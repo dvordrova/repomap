@@ -186,7 +186,9 @@ const report = {
     behavior_anchors: [], surfaces: [], flows: [],
   },
 };
-const roots = {};
+function journey(report, lang) {
+  report = Object.assign({}, report, { report_language: lang });
+  const roots = {};
 ["rm-overview", "rm-task-investigation", "rm-mechanisms", "rm-mechanism-detail",
  "rm-study-overview", "rm-study-detail", "rm-operate-detail", "rm-architecture", "rm-provenance"].forEach((id) => {
   roots[id] = new Element("section");
@@ -276,46 +278,56 @@ if (modelPickBadges.length) {
 }
 if (showAllButtons.length) showAllButtons[0].onclick();
 const localCollapsedAfter = localGroup ? String(localGroup.className).split(/\s+/).includes("rm-study-browse-group--collapsed") : false;
-process.stdout.write(JSON.stringify({ overviewText, studyOverviewText, stageCounts, flagItems, omissionItems, architectureText, browseRowCount: browseRows.length, browseStageTexts, unavailableRows, modelPickCount: modelPickBadges.length, directionCardAfterPick, beyondBefore, localCollapsedBefore, localCollapsedAfter, showAllCount: showAllButtons.length, browsePanelPresent: !!browsePanel }));
+  const questionLinks = byClass(browseRoot, "rm-study-browse-row__question").map((node) => ({ tag: node.tagName, href: (node.attributes && node.attributes.href) || "" }));
+  return { overviewText, studyOverviewText, stageCounts, flagItems, omissionItems, architectureText, browseRowCount: browseRows.length, browseStageTexts, unavailableRows, modelPickCount: modelPickBadges.length, directionCardAfterPick, beyondBefore, localCollapsedBefore, localCollapsedAfter, showAllCount: showAllButtons.length, browsePanelPresent: !!browsePanel, questionLinks };
+}
+const strippedReport = JSON.parse(JSON.stringify(report));
+strippedReport.user_sources = [];
+strippedReport.openable_paths = ["study/route-1.go", "study/route-2.go"];
+strippedReport.github_source_links = { repository_url: "https://github.com/example/repository", revision: "a".repeat(40) };
+process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(report, "ru"), stripped: journey(strippedReport, "en") }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "atlas-study-diagnostics-test.js")
 	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	type questionLink struct {
+		Tag  string `json:"tag"`
+		Href string `json:"href"`
+	}
+	type journey struct {
+		OverviewText         string         `json:"overviewText"`
+		StudyOverviewText    string         `json:"studyOverviewText"`
+		StageCounts          []string       `json:"stageCounts"`
+		FlagItems            []string       `json:"flagItems"`
+		OmissionItems        []string       `json:"omissionItems"`
+		ArchitectureText     string         `json:"architectureText"`
+		BrowseRowCount       int            `json:"browseRowCount"`
+		BrowseStageTexts     []string       `json:"browseStageTexts"`
+		UnavailableRows      []string       `json:"unavailableRows"`
+		ModelPickCount       int            `json:"modelPickCount"`
+		DirectionCardAfter   string         `json:"directionCardAfterPick"`
+		BeyondBefore         int            `json:"beyondBefore"`
+		LocalCollapsedBefore bool           `json:"localCollapsedBefore"`
+		LocalCollapsedAfter  bool           `json:"localCollapsedAfter"`
+		ShowAllCount         int            `json:"showAllCount"`
+		BrowsePanelPresent   bool           `json:"browsePanelPresent"`
+		QuestionLinks        []questionLink `json:"questionLinks"`
+	}
+	type journeySet struct {
+		En       journey `json:"en"`
+		Ru       journey `json:"ru"`
+		Stripped journey `json:"stripped"`
+	}
 	output, err := exec.Command(node, runnerPath, assetPath).CombinedOutput()
 	if err != nil {
 		t.Fatalf("run diagnostics workspace: %v\n%s", err, output)
 	}
-	type journey struct {
-		OverviewText         string   `json:"overviewText"`
-		StudyOverviewText    string   `json:"studyOverviewText"`
-		StageCounts          []string `json:"stageCounts"`
-		FlagItems            []string `json:"flagItems"`
-		OmissionItems        []string `json:"omissionItems"`
-		ArchitectureText     string   `json:"architectureText"`
-		BrowseRowCount       int      `json:"browseRowCount"`
-		BrowseStageTexts     []string `json:"browseStageTexts"`
-		UnavailableRows      []string `json:"unavailableRows"`
-		ModelPickCount       int      `json:"modelPickCount"`
-		DirectionCardAfter   string   `json:"directionCardAfterPick"`
-		BeyondBefore         int      `json:"beyondBefore"`
-		LocalCollapsedBefore bool     `json:"localCollapsedBefore"`
-		LocalCollapsedAfter  bool     `json:"localCollapsedAfter"`
-		ShowAllCount         int      `json:"showAllCount"`
-		BrowsePanelPresent   bool     `json:"browsePanelPresent"`
+	var out journeySet
+	if err := json.Unmarshal(output, &out); err != nil {
+		t.Fatalf("decode diagnostics workspace: %v\n%s", err, output)
 	}
-	runJourney := func(lang string) journey {
-		output, err := exec.Command(node, runnerPath, assetPath, lang).CombinedOutput()
-		if err != nil {
-			t.Fatalf("run diagnostics workspace (%s): %v\n%s", lang, err, output)
-		}
-		var got journey
-		if err := json.Unmarshal(output, &got); err != nil {
-			t.Fatalf("decode diagnostics workspace (%s): %v\n%s", lang, err, output)
-		}
-		return got
-	}
-	got := runJourney("en")
+	en, ru, stripped := out.En, out.Ru, out.Stripped
 
 	// Four-stage diagnostics: stage counts present with exact values.
 	for _, want := range []string{
@@ -324,8 +336,8 @@ process.stdout.write(JSON.stringify({ overviewText, studyOverviewText, stageCoun
 		"Model-selected spans", "10",
 		"Locally accepted spans", "10",
 	} {
-		if !strings.Contains(got.StudyOverviewText, want) {
-			t.Fatalf("Study diagnostics missing %q:\n%s", want, got.StudyOverviewText)
+		if !strings.Contains(en.StudyOverviewText, want) {
+			t.Fatalf("Study diagnostics missing %q:\n%s", want, en.StudyOverviewText)
 		}
 	}
 	// The four independent flags render with exact true/false presentation.
@@ -333,40 +345,40 @@ process.stdout.write(JSON.stringify({ overviewText, studyOverviewText, stageCoun
 		"Frontier completeNo", "Selected items completeYes",
 		"Support coverage completeYes", "Portfolio target metYes",
 	}, "|")
-	if strings.Join(got.FlagItems, "|") != wantFlagText {
-		t.Fatalf("flag presentation = %#v, want %q", got.FlagItems, wantFlagText)
+	if strings.Join(en.FlagItems, "|") != wantFlagText {
+		t.Fatalf("flag presentation = %#v, want %q", en.FlagItems, wantFlagText)
 	}
 	// The raw advertised_budget chip is replaced by the human omission
 	// sentence and a "Show all N" disclosure button.
-	if len(got.OmissionItems) != 1 ||
-		!strings.Contains(got.OmissionItems[0], "Left out of the model's review to keep the request bounded — these are full local questions.") ||
-		!strings.Contains(got.OmissionItems[0], "Show all 36") ||
-		strings.Contains(got.OmissionItems[0], "advertised_budget") {
-		t.Fatalf("omission aggregates = %#v", got.OmissionItems)
+	if len(en.OmissionItems) != 1 ||
+		!strings.Contains(en.OmissionItems[0], "Left out of the model's review to keep the request bounded — these are full local questions.") ||
+		!strings.Contains(en.OmissionItems[0], "Show all 36") ||
+		strings.Contains(en.OmissionItems[0], "advertised_budget") {
+		t.Fatalf("omission aggregates = %#v", en.OmissionItems)
 	}
 	// D212 frontier browse renders below the diagnostics panel.
-	if !got.BrowsePanelPresent {
-		t.Fatalf("frontier browse panel missing from the Study overview:\n%s", got.StudyOverviewText)
+	if !en.BrowsePanelPresent {
+		t.Fatalf("frontier browse panel missing from the Study overview:\n%s", en.StudyOverviewText)
 	}
-	if !strings.Contains(got.StudyOverviewText, "All study questions") ||
-		!strings.Contains(got.StudyOverviewText, "Every question the local analysis can answer for this repository, in a fixed local order. This is not a model ranking.") {
-		t.Fatalf("frontier browse title/caption missing:\n%s", got.StudyOverviewText)
+	if !strings.Contains(en.StudyOverviewText, "All study questions") ||
+		!strings.Contains(en.StudyOverviewText, "Every question the local analysis can answer for this repository, in a fixed local order. This is not a model ranking.") {
+		t.Fatalf("frontier browse title/caption missing:\n%s", en.StudyOverviewText)
 	}
-	if got.BrowseRowCount != 68 {
-		t.Fatalf("browse rows = %d, want 68", got.BrowseRowCount)
+	if en.BrowseRowCount != 68 {
+		t.Fatalf("browse rows = %d, want 68", en.BrowseRowCount)
 	}
 	// Four distinct stage states with exact counts 10/0/22/36 (a/b/c/d).
 	stageCount := func(label string) int {
 		count := 0
-		for _, item := range got.BrowseStageTexts {
+		for _, item := range en.BrowseStageTexts {
 			if item == label {
 				count++
 			}
 		}
 		return count
 	}
-	if got.ModelPickCount != 10 || stageCount("Model pick") != 10 {
-		t.Fatalf("Model pick badges = %d/%d, want 10", got.ModelPickCount, stageCount("Model pick"))
+	if en.ModelPickCount != 10 || stageCount("Model pick") != 10 {
+		t.Fatalf("Model pick badges = %d/%d, want 10", en.ModelPickCount, stageCount("Model pick"))
 	}
 	if stageCount("Shown to the model, not picked") != 22 {
 		t.Fatalf("advertised rows = %d, want 22", stageCount("Shown to the model, not picked"))
@@ -375,30 +387,29 @@ process.stdout.write(JSON.stringify({ overviewText, studyOverviewText, stageCoun
 		t.Fatalf("considered rows = %d, want 36", stageCount("Local question — not shown to the model"))
 	}
 	// A Model pick badge opens exactly one numbered direction card.
-	if !strings.Contains(got.DirectionCardAfter, "Study question 1?") {
-		t.Fatalf("Model pick badge did not open the matching direction card:\n%s", got.DirectionCardAfter)
+	if !strings.Contains(en.DirectionCardAfter, "Study question 1?") {
+		t.Fatalf("Model pick badge did not open the matching direction card:\n%s", en.DirectionCardAfter)
 	}
 	// Show all N reveals the Local group (12 representatives visible first).
-	if got.ShowAllCount < 1 || got.BeyondBefore != 24 || !got.LocalCollapsedBefore || got.LocalCollapsedAfter {
+	if en.ShowAllCount < 1 || en.BeyondBefore != 24 || !en.LocalCollapsedBefore || en.LocalCollapsedAfter {
 		t.Fatalf("Show all N = %d, beyond rows = %d, collapsed before/after = %v/%v, want 1, 24, true, false",
-			got.ShowAllCount, got.BeyondBefore, got.LocalCollapsedBefore, got.LocalCollapsedAfter)
+			en.ShowAllCount, en.BeyondBefore, en.LocalCollapsedBefore, en.LocalCollapsedAfter)
 	}
 	// Rows without an openable source render the neutral unavailable state.
-	if len(got.UnavailableRows) != 2 || !strings.Contains(got.UnavailableRows[0], "Source unavailable") {
-		t.Fatalf("unavailable rows = %#v, want 2 neutral states", got.UnavailableRows)
+	if len(en.UnavailableRows) != 2 || !strings.Contains(en.UnavailableRows[0], "Source unavailable") {
+		t.Fatalf("unavailable rows = %#v, want 2 neutral states", en.UnavailableRows)
 	}
 	// Honest synthesis-failed copy replaces the unconditional acceptance copy.
-	if !strings.Contains(got.OverviewText, "Architecture synthesis failed; showing the locally available architecture with exact symbol sources.") {
-		t.Fatalf("Overview does not show the synthesis-failed copy:\n%s", got.OverviewText)
+	if !strings.Contains(en.OverviewText, "Architecture synthesis failed; showing the locally available architecture with exact symbol sources.") {
+		t.Fatalf("Overview does not show the synthesis-failed copy:\n%s", en.OverviewText)
 	}
-	if strings.Contains(got.OverviewText, "Accepted conceptual components open on the map") {
-		t.Fatalf("Overview still shows the unconditional acceptance copy:\n%s", got.OverviewText)
+	if strings.Contains(en.OverviewText, "Accepted conceptual components open on the map") {
+		t.Fatalf("Overview still shows the unconditional acceptance copy:\n%s", en.OverviewText)
 	}
-	if !strings.Contains(got.ArchitectureText, "Architecture synthesis failed; showing the locally available architecture.") {
-		t.Fatalf("Architecture tab does not show the synthesis-failed notice:\n%s", got.ArchitectureText)
+	if !strings.Contains(en.ArchitectureText, "Architecture synthesis failed; showing the locally available architecture.") {
+		t.Fatalf("Architecture tab does not show the synthesis-failed notice:\n%s", en.ArchitectureText)
 	}
 	// RU journey: same browse with the Russian catalog.
-	ru := runJourney("ru")
 	if !strings.Contains(ru.StudyOverviewText, "Все вопросы изучения") ||
 		!strings.Contains(ru.StudyOverviewText, "Каждый вопрос, который локальный анализ может поставить для этого репозитория, в фиксированном локальном порядке. Это не ранжирование моделью.") {
 		t.Fatalf("RU frontier browse title/caption missing:\n%s", ru.StudyOverviewText)
@@ -419,5 +430,40 @@ process.stdout.write(JSON.stringify({ overviewText, studyOverviewText, stageCoun
 		t.Fatalf("RU browse journey failed: rows=%d badges=%d/%d/%d unavailable=%#v",
 			ru.BrowseRowCount, ruStageCount("Выбор модели"), ruStageCount("Показано модели, не выбрано"),
 			ruStageCount("Локальный вопрос — модели не показывался"), ru.UnavailableRows)
+	}
+	// Stripped static report: no embedded source bodies; the browse still
+	// renders 68 rows with the same stage counts, and every openable row
+	// resolves to one exact pinned GitHub source action instead of a dead
+	// button, while non-openable rows keep the neutral unavailable state.
+	if !stripped.BrowsePanelPresent || stripped.BrowseRowCount != 68 {
+		t.Fatalf("stripped browse panel/rows = %v/%d, want true/68", stripped.BrowsePanelPresent, stripped.BrowseRowCount)
+	}
+	strippedStageCount := func(label string) int {
+		count := 0
+		for _, item := range stripped.BrowseStageTexts {
+			if item == label {
+				count++
+			}
+		}
+		return count
+	}
+	if strippedStageCount("Model pick") != 10 ||
+		strippedStageCount("Shown to the model, not picked") != 22 ||
+		strippedStageCount("Local question — not shown to the model") != 36 ||
+		len(stripped.UnavailableRows) != 2 || !strings.Contains(stripped.UnavailableRows[0], "Source unavailable") {
+		t.Fatalf("stripped browse counts failed: badges=%d/%d/%d unavailable=%#v",
+			strippedStageCount("Model pick"), strippedStageCount("Shown to the model, not picked"),
+			strippedStageCount("Local question — not shown to the model"), stripped.UnavailableRows)
+	}
+	if len(stripped.QuestionLinks) < 66 {
+		t.Fatalf("stripped question source actions = %d, want >= 66", len(stripped.QuestionLinks))
+	}
+	if stripped.QuestionLinks[0].Tag != "a" ||
+		!strings.Contains(stripped.QuestionLinks[0].Href, "/blob/") ||
+		!strings.Contains(stripped.QuestionLinks[0].Href, "#L") {
+		t.Fatalf("stripped question source action is not a pinned link: %#v", stripped.QuestionLinks[0])
+	}
+	if !strings.Contains(stripped.DirectionCardAfter, "Study question 1?") {
+		t.Fatalf("stripped Model pick badge did not open the matching direction card:\n%s", stripped.DirectionCardAfter)
 	}
 }
