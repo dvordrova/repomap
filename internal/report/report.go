@@ -299,11 +299,13 @@ type AtlasStudyReportStatus struct {
 	AdvertisedSpanCount    int `json:"advertised_span_count,omitempty"`
 	ModelSelectedSpanCount int `json:"model_selected_span_count,omitempty"`
 	AcceptedSpanCount      int `json:"accepted_span_count,omitempty"`
-	// Four independent coverage flags.
-	FrontierComplete        bool `json:"frontier_complete,omitempty"`
-	SelectedItemsComplete   bool `json:"selected_items_complete,omitempty"`
-	SupportCoverageComplete bool `json:"support_coverage_complete,omitempty"`
-	PortfolioTargetMet      bool `json:"portfolio_target_met,omitempty"`
+	// Four independent coverage flags. They are recorded independently and are
+	// part of the documented projection v6 contract, so they serialize even
+	// when false.
+	FrontierComplete        bool `json:"frontier_complete"`
+	SelectedItemsComplete   bool `json:"selected_items_complete"`
+	SupportCoverageComplete bool `json:"support_coverage_complete"`
+	PortfolioTargetMet      bool `json:"portfolio_target_met"`
 	// Omissions are bounded public-safe aggregates of considered spans omitted
 	// from the advertised frontier: exact counts by closed reason plus the
 	// bounded representative count. Canonical identities never enter the
