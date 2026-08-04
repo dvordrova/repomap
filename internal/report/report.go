@@ -27,7 +27,12 @@ import (
 
 const CurrentFormatVersion = 30
 
-const AtlasStudyReportProjectionVersion = 6
+const AtlasStudyReportProjectionVersion = 7
+
+// MaxAtlasStudyBrowseSpans bounds the report-side provider-free per-span
+// browse. Truthful Total/Shown keep larger repositories honest; the complete
+// considered set stays bound by the status artifact's CandidateSHA256 digest.
+const MaxAtlasStudyBrowseSpans = 256
 
 const maxAtlasStudyReportCoverageCount = 1_000_000
 
@@ -311,6 +316,52 @@ type AtlasStudyReportStatus struct {
 	// bounded representative count. Canonical identities never enter the
 	// report, so representative route-span refs are reduced to their count.
 	Omissions []AtlasStudyOmissionAggregate `json:"omissions,omitempty"`
+	// FrontierBrowse is the bounded provider-free per-span browse of the
+	// complete considered Study question set. It is derived only inside
+	// readAtlasStudyReportProduct from already-validated local artifacts and
+	// stays nil for unavailable/prepared/uncalled states.
+	FrontierBrowse *FrontierBrowse `json:"frontier_browse,omitempty"`
+}
+
+// AtlasStudySpanStage is the highest reached stage of one span, derived by
+// exact set arithmetic at projection time. It is never provider-authored.
+type AtlasStudySpanStage string // "considered" | "advertised" | "model_selected" | "accepted"
+
+const (
+	AtlasStudySpanStageConsidered      AtlasStudySpanStage = "considered"
+	AtlasStudySpanStageAdvertised      AtlasStudySpanStage = "advertised"
+	AtlasStudySpanStageModelSelected   AtlasStudySpanStage = "model_selected"
+	AtlasStudySpanStageAccepted        AtlasStudySpanStage = "accepted"
+)
+
+// FrontierBrowse is the bounded provider-free per-span browse of the complete
+// considered Study question set. Total/Shown are always truthful; Spans never
+// exceed MaxAtlasStudyBrowseSpans.
+type FrontierBrowse struct {
+	Total int    `json:"total"` // complete considered count (len of rebuilt input.RouteSpans)
+	Shown int    `json:"shown"` // len(Spans)
+	Spans []Span `json:"spans"`
+}
+
+// Span is one browse row. Ordinal is 1..N in canonical span-ID order within
+// learning-stage groups and is manifest-relative; it is NOT a canonical ID.
+// Stage is the four-value membership. Source/Endpoint are exact user-code
+// locations published only for paths in OpenablePaths; a row whose source
+// cannot open carries the neutral unavailable state instead of a dead button.
+// DirectionID is present ONLY on accepted rows: it is the public
+// manifest-relative report direction id (matching the study_map direction id
+// used by openStudyDirection), derived at projection time from the validated
+// result.Directions array order (model rank); no canonical span ID is
+// serialized. An accepted row with no matching published direction (should not
+// occur — fail closed) is a projection error.
+type Span struct {
+	Ordinal     int                 `json:"ordinal"`
+	Title       string              `json:"title"`    // exact source-card symbol/label; system-path "from → to" endpoints
+	Question    string              `json:"question"` // backend-compiled question in the report language
+	Stage       AtlasStudySpanStage `json:"stage"`
+	Source      UserCodeLocation    `json:"source"`             // only when Source.Path ∈ data.OpenablePaths
+	Endpoint    *UserCodeLocation   `json:"endpoint,omitempty"` // only for system-path spans whose endpoint path ∈ data.OpenablePaths
+	DirectionID string              `json:"direction_id,omitempty"` // accepted rows ONLY; public study_map direction id (model rank)
 }
 
 // AtlasStudyOmissionAggregate is the public-safe report projection of one
