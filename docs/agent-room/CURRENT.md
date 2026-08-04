@@ -1,17 +1,40 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/212-provider-free-frontier-browse-d211-considered-spans.md
+    decisions/213-atlas-backed-source-grounded-study-themes.md
 
 Status:
-    Decision 212 active: a local provider-free browse surface in the Study tab
-    over the complete D211 considered-span set with four honest user-language
-    stage states and exact source navigation
+    Decision 213 active: an Atlas-backed, source-grounded editorial Study theme
+    shelf produced by exactly two bounded semantic stages (Theme Scout, then
+    Source Review / Theme Adjudication) with local source expansion and a
+    deterministic reducer; the D212 local browse is kept and re-based onto it
 
 Approved by:
-    Repository owner in the current session
+    Repository owner via the Monster council gate (red-team PASS,
+    council/31-red-team-213.md) in the current session
 
 Notes:
+    Decision 213 restores the editorial multi-anchor Study theme layer on top of
+    the accepted Atlas-first base. One new deterministic local package
+    `internal/themestudy` produces a flat names-only `f*` file vocabulary, bounded
+    exact `a*` seed-anchor source packs, and two new versioned semantic stages —
+    Theme Scout then Source Review / Theme Adjudication — separated by local
+    source expansion, followed by a deterministic local reducer into clean Study
+    theme cards plus the existing exact-source drawer. The single-stage atlas-study
+    provider call is retired (its local compile remains the exact seed producer),
+    so the Study pipeline has exactly two semantic stages; Navigator is untouched.
+    The report projection advances AtlasStudyReportProjectionVersion 7→8 and
+    CurrentFormatVersion 30→31; RunManifest v11→v12 binds eight new theme artifacts
+    by SHA-256. D212's four-stage local browse is kept (never three states) and
+    re-based onto the D213 pipeline: considered / seed-advertised / scout-anchored
+    / published, with the distinct failed-run neutral label "Local question" ·
+    «Локальный вопрос» preserved. Old v7 projections fail closed under the v8
+    binary; historical self-contained reports remain untouched. Acceptance is
+    provider-free first, then exactly one fresh Casdoor semantic A/B run on the
+    same revision and dirty state judged by the M1–M9 material-improvement criteria
+    — acceptance, never a tuning loop, no second live calibration. One decision per
+    Monster run: after D213 PASS write MORNING.md and stop.
+
     Decision 212 makes the complete D211 considered-span set explorable in the
     Study tab through one distinct local "Study questions" surface, provider-free
     and derived only from already-validated local artifacts: zero new analysis,
