@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"reflect"
 
 	"github.com/dvordrova/repomap/internal/atlasstudy"
+	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/secretscan"
 )
@@ -19,15 +21,24 @@ import (
 // saved sources, then round-trip validated and published with the same
 // exclusive-write safety as atlas-study-response-replay. No provider call and
 // no network access happen here.
+//
+// With --repo the seam reproduces the authority-confirmed, source-covered
+// ReportData used by the original run-time producer: the manifest seed is
+// verified, the scoped run authority is re-confirmed against the live
+// repository, and PrepareAuthorizedSourceCoverage installs the exact fresh
+// sources before the request is compiled. This makes the rebuilt request bind
+// the same compiled product as render-report --repo, so the deterministic
+// mock -> replay -> render pipeline stays self-consistent.
 func runAtlasStudyRequestRebuildCLI(args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet("atlas-study-request-rebuild", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	runDirFlag := flags.String("run-dir", "", "explicit copied Atlas Study run")
+	repoFlag := flags.String("repo", "", "authoritative repository for the copied run (optional)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 || *runDirFlag == "" {
-		return fmt.Errorf("usage: repomap dev atlas-study-request-rebuild --run-dir <copied-run>")
+		return fmt.Errorf("usage: repomap dev atlas-study-request-rebuild --run-dir <copied-run> [--repo <repo>]")
 	}
 	if stdout == nil {
 		return fmt.Errorf("atlas study request rebuild: stdout is required")
@@ -68,6 +79,13 @@ func runAtlasStudyRequestRebuildCLI(args []string, stdout io.Writer) error {
 	data, err := report.ReadRunDir(runDir)
 	if err != nil {
 		return fmt.Errorf("atlas study request rebuild: read run: %w", err)
+	}
+	if *repoFlag != "" {
+		prepared, err := prepareAtlasStudyRebuildData(runDir, *repoFlag, data)
+		if err != nil {
+			return err
+		}
+		data = prepared
 	}
 	input, err := report.BuildAtlasStudyInput(data, language)
 	if err != nil {
@@ -127,4 +145,51 @@ func runAtlasStudyRequestRebuildCLI(args []string, stdout io.Writer) error {
 		product.Coverage().SpansSelected,
 	)
 	return nil
+}
+
+// prepareAtlasStudyRebuildData re-reads the copied run against the confirmed
+// scoped repository authority and installs the exact authorized source
+// coverage, mirroring the run-time producer path in cmd/repomap main.go. The
+// manifest seed must match the live repository exactly, and the rebuilt
+// request is then compiled from the same ReportData the authorized render
+// replays, so request binding is preserved across the provider-free pipeline.
+func prepareAtlasStudyRebuildData(runDir, repo string, base *report.ReportData) (*report.ReportData, error) {
+	if base == nil {
+		return nil, fmt.Errorf("atlas study request rebuild: base run data is required")
+	}
+	seed, err := report.ReadRunManifestAuthoritySeed(runDir)
+	if err != nil {
+		return nil, fmt.Errorf("atlas study request rebuild: read authority seed: %w", err)
+	}
+	analysisRoot, err := resolveAnalysisRoot(repo)
+	if err != nil {
+		return nil, fmt.Errorf("atlas study request rebuild: resolve repository authority: %w", err)
+	}
+	ctx := context.Background()
+	before, err := freshness.CaptureRepository(ctx, repo)
+	if err != nil {
+		return nil, fmt.Errorf("atlas study request rebuild: capture repository before authority confirmation: %w", err)
+	}
+	after, err := freshness.CaptureRepository(ctx, repo)
+	if err != nil {
+		return nil, fmt.Errorf("atlas study request rebuild: capture repository after authority confirmation: %w", err)
+	}
+	if seed.RepositoryIdentity != before.Identity || seed.AnalysisRoot != analysisRoot ||
+		seed.SelectedRevision != before.Head {
+		return nil, fmt.Errorf("atlas study request rebuild: copied run authority does not match --repo")
+	}
+	authority, err := report.ConfirmRunAuthorityScoped(
+		ctx, analysisRoot, before, after, seed.CapturedInputPaths, true,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("atlas study request rebuild: confirm repository authority: %w", err)
+	}
+	data, err := report.ReadRunDirForAuthorizedArchitecture(runDir, authority)
+	if err != nil && !report.IsExactWorkspaceGraphUnavailable(err) {
+		return nil, fmt.Errorf("atlas study request rebuild: read authorized run: %w", err)
+	}
+	if err := report.PrepareAuthorizedSourceCoverage(ctx, data, &authority); err != nil {
+		return nil, fmt.Errorf("atlas study request rebuild: prepare exact source coverage: %w", err)
+	}
+	return data, nil
 }
