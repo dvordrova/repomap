@@ -20,7 +20,7 @@ func TestD210CompileBuildsTypedSupportAndBackendSpanWireDeterministically(t *tes
 	if err := json.Unmarshal(product.WireJSON(), &wire); err != nil {
 		t.Fatal(err)
 	}
-	if wire.Version != 6 || len(wire.RouteSupports) != 3 || len(wire.RouteSpans) != 1 {
+	if wire.Version != 7 || len(wire.RouteSupports) != 2 || len(wire.RouteSpans) != 1 {
 		t.Fatalf("typed wire = version:%d supports:%d spans:%d", wire.Version, len(wire.RouteSupports), len(wire.RouteSpans))
 	}
 	span := wire.RouteSpans[0]
@@ -30,7 +30,10 @@ func TestD210CompileBuildsTypedSupportAndBackendSpanWireDeterministically(t *tes
 		t.Fatalf("typed span = %#v", span)
 	}
 	coverage := product.Coverage()
-	if !coverage.Complete || coverage.TargetsConsidered != 3 || coverage.TargetsSelected != 3 ||
+	// The D211 frontier is span-driven: the single advertised system-path span
+	// allows only the config and startup targets, so the third considered
+	// reading target is deliberately not selected and coverage stays explicit.
+	if coverage.Complete || coverage.TargetsConsidered != 3 || coverage.TargetsSelected != 2 ||
 		coverage.SpansConsidered != 1 || coverage.SpansSelected != 1 || coverage.CandidateSHA256 == "" {
 		t.Fatalf("coverage = %#v", coverage)
 	}
@@ -111,12 +114,16 @@ func TestD210EveryRequestEncodableCoverageCanPersistAllStatusStates(t *testing.T
 		{Kind: RefRouteSpan, ID: "span-large-a"},
 		{Kind: RefRouteSpan, ID: "span-large-b"},
 	}
+	coverage := product.Coverage()
 	partial := product.status(ProductStateAcceptedPartial, 1, SpanCoverage{
-		Requested: requested,
-		Covered:   requested[:1],
-		Uncovered: requested[1:],
-		Complete:  false,
+		ConsideredSpanCount:    coverage.SpansConsidered,
+		AdvertisedSpanCount:    len(product.selectedSpanIDs),
+		ModelSelectedSpanCount: 1,
+		AcceptedSpanCount:      1,
+		FrontierComplete:       len(product.selectedSpanIDs) == coverage.SpansConsidered,
+		SupportCoverageComplete: true,
 	}, "", "")
+	_ = requested
 	statuses = append(statuses, partial)
 
 	for _, status := range statuses {
@@ -325,11 +332,33 @@ func TestD210BreadthRotatesPackagesAndRecordsExplicitPartialCoverage(t *testing.
 	input.Limits.MaxReadingTargets = 4
 	product := mustCompileTestProduct(t, input)
 	coverage := product.Coverage()
-	if coverage.Complete || coverage.TargetsConsidered != 5 || coverage.TargetsSelected != 4 {
+	if coverage.Complete || coverage.TargetsConsidered != 5 || coverage.TargetsSelected != 2 ||
+		coverage.SpansConsidered != 1 || coverage.SpansSelected != 1 {
 		t.Fatalf("partial breadth coverage = %#v", coverage)
 	}
-	if _, ok := product.byCanonical[CanonicalRef{Kind: RefReadingTarget, ID: "anchor-breadth-b"}]; !ok {
-		t.Fatal("round-robin package bucket was monopolized by the repeated first package")
+	wantRoles := []CandidateCoverageCount{
+		{Key: "entry_handoff", Considered: 4, Selected: 1},
+		{Key: "process_entry", Considered: 1, Selected: 1},
+	}
+	if !reflect.DeepEqual(coverage.PerRole, wantRoles) {
+		t.Fatalf("per-role breadth coverage = %#v", coverage.PerRole)
+	}
+	wantPackages := []CandidateCoverageCount{
+		{Key: "package-config-canonical", Considered: 2, Selected: 1},
+		{Key: "package-main-canonical", Considered: 1, Selected: 1},
+		{Key: "package-other-canonical", Considered: 1, Selected: 0},
+		{Key: "package-server-canonical", Considered: 1, Selected: 0},
+	}
+	if !reflect.DeepEqual(coverage.PerPackage, wantPackages) {
+		t.Fatalf("per-package breadth coverage = %#v", coverage.PerPackage)
+	}
+	// The D211 frontier is span-driven: the single advertised span covers the
+	// process entry and one entry handoff, and the extra breadth supports are
+	// not required by any span. Their exact packages stay visible in the
+	// bounded coverage aggregates as considered-but-unselected, and the
+	// unselected breadth target never enters the advertised catalog.
+	if _, ok := product.byCanonical[CanonicalRef{Kind: RefReadingTarget, ID: "anchor-breadth-b"}]; ok {
+		t.Fatal("span-unreferenced breadth target entered the advertised catalog")
 	}
 }
 
@@ -390,7 +419,7 @@ func TestD210CompileAdvertisesPackageDiverseSpans(t *testing.T) {
 			RequiredSupportIDs: []string{supportID}, AllowedTargetIDs: []string{targetID},
 		})
 	}
-	input.Limits.MaxRouteSpans = 3
+	input.Limits.MaxAdvertisedSpans = 3
 	product := mustCompileTestProduct(t, input)
 	if got, want := selectedSpanIDs(product.input.RouteSpans), []string{"span-a-1", "span-b", "span-c"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("advertised package-diverse spans = %v, want %v", got, want)
@@ -462,14 +491,14 @@ func TestD210ResolverPreservesValidSiblingAndRejectsDuplicateSpanItemLocally(t *
 	bad := valid
 	bad.Reading = bad.Reading[:1]
 	items := []json.RawMessage{marshalTestJSON(t, bad), marshalTestJSON(t, valid)}
-	directions, diagnostics := product.resolveDirections(items)
+	directions, diagnostics, _ := product.resolveDirections(items)
 	if len(directions) != 1 || diagnostics.DirectionsRejected != 1 ||
 		len(diagnostics.Issues) != 1 || diagnostics.Issues[0].Code != IssueSpanSupportIncomplete {
 		t.Fatalf("item-local result = %#v / %#v", directions, diagnostics)
 	}
 
 	items = []json.RawMessage{marshalTestJSON(t, valid), marshalTestJSON(t, valid)}
-	directions, diagnostics = product.resolveDirections(items)
+	directions, diagnostics, _ = product.resolveDirections(items)
 	if len(directions) != 1 || len(diagnostics.Issues) != 1 || diagnostics.Issues[0].Code != IssueDuplicateSpanRef {
 		t.Fatalf("duplicate span result = %#v / %#v", directions, diagnostics)
 	}

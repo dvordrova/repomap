@@ -975,10 +975,14 @@ func TestReadAtlasStudyReportProductAcceptedProjectsExactSources(t *testing.T) {
 	if err != nil {
 		t.Fatalf("readAtlasStudyReportProduct: %v", err)
 	}
-	if status == nil || status.State != atlasstudy.ProductStateAcceptedPartial ||
+	if status == nil || status.State != atlasstudy.ProductStateAccepted ||
 		status.ProjectionVersion != AtlasStudyReportProjectionVersion ||
 		status.DirectionCount != 1 || status.PublishedDirectionCount != 1 ||
-		status.HiddenDirectionCount != 0 || studyMap == nil || len(studyMap.Directions) != 1 ||
+		status.HiddenDirectionCount != 0 || status.ConsideredSpanCount != 4 ||
+		status.AdvertisedSpanCount != 4 || status.ModelSelectedSpanCount != 1 ||
+		status.AcceptedSpanCount != 1 || !status.FrontierComplete ||
+		!status.SelectedItemsComplete || !status.SupportCoverageComplete ||
+		status.PortfolioTargetMet || studyMap == nil || len(studyMap.Directions) != 1 ||
 		len(studyMap.Directions[0].ReadingAnchors) != 1 || len(studyMap.Shape) != 1 {
 		t.Fatalf("accepted report projection = %#v / %#v", status, studyMap)
 	}

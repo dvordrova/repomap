@@ -737,10 +737,19 @@ func validateAtlasStudyReportProjection(
 	if status == nil {
 		return fmt.Errorf("Atlas Study projection is absent")
 	}
-	zeroSpanCoverage := status.RequestedSpanCount == 0 && status.CoveredSpanCount == 0 &&
-		status.UncoveredSpanCount == 0 && !status.CoverageComplete
+	zeroStageCounts := status.ConsideredSpanCount == 0 && status.AdvertisedSpanCount == 0 &&
+		status.ModelSelectedSpanCount == 0 && status.AcceptedSpanCount == 0
+	zeroFlags := !status.FrontierComplete && !status.SelectedItemsComplete &&
+		!status.SupportCoverageComplete && !status.PortfolioTargetMet
 	switch status.State {
 	case atlasstudy.ProductStateAccepted, atlasstudy.ProductStateAcceptedPartial:
+		// Four-stage contract mirroring validateStatus projected onto the
+		// public report: advertised <= considered, the model-selected stage is
+		// between the accepted direction count and the advertised frontier,
+		// the locally accepted span count equals the accepted direction count,
+		// and the four coverage flags are recorded independently. An advertised
+		// span with no returned direction is normal not_selected: it never
+		// turns an otherwise exact result into accepted_partial.
 		if !hasRequest || !hasResult || !hasStatus || studyMap == nil ||
 			status.UnavailableCode != "" || status.FailureCode != "" ||
 			status.CandidateCoverage == nil || status.DirectionCount < 1 ||
@@ -748,21 +757,39 @@ func validateAtlasStudyReportProjection(
 			status.PublishedDirectionCount != len(studyMap.Directions) ||
 			status.HiddenDirectionCount != len(studyMap.HiddenDirections) ||
 			status.DirectionCount != status.PublishedDirectionCount+status.HiddenDirectionCount ||
-			status.CoveredSpanCount != status.DirectionCount ||
-			status.RequestedSpanCount != status.CoveredSpanCount+status.UncoveredSpanCount {
+			status.DirectionCount != status.AcceptedSpanCount ||
+			status.ConsideredSpanCount <= 0 || status.AdvertisedSpanCount <= 0 ||
+			status.AdvertisedSpanCount > status.ConsideredSpanCount ||
+			status.ModelSelectedSpanCount < status.AcceptedSpanCount ||
+			status.ModelSelectedSpanCount > status.AdvertisedSpanCount ||
+			status.FrontierComplete != (status.AdvertisedSpanCount == status.ConsideredSpanCount) ||
+			status.SelectedItemsComplete != (status.State == atlasstudy.ProductStateAccepted) ||
+			!status.SupportCoverageComplete ||
+			status.PortfolioTargetMet != (status.DirectionCount >= atlasstudy.MinPortfolioDirections &&
+				status.DirectionCount <= atlasstudy.MaxDirections) {
 			return fmt.Errorf("accepted Atlas Study projection is invalid")
 		}
 		if err := status.CandidateCoverage.validate(); err != nil {
 			return err
 		}
-		if status.CandidateCoverage.SpansSelected != status.RequestedSpanCount {
+		if err := validateAtlasStudyOmissionProjection(status.Omissions); err != nil {
+			return err
+		}
+		if status.CandidateCoverage.SpansSelected != status.AdvertisedSpanCount {
 			return fmt.Errorf("accepted Atlas Study candidate/span counts do not match")
 		}
-		if status.State == atlasstudy.ProductStateAccepted {
-			if !status.CoverageComplete || status.UncoveredSpanCount != 0 {
-				return fmt.Errorf("complete Atlas Study projection is invalid")
-			}
-		} else if status.CoverageComplete || status.UncoveredSpanCount <= 0 {
+		// Accepted means every returned selected item is locally valid: the
+		// model-selected stage collapses onto the locally accepted span count
+		// (zero rejected siblings). accepted_partial keeps at least one valid
+		// direction while a returned sibling is rejected; a rejected sibling
+		// may reference an already-selected span, so its count may still equal
+		// the accepted count and the flag remains the exact disambiguator.
+		if status.State == atlasstudy.ProductStateAccepted &&
+			(status.ModelSelectedSpanCount != status.AcceptedSpanCount || !status.SelectedItemsComplete) {
+			return fmt.Errorf("complete Atlas Study projection is invalid")
+		}
+		if status.State == atlasstudy.ProductStateAcceptedPartial &&
+			(status.SelectedItemsComplete || status.ModelSelectedSpanCount < status.AcceptedSpanCount) {
 			return fmt.Errorf("partial Atlas Study projection is invalid")
 		}
 	case atlasstudy.ProductStateUnavailable:
@@ -771,7 +798,8 @@ func validateAtlasStudyReportProjection(
 				status.UnavailableCode != AtlasStudyUnavailableInsufficientCatalog) ||
 			status.FailureCode != "" || status.CandidateCoverage != nil ||
 			status.DirectionCount != 0 || status.PublishedDirectionCount != 0 ||
-			status.HiddenDirectionCount != 0 || !zeroSpanCoverage {
+			status.HiddenDirectionCount != 0 || !zeroStageCounts || !zeroFlags ||
+			len(status.Omissions) != 0 {
 			return fmt.Errorf("unavailable Atlas Study projection is invalid")
 		}
 	case atlasstudy.ProductStateFailed:
@@ -779,10 +807,14 @@ func validateAtlasStudyReportProjection(
 			status.UnavailableCode != "" || status.CandidateCoverage == nil ||
 			!status.FailureCode.Valid() || status.FailureCode == atlasstudy.FailureResource ||
 			status.FailureCode == atlasstudy.FailureCanceled || status.DirectionCount != 0 ||
-			status.PublishedDirectionCount != 0 || status.HiddenDirectionCount != 0 || !zeroSpanCoverage {
+			status.PublishedDirectionCount != 0 || status.HiddenDirectionCount != 0 ||
+			!zeroStageCounts || !zeroFlags {
 			return fmt.Errorf("failed Atlas Study projection is invalid")
 		}
 		if err := status.CandidateCoverage.validate(); err != nil {
+			return err
+		}
+		if err := validateAtlasStudyOmissionProjection(status.Omissions); err != nil {
 			return err
 		}
 	default:

@@ -32,7 +32,7 @@ func TestRunAtlasStudyProductAcceptsBriefAndValidSiblingRoute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runAtlasStudyProductForRun: %v", err)
 	}
-	if outcome.State != atlasstudy.ProductStateAccepted || outcome.Cached ||
+	if outcome.State != atlasstudy.ProductStateAcceptedPartial || outcome.Cached ||
 		outcome.DirectionCount != 1 || outcome.RejectedDirections != 1 ||
 		outcome.TransportAttempts != 1 || client.calls != 1 {
 		t.Fatalf("accepted outcome/client = %#v / %#v", outcome, client)
@@ -45,7 +45,7 @@ func TestRunAtlasStudyProductAcceptsBriefAndValidSiblingRoute(t *testing.T) {
 		t.Fatalf("sibling route diagnostics/result = %#v", result)
 	}
 	status := atlasStudyRuntimeReadStatus(t, runDir)
-	if status.State != atlasstudy.ProductStateAccepted || status.DirectionCount != 1 {
+	if status.State != atlasstudy.ProductStateAcceptedPartial || status.DirectionCount != 1 {
 		t.Fatalf("accepted status = %#v", status)
 	}
 	exchange := atlasStudyRuntimeReadExchange(t, runDir)
@@ -93,7 +93,7 @@ func TestRunAtlasStudyProductReplaysOnlyAcceptedExactCache(t *testing.T) {
 	}
 }
 
-func TestRunAtlasStudyProductPreservesAcceptedPartialAcrossLiveAndCache(t *testing.T) {
+func TestRunAtlasStudyProductPreservesAcceptedWithNotSelectedSpansAcrossLiveAndCache(t *testing.T) {
 	product := atlasStudyRuntimeProduct(t, atlasStudyRuntimePartialInput())
 	response := atlasStudyRuntimeResponse(t, product, false)
 	live := newAtlasStudyRuntimeClient(response, nil)
@@ -107,17 +107,26 @@ func TestRunAtlasStudyProductPreservesAcceptedPartialAcrossLiveAndCache(t *testi
 	if err != nil {
 		t.Fatalf("run partial live Atlas Study: %v", err)
 	}
-	if liveOutcome.State != atlasstudy.ProductStateAcceptedPartial || liveOutcome.Cached ||
+	// Two advertised spans, one returned valid direction: the other advertised
+	// span is normal not_selected under D211 and never turns the exact result
+	// into accepted_partial.
+	if liveOutcome.State != atlasstudy.ProductStateAccepted || liveOutcome.Cached ||
 		liveOutcome.DirectionCount != 1 || live.calls != 1 {
-		t.Fatalf("partial live outcome/client = %#v / %#v", liveOutcome, live)
+		t.Fatalf("accepted live outcome/client = %#v / %#v", liveOutcome, live)
 	}
-	if result := atlasStudyRuntimeReadResult(t, liveRun); result.State != atlasstudy.ProductStateAcceptedPartial ||
-		result.SpanCoverage.Complete || len(result.SpanCoverage.Uncovered) != 1 {
-		t.Fatalf("partial live result = %#v", result)
+	if result := atlasStudyRuntimeReadResult(t, liveRun); result.State != atlasstudy.ProductStateAccepted ||
+		result.SpanCoverage.ConsideredSpanCount != 2 || result.SpanCoverage.AdvertisedSpanCount != 2 ||
+		result.SpanCoverage.ModelSelectedSpanCount != 1 || result.SpanCoverage.AcceptedSpanCount != 1 ||
+		!result.SpanCoverage.FrontierComplete || !result.SpanCoverage.SelectedItemsComplete ||
+		!result.SpanCoverage.SupportCoverageComplete || result.SpanCoverage.PortfolioTargetMet {
+		t.Fatalf("accepted live result = %#v", result)
 	}
-	if status := atlasStudyRuntimeReadStatus(t, liveRun); status.State != atlasstudy.ProductStateAcceptedPartial ||
-		status.CoverageComplete || status.UncoveredSpanCount != 1 {
-		t.Fatalf("partial live status = %#v", status)
+	if status := atlasStudyRuntimeReadStatus(t, liveRun); status.State != atlasstudy.ProductStateAccepted ||
+		status.ConsideredSpanCount != 2 || status.AdvertisedSpanCount != 2 ||
+		status.ModelSelectedSpanCount != 1 || status.AcceptedSpanCount != 1 ||
+		!status.FrontierComplete || !status.SelectedItemsComplete ||
+		!status.SupportCoverageComplete || status.PortfolioTargetMet {
+		t.Fatalf("accepted live status = %#v", status)
 	}
 
 	cacheRun := filepath.Join(runsDir, "partial-cache")
@@ -133,17 +142,20 @@ func TestRunAtlasStudyProductPreservesAcceptedPartialAcrossLiveAndCache(t *testi
 	if err != nil {
 		t.Fatalf("replay partial Atlas Study cache: %v", err)
 	}
-	if cacheOutcome.State != atlasstudy.ProductStateAcceptedPartial || !cacheOutcome.Cached ||
+	if cacheOutcome.State != atlasstudy.ProductStateAccepted || !cacheOutcome.Cached ||
 		cacheOutcome.DirectionCount != 1 || cacheOnly.calls != 0 {
-		t.Fatalf("partial cache outcome/client = %#v / %#v", cacheOutcome, cacheOnly)
+		t.Fatalf("accepted cache outcome/client = %#v / %#v", cacheOutcome, cacheOnly)
 	}
-	if status := atlasStudyRuntimeReadStatus(t, cacheRun); status.State != atlasstudy.ProductStateAcceptedPartial ||
-		status.CoverageComplete || status.UncoveredSpanCount != 1 {
-		t.Fatalf("partial cache status = %#v", status)
+	if status := atlasStudyRuntimeReadStatus(t, cacheRun); status.State != atlasstudy.ProductStateAccepted ||
+		status.ConsideredSpanCount != 2 || status.AdvertisedSpanCount != 2 ||
+		status.ModelSelectedSpanCount != 1 || status.AcceptedSpanCount != 1 ||
+		!status.FrontierComplete || !status.SelectedItemsComplete ||
+		!status.SupportCoverageComplete || status.PortfolioTargetMet {
+		t.Fatalf("accepted cache status = %#v", status)
 	}
 }
 
-func TestAtlasStudyCacheV6RejectsV5ContractAndDifferentCatalog(t *testing.T) {
+func TestAtlasStudyCacheV7RejectsV6ContractAndDifferentCatalog(t *testing.T) {
 	input := atlasStudyRuntimeInput()
 	product := atlasStudyRuntimeProduct(t, input)
 	client := newAtlasStudyRuntimeClient(atlasStudyRuntimeResponse(t, product, false), nil)
@@ -156,18 +168,18 @@ func TestAtlasStudyCacheV6RejectsV5ContractAndDifferentCatalog(t *testing.T) {
 		runsDir, atlasStudyRuntimeRepository(), modelresearch.DefaultPolicy(),
 		client.config, endpointSHA, product, client.request,
 	)
-	if current.Fingerprint.CacheContract != "atlas-study-accepted-v6" {
+	if current.Fingerprint.CacheContract != "atlas-study-accepted-v7" {
 		t.Fatalf("current Atlas Study cache contract = %q", current.Fingerprint.CacheContract)
 	}
 	legacy := current
-	legacy.Fingerprint.CacheContract = "atlas-study-accepted-v5"
+	legacy.Fingerprint.CacheContract = "atlas-study-accepted-v6"
 	if _, err := modelresearch.SaveStageResponse(legacy, modelresearch.StageResponse{
 		Content: []byte(`{"legacy":true}`),
 	}); err != nil {
 		t.Fatalf("save isolated legacy cache: %v", err)
 	}
 	if _, found, err := modelresearch.LoadStageResponse(current); err != nil || found {
-		t.Fatalf("v6 lookup read v5 cache: found=%t err=%v", found, err)
+		t.Fatalf("v7 lookup read v6 cache: found=%t err=%v", found, err)
 	}
 
 	if _, err := modelresearch.SaveStageResponse(current, modelresearch.StageResponse{

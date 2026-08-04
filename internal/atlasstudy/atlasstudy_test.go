@@ -40,15 +40,18 @@ func TestCompileBuildsPrivateTypedCatalogAndSafeDeterministicWire(t *testing.T) 
 		`"ref":"u1"`, `"ref":"ss1"`, `"ref":"c1"`, `"ref":"sf1"`,
 		`"ref":"a1"`, `"ref":"rs1"`, `"span_ref":"sp1"`, `"ref":"e1"`, `"ref":"d1"`,
 		`"authority":"resolved"`, `"language":"en"`,
-		`"allowed_paths":["cmd/server/main.go","internal/config/load.go","internal/server/routes.go"]`,
+		`"allowed_paths":["cmd/server/main.go","internal/config/load.go"]`,
 		`"path":"cmd/server/main.go","line":20`,
 	} {
 		if !strings.Contains(wire, visible) {
 			t.Fatalf("provider wire missing %q: %s", visible, wire)
 		}
 	}
-	if want := fmt.Sprintf("Return one direction for each advertised route_span, up to %d directions", MaxDirections); !strings.Contains(product.BuildPrompt().System, want) {
-		t.Fatalf("provider prompt does not use the production route bound %q", want)
+	if want := "Choose 6-10 advertised route_spans"; !strings.Contains(product.BuildPrompt().System, want) {
+		t.Fatalf("provider prompt does not use the ranked route selection ask %q", want)
+	}
+	if want := "hard ceiling"; !strings.Contains(product.BuildPrompt().System, want) {
+		t.Fatalf("provider prompt does not bound the direction count %q", want)
 	}
 	if want := fmt.Sprintf(
 		"%d-%d distinct reading items",
@@ -418,8 +421,8 @@ func TestResolveBriefAcceptsCompleteUniqueSupportSetWithoutMagicCountCap(t *test
 			support = append(support, object.Ref)
 		}
 	}
-	if len(support) < 9 {
-		t.Fatalf("fixture support catalog = %d, want at least 9", len(support))
+	if len(support) != 8 {
+		t.Fatalf("fixture support catalog = %d, want exactly 8", len(support))
 	}
 	response := responseMap(t, validResponse(t, product))
 	brief := response["brief"].(map[string]any)
@@ -493,10 +496,10 @@ func TestResolveResponseAllowsOnlyScopedExactReadingLocatorEchoes(t *testing.T) 
 	foreignBrief := cloneResponseMap(briefScoped)
 	brief = foreignBrief["brief"].(map[string]any)
 	statement = brief["what_it_is"].(map[string]any)
-	statement["text"] = "Read internal/server/routes.go to understand configuration."
+	statement["text"] = "Read cmd/server/main.go to understand configuration."
 	if _, _, err := product.ResolveResponseJSON(marshalTestJSON(t, foreignBrief)); err == nil ||
 		!strings.Contains(err.Error(), "canonical identity or source locator") {
-		t.Fatalf("Brief locator from unsupported reading target = %v", err)
+		t.Fatalf("Brief locator from an advertised but unrelated reading target = %v", err)
 	}
 
 	locatorTerm := cloneResponseMap(briefScoped)
@@ -517,7 +520,7 @@ func TestResolveResponseAllowsOnlyScopedExactReadingLocatorEchoes(t *testing.T) 
 	direction = wrongTarget["directions"].([]any)[0].(map[string]any)
 	reading = direction["reading"].([]any)
 	reading[0].(map[string]any)["what_to_look_for"] =
-		"Inspect internal/server/routes.go instead."
+		"Inspect cmd/server/main.go instead."
 	_, diagnostics, err = product.ResolveResponseJSON(marshalTestJSON(t, wrongTarget))
 	if err == nil || diagnostics.DirectionsAccepted != 0 || len(diagnostics.Issues) != 1 ||
 		diagnostics.Issues[0].Code != IssueInvalidReadingCopy {
@@ -784,7 +787,10 @@ func TestResolveResponseDropsOnlyInvalidDirectionItemsWithBoundedDiagnostics(t *
 	if len(result.Directions) != 1 || diagnostics.DirectionsReceived != 15 ||
 		diagnostics.DirectionsRejected != 14 || len(diagnostics.Issues) != MaxDirectionDiagnostics ||
 		diagnostics.Issues[0].Position != 0 || diagnostics.Issues[1].Code != IssueDuplicateSpanRef ||
-		diagnostics.Issues[len(diagnostics.Issues)-1].Position != MaxDirections ||
+		// The diagnostic cap (MaxDirectionDiagnostics = 12) stops mid-overflow:
+		// the unrequested tail positions 10, 11 and 12 are recorded and the
+		// remaining overflow (13, 14) is not enumerated.
+		diagnostics.Issues[len(diagnostics.Issues)-1].Position != MaxDirections+2 ||
 		diagnostics.Issues[len(diagnostics.Issues)-1].Code != "unrequested_output" {
 		t.Fatalf("overflow diagnostics = %#v", diagnostics)
 	}
@@ -856,12 +862,12 @@ func TestStudyRejectsRepeatedDirectionsForOneBackendSpan(t *testing.T) {
 	}
 }
 
-func TestStudyV6RequestAndV7ResultIdentityRejectEarlierArtifacts(t *testing.T) {
-	if Version != 6 || ResultVersion != 7 || PromptVersion != "atlas-study-prompt-v12" ||
-		RequestArtifactFilename != "atlas_study_request.v6.json" ||
-		ResultArtifactFilename != "atlas_study_result.v7.json" ||
-		StatusArtifactFilename != "atlas_study_status.v7.json" {
-		t.Fatalf("Study v6 request / v7 result identity is incomplete: %d %d %q %q %q %q",
+func TestStudyV7RequestAndV8ResultIdentityRejectEarlierArtifacts(t *testing.T) {
+	if Version != 7 || ResultVersion != 8 || PromptVersion != "atlas-study-prompt-v13" ||
+		RequestArtifactFilename != "atlas_study_request.v7.json" ||
+		ResultArtifactFilename != "atlas_study_result.v8.json" ||
+		StatusArtifactFilename != "atlas_study_status.v8.json" {
+		t.Fatalf("Study v7 request / v8 result identity is incomplete: %d %d %q %q %q %q",
 			Version, ResultVersion, PromptVersion, RequestArtifactFilename,
 			ResultArtifactFilename, StatusArtifactFilename)
 	}
@@ -870,11 +876,11 @@ func TestStudyV6RequestAndV7ResultIdentityRejectEarlierArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request.Version = 5
-	request.PromptVersion = "atlas-study-prompt-v11"
-	request.CatalogRef = fmt.Sprintf("atlas-study-v5-%s", request.CatalogSHA256)
+	request.Version = 6
+	request.PromptVersion = "atlas-study-prompt-v12"
+	request.CatalogRef = fmt.Sprintf("atlas-study-v6-%s", request.CatalogSHA256)
 	if err := product.ValidateRequestRecord(request); err == nil {
-		t.Fatal("Study v5 request replayed under the v6 contract")
+		t.Fatal("Study v6 request replayed under the v7 contract")
 	}
 
 	result, _, err := product.ResolveResponseJSON(validResponse(t, product))
@@ -883,12 +889,12 @@ func TestStudyV6RequestAndV7ResultIdentityRejectEarlierArtifacts(t *testing.T) {
 	}
 	result.Version = Version
 	if err := product.ValidateResultRecord(result); err == nil {
-		t.Fatal("Study v6 result replayed under the v7 local validator contract")
+		t.Fatal("Study v7 result replayed under the v8 local validator contract")
 	}
 	status := product.PreparedStatus()
 	status.Version = Version
 	if err := product.ValidateStatus(status); err == nil {
-		t.Fatal("Study v6 status replayed under the v7 local artifact contract")
+		t.Fatal("Study v7 status replayed under the v8 local artifact contract")
 	}
 }
 

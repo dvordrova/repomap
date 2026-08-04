@@ -43,23 +43,32 @@ func TestD210ManifestRejectsAtlasStudyCoverageDriftAndHistoricalProjection(t *te
 			want: "projection is incomplete",
 		},
 		{
-			name: "complete state with uncovered span",
+			name: "accepted collapses the model-selected stage onto accepted spans",
 			mutate: func(report *ReportData) {
-				report.AtlasStudy.UncoveredSpanCount = 1
-				report.AtlasStudy.RequestedSpanCount++
-				report.AtlasStudy.CandidateCoverage.SpansConsidered++
-				report.AtlasStudy.CandidateCoverage.SpansSelected++
+				report.AtlasStudy.ModelSelectedSpanCount = report.AtlasStudy.AcceptedSpanCount + 1
 			},
 			want: "complete Atlas Study projection",
 		},
 		{
-			name: "covered spans differ from accepted directions",
+			name: "accepted_partial only with a rejected sibling",
 			mutate: func(report *ReportData) {
-				report.AtlasStudy.CoveredSpanCount++
-				report.AtlasStudy.RequestedSpanCount++
-				report.AtlasStudy.CandidateCoverage.SpansSelected++
+				report.AtlasStudy.State = atlasstudy.ProductStateAcceptedPartial
 			},
-			want: "accepted Atlas Study projection",
+			want: "accepted Atlas Study projection is invalid",
+		},
+		{
+			name: "model-selected stage cannot exceed the advertised frontier",
+			mutate: func(report *ReportData) {
+				report.AtlasStudy.ModelSelectedSpanCount = report.AtlasStudy.AdvertisedSpanCount + 1
+			},
+			want: "accepted Atlas Study projection is invalid",
+		},
+		{
+			name: "accepted span count must equal the direction counts",
+			mutate: func(report *ReportData) {
+				report.AtlasStudy.AcceptedSpanCount = report.AtlasStudy.DirectionCount + 1
+			},
+			want: "accepted Atlas Study projection is invalid",
 		},
 		{
 			name: "advertised spans differ from candidate shelf",
@@ -67,14 +76,7 @@ func TestD210ManifestRejectsAtlasStudyCoverageDriftAndHistoricalProjection(t *te
 				report.AtlasStudy.CandidateCoverage.SpansConsidered++
 				report.AtlasStudy.CandidateCoverage.SpansSelected++
 			},
-			want: "candidate/span counts do not match",
-		},
-		{
-			name: "partial state claims complete coverage",
-			mutate: func(report *ReportData) {
-				report.AtlasStudy.State = atlasstudy.ProductStateAcceptedPartial
-			},
-			want: "partial Atlas Study projection",
+			want: "accepted Atlas Study candidate/span counts do not match",
 		},
 	}
 	for _, test := range tests {
@@ -143,6 +145,10 @@ func d210AtlasStudyManifestFixture(
 		t.Fatal(err)
 	}
 	navigatorFixture := makeNavigatorArtifactFixture(t, atlas, "selected")
+	// Four-stage projection: two considered spans, both advertised, one
+	// returned direction locally accepted. The second advertised span receives
+	// no returned direction — normal not_selected under D211 — and never turns
+	// the accepted result into accepted_partial.
 	status := &AtlasStudyReportStatus{
 		Version: atlasstudy.ResultVersion, ProjectionVersion: AtlasStudyReportProjectionVersion,
 		State: state,
@@ -159,15 +165,19 @@ func d210AtlasStudyManifestFixture(
 			},
 		},
 		DirectionCount: 1, PublishedDirectionCount: 1,
-		RequestedSpanCount: 2, CoveredSpanCount: 1,
+		ConsideredSpanCount:    2,
+		AdvertisedSpanCount:    2,
+		ModelSelectedSpanCount: 1,
+		AcceptedSpanCount:      1,
+		FrontierComplete:       true,
+		SupportCoverageComplete: true,
 	}
 	if state == atlasstudy.ProductStateAccepted {
-		status.CandidateCoverage.SpansConsidered = 1
-		status.CandidateCoverage.SpansSelected = 1
-		status.RequestedSpanCount = 1
-		status.CoverageComplete = true
+		status.SelectedItemsComplete = true
 	} else {
-		status.UncoveredSpanCount = 1
+		// A rejected returned sibling keeps the model-selected stage above the
+		// locally accepted count while the flag stays false.
+		status.ModelSelectedSpanCount = 2
 	}
 	reportJSON, err := json.Marshal(&ReportData{
 		FormatVersion:   CurrentFormatVersion,
