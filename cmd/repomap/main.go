@@ -98,7 +98,7 @@ func main() {
 		}
 	case "dev":
 		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "Usage: repomap dev render-report <run-dir> [--repo <repo>] | atlas-study-response-replay --run-dir <copied-run> --request-sha256 <sha> --response <file> --response-sha256 <sha> | atlas-study-request-rebuild --run-dir <copied-run> | localization-check <run-dir> | localization-replay <run-dir> <projection.json> | localization-stage <run-dir> [<projection.json>] | localization-record <run-dir> [<projection.json>] | v32-refresh --run-dir <copied-run-dir> --repo <repo> [--reuse-study | --operate-only | --replay-saved] | fresh-repo-onboarding --run-dir <run-dir> [--repo <repo> [--replan-saved] | --replay-saved] | guided-tour <run-dir> | guided-tour-fanout <run-dir> | guided-tour-experiment <run-dir> | semantic-discovery <run-dir> | semantic-discovery-experiment <run-dir> | golden-mechanism <run-dir> [--probe-only] | golden-mechanism-v01 <run-dir> [--replay-old] | golden-mechanism-v02 <run-dir> [--prepare | --replay] | golden-mechanism-v03 <run-dir> [--replay] | golden-mechanism-v1 <run-dir> [--prepare | --replay] | chi-request-dispatch <run-dir> [--prepare | --replay-response | --replay] | mechanism-v1 <run-dir> [--replay] | review-cockpit --caddy-run <run-dir> --chi-run <run-dir> --out <output-dir> | prompt-versions")
+			fmt.Fprintln(os.Stderr, "Usage: repomap dev render-report <run-dir> [--repo <repo>] | atlas-study-response-replay --run-dir <copied-run> --request-sha256 <sha> --response <file> --response-sha256 <sha> | atlas-study-request-rebuild --run-dir <copied-run> [--repo <repo>] | atlas-study-response-mock --run-dir <copied-run> [--out <file>] | localization-check <run-dir> | localization-replay <run-dir> <projection.json> | localization-stage <run-dir> [<projection.json>] | localization-record <run-dir> [<projection.json>] | v32-refresh --run-dir <copied-run-dir> --repo <repo> [--reuse-study | --operate-only | --replay-saved] | fresh-repo-onboarding --run-dir <run-dir> [--repo <repo> [--replan-saved] | --replay-saved] | guided-tour <run-dir> | guided-tour-fanout <run-dir> | guided-tour-experiment <run-dir> | semantic-discovery <run-dir> | semantic-discovery-experiment <run-dir> | golden-mechanism <run-dir> [--probe-only] | golden-mechanism-v01 <run-dir> [--replay-old] | golden-mechanism-v02 <run-dir> [--prepare | --replay] | golden-mechanism-v03 <run-dir> [--replay] | golden-mechanism-v1 <run-dir> [--prepare | --replay] | chi-request-dispatch <run-dir> [--prepare | --replay-response | --replay] | mechanism-v1 <run-dir> [--replay] | review-cockpit --caddy-run <run-dir> --chi-run <run-dir> --out <output-dir> | prompt-versions")
 			os.Exit(2)
 		}
 		switch os.Args[2] {
@@ -109,6 +109,11 @@ func main() {
 			}
 		case "atlas-study-request-rebuild":
 			if err := runAtlasStudyRequestRebuildCLI(os.Args[3:], os.Stdout); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		case "atlas-study-response-mock":
+			if err := runAtlasStudyResponseMockCLI(os.Args[3:], os.Stdout); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}

@@ -77,3 +77,35 @@ func TestAtlasStudyRequestRebuildFailsCleanlyWithoutFullRunData(t *testing.T) {
 		t.Fatalf("rebuild failure printed partial stdout: %q", stdout.String())
 	}
 }
+
+// TestAtlasStudyRequestRebuildAuthorityModeFailsCleanlyWithoutManifestSeed
+// verifies the --repo authority mode refuses to compile a request when the
+// copied run carries no run_manifest.json authority seed, and publishes
+// nothing: no partial request may ever be left behind.
+func TestAtlasStudyRequestRebuildAuthorityModeFailsCleanlyWithoutManifestSeed(t *testing.T) {
+	fixture := writeAtlasStudyResponseReplayFixture(t, "copied-review", "original-canonical-run")
+	if err := os.Remove(filepath.Join(fixture.runDir, atlasstudy.RequestArtifactFilename)); err != nil {
+		t.Fatalf("remove fixture request: %v", err)
+	}
+	var stdout bytes.Buffer
+	err := runAtlasStudyRequestRebuildCLI(
+		[]string{"--run-dir", fixture.runDir, "--repo", fixture.runDir},
+		&stdout,
+	)
+	if err == nil {
+		t.Fatalf("rebuild --repo accepted a run without a manifest authority seed")
+	}
+	if !strings.Contains(err.Error(), "authority seed") {
+		t.Fatalf("rebuild --repo error does not explain the missing seed: %v", err)
+	}
+	for _, name := range []string{
+		atlasstudy.RequestArtifactFilename, atlasstudy.ResultArtifactFilename, atlasstudy.StatusArtifactFilename,
+	} {
+		if _, statErr := os.Lstat(filepath.Join(fixture.runDir, name)); !os.IsNotExist(statErr) {
+			t.Fatalf("rebuild --repo failure left artifact %q behind", name)
+		}
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("rebuild --repo failure printed partial stdout: %q", stdout.String())
+	}
+}
