@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"slices"
 	"sort"
 	"strings"
 )
@@ -108,7 +107,7 @@ func (product Product) ResolveResponseJSON(data []byte) (ResultRecord, Diagnosti
 	if err != nil {
 		return ResultRecord{}, Diagnostics{}, err
 	}
-	directions, directionDiagnostics := product.resolveDirections(envelope.Directions)
+	directions, directionDiagnostics, modelSelected := product.resolveDirections(envelope.Directions)
 	diagnostics.DirectionsReceived = directionDiagnostics.DirectionsReceived
 	diagnostics.DirectionsAccepted = directionDiagnostics.DirectionsAccepted
 	diagnostics.DirectionsRejected = directionDiagnostics.DirectionsRejected
@@ -117,45 +116,45 @@ func (product Product) ResolveResponseJSON(data []byte) (ResultRecord, Diagnosti
 		return ResultRecord{}, diagnostics, fmt.Errorf("atlas study response: no valid Study directions")
 	}
 	shape := shapeFromDirections(directions)
-	spanCoverage := product.spanCoverage(directions)
-	result := product.result(envelope.RepositoryType, brief, directions, shape, spanCoverage, diagnostics)
+	spanCoverage := product.spanCoverage(directions, modelSelected, diagnostics)
+	result := product.result(envelope.RepositoryType, brief, directions, modelSelected, shape, spanCoverage, diagnostics)
 	if err := product.ValidateResultRecord(result); err != nil {
 		return ResultRecord{}, diagnostics, err
 	}
 	return result, diagnostics, nil
 }
 
-func (product Product) spanCoverage(directions []Direction) SpanCoverage {
-	coverage := SpanCoverage{}
-	covered := make(map[string]struct{}, len(directions))
-	for _, direction := range directions {
-		covered[direction.Span.ID] = struct{}{}
+// spanCoverage derives the four D211 span stages. considered is the complete
+// locally supported set from the compiled candidate coverage; advertised is
+// the request frontier; model-selected is the distinct spans referenced by the
+// returned directions, including locally rejected siblings; locally accepted
+// is the distinct spans of directions passing item-local validation, which
+// equals the accepted direction count because duplicate-span directions are
+// rejected. An advertised span with no returned direction is normal
+// not_selected: it is never uncovered and never contributes to
+// accepted_partial.
+func (product Product) spanCoverage(directions []Direction, modelSelected []CanonicalRef, diagnostics Diagnostics) SpanCoverage {
+	coverage := SpanCoverage{
+		ConsideredSpanCount:    product.coverage.SpansConsidered,
+		AdvertisedSpanCount:    len(product.selectedSpanIDs),
+		ModelSelectedSpanCount: len(modelSelected),
+		AcceptedSpanCount:      len(directions),
 	}
-	for _, id := range product.selectedSpanIDs {
-		ref := CanonicalRef{Kind: RefRouteSpan, ID: id}
-		coverage.Requested = append(coverage.Requested, ref)
-		if _, ok := covered[id]; ok {
-			coverage.Covered = append(coverage.Covered, ref)
-		} else {
-			coverage.Uncovered = append(coverage.Uncovered, ref)
-		}
-	}
-	coverage.Complete = len(coverage.Requested) != 0 && len(coverage.Uncovered) == 0
+	coverage.FrontierComplete = coverage.AdvertisedSpanCount == coverage.ConsideredSpanCount
+	coverage.SelectedItemsComplete = diagnostics.DirectionsReceived >= 1 && diagnostics.DirectionsRejected == 0
+	coverage.SupportCoverageComplete = len(directions) >= 1
+	coverage.PortfolioTargetMet = len(directions) >= MinPortfolioDirections && len(directions) <= MaxDirections
 	return coverage
 }
 
-func cloneSpanCoverage(value SpanCoverage) SpanCoverage {
-	value.Requested = append([]CanonicalRef(nil), value.Requested...)
-	value.Covered = append([]CanonicalRef(nil), value.Covered...)
-	value.Uncovered = append([]CanonicalRef(nil), value.Uncovered...)
-	return value
-}
-
-func (product Product) validateSpanCoverage(coverage SpanCoverage, directions []Direction) error {
-	want := product.spanCoverage(directions)
-	if !slices.Equal(coverage.Requested, want.Requested) ||
-		!slices.Equal(coverage.Covered, want.Covered) ||
-		!slices.Equal(coverage.Uncovered, want.Uncovered) || coverage.Complete != want.Complete {
+func (product Product) validateSpanCoverage(
+	coverage SpanCoverage,
+	directions []Direction,
+	modelSelected []CanonicalRef,
+	diagnostics Diagnostics,
+) error {
+	want := product.spanCoverage(directions, modelSelected, diagnostics)
+	if coverage != want {
 		return fmt.Errorf("atlas study result artifact: span coverage does not match exact directions")
 	}
 	return nil
@@ -288,7 +287,12 @@ func briefSupportKind(kind RefKind) bool {
 	}
 }
 
-func (product Product) resolveDirections(items []json.RawMessage) ([]Direction, Diagnostics) {
+// resolveDirections resolves the ordered directions array, which IS the ranked
+// Study portfolio. It returns the locally accepted directions, bounded
+// item-local diagnostics with closed codes, and the distinct spans referenced
+// by the returned directions (the model-selected stage), including locally
+// rejected siblings. Items beyond MaxDirections are unrequested output.
+func (product Product) resolveDirections(items []json.RawMessage) ([]Direction, Diagnostics, []CanonicalRef) {
 	diagnostics := Diagnostics{DirectionsReceived: len(items)}
 	limit := len(items)
 	if limit > MaxDirections {
@@ -297,11 +301,17 @@ func (product Product) resolveDirections(items []json.RawMessage) ([]Direction, 
 	result := make([]Direction, 0, limit)
 	seenIDs := make(map[string]struct{}, limit)
 	seenSpans := make(map[string]struct{}, limit)
+	modelSelected := make(map[string]struct{}, limit)
 	for position := 0; position < limit; position++ {
 		var provider providerDirection
 		if err := decodeStrict(items[position], &provider); err != nil {
 			diagnostics.addIssue(position, "decode_candidate")
 			continue
+		}
+		if object, err := product.resolveRef(
+			fmt.Sprintf("directions[%d].span_ref", position), 0, provider.SpanRef,
+		); err == nil && object.Kind == RefRouteSpan {
+			modelSelected[object.CanonicalID] = struct{}{}
 		}
 		direction, code := product.resolveDirection(position, provider)
 		if code != "" {
@@ -327,7 +337,12 @@ func (product Product) resolveDirections(items []json.RawMessage) ([]Direction, 
 	}
 	diagnostics.DirectionsAccepted = len(result)
 	diagnostics.DirectionsRejected = diagnostics.DirectionsReceived - diagnostics.DirectionsAccepted
-	return result, diagnostics
+	modelSelectedRefs := make([]CanonicalRef, 0, len(modelSelected))
+	for id := range modelSelected {
+		modelSelectedRefs = append(modelSelectedRefs, CanonicalRef{Kind: RefRouteSpan, ID: id})
+	}
+	sort.Slice(modelSelectedRefs, func(i, j int) bool { return canonicalRefLess(modelSelectedRefs[i], modelSelectedRefs[j]) })
+	return result, diagnostics, modelSelectedRefs
 }
 
 func (product Product) resolveDirection(position int, provider providerDirection) (Direction, DirectionIssueCode) {
