@@ -1,52 +1,98 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/211-automatic-study-portfolio-d210-frontier.md
+    decisions/212-provider-free-frontier-browse-d211-considered-spans.md
 
 Status:
-    Decision 211 active; the ordered Atlas Study directions array is the ranked
-    Study portfolio over the D210 frontier, with four distinct span stages and
-    independent coverage flags, authorized after the D210 Unicode handoff gate
+    Decision 212 active: a local provider-free browse surface in the Study tab
+    over the complete D211 considered-span set with four honest user-language
+    stage states and exact source navigation
 
 Approved by:
     Repository owner in the current session
 
 Notes:
-    Decision 211 makes the Atlas Study directions array itself the ranked
-    portfolio: the ordered returned directions are the model's comparative
-    selection, array order is rank and why_it_matters is the bounded rationale;
-    the backend derives authoritative selected span refs only from locally valid
-    directions. There is no separate portfolio field and no focus flag. The
-    desired direction count is six through ten, but the valid production
-    cardinality is one through ten with zero valid directions a failure and no
-    filler or padding. Four stages stay distinct: considered (the complete
-    locally supported D210 span set, bounded only by existing hard
-    producer/resource limits), advertised (the MaxAdvertisedSpans frontier,
-    initially 32), model-selected (spans referenced by returned directions) and
-    locally accepted (spans of directions that pass exact item-local
-    validation); advertised-but-not-selected is normal not_selected, never
-    uncovered and never accepted_partial. Status is accepted when every returned
-    selected item is locally valid, accepted_partial when at least one returned
-    sibling is rejected, and failure when zero valid directions exist. Frontier
-    completeness, selected-item completeness, support coverage and portfolio
-    target are recorded as independent flags instead of one overloaded
-    coverage_complete; the old MaxRouteSpans meaning is removed and MaxDirections
-    becomes 10. Questions stay backend-owned and target-specific, using only the
-    exact source-card symbol/label for a focused span and both exact endpoint
-    symbols/labels for a system path; the model authors no question, path,
-    relation, authority or canonical ID. Omission diagnostics are bounded
-    aggregate counts by closed reason plus bounded representative typed refs and
-    the complete candidate SHA. On semantic failure the local Architecture
-    remains visible, no synthetic Study portfolio is created, the failed new
-    Study run is honestly unavailable and historical reports are untouched. One
-    final fresh Casdoor semantic acceptance run is owner-authorized after every
-    provider-free gate is green; it is one product acceptance run, not a
-    prompt-tuning loop, and must review the actual default shelf for
-    target-specific titles, useful comparative selection, no forced filler,
-    exact source navigation, the four-stage diagnostics and material improvement
-    over the accepted D210 shelf. No focus lane, second semantic call, GoSurvey,
-    Boundary/Resource producer, Tree-sitter, deeper SSA/DFS, fuzzy repair,
-    hidden fallback, compatibility reader or migration is authorized.
+    Decision 212 makes the complete D211 considered-span set explorable in the
+    Study tab through one distinct local "Study questions" surface, provider-free
+    and derived only from already-validated local artifacts: zero new analysis,
+    zero provider calls, zero artifact/wire/cache/request/result/status change.
+    The report projection adds exactly `FrontierBrowse{Total,Shown,Spans}` with
+    `Span{Ordinal,Title,Question,Stage,Source,Endpoint,DirectionID}`;
+    `DirectionID` is the public manifest-relative report direction id (matching
+    the `study_map` direction id used by `openStudyDirection`, script.js:4398),
+    derived at projection time from the validated `result.Directions` array order
+    (model rank) and present ONLY on accepted rows — no canonical span ID is
+    serialized; an accepted row with no matching published direction (should not
+    occur — fail closed) renders without the link. `Stage` is the four-value
+    membership (considered/advertised/model_selected/accepted) computed by exact
+    set arithmetic over the rebuilt input (`BuildAtlasStudyInput` +
+    `ValidateRequestRecordAgainstInput`, atlas_study.go:1613–1618), the request
+    catalog's advertised `RefRouteSpan` refs, `result.ModelSelectedSpanRefs`
+    (artifact.go:80, rejected siblings included) and `result.Directions[].Span`.
+    The browse is computed ONLY inside `readAtlasStudyReportProduct`
+    (atlas_study.go:1572): in the accepted/accepted_partial branch after result
+    decode + `ValidateResultRecordAgainstInput` (after :1657), with the chain
+    accepted ⊆ model_selected ⊆ advertised ⊆ considered re-verified, every
+    accepted row's `DirectionID` resolving to exactly one published direction
+    whose span matches, and per-stage tallies over the FULL pre-truncation row
+    set equal to the four status counts (68/32/10/10 on casdoor) enforced
+    fail-closed; a status `failed` run renders a separate neutral local-question
+    browse (Total from input count) exempt from accepted-stage tallies;
+    unavailable/prepared/uncalled states carry no browse. The four user-language
+    stage states, never three (STATE-001), are used ONLY in
+    accepted/accepted_partial runs: (a) "Model pick" · «Выбор модели» (locally
+    accepted; links to the numbered direction card via `DirectionID`), (b) "Picked
+    by the model, rejected by local checks" · «Выбрано моделью, отклонено
+    локальными проверками» (model_selected ∖ accepted, rendered only when
+    accepted_partial), (c) "Shown to the model, not picked" · «Показано модели,
+    не выбрано» (advertised not_selected — neutral wording, never
+    "reviewed"/"rejected" as a per-span model verdict, AUTH-001), (d) "Local
+    question — not shown to the model" · «Локальный вопрос — модели не
+    показывался» (considered ∖ advertised). In the failed state rows carry a
+    distinct neutral label WITHOUT the "not shown to the model" suffix — "Local
+    question" · «Локальный вопрос» — because the advertised subset WAS included
+    in the sent request (the request artifact exists in failed runs;
+    `readAtlasStudyReportProduct` requires request+status for a failed state,
+    atlas_study.go:1602–1603); the template keys this neutral label off
+    `state == failed`, not off the Stage enum value alone, and the
+    failure-banner-headed distinct surface is preserved. A visible "not a model
+    ranking" caption states that local order is stage group + canonical span ID
+    (locale-independent, byte-identical across EN/RU); the raw
+    `advertised_budget` enum chip becomes a human bilingual sentence, the 12
+    omission representatives become the first clickable rows of the Local group,
+    and "Show all N" · «Показать все N» reveals the embedded group client-side
+    (the report is already a JS app; no reportserver slice). Boundedness:
+    `MaxAtlasStudyBrowseSpans` = 256 with truthful Total/Shown and deterministic
+    first-N in canonical span-ID order when considered exceeds the ceiling; the
+    complete set stays bound by the existing CandidateSHA256 digest. Per-row
+    `Source`/`Endpoint` are published only for paths in `OpenablePaths` with an
+    explicit neutral unavailable state for rows whose source cannot open (no dead
+    buttons; `renderStudySourceAction` silently skips today, script.js:4761).
+    No per-row Role, no canonical IDs, no package buckets, no raw edges in the
+    projection (UX-001 + D211 exclusion; the v6 per-role histogram stays the only
+    role surface). Version delta is `AtlasStudyReportProjectionVersion` 6→7 ONLY
+    (report.go:30) because the report status JSON contract genuinely gains a
+    bounded per-span slice while request v7, prompt v13, result/status v8,
+    accepted-cache v7 (atlas_study_runtime.go:22), RunManifest v11
+    (manifest.go:32) and CurrentFormatVersion 30 (report.go:28) serialize no
+    browse bytes and stay unchanged; old v6 projection runs FAIL CLOSED under the
+    v7 binary (projection gate manifest.go:682–688) and only already-rendered
+    static HTML remains viewable — no compatibility reader, no migration. Test
+    updates: pin atlas_study_diagnostics_asset_test.go:141 to projection_version
+    7, add stage/tally/ceiling/unavailable/failed/DirectionID tests, regenerate
+    internal/report/testdata/report.golden.html. Verification is fully
+    provider-free: rebuild request (--repo), mock from the request catalog,
+    replay the saved accepted fixture (zero provider calls), render + node asset
+    journey (EN and RU, embedded and stripped, keyboard and pointer), manifest
+    gate, built binary offline on casdoor and one larger Go repository, and a
+    byte-identical two-run projection. On Study failure the browse is a distinct
+    local surface whose heading IS the failure banner, outside/visually disjoined
+    from the Study diagnostics block, never the default content of a failed Study
+    tab (FAILURE-001). No focus lane, second semantic call, GoSurvey, Tree-sitter,
+    deeper SSA/DFS, fuzzy repair, hidden fallback, compatibility reader,
+    migration, interactive pagination endpoint, or change to
+    MaxAdvertisedSpans/MaxDirections/wire/cache/request/result/status contracts is
+    authorized; no live acceptance is authorized by this decision.
     Decision 210 fixes the upstream cause of the narrow TLS-heavy Study shelf.
     It records exact direct static handoffs from production process entries by
     reusing the already built SSA program, without another package load, SSA
