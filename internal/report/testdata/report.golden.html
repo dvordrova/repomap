@@ -140,6 +140,28 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-study-direction-card__source code { color: #64748b; font-size: .58rem; overflow-wrap: anywhere; }
 .rm-study-back { margin-bottom: 1rem; }
 .rm-study-outcome { background: #f8fafc; border-left: 3px solid var(--rm-accent); display: grid; gap: .3rem; margin: 1rem 0; padding: .7rem .85rem; }
+/* D212: provider-free "All study questions" frontier browse */
+.rm-study-frontier-browse { margin-top: .25rem; }
+.rm-study-browse-ceiling { color: #64748b; font-size: .74rem; margin: .1rem 0 .6rem; }
+.rm-study-browse-list { display: grid; gap: .9rem; list-style: none; margin: 0; padding: 0; }
+.rm-study-browse-group { border-top: 1px solid var(--rm-border); display: grid; gap: .45rem; padding-top: .6rem; }
+.rm-study-browse-group__heading { color: #475569; font-size: .72rem; letter-spacing: .02em; margin: 0; text-transform: uppercase; }
+.rm-study-browse-group__rows { display: grid; gap: .3rem; list-style: none; margin: 0; padding: 0; }
+.rm-study-browse-row { align-items: center; display: flex; flex-wrap: wrap; gap: .45rem; }
+.rm-study-browse-row__stage { background: #f1f5f9; border-radius: 999px; color: #475569; font-size: .66rem; font-weight: 700; padding: .18rem .5rem; white-space: nowrap; }
+.rm-study-browse-row__stage-accepted { background: #dcfce7; border: 0; color: #166534; cursor: pointer; font: inherit; font-size: .66rem; font-weight: 700; padding: .18rem .5rem; white-space: nowrap; }
+.rm-study-browse-row__stage-accepted:hover { background: #bbf7d0; }
+.rm-study-browse-row__not-accepted { color: #b45309; font-size: .64rem; font-weight: 700; }
+.rm-study-browse-row__question { background: transparent; border: 0; color: inherit; cursor: pointer; font: inherit; font-size: .84rem; line-height: 1.4; padding: 0; text-align: left; }
+.rm-study-browse-row__question:hover { color: var(--rm-accent); }
+.rm-study-browse-row__unavailable { color: #94a3b8; font-size: .8rem; font-style: italic; }
+.rm-study-browse-row__title { color: #64748b; font-size: .66rem; overflow-wrap: anywhere; }
+.rm-study-browse-group--collapsed .rm-study-browse-row--beyond { display: none; }
+.rm-study-browse-show-all { margin-top: .3rem; }
+.rm-study-diagnostics-omission-sentence { font-size: .8rem; line-height: 1.5; margin: 0 0 .35rem; }
+.rm-study-diagnostics-show-all { margin-top: .2rem; }
+.rm-study-failed-banner { margin: 0 0 .9rem; }
+
 .rm-study-outcome strong { color: #334155; font-size: .82rem; line-height: 1.5; }
 .rm-study-reading-list { display: grid; gap: .7rem; }
 .rm-study-reading-anchor { align-items: start; background: #fff; border: 1px solid var(--rm-border); border-radius: 10px; display: grid; gap: .8rem; grid-template-columns: 2rem minmax(0, 1fr); min-width: 0; padding: .85rem; }
@@ -1006,8 +1028,20 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.diagnostics.support_coverage_complete": { params: [], text: "Support coverage complete" },
     "main.study.diagnostics.portfolio_target_met": { params: [], text: "Portfolio target met" },
     "main.study.diagnostics.omissions": { params: [], text: "Frontier omissions" },
-    "main.study.diagnostics.omission_count": { params: ["count"], format: function (params) { return "Omitted: " + params.count; } },
-    "main.study.diagnostics.omission_representatives": { params: ["count"], format: function (params) { return "Representative refs: " + params.count; } },
+    "main.study.frontier.browse_title": { params: [], text: "All study questions" },
+    "main.study.frontier.browse_copy": { params: [], text: "Every question the local analysis can answer for this repository, in a fixed local order. This is not a model ranking." },
+    "main.study.frontier.stage_accepted": { params: [], text: "Model pick" },
+    "main.study.frontier.stage_rejected_sibling": { params: [], text: "Picked by the model, rejected by local checks" },
+    "main.study.frontier.stage_advertised": { params: [], text: "Shown to the model, not picked" },
+    "main.study.frontier.stage_considered": { params: [], text: "Local question — not shown to the model" },
+    "main.study.frontier.stage_local_failed": { params: [], text: "Local question" },
+    "main.study.frontier.source_unavailable": { params: [], text: "Source unavailable" },
+    "main.study.frontier.show_all": { params: ["count"], format: function (params) { return "Show all " + params.count; } },
+    "main.study.frontier.omission_sentence": { params: [], text: "Left out of the model's review to keep the request bounded — these are full local questions." },
+    "main.study.frontier.failed_banner": { params: [], text: "The model study could not be completed; showing the local question set." },
+    "main.study.frontier.ceiling_note": { params: ["shown", "total"], format: function (params) { return "Showing " + params.shown + " of " + params.total; } },
+    "main.study.frontier.not_accepted": { params: [], text: "not accepted" },
+    "main.study.frontier.open_direction": { params: ["count"], format: function (params) { return "Open direction card " + params.count; } },
     "main.study.diagnostics.yes": { params: [], text: "Yes" },
     "main.study.diagnostics.no": { params: [], text: "No" },
     "main.back.to.reading.path": { params: [], text: "← Back to reading path" },
@@ -2286,8 +2320,20 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.diagnostics.support_coverage_complete": { params: [], text: "Покрытие поддержки полное" },
     "main.study.diagnostics.portfolio_target_met": { params: [], text: "Целевой размер портфеля достигнут" },
     "main.study.diagnostics.omissions": { params: [], text: "Опущено из фронтира" },
-    "main.study.diagnostics.omission_count": { params: ["count"], format: function (params) { return "Опущено: " + params.count; } },
-    "main.study.diagnostics.omission_representatives": { params: ["count"], format: function (params) { return "Представительных ссылок: " + params.count; } },
+    "main.study.frontier.browse_title": { params: [], text: "Все вопросы изучения" },
+    "main.study.frontier.browse_copy": { params: [], text: "Каждый вопрос, который локальный анализ может поставить для этого репозитория, в фиксированном локальном порядке. Это не ранжирование моделью." },
+    "main.study.frontier.stage_accepted": { params: [], text: "Выбор модели" },
+    "main.study.frontier.stage_rejected_sibling": { params: [], text: "Выбрано моделью, отклонено локальными проверками" },
+    "main.study.frontier.stage_advertised": { params: [], text: "Показано модели, не выбрано" },
+    "main.study.frontier.stage_considered": { params: [], text: "Локальный вопрос — модели не показывался" },
+    "main.study.frontier.stage_local_failed": { params: [], text: "Локальный вопрос" },
+    "main.study.frontier.source_unavailable": { params: [], text: "Источник недоступен" },
+    "main.study.frontier.show_all": { params: ["count"], format: function (params) { return "Показать все " + params.count; } },
+    "main.study.frontier.omission_sentence": { params: [], text: "Не вошли в рассмотрение моделью, чтобы запрос оставался ограниченным, — это полные локальные вопросы." },
+    "main.study.frontier.failed_banner": { params: [], text: "Модельное исследование не выполнено; показан локальный набор вопросов." },
+    "main.study.frontier.ceiling_note": { params: ["shown", "total"], format: function (params) { return "Показано " + params.shown + " из " + params.total; } },
+    "main.study.frontier.not_accepted": { params: [], text: "не принято" },
+    "main.study.frontier.open_direction": { params: ["count"], format: function (params) { return "Открыть карточку направления " + params.count; } },
     "main.study.diagnostics.yes": { params: [], text: "Да" },
     "main.study.diagnostics.no": { params: [], text: "Нет" },
     "main.back.to.reading.path": { params: [], text: "← Назад к пути изучения" },
@@ -8081,13 +8127,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			omissions.forEach(function (omission) {
 				if (!omission || !omission.reason || !(Number(omission.count) > 0)) return;
 				var item = el('li', 'rm-study-diagnostics-omission');
-				var details = txt('span', '', msg('main.study.diagnostics.omission_count', { count: omission.count }));
-				if (Number(omission.representative_count) > 0) {
-					details.appendChild(document.createTextNode(' · '));
-					details.appendChild(document.createTextNode(msg('main.study.diagnostics.omission_representatives', { count: omission.representative_count })));
-				}
-				item.appendChild(txt('code', '', omission.reason));
-				item.appendChild(details);
+				item.appendChild(txt('p', 'rm-study-diagnostics-omission-sentence', msg('main.study.frontier.omission_sentence')));
+				var showAll = txt('button', 'rm-secondary-action rm-study-diagnostics-show-all', msg('main.study.frontier.show_all', { count: omission.count }));
+				showAll.type = 'button';
+				showAll.onclick = function () { revealAtlasStudyLocalGroup(); };
+				item.appendChild(showAll);
 				omissionList.appendChild(item);
 			});
 			if (omissionList.childNodes.length) {
@@ -8100,7 +8144,151 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		return panel;
 	}
 
+	// D212: provider-free browse of the complete considered Study question set.
+	// Derived only inside readAtlasStudyReportProduct from already-validated
+	// local artifacts; never a model verdict and never per-span model state.
+	function atlasStudyBrowseStageLabel(stage, failedState) {
+		if (failedState) return msg('main.study.frontier.stage_local_failed');
+		switch (String(stage || '')) {
+			case 'accepted': return msg('main.study.frontier.stage_accepted');
+			case 'model_selected': return msg('main.study.frontier.stage_rejected_sibling');
+			case 'advertised': return msg('main.study.frontier.stage_advertised');
+			case 'considered': return msg('main.study.frontier.stage_considered');
+			default: return msg('main.study.frontier.stage_local_failed');
+		}
+	}
+
+	function atlasStudyBrowseSourceLocation(row) {
+		if (!row || !row.source || !row.source.path) return null;
+		var line = Number(row.source.line) || 0;
+		return { path: row.source.path, line: line, column: Number(row.source.column) || 0, end_line: line };
+	}
+
+	function renderAtlasStudyBrowseRowSource(row) {
+		var location = atlasStudyBrowseSourceLocation(row);
+		if (!location || !sourceLocationActionAvailable(location)) return null;
+		return sourceActionElement(
+			row.question || row.title || '',
+			'rm-study-browse-row__question rm-source-action-link',
+			location,
+			location.end_line,
+			function () { openSourceLocation(location); }
+		);
+	}
+
+	function atlasStudyBrowseDirectionCardNumber(directionID) {
+		var direction = studyDirectionByID(directionID);
+		if (!direction) return 0;
+		return COMPLETE_STUDY_DIRECTIONS.indexOf(direction) + 1;
+	}
+
+	function renderAtlasStudyBrowseRow(row, failedState, statusState) {
+		var item = el('li', 'rm-study-browse-row');
+		var stageLabel = atlasStudyBrowseStageLabel(row.stage, failedState);
+		if (!failedState && String(row.stage) === 'accepted' && row.direction_id) {
+			var badge = txt('button', 'rm-study-browse-row__stage rm-study-browse-row__stage-accepted', stageLabel);
+			badge.type = 'button';
+			var cardNumber = atlasStudyBrowseDirectionCardNumber(row.direction_id);
+			badge.title = cardNumber > 0 ? msg('main.study.frontier.open_direction', { count: cardNumber }) : stageLabel;
+			badge.onclick = function () { openStudyDirection(row.direction_id); };
+			item.appendChild(badge);
+		} else {
+			item.appendChild(txt('span', 'rm-study-browse-row__stage', stageLabel));
+		}
+		if (!failedState && String(row.stage) === 'model_selected' && statusState === 'accepted_partial') {
+			item.appendChild(txt('span', 'rm-study-browse-row__not-accepted', msg('main.study.frontier.not_accepted')));
+		}
+		var question = renderAtlasStudyBrowseRowSource(row);
+		if (question) {
+			var sourceLocation = atlasStudyBrowseSourceLocation(row);
+			var locationHint = sourceLocation ? formatCodeLocation(sourceLocation) : '';
+			if (row.endpoint && row.endpoint.path && row.endpoint.path !== (row.source && row.source.path)) {
+				locationHint = locationHint + ' → ' + formatCodeLocation({ path: row.endpoint.path, line: Number(row.endpoint.line) || 0, column: Number(row.endpoint.column) || 0 });
+			}
+			if (locationHint) question.title = locationHint;
+			item.appendChild(question);
+		} else {
+			item.appendChild(txt('span', 'rm-study-browse-row__unavailable', msg('main.study.frontier.source_unavailable')));
+		}
+		item.appendChild(txt('code', 'rm-study-browse-row__title', row.title || ''));
+		return item;
+	}
+
+	function atlasStudyBrowseRepresentativeCount() {
+		var study = DATA.atlas_study;
+		var total = 0;
+		(study && Array.isArray(study.omissions) ? study.omissions : []).forEach(function (omission) {
+			if (omission && Number(omission.representative_count) > 0) total += Number(omission.representative_count);
+		});
+		return total;
+	}
+
+	function revealAtlasStudyLocalGroup() {
+		var group = document.querySelector('.rm-study-browse-group--local');
+		if (!group) return;
+		group.classList.remove('rm-study-browse-group--collapsed');
+		group.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	}
+
+	function renderAtlasStudyBrowse() {
+		var study = DATA.atlas_study;
+		if (!study || !study.frontier_browse) return null;
+		var browse = study.frontier_browse;
+		var failedState = study.state === 'failed';
+		var section = el('section', 'rm-workspace-section rm-study-frontier-browse');
+		section.appendChild(renderViewHeading(
+			msg('main.study'),
+			msg('main.study.frontier.browse_title'),
+			msg('main.study.frontier.browse_copy')
+		));
+		if (Number(browse.shown) < Number(browse.total)) {
+			section.appendChild(txt('p', 'rm-study-browse-ceiling', msg('main.study.frontier.ceiling_note', { shown: browse.shown, total: browse.total })));
+		}
+		var representativeCount = failedState ? 0 : atlasStudyBrowseRepresentativeCount();
+		var list = el('ul', 'rm-study-browse-list');
+		var currentStage = null;
+		var group = null;
+		var groupRows = null;
+		var localRows = null;
+		browse.spans.forEach(function (row) {
+			var stageKey = failedState ? 'failed' : String(row.stage || '');
+			if (stageKey !== currentStage) {
+				currentStage = stageKey;
+				group = el('li', 'rm-study-browse-group' + (stageKey === 'considered' ? ' rm-study-browse-group--local' : ''));
+				groupRows = el('ul', 'rm-study-browse-group__rows');
+				group.appendChild(txt('h3', 'rm-study-browse-group__heading', atlasStudyBrowseStageLabel(row.stage, failedState)));
+				group.appendChild(groupRows);
+				list.appendChild(group);
+				localRows = stageKey === 'considered' ? [] : null;
+			}
+			var item = renderAtlasStudyBrowseRow(row, failedState, study.state);
+			if (localRows) localRows.push(item);
+			groupRows.appendChild(item);
+		});
+		if (localRows && localRows.length > representativeCount) {
+			var showAll = txt('button', 'rm-secondary-action rm-study-browse-show-all', msg('main.study.frontier.show_all', { count: localRows.length }));
+			showAll.type = 'button';
+			showAll.onclick = function () { revealAtlasStudyLocalGroup(); };
+			group.appendChild(showAll);
+			group.classList.add('rm-study-browse-group--collapsed');
+			localRows.slice(representativeCount).forEach(function (item) {
+				item.classList.add('rm-study-browse-row--beyond');
+			});
+		}
+		section.appendChild(list);
+		return section;
+	}
+
+	function renderAtlasStudyFailedBrowse(root) {
+		var study = DATA.atlas_study;
+		if (!study || study.state !== 'failed' || !study.frontier_browse || !root) return;
+		root.appendChild(txt('p', 'rm-study-failed-banner rm-warning', msg('main.study.frontier.failed_banner')));
+		var browse = renderAtlasStudyBrowse();
+		if (browse) root.appendChild(browse);
+	}
+
 	function renderStudyMapOverview(root, includeBrief) {
+
 		if (includeBrief !== false) {
 			var briefHero = renderRepositoryBriefHero();
 			if (briefHero) root.appendChild(briefHero);
@@ -8119,6 +8307,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
 		var studyDiagnostics = renderAtlasStudyDiagnostics();
 		if (studyDiagnostics) root.appendChild(studyDiagnostics);
+
+		var frontierBrowse = renderAtlasStudyBrowse();
+		if (frontierBrowse) root.appendChild(frontierBrowse);
 
 		renderOperationsOverview(root);
 
@@ -9775,6 +9966,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		if (!root) return;
 		root.replaceChildren();
 		renderStudyPublicationNotice(root);
+		renderAtlasStudyFailedBrowse(root);
 		var anatomy = repositoryOverviewAnatomy();
 		if (anatomy) {
 			renderRepositoryOverviewLead(root);
