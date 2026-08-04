@@ -78,7 +78,7 @@ func TestRunDefaultAtlasFirstPublishesNavigatorArchitectureAndStudy(t *testing.T
 	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
 		debugdump.SemanticStageNavigator:    "accepted",
 		debugdump.SemanticStageArchitecture: "accepted",
-		debugdump.SemanticStageAtlasStudy:   "accepted",
+		debugdump.SemanticStageAtlasStudy:   "accepted_partial",
 	})
 	assertAtlasFirstSemanticStages(t, runDir,
 		debugdump.SemanticStageNavigator,
@@ -859,9 +859,24 @@ func assertAtlasFirstAcceptedArchitecture(t *testing.T, data *report.ReportData)
 
 func assertAtlasFirstAcceptedStudy(t *testing.T, data *report.ReportData) {
 	t.Helper()
-	if data.AtlasStudy == nil || data.AtlasStudy.State != atlasstudy.ProductStateAccepted ||
-		data.AtlasStudy.DirectionCount == 0 || !data.AtlasStudy.CoverageComplete || data.StudyMap == nil ||
+	if data.AtlasStudy == nil || data.AtlasStudy.DirectionCount == 0 || data.StudyMap == nil ||
 		len(data.StudyMap.Directions) != data.AtlasStudy.DirectionCount || len(data.StudyMap.Brief.WhatItIs) == 0 {
+		t.Fatalf("accepted Atlas Study = %#v / %#v", data.AtlasStudy, data.StudyMap)
+	}
+	// D211 admits exactly two accepted state combinations: a fully accepted
+	// selection (accepted + complete) or a partial acceptance with rejected
+	// siblings uncovered (accepted_partial + incomplete). Anything else —
+	// including a third state value — is a failure.
+	switch data.AtlasStudy.State {
+	case atlasstudy.ProductStateAccepted:
+		if !data.AtlasStudy.SelectedItemsComplete {
+			t.Fatalf("accepted Atlas Study = %#v / %#v", data.AtlasStudy, data.StudyMap)
+		}
+	case atlasstudy.ProductStateAcceptedPartial:
+		if data.AtlasStudy.SelectedItemsComplete {
+			t.Fatalf("accepted Atlas Study = %#v / %#v", data.AtlasStudy, data.StudyMap)
+		}
+	default:
 		t.Fatalf("accepted Atlas Study = %#v / %#v", data.AtlasStudy, data.StudyMap)
 	}
 	for _, direction := range data.StudyMap.Directions {

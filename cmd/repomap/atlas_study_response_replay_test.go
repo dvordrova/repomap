@@ -28,8 +28,8 @@ func TestAtlasStudyResponseReplayCLIExactSavedResponse(t *testing.T) {
 	fixture := writeAtlasStudyResponseReplayFixture(t, "copied-review", "original-canonical-run")
 	oldResult := []byte("old result must not be read or changed\n")
 	oldStatus := []byte("old status must not be read or changed\n")
-	mustWriteAtlasStudyReplayTestFile(t, filepath.Join(fixture.runDir, "atlas_study_result.v6.json"), oldResult)
-	mustWriteAtlasStudyReplayTestFile(t, filepath.Join(fixture.runDir, "atlas_study_status.v6.json"), oldStatus)
+	mustWriteAtlasStudyReplayTestFile(t, filepath.Join(fixture.runDir, "atlas_study_result.v7.json"), oldResult)
+	mustWriteAtlasStudyReplayTestFile(t, filepath.Join(fixture.runDir, "atlas_study_status.v7.json"), oldStatus)
 
 	var stdout bytes.Buffer
 	err := runAtlasStudyResponseReplayCLI([]string{
@@ -75,11 +75,11 @@ func TestAtlasStudyResponseReplayCLIExactSavedResponse(t *testing.T) {
 		t.Fatalf("decode current status: %v", err)
 	}
 	if status.Version != atlasstudy.ResultVersion || status.State != atlasstudy.ProductStateAccepted ||
-		status.DirectionCount != 1 || !status.CoverageComplete {
+		status.DirectionCount != 1 || !status.SelectedItemsComplete {
 		t.Fatalf("status = %+v", status)
 	}
-	assertAtlasStudyReplayTestFile(t, filepath.Join(fixture.runDir, "atlas_study_result.v6.json"), oldResult)
-	assertAtlasStudyReplayTestFile(t, filepath.Join(fixture.runDir, "atlas_study_status.v6.json"), oldStatus)
+	assertAtlasStudyReplayTestFile(t, filepath.Join(fixture.runDir, "atlas_study_result.v7.json"), oldResult)
+	assertAtlasStudyReplayTestFile(t, filepath.Join(fixture.runDir, "atlas_study_status.v7.json"), oldStatus)
 }
 
 func TestAtlasStudyResponseReplayCLIRejectsD209RequestAndResponse(t *testing.T) {
@@ -116,7 +116,7 @@ func TestAtlasStudyResponseReplayCLIRejectsD209RequestAndResponse(t *testing.T) 
 		"--response", responsePath,
 		"--response-sha256", atlasStudyD209ReplayResponseFixtureSHA,
 	}, &stdout)
-	if err == nil || !strings.Contains(err.Error(), "canonical v6 request") {
+	if err == nil || !strings.Contains(err.Error(), "canonical v7 request") {
 		t.Fatalf("D209 replay error = %v", err)
 	}
 	if stdout.Len() != 0 {

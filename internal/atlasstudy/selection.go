@@ -110,6 +110,10 @@ func selectStudyCandidates(input Input) (Input, CandidateCoverage, error) {
 		}
 	}
 
+	if len(selectedTargets) > input.Limits.MaxReadingTargets {
+		return Input{}, CandidateCoverage{}, &CandidateUnavailableError{Reason: "reading target budget cannot represent the typed route spans"}
+	}
+
 	coverage := candidateCoverage(input, selectedTargets, selectedSpans)
 	input.ReadingTargets = filterTargets(input.ReadingTargets, selectedTargets)
 	input.ReadingSupports = filterSupports(input.ReadingSupports, selectedSupports)

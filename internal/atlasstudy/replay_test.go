@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestReplayResponseRecordRevalidatesExactPartialSpanCoverage(t *testing.T) {
+func TestReplayResponseRecordRevalidatesExactAcceptedAndNotSelectedSpans(t *testing.T) {
 	product := mustCompileArtifactTestProduct(t, LanguageRussian)
 	request, err := product.RequestRecord()
 	if err != nil {
@@ -22,16 +22,21 @@ func TestReplayResponseRecordRevalidatesExactPartialSpanCoverage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReplayResponseRecord: %v", err)
 	}
-	if result.State != ProductStateAcceptedPartial || status.State != ProductStateAcceptedPartial ||
-		result.SpanCoverage.Complete || status.CoverageComplete ||
-		len(result.SpanCoverage.Requested) != 3 || len(result.SpanCoverage.Covered) != 1 ||
-		len(result.SpanCoverage.Uncovered) != 2 || status.RequestedSpanCount != 3 ||
-		status.CoveredSpanCount != 1 || status.UncoveredSpanCount != 2 {
-		t.Fatalf("partial replay coverage = result:%+v status:%+v", result.SpanCoverage, status)
+	// One valid direction while two advertised spans receive no returned
+	// direction is normal not_selected under D211: the result stays accepted
+	// and the omitted spans are never uncovered.
+	if result.State != ProductStateAccepted || status.State != ProductStateAccepted ||
+		!result.SpanCoverage.SelectedItemsComplete || !status.SelectedItemsComplete ||
+		result.SpanCoverage.ConsideredSpanCount != 3 || result.SpanCoverage.AdvertisedSpanCount != 3 ||
+		result.SpanCoverage.ModelSelectedSpanCount != 1 || result.SpanCoverage.AcceptedSpanCount != 1 ||
+		status.ConsideredSpanCount != 3 || status.AdvertisedSpanCount != 3 ||
+		status.ModelSelectedSpanCount != 1 || status.AcceptedSpanCount != 1 ||
+		!status.FrontierComplete || !status.SupportCoverageComplete || status.PortfolioTargetMet {
+		t.Fatalf("accepted replay coverage = result:%+v status:%+v", result.SpanCoverage, status)
 	}
 	if diagnostics.DirectionsReceived != 1 || diagnostics.DirectionsAccepted != 1 ||
 		diagnostics.DirectionsRejected != 0 {
-		t.Fatalf("partial replay diagnostics = %+v", diagnostics)
+		t.Fatalf("accepted replay diagnostics = %+v", diagnostics)
 	}
 	if !reflect.DeepEqual(request.CandidateCoverage, result.CandidateCoverage) ||
 		!reflect.DeepEqual(request.CandidateCoverage, status.CandidateCoverage) {
@@ -44,17 +49,15 @@ func TestReplayResponseRecordRevalidatesExactPartialSpanCoverage(t *testing.T) {
 		t.Fatalf("EncodeStatus: %v", err)
 	}
 	tamperedResult := result
-	tamperedResult.SpanCoverage = cloneSpanCoverage(result.SpanCoverage)
-	tamperedResult.SpanCoverage.Uncovered = nil
-	tamperedResult.SpanCoverage.Complete = true
+	tamperedResult.SpanCoverage = result.SpanCoverage
+	tamperedResult.SpanCoverage.AcceptedSpanCount = 2
 	if err := product.ValidateResultRecord(tamperedResult); err == nil {
-		t.Fatal("tampered exact span identities validated")
+		t.Fatal("tampered four-stage counts validated")
 	}
 	tamperedStatus := status
-	tamperedStatus.UncoveredSpanCount = 0
-	tamperedStatus.CoverageComplete = true
+	tamperedStatus.AcceptedSpanCount = 2
 	if err := product.ValidateStatus(tamperedStatus); err == nil {
-		t.Fatal("tampered span counts validated")
+		t.Fatal("tampered four-stage counts validated")
 	}
 }
 
@@ -366,14 +369,20 @@ func TestArtifactResponseHelperPreservesCanonicalSpanOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	covered := make([]string, 0, len(result.SpanCoverage.Covered))
-	for _, ref := range result.SpanCoverage.Covered {
-		covered = append(covered, ref.ID)
-	}
 	if result.State != ProductStateAccepted || status.State != ProductStateAccepted ||
-		!result.SpanCoverage.Complete || !status.CoverageComplete ||
-		len(result.SpanCoverage.Uncovered) != 0 || !slices.IsSorted(covered) {
-		t.Fatalf("covered span order is not canonical: %v", covered)
+		result.SpanCoverage.AcceptedSpanCount != 3 || status.AcceptedSpanCount != 3 ||
+		status.ModelSelectedSpanCount != 3 || !status.SelectedItemsComplete ||
+		len(result.ModelSelectedSpanRefs) != 3 ||
+		!slices.IsSortedFunc(result.ModelSelectedSpanRefs, func(left, right CanonicalRef) int {
+			if canonicalRefLess(left, right) {
+				return -1
+			}
+			if canonicalRefLess(right, left) {
+				return 1
+			}
+			return 0
+		}) {
+		t.Fatalf("model-selected span order is not canonical: %v", result.ModelSelectedSpanRefs)
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/componentmap"
@@ -1101,6 +1102,23 @@ func atlasStudyRouteSpans(
 			ru = "Какой прямой статический вызов в исходном коде связывает точку входа с этим локальным вызовом репозитория?"
 			stage = atlasstudy.StageOrientation
 		}
+		if from, ok := targetByID[relation.FromTargetID]; ok {
+			if to, ok := targetByID[relation.ToTargetID]; ok {
+				if fromRef, fromSymbol := atlasStudyReadableTargetReference(from); fromRef != "" {
+					if toRef, toSymbol := atlasStudyReadableTargetReference(to); toRef != "" {
+						fromText := atlasStudyQuestionReference(fromRef, fromSymbol)
+						toText := atlasStudyQuestionReference(toRef, toSymbol)
+						if relation.Kind == atlasstudy.RouteRelationEntryHandoff {
+							en = "Which direct static source call connects " + fromText + " to " + toText + "?"
+							ru = "Какой прямой статический вызов в исходном коде связывает " + fromText + " и " + toText + "?"
+						} else {
+							en = "How does this exact saved flow move between " + fromText + " and " + toText + "?"
+							ru = "Как точный сохранённый поток связывает " + fromText + " и " + toText + "?"
+						}
+					}
+				}
+			}
+		}
 		result = append(result, atlasstudy.RouteSpan{
 			ID:              "route-span-" + atlasStudyDigest("system_path\x00"+relation.ID),
 			Kind:            atlasstudy.RouteSpanSystemPath,
@@ -1118,21 +1136,97 @@ func atlasStudyFocusedSpanPresentation(
 	role atlasstudy.SupportRole,
 	target atlasstudy.ReadingTarget,
 ) (string, string, atlasstudy.TargetJob, atlasstudy.LearningStage) {
+	reference, symbol := atlasStudyReadableTargetReference(target)
+	if reference == "" {
+		switch role {
+		case atlasstudy.SupportProcessEntry:
+			return "Where does this application process start?", "Где запускается процесс приложения?", atlasstudy.JobFirstContact, atlasstudy.StageOrientation
+		case atlasstudy.SupportEntryHandoff:
+			return "What repository code is called directly from the process entry?", "Какой код репозитория точка входа вызывает напрямую?", atlasstudy.JobFirstContact, atlasstudy.StageOrientation
+		case atlasstudy.SupportSurface:
+			return "Where is this exact application surface implemented?", "Где реализована эта точная поверхность приложения?", atlasstudy.JobIntegrate, atlasstudy.StageIntegration
+		case atlasstudy.SupportSurfaceCandidate:
+			return "What source marks this partially resolved application surface?", "Какой исходный код отмечает эту частично разрешённую поверхность приложения?", atlasstudy.JobIntegrate, atlasstudy.StageIntegration
+		case atlasstudy.SupportSavedFlow:
+			return "What happens at this exact saved flow step?", "Что происходит на этом точном шаге сохранённого потока?", atlasstudy.JobMaintain, atlasstudy.StageCentralOperation
+		default:
+			return "What does this observed static call boundary connect?", "Что связывает эта наблюдаемая статическая граница вызова?", atlasstudy.JobMaintain, atlasstudy.StageCentralOperation
+		}
+	}
+	ref := atlasStudyQuestionReference(reference, symbol)
 	switch role {
 	case atlasstudy.SupportProcessEntry:
-		return "Where does this application process start?", "Где запускается процесс приложения?", atlasstudy.JobFirstContact, atlasstudy.StageOrientation
+		if symbol {
+			return "Where does the " + ref + " function start this application's process?",
+				"Где функция " + ref + " запускает процесс этого приложения?",
+				atlasstudy.JobFirstContact, atlasstudy.StageOrientation
+		}
+		return "Where does this application's process start at " + ref + "?",
+			"Где начинается процесс этого приложения в " + ref + "?",
+			atlasstudy.JobFirstContact, atlasstudy.StageOrientation
 	case atlasstudy.SupportEntryHandoff:
-		return "What repository code is called directly from the process entry?", "Какой код репозитория точка входа вызывает напрямую?", atlasstudy.JobFirstContact, atlasstudy.StageOrientation
+		if symbol {
+			return "What repository code calls the " + ref + " function directly from the process entry?",
+				"Какой код репозитория напрямую вызывает функцию " + ref + " из точки входа?",
+				atlasstudy.JobFirstContact, atlasstudy.StageOrientation
+		}
+		return "What repository code calls " + ref + " directly from the process entry?",
+			"Какой код репозитория напрямую вызывает " + ref + " из точки входа?",
+			atlasstudy.JobFirstContact, atlasstudy.StageOrientation
 	case atlasstudy.SupportSurface:
-		return "Where is this exact application surface implemented?", "Где реализована эта точная поверхность приложения?", atlasstudy.JobIntegrate, atlasstudy.StageIntegration
+		return "Where is the " + ref + " surface implemented?",
+			"Где реализована поверхность " + ref + "?",
+			atlasstudy.JobIntegrate, atlasstudy.StageIntegration
 	case atlasstudy.SupportSurfaceCandidate:
-		return "What source marks this partially resolved application surface?", "Какой исходный код отмечает эту частично разрешённую поверхность приложения?", atlasstudy.JobIntegrate, atlasstudy.StageIntegration
+		return "What source marks the partially resolved " + ref + " surface?",
+			"Какой исходный код отмечает частично разрешённую поверхность " + ref + "?",
+			atlasstudy.JobIntegrate, atlasstudy.StageIntegration
 	case atlasstudy.SupportSavedFlow:
-		return "What happens at this exact saved flow step?", "Что происходит на этом точном шаге сохранённого потока?", atlasstudy.JobMaintain, atlasstudy.StageCentralOperation
+		return "What happens at the exact saved flow step " + ref + "?",
+			"Что происходит на точном шаге сохранённого потока " + ref + "?",
+			atlasstudy.JobMaintain, atlasstudy.StageCentralOperation
 	default:
-		_ = target
-		return "What does this observed static call boundary connect?", "Что связывает эта наблюдаемая статическая граница вызова?", atlasstudy.JobMaintain, atlasstudy.StageCentralOperation
+		return "What does the observed " + ref + " call boundary connect?",
+			"Что связывает наблюдаемая граница вызова " + ref + "?",
+			atlasstudy.JobMaintain, atlasstudy.StageCentralOperation
 	}
+}
+
+// atlasStudyReadableTargetReference returns the exact bounded natural-language
+// reference a backend-owned question may use for one reading target, plus
+// whether that reference is the exact source symbol (rather than a natural
+// label). Only the target's own source-card symbol (a bare identifier) or its
+// natural label qualifies; qualified symbols, canonical IDs, repository paths,
+// package buckets and generic fallback labels are private and never injected
+// into a question. An empty reference means the target has no readable value
+// and callers must keep the generic wording.
+func atlasStudyReadableTargetReference(target atlasstudy.ReadingTarget) (string, bool) {
+	if symbol := strings.TrimSpace(target.Symbol); symbol != "" &&
+		!strings.ContainsAny(symbol, "./()") && utf8.ValidString(symbol) &&
+		utf8.RuneCountInString(symbol) <= 128 {
+		return symbol, true
+	}
+	label := strings.TrimSpace(target.Label)
+	if label == "" || strings.ContainsAny(label, "./()") || !utf8.ValidString(label) ||
+		utf8.RuneCountInString(label) > 128 {
+		return "", false
+	}
+	switch label {
+	case "Application entrypoint", "Repository method", "Repository function",
+		"Repository source", "Qualified Go call site", "Repository declaration":
+		return "", false
+	}
+	return label, false
+}
+
+// atlasStudyQuestionReference renders a readable target reference inside a
+// question: bare symbols become backtick-quoted code refs, natural labels stay
+// plain prose.
+func atlasStudyQuestionReference(reference string, symbol bool) string {
+	if symbol {
+		return "`" + reference + "`"
+	}
+	return reference
 }
 
 func atlasStudyComponentOwnsPath(
@@ -1493,10 +1587,14 @@ func readAtlasStudyReportProduct(
 		State:           status.State,
 		UnavailableCode: AtlasStudyUnavailableCode(status.UnavailableCode),
 		FailureCode:     status.FailureCode, DirectionCount: status.DirectionCount,
-		RequestedSpanCount: status.RequestedSpanCount,
-		CoveredSpanCount:   status.CoveredSpanCount,
-		UncoveredSpanCount: status.UncoveredSpanCount,
-		CoverageComplete:   status.CoverageComplete,
+		ConsideredSpanCount:    status.ConsideredSpanCount,
+		AdvertisedSpanCount:    status.AdvertisedSpanCount,
+		ModelSelectedSpanCount: status.ModelSelectedSpanCount,
+		AcceptedSpanCount:      status.AcceptedSpanCount,
+		FrontierComplete:        status.FrontierComplete,
+		SelectedItemsComplete:   status.SelectedItemsComplete,
+		SupportCoverageComplete: status.SupportCoverageComplete,
+		PortfolioTargetMet:      status.PortfolioTargetMet,
 	}
 	if status.State == atlasstudy.ProductStateAccepted ||
 		status.State == atlasstudy.ProductStateAcceptedPartial ||
@@ -1505,6 +1603,7 @@ func readAtlasStudyReportProduct(
 		if err != nil {
 			return nil, nil, err
 		}
+		reportStatus.Omissions = projectAtlasStudyOmissions(status.CandidateCoverage.Omissions)
 	}
 	switch status.State {
 	case atlasstudy.ProductStateAccepted, atlasstudy.ProductStateAcceptedPartial:

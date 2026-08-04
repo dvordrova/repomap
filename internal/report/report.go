@@ -27,7 +27,7 @@ import (
 
 const CurrentFormatVersion = 30
 
-const AtlasStudyReportProjectionVersion = 5
+const AtlasStudyReportProjectionVersion = 6
 
 const maxAtlasStudyReportCoverageCount = 1_000_000
 
@@ -279,7 +279,9 @@ type NavigatorReportProduct struct {
 
 // AtlasStudyReportStatus deliberately excludes provider prose, raw errors and
 // private request identities. The exact request/result/status artifacts stay
-// hash-bound material inputs of the authorized report.
+// hash-bound material inputs of the authorized report. It carries the four
+// distinct span stage counts and the four independent coverage flags instead
+// of one overloaded coverage_complete.
 type AtlasStudyReportStatus struct {
 	Version                 int                          `json:"version"`
 	ProjectionVersion       int                          `json:"projection_version"`
@@ -290,10 +292,33 @@ type AtlasStudyReportStatus struct {
 	DirectionCount          int                          `json:"direction_count,omitempty"`
 	PublishedDirectionCount int                          `json:"published_direction_count,omitempty"`
 	HiddenDirectionCount    int                          `json:"hidden_direction_count,omitempty"`
-	RequestedSpanCount      int                          `json:"requested_span_count,omitempty"`
-	CoveredSpanCount        int                          `json:"covered_span_count,omitempty"`
-	UncoveredSpanCount      int                          `json:"uncovered_span_count,omitempty"`
-	CoverageComplete        bool                         `json:"coverage_complete,omitempty"`
+	// Four-stage span counts: considered (complete set), advertised (request
+	// frontier), model-selected (returned directions, rejected siblings
+	// included) and locally accepted (valid directions only).
+	ConsideredSpanCount    int `json:"considered_span_count,omitempty"`
+	AdvertisedSpanCount    int `json:"advertised_span_count,omitempty"`
+	ModelSelectedSpanCount int `json:"model_selected_span_count,omitempty"`
+	AcceptedSpanCount      int `json:"accepted_span_count,omitempty"`
+	// Four independent coverage flags.
+	FrontierComplete        bool `json:"frontier_complete,omitempty"`
+	SelectedItemsComplete   bool `json:"selected_items_complete,omitempty"`
+	SupportCoverageComplete bool `json:"support_coverage_complete,omitempty"`
+	PortfolioTargetMet      bool `json:"portfolio_target_met,omitempty"`
+	// Omissions are bounded public-safe aggregates of considered spans omitted
+	// from the advertised frontier: exact counts by closed reason plus the
+	// bounded representative count. Canonical identities never enter the
+	// report, so representative route-span refs are reduced to their count.
+	Omissions []AtlasStudyOmissionAggregate `json:"omissions,omitempty"`
+}
+
+// AtlasStudyOmissionAggregate is the public-safe report projection of one
+// closed advertised-frontier omission reason. RepresentativeCount is the
+// bounded number of representative typed refs recorded by the exact artifact;
+// the canonical refs themselves are never projected.
+type AtlasStudyOmissionAggregate struct {
+	Reason              atlasstudy.CoverageOmissionReason `json:"reason"`
+	Count               int                               `json:"count"`
+	RepresentativeCount int                               `json:"representative_count,omitempty"`
 }
 
 // AtlasStudyCandidateCoverage is the public-safe report projection of the
@@ -359,6 +384,43 @@ func projectAtlasStudyCandidateCoverage(
 		return nil, err
 	}
 	return projected, nil
+}
+
+// projectAtlasStudyOmissions projects the bounded omission aggregates in a
+// public-safe form. Representative refs are canonical route-span identities and
+// never enter the report; only the bounded representative count is published.
+func projectAtlasStudyOmissions(omissions []atlasstudy.CoverageOmission) []AtlasStudyOmissionAggregate {
+	if len(omissions) == 0 {
+		return nil
+	}
+	projected := make([]AtlasStudyOmissionAggregate, 0, len(omissions))
+	for _, omission := range omissions {
+		projected = append(projected, AtlasStudyOmissionAggregate{
+			Reason: omission.Reason, Count: omission.Count,
+			RepresentativeCount: len(omission.Representatives),
+		})
+	}
+	return projected
+}
+
+func validateAtlasStudyOmissionProjection(omissions []AtlasStudyOmissionAggregate) error {
+	if len(omissions) == 0 {
+		return nil
+	}
+	previous := atlasstudy.CoverageOmissionReason("")
+	for _, omission := range omissions {
+		if !omission.Reason.Valid() || omission.Count <= 0 ||
+			omission.Count > maxAtlasStudyReportCoverageCount ||
+			omission.RepresentativeCount < 0 ||
+			omission.RepresentativeCount > atlasstudy.MaxOmissionRepresentatives {
+			return fmt.Errorf("atlas study report: invalid omission aggregate")
+		}
+		if previous != "" && omission.Reason <= previous {
+			return fmt.Errorf("atlas study report: omission aggregates are not canonical")
+		}
+		previous = omission.Reason
+	}
+	return nil
 }
 
 func (coverage AtlasStudyCandidateCoverage) validate() error {
