@@ -22,7 +22,15 @@ func TestArchitectureCanvasLayoutModes(t *testing.T) {
 	runner := `
 const fs = require("fs");
 const vm = require("vm");
-const window = { __REPOMAP_LAYOUT_TEST__: {} };
+const window = {
+  RepomapUI: {
+    message(id, params) {
+      if (params !== undefined && Object.keys(params).length > 0) throw new Error("unexpected params for " + id);
+      return id;
+    },
+  },
+  __REPOMAP_LAYOUT_TEST__: {},
+};
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), { window });
 const api = window.__REPOMAP_LAYOUT_TEST__;
 const mode = (groupCount, primaryCount) => api.landscapeLayoutMode({
@@ -51,6 +59,23 @@ process.stdout.write(JSON.stringify({
     api.diagnosticSubsystemIDs([{ id: "a", category: "diagnostic" }, { id: "b" }], []),
     api.diagnosticSubsystemIDs([{ id: "a" }, { id: "b" }], [{ code: "proposal.omitted_members_preserved" }]),
   ],
+  partialTruth: api.architecturePartialTruth({
+    validation_outcome: "accepted_partial",
+    local_remainder_component_id: "remainder",
+    diagnostics: [{ code: "noisy-generic-diagnostic" }],
+    components: [
+      { id: "ordinary-diagnostic", members: [{ name: "must not appear" }] },
+      { id: "remainder", members: [
+        { name: "cmd/server/main.go" },
+        { id: { kind: "package", value: "example.test/internal/local" } },
+      ] },
+    ],
+  }),
+  fullTruth: api.architecturePartialTruth({
+    validation_outcome: "accepted",
+    local_remainder_component_id: "remainder",
+    components: [{ id: "remainder", members: [{ name: "must not appear" }] }],
+  }),
   fitScales: [
     api.readableFitScale({ x: 28, y: 28, width: 1296, height: 1524 }, { width: 1204, height: 718 }, 28),
     api.readableFitScale({ x: 0, y: 0, width: 500, height: 300 }, { width: 1204, height: 718 }, 28),
@@ -62,6 +87,20 @@ process.stdout.write(JSON.stringify({
   transforms: [
     api.centeredTransform({ x: 28, y: 28, width: 1296, height: 1524 }, { width: 1204, height: 718 }, 0.65),
     api.centeredTransform({ x: 28, y: 28, width: 1296, height: 1524 }, { width: 1204, height: 718 }, 0.65),
+  ],
+  stepStates: [
+    api.architectureStepComponentState(
+      { participating_component_ids: ["a", "b", "a"] },
+      ["a", "b"]
+    ),
+    api.architectureStepComponentState(
+      { participating_component_ids: ["b"] },
+      ["a", "b"]
+    ),
+    api.architectureStepComponentState(
+      { component_id: "a", participating_component_ids: ["a", "b"] },
+      ["a", "b"]
+    ),
   ],
 }));
 `
@@ -81,13 +120,27 @@ process.stdout.write(JSON.stringify({
 		Singleton    []bool     `json:"singleton"`
 		Placements   []int      `json:"placements"`
 		Diagnostics  [][]string `json:"diagnostics"`
-		FitScales    []float64  `json:"fitScales"`
-		FocusScales  []float64  `json:"focusScales"`
-		Transforms   []struct {
+		PartialTruth *struct {
+			RemainderComponentID string `json:"remainderComponentID"`
+			Members              []struct {
+				Label string `json:"label"`
+			} `json:"members"`
+		} `json:"partialTruth"`
+		FullTruth   any       `json:"fullTruth"`
+		FitScales   []float64 `json:"fitScales"`
+		FocusScales []float64 `json:"focusScales"`
+		Transforms  []struct {
 			X     float64 `json:"x"`
 			Y     float64 `json:"y"`
 			Scale float64 `json:"scale"`
 		} `json:"transforms"`
+		StepStates []struct {
+			Owner        string   `json:"owner"`
+			Participants []string `json:"participants"`
+			Related      []string `json:"related"`
+			Lane         string   `json:"lane"`
+			Selection    string   `json:"selection"`
+		} `json:"stepStates"`
 	}
 	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatalf("decode Landscape layout contract: %v\n%s", err, output)
@@ -113,6 +166,18 @@ process.stdout.write(JSON.stringify({
 	if want := [][]string{{"a"}, {"b"}}; !reflect.DeepEqual(result.Diagnostics, want) {
 		t.Errorf("diagnostic subsystem ids = %v, want %v", result.Diagnostics, want)
 	}
+	var partialLabels []string
+	if result.PartialTruth != nil {
+		for _, member := range result.PartialTruth.Members {
+			partialLabels = append(partialLabels, member.Label)
+		}
+	}
+	if result.PartialTruth == nil || result.PartialTruth.RemainderComponentID != "remainder" ||
+		!reflect.DeepEqual(partialLabels, []string{
+			"cmd/server/main.go", "package:example.test/internal/local",
+		}) || result.FullTruth != nil {
+		t.Errorf("partial Architecture truth projection = %#v / full=%#v", result.PartialTruth, result.FullTruth)
+	}
 	if want := []float64{0.65, 1.35}; !reflect.DeepEqual(result.FitScales, want) {
 		t.Errorf("readable Fit scales = %v, want %v", result.FitScales, want)
 	}
@@ -121,6 +186,26 @@ process.stdout.write(JSON.stringify({
 	}
 	if len(result.Transforms) != 2 || result.Transforms[0] != result.Transforms[1] {
 		t.Errorf("repeated centered transforms differ: %v", result.Transforms)
+	}
+	if len(result.StepStates) != 3 {
+		t.Fatalf("step component states = %#v", result.StepStates)
+	}
+	multiple := result.StepStates[0]
+	if multiple.Owner != "" || multiple.Lane != "__repomap_unassigned__" || multiple.Selection != "" ||
+		!reflect.DeepEqual(multiple.Participants, []string{"a", "b"}) ||
+		!reflect.DeepEqual(multiple.Related, []string{"a", "b"}) {
+		t.Errorf("multiple-participant step chose or duplicated a component: %#v", multiple)
+	}
+	single := result.StepStates[1]
+	if single.Owner != "" || single.Lane != "b" || single.Selection != "b" ||
+		!reflect.DeepEqual(single.Participants, []string{"b"}) {
+		t.Errorf("single-participant step state = %#v", single)
+	}
+	owned := result.StepStates[2]
+	if owned.Owner != "a" || owned.Lane != "a" || owned.Selection != "a" ||
+		!reflect.DeepEqual(owned.Participants, []string{"a", "b"}) ||
+		!reflect.DeepEqual(owned.Related, []string{"a", "b"}) {
+		t.Errorf("independently owned step state = %#v", owned)
 	}
 }
 
@@ -141,7 +226,24 @@ func TestArchitectureCanvasGroupsResticLifecycleByTaskRoot(t *testing.T) {
 	runner := `
 const fs = require("fs");
 const vm = require("vm");
-const window = { __REPOMAP_LAYOUT_TEST__: {} };
+const messages = {
+  "architecture.value.saved_cli_trace": "Saved CLI trace",
+  "architecture.value.saved_process_trace": "Saved process trace",
+  "architecture.label.saved_trace": "Saved trace",
+  "architecture.value.lifecycle_started_by": "Started by",
+  "architecture.value.lifecycle_callback": "Callback",
+  "architecture.value.lifecycle_cancellation": "Cancellation",
+  "architecture.value.lifecycle_join": "Join",
+};
+function message(id, params) {
+  if (!Object.prototype.hasOwnProperty.call(messages, id)) throw new Error("unknown message " + id);
+  if (params !== undefined && Object.keys(params).length > 0) throw new Error("unexpected params for " + id);
+  return messages[id];
+}
+const window = {
+  RepomapUI: { message },
+  __REPOMAP_LAYOUT_TEST__: {},
+};
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), { window });
 const api = window.__REPOMAP_LAYOUT_TEST__;
 const canvas = JSON.parse(fs.readFileSync(process.argv[3], "utf8")).architecture_canvas;
@@ -153,11 +255,15 @@ const fallback = api.groupLifecycleRelations(
 );
 process.stdout.write(JSON.stringify({
   archetype: flow.archetype,
-  traceLabels: [api.savedTraceLabel("cli"), api.savedTraceLabel("process"), api.savedTraceLabel("")],
+  traceLabels: [
+    api.savedTraceLabel("cli", message),
+    api.savedTraceLabel("process", message),
+    api.savedTraceLabel("", message),
+  ],
   groups: grouped.groups.map((group) => {
     const relations = {};
     group.relations.forEach((edge) => {
-      const label = api.lifecycleRelationHeading(edge);
+      const label = api.lifecycleRelationHeading(edge, message);
       if (!relations[label]) relations[label] = [];
       relations[label].push(edge.id);
     });

@@ -1,0 +1,101 @@
+{
+  "coverage": "candidate_non_exhaustive",
+  "topics": [
+    {
+      "id": "t1",
+      "label": "Configuration loading and reloading",
+      "why": "Central to Caddy's operation; understanding how config is loaded, adapted, and reloaded helps an engineer modify behavior.",
+      "how_question": "How does Caddy load and apply configuration from a Caddyfile or JSON?",
+      "change_question": "Where should an engineer add a new configuration directive or change the reload logic?",
+      "support_symbol_ids": ["d0002", "d0193", "d0197", "d0201", "d0309", "d0312"]
+    },
+    {
+      "id": "t2",
+      "label": "HTTP server lifecycle",
+      "why": "Core to serving requests; knowing how servers start, stop, and handle errors is essential for debugging and extending.",
+      "how_question": "How does the HTTP app provision, start, and stop its servers?",
+      "change_question": "What should an engineer modify to add a new server type or change the shutdown sequence?",
+      "support_symbol_ids": ["d0118", "d0137", "d0143", "d0149", "d0155", "d0161"]
+    },
+    {
+      "id": "t3",
+      "label": "Admin API and configuration management",
+      "why": "The admin API is the primary runtime interface; understanding it enables dynamic config changes and monitoring.",
+      "how_question": "How does the admin API handle config retrieval, update, and deletion?",
+      "change_question": "Where should an engineer add a new admin endpoint or change access controls?",
+      "support_symbol_ids": ["d0001", "d0071", "d0132", "d0138", "d0144", "d0156"]
+    },
+    {
+      "id": "t4",
+      "label": "Caddyfile parsing and dispenser",
+      "why": "The Caddyfile is the primary config format; understanding parsing helps debug config issues and add new directives.",
+      "how_question": "How does the Caddyfile parser tokenize input and navigate directives?",
+      "change_question": "What should an engineer change to support a new Caddyfile syntax or directive?",
+      "support_symbol_ids": ["d0023", "d0037", "d0051", "d0065", "d0086", "d0322"]
+    },
+    {
+      "id": "t5",
+      "label": "Automatic HTTPS and TLS",
+      "why": "A key Caddy feature; understanding automatic HTTPS helps troubleshoot certificate issues and customize TLS.",
+      "how_question": "How does Caddy automatically provision and manage TLS certificates?",
+      "change_question": "Where should an engineer modify the automatic HTTPS logic to support custom certificate sources?",
+      "support_symbol_ids": ["d0166", "d0171", "d0184", "d0188", "d0192", "d0200"]
+    },
+    {
+      "id": "t6",
+      "label": "Request routing and middleware",
+      "why": "Core to HTTP handling; understanding routing helps add new middleware or modify request flow.",
+      "how_question": "How does Caddy match requests to routes and execute middleware?",
+      "change_question": "What should an engineer change to add a new route matcher or middleware handler?",
+      "support_symbol_ids": ["d0276", "d0296", "d0479", "d0505", "d0553", "d0562"]
+    },
+    {
+      "id": "t7",
+      "label": "Event system and module lifecycle",
+      "why": "Events drive module coordination; understanding them helps add new hooks or debug startup/shutdown.",
+      "how_question": "How does the event system allow modules to subscribe and emit events?",
+      "change_question": "Where should an engineer add a new event or change the event emission order?",
+      "support_symbol_ids": ["d0020", "d0027", "d0034", "d0041", "d0048", "d0273"]
+    },
+    {
+      "id": "t8",
+      "label": "Listener management and network addresses",
+      "why": "Critical for network configuration; understanding listeners helps debug port conflicts and add custom transports.",
+      "how_question": "How does Caddy manage network listeners and support address parsing?",
+      "change_question": "What should an engineer change to add a new listener type or modify address resolution?",
+      "support_symbol_ids": ["d0459", "d0462", "d0477", "d0504", "d0507", "d0546"]
+    },
+    {
+      "id": "t9",
+      "label": "Logging system",
+      "why": "Essential for observability; understanding logging helps add new log outputs or change log levels.",
+      "how_question": "How does Caddy configure and write logs to various outputs?",
+      "change_question": "Where should an engineer add a new log writer or change log filtering?",
+      "support_symbol_ids": ["d0558", "d0561", "d0564", "d0567", "d0570", "d0588"]
+    },
+    {
+      "id": "t10",
+      "label": "Authentication and password hashing",
+      "why": "Security-critical; understanding authentication helps add new auth providers or change password storage.",
+      "how_question": "How does Caddy authenticate users and verify passwords?",
+      "change_question": "What should an engineer change to add a new authentication provider or hash algorithm?",
+      "support_symbol_ids": ["d0208", "d0212", "d0236", "d0256", "d0260", "d0276"]
+    },
+    {
+      "id": "t11",
+      "label": "File server and directory browsing",
+      "why": "Common use case; understanding file serving helps customize directory listings or add virtual filesystems.",
+      "how_question": "How does the file server serve static files and generate directory listings?",
+      "change_question": "Where should an engineer modify the file server to support custom index files or access control?",
+      "support_symbol_ids": ["d0587", "d0590", "d0593", "d0596", "d0599", "d0605"]
+    },
+    {
+      "id": "t12",
+      "label": "Command-line interface and process lifecycle",
+      "why": "Entry point for users; understanding CLI helps add new commands or change startup behavior.",
+      "how_question": "How does the CLI parse commands and manage the Caddy process lifecycle?",
+      "change_question": "What should an engineer change to add a new CLI command or modify the run/stop sequence?",
+      "support_symbol_ids": ["d0004", "d0060", "d0074", "d0081", "d0088", "d0174"]
+    }
+  ]
+}

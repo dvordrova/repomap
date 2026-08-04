@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/artifactrole"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/sourcesignals"
@@ -46,6 +47,14 @@ var packageAnchorRoles = map[string]struct{}{
 	"manager": {}, "repository": {}, "runner": {}, "server": {},
 	"service": {}, "store": {}, "worker": {},
 }
+
+const (
+	maxKnownDocsForBundle     = 30
+	maxCommandTracesForBundle = 8
+	minByteFitCandidateFiles  = 8
+	maxByteFitSearchAttempts  = 64
+	byteFitWarning            = "provider bundle fitted to request-byte context budget"
+)
 
 type goSection struct {
 	ModulesCount          int                            `json:"modules_count"`
@@ -115,47 +124,219 @@ func defaults(opts Options) Options {
 }
 
 func Build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
+	bundle, _ := BuildWithTrace(s, fileList, opts)
+	return bundle
+}
+
+// BuildWithTrace returns the exact ordinary Bundle plus observability captured
+// inside the same selection and byte-fit path.
+func BuildWithTrace(s snapshot.Snapshot, fileList []string, opts Options) (Bundle, BuildTrace) {
 	opts = defaults(opts)
 	maxBytes := opts.MaxBytes
 	opts.MaxBytes = 0
+	configuredCaps := selectionCapsFromOptions(opts, maxBytes)
 	if maxBytes <= 0 {
-		return build(s, fileList, opts)
+		candidate, trace := buildWithTrace(s, fileList, opts)
+		encoded, _ := json.Marshal(candidate)
+		trace.ConfiguredCaps = configuredCaps
+		trace.EffectiveCaps = effectiveSelectionCaps(opts, opts, configuredCaps, maxBytes)
+		trace.ByteFit = ByteFitTrace{
+			Attempts: 1, Fit: true, InitialBytes: len(encoded), FittedBytes: len(encoded),
+		}
+		return candidate, trace
 	}
 
-	fit := opts
-	var candidate Bundle
-	for attempt := 0; attempt < 24; attempt++ {
-		candidate = build(s, fileList, fit)
-		encoded, err := json.Marshal(candidate)
-		if err == nil && len(encoded) <= maxBytes {
-			if fit.MaxFiles < opts.MaxFiles || fit.MaxEdges < opts.MaxEdges ||
-				fit.MaxSignalTotal < opts.MaxSignalTotal {
-				candidate.Warnings = append(candidate.Warnings, "provider bundle fitted to request-byte context budget")
-			}
-			return candidate
+	baseline, baselineTrace := buildWithTrace(s, fileList, opts)
+	baselineJSON, baselineErr := json.Marshal(baseline)
+	initialBytes := len(baselineJSON)
+	if baselineErr == nil && initialBytes <= maxBytes {
+		baselineTrace.ConfiguredCaps = configuredCaps
+		baselineTrace.EffectiveCaps = effectiveSelectionCaps(opts, opts, configuredCaps, maxBytes)
+		baselineTrace.ByteFit = ByteFitTrace{
+			Attempts: 1, Fit: true, InitialBytes: initialBytes, FittedBytes: initialBytes,
 		}
-		if !shrinkForByteBudget(&fit) {
-			break
-		}
+		return baseline, baselineTrace
 	}
-	candidate.Warnings = append(candidate.Warnings, "provider bundle exceeds configured context-byte budget")
-	return candidate
+
+	// The canonical candidate rows are sorted best-first. Search that exact
+	// prefix for the largest count whose complete returned bundle, including
+	// its fit warning, stays within the byte budget.
+	upper := min(opts.MaxFiles, baselineTrace.Counts.Candidates.Before)
+	if upper <= minByteFitCandidateFiles {
+		return failedByteFitResult(
+			baseline,
+			baselineTrace,
+			opts,
+			opts,
+			configuredCaps,
+			maxBytes,
+			1,
+			initialBytes,
+		)
+	}
+
+	attempts := 1
+	var bestBundle Bundle
+	var bestTrace BuildTrace
+	var bestOptions Options
+	bestBytes := 0
+	var minimumBundle Bundle
+	var minimumTrace BuildTrace
+	minimumCaptured := false
+	low, high := minByteFitCandidateFiles, upper-1
+	for low <= high && attempts < maxByteFitSearchAttempts {
+		candidateLimit := low + (high-low)/2
+		fitOptions := opts
+		fitOptions.MaxFiles = candidateLimit
+		candidate, trace := buildWithByteFitTrace(s, fileList, fitOptions, opts.MaxFiles)
+		candidate.Warnings = append(candidate.Warnings, byteFitWarning)
+		if candidateLimit == minByteFitCandidateFiles {
+			minimumBundle = candidate
+			minimumBundle.Warnings = append([]string(nil), candidate.Warnings...)
+			minimumTrace = trace
+			minimumCaptured = true
+		}
+		encoded, err := json.Marshal(candidate)
+		attempts++
+		if err == nil && len(encoded) <= maxBytes {
+			bestBundle = candidate
+			bestTrace = trace
+			bestOptions = fitOptions
+			bestBytes = len(encoded)
+			low = candidateLimit + 1
+			continue
+		}
+		high = candidateLimit - 1
+	}
+	if bestBytes > 0 {
+		bestTrace.ConfiguredCaps = configuredCaps
+		bestTrace.EffectiveCaps = effectiveSelectionCaps(opts, bestOptions, configuredCaps, maxBytes)
+		bestTrace.ByteFit = ByteFitTrace{
+			Attempts: attempts, Applied: true, Fit: true,
+			InitialBytes: initialBytes, FittedBytes: bestBytes,
+		}
+		appendSelectionCutoff(&bestTrace, "bundle_bytes", "byte_fit", "request_byte_budget", initialBytes, bestBytes, nil)
+		return bestBundle, bestTrace
+	}
+
+	minimumOptions := opts
+	minimumOptions.MaxFiles = minByteFitCandidateFiles
+	if !minimumCaptured {
+		minimumBundle, minimumTrace = buildWithByteFitTrace(s, fileList, minimumOptions, opts.MaxFiles)
+		attempts++
+	}
+	return failedByteFitResult(
+		minimumBundle,
+		minimumTrace,
+		opts,
+		minimumOptions,
+		configuredCaps,
+		maxBytes,
+		attempts,
+		initialBytes,
+	)
+}
+
+func failedByteFitResult(
+	bundle Bundle,
+	trace BuildTrace,
+	configuredOptions Options,
+	effectiveOptions Options,
+	configuredCaps SelectionCaps,
+	maxBytes int,
+	attempts int,
+	initialBytes int,
+) (Bundle, BuildTrace) {
+	bundle.Warnings = append(bundle.Warnings, "provider bundle exceeds configured context-byte budget")
+	encoded, _ := json.Marshal(bundle)
+	trace.ConfiguredCaps = configuredCaps
+	trace.EffectiveCaps = effectiveSelectionCaps(configuredOptions, effectiveOptions, configuredCaps, maxBytes)
+	trace.ByteFit = ByteFitTrace{
+		Attempts: attempts, Applied: attempts > 1, Fit: false,
+		InitialBytes: initialBytes, FittedBytes: len(encoded),
+	}
+	if trace.ByteFit.Applied && initialBytes > len(encoded) {
+		appendSelectionCutoff(&trace, "bundle_bytes", "byte_fit", "request_byte_budget_exhausted", initialBytes, len(encoded), nil)
+	}
+	return bundle, trace
 }
 
 func build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
+	bundle, _ := buildWithTrace(s, fileList, opts)
+	return bundle
+}
+
+func buildWithTrace(s snapshot.Snapshot, fileList []string, opts Options) (Bundle, BuildTrace) {
+	return buildWithFileIndexSelection(
+		s,
+		fileList,
+		opts,
+		opts.MaxFiles,
+		countBoundFileIndexSelection,
+	)
+}
+
+type fileIndexSelection int
+
+const (
+	countBoundFileIndexSelection fileIndexSelection = iota
+	byteFitFileIndexSelection
+)
+
+func buildWithByteFitTrace(
+	s snapshot.Snapshot,
+	fileList []string,
+	opts Options,
+	orientationCandidateLimit int,
+) (Bundle, BuildTrace) {
+	return buildWithFileIndexSelection(
+		s,
+		fileList,
+		opts,
+		orientationCandidateLimit,
+		byteFitFileIndexSelection,
+	)
+}
+
+func buildWithFileIndexSelection(
+	s snapshot.Snapshot,
+	fileList []string,
+	opts Options,
+	orientationCandidateLimit int,
+	selection fileIndexSelection,
+) (Bundle, BuildTrace) {
+	var trace BuildTrace
+	allKnownDocs := findKnownDocsUnbounded(fileList)
+	knownDocs := allKnownDocs
+	if len(knownDocs) > maxKnownDocsForBundle {
+		knownDocs = knownDocs[:maxKnownDocsForBundle]
+		appendSelectionCutoff(&trace, "known_docs", "selection", "max_known_docs", len(allKnownDocs), len(knownDocs), allKnownDocs[len(knownDocs):])
+	}
+	readmeExcerpt, readmeRetainedBytes := truncateStrWithRetainedBytes(s.Readme, opts.MaxReadmeBytes)
 
 	b := Bundle{
 		RepoName:               s.RepoName,
-		ReadmeExcerpt:          truncateStr(s.Readme, opts.MaxReadmeBytes),
+		ReadmeExcerpt:          readmeExcerpt,
 		TopLevelDirectoryStats: s.TopLevelStats,
 		LanguageHints:          s.LanguageHints,
-		KnownDocs:              findKnownDocs(fileList),
+		KnownDocs:              knownDocs,
 		PolicyVersion:          opts.PolicyVersion,
 		LocalAuthorizedFiles:   len(fileList),
+	}
+	trace.Counts.ReadmeBytes.Before = len(s.Readme)
+	trace.Counts.ReadmeBytes.After = readmeRetainedBytes
+	trace.Counts.KnownDocs.Before = len(allKnownDocs)
+	if len(s.Readme) > readmeRetainedBytes {
+		appendSelectionCutoff(&trace, "readme_bytes", "selection", "max_readme_bytes", len(s.Readme), readmeRetainedBytes, nil)
 	}
 
 	if s.GoFacts != nil {
 		f := s.GoFacts
+		trace.Counts.Modules.Before = len(f.ModuleSummaries)
+		trace.Counts.Entrypoints.Before = len(f.EntrypointPackages)
+		trace.Counts.Edges.Before = len(f.InternalEdges)
+		trace.Counts.OrientationCandidates.Before = len(f.OrientationCandidates)
+		trace.Counts.CommandTraces.Before = len(f.CommandTraces)
 
 		modSummaries := make([]moduleSummaryCompact, 0, len(f.ModuleSummaries))
 		for _, ms := range f.ModuleSummaries {
@@ -169,12 +350,34 @@ func build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 				TopExternalImports:      ms.TopExternalImports,
 			})
 		}
+		sort.SliceStable(modSummaries, func(i, j int) bool {
+			left := moduleSummaryRole(modSummaries[i])
+			right := moduleSummaryRole(modSummaries[j])
+			if artifactrole.SelectionPriority(left) != artifactrole.SelectionPriority(right) {
+				return artifactrole.SelectionPriority(left) > artifactrole.SelectionPriority(right)
+			}
+			return artifactrole.LessPath(
+				modSummaries[i].ModuleDir,
+				modSummaries[j].ModuleDir,
+				left,
+			)
+		})
 		if len(modSummaries) > opts.MaxModules {
 			b.Warnings = append(b.Warnings, "truncated module summaries")
+			omitted := moduleSummarySamples(modSummaries[opts.MaxModules:])
+			appendSelectionCutoff(&trace, "modules", "selection", "max_modules", len(modSummaries), opts.MaxModules, omitted)
 			modSummaries = modSummaries[:opts.MaxModules]
 		}
 
 		selectedEntrypoints := selectOrientationEntrypoints(f.EntrypointPackages)
+		if len(selectedEntrypoints) < len(f.EntrypointPackages) {
+			appendSelectionCutoff(&trace, "entrypoints", "eligibility", "orientation_entrypoint_policy", len(f.EntrypointPackages), len(selectedEntrypoints), entrypointSamplesDifference(f.EntrypointPackages, selectedEntrypoints))
+		}
+		if len(selectedEntrypoints) > opts.MaxEntrypoints {
+			b.Warnings = append(b.Warnings, "truncated entrypoints")
+			appendSelectionCutoff(&trace, "entrypoints", "selection", "max_entrypoints", len(selectedEntrypoints), opts.MaxEntrypoints, entrypointSamples(selectedEntrypoints[opts.MaxEntrypoints:]))
+			selectedEntrypoints = selectedEntrypoints[:opts.MaxEntrypoints]
+		}
 		selectedEntrypointImports := make(map[string]struct{}, len(selectedEntrypoints))
 		eps := make([]entrypointCompact, 0, len(selectedEntrypoints))
 		for _, ep := range selectedEntrypoints {
@@ -209,11 +412,6 @@ func build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 				OpenFiles:  openFiles,
 			})
 		}
-		if len(eps) > opts.MaxEntrypoints {
-			b.Warnings = append(b.Warnings, "truncated entrypoints")
-			eps = eps[:opts.MaxEntrypoints]
-		}
-
 		candidates := make([]gofacts.OrientationCandidate, 0, len(f.OrientationCandidates))
 		for _, candidate := range f.OrientationCandidates {
 			_, selectedEntrypoint := selectedEntrypointImports[candidate.EntrypointPackage]
@@ -221,15 +419,33 @@ func build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 				candidates = append(candidates, candidate)
 			}
 		}
-		if len(candidates) > opts.MaxFiles {
+		if len(candidates) < len(f.OrientationCandidates) {
+			appendSelectionCutoff(&trace, "orientation_candidates", "eligibility", "selected_entrypoint_or_signal_flow", len(f.OrientationCandidates), len(candidates), orientationCandidateSamplesDifference(f.OrientationCandidates, candidates))
+		}
+		if len(candidates) > orientationCandidateLimit {
 			b.Warnings = append(b.Warnings, "truncated orientation candidates")
-			candidates = candidates[:opts.MaxFiles]
+			appendSelectionCutoff(
+				&trace,
+				"orientation_candidates",
+				"selection",
+				"max_files",
+				len(candidates),
+				orientationCandidateLimit,
+				orientationCandidateSamples(candidates[orientationCandidateLimit:]),
+			)
+			candidates = candidates[:orientationCandidateLimit]
 		}
 
-		edges := f.InternalEdges
-		if len(edges) > opts.MaxEdges {
+		edges := selectImportantEdges(f.InternalEdges, selectedEntrypoints, f.Modules, opts.MaxEdges)
+		if len(f.InternalEdges) > opts.MaxEdges {
 			b.Warnings = append(b.Warnings, "truncated important edges")
-			edges = edges[:opts.MaxEdges]
+		}
+		if len(edges) < len(f.InternalEdges) {
+			appendSelectionCutoff(&trace, "edges", "selection", "max_edges", len(f.InternalEdges), len(edges), edgeSamplesDifference(f.InternalEdges, edges))
+		}
+		commandTraces := selectCommandTraces(f.CommandTraces, b.ReadmeExcerpt, maxCommandTracesForBundle)
+		if len(commandTraces) < len(f.CommandTraces) {
+			appendSelectionCutoff(&trace, "command_traces", "selection", "max_command_traces", len(f.CommandTraces), len(commandTraces), commandTraceSamplesDifference(f.CommandTraces, commandTraces))
 		}
 
 		b.Go = goSection{
@@ -237,7 +453,7 @@ func build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 			PackagesCount:         f.PackagesCount,
 			ModuleSummaries:       modSummaries,
 			Entrypoints:           eps,
-			CommandTraces:         selectCommandTraces(f.CommandTraces, b.ReadmeExcerpt, 8),
+			CommandTraces:         commandTraces,
 			OrientationCandidates: candidates,
 			ImportantEdges:        edges,
 		}
@@ -256,48 +472,70 @@ func build(s snapshot.Snapshot, fileList []string, opts Options) Bundle {
 	}
 	b.SourceSignals = fileSignals
 	fileIndex := buildFileIndex(fileList, s.GoFacts, b.KnownDocs, fileSignals)
+	trace.Counts.Candidates.Before = len(fileIndex)
+	trace.Counts.SourceSignals.Before = len(fileSignals)
 	if len(fileIndex) > opts.MaxFiles {
 		b.Warnings = append(b.Warnings, "truncated candidate_file_index")
-		fileIndex = selectFileIndexWithPins(fileIndex, opts.MaxFiles, selectedCommandTracePaths(b.Go.CommandTraces))
+		var selected []fileIndexEntry
+		cutoffStage := "selection"
+		cutoffReason := "max_files"
+		if selection == byteFitFileIndexSelection {
+			selected = append([]fileIndexEntry(nil), fileIndex[:opts.MaxFiles]...)
+			cutoffStage = "byte_fit"
+			cutoffReason = "request_byte_budget"
+		} else {
+			selected = selectFileIndexWithPins(
+				fileIndex,
+				opts.MaxFiles,
+				selectedCommandTracePaths(b.Go.CommandTraces),
+			)
+		}
+		omittedRows := omittedCandidateRows(fileIndex, selected)
+		trace.OmittedCandidateSamples = boundedCandidateRows(omittedRows, maxSelectionCutoffSamples)
+		appendSelectionCutoff(
+			&trace,
+			"candidates",
+			cutoffStage,
+			cutoffReason,
+			len(fileIndex),
+			len(selected),
+			candidatePaths(omittedRows),
+		)
+		fileIndex = selected
 	}
 	b.CandidateFileIndex = fileIndex
 	b.ProviderAllowedPaths = buildAllowedPaths(fileIndex)
 	allowedSet := makePathSet(b.ProviderAllowedPaths)
-	b.KnownDocs = filterPaths(b.KnownDocs, allowedSet)
-	b.SourceSignals = filterSourceSignals(b.SourceSignals, allowedSet)
-	b.Go.Entrypoints = filterEntrypoints(b.Go.Entrypoints, allowedSet)
-	b.Go.CommandTraces = filterCommandTraces(b.Go.CommandTraces, allowedSet)
-	b.Go.OrientationCandidates = filterOrientationCandidates(
+	filteredKnownDocs := filterPaths(b.KnownDocs, allowedSet)
+	appendSelectionCutoff(&trace, "known_docs", "allowlist", "candidate_file_index", len(b.KnownDocs), len(filteredKnownDocs), stringDifference(b.KnownDocs, filteredKnownDocs))
+	b.KnownDocs = filteredKnownDocs
+	filteredSignals := filterSourceSignals(b.SourceSignals, allowedSet)
+	appendSelectionCutoff(&trace, "source_signals", "allowlist", "candidate_file_index", len(b.SourceSignals), len(filteredSignals), sourceSignalSamplesDifference(b.SourceSignals, filteredSignals))
+	b.SourceSignals = filteredSignals
+	filteredEntrypoints := filterEntrypoints(b.Go.Entrypoints, allowedSet)
+	appendSelectionCutoff(&trace, "entrypoints", "allowlist", "candidate_file_index", len(b.Go.Entrypoints), len(filteredEntrypoints), nil)
+	b.Go.Entrypoints = filteredEntrypoints
+	filteredCommandTraces := filterCommandTraces(b.Go.CommandTraces, allowedSet)
+	appendSelectionCutoff(&trace, "command_traces", "allowlist", "candidate_file_index", len(b.Go.CommandTraces), len(filteredCommandTraces), nil)
+	b.Go.CommandTraces = filteredCommandTraces
+	filteredOrientationCandidates := filterOrientationCandidates(
 		b.Go.OrientationCandidates,
 		allowedSet,
 	)
+	appendSelectionCutoff(&trace, "orientation_candidates", "allowlist", "candidate_file_index", len(b.Go.OrientationCandidates), len(filteredOrientationCandidates), orientationCandidateSamplesDifference(b.Go.OrientationCandidates, filteredOrientationCandidates))
+	b.Go.OrientationCandidates = filteredOrientationCandidates
 
-	return b
-}
-
-func shrinkForByteBudget(opts *Options) bool {
-	changed := false
-	shrink := func(value *int, minimum int) {
-		if *value <= minimum {
-			return
-		}
-		next := *value * 4 / 5
-		if next < minimum {
-			next = minimum
-		}
-		if next == *value {
-			next--
-		}
-		*value = next
-		changed = true
-	}
-	shrink(&opts.MaxFiles, 8)
-	shrink(&opts.MaxEdges, 16)
-	shrink(&opts.MaxSignalTotal, 12)
-	shrink(&opts.MaxEntrypoints, 8)
-	shrink(&opts.MaxModules, 8)
-	shrink(&opts.MaxReadmeBytes, 2<<10)
-	return changed
+	trace.Counts.Candidates.After = len(b.CandidateFileIndex)
+	trace.Counts.Entrypoints.After = len(b.Go.Entrypoints)
+	trace.Counts.Modules.After = len(b.Go.ModuleSummaries)
+	trace.Counts.Edges.After = len(b.Go.ImportantEdges)
+	trace.Counts.SourceSignals.After = len(b.SourceSignals)
+	trace.Counts.OrientationCandidates.After = len(b.Go.OrientationCandidates)
+	trace.Counts.KnownDocs.After = len(b.KnownDocs)
+	trace.Counts.CommandTraces.After = len(b.Go.CommandTraces)
+	_ = completeSelectionCounts(&trace.Counts)
+	trace.SelectedCandidates = candidateSelectionRows(b.CandidateFileIndex)
+	return b, trace
 }
 
 func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string, fileSignals []sourcesignals.Signal) []fileIndexEntry {
@@ -428,6 +666,15 @@ func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string,
 		if score <= 0 {
 			continue
 		}
+		role := artifactrole.Classify(f, artifactrole.Hints{
+			PrimaryEntry:  containsPath(entrypointPaths, f),
+			Documentation: kind == "doc",
+			Generated:     kind == "generated",
+			Test:          kind == "test",
+		})
+		score += fileRoleScore(role)
+		signals = append(signals, "role:"+string(role))
+		reasons = append(reasons, "bounded context role: "+string(role))
 
 		entries = append(entries, fileIndexEntry{
 			ID:      providerFileID(f),
@@ -441,6 +688,11 @@ func buildFileIndex(fileList []string, facts *gofacts.Facts, knownDocs []string,
 
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].Score == entries[j].Score {
+			leftRole := fileIndexEntryRole(entries[i])
+			rightRole := fileIndexEntryRole(entries[j])
+			if leftRole == rightRole {
+				return artifactrole.LessPath(entries[i].Path, entries[j].Path, leftRole)
+			}
 			return entries[i].Path < entries[j].Path
 		}
 		return entries[i].Score > entries[j].Score
@@ -466,18 +718,113 @@ func selectOrientationEntrypoints(entrypoints []gofacts.Entrypoint) []gofacts.En
 		}
 	}
 	if len(selected) > 0 {
+		sortEntrypointsByRole(selected)
+		production := selected[:0]
+		for _, entrypoint := range selected {
+			if artifactrole.IsProduction(entrypointRole(entrypoint)) {
+				production = append(production, entrypoint)
+			}
+		}
+		if len(production) > 0 {
+			return production
+		}
 		return selected
 	}
 
 	const fallbackLimit = 3
 	fallback := append([]gofacts.Entrypoint(nil), entrypoints...)
-	sort.Slice(fallback, func(i, j int) bool {
-		return fallback[i].ImportPath < fallback[j].ImportPath
-	})
+	sortEntrypointsByRole(fallback)
 	if len(fallback) > fallbackLimit {
 		return fallback[:fallbackLimit]
 	}
 	return fallback
+}
+
+func sortEntrypointsByRole(entrypoints []gofacts.Entrypoint) {
+	sort.SliceStable(entrypoints, func(i, j int) bool {
+		left := entrypointRole(entrypoints[i])
+		right := entrypointRole(entrypoints[j])
+		if artifactrole.SelectionPriority(left) != artifactrole.SelectionPriority(right) {
+			return artifactrole.SelectionPriority(left) > artifactrole.SelectionPriority(right)
+		}
+		return artifactrole.LessPath(
+			entrypointArtifactPath(entrypoints[i]),
+			entrypointArtifactPath(entrypoints[j]),
+			left,
+		)
+	})
+}
+
+func entrypointRole(entrypoint gofacts.Entrypoint) artifactrole.Role {
+	return artifactrole.Classify(entrypointArtifactPath(entrypoint), artifactrole.Hints{
+		PrimaryEntry: entrypoint.Kind == "primary_binary" || entrypoint.Kind == "cli",
+		Test:         entrypoint.Kind == "test_binary",
+	})
+}
+
+func entrypointArtifactPath(entrypoint gofacts.Entrypoint) string {
+	entryPath := strings.Trim(strings.ReplaceAll(entrypoint.PackageDir, "\\", "/"), "/")
+	if len(entrypoint.Anchors) > 0 && entrypoint.Anchors[0].Path != "" {
+		entryPath = entrypoint.Anchors[0].Path
+	} else if entryPath != "" && entryPath != "." {
+		entryPath += "/main.go"
+	} else {
+		entryPath = "main.go"
+	}
+	return entryPath
+}
+
+func moduleSummaryRole(summary moduleSummaryCompact) artifactrole.Role {
+	modulePath := strings.Trim(strings.ReplaceAll(summary.ModuleDir, "\\", "/"), "/")
+	if modulePath == "" || modulePath == "." {
+		modulePath = "go.mod"
+	} else {
+		modulePath += "/go.mod"
+	}
+	hints := artifactrole.Hints{PrimaryEntry: summary.EntrypointsCount > 0}
+	switch summary.RoleGuess {
+	case "api_definitions", "client_library":
+		hints.PublicAPI = true
+	case "server_runtime":
+		hints.EffectBoundary = true
+	case "tests":
+		hints.Test = true
+	}
+	return artifactrole.Classify(modulePath, hints)
+}
+
+func containsPath(paths map[string]struct{}, target string) bool {
+	_, ok := paths[target]
+	return ok
+}
+
+func fileRoleScore(role artifactrole.Role) int {
+	switch role {
+	case artifactrole.RolePrimaryProductionEntry:
+		return 60
+	case artifactrole.RoleEffectBoundary:
+		return 35
+	case artifactrole.RolePublicAPI:
+		return 30
+	case artifactrole.RoleProductionCore:
+		return 20
+	case artifactrole.RoleCurrentDocumentation:
+		return 15
+	case artifactrole.RoleExperimental:
+		return -5
+	case artifactrole.RoleExample:
+		return -15
+	case artifactrole.RoleHistoricalDocumentation:
+		return -20
+	case artifactrole.RolePlayground:
+		return -30
+	case artifactrole.RoleTest:
+		return -40
+	case artifactrole.RoleFixture, artifactrole.RoleGenerated:
+		return -50
+	default:
+		return 0
+	}
 }
 
 func selectFileIndex(entries []fileIndexEntry, maxFiles int) []fileIndexEntry {
@@ -523,19 +870,56 @@ func selectFileIndexWithPins(entries []fileIndexEntry, maxFiles int, pinned map[
 		}
 		selectEntry(i)
 	}
+	productionEntrypoints := 0
 	for i := range entries {
 		if selectedCount == maxFiles {
 			break
 		}
-		if selected[i] || !containsFileSignal(entries[i].Signals, "entrypoint") {
+		if selected[i] || !containsFileSignal(entries[i].Signals, "entrypoint") ||
+			!fileIndexEntryIsProduction(entries[i]) {
 			continue
 		}
 		selectEntry(i)
+		productionEntrypoints++
+	}
+	if productionEntrypoints == 0 {
+		for i := range entries {
+			if selectedCount == maxFiles {
+				break
+			}
+			if selected[i] || !containsFileSignal(entries[i].Signals, "entrypoint") {
+				continue
+			}
+			selectEntry(i)
+		}
 	}
 	for _, target := range targets {
 		remaining := target.count - selectedByGroup[target.group]
 		if target.group == "source" {
 			const maxInitialSourcesPerDir = 4
+			for _, productionOnly := range []bool{true, false} {
+				for i := range entries {
+					if remaining <= 0 || selectedCount == maxFiles {
+						break
+					}
+					if selected[i] || fileIndexGroup(entries[i].Kind) != target.group {
+						continue
+					}
+					if productionOnly != fileIndexEntryIsProduction(entries[i]) {
+						continue
+					}
+					dir := path.Dir(entries[i].Path)
+					if selectedSourcesByDir[dir] >= maxInitialSourcesPerDir {
+						continue
+					}
+					selected[i] = true
+					selectedCount++
+					remaining--
+					selectedSourcesByDir[dir]++
+				}
+			}
+		}
+		for _, productionOnly := range []bool{true, false} {
 			for i := range entries {
 				if remaining <= 0 || selectedCount == maxFiles {
 					break
@@ -543,38 +927,30 @@ func selectFileIndexWithPins(entries []fileIndexEntry, maxFiles int, pinned map[
 				if selected[i] || fileIndexGroup(entries[i].Kind) != target.group {
 					continue
 				}
-				dir := path.Dir(entries[i].Path)
-				if selectedSourcesByDir[dir] >= maxInitialSourcesPerDir {
+				if target.group == "source" && productionOnly != fileIndexEntryIsProduction(entries[i]) {
 					continue
 				}
 				selected[i] = true
 				selectedCount++
 				remaining--
-				selectedSourcesByDir[dir]++
 			}
-		}
-		for i := range entries {
-			if remaining <= 0 || selectedCount == maxFiles {
+			if target.group != "source" {
 				break
 			}
-			if selected[i] || fileIndexGroup(entries[i].Kind) != target.group {
+		}
+	}
+
+	for _, productionOnly := range []bool{true, false} {
+		for i := range entries {
+			if selectedCount == maxFiles {
+				break
+			}
+			if selected[i] || productionOnly != fileIndexEntryIsProduction(entries[i]) {
 				continue
 			}
 			selected[i] = true
 			selectedCount++
-			remaining--
 		}
-	}
-
-	for i := range entries {
-		if selectedCount == maxFiles {
-			break
-		}
-		if selected[i] {
-			continue
-		}
-		selected[i] = true
-		selectedCount++
 	}
 
 	result := make([]fileIndexEntry, 0, maxFiles)
@@ -586,9 +962,34 @@ func selectFileIndexWithPins(entries []fileIndexEntry, maxFiles int, pinned map[
 	return result
 }
 
+func fileIndexEntryIsProduction(entry fileIndexEntry) bool {
+	return artifactrole.IsProduction(fileIndexEntryRole(entry))
+}
+
+func fileIndexEntryRole(entry fileIndexEntry) artifactrole.Role {
+	for _, signal := range entry.Signals {
+		const prefix = "role:"
+		if !strings.HasPrefix(signal, prefix) {
+			continue
+		}
+		return artifactrole.Role(strings.TrimPrefix(signal, prefix))
+	}
+	return artifactrole.Classify(entry.Path, artifactrole.Hints{})
+}
+
 func selectedCommandTracePaths(traces []gofacts.CommandTrace) map[string]struct{} {
+	productionOnly := false
+	for _, trace := range traces {
+		if artifactrole.IsProduction(commandTraceRole(trace)) {
+			productionOnly = true
+			break
+		}
+	}
 	paths := make(map[string]struct{})
 	for _, trace := range traces {
+		if productionOnly && !artifactrole.IsProduction(commandTraceRole(trace)) {
+			continue
+		}
 		for _, step := range trace.Steps {
 			paths[step.TargetLocation.Path] = struct{}{}
 			if step.CallsiteLocation != nil {
@@ -625,6 +1026,179 @@ func fileIndexGroup(kind string) string {
 	default:
 		return "support"
 	}
+}
+
+type importantParentEdge struct {
+	edge  gofacts.Edge
+	depth int
+}
+
+func selectImportantEdges(
+	edges []gofacts.Edge,
+	entrypoints []gofacts.Entrypoint,
+	modules []gofacts.ModuleFact,
+	limit int,
+) []gofacts.Edge {
+	if limit <= 0 || len(edges) == 0 {
+		return nil
+	}
+
+	ordered := append([]gofacts.Edge(nil), edges...)
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].From != ordered[j].From {
+			return ordered[i].From < ordered[j].From
+		}
+		return ordered[i].To < ordered[j].To
+	})
+	if len(ordered) <= limit {
+		return ordered
+	}
+
+	roots := make([]string, 0, len(entrypoints))
+	for _, entrypoint := range entrypoints {
+		if entrypointRole(entrypoint) == artifactrole.RolePrimaryProductionEntry {
+			roots = append(roots, entrypoint.ImportPath)
+		}
+	}
+	sort.Strings(roots)
+
+	parents := make(map[string]importantParentEdge)
+	depths := make(map[string]int, len(roots))
+	queue := append([]string(nil), roots...)
+	for _, root := range roots {
+		depths[root] = 0
+	}
+	adjacency := make(map[string][]gofacts.Edge)
+	for _, edge := range ordered {
+		adjacency[edge.From] = append(adjacency[edge.From], edge)
+	}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		depth := depths[current]
+		for _, edge := range adjacency[current] {
+			if _, seen := depths[edge.To]; seen {
+				continue
+			}
+			depths[edge.To] = depth + 1
+			parents[edge.To] = importantParentEdge{edge: edge, depth: depth + 1}
+			queue = append(queue, edge.To)
+		}
+	}
+
+	targets := make([]string, 0, len(parents))
+	for target := range parents {
+		role := importArtifactRole(target, modules)
+		if artifactrole.IsProduction(role) {
+			targets = append(targets, target)
+		}
+	}
+	sort.Slice(targets, func(i, j int) bool {
+		leftRole := importArtifactRole(targets[i], modules)
+		rightRole := importArtifactRole(targets[j], modules)
+		if artifactrole.SelectionPriority(leftRole) != artifactrole.SelectionPriority(rightRole) {
+			return artifactrole.SelectionPriority(leftRole) > artifactrole.SelectionPriority(rightRole)
+		}
+		if depths[targets[i]] != depths[targets[j]] {
+			return depths[targets[i]] > depths[targets[j]]
+		}
+		return targets[i] < targets[j]
+	})
+
+	selected := make([]gofacts.Edge, 0, min(limit, len(ordered)))
+	seen := make(map[gofacts.Edge]struct{}, limit)
+	connectivityLimit := limit / 2
+	if connectivityLimit < 4 {
+		connectivityLimit = limit
+	}
+	for _, target := range targets {
+		pathEdges := connectivityPath(target, parents)
+		newCount := 0
+		for _, edge := range pathEdges {
+			if _, exists := seen[edge]; !exists {
+				newCount++
+			}
+		}
+		pathLimit := connectivityLimit
+		if len(selected) == 0 {
+			pathLimit = limit
+		}
+		if len(selected)+newCount > pathLimit {
+			continue
+		}
+		for _, edge := range pathEdges {
+			if _, exists := seen[edge]; exists {
+				continue
+			}
+			seen[edge] = struct{}{}
+			selected = append(selected, edge)
+		}
+		if len(selected) == connectivityLimit {
+			break
+		}
+	}
+
+	type rankedEdge struct {
+		edge  gofacts.Edge
+		score int
+	}
+	ranked := make([]rankedEdge, 0, len(ordered))
+	for _, edge := range ordered {
+		toRole := importArtifactRole(edge.To, modules)
+		fromRole := importArtifactRole(edge.From, modules)
+		score := artifactrole.SelectionPriority(toRole)*10 + artifactrole.SelectionPriority(fromRole)
+		if depth, reachable := depths[edge.From]; reachable {
+			score += 10_000 - depth*100
+			if !artifactrole.IsProduction(toRole) {
+				score -= 5_000
+			}
+		}
+		ranked = append(ranked, rankedEdge{edge: edge, score: score})
+	}
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if ranked[i].score != ranked[j].score {
+			return ranked[i].score > ranked[j].score
+		}
+		if ranked[i].edge.From != ranked[j].edge.From {
+			return ranked[i].edge.From < ranked[j].edge.From
+		}
+		return ranked[i].edge.To < ranked[j].edge.To
+	})
+	for _, item := range ranked {
+		if len(selected) == limit {
+			break
+		}
+		if _, exists := seen[item.edge]; exists {
+			continue
+		}
+		seen[item.edge] = struct{}{}
+		selected = append(selected, item.edge)
+	}
+	return selected
+}
+
+func connectivityPath(target string, parents map[string]importantParentEdge) []gofacts.Edge {
+	var reversed []gofacts.Edge
+	for {
+		parent, ok := parents[target]
+		if !ok {
+			break
+		}
+		reversed = append(reversed, parent.edge)
+		target = parent.edge.From
+	}
+	result := make([]gofacts.Edge, len(reversed))
+	for index := range reversed {
+		result[index] = reversed[len(reversed)-1-index]
+	}
+	return result
+}
+
+func importArtifactRole(importPath string, modules []gofacts.ModuleFact) artifactrole.Role {
+	if directory, ok := repositoryDirForImport(importPath, modules); ok {
+		return artifactrole.Classify(path.Join(directory, "package.go"), artifactrole.Hints{})
+	}
+	return artifactrole.Classify(importPath+"/package.go", artifactrole.Hints{})
 }
 
 func repositoryDirForImport(importPath string, modules []gofacts.ModuleFact) (string, bool) {
@@ -680,7 +1254,7 @@ func detectFileKind(path string) string {
 	if strings.HasSuffix(base, ".pb.go") {
 		return "generated"
 	}
-	if strings.HasSuffix(lower, ".go") || strings.HasSuffix(lower, ".py") || strings.HasSuffix(lower, ".pyi") {
+	if artifactrole.IsSourcePath(path) {
 		return "source"
 	}
 	return "unknown"
@@ -923,6 +1497,7 @@ func selectCommandTraces(traces []gofacts.CommandTrace, readme string, limit int
 	type rankedTrace struct {
 		trace    gofacts.CommandTrace
 		score    int
+		role     artifactrole.Role
 		position int
 	}
 	lowerReadme := strings.ToLower(readme)
@@ -936,9 +1511,16 @@ func selectCommandTraces(traces []gofacts.CommandTrace, readme string, limit int
 		if trace.Complete {
 			score += 10
 		}
-		ranked = append(ranked, rankedTrace{trace: trace, score: score, position: position})
+		ranked = append(ranked, rankedTrace{
+			trace: trace, score: score, role: commandTraceRole(trace), position: position,
+		})
 	}
 	sort.SliceStable(ranked, func(i, j int) bool {
+		leftRole := artifactrole.SelectionPriority(ranked[i].role)
+		rightRole := artifactrole.SelectionPriority(ranked[j].role)
+		if leftRole != rightRole {
+			return leftRole > rightRole
+		}
 		if ranked[i].score != ranked[j].score {
 			return ranked[i].score > ranked[j].score
 		}
@@ -952,6 +1534,26 @@ func selectCommandTraces(traces []gofacts.CommandTrace, readme string, limit int
 		selected[index] = ranked[index].trace
 	}
 	return selected
+}
+
+func commandTraceRole(trace gofacts.CommandTrace) artifactrole.Role {
+	for _, step := range trace.Steps {
+		if step.TargetLocation.Path != "" {
+			return artifactrole.Classify(step.TargetLocation.Path, artifactrole.Hints{PrimaryEntry: true})
+		}
+		if step.CallsiteLocation != nil && step.CallsiteLocation.Path != "" {
+			return artifactrole.Classify(step.CallsiteLocation.Path, artifactrole.Hints{PrimaryEntry: true})
+		}
+	}
+	for _, call := range trace.HandlerCalls {
+		if call.Path != "" {
+			return artifactrole.Classify(call.Path, artifactrole.Hints{PrimaryEntry: true})
+		}
+		if call.TargetPath != "" {
+			return artifactrole.Classify(call.TargetPath, artifactrole.Hints{PrimaryEntry: true})
+		}
+	}
+	return artifactrole.Classify(trace.EntrypointPackage+"/main.go", artifactrole.Hints{PrimaryEntry: true})
 }
 
 func containsWord(text, word string) bool {
@@ -1028,6 +1630,14 @@ func filterOrientationCandidates(
 }
 
 func findKnownDocs(files []string) []string {
+	docs := findKnownDocsUnbounded(files)
+	if len(docs) > maxKnownDocsForBundle {
+		docs = docs[:maxKnownDocsForBundle]
+	}
+	return docs
+}
+
+func findKnownDocsUnbounded(files []string) []string {
 	interestingPatterns := []string{
 		"Documentation/",
 		"docs/",
@@ -1075,11 +1685,14 @@ func findKnownDocs(files []string) []string {
 		docs = append(docs, f)
 	}
 
-	sort.Strings(docs)
-
-	if len(docs) > 30 {
-		docs = docs[:30]
-	}
+	sort.Slice(docs, func(i, j int) bool {
+		left := artifactrole.Classify(docs[i], artifactrole.Hints{Documentation: true})
+		right := artifactrole.Classify(docs[j], artifactrole.Hints{Documentation: true})
+		if artifactrole.SelectionPriority(left) != artifactrole.SelectionPriority(right) {
+			return artifactrole.SelectionPriority(left) > artifactrole.SelectionPriority(right)
+		}
+		return artifactrole.LessPath(docs[i], docs[j], left)
+	})
 
 	return docs
 }
@@ -1099,8 +1712,13 @@ func isDocumentationFile(filePath string) bool {
 }
 
 func truncateStr(s string, maxBytes int) string {
+	result, _ := truncateStrWithRetainedBytes(s, maxBytes)
+	return result
+}
+
+func truncateStrWithRetainedBytes(s string, maxBytes int) (string, int) {
 	if maxBytes <= 0 || len(s) <= maxBytes {
-		return s
+		return s, len(s)
 	}
 	cut := maxBytes
 	for cut > 0 {
@@ -1113,7 +1731,7 @@ func truncateStr(s string, maxBytes int) string {
 		cut--
 	}
 	if cut == 0 {
-		return ""
+		return "", 0
 	}
-	return s[:cut] + "\n...[truncated]"
+	return s[:cut] + "\n...[truncated]", cut
 }

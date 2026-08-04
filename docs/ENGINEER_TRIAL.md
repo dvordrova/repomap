@@ -48,6 +48,8 @@ export REPOMAP_LLM_MODEL=company-code-model
 export REPOMAP_LLM_API_KEY=...
 export REPOMAP_LLM_AUTH=bearer
 export REPOMAP_LLM_TIMEOUT=90s
+# Optional sole output-ceiling override; the default is 64000.
+export REPOMAP_LLM_MAX_TOKENS=64000
 ```
 
 For an explicitly unauthenticated local endpoint:
@@ -58,9 +60,16 @@ export REPOMAP_LLM_MODEL=qwen2.5-coder:1.5b
 export REPOMAP_LLM_AUTH=none
 ```
 
-`DEEPSEEK_*` remains a compatibility alias. New integrations should use
-`REPOMAP_LLM_*`. The namespaces are atomic: generic configuration requires an
-explicit endpoint and never inherits a legacy DeepSeek key or endpoint.
+Legacy `DEEPSEEK_*` endpoint, model, key, timeout, and auth settings remain a
+compatibility mode. New integrations should use `REPOMAP_LLM_*`. The namespaces
+are atomic: generic configuration requires an explicit endpoint and never
+inherits a legacy DeepSeek key or endpoint. `DEEPSEEK_MAX_TOKENS` is ignored;
+the sole output-ceiling override is `REPOMAP_LLM_MAX_TOKENS`.
+
+The default output ceiling is 64,000 tokens. Every semantic request sends that
+exact configured value; no stage raises, lowers, or doubles it. An explicit
+`finish_reason=length` terminates the run as a resource-limit result without a
+semantic resend or partial report publication.
 
 Check configuration without sending repository content, then optionally send a
 tiny synthetic JSON compatibility request:
@@ -70,37 +79,20 @@ tiny synthetic JSON compatibility request:
 ./repomap doctor llm --check
 ```
 
-Inspect the exact request body before the first repository call:
-
-```bash
-./repomap /path/to/repo --preview-request > /tmp/repomap-request.json
-wc -c /tmp/repomap-request.json
-```
-
-The preview file is the exact provider body, so the engineer can review both its
-contents and byte size before authorizing the first repository call.
-
-The normal first call performs one bounded orientation request, presents the
-full onboarding overview, and prepares a compact deterministic local evidence
-bundle for every validated direction. Clicking a direction reads that saved
-bundle; it makes no second provider call. `--flows N` additionally asks the
-model to expand the top N directions.
+The normal run builds the complete local Repository Atlas, then performs at
+most one bounded Navigator selection over exact locally-resolved application
+startups. Empty and offline outcomes make no provider call.
 
 ```bash
 ./repomap /path/to/repo
-./repomap /path/to/repo --flows 1
 ```
 
-Today the direction cards are actions over saved local file/test/package/import
-evidence, while `--flows 1` still expands the highest-ranked direction rather
-than a user-selected one. Deterministic exact-symbol candidates and the
-resumable source/test investigation handoff remain outside the main CLI. The
-current friend pass is a runnable onboarding baseline, not a claim that the
-complete progressive journey is wired.
+The Navigator selects only an advertised opaque action ref. The backend restores
+the canonical startup relation, endpoints, and evidence before publication.
 
 Debug artifacts default to the user cache rather than the analysed repository.
-Use `--no-debug` to retain nothing or `--debug-dir` to choose an explicit trusted
-location.
+Ordinary runs persist their authoritative `report.json`; use `--debug-dir` to
+choose an explicit trusted location.
 
 ## One workflow, three goal policies
 
@@ -181,11 +173,13 @@ names a test or preserves a test gap, and does not claim to know the exact patch
 - path-like mentions inside orientation evidence are rejected unless the path
   was actually present in the bounded bundle;
 - the exact request body can be previewed without a key or network call;
-- live debug artifacts record the selected model and endpoint and retain the
-  attempted request even when the provider call fails.
+- live debug artifacts record the selected model and endpoint and journal the
+  attempted semantic request even when the provider call fails.
 
-When `--dump-llm` is requested, failure to create or write the required request
-artifact aborts before the provider call; inspectability is not best-effort.
+Ordinary debug runs publish the bounded semantic exchange journal best-effort.
+A journal failure emits one closed warning per stage and never changes provider,
+cache, validation, or publication behavior. Use request preview when a request
+must be inspected without making a provider call.
 
 ## Trial completion gates
 
@@ -195,7 +189,8 @@ These are zero-tolerance conditions for all three scenarios:
 - no path outside the local allowlist presented as verified;
 - no README or source symlink escape outside the resolved repository root;
 - obvious credentials cause remote use to fail closed;
-- the exact outbound request is inspectable before sending;
+- the exact outbound request can be previewed without sending, and ordinary
+  semantic calls leave a bounded journal entry;
 - saved evaluation tasks expose model/provider, prompt/evaluator versions,
   bytes, latency, revision, and build scenario without inventing missing values;
 - source-supported claims cite line-addressable evidence;

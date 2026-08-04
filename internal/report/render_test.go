@@ -3,6 +3,7 @@ package report
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"os"
 	"path/filepath"
@@ -16,6 +17,23 @@ import (
 )
 
 var update = flag.Bool("update", false, "update golden files")
+
+func TestWriteReportJSONResourceLimitIsTypedAndDoesNotPublish(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "report.json")
+	err := writeReportJSON(&ReportData{RepoName: "exact-report"}, path, 32)
+	var limitErr *ReportResourceLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("writeReportJSON() error = %v, want ReportResourceLimitError", err)
+	}
+	if limitErr.LimitBytes != 32 || limitErr.ActualBytes <= limitErr.LimitBytes {
+		t.Fatalf("resource evidence = %#v", limitErr)
+	}
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Fatalf("resource failure published report: %v", statErr)
+	}
+}
 
 func TestWriteReportHTML_Golden(t *testing.T) {
 	latency := int64(432)
@@ -164,20 +182,19 @@ func TestWriteReportHTML_Golden(t *testing.T) {
 	}
 }
 
-func TestReportAssetsScopeBundleTruncationAsModelContext(t *testing.T) {
+func TestReportAssetsKeepUntypedWarningsVisible(t *testing.T) {
 	t.Parallel()
 
+	const warning = "Important edges and candidate file index were truncated in the provided bundle."
 	html, err := RenderHTML(&ReportData{
 		RepoName: "bounded",
-		Warnings: []string{"Important edges and candidate file index were truncated in the provided bundle."},
+		Warnings: []string{warning},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, text := range []string{"Model context limit", "surface counts", "isModelContextWarning"} {
-		if !strings.Contains(string(html), text) {
-			t.Fatalf("rendered report is missing scoped model-context token %q", text)
-		}
+	if !strings.Contains(string(html), warning) {
+		t.Fatalf("rendered report is missing untyped warning %q", warning)
 	}
 }
 
@@ -255,7 +272,8 @@ func TestReportPreservesMissingFlowTypeWithoutRequestClaim(t *testing.T) {
 func TestReportUsesDistinctProductVocabulary(t *testing.T) {
 	t.Parallel()
 
-	assets := string(readCanvasAsset(t, "architecture_canvas.js"))
+	assets := string(readCanvasAsset(t, "ui_messages.js"))
+	assets += string(readCanvasAsset(t, "architecture_canvas.js"))
 	mainScript, err := os.ReadFile(filepath.Join("templates", "script.js"))
 	if err != nil {
 		t.Fatal(err)
@@ -310,11 +328,11 @@ func TestSourceOpenBrowserContractUsesOpaqueIDsAndTypedFallback(t *testing.T) {
 	}
 	for _, required := range []string{
 		`source_id: sourceID`,
-		`Opening in VS Code…`,
-		`VS Code is not available`,
-		`Copy repository-relative path`,
-		`Copy path:line:column`,
-		`Source changed since this report was generated`,
+		`main.toast.opening_vscode`,
+		`main.vs.code.is.not.available`,
+		`main.copy.repository.relative.path`,
+		`main.copy.path.line.column`,
+		`main.toast.source_changed_suffix`,
 	} {
 		if !bytes.Contains(script, []byte(required)) {
 			t.Fatalf("source-open browser contract is missing %q", required)

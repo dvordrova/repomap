@@ -24,7 +24,7 @@ import (
 const (
 	defaultEndpoint  = "https://api.deepseek.com/chat/completions"
 	defaultModel     = "deepseek-v4-flash"
-	defaultMaxTokens = 6000
+	defaultMaxTokens = 64_000
 	defaultTimeout   = 10 * time.Minute
 
 	authBearer = "bearer"
@@ -37,17 +37,31 @@ const (
 	envTimeout   = "REPOMAP_LLM_TIMEOUT"
 	envAuth      = "REPOMAP_LLM_AUTH"
 
-	legacyEnvEndpoint  = "DEEPSEEK_ENDPOINT"
-	legacyEnvModel     = "DEEPSEEK_MODEL"
-	legacyEnvAPIKey    = "DEEPSEEK_API_KEY"
-	legacyEnvMaxTokens = "DEEPSEEK_MAX_TOKENS"
-	legacyEnvTimeout   = "DEEPSEEK_TIMEOUT"
-	legacyEnvAuth      = "DEEPSEEK_AUTH"
+	legacyEnvEndpoint = "DEEPSEEK_ENDPOINT"
+	legacyEnvModel    = "DEEPSEEK_MODEL"
+	legacyEnvAPIKey   = "DEEPSEEK_API_KEY"
+	legacyEnvTimeout  = "DEEPSEEK_TIMEOUT"
+	legacyEnvAuth     = "DEEPSEEK_AUTH"
 )
 
 // OrientationPromptVersionJSON identifies the semantic orientation prompt and
 // request contract used by Orient and OrientPromptJSON.
-const OrientationPromptVersionJSON = "orientation-json-v10"
+const OrientationPromptVersionJSON = "orientation-json-v13"
+
+// SemanticOutputLanguageContractVersion identifies the default shared
+// language contract. A stage whose versioned prompt owns a closed output
+// language bypasses this wrapper; localization likewise owns its separate
+// source/target-locale contract.
+const SemanticOutputLanguageContractVersion = "canonical-english-output-v1"
+
+const canonicalEnglishSystemContract = `CANONICAL OUTPUT LANGUAGE CONTRACT (canonical-english-output-v1):
+- Write every human-readable prose value in English.
+- Keep JSON keys, enum values, exact schema literals, opaque IDs, repository paths, code identifiers, package/module names, API/protocol/product/library names, exact format tags, and quoted source text unchanged.
+- Copy values from closed lists of allowed literals exactly, even when their words look human-readable.
+- Return exactly the requested response shape.`
+
+const canonicalEnglishUserContract = `OUTPUT LANGUAGE:
+The response is the canonical semantic result. Before returning it, verify that every human-readable title, description, explanation, question, reason, warning, summary, and other prose value is English while protected technical values remain unchanged.`
 
 type Client struct {
 	HTTPClient *http.Client
@@ -134,7 +148,7 @@ func newFromEnv(requireAPIKey bool) (*Client, error) {
 	}
 
 	maxTokens := defaultMaxTokens
-	if s := value(envMaxTokens, legacyEnvMaxTokens); s != "" {
+	if s := strings.TrimSpace(os.Getenv(envMaxTokens)); s != "" {
 		n, err := strconv.Atoi(s)
 		if err != nil {
 			return nil, fmt.Errorf("%s must be an integer: %w", envMaxTokens, err)
@@ -212,6 +226,9 @@ func validateEndpoint(endpoint string) error {
 	if parsed.User != nil {
 		return fmt.Errorf("userinfo is not allowed")
 	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("query and fragment are not allowed")
+	}
 	return nil
 }
 
@@ -224,12 +241,13 @@ type thinkingConfig struct {
 }
 
 type chatRequest struct {
-	Model          string          `json:"model"`
-	Messages       []chatMessage   `json:"messages"`
-	Temperature    float64         `json:"temperature"`
-	MaxTokens      int             `json:"max_tokens"`
-	ResponseFormat *jsonFormat     `json:"response_format,omitempty"`
-	Thinking       *thinkingConfig `json:"thinking,omitempty"`
+	Model           string          `json:"model"`
+	Messages        []chatMessage   `json:"messages"`
+	Temperature     *float64        `json:"temperature,omitempty"`
+	MaxTokens       int             `json:"max_tokens"`
+	ResponseFormat  *jsonFormat     `json:"response_format,omitempty"`
+	Thinking        *thinkingConfig `json:"thinking,omitempty"`
+	ReasoningEffort string          `json:"reasoning_effort,omitempty"`
 }
 
 type chatMessage struct {
@@ -243,34 +261,64 @@ type chatResponse struct {
 		FinishReason string      `json:"finish_reason"`
 		Message      chatMessage `json:"message"`
 	} `json:"choices"`
-	Usage struct {
-		PromptTokens           int `json:"prompt_tokens"`
-		CompletionTokens       int `json:"completion_tokens"`
-		CompletionTokenDetails struct {
-			ReasoningTokens int `json:"reasoning_tokens"`
-		} `json:"completion_tokens_details"`
-	} `json:"usage"`
+	Usage *chatUsage `json:"usage"`
+}
+
+type chatUsage struct {
+	PromptTokens           int `json:"prompt_tokens"`
+	CompletionTokens       int `json:"completion_tokens"`
+	PromptCacheHitTokens   int `json:"prompt_cache_hit_tokens"`
+	PromptCacheMissTokens  int `json:"prompt_cache_miss_tokens"`
+	CompletionTokenDetails struct {
+		ReasoningTokens int `json:"reasoning_tokens"`
+	} `json:"completion_tokens_details"`
 }
 
 const maxRetries = 3
 
 const maxProviderErrorBytes = 8 * 1024
 
-const maxProviderResponseBytes = 16 * 1024 * 1024
+const maxProviderResponseBytes = modelresearch.ProviderResponseByteLimit
+
+var (
+	errJSONCompletionInvalid     = errors.New("llm response content is not valid JSON")
+	errResponseEnvelopeMalformed = errors.New("llm response envelope is malformed")
+)
+
+// IncompleteCompletionError reports an envelope that cannot represent one
+// complete semantic answer. FinishReason is a closed diagnostic value; an
+// unknown provider value is never echoed.
+type IncompleteCompletionError struct {
+	Stage        string
+	ChoiceCount  int
+	FinishReason string
+}
+
+func (err *IncompleteCompletionError) Error() string {
+	if err == nil {
+		return "llm response completion is incomplete"
+	}
+	stage := strings.TrimSpace(err.Stage)
+	if stage == "" {
+		stage = "semantic"
+	}
+	reason := err.FinishReason
+	if reason == "" {
+		reason = "unavailable"
+	}
+	return fmt.Sprintf(
+		"llm %s response completion is incomplete (choices=%d, finish_reason=%s)",
+		stage,
+		err.ChoiceCount,
+		reason,
+	)
+}
 
 func (c *Client) buildRequest(bundleJSON []byte) chatRequest {
-	return chatRequest{
-		Model: c.Model,
-		Messages: []chatMessage{
-			{
-				Role:    "system",
-				Content: "You are a senior software engineer helping orient inside a large unfamiliar repository. Infer the language from language_hints and use only the provided facts. Do not pretend to have read files that were not provided. Return valid json only.",
-			},
-			{
-				Role: "user",
-				Content: `Do not explain the whole repo. Help the developer choose what runtime/event flow to inspect next.
+	request := c.canonicalSemanticRequest(
+		`Do not explain the whole repo. Help the developer choose what runtime/event flow to inspect next.
 
-Treat allowed_paths as a closed exact set for every verified file field. Copy every referenced path exactly and in full: never shorten cmd/server/main.go to main.go. Before returning, verify that every likely_entrypoint, likely_files, first_files_to_open, and path-only evidence value is an exact string member of allowed_paths; omit a value or flow that cannot pass this membership check. Directory, package, and import paths are not files and must never appear in those verified fields, even when an import edge names them. For example, "internal/compact" is invalid unless that exact string occurs in allowed_paths as a file; omit it instead of treating the package or directory as a file. Do not guess a filename from a package path. unverified_paths may contain a suspected repository-relative file or directory that should be retrieved next, but never present it as verified evidence.
+The request-local reference fields embedded in the facts bundle are closed. Return only exact file refs (f0001...) in file-ref fields and exact evidence refs (e0001...) in evidence-ref fields. Never return a repository path, candidate_file_index id, package path, import path, path:line statement, or reference handle in a prose field. Never shorten, extend, prefix, substitute, or repair a ref. Never use a file ref where an evidence ref is required or an evidence ref where a file ref is required. Do not duplicate a ref within one field. Omit a value or flow that cannot use exact refs from this request. There is no unverified_paths response field and no filename inference or fallback from an entrypoint to the first likely file.
 
 Produce a json orientation report with this exact shape:
 {
@@ -280,13 +328,13 @@ Produce a json orientation report with this exact shape:
     {
       "name": "component or subsystem name",
       "role": "entry | boundary | coordination | domain | state | support | unknown",
-      "evidence": ["facts or paths from the bundle"],
+      "evidence_refs": ["exact e-ref embedded in this request"],
       "why_it_matters": "why this component matters for understanding the repo"
     }
   ],
   "first_files_to_open": [
     {
-      "path": "must be from allowed_paths",
+      "file_ref": "exact f-ref embedded in this request",
       "reason": "why this file is worth opening first"
     }
   ],
@@ -295,10 +343,10 @@ Produce a json orientation report with this exact shape:
       "name": "runtime or event flow name",
       "flow_type": "request | operational",
       "trigger": "what starts this flow",
-      "likely_entrypoint": "exact full path from allowed_paths, preferably one of likely_files",
-      "likely_files": ["all must be from allowed_paths"],
+      "likely_entrypoint_ref": "exact f-ref embedded in this request, preferably one of likely_file_refs",
+      "likely_file_refs": ["exact f-refs embedded in this request"],
       "why_interesting": "why this flow matters",
-      "evidence": ["facts from the bundle supporting this flow"],
+      "evidence_refs": ["exact e-refs embedded in this request that support this flow"],
       "confidence": 0.0
     }
   ],
@@ -306,7 +354,7 @@ Produce a json orientation report with this exact shape:
     {
       "word": "term found in paths or readme",
       "guess": "what it probably means in this repo",
-      "evidence": ["paths or readme excerpts from the bundle"]
+      "evidence_refs": ["exact e-refs embedded in this request"]
     }
   ],
   "questions_for_human": [
@@ -317,14 +365,8 @@ Produce a json orientation report with this exact shape:
       "id": "short question id",
       "purpose": "why resolving this question would improve architecture or a saved trace",
       "question": "one concrete high-value repository question",
-      "candidate_ids": ["opaque ids copied from candidate_file_index"],
+      "candidate_file_refs": ["exact f-refs from candidate_file_index in this request"],
       "evidence_categories": ["declaration, callsite, transition, source_window, test, or frontier"]
-    }
-  ],
-  "unverified_paths": [
-    {
-      "path": "path model suspects but was not present in allowed_paths",
-      "reason": "why it might be relevant"
     }
   ],
   "warnings": [
@@ -335,23 +377,27 @@ Produce a json orientation report with this exact shape:
 Important rules:
 - Candidate flows must be runtime/event-oriented (e.g. "CLI command dispatch", "HTTP request handling", "server startup", "plugin loading", "background job execution"), not folder-oriented (do not say "server module" or "pkg folder").
 - Set flow_type to "request" for user/request-driven work and "operational" for background, maintenance, threshold, consensus, or durability work. Prefer the strongest grounded evidence regardless of flow type.
-- An operational candidate must cite source_signal evidence. If that evidence is weak or only suggests a possible flow, cap confidence at 0.3 and state the uncertainty.
+- An operational candidate must cite an evidence_ref attached to a source_signals record. If that evidence is weak or only suggests a possible flow, cap confidence at 0.3 and state the uncertainty.
 - Give every high_level_map item one coarse navigation role. Use entry for process or command entrypoints, boundary for external protocols and adapters, coordination for lifecycle and orchestration, domain for core behavior, state for persistence or state ownership, support for configuration/operations/observability/testing, and unknown when the bundle does not support a useful choice. A role is an orientation hypothesis, not static or runtime proof.
-- Every candidate flow must include evidence from the bundle.
-- Propose two to four research_questions only when bounded local evidence could answer them. Use only opaque candidate_file_index ids and supplied evidence categories; do not invent or request paths. Treat omitted files as unknown rather than absent. Questions should target user-facing behavior, architecture gaps, or trace frontiers, not prettier names.
+- Every candidate flow must include evidence_refs from the facts bundle.
+- Propose two to four research_questions only when bounded local evidence could answer them. Select candidates only through exact candidate_file_refs and supplied evidence categories; do not invent or request paths. Treat omitted files as unknown rather than absent. Questions should target user-facing behavior, architecture gaps, or trace frontiers, not prettier names.
 - go.command_traces are locally extracted bounded syntax evidence. Preserve their typed relations: calls, registers_command, callback, constructs, registers, and starts_goroutine are not interchangeable. A handler_call with resolved=false is an exact call site but not a resolved concrete target. Prefer a complete command_trace over a filename-only CLI guess.
-- Keep each evidence item atomic. When citing source_signals or go.command_traces, start with its exact path:line and optionally add one short fact, for example "app/service.py:42 registers the handler". Never write "path line 42", "path lines 42-43", or "at line 42". For evidence without a grounded line, use either one exact full allowed_paths value or one non-path fact copied from the bundle. Never abbreviate a path.
+- Evidence is selected only by exact evidence_refs embedded in this request; do not rewrite referenced evidence as prose.
 - Distinguish facts from guesses. If confidence is low, say so in warnings.
-- Use only the provided facts bundle. Do not imagine files you cannot see.
+- Use only the provided facts bundle and its request-local reference fields. Do not imagine files you cannot see.
 
-Facts bundle JSON:
-` + string(bundleJSON),
-			},
-		},
-		Temperature:    0.1,
-		MaxTokens:      c.MaxTokens,
-		ResponseFormat: &jsonFormat{Type: "json_object"},
+Orientation facts bundle JSON:
+`+string(bundleJSON),
+		"You are a senior software engineer helping orient inside a large unfamiliar repository. Infer the language from language_hints and use only the provided facts. Do not pretend to have read files that were not provided. Return valid json only.",
+		true,
+	)
+	if isOfficialDeepSeekEndpoint(c.Endpoint) {
+		// Orientation is a bounded classification over an already compact local
+		// facts bundle. DeepSeek V4 otherwise enables thinking by default and can
+		// consume the entire JSON completion envelope without returning content.
+		request.Thinking = &thinkingConfig{Type: "disabled"}
 	}
+	return request
 }
 
 func (c *Client) OrientPromptJSON(bundleJSON []byte) ([]byte, error) {
@@ -370,19 +416,54 @@ func (c *Client) flowExplainPromptText(userContent, systemContent string) ([]byt
 }
 
 func (c *Client) flowExplainRequest(userContent, systemContent string, jsonMode bool) chatRequest {
+	return c.canonicalSemanticRequest(userContent, systemContent, jsonMode)
+}
+
+func (c *Client) canonicalSemanticRequest(
+	userContent,
+	systemContent string,
+	jsonMode bool,
+) chatRequest {
+	return c.semanticRequest(
+		withCanonicalEnglishUserContract(userContent),
+		withCanonicalEnglishSystemContract(systemContent),
+		jsonMode,
+	)
+}
+
+// semanticRequest builds one provider request without imposing a shared
+// output-language contract. It is reserved for stages whose versioned prompt
+// owns an explicit closed output language itself.
+func (c *Client) semanticRequest(
+	userContent,
+	systemContent string,
+	jsonMode bool,
+) chatRequest {
 	request := chatRequest{
 		Model: c.Model,
 		Messages: []chatMessage{
 			{Role: "system", Content: systemContent},
 			{Role: "user", Content: userContent},
 		},
-		Temperature: 0.1,
+		Temperature: float64Pointer(0.1),
 		MaxTokens:   c.MaxTokens,
 	}
 	if jsonMode {
 		request.ResponseFormat = &jsonFormat{Type: "json_object"}
 	}
 	return request
+}
+
+func withCanonicalEnglishSystemContract(systemContent string) string {
+	return systemContent + "\n\n" + canonicalEnglishSystemContract
+}
+
+func withCanonicalEnglishUserContract(userContent string) string {
+	return canonicalEnglishUserContract + "\n\n" + userContent
+}
+
+func float64Pointer(value float64) *float64 {
+	return &value
 }
 
 func (c *Client) FlowExplain(ctx context.Context, userContent, systemContent string) ([]byte, error) {
@@ -407,31 +488,20 @@ func (c *Client) Research(ctx context.Context, prompt modelresearch.Prompt) (mod
 	if err != nil {
 		return modelresearch.ProviderResult{}, err
 	}
-	var lastErr error
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			backoff := backoffDuration(attempt)
-			select {
-			case <-ctx.Done():
-				return modelresearch.ProviderResult{Attempts: attempt}, ctx.Err()
-			case <-time.After(backoff):
-			}
-		}
-		completion, shouldRetry, callErr := doChatMeasured(ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, true)
-		if callErr == nil {
-			return modelresearch.ProviderResult{
-				Content: completion.Content, Attempts: attempt + 1,
-				InputTokens: completion.InputTokens, OutputTokens: completion.OutputTokens,
-			}, nil
-		}
-		lastErr = callErr
-		if !shouldRetry {
-			return modelresearch.ProviderResult{Attempts: attempt + 1}, callErr
-		}
-	}
-	return modelresearch.ProviderResult{Attempts: maxRetries + 1}, fmt.Errorf(
-		"retries exhausted (%d attempts): %w", maxRetries+1, lastErr,
+	completion, attempts, callErr := executeChatWithTransportRetries(
+		ctx,
+		c.HTTPClient,
+		c.Endpoint,
+		c.APIKey,
+		c.Auth,
+		body,
+		true,
 	)
+	if callErr != nil {
+		return providerResultFromCompletion(completion, attempts, len(body)*attempts),
+			annotateResourceLimit(callErr, "targeted_research", c.MaxTokens)
+	}
+	return providerResultFromCompletion(completion, attempts, len(body)*attempts), nil
 }
 
 // CheckJSONCompatibility makes exactly one small synthetic request. It is used
@@ -442,7 +512,6 @@ func (c *Client) CheckJSONCompatibility(ctx context.Context) error {
 		"This is a provider compatibility check. Return valid JSON only.",
 		true,
 	)
-	reqPayload.MaxTokens = 64
 	body, err := json.Marshal(reqPayload)
 	if err != nil {
 		return fmt.Errorf("marshal llm compatibility request: %w", err)
@@ -491,7 +560,7 @@ func (c *Client) flowExplain(ctx context.Context, userContent, systemContent str
 		}
 		lastErr = err
 		if !shouldRetry {
-			return nil, err
+			return nil, annotateResourceLimit(err, "flow_explain", c.MaxTokens)
 		}
 	}
 
@@ -508,38 +577,83 @@ func (c *Client) Orient(ctx context.Context, bundleJSON []byte) ([]byte, error) 
 func (c *Client) OrientMeasured(ctx context.Context, bundleJSON []byte) (modelresearch.ProviderResult, error) {
 	stopWaiting := c.startWaitProgress(ctx, "orientation")
 	defer stopWaiting()
-	body, err := c.OrientPromptJSON(bundleJSON)
+	request := c.buildRequest(bundleJSON)
+	body, err := json.Marshal(request)
 	if err != nil {
 		return modelresearch.ProviderResult{}, fmt.Errorf("marshal llm request: %w", err)
 	}
-
-	var lastErr error
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			backoff := backoffDuration(attempt)
+	var (
+		measured         modelresearch.ProviderResult
+		lastErr          error
+		transportRetries int
+	)
+	for {
+		if measured.Attempts > 0 {
+			backoff := backoffDuration(measured.Attempts)
 			select {
 			case <-ctx.Done():
-				return modelresearch.ProviderResult{Attempts: attempt}, ctx.Err()
+				return measured, ctx.Err()
 			case <-time.After(backoff):
 			}
 		}
 
-		result, shouldRetry, err := doChatMeasured(ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, true)
+		result, shouldRetry, err := doChatMeasured(
+			ctx,
+			c.HTTPClient,
+			c.Endpoint,
+			c.APIKey,
+			c.Auth,
+			body,
+			true,
+		)
+		measured.Attempts++
+		measured.RequestBytes += len(body)
+		measured.ResponseBytes += result.ResponseBytes
+		measured.UsageReported = measured.UsageReported || result.UsageReported
+		measured.InputTokens += result.InputTokens
+		measured.OutputTokens += result.OutputTokens
+		measured.ReasoningTokens += result.ReasoningTokens
+		measured.PromptCacheHitTokens += result.PromptCacheHitTokens
+		measured.PromptCacheMissTokens += result.PromptCacheMissTokens
+		measured.Content = append([]byte(nil), result.Content...)
+		measured.FinishReason = result.FinishReason
+		measured.ChoiceCount = result.ChoiceCount
 		if err == nil {
-			return modelresearch.ProviderResult{
-				Content: result.Content, Attempts: attempt + 1,
-				InputTokens: result.InputTokens, OutputTokens: result.OutputTokens,
-			}, nil
+			return measured, nil
 		}
 		lastErr = err
-		if !shouldRetry {
-			return modelresearch.ProviderResult{Attempts: attempt + 1}, err
+		if shouldRetry && transportRetries < maxRetries {
+			transportRetries++
+			continue
 		}
+		if shouldRetry {
+			return measured, fmt.Errorf(
+				"retries exhausted (%d attempts): %w",
+				measured.Attempts,
+				lastErr,
+			)
+		}
+		return measured, annotateResourceLimit(err, "orientation", request.MaxTokens)
 	}
+}
 
-	return modelresearch.ProviderResult{Attempts: maxRetries + 1}, fmt.Errorf(
-		"retries exhausted (%d attempts): %w", maxRetries+1, lastErr,
-	)
+func providerResultFromCompletion(
+	completion chatCompletion,
+	attempts int,
+	requestBytes int,
+) modelresearch.ProviderResult {
+	return modelresearch.ProviderResult{
+		Content:  append([]byte(nil), completion.Content...),
+		Attempts: attempts, RequestBytes: requestBytes,
+		ResponseBytes: completion.ResponseBytes,
+		UsageReported: completion.UsageReported,
+		InputTokens:   completion.InputTokens, OutputTokens: completion.OutputTokens,
+		ReasoningTokens:       completion.ReasoningTokens,
+		FinishReason:          completion.FinishReason,
+		ChoiceCount:           completion.ChoiceCount,
+		PromptCacheHitTokens:  completion.PromptCacheHitTokens,
+		PromptCacheMissTokens: completion.PromptCacheMissTokens,
+	}
 }
 
 func (c *Client) startWaitProgress(ctx context.Context, stage string) func() {
@@ -586,9 +700,17 @@ func doChat(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth
 }
 
 type chatCompletion struct {
-	Content      []byte
-	InputTokens  int
-	OutputTokens int
+	Content               []byte
+	ResponseBytes         int
+	UsageReported         bool
+	InputTokens           int
+	OutputTokens          int
+	ReasoningTokens       int
+	FinishReason          string
+	ChoiceCount           int
+	PromptCacheHitTokens  int
+	PromptCacheMissTokens int
+	finishReasonClass     string
 }
 
 func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth string, body []byte, validateJSON bool) (chatCompletion, bool, error) {
@@ -618,17 +740,20 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxProviderResponseBytes+1))
 	if err != nil {
-		return chatCompletion{}, false, fmt.Errorf("read llm response: %w", err)
+		return chatCompletion{}, isRetryableNetworkError(err), fmt.Errorf("read llm response: %w", err)
 	}
 	if len(respBody) > maxProviderResponseBytes {
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return chatCompletion{}, isRetryableHTTP(resp.StatusCode), fmt.Errorf(
-				"llm request failed with status %d: %s...[truncated]",
-				resp.StatusCode,
-				safeProviderErrorText(respBody[:maxProviderErrorBytes]),
-			)
+		resourceErr := &ResourceLimitError{
+			Kind:            ResourceLimitResponseBytes,
+			Limit:           maxProviderResponseBytes,
+			Observed:        len(respBody),
+			ObservedKnown:   true,
+			ObservedAtLeast: true,
 		}
-		return chatCompletion{}, false, fmt.Errorf("llm response exceeds %d bytes", maxProviderResponseBytes)
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			resourceErr.HTTPStatus = resp.StatusCode
+		}
+		return chatCompletion{ResponseBytes: len(respBody)}, false, resourceErr
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -638,46 +763,105 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 
 	var parsed chatResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return chatCompletion{}, false, fmt.Errorf("parse llm response envelope: %w", err)
+		return chatCompletion{}, false, fmt.Errorf("%w: %v", errResponseEnvelopeMalformed, err)
 	}
-	if len(parsed.Choices) == 0 {
-		return chatCompletion{}, false, fmt.Errorf("llm response contains no choices")
+	usage := chatUsage{}
+	usageReported := parsed.Usage != nil
+	if usageReported {
+		usage = *parsed.Usage
+	}
+	completion := chatCompletion{
+		ResponseBytes:         len(respBody),
+		ChoiceCount:           len(parsed.Choices),
+		UsageReported:         usageReported,
+		InputTokens:           usage.PromptTokens,
+		OutputTokens:          usage.CompletionTokens,
+		ReasoningTokens:       usage.CompletionTokenDetails.ReasoningTokens,
+		PromptCacheHitTokens:  usage.PromptCacheHitTokens,
+		PromptCacheMissTokens: usage.PromptCacheMissTokens,
+	}
+	if completion.ChoiceCount != 1 {
+		return completion, false, &IncompleteCompletionError{
+			ChoiceCount: completion.ChoiceCount, FinishReason: "unavailable",
+		}
 	}
 	choice := parsed.Choices[0]
+	completion.FinishReason = knownFinishReason(choice.FinishReason)
+	completion.finishReasonClass = closedFinishReason(choice.FinishReason)
 	content := strings.TrimSpace(choice.Message.Content)
+	completion.Content = []byte(content)
+	if choice.FinishReason == "length" {
+		return completion, false, modelresearch.NewResourceLimitError(ResourceLimitError{
+			Kind:            ResourceLimitOutputTokens,
+			Observed:        usage.CompletionTokens,
+			ObservedKnown:   usageReported,
+			InputTokens:     usage.PromptTokens,
+			OutputTokens:    usage.CompletionTokens,
+			ReasoningTokens: usage.CompletionTokenDetails.ReasoningTokens,
+			FinishReason:    "length",
+		}, completion.Content)
+	}
 	if content == "" {
 		details := make([]string, 0, 4)
 		if finishReason := knownFinishReason(choice.FinishReason); finishReason != "" {
 			details = append(details, "finish_reason="+finishReason)
 		}
-		if parsed.Usage.CompletionTokens > 0 {
-			details = append(details, fmt.Sprintf("completion_tokens=%d", parsed.Usage.CompletionTokens))
+		if usage.CompletionTokens > 0 {
+			details = append(details, fmt.Sprintf("completion_tokens=%d", usage.CompletionTokens))
 		}
-		if parsed.Usage.CompletionTokenDetails.ReasoningTokens > 0 {
+		if usage.CompletionTokenDetails.ReasoningTokens > 0 {
 			details = append(details, fmt.Sprintf(
 				"reasoning_tokens=%d",
-				parsed.Usage.CompletionTokenDetails.ReasoningTokens,
+				usage.CompletionTokenDetails.ReasoningTokens,
 			))
 		} else if strings.TrimSpace(choice.Message.ReasoningContent) != "" {
 			details = append(details, "reasoning_content_present")
 		}
 		if len(details) > 0 {
-			return chatCompletion{}, false, fmt.Errorf("llm response content is empty (%s)", strings.Join(details, ", "))
+			return completion, false, fmt.Errorf("llm response content is empty (%s)", strings.Join(details, ", "))
 		}
-		return chatCompletion{}, false, fmt.Errorf("llm response content is empty")
+		return completion, false, fmt.Errorf("llm response content is empty")
 	}
 
 	if validateJSON {
 		var validate json.RawMessage
 		if err := json.Unmarshal([]byte(content), &validate); err != nil {
-			return chatCompletion{}, false, fmt.Errorf("llm response content is not valid JSON:\n%s", safeProviderErrorText([]byte(content)))
+			return completion, false, fmt.Errorf("%w: %v", errJSONCompletionInvalid, err)
 		}
 	}
 
-	return chatCompletion{
-		Content: []byte(content), InputTokens: parsed.Usage.PromptTokens,
-		OutputTokens: parsed.Usage.CompletionTokens,
-	}, false, nil
+	return completion, false, nil
+}
+
+func requireSingleStoppedCompletion(stage string, completion chatCompletion) error {
+	if completion.ChoiceCount == 1 && completion.finishReasonClass == "stop" {
+		return nil
+	}
+	return &IncompleteCompletionError{
+		Stage: stage, ChoiceCount: completion.ChoiceCount,
+		FinishReason: completion.finishReasonClass,
+	}
+}
+
+func annotateIncompleteCompletion(err error, stage string) error {
+	var incomplete *IncompleteCompletionError
+	if !errors.As(err, &incomplete) {
+		return err
+	}
+	return &IncompleteCompletionError{
+		Stage: stage, ChoiceCount: incomplete.ChoiceCount,
+		FinishReason: incomplete.FinishReason,
+	}
+}
+
+func closedFinishReason(reason string) string {
+	if known := knownFinishReason(reason); known != "" {
+		return known
+	}
+	if strings.TrimSpace(reason) == "" {
+		return "missing"
+	}
+	return "unknown"
 }
 
 func knownFinishReason(reason string) string {

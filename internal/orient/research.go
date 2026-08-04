@@ -2,17 +2,15 @@ package orient
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/evidence"
-	"github.com/dvordrova/repomap/internal/experiment/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/flowproof"
 	"github.com/dvordrova/repomap/internal/gofacts"
@@ -20,10 +18,12 @@ import (
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/sourcesignals"
+	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
 
 type orientationCall struct {
 	Raw        []byte
+	Prepared   *orientationPart
 	Metrics    modelresearch.StageMetrics
 	CacheInput modelresearch.StageCacheInput
 	SaveCache  bool
@@ -54,26 +54,53 @@ func obtainOrientation(
 	repository modelresearch.RepositoryContext,
 	profile string,
 	bundleJSON []byte,
+	evidenceBundleHash string,
 	requestJSON []byte,
+	useCache bool,
+	prepareCached func([]byte) (orientationPart, error),
 ) (orientationCall, error) {
 	call := orientationCall{Metrics: modelresearch.StageMetrics{
 		Stage: "orientation", Status: "prepared", RequestBytes: len(requestJSON),
 	}}
-	bundleHash := modelresearch.SHA256(bundleJSON)
-	if dw != nil {
+	if evidenceBundleHash == "" {
+		return call, fmt.Errorf("orientation cache: private evidence identity is required")
+	}
+	bundleHash := evidenceBundleHash
+	if dw != nil && useCache {
+		endpointSHA, err := modelresearch.ProviderEndpointSHA256(client.Endpoint)
+		if err != nil {
+			return call, fmt.Errorf("orientation cache: %w", err)
+		}
 		call.CacheInput = modelresearch.StageCacheInput{
 			RunsDir: dw.BaseDir,
 			Fingerprint: modelresearch.FingerprintInput{
 				Repository: repository, Stage: "orientation",
 				PromptVersion: deepseek.OrientationPromptVersionJSON,
 				Profile:       profile, Model: client.Model,
-				EvidenceBundleHash: bundleHash, PolicyVersion: policy.Version,
+				ProviderEndpointSHA256: endpointSHA,
+				RequestSHA256:          modelresearch.SHA256(requestJSON),
+				EvidenceBundleHash:     bundleHash, PolicyVersion: policy.Version,
+				CacheContract: orientationCacheContractVersion,
 			},
 			Request: requestJSON, EvidenceBundleHash: bundleHash,
 		}
 		cached, found, err := modelresearch.LoadStageResponse(call.CacheInput)
 		if err != nil {
 			return call, fmt.Errorf("orientation cache: %w", err)
+		}
+		if found {
+			if prepareCached == nil {
+				return call, fmt.Errorf("orientation cache: semantic validator is required")
+			}
+			prepared, prepareErr := prepareCached(cached.Content)
+			if prepareErr != nil {
+				if err := modelresearch.InvalidateStageResponse(call.CacheInput); err != nil {
+					return call, fmt.Errorf("orientation cache: invalidate rejected hit: %w", err)
+				}
+				found = false
+			} else {
+				call.Prepared = &prepared
+			}
 		}
 		if found {
 			call.Raw = cached.Content
@@ -92,7 +119,8 @@ func obtainOrientation(
 	started := time.Now()
 	result, err := client.OrientMeasured(ctx, bundleJSON)
 	call.Metrics.LatencyMillis = time.Since(started).Milliseconds()
-	call.Metrics.ResponseBytes = len(result.Content)
+	call.Metrics.RequestBytes = result.RequestBytes
+	call.Metrics.ResponseBytes = max(len(result.Content), result.ResponseBytes)
 	call.Metrics.InputTokens = result.InputTokens
 	call.Metrics.OutputTokens = result.OutputTokens
 	call.Metrics.SemanticCalls = 1
@@ -169,7 +197,7 @@ func runTargetedResearch(
 	traceIDs := savedFlowProofIDs(report.CandidateFlows)
 	state.Theory.RelatedTraceIDs = append([]string(nil), traceIDs...)
 	warnings := make([]string, 0)
-	for _, planned := range plan.Selected {
+	for plannedIndex, planned := range plan.Selected {
 		if err := ctx.Err(); err != nil {
 			return warnings, err
 		}
@@ -179,17 +207,23 @@ func runTargetedResearch(
 			Activity: "targeted research", FileCount: len(planned.Scope.LocallyInspected),
 			EvidenceCount: len(planned.Bundle.Evidence),
 		})
+		runsDir := dw.BaseDir
+		if opts.NoCache {
+			runsDir = ""
+		}
+		endpointSHA, endpointErr := modelresearch.ProviderEndpointSHA256(client.Endpoint)
+		if endpointErr != nil {
+			return warnings, fmt.Errorf("targeted model research cache: %w", endpointErr)
+		}
 		round, callErr := modelresearch.ExecuteRound(ctx, modelresearch.ExecuteInput{
 			Plan: planned, Policy: state.Policy, Usage: state.Usage, Repository: state.Repository,
-			RunsDir: dw.BaseDir, RunDir: dw.RunDir(),
-			Profile: "openai-compatible/" + client.Auth, Model: client.Model, Provider: client,
+			RunsDir: runsDir, RunDir: dw.RunDir(),
+			Profile: "openai-compatible/" + client.Auth, Model: client.Model,
+			ProviderEndpointSHA256: endpointSHA, Provider: client,
+			ExchangeWriter: dw, ExchangeOrdinal: plannedIndex + 1,
 		})
 		if err := ctx.Err(); err != nil {
 			return warnings, err
-		}
-		modelresearch.ApplyRound(state, planned, round)
-		if artifactErr := writeResearchBundleArtifact(dw, round, planned.Bundle); artifactErr != nil {
-			warnings = append(warnings, fmt.Sprintf("persist targeted evidence bundle: %v", artifactErr))
 		}
 		attemptState := string(round.Status)
 		runMeta.RequestAttempts = append(runMeta.RequestAttempts, debugdump.RequestAttempt{
@@ -197,6 +231,10 @@ func runTargetedResearch(
 			ProviderCallCount: boolInt(!round.Cached && round.RequestBytes > 0),
 			LatencyMillis:     optionalMillis(round.LatencyMillis),
 		})
+		if callErr != nil && isResourceLimitError(callErr) {
+			return warnings, callErr
+		}
+		modelresearch.ApplyRound(state, planned, round)
 		if callErr != nil {
 			warnings = append(warnings, fmt.Sprintf("targeted model research %q failed; local evidence was preserved: %v", round.Question, callErr))
 		}
@@ -228,6 +266,11 @@ func runTargetedResearch(
 	runMeta.ProviderRequestCount = state.Usage.SemanticCalls
 	runMeta.ExternalRequestBytes = state.Usage.RequestBytes
 	return warnings, nil
+}
+
+func isResourceLimitError(err error) bool {
+	var limitErr *deepseek.ResourceLimitError
+	return errors.As(err, &limitErr)
 }
 
 func addResearchFocusLocations(
@@ -405,13 +448,4 @@ func optionalMillis(value int64) *int64 {
 		return nil
 	}
 	return &value
-}
-
-func writeResearchBundleArtifact(dw *debugdump.Writer, round modelresearch.ResearchRound, bundle modelresearch.EvidenceBundle) error {
-	data, err := json.MarshalIndent(bundle, "", "  ")
-	if err != nil {
-		return err
-	}
-	subdir := filepath.Join("research", strings.TrimSpace(round.ID))
-	return dw.WriteDirFile(subdir, "evidence_bundle.json", append(data, '\n'))
 }

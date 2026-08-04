@@ -14,7 +14,7 @@ import (
 
 // ArchitectureCanvasVersion changes when the saved projection semantics or
 // identity rules change. It is independent of the landscape and proof versions.
-const ArchitectureCanvasVersion = 5
+const ArchitectureCanvasVersion = 9
 
 type ArchitectureCanvasInput struct {
 	CandidateBundle componentmap.CandidateBundle
@@ -32,31 +32,33 @@ type ArchitectureFlowInput struct {
 }
 
 type ArchitectureCanvas struct {
-	Version                int                                   `json:"version"`
-	LandscapeVersion       int                                   `json:"landscape_version"`
-	FlowProofVersion       int                                   `json:"flowproof_version"`
-	Fallback               bool                                  `json:"fallback"`
-	FallbackReason         componentmap.FallbackReason           `json:"fallback_reason,omitempty"`
-	ValidationOutcome      componentmap.ValidationOutcome        `json:"validation_outcome"`
-	ArchitectureSource     componentmap.ArchitectureSource       `json:"architecture_source"`
-	ArchitectureLevel      int                                   `json:"architecture_level"`
-	Normalizations         []componentmap.NormalizationOperation `json:"normalization_operations,omitempty"`
-	OriginalProposalSHA256 string                                `json:"original_proposal_sha256,omitempty"`
-	RepositoryArchetype    componentmap.RepositoryArchetype      `json:"repository_archetype"`
-	GroundingMode          componentmap.GroundingMode            `json:"grounding_mode"`
-	Title                  string                                `json:"title"`
-	Subtitle               string                                `json:"subtitle"`
-	BehaviorAnchors        []componentmap.BehaviorAnchor         `json:"behavior_anchors,omitempty"`
-	Subsystems             []ArchitectureSubsystem               `json:"subsystems"`
-	Components             []ArchitectureComponent               `json:"components"`
-	Surfaces               []ArchitectureSurface                 `json:"surfaces,omitempty"`
-	Suggestions            []ArchitectureSuggestion              `json:"suggested_investigations,omitempty"`
-	StructuralFacts        []componentmap.LocalRelation          `json:"structural_facts,omitempty"`
-	StructuralEdges        []ArchitectureStructuralEdge          `json:"structural_edges,omitempty"`
-	Flows                  []ArchitectureFlow                    `json:"flows,omitempty"`
-	FlowEdges              []ArchitectureFlowEdge                `json:"flow_edges,omitempty"`
-	Frontiers              []ArchitectureFrontier                `json:"frontiers,omitempty"`
-	Diagnostics            []ArchitectureDiagnostic              `json:"diagnostics,omitempty"`
+	Version                   int                                   `json:"version"`
+	LandscapeVersion          int                                   `json:"landscape_version"`
+	FlowProofVersion          int                                   `json:"flowproof_version"`
+	Fallback                  bool                                  `json:"fallback"`
+	FallbackReason            componentmap.FallbackReason           `json:"fallback_reason,omitempty"`
+	ValidationOutcome         componentmap.ValidationOutcome        `json:"validation_outcome"`
+	ArchitectureSource        componentmap.ArchitectureSource       `json:"architecture_source"`
+	ArchitectureLevel         int                                   `json:"architecture_level"`
+	Normalizations            []componentmap.NormalizationOperation `json:"normalization_operations,omitempty"`
+	OriginalProposalSHA256    string                                `json:"original_proposal_sha256,omitempty"`
+	RepositoryArchetype       componentmap.RepositoryArchetype      `json:"repository_archetype"`
+	GroundingMode             componentmap.GroundingMode            `json:"grounding_mode"`
+	Title                     string                                `json:"title"`
+	Subtitle                  string                                `json:"subtitle"`
+	BehaviorAnchors           []componentmap.BehaviorAnchor         `json:"behavior_anchors,omitempty"`
+	Subsystems                []ArchitectureSubsystem               `json:"subsystems"`
+	Components                []ArchitectureComponent               `json:"components"`
+	LocalRemainderComponentID componentmap.ComponentID              `json:"local_remainder_component_id,omitempty"`
+	StructuralLocators        []ArchitectureStructuralLocator       `json:"structural_locators,omitempty"`
+	Surfaces                  []ArchitectureSurface                 `json:"surfaces,omitempty"`
+	Suggestions               []ArchitectureSuggestion              `json:"suggested_investigations,omitempty"`
+	StructuralFacts           []componentmap.LocalRelation          `json:"structural_facts,omitempty"`
+	StructuralEdges           []ArchitectureStructuralEdge          `json:"structural_edges,omitempty"`
+	Flows                     []ArchitectureFlow                    `json:"flows,omitempty"`
+	FlowEdges                 []ArchitectureFlowEdge                `json:"flow_edges,omitempty"`
+	Frontiers                 []ArchitectureFrontier                `json:"frontiers,omitempty"`
+	Diagnostics               []ArchitectureDiagnostic              `json:"diagnostics,omitempty"`
 }
 
 type ArchitectureSubsystem struct {
@@ -81,6 +83,15 @@ type ArchitectureComponent struct {
 	AnchorIDs                 []string                   `json:"anchor_ids,omitempty"`
 	Hypothesis                bool                       `json:"hypothesis,omitempty"`
 	SourceIDs                 []componentmap.ComponentID `json:"source_component_ids,omitempty"`
+}
+
+// ArchitectureStructuralLocator retains an exact producer-owned source or
+// containment node without turning it into a model-authored conceptual
+// member. ParticipatingComponentIDs is the complete sorted union recovered
+// locally through exact ParentID containment; it never claims ownership.
+type ArchitectureStructuralLocator struct {
+	Locator                   componentmap.Candidate     `json:"locator"`
+	ParticipatingComponentIDs []componentmap.ComponentID `json:"participating_component_ids,omitempty"`
 }
 
 // ArchitectureSurface is a presentation join over an existing deterministic
@@ -125,10 +136,12 @@ type ArchitectureSuggestion struct {
 }
 
 type ArchitectureStructuralEdge struct {
-	ID              string                     `json:"id"`
-	FromComponentID componentmap.ComponentID   `json:"from_component_id"`
-	ToComponentID   componentmap.ComponentID   `json:"to_component_id"`
-	Witness         componentmap.LocalRelation `json:"witness"`
+	ID               string                     `json:"id"`
+	FromComponentIDs []componentmap.ComponentID `json:"from_component_ids,omitempty"`
+	ToComponentIDs   []componentmap.ComponentID `json:"to_component_ids,omitempty"`
+	FromComponentID  componentmap.ComponentID   `json:"from_component_id,omitempty"`
+	ToComponentID    componentmap.ComponentID   `json:"to_component_id,omitempty"`
+	Witness          componentmap.LocalRelation `json:"witness"`
 }
 
 type ArchitectureFlow struct {
@@ -160,14 +173,15 @@ type ArchitectureFlow struct {
 }
 
 type ArchitectureFlowStep struct {
-	ID            string                          `json:"id"`
-	Kind          flowproof.AnchorKind            `json:"kind"`
-	Label         string                          `json:"label"`
-	QualifiedName string                          `json:"qualified_name,omitempty"`
-	Location      *evidence.Location              `json:"location,omitempty"`
-	BranchID      string                          `json:"branch_id,omitempty"`
-	ComponentID   componentmap.ComponentID        `json:"component_id,omitempty"`
-	Binding       *componentmap.FlowAnchorBinding `json:"binding,omitempty"`
+	ID                        string                          `json:"id"`
+	Kind                      flowproof.AnchorKind            `json:"kind"`
+	Label                     string                          `json:"label"`
+	QualifiedName             string                          `json:"qualified_name,omitempty"`
+	Location                  *evidence.Location              `json:"location,omitempty"`
+	BranchID                  string                          `json:"branch_id,omitempty"`
+	ComponentID               componentmap.ComponentID        `json:"component_id,omitempty"`
+	ParticipatingComponentIDs []componentmap.ComponentID      `json:"participating_component_ids,omitempty"`
+	Binding                   *componentmap.FlowAnchorBinding `json:"binding,omitempty"`
 }
 
 type ArchitectureFlowBranch struct {
@@ -217,9 +231,9 @@ type ArchitectureDiagnostic struct {
 }
 
 type architectureCanvasIndex struct {
-	componentOwners map[componentmap.MemberID][]componentmap.ComponentID
-	bindings        map[architectureBindingKey]componentmap.FlowAnchorBinding
-	flowNames       map[componentmap.FlowID]string
+	memberComponents map[componentmap.MemberID][]componentmap.ComponentID
+	bindings         map[architectureBindingKey]componentmap.FlowAnchorBinding
+	flowNames        map[componentmap.FlowID]string
 }
 
 type architectureBindingKey struct {
@@ -261,13 +275,27 @@ func ProjectArchitectureCanvas(input ArchitectureCanvasInput) (ArchitectureCanva
 		GroundingMode:          input.CandidateBundle.GroundingMode,
 		BehaviorAnchors:        append([]componentmap.BehaviorAnchor(nil), input.CandidateBundle.BehaviorAnchors...),
 	}
+	remainderComponentID, err := architectureLocalRemainderComponentID(input.Landscape)
+	if err != nil {
+		return ArchitectureCanvas{}, fmt.Errorf("architecture canvas: local remainder: %w", err)
+	}
+	canvas.LocalRemainderComponentID = remainderComponentID
 	canvas.Title, canvas.Subtitle = architectureGroundingWording(canvas.ArchitectureSource, canvas.GroundingMode)
 	index := projectArchitectureLandscape(input.CandidateBundle, input.Landscape, &canvas)
-	projectArchitectureStructuralFacts(input.Landscape.Relations, index.componentOwners, &canvas)
+	projectArchitectureStructuralLocators(input.CandidateBundle, input.Landscape, &index, &canvas)
+	projectArchitectureStructuralFacts(input.Landscape.Relations, index.memberComponents, &canvas)
 	projectArchitectureFlows(input.Flows, index, &canvas)
 
 	sort.Slice(canvas.StructuralFacts, func(i, j int) bool {
 		return canvas.StructuralFacts[i].ID < canvas.StructuralFacts[j].ID
+	})
+	sort.Slice(canvas.StructuralLocators, func(i, j int) bool {
+		left := canvas.StructuralLocators[i].Locator.ID
+		right := canvas.StructuralLocators[j].Locator.ID
+		if left.Kind != right.Kind {
+			return left.Kind < right.Kind
+		}
+		return left.Value < right.Value
 	})
 	sort.Slice(canvas.StructuralEdges, func(i, j int) bool {
 		return canvas.StructuralEdges[i].ID < canvas.StructuralEdges[j].ID
@@ -284,15 +312,108 @@ func ProjectArchitectureCanvas(input ArchitectureCanvasInput) (ArchitectureCanva
 	return canvas, nil
 }
 
+func architectureLocalRemainderComponentID(landscape componentmap.Landscape) (componentmap.ComponentID, error) {
+	if len(landscape.LocalRemainderMemberIDs) == 0 {
+		return "", nil
+	}
+	remainder := make(map[componentmap.MemberID]struct{}, len(landscape.LocalRemainderMemberIDs))
+	for _, memberID := range landscape.LocalRemainderMemberIDs {
+		remainder[memberID] = struct{}{}
+	}
+	var matched componentmap.ComponentID
+	for _, subsystem := range landscape.Subsystems {
+		if subsystem.Category != componentmap.SubsystemCategoryDiagnostic {
+			continue
+		}
+		for _, component := range subsystem.Components {
+			if len(component.Members) != len(remainder) {
+				continue
+			}
+			exact := true
+			for _, member := range component.Members {
+				if _, exists := remainder[member.ID]; !exists {
+					exact = false
+					break
+				}
+			}
+			if !exact {
+				continue
+			}
+			if matched != "" {
+				return "", fmt.Errorf("multiple diagnostic components match exact local remainder identities")
+			}
+			matched = component.ID
+		}
+	}
+	if matched == "" {
+		return "", fmt.Errorf("no diagnostic component matches exact local remainder identities")
+	}
+	return matched, nil
+}
+
+func projectArchitectureStructuralLocators(
+	bundle componentmap.CandidateBundle,
+	landscape componentmap.Landscape,
+	index *architectureCanvasIndex,
+	canvas *ArchitectureCanvas,
+) {
+	if len(landscape.StructuralLocators) == 0 {
+		return
+	}
+	known := make(map[componentmap.MemberID]componentmap.Candidate, len(bundle.Candidates))
+	for _, candidate := range bundle.Candidates {
+		known[candidate.ID] = candidate
+	}
+
+	for _, locator := range landscape.StructuralLocators {
+		participants := make([]componentmap.ComponentID, 0)
+		// Exact conceptual ancestors provide local containment context.
+		for parentID := locator.ParentID; parentID != nil; {
+			parent, exists := known[*parentID]
+			if !exists {
+				break
+			}
+			if parent.Role == componentmap.CandidateRoleConceptualMember {
+				participants = append(participants, index.memberComponents[parent.ID]...)
+			}
+			parentID = parent.ParentID
+		}
+		// Exact conceptual descendants provide the other side of a structural
+		// source container. No path, name or proposal ordering participates.
+		for _, candidate := range bundle.Candidates {
+			if candidate.Role != componentmap.CandidateRoleConceptualMember {
+				continue
+			}
+			for parentID := candidate.ParentID; parentID != nil; {
+				if *parentID == locator.ID {
+					participants = append(participants, index.memberComponents[candidate.ID]...)
+					break
+				}
+				parent, exists := known[*parentID]
+				if !exists {
+					break
+				}
+				parentID = parent.ParentID
+			}
+		}
+		participants = uniqueArchitectureComponentIDs(participants)
+		index.memberComponents[locator.ID] = append([]componentmap.ComponentID(nil), participants...)
+		canvas.StructuralLocators = append(canvas.StructuralLocators, ArchitectureStructuralLocator{
+			Locator:                   cloneArchitectureCandidate(locator),
+			ParticipatingComponentIDs: append([]componentmap.ComponentID(nil), participants...),
+		})
+	}
+}
+
 func projectArchitectureLandscape(
 	bundle componentmap.CandidateBundle,
 	landscape componentmap.Landscape,
 	canvas *ArchitectureCanvas,
 ) architectureCanvasIndex {
 	index := architectureCanvasIndex{
-		componentOwners: make(map[componentmap.MemberID][]componentmap.ComponentID),
-		bindings:        make(map[architectureBindingKey]componentmap.FlowAnchorBinding),
-		flowNames:       make(map[componentmap.FlowID]string, len(bundle.Flows)),
+		memberComponents: make(map[componentmap.MemberID][]componentmap.ComponentID),
+		bindings:         make(map[architectureBindingKey]componentmap.FlowAnchorBinding),
+		flowNames:        make(map[componentmap.FlowID]string, len(bundle.Flows)),
 	}
 	for _, flow := range bundle.Flows {
 		index.flowNames[flow.ID] = flow.Name
@@ -309,10 +430,12 @@ func projectArchitectureLandscape(
 			projected.ComponentIDs = append(projected.ComponentIDs, component.ID)
 			members := append([]componentmap.Candidate(nil), component.Members...)
 			participatingFlows := make(map[componentmap.FlowID]struct{})
-			for _, member := range component.Members {
-				index.componentOwners[member.ID] = append(index.componentOwners[member.ID], component.ID)
-				for _, participation := range member.Participations {
-					participatingFlows[participation.FlowID] = struct{}{}
+			if component.ID != canvas.LocalRemainderComponentID {
+				for _, member := range component.Members {
+					index.memberComponents[member.ID] = append(index.memberComponents[member.ID], component.ID)
+					for _, participation := range member.Participations {
+						participatingFlows[participation.FlowID] = struct{}{}
+					}
 				}
 			}
 			canvas.Components = append(canvas.Components, ArchitectureComponent{
@@ -333,7 +456,7 @@ func projectArchitectureLandscape(
 
 func projectArchitectureStructuralFacts(
 	relations []componentmap.LocalRelation,
-	owners map[componentmap.MemberID][]componentmap.ComponentID,
+	memberComponents map[componentmap.MemberID][]componentmap.ComponentID,
 	canvas *ArchitectureCanvas,
 ) {
 	for _, relation := range relations {
@@ -342,24 +465,23 @@ func projectArchitectureStructuralFacts(
 			continue
 		}
 
-		fromOwners := uniqueArchitectureComponentIDs(owners[relation.From])
-		toOwners := uniqueArchitectureComponentIDs(owners[relation.To])
-		if len(fromOwners) != 1 || len(toOwners) != 1 {
-			canvas.Diagnostics = append(canvas.Diagnostics, newArchitectureDiagnostic(
-				"projection", "warning", "structural.ambiguous_component_owner",
-				fmt.Sprintf("structural fact %q has no unique component endpoints", relation.ID), "", nil,
-			))
-			continue
+		fromComponents := uniqueArchitectureComponentIDs(memberComponents[relation.From])
+		toComponents := uniqueArchitectureComponentIDs(memberComponents[relation.To])
+		edge := ArchitectureStructuralEdge{
+			ID:               architectureStableID("structural-edge", relation.ID),
+			FromComponentIDs: fromComponents, ToComponentIDs: toComponents,
+			Witness: relation,
 		}
-		if fromOwners[0] == toOwners[0] {
-			continue
+		// Singular endpoints are a presentation convenience only. Plural or
+		// absent conceptual participation remains preserved on the exact
+		// member-level relation and must never be collapsed by array order.
+		if len(fromComponents) == 1 {
+			edge.FromComponentID = fromComponents[0]
 		}
-		canvas.StructuralEdges = append(canvas.StructuralEdges, ArchitectureStructuralEdge{
-			ID:              architectureStableID("structural-edge", relation.ID),
-			FromComponentID: fromOwners[0],
-			ToComponentID:   toOwners[0],
-			Witness:         relation,
-		})
+		if len(toComponents) == 1 {
+			edge.ToComponentID = toComponents[0]
+		}
+		canvas.StructuralEdges = append(canvas.StructuralEdges, edge)
 	}
 }
 
@@ -367,6 +489,8 @@ func architectureGroundingWording(source componentmap.ArchitectureSource, mode c
 	switch source {
 	case componentmap.SourceLocalAnchors:
 		return "Evidence-backed architecture skeleton", "Built from exact local architecture anchors"
+	case componentmap.SourceLocalPackages:
+		return "Repository architecture", "Built from exact local package and repository structure"
 	case componentmap.SourcePackageFallback:
 		return "Package landscape", "Behavioral grounding was insufficient or the architecture proposal was rejected"
 	}
@@ -376,7 +500,7 @@ func architectureGroundingWording(source componentmap.ArchitectureSource, mode c
 	case componentmap.GroundingMixed:
 		return "Architecture hypotheses and grounded behavior", "Some areas remain package-derived"
 	default:
-		return "Package landscape", "Behavioral grounding was insufficient or the architecture proposal was rejected"
+		return "Conceptual architecture", "Model-assisted grouping of exact local repository members"
 	}
 }
 
@@ -826,21 +950,16 @@ func projectArchitectureAnchorBinding(
 		))
 		return
 	}
-	owners := uniqueArchitectureComponentIDs(index.componentOwners[binding.MemberID])
+	participants := uniqueArchitectureComponentIDs(index.memberComponents[binding.MemberID])
 	bindingCopy := binding
 	step.Binding = &bindingCopy
-	if len(owners) == 1 {
-		step.ComponentID = owners[0]
+	step.ParticipatingComponentIDs = participants
+	if len(participants) > 0 {
 		return
 	}
-	kind := "unassigned_component"
-	reason := "bound member has no component owner"
-	if len(owners) > 1 {
-		kind = "ambiguous_component"
-		reason = "bound member has more than one component owner"
-	}
 	canvas.Frontiers = append(canvas.Frontiers, newArchitectureFrontier(
-		flowID, kind, anchor.ID, "", "", reason, anchor.Location,
+		flowID, "unassigned_component", anchor.ID, "", "",
+		"bound member has no participating conceptual component", anchor.Location,
 	))
 }
 
@@ -1114,6 +1233,38 @@ func cloneArchitectureSlot(slot flowproof.Slot) flowproof.Slot {
 	cloned := slot
 	cloned.EvidenceIDs = append([]string(nil), slot.EvidenceIDs...)
 	cloned.Provenance = cloneArchitectureProvenance(slot.Provenance)
+	return cloned
+}
+
+func cloneArchitectureCandidate(candidate componentmap.Candidate) componentmap.Candidate {
+	cloned := candidate
+	if candidate.ParentID != nil {
+		parentID := *candidate.ParentID
+		cloned.ParentID = &parentID
+	}
+	if candidate.Facts != nil {
+		cloned.Facts = make([]componentmap.LocalFact, len(candidate.Facts))
+		for index, fact := range candidate.Facts {
+			cloned.Facts[index] = cloneArchitectureLocalFact(fact)
+		}
+	}
+	if candidate.Participations != nil {
+		cloned.Participations = make([]componentmap.FlowParticipation, len(candidate.Participations))
+		for index, participation := range candidate.Participations {
+			cloned.Participations[index] = participation
+			cloned.Participations[index].Evidence = cloneArchitectureLocalFact(participation.Evidence)
+		}
+	}
+	return cloned
+}
+
+func cloneArchitectureLocalFact(fact componentmap.LocalFact) componentmap.LocalFact {
+	cloned := fact
+	cloned.Location = cloneArchitectureLocation(fact.Location)
+	cloned.Provenance = cloneArchitectureProvenance(fact.Provenance)
+	for index := range cloned.Provenance {
+		cloned.Provenance[index].Location = cloneArchitectureLocation(cloned.Provenance[index].Location)
+	}
 	return cloned
 }
 

@@ -45,7 +45,11 @@ func TestEditorLauncherStartsWithoutWaitingAndPassesExactTarget(t *testing.T) {
 	deadline := time.Now().Add(time.Second)
 	for {
 		data, err := os.ReadFile(record)
-		if err == nil {
+		// The helper writes the record through os.WriteFile, whose O_TRUNC
+		// open makes the file briefly visible empty before the payload is
+		// written; under parallel full-suite load that window is wide enough
+		// to read. Retry on empty content instead of failing on a race.
+		if err == nil && len(strings.TrimSpace(string(data))) > 0 {
 			if !strings.Contains(string(data), "--goto\n/repo/main.go:42:7") {
 				t.Fatalf("helper arguments = %q", data)
 			}

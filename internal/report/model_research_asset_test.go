@@ -9,13 +9,14 @@ import (
 
 func TestModelResearchDetailsRemainCollapsedAndTyped(t *testing.T) {
 	for _, required := range []string{
-		"Model research",
-		"Provider calls:",
-		"External request bytes:",
-		"Local authorized files:",
-		"Initial model summaries:",
-		"Focused local evidence inspected:",
-		"Targeted model evidence windows:",
+		"main.chrome.model.research",
+		"main.research.provider_calls",
+		"main.research.external_request_bytes",
+		"main.research.local_authorized_files",
+		"main.research.initial_model_summaries",
+		"main.research.focused_local_evidence",
+		"main.research.targeted_model_windows",
+		"main.guided_tour_editor",
 		"rejected_findings",
 		"unresolved_frontiers",
 	} {
@@ -40,7 +41,7 @@ func TestModelResearchDetailsRemainCollapsedAndTyped(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(html), `"local_authorized_files":382`) ||
-		!strings.Contains(string(html), `"max_semantic_calls":4`) {
+		!strings.Contains(string(html), `"max_semantic_calls":5`) {
 		t.Fatalf("rendered report omitted typed research state: %s", html)
 	}
 }

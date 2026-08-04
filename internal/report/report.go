@@ -1,25 +1,130 @@
 package report
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"os"
+	"path"
+	"path/filepath"
 	"sort"
+	"strings"
 
+	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/flowproof"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/gofacts"
+	"github.com/dvordrova/repomap/internal/guidedtour"
 	"github.com/dvordrova/repomap/internal/modelresearch"
+	"github.com/dvordrova/repomap/internal/navigator"
+	"github.com/dvordrova/repomap/internal/orient"
+	"github.com/dvordrova/repomap/internal/repositoryatlas"
+	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 )
 
-const CurrentFormatVersion = 18
+const CurrentFormatVersion = 30
+
+const AtlasStudyReportProjectionVersion = 7
+
+// MaxAtlasStudyBrowseSpans bounds the report-side provider-free per-span
+// browse. Truthful Total/Shown keep larger repositories honest; the complete
+// considered set stays bound by the status artifact's CandidateSHA256 digest.
+const MaxAtlasStudyBrowseSpans = 256
+
+const maxAtlasStudyReportCoverageCount = 1_000_000
+
+const maxExactDiscoveryDeclarations = 16
+
+// ExactDiscoveryAnchor is a deterministic declaration found inside one
+// already-saved, authorized source window. It is deliberately weaker than a
+// behavior fact: it says where study can start, not what the code does.
+type ExactDiscoveryAnchor struct {
+	Path          string
+	Language      string
+	Symbol        string
+	Line          int
+	Statement     string
+	ContentSHA256 string
+}
+
+// ExactDiscoveryAnchors returns bounded declaration anchors in saved line
+// order. Callers remain responsible for proving that the supplied window came
+// from the authorized source catalog and has matching local provenance.
+func ExactDiscoveryAnchors(
+	sourcePath string,
+	startLine int,
+	lines []string,
+) []ExactDiscoveryAnchor {
+	if !validUserTopicPath(sourcePath) || startLine <= 0 ||
+		len(lines) == 0 || len(lines) > maxFullFunctionSourceLines {
+		return nil
+	}
+	language := sourceLanguage(sourcePath)
+	if language == "text" {
+		return nil
+	}
+	for _, line := range lines {
+		if len(line) > 64<<10 {
+			return nil
+		}
+	}
+	result := make([]ExactDiscoveryAnchor, 0, min(len(lines), maxExactDiscoveryDeclarations))
+	seen := make(map[string]struct{}, cap(result))
+	for index, text := range lines {
+		symbol, _, _, ok := boundedSourceDeclaration(sourcePath, text)
+		if !ok || !boundedUserTopicText(symbol, maxUserTopicSymbolBytes) {
+			continue
+		}
+		line := startLine + index
+		key := sourcePath + "\x00" + language + "\x00" + symbol + "\x00" + fmt.Sprint(line)
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, ExactDiscoveryAnchor{
+			Path:     sourcePath,
+			Language: language,
+			Symbol:   symbol,
+			Line:     line,
+			Statement: fmt.Sprintf(
+				"The %s declaration is present in an exact %s source window available for local behavior investigation.",
+				symbol,
+				language,
+			),
+			ContentSHA256: sourceLinesSHA256([]string{text}),
+		})
+		if len(result) == maxExactDiscoveryDeclarations {
+			break
+		}
+	}
+	return result
+}
 
 type ReportData struct {
 	FormatVersion int `json:"format_version"`
+	// ReportLanguage is transient render state selected by the requested
+	// presentation locale. It controls the typed product message catalog
+	// independently of whether optional model-authored prose was translated.
+	// Canonical report artifacts always omit it.
+	ReportLanguage string `json:"report_language,omitempty"`
+	// GitLabSourceLinks is present only when the report is intended to be a
+	// standalone shareable artifact. Source actions then target the exact
+	// captured revision instead of the localhost editor/source APIs.
+	GitLabSourceLinks *GitLabSourceLinks `json:"gitlab_source_links,omitempty"`
+	// GitHubSourceLinks is the GitHub-hosted equivalent of GitLabSourceLinks.
+	// At most one external source host is present in a rendered report.
+	GitHubSourceLinks *GitHubSourceLinks `json:"github_source_links,omitempty"`
 
-	RepoName                   string               `json:"repo_name"`
-	ProjectGuess               string               `json:"project_guess"`
+	RepoName     string `json:"repo_name"`
+	ProjectGuess string `json:"project_guess"`
+	// DocumentedPurpose is a bounded presentation-only repository purpose
+	// extracted from the repository's own documentation. It is kept separate
+	// from model orientation so the onboarding thesis can prefer author-written
+	// purpose without promoting it into semantic evidence.
+	DocumentedPurpose          string               `json:"documented_purpose,omitempty"`
 	OrientationConfidence      float64              `json:"orientation_confidence"`
 	HighLevelMap               []Subsystem          `json:"high_level_map,omitempty"`
 	FirstFilesToOpen           []FileItem           `json:"first_files_to_open,omitempty"`
@@ -32,30 +137,506 @@ type ReportData struct {
 	ArtifactsDir               string               `json:"artifacts_dir"`
 	FeedbackPath               string               `json:"feedback_path,omitempty"`
 	Warnings                   []string             `json:"warnings,omitempty"`
-	Run                        *RunInfo             `json:"run,omitempty"`
-	OpenablePaths              []string             `json:"openable_paths,omitempty"`
+	// PresentationWarnings is a render-only parallel copy of Warnings. A
+	// localized render clone replaces dynamic warning prose in both slices so
+	// the standalone terminal artifact does not retain copyable English prose.
+	PresentationWarnings []string `json:"presentation_warnings,omitempty"`
+	// PresentationWarningKinds is a render-only parallel list of typed catalog
+	// message IDs for warnings whose product-owned identity is known from
+	// structural run status. Canonical report artifacts never persist it.
+	PresentationWarningKinds []string `json:"presentation_warning_kinds,omitempty"`
+	// PresentationWarningMessages is the render-only typed message projection
+	// for product warnings that require catalog parameters. Canonical report
+	// artifacts keep only the unchanged legacy Warnings strings.
+	PresentationWarningMessages []RunPresentationWarning `json:"presentation_warning_messages,omitempty"`
+	Run                         *RunInfo                 `json:"run,omitempty"`
+	OpenablePaths               []string                 `json:"openable_paths,omitempty"`
 	// SourceIDs is an ephemeral server-rendered map from authorized
 	// repository-relative paths to opaque navigation IDs. WriteReportJSON
 	// deliberately excludes it from persisted report evidence.
-	SourceIDs             map[string]string            `json:"source_ids,omitempty"`
-	RepositoryGraph       *RepositoryGraph             `json:"repository_graph,omitempty"`
-	Components            []Component                  `json:"components,omitempty"`
-	ComponentRelations    []ComponentRelation          `json:"component_relations,omitempty"`
-	ArchitectureCanvas    *ArchitectureCanvas          `json:"architecture_canvas,omitempty"`
-	ArchitectureSynthesis *ArchitectureSynthesisStatus `json:"architecture_synthesis,omitempty"`
-	ArchitectureGrounding *ArchitectureGrounding       `json:"architecture_grounding,omitempty"`
-	ModelResearch         *modelresearch.State         `json:"model_research,omitempty"`
-	DiscoveredSurfaces    *DiscoveredSurfaces          `json:"discovered_surfaces,omitempty"`
-	CommandTraces         []gofacts.CommandTrace       `json:"command_traces,omitempty"`
-	Freshness             *freshness.FreshnessResult   `json:"freshness,omitempty"`
-	CapturedRevision      string                       `json:"captured_revision,omitempty"`
-	CapturedInputCount    int                          `json:"captured_input_count,omitempty"`
-	RepositorySubmodules  []freshness.SubmoduleState   `json:"repository_submodules,omitempty"`
-	evidenceLocations     []evidence.Location
-	sourceSignals         []SourceSignal
+	SourceIDs       map[string]string `json:"source_ids,omitempty"`
+	RepositoryGraph *RepositoryGraph  `json:"repository_graph,omitempty"`
+	// RepositoryAtlas is the exact language-neutral canonical Atlas persisted
+	// beside the report. It contains only locally proven Units, entities,
+	// observations, evidence and relations; files and symbols remain evidence
+	// locators rather than entities.
+	RepositoryAtlas *repositoryatlas.Atlas `json:"repository_atlas,omitempty"`
+	// Navigator is the deliberately small report projection of the exact
+	// persisted Atlas-first result. The full request and action catalog remain
+	// separate, hash-bound run artifacts.
+	Navigator          *NavigatorReportProduct `json:"navigator,omitempty"`
+	Components         []Component             `json:"components,omitempty"`
+	ComponentRelations []ComponentRelation     `json:"component_relations,omitempty"`
+	ArchitectureCanvas *ArchitectureCanvas     `json:"architecture_canvas,omitempty"`
+	// ArchitectureComponentNavigation is a report-owned navigation projection
+	// over the exact accepted Canvas. It keeps conceptual map targets separate
+	// from producer-owned source starts and never selects a representative
+	// package, file, or symbol by presentation order.
+	ArchitectureComponentNavigation *ArchitectureComponentNavigationProjection `json:"architecture_component_navigation,omitempty"`
+	GuidedTour                      *guidedtour.Story                          `json:"guided_tour,omitempty"`
+	SemanticArtifacts               []semanticdiscovery.Artifact               `json:"semantic_artifacts,omitempty"`
+	// UserMechanisms is a presentation-only supported slice of independently
+	// replayed canonical Mechanisms. Raw artifacts remain available for replay
+	// and provenance, but default onboarding renders this narrower projection.
+	UserMechanisms []UserMechanism `json:"user_mechanisms,omitempty"`
+	// UserTopics exposes locally grounded questions that did not pass the
+	// unchanged Mechanism publication gate. Topics contain exact starting
+	// symbols and a bounded explanation of missing proof, never an answer,
+	// ordered steps, an effect, or a claimed path.
+	UserTopics []UserTopic `json:"user_topics,omitempty"`
+	// RepositoryThesis is a presentation-only overview assembled exclusively
+	// from bounded documented purpose and already validated report navigation
+	// targets. It does not participate in semantic identity or evidence.
+	RepositoryThesis *RepositoryThesis `json:"repository_thesis,omitempty"`
+	// RepositoryGuide is the product-facing ordering of already accepted
+	// Mechanisms, exact source continuations, and useful architecture areas.
+	// It is a presentation projection only: canonical semantic objects remain
+	// the sole authority for every explanation it references.
+	RepositoryGuide *RepositoryGuide `json:"repository_guide,omitempty"`
+	// StudyMap is a presentation-only repository brief and ordered reading
+	// guide over exact, locally validated code anchors. Its order is editorial,
+	// not a runtime sequence; canonical Mechanisms remain separate authority.
+	StudyMap *RepositoryStudyMap `json:"study_map,omitempty"`
+	// AtlasStudy is the closed publication state of the Atlas-first Brief and
+	// Study stage. Accepted content is projected separately through StudyMap;
+	// unavailable and failed states remain explicit without manufacturing an
+	// old repository_study_map result.
+	AtlasStudy *AtlasStudyReportStatus `json:"atlas_study,omitempty"`
+	// StudyPublication records whether the independent Study editing stage
+	// published a usable result. A failed stage remains explicit in the product
+	// report instead of being silently replaced by the remaining Overview.
+	StudyPublication *StudyPublicationStatus `json:"study_publication,omitempty"`
+	// IncompleteStudy retains bounded provider questions that have exact saved
+	// reading starts but did not satisfy the unchanged complete Reading Pack
+	// contract. It is navigation only and never claims an ordered path.
+	IncompleteStudy *RepositoryIncompleteStudy `json:"incomplete_study,omitempty"`
+	// Operations is a presentation-only operating guide over exact, bounded
+	// repository-owned commands, configuration, endpoints, and documentation.
+	// It never authorizes command execution; CopyText is present only after
+	// conservative local validation.
+	Operations *RepositoryOperations `json:"operations,omitempty"`
+	// TaskInvestigation is an optional task-first projection of one validated,
+	// bounded Task Investigation Pack. It deliberately omits the pack's opaque
+	// evidence identifiers and never replaces the canonical saved task artifacts.
+	TaskInvestigation *TaskInvestigationWorkspace `json:"task_investigation,omitempty"`
+	// UserSources contains bounded saved source for a useful Overview fallback.
+	// SourceContextIDs is issued only by the verified localhost server and is
+	// removed from persisted report evidence beside SourceIDs.
+	UserSources      []SourceSnippet          `json:"user_sources,omitempty"`
+	SourceContextIDs map[string]string        `json:"source_context_ids,omitempty"`
+	SemanticCoverage *SemanticCoverageSummary `json:"semantic_coverage,omitempty"`
+	// StartHereArtifactID is a presentation-only selection of one validated
+	// semantic artifact. It is not evidence and does not participate in the
+	// Mechanism content hash.
+	StartHereArtifactID string `json:"start_here_artifact_id,omitempty"`
+	// SemanticSupplementalFacts is an ephemeral, locally validated enrichment
+	// used while replaying one bounded semantic experiment. It is deliberately
+	// excluded from report.json; the authoritative copy remains the saved local
+	// probe artifact beside the replay record.
+	SemanticSupplementalFacts     []semanticdiscovery.Fact     `json:"-"`
+	SemanticSearchDisabled        bool                         `json:"semantic_search_disabled,omitempty"`
+	SemanticSearch                *SemanticSearchIndex         `json:"semantic_search,omitempty"`
+	ArchitectureSynthesis         *ArchitectureSynthesisStatus `json:"architecture_synthesis,omitempty"`
+	ArchitectureGrounding         *ArchitectureGrounding       `json:"architecture_grounding,omitempty"`
+	ModelResearch                 *modelresearch.State         `json:"model_research,omitempty"`
+	DiscoveredSurfaces            *DiscoveredSurfaces          `json:"discovered_surfaces,omitempty"`
+	CommandTraces                 []gofacts.CommandTrace       `json:"command_traces,omitempty"`
+	Freshness                     *freshness.FreshnessResult   `json:"freshness,omitempty"`
+	CapturedRevision              string                       `json:"captured_revision,omitempty"`
+	CapturedInputCount            int                          `json:"captured_input_count,omitempty"`
+	RepositorySubmodules          []freshness.SubmoduleState   `json:"repository_submodules,omitempty"`
+	evidenceLocations             []evidence.Location
+	sourceSignals                 []SourceSignal
+	studyDocumentSourceRoot       string
+	standaloneLocalRoots          []string
+	externalImports               []externalImportUsage
+	repositoryGoFacts             *gofacts.Facts
+	repositoryEntrypointFacts     *gofacts.Facts
+	architectureDebugPresentation map[string]string
+	semanticAttempted             int
+	semanticInvestigated          int
+	// Presentation localization is transient render state loaded from a
+	// separately validated sidecar. It is never part of canonical report JSON.
+	presentationLocalizationState     string
+	presentationLocalizationMessageID string
+	requestedPresentationLocale       string
+	presentationSourceEpisode         *sourceEpisodeProjection
+	runWarningDiagnostics             []runWarningDiagnostic
+	// presentationMetadataErr quarantines an invalid optional presentation
+	// sidecar without turning it into canonical report prose or failing EN
+	// replay. Shared hydration surfaces it to RU localization and serving.
+	presentationMetadataErr error
 
 	RecommendedFlow string `json:"recommended_flow,omitempty"`
 	FlowCount       int    `json:"flow_count"`
+}
+
+// NavigatorReportProduct carries only the product state and, when selected,
+// the backend-owned action already validated against the exact persisted
+// Repository Atlas. It contains no provider-authored prose.
+type NavigatorReportProduct struct {
+	Version         int                             `json:"version"`
+	State           navigator.ProductState          `json:"state"`
+	UnavailableCode navigator.UnavailableCode       `json:"unavailable_code,omitempty"`
+	FailureCode     navigator.FailureCode           `json:"failure_code,omitempty"`
+	Recommendation  *navigator.RecommendationAction `json:"recommendation,omitempty"`
+}
+
+// AtlasStudyReportStatus deliberately excludes provider prose, raw errors and
+// private request identities. The exact request/result/status artifacts stay
+// hash-bound material inputs of the authorized report. It carries the four
+// distinct span stage counts and the four independent coverage flags instead
+// of one overloaded coverage_complete.
+type AtlasStudyReportStatus struct {
+	Version                 int                          `json:"version"`
+	ProjectionVersion       int                          `json:"projection_version"`
+	State                   atlasstudy.ProductState      `json:"state"`
+	UnavailableCode         AtlasStudyUnavailableCode    `json:"unavailable_code,omitempty"`
+	FailureCode             atlasstudy.FailureCode       `json:"failure_code,omitempty"`
+	CandidateCoverage       *AtlasStudyCandidateCoverage `json:"candidate_coverage,omitempty"`
+	DirectionCount          int                          `json:"direction_count,omitempty"`
+	PublishedDirectionCount int                          `json:"published_direction_count,omitempty"`
+	HiddenDirectionCount    int                          `json:"hidden_direction_count,omitempty"`
+	// Four-stage span counts: considered (complete set), advertised (request
+	// frontier), model-selected (returned directions, rejected siblings
+	// included) and locally accepted (valid directions only).
+	ConsideredSpanCount    int `json:"considered_span_count,omitempty"`
+	AdvertisedSpanCount    int `json:"advertised_span_count,omitempty"`
+	ModelSelectedSpanCount int `json:"model_selected_span_count,omitempty"`
+	AcceptedSpanCount      int `json:"accepted_span_count,omitempty"`
+	// Four independent coverage flags. They are recorded independently and are
+	// part of the documented projection v6 contract, so they serialize even
+	// when false.
+	FrontierComplete        bool `json:"frontier_complete"`
+	SelectedItemsComplete   bool `json:"selected_items_complete"`
+	SupportCoverageComplete bool `json:"support_coverage_complete"`
+	PortfolioTargetMet      bool `json:"portfolio_target_met"`
+	// Omissions are bounded public-safe aggregates of considered spans omitted
+	// from the advertised frontier: exact counts by closed reason plus the
+	// bounded representative count. Canonical identities never enter the
+	// report, so representative route-span refs are reduced to their count.
+	Omissions []AtlasStudyOmissionAggregate `json:"omissions,omitempty"`
+	// FrontierBrowse is the bounded provider-free per-span browse of the
+	// complete considered Study question set. It is derived only inside
+	// readAtlasStudyReportProduct from already-validated local artifacts and
+	// stays nil for unavailable/prepared/uncalled states.
+	FrontierBrowse *FrontierBrowse `json:"frontier_browse,omitempty"`
+}
+
+// AtlasStudySpanStage is the highest reached stage of one span, derived by
+// exact set arithmetic at projection time. It is never provider-authored.
+type AtlasStudySpanStage string // "considered" | "advertised" | "model_selected" | "accepted"
+
+const (
+	AtlasStudySpanStageConsidered      AtlasStudySpanStage = "considered"
+	AtlasStudySpanStageAdvertised      AtlasStudySpanStage = "advertised"
+	AtlasStudySpanStageModelSelected   AtlasStudySpanStage = "model_selected"
+	AtlasStudySpanStageAccepted        AtlasStudySpanStage = "accepted"
+)
+
+// FrontierBrowse is the bounded provider-free per-span browse of the complete
+// considered Study question set. Total/Shown are always truthful; Spans never
+// exceed MaxAtlasStudyBrowseSpans.
+type FrontierBrowse struct {
+	Total int    `json:"total"` // complete considered count (len of rebuilt input.RouteSpans)
+	Shown int    `json:"shown"` // len(Spans)
+	Spans []Span `json:"spans"`
+}
+
+// Span is one browse row. Ordinal is 1..N in canonical span-ID order within
+// learning-stage groups and is manifest-relative; it is NOT a canonical ID.
+// Stage is the four-value membership. Source/Endpoint are exact user-code
+// locations published only for paths in OpenablePaths; a row whose source
+// cannot open carries the neutral unavailable state instead of a dead button.
+// DirectionID is present ONLY on accepted rows: it is the public
+// manifest-relative report direction id (matching the study_map direction id
+// used by openStudyDirection), derived at projection time from the validated
+// result.Directions array order (model rank); no canonical span ID is
+// serialized. An accepted row with no matching published direction (should not
+// occur — fail closed) is a projection error.
+type Span struct {
+	Ordinal     int                 `json:"ordinal"`
+	Title       string              `json:"title"`    // exact source-card symbol/label; system-path "from → to" endpoints
+	Question    string              `json:"question"` // backend-compiled question in the report language
+	Stage       AtlasStudySpanStage `json:"stage"`
+	Source      UserCodeLocation    `json:"source"`             // only when Source.Path ∈ data.OpenablePaths
+	Endpoint    *UserCodeLocation   `json:"endpoint,omitempty"` // only for system-path spans whose endpoint path ∈ data.OpenablePaths
+	DirectionID string              `json:"direction_id,omitempty"` // accepted rows ONLY; public study_map direction id (model rank)
+}
+
+// AtlasStudyOmissionAggregate is the public-safe report projection of one
+// closed advertised-frontier omission reason. RepresentativeCount is the
+// bounded number of representative typed refs recorded by the exact artifact;
+// the canonical refs themselves are never projected.
+type AtlasStudyOmissionAggregate struct {
+	Reason              atlasstudy.CoverageOmissionReason `json:"reason"`
+	Count               int                               `json:"count"`
+	RepresentativeCount int                               `json:"representative_count,omitempty"`
+}
+
+// AtlasStudyCandidateCoverage is the public-safe report projection of the
+// exact private candidate shelf bound by the Atlas Study request/status
+// artifacts. It deliberately omits the candidate digest and canonical package
+// bucket IDs. Package bucket counts remain an exact anonymous histogram, so
+// bounded selection loss is visible without publishing backend identities.
+type AtlasStudyCandidateCoverage struct {
+	TargetsConsidered int                               `json:"targets_considered"`
+	TargetsSelected   int                               `json:"targets_selected"`
+	SpansConsidered   int                               `json:"spans_considered"`
+	SpansSelected     int                               `json:"spans_selected"`
+	Complete          bool                              `json:"complete"`
+	PerRole           []AtlasStudyRoleCandidateCoverage `json:"per_role"`
+	PackageBuckets    []AtlasStudyAnonymousCoverage     `json:"package_buckets"`
+}
+
+type AtlasStudyRoleCandidateCoverage struct {
+	Role       atlasstudy.SupportRole `json:"role"`
+	Considered int                    `json:"considered"`
+	Selected   int                    `json:"selected"`
+}
+
+type AtlasStudyAnonymousCoverage struct {
+	Considered int `json:"considered"`
+	Selected   int `json:"selected"`
+}
+
+// projectAtlasStudyCandidateCoverage removes only private candidate and
+// package identities. All counts, every producer-owned role lane, and the
+// anonymous package-bucket histogram remain exact.
+func projectAtlasStudyCandidateCoverage(
+	coverage atlasstudy.CandidateCoverage,
+) (*AtlasStudyCandidateCoverage, error) {
+	projected := &AtlasStudyCandidateCoverage{
+		TargetsConsidered: coverage.TargetsConsidered,
+		TargetsSelected:   coverage.TargetsSelected,
+		SpansConsidered:   coverage.SpansConsidered,
+		SpansSelected:     coverage.SpansSelected,
+		Complete:          coverage.Complete,
+	}
+	for _, count := range coverage.PerRole {
+		role := atlasstudy.SupportRole(count.Key)
+		projected.PerRole = append(projected.PerRole, AtlasStudyRoleCandidateCoverage{
+			Role: role, Considered: count.Considered, Selected: count.Selected,
+		})
+	}
+	for _, count := range coverage.PerPackage {
+		projected.PackageBuckets = append(projected.PackageBuckets, AtlasStudyAnonymousCoverage{
+			Considered: count.Considered, Selected: count.Selected,
+		})
+	}
+	sort.Slice(projected.PerRole, func(i, j int) bool {
+		return projected.PerRole[i].Role < projected.PerRole[j].Role
+	})
+	sort.Slice(projected.PackageBuckets, func(i, j int) bool {
+		if projected.PackageBuckets[i].Considered != projected.PackageBuckets[j].Considered {
+			return projected.PackageBuckets[i].Considered < projected.PackageBuckets[j].Considered
+		}
+		return projected.PackageBuckets[i].Selected < projected.PackageBuckets[j].Selected
+	})
+	if err := projected.validate(); err != nil {
+		return nil, err
+	}
+	return projected, nil
+}
+
+// projectAtlasStudyOmissions projects the bounded omission aggregates in a
+// public-safe form. Representative refs are canonical route-span identities and
+// never enter the report; only the bounded representative count is published.
+func projectAtlasStudyOmissions(omissions []atlasstudy.CoverageOmission) []AtlasStudyOmissionAggregate {
+	if len(omissions) == 0 {
+		return nil
+	}
+	projected := make([]AtlasStudyOmissionAggregate, 0, len(omissions))
+	for _, omission := range omissions {
+		projected = append(projected, AtlasStudyOmissionAggregate{
+			Reason: omission.Reason, Count: omission.Count,
+			RepresentativeCount: len(omission.Representatives),
+		})
+	}
+	return projected
+}
+
+func validateAtlasStudyOmissionProjection(omissions []AtlasStudyOmissionAggregate) error {
+	if len(omissions) == 0 {
+		return nil
+	}
+	previous := atlasstudy.CoverageOmissionReason("")
+	for _, omission := range omissions {
+		if !omission.Reason.Valid() || omission.Count <= 0 ||
+			omission.Count > maxAtlasStudyReportCoverageCount ||
+			omission.RepresentativeCount < 0 ||
+			omission.RepresentativeCount > atlasstudy.MaxOmissionRepresentatives {
+			return fmt.Errorf("atlas study report: invalid omission aggregate")
+		}
+		if previous != "" && omission.Reason <= previous {
+			return fmt.Errorf("atlas study report: omission aggregates are not canonical")
+		}
+		previous = omission.Reason
+	}
+	return nil
+}
+
+func (coverage AtlasStudyCandidateCoverage) validate() error {
+	validCount := func(value int) bool {
+		return value > 0 && value <= maxAtlasStudyReportCoverageCount
+	}
+	if !validCount(coverage.TargetsConsidered) || !validCount(coverage.TargetsSelected) ||
+		coverage.TargetsSelected > coverage.TargetsConsidered ||
+		!validCount(coverage.SpansConsidered) || !validCount(coverage.SpansSelected) ||
+		coverage.SpansSelected > coverage.SpansConsidered ||
+		coverage.Complete != (coverage.TargetsSelected == coverage.TargetsConsidered &&
+			coverage.SpansSelected == coverage.SpansConsidered) ||
+		len(coverage.PerRole) == 0 || len(coverage.PerRole) > 6 ||
+		len(coverage.PackageBuckets) == 0 || len(coverage.PackageBuckets) > coverage.TargetsConsidered {
+		return fmt.Errorf("atlas study report: invalid candidate coverage")
+	}
+	previousRole := atlasstudy.SupportRole("")
+	for _, count := range coverage.PerRole {
+		if !count.Role.Valid() || count.Role <= previousRole || !validCount(count.Considered) ||
+			count.Selected < 0 || count.Selected > count.Considered {
+			return fmt.Errorf("atlas study report: invalid role candidate coverage")
+		}
+		previousRole = count.Role
+	}
+	previous := AtlasStudyAnonymousCoverage{}
+	for index, count := range coverage.PackageBuckets {
+		if !validCount(count.Considered) || count.Selected < 0 || count.Selected > count.Considered ||
+			(index > 0 && (count.Considered < previous.Considered ||
+				(count.Considered == previous.Considered && count.Selected < previous.Selected))) {
+			return fmt.Errorf("atlas study report: invalid anonymous package candidate coverage")
+		}
+		previous = count
+	}
+	return nil
+}
+
+type AtlasStudyUnavailableCode string
+
+const (
+	AtlasStudyUnavailableOffline                AtlasStudyUnavailableCode = "offline"
+	AtlasStudyUnavailableArchitectureEnrichment AtlasStudyUnavailableCode = "architecture_enrichment_unavailable"
+)
+
+type runWarningDiagnostic struct {
+	WarningIndex   int
+	Code           orient.ConfidenceWarningCode
+	CandidateIndex int
+	Proposed       float64
+	Capped         float64
+}
+
+// RunPresentationWarning addresses one raw warning and supplies a closed set
+// of typed parameters to the shared EN/RU product-message catalog.
+type RunPresentationWarning struct {
+	WarningIndex   int    `json:"warning_index"`
+	MessageID      string `json:"message_id"`
+	CandidateIndex int    `json:"candidate_index"`
+	Proposed       string `json:"proposed"`
+	Capped         string `json:"capped"`
+}
+
+// UserTopic is a presentation-only projection of one rejected-but-grounded
+// fresh-repository candidate. Its deliberately narrow shape prevents a topic
+// from being confused with a published Mechanism.
+type UserTopic struct {
+	CandidateID     string            `json:"candidate_id"`
+	Title           string            `json:"title"`
+	Question        string            `json:"question"`
+	StartingSymbols []UserTopicSymbol `json:"starting_symbols"`
+	Uncertainty     string            `json:"uncertainty"`
+}
+
+// UserTopicSymbol is one exact repository-owned place from which a reader can
+// continue through the existing authorized source navigation.
+type UserTopicSymbol struct {
+	Path   string `json:"path"`
+	Symbol string `json:"symbol"`
+	Line   int    `json:"line,omitempty"`
+	Column int    `json:"column,omitempty"`
+}
+
+const (
+	freshRepoDemoStatusFileForTopics     = "fresh_repo_demo_status.json"
+	freshRepoDemoCandidatesFileForTopics = "fresh_repo_candidates.json"
+	freshRepoOpportunityFileForTopics    = "fresh_repo_opportunity_attempt.json"
+
+	maxUserTopicArtifactBytes         = 1 << 20
+	maxUserTopicOpportunityCandidates = 20
+	maxUserTopics                     = 3
+	maxUserTopicSymbols               = 4
+	maxUserTopicAnchors               = 8
+	maxUserTopicReasons               = 8
+	maxUserTopicIDBytes               = 256
+	maxUserTopicTitleBytes            = 240
+	maxUserTopicQuestionBytes         = 800
+	maxUserTopicPathBytes             = 4096
+	maxUserTopicSymbolBytes           = 512
+	maxUserTopicReasonBytes           = 128
+)
+
+type userTopicOpportunityArtifact struct {
+	ValidationState    string `json:"validation_state"`
+	NormalizedProposal struct {
+		Candidates []struct {
+			ID               string `json:"id"`
+			Title            string `json:"title"`
+			QuestionAnswered string `json:"question_answered"`
+		} `json:"candidates"`
+	} `json:"normalized_proposal"`
+}
+
+type userTopicEligibility struct {
+	Status          string   `json:"status"`
+	Reasons         []string `json:"reasons"`
+	DistinctSymbols []string `json:"distinct_symbols"`
+}
+
+type userTopicCandidatesArtifact struct {
+	Selected []struct {
+		CandidateID string `json:"candidate_id"`
+		Question    string `json:"question"`
+		Primary     *struct {
+			Status      string                `json:"status"`
+			RootAnchors []userTopicRootAnchor `json:"root_anchors"`
+			Eligibility userTopicEligibility  `json:"eligibility"`
+			AnchorFacts []userTopicAnchorFact `json:"anchor_facts"`
+		} `json:"primary_path"`
+	} `json:"selected"`
+}
+
+type userTopicRootAnchor struct {
+	OriginFactID string `json:"origin_fact_id"`
+	Path         string `json:"path"`
+	Symbol       string `json:"symbol"`
+}
+
+type userTopicAnchorFact struct {
+	ID     string `json:"id"`
+	Source *struct {
+		Path            string `json:"path"`
+		StartLine       int    `json:"start_line"`
+		EnclosingSymbol string `json:"enclosing_symbol"`
+	} `json:"source"`
+}
+
+type userTopicStatusArtifact struct {
+	Attempts []struct {
+		CandidateID        string                `json:"candidate_id"`
+		Question           string                `json:"question"`
+		State              string                `json:"state"`
+		FailureStage       string                `json:"failure_stage"`
+		PrimaryEligibility *userTopicEligibility `json:"primary_eligibility"`
+	} `json:"attempts"`
+}
+
+// SemanticCoverageSummary keeps the publication funnel visible beside a
+// small set of polished semantic artifacts. It is derived locally from saved
+// replay records and never participates in semantic truth or Mechanism hashes.
+type SemanticCoverageSummary struct {
+	OpportunitiesAttempted       int    `json:"opportunities_attempted"`
+	CandidatesInvestigated       int    `json:"candidates_investigated"`
+	CanonicalMechanismsPublished int    `json:"canonical_mechanisms_published"`
+	CentralRoutingMechanism      string `json:"central_routing_mechanism,omitempty"`
 }
 
 // RepositoryGraph is a bounded deterministic projection of local repository
@@ -142,6 +723,7 @@ type RunInfo struct {
 	CompactContextBytes          int    `json:"compact_context_bytes,omitempty"`
 	ExternalRequestBytes         int    `json:"external_request_bytes,omitempty"`
 	ProviderRequestCount         int    `json:"provider_request_count,omitempty"`
+	ProviderAccountingComplete   bool   `json:"provider_accounting_complete,omitempty"`
 	CandidateDirectionCount      int    `json:"candidate_direction_count,omitempty"`
 	ProposedDirectionCount       int    `json:"proposed_direction_count,omitempty"`
 	AcceptedDirectionCount       int    `json:"accepted_direction_count,omitempty"`
@@ -236,6 +818,12 @@ type FlowData struct {
 	BundleDocs     []FileItem `json:"bundle_docs,omitempty"`
 	BundlePackages []string   `json:"bundle_packages,omitempty"`
 	BundleEdges    []EdgeInfo `json:"bundle_edges,omitempty"`
+	bundleSignals  []SourceSignal
+}
+
+type externalImportUsage struct {
+	ImportPath  string
+	UsedByCount int
 }
 
 type EdgeInfo struct {
@@ -252,9 +840,10 @@ type ChainStep struct {
 }
 
 type FileItem struct {
-	Path     string `json:"path"`
-	Reason   string `json:"reason"`
-	Priority int    `json:"priority"`
+	Path               string `json:"path"`
+	Reason             string `json:"reason"`
+	PresentationReason string `json:"presentation_reason,omitempty"`
+	Priority           int    `json:"priority"`
 }
 
 type PathItem struct {
@@ -315,6 +904,17 @@ func findBestFlow(flows []FlowData) string {
 func enrich(data *ReportData) {
 	data.FormatVersion = CurrentFormatVersion
 	data.FlowCount = len(data.Flows)
+	if topics, warning := projectFreshRepoTopics(data); warning != "" {
+		data.Warnings = append(data.Warnings, warning)
+	} else {
+		data.UserTopics = topics
+		for _, topic := range topics {
+			for _, location := range topic.StartingSymbols {
+				data.OpenablePaths = appendUniqueString(data.OpenablePaths, location.Path)
+			}
+		}
+		sort.Strings(data.OpenablePaths)
+	}
 	acceptedDirections := 0
 	rejectedDirections := 0
 	flowTypes := make(map[string]string, len(data.CandidateDirections))
@@ -350,6 +950,298 @@ func enrich(data *ReportData) {
 		}
 		refreshProductCounts(data)
 	}
+}
+
+func projectFreshRepoTopics(data *ReportData) ([]UserTopic, string) {
+	if data == nil || data.ArtifactsDir == "" {
+		return nil, ""
+	}
+
+	var opportunity userTopicOpportunityArtifact
+	var candidates userTopicCandidatesArtifact
+	var status userTopicStatusArtifact
+	for _, input := range []struct {
+		name   string
+		target any
+	}{
+		{freshRepoOpportunityFileForTopics, &opportunity},
+		{freshRepoDemoCandidatesFileForTopics, &candidates},
+		{freshRepoDemoStatusFileForTopics, &status},
+	} {
+		present, err := readBoundedUserTopicArtifact(
+			filepath.Join(data.ArtifactsDir, input.name),
+			input.target,
+		)
+		if err != nil {
+			return nil, fmt.Sprintf("topic shelf unavailable: %v", err)
+		}
+		if !present {
+			return nil, ""
+		}
+	}
+
+	if opportunity.ValidationState != "accepted" ||
+		len(opportunity.NormalizedProposal.Candidates) == 0 ||
+		len(opportunity.NormalizedProposal.Candidates) > maxUserTopicOpportunityCandidates ||
+		len(candidates.Selected) == 0 || len(candidates.Selected) > maxUserTopics ||
+		len(status.Attempts) == 0 || len(status.Attempts) > maxUserTopics ||
+		len(candidates.Selected) != len(status.Attempts) {
+		return nil, "topic shelf unavailable: saved candidate collections are outside the projection contract"
+	}
+
+	opportunityByID := make(map[string]struct {
+		Title    string
+		Question string
+	}, len(opportunity.NormalizedProposal.Candidates))
+	for _, candidate := range opportunity.NormalizedProposal.Candidates {
+		if !boundedUserTopicText(candidate.ID, maxUserTopicIDBytes) ||
+			!boundedUserTopicText(candidate.Title, maxUserTopicTitleBytes) ||
+			!boundedUserTopicText(candidate.QuestionAnswered, maxUserTopicQuestionBytes) {
+			return nil, "topic shelf unavailable: opportunity metadata is invalid"
+		}
+		if _, exists := opportunityByID[candidate.ID]; exists {
+			return nil, "topic shelf unavailable: opportunity candidate IDs are not unique"
+		}
+		opportunityByID[candidate.ID] = struct {
+			Title    string
+			Question string
+		}{Title: candidate.Title, Question: candidate.QuestionAnswered}
+	}
+
+	selectedByID := make(map[string]int, len(candidates.Selected))
+	for index, candidate := range candidates.Selected {
+		if !boundedUserTopicText(candidate.CandidateID, maxUserTopicIDBytes) {
+			return nil, "topic shelf unavailable: selected candidate ID is invalid"
+		}
+		if _, exists := selectedByID[candidate.CandidateID]; exists {
+			return nil, "topic shelf unavailable: selected candidate IDs are not unique"
+		}
+		selectedByID[candidate.CandidateID] = index
+	}
+
+	topics := make([]UserTopic, 0, min(len(status.Attempts), maxUserTopics))
+	seenAttempts := make(map[string]struct{}, len(status.Attempts))
+	for _, attempt := range status.Attempts {
+		if !boundedUserTopicText(attempt.CandidateID, maxUserTopicIDBytes) {
+			return nil, "topic shelf unavailable: attempt candidate ID is invalid"
+		}
+		if _, exists := seenAttempts[attempt.CandidateID]; exists {
+			return nil, "topic shelf unavailable: attempt candidate IDs are not unique"
+		}
+		seenAttempts[attempt.CandidateID] = struct{}{}
+
+		opportunityCandidate, exists := opportunityByID[attempt.CandidateID]
+		selectedIndex, selected := selectedByID[attempt.CandidateID]
+		if !exists || !selected {
+			return nil, "topic shelf unavailable: saved candidate IDs do not join uniquely"
+		}
+		selectedCandidate := candidates.Selected[selectedIndex]
+		if selectedCandidate.Primary == nil ||
+			selectedCandidate.Question != opportunityCandidate.Question ||
+			attempt.Question != opportunityCandidate.Question {
+			return nil, "topic shelf unavailable: saved candidate questions do not agree"
+		}
+
+		if attempt.State != "insufficient_primary_evidence" {
+			continue
+		}
+		if attempt.FailureStage != "eligibility" ||
+			attempt.PrimaryEligibility == nil ||
+			selectedCandidate.Primary.Status != "insufficient_primary_evidence" ||
+			!equalUserTopicEligibility(selectedCandidate.Primary.Eligibility, *attempt.PrimaryEligibility) {
+			return nil, "topic shelf unavailable: rejected candidate eligibility does not agree"
+		}
+
+		uncertainty, ok := userTopicUncertainty(attempt.PrimaryEligibility.Reasons)
+		if !ok {
+			return nil, "topic shelf unavailable: rejected candidate reason is unsupported"
+		}
+		startingSymbols, ok := projectUserTopicSymbols(selectedCandidate.Primary)
+		if !ok {
+			return nil, "topic shelf unavailable: rejected candidate symbols are invalid"
+		}
+		topics = append(topics, UserTopic{
+			CandidateID:     attempt.CandidateID,
+			Title:           opportunityCandidate.Title,
+			Question:        opportunityCandidate.Question,
+			StartingSymbols: startingSymbols,
+			Uncertainty:     uncertainty,
+		})
+	}
+	if len(topics) == 0 {
+		return nil, ""
+	}
+	return topics, ""
+}
+
+func readBoundedUserTopicArtifact(filePath string, target any) (bool, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("%s: %w", filepath.Base(filePath), err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", filepath.Base(filePath), err)
+	}
+	if info.Size() <= 0 || info.Size() > maxUserTopicArtifactBytes {
+		return false, fmt.Errorf("%s exceeds the byte budget", filepath.Base(filePath))
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, maxUserTopicArtifactBytes+1))
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", filepath.Base(filePath), err)
+	}
+	if len(raw) > maxUserTopicArtifactBytes {
+		return false, fmt.Errorf("%s exceeds the byte budget", filepath.Base(filePath))
+	}
+	if err := json.Unmarshal(raw, target); err != nil {
+		return false, fmt.Errorf("%s is invalid JSON", filepath.Base(filePath))
+	}
+	return true, nil
+}
+
+func projectUserTopicSymbols(
+	primary *struct {
+		Status      string                `json:"status"`
+		RootAnchors []userTopicRootAnchor `json:"root_anchors"`
+		Eligibility userTopicEligibility  `json:"eligibility"`
+		AnchorFacts []userTopicAnchorFact `json:"anchor_facts"`
+	},
+) ([]UserTopicSymbol, bool) {
+	if primary == nil ||
+		len(primary.Eligibility.DistinctSymbols) == 0 ||
+		len(primary.Eligibility.DistinctSymbols) > maxUserTopicSymbols ||
+		len(primary.RootAnchors) == 0 || len(primary.RootAnchors) > maxUserTopicAnchors ||
+		len(primary.AnchorFacts) == 0 || len(primary.AnchorFacts) > maxUserTopicAnchors {
+		return nil, false
+	}
+	factsByID := make(map[string]userTopicAnchorFact, len(primary.AnchorFacts))
+	for _, fact := range primary.AnchorFacts {
+		if fact.Source == nil || !boundedUserTopicText(fact.ID, maxUserTopicIDBytes) {
+			return nil, false
+		}
+		if _, exists := factsByID[fact.ID]; exists {
+			return nil, false
+		}
+		factsByID[fact.ID] = fact
+	}
+	anchorsBySymbol := make(map[string]userTopicRootAnchor, len(primary.RootAnchors))
+	for _, anchor := range primary.RootAnchors {
+		if !boundedUserTopicText(anchor.OriginFactID, maxUserTopicIDBytes) ||
+			!validUserTopicPath(anchor.Path) ||
+			!boundedUserTopicText(anchor.Symbol, maxUserTopicSymbolBytes) {
+			return nil, false
+		}
+		key := anchor.Path + "\x00" + anchor.Symbol
+		if _, exists := anchorsBySymbol[key]; exists {
+			return nil, false
+		}
+		anchorsBySymbol[key] = anchor
+	}
+
+	result := make([]UserTopicSymbol, 0, min(len(primary.Eligibility.DistinctSymbols), maxUserTopicSymbols))
+	seen := make(map[string]struct{}, len(primary.Eligibility.DistinctSymbols))
+	for _, key := range primary.Eligibility.DistinctSymbols {
+		if len(key) == 0 || len(key) > maxUserTopicPathBytes+maxUserTopicSymbolBytes+1 {
+			return nil, false
+		}
+		if _, duplicate := seen[key]; duplicate {
+			return nil, false
+		}
+		seen[key] = struct{}{}
+		sourcePath, symbol, found := strings.Cut(key, "\x00")
+		if !found || !validUserTopicPath(sourcePath) ||
+			!boundedUserTopicText(symbol, maxUserTopicSymbolBytes) {
+			return nil, false
+		}
+		anchor, exists := anchorsBySymbol[key]
+		if !exists {
+			return nil, false
+		}
+		fact, exists := factsByID[anchor.OriginFactID]
+		if !exists || fact.Source.Path != sourcePath ||
+			fact.Source.EnclosingSymbol != symbol || fact.Source.StartLine <= 0 {
+			return nil, false
+		}
+		result = append(result, UserTopicSymbol{
+			Path: sourcePath, Symbol: symbol, Line: fact.Source.StartLine,
+		})
+	}
+	return result, len(result) > 0
+}
+
+func equalUserTopicEligibility(left, right userTopicEligibility) bool {
+	return left.Status == right.Status &&
+		equalUserTopicStrings(left.Reasons, right.Reasons) &&
+		equalUserTopicStrings(left.DistinctSymbols, right.DistinctSymbols)
+}
+
+func equalUserTopicStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func userTopicUncertainty(reasons []string) (string, bool) {
+	if len(reasons) == 0 || len(reasons) > maxUserTopicReasons {
+		return "", false
+	}
+	messages := make([]string, 0, len(reasons))
+	seen := make(map[string]struct{}, len(reasons))
+	for _, reason := range reasons {
+		if !boundedUserTopicText(reason, maxUserTopicReasonBytes) {
+			return "", false
+		}
+		if _, duplicate := seen[reason]; duplicate {
+			return "", false
+		}
+		seen[reason] = struct{}{}
+		switch reason {
+		case "observable_effect_fact_missing":
+			messages = append(messages, "The observable result is not yet supported by exact local evidence.")
+		case "core_work_fact_missing":
+			messages = append(messages, "The exact starting point is known, but exact source evidence does not yet establish the core behavior.")
+		case "fewer_than_two_exact_symbols":
+			messages = append(messages, "Only one exact starting symbol is available, so no ordered mechanism is claimed.")
+		case "bounded_static_analysis_limit":
+			messages = append(messages, "The local evidence stops before the remaining behavior can be established.")
+		case "unresolved_dynamic_dispatch":
+			messages = append(messages, "Exact local evidence is available, but dynamic dispatch prevents proving the next target.")
+		case "proof_adapter_unavailable":
+			messages = append(messages, "A complete proof adapter is not available for this language yet, so this remains an exact starting point rather than a claimed mechanism.")
+		default:
+			return "", false
+		}
+	}
+	return strings.Join(messages, " "), true
+}
+
+func boundedUserTopicText(value string, limit int) bool {
+	return len(value) > 0 && len(value) <= limit && strings.TrimSpace(value) == value
+}
+
+func validUserTopicPath(value string) bool {
+	if !boundedUserTopicText(value, maxUserTopicPathBytes) ||
+		path.IsAbs(value) || path.Clean(value) != value ||
+		value == "." || value == ".." || strings.HasPrefix(value, "../") ||
+		strings.Contains(value, `\`) {
+		return false
+	}
+	for _, char := range value {
+		if char < 0x20 || char == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 func refreshProductCounts(data *ReportData) {

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -147,17 +149,24 @@ func TestMergeOrientationCandidatesUsesNaturalPriorityOrder(t *testing.T) {
 func TestMergeOperationalCandidateFlowsKeepsLocallyGroundedCandidate(t *testing.T) {
 	t.Parallel()
 
-	report := orientationPart{CandidateFlows: []flowexplain.CandidateFlow{{
-		Name:     "HTTP request handling",
-		FlowType: flowexplain.FlowTypeRequest,
-	}}}
+	providerFlow := flowexplain.CandidateFlow{
+		Name:             "HTTP request handling",
+		FlowType:         flowexplain.FlowTypeRequest,
+		Trigger:          "GET /items",
+		LikelyEntrypoint: "cmd/server/main.go",
+		LikelyFiles:      []string{"cmd/server/main.go"},
+		WhyInteresting:   "shows request dispatch",
+		Evidence:         []string{"exact provider evidence"},
+		Confidence:       0.8,
+		CandidateBasis:   flowexplain.CandidateBasisModelOrientation,
+	}
+	report := orientationPart{CandidateFlows: []flowexplain.CandidateFlow{providerFlow}}
 	candidates := []gofacts.OrientationCandidate{{
-		Name:              "Background loop — periodic ticker created",
-		Kind:              "signal_flow",
-		EntrypointPackage: "example.com/project/cmd/server",
-		OpenFiles:         []string{"internal/worker/reaper.go"},
-		Why:               "operational flow discovered from one strong signal",
-		Priority:          2,
+		Name:      "Background loop — periodic ticker created",
+		Kind:      "signal_flow",
+		OpenFiles: []string{"internal/worker/reaper.go", "internal/worker/queue.go"},
+		Why:       "operational flow discovered from one strong signal",
+		Priority:  2,
 	}}
 	signals := []sourcesignals.Signal{{
 		Path:     "internal/worker/reaper.go",
@@ -172,13 +181,153 @@ func TestMergeOperationalCandidateFlowsKeepsLocallyGroundedCandidate(t *testing.
 	if len(report.CandidateFlows) != 2 {
 		t.Fatalf("candidate flows = %#v, want request plus operational", report.CandidateFlows)
 	}
+	if !reflect.DeepEqual(report.CandidateFlows[0], providerFlow) {
+		t.Fatalf("provider flow changed:\n got: %#v\nwant: %#v", report.CandidateFlows[0], providerFlow)
+	}
 	operational := report.CandidateFlows[1]
 	if operational.FlowType != flowexplain.FlowTypeOperational || operational.Confidence != 0.3 {
 		t.Fatalf("operational flow = %#v", operational)
 	}
+	if operational.LikelyEntrypoint != "" ||
+		!reflect.DeepEqual(operational.LikelyFiles, candidates[0].OpenFiles) {
+		t.Fatalf("local operational entrypoint/files = %q / %#v", operational.LikelyEntrypoint, operational.LikelyFiles)
+	}
+	if operational.CandidateBasis != flowexplain.CandidateBasisSourceSignalAggregate {
+		t.Fatalf("local operational candidate basis = %q", operational.CandidateBasis)
+	}
 	if len(operational.Evidence) != 1 ||
 		operational.Evidence[0] != "internal/worker/reaper.go:8 source_signal periodic ticker created" {
 		t.Fatalf("operational evidence = %v", operational.Evidence)
+	}
+	if err := validateResolvedOrientation(orientationPart{
+		ProjectGuess: "worker service", Confidence: 0.3,
+		CandidateFlows: []flowexplain.CandidateFlow{operational},
+	}); err != nil {
+		t.Fatalf("local signal aggregate did not validate: %v", err)
+	}
+	validSeeds, unverified := flowexplain.ValidateSeedFiles(
+		operational.LikelyFiles,
+		[]string{"internal/worker/reaper.go", "internal/worker/queue.go", "cmd/server/main.go"},
+	)
+	queryTerms, aliasTerms := flowexplain.ExtractTerms(
+		operational.Name,
+		operational.Trigger,
+		operational.LikelyEntrypoint,
+		operational.Evidence,
+	)
+	for _, terms := range [][]string{queryTerms, aliasTerms} {
+		if slices.Contains(terms, "reaper") || slices.Contains(terms, "worker") || slices.Contains(terms, "internal") {
+			t.Fatalf("blank entrypoint synthesized path query terms: %#v", terms)
+		}
+	}
+	selected, _, _, _, _ := flowexplain.SelectFlowFiles(
+		[]string{"cmd/server/main.go", "internal/worker/queue.go", "internal/worker/reaper.go"},
+		aliasTerms,
+		validSeeds,
+		nil,
+		2,
+	)
+	if len(unverified) != 0 || len(selected) != 2 ||
+		selected[0].Path != "internal/worker/queue.go" || selected[1].Path != "internal/worker/reaper.go" {
+		t.Fatalf("local bundle seed selection = valid %#v unverified %#v selected %#v", validSeeds, unverified, selected)
+	}
+	for _, file := range selected {
+		if len(file.MatchedTerms) != 0 || !reflect.DeepEqual(file.Reasons, []string{"likely_file from candidate_flow"}) {
+			t.Fatalf("local bundle seed gained query semantics: %#v", file)
+		}
+	}
+	proven := candidates[0]
+	proven.Name = "Scheduled maintenance"
+	proven.EntrypointPackage = "example.com/project/cmd/server"
+	provenReport := orientationPart{}
+	mergeOperationalCandidateFlows(&provenReport, []gofacts.OrientationCandidate{proven}, signals)
+	if len(provenReport.CandidateFlows) != 1 ||
+		provenReport.CandidateFlows[0].LikelyEntrypoint != proven.EntrypointPackage {
+		t.Fatalf("producer-owned entrypoint was not retained: %#v", provenReport.CandidateFlows)
+	}
+}
+
+func TestMergeOperationalCandidateFlowsDoesNotRepairInvalidModelFlow(t *testing.T) {
+	t.Parallel()
+
+	report := orientationPart{
+		ProjectGuess: "worker service",
+		Confidence:   0.8,
+		CandidateFlows: []flowexplain.CandidateFlow{{
+			Name:           "Background loop",
+			FlowType:       flowexplain.FlowTypeRequest,
+			Trigger:        "provider trigger",
+			LikelyFiles:    []string{"internal/worker/reaper.go"},
+			WhyInteresting: "provider interpretation",
+			Evidence:       []string{"provider evidence"},
+			Confidence:     0.8,
+			CandidateBasis: flowexplain.CandidateBasisModelOrientation,
+		}}}
+	candidates := []gofacts.OrientationCandidate{{
+		Name:      "Background loop",
+		Kind:      "signal_flow",
+		OpenFiles: []string{"internal/worker/reaper.go"},
+	}}
+	signals := []sourcesignals.Signal{{
+		Path: "internal/worker/reaper.go", Line: 8,
+		Category: "background_loop", Weight: 40, Reason: "periodic ticker created",
+	}}
+
+	mergeOperationalCandidateFlows(&report, candidates, signals)
+
+	if report.CandidateFlows[0].LikelyEntrypoint != "" {
+		t.Fatalf("invalid model likely_entrypoint was repaired: %#v", report.CandidateFlows[0])
+	}
+	if err := validateResolvedOrientation(report); err == nil ||
+		!strings.Contains(err.Error(), "candidate_flows[0] has no likely_entrypoint") {
+		t.Fatalf("invalid whole model output error = %v", err)
+	}
+}
+
+func TestValidateResolvedOrientationAllowsBlankEntrypointOnlyForLocalSignalAggregate(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name     string
+		basis    string
+		flowType string
+		wantErr  bool
+	}{
+		{name: "local signal aggregate", basis: flowexplain.CandidateBasisSourceSignalAggregate},
+		{name: "signal aggregate request", basis: flowexplain.CandidateBasisSourceSignalAggregate, flowType: flowexplain.FlowTypeRequest, wantErr: true},
+		{name: "model", basis: flowexplain.CandidateBasisModelOrientation, wantErr: true},
+		{name: "local entrypoint", basis: flowexplain.CandidateBasisLocalEntrypoint, wantErr: true},
+		{name: "runtime activity", basis: flowexplain.CandidateBasisRuntimeActivity, wantErr: true},
+		{name: "unspecified", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			flowType := test.flowType
+			if flowType == "" {
+				flowType = flowexplain.FlowTypeOperational
+			}
+			report := orientationPart{
+				ProjectGuess: "worker service",
+				Confidence:   0.3,
+				CandidateFlows: []flowexplain.CandidateFlow{{
+					Name: "Periodic maintenance", FlowType: flowType,
+					Trigger:     "local static source-signal threshold was met",
+					LikelyFiles: []string{"internal/worker/reaper.go"},
+					Evidence:    []string{"exact local source signal"}, Confidence: 0.3,
+					CandidateBasis: test.basis,
+				}},
+			}
+			err := validateResolvedOrientation(report)
+			if test.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "has no likely_entrypoint") {
+					t.Fatalf("blank entrypoint error = %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("local signal aggregate error = %v", err)
+			}
+		})
 	}
 }
 

@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/evidence"
-	"github.com/dvordrova/repomap/internal/experiment/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/flowproof"
 	"github.com/dvordrova/repomap/internal/gofacts"
+	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
 
 func TestAttachSeedsPartialProcessTraceFromUniqueExactEntry(t *testing.T) {
@@ -135,7 +135,7 @@ func TestAttachKeepsEntryOnlyProcessProofWithExplicitFrontier(t *testing.T) {
 	}
 }
 
-func TestAttachDoesNotPromoteRuntimeActivityOrUnavailableEntry(t *testing.T) {
+func TestAttachDoesNotPromoteRuntimeActivityButKeepsExactUnavailableEntry(t *testing.T) {
 	t.Parallel()
 
 	activity := processEntrySurface("entry-app", surfacediscovery.AvailabilityAvailable)
@@ -152,17 +152,19 @@ func TestAttachDoesNotPromoteRuntimeActivityOrUnavailableEntry(t *testing.T) {
 	}
 	unavailable := processEntrySurface("entry-broken", surfacediscovery.AvailabilityUnavailable)
 	unavailable.ProcessEntrypoint.Location.Path = "cmd/broken/main.go"
-	unavailable.SurfaceRole = surfacediscovery.SurfaceRoleRejected
-	unavailable.TraceReadiness = surfacediscovery.TraceReadinessRejected
 
 	Attach(context.Background(), t.TempDir(), flows, Input{
 		Surfaces: []surfacediscovery.TriggerRecord{activity, unavailable},
 	})
 
-	for index, flow := range flows {
+	for index, flow := range flows[:2] {
 		if flow.LocalProof != nil {
 			t.Fatalf("flow[%d] unexpectedly became a process trace: %#v", index, flow.LocalProof)
 		}
+	}
+	if flows[2].LocalProof == nil || len(flows[2].LocalProof.Proof.Anchors) != 1 ||
+		!strings.Contains(flows[2].LocalProof.Proof.CurrentFrontier, "typed downstream closure") {
+		t.Fatalf("exact unavailable process did not produce bounded partial proof: %#v", flows[2].LocalProof)
 	}
 }
 

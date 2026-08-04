@@ -40,7 +40,7 @@ func (c *Client) TeacherPromptJSON(bundleJSON []byte) ([]byte, error) {
 		return nil, err
 	}
 	request := c.flowExplainRequest(userPrompt, systemPrompt, true)
-	request.Temperature = 0
+	request.Temperature = float64Pointer(0)
 	return json.Marshal(request)
 }
 
@@ -77,7 +77,7 @@ func (c *Client) TeachComponent(ctx context.Context, bundleJSON []byte) ([]byte,
 		}
 		lastErr = err
 		if !shouldRetry {
-			return nil, err
+			return nil, annotateResourceLimit(err, "component_teach", c.MaxTokens)
 		}
 	}
 

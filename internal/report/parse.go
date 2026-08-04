@@ -3,12 +3,15 @@ package report
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
@@ -18,10 +21,12 @@ import (
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/sourcesignals"
+	"github.com/dvordrova/repomap/internal/studymap"
 )
 
 type snapshotJSON struct {
 	RepoName string `json:"repo_name"`
+	Readme   string `json:"readme"`
 	GoFacts  *struct {
 		Modules []struct {
 			ID          string `json:"id"`
@@ -29,8 +34,12 @@ type snapshotJSON struct {
 			ModuleDir   string `json:"module_dir"`
 			DisplayName string `json:"display_name"`
 		} `json:"modules"`
-		Packages      []PackageInfo          `json:"packages"`
-		CommandTraces []gofacts.CommandTrace `json:"command_traces"`
+		Packages           []PackageInfo          `json:"packages"`
+		CommandTraces      []gofacts.CommandTrace `json:"command_traces"`
+		ExternalImportsTop []struct {
+			ImportPath  string `json:"import_path"`
+			UsedByCount int    `json:"used_by_count"`
+		} `json:"external_imports_top"`
 	} `json:"go_facts"`
 }
 
@@ -47,20 +56,24 @@ type llmBundleJSON struct {
 }
 
 type runMetadataJSON struct {
-	CreatedAt               string   `json:"created_at"`
-	Model                   string   `json:"model"`
-	PromptVersion           string   `json:"prompt_version"`
-	CompactContextBytes     int      `json:"compact_context_bytes"`
-	ExternalRequestBytes    int      `json:"external_request_bytes"`
-	ProviderRequestCount    int      `json:"provider_request_count"`
-	CandidateDirectionCount int      `json:"candidate_direction_count"`
-	AcceptedDirectionCount  int      `json:"accepted_direction_count"`
-	RejectedDirectionCount  int      `json:"rejected_direction_count"`
-	ProviderLatencyMillis   *int64   `json:"provider_latency_ms"`
-	SurfaceDiscoveryRan     bool     `json:"surface_discovery_ran"`
-	SurfaceDiscoveryCount   int      `json:"surface_discovery_count"`
-	SurfaceDiscoveryMillis  *int64   `json:"surface_discovery_ms"`
-	Warnings                []string `json:"warnings"`
+	CreatedAt                  string   `json:"created_at"`
+	Model                      string   `json:"model"`
+	PromptVersion              string   `json:"prompt_version"`
+	CompactContextBytes        int      `json:"compact_context_bytes"`
+	ExternalRequestBytes       int      `json:"external_request_bytes"`
+	ProviderRequestCount       int      `json:"provider_request_count"`
+	ProviderAccountingComplete bool     `json:"provider_accounting_complete"`
+	CandidateDirectionCount    int      `json:"candidate_direction_count"`
+	AcceptedDirectionCount     int      `json:"accepted_direction_count"`
+	RejectedDirectionCount     int      `json:"rejected_direction_count"`
+	ProviderLatencyMillis      *int64   `json:"provider_latency_ms"`
+	SurfaceDiscoveryRan        bool     `json:"surface_discovery_ran"`
+	SurfaceDiscoveryCount      int      `json:"surface_discovery_count"`
+	SurfaceDiscoveryMillis     *int64   `json:"surface_discovery_ms"`
+	Warnings                   []string `json:"warnings"`
+	EffectiveOptions           struct {
+		ReportLanguage string `json:"report_language"`
+	} `json:"effective_options"`
 }
 
 type orientationReportJSON struct {
@@ -363,14 +376,53 @@ func (f *flexStrings) UnmarshalJSON(b []byte) error {
 }
 
 func ReadRunDir(runDir string) (*ReportData, error) {
+	return readRunDir(runDir, "", nil, nil)
+}
+
+// ReadRunDirForAuthorizedArchitecture replays a saved run against confirmed
+// scoped repository authority and requires its producer-owned Go package graph
+// to be complete before it can become an Architecture provider input. A
+// non-Go run does not require a package graph.
+func ReadRunDirForAuthorizedArchitecture(
+	runDir string,
+	authority RunAuthority,
+) (*ReportData, error) {
+	if err := authority.validate(); err != nil {
+		return nil, fmt.Errorf("read authorized Architecture run: %w", err)
+	}
+	data, err := readRunDir(runDir, "", &authority, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireCompleteExactWorkspaceGraph(data); err != nil {
+		return data, err
+	}
+	return data, nil
+}
+
+type savedArchitectureArtifacts struct {
+	status    ArchitectureSynthesisStatus
+	synthesis []byte
+}
+
+func readRunDir(
+	runDir,
+	studyDocumentSourceRoot string,
+	authority *RunAuthority,
+	architectureArtifacts *savedArchitectureArtifacts,
+) (*ReportData, error) {
 	absDir, err := filepath.Abs(runDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve run dir: %w", err)
 	}
-	data := &ReportData{ArtifactsDir: absDir}
+	data := &ReportData{ArtifactsDir: absDir, studyDocumentSourceRoot: studyDocumentSourceRoot}
 	var parseWarnings []string
 
-	if w := parseSnapshot(filepath.Join(absDir, "snapshot.json"), data); w != "" {
+	if w := parseSnapshotWithExactFacts(
+		filepath.Join(absDir, "snapshot.json"),
+		data,
+		authority != nil,
+	); w != "" {
 		parseWarnings = append(parseWarnings, w)
 	}
 	if w := parseRunMetadata(filepath.Join(absDir, "metadata.json"), data); w != "" {
@@ -381,29 +433,43 @@ func ReadRunDir(runDir string) (*ReportData, error) {
 		if data.Run == nil {
 			data.Run = &RunInfo{}
 		}
-		data.Run.ProviderRequestCount = state.Usage.SemanticCalls
-		data.Run.ExternalRequestBytes = state.Usage.RequestBytes
 	} else if !os.IsNotExist(err) {
 		parseWarnings = append(parseWarnings, fmt.Sprintf("model research: %v", err))
 	}
-	architectureStatus, warning := readArchitectureSynthesisStatus(
-		filepath.Join(absDir, ArchitectureSynthesisStatusFile),
-	)
+	var architectureStatus *ArchitectureSynthesisStatus
+	var warning string
+	if architectureArtifacts == nil {
+		architectureStatus, warning = readArchitectureSynthesisStatus(
+			filepath.Join(absDir, ArchitectureSynthesisStatusFile),
+		)
+	} else {
+		status := architectureArtifacts.status
+		architectureStatus = &status
+	}
 	data.ArchitectureSynthesis = architectureStatus
-	if warning != "" {
-		parseWarnings = append(parseWarnings, warning)
+	reconcileLegacyProviderAccounting(data)
+	data.RepositoryAtlas, err = readRepositoryAtlasArtifact(absDir)
+	if err != nil {
+		return nil, err
 	}
-	if warning = architectureSynthesisUserWarning(data.ArchitectureSynthesis); warning != "" {
-		parseWarnings = append(parseWarnings, warning)
+	data.Navigator, err = readNavigatorReportProduct(absDir, data.RepositoryAtlas)
+	if err != nil {
+		return nil, err
 	}
-	if data.Run != nil && data.ArchitectureSynthesis != nil && data.ModelResearch == nil {
-		data.Run.ProviderRequestCount += data.ArchitectureSynthesis.ProviderRequestCount
-	}
-	if w := parseOrientationReport(filepath.Join(absDir, "orientation_report.json"), data); w != "" {
-		parseWarnings = append(parseWarnings, w)
+	if data.Navigator == nil {
+		if w := parseOrientationReport(filepath.Join(absDir, "orientation_report.json"), data); w != "" {
+			parseWarnings = append(parseWarnings, w)
+		}
 	}
 	if w := parseLLMBundle(filepath.Join(absDir, "llm_bundle.json"), data); w != "" {
 		parseWarnings = append(parseWarnings, w)
+	}
+	data.TaskInvestigation, warning = readTaskInvestigation(absDir, studyDocumentSourceRoot)
+	if warning != "" {
+		parseWarnings = append(parseWarnings, warning)
+	}
+	if data.TaskInvestigation != nil && data.RepoName == "" {
+		data.RepoName = data.TaskInvestigation.RepoName()
 	}
 	var surfaceWarnings []string
 	data.DiscoveredSurfaces, surfaceWarnings = parseDiscoveredSurfaces(absDir)
@@ -422,11 +488,24 @@ func ReadRunDir(runDir string) (*ReportData, error) {
 	parseWarnings = append(parseWarnings, flowWarnings...)
 	canonicalizeReportEvidence(data)
 	collectOpenablePaths(data)
+	if err := validateRepositoryAtlasForReport(data); err != nil {
+		return nil, err
+	}
+	attachAuthorizedWorkspacePackageGraph(data, authority)
+	attachAuthorizedWorkspaceEntrypointIndex(data, authority)
 	buildComponents(data)
-	if w := projectSavedArchitectureCanvas(data, filepath.Join(absDir, ArchitectureSynthesisFile)); w != "" {
-		parseWarnings = append(parseWarnings, w)
+	if architectureWarning := projectCanonicalArchitectureCanvas(data); architectureWarning != "" {
+		parseWarnings = append(parseWarnings, architectureWarning)
+	}
+	if err := replayAcceptedArchitectureForReport(
+		data, absDir, architectureArtifacts,
+	); err != nil {
+		return nil, err
 	}
 	linkArchitectureProductObjects(data)
+	if w := replaySavedGuidedTour(data, filepath.Join(absDir, GuidedStoryFile)); w != "" {
+		parseWarnings = append(parseWarnings, w)
+	}
 
 	enrich(data)
 
@@ -440,8 +519,128 @@ func ReadRunDir(runDir string) (*ReportData, error) {
 		return data.Flows[i].ID < data.Flows[j].ID
 	})
 
+	data.UserSources = projectOverviewSourceSnippets(data)
 	data.Warnings = append(data.Warnings, parseWarnings...)
+	if data.RepositoryAtlas != nil {
+		if authority == nil {
+			data.AtlasStudy, data.StudyMap, err = readAtlasStudyReportProduct(absDir, data)
+			if err != nil {
+				return nil, err
+			}
+			applyCanonicalStudyPublication(data)
+		}
+	} else {
+		if warning := replaySavedStudyMap(data, filepath.Join(absDir, studymap.RecordFile)); warning != "" {
+			data.Warnings = append(data.Warnings, warning)
+		}
+		data.StudyPublication, warning = readStudyPublicationStatus(
+			filepath.Join(absDir, studymap.StatusFile),
+		)
+		if warning != "" {
+			data.Warnings = append(data.Warnings, warning)
+		}
+		if warning = studyPublicationUserWarning(data.StudyPublication); warning != "" {
+			data.Warnings = append(data.Warnings, warning)
+		}
+		if warning := replaySavedIncompleteStudy(
+			data,
+			filepath.Join(absDir, studymap.BundleFile),
+			filepath.Join(absDir, studymap.DirectionsAttemptFile),
+		); warning != "" {
+			data.Warnings = append(data.Warnings, warning)
+		}
+		applyCanonicalStudyPublication(data)
+	}
+	prepareReplayedPresentationMetadata(data)
 	return data, nil
+}
+
+func replayAcceptedArchitectureForReport(
+	data *ReportData,
+	runDir string,
+	artifacts *savedArchitectureArtifacts,
+) error {
+	status := data.ArchitectureSynthesis
+	accepted := status != nil &&
+		(status.State == ArchitectureSynthesisSucceeded || status.State == ArchitectureSynthesisCached) &&
+		status.ProposalAccepted && !status.ProposalRejected && !status.FallbackSelected
+	var (
+		saved   []byte
+		present bool
+		err     error
+	)
+	if artifacts != nil {
+		saved = artifacts.synthesis
+		present = len(saved) > 0
+	} else {
+		artifactPath := filepath.Join(runDir, ArchitectureSynthesisFile)
+		var info os.FileInfo
+		info, err = os.Lstat(artifactPath)
+		switch {
+		case err == nil:
+			present = true
+			if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxArchitectureLocalizationSynthesisBytes {
+				return fmt.Errorf("architecture synthesis: saved record is not a bounded regular file")
+			}
+			saved, err = os.ReadFile(artifactPath)
+		case os.IsNotExist(err):
+			err = nil
+		default:
+			return fmt.Errorf("architecture synthesis: inspect saved record: %w", err)
+		}
+		if err != nil {
+			return fmt.Errorf("architecture synthesis: read saved record: %w", err)
+		}
+	}
+	if !accepted {
+		if present {
+			return fmt.Errorf("architecture synthesis: unaccepted status cannot authorize a saved synthesis")
+		}
+		return nil
+	}
+	if !present {
+		return fmt.Errorf("architecture synthesis: accepted status requires a saved synthesis")
+	}
+	if warning := projectSavedArchitectureCanvasBytes(data, saved); warning != "" {
+		return fmt.Errorf("architecture synthesis: %s", warning)
+	}
+	if err := validateAcceptedAtlasStudyArchitecture(data); err != nil {
+		return err
+	}
+	return nil
+}
+
+func projectCanonicalArchitectureCanvas(data *ReportData) string {
+	input, err := BuildArchitectureCanvasInput(data)
+	if err != nil {
+		if errors.Is(err, errNoCanonicalArchitectureCandidates) {
+			return ""
+		}
+		return fmt.Sprintf("architecture canvas: %v", err)
+	}
+	canvas, err := ProjectArchitectureCanvas(input)
+	if err != nil {
+		return fmt.Sprintf("architecture canvas projection: %v", err)
+	}
+	data.ArchitectureCanvas = &canvas
+	navigation, err := ProjectArchitectureComponentNavigation(&canvas, data.OpenablePaths)
+	if err != nil {
+		return fmt.Sprintf("architecture component navigation projection: %v", err)
+	}
+	data.ArchitectureComponentNavigation = navigation
+	return ""
+}
+
+// applyCanonicalStudyPublication makes the locally reduced Study record the
+// sole publication projection when it exists. Raw candidate attempts and
+// pre-eligibility semantic topics remain useful debug artifacts, but must not
+// compete with accepted reducer output in the ordinary report.
+func applyCanonicalStudyPublication(data *ReportData) {
+	if data == nil || data.StudyMap == nil || len(data.StudyMap.Directions) == 0 {
+		return
+	}
+	data.IncompleteStudy = nil
+	data.UserTopics = nil
 }
 
 func parseLLMBundle(path string, data *ReportData) string {
@@ -492,26 +691,39 @@ func parseLLMBundle(path string, data *ReportData) string {
 }
 
 func projectSavedArchitectureCanvas(data *ReportData, synthesisPath string) string {
+	info, readErr := os.Lstat(synthesisPath)
+	if readErr != nil {
+		return fmt.Sprintf("read saved synthesis: %v", readErr)
+	}
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxArchitectureLocalizationSynthesisBytes {
+		return "saved synthesis is not a bounded regular file"
+	}
 	saved, readErr := os.ReadFile(synthesisPath)
 	if readErr != nil {
-		if os.IsNotExist(readErr) {
-			return ""
-		}
-		return fmt.Sprintf("architecture map unavailable: cannot read saved synthesis: %v", readErr)
+		return fmt.Sprintf("read saved synthesis: %v", readErr)
 	}
+	return projectSavedArchitectureCanvasBytes(data, saved)
+}
+
+func projectSavedArchitectureCanvasBytes(data *ReportData, saved []byte) string {
 	input, err := BuildArchitectureCanvasInput(data)
 	if err != nil {
 		return fmt.Sprintf("architecture canvas: %v", err)
 	}
 	replayed, replayErr := ReplayArchitectureSynthesis(input, saved)
 	if replayErr != nil {
-		return fmt.Sprintf("architecture map unavailable: saved grouping is invalid: %v", replayErr)
+		return fmt.Sprintf("replay saved synthesis: %v", replayErr)
 	}
 	canvas, err := ProjectArchitectureCanvas(replayed)
 	if err != nil {
 		return fmt.Sprintf("architecture canvas projection: %v", err)
 	}
 	data.ArchitectureCanvas = &canvas
+	navigation, err := ProjectArchitectureComponentNavigation(&canvas, data.OpenablePaths)
+	if err != nil {
+		return fmt.Sprintf("architecture component navigation projection: %v", err)
+	}
+	data.ArchitectureComponentNavigation = navigation
 	return ""
 }
 
@@ -606,6 +818,11 @@ func collectOpenablePaths(data *ReportData) {
 				add(member.Location.Path)
 			}
 		}
+		for _, handoff := range data.ArchitectureGrounding.EntryHandoffs {
+			add(handoff.ProcessEntrypoint.Location.Path)
+			add(handoff.Callee.Location.Path)
+			add(handoff.RepresentativeCallsite.Path)
+		}
 	}
 	if data.ModelResearch != nil {
 		for _, fact := range data.ModelResearch.Theory.GroundedFacts {
@@ -613,6 +830,14 @@ func collectOpenablePaths(data *ReportData) {
 				add(fact.Location.Path)
 			}
 		}
+	}
+	if data.TaskInvestigation != nil {
+		for _, anchor := range data.TaskInvestigation.Anchors {
+			add(anchor.Path)
+		}
+	}
+	for _, item := range exactRepositoryAtlasPackageEvidence(data) {
+		add(item.Location.Path)
 	}
 	data.OpenablePaths = data.OpenablePaths[:0]
 	for path := range paths {
@@ -634,25 +859,51 @@ func parseRunMetadata(path string, data *ReportData) string {
 		return fmt.Sprintf("metadata unmarshal: %v", err)
 	}
 	data.Run = &RunInfo{
-		CreatedAt:               metadata.CreatedAt,
-		Model:                   metadata.Model,
-		PromptVersion:           metadata.PromptVersion,
-		CompactContextBytes:     metadata.CompactContextBytes,
-		ExternalRequestBytes:    metadata.ExternalRequestBytes,
-		ProviderRequestCount:    metadata.ProviderRequestCount,
-		CandidateDirectionCount: metadata.CandidateDirectionCount,
-		AcceptedDirectionCount:  metadata.AcceptedDirectionCount,
-		RejectedDirectionCount:  metadata.RejectedDirectionCount,
-		ProviderLatencyMillis:   metadata.ProviderLatencyMillis,
-		SurfaceDiscoveryRan:     metadata.SurfaceDiscoveryRan,
-		SurfaceDiscoveryCount:   metadata.SurfaceDiscoveryCount,
-		SurfaceDiscoveryMillis:  metadata.SurfaceDiscoveryMillis,
+		CreatedAt:                  metadata.CreatedAt,
+		Model:                      metadata.Model,
+		PromptVersion:              metadata.PromptVersion,
+		CompactContextBytes:        metadata.CompactContextBytes,
+		ExternalRequestBytes:       metadata.ExternalRequestBytes,
+		ProviderRequestCount:       metadata.ProviderRequestCount,
+		ProviderAccountingComplete: metadata.ProviderAccountingComplete,
+		CandidateDirectionCount:    metadata.CandidateDirectionCount,
+		AcceptedDirectionCount:     metadata.AcceptedDirectionCount,
+		RejectedDirectionCount:     metadata.RejectedDirectionCount,
+		ProviderLatencyMillis:      metadata.ProviderLatencyMillis,
+		SurfaceDiscoveryRan:        metadata.SurfaceDiscoveryRan,
+		SurfaceDiscoveryCount:      metadata.SurfaceDiscoveryCount,
+		SurfaceDiscoveryMillis:     metadata.SurfaceDiscoveryMillis,
+	}
+	if normalizedReportLanguage(metadata.EffectiveOptions.ReportLanguage) == "ru" {
+		data.requestedPresentationLocale = "ru"
 	}
 	data.Warnings = append(data.Warnings, metadata.Warnings...)
 	return ""
 }
 
+// reconcileLegacyProviderAccounting preserves the historical report reader's
+// reconstruction only for metadata written before the Atlas-first runtime
+// began persisting complete cross-stage provider totals. Completed metadata is
+// authoritative even when an older model-research state remains beside it.
+func reconcileLegacyProviderAccounting(data *ReportData) {
+	if data == nil || data.Run == nil || data.Run.ProviderAccountingComplete {
+		return
+	}
+	if data.ModelResearch != nil {
+		data.Run.ProviderRequestCount = data.ModelResearch.Usage.SemanticCalls
+		data.Run.ExternalRequestBytes = data.ModelResearch.Usage.RequestBytes
+		return
+	}
+	if data.ArchitectureSynthesis != nil {
+		data.Run.ProviderRequestCount += data.ArchitectureSynthesis.ProviderRequestCount
+	}
+}
+
 func parseSnapshot(path string, data *ReportData) string {
+	return parseSnapshotWithExactFacts(path, data, false)
+}
+
+func parseSnapshotWithExactFacts(path string, data *ReportData, captureExact bool) string {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Sprintf("snapshot: %v", err)
@@ -661,9 +912,28 @@ func parseSnapshot(path string, data *ReportData) string {
 	if err := json.Unmarshal(b, &snap); err != nil {
 		return fmt.Sprintf("snapshot unmarshal: %v", err)
 	}
+	if captureExact {
+		data.repositoryGoFacts = nil
+		if facts, err := decodeSnapshotExactGoFacts(b); err == nil {
+			data.repositoryGoFacts = &facts
+		}
+		data.repositoryEntrypointFacts = nil
+		if facts, err := decodeSnapshotExactEntrypoints(b); err == nil {
+			data.repositoryEntrypointFacts = &facts
+		}
+	}
 	data.RepoName = snap.RepoName
+	data.DocumentedPurpose = boundedDocumentedPurpose(snap.Readme)
 	if snap.GoFacts != nil {
 		data.CommandTraces = append([]gofacts.CommandTrace(nil), snap.GoFacts.CommandTraces...)
+		for _, item := range snap.GoFacts.ExternalImportsTop {
+			if strings.TrimSpace(item.ImportPath) == "" || item.UsedByCount <= 0 {
+				continue
+			}
+			data.externalImports = append(data.externalImports, externalImportUsage{
+				ImportPath: item.ImportPath, UsedByCount: item.UsedByCount,
+			})
+		}
 	}
 	if snap.GoFacts != nil && (len(snap.GoFacts.Modules) > 0 || len(snap.GoFacts.Packages) > 0) {
 		graph := &RepositoryGraph{Version: 2, Packages: append([]PackageInfo(nil), snap.GoFacts.Packages...)}
@@ -679,6 +949,66 @@ func parseSnapshot(path string, data *ReportData) string {
 		data.RepositoryGraph = graph
 	}
 	return ""
+}
+
+func boundedDocumentedPurpose(readme string) string {
+	const maxBytes = 1 << 10
+	lines := strings.Split(strings.ReplaceAll(readme, "\r\n", "\n"), "\n")
+	paragraphs := make([][]string, 0, 4)
+	paragraph := make([]string, 0, 8)
+	flush := func() {
+		if len(paragraph) == 0 {
+			return
+		}
+		paragraphs = append(paragraphs, append([]string(nil), paragraph...))
+		paragraph = paragraph[:0]
+	}
+	for _, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			flush()
+			continue
+		}
+		if !documentedPurposeDecoration(line) {
+			paragraph = append(paragraph, line)
+		}
+	}
+	flush()
+	var text string
+	for _, candidate := range paragraphs {
+		value := strings.Join(strings.Fields(strings.Join(candidate, " ")), " ")
+		if len(strings.Fields(value)) < 6 {
+			continue
+		}
+		text = atlasStudyDocumentedPurpose(value)
+		break
+	}
+	text = strings.Join(strings.Fields(text), " ")
+	if len(text) <= maxBytes {
+		return text
+	}
+	text = text[:maxBytes]
+	for !utf8.ValidString(text) {
+		text = text[:len(text)-1]
+	}
+	if boundary := strings.LastIndexByte(text, ' '); boundary > maxBytes/2 {
+		text = text[:boundary]
+	}
+	return strings.TrimSpace(text)
+}
+
+func documentedPurposeDecoration(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "![") ||
+		strings.HasPrefix(trimmed, "<") || strings.HasPrefix(trimmed, "[") {
+		return true
+	}
+	for _, value := range trimmed {
+		if value != '=' && value != '-' && value != '_' && !unicode.IsSpace(value) {
+			return false
+		}
+	}
+	return trimmed != ""
 }
 
 func repositoryGraphHasModule(modules []ModuleInfo, modulePath, moduleDir string) bool {
@@ -757,7 +1087,25 @@ func parseOrientationReport(path string, data *ReportData) string {
 			Reason: item.Reason,
 		})
 	}
+	warningOffset := len(data.Warnings)
 	data.Warnings = append(data.Warnings, or.Warnings...)
+	diagnostics, diagnosticsErr := readOrientationWarningDiagnostics(
+		filepath.Dir(path),
+		b,
+		warningOffset,
+		or,
+	)
+	if diagnosticsErr != nil {
+		data.presentationMetadataErr = errors.Join(
+			data.presentationMetadataErr,
+			diagnosticsErr,
+		)
+	} else {
+		data.runWarningDiagnostics = append(
+			data.runWarningDiagnostics,
+			diagnostics...,
+		)
+	}
 	return ""
 }
 
@@ -852,6 +1200,12 @@ func parseFlowBundle(path string, fd *FlowData) string {
 	fd.BundleEdges = make([]EdgeInfo, 0, len(fb.RelatedEdges))
 	for _, e := range fb.RelatedEdges {
 		fd.BundleEdges = append(fd.BundleEdges, EdgeInfo{From: e.From, To: e.To})
+	}
+	for _, signal := range fb.SourceSignals {
+		fd.bundleSignals = append(fd.bundleSignals, SourceSignal{
+			Path: signal.Path, Line: signal.Line, Category: signal.Category,
+			Snippet: signal.Snippet, Reason: signal.Reason,
+		})
 	}
 	return ""
 }

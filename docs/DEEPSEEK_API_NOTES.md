@@ -12,7 +12,7 @@ REPOMAP_LLM_ENDPOINT      required full chat/completions URL
 REPOMAP_LLM_MODEL         model name
 REPOMAP_LLM_API_KEY       required for bearer auth
 REPOMAP_LLM_AUTH          bearer (default) or none
-REPOMAP_LLM_MAX_TOKENS    positive integer (default 6000)
+REPOMAP_LLM_MAX_TOKENS    positive integer (default 64000; sole output-ceiling override)
 REPOMAP_LLM_TIMEOUT       Go duration (default 10m)
 ```
 
@@ -22,9 +22,10 @@ to the public DeepSeek endpoint and prevents a stale DeepSeek key from reaching
 an internal endpoint.
 
 `DEEPSEEK_ENDPOINT`, `DEEPSEEK_MODEL`, `DEEPSEEK_API_KEY`,
-`DEEPSEEK_MAX_TOKENS`, `DEEPSEEK_TIMEOUT`, and `DEEPSEEK_AUTH` remain a
-legacy-only compatibility mode. With no explicit legacy endpoint/model, the
-DeepSeek defaults below are used.
+`DEEPSEEK_TIMEOUT`, and `DEEPSEEK_AUTH` remain a legacy-only compatibility
+mode. With no explicit legacy endpoint/model, the DeepSeek defaults below are
+used. `DEEPSEEK_MAX_TOKENS` is intentionally ignored: the only output-ceiling
+override in either configuration mode is `REPOMAP_LLM_MAX_TOKENS`.
 
 The application does not source `.env` files. The current repository may be
 untrusted input and its environment file may contain unrelated credentials or
@@ -86,12 +87,13 @@ contains prompt, response, source, credential, or header material. Ctrl-C
 cancels the shared request context even though the default transport timeout is
 ten minutes.
 
-With `--dump-llm`, `llm_request.redacted.json` remains the inspectable request
-body written before network access. Without that flag, a provider failure now
-writes the same redacted request body automatically, while `error.txt` retains
-the bounded safe provider error. Request-attempt metadata is written before
-network access, so a failed or canceled request does not look as though no
-request was prepared.
+Ordinary debug runs write every covered semantic request and its validated
+response, or a truthful closed unavailable marker, under `semantic_exchanges/`.
+The bounded payloads are redacted and secret-scanned, and `exchange.v1.json` is
+published last as the commit marker. Use request preview when the exact request
+must be inspected without making a provider call. Request-attempt metadata is
+still written before network access, so a failed or canceled request does not
+look as though no request was prepared.
 
 ## Model
 
@@ -113,7 +115,7 @@ DeepSeek-mode default: `deepseek-v4-flash`.
     }
   ],
   "temperature": 0.1,
-  "max_tokens": 6000,
+  "max_tokens": 64000,
   "response_format": {"type": "json_object"}
 }
 ```
@@ -123,14 +125,86 @@ DeepSeek-mode default: `deepseek-v4-flash`.
 - Request must include `"response_format": {"type": "json_object"}`.
 - Prompt must contain the word **json** (case-insensitive match is fine).
 - Prompt must include an example JSON shape so the model knows the expected schema.
-- `max_tokens` must be high enough to avoid truncation (default 6000).
-- Do not replace the configured/default budget with a small stage-specific cap.
-  The Pebble component planner returned empty content at 1600 tokens and
-  succeeded at 6000.
+- Every semantic request serializes the exact configured global output ceiling.
+  The default is 64,000 and `REPOMAP_LLM_MAX_TOKENS` is its only override.
+  Request builders do not raise, lower, or double it for a stage or endpoint.
+  Historical Pebble calibration returned empty content at 1,600 tokens and
+  succeeded at the then-configured 6,000-token ceiling; that evidence motivated
+  removing smaller stage-specific caps, not a current per-stage exception.
 - DeepSeek V4 enables thinking by default. The architecture grouping request is
   a bounded classification task, so the official DeepSeek endpoint receives
   `"thinking": {"type":"disabled"}` for that request only. Generic compatible
   endpoints do not receive this DeepSeek-specific extension.
+- Orientation is likewise a bounded classification over an already compact
+  local facts bundle. The official endpoint receives explicit disabled
+  thinking; compatible endpoints do not. This prevents hidden reasoning from
+  consuming the whole JSON envelope before any report content is returned.
+- The guided-onboarding comparison uses the opposite, purpose-specific policy
+  on the official endpoint: independently verifiable semantic leaves receive
+  `"thinking":{"type":"enabled"}` with `"reasoning_effort":"high"`; the
+  monolithic editor and final fan-in planner receive `reasoning_effort:"max"`.
+  Thinking mode ignores temperature, so determinism comes from strict JSON
+  contracts, opaque-ID validation, canonical inputs, and replayable caches.
+- Guided editor, fan-in, and leaf requests all use the exact global ceiling.
+  Historical Chatto and self-experiment runs showed `thinking/max` consuming
+  6,000 and 12,000-token envelopes before completing the strict JSON wrapper;
+  the current 64,000 default replaces those former stage floors. An explicit
+  `finish_reason=length`, malformed or incomplete semantic content, or local
+  Guided Tour rejection is terminal for that semantic request. It is never
+  resent for more output or replaced by a fresh proposal. Only a locally
+  accepted proposal can be cached or published.
+- Semantic discovery always uses JSON mode. On the official DeepSeek endpoint,
+  the opportunity scan, fan-in synthesis, and monolithic comparison use
+  `"thinking":{"type":"enabled"}` with `reasoning_effort:"max"`; bounded
+  evidence leaves use `reasoning_effort:"high"`. Temperature is omitted for
+  all of these thinking-mode requests. Global tasks and bounded leaves use the
+  same exact configured ceiling. Generic compatible endpoints receive the
+  ordinary OpenAI-compatible JSON request without DeepSeek-specific thinking
+  fields. Historical scans exhausted 6,000 and 12,000 output-token envelopes
+  and ended in locally rejected truncated JSON; no invalid response was
+  accepted or written to the semantic replay record. Those measurements
+  informed the current global 64,000 default rather than creating per-stage
+  minimums.
+- Study reading-pack review is a bounded classification over three to five
+  exact anchors. The official endpoint receives explicit disabled thinking for
+  that review only; compatible endpoints receive no DeepSeek-specific field.
+  A Casdoor control run showed four of eight otherwise independent reviews
+  returning reasoning-only completions, including one `finish_reason=stop`, so
+  increasing the output cap would not recover the missing JSON verdicts.
+- Complete Russian presentation projection is assembled from deterministic
+  bounded requests rather than one monolithic completion. Fields are sorted by
+  their stable presentation ID and partitioned by a predicted output budget;
+  every batch records an exact manifest and content hash. The provider wire is
+  the compact ordered `[index, text]` tuple form, while the saved sidecar and
+  internal projection remain keyed by the original stable IDs. Each batch has
+  an exact request/cache identity, passes the same strict completeness,
+  placeholder, language, secret, and tuple-order validation on a live response
+  or cache hit, and uses the exact global output ceiling. A batch contains
+  at most 64 fields. The current saved Casdoor replay contains 508 fields and
+  deterministically produces eight batches: seven batches of 64 fields and one
+  final batch of 60. This is a replay measurement, not a claim of complete live
+  RU success. A live batch that fails quality validation is rejected without a
+  localization-specific repair request; a rejected result is neither cached
+  nor applied. The final RU sidecar is published only after every batch validates
+  and the merged projection validates against the full canonical English
+  inventory. A missing, corrupt, truncated, or rejected batch therefore
+  degrades the whole presentation atomically to canonical English; partial RU
+  is never published or labelled successful. Opaque paths, IDs, symbols, URLs,
+  packages, protocol
+  identities, and exact technical spans are supplied through typed ownership
+  and reversible object-local placeholders. Localization does not maintain a
+  lexical allow/deny dictionary for words in human prose; unprotected prose is
+  translated by the model as prose. It does not apply a blanket policy to
+  translate or transliterate every Latin span.
+- Cache contract changes use clean invalidation rather than replay adapters.
+  `repomap cache clear [--debug-dir DIR]` removes only the known persistent
+  model-research, component-synthesis, and localization cache directories;
+  saved run artifacts remain untouched.
+- DeepSeek usage may report `prompt_cache_hit_tokens` and
+  `prompt_cache_miss_tokens`. Guided experiment records and semantic-discovery
+  measured results preserve both fields independently from total prompt tokens
+  so a stable common leaf prefix can be evaluated rather than assumed to hit
+  cache.
 - Empty content errors include safe `finish_reason` and token-count diagnostics
   when the provider supplies them. Reasoning content itself is never echoed or
   retained.
@@ -145,22 +219,22 @@ DeepSeek-mode default: `deepseek-v4-flash`.
     {
       "name": "component or subsystem name",
       "role": "entry | boundary | coordination | domain | state | support | unknown",
-      "evidence": ["facts or paths from bundle"],
+	  "evidence_refs": ["e0001"],
       "why_it_matters": "..."
     }
   ],
   "first_files_to_open": [
-    {"path": "repo-relative path", "reason": "..."}
+	{"file_ref": "f0001", "reason": "..."}
   ],
   "candidate_flows": [
     {
       "name": "runtime or event flow name",
       "flow_type": "request | operational",
       "trigger": "what starts this flow",
-      "likely_entrypoint": "exact full path from allowed_paths",
-      "likely_files": ["repo-relative paths"],
+	  "likely_entrypoint_ref": "f0001",
+	  "likely_file_refs": ["f0001"],
       "why_interesting": "...",
-      "evidence": ["facts from bundle supporting this flow"],
+	  "evidence_refs": ["e0001"],
       "confidence": 0.0
     }
   ],
@@ -168,14 +242,20 @@ DeepSeek-mode default: `deepseek-v4-flash`.
     {
       "word": "term",
       "guess": "what it probably means",
-      "evidence": ["paths or readme excerpts"]
+	  "evidence_refs": ["e0001"]
     }
   ],
   "questions_for_human": [
     "question that helps guide next analysis step"
   ],
-  "unverified_paths": [
-    {"path": "suspected/repo-relative/path", "reason": "not in allowed_paths"}
+	"research_questions": [
+	  {
+		"id": "short id",
+		"purpose": "why this matters",
+		"question": "one bounded question",
+		"candidate_file_refs": ["f0001"],
+		"evidence_categories": ["declaration", "callsite"]
+	  }
   ],
   "warnings": [
     "uncertainty or missing context"
@@ -183,34 +263,46 @@ DeepSeek-mode default: `deepseek-v4-flash`.
 }
 ```
 
-Operational flows must cite bounded `source_signals` evidence. When the static
+The request uses Orientation prompt `orientation-json-v13`. Its compact wire
+projection has one request-local `file_index`; each concrete model-visible path
+appears there once. Candidate-file rows replace long canonical IDs and paths
+with a `file_ref`, raw `allowed_paths` is not repeated, and signals, entrypoint
+anchors/open files, command traces, orientation candidates, and import edges
+carry inline file/evidence refs without restating their facts. This projection
+does not reselect, shrink, or reorder the already bounded bundle.
+
+Operational flows must cite bounded `source_signals` evidence through its exact
+inline evidence ref. When the static
 evidence remains weak and no local proof establishes execution, confidence is
 capped at `0.3`. Request and operational flows remain one naturally ranked
 candidate list.
 
-Orientation parsing separates recoverable prose drift from structured
-navigation. A free-form evidence item that contains an invalid or unprovided
-path-like mention is dropped with a warning. If `likely_entrypoint` is neither
-an allowed file nor a provided entrypoint package, it may be replaced with that
-flow's first already-allowed `likely_file`, again with a warning.
-`first_files_to_open` and `candidate_flows[].likely_files` are never repaired to
-invented values. Invalid or unallowed items are removed with an explicit parser
-warning; the remaining structured paths still validate fail-closed. A response
-with no grounded candidate flow remains fatal.
-Orientation prompt v6 retains the atomic-evidence and closed-`allowed_paths`
-rules introduced in v3, explicitly rejects directory, package, import, and
-trailing-slash values in structured file fields, and adds the bounded component
-role used by the landscape layout.
-`main.go` is not accepted as an abbreviation for `cmd/prometheus/main.go`, and
-an import such as `pkg/goanalysis` is not accepted as a file. Prompt v2 captures
-remain replayable historical artifacts. The Prometheus capture still contains
-mixed prose items, which quality replay leaves explicitly unscored. Its clean
-raw-contract flag means the JSON wire shape was clean, not that every semantic
-prompt instruction was obeyed.
+Orientation response decoding is strict and typed. The provider returns only
+the decision AST above; private catalog digests and backend contract versions
+are not response fields. Unknown fields, unknown refs, wrong namespaces,
+duplicate refs, prefixes, shortening, substitutions, and raw paths in ref
+fields reject the response as a whole. There is no unique-prefix, regex/path
+grammar, fuzzy/semantic repair, or entrypoint-from-first-file fallback on this
+path. Provider prose is
+non-authoritative and never parsed into evidence or navigation. Canonical paths,
+evidence statements/locations, and research candidate IDs are restored locally
+from exact refs before shared structural validation and downstream consumers;
+the legacy evidence-path grammar is not run over those locally owned values.
+A fact file outside `candidate_file_index` remains valid bounded navigation,
+but has no candidate mapping and therefore cannot be selected for targeted
+research. Canonical
+`unverified_paths` remains empty because the provider contract has no such
+field.
+
+The cache fingerprint binds the exact provider request and a backend-owned
+private catalog digest that includes the response contract and canonical
+candidate-ID mapping. Equal provider-visible wire bytes with a different
+private mapping therefore miss rather than replaying a stale response. The
+provider never copies that digest or those versions.
 
 The component `role` is a bounded orientation hypothesis used only to arrange
-the browser landscape. It is normalized to `unknown` when a provider returns an
-unsupported value. Static package imports remain separate evidence and never
+the browser landscape. Unsupported provider role literals reject the strict
+typed response. Static package imports remain separate evidence and never
 upgrade a semantic role into a verified fact.
 
 ## Component planning and probe handoff
@@ -340,21 +432,31 @@ The JSON wire contract is intentionally smaller than `internal/symbol.Report`:
 
 The tagged contract expresses the same information as repeated `KEY: VALUE`
 lines. `symbol_evaluation.json` scores observable contract adherence out of 100;
-it deliberately does not pretend to score semantic truth. Run and compare real
-prompt versions with:
-
-```bash
-./scripts/symbol_prompt_experiment.sh baseline ../etcd kvServer.Put json
-./scripts/symbol_prompt_experiment.sh tagged ../etcd kvServer.Put tagged
-./scripts/symbol_prompt_compare.sh \
-  tmp/prompt-experiments/baseline-json \
-  tmp/prompt-experiments/tagged-tagged
-```
+it deliberately does not pretend to score semantic truth. Historical prompt
+experiments are retained in Git history rather than as production shell tools.
 
 Stable bundle/response fixtures and an in-memory explainer live in
 `internal/deepseektest`; they let higher layers test without calling DeepSeek.
 Capture tooling reads current contract IDs from `repomap dev prompt-versions`
 instead of duplicating prompt-version literals in shell.
+
+## Task investigation synthesis
+
+Task Lens uses one compact JSON-mode editing request after deterministic local
+retrieval. The provider receives only the bounded task bundle projection:
+opaque IDs, selected source/document excerpts, exact local relations, and the
+closed `allowed_paths` set. It never receives the checkout display name, raw
+file tree, global edges, or generic onboarding artifacts.
+
+On the official DeepSeek endpoint, this request enables thinking with
+`reasoning_effort: "high"` and omits temperature. It uses the same exact global
+output ceiling as every other semantic request; the historical development run
+that truncated at 6,000 no longer creates a purpose-specific minimum.
+Compatible endpoints receive the ordinary configured JSON-mode request. The
+response is only a proposal: local reduction rejects unknown IDs, fabricated
+local relations, unsupported causal claims, ungrounded commands, and paths
+outside the bundle. A substantive rejection is not retried; Task Lens may
+publish a clearly labeled deterministic local partial instead.
 
 ## Source assessment
 
@@ -384,32 +486,43 @@ split-line, or truncated shapes are not promoted.
 - Non-2xx HTTP response: return status plus a bounded response body. Obvious
   credential-like content is replaced with a redaction marker rather than echoed
   into stderr or debug artifacts.
-- Orientation responses still require JSON. Focused symbol responses are parsed
+- Semantic responses still require their consumer-owned JSON contract. Focused symbol responses are parsed
   tolerantly and fail only when neither a JSON object nor tagged report can be recovered.
-- No key is required for `--snapshot-only`, `--llm-bundle-only`, or request
-  preview. Live bearer calls require the key from the active namespace.
+- No key is required for an ordinary `--offline` run. Live bearer calls require
+  the key from the active namespace.
 
 ## Retry behavior
 
-- Retry on network errors (unless context canceled/exceeded).
-- Retry on HTTP 429 and 5xx.
-- No retry on HTTP 4xx (except 429).
-- Small exponential backoff with jitter, max 3 retries.
+- The shared transport may replay the exact same request after retryable network
+  errors, HTTP 429, or HTTP 5xx, using bounded exponential backoff with jitter
+  and at most three retries.
+- Context cancellation, non-429 HTTP 4xx, response-body overflow,
+  `finish_reason=length`, malformed semantic content, and local semantic
+  rejection are not retried.
+- Transport replay never changes `max_tokens`, prompt content, request identity,
+  or any other request byte. There is no semantic completion/proposal retry.
 
 ## Debugging
 
 ```bash
-repomap orient --repo ../etcd --debug-dir .repomap-runs --dump-llm
-./scripts/debug_last_run.sh .repomap-runs
+repomap ../etcd --debug-dir .repomap-runs --no-open --no-serve
 ```
+
+The CLI prints the exact run directory near the start of the run. Inspect that
+directory directly; there is no second debug wrapper.
 
 Artifacts produced:
 - `metadata.json` — run metadata (model, endpoint, command)
 - `snapshot.json` — full local deterministic snapshot
-- `llm_bundle.json` — compact bounded bundle sent to DeepSeek
-- `llm_request.redacted.json` — full request body (no Authorization header)
-- `llm_response.raw.json` — raw DeepSeek HTTP response body (redacted)
-- `orientation_report.json` — parsed/pretty orientation report
+- `repository_atlas.v1.json` — complete canonical local Repository Atlas
+- `navigator_request.v1.json` — bounded request-local Navigator projection and backend catalog
+- `semantic_exchanges/<id>/request.{json,txt}` — bounded redacted semantic request
+- `semantic_exchanges/<id>/response.{json,txt}` — bounded redacted response, when available and safe
+- `semantic_exchanges/<id>/response.marker.json` — closed unavailable or unsafe marker
+- `semantic_exchanges/<id>/exchange.v1.json` — closed committed outcome metadata
+- `navigator_status.v1.json` — closed Navigator state
+- `navigator_result.v1.json` — accepted or empty canonical recommendation
+- `report.json` — authoritative machine report
 - `error.txt` — error message if any step failed
 
 Never commit `.repomap-runs/`.

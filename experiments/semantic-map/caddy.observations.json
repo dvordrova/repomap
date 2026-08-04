@@ -1,0 +1,150 @@
+{
+  "case_id": "caddy-reload-handoff",
+  "repository": {
+    "name": "caddy",
+    "revision": "873fac5fc094fe538d0c477509127bb321d51a32"
+  },
+  "question": "How does Caddy replace a running configuration without discarding the old one before the new applications are ready, and where can the handoff fail?",
+  "observations": [
+    {
+      "id": "obs-01",
+      "state": "extracted",
+      "text": "changeConfig locks rawCfgMu and defers its unlock.",
+      "source": {
+        "path": "caddy.go",
+        "start_line": 168,
+        "end_line": 169
+      }
+    },
+    {
+      "id": "obs-02",
+      "state": "extracted",
+      "text": "The requested mutation is applied to rawCfg, then the complete resulting configuration is marshaled into newCfg.",
+      "source": {
+        "path": "caddy.go",
+        "start_line": 205,
+        "end_line": 217
+      }
+    },
+    {
+      "id": "obs-03",
+      "state": "extracted",
+      "text": "When forceReload is false and newCfg equals rawCfgJSON, changeConfig returns errSameConfig before loading.",
+      "source": {
+        "path": "caddy.go",
+        "start_line": 219,
+        "end_line": 223
+      }
+    },
+    {
+      "id": "obs-04",
+      "state": "extracted",
+      "text": "Configuration object IDs are indexed before loading; an indexing error restores the prior raw configuration representation when one exists.",
+      "source": {
+        "path": "caddy.go",
+        "start_line": 225,
+        "end_line": 243
+      }
+    },
+    {
+      "id": "obs-05",
+      "state": "extracted",
+      "text": "changeConfig calls unsyncedDecodeAndRun with newCfg; when it returns an error, changeConfig restores the prior raw configuration representation and returns an error.",
+      "source": {
+        "path": "caddy.go",
+        "start_line": 245,
+        "end_line": 265
+      }
+    },
+    {
+      "id": "obs-06",
+      "state": "extracted",
+      "text": "rawCfgJSON and rawCfgIndex are assigned the new values only after unsyncedDecodeAndRun succeeds.",
+      "source": {
+        "path": "caddy.go",
+        "start_line": 267,
+        "end_line": 274
+      }
+    },
+    {
+      "id": "obs-07",
+      "state": "extracted",
+      "text": "unsyncedDecodeAndRun removes meta fields and strictly unmarshals the result into a new Config.",
+      "source": {
+        "path": "caddy.go",
+        "start_line": 337,
+        "end_line": 346
+      }
+    },
+    {
+      "id": "obs-08",
+      "state": "extracted",
+      "text": "unsyncedDecodeAndRun calls run(newCfg, true) and returns immediately if run fails.",
+      "source": {
+        "path": "caddy.go",
+        "start_line": 362,
+        "end_line": 366
+      }
+    },
+    {
+      "id": "obs-09",
+      "state": "extracted",
+      "text": "After run succeeds, unsyncedDecodeAndRun saves currentCtx as oldCtx, assigns the new context while holding currentCtxMu, unlocks, and then calls unsyncedStop(oldCtx).",
+      "source": {
+        "path": "caddy.go",
+        "start_line": 368,
+        "end_line": 375
+      }
+    },
+    {
+      "id": "obs-10",
+      "state": "extracted",
+      "text": "run provisions the new context first; a provisioning error is returned before application startup.",
+      "source": {
+        "path": "caddy.go",
+        "start_line": 419,
+        "end_line": 428
+      }
+    },
+    {
+      "id": "obs-11",
+      "state": "extracted",
+      "text": "With startup enabled, run starts applications from ctx.cfg.apps; if one start fails, it stops the applications already recorded as started and returns an error.",
+      "source": {
+        "path": "caddy.go",
+        "start_line": 430,
+        "end_line": 465
+      }
+    },
+    {
+      "id": "obs-12",
+      "state": "extracted",
+      "text": "After application startup, run emits the started event, calls finishSettingUp, and returns the resulting error.",
+      "source": {
+        "path": "caddy.go",
+        "start_line": 470,
+        "end_line": 476
+      }
+    },
+    {
+      "id": "obs-13",
+      "state": "extracted",
+      "text": "During provisioning, replaceAdminServer is called before configured applications are loaded and provisioned.",
+      "source": {
+        "path": "caddy.go",
+        "start_line": 564,
+        "end_line": 581
+      }
+    },
+    {
+      "id": "obs-14",
+      "state": "extracted",
+      "text": "unsyncedStop emits stopping, calls Stop for every application while continuing after logged errors, and then invokes the configuration context cancel function.",
+      "source": {
+        "path": "caddy.go",
+        "start_line": 724,
+        "end_line": 742
+      }
+    }
+  ]
+}

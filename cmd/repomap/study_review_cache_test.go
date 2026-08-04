@@ -1,0 +1,1202 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/dvordrova/repomap/internal/deepseek"
+	"github.com/dvordrova/repomap/internal/modelresearch"
+	"github.com/dvordrova/repomap/internal/semanticdiscovery"
+	"github.com/dvordrova/repomap/internal/sourcewindowfacts"
+	"github.com/dvordrova/repomap/internal/studymap"
+)
+
+const studyReviewCacheTestAPIKey = "study-cache-actual-secret-key"
+
+type studyReviewCacheHTTPFixture struct {
+	server          *httptest.Server
+	calls           atomic.Int64
+	responseMutator func(*studymap.ReviewProposal)
+}
+
+type studyReviewDirectEditor struct {
+	calls    int
+	response []byte
+}
+
+func (editor *studyReviewDirectEditor) SemanticDiscoveryPromptJSON(
+	prompt semanticdiscovery.Prompt,
+) ([]byte, error) {
+	return json.Marshal(prompt)
+}
+
+func (editor *studyReviewDirectEditor) DiscoverSemanticsMeasured(
+	_ context.Context,
+	_ semanticdiscovery.Prompt,
+) (modelresearch.ProviderResult, error) {
+	editor.calls++
+	return modelresearch.ProviderResult{Content: append([]byte(nil), editor.response...)}, nil
+}
+
+type studyReviewCacheRunResult struct {
+	recordJSON    []byte
+	recordHash    string
+	candidateIDs  []string
+	reviewIDs     []string
+	publishedIDs  []string
+	scheduled     int
+	accepted      int
+	rejected      int
+	providerCalls int
+	cacheStats    studyReviewCacheStats
+	editor        *studyReviewCachingEditor
+}
+
+type studyReviewCacheRunOptions struct {
+	runsDir      string
+	runName      string
+	endpoint     string
+	model        string
+	disableCache bool
+	withoutLive  bool
+	mutateEditor func(*studyReviewCachingEditor)
+}
+
+func TestStudyReviewCacheHTTPColdWarmAndContentAddressing(t *testing.T) {
+	provider := newStudyReviewCacheHTTPFixture(t)
+	defer provider.server.Close()
+
+	runsDir := t.TempDir()
+	bundleA, directions := studyReviewCacheIndependentFixture(t)
+	cold := runStudyReviewCacheFixture(t, provider, bundleA, directions, studyReviewCacheRunOptions{
+		runsDir:  runsDir,
+		runName:  "cold",
+		endpoint: provider.server.URL,
+		model:    "study-cache-model",
+	})
+	if got, want := provider.calls.Load(), int64(len(directions.Directions)); got != want {
+		t.Fatalf("cold review HTTP calls = %d, want %d", got, want)
+	}
+	assertStudyReviewCacheStats(t, cold.editor, 0, len(directions.Directions), 0, 0)
+	assertStudyReviewCacheRunTrace(t, cold, directions, len(directions.Directions), 0, len(directions.Directions), 0)
+
+	cacheFiles := studyReviewCacheFiles(t, runsDir)
+	if got, want := len(cacheFiles), len(directions.Directions); got != want {
+		t.Fatalf("cold cache files = %d, want %d", got, want)
+	}
+	for _, path := range cacheFiles {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(raw, []byte(studyReviewCacheTestAPIKey)) ||
+			bytes.Contains(bytes.ToLower(raw), []byte("authorization")) {
+			t.Fatalf("cache record %q persisted transport credentials", filepath.Base(path))
+		}
+	}
+
+	var warmLiveFactories atomic.Int64
+	warm := runStudyReviewCacheFixture(t, provider, bundleA, directions, studyReviewCacheRunOptions{
+		runsDir:     runsDir,
+		runName:     "warm-without-api-key",
+		endpoint:    provider.server.URL,
+		model:       "study-cache-model",
+		withoutLive: true,
+		mutateEditor: func(editor *studyReviewCachingEditor) {
+			editor.newLive = func() (semanticDiscoveryEditor, error) {
+				warmLiveFactories.Add(1)
+				return nil, errors.New("warm cache hit constructed a live provider")
+			}
+		},
+	})
+	if got, want := provider.calls.Load(), int64(len(directions.Directions)); got != want {
+		t.Fatalf("warm review HTTP calls changed total to %d, want %d", got, want)
+	}
+	if got := warmLiveFactories.Load(); got != 0 {
+		t.Fatalf("warm live provider factories = %d, want 0", got)
+	}
+	assertStudyReviewCacheStats(t, warm.editor, len(directions.Directions), 0, 0, 0)
+	assertStudyReviewCacheRunTrace(t, warm, directions, 0, len(directions.Directions), 0, 0)
+	if !bytes.Equal(cold.recordJSON, warm.recordJSON) || cold.recordHash != warm.recordHash {
+		t.Fatalf("cold/warm normalized Study differs: %s / %s", cold.recordHash, warm.recordHash)
+	}
+	if !reflect.DeepEqual(cold.candidateIDs, warm.candidateIDs) ||
+		!reflect.DeepEqual(cold.reviewIDs, warm.reviewIDs) ||
+		!reflect.DeepEqual(cold.publishedIDs, warm.publishedIDs) {
+		t.Fatalf("cold/warm Study IDs differ: cold=%#v/%#v/%#v warm=%#v/%#v/%#v",
+			cold.candidateIDs, cold.reviewIDs, cold.publishedIDs,
+			warm.candidateIDs, warm.reviewIDs, warm.publishedIDs)
+	}
+
+	bundleB := mutateStudyReviewCacheSource(t, bundleA, 0, 2)
+	beforeB := provider.calls.Load()
+	changed := runStudyReviewCacheFixture(t, provider, bundleB, directions, studyReviewCacheRunOptions{
+		runsDir:  runsDir,
+		runName:  "one-fragment-b",
+		endpoint: provider.server.URL,
+		model:    "study-cache-model",
+	})
+	if got := provider.calls.Load() - beforeB; got != 1 {
+		t.Fatalf("one changed review fragment HTTP calls = %d, want 1", got)
+	}
+	assertStudyReviewCacheRunTrace(t, changed, directions, 1, len(directions.Directions)-1, 1, 0)
+
+	var returnToALiveFactories atomic.Int64
+	returnToA := runStudyReviewCacheFixture(t, provider, bundleA, directions, studyReviewCacheRunOptions{
+		runsDir:     runsDir,
+		runName:     "return-to-a-without-api-key",
+		endpoint:    provider.server.URL,
+		model:       "study-cache-model",
+		withoutLive: true,
+		mutateEditor: func(editor *studyReviewCachingEditor) {
+			editor.newLive = func() (semanticDiscoveryEditor, error) {
+				returnToALiveFactories.Add(1)
+				return nil, errors.New("A-B-A replay constructed a live provider")
+			}
+		},
+	})
+	if got := returnToALiveFactories.Load(); got != 0 {
+		t.Fatalf("A-B-A live provider factories = %d, want 0", got)
+	}
+	assertStudyReviewCacheRunTrace(t, returnToA, directions, 0, len(directions.Directions), 0, 0)
+	if !bytes.Equal(cold.recordJSON, returnToA.recordJSON) || cold.recordHash != returnToA.recordHash {
+		t.Fatalf("A-B-A normalized Study differs: %s / %s", cold.recordHash, returnToA.recordHash)
+	}
+	t.Logf(
+		"Study review matrix candidates=%d scheduled=%d cold_calls=%d warm_hits=%d changed_hits=%d changed_misses=%d return_hits=%d published=%d",
+		len(cold.candidateIDs), cold.scheduled, cold.providerCalls, warm.cacheStats.Hits,
+		changed.cacheStats.Hits, changed.cacheStats.Misses, returnToA.cacheStats.Hits,
+		len(cold.publishedIDs),
+	)
+}
+
+func TestStudyReviewCacheIdentityDriftMisses(t *testing.T) {
+	provider := newStudyReviewCacheHTTPFixture(t)
+	defer provider.server.Close()
+
+	runsDir := t.TempDir()
+	bundle, directions := studyReviewCacheIndependentFixture(t)
+	base := studyReviewCacheRunOptions{
+		runsDir:  runsDir,
+		endpoint: provider.server.URL,
+		model:    "study-cache-model",
+	}
+	runStudyReviewCacheFixture(t, provider, bundle, directions, withStudyReviewCacheRunName(base, "identity-base"))
+	wantPerRun := int64(len(directions.Directions))
+	if got := provider.calls.Load(); got != wantPerRun {
+		t.Fatalf("identity seed calls = %d, want %d", got, wantPerRun)
+	}
+
+	tests := []struct {
+		name   string
+		change func(*studyReviewCacheRunOptions)
+	}{
+		{
+			name: "endpoint",
+			change: func(options *studyReviewCacheRunOptions) {
+				options.endpoint += "/endpoint-drift"
+			},
+		},
+		{
+			name: "model",
+			change: func(options *studyReviewCacheRunOptions) {
+				options.model = "study-cache-other-model"
+			},
+		},
+		{
+			name: "stage-contract",
+			change: func(options *studyReviewCacheRunOptions) {
+				options.mutateEditor = func(editor *studyReviewCachingEditor) {
+					editor.stageContractVersion += "-drift"
+				}
+			},
+		},
+		{
+			name: "validator-contract",
+			change: func(options *studyReviewCacheRunOptions) {
+				options.mutateEditor = func(editor *studyReviewCachingEditor) {
+					editor.validatorVersion += "-drift"
+				}
+			},
+		},
+		{
+			name: "english-output-contract",
+			change: func(options *studyReviewCacheRunOptions) {
+				options.mutateEditor = func(editor *studyReviewCachingEditor) {
+					editor.englishContract += "-drift"
+				}
+			},
+		},
+	}
+	for _, test := range tests {
+		before := provider.calls.Load()
+		options := base
+		options.runName = "identity-" + test.name
+		test.change(&options)
+		runStudyReviewCacheFixture(t, provider, bundle, directions, options)
+		if got := provider.calls.Load() - before; got != wantPerRun {
+			t.Errorf("%s identity drift calls = %d, want %d", test.name, got, wantPerRun)
+		}
+	}
+
+	identityEditor := newStudyReviewCachingEditor(
+		studyReviewCacheClient(provider.server.URL, "study-cache-model", ""),
+		nil,
+		runsDir,
+		false,
+		io.Discard,
+	)
+	prompt, _, _ := studyReviewCachePlanFor(
+		t,
+		identityEditor,
+		bundle,
+		directions.Directions[0],
+	)
+	prompt.System += "\nPrompt-contract drift."
+	driftedRequest, err := identityEditor.SemanticDiscoveryPromptJSON(prompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, hit, err := identityEditor.loadStudyReview(
+		prompt,
+		driftedRequest,
+		bundle,
+		directions.Directions[0],
+	); err != nil || hit {
+		t.Fatalf("prompt drift load = hit %t, error %v; want clean miss", hit, err)
+	}
+}
+
+func TestStudyReviewCacheReviewMissBindsLiveProviderIdentity(t *testing.T) {
+	provider := newStudyReviewCacheHTTPFixture(t)
+	defer provider.server.Close()
+
+	bundle, directions := studyReviewCacheIndependentFixture(t)
+	promptClient := studyReviewCacheClient(provider.server.URL, "study-cache-model", "")
+	liveClient := studyReviewCacheClient(
+		provider.server.URL+"/changed-provider",
+		"study-cache-model",
+		studyReviewCacheTestAPIKey,
+	)
+	editor := newStudyReviewCachingEditor(
+		promptClient,
+		func() (semanticDiscoveryEditor, error) { return liveClient, nil },
+		t.TempDir(),
+		false,
+		io.Discard,
+	)
+	prompt, _, _ := studyReviewCachePlanFor(t, editor, bundle, directions.Directions[0])
+	if _, err := editor.DiscoverSemanticsMeasured(context.Background(), prompt); err == nil ||
+		!strings.Contains(err.Error(), "identity changed") {
+		t.Fatalf("mismatched live provider error = %v, want bounded identity rejection", err)
+	}
+	if got := provider.calls.Load(); got != 0 {
+		t.Fatalf("mismatched provider HTTP calls = %d, want 0", got)
+	}
+}
+
+func TestStudyReviewCacheDoesNotChangeNonReviewProviderPath(t *testing.T) {
+	live := &studyReviewDirectEditor{response: []byte(`{"version":1}`)}
+	editor := newStudyReviewCachingEditor(
+		studyReviewCacheClient("https://prompt.example.test/chat", "study-cache-model", ""),
+		func() (semanticDiscoveryEditor, error) { return live, nil },
+		t.TempDir(),
+		false,
+		io.Discard,
+	)
+	prompt := semanticdiscovery.Prompt{
+		Version:         semanticdiscovery.StudyCandidatesPromptVersion,
+		System:          "Return JSON.",
+		User:            "Build directions.",
+		ThinkingProfile: semanticdiscovery.ThinkingHigh,
+	}
+	result, err := editor.DiscoverSemanticsMeasured(context.Background(), prompt)
+	if err != nil {
+		t.Fatalf("non-review provider path error = %v", err)
+	}
+	if !bytes.Equal(result.Content, live.response) || live.calls != 1 {
+		t.Fatalf("non-review result/calls = %q/%d, want unchanged direct delegation", result.Content, live.calls)
+	}
+}
+
+func TestStudyReviewCacheNoCacheBypassesReadAndWrite(t *testing.T) {
+	provider := newStudyReviewCacheHTTPFixture(t)
+	defer provider.server.Close()
+
+	runsDir := t.TempDir()
+	bundle, directions := studyReviewCacheIndependentFixture(t)
+	runStudyReviewCacheFixture(t, provider, bundle, directions, studyReviewCacheRunOptions{
+		runsDir:  runsDir,
+		runName:  "no-cache-seed",
+		endpoint: provider.server.URL,
+		model:    "study-cache-model",
+	})
+	beforeFiles := studyReviewCacheSnapshot(t, runsDir)
+	beforeCalls := provider.calls.Load()
+	result := runStudyReviewCacheFixture(t, provider, bundle, directions, studyReviewCacheRunOptions{
+		runsDir:      runsDir,
+		runName:      "no-cache-run",
+		endpoint:     provider.server.URL,
+		model:        "study-cache-model",
+		disableCache: true,
+	})
+	if got, want := provider.calls.Load()-beforeCalls, int64(len(directions.Directions)); got != want {
+		t.Fatalf("--no-cache review HTTP calls = %d, want %d", got, want)
+	}
+	assertStudyReviewCacheStats(t, result.editor, 0, 0, len(directions.Directions), 0)
+	afterFiles := studyReviewCacheSnapshot(t, runsDir)
+	if !reflect.DeepEqual(beforeFiles, afterFiles) {
+		t.Fatal("--no-cache changed the persistent review cache")
+	}
+}
+
+func TestStudyReviewCacheCanceledStoreDoesNotPublish(t *testing.T) {
+	runsDir := t.TempDir()
+	bundle, directions := studyReviewCacheIndependentFixture(t)
+	editor := newStudyReviewCachingEditor(
+		studyReviewCacheClient("https://provider.example.test/chat", "study-cache-model", ""),
+		nil,
+		runsDir,
+		false,
+		io.Discard,
+	)
+	prompt, request, reviewBundle := studyReviewCachePlanFor(
+		t, editor, bundle, directions.Directions[0],
+	)
+	response, err := json.Marshal(studyReviewCacheProposal(reviewBundle))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	editor.storeStudyReview(
+		ctx, prompt, request, bundle, directions.Directions[0], response,
+	)
+	if files := studyReviewCacheFiles(t, runsDir); len(files) != 0 {
+		t.Fatalf("canceled review produced %d cache files, want 0", len(files))
+	}
+}
+
+func TestStudyReviewCacheRejectsCorruptWrongIDAndWrongSourceEntries(t *testing.T) {
+	provider := newStudyReviewCacheHTTPFixture(t)
+	defer provider.server.Close()
+
+	runsDir := t.TempDir()
+	bundleA, directions := studyReviewCacheIndependentFixture(t)
+	seed := runStudyReviewCacheFixture(t, provider, bundleA, directions, studyReviewCacheRunOptions{
+		runsDir:  runsDir,
+		runName:  "invalid-seed",
+		endpoint: provider.server.URL,
+		model:    "study-cache-model",
+	})
+	files := studyReviewCacheFiles(t, runsDir)
+	if len(files) != len(directions.Directions) {
+		t.Fatalf("seed cache files = %d, want %d", len(files), len(directions.Directions))
+	}
+
+	if err := os.WriteFile(files[0], []byte("{truncated"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	beforeCorrupt := provider.calls.Load()
+	corrupt := runStudyReviewCacheFixture(t, provider, bundleA, directions, studyReviewCacheRunOptions{
+		runsDir:  runsDir,
+		runName:  "invalid-corrupt",
+		endpoint: provider.server.URL,
+		model:    "study-cache-model",
+	})
+	if got := provider.calls.Load() - beforeCorrupt; got != 1 {
+		t.Fatalf("corrupt cache recompute calls = %d, want 1", got)
+	}
+	if !bytes.Equal(seed.recordJSON, corrupt.recordJSON) || seed.recordHash != corrupt.recordHash {
+		t.Fatal("corrupt cache recompute changed normalized Study")
+	}
+
+	files = studyReviewCacheFiles(t, runsDir)
+	raw, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record studyReviewCacheRecord
+	if err := json.Unmarshal(raw, &record); err != nil {
+		t.Fatal(err)
+	}
+	proposal, err := studymap.DecodeReviewProposal(record.Response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal.DirectionID = "direction-wrong"
+	record.Response, err = json.Marshal(proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.ResponseSHA256 = studyReviewCacheTestSHA256(record.Response)
+	wrongIDRecord, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(files[0], append(wrongIDRecord, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	beforeWrongID := provider.calls.Load()
+	runStudyReviewCacheFixture(t, provider, bundleA, directions, studyReviewCacheRunOptions{
+		runsDir:  runsDir,
+		runName:  "invalid-wrong-id",
+		endpoint: provider.server.URL,
+		model:    "study-cache-model",
+	})
+	if got := provider.calls.Load() - beforeWrongID; got != 1 {
+		t.Fatalf("wrong direction ID recompute calls = %d, want 1", got)
+	}
+
+	bundleB := mutateStudyReviewCacheSource(t, bundleA, 0, 2)
+	identityEditor := newStudyReviewCachingEditor(
+		studyReviewCacheClient(provider.server.URL, "study-cache-model", ""),
+		nil,
+		runsDir,
+		false,
+		io.Discard,
+	)
+	for _, direction := range directions.Directions {
+		prompt, request, _ := studyReviewCachePlanFor(t, identityEditor, bundleA, direction)
+		_, key, identityJSON, err := identityEditor.reviewCacheIdentity(
+			prompt, request, bundleA, direction,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, found, corrupt := loadStudyReviewCache(runsDir, key, identityJSON); !found || corrupt {
+			t.Fatalf(
+				"seed cache before stale-source probe = found %t, corrupt %t for %s",
+				found, corrupt, direction.DirectionID,
+			)
+		}
+	}
+	keyA := studyReviewCacheKeyFor(t, identityEditor, bundleA, directions.Directions[0])
+	keyB := studyReviewCacheKeyFor(t, identityEditor, bundleB, directions.Directions[0])
+	if keyA == keyB {
+		t.Fatal("source fragment change did not change review cache identity")
+	}
+	rawA, err := os.ReadFile(studyReviewCachePath(runsDir, keyA))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var staleSourceRecord studyReviewCacheRecord
+	if err := json.Unmarshal(rawA, &staleSourceRecord); err != nil {
+		t.Fatal(err)
+	}
+	staleSourceRecord.Key = keyB
+	staleSourceRaw, err := json.Marshal(staleSourceRecord)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		studyReviewCachePath(runsDir, keyB),
+		append(staleSourceRaw, '\n'),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	changedKeys := 0
+	corruptKeys := 0
+	rejectedResponses := 0
+	for _, direction := range directions.Directions {
+		oldKey := studyReviewCacheKeyFor(t, identityEditor, bundleA, direction)
+		prompt, request, _ := studyReviewCachePlanFor(t, identityEditor, bundleB, direction)
+		_, newKey, identityJSON, err := identityEditor.reviewCacheIdentity(
+			prompt, request, bundleB, direction,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if oldKey != newKey {
+			changedKeys++
+		}
+		record, found, corrupt := loadStudyReviewCache(runsDir, newKey, identityJSON)
+		if corrupt {
+			corruptKeys++
+		}
+		if found && !studyReviewResponseAccepted(bundleB, direction, record.Response) {
+			rejectedResponses++
+		}
+	}
+	if changedKeys != 1 || corruptKeys != 1 || rejectedResponses != 0 {
+		t.Fatalf(
+			"stale-source precondition = changed keys %d, corrupt keys %d, rejected responses %d; want 1/1/0",
+			changedKeys, corruptKeys, rejectedResponses,
+		)
+	}
+	beforeWrongSource := provider.calls.Load()
+	wrongSource := runStudyReviewCacheFixture(t, provider, bundleB, directions, studyReviewCacheRunOptions{
+		runsDir:  runsDir,
+		runName:  "invalid-wrong-source",
+		endpoint: provider.server.URL,
+		model:    "study-cache-model",
+	})
+	if got := provider.calls.Load() - beforeWrongSource; got != 1 {
+		wrongSource.editor.mu.Lock()
+		stats := wrongSource.editor.stats
+		wrongSource.editor.mu.Unlock()
+		t.Fatalf("wrong source identity recompute calls = %d, want 1; stats=%#v", got, stats)
+	}
+}
+
+func TestStudyReviewCacheCorruptRepairRevalidatesCurrentObject(t *testing.T) {
+	runsDir := t.TempDir()
+	bundle, directions := studyReviewCacheIndependentFixture(t)
+	editor := newStudyReviewCachingEditor(
+		studyReviewCacheClient("https://provider.example.test/chat", "study-cache-model", ""),
+		nil,
+		runsDir,
+		false,
+		io.Discard,
+	)
+	prompt, request, reviewBundle := studyReviewCachePlanFor(
+		t, editor, bundle, directions.Directions[0],
+	)
+	response, err := json.Marshal(studyReviewCacheProposal(reviewBundle))
+	if err != nil {
+		t.Fatal(err)
+	}
+	editor.storeStudyReview(
+		context.Background(), prompt, request, bundle, directions.Directions[0], response,
+	)
+	_, key, identityJSON, err := editor.reviewCacheIdentity(
+		prompt, request, bundle, directions.Directions[0],
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := studyReviewCachePath(runsDir, key)
+	validRecord, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{corrupt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	versionDir, safe := studyReviewCacheDirectory(runsDir, false)
+	if !safe {
+		t.Fatal("cache directory unexpectedly unsafe")
+	}
+	lockPath := filepath.Join(versionDir, key+".repair-lock")
+	if err := os.Mkdir(lockPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := repairCorruptStudyReviewCache(
+		runsDir, key, identityJSON, bundle, directions.Directions[0],
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, validRecord, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(lockPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := repairCorruptStudyReviewCache(
+		runsDir, key, identityJSON, bundle, directions.Directions[0],
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, corrupt := loadStudyReviewCache(runsDir, key, identityJSON); !found || corrupt {
+		t.Fatalf("revalidated repair = found %t, corrupt %t; want intact valid record", found, corrupt)
+	}
+}
+
+func TestStudyReviewCacheDoesNotPersistSecretResponse(t *testing.T) {
+	runsDir := t.TempDir()
+	bundle, directions := studyReviewCacheIndependentFixture(t)
+	editor := newStudyReviewCachingEditor(
+		studyReviewCacheClient("https://provider.example.test/chat", "study-cache-model", ""),
+		nil,
+		runsDir,
+		false,
+		io.Discard,
+	)
+	prompt, request, reviewBundle := studyReviewCachePlanFor(
+		t,
+		editor,
+		bundle,
+		directions.Directions[0],
+	)
+	proposal := studyReviewCacheProposal(reviewBundle)
+	proposal.Reviews[0].SupportedObservation = "API_KEY=actual-secret-value"
+	response, err := json.Marshal(proposal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	editor.storeStudyReview(
+		context.Background(), prompt, request, bundle, directions.Directions[0], response,
+	)
+	if files := studyReviewCacheFiles(t, runsDir); len(files) != 0 {
+		t.Fatalf("secret-bearing response produced %d cache files, want 0", len(files))
+	}
+}
+
+func TestStudyReviewCacheDoesNotPersistSecretRequestOrRawEndpoint(t *testing.T) {
+	runsDir := t.TempDir()
+	bundle, directions := studyReviewCacheIndependentFixture(t)
+	endpointMarker := "endpoint-private-marker"
+	editor := newStudyReviewCachingEditor(
+		studyReviewCacheClient(
+			"https://provider.example.test/"+endpointMarker,
+			"study-cache-model",
+			"",
+		),
+		nil,
+		runsDir,
+		false,
+		io.Discard,
+	)
+	prompt, request, reviewBundle := studyReviewCachePlanFor(
+		t,
+		editor,
+		bundle,
+		directions.Directions[0],
+	)
+	validResponse, err := json.Marshal(studyReviewCacheProposal(reviewBundle))
+	if err != nil {
+		t.Fatal(err)
+	}
+	editor.storeStudyReview(
+		context.Background(),
+		prompt,
+		request,
+		bundle,
+		directions.Directions[0],
+		validResponse,
+	)
+	files := studyReviewCacheFiles(t, runsDir)
+	if len(files) != 1 {
+		t.Fatalf("endpoint identity cache files = %d, want 1", len(files))
+	}
+	raw, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(raw, []byte(endpointMarker)) {
+		t.Fatal("cache record persisted the raw provider endpoint")
+	}
+
+	secretRunsDir := t.TempDir()
+	secretEditor := newStudyReviewCachingEditor(
+		studyReviewCacheClient("https://provider.example.test/chat", "study-cache-model", ""),
+		nil,
+		secretRunsDir,
+		false,
+		io.Discard,
+	)
+	secretPrompt, _, secretBundle := studyReviewCachePlanFor(
+		t,
+		secretEditor,
+		bundle,
+		directions.Directions[0],
+	)
+	secretPrompt.System += ` sk-12345678901234567890`
+	secretRequest, err := secretEditor.SemanticDiscoveryPromptJSON(secretPrompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secretResponse, err := json.Marshal(studyReviewCacheProposal(secretBundle))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secretEditor.storeStudyReview(
+		context.Background(),
+		secretPrompt,
+		secretRequest,
+		bundle,
+		directions.Directions[0],
+		secretResponse,
+	)
+	if files := studyReviewCacheFiles(t, secretRunsDir); len(files) != 0 {
+		t.Fatalf("secret-bearing request produced %d cache files, want 0", len(files))
+	}
+}
+
+func TestStudyReviewCacheSecretProviderResponseLeavesNoCacheOrDebugArtifact(t *testing.T) {
+	provider := newStudyReviewCacheHTTPFixture(t)
+	defer provider.server.Close()
+	secret := `sk-12345678901234567890`
+	provider.responseMutator = func(proposal *studymap.ReviewProposal) {
+		proposal.Reviews[0].SupportedObservation = secret
+	}
+
+	runsDir := t.TempDir()
+	runDir := filepath.Join(runsDir, "secret-response")
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	bundle, directions := studyReviewCacheIndependentFixture(t)
+	directions.Directions = directions.Directions[:1]
+	editor := newStudyReviewCachingEditor(
+		studyReviewCacheClient(provider.server.URL, "study-cache-model", ""),
+		func() (semanticDiscoveryEditor, error) {
+			return studyReviewCacheClient(
+				provider.server.URL,
+				"study-cache-model",
+				studyReviewCacheTestAPIKey,
+			), nil
+		},
+		runsDir,
+		false,
+		io.Discard,
+	)
+	bundleHash, err := studymap.BundleHash(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, _, err := reviewStudyMapDirections(
+		context.Background(),
+		runDir,
+		bundle,
+		directions,
+		bundleHash,
+		editor,
+	); err == nil || !strings.Contains(err.Error(), "obvious secret key") {
+		t.Fatalf("secret provider response error = %v, want fail-closed diagnostic", err)
+	}
+	if files := studyReviewCacheFiles(t, runsDir); len(files) != 0 {
+		t.Fatalf("secret provider response produced %d cache files, want 0", len(files))
+	}
+	if err := filepath.WalkDir(runDir, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if bytes.Contains(raw, []byte(secret)) {
+			t.Fatalf("debug artifact %q contains the provider credential", path)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func newStudyReviewCacheHTTPFixture(t *testing.T) *studyReviewCacheHTTPFixture {
+	t.Helper()
+	fixture := &studyReviewCacheHTTPFixture{}
+	fixture.server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		fixture.calls.Add(1)
+		if got, want := request.Header.Get("Authorization"), "Bearer "+studyReviewCacheTestAPIKey; got != want {
+			t.Errorf("provider Authorization = %q, want bearer fixture credential", got)
+		}
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Errorf("read review request: %v", err)
+			return
+		}
+		var envelope struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.Unmarshal(body, &envelope); err != nil {
+			t.Errorf("decode review request: %v", err)
+			return
+		}
+		var user string
+		for _, message := range envelope.Messages {
+			if message.Role == "user" {
+				user = message.Content
+			}
+		}
+		marker := strings.LastIndex(user, studyMapReviewBundleMarker)
+		if marker < 0 {
+			t.Error("review request omitted its bounded bundle")
+			return
+		}
+		bundle, err := studymap.DecodeReviewBundle(
+			[]byte(user[marker+len(studyMapReviewBundleMarker):]),
+		)
+		if err != nil {
+			t.Errorf("decode bounded review bundle: %v", err)
+			return
+		}
+		proposal := studyReviewCacheProposal(bundle)
+		if fixture.responseMutator != nil {
+			fixture.responseMutator(&proposal)
+		}
+		content, err := json.Marshal(proposal)
+		if err != nil {
+			t.Errorf("encode review proposal: %v", err)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(writer).Encode(map[string]any{
+			"choices": []any{map[string]any{
+				"finish_reason": "stop",
+				"message":       map[string]any{"role": "assistant", "content": string(content)},
+			}},
+			"usage": map[string]any{"prompt_tokens": 17, "completion_tokens": 11},
+		}); err != nil {
+			t.Errorf("encode provider envelope: %v", err)
+		}
+	}))
+	return fixture
+}
+
+func runStudyReviewCacheFixture(
+	t *testing.T,
+	provider *studyReviewCacheHTTPFixture,
+	bundle studymap.Bundle,
+	directions studymap.DirectionProposal,
+	options studyReviewCacheRunOptions,
+) studyReviewCacheRunResult {
+	t.Helper()
+	if options.runName == "" || options.runsDir == "" || options.endpoint == "" || options.model == "" {
+		t.Fatal("incomplete Study review cache test options")
+	}
+	runDir := filepath.Join(options.runsDir, options.runName)
+	if err := os.MkdirAll(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	promptClient := studyReviewCacheClient(options.endpoint, options.model, "")
+	newLive := func() (semanticDiscoveryEditor, error) {
+		if options.withoutLive {
+			return nil, errors.New("live provider is unavailable")
+		}
+		return studyReviewCacheClient(options.endpoint, options.model, studyReviewCacheTestAPIKey), nil
+	}
+	editor := newStudyReviewCachingEditor(
+		promptClient,
+		newLive,
+		options.runsDir,
+		options.disableCache,
+		io.Discard,
+	)
+	if options.mutateEditor != nil {
+		options.mutateEditor(editor)
+	}
+	bundleHash, err := studymap.BundleHash(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviews, summaries, stages, issues, err := reviewStudyMapDirections(
+		context.Background(),
+		runDir,
+		bundle,
+		directions,
+		bundleHash,
+		editor,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reviews) != len(directions.Directions) ||
+		len(summaries) != len(directions.Directions) ||
+		len(stages) != len(directions.Directions) || len(issues) != 0 {
+		t.Fatalf(
+			"reviews/summaries/stages/issues = %d/%d/%d/%d, want %d/%d/%d/0",
+			len(reviews), len(summaries), len(stages), len(issues),
+			len(directions.Directions), len(directions.Directions), len(directions.Directions),
+		)
+	}
+	brief := studyReviewCacheBrief(bundle)
+	record, _, err := studymap.BuildReviewedRecord(bundle, brief, directions, reviews)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordJSON, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidateIDs := make([]string, 0, len(directions.Directions))
+	for _, direction := range directions.Directions {
+		candidateIDs = append(candidateIDs, direction.DirectionID)
+	}
+	reviewIDs := make([]string, 0, len(reviews))
+	for _, review := range reviews {
+		reviewIDs = append(reviewIDs, review.DirectionID)
+	}
+	publishedIDs := make([]string, 0, len(record.Directions))
+	for _, direction := range record.Directions {
+		publishedIDs = append(publishedIDs, direction.ID)
+	}
+	providerCalls := 0
+	accepted := 0
+	for _, stage := range stages {
+		if stage.ProviderCall {
+			providerCalls++
+		}
+		if stage.Status == "accepted" {
+			accepted++
+		}
+	}
+	editor.mu.Lock()
+	cacheStats := editor.stats
+	editor.mu.Unlock()
+	return studyReviewCacheRunResult{
+		recordJSON: recordJSON, recordHash: studyReviewCacheTestSHA256(recordJSON),
+		candidateIDs: candidateIDs, reviewIDs: reviewIDs, publishedIDs: publishedIDs,
+		scheduled: len(stages), accepted: accepted, rejected: len(stages) - accepted,
+		providerCalls: providerCalls, cacheStats: cacheStats, editor: editor,
+	}
+}
+
+func assertStudyReviewCacheRunTrace(
+	t *testing.T,
+	result studyReviewCacheRunResult,
+	directions studymap.DirectionProposal,
+	wantProviderCalls,
+	wantHits,
+	wantMisses,
+	wantRejected int,
+) {
+	t.Helper()
+	wantIDs := make([]string, 0, len(directions.Directions))
+	for _, direction := range directions.Directions {
+		wantIDs = append(wantIDs, direction.DirectionID)
+	}
+	if result.scheduled != len(wantIDs) || result.accepted != len(wantIDs) ||
+		result.rejected != wantRejected || result.providerCalls != wantProviderCalls ||
+		result.cacheStats.Hits != wantHits || result.cacheStats.Misses != wantMisses {
+		t.Fatalf(
+			"Study review trace scheduled/accepted/rejected/provider_calls/hits/misses = %d/%d/%d/%d/%d/%d, want %d/%d/%d/%d/%d/%d",
+			result.scheduled, result.accepted, result.rejected, result.providerCalls,
+			result.cacheStats.Hits, result.cacheStats.Misses,
+			len(wantIDs), len(wantIDs), wantRejected, wantProviderCalls, wantHits, wantMisses,
+		)
+	}
+	if !reflect.DeepEqual(result.candidateIDs, wantIDs) ||
+		!reflect.DeepEqual(result.reviewIDs, wantIDs) {
+		t.Fatalf(
+			"Study candidate/review IDs = %#v/%#v, want %#v",
+			result.candidateIDs, result.reviewIDs, wantIDs,
+		)
+	}
+	if len(result.publishedIDs) == 0 || len(result.publishedIDs) > len(wantIDs) {
+		t.Fatalf(
+			"published Study IDs = %#v, want a non-empty bounded reducer result",
+			result.publishedIDs,
+		)
+	}
+}
+
+func studyReviewCacheIndependentFixture(
+	t *testing.T,
+) (studymap.Bundle, studymap.DirectionProposal) {
+	t.Helper()
+	bundle, all := studyMapV32SingleFileReviewFixture(t)
+	selected := studymap.DirectionProposal{Version: all.Version}
+	for _, index := range []int{0, 3, 6, 9} {
+		selected.Directions = append(selected.Directions, all.Directions[index])
+	}
+	return bundle, selected
+}
+
+func mutateStudyReviewCacheSource(
+	t *testing.T,
+	bundle studymap.Bundle,
+	anchorIndex,
+	returnValue int,
+) studymap.Bundle {
+	t.Helper()
+	copyBundle := bundle
+	copyBundle.Anchors = append([]studymap.Anchor(nil), bundle.Anchors...)
+	anchor := copyBundle.Anchors[anchorIndex]
+	window, err := sourcewindowfacts.NewWindow(
+		"cache-mutated-"+anchor.Symbol,
+		anchor.Path,
+		anchor.Function.StartLine,
+		[]string{
+			"func " + anchor.Symbol + "() int {",
+			"\treturn " + string(rune('0'+returnValue)),
+			"}",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	function, err := sourcewindowfacts.ExtractGoFunction(window, anchor.Symbol)
+	if err != nil {
+		t.Fatal(err)
+	}
+	copyBundle.Anchors[anchorIndex].Function = function
+	copyBundle.Anchors[anchorIndex].Line = function.StartLine
+	return copyBundle
+}
+
+func studyReviewCacheBrief(bundle studymap.Bundle) studymap.BriefShapeProposal {
+	support := []string{bundle.Anchors[0].ID}
+	statement := func(text string) studymap.BriefStatement {
+		return studymap.BriefStatement{Text: text, SupportIDs: append([]string(nil), support...)}
+	}
+	return studymap.BriefShapeProposal{
+		Version:        studymap.BriefShapeProposalVersion,
+		RepositoryType: studymap.RepositoryLibrary,
+		Brief: studymap.Brief{
+			WhatItIs:              statement("This fixture is a bounded source library."),
+			Problem:               statement("It exercises deterministic Study review caching."),
+			MainInput:             statement("Its input is a bounded source bundle."),
+			CentralResponsibility: statement("It preserves complete reviewed directions."),
+			ObservableResult:      statement("It produces a validated repository Study."),
+		},
+		ShapeAreaIDs: []string{bundle.Areas[0].ID},
+	}
+}
+
+func studyReviewCacheClient(endpoint, model, apiKey string) *deepseek.Client {
+	return &deepseek.Client{
+		HTTPClient: &http.Client{Timeout: 5 * time.Second},
+		APIKey:     apiKey,
+		Model:      model,
+		MaxTokens:  4096,
+		Endpoint:   endpoint,
+		Auth:       "bearer",
+	}
+}
+
+func studyReviewCacheProposal(bundle studymap.ReviewBundle) studymap.ReviewProposal {
+	roles := []studymap.ReadingRole{
+		studymap.ReadingRolePublicOrCLIEntry,
+		studymap.ReadingRoleCoreOrchestration,
+		studymap.ReadingRoleEffectOrIntegrationBoundary,
+	}
+	proposal := studymap.ReviewProposal{
+		Version:     studymap.ReviewProposalVersion,
+		DirectionID: bundle.DirectionID,
+	}
+	for index, anchor := range bundle.Anchors {
+		proposal.Reviews = append(proposal.Reviews, studymap.AnchorReview{
+			AnchorID:             anchor.AnchorID,
+			Fit:                  studymap.AnchorFitDirect,
+			SupportedObservation: "This fragment defines the selected function.",
+			Role:                 roles[index%len(roles)],
+			OverclaimReasons:     []studymap.OverclaimReason{studymap.OverclaimNone},
+		})
+	}
+	return proposal
+}
+
+func studyReviewCachePlanFor(
+	t *testing.T,
+	editor *studyReviewCachingEditor,
+	bundle studymap.Bundle,
+	direction studymap.DirectionCandidate,
+) (semanticdiscovery.Prompt, []byte, studymap.ReviewBundle) {
+	t.Helper()
+	reviewBundle, err := studymap.BuildReviewBundle(bundle, direction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(reviewBundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt := semanticdiscovery.Prompt{
+		Version:         semanticdiscovery.ReadingPackReviewPromptVersion,
+		System:          studyMapReviewSystemPrompt,
+		User:            studyMapReviewTask + string(raw),
+		ThinkingProfile: semanticdiscovery.ThinkingDisabled,
+		ProgressLabel:   "reading pack review " + reviewBundle.DirectionID,
+	}
+	request, err := editor.SemanticDiscoveryPromptJSON(prompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return prompt, request, reviewBundle
+}
+
+func studyReviewCacheKeyFor(
+	t *testing.T,
+	editor *studyReviewCachingEditor,
+	bundle studymap.Bundle,
+	direction studymap.DirectionCandidate,
+) string {
+	t.Helper()
+	prompt, request, _ := studyReviewCachePlanFor(t, editor, bundle, direction)
+	_, key, _, err := editor.reviewCacheIdentity(prompt, request, bundle, direction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key
+}
+
+func studyReviewCacheFiles(t *testing.T, runsDir string) []string {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(
+		runsDir,
+		studyReviewCacheParentDirectory,
+		studyReviewCacheVersionDirectory,
+		"*.json",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(files)
+	return files
+}
+
+func studyReviewCacheSnapshot(t *testing.T, runsDir string) map[string][]byte {
+	t.Helper()
+	result := make(map[string][]byte)
+	for _, path := range studyReviewCacheFiles(t, runsDir) {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result[filepath.Base(path)] = raw
+	}
+	return result
+}
+
+func assertStudyReviewCacheStats(
+	t *testing.T,
+	editor *studyReviewCachingEditor,
+	hits,
+	misses,
+	bypassed,
+	corrupt int,
+) {
+	t.Helper()
+	editor.mu.Lock()
+	stats := editor.stats
+	editor.mu.Unlock()
+	if stats.Hits != hits || stats.Misses != misses || stats.Bypassed != bypassed ||
+		stats.Corrupt != corrupt || stats.WriteFailures != 0 {
+		t.Fatalf(
+			"cache stats = %#v, want hits=%d misses=%d bypassed=%d corrupt=%d write_failures=0",
+			stats,
+			hits,
+			misses,
+			bypassed,
+			corrupt,
+		)
+	}
+}
+
+func withStudyReviewCacheRunName(
+	options studyReviewCacheRunOptions,
+	name string,
+) studyReviewCacheRunOptions {
+	options.runName = name
+	return options
+}
+
+func studyReviewCacheTestSHA256(raw []byte) string {
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:])
+}

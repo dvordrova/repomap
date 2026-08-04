@@ -25,7 +25,12 @@ type Options struct {
 }
 
 type Snapshot struct {
-	RepoName           string         `json:"repo_name"`
+	// RepoName is a semantic repository identity derived from repository
+	// metadata. It must not depend on the local checkout directory name.
+	RepoName string `json:"repo_name"`
+	// DisplayName is local presentation copy only. Provider bundles deliberately
+	// omit it because temporary checkout names can contain task labels.
+	DisplayName        string         `json:"display_name,omitempty"`
 	Readme             string         `json:"readme"`
 	FileTree           []string       `json:"file_tree"`
 	TopLevelStats      map[string]int `json:"top_level_directory_stats"`
@@ -105,6 +110,16 @@ var interestingWords = []string{
 }
 
 func Build(opts Options) (Snapshot, error) {
+	return BuildContext(context.Background(), opts)
+}
+
+func BuildContext(ctx context.Context, opts Options) (Snapshot, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return Snapshot{}, err
+	}
 	if opts.MaxReadmeBytes <= 0 {
 		opts.MaxReadmeBytes = 20000
 	}
@@ -114,20 +129,18 @@ func Build(opts Options) (Snapshot, error) {
 	if opts.MaxInterestingFiles <= 0 {
 		opts.MaxInterestingFiles = 200
 	}
-	if opts.MaxGoPkgs <= 0 {
-		opts.MaxGoPkgs = 300
-	}
-	if opts.MaxGoEdges <= 0 {
-		opts.MaxGoEdges = 500
-	}
-
-	files, err := gitfiles.List(opts.RepoPath)
+	listing, err := gitfiles.ListWithModesContext(ctx, opts.RepoPath)
 	if err != nil {
 		return Snapshot{}, err
 	}
+	files := listing.Paths
+	regular := make(map[string]struct{}, len(listing.RegularPaths))
+	for _, filePath := range listing.RegularPaths {
+		regular[filePath] = struct{}{}
+	}
 
-	repoName := filepath.Base(filepath.Clean(opts.RepoPath))
 	filtered := make([]string, 0, len(files))
+	analysisFiles := make([]string, 0, len(listing.RegularPaths))
 	skippedSamples := make([]string, 0, 20)
 	for _, f := range files {
 		if shouldSkipPath(f) {
@@ -137,11 +150,17 @@ func Build(opts Options) (Snapshot, error) {
 			continue
 		}
 		filtered = append(filtered, f)
+		if _, ok := regular[f]; ok {
+			analysisFiles = append(analysisFiles, f)
+		}
 	}
 
 	sort.Strings(filtered)
+	sort.Strings(analysisFiles)
+	goMetadata := goHints(opts.RepoPath, analysisFiles)
 	s := Snapshot{
-		RepoName:           repoName,
+		RepoName:           repositoryIdentity(opts.RepoPath, filtered, goMetadata),
+		DisplayName:        repositoryDisplayName(opts.RepoPath),
 		FileTree:           takeFirst(filtered, opts.MaxTreeLines),
 		TopLevelStats:      topLevelStats(filtered),
 		LanguageHints:      detectLanguages(filtered),
@@ -149,16 +168,20 @@ func Build(opts Options) (Snapshot, error) {
 		FilesConsidered:    len(filtered),
 		FilesSkipped:       len(files) - len(filtered),
 		SkippedPathSamples: skippedSamples,
-		FilteredFiles:      filtered,
+		FilteredFiles:      analysisFiles,
+		Go:                 goMetadata,
 	}
 
-	s.Go = goHints(opts.RepoPath, filtered)
-	s.Readme = readReadme(opts.RepoPath, filtered, opts.MaxReadmeBytes)
+	s.Readme = readReadme(opts.RepoPath, analysisFiles, opts.MaxReadmeBytes)
 
-	if s.Go.GoModExists || hasGoFiles(filtered) {
-		facts, err := gofacts.Load(context.Background(), opts.RepoPath, filtered, opts.MaxGoPkgs, opts.MaxGoEdges)
+	if s.Go.GoModExists || hasGoFiles(analysisFiles) {
+		facts, err := gofacts.Load(ctx, opts.RepoPath, analysisFiles, opts.MaxGoPkgs, opts.MaxGoEdges)
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return Snapshot{}, ctxErr
+			}
 			s.GoFacts = &gofacts.Facts{
+				Coverage: gofacts.Coverage{State: gofacts.CoverageUnavailable},
 				Warnings: []string{fmt.Sprintf("go facts load failed: %v", err)},
 			}
 		} else {

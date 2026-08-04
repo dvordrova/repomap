@@ -129,8 +129,9 @@ node --check internal/report/templates/architecture_canvas.js
 node --check internal/report/templates/surface_catalog.js
 go test ./internal/report ./cmd/canvas-preview ./internal/componentmap ./internal/deepseek ./cmd/repomap
 make surface-check
-./scripts/check.sh
-./scripts/etcd_check.sh ../etcd
+go vet ./...
+go build -trimpath -o /tmp/repomap ./cmd/repomap
+/tmp/repomap ../etcd --offline --no-open --no-serve --debug-dir /tmp/repomap-etcd
 ```
 
 No live provider request is required for normal verification.

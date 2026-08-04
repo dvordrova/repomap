@@ -15,13 +15,14 @@ import (
 	analysis "github.com/dvordrova/repomap/internal/analyzer"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/inspection"
 	"github.com/dvordrova/repomap/internal/report"
+	"github.com/dvordrova/repomap/internal/sourcecatalog"
 	"github.com/dvordrova/repomap/internal/testevidence"
 )
 
 const (
-	defaultAnalysisTimeout = 45 * time.Second
-	maxSymbolCandidates    = 8
+	defaultAnalysisTimeout = 180 * time.Second
 	maxCandidateSets       = 32
 	maxRankTerms           = 16
 )
@@ -86,7 +87,7 @@ type candidateSet struct {
 	ReportSHA256   string
 	RepositoryHash string
 	AnalysisRoot   string
-	Candidates     map[string]analysis.LocationCandidate
+	Candidates     map[string]inspection.Candidate
 	CreatedAt      time.Time
 }
 
@@ -132,6 +133,17 @@ func newSymbolAnalysis(opts Options) *symbolAnalysis {
 	}
 }
 
+func (a *symbolAnalysis) inspectionService(catalog *sourcecatalog.Catalog) (*inspection.Service, error) {
+	if a == nil || catalog == nil {
+		return nil, fmt.Errorf("inspection authority unavailable")
+	}
+	return inspection.New(*catalog, inspection.Dependencies{
+		Resolver:        a.resolver,
+		ExactAnalyzer:   a.exact,
+		ReferenceFinder: a.references,
+	})
+}
+
 func (h *handler) serveSymbols(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("X-Repomap-Action") != "list-symbols" {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "missing repomap action header"})
@@ -172,7 +184,7 @@ func (h *handler) serveSymbols(w http.ResponseWriter, r *http.Request) {
 		h.writeAnalysisError(w, ctx, "could not verify repository state")
 		return
 	}
-	if err := authorized.run.Manifest.VerifyRepositoryState(before); err != nil {
+	if err := authorized.run.verifyRepositoryState(before); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "report is stale; regenerate it before analyzing symbols"})
 		return
 	}
@@ -181,13 +193,24 @@ func (h *handler) serveSymbols(w http.ResponseWriter, r *http.Request) {
 	if line == 0 {
 		line = 1
 	}
-	resolution, err := h.analysis.resolver.ResolveLocation(ctx, analysis.LocationRequest{
-		RepoPath:      authorized.run.RepoPath,
-		Location:      evidence.Location{Path: authorized.anchor.Path, Line: line},
-		MaxCandidates: 20,
-		RankTerms:     componentRankTerms(authorized.component, authorized.anchor),
+	service, err := h.analysis.inspectionService(authorized.run.SourceCatalog)
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "local Go analysis is unavailable"})
+		return
+	}
+	resolution, err := service.Resolve(ctx, inspection.ResolveRequest{
+		Location:  evidence.Location{Path: authorized.anchor.Path, Line: line},
+		RankTerms: componentRankTerms(authorized.component, authorized.anchor),
 	})
 	if err != nil {
+		if inspection.ErrorKindOf(err) == inspection.ErrorSourceChanged {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "report is stale; regenerate it before analyzing symbols"})
+			return
+		}
+		if inspection.ErrorKindOf(err) == inspection.ErrorNotFound {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "no callable Go declarations were found near this anchor"})
+			return
+		}
 		h.writeAnalysisError(w, ctx, "could not resolve Go symbols for this anchor")
 		return
 	}
@@ -196,17 +219,12 @@ func (h *handler) serveSymbols(w http.ResponseWriter, r *http.Request) {
 		h.writeAnalysisError(w, ctx, "could not recheck repository state")
 		return
 	}
-	if err := authorized.run.Manifest.VerifyRepositoryState(after); err != nil {
+	if err := authorized.run.verifyRepositoryState(after); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "repository changed during analysis; regenerate the report"})
 		return
 	}
 
-	candidates := filterLocationCandidates(resolution.Candidates, authorized.anchor.Path)
-	if len(candidates) == 0 {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "no callable Go declarations were found near this anchor"})
-		return
-	}
-	response, err := h.analysis.rememberCandidates(authorized, request.Line, resolution, candidates)
+	response, err := h.analysis.rememberCandidates(authorized, request.Line, resolution)
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "could not prepare symbol candidates"})
 		return
@@ -224,7 +242,8 @@ func (h *handler) writeAnalysisError(w http.ResponseWriter, ctx context.Context,
 
 func (h *handler) authorizeAnchor(request symbolsRequest) (authorizedAnchor, error) {
 	run, err := h.findRun(request.RunID)
-	if err != nil || run.Manifest == nil || run.Report == nil || h.analysis == nil {
+	if err != nil || run.Manifest == nil || run.WorkspaceSnapshot == nil ||
+		run.Report == nil || run.SourceCatalog == nil || h.analysis == nil {
 		return authorizedAnchor{}, fmt.Errorf("analysis authority unavailable")
 	}
 	var componentAuthority *report.ComponentAuthority
@@ -281,26 +300,6 @@ func allowedAnchorLine(anchor report.AnchorAuthority, line int) bool {
 	return index < len(anchor.AllowedLines) && anchor.AllowedLines[index] == line
 }
 
-func filterLocationCandidates(candidates []analysis.LocationCandidate, anchorPath string) []analysis.LocationCandidate {
-	filtered := make([]analysis.LocationCandidate, 0, min(len(candidates), maxSymbolCandidates))
-	for _, candidate := range candidates {
-		if len(filtered) == maxSymbolCandidates {
-			break
-		}
-		if !candidate.Investigable || candidate.Entity.Location == nil {
-			continue
-		}
-		if candidate.Entity.Kind != evidence.EntityFunction && candidate.Entity.Kind != evidence.EntityMethod {
-			continue
-		}
-		if candidate.Entity.Location.Path != anchorPath || candidate.Entity.Location.Line <= 0 || candidate.Entity.Location.Column <= 0 {
-			continue
-		}
-		filtered = append(filtered, candidate)
-	}
-	return filtered
-}
-
 func componentRankTerms(component report.Component, anchor report.AnchorGroup) []string {
 	values := []string{component.Name, component.ModelPurpose, filepath.Base(anchor.Path)}
 	values = append(values, anchor.ModelNotes...)
@@ -330,8 +329,7 @@ func componentRankTerms(component report.Component, anchor report.AnchorGroup) [
 func (a *symbolAnalysis) rememberCandidates(
 	authorized authorizedAnchor,
 	anchorLine int,
-	resolution analysis.LocationResolution,
-	candidates []analysis.LocationCandidate,
+	resolution inspection.ResolveResult,
 ) (symbolsResponse, error) {
 	setID, err := generateCapability()
 	if err != nil {
@@ -343,13 +341,13 @@ func (a *symbolAnalysis) rememberCandidates(
 		AnchorID:       authorized.anchor.ID,
 		AnchorLine:     anchorLine,
 		ReportSHA256:   authorized.run.Manifest.ReportSHA256,
-		RepositoryHash: authorized.run.Manifest.RepositoryStateSHA256,
-		AnalysisRoot:   authorized.run.RepoPath,
-		Candidates:     make(map[string]analysis.LocationCandidate, len(candidates)),
+		RepositoryHash: authorized.run.workspaceRepositoryDigest(),
+		AnalysisRoot:   authorized.run.workspaceAnalysisRoot(),
+		Candidates:     make(map[string]inspection.Candidate, len(resolution.Candidates)),
 		CreatedAt:      time.Now(),
 	}
-	publicCandidates := make([]publicLocationCandidate, 0, len(candidates))
-	for _, candidate := range candidates {
+	publicCandidates := make([]publicLocationCandidate, 0, len(resolution.Candidates))
+	for _, candidate := range resolution.Candidates {
 		candidateID, err := generateCapability()
 		if err != nil {
 			return symbolsResponse{}, err

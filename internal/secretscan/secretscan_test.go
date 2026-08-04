@@ -54,9 +54,75 @@ func TestDetectIgnoresDocumentedPlaceholders(t *testing.T) {
 		`{"api_key":"placeholder-value"}`,
 		"password: change-me-please",
 		"password: authentication",
+		"ClientSecret: 00000000000000000000000000000000",
 	} {
 		if kind, found := Detect(input); found {
 			t.Errorf("Detect(%q) = %q, true; want placeholder ignored", input, kind)
+		}
+	}
+}
+
+func TestDetectDoesNotTreatMixedNumericCredentialAsPlaceholder(t *testing.T) {
+	t.Parallel()
+
+	const input = "ClientSecret: 00000000000000000000000000000001"
+	if kind, found := Detect(input); !found || kind != "credential assignment" {
+		t.Fatalf("Detect(%q) = %q, %v, want credential assignment", input, kind, found)
+	}
+}
+
+func TestDetectIgnoresRuntimeSelectorAssignments(t *testing.T) {
+	t.Parallel()
+
+	for _, input := range []string{
+		"server.Password = options.password",
+		"client.PrivateKey = key.String",
+		"telegram.Token = flags.telegramToken",
+		"apiKey := config.Sendgrid.ApiKey",
+	} {
+		if kind, found := Detect(input); found {
+			t.Errorf("Detect(%q) = %q, true; want runtime selector ignored", input, kind)
+		}
+	}
+}
+
+func TestDetectKeepsQuotedDottedCredentialLiteralFailClosed(t *testing.T) {
+	t.Parallel()
+
+	const input = `password: "company.prod.secret"`
+	if kind, found := Detect(input); !found || kind != "credential assignment" {
+		t.Fatalf("Detect(%q) = %q, %v, want credential assignment", input, kind, found)
+	}
+}
+
+func TestDetectAlwaysIgnoresUnsafeOverride(t *testing.T) {
+	restore := SetDisabled(true)
+	defer restore()
+
+	const input = `API_KEY="actual-secret-value"`
+	if kind, found := Detect(input); found || kind != "" {
+		t.Fatalf("Detect() = %q, %v while disabled", kind, found)
+	}
+	if kind, found := DetectAlways(input); !found || kind != "credential assignment" {
+		t.Fatalf("DetectAlways() = %q, %v, want mandatory detection", kind, found)
+	}
+}
+
+func TestClosedKindUsesOnlyBoundedCodes(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		"private key":           ClosedKindPrivateKey,
+		"bearer credential":     ClosedKindBearerCredential,
+		"secret key":            ClosedKindSecretKey,
+		"github token":          ClosedKindGitHubToken,
+		"aws access key":        ClosedKindAWSAccessKey,
+		"credential assignment": ClosedKindCredentialAssignment,
+		"detector prose drift":  ClosedKindUnknown,
+	}
+	for input, want := range tests {
+		if got := ClosedKind(input); got != want {
+			t.Errorf("ClosedKind(%q) = %q, want %q", input, got, want)
 		}
 	}
 }

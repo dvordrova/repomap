@@ -57,20 +57,11 @@ not yet one shared bounded **analysis core** for Go and Python.
 
 ## Direct Go/Python comparison
 
-### Executed fixtures
+### Retired direct-analyzer fixtures
 
-```bash
-PATH="$HOME/go/bin:$PATH" go run ./cmd/gopls-playground \
-  --repo . --location internal/componentmap/role.go:41 \
-  --analyze-candidate 1 --max-symbols 4 --max-callers 4 --max-callees 4
-
-make pyright-fixture PYRIGHT_LANGSERVER=/usr/local/bin/pyright-langserver
-
-go run ./cmd/pyright-playground \
-  --repo internal/analyzer/python/pyright/testdata/fixture \
-  --path app/service.py --line 18 \
-  --pyright-langserver /usr/local/bin/pyright-langserver
-```
+The former gopls/Pyright command fixtures were exploratory only and were
+removed with their standalone commands. This audit preserves their results
+below as historical comparison data, not as runnable current instructions.
 
 | Input | Tool | Raw result |
 | --- | --- | --- |

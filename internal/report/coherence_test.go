@@ -1,6 +1,8 @@
 package report
 
 import (
+	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -50,26 +52,44 @@ func TestLinkArchitectureProductObjectsUsesExactEvidenceJoins(t *testing.T) {
 			ProcessEntrypoint: SurfaceSymbol{Package: "github.com/restic/restic/cmd/restic", Location: &SurfaceLocation{Path: "cmd/restic/main.go", Line: 10}},
 			RegistrationSite:  &SurfaceLocation{Path: "cmd/restic/cmd_backup.go", Line: 74},
 			Handler:           SurfaceValue{Known: true, Text: "runBackup"}, Certainty: "static", Resolution: "static",
+			OwningComponentID: componentID,
 		}}},
 	}
 
 	linkArchitectureProductObjects(data)
 
 	component := data.ArchitectureCanvas.Components[0]
-	if len(component.OwnedSurfaceIDs) != 1 || component.OwnedSurfaceIDs[0] != "surface-backup" {
-		t.Fatalf("owned surfaces = %v", component.OwnedSurfaceIDs)
+	if len(component.OwnedSurfaceIDs) != 0 ||
+		!reflect.DeepEqual(component.ParticipatingSurfaceIDs, []string{"surface-backup"}) {
+		t.Fatalf("component surface relations = %#v", component)
 	}
 	if len(component.SuggestedInvestigationIDs) != 1 || component.SuggestedInvestigationIDs[0] != "check" {
 		t.Fatalf("suggested investigations = %v", component.SuggestedInvestigationIDs)
 	}
 	surface := data.ArchitectureCanvas.Surfaces[0]
-	if surface.OwningComponentID != componentID || surface.RelatedTraceID != "backup" {
+	if surface.OwningComponentID != "" || surface.RelatedTraceID != "backup" ||
+		!reflect.DeepEqual(surface.ParticipatingComponentIDs, []componentmap.ComponentID{componentID}) {
 		t.Fatalf("surface join = %#v", surface)
+	}
+	if data.DiscoveredSurfaces.Triggers[0].OwningComponentID != "" {
+		t.Fatalf("stale presentation owner survived = %#v", data.DiscoveredSurfaces.Triggers[0])
 	}
 	trace := data.ArchitectureCanvas.Flows[0]
 	if trace.Status != "complete" || trace.GroundedAreas != 2 || trace.TotalAreas != 2 ||
 		trace.StartSurfaceID != surface.ID || len(trace.ParticipatingComponentIDs) != 1 {
 		t.Fatalf("trace summary = %#v", trace)
+	}
+	first, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	linkArchitectureProductObjects(data)
+	second, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(first) != string(second) {
+		t.Fatalf("presentation coherence is not idempotent:\nfirst:  %s\nsecond: %s", first, second)
 	}
 }
 
@@ -190,8 +210,62 @@ func TestLinkArchitectureProductObjectsLeavesAmbiguousSurfaceUnassigned(t *testi
 	if surface.OwningComponentID != "" || surface.Category != surfaceCategoryUnassigned {
 		t.Fatalf("ambiguous surface = %#v", surface)
 	}
+	if !reflect.DeepEqual(surface.ParticipatingComponentIDs, []componentmap.ComponentID{"a", "b"}) {
+		t.Fatalf("ambiguous surface participants = %v", surface.ParticipatingComponentIDs)
+	}
+	for _, component := range data.ArchitectureCanvas.Components {
+		if len(component.OwnedSurfaceIDs) != 0 || !reflect.DeepEqual(component.ParticipatingSurfaceIDs, []string{"shared"}) {
+			t.Fatalf("component surface relations = %#v", component)
+		}
+	}
 	if surface.TraceUnavailableReason != "runtime activity is nested asynchronous work and cannot independently establish a top-level trace" {
 		t.Fatalf("unavailable reason = %q", surface.TraceUnavailableReason)
+	}
+}
+
+func TestLinkArchitectureProductObjectsDoesNotTurnUniqueConceptualMembershipIntoOwnership(t *testing.T) {
+	t.Parallel()
+
+	data := &ReportData{
+		ArchitectureCanvas: &ArchitectureCanvas{Components: []ArchitectureComponent{
+			architecturePathComponent("only-participant", "service/start.go"),
+		}},
+		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{{
+			ID: "service", Kind: "process_entry", Availability: SurfaceAvailabilityAvailable,
+			ProcessEntrypoint: SurfaceSymbol{Location: &SurfaceLocation{Path: "service/start.go", Line: 20}},
+		}}},
+	}
+
+	linkArchitectureProductObjects(data)
+
+	surface := data.ArchitectureCanvas.Surfaces[0]
+	if surface.OwningComponentID != "" ||
+		!reflect.DeepEqual(surface.ParticipatingComponentIDs, []componentmap.ComponentID{"only-participant"}) {
+		t.Fatalf("unique conceptual membership became ownership: %#v", surface)
+	}
+	component := data.ArchitectureCanvas.Components[0]
+	if len(component.OwnedSurfaceIDs) != 0 ||
+		!reflect.DeepEqual(component.ParticipatingSurfaceIDs, []string{"service"}) {
+		t.Fatalf("owner-only component action was exposed: %#v", component)
+	}
+}
+
+func TestPopulateArchitectureTraceSummaryUnionsSortedParticipantsAndExactOwnerProof(t *testing.T) {
+	t.Parallel()
+
+	flow := ArchitectureFlow{
+		ID: "shared-flow",
+		Steps: []ArchitectureFlowStep{
+			{ID: "shared", ParticipatingComponentIDs: []componentmap.ComponentID{"component-b", "component-a"}},
+			{ID: "owned", ComponentID: "component-c", ParticipatingComponentIDs: []componentmap.ComponentID{"component-a"}},
+		},
+	}
+	populateArchitectureTraceSummary(&ReportData{}, &flow, ArchitectureCanvas{})
+	if !reflect.DeepEqual(
+		flow.ParticipatingComponentIDs,
+		[]componentmap.ComponentID{"component-a", "component-b", "component-c"},
+	) {
+		t.Fatalf("flow participants = %v", flow.ParticipatingComponentIDs)
 	}
 }
 
@@ -240,7 +314,7 @@ func TestSuggestionMapsPackageDeclarationToRepositoryPackageFiles(t *testing.T) 
 	}
 }
 
-func TestSuggestionLeavesAmbiguousPackageDeclarationUnassigned(t *testing.T) {
+func TestSuggestionPreservesSharedPackageParticipantsWithoutOwnership(t *testing.T) {
 	t.Parallel()
 
 	const canonical = "example.com/project/internal/shared"
@@ -270,10 +344,10 @@ func TestSuggestionLeavesAmbiguousPackageDeclarationUnassigned(t *testing.T) {
 	linkArchitectureProductObjects(data)
 
 	suggestion := data.ArchitectureCanvas.Suggestions[0]
-	if len(suggestion.RelevantComponentIDs) != 0 ||
-		len(data.ArchitectureCanvas.Components[0].SuggestedInvestigationIDs) != 0 ||
-		len(data.ArchitectureCanvas.Components[1].SuggestedInvestigationIDs) != 0 {
-		t.Fatalf("ambiguous package suggestion received ownership: %#v", suggestion)
+	if !reflect.DeepEqual(suggestion.RelevantComponentIDs, []componentmap.ComponentID{"component-a", "component-b"}) ||
+		len(data.ArchitectureCanvas.Components[0].SuggestedInvestigationIDs) != 1 ||
+		len(data.ArchitectureCanvas.Components[1].SuggestedInvestigationIDs) != 1 {
+		t.Fatalf("shared package suggestion lost participants: %#v", suggestion)
 	}
 	if !suggestion.InvestigationAvailable || suggestion.StartLocation == nil {
 		t.Fatalf("ambiguous ownership hid exact source availability: %#v", suggestion)
@@ -311,7 +385,12 @@ func TestSuggestionsKeepSourceAndTypedTraceAvailabilityDistinct(t *testing.T) {
 				ID: "broken-process", Kind: "process_entry", Availability: SurfaceAvailabilityUnavailable,
 				UnavailableReason: "package failed to load under the recorded build scenario",
 				ProcessEntrypoint: SurfaceSymbol{Location: &SurfaceLocation{Path: "cmd/broken/main.go", Line: 5}},
-				Resolution:        "exact",
+				Resolution:        "exact", ApplicationClass: SurfaceApplicationOwned,
+				SurfaceRole: SurfaceRoleEntrySurface, TraceReadiness: SurfaceTracePartialReady,
+				TraceReadinessReason: "exact process entry can seed a one-anchor partial trace; typed downstream closure is unavailable",
+				Quality: SurfaceQuality{Identity: surfaceQualityExact, RegistrationStart: surfaceQualityNotApplicable,
+					HandlerCallback: surfaceQualityNotApplicable, Reachability: surfaceQualityPartial,
+					Ownership: surfaceQualityExact, Traceability: SurfaceTracePartialReady},
 			},
 		}},
 	}
@@ -325,20 +404,19 @@ func TestSuggestionsKeepSourceAndTypedTraceAvailabilityDistinct(t *testing.T) {
 		suggestions["route"].StartLocation == nil || suggestions["route"].StartLocation.Line != 20 {
 		t.Fatalf("route suggestion = %#v", suggestions["route"])
 	}
-	for _, id := range []string{"aggregate", "activity", "broken"} {
+	for _, id := range []string{"aggregate", "activity"} {
 		suggestion := suggestions[id]
 		if !suggestion.InvestigationAvailable || suggestion.CanStartTrace || suggestion.StartLocation == nil ||
 			suggestion.TraceUnavailableReason == "" || suggestion.UnavailableReason != "" {
 			t.Errorf("source-only suggestion %q = %#v", id, suggestion)
 		}
 	}
-	if suggestions["aggregate"].TraceUnavailableReason == suggestions["activity"].TraceUnavailableReason ||
-		!strings.Contains(suggestions["broken"].TraceUnavailableReason, "package failed to load") {
-		t.Fatalf("typed trace reasons = aggregate:%q activity:%q broken:%q",
-			suggestions["aggregate"].TraceUnavailableReason,
-			suggestions["activity"].TraceUnavailableReason,
-			suggestions["broken"].TraceUnavailableReason,
-		)
+	if !suggestions["broken"].InvestigationAvailable || !suggestions["broken"].CanStartTrace ||
+		suggestions["broken"].TraceUnavailableReason != "" {
+		t.Fatalf("exact unavailable process suggestion = %#v", suggestions["broken"])
+	}
+	if suggestions["aggregate"].TraceUnavailableReason == suggestions["activity"].TraceUnavailableReason {
+		t.Fatalf("aggregate/activity trace reasons are not distinct: %q", suggestions["aggregate"].TraceUnavailableReason)
 	}
 	rendered, err := RenderHTML(data)
 	if err != nil {
@@ -459,11 +537,13 @@ func TestUnifiedSurfaceCatalogCountsProducersRolesAndUntracedCommands(t *testing
 	for _, surface := range data.DiscoveredSurfaces.Triggers {
 		switch surface.Identity.Name {
 		case "backup":
-			if surface.RelatedTraceID != "backup-flow" || surface.OwningComponentID != backupComponent {
+			if surface.RelatedTraceID != "backup-flow" || surface.OwningComponentID != "" ||
+				!reflect.DeepEqual(surface.ParticipatingComponentIDs, []componentmap.ComponentID{backupComponent}) {
 				t.Fatalf("backup surface = %#v", surface)
 			}
 		case "restore":
-			if surface.RelatedTraceID != "" || surface.OwningComponentID != restoreComponent {
+			if surface.RelatedTraceID != "" || surface.OwningComponentID != "" ||
+				!reflect.DeepEqual(surface.ParticipatingComponentIDs, []componentmap.ComponentID{restoreComponent}) {
 				t.Fatalf("untraced restore surface = %#v", surface)
 			}
 		default:
@@ -560,6 +640,40 @@ func TestRepositoryNamedMainClassifiesPrimaryWithoutArchitectureCanvas(t *testin
 	classifySurfaceExecutable(data, &trigger)
 	if trigger.OwningExecutable != "cmd/caddy" || trigger.ExecutableRole != ExecutableRolePrimaryApplication {
 		t.Fatalf("repository-named main executable = %#v", trigger)
+	}
+}
+
+func TestShallowCobraDescriptorKeepsSourceOwnershipWithoutRuntimeRole(t *testing.T) {
+	t.Parallel()
+
+	trigger := DiscoveredTrigger{
+		Kind:      "cli_command",
+		Producer:  SurfaceProducerCobra,
+		Framework: "cobra",
+		Constructor: SurfaceSymbol{
+			Package: "example.com/app/command",
+			Name:    "newServeCommand",
+			Location: &SurfaceLocation{
+				Path: "command/serve.go",
+				Line: 20,
+			},
+		},
+		DescriptorSite: &SurfaceLocation{
+			Path: "command/serve.go",
+			Line: 21,
+		},
+	}
+
+	classifySurfaceExecutable(nil, &trigger)
+
+	if trigger.OwningExecutable != "example.com/app/command" {
+		t.Fatalf("shallow descriptor owner = %q", trigger.OwningExecutable)
+	}
+	if trigger.ExecutableRole != ExecutableRoleUnknown {
+		t.Fatalf("shallow descriptor role = %q, want unknown", trigger.ExecutableRole)
+	}
+	if trigger.ProcessEntrypoint.Location != nil || trigger.ProcessEntrypoint.Package != "" {
+		t.Fatalf("shallow descriptor invented process reachability: %#v", trigger.ProcessEntrypoint)
 	}
 }
 

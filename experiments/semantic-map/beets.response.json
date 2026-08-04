@@ -1,0 +1,118 @@
+{
+  "nodes": [
+    {
+      "id": "plugin-config",
+      "label": "Plugin Configuration",
+      "responsibility": "Reads pluginpath and plugins list from configuration, expands paths, deduplicates names, and excludes disabled plugins.",
+      "state": "supported",
+      "observation_ids": ["obs-01", "obs-02", "obs-12"]
+    },
+    {
+      "id": "plugin-loader",
+      "label": "Plugin Loader",
+      "responsibility": "Imports beetsplug.<name>, finds a BeetsPlugin subclass, instantiates it; returns None on failure.",
+      "state": "supported",
+      "observation_ids": ["obs-03", "obs-04", "obs-05"]
+    },
+    {
+      "id": "command-collector",
+      "label": "Command Collector",
+      "responsibility": "Iterates loaded plugin instances and collects Subcommand objects from each.",
+      "state": "supported",
+      "observation_ids": ["obs-06"]
+    },
+    {
+      "id": "command-registry",
+      "label": "Command Registry",
+      "responsibility": "Registers each Subcommand with the CLI parser by assigning its parser and appending to subcommands list.",
+      "state": "supported",
+      "observation_ids": ["obs-07"]
+    },
+    {
+      "id": "cli-parser",
+      "label": "CLI Parser",
+      "responsibility": "Parses top-level options, selects subcommand by name (with alias support), parses its arguments, and invokes its func.",
+      "state": "supported",
+      "observation_ids": ["obs-08", "obs-09", "obs-11"]
+    },
+    {
+      "id": "main-entry",
+      "label": "Main Entry",
+      "responsibility": "Orchestrates the entire flow: loads configuration, loads plugins, collects commands, registers them, parses CLI, and executes the selected command.",
+      "state": "supported",
+      "observation_ids": ["obs-10", "obs-11", "obs-12"]
+    }
+  ],
+  "edges": [
+    {
+      "id": "config-to-loader",
+      "from": "plugin-config",
+      "to": "plugin-loader",
+      "verb": "provides plugin names and paths",
+      "state": "supported",
+      "observation_ids": ["obs-01", "obs-02", "obs-03"]
+    },
+    {
+      "id": "loader-to-collector",
+      "from": "plugin-loader",
+      "to": "command-collector",
+      "verb": "yields plugin instances",
+      "state": "supported",
+      "observation_ids": ["obs-05", "obs-06"]
+    },
+    {
+      "id": "collector-to-registry",
+      "from": "command-collector",
+      "to": "command-registry",
+      "verb": "provides Subcommand objects",
+      "state": "supported",
+      "observation_ids": ["obs-06", "obs-07"]
+    },
+    {
+      "id": "registry-to-parser",
+      "from": "command-registry",
+      "to": "cli-parser",
+      "verb": "registers commands into subcommands list",
+      "state": "supported",
+      "observation_ids": ["obs-07"]
+    },
+    {
+      "id": "main-to-config",
+      "from": "main-entry",
+      "to": "plugin-config",
+      "verb": "reads configuration",
+      "state": "supported",
+      "observation_ids": ["obs-12"]
+    },
+    {
+      "id": "main-to-loader",
+      "from": "main-entry",
+      "to": "plugin-loader",
+      "verb": "invokes load_plugins",
+      "state": "supported",
+      "observation_ids": ["obs-10"]
+    },
+    {
+      "id": "main-to-collector",
+      "from": "main-entry",
+      "to": "command-collector",
+      "verb": "calls plugins.commands()",
+      "state": "supported",
+      "observation_ids": ["obs-10"]
+    },
+    {
+      "id": "main-to-parser",
+      "from": "main-entry",
+      "to": "cli-parser",
+      "verb": "runs command parsing and execution",
+      "state": "supported",
+      "observation_ids": ["obs-11"]
+    }
+  ],
+  "question_overlay": {
+    "summary": "A plugin named in configuration triggers configuration reading, which provides plugin names and paths to the loader. The loader imports the module and instantiates a BeetsPlugin subclass. Loaded plugins contribute Subcommand objects, which are registered with the CLI parser. During CLI invocation, the parser selects the command by name and executes its function.",
+    "node_ids": ["plugin-config", "plugin-loader", "command-collector", "command-registry", "cli-parser", "main-entry"],
+    "edge_ids": ["config-to-loader", "loader-to-collector", "collector-to-registry", "registry-to-parser", "main-to-config", "main-to-loader", "main-to-collector", "main-to-parser"],
+    "unknowns": ["The specific method by which a plugin defines its Subcommand (e.g., the exact protocol for exposing commands) is not observed.", "The internal structure of BeetsPlugin subclasses beyond being instantiable is not established."]
+  }
+}

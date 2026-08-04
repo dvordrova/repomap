@@ -17,12 +17,19 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/llmbundle"
+	"github.com/dvordrova/repomap/internal/navigator"
+	"github.com/dvordrova/repomap/internal/repositoryatlas"
+	"github.com/dvordrova/repomap/internal/sourcecatalog"
+	"github.com/dvordrova/repomap/internal/tasklens"
+	"github.com/dvordrova/repomap/internal/workspacesnapshot"
 )
 
 const (
-	CurrentRunManifestVersion = 3
+	CurrentRunManifestVersion = 11
 	RunManifestFilename       = "run_manifest.json"
 
 	maxRunManifestBytes             = 4 * 1024 * 1024
@@ -57,11 +64,25 @@ type RunManifest struct {
 }
 
 type MaterialInputs struct {
-	SelectedRevision     string `json:"selected_revision"`
-	ModelBundleSHA256    string `json:"model_bundle_sha256,omitempty"`
-	InputPolicyVersion   string `json:"input_policy_version"`
-	ArchitectureContract int    `json:"architecture_contract"`
-	ReportContract       int    `json:"report_contract"`
+	SelectedRevision                  string `json:"selected_revision"`
+	ModelBundleSHA256                 string `json:"model_bundle_sha256,omitempty"`
+	OrientationContextSelectionSHA256 string `json:"orientation_context_selection_sha256,omitempty"`
+	RepositoryAtlasSHA256             string `json:"repository_atlas_sha256,omitempty"`
+	NavigatorRequestSHA256            string `json:"navigator_request_sha256,omitempty"`
+	NavigatorResultSHA256             string `json:"navigator_result_sha256,omitempty"`
+	NavigatorStatusSHA256             string `json:"navigator_status_sha256,omitempty"`
+	AtlasStudyRequestSHA256           string `json:"atlas_study_request_sha256,omitempty"`
+	AtlasStudyResultSHA256            string `json:"atlas_study_result_sha256,omitempty"`
+	AtlasStudyStatusSHA256            string `json:"atlas_study_status_sha256,omitempty"`
+	TaskBundleSHA256                  string `json:"task_bundle_sha256,omitempty"`
+	TaskAttemptSHA256                 string `json:"task_attempt_sha256,omitempty"`
+	TaskPackSHA256                    string `json:"task_pack_sha256,omitempty"`
+	TaskStatusSHA256                  string `json:"task_status_sha256,omitempty"`
+	TaskRetrievalTraceSHA256          string `json:"task_retrieval_trace_sha256,omitempty"`
+	TaskRetrievalTraceMarkdownSHA256  string `json:"task_retrieval_trace_markdown_sha256,omitempty"`
+	InputPolicyVersion                string `json:"input_policy_version"`
+	ArchitectureContract              int    `json:"architecture_contract"`
+	ReportContract                    int    `json:"report_contract"`
 }
 
 // RunAuthority is a repository state that was captured before repository
@@ -101,7 +122,7 @@ type AnchorAuthority struct {
 // Validate checks that a manifest is bounded, canonical, and internally
 // consistent before it is used as an authority source.
 func (m RunManifest) Validate() error {
-	if m.Version != 2 && m.Version != CurrentRunManifestVersion {
+	if m.Version != CurrentRunManifestVersion {
 		return fmt.Errorf("report manifest: unsupported version %d", m.Version)
 	}
 	if err := m.RepositoryState.Validate(); err != nil {
@@ -129,25 +150,99 @@ func (m RunManifest) Validate() error {
 	if len(m.OpenablePaths) > maxManifestOpenablePaths {
 		return fmt.Errorf("report manifest: more than %d openable paths", maxManifestOpenablePaths)
 	}
-	if m.Version >= 3 {
-		inputsDigest, err := freshness.CapturedInputsDigest(m.CapturedInputs)
-		if err != nil {
-			return fmt.Errorf("report manifest: captured inputs: %w", err)
+	inputsDigest, err := freshness.CapturedInputsDigest(m.CapturedInputs)
+	if err != nil {
+		return fmt.Errorf("report manifest: captured inputs: %w", err)
+	}
+	if !validManifestSHA256(m.CapturedInputsSHA256) || inputsDigest != m.CapturedInputsSHA256 {
+		return fmt.Errorf("report manifest: captured inputs sha256 mismatch")
+	}
+	if err := m.Freshness.Validate(); err != nil {
+		return fmt.Errorf("report manifest: freshness: %w", err)
+	}
+	if m.MaterialInputs.SelectedRevision != m.RepositoryState.Head ||
+		!validManifestLabel(m.MaterialInputs.InputPolicyVersion) ||
+		m.MaterialInputs.ArchitectureContract <= 0 || m.MaterialInputs.ReportContract != m.ReportFormatVersion {
+		return fmt.Errorf("report manifest: material inputs are invalid")
+	}
+	hasModelBundle := m.MaterialInputs.ModelBundleSHA256 != ""
+	hasOrientationSelection := m.MaterialInputs.OrientationContextSelectionSHA256 != ""
+	if hasModelBundle != hasOrientationSelection {
+		return fmt.Errorf("report manifest: Orientation model bundle and context selection identity must both be present or absent")
+	}
+	if hasModelBundle && !validManifestSHA256(m.MaterialInputs.ModelBundleSHA256) {
+		return fmt.Errorf("report manifest: model bundle sha256 is invalid")
+	}
+	if hasOrientationSelection && !validManifestSHA256(m.MaterialInputs.OrientationContextSelectionSHA256) {
+		return fmt.Errorf("report manifest: orientation context selection sha256 is invalid")
+	}
+	if m.MaterialInputs.RepositoryAtlasSHA256 != "" &&
+		!validManifestSHA256(m.MaterialInputs.RepositoryAtlasSHA256) {
+		return fmt.Errorf("report manifest: repository Atlas sha256 is invalid")
+	}
+	navigatorDigests := []string{
+		m.MaterialInputs.NavigatorRequestSHA256,
+		m.MaterialInputs.NavigatorResultSHA256,
+		m.MaterialInputs.NavigatorStatusSHA256,
+	}
+	navigatorDigestCount := 0
+	for _, digest := range navigatorDigests {
+		if digest == "" {
+			continue
 		}
-		if !validManifestSHA256(m.CapturedInputsSHA256) || inputsDigest != m.CapturedInputsSHA256 {
-			return fmt.Errorf("report manifest: captured inputs sha256 mismatch")
+		navigatorDigestCount++
+		if !validManifestSHA256(digest) {
+			return fmt.Errorf("report manifest: Navigator artifact sha256 is invalid")
 		}
-		if err := m.Freshness.Validate(); err != nil {
-			return fmt.Errorf("report manifest: freshness: %w", err)
+	}
+	if navigatorDigestCount != 0 && m.MaterialInputs.NavigatorStatusSHA256 == "" {
+		return fmt.Errorf("report manifest: Navigator artifact identity requires status")
+	}
+	if navigatorDigestCount != 0 && m.MaterialInputs.RepositoryAtlasSHA256 == "" {
+		return fmt.Errorf("report manifest: Navigator artifacts require repository Atlas authority")
+	}
+	atlasStudyDigests := []string{
+		m.MaterialInputs.AtlasStudyRequestSHA256,
+		m.MaterialInputs.AtlasStudyResultSHA256,
+		m.MaterialInputs.AtlasStudyStatusSHA256,
+	}
+	atlasStudyDigestCount := 0
+	for _, digest := range atlasStudyDigests {
+		if digest == "" {
+			continue
 		}
-		if m.MaterialInputs.SelectedRevision != m.RepositoryState.Head ||
-			!validManifestLabel(m.MaterialInputs.InputPolicyVersion) ||
-			m.MaterialInputs.ArchitectureContract <= 0 || m.MaterialInputs.ReportContract != m.ReportFormatVersion {
-			return fmt.Errorf("report manifest: material inputs are invalid")
+		atlasStudyDigestCount++
+		if !validManifestSHA256(digest) {
+			return fmt.Errorf("report manifest: Atlas Study artifact sha256 is invalid")
 		}
-		if m.MaterialInputs.ModelBundleSHA256 != "" && !validManifestSHA256(m.MaterialInputs.ModelBundleSHA256) {
-			return fmt.Errorf("report manifest: model bundle sha256 is invalid")
+	}
+	if atlasStudyDigestCount != 0 &&
+		(m.MaterialInputs.AtlasStudyRequestSHA256 == "" ||
+			m.MaterialInputs.AtlasStudyStatusSHA256 == "") {
+		return fmt.Errorf("report manifest: Atlas Study artifact identity requires request and status")
+	}
+	if atlasStudyDigestCount != 0 && m.MaterialInputs.RepositoryAtlasSHA256 == "" {
+		return fmt.Errorf("report manifest: Atlas Study artifacts require repository Atlas authority")
+	}
+	taskDigests := []string{
+		m.MaterialInputs.TaskBundleSHA256,
+		m.MaterialInputs.TaskAttemptSHA256,
+		m.MaterialInputs.TaskPackSHA256,
+		m.MaterialInputs.TaskStatusSHA256,
+		m.MaterialInputs.TaskRetrievalTraceSHA256,
+		m.MaterialInputs.TaskRetrievalTraceMarkdownSHA256,
+	}
+	taskDigestCount := 0
+	for _, digest := range taskDigests {
+		if digest != "" {
+			taskDigestCount++
+			if !validManifestSHA256(digest) {
+				return fmt.Errorf("report manifest: Task Lens artifact sha256 is invalid")
+			}
 		}
+	}
+	if taskDigestCount != 0 && taskDigestCount != len(taskDigests) {
+		return fmt.Errorf("report manifest: Task Lens artifact identity is incomplete")
 	}
 	openable := make(map[string]struct{}, len(m.OpenablePaths))
 	previousPath := ""
@@ -377,6 +472,9 @@ func CapturedInputPaths(data *ReportData) []string {
 		return nil
 	}
 	paths := append([]string(nil), data.OpenablePaths...)
+	if data.TaskInvestigation != nil {
+		paths = append(paths, data.TaskInvestigation.MaterialPaths...)
+	}
 	paths = append(paths, "go.work", "go.work.sum")
 	if data.RepositoryGraph != nil {
 		for _, module := range data.RepositoryGraph.Modules {
@@ -429,6 +527,44 @@ func (m RunManifest) ResolveAnalysisRoot() (string, error) {
 	return analysisRoot, nil
 }
 
+// SourceCatalog adapts the source scope of an already validated manifest into
+// a presentation-neutral catalog. Report/run binding and all other manifest
+// authority remain outside the catalog.
+func (m RunManifest) SourceCatalog() (sourcecatalog.Catalog, error) {
+	if err := m.Validate(); err != nil {
+		return sourcecatalog.Catalog{}, err
+	}
+	catalog, err := sourcecatalog.New(sourcecatalog.Input{
+		RepositoryRoot: m.RepositoryState.Identity,
+		AnalysisRoot:   m.AnalysisRoot,
+		AllowedPaths:   m.OpenablePaths,
+		CapturedInputs: m.CapturedInputs,
+	})
+	if err != nil {
+		return sourcecatalog.Catalog{}, fmt.Errorf("report manifest: source catalog: %w", err)
+	}
+	return catalog, nil
+}
+
+// WorkspaceSnapshot adapts current captured-input authority into one
+// presentation-neutral immutable value. Live filesystem canonicality remains
+// the responsibility of ResolveAnalysisRoot.
+func (m RunManifest) WorkspaceSnapshot() (workspacesnapshot.Snapshot, error) {
+	if err := m.Validate(); err != nil {
+		return workspacesnapshot.Snapshot{}, err
+	}
+	snapshot, err := workspacesnapshot.New(workspacesnapshot.Input{
+		AnalysisRoot:   m.AnalysisRoot,
+		Repository:     m.RepositoryState,
+		CapturedInputs: m.CapturedInputs,
+		AllowedPaths:   m.OpenablePaths,
+	})
+	if err != nil {
+		return workspacesnapshot.Snapshot{}, fmt.Errorf("report manifest: workspace snapshot: %w", err)
+	}
+	return snapshot, nil
+}
+
 // VerifyReportJSON verifies both the exact report bytes and the authority
 // projection carried by those bytes.
 func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
@@ -442,15 +578,123 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 		return fmt.Errorf("report manifest: report sha256 mismatch")
 	}
 	var report struct {
-		FormatVersion int         `json:"format_version"`
-		OpenablePaths []string    `json:"openable_paths"`
-		Components    []Component `json:"components"`
+		FormatVersion                   int                                        `json:"format_version"`
+		OpenablePaths                   []string                                   `json:"openable_paths"`
+		Components                      []Component                                `json:"components"`
+		RepositoryAtlas                 *repositoryatlas.Atlas                     `json:"repository_atlas"`
+		Navigator                       *NavigatorReportProduct                    `json:"navigator"`
+		ArchitectureCanvas              *ArchitectureCanvas                        `json:"architecture_canvas"`
+		ArchitectureComponentNavigation *ArchitectureComponentNavigationProjection `json:"architecture_component_navigation"`
+		Architecture                    *ArchitectureSynthesisStatus               `json:"architecture_synthesis"`
+		AtlasStudy                      *AtlasStudyReportStatus                    `json:"atlas_study"`
+		StudyMap                        *RepositoryStudyMap                        `json:"study_map"`
+		TaskInvestigation               *struct {
+			BundleSHA256                 string `json:"bundle_sha256"`
+			AttemptSHA256                string `json:"attempt_sha256"`
+			PackSHA256                   string `json:"pack_sha256"`
+			StatusSHA256                 string `json:"status_sha256"`
+			RetrievalTraceSHA256         string `json:"retrieval_trace_sha256"`
+			RetrievalTraceMarkdownSHA256 string `json:"retrieval_trace_markdown_sha256"`
+		} `json:"task_investigation"`
 	}
 	if err := json.Unmarshal(reportJSON, &report); err != nil {
 		return fmt.Errorf("report manifest: decode report: %w", err)
 	}
 	if report.FormatVersion != m.ReportFormatVersion {
 		return fmt.Errorf("report manifest: report format version mismatch")
+	}
+	if report.ArchitectureCanvas != nil && report.ArchitectureCanvas.Version != ArchitectureCanvasVersion {
+		return fmt.Errorf(
+			"report manifest: unsupported architecture canvas version %d, want %d",
+			report.ArchitectureCanvas.Version,
+			ArchitectureCanvasVersion,
+		)
+	}
+	if err := ValidateArchitectureComponentNavigation(
+		report.ArchitectureCanvas,
+		report.OpenablePaths,
+		report.ArchitectureComponentNavigation,
+	); err != nil {
+		return fmt.Errorf("report manifest: %w", err)
+	}
+	if report.Architecture != nil {
+		if err := report.Architecture.Validate(); err != nil {
+			return fmt.Errorf("report manifest: architecture synthesis status: %w", err)
+		}
+	}
+	hasRepositoryAtlas := m.MaterialInputs.RepositoryAtlasSHA256 != ""
+	if (report.RepositoryAtlas != nil) != hasRepositoryAtlas {
+		return fmt.Errorf("report manifest: repository Atlas identity does not match report")
+	}
+	if report.RepositoryAtlas != nil {
+		if _, err := repositoryatlas.CanonicalJSON(*report.RepositoryAtlas); err != nil {
+			return fmt.Errorf("report manifest: repository Atlas: %w", err)
+		}
+	}
+	hasNavigatorResult := m.MaterialInputs.NavigatorResultSHA256 != ""
+	hasNavigatorStatus := m.MaterialInputs.NavigatorStatusSHA256 != ""
+	if (report.Navigator != nil) != hasNavigatorStatus ||
+		hasRepositoryAtlas != hasNavigatorStatus {
+		return fmt.Errorf("report manifest: Navigator artifact identity does not match report")
+	}
+	if report.Navigator != nil {
+		hasNavigatorRequest := m.MaterialInputs.NavigatorRequestSHA256 != ""
+		switch report.Navigator.State {
+		case navigator.ProductStateEmpty:
+			if hasNavigatorRequest || !hasNavigatorResult ||
+				report.Navigator.UnavailableCode != "" || report.Navigator.FailureCode != "" ||
+				report.Navigator.Recommendation != nil {
+				return fmt.Errorf("report manifest: empty Navigator report projection is invalid")
+			}
+		case navigator.ProductStateSelected:
+			if !hasNavigatorRequest || !hasNavigatorResult ||
+				report.Navigator.UnavailableCode != "" || report.Navigator.FailureCode != "" ||
+				report.Navigator.Recommendation == nil {
+				return fmt.Errorf("report manifest: selected Navigator report projection is incomplete")
+			}
+		case navigator.ProductStateUnavailable:
+			if !hasNavigatorRequest || hasNavigatorResult ||
+				report.Navigator.UnavailableCode != navigator.UnavailableOffline ||
+				report.Navigator.FailureCode != "" ||
+				report.Navigator.Recommendation != nil {
+				return fmt.Errorf("report manifest: unavailable Navigator report projection is invalid")
+			}
+		case navigator.ProductStateFailed:
+			if !hasNavigatorRequest || hasNavigatorResult ||
+				report.Navigator.UnavailableCode != "" ||
+				!publishableNavigatorFailure(report.Navigator.FailureCode) ||
+				report.Navigator.Recommendation != nil {
+				return fmt.Errorf("report manifest: failed Navigator report projection is invalid")
+			}
+		default:
+			return fmt.Errorf("report manifest: unsupported Navigator report state %q", report.Navigator.State)
+		}
+		if report.Navigator.Version != navigator.ProductVersion {
+			return fmt.Errorf("report manifest: unsupported Navigator report version %d", report.Navigator.Version)
+		}
+	}
+	hasAtlasStudyRequest := m.MaterialInputs.AtlasStudyRequestSHA256 != ""
+	hasAtlasStudyResult := m.MaterialInputs.AtlasStudyResultSHA256 != ""
+	hasAtlasStudyStatus := m.MaterialInputs.AtlasStudyStatusSHA256 != ""
+	if report.AtlasStudy == nil && (hasAtlasStudyRequest || hasAtlasStudyResult || hasAtlasStudyStatus) {
+		return fmt.Errorf("report manifest: Atlas Study artifact identity does not match report")
+	}
+	if report.AtlasStudy != nil {
+		if !hasRepositoryAtlas || report.AtlasStudy.Version != atlasstudy.ResultVersion ||
+			report.AtlasStudy.ProjectionVersion != AtlasStudyReportProjectionVersion {
+			return fmt.Errorf("report manifest: Atlas Study report projection is incomplete")
+		}
+		if err := validateAtlasStudyReportProjection(
+			report.AtlasStudy,
+			report.StudyMap,
+			hasAtlasStudyRequest,
+			hasAtlasStudyResult,
+			hasAtlasStudyStatus,
+		); err != nil {
+			return fmt.Errorf("report manifest: %w", err)
+		}
+	} else if report.StudyMap != nil && hasRepositoryAtlas {
+		return fmt.Errorf("report manifest: Atlas-first Study map lacks Atlas Study state")
 	}
 	authority, err := componentAuthority(report.Components)
 	if err != nil {
@@ -459,7 +703,347 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 	if !reflect.DeepEqual(report.OpenablePaths, m.OpenablePaths) || !reflect.DeepEqual(authority, m.Components) {
 		return fmt.Errorf("report manifest: authority does not match report")
 	}
+	material := m.MaterialInputs
+	if report.TaskInvestigation == nil {
+		if material.TaskBundleSHA256 != "" || material.TaskAttemptSHA256 != "" ||
+			material.TaskPackSHA256 != "" || material.TaskStatusSHA256 != "" ||
+			material.TaskRetrievalTraceSHA256 != "" || material.TaskRetrievalTraceMarkdownSHA256 != "" {
+			return fmt.Errorf("report manifest: Task Lens artifacts are not present in report")
+		}
+	} else if report.TaskInvestigation.BundleSHA256 != material.TaskBundleSHA256 ||
+		report.TaskInvestigation.AttemptSHA256 != material.TaskAttemptSHA256 ||
+		report.TaskInvestigation.PackSHA256 != material.TaskPackSHA256 ||
+		report.TaskInvestigation.StatusSHA256 != material.TaskStatusSHA256 ||
+		!validManifestSHA256(report.TaskInvestigation.BundleSHA256) ||
+		!validManifestSHA256(report.TaskInvestigation.AttemptSHA256) ||
+		!validManifestSHA256(report.TaskInvestigation.PackSHA256) ||
+		!validManifestSHA256(report.TaskInvestigation.StatusSHA256) ||
+		report.TaskInvestigation.RetrievalTraceSHA256 != material.TaskRetrievalTraceSHA256 ||
+		report.TaskInvestigation.RetrievalTraceMarkdownSHA256 != material.TaskRetrievalTraceMarkdownSHA256 ||
+		!validManifestSHA256(report.TaskInvestigation.RetrievalTraceSHA256) ||
+		!validManifestSHA256(report.TaskInvestigation.RetrievalTraceMarkdownSHA256) {
+		return fmt.Errorf("report manifest: Task Lens artifact identity does not match report")
+	}
 	return nil
+}
+
+func validateAtlasStudyReportProjection(
+	status *AtlasStudyReportStatus,
+	studyMap *RepositoryStudyMap,
+	hasRequest bool,
+	hasResult bool,
+	hasStatus bool,
+) error {
+	if status == nil {
+		return fmt.Errorf("Atlas Study projection is absent")
+	}
+	zeroStageCounts := status.ConsideredSpanCount == 0 && status.AdvertisedSpanCount == 0 &&
+		status.ModelSelectedSpanCount == 0 && status.AcceptedSpanCount == 0
+	zeroFlags := !status.FrontierComplete && !status.SelectedItemsComplete &&
+		!status.SupportCoverageComplete && !status.PortfolioTargetMet
+	switch status.State {
+	case atlasstudy.ProductStateAccepted, atlasstudy.ProductStateAcceptedPartial:
+		// Four-stage contract mirroring validateStatus projected onto the
+		// public report: advertised <= considered, the model-selected stage is
+		// between the accepted direction count and the advertised frontier,
+		// the locally accepted span count equals the accepted direction count,
+		// and the four coverage flags are recorded independently. An advertised
+		// span with no returned direction is normal not_selected: it never
+		// turns an otherwise exact result into accepted_partial.
+		if !hasRequest || !hasResult || !hasStatus || studyMap == nil ||
+			status.UnavailableCode != "" || status.FailureCode != "" ||
+			status.CandidateCoverage == nil || status.DirectionCount < 1 ||
+			status.PublishedDirectionCount < 1 ||
+			status.PublishedDirectionCount != len(studyMap.Directions) ||
+			status.HiddenDirectionCount != len(studyMap.HiddenDirections) ||
+			status.DirectionCount != status.PublishedDirectionCount+status.HiddenDirectionCount ||
+			status.DirectionCount != status.AcceptedSpanCount ||
+			status.ConsideredSpanCount <= 0 || status.AdvertisedSpanCount <= 0 ||
+			status.AdvertisedSpanCount > status.ConsideredSpanCount ||
+			status.ModelSelectedSpanCount < status.AcceptedSpanCount ||
+			status.ModelSelectedSpanCount > status.AdvertisedSpanCount ||
+			status.FrontierComplete != (status.AdvertisedSpanCount == status.ConsideredSpanCount) ||
+			status.SelectedItemsComplete != (status.State == atlasstudy.ProductStateAccepted) ||
+			!status.SupportCoverageComplete ||
+			status.PortfolioTargetMet != (status.DirectionCount >= atlasstudy.MinPortfolioDirections &&
+				status.DirectionCount <= atlasstudy.MaxDirections) {
+			return fmt.Errorf("accepted Atlas Study projection is invalid")
+		}
+		if err := status.CandidateCoverage.validate(); err != nil {
+			return err
+		}
+		if err := validateAtlasStudyOmissionProjection(status.Omissions); err != nil {
+			return err
+		}
+		if status.CandidateCoverage.SpansSelected != status.AdvertisedSpanCount {
+			return fmt.Errorf("accepted Atlas Study candidate/span counts do not match")
+		}
+		// Accepted means every returned selected item is locally valid: the
+		// model-selected stage collapses onto the locally accepted span count
+		// (zero rejected siblings). accepted_partial keeps at least one valid
+		// direction while a returned sibling is rejected; a rejected sibling
+		// may reference an already-selected span, so its count may still equal
+		// the accepted count and the flag remains the exact disambiguator.
+		if status.State == atlasstudy.ProductStateAccepted &&
+			(status.ModelSelectedSpanCount != status.AcceptedSpanCount || !status.SelectedItemsComplete) {
+			return fmt.Errorf("complete Atlas Study projection is invalid")
+		}
+		if status.State == atlasstudy.ProductStateAcceptedPartial &&
+			(status.SelectedItemsComplete || status.ModelSelectedSpanCount < status.AcceptedSpanCount) {
+			return fmt.Errorf("partial Atlas Study projection is invalid")
+		}
+	case atlasstudy.ProductStateUnavailable:
+		if hasRequest || hasResult || hasStatus || studyMap != nil ||
+			(status.UnavailableCode != AtlasStudyUnavailableOffline &&
+				status.UnavailableCode != AtlasStudyUnavailableInsufficientCatalog) ||
+			status.FailureCode != "" || status.CandidateCoverage != nil ||
+			status.DirectionCount != 0 || status.PublishedDirectionCount != 0 ||
+			status.HiddenDirectionCount != 0 || !zeroStageCounts || !zeroFlags ||
+			len(status.Omissions) != 0 {
+			return fmt.Errorf("unavailable Atlas Study projection is invalid")
+		}
+	case atlasstudy.ProductStateFailed:
+		if !hasRequest || hasResult || !hasStatus || studyMap != nil ||
+			status.UnavailableCode != "" || status.CandidateCoverage == nil ||
+			!status.FailureCode.Valid() || status.FailureCode == atlasstudy.FailureResource ||
+			status.FailureCode == atlasstudy.FailureCanceled || status.DirectionCount != 0 ||
+			status.PublishedDirectionCount != 0 || status.HiddenDirectionCount != 0 ||
+			!zeroStageCounts || !zeroFlags {
+			return fmt.Errorf("failed Atlas Study projection is invalid")
+		}
+		if err := status.CandidateCoverage.validate(); err != nil {
+			return err
+		}
+		if err := validateAtlasStudyOmissionProjection(status.Omissions); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unsupported Atlas Study report state %q", status.State)
+	}
+	return nil
+}
+
+// VerifyTaskInvestigationArtifacts binds the canonical Task Lens files
+// to the exact report/manifest pair before any saved workspace is exposed.
+func (m RunManifest) VerifyTaskInvestigationArtifacts(runDir string) error {
+	material := m.MaterialInputs
+	if material.TaskBundleSHA256 == "" {
+		return nil
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return fmt.Errorf("report manifest: open Task Lens run: %w", err)
+	}
+	defer root.Close()
+	artifacts := []struct {
+		name string
+		want string
+	}{
+		{tasklens.BundleFile, material.TaskBundleSHA256},
+		{tasklens.AttemptFile, material.TaskAttemptSHA256},
+		{tasklens.PackFile, material.TaskPackSHA256},
+		{tasklens.StatusFile, material.TaskStatusSHA256},
+	}
+	artifacts = append(artifacts,
+		struct{ name, want string }{tasklens.TraceJSONFile, material.TaskRetrievalTraceSHA256},
+		struct{ name, want string }{tasklens.TraceMarkdownFile, material.TaskRetrievalTraceMarkdownSHA256},
+	)
+	for _, artifact := range artifacts {
+		data, readErr := readManifestFile(root, artifact.name, maxRunManifestBytes)
+		if readErr != nil || manifestSHA256(data) != artifact.want {
+			return fmt.Errorf("report manifest: Task Lens artifact %s sha256 mismatch", artifact.name)
+		}
+	}
+	return nil
+}
+
+// VerifyOrientationContextSelectionArtifact binds the safe selection trace to
+// the authorized run before callers trust it as an explanation of model input.
+func (m RunManifest) VerifyOrientationContextSelectionArtifact(runDir string) error {
+	want := m.MaterialInputs.OrientationContextSelectionSHA256
+	if want == "" {
+		return nil
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return fmt.Errorf("report manifest: open orientation context selection run: %w", err)
+	}
+	defer root.Close()
+	data, err := readManifestFile(
+		root,
+		llmbundle.OrientationContextSelectionFilename,
+		llmbundle.MaxOrientationContextSelectionBytes,
+	)
+	if err != nil || manifestSHA256(data) != want {
+		return fmt.Errorf("report manifest: orientation context selection sha256 mismatch")
+	}
+	selection, err := llmbundle.DecodeOrientationContextSelection(data)
+	if err != nil {
+		return fmt.Errorf("report manifest: orientation context selection: %w", err)
+	}
+	modelBundle, err := readManifestFile(root, "llm_bundle.json", maxManifestReportBytes)
+	if err != nil || manifestSHA256(modelBundle) != m.MaterialInputs.ModelBundleSHA256 {
+		return fmt.Errorf("report manifest: model bundle sha256 mismatch")
+	}
+	if !orientationSelectionMatchesModelBundle(selection, modelBundle) {
+		return fmt.Errorf("report manifest: orientation context selection model bundle identity mismatch")
+	}
+	return nil
+}
+
+// VerifyRepositoryAtlasArtifact binds the exact canonical Atlas file to the
+// Atlas value embedded in the authorized report. Neither copy is accepted as
+// an independent source of truth.
+func (m RunManifest) VerifyRepositoryAtlasArtifact(runDir string, reportJSON []byte) error {
+	want := m.MaterialInputs.RepositoryAtlasSHA256
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return fmt.Errorf("report manifest: open repository Atlas run: %w", err)
+	}
+	defer root.Close()
+	if want == "" {
+		if _, statErr := root.Lstat(repositoryatlas.ArtifactFilename); statErr == nil {
+			return fmt.Errorf("report manifest: unbound repository Atlas artifact is present")
+		} else if !errors.Is(statErr, fs.ErrNotExist) {
+			return fmt.Errorf("report manifest: inspect repository Atlas artifact: %w", statErr)
+		}
+		return nil
+	}
+	encoded, err := readManifestFile(root, repositoryatlas.ArtifactFilename, repositoryatlas.MaxArtifactBytes)
+	if err != nil || manifestSHA256(encoded) != want {
+		return fmt.Errorf("report manifest: repository Atlas artifact sha256 mismatch")
+	}
+	atlas, err := repositoryatlas.DecodeCanonicalJSON(encoded)
+	if err != nil {
+		return fmt.Errorf("report manifest: repository Atlas artifact: %w", err)
+	}
+	var persisted struct {
+		RepositoryAtlas *repositoryatlas.Atlas `json:"repository_atlas"`
+	}
+	if err := json.Unmarshal(reportJSON, &persisted); err != nil {
+		return fmt.Errorf("report manifest: decode report repository Atlas: %w", err)
+	}
+	if persisted.RepositoryAtlas == nil || !reflect.DeepEqual(atlas, *persisted.RepositoryAtlas) {
+		return fmt.Errorf("report manifest: repository Atlas artifact does not match report")
+	}
+	return nil
+}
+
+// VerifyNavigatorArtifacts binds the exact Navigator request/result/status
+// files to the Atlas and the deliberately small recommendation projection in
+// the authorized report. Selected runs require all three files; a local empty
+// result requires result and status; an offline run requires its compiled
+// request and status and forbids a result artifact.
+func (m RunManifest) VerifyNavigatorArtifacts(runDir string, reportJSON []byte) error {
+	artifacts := []struct {
+		name  string
+		want  string
+		limit int
+	}{
+		{navigator.RequestArtifactFilename, m.MaterialInputs.NavigatorRequestSHA256, repositoryatlas.MaxArtifactBytes},
+		{navigator.RecordArtifactFilename, m.MaterialInputs.NavigatorResultSHA256, repositoryatlas.MaxArtifactBytes},
+		{navigator.StatusArtifactFilename, m.MaterialInputs.NavigatorStatusSHA256, navigator.MaxStatusArtifactBytes},
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return fmt.Errorf("report manifest: open Navigator run: %w", err)
+	}
+	defer root.Close()
+	for _, artifact := range artifacts {
+		if artifact.want == "" {
+			if _, statErr := root.Lstat(artifact.name); statErr == nil {
+				return fmt.Errorf("report manifest: unbound Navigator artifact %s is present", artifact.name)
+			} else if !errors.Is(statErr, fs.ErrNotExist) {
+				return fmt.Errorf("report manifest: inspect Navigator artifact %s: %w", artifact.name, statErr)
+			}
+			continue
+		}
+		encoded, readErr := readManifestFile(root, artifact.name, artifact.limit)
+		if readErr != nil || manifestSHA256(encoded) != artifact.want {
+			return fmt.Errorf("report manifest: Navigator artifact %s sha256 mismatch", artifact.name)
+		}
+	}
+
+	var persisted struct {
+		RepositoryAtlas *repositoryatlas.Atlas  `json:"repository_atlas"`
+		Navigator       *NavigatorReportProduct `json:"navigator"`
+	}
+	if err := json.Unmarshal(reportJSON, &persisted); err != nil {
+		return fmt.Errorf("report manifest: decode report Navigator projection: %w", err)
+	}
+	projected, err := readNavigatorReportProduct(runDir, persisted.RepositoryAtlas)
+	if err != nil {
+		return fmt.Errorf("report manifest: Navigator artifacts: %w", err)
+	}
+	if !reflect.DeepEqual(projected, persisted.Navigator) {
+		return fmt.Errorf("report manifest: Navigator artifacts do not match report")
+	}
+	return nil
+}
+
+// VerifyAtlasStudyArtifacts binds the exact Atlas Study request/result/status
+// files to the authorized report. Semantic decoding and projection equality
+// are enforced by the shared Atlas Study report reader after the byte identity
+// checks below succeed.
+func (m RunManifest) VerifyAtlasStudyArtifacts(runDir string, reportJSON []byte) error {
+	if m.Version != CurrentRunManifestVersion {
+		return fmt.Errorf("report manifest: unsupported version %d", m.Version)
+	}
+	artifacts := []struct {
+		name  string
+		want  string
+		limit int
+	}{
+		{atlasstudy.RequestArtifactFilename, m.MaterialInputs.AtlasStudyRequestSHA256, atlasstudy.MaxRequestArtifactBytes},
+		{atlasstudy.ResultArtifactFilename, m.MaterialInputs.AtlasStudyResultSHA256, atlasstudy.MaxResultArtifactBytes},
+		{atlasstudy.StatusArtifactFilename, m.MaterialInputs.AtlasStudyStatusSHA256, atlasstudy.MaxStatusArtifactBytes},
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return fmt.Errorf("report manifest: open Atlas Study run: %w", err)
+	}
+	defer root.Close()
+	for _, artifact := range artifacts {
+		if artifact.want == "" {
+			if _, statErr := root.Lstat(artifact.name); statErr == nil {
+				return fmt.Errorf("report manifest: unbound Atlas Study artifact %s is present", artifact.name)
+			} else if !errors.Is(statErr, fs.ErrNotExist) {
+				return fmt.Errorf("report manifest: inspect Atlas Study artifact %s: %w", artifact.name, statErr)
+			}
+			continue
+		}
+		encoded, readErr := readManifestFile(root, artifact.name, artifact.limit)
+		if readErr != nil || manifestSHA256(encoded) != artifact.want {
+			return fmt.Errorf("report manifest: Atlas Study artifact %s sha256 mismatch", artifact.name)
+		}
+	}
+	var persisted ReportData
+	if err := json.Unmarshal(reportJSON, &persisted); err != nil {
+		return fmt.Errorf("report manifest: decode Atlas Study report projection: %w", err)
+	}
+	if persisted.AtlasStudy == nil &&
+		m.MaterialInputs.AtlasStudyRequestSHA256 == "" &&
+		m.MaterialInputs.AtlasStudyResultSHA256 == "" &&
+		m.MaterialInputs.AtlasStudyStatusSHA256 == "" {
+		return nil
+	}
+	status, studyMap, err := readAtlasStudyReportProduct(runDir, &persisted)
+	if err != nil {
+		return fmt.Errorf("report manifest: Atlas Study artifacts: %w", err)
+	}
+	if !reflect.DeepEqual(status, persisted.AtlasStudy) ||
+		!reflect.DeepEqual(studyMap, persisted.StudyMap) {
+		return fmt.Errorf("report manifest: Atlas Study artifacts do not match report")
+	}
+	return nil
+}
+
+func orientationSelectionMatchesModelBundle(
+	selection llmbundle.OrientationContextSelection,
+	modelBundle []byte,
+) bool {
+	return selection.PersistedBundleBytes == len(modelBundle) &&
+		selection.PersistedBundleSHA256 == manifestSHA256(modelBundle)
 }
 
 // VerifyRepositoryState lets a caller compare a freshly captured repository
@@ -467,16 +1051,6 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 func (m RunManifest) VerifyRepositoryState(current freshness.RepositoryState) error {
 	if err := m.Validate(); err != nil {
 		return err
-	}
-	if m.Version < 3 {
-		digest, err := current.Digest()
-		if err != nil {
-			return fmt.Errorf("report manifest: current repository state: %w", err)
-		}
-		if digest != m.RepositoryStateSHA256 {
-			return fmt.Errorf("report manifest: legacy repository state changed")
-		}
-		return nil
 	}
 	result := freshness.AssessInputs(context.Background(), m.RepositoryState, current, m.CapturedInputs)
 	if result.State == freshness.FreshnessPartiallyStale || result.State == freshness.FreshnessMixedSnapshot ||
@@ -487,9 +1061,6 @@ func (m RunManifest) VerifyRepositoryState(current freshness.RepositoryState) er
 }
 
 func (m RunManifest) CurrentFreshness(current freshness.RepositoryState) freshness.FreshnessResult {
-	if m.Version < 3 {
-		return freshness.NewFreshnessResult(freshness.FreshnessLegacyUnknown)
-	}
 	return freshness.AssessInputs(context.Background(), m.RepositoryState, current, m.CapturedInputs)
 }
 
@@ -516,6 +1087,68 @@ func DecodeRunManifest(data []byte) (RunManifest, error) {
 	return manifest, nil
 }
 
+// RunManifestAuthoritySeed exposes only the exact repository identity and
+// captured input paths needed to re-confirm authority before an authorized
+// provider-free report render. It is not a verified interactive manifest:
+// callers must capture the repository again and publish a new manifest.
+type RunManifestAuthoritySeed struct {
+	RepositoryIdentity string
+	AnalysisRoot       string
+	SelectedRevision   string
+	// CapturedInputPaths are analysis-root-relative, matching the input
+	// contract of ConfirmRunAuthorityScoped. The manifest itself stores these
+	// paths relative to RepositoryIdentity.
+	CapturedInputPaths []string
+}
+
+// ReadRunManifestAuthoritySeed strictly reads the existing bounded manifest
+// without interpreting its report projection under the current contract. This
+// narrow bootstrap seam lets a copied historical run recover the exact input
+// set needed by ConfirmRunAuthorityScoped; the resulting render still replays
+// every saved product and writes a fresh current manifest fail-closed.
+func ReadRunManifestAuthoritySeed(runDir string) (RunManifestAuthoritySeed, error) {
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return RunManifestAuthoritySeed{}, fmt.Errorf("report manifest seed: open run directory: %w", err)
+	}
+	defer root.Close()
+	raw, err := readManifestFile(root, RunManifestFilename, maxRunManifestBytes)
+	if err != nil {
+		return RunManifestAuthoritySeed{}, fmt.Errorf("report manifest seed: %w", err)
+	}
+	manifest, err := DecodeRunManifest(raw)
+	if err != nil {
+		return RunManifestAuthoritySeed{}, err
+	}
+	paths, err := analysisRelativeManifestInputPaths(manifest)
+	if err != nil {
+		return RunManifestAuthoritySeed{}, err
+	}
+	return RunManifestAuthoritySeed{
+		RepositoryIdentity: manifest.RepositoryState.Identity,
+		AnalysisRoot:       manifest.AnalysisRoot,
+		SelectedRevision:   manifest.MaterialInputs.SelectedRevision,
+		CapturedInputPaths: paths,
+	}, nil
+}
+
+func analysisRelativeManifestInputPaths(manifest RunManifest) ([]string, error) {
+	paths := make([]string, 0, len(manifest.CapturedInputs))
+	for _, input := range manifest.CapturedInputs {
+		repositoryPath := filepath.Join(manifest.RepositoryState.Identity, filepath.FromSlash(input.Path))
+		relative, err := filepath.Rel(manifest.AnalysisRoot, repositoryPath)
+		if err != nil || filepath.IsAbs(relative) || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return nil, fmt.Errorf("report manifest seed: captured input %q is outside analysis root", input.Path)
+		}
+		path := filepath.ToSlash(relative)
+		if err := validateManifestPath(path); err != nil {
+			return nil, fmt.Errorf("report manifest seed: captured input %q: %w", input.Path, err)
+		}
+		paths = append(paths, path)
+	}
+	return paths, nil
+}
+
 // ReadRunManifest reads and verifies run_manifest.json and report.json from a
 // run directory. Both files must be bounded, regular files (not symlinks).
 func ReadRunManifest(runDir string) (RunManifest, error) {
@@ -538,6 +1171,21 @@ func ReadRunManifest(runDir string) (RunManifest, error) {
 		return RunManifest{}, err
 	}
 	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
+		return RunManifest{}, err
+	}
+	if err := manifest.VerifyTaskInvestigationArtifacts(runDir); err != nil {
+		return RunManifest{}, err
+	}
+	if err := manifest.VerifyOrientationContextSelectionArtifact(runDir); err != nil {
+		return RunManifest{}, err
+	}
+	if err := manifest.VerifyRepositoryAtlasArtifact(runDir, reportJSON); err != nil {
+		return RunManifest{}, err
+	}
+	if err := manifest.VerifyNavigatorArtifacts(runDir, reportJSON); err != nil {
+		return RunManifest{}, err
+	}
+	if err := manifest.VerifyAtlasStudyArtifacts(runDir, reportJSON); err != nil {
 		return RunManifest{}, err
 	}
 	return manifest, nil
@@ -597,6 +1245,24 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 	if err != nil {
 		return err
 	}
+	orientationSelectionDigest, err := savedOrientationContextSelectionSHA256(runDir)
+	if err != nil {
+		return err
+	}
+	modelBundleDigest, err := savedModelBundleSHA256(runDir)
+	if err != nil {
+		return err
+	}
+	repositoryAtlasDigest, err := savedRepositoryAtlasSHA256(runDir)
+	if err != nil {
+		return err
+	}
+	navigatorRequestDigest := savedArtifactSHA256(runDir, navigator.RequestArtifactFilename)
+	navigatorResultDigest := savedArtifactSHA256(runDir, navigator.RecordArtifactFilename)
+	navigatorStatusDigest := savedArtifactSHA256(runDir, navigator.StatusArtifactFilename)
+	atlasStudyRequestDigest := savedArtifactSHA256(runDir, atlasstudy.RequestArtifactFilename)
+	atlasStudyResultDigest := savedArtifactSHA256(runDir, atlasstudy.ResultArtifactFilename)
+	atlasStudyStatusDigest := savedArtifactSHA256(runDir, atlasstudy.StatusArtifactFilename)
 	manifest := RunManifest{
 		Version:               CurrentRunManifestVersion,
 		RepositoryState:       authority.repository,
@@ -610,12 +1276,39 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 		CapturedInputsSHA256:  inputsDigest,
 		Freshness:             authority.freshness,
 		MaterialInputs: MaterialInputs{
-			SelectedRevision: authority.repository.Head, ModelBundleSHA256: savedArtifactSHA256(runDir, "llm_bundle.json"),
-			InputPolicyVersion: "captured-inputs-v1", ArchitectureContract: componentmap.ContractVersion,
+			SelectedRevision:                  authority.repository.Head,
+			ModelBundleSHA256:                 modelBundleDigest,
+			OrientationContextSelectionSHA256: orientationSelectionDigest,
+			RepositoryAtlasSHA256:             repositoryAtlasDigest,
+			NavigatorRequestSHA256:            navigatorRequestDigest,
+			NavigatorResultSHA256:             navigatorResultDigest,
+			NavigatorStatusSHA256:             navigatorStatusDigest,
+			AtlasStudyRequestSHA256:           atlasStudyRequestDigest,
+			AtlasStudyResultSHA256:            atlasStudyResultDigest,
+			AtlasStudyStatusSHA256:            atlasStudyStatusDigest,
+			TaskBundleSHA256:                  savedArtifactSHA256(runDir, tasklens.BundleFile),
+			TaskAttemptSHA256:                 savedArtifactSHA256(runDir, tasklens.AttemptFile),
+			TaskPackSHA256:                    savedArtifactSHA256(runDir, tasklens.PackFile),
+			TaskStatusSHA256:                  savedArtifactSHA256(runDir, tasklens.StatusFile),
+			TaskRetrievalTraceSHA256:          savedArtifactSHA256(runDir, tasklens.TraceJSONFile),
+			TaskRetrievalTraceMarkdownSHA256:  savedArtifactSHA256(runDir, tasklens.TraceMarkdownFile),
+			InputPolicyVersion:                "captured-inputs-v1", ArchitectureContract: componentmap.ContractVersion,
 			ReportContract: data.FormatVersion,
 		},
 	}
 	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
+		return err
+	}
+	if err := manifest.VerifyOrientationContextSelectionArtifact(runDir); err != nil {
+		return err
+	}
+	if err := manifest.VerifyRepositoryAtlasArtifact(runDir, reportJSON); err != nil {
+		return err
+	}
+	if err := manifest.VerifyNavigatorArtifacts(runDir, reportJSON); err != nil {
+		return err
+	}
+	if err := manifest.VerifyAtlasStudyArtifacts(runDir, reportJSON); err != nil {
 		return err
 	}
 	return writeRunManifestAtomic(runDir, manifest)
@@ -654,6 +1347,84 @@ func savedArtifactSHA256(runDir, name string) string {
 		return ""
 	}
 	return manifestSHA256(data)
+}
+
+func savedOrientationContextSelectionSHA256(runDir string) (string, error) {
+	path := filepath.Join(runDir, llmbundle.OrientationContextSelectionFilename)
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("report manifest: inspect orientation context selection: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > llmbundle.MaxOrientationContextSelectionBytes {
+		return "", fmt.Errorf("report manifest: orientation context selection must be a bounded regular file")
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return "", fmt.Errorf("report manifest: open orientation context selection run: %w", err)
+	}
+	defer root.Close()
+	data, err := readManifestFile(root, llmbundle.OrientationContextSelectionFilename, llmbundle.MaxOrientationContextSelectionBytes)
+	if err != nil {
+		return "", fmt.Errorf("report manifest: read orientation context selection: %w", err)
+	}
+	if _, err := llmbundle.DecodeOrientationContextSelection(data); err != nil {
+		return "", fmt.Errorf("report manifest: orientation context selection: %w", err)
+	}
+	return manifestSHA256(data), nil
+}
+
+func savedModelBundleSHA256(runDir string) (string, error) {
+	path := filepath.Join(runDir, "llm_bundle.json")
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("report manifest: inspect model bundle: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxManifestReportBytes {
+		return "", fmt.Errorf("report manifest: model bundle must be a bounded regular file")
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return "", fmt.Errorf("report manifest: open model bundle run: %w", err)
+	}
+	defer root.Close()
+	data, err := readManifestFile(root, "llm_bundle.json", maxManifestReportBytes)
+	if err != nil {
+		return "", fmt.Errorf("report manifest: read model bundle: %w", err)
+	}
+	return manifestSHA256(data), nil
+}
+
+func savedRepositoryAtlasSHA256(runDir string) (string, error) {
+	path := filepath.Join(runDir, repositoryatlas.ArtifactFilename)
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("report manifest: inspect repository Atlas: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > repositoryatlas.MaxArtifactBytes {
+		return "", fmt.Errorf("report manifest: repository Atlas must be a bounded regular file")
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return "", fmt.Errorf("report manifest: open repository Atlas run: %w", err)
+	}
+	defer root.Close()
+	data, err := readManifestFile(root, repositoryatlas.ArtifactFilename, repositoryatlas.MaxArtifactBytes)
+	if err != nil {
+		return "", fmt.Errorf("report manifest: read repository Atlas: %w", err)
+	}
+	if _, err := repositoryatlas.DecodeCanonicalJSON(data); err != nil {
+		return "", fmt.Errorf("report manifest: repository Atlas: %w", err)
+	}
+	return manifestSHA256(data), nil
 }
 
 func validManifestLabel(value string) bool {

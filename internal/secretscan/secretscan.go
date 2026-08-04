@@ -6,6 +6,7 @@ package secretscan
 import (
 	"regexp"
 	"strings"
+	"sync/atomic"
 )
 
 var patterns = []struct {
@@ -22,8 +23,67 @@ var patterns = []struct {
 	{kind: "credential assignment", pattern: regexp.MustCompile(`(?i)["']?(?:api[_-]?key|client[_-]?secret|token|password|passwd|secret|private[_-]?key|access[_-]?key|refresh[_-]?token)["']?\s*:\s*["']?[A-Za-z0-9][A-Za-z0-9._~+/=-]{7,}`)},
 }
 
+var dynamicCredentialReference = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$`)
+var disabled atomic.Bool
+
+const (
+	ClosedKindPrivateKey           = "private_key"
+	ClosedKindBearerCredential     = "bearer_credential"
+	ClosedKindSecretKey            = "secret_key"
+	ClosedKindGitHubToken          = "github_token"
+	ClosedKindAWSAccessKey         = "aws_access_key"
+	ClosedKindCredentialAssignment = "credential_assignment"
+	ClosedKindUnknown              = "unknown"
+)
+
+// ClosedKind converts detector-owned descriptions into the bounded codes
+// permitted in persistent diagnostics. Unknown descriptions fail closed and
+// never become artifact prose.
+func ClosedKind(kind string) string {
+	switch kind {
+	case "private key":
+		return ClosedKindPrivateKey
+	case "bearer credential":
+		return ClosedKindBearerCredential
+	case "secret key":
+		return ClosedKindSecretKey
+	case "github token":
+		return ClosedKindGitHubToken
+	case "aws access key":
+		return ClosedKindAWSAccessKey
+	case "credential assignment":
+		return ClosedKindCredentialAssignment
+	default:
+		return ClosedKindUnknown
+	}
+}
+
+// SetDisabled changes credential detection for the current process and returns
+// a restore function. It exists for the explicitly unsafe CLI override; normal
+// callers must leave detection enabled.
+func SetDisabled(value bool) func() {
+	previous := disabled.Swap(value)
+	return func() {
+		disabled.Store(previous)
+	}
+}
+
 // Detect returns the credential kind without returning the matched value.
 func Detect(text string) (string, bool) {
+	if disabled.Load() {
+		return "", false
+	}
+	return detect(text)
+}
+
+// DetectAlways performs mandatory credential detection even when the
+// explicitly unsafe process-wide override is active. Persistent artifacts and
+// provider request evidence must use this boundary.
+func DetectAlways(text string) (string, bool) {
+	return detect(text)
+}
+
+func detect(text string) (string, bool) {
 	for _, candidate := range patterns {
 		for _, match := range candidate.pattern.FindAllString(text, -1) {
 			if candidate.kind == "credential assignment" {
@@ -38,15 +98,17 @@ func Detect(text string) (string, bool) {
 }
 
 func looksLikeCredentialAssignment(match string) bool {
-	separator := strings.IndexAny(match, "=:")
-	if separator < 0 || separator+1 >= len(match) {
+	value := credentialAssignmentValue(match)
+	if value == "" {
 		return false
 	}
-	valueStart := separator + 1
-	if match[separator] == ':' && valueStart < len(match) && match[valueStart] == '=' {
-		valueStart++
+	if !credentialAssignmentValueIsQuoted(match) && dynamicCredentialReference.MatchString(value) {
+		return false
 	}
-	value := strings.Trim(strings.TrimSpace(match[valueStart:]), "\"'`")
+	valueStart := strings.Index(match, value)
+	if valueStart < 0 {
+		return false
+	}
 	if strings.ContainsAny(match[valueStart:], "\"'`") || len(value) >= 16 {
 		return true
 	}
@@ -61,8 +123,33 @@ func looksLikeCredentialAssignment(match string) bool {
 	return false
 }
 
-func looksLikePlaceholder(value string) bool {
-	lower := strings.ToLower(value)
+func credentialAssignmentValueIsQuoted(match string) bool {
+	separator := strings.IndexAny(match, "=:")
+	if separator < 0 || separator+1 >= len(match) {
+		return false
+	}
+	valueStart := separator + 1
+	if match[separator] == ':' && valueStart < len(match) && match[valueStart] == '=' {
+		valueStart++
+	}
+	tail := strings.TrimSpace(match[valueStart:])
+	return tail != "" && strings.ContainsRune("\"'`", rune(tail[0]))
+}
+
+func credentialAssignmentValue(match string) string {
+	separator := strings.IndexAny(match, "=:")
+	if separator < 0 || separator+1 >= len(match) {
+		return ""
+	}
+	valueStart := separator + 1
+	if match[separator] == ':' && valueStart < len(match) && match[valueStart] == '=' {
+		valueStart++
+	}
+	return strings.Trim(strings.TrimSpace(match[valueStart:]), "\"'`")
+}
+
+func looksLikePlaceholder(match string) bool {
+	lower := strings.ToLower(match)
 	for _, marker := range []string{
 		"<your", "${", "placeholder", "redacted", "replace-me", "replace_me",
 		"your-api", "your_api", "example", "dummy", "changeme", "change-me",
@@ -71,5 +158,6 @@ func looksLikePlaceholder(value string) bool {
 			return true
 		}
 	}
-	return false
+	value := credentialAssignmentValue(match)
+	return len(value) >= 8 && strings.Trim(value, "0") == ""
 }

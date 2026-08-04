@@ -1,0 +1,500 @@
+{
+  "case_id": "beets-configured-plugin-command",
+  "repository": {
+    "name": "beets",
+    "revision": "9acb1ecff6c7ee0a1e83e3b983c94792345712c5"
+  },
+  "question": "How does a Beets plugin named in configuration become an executable CLI command?",
+  "source_slices": [
+    {
+      "path": "beets/plugins.py",
+      "start_line": 365,
+      "end_line": 403,
+      "enclosing_symbol_id": "pyright:symbol:beets/plugins.py:365:1:get_plugin_names",
+      "intersecting_symbol_ids": [
+        "pyright:symbol:beets/plugins.py:365:1:get_plugin_names"
+      ],
+      "scope_coverage": "complete",
+      "text": "def get_plugin_names() -\u003e list[str]:\n    \"\"\"Discover and return the set of plugin names to be loaded.\n\n    Configures the plugin search paths and resolves the final set of plugins\n    based on configuration settings, inclusion filters, and exclusion rules.\n    Automatically includes the musicbrainz plugin when enabled in configuration.\n    \"\"\"\n    paths = [\n        str(Path(p).expanduser().absolute())\n        for p in beets.config[\"pluginpath\"].as_str_seq(split=False)\n    ]\n    log.debug(\"plugin paths: {}\", paths)\n\n    # Extend the `beetsplug` package to include the plugin paths.\n    import beetsplug\n\n    beetsplug.__path__ = paths + list(beetsplug.__path__)\n\n    # For backwards compatibility, also support plugin paths that\n    # *contain* a `beetsplug` package.\n    sys.path += paths\n    plugins = unique_list(beets.config[\"plugins\"].as_str_seq())\n    beets.config.add({\"disabled_plugins\": []})\n    disabled_plugins = set(beets.config[\"disabled_plugins\"].as_str_seq())\n    # TODO: Remove in v3.0.0\n    mb_enabled = beets.config[\"musicbrainz\"].flatten().get(\"enabled\")\n    if mb_enabled:\n        deprecate_for_user(\n            log,\n            \"'musicbrainz.enabled' configuration option\",\n            \"'plugins' configuration to explicitly add 'musicbrainz'\",\n        )\n        if \"musicbrainz\" not in plugins:\n            plugins.append(\"musicbrainz\")\n    elif mb_enabled is False:\n        deprecate_for_user(log, \"'musicbrainz.enabled' configuration option\")\n        disabled_plugins.add(\"musicbrainz\")\n\n    return [p for p in plugins if p not in disabled_plugins]\n"
+    },
+    {
+      "path": "beets/plugins.py",
+      "start_line": 406,
+      "end_line": 443,
+      "enclosing_symbol_id": "pyright:symbol:beets/plugins.py:406:1:_get_plugin",
+      "intersecting_symbol_ids": [
+        "pyright:symbol:beets/plugins.py:406:1:_get_plugin"
+      ],
+      "scope_coverage": "complete",
+      "text": "def _get_plugin(name: str) -\u003e BeetsPlugin | None:\n    \"\"\"Dynamically load and instantiate a plugin class by name.\n\n    Attempts to import the plugin module, locate the appropriate plugin class\n    within it, and return an instance. Handles import failures gracefully and\n    logs warnings for missing plugins or loading errors.\n\n    Note we load the *last* plugin class found in the plugin namespace. This\n    allows plugins to define helper classes that inherit from BeetsPlugin\n    without those being loaded as the main plugin class.\n\n    Returns None if the plugin could not be loaded for any reason.\n    \"\"\"\n    try:\n        try:\n            namespace = import_module(f\"{PLUGIN_NAMESPACE}.{name}\")\n        except Exception as exc:\n            raise PluginImportError(name) from exc\n\n        for obj in reversed(namespace.__dict__.values()):\n            if (\n                inspect.isclass(obj)\n                and issubclass(obj, BeetsPlugin)\n                and obj != BeetsPlugin\n                and not inspect.isabstract(obj)\n                # Only consider this plugin's module or submodules to avoid\n                # conflicts when plugins import other BeetsPlugin classes\n                and (\n                    obj.__module__ == namespace.__name__\n                    or obj.__module__.startswith(f\"{namespace.__name__}.\")\n                )\n            ):\n                return obj()\n\n    except Exception:\n        log.warning(\"** error loading plugin {}\", name, exc_info=True)\n\n    return None\n"
+    },
+    {
+      "path": "beets/plugins.py",
+      "start_line": 449,
+      "end_line": 476,
+      "enclosing_symbol_id": "synthetic:scope:beets/plugins.py:449:1:476:15",
+      "intersecting_symbol_ids": [
+        "pyright:symbol:beets/plugins.py:449:1:load_plugins",
+        "pyright:symbol:beets/plugins.py:464:1:find_plugins",
+        "pyright:symbol:beets/plugins.py:471:1:commands"
+      ],
+      "scope_coverage": "partial",
+      "text": "def load_plugins() -\u003e None:\n    \"\"\"Initialize the plugin system by loading all configured plugins.\n\n    Performs one-time plugin discovery and instantiation, storing loaded plugin\n    instances globally. Emits a pluginload event after successful initialization\n    to notify other components.\n    \"\"\"\n    if not _instances:\n        names = get_plugin_names()\n        log.debug(\"Loading plugins: {}\", \", \".join(sorted(names)))\n        _instances.extend(filter(None, map(_get_plugin, names)))\n\n        send(\"pluginload\")\n\n\ndef find_plugins() -\u003e Iterable[BeetsPlugin]:\n    return _instances\n\n\n# Communication with plugins.\n\n\ndef commands() -\u003e list[Subcommand]:\n    \"\"\"Returns a list of Subcommand objects from all loaded plugins.\"\"\"\n    out: list[Subcommand] = []\n    for plugin in find_plugins():\n        out += plugin.commands()\n    return out\n"
+    },
+    {
+      "path": "beets/ui/__init__.py",
+      "start_line": 643,
+      "end_line": 647,
+      "enclosing_symbol_id": "pyright:symbol:beets/ui/__init__.py:643:5:add_subcommand",
+      "intersecting_symbol_ids": [
+        "pyright:symbol:beets/ui/__init__.py:618:1:SubcommandsOptionParser",
+        "pyright:symbol:beets/ui/__init__.py:643:5:add_subcommand"
+      ],
+      "scope_coverage": "complete",
+      "text": "    def add_subcommand(self, *cmds):\n        \"\"\"Adds a Subcommand object to the parser's list of commands.\"\"\"\n        for cmd in cmds:\n            cmd.root_parser = self\n            self.subcommands.append(cmd)\n"
+    },
+    {
+      "path": "beets/ui/__init__.py",
+      "start_line": 702,
+      "end_line": 740,
+      "enclosing_symbol_id": "pyright:symbol:beets/ui/__init__.py:618:1:SubcommandsOptionParser",
+      "intersecting_symbol_ids": [
+        "pyright:symbol:beets/ui/__init__.py:618:1:SubcommandsOptionParser",
+        "pyright:symbol:beets/ui/__init__.py:702:5:_subcommand_for_name",
+        "pyright:symbol:beets/ui/__init__.py:712:5:parse_global_options",
+        "pyright:symbol:beets/ui/__init__.py:725:5:parse_subcommand"
+      ],
+      "scope_coverage": "partial",
+      "text": "    def _subcommand_for_name(self, name):\n        \"\"\"Return the subcommand in self.subcommands matching the\n        given name. The name may either be the name of a subcommand or\n        an alias. If no subcommand matches, returns None.\n        \"\"\"\n        for subcommand in self.subcommands:\n            if name == subcommand.name or name in subcommand.aliases:\n                return subcommand\n        return None\n\n    def parse_global_options(self, args):\n        \"\"\"Parse options up to the subcommand argument. Returns a tuple\n        of the options object and the remaining arguments.\n        \"\"\"\n        options, subargs = self.parse_args(args)\n\n        # Force the help command\n        if options.help:\n            subargs = [\"help\"]\n        elif options.version:\n            subargs = [\"version\"]\n        return options, subargs\n\n    def parse_subcommand(self, args):\n        \"\"\"Given the `args` left unused by a `parse_global_options`,\n        return the invoked subcommand, the subcommand options, and the\n        subcommand arguments.\n        \"\"\"\n        # Help is default command\n        if not args:\n            args = [\"help\"]\n\n        cmdname = args.pop(0)\n        subcommand = self._subcommand_for_name(cmdname)\n        if not subcommand:\n            raise UserError(f\"unknown command '{cmdname}'\")\n\n        suboptions, subargs = subcommand.parse_args(args)\n        return subcommand, suboptions, subargs\n"
+    },
+    {
+      "path": "beets/ui/__init__.py",
+      "start_line": 749,
+      "end_line": 766,
+      "enclosing_symbol_id": "pyright:symbol:beets/ui/__init__.py:749:1:_setup",
+      "intersecting_symbol_ids": [
+        "pyright:symbol:beets/ui/__init__.py:749:1:_setup"
+      ],
+      "scope_coverage": "complete",
+      "text": "def _setup() -\u003e tuple[list[Subcommand], library.Library]:\n    \"\"\"Prepare and global state and updates it with command line options.\n\n    Returns a list of subcommands, a list of plugins, and a library instance.\n    \"\"\"\n\n    plugins.load_plugins()\n\n    # Get the default subcommands.\n    from beets.ui.commands import default_commands\n\n    subcommands = list(default_commands)\n    subcommands.extend(plugins.commands())\n\n    lib = _open_library(config)\n    plugins.send(\"library_opened\", lib=lib)\n\n    return subcommands, lib\n"
+    },
+    {
+      "path": "beets/ui/__init__.py",
+      "start_line": 839,
+      "end_line": 853,
+      "enclosing_symbol_id": "pyright:symbol:beets/ui/__init__.py:802:1:_raw_main",
+      "intersecting_symbol_ids": [
+        "pyright:symbol:beets/ui/__init__.py:802:1:_raw_main"
+      ],
+      "scope_coverage": "partial",
+      "text": "    parser.add_option(\n        \"-p\",\n        \"--plugins\",\n        dest=\"plugins\",\n        action=\"callback\",\n        callback=parse_csl_callback,\n        help=\"a comma-separated list of plugins to load\",\n    )\n    parser.add_option(\n        \"-P\",\n        \"--disable-plugins\",\n        dest=\"disabled_plugins\",\n        action=\"callback\",\n        callback=parse_csl_callback,\n        help=\"a comma-separated list of plugins to disable\",\n"
+    },
+    {
+      "path": "beets/ui/__init__.py",
+      "start_line": 869,
+      "end_line": 930,
+      "enclosing_symbol_id": "synthetic:scope:beets/ui/__init__.py:869:1:930:27",
+      "intersecting_symbol_ids": [
+        "pyright:symbol:beets/ui/__init__.py:802:1:_raw_main",
+        "pyright:symbol:beets/ui/__init__.py:907:1:_bootstrap_config"
+      ],
+      "scope_coverage": "partial",
+      "text": "    options, subargs = parser.parse_global_options(args)\n\n    # Defer config errors such that logging is available early for error reporting\n    # also allows `config --edit` command to bypass on config errors\n    deferred_error = _bootstrap_config(options)\n    _bootstrap_logging()\n\n    if (\n        subargs\n        and subargs[0] == \"config\"\n        and (\"-e\" in subargs or \"--edit\" in subargs)\n    ):\n        from beets.ui.commands.config import config_edit\n\n        return config_edit(options)\n\n    if \"AppData\\\\Local\\\\Microsoft\\\\WindowsApps\" in sys.exec_prefix:\n        raise UserError(\n            \"beets is unable to use the Microsoft Store version of \"\n            \"Python. Please install Python from https://python.org.\\n\"\n            \"More details can be found here \"\n            \"https://beets.readthedocs.io/en/stable/guides/main.html\"\n        )\n\n    if deferred_error:\n        raise deferred_error\n\n    subcommands, lib = _setup()\n    parser.add_subcommand(*subcommands)\n\n    subcommand, suboptions, subargs = parser.parse_subcommand(subargs)\n    subcommand.func(lib, suboptions, subargs)\n\n    plugins.send(\"cli_exit\", lib=lib)\n    lib._close()\n    return None\n\n\ndef _bootstrap_config(options: optparse.Values) -\u003e confuse.ConfigError | None:\n    \"\"\"Apply CLI to config, return error as value if any.\"\"\"\n\n    deferred_error: confuse.ConfigError | None = None\n    try:\n        # Explicit read() so we own error handling (a broken user config file would\n        # otherwise surface on the first implicit config access e.g. config[\"verbose\"].\n        # It also ensures confuse's source list is populated before set_file() adds the\n        #  --config overlay.\n        config.read()\n        if overlay_path := getattr(options, \"config\", None):\n            config.set_file(overlay_path)\n    except confuse.ConfigError as e:\n        deferred_error = e\n        # Ensure defaults are loaded even when user config is broken,\n        # so that logging and other subsystems can read basic settings.\n        config.read(user=False, defaults=True)\n\n    # Even if the earlier config loading fails we seperatly try to set the\n    # cli options\n    try:\n        config.set_args(options)\n    except confuse.ConfigError as e:\n        deferred_error = e\n"
+    },
+    {
+      "path": "test/rsrc/beetsplug/test.py",
+      "start_line": 5,
+      "end_line": 19,
+      "enclosing_symbol_id": "pyright:symbol:test/rsrc/beetsplug/test.py:5:1:TestPlugin",
+      "intersecting_symbol_ids": [
+        "pyright:symbol:test/rsrc/beetsplug/test.py:5:1:TestPlugin",
+        "pyright:symbol:test/rsrc/beetsplug/test.py:6:5:__init__",
+        "pyright:symbol:test/rsrc/beetsplug/test.py:10:5:commands"
+      ],
+      "scope_coverage": "complete",
+      "text": "class TestPlugin(BeetsPlugin):\n    def __init__(self):\n        super().__init__()\n        self.is_test_plugin = True\n\n    def commands(self):\n        test = ui.Subcommand(\"test\")\n        test.func = lambda *args: None\n\n        # Used in CompletionTest\n        test.parser.add_option(\"-o\", \"--option\", dest=\"my_opt\")\n\n        plugin = ui.Subcommand(\"plugin\")\n        plugin.func = lambda *args: None\n        return [test, plugin]\n"
+    },
+    {
+      "path": "test/ui/test_ui.py",
+      "start_line": 248,
+      "end_line": 257,
+      "enclosing_symbol_id": "pyright:symbol:test/ui/test_ui.py:248:5:test_cli_config_file_loads_plugin_commands",
+      "intersecting_symbol_ids": [
+        "pyright:symbol:test/ui/test_ui.py:55:1:ConfigTest",
+        "pyright:symbol:test/ui/test_ui.py:248:5:test_cli_config_file_loads_plugin_commands"
+      ],
+      "scope_coverage": "complete",
+      "text": "    def test_cli_config_file_loads_plugin_commands(self):\n        with open(self.cli_config_path, \"w\") as file:\n            file.write(f\"pluginpath: {_common.PLUGINPATH}\\n\")\n            file.write(\"plugins: test\")\n\n        self.run_command(\"--config\", self.cli_config_path, \"plugin\")\n        plugs = plugins.find_plugins()\n        assert len(plugs) == 1\n        assert plugs[0].is_test_plugin\n        self.unload_plugins()\n"
+    }
+  ],
+  "structure_provenance": {
+    "analyzer": "pyright",
+    "version": "pyright 1.1.409",
+    "collector_version": "semantic-map-structure-v1",
+    "adapter_identity": "internal/analyzer/python/pyright@084c07588657556b9c23d8632ef7ba3a9e14ae9f",
+    "operations": [
+      "textDocument/documentSymbol",
+      "textDocument/prepareCallHierarchy",
+      "callHierarchy/outgoingCalls"
+    ],
+    "repository_revision": "9acb1ecff6c7ee0a1e83e3b983c94792345712c5",
+    "scenario": "pyright-workspace",
+    "symbol_coverage": "retained_scopes_only",
+    "call_coverage": "selected_symbol_targets_only",
+    "synthetic_scope_policy": "anonymous_cross-slice_container"
+  },
+  "symbols": [
+    {
+      "id": "pyright:symbol:beets/plugins.py:365:1:get_plugin_names",
+      "path": "beets/plugins.py",
+      "kind": "function",
+      "name": "get_plugin_names",
+      "start_line": 365,
+      "start_column": 1,
+      "end_line": 403,
+      "end_column": 61,
+      "parent_symbol_id": "",
+      "containment_parent_symbol_id": ""
+    },
+    {
+      "id": "pyright:symbol:beets/plugins.py:406:1:_get_plugin",
+      "path": "beets/plugins.py",
+      "kind": "function",
+      "name": "_get_plugin",
+      "start_line": 406,
+      "start_column": 1,
+      "end_line": 443,
+      "end_column": 16,
+      "parent_symbol_id": "",
+      "containment_parent_symbol_id": ""
+    },
+    {
+      "id": "pyright:symbol:beets/plugins.py:449:1:load_plugins",
+      "path": "beets/plugins.py",
+      "kind": "function",
+      "name": "load_plugins",
+      "start_line": 449,
+      "start_column": 1,
+      "end_line": 461,
+      "end_column": 27,
+      "parent_symbol_id": "",
+      "containment_parent_symbol_id": ""
+    },
+    {
+      "id": "synthetic:scope:beets/plugins.py:449:1:476:15",
+      "path": "beets/plugins.py",
+      "kind": "synthetic_scope",
+      "name": "",
+      "start_line": 449,
+      "start_column": 1,
+      "end_line": 476,
+      "end_column": 15,
+      "parent_symbol_id": "",
+      "containment_parent_symbol_id": ""
+    },
+    {
+      "id": "pyright:symbol:beets/plugins.py:464:1:find_plugins",
+      "path": "beets/plugins.py",
+      "kind": "function",
+      "name": "find_plugins",
+      "start_line": 464,
+      "start_column": 1,
+      "end_line": 465,
+      "end_column": 22,
+      "parent_symbol_id": "",
+      "containment_parent_symbol_id": ""
+    },
+    {
+      "id": "pyright:symbol:beets/plugins.py:471:1:commands",
+      "path": "beets/plugins.py",
+      "kind": "function",
+      "name": "commands",
+      "start_line": 471,
+      "start_column": 1,
+      "end_line": 476,
+      "end_column": 15,
+      "parent_symbol_id": "",
+      "containment_parent_symbol_id": ""
+    },
+    {
+      "id": "pyright:symbol:beets/ui/__init__.py:618:1:SubcommandsOptionParser",
+      "path": "beets/ui/__init__.py",
+      "kind": "class",
+      "name": "SubcommandsOptionParser",
+      "start_line": 618,
+      "start_column": 1,
+      "end_line": 740,
+      "end_column": 47,
+      "parent_symbol_id": "",
+      "containment_parent_symbol_id": ""
+    },
+    {
+      "id": "pyright:symbol:beets/ui/__init__.py:643:5:add_subcommand",
+      "path": "beets/ui/__init__.py",
+      "kind": "method",
+      "name": "add_subcommand",
+      "start_line": 643,
+      "start_column": 5,
+      "end_line": 647,
+      "end_column": 41,
+      "parent_symbol_id": "pyright:symbol:beets/ui/__init__.py:618:1:SubcommandsOptionParser",
+      "containment_parent_symbol_id": "pyright:symbol:beets/ui/__init__.py:618:1:SubcommandsOptionParser"
+    },
+    {
+      "id": "pyright:symbol:beets/ui/__init__.py:702:5:_subcommand_for_name",
+      "path": "beets/ui/__init__.py",
+      "kind": "method",
+      "name": "_subcommand_for_name",
+      "start_line": 702,
+      "start_column": 5,
+      "end_line": 710,
+      "end_column": 20,
+      "parent_symbol_id": "pyright:symbol:beets/ui/__init__.py:618:1:SubcommandsOptionParser",
+      "containment_parent_symbol_id": "pyright:symbol:beets/ui/__init__.py:618:1:SubcommandsOptionParser"
+    },
+    {
+      "id": "pyright:symbol:beets/ui/__init__.py:712:5:parse_global_options",
+      "path": "beets/ui/__init__.py",
+      "kind": "method",
+      "name": "parse_global_options",
+      "start_line": 712,
+      "start_column": 5,
+      "end_line": 723,
+      "end_column": 32,
+      "parent_symbol_id": "pyright:symbol:beets/ui/__init__.py:618:1:SubcommandsOptionParser",
+      "containment_parent_symbol_id": "pyright:symbol:beets/ui/__init__.py:618:1:SubcommandsOptionParser"
+    },
+    {
+      "id": "pyright:symbol:beets/ui/__init__.py:725:5:parse_subcommand",
+      "path": "beets/ui/__init__.py",
+      "kind": "method",
+      "name": "parse_subcommand",
+      "start_line": 725,
+      "start_column": 5,
+      "end_line": 740,
+      "end_column": 47,
+      "parent_symbol_id": "pyright:symbol:beets/ui/__init__.py:618:1:SubcommandsOptionParser",
+      "containment_parent_symbol_id": "pyright:symbol:beets/ui/__init__.py:618:1:SubcommandsOptionParser"
+    },
+    {
+      "id": "pyright:symbol:beets/ui/__init__.py:749:1:_setup",
+      "path": "beets/ui/__init__.py",
+      "kind": "function",
+      "name": "_setup",
+      "start_line": 749,
+      "start_column": 1,
+      "end_line": 766,
+      "end_column": 28,
+      "parent_symbol_id": "",
+      "containment_parent_symbol_id": ""
+    },
+    {
+      "id": "pyright:symbol:beets/ui/__init__.py:802:1:_raw_main",
+      "path": "beets/ui/__init__.py",
+      "kind": "function",
+      "name": "_raw_main",
+      "start_line": 802,
+      "start_column": 1,
+      "end_line": 904,
+      "end_column": 16,
+      "parent_symbol_id": "",
+      "containment_parent_symbol_id": ""
+    },
+    {
+      "id": "synthetic:scope:beets/ui/__init__.py:869:1:930:27",
+      "path": "beets/ui/__init__.py",
+      "kind": "synthetic_scope",
+      "name": "",
+      "start_line": 869,
+      "start_column": 1,
+      "end_line": 930,
+      "end_column": 27,
+      "parent_symbol_id": "",
+      "containment_parent_symbol_id": ""
+    },
+    {
+      "id": "pyright:symbol:beets/ui/__init__.py:907:1:_bootstrap_config",
+      "path": "beets/ui/__init__.py",
+      "kind": "function",
+      "name": "_bootstrap_config",
+      "start_line": 907,
+      "start_column": 1,
+      "end_line": 932,
+      "end_column": 26,
+      "parent_symbol_id": "",
+      "containment_parent_symbol_id": ""
+    },
+    {
+      "id": "pyright:symbol:test/rsrc/beetsplug/test.py:5:1:TestPlugin",
+      "path": "test/rsrc/beetsplug/test.py",
+      "kind": "class",
+      "name": "TestPlugin",
+      "start_line": 5,
+      "start_column": 1,
+      "end_line": 19,
+      "end_column": 30,
+      "parent_symbol_id": "",
+      "containment_parent_symbol_id": ""
+    },
+    {
+      "id": "pyright:symbol:test/rsrc/beetsplug/test.py:6:5:__init__",
+      "path": "test/rsrc/beetsplug/test.py",
+      "kind": "method",
+      "name": "__init__",
+      "start_line": 6,
+      "start_column": 5,
+      "end_line": 8,
+      "end_column": 35,
+      "parent_symbol_id": "pyright:symbol:test/rsrc/beetsplug/test.py:5:1:TestPlugin",
+      "containment_parent_symbol_id": "pyright:symbol:test/rsrc/beetsplug/test.py:5:1:TestPlugin"
+    },
+    {
+      "id": "pyright:symbol:test/rsrc/beetsplug/test.py:10:5:commands",
+      "path": "test/rsrc/beetsplug/test.py",
+      "kind": "method",
+      "name": "commands",
+      "start_line": 10,
+      "start_column": 5,
+      "end_line": 19,
+      "end_column": 30,
+      "parent_symbol_id": "pyright:symbol:test/rsrc/beetsplug/test.py:5:1:TestPlugin",
+      "containment_parent_symbol_id": "pyright:symbol:test/rsrc/beetsplug/test.py:5:1:TestPlugin"
+    },
+    {
+      "id": "pyright:symbol:test/ui/test_ui.py:55:1:ConfigTest",
+      "path": "test/ui/test_ui.py",
+      "kind": "class",
+      "name": "ConfigTest",
+      "start_line": 55,
+      "start_column": 1,
+      "end_line": 300,
+      "end_column": 72,
+      "parent_symbol_id": "",
+      "containment_parent_symbol_id": ""
+    },
+    {
+      "id": "pyright:symbol:test/ui/test_ui.py:248:5:test_cli_config_file_loads_plugin_commands",
+      "path": "test/ui/test_ui.py",
+      "kind": "method",
+      "name": "test_cli_config_file_loads_plugin_commands",
+      "start_line": 248,
+      "start_column": 5,
+      "end_line": 257,
+      "end_column": 30,
+      "parent_symbol_id": "pyright:symbol:test/ui/test_ui.py:55:1:ConfigTest",
+      "containment_parent_symbol_id": "pyright:symbol:test/ui/test_ui.py:55:1:ConfigTest"
+    }
+  ],
+  "static_calls": [
+    {
+      "caller_symbol_id": "pyright:symbol:beets/plugins.py:449:1:load_plugins",
+      "path": "beets/plugins.py",
+      "start_line": 457,
+      "start_column": 17,
+      "end_line": 457,
+      "end_column": 33,
+      "callee_symbol_id": "pyright:symbol:beets/plugins.py:365:1:get_plugin_names"
+    },
+    {
+      "caller_symbol_id": "pyright:symbol:beets/plugins.py:471:1:commands",
+      "path": "beets/plugins.py",
+      "start_line": 474,
+      "start_column": 19,
+      "end_line": 474,
+      "end_column": 31,
+      "callee_symbol_id": "pyright:symbol:beets/plugins.py:464:1:find_plugins"
+    },
+    {
+      "caller_symbol_id": "pyright:symbol:beets/ui/__init__.py:725:5:parse_subcommand",
+      "path": "beets/ui/__init__.py",
+      "start_line": 735,
+      "start_column": 27,
+      "end_line": 735,
+      "end_column": 47,
+      "callee_symbol_id": "pyright:symbol:beets/ui/__init__.py:702:5:_subcommand_for_name"
+    },
+    {
+      "caller_symbol_id": "pyright:symbol:beets/ui/__init__.py:749:1:_setup",
+      "path": "beets/ui/__init__.py",
+      "start_line": 755,
+      "start_column": 13,
+      "end_line": 755,
+      "end_column": 25,
+      "callee_symbol_id": "pyright:symbol:beets/plugins.py:449:1:load_plugins"
+    },
+    {
+      "caller_symbol_id": "pyright:symbol:beets/ui/__init__.py:749:1:_setup",
+      "path": "beets/ui/__init__.py",
+      "start_line": 761,
+      "start_column": 32,
+      "end_line": 761,
+      "end_column": 40,
+      "callee_symbol_id": "pyright:symbol:beets/plugins.py:471:1:commands"
+    },
+    {
+      "caller_symbol_id": "pyright:symbol:beets/ui/__init__.py:802:1:_raw_main",
+      "path": "beets/ui/__init__.py",
+      "start_line": 869,
+      "start_column": 31,
+      "end_line": 869,
+      "end_column": 51,
+      "callee_symbol_id": "pyright:symbol:beets/ui/__init__.py:712:5:parse_global_options"
+    },
+    {
+      "caller_symbol_id": "pyright:symbol:beets/ui/__init__.py:802:1:_raw_main",
+      "path": "beets/ui/__init__.py",
+      "start_line": 873,
+      "start_column": 22,
+      "end_line": 873,
+      "end_column": 39,
+      "callee_symbol_id": "pyright:symbol:beets/ui/__init__.py:907:1:_bootstrap_config"
+    },
+    {
+      "caller_symbol_id": "pyright:symbol:beets/ui/__init__.py:802:1:_raw_main",
+      "path": "beets/ui/__init__.py",
+      "start_line": 896,
+      "start_column": 24,
+      "end_line": 896,
+      "end_column": 30,
+      "callee_symbol_id": "pyright:symbol:beets/ui/__init__.py:749:1:_setup"
+    },
+    {
+      "caller_symbol_id": "pyright:symbol:beets/ui/__init__.py:802:1:_raw_main",
+      "path": "beets/ui/__init__.py",
+      "start_line": 897,
+      "start_column": 12,
+      "end_line": 897,
+      "end_column": 26,
+      "callee_symbol_id": "pyright:symbol:beets/ui/__init__.py:643:5:add_subcommand"
+    },
+    {
+      "caller_symbol_id": "pyright:symbol:beets/ui/__init__.py:802:1:_raw_main",
+      "path": "beets/ui/__init__.py",
+      "start_line": 899,
+      "start_column": 46,
+      "end_line": 899,
+      "end_column": 62,
+      "callee_symbol_id": "pyright:symbol:beets/ui/__init__.py:725:5:parse_subcommand"
+    },
+    {
+      "caller_symbol_id": "pyright:symbol:test/ui/test_ui.py:248:5:test_cli_config_file_loads_plugin_commands",
+      "path": "test/ui/test_ui.py",
+      "start_line": 254,
+      "start_column": 25,
+      "end_line": 254,
+      "end_column": 37,
+      "callee_symbol_id": "pyright:symbol:beets/plugins.py:464:1:find_plugins"
+    }
+  ],
+  "unresolved_calls": [
+    {
+      "fact_id": "r40",
+      "caller_symbol_id": "pyright:symbol:beets/ui/__init__.py:802:1:_raw_main",
+      "path": "beets/ui/__init__.py",
+      "start_line": 900,
+      "end_line": 900,
+      "expression": "subcommand.func",
+      "reason": "dynamic_target"
+    }
+  ]
+}

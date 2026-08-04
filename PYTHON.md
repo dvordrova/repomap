@@ -90,7 +90,7 @@ Pyright language server поддерживает необходимые LSP-оп
 
 ## Проведенный эксперимент: 2026-07-11
 
-Эксперимент проводился вне tracked-кода repomap: временная fixture, одноразовый JSON-RPC client и shallow clone beets. Поэтому он проверяет техническую гипотезу, но еще не является реализацией `cmd/pyright-playground`.
+Эксперимент проводился вне tracked-кода repomap: временная fixture, одноразовый JSON-RPC client и shallow clone beets. Он проверяет техническую гипотезу, но не является поддерживаемой командой или частью обычного product path.
 
 ### Минимальная fixture
 
@@ -201,110 +201,13 @@ Raw Pyright output также содержал повторяющиеся target
 
 Каждая связь должна иметь provenance: provider, version, operation, исходную location и scenario/config context.
 
-## Следующий tracked vertical slice
+## Retired Pyright exploration
 
-Временный proof-of-concept подтвердил протокол. Следующий шаг — перенести только минимальный reusable результат в полностью изолированный `cmd/pyright-playground`, не меняя default survey, browser report и LLM pipeline.
-
-Пример интерфейса:
-
-```sh
-go run ./cmd/pyright-playground \
-  --repo ../python-project \
-  --path app/service.py \
-  --line 42
-```
-
-Playground должен:
-
-1. найти явно указанный или установленный `pyright-langserver`, но ничего не устанавливать скрыто;
-2. инициализировать workspace с корректным repository root;
-3. разрешить символ строго по заданной location, а не только по имени;
-4. подтвердить его точную identity/location;
-5. запросить bounded incoming calls, outgoing calls и references;
-6. преобразовать результат в общий `evidence.Graph`;
-7. вывести JSON для ручного изучения и сравнения с gopls;
-8. корректно завершить LSP-процесс;
-9. вернуть partial result с понятным warning, если отдельная capability ничего не дала.
-
-Для tracked-проверки достаточно сохранить крошечную fixture-репу:
-
-```text
-main.py -> service.py -> repository.py
-             ^
-             |
-      tests/test_service.py
-```
-
-Стоит добавить один намеренно динамический вызов и убедиться, что инструмент не выдумывает для него точную связь.
-
-## Acceptance criteria первого среза
-
-- выбранный Python callable разрешается по `file:line[:column]`;
-- два одноименных символа в одном файле разрешаются однозначно по location;
-- location, symbol kind и диапазон объявления корректны;
-- incoming/outgoing/references bounded и представлены общим evidence contract;
-- все пути внутри результата repository-relative;
-- stdlib/dependency/outside-workspace locations не смешиваются с repository entities;
-- одинаковые overload/target/callsite records дедуплицируются;
-- zero-based LSP coordinates не протекают в пользовательский `file:line` contract;
-- provenance содержит Pyright version и название LSP operation;
-- scenario учитывает Python/Pyright/config inputs, но не протекает чувствительными абсолютными путями в model-facing bundle;
-- `evidence.Graph` проходит валидацию;
-- отсутствие call hierarchy дает честный partial/warning, а не пустую «успешную» истину;
-- никакого LLM-вызова;
-- никакой интеграции в default repository survey;
-- один analyzer instance переиспользует LSP-сессию для нескольких bounded запросов и корректно завершает процесс;
-- `getattr`/registry dispatch сохраняется как unresolved dynamic boundary без выдуманного target;
-- отсутствие binary дает actionable setup error и не запускает implicit download;
-- минимальные тесты проверяют contract и могут быть дешево выброшены/переписаны вместе с playground.
-
-## Tracked vertical slice: 2026-07-11
-
-Первый изолированный срез теперь реализован без подключения к default survey,
-browser report или LLM pipeline:
-
-- `cmd/pyright-playground` принимает `--repo`, `--path`, `--line`, optional
-  `--column` и explicit `--pyright-langserver`;
-- `internal/lspclient` держит одну bounded stdio JSON-RPC session, отвечает на
-  server-side `workspace/configuration` requests и корректно делает
-  `shutdown` / `exit`;
-- `internal/analyzer/python/pyright` реализует `LocationResolver` и
-  `ExactSymbolAnalyzer`, а incoming/outgoing/references складывает в общий
-  `evidence.Graph`;
-- common evidence различает `repository`, `stdlib`, `dependency` и
-  `outside_workspace`; внешние entities не сохраняют абсолютные toolchain
-  paths;
-- tracked fixture содержит production caller, test caller, два `process` в
-  одном файле и отдельный `getattr` boundary;
-- `make pyright-fixture PYRIGHT_LANGSERVER=/path/to/pyright-langserver`
-  запускает ручной smoke без model call.
-
-Реальный smoke на Pyright 1.1.411 подтвердил:
-
-- `app/service.py:8` разрешается в top-level `process`, находит callers из
-  `main.py` и `tests/test_service.py`, а также direct outgoing в `normalize`,
-  `Repository` и `Repository.save`;
-- `app/service.py:14` независимо разрешается в одноименный method;
-- `app/service.py:18` сохраняет один дедуплицированный stdlib target `getattr`
-  и warning `unresolved`; runtime method по строке не выдумывается;
-- все repository locations в JSON one-based и repository-relative;
-- provider version записывается как `pyright 1.1.411`.
-
-Два важных технических уточнения эксперимента:
-
-1. `pyright-langserver --version` не является version command: langserver
-   требует `--stdio`/другой transport. Адаптер берет версию через соседний
-   executable `pyright --version`, когда он доступен.
-2. Pyright language server по умолчанию использует `openFilesOnly`, поэтому
-   incoming calls и cross-file references сначала были пустыми. Playground
-   явно передает `python.analysis.diagnosticMode=workspace` через стандартный
-   `workspace/configuration` и делает response-sized `workspace/symbol` index
-   barrier с заведомо отсутствующим query. Это дает полные fixture callers, но
-   стоимость такого barrier еще нужно измерить на beets/qutebrowser до
-   продуктовой интеграции.
-
-Следующие пункты ниже остаются архитектурной очередью, а не частью уже
-подключенного Python onboarding.
+The standalone Pyright playground and its Make target were retired because
+they were not part of the supported product path. `internal/lspclient` and the
+Pyright adapter remain an explicitly unintegrated follow-up: any future public
+workflow needs a new approved decision, a bounded fixture contract, and an
+honest Authority label rather than restoration of the old command.
 
 ## Ordinary CLI orientation: 2026-07-11
 

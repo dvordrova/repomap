@@ -18,6 +18,7 @@ const (
 	ProgressSurfaceReady     ProgressStage = "surface_ready"
 	ProgressSurfaceFailed    ProgressStage = "surface_failed"
 	ProgressSurfaceWaiting   ProgressStage = "surface_waiting"
+	ProgressSurfacePhase     ProgressStage = "surface_phase"
 	ProgressModelRequest     ProgressStage = "model_request"
 	ProgressProviderWaiting  ProgressStage = "provider_waiting"
 	ProgressOrientationDone  ProgressStage = "orientation_done"
@@ -47,6 +48,10 @@ type ProgressEvent struct {
 	OutputTokens   int
 	Cached         bool
 	SurfaceCount   int
+	Phase          string
+	PhaseState     string
+	CompletedCount int
+	TotalCount     int
 	Warning        string
 	LatencyMillis  int64
 }

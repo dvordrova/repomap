@@ -128,7 +128,7 @@ func TestCaddyAdminAnchorsCanHaveZeroSurfacesAndSeparateSuggestion(t *testing.T)
 	}
 }
 
-func TestApplyProductCoherenceBuildsLocalCanvasWhenSavedSynthesisIsUnavailable(t *testing.T) {
+func TestApplyProductCoherenceDoesNotCreateASecondArchitectureCanvas(t *testing.T) {
 	t.Parallel()
 
 	data := &ReportData{
@@ -144,8 +144,8 @@ func TestApplyProductCoherenceBuildsLocalCanvasWhenSavedSynthesisIsUnavailable(t
 		}},
 	}
 	ApplyProductCoherence(data)
-	if data.ArchitectureCanvas == nil || len(data.ArchitectureCanvas.Flows) != 1 {
-		t.Fatalf("local fallback canvas = %#v", data.ArchitectureCanvas)
+	if data.ArchitectureCanvas != nil {
+		t.Fatalf("presentation coherence created a competing canvas: %#v", data.ArchitectureCanvas)
 	}
 }
 

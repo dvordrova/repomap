@@ -2,7 +2,10 @@ package orient
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,7 +17,72 @@ import (
 
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
+	"github.com/dvordrova/repomap/internal/flowexplain"
+	"github.com/dvordrova/repomap/internal/llmbundle"
 )
+
+func TestRunCanceledContextStopsBeforeSnapshotPublication(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := Run(ctx, Options{RepoPath: t.TempDir(), SnapshotOnly: true})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run error = %v, want context canceled", err)
+	}
+}
+
+func TestRunSnapshotUsesZeroAsCompleteAndPositiveAsExplicitCap(t *testing.T) {
+	repo := t.TempDir()
+	files := map[string]string{
+		"go.mod":         "module example.com/all\n\ngo 1.24\n",
+		"alpha/alpha.go": "package alpha\n",
+		"beta/beta.go":   "package beta\n\nimport _ \"example.com/all/alpha\"\n",
+		"gamma/gamma.go": "package gamma\n\nimport _ \"example.com/all/alpha\"\n",
+	}
+	tracked := make([]string, 0, len(files))
+	for name, content := range files {
+		path := filepath.Join(repo, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		tracked = append(tracked, name)
+	}
+	runOrientGit(t, repo, "init", "--quiet")
+	runOrientGit(t, repo, append([]string{"add", "--"}, tracked...)...)
+
+	type result struct {
+		GoFacts struct {
+			Packages      []json.RawMessage `json:"packages"`
+			InternalEdges []json.RawMessage `json:"internal_edges"`
+			Coverage      struct {
+				State string `json:"state"`
+			} `json:"coverage"`
+		} `json:"go_facts"`
+	}
+	run := func(options Options) result {
+		t.Helper()
+		encoded, err := Run(context.Background(), options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got result
+		if err := json.Unmarshal(encoded, &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	complete := run(Options{RepoPath: repo, SnapshotOnly: true})
+	if len(complete.GoFacts.Packages) != 3 || len(complete.GoFacts.InternalEdges) != 2 || complete.GoFacts.Coverage.State != "complete" {
+		t.Fatalf("zero-cap Go facts = packages %d edges %d coverage %q", len(complete.GoFacts.Packages), len(complete.GoFacts.InternalEdges), complete.GoFacts.Coverage.State)
+	}
+	capped := run(Options{RepoPath: repo, SnapshotOnly: true, MaxGoPkgs: 1, MaxGoEdges: 1})
+	if len(capped.GoFacts.Packages) != 1 || len(capped.GoFacts.InternalEdges) != 1 || capped.GoFacts.Coverage.State != "partial" {
+		t.Fatalf("explicitly capped Go facts = packages %d edges %d coverage %q", len(capped.GoFacts.Packages), len(capped.GoFacts.InternalEdges), capped.GoFacts.Coverage.State)
+	}
+}
 
 func TestRunDumpsInspectableRequestBeforeProviderFailure(t *testing.T) {
 	repo := t.TempDir()
@@ -76,12 +144,16 @@ func TestRunDumpsInspectableRequestBeforeProviderFailure(t *testing.T) {
 	}
 
 	runDir := filepath.Join(debugDir, runID)
-	request, err := os.ReadFile(filepath.Join(runDir, "llm_request.redacted.json"))
-	if err != nil {
-		t.Fatalf("read request artifact: %v", err)
-	}
-	if !strings.Contains(string(request), `"model":"company-test-model"`) || !strings.Contains(string(request), `"json_object"`) {
-		t.Fatalf("request artifact does not describe the attempted request: %s", request)
+	semanticRecords := readOrientationSemanticRecords(t, runDir)
+	if len(semanticRecords) != 1 ||
+		semanticRecords[0].Stage != debugdump.SemanticStageOrientation ||
+		semanticRecords[0].State != debugdump.SemanticStateProviderFailed ||
+		semanticRecords[0].ValidationCode != debugdump.SemanticValidationProvider ||
+		semanticRecords[0].RequestProvenance != debugdump.SemanticRequestPrepared ||
+		semanticRecords[0].SemanticCalls != 1 ||
+		semanticRecords[0].TransportAttempts != 1 ||
+		semanticRecords[0].Response.Storage != "raw_unavailable" {
+		t.Fatalf("failed orientation semantic exchange = %#v", semanticRecords)
 	}
 
 	metadataBytes, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
@@ -118,8 +190,8 @@ func TestRunDumpsInspectableRequestBeforeProviderFailure(t *testing.T) {
 		)
 	}
 	if metadata.EffectiveOptions.FlowCount != 2 || !metadata.EffectiveOptions.DiscoverSurfaces ||
-		metadata.EffectiveOptions.DumpLLM || !metadata.EffectiveOptions.OutputJSON ||
-		!metadata.EffectiveOptions.NoOpen || metadata.EffectiveOptions.Port != 59769 ||
+		!metadata.EffectiveOptions.OutputJSON || !metadata.EffectiveOptions.NoOpen ||
+		metadata.EffectiveOptions.Port != 59769 ||
 		!metadata.EffectiveOptions.DebugEnabled {
 		t.Fatalf("metadata effective options = %#v", metadata.EffectiveOptions)
 	}
@@ -137,7 +209,7 @@ func TestRunDumpsInspectableRequestBeforeProviderFailure(t *testing.T) {
 	}
 }
 
-func TestRunDumpLLMAbortsBeforeNetworkWhenDebugWriterFails(t *testing.T) {
+func TestRunRequiredArtifactsAbortBeforeNetworkWhenDebugWriterFails(t *testing.T) {
 	repo := t.TempDir()
 	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/dump-failure\n\ngo 1.24\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -164,21 +236,6 @@ func TestRunDumpLLMAbortsBeforeNetworkWhenDebugWriterFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := Run(context.Background(), Options{
-		RepoPath:     repo,
-		OutputJSON:   true,
-		RunID:        "must-not-call-provider",
-		DebugDir:     blockedDebugDir,
-		DumpLLM:      true,
-		DumpRedacted: true,
-	})
-	if err == nil || !strings.Contains(err.Error(), "create required debug writer") {
-		t.Fatalf("Run() error = %v", err)
-	}
-	if requests != 0 {
-		t.Fatalf("provider requests = %d, want 0", requests)
-	}
-
-	_, err = Run(context.Background(), Options{
 		RepoPath:         repo,
 		OutputJSON:       true,
 		RunID:            "required-browser-artifacts",
@@ -225,6 +282,98 @@ func TestRunOfflineRespectsZeroFlowExpansion(t *testing.T) {
 	}
 }
 
+func TestRunOfflineWritesExactBoundedOrientationContextSelection(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/selection\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "main.go"), []byte(`package main
+
+import "time"
+
+func main() {
+	time.NewTicker(time.Second)
+}
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, "private"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "private", "blob.bin"), []byte("must-not-leak-source-body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runOrientGit(t, repo, "init", "--quiet")
+	runOrientGit(t, repo, "add", "--", "go.mod", "main.go", "private/blob.bin")
+
+	debugDir := t.TempDir()
+	runID := "selection-manifest"
+	if _, err := Run(context.Background(), Options{
+		RepoPath:         repo,
+		Offline:          true,
+		OutputJSON:       true,
+		FlowCount:        0,
+		RunID:            runID,
+		DebugDir:         debugDir,
+		RequireArtifacts: true,
+		MaxLLMFiles:      8,
+		MaxLLMEdges:      8,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	runDir := filepath.Join(debugDir, runID)
+	manifestBytes, err := os.ReadFile(filepath.Join(runDir, llmbundle.OrientationContextSelectionFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := llmbundle.DecodeOrientationContextSelection(manifestBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundleBytes, err := os.ReadFile(filepath.Join(runDir, "llm_bundle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bundle llmbundle.Bundle
+	if err := json.Unmarshal(bundleBytes, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := buildOrientationReferenceCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	typedWire, err := buildOrientationWireBundle(bundle, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundleDigest := sha256.Sum256(bundleBytes)
+	wireDigest := sha256.Sum256(typedWire)
+	if manifest.CanonicalBundleSHA256 != hex.EncodeToString(bundleDigest[:]) ||
+		manifest.CanonicalBundleBytes != len(bundleBytes) ||
+		manifest.PersistedBundleSHA256 != hex.EncodeToString(bundleDigest[:]) ||
+		manifest.PersistedBundleBytes != len(bundleBytes) ||
+		manifest.TypedWireSHA256 != hex.EncodeToString(wireDigest[:]) ||
+		manifest.TypedWireBytes != len(typedWire) {
+		t.Fatalf("selection identity = %#v", manifest)
+	}
+	if len(manifest.SelectedCandidates) != len(bundle.CandidateFileIndex) {
+		t.Fatalf("selected candidates = %d, bundle = %d", len(manifest.SelectedCandidates), len(bundle.CandidateFileIndex))
+	}
+	for index, candidate := range bundle.CandidateFileIndex {
+		selected := manifest.SelectedCandidates[index]
+		if selected.Path != candidate.Path || selected.Kind != candidate.Kind || selected.Score != candidate.Score ||
+			strings.Join(selected.Reasons, "\x00") != strings.Join(candidate.Reasons, "\x00") ||
+			strings.Join(selected.Signals, "\x00") != strings.Join(candidate.Signals, "\x00") {
+			t.Fatalf("selected candidate %d differs: %#v / %#v", index, selected, candidate)
+		}
+	}
+	if strings.Contains(string(manifestBytes), "must-not-leak-source-body") ||
+		strings.Contains(string(manifestBytes), `"file_tree"`) {
+		t.Fatalf("selection manifest leaked source body or full file tree: %s", manifestBytes)
+	}
+}
+
 func TestRunWritesLocalEvidenceForEveryDirectionWithoutExtraModelCalls(t *testing.T) {
 	repo := t.TempDir()
 	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/onboarding\n\ngo 1.24\n"), 0o600); err != nil {
@@ -245,42 +394,34 @@ func TestRunWritesLocalEvidenceForEveryDirectionWithoutExtraModelCalls(t *testin
 	runOrientGit(t, repo, "init", "--quiet")
 	runOrientGit(t, repo, "add", "--", "go.mod", "cmd/trial/main.go", "internal/worker/worker.go")
 
-	orientation := `{
-  "project_guess":"tiny worker command",
-  "confidence":0.9,
-  "high_level_map":[],
-  "first_files_to_open":[],
-  "candidate_flows":[
-    {
-      "name":"Process startup",
-      "trigger":"the executable starts",
-      "likely_entrypoint":"cmd/trial/main.go",
-      "likely_files":["cmd/trial/main.go"],
-      "why_interesting":"shows process wiring",
-      "evidence":["cmd/trial/main.go"],
-      "confidence":0.9
-    },
-    {
-      "name":"Worker run",
-      "trigger":"the worker is invoked",
-      "likely_entrypoint":"internal/worker/worker.go",
-      "likely_files":["internal/worker/worker.go"],
-      "why_interesting":"shows background work",
-      "evidence":["internal/worker/worker.go"],
-      "confidence":0.8
-    }
-  ],
-  "important_domain_words":[],
-  "questions_for_human":[],
-  "unverified_paths":[],
-  "warnings":[]
-}`
 	requests := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		requests++
+		wire := orientationWireFromHTTPRequest(t, request)
+		mainRef, mainEvidence := orientationWireFileRefs(t, wire, "cmd/trial/main.go")
+		workerRef, workerEvidence := orientationWireFileRefs(t, wire, "internal/worker/worker.go")
+		orientation, err := json.Marshal(orientationProviderResponse{
+			ProjectGuess: "tiny worker command", Confidence: 0.9,
+			CandidateFlows: []orientationProviderCandidateFlow{
+				{
+					Name: "Process startup", FlowType: "request", Trigger: "the executable starts",
+					LikelyEntrypointRef: mainRef, LikelyFileRefs: []string{mainRef},
+					WhyInteresting: "shows process wiring", EvidenceRefs: []string{mainEvidence}, Confidence: 0.9,
+				},
+				{
+					Name: "Worker run", FlowType: "request", Trigger: "the worker is invoked",
+					LikelyEntrypointRef: workerRef, LikelyFileRefs: []string{workerRef},
+					WhyInteresting: "shows background work", EvidenceRefs: []string{workerEvidence}, Confidence: 0.8,
+				},
+			},
+			Warnings: []string{},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []any{map[string]any{
-				"message": map[string]any{"role": "assistant", "content": orientation},
+				"message": map[string]any{"role": "assistant", "content": string(orientation)},
 			}},
 		})
 	}))
@@ -294,7 +435,7 @@ func TestRunWritesLocalEvidenceForEveryDirectionWithoutExtraModelCalls(t *testin
 
 	debugDir := t.TempDir()
 	runID := "onboarding-directions"
-	output, err := Run(context.Background(), Options{
+	options := Options{
 		RepoPath:               repo,
 		OutputJSON:             true,
 		FlowCount:              0,
@@ -312,7 +453,8 @@ func TestRunWritesLocalEvidenceForEveryDirectionWithoutExtraModelCalls(t *testin
 		MaxLLMFiles:            10,
 		MaxLocalDirectionFiles: 1,
 		MaxLLMEdges:            10,
-	})
+	}
+	output, err := Run(context.Background(), options)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,6 +470,60 @@ func TestRunWritesLocalEvidenceForEveryDirectionWithoutExtraModelCalls(t *testin
 	}
 
 	runDir := filepath.Join(debugDir, runID)
+	semanticRecords := readOrientationSemanticRecords(t, runDir)
+	if len(semanticRecords) != 1 ||
+		semanticRecords[0].State != debugdump.SemanticStateAccepted ||
+		semanticRecords[0].ValidationCode != debugdump.SemanticValidationAccepted ||
+		semanticRecords[0].SemanticCalls != 1 ||
+		semanticRecords[0].TransportAttempts != 1 ||
+		semanticRecords[0].Response.Storage != "raw_content" {
+		t.Fatalf("accepted orientation semantic exchange = %#v", semanticRecords)
+	}
+	options.RunID = runID + "-cached"
+	if _, err := Run(context.Background(), options); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 1 {
+		t.Fatalf("validated orientation cache made %d provider requests, want 1 total", requests)
+	}
+	cachedRecords := readOrientationSemanticRecords(t, filepath.Join(debugDir, options.RunID))
+	if len(cachedRecords) != 1 ||
+		cachedRecords[0].State != debugdump.SemanticStateCacheHit ||
+		cachedRecords[0].ValidationCode != debugdump.SemanticValidationCache ||
+		cachedRecords[0].SemanticCalls != 0 || cachedRecords[0].TransportAttempts != 0 ||
+		cachedRecords[0].Response.Storage != "raw_content" {
+		t.Fatalf("cached orientation semantic exchange = %#v", cachedRecords)
+	}
+	orientationReportJSON, err := os.ReadFile(filepath.Join(runDir, "orientation_report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	warningSidecarJSON, err := os.ReadFile(filepath.Join(
+		runDir,
+		ConfidenceWarningDiagnosticsFile,
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	warningSidecar, err := DecodeConfidenceWarningDiagnostics(warningSidecarJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !warningSidecar.MatchesOrientationReport(orientationReportJSON) ||
+		len(warningSidecar.Diagnostics) != 0 {
+		t.Fatalf("orientation warning sidecar = %#v", warningSidecar)
+	}
+	var savedOrientation orientationPart
+	if err := json.Unmarshal(orientationReportJSON, &savedOrientation); err != nil {
+		t.Fatal(err)
+	}
+	for _, diagnostic := range warningSidecar.Diagnostics {
+		rawWarning, ok := diagnostic.RawWarning()
+		if !ok || diagnostic.WarningIndex >= len(savedOrientation.Warnings) ||
+			savedOrientation.Warnings[diagnostic.WarningIndex] != rawWarning {
+			t.Fatalf("sidecar diagnostic does not address producer warning: %#v", diagnostic)
+		}
+	}
 	metadataBytes, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -339,7 +535,7 @@ func TestRunWritesLocalEvidenceForEveryDirectionWithoutExtraModelCalls(t *testin
 	if metadata.CandidateDirectionCount != 2 || metadata.ProviderRequestCount != 1 || metadata.CompactContextBytes <= 0 || metadata.ExternalRequestBytes <= 0 {
 		t.Fatalf("onboarding metadata = %#v", metadata)
 	}
-	for _, flowID := range []string{"process-startup", "worker-run"} {
+	for _, flowID := range []string{"process-startup"} {
 		bundlePath := filepath.Join(runDir, "flows", flowID, "flow_bundle.json")
 		bundle, err := os.ReadFile(bundlePath)
 		if err != nil {
@@ -378,6 +574,20 @@ func TestRunWritesLocalEvidenceForEveryDirectionWithoutExtraModelCalls(t *testin
 			t.Fatalf("flow %s unexpectedly has a model report: %v", flowID, err)
 		}
 	}
+	if _, err := os.Stat(filepath.Join(runDir, "flows", "worker-run")); !os.IsNotExist(err) {
+		t.Fatalf("unverified worker direction unexpectedly has a local bundle: %v", err)
+	}
+	var worker *flowexplain.CandidateFlow
+	for index := range savedOrientation.CandidateFlows {
+		if savedOrientation.CandidateFlows[index].Name == "Worker run" {
+			worker = &savedOrientation.CandidateFlows[index]
+			break
+		}
+	}
+	if worker == nil || worker.Disposition != flowexplain.DirectionRejected ||
+		worker.DispositionReason != "no exact local verification" {
+		t.Fatalf("unverified worker disposition = %#v", worker)
+	}
 }
 
 func TestRunKeepsFlowExpansionLocalUnderResearchCallBudget(t *testing.T) {
@@ -391,25 +601,6 @@ func TestRunKeepsFlowExpansionLocalUnderResearchCallBudget(t *testing.T) {
 	runOrientGit(t, repo, "init", "--quiet")
 	runOrientGit(t, repo, "add", "--", "go.mod", "main.go")
 
-	orientation := `{
-  "project_guess":"tiny command",
-  "confidence":0.9,
-  "high_level_map":[],
-  "first_files_to_open":[{"path":"main.go","reason":"entrypoint"}],
-  "candidate_flows":[{
-    "name":"Process startup",
-    "trigger":"the executable starts",
-    "likely_entrypoint":"main.go",
-    "likely_files":["main.go"],
-    "why_interesting":"shows wiring",
-    "evidence":["main.go"],
-    "confidence":0.9
-  }],
-  "important_domain_words":[],
-  "questions_for_human":[],
-  "unverified_paths":[],
-  "warnings":[]
-}`
 	var requestSizes []int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		body, err := io.ReadAll(request.Body)
@@ -418,9 +609,24 @@ func TestRunKeepsFlowExpansionLocalUnderResearchCallBudget(t *testing.T) {
 			return
 		}
 		requestSizes = append(requestSizes, len(body))
+		wire := orientationWireFromRequestBytes(t, body)
+		fileRef, evidenceRef := orientationWireFileRefs(t, wire, "main.go")
+		orientation, err := json.Marshal(orientationProviderResponse{
+			ProjectGuess: "tiny command", Confidence: 0.9,
+			FirstFilesToOpen: []orientationProviderFileToOpen{{FileRef: fileRef, Reason: "entrypoint"}},
+			CandidateFlows: []orientationProviderCandidateFlow{{
+				Name: "Process startup", FlowType: "request", Trigger: "the executable starts",
+				LikelyEntrypointRef: fileRef, LikelyFileRefs: []string{fileRef},
+				WhyInteresting: "shows wiring", EvidenceRefs: []string{evidenceRef}, Confidence: 0.9,
+			}},
+			Warnings: []string{},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"choices": []any{map[string]any{
-				"message": map[string]any{"role": "assistant", "content": orientation},
+				"message": map[string]any{"role": "assistant", "content": string(orientation)},
 			}},
 		})
 	}))
@@ -471,6 +677,38 @@ func TestRunKeepsFlowExpansionLocalUnderResearchCallBudget(t *testing.T) {
 	if !strings.Contains(string(status), `"mode": "local_only"`) {
 		t.Fatalf("expanded flow status = %s", status)
 	}
+}
+
+func readOrientationSemanticRecords(
+	t *testing.T,
+	runDir string,
+) []debugdump.SemanticExchangeRecord {
+	t.Helper()
+	directories, err := os.ReadDir(filepath.Join(runDir, debugdump.SemanticExchangesDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := make([]debugdump.SemanticExchangeRecord, 0, len(directories))
+	for _, directory := range directories {
+		if !directory.IsDir() {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(
+			runDir,
+			debugdump.SemanticExchangesDir,
+			directory.Name(),
+			debugdump.SemanticExchangeMetaFile,
+		))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var record debugdump.SemanticExchangeRecord
+		if err := json.Unmarshal(raw, &record); err != nil {
+			t.Fatal(err)
+		}
+		records = append(records, record)
+	}
+	return records
 }
 
 func runOrientGit(t *testing.T, repo string, args ...string) {

@@ -1,0 +1,37 @@
+{
+  "repository": "go-fuego/fuego",
+  "role": "frozen_holdout",
+  "may_use_historical_gold_before_seal": false,
+  "episodes": [
+    {
+      "id": "openapi_example_tag_parsing",
+      "base_revision": "84fadc7a86fa097f240d5dafda3d86f7a784b3ec",
+      "task": "Generated OpenAPI parameter examples sometimes contain the field description instead of the example value. Non-string examples such as integers, booleans, and slices can fail or panic during generation. Find the relevant parameter-registration path, explain the likely data transformation problem, and provide a reproduction and verification plan."
+    },
+    {
+      "id": "openapi_required_nullable_semantics",
+      "base_revision": "c8a6e9dcd907314a613b2f8ff325ba3f01372774",
+      "task": "Exported response fields without `omitempty` are missing from the generated OpenAPI `required` list unless `validate:\"required\"` is also present. Explain where JSON tags and validation tags become OpenAPI required/nullable semantics, identify the likely mismatch, and provide a verification plan."
+    },
+    {
+      "id": "accept_header_wrong_status",
+      "base_revision": "4bc28418acc1e8523276d0da2d6581fd98393106",
+      "task": "A request whose `Accept` header contains only unsupported media types becomes an internal-server response rather than a client-facing not-acceptable response. Locate the negotiation/error-mapping path and propose how to verify the correct status behavior."
+    },
+    {
+      "id": "nil_body_validation_panic",
+      "base_revision": "29023c565e324759e5a50e90583f4afdcdca11e4",
+      "task": "A route that accepts arbitrary JSON can panic when the body is absent or the JSON literal is `null`. The connection closes instead of returning a normal result. Find the post-decode validation path, explain the likely nil-handling failure, and provide a minimal verification plan."
+    },
+    {
+      "id": "httperror_pointer_value",
+      "base_revision": "fbf3dcfcaa69bdee8a17858a8f82656a4a8485d0",
+      "task": "The default error handler behaves inconsistently when a framework HTTP error is returned as a value versus a pointer. Nested developer-only error information may be exposed unexpectedly. Trace error normalization and public serialization, and provide a safe fix and verification strategy."
+    },
+    {
+      "id": "multi_module_release_script",
+      "base_revision": "62113a7cff6210c0db16ed51e003d26043398cf2",
+      "task": "Maintainers need a safe repository-owned release path for a multi-module Go repository. It should validate a semantic version, enumerate root and submodule tags, detect local or remote conflicts before changing anything, create annotated tags, and require confirmation before pushing. Map the repository obligations and produce a non-destructive verification plan."
+    }
+  ]
+}

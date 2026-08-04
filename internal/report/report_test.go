@@ -5,11 +5,243 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 )
+
+func TestExactDiscoveryAnchorsPreserveSavedDeclarationOrder(t *testing.T) {
+	t.Parallel()
+
+	anchors := ExactDiscoveryAnchors(
+		"src/tool/service.py",
+		40,
+		[]string{
+			"# bounded saved source",
+			"def run() -> None:",
+			"    print('hello')",
+			"async def stop() -> None:",
+		},
+	)
+	if len(anchors) != 2 {
+		t.Fatalf("anchors = %#v, want two exact declarations", anchors)
+	}
+	if anchors[0].Path != "src/tool/service.py" ||
+		anchors[0].Language != "python" ||
+		anchors[0].Symbol != "run" ||
+		anchors[0].Line != 41 ||
+		anchors[1].Symbol != "stop" ||
+		anchors[1].Line != 43 {
+		t.Fatalf("anchors = %#v, want saved declaration order and exact lines", anchors)
+	}
+	for _, anchor := range anchors {
+		if len(anchor.Statement) == 0 || len(anchor.ContentSHA256) != 64 {
+			t.Fatalf("anchor is not bounded and content-addressed: %#v", anchor)
+		}
+	}
+}
+
+func TestExactDiscoveryAnchorsRejectUnboundedOrUnauthorizedInputs(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name  string
+		path  string
+		start int
+		lines []string
+	}{
+		{name: "absolute path", path: "/tmp/service.py", start: 1, lines: []string{"def run():"}},
+		{name: "invalid start", path: "service.py", start: 0, lines: []string{"def run():"}},
+		{name: "unknown language", path: "service.txt", start: 1, lines: []string{"def run():"}},
+		{name: "oversized line", path: "service.py", start: 1, lines: []string{strings.Repeat("x", (64<<10)+1)}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := ExactDiscoveryAnchors(test.path, test.start, test.lines); len(got) != 0 {
+				t.Fatalf("ExactDiscoveryAnchors() = %#v, want no anchors", got)
+			}
+		})
+	}
+}
+
+func TestUserTopicUncertaintyExplainsSupportedIncompleteReasons(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		reason string
+		want   string
+	}{
+		{
+			reason: "core_work_fact_missing",
+			want:   "The exact starting point is known, but exact source evidence does not yet establish the core behavior.",
+		},
+		{
+			reason: "unresolved_dynamic_dispatch",
+			want:   "Exact local evidence is available, but dynamic dispatch prevents proving the next target.",
+		},
+		{
+			reason: "proof_adapter_unavailable",
+			want:   "A complete proof adapter is not available for this language yet, so this remains an exact starting point rather than a claimed mechanism.",
+		},
+	} {
+		t.Run(test.reason, func(t *testing.T) {
+			got, ok := userTopicUncertainty([]string{test.reason})
+			if !ok || got != test.want {
+				t.Fatalf("userTopicUncertainty() = %q, %v, want %q, true", got, ok, test.want)
+			}
+		})
+	}
+}
+
+type topicProjectionFixture struct {
+	id       string
+	title    string
+	question string
+	path     string
+	symbol   string
+	line     int
+	reasons  []string
+}
+
+func TestProjectFreshRepoTopicsPreservesChattoRejectionReasons(t *testing.T) {
+	t.Parallel()
+
+	fixtures := []topicProjectionFixture{
+		{
+			id:       "presence",
+			title:    "Real-time presence projection",
+			question: "How are user presences aggregated for real-time delivery?",
+			path:     "cli/internal/connectapi/realtime_projection.go",
+			symbol:   "API.BuildRealtimeProjectionPresences",
+			line:     82,
+			reasons:  []string{"core_work_fact_missing", "unresolved_dynamic_dispatch"},
+		},
+		{
+			id:       "message",
+			title:    "Message creation process",
+			question: "How does the server process a new chat message and persist it?",
+			path:     "cli/internal/connectapi/messages.go",
+			symbol:   "messageService.CreateMessage",
+			line:     45,
+			reasons:  []string{"observable_effect_fact_missing", "bounded_static_analysis_limit"},
+		},
+		{
+			id:       "upload",
+			title:    "Asset upload initiation",
+			question: "How are file uploads initiated and validated in the asset upload service?",
+			path:     "cli/internal/connectapi/asset_uploads.go",
+			symbol:   "assetUploadService.CreateUpload",
+			line:     17,
+			reasons:  []string{"observable_effect_fact_missing", "unresolved_dynamic_dispatch"},
+		},
+	}
+	runDir := t.TempDir()
+	writeTopicProjectionArtifacts(t, runDir, fixtures)
+
+	topics, warning := projectFreshRepoTopics(&ReportData{ArtifactsDir: runDir})
+	if warning != "" {
+		t.Fatalf("projectFreshRepoTopics() warning = %q", warning)
+	}
+	if len(topics) != len(fixtures) {
+		t.Fatalf("topics = %#v, want %d", topics, len(fixtures))
+	}
+	for index, topic := range topics {
+		fixture := fixtures[index]
+		if topic.CandidateID != fixture.id || topic.Title != fixture.title ||
+			topic.Question != fixture.question || len(topic.StartingSymbols) != 1 {
+			t.Fatalf("topic %d = %#v, want fixture %#v", index, topic, fixture)
+		}
+		location := topic.StartingSymbols[0]
+		if location.Path != fixture.path || location.Symbol != fixture.symbol || location.Line != fixture.line {
+			t.Errorf("topic %d location = %#v, want %s:%d %s", index, location, fixture.path, fixture.line, fixture.symbol)
+		}
+		if strings.TrimSpace(topic.Uncertainty) == "" {
+			t.Errorf("topic %d has empty uncertainty", index)
+		}
+	}
+	encoded, err := json.Marshal(topics)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{`"answer"`, `"steps"`, `"effect"`, `"order"`} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Errorf("topic JSON contains mechanism claim field %s: %s", forbidden, encoded)
+		}
+	}
+}
+
+func TestProjectFreshRepoTopicsStillFailsClosedForUnknownReason(t *testing.T) {
+	t.Parallel()
+
+	runDir := t.TempDir()
+	writeTopicProjectionArtifacts(t, runDir, []topicProjectionFixture{{
+		id: "unknown", title: "Unknown", question: "What happens?", path: "main.go",
+		symbol: "main", line: 1, reasons: []string{"future_unreviewed_reason"},
+	}})
+
+	topics, warning := projectFreshRepoTopics(&ReportData{ArtifactsDir: runDir})
+	if len(topics) != 0 || !strings.Contains(warning, "rejected candidate reason is unsupported") {
+		t.Fatalf("projectFreshRepoTopics() = %#v, %q, want fail-closed warning", topics, warning)
+	}
+}
+
+func writeTopicProjectionArtifacts(t *testing.T, runDir string, fixtures []topicProjectionFixture) {
+	t.Helper()
+
+	opportunityCandidates := make([]any, 0, len(fixtures))
+	selected := make([]any, 0, len(fixtures))
+	attempts := make([]any, 0, len(fixtures))
+	for _, fixture := range fixtures {
+		factID := fixture.id + "-fact"
+		eligibility := map[string]any{
+			"status":           "insufficient_primary_evidence",
+			"reasons":          fixture.reasons,
+			"distinct_symbols": []string{fixture.path + "\x00" + fixture.symbol},
+		}
+		opportunityCandidates = append(opportunityCandidates, map[string]any{
+			"id": fixture.id, "title": fixture.title, "question_answered": fixture.question,
+		})
+		selected = append(selected, map[string]any{
+			"candidate_id": fixture.id,
+			"question":     fixture.question,
+			"primary_path": map[string]any{
+				"status":      "insufficient_primary_evidence",
+				"eligibility": eligibility,
+				"root_anchors": []any{map[string]any{
+					"origin_fact_id": factID, "path": fixture.path, "symbol": fixture.symbol,
+				}},
+				"anchor_facts": []any{map[string]any{
+					"id": factID,
+					"source": map[string]any{
+						"path": fixture.path, "start_line": fixture.line, "enclosing_symbol": fixture.symbol,
+					},
+				}},
+			},
+		})
+		attempts = append(attempts, map[string]any{
+			"candidate_id": fixture.id, "question": fixture.question,
+			"state": "insufficient_primary_evidence", "failure_stage": "eligibility",
+			"primary_eligibility": eligibility,
+		})
+	}
+	for name, value := range map[string]any{
+		freshRepoOpportunityFileForTopics: map[string]any{
+			"validation_state":    "accepted",
+			"normalized_proposal": map[string]any{"candidates": opportunityCandidates},
+		},
+		freshRepoDemoCandidatesFileForTopics: map[string]any{"selected": selected},
+		freshRepoDemoStatusFileForTopics:     map[string]any{"attempts": attempts},
+	} {
+		raw, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(runDir, name), raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
 
 func TestParseSnapshotPreservesExactPackageIdentity(t *testing.T) {
 	t.Parallel()
@@ -158,6 +390,97 @@ func TestEnrich(t *testing.T) {
 	}
 }
 
+func TestMixedTopicShelfRendererIsPrimaryAndLive(t *testing.T) {
+	t.Parallel()
+
+	overviewStart := strings.Index(scriptJS, "function renderOverviewWorkspace()")
+	if overviewStart < 0 {
+		t.Fatal("renderOverviewWorkspace is missing")
+	}
+	overviewScript := scriptJS[overviewStart:]
+	mixedIndex := strings.Index(overviewScript, "if (renderMixedLearningShelf(root)) return;")
+	studyIndex := strings.Index(overviewScript, "if (STUDY_MAP)")
+	if mixedIndex < 0 || studyIndex < 0 || mixedIndex >= studyIndex {
+		t.Fatalf("mixed shelf / Study Map order = %d / %d", mixedIndex, studyIndex)
+	}
+	for _, liveControl := range []string{
+		"card.onclick = function () {\n\t\t\tactiveOverviewTopicID = topic.candidate_id;",
+		"button.onclick = function () { openSourceLocation(location); };",
+		"card.onclick = function () { openUserMechanism(mechanism.artifact_id, 0); };",
+	} {
+		if !strings.Contains(scriptJS, liveControl) {
+			t.Errorf("renderer lacks live control %q", liveControl)
+		}
+	}
+	for _, forbidden := range []string{
+		"addWorkspaceTab('Search'",
+		"navigateWorkspace('search')",
+		"if (!TASK_INVESTIGATION) mountSemanticSearch();",
+	} {
+		if strings.Contains(scriptJS, forbidden) {
+			t.Errorf("normal report retains Search surface %q", forbidden)
+		}
+	}
+	for _, removed := range []string{
+		"rm-search-view",
+		"mountSemanticSearch",
+		"RepomapSemanticSearch",
+		"DATA.semantic_search",
+	} {
+		if strings.Contains(scriptJS, removed) {
+			t.Errorf("compiled report script retains removed Search code %q", removed)
+		}
+	}
+
+	data := &ReportData{
+		RepoName:      "go.etcd.io/etcd/v3",
+		OpenablePaths: []string{"server/etcdserver/api/v3rpc/quota.go"},
+		StudyMap:      &RepositoryStudyMap{},
+		UserMechanisms: []UserMechanism{{
+			ArtifactID: "semantic-artifact-003a27952d61f4735635a018",
+			Title:      "Snapshot delivery",
+			Question:   "How is a snapshot delivered?",
+			Answer:     "The accepted path opens and sends the snapshot.",
+			Steps: []UserMechanismStep{
+				{Title: "Open", Locations: []UserCodeLocation{{Path: "server/etcdserver/api/v3rpc/quota.go", Line: 10}}},
+				{Title: "Send", Locations: []UserCodeLocation{{Path: "server/etcdserver/api/v3rpc/quota.go", Line: 20}}},
+			},
+			Files: []UserCodeLocation{{Path: "server/etcdserver/api/v3rpc/quota.go", Line: 10}},
+		}},
+		UserTopics: []UserTopic{{
+			CandidateID: "semantic-candidate-7d19808e04b2b7c7e49e02e3",
+			Title:       "Storage Quota Enforcement on Writes",
+			Question:    "How does the etcd server enforce storage quota?",
+			StartingSymbols: []UserTopicSymbol{{
+				Path: "server/etcdserver/api/v3rpc/quota.go", Symbol: "quotaKVServer.Txn", Line: 42,
+			}},
+			Uncertainty: "The observable result is not yet supported by exact local evidence.",
+		}},
+	}
+	html, err := RenderHTML(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := string(html)
+	for _, want := range []string{
+		`"user_topics":[`,
+		`"candidate_id":"semantic-candidate-7d19808e04b2b7c7e49e02e3"`,
+		`"starting_symbols":[`,
+		`"artifact_id":"semantic-artifact-003a27952d61f4735635a018"`,
+		"Pick a path worth following.",
+		"Open exact symbol",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Errorf("rendered report lacks %q", want)
+		}
+	}
+	for _, forbidden := range []string{"semantic_search", "rm-search-view", "RepomapSemanticSearch"} {
+		if strings.Contains(rendered, forbidden) {
+			t.Errorf("rendered report retains removed Search code %q", forbidden)
+		}
+	}
+}
+
 func TestEnrichSeparatesDirectionFlowSurfaceAndAnchorCounts(t *testing.T) {
 	t.Parallel()
 
@@ -247,7 +570,8 @@ func TestReadRunDir_Integration(t *testing.T) {
 			"likely_files":["server/put.go","storage/kv.go"],
 			"why_interesting":"shows the write path",
 			"evidence":["server/put.go handles Put at line 42"],
-			"confidence":0.82
+			"confidence":0.82,
+			"disposition":"accepted"
 		}],
 		"important_domain_words":[{
 			"word":"revision",
@@ -2131,6 +2455,26 @@ func TestParseFlowReport_WarningsAsBareString(t *testing.T) {
 	}
 	if f.Warnings[0] != "Single warning as a string." {
 		t.Errorf("warnings[0] = %q", f.Warnings[0])
+	}
+}
+
+func TestBoundedDocumentedPurposeSkipsReadmeChrome(t *testing.T) {
+	readme := "Project\n![status](badge.svg)\n==========\n\n" +
+		"Project safely copies database changes to durable storage.\n" +
+		"It runs beside the application.\n\n" +
+		"## Installation\nRun the installer.\n"
+	want := "Project safely copies database changes to durable storage. It runs beside the application."
+	if got := boundedDocumentedPurpose(readme); got != want {
+		t.Fatalf("documented purpose = %q, want %q", got, want)
+	}
+}
+
+func TestBoundedDocumentedPurposeProjectsInlineREADMEHTMLAsPlainText(t *testing.T) {
+	readme := "# Project\n\n" +
+		"Supporting OAuth&nbsp;2.0, OIDC, SAML,<br> LDAP, SCIM, WebAuthn, and MFA.\n"
+	want := "Supporting OAuth 2.0, OIDC, SAML, LDAP, SCIM, WebAuthn, and MFA."
+	if got := boundedDocumentedPurpose(readme); got != want {
+		t.Fatalf("documented purpose = %q, want %q", got, want)
 	}
 }
 

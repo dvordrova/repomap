@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path"
 	"sort"
@@ -19,15 +20,19 @@ import (
 
 const architectureBuildContractVersion = "architecture-candidates-v1"
 
+var errNoCanonicalArchitectureCandidates = errors.New(
+	"architecture canvas build: no canonical local candidates",
+)
+
 // ArchitectureSynthesisFile is the optional, replayable conceptual synthesis
 // record stored beside other run artifacts.
 const ArchitectureSynthesisFile = "architecture_synthesis.json"
 
 // BuildArchitectureCanvasInput derives the exact local input for the v2
-// architecture canvas from saved report facts. A repository landscape does
-// not require a proven flow; saved FlowProof sessions add optional overlays.
-// It intentionally chooses the deterministic landscape; conceptual synthesis
-// may replace only that membership result later, using the returned candidate
+// architecture canvas from saved report facts. CandidateDirection.LocalProof
+// is not a producer-owned exact relation and therefore never becomes a flow
+// overlay here. It remains available to Study and diagnostics. Conceptual
+// synthesis may replace only local grouping, using the returned candidate
 // bundle.
 func BuildArchitectureCanvasInput(data *ReportData) (ArchitectureCanvasInput, error) {
 	if data == nil {
@@ -43,7 +48,6 @@ func BuildArchitectureCanvasInput(data *ReportData) (ArchitectureCanvasInput, er
 	sort.SliceStable(directions, func(i, j int) bool {
 		return directions[i].ID < directions[j].ID
 	})
-	seenFlows := make(map[componentmap.FlowID]struct{}, len(directions))
 	for _, direction := range directions {
 		if direction.Disposition == flowexplain.DirectionRejected {
 			builder.diagnostics = append(builder.diagnostics, componentmap.Diagnostic{
@@ -52,28 +56,25 @@ func BuildArchitectureCanvasInput(data *ReportData) (ArchitectureCanvasInput, er
 			})
 			continue
 		}
-		if direction.LocalProof == nil {
-			builder.assessUngroundedDirection(direction)
-			continue
+		if direction.LocalProof != nil {
+			builder.diagnostics = append(builder.diagnostics, componentmap.Diagnostic{
+				Code: "builder.direction_flow_overlay_omitted", Severity: componentmap.FindingAdvisory,
+				Message: fmt.Sprintf("direction %q remains a Study direction because it has no producer-owned exact architecture binding", direction.Name),
+			})
 		}
-		flowID := componentmap.FlowID(direction.ID)
-		if _, duplicate := seenFlows[flowID]; duplicate {
-			return ArchitectureCanvasInput{}, fmt.Errorf(
-				"architecture canvas build: duplicate saved flow id %q",
-				direction.ID,
-			)
-		}
-		seenFlows[flowID] = struct{}{}
-		builder.addFlow(direction)
+		builder.assessUngroundedDirection(direction)
 	}
 	builder.addResearchFindings(data.ModelResearch)
 	bundle := builder.bundle()
+	if len(bundle.Candidates) == 0 {
+		return ArchitectureCanvasInput{}, errNoCanonicalArchitectureCandidates
+	}
 	if err := bundle.Validate(); err != nil {
 		return ArchitectureCanvasInput{}, fmt.Errorf("architecture canvas build: candidate bundle: %w", err)
 	}
-	landscape, err := componentmap.Deterministic(bundle, componentmap.FallbackModelDisabled)
+	landscape, err := componentmap.Canonical(bundle)
 	if err != nil {
-		return ArchitectureCanvasInput{}, fmt.Errorf("architecture canvas build: deterministic landscape: %w", err)
+		return ArchitectureCanvasInput{}, fmt.Errorf("architecture canvas build: canonical landscape: %w", err)
 	}
 	landscape.Diagnostics = append(landscape.Diagnostics, builder.diagnostics...)
 	if err := landscape.Validate(bundle); err != nil {
@@ -83,7 +84,7 @@ func BuildArchitectureCanvasInput(data *ReportData) (ArchitectureCanvasInput, er
 	return ArchitectureCanvasInput{
 		CandidateBundle: bundle,
 		Landscape:       landscape,
-		Flows:           append([]ArchitectureFlowInput(nil), builder.flows...),
+		Flows:           nil,
 	}, nil
 }
 
@@ -106,10 +107,10 @@ func ReplayArchitectureSynthesis(
 		saved,
 	)
 	if err != nil {
-		landscape, err = componentmap.ReplayLegacyCapturedSynthesis(input.CandidateBundle, saved)
-		if err != nil {
-			return input, fmt.Errorf("architecture canvas synthesis: %w", err)
-		}
+		return input, fmt.Errorf("architecture canvas synthesis: %w", err)
+	}
+	if landscape.Fallback || landscape.ValidationOutcome == componentmap.ValidationRejected {
+		return input, fmt.Errorf("architecture canvas synthesis: proposal was not accepted")
 	}
 	input.Landscape = landscape
 	return input, nil
@@ -263,10 +264,11 @@ func (b *architectureCandidateBuilder) addArchitectureGrounding(grounding *Archi
 				packageID = &id
 			}
 			b.addCandidate(componentmap.Candidate{
-				ID: fileID, Name: location.Path, ParentID: packageID,
+				ID: fileID, Role: componentmap.CandidateRoleStructuralLocator,
+				Name: location.Path, ParentID: packageID,
 				Facts: []componentmap.LocalFact{architectureBuildFact(
 					componentmap.FactRepositoryPath, location.Path, evidence.CertaintyStatic,
-					&evidence.Location{Path: location.Path}, "architecture_grounding",
+					&location, "architecture_grounding",
 					"behavior_anchor_file", "file containing a deterministic behavior-anchor member",
 				)},
 			})
@@ -274,7 +276,8 @@ func (b *architectureCandidateBuilder) addArchitectureGrounding(grounding *Archi
 			symbolID := architectureBuildMemberID(componentmap.MemberSymbol, identity)
 			parentID := fileID
 			b.addCandidate(componentmap.Candidate{
-				ID: symbolID, Name: member.ID, ParentID: &parentID,
+				ID: symbolID, Role: componentmap.CandidateRoleConceptualMember,
+				Name: member.ID, ParentID: &parentID,
 				Facts: []componentmap.LocalFact{architectureBuildFact(
 					componentmap.FactDeclaration, member.ID, evidence.CertaintyStatic, &location,
 					"architecture_grounding", "behavior_anchor_member",
@@ -295,7 +298,8 @@ func (b *architectureCandidateBuilder) addArchitectureGrounding(grounding *Archi
 		producer := anchor.Producer
 		producer.Location = cloneArchitectureLocation(&anchor.Location)
 		b.behaviorAnchors = append(b.behaviorAnchors, componentmap.BehaviorAnchor{
-			ID: anchor.ID, Kind: anchor.Kind, Label: anchor.Label, Location: anchor.Location,
+			ID: anchor.ID, Kind: anchor.Kind, ProofMode: anchor.ProofMode,
+			Label: anchor.Label, Location: anchor.Location,
 			Scenario: componentmap.ScenarioContext{
 				ID: anchor.Scenario.ID, Name: "Recorded Go build scenario",
 				Build: evidence.BuildContext{GOOS: anchor.Scenario.GOOS, GOARCH: anchor.Scenario.GOARCH, BuildTags: append([]string(nil), anchor.Scenario.Tags...)},
@@ -576,7 +580,7 @@ func (b *architectureCandidateBuilder) addPackageCandidate(packagePath string) c
 		}
 	}
 	b.addCandidate(componentmap.Candidate{
-		ID:   id,
+		ID: id, Role: componentmap.CandidateRoleConceptualMember,
 		Name: name,
 		Facts: []componentmap.LocalFact{architectureBuildFact(
 			componentmap.FactDeclaration,
@@ -615,7 +619,7 @@ func (b *architectureCandidateBuilder) addFlow(direction CandidateDirection) {
 	})
 	flowMemberID := architectureBuildMemberID(componentmap.MemberFlow, direction.ID)
 	b.addCandidate(componentmap.Candidate{
-		ID:   flowMemberID,
+		ID: flowMemberID, Role: componentmap.CandidateRoleConceptualMember,
 		Name: name,
 		Facts: []componentmap.LocalFact{architectureBuildFact(
 			componentmap.FactFlowParticipation,
@@ -668,15 +672,20 @@ func (b *architectureCandidateBuilder) addAnchor(
 		id := b.knownPackages[packagePath]
 		packageID = &id
 	}
+	fileRole := componentmap.CandidateRoleConceptualMember
+	if anchor.Kind == flowproof.AnchorFunction || anchor.Kind == flowproof.AnchorMethod {
+		fileRole = componentmap.CandidateRoleStructuralLocator
+	}
 	b.addCandidate(componentmap.Candidate{
 		ID:       fileID,
+		Role:     fileRole,
 		Name:     location.Path,
 		ParentID: packageID,
 		Facts: []componentmap.LocalFact{architectureBuildFact(
 			componentmap.FactRepositoryPath,
 			location.Path,
 			evidence.CertaintyStatic,
-			&evidence.Location{Path: location.Path},
+			location,
 			"flowproof",
 			"anchor_file",
 			"file contains an exact saved flow anchor",
@@ -705,6 +714,7 @@ func (b *architectureCandidateBuilder) addAnchor(
 			parentID := fileID
 			b.addCandidate(componentmap.Candidate{
 				ID:       memberID,
+				Role:     componentmap.CandidateRoleConceptualMember,
 				Name:     anchor.Label,
 				ParentID: &parentID,
 				Facts: []componentmap.LocalFact{architectureBuildFact(
@@ -748,7 +758,26 @@ func architectureDeclarationKey(location evidence.Location, declaration string) 
 }
 
 func (b *architectureCandidateBuilder) addCandidate(candidate componentmap.Candidate) {
-	if _, exists := b.candidates[candidate.ID]; exists {
+	if existing, exists := b.candidates[candidate.ID]; exists {
+		// A direct producer-owned semantic use wins over an intermediate
+		// containment use. Structural is retained only when every producer use
+		// of the exact member is locator-only.
+		if existing.candidate.Role == componentmap.CandidateRoleStructuralLocator &&
+			candidate.Role == componentmap.CandidateRoleConceptualMember {
+			existing.candidate.Role = componentmap.CandidateRoleConceptualMember
+		}
+		knownFacts := make(map[string]struct{}, len(existing.candidate.Facts))
+		for _, fact := range existing.candidate.Facts {
+			knownFacts[architectureBuildFactIdentity(fact)] = struct{}{}
+		}
+		for _, fact := range candidate.Facts {
+			identity := architectureBuildFactIdentity(fact)
+			if _, duplicate := knownFacts[identity]; duplicate {
+				continue
+			}
+			existing.candidate.Facts = append(existing.candidate.Facts, fact)
+			knownFacts[identity] = struct{}{}
+		}
 		return
 	}
 	b.candidates[candidate.ID] = &architectureCandidateRecord{
@@ -834,6 +863,9 @@ func (b *architectureCandidateBuilder) bundle() componentmap.CandidateBundle {
 		}
 		sort.Slice(flowIDs, func(i, j int) bool { return flowIDs[i] < flowIDs[j] })
 		candidate := record.candidate
+		sort.Slice(candidate.Facts, func(i, j int) bool {
+			return architectureBuildFactIdentity(candidate.Facts[i]) < architectureBuildFactIdentity(candidate.Facts[j])
+		})
 		for _, flowID := range flowIDs {
 			candidate.Participations = append(candidate.Participations, componentmap.FlowParticipation{
 				FlowID:   flowID,
@@ -880,6 +912,14 @@ func (b *architectureCandidateBuilder) bundle() componentmap.CandidateBundle {
 		ResearchFindings:      append([]componentmap.ResearchInterpretation(nil), b.researchFindings...),
 		ResearchPolicyVersion: b.researchPolicyVersion,
 	}
+}
+
+func architectureBuildFactIdentity(fact componentmap.LocalFact) string {
+	encoded, err := json.Marshal(fact)
+	if err != nil {
+		panic(fmt.Sprintf("architecture canvas build: encode validated local fact identity: %v", err))
+	}
+	return string(encoded)
 }
 
 func architectureBuildEntrypointAnchors(proof flowproof.Proof) map[string]struct{} {

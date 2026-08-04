@@ -51,16 +51,6 @@ func TestValidateOutboundBundlesRejectCredentials(t *testing.T) {
 	}); err == nil || !contains(err.Error(), "server/main.go:12") {
 		t.Fatalf("source signal validation error = %v", err)
 	}
-	if err := validateFlowBundleForRemote(flowexplain.FlowBundle{
-		FlowSeed: flowexplain.FlowSeed{Name: "startup"},
-		SourceSignals: []sourcesignals.Signal{{
-			Path:    "server/main.go",
-			Line:    12,
-			Snippet: `password = "company-secret-value"`,
-		}},
-	}); err == nil || !contains(err.Error(), "startup") {
-		t.Fatalf("flow validation error = %v", err)
-	}
 	if err := validateProviderOutputForStorage("orientation", []byte(`{"summary":"Bearer company-secret-token-value"}`)); err == nil || !contains(err.Error(), "refusing to retain") {
 		t.Fatalf("provider output validation error = %v", err)
 	}
@@ -380,6 +370,11 @@ func TestNormalizeOrientationGroundingDropsProseDriftAndRepairsEntrypoint(t *tes
 			Guess:    "configuration reload",
 			Evidence: []string{"main.go", "config/reload.go"},
 		}},
+		UnverifiedPaths: unverifiedPathList{
+			{Path: "a/b/c/", Reason: "model returned a directory-like path"},
+			{Path: "../secret", Reason: "unsafe"},
+			{Path: "a/b/c", Reason: "duplicate canonical path"},
+		},
 	}
 	allowed := []string{"cmd/server/main.go", "config/config.go", "config/reload.go"}
 
@@ -399,14 +394,153 @@ func TestNormalizeOrientationGroundingDropsProseDriftAndRepairsEntrypoint(t *tes
 			report.ImportantDomainWords[0].Evidence,
 		)
 	}
+	if len(report.UnverifiedPaths) != 1 || report.UnverifiedPaths[0].Path != "a/b/c" {
+		t.Fatalf("normalized unverified paths = %#v, want one canonical path", report.UnverifiedPaths)
+	}
 	warnings := strings.Join(report.Warnings, "\n")
 	if !strings.Contains(warnings, "dropped ungrounded path-like evidence") ||
 		!strings.Contains(warnings, "replaced ungrounded") ||
-		!strings.Contains(warnings, `dropped first_files_to_open[1] outside allowed_paths: "internal/deepseek/deepseek.go"`) {
+		!strings.Contains(warnings, `dropped first_files_to_open[1] outside allowed_paths: "internal/deepseek/deepseek.go"`) ||
+		!strings.Contains(warnings, `normalized unverified_paths[0] to "a/b/c"`) ||
+		!strings.Contains(warnings, `dropped unverified_paths[1] with invalid path: "../secret"`) {
 		t.Fatalf("warnings = %q, want evidence, entrypoint, and first-file warnings", report.Warnings)
 	}
 	if err := validateOrientation(report, allowed, nil); err != nil {
 		t.Fatalf("normalized orientation should validate: %v", err)
+	}
+}
+
+func TestNormalizeOrientationGroundingPreservesTerminalTSXEvidencePath(t *testing.T) {
+	t.Parallel()
+
+	const response = `{
+		"project_guess":"TypeScript tutorial game",
+		"confidence":0.7,
+		"high_level_map":[{
+			"name":"browser entrypoint",
+			"role":"entrypoint",
+			"evidence":["front/src/index.tsx mounts the application"],
+			"why_it_matters":"starts the browser UI"
+		}],
+		"first_files_to_open":[{"path":"front/src/index.tsx","reason":"browser entrypoint"}],
+		"candidate_flows":[{
+			"name":"Browser startup",
+			"trigger":"the page loads",
+			"likely_entrypoint":"front/src/index.tsx",
+			"likely_files":["front/src/index.tsx"],
+			"why_interesting":"application startup",
+			"evidence":["front/src/index.tsx mounts the application"],
+			"confidence":0.7
+		}],
+		"important_domain_words":[],
+		"questions_for_human":[],
+		"unverified_paths":[],
+		"warnings":[]
+	}`
+	allowed := []string{"front/src/index.tsx"}
+
+	report, err := parseOrientation([]byte(response))
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalizeOrientationGrounding(&report, allowed, nil, nil)
+	if err := validateOrientation(report, allowed, nil); err != nil {
+		t.Fatalf("normalized .tsx orientation should validate: %v", err)
+	}
+	if got := report.CandidateFlows[0].Evidence; !slices.Equal(got, []string{"front/src/index.tsx mounts the application"}) {
+		t.Fatalf("candidate evidence = %q", got)
+	}
+	if got := evidencePathMentions(report.CandidateFlows[0].Evidence[0]); !slices.Equal(got, allowed) {
+		t.Fatalf("evidence paths = %q, want exact terminal .tsx path", got)
+	}
+}
+
+func TestValidateOrientationRejectsInventedTSXEvidencePath(t *testing.T) {
+	t.Parallel()
+
+	report := orientationPart{
+		ProjectGuess: "TypeScript tutorial game",
+		Confidence:   0.7,
+		CandidateFlows: []flowexplain.CandidateFlow{{
+			Name:             "Browser startup",
+			Trigger:          "the page loads",
+			LikelyEntrypoint: "front/src/index.tsx",
+			LikelyFiles:      []string{"front/src/index.tsx"},
+			Evidence:         []string{"front/src/invented.tsx mounts the application"},
+			Confidence:       0.7,
+		}},
+	}
+
+	err := validateOrientation(report, []string{"front/src/index.tsx"}, nil)
+	if err == nil || !strings.Contains(err.Error(), `outside allowed_paths: "front/src/invented.tsx"`) {
+		t.Fatalf("validateOrientation() error = %v, want invented .tsx rejection", err)
+	}
+}
+
+func TestEvidencePathMentionsRequiresTerminalExtensionBoundary(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		statement string
+		want      []string
+	}{
+		{name: "tsx", statement: "front/src/index.tsx mounts", want: []string{"front/src/index.tsx"}},
+		{name: "tsx line", statement: "front/src/index.tsx:42 mounts", want: []string{"front/src/index.tsx"}},
+		{name: "ts", statement: "front/src/index.ts mounts", want: []string{"front/src/index.ts"}},
+		{name: "longer suffix", statement: "front/src/index.tsx.extra mounts"},
+		{name: "path continuation", statement: "front/src/index.tsx/child mounts"},
+		{
+			name:      "adjacent paths",
+			statement: "front/src/index.tsx,front/src/router.ts",
+			want:      []string{"front/src/index.tsx", "front/src/router.ts"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := evidencePathMentions(test.statement); !slices.Equal(got, test.want) {
+				t.Fatalf("evidencePathMentions(%q) = %q, want %q", test.statement, got, test.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeOrientationGroundingDisambiguatesCollidingFlowIDs(t *testing.T) {
+	t.Parallel()
+
+	report := orientationPart{
+		ProjectGuess: "service",
+		Confidence:   0.7,
+		CandidateFlows: []flowexplain.CandidateFlow{
+			{
+				Name: "Server startup", Trigger: "process starts",
+				LikelyEntrypoint: "server/main.go", LikelyFiles: []string{"server/main.go"},
+				Evidence: []string{"server/main.go"}, Confidence: 0.7,
+			},
+			{
+				Name: "server-startup", Trigger: "configuration is loaded",
+				LikelyEntrypoint: "server/main.go", LikelyFiles: []string{"server/main.go"},
+				Evidence: []string{"server/main.go"}, Confidence: 0.6,
+			},
+		},
+	}
+
+	normalizeOrientationGrounding(&report, []string{"server/main.go"}, nil, nil)
+
+	if len(report.CandidateFlows) != 2 {
+		t.Fatalf("candidate flows = %#v", report.CandidateFlows)
+	}
+	firstID := flowexplain.GenerateFlowID(report.CandidateFlows[0].Name)
+	secondID := flowexplain.GenerateFlowID(report.CandidateFlows[1].Name)
+	if firstID == secondID || report.CandidateFlows[1].Name != "server-startup (2)" {
+		t.Fatalf("normalized names/ids = %q/%q, %q/%q", report.CandidateFlows[0].Name, firstID, report.CandidateFlows[1].Name, secondID)
+	}
+	if err := validateOrientation(report, []string{"server/main.go"}, nil); err != nil {
+		t.Fatalf("validateOrientation() error = %v", err)
+	}
+	if warnings := strings.Join(report.Warnings, "\n"); !strings.Contains(warnings, "disambiguated candidate_flows[1].name") {
+		t.Fatalf("warnings = %q", warnings)
 	}
 }
 
@@ -526,105 +660,6 @@ func TestK6QualityOrientationMatchesProductContract(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(report.Warnings, "\n"), "wildcard evidence") {
 		t.Fatalf("parser warnings = %q, want wildcard evidence warning", report.Warnings)
-	}
-}
-
-func TestValidateFlowReport(t *testing.T) {
-	t.Parallel()
-
-	bundle := flowexplain.FlowBundle{
-		FlowSeed: flowexplain.FlowSeed{
-			Name:           "server startup",
-			ValidSeedFiles: []string{"server/main.go", "server/main_test.go"},
-		},
-	}
-	tests := []struct {
-		name   string
-		report string
-		want   string
-	}{
-		{
-			name: "object and string lists",
-			report: `{
-				"summary":"startup",
-				"confidence":0.6,
-				"files_to_read_in_order":[{"path":"server/main.go","reason":"entry"}],
-				"tests_to_read":["server/main_test.go"],
-				"likely_chain":[{"step":"Step 1","what_happens":"server starts","file":"server/main.go","evidence_files":["server/main.go"],"confidence":0.5}],
-				"unverified_paths":[{"path":"server/maybe.go","reason":"suspected"}],
-				"unknowns":[],
-				"warnings":[]
-			}`,
-		},
-		{
-			name:   "invented file",
-			report: `{"summary":"startup","confidence":0.5,"files_to_read_in_order":["server/invented.go"],"tests_to_read":[],"likely_chain":[],"unknowns":[],"warnings":[]}`,
-			want:   "unprovided path",
-		},
-		{
-			name:   "invented chain evidence",
-			report: `{"summary":"startup","confidence":0.5,"files_to_read_in_order":["server/main.go"],"tests_to_read":[],"likely_chain":[{"what_happens":"starts","evidence_files":["server/invented.go"]}],"unknowns":[],"warnings":[]}`,
-			want:   "unprovided path",
-		},
-		{
-			name:   "unverified traversal",
-			report: `{"summary":"startup","confidence":0.5,"files_to_read_in_order":["server/main.go"],"tests_to_read":[],"likely_chain":[],"unverified_paths":["../secret"],"unknowns":[],"warnings":[]}`,
-			want:   "invalid path",
-		},
-		{
-			name:   "invalid confidence",
-			report: `{"summary":"startup","confidence":2,"files_to_read_in_order":["server/main.go"],"tests_to_read":[],"likely_chain":[],"unknowns":[],"warnings":[]}`,
-			want:   "within [0,1]",
-		},
-		{
-			name:   "empty object",
-			report: `{}`,
-			want:   "required field",
-		},
-		{
-			name:   "non test path",
-			report: `{"summary":"startup","confidence":0.5,"files_to_read_in_order":["server/main.go"],"tests_to_read":["server/main.go"],"likely_chain":[],"unknowns":[],"warnings":[]}`,
-			want:   "not a Go test file",
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			err := validateFlowReport([]byte(test.report), bundle)
-			if test.want == "" {
-				if err != nil {
-					t.Fatalf("validateFlowReport() error = %v", err)
-				}
-				return
-			}
-			if err == nil || !contains(err.Error(), test.want) {
-				t.Fatalf("validateFlowReport() error = %v, want %q", err, test.want)
-			}
-		})
-	}
-
-	normalized, err := normalizeFlowReport([]byte(`{
-		"summary":"startup",
-		"confidence":0.5,
-		"files_to_read_in_order":["server/main.go"],
-		"tests_to_read":[],
-		"likely_chain":[],
-		"unknowns":[],
-		"warnings":[],
-		"dangerous_path":"/etc/passwd"
-	}`), bundle)
-	if err != nil {
-		t.Fatalf("normalizeFlowReport() error = %v", err)
-	}
-	var normalizedFields map[string]json.RawMessage
-	if err := json.Unmarshal(normalized, &normalizedFields); err != nil {
-		t.Fatal(err)
-	}
-	if _, retained := normalizedFields["dangerous_path"]; retained {
-		t.Fatal("normalized report retained an unknown path-bearing field")
-	}
-	if !contains(string(normalizedFields["warnings"]), "dangerous_path") {
-		t.Fatal("normalized report did not warn about ignored unknown field")
 	}
 }
 
