@@ -206,7 +206,6 @@ func Compile(input Input) (Product, error) {
 		{"components", canonical.Limits.MaxComponents, len(canonical.Architecture.Components)},
 		{"surfaces", canonical.Limits.MaxSurfaces, len(canonical.Surfaces)},
 		{"reading_targets", canonical.Limits.MaxReadingTargets, len(canonical.ReadingTargets)},
-		{"route_spans", canonical.Limits.MaxRouteSpans, len(canonical.RouteSpans)},
 		{"evidence", canonical.Limits.MaxEvidence, len(canonical.Evidence)},
 		{"documents", canonical.Limits.MaxDocuments, len(canonical.Documents)},
 	}
@@ -1153,7 +1152,7 @@ func validateLimits(limits Limits) error {
 		{"max_components", limits.MaxComponents},
 		{"max_surfaces", limits.MaxSurfaces},
 		{"max_reading_targets", limits.MaxReadingTargets},
-		{"max_route_spans", limits.MaxRouteSpans},
+		{"max_advertised_spans", limits.MaxAdvertisedSpans},
 		{"max_evidence", limits.MaxEvidence},
 		{"max_documents", limits.MaxDocuments},
 	}

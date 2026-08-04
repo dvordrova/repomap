@@ -20,11 +20,6 @@ func (err *CandidateUnavailableError) Error() string {
 	return "atlas study: typed candidate shelf unavailable: " + err.Reason
 }
 
-type selectionLane struct {
-	role    SupportRole
-	targets []string
-}
-
 func selectStudyCandidates(input Input) (Input, CandidateCoverage, error) {
 	targets := make(map[string]ReadingTarget, len(input.ReadingTargets))
 	for _, target := range input.ReadingTargets {
@@ -61,152 +56,63 @@ func selectStudyCandidates(input Input) (Input, CandidateCoverage, error) {
 		return Input{}, CandidateCoverage{}, &CandidateUnavailableError{Reason: "no observed support roles"}
 	}
 
-	lanes := make([]selectionLane, 0, len(roleBuckets))
 	roles := make([]SupportRole, 0, len(roleBuckets))
 	for role := range roleBuckets {
 		roles = append(roles, role)
 	}
 	sort.Slice(roles, func(i, j int) bool { return roles[i] < roles[j] })
-	for _, role := range roles {
-		lanes = append(lanes, selectionLane{role: role, targets: roundRobinBuckets(roleBuckets[role])})
-	}
-	selectedTargets := make(map[string]struct{}, input.Limits.MaxReadingTargets)
-	selectedRoles := make(map[SupportRole]struct{}, len(roles))
-	selectedRolePackages := make(map[SupportRole]map[string]struct{}, len(roles))
-	markTarget := func(id string) {
-		selectedTargets[id] = struct{}{}
-		for _, support := range input.ReadingSupports {
-			if support.TargetID != id {
-				continue
-			}
-			selectedRoles[support.Role] = struct{}{}
-			if selectedRolePackages[support.Role] == nil {
-				selectedRolePackages[support.Role] = make(map[string]struct{})
-			}
-			selectedRolePackages[support.Role][support.PackageBucket] = struct{}{}
-		}
-	}
-	seedSpans := minimumSpansByRole(input.RouteSpans, supportByID, roles, input.Limits.MaxRouteSpans)
-	if seedSpans == nil {
-		return Input{}, CandidateCoverage{}, &CandidateUnavailableError{Reason: "route span budget cannot represent every observed support role"}
-	}
-	for _, span := range seedSpans {
+
+	// The complete considered span set is the locally supported D210 span set
+	// exactly as produced: every focused span compiled from an exact support
+	// and every system-path span compiled from one exact producer join. It is
+	// never trimmed to the advertised budget; it is bounded only by the
+	// existing hard producer/resource limits.
+	consideredSpans := cloneRouteSpans(input.RouteSpans)
+	for _, span := range consideredSpans {
 		for _, supportID := range span.RequiredSupportIDs {
-			support, ok := supportByID[supportID]
-			if !ok {
+			if _, ok := supportByID[supportID]; !ok {
 				return Input{}, CandidateCoverage{}, fmt.Errorf("atlas study: route span references unknown support candidate")
 			}
-			selectedRoles[support.Role] = struct{}{}
 		}
 		for _, targetID := range span.AllowedTargetIDs {
 			if _, ok := targets[targetID]; !ok {
 				return Input{}, CandidateCoverage{}, fmt.Errorf("atlas study: route span references unknown reading target")
 			}
-			markTarget(targetID)
 		}
 	}
-	if len(selectedTargets) > input.Limits.MaxReadingTargets {
-		return Input{}, CandidateCoverage{}, &CandidateUnavailableError{Reason: "reading target budget cannot represent the typed route spans"}
-	}
-	addFromLane := func(lane *selectionLane) bool {
-		chosen := ""
-		for _, id := range lane.targets {
-			if _, duplicate := selectedTargets[id]; duplicate {
-				continue
-			}
-			if chosen == "" {
-				chosen = id
-			}
-			for _, support := range input.ReadingSupports {
-				if support.TargetID == id && support.Role == lane.role {
-					if _, represented := selectedRolePackages[lane.role][support.PackageBucket]; !represented {
-						chosen = id
-						break
-					}
-				}
-			}
-			if chosen == id {
-				for _, support := range input.ReadingSupports {
-					if support.TargetID == id && support.Role == lane.role {
-						if _, represented := selectedRolePackages[lane.role][support.PackageBucket]; !represented {
-							markTarget(chosen)
-							return true
-						}
-					}
-				}
-			}
-		}
-		if chosen == "" {
-			return false
-		}
-		markTarget(chosen)
-		return true
-	}
-	for index := range lanes {
-		if _, alreadyCovered := selectedRoles[lanes[index].role]; alreadyCovered {
-			continue
-		}
-		if len(selectedTargets) == input.Limits.MaxReadingTargets {
-			break
-		}
-		addFromLane(&lanes[index])
-	}
-	for len(selectedTargets) < input.Limits.MaxReadingTargets {
-		progress := false
-		for index := range lanes {
-			if len(selectedTargets) == input.Limits.MaxReadingTargets {
-				break
-			}
-			progress = addFromLane(&lanes[index]) || progress
-		}
-		if !progress {
-			break
-		}
-	}
-	if len(selectedRoles) != len(roles) {
-		return Input{}, CandidateCoverage{}, &CandidateUnavailableError{Reason: "not every observed support role has a selected target"}
+	sort.Slice(consideredSpans, func(i, j int) bool { return consideredSpans[i].ID < consideredSpans[j].ID })
+
+	// The advertised frontier is deterministic breadth over the complete
+	// considered set: every observed support role is represented by at least
+	// one advertised span or the request is provider-free unavailable; within
+	// each role exact target-package buckets round-robin so one repeated
+	// package family cannot monopolize the frontier; system-path spans stay
+	// eligible only through their exact producer join (they already carry
+	// Joins); the frontier is capped at MaxAdvertisedSpans. Selection order is
+	// a request-budget mechanism, never semantic importance.
+	selectedSpans := selectSpansByRole(consideredSpans, supportByID, roles, input.Limits.MaxAdvertisedSpans)
+	if selectedSpans == nil {
+		return Input{}, CandidateCoverage{}, &CandidateUnavailableError{Reason: "advertised span budget cannot represent every observed support role"}
 	}
 
-	selectedSupports := make(map[string]struct{})
-	for id, support := range supportByID {
-		if _, ok := selectedTargets[support.TargetID]; ok {
-			selectedSupports[id] = struct{}{}
-		}
-	}
-	eligibleSpans := make([]RouteSpan, 0, len(input.RouteSpans))
-	for _, span := range input.RouteSpans {
-		eligible := true
-		for _, supportID := range span.RequiredSupportIDs {
-			if _, ok := selectedSupports[supportID]; !ok {
-				eligible = false
-				break
-			}
-		}
+	selectedTargets := make(map[string]struct{}, len(selectedSpans))
+	selectedSupports := make(map[string]struct{}, len(selectedSpans))
+	selectedRelationIDs := make(map[string]struct{})
+	for _, span := range selectedSpans {
 		for _, targetID := range span.AllowedTargetIDs {
-			if _, ok := selectedTargets[targetID]; !ok {
-				eligible = false
-				break
-			}
+			selectedTargets[targetID] = struct{}{}
 		}
-		if eligible {
-			eligibleSpans = append(eligibleSpans, span)
+		for _, supportID := range span.RequiredSupportIDs {
+			selectedSupports[supportID] = struct{}{}
 		}
-	}
-	sort.Slice(eligibleSpans, func(i, j int) bool { return eligibleSpans[i].ID < eligibleSpans[j].ID })
-	selectedSpans := selectSpansByRole(eligibleSpans, supportByID, roles, input.Limits.MaxRouteSpans)
-	if selectedSpans == nil {
-		return Input{}, CandidateCoverage{}, &CandidateUnavailableError{Reason: "route span budget cannot represent every observed support role"}
+		for _, join := range span.Joins {
+			selectedRelationIDs[join.RelationID] = struct{}{}
+		}
 	}
 
 	coverage := candidateCoverage(input, selectedTargets, selectedSpans)
 	input.ReadingTargets = filterTargets(input.ReadingTargets, selectedTargets)
 	input.ReadingSupports = filterSupports(input.ReadingSupports, selectedSupports)
-	selectedRelationIDs := make(map[string]struct{})
-	for _, span := range selectedSpans {
-		for _, join := range span.Joins {
-			selectedRelationIDs[join.RelationID] = struct{}{}
-		}
-	}
 	input.ProducerRelations = filterRelations(input.ProducerRelations, selectedRelationIDs)
 	input.RouteSpans = selectedSpans
 	for index := range input.Architecture.Components {
@@ -227,29 +133,13 @@ func validSupportAuthority(role SupportRole, authority repositoryatlas.Authority
 	return role.Valid() && (authority == repositoryatlas.AuthorityObserved || authority == repositoryatlas.AuthorityResolved)
 }
 
-func roundRobinBuckets(buckets map[string][]string) []string {
-	keys := make([]string, 0, len(buckets))
-	for key := range buckets {
-		keys = append(keys, key)
-		sort.Strings(buckets[key])
-		buckets[key] = uniqueStrings(buckets[key])
-	}
-	sort.Strings(keys)
-	var result []string
-	for ordinal := 0; ; ordinal++ {
-		progress := false
-		for _, key := range keys {
-			if ordinal < len(buckets[key]) {
-				result = append(result, buckets[key][ordinal])
-				progress = true
-			}
-		}
-		if !progress {
-			return result
-		}
-	}
-}
-
+// selectSpansByRole builds the advertised request frontier from the complete
+// considered span set. It is deterministic breadth: every observed support
+// role is represented by one seed span or nil is returned (provider-free
+// unavailable), then exact target-package buckets round-robin so one repeated
+// package family cannot monopolize the frontier, then remaining spans fill by
+// ID order up to the limit. Selection order is a request-budget mechanism,
+// never semantic importance.
 func selectSpansByRole(spans []RouteSpan, supports map[string]ReadingSupport, roles []SupportRole, limit int) []RouteSpan {
 	result := minimumSpansByRole(spans, supports, roles, limit)
 	if result == nil {
@@ -457,7 +347,41 @@ func candidateCoverage(input Input, selectedTargets map[string]struct{}, selecte
 	}
 	sort.Slice(coverage.PerRole, func(i, j int) bool { return coverage.PerRole[i].Key < coverage.PerRole[j].Key })
 	sort.Slice(coverage.PerPackage, func(i, j int) bool { return coverage.PerPackage[i].Key < coverage.PerPackage[j].Key })
+	coverage.Omissions = candidateOmissions(input.RouteSpans, selectedSpans)
 	return coverage
+}
+
+// candidateOmissions records bounded aggregate omission diagnostics keyed by
+// closed reason. Every considered span omitted from the advertised frontier is
+// counted once with a bounded list of representative typed refs; the complete
+// candidate digest already binds the full set, so an unbounded list is never
+// persisted.
+func candidateOmissions(considered []RouteSpan, advertised []RouteSpan) []CoverageOmission {
+	advertisedSet := make(map[string]struct{}, len(advertised))
+	for _, span := range advertised {
+		advertisedSet[span.ID] = struct{}{}
+	}
+	var omitted []RouteSpan
+	for _, span := range considered {
+		if _, ok := advertisedSet[span.ID]; !ok {
+			omitted = append(omitted, span)
+		}
+	}
+	if len(omitted) == 0 {
+		return nil
+	}
+	sort.Slice(omitted, func(i, j int) bool { return omitted[i].ID < omitted[j].ID })
+	omission := CoverageOmission{Reason: OmissionAdvertisedBudget, Count: len(omitted)}
+	for _, span := range omitted {
+		if len(omission.Representatives) >= MaxOmissionRepresentatives {
+			break
+		}
+		omission.Representatives = append(
+			omission.Representatives,
+			CanonicalRef{Kind: RefRouteSpan, ID: span.ID},
+		)
+	}
+	return []CoverageOmission{omission}
 }
 
 func filterTargets(values []ReadingTarget, selected map[string]struct{}) []ReadingTarget {
@@ -496,18 +420,6 @@ func filterStrings(values []string, selected map[string]struct{}) []string {
 	}
 	return out
 }
-func uniqueStrings(values []string) []string {
-	if len(values) < 2 {
-		return values
-	}
-	out := values[:1]
-	for _, value := range values[1:] {
-		if value != out[len(out)-1] {
-			out = append(out, value)
-		}
-	}
-	return out
-}
 func selectedSpanIDs(values []RouteSpan) []string {
 	result := make([]string, len(values))
 	for i, v := range values {
@@ -527,5 +439,11 @@ func cloneRouteSpans(values []RouteSpan) []RouteSpan {
 func cloneCandidateCoverage(value CandidateCoverage) CandidateCoverage {
 	value.PerRole = append([]CandidateCoverageCount(nil), value.PerRole...)
 	value.PerPackage = append([]CandidateCoverageCount(nil), value.PerPackage...)
+	value.Omissions = append([]CoverageOmission(nil), value.Omissions...)
+	for index := range value.Omissions {
+		value.Omissions[index].Representatives = append(
+			[]CanonicalRef(nil), value.Omissions[index].Representatives...,
+		)
+	}
 	return value
 }

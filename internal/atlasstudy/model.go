@@ -7,23 +7,22 @@ package atlasstudy
 import (
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
-	"github.com/dvordrova/repomap/internal/studymap"
 )
 
 const (
 	// Version and PromptVersion own the byte-identical provider request and
 	// private request catalog contract.
-	Version       = 6
-	PromptVersion = "atlas-study-prompt-v12"
+	Version       = 7
+	PromptVersion = "atlas-study-prompt-v13"
 
 	// ResultVersion owns local response validation plus result/status replay.
-	// It advances independently so the unchanged v5 provider request cannot
+	// It advances independently so the unchanged v6 provider request cannot
 	// reinterpret a result accepted by the earlier question validator.
-	ResultVersion = 7
+	ResultVersion = 8
 
-	RequestArtifactFilename = "atlas_study_request.v6.json"
-	ResultArtifactFilename  = "atlas_study_result.v7.json"
-	StatusArtifactFilename  = "atlas_study_status.v7.json"
+	RequestArtifactFilename = "atlas_study_request.v7.json"
+	ResultArtifactFilename  = "atlas_study_result.v8.json"
+	StatusArtifactFilename  = "atlas_study_status.v8.json"
 
 	MaxRequestArtifactBytes = 16 << 20
 	MaxResultArtifactBytes  = 16 << 20
@@ -32,12 +31,30 @@ const (
 	// compiled product without trimming package buckets after a provider call.
 	MaxStatusArtifactBytes = MaxRequestArtifactBytes
 
-	MaxDirections            = studymap.MaxCandidates
+	// MaxDirections is the model-output ceiling: the maximum number of accepted
+	// directions and the ceiling for the returned directions array. The desired
+	// direction count is MinPortfolioDirections..MaxDirections; the valid
+	// production cardinality is 1..MaxDirections and zero valid directions is a
+	// failure. The old advertised-span meaning of MaxRouteSpans is removed; the
+	// request frontier has exactly one budget, MaxAdvertisedSpans.
+	MaxDirections = 10
+
+	// MinPortfolioDirections is the desired lower bound of the ranked Study
+	// portfolio. A valid response with fewer directions is accepted as-is: the
+	// backend never forces filler or padding.
+	MinPortfolioDirections = 6
+
 	MinDirectionReadingCount = 1
 	MaxDirectionReadingCount = 5
 	MaxDirectionDiagnostics  = 12
 	MaxDomainTerms           = 8
 	MaxDomainTermDiagnostics = 12
+
+	// MaxOmissionRepresentatives bounds the representative typed refs recorded
+	// for each closed omission reason. The complete candidate digest already
+	// binds the full considered set, so an unbounded omission list is never
+	// persisted.
+	MaxOmissionRepresentatives = 12
 )
 
 type Language string
@@ -62,16 +79,20 @@ type Limits struct {
 	MaxComponents     int `json:"max_components"`
 	MaxSurfaces       int `json:"max_surfaces"`
 	MaxReadingTargets int `json:"max_reading_targets"`
-	MaxRouteSpans     int `json:"max_route_spans"`
-	MaxEvidence       int `json:"max_evidence"`
-	MaxDocuments      int `json:"max_documents"`
+	// MaxAdvertisedSpans is the one unambiguous advertised-span limit: the
+	// request frontier budget. The complete considered span set is never
+	// trimmed to it; selection order is a request-budget mechanism, never
+	// semantic importance.
+	MaxAdvertisedSpans int `json:"max_advertised_spans"`
+	MaxEvidence        int `json:"max_evidence"`
+	MaxDocuments       int `json:"max_documents"`
 }
 
 func DefaultLimits() Limits {
 	return Limits{
 		MaxWireBytes: 1 << 20, MaxResponseBytes: 16 << 20, MaxTextBytes: 4096,
 		MaxUnits: 512, MaxSubsystems: 64, MaxComponents: 256,
-		MaxSurfaces: 128, MaxReadingTargets: 512, MaxRouteSpans: MaxDirections, MaxEvidence: 512,
+		MaxSurfaces: 128, MaxReadingTargets: 512, MaxAdvertisedSpans: 32, MaxEvidence: 512,
 		MaxDocuments: 64,
 	}
 }
@@ -326,7 +347,37 @@ type CandidateCoverageCount struct {
 	Selected   int    `json:"selected"`
 }
 
-// CandidateCoverage makes bounded shelf loss explicit and request-bound.
+// CoverageOmissionReason is a closed reason for an advertised-frontier
+// omission. It is never semantic importance: selection order is a
+// request-budget mechanism only.
+type CoverageOmissionReason string
+
+const (
+	// OmissionAdvertisedBudget records considered spans omitted because the
+	// advertised frontier is capped at MaxAdvertisedSpans.
+	OmissionAdvertisedBudget CoverageOmissionReason = "advertised_budget"
+)
+
+func (reason CoverageOmissionReason) Valid() bool {
+	return reason == OmissionAdvertisedBudget
+}
+
+// CoverageOmission aggregates one closed omission reason with a bounded
+// representative list of typed refs. The complete candidate digest
+// (CandidateSHA256) already binds the full considered set, so an unbounded
+// omission list is never persisted.
+type CoverageOmission struct {
+	Reason          CoverageOmissionReason `json:"reason"`
+	Count           int                    `json:"count"`
+	Representatives []CanonicalRef         `json:"representatives,omitempty"`
+}
+
+// CandidateCoverage makes bounded shelf loss explicit and request-bound. The
+// considered set is the complete locally supported D210 span set; the selected
+// set is the advertised request frontier. Complete is full-selection equality
+// over targets and spans, which under the D211 producer invariant (every
+// support target has one focused span) equals the advertised frontier matching
+// the complete considered span set.
 type CandidateCoverage struct {
 	CandidateSHA256   string                   `json:"candidate_sha256"`
 	TargetsConsidered int                      `json:"targets_considered"`
@@ -336,6 +387,7 @@ type CandidateCoverage struct {
 	Complete          bool                     `json:"complete"`
 	PerRole           []CandidateCoverageCount `json:"per_role"`
 	PerPackage        []CandidateCoverageCount `json:"per_package"`
+	Omissions         []CoverageOmission       `json:"omissions,omitempty"`
 }
 
 type EvidenceFact struct {
@@ -490,13 +542,41 @@ type Direction struct {
 	Reading         []ResolvedReading `json:"reading"`
 }
 
-// SpanCoverage distinguishes a complete answer from a useful exact partial
-// answer without inventing or padding routes locally.
+// SpanCoverage carries the four distinct D211 span stages and the four
+// independent coverage flags. The old Requested/Covered/Uncovered
+// advertised-coverage semantics are removed: an advertised span with no
+// returned direction is normal not_selected, never uncovered, and never turns
+// a result into accepted_partial.
 type SpanCoverage struct {
-	Requested []CanonicalRef `json:"requested"`
-	Covered   []CanonicalRef `json:"covered"`
-	Uncovered []CanonicalRef `json:"uncovered"`
-	Complete  bool           `json:"complete"`
+	// ConsideredSpanCount is the complete locally supported D210 span set.
+	ConsideredSpanCount int `json:"considered_span_count"`
+	// AdvertisedSpanCount is the request frontier (MaxAdvertisedSpans).
+	AdvertisedSpanCount int `json:"advertised_span_count"`
+	// ModelSelectedSpanCount is the distinct spans referenced by the returned
+	// directions, including locally rejected siblings.
+	ModelSelectedSpanCount int `json:"model_selected_span_count"`
+	// AcceptedSpanCount is the distinct spans of directions that pass exact
+	// item-local validation; it equals the accepted direction count because
+	// duplicate-span directions are rejected.
+	AcceptedSpanCount int `json:"accepted_span_count"`
+
+	// FrontierComplete is true when the advertised frontier equals the complete
+	// considered set (zero omissions).
+	FrontierComplete bool `json:"frontier_complete"`
+	// SelectedItemsComplete is true when every returned selected item is
+	// locally valid and at least one direction was returned (no rejected
+	// sibling).
+	SelectedItemsComplete bool `json:"selected_items_complete"`
+	// SupportCoverageComplete is recorded independently: item-local validation
+	// keeps the invariant that every accepted direction covers all required
+	// support identities of its exact span, so the flag is true whenever at
+	// least one direction is accepted.
+	SupportCoverageComplete bool `json:"support_coverage_complete"`
+	// PortfolioTargetMet is true when the accepted direction count is within
+	// the desired MinPortfolioDirections..MaxDirections band. It is
+	// independent of status and does not by itself invalidate an otherwise
+	// exact result.
+	PortfolioTargetMet bool `json:"portfolio_target_met"`
 }
 
 type DirectionIssueCode string

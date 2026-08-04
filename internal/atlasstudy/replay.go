@@ -8,7 +8,7 @@ import (
 )
 
 // ReplayResponseRecord resolves one saved provider response against the exact
-// canonical v6 request record that authorized it. It performs no I/O and has
+// canonical v7 request record that authorized it. It performs no I/O and has
 // no provider, cache, or semantic-journal dependency.
 func ReplayResponseRecord(
 	request RequestRecord,
@@ -43,7 +43,7 @@ func ReplayResponseRecord(
 }
 
 func productFromReplayRequest(request RequestRecord) (Product, error) {
-	// Round-trip through the one canonical v6 request encoder/decoder. The CLI
+	// Round-trip through the one canonical v7 request encoder/decoder. The CLI
 	// additionally pins the original bytes, while this pure seam rejects any
 	// structurally invalid in-memory record.
 	encoded, err := EncodeRequestRecord(request)
@@ -131,6 +131,10 @@ func validateReplayRouteProjection(
 			spans = append(spans, object)
 		}
 	}
+	// Under D211 the wire carries only the advertised frontier: every catalog
+	// span is advertised, so SpansSelected (the advertised count) must equal
+	// both the wire and catalog span counts, and the trimmed target set must
+	// equal the wire targets.
 	if len(wire.Targets) != targetCount || coverage.TargetsSelected != targetCount ||
 		len(wire.RouteSupports) != len(supports) || len(wire.RouteSpans) != len(spans) ||
 		coverage.SpansSelected != len(spans) {

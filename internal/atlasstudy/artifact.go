@@ -73,11 +73,18 @@ type ResultRecord struct {
 	Directions         []Direction       `json:"directions"`
 	ShapeComponentRefs []CanonicalRef    `json:"shape_component_refs"`
 	SpanCoverage       SpanCoverage      `json:"span_coverage"`
-	Diagnostics        Diagnostics       `json:"diagnostics"`
+	// ModelSelectedSpanRefs are the distinct spans referenced by the returned
+	// directions, including locally rejected siblings, in canonical order.
+	// They are the model-selected stage of the four-stage span pipeline and
+	// must be persisted so exact coverage can be re-derived from an artifact.
+	ModelSelectedSpanRefs []CanonicalRef `json:"model_selected_span_refs,omitempty"`
+	Diagnostics           Diagnostics    `json:"diagnostics"`
 }
 
 // Status contains no provider prose, source locator, endpoint, model name, or
-// raw error. The semantic exchange journal remains the Q/A recorder.
+// raw error. The semantic exchange journal remains the Q/A recorder. It
+// carries the four distinct span stage counts and the four independent
+// coverage flags instead of one overloaded coverage_complete.
 type Status struct {
 	Version            int               `json:"version"`
 	State              ProductState      `json:"state"`
@@ -90,12 +97,20 @@ type Status struct {
 	Language           Language          `json:"language"`
 	CandidateCoverage  CandidateCoverage `json:"candidate_coverage"`
 	DirectionCount     int               `json:"direction_count"`
-	RequestedSpanCount int               `json:"requested_span_count"`
-	CoveredSpanCount   int               `json:"covered_span_count"`
-	UncoveredSpanCount int               `json:"uncovered_span_count"`
-	CoverageComplete   bool              `json:"coverage_complete"`
-	UnavailableCode    UnavailableCode   `json:"unavailable_code,omitempty"`
-	FailureCode        FailureCode       `json:"failure_code,omitempty"`
+	// Four-stage span counts: considered (complete set), advertised (request
+	// frontier), model-selected (returned directions, rejected siblings
+	// included) and locally accepted (valid directions only).
+	ConsideredSpanCount    int `json:"considered_span_count"`
+	AdvertisedSpanCount    int `json:"advertised_span_count"`
+	ModelSelectedSpanCount int `json:"model_selected_span_count"`
+	AcceptedSpanCount      int `json:"accepted_span_count"`
+	// Four independent coverage flags.
+	FrontierComplete        bool            `json:"frontier_complete"`
+	SelectedItemsComplete   bool            `json:"selected_items_complete"`
+	SupportCoverageComplete bool            `json:"support_coverage_complete"`
+	PortfolioTargetMet      bool            `json:"portfolio_target_met"`
+	UnavailableCode         UnavailableCode `json:"unavailable_code,omitempty"`
+	FailureCode             FailureCode     `json:"failure_code,omitempty"`
 }
 
 func (product Product) RequestRecord() (RequestRecord, error) {
@@ -114,12 +129,18 @@ func (product Product) result(
 	repositoryType RepositoryType,
 	brief Brief,
 	directions []Direction,
+	modelSelected []CanonicalRef,
 	shape []CanonicalRef,
 	spanCoverage SpanCoverage,
 	diagnostics Diagnostics,
 ) ResultRecord {
+	// The ordered directions array IS the portfolio. Status is accepted when
+	// every returned selected item is locally valid (zero rejected siblings)
+	// and at least one direction exists; accepted_partial when at least one
+	// returned sibling is locally rejected; failure (zero valid directions) is
+	// handled by the caller before this point.
 	state := ProductStateAccepted
-	if !spanCoverage.Complete {
+	if diagnostics.DirectionsRejected > 0 {
 		state = ProductStateAcceptedPartial
 	}
 	return ResultRecord{
@@ -130,9 +151,10 @@ func (product Product) result(
 		CandidateCoverage: product.Coverage(),
 		Catalog:           product.Catalog(), RepositoryType: repositoryType,
 		Brief: cloneBrief(brief), Directions: cloneDirections(directions),
-		ShapeComponentRefs: append([]CanonicalRef(nil), shape...),
-		SpanCoverage:       cloneSpanCoverage(spanCoverage),
-		Diagnostics:        cloneDiagnostics(diagnostics),
+		ShapeComponentRefs:    append([]CanonicalRef(nil), shape...),
+		SpanCoverage:          spanCoverage,
+		ModelSelectedSpanRefs: append([]CanonicalRef(nil), modelSelected...),
+		Diagnostics:           cloneDiagnostics(diagnostics),
 	}
 }
 
@@ -196,15 +218,47 @@ func (product Product) ValidateResultRecord(record ResultRecord) error {
 	if err := validateDiagnostics(record.Diagnostics, len(record.Directions), len(record.Brief.DomainTerms)); err != nil {
 		return err
 	}
-	if err := product.validateSpanCoverage(record.SpanCoverage, record.Directions); err != nil {
+	if err := product.validateSpanCoverage(
+		record.SpanCoverage, record.Directions, record.ModelSelectedSpanRefs, record.Diagnostics,
+	); err != nil {
+		return err
+	}
+	if err := product.validateModelSelectedSpanRefs(record.ModelSelectedSpanRefs, record.Directions); err != nil {
 		return err
 	}
 	wantState := ProductStateAccepted
-	if !record.SpanCoverage.Complete {
+	if record.Diagnostics.DirectionsRejected > 0 {
 		wantState = ProductStateAcceptedPartial
 	}
 	if record.State != wantState {
-		return fmt.Errorf("atlas study result artifact: state does not match exact span coverage")
+		return fmt.Errorf("atlas study result artifact: state does not match exact returned directions")
+	}
+	return nil
+}
+
+// validateModelSelectedSpanRefs checks the persisted model-selected stage: the
+// distinct spans referenced by the returned directions (including locally
+// rejected siblings), in canonical order, each an advertised route span, and a
+// superset of the locally accepted directions' spans.
+func (product Product) validateModelSelectedSpanRefs(modelSelected []CanonicalRef, directions []Direction) error {
+	if len(modelSelected) == 0 || !uniqueCanonicalRefs(modelSelected) {
+		return fmt.Errorf("atlas study result artifact: invalid model-selected span refs")
+	}
+	seen := make(map[CanonicalRef]struct{}, len(modelSelected))
+	for _, ref := range modelSelected {
+		if ref.Kind != RefRouteSpan {
+			return fmt.Errorf("atlas study result artifact: wrong-kind model-selected ref")
+		}
+		object, ok := product.byCanonical[ref]
+		if !ok || object.Kind != RefRouteSpan {
+			return fmt.Errorf("atlas study result artifact: model-selected span is outside the advertised catalog")
+		}
+		seen[ref] = struct{}{}
+	}
+	for _, direction := range directions {
+		if _, ok := seen[direction.Span]; !ok {
+			return fmt.Errorf("atlas study result artifact: accepted direction span is missing from model-selected refs")
+		}
 	}
 	return nil
 }
@@ -256,11 +310,18 @@ func (product Product) status(
 		AtlasSHA256: product.atlasSHA256, ArchitectureSHA256: product.architectureSHA256,
 		WireSHA256: product.wireSHA256, CatalogSHA256: product.catalogSHA256,
 		CatalogRef: product.catalogRef, Language: product.input.Language,
-		CandidateCoverage:  product.Coverage(),
-		DirectionCount:     directionCount,
-		RequestedSpanCount: len(spanCoverage.Requested), CoveredSpanCount: len(spanCoverage.Covered),
-		UncoveredSpanCount: len(spanCoverage.Uncovered), CoverageComplete: spanCoverage.Complete,
-		UnavailableCode: unavailable, FailureCode: failure,
+		CandidateCoverage:       product.Coverage(),
+		DirectionCount:          directionCount,
+		ConsideredSpanCount:     spanCoverage.ConsideredSpanCount,
+		AdvertisedSpanCount:     spanCoverage.AdvertisedSpanCount,
+		ModelSelectedSpanCount:  spanCoverage.ModelSelectedSpanCount,
+		AcceptedSpanCount:       spanCoverage.AcceptedSpanCount,
+		FrontierComplete:        spanCoverage.FrontierComplete,
+		SelectedItemsComplete:   spanCoverage.SelectedItemsComplete,
+		SupportCoverageComplete: spanCoverage.SupportCoverageComplete,
+		PortfolioTargetMet:      spanCoverage.PortfolioTargetMet,
+		UnavailableCode:         unavailable,
+		FailureCode:             failure,
 	}
 }
 
@@ -277,8 +338,8 @@ func (product Product) ValidateStatus(status Status) error {
 		return fmt.Errorf("atlas study status artifact: does not match the exact compiled product")
 	}
 	if status.State == ProductStateAccepted || status.State == ProductStateAcceptedPartial {
-		if status.RequestedSpanCount != len(product.selectedSpanIDs) ||
-			status.CoveredSpanCount+status.UncoveredSpanCount != len(product.selectedSpanIDs) {
+		if status.ConsideredSpanCount != product.coverage.SpansConsidered ||
+			status.AdvertisedSpanCount != len(product.selectedSpanIDs) {
 			return fmt.Errorf("atlas study status artifact: span counts do not match exact compiled product")
 		}
 	}
@@ -417,10 +478,13 @@ func validateStatus(status Status) error {
 	if err := validateCandidateCoverage(status.CandidateCoverage); err != nil {
 		return err
 	}
+	zeroStageCounts := status.ConsideredSpanCount == 0 && status.AdvertisedSpanCount == 0 &&
+		status.ModelSelectedSpanCount == 0 && status.AcceptedSpanCount == 0
+	zeroFlags := !status.FrontierComplete && !status.SelectedItemsComplete &&
+		!status.SupportCoverageComplete && !status.PortfolioTargetMet
 	switch status.State {
 	case ProductStatePrepared:
-		if status.DirectionCount != 0 || status.RequestedSpanCount != 0 || status.CoveredSpanCount != 0 ||
-			status.UncoveredSpanCount != 0 || status.CoverageComplete ||
+		if status.DirectionCount != 0 || !zeroStageCounts || !zeroFlags ||
 			status.UnavailableCode != "" || status.FailureCode != "" {
 			return fmt.Errorf("atlas study status artifact: invalid prepared status")
 		}
@@ -428,21 +492,33 @@ func validateStatus(status Status) error {
 		if status.DirectionCount == 0 || status.UnavailableCode != "" || status.FailureCode != "" {
 			return fmt.Errorf("atlas study status artifact: invalid accepted status")
 		}
-		if status.RequestedSpanCount <= 0 || status.CoveredSpanCount != status.DirectionCount ||
-			status.CoveredSpanCount+status.UncoveredSpanCount != status.RequestedSpanCount ||
-			status.CoverageComplete != (status.UncoveredSpanCount == 0) ||
-			(status.State == ProductStateAccepted) != status.CoverageComplete {
+		// Four-stage counts: considered >= advertised >= model-selected, and
+		// the locally accepted span count equals the accepted direction count
+		// because duplicate-span directions are rejected. Selected-items
+		// completeness is exactly the accepted state (no rejected sibling and
+		// at least one returned direction); support coverage is recorded true
+		// whenever at least one direction is accepted; portfolio target is the
+		// desired 6..MaxDirections band, independent of status. Frontier
+		// completeness is advertised == considered, and advertised-but-returned
+		// never turns accepted into accepted_partial.
+		if status.ConsideredSpanCount <= 0 || status.AdvertisedSpanCount <= 0 ||
+			status.AdvertisedSpanCount > status.ConsideredSpanCount ||
+			status.ModelSelectedSpanCount < status.DirectionCount ||
+			status.ModelSelectedSpanCount > status.AdvertisedSpanCount ||
+			status.AcceptedSpanCount != status.DirectionCount ||
+			status.FrontierComplete != (status.AdvertisedSpanCount == status.ConsideredSpanCount) ||
+			status.SelectedItemsComplete != (status.State == ProductStateAccepted) ||
+			!status.SupportCoverageComplete ||
+			status.PortfolioTargetMet != (status.DirectionCount >= MinPortfolioDirections && status.DirectionCount <= MaxDirections) {
 			return fmt.Errorf("atlas study status artifact: invalid accepted span coverage")
 		}
 	case ProductStateUnavailable:
-		if status.DirectionCount != 0 || status.RequestedSpanCount != 0 || status.CoveredSpanCount != 0 ||
-			status.UncoveredSpanCount != 0 || status.CoverageComplete ||
+		if status.DirectionCount != 0 || !zeroStageCounts || !zeroFlags ||
 			status.UnavailableCode != UnavailableOffline || status.FailureCode != "" {
 			return fmt.Errorf("atlas study status artifact: invalid unavailable status")
 		}
 	case ProductStateFailed:
-		if status.DirectionCount != 0 || status.RequestedSpanCount != 0 || status.CoveredSpanCount != 0 ||
-			status.UncoveredSpanCount != 0 || status.CoverageComplete ||
+		if status.DirectionCount != 0 || !zeroStageCounts || !zeroFlags ||
 			status.UnavailableCode != "" || !status.FailureCode.Valid() {
 			return fmt.Errorf("atlas study status artifact: invalid failed status")
 		}
@@ -458,6 +534,9 @@ func validateCandidateCoverage(coverage CandidateCoverage) error {
 		coverage.TargetsSelected > coverage.TargetsConsidered ||
 		coverage.SpansConsidered <= 0 || coverage.SpansSelected <= 0 ||
 		coverage.SpansSelected > coverage.SpansConsidered ||
+		// Complete is full-selection equality: the advertised frontier equals
+		// the complete considered span set (zero omissions) and every
+		// considered target is selected.
 		coverage.Complete != (coverage.TargetsSelected == coverage.TargetsConsidered &&
 			coverage.SpansSelected == coverage.SpansConsidered) {
 		return fmt.Errorf("atlas study artifact: invalid candidate coverage")
@@ -479,7 +558,56 @@ func validateCandidateCoverage(coverage CandidateCoverage) error {
 	if err := validateCounts("per_role", coverage.PerRole); err != nil {
 		return err
 	}
-	return validateCounts("per_package", coverage.PerPackage)
+	if err := validateCounts("per_package", coverage.PerPackage); err != nil {
+		return err
+	}
+	return validateCandidateOmissions(coverage)
+}
+
+// validateCandidateOmissions checks the bounded omission aggregates: sorted
+// unique closed reasons, positive counts that exactly partition the spans
+// omitted from the advertised frontier, and bounded unique representative
+// route-span refs. A complete frontier (zero omissions) records no omissions.
+func validateCandidateOmissions(coverage CandidateCoverage) error {
+	omitted := coverage.SpansConsidered - coverage.SpansSelected
+	if omitted == 0 {
+		if len(coverage.Omissions) != 0 {
+			return fmt.Errorf("atlas study artifact: complete candidate records omissions")
+		}
+		return nil
+	}
+	if len(coverage.Omissions) == 0 {
+		return fmt.Errorf("atlas study artifact: omitted candidate spans lack omission aggregates")
+	}
+	total := 0
+	previousReason := CoverageOmissionReason("")
+	for _, omission := range coverage.Omissions {
+		if !omission.Reason.Valid() || omission.Count <= 0 ||
+			omission.Count > coverage.SpansConsidered ||
+			len(omission.Representatives) > MaxOmissionRepresentatives {
+			return fmt.Errorf("atlas study artifact: invalid candidate omission")
+		}
+		if previousReason != "" && omission.Reason <= previousReason {
+			return fmt.Errorf("atlas study artifact: candidate omissions are not canonical")
+		}
+		previousReason = omission.Reason
+		total += omission.Count
+		if len(omission.Representatives) == 0 {
+			continue
+		}
+		if !uniqueCanonicalRefs(omission.Representatives) {
+			return fmt.Errorf("atlas study artifact: omission representatives are not canonical")
+		}
+		for _, ref := range omission.Representatives {
+			if ref.Kind != RefRouteSpan || ref.ID == "" {
+				return fmt.Errorf("atlas study artifact: wrong-kind omission representative")
+			}
+		}
+	}
+	if total != omitted {
+		return fmt.Errorf("atlas study artifact: omission aggregates do not cover the omitted span count")
+	}
+	return nil
 }
 
 func validateCatalogDigest(
