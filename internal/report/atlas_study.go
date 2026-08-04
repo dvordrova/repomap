@@ -1671,13 +1671,34 @@ func readAtlasStudyReportProduct(
 		if projectErr != nil {
 			return nil, nil, projectErr
 		}
+		browse, browseErr := deriveAtlasStudyFrontierBrowse(
+			request, result, input, status, data, studyMap.Directions,
+		)
+		if browseErr != nil {
+			return nil, nil, browseErr
+		}
+		reportStatus.FrontierBrowse = browse
 		// DirectionCount remains the exact accepted result/status count.
 		// Publication counts are an explicit versioned report projection; exact
 		// duplicate reading sets remain available as hidden diagnostics.
 		reportStatus.PublishedDirectionCount = len(studyMap.Directions)
 		reportStatus.HiddenDirectionCount = len(studyMap.HiddenDirections)
 		return reportStatus, studyMap, nil
-	case atlasstudy.ProductStateUnavailable, atlasstudy.ProductStateFailed:
+	case atlasstudy.ProductStateFailed:
+		if hasResult {
+			return nil, nil, fmt.Errorf("atlas study report: terminal non-accepted status cannot contain result")
+		}
+		// The failed-state browse is a distinct neutral local surface: every
+		// row is the considered stage, the total comes from the rebuilt input
+		// count, and the surface is exempt from accepted-stage tally checks
+		// because there is no result artifact and no direction portfolio.
+		browse, browseErr := deriveAtlasStudyFailedBrowse(input, data)
+		if browseErr != nil {
+			return nil, nil, browseErr
+		}
+		reportStatus.FrontierBrowse = browse
+		return reportStatus, nil, nil
+	case atlasstudy.ProductStateUnavailable:
 		if hasResult {
 			return nil, nil, fmt.Errorf("atlas study report: terminal non-accepted status cannot contain result")
 		}
@@ -1687,6 +1708,337 @@ func readAtlasStudyReportProduct(
 	default:
 		return nil, nil, fmt.Errorf("atlas study report: unsupported state %q", status.State)
 	}
+}
+
+// atlasStudyBrowseRow is one pre-truncation browse row. spanID, learningStage
+// and representative are internal sort keys only and are never serialized.
+type atlasStudyBrowseRow struct {
+	spanID        string
+	learningStage atlasstudy.LearningStage
+	stage         AtlasStudySpanStage
+	title         string
+	question      string
+	source        UserCodeLocation
+	endpoint      *UserCodeLocation
+	directionID   string
+	// representative marks an advertised_budget omission representative: a
+	// DERIVED first row of the Local (considered) group, emitted before the
+	// remaining considered rows in canonical span-ID order (D212 §4).
+	representative bool
+}
+
+// deriveAtlasStudyFrontierBrowse computes the provider-free per-span browse of
+// the complete considered Study question set for accepted/accepted_partial
+// runs. It runs ONLY inside readAtlasStudyReportProduct after the result
+// record was decoded and validated against the rebuilt input, so the manifest
+// DeepEqual round-trip (manifest.go:1030–1037) re-derives byte-identical
+// browse bytes. Fail-closed invariants: the chain
+// accepted ⊆ model_selected ⊆ advertised ⊆ considered is re-verified, the four
+// stage-set sizes equal the four status counts, every accepted row's
+// DirectionID (derived from the validated result.Directions array order, model
+// rank) resolves to exactly one published direction whose span matches, and
+// only then the 256 ceiling is applied with truthful Total/Shown. Considered
+// always comes from the rebuilt input.RouteSpans — never from the request
+// catalog, which carries only the advertised frontier.
+func deriveAtlasStudyFrontierBrowse(
+	request atlasstudy.RequestRecord,
+	result atlasstudy.ResultRecord,
+	input atlasstudy.Input,
+	status atlasstudy.Status,
+	data *ReportData,
+	publishedDirections []StudyDirection,
+) (*FrontierBrowse, error) {
+	considered := make(map[string]struct{}, len(input.RouteSpans))
+	for _, span := range input.RouteSpans {
+		considered[span.ID] = struct{}{}
+	}
+	advertised := make(map[string]struct{}, len(request.Catalog))
+	for _, object := range request.Catalog {
+		if object.Kind == atlasstudy.RefRouteSpan {
+			advertised[object.CanonicalID] = struct{}{}
+		}
+	}
+	modelSelected := make(map[string]struct{}, len(result.ModelSelectedSpanRefs))
+	for _, ref := range result.ModelSelectedSpanRefs {
+		if ref.Kind != atlasstudy.RefRouteSpan {
+			return nil, fmt.Errorf("atlas study report: browse model-selected ref has wrong kind")
+		}
+		modelSelected[ref.ID] = struct{}{}
+	}
+	accepted := make(map[string]struct{}, len(result.Directions))
+	directionBySpan := make(map[string]string, len(result.Directions))
+	for _, direction := range result.Directions {
+		if direction.Span.Kind != atlasstudy.RefRouteSpan {
+			return nil, fmt.Errorf("atlas study report: browse accepted ref has wrong kind")
+		}
+		if _, duplicate := accepted[direction.Span.ID]; duplicate {
+			return nil, fmt.Errorf("atlas study report: browse accepted spans are not unique")
+		}
+		accepted[direction.Span.ID] = struct{}{}
+		directionBySpan[direction.Span.ID] = direction.ID
+	}
+	// Re-verify accepted ⊆ model_selected ⊆ advertised ⊆ considered.
+	for spanID := range accepted {
+		if _, ok := modelSelected[spanID]; !ok {
+			return nil, fmt.Errorf("atlas study report: browse accepted span is outside model-selected")
+		}
+	}
+	for spanID := range modelSelected {
+		if _, ok := advertised[spanID]; !ok {
+			return nil, fmt.Errorf("atlas study report: browse model-selected span is outside advertised")
+		}
+	}
+	for spanID := range advertised {
+		if _, ok := considered[spanID]; !ok {
+			return nil, fmt.Errorf("atlas study report: browse advertised span is outside considered")
+		}
+	}
+	// Per-stage tallies over the FULL pre-truncation row set must equal the
+	// four status counts (never per-role tallies: candidateCoverage counts
+	// support pairs, not spans).
+	if len(considered) != status.ConsideredSpanCount ||
+		len(advertised) != status.AdvertisedSpanCount ||
+		len(modelSelected) != status.ModelSelectedSpanCount ||
+		len(accepted) != status.AcceptedSpanCount {
+		return nil, fmt.Errorf("atlas study report: browse stage counts do not match status")
+	}
+	published := make(map[string]struct{}, len(publishedDirections))
+	for _, direction := range publishedDirections {
+		published[direction.ID] = struct{}{}
+	}
+	// The advertised_budget omission representatives are DERIVED rows of the
+	// Local (considered) group: the browse re-derives them from the rebuilt
+	// input and the status omission aggregates, so they render as the first
+	// clickable rows of the group in canonical span-ID order (D212 §4).
+	representativeIDs := make(map[string]struct{})
+	for _, omission := range status.CandidateCoverage.Omissions {
+		if omission.Reason != atlasstudy.OmissionAdvertisedBudget {
+			continue
+		}
+		for _, ref := range omission.Representatives {
+			if ref.Kind != atlasstudy.RefRouteSpan {
+				return nil, fmt.Errorf("atlas study report: browse representative ref has wrong kind")
+			}
+			representativeIDs[ref.ID] = struct{}{}
+		}
+	}
+	rows := make([]atlasStudyBrowseRow, 0, len(input.RouteSpans))
+	for _, span := range input.RouteSpans {
+		stage := AtlasStudySpanStageConsidered
+		if _, ok := accepted[span.ID]; ok {
+			stage = AtlasStudySpanStageAccepted
+		} else if _, ok := modelSelected[span.ID]; ok {
+			stage = AtlasStudySpanStageModelSelected
+		} else if _, ok := advertised[span.ID]; ok {
+			stage = AtlasStudySpanStageAdvertised
+		}
+		title, question, source, endpoint, err := atlasStudyBrowseRowContent(input, span, data)
+		if err != nil {
+			return nil, err
+		}
+		row := atlasStudyBrowseRow{
+			spanID: span.ID, learningStage: span.LearningStage, stage: stage,
+			title: title, question: question, source: source, endpoint: endpoint,
+		}
+		if _, ok := representativeIDs[span.ID]; ok {
+			// A representative is a considered span that was omitted from the
+			// advertised frontier; a representative with a higher stage means
+			// the status omission aggregate does not match the rebuilt input
+			// that produced this projection — fail closed.
+			if stage != AtlasStudySpanStageConsidered {
+				return nil, fmt.Errorf("atlas study report: browse representative ref %q is not a considered span (fail closed)", span.ID)
+			}
+			row.representative = true
+		}
+		if stage == AtlasStudySpanStageAccepted {
+			// DirectionID is the public study_map direction id derived from the
+			// validated result.Directions array order (model rank). It must
+			// resolve to exactly one published direction whose span matches;
+			// any mismatch fails closed with no partial browse.
+			directionID := directionBySpan[span.ID]
+			if directionID == "" {
+				return nil, fmt.Errorf("atlas study report: accepted browse row has no matching direction")
+			}
+			if _, ok := published[directionID]; !ok {
+				return nil, fmt.Errorf("atlas study report: accepted browse row direction is not published")
+			}
+			row.directionID = directionID
+		}
+		rows = append(rows, row)
+	}
+	// Every representative ref must resolve to a considered span: the status
+	// digest binds the artifact to the rebuilt input, so an unresolved
+	// representative means the omission aggregate does not match the input
+	// that produced this projection — fail closed rather than silently
+	// dropping the derived row.
+	for id := range representativeIDs {
+		if _, ok := considered[id]; !ok {
+			return nil, fmt.Errorf("atlas study report: browse representative ref %q does not resolve to a considered span (fail closed)", id)
+		}
+	}
+	return finishAtlasStudyBrowse(rows, representativeIDs), nil
+}
+
+// deriveAtlasStudyFailedBrowse builds the neutral local-question browse for a
+// failed Study run. Every row carries the considered stage and the surface is
+// exempt from accepted-stage tally checks (no result artifact, no directions,
+// no DirectionID resolution). Total comes from the rebuilt input count.
+func deriveAtlasStudyFailedBrowse(input atlasstudy.Input, data *ReportData) (*FrontierBrowse, error) {
+	rows := make([]atlasStudyBrowseRow, 0, len(input.RouteSpans))
+	for _, span := range input.RouteSpans {
+		title, question, source, endpoint, err := atlasStudyBrowseRowContent(input, span, data)
+		if err != nil {
+			return nil, err
+		}
+		rows = append(rows, atlasStudyBrowseRow{
+			spanID: span.ID, learningStage: span.LearningStage,
+			stage: AtlasStudySpanStageConsidered,
+			title: title, question: question, source: source, endpoint: endpoint,
+		})
+	}
+	return finishAtlasStudyBrowse(rows, nil), nil
+}
+
+// atlasStudyBrowseRowContent derives the report-language question, the exact
+// source-card title and the OpenablePaths-gated source locations for one
+// browse row. Focused spans present the exact readable target reference;
+// system-path spans present "from → to" endpoints. Source/Endpoint are
+// published only for paths in data.OpenablePaths; otherwise the row carries
+// the zero location and the template renders the neutral unavailable state.
+func atlasStudyBrowseRowContent(
+	input atlasstudy.Input,
+	span atlasstudy.RouteSpan,
+	data *ReportData,
+) (title, question string, source UserCodeLocation, endpoint *UserCodeLocation, err error) {
+	question = span.QuestionEnglish
+	if input.Language == atlasstudy.LanguageRussian {
+		question = span.QuestionRussian
+	}
+	targetByID := make(map[string]atlasstudy.ReadingTarget, len(input.ReadingTargets))
+	for _, target := range input.ReadingTargets {
+		targetByID[target.ID] = target
+	}
+	switch span.Kind {
+	case atlasstudy.RouteSpanFocused:
+		if len(span.AllowedTargetIDs) != 1 {
+			return "", "", UserCodeLocation{}, nil, fmt.Errorf("atlas study report: focused browse span has invalid target count")
+		}
+		target, ok := targetByID[span.AllowedTargetIDs[0]]
+		if !ok {
+			return "", "", UserCodeLocation{}, nil, fmt.Errorf("atlas study report: focused browse span references unavailable target")
+		}
+		title = atlasStudyBrowseTargetTitle(target)
+		if openableAtlasStudyBrowsePath(data, target.Location.Path) {
+			source = UserCodeLocation{Path: target.Location.Path, Line: target.Location.Line}
+		}
+		return title, question, source, nil, nil
+	case atlasstudy.RouteSpanSystemPath:
+		if len(span.Joins) != 1 {
+			return "", "", UserCodeLocation{}, nil, fmt.Errorf("atlas study report: system-path browse span has invalid joins")
+		}
+		relationByID := make(map[string]atlasstudy.RouteProducerRelation, len(input.ProducerRelations))
+		for _, relation := range input.ProducerRelations {
+			relationByID[relation.ID] = relation
+		}
+		relation, ok := relationByID[span.Joins[0].RelationID]
+		if !ok {
+			return "", "", UserCodeLocation{}, nil, fmt.Errorf("atlas study report: system-path browse span references unavailable relation")
+		}
+		from, ok := targetByID[relation.FromTargetID]
+		if !ok {
+			return "", "", UserCodeLocation{}, nil, fmt.Errorf("atlas study report: system-path browse span references unavailable from target")
+		}
+		to, ok := targetByID[relation.ToTargetID]
+		if !ok {
+			return "", "", UserCodeLocation{}, nil, fmt.Errorf("atlas study report: system-path browse span references unavailable to target")
+		}
+		fromRef := atlasStudyBrowseTargetTitle(from)
+		toRef := atlasStudyBrowseTargetTitle(to)
+		title = fromRef + " → " + toRef
+		if openableAtlasStudyBrowsePath(data, from.Location.Path) {
+			source = UserCodeLocation{Path: from.Location.Path, Line: from.Location.Line}
+		}
+		if openableAtlasStudyBrowsePath(data, to.Location.Path) {
+			endpoint = &UserCodeLocation{Path: to.Location.Path, Line: to.Location.Line}
+		}
+		return title, question, source, endpoint, nil
+	default:
+		return "", "", UserCodeLocation{}, nil, fmt.Errorf("atlas study report: unsupported browse span kind %q", span.Kind)
+	}
+}
+
+// atlasStudyBrowseTargetTitle is the exact source-card symbol/label of one
+// reading target: the bounded readable reference when one exists, otherwise
+// the target's own raw symbol (already published by StudyReadingAnchor).
+func atlasStudyBrowseTargetTitle(target atlasstudy.ReadingTarget) string {
+	if reference, ok := atlasStudyReadableTargetReference(target); ok && reference != "" {
+		return reference
+	}
+	return target.Symbol
+}
+
+func openableAtlasStudyBrowsePath(data *ReportData, sourcePath string) bool {
+	if data == nil || sourcePath == "" {
+		return false
+	}
+	for _, openable := range data.OpenablePaths {
+		if openable == sourcePath {
+			return true
+		}
+	}
+	return false
+}
+
+// atlasStudySpanStageOrder is the user-facing display order of the four-stage
+// pipeline: locally accepted ("Model pick") first, then model-selected
+// (rejected siblings), then advertised not_selected, and the Local
+// (considered ∖ advertised) group last. Locale-independent: it makes the
+// browse order byte-identical across EN/RU (D212 §1/§4).
+var atlasStudySpanStageOrder = []AtlasStudySpanStage{
+	AtlasStudySpanStageAccepted,
+	AtlasStudySpanStageModelSelected,
+	AtlasStudySpanStageAdvertised,
+	AtlasStudySpanStageConsidered,
+}
+
+// finishAtlasStudyBrowse orders rows by stage group and then by canonical span
+// ID (locale-independent, byte-identical across EN/RU): the accepted,
+// model-selected and advertised groups keep canonical span-ID order, while the
+// advertised_budget omission representatives are the first rows of the Local
+// (considered) group in canonical span-ID order followed by the remaining
+// considered rows. It assigns manifest-relative Ordinals 1..N and applies the
+// MaxAtlasStudyBrowseSpans ceiling with truthful Total/Shown. Canonical span
+// IDs are internal sort keys only and are never serialized.
+func finishAtlasStudyBrowse(rows []atlasStudyBrowseRow, representativeIDs map[string]struct{}) *FrontierBrowse {
+	stageRank := make(map[AtlasStudySpanStage]int, len(atlasStudySpanStageOrder))
+	for index, stage := range atlasStudySpanStageOrder {
+		stageRank[stage] = index
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		leftRank := stageRank[rows[i].stage]
+		rightRank := stageRank[rows[j].stage]
+		if leftRank != rightRank {
+			return leftRank < rightRank
+		}
+		if rows[i].representative != rows[j].representative {
+			return rows[i].representative
+		}
+		return rows[i].spanID < rows[j].spanID
+	})
+	total := len(rows)
+	shown := total
+	if shown > MaxAtlasStudyBrowseSpans {
+		shown = MaxAtlasStudyBrowseSpans
+	}
+	browse := &FrontierBrowse{Total: total, Shown: shown, Spans: make([]Span, 0, shown)}
+	for index, row := range rows[:shown] {
+		browse.Spans = append(browse.Spans, Span{
+			Ordinal: index + 1, Title: row.title, Question: row.question,
+			Stage: row.stage, Source: row.source, Endpoint: row.endpoint,
+			DirectionID: row.directionID,
+		})
+	}
+	return browse
 }
 
 func readOptionalAtlasStudyArtifact(
