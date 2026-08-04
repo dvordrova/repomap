@@ -8,6 +8,9 @@ temperature: 0.1
 permission:
   edit: allow
   bash: allow
+  external_directory:
+    "~/Library/Caches/repomap/**": allow
+    "~/git/**": allow
 ---
 
 You manage repomap governance transitions and publication.

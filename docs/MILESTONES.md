@@ -67,9 +67,9 @@ Done when all of the following are observable:
    The output distinguishes source-supported from test-supported claims.
 6. A deliberately misleading-name fixture prevents names or static calls from
    being promoted to source truth without supporting lines.
-7. `./scripts/check.sh` and `./scripts/etcd_check.sh ../etcd` pass, and one
-   replayable command produces the complete `kvServer.Put` artifact set without
-   credentials or Authorization data.
+7. Focused Go tests and a direct built-binary etcd run pass, and one replayable
+   fixture produces the complete `kvServer.Put` artifact set without credentials
+   or Authorization data.
 
 Completed on 2026-07-10. The DeepSeek v2 replay assessed four questions with
 zero parser warnings and a 100/100 contract score from a 4,286-byte source
@@ -104,7 +104,7 @@ invalidation are wired at the CLI boundary; the reducer remains pure and owns no
 collector, context, filesystem, model client, or presentation call.
 
 Replay coverage includes unit fixtures for every handoff/resume choice and a
-local etcd run through `./scripts/investigation_handoff_check.sh`. Selecting and
+local etcd integration fixture. Selecting and
 reading a bounded test body remains M3/M8 work; M2 only promises that the shared
 loop reaches an explicit user choice without silently expanding it.
 
@@ -119,7 +119,7 @@ Start with a versioned task manifest and replay evaluator. Each task must name a
 user goal, repository revision/scenario, expected useful directions or symbols,
 forbidden overclaims, and size/latency observations. Saved model responses are
 evaluated without another API call; live DeepSeek runs refresh baselines but are
-not required by `./scripts/check.sh`.
+not required by ordinary product acceptance.
 
 The first etcd task is replayable offline. It combines the saved orientation
 response, the `kvServer.Put` source assessment, and sanitized gopls test-reference
@@ -147,10 +147,9 @@ allowlist-checked.
 Evaluator v3 additionally requires the drill-down source path to occur in the
 selected orientation candidate. This prevents two independently useful but
 unrelated artifacts from passing as one journey. All five current tasks satisfy
-the stronger relation. `scripts/quality_preflight.sh` checks its necessary
-precondition before any model call—the symbol path must occur in the bounded
-orientation context—and records the clean revision, toolchain, exact model
-contexts, requests, hashes, and prompt versions.
+the stronger relation. Its provider-free preflight contract checks before any
+model call that the symbol path occurs in bounded model context and records the
+clean revision, toolchain, exact contexts, requests, hashes, and prompt versions.
 The quality loader also rejects obvious credentials in a manifest or hashed
 artifact without copying the detected value into its error.
 
@@ -301,7 +300,7 @@ The first runnable friend baseline now targets the current directory, makes one
 `deepseek-v4-flash` orientation call, preserves the complete onboarding shape,
 shows context/request bytes and latency, and prepares a bounded local evidence
 bundle for every direction without another provider call. Direction cards open
-those saved neighborhoods, `friend_check.sh` builds and replays the handoff
+those saved neighborhoods, focused Go fixtures build and replay the handoff
 fixture, and each run creates a non-overwriting correct/missing/misleading
 feedback note. The current etcd proof produced three clickable directions from
 a 42,159-byte compact context and a 49,509-byte external request in 30,983 ms,

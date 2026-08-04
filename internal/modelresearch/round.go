@@ -3,12 +3,14 @@ package modelresearch
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
@@ -19,10 +21,18 @@ type Prompt struct {
 }
 
 type ProviderResult struct {
-	Content      []byte
-	Attempts     int
-	InputTokens  int
-	OutputTokens int
+	Content               []byte
+	Attempts              int
+	RequestBytes          int
+	ResponseBytes         int
+	UsageReported         bool
+	InputTokens           int
+	OutputTokens          int
+	ReasoningTokens       int
+	FinishReason          string
+	ChoiceCount           int
+	PromptCacheHitTokens  int
+	PromptCacheMissTokens int
 }
 
 type Provider interface {
@@ -35,11 +45,17 @@ type ExecuteInput struct {
 	Policy     Policy
 	Usage      Usage
 	Repository RepositoryContext
-	RunsDir    string
-	RunDir     string
-	Profile    string
-	Model      string
-	Provider   Provider
+	// OutputLanguage participates only in cache identity. The provider owns
+	// the actual prompt contract.
+	OutputLanguage         string
+	RunsDir                string
+	RunDir                 string
+	Profile                string
+	Model                  string
+	ProviderEndpointSHA256 string
+	Provider               Provider
+	ExchangeWriter         *debugdump.Writer
+	ExchangeOrdinal        int
 }
 
 type researchResponse struct {
@@ -47,6 +63,8 @@ type researchResponse struct {
 	UnresolvedFrontiers []Frontier   `json:"unresolved_frontiers"`
 	Summary             string       `json:"summary,omitempty"`
 }
+
+const targetedResearchCacheContractVersion = "targeted-research-cache-v4"
 
 func BuildPrompt(bundle EvidenceBundle) (Prompt, error) {
 	if bundle.Version != ContractVersion || bundle.PolicyVersion != PolicyVersion ||
@@ -88,6 +106,7 @@ Rules:
 - Every finding and frontier must cite supplied evidence IDs.
 - Do not emit paths, symbols, relations, or IDs absent from the bundle.
 - Do not upgrade static evidence to observed execution or guaranteed runtime order.
+- A source_window is a bounded lexical excerpt, not a complete file or call graph. Missing text cannot prove that an operation, call, or relation is absent. Describe only what the supplied windows show and record the rest as an unresolved frontier.
 - Unsupported hypotheses are useful; say unsupported rather than inventing support.
 - Suggest at most one distinct bounded frontier. Do not request a repeated wording pass.
 
@@ -136,7 +155,7 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 	}
 	round.RequestBytes = len(request)
 	round.ProviderRequestSHA256 = requestHash(request)
-	if err := persistProviderArtifacts(input.RunDir, input.Plan.Bundle, request, nil); err != nil {
+	if err := persistEvidenceBundle(input.RunDir, input.Plan.Bundle, request); err != nil {
 		return round, err
 	}
 	if allowed, reason := input.Policy.Allows(input.Policy.Targeted, input.Usage, len(request)); !allowed {
@@ -147,93 +166,157 @@ func ExecuteRound(ctx context.Context, input ExecuteInput) (ResearchRound, error
 		return round, nil
 	}
 
-	cacheKey, err := CacheKey(FingerprintInput{
-		Repository: input.Repository, Stage: "targeted_research", PromptVersion: PromptVersion,
-		Profile: input.Profile, Model: input.Model, EvidenceBundleHash: bundleSHA,
-		PolicyVersion: input.Policy.Version,
-	})
+	cacheFingerprint := targetedResearchCacheFingerprint(input, bundleSHA, round.ProviderRequestSHA256)
+	cacheKey, err := CacheKey(cacheFingerprint)
 	if err != nil {
 		return round, err
 	}
 	round.CacheKey = cacheKey
 	if input.RunsDir != "" {
-		record, found, loadErr := loadCache(input.RunsDir, cacheKey, round.ProviderRequestSHA256, bundleSHA)
+		record, found, loadErr := loadCache(
+			input.RunsDir,
+			cacheKey,
+			cacheFingerprint.CacheContract,
+			round.ProviderRequestSHA256,
+			bundleSHA,
+		)
 		if loadErr != nil {
-			round.Status = RoundRejected
-			round.StopReason = "invalid_cached_record"
-			return round, loadErr
+			if !errors.Is(loadErr, ErrInvalidCachedRound) {
+				round.Status = RoundRejected
+				round.StopReason = "invalid_cached_record"
+				return round, loadErr
+			}
+			if removeErr := removeCache(input.RunsDir, cacheKey); removeErr != nil {
+				round.Status = RoundRejected
+				round.StopReason = "invalid_cached_record"
+				return round, removeErr
+			}
+			found = false
 		}
 		if found {
-			round.Cached = true
-			round.Status = RoundCached
-			round.ResponseBytes = record.ResponseBytes
-			round.InputTokens = record.InputTokens
-			round.OutputTokens = record.OutputTokens
-			round.LatencyMillis = record.LatencyMillis
-			round.RetryCount = record.RetryCount
-			if err := persistProviderArtifacts(input.RunDir, input.Plan.Bundle, request, record.Response); err != nil {
-				return round, err
+			cachedRound := round
+			cachedRound.Cached = true
+			cachedRound.Status = RoundCached
+			cachedRound.ResponseBytes = record.ResponseBytes
+			cachedRound.InputTokens = record.InputTokens
+			cachedRound.OutputTokens = record.OutputTokens
+			cachedRound.PromptCacheHitTokens = record.PromptCacheHitTokens
+			cachedRound.PromptCacheMissTokens = record.PromptCacheMissTokens
+			cachedRound.LatencyMillis = record.LatencyMillis
+			cachedRound.RetryCount = record.RetryCount
+			applyErr := applyResponse(&cachedRound, input.Plan.Bundle, record.Response)
+			if applyErr == nil && cachedRound.Status == RoundCached {
+				if err := validateProviderResponseArtifact(input.RunDir, record.Response); err != nil {
+					return round, err
+				}
+				recordTargetedSemanticExchange(
+					input, request, record.Response, record.ResponseBytes, 0,
+					debugdump.SemanticStateCacheHit,
+					debugdump.SemanticValidationCache,
+				)
+				cachedRound.CompletedAt = nowUTC()
+				return cachedRound, nil
 			}
-			if err := applyResponse(&round, input.Plan.Bundle, record.Response); err != nil {
+			if removeErr := removeCache(input.RunsDir, cacheKey); removeErr != nil {
 				round.Status = RoundRejected
 				round.StopReason = "invalid_cached_response"
-				return round, err
+				return round, removeErr
 			}
-			round.CompletedAt = nowUTC()
-			return round, nil
 		}
 	}
 
 	started := time.Now()
 	result, callErr := input.Provider.Research(ctx, prompt)
 	round.LatencyMillis = time.Since(started).Milliseconds()
-	round.ResponseBytes = len(result.Content)
+	round.ResponseBytes = max(len(result.Content), result.ResponseBytes)
 	round.InputTokens = result.InputTokens
 	round.OutputTokens = result.OutputTokens
+	round.PromptCacheHitTokens = result.PromptCacheHitTokens
+	round.PromptCacheMissTokens = result.PromptCacheMissTokens
 	if result.Attempts > 1 {
 		round.RetryCount = result.Attempts - 1
 	}
 	if callErr != nil {
 		round.Status = RoundFailed
 		round.StopReason = "provider_call_failed"
+		state := debugdump.SemanticStateProviderFailed
+		validationCode := debugdump.SemanticValidationProvider
+		if errors.Is(callErr, context.Canceled) || errors.Is(callErr, context.DeadlineExceeded) || ctx.Err() != nil {
+			state = debugdump.SemanticStateCanceled
+			validationCode = debugdump.SemanticValidationCanceled
+		}
+		recordTargetedSemanticExchange(
+			input, request, providerFailureContentForExchange(callErr, result.Content),
+			max(len(result.Content), result.ResponseBytes), result.Attempts, state, validationCode,
+		)
 		return round, callErr
 	}
-	if err := persistProviderArtifacts(input.RunDir, input.Plan.Bundle, request, result.Content); err != nil {
+	if err := validateProviderResponseArtifact(input.RunDir, result.Content); err != nil {
+		recordTargetedSemanticExchange(
+			input, request, result.Content, max(len(result.Content), result.ResponseBytes), result.Attempts,
+			debugdump.SemanticStateRejected,
+			debugdump.SemanticValidationSecret,
+		)
 		return round, err
 	}
-	if input.RunsDir != "" {
+	if err := applyResponse(&round, input.Plan.Bundle, result.Content); err != nil {
+		round.Status = RoundRejected
+		round.StopReason = "invalid_response"
+		recordTargetedSemanticExchange(
+			input, request, result.Content, max(len(result.Content), result.ResponseBytes), result.Attempts,
+			debugdump.SemanticStateRejected,
+			debugdump.SemanticValidationDecode,
+		)
+		return round, err
+	}
+	state := debugdump.SemanticStateAccepted
+	validationCode := debugdump.SemanticValidationAccepted
+	if round.Status == RoundRejected {
+		state = debugdump.SemanticStateRejected
+		validationCode = debugdump.SemanticValidationResponse
+	}
+	recordTargetedSemanticExchange(
+		input, request, result.Content, max(len(result.Content), result.ResponseBytes),
+		result.Attempts, state, validationCode,
+	)
+	if round.Status == RoundCompleted && input.RunsDir != "" {
 		record := cacheRecord{
-			Version: ContractVersion, CacheKey: cacheKey,
+			Version: cacheRecordVersion, CacheKey: cacheKey,
+			CacheContract: cacheFingerprint.CacheContract,
 			RequestSHA256: round.ProviderRequestSHA256, BundleSHA256: bundleSHA,
 			ResponseSHA256: requestHash(result.Content), Response: append([]byte(nil), result.Content...),
 			RequestBytes: len(request), ResponseBytes: len(result.Content),
 			InputTokens: result.InputTokens, OutputTokens: result.OutputTokens,
-			LatencyMillis: round.LatencyMillis, RetryCount: round.RetryCount,
+			PromptCacheHitTokens:  result.PromptCacheHitTokens,
+			PromptCacheMissTokens: result.PromptCacheMissTokens,
+			LatencyMillis:         round.LatencyMillis, RetryCount: round.RetryCount,
 		}
 		if err := saveCache(input.RunsDir, record); err != nil {
 			return round, err
 		}
 	}
-	if err := applyResponse(&round, input.Plan.Bundle, result.Content); err != nil {
-		round.Status = RoundRejected
-		round.StopReason = "invalid_response"
-		return round, err
-	}
 	round.CompletedAt = nowUTC()
 	return round, nil
 }
 
-func persistProviderArtifacts(runDir string, bundle EvidenceBundle, request, response []byte) error {
+func targetedResearchCacheFingerprint(input ExecuteInput, bundleSHA, requestSHA string) FingerprintInput {
+	return FingerprintInput{
+		Repository: input.Repository, Stage: "targeted_research", PromptVersion: PromptVersion,
+		CacheContract: targetedResearchCacheContractVersion,
+		Profile:       input.Profile, Model: input.Model,
+		ProviderEndpointSHA256: input.ProviderEndpointSHA256,
+		RequestSHA256:          requestSHA, EvidenceBundleHash: bundleSHA,
+		PolicyVersion:  input.Policy.Version,
+		OutputLanguage: CacheOutputLanguage(input.OutputLanguage),
+	}
+}
+
+func persistEvidenceBundle(runDir string, bundle EvidenceBundle, request []byte) error {
 	if runDir == "" {
 		return nil
 	}
 	if _, found := secretscan.Detect(string(request)); found {
 		return fmt.Errorf("model research: targeted request contains an obvious credential")
-	}
-	if len(response) > 0 {
-		if _, found := secretscan.Detect(string(response)); found {
-			return fmt.Errorf("model research: targeted response contains an obvious credential")
-		}
 	}
 	subdir := filepath.Join(runDir, "research", bundle.RoundID)
 	bundleJSON, err := json.MarshalIndent(bundle, "", "  ")
@@ -243,15 +326,74 @@ func persistProviderArtifacts(runDir string, bundle EvidenceBundle, request, res
 	if err := writeProtected(filepath.Join(subdir, "evidence_bundle.json"), append(bundleJSON, '\n')); err != nil {
 		return err
 	}
-	if err := writeProtected(filepath.Join(subdir, "request.redacted.json"), request); err != nil {
-		return err
+	return nil
+}
+
+func validateProviderResponseArtifact(runDir string, response []byte) error {
+	if runDir == "" {
+		return nil
 	}
 	if len(response) > 0 {
-		if err := writeProtected(filepath.Join(subdir, "response.raw.json"), response); err != nil {
-			return err
+		if _, found := secretscan.Detect(string(response)); found {
+			return fmt.Errorf("model research: targeted response contains an obvious credential")
 		}
 	}
 	return nil
+}
+
+func recordTargetedSemanticExchange(
+	input ExecuteInput,
+	request,
+	response []byte,
+	responseBytes int,
+	transportAttempts int,
+	state,
+	validationCode string,
+) {
+	if input.ExchangeWriter == nil {
+		return
+	}
+	ordinal := input.ExchangeOrdinal
+	if ordinal <= 0 {
+		ordinal = 1
+	}
+	semanticCalls := 1
+	if state == debugdump.SemanticStateCacheHit {
+		semanticCalls = 0
+		transportAttempts = 0
+	}
+	exchange := debugdump.SemanticExchange{
+		Stage:           debugdump.SemanticStageTargetedResearch,
+		InstanceOrdinal: ordinal, SemanticAttemptOrdinal: 1,
+		RequestProvenance: debugdump.SemanticRequestPrepared,
+		State:             state, ValidationCode: validationCode,
+		SemanticCalls: semanticCalls, TransportAttempts: transportAttempts,
+		Request: request, Response: response,
+	}
+	if len(response) == 0 {
+		unavailableCode := debugdump.SemanticUnavailableNoContent
+		if state == debugdump.SemanticStateCanceled {
+			unavailableCode = debugdump.SemanticUnavailableCanceled
+		}
+		exchange.ResponseUnavailable = &debugdump.SemanticUnavailable{
+			Code: unavailableCode, OriginalBytes: responseBytes,
+		}
+	}
+	input.ExchangeWriter.RecordSemanticExchange(exchange)
+}
+
+// providerFailureContentForExchange is only for the existing redacting
+// semantic-exchange recorder. The interface keeps modelresearch independent
+// of the concrete provider package.
+func providerFailureContentForExchange(err error, fallback []byte) []byte {
+	type contentCarrier interface {
+		ProviderContent() []byte
+	}
+	var carrier contentCarrier
+	if errors.As(err, &carrier) {
+		return carrier.ProviderContent()
+	}
+	return fallback
 }
 
 func applyResponse(round *ResearchRound, bundle EvidenceBundle, raw []byte) error {
@@ -326,7 +468,19 @@ func validateFinding(finding RawFinding, known map[string]EvidenceItem, seen map
 		return "unknown_evidence_id"
 	}
 	text := strings.ToLower(finding.Interpretation + " " + finding.Explanation)
-	for _, certaintyUpgrade := range []string{"observed at runtime", "guaranteed", "always executes", "proves runtime order"} {
+	for _, certaintyUpgrade := range []string{
+		"observed at runtime",
+		"guaranteed",
+		"always executes",
+		"proves runtime order",
+		"наблюдается во время выполнения",
+		"наблюдалось во время выполнения",
+		"гарантирован",
+		"всегда выполняется",
+		"всегда исполняется",
+		"доказывает порядок выполнения",
+		"доказывает порядок исполнения",
+	} {
 		if strings.Contains(text, certaintyUpgrade) {
 			return "unsupported_certainty_upgrade"
 		}

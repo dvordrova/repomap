@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
-	"github.com/dvordrova/repomap/internal/experiment/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/flowproof"
 	flowproofassemble "github.com/dvordrova/repomap/internal/flowproof/assemble"
+	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
 
 func TestReplaySavedSyncthingOrientationSeedsPartialTracesWithoutProvider(t *testing.T) {
@@ -58,7 +59,6 @@ func TestReplaySavedSyncthingOrientationSeedsPartialTracesWithoutProvider(t *tes
 		}
 	}
 	for _, id := range []string{
-		"syncthing-daemon-startup-and-continuous-sync",
 		"rest-api-request-handling",
 		"background-loop-periodic-ticker-created",
 	} {
@@ -66,18 +66,19 @@ func TestReplaySavedSyncthingOrientationSeedsPartialTracesWithoutProvider(t *tes
 			t.Fatalf("unavailable or aggregate direction %q became a top-level trace", id)
 		}
 	}
-	if got := savedFlowProofIDs(report.CandidateFlows); len(got) != 3 {
-		t.Fatalf("saved trace IDs = %v, want three real FlowProof sessions", got)
+	primary := proofs["syncthing-daemon-startup-and-continuous-sync"]
+	if primary == nil || len(primary.Proof.Anchors) != 1 || len(primary.Proof.Transitions) != 0 ||
+		!strings.Contains(primary.Proof.CurrentFrontier, "typed downstream closure") {
+		t.Fatalf("unavailable primary process did not produce one-anchor proof: %#v", primary)
+	}
+	if got := savedFlowProofIDs(report.CandidateFlows); len(got) != 4 {
+		t.Fatalf("saved trace IDs = %v, want four real FlowProof sessions", got)
 	}
 }
 
 func replayProcessSurface(id, path, owner, availability string) surfacediscovery.TriggerRecord {
 	role := surfacediscovery.SurfaceRoleEntrySurface
 	readiness := surfacediscovery.TraceReadinessPartial
-	if availability == surfacediscovery.AvailabilityUnavailable {
-		role = surfacediscovery.SurfaceRoleRejected
-		readiness = surfacediscovery.TraceReadinessRejected
-	}
 	return surfacediscovery.TriggerRecord{
 		ID: id, Kind: "process_entry", Resolution: "exact", ScenarioID: "go-default",
 		SurfaceRole: role, TraceReadiness: readiness, Availability: availability,

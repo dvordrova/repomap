@@ -14,8 +14,8 @@ import (
 
 const maxMergedOrientationCandidates = 20
 
-func collectOrientationSignals(s snapshot.Snapshot, opts Options) []sourcesignals.Signal {
-	signals := sourcesignals.ScanFiles(
+func collectOrientationSignals(s snapshot.Snapshot, opts Options) ([]sourcesignals.Signal, sourcesignals.ScanTrace) {
+	signals, trace := sourcesignals.ScanFilesWithTrace(
 		s.FilteredFiles,
 		opts.RepoPath,
 		sourcesignals.ScanOptions{
@@ -24,9 +24,9 @@ func collectOrientationSignals(s snapshot.Snapshot, opts Options) []sourcesignal
 		},
 	)
 	if signals == nil {
-		return []sourcesignals.Signal{}
+		return []sourcesignals.Signal{}, trace
 	}
-	return signals
+	return signals, trace
 }
 
 func discoverOperationalCandidates(
@@ -132,16 +132,7 @@ func operationalCandidateEvidence(
 			if signal.Path != path || !isOperationalSignalCategory(signal.Category) {
 				continue
 			}
-			detail := strings.TrimSpace(signal.Reason)
-			if detail == "" {
-				detail = strings.ReplaceAll(signal.Category, "_", " ")
-			}
-			evidence = append(evidence, fmt.Sprintf(
-				"%s:%d source_signal %s",
-				signal.Path,
-				signal.Line,
-				detail,
-			))
+			evidence = append(evidence, orientationSourceSignalEvidence(signal))
 			break
 		}
 		if len(evidence) == maxEvidence {
@@ -149,6 +140,14 @@ func operationalCandidateEvidence(
 		}
 	}
 	return evidence
+}
+
+func orientationSourceSignalEvidence(signal sourcesignals.Signal) string {
+	detail := strings.TrimSpace(signal.Reason)
+	if detail == "" {
+		detail = strings.ReplaceAll(signal.Category, "_", " ")
+	}
+	return fmt.Sprintf("%s:%d source_signal %s", signal.Path, signal.Line, detail)
 }
 
 func isOperationalSignalCategory(category string) bool {

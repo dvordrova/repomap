@@ -1,8 +1,10 @@
 package deepseek
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -25,7 +27,7 @@ func TestNewFromEnvUsesRepomapConfigBeforeAliases(t *testing.T) {
 	t.Setenv(legacyEnvEndpoint, "https://legacy.example.com/chat/completions")
 	t.Setenv(legacyEnvModel, "legacy-model")
 	t.Setenv(legacyEnvAPIKey, "legacy-key")
-	t.Setenv(legacyEnvMaxTokens, "9999")
+	t.Setenv("DEEPSEEK_MAX_TOKENS", "9999")
 	t.Setenv(legacyEnvTimeout, "45s")
 	t.Setenv(legacyEnvAuth, authNone)
 
@@ -53,13 +55,13 @@ func TestNewFromEnvUsesRepomapConfigBeforeAliases(t *testing.T) {
 	}
 }
 
-func TestNewFromEnvSupportsDeepSeekCompatibilityAliases(t *testing.T) {
+func TestNewFromEnvSupportsDeepSeekCompatibilityAliasesWithoutOutputOverride(t *testing.T) {
 	clearLLMConfigEnv(t)
 
 	t.Setenv(legacyEnvEndpoint, "http://127.0.0.1:8080/v1/chat/completions")
 	t.Setenv(legacyEnvModel, "legacy-compatible-model")
 	t.Setenv(legacyEnvAPIKey, "legacy-key")
-	t.Setenv(legacyEnvMaxTokens, "2048")
+	t.Setenv("DEEPSEEK_MAX_TOKENS", "2048")
 	t.Setenv(legacyEnvTimeout, "12s")
 	t.Setenv(legacyEnvAuth, authBearer)
 
@@ -70,7 +72,7 @@ func TestNewFromEnvSupportsDeepSeekCompatibilityAliases(t *testing.T) {
 	if client.Endpoint != "http://127.0.0.1:8080/v1/chat/completions" ||
 		client.Model != "legacy-compatible-model" ||
 		client.APIKey != "legacy-key" ||
-		client.MaxTokens != 2048 ||
+		client.MaxTokens != defaultMaxTokens ||
 		client.HTTPClient.Timeout != 12*time.Second ||
 		client.Auth != authBearer {
 		t.Fatalf("compatibility config = %#v, timeout = %s", client, client.HTTPClient.Timeout)
@@ -117,6 +119,48 @@ func TestNewFromEnvDefaultsToDeepSeekBearerConfig(t *testing.T) {
 	}
 	if client.Auth != authBearer || client.APIKey != "test-key" {
 		t.Fatalf("default auth = %q, key = %q", client.Auth, client.APIKey)
+	}
+}
+
+func TestOrientationRequestPreservesExactGlobalOutputCeiling(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		endpoint     string
+		maxTokens    int
+		wantDeepSeek bool
+	}{
+		{name: "official lowered", endpoint: defaultEndpoint, maxTokens: 4096, wantDeepSeek: true},
+		{name: "official default", endpoint: defaultEndpoint, maxTokens: defaultMaxTokens, wantDeepSeek: true},
+		{name: "official raised", endpoint: defaultEndpoint, maxTokens: 80_000, wantDeepSeek: true},
+		{name: "generic lowered", endpoint: "https://provider.example.test/v1/chat/completions", maxTokens: 4096},
+		{name: "generic default", endpoint: "https://provider.example.test/v1/chat/completions", maxTokens: defaultMaxTokens},
+		{name: "generic raised", endpoint: "https://provider.example.test/v1/chat/completions", maxTokens: 80_000},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			client := &Client{Endpoint: test.endpoint, Model: "fixture", MaxTokens: test.maxTokens}
+			body, err := client.OrientPromptJSON([]byte(`{"bounded":"facts"}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var request chatRequest
+			if err := json.Unmarshal(body, &request); err != nil {
+				t.Fatal(err)
+			}
+			if request.MaxTokens != test.maxTokens || client.MaxTokens != test.maxTokens {
+				t.Fatalf("request/client max_tokens = %d/%d, want exact %d", request.MaxTokens, client.MaxTokens, test.maxTokens)
+			}
+			if test.wantDeepSeek {
+				if request.Thinking == nil || request.Thinking.Type != "disabled" {
+					t.Fatalf("official thinking = %#v, want disabled", request.Thinking)
+				}
+			} else if request.Thinking != nil {
+				t.Fatalf("generic thinking = %#v, want omitted", request.Thinking)
+			}
+		})
 	}
 }
 
@@ -288,6 +332,8 @@ func TestNewFromEnvRejectsInvalidConfig(t *testing.T) {
 		{name: "endpoint ftp", environ: map[string]string{envEndpoint: "ftp://models.example.com/chat", envAuth: authNone}, want: "scheme"},
 		{name: "endpoint missing host", environ: map[string]string{envEndpoint: "https:///chat/completions", envAuth: authNone}, want: "host"},
 		{name: "endpoint with userinfo", environ: map[string]string{envEndpoint: "https://user:password@models.example.com/chat", envAuth: authNone}, want: "userinfo"},
+		{name: "endpoint with query secret", environ: map[string]string{envEndpoint: "https://models.example.com/chat?api_key=sk-secret", envAuth: authNone}, want: "query"},
+		{name: "endpoint with fragment", environ: map[string]string{envEndpoint: "https://models.example.com/chat#secret", envAuth: authNone}, want: "fragment"},
 	}
 
 	for _, test := range tests {
@@ -397,8 +443,8 @@ func TestOrientResponseFormat(t *testing.T) {
 	if parsed.MaxTokens != 4000 {
 		t.Fatalf("max_tokens = %d, want %d", parsed.MaxTokens, 4000)
 	}
-	if parsed.Temperature != 0.1 {
-		t.Fatalf("temperature = %f, want 0.1", parsed.Temperature)
+	if parsed.Temperature == nil || *parsed.Temperature != 0.1 {
+		t.Fatalf("temperature = %v, want 0.1", parsed.Temperature)
 	}
 }
 
@@ -426,8 +472,87 @@ func TestOrientValidJSON(t *testing.T) {
 	}
 }
 
+func TestOrientMeasuredReportsPromptCacheTokens(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"choices":[{"message":{"content":"{}"}}],
+			"usage":{
+				"prompt_tokens":120,
+				"completion_tokens":17,
+				"prompt_cache_hit_tokens":96,
+				"prompt_cache_miss_tokens":24
+			}
+		}`)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		HTTPClient: server.Client(),
+		Model:      "deepseek-v4-flash",
+		MaxTokens:  6000,
+		Endpoint:   server.URL,
+		Auth:       authNone,
+	}
+	result, err := client.OrientMeasured(context.Background(), []byte(`{}`))
+	if err != nil {
+		t.Fatalf("OrientMeasured() error = %v", err)
+	}
+	if result.InputTokens != 120 || result.OutputTokens != 17 ||
+		result.PromptCacheHitTokens != 96 || result.PromptCacheMissTokens != 24 ||
+		!result.UsageReported {
+		t.Fatalf("OrientMeasured() token usage = %#v", result)
+	}
+}
+
+func TestOrientMeasuredDistinguishesMissingUsageFromReportedZeros(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name          string
+		providerBody  string
+		usageReported bool
+	}{
+		{
+			name:         "missing usage",
+			providerBody: `{"choices":[{"message":{"content":"{}"}}]}`,
+		},
+		{
+			name:          "reported zero usage",
+			providerBody:  `{"choices":[{"message":{"content":"{}"}}],"usage":{}}`,
+			usageReported: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, test.providerBody)
+			}))
+			defer server.Close()
+
+			client := &Client{
+				HTTPClient: server.Client(), Endpoint: server.URL, Auth: authNone,
+				Model: "fixture-model", MaxTokens: 64_000,
+			}
+			result, err := client.OrientMeasured(t.Context(), []byte(`{}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.UsageReported != test.usageReported ||
+				result.InputTokens != 0 || result.OutputTokens != 0 {
+				t.Fatalf("usage presence = %#v, want reported=%t", result, test.usageReported)
+			}
+		})
+	}
+}
+
 func TestOrientInvalidJSON(t *testing.T) {
+	attempts := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"choices":[{"message":{"content":"not json"}}]}`)
 	}))
@@ -447,6 +572,71 @@ func TestOrientInvalidJSON(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not valid JSON") {
 		t.Fatalf("error should mention invalid JSON, got: %v", err)
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1 for non-truncated invalid JSON", attempts)
+	}
+}
+
+func TestOrientFailsClosedOnValidJSONLengthWithoutRetry(t *testing.T) {
+	t.Parallel()
+
+	attempts := 0
+	var requestBody []byte
+	var request chatRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		var err error
+		requestBody, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if err := json.Unmarshal(requestBody, &request); err != nil {
+			t.Errorf("decode request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"choices":[{"finish_reason":"length","message":{"content":"{}"}}],
+			"usage":{"prompt_tokens":100,"completion_tokens":6000,
+				"completion_tokens_details":{"reasoning_tokens":5900}}
+		}`)
+	}))
+	defer srv.Close()
+
+	client := &Client{
+		HTTPClient: srv.Client(),
+		Model:      "deepseek-v4-flash",
+		MaxTokens:  6000,
+		Endpoint:   srv.URL,
+		Auth:       authNone,
+	}
+	result, err := client.OrientMeasured(context.Background(), []byte(`{}`))
+	var limitErr *ResourceLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("OrientMeasured() error = %v, want ResourceLimitError", err)
+	}
+	if attempts != 1 || request.MaxTokens != client.MaxTokens {
+		t.Fatalf("attempts/max_tokens = %d/%d, want 1/%d", attempts, request.MaxTokens, client.MaxTokens)
+	}
+	if limitErr.Stage != "orientation" || limitErr.Kind != ResourceLimitOutputTokens ||
+		limitErr.Limit != client.MaxTokens || limitErr.Observed != 6000 ||
+		limitErr.ConfiguredMaxTokens != client.MaxTokens ||
+		limitErr.InputTokens != 100 || limitErr.OutputTokens != 6000 ||
+		limitErr.ReasoningTokens != 5900 || limitErr.FinishReason != "length" ||
+		string(limitErr.ProviderContent()) != `{}` {
+		t.Fatalf("resource limit = %#v, content = %q", limitErr, limitErr.ProviderContent())
+	}
+	if result.Attempts != 1 || result.RequestBytes != len(requestBody) ||
+		result.InputTokens != 100 || result.OutputTokens != 6000 ||
+		result.ReasoningTokens != 5900 || result.FinishReason != "length" {
+		t.Fatalf("OrientMeasured() telemetry = %#v", result)
+	}
+	if string(result.Content) != `{}` {
+		t.Fatalf("OrientMeasured() content = %q", result.Content)
 	}
 }
 
@@ -476,13 +666,14 @@ func TestOrientEmptyContentIncludesSafeCompletionDiagnostics(t *testing.T) {
 		Auth:       authNone,
 	}
 	_, err := client.Orient(context.Background(), []byte(`{}`))
-	if err == nil {
-		t.Fatal("Orient() error = nil")
+	var limitErr *ResourceLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("Orient() error = %v, want ResourceLimitError", err)
 	}
 	for _, want := range []string{
-		"llm response content is empty",
+		"llm resource limit reached",
 		"finish_reason=length",
-		"completion_tokens=6000",
+		"output_tokens=6000",
 		"reasoning_tokens=6000",
 	} {
 		if !strings.Contains(err.Error(), want) {
@@ -496,8 +687,16 @@ func TestOrientEmptyContentIncludesSafeCompletionDiagnostics(t *testing.T) {
 
 func TestOrientRetryOn500(t *testing.T) {
 	attempts := 0
+	var bodies [][]byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempts++
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		bodies = append(bodies, append([]byte(nil), body...))
 		if attempts < 2 {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -522,9 +721,12 @@ func TestOrientRetryOn500(t *testing.T) {
 	if attempts != 2 {
 		t.Fatalf("attempts = %d, want 2", attempts)
 	}
+	if len(bodies) != 2 || !bytes.Equal(bodies[0], bodies[1]) {
+		t.Fatal("orientation transport retry changed the exact provider request")
+	}
 }
 
-func TestCheckJSONCompatibilityUsesOneSmallRequest(t *testing.T) {
+func TestCheckJSONCompatibilityUsesOneConfiguredCeilingRequest(t *testing.T) {
 	requests := 0
 	var maxTokens int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -550,8 +752,8 @@ func TestCheckJSONCompatibilityUsesOneSmallRequest(t *testing.T) {
 	if requests != 1 {
 		t.Fatalf("requests = %d, want exactly 1", requests)
 	}
-	if maxTokens != 64 {
-		t.Fatalf("max_tokens = %d, want 64", maxTokens)
+	if maxTokens != client.MaxTokens {
+		t.Fatalf("max_tokens = %d, want configured %d", maxTokens, client.MaxTokens)
 	}
 }
 
@@ -611,6 +813,87 @@ func TestOrientNon2xxIncludesBoundedSafeBody(t *testing.T) {
 			t.Fatal("Orient() error exposed credential-like provider content")
 		}
 	})
+}
+
+func TestOrientReportsTypedResponseBodyLimitWithoutRetry(t *testing.T) {
+	calls := 0
+	oversized := strings.Repeat("x", maxProviderResponseBytes+1)
+	httpClient := &http.Client{Transport: clientRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(oversized)),
+			Request:    request,
+		}, nil
+	})}
+	client := &Client{
+		HTTPClient: httpClient, Model: "fixture", MaxTokens: defaultMaxTokens,
+		Endpoint: "https://provider.example.test/chat", Auth: authNone,
+	}
+
+	result, err := client.OrientMeasured(t.Context(), []byte(`{}`))
+	var limitErr *ResourceLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("OrientMeasured() error = %v, want ResourceLimitError", err)
+	}
+	if calls != 1 || result.Attempts != 1 || result.ResponseBytes != maxProviderResponseBytes+1 {
+		t.Fatalf("calls/result = %d/%#v", calls, result)
+	}
+	if limitErr.Stage != "orientation" || limitErr.Kind != ResourceLimitResponseBytes ||
+		limitErr.Limit != maxProviderResponseBytes ||
+		limitErr.Observed != maxProviderResponseBytes+1 || !limitErr.ObservedKnown ||
+		!limitErr.ObservedAtLeast || limitErr.ConfiguredMaxTokens != client.MaxTokens {
+		t.Fatalf("resource limit = %#v", limitErr)
+	}
+	if len(limitErr.ProviderContent()) != 0 ||
+		!strings.Contains(err.Error(), "observed>=16777217") ||
+		strings.Contains(err.Error(), "observed=>=") ||
+		strings.Contains(err.Error(), "xxxxx") {
+		t.Fatalf("resource error exposed provider body: %v", err)
+	}
+}
+
+func TestOrientOversizedNon2xxIsTypedTerminalWithClosedMetadataOnly(t *testing.T) {
+	calls := 0
+	const providerProse = "temporarily unavailable; retry later"
+	prefix := `{"error":"` + providerProse + `"}`
+	oversized := prefix + strings.Repeat("x", maxProviderResponseBytes+1-len(prefix))
+	httpClient := &http.Client{Transport: clientRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(oversized)),
+			Request:    request,
+		}, nil
+	})}
+	client := &Client{
+		HTTPClient: httpClient, Model: "fixture", MaxTokens: defaultMaxTokens,
+		Endpoint: "https://provider.example.test/chat", Auth: authNone,
+	}
+
+	result, err := client.OrientMeasured(t.Context(), []byte(`{}`))
+	var limitErr *ResourceLimitError
+	if !errors.As(err, &limitErr) {
+		t.Fatalf("OrientMeasured() error = %v, want ResourceLimitError", err)
+	}
+	if calls != 1 || result.Attempts != 1 ||
+		limitErr.Kind != ResourceLimitResponseBytes ||
+		limitErr.HTTPStatus != http.StatusServiceUnavailable ||
+		limitErr.Limit != maxProviderResponseBytes ||
+		limitErr.Observed != maxProviderResponseBytes+1 ||
+		!limitErr.ObservedKnown || !limitErr.ObservedAtLeast ||
+		limitErr.ConfiguredMaxTokens != client.MaxTokens {
+		t.Fatalf("calls/result/limit = %d/%#v/%#v", calls, result, limitErr)
+	}
+	if !strings.Contains(err.Error(), "status=503") ||
+		!strings.Contains(err.Error(), "limit=response_bytes") ||
+		!strings.Contains(err.Error(), "observed>=16777217") ||
+		strings.Contains(err.Error(), "observed=>=") ||
+		strings.Contains(err.Error(), providerProse) || strings.Contains(err.Error(), "provider_response") {
+		t.Fatalf("open or incomplete resource metadata: %v", err)
+	}
 }
 
 func TestOrientRetryOn429(t *testing.T) {
@@ -702,7 +985,7 @@ func TestOrientPromptContainsJSONWord(t *testing.T) {
 }
 
 func TestOrientPromptContainsExampleShape(t *testing.T) {
-	if OrientationPromptVersionJSON != "orientation-json-v10" {
+	if OrientationPromptVersionJSON != "orientation-json-v13" {
 		t.Fatalf("OrientationPromptVersionJSON = %q", OrientationPromptVersionJSON)
 	}
 	c := &Client{
@@ -720,11 +1003,13 @@ func TestOrientPromptContainsExampleShape(t *testing.T) {
 	body := msgs[1].Content // user message
 
 	expected := []string{
+		"file_ref",
+		"evidence_refs",
 		"project_guess",
 		"candidate_flows",
 		"flow_type",
 		`"operational"`,
-		"cite source_signal evidence",
+		"source_signal",
 		"cap confidence at 0.3",
 		"strongest grounded evidence regardless of flow type",
 		"first_files_to_open",
@@ -733,11 +1018,11 @@ func TestOrientPromptContainsExampleShape(t *testing.T) {
 		"orientation hypothesis",
 		"important_domain_words",
 		"questions_for_human",
-		"never shorten cmd/server/main.go to main.go",
-		"each evidence item atomic",
-		"closed exact set",
-		"Directory, package, and import paths are not files",
-		"unverified_paths may contain a suspected repository-relative file or directory",
+		"Never shorten, extend, prefix, substitute, or repair a ref",
+		"Evidence is selected only by exact evidence_refs",
+		"embedded in the facts bundle are closed",
+		"Never use a file ref where an evidence ref is required",
+		"There is no unverified_paths response field",
 		"go.command_traces are locally extracted bounded syntax evidence",
 	}
 
@@ -745,6 +1030,34 @@ func TestOrientPromptContainsExampleShape(t *testing.T) {
 		if !strings.Contains(body, field) {
 			t.Fatalf("prompt must contain expected JSON field %s", field)
 		}
+	}
+}
+
+func TestOrientationThinkingPolicyIsEndpointSpecific(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name         string
+		endpoint     string
+		wantThinking string
+	}{
+		{name: "official DeepSeek", endpoint: "https://api.deepseek.com/chat/completions", wantThinking: "disabled"},
+		{name: "compatible endpoint", endpoint: "https://llm.example.test/chat/completions"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			client := &Client{Model: "fixture", MaxTokens: 6000, Endpoint: test.endpoint}
+			request := client.buildRequest([]byte(`{}`))
+			if test.wantThinking == "" {
+				if request.Thinking != nil {
+					t.Fatalf("thinking = %#v, want omitted", request.Thinking)
+				}
+				return
+			}
+			if request.Thinking == nil || request.Thinking.Type != test.wantThinking {
+				t.Fatalf("thinking = %#v, want %q", request.Thinking, test.wantThinking)
+			}
+		})
 	}
 }
 
@@ -787,7 +1100,7 @@ func clearLLMConfigEnv(t *testing.T) {
 		legacyEnvEndpoint,
 		legacyEnvModel,
 		legacyEnvAPIKey,
-		legacyEnvMaxTokens,
+		"DEEPSEEK_MAX_TOKENS",
 		legacyEnvTimeout,
 		legacyEnvAuth,
 	}
@@ -804,4 +1117,10 @@ func clearLLMConfigEnv(t *testing.T) {
 			_ = os.Unsetenv(name)
 		})
 	}
+}
+
+type clientRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn clientRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return fn(request)
 }

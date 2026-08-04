@@ -1,0 +1,94 @@
+{
+  "nodes": [
+    {
+      "id": "config-source",
+      "label": "Plugin Configuration",
+      "responsibility": "Reads enabled plugin names from beets config and filters disabled ones.",
+      "state": "supported",
+      "observation_ids": ["obs-01"]
+    },
+    {
+      "id": "plugin-loader",
+      "label": "Plugin Loader",
+      "responsibility": "Imports plugin modules and instantiates each plugin, storing instances globally.",
+      "state": "supported",
+      "observation_ids": ["obs-02", "obs-03"]
+    },
+    {
+      "id": "command-aggregator",
+      "label": "Command Aggregator",
+      "responsibility": "Collects Subcommand objects from each loaded plugin instance via plugin.commands().",
+      "state": "supported",
+      "observation_ids": ["obs-04", "obs-12"]
+    },
+    {
+      "id": "command-registrar",
+      "label": "Command Registrar",
+      "responsibility": "Adds collected subcommands to the CLI argument parser's subcommand list.",
+      "state": "supported",
+      "observation_ids": ["obs-05", "obs-06", "obs-07"]
+    },
+    {
+      "id": "cli-executor",
+      "label": "CLI Executor",
+      "responsibility": "Parses the chosen subcommand from user input and invokes its callback function.",
+      "state": "supported",
+      "observation_ids": ["obs-08", "obs-09"]
+    },
+    {
+      "id": "override-config",
+      "label": "Runtime Override",
+      "responsibility": "Allows --plugins and --disable-plugins CLI options to modify the plugin list at runtime.",
+      "state": "supported",
+      "observation_ids": ["obs-11"]
+    }
+  ],
+  "edges": [
+    {
+      "id": "config-to-loader",
+      "from": "config-source",
+      "to": "plugin-loader",
+      "verb": "provides plugin names",
+      "state": "supported",
+      "observation_ids": ["obs-01", "obs-03"]
+    },
+    {
+      "id": "loader-to-aggregator",
+      "from": "plugin-loader",
+      "to": "command-aggregator",
+      "verb": "provides subcommands",
+      "state": "supported",
+      "observation_ids": ["obs-04", "obs-12"]
+    },
+    {
+      "id": "aggregator-to-registrar",
+      "from": "command-aggregator",
+      "to": "command-registrar",
+      "verb": "delivers subcommands",
+      "state": "supported",
+      "observation_ids": ["obs-05", "obs-07"]
+    },
+    {
+      "id": "registrar-to-executor",
+      "from": "command-registrar",
+      "to": "cli-executor",
+      "verb": "subcommands available for parsing",
+      "state": "supported",
+      "observation_ids": ["obs-06", "obs-08"]
+    },
+    {
+      "id": "override-to-config",
+      "from": "override-config",
+      "to": "config-source",
+      "verb": "may override plugin list",
+      "state": "supported",
+      "observation_ids": ["obs-11"]
+    }
+  ],
+  "question_overlay": {
+    "summary": "A plugin named in configuration becomes an executable CLI command by: reading its name from config (optionally overridden at runtime), loading its module and instantiating it, collecting its Subcommand objects, registering them with the argument parser, and finally parsing user input to invoke the command's callback.",
+    "node_ids": ["config-source", "plugin-loader", "command-aggregator", "command-registrar", "cli-executor", "override-config"],
+    "edge_ids": ["config-to-loader", "loader-to-aggregator", "aggregator-to-registrar", "registrar-to-executor", "override-to-config"],
+    "unknowns": ["How plugin name resolves to a module file path (assumed beetsplug.<name>)", "Priority among multiple plugins providing the same command name"]
+  }
+}

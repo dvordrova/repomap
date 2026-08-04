@@ -15,9 +15,14 @@ import (
 )
 
 type savedProvider struct {
-	response []byte
-	err      error
-	calls    int
+	response              []byte
+	err                   error
+	calls                 int
+	inputTokens           int
+	outputTokens          int
+	promptCacheHitTokens  int
+	promptCacheMissTokens int
+	requestMaxTokens      int
 }
 
 func TestPlanTargetedRoundsHonorsCanceledContext(t *testing.T) {
@@ -31,12 +36,120 @@ func TestPlanTargetedRoundsHonorsCanceledContext(t *testing.T) {
 }
 
 func (p *savedProvider) BuildResearchRequest(prompt Prompt) ([]byte, error) {
+	if p.requestMaxTokens > 0 {
+		return json.Marshal(struct {
+			Prompt    Prompt `json:"prompt"`
+			MaxTokens int    `json:"max_tokens"`
+		}{Prompt: prompt, MaxTokens: p.requestMaxTokens})
+	}
 	return json.Marshal(prompt)
 }
 
 func (p *savedProvider) Research(context.Context, Prompt) (ProviderResult, error) {
 	p.calls++
-	return ProviderResult{Content: append([]byte(nil), p.response...), Attempts: 1}, p.err
+	return ProviderResult{
+		Content: append([]byte(nil), p.response...), Attempts: 1,
+		InputTokens: p.inputTokens, OutputTokens: p.outputTokens,
+		PromptCacheHitTokens:  p.promptCacheHitTokens,
+		PromptCacheMissTokens: p.promptCacheMissTokens,
+	}, p.err
+}
+
+func TestCacheKeyBindsExactRequestEndpointAndOutputLanguage(t *testing.T) {
+	t.Parallel()
+
+	input := FingerprintInput{
+		Repository: RepositoryContext{
+			Identity: "fixture", Revision: "abc", Scenario: "go-default",
+		},
+		Stage: "orientation", PromptVersion: "orientation-json-v1",
+		Profile: "test", Model: "fixture-model",
+		ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
+		RequestSHA256:          SHA256([]byte(`{"request":"one"}`)),
+		EvidenceBundleHash:     strings.Repeat("a", 64), PolicyVersion: "policy-v1",
+	}
+	defaultKey, err := CacheKey(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.OutputLanguage = CacheOutputLanguage("en")
+	englishKey, err := CacheKey(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaultKey != englishKey || input.OutputLanguage != "" {
+		t.Fatalf(
+			"default/English cache identity changed: %q / %q, language %q",
+			defaultKey,
+			englishKey,
+			input.OutputLanguage,
+		)
+	}
+
+	input.OutputLanguage = CacheOutputLanguage(" RU ")
+	russianKey, err := CacheKey(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.OutputLanguage != "ru" || russianKey == defaultKey {
+		t.Fatalf(
+			"Russian cache identity = %q, language %q; default = %q",
+			russianKey,
+			input.OutputLanguage,
+			defaultKey,
+		)
+	}
+	input.OutputLanguage = ""
+	input.RequestSHA256 = SHA256([]byte(`{"request":"two"}`))
+	requestKey, err := CacheKey(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.RequestSHA256 = SHA256([]byte(`{"request":"one"}`))
+	otherEndpoint, err := ProviderEndpointSHA256("https://other-provider.test/v1/chat/completions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.ProviderEndpointSHA256 = otherEndpoint
+	endpointKey, err := CacheKey(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requestKey == defaultKey || endpointKey == defaultKey || endpointKey == requestKey {
+		t.Fatalf("request/endpoint cache identities collided: default=%q request=%q endpoint=%q", defaultKey, requestKey, endpointKey)
+	}
+}
+
+func TestProviderEndpointSHA256NormalizesWithoutPersistingRawEndpoint(t *testing.T) {
+	t.Parallel()
+
+	first, err := ProviderEndpointSHA256(" HTTPS://EXAMPLE.COM:443/v1/chat/completions?b=2&a=1 ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := ProviderEndpointSHA256("https://example.com/v1/chat/completions?a=1&b=2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second || !IsSHA256(first) {
+		t.Fatalf("normalized endpoint digests = %q/%q", first, second)
+	}
+	if _, err := ProviderEndpointSHA256("https://secret@example.com/v1/chat/completions"); err == nil {
+		t.Fatal("endpoint user-info was accepted")
+	}
+	fingerprint := FingerprintInput{
+		Repository: RepositoryContext{Identity: "fixture", Revision: "abc", Scenario: "go-default"},
+		Stage:      "orientation", PromptVersion: "v1", Profile: "test", Model: "fixture",
+		ProviderEndpointSHA256: first, RequestSHA256: SHA256([]byte("request")),
+		EvidenceBundleHash: SHA256([]byte("bundle")), PolicyVersion: "policy-v1",
+	}
+	encoded, err := json.Marshal(fingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "example.com") || !strings.Contains(string(encoded), first) {
+		t.Fatalf("fingerprint persisted unsafe endpoint identity: %s", encoded)
+	}
 }
 
 func TestPlanTargetedRoundsSelectsOnlyFocusedExactEvidence(t *testing.T) {
@@ -100,14 +213,39 @@ func TestPlanTargetedRoundsSkipsWithoutNewExactEvidence(t *testing.T) {
 }
 
 func TestPlanTargetedRoundsSkipsRuntimeOnlyFrontier(t *testing.T) {
-	input := basicPlanningInput(t)
-	input.Questions[0].Question = "This requires runtime observation only: which production backend is chosen?"
-	result, err := PlanTargetedRounds(context.Background(), input)
-	if err != nil {
-		t.Fatal(err)
+	for name, question := range map[string]string{
+		"english": "This requires runtime observation only: which production backend is chosen?",
+		"russian": "Требуется наблюдение во время выполнения: какой production backend выбран?",
+	} {
+		t.Run(name, func(t *testing.T) {
+			input := basicPlanningInput(t)
+			input.Questions[0].Question = question
+			result, err := PlanTargetedRounds(context.Background(), input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Selected) != 0 || len(result.Skipped) != 1 ||
+				result.Skipped[0].Gate.Reason != "runtime_only_frontier" {
+				t.Fatalf("runtime-only plan = %#v", result)
+			}
+		})
 	}
-	if len(result.Selected) != 0 || len(result.Skipped) != 1 || result.Skipped[0].Gate.Reason != "runtime_only_frontier" {
-		t.Fatalf("runtime-only plan = %#v", result)
+}
+
+func TestQuestionImpactScoreRecognizesEnglishAndRussianEquivalents(t *testing.T) {
+	for name, question := range map[string]ProposedQuestion{
+		"english": {
+			Purpose: "backup config admin request runtime server repository security lifecycle user",
+		},
+		"russian": {
+			Purpose: "резервное копирование конфигурация администрирование запрос время выполнения сервер репозиторий безопасность жизненный цикл пользователь",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if score := questionImpactScore(question); score != 30 {
+				t.Fatalf("questionImpactScore() = %d, want 30", score)
+			}
+		})
 	}
 }
 
@@ -159,6 +297,75 @@ func TestReadSourceWindowWithoutFocusStartsAtCodeInsteadOfLineOne(t *testing.T) 
 	window, ok := readSourceWindow(reader, "focused.go", 0)
 	if !ok || window.StartLine == 1 || window.EndLine < 75 {
 		t.Fatalf("missing-focus source window = %#v, ok=%t", window, ok)
+	}
+}
+
+func TestPlanTargetedRoundsRetainsDistantWindowsInOneFile(t *testing.T) {
+	repo := t.TempDir()
+	var source strings.Builder
+	source.WriteString("package wal\n\n")
+	for line := 3; line <= 600; line++ {
+		switch line {
+		case 100:
+			source.WriteString("func Close() { syncFile() }\n")
+		case 500:
+			source.WriteString("func writeBatch() { syncFile() }\n")
+		default:
+			fmt.Fprintf(&source, "var line%d = %d\n", line, line)
+		}
+	}
+	writeResearchFile(t, repo, "wal.go", source.String())
+	input := PlanningInput{
+		RepoPath: repo,
+		Questions: []ProposedQuestion{{
+			ID: "durability", Purpose: "understand durability",
+			Question: "How does writeBatch synchronize writes?", CandidateIDs: []string{"wal"},
+		}},
+		Candidates: []FileCandidate{{
+			ID: "wal", Path: "wal.go", Score: 100,
+			FocusLocations: []evidence.Location{
+				{Path: "wal.go", Line: 100},
+				{Path: "wal.go", Line: 300},
+				{Path: "wal.go", Line: 500},
+			},
+		}},
+		InitialProviderPaths: []string{"wal.go"},
+		Universe:             LocalRepositoryUniverse{AuthorizedPaths: []string{"wal.go"}},
+		Policy:               DefaultPolicy(),
+	}
+	plan, err := PlanTargetedRounds(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Selected) != 1 {
+		t.Fatalf("selected rounds = %#v", plan)
+	}
+	var windows []SourceWindow
+	for _, item := range plan.Selected[0].Bundle.Evidence {
+		if item.Kind == EvidenceSource && item.Window != nil {
+			windows = append(windows, *item.Window)
+		}
+	}
+	if len(windows) != 2 {
+		t.Fatalf("source windows = %#v, want two bounded distant windows", windows)
+	}
+	foundClose, foundWriteBatch := false, false
+	for _, window := range windows {
+		for _, line := range window.Lines {
+			foundClose = foundClose || strings.Contains(line, "func Close")
+			foundWriteBatch = foundWriteBatch || strings.Contains(line, "func writeBatch")
+		}
+	}
+	if !foundClose || !foundWriteBatch {
+		t.Fatalf("distant focus coverage: Close=%t writeBatch=%t windows=%#v", foundClose, foundWriteBatch, windows)
+	}
+	prompt, err := BuildPrompt(plan.Selected[0].Bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(prompt.User, "Missing text cannot prove") ||
+		!strings.Contains(prompt.User, "unresolved frontier") {
+		t.Fatalf("targeted research prompt lacks bounded absence contract:\n%s", prompt.User)
 	}
 }
 
@@ -252,6 +459,68 @@ func TestPlanTargetedRoundsHardCapsTwoRounds(t *testing.T) {
 	}
 }
 
+func TestPlanTargetedRoundsDiversifiesSecondRound(t *testing.T) {
+	repo := t.TempDir()
+	writeResearchFile(t, repo, "beets/__main__.py", "from .ui import main\n\nmain([])\n")
+	writeResearchFile(t, repo, "beets/ui/commands/__init__.py", "def dispatch():\n    return True\n")
+	writeResearchFile(t, repo, "beets/ui/commands/import_/__init__.py", "def import_files():\n    return True\n")
+	writeResearchFile(t, repo, "beets/importer/__init__.py", "class ImportSession:\n    pass\n")
+	writeResearchFile(t, repo, "beets/plugins.py", "class BeetsPlugin:\n    pass\n")
+
+	questions := []ProposedQuestion{
+		{
+			ID: "cli-dispatch", Purpose: "Clarify how argparse or similar is wired to subcommand modules, enabling trace of any CLI flow.",
+			Question:     "How does beets/ui/commands/__init__.py register subcommands, and what is the dispatch mechanism from beets/__main__.py?",
+			CandidateIDs: []string{"main", "commands"},
+		},
+		{
+			ID: "plugin-api", Purpose: "Understand the plugin interface (base class, hooks) to know how plugins integrate.",
+			Question:     "What base class or protocol do plugins in beetsplug/ follow, and how are they loaded by beets/plugins.py?",
+			CandidateIDs: []string{"plugins"},
+		},
+		{
+			ID: "import-pipeline-start", Purpose: "Trace the first steps of import to map the flow from CLI command to importer session.",
+			Question:     "How does beets/ui/commands/import_/__init__.py invoke the importer subsystem (beets/importer), and what is the initial call?",
+			CandidateIDs: []string{"import-command", "importer"},
+		},
+	}
+	candidates := []FileCandidate{
+		{ID: "main", Path: "beets/__main__.py", Score: 180},
+		{ID: "commands", Path: "beets/ui/commands/__init__.py", Score: 50},
+		{ID: "plugins", Path: "beets/plugins.py", Score: 50},
+		{ID: "import-command", Path: "beets/ui/commands/import_/__init__.py", Score: 50},
+		{ID: "importer", Path: "beets/importer/__init__.py", Score: 50},
+	}
+	authorized := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		authorized = append(authorized, candidate.Path)
+	}
+
+	result, err := PlanTargetedRounds(context.Background(), PlanningInput{
+		RepoPath: repo, Questions: questions, Candidates: candidates,
+		InitialProviderPaths: authorized,
+		Universe:             LocalRepositoryUniverse{AuthorizedPaths: authorized},
+		Policy:               DefaultPolicy(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(plannedQuestionIDs(result.Selected), ","); got != "cli-dispatch,plugin-api" {
+		t.Fatalf("selected rounds = %v, want diverse CLI and plugin rounds", result.Selected)
+	}
+	if len(result.Skipped) != 1 || result.Skipped[0].Question.ID != "import-pipeline-start" ||
+		result.Skipped[0].Gate.Reason != "targeted_round_limit" {
+		t.Fatalf("skipped rounds = %#v, want overlapping import round at targeted limit", result.Skipped)
+	}
+	scores := make(map[string]int, len(result.Selected)+len(result.Skipped))
+	for _, plan := range append(append([]PlannedRound(nil), result.Selected...), result.Skipped...) {
+		scores[plan.Question.ID] = plan.Score
+	}
+	if scores["cli-dispatch"] != 8 || scores["import-pipeline-start"] != 8 || scores["plugin-api"] != 4 {
+		t.Fatalf("planner scores = %v, want cli=8 import=8 plugin=4", scores)
+	}
+}
+
 func TestExecuteRoundRejectsUnknownModelEvidenceID(t *testing.T) {
 	input := basicPlanningInput(t)
 	planResult, err := PlanTargetedRounds(context.Background(), input)
@@ -266,6 +535,7 @@ func TestExecuteRoundRejectsUnknownModelEvidenceID(t *testing.T) {
 		Plan: planResult.Selected[0], Policy: input.Policy, Repository: RepositoryContext{
 			Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default",
 		}, RunsDir: t.TempDir(), Profile: "test", Model: "saved", Provider: provider,
+		ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -273,6 +543,39 @@ func TestExecuteRoundRejectsUnknownModelEvidenceID(t *testing.T) {
 	if round.Status != RoundRejected || len(round.ValidatedFindings) != 0 ||
 		len(round.RejectedFindings) != 1 || round.RejectedFindings[0].Reason != "unknown_evidence_id" {
 		t.Fatalf("round validation = %#v", round)
+	}
+}
+
+func TestValidateFindingRejectsEnglishAndRussianCertaintyUpgrades(t *testing.T) {
+	known := map[string]EvidenceItem{"evidence-1": {ID: "evidence-1"}}
+	for name, interpretation := range map[string]string{
+		"english observed":   "The backend was observed at runtime.",
+		"english guaranteed": "The backend is guaranteed.",
+		"russian observed":   "Backend наблюдается во время выполнения.",
+		"russian guaranteed": "Backend гарантированно выполняется.",
+		"russian always":     "Backend всегда выполняется.",
+		"russian order":      "Это доказывает порядок выполнения.",
+	} {
+		t.Run(name, func(t *testing.T) {
+			reason := validateFinding(RawFinding{
+				ID:                   "finding-1",
+				Interpretation:       interpretation,
+				HypothesisAssessment: "supported",
+				EvidenceIDs:          []string{"evidence-1"},
+			}, known, map[string]struct{}{})
+			if reason != "unsupported_certainty_upgrade" {
+				t.Fatalf("validateFinding() reason = %q", reason)
+			}
+		})
+	}
+
+	if reason := validateFinding(RawFinding{
+		ID:                   "finding-safe",
+		Interpretation:       "Фрагмент показывает вызов backend.",
+		HypothesisAssessment: "supported",
+		EvidenceIDs:          []string{"evidence-1"},
+	}, known, map[string]struct{}{}); reason != "" {
+		t.Fatalf("safe Russian finding rejected with %q", reason)
 	}
 }
 
@@ -290,7 +593,10 @@ func TestExecuteRoundReplaysIdenticalCachedInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider := &savedProvider{response: response}
+	provider := &savedProvider{
+		response: response, inputTokens: 120, outputTokens: 17,
+		promptCacheHitTokens: 96, promptCacheMissTokens: 24,
+	}
 	runsDir := t.TempDir()
 	repository := RepositoryContext{Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default"}
 	execute := func() ResearchRound {
@@ -298,6 +604,7 @@ func TestExecuteRoundReplaysIdenticalCachedInput(t *testing.T) {
 			Plan: planResult.Selected[0], Policy: input.Policy,
 			Repository: repository,
 			RunsDir:    runsDir, Profile: "test", Model: "saved", Provider: provider,
+			ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
 		})
 		if executeErr != nil {
 			t.Fatal(executeErr)
@@ -312,6 +619,282 @@ func TestExecuteRoundReplaysIdenticalCachedInput(t *testing.T) {
 	if provider.calls != 1 {
 		t.Fatalf("provider calls = %d, want one call plus cache replay", provider.calls)
 	}
+	for _, round := range []ResearchRound{first, second} {
+		if round.InputTokens != 120 || round.OutputTokens != 17 ||
+			round.PromptCacheHitTokens != 96 || round.PromptCacheMissTokens != 24 {
+			t.Fatalf("round token usage = %#v", round)
+		}
+	}
+}
+
+func TestExecuteRoundCachesTargetedResearchPerOutputLanguage(t *testing.T) {
+	input := basicPlanningInput(t)
+	planResult, err := PlanTargetedRounds(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidenceID := planResult.Selected[0].Bundle.Evidence[0].ID
+	response, err := json.Marshal(researchResponse{Findings: []RawFinding{{
+		ID: "finding-1", Interpretation: "backup is coordinated here",
+		HypothesisAssessment: "supported", EvidenceIDs: []string{evidenceID},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &savedProvider{response: response}
+	runsDir := t.TempDir()
+	repository := RepositoryContext{
+		Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default",
+	}
+	execute := func(language string) ResearchRound {
+		round, executeErr := ExecuteRound(context.Background(), ExecuteInput{
+			Plan: planResult.Selected[0], Policy: input.Policy,
+			Repository: repository, OutputLanguage: language,
+			RunsDir: runsDir, Profile: "test", Model: "saved", Provider: provider,
+			ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
+		})
+		if executeErr != nil {
+			t.Fatal(executeErr)
+		}
+		return round
+	}
+
+	englishFirst := execute("")
+	russianFirst := execute("ru")
+	englishReplay := execute("en")
+	russianReplay := execute(" RU ")
+	if englishFirst.Status != RoundCompleted || russianFirst.Status != RoundCompleted {
+		t.Fatalf(
+			"first statuses = %q/%q, want completed",
+			englishFirst.Status,
+			russianFirst.Status,
+		)
+	}
+	if englishReplay.Status != RoundCached || russianReplay.Status != RoundCached {
+		t.Fatalf(
+			"replay statuses = %q/%q, want cached",
+			englishReplay.Status,
+			russianReplay.Status,
+		)
+	}
+	if englishFirst.CacheKey != englishReplay.CacheKey ||
+		russianFirst.CacheKey != russianReplay.CacheKey ||
+		englishFirst.CacheKey == russianFirst.CacheKey {
+		t.Fatalf(
+			"language cache keys = en %q/%q, ru %q/%q",
+			englishFirst.CacheKey,
+			englishReplay.CacheKey,
+			russianFirst.CacheKey,
+			russianReplay.CacheKey,
+		)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls = %d, want one per output language", provider.calls)
+	}
+}
+
+func TestExecuteRoundWithoutRunsDirDoesNotReuseOrPopulateCache(t *testing.T) {
+	input := basicPlanningInput(t)
+	planResult, err := PlanTargetedRounds(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidenceID := planResult.Selected[0].Bundle.Evidence[0].ID
+	response, err := json.Marshal(researchResponse{Findings: []RawFinding{{
+		ID: "finding-1", Interpretation: "backup is coordinated here",
+		HypothesisAssessment: "supported", EvidenceIDs: []string{evidenceID},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &savedProvider{response: response}
+	repository := RepositoryContext{Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default"}
+	for range 2 {
+		round, executeErr := ExecuteRound(context.Background(), ExecuteInput{
+			Plan: planResult.Selected[0], Policy: input.Policy, Repository: repository,
+			Profile: "test", Model: "saved", Provider: provider,
+			ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
+		})
+		if executeErr != nil {
+			t.Fatal(executeErr)
+		}
+		if round.Cached || round.Status != RoundCompleted {
+			t.Fatalf("uncached round = %#v", round)
+		}
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls = %d, want one call per round", provider.calls)
+	}
+}
+
+func TestExecuteRoundRefetchesInvalidCachedInput(t *testing.T) {
+	input := basicPlanningInput(t)
+	planResult, err := PlanTargetedRounds(context.Background(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidenceID := planResult.Selected[0].Bundle.Evidence[0].ID
+	response, err := json.Marshal(researchResponse{Findings: []RawFinding{{
+		ID: "finding-1", Interpretation: "backup is coordinated here",
+		HypothesisAssessment: "supported", EvidenceIDs: []string{evidenceID},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &savedProvider{response: response}
+	runsDir := t.TempDir()
+	execute := func() ResearchRound {
+		round, executeErr := ExecuteRound(context.Background(), ExecuteInput{
+			Plan: planResult.Selected[0], Policy: input.Policy,
+			Repository: RepositoryContext{Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default"},
+			RunsDir:    runsDir, Profile: "test", Model: "saved", Provider: provider,
+			ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
+		})
+		if executeErr != nil {
+			t.Fatal(executeErr)
+		}
+		return round
+	}
+	if round := execute(); round.Status != RoundCompleted {
+		t.Fatalf("first round = %#v", round)
+	}
+	cacheFiles, err := filepath.Glob(filepath.Join(runsDir, cacheDirectory, "*.json"))
+	if err != nil || len(cacheFiles) != 1 {
+		t.Fatalf("cache files = %v, err = %v", cacheFiles, err)
+	}
+	if err := os.WriteFile(cacheFiles[0], []byte(`{"version":0}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if round := execute(); round.Status != RoundCompleted || round.Cached {
+		t.Fatalf("refetched round = %#v", round)
+	}
+	if provider.calls != 2 {
+		t.Fatalf("provider calls = %d, want invalid cache to trigger a refetch", provider.calls)
+	}
+}
+
+func TestStageResponseCachePreservesPromptCacheTokens(t *testing.T) {
+	t.Parallel()
+
+	runsDir := t.TempDir()
+	request := []byte(`{"model":"fixture"}`)
+	bundleHash := SHA256([]byte("bounded evidence"))
+	cacheInput := StageCacheInput{
+		RunsDir: runsDir,
+		Fingerprint: FingerprintInput{
+			Repository: RepositoryContext{Identity: "fixture", Revision: "abc", Scenario: "go-default"},
+			Stage:      "guided_tour_leaf", PromptVersion: "prompt-v1", Profile: "test",
+			Model: "deepseek-v4-flash", EvidenceBundleHash: bundleHash, PolicyVersion: PolicyVersion,
+			ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
+			RequestSHA256:          SHA256(request),
+		},
+		Request: request, EvidenceBundleHash: bundleHash,
+	}
+	_, err := SaveStageResponse(cacheInput, StageResponse{
+		Content:     []byte(`{"status":"ok"}`),
+		InputTokens: 120, OutputTokens: 17,
+		PromptCacheHitTokens: 96, PromptCacheMissTokens: 24,
+	})
+	if err != nil {
+		t.Fatalf("SaveStageResponse() error = %v", err)
+	}
+	response, found, err := LoadStageResponse(cacheInput)
+	if err != nil {
+		t.Fatalf("LoadStageResponse() error = %v", err)
+	}
+	if !found || !response.Cached {
+		t.Fatalf("LoadStageResponse() found/cached = %t/%t", found, response.Cached)
+	}
+	if response.InputTokens != 120 || response.OutputTokens != 17 ||
+		response.PromptCacheHitTokens != 96 || response.PromptCacheMissTokens != 24 {
+		t.Fatalf("cached token usage = %#v", response)
+	}
+}
+
+func TestInvalidateStageResponseRemovesOnlyExactRecord(t *testing.T) {
+	t.Parallel()
+
+	runsDir := t.TempDir()
+	bundleHash := SHA256([]byte("bounded evidence"))
+	newInput := func(stage string) StageCacheInput {
+		request := []byte(`{"stage":"` + stage + `"}`)
+		return StageCacheInput{
+			RunsDir: runsDir,
+			Fingerprint: FingerprintInput{
+				Repository: RepositoryContext{Identity: "fixture", Revision: "abc", Scenario: "go-default"},
+				Stage:      stage, PromptVersion: "prompt-v1", Profile: "test",
+				Model: "fixture-model", EvidenceBundleHash: bundleHash, PolicyVersion: PolicyVersion,
+				ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
+				RequestSHA256:          SHA256(request),
+			},
+			Request: request, EvidenceBundleHash: bundleHash,
+		}
+	}
+	rejected := newInput("rejected")
+	retained := newInput("retained")
+	for _, input := range []StageCacheInput{rejected, retained} {
+		if _, err := SaveStageResponse(input, StageResponse{Content: []byte(`{"status":"ok"}`)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := InvalidateStageResponse(rejected); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := LoadStageResponse(rejected); err != nil || found {
+		t.Fatalf("rejected cache after invalidation = found %t, err %v", found, err)
+	}
+	if _, found, err := LoadStageResponse(retained); err != nil || !found {
+		t.Fatalf("unrelated cache after invalidation = found %t, err %v", found, err)
+	}
+}
+
+func TestStageResponseCacheDefaultsOmittedPromptCacheTokensToZero(t *testing.T) {
+	t.Parallel()
+
+	runsDir := t.TempDir()
+	request := []byte(`{"model":"fixture"}`)
+	responseContent := []byte(`{"status":"ok"}`)
+	bundleHash := SHA256([]byte("bounded evidence"))
+	fingerprint := FingerprintInput{
+		Repository: RepositoryContext{Identity: "fixture", Revision: "abc", Scenario: "go-default"},
+		Stage:      "guided_tour_leaf", PromptVersion: "prompt-v1", Profile: "test",
+		Model: "deepseek-v4-flash", EvidenceBundleHash: bundleHash, PolicyVersion: PolicyVersion,
+		ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
+		RequestSHA256:          SHA256(request),
+	}
+	cacheKey, err := CacheKey(fingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveCache(runsDir, cacheRecord{
+		Version: cacheRecordVersion, CacheKey: cacheKey,
+		RequestSHA256: requestHash(request), BundleSHA256: bundleHash,
+		ResponseSHA256: requestHash(responseContent), Response: responseContent,
+		RequestBytes: len(request), ResponseBytes: len(responseContent),
+		InputTokens: 41, OutputTokens: 7,
+	}); err != nil {
+		t.Fatalf("save cache record with omitted prompt-cache counters: %v", err)
+	}
+
+	response, found, err := LoadStageResponse(StageCacheInput{
+		RunsDir: runsDir, Fingerprint: fingerprint, Request: request, EvidenceBundleHash: bundleHash,
+	})
+	if err != nil {
+		t.Fatalf("LoadStageResponse() error = %v", err)
+	}
+	if !found || response.PromptCacheHitTokens != 0 || response.PromptCacheMissTokens != 0 {
+		t.Fatalf("omitted prompt-cache counters = found %t, response %#v", found, response)
+	}
+}
+
+func modelResearchTestEndpointSHA256(t *testing.T) string {
+	t.Helper()
+	digest, err := ProviderEndpointSHA256("https://model-research.test/v1/chat/completions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return digest
 }
 
 func TestFailedRoundPreservesGroundedLocalEvidence(t *testing.T) {
@@ -325,6 +908,7 @@ func TestFailedRoundPreservesGroundedLocalEvidence(t *testing.T) {
 		Plan: planResult.Selected[0], Policy: input.Policy,
 		Repository: RepositoryContext{Identity: repoIdentity(t), Revision: "abc", Scenario: "go-default"},
 		Model:      "saved", Provider: provider,
+		ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
 	})
 	if callErr == nil || round.Status != RoundFailed {
 		t.Fatalf("failed round = %#v, err=%v", round, callErr)
@@ -372,6 +956,14 @@ func writeResearchFile(t *testing.T, repo, path, content string) {
 	if err := os.WriteFile(absolute, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func plannedQuestionIDs(plans []PlannedRound) []string {
+	ids := make([]string, 0, len(plans))
+	for _, plan := range plans {
+		ids = append(ids, plan.Question.ID)
+	}
+	return ids
 }
 
 func repoIdentity(t *testing.T) string {

@@ -1,13 +1,476 @@
 package debugdump
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
+
+func TestSemanticExchangeRecordsExactSafeBytesAndUnsafeMarker(t *testing.T) {
+	t.Parallel()
+
+	w, err := NewWriter(t.TempDir(), "semantic", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	safeRequest := []byte(`{"model":"fixture","messages":[]}`)
+	safeResponse := []byte(`{"answer":"bounded"}`)
+	w.RecordSemanticExchange(SemanticExchange{
+		Stage: SemanticStageOrientation, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: SemanticRequestPrepared,
+		State:             SemanticStateAccepted, ValidationCode: SemanticValidationAccepted,
+		SemanticCalls: 1, TransportAttempts: 2,
+		Request: safeRequest, Response: safeResponse,
+	})
+	unsafe := []byte(`{"answer":"sk-abcdefghijklmnop"}`)
+	w.RecordSemanticExchange(SemanticExchange{
+		Stage: SemanticStageTargetedResearch, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: SemanticRequestPrepared,
+		State:             SemanticStateRejected, ValidationCode: SemanticValidationSecret,
+		SemanticCalls: 1, TransportAttempts: 1,
+		Request: safeRequest, Response: unsafe,
+	})
+
+	records := readSemanticExchangeRecords(t, w.RunDir())
+	if len(records) != 2 {
+		t.Fatalf("semantic exchange records = %d, want 2", len(records))
+	}
+	byStage := make(map[string]SemanticExchangeRecord, len(records))
+	for _, record := range records {
+		byStage[record.Stage] = record
+	}
+	safe := byStage[SemanticStageOrientation]
+	if safe.RequestProvenance != SemanticRequestPrepared || safe.State != SemanticStateAccepted ||
+		safe.SemanticCalls != 1 || safe.TransportAttempts != 2 {
+		t.Fatalf("safe semantic metadata = %#v", safe)
+	}
+	assertSemanticPayloadIdentity(t, w.RunDir(), safe.Request, safeRequest)
+	assertSemanticPayloadIdentity(t, w.RunDir(), safe.Response, safeResponse)
+
+	rejected := byStage[SemanticStageTargetedResearch]
+	if rejected.Response.Storage != "unsafe_marker" ||
+		rejected.Response.UnsafeKind != "secret_key" ||
+		rejected.Response.OriginalSHA256 != sha256Text(unsafe) ||
+		rejected.Response.OriginalBytes != len(unsafe) {
+		t.Fatalf("unsafe semantic response = %#v", rejected.Response)
+	}
+	marker := readSemanticPayload(t, w.RunDir(), rejected.Response)
+	if bytes.Contains(marker, unsafe) || bytes.Contains(marker, []byte("abcdefghijklmnop")) {
+		t.Fatalf("unsafe marker leaked provider content: %s", marker)
+	}
+}
+
+func TestSemanticExchangeRedactsSensitiveFieldsAndBoundsOversizePayload(t *testing.T) {
+	t.Parallel()
+
+	w, err := NewWriter(t.TempDir(), "semantic-redaction", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	request := []byte(`{"api_key":"sk-abcdefghijklmnop","normal":"kept"}`)
+	oversize := bytes.Repeat([]byte("x"), maxSemanticExchangePayloadSize+1)
+	w.RecordSemanticExchange(SemanticExchange{
+		Stage: SemanticStageOrientation, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: SemanticRequestPrepared,
+		State:             SemanticStateRejected, ValidationCode: SemanticValidationResponse,
+		SemanticCalls: 1, TransportAttempts: 1,
+		Request: request, Response: oversize,
+	})
+	record := readSemanticExchangeRecords(t, w.RunDir())[0]
+	requestSaved := readSemanticPayload(t, w.RunDir(), record.Request)
+	if bytes.Contains(requestSaved, []byte("abcdefghijklmnop")) ||
+		!bytes.Contains(requestSaved, []byte(`"normal":"kept"`)) ||
+		!bytes.Contains(requestSaved, []byte("[redacted]")) {
+		t.Fatalf("request redaction = %s", requestSaved)
+	}
+	if record.Request.OriginalSHA256 != sha256Text(request) || record.Request.OriginalBytes != len(request) {
+		t.Fatalf("request original identity = %#v", record.Request)
+	}
+	if record.Response.Storage != "raw_unavailable" ||
+		record.Response.UnavailableCode != SemanticUnavailableSize ||
+		record.Response.OriginalSHA256 != sha256Text(oversize) ||
+		record.Response.OriginalBytes != len(oversize) {
+		t.Fatalf("oversize response marker = %#v", record.Response)
+	}
+}
+
+func TestSemanticExchangePublishesMetadataLast(t *testing.T) {
+	t.Parallel()
+
+	w, err := NewWriter(t.TempDir(), "semantic-partial", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	exchange := SemanticExchange{
+		Stage: SemanticStageOrientation, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: SemanticRequestPrepared,
+		State:             SemanticStateAccepted, ValidationCode: SemanticValidationAccepted,
+		SemanticCalls: 1, TransportAttempts: 1,
+		Request: []byte(`{"request":true}`), Response: []byte(`{"response":true}`),
+	}
+	if err := w.writeSemanticExchange(exchange, func() error {
+		return errors.New("injected after payloads")
+	}); err == nil {
+		t.Fatal("injected partial write succeeded")
+	}
+	directory := filepath.Join(w.RunDir(), SemanticExchangesDir, semanticExchangeKey(exchange))
+	if _, err := os.Stat(directory); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("partial exchange directory survived cleanup: %v", err)
+	}
+	if records := readSemanticExchangeRecords(t, w.RunDir()); len(records) != 0 {
+		t.Fatalf("partial exchange was treated as committed: %#v", records)
+	}
+	if err := w.writeSemanticExchange(exchange, nil); err != nil {
+		t.Fatalf("identical semantic exchange was not recoverable: %v", err)
+	}
+	if records := readSemanticExchangeRecords(t, w.RunDir()); len(records) != 1 {
+		t.Fatalf("recovered semantic records = %d, want exactly 1", len(records))
+	}
+}
+
+func TestSemanticExchangeWriteWarningIsBoundedAndDeduplicated(t *testing.T) {
+	t.Parallel()
+
+	w, err := NewWriter(t.TempDir(), "semantic-warning", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	var warnings bytes.Buffer
+	w.SetWarningWriter(&warnings)
+	exchange := SemanticExchange{
+		Stage: SemanticStageTargetedResearch, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: SemanticRequestPrepared,
+		State:             SemanticStateAccepted, ValidationCode: SemanticValidationAccepted,
+		SemanticCalls: 1, TransportAttempts: 1,
+		Request: []byte(`{"request":true}`), Response: []byte(`{"response":true}`),
+	}
+	w.RecordSemanticExchange(exchange)
+	w.RecordSemanticExchange(exchange)
+	w.RecordSemanticExchange(exchange)
+	got := warnings.String()
+	if strings.Count(got, "warning:") != 1 ||
+		!strings.Contains(got, "stage=targeted_research") ||
+		!strings.Contains(got, "code="+SemanticExchangeWarningCode) {
+		t.Fatalf("semantic warning = %q", got)
+	}
+	for _, forbidden := range []string{w.RunDir(), "create semantic exchange", "file exists", "response"} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("semantic warning leaked unbounded detail %q: %q", forbidden, got)
+		}
+	}
+}
+
+func TestSemanticExchangeSupportsConcurrentDistinctOwners(t *testing.T) {
+	t.Parallel()
+
+	w, err := NewWriter(t.TempDir(), "semantic-concurrent", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	var wait sync.WaitGroup
+	for ordinal := 1; ordinal <= 12; ordinal++ {
+		ordinal := ordinal
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			w.RecordSemanticExchange(SemanticExchange{
+				Stage:           SemanticStageStudyReview,
+				InstanceOrdinal: ordinal, SemanticAttemptOrdinal: 1,
+				RequestProvenance: SemanticRequestPrepared,
+				State:             SemanticStateAccepted, ValidationCode: SemanticValidationAccepted,
+				SemanticCalls: 1, TransportAttempts: 1,
+				Request:  []byte(fmt.Sprintf(`{"request":%d}`, ordinal)),
+				Response: []byte(fmt.Sprintf(`{"response":%d}`, ordinal)),
+			})
+		}()
+	}
+	wait.Wait()
+	if records := readSemanticExchangeRecords(t, w.RunDir()); len(records) != 12 {
+		t.Fatalf("concurrent semantic records = %d, want 12", len(records))
+	}
+}
+
+func TestOpenWriterRejectsRunSymlink(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	outside := t.TempDir()
+	link := filepath.Join(base, "run")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := OpenWriter(link, true); err == nil {
+		t.Fatal("OpenWriter accepted a run-directory symlink")
+	}
+	entries, err := os.ReadDir(outside)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("outside directory was touched: entries=%v err=%v", entries, err)
+	}
+}
+
+func TestOpenWriterRecordsInsideExistingConfinedRun(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	created, err := NewWriter(base, "existing-run", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDir := created.RunDir()
+	if err := created.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenWriter(runDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened.RecordSemanticExchange(SemanticExchange{
+		Stage: SemanticStageOrientation, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: SemanticRequestPrepared,
+		State:             SemanticStateAccepted, ValidationCode: SemanticValidationAccepted,
+		SemanticCalls: 1, TransportAttempts: 1,
+		Request: []byte(`{"request":true}`), Response: []byte(`{"response":true}`),
+	})
+	if err := reopened.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if records := readSemanticExchangeRecords(t, runDir); len(records) != 1 {
+		t.Fatalf("reopened semantic records = %d, want 1", len(records))
+	}
+}
+
+func TestSemanticExchangeRejectsSymlinkEscapeWithoutChangingCaller(t *testing.T) {
+	t.Parallel()
+
+	w, err := NewWriter(t.TempDir(), "semantic-symlink", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(w.RunDir(), SemanticExchangesDir)); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	var warnings bytes.Buffer
+	w.SetWarningWriter(&warnings)
+	// RecordSemanticExchange has no failure return by design; a confined write
+	// failure cannot be fed back into the caller's semantic result.
+	w.RecordSemanticExchange(SemanticExchange{
+		Stage: SemanticStageOrientation, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: SemanticRequestPrepared,
+		State:             SemanticStateAccepted, ValidationCode: SemanticValidationAccepted,
+		SemanticCalls: 1, TransportAttempts: 1,
+		Request: []byte(`{"request":true}`), Response: []byte(`{"response":true}`),
+	})
+	entries, err := os.ReadDir(outside)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("semantic exchange escaped run root: entries=%v err=%v", entries, err)
+	}
+	if got := warnings.String(); got != "warning: semantic exchange journal unavailable: stage=orientation code=artifact_write_failed\n" {
+		t.Fatalf("bounded symlink warning = %q", got)
+	}
+}
+
+func TestSemanticExchangeRejectsOpenMetadataAndAvailability(t *testing.T) {
+	t.Parallel()
+
+	base := SemanticExchange{
+		Stage: SemanticStageOrientation, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: SemanticRequestPrepared,
+		State:             SemanticStateAccepted, ValidationCode: SemanticValidationAccepted,
+		SemanticCalls: 1, TransportAttempts: 1,
+		Request: []byte(`{"request":true}`), Response: []byte(`{"response":true}`),
+	}
+	for name, mutate := range map[string]func(*SemanticExchange){
+		"stage":      func(value *SemanticExchange) { value.Stage = "repository/path" },
+		"state":      func(value *SemanticExchange) { value.State = "some_error_text" },
+		"validation": func(value *SemanticExchange) { value.ValidationCode = "decoder said secret prose" },
+		"ordinal":    func(value *SemanticExchange) { value.InstanceOrdinal = 0 },
+		"availability": func(value *SemanticExchange) {
+			value.ResponseUnavailable = &SemanticUnavailable{Code: SemanticUnavailableNoContent}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := base
+			mutate(&value)
+			if err := validateSemanticExchange(value); err == nil {
+				t.Fatalf("invalid semantic exchange accepted: %#v", value)
+			}
+		})
+	}
+}
+
+func readSemanticExchangeRecords(t *testing.T, runDir string) []SemanticExchangeRecord {
+	t.Helper()
+	directories, err := os.ReadDir(filepath.Join(runDir, SemanticExchangesDir))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := make([]SemanticExchangeRecord, 0, len(directories))
+	for _, directory := range directories {
+		if !directory.IsDir() {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(
+			runDir,
+			SemanticExchangesDir,
+			directory.Name(),
+			SemanticExchangeMetaFile,
+		))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		var record SemanticExchangeRecord
+		if err := json.Unmarshal(raw, &record); err != nil {
+			t.Fatal(err)
+		}
+		records = append(records, record)
+	}
+	return records
+}
+
+func readSemanticPayload(t *testing.T, runDir string, record SemanticPayloadRecord) []byte {
+	t.Helper()
+	directories, err := os.ReadDir(filepath.Join(runDir, SemanticExchangesDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, directory := range directories {
+		metadata, err := os.ReadFile(filepath.Join(
+			runDir, SemanticExchangesDir, directory.Name(), SemanticExchangeMetaFile,
+		))
+		if err != nil {
+			continue
+		}
+		if !bytes.Contains(metadata, []byte(record.SavedSHA256)) {
+			continue
+		}
+		payload, err := os.ReadFile(filepath.Join(
+			runDir, SemanticExchangesDir, directory.Name(), record.File,
+		))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return payload
+	}
+	t.Fatalf("semantic payload %q was not found", record.File)
+	return nil
+}
+
+func assertSemanticPayloadIdentity(
+	t *testing.T,
+	runDir string,
+	record SemanticPayloadRecord,
+	want []byte,
+) {
+	t.Helper()
+	got := readSemanticPayload(t, runDir, record)
+	if !bytes.Equal(got, want) || record.Storage != "raw_content" ||
+		record.OriginalSHA256 != sha256Text(want) || record.OriginalBytes != len(want) ||
+		record.SavedSHA256 != sha256Text(got) || record.SavedBytes != len(got) {
+		t.Fatalf("semantic payload identity = %#v, bytes %q, want %q", record, got, want)
+	}
+}
+
+func sha256Text(data []byte) string {
+	digest := sha256.Sum256(data)
+	return fmt.Sprintf("%x", digest)
+}
+
+func TestWriteLLMBundleWithSidecarBindsExactPreparedBytes(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name          string
+		redacted      bool
+		input         []byte
+		wantDifferent bool
+	}{
+		{
+			name:          "redaction changes persisted bundle",
+			redacted:      true,
+			input:         []byte(`{"readme":"API_KEY=actual-secret-value"}` + "\n"),
+			wantDifferent: true,
+		},
+		{
+			name:     "non-redacted bundle stays byte exact",
+			input:    []byte(`{"repo_name":"exact"}` + "\n"),
+			redacted: false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			writer, err := NewWriter(t.TempDir(), "bundle-sidecar", test.redacted)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer writer.Close()
+			var callbackBytes []byte
+			err = writer.WriteLLMBundleWithSidecar(
+				test.input,
+				"bundle_identity.json",
+				func(saved []byte) ([]byte, error) {
+					callbackBytes = append([]byte(nil), saved...)
+					digest := sha256.Sum256(saved)
+					return json.Marshal(struct {
+						SHA256 string `json:"sha256"`
+						Bytes  int    `json:"bytes"`
+					}{SHA256: fmt.Sprintf("%x", digest), Bytes: len(saved)})
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			saved, err := os.ReadFile(filepath.Join(writer.RunDir(), "llm_bundle.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(callbackBytes, saved) {
+				t.Fatal("sidecar callback did not observe the exact persisted bundle bytes")
+			}
+			if test.wantDifferent == bytes.Equal(saved, test.input) {
+				t.Fatalf("persisted bundle change = %v, want %v", !bytes.Equal(saved, test.input), test.wantDifferent)
+			}
+			if test.redacted && bytes.Contains(saved, []byte("actual-secret-value")) {
+				t.Fatalf("persisted bundle leaked the redaction-changing value: %s", saved)
+			}
+			var sidecar struct {
+				SHA256 string `json:"sha256"`
+				Bytes  int    `json:"bytes"`
+			}
+			sidecarJSON, err := os.ReadFile(filepath.Join(writer.RunDir(), "bundle_identity.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(sidecarJSON, &sidecar); err != nil {
+				t.Fatal(err)
+			}
+			digest := sha256.Sum256(saved)
+			if sidecar.SHA256 != fmt.Sprintf("%x", digest) || sidecar.Bytes != len(saved) {
+				t.Fatalf("sidecar identity = %#v, want exact saved bundle hash/length", sidecar)
+			}
+		})
+	}
+}
 
 func TestNewWriterCreatesDir(t *testing.T) {
 	dir := t.TempDir()
@@ -34,6 +497,41 @@ func TestNewWriterCreatesDir(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(runDir, "metadata.json")); os.IsNotExist(err) {
 		t.Fatal("metadata.json was not created")
+	}
+}
+
+func TestNewWriterRejectsExistingRunDirectoryWithoutReusingIt(t *testing.T) {
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "test-run")
+	if err := os.Mkdir(existing, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(existing, "sentinel")
+	if err := os.WriteFile(sentinel, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := NewWriter(dir, "test-run", true); err == nil {
+		t.Fatal("NewWriter accepted an existing run directory")
+	}
+	got, err := os.ReadFile(sentinel)
+	if err != nil || string(got) != "keep" {
+		t.Fatalf("existing run was changed: content=%q err=%v", got, err)
+	}
+}
+
+func TestNewWriterRejectsSymlinkRunDirectory(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(dir, "test-run")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewWriter(dir, "test-run", true); err == nil {
+		t.Fatal("NewWriter accepted a symlink run directory")
+	}
+	entries, err := os.ReadDir(outside)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("outside directory was touched: entries=%v err=%v", entries, err)
 	}
 }
 
@@ -152,6 +650,78 @@ func TestWriteFileUsesTempThenRename(t *testing.T) {
 	}
 }
 
+func TestWriteValidatedFileValidatesExactPostRedactionBytes(t *testing.T) {
+	dir := t.TempDir()
+	w, err := NewWriter(dir, "validated", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	input := []byte(`{"api_key":"company-secret-token-value","value":"safe"}`)
+	var validated []byte
+	if err := w.WriteValidatedFile("artifact.json", input, func(prepared []byte) error {
+		validated = append([]byte(nil), prepared...)
+		if bytes.Contains(prepared, []byte("company-secret-token-value")) ||
+			!bytes.Contains(prepared, []byte("[redacted]")) {
+			return fmt.Errorf("prepared bytes were not redacted")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := os.ReadFile(filepath.Join(dir, "validated", "artifact.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(saved, validated) {
+		t.Fatalf("saved bytes differ from validated bytes: %q / %q", saved, validated)
+	}
+}
+
+func TestWriteValidatedFileDoesNotPublishRejectedPreparedBytes(t *testing.T) {
+	dir := t.TempDir()
+	w, err := NewWriter(dir, "validated-reject", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	err = w.WriteValidatedFile(
+		"artifact.json",
+		[]byte("Authorization: Bearer company-secret-token-value"),
+		func(prepared []byte) error {
+			if !bytes.Contains(prepared, []byte("[redacted:")) {
+				t.Fatalf("validator did not observe the redacted marker: %q", prepared)
+			}
+			return fmt.Errorf("canonical artifact rejected")
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "canonical artifact rejected") {
+		t.Fatalf("validation error = %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "validated-reject", "artifact.json")); !os.IsNotExist(statErr) {
+		t.Fatalf("rejected artifact was published: %v", statErr)
+	}
+}
+
+func TestWriteFileAtomicallyReplacesPublishedArtifact(t *testing.T) {
+	dir := t.TempDir()
+	w, err := NewWriter(dir, "run", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	if err := w.WriteFile("test.json", []byte("first")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.WriteFile("test.json", []byte("second")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "run", "test.json"))
+	if err != nil || string(got) != "second" {
+		t.Fatalf("published artifact changed: content=%q err=%v", got, err)
+	}
+}
+
 func TestWriteDirErrorRedactsPlainTextCredential(t *testing.T) {
 	dir := t.TempDir()
 	w, err := NewWriter(dir, "run", true)
@@ -171,6 +741,7 @@ func TestWriteDirErrorRedactsPlainTextCredential(t *testing.T) {
 
 func TestGenerateRunID(t *testing.T) {
 	id := GenerateRunID("etcd")
+	second := GenerateRunID("etcd")
 	if !strings.Contains(id, "etcd") {
 		t.Fatalf("run ID should contain repo name: %q", id)
 	}
@@ -179,6 +750,9 @@ func TestGenerateRunID(t *testing.T) {
 	}
 	if strings.Contains(id, " ") {
 		t.Fatalf("run ID contains spaces: %q", id)
+	}
+	if id == second {
+		t.Fatalf("independent run IDs collided: %q", id)
 	}
 }
 

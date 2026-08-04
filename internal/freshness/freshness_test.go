@@ -2,6 +2,7 @@ package freshness
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -98,6 +99,33 @@ func TestCaptureRepositoryHashesIgnoredBuildInputsButNotIgnoredSecrets(t *testin
 	writeFile(t, filepath.Join(repo, "generated.go"), "package fixture\n\nconst generated = 2\n")
 	third := capture(t, repo)
 	assertReason(t, CompareRepository(second, third), ReasonRepositoryDirty, "generated.go")
+}
+
+func TestCaptureRepositoryIgnoresUntrackedNestedRepository(t *testing.T) {
+	t.Parallel()
+
+	repo := newRepository(t)
+	nested := filepath.Join(repo, "scratch", "tool")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitCommand(t, nested, "init", "--quiet")
+	writeFile(t, filepath.Join(nested, "main.go"), "package nested\n")
+	writeFile(t, filepath.Join(nested, ".env"), "SECRET=must-not-be-read\n")
+	gitCommand(t, nested, "add", "main.go")
+	gitCommand(t, nested, "-c", "user.name=repomap test", "-c", "user.email=repomap@example.invalid", "commit", "--quiet", "-m", "nested")
+
+	first := capture(t, repo)
+	if len(first.Dirty) != 0 || len(first.Submodules) != 0 {
+		t.Fatalf("nested untracked repository affected parent state: %#v", first)
+	}
+
+	writeFile(t, filepath.Join(nested, "main.go"), "package nested\n\nconst changed = true\n")
+	writeFile(t, filepath.Join(nested, ".env"), "SECRET=changed-but-still-not-read\n")
+	second := capture(t, repo)
+	if differences := CompareRepository(first, second); len(differences) != 0 {
+		t.Fatalf("nested untracked repository affected parent freshness: %#v", differences)
+	}
 }
 
 func TestCaptureRepositoryTreatsExcludedSubmoduleDirtAsInformational(t *testing.T) {
@@ -225,6 +253,116 @@ func TestAssessInputsSeparatesUnrelatedAndAnalyzedChanges(t *testing.T) {
 	if result.State != FreshnessPartiallyStale || !result.AnalyzedChanges ||
 		!reflect.DeepEqual(result.AffectedPaths, []string{"main.go"}) {
 		t.Fatalf("stale result = %#v", result)
+	}
+}
+
+func TestCaptureInputsIgnoresAmbientAlternateGitIdentity(t *testing.T) {
+	wanted := newRepository(t)
+	const wantedContent = "package fixture\n\nconst wanted = true\n"
+	writeFile(t, filepath.Join(wanted, "main.go"), wantedContent)
+	gitCommand(t, wanted, "add", "main.go")
+	gitCommand(t, wanted, "-c", "user.name=repomap test", "-c", "user.email=repomap@example.invalid", "commit", "--quiet", "-m", "wanted content")
+	wantedState := capture(t, wanted)
+
+	other := newRepository(t)
+	t.Setenv("GIT_DIR", filepath.Join(other, ".git"))
+	t.Setenv("GIT_WORK_TREE", other)
+	t.Setenv("GIT_INDEX_FILE", filepath.Join(other, ".git", "index"))
+
+	inputs, err := CaptureInputs(context.Background(), wantedState, []string{"main.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inputs) != 1 || inputs[0].Path != "main.go" ||
+		inputs[0].ContentSHA256 != sha256Hex([]byte(wantedContent)) {
+		t.Fatalf("captured inputs = %#v", inputs)
+	}
+}
+
+func TestCaptureInputsBatchesRegularSymlinkAndMissingPaths(t *testing.T) {
+	t.Parallel()
+
+	repo := newRepository(t)
+	if err := os.MkdirAll(filepath.Join(repo, "batch"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{"missing.go"}
+	for index := 0; index < 64; index++ {
+		path := fmt.Sprintf("batch/file-%02d.go", index)
+		writeFile(t, filepath.Join(repo, path), fmt.Sprintf("package batch\n\nconst Value%02d = %d\n", index, index))
+		paths = append(paths, path)
+	}
+	writeFile(t, filepath.Join(repo, ":literal.go"), "package fixture\n\nconst Literal = true\n")
+	paths = append(paths, ":literal.go")
+	if err := os.Symlink("batch/file-00.go", filepath.Join(repo, "batch-link")); err != nil {
+		t.Fatal(err)
+	}
+	paths = append(paths, "batch-link")
+	gitCommand(t, repo, "add", "--", "batch", "batch-link", ":(literal):literal.go")
+	gitCommand(
+		t,
+		repo,
+		"-c", "user.name=repomap test",
+		"-c", "user.email=repomap@example.invalid",
+		"commit", "--quiet", "-m", "batch inputs",
+	)
+
+	inputs, err := CaptureInputs(context.Background(), capture(t, repo), paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inputs) != len(paths) {
+		t.Fatalf("captured input count = %d, want %d", len(inputs), len(paths))
+	}
+	byPath := make(map[string]CapturedInput, len(inputs))
+	for _, input := range inputs {
+		byPath[input.Path] = input
+	}
+	if input := byPath["batch/file-00.go"]; input.Kind != FileRegular || input.Mode != "100644" ||
+		input.ContentSHA256 != sha256Hex([]byte("package batch\n\nconst Value00 = 0\n")) {
+		t.Fatalf("regular input = %#v", input)
+	}
+	if input := byPath["batch-link"]; input.Kind != FileSymlink || input.Mode != "120000" ||
+		input.ContentSHA256 != sha256Hex([]byte("batch/file-00.go")) {
+		t.Fatalf("symlink input = %#v", input)
+	}
+	if input := byPath[":literal.go"]; input.Kind != FileRegular ||
+		input.ContentSHA256 != sha256Hex([]byte("package fixture\n\nconst Literal = true\n")) {
+		t.Fatalf("literal-path input = %#v", input)
+	}
+	if input := byPath["missing.go"]; input.Kind != FileMissing || input.Mode != "" ||
+		input.ContentSHA256 != "" {
+		t.Fatalf("missing input = %#v", input)
+	}
+}
+
+func TestIsolatedGitEnvironmentDropsGitConfigInjectionAndNeutralizesGlobalConfig(t *testing.T) {
+	got := strings.Join(isolatedGitEnvironment([]string{
+		"PATH=/usr/bin",
+		"GIT_CONFIG=/tmp/injected",
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=core.bare",
+		"GIT_CONFIG_VALUE_0=true",
+		"GIT_CONFIG_PARAMETERS='core.worktree'='/tmp/other'",
+		"GIT_CONFIG_GLOBAL=/tmp/global",
+		"GIT_CONFIG_SYSTEM=/tmp/system",
+	}), "\n")
+	for _, forbidden := range []string{
+		"GIT_CONFIG=/tmp/injected", "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=",
+		"GIT_CONFIG_VALUE_0=", "GIT_CONFIG_PARAMETERS=", "GIT_CONFIG_GLOBAL=/tmp/global",
+		"GIT_CONFIG_SYSTEM=/tmp/system",
+	} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("isolated environment retained %q: %q", forbidden, got)
+		}
+	}
+	for _, required := range []string{
+		"PATH=/usr/bin", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull,
+		"GIT_CONFIG_SYSTEM=" + os.DevNull,
+	} {
+		if !strings.Contains(got, required) {
+			t.Fatalf("isolated environment lacks %q: %q", required, got)
+		}
 	}
 }
 

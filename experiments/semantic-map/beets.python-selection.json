@@ -1,0 +1,1477 @@
+{
+  "version": "semantic-map-python-selector-v1",
+  "repository": {
+    "name": "beets",
+    "revision": "9acb1ecff6c7ee0a1e83e3b983c94792345712c5"
+  },
+  "question": "How does a Beets plugin named in configuration become an executable CLI command?",
+  "limits": {
+    "query_terms": 3,
+    "hits_per_query": 64,
+    "candidates": 96,
+    "roots_per_query": 3,
+    "exact_analyses": 11,
+    "call_endpoints": 64,
+    "source_slices": 12,
+    "source_text_bytes": 24576,
+    "source_slice_lines": 201
+  },
+  "query_terms": [
+    {
+      "id": "q1",
+      "text": "plugin"
+    },
+    {
+      "id": "q2",
+      "text": "config"
+    },
+    {
+      "id": "q3",
+      "text": "comman"
+    }
+  ],
+  "candidates": [
+    {
+      "id": "method:test/ui/test_ui.py:248:9:test_cli_config_file_loads_plugin_commands",
+      "name": "test_cli_config_file_loads_plugin_commands",
+      "container": "ConfigTest",
+      "kind": "method",
+      "path": "test/ui/test_ui.py",
+      "line": 248,
+      "column": 9,
+      "query_term_ids": [
+        "q1"
+      ],
+      "score": 140
+    },
+    {
+      "id": "method:test/ui/test_ui.py:304:9:test_plugin_command_from_pluginpath",
+      "name": "test_plugin_command_from_pluginpath",
+      "container": "PluginTest",
+      "kind": "method",
+      "path": "test/ui/test_ui.py",
+      "line": 304,
+      "column": 9,
+      "query_term_ids": [
+        "q1"
+      ],
+      "score": 140
+    },
+    {
+      "id": "function:beets/plugins.py:471:5:commands",
+      "name": "commands",
+      "kind": "function",
+      "path": "beets/plugins.py",
+      "line": 471,
+      "column": 5,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 136
+    },
+    {
+      "id": "function:beets/importer/stages.py:231:5:plugin_stage",
+      "name": "plugin_stage",
+      "kind": "function",
+      "path": "beets/importer/stages.py",
+      "line": 231,
+      "column": 5,
+      "query_term_ids": [
+        "q1"
+      ],
+      "score": 134
+    },
+    {
+      "id": "function:beets/plugins.py:406:5:_get_plugin",
+      "name": "_get_plugin",
+      "kind": "function",
+      "path": "beets/plugins.py",
+      "line": 406,
+      "column": 5,
+      "query_term_ids": [
+        "q1"
+      ],
+      "score": 134
+    },
+    {
+      "id": "function:beets/plugins.py:449:5:load_plugins",
+      "name": "load_plugins",
+      "kind": "function",
+      "path": "beets/plugins.py",
+      "line": 449,
+      "column": 5,
+      "query_term_ids": [
+        "q1"
+      ],
+      "score": 134
+    },
+    {
+      "id": "function:beets/plugins.py:464:5:find_plugins",
+      "name": "find_plugins",
+      "kind": "function",
+      "path": "beets/plugins.py",
+      "line": 464,
+      "column": 5,
+      "query_term_ids": [
+        "q1"
+      ],
+      "score": 134
+    },
+    {
+      "id": "function:beets/ui/__init__.py:907:5:_bootstrap_config",
+      "name": "_bootstrap_config",
+      "kind": "function",
+      "path": "beets/ui/__init__.py",
+      "line": 907,
+      "column": 5,
+      "query_term_ids": [
+        "q2"
+      ],
+      "score": 134
+    },
+    {
+      "id": "function:beets/ui/commands/config.py:10:5:config_func",
+      "name": "config_func",
+      "kind": "function",
+      "path": "beets/ui/commands/config.py",
+      "line": 10,
+      "column": 5,
+      "query_term_ids": [
+        "q2"
+      ],
+      "score": 134
+    },
+    {
+      "id": "function:beets/ui/commands/config.py:48:5:config_edit",
+      "name": "config_edit",
+      "kind": "function",
+      "path": "beets/ui/commands/config.py",
+      "line": 48,
+      "column": 5,
+      "query_term_ids": [
+        "q2"
+      ],
+      "score": 134
+    },
+    {
+      "id": "function:beets/util/__init__.py:858:5:command_output",
+      "name": "command_output",
+      "kind": "function",
+      "path": "beets/util/__init__.py",
+      "line": 858,
+      "column": 5,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 134
+    },
+    {
+      "id": "function:beets/util/__init__.py:934:5:editor_command",
+      "name": "editor_command",
+      "kind": "function",
+      "path": "beets/util/__init__.py",
+      "line": 934,
+      "column": 5,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 134
+    },
+    {
+      "id": "function:beets/metadata_plugins.py:77:5:_yield_from_plugins",
+      "name": "_yield_from_plugins",
+      "kind": "function",
+      "path": "beets/metadata_plugins.py",
+      "line": 77,
+      "column": 5,
+      "query_term_ids": [
+        "q1"
+      ],
+      "score": 132
+    },
+    {
+      "id": "function:beets/plugins.py:365:5:get_plugin_names",
+      "name": "get_plugin_names",
+      "kind": "function",
+      "path": "beets/plugins.py",
+      "line": 365,
+      "column": 5,
+      "query_term_ids": [
+        "q1"
+      ],
+      "score": 132
+    },
+    {
+      "id": "function:beets/util/color.py:117:5:get_color_config",
+      "name": "get_color_config",
+      "kind": "function",
+      "path": "beets/util/color.py",
+      "line": 117,
+      "column": 5,
+      "query_term_ids": [
+        "q2"
+      ],
+      "score": 132
+    },
+    {
+      "id": "function:beetsplug/fish.py:216:5:get_all_commands",
+      "name": "get_all_commands",
+      "kind": "function",
+      "path": "beetsplug/fish.py",
+      "line": 216,
+      "column": 5,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 132
+    },
+    {
+      "id": "function:extra/release.py:152:5:update_docs_config",
+      "name": "update_docs_config",
+      "kind": "function",
+      "path": "extra/release.py",
+      "line": 152,
+      "column": 5,
+      "query_term_ids": [
+        "q2"
+      ],
+      "score": 132
+    },
+    {
+      "id": "function:beets/metadata_plugins.py:47:5:find_metadata_source_plugins",
+      "name": "find_metadata_source_plugins",
+      "kind": "function",
+      "path": "beets/metadata_plugins.py",
+      "line": 47,
+      "column": 5,
+      "query_term_ids": [
+        "q1"
+      ],
+      "score": 130
+    },
+    {
+      "id": "function:beets/metadata_plugins.py:63:5:maybe_handle_plugin_error",
+      "name": "maybe_handle_plugin_error",
+      "kind": "function",
+      "path": "beets/metadata_plugins.py",
+      "line": 63,
+      "column": 5,
+      "query_term_ids": [
+        "q1"
+      ],
+      "score": 130
+    },
+    {
+      "id": "method:beets/plugins.py:247:9:commands",
+      "name": "commands",
+      "container": "BeetsPlugin",
+      "kind": "method",
+      "path": "beets/plugins.py",
+      "line": 247,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/absubmit.py:116:9:command",
+      "name": "command",
+      "container": "AcousticBrainzSubmitPlugin",
+      "kind": "method",
+      "path": "beetsplug/absubmit.py",
+      "line": 116,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/absubmit.py:90:9:commands",
+      "name": "commands",
+      "container": "AcousticBrainzSubmitPlugin",
+      "kind": "method",
+      "path": "beetsplug/absubmit.py",
+      "line": 90,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/acousticbrainz.py:93:9:commands",
+      "name": "commands",
+      "container": "AcousticPlugin",
+      "kind": "method",
+      "path": "beetsplug/acousticbrainz.py",
+      "line": 93,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/aura.py:930:9:commands",
+      "name": "commands",
+      "container": "AURAPlugin",
+      "kind": "method",
+      "path": "beetsplug/aura.py",
+      "line": 930,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/autobpm.py:42:9:commands",
+      "name": "commands",
+      "container": "AutoBPMPlugin",
+      "kind": "method",
+      "path": "beetsplug/autobpm.py",
+      "line": 42,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/autobpm.py:65:9:command",
+      "name": "command",
+      "container": "AutoBPMPlugin",
+      "kind": "method",
+      "path": "beetsplug/autobpm.py",
+      "line": 65,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/badfiles.py:237:9:command",
+      "name": "command",
+      "container": "BadFiles",
+      "kind": "method",
+      "path": "beetsplug/badfiles.py",
+      "line": 237,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/badfiles.py:248:9:commands",
+      "name": "commands",
+      "container": "BadFiles",
+      "kind": "method",
+      "path": "beetsplug/badfiles.py",
+      "line": 248,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/bareasc.py:54:9:commands",
+      "name": "commands",
+      "container": "BareascPlugin",
+      "kind": "method",
+      "path": "beetsplug/bareasc.py",
+      "line": 54,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/bench.py:84:9:commands",
+      "name": "commands",
+      "container": "BenchmarkPlugin",
+      "kind": "method",
+      "path": "beetsplug/bench.py",
+      "line": 84,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/bpd/__init__.py:1585:9:commands",
+      "name": "commands",
+      "container": "BPDPlugin",
+      "kind": "method",
+      "path": "beetsplug/bpd/__init__.py",
+      "line": 1585,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/bpm.py:37:9:commands",
+      "name": "commands",
+      "container": "BPMPlugin",
+      "kind": "method",
+      "path": "beetsplug/bpm.py",
+      "line": 37,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/bpm.py:45:9:command",
+      "name": "command",
+      "container": "BPMPlugin",
+      "kind": "method",
+      "path": "beetsplug/bpm.py",
+      "line": 45,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/bpsync.py:18:9:commands",
+      "name": "commands",
+      "container": "BPSyncPlugin",
+      "kind": "method",
+      "path": "beetsplug/bpsync.py",
+      "line": 18,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/chroma.py:253:9:commands",
+      "name": "commands",
+      "container": "AcoustidPlugin",
+      "kind": "method",
+      "path": "beetsplug/chroma.py",
+      "line": 253,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/convert.py:117:9:commands",
+      "name": "commands",
+      "container": "ConvertPlugin",
+      "kind": "method",
+      "path": "beetsplug/convert.py",
+      "line": 117,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/convert.py:264:9:command",
+      "name": "command",
+      "container": "ConvertPlugin",
+      "kind": "method",
+      "path": "beetsplug/convert.py",
+      "line": 264,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/deezer.py:43:9:commands",
+      "name": "commands",
+      "container": "DeezerPlugin",
+      "kind": "method",
+      "path": "beetsplug/deezer.py",
+      "line": 43,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/duplicates.py:130:9:commands",
+      "name": "commands",
+      "container": "DuplicatesPlugin",
+      "kind": "method",
+      "path": "beetsplug/duplicates.py",
+      "line": 130,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/edit.py:145:9:commands",
+      "name": "commands",
+      "container": "EditPlugin",
+      "kind": "method",
+      "path": "beetsplug/edit.py",
+      "line": 145,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/embedart.py:76:9:commands",
+      "name": "commands",
+      "container": "EmbedCoverArtPlugin",
+      "kind": "method",
+      "path": "beetsplug/embedart.py",
+      "line": 76,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/export.py:68:9:commands",
+      "name": "commands",
+      "container": "ExportPlugin",
+      "kind": "method",
+      "path": "beetsplug/export.py",
+      "line": 68,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/fetchart.py:1526:9:commands",
+      "name": "commands",
+      "container": "FetchArtPlugin",
+      "kind": "method",
+      "path": "beetsplug/fetchart.py",
+      "line": 1526,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/fish.py:55:9:commands",
+      "name": "commands",
+      "container": "FishPlugin",
+      "kind": "method",
+      "path": "beetsplug/fish.py",
+      "line": 55,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/freedesktop.py:8:9:commands",
+      "name": "commands",
+      "container": "FreedesktopPlugin",
+      "kind": "method",
+      "path": "beetsplug/freedesktop.py",
+      "line": 8,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/ftintitle.py:258:9:commands",
+      "name": "commands",
+      "container": "FtInTitlePlugin",
+      "kind": "method",
+      "path": "beetsplug/ftintitle.py",
+      "line": 258,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/info.py:135:9:commands",
+      "name": "commands",
+      "container": "InfoPlugin",
+      "kind": "method",
+      "path": "beetsplug/info.py",
+      "line": 135,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/ipfs.py:20:9:commands",
+      "name": "commands",
+      "container": "IPFSPlugin",
+      "kind": "method",
+      "path": "beetsplug/ipfs.py",
+      "line": 20,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/keyfinder.py:18:9:commands",
+      "name": "commands",
+      "container": "KeyFinderPlugin",
+      "kind": "method",
+      "path": "beetsplug/keyfinder.py",
+      "line": 18,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/keyfinder.py:25:9:command",
+      "name": "command",
+      "container": "KeyFinderPlugin",
+      "kind": "method",
+      "path": "beetsplug/keyfinder.py",
+      "line": 25,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/lastgenre/__init__.py:577:9:commands",
+      "name": "commands",
+      "container": "LastGenrePlugin",
+      "kind": "method",
+      "path": "beetsplug/lastgenre/__init__.py",
+      "line": 577,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/lastimport.py:29:9:commands",
+      "name": "commands",
+      "container": "LastImportPlugin",
+      "kind": "method",
+      "path": "beetsplug/lastimport.py",
+      "line": 29,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/limit.py:57:9:commands",
+      "name": "commands",
+      "container": "LimitPlugin",
+      "kind": "method",
+      "path": "beetsplug/limit.py",
+      "line": 57,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/listenbrainz.py:68:9:commands",
+      "name": "commands",
+      "container": "ListenBrainzPlugin",
+      "kind": "method",
+      "path": "beetsplug/listenbrainz.py",
+      "line": 68,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/lyrics.py:1061:9:commands",
+      "name": "commands",
+      "container": "LyricsPlugin",
+      "kind": "method",
+      "path": "beetsplug/lyrics.py",
+      "line": 1061,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/mbcollection.py:172:9:commands",
+      "name": "commands",
+      "container": "MusicBrainzCollectionPlugin",
+      "kind": "method",
+      "path": "beetsplug/mbcollection.py",
+      "line": 172,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/mbsubmit.py:68:9:commands",
+      "name": "commands",
+      "container": "MBSubmitPlugin",
+      "kind": "method",
+      "path": "beetsplug/mbsubmit.py",
+      "line": 68,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/mbsync.py:14:9:commands",
+      "name": "commands",
+      "container": "MBSyncPlugin",
+      "kind": "method",
+      "path": "beetsplug/mbsync.py",
+      "line": 14,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/metasync/__init__.py:65:9:commands",
+      "name": "commands",
+      "container": "MetaSyncPlugin",
+      "kind": "method",
+      "path": "beetsplug/metasync/__init__.py",
+      "line": 65,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/missing.py:153:9:commands",
+      "name": "commands",
+      "container": "MissingPlugin",
+      "kind": "method",
+      "path": "beetsplug/missing.py",
+      "line": 153,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/mpdstats.py:331:9:commands",
+      "name": "commands",
+      "container": "MPDStatsPlugin",
+      "kind": "method",
+      "path": "beetsplug/mpdstats.py",
+      "line": 331,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/parentwork.py:29:9:commands",
+      "name": "commands",
+      "container": "ParentWorkPlugin",
+      "kind": "method",
+      "path": "beetsplug/parentwork.py",
+      "line": 29,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/play.py:72:9:commands",
+      "name": "commands",
+      "container": "PlayPlugin",
+      "kind": "method",
+      "path": "beetsplug/play.py",
+      "line": 72,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/random.py:68:9:commands",
+      "name": "commands",
+      "container": "Random",
+      "kind": "method",
+      "path": "beetsplug/random.py",
+      "line": 68,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/replace.py:18:9:commands",
+      "name": "commands",
+      "container": "ReplacePlugin",
+      "kind": "method",
+      "path": "beetsplug/replace.py",
+      "line": 18,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/replaygain.py:1507:9:commands",
+      "name": "commands",
+      "container": "ReplayGainPlugin",
+      "kind": "method",
+      "path": "beetsplug/replaygain.py",
+      "line": 1507,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/scrub.py:40:9:commands",
+      "name": "commands",
+      "container": "ScrubPlugin",
+      "kind": "method",
+      "path": "beetsplug/scrub.py",
+      "line": 40,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/smartplaylist.py:99:9:commands",
+      "name": "commands",
+      "container": "SmartPlaylistPlugin",
+      "kind": "method",
+      "path": "beetsplug/smartplaylist.py",
+      "line": 99,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/spotify.py:526:9:commands",
+      "name": "commands",
+      "container": "SpotifyPlugin",
+      "kind": "method",
+      "path": "beetsplug/spotify.py",
+      "line": 526,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beetsplug/subsonicplaylist.py:92:9:commands",
+      "name": "commands",
+      "container": "SubsonicPlaylistPlugin",
+      "kind": "method",
+      "path": "beetsplug/subsonicplaylist.py",
+      "line": 92,
+      "column": 9,
+      "query_term_ids": [
+        "q3"
+      ],
+      "score": 128
+    },
+    {
+      "id": "method:beets/test/helper.py:531:9:configure_plugin",
+      "name": "configure_plugin",
+      "container": "PluginMixin",
+      "kind": "method",
+      "path": "beets/test/helper.py",
+      "line": 531,
+      "column": 9,
+      "query_term_ids": [
+        "q1",
+        "q2"
+      ],
+      "score": 126
+    },
+    {
+      "id": "method:test/plugins/test_lyrics.py:206:9:plugin_config",
+      "name": "plugin_config",
+      "container": "LyricsPluginMixin",
+      "kind": "method",
+      "path": "test/plugins/test_lyrics.py",
+      "line": 206,
+      "column": 9,
+      "query_term_ids": [
+        "q1",
+        "q2"
+      ],
+      "score": 126
+    },
+    {
+      "id": "method:test/plugins/test_lyrics.py:403:9:plugin_config",
+      "name": "plugin_config",
+      "container": "TestLyricsSources",
+      "kind": "method",
+      "path": "test/plugins/test_lyrics.py",
+      "line": 403,
+      "column": 9,
+      "query_term_ids": [
+        "q1",
+        "q2"
+      ],
+      "score": 126
+    },
+    {
+      "id": "method:test/plugins/test_lyrics.py:469:9:plugin_config",
+      "name": "plugin_config",
+      "container": "TestGoogleLyrics",
+      "kind": "method",
+      "path": "test/plugins/test_lyrics.py",
+      "line": 469,
+      "column": 9,
+      "query_term_ids": [
+        "q1",
+        "q2"
+      ],
+      "score": 126
+    },
+    {
+      "id": "method:test/plugins/test_mbpseudo.py:119:9:plugin_config",
+      "name": "plugin_config",
+      "container": "TestMBPseudoMixin",
+      "kind": "method",
+      "path": "test/plugins/test_mbpseudo.py",
+      "line": 119,
+      "column": 9,
+      "query_term_ids": [
+        "q1",
+        "q2"
+      ],
+      "score": 126
+    },
+    {
+      "id": "method:test/plugins/test_mbpseudo.py:274:9:plugin_config",
+      "name": "plugin_config",
+      "container": "TestMBPseudoPluginCustomTagsOnly",
+      "kind": "method",
+      "path": "test/plugins/test_mbpseudo.py",
+      "line": 274,
+      "column": 9,
+      "query_term_ids": [
+        "q1",
+        "q2"
+      ],
+      "score": 126
+    },
+    {
+      "id": "method:test/plugins/test_musicbrainz.py:166:9:plugin_config",
+      "name": "plugin_config",
+      "container": "MusicBrainzPluginTestMixin",
+      "kind": "method",
+      "path": "test/plugins/test_musicbrainz.py",
+      "line": 166,
+      "column": 9,
+      "query_term_ids": [
+        "q1",
+        "q2"
+      ],
+      "score": 126
+    },
+    {
+      "id": "method:beets/importer/session.py:91:9:set_config",
+      "name": "set_config",
+      "container": "ImportSession",
+      "kind": "method",
+      "path": "beets/importer/session.py",
+      "line": 91,
+      "column": 9,
+      "query_term_ids": [
+        "q2"
+      ],
+      "score": 126
+    },
+    {
+      "id": "method:beets/plugins.py:218:9:_verify_config",
+      "name": "_verify_config",
+      "container": "BeetsPlugin",
+      "kind": "method",
+      "path": "beets/plugins.py",
+      "line": 218,
+      "column": 9,
+      "query_term_ids": [
+        "q2"
+      ],
+      "score": 126
+    },
+    {
+      "id": "method:beets/ui/commands/import_/display.py:44:9:_indentation_config",
+      "name": "_indentation_config",
+      "container": "ChangeRepresentation",
+      "kind": "method",
+      "path": "beets/ui/commands/import_/display.py",
+      "line": 44,
+      "column": 9,
+      "query_term_ids": [
+        "q2"
+      ],
+      "score": 126
+    },
+    {
+      "id": "method:beetsplug/discogs/states.py:199:9:from_config",
+      "name": "from_config",
+      "container": "ArtistState",
+      "kind": "method",
+      "path": "beetsplug/discogs/states.py",
+      "line": 199,
+      "column": 9,
+      "query_term_ids": [
+        "q2"
+      ],
+      "score": 126
+    },
+    {
+      "id": "method:beetsplug/importadded.py:40:9:check_config",
+      "name": "check_config",
+      "container": "ImportAddedPlugin",
+      "kind": "method",
+      "path": "beetsplug/importadded.py",
+      "line": 40,
+      "column": 9,
+      "query_term_ids": [
+        "q2"
+      ],
+      "score": 126
+    },
+    {
+      "id": "method:beetsplug/lyrics.py:827:9:from_config",
+      "name": "from_config",
+      "container": "Translator",
+      "kind": "method",
+      "path": "beetsplug/lyrics.py",
+      "line": 827,
+      "column": 9,
+      "query_term_ids": [
+        "q2"
+      ],
+      "score": 126
+    },
+    {
+      "id": "method:beets/autotag/match.py:103:9:config_from_scratch",
+      "name": "config_from_scratch",
+      "container": "Match",
+      "kind": "method",
+      "path": "beets/autotag/match.py",
+      "line": 103,
+      "column": 9,
+      "query_term_ids": [
+        "q2"
+      ],
+      "score": 124
+    },
+    {
+      "id": "method:beetsplug/fetchart.py:1135:9:add_default_config",
+      "name": "add_default_config",
+      "container": "LastFM",
+      "kind": "method",
+      "path": "beetsplug/fetchart.py",
+      "line": 1135,
+      "column": 9,
+      "query_term_ids": [
+        "q2"
+      ],
+      "score": 124
+    },
+    {
+      "id": "method:beetsplug/fetchart.py:373:9:add_default_config",
+      "name": "add_default_config",
+      "container": "ArtSource",
+      "kind": "method",
+      "path": "beetsplug/fetchart.py",
+      "line": 373,
+      "column": 9,
+      "query_term_ids": [
+        "q2"
+      ],
+      "score": 124
+    },
+    {
+      "id": "method:beetsplug/fetchart.py:648:9:add_default_config",
+      "name": "add_default_config",
+      "container": "GoogleImages",
+      "kind": "method",
+      "path": "beetsplug/fetchart.py",
+      "line": 648,
+      "column": 9,
+      "query_term_ids": [
+        "q2"
+      ],
+      "score": 124
+    },
+    {
+      "id": "method:beetsplug/fetchart.py:725:9:add_default_config",
+      "name": "add_default_config",
+      "container": "FanartTV",
+      "kind": "method",
+      "path": "beetsplug/fetchart.py",
+      "line": 725,
+      "column": 9,
+      "query_term_ids": [
+        "q2"
+      ],
+      "score": 124
+    },
+    {
+      "id": "method:beetsplug/mbpseudo.py:89:9:_on_plugins_loaded",
+      "name": "_on_plugins_loaded",
+      "container": "MusicBrainzPseudoReleasePlugin",
+      "kind": "method",
+      "path": "beetsplug/mbpseudo.py",
+      "line": 89,
+      "column": 9,
+      "query_term_ids": [
+        "q1"
+      ],
+      "score": 124
+    },
+    {
+      "id": "function:test/conftest.py:101:5:config",
+      "name": "config",
+      "kind": "function",
+      "path": "test/conftest.py",
+      "line": 101,
+      "column": 5,
+      "query_term_ids": [
+        "q2"
+      ],
+      "score": 96
+    },
+    {
+      "id": "method:beetsplug/replaygain.py:1073:9:compute_album_gain",
+      "name": "compute_album_gain",
+      "container": "AudioToolsBackend",
+      "kind": "method",
+      "path": "beetsplug/replaygain.py",
+      "line": 1073,
+      "column": 9,
+      "query_term_ids": [
+        "q1"
+      ],
+      "score": 94
+    },
+    {
+      "id": "method:beetsplug/replaygain.py:261:9:compute_album_gain",
+      "name": "compute_album_gain",
+      "container": "Backend",
+      "kind": "method",
+      "path": "beetsplug/replaygain.py",
+      "line": 261,
+      "column": 9,
+      "query_term_ids": [
+        "q1"
+      ],
+      "score": 94
+    },
+    {
+      "id": "method:beetsplug/replaygain.py:316:9:compute_album_gain",
+      "name": "compute_album_gain",
+      "container": "FfmpegBackend",
+      "kind": "method",
+      "path": "beetsplug/replaygain.py",
+      "line": 316,
+      "column": 9,
+      "query_term_ids": [
+        "q1"
+      ],
+      "score": 94
+    },
+    {
+      "id": "method:beetsplug/replaygain.py:568:9:compute_album_gain",
+      "name": "compute_album_gain",
+      "container": "CommandBackend",
+      "kind": "method",
+      "path": "beetsplug/replaygain.py",
+      "line": 568,
+      "column": 9,
+      "query_term_ids": [
+        "q1"
+      ],
+      "score": 94
+    },
+    {
+      "id": "method:beetsplug/replaygain.py:793:9:compute_album_gain",
+      "name": "compute_album_gain",
+      "container": "GStreamerBackend",
+      "kind": "method",
+      "path": "beetsplug/replaygain.py",
+      "line": 793,
+      "column": 9,
+      "query_term_ids": [
+        "q1"
+      ],
+      "score": 94
+    },
+    {
+      "id": "function:test/test_plugins.py:460:5:get_available_plugins",
+      "name": "get_available_plugins",
+      "kind": "function",
+      "path": "test/test_plugins.py",
+      "line": 460,
+      "column": 5,
+      "query_term_ids": [
+        "q1"
+      ],
+      "score": 92
+    }
+  ],
+  "selected_symbols": [
+    {
+      "id": "function:beets/ui/__init__.py:749:1:_setup",
+      "name": "_setup",
+      "kind": "function",
+      "path": "beets/ui/__init__.py",
+      "start_line": 749,
+      "start_column": 1,
+      "end_line": 766,
+      "end_column": 28,
+      "selection_reason_ids": [
+        "e3",
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "function:beets/plugins.py:449:1:load_plugins",
+      "name": "load_plugins",
+      "kind": "function",
+      "path": "beets/plugins.py",
+      "start_line": 449,
+      "start_column": 1,
+      "end_line": 461,
+      "end_column": 27,
+      "selection_reason_ids": [
+        "e1",
+        "e3",
+        "q1"
+      ]
+    },
+    {
+      "id": "function:beets/plugins.py:471:1:commands",
+      "name": "commands",
+      "kind": "function",
+      "path": "beets/plugins.py",
+      "start_line": 471,
+      "start_column": 1,
+      "end_line": 476,
+      "end_column": 15,
+      "selection_reason_ids": [
+        "e2",
+        "e4",
+        "q3"
+      ]
+    },
+    {
+      "id": "function:beets/ui/__init__.py:907:1:_bootstrap_config",
+      "name": "_bootstrap_config",
+      "kind": "function",
+      "path": "beets/ui/__init__.py",
+      "start_line": 907,
+      "start_column": 1,
+      "end_line": 932,
+      "end_column": 26,
+      "selection_reason_ids": [
+        "e6",
+        "q2"
+      ]
+    },
+    {
+      "id": "function:beets/ui/__init__.py:802:1:_raw_main",
+      "name": "_raw_main",
+      "kind": "function",
+      "path": "beets/ui/__init__.py",
+      "start_line": 802,
+      "start_column": 1,
+      "end_line": 904,
+      "end_column": 16,
+      "selection_reason_ids": [
+        "e5",
+        "e6"
+      ]
+    },
+    {
+      "id": "function:beets/plugins.py:365:1:get_plugin_names",
+      "name": "get_plugin_names",
+      "kind": "function",
+      "path": "beets/plugins.py",
+      "start_line": 365,
+      "start_column": 1,
+      "end_line": 403,
+      "end_column": 61,
+      "selection_reason_ids": [
+        "e1"
+      ]
+    },
+    {
+      "id": "function:beets/plugins.py:406:1:_get_plugin",
+      "name": "_get_plugin",
+      "kind": "function",
+      "path": "beets/plugins.py",
+      "start_line": 406,
+      "start_column": 1,
+      "end_line": 443,
+      "end_column": 16,
+      "selection_reason_ids": [
+        "q1"
+      ]
+    },
+    {
+      "id": "function:beets/plugins.py:464:1:find_plugins",
+      "name": "find_plugins",
+      "kind": "function",
+      "path": "beets/plugins.py",
+      "start_line": 464,
+      "start_column": 1,
+      "end_line": 465,
+      "end_column": 22,
+      "selection_reason_ids": [
+        "e2"
+      ]
+    }
+  ],
+  "exact_calls": [
+    {
+      "id": "e1",
+      "caller_symbol_id": "function:beets/plugins.py:449:1:load_plugins",
+      "callee_symbol_id": "function:beets/plugins.py:365:1:get_plugin_names",
+      "path": "beets/plugins.py",
+      "start_line": 457,
+      "start_column": 17,
+      "end_line": 457,
+      "end_column": 33
+    },
+    {
+      "id": "e2",
+      "caller_symbol_id": "function:beets/plugins.py:471:1:commands",
+      "callee_symbol_id": "function:beets/plugins.py:464:1:find_plugins",
+      "path": "beets/plugins.py",
+      "start_line": 474,
+      "start_column": 19,
+      "end_line": 474,
+      "end_column": 31
+    },
+    {
+      "id": "e3",
+      "caller_symbol_id": "function:beets/ui/__init__.py:749:1:_setup",
+      "callee_symbol_id": "function:beets/plugins.py:449:1:load_plugins",
+      "path": "beets/ui/__init__.py",
+      "start_line": 755,
+      "start_column": 13,
+      "end_line": 755,
+      "end_column": 25
+    },
+    {
+      "id": "e4",
+      "caller_symbol_id": "function:beets/ui/__init__.py:749:1:_setup",
+      "callee_symbol_id": "function:beets/plugins.py:471:1:commands",
+      "path": "beets/ui/__init__.py",
+      "start_line": 761,
+      "start_column": 32,
+      "end_line": 761,
+      "end_column": 40
+    },
+    {
+      "id": "e5",
+      "caller_symbol_id": "function:beets/ui/__init__.py:802:1:_raw_main",
+      "callee_symbol_id": "function:beets/ui/__init__.py:749:1:_setup",
+      "path": "beets/ui/__init__.py",
+      "start_line": 896,
+      "start_column": 24,
+      "end_line": 896,
+      "end_column": 30
+    },
+    {
+      "id": "e6",
+      "caller_symbol_id": "function:beets/ui/__init__.py:802:1:_raw_main",
+      "callee_symbol_id": "function:beets/ui/__init__.py:907:1:_bootstrap_config",
+      "path": "beets/ui/__init__.py",
+      "start_line": 873,
+      "start_column": 22,
+      "end_line": 873,
+      "end_column": 39
+    }
+  ],
+  "provenance": {
+    "provider": "pyright",
+    "version": "pyright 1.1.409",
+    "collector_version": "semantic-map-python-selector-v1",
+    "operations": [
+      "workspace/symbol",
+      "textDocument/documentSymbol",
+      "callHierarchy/incomingCalls",
+      "callHierarchy/outgoingCalls"
+    ]
+  },
+  "coverage": "bounded_pyright_static_call_neighborhood_non_exhaustive",
+  "unresolved_frontiers": [
+    "runtime-selected imports and concrete classes",
+    "runtime-selected method implementations and returned command objects",
+    "runtime-selected callback targets"
+  ],
+  "warnings": [
+    "Pyright did not report a server version",
+    "Pyright method-target call edges were omitted because runtime dispatch may select a different implementation",
+    "Pyright provides bounded static evidence, not a complete runtime trace",
+    "Pyright workspace/symbol query q2 truncated from 99 to 64 callable repository hits",
+    "Pyright workspace/symbol query q3 truncated from 112 to 64 callable repository hits",
+    "dynamic dispatch through getattr remains unresolved; no runtime target was invented",
+    "dynamic dispatch through import_module remains unresolved; no runtime target was invented",
+    "runtime-selected module, class, command-list, and callback targets remain unresolved unless Pyright reports an exact repository declaration",
+    "workspace candidate plugin_stage at beets/importer/stages.py:231 was not confirmed by exact document symbols",
+    "workspace candidates were deterministically truncated to 96",
+    "workspace symbol matches and exact call neighborhoods are bounded and non-exhaustive"
+  ]
+}

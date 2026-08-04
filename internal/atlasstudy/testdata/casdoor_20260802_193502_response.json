@@ -1,0 +1,144 @@
+{
+  "repository_type": "service_application",
+  "brief": {
+    "what_it_is": {
+      "text": "Casdoor — это сервисное приложение с открытым исходным кодом, предоставляющее единую точку входа для аутентификации и авторизации, поддерживающее множество протоколов и интеграций.",
+      "support_refs": ["ss1", "c4", "sf1", "d1"]
+    },
+    "problem": {
+      "text": "Обеспечить безопасную и гибкую аутентификацию и авторизацию для приложений, поддерживая множество стандартов и внешних систем.",
+      "support_refs": ["ss1", "c4", "d1"]
+    },
+    "main_input": {
+      "text": "HTTP-запросы от пользователей и внешних систем, направляемые на сервер, а также конфигурация инициализации при запуске.",
+      "support_refs": ["c4", "sf1", "a2"]
+    },
+    "central_responsibility": {
+      "text": "Запуск и управление жизненным циклом сервера, включая инициализацию провайдеров логирования и агентов, а также настройку TLS.",
+      "support_refs": ["c4", "c6", "c7", "a2", "a10"]
+    },
+    "observable_result": {
+      "text": "Работающий HTTP-сервер, обрабатывающий запросы аутентификации и авторизации, с корректно настроенными провайдерами и TLS.",
+      "support_refs": ["c4", "c7", "a2", "a10"]
+    },
+    "domain_terms": [
+      {
+        "term": "TLS",
+        "meaning": "Протокол защиты транспортного уровня, используемый для шифрования соединений; настраивается в функции getTLSconfig.",
+        "support_refs": ["a10"]
+      },
+      {
+        "term": "HTTP-провайдер",
+        "meaning": "Компонент, управляющий HTTP-сервером; его очистка выполняется в методе CleanUp.",
+        "support_refs": ["a8"]
+      },
+      {
+        "term": "Провайдеры запуска",
+        "meaning": "Компоненты, запускающие фоновые службы, такие как логирование и агенты, через методы Start.",
+        "support_refs": ["a1", "a5", "a6", "a7"]
+      }
+    ]
+  },
+  "directions": [
+    {
+      "question": "Как запускается приложение и какие основные шаги инициализации выполняются?",
+      "why_it_matters": "Понимание точки входа помогает проследить жизненный цикл приложения и его основные компоненты.",
+      "learning_outcome": "Вы узнаете, как main вызывает инициализацию и запуск сервера.",
+      "target_job": "first_contact",
+      "learning_stage": "orientation",
+      "principal_refs": ["c4", "sf1"],
+      "reading": [
+        {
+          "target_ref": "a2",
+          "label": "start",
+          "what_to_look_for": "Вызовы функций инициализации и запуска сервера, порядок выполнения."
+        }
+      ]
+    },
+    {
+      "question": "Как настраивается TLS для сервера?",
+      "why_it_matters": "TLS критичен для безопасности; понимание конфигурации помогает в отладке и расширении.",
+      "learning_outcome": "Вы узнаете, где и как формируется TLS-конфигурация.",
+      "target_job": "extend_or_integrate",
+      "learning_stage": "core_model",
+      "principal_refs": ["c7"],
+      "reading": [
+        {
+          "target_ref": "a10",
+          "label": "start",
+          "what_to_look_for": "Логика создания TLS-конфигурации, используемые сертификаты и параметры."
+        }
+      ]
+    },
+    {
+      "question": "Как запускаются фоновые провайдеры, такие как логирование и агенты?",
+      "why_it_matters": "Эти провайдеры обеспечивают наблюдаемость и интеграции; их запуск важен для работы системы.",
+      "learning_outcome": "Вы поймете, какие методы Start вызываются и что они делают.",
+      "target_job": "contribute",
+      "learning_stage": "integration",
+      "principal_refs": ["c6"],
+      "reading": [
+        {
+          "target_ref": "a1",
+          "label": "start",
+          "what_to_look_for": "Объявление метода Start и его назначение."
+        },
+        {
+          "target_ref": "a5",
+          "label": "continue",
+          "what_to_look_for": "Аналогичный метод Start для системного лога."
+        },
+        {
+          "target_ref": "a6",
+          "label": "continue",
+          "what_to_look_for": "Метод Start для агента OpenClaw."
+        },
+        {
+          "target_ref": "a7",
+          "label": "continue",
+          "what_to_look_for": "Метод Start для SELinux-лога."
+        }
+      ]
+    },
+    {
+      "question": "Как запускается HTTP-сервер и как обрабатываются TLS-соединения?",
+      "why_it_matters": "Это ключевая часть рантайма; понимание помогает в отладке сетевых проблем.",
+      "learning_outcome": "Вы увидите вызовы ListenAndServe и ListenAndServeTLS.",
+      "target_job": "debug_or_maintain",
+      "learning_stage": "operations",
+      "principal_refs": ["c6"],
+      "reading": [
+        {
+          "target_ref": "a3",
+          "label": "start",
+          "what_to_look_for": "Вызов http.ListenAndServe и его параметры."
+        },
+        {
+          "target_ref": "a4",
+          "label": "continue",
+          "what_to_look_for": "Вызов server.ListenAndServeTLS и его параметры."
+        },
+        {
+          "target_ref": "a9",
+          "label": "start",
+          "what_to_look_for": "Функция Start, которая, вероятно, содержит эти вызовы."
+        }
+      ]
+    },
+    {
+      "question": "Как происходит очистка ресурсов HTTP-провайдера?",
+      "why_it_matters": "Правильная очистка важна для корректного завершения работы и избежания утечек.",
+      "learning_outcome": "Вы узнаете, какие ресурсы освобождаются в методе CleanUp.",
+      "target_job": "debug_or_maintain",
+      "learning_stage": "operations",
+      "principal_refs": ["c2"],
+      "reading": [
+        {
+          "target_ref": "a8",
+          "label": "start",
+          "what_to_look_for": "Логика очистки, вызовы закрытия ресурсов."
+        }
+      ]
+    }
+  ]
+}

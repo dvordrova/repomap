@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/dvordrova/repomap/internal/experiment/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/flowexplain"
+	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
 
 func FlowSeed(trigger surfacediscovery.TriggerRecord) (flowexplain.FlowSeed, error) {

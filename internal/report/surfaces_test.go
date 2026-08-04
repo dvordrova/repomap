@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/gofacts"
 )
 
 func TestParseDiscoveredSurfacesProjectsPairedV2Artifacts(t *testing.T) {
@@ -111,6 +113,368 @@ func TestProjectedSurfaceSemanticsUseDynamicRoleAndLocalWrapperStart(t *testing.
 	}
 }
 
+func TestProjectDiscoveredSurfacesRetainsTypedCobraLocationsAndProducer(t *testing.T) {
+	t.Parallel()
+
+	projected := projectDiscoveredSurfaces(rawSurfaceCatalog{Triggers: []rawSurfaceTrigger{{
+		ID: "typed-put", Kind: "cli_command", Producer: SurfaceProducerCobra,
+		Identity: rawSurfaceIdentity{
+			Name: "put",
+			Path: rawSurfaceValue{Kind: "command_path", Text: "put", Known: true},
+		},
+		Transport: "cli", Framework: "cobra",
+		ProcessEntrypoint: rawSurfaceSymbol{
+			ID: "example.com/app.main", Package: "example.com/app", Name: "main",
+			Location: rawSurfaceLocation{Path: "main.go", Line: 8},
+		},
+		Dispatcher: rawSurfaceValue{Kind: "function", Text: "example.com/app/cli.Start", Known: true},
+		Constructor: rawSurfaceSymbol{
+			ID: "example.com/app/command.NewPutCommand", Package: "example.com/app/command",
+			Name: "NewPutCommand", Location: rawSurfaceLocation{Path: "command/put.go", Line: 20},
+		},
+		RegistrationSite: rawSurfaceLocation{Path: "cli/root.go", Line: 42},
+		DescriptorSite:   &rawSurfaceLocation{Path: "command/put.go", Line: 21},
+		Handler: rawSurfaceValue{
+			Kind: "function", Text: "example.com/app/command.putCommandFunc", Known: true,
+		},
+		HandlerLocation: &rawSurfaceLocation{Path: "command/put.go", Line: 55},
+		DiscoveryBasis:  "build_selected_typed_cobra_registration",
+		Certainty:       "static", Resolution: "exact", Availability: SurfaceAvailabilityAvailable,
+		ApplicationClass: SurfaceApplicationOwned,
+		Provenance: []rawSurfaceProvenance{{
+			Provider: "go_types_ssa", Operation: "discover_typed_cobra_command",
+		}},
+	}}}, rawSurfaceCoverage{})
+
+	if len(projected.Triggers) != 1 {
+		t.Fatalf("typed projection count = %d", len(projected.Triggers))
+	}
+	trigger := projected.Triggers[0]
+	if trigger.Producer != SurfaceProducerCobra ||
+		trigger.Constructor.Location == nil ||
+		trigger.Constructor.Location.Path != "command/put.go" ||
+		trigger.Constructor.Location.Line != 20 ||
+		trigger.HandlerLocation == nil ||
+		trigger.HandlerLocation.Path != "command/put.go" ||
+		trigger.HandlerLocation.Line != 55 ||
+		trigger.SurfaceRole != SurfaceRoleEntrySurface ||
+		trigger.TraceReadiness != SurfaceTraceReady {
+		t.Fatalf("typed Cobra projection = %#v", trigger)
+	}
+}
+
+func TestMergeCommandSurfaceCatalogPrefersEquivalentTypedCobraRecord(t *testing.T) {
+	t.Parallel()
+
+	typed := DiscoveredTrigger{
+		ID: "typed-backup", Kind: "cli_command", Producer: SurfaceProducerCobra,
+		Identity: SurfaceIdentity{
+			Name: "backup",
+			Path: SurfaceValue{Kind: "command_path", Text: "backup", Known: true},
+		},
+		Transport: "cli", Framework: "cobra",
+		ProcessEntrypoint: SurfaceSymbol{
+			ID: "example.com/restic/cmd/restic.main", Package: "example.com/restic/cmd/restic",
+			Name: "main", Location: &SurfaceLocation{Path: "cmd/restic/main.go", Line: 10},
+		},
+		Dispatcher: SurfaceValue{Kind: "function", Text: "example.com/restic/cmd/restic.Start", Known: true},
+		Constructor: SurfaceSymbol{
+			ID:      "example.com/restic/cmd/restic.newBackupCommand",
+			Package: "example.com/restic/cmd/restic", Name: "newBackupCommand",
+			Location: &SurfaceLocation{Path: "cmd/restic/cmd_backup.go", Line: 35},
+		},
+		RegistrationSite: &SurfaceLocation{Path: "cmd/restic/cmd_backup.go", Line: 35, Column: 4},
+		Handler: SurfaceValue{
+			Kind: "function", Text: "example.com/restic/cmd/restic.run-backup", Known: true,
+		},
+		HandlerLocation:  &SurfaceLocation{Path: "cmd/restic/cmd_backup.go", Line: 45},
+		DiscoveryBasis:   "build_selected_typed_cobra_registration",
+		Certainty:        "static",
+		Resolution:       "exact",
+		Availability:     SurfaceAvailabilityAvailable,
+		ApplicationClass: SurfaceApplicationOwned,
+		Provenance: []SurfaceProvenance{{
+			Provider: "go_types_ssa", Operation: "discover_typed_cobra_command",
+		}},
+	}
+	data := &ReportData{
+		CommandTraces: []gofacts.CommandTrace{
+			testCommandTrace("backup", "newBackupCommand", "cmd/restic/cmd_backup.go", 35),
+		},
+		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{typed}},
+	}
+
+	mergeCommandSurfaceCatalog(data)
+
+	if len(data.DiscoveredSurfaces.Triggers) != 1 ||
+		data.DiscoveredSurfaces.Triggers[0].ID != "typed-backup" ||
+		data.DiscoveredSurfaces.CLICommandCount != 1 ||
+		data.DiscoveredSurfaces.Triggers[0].TraceReadiness != SurfaceTraceReady {
+		t.Fatalf("merged typed/legacy commands = %#v", data.DiscoveredSurfaces)
+	}
+}
+
+func TestEquivalentCobraCommandSurfaceRequiresQualifiedOwnership(t *testing.T) {
+	t.Parallel()
+
+	typed := DiscoveredTrigger{
+		Kind: "cli_command",
+		Identity: SurfaceIdentity{
+			Name: "lease grant",
+		},
+		Framework: "cobra",
+		Constructor: SurfaceSymbol{
+			ID:      "example.com/app/commands.newGrantCommand",
+			Package: "example.com/app/commands",
+			Name:    "newGrantCommand",
+		},
+	}
+	same := typed
+	same.Identity.Name = "grant"
+	if !equivalentCobraCommandSurface(typed, same) {
+		t.Fatal("same qualified constructor did not suppress nested typed/legacy duplicate")
+	}
+
+	other := same
+	other.Constructor.ID = "example.com/other/commands.newGrantCommand"
+	other.Constructor.Package = "example.com/other/commands"
+	if equivalentCobraCommandSurface(typed, other) {
+		t.Fatal("same constructor leaf in another package was treated as equivalent")
+	}
+}
+
+func TestMergeCommandSurfaceCatalogPreservesFullCountsWhenLegacyTracesOverflow(t *testing.T) {
+	t.Parallel()
+
+	const legacyCount = 10
+	genericCount := maxDiscoveredSurfaceTriggers - 6
+	triggers := make([]DiscoveredTrigger, 0, genericCount)
+	for index := range genericCount {
+		triggers = append(triggers, DiscoveredTrigger{
+			ID:       fmt.Sprintf("generic-%03d", index),
+			Kind:     "worker",
+			Producer: SurfaceProducerGeneric,
+		})
+	}
+	traces := make([]gofacts.CommandTrace, 0, legacyCount)
+	for index := range legacyCount {
+		traces = append(traces, testCommandTrace(
+			fmt.Sprintf("command-%02d", index),
+			fmt.Sprintf("newCommand%02d", index),
+			fmt.Sprintf("cmd/app/command_%02d.go", index),
+			index+1,
+		))
+	}
+	data := &ReportData{
+		CommandTraces:      traces,
+		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: triggers},
+	}
+
+	mergeCommandSurfaceCatalog(data)
+
+	catalog := data.DiscoveredSurfaces
+	wantTotal := genericCount + legacyCount
+	if !catalog.Truncated ||
+		len(catalog.Triggers) != maxDiscoveredSurfaceTriggers ||
+		catalog.TotalCount != wantTotal ||
+		catalog.CLICommandCount != legacyCount ||
+		catalog.GenericSurfaceCount != genericCount {
+		t.Fatalf("overflowed merged catalog = %#v", catalog)
+	}
+	refreshSurfaceCatalogCounts(catalog)
+	if catalog.TotalCount != wantTotal ||
+		catalog.CLICommandCount != legacyCount ||
+		catalog.GenericSurfaceCount != genericCount {
+		t.Fatalf("refresh rewrote full merged counts from retained subset: %#v", catalog)
+	}
+}
+
+func TestMergeCommandSurfaceCatalogDoesNotEvictAuthoritativeFacts(t *testing.T) {
+	t.Parallel()
+
+	const legacyCount = 10
+	authoritativeCount := maxDiscoveredSurfaceTriggers - 6
+	triggers := make([]DiscoveredTrigger, 0, authoritativeCount)
+	for index := range authoritativeCount {
+		triggers = append(triggers, DiscoveredTrigger{
+			ID:       fmt.Sprintf("typed-%03d", index),
+			Kind:     "cli_command",
+			Producer: SurfaceProducerCobra,
+			Identity: SurfaceIdentity{
+				Name: fmt.Sprintf("typed-%03d", index),
+				Path: SurfaceValue{
+					Kind:  "command_segment",
+					Text:  fmt.Sprintf("typed-%03d", index),
+					Known: true,
+				},
+			},
+			Framework:      "cobra",
+			DiscoveryBasis: "build_selected_typed_cobra_descriptor",
+		})
+	}
+	traces := make([]gofacts.CommandTrace, 0, legacyCount)
+	for index := range legacyCount {
+		traces = append(traces, testCommandTrace(
+			fmt.Sprintf("legacy-%02d", index),
+			fmt.Sprintf("newLegacy%02dCommand", index),
+			fmt.Sprintf("cmd/app/legacy_%02d.go", index),
+			index+1,
+		))
+	}
+	data := &ReportData{
+		CommandTraces:      traces,
+		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: triggers},
+	}
+
+	mergeCommandSurfaceCatalog(data)
+
+	catalog := data.DiscoveredSurfaces
+	if len(catalog.Triggers) != maxDiscoveredSurfaceTriggers ||
+		catalog.TotalCount != authoritativeCount+legacyCount {
+		t.Fatalf("bounded merged catalog = %#v", catalog)
+	}
+	seen := make(map[string]struct{}, len(catalog.Triggers))
+	for _, trigger := range catalog.Triggers {
+		seen[trigger.ID] = struct{}{}
+	}
+	for _, trigger := range triggers {
+		if _, ok := seen[trigger.ID]; !ok {
+			t.Fatalf("authoritative fact %q was evicted by a legacy trace", trigger.ID)
+		}
+	}
+}
+
+func TestMergeCommandSurfaceCatalogSkipsLegacyMergeForTruncatedTypedCatalog(t *testing.T) {
+	t.Parallel()
+
+	total := maxDiscoveredSurfaceTriggers + 20
+	retained := DiscoveredTrigger{
+		ID: "typed-backup", Kind: "cli_command",
+		Identity: SurfaceIdentity{
+			Name: "backup",
+			Path: SurfaceValue{Kind: "command_path", Text: "backup", Known: true},
+		},
+		Framework:      "cobra",
+		DiscoveryBasis: "build_selected_typed_cobra_registration",
+		Provenance: []SurfaceProvenance{{
+			Provider: "go_types_ssa", Operation: "discover_typed_cobra_command",
+		}},
+	}
+	data := &ReportData{
+		CommandTraces: []gofacts.CommandTrace{
+			testCommandTrace("backup", "newBackupCommand", "cmd/app/backup.go", 10),
+			testCommandTrace("restore", "newRestoreCommand", "cmd/app/restore.go", 20),
+		},
+		DiscoveredSurfaces: &DiscoveredSurfaces{
+			TotalCount:      total,
+			Truncated:       true,
+			CLICommandCount: total,
+			Triggers:        []DiscoveredTrigger{retained},
+		},
+	}
+
+	mergeCommandSurfaceCatalog(data)
+
+	catalog := data.DiscoveredSurfaces
+	if len(catalog.Triggers) != 1 || catalog.Triggers[0].ID != retained.ID {
+		t.Fatalf("legacy traces were merged into truncated typed catalog: %#v", catalog.Triggers)
+	}
+	if catalog.TotalCount != total ||
+		catalog.CLICommandCount != total ||
+		catalog.GenericSurfaceCount != 0 ||
+		!catalog.Truncated {
+		t.Fatalf("truncated typed counts changed during legacy merge: %#v", catalog)
+	}
+	if catalog.Triggers[0].Producer != SurfaceProducerCobra ||
+		catalog.Triggers[0].Availability != SurfaceAvailabilityAvailable ||
+		catalog.Triggers[0].ExecutableRole != ExecutableRoleUnknown {
+		t.Fatalf("retained typed trigger was not normalized: %#v", catalog.Triggers[0])
+	}
+}
+
+func TestMergeCommandSurfaceCatalogPreservesLegacyCardsForTruncatedGenericCatalog(t *testing.T) {
+	t.Parallel()
+
+	total := maxDiscoveredSurfaceTriggers + 20
+	genericCount := total
+	retained := make([]DiscoveredTrigger, 0, maxDiscoveredSurfaceTriggers)
+	for index := range maxDiscoveredSurfaceTriggers {
+		retained = append(retained, DiscoveredTrigger{
+			ID:       fmt.Sprintf("generic-%03d", index),
+			Kind:     "worker",
+			Producer: SurfaceProducerGeneric,
+		})
+	}
+	data := &ReportData{
+		CommandTraces: []gofacts.CommandTrace{
+			testCommandTrace("backup", "newBackupCommand", "cmd/app/backup.go", 10),
+			testCommandTrace("restore", "newRestoreCommand", "cmd/app/restore.go", 20),
+		},
+		DiscoveredSurfaces: &DiscoveredSurfaces{
+			Version:             6,
+			TotalCount:          total,
+			Truncated:           true,
+			GenericSurfaceCount: genericCount,
+			Triggers:            retained,
+		},
+	}
+
+	mergeCommandSurfaceCatalog(data)
+
+	catalog := data.DiscoveredSurfaces
+	if len(catalog.Triggers) != maxDiscoveredSurfaceTriggers ||
+		catalog.TotalCount != total+2 ||
+		catalog.CLICommandCount != 2 ||
+		catalog.GenericSurfaceCount != genericCount ||
+		!catalog.Truncated {
+		t.Fatalf("truncated generic catalog did not retain legacy command counts: %#v", catalog)
+	}
+	var retainedLegacy int
+	for _, trigger := range catalog.Triggers {
+		if trigger.Identity.Name == "backup" || trigger.Identity.Name == "restore" {
+			retainedLegacy++
+		}
+	}
+	if retainedLegacy == 0 {
+		t.Fatalf("legacy CLI cards were not retained in bounded generic catalog: %#v", catalog.Triggers)
+	}
+}
+
+func TestMergeCommandSurfaceCatalogSkipsLegacyWhenTruncatedCountMayHideTypedCommands(t *testing.T) {
+	t.Parallel()
+
+	total := maxDiscoveredSurfaceTriggers + 20
+	retained := DiscoveredTrigger{
+		ID:       "generic-worker",
+		Kind:     "worker",
+		Producer: SurfaceProducerGeneric,
+	}
+	data := &ReportData{
+		CommandTraces: []gofacts.CommandTrace{
+			testCommandTrace("backup", "newBackupCommand", "cmd/app/backup.go", 10),
+		},
+		DiscoveredSurfaces: &DiscoveredSurfaces{
+			TotalCount:          total,
+			Truncated:           true,
+			CLICommandCount:     1,
+			GenericSurfaceCount: total - 1,
+			Triggers:            []DiscoveredTrigger{retained},
+		},
+	}
+
+	mergeCommandSurfaceCatalog(data)
+
+	catalog := data.DiscoveredSurfaces
+	if len(catalog.Triggers) != 1 || catalog.Triggers[0].ID != retained.ID {
+		t.Fatalf("legacy trace was merged despite a possibly omitted typed command: %#v", catalog.Triggers)
+	}
+	if catalog.TotalCount != total ||
+		catalog.CLICommandCount != 1 ||
+		catalog.GenericSurfaceCount != total-1 {
+		t.Fatalf("hidden typed command counts changed during legacy merge: %#v", catalog)
+	}
+}
+
 func TestProjectDiscoveredSurfacesCollapsesRepeatedCoverageNoise(t *testing.T) {
 	t.Parallel()
 
@@ -208,6 +572,26 @@ func TestProjectDiscoveredSurfacesRetainsProcessEntryAndUnavailablePackage(t *te
 	}
 }
 
+func TestProjectDiscoveredSurfacesPreservesUnavailableProcessProducerSemantics(t *testing.T) {
+	t.Parallel()
+
+	projected := projectDiscoveredSurfaces(rawSurfaceCatalog{Triggers: []rawSurfaceTrigger{{
+		ID: "process-primary", Kind: "process_entry", Resolution: "exact",
+		ProcessEntrypoint: rawSurfaceSymbol{Location: rawSurfaceLocation{Path: "cmd/app/main.go", Line: 7}},
+		Availability:      SurfaceAvailabilityUnavailable, ApplicationClass: SurfaceApplicationOwned,
+		SurfaceRole: SurfaceRoleEntrySurface, TraceReadiness: SurfaceTracePartialReady,
+		TraceReadinessReason: "exact process entry can seed a one-anchor partial trace; typed downstream closure is unavailable",
+		Quality: rawSurfaceQuality{Identity: surfaceQualityExact, RegistrationStart: surfaceQualityNotApplicable,
+			HandlerCallback: surfaceQualityNotApplicable, Reachability: surfaceQualityPartial,
+			Ownership: surfaceQualityExact, Traceability: SurfaceTracePartialReady},
+	}}}, rawSurfaceCoverage{})
+	trigger := projected.Triggers[0]
+	if trigger.SurfaceRole != SurfaceRoleEntrySurface || trigger.TraceReadiness != SurfaceTracePartialReady ||
+		trigger.Quality.Identity != surfaceQualityExact || trigger.Quality.Traceability != SurfaceTracePartialReady {
+		t.Fatalf("producer process semantics were rewritten: %#v", trigger)
+	}
+}
+
 func TestProjectDiscoveredSurfacesSanitizesEmbeddedExternalLocations(t *testing.T) {
 	t.Parallel()
 
@@ -281,19 +665,19 @@ func TestParseDiscoveredSurfacesRejectsUnusablePairs(t *testing.T) {
 			name: "unsupported catalog version",
 			mutate: func(t *testing.T, runDir string) {
 				mutateSurfaceCatalog(t, runDir, func(catalog *rawSurfaceCatalog) {
-					catalog.Version = 5
+					catalog.Version = 8
 				})
 			},
-			warning: "unsupported trigger_catalog.json version 5",
+			warning: "unsupported trigger_catalog.json version 8",
 		},
 		{
 			name: "unsupported coverage version",
 			mutate: func(t *testing.T, runDir string) {
 				mutateSurfaceCoverage(t, runDir, func(coverage *rawSurfaceCoverage) {
-					coverage.Version = 5
+					coverage.Version = 8
 				})
 			},
-			warning: "unsupported surface_coverage.json version 5",
+			warning: "unsupported surface_coverage.json version 8",
 		},
 		{
 			name: "repository mismatch",
@@ -372,12 +756,56 @@ func TestParseDiscoveredSurfacesSortsAndCapsStableIDs(t *testing.T) {
 		)
 	}
 	beforeRoutes := surfaces.HTTPRouteCount
-	surfaces.Triggers = append(surfaces.Triggers, DiscoveredTrigger{
-		ID: "cobra-extra", Kind: "cli_command", Producer: SurfaceProducerCobra,
-	})
+	beforeTotal := surfaces.TotalCount
+	beforeCLICommands := surfaces.CLICommandCount
+	beforeUnassigned := surfaces.UnassignedCount
 	refreshSurfaceCatalogCounts(surfaces)
-	if surfaces.TotalCount != maxDiscoveredSurfaceTriggers+4 || surfaces.HTTPRouteCount != beforeRoutes {
+	if surfaces.TotalCount != beforeTotal ||
+		surfaces.CLICommandCount != beforeCLICommands ||
+		surfaces.HTTPRouteCount != beforeRoutes ||
+		surfaces.UnassignedCount != beforeUnassigned {
 		t.Fatalf("truncated counts changed to displayed subset: %#v", surfaces)
+	}
+}
+
+func TestProjectDiscoveredSurfacesCountsCobraBeforeMixedCatalogTruncation(t *testing.T) {
+	t.Parallel()
+
+	total := maxDiscoveredSurfaceTriggers + 20
+	raw := make([]rawSurfaceTrigger, 0, total)
+	for index := range total {
+		producer := SurfaceProducerGeneric
+		kind := "http_route"
+		if index%3 == 0 {
+			producer = SurfaceProducerCobra
+			kind = "cli_command"
+		}
+		raw = append(raw, rawSurfaceTrigger{
+			ID:             fmt.Sprintf("trigger-%03d", total-index-1),
+			Kind:           kind,
+			Producer:       producer,
+			ScenarioID:     "scenario",
+			Availability:   SurfaceAvailabilityAvailable,
+			ExecutableRole: ExecutableRoleUnknown,
+		})
+	}
+
+	projected := projectDiscoveredSurfaces(rawSurfaceCatalog{Triggers: raw}, rawSurfaceCoverage{})
+	wantCLICommands := (total + 2) / 3
+	if !projected.Truncated ||
+		len(projected.Triggers) != maxDiscoveredSurfaceTriggers ||
+		projected.TotalCount != total ||
+		projected.CLICommandCount != wantCLICommands ||
+		projected.GenericSurfaceCount != total-wantCLICommands {
+		t.Fatalf("mixed truncated counts = %#v", projected)
+	}
+
+	refreshSurfaceCatalogCounts(projected)
+	if projected.TotalCount != total ||
+		projected.CLICommandCount != wantCLICommands ||
+		projected.GenericSurfaceCount != total-wantCLICommands ||
+		projected.UnassignedCount != total {
+		t.Fatalf("refresh rewrote raw mixed counts from retained subset: %#v", projected)
 	}
 }
 

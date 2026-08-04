@@ -1,41 +1,41 @@
 # Reproducible debug run
 
-How to capture a complete, reproducible orientation run for the configured
+How to capture a complete, reproducible Atlas-first run for the configured
 OpenAI-compatible provider.
 
-## Inspect the compact LLM bundle only (no API key)
+## Capture a provider-free local run
 
 ```bash
-repomap orient --repo ../etcd --llm-bundle-only > /tmp/etcd-llm-bundle.json
+repomap ../etcd --offline --debug-dir .repomap-runs --no-open --no-serve
 ```
 
-This mode prints one artifact and deliberately does not create a debug run.
-Use `--preview-request` to inspect the complete provider body without sending it.
+This persists the complete local Atlas and explicit offline Navigator status
+without making a provider call.
 
 ## Capture a full provider run (requires configured auth)
 
 ```bash
-repomap orient --repo ../etcd --debug-dir .repomap-runs --dump-llm
+repomap ../etcd --debug-dir .repomap-runs --no-open --no-serve
 ```
 
 Writes under `.repomap-runs/<run-id>/`:
 - `metadata.json`
 - `snapshot.json`
-- `llm_bundle.json`
-- `llm_request.redacted.json`
-- `llm_response.raw.json`
-- `orientation_report.json`
+- `repository_atlas.v1.json`
+- `navigator_request.v1.json` when eligible startup actions exist
+- `navigator_status.v1.json`
+- `navigator_result.v1.json` after an empty or accepted selection
+- `semantic_exchanges/<content-addressed-id>/request.{json,txt}`
+- `semantic_exchanges/<content-addressed-id>/response.{json,txt}` or `response.marker.json`
+- `semantic_exchanges/<content-addressed-id>/exchange.v1.json`
+- `report.json`
+- `report.html`
 - `error.txt` (if failure)
 
 ## Inspect the last run
 
-```bash
-./scripts/debug_last_run.sh
-./scripts/debug_last_run.sh .repomap-runs
-```
-
-With no argument the script inspects the platform user-cache directory used by
-the normal CLI. Pass an explicit directory for the reproducible layout above.
+The CLI prints the exact artifact directory near the start of every ordinary
+run. Open its `run_manifest.json`, `report.json` and `report.html` directly.
 
 ## Debug run directory structure
 
@@ -44,10 +44,18 @@ the normal CLI. Pass an explicit directory for the reproducible layout above.
   20260523-173804-etcd/
     metadata.json
     snapshot.json
-    llm_bundle.json
-    llm_request.redacted.json
-    llm_response.raw.json
-    orientation_report.json
+    repository_atlas.v1.json
+    navigator_request.v1.json
+    navigator_status.v1.json
+    navigator_result.v1.json
+    semantic_exchanges/
+      <content-addressed-id>/
+        request.json or request.txt
+        response.json, response.txt, or response.marker.json
+        exchange.v1.json
+    run_manifest.json
+    report.json
+    report.html
     error.txt
 ```
 
@@ -56,4 +64,5 @@ the normal CLI. Pass an explicit directory for the reproducible layout above.
 - **Do not commit** `.repomap-runs/` — it may contain repository information.
 - Debug artifacts never include API keys or Authorization headers.
 - Sensitive values are redacted (api_key, token, password, secret, authorization, bearer).
+- Semantic journal payloads are bounded; unavailable or unsafe raw bytes use closed markers.
 - Directories use mode 0700, files use 0600.

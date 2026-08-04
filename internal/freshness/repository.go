@@ -89,6 +89,13 @@ func captureRepositoryOnce(ctx context.Context, root string) (RepositoryState, e
 		if entry.submodule != "" {
 			continue
 		}
+		excluded, err := excludedUntrackedRepository(ctx, rootHandle, root, entry)
+		if err != nil {
+			return RepositoryState{}, err
+		}
+		if excluded {
+			continue
+		}
 		file, err := fingerprintDirtyFile(rootHandle, entry)
 		if err != nil {
 			return RepositoryState{}, err
@@ -241,6 +248,40 @@ func captureSubmodules(ctx context.Context, root string, entries []statusEntry) 
 	return result, nil
 }
 
+// Git reports an untracked nested checkout as one directory even with
+// --untracked-files=all. It is outside the superproject's tracked snapshot, so
+// do not recurse into it or let its private/ignored contents block a report.
+func excludedUntrackedRepository(
+	ctx context.Context,
+	rootHandle *os.Root,
+	root string,
+	entry statusEntry,
+) (bool, error) {
+	if entry.xy != "??" {
+		return false, nil
+	}
+	info, err := rootHandle.Lstat(filepath.FromSlash(entry.path))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("freshness: inspect dirty path %q: %w", entry.path, err)
+	}
+	if !info.IsDir() {
+		return false, nil
+	}
+	nestedPath := filepath.Join(root, filepath.FromSlash(entry.path))
+	topLevel, err := gitOutput(ctx, nestedPath, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return false, nil
+	}
+	nestedRoot, err := canonicalRoot(strings.TrimSpace(string(topLevel)))
+	if err != nil {
+		return false, nil
+	}
+	return nestedRoot == nestedPath, nil
+}
+
 func parseIgnoredBuildInputs(data []byte) ([]statusEntry, error) {
 	var entries []statusEntry
 	for len(data) > 0 {
@@ -387,12 +428,45 @@ func isGoBuildInput(path string) bool {
 }
 
 func gitOutput(ctx context.Context, path string, args ...string) ([]byte, error) {
-	commandArgs := append([]string{"-C", path}, args...)
+	commandArgs := []string{
+		"--no-pager",
+		"-c", "core.fsmonitor=false",
+		"-c", "core.hooksPath=" + os.DevNull,
+		"-C", path,
+	}
+	commandArgs = append(commandArgs, args...)
 	command := exec.CommandContext(ctx, "git", commandArgs...)
-	command.Env = append(os.Environ(), "GIT_OPTIONAL_LOCKS=0")
+	command.Env = isolatedGitEnvironment(os.Environ())
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("freshness: git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
 	}
 	return output, nil
+}
+
+func isolatedGitEnvironment(environment []string) []string {
+	result := make([]string, 0, len(environment)+4)
+	for _, entry := range environment {
+		name, _, _ := strings.Cut(entry, "=")
+		switch name {
+		case "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
+			"GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+			"GIT_CONFIG", "GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS",
+			"GIT_CONFIG_SYSTEM", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM",
+			"GIT_EXTERNAL_DIFF", "GIT_PAGER", "PAGER":
+			continue
+		}
+		if strings.HasPrefix(name, "GIT_CONFIG_KEY_") || strings.HasPrefix(name, "GIT_CONFIG_VALUE_") {
+			continue
+		}
+		result = append(result, entry)
+	}
+	return append(result,
+		"GIT_OPTIONAL_LOCKS=0",
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_SYSTEM="+os.DevNull,
+		"GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_PAGER=cat",
+		"PAGER=cat",
+	)
 }

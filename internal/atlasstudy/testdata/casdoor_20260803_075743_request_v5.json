@@ -1,0 +1,674 @@
+{
+  "version": 5,
+  "prompt_version": "atlas-study-prompt-v11",
+  "atlas_sha256": "b5892e62960940851e8ee180e181540f3fab72919393dc67e0ca218aaca83e5d",
+  "architecture_sha256": "aa1ccfd860b1133aad872d433850f1b9870d8a08a5111ee70f5304d18f1e1125",
+  "wire_sha256": "97665ba9fbd37ee3445ee2e6610c99228a7ac187cca162f6e73cf70ea975a909",
+  "catalog_sha256": "7d9400b9366feae1832d45636477fb59448b0d482bac3b9d3b2b516d6bdff4ba",
+  "catalog_ref": "atlas-study-v5-7d9400b9366feae1832d45636477fb59448b0d482bac3b9d3b2b516d6bdff4ba",
+  "language": "ru",
+  "catalog": [
+    {
+      "ref": "u1",
+      "kind": "unit",
+      "canonical_id": "module-1e92304d4e1fbe8f2e72117b",
+      "label": "github.com/casdoor/casdoor",
+      "authority": "observed"
+    },
+    {
+      "ref": "u2",
+      "kind": "unit",
+      "canonical_id": "unit-app-cda3f78bfcb7e21d38b4983d",
+      "label": "github.com/casdoor/casdoor",
+      "authority": "observed"
+    },
+    {
+      "ref": "u3",
+      "kind": "unit",
+      "canonical_id": "unit-package-025c0abc04de59a5fa00cec1",
+      "label": "github.com/casdoor/casdoor/controllers",
+      "authority": "observed"
+    },
+    {
+      "ref": "u4",
+      "kind": "unit",
+      "canonical_id": "unit-package-068348c35831eea77b08e9be",
+      "label": "github.com/casdoor/casdoor/idp",
+      "authority": "observed"
+    },
+    {
+      "ref": "u5",
+      "kind": "unit",
+      "canonical_id": "unit-package-0a0028a011edff6140a0c84d",
+      "label": "github.com/casdoor/casdoor/storage",
+      "authority": "observed"
+    },
+    {
+      "ref": "u6",
+      "kind": "unit",
+      "canonical_id": "unit-package-0c153df98d146671f0d903ab",
+      "label": "github.com/casdoor/casdoor/conf",
+      "authority": "observed"
+    },
+    {
+      "ref": "u7",
+      "kind": "unit",
+      "canonical_id": "unit-package-44abbd794a40b54ecaa020c5",
+      "label": "github.com/casdoor/casdoor/faceId",
+      "authority": "observed"
+    },
+    {
+      "ref": "u8",
+      "kind": "unit",
+      "canonical_id": "unit-package-4feec044ec1d0b8a8b6fe3d8",
+      "label": "github.com/casdoor/casdoor/mcp",
+      "authority": "observed"
+    },
+    {
+      "ref": "u9",
+      "kind": "unit",
+      "canonical_id": "unit-package-512df92bdd5c73315b996834",
+      "label": "github.com/casdoor/casdoor/email",
+      "authority": "observed"
+    },
+    {
+      "ref": "u10",
+      "kind": "unit",
+      "canonical_id": "unit-package-547a636553a8db1c6d11e7ce",
+      "label": "github.com/casdoor/casdoor/deployment",
+      "authority": "observed"
+    },
+    {
+      "ref": "u11",
+      "kind": "unit",
+      "canonical_id": "unit-package-54fd428ecd00cd43c8d680b1",
+      "label": "github.com/casdoor/casdoor/proxy",
+      "authority": "observed"
+    },
+    {
+      "ref": "u12",
+      "kind": "unit",
+      "canonical_id": "unit-package-57192673f281c916cc7fbaa0",
+      "label": "github.com/casdoor/casdoor/object",
+      "authority": "observed"
+    },
+    {
+      "ref": "u13",
+      "kind": "unit",
+      "canonical_id": "unit-package-66d41e5b0fa2a8e12fa02aea",
+      "label": "github.com/casdoor/casdoor/form",
+      "authority": "observed"
+    },
+    {
+      "ref": "u14",
+      "kind": "unit",
+      "canonical_id": "unit-package-69be30e9cef976eb58bba8e3",
+      "label": "github.com/casdoor/casdoor/scim",
+      "authority": "observed"
+    },
+    {
+      "ref": "u15",
+      "kind": "unit",
+      "canonical_id": "unit-package-6a222027d6b51e75c4481d68",
+      "label": "github.com/casdoor/casdoor/cred",
+      "authority": "observed"
+    },
+    {
+      "ref": "u16",
+      "kind": "unit",
+      "canonical_id": "unit-package-6ad5e550eaa392a5a40d4a12",
+      "label": "github.com/casdoor/casdoor/notification",
+      "authority": "observed"
+    },
+    {
+      "ref": "u17",
+      "kind": "unit",
+      "canonical_id": "unit-package-73a0ecfe54ecc19dedd9d91d",
+      "label": "github.com/casdoor/casdoor/rule",
+      "authority": "observed"
+    },
+    {
+      "ref": "u18",
+      "kind": "unit",
+      "canonical_id": "unit-package-764a3a0e42c3888883ed3ca5",
+      "label": "github.com/casdoor/casdoor/mcpself",
+      "authority": "observed"
+    },
+    {
+      "ref": "u19",
+      "kind": "unit",
+      "canonical_id": "unit-package-83e19eefc96cce2596e77433",
+      "label": "github.com/casdoor/casdoor/authz",
+      "authority": "observed"
+    },
+    {
+      "ref": "u20",
+      "kind": "unit",
+      "canonical_id": "unit-package-8e792a269fe635a44a8da817",
+      "label": "github.com/casdoor/casdoor/scan",
+      "authority": "observed"
+    },
+    {
+      "ref": "u21",
+      "kind": "unit",
+      "canonical_id": "unit-package-9a974556ce5bbb3bd47386c6",
+      "label": "github.com/casdoor/casdoor/ip",
+      "authority": "observed"
+    },
+    {
+      "ref": "u22",
+      "kind": "unit",
+      "canonical_id": "unit-package-9e2430d0499444e3500a589f",
+      "label": "github.com/casdoor/casdoor/util",
+      "authority": "observed"
+    },
+    {
+      "ref": "u23",
+      "kind": "unit",
+      "canonical_id": "unit-package-aa58536b51224ea5f907dd14",
+      "label": "github.com/casdoor/casdoor/service",
+      "authority": "observed"
+    },
+    {
+      "ref": "u24",
+      "kind": "unit",
+      "canonical_id": "unit-package-aaafa81c5429348c41f0d668",
+      "label": "github.com/casdoor/casdoor/routers",
+      "authority": "observed"
+    },
+    {
+      "ref": "u25",
+      "kind": "unit",
+      "canonical_id": "unit-package-aff1c88017fccffd04e3ccea",
+      "label": "github.com/casdoor/casdoor/sync",
+      "authority": "observed"
+    },
+    {
+      "ref": "u26",
+      "kind": "unit",
+      "canonical_id": "unit-package-b3336054ea95574d9db6bf0e",
+      "label": "github.com/casdoor/casdoor/log",
+      "authority": "observed"
+    },
+    {
+      "ref": "u27",
+      "kind": "unit",
+      "canonical_id": "unit-package-b410f19dd1c4638fd91613e0",
+      "label": "github.com/casdoor/casdoor/i18n",
+      "authority": "observed"
+    },
+    {
+      "ref": "u28",
+      "kind": "unit",
+      "canonical_id": "unit-package-bed15c119b3915225e7f1ef1",
+      "label": "github.com/casdoor/casdoor/captcha",
+      "authority": "observed"
+    },
+    {
+      "ref": "u29",
+      "kind": "unit",
+      "canonical_id": "unit-package-c78f786b02625d55cae36040",
+      "label": "github.com/casdoor/casdoor/radius",
+      "authority": "observed"
+    },
+    {
+      "ref": "u30",
+      "kind": "unit",
+      "canonical_id": "unit-package-cb710611a9949dfcced710ad",
+      "label": "github.com/casdoor/casdoor/pp",
+      "authority": "observed"
+    },
+    {
+      "ref": "u31",
+      "kind": "unit",
+      "canonical_id": "unit-package-cda3f78bfcb7e21d38b4983d",
+      "label": "github.com/casdoor/casdoor",
+      "authority": "observed"
+    },
+    {
+      "ref": "u32",
+      "kind": "unit",
+      "canonical_id": "unit-package-d4dc33a75285b34d94d741d8",
+      "label": "github.com/casdoor/casdoor/certificate",
+      "authority": "observed"
+    },
+    {
+      "ref": "u33",
+      "kind": "unit",
+      "canonical_id": "unit-package-d6b00e4f809ef076670b8ccc",
+      "label": "github.com/casdoor/casdoor/idv",
+      "authority": "observed"
+    },
+    {
+      "ref": "u34",
+      "kind": "unit",
+      "canonical_id": "unit-package-f228b238d54048c5dd26200e",
+      "label": "github.com/casdoor/casdoor/ldap",
+      "authority": "observed"
+    },
+    {
+      "ref": "u35",
+      "kind": "unit",
+      "canonical_id": "unit-package-f4859e4ae0d68015f6e68068",
+      "label": "github.com/casdoor/casdoor/xlsx",
+      "authority": "observed"
+    },
+    {
+      "ref": "u36",
+      "kind": "unit",
+      "canonical_id": "unit-package-f8d9f8c1c64d0a31cda97fc9",
+      "label": "github.com/casdoor/casdoor/sync_v2",
+      "authority": "observed"
+    },
+    {
+      "ref": "u37",
+      "kind": "unit",
+      "canonical_id": "unit-repository-dd33b492e605f88c078c3256",
+      "label": "github.com/casdoor/casdoor",
+      "authority": "observed"
+    },
+    {
+      "ref": "ss1",
+      "kind": "subsystem",
+      "canonical_id": "subsystem-0ce2b3728ef4363beb9eabb075001bea6f6e63177c157be9fd3592a2e2f15986",
+      "label": "Entry and dispatch",
+      "fact": "Process entry and command dispatch anchors.",
+      "authority": "inferred"
+    },
+    {
+      "ref": "ss2",
+      "kind": "subsystem",
+      "canonical_id": "subsystem-447d31bda20713b26305cd97da31c57d6506194417946b23726a41f6ae441e72",
+      "label": "Security",
+      "fact": "TLS and security-boundary anchors.",
+      "authority": "inferred"
+    },
+    {
+      "ref": "ss3",
+      "kind": "subsystem",
+      "canonical_id": "subsystem-4ce5625e11be68e14d4a06463304d7c622f1c4622d0df508620bd29ec7a965e2",
+      "label": "Supporting evidence",
+      "fact": "Package, file, symbol, and flow evidence retained outside the primary architecture.",
+      "authority": "inferred"
+    },
+    {
+      "ref": "ss4",
+      "kind": "subsystem",
+      "canonical_id": "subsystem-bf404d339bb5c41988e032a31e2074aae4f954b1706308b4508935cf7fc3dca0",
+      "label": "Runtime and extensions",
+      "fact": "Registry, extension, and lifecycle anchors.",
+      "authority": "inferred"
+    },
+    {
+      "ref": "c1",
+      "kind": "component",
+      "canonical_id": "component-27f28b5c505f32883d653d442c9395b780fc99109d84238071acbfd4d60b3fe6",
+      "label": "Primary application",
+      "fact": "Repository-named process entrypoint backed by an exact main declaration.",
+      "authority": "inferred"
+    },
+    {
+      "ref": "c2",
+      "kind": "component",
+      "canonical_id": "component-52ebba80c0d33c1597f1b8340a4d43f42eca93444e9794a54c2a09519c1108a1",
+      "label": "TLS and security boundary",
+      "fact": "Deterministic grouping from exact tls_or_security_boundary anchors.",
+      "authority": "inferred"
+    },
+    {
+      "ref": "c3",
+      "kind": "component",
+      "canonical_id": "component-9331ec585a3091d18aba0c55da67801f11770608bde625a9cc318a252622dcef",
+      "label": "Lifecycle startup",
+      "fact": "Deterministic grouping from exact lifecycle_start anchors.",
+      "authority": "inferred"
+    },
+    {
+      "ref": "c4",
+      "kind": "component",
+      "canonical_id": "component-c9d49da2b890f0566f62da02ef938566912f9a46733723eed737a5d0c0f0fa0a",
+      "label": "Supporting repository evidence",
+      "fact": "Exact local members not assigned by the bounded anchor-kind mapping.",
+      "authority": "inferred"
+    },
+    {
+      "ref": "sf1",
+      "kind": "surface",
+      "canonical_id": "trigger-d0ffcc169913e9701cc401c2",
+      "label": "main",
+      "fact": "process_entry",
+      "authority": "resolved"
+    },
+    {
+      "ref": "a1",
+      "kind": "reading_target",
+      "canonical_id": "reading-target-3d5b287f612071562b45c1f4",
+      "label": "main",
+      "fact": "Exact saved source for this advertised application surface.",
+      "authority": "observed",
+      "related_component_refs": [
+        {
+          "kind": "component",
+          "id": "component-27f28b5c505f32883d653d442c9395b780fc99109d84238071acbfd4d60b3fe6"
+        },
+        {
+          "kind": "component",
+          "id": "component-c9d49da2b890f0566f62da02ef938566912f9a46733723eed737a5d0c0f0fa0a"
+        }
+      ],
+      "principal_refs": [
+        {
+          "kind": "component",
+          "id": "component-27f28b5c505f32883d653d442c9395b780fc99109d84238071acbfd4d60b3fe6"
+        },
+        {
+          "kind": "component",
+          "id": "component-c9d49da2b890f0566f62da02ef938566912f9a46733723eed737a5d0c0f0fa0a"
+        },
+        {
+          "kind": "surface",
+          "id": "trigger-d0ffcc169913e9701cc401c2"
+        }
+      ],
+      "location": {
+        "path": "main.go",
+        "line": 36
+      },
+      "symbol": "main"
+    },
+    {
+      "ref": "a2",
+      "kind": "reading_target",
+      "canonical_id": "reading-target-623eea3f88eae138056524f4",
+      "label": "Function buildSpCertificateStore",
+      "fact": "Exact saved Go function declaration.",
+      "authority": "observed",
+      "related_component_refs": [
+        {
+          "kind": "component",
+          "id": "component-52ebba80c0d33c1597f1b8340a4d43f42eca93444e9794a54c2a09519c1108a1"
+        }
+      ],
+      "principal_refs": [
+        {
+          "kind": "component",
+          "id": "component-52ebba80c0d33c1597f1b8340a4d43f42eca93444e9794a54c2a09519c1108a1"
+        }
+      ],
+      "location": {
+        "path": "object/saml_sp.go",
+        "line": 170
+      },
+      "symbol": "buildSpCertificateStore"
+    },
+    {
+      "ref": "a3",
+      "kind": "reading_target",
+      "canonical_id": "reading-target-964034ed85c4037d3325fcb8",
+      "label": "Function getLegoClientAndAccount",
+      "fact": "Exact saved Go function declaration.",
+      "authority": "observed",
+      "related_component_refs": [
+        {
+          "kind": "component",
+          "id": "component-52ebba80c0d33c1597f1b8340a4d43f42eca93444e9794a54c2a09519c1108a1"
+        },
+        {
+          "kind": "component",
+          "id": "component-c9d49da2b890f0566f62da02ef938566912f9a46733723eed737a5d0c0f0fa0a"
+        }
+      ],
+      "principal_refs": [
+        {
+          "kind": "component",
+          "id": "component-52ebba80c0d33c1597f1b8340a4d43f42eca93444e9794a54c2a09519c1108a1"
+        },
+        {
+          "kind": "component",
+          "id": "component-c9d49da2b890f0566f62da02ef938566912f9a46733723eed737a5d0c0f0fa0a"
+        }
+      ],
+      "location": {
+        "path": "certificate/account.go",
+        "line": 50
+      },
+      "symbol": "getLegoClientAndAccount"
+    },
+    {
+      "ref": "a4",
+      "kind": "reading_target",
+      "canonical_id": "reading-target-a53776169586140f8c0c176a",
+      "label": "Function Start",
+      "fact": "Exact saved Go function declaration.",
+      "authority": "observed",
+      "related_component_refs": [
+        {
+          "kind": "component",
+          "id": "component-9331ec585a3091d18aba0c55da67801f11770608bde625a9cc318a252622dcef"
+        }
+      ],
+      "principal_refs": [
+        {
+          "kind": "component",
+          "id": "component-9331ec585a3091d18aba0c55da67801f11770608bde625a9cc318a252622dcef"
+        }
+      ],
+      "location": {
+        "path": "service/proxy.go",
+        "line": 306
+      },
+      "symbol": "Start"
+    },
+    {
+      "ref": "a5",
+      "kind": "reading_target",
+      "canonical_id": "reading-target-b155a91108887a981320fb28",
+      "label": "Function getGoDaddyCert",
+      "fact": "Exact saved Go function declaration.",
+      "authority": "observed",
+      "related_component_refs": [
+        {
+          "kind": "component",
+          "id": "component-52ebba80c0d33c1597f1b8340a4d43f42eca93444e9794a54c2a09519c1108a1"
+        },
+        {
+          "kind": "component",
+          "id": "component-c9d49da2b890f0566f62da02ef938566912f9a46733723eed737a5d0c0f0fa0a"
+        }
+      ],
+      "principal_refs": [
+        {
+          "kind": "component",
+          "id": "component-52ebba80c0d33c1597f1b8340a4d43f42eca93444e9794a54c2a09519c1108a1"
+        },
+        {
+          "kind": "component",
+          "id": "component-c9d49da2b890f0566f62da02ef938566912f9a46733723eed737a5d0c0f0fa0a"
+        }
+      ],
+      "location": {
+        "path": "certificate/dns.go",
+        "line": 86
+      },
+      "symbol": "getGoDaddyCert"
+    },
+    {
+      "ref": "a6",
+      "kind": "reading_target",
+      "canonical_id": "reading-target-b4ba876984ded855e1469843",
+      "label": "Function getAliCert",
+      "fact": "Exact saved Go function declaration.",
+      "authority": "observed",
+      "related_component_refs": [
+        {
+          "kind": "component",
+          "id": "component-52ebba80c0d33c1597f1b8340a4d43f42eca93444e9794a54c2a09519c1108a1"
+        },
+        {
+          "kind": "component",
+          "id": "component-c9d49da2b890f0566f62da02ef938566912f9a46733723eed737a5d0c0f0fa0a"
+        }
+      ],
+      "principal_refs": [
+        {
+          "kind": "component",
+          "id": "component-52ebba80c0d33c1597f1b8340a4d43f42eca93444e9794a54c2a09519c1108a1"
+        },
+        {
+          "kind": "component",
+          "id": "component-c9d49da2b890f0566f62da02ef938566912f9a46733723eed737a5d0c0f0fa0a"
+        }
+      ],
+      "location": {
+        "path": "certificate/dns.go",
+        "line": 49
+      },
+      "symbol": "getAliCert"
+    },
+    {
+      "ref": "a7",
+      "kind": "reading_target",
+      "canonical_id": "reading-target-d68b3fb4bf66edef5516683b",
+      "label": "Function getTLSconfig",
+      "fact": "Exact saved Go function declaration.",
+      "authority": "observed",
+      "related_component_refs": [
+        {
+          "kind": "component",
+          "id": "component-52ebba80c0d33c1597f1b8340a4d43f42eca93444e9794a54c2a09519c1108a1"
+        }
+      ],
+      "principal_refs": [
+        {
+          "kind": "component",
+          "id": "component-52ebba80c0d33c1597f1b8340a4d43f42eca93444e9794a54c2a09519c1108a1"
+        }
+      ],
+      "location": {
+        "path": "ldap/server.go",
+        "line": 76
+      },
+      "symbol": "getTLSconfig"
+    },
+    {
+      "ref": "a8",
+      "kind": "reading_target",
+      "canonical_id": "reading-target-e86c24ad51ae0abb489fe0f1",
+      "label": "Function ObtainCertificateGoDaddy",
+      "fact": "Exact saved Go function declaration.",
+      "authority": "observed",
+      "related_component_refs": [
+        {
+          "kind": "component",
+          "id": "component-52ebba80c0d33c1597f1b8340a4d43f42eca93444e9794a54c2a09519c1108a1"
+        },
+        {
+          "kind": "component",
+          "id": "component-c9d49da2b890f0566f62da02ef938566912f9a46733723eed737a5d0c0f0fa0a"
+        }
+      ],
+      "principal_refs": [
+        {
+          "kind": "component",
+          "id": "component-52ebba80c0d33c1597f1b8340a4d43f42eca93444e9794a54c2a09519c1108a1"
+        },
+        {
+          "kind": "component",
+          "id": "component-c9d49da2b890f0566f62da02ef938566912f9a46733723eed737a5d0c0f0fa0a"
+        }
+      ],
+      "location": {
+        "path": "certificate/dns.go",
+        "line": 135
+      },
+      "symbol": "ObtainCertificateGoDaddy"
+    },
+    {
+      "ref": "a9",
+      "kind": "reading_target",
+      "canonical_id": "reading-target-ec4ce0d792e210b002041e31",
+      "label": "Function ObtainCertificateAli",
+      "fact": "Exact saved Go function declaration.",
+      "authority": "observed",
+      "related_component_refs": [
+        {
+          "kind": "component",
+          "id": "component-52ebba80c0d33c1597f1b8340a4d43f42eca93444e9794a54c2a09519c1108a1"
+        },
+        {
+          "kind": "component",
+          "id": "component-c9d49da2b890f0566f62da02ef938566912f9a46733723eed737a5d0c0f0fa0a"
+        }
+      ],
+      "principal_refs": [
+        {
+          "kind": "component",
+          "id": "component-52ebba80c0d33c1597f1b8340a4d43f42eca93444e9794a54c2a09519c1108a1"
+        },
+        {
+          "kind": "component",
+          "id": "component-c9d49da2b890f0566f62da02ef938566912f9a46733723eed737a5d0c0f0fa0a"
+        }
+      ],
+      "location": {
+        "path": "certificate/dns.go",
+        "line": 122
+      },
+      "symbol": "ObtainCertificateAli"
+    },
+    {
+      "ref": "a10",
+      "kind": "reading_target",
+      "canonical_id": "reading-target-f0b3f46fec0e5dddbc73a3f4",
+      "label": "Function decodeEccKey",
+      "fact": "Exact saved Go function declaration.",
+      "authority": "observed",
+      "related_component_refs": [
+        {
+          "kind": "component",
+          "id": "component-52ebba80c0d33c1597f1b8340a4d43f42eca93444e9794a54c2a09519c1108a1"
+        },
+        {
+          "kind": "component",
+          "id": "component-c9d49da2b890f0566f62da02ef938566912f9a46733723eed737a5d0c0f0fa0a"
+        }
+      ],
+      "principal_refs": [
+        {
+          "kind": "component",
+          "id": "component-52ebba80c0d33c1597f1b8340a4d43f42eca93444e9794a54c2a09519c1108a1"
+        },
+        {
+          "kind": "component",
+          "id": "component-c9d49da2b890f0566f62da02ef938566912f9a46733723eed737a5d0c0f0fa0a"
+        }
+      ],
+      "location": {
+        "path": "certificate/ecc.go",
+        "line": 43
+      },
+      "symbol": "decodeEccKey"
+    },
+    {
+      "ref": "e1",
+      "kind": "evidence",
+      "canonical_id": "evidence-12b73ede50c482a6d4445b5c",
+      "fact": "Local Atlas observation with exact saved evidence.",
+      "authority": "observed",
+      "location": {
+        "path": "main.go",
+        "line": 36
+      },
+      "symbol": "github.com/casdoor/casdoor.main"
+    },
+    {
+      "ref": "d1",
+      "kind": "document",
+      "canonical_id": "documented-purpose-1cc8a6e7925dc0d4d51925e4",
+      "label": "Repository documentation",
+      "fact": "Supporting MCP, A2A, OAuth 2.0, OIDC (OAuth 2.x), SAML, CAS, LDAP, SCIM, WebAuthn, TOTP, MFA, Face ID, Google Workspace, Azure AD, and more.",
+      "authority": "observed"
+    }
+  ],
+  "wire_json": "{\"version\":5,\"language\":\"ru\",\"allowed_paths\":[\"certificate/account.go\",\"certificate/dns.go\",\"certificate/ecc.go\",\"ldap/server.go\",\"main.go\",\"object/saml_sp.go\",\"service/proxy.go\"],\"architecture\":{\"title\":\"Evidence-backed architecture skeleton\",\"subtitle\":\"Built from exact local architecture anchors\"},\"brief_support_choices\":[{\"ref\":\"ss1\",\"kind\":\"subsystem\"},{\"ref\":\"ss2\",\"kind\":\"subsystem\"},{\"ref\":\"ss3\",\"kind\":\"subsystem\"},{\"ref\":\"ss4\",\"kind\":\"subsystem\"},{\"ref\":\"c1\",\"kind\":\"component\"},{\"ref\":\"c2\",\"kind\":\"component\"},{\"ref\":\"c3\",\"kind\":\"component\"},{\"ref\":\"c4\",\"kind\":\"component\"},{\"ref\":\"sf1\",\"kind\":\"surface\"},{\"ref\":\"a1\",\"kind\":\"reading_target\"},{\"ref\":\"a2\",\"kind\":\"reading_target\"},{\"ref\":\"a3\",\"kind\":\"reading_target\"},{\"ref\":\"a4\",\"kind\":\"reading_target\"},{\"ref\":\"a5\",\"kind\":\"reading_target\"},{\"ref\":\"a6\",\"kind\":\"reading_target\"},{\"ref\":\"a7\",\"kind\":\"reading_target\"},{\"ref\":\"a8\",\"kind\":\"reading_target\"},{\"ref\":\"a9\",\"kind\":\"reading_target\"},{\"ref\":\"a10\",\"kind\":\"reading_target\"},{\"ref\":\"e1\",\"kind\":\"evidence\"},{\"ref\":\"d1\",\"kind\":\"document\"}],\"units\":[{\"ref\":\"u1\",\"kind\":\"module\",\"label\":\"github.com/casdoor/casdoor\",\"authority\":\"observed\"},{\"ref\":\"u2\",\"kind\":\"app\",\"label\":\"github.com/casdoor/casdoor\",\"authority\":\"observed\"},{\"ref\":\"u3\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/controllers\",\"authority\":\"observed\"},{\"ref\":\"u4\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/idp\",\"authority\":\"observed\"},{\"ref\":\"u5\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/storage\",\"authority\":\"observed\"},{\"ref\":\"u6\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/conf\",\"authority\":\"observed\"},{\"ref\":\"u7\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/faceId\",\"authority\":\"observed\"},{\"ref\":\"u8\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/mcp\",\"authority\":\"observed\"},{\"ref\":\"u9\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/email\",\"authority\":\"observed\"},{\"ref\":\"u10\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/deployment\",\"authority\":\"observed\"},{\"ref\":\"u11\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/proxy\",\"authority\":\"observed\"},{\"ref\":\"u12\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/object\",\"authority\":\"observed\"},{\"ref\":\"u13\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/form\",\"authority\":\"observed\"},{\"ref\":\"u14\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/scim\",\"authority\":\"observed\"},{\"ref\":\"u15\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/cred\",\"authority\":\"observed\"},{\"ref\":\"u16\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/notification\",\"authority\":\"observed\"},{\"ref\":\"u17\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/rule\",\"authority\":\"observed\"},{\"ref\":\"u18\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/mcpself\",\"authority\":\"observed\"},{\"ref\":\"u19\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/authz\",\"authority\":\"observed\"},{\"ref\":\"u20\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/scan\",\"authority\":\"observed\"},{\"ref\":\"u21\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/ip\",\"authority\":\"observed\"},{\"ref\":\"u22\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/util\",\"authority\":\"observed\"},{\"ref\":\"u23\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/service\",\"authority\":\"observed\"},{\"ref\":\"u24\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/routers\",\"authority\":\"observed\"},{\"ref\":\"u25\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/sync\",\"authority\":\"observed\"},{\"ref\":\"u26\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/log\",\"authority\":\"observed\"},{\"ref\":\"u27\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/i18n\",\"authority\":\"observed\"},{\"ref\":\"u28\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/captcha\",\"authority\":\"observed\"},{\"ref\":\"u29\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/radius\",\"authority\":\"observed\"},{\"ref\":\"u30\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/pp\",\"authority\":\"observed\"},{\"ref\":\"u31\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor\",\"authority\":\"observed\"},{\"ref\":\"u32\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/certificate\",\"authority\":\"observed\"},{\"ref\":\"u33\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/idv\",\"authority\":\"observed\"},{\"ref\":\"u34\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/ldap\",\"authority\":\"observed\"},{\"ref\":\"u35\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/xlsx\",\"authority\":\"observed\"},{\"ref\":\"u36\",\"kind\":\"package\",\"label\":\"github.com/casdoor/casdoor/sync_v2\",\"authority\":\"observed\"},{\"ref\":\"u37\",\"kind\":\"repository\",\"label\":\"github.com/casdoor/casdoor\",\"authority\":\"observed\"}],\"subsystems\":[{\"ref\":\"ss1\",\"label\":\"Entry and dispatch\",\"description\":\"Process entry and command dispatch anchors.\",\"authority\":\"inferred\",\"component_refs\":[\"c1\"]},{\"ref\":\"ss2\",\"label\":\"Security\",\"description\":\"TLS and security-boundary anchors.\",\"authority\":\"inferred\",\"component_refs\":[\"c2\"]},{\"ref\":\"ss3\",\"label\":\"Supporting evidence\",\"description\":\"Package, file, symbol, and flow evidence retained outside the primary architecture.\",\"authority\":\"inferred\",\"component_refs\":[\"c4\"]},{\"ref\":\"ss4\",\"label\":\"Runtime and extensions\",\"description\":\"Registry, extension, and lifecycle anchors.\",\"authority\":\"inferred\",\"component_refs\":[\"c3\"]}],\"components\":[{\"ref\":\"c1\",\"subsystem_ref\":\"ss1\",\"label\":\"Primary application\",\"description\":\"Repository-named process entrypoint backed by an exact main declaration.\",\"authority\":\"inferred\",\"reading_target_refs\":[\"a1\"]},{\"ref\":\"c2\",\"subsystem_ref\":\"ss2\",\"label\":\"TLS and security boundary\",\"description\":\"Deterministic grouping from exact tls_or_security_boundary anchors.\",\"authority\":\"inferred\",\"reading_target_refs\":[\"a2\",\"a3\",\"a5\",\"a6\",\"a7\",\"a8\",\"a9\",\"a10\"]},{\"ref\":\"c3\",\"subsystem_ref\":\"ss4\",\"label\":\"Lifecycle startup\",\"description\":\"Deterministic grouping from exact lifecycle_start anchors.\",\"authority\":\"inferred\",\"reading_target_refs\":[\"a4\"]},{\"ref\":\"c4\",\"subsystem_ref\":\"ss3\",\"label\":\"Supporting repository evidence\",\"description\":\"Exact local members not assigned by the bounded anchor-kind mapping.\",\"authority\":\"inferred\",\"reading_target_refs\":[\"a1\",\"a3\",\"a5\",\"a6\",\"a8\",\"a9\",\"a10\"]}],\"surfaces\":[{\"ref\":\"sf1\",\"unit_ref\":\"u2\",\"label\":\"main\",\"kind\":\"process_entry\",\"authority\":\"resolved\",\"reading_target_refs\":[\"a1\"]}],\"reading_targets\":[{\"ref\":\"a1\",\"related_component_refs\":[\"c1\",\"c4\"],\"principal_refs\":[\"c1\",\"c4\",\"sf1\"],\"kind\":\"entrypoint\",\"label\":\"main\",\"fact\":\"Exact saved source for this advertised application surface.\",\"path\":\"main.go\",\"line\":36,\"authority\":\"observed\"},{\"ref\":\"a2\",\"related_component_refs\":[\"c2\"],\"principal_refs\":[\"c2\"],\"kind\":\"function\",\"label\":\"Function buildSpCertificateStore\",\"fact\":\"Exact saved Go function declaration.\",\"path\":\"object/saml_sp.go\",\"line\":170,\"authority\":\"observed\"},{\"ref\":\"a3\",\"related_component_refs\":[\"c2\",\"c4\"],\"principal_refs\":[\"c2\",\"c4\"],\"kind\":\"function\",\"label\":\"Function getLegoClientAndAccount\",\"fact\":\"Exact saved Go function declaration.\",\"path\":\"certificate/account.go\",\"line\":50,\"authority\":\"observed\"},{\"ref\":\"a4\",\"related_component_refs\":[\"c3\"],\"principal_refs\":[\"c3\"],\"kind\":\"function\",\"label\":\"Function Start\",\"fact\":\"Exact saved Go function declaration.\",\"path\":\"service/proxy.go\",\"line\":306,\"authority\":\"observed\"},{\"ref\":\"a5\",\"related_component_refs\":[\"c2\",\"c4\"],\"principal_refs\":[\"c2\",\"c4\"],\"kind\":\"function\",\"label\":\"Function getGoDaddyCert\",\"fact\":\"Exact saved Go function declaration.\",\"path\":\"certificate/dns.go\",\"line\":86,\"authority\":\"observed\"},{\"ref\":\"a6\",\"related_component_refs\":[\"c2\",\"c4\"],\"principal_refs\":[\"c2\",\"c4\"],\"kind\":\"function\",\"label\":\"Function getAliCert\",\"fact\":\"Exact saved Go function declaration.\",\"path\":\"certificate/dns.go\",\"line\":49,\"authority\":\"observed\"},{\"ref\":\"a7\",\"related_component_refs\":[\"c2\"],\"principal_refs\":[\"c2\"],\"kind\":\"function\",\"label\":\"Function getTLSconfig\",\"fact\":\"Exact saved Go function declaration.\",\"path\":\"ldap/server.go\",\"line\":76,\"authority\":\"observed\"},{\"ref\":\"a8\",\"related_component_refs\":[\"c2\",\"c4\"],\"principal_refs\":[\"c2\",\"c4\"],\"kind\":\"function\",\"label\":\"Function ObtainCertificateGoDaddy\",\"fact\":\"Exact saved Go function declaration.\",\"path\":\"certificate/dns.go\",\"line\":135,\"authority\":\"observed\"},{\"ref\":\"a9\",\"related_component_refs\":[\"c2\",\"c4\"],\"principal_refs\":[\"c2\",\"c4\"],\"kind\":\"function\",\"label\":\"Function ObtainCertificateAli\",\"fact\":\"Exact saved Go function declaration.\",\"path\":\"certificate/dns.go\",\"line\":122,\"authority\":\"observed\"},{\"ref\":\"a10\",\"related_component_refs\":[\"c2\",\"c4\"],\"principal_refs\":[\"c2\",\"c4\"],\"kind\":\"function\",\"label\":\"Function decodeEccKey\",\"fact\":\"Exact saved Go function declaration.\",\"path\":\"certificate/ecc.go\",\"line\":43,\"authority\":\"observed\"}],\"evidence\":[{\"ref\":\"e1\",\"subject_refs\":[\"sf1\",\"u2\"],\"fact\":\"Local Atlas observation with exact saved evidence.\",\"authority\":\"observed\"}],\"documented_claims\":[{\"ref\":\"d1\",\"label\":\"Repository documentation\",\"claim\":\"Supporting MCP, A2A, OAuth 2.0, OIDC (OAuth 2.x), SAML, CAS, LDAP, SCIM, WebAuthn, TOTP, MFA, Face ID, Google Workspace, Azure AD, and more.\",\"authority\":\"observed\"}]}"
+}

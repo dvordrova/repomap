@@ -1,12 +1,167 @@
 package gofacts
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestLoadCollectsEveryModuleBeforeFairExplicitCaps(t *testing.T) {
+	t.Parallel()
+
+	repo := t.TempDir()
+	files := map[string]string{
+		"a-large/go.mod":          "module example.com/a\n\ngo 1.24\n",
+		"a-large/cmd/a/main.go":   "package main\n\nimport _ \"example.com/a/lib\"\n\nfunc main() {}\n",
+		"a-large/lib/lib.go":      "package lib\n",
+		"z-service/go.mod":        "module example.com/z\n\ngo 1.24\n",
+		"z-service/cmd/z/main.go": "package main\n\nimport _ \"example.com/z/lib\"\n\nfunc main() {}\n",
+		"z-service/lib/lib.go":    "package lib\n",
+	}
+	fileList := make([]string, 0, len(files))
+	for name, content := range files {
+		path := filepath.Join(repo, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		fileList = append(fileList, name)
+	}
+
+	facts, err := Load(context.Background(), repo, fileList, 2, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts.Modules) != 2 || len(facts.ModuleSummaries) != 2 || len(facts.EntrypointPackages) != 2 {
+		t.Fatalf("complete module facts = modules %d summaries %d entrypoints %d", len(facts.Modules), len(facts.ModuleSummaries), len(facts.EntrypointPackages))
+	}
+	if facts.PackagesCount != 4 || facts.RetainedPackagesCount != 2 || len(facts.Packages) != 2 {
+		t.Fatalf("package counts = discovered %d retained %d/%d", facts.PackagesCount, facts.RetainedPackagesCount, len(facts.Packages))
+	}
+	retained := make(map[string]struct{}, len(facts.Packages))
+	for _, pkg := range facts.Packages {
+		retained[pkg.CanonicalPath] = struct{}{}
+	}
+	for _, want := range []string{"example.com/a/cmd/a", "example.com/z/cmd/z"} {
+		if _, ok := retained[want]; !ok {
+			t.Fatalf("fair selection omitted exact entry package %q: %#v", want, facts.Packages)
+		}
+	}
+	if facts.Coverage.State != CoveragePartial || facts.Coverage.ModulesDiscovered != 2 ||
+		facts.Coverage.ModulesAvailable != 2 || facts.Coverage.ModulesUnavailable != 0 ||
+		facts.Coverage.PackagesDiscovered != 4 || facts.Coverage.PackagesRetained != 2 ||
+		facts.Coverage.EdgesDiscovered != 2 || facts.Coverage.EdgesRetained != 1 {
+		t.Fatalf("coverage = %#v", facts.Coverage)
+	}
+	for _, module := range facts.Modules {
+		if module.PackagesCount != 2 || module.RetainedPackagesCount != 1 || module.Coverage.State != CoveragePartial {
+			t.Fatalf("module coverage = %#v", module)
+		}
+	}
+
+	reversed := append([]string(nil), fileList...)
+	for left, right := 0, len(reversed)-1; left < right; left, right = left+1, right-1 {
+		reversed[left], reversed[right] = reversed[right], reversed[left]
+	}
+	again, err := Load(context.Background(), repo, reversed, 2, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstJSON, err := json.Marshal(facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondJSON, err := json.Marshal(again)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(firstJSON, secondJSON) {
+		t.Fatalf("facts depend on tracked-file order:\n%s\n%s", firstJSON, secondJSON)
+	}
+}
+
+func TestLoadZeroCapsRetainAllFacts(t *testing.T) {
+	t.Parallel()
+
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/all\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for index, name := range []string{"alpha", "beta", "gamma"} {
+		dir := filepath.Join(repo, name)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		content := "package " + name + "\n"
+		if index > 0 {
+			content = "package " + name + "\n\nimport _ \"example.com/all/alpha\"\n"
+		}
+		if err := os.WriteFile(filepath.Join(dir, name+".go"), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	facts, err := Load(context.Background(), repo, []string{
+		"go.mod", "alpha/alpha.go", "beta/beta.go", "gamma/gamma.go",
+	}, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if facts.PackagesCount != 3 || facts.RetainedPackagesCount != 3 || len(facts.InternalEdges) != 2 ||
+		facts.Coverage.State != CoverageComplete || facts.Coverage.EdgesRetained != 2 {
+		t.Fatalf("zero-cap facts = packages %d/%d edges %d coverage %#v", facts.RetainedPackagesCount, facts.PackagesCount, len(facts.InternalEdges), facts.Coverage)
+	}
+}
+
+func TestParseGoListOutputMarksIncompleteAndDependencyErrors(t *testing.T) {
+	t.Parallel()
+
+	packages, warnings, err := parseGoListOutput(strings.NewReader(`
+{"ImportPath":"example.com/app","Dir":"/repo","Name":"app","Incomplete":true,"DepsErrors":[{"Err":"dependency unavailable"}]}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(packages) != 1 || !packages[0].Incomplete || len(packages[0].DepsErrors) != 1 {
+		t.Fatalf("decoded package diagnostics = %#v", packages)
+	}
+	if len(warnings) != 2 ||
+		warnings[0] != "package example.com/app: go list facts are incomplete" ||
+		warnings[1] != "package example.com/app dependency: dependency unavailable" {
+		t.Fatalf("warnings = %q", warnings)
+	}
+}
+
+func TestLoadCancellationTerminatesGoCommand(t *testing.T) {
+	fakeBin := t.TempDir()
+	fakeGo := filepath.Join(fakeBin, "go")
+	if err := os.WriteFile(fakeGo, []byte("#!/bin/sh\nexec /bin/sleep 30\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "go.mod"), []byte("module example.com/cancel\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, err := Load(ctx, repo, []string{"go.mod"}, 0, 0)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Load error = %v, want context deadline", err)
+	}
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("canceled Go subprocess returned after %v", elapsed)
+	}
+}
 
 func TestLoadSkipsModuleWhoseGoModEscapesRepository(t *testing.T) {
 	t.Parallel()
@@ -39,6 +194,10 @@ func TestLoadSkipsModuleWhoseGoModEscapesRepository(t *testing.T) {
 	}
 	if len(facts.Modules) != 1 {
 		t.Fatalf("modules = %d, want 1", len(facts.Modules))
+	}
+	if facts.Coverage.State != CoverageUnavailable || facts.Coverage.ModulesDiscovered != 1 ||
+		facts.Coverage.ModulesUnavailable != 1 || facts.Modules[0].Coverage.State != CoverageUnavailable {
+		t.Fatalf("unavailable coverage = %#v / %#v", facts.Coverage, facts.Modules[0].Coverage)
 	}
 	if len(facts.Modules[0].Warnings) != 1 {
 		t.Fatalf("module warnings = %q, want one", facts.Modules[0].Warnings)

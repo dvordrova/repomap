@@ -2,6 +2,7 @@ package orient
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/flowexplain"
@@ -16,6 +17,77 @@ const (
 	missingCoreCallCap   = 0.5
 	incompleteContextCap = 0.6
 )
+
+type ConfidenceWarningCode string
+
+const (
+	ConfidenceWarningCandidateCapped   ConfidenceWarningCode = "candidate_confidence_capped"
+	ConfidenceWarningOrientationCapped ConfidenceWarningCode = "orientation_confidence_capped_incomplete_context"
+)
+
+// ConfidenceWarningDiagnostic is producer-owned presentation metadata for one
+// legacy confidence-gate warning. It is persisted only in the separately
+// hashed orientation warning sidecar; the canonical orientation report keeps
+// the unchanged raw warning bytes.
+type ConfidenceWarningDiagnostic struct {
+	WarningIndex   int                   `json:"warning_index"`
+	Code           ConfidenceWarningCode `json:"code"`
+	CandidateIndex int                   `json:"candidate_index"`
+	Proposed       float64               `json:"proposed"`
+	Capped         float64               `json:"capped"`
+}
+
+// RawWarning reconstructs the exact legacy warning paired with this
+// diagnostic. Consumers use exact equality to reject forged or stale metadata;
+// they never infer product ownership by scanning warning prose.
+func (diagnostic ConfidenceWarningDiagnostic) RawWarning() (string, bool) {
+	if math.IsNaN(diagnostic.Proposed) || math.IsInf(diagnostic.Proposed, 0) ||
+		math.IsNaN(diagnostic.Capped) || math.IsInf(diagnostic.Capped, 0) ||
+		diagnostic.Proposed < 0 || diagnostic.Proposed > 1 ||
+		diagnostic.Capped < 0 || diagnostic.Capped > 1 ||
+		diagnostic.Proposed <= diagnostic.Capped {
+		return "", false
+	}
+	switch diagnostic.Code {
+	case ConfidenceWarningCandidateCapped:
+		if diagnostic.CandidateIndex < 0 {
+			return "", false
+		}
+		return fmt.Sprintf(
+			"local confidence gate capped candidate_flows[%d] from %.2f to %.2f",
+			diagnostic.CandidateIndex,
+			diagnostic.Proposed,
+			diagnostic.Capped,
+		), true
+	case ConfidenceWarningOrientationCapped:
+		return fmt.Sprintf(
+			"local confidence gate capped orientation from %.2f to %.2f because focused retrieval is incomplete",
+			diagnostic.Proposed,
+			diagnostic.Capped,
+		), true
+	default:
+		return "", false
+	}
+}
+
+func appendConfidenceWarning(
+	report *orientationPart,
+	diagnostic ConfidenceWarningDiagnostic,
+) {
+	if report == nil {
+		return
+	}
+	diagnostic.WarningIndex = len(report.Warnings)
+	warning, ok := diagnostic.RawWarning()
+	if !ok {
+		return
+	}
+	report.Warnings = append(report.Warnings, warning)
+	report.confidenceWarningDiagnostics = append(
+		report.confidenceWarningDiagnostics,
+		diagnostic,
+	)
+}
 
 // applyOrientationConfidenceGate treats provider confidence as a proposal.
 // Exact local entrypoint and command-trace facts determine the maximum value
@@ -73,12 +145,12 @@ func applyOrientationConfidenceGate(report *orientationPart, bundle llmbundle.Bu
 			verification.Status = "partial"
 		}
 		if flow.Confidence > verification.ConfidenceCap {
-			report.Warnings = append(report.Warnings, fmt.Sprintf(
-				"local confidence gate capped candidate_flows[%d] from %.2f to %.2f",
-				index,
-				flow.Confidence,
-				verification.ConfidenceCap,
-			))
+			appendConfidenceWarning(report, ConfidenceWarningDiagnostic{
+				Code:           ConfidenceWarningCandidateCapped,
+				CandidateIndex: index,
+				Proposed:       flow.Confidence,
+				Capped:         verification.ConfidenceCap,
+			})
 			flow.Confidence = verification.ConfidenceCap
 		}
 		flow.LocalVerification = verification
@@ -87,11 +159,12 @@ func applyOrientationConfidenceGate(report *orientationPart, bundle llmbundle.Bu
 		}
 	}
 	if contextIncomplete && report.Confidence > incompleteContextCap {
-		report.Warnings = append(report.Warnings, fmt.Sprintf(
-			"local confidence gate capped orientation from %.2f to %.2f because focused retrieval is incomplete",
-			report.Confidence,
-			incompleteContextCap,
-		))
+		appendConfidenceWarning(report, ConfidenceWarningDiagnostic{
+			Code:           ConfidenceWarningOrientationCapped,
+			CandidateIndex: -1,
+			Proposed:       report.Confidence,
+			Capped:         incompleteContextCap,
+		})
 		report.Confidence = incompleteContextCap
 	}
 	if maxFlowConfidence > 0 && report.Confidence > maxFlowConfidence && contextIncomplete {

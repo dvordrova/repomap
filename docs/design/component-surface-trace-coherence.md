@@ -178,9 +178,9 @@ the source-click path.
 
 ## Validation commands
 
-- `./scripts/check.sh`
+- focused Go tests and `go vet` for changed packages
 - `go test -race ./internal/reportserver`
 - model-backed Restic and Caddy replay tests with their exact cache paths
 - model-backed Restic saved-report latency test
 - `node --check` for all report JavaScript assets
-- `./scripts/etcd_check.sh ../etcd`
+- direct built-binary offline etcd run with fresh artifacts

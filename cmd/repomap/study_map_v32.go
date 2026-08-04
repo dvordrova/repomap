@@ -1,0 +1,1344 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"sync"
+	"time"
+
+	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/modelresearch"
+	"github.com/dvordrova/repomap/internal/report"
+	"github.com/dvordrova/repomap/internal/secretscan"
+	"github.com/dvordrova/repomap/internal/semanticdiscovery"
+	"github.com/dvordrova/repomap/internal/studymap"
+)
+
+const (
+	studyMapV32ReviewConcurrency   = 3
+	studyMapMinimumCompleteAnchors = 3
+
+	studyMapBriefShapeFile        = "repository_brief_shape.json"
+	studyMapBriefShapeAttempt     = "repository_brief_shape_attempt.json"
+	studyMapDirectionsFile        = "study_direction_candidates.json"
+	studyMapDirectionsAttempt     = studymap.DirectionsAttemptFile
+	studyMapReviewsFile           = "reading_pack_reviews.json"
+	studyMapReviewAttemptsDir     = "reading_pack_review_attempts"
+	studyMapSourceAttemptFile     = "repository_study_map_source_attempt.json"
+	studyMapReviewArtifactVersion = 1
+)
+
+const studyMapV32SystemPrompt = `You are an editorial onboarding planner for one bounded repository model. The supplied objects and request-local typed references are the complete authority. A Study Direction recommends what to read; it is not a runtime claim or canonical Mechanism. Return valid JSON only. Never invent or alter a file, symbol, component, document, mechanism, relation, fact, typed reference, or runtime order.`
+
+const studyMapDirectionSystemPrompt = `You are an editorial onboarding planner for one bounded repository model. The supplied objects and request-local typed references are the complete authority. A Study Direction recommends what to read; it is not a runtime claim or canonical Mechanism. Return valid JSON only. Never invent or alter a file, symbol, component, document, mechanism, relation, fact, typed reference, or runtime order.`
+
+const studyMapV32SharedInput = `The bounded repository bundle below is the complete source for this task. Documentation describes intent, while code anchors identify exact local source. Do not treat editorial reading order as execution order.
+
+Bounded repository bundle JSON:
+`
+
+const studyMapBriefShapeTask = `
+
+Task: produce only the repository Brief and Shape. Return exactly:
+{
+  "version": 1,
+  "catalog_ref": "copy the exact top-level catalog_ref from the bounded repository bundle",
+  "repository_type": "service_application | library_framework | cli_tool | monorepo | mixed",
+  "brief": {
+    "what_it_is": {"text": "short answer", "support_refs": ["exact supplied anchor, document, or area refs"]},
+    "problem": {"text": "problem it addresses", "support_refs": ["exact supplied anchor, document, or area refs"]},
+    "main_input": {"text": "main input or trigger", "support_refs": ["exact supplied anchor, document, or area refs"]},
+    "central_responsibility": {"text": "central responsibility", "support_refs": ["exact supplied anchor, document, or area refs"]},
+    "observable_result": {"text": "observable result", "support_refs": ["exact supplied anchor, document, or area refs"]},
+    "domain_terms": [{"term": "term", "meaning": "short meaning", "support_refs": ["exact supplied anchor, document, or area refs"]}]
+  },
+  "shape_area_refs": ["zero to seven exact supplied area refs"]
+}
+
+Copy the exact catalog_ref once. Copy every short typed reference exactly and only into a field that permits its kind. Never return a backend canonical ID. Keep every sentence short and independently useful. Leave out a domain term rather than guessing, but provide all five Brief statements from supported repository objects.`
+
+const studyMapDirectionTask = `
+
+Task: produce only bounded Study Direction drafts. Return exactly:
+{
+  "version": 1,
+  "catalog_ref": "copy the exact top-level catalog_ref from the bounded repository bundle",
+  "directions": [
+    {
+      "question": "natural developer question ending in ?",
+      "why_it_matters": "one sentence",
+      "learning_outcome": "what the reader will understand",
+      "target_user_job": "first_contact | use_or_operate | extend_or_integrate | contribute | debug_or_maintain",
+      "learning_stage": "orientation | central_operation | core_model | integration | operations | contribution",
+      "anchor_refs": [
+        "exact supplied code anchor ref A",
+        "exact supplied code anchor ref B",
+        "exact supplied code anchor ref C"
+      ],
+      "document_refs": ["zero or more exact supplied document refs"],
+      "area_refs": ["one or more exact supplied area refs"],
+      "mechanism_ref": "exact supplied mechanism ref or empty",
+      "reading_anchors": [
+        {"anchor_ref": "exact supplied code anchor ref A", "label": "Start here", "what_to_look_for": "bounded editorial reading instruction for A"},
+        {"anchor_ref": "exact supplied code anchor ref B", "label": "Then inspect", "what_to_look_for": "bounded editorial reading instruction for B"},
+        {"anchor_ref": "exact supplied code anchor ref C", "label": "Related implementation", "what_to_look_for": "bounded editorial reading instruction for C"}
+      ],
+      "search_queries": ["natural search wording"]
+    }
+  ]
+}
+
+Rules:
+- Return eight to twelve candidates when supported, never more than twelve. Do not create direction IDs; local code assigns them.
+- Copy the exact top-level catalog_ref once. Every short typed reference must be copied exactly from the bundle and returned only in a field of the same reference kind. Never return a backend canonical ID.
+- Use three to five code anchors and describe each exactly once in reading_anchors.
+- reading_anchors.label is a closed schema value. Copy one of the five listed English literals exactly; the report localizes it later.
+- Favor central responsibilities and role-diverse packs over narrow helpers, duplicate questions, tests, examples, fixtures, or similarly named implementations.
+- Questions may ask about behavior, but reading copy must not assert execution order, causality, or behavior outside the supplied bounded facts.
+- Attach a canonical Mechanism only when supplied anchors overlap it.
+- The candidate task is independent: do not assume or reconstruct another model response.`
+
+const studyMapReviewSystemPrompt = `You review one fixed source-backed Reading Pack. The supplied direction, opaque anchor IDs, metadata, and exact line-numbered source fragments are the complete authority. Evaluate each anchor independently. Return valid JSON only. Do not create or alter IDs, files, symbols, relations, facts, commands, or runtime order. A supported observation is presentation copy bounded to the visible fragment, not a new repository fact.`
+
+const studyMapReviewBundleMarker = "Fixed bounded review bundle JSON:\n"
+
+const studyMapReviewTask = `Return exactly:
+{
+  "version": 1,
+  "direction_id": "copy the supplied direction id exactly",
+  "reviews": [
+    {
+      "anchor_id": "copy one supplied anchor id exactly",
+      "fit": "direct | supporting | weak | irrelevant",
+      "supported_observation": "short sentence limited to visible source",
+      "role": "documentation_intent | public_or_cli_entry | core_orchestration | state_or_data_model | effect_or_integration_boundary | representative_implementation | configuration_or_operations | example_or_usage | test_or_verification",
+      "overclaim_reasons": ["none | wrong_responsibility | behavior_outside_window | unsupported_runtime_order | unsupported_causality | question_scope_broader | learning_outcome_scope_broader | vague_or_generic"],
+      "narrower_display_sentence": "optional shorter replacement"
+    }
+  ]
+}
+
+Review every supplied anchor exactly once. Choose ` + "`none`" + ` alone when no overclaim applies. Use ` + "`irrelevant`" + ` when the exact fragment does not help answer the fixed question. Do not repair the question, infer missing code, or claim an execution sequence.
+
+` + studyMapReviewBundleMarker
+
+type studyMapV32StageAttempt struct {
+	Version              int                                      `json:"version"`
+	PromptVersion        string                                   `json:"prompt_version"`
+	BundleSHA256         string                                   `json:"bundle_sha256"`
+	ValidationState      string                                   `json:"validation_state"`
+	FailureReason        string                                   `json:"failure_reason,omitempty"`
+	Metrics              semanticDiscoveryStageMetrics            `json:"metrics"`
+	BriefDiagnostics     *studymap.BriefShapeReferenceDiagnostics `json:"brief_diagnostics,omitempty"`
+	DirectionDiagnostics *studymap.DirectionProposalDiagnostics   `json:"direction_diagnostics,omitempty"`
+	Response             json.RawMessage                          `json:"response,omitempty"`
+	RawResponse          string                                   `json:"raw_response,omitempty"`
+}
+
+type studyMapReviewAttempt struct {
+	Version         int                           `json:"version"`
+	PromptVersion   string                        `json:"prompt_version"`
+	BundleSHA256    string                        `json:"bundle_sha256"`
+	DirectionID     string                        `json:"direction_id"`
+	ValidationState string                        `json:"validation_state"`
+	IssueCode       string                        `json:"issue_code,omitempty"`
+	FailureReason   string                        `json:"failure_reason,omitempty"`
+	Metrics         semanticDiscoveryStageMetrics `json:"metrics"`
+	Bundle          *studymap.ReviewBundle        `json:"bundle,omitempty"`
+	Response        json.RawMessage               `json:"response,omitempty"`
+	RawResponse     string                        `json:"raw_response,omitempty"`
+}
+
+type studyMapReviewArtifact struct {
+	Version   int                       `json:"version"`
+	Reviews   []studymap.ReviewProposal `json:"reviews"`
+	Reduction studymap.ReviewReduction  `json:"reduction"`
+	Attempts  []studyMapReviewSummary   `json:"attempts"`
+}
+
+type studyMapReviewSummary struct {
+	DirectionID     string                        `json:"direction_id"`
+	ValidationState string                        `json:"validation_state"`
+	IssueCode       string                        `json:"issue_code,omitempty"`
+	FailureReason   string                        `json:"failure_reason,omitempty"`
+	Metrics         semanticDiscoveryStageMetrics `json:"metrics"`
+}
+
+type studyMapReviewTaskInput struct {
+	index     int
+	direction studymap.DirectionCandidate
+	bundle    studymap.ReviewBundle
+	plan      semanticDiscoveryStagePlan
+}
+
+type studyMapReviewCompletion struct {
+	index       int
+	directionID string
+	bundle      studymap.ReviewBundle
+	cacheTask   *studyMapReviewTaskInput
+	cacheReply  []byte
+	attempt     studyMapReviewAttempt
+	proposal    studymap.ReviewProposal
+	issue       studymap.ReviewIssue
+	valid       bool
+	unsafeKind  string
+	providerErr error
+}
+
+type studyMapReviewPreparationFailure struct {
+	index       int
+	directionID string
+	bundleSHA   string
+	stage       string
+	issueCode   string
+	bundle      *studymap.ReviewBundle
+	cause       error
+}
+
+type studyMapRunOptions struct {
+	exchangeWriter *debugdump.Writer
+}
+
+type studyMapStageExchange struct {
+	request           []byte
+	response          []byte
+	responseBytes     int
+	transportAttempts int
+	providerErr       error
+}
+
+func clearStudyMapV32Outputs(runDir string) error {
+	if err := clearStudyMapV32TerminalOutputs(runDir); err != nil {
+		return err
+	}
+	if err := os.Remove(filepath.Join(runDir, studymap.BundleFile)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("study map: remove stale %s: %w", studymap.BundleFile, err)
+	}
+	return nil
+}
+
+// clearStudyMapV32TerminalOutputs removes every saved result, attempt and
+// status that could be mistaken for a reusable or publishable Study outcome.
+// The deterministic input bundle and the shared safe semantic exchange journal
+// remain available for diagnosing the terminal resource error.
+func clearStudyMapV32TerminalOutputs(runDir string) error {
+	files := []string{
+		studymap.RecordFile,
+		studymap.AttemptFile,
+		studymap.StatusFile,
+		studyMapBriefShapeFile,
+		studyMapBriefShapeAttempt,
+		studyMapDirectionsFile,
+		studyMapDirectionsAttempt,
+		studyMapSourceAttemptFile,
+	}
+	for _, name := range files {
+		if err := os.Remove(filepath.Join(runDir, name)); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("study map: remove stale %s: %w", name, err)
+		}
+	}
+	return clearStudyMapV32ReviewOutputs(runDir)
+}
+
+func clearStudyMapV32ReviewOutputs(runDir string) error {
+	if err := os.Remove(filepath.Join(runDir, studyMapReviewsFile)); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("study map: remove stale %s: %w", studyMapReviewsFile, err)
+	}
+	if err := os.RemoveAll(filepath.Join(runDir, studyMapReviewAttemptsDir)); err != nil {
+		return fmt.Errorf("study map: remove stale review attempts: %w", err)
+	}
+	return nil
+}
+
+func writeNormalizedDirectionProposal(path string, proposal studymap.DirectionProposal) error {
+	raw, err := json.Marshal(proposal)
+	if err != nil {
+		return fmt.Errorf("study map: encode normalized directions: %w", err)
+	}
+	replayed, err := studymap.DecodeNormalizedDirectionProposal(raw)
+	if err != nil {
+		return fmt.Errorf("study map: validate normalized directions for replay: %w", err)
+	}
+	if err := writeGoldenJSON(path, replayed); err != nil {
+		return fmt.Errorf("study map: save normalized directions: %w", err)
+	}
+	return nil
+}
+
+func prepareStudyMap(
+	ctx context.Context,
+	runDir string,
+	repoRoot string,
+	provider semanticDiscoveryEditor,
+) (studyMapStatus, error) {
+	return prepareStudyMapWithProviderFactory(ctx, runDir, repoRoot, func() (semanticDiscoveryEditor, error) {
+		if provider == nil {
+			return nil, fmt.Errorf("study map: provider is required")
+		}
+		return provider, nil
+	})
+}
+
+// prepareStudyMapWithProviderFactory keeps local source availability ahead of
+// provider configuration. Unsupported repositories therefore produce their
+// typed local Study outcome without requiring credentials or a network-ready
+// client, while supported repositories retain the same canonical bundle and
+// provider pipeline.
+func prepareStudyMapWithProviderFactory(
+	ctx context.Context,
+	runDir string,
+	repoRoot string,
+	providerFactory func() (semanticDiscoveryEditor, error),
+) (status studyMapStatus, returnErr error) {
+	return prepareStudyMapWithProviderFactoryWithOptions(
+		ctx, runDir, repoRoot, providerFactory, studyMapRunOptions{},
+	)
+}
+
+func prepareStudyMapWithProviderFactoryWithOptions(
+	ctx context.Context,
+	runDir string,
+	repoRoot string,
+	providerFactory func() (semanticDiscoveryEditor, error),
+	options studyMapRunOptions,
+) (status studyMapStatus, returnErr error) {
+	started := time.Now()
+	status = studyMapStatus{Version: studyMapStatusVersion, State: "started"}
+	defer func() {
+		if isSemanticResourceLimit(returnErr) {
+			if err := clearStudyMapV32TerminalOutputs(runDir); err != nil {
+				returnErr = errors.Join(returnErr, err)
+			}
+			return
+		}
+		status.WallMillis = time.Since(started).Milliseconds()
+		if returnErr != nil && status.State == "started" {
+			status.State = "failed"
+			status.FailureReason = semanticDiscoveryReason(returnErr.Error())
+		}
+		if err := writeGoldenJSON(filepath.Join(runDir, studymap.StatusFile), status); err != nil {
+			if returnErr != nil {
+				returnErr = fmt.Errorf("%w; save study map status: %v", returnErr, err)
+			} else {
+				returnErr = fmt.Errorf("study map: save status: %w", err)
+			}
+		}
+	}()
+	if ctx == nil || providerFactory == nil {
+		return status, fmt.Errorf("study map: context and provider factory are required")
+	}
+	if err := ctx.Err(); err != nil {
+		return status, err
+	}
+	if err := clearStudyMapV32Outputs(runDir); err != nil {
+		return status, err
+	}
+	data, err := report.ReadRunDir(runDir)
+	if err != nil {
+		return status, fmt.Errorf("study map: read saved run: %w", err)
+	}
+	bundle, err := buildStudyMapBundle(runDir, repoRoot, data)
+	if err != nil {
+		if outcome, ok := studyMapSourceOutcomeCode(err); ok {
+			status.State = "failed"
+			status.FailureReason = string(outcome)
+			return status, nil
+		}
+		return status, err
+	}
+	status.Anchors = len(bundle.Anchors)
+	status.Areas = len(bundle.Areas)
+	status.Documents = len(bundle.Documents)
+	status.Mechanisms = len(bundle.Mechanisms)
+	bundleSHA, err := studymap.BundleHash(bundle)
+	if err != nil {
+		return status, err
+	}
+	if err := writeGoldenJSON(filepath.Join(runDir, studymap.BundleFile), bundle); err != nil {
+		return status, fmt.Errorf("study map: save bundle: %w", err)
+	}
+	provider, err := providerFactory()
+	if err != nil {
+		return status, err
+	}
+	if provider == nil {
+		return status, fmt.Errorf("study map: provider factory returned no provider")
+	}
+	record, reduction, stages, editErr := prepareStudyMapV32WithOptions(
+		ctx, runDir, bundle, provider, options,
+	)
+	status.Stages = stages
+	status.Metrics = aggregateStudyMapMetrics(stages, editErr)
+	status.ProviderLatencyMillis = status.Metrics.LatencyMillis
+	attempt := studyMapAttempt{
+		Version: 2, PromptVersion: "repository-study-map-split-v2", BundleSHA256: bundleSHA,
+		ValidationState: "rejected", Metrics: status.Metrics,
+	}
+	if editErr != nil {
+		if isSemanticResourceLimit(editErr) {
+			return status, editErr
+		}
+		attempt.FailureReason = semanticDiscoveryReason(editErr.Error())
+		_ = writeGoldenJSON(filepath.Join(runDir, studymap.AttemptFile), attempt)
+		return status, editErr
+	}
+	status.RepositoryType = record.RepositoryType
+	status.Candidates = reduction.Proposed
+	status.Validated = reduction.Reviewed
+	status.Selected = len(record.Directions)
+	status.State = "published"
+	attempt.ValidationState = "accepted"
+	legacyProposal := studyMapV32ProposalFromRecord(record)
+	if raw, marshalErr := json.Marshal(legacyProposal); marshalErr == nil {
+		attempt.Response = raw
+	}
+	if err := writeGoldenJSON(filepath.Join(runDir, studymap.AttemptFile), attempt); err != nil {
+		return status, err
+	}
+	if err := writeGoldenJSON(filepath.Join(runDir, studymap.RecordFile), record); err != nil {
+		return status, fmt.Errorf("study map: save canonical record: %w", err)
+	}
+	return status, nil
+}
+
+// prepareStudyMapV32 runs the split editor. Brief and candidate calls share a
+// stable repository-bundle prefix, while each review is independently saved
+// and allowed to fail without canceling its siblings.
+func prepareStudyMapV32(
+	ctx context.Context,
+	runDir string,
+	bundle studymap.Bundle,
+	provider semanticDiscoveryEditor,
+) (studymap.Record, studymap.ReviewReduction, []semanticDiscoveryStageMetrics, error) {
+	return prepareStudyMapV32WithOptions(
+		ctx, runDir, bundle, provider, studyMapRunOptions{},
+	)
+}
+
+func prepareStudyMapV32WithOptions(
+	ctx context.Context,
+	runDir string,
+	bundle studymap.Bundle,
+	provider semanticDiscoveryEditor,
+	options studyMapRunOptions,
+) (
+	resultRecord studymap.Record,
+	resultReduction studymap.ReviewReduction,
+	resultStages []semanticDiscoveryStageMetrics,
+	returnErr error,
+) {
+	defer func() {
+		if !isSemanticResourceLimit(returnErr) {
+			return
+		}
+		if err := clearStudyMapV32TerminalOutputs(runDir); err != nil {
+			returnErr = errors.Join(returnErr, err)
+		}
+	}()
+	if ctx == nil || provider == nil {
+		return studymap.Record{}, studymap.ReviewReduction{}, nil,
+			fmt.Errorf("study map: context and provider are required")
+	}
+	if len(bundle.Anchors) < studyMapMinimumCompleteAnchors {
+		return studymap.Record{}, studymap.ReviewReduction{}, nil, fmt.Errorf(
+			"study map: insufficient code anchors for complete directions: have %d, need at least %d",
+			len(bundle.Anchors),
+			studyMapMinimumCompleteAnchors,
+		)
+	}
+	bundleSHA, err := studymap.BundleHash(bundle)
+	if err != nil {
+		return studymap.Record{}, studymap.ReviewReduction{}, nil, err
+	}
+	briefCatalog, briefPrompt, err := buildStudyMapBriefShapeStage(bundle)
+	if err != nil {
+		return studymap.Record{}, studymap.ReviewReduction{}, nil, err
+	}
+	directionCatalog, directionPrompt, err := buildStudyMapDirectionStage(bundle)
+	if err != nil {
+		return studymap.Record{}, studymap.ReviewReduction{}, nil, err
+	}
+
+	briefRaw, briefMetrics, briefAttempt, briefExchange, err := executeStudyMapV32Stage(
+		ctx, provider, briefPrompt, "repository_brief_shape", bundleSHA,
+	)
+	stages := []semanticDiscoveryStageMetrics{briefMetrics}
+	if err != nil {
+		recordStudyMapStageSemanticExchange(
+			options.exchangeWriter,
+			debugdump.SemanticStageStudyBrief,
+			briefExchange,
+			semanticStateForStudyMapStage(briefMetrics.Status),
+			semanticValidationForStudyMapStage(briefMetrics.Status),
+		)
+		if isSemanticResourceLimit(err) {
+			briefMetrics.Status = "failed_provider"
+			stages[0] = briefMetrics
+			return studymap.Record{}, studymap.ReviewReduction{}, stages, err
+		}
+		_ = writeGoldenJSON(filepath.Join(runDir, studyMapBriefShapeAttempt), briefAttempt)
+		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
+	}
+	recoveredBrief, recoveryErr := studymap.RecoverBriefShapeReferenceProviderJSON(briefRaw)
+	var brief studymap.BriefShapeProposal
+	var briefDiagnostics studymap.BriefShapeReferenceDiagnostics
+	if recoveryErr != nil {
+		err = recoveryErr
+	} else {
+		briefAttempt.RawResponse = ""
+		briefAttempt.Response = append(json.RawMessage(nil), recoveredBrief...)
+		brief, briefDiagnostics, err =
+			studymap.DecodeAndResolveBriefShapeProposal(recoveredBrief, briefCatalog)
+		if briefDiagnostics.ShapeReceived > 0 || len(briefDiagnostics.Issues) > 0 {
+			briefAttempt.BriefDiagnostics = &briefDiagnostics
+		}
+	}
+	if err != nil {
+		state := debugdump.SemanticStateRejected
+		validation := debugdump.SemanticValidationResponse
+		if isSemanticResourceLimit(err) {
+			state = debugdump.SemanticStateProviderFailed
+			validation = debugdump.SemanticValidationDecode
+		}
+		recordStudyMapStageSemanticExchange(
+			options.exchangeWriter,
+			debugdump.SemanticStageStudyBrief,
+			briefExchange,
+			state,
+			validation,
+		)
+		if isSemanticResourceLimit(err) {
+			briefMetrics.Status = "failed_provider"
+			stages[0] = briefMetrics
+			return studymap.Record{}, studymap.ReviewReduction{}, stages, err
+		}
+		briefMetrics.Status = "rejected"
+		briefAttempt.Metrics = briefMetrics
+		briefAttempt.ValidationState = briefMetrics.Status
+		briefAttempt.FailureReason = semanticDiscoveryReason(err.Error())
+		stages[0] = briefMetrics
+		_ = writeGoldenJSON(filepath.Join(runDir, studyMapBriefShapeAttempt), briefAttempt)
+		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
+	}
+	briefMetrics.Status = "accepted"
+	briefAttempt.Metrics = briefMetrics
+	briefAttempt.ValidationState = briefMetrics.Status
+	stages[0] = briefMetrics
+	recordStudyMapStageSemanticExchange(
+		options.exchangeWriter,
+		debugdump.SemanticStageStudyBrief,
+		briefExchange,
+		debugdump.SemanticStateAccepted,
+		debugdump.SemanticValidationAccepted,
+	)
+	if saveErr := writeGoldenJSON(filepath.Join(runDir, studyMapBriefShapeAttempt), briefAttempt); saveErr != nil {
+		return studymap.Record{}, studymap.ReviewReduction{}, stages, saveErr
+	}
+	if err := writeGoldenJSON(filepath.Join(runDir, studyMapBriefShapeFile), brief); err != nil {
+		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
+	}
+
+	directionRaw, directionMetrics, directionAttempt, directionExchange, err := executeStudyMapV32Stage(
+		ctx, provider, directionPrompt, "study_direction_candidates", bundleSHA,
+	)
+	stages = append(stages, directionMetrics)
+	if err != nil {
+		recordStudyMapStageSemanticExchange(
+			options.exchangeWriter,
+			debugdump.SemanticStageStudyDirections,
+			directionExchange,
+			semanticStateForStudyMapStage(directionMetrics.Status),
+			semanticValidationForStudyMapStage(directionMetrics.Status),
+		)
+		if isSemanticResourceLimit(err) {
+			directionMetrics.Status = "failed_provider"
+			stages[len(stages)-1] = directionMetrics
+			return studymap.Record{}, studymap.ReviewReduction{}, stages, err
+		}
+		_ = writeGoldenJSON(filepath.Join(runDir, studyMapDirectionsAttempt), directionAttempt)
+		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
+	}
+	recoveredDirections, recoveryErr := studymap.RecoverDirectionReferenceProviderJSON(directionRaw)
+	var directions studymap.DirectionProposal
+	var directionDiagnostics studymap.DirectionProposalDiagnostics
+	if recoveryErr != nil {
+		err = recoveryErr
+	} else {
+		directionAttempt.RawResponse = ""
+		directionAttempt.Response = append(json.RawMessage(nil), recoveredDirections...)
+		directions, directionDiagnostics, err =
+			studymap.DecodeAndResolveDirectionProposalWithDiagnostics(recoveredDirections, directionCatalog)
+	}
+	if directionDiagnostics.Received > 0 {
+		directionAttempt.DirectionDiagnostics = &directionDiagnostics
+	}
+	if err != nil {
+		state := debugdump.SemanticStateRejected
+		validation := debugdump.SemanticValidationResponse
+		if isSemanticResourceLimit(err) {
+			state = debugdump.SemanticStateProviderFailed
+			validation = debugdump.SemanticValidationDecode
+		}
+		recordStudyMapStageSemanticExchange(
+			options.exchangeWriter,
+			debugdump.SemanticStageStudyDirections,
+			directionExchange,
+			state,
+			validation,
+		)
+		if isSemanticResourceLimit(err) {
+			directionMetrics.Status = "failed_provider"
+			stages[len(stages)-1] = directionMetrics
+			return studymap.Record{}, studymap.ReviewReduction{}, stages, err
+		}
+		directionMetrics.Status = "rejected"
+		directionAttempt.Metrics = directionMetrics
+		directionAttempt.ValidationState = directionMetrics.Status
+		directionAttempt.FailureReason = semanticDiscoveryReason(err.Error())
+		stages[len(stages)-1] = directionMetrics
+		_ = writeGoldenJSON(filepath.Join(runDir, studyMapDirectionsAttempt), directionAttempt)
+		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
+	}
+	directionMetrics.Status = "accepted"
+	directionAttempt.Metrics = directionMetrics
+	directionAttempt.ValidationState = directionMetrics.Status
+	stages[len(stages)-1] = directionMetrics
+	recordStudyMapStageSemanticExchange(
+		options.exchangeWriter,
+		debugdump.SemanticStageStudyDirections,
+		directionExchange,
+		debugdump.SemanticStateAccepted,
+		debugdump.SemanticValidationAccepted,
+	)
+	if saveErr := writeGoldenJSON(filepath.Join(runDir, studyMapDirectionsAttempt), directionAttempt); saveErr != nil {
+		return studymap.Record{}, studymap.ReviewReduction{}, stages, saveErr
+	}
+	if err := writeNormalizedDirectionProposal(
+		filepath.Join(runDir, studyMapDirectionsFile),
+		directions,
+	); err != nil {
+		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
+	}
+
+	reviews, summaries, reviewStages, preparationIssues, err := reviewStudyMapDirectionsWithOptions(
+		ctx, runDir, bundle, directions, bundleSHA, provider, options,
+	)
+	stages = append(stages, reviewStages...)
+	if err != nil {
+		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
+	}
+	record, reduction, err := studymap.BuildReviewedRecord(bundle, brief, directions, reviews)
+	reduction.Issues = append(reduction.Issues, preparationIssues...)
+	artifact := studyMapReviewArtifact{
+		Version: studyMapReviewArtifactVersion, Reviews: reviews,
+		Reduction: reduction, Attempts: summaries,
+	}
+	if saveErr := writeGoldenJSON(filepath.Join(runDir, studyMapReviewsFile), artifact); saveErr != nil {
+		return studymap.Record{}, reduction, stages, saveErr
+	}
+	if err != nil {
+		return studymap.Record{}, reduction, stages, err
+	}
+	return record, reduction, stages, nil
+}
+
+func buildStudyMapBriefShapeStage(
+	bundle studymap.Bundle,
+) (studymap.BriefShapeReferenceCatalog, semanticdiscovery.Prompt, error) {
+	catalog, err := studymap.BuildBriefShapeReferenceCatalog(bundle)
+	if err != nil {
+		return studymap.BriefShapeReferenceCatalog{}, semanticdiscovery.Prompt{}, err
+	}
+	return catalog, semanticdiscovery.Prompt{
+		Version:         semanticdiscovery.StudyBriefPromptVersion,
+		System:          studyMapV32SystemPrompt,
+		User:            studyMapV32SharedInput + string(catalog.PromptBundleJSON()) + studyMapBriefShapeTask,
+		ThinkingProfile: semanticdiscovery.ThinkingMax,
+		ProgressLabel:   "repository brief and shape editing",
+	}, nil
+}
+
+func buildStudyMapDirectionStage(
+	bundle studymap.Bundle,
+) (studymap.DirectionReferenceCatalog, semanticdiscovery.Prompt, error) {
+	catalog, err := studymap.BuildDirectionReferenceCatalog(bundle)
+	if err != nil {
+		return studymap.DirectionReferenceCatalog{}, semanticdiscovery.Prompt{}, err
+	}
+	return catalog, semanticdiscovery.Prompt{
+		Version:         semanticdiscovery.StudyCandidatesPromptVersion,
+		System:          studyMapDirectionSystemPrompt,
+		User:            studyMapV32SharedInput + string(catalog.PromptBundleJSON()) + studyMapDirectionTask,
+		ThinkingProfile: semanticdiscovery.ThinkingMax,
+		ProgressLabel:   "study direction candidate editing",
+	}, nil
+}
+
+func reviewSavedStudyMapV32(
+	ctx context.Context,
+	runDir string,
+	record studymap.Record,
+	provider semanticDiscoveryEditor,
+) (studymap.Record, studymap.ReviewReduction, []semanticDiscoveryStageMetrics, error) {
+	brief, directions, inputErr := studyMapV32InputsFromRecord(record)
+	if inputErr != nil {
+		return studymap.Record{}, studymap.ReviewReduction{}, nil, inputErr
+	}
+	bundleSHA, err := studymap.BundleHash(record.Bundle)
+	if err != nil {
+		return studymap.Record{}, studymap.ReviewReduction{}, nil, err
+	}
+	if err := writeGoldenJSON(filepath.Join(runDir, studyMapBriefShapeFile), brief); err != nil {
+		return studymap.Record{}, studymap.ReviewReduction{}, nil, err
+	}
+	if err := writeNormalizedDirectionProposal(
+		filepath.Join(runDir, studyMapDirectionsFile),
+		directions,
+	); err != nil {
+		return studymap.Record{}, studymap.ReviewReduction{}, nil, err
+	}
+	reviews, summaries, stages, preparationIssues, err := reviewStudyMapDirections(
+		ctx, runDir, record.Bundle, directions, bundleSHA, provider,
+	)
+	if err != nil {
+		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
+	}
+	reviewed, reduction, buildErr := studymap.BuildReviewedRecord(record.Bundle, brief, directions, reviews)
+	reduction.Issues = append(reduction.Issues, preparationIssues...)
+	artifact := studyMapReviewArtifact{
+		Version: studyMapReviewArtifactVersion, Reviews: reviews,
+		Reduction: reduction, Attempts: summaries,
+	}
+	if saveErr := writeGoldenJSON(filepath.Join(runDir, studyMapReviewsFile), artifact); saveErr != nil {
+		return studymap.Record{}, reduction, stages, saveErr
+	}
+	return reviewed, reduction, stages, buildErr
+}
+
+func executeStudyMapV32Stage(
+	ctx context.Context,
+	provider semanticDiscoveryEditor,
+	prompt semanticdiscovery.Prompt,
+	stage string,
+	bundleSHA string,
+) ([]byte, semanticDiscoveryStageMetrics, studyMapV32StageAttempt, studyMapStageExchange, error) {
+	plan, err := newSemanticDiscoveryStagePlan(provider, prompt, stage)
+	if err != nil {
+		return nil, semanticDiscoveryStageMetrics{}, studyMapV32StageAttempt{}, studyMapStageExchange{}, err
+	}
+	metrics := semanticDiscoveryStageMetrics{
+		Stage: plan.name, PromptVersion: prompt.Version, RequestBytes: len(plan.request), ProviderCall: true,
+	}
+	attempt := studyMapV32StageAttempt{
+		Version: 1, PromptVersion: prompt.Version, BundleSHA256: bundleSHA,
+		ValidationState: "started", Metrics: metrics,
+	}
+	started := time.Now()
+	result, callErr := provider.DiscoverSemanticsMeasured(ctx, prompt)
+	exchange := studyMapStageExchange{
+		request:           append([]byte(nil), plan.request...),
+		response:          append([]byte(nil), result.Content...),
+		responseBytes:     providerResultResponseBytes(result),
+		transportAttempts: result.Attempts,
+		providerErr:       callErr,
+	}
+	metrics.addResponse(result, time.Since(started))
+	attempt.Metrics = metrics
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		metrics.Status = "canceled"
+		attempt.Metrics = metrics
+		attempt.ValidationState = metrics.Status
+		attempt.FailureReason = semanticDiscoveryReason(ctxErr.Error())
+		return nil, metrics, attempt, exchange, ctxErr
+	}
+	if callErr != nil {
+		metrics.Status = "failed_provider"
+		attempt.Metrics = metrics
+		attempt.ValidationState = metrics.Status
+		attempt.FailureReason = semanticDiscoveryReason(callErr.Error())
+		return nil, metrics, attempt, exchange, fmt.Errorf("study map: %s provider call: %w", stage, callErr)
+	}
+	if json.Valid(result.Content) {
+		attempt.Response = append(json.RawMessage(nil), result.Content...)
+	}
+	metrics.Status = "accepted_transport"
+	attempt.Metrics = metrics
+	attempt.ValidationState = metrics.Status
+	return append([]byte(nil), result.Content...), metrics, attempt, exchange, nil
+}
+
+func recordStudyMapStageSemanticExchange(
+	writer *debugdump.Writer,
+	stage string,
+	exchange studyMapStageExchange,
+	state string,
+	validationCode string,
+) {
+	if writer == nil || len(exchange.request) == 0 {
+		return
+	}
+	record := debugdump.SemanticExchange{
+		Stage:                  stage,
+		InstanceOrdinal:        1,
+		SemanticAttemptOrdinal: 1,
+		RequestProvenance:      debugdump.SemanticRequestPrepared,
+		State:                  state,
+		ValidationCode:         validationCode,
+		SemanticCalls:          1,
+		TransportAttempts:      exchange.transportAttempts,
+		Request:                exchange.request,
+		Response: providerFailureContentForExchange(
+			exchange.providerErr,
+			exchange.response,
+		),
+	}
+	if len(record.Response) == 0 {
+		unavailableCode := debugdump.SemanticUnavailableNoContent
+		if state == debugdump.SemanticStateCanceled {
+			unavailableCode = debugdump.SemanticUnavailableCanceled
+		}
+		record.ResponseUnavailable = &debugdump.SemanticUnavailable{
+			Code: unavailableCode, OriginalBytes: exchange.responseBytes,
+		}
+	}
+	writer.RecordSemanticExchange(record)
+}
+
+func semanticStateForStudyMapStage(status string) string {
+	if status == "canceled" {
+		return debugdump.SemanticStateCanceled
+	}
+	return debugdump.SemanticStateProviderFailed
+}
+
+func semanticValidationForStudyMapStage(status string) string {
+	if status == "canceled" {
+		return debugdump.SemanticValidationCanceled
+	}
+	return debugdump.SemanticValidationProvider
+}
+
+func reviewStudyMapDirections(
+	ctx context.Context,
+	runDir string,
+	bundle studymap.Bundle,
+	directions studymap.DirectionProposal,
+	bundleSHA string,
+	provider semanticDiscoveryEditor,
+) (
+	[]studymap.ReviewProposal,
+	[]studyMapReviewSummary,
+	[]semanticDiscoveryStageMetrics,
+	[]studymap.ReviewIssue,
+	error,
+) {
+	return reviewStudyMapDirectionsWithOptions(
+		ctx, runDir, bundle, directions, bundleSHA, provider, studyMapRunOptions{},
+	)
+}
+
+func reviewStudyMapDirectionsWithOptions(
+	ctx context.Context,
+	runDir string,
+	bundle studymap.Bundle,
+	directions studymap.DirectionProposal,
+	bundleSHA string,
+	provider semanticDiscoveryEditor,
+	options studyMapRunOptions,
+) (
+	resultReviews []studymap.ReviewProposal,
+	resultSummaries []studyMapReviewSummary,
+	resultStages []semanticDiscoveryStageMetrics,
+	resultIssues []studymap.ReviewIssue,
+	returnErr error,
+) {
+	defer func() {
+		if !isSemanticResourceLimit(returnErr) {
+			return
+		}
+		if err := clearStudyMapV32ReviewOutputs(runDir); err != nil {
+			returnErr = errors.Join(returnErr, err)
+		}
+	}()
+	if err := os.Remove(filepath.Join(runDir, studyMapReviewsFile)); err != nil && !os.IsNotExist(err) {
+		return nil, nil, nil, nil, fmt.Errorf("study map: clear saved reviews: %w", err)
+	}
+	if err := os.RemoveAll(filepath.Join(runDir, studyMapReviewAttemptsDir)); err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("study map: clear review attempts: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Join(runDir, studyMapReviewAttemptsDir), 0o700); err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("study map: create review attempts: %w", err)
+	}
+	tasks := make([]studyMapReviewTaskInput, 0, len(directions.Directions))
+	ordered := make([]studyMapReviewCompletion, 0, len(directions.Directions))
+	for index, direction := range directions.Directions {
+		stage := "reading_pack_review/" + direction.DirectionID
+		reviewBundle, err := studymap.BuildReviewBundle(bundle, direction)
+		if err != nil {
+			ordered = append(ordered, rejectedStudyMapReviewPreparation(
+				studyMapReviewPreparationFailure{
+					index:       index,
+					directionID: direction.DirectionID,
+					bundleSHA:   bundleSHA,
+					stage:       stage,
+					issueCode:   "review_bundle_build_failed",
+					cause:       err,
+				},
+			))
+			continue
+		}
+		raw, err := json.Marshal(reviewBundle)
+		if err != nil {
+			ordered = append(ordered, rejectedStudyMapReviewPreparation(
+				studyMapReviewPreparationFailure{
+					index:       index,
+					directionID: direction.DirectionID,
+					bundleSHA:   bundleSHA,
+					stage:       stage,
+					issueCode:   "review_bundle_encode_failed",
+					bundle:      &reviewBundle,
+					cause:       err,
+				},
+			))
+			continue
+		}
+		prompt := semanticdiscovery.Prompt{
+			Version: semanticdiscovery.ReadingPackReviewPromptVersion,
+			System:  studyMapReviewSystemPrompt, User: studyMapReviewTask + string(raw),
+			ThinkingProfile: semanticdiscovery.ThinkingDisabled,
+			ProgressLabel:   "reading pack review " + reviewBundle.DirectionID,
+		}
+		plan, err := newSemanticDiscoveryStagePlan(provider, prompt, stage)
+		if err != nil {
+			ordered = append(ordered, rejectedStudyMapReviewPreparation(
+				studyMapReviewPreparationFailure{
+					index:       index,
+					directionID: direction.DirectionID,
+					bundleSHA:   bundleSHA,
+					stage:       stage,
+					issueCode:   "review_request_plan_failed",
+					bundle:      &reviewBundle,
+					cause:       err,
+				},
+			))
+			continue
+		}
+		tasks = append(tasks, studyMapReviewTaskInput{
+			index: index, direction: direction, bundle: reviewBundle, plan: plan,
+		})
+	}
+	completions := make(chan studyMapReviewCompletion, len(tasks))
+	semaphore := make(chan struct{}, studyMapV32ReviewConcurrency)
+	var wait sync.WaitGroup
+	for _, task := range tasks {
+		task := task
+		wait.Go(func() {
+			completion := executeStudyMapReview(
+				ctx, provider, task, bundle, bundleSHA, semaphore, options.exchangeWriter,
+			)
+			completions <- completion
+		})
+	}
+	wait.Wait()
+	close(completions)
+	for completion := range completions {
+		ordered = append(ordered, completion)
+	}
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].index < ordered[j].index })
+	for _, completion := range ordered {
+		if isSemanticResourceLimit(completion.providerErr) {
+			return nil, nil, nil, nil, fmt.Errorf(
+				"study map: review %s provider call: %w",
+				completion.directionID,
+				completion.providerErr,
+			)
+		}
+	}
+	reviews := make([]studymap.ReviewProposal, 0, len(ordered))
+	summaries := make([]studyMapReviewSummary, 0, len(ordered))
+	stages := make([]semanticDiscoveryStageMetrics, 0, len(ordered))
+	issues := make([]studymap.ReviewIssue, 0, len(ordered))
+	for _, completion := range ordered {
+		if completion.cacheTask != nil && len(completion.cacheReply) > 0 {
+			if cache, ok := provider.(studyReviewCacheReplay); ok {
+				cache.storeStudyReview(
+					ctx,
+					completion.cacheTask.plan.prompt,
+					completion.cacheTask.plan.request,
+					bundle,
+					completion.cacheTask.direction,
+					completion.cacheReply,
+				)
+			}
+		}
+		if completion.unsafeKind != "" {
+			return nil, nil, stages, issues, fmt.Errorf(
+				"study map: review provider response contains an obvious %s",
+				completion.unsafeKind,
+			)
+		}
+		attemptPath := filepath.Join(runDir, studyMapReviewAttemptsDir, completion.directionID+".json")
+		if err := writeGoldenJSON(attemptPath, completion.attempt); err != nil {
+			return nil, nil, stages, issues, err
+		}
+		stages = append(stages, completion.attempt.Metrics)
+		summaries = append(summaries, studyMapReviewSummary{
+			DirectionID:     completion.directionID,
+			ValidationState: completion.attempt.ValidationState,
+			IssueCode:       completion.attempt.IssueCode,
+			FailureReason:   completion.attempt.FailureReason,
+			Metrics:         completion.attempt.Metrics,
+		})
+		if completion.issue.Code != "" {
+			issues = append(issues, completion.issue)
+		}
+		if completion.valid {
+			reviews = append(reviews, completion.proposal)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return reviews, summaries, stages, issues, err
+	}
+	return reviews, summaries, stages, issues, nil
+}
+
+func rejectedStudyMapReviewPreparation(
+	failure studyMapReviewPreparationFailure,
+) studyMapReviewCompletion {
+	metrics := semanticDiscoveryStageMetrics{
+		Stage:         failure.stage,
+		PromptVersion: semanticdiscovery.ReadingPackReviewPromptVersion,
+		Status:        "rejected",
+	}
+	attempt := studyMapReviewAttempt{
+		Version:         1,
+		PromptVersion:   semanticdiscovery.ReadingPackReviewPromptVersion,
+		BundleSHA256:    failure.bundleSHA,
+		DirectionID:     failure.directionID,
+		ValidationState: metrics.Status,
+		IssueCode:       failure.issueCode,
+		FailureReason:   semanticDiscoveryReason(failure.cause.Error()),
+		Metrics:         metrics,
+		Bundle:          failure.bundle,
+	}
+	return studyMapReviewCompletion{
+		index:       failure.index,
+		directionID: failure.directionID,
+		attempt:     attempt,
+		issue: studymap.ReviewIssue{
+			DirectionID: failure.directionID,
+			Code:        failure.issueCode,
+			Detail:      semanticDiscoveryReason(failure.cause.Error()),
+		},
+	}
+}
+
+func executeStudyMapReview(
+	ctx context.Context,
+	provider semanticDiscoveryEditor,
+	task studyMapReviewTaskInput,
+	sourceBundle studymap.Bundle,
+	bundleSHA string,
+	semaphore chan struct{},
+	exchangeWriter *debugdump.Writer,
+) studyMapReviewCompletion {
+	metrics := semanticDiscoveryStageMetrics{
+		Stage: task.plan.name, PromptVersion: task.plan.prompt.Version,
+		RequestBytes: len(task.plan.request),
+	}
+	attempt := studyMapReviewAttempt{
+		Version: 1, PromptVersion: task.plan.prompt.Version, BundleSHA256: bundleSHA,
+		DirectionID: task.bundle.DirectionID, ValidationState: "started",
+		Metrics: metrics, Bundle: &task.bundle,
+	}
+	completion := studyMapReviewCompletion{
+		index: task.index, directionID: task.bundle.DirectionID,
+		bundle: task.bundle, attempt: attempt,
+	}
+	var (
+		result  modelresearch.ProviderResult
+		callErr error
+		cached  bool
+	)
+	if cache, ok := provider.(studyReviewCacheReplay); ok {
+		result, cached, callErr = cache.loadStudyReview(
+			task.plan.prompt,
+			task.plan.request,
+			sourceBundle,
+			task.direction,
+		)
+		if callErr != nil {
+			metrics.Status = "failed_provider"
+			completion.attempt.Metrics = metrics
+			completion.attempt.ValidationState = metrics.Status
+			completion.attempt.FailureReason = semanticDiscoveryReason(callErr.Error())
+			completion.providerErr = callErr
+			return completion
+		}
+		if cached {
+			metrics.ProviderCall = false
+		}
+	}
+	if !cached {
+		select {
+		case semaphore <- struct{}{}:
+			defer func() { <-semaphore }()
+		case <-ctx.Done():
+			metrics.Status = "canceled"
+			completion.attempt.Metrics = metrics
+			completion.attempt.ValidationState = metrics.Status
+			completion.attempt.FailureReason = semanticDiscoveryReason(ctx.Err().Error())
+			return completion
+		}
+		started := time.Now()
+		result, callErr = provider.DiscoverSemanticsMeasured(ctx, task.plan.prompt)
+		metrics.ProviderCall = true
+		metrics.addResponse(result, time.Since(started))
+	} else {
+		metrics.addResponse(result, 0)
+	}
+	completion.attempt.Metrics = metrics
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		metrics.Status = "canceled"
+		completion.attempt.Metrics = metrics
+		completion.attempt.ValidationState = metrics.Status
+		completion.attempt.FailureReason = semanticDiscoveryReason(ctxErr.Error())
+		recordStudyMapReviewSemanticExchange(
+			exchangeWriter, task, result, callErr, cached,
+			debugdump.SemanticStateCanceled, debugdump.SemanticValidationCanceled,
+		)
+		return completion
+	}
+	if callErr != nil {
+		metrics.Status = "failed_provider"
+		completion.attempt.Metrics = metrics
+		completion.attempt.ValidationState = metrics.Status
+		completion.attempt.FailureReason = semanticDiscoveryReason(callErr.Error())
+		completion.providerErr = callErr
+		recordStudyMapReviewSemanticExchange(
+			exchangeWriter, task, result, callErr, cached,
+			debugdump.SemanticStateProviderFailed, debugdump.SemanticValidationProvider,
+		)
+		return completion
+	}
+	if kind, found := secretscan.DetectAlways(string(result.Content)); found {
+		metrics.Status = "rejected"
+		completion.attempt.Metrics = metrics
+		completion.attempt.ValidationState = metrics.Status
+		completion.attempt.FailureReason = "review_response_contains_obvious_credential"
+		completion.unsafeKind = kind
+		recordStudyMapReviewSemanticExchange(
+			exchangeWriter, task, result, nil, cached,
+			debugdump.SemanticStateRejected, debugdump.SemanticValidationSecret,
+		)
+		return completion
+	}
+	if json.Valid(result.Content) {
+		completion.attempt.Response = append(json.RawMessage(nil), result.Content...)
+	} else {
+		completion.attempt.RawResponse = string(result.Content)
+	}
+	proposal, err := studymap.DecodeReviewProposal(result.Content)
+	if isSemanticResourceLimit(err) {
+		metrics.Status = "failed_provider"
+		completion.attempt.Metrics = metrics
+		completion.attempt.ValidationState = metrics.Status
+		completion.attempt.FailureReason = semanticDiscoveryReason(err.Error())
+		completion.providerErr = err
+		recordStudyMapReviewSemanticExchange(
+			exchangeWriter, task, result, nil, cached,
+			debugdump.SemanticStateProviderFailed, debugdump.SemanticValidationDecode,
+		)
+		return completion
+	}
+	if err != nil || proposal.DirectionID != task.bundle.DirectionID {
+		metrics.Status = "rejected"
+		completion.attempt.Metrics = metrics
+		completion.attempt.ValidationState = metrics.Status
+		if err != nil {
+			completion.attempt.FailureReason = semanticDiscoveryReason(err.Error())
+		} else {
+			completion.attempt.FailureReason = "review_direction_mismatch"
+		}
+		validationCode := debugdump.SemanticValidationResponse
+		if err != nil {
+			validationCode = debugdump.SemanticValidationDecode
+		}
+		recordStudyMapReviewSemanticExchange(
+			exchangeWriter, task, result, nil, cached,
+			debugdump.SemanticStateRejected, validationCode,
+		)
+		return completion
+	}
+	metrics.Status = "accepted"
+	completion.attempt.Metrics = metrics
+	completion.attempt.ValidationState = metrics.Status
+	completion.proposal = proposal
+	completion.valid = true
+	state := debugdump.SemanticStateAccepted
+	validationCode := debugdump.SemanticValidationAccepted
+	if cached {
+		state = debugdump.SemanticStateCacheHit
+		validationCode = debugdump.SemanticValidationCache
+	}
+	recordStudyMapReviewSemanticExchange(
+		exchangeWriter, task, result, nil, cached, state, validationCode,
+	)
+	if !cached && studyReviewResponseAccepted(
+		sourceBundle,
+		task.direction,
+		result.Content,
+	) {
+		cacheTask := task
+		completion.cacheTask = &cacheTask
+		completion.cacheReply = append([]byte(nil), result.Content...)
+	}
+	return completion
+}
+
+func recordStudyMapReviewSemanticExchange(
+	writer *debugdump.Writer,
+	task studyMapReviewTaskInput,
+	result modelresearch.ProviderResult,
+	providerErr error,
+	cached bool,
+	state string,
+	validationCode string,
+) {
+	if writer == nil {
+		return
+	}
+	semanticCalls := 1
+	transportAttempts := result.Attempts
+	if cached {
+		semanticCalls = 0
+		transportAttempts = 0
+	}
+	exchange := debugdump.SemanticExchange{
+		Stage:                  debugdump.SemanticStageStudyReview,
+		InstanceOrdinal:        task.index + 1,
+		SemanticAttemptOrdinal: 1,
+		RequestProvenance:      debugdump.SemanticRequestPrepared,
+		State:                  state,
+		ValidationCode:         validationCode,
+		SemanticCalls:          semanticCalls,
+		TransportAttempts:      transportAttempts,
+		Request:                task.plan.request,
+		Response: providerFailureContentForExchange(
+			providerErr,
+			result.Content,
+		),
+	}
+	if len(exchange.Response) == 0 {
+		unavailableCode := debugdump.SemanticUnavailableNoContent
+		if state == debugdump.SemanticStateCanceled {
+			unavailableCode = debugdump.SemanticUnavailableCanceled
+		} else if cached {
+			unavailableCode = debugdump.SemanticUnavailableCache
+		}
+		exchange.ResponseUnavailable = &debugdump.SemanticUnavailable{
+			Code: unavailableCode, OriginalBytes: providerResultResponseBytes(result),
+		}
+	}
+	writer.RecordSemanticExchange(exchange)
+}
+
+func studyMapV32InputsFromRecord(
+	record studymap.Record,
+) (studymap.BriefShapeProposal, studymap.DirectionProposal, error) {
+	brief := studymap.BriefShapeProposal{
+		Version: studymap.BriefShapeProposalVersion, RepositoryType: record.RepositoryType,
+		Brief: record.Brief, ShapeAreaIDs: append([]string(nil), record.ShapeAreaIDs...),
+	}
+	directions := studymap.DirectionProposal{Version: studymap.DirectionProposalVersion}
+	for _, direction := range record.Directions {
+		directions.Directions = append(directions.Directions, studymap.DirectionCandidate{
+			Question:     direction.Question,
+			WhyItMatters: direction.WhyItMatters, LearningOutcome: direction.LearningOutcome,
+			TargetJob: direction.TargetJob, LearningStage: direction.LearningStage,
+			AnchorIDs:   append([]string(nil), direction.AnchorIDs...),
+			DocumentIDs: append([]string(nil), direction.DocumentIDs...),
+			AreaIDs:     append([]string(nil), direction.AreaIDs...), MechanismID: direction.MechanismID,
+			ReadingAnchors: append([]studymap.ReadingAnchor(nil), direction.ReadingAnchors...),
+			SearchQueries:  append([]string(nil), direction.SearchQueries...),
+		})
+	}
+	normalized, err := studymap.NormalizeDirectionProposal(directions)
+	if err != nil {
+		return studymap.BriefShapeProposal{}, studymap.DirectionProposal{}, err
+	}
+	return brief, normalized, nil
+}
+
+func aggregateStudyMapMetrics(
+	stages []semanticDiscoveryStageMetrics,
+	outcomeErr error,
+) semanticDiscoveryStageMetrics {
+	total := semanticDiscoveryStageMetrics{Stage: "repository_study_map_v32", PromptVersion: "repository-study-map-split-v2"}
+	statuses := make(map[string]struct{}, len(stages))
+	accepted := 0
+	for _, stage := range stages {
+		total.ProviderCall = total.ProviderCall || stage.ProviderCall
+		total.RequestBytes += stage.RequestBytes
+		total.ResponseBytes += stage.ResponseBytes
+		total.InputTokens += stage.InputTokens
+		total.OutputTokens += stage.OutputTokens
+		total.PromptCacheHitTokens += stage.PromptCacheHitTokens
+		total.PromptCacheMissTokens += stage.PromptCacheMissTokens
+		total.LatencyMillis += stage.LatencyMillis
+		statuses[stage.Status] = struct{}{}
+		if stage.Status == "accepted" {
+			accepted++
+		}
+	}
+	switch {
+	case len(stages) == 0:
+		total.Status = "not_run"
+	case outcomeErr != nil:
+		total.Status = failedStudyMapAggregateStatus(statuses)
+	case accepted == len(stages):
+		total.Status = "accepted"
+	case len(statuses) == 1:
+		for status := range statuses {
+			total.Status = status
+		}
+	default:
+		total.Status = "partial"
+	}
+	return total
+}
+
+func failedStudyMapAggregateStatus(statuses map[string]struct{}) string {
+	if _, canceled := statuses["canceled"]; canceled {
+		return "canceled"
+	}
+	if _, providerFailed := statuses["failed_provider"]; providerFailed {
+		return "failed_provider"
+	}
+	return "rejected"
+}
+
+func studyMapV32ProposalFromRecord(record studymap.Record) studymap.Proposal {
+	proposal := studymap.Proposal{
+		Version: studymap.ProposalVersion, RepositoryType: record.RepositoryType,
+		Brief: record.Brief, ShapeAreaIDs: append([]string(nil), record.ShapeAreaIDs...),
+	}
+	for _, direction := range record.Directions {
+		proposal.Candidates = append(proposal.Candidates, studymap.Candidate{
+			Question: direction.Question, WhyItMatters: direction.WhyItMatters,
+			LearningOutcome: direction.LearningOutcome, TargetJob: direction.TargetJob,
+			LearningStage: direction.LearningStage,
+			AnchorIDs:     append([]string(nil), direction.AnchorIDs...),
+			DocumentIDs:   append([]string(nil), direction.DocumentIDs...),
+			AreaIDs:       append([]string(nil), direction.AreaIDs...), MechanismID: direction.MechanismID,
+			ReadingAnchors: append([]studymap.ReadingAnchor(nil), direction.ReadingAnchors...),
+			SearchQueries:  append([]string(nil), direction.SearchQueries...),
+		})
+	}
+	return proposal
+}

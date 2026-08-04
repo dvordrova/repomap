@@ -62,6 +62,7 @@ func TestResticSavedResponseExpandsBeyondInitialProviderBundle(t *testing.T) {
 		Plan: plan.Selected[0], Policy: policy,
 		Repository: RepositoryContext{Identity: repo, Revision: "restic-fixture", Scenario: "go-default"},
 		RunsDir:    t.TempDir(), Profile: "saved", Model: "saved-response", Provider: provider,
+		ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -116,6 +117,7 @@ func TestCaddySavedResponsePreservesZeroSurfaceHonesty(t *testing.T) {
 		Plan: configPlan, Policy: policy,
 		Repository: RepositoryContext{Identity: repo, Revision: "caddy-fixture", Scenario: "go-default"},
 		Model:      "saved-response", Provider: provider,
+		ProviderEndpointSHA256: modelResearchTestEndpointSHA256(t),
 	})
 	if err != nil {
 		t.Fatal(err)

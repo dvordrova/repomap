@@ -1,0 +1,17 @@
+{
+  "deterministic_local_seconds": 10,
+  "gopls_queries": 12,
+  "initial_lexical_symbol_candidates": 40,
+  "model_calls_by_locality": {
+    "bounded_cross_file": 2,
+    "extension_contribution": 3,
+    "local_exact": 1
+  },
+  "model_calls_hard_max": 4,
+  "named_frontier_expansions": 2,
+  "retained_anchors_before_review": 16,
+  "retained_source_document_bytes": 131072,
+  "source_document_files_read": 12,
+  "visible_anchors_max": 8,
+  "visible_anchors_min": 3
+}

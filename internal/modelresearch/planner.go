@@ -27,6 +27,7 @@ const (
 	maxSourceLineBytes  = 512
 	minWindowLines      = 40
 	maxWindowLines      = 80
+	maxWindowsPerFile   = 2
 	requestFramingBytes = 16 << 10
 )
 
@@ -174,7 +175,13 @@ func PlanTargetedRounds(ctx context.Context, input PlanningInput) (PlanResult, e
 		return plans[i].Question.ID < plans[j].Question.ID
 	})
 	result := PlanResult{Selected: make([]PlannedRound, 0, input.Policy.MaxTargetedRounds)}
-	for _, plan := range plans {
+	for len(plans) > 0 {
+		index := 0
+		if len(result.Selected) > 0 && len(result.Selected) < input.Policy.MaxTargetedRounds {
+			index = nextDiversePlanIndex(plans, result.Selected)
+		}
+		plan := plans[index]
+		plans = append(plans[:index], plans[index+1:]...)
 		if !plan.Gate.Selected {
 			result.Skipped = append(result.Skipped, plan)
 			continue
@@ -206,6 +213,71 @@ func PlanTargetedRounds(ctx context.Context, input PlanningInput) (PlanResult, e
 	return result, nil
 }
 
+func nextDiversePlanIndex(plans, selected []PlannedRound) int {
+	// Eligibility and the strongest first round are decided before this point.
+	// Later slots use only the already bounded provider-visible paths so two
+	// nearby questions do not consume the entire targeted-research budget.
+	best := -1
+	for index, plan := range plans {
+		if !plan.Gate.Selected {
+			continue
+		}
+		if best == -1 || planPathOverlapLess(plan, plans[best], selected) {
+			best = index
+		}
+	}
+	if best == -1 {
+		return 0
+	}
+	return best
+}
+
+func planPathOverlapLess(left, right PlannedRound, selected []PlannedRound) bool {
+	leftSum, leftPairs := planPathOverlap(left, selected)
+	rightSum, rightPairs := planPathOverlap(right, selected)
+	if leftSum*rightPairs != rightSum*leftPairs {
+		return leftSum*rightPairs < rightSum*leftPairs
+	}
+	if left.Score != right.Score {
+		return left.Score > right.Score
+	}
+	return left.Question.ID < right.Question.ID
+}
+
+func planPathOverlap(candidate PlannedRound, selected []PlannedRound) (sum int, pairs int) {
+	for _, existing := range selected {
+		for _, left := range candidate.Bundle.ProviderAllowedPaths {
+			for _, right := range existing.Bundle.ProviderAllowedPaths {
+				sum += sharedDirectoryPrefixDepth(left, right)
+				pairs++
+			}
+		}
+	}
+	if pairs == 0 {
+		return 0, 1
+	}
+	return sum, pairs
+}
+
+func sharedDirectoryPrefixDepth(left, right string) int {
+	leftParts := pathDirectoryParts(left)
+	rightParts := pathDirectoryParts(right)
+	limit := min(len(leftParts), len(rightParts))
+	shared := 0
+	for shared < limit && leftParts[shared] == rightParts[shared] {
+		shared++
+	}
+	return shared
+}
+
+func pathDirectoryParts(path string) []string {
+	directory := filepath.ToSlash(filepath.Dir(path))
+	if directory == "." || directory == "" {
+		return nil
+	}
+	return strings.Split(strings.Trim(directory, "/"), "/")
+}
+
 func assembleEvidenceBundle(
 	ctx context.Context,
 	reader *reporead.Reader,
@@ -223,7 +295,7 @@ func assembleEvidenceBundle(
 		Purpose: question.Purpose, Question: question.Question,
 	}
 	selectedPaths := make(map[string]int)
-	focusLines := make(map[string]int)
+	focusLines := make(map[string][]int)
 	unknownCandidates := 0
 	for _, candidateID := range sortedUnique(question.CandidateIDs) {
 		candidate, ok := candidates[candidateID]
@@ -236,7 +308,7 @@ func assembleEvidenceBundle(
 			continue
 		}
 		selectedPaths[candidate.Path] = 0
-		focusLines[candidate.Path] = candidateFocusLine(candidate)
+		focusLines[candidate.Path] = candidateFocusLines(candidate)
 		bundle.Evidence = append(bundle.Evidence, EvidenceItem{
 			ID: stableID("evidence", "file\x00"+candidate.Path), Kind: EvidenceFileSummary,
 			Statement: "provider file summary selected for focused local expansion",
@@ -248,7 +320,7 @@ func assembleEvidenceBundle(
 	if len(selectedPaths) == 0 {
 		for _, candidate := range bestQuestionCandidates(question, candidates, authorized, 3) {
 			selectedPaths[candidate.Path] = 0
-			focusLines[candidate.Path] = candidateFocusLine(candidate)
+			focusLines[candidate.Path] = candidateFocusLines(candidate)
 		}
 	}
 
@@ -288,24 +360,41 @@ func assembleEvidenceBundle(
 	if len(paths) > budget.MaxFiles {
 		paths = paths[:budget.MaxFiles]
 	}
+	windowLimit := budget.MaxSourceWindows
+	if windowLimit <= 0 {
+		windowLimit = max(1, budget.MaxFiles)
+	}
+	windowCount := 0
 	for _, path := range paths {
 		if err := ctx.Err(); err != nil {
 			return EvidenceBundle{}, FocusedInvestigationScope{}, 0, err
 		}
-		line := focusLines[path]
-		window, ok := readSourceWindow(reader, path, line)
-		if !ok {
-			continue
+		lines := focusLines[path]
+		if len(lines) == 0 {
+			lines = []int{0}
 		}
-		location := evidence.Location{Path: path, Line: window.StartLine}
-		item := EvidenceItem{
-			ID:   stableID("evidence", strings.Join([]string{"source", path, strconv.Itoa(window.StartLine), strconv.Itoa(window.EndLine)}, "\x00")),
-			Kind: EvidenceSource, Statement: "bounded source window selected locally for the research question",
-			Location: &location, Certainty: evidence.CertaintyStatic, Window: &window,
-			Provenance: []evidence.Provenance{{Provider: "reporead", Version: PolicyVersion, Operation: "read_bounded_source_window", Location: &location}},
-			Visibility: []EvidenceVisibility{VisibilityLocalAfter},
+		for _, line := range lines {
+			if windowCount >= windowLimit {
+				break
+			}
+			window, ok := readSourceWindow(reader, path, line)
+			if !ok {
+				continue
+			}
+			location := evidence.Location{Path: path, Line: window.StartLine}
+			item := EvidenceItem{
+				ID:   stableID("evidence", strings.Join([]string{"source", path, strconv.Itoa(window.StartLine), strconv.Itoa(window.EndLine)}, "\x00")),
+				Kind: EvidenceSource, Statement: "bounded source window selected locally for the research question",
+				Location: &location, Certainty: evidence.CertaintyStatic, Window: &window,
+				Provenance: []evidence.Provenance{{Provider: "reporead", Version: PolicyVersion, Operation: "read_bounded_source_window", Location: &location}},
+				Visibility: []EvidenceVisibility{VisibilityLocalAfter},
+			}
+			bundle.Evidence = append(bundle.Evidence, item)
+			windowCount++
 		}
-		bundle.Evidence = append(bundle.Evidence, item)
+		if windowCount >= windowLimit {
+			break
+		}
 	}
 	localEvidence := deduplicateEvidence(bundle.Evidence)
 	providerEvidence := prioritizedProviderEvidence(localEvidence)
@@ -626,13 +715,22 @@ func prioritizedProviderEvidence(items []EvidenceItem) []EvidenceItem {
 	return result
 }
 
-func candidateFocusLine(candidate FileCandidate) int {
+func candidateFocusLines(candidate FileCandidate) []int {
+	var lines []int
 	for _, location := range candidate.FocusLocations {
 		if location.Path == candidate.Path && location.Line > 0 {
-			return location.Line
+			if len(lines) == 0 {
+				lines = append(lines, location.Line)
+			} else if location.Line != lines[0] {
+				if len(lines) == 1 {
+					lines = append(lines, location.Line)
+				} else {
+					lines[1] = location.Line
+				}
+			}
 		}
 	}
-	return 0
+	return lines
 }
 
 func matchingCommandTraces(question string, traces []gofacts.CommandTrace) []gofacts.CommandTrace {
@@ -739,7 +837,7 @@ func rankedPaths(paths map[string]int) []string {
 
 func addTraceLocation(
 	paths map[string]int,
-	focusLines map[string]int,
+	focusLines map[string][]int,
 	authorized map[string]struct{},
 	location evidence.Location,
 ) {
@@ -752,8 +850,14 @@ func addTraceLocation(
 	if current, exists := paths[location.Path]; !exists || current == 0 {
 		paths[location.Path] = location.Line
 	}
-	if current, exists := focusLines[location.Path]; !exists || current == 0 {
-		focusLines[location.Path] = location.Line
+	lines := focusLines[location.Path]
+	if location.Line > 0 && len(lines) < maxWindowsPerFile {
+		for _, line := range lines {
+			if line == location.Line {
+				return
+			}
+		}
+		focusLines[location.Path] = append(lines, location.Line)
 	}
 }
 
@@ -785,9 +889,23 @@ func localGateSignals(items []EvidenceItem, initialPaths map[string]struct{}) []
 func questionImpactScore(question ProposedQuestion) int {
 	text := strings.ToLower(question.Purpose + " " + question.Question)
 	score := len(question.CandidateIDs) * 2
-	for _, term := range []string{"backup", "config", "admin", "request", "runtime", "server", "repository", "security", "lifecycle", "user"} {
-		if strings.Contains(text, term) {
-			score += 3
+	for _, equivalents := range [][]string{
+		{"backup", "резервн"},
+		{"config", "конфигурац", "настройк"},
+		{"admin", "админист"},
+		{"request", "запрос"},
+		{"runtime", "время выполнения"},
+		{"server", "сервер"},
+		{"repository", "репозитор"},
+		{"security", "безопасност"},
+		{"lifecycle", "жизненный цикл", "жизненного цикла"},
+		{"user", "пользовател"},
+	} {
+		for _, term := range equivalents {
+			if strings.Contains(text, term) {
+				score += 3
+				break
+			}
 		}
 	}
 	return score
@@ -795,7 +913,18 @@ func questionImpactScore(question ProposedQuestion) int {
 
 func isRuntimeOnlyQuestion(question string) bool {
 	text := strings.ToLower(question)
-	for _, phrase := range []string{"runtime observation only", "requires runtime observation", "dynamic runtime value", "production traffic only"} {
+	for _, phrase := range []string{
+		"runtime observation only",
+		"requires runtime observation",
+		"dynamic runtime value",
+		"production traffic only",
+		"только наблюдение во время выполнения",
+		"наблюдение только во время выполнения",
+		"требует наблюдения во время выполнения",
+		"требуется наблюдение во время выполнения",
+		"динамическое значение времени выполнения",
+		"только производственный трафик",
+	} {
 		if strings.Contains(text, phrase) {
 			return true
 		}

@@ -10,21 +10,28 @@ import (
 
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
-	"github.com/dvordrova/repomap/internal/evidence"
-	"github.com/dvordrova/repomap/internal/experiment/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/llmbundle"
 	"github.com/dvordrova/repomap/internal/modelresearch"
+	"github.com/dvordrova/repomap/internal/repositoryatlas"
+	"github.com/dvordrova/repomap/internal/repositoryatlas/goadapter"
 	"github.com/dvordrova/repomap/internal/snapshot"
+	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
 
 type Options struct {
-	RepoPath                  string
-	SnapshotOnly              bool
-	LLMBundleOnly             bool
-	LLMRequestOnly            bool
-	OutputJSON                bool
+	RepoPath       string
+	SnapshotOnly   bool
+	LLMBundleOnly  bool
+	LLMRequestOnly bool
+	OutputJSON     bool
+	// AtlasFirst is the ordinary product local-artifact path. It stops before
+	// raw Orientation signal/bundle construction and every legacy semantic
+	// stage, while still publishing snapshot, surface, and Repository Atlas
+	// artifacts through the existing confined writer.
+	AtlasFirst                bool
 	Offline                   bool
+	NoCache                   bool
 	FlowCount                 int
 	FlowBundlesOnly           bool
 	MaxReadmeBytes            int
@@ -43,7 +50,6 @@ type Options struct {
 	MaxLLMSignalsPerFile      int
 	DebugDir                  string
 	RunID                     string
-	DumpLLM                   bool
 	DumpRedacted              bool
 	RequireArtifacts          bool
 	DiscoverSurfaces          bool
@@ -71,13 +77,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 	if err := policy.Validate(); err != nil {
 		return nil, err
 	}
-	requireArtifacts := opts.DumpLLM || opts.RequireArtifacts
-	if opts.DumpLLM && opts.Offline {
-		return nil, fmt.Errorf("--dump-llm cannot be used with offline mode; use request preview instead")
-	}
-	if opts.DumpLLM && !opts.SnapshotOnly && !opts.LLMBundleOnly && !opts.LLMRequestOnly && opts.DebugDir == "" {
-		return nil, fmt.Errorf("--dump-llm requires a debug directory")
-	}
+	requireArtifacts := opts.RequireArtifacts
 	if opts.RequireArtifacts && !opts.SnapshotOnly && !opts.LLMBundleOnly && !opts.LLMRequestOnly && opts.DebugDir == "" {
 		return nil, fmt.Errorf("required browser artifacts need a debug directory")
 	}
@@ -87,7 +87,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		RepoPath: opts.RepoPath,
 	})
 
-	s, err := snapshot.Build(snapshot.Options{
+	s, err := snapshot.BuildContext(ctx, snapshot.Options{
 		RepoPath:            opts.RepoPath,
 		MaxReadmeBytes:      opts.MaxReadmeBytes,
 		MaxTreeLines:        opts.MaxTreeLines,
@@ -113,16 +113,20 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		}
 		return snapshotJSON, nil
 	}
-	orientationSignals := collectOrientationSignals(s, opts)
+	if opts.AtlasFirst {
+		return runAtlasFirstLocalArtifacts(ctx, opts, s, snapshotJSON, requireArtifacts)
+	}
+	orientationSignals, orientationSignalTrace := collectOrientationSignals(s, opts)
 	operationalWarnings := discoverOperationalCandidates(&s, orientationSignals)
 	snapshotJSON, _ = s.JSON()
 
 	bundleStarted := time.Now()
-	bundle := llmbundle.Build(s, s.FilteredFiles, llmbundle.Options{
+	maxOrientationFiles := orientationFileLimit(opts.MaxLLMFiles, len(s.FilteredFiles))
+	bundle, bundleSelectionTrace := llmbundle.BuildWithTrace(s, s.FilteredFiles, llmbundle.Options{
 		MaxReadmeBytes:   opts.MaxReadmeLLMBytes,
 		MaxModules:       opts.MaxLLMModules,
 		MaxEntrypoints:   opts.MaxLLMEntrypoints,
-		MaxFiles:         opts.MaxLLMFiles,
+		MaxFiles:         maxOrientationFiles,
 		MaxEdges:         opts.MaxLLMEdges,
 		MaxSignalTotal:   opts.MaxLLMSignals,
 		MaxSignalPerFile: opts.MaxLLMSignalsPerFile,
@@ -136,6 +140,14 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 	modelBundleJSON, err := json.Marshal(bundle)
 	if err != nil {
 		return nil, fmt.Errorf("marshal compact model bundle: %w", err)
+	}
+	orientationCatalog, err := buildOrientationReferenceCatalog(bundle)
+	if err != nil {
+		return nil, err
+	}
+	orientationWireJSON, err := buildOrientationWireBundle(bundle, orientationCatalog)
+	if err != nil {
+		return nil, err
 	}
 	emitProgress(opts, ProgressEvent{
 		Stage:          ProgressBundleReady,
@@ -159,7 +171,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		requestJSON, err := client.OrientPromptJSON(modelBundleJSON)
+		requestJSON, err := client.OrientPromptJSON(orientationWireJSON)
 		if err != nil {
 			return nil, err
 		}
@@ -181,7 +193,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		RepoName:            s.RepoName,
 		RepoPath:            opts.RepoPath,
 		Command:             "orient",
-		CompactContextBytes: len(modelBundleJSON),
+		CompactContextBytes: len(orientationWireJSON),
 		LLMBundleOnly:       opts.LLMBundleOnly,
 		EffectiveOptions:    opts.EffectiveOptions,
 	}
@@ -194,14 +206,32 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			dw = nil
 		}
 		if dw != nil {
+			defer dw.Close()
 			if err := dw.WriteMetadata(runMeta); err != nil && requireArtifacts {
 				return nil, fmt.Errorf("write required debug metadata: %w", err)
 			}
 			if err := dw.WriteSnapshot(snapshotJSON); err != nil && requireArtifacts {
 				return nil, fmt.Errorf("write required debug snapshot: %w", err)
 			}
-			if err := dw.WriteLLMBundle(append(modelBundleJSON, '\n')); err != nil && requireArtifacts {
-				return nil, fmt.Errorf("write required model bundle: %w", err)
+			if err := dw.WriteLLMBundleWithSidecar(
+				modelBundleJSON,
+				llmbundle.OrientationContextSelectionFilename,
+				func(savedBundle []byte) ([]byte, error) {
+					contextSelection, selectionErr := llmbundle.FinalizeOrientationContextSelection(
+						bundleSelectionTrace,
+						bundle,
+						modelBundleJSON,
+						savedBundle,
+						orientationWireJSON,
+						orientationSignalTrace,
+					)
+					if selectionErr != nil {
+						return nil, selectionErr
+					}
+					return llmbundle.EncodeOrientationContextSelection(contextSelection)
+				},
+			); err != nil && requireArtifacts {
+				return nil, fmt.Errorf("write required model bundle and orientation context selection: %w", err)
 			}
 		}
 	}
@@ -216,15 +246,20 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			Stage:    ProgressSurfaceStarted,
 			RepoName: s.RepoName,
 		})
-		stopSurfaceHeartbeat := startProgressHeartbeat(ctx, opts, ProgressEvent{
-			Stage: ProgressSurfaceWaiting, RepoName: s.RepoName, Activity: "Go runtime surface discovery",
-		})
+		surfaceOptions := surfacediscovery.DefaultOptions(opts.RepoPath)
+		surfaceOptions.Progress = func(progress surfacediscovery.PhaseProgress) {
+			emitProgress(opts, ProgressEvent{
+				Stage: ProgressSurfacePhase, RepoName: s.RepoName,
+				Phase: progress.Phase, PhaseState: progress.State, Activity: progress.Detail,
+				CompletedCount: progress.Completed, TotalCount: progress.Total,
+				LatencyMillis: progress.ElapsedMillis,
+			})
+		}
 		surfaceResult, surfaceErr := surfacediscovery.AnalyzeContextWithInput(
 			ctx,
-			surfacediscovery.DefaultOptions(opts.RepoPath),
+			surfaceOptions,
 			surfaceDiscoveryInput(s.RepoName, s.GoFacts),
 		)
-		stopSurfaceHeartbeat()
 		if errors.Is(surfaceErr, context.Canceled) || errors.Is(surfaceErr, context.DeadlineExceeded) {
 			return nil, surfaceErr
 		}
@@ -262,6 +297,41 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		}
 		if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
 			return nil, fmt.Errorf("write surface discovery metadata: %w", metadataErr)
+		}
+	}
+	if dw != nil && s.GoFacts != nil {
+		catalog := surfacediscovery.TriggerCatalog{}
+		if successfulSurfaceResult != nil {
+			catalog = successfulSurfaceResult.Catalog
+		}
+		packageDeclarations, err := exactPackageDeclarationLocations(
+			ctx, opts.RepoPath, s.FilteredFiles, *s.GoFacts,
+		)
+		if err != nil {
+			return nil, err
+		}
+		atlas, err := goadapter.Project(goadapter.Input{
+			RepositoryName:      s.RepoName,
+			Facts:               *s.GoFacts,
+			Catalog:             catalog,
+			PackageDeclarations: packageDeclarations,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("project repository Atlas: %w", err)
+		}
+		encoded, err := repositoryatlas.CanonicalJSON(atlas)
+		if err != nil {
+			return nil, fmt.Errorf("encode repository Atlas: %w", err)
+		}
+		if err := dw.WriteValidatedFile(
+			repositoryatlas.ArtifactFilename,
+			encoded,
+			func(saved []byte) error {
+				_, validateErr := repositoryatlas.DecodeCanonicalJSON(saved)
+				return validateErr
+			},
+		); err != nil {
+			return nil, fmt.Errorf("write repository Atlas: %w", err)
 		}
 	}
 
@@ -320,7 +390,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			}
 		}
 
-		requestJSON, err := client.OrientPromptJSON(modelBundleJSON)
+		requestJSON, err := client.OrientPromptJSON(orientationWireJSON)
 		if err != nil {
 			if dw != nil {
 				runMeta.RequestAttempts = append(runMeta.RequestAttempts, debugdump.RequestAttempt{
@@ -344,36 +414,62 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 				return nil, fmt.Errorf("write request attempt metadata: %w", metadataErr)
 			}
 		}
-		if opts.DumpLLM && dw != nil {
-			if err := dw.WriteLLMRequest(requestJSON); err != nil {
-				return nil, fmt.Errorf("write required llm request before provider call: %w", err)
-			}
-		}
 		emitProgress(opts, ProgressEvent{
 			Stage:        ProgressModelRequest,
 			RepoName:     s.RepoName,
 			Model:        client.Model,
-			BundleBytes:  len(modelBundleJSON),
+			BundleBytes:  len(orientationWireJSON),
 			RequestBytes: len(requestJSON),
 		})
 
+		prepareOrientation := func(raw []byte) (orientationPart, string, error) {
+			if err := validateProviderOutputForStorage("orientation", raw); err != nil {
+				return orientationPart{}, "response_rejected", err
+			}
+			or, err := parseAndResolveOrientationResponse(raw, orientationCatalog)
+			if err != nil {
+				return orientationPart{}, "response_parse_failed", err
+			}
+			mergeOperationalCandidateFlows(&or, bundle.Go.OrientationCandidates, bundle.SourceSignals)
+
+			localProofInput := localFlowProofInput(s, successfulSurfaceResult)
+			attachLocalFlowProofs(ctx, opts.RepoPath, &or, localProofInput)
+			reconcileResolvedUnknownPaths(&or)
+			applyOrientationConfidenceGate(&or, bundle)
+			for index := range or.CandidateFlows {
+				flowexplain.ClassifyCandidateFlow(&or.CandidateFlows[index])
+			}
+			if err := validateResolvedOrientation(or); err != nil {
+				return orientationPart{}, "response_validation_failed", err
+			}
+			return or, "", nil
+		}
+
 		call, err := obtainOrientation(
 			ctx, client, dw, policy, repository, "openai-compatible/"+client.Auth,
-			modelBundleJSON, requestJSON,
+			orientationWireJSON, orientationCatalog.digest, requestJSON, !opts.NoCache,
+			func(raw []byte) (orientationPart, error) {
+				prepared, _, err := prepareOrientation(raw)
+				return prepared, err
+			},
 		)
 		raw := call.Raw
 		providerLatency := call.Metrics.LatencyMillis
 		researchState.Orientation = call.Metrics
 		researchState.Usage.SemanticCalls += call.Metrics.SemanticCalls
 		if call.Metrics.SemanticCalls > 0 {
-			researchState.Usage.RequestBytes += len(requestJSON)
+			researchState.Usage.RequestBytes += call.Metrics.RequestBytes
 		}
 		runMeta.ExternalRequestBytes = researchState.Usage.RequestBytes
 		runMeta.ProviderRequestCount = researchState.Usage.SemanticCalls
 		runMeta.ProviderLatencyMillis = &providerLatency
 		attempt := &runMeta.RequestAttempts[len(runMeta.RequestAttempts)-1]
 		attempt.LatencyMillis = &providerLatency
+		attempt.RequestBytes = call.Metrics.RequestBytes
 		attempt.ProviderCallCount = call.Metrics.SemanticCalls
+		if call.Metrics.SemanticCalls > 0 {
+			attempt.TransportAttemptCount = call.Metrics.RetryCount + 1
+		}
 		contextErr := ctx.Err()
 		if contextErr != nil {
 			attempt.State = "canceled"
@@ -390,78 +486,73 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			}
 		}
 		if contextErr != nil {
+			recordOrientationSemanticExchange(
+				dw, requestJSON, raw, call.Metrics,
+				debugdump.SemanticStateCanceled,
+				debugdump.SemanticValidationCanceled,
+				debugdump.SemanticUnavailableCanceled,
+			)
 			return nil, contextErr
 		}
 		if err != nil {
+			recordOrientationSemanticExchange(
+				dw, requestJSON, providerFailureContentForExchange(err, raw), call.Metrics,
+				debugdump.SemanticStateProviderFailed,
+				debugdump.SemanticValidationProvider,
+				debugdump.SemanticUnavailableNoContent,
+			)
 			if dw != nil {
-				writeOrientationFailureArtifacts(dw, opts.DumpLLM, requestJSON, nil, "provider_request_failed", err)
-			}
-			return nil, err
-		}
-		if err := validateProviderOutputForStorage("orientation", raw); err != nil {
-			attempt.State = "response_rejected"
-			if dw != nil {
-				_ = dw.WriteMetadata(runMeta)
-				writeOrientationFailureArtifacts(dw, opts.DumpLLM, requestJSON, nil, "response_rejected", err)
+				writeOrientationFailureArtifacts(dw, "provider_request_failed", err)
 			}
 			return nil, err
 		}
 
-		if opts.DumpLLM && dw != nil {
-			if err := dw.WriteLLMResponse(raw); err != nil {
-				return nil, fmt.Errorf("write required llm response: %w", err)
+		or, responseFailureState, responseErr := resolvePreparedOrientation(call, prepareOrientation)
+		if responseErr != nil {
+			attempt.State = responseFailureState
+			validationCode := debugdump.SemanticValidationResponse
+			if responseFailureState == "response_rejected" {
+				validationCode = debugdump.SemanticValidationSecret
+			} else if responseFailureState == "response_parse_failed" {
+				validationCode = debugdump.SemanticValidationDecode
 			}
-		}
-
-		or, err := parseOrientation(raw)
-		if err != nil {
-			attempt.State = "response_parse_failed"
+			recordOrientationSemanticExchange(
+				dw, requestJSON, raw, call.Metrics,
+				debugdump.SemanticStateRejected,
+				validationCode,
+				debugdump.SemanticUnavailableNoContent,
+			)
 			if dw != nil {
 				_ = dw.WriteMetadata(runMeta)
-				writeOrientationFailureArtifacts(dw, opts.DumpLLM, requestJSON, raw, "response_parse_failed", err)
+				writeOrientationFailureArtifacts(
+					dw,
+					responseFailureState,
+					responseErr,
+				)
 			}
-			return nil, fmt.Errorf("llm provider returned invalid JSON for orientation")
-		}
-		mergeOperationalCandidateFlows(&or, bundle.Go.OrientationCandidates, bundle.SourceSignals)
-
-		allowedEntrypoints := orientationEntrypoints(bundle)
-		signalLocations := make([]evidence.Location, 0, len(bundle.SourceSignals))
-		for _, signal := range bundle.SourceSignals {
-			signalLocations = append(signalLocations, evidence.Location{Path: signal.Path, Line: signal.Line})
-		}
-		for _, trace := range bundle.Go.CommandTraces {
-			for _, step := range trace.Steps {
-				signalLocations = append(signalLocations, step.TargetLocation)
-				if step.CallsiteLocation != nil {
-					signalLocations = append(signalLocations, *step.CallsiteLocation)
-				}
+			if responseFailureState == "response_parse_failed" {
+				return nil, fmt.Errorf("llm provider returned invalid JSON for orientation")
 			}
-			for _, call := range trace.HandlerCalls {
-				signalLocations = append(signalLocations, evidence.Location{Path: call.Path, Line: call.Line})
-			}
-		}
-		normalizeOrientationGrounding(&or, bundle.ProviderAllowedPaths, allowedEntrypoints, signalLocations)
-		localProofInput := localFlowProofInput(s, successfulSurfaceResult)
-		attachLocalFlowProofs(ctx, opts.RepoPath, &or, localProofInput)
-		reconcileResolvedUnknownPaths(&or)
-		applyOrientationConfidenceGate(&or, bundle)
-		for index := range or.CandidateFlows {
-			flowexplain.ClassifyCandidateFlow(&or.CandidateFlows[index])
-		}
-		if err := validateOrientation(or, bundle.ProviderAllowedPaths, allowedEntrypoints); err != nil {
-			attempt.State = "response_validation_failed"
-			if dw != nil {
-				_ = dw.WriteMetadata(runMeta)
-				writeOrientationFailureArtifacts(dw, opts.DumpLLM, requestJSON, raw, "response_validation_failed", err)
-			}
-			return nil, err
+			return nil, responseErr
 		}
 		if call.Metrics.CacheHit {
 			attempt.State = "cached"
 			researchState.Orientation.Status = "cached"
+			recordOrientationSemanticExchange(
+				dw, requestJSON, raw, call.Metrics,
+				debugdump.SemanticStateCacheHit,
+				debugdump.SemanticValidationCache,
+				debugdump.SemanticUnavailableCache,
+			)
 		} else {
 			attempt.State = "succeeded"
 			researchState.Orientation.Status = "completed"
+			recordOrientationSemanticExchange(
+				dw, requestJSON, raw, call.Metrics,
+				debugdump.SemanticStateAccepted,
+				debugdump.SemanticValidationAccepted,
+				debugdump.SemanticUnavailableNoContent,
+			)
 			if err := saveOrientationResponse(call); err != nil {
 				return nil, fmt.Errorf("persist validated orientation cache: %w", err)
 			}
@@ -486,6 +577,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			RepoName:       s.RepoName,
 			Model:          client.Model,
 			CandidateCount: len(acceptedFlows),
+			RejectedCount:  len(or.CandidateFlows) - len(acceptedFlows),
 			LatencyMillis:  providerLatency,
 			ResponseBytes:  call.Metrics.ResponseBytes,
 			InputTokens:    call.Metrics.InputTokens,
@@ -511,8 +603,18 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		}
 		out, _ := json.MarshalIndent(or, "", "  ")
 		if dw != nil {
-			if err := dw.WriteOrientationReport(out); err != nil && requireArtifacts {
-				return nil, fmt.Errorf("write required orientation report: %w", err)
+			writeErr := dw.WriteOrientationReportWithSidecar(
+				out,
+				ConfidenceWarningDiagnosticsFile,
+				func(savedOrientation []byte) ([]byte, error) {
+					return EncodeConfidenceWarningDiagnostics(
+						savedOrientation,
+						or.confidenceWarningDiagnostics,
+					)
+				},
+			)
+			if writeErr != nil && requireArtifacts {
+				return nil, fmt.Errorf("write required orientation report: %w", writeErr)
 			}
 		}
 
@@ -522,7 +624,6 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			expandedIDs[flowexplain.GenerateFlowID(candidate.Name)] = struct{}{}
 		}
 		if err := writeLocalFlowBundles(
-			ctx,
 			acceptedFlows,
 			expandedIDs,
 			s.FilteredFiles,
@@ -533,16 +634,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			return nil, err
 		}
 		for _, cf := range cfs {
-			ef := explainOneFlow(ctx, client, cf, s.FilteredFiles, s.GoFacts, opts.MaxLLMFiles, dw, opts, false)
-			if ef.ProviderRequestBytes > 0 {
-				runMeta.ExternalRequestBytes += ef.ProviderRequestBytes
-				runMeta.ProviderRequestCount++
-				if dw != nil {
-					if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
-						return nil, fmt.Errorf("write flow metadata: %w", metadataErr)
-					}
-				}
-			}
+			ef := explainOneFlow(cf, s.FilteredFiles, s.GoFacts, opts.MaxLLMFiles, dw, opts)
 			if ef.ArtifactError != "" {
 				return nil, fmt.Errorf("persist flow %q: %s", cf.Name, ef.ArtifactError)
 			}
@@ -563,20 +655,210 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 	return []byte(text), nil
 }
 
+func runAtlasFirstLocalArtifacts(
+	ctx context.Context,
+	opts Options,
+	s snapshot.Snapshot,
+	snapshotJSON []byte,
+	requireArtifacts bool,
+) ([]byte, error) {
+	runID := opts.RunID
+	if runID == "" {
+		runID = debugdump.GenerateRunID(s.RepoName)
+	}
+	runMeta := debugdump.RunMeta{
+		RunID: runID, CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		RepoName: s.RepoName, RepoPath: opts.RepoPath, Command: "atlas-first",
+		EffectiveOptions: opts.EffectiveOptions,
+	}
+	report := combinedReport{
+		RepoName: s.RepoName, ExplainedFlows: []explainedFlow{}, Warnings: []string{},
+	}
+	var dw *debugdump.Writer
+	var err error
+	if opts.DebugDir != "" {
+		dw, err = debugdump.NewWriter(opts.DebugDir, runID, opts.DumpRedacted)
+		if err != nil {
+			if requireArtifacts {
+				return nil, fmt.Errorf("create required debug writer: %w", err)
+			}
+		} else {
+			defer dw.Close()
+			if err := dw.WriteMetadata(runMeta); err != nil && requireArtifacts {
+				return nil, fmt.Errorf("write required debug metadata: %w", err)
+			}
+			if err := dw.WriteSnapshot(snapshotJSON); err != nil && requireArtifacts {
+				return nil, fmt.Errorf("write required debug snapshot: %w", err)
+			}
+		}
+	}
+
+	var successfulSurfaceResult *surfacediscovery.Result
+	if opts.DiscoverSurfaces && dw != nil && s.GoFacts != nil {
+		surfaceStarted := time.Now()
+		emitProgress(opts, ProgressEvent{Stage: ProgressSurfaceStarted, RepoName: s.RepoName})
+		surfaceOptions := surfacediscovery.DefaultOptions(opts.RepoPath)
+		surfaceOptions.Progress = func(progress surfacediscovery.PhaseProgress) {
+			emitProgress(opts, ProgressEvent{
+				Stage: ProgressSurfacePhase, RepoName: s.RepoName,
+				Phase: progress.Phase, PhaseState: progress.State, Activity: progress.Detail,
+				CompletedCount: progress.Completed, TotalCount: progress.Total,
+				LatencyMillis: progress.ElapsedMillis,
+			})
+		}
+		surfaceResult, surfaceErr := surfacediscovery.AnalyzeContextWithInput(
+			ctx, surfaceOptions, surfaceDiscoveryInput(s.RepoName, s.GoFacts),
+		)
+		if errors.Is(surfaceErr, context.Canceled) || errors.Is(surfaceErr, context.DeadlineExceeded) {
+			return nil, surfaceErr
+		}
+		if surfaceErr == nil {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			surfaceErr = surfacediscovery.WriteArtifacts(dw.RunDir(), surfaceResult)
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
+		surfaceLatency := time.Since(surfaceStarted).Milliseconds()
+		runMeta.SurfaceDiscoveryRan = true
+		runMeta.SurfaceDiscoveryMillis = &surfaceLatency
+		runMeta.SurfaceDiscoveryCount = len(surfaceResult.Catalog.Triggers)
+		if surfaceErr != nil {
+			warning := formatSurfaceDiscoveryWarning(surfaceErr)
+			report.Warnings = append(report.Warnings, warning)
+			runMeta.Warnings = append(runMeta.Warnings, warning)
+			emitProgress(opts, ProgressEvent{
+				Stage: ProgressSurfaceFailed, RepoName: s.RepoName,
+				Warning: warning, LatencyMillis: surfaceLatency,
+			})
+		} else {
+			successfulSurfaceResult = &surfaceResult
+			emitProgress(opts, ProgressEvent{
+				Stage: ProgressSurfaceReady, RepoName: s.RepoName,
+				SurfaceCount: len(surfaceResult.Catalog.Triggers), LatencyMillis: surfaceLatency,
+			})
+		}
+		if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
+			return nil, fmt.Errorf("write surface discovery metadata: %w", metadataErr)
+		}
+	}
+	if dw != nil {
+		catalog := surfacediscovery.TriggerCatalog{}
+		if successfulSurfaceResult != nil {
+			catalog = successfulSurfaceResult.Catalog
+		}
+		atlasInput := goadapter.Input{RepositoryName: s.RepoName, Catalog: catalog}
+		if s.GoFacts != nil {
+			atlasInput.Facts = *s.GoFacts
+		}
+		packageDeclarations, err := exactPackageDeclarationLocations(
+			ctx, opts.RepoPath, s.FilteredFiles, atlasInput.Facts,
+		)
+		if err != nil {
+			return nil, err
+		}
+		atlasInput.PackageDeclarations = packageDeclarations
+		atlas, err := goadapter.Project(atlasInput)
+		if err != nil {
+			return nil, fmt.Errorf("project repository Atlas: %w", err)
+		}
+		encoded, err := repositoryatlas.CanonicalJSON(atlas)
+		if err != nil {
+			return nil, fmt.Errorf("encode repository Atlas: %w", err)
+		}
+		if err := dw.WriteValidatedFile(
+			repositoryatlas.ArtifactFilename,
+			encoded,
+			func(saved []byte) error {
+				_, validateErr := repositoryatlas.DecodeCanonicalJSON(saved)
+				return validateErr
+			},
+		); err != nil {
+			return nil, fmt.Errorf("write repository Atlas: %w", err)
+		}
+	}
+	if opts.OutputJSON {
+		out, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		return append(out, '\n'), nil
+	}
+	return nil, nil
+}
+
+func orientationFileLimit(explicitLimit, inputCount int) int {
+	if explicitLimit > 0 {
+		return explicitLimit
+	}
+	// The ordinary Orientation path is byte-bounded, not count-bounded. Every
+	// eligible candidate comes from FilteredFiles, so this input count is an
+	// exact upper bound without rerunning candidate selection here.
+	return max(1, inputCount)
+}
+
+func resolvePreparedOrientation(
+	call orientationCall,
+	prepare func([]byte) (orientationPart, string, error),
+) (orientationPart, string, error) {
+	if call.Prepared != nil {
+		return *call.Prepared, "", nil
+	}
+	return prepare(call.Raw)
+}
+
+func recordOrientationSemanticExchange(
+	dw *debugdump.Writer,
+	request,
+	response []byte,
+	metrics modelresearch.StageMetrics,
+	state,
+	validationCode,
+	unavailableCode string,
+) {
+	if dw == nil {
+		return
+	}
+	if metrics.SemanticCalls == 0 && state != debugdump.SemanticStateCacheHit {
+		return
+	}
+	transportAttempts := 0
+	if metrics.SemanticCalls > 0 {
+		transportAttempts = metrics.RetryCount + 1
+	}
+	exchange := debugdump.SemanticExchange{
+		Stage:           debugdump.SemanticStageOrientation,
+		InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: debugdump.SemanticRequestPrepared,
+		State:             state, ValidationCode: validationCode,
+		SemanticCalls: metrics.SemanticCalls, TransportAttempts: transportAttempts,
+		Request: request, Response: response,
+	}
+	if len(response) == 0 {
+		exchange.ResponseUnavailable = &debugdump.SemanticUnavailable{
+			Code: unavailableCode, OriginalBytes: metrics.ResponseBytes,
+		}
+	}
+	dw.RecordSemanticExchange(exchange)
+}
+
+// providerFailureContentForExchange is only for the existing redacting
+// semantic-exchange recorder.
+func providerFailureContentForExchange(err error, fallback []byte) []byte {
+	var limitErr *deepseek.ResourceLimitError
+	if errors.As(err, &limitErr) {
+		return limitErr.ProviderContent()
+	}
+	return fallback
+}
+
 func writeOrientationFailureArtifacts(
 	dw *debugdump.Writer,
-	dumped bool,
-	requestJSON []byte,
-	safeResponse []byte,
 	stage string,
 	err error,
 ) {
-	if !dumped && len(requestJSON) > 0 {
-		_ = dw.WriteLLMRequest(requestJSON)
-	}
-	if !dumped && len(safeResponse) > 0 {
-		_ = dw.WriteLLMResponse(safeResponse)
-	}
 	validation, marshalErr := json.MarshalIndent(map[string]string{
 		"status": "failed",
 		"stage":  stage,

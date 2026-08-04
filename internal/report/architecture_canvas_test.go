@@ -2,6 +2,7 @@ package report
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
@@ -164,14 +165,251 @@ func TestProjectArchitectureCanvasUsesExactBindingNotPathCoincidence(t *testing.
 	flow := architectureFlow(t, canvas, "backup")
 	scan := architectureStep(t, flow, "scan")
 	handler := architectureStep(t, flow, "handler")
-	if handler.ComponentID == "" {
+	if handler.Binding == nil || handler.ComponentID != "" || len(handler.ParticipatingComponentIDs) != 1 {
 		t.Fatal("exact handler binding was not projected")
 	}
-	if scan.ComponentID != "" || scan.Binding != nil {
+	if scan.ComponentID != "" || len(scan.ParticipatingComponentIDs) != 0 || scan.Binding != nil {
 		t.Fatalf("path coincidence assigned Scan to handler component: %#v", scan)
 	}
 	if !architectureHasAnchorFrontier(canvas, "unassigned_component", "scan") {
 		t.Fatalf("frontiers = %#v, want unassigned Scan binding", canvas.Frontiers)
+	}
+}
+
+func TestProjectArchitectureCanvasSharedBindingUsesParticipantsWithoutOwnershipOrCrossProduct(t *testing.T) {
+	t.Parallel()
+
+	project := func(reverse bool) ArchitectureCanvas {
+		bundle := architectureBundle()
+		bundle.Relations[0].Kind = componentmap.StructuralRelationBehaviorHandoff
+		cmd := architectureMember(componentmap.MemberPackage, "cmd")
+		archiver := architectureMember(componentmap.MemberPackage, "archiver")
+		subsystems := []componentmap.ProposedSubsystem{
+			{
+				Name: "Command Surface",
+				Components: []componentmap.ProposedComponent{{
+					Name: "Backup command and scan", MemberIDs: []componentmap.MemberID{cmd, archiver},
+				}},
+			},
+			{
+				Name: "Repository Engine",
+				Components: []componentmap.ProposedComponent{{
+					Name: "Repository scanner", MemberIDs: []componentmap.MemberID{archiver},
+				}},
+			},
+		}
+		if reverse {
+			subsystems[0], subsystems[1] = subsystems[1], subsystems[0]
+		}
+		landscape, err := componentmap.Apply(bundle, componentmap.Proposal{
+			Version: componentmap.ProposalVersion, Subsystems: subsystems,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		canvas, err := ProjectArchitectureCanvas(ArchitectureCanvasInput{
+			CandidateBundle: bundle,
+			Landscape:       landscape,
+			Flows: []ArchitectureFlowInput{{
+				ID: "backup", Name: "Backup operation",
+				Session: flowproof.Session{Version: flowproof.SessionVersion, Proof: architectureResticProof()},
+			}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return canvas
+	}
+
+	first := project(false)
+	second := project(true)
+	firstStep := architectureStep(t, architectureFlow(t, first, "backup"), "scan")
+	secondStep := architectureStep(t, architectureFlow(t, second, "backup"), "scan")
+	if firstStep.Binding == nil || firstStep.ComponentID != "" || len(firstStep.ParticipatingComponentIDs) != 2 {
+		t.Fatalf("shared bound step = %#v", firstStep)
+	}
+	if !reflect.DeepEqual(firstStep.ParticipatingComponentIDs, secondStep.ParticipatingComponentIDs) {
+		t.Fatalf(
+			"participant order changed with proposal order: first=%v second=%v",
+			firstStep.ParticipatingComponentIDs,
+			secondStep.ParticipatingComponentIDs,
+		)
+	}
+	if len(first.StructuralFacts) != 1 || len(first.StructuralEdges) != 1 {
+		t.Fatalf("shared endpoint lost its exact member relation: %#v", first)
+	}
+	edge := first.StructuralEdges[0]
+	if edge.Witness.From != first.StructuralFacts[0].From || edge.Witness.To != first.StructuralFacts[0].To ||
+		edge.FromComponentID == "" || edge.ToComponentID != "" ||
+		len(edge.FromComponentIDs) != 1 || len(edge.ToComponentIDs) != 2 {
+		t.Fatalf("shared endpoint relation chose or expanded conceptual endpoints: %#v", edge)
+	}
+	if architectureHasAnchorFrontier(first, "ambiguous_component", "scan") {
+		t.Fatalf("valid shared binding was presented as unresolved: %#v", first.Frontiers)
+	}
+}
+
+func TestProjectArchitectureCanvasKeepsStructuralLocatorSeparateWithPluralExactParticipants(t *testing.T) {
+	t.Parallel()
+
+	packageID := architectureMember(componentmap.MemberPackage, "service")
+	fileID := architectureMember(componentmap.MemberFile, "service.go")
+	symbolID := architectureMember(componentmap.MemberSymbol, "Serve")
+	bundle := componentmap.CandidateBundle{
+		Version:             componentmap.ContractVersion,
+		RepositoryArchetype: componentmap.ArchetypeApplication,
+		GroundingMode:       componentmap.GroundingPackages,
+		Candidates: []componentmap.Candidate{
+			{
+				ID: packageID, Role: componentmap.CandidateRoleConceptualMember, Name: "service",
+				Facts: []componentmap.LocalFact{architectureFact(componentmap.FactRepositoryPath, "service", "service.go", 1)},
+			},
+			{
+				ID: fileID, Role: componentmap.CandidateRoleStructuralLocator, Name: "service.go", ParentID: &packageID,
+				Facts: []componentmap.LocalFact{architectureFact(componentmap.FactRepositoryPath, "service.go", "service.go", 1)},
+			},
+			{
+				ID: symbolID, Role: componentmap.CandidateRoleConceptualMember, Name: "Serve", ParentID: &fileID,
+				Facts: []componentmap.LocalFact{architectureFact(componentmap.FactDeclaration, "Serve", "service.go", 20)},
+			},
+		},
+		Relations: []componentmap.LocalRelation{{
+			ID: "package-to-handler", From: packageID, To: symbolID,
+			Kind: componentmap.StructuralRelationBehaviorHandoff, Certainty: evidence.CertaintyStatic,
+			Provenance: architectureProvenance("fixture", "containment_witness", "service.go", 20),
+			Scenarios:  []componentmap.ScenarioContext{{ID: "fixture", Name: "fixture"}},
+		}},
+	}
+	project := func(reverse bool) ArchitectureCanvas {
+		subsystems := []componentmap.ProposedSubsystem{
+			{Name: "Service package", Components: []componentmap.ProposedComponent{{Name: "Service package", MemberIDs: []componentmap.MemberID{packageID}}}},
+			{Name: "Request handling", Components: []componentmap.ProposedComponent{{Name: "Request handling", MemberIDs: []componentmap.MemberID{symbolID}}}},
+		}
+		if reverse {
+			subsystems[0], subsystems[1] = subsystems[1], subsystems[0]
+		}
+		landscape, err := componentmap.Apply(bundle, componentmap.Proposal{
+			Version: componentmap.ProposalVersion, Subsystems: subsystems,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		canvas, err := ProjectArchitectureCanvas(ArchitectureCanvasInput{
+			CandidateBundle: bundle, Landscape: landscape,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return canvas
+	}
+
+	first := project(false)
+	second := project(true)
+	if len(first.StructuralLocators) != 1 {
+		t.Fatalf("structural locators = %#v", first.StructuralLocators)
+	}
+	locator := first.StructuralLocators[0]
+	if locator.Locator.ID != fileID || locator.Locator.Role != componentmap.CandidateRoleStructuralLocator ||
+		len(locator.ParticipatingComponentIDs) != 2 {
+		t.Fatalf("structural locator projection = %#v", locator)
+	}
+	if !reflect.DeepEqual(locator.ParticipatingComponentIDs, second.StructuralLocators[0].ParticipatingComponentIDs) {
+		t.Fatalf(
+			"structural locator participants changed with proposal order: first=%v second=%v",
+			locator.ParticipatingComponentIDs,
+			second.StructuralLocators[0].ParticipatingComponentIDs,
+		)
+	}
+	for _, component := range first.Components {
+		for _, member := range component.Members {
+			if member.ID == fileID {
+				t.Fatalf("structural locator became a conceptual member: %#v", component)
+			}
+		}
+	}
+	if len(first.StructuralFacts) != 1 || first.StructuralFacts[0].ID != "package-to-handler" {
+		t.Fatalf("local structural facts changed: %#v", first.StructuralFacts)
+	}
+
+	localLandscape, err := componentmap.Canonical(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	localCanvas, err := ProjectArchitectureCanvas(ArchitectureCanvasInput{
+		CandidateBundle: bundle, Landscape: localLandscape,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(localCanvas.StructuralLocators) != 1 ||
+		localCanvas.StructuralLocators[0].Locator.ID != fileID ||
+		len(localCanvas.StructuralLocators[0].ParticipatingComponentIDs) == 0 {
+		t.Fatalf("local Canvas lost structural locator participation: %#v", localCanvas.StructuralLocators)
+	}
+	for _, component := range localCanvas.Components {
+		for _, member := range component.Members {
+			if member.ID == fileID {
+				t.Fatalf("local Canvas made structural locator conceptual: %#v", component)
+			}
+		}
+	}
+	rejectedLandscape, err := componentmap.Apply(bundle, componentmap.Proposal{
+		Version: componentmap.ProposalVersion,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rejectedCanvas, err := ProjectArchitectureCanvas(ArchitectureCanvasInput{
+		CandidateBundle: bundle, Landscape: rejectedLandscape,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rejectedCanvas.StructuralLocators) != 1 ||
+		rejectedCanvas.StructuralLocators[0].Locator.ID != fileID ||
+		!reflect.DeepEqual(
+			rejectedCanvas.StructuralLocators[0].ParticipatingComponentIDs,
+			localCanvas.StructuralLocators[0].ParticipatingComponentIDs,
+		) {
+		t.Fatalf(
+			"rejected/local Canvas structural locator mismatch: rejected=%#v local=%#v",
+			rejectedCanvas.StructuralLocators,
+			localCanvas.StructuralLocators,
+		)
+	}
+}
+
+func TestProjectArchitectureCanvasKeepsProducerOwnedFileAsModuleConceptual(t *testing.T) {
+	t.Parallel()
+
+	fileID := architectureMember(componentmap.MemberFile, "module.go")
+	bundle := componentmap.CandidateBundle{
+		Version:             componentmap.ContractVersion,
+		RepositoryArchetype: componentmap.ArchetypeLibraryFramework,
+		GroundingMode:       componentmap.GroundingPackages,
+		Candidates: []componentmap.Candidate{{
+			ID: fileID, Role: componentmap.CandidateRoleConceptualMember, Name: "module.go",
+			Facts: []componentmap.LocalFact{architectureFact(componentmap.FactRepositoryPath, "module.go", "module.go", 1)},
+		}},
+	}
+	landscape, err := componentmap.Apply(bundle, componentmap.Proposal{
+		Version: componentmap.ProposalVersion,
+		Subsystems: []componentmap.ProposedSubsystem{{
+			Name: "Library module", Components: []componentmap.ProposedComponent{{
+				Name: "Library module", MemberIDs: []componentmap.MemberID{fileID},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	canvas, err := ProjectArchitectureCanvas(ArchitectureCanvasInput{CandidateBundle: bundle, Landscape: landscape})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(canvas.StructuralLocators) != 0 || len(canvas.Components) != 1 ||
+		len(canvas.Components[0].Members) != 1 || canvas.Components[0].Members[0].ID != fileID {
+		t.Fatalf("file-as-module conceptual projection = %#v", canvas)
 	}
 }
 
@@ -214,6 +452,21 @@ func TestProjectArchitectureCanvasLabelsPackageFallbackHonestly(t *testing.T) {
 	}
 }
 
+func TestProjectArchitectureCanvasLabelsAcceptedPackageGroupingHonestly(t *testing.T) {
+	t.Parallel()
+
+	input, _ := architectureCanvasInput(t, architectureResticProof(), nil)
+	canvas, err := ProjectArchitectureCanvas(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if canvas.ArchitectureSource != componentmap.SourceValidatedModel ||
+		canvas.Title != "Conceptual architecture" ||
+		canvas.Subtitle != "Model-assisted grouping of exact local repository members" {
+		t.Fatalf("accepted package grouping presentation = %#v", canvas)
+	}
+}
+
 func TestProjectArchitectureCanvasPreservesDiagnosticSubsystemCategory(t *testing.T) {
 	t.Parallel()
 
@@ -226,6 +479,128 @@ func TestProjectArchitectureCanvasPreservesDiagnosticSubsystemCategory(t *testin
 	}
 	if canvas.Subsystems[0].Category != componentmap.SubsystemCategoryDiagnostic {
 		t.Fatalf("subsystem category = %q, want diagnostic", canvas.Subsystems[0].Category)
+	}
+	if canvas.LocalRemainderComponentID != "" {
+		t.Fatalf("ordinary local diagnostic component became D206 remainder %q", canvas.LocalRemainderComponentID)
+	}
+	retainedFlowAssociation := false
+	for _, component := range canvas.Components {
+		if len(component.ParticipatingFlowIDs) != 0 {
+			retainedFlowAssociation = true
+			break
+		}
+	}
+	if !retainedFlowAssociation {
+		t.Fatal("ordinary local diagnostic components lost exact flow associations")
+	}
+}
+
+func TestProjectArchitectureCanvasKeepsPartialRemainderOutOfModelAssociations(t *testing.T) {
+	t.Parallel()
+
+	bundle := architectureBundle()
+	landscape, err := componentmap.Apply(bundle, componentmap.Proposal{
+		Version: componentmap.ProposalVersion,
+		Subsystems: []componentmap.ProposedSubsystem{{
+			Name: "Command Surface",
+			Components: []componentmap.ProposedComponent{{
+				Name: "Backup command",
+				MemberIDs: []componentmap.MemberID{
+					architectureMember(componentmap.MemberPackage, "cmd"),
+				},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if landscape.ValidationOutcome != componentmap.ValidationAcceptedPartial ||
+		len(landscape.LocalRemainderMemberIDs) != 1 ||
+		landscape.LocalRemainderMemberIDs[0] != architectureMember(componentmap.MemberPackage, "archiver") {
+		t.Fatalf("partial landscape = %#v", landscape)
+	}
+	canvas, err := ProjectArchitectureCanvas(ArchitectureCanvasInput{
+		CandidateBundle: bundle,
+		Landscape:       landscape,
+		Flows: []ArchitectureFlowInput{{
+			ID: "backup", Name: "Backup operation",
+			Session: flowproof.Session{Version: flowproof.SessionVersion, Proof: architectureResticProof()},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(canvas.StructuralFacts, bundle.Relations) {
+		t.Fatalf("partial enrichment changed exact local relations: %#v", canvas.StructuralFacts)
+	}
+	if len(canvas.StructuralLocators) != 0 {
+		t.Fatalf("partial enrichment invented structural locators: %#v", canvas.StructuralLocators)
+	}
+	diagnosticComponents := make(map[componentmap.ComponentID]struct{})
+	for _, subsystem := range canvas.Subsystems {
+		if subsystem.Category != componentmap.SubsystemCategoryDiagnostic {
+			continue
+		}
+		for _, componentID := range subsystem.ComponentIDs {
+			diagnosticComponents[componentID] = struct{}{}
+		}
+	}
+	if len(diagnosticComponents) != 1 {
+		t.Fatalf("partial remainder components = %#v", diagnosticComponents)
+	}
+	if _, exists := diagnosticComponents[canvas.LocalRemainderComponentID]; canvas.LocalRemainderComponentID == "" || !exists {
+		t.Fatalf("persisted local remainder component = %q, diagnostics = %#v", canvas.LocalRemainderComponentID, diagnosticComponents)
+	}
+	for _, component := range canvas.Components {
+		if _, remainder := diagnosticComponents[component.ID]; !remainder {
+			continue
+		}
+		if len(component.Members) != 1 ||
+			component.Members[0].ID != architectureMember(componentmap.MemberPackage, "archiver") ||
+			len(component.ParticipatingFlowIDs) != 0 || len(component.AnchorIDs) != 0 {
+			t.Fatalf("local remainder gained model association: %#v", component)
+		}
+	}
+	scan := architectureStep(t, architectureFlow(t, canvas, "backup"), "scan")
+	if scan.Binding == nil || scan.ComponentID != "" || len(scan.ParticipatingComponentIDs) != 0 {
+		t.Fatalf("local remainder became flow ownership/participation: %#v", scan)
+	}
+}
+
+func TestArchitectureCanvasVersionRejectsHistoricalRemainderSemantics(t *testing.T) {
+	t.Parallel()
+
+	if ArchitectureCanvasVersion != 9 {
+		t.Fatalf("ArchitectureCanvasVersion = %d, want 9 for member-level structural relation identity", ArchitectureCanvasVersion)
+	}
+	if err := validateSemanticSearchCanvasVersion(&ArchitectureCanvas{Version: ArchitectureCanvasVersion - 1}); err == nil || !strings.Contains(err.Error(), "unsupported architecture canvas version") {
+		t.Fatalf("historical Architecture Canvas version error = %v", err)
+	}
+}
+
+func TestArchitectureCanvasRejectsRemainderIdentityNotBoundToExactMembers(t *testing.T) {
+	t.Parallel()
+
+	bundle := architectureBundle()
+	landscape, err := componentmap.Apply(bundle, componentmap.Proposal{
+		Version: componentmap.ProposalVersion,
+		Subsystems: []componentmap.ProposedSubsystem{{
+			Name: "Command Surface",
+			Components: []componentmap.ProposedComponent{{
+				Name:      "Backup command",
+				MemberIDs: []componentmap.MemberID{architectureMember(componentmap.MemberPackage, "cmd")},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	landscape.LocalRemainderMemberIDs = []componentmap.MemberID{
+		architectureMember(componentmap.MemberPackage, "cmd"),
+	}
+	if _, err := architectureLocalRemainderComponentID(landscape); err == nil ||
+		!strings.Contains(err.Error(), "no diagnostic component matches") {
+		t.Fatalf("mismatched local remainder identity error = %v", err)
 	}
 }
 
@@ -317,14 +692,14 @@ func architectureBundle() componentmap.CandidateBundle {
 		}},
 		Candidates: []componentmap.Candidate{
 			{
-				ID: cmd, Name: "cmd/restic",
+				ID: cmd, Role: componentmap.CandidateRoleConceptualMember, Name: "cmd/restic",
 				Participations: []componentmap.FlowParticipation{{
 					FlowID: "backup", Evidence: architectureFact(componentmap.FactFlowParticipation, "backup", "cmd/restic/cmd_backup.go", 500),
 				}},
 				Facts: []componentmap.LocalFact{architectureFact(componentmap.FactRepositoryPath, "cmd/restic", "cmd/restic/cmd_backup.go", 1)},
 			},
 			{
-				ID: archiver, Name: "internal/archiver",
+				ID: archiver, Role: componentmap.CandidateRoleConceptualMember, Name: "internal/archiver",
 				Participations: []componentmap.FlowParticipation{{
 					FlowID: "backup", Evidence: architectureFact(componentmap.FactFlowParticipation, "backup", "internal/archiver/scanner.go", 44),
 				}},

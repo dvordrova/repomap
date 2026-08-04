@@ -1,0 +1,21 @@
+{
+  "facts": [
+    {"id": "f1", "text": "After config mutation, the entire config is encoded as JSON.", "at": [0, 198, 200]},
+    {"id": "f2", "text": "If indexing fails, old config is restored from rawCfgJSON.", "at": [1, 225, 232]},
+    {"id": "f3", "text": "If unsyncedDecodeAndRun fails, old config is restored from rawCfgJSON.", "at": [1, 232, 246]},
+    {"id": "f4", "text": "unsyncedDecodeAndRun unmarshals new config, runs it, swaps old context with new, then stops old apps.", "at": [2, 337, 375]},
+    {"id": "f5", "text": "run function starts each app in order; if an app fails, it stops already started apps and returns error.", "at": [3, 419, 441]},
+    {"id": "f6", "text": "On failure in run, a deferred function cleans up provisioned modules and cancels context.", "at": [3, 424, 432]},
+    {"id": "f7", "text": "provisionContext starts the admin endpoint and provisions each app.", "at": [4, 564, 581]}
+  ],
+  "hypotheses": [
+    {"id": "h1", "text": "The handoff ensures old config continues until new apps are successfully started, by swapping contexts after new config is fully running.", "refs": ["f4", "f5"]},
+    {"id": "h2", "text": "Failure during config loading (indexing or decode/run) restores the old config state to maintain consistency.", "refs": ["f2", "f3"]},
+    {"id": "h3", "text": "When an app fails to start, only the started apps are stopped, leaving the old config intact.", "refs": ["f5", "f6"]}
+  ],
+  "unknowns": [
+    {"id": "u1", "text": "The exact point after which the old config is irreversibly discarded is not documented; swap occurs before old apps are stopped.", "refs": ["f4"]},
+    {"id": "u2", "text": "If admin server replacement fails in provisionContext, the error is returned but the impact on handoff is unclear.", "refs": ["f7"]},
+    {"id": "u3", "text": "The restoration behavior when rawCfgJSON is empty is not fully specified; it sets rawCfg[rawConfigKey] to nil.", "refs": ["f2", "f3"]}
+  ]
+}

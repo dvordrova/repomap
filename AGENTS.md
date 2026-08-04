@@ -10,12 +10,11 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 
 ## Core pipeline
 
-1. **Local deterministic snapshot** — `git ls-files`, README, file tree, language hints
-2. **Go facts** — `go list -json ./...` per discovered module, packages/edges/entrypoints
-3. **Compact LLM bundle** — bounded subset (module summaries, entrypoints with open_files, important edges)
-4. **Optional model orientation** — sends only the compact bundle, not full repo contents
-5. **Local direction bundles** — bounded file/test/package/import neighborhoods, no extra model call
-6. **Browser/debug artifacts** — full onboarding view plus inspectable saved facts under `--debug-dir`
+1. **Local deterministic snapshot** — tracked files, documentation and language hints
+2. **Repository facts and Atlas** — language adapters produce canonical local entities and relations
+3. **Task-shaped Navigator projection** — one bounded question over exact eligible Atlas actions
+4. **Optional model selection** — the provider sees only request-local refs and compact labels
+5. **Browser/debug artifacts** — the authoritative Atlas, Navigator state and report under `--debug-dir`
 
 ## Design rules
 
@@ -31,9 +30,9 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
   decision before implementing feature-specific scope.
 - Read [docs/DEEPSEEK_API_NOTES.md](docs/DEEPSEEK_API_NOTES.md) before changing DeepSeek client.
 - Do not invent ad-hoc DeepSeek request shapes; follow docs/DEEPSEEK_API_NOTES.md.
-- Reusable developer entrypoints belong in `Makefile`. Keep a script only when
-  it contains a substantive multi-step check or is also a standalone CI entrypoint;
-  expose that script through a Make target.
+- Do not add shell-script entrypoints. Keep `Makefile` as a small router to Go
+  commands, Go tests and the built `repomap` binary. Put substantive reusable
+  logic in Go; keep one-off experiments outside the production workflow.
 
 ## Decision workflow
 
@@ -48,48 +47,25 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 
 ## Development rules
 
-- Before finishing any code change, run:
-  ```
-  ./scripts/check.sh
-  ```
-- If the repo is Go and etcd is available nearby, also run:
-  ```
-  ./scripts/etcd_check.sh ../etcd
-  ```
+- Build the exact candidate with `go build -trimpath -o PATH ./cmd/repomap`.
+- Exercise the built binary directly on a real repository. For a provider-free
+  gate use `PATH REPO --offline --no-open --no-serve --debug-dir DIR`.
+- Verify the process exit status and the generated manifest, Atlas, report JSON
+  and report HTML. A wrapper reporting success is not product acceptance.
+- Run focused Go tests for changed contracts and `go vet` for changed packages.
 - If a command fails, **fix the failure** or clearly explain why it cannot be fixed.
 - Never leave known broken tests.
-- Never leave a useful one-off shell pipeline undocumented.
-- If a debugging command is useful twice, **turn it into a Make target**. Extract
-  a script under `./scripts/` only when the recipe is too substantial for Make.
+- If a debugging operation is useful twice, implement it as a Go test, Go
+  command or a short Make target that invokes one of those entrypoints.
 - Debug artifacts must **never** include API keys or Authorization headers.
 - Debug artifacts must **never** be committed.
 
-## Reusable scripts
-
-```
-./scripts/check.sh          # go test + go vet
-./scripts/smoke.sh           # temp git repo, snapshot+bundle, no network/API key
-./scripts/etcd_check.sh      # validate against etcd clone (skip if absent)
-./scripts/deepseek_check.sh  # full DeepSeek call (skip without key)
-./scripts/source_artifacts_check.sh # bounded source card/bundle, no model call
-./scripts/source_check.sh    # replay fixed DeepSeek source response, no network
-./scripts/source_prompt_experiment.sh # live source-stage DeepSeek experiment
-./scripts/investigation_check.sh # replay M2 reducer path (local or DeepSeek)
-./scripts/investigation_handoff_check.sh # copied split-memory restart, no model call
-./scripts/friend_check.sh     # build handoff binary + one-request browser journey fixture
-./scripts/friend_artifact_check.sh # validate one generated friend-trial run
-./scripts/quality_check.sh   # replay committed quality task, no network/API key
-./scripts/quality_preflight.sh # verify a linked orientation/symbol target, no network
-./scripts/debug_last_run.sh  # inspect last debug run
-./scripts/clean.sh           # remove tmp/.repomap-runs/.bin
-```
-
 ## Test invariants
 
-- `--llm-bundle-only` must not require `DEEPSEEK_API_KEY`
-- LLM bundle must not include full `file_tree`
-- LLM bundle must include `open_files` for entrypoints
-- Every model-visible repository file path must occur in `allowed_paths`
+- Offline runs must not require provider credentials or make provider calls.
+- Navigator requests must not include the full file tree, raw internal edges,
+  canonical Atlas IDs or unadvertised repository paths.
+- Every accepted Navigator ref must restore one exact backend-owned Atlas action.
 - Debug dumps must redact sensitive keys (api_key, token, authorization, password)
 - Debug dumps must never contain Authorization headers
 - Invalid DeepSeek JSON must return a clear error

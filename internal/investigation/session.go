@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/sourcecard"
@@ -157,9 +158,9 @@ func validateOrigin(origin *Origin, revision string) error {
 		strings.TrimSpace(origin.RepoName) == "" {
 		return fmt.Errorf("investigation: invalid orientation origin")
 	}
-	if len(origin.RepoName) > 128 || len(origin.FlowID) > 128 || len(origin.FlowName) > 256 ||
+	if !validOriginRepositoryIdentity(origin.RepoName) || len(origin.FlowID) > 128 || len(origin.FlowName) > 256 ||
 		len(origin.ComponentID) > 128 || len(origin.AnchorID) > 128 ||
-		strings.ContainsAny(origin.RepoName, "/\\") || containsControl(origin.RepoName) || containsControl(origin.FlowName) {
+		containsControl(origin.FlowName) {
 		return fmt.Errorf("investigation: unsafe orientation origin text")
 	}
 	switch origin.Kind {
@@ -178,6 +179,25 @@ func validateOrigin(origin *Origin, revision string) error {
 		return fmt.Errorf("investigation: invalid orientation origin kind")
 	}
 	return nil
+}
+
+// validOriginRepositoryIdentity accepts canonical module, remote, and scoped
+// manifest identities. The value is an opaque equality/display key and is
+// never resolved against Repository.Path. Rejecting absolute, traversal, and
+// backslash-shaped values keeps that boundary explicit while allowing the
+// forward slashes present in canonical identities.
+func validOriginRepositoryIdentity(value string) bool {
+	if value == "" || value != strings.TrimSpace(value) || len(value) > 512 ||
+		!utf8.ValidString(value) || strings.HasPrefix(value, "/") ||
+		strings.Contains(value, "\\") || containsControl(value) {
+		return false
+	}
+	for _, part := range strings.Split(value, "/") {
+		if part == "" || part == "." || part == ".." {
+			return false
+		}
+	}
+	return true
 }
 
 func validateFocusEntity(symbolName string, entity *evidence.Entity) error {

@@ -17,7 +17,11 @@ import (
 )
 
 var (
-	evidenceFilePathPattern  = regexp.MustCompile(`(?i)(?:^|[^A-Za-z0-9_./-])((?:/|\./|\.\./)?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.(?:go|md|yaml|yml|json|toml|proto|mod|sum|sh|c|h|rs|py|js|ts))(?:[:#][0-9]+)?`)
+	// The consumed terminal delimiter is part of the grammar so a shorter
+	// extension cannot match a prefix of a longer one (for example, .ts in
+	// .tsx). evidencePathMentions resumes at the capture boundary so consuming
+	// that delimiter does not hide an immediately adjacent path.
+	evidenceFilePathPattern  = regexp.MustCompile(`(?i)(?:^|[^A-Za-z0-9_./-])((?:/|\./|\.\./)?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.(?:go|md|yaml|yml|json|toml|proto|mod|sum|sh|c|h|rs|py|js|tsx|ts))(?:[:#][0-9]+)?(?:$|[^A-Za-z0-9_./-]|\.(?:$|[^A-Za-z0-9_./-]))`)
 	evidenceEscapePattern    = regexp.MustCompile(`(?:^|[\s"'()\[\]{},;=:])((?:/|\.\./)[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*)`)
 	versionedAPIRoutePattern = regexp.MustCompile(`(?i)^/(?:api/)?v[0-9]+(?:/|$)`)
 )
@@ -33,6 +37,10 @@ type orientationPart struct {
 	ResearchQuestions    []modelresearch.ProposedQuestion `json:"research_questions,omitempty"`
 	UnverifiedPaths      unverifiedPathList               `json:"unverified_paths"`
 	Warnings             []string                         `json:"warnings"`
+	// confidenceWarningDiagnostics is a producer-owned, render-only account of
+	// warnings appended by the local confidence gate. It never enters the
+	// canonical orientation JSON.
+	confidenceWarningDiagnostics []ConfidenceWarningDiagnostic
 }
 
 type orientationMapItem struct {
@@ -265,6 +273,39 @@ func normalizeOrientationGrounding(
 	}
 	report.FirstFilesToOpen = normalizedFirstFiles
 
+	normalizedUnverifiedPaths := make(
+		unverifiedPathList,
+		0,
+		len(report.UnverifiedPaths),
+	)
+	seenUnverifiedPaths := make(map[string]struct{}, len(report.UnverifiedPaths))
+	for index, item := range report.UnverifiedPaths {
+		candidate := strings.TrimSpace(item.Path)
+		candidate = strings.TrimRight(candidate, "/")
+		if !validRepoRelativePath(candidate) {
+			report.Warnings = append(report.Warnings, fmt.Sprintf(
+				"parser dropped unverified_paths[%d] with invalid path: %q",
+				index,
+				item.Path,
+			))
+			continue
+		}
+		if candidate != item.Path {
+			report.Warnings = append(report.Warnings, fmt.Sprintf(
+				"parser normalized unverified_paths[%d] to %q",
+				index,
+				candidate,
+			))
+		}
+		if _, duplicate := seenUnverifiedPaths[candidate]; duplicate {
+			continue
+		}
+		seenUnverifiedPaths[candidate] = struct{}{}
+		item.Path = candidate
+		normalizedUnverifiedPaths = append(normalizedUnverifiedPaths, item)
+	}
+	report.UnverifiedPaths = normalizedUnverifiedPaths
+
 	for index := range report.HighLevelMap {
 		report.HighLevelMap[index].Evidence = filterEvidence(
 			fmt.Sprintf("high_level_map[%d].evidence", index),
@@ -381,9 +422,53 @@ func normalizeOrientationGrounding(
 		normalizedFlows = append(normalizedFlows, flow)
 	}
 	report.CandidateFlows = normalizedFlows
+	normalizeCandidateFlowIDs(report)
+}
+
+func normalizeCandidateFlowIDs(report *orientationPart) {
+	used := make(map[string]struct{}, len(report.CandidateFlows))
+	for index := range report.CandidateFlows {
+		flow := &report.CandidateFlows[index]
+		originalName := flow.Name
+		flowID := flowexplain.GenerateFlowID(originalName)
+		if _, exists := used[flowID]; !exists {
+			used[flowID] = struct{}{}
+			continue
+		}
+		for suffix := 2; ; suffix++ {
+			flow.Name = fmt.Sprintf("%s (%d)", originalName, suffix)
+			flowID = flowexplain.GenerateFlowID(flow.Name)
+			if _, exists := used[flowID]; exists {
+				continue
+			}
+			used[flowID] = struct{}{}
+			report.Warnings = append(report.Warnings, fmt.Sprintf(
+				"parser disambiguated candidate_flows[%d].name because its local id collided with an earlier direction",
+				index,
+			))
+			break
+		}
+	}
 }
 
 func validateOrientation(report orientationPart, allowedPaths, allowedEntrypoints []string) error {
+	if err := validateOrientationStructure(report); err != nil {
+		return err
+	}
+	return validateLegacyOrientationGrounding(report, allowedPaths, allowedEntrypoints)
+}
+
+// validateResolvedOrientation runs after exact request-local ref resolution.
+// Repository identity and evidence authority have already been proven by typed
+// lookup, so legacy path/evidence lexical parsing is not a second authority.
+func validateResolvedOrientation(report orientationPart) error {
+	if len(report.UnverifiedPaths) != 0 {
+		return fmt.Errorf("orientation: resolved response cannot contain unverified_paths")
+	}
+	return validateOrientationStructure(report)
+}
+
+func validateOrientationStructure(report orientationPart) error {
 	if strings.TrimSpace(report.ProjectGuess) == "" {
 		return fmt.Errorf("orientation: project_guess is required")
 	}
@@ -394,55 +479,6 @@ func validateOrientation(report orientationPart, allowedPaths, allowedEntrypoint
 		return fmt.Errorf("orientation: at least one candidate flow is required")
 	}
 
-	allowed := make(map[string]struct{}, len(allowedPaths))
-	for _, path := range allowedPaths {
-		allowed[path] = struct{}{}
-	}
-	entrypoints := make(map[string]struct{}, len(allowedEntrypoints))
-	for _, entrypoint := range allowedEntrypoints {
-		if entrypoint = strings.TrimSpace(entrypoint); entrypoint != "" && entrypoint != "." {
-			entrypoints[entrypoint] = struct{}{}
-		}
-	}
-	validateAllowed := func(field, path string) error {
-		if !validRepoRelativePath(path) {
-			return fmt.Errorf("orientation: %s has invalid path %q", field, path)
-		}
-		if _, ok := allowed[path]; !ok {
-			return fmt.Errorf("orientation: %s references path outside allowed_paths: %q", field, path)
-		}
-		return nil
-	}
-	validateEvidence := func(field string, evidence []string) error {
-		for evidenceIndex, statement := range evidence {
-			for _, path := range evidencePathMentions(statement) {
-				if !validRepoRelativePath(path) {
-					return fmt.Errorf("orientation: %s[%d] has invalid path-like evidence %q", field, evidenceIndex, path)
-				}
-				if _, ok := allowed[path]; !ok {
-					return fmt.Errorf("orientation: %s[%d] references path-like evidence outside allowed_paths: %q", field, evidenceIndex, path)
-				}
-			}
-		}
-		return nil
-	}
-
-	for index, item := range report.HighLevelMap {
-		if err := validateEvidence(fmt.Sprintf("high_level_map[%d].evidence", index), item.Evidence); err != nil {
-			return err
-		}
-	}
-	for index, item := range report.ImportantDomainWords {
-		if err := validateEvidence(fmt.Sprintf("important_domain_words[%d].evidence", index), item.Evidence); err != nil {
-			return err
-		}
-	}
-
-	for index, file := range report.FirstFilesToOpen {
-		if err := validateAllowed(fmt.Sprintf("first_files_to_open[%d]", index), file.Path); err != nil {
-			return err
-		}
-	}
 	flowIDs := make(map[string]string, len(report.CandidateFlows))
 	for flowIndex, flow := range report.CandidateFlows {
 		if strings.TrimSpace(flow.Name) == "" || strings.TrimSpace(flow.Trigger) == "" {
@@ -474,20 +510,75 @@ func validateOrientation(report orientationPart, allowedPaths, allowedEntrypoint
 		if len(flow.Evidence) == 0 {
 			return fmt.Errorf("orientation: candidate_flows[%d] has no evidence", flowIndex)
 		}
+		entrypoint := strings.TrimSpace(flow.LikelyEntrypoint)
+		if entrypoint == "" && !allowsMissingOrientationEntrypoint(flow) {
+			return fmt.Errorf("orientation: candidate_flows[%d] has no likely_entrypoint", flowIndex)
+		}
+	}
+	return nil
+}
+
+func validateLegacyOrientationGrounding(report orientationPart, allowedPaths, allowedEntrypoints []string) error {
+	allowed := make(map[string]struct{}, len(allowedPaths))
+	for _, path := range allowedPaths {
+		allowed[path] = struct{}{}
+	}
+	entrypoints := make(map[string]struct{}, len(allowedEntrypoints))
+	for _, entrypoint := range allowedEntrypoints {
+		if entrypoint = strings.TrimSpace(entrypoint); entrypoint != "" && entrypoint != "." {
+			entrypoints[entrypoint] = struct{}{}
+		}
+	}
+	validateAllowed := func(field, path string) error {
+		if !validRepoRelativePath(path) {
+			return fmt.Errorf("orientation: %s has invalid path %q", field, path)
+		}
+		if _, ok := allowed[path]; !ok {
+			return fmt.Errorf("orientation: %s references path outside allowed_paths: %q", field, path)
+		}
+		return nil
+	}
+	validateEvidence := func(field string, statements []string) error {
+		for evidenceIndex, statement := range statements {
+			for _, path := range evidencePathMentions(statement) {
+				if !validRepoRelativePath(path) {
+					return fmt.Errorf("orientation: %s[%d] has invalid path-like evidence %q", field, evidenceIndex, path)
+				}
+				if _, ok := allowed[path]; !ok {
+					return fmt.Errorf("orientation: %s[%d] references path-like evidence outside allowed_paths: %q", field, evidenceIndex, path)
+				}
+			}
+		}
+		return nil
+	}
+
+	for index, item := range report.HighLevelMap {
+		if err := validateEvidence(fmt.Sprintf("high_level_map[%d].evidence", index), item.Evidence); err != nil {
+			return err
+		}
+	}
+	for index, item := range report.ImportantDomainWords {
+		if err := validateEvidence(fmt.Sprintf("important_domain_words[%d].evidence", index), item.Evidence); err != nil {
+			return err
+		}
+	}
+	for index, file := range report.FirstFilesToOpen {
+		if err := validateAllowed(fmt.Sprintf("first_files_to_open[%d]", index), file.Path); err != nil {
+			return err
+		}
+	}
+	for flowIndex, flow := range report.CandidateFlows {
 		if err := validateEvidence(fmt.Sprintf("candidate_flows[%d].evidence", flowIndex), flow.Evidence); err != nil {
 			return err
 		}
 		for pathIndex, path := range flow.LikelyFiles {
-			if err := validateAllowed(
-				fmt.Sprintf("candidate_flows[%d].likely_files[%d]", flowIndex, pathIndex),
-				path,
-			); err != nil {
+			if err := validateAllowed(fmt.Sprintf("candidate_flows[%d].likely_files[%d]", flowIndex, pathIndex), path); err != nil {
 				return err
 			}
 		}
 		entrypoint := strings.TrimSpace(flow.LikelyEntrypoint)
-		if entrypoint == "" {
-			return fmt.Errorf("orientation: candidate_flows[%d] has no likely_entrypoint", flowIndex)
+		if entrypoint == "" && allowsMissingOrientationEntrypoint(flow) {
+			continue
 		}
 		if _, isAllowedPath := allowed[entrypoint]; isAllowedPath {
 			if !validRepoRelativePath(entrypoint) {
@@ -505,23 +596,42 @@ func validateOrientation(report orientationPart, allowedPaths, allowedEntrypoint
 	return nil
 }
 
+func allowsMissingOrientationEntrypoint(flow flowexplain.CandidateFlow) bool {
+	return flow.FlowType == flowexplain.FlowTypeOperational &&
+		flow.CandidateBasis == flowexplain.CandidateBasisSourceSignalAggregate
+}
+
 func evidencePathMentions(statement string) []string {
 	seen := make(map[string]struct{})
 	var paths []string
-	for _, pattern := range []*regexp.Regexp{evidenceFilePathPattern, evidenceEscapePattern} {
-		for _, match := range pattern.FindAllStringSubmatch(statement, -1) {
-			if len(match) < 2 || match[1] == "" {
-				continue
-			}
-			path := strings.TrimSuffix(strings.TrimSuffix(match[1], "."), ",")
-			if looksLikeHTTPRoute(statement, path) {
-				continue
-			}
-			if _, exists := seen[path]; exists {
-				continue
-			}
-			seen[path] = struct{}{}
-			paths = append(paths, path)
+	appendPath := func(path string) {
+		path = strings.TrimSuffix(strings.TrimSuffix(path, "."), ",")
+		if path == "" || looksLikeHTTPRoute(statement, path) {
+			return
+		}
+		if _, exists := seen[path]; exists {
+			return
+		}
+		seen[path] = struct{}{}
+		paths = append(paths, path)
+	}
+
+	for offset := 0; offset < len(statement); {
+		match := evidenceFilePathPattern.FindStringSubmatchIndex(statement[offset:])
+		if len(match) < 4 || match[2] < 0 || match[3] <= match[2] {
+			break
+		}
+		captureStart := offset + match[2]
+		captureEnd := offset + match[3]
+		appendPath(statement[captureStart:captureEnd])
+		// Resume at the end of the captured path, before the terminal delimiter
+		// consumed by the RE2 grammar. This preserves adjacent path matches.
+		offset = captureEnd
+	}
+
+	for _, match := range evidenceEscapePattern.FindAllStringSubmatch(statement, -1) {
+		if len(match) >= 2 {
+			appendPath(match[1])
 		}
 	}
 	return paths

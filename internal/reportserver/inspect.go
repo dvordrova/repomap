@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	analysis "github.com/dvordrova/repomap/internal/analyzer"
 	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/inspection"
 	"github.com/dvordrova/repomap/internal/investigation"
 	"github.com/dvordrova/repomap/internal/memory"
 	"github.com/dvordrova/repomap/internal/sourcecard"
@@ -108,8 +108,9 @@ func (h *handler) serveInspectSymbol(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer storeRoot.Close()
-	if run.Manifest == nil || run.Manifest.ReportSHA256 != set.ReportSHA256 ||
-		run.Manifest.RepositoryStateSHA256 != set.RepositoryHash || run.RepoPath == "" || run.RepoPath != set.AnalysisRoot {
+	if run.Manifest == nil || run.WorkspaceSnapshot == nil || run.Manifest.ReportSHA256 != set.ReportSHA256 ||
+		run.workspaceRepositoryDigest() != set.RepositoryHash || run.RepoPath == "" ||
+		run.workspaceAnalysisRoot() != set.AnalysisRoot || run.RepoPath != set.AnalysisRoot {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "report authority changed; find Go symbols again"})
 		return
 	}
@@ -129,8 +130,13 @@ func (h *handler) serveInspectSymbol(w http.ResponseWriter, r *http.Request) {
 		h.writeAnalysisError(w, ctx, "could not verify repository state")
 		return
 	}
-	if err := run.Manifest.VerifyRepositoryState(before); err != nil {
+	if err := run.verifyRepositoryState(before); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "report is stale; regenerate it before inspecting symbols"})
+		return
+	}
+	service, err := h.analysis.inspectionService(run.SourceCatalog)
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "exact Go symbol analysis is unavailable"})
 		return
 	}
 
@@ -159,27 +165,36 @@ func (h *handler) serveInspectSymbol(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "could not start the exact symbol investigation"})
 		return
 	}
-	runner := investigation.Runner{
-		ExactAnalyzer: h.analysis.exact,
-		SymbolOptions: browserSymbolOptions(),
-		SourceLimits:  browserSourceLimits(),
-	}
-	execution, err := runner.Execute(ctx, session, session.Next[0])
-	if err != nil || execution.DiagnosticError != nil {
+	result, err := service.Inspect(ctx, inspection.InspectRequest{
+		Target: candidate.Entity,
+		Limits: inspection.Limits{
+			Symbol: browserSymbolOptions(),
+			Source: browserSourceLimits(),
+		},
+	})
+	if err != nil {
+		var serviceError *inspection.Error
+		if errors.As(err, &serviceError) && serviceError.Operation == "source" {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "could not read a bounded source window for this declaration"})
+			return
+		}
 		h.writeAnalysisError(w, ctx, "could not inspect the selected Go symbol")
 		return
 	}
-	session, _, err = investigation.Reduce(session, execution.Event)
+	session, _, err = investigation.Reduce(session, investigation.Event{
+		Kind:     investigation.EventSymbolResolved,
+		ActionID: session.Next[0].ID,
+		Symbol:   &result.Structural,
+	})
 	if err != nil || session.Symbol == nil || session.State != investigation.StateReadingSource {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "exact symbol evidence did not match the selected declaration"})
 		return
 	}
-	sourceExecution, err := runner.Execute(ctx, session, session.Next[0])
-	if err != nil || sourceExecution.DiagnosticError != nil || sourceExecution.Event.Source == nil {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "could not read a bounded source window for this declaration"})
-		return
-	}
-	session, _, err = investigation.Reduce(session, sourceExecution.Event)
+	session, _, err = investigation.Reduce(session, investigation.Event{
+		Kind:     investigation.EventSourceRead,
+		ActionID: session.Next[0].ID,
+		Source:   &result.Source,
+	})
 	if err != nil || session.State != investigation.StateFindingTestReferences || session.Source == nil {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "source evidence did not match the selected declaration"})
 		return
@@ -194,7 +209,7 @@ func (h *handler) serveInspectSymbol(w http.ResponseWriter, r *http.Request) {
 		h.writeAnalysisError(w, ctx, "could not recheck repository state")
 		return
 	}
-	if err := run.Manifest.VerifyRepositoryState(after); err != nil {
+	if err := run.verifyRepositoryState(after); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "repository changed during analysis; regenerate the report"})
 		return
 	}
@@ -221,12 +236,12 @@ func (h *handler) serveInspectSymbol(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
-func (a *symbolAnalysis) candidateForInspection(setID, candidateID string) (candidateSet, analysis.LocationCandidate, bool) {
+func (a *symbolAnalysis) candidateForInspection(setID, candidateID string) (candidateSet, inspection.Candidate, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	set, ok := a.sets[setID]
 	if !ok {
-		return candidateSet{}, analysis.LocationCandidate{}, false
+		return candidateSet{}, inspection.Candidate{}, false
 	}
 	if time.Since(set.CreatedAt) > candidateSetTTL {
 		delete(a.sets, setID)
@@ -236,7 +251,7 @@ func (a *symbolAnalysis) candidateForInspection(setID, candidateID string) (cand
 				break
 			}
 		}
-		return candidateSet{}, analysis.LocationCandidate{}, false
+		return candidateSet{}, inspection.Candidate{}, false
 	}
 	candidate, ok := set.Candidates[candidateID]
 	return set, candidate, ok
