@@ -4659,13 +4659,11 @@
 			omissions.forEach(function (omission) {
 				if (!omission || !omission.reason || !(Number(omission.count) > 0)) return;
 				var item = el('li', 'rm-study-diagnostics-omission');
-				var details = txt('span', '', msg('main.study.diagnostics.omission_count', { count: omission.count }));
-				if (Number(omission.representative_count) > 0) {
-					details.appendChild(document.createTextNode(' · '));
-					details.appendChild(document.createTextNode(msg('main.study.diagnostics.omission_representatives', { count: omission.representative_count })));
-				}
-				item.appendChild(txt('code', '', omission.reason));
-				item.appendChild(details);
+				item.appendChild(txt('p', 'rm-study-diagnostics-omission-sentence', msg('main.study.frontier.omission_sentence')));
+				var showAll = txt('button', 'rm-secondary-action rm-study-diagnostics-show-all', msg('main.study.frontier.show_all', { count: omission.count }));
+				showAll.type = 'button';
+				showAll.onclick = function () { revealAtlasStudyLocalGroup(); };
+				item.appendChild(showAll);
 				omissionList.appendChild(item);
 			});
 			if (omissionList.childNodes.length) {
@@ -4678,7 +4676,151 @@
 		return panel;
 	}
 
+	// D212: provider-free browse of the complete considered Study question set.
+	// Derived only inside readAtlasStudyReportProduct from already-validated
+	// local artifacts; never a model verdict and never per-span model state.
+	function atlasStudyBrowseStageLabel(stage, failedState) {
+		if (failedState) return msg('main.study.frontier.stage_local_failed');
+		switch (String(stage || '')) {
+			case 'accepted': return msg('main.study.frontier.stage_accepted');
+			case 'model_selected': return msg('main.study.frontier.stage_rejected_sibling');
+			case 'advertised': return msg('main.study.frontier.stage_advertised');
+			case 'considered': return msg('main.study.frontier.stage_considered');
+			default: return msg('main.study.frontier.stage_local_failed');
+		}
+	}
+
+	function atlasStudyBrowseSourceLocation(row) {
+		if (!row || !row.source || !row.source.path) return null;
+		var line = Number(row.source.line) || 0;
+		return { path: row.source.path, line: line, column: Number(row.source.column) || 0, end_line: line };
+	}
+
+	function renderAtlasStudyBrowseRowSource(row) {
+		var location = atlasStudyBrowseSourceLocation(row);
+		if (!location || !sourceLocationActionAvailable(location)) return null;
+		return sourceActionElement(
+			row.question || row.title || '',
+			'rm-study-browse-row__question rm-source-action-link',
+			location,
+			location.end_line,
+			function () { openSourceLocation(location); }
+		);
+	}
+
+	function atlasStudyBrowseDirectionCardNumber(directionID) {
+		var direction = studyDirectionByID(directionID);
+		if (!direction) return 0;
+		return COMPLETE_STUDY_DIRECTIONS.indexOf(direction) + 1;
+	}
+
+	function renderAtlasStudyBrowseRow(row, failedState, statusState) {
+		var item = el('li', 'rm-study-browse-row');
+		var stageLabel = atlasStudyBrowseStageLabel(row.stage, failedState);
+		if (!failedState && String(row.stage) === 'accepted' && row.direction_id) {
+			var badge = txt('button', 'rm-study-browse-row__stage rm-study-browse-row__stage-accepted', stageLabel);
+			badge.type = 'button';
+			var cardNumber = atlasStudyBrowseDirectionCardNumber(row.direction_id);
+			badge.title = cardNumber > 0 ? msg('main.study.frontier.open_direction', { count: cardNumber }) : stageLabel;
+			badge.onclick = function () { openStudyDirection(row.direction_id); };
+			item.appendChild(badge);
+		} else {
+			item.appendChild(txt('span', 'rm-study-browse-row__stage', stageLabel));
+		}
+		if (!failedState && String(row.stage) === 'model_selected' && statusState === 'accepted_partial') {
+			item.appendChild(txt('span', 'rm-study-browse-row__not-accepted', msg('main.study.frontier.not_accepted')));
+		}
+		var question = renderAtlasStudyBrowseRowSource(row);
+		if (question) {
+			var sourceLocation = atlasStudyBrowseSourceLocation(row);
+			var locationHint = sourceLocation ? formatCodeLocation(sourceLocation) : '';
+			if (row.endpoint && row.endpoint.path && row.endpoint.path !== (row.source && row.source.path)) {
+				locationHint = locationHint + ' → ' + formatCodeLocation({ path: row.endpoint.path, line: Number(row.endpoint.line) || 0, column: Number(row.endpoint.column) || 0 });
+			}
+			if (locationHint) question.title = locationHint;
+			item.appendChild(question);
+		} else {
+			item.appendChild(txt('span', 'rm-study-browse-row__unavailable', msg('main.study.frontier.source_unavailable')));
+		}
+		item.appendChild(txt('code', 'rm-study-browse-row__title', row.title || ''));
+		return item;
+	}
+
+	function atlasStudyBrowseRepresentativeCount() {
+		var study = DATA.atlas_study;
+		var total = 0;
+		(study && Array.isArray(study.omissions) ? study.omissions : []).forEach(function (omission) {
+			if (omission && Number(omission.representative_count) > 0) total += Number(omission.representative_count);
+		});
+		return total;
+	}
+
+	function revealAtlasStudyLocalGroup() {
+		var group = document.querySelector('.rm-study-browse-group--local');
+		if (!group) return;
+		group.classList.remove('rm-study-browse-group--collapsed');
+		group.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	}
+
+	function renderAtlasStudyBrowse() {
+		var study = DATA.atlas_study;
+		if (!study || !study.frontier_browse) return null;
+		var browse = study.frontier_browse;
+		var failedState = study.state === 'failed';
+		var section = el('section', 'rm-workspace-section rm-study-frontier-browse');
+		section.appendChild(renderViewHeading(
+			msg('main.study'),
+			msg('main.study.frontier.browse_title'),
+			msg('main.study.frontier.browse_copy')
+		));
+		if (Number(browse.shown) < Number(browse.total)) {
+			section.appendChild(txt('p', 'rm-study-browse-ceiling', msg('main.study.frontier.ceiling_note', { shown: browse.shown, total: browse.total })));
+		}
+		var representativeCount = failedState ? 0 : atlasStudyBrowseRepresentativeCount();
+		var list = el('ul', 'rm-study-browse-list');
+		var currentStage = null;
+		var group = null;
+		var groupRows = null;
+		var localRows = null;
+		browse.spans.forEach(function (row) {
+			var stageKey = failedState ? 'failed' : String(row.stage || '');
+			if (stageKey !== currentStage) {
+				currentStage = stageKey;
+				group = el('li', 'rm-study-browse-group' + (stageKey === 'considered' ? ' rm-study-browse-group--local' : ''));
+				groupRows = el('ul', 'rm-study-browse-group__rows');
+				group.appendChild(txt('h3', 'rm-study-browse-group__heading', atlasStudyBrowseStageLabel(row.stage, failedState)));
+				group.appendChild(groupRows);
+				list.appendChild(group);
+				localRows = stageKey === 'considered' ? [] : null;
+			}
+			var item = renderAtlasStudyBrowseRow(row, failedState, study.state);
+			if (localRows) localRows.push(item);
+			groupRows.appendChild(item);
+		});
+		if (localRows && localRows.length > representativeCount) {
+			var showAll = txt('button', 'rm-secondary-action rm-study-browse-show-all', msg('main.study.frontier.show_all', { count: localRows.length }));
+			showAll.type = 'button';
+			showAll.onclick = function () { revealAtlasStudyLocalGroup(); };
+			group.appendChild(showAll);
+			group.classList.add('rm-study-browse-group--collapsed');
+			localRows.slice(representativeCount).forEach(function (item) {
+				item.classList.add('rm-study-browse-row--beyond');
+			});
+		}
+		section.appendChild(list);
+		return section;
+	}
+
+	function renderAtlasStudyFailedBrowse(root) {
+		var study = DATA.atlas_study;
+		if (!study || study.state !== 'failed' || !study.frontier_browse || !root) return;
+		root.appendChild(txt('p', 'rm-study-failed-banner rm-warning', msg('main.study.frontier.failed_banner')));
+		var browse = renderAtlasStudyBrowse();
+		if (browse) root.appendChild(browse);
+	}
+
 	function renderStudyMapOverview(root, includeBrief) {
+
 // repomap-source-episode:start
 		var episode = renderSourceEpisode(SOURCE_EPISODE);
 		if (episode) root.appendChild(episode);
@@ -4702,6 +4844,9 @@
 
 		var studyDiagnostics = renderAtlasStudyDiagnostics();
 		if (studyDiagnostics) root.appendChild(studyDiagnostics);
+
+		var frontierBrowse = renderAtlasStudyBrowse();
+		if (frontierBrowse) root.appendChild(frontierBrowse);
 
 		renderOperationsOverview(root);
 
@@ -6358,6 +6503,7 @@
 		if (!root) return;
 		root.replaceChildren();
 		renderStudyPublicationNotice(root);
+		renderAtlasStudyFailedBrowse(root);
 		var anatomy = repositoryOverviewAnatomy();
 		if (anatomy) {
 			renderRepositoryOverviewLead(root);
