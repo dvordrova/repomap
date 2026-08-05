@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 )
@@ -132,6 +131,7 @@ const window = {
   location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   __REPOMAP_WORKSPACE_TEST__: {},
   addEventListener() {}, setTimeout(fn) { fn(); return 1; }, clearTimeout() {},
+  open() { return null; },
 };
 window.history = {
   get state() { return entries[historyIndex].state; },
@@ -185,6 +185,7 @@ if (copyButtons[0]) copyButtons[0].onclick();
 const sourceCards = detailNodes.filter((node) => String(node.className).split(/\s+/).includes("rm-source-card"));
 const redactedCard = sourceCards.find((card) => text(card).includes("TOKEN=[redacted]"));
 const redactedButtons = descendants(redactedCard).filter((node) => node && node.tagName === "button").map(text);
+const sourceCardCount = sourceCards.length;
 
 api.openSourceSnippet(normalSource, normalReference.location, false);
 const sourceHash = window.location.hash;
@@ -204,7 +205,7 @@ api.openReportTarget({ kind: "paved_path", paved_path_id: "operate/server" });
 process.stdout.write(JSON.stringify({
   validRoute, invalidRoute, overviewText, openedHash, openedState, detailText,
   buttonTexts, copyButtonCount: copyButtons.length, copied,
-  redactedButtons, sourceHash, sourceState, closedState, closedHash,
+  redactedButtons, sourceCardCount, sourceHash, sourceState, closedState, closedHash,
   relatedHash, searchHash: window.location.hash,
 }));
 `
@@ -236,6 +237,7 @@ process.stdout.write(JSON.stringify({
 		CopyButtonCount int      `json:"copyButtonCount"`
 		Copied          string   `json:"copied"`
 		RedactedButtons []string `json:"redactedButtons"`
+		SourceCardCount int      `json:"sourceCardCount"`
 		SourceHash      string   `json:"sourceHash"`
 		ClosedHash      string   `json:"closedHash"`
 		RelatedHash     string   `json:"relatedHash"`
@@ -299,15 +301,22 @@ process.stdout.write(JSON.stringify({
 			t.Fatalf("operation detail exposed execution action %q", label)
 		}
 	}
-	if !slices.Contains(got.ButtonTexts, "Show source") {
-		t.Fatalf("expected result source action is missing: %#v", got.ButtonTexts)
+	if got.SourceCardCount != 5 || !strings.Contains(got.DetailText, "TOKEN=[redacted]") {
+		t.Fatalf("expected embedded saved source cards = %d: %#v", got.SourceCardCount, got.ButtonTexts)
+	}
+	for _, label := range got.ButtonTexts {
+		if label == "Show source" || label == "Open one of the suggested source files." {
+			t.Fatalf("operation detail offered a dead source action %q: %#v", label, got.ButtonTexts)
+		}
 	}
 	if len(got.RedactedButtons) != 0 {
 		t.Fatalf("redacted source exposed navigation actions: %#v", got.RedactedButtons)
 	}
+	// Decision 222: without a GitHub/GitLab (or server) jump, opening the
+	// source is a no-op — never an inline code drawer, never a route change.
 	if got.SourceHash != "#/operate/operate%2Fserver" || got.SourceState.View != "operate" ||
-		got.SourceState.OperationID != "operate/server" || got.SourceState.SourceLocation == nil {
-		t.Fatalf("operation source drawer changed route/context: hash %q state %#v", got.SourceHash, got.SourceState)
+		got.SourceState.OperationID != "operate/server" || got.SourceState.SourceLocation != nil {
+		t.Fatalf("operation source opening changed route/context: hash %q state %#v", got.SourceHash, got.SourceState)
 	}
 	if got.ClosedHash != "#/operate/operate%2Fserver" || got.ClosedState.View != "operate" ||
 		got.ClosedState.OperationID != "operate/server" || got.ClosedState.SourceLocation != nil {

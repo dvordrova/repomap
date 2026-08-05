@@ -28,7 +28,13 @@ class Element {
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.children = children; }
 }
-const report = { user_mechanisms: [], user_sources: [], openable_paths: [], source_ids: {} };
+const report = {
+  user_mechanisms: [], user_sources: [], openable_paths: ["replica.go"], source_ids: {},
+  github_source_links: {
+    repository_url: "https://github.com/example/fixture",
+    revision: "1".repeat(40),
+  },
+};
 const window = {
   location: { search: "", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
@@ -87,7 +93,7 @@ process.stdout.write(JSON.stringify({ titles: items.map((item) => item.title), t
 	for _, token := range []string{
 		"Show implementation details (2)", "Sync execution internals",
 		"The replica sync function calls sync once and returns its error.",
-		"replica.go:145", "replica.go:146", "Show code",
+		"replica.go:145", "replica.go:146", "Open in GitHub",
 	} {
 		if !strings.Contains(got.Text, token) {
 			t.Fatalf("rendered implementation details are missing %q: %q", token, got.Text)

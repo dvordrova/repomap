@@ -141,6 +141,10 @@ for (let i = 0; i < 36; i++) browseSpans.push(browseSpan(browseOrdinal++, "consi
 const report = {
   repo_name: "fixture", report_language: process.argv[3] || "en", user_mechanisms: [], user_topics: [], user_sources: [],
   openable_paths: paths, source_ids: {},
+  github_source_links: {
+    repository_url: "https://github.com/example/repository",
+    revision: "a".repeat(40),
+  },
   navigator: { version: 1, state: "empty" },
   repository_atlas: {
     version: 1,
@@ -281,14 +285,16 @@ const localCollapsedAfter = localGroup ? String(localGroup.className).split(/\s+
   // Decision 217 drawer accessibility: open a source snippet and verify the
   // drawer becomes a real dialog (role, aria-modal, descriptive label).
   const studyReadings = byClass(roots["rm-study-overview"], "rm-study-theme-card__reading");
-  if (studyReadings.length && studyReadings[0].onclick) studyReadings[0].onclick();
+  const readingJump = studyReadings.length
+    ? { tag: String(studyReadings[0].tagName || "").toLowerCase(), href: (studyReadings[0].attributes && studyReadings[0].attributes.href) || "" }
+    : null;
   const drawerEl = roots["rm-source-drawer"];
   const drawerDialog = {
     role: drawerEl.getAttribute("role"),
     ariaModal: drawerEl.getAttribute("aria-modal"),
     ariaLabel: drawerEl.getAttribute("aria-label"),
   };
-  return { overviewText, studyOverviewText, stageCounts, flagItems, omissionItems, architectureText, browseRowCount: browseRows.length, browseStageTexts, unavailableRows, modelPickCount: modelPickBadges.length, directionCardAfterPick, beyondBefore, localCollapsedBefore, localCollapsedAfter, showAllCount: showAllButtons.length, browsePanelPresent: !!browsePanel, questionLinks, themeShelfPresent: !!themeShelf, drawerDialog };
+  return { overviewText, studyOverviewText, stageCounts, flagItems, omissionItems, architectureText, browseRowCount: browseRows.length, browseStageTexts, unavailableRows, modelPickCount: modelPickBadges.length, directionCardAfterPick, beyondBefore, localCollapsedBefore, localCollapsedAfter, showAllCount: showAllButtons.length, browsePanelPresent: !!browsePanel, questionLinks, themeShelfPresent: !!themeShelf, drawerDialog, readingJump };
 }
 const strippedReport = JSON.parse(JSON.stringify(report));
 strippedReport.user_sources = [];
@@ -328,6 +334,10 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 			AriaModal string `json:"ariaModal"`
 			AriaLabel string `json:"ariaLabel"`
 		} `json:"drawerDialog"`
+		ReadingJump *struct {
+			Tag  string `json:"tag"`
+			Href string `json:"href"`
+		} `json:"readingJump"`
 	}
 	type journeySet struct {
 		En       journey `json:"en"`
@@ -497,11 +507,12 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 	if !strings.Contains(stripped.DirectionCardAfter, "Study question 1?") {
 		t.Fatalf("stripped Model pick badge did not open the matching direction card:\n%s", stripped.DirectionCardAfter)
 	}
-	// Decision 217 drawer accessibility: opening a source snippet makes the
-	// drawer a real dialog with a descriptive label.
+	// Decision 222: a theme reading is a GitHub/GitLab jump in a new tab —
+	// never an inline code drawer.
 	for name, j := range map[string]journey{"en": en, "ru": ru} {
-		if j.DrawerDialog.Role != "dialog" || j.DrawerDialog.AriaModal != "true" || j.DrawerDialog.AriaLabel == "" {
-			t.Fatalf("%s drawer dialog semantics = %#v, want role=dialog aria-modal=true with label", name, j.DrawerDialog)
+		if j.ReadingJump == nil || j.ReadingJump.Tag != "a" ||
+			!strings.Contains(j.ReadingJump.Href, "github.com/example/repository/blob") {
+			t.Fatalf("%s reading jump = %#v, want GitHub blob link", name, j.ReadingJump)
 		}
 	}
 }

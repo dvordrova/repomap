@@ -769,10 +769,15 @@
       };
       return localOnly;
     }
-    var button = txt('button', cls || '', label);
-    button.type = 'button';
-    button.onclick = action;
-    return button;
+    // Decision 222: without a GitHub/GitLab (or server) jump the source
+    // action is not offered at all — never an inline code drawer.
+    if (serverMode() && currentRunID() && location && SOURCE_IDS[location.path]) {
+      var button = txt('button', cls || '', label);
+      button.type = 'button';
+      button.onclick = action;
+      return button;
+    }
+    return null;
   }
 
   function serverBasePath() {
@@ -4430,7 +4435,7 @@
 					openSourceSnippet(landmark.reference.source, landmark.reference.location, false);
 				}
 			);
-			actions.appendChild(source);
+			if (source) actions.appendChild(source);
 		}
 		if (actions.childNodes.length) card.appendChild(actions);
 		return card;
@@ -4483,8 +4488,22 @@
 		if (direction.learning_outcome) body.appendChild(txt('span', 'rm-study-direction-card__outcome', direction.learning_outcome));
 		var anchors = el('div', 'rm-study-direction-card__anchors');
 		(direction.reading_anchors || []).forEach(function (reading) {
+			var location = studyReadingLocation(reading);
+			if (!location) return;
 			var action = renderStudySourceAction(reading, 'rm-study-direction-card__source', true);
-			if (action) anchors.appendChild(action);
+			if (action) {
+				anchors.appendChild(action);
+				return;
+			}
+			// Decision 222: without a GitHub/GitLab (or server) jump the
+			// reading stays a typed row — bare symbol + location — never a
+			// dead button and never an inline code drawer.
+			var row = el('div', 'rm-study-direction-card__source rm-study-direction-card__source--plain');
+			row.appendChild(txt('strong', '', bareSourceSymbol(String(reading && reading.symbol || ''))));
+			var kind = sourceKindFor(reading && reading.symbol, reading && reading.path);
+			row.appendChild(txt('span', 'rm-study-direction-card__source-kind', sourceKindLabel(kind)));
+			row.appendChild(txt('code', '', formatCodeLocation(location)));
+			anchors.appendChild(row);
 		});
 		if (anchors.childNodes.length) body.appendChild(anchors);
 		card.appendChild(body);
@@ -4602,17 +4621,21 @@
 		var article = el('article', 'rm-study-theme-card' + (card.badge ? ' rm-study-theme-card--' + String(card.badge).toLowerCase() : ''));
 		var titleRow = el('div', 'rm-study-theme-card__title-row');
 		var title = txt('h3', 'rm-study-theme-card__title', card.final_title || '');
-		title.onclick = function () { openThemeCard(card.ordinal); };
 		titleRow.appendChild(title);
-		titleRow.appendChild(txt('span', 'rm-study-theme-card__coverage rm-study-theme-card__coverage--' + themeCoverageState(card), themeCoverageLabel(card)));
+		// Decision 222: the "Source-backed" badge is dropped — it carries no
+		// user information; partial coverage stays visible as it is meaningful.
+		if (themeCoverageState(card) !== 'supported') {
+			titleRow.appendChild(txt('span', 'rm-study-theme-card__coverage rm-study-theme-card__coverage--' + themeCoverageState(card), themeCoverageLabel(card)));
+		}
 		article.appendChild(titleRow);
 		if (card.final_question) article.appendChild(txt('p', 'rm-study-theme-card__question', card.final_question));
 		if (card.why_it_matters) article.appendChild(txt('span', 'rm-study-theme-card__reason', card.why_it_matters));
 		var readings = el('ul', 'rm-study-theme-card__readings');
-		// Bounded reading preview on the card; the detail route shows the full
-		// reading list. Decision 218 (B): each reading is a typed source row —
-		// symbol, kind · path:line as separate DOM nodes.
-		(card.readings || []).slice(0, 3).forEach(function (reading) {
+		// Decision 222: the full reading plan is always shown on the card —
+		// plans are short and truncating them hid the actual plan behind a
+		// button. Each reading is a typed source row: bare symbol, kind ·
+		// path:line as separate DOM nodes.
+		(card.readings || []).forEach(function (reading) {
 			var kind = sourceKindFor(reading && reading.symbol, reading && reading.path);
 			var location = studyReadingLocation(reading);
 			if (!location) return;
@@ -4624,23 +4647,18 @@
 			} else {
 				// Decision 218 (B): the reading is still visible and typed
 				// when no exact saved source is available for this run.
-				row.appendChild(txt('span', 'rm-study-theme-card__reading rm-study-theme-card__reading--plain', String(reading && reading.symbol || '')));
+				// Decision 222: bare symbol only — package is in the location.
+				row.appendChild(txt('span', 'rm-study-theme-card__reading rm-study-theme-card__reading--plain', bareSourceSymbol(String(reading && reading.symbol || ''))));
 			}
 			var meta = el('div', 'rm-study-theme-card__reading-meta');
 			meta.appendChild(txt('span', 'rm-study-theme-card__reading-kind', sourceKindLabel(kind)));
 			meta.appendChild(txt('code', 'rm-study-theme-card__reading-location', formatCodeLocation(location)));
 			row.appendChild(meta);
 			item.appendChild(row);
+			if (reading.what_to_look_for) item.appendChild(txt('p', 'rm-study-theme-card__reading-explain', reading.what_to_look_for));
 			readings.appendChild(item);
 		});
 		if (readings.childNodes.length) article.appendChild(readings);
-		if (card.readings && card.readings.length > 3) {
-			article.appendChild(txt('span', 'rm-study-theme-card__more', msg('main.study.theme.more_readings', { count: card.readings.length - 3 })));
-		}
-		var openDetail = txt('button', 'rm-quiet-action rm-study-theme-card__open', msg('main.study.theme.open_detail'));
-		openDetail.type = 'button';
-		openDetail.onclick = function () { openThemeCard(card.ordinal); };
-		article.appendChild(openDetail);
 		return article;
 	}
 
@@ -4724,6 +4742,9 @@
 					openSourceLocation({ path: source.path, line: Number(source.start_line) || 0 });
 				}
 			);
+			// Decision 222: without a GitHub/GitLab (or server) jump the
+			// source stays a typed row — never a dead button.
+			if (!button) return;
 			button.setAttribute('aria-label', msg('main.source.inspect_exact', {
         label: sourceEpisodeSourceLabel(source),
       }));
@@ -5164,7 +5185,10 @@
 
 	function renderStudySourceAction(reading, cls, includeLocation) {
 		var location = studyReadingLocation(reading);
-		var symbol = String(reading && reading.symbol || '');
+		// Decision 222: the reading shows the bare symbol name only — the
+		// package is already stated by the location (path:line) right next
+		// to it. Full qualified paths are noise on the card.
+		var symbol = bareSourceSymbol(String(reading && reading.symbol || ''));
 		var embedded = reading && sourceSnippetAvailable(reading.source) ? reading.source : null;
 		if (!location || !symbol || (!embedded && !sourceLocationActionAvailable(location))) return null;
 		var action = sourceActionElement(
@@ -5180,6 +5204,7 @@
 				openSourceLocation(location);
 			}
 		);
+		if (!action) return null;
 		action.setAttribute('aria-label', symbol + ' · ' + formatCodeLocation(location));
 		if (includeLocation) {
 			action.textContent = '';
@@ -5187,6 +5212,26 @@
 			action.appendChild(txt('code', '', formatCodeLocation(location)));
 		}
 		return action;
+	}
+
+	// bareSourceSymbol reduces a fully-qualified symbol to its bare name:
+	// the last dot-segment (keeping a (*Type) receiver prefix), because the
+	// package is already shown by the location text next to the symbol.
+	function bareSourceSymbol(symbol) {
+		var value = String(symbol || '').trim();
+		if (!value) return '';
+		var last = value;
+		var receiver = '';
+		var open = value.indexOf('(');
+		if (open >= 0) {
+			receiver = value.slice(0, value.indexOf(')') + 1);
+			last = value.slice(value.indexOf(')') + 1);
+		}
+		if (last) {
+			var dot = last.lastIndexOf('.');
+			if (dot >= 0 && dot + 1 < last.length) last = last.slice(dot + 1);
+		}
+		return (receiver ? receiver + '.' : '') + last;
 	}
 
 	function renderStudyReadingAnchor(reading, index) {
@@ -5204,11 +5249,14 @@
 		// available for this run: the reading is still visible and typed,
 		// just without a click action.
 		var symbol = String(reading && reading.symbol || '');
+		var bare = bareSourceSymbol(symbol);
 		var open = renderStudySourceAction(reading, 'rm-study-reading-anchor__open', false);
 		if (open) {
 			row.appendChild(open);
 		} else {
-			var plain = txt('span', 'rm-study-reading-anchor__open rm-study-reading-anchor__open--plain', symbol);
+			// Decision 222: the plain fallback shows the bare symbol name;
+			// the package is already stated by the location next to it.
+			var plain = txt('span', 'rm-study-reading-anchor__open rm-study-reading-anchor__open--plain', bare);
 			row.appendChild(plain);
 		}
 		var meta = el('div', 'rm-study-reading-anchor__meta');
@@ -5330,7 +5378,7 @@
 					openSourceSnippet(result.reference.source, result.reference.location, false);
 				}
 			);
-			card.appendChild(source);
+			if (source) card.appendChild(source);
 			list.appendChild(card);
 		});
 		section.appendChild(list);
@@ -5751,7 +5799,7 @@
 						openSourceSnippet(anchor.source, { path: anchor.path, line: anchor.start_line });
 					}
 				);
-				heading.appendChild(showSource);
+				if (showSource) heading.appendChild(showSource);
 				card.appendChild(heading);
 				card.appendChild(renderFileReference(
 					anchor.path,
@@ -6366,6 +6414,9 @@
 						0,
 						function () { openSourceLocation(source.location); }
 					);
+				// Decision 222: without a GitHub/GitLab (or server) jump the
+				// source action is not offered at all.
+				if (!sourceAction) return;
 				if (hasEmbeddedSource) sourceAction.type = 'button';
 				sourceAction.appendChild(txt('strong', '', source.symbol));
 				sourceAction.appendChild(txt('code', '', formatCodeLocation(source.location)));
@@ -7278,28 +7329,27 @@
 						unit.name.slice(group.prefix.length + 1))
 					: unit.name;
 				if (unit.source) {
-					var hasEmbeddedSource = sourceSnippetHasCode(unit.source.snippet);
-					var action = hasEmbeddedSource
-						? el('button', 'rm-atlas-package-action')
-						: sourceActionElement(
-							'',
-							'rm-atlas-package-action',
-							unit.source.location,
-							0,
-							function () { openSourceLocation(unit.source.location); }
-						);
-					if (hasEmbeddedSource) action.type = 'button';
+					// Decision 222: source actions are GitHub/GitLab jumps
+					// (new tab) or server open actions — never an inline
+					// code drawer. Without either, no action is offered.
+					var action = sourceActionElement(
+						'',
+						'rm-atlas-package-action',
+						unit.source.location,
+						0,
+						function () { openSourceLocation(unit.source.location); }
+					);
+					if (!action) {
+						item.appendChild(txt('code', 'rm-atlas-package-name', label));
+						list.appendChild(item);
+						return;
+					}
 					action.setAttribute('aria-label', msg(
 						'main.atlas.workspace.open_package_source',
 						{ package: unit.name }
 					));
 					action.appendChild(txt('code', 'rm-atlas-package-name', label));
 					action.appendChild(txt('span', 'rm-atlas-package-open', '↗'));
-					if (hasEmbeddedSource) {
-						action.onclick = function () {
-							openSourceSnippet(unit.source.snippet, unit.source.location, false, { drawerFirst: true });
-						};
-					}
 					item.appendChild(action);
 				} else {
 					var unavailable = el('span', 'rm-atlas-package-unavailable');
@@ -7445,12 +7495,19 @@
 					'main.atlas.workspace.authority',
 					{ authority: msg('main.atlas.workspace.authority.resolved') }
 				)));
-				var sourceButton = txt('button', 'rm-atlas-source-action', msg('main.open.exact.source'));
-				sourceButton.type = 'button';
-				sourceButton.onclick = function () {
-					openSourceSnippet(relation.snippet, relation.location, false, { drawerFirst: true });
-				};
-				card.appendChild(sourceButton);
+				// Decision 222: source actions are GitHub/GitLab jumps (new
+				// tab) or server open actions — never an inline code drawer.
+				// Without either, the exact source stays a plain reference.
+				var sourceButton = sourceActionElement(
+					msg('main.open.exact.source'),
+					'rm-atlas-source-action',
+					relation.location || sourceSnippetLocation(relation.snippet),
+					relation.snippet && relation.snippet.end_line || 0,
+					function () {
+						openSourceSnippet(relation.snippet, relation.location, false, { drawerFirst: true });
+					}
+				);
+				if (sourceButton) card.appendChild(sourceButton);
 				relationGrid.appendChild(card);
 			});
 			section.appendChild(relationGrid);
@@ -8330,7 +8387,9 @@
       snippet.end_line,
       function () { openSourceSnippet(snippet, sourceSnippetLocation(snippet)); }
     );
-    card.appendChild(show);
+    // Decision 222: without a GitHub/GitLab (or server) jump the related
+    // source stays a plain reference — never a dead button.
+    if (show) card.appendChild(show);
     return card;
   }
 
@@ -8621,43 +8680,24 @@
 	}
 
 	function openSourceLocation(location) {
-		if (!location || !location.path || !OPENABLE_PATH_SET[location.path]) return;
-		if (openStaticSource(location, location.end_line)) return;
-		if (serverMode() && currentRunID() && SOURCE_IDS[location.path]) {
-			requestOpenFile(location.path, Number(location.line) || 0, Number(location.column) || 0);
-			return;
-		}
-		var snippet = embeddedSourceForLocation(location);
-		if (snippet) {
-			openSourceSnippet(snippet, location);
-		}
+	  if (!location || !location.path || !OPENABLE_PATH_SET[location.path]) return;
+	  if (openStaticSource(location, location.end_line)) return;
+	  if (serverMode() && currentRunID() && SOURCE_IDS[location.path]) {
+	    requestOpenFile(location.path, Number(location.line) || 0, Number(location.column) || 0);
+	  }
 	}
 
+  // Decision 222: source actions never open an inline code drawer in the
+  // user surface — they always jump: GitHub/GitLab (static source mode) or
+  // the repository server open action. When neither is available the action
+  // is simply not offered (callers show the plain location text).
   function openSourceSnippet(snippet, location, expanded, options) {
     options = options || {};
     var resolved = sourceSnippetLocation(snippet, location);
-    if (!options.drawerFirst && openStaticSource(resolved, snippet && snippet.end_line)) return;
-    if (!sourceSnippetHasCode(snippet) || !OPENABLE_PATH_SET[snippet.path]) return;
-    var next = reduceWorkspaceState(workspaceState, {
-      type: 'open_source',
-      selection: {
-        path: snippet.path,
-        line: resolved.line,
-        column: resolved.column,
-        snippet: snippet,
-        expanded: !!expanded,
-			drawerFirst: !!options.drawerFirst,
-      },
-    }, USER_MECHANISMS);
-    var reference = sourceDrawerHistoryReference(next.sourceLocation);
-    var replacingDrawer = !!(window.history && window.history.state && window.history.state.sourceDrawer);
-    writeWorkspaceHistory(
-      String(window.location && window.location.hash || workspaceHashForState(next)),
-      next,
-      { replace: replacingDrawer, sourceDrawer: reference }
-    );
-    workspaceState = next;
-    renderSourceDrawer();
+    if (openStaticSource(resolved, snippet && snippet.end_line)) return;
+    if (serverMode() && currentRunID() && snippet && OPENABLE_PATH_SET[snippet.path]) {
+      requestOpenFile(snippet.path, Number(resolved.line) || 0, Number(resolved.column) || 0);
+    }
   }
 
   function closeSourceDrawer() {
@@ -9046,6 +9086,11 @@
 				file_count: Object.keys(componentFiles).length,
 				sources: sources,
 				surface_starts: surfaceStarts,
+				member_count: Array.isArray(component.members) ? component.members.length : 0,
+				// Decision 222: authority and evidence composition travel with
+				// the component so the inspector can state them truthfully.
+				authority: architectureGroupingAuthority(),
+				evidence_composition: componentEvidenceComposition(component),
 				studies: matches.map(function (match) {
 					return {
 						id: match.direction.id,
@@ -9152,16 +9197,38 @@
         root.appendChild(txt('p', 'rm-architecture-synthesis-note' + (synthesisNote.warning ? ' rm-warning' : ''), synthesisNote.copy));
       }
     }
-    // Decision 218 (D): the relation area is a closed three-state
-    // presentation derived from exact evidence.
+    // Decision 221 authority + coverage axes: one compact truth strip above
+    // the relations area. Grouping authority and member evidence are never
+    // conflated — the strip states who owns the grouping claim and how much
+    // of the requested surface it covers.
+    var truthStrip = renderArchitectureAuthorityStrip();
+    if (truthStrip) root.appendChild(truthStrip);
+    // Decision 222: the map/scheme is the first-class content — everything
+    // else (relations inventory, component list) comes after it. The canvas
+    // never reads as a runtime graph when no relation evidence exists.
+    var relations = architectureRelationships();
+    var relationState = architectureRelationState();
+    var componentList = renderArchitectureComponentList();
+    var canvasCard = null;
+    if (DATA.architecture_canvas && window.RepomapArchitectureCanvas) {
+      canvasCard = el('section', 'rm-card rm-architecture-canvas-card');
+      if (relationState === 'no_supported_relation_evidence') {
+        canvasCard.appendChild(txt('p', 'rm-architecture-canvas-conceptual rm-warning', msg('main.architecture.canvas.conceptual')));
+      }
+      architectureCanvasHost = el('div', 'rm-architecture-canvas-host');
+      canvasCard.appendChild(architectureCanvasHost);
+      root.appendChild(canvasCard);
+    } else {
+      var systemMap = renderUserSystemMap(DATA.high_level_map || []);
+      if (systemMap) root.appendChild(systemMap);
+    }
+    // Relation area after the map: a closed three-state presentation derived
+    // from exact evidence (Decision 218 D).
     //  - proven_component_relations: labeled relation list (and canvas);
     //  - member_relations_unprojected: exact structural-fact count and why no
     //    safe component edge was created;
     //  - no_supported_relation_evidence: the view is labeled a conceptual /
-    //    package grouping and the structured list is primary — a zero-edge
-    //    canvas never reads as a runtime graph.
-    var relations = architectureRelationships();
-    var relationState = architectureRelationState();
+    //    package grouping and the structured list is primary.
     if (relations.length) {
       root.appendChild(renderArchitectureRelations(relations));
     } else if (relationState === 'member_relations_unprojected') {
@@ -9169,35 +9236,15 @@
     } else {
       root.appendChild(txt('p', 'rm-architecture-no-relation-evidence rm-warning', msg('main.architecture.no_relation_evidence')));
     }
-    var componentList = renderArchitectureComponentList();
     if (componentList) {
-      // Decision 218 (D): with no supported relation evidence the structured
-      // list is the primary representation; the canvas (if any) is clearly
-      // secondary and never implies runtime order.
-      if (relationState === 'no_supported_relation_evidence') {
-        root.appendChild(componentList);
-        componentList = null;
-      }
-    }
-    if (DATA.architecture_canvas && window.RepomapArchitectureCanvas) {
-      var card = el('section', 'rm-card rm-architecture-canvas-card');
-      if (relationState === 'no_supported_relation_evidence') {
-        card.appendChild(txt('p', 'rm-architecture-canvas-conceptual rm-warning', msg('main.architecture.canvas.conceptual')));
-      }
-      architectureCanvasHost = el('div', 'rm-architecture-canvas-host');
-      card.appendChild(architectureCanvasHost);
-      root.appendChild(card);
-    } else {
-      var systemMap = renderUserSystemMap(DATA.high_level_map || []);
-      if (systemMap) root.appendChild(systemMap);
-      else if (!componentList) root.appendChild(txt('p', 'rm-empty-state', msg('main.chrome.open.one.of.the.suggested.source.files')));
+      // With no supported relation evidence the structured list is the
+      // primary representation (it already follows the map in layout).
+      root.appendChild(componentList);
     }
     // Decision 217: compact unmapped-evidence disclosure preserving every
-    // exact item behind an expand action; a structured component list
-    // alternative next to the desktop map.
+    // exact item behind an expand action.
     var unmapped = renderArchitectureUnmappedDisclosure();
     if (unmapped) root.appendChild(unmapped);
-    if (componentList) root.appendChild(componentList);
     renderArchitectureReturn();
   }
 
@@ -9288,14 +9335,41 @@
     (DATA.architecture_canvas && Array.isArray(DATA.architecture_canvas.behavior_anchors) ? DATA.architecture_canvas.behavior_anchors : []).forEach(function (anchor) {
       if (anchor && anchor.id) anchors[String(anchor.id)] = String(anchor.label || anchor.name || anchor.id);
     });
-    return rels.slice(0, 12).map(function (rel) {
+    return rels.slice(0, 40).map(function (rel) {
+      var location = rel && rel.location && rel.location.path ? rel.location : null;
       return {
         id: String(rel && rel.id || ''),
         kind: String(rel && rel.kind || ''),
+        evidenceKind: String(rel && rel.evidence_kind || ''),
         from: anchors[String(rel && rel.from_anchor_id || '')] || String(rel && rel.from_anchor_id || ''),
         to: anchors[String(rel && rel.to_anchor_id || '')] || String(rel && rel.to_anchor_id || ''),
+        path: location && location.path || '',
+        line: location && location.line || 0,
+        certainty: String(rel && rel.certainty || ''),
       };
     });
+  }
+
+  // architectureRelationKinds groups relations by kind with a human summary
+  // of the proof shape before any raw inventory (Decision 221 relations
+  // storytelling). Static structural support is distinguished from runtime
+  // transition by the exact evidence kind.
+  function architectureRelationSummary(relations) {
+    if (!relations.length) return null;
+    var byKind = {};
+    var staticCount = 0;
+    var runtimeCount = 0;
+    relations.forEach(function (relation) {
+      var kind = relation.kind || 'relation';
+      byKind[kind] = (byKind[kind] || 0) + 1;
+      var evidence = String(relation.evidenceKind || '');
+      if (evidence.indexOf('runtime') >= 0 || evidence.indexOf('transition') >= 0 || evidence.indexOf('handoff') >= 0) {
+        runtimeCount++;
+      } else {
+        staticCount++;
+      }
+    });
+    return { byKind: byKind, staticCount: staticCount, runtimeCount: runtimeCount, total: relations.length };
   }
 
   function renderArchitectureRelations(relations) {
@@ -9305,15 +9379,68 @@
       msg('main.architecture.relations.title'),
       msg('main.architecture.relations.copy')
     ));
-    var list = el('ul', 'rm-architecture-relation-list');
+    var summary = architectureRelationSummary(relations);
+    if (summary) {
+      // Human-facing summary before the raw inventory: how many relations,
+      // how many are static structural support vs runtime transition, and
+      // the kind breakdown.
+      section.appendChild(txt('p', 'rm-architecture-relations__summary', msg(
+        'main.architecture.relations.summary',
+        { total: summary.total, staticCount: summary.staticCount, runtimeCount: summary.runtimeCount }
+      )));
+      var kindNames = Object.keys(summary.byKind).sort();
+      if (kindNames.length) {
+        var kindList = el('ul', 'rm-architecture-relation-kinds');
+        kindNames.forEach(function (kind) {
+          var item = txt('li', 'rm-architecture-relation-kind-row', '');
+          item.appendChild(txt('span', 'rm-architecture-relation-kind-name', kind));
+          item.appendChild(txt('span', 'rm-architecture-relation-kind-count', String(summary.byKind[kind])));
+          kindList.appendChild(item);
+        });
+        section.appendChild(kindList);
+      }
+    }
+    // Grouped raw inventory: each relation is a labeled edge with an exact
+    // source action when the evidence has a location.
+    var groups = {};
     relations.forEach(function (relation) {
-      var item = txt('li', 'rm-architecture-relation-item', '');
-      item.appendChild(txt('strong', '', relation.from));
-      item.appendChild(txt('span', 'rm-architecture-relation-kind', relation.kind));
-      item.appendChild(txt('strong', '', relation.to));
-      list.appendChild(item);
+      var key = String(relation.kind || 'relation');
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(relation);
     });
-    section.appendChild(list);
+    var kindNames = Object.keys(groups).sort();
+    kindNames.forEach(function (kind) {
+      var groupSection = el('section', 'rm-architecture-relation-group');
+      groupSection.appendChild(txt('h4', 'rm-architecture-relation-group__label', kind));
+      var list = el('ul', 'rm-architecture-relation-list');
+      groups[kind].forEach(function (relation) {
+        var item = txt('li', 'rm-architecture-relation-item', '');
+        item.appendChild(txt('strong', '', relation.from));
+        item.appendChild(txt('span', 'rm-architecture-relation-arrow', '→'));
+        item.appendChild(txt('strong', '', relation.to));
+        if (relation.path) {
+          // Decision 221: an exact source action is shown only when the
+          // persisted evidence actually contains the code for that line
+          // (embedded snippet); a location-only resolution stays text-only —
+          // never a dead button.
+          var resolution = exactOverviewActionResolutionForLocation({ path: relation.path, line: relation.line || 0 });
+          if (resolution && resolution.source && resolution.source.snippet) {
+            var action = el('button', 'rm-source-action-link rm-architecture-relation-source', '');
+            action.type = 'button';
+            action.textContent = relation.path + ':' + relation.line;
+            action.onclick = function () {
+              openSourceSnippet(resolution.source.snippet, resolution.source.location, false, { drawerFirst: true });
+            };
+            item.appendChild(action);
+          } else {
+            item.appendChild(txt('span', 'rm-architecture-relation-source rm-architecture-relation-source--text', relation.path + ':' + relation.line));
+          }
+        }
+        list.appendChild(item);
+      });
+      groupSection.appendChild(list);
+      section.appendChild(groupSection);
+    });
     return section;
   }
 
@@ -9342,6 +9469,86 @@
     return details;
   }
 
+  // Decision 221/216 authority axis: the grouping authority of the whole
+  // canvas, derived exclusively from the exact closed canvas source and
+  // synthesis state — never from component membership.
+  //   validated_model      -> validated model hypothesis
+  //   partial_model        -> partial validated model hypothesis
+  //   local_anchors / local_* / package_fallback -> local deterministic fallback
+  function architectureGroupingAuthority() {
+  	var canvas = DATA.architecture_canvas || {};
+  	var source = String(canvas.architecture_source || canvas.source || '');
+  	if (source === 'validated_model') return 'validated';
+  	if (source === 'partial_model') return 'partial';
+  	return 'local';
+  }
+
+  // architectureAuthorityMessageID maps the closed authority axis to copy.
+  function architectureAuthorityMessageID(authority) {
+  	if (authority === 'validated') return 'main.architecture.authority.validated';
+  	if (authority === 'partial') return 'main.architecture.authority.partial';
+  	return 'main.architecture.authority.local';
+  }
+
+  // architectureCoverageState compiles the exact coverage axis: complete,
+  // partial (covered/requested), or no synthesis (local remainder only).
+  function architectureCoverageState() {
+  	var synthesis = DATA.architecture_synthesis || {};
+  	var state = String(synthesis.state || '');
+  	if (state === 'succeeded' || state === 'accepted') {
+  		var covered = Number(synthesis.covered_conceptual_count) || 0;
+  		var requested = Number(synthesis.requested_conceptual_count) || 0;
+  		if (requested > 0 && covered >= requested) return { kind: 'complete' };
+  		if (requested > 0) return { kind: 'partial', covered: covered, requested: requested };
+  	}
+  	return { kind: 'local' };
+  }
+
+  // componentEvidenceComposition classifies a component's member evidence
+  // into exact-only, mixed exact + package, or package/structure only.
+  // This is the member-evidence axis and is independent of grouping
+  // authority: a local deterministic component with exact sources is still
+  // a local grouping, and a validated component with package-only members
+  // is still a validated hypothesis about structure.
+  function componentEvidenceComposition(component) {
+  	var navigation = ARCHITECTURE_COMPONENT_NAVIGATION && Number(ARCHITECTURE_COMPONENT_NAVIGATION.version) === 1
+  		? (ARCHITECTURE_COMPONENT_NAVIGATION.components || []).filter(function (entry) {
+  			return entry && entry.component_id === component.id;
+  		})[0] : null;
+  	var exactSources = (component.symbol_sources && component.symbol_sources.length) ||
+  		(navigation && navigation.symbol_sources && navigation.symbol_sources.length) ||
+  		(component.members || []).filter(function (member) {
+  			return member && member.id && String(member.id.kind) === 'symbol';
+  		}).length;
+  	var packages = (navigation && navigation.package_participant_ids && navigation.package_participant_ids.length) ||
+  		(component.package_ids && component.package_ids.length) ||
+  		(component.members || []).filter(function (member) {
+  			return member && member.id && String(member.id.kind) === 'package';
+  		}).length;
+  	if (exactSources && packages) return 'mixed';
+  	if (exactSources) return 'exact';
+  	return 'package';
+  }
+
+  function renderArchitectureAuthorityStrip() {
+  	var authority = architectureGroupingAuthority();
+  	var coverage = architectureCoverageState();
+  	var items = [];
+  	items.push(msg(architectureAuthorityMessageID(authority)));
+  	if (coverage.kind === 'complete') {
+  		items.push(msg('main.architecture.coverage.complete'));
+  	} else if (coverage.kind === 'partial') {
+  		items.push(msg('main.architecture.coverage.partial', { covered: coverage.covered, requested: coverage.requested }));
+  	} else {
+  		items.push(msg('main.architecture.coverage.local'));
+  	}
+  	var strip = el('div', 'rm-architecture-truth-strip');
+  	items.forEach(function (item) {
+  		strip.appendChild(txt('span', 'rm-architecture-truth-strip__item', item));
+  	});
+  	return strip;
+  }
+
   function renderArchitectureComponentList() {
     var canvas = DATA.architecture_canvas || {};
     var remainderID = String(canvas.local_remainder_component_id || '');
@@ -9358,11 +9565,17 @@
     var list = el('ol', 'rm-architecture-list__items');
     components.forEach(function (component) {
       var tier = componentEvidenceTier(component);
+      var composition = componentEvidenceComposition(component);
       var item = txt('li', 'rm-architecture-list__item rm-architecture-list__item--' + tier, '');
       var primary = el('button', 'rm-architecture-list__primary');
       primary.type = 'button';
       primary.appendChild(txt('strong', '', String(component.name || component.id)));
       primary.appendChild(txt('span', 'rm-evidence-tier rm-evidence-tier--' + tier, componentEvidenceTierLabel(tier)));
+      primary.appendChild(txt('span', 'rm-evidence-composition rm-evidence-composition--' + composition, msg(
+        composition === 'exact' ? 'main.architecture.evidence.exact'
+          : composition === 'mixed' ? 'main.architecture.evidence.mixed'
+          : 'main.architecture.evidence.package'
+      )));
       primary.onclick = function () {
         if (architectureCanvasView) {
           architectureCanvasView.openComponent(String(component.id));

@@ -1844,7 +1844,11 @@ func readOptionalAtlasStudyArtifact(
 	if err != nil {
 		return nil, false, fmt.Errorf("atlas study report: %w", err)
 	}
-	if _, found := secretscan.DetectAlways(string(data)); found {
+	// Owner doctrine: locally expanded repository source legitimately contains
+	// credential-shaped assignments (identity providers, config fixtures). Real
+	// credential material still fails closed; the noisy assignment heuristic
+	// must never make Study unavailable on a repo that mentions credentials.
+	if _, found := secretscan.DetectSourceMaterial(string(data)); found {
 		return nil, false, fmt.Errorf("atlas study report: %s contains an obvious credential", name)
 	}
 	return data, true, nil

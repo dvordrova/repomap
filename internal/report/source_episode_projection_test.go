@@ -585,10 +585,11 @@ const claimTitles = nodes
 const states = nodes
   .filter((node) => String(node.className).includes("rm-source-episode__state "))
   .map((node) => node.textContent);
-const sourceButtons = nodes.filter((node) =>
+const sourceLinks = nodes.filter((node) =>
   String(node.className).split(/\s+/).includes("rm-source-episode__source"));
-if (sourceButtons.length) sourceButtons[0].onclick();
-const openedSource = api.workspaceStateSnapshot().sourceLocation;
+const sourceButtons = sourceLinks.filter((node) => node.tagName === "A");
+if (sourceButtons.length) sourceButtons[0].onclick && sourceButtons[0].onclick();
+const openedSourcePath = sourceButtons[0] ? (sourceButtons[0].attributes.href || "") : "";
 report.source_episode.claims.forEach((claim) => { claim.sources = []; });
 report.source_episode.uncertainties.forEach((uncertainty) => { uncertainty.sources = []; });
 const withoutAuthority = api.renderSourceEpisode(report.source_episode);
@@ -604,8 +605,8 @@ process.stdout.write(JSON.stringify({
   claimTitles,
   states,
   sourceButtonCount: sourceButtons.length,
-  sourceButtonsAreDirect: sourceButtons.every((node) => typeof node.onclick === "function"),
-  openedSourcePath: openedSource && openedSource.path || "",
+  sourceButtonsAreDirect: sourceButtons.every((node) => typeof node.attributes.href === "string" && node.attributes.href.length > 0),
+  openedSourcePath: openedSourcePath,
   withoutAuthorityButtonCount: withoutAuthorityButtons.length,
   overviewSearchDestinations,
   tabSearchDestinations,
@@ -655,16 +656,21 @@ process.stdout.write(JSON.stringify({
 			}
 			firstAnchor := episode.Anchors[0]
 			reportJSON, err := json.Marshal(struct {
-				RepoName       string                   `json:"repo_name"`
-				OpenablePaths  []string                 `json:"openable_paths"`
-				SourceIDs      map[string]string        `json:"source_ids"`
-				UserSources    []map[string]any         `json:"user_sources"`
-				SemanticSearch map[string]any           `json:"semantic_search"`
-				SourceEpisode  *sourceEpisodeProjection `json:"source_episode"`
+				RepoName        string                   `json:"repo_name"`
+				OpenablePaths   []string                 `json:"openable_paths"`
+				SourceIDs       map[string]string        `json:"source_ids"`
+				GitHubSource    map[string]any           `json:"github_source_links"`
+				UserSources     []map[string]any         `json:"user_sources"`
+				SemanticSearch  map[string]any           `json:"semantic_search"`
+				SourceEpisode   *sourceEpisodeProjection `json:"source_episode"`
 			}{
 				RepoName:      episode.Repository.Name,
 				OpenablePaths: data.OpenablePaths,
 				SourceIDs:     data.SourceIDs,
+				GitHubSource: map[string]any{
+					"repository_url": "https://github.com/example/fixture",
+					"revision":       strings.Repeat("1", 40),
+				},
 				SemanticSearch: map[string]any{
 					"version": 1,
 				},
@@ -734,8 +740,8 @@ process.stdout.write(JSON.stringify({
 			if got.SourceButtonCount == 0 || !got.SourceButtonsAreDirect {
 				t.Fatalf("authorized one-click source controls = %d, direct=%t", got.SourceButtonCount, got.SourceButtonsAreDirect)
 			}
-			if got.OpenedSourcePath != firstAnchor.Path {
-				t.Fatalf("source control opened %q, want %q", got.OpenedSourcePath, firstAnchor.Path)
+			if !strings.Contains(got.OpenedSourcePath, "github.com/example/fixture/blob") {
+				t.Fatalf("source control opened %q, want GitHub blob jump", got.OpenedSourcePath)
 			}
 			if got.WithoutAuthorityButtonCount != 0 {
 				t.Fatalf("missing SourceIDs left %d broken source controls", got.WithoutAuthorityButtonCount)

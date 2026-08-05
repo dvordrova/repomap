@@ -3840,68 +3840,48 @@ function architecturePartialTruth(data) {
    const context = this.userComponentContext(component);
    const actions = this.userComponentActions(component);
    if (!context) return;
+   // Decision 222: the detail card answers the seven product questions —
+   // what it is, why it matters, how work enters, what operations happen,
+   // which resources it touches, where to start reading, what remains
+   // unknown. Internal package/evidence roles stay detail material.
    this.inspectorHeading(
-    this.msg("architecture.label.code_area"),
+    this.msg("architecture.label.component"),
     component.name || this.msg("architecture.fallback.repository_component"),
     component.description
    );
 
-   if (subsystem && subsystem.name) {
-    const areaSection = this.inspectorSection(this.msg("architecture.fallback.repository_area"));
-    areaSection.appendChild(element("p", "rm-arch__copy", subsystem.name));
+   // Truth strip: grouping authority, member evidence composition, scope.
+   const truth = this.inspectorSection(this.msg("architecture.section.evidence"));
+   const authorityValue = context.authority === "validated"
+    ? this.msg("architecture.value.authority_validated")
+    : context.authority === "partial"
+     ? this.msg("architecture.value.authority_partial")
+     : this.msg("architecture.value.authority_local");
+   const evidenceValue = context.evidence_composition === "exact"
+    ? this.msg("architecture.value.evidence_exact")
+    : context.evidence_composition === "mixed"
+     ? this.msg("architecture.value.evidence_mixed")
+     : this.msg("architecture.value.evidence_package");
+   this.appendKeyValue(truth, this.msg("architecture.label.grouping_authority"), authorityValue);
+   this.appendKeyValue(truth, this.msg("architecture.label.member_evidence"), evidenceValue);
+   if (Number(context.member_count) > 0) {
+    this.appendKeyValue(truth, this.msg("architecture.label.scope"), this.msg("architecture.label.member_scope", { count: Number(context.member_count) }));
    }
 
-   if (array(context.package_paths).length > 0) {
-    const packages = this.inspectorSection(this.msg("architecture.section.package"));
-    const packageTargets = new Map(array(context.package_targets).map((target) => [text(target && target.path), target]));
-    array(context.package_paths).forEach((packagePath) => {
-     const target = packageTargets.get(text(packagePath));
-     if (target && target.actionable && locationLabel(target.location) && typeof this.options.openSourceLocation === "function") {
-      const button = element("button", "rm-arch__compact-package rm-arch__compact-package-action", packagePath);
-      button.type = "button";
-      this.listen(button, "click", () => this.options.openSourceLocation(target.location));
-      packages.appendChild(button);
-      return;
-     }
-     packages.appendChild(element("code", "rm-arch__compact-package", packagePath));
-    });
-    if (Number(context.file_count) > 0) {
-     packages.appendChild(element(
-      "p",
-      "rm-arch__compact-meta",
-      this.msg("architecture.count.repository_files", { count: Number(context.file_count) })
-     ));
-    }
+   // What remains unknown: model hypothesis / not-covered statement.
+   const unknown = this.inspectorSection(this.msg("architecture.section.what_remains_unknown"));
+   if (component.hypothesis) {
+    unknown.appendChild(element("p", "rm-arch__copy", this.msg("architecture.value.unknown_hypothesis")));
+   } else {
+    unknown.appendChild(element("p", "rm-arch__copy", this.msg("architecture.value.unknown_not_covered")));
    }
 
-   if (array(context.structural_relations).length > 0) {
-    const relations = this.inspectorSection(this.msg("architecture.section.code_relations"));
-    array(context.structural_relations).forEach((relation) => {
-     const from = text(relation && relation.from_label) || memberLabel(relation && relation.from, this.message);
-     const to = text(relation && relation.to_label) || memberLabel(relation && relation.to, this.message);
-     const location = relation && relation.location;
-     if (location && locationLabel(location) && typeof this.options.openLocation === "function") {
-      const action = element("button", "rm-arch__edge-jump rm-arch__compact-action");
-      action.type = "button";
-      action.appendChild(element("strong", null, from + " → " + to));
-      action.appendChild(element("span", null, locationLabel(location)));
-      this.listen(action, "click", () => this.options.openLocation(
-       location.path, location.line || 0, location.column || 0
-      ));
-      relations.appendChild(action);
-      return;
-     }
-     const reference = element("div", "rm-arch__compact-reference");
-     reference.appendChild(element("strong", null, from + " → " + to));
-     relations.appendChild(reference);
-    });
-   }
-
+   // How work enters: launch points / entry surfaces (exact sources).
    const surfaceStarts = array(context.surface_starts).filter((start) => (
     start && locationLabel(start.location)
    ));
    if (surfaceStarts.length > 0) {
-    const surfaceSection = this.inspectorSection(this.msg("architecture.section.launch_points"));
+    const entersSection = this.inspectorSection(this.msg("architecture.section.how_work_enters"));
     surfaceStarts.forEach((start) => {
      if (!start.actionable || typeof this.options.openSourceLocation !== "function") {
       const reference = element("div", "rm-arch__compact-reference");
@@ -3911,7 +3891,7 @@ function architecturePartialTruth(data) {
        start.label || this.msg("architecture.fallback.runtime_surface")
       ));
       reference.appendChild(element("span", null, locationLabel(start.location)));
-      surfaceSection.appendChild(reference);
+      entersSection.appendChild(reference);
       return;
      }
      const button = element("button", "rm-arch__edge-jump rm-arch__compact-action");
@@ -3923,10 +3903,11 @@ function architecturePartialTruth(data) {
      ));
      button.appendChild(element("span", null, locationLabel(start.location)));
      this.listen(button, "click", () => this.options.openSourceLocation(start.location));
-     surfaceSection.appendChild(button);
+     entersSection.appendChild(button);
     });
    }
 
+   // Where to start reading: representative exact sources.
    const sourceActions = actions.filter((action) => action.kind === "source");
    if (sourceActions.length > 0) {
     const sourceSection = this.inspectorSection(this.msg("architecture.section.start_in_code"));
@@ -3945,9 +3926,10 @@ function architecturePartialTruth(data) {
     });
    }
 
+   // Why it matters: study directions touching this component.
    const studyActions = actions.filter((action) => action.kind === "study");
    if (studyActions.length > 0) {
-    const studySection = this.inspectorSection(this.msg("architecture.section.reading_paths"));
+    const studySection = this.inspectorSection(this.msg("architecture.section.why_it_matters"));
     studyActions.forEach((action) => {
      const study = action.value;
      const button = element("button", "rm-arch__edge-jump rm-arch__compact-action");
@@ -3956,6 +3938,30 @@ function architecturePartialTruth(data) {
      button.appendChild(element("span", null, this.msg("architecture.action.open_reading_path")));
      this.listen(button, "click", () => this.options.openStudyDirection(study.id));
      studySection.appendChild(button);
+    });
+   }
+
+   // Operations: exact code relations observed for this component.
+   if (array(context.structural_relations).length > 0) {
+    const relations = this.inspectorSection(this.msg("architecture.section.operations"));
+    array(context.structural_relations).forEach((relation) => {
+     const from = text(relation && relation.from_label) || memberLabel(relation && relation.from, this.message);
+     const to = text(relation && relation.to_label) || memberLabel(relation && relation.to, this.message);
+     const location = relation && relation.location;
+     if (location && locationLabel(location) && typeof this.options.openLocation === "function") {
+      const action = element("button", "rm-arch__edge-jump rm-arch__compact-action");
+      action.type = "button";
+      action.appendChild(element("strong", null, from + " → " + to));
+      action.appendChild(element("span", null, locationLabel(location)));
+      this.listen(action, "click", () => this.options.openLocation(
+       location.path, location.line || 0, location.column || 0
+      ));
+      relations.appendChild(action);
+      return;
+     }
+     const reference = element("div", "rm-arch__compact-reference");
+     reference.appendChild(element("strong", null, from + " → " + to));
+     relations.appendChild(reference);
     });
    }
   }

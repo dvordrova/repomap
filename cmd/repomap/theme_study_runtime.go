@@ -340,7 +340,7 @@ func runThemeStudyProductForRun(
 	if err != nil {
 		return outcome, fmt.Errorf("theme study run: encode expansion: %w", err)
 	}
-	if unsafeErr := themeUnsafePayload("theme_source_expansion", expansionBytes); unsafeErr != nil {
+	if unsafeErr := themeUnsafeSourcePayload("theme_source_expansion", expansionBytes); unsafeErr != nil {
 		return outcome, unsafeErr
 	}
 	if err := writer.WriteValidatedFile(themestudy.ExpansionArtifactFilename, expansionBytes, func(saved []byte) error {

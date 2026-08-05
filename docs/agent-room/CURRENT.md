@@ -7,6 +7,7 @@ Active decisions (each approved by the repository owner via its supervisory goal
 3. decisions/218-report-truth-corrective.md
 4. decisions/220-surface-discovery-v2.md
 5. decisions/221-overview-truth-first-action.md
+6. decisions/222-architecture-truth-model-relations-ux.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)

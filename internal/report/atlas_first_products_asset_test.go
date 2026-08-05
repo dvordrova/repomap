@@ -119,6 +119,10 @@ const directions = readingCounts.map((count, directionIndex) => {
 const report = {
   repo_name: "fixture", report_language: "en", user_mechanisms: [], user_topics: [], user_sources: [],
   openable_paths: paths, source_ids: {},
+  github_source_links: {
+    repository_url: "https://github.com/example/fixture",
+    revision: "1".repeat(40),
+  },
   navigator: { version: 1, state: "empty" },
   repository_atlas: {
     version: 1,
@@ -233,11 +237,10 @@ directionCards.forEach((directionCard, directionIndex) => {
   const directionTitle = byClass(directionCard, "rm-study-direction-card__title")[0];
   const directionSources = byClass(directionCard, "rm-study-direction-card__source");
   const directionExactClicks = directionSources.map((action, readingIndex) => {
-    action.onclick();
-    const state = api.workspaceStateSnapshot();
+    // Decision 222: source actions are GitHub/GitLab jumps (new tab), never
+    // an inline code drawer and never a local state mutation.
     return {
-      path: state.sourceLocation && state.sourceLocation.path,
-      line: state.sourceLocation && state.sourceLocation.line,
+      href: action.attributes && action.attributes.href || "",
       expectedPath: directions[directionIndex].reading_anchors[readingIndex].location.path,
       expectedLine: directions[directionIndex].reading_anchors[readingIndex].location.line,
     };
@@ -248,13 +251,9 @@ directionCards.forEach((directionCard, directionIndex) => {
   const readingActions = byClass(detail, "rm-study-reading-anchor__open");
   const exactClicks = [];
   readingActions.forEach((action, readingIndex) => {
-    action.onclick();
-    const state = api.workspaceStateSnapshot();
     exactClicks.push({
-      path: state.sourceLocation && state.sourceLocation.path,
-      line: state.sourceLocation && state.sourceLocation.line,
-      drawerHidden: roots["rm-source-drawer"].hidden,
-      drawerText: text(roots["rm-source-drawer-content"]),
+      href: action.attributes && action.attributes.href || "",
+      drawerHidden: !roots["rm-source-drawer"] || roots["rm-source-drawer"].hidden,
       expectedPath: directions[directionIndex].reading_anchors[readingIndex].location.path,
       expectedLine: directions[directionIndex].reading_anchors[readingIndex].location.line,
     });
@@ -303,18 +302,15 @@ process.stdout.write(JSON.stringify({
 			DirectionTitleTag    string `json:"directionTitleTag"`
 			DirectionSources     int    `json:"directionSources"`
 			DirectionExactClicks []struct {
-				Path         string `json:"path"`
-				Line         int    `json:"line"`
+				Href         string `json:"href"`
 				ExpectedPath string `json:"expectedPath"`
 				ExpectedLine int    `json:"expectedLine"`
 			} `json:"directionExactClicks"`
 			ExactClicks []struct {
-				Path         string `json:"path"`
-				Line         int    `json:"line"`
-				DrawerHidden bool   `json:"drawerHidden"`
-				DrawerText   string `json:"drawerText"`
-				ExpectedPath string `json:"expectedPath"`
-				ExpectedLine int    `json:"expectedLine"`
+				Href          string `json:"href"`
+				DrawerHidden  bool   `json:"drawerHidden"`
+				ExpectedPath  string `json:"expectedPath"`
+				ExpectedLine  int    `json:"expectedLine"`
 			} `json:"exactClicks"`
 		} `json:"routeResults"`
 		ArchitectureText    string `json:"architectureText"`
@@ -363,14 +359,16 @@ process.stdout.write(JSON.stringify({
 			t.Fatalf("Study route %d = %#v", index+1, route)
 		}
 		for _, click := range route.DirectionExactClicks {
-			if click.Path != click.ExpectedPath || click.Line != click.ExpectedLine {
-				t.Fatalf("Study card exact source click = %#v", click)
+			if !strings.Contains(click.Href, "github.com/example/fixture/blob") ||
+				!strings.Contains(click.Href, click.ExpectedPath) {
+				t.Fatalf("Study card exact source href = %#v", click)
 			}
 		}
 		for _, click := range route.ExactClicks {
-			if click.Path != click.ExpectedPath || click.Line != click.ExpectedLine || click.DrawerHidden ||
-				!strings.Contains(click.DrawerText, click.ExpectedPath) {
-				t.Fatalf("Study exact source click = %#v", click)
+			if !click.DrawerHidden ||
+				!strings.Contains(click.Href, "github.com/example/fixture/blob") ||
+				!strings.Contains(click.Href, click.ExpectedPath) {
+				t.Fatalf("Study exact source href = %#v", click)
 			}
 		}
 	}

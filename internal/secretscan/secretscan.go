@@ -85,6 +85,27 @@ func DetectAlways(text string) (string, bool) {
 	return detect(text)
 }
 
+// DetectSourceMaterial performs mandatory credential detection on locally
+// expanded repository source before it is sent to a model provider. Real
+// credential material (private keys, bearer credentials, secret keys,
+// provider tokens, access keys) always fails closed. The credential
+// assignment heuristic is deliberately ignored here: production source
+// legitimately contains credential-shaped assignments (password/token/secret
+// fields of an identity provider), and per the repository owner doctrine a
+// repo that mentions credentials is the problem of whoever left them there,
+// not a reason to make Study unavailable.
+func DetectSourceMaterial(text string) (string, bool) {
+	for _, candidate := range patterns {
+		if candidate.kind == "credential assignment" {
+			continue
+		}
+		if candidate.pattern.MatchString(text) {
+			return candidate.kind, true
+		}
+	}
+	return "", false
+}
+
 func detect(text string) (string, bool) {
 	for _, candidate := range patterns {
 		for _, match := range candidate.pattern.FindAllString(text, -1) {
