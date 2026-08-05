@@ -97,7 +97,7 @@ func (stub *architectureSynthesisStub) SynthesizeComponentLandscapeBodyMeasured(
 		Content: append([]byte(nil), stub.response...), Attempts: 1,
 		RequestBytes: len(body), ResponseBytes: len(stub.response),
 	}
-	if stub.err == nil {
+	if stub.err == nil || stub.finish == "length" {
 		result.UsageReported = true
 		result.InputTokens = 101
 		result.OutputTokens = 53
@@ -991,7 +991,7 @@ func TestEnsureArchitectureSynthesisRejectsInvalidOutputWithoutPublishingOrCachi
 	}
 }
 
-func TestEnsureArchitectureSynthesisResourceLimitDoesNotPublishPartialArtifacts(t *testing.T) {
+func TestEnsureArchitectureSynthesisResourceLimitPublishesOnlyFailedStatus(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		provider func() *architectureSynthesisStub
@@ -999,10 +999,15 @@ func TestEnsureArchitectureSynthesisResourceLimitDoesNotPublishPartialArtifacts(
 		{
 			name: "provider resource error",
 			provider: func() *architectureSynthesisStub {
-				return &architectureSynthesisStub{err: &modelresearch.ResourceLimitError{
-					Stage: "architecture_synthesis", Kind: modelresearch.ResourceLimitOutputTokens,
-					Limit: 64_000, ConfiguredMaxTokens: 64_000, FinishReason: "length",
-				}}
+				return &architectureSynthesisStub{
+					response: []byte(`{"kind":"subsystem","ref":"g1"`),
+					finish:   "length",
+					err: &modelresearch.ResourceLimitError{
+						Stage: "architecture_synthesis", Kind: modelresearch.ResourceLimitOutputTokens,
+						Limit: 64_000, ConfiguredMaxTokens: 64_000, FinishReason: "length",
+						Observed: 64_000, ObservedKnown: true, OutputTokens: 64_000,
+					},
+				}
 			},
 		},
 		{
@@ -1047,6 +1052,9 @@ func TestEnsureArchitectureSynthesisResourceLimitDoesNotPublishPartialArtifacts(
 			if !errors.As(synthesisErr, &limitErr) || provider.calls != 1 {
 				t.Fatalf("synthesis error/provider calls = %#v/%d", synthesisErr, provider.calls)
 			}
+			if !isArchitectureOutputResourceExhausted(synthesisErr) {
+				t.Fatalf("attempted output exhaustion was not typed as publishable: %#v", synthesisErr)
+			}
 			if err := persistArchitectureSynthesisStatus(runDir, outcome, synthesisErr); err != nil {
 				t.Fatal(err)
 			}
@@ -1054,16 +1062,41 @@ func TestEnsureArchitectureSynthesisResourceLimitDoesNotPublishPartialArtifacts(
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !bytes.Equal(beforeState, afterState) {
-				t.Fatal("terminal resource error mutated model research stage metrics")
+			if bytes.Equal(beforeState, afterState) {
+				t.Fatal("attempted Architecture resource exhaustion did not record model research metrics")
 			}
-			for _, name := range []string{
-				report.ArchitectureSynthesisFile,
-				report.ArchitectureSynthesisStatusFile,
-			} {
-				if _, err := os.Lstat(filepath.Join(runDir, name)); !errors.Is(err, os.ErrNotExist) {
-					t.Fatalf("terminal resource error published %s: %v", name, err)
+			var recorded modelresearch.State
+			if err := json.Unmarshal(afterState, &recorded); err != nil {
+				t.Fatal(err)
+			}
+			if recorded.Architecture.Status != "resource_limited" ||
+				recorded.Architecture.SemanticCalls != 1 ||
+				recorded.Usage.SemanticCalls != 1 {
+				t.Fatalf("resource-limited accounting = %#v", recorded.Architecture)
+			}
+			statusData, err := os.ReadFile(filepath.Join(runDir, report.ArchitectureSynthesisStatusFile))
+			if err != nil {
+				t.Fatalf("failed Architecture status was not persisted: %v", err)
+			}
+			var status report.ArchitectureSynthesisStatus
+			if err := json.Unmarshal(statusData, &status); err != nil {
+				t.Fatal(err)
+			}
+			if status.State != report.ArchitectureSynthesisFailed ||
+				status.ErrorCode != report.ArchitectureSynthesisErrorProviderOutputLimit ||
+				status.ProviderRequestCount != 1 || status.ConfiguredMaxTokens <= 0 {
+				t.Fatalf("failed status = %#v", status)
+			}
+			if test.name == "provider resource error" {
+				if status.FinishReason != "length" || status.ResponseComplete ||
+					status.ObservedOutputTokens <= 0 || !status.UsageReported {
+					t.Fatalf("length-ended failed status = %#v", status)
 				}
+			} else if status.ResponseBytes == 0 {
+				t.Fatalf("response-byte failed status = %#v", status)
+			}
+			if _, err := os.Lstat(filepath.Join(runDir, report.ArchitectureSynthesisFile)); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("resource exhaustion published a synthesis record: %v", err)
 			}
 			cacheFiles, err := filepath.Glob(filepath.Join(
 				runsDir,
@@ -1074,10 +1107,79 @@ func TestEnsureArchitectureSynthesisResourceLimitDoesNotPublishPartialArtifacts(
 				t.Fatal(err)
 			}
 			if len(cacheFiles) != 0 {
-				t.Fatalf("terminal resource error populated cache: %v", cacheFiles)
+				t.Fatalf("resource exhaustion populated cache: %v", cacheFiles)
 			}
 		})
 	}
+}
+
+func TestArchitectureOutputExhaustionJournalsOneRedactedExchange(t *testing.T) {
+	bundle := architectureSynthesisTestBundle()
+	provider := &architectureSynthesisStub{
+		response: []byte(`{"records":[{"kind":"subsystem","ref":"g1","name":"Fixture core","description":"Fixture grouping"},{"kind":"component","ref":"c1","subsystem_ref":"g1","name":"Fixture component","description":"Fixture grouping","member_refs":[{"kind":"package","ref":"p1"},{"kind":"package","ref":"p2"},{"kind":"package","ref":"p3"},{"kind":"package","ref":"p1"}`),
+		finish:   "length",
+		err: &modelresearch.ResourceLimitError{
+			Stage: "architecture_synthesis", Kind: modelresearch.ResourceLimitOutputTokens,
+			Limit: 64_000, ConfiguredMaxTokens: 64_000, FinishReason: "length",
+			Observed: 64_000, ObservedKnown: true, OutputTokens: 64_000,
+		},
+	}
+	prompt, err := componentmap.BuildSynthesisPrompt(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantBody, err := provider.ComponentSynthesisPromptJSON(prompt)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runDir := t.TempDir()
+	writer, err := debugdump.OpenWriter(runDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, synthesisErr := ensureArchitectureSynthesisWithOptions(
+		t.Context(), bundle, runDir, "revision-exchange-length",
+		"openai-compatible/bearer", "test-model", provider,
+		architectureSynthesisOptions{
+			disableCache: true, exchangeWriter: writer,
+			providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256(),
+		},
+	)
+	if closeErr := writer.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if !isArchitectureOutputResourceExhausted(synthesisErr) {
+		t.Fatalf("synthesis error = %#v, want typed output exhaustion", synthesisErr)
+	}
+	if provider.calls != 1 || len(provider.bodies) != 1 ||
+		!bytes.Equal(provider.bodies[0], wantBody) {
+		t.Fatalf("provider calls/bodies = %d/%d, want exactly one exact body", provider.calls, len(provider.bodies))
+	}
+	directories, err := os.ReadDir(filepath.Join(runDir, debugdump.SemanticExchangesDir))
+	if err != nil || len(directories) != 1 {
+		t.Fatalf("failed attempt journaled %d exchange dirs, want exactly 1 (err %v)", len(directories), err)
+	}
+	var recorded debugdump.SemanticExchangeRecord
+	recordData, err := os.ReadFile(filepath.Join(
+		runDir, debugdump.SemanticExchangesDir, directories[0].Name(),
+		debugdump.SemanticExchangeMetaFile,
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(recordData, &recorded); err != nil {
+		t.Fatal(err)
+	}
+	if recorded.Stage != debugdump.SemanticStageArchitecture ||
+		recorded.State != debugdump.SemanticStateProviderFailed ||
+		recorded.SemanticCalls != 1 || recorded.TransportAttempts != 1 {
+		t.Fatalf("failed exchange metadata = %#v", recorded)
+	}
+	if _, err := os.Lstat(filepath.Join(runDir, report.ArchitectureSynthesisFile)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed attempt published a synthesis record: %v", err)
+	}
+	_ = outcome
 }
 
 func TestPersistArchitectureSynthesisStatusRetainsNonResourceFailure(t *testing.T) {
@@ -1158,6 +1260,134 @@ func TestArchitectureSemanticFailureIsPublishableOnlyAfterDurableFailedStatus(t 
 		)
 		if failure == nil || isPublishableArchitectureFailure(failure) {
 			t.Fatalf("provider setup failure = %T / %v", failure, failure)
+		}
+	})
+}
+
+// TestArchitectureOutputExhaustionClassification is the Decision 215
+// classification proof: the attempted output exhaustion is publishable only
+// after the failed status and model-research accounting are durable; a
+// status-write failure, an accounting-write failure, cancellation, and a
+// pre-call resource limit remain terminal.
+func TestArchitectureOutputExhaustionClassification(t *testing.T) {
+	limitCause := &architectureOutputResourceExhausted{cause: &modelresearch.ResourceLimitError{
+		Stage: "architecture_synthesis", Kind: modelresearch.ResourceLimitOutputTokens,
+		Limit: 64_000, ConfiguredMaxTokens: 64_000, FinishReason: "length",
+		Observed: 64_000, ObservedKnown: true, OutputTokens: 64_000,
+	}}
+	lengthOutcome := architectureSynthesisOutcome{
+		Attempted: true, InputBytes: 5904, ResponseBytes: 201396,
+		ResponseContentBytes: 201396, TransportAttempts: 1,
+		LocalCandidateCount: 3, RequestedConceptualCount: 2, StructuralLocatorCount: 1,
+		AnchorCount: 4, UsageReported: true, InputTokens: 42197, OutputTokens: 64000,
+		FinishReason: "length", ResponseComplete: false,
+	}
+	policy := modelresearch.DefaultPolicy()
+	usage := modelresearch.Usage{}
+
+	t.Run("publishable only after durable status and accounting", func(t *testing.T) {
+		runDir := t.TempDir()
+		state := modelresearch.NewState(policy, modelresearch.RepositoryContext{
+			Identity: "fixture", Revision: "revision-output", Scenario: "go-default",
+		})
+		if err := modelresearch.WriteState(runDir, state); err != nil {
+			t.Fatal(err)
+		}
+		// Simulate the stage owner: accounting first (C), then status + class.
+		if err := recordArchitectureResearch(runDir, lengthOutcome, "resource_limited", false, policy, usage); err != nil {
+			t.Fatal(err)
+		}
+		failure := persistAndClassifyArchitectureSynthesisStatus(runDir, lengthOutcome, limitCause)
+		if !isPublishableArchitectureFailure(failure) || !errors.Is(failure, limitCause) {
+			t.Fatalf("durably recorded output exhaustion = %T / %v", failure, failure)
+		}
+		var recorded modelresearch.State
+		stateData, err := os.ReadFile(filepath.Join(runDir, modelresearch.StateFile))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(stateData, &recorded); err != nil {
+			t.Fatal(err)
+		}
+		if recorded.Architecture.Status != "resource_limited" || recorded.Architecture.SemanticCalls != 1 {
+			t.Fatalf("resource-limited accounting = %#v", recorded.Architecture)
+		}
+	})
+
+	t.Run("status write failure is terminal", func(t *testing.T) {
+		runDir := t.TempDir()
+		if err := os.Mkdir(filepath.Join(runDir, report.ArchitectureSynthesisStatusFile), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		failure := persistAndClassifyArchitectureSynthesisStatus(runDir, lengthOutcome, limitCause)
+		if failure == nil || isPublishableArchitectureFailure(failure) ||
+			!errors.Is(failure, limitCause) {
+			t.Fatalf("status persistence failure = %T / %v", failure, failure)
+		}
+	})
+
+	t.Run("accounting write failure is terminal", func(t *testing.T) {
+		runDir := t.TempDir()
+		if err := os.Mkdir(filepath.Join(runDir, modelresearch.StateFile), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		failure := classifyArchitectureOutputResourceExhaustion(
+			runDir, lengthOutcome, policy, usage, limitCause.cause,
+		)
+		if failure == nil || isArchitectureOutputResourceExhausted(failure) ||
+			!errors.Is(failure, limitCause.cause) {
+			t.Fatalf("accounting persistence failure = %T / %v", failure, failure)
+		}
+	})
+
+	t.Run("cancellation is terminal", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		runDir := t.TempDir()
+		if err := modelresearch.WriteState(runDir, modelresearch.NewState(policy, modelresearch.RepositoryContext{
+			Identity: "fixture", Revision: "revision-cancel", Scenario: "go-default",
+		})); err != nil {
+			t.Fatal(err)
+		}
+		provider := &architectureSynthesisStub{
+			response: []byte(`{"records":[{"kind":"subsystem","ref":"g1"`),
+			finish:   "length",
+			onCall: func() {
+				cancel()
+			},
+			err: limitCause.cause,
+		}
+		_, err := ensureArchitectureSynthesis(
+			ctx, architectureSynthesisTestBundle(), runDir,
+			"revision-cancel", "openai-compatible/bearer", "test-model", provider,
+		)
+		if err == nil || !errors.Is(err, context.Canceled) {
+			t.Fatalf("cancelled Architecture attempt = %v, want context.Canceled", err)
+		}
+		if _, statErr := os.Lstat(filepath.Join(runDir, report.ArchitectureSynthesisStatusFile)); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("cancelled attempt persisted a status: %v", statErr)
+		}
+	})
+
+	t.Run("pre-call resource limit remains terminal", func(t *testing.T) {
+		runDir := t.TempDir()
+		state := modelresearch.NewState(policy, modelresearch.RepositoryContext{
+			Identity: "fixture", Revision: "revision-precall", Scenario: "go-default",
+		})
+		state.Usage.RequestBytes = policy.MaxTotalRequestBytes
+		if err := modelresearch.WriteState(runDir, state); err != nil {
+			t.Fatal(err)
+		}
+		provider := &architectureSynthesisStub{response: architectureSynthesisTestResponse(t, architectureSynthesisTestBundle())}
+		_, err := ensureArchitectureSynthesis(
+			context.Background(), architectureSynthesisTestBundle(), runDir,
+			"revision-precall", "openai-compatible/bearer", "test-model", provider,
+		)
+		if err == nil || isArchitectureOutputResourceExhausted(err) ||
+			isPublishableArchitectureFailure(err) {
+			t.Fatalf("pre-call resource limit = %T / %v, want terminal", err, err)
+		}
+		if provider.calls != 0 {
+			t.Fatalf("pre-call limit made %d provider calls", provider.calls)
 		}
 	})
 }

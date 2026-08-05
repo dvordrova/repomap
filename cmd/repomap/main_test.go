@@ -1807,7 +1807,7 @@ func TestRunDoctorReportsConfigWithoutSecret(t *testing.T) {
 		"endpoint: https://llm.company.example/v1/chat/completions",
 		"model: company-model",
 		"auth: bearer",
-		"max_tokens: 128000",
+		"max_tokens: 64000",
 		"max_tokens_override: REPOMAP_LLM_MAX_TOKENS",
 		"network_check: skipped",
 	} {

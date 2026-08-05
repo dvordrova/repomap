@@ -32,9 +32,9 @@ import (
 	"github.com/dvordrova/repomap/internal/reportserver"
 	"github.com/dvordrova/repomap/internal/secretscan"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
-	"github.com/dvordrova/repomap/internal/themestudy"
 	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/tasklens"
+	"github.com/dvordrova/repomap/internal/themestudy"
 )
 
 func main() {
@@ -777,11 +777,20 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 				"reason: exact local package graph unavailable",
 			)
 		} else if !errors.Is(architectureErr, errArchitectureSynthesisRejected) {
-			humanOutput.Warn(
-				"Architecture model stage failed",
-				"state: failed",
-				"the exact local Architecture Canvas remains available",
-			)
+			if isArchitectureOutputResourceExhausted(architectureErr) {
+				humanOutput.Warn(
+					"Architecture grouping unavailable",
+					"reason: the model exceeded its response budget",
+					"the partial response was not used",
+					"the exact local Architecture Canvas remains available",
+				)
+			} else {
+				humanOutput.Warn(
+					"Architecture model stage failed",
+					"state: failed",
+					"the exact local Architecture Canvas remains available",
+				)
+			}
 		}
 	}
 	reconciliationStarted := time.Now()

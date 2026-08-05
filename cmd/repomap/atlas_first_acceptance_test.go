@@ -29,11 +29,11 @@ import (
 type atlasFirstAcceptanceStage string
 
 const (
-	atlasFirstStageNavigator           atlasFirstAcceptanceStage = "navigator"
-	atlasFirstStageArchitecture        atlasFirstAcceptanceStage = "architecture"
-	atlasFirstStageStudyScout          atlasFirstAcceptanceStage = "theme_scout"
-	atlasFirstStageStudyAdjudication   atlasFirstAcceptanceStage = "theme_adjudication"
-	atlasFirstStageStudy               atlasFirstAcceptanceStage = "atlas_study"
+	atlasFirstStageNavigator         atlasFirstAcceptanceStage = "navigator"
+	atlasFirstStageArchitecture      atlasFirstAcceptanceStage = "architecture"
+	atlasFirstStageStudyScout        atlasFirstAcceptanceStage = "theme_scout"
+	atlasFirstStageStudyAdjudication atlasFirstAcceptanceStage = "theme_adjudication"
+	atlasFirstStageStudy             atlasFirstAcceptanceStage = "atlas_study"
 )
 
 type atlasFirstAcceptanceProvider struct {
@@ -43,6 +43,7 @@ type atlasFirstAcceptanceProvider struct {
 	rejectNavigator        bool
 	failArchitectureCall   bool
 	failNavigatorCall      bool
+	lengthArchitectureCall bool
 	includeBadStudySibling bool
 
 	mu     sync.Mutex
@@ -346,6 +347,145 @@ func TestRunDefaultAtlasFirstArchitectureProviderFailureKeepsLocalCanvas(t *test
 	})
 }
 
+// TestRunDefaultAtlasFirstArchitectureOutputExhaustionPublishesLocalProduct
+// is the Decision 215 continuation proof: an attempted Architecture provider
+// output exhaustion (finish_reason=length with a partial repeated-ref
+// response) records a durable failed status and accounting, keeps the partial
+// response diagnostic-only, and the run continues through both D213 semantic
+// stages and the published report bound to the canonical local Canvas.
+func TestRunDefaultAtlasFirstArchitectureOutputExhaustionPublishesLocalProduct(t *testing.T) {
+	repo := navigatorAcceptanceRepository(t)
+	provider := &atlasFirstAcceptanceProvider{
+		t: t, repositoryType: atlasstudy.RepositoryService,
+		lengthArchitectureCall: true,
+	}
+	runDir, _, data := runAtlasFirstAcceptance(t, repo, provider)
+
+	provider.assertStages(t,
+		atlasFirstStageNavigator,
+		atlasFirstStageArchitecture,
+		atlasFirstStageStudyScout,
+		atlasFirstStageStudyAdjudication,
+	)
+	if data.ArchitectureSynthesis == nil ||
+		data.ArchitectureSynthesis.State != report.ArchitectureSynthesisFailed ||
+		data.ArchitectureSynthesis.ErrorCode != report.ArchitectureSynthesisErrorProviderOutputLimit ||
+		data.ArchitectureSynthesis.FinishReason != "length" ||
+		data.ArchitectureSynthesis.ResponseComplete ||
+		data.ArchitectureSynthesis.ConfiguredMaxTokens <= 0 ||
+		data.ArchitectureSynthesis.ObservedOutputTokens <= 0 {
+		t.Fatalf("output-exhausted Architecture status = %#v", data.ArchitectureSynthesis)
+	}
+	if data.ArchitectureSynthesis.ProposalAccepted || data.ArchitectureSynthesis.ProposalRejected ||
+		data.ArchitectureSynthesis.ProposalPartial || data.ArchitectureSynthesis.MembershipCounted ||
+		data.ArchitectureSynthesis.ArchitectureSource != "" ||
+		len(data.ArchitectureSynthesis.ValidationCodes) != 0 {
+		t.Fatalf("output-exhausted Architecture status published partial response evidence: %#v", data.ArchitectureSynthesis)
+	}
+	if data.ArchitectureCanvas == nil || data.ArchitectureCanvas.Fallback ||
+		len(data.ArchitectureCanvas.Components) == 0 {
+		t.Fatalf("output exhaustion erased canonical local canvas: %#v", data.ArchitectureCanvas)
+	}
+	assertAtlasFirstAcceptedStudy(t, data)
+	assertAtlasFirstDiagnostics(t, runDir, 4, map[string]string{
+		debugdump.SemanticStageNavigator:    "accepted",
+		debugdump.SemanticStageArchitecture: "resource_exhausted",
+		debugdump.SemanticStageAtlasStudy:   "accepted",
+	})
+	if _, err := os.Lstat(filepath.Join(runDir, report.ArchitectureSynthesisFile)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("output exhaustion published a synthesis record: %v", err)
+	}
+	// The manifest binds the failed Architecture status alongside the local
+	// Canvas.
+	statusData, err := os.ReadFile(filepath.Join(runDir, report.ArchitectureSynthesisStatusFile))
+	if err != nil {
+		t.Fatalf("failed Architecture status missing: %v", err)
+	}
+	var status report.ArchitectureSynthesisStatus
+	if err := json.Unmarshal(statusData, &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.ErrorCode != report.ArchitectureSynthesisErrorProviderOutputLimit {
+		t.Fatalf("manifest-bound failed status = %#v", status)
+	}
+}
+
+// TestEtcdArchitectureOutputExhaustionReplayPublishesCompleteReport is the
+// Decision 215 etcd acceptance replay: the real CLI runs against the local
+// etcd repository with a deterministic provider that serves Navigator, the
+// exact etcd-shaped Architecture output exhaustion (one subsystem, one
+// component, an open member_refs repeating a bounded package-ref block,
+// finish_reason=length), and valid D213 Scout + Adjudication fixtures. The
+// run must complete: failed Architecture status and accounting durable, no
+// synthesis record, Study accepted, report + manifest published, and the
+// canonical local Canvas bound.
+func TestEtcdArchitectureOutputExhaustionReplayPublishesCompleteReport(t *testing.T) {
+	repo := "/Users/dvordrova/git/etcd"
+	if info, err := os.Stat(repo); err != nil || !info.IsDir() {
+		t.Skipf("local etcd repository unavailable: %v", err)
+	}
+	provider := &atlasFirstAcceptanceProvider{
+		t: t, repositoryType: atlasstudy.RepositoryLibrary,
+		lengthArchitectureCall: true,
+	}
+	runDir, manifest, data := runAtlasFirstAcceptance(t, repo, provider)
+
+	provider.assertStages(t,
+		atlasFirstStageNavigator,
+		atlasFirstStageArchitecture,
+		atlasFirstStageStudyScout,
+		atlasFirstStageStudyAdjudication,
+	)
+	if data.ArchitectureSynthesis == nil ||
+		data.ArchitectureSynthesis.State != report.ArchitectureSynthesisFailed ||
+		data.ArchitectureSynthesis.ErrorCode != report.ArchitectureSynthesisErrorProviderOutputLimit ||
+		data.ArchitectureSynthesis.FinishReason != "length" ||
+		data.ArchitectureSynthesis.ResponseComplete ||
+		data.ArchitectureSynthesis.ConfiguredMaxTokens != 64_000 ||
+		data.ArchitectureSynthesis.ObservedOutputTokens != 64_000 {
+		t.Fatalf("etcd output-exhausted Architecture status = %#v", data.ArchitectureSynthesis)
+	}
+	if data.ArchitectureCanvas == nil || data.ArchitectureCanvas.Fallback ||
+		len(data.ArchitectureCanvas.Components) == 0 {
+		t.Fatalf("etcd output exhaustion erased canonical local canvas: %#v", data.ArchitectureCanvas)
+	}
+	// Study must have executed (accepted or an honest zero-candidate failure);
+	// it must not be absent from a run that continued past Architecture.
+	if data.AtlasStudy == nil && data.StudyPublication == nil {
+		t.Fatalf("etcd continuation did not execute Study")
+	}
+	if _, err := os.Lstat(filepath.Join(runDir, report.ArchitectureSynthesisFile)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("etcd output exhaustion published a synthesis record: %v", err)
+	}
+	// The run manifest binds the published report, which carries the failed
+	// Architecture status alongside the local Canvas.
+	if manifest.ReportSHA256 == "" {
+		t.Fatalf("etcd manifest missing report binding")
+	}
+	// The published report.json binds the failed status and the local Canvas.
+	reportJSON, err := os.ReadFile(filepath.Join(runDir, "report.json"))
+	if err != nil {
+		t.Fatalf("read etcd report.json: %v", err)
+	}
+	if !bytes.Contains(reportJSON, []byte(`"error_code": "provider_output_limit"`)) &&
+		!bytes.Contains(reportJSON, []byte(`"error_code":"provider_output_limit"`)) {
+		t.Logf("architecture_synthesis in report.json: %s", string(bytesBetween(reportJSON, []byte(`"architecture_synthesis":`))))
+		t.Fatalf("etcd report.json missing provider_output_limit binding")
+	}
+}
+
+func bytesBetween(data, marker []byte) []byte {
+	index := bytes.Index(data, marker)
+	if index < 0 {
+		return []byte("MARKER ABSENT")
+	}
+	end := index + len(marker) + 400
+	if end > len(data) {
+		end = len(data)
+	}
+	return data[index:end]
+}
+
 func runAtlasFirstAcceptance(
 	t *testing.T,
 	repo string,
@@ -412,6 +552,46 @@ func (provider *atlasFirstAcceptanceProvider) ServeHTTP(
 		writer.Header().Set("Content-Type", "application/json")
 		writer.WriteHeader(http.StatusBadRequest)
 		_, _ = writer.Write([]byte(`{"error":{"message":"fixture provider call failed"}}`))
+		return
+	}
+	if stage == atlasFirstStageArchitecture && provider.lengthArchitectureCall {
+		// Decision 215: the provider exhausts its output budget with a partial
+		// response. Like the etcd incident, it emits one subsystem, one
+		// component, an open member_refs array, and then repeats the same
+		// bounded package-ref block many times with no closing JSON. The block
+		// is generated deterministically, not stored as a large fixture.
+		writer.Header().Set("Content-Type", "application/json")
+		var partial strings.Builder
+		partial.WriteString(`{"records":[{"kind":"subsystem","ref":"g1","name":"Fixture core","description":"Fixture grouping"},{"kind":"component","ref":"c1","subsystem_ref":"g1","name":"Fixture component","description":"Fixture component grouping","member_refs":[`)
+		block := []string{
+			`{"kind":"package","ref":"p1"}`,
+			`{"kind":"package","ref":"p2"}`,
+			`{"kind":"package","ref":"p3"}`,
+			`{"kind":"package","ref":"p4"}`,
+			`{"kind":"package","ref":"p5"}`,
+			`{"kind":"package","ref":"p6"}`,
+			`{"kind":"package","ref":"p7"}`,
+			`{"kind":"package","ref":"p8"}`,
+		}
+		for index := 0; index < 128; index++ {
+			if index > 0 {
+				partial.WriteByte(',')
+			}
+			partial.WriteString(block[index%len(block)])
+		}
+		if err := json.NewEncoder(writer).Encode(map[string]any{
+			"choices": []any{map[string]any{
+				"finish_reason": "length",
+				"message": map[string]any{
+					"role": "assistant", "content": partial.String(),
+				},
+			}},
+			"usage": map[string]any{
+				"prompt_tokens": 42197, "completion_tokens": 64000,
+			},
+		}); err != nil {
+			provider.t.Errorf("encode length-ended architecture response: %v", err)
+		}
 		return
 	}
 
@@ -645,10 +825,10 @@ func atlasFirstAcceptanceScoutResponse(combined string, includeBadSibling bool) 
 	if len(fileRefs) > 0 {
 		expansionRef = fileRefs[0]
 	}
-	theme := func(title string, refs []string) map[string]any {
+	theme := func(title, question string, refs []string) map[string]any {
 		return map[string]any{
 			"title":               title,
-			"question":            "How do the exact anchors work together in this repository?",
+			"question":            question,
 			"theme_kind":          string(themestudy.KindSiblingImplementationFamily),
 			"anchor_refs":         refs,
 			"expansion_file_refs": []string{expansionRef},
@@ -658,7 +838,19 @@ func atlasFirstAcceptanceScoutResponse(combined string, includeBadSibling bool) 
 			"focused":             false,
 		}
 	}
-	themes := []any{theme("Shared responsibilities across exact anchors", anchorRefs)}
+	// The candidate contract bounds each theme to MaxThemeAnchors anchors and
+	// rejects duplicate normalized question/learning pairs, so large
+	// repositories (etcd) are covered by several bounded candidates with
+	// distinct questions instead of one oversized theme.
+	var themes []any
+	for offset := 0; offset < len(anchorRefs); offset += themestudy.MaxThemeAnchors {
+		end := min(offset+themestudy.MaxThemeAnchors, len(anchorRefs))
+		themes = append(themes, theme(
+			fmt.Sprintf("Shared responsibilities across exact anchors %d", offset/themestudy.MaxThemeAnchors+1),
+			fmt.Sprintf("How do anchors %d through %d work together in this repository?", offset+1, end),
+			anchorRefs[offset:end],
+		))
+	}
 	if includeBadSibling {
 		themes = append(themes, map[string]any{
 			"title":               "Deliberately invalid sibling",
@@ -713,20 +905,20 @@ func atlasFirstAcceptanceAdjudicationResponse(combined string) ([]byte, error) {
 				role = "public_entry"
 			}
 			assessments = append(assessments, map[string]any{
-				"anchor_ref":           anchor,
-				"fit":                  "direct",
-				"role":                 role,
+				"anchor_ref":            anchor,
+				"fit":                   "direct",
+				"role":                  role,
 				"supported_observation": "The exact source pack shows this anchor participating in the theme.",
 			})
 			readingOrder = append(readingOrder, anchor)
 		}
 		themes = append(themes, map[string]any{
-			"candidate_ref":     candidate.Ref,
-			"final_title":       "Accepted theme for " + candidate.Ref,
-			"final_question":    "What shared responsibility do the exact anchors implement?",
+			"candidate_ref":      candidate.Ref,
+			"final_title":        "Accepted theme for " + candidate.Ref,
+			"final_question":     "What shared responsibility do the exact anchors implement?",
 			"anchor_assessments": assessments,
-			"reading_order":     readingOrder,
-			"unknowns":          []string{},
+			"reading_order":      readingOrder,
+			"unknowns":           []string{},
 		})
 	}
 	content, err := json.Marshal(map[string]any{"themes": themes})
