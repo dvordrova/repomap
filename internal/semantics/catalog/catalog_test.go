@@ -12,8 +12,8 @@ func TestBuiltin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(catalog.Seeds) != 20 {
-		t.Fatalf("seed count = %d, want 20", len(catalog.Seeds))
+	if len(catalog.Seeds) != 23 {
+		t.Fatalf("seed count = %d, want 23", len(catalog.Seeds))
 	}
 	seeds := make(map[string]Seed, len(catalog.Seeds))
 	for _, seed := range catalog.Seeds {
@@ -25,6 +25,7 @@ func TestBuiltin(t *testing.T) {
 		"caddy-admin-load-routes",
 		"caddy-http-route-list-compile",
 		"gin-router-group-handle",
+		"beego-web-newnamespace",
 		"quic-go-http3-server-serve-listener",
 	} {
 		if _, ok := seeds[id]; !ok {

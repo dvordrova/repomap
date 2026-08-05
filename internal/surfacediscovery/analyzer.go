@@ -196,6 +196,7 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 	if err := a.load(); err != nil {
 		return Result{}, err
 	}
+	a.result.Coverage.FrameworkMatched = map[string]int{}
 	a.recordProcessEntrypoints()
 	if err := ctx.Err(); err != nil {
 		return Result{}, fmt.Errorf("surface discovery: %w", err)
@@ -606,6 +607,16 @@ func (a *analyzer) prepare() {
 					a.callTargets[call] = targets
 					for _, target := range targets {
 						if seed, matched := a.callSeed(target); matched && a.terminalSeedEligible(seed, call, target) {
+							a.relevant[function] = true
+							a.relevanceDistance[function] = 0
+						}
+						// Decision 220 B: repository-local typed registration
+						// shapes (path string, handler) also make the calling
+						// function relevant for the walk. Convenience methods
+						// that wrap a catalog seed are handled by wrapper
+						// propagation and are not claimed here.
+						if a.typedRegistrationShape(target) && !a.callsCatalogSeed(target) &&
+							a.terminalSeedEligible(catalog.Seed{}, call, target) {
 							a.relevant[function] = true
 							a.relevanceDistance[function] = 0
 						}
@@ -1117,6 +1128,21 @@ func (a *analyzer) walk(
 				matched = matched && a.terminalSeedEligible(seed, call, target)
 				if matched {
 					a.recordCall(seed, call, target, env, chain, entrypoint, callAmbiguous)
+					if dispatchFrontier != nil {
+						a.applyFrontierSince(triggerStart, serverStart, *dispatchFrontier)
+					}
+					continue
+				}
+				// Decision 220 B: generic typed registration detector. A
+				// repository-local call to a method with the closed typed
+				// registration shape (path string, handler) is recorded as a
+				// route with the detector producer; exact when the path and
+				// handler resolve, otherwise dynamic with a bounded frontier.
+				// Catalog seeds and their convenience wrappers always win;
+				// the detector never double-reports.
+				if a.typedRegistrationShape(target) && !a.callsCatalogSeed(target) &&
+					a.terminalSeedEligible(catalog.Seed{}, call, target) {
+					a.recordTypedRegistration(call, target, env, chain, entrypoint, callAmbiguous)
 					if dispatchFrontier != nil {
 						a.applyFrontierSince(triggerStart, serverStart, *dispatchFrontier)
 					}
@@ -1816,6 +1842,112 @@ func typesFunctionID(function *types.Func) string {
 		return path + ".(" + receiverName(signature) + ")." + function.Name()
 	}
 	return path + "." + function.Name()
+}
+
+// httpVerbFromMethodName returns the closed HTTP verb for a registration
+// method name, or "" when the name is not a verb (Decision 220 A/B). Only
+// the standard HTTP methods plus "Any" are recognized; a name like "Add" or
+// "Register" never infers a verb.
+func httpVerbFromMethodName(name string) string {
+	switch name {
+	case "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS":
+		return name
+	case "Any":
+		return "ANY"
+	default:
+		return ""
+	}
+}
+
+// recordTypedRegistration records a route from the generic typed
+// registration detector (Decision 220 B): a repository-local call to a
+// method whose signature is (path string, handler). Resolution is exact when
+// the path argument is a known constant and the handler argument resolves to
+// a repository-local symbol; otherwise dynamic with a bounded frontier. The
+// detector never invents a verb and never double-reports catalog seeds.
+func (a *analyzer) recordTypedRegistration(
+	call ssa.CallInstruction,
+	target *ssa.Function,
+	env environment,
+	chain []Wrapper,
+	entrypoint *ssa.Function,
+	ambiguous bool,
+) {
+	location := a.location(call.Pos())
+	args := a.arguments(call)
+	// Both static and invoke method calls place the receiver first (static:
+	// receiver is Args[0]; invoke: arguments() prepends the receiver Value).
+	// The path and handler are the first and second explicit parameters.
+	receiverOffset := 1
+	pathValue := dynamicValue("unknown path")
+	if len(args) > receiverOffset {
+		pathValue = a.eval(args[receiverOffset], env, 0)
+	}
+	handlerValue := dynamicValue("unknown handler")
+	if len(args) > receiverOffset+1 {
+		handlerValue = a.eval(args[receiverOffset+1], env, 0)
+	}
+	frontiers := []Frontier{}
+	if !pathValue.Known {
+		frontiers = append(frontiers, Frontier{Kind: "dynamic_route_identity", Detail: pathValue.Text, Location: &location})
+	}
+	if !handlerValue.Known {
+		frontiers = append(frontiers, Frontier{Kind: "dynamic_handler_identity", Detail: handlerValue.Text, Location: &location})
+	}
+	resolution := "exact"
+	status := "confirmed_typed_registration"
+	if ambiguous {
+		resolution = "ambiguous"
+	}
+	if len(frontiers) > 0 {
+		resolution = "dynamic"
+		status = "dynamic_typed_registration"
+	}
+	basis := string(catalog.OriginCatalogStatic)
+	if len(chain) > 0 {
+		basis = string(catalog.OriginWrapperStatic)
+	}
+	// A closed HTTP verb method name (GET/POST/PUT/DELETE/PATCH/HEAD/
+	// OPTIONS/Any) establishes the route method exactly (Decision 220 A/B);
+	// other names leave the method unset rather than guessing.
+	method := ""
+	if verb := httpVerbFromMethodName(target.Name()); verb != "" {
+		method = verb
+	}
+	record := TriggerRecord{
+		Kind:              "http_route",
+		Producer:          "typed_registration_detector",
+		Identity:          Identity{Method: method, Path: pathValue},
+		Transport:         "http",
+		Framework:         "typed",
+		ProcessEntrypoint: a.symbol(entrypoint),
+		Dispatcher:        dynamicValue("typed registration receiver"),
+		RegistrationSite:  location,
+		Handler:           handlerValue,
+		Middleware:        []Value{},
+		WrapperChain:      append([]Wrapper{}, chain...),
+		FinalSeed:         "typed_registration_detector",
+		DiscoveryBasis:    basis,
+		Certainty:         "static",
+		Resolution:        resolution,
+		ScenarioID:        a.scenario.ID,
+		Evidence: []Evidence{{
+			ID: "typed-registration:" + locationKey(location), Kind: "typed_registration_call",
+			Location: location, Detail: a.functionID(target),
+		}},
+		Provenance: []Provenance{{
+			Provider: "go_ssa", Version: AnalyzerVersion,
+			Operation: "detect_typed_registration_shape", Detail: a.functionID(target),
+		}},
+		DynamicFrontier: frontiers,
+		Status:          status,
+	}
+	record.TerminalSourceScope, record.ApplicationClass, record.PromotionBasis =
+		classifyTerminalOwnership(location, chain, a.detachedWalk)
+	record.ProvisionalID = !pathValue.Known || !handlerValue.Known
+	record.ID = stableTriggerID(record)
+	a.result.Catalog.Triggers = append(a.result.Catalog.Triggers, record)
+	a.result.Coverage.DynamicFrontiers = append(a.result.Coverage.DynamicFrontiers, frontiers...)
 }
 
 func (a *analyzer) recordRoute(
@@ -2592,6 +2724,98 @@ func (a *analyzer) callSeed(function *ssa.Function) (catalog.Seed, bool) {
 		return seed, true
 	}
 	return catalog.Seed{}, false
+}
+
+// typedRegistrationShape reports whether a repository-local method has the
+// closed typed registration shape (Decision 220 B): a first string parameter
+// (route path) and a second handler parameter of a supported handler kind
+// (func, func(http.ResponseWriter,*http.Request), http.Handler, or a
+// context-handler interface). The detector is deliberately conservative: it
+// never infers a verb from the name and never claims a shape when the
+// signature does not establish it exactly.
+func (a *analyzer) typedRegistrationShape(function *ssa.Function) bool {
+	if function == nil || function.Signature == nil {
+		return false
+	}
+	signature := function.Signature
+	params := signature.Params()
+	if params.Len() < 2 {
+		return false
+	}
+	pathType, ok := params.At(0).Type().(*types.Basic)
+	if !ok || pathType.Kind() != types.String {
+		return false
+	}
+	handlerType := params.At(1).Type()
+	return typedHandlerKind(handlerType) != ""
+}
+
+// callsCatalogSeed reports whether the target's body directly calls a
+// catalog seed (Decision 220 B). A framework convenience method that wraps a
+// catalog seed (e.g. echo GET → Add, gin GET → Handle) is therefore handled
+// by the existing wrapper propagation, which preserves the exact method
+// constant and group prefix; the generic detector must not double-report it.
+func (a *analyzer) callsCatalogSeed(target *ssa.Function) bool {
+	if target == nil || target.Blocks == nil {
+		return false
+	}
+	for _, block := range target.Blocks {
+		for _, instruction := range block.Instrs {
+			call, ok := instruction.(ssa.CallInstruction)
+			if !ok {
+				continue
+			}
+			for _, candidate := range a.callTargets[call] {
+				if _, matched := a.callSeed(candidate); matched {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// typedHandlerKind classifies a handler parameter type into a closed kind, or
+// returns "" when the type is not an established handler shape (Decision
+// 220 B). It never widens: an arbitrary interface without an http.Handler
+// method set is not claimed as a handler.
+func typedHandlerKind(handlerType types.Type) string {
+	if handlerType == nil {
+		return ""
+	}
+	if signature, ok := handlerType.(*types.Signature); ok {
+		if signature.Recv() == nil {
+			// func(...) — accept any plain function (its parameter shape is
+			// validated by the analyzer walk, not guessed here).
+			return "func"
+		}
+		return ""
+	}
+	named, ok := handlerType.(*types.Named)
+	if !ok || named.Obj() == nil || named.Obj().Pkg() == nil {
+		return ""
+	}
+	path := named.Obj().Pkg().Path()
+	name := named.Obj().Name()
+	if path == "net/http" && name == "Handler" {
+		return "http_handler"
+	}
+	if path == "net/http" && name == "HandlerFunc" {
+		return "http_handler_func"
+	}
+	// context handler interfaces from supported server frameworks are
+	// recognized only when the framework is already cataloged; the generic
+	// detector stays conservative and does not guess unknown interfaces.
+	if path == "github.com/gin-gonic/gin" && name == "HandlerFunc" {
+		return "context_handler"
+	}
+	if path == "github.com/labstack/echo/v4" && name == "HandlerFunc" {
+		return "context_handler"
+	}
+	if path == "github.com/go-chi/chi/v5" && name == "HandlerFunc" {
+		return "context_handler"
+	}
+	return ""
 }
 
 func (a *analyzer) fieldSeed(store *ssa.Store) (catalog.Seed, bool) {
@@ -3688,7 +3912,7 @@ func (a *analyzer) finish(latency time.Duration) {
 	a.result.Coverage.DispatchRootsFound = len(a.starts)
 	a.result.Coverage.ColdLatencyMillis = latency.Milliseconds()
 	a.result.Coverage.BuildConstraints = append([]string{}, a.opts.BuildTags...)
-	a.result.Coverage.ScopeStatement = "exact build-selected process entries, typed Cobra commands, and runtime registrations and starts found through safe typed package closures and bounded wrapper propagation under the recorded build scenario, subject to listed diagnostics and frontiers"
+	a.result.Coverage.ScopeStatement = "exact build-selected process entries, typed Cobra commands, runtime registrations and starts found through safe typed package closures, bounded wrapper propagation, and the generic typed registration detector (path string + handler) under the recorded build scenario, subject to listed diagnostics and frontiers"
 	for _, trigger := range a.result.Catalog.Triggers {
 		if len(trigger.WrapperChain) == 0 {
 			a.result.Coverage.DirectTriggers++
@@ -3715,6 +3939,16 @@ func (a *analyzer) finish(latency time.Duration) {
 		if trigger.Kind == "http_route" && trigger.Resolution != "exact" {
 			a.result.Coverage.PossibleRegistrations++
 		}
+		// Decision 220 D: per-framework matched counts so coverage shows
+		// exactly which adapters produced records (catalog vs detector).
+		frameworkKey := trigger.Framework
+		if frameworkKey == "" {
+			frameworkKey = "unknown"
+		}
+		if trigger.Producer == "typed_registration_detector" {
+			a.result.Coverage.TypedRegistrationDetectorMatches++
+		}
+		a.result.Coverage.FrameworkMatched[frameworkKey]++
 	}
 	a.result.normalize()
 }

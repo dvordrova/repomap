@@ -237,15 +237,20 @@ type SurfaceCoverage struct {
 	LoopSignals                 []LoopSignal          `json:"loop_signals"`
 	DynamicFrontiers            []Frontier            `json:"dynamic_frontiers"`
 	UnsupportedDispatch         []Frontier            `json:"unsupported_dispatch_mechanisms"`
-	BuildConstraints            []string              `json:"build_constraints"`
-	FilesSkipped                []string              `json:"files_skipped"`
-	PackagesSkipped             []string              `json:"packages_skipped"`
-	BudgetsReached              []string              `json:"budgets_reached"`
-	ColdLatencyMillis           int64                 `json:"cold_latency_ms"`
-	WarmLatencyMillis           *int64                `json:"warm_latency_ms,omitempty"`
-	CacheReuse                  bool                  `json:"cache_reuse"`
-	Phases                      []PhaseMetric         `json:"phases,omitempty"`
-	ScopeStatement              string                `json:"scope_statement"`
+	// Decision 220 D: exact adapter accounting — how many records each
+	// framework produced and how many came from the generic typed
+	// registration detector (never a source of authority, always counted).
+	TypedRegistrationDetectorMatches int            `json:"typed_registration_detector_matches,omitempty"`
+	FrameworkMatched                 map[string]int `json:"framework_matched,omitempty"`
+	BuildConstraints                 []string       `json:"build_constraints"`
+	FilesSkipped                     []string       `json:"files_skipped"`
+	PackagesSkipped                  []string       `json:"packages_skipped"`
+	BudgetsReached                   []string       `json:"budgets_reached"`
+	ColdLatencyMillis                int64          `json:"cold_latency_ms"`
+	WarmLatencyMillis                *int64         `json:"warm_latency_ms,omitempty"`
+	CacheReuse                       bool           `json:"cache_reuse"`
+	Phases                           []PhaseMetric  `json:"phases,omitempty"`
+	ScopeStatement                   string         `json:"scope_statement"`
 }
 
 type PackageDiagnostic struct {
@@ -441,6 +446,9 @@ func (r *Result) normalize() {
 	}
 	if r.Coverage.UnsupportedDispatch == nil {
 		r.Coverage.UnsupportedDispatch = []Frontier{}
+	}
+	if r.Coverage.FrameworkMatched == nil {
+		r.Coverage.FrameworkMatched = map[string]int{}
 	}
 	if r.Coverage.PackageDiagnostics == nil {
 		r.Coverage.PackageDiagnostics = []PackageDiagnostic{}

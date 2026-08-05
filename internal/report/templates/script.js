@@ -6657,6 +6657,21 @@
 			directions.appendChild(directionGrid);
 			root.appendChild(directions);
 		}
+
+		// Decision 220 E: honest zero-handler copy. When a surface analysis
+		// ran but no exact HTTP handler or server start was resolved, the
+		// surfaces area says so with the unresolved-candidate count instead
+		// of reading as proof that no handlers exist.
+		var surfaces = DATA.discovered_surfaces;
+		if (surfaces && surfaces.total_count === 0 && !anatomy.entries.objects.length) {
+			var unresolved = Number(surfaces.unresolved_handler_count) || 0;
+			var possible = Number(surfaces.possible_registration_count) || 0;
+			var candidates = unresolved + possible;
+			var copy = candidates > 0
+				? msg('main.overview.surfaces.zero_handlers_candidates', { count: candidates })
+				: msg('main.overview.surfaces.zero_handlers_none');
+			root.appendChild(txt('p', 'rm-overview-zero-handlers rm-warning', copy));
+		}
 	}
 
 	var REPOSITORY_ATLAS_UNIT_KIND_MESSAGE_IDS = {
