@@ -30,6 +30,11 @@ func TestDevRenderSavedRunForUIReview(t *testing.T) {
 	if err := json.Unmarshal(raw, &data); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
+	// Decision 218: allow RU UI review of saved runs (the persisted
+	// projection carries no language; the serve layer selects it).
+	if lang := os.Getenv("D217_LANG"); lang != "" {
+		data.ReportLanguage = lang
+	}
 	html, err := RenderHTML(&data)
 	if err != nil {
 		t.Fatalf("render: %v", err)

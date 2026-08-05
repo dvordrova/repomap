@@ -4576,30 +4576,12 @@
 			msg('main.study.themes.title'),
 			msg('main.study.themes.copy')
 		));
-		// Bounded default shelf with an explicit "show all" action; every card
-		// remains available (Decision 217: no hidden truncation).
+		// Decision 218 (A): the dedicated Study route renders every published
+		// theme — no "show more" for peer theme existence. Progressive
+		// disclosure may collapse card detail, reading previews, and
+		// provenance, never the themes themselves.
 		var shelf = el('div', 'rm-study-theme-shelf');
-		var shown = cards;
-		var initial = 4;
-		if (cards.length > initial) {
-			shown = cards.slice(0, initial);
-			var remaining = cards.length - initial;
-			var showAll = txt('button', 'rm-secondary-action rm-study-show-all', msg('main.study.themes.show_all', { count: remaining }));
-			showAll.type = 'button';
-			showAll.setAttribute('aria-expanded', 'false');
-			showAll.onclick = function () {
-				var expanded = document.createElement('div');
-				expanded.className = 'rm-study-theme-shelf';
-				cards.slice(initial).forEach(function (card, index) {
-					expanded.appendChild(renderThemeCard(card, initial + index));
-				});
-				shelf.appendChild(expanded);
-				showAll.hidden = true;
-				showAll.setAttribute('aria-expanded', 'true');
-			};
-			root.appendChild(showAll);
-		}
-		shown.forEach(function (card, index) {
+		cards.forEach(function (card, index) {
 			shelf.appendChild(renderThemeCard(card, index));
 		});
 		root.appendChild(shelf);
@@ -4628,14 +4610,28 @@
 		if (card.why_it_matters) article.appendChild(txt('span', 'rm-study-theme-card__reason', card.why_it_matters));
 		var readings = el('ul', 'rm-study-theme-card__readings');
 		// Bounded reading preview on the card; the detail route shows the full
-		// reading list (Decision 217).
+		// reading list. Decision 218 (B): each reading is a typed source row —
+		// symbol, kind · path:line as separate DOM nodes.
 		(card.readings || []).slice(0, 3).forEach(function (reading) {
-			var action = renderStudySourceAction(reading, 'rm-study-theme-card__reading', true);
+			var kind = sourceKindFor(reading && reading.symbol, reading && reading.path);
+			var location = studyReadingLocation(reading);
+			if (!location) return;
+			var item = txt('li', 'rm-study-theme-card__reading-item', '');
+			var row = el('div', 'rm-study-theme-card__reading-row');
+			var action = renderStudySourceAction(reading, 'rm-study-theme-card__reading', false);
 			if (action) {
-				var item = txt('li', 'rm-study-theme-card__reading-item', '');
-				item.appendChild(action);
-				readings.appendChild(item);
+				row.appendChild(action);
+			} else {
+				// Decision 218 (B): the reading is still visible and typed
+				// when no exact saved source is available for this run.
+				row.appendChild(txt('span', 'rm-study-theme-card__reading rm-study-theme-card__reading--plain', String(reading && reading.symbol || '')));
 			}
+			var meta = el('div', 'rm-study-theme-card__reading-meta');
+			meta.appendChild(txt('span', 'rm-study-theme-card__reading-kind', sourceKindLabel(kind)));
+			meta.appendChild(txt('code', 'rm-study-theme-card__reading-location', formatCodeLocation(location)));
+			row.appendChild(meta);
+			item.appendChild(row);
+			readings.appendChild(item);
 		});
 		if (readings.childNodes.length) article.appendChild(readings);
 		if (card.readings && card.readings.length > 3) {
@@ -5134,6 +5130,38 @@
 		};
 	}
 
+	// sourceKindFor derives the closed source kind for one reading/source
+	// action deterministically from exact local fields (Decision 218 B).
+	// It never infers a stronger kind than the evidence supports: a receiver
+	// symbol is a method, a bare symbol with a line is a function, an empty
+	// symbol over a path is a file, and explicit package markers are
+	// packages. call_site/boundary are only used when the projection says so.
+	function sourceKindFor(symbol, path) {
+		var sym = String(symbol || '').trim();
+		var filePath = String(path || '');
+		if (!sym) {
+			if (/(^|\/)\w+\.\w+$/.test(filePath)) return 'file';
+			return 'package';
+		}
+		if (/\([^)]*\)\.[A-Za-z_]/.test(sym)) return 'method';
+		if (/^type\s+/.test(sym)) return 'type';
+		if (/^func\s+/.test(sym) || /\([^)]*\)/.test(sym)) return 'function';
+		return 'function';
+	}
+
+	function sourceKindLabel(kind) {
+		switch (String(kind || '')) {
+		case 'method': return msg('main.source.kind.method');
+		case 'type': return msg('main.source.kind.type');
+		case 'call_site': return msg('main.source.kind.call_site');
+		case 'package': return msg('main.source.kind.package');
+		case 'file': return msg('main.source.kind.file');
+		case 'document': return msg('main.source.kind.document');
+		case 'boundary': return msg('main.source.kind.boundary');
+		default: return msg('main.source.kind.function');
+		}
+	}
+
 	function renderStudySourceAction(reading, cls, includeLocation) {
 		var location = studyReadingLocation(reading);
 		var symbol = String(reading && reading.symbol || '');
@@ -5163,14 +5191,32 @@
 
 	function renderStudyReadingAnchor(reading, index) {
 		var location = studyReadingLocation(reading);
-		var open = renderStudySourceAction(reading, 'rm-study-reading-anchor__open', false);
-		if (!location || !open) return null;
+		if (!location) return null;
+		var kind = sourceKindFor(reading && reading.symbol, reading && reading.path);
 		var card = el('article', 'rm-study-reading-anchor');
 		card.appendChild(txt('span', 'rm-study-reading-anchor__order', String(index + 1)));
 		var copy = el('div', 'rm-study-reading-anchor__copy');
-		copy.appendChild(open);
-		copy.appendChild(txt('code', 'rm-study-reading-anchor__location', formatCodeLocation(location)));
-		if (reading.what_to_look_for) copy.appendChild(txt('p', '', reading.what_to_look_for));
+		var row = el('div', 'rm-study-reading-anchor__row');
+		// Decision 218 (B): typed source rows — symbol, kind · path:line, and
+		// explanation are separate DOM nodes with visible separation; a
+		// package/file entry is explicitly labeled and never reads as a
+		// function. The row renders even when no exact saved source is
+		// available for this run: the reading is still visible and typed,
+		// just without a click action.
+		var symbol = String(reading && reading.symbol || '');
+		var open = renderStudySourceAction(reading, 'rm-study-reading-anchor__open', false);
+		if (open) {
+			row.appendChild(open);
+		} else {
+			var plain = txt('span', 'rm-study-reading-anchor__open rm-study-reading-anchor__open--plain', symbol);
+			row.appendChild(plain);
+		}
+		var meta = el('div', 'rm-study-reading-anchor__meta');
+		meta.appendChild(txt('span', 'rm-study-reading-anchor__kind', sourceKindLabel(kind)));
+		meta.appendChild(txt('code', 'rm-study-reading-anchor__location', formatCodeLocation(location)));
+		row.appendChild(meta);
+		copy.appendChild(row);
+		if (reading.what_to_look_for) copy.appendChild(txt('p', 'rm-study-reading-anchor__explain', reading.what_to_look_for));
 		card.appendChild(copy);
 		return card;
 	}
@@ -6094,6 +6140,12 @@
 			return !remainderComponentID || !component || component.id !== remainderComponentID;
 		});
 		var contexts = architectureComponentContexts();
+		var navigationByComponent = {};
+		if (ARCHITECTURE_COMPONENT_NAVIGATION && Number(ARCHITECTURE_COMPONENT_NAVIGATION.version) === 1) {
+			(ARCHITECTURE_COMPONENT_NAVIGATION.components || []).forEach(function (entry) {
+				if (entry && entry.component_id) navigationByComponent[entry.component_id] = entry;
+			});
+		}
 		var counts = {};
 		components.forEach(function (component) {
 			if (component && typeof component.id === 'string' && component.id) {
@@ -6104,6 +6156,7 @@
 		components.forEach(function (component) {
 			if (!component || !component.id || counts[component.id] !== 1) return;
 			var context = contexts[component.id] || {};
+			var navigation = navigationByComponent[component.id] || {};
 			var resolved = [];
 			var resolvedSeen = {};
 			(Array.isArray(context.sources) ? context.sources : []).forEach(function (source) {
@@ -6123,13 +6176,23 @@
 					location: resolution.source.location,
 				});
 			});
+			// Decision 218 (C): a component participates in the Overview
+			// system spine even without exact symbol sources — the spine is
+			// about roles, not just evidence. Package-backed components use
+			// their navigation entry (package participants, map target) and
+			// keep an empty source list; the evidence tier stays honest.
+			var mapTarget = context.map_target ||
+				(navigation.map_target || { kind: 'component', component_id: component.id });
+			var packageCount = Array.isArray(navigation.package_participant_ids)
+				? navigation.package_participant_ids.length
+				: (Array.isArray(component.package_ids) ? component.package_ids.length : 0);
 			objects.push({
 				id: component.id,
 				title: String(component.name || component.id),
 				detail: String(component.description || ''),
-				mapTarget: context.map_target || { kind: 'component', component_id: component.id },
+				mapTarget: mapTarget,
 				sources: resolved,
-				packageCount: packageParticipantCount(component.id),
+				packageCount: packageCount,
 			});
 		});
 		return {
@@ -6145,6 +6208,129 @@
 		var components = overviewComponentObjects();
 		if (!entries.objects.length && !components.objects.length) return null;
 		return { entries: entries, components: components, integrations: [] };
+	}
+
+	// overviewSystemSpine derives the Overview system spine (Decision 218 C):
+	// at most one representative card per supported role — entry/consumption,
+	// core coordination/domain, state/resource, extension/integration,
+	// operations/support — targeting 3-5 cards with one explicit primary card
+	// when evidence supports it. Selection is deterministic and evidence
+	// based (exact-source count, package count, then title), never array
+	// order or canonical hash alone. Every other component remains reachable
+	// through Architecture; nothing is deleted from report data.
+	function overviewSystemSpine(anatomy) {
+		var entryObjects = anatomy && anatomy.entries && anatomy.entries.objects || [];
+		var componentObjects = anatomy && anatomy.components && anatomy.components.objects || [];
+		var spine = { roles: [], primary: null, totalComponents: componentObjects.length };
+		var roleGroups = {
+			entry: [],
+			core: [],
+			state: [],
+			extension: [],
+			operations: [],
+		};
+		entryObjects.forEach(function (object) {
+			roleGroups.entry.push({ object: object, isEntry: true });
+		});
+		componentObjects.forEach(function (object) {
+			var role = overviewComponentRole(object);
+			if (role && roleGroups[role]) roleGroups[role].push({ object: object, isEntry: false });
+		});
+		var evidenceScore = function (candidate) {
+			var object = candidate.object;
+			var score = 0;
+			if (object.isEntry) score += 1000;
+			score += Math.min(Array.isArray(object.sources) ? object.sources.length : 0, 8) * 100;
+			score += Math.min(object.packageCount || 0, 12) * 10;
+			return score;
+		};
+		var pickRole = function (role, isPrimary) {
+			var group = roleGroups[role];
+			if (!group.length) return;
+			group.sort(function (left, right) {
+				var byEvidence = evidenceScore(right) - evidenceScore(left);
+				if (byEvidence) return byEvidence;
+				return String(left.object.title || '').localeCompare(String(right.object.title || ''));
+			});
+			var winner = group[0];
+			var card = {
+				role: role,
+				object: winner.object,
+				isEntry: winner.isEntry,
+				primary: !!isPrimary,
+			};
+			spine.roles.push(card);
+			if (isPrimary) spine.primary = card;
+		};
+		// Entry/consumption is the natural primary card when present.
+		if (roleGroups.entry.length) {
+			pickRole('entry', true);
+		}
+		pickRole('core', false);
+		pickRole('state', false);
+		pickRole('extension', false);
+		pickRole('operations', false);
+		// Without any entry surface, the strongest core component becomes
+		// primary.
+		if (!spine.primary && roleGroups.core.length) {
+			spine.primary = spine.roles.filter(function (card) { return card.role === 'core'; })[0] || null;
+			if (spine.primary) spine.primary.primary = true;
+		}
+		return spine;
+	}
+
+	// overviewComponentRole classifies one component into a closed spine role
+	// from exact local fields only (Decision 218 C): name/description
+	// keywords in the report language, then evidence. It never invents a
+	// role; a component that matches no role returns null.
+	function overviewComponentRole(object) {
+		var title = String(object.title || '').toLowerCase();
+		var detail = String(object.detail || '').toLowerCase();
+		var text = title + ' ' + detail;
+		var has = function (words) {
+			return words.some(function (word) { return text.indexOf(word) >= 0; });
+		};
+		if (has(['api', 'sdk', 'core', 'domain', 'kernel', 'ядро', 'основн', 'координац', 'coordination', 'сервер', 'server', 'движок', 'engine'])) {
+			if (has(['интеграц', 'integration', 'plugin', 'плагин', 'адаптер', 'adapter', 'расширени', 'extension', 'провайдер', 'provider'])) return 'extension';
+			return 'core';
+		}
+		if (has(['storage', 'store', 'cache', 'database', 'db', 'state', 'resource', 'хранилищ', 'баз', 'кэш', 'состояни', 'ресурс', 'бэкенд', 'backend', 'repo', 'репозитор'])) return 'state';
+		if (has(['интеграц', 'integration', 'plugin', 'плагин', 'адаптер', 'adapter', 'расширени', 'extension', 'провайдер', 'provider', 'connector', 'коннектор'])) return 'extension';
+		if (has(['tool', 'util', 'cli', 'debug', 'script', 'build', 'инструмент', 'утилит', 'отладк', 'сборк', 'скрипт', 'терминал', 'terminal', 'diagnostic', 'диагност'])) return 'operations';
+		return null;
+	}
+
+	function renderOverviewSystemSpine(spine) {
+		if (!spine || !spine.roles.length) return null;
+		var section = el('section', 'rm-workspace-section rm-overview-spine');
+		section.appendChild(renderViewHeading(
+			msg('main.overview.spine.kicker'),
+			msg('main.overview.spine.title'),
+			msg('main.overview.spine.copy')
+		));
+		var grid = el('div', 'rm-overview-spine-grid');
+		spine.roles.forEach(function (card) {
+			var wrapper = el('div', 'rm-overview-spine-card' + (card.primary ? ' rm-overview-spine-card--primary' : ''));
+			var roleMessageID = 'main.overview.spine.role.operations';
+			if (card.role === 'entry') roleMessageID = 'main.overview.spine.role.entry';
+			else if (card.role === 'core') roleMessageID = 'main.overview.spine.role.core';
+			else if (card.role === 'state') roleMessageID = 'main.overview.spine.role.state';
+			else if (card.role === 'extension') roleMessageID = 'main.overview.spine.role.extension';
+			wrapper.appendChild(txt('span', 'rm-overview-spine-role', msg(roleMessageID)));
+			wrapper.appendChild(renderOverviewObjectCard(card.object, card.isEntry ? 'surface' : 'component'));
+			grid.appendChild(wrapper);
+		});
+		section.appendChild(grid);
+		if (spine.totalComponents > spine.roles.length) {
+			var remaining = spine.totalComponents - spine.roles.filter(function (card) { return !card.isEntry; }).length;
+			if (remaining > 0) {
+				var allAction = txt('button', 'rm-secondary-action rm-overview-spine-all', msg('main.overview.spine.all', { count: remaining }));
+				allAction.type = 'button';
+				allAction.onclick = function () { navigateWorkspace('architecture'); };
+				section.appendChild(allAction);
+			}
+		}
+		return section;
 	}
 
 	function renderOverviewObjectCard(object, kind) {
@@ -6245,6 +6431,7 @@
 			var purpose = thesis.purpose || DATA.documented_purpose || DATA.project_guess;
 			var isReadmePurpose = !!DATA.documented_purpose &&
 				(!purpose || purpose === DATA.documented_purpose || purpose === thesis.purpose && !!DATA.documented_purpose);
+			var useFallback = isReadmePurpose && readmePurposeHasResidue(purpose);
 			hero = el('section', 'rm-overview-hero rm-purpose-hero');
 			hero.appendChild(txt('div', 'rm-view-kicker', msg('main.overview')));
 			hero.appendChild(txt('h2', '', DATA.repo_name || msg('main.repository.overview')));
@@ -6263,8 +6450,19 @@
 					readmeQuote.appendChild(txt('span', 'rm-purpose-source', purposeSourceLabel()));
 					hero.appendChild(readmeQuote);
 				}
+			} else if (useFallback) {
+				// Decision 218 (G): raw README head that begins with
+				// warning/badge/ASCII-art/marketing residue is preserved as
+				// labeled source material under disclosure, never claimed as
+				// the product purpose. The hero shows a neutral local
+				// fallback assembled from repository name and archetype.
+				hero.appendChild(txt('p', 'rm-purpose-fallback', neutralPurposeFallback()));
+				var readmeQuote = el('blockquote', 'rm-hero-readme');
+				readmeQuote.appendChild(txt('p', '', normalizeMarkdownProse(purpose)));
+				readmeQuote.appendChild(txt('span', 'rm-purpose-source', purposeSourceLabel()));
+				hero.appendChild(readmeQuote);
 			} else {
-				var purposeNode = txt('p', '', purpose ? normalizeMarkdownProse(purpose) : msg('main.explore.how.this.repository.is.organized.and.implemented'));
+				var purposeNode = txt('p', '', purpose ? normalizeMarkdownProse(purpose) : neutralPurposeFallback());
 				hero.appendChild(purposeNode);
 				if (isReadmePurpose) {
 					hero.appendChild(txt('span', 'rm-purpose-source', purposeSourceLabel()));
@@ -6272,6 +6470,38 @@
 			}
 		}
 		root.appendChild(hero);
+	}
+
+	// readmePurposeHasResidue detects README heads that begin with
+	// warning/badge/ASCII-art/marketing residue rather than product copy
+	// (Decision 218 G). It is a conservative local heuristic over the first
+	// non-empty line: images, badge URLs, ASCII-art borders, and generic
+	// marketing imperatives never become a claimed purpose.
+	function readmePurposeHasResidue(purpose) {
+		var text = String(purpose || '').trim();
+		if (!text) return false;
+		var firstLine = text.split('\n')[0].trim();
+		var lower = firstLine.toLowerCase();
+		if (/^!\[/.test(firstLine)) return true;
+		if (/^(https?:\/\/|!\[[^\]]*\]\(|<img|\[![^\]]*\]\()/.test(firstLine)) return true;
+		if (/^[#>*\s_-]{3,}$/.test(firstLine)) return true;
+		if (/^[-=#*|+]{4,}$/.test(firstLine)) return true;
+		if (/^┌|^╔|^┏|^\x1b\[/.test(firstLine)) return true;
+		if (/(badge|travis|ci status|coverage|codacy|gitter|license[-\s]?badge|build[-\s]?status|downloads?[-\s]?badge)/.test(lower)) return true;
+		if (/^(welcome to|install|quick start|getting started|status|build status|releases?|downloads?)$/.test(lower)) return true;
+		return false;
+	}
+
+	// neutralPurposeFallback assembles a neutral local purpose answer from
+	// repository name and archetype (Decision 218 G) — never README prose.
+	function neutralPurposeFallback() {
+		var archetype = DATA.repository_archetype || DATA.architecture_canvas && DATA.architecture_canvas.repository_archetype || '';
+		var name = DATA.repo_name || '';
+		var pieces = [];
+		if (name) pieces.push(name);
+		if (archetype) pieces.push(String(archetype));
+		if (!pieces.length) return msg('main.overview.glance.what_fallback');
+		return pieces.join(' · ');
 	}
 
 	// renderOverviewAtAGlance answers the four orientation questions above the
@@ -6283,8 +6513,12 @@
 		var rows = [];
 		var thesis = REPOSITORY_GUIDE || DATA.repository_thesis || {};
 		var story = Array.isArray(thesis.system_story) ? thesis.system_story : [];
-		var purpose = thesis.purpose || DATA.documented_purpose || DATA.project_guess;
-		var what = story.length ? story[0] : (purpose ? normalizeMarkdownProse(purpose) : '');
+		// Decision 218 (G): the glance "what" answer never repeats raw
+		// README/documented-purpose text (already shown as labeled source
+		// material in the hero). It uses the localized story when present,
+		// otherwise a neutral local fallback assembled from repository name
+		// and archetype.
+		var what = story.length ? story[0] : neutralPurposeFallback();
 		if (what) {
 			rows.push([msg('main.overview.glance.what'), what]);
 		}
@@ -6375,15 +6609,28 @@
 			}
 		}
 		if (anatomy.components.objects.length) {
-			root.appendChild(renderOverviewAnatomyZone(
-				msg('main.overview.anatomy.components_kicker'),
-				msg('main.overview.anatomy.components'),
-				DATA.architecture_synthesis && DATA.architecture_synthesis.state === 'failed' ?
-					msg('main.overview.anatomy.components_copy_synthesis_failed') :
-					msg('main.overview.anatomy.components_copy'),
-				anatomy.components,
-				'component'
-			));
+			// Decision 218 (C): Overview shows the system spine — at most one
+			// representative card per supported role — instead of every
+			// component with equal weight. All other components stay
+			// reachable through the Architecture route; nothing is deleted
+			// from report data. When no component classifies into a spine
+			// role, the full component zone remains (never hide content).
+			var spine = overviewSystemSpine(anatomy);
+			var spineHasComponentRoles = spine && spine.roles.some(function (card) { return !card.isEntry; });
+			var spineView = spineHasComponentRoles ? renderOverviewSystemSpine(spine) : null;
+			if (spineView) {
+				root.appendChild(spineView);
+			} else {
+				root.appendChild(renderOverviewAnatomyZone(
+					msg('main.overview.anatomy.components_kicker'),
+					msg('main.overview.anatomy.components'),
+					DATA.architecture_synthesis && DATA.architecture_synthesis.state === 'failed' ?
+						msg('main.overview.anatomy.components_copy_synthesis_failed') :
+						msg('main.overview.anatomy.components_copy'),
+					anatomy.components,
+					'component'
+				));
+			}
 		}
 
 		if (anatomy.integrations && anatomy.integrations.length) {
@@ -6446,8 +6693,24 @@
 			if (!groupsByName[unit.name]) groupsByName[unit.name] = [];
 			groupsByName[unit.name].push(unit);
 		});
+		// Decision 218 (F): repository and module units become structural
+		// headers when child applications/libraries exist under them. A unit
+		// with a same-name peer of a different container kind (repository +
+		// module) coalesces into one structural header; the children render
+		// under it, never as equal-weight peer cards.
 		var emitted = Object.create(null);
 		var displayUnits = [];
+		var childByParent = Object.create(null);
+		units.forEach(function (unit) {
+			if (unit.parentID && !childByParent[unit.parentID]) childByParent[unit.parentID] = [];
+			if (unit.parentID) childByParent[unit.parentID].push(unit);
+		});
+		var isStructuralHeader = function (unit) {
+			var children = childByParent[unit.id] || [];
+			return children.some(function (child) {
+				return child.kind === 'app' || child.kind === 'service';
+			});
+		};
 		units.forEach(function (unit) {
 			var peers = groupsByName[unit.name] || [];
 			var kinds = Object.create(null);
@@ -6457,7 +6720,11 @@
 				return true;
 			});
 			if (!coalescible) {
-				displayUnits.push({ name: unit.name, kinds: [unit.kind], unitIDs: [unit.id] });
+				displayUnits.push({
+					name: unit.name, kinds: [unit.kind], unitIDs: [unit.id],
+					structural: isStructuralHeader(unit),
+					childCount: (childByParent[unit.id] || []).length,
+				});
 				return;
 			}
 			if (emitted[unit.name]) return;
@@ -6469,6 +6736,10 @@
 						(REPOSITORY_ATLAS_UNIT_KIND_ORDER[right] || 0) || left.localeCompare(right);
 				}),
 				unitIDs: peers.map(function (peer) { return peer.id; }),
+				structural: peers.some(isStructuralHeader),
+				childCount: peers.reduce(function (total, peer) {
+					return total + (childByParent[peer.id] || []).length;
+				}, 0),
 			});
 		});
 		return displayUnits;
@@ -6703,6 +6974,28 @@
 	function renderRepositoryAtlasUnitGrid(units) {
 		var unitGrid = el('div', 'rm-atlas-unit-grid');
 		units.forEach(function (unit) {
+			if (unit.structural) {
+				// Decision 218 (F): repository/module containers with child
+				// applications render as structural section headers with a
+				// child count, not equal-weight peer cards.
+				var header = el('div', 'rm-atlas-unit-header');
+				var heading = el('h4', 'rm-atlas-unit-header__name');
+				heading.appendChild(txt('span', '', unit.name));
+				if (unit.childCount > 0) {
+					heading.appendChild(txt('span', 'rm-atlas-unit-header__count', msg(
+						'main.atlas.workspace.children_count',
+						{ count: unit.childCount }
+					)));
+				}
+				header.appendChild(heading);
+				var tags = el('div', 'rm-atlas-unit-tags');
+				(Array.isArray(unit.kinds) ? unit.kinds : [unit.kind]).forEach(function (kind) {
+					tags.appendChild(txt('span', 'rm-atlas-unit-tag', repositoryAtlasUnitKindLabel(kind)));
+				});
+				header.appendChild(tags);
+				unitGrid.appendChild(header);
+				return;
+			}
 			var card = el('article', 'rm-atlas-unit-card');
 			card.appendChild(txt('strong', '', unit.name));
 			var tags = el('div', 'rm-atlas-unit-tags');
@@ -8604,41 +8897,141 @@
       msg('main.explore.the.repository.map'),
       msg('main.select.a.component.runtime.surface.or.code.path.to.inspect.its.implementation.context')
     ));
-    if (DATA.architecture_synthesis && DATA.architecture_synthesis.state === 'failed') {
-      var synthesisWarning = msg('main.architecture.synthesis_failed');
-      if (DATA.architecture_synthesis.error_code === 'provider_output_limit') {
-        synthesisWarning = msg('main.architecture.synthesis_output_limit');
+    // Decision 218 (E): truthful synthesis state. The visible copy maps the
+    // exact closed status; "not performed" is forbidden for attempted
+    // provider calls, and a rejected proposal still shows the local
+    // Architecture. Closed diagnostic codes stay under provenance.
+    var synthesis = DATA.architecture_synthesis || null;
+    if (synthesis) {
+      var synthesisNote = architectureSynthesisNote(synthesis);
+      if (synthesisNote) {
+        root.appendChild(txt('p', 'rm-architecture-synthesis-note' + (synthesisNote.warning ? ' rm-warning' : ''), synthesisNote.copy));
       }
-      root.appendChild(txt('p', 'rm-architecture-synthesis-failed rm-warning', synthesisWarning));
     }
-    // Decision 217: honest relationship presentation. With established
-    // relationships show them as a readable list; with zero relationships
-    // describe the view as a conceptual component grouping and say explicitly
-    // that inter-component relationships were not established in this run.
+    // Decision 218 (D): the relation area is a closed three-state
+    // presentation derived from exact evidence.
+    //  - proven_component_relations: labeled relation list (and canvas);
+    //  - member_relations_unprojected: exact structural-fact count and why no
+    //    safe component edge was created;
+    //  - no_supported_relation_evidence: the view is labeled a conceptual /
+    //    package grouping and the structured list is primary — a zero-edge
+    //    canvas never reads as a runtime graph.
     var relations = architectureRelationships();
+    var relationState = architectureRelationState();
     if (relations.length) {
       root.appendChild(renderArchitectureRelations(relations));
-    } else if (DATA.architecture_canvas && !(DATA.architecture_synthesis && DATA.architecture_synthesis.state === 'failed')) {
-      root.appendChild(txt('p', 'rm-architecture-zero-relations rm-warning', msg('main.architecture.zero_relations')));
+    } else if (relationState === 'member_relations_unprojected') {
+      root.appendChild(renderArchitectureUnprojectedRelations());
+    } else {
+      root.appendChild(txt('p', 'rm-architecture-no-relation-evidence rm-warning', msg('main.architecture.no_relation_evidence')));
+    }
+    var componentList = renderArchitectureComponentList();
+    if (componentList) {
+      // Decision 218 (D): with no supported relation evidence the structured
+      // list is the primary representation; the canvas (if any) is clearly
+      // secondary and never implies runtime order.
+      if (relationState === 'no_supported_relation_evidence') {
+        root.appendChild(componentList);
+        componentList = null;
+      }
     }
     if (DATA.architecture_canvas && window.RepomapArchitectureCanvas) {
       var card = el('section', 'rm-card rm-architecture-canvas-card');
+      if (relationState === 'no_supported_relation_evidence') {
+        card.appendChild(txt('p', 'rm-architecture-canvas-conceptual rm-warning', msg('main.architecture.canvas.conceptual')));
+      }
       architectureCanvasHost = el('div', 'rm-architecture-canvas-host');
       card.appendChild(architectureCanvasHost);
       root.appendChild(card);
     } else {
       var systemMap = renderUserSystemMap(DATA.high_level_map || []);
       if (systemMap) root.appendChild(systemMap);
-      else root.appendChild(txt('p', 'rm-empty-state', msg('main.chrome.open.one.of.the.suggested.source.files')));
+      else if (!componentList) root.appendChild(txt('p', 'rm-empty-state', msg('main.chrome.open.one.of.the.suggested.source.files')));
     }
     // Decision 217: compact unmapped-evidence disclosure preserving every
     // exact item behind an expand action; a structured component list
     // alternative next to the desktop map.
     var unmapped = renderArchitectureUnmappedDisclosure();
     if (unmapped) root.appendChild(unmapped);
-    var componentList = renderArchitectureComponentList();
     if (componentList) root.appendChild(componentList);
     renderArchitectureReturn();
+  }
+
+  // architectureSynthesisNote maps the exact closed Architecture synthesis
+  // status to bounded user copy (Decision 218 E). It returns null when the
+  // synthesis was accepted cleanly (no note needed). The mapping is:
+  //  - unavailable/offline/uncalled -> not attempted;
+  //  - accepted -> accepted (no note);
+  //  - accepted_partial -> accepted for X/Y, local remainder shown;
+  //  - validation/invalid response -> provider responded, proposal rejected,
+  //    local Architecture shown;
+  //  - output/response limit -> partial response unused, local shown;
+  //  - cached -> accepted grouping replayed.
+  function architectureSynthesisNote(synthesis) {
+    if (!synthesis) return null;
+    var state = String(synthesis.state || '');
+    var warning = true;
+    if (state === 'succeeded' || state === 'accepted') {
+      if (synthesis.proposal_partial) {
+        var covered = Number(synthesis.covered_conceptual_count) || 0;
+        var requested = Number(synthesis.requested_conceptual_count) || 0;
+        return {
+          warning: false,
+          copy: msg('main.architecture.synthesis_partial', { covered: covered, requested: requested }),
+        };
+      }
+      return null;
+    }
+    if (state === 'cached') {
+      return { warning: false, copy: msg('main.architecture.synthesis_cached') };
+    }
+    if (state === 'unavailable') {
+      return { warning: false, copy: msg('main.architecture.synthesis_unavailable') };
+    }
+    if (state === 'failed') {
+      if (synthesis.error_code === 'provider_output_limit') {
+        return { warning: true, copy: msg('main.architecture.synthesis_output_limit') };
+      }
+      if (synthesis.provider_call_succeeded && synthesis.proposal_rejected) {
+        return { warning: true, copy: msg('main.architecture.synthesis_rejected') };
+      }
+      return { warning: true, copy: msg('main.architecture.synthesis_failed') };
+    }
+    return null;
+  }
+
+  // architectureRelationState compiles the closed three-state relation
+  // presentation (Decision 218 D) from exact local evidence: proven
+  // component relations, member relations that exist but were not safely
+  // projectable to component edges, or no supported relation evidence.
+  function architectureRelationState() {
+    var grounding = DATA.architecture_grounding || {};
+    var rels = Array.isArray(grounding.relationships) ? grounding.relationships : [];
+    if (rels.length) return 'proven_component_relations';
+    var canvas = DATA.architecture_canvas || {};
+    var facts = Array.isArray(canvas.structural_facts) ? canvas.structural_facts : [];
+    var edges = Array.isArray(canvas.structural_edges) ? canvas.structural_edges : [];
+    if (facts.length || edges.length) return 'member_relations_unprojected';
+    return 'no_supported_relation_evidence';
+  }
+
+  function renderArchitectureUnprojectedRelations() {
+    var canvas = DATA.architecture_canvas || {};
+    var facts = Array.isArray(canvas.structural_facts) ? canvas.structural_facts : [];
+    var edges = Array.isArray(canvas.structural_edges) ? canvas.structural_edges : [];
+    var factsCount = facts.length;
+    var edgesCount = edges.length;
+    var section = el('section', 'rm-workspace-section rm-architecture-unprojected');
+    section.appendChild(renderViewHeading(
+      msg('main.architecture.relations.kicker'),
+      msg('main.architecture.relations.title'),
+      msg('main.architecture.unprojected.copy')
+    ));
+    section.appendChild(txt('p', '', msg('main.architecture.unprojected.summary', {
+      facts: factsCount,
+      edges: edgesCount,
+    })));
+    return section;
   }
 
   // architectureRelationships derives labeled relations from the grounding

@@ -866,7 +866,8 @@ const studyCard = walk(roots["rm-overview"]).find((node) => String(node.classNam
 walk(studyCard).find((node) => String(node.className).split(/\s+/).includes("rm-study-direction-card__title")).onclick();
 const studyState = api.workspaceStateSnapshot();
 const studyHash = window.location.hash;
-componentCards[0].children[0].onclick();
+const firstComponentPrimary = componentCards[0] && walk(componentCards[0]).find((node) => String(node.className).split(/\s+/).includes("rm-overview-object-primary"));
+firstComponentPrimary.onclick();
 const architectureState = api.workspaceStateSnapshot();
 const architectureHash = window.location.hash;
 const exactStart = api.exactOverviewSourceForLocation({ path: "surface-a.go", line: 10 });
@@ -1337,7 +1338,7 @@ func TestUserWorkspaceOverviewKeepsSourceLessComponentsWithoutSurfaceZone(t *tes
 		"renderStudyMapOverview(root, false);",
 		"if (conflict) return { source: null, conflict: true };",
 		"sources: resolved,",
-		"mapTarget: context.map_target",
+		"mapTarget: mapTarget",
 		"exactOverviewSourcePath(snippet.path) !== location.path",
 	} {
 		if !strings.Contains(script, marker) {
