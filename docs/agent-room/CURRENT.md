@@ -4,6 +4,10 @@ Active decisions (each approved by the repository owner via its supervisory goal
 
 1. decisions/215-etcd-architecture-output-exhaustion-isolation.md
 2. decisions/217-report-ui-ux-acceptance-repair.md
+3. decisions/218-report-truth-corrective.md
+   (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
+   in priority by 218 per the owner's revised risk review; the pending change
+   set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
 
 ## Decision 215
 
@@ -1017,3 +1021,48 @@ Notes:
     all-format-31 conceptual components carry hypothesis:true, zero
     flow_count/orientation_confidence across the matrix, study-theme overlap
     surfaced as limitation rather than rewritten.
+
+## Decision 218
+
+Status:
+    ACTIVE (2026-08-05) — report truth corrective authorized by the owner's
+    revised risk roadmap pack (repomap-hermes-d218-report-truth-corrective.txt).
+    Provider-free presentation/view-model corrective on top of D215 + D217:
+    A) Study renders every published theme (theme-level "show more" removed);
+    B) typed source rows with closed kinds (function/method/type/call_site/
+    package/file/document/boundary) as separate DOM nodes, visible even when
+    no exact saved source is available for the run;
+    C) Overview system spine — one representative card per supported role
+    (entry, core, state, extension, operations), one explicit primary card,
+    every other component reachable through Architecture;
+    D) closed three-state relation presentation (proven_component_relations /
+    member_relations_unprojected / no_supported_relation_evidence) with
+    structured-list-primary when there is no proven edge evidence;
+    E) truthful Architecture synthesis state mapping (not attempted / accepted
+    / accepted for X of Y / provider responded-rejected / output limit /
+    cached); "not performed" is never shown for attempted provider calls;
+    F) repository/module units become structural headers with child counts
+    when child applications exist;
+    G) README-derived purpose is labeled source material, never repeated as
+    hero + glance answer, with a neutral local fallback for residue heads.
+
+Verification (2026-08-05):
+    All five Archive 5 fixtures (etcd, Telebot, Chatto, Restic, Casdoor)
+    rendered and inspected at 1440x1000 and 390x844 on Overview, Study, one
+    Study detail, and Architecture; every published theme visible without
+    "show more"; symbol/path/kind visibly distinct; packages never shown as
+    functions; Overview spine 3-5 role cards with primary; zero-relation
+    repos default to list/taxonomy; etcd shows attempted/rejected/local
+    fallback (never uncalled); chatto shows accepted 81 of 89 with local
+    remainder; repository/module hierarchy clear; README not duplicated;
+    16/16 route×repo checks at 390 px with zero horizontal overflow. Full
+    suite, vet, build, node checks, quality and localization gates green.
+
+Approved by:
+    Repository owner via the active supervisory goal
+    (D218 report truth corrective, revised risk roadmap pack, 2026-08-05).
+
+Notes:
+    Decision 219 (Study content integrity) is deferred by the same review;
+    its partial implementation is preserved as a patch and will resume after
+    Surface Discovery v2 and the Study deep-reading contract.

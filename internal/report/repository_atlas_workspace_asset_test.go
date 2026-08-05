@@ -76,6 +76,7 @@ function run(report, language) {
   api.renderRepositoryAtlasWorkspaceShelf(root);
   const nodes = walk(root);
   const unitCards = nodes.filter((node) => String(node.className).split(/\s+/).includes("rm-atlas-unit-card"));
+  const unitHeaders = nodes.filter((node) => String(node.className).split(/\s+/).includes("rm-atlas-unit-header"));
   const unitTags = nodes.filter((node) => String(node.className).split(/\s+/).includes("rm-atlas-unit-tag"));
   const unitAuthorityBadges = unitCards.reduce((count, card) => count + walk(card).filter((node) => String(node.className).split(/\s+/).includes("rm-atlas-authority")).length, 0);
   const sourceButtons = nodes.filter((node) => String(node.className).split(/\s+/).includes("rm-atlas-source-action"));
@@ -112,7 +113,7 @@ function run(report, language) {
     sourceButtons: sourceButtons.length,
     navigatorButtons: navigatorButtons.length,
     sourceState: api.workspaceStateSnapshot().sourceLocation,
-    topologyCards: unitCards.length,
+    topologyCards: unitCards.length + unitHeaders.length,
     unitTags: unitTags.map((node) => String(node.textContent || "")),
     topologyUnitIDs: shelf && shelf.topologyDisplayUnits.map((unit) => unit.unitIDs) || [],
     relationUnitIDs: shelf && shelf.relations.map((relation) => relation.unit.id) || [],
