@@ -3,6 +3,7 @@ package navigator
 import (
 	"crypto/sha256"
 	"fmt"
+	"go/token"
 	"sort"
 	"strconv"
 	"strings"
@@ -240,7 +241,14 @@ func rejectIdentityInMeaning(value string, atlas repositoryatlas.Atlas) error {
 		identities = append(identities, entity.ID)
 	}
 	for _, item := range atlas.Evidence {
-		identities = append(identities, item.ID, item.Location.Path, item.Symbol)
+		identities = append(identities, item.ID, item.Location.Path)
+		// Only QUALIFIED symbols are source locators worth rejecting. A bare
+		// package/function name (workqueue, v1alpha1, internal) is natural
+		// text that legitimately appears inside module-path unit labels; it
+		// is not a canonical identity and must not fail the compile.
+		if symbol := strings.TrimSpace(item.Symbol); symbol != "" && !token.IsIdentifier(symbol) {
+			identities = append(identities, symbol)
+		}
 	}
 	for _, relation := range atlas.Relations {
 		identities = append(identities, relation.ID)

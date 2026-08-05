@@ -363,6 +363,22 @@ func compileCatalog(input Input) (
 		return nil, nil, nil, fmt.Errorf("atlas study: Architecture source: %w", err)
 	}
 	identities := allPrivateIdentities(input, true)
+	// Question text may legitimately reference the exact advertised symbol of
+	// a reading target through its derived package.Symbol segment. Those
+	// model-visible symbols are therefore not private for backend-owned
+	// question prose (a derived reference can collide with another target's
+	// shorter bare symbol on real repositories). Response prose still
+	// validates against the full private set, where qualified symbols stay
+	// private unless the target is explicitly in scope.
+	questionIdentities := make(map[string]struct{}, len(identities))
+	for identity := range identities {
+		questionIdentities[identity] = struct{}{}
+	}
+	for _, target := range input.ReadingTargets {
+		if symbol := modelVisibleTargetSymbol(target.Symbol); symbol != "" {
+			delete(questionIdentities, symbol)
+		}
+	}
 	objects := make([]CatalogObject, 0,
 		len(input.Atlas.Units)+len(input.Architecture.Subsystems)+
 			len(input.Architecture.Components)+len(input.Surfaces)+
@@ -619,7 +635,7 @@ func compileCatalog(input Input) (
 			len(span.AllowedTargetIDs) == 0 {
 			return nil, nil, nil, fmt.Errorf("atlas study: invalid route span")
 		}
-		if err := validateLocalizedSpanQuestions(span, input.Limits.MaxTextBytes, identities); err != nil {
+		if err := validateLocalizedSpanQuestions(span, input.Limits.MaxTextBytes, questionIdentities); err != nil {
 			return nil, nil, nil, err
 		}
 		required := make([]CanonicalRef, 0, len(span.RequiredSupportIDs))

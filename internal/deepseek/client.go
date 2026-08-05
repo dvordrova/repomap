@@ -24,7 +24,7 @@ import (
 const (
 	defaultEndpoint  = "https://api.deepseek.com/chat/completions"
 	defaultModel     = "deepseek-v4-flash"
-	defaultMaxTokens = 64_000
+	defaultMaxTokens = 128_000
 	defaultTimeout   = 10 * time.Minute
 
 	authBearer = "bearer"

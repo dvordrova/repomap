@@ -928,6 +928,76 @@ func TestSavedD208CasdoorResponseReplaysFiveRoutesProviderFree(t *testing.T) {
 	}
 }
 
+// TestQuestionDerivedReferenceDoesNotCollideWithShorterVisibleTargetSymbol
+// reproduces the real-project failure "route span has invalid en question":
+// a question for a fully-qualified target embeds its derived package.Symbol
+// segment (e.g. `server.RunServer` after the last '/'), and that derived text
+// must not be rejected merely because another reading target advertises the
+// same shorter symbol. Backend-owned question prose may use the exact
+// advertised segment; response prose still keeps out-of-scope qualified
+// symbols private.
+func TestQuestionDerivedReferenceDoesNotCollideWithShorterVisibleTargetSymbol(t *testing.T) {
+	input := testInput()
+	// Target A: fully-qualified symbol; its derived question reference is
+	// the segment after the last '/', i.e. "server.RunServer".
+	input.ReadingTargets = append(input.ReadingTargets, ReadingTarget{
+		ID: "anchor-qualified-canonical", Owner: CanonicalRef{Kind: RefComponent, ID: "component-api-canonical"},
+		RelatedComponentIDs: []string{"component-api-canonical"},
+		PrincipalRefs:       []CanonicalRef{{Kind: RefComponent, ID: "component-api-canonical"}},
+		Kind:                ReadingTargetFunction, Label: "Qualified boundary",
+		Fact: "Observed outbound client boundary.", Authority: repositoryatlas.AuthorityObserved,
+		Location: evidence.Location{Path: "internal/client/run.go", Line: 9},
+		Symbol:   "example.com/server.RunServer",
+	})
+	// Target B: the shorter bare symbol that equals A's derived reference.
+	input.ReadingTargets = append(input.ReadingTargets, ReadingTarget{
+		ID: "anchor-short-canonical", Owner: CanonicalRef{Kind: RefComponent, ID: "component-api-canonical"},
+		RelatedComponentIDs: []string{"component-api-canonical"},
+		PrincipalRefs:       []CanonicalRef{{Kind: RefComponent, ID: "component-api-canonical"}},
+		Kind:                ReadingTargetFunction, Label: "Short boundary",
+		Fact: "Observed inbound call site.", Authority: repositoryatlas.AuthorityObserved,
+		Location: evidence.Location{Path: "internal/client/other.go", Line: 12},
+		Symbol:   "server.RunServer",
+	})
+	// Give the qualified target a focused route span whose question embeds
+	// the derived reference.
+	input.RouteSpans = append(input.RouteSpans, RouteSpan{
+		ID: "span-qualified-canonical", Kind: RouteSpanFocused,
+		QuestionEnglish: "What does the observed `server.RunServer` call boundary connect?",
+		QuestionRussian: "Что связывает наблюдаемая граница вызова `server.RunServer`?",
+		TargetJob:       JobMaintain, LearningStage: StageCentralOperation,
+		RequiredSupportIDs: []string{"support-qualified-canonical"},
+		AllowedTargetIDs:   []string{"anchor-qualified-canonical"},
+	})
+	input.ReadingSupports = append(input.ReadingSupports, ReadingSupport{
+		ID: "support-qualified-canonical", TargetID: "anchor-qualified-canonical",
+		PackageBucket: "package-client-canonical", Role: SupportObservedCallBoundary,
+		Authority: repositoryatlas.AuthorityObserved,
+	})
+	// The shorter target must survive candidate selection for its symbol to
+	// enter the private identity set, exactly as on a real repository.
+	input.ReadingSupports = append(input.ReadingSupports, ReadingSupport{
+		ID: "support-short-canonical", TargetID: "anchor-short-canonical",
+		PackageBucket: "package-client-canonical", Role: SupportObservedCallBoundary,
+		Authority: repositoryatlas.AuthorityObserved,
+	})
+	input.RouteSpans = append(input.RouteSpans, RouteSpan{
+		ID: "span-short-canonical", Kind: RouteSpanFocused,
+		QuestionEnglish: "What does the observed `RunServer` call boundary connect?",
+		QuestionRussian: "Что связывает наблюдаемая граница вызова `RunServer`?",
+		TargetJob:       JobMaintain, LearningStage: StageCentralOperation,
+		RequiredSupportIDs: []string{"support-short-canonical"},
+		AllowedTargetIDs:   []string{"anchor-short-canonical"},
+	})
+	input.Architecture.Components[0].ReadingTargetIDs = append(
+		input.Architecture.Components[0].ReadingTargetIDs,
+		"anchor-qualified-canonical", "anchor-short-canonical",
+	)
+	if _, err := Compile(input); err != nil {
+		t.Fatalf("question derived reference collided with a shorter visible target symbol: %v", err)
+	}
+}
+
 func TestSavedCasdoor144414ResponseMissesClosedUnderTypedSpanContract(t *testing.T) {
 	product := mustCompileTestProduct(t, testInput())
 	saved, err := os.ReadFile("testdata/casdoor_20260802_144414_response_shape.json")

@@ -6,6 +6,7 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -301,12 +302,26 @@ func insertSortedLimitedSourceFile(
 
 type cobraASTBudgetStop struct{}
 
+// isNilASTNode detects a typed-nil ast.Node (e.g. a *ast.BlockStmt(nil) from
+// a body-less FuncDecl). ast.Inspect would dereference it and panic; a plain
+// interface == nil check does not catch the typed nil.
+func isNilASTNode(node ast.Node) bool {
+	value := reflect.ValueOf(node)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map,
+		reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
+}
+
 func (d *cobraDiscovery) inspectNode(
 	pkg *packages.Package,
 	function *types.Func,
 	node ast.Node,
 ) (stopped bool) {
-	if node == nil {
+	if node == nil || isNilASTNode(node) {
 		return false
 	}
 	defer func() {
