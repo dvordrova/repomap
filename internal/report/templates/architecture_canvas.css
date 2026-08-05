@@ -1602,7 +1602,19 @@
  padding: 9px 11px;
 }
 
-.rm-arch__partial-truth-label,
+/* Decision 217: the partial-truth disclosure is a collapsed <details>
+   with the count in the summary; every exact member stays available
+   behind the expand action. */
+.rm-arch__partial-truth-label {
+ align-items: baseline;
+ cursor: pointer;
+ display: flex;
+ flex-wrap: wrap;
+ gap: 6px;
+ user-select: none;
+}
+
+.rm-arch__partial-truth-label-text,
 .rm-arch__partial-count {
  font-size: .68rem;
 }

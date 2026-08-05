@@ -6,18 +6,20 @@
   <link rel="icon" href="data:,">
   <title>repomap — testrepo — test project</title>
   <style>:root { --rm-bg: #fff; --rm-fg: #1a1a1a; --rm-card: #f5f5f5; --rm-border: #e0e0e0; --rm-accent: #2563eb; --rm-dim: #666; --rm-code: #d63384; --rm-good: #16a34a; --rm-warn: #ca8a04; --rm-bad: #dc2626; --rm-info: #0ea5e9; --rm-muted: #9ca3af; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
+}
+*:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: 2px; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; margin: 0; padding: 0; background: var(--rm-bg); color: var(--rm-fg); line-height: 1.5; font-size: 14px; overflow-x: hidden; }
-.rm-localization-status { align-items: baseline; display: flex; gap: .45rem; padding: .55rem 1.5rem; }
-.rm-localization-status strong { font-size: .72rem; }
-.rm-localization-status span { font-size: .76rem; }
-.rm-localization-status--succeeded { background: #ecfdf5; color: #166534; }
-.rm-localization-status--failed { background: #fff7ed; color: #9a3412; }
 header { background: linear-gradient(135deg, #1e293b, #334155); color: #fff; padding: .8rem 1.5rem; }
+header h1 { min-width: 0; overflow-wrap: anywhere; }
 .rm-header-inner { max-width: 1240px; margin: 0 auto; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 header h1 { margin: 0; font-size: 1.3rem; }
 header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-header-actions { align-items: flex-end; display: flex; flex-direction: column; gap: .4rem; max-width: 65%; }
-.rm-run-details { max-width: 65%; text-align: right; font-size: .78rem; color: rgba(255,255,255,.75); }
+.rm-provenance-row { display: flex; flex-wrap: wrap; gap: .3rem; justify-content: flex-end; }
+.rm-provenance-chip { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22); border-radius: 999px; padding: .08rem .5rem; font-size: .68rem; white-space: nowrap; }
+.rm-run-details { font-size: .78rem; color: rgba(255,255,255,.75); text-align: right; }
 .rm-run-details summary { cursor: pointer; user-select: none; }
 .rm-artifacts { font-size: .7rem; opacity: .7; margin-top: .35rem; font-family: monospace; overflow-wrap: anywhere; }
 .rm-run-picker { align-items: center; display: flex; gap: .45rem; font-size: .72rem; color: rgba(255,255,255,.75); }
@@ -53,6 +55,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-overview-object-primary:hover { background: #f8fafc; }
 .rm-overview-object-primary:focus-visible, .rm-overview-object-source:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: -2px; }
 .rm-overview-object-detail { color: var(--rm-dim); font-size: .78rem; }
+.rm-overview-object-meta { align-items: center; display: flex; flex-wrap: wrap; gap: .4rem; padding: 0 1rem .65rem; }
+.rm-evidence-tier { border-radius: 999px; font-size: .64rem; font-weight: 700; padding: .18rem .5rem; white-space: nowrap; }
+.rm-evidence-tier--exact_source { background: #ecfdf5; color: #047857; }
+.rm-evidence-tier--package_backed { background: #eff6ff; color: #1d4ed8; }
+.rm-evidence-tier--hypothesis { background: #fef3c7; color: #92400e; }
+.rm-evidence-tier--unmapped { background: #f1f5f9; color: #475569; }
+.rm-overview-object-count { color: var(--rm-dim); font-size: .68rem; }
+.rm-overview-object-more { color: var(--rm-dim); font-size: .68rem; padding: 0 1rem .6rem; }
 .rm-overview-object-location { color: #475569; font-size: .75rem; overflow-wrap: anywhere; }
 .rm-overview-object-action { color: var(--rm-accent); font-size: .78rem; font-weight: 650; }
 .rm-overview-object-sources { border-top: 1px solid var(--rm-border); display: grid; }
@@ -61,8 +71,67 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-overview-object-source:hover { background: #eff6ff; color: var(--rm-accent); }
 .rm-overview-object-source strong { font-size: .76rem; overflow-wrap: anywhere; }
 .rm-overview-object-source code { color: #64748b; font-size: .64rem; overflow-wrap: anywhere; }
+.rm-overview-glance { background: #f8fafc; border: 1px solid var(--rm-border); border-radius: 12px; margin: 1rem 0; padding: 1rem 1.25rem; }
+.rm-overview-glance__title { font-size: .78rem; letter-spacing: .04em; margin: 0 0 .6rem; text-transform: uppercase; }
+.rm-overview-glance__row { display: grid; gap: .4rem 1rem; grid-template-columns: 150px minmax(0, 1fr); padding: .32rem 0; }
+.rm-overview-glance__label { color: var(--rm-dim); font-size: .76rem; font-weight: 650; }
+.rm-overview-glance__value { font-size: .86rem; margin: 0; overflow-wrap: anywhere; }
+.rm-overview-entry-group { margin-bottom: .9rem; }
+.rm-overview-entry-group__label { font-size: .78rem; margin: 0 0 .45rem; }
+@media (max-width: 560px) {
+  .rm-overview-glance__row { grid-template-columns: 1fr; gap: .1rem; }
+  .rm-architecture-canvas-card { display: none; }
+  .rm-architecture-list { margin-top: 0; }
+}
+/* Decision 217: the canvas renders its own compact unassigned-evidence
+   disclosure on desktop; the page-level disclosure replaces it on mobile
+   where the canvas is hidden. Never both. */
+.rm-architecture-unmapped { display: none; }
+@media (max-width: 560px) {
+  .rm-architecture-unmapped { display: block; }
+}
 .rm-overview-anatomy-omitted { color: var(--rm-dim); font-size: .78rem; margin: 0; }
 .rm-overview-integrations-empty { margin: 0; }
+.rm-study-theme-shelf { display: grid; gap: 1rem; }
+.rm-study-theme-card { background: #fff; border: 1px solid var(--rm-border); border-radius: 12px; display: flex; flex-direction: column; gap: .55rem; min-width: 0; padding: 1rem 1.1rem; }
+.rm-study-theme-card__title-row { align-items: baseline; display: flex; flex-wrap: wrap; gap: .5rem; justify-content: space-between; min-width: 0; }
+.rm-study-theme-card__title { cursor: pointer; font-size: 1.05rem; margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.rm-study-theme-card__title:hover { color: var(--rm-accent); }
+.rm-study-theme-card__coverage { border-radius: 999px; font-size: .64rem; font-weight: 700; padding: .18rem .5rem; white-space: nowrap; }
+.rm-study-theme-card__coverage--supported { background: #ecfdf5; color: #047857; }
+.rm-study-theme-card__coverage--partial { background: #fef3c7; color: #92400e; }
+.rm-study-theme-card__question { font-size: .92rem; margin: 0; overflow-wrap: anywhere; }
+.rm-study-theme-card__reason { color: var(--rm-dim); font-size: .84rem; overflow-wrap: anywhere; }
+.rm-study-theme-card__readings { display: grid; gap: .3rem; list-style: none; margin: 0; min-width: 0; padding: 0; }
+.rm-study-theme-card__reading-item { margin: 0; min-width: 0; }
+.rm-study-theme-card__reading { min-width: 0; overflow-wrap: anywhere; }
+.rm-study-theme-card__reading strong, .rm-study-theme-card__reading code { overflow-wrap: anywhere; }
+.rm-source-action-link { max-width: 100%; }
+.rm-source-action-link strong { min-width: 0; overflow-wrap: anywhere; }
+.rm-source-action-link code { min-width: 0; overflow-wrap: anywhere; }
+.rm-study-theme-card__more { color: var(--rm-dim); font-size: .72rem; }
+.rm-study-theme-card__open { align-self: flex-start; }
+.rm-study-theme-card__coverage-explanation { color: var(--rm-dim); font-size: .82rem; margin: 0 0 .4rem; overflow-wrap: anywhere; }
+.rm-study-show-all { align-self: flex-start; margin-bottom: .4rem; }
+.rm-study-provenance { border: 1px solid var(--rm-border); border-radius: 12px; margin-top: 1.4rem; padding: .6rem 1rem; }
+.rm-study-provenance__summary { cursor: pointer; font-size: .8rem; font-weight: 650; user-select: none; }
+.rm-architecture-zero-relations { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; color: #78350f; font-size: .85rem; margin: 0 0 1rem; padding: .7rem .9rem; }
+.rm-architecture-relations { margin-bottom: .8rem; }
+.rm-architecture-relation-list { display: grid; gap: .35rem; list-style: none; margin: 0; padding: 0; }
+.rm-architecture-relation-item { align-items: baseline; display: flex; flex-wrap: wrap; gap: .4rem; font-size: .82rem; }
+.rm-architecture-relation-kind { background: #eff6ff; border-radius: 999px; color: #1d4ed8; font-size: .62rem; font-weight: 700; padding: .12rem .45rem; }
+.rm-architecture-unmapped { border: 1px solid var(--rm-border); border-radius: 10px; margin: .8rem 0; padding: .55rem .9rem; }
+.rm-architecture-unmapped__summary { cursor: pointer; font-size: .8rem; font-weight: 650; user-select: none; }
+.rm-architecture-unmapped__note { color: var(--rm-dim); font-size: .76rem; margin: .35rem 0; }
+.rm-architecture-unmapped__list { display: grid; gap: .2rem; list-style: none; margin: 0; padding: 0; }
+.rm-architecture-unmapped__item { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .7rem; overflow-wrap: anywhere; }
+.rm-architecture-list { margin-top: .6rem; }
+.rm-architecture-list__items { display: grid; gap: .5rem; list-style: none; margin: 0; padding: 0; }
+.rm-architecture-list__item { background: #fff; border: 1px solid var(--rm-border); border-radius: 10px; padding: .6rem .8rem; }
+.rm-architecture-list__primary { align-items: center; background: transparent; border: 0; color: inherit; cursor: pointer; display: flex; flex-wrap: wrap; gap: .5rem; font: inherit; padding: 0; text-align: left; }
+.rm-architecture-list__primary:hover strong { color: var(--rm-accent); }
+.rm-architecture-list__description { color: var(--rm-dim); font-size: .78rem; margin: .3rem 0 0; overflow-wrap: anywhere; }
+.rm-architecture-list__count { color: var(--rm-dim); font-size: .7rem; }
 .rm-atlas-shelf { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1.1rem; }
 .rm-overview-hero + .rm-atlas-shelf--overview { margin-top: .9rem; }
 .rm-atlas-shelf--overview { background: #fbfdff; }
@@ -123,8 +192,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-brief-term { background: #fff; border: 1px solid #e2e8f0; border-radius: 999px; display: flex; gap: .35rem; padding: .35rem .55rem; }
 .rm-brief-term strong, .rm-brief-term span { font-size: .66rem; }
 .rm-brief-term span { color: #64748b; }
-.rm-study-direction-list { display: grid; gap: .7rem; }
-.rm-study-direction-card { align-items: flex-start; background: #fff; border: 1px solid var(--rm-border); border-radius: 11px; color: var(--rm-fg); display: grid; gap: .9rem; grid-template-columns: 2rem minmax(0, 1fr); padding: 1rem; width: 100%; }
+.rm-study-direction-list { display: grid; gap: .7rem; min-width: 0; }
+.rm-study-direction-card { align-items: flex-start; background: #fff; border: 1px solid var(--rm-border); border-radius: 11px; box-sizing: border-box; color: var(--rm-fg); display: grid; gap: .9rem; grid-template-columns: 2rem minmax(0, 1fr); max-width: 100%; min-width: 0; overflow-wrap: anywhere; padding: 1rem; width: 100%; }
 .rm-study-direction-card:focus-within, .rm-study-direction-card:hover { border-color: var(--rm-accent); box-shadow: 0 8px 22px rgba(15,23,42,.08); }
 .rm-study-direction-card__order, .rm-study-reading-anchor__order { align-items: center; background: #eff6ff; border-radius: 999px; color: #1d4ed8; display: inline-flex; flex: 0 0 auto; font-size: .72rem; font-weight: 800; height: 2rem; justify-content: center; width: 2rem; }
 .rm-study-direction-card__body { display: grid; gap: .42rem; min-width: 0; }
@@ -201,6 +270,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-operation-result__value--output { max-height: 16rem; }
 .rm-operation-result > .rm-quiet-action { justify-self: start; }
 .rm-purpose-hero p { font-size: 1rem; line-height: 1.65; margin-bottom: 0; }
+.rm-purpose-hero h2 { min-width: 0; overflow-wrap: anywhere; }
+.rm-purpose-source { color: var(--rm-dim); display: inline-block; font-size: .72rem; margin-top: .45rem; }
+.rm-hero-story__entry { margin-bottom: .35rem; }
+.rm-hero-readme { border-left: 3px solid var(--rm-border); margin: .6rem 0 0; min-width: 0; overflow-wrap: anywhere; padding: .15rem 0 .15rem .8rem; }
+.rm-hero-readme p { color: var(--rm-dim); font-size: .9rem; margin-bottom: .2rem; overflow-wrap: anywhere; }
 .rm-overview-actions, .rm-mechanism-actions, .rm-step-actions, .rm-map-return { display: flex; flex-wrap: wrap; gap: .55rem; }
 .rm-primary-action, .rm-secondary-action, .rm-quiet-action { border: 1px solid var(--rm-accent); border-radius: 7px; cursor: pointer; font: inherit; font-size: .78rem; font-weight: 650; padding: .5rem .75rem; }
 .rm-source-action-link { align-items: center; box-sizing: border-box; display: inline-flex; justify-content: center; text-decoration: none; }
@@ -272,7 +346,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-code-location { align-items: center; background: #f8fafc; border: 1px solid var(--rm-border); border-radius: 7px; color: var(--rm-code); cursor: pointer; display: flex; font: inherit; font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace; font-size: .7rem; justify-content: space-between; gap: .75rem; padding: .55rem .65rem; text-align: left; }
 .rm-code-location:hover, .rm-code-location:focus-visible { border-color: var(--rm-accent); outline: none; }
 .rm-code-location span:last-child { color: var(--rm-accent); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; font-size: .65rem; font-weight: 650; white-space: nowrap; }
-.rm-source-drawer { background: #fff; border-left: 1px solid var(--rm-border); box-sizing: border-box; height: calc(100vh - 65px); overflow: auto; overflow-x: hidden; padding: 1.25rem; position: sticky; top: 0; }
+.rm-source-drawer { background: #fff; border-left: 1px solid var(--rm-border); box-sizing: border-box; height: calc(100vh - 65px); overflow: auto; overflow-x: auto; padding: 1.25rem; position: sticky; top: 0; }
+.rm-source-drawer code, .rm-source-drawer pre { overflow-wrap: anywhere; }
+.rm-source-drawer pre { max-width: 100%; white-space: pre-wrap; }
 .rm-source-drawer__close { background: none; border: 0; color: var(--rm-dim); cursor: pointer; float: right; font-size: 1.35rem; line-height: 1; }
 .rm-source-drawer h2 { font-size: 1rem; margin: .2rem 2rem .35rem 0; }
 .rm-source-drawer p { color: var(--rm-dim); font-size: .76rem; }
@@ -784,6 +860,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   .rm-header-inner { align-items: stretch; flex-direction: column; }
   .rm-header-actions { align-items: flex-start; max-width: 100%; }
   .rm-run-details { max-width: 100%; text-align: left; }
+  .rm-provenance-row { justify-content: flex-start; }
   .rm-run-picker { align-items: flex-start; flex-direction: column; width: 100%; }
   .rm-run-picker select { max-width: 100%; width: 100%; }
   .rm-direction-context-facts { grid-template-columns: 1fr; }
@@ -824,7 +901,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     <style>body > :not(noscript) { display: none !important; }</style>
     <p>This report requires JavaScript. The raw data is available in <code>report.json</code>.</p>
   </noscript>
-
   <header>
     <div class="rm-header-inner">
       <div>
@@ -832,13 +908,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
         <p id="rm-workspace-purpose" data-rm-message="main.repository.onboarding">Repository onboarding</p>
       </div>
       <div class="rm-header-actions">
+        <div class="rm-provenance-row" id="rm-provenance-row" aria-label="Report provenance" data-rm-aria-message="main.provenance.row"></div>
         <label class="rm-run-picker" id="rm-run-picker" hidden>
           <span data-rm-message="main.saved.report">Saved report</span>
           <select id="rm-run-selector"></select>
         </label>
         <span class="rm-editor-hint" id="rm-editor-hint" hidden data-rm-message="main.file.paths.open.in.vs.code">File paths open in VS Code ↗</span>
-        <details class="rm-run-details" id="rm-run-details" hidden>
-          <summary data-rm-message="main.run.details">Run details</summary>
+        <details class="rm-run-details" id="rm-run-details">
+          <summary data-rm-message="main.about.this.report">About this report</summary>
           <div class="rm-artifacts" id="rm-artifacts-dir"></div>
           <div class="rm-artifacts" id="rm-feedback-path"></div>
           <div class="rm-artifacts" id="rm-snapshot-detail"></div>
@@ -900,6 +977,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.flow.tests_deterministic": { params: [], text: "Tests selected by deterministic retrieval" },
     "main.flow.tests_selected_locally": { params: [], text: "Tests selected locally" },
     "main.localization.ru_active": { params: [], text: "Russian localization is active." },
+    "main.provenance.readme_source": { params: [], text: "Source: repository README" },
     "main.localization.ru_unavailable_canonical_en": { params: [], text: "Russian localization is unavailable. Showing the canonical English report." },
     "main.localization.status_label": { params: [], text: "Localization status" },
     "main.mechanism.complete": { params: [], text: "Complete mechanisms" },
@@ -968,13 +1046,33 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.repository.onboarding": { params: [], text: "Repository onboarding" },
     "main.saved.report": { params: [], text: "Saved report" },
     "main.file.paths.open.in.vs.code": { params: [], text: "File paths open in VS Code ↗" },
-    "main.run.details": { params: [], text: "Run details" },
+    "main.about.this.report": { params: [], text: "About this report" },
+    "main.provenance.row": { params: [], text: "Report provenance" },
+    "main.provenance.revision": { params: ["revision"], format: function (params) { return "revision " + params.revision; } },
+    "main.provenance.freshness": { params: ["state"], format: function (params) { return "repository " + params.state; } },
+    "main.provenance.language": { params: ["language"], format: function (params) { return "language: " + params.language; } },
+    "main.freshness.state.fresh": { params: [], text: "clean" },
+    "main.freshness.state.dirty": { params: [], text: "locally modified" },
+    "main.freshness.state.stale": { params: [], text: "stale" },
+    "main.freshness.state.missing": { params: [], text: "missing" },
+    "main.freshness.state.unavailable": { params: [], text: "unavailable" },
     "main.repository.navigation": { params: [], text: "Repository navigation" },
     "main.repository.workspace": { params: [], text: "Repository workspace" },
     "main.overview": { params: [], text: "Overview" },
     "main.study": { params: [], text: "Study" },
     "main.architecture": { params: [], text: "Architecture" },
     "main.architecture.synthesis_failed": { params: [], text: "Architecture synthesis failed; showing the locally available architecture." },
+    "main.architecture.zero_relations": { params: [], text: "Conceptual component grouping: no inter-component relationships were established in this run. Component order and membership are model hypotheses over exact local packages, not a verified call graph." },
+    "main.architecture.relations.kicker": { params: [], text: "Established relationships" },
+    "main.architecture.relations.title": { params: [], text: "Observed relations" },
+    "main.architecture.relations.copy": { params: [], text: "Relationships between components, each bound to an exact source anchor." },
+    "main.architecture.unmapped.title": { params: ["count"], format: function (params) { return englishCount(params.count, "exact member", "exact members") + " outside the conceptual map"; } },
+    "main.architecture.unmapped.copy": { params: [], text: "These locally observed members were not assigned to any component by the model. They remain exact evidence; the grouping simply did not cover them." },
+    "main.architecture.list.kicker": { params: [], text: "Components" },
+    "main.architecture.list.title": { params: [], text: "Component list" },
+    "main.architecture.list.copy": { params: [], text: "Structured alternative to the map: every component with its evidence tier. Select one to focus it." },
+    "main.architecture.list.member_count": { params: ["count"], format: function (params) { return englishCount(params.count, "member", "members"); } },
+    "main.architecture.synthesis_output_limit": { params: [], text: "Conceptual grouping is unavailable because the model exceeded its response budget. The partial response was not used; exact local Architecture remains available." },
     "main.provenance": { params: [], text: "Provenance" },
     "main.source.locations": { params: [], text: "Source locations" },
     "main.close.source.drawer": { params: [], text: "Close source drawer" },
@@ -1029,6 +1127,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.diagnostics.portfolio_target_met": { params: [], text: "Portfolio target met" },
     "main.study.diagnostics.omissions": { params: [], text: "Frontier omissions" },
     "main.study.themes.title": { params: [], text: "Source-grounded study themes" },
+    "main.study.themes.show_all": { params: ["count"], format: function (params) { return "Show all " + params.count + " more"; } },
+    "main.study.theme.supported": { params: [], text: "Source-backed" },
+    "main.study.theme.partial": { params: [], text: "Partial coverage" },
+    "main.study.theme.supported_explanation": { params: [], text: "Every reading in this theme is backed by an exact source anchor." },
+    "main.study.theme.partial_explanation": { params: ["passed", "total"], format: function (params) { return params.passed + " of " + params.total + " anchors passed source review. Thematic coverage can still be partial: the theme spans more source than was reviewed, or some anchors could not be pinned exactly."; } },
+    "main.study.theme.partial_explanation_generic": { params: [], text: "Thematic coverage is partial: some anchors could not be pinned to exact source, or the theme spans more source than was reviewed." },
+    "main.study.theme.more_readings": { params: ["count"], format: function (params) { return "+" + params.count + " more readings in detail"; } },
+    "main.study.theme.open_detail": { params: [], text: "Open reading plan" },
+    "main.study.provenance.title": { params: [], text: "Coverage and provenance" },
     "main.study.themes.copy": { params: [], text: "Editorial themes over exact anchors, each with its exact source readings. The model proposes; local reduction publishes only what the source supports." },
     "main.study.frontier.browse_title": { params: [], text: "All study questions" },
     "main.study.frontier.open_theme": { params: ["count"], format: function (params) { return "Open theme " + params.count; } },
@@ -1119,6 +1226,22 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.atlas.navigator.inspect_source": { params: [], text: "Inspect selected startup evidence" },
     "main.overview.anatomy.entry_surfaces_kicker": { params: [], text: "Saved taxonomy" },
     "main.overview.anatomy.entry_surfaces": { params: [], text: "Entry surfaces" },
+    "main.overview.glance.title": { params: [], text: "At a glance" },
+    "main.overview.glance.what": { params: [], text: "What is this?" },
+    "main.overview.glance.entry": { params: [], text: "Where does it start?" },
+    "main.overview.glance.areas": { params: [], text: "Main areas" },
+    "main.overview.glance.open_first": { params: [], text: "Open first" },
+    "main.overview.entry.primary": { params: [], text: "Primary product entry" },
+    "main.overview.entry.service": { params: [], text: "Service entry" },
+    "main.overview.entry.tooling": { params: [], text: "CLI and tooling" },
+    "main.overview.entry.library": { params: [], text: "Library API" },
+    "main.overview.entry.other": { params: [], text: "Other entry points" },
+    "main.overview.object.package_count": { params: ["count"], format: function (params) { return englishCount(params.count, "package", "packages"); } },
+    "main.overview.object.more_sources": { params: ["count"], format: function (params) { return "+" + params.count + " more exact sources"; } },
+    "main.evidence.tier.exact_source": { params: [], text: "Exact source" },
+    "main.evidence.tier.package_backed": { params: [], text: "Package-backed grouping" },
+    "main.evidence.tier.hypothesis": { params: [], text: "Exploratory hypothesis" },
+    "main.evidence.tier.unmapped": { params: [], text: "Unmapped exact evidence" },
     "main.overview.anatomy.entry_surfaces_copy": { params: [], text: "Entry-surface objects from the saved catalog with an exact saved source excerpt." },
     "main.overview.anatomy.components_kicker": { params: [], text: "Saved architecture" },
     "main.overview.anatomy.components": { params: [], text: "Components" },
@@ -2193,6 +2316,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.flow.tests_deterministic": { params: [], text: "Тесты, выбранные детерминированным поиском" },
     "main.flow.tests_selected_locally": { params: [], text: "Тесты, выбранные локально" },
     "main.localization.ru_active": { params: [], text: "Русская локализация включена." },
+    "main.provenance.readme_source": { params: [], text: "Источник: README репозитория" },
     "main.localization.ru_unavailable_canonical_en": { params: [], text: "Русская локализация недоступна. Показан канонический отчёт на английском языке." },
     "main.localization.status_label": { params: [], text: "Статус локализации" },
     "main.mechanism.complete": { params: [], text: "Полные механизмы" },
@@ -2261,13 +2385,33 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.repository.onboarding": { params: [], text: "Знакомство с репозиторием" },
     "main.saved.report": { params: [], text: "Сохранённый отчёт" },
     "main.file.paths.open.in.vs.code": { params: [], text: "Пути к файлам открываются в VS Code ↗" },
-    "main.run.details": { params: [], text: "Детали запуска" },
+    "main.about.this.report": { params: [], text: "Об этом отчёте" },
+    "main.provenance.row": { params: [], text: "Происхождение отчёта" },
+    "main.provenance.revision": { params: ["revision"], format: function (params) { return "ревизия " + params.revision; } },
+    "main.provenance.freshness": { params: ["state"], format: function (params) { return "репозиторий " + params.state; } },
+    "main.provenance.language": { params: ["language"], format: function (params) { return "язык: " + params.language; } },
+    "main.freshness.state.fresh": { params: [], text: "чистый" },
+    "main.freshness.state.dirty": { params: [], text: "локально изменён" },
+    "main.freshness.state.stale": { params: [], text: "устарел" },
+    "main.freshness.state.missing": { params: [], text: "отсутствует" },
+    "main.freshness.state.unavailable": { params: [], text: "недоступен" },
     "main.repository.navigation": { params: [], text: "Навигация по репозиторию" },
     "main.repository.workspace": { params: [], text: "Рабочее пространство репозитория" },
     "main.overview": { params: [], text: "Обзор" },
     "main.study": { params: [], text: "Изучение" },
     "main.architecture": { params: [], text: "Архитектура" },
     "main.architecture.synthesis_failed": { params: [], text: "Синтез архитектуры не выполнен; показана локально доступная архитектура." },
+    "main.architecture.zero_relations": { params: [], text: "Концептуальная группировка компонентов: связи между компонентами в этом запуске не установлены. Порядок и состав компонентов — гипотезы модели над точными локальными пакетами, а не проверенный граф вызовов." },
+    "main.architecture.relations.kicker": { params: [], text: "Установленные связи" },
+    "main.architecture.relations.title": { params: [], text: "Наблюдаемые связи" },
+    "main.architecture.relations.copy": { params: [], text: "Связи между компонентами, каждая привязана к точному исходному якорю." },
+    "main.architecture.unmapped.title": { params: ["count"], format: function (params) { return russianCount(params.count, "точный элемент вне карты", "точных элемента вне карты", "точных элементов вне карты"); } },
+    "main.architecture.unmapped.copy": { params: [], text: "Эти локально наблюдаемые элементы модель не отнесла ни к одному компоненту. Они остаются точными данными; группировка просто их не покрыла." },
+    "main.architecture.list.kicker": { params: [], text: "Компоненты" },
+    "main.architecture.list.title": { params: [], text: "Список компонентов" },
+    "main.architecture.list.copy": { params: [], text: "Структурированная альтернатива карте: каждый компонент с уровнем доказательности. Выберите, чтобы сфокусировать карту." },
+    "main.architecture.list.member_count": { params: ["count"], format: function (params) { return russianCount(params.count, "элемент", "элемента", "элементов"); } },
+    "main.architecture.synthesis_output_limit": { params: [], text: "Концептуальная группировка недоступна: модель исчерпала лимит ответа. Частичный ответ не использован; точная локальная архитектура остаётся доступна." },
     "main.provenance": { params: [], text: "Происхождение данных" },
     "main.source.locations": { params: [], text: "Исходные позиции" },
     "main.close.source.drawer": { params: [], text: "Закрыть панель исходников" },
@@ -2322,6 +2466,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.diagnostics.portfolio_target_met": { params: [], text: "Целевой размер портфеля достигнут" },
     "main.study.diagnostics.omissions": { params: [], text: "Опущено из фронтира" },
     "main.study.themes.title": { params: [], text: "Темы изучения на основе источников" },
+    "main.study.themes.show_all": { params: ["count"], format: function (params) { return "Показать ещё " + params.count; } },
+    "main.study.theme.supported": { params: [], text: "Подтверждено источниками" },
+    "main.study.theme.partial": { params: [], text: "Неполное покрытие" },
+    "main.study.theme.supported_explanation": { params: [], text: "Каждое чтение этой темы опирается на точный исходный якорь." },
+    "main.study.theme.partial_explanation": { params: ["passed", "total"], format: function (params) { return params.passed + " из " + params.total + " якорей прошли проверку источника. Покрытие темы может оставаться неполным: тема охватывает больше исходников, чем было проверено, или часть якорей не удалось привязать точно."; } },
+    "main.study.theme.partial_explanation_generic": { params: [], text: "Покрытие темы неполное: часть якорей не удалось привязать к точному исходнику, или тема охватывает больше исходников, чем было проверено." },
+    "main.study.theme.more_readings": { params: ["count"], format: function (params) { return "ещё " + params.count + " чтений в деталях"; } },
+    "main.study.theme.open_detail": { params: [], text: "Открыть план чтения" },
+    "main.study.provenance.title": { params: [], text: "Покрытие и происхождение" },
     "main.study.themes.copy": { params: [], text: "Редакционные темы над точными якорями, каждая с точными чтениями исходников. Модель предлагает; локальная редукция публикует только то, что подтверждает источник." },
     "main.study.frontier.browse_title": { params: [], text: "Все вопросы изучения" },
     "main.study.frontier.open_theme": { params: ["count"], format: function (params) { return "Открыть тему " + params.count; } },
@@ -2412,6 +2565,22 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.atlas.navigator.inspect_source": { params: [], text: "Открыть свидетельство выбранного запуска" },
     "main.overview.anatomy.entry_surfaces_kicker": { params: [], text: "Сохранённая таксономия" },
     "main.overview.anatomy.entry_surfaces": { params: [], text: "Точки входа" },
+    "main.overview.glance.title": { params: [], text: "Кратко" },
+    "main.overview.glance.what": { params: [], text: "Что это?" },
+    "main.overview.glance.entry": { params: [], text: "С чего начинается?" },
+    "main.overview.glance.areas": { params: [], text: "Основные области" },
+    "main.overview.glance.open_first": { params: [], text: "Открыть первым" },
+    "main.overview.entry.primary": { params: [], text: "Основная точка входа продукта" },
+    "main.overview.entry.service": { params: [], text: "Точка входа сервиса" },
+    "main.overview.entry.tooling": { params: [], text: "CLI и инструменты" },
+    "main.overview.entry.library": { params: [], text: "API библиотеки" },
+    "main.overview.entry.other": { params: [], text: "Прочие точки входа" },
+    "main.overview.object.package_count": { params: ["count"], format: function (params) { return russianCount(params.count, "пакет", "пакета", "пакетов"); } },
+    "main.overview.object.more_sources": { params: ["count"], format: function (params) { return "ещё " + params.count + " точных источника"; } },
+    "main.evidence.tier.exact_source": { params: [], text: "Точный источник" },
+    "main.evidence.tier.package_backed": { params: [], text: "Группировка по пакетам" },
+    "main.evidence.tier.hypothesis": { params: [], text: "Поисковая гипотеза" },
+    "main.evidence.tier.unmapped": { params: [], text: "Неотображённые точные данные" },
     "main.overview.anatomy.entry_surfaces_copy": { params: [], text: "Объекты точек входа из сохранённого каталога с точным сохранённым фрагментом исходника." },
     "main.overview.anatomy.components_kicker": { params: [], text: "Сохранённая архитектура" },
     "main.overview.anatomy.components": { params: [], text: "Компоненты" },
@@ -4584,6 +4753,34 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var node = el(tag, cls);
     appendLinkifiedText(node, statement);
     return node;
+  }
+
+  // normalizeMarkdownProse renders repository README-derived prose as plain,
+  // readable text: link syntax becomes "text (url)", emphasis/backticks are
+  // stripped, blockquote markers and leading hashes are removed, and code
+  // fences/HTML tags never leak into product copy. It is a display-only
+  // projection: source material stays labeled, never translated in place.
+  function normalizeMarkdownProse(value) {
+    if (!value) return '';
+    var text = String(value);
+    text = text.replace(/```[\s\S]*?```/g, ' ').replace(/`([^`]*)`/g, '$1');
+    text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '$1 ($2)');
+    text = text.replace(/\[([^\]]*)\]\(([^)]+)\)/g, '$1 ($2)');
+    text = text.replace(/<[^>]+>/g, ' ');
+    text = text.replace(/^\s{0,3}#{1,6}\s+/gm, '');
+    text = text.replace(/^\s{0,3}(&gt;|>)\s?/gm, '');
+    text = text.replace(/\*\*([^*]+)\*\*/g, '$1');
+    text = text.replace(/(^|[^*])\*([^*]+)\*/g, '$1$2');
+    text = text.replace(/__([^_]+)__/g, '$1');
+    text = text.replace(/(^|[^_])_([^_]+)_/g, '$1$2');
+    text = text.replace(/\s+/g, ' ').trim();
+    return text;
+  }
+
+  function purposeSourceLabel() {
+    // README-derived purpose is labeled source material, never presented as
+    // translated product copy (Decision 217).
+    return msg('main.provenance.readme_source');
   }
 
   function runPickerDate(run) {
@@ -8108,32 +8305,101 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
 	// D213: renders the source-grounded theme shelf (cards with exact
 	// readings), the diagnostics panel and the four-stage frontier browse.
+	// themeCoverageState maps the stored badge to a user-facing coverage
+	// state: "supported" for source-backed themes, "partial" otherwise.
+	// It never presents "1 of 1 anchors passed" as failed evidence
+	// (Decision 217).
+	function themeCoverageState(card) {
+		if (!card) return 'partial';
+		var badge = String(card.badge || '');
+		if (badge === 'editorial_source_backed' || badge === 'source_backed') return 'supported';
+		return 'partial';
+	}
+
+	function themeCoverageLabel(card) {
+		var state = themeCoverageState(card);
+		return state === 'supported'
+			? msg('main.study.theme.supported')
+			: msg('main.study.theme.partial');
+	}
+
+	// themeCoverageExplanation renders the coverage limitation in user-facing
+	// terms. A "1 of 1 anchors passed source review" limitation is explained
+	// as supported-but-narrow rather than as failed evidence.
+	function themeCoverageExplanation(card) {
+		var state = themeCoverageState(card);
+		if (state === 'supported') return msg('main.study.theme.supported_explanation');
+		var limitation = String(card.limitation || '');
+		var anchorsPassed = limitation.match(/(\d+)\s+of\s+(\d+)\s+anchors?\s+passed/);
+		if (anchorsPassed) {
+			return msg('main.study.theme.partial_explanation', {
+				passed: anchorsPassed[1],
+				total: anchorsPassed[2],
+			});
+		}
+		return msg('main.study.theme.partial_explanation_generic');
+	}
+
 	function renderAtlasStudyThemeShelf(root, cards) {
 		root.appendChild(renderViewHeading(
 			msg('main.study'),
 			msg('main.study.themes.title'),
 			msg('main.study.themes.copy')
 		));
+		// Bounded default shelf with an explicit "show all" action; every card
+		// remains available (Decision 217: no hidden truncation).
 		var shelf = el('div', 'rm-study-theme-shelf');
-		cards.forEach(function (card, index) {
+		var shown = cards;
+		var initial = 4;
+		if (cards.length > initial) {
+			shown = cards.slice(0, initial);
+			var remaining = cards.length - initial;
+			var showAll = txt('button', 'rm-secondary-action rm-study-show-all', msg('main.study.themes.show_all', { count: remaining }));
+			showAll.type = 'button';
+			showAll.setAttribute('aria-expanded', 'false');
+			showAll.onclick = function () {
+				var expanded = document.createElement('div');
+				expanded.className = 'rm-study-theme-shelf';
+				cards.slice(initial).forEach(function (card, index) {
+					expanded.appendChild(renderThemeCard(card, initial + index));
+				});
+				shelf.appendChild(expanded);
+				showAll.hidden = true;
+				showAll.setAttribute('aria-expanded', 'true');
+			};
+			root.appendChild(showAll);
+		}
+		shown.forEach(function (card, index) {
 			shelf.appendChild(renderThemeCard(card, index));
 		});
 		root.appendChild(shelf);
+		// Raw span/model/frontier diagnostics and the machine question
+		// inventory move into a collapsed "Coverage and provenance" section
+		// (Decision 217): available for the meticulous critic, out of the
+		// main learning path.
+		var provenance = el('details', 'rm-study-provenance');
+		provenance.appendChild(txt('summary', 'rm-study-provenance__summary', msg('main.study.provenance.title')));
 		var diagnostics = renderAtlasStudyDiagnostics();
-		if (diagnostics) root.appendChild(diagnostics);
+		if (diagnostics) provenance.appendChild(diagnostics);
 		var browse = renderAtlasStudyBrowse();
-		if (browse) root.appendChild(browse);
+		if (browse) provenance.appendChild(browse);
+		root.appendChild(provenance);
 	}
 
 	function renderThemeCard(card, index) {
 		var article = el('article', 'rm-study-theme-card' + (card.badge ? ' rm-study-theme-card--' + String(card.badge).toLowerCase() : ''));
+		var titleRow = el('div', 'rm-study-theme-card__title-row');
 		var title = txt('h3', 'rm-study-theme-card__title', card.final_title || '');
 		title.onclick = function () { openThemeCard(card.ordinal); };
-		article.appendChild(title);
+		titleRow.appendChild(title);
+		titleRow.appendChild(txt('span', 'rm-study-theme-card__coverage rm-study-theme-card__coverage--' + themeCoverageState(card), themeCoverageLabel(card)));
+		article.appendChild(titleRow);
 		if (card.final_question) article.appendChild(txt('p', 'rm-study-theme-card__question', card.final_question));
 		if (card.why_it_matters) article.appendChild(txt('span', 'rm-study-theme-card__reason', card.why_it_matters));
 		var readings = el('ul', 'rm-study-theme-card__readings');
-		(card.readings || []).forEach(function (reading) {
+		// Bounded reading preview on the card; the detail route shows the full
+		// reading list (Decision 217).
+		(card.readings || []).slice(0, 3).forEach(function (reading) {
 			var action = renderStudySourceAction(reading, 'rm-study-theme-card__reading', true);
 			if (action) {
 				var item = txt('li', 'rm-study-theme-card__reading-item', '');
@@ -8142,6 +8408,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			}
 		});
 		if (readings.childNodes.length) article.appendChild(readings);
+		if (card.readings && card.readings.length > 3) {
+			article.appendChild(txt('span', 'rm-study-theme-card__more', msg('main.study.theme.more_readings', { count: card.readings.length - 3 })));
+		}
+		var openDetail = txt('button', 'rm-quiet-action rm-study-theme-card__open', msg('main.study.theme.open_detail'));
+		openDetail.type = 'button';
+		openDetail.onclick = function () { openThemeCard(card.ordinal); };
+		article.appendChild(openDetail);
 		return article;
 	}
 
@@ -8156,10 +8429,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		back.onclick = function () { navigateWorkspace('study_overview'); };
 		root.appendChild(back);
 		root.appendChild(renderViewHeading(
-			card.badge || '',
+			themeCoverageLabel(card),
 			card.final_title || '',
 			card.final_question || ''
 		));
+		root.appendChild(txt('p', 'rm-study-theme-card__coverage-explanation', themeCoverageExplanation(card)));
 		if (card.why_it_matters) {
 			var reason = el('aside', 'rm-study-outcome');
 			reason.appendChild(txt('strong', '', card.why_it_matters));
@@ -9357,6 +9631,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 				detail: overviewSurfaceKindLabel(trigger.kind),
 				snippet: source.snippet,
 				location: source.location,
+				entryKind: String(trigger.kind || ''),
+				entryRole: String(trigger.executable_role || ''),
+				entryFramework: String(trigger.framework || ''),
 			});
 		});
 		return {
@@ -9364,6 +9641,84 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			total: Object.keys(counts).length,
 			omitted: Object.keys(counts).length - objects.length,
 		};
+	}
+
+	// overviewEntryClassifications groups eligible entry surfaces into
+	// user-facing classes derived from existing fields only (Decision 217):
+	// primary product entry, secondary service, tooling/CLI, library API.
+	// Duplicate "HTTP server" cards with no behavioral distinction are
+	// coalesced into one classified group.
+	function overviewEntryClassifications(objects) {
+		var groups = [];
+		var byClass = {};
+		var push = function (key, labelMessageID, items) {
+			if (!items.length) return;
+			byClass[key] = { key: key, labelMessageID: labelMessageID, items: items };
+			groups.push(byClass[key]);
+		};
+		var primary = [], service = [], tooling = [], library = [], other = [];
+		objects.forEach(function (object) {
+			var kind = object.entryKind;
+			var role = object.entryRole;
+			if (kind === 'process_entry' && role === 'primary_application') { primary.push(object); return; }
+			if (kind === 'http_server' || kind === 'grpc_server' || kind === 'service' ||
+				(kind === 'process_entry' && role === 'secondary_service')) { service.push(object); return; }
+			if (kind === 'cli_command' || kind === 'tool' || role === 'tooling') { tooling.push(object); return; }
+			if (kind === 'library_api' || kind === 'exported_api') { library.push(object); return; }
+			other.push(object);
+		});
+		push('primary', 'main.overview.entry.primary', primary);
+		push('service', 'main.overview.entry.service', service);
+		push('tooling', 'main.overview.entry.tooling', tooling);
+		push('library', 'main.overview.entry.library', library);
+		push('other', 'main.overview.entry.other', other);
+		return groups;
+	}
+
+	// componentEvidenceTier derives a small non-numeric presentation tier from
+	// existing fields (Decision 217):
+	//   exact_source   — exact symbol/path sources present in navigation
+	//   package_backed — packages present but no exact symbol start
+	//   hypothesis     — model grouping/hypothesis with limited support
+	//   unmapped       — locally observed members not assigned to the map
+	function componentEvidenceTier(component) {
+		var context = (component && component.id) ? (architectureComponentContexts()[component.id] || {}) : {};
+		var navigation = ARCHITECTURE_COMPONENT_NAVIGATION && Number(ARCHITECTURE_COMPONENT_NAVIGATION.version) === 1
+			? (ARCHITECTURE_COMPONENT_NAVIGATION.components || []).filter(function (entry) {
+				return entry && entry.component_id === component.id;
+			})[0] : null;
+		var exactSources = (context.sources && context.sources.length) ||
+			(navigation && navigation.symbol_sources && navigation.symbol_sources.length) ||
+			(component.symbol_sources && component.symbol_sources.length);
+		if (exactSources) return 'exact_source';
+		var packages = (navigation && navigation.package_participant_ids && navigation.package_participant_ids.length) ||
+			(component.package_ids && component.package_ids.length) ||
+			(context.packageIDs && context.packageIDs.length);
+		if (packages) return 'package_backed';
+		return 'hypothesis';
+	}
+
+	var EVIDENCE_TIER_MESSAGE_IDS = {
+		exact_source: 'main.evidence.tier.exact_source',
+		package_backed: 'main.evidence.tier.package_backed',
+		hypothesis: 'main.evidence.tier.hypothesis',
+		unmapped: 'main.evidence.tier.unmapped',
+	};
+
+	function componentEvidenceTierLabel(tier) {
+		return msg(EVIDENCE_TIER_MESSAGE_IDS[tier] || 'main.evidence.tier.hypothesis');
+	}
+
+	function componentEvidenceTierMessageID(tier) {
+		return EVIDENCE_TIER_MESSAGE_IDS[tier] || 'main.evidence.tier.hypothesis';
+	}
+
+	function packageParticipantCount(componentID) {
+		if (!ARCHITECTURE_COMPONENT_NAVIGATION || Number(ARCHITECTURE_COMPONENT_NAVIGATION.version) !== 1) return 0;
+		var entry = (ARCHITECTURE_COMPONENT_NAVIGATION.components || []).filter(function (candidate) {
+			return candidate && candidate.component_id === componentID;
+		})[0];
+		return entry && Array.isArray(entry.package_participant_ids) ? entry.package_participant_ids.length : 0;
 	}
 
 	function overviewComponentObjects() {
@@ -9408,6 +9763,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 				detail: String(component.description || ''),
 				mapTarget: context.map_target || { kind: 'component', component_id: component.id },
 				sources: resolved,
+				packageCount: packageParticipantCount(component.id),
 			});
 		});
 		return {
@@ -9430,14 +9786,23 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		card.setAttribute('data-rm-object-kind', kind);
 		card.setAttribute('data-rm-object-id', object.id);
 		if (kind === 'component') {
+			var tier = componentEvidenceTier(object);
+			card.setAttribute('data-rm-evidence-tier', tier);
 			var mapAction = el('button', 'rm-overview-object-primary rm-overview-object-map');
 			mapAction.type = 'button';
 			mapAction.appendChild(txt('strong', '', object.title));
 			if (object.detail) mapAction.appendChild(txt('span', 'rm-overview-object-detail', object.detail));
 			mapAction.onclick = function () { openArchitectureTarget(object.mapTarget, null); };
 			card.appendChild(mapAction);
+			var meta = el('div', 'rm-overview-object-meta');
+			meta.appendChild(txt('span', 'rm-evidence-tier rm-evidence-tier--' + tier, componentEvidenceTierLabel(tier)));
+			if (object.packageCount > 0) {
+				meta.appendChild(txt('span', 'rm-overview-object-count', msg('main.overview.object.package_count', { count: object.packageCount })));
+			}
+			card.appendChild(meta);
 			var sources = el('div', 'rm-overview-object-sources');
-			(Array.isArray(object.sources) ? object.sources : []).forEach(function (source) {
+			var representative = Array.isArray(object.sources) ? object.sources.slice(0, 1) : [];
+			representative.forEach(function (source) {
 				if (!source || !source.symbol || !source.location) return;
 				var hasEmbeddedSource = sourceSnippetHasCode(source.snippet);
 				var sourceAction = hasEmbeddedSource
@@ -9460,6 +9825,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 				sources.appendChild(sourceAction);
 			});
 			if (sources.childNodes.length) card.appendChild(sources);
+			if (Array.isArray(object.sources) && object.sources.length > 1) {
+				card.appendChild(txt('span', 'rm-overview-object-more', msg('main.overview.object.more_sources', { count: object.sources.length - 1 })));
+			}
 			return card;
 		}
 		var hasEmbeddedSource = sourceSnippetHasCode(object.snippet);
@@ -9507,26 +9875,138 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		var thesis = REPOSITORY_GUIDE || DATA.repository_thesis || {};
 		var hero = renderRepositoryBriefHero();
 		if (!hero) {
+			var story = Array.isArray(thesis.system_story) ? thesis.system_story : [];
 			var purpose = thesis.purpose || DATA.documented_purpose || DATA.project_guess;
+			var isReadmePurpose = !!DATA.documented_purpose &&
+				(!purpose || purpose === DATA.documented_purpose || purpose === thesis.purpose && !!DATA.documented_purpose);
 			hero = el('section', 'rm-overview-hero rm-purpose-hero');
 			hero.appendChild(txt('div', 'rm-view-kicker', msg('main.overview')));
 			hero.appendChild(txt('h2', '', DATA.repo_name || msg('main.repository.overview')));
-			hero.appendChild(txt('p', '', purpose || msg('main.explore.how.this.repository.is.organized.and.implemented')));
+			if (story.length) {
+				// Localized repository orientation first (Decision 217): the
+				// system story is product copy, the README quote is source
+				// material shown separately and labeled.
+				var storyNode = el('div', 'rm-hero-story');
+				story.forEach(function (entry) {
+					storyNode.appendChild(txt('p', 'rm-hero-story__entry', String(entry || '')));
+				});
+				hero.appendChild(storyNode);
+				if (purpose) {
+					var readmeQuote = el('blockquote', 'rm-hero-readme');
+					readmeQuote.appendChild(txt('p', '', normalizeMarkdownProse(purpose)));
+					readmeQuote.appendChild(txt('span', 'rm-purpose-source', purposeSourceLabel()));
+					hero.appendChild(readmeQuote);
+				}
+			} else {
+				var purposeNode = txt('p', '', purpose ? normalizeMarkdownProse(purpose) : msg('main.explore.how.this.repository.is.organized.and.implemented'));
+				hero.appendChild(purposeNode);
+				if (isReadmePurpose) {
+					hero.appendChild(txt('span', 'rm-purpose-source', purposeSourceLabel()));
+				}
+			}
 		}
 		root.appendChild(hero);
+	}
+
+	// renderOverviewAtAGlance answers the four orientation questions above the
+	// fold from existing grounded data only (Decision 217): what the repository
+	// is, where it is entered, what its main areas are, and what to open first.
+	// It reuses the strong "at a glance" idea of the older Casdoor report
+	// without restoring the old Overview wall.
+	function renderOverviewAtAGlance(anatomy) {
+		var rows = [];
+		var thesis = REPOSITORY_GUIDE || DATA.repository_thesis || {};
+		var story = Array.isArray(thesis.system_story) ? thesis.system_story : [];
+		var purpose = thesis.purpose || DATA.documented_purpose || DATA.project_guess;
+		var what = story.length ? story[0] : (purpose ? normalizeMarkdownProse(purpose) : '');
+		if (what) {
+			rows.push([msg('main.overview.glance.what'), what]);
+		}
+		var entryObjects = anatomy && anatomy.entries && anatomy.entries.objects || [];
+		if (entryObjects.length) {
+			var entryLabels = entryObjects.slice(0, 3).map(function (object) {
+				return object.title;
+			});
+			rows.push([msg('main.overview.glance.entry'), entryLabels.join(' · ')]);
+		}
+		var componentObjects = anatomy && anatomy.components && anatomy.components.objects || [];
+		if (componentObjects.length) {
+			var componentLabels = componentObjects.slice(0, 4).map(function (object) {
+				return object.title;
+			});
+			rows.push([msg('main.overview.glance.areas'), componentLabels.join(' · ')]);
+		}
+		var firstReading = recommendedNextReading(anatomy);
+		if (firstReading) {
+			rows.push([msg('main.overview.glance.open_first'), firstReading]);
+		}
+		if (!rows.length) return null;
+		var glance = el('section', 'rm-overview-glance');
+		glance.appendChild(txt('h3', 'rm-overview-glance__title', msg('main.overview.glance.title')));
+		rows.forEach(function (row) {
+			var line = el('div', 'rm-overview-glance__row');
+			line.appendChild(txt('span', 'rm-overview-glance__label', row[0]));
+			line.appendChild(txt('p', 'rm-overview-glance__value', row[1]));
+			glance.appendChild(line);
+		});
+		return glance;
+	}
+
+	// recommendedNextReading derives one next action from existing Study data:
+	// the first source-backed theme card, else the first exact component
+	// source, else nothing. It never invents a path.
+	function recommendedNextReading(anatomy) {
+		var cards = themeCards();
+		if (cards.length) {
+			var card = cards[0];
+			if (card && card.readings && card.readings.length && card.readings[0].label) {
+				return card.readings[0].label;
+			}
+			if (card && card.final_title) return card.final_title;
+		}
+		var componentObjects = anatomy && anatomy.components && anatomy.components.objects || [];
+		for (var index = 0; index < componentObjects.length; index++) {
+			var sources = componentObjects[index].sources || [];
+			if (sources.length && sources[0].symbol) return sources[0].symbol;
+		}
+		return '';
 	}
 
 	function renderRepositoryOverviewAnatomy(root, anatomy, includeBrief) {
 		if (includeBrief !== false) renderRepositoryOverviewLead(root);
 
+		var glance = renderOverviewAtAGlance(anatomy);
+		if (glance) root.appendChild(glance);
+
 		if (anatomy.entries.objects.length) {
-			root.appendChild(renderOverviewAnatomyZone(
-				msg('main.overview.anatomy.entry_surfaces_kicker'),
-				msg('main.overview.anatomy.entry_surfaces'),
-				msg('main.overview.anatomy.entry_surfaces_copy'),
-				anatomy.entries,
-				'surface'
-			));
+			var entryGroups = overviewEntryClassifications(anatomy.entries.objects);
+			if (entryGroups.length) {
+				var entrySection = el('section', 'rm-workspace-section rm-overview-anatomy-zone');
+				entrySection.appendChild(renderViewHeading(
+					msg('main.overview.anatomy.entry_surfaces_kicker'),
+					msg('main.overview.anatomy.entry_surfaces'),
+					msg('main.overview.anatomy.entry_surfaces_copy')
+				));
+				entryGroups.forEach(function (group) {
+					var groupBlock = el('div', 'rm-overview-entry-group');
+					groupBlock.appendChild(txt('h4', 'rm-overview-entry-group__label', msg(group.labelMessageID)));
+					var grid = el('div', 'rm-overview-object-grid');
+					group.items.forEach(function (object) {
+						grid.appendChild(renderOverviewObjectCard(object, 'surface'));
+					});
+					groupBlock.appendChild(grid);
+					entrySection.appendChild(groupBlock);
+				});
+				root.appendChild(entrySection);
+			} else {
+				root.appendChild(renderOverviewAnatomyZone(
+					msg('main.overview.anatomy.entry_surfaces_kicker'),
+					msg('main.overview.anatomy.entry_surfaces'),
+					msg('main.overview.anatomy.entry_surfaces_copy'),
+					anatomy.entries,
+					'surface'
+				));
+			}
 		}
 		if (anatomy.components.objects.length) {
 			root.appendChild(renderOverviewAnatomyZone(
@@ -10102,13 +10582,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		var anatomy = repositoryOverviewAnatomy();
 		if (anatomy) {
 			renderRepositoryOverviewLead(root);
-			renderRepositoryAtlasWorkspaceShelf(root, true);
 			renderRepositoryOverviewAnatomy(root, anatomy, false);
+			// The Atlas unit ontology is demoted below the user-facing
+			// orientation (Decision 217): units describe the local package
+			// structure, they do not precede entry points and components.
+			renderRepositoryAtlasWorkspaceShelf(root, true);
 			return;
 		}
 		if (STUDY_MAP && COMPLETE_STUDY_DIRECTIONS.length) {
 			renderRepositoryOverviewLead(root);
-			renderRepositoryAtlasWorkspaceShelf(root, true);
 			renderStudyMapOverview(root, false);
 			return;
 		}
@@ -10124,7 +10606,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var hero = el('section', 'rm-overview-hero rm-purpose-hero');
     hero.appendChild(txt('div', 'rm-view-kicker', msg('main.purpose')));
     hero.appendChild(txt('h2', '', DATA.repo_name || msg('main.repository.overview')));
-    hero.appendChild(txt('p', '', overviewPurpose || msg('main.explore.how.this.repository.is.organized.and.implemented')));
+    hero.appendChild(txt('p', '', overviewPurpose ? normalizeMarkdownProse(overviewPurpose) : msg('main.explore.how.this.repository.is.organized.and.implemented')));
+    if (DATA.documented_purpose && overviewPurpose === DATA.documented_purpose) {
+      hero.appendChild(txt('span', 'rm-purpose-source', purposeSourceLabel()));
+    }
     root.appendChild(hero);
 
     var areas = Array.isArray(thesis.areas) ? thesis.areas.slice(0, 7) : [];
@@ -11268,6 +11753,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   }
 
   function closeSourceDrawer() {
+    // Decision 217: focus returns to the trigger that opened the drawer.
+    var drawer = document.getElementById('rm-source-drawer');
+    if (drawer) {
+      var trigger = drawer._rmTrigger;
+      drawer._rmTrigger = null;
+      if (trigger && typeof trigger.focus === 'function') trigger.focus();
+    }
     if (window.history && window.history.state && window.history.state.sourceDrawer &&
         typeof window.history.back === 'function') {
       window.history.back();
@@ -11321,6 +11813,42 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     drawer.hidden = false;
     workspace.classList.add('has-source-drawer');
     if (close) close.onclick = closeSourceDrawer;
+    // Decision 217: the source drawer is a real dialog — descriptive label,
+    // aria-modal, focus trap, Escape closes, focus returns to the trigger.
+    drawer.setAttribute('role', 'dialog');
+    drawer.setAttribute('aria-modal', 'true');
+    drawer.setAttribute('aria-label', msg('main.source.locations'));
+    if (!drawer._rmDialogInstalled) {
+      drawer._rmDialogInstalled = true;
+      drawer.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          closeSourceDrawer();
+          return;
+        }
+        if (event.key !== 'Tab') return;
+        var focusables = drawer.querySelectorAll(
+          'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
+        );
+        if (!focusables.length) return;
+        var first = focusables[0];
+        var last = focusables[focusables.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      });
+    }
+    // Capture the opening trigger for focus return (only when one is active).
+    if (!drawer._rmTrigger || !document.body.contains(drawer._rmTrigger)) {
+      var active = document.activeElement;
+      if (active && active !== document.body && active !== drawer && !drawer.contains(active)) {
+        drawer._rmTrigger = active;
+      }
+    }
     content.replaceChildren();
 			var mechanism = activeSourceDrawerMechanism();
 			var study = activeSourceDrawerStudy();
@@ -11706,7 +12234,21 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       msg('main.select.a.component.runtime.surface.or.code.path.to.inspect.its.implementation.context')
     ));
     if (DATA.architecture_synthesis && DATA.architecture_synthesis.state === 'failed') {
-      root.appendChild(txt('p', 'rm-architecture-synthesis-failed rm-warning', msg('main.architecture.synthesis_failed')));
+      var synthesisWarning = msg('main.architecture.synthesis_failed');
+      if (DATA.architecture_synthesis.error_code === 'provider_output_limit') {
+        synthesisWarning = msg('main.architecture.synthesis_output_limit');
+      }
+      root.appendChild(txt('p', 'rm-architecture-synthesis-failed rm-warning', synthesisWarning));
+    }
+    // Decision 217: honest relationship presentation. With established
+    // relationships show them as a readable list; with zero relationships
+    // describe the view as a conceptual component grouping and say explicitly
+    // that inter-component relationships were not established in this run.
+    var relations = architectureRelationships();
+    if (relations.length) {
+      root.appendChild(renderArchitectureRelations(relations));
+    } else if (DATA.architecture_canvas && !(DATA.architecture_synthesis && DATA.architecture_synthesis.state === 'failed')) {
+      root.appendChild(txt('p', 'rm-architecture-zero-relations rm-warning', msg('main.architecture.zero_relations')));
     }
     if (DATA.architecture_canvas && window.RepomapArchitectureCanvas) {
       var card = el('section', 'rm-card rm-architecture-canvas-card');
@@ -11718,7 +12260,118 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       if (systemMap) root.appendChild(systemMap);
       else root.appendChild(txt('p', 'rm-empty-state', msg('main.chrome.open.one.of.the.suggested.source.files')));
     }
+    // Decision 217: compact unmapped-evidence disclosure preserving every
+    // exact item behind an expand action; a structured component list
+    // alternative next to the desktop map.
+    var unmapped = renderArchitectureUnmappedDisclosure();
+    if (unmapped) root.appendChild(unmapped);
+    var componentList = renderArchitectureComponentList();
+    if (componentList) root.appendChild(componentList);
     renderArchitectureReturn();
+  }
+
+  // architectureRelationships derives labeled relations from the grounding
+  // evidence: exact from/to anchors with a bounded kind label.
+  function architectureRelationships() {
+    var grounding = DATA.architecture_grounding || {};
+    var rels = Array.isArray(grounding.relationships) ? grounding.relationships : [];
+    if (!rels.length) return [];
+    var anchors = {};
+    (DATA.architecture_canvas && Array.isArray(DATA.architecture_canvas.behavior_anchors) ? DATA.architecture_canvas.behavior_anchors : []).forEach(function (anchor) {
+      if (anchor && anchor.id) anchors[String(anchor.id)] = String(anchor.label || anchor.name || anchor.id);
+    });
+    return rels.slice(0, 12).map(function (rel) {
+      return {
+        id: String(rel && rel.id || ''),
+        kind: String(rel && rel.kind || ''),
+        from: anchors[String(rel && rel.from_anchor_id || '')] || String(rel && rel.from_anchor_id || ''),
+        to: anchors[String(rel && rel.to_anchor_id || '')] || String(rel && rel.to_anchor_id || ''),
+      };
+    });
+  }
+
+  function renderArchitectureRelations(relations) {
+    var section = el('section', 'rm-workspace-section rm-architecture-relations');
+    section.appendChild(renderViewHeading(
+      msg('main.architecture.relations.kicker'),
+      msg('main.architecture.relations.title'),
+      msg('main.architecture.relations.copy')
+    ));
+    var list = el('ul', 'rm-architecture-relation-list');
+    relations.forEach(function (relation) {
+      var item = txt('li', 'rm-architecture-relation-item', '');
+      item.appendChild(txt('strong', '', relation.from));
+      item.appendChild(txt('span', 'rm-architecture-relation-kind', relation.kind));
+      item.appendChild(txt('strong', '', relation.to));
+      list.appendChild(item);
+    });
+    section.appendChild(list);
+    return section;
+  }
+
+  function renderArchitectureUnmappedDisclosure() {
+    var canvas = DATA.architecture_canvas || {};
+    var remainderID = String(canvas.local_remainder_component_id || '');
+    var remainder = null;
+    (Array.isArray(canvas.components) ? canvas.components : []).forEach(function (component) {
+      if (component && component.id === remainderID) remainder = component;
+    });
+    var members = remainder && Array.isArray(remainder.members) ? remainder.members : [];
+    if (!members.length) return null;
+    var details = el('details', 'rm-architecture-unmapped');
+    details.appendChild(txt('summary', 'rm-architecture-unmapped__summary', msg(
+      'main.architecture.unmapped.title',
+      { count: members.length }
+    )));
+    details.appendChild(txt('p', 'rm-architecture-unmapped__note', msg('main.architecture.unmapped.copy')));
+    var list = el('ul', 'rm-architecture-unmapped__list');
+    members.forEach(function (member) {
+      var name = String(member && member.name || member && member.id && member.id.value || '');
+      var item = txt('li', 'rm-architecture-unmapped__item', name);
+      list.appendChild(item);
+    });
+    details.appendChild(list);
+    return details;
+  }
+
+  function renderArchitectureComponentList() {
+    var canvas = DATA.architecture_canvas || {};
+    var remainderID = String(canvas.local_remainder_component_id || '');
+    var components = (Array.isArray(canvas.components) ? canvas.components : []).filter(function (component) {
+      return component && component.id !== remainderID;
+    });
+    if (!components.length) return null;
+    var section = el('section', 'rm-workspace-section rm-architecture-list');
+    section.appendChild(renderViewHeading(
+      msg('main.architecture.list.kicker'),
+      msg('main.architecture.list.title'),
+      msg('main.architecture.list.copy')
+    ));
+    var list = el('ol', 'rm-architecture-list__items');
+    components.forEach(function (component) {
+      var tier = componentEvidenceTier(component);
+      var item = txt('li', 'rm-architecture-list__item rm-architecture-list__item--' + tier, '');
+      var primary = el('button', 'rm-architecture-list__primary');
+      primary.type = 'button';
+      primary.appendChild(txt('strong', '', String(component.name || component.id)));
+      primary.appendChild(txt('span', 'rm-evidence-tier rm-evidence-tier--' + tier, componentEvidenceTierLabel(tier)));
+      primary.onclick = function () {
+        if (architectureCanvasView) {
+          architectureCanvasView.openComponent(String(component.id));
+        } else {
+          openArchitectureTarget({ kind: 'component', component_id: component.id }, null);
+        }
+      };
+      item.appendChild(primary);
+      if (component.description) item.appendChild(txt('p', 'rm-architecture-list__description', String(component.description)));
+      var memberCount = Array.isArray(component.members) ? component.members.length : 0;
+      if (memberCount > 0) {
+        item.appendChild(txt('span', 'rm-architecture-list__count', msg('main.architecture.list.member_count', { count: memberCount })));
+      }
+      list.appendChild(item);
+    });
+    section.appendChild(list);
+    return section;
   }
 
   function renderUserSystemMap(subsystems) {
@@ -11935,8 +12588,26 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   function renderRunDetails() {
     var details = document.getElementById('rm-run-details');
     if (!details) return;
-    details.hidden = !DEBUG_MODE;
-    if (!DEBUG_MODE) return;
+    // The "About this report" disclosure is a compact provenance row, never
+    // a debug-only telemetry dump (Decision 217).
+    details.hidden = false;
+    var provenanceRow = document.getElementById('rm-provenance-row');
+    if (provenanceRow) {
+      provenanceRow.replaceChildren();
+      var chips = [];
+      if (DATA.captured_revision) {
+        chips.push(msg('main.provenance.revision', { revision: DATA.captured_revision.slice(0, 12) }));
+      }
+      if (DATA.freshness && DATA.freshness.state) {
+        chips.push(msg('main.provenance.freshness', { state: provenanceFreshnessLabel(DATA.freshness.state) }));
+      }
+      if (DATA.report_language) {
+        chips.push(msg('main.provenance.language', { language: DATA.report_language }));
+      }
+      chips.forEach(function (chip) {
+        provenanceRow.appendChild(txt('span', 'rm-provenance-chip', chip));
+      });
+    }
     if (DATA.artifacts_dir) {
       document.getElementById('rm-artifacts-dir').textContent = msg('main.run.artifacts', {
         path: DATA.artifacts_dir,
@@ -11955,7 +12626,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     }
     if (DATA.freshness) {
       document.getElementById('rm-freshness-detail').textContent = msg('main.current_freshness', {
-        state: String(DATA.freshness.state || 'unavailable'),
+        state: provenanceFreshnessLabel(DATA.freshness.state),
       });
     }
     var submodules = DATA.repository_submodules || [];
@@ -11963,6 +12634,18 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       document.getElementById('rm-submodule-detail').textContent = msg('main.run.excluded_submodules', {
         count: submodules.length,
       });
+    }
+  }
+
+  function provenanceFreshnessLabel(state) {
+    var value = String(state || '');
+    switch (value) {
+      case 'fresh': return msg('main.freshness.state.fresh');
+      case 'dirty': return msg('main.freshness.state.dirty');
+      case 'stale': return msg('main.freshness.state.stale');
+      case 'missing': return msg('main.freshness.state.missing');
+      case 'unavailable': return msg('main.freshness.state.unavailable');
+      default: return value;
     }
   }
 

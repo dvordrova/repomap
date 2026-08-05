@@ -14,12 +14,6 @@
     <style>body > :not(noscript) { display: none !important; }</style>
     <p>{{if eq .Language "ru"}}Для этого отчёта нужен JavaScript. Исходные данные доступны в <code>report.json</code>.{{else}}This report requires JavaScript. The raw data is available in <code>report.json</code>.{{end}}</p>
   </noscript>
-{{if .LocalizationState}}  <section class="rm-localization-status rm-localization-status--{{.LocalizationState}}" role="status" aria-live="polite">
-    <strong data-rm-message="main.localization.status_label">Localization</strong>
-{{if eq .LocalizationState "failed"}}    <span data-rm-message="main.localization.ru_unavailable_canonical_en">Russian localization is unavailable; canonical English is shown.</span>
-{{else}}    <span data-rm-message="main.localization.ru_active">Russian localization is active.</span>
-{{end}}  </section>
-{{end}}
   <header>
     <div class="rm-header-inner">
       <div>
@@ -27,14 +21,20 @@
         <p id="rm-workspace-purpose" data-rm-message="main.repository.onboarding">Repository onboarding</p>
       </div>
       <div class="rm-header-actions">
+        <div class="rm-provenance-row" id="rm-provenance-row" aria-label="Report provenance" data-rm-aria-message="main.provenance.row"></div>
         <label class="rm-run-picker" id="rm-run-picker" hidden>
           <span data-rm-message="main.saved.report">Saved report</span>
           <select id="rm-run-selector"></select>
         </label>
         <span class="rm-editor-hint" id="rm-editor-hint" hidden data-rm-message="main.file.paths.open.in.vs.code">File paths open in VS Code ↗</span>
-        <details class="rm-run-details" id="rm-run-details" hidden>
-          <summary data-rm-message="main.run.details">Run details</summary>
-          <div class="rm-artifacts" id="rm-artifacts-dir"></div>
+        <details class="rm-run-details" id="rm-run-details">
+          <summary data-rm-message="main.about.this.report">About this report</summary>
+{{if .LocalizationState}}          <div class="rm-localization-status rm-localization-status--{{.LocalizationState}}" role="status" aria-live="polite">
+            <strong data-rm-message="main.localization.status_label">Localization</strong>
+{{if eq .LocalizationState "failed"}}            <span data-rm-message="main.localization.ru_unavailable_canonical_en">Russian localization is unavailable; canonical English is shown.</span>
+{{else}}            <span data-rm-message="main.localization.ru_active">Russian localization is active.</span>
+{{end}}          </div>
+{{end}}          <div class="rm-artifacts" id="rm-artifacts-dir"></div>
           <div class="rm-artifacts" id="rm-feedback-path"></div>
           <div class="rm-artifacts" id="rm-snapshot-detail"></div>
           <div class="rm-artifacts" id="rm-freshness-detail"></div>

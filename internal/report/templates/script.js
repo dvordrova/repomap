@@ -985,6 +985,34 @@
     return node;
   }
 
+  // normalizeMarkdownProse renders repository README-derived prose as plain,
+  // readable text: link syntax becomes "text (url)", emphasis/backticks are
+  // stripped, blockquote markers and leading hashes are removed, and code
+  // fences/HTML tags never leak into product copy. It is a display-only
+  // projection: source material stays labeled, never translated in place.
+  function normalizeMarkdownProse(value) {
+    if (!value) return '';
+    var text = String(value);
+    text = text.replace(/```[\s\S]*?```/g, ' ').replace(/`([^`]*)`/g, '$1');
+    text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '$1 ($2)');
+    text = text.replace(/\[([^\]]*)\]\(([^)]+)\)/g, '$1 ($2)');
+    text = text.replace(/<[^>]+>/g, ' ');
+    text = text.replace(/^\s{0,3}#{1,6}\s+/gm, '');
+    text = text.replace(/^\s{0,3}(&gt;|>)\s?/gm, '');
+    text = text.replace(/\*\*([^*]+)\*\*/g, '$1');
+    text = text.replace(/(^|[^*])\*([^*]+)\*/g, '$1$2');
+    text = text.replace(/__([^_]+)__/g, '$1');
+    text = text.replace(/(^|[^_])_([^_]+)_/g, '$1$2');
+    text = text.replace(/\s+/g, ' ').trim();
+    return text;
+  }
+
+  function purposeSourceLabel() {
+    // README-derived purpose is labeled source material, never presented as
+    // translated product copy (Decision 217).
+    return msg('main.provenance.readme_source');
+  }
+
   function runPickerDate(run) {
     var parsed = new Date(String(run && run.created_at || ''));
     if (Number.isNaN(parsed.getTime())) {
@@ -4507,32 +4535,101 @@
 
 	// D213: renders the source-grounded theme shelf (cards with exact
 	// readings), the diagnostics panel and the four-stage frontier browse.
+	// themeCoverageState maps the stored badge to a user-facing coverage
+	// state: "supported" for source-backed themes, "partial" otherwise.
+	// It never presents "1 of 1 anchors passed" as failed evidence
+	// (Decision 217).
+	function themeCoverageState(card) {
+		if (!card) return 'partial';
+		var badge = String(card.badge || '');
+		if (badge === 'editorial_source_backed' || badge === 'source_backed') return 'supported';
+		return 'partial';
+	}
+
+	function themeCoverageLabel(card) {
+		var state = themeCoverageState(card);
+		return state === 'supported'
+			? msg('main.study.theme.supported')
+			: msg('main.study.theme.partial');
+	}
+
+	// themeCoverageExplanation renders the coverage limitation in user-facing
+	// terms. A "1 of 1 anchors passed source review" limitation is explained
+	// as supported-but-narrow rather than as failed evidence.
+	function themeCoverageExplanation(card) {
+		var state = themeCoverageState(card);
+		if (state === 'supported') return msg('main.study.theme.supported_explanation');
+		var limitation = String(card.limitation || '');
+		var anchorsPassed = limitation.match(/(\d+)\s+of\s+(\d+)\s+anchors?\s+passed/);
+		if (anchorsPassed) {
+			return msg('main.study.theme.partial_explanation', {
+				passed: anchorsPassed[1],
+				total: anchorsPassed[2],
+			});
+		}
+		return msg('main.study.theme.partial_explanation_generic');
+	}
+
 	function renderAtlasStudyThemeShelf(root, cards) {
 		root.appendChild(renderViewHeading(
 			msg('main.study'),
 			msg('main.study.themes.title'),
 			msg('main.study.themes.copy')
 		));
+		// Bounded default shelf with an explicit "show all" action; every card
+		// remains available (Decision 217: no hidden truncation).
 		var shelf = el('div', 'rm-study-theme-shelf');
-		cards.forEach(function (card, index) {
+		var shown = cards;
+		var initial = 4;
+		if (cards.length > initial) {
+			shown = cards.slice(0, initial);
+			var remaining = cards.length - initial;
+			var showAll = txt('button', 'rm-secondary-action rm-study-show-all', msg('main.study.themes.show_all', { count: remaining }));
+			showAll.type = 'button';
+			showAll.setAttribute('aria-expanded', 'false');
+			showAll.onclick = function () {
+				var expanded = document.createElement('div');
+				expanded.className = 'rm-study-theme-shelf';
+				cards.slice(initial).forEach(function (card, index) {
+					expanded.appendChild(renderThemeCard(card, initial + index));
+				});
+				shelf.appendChild(expanded);
+				showAll.hidden = true;
+				showAll.setAttribute('aria-expanded', 'true');
+			};
+			root.appendChild(showAll);
+		}
+		shown.forEach(function (card, index) {
 			shelf.appendChild(renderThemeCard(card, index));
 		});
 		root.appendChild(shelf);
+		// Raw span/model/frontier diagnostics and the machine question
+		// inventory move into a collapsed "Coverage and provenance" section
+		// (Decision 217): available for the meticulous critic, out of the
+		// main learning path.
+		var provenance = el('details', 'rm-study-provenance');
+		provenance.appendChild(txt('summary', 'rm-study-provenance__summary', msg('main.study.provenance.title')));
 		var diagnostics = renderAtlasStudyDiagnostics();
-		if (diagnostics) root.appendChild(diagnostics);
+		if (diagnostics) provenance.appendChild(diagnostics);
 		var browse = renderAtlasStudyBrowse();
-		if (browse) root.appendChild(browse);
+		if (browse) provenance.appendChild(browse);
+		root.appendChild(provenance);
 	}
 
 	function renderThemeCard(card, index) {
 		var article = el('article', 'rm-study-theme-card' + (card.badge ? ' rm-study-theme-card--' + String(card.badge).toLowerCase() : ''));
+		var titleRow = el('div', 'rm-study-theme-card__title-row');
 		var title = txt('h3', 'rm-study-theme-card__title', card.final_title || '');
 		title.onclick = function () { openThemeCard(card.ordinal); };
-		article.appendChild(title);
+		titleRow.appendChild(title);
+		titleRow.appendChild(txt('span', 'rm-study-theme-card__coverage rm-study-theme-card__coverage--' + themeCoverageState(card), themeCoverageLabel(card)));
+		article.appendChild(titleRow);
 		if (card.final_question) article.appendChild(txt('p', 'rm-study-theme-card__question', card.final_question));
 		if (card.why_it_matters) article.appendChild(txt('span', 'rm-study-theme-card__reason', card.why_it_matters));
 		var readings = el('ul', 'rm-study-theme-card__readings');
-		(card.readings || []).forEach(function (reading) {
+		// Bounded reading preview on the card; the detail route shows the full
+		// reading list (Decision 217).
+		(card.readings || []).slice(0, 3).forEach(function (reading) {
 			var action = renderStudySourceAction(reading, 'rm-study-theme-card__reading', true);
 			if (action) {
 				var item = txt('li', 'rm-study-theme-card__reading-item', '');
@@ -4541,6 +4638,13 @@
 			}
 		});
 		if (readings.childNodes.length) article.appendChild(readings);
+		if (card.readings && card.readings.length > 3) {
+			article.appendChild(txt('span', 'rm-study-theme-card__more', msg('main.study.theme.more_readings', { count: card.readings.length - 3 })));
+		}
+		var openDetail = txt('button', 'rm-quiet-action rm-study-theme-card__open', msg('main.study.theme.open_detail'));
+		openDetail.type = 'button';
+		openDetail.onclick = function () { openThemeCard(card.ordinal); };
+		article.appendChild(openDetail);
 		return article;
 	}
 
@@ -4555,10 +4659,11 @@
 		back.onclick = function () { navigateWorkspace('study_overview'); };
 		root.appendChild(back);
 		root.appendChild(renderViewHeading(
-			card.badge || '',
+			themeCoverageLabel(card),
 			card.final_title || '',
 			card.final_question || ''
 		));
+		root.appendChild(txt('p', 'rm-study-theme-card__coverage-explanation', themeCoverageExplanation(card)));
 		if (card.why_it_matters) {
 			var reason = el('aside', 'rm-study-outcome');
 			reason.appendChild(txt('strong', '', card.why_it_matters));
@@ -5892,6 +5997,9 @@
 				detail: overviewSurfaceKindLabel(trigger.kind),
 				snippet: source.snippet,
 				location: source.location,
+				entryKind: String(trigger.kind || ''),
+				entryRole: String(trigger.executable_role || ''),
+				entryFramework: String(trigger.framework || ''),
 			});
 		});
 		return {
@@ -5899,6 +6007,84 @@
 			total: Object.keys(counts).length,
 			omitted: Object.keys(counts).length - objects.length,
 		};
+	}
+
+	// overviewEntryClassifications groups eligible entry surfaces into
+	// user-facing classes derived from existing fields only (Decision 217):
+	// primary product entry, secondary service, tooling/CLI, library API.
+	// Duplicate "HTTP server" cards with no behavioral distinction are
+	// coalesced into one classified group.
+	function overviewEntryClassifications(objects) {
+		var groups = [];
+		var byClass = {};
+		var push = function (key, labelMessageID, items) {
+			if (!items.length) return;
+			byClass[key] = { key: key, labelMessageID: labelMessageID, items: items };
+			groups.push(byClass[key]);
+		};
+		var primary = [], service = [], tooling = [], library = [], other = [];
+		objects.forEach(function (object) {
+			var kind = object.entryKind;
+			var role = object.entryRole;
+			if (kind === 'process_entry' && role === 'primary_application') { primary.push(object); return; }
+			if (kind === 'http_server' || kind === 'grpc_server' || kind === 'service' ||
+				(kind === 'process_entry' && role === 'secondary_service')) { service.push(object); return; }
+			if (kind === 'cli_command' || kind === 'tool' || role === 'tooling') { tooling.push(object); return; }
+			if (kind === 'library_api' || kind === 'exported_api') { library.push(object); return; }
+			other.push(object);
+		});
+		push('primary', 'main.overview.entry.primary', primary);
+		push('service', 'main.overview.entry.service', service);
+		push('tooling', 'main.overview.entry.tooling', tooling);
+		push('library', 'main.overview.entry.library', library);
+		push('other', 'main.overview.entry.other', other);
+		return groups;
+	}
+
+	// componentEvidenceTier derives a small non-numeric presentation tier from
+	// existing fields (Decision 217):
+	//   exact_source   — exact symbol/path sources present in navigation
+	//   package_backed — packages present but no exact symbol start
+	//   hypothesis     — model grouping/hypothesis with limited support
+	//   unmapped       — locally observed members not assigned to the map
+	function componentEvidenceTier(component) {
+		var context = (component && component.id) ? (architectureComponentContexts()[component.id] || {}) : {};
+		var navigation = ARCHITECTURE_COMPONENT_NAVIGATION && Number(ARCHITECTURE_COMPONENT_NAVIGATION.version) === 1
+			? (ARCHITECTURE_COMPONENT_NAVIGATION.components || []).filter(function (entry) {
+				return entry && entry.component_id === component.id;
+			})[0] : null;
+		var exactSources = (context.sources && context.sources.length) ||
+			(navigation && navigation.symbol_sources && navigation.symbol_sources.length) ||
+			(component.symbol_sources && component.symbol_sources.length);
+		if (exactSources) return 'exact_source';
+		var packages = (navigation && navigation.package_participant_ids && navigation.package_participant_ids.length) ||
+			(component.package_ids && component.package_ids.length) ||
+			(context.packageIDs && context.packageIDs.length);
+		if (packages) return 'package_backed';
+		return 'hypothesis';
+	}
+
+	var EVIDENCE_TIER_MESSAGE_IDS = {
+		exact_source: 'main.evidence.tier.exact_source',
+		package_backed: 'main.evidence.tier.package_backed',
+		hypothesis: 'main.evidence.tier.hypothesis',
+		unmapped: 'main.evidence.tier.unmapped',
+	};
+
+	function componentEvidenceTierLabel(tier) {
+		return msg(EVIDENCE_TIER_MESSAGE_IDS[tier] || 'main.evidence.tier.hypothesis');
+	}
+
+	function componentEvidenceTierMessageID(tier) {
+		return EVIDENCE_TIER_MESSAGE_IDS[tier] || 'main.evidence.tier.hypothesis';
+	}
+
+	function packageParticipantCount(componentID) {
+		if (!ARCHITECTURE_COMPONENT_NAVIGATION || Number(ARCHITECTURE_COMPONENT_NAVIGATION.version) !== 1) return 0;
+		var entry = (ARCHITECTURE_COMPONENT_NAVIGATION.components || []).filter(function (candidate) {
+			return candidate && candidate.component_id === componentID;
+		})[0];
+		return entry && Array.isArray(entry.package_participant_ids) ? entry.package_participant_ids.length : 0;
 	}
 
 	function overviewComponentObjects() {
@@ -5943,6 +6129,7 @@
 				detail: String(component.description || ''),
 				mapTarget: context.map_target || { kind: 'component', component_id: component.id },
 				sources: resolved,
+				packageCount: packageParticipantCount(component.id),
 			});
 		});
 		return {
@@ -5965,14 +6152,23 @@
 		card.setAttribute('data-rm-object-kind', kind);
 		card.setAttribute('data-rm-object-id', object.id);
 		if (kind === 'component') {
+			var tier = componentEvidenceTier(object);
+			card.setAttribute('data-rm-evidence-tier', tier);
 			var mapAction = el('button', 'rm-overview-object-primary rm-overview-object-map');
 			mapAction.type = 'button';
 			mapAction.appendChild(txt('strong', '', object.title));
 			if (object.detail) mapAction.appendChild(txt('span', 'rm-overview-object-detail', object.detail));
 			mapAction.onclick = function () { openArchitectureTarget(object.mapTarget, null); };
 			card.appendChild(mapAction);
+			var meta = el('div', 'rm-overview-object-meta');
+			meta.appendChild(txt('span', 'rm-evidence-tier rm-evidence-tier--' + tier, componentEvidenceTierLabel(tier)));
+			if (object.packageCount > 0) {
+				meta.appendChild(txt('span', 'rm-overview-object-count', msg('main.overview.object.package_count', { count: object.packageCount })));
+			}
+			card.appendChild(meta);
 			var sources = el('div', 'rm-overview-object-sources');
-			(Array.isArray(object.sources) ? object.sources : []).forEach(function (source) {
+			var representative = Array.isArray(object.sources) ? object.sources.slice(0, 1) : [];
+			representative.forEach(function (source) {
 				if (!source || !source.symbol || !source.location) return;
 				var hasEmbeddedSource = sourceSnippetHasCode(source.snippet);
 				var sourceAction = hasEmbeddedSource
@@ -5995,6 +6191,9 @@
 				sources.appendChild(sourceAction);
 			});
 			if (sources.childNodes.length) card.appendChild(sources);
+			if (Array.isArray(object.sources) && object.sources.length > 1) {
+				card.appendChild(txt('span', 'rm-overview-object-more', msg('main.overview.object.more_sources', { count: object.sources.length - 1 })));
+			}
 			return card;
 		}
 		var hasEmbeddedSource = sourceSnippetHasCode(object.snippet);
@@ -6042,26 +6241,138 @@
 		var thesis = REPOSITORY_GUIDE || DATA.repository_thesis || {};
 		var hero = renderRepositoryBriefHero();
 		if (!hero) {
+			var story = Array.isArray(thesis.system_story) ? thesis.system_story : [];
 			var purpose = thesis.purpose || DATA.documented_purpose || DATA.project_guess;
+			var isReadmePurpose = !!DATA.documented_purpose &&
+				(!purpose || purpose === DATA.documented_purpose || purpose === thesis.purpose && !!DATA.documented_purpose);
 			hero = el('section', 'rm-overview-hero rm-purpose-hero');
 			hero.appendChild(txt('div', 'rm-view-kicker', msg('main.overview')));
 			hero.appendChild(txt('h2', '', DATA.repo_name || msg('main.repository.overview')));
-			hero.appendChild(txt('p', '', purpose || msg('main.explore.how.this.repository.is.organized.and.implemented')));
+			if (story.length) {
+				// Localized repository orientation first (Decision 217): the
+				// system story is product copy, the README quote is source
+				// material shown separately and labeled.
+				var storyNode = el('div', 'rm-hero-story');
+				story.forEach(function (entry) {
+					storyNode.appendChild(txt('p', 'rm-hero-story__entry', String(entry || '')));
+				});
+				hero.appendChild(storyNode);
+				if (purpose) {
+					var readmeQuote = el('blockquote', 'rm-hero-readme');
+					readmeQuote.appendChild(txt('p', '', normalizeMarkdownProse(purpose)));
+					readmeQuote.appendChild(txt('span', 'rm-purpose-source', purposeSourceLabel()));
+					hero.appendChild(readmeQuote);
+				}
+			} else {
+				var purposeNode = txt('p', '', purpose ? normalizeMarkdownProse(purpose) : msg('main.explore.how.this.repository.is.organized.and.implemented'));
+				hero.appendChild(purposeNode);
+				if (isReadmePurpose) {
+					hero.appendChild(txt('span', 'rm-purpose-source', purposeSourceLabel()));
+				}
+			}
 		}
 		root.appendChild(hero);
+	}
+
+	// renderOverviewAtAGlance answers the four orientation questions above the
+	// fold from existing grounded data only (Decision 217): what the repository
+	// is, where it is entered, what its main areas are, and what to open first.
+	// It reuses the strong "at a glance" idea of the older Casdoor report
+	// without restoring the old Overview wall.
+	function renderOverviewAtAGlance(anatomy) {
+		var rows = [];
+		var thesis = REPOSITORY_GUIDE || DATA.repository_thesis || {};
+		var story = Array.isArray(thesis.system_story) ? thesis.system_story : [];
+		var purpose = thesis.purpose || DATA.documented_purpose || DATA.project_guess;
+		var what = story.length ? story[0] : (purpose ? normalizeMarkdownProse(purpose) : '');
+		if (what) {
+			rows.push([msg('main.overview.glance.what'), what]);
+		}
+		var entryObjects = anatomy && anatomy.entries && anatomy.entries.objects || [];
+		if (entryObjects.length) {
+			var entryLabels = entryObjects.slice(0, 3).map(function (object) {
+				return object.title;
+			});
+			rows.push([msg('main.overview.glance.entry'), entryLabels.join(' · ')]);
+		}
+		var componentObjects = anatomy && anatomy.components && anatomy.components.objects || [];
+		if (componentObjects.length) {
+			var componentLabels = componentObjects.slice(0, 4).map(function (object) {
+				return object.title;
+			});
+			rows.push([msg('main.overview.glance.areas'), componentLabels.join(' · ')]);
+		}
+		var firstReading = recommendedNextReading(anatomy);
+		if (firstReading) {
+			rows.push([msg('main.overview.glance.open_first'), firstReading]);
+		}
+		if (!rows.length) return null;
+		var glance = el('section', 'rm-overview-glance');
+		glance.appendChild(txt('h3', 'rm-overview-glance__title', msg('main.overview.glance.title')));
+		rows.forEach(function (row) {
+			var line = el('div', 'rm-overview-glance__row');
+			line.appendChild(txt('span', 'rm-overview-glance__label', row[0]));
+			line.appendChild(txt('p', 'rm-overview-glance__value', row[1]));
+			glance.appendChild(line);
+		});
+		return glance;
+	}
+
+	// recommendedNextReading derives one next action from existing Study data:
+	// the first source-backed theme card, else the first exact component
+	// source, else nothing. It never invents a path.
+	function recommendedNextReading(anatomy) {
+		var cards = themeCards();
+		if (cards.length) {
+			var card = cards[0];
+			if (card && card.readings && card.readings.length && card.readings[0].label) {
+				return card.readings[0].label;
+			}
+			if (card && card.final_title) return card.final_title;
+		}
+		var componentObjects = anatomy && anatomy.components && anatomy.components.objects || [];
+		for (var index = 0; index < componentObjects.length; index++) {
+			var sources = componentObjects[index].sources || [];
+			if (sources.length && sources[0].symbol) return sources[0].symbol;
+		}
+		return '';
 	}
 
 	function renderRepositoryOverviewAnatomy(root, anatomy, includeBrief) {
 		if (includeBrief !== false) renderRepositoryOverviewLead(root);
 
+		var glance = renderOverviewAtAGlance(anatomy);
+		if (glance) root.appendChild(glance);
+
 		if (anatomy.entries.objects.length) {
-			root.appendChild(renderOverviewAnatomyZone(
-				msg('main.overview.anatomy.entry_surfaces_kicker'),
-				msg('main.overview.anatomy.entry_surfaces'),
-				msg('main.overview.anatomy.entry_surfaces_copy'),
-				anatomy.entries,
-				'surface'
-			));
+			var entryGroups = overviewEntryClassifications(anatomy.entries.objects);
+			if (entryGroups.length) {
+				var entrySection = el('section', 'rm-workspace-section rm-overview-anatomy-zone');
+				entrySection.appendChild(renderViewHeading(
+					msg('main.overview.anatomy.entry_surfaces_kicker'),
+					msg('main.overview.anatomy.entry_surfaces'),
+					msg('main.overview.anatomy.entry_surfaces_copy')
+				));
+				entryGroups.forEach(function (group) {
+					var groupBlock = el('div', 'rm-overview-entry-group');
+					groupBlock.appendChild(txt('h4', 'rm-overview-entry-group__label', msg(group.labelMessageID)));
+					var grid = el('div', 'rm-overview-object-grid');
+					group.items.forEach(function (object) {
+						grid.appendChild(renderOverviewObjectCard(object, 'surface'));
+					});
+					groupBlock.appendChild(grid);
+					entrySection.appendChild(groupBlock);
+				});
+				root.appendChild(entrySection);
+			} else {
+				root.appendChild(renderOverviewAnatomyZone(
+					msg('main.overview.anatomy.entry_surfaces_kicker'),
+					msg('main.overview.anatomy.entry_surfaces'),
+					msg('main.overview.anatomy.entry_surfaces_copy'),
+					anatomy.entries,
+					'surface'
+				));
+			}
 		}
 		if (anatomy.components.objects.length) {
 			root.appendChild(renderOverviewAnatomyZone(
@@ -6637,13 +6948,15 @@
 		var anatomy = repositoryOverviewAnatomy();
 		if (anatomy) {
 			renderRepositoryOverviewLead(root);
-			renderRepositoryAtlasWorkspaceShelf(root, true);
 			renderRepositoryOverviewAnatomy(root, anatomy, false);
+			// The Atlas unit ontology is demoted below the user-facing
+			// orientation (Decision 217): units describe the local package
+			// structure, they do not precede entry points and components.
+			renderRepositoryAtlasWorkspaceShelf(root, true);
 			return;
 		}
 		if (STUDY_MAP && COMPLETE_STUDY_DIRECTIONS.length) {
 			renderRepositoryOverviewLead(root);
-			renderRepositoryAtlasWorkspaceShelf(root, true);
 			renderStudyMapOverview(root, false);
 			return;
 		}
@@ -6664,7 +6977,10 @@
     var hero = el('section', 'rm-overview-hero rm-purpose-hero');
     hero.appendChild(txt('div', 'rm-view-kicker', msg('main.purpose')));
     hero.appendChild(txt('h2', '', DATA.repo_name || msg('main.repository.overview')));
-    hero.appendChild(txt('p', '', overviewPurpose || msg('main.explore.how.this.repository.is.organized.and.implemented')));
+    hero.appendChild(txt('p', '', overviewPurpose ? normalizeMarkdownProse(overviewPurpose) : msg('main.explore.how.this.repository.is.organized.and.implemented')));
+    if (DATA.documented_purpose && overviewPurpose === DATA.documented_purpose) {
+      hero.appendChild(txt('span', 'rm-purpose-source', purposeSourceLabel()));
+    }
     root.appendChild(hero);
 
     var areas = Array.isArray(thesis.areas) ? thesis.areas.slice(0, 7) : [];
@@ -7808,6 +8124,13 @@
   }
 
   function closeSourceDrawer() {
+    // Decision 217: focus returns to the trigger that opened the drawer.
+    var drawer = document.getElementById('rm-source-drawer');
+    if (drawer) {
+      var trigger = drawer._rmTrigger;
+      drawer._rmTrigger = null;
+      if (trigger && typeof trigger.focus === 'function') trigger.focus();
+    }
     if (window.history && window.history.state && window.history.state.sourceDrawer &&
         typeof window.history.back === 'function') {
       window.history.back();
@@ -7861,6 +8184,42 @@
     drawer.hidden = false;
     workspace.classList.add('has-source-drawer');
     if (close) close.onclick = closeSourceDrawer;
+    // Decision 217: the source drawer is a real dialog — descriptive label,
+    // aria-modal, focus trap, Escape closes, focus returns to the trigger.
+    drawer.setAttribute('role', 'dialog');
+    drawer.setAttribute('aria-modal', 'true');
+    drawer.setAttribute('aria-label', msg('main.source.locations'));
+    if (!drawer._rmDialogInstalled) {
+      drawer._rmDialogInstalled = true;
+      drawer.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          closeSourceDrawer();
+          return;
+        }
+        if (event.key !== 'Tab') return;
+        var focusables = drawer.querySelectorAll(
+          'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
+        );
+        if (!focusables.length) return;
+        var first = focusables[0];
+        var last = focusables[focusables.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      });
+    }
+    // Capture the opening trigger for focus return (only when one is active).
+    if (!drawer._rmTrigger || !document.body.contains(drawer._rmTrigger)) {
+      var active = document.activeElement;
+      if (active && active !== document.body && active !== drawer && !drawer.contains(active)) {
+        drawer._rmTrigger = active;
+      }
+    }
     content.replaceChildren();
 			var mechanism = activeSourceDrawerMechanism();
 			var study = activeSourceDrawerStudy();
@@ -8246,7 +8605,21 @@
       msg('main.select.a.component.runtime.surface.or.code.path.to.inspect.its.implementation.context')
     ));
     if (DATA.architecture_synthesis && DATA.architecture_synthesis.state === 'failed') {
-      root.appendChild(txt('p', 'rm-architecture-synthesis-failed rm-warning', msg('main.architecture.synthesis_failed')));
+      var synthesisWarning = msg('main.architecture.synthesis_failed');
+      if (DATA.architecture_synthesis.error_code === 'provider_output_limit') {
+        synthesisWarning = msg('main.architecture.synthesis_output_limit');
+      }
+      root.appendChild(txt('p', 'rm-architecture-synthesis-failed rm-warning', synthesisWarning));
+    }
+    // Decision 217: honest relationship presentation. With established
+    // relationships show them as a readable list; with zero relationships
+    // describe the view as a conceptual component grouping and say explicitly
+    // that inter-component relationships were not established in this run.
+    var relations = architectureRelationships();
+    if (relations.length) {
+      root.appendChild(renderArchitectureRelations(relations));
+    } else if (DATA.architecture_canvas && !(DATA.architecture_synthesis && DATA.architecture_synthesis.state === 'failed')) {
+      root.appendChild(txt('p', 'rm-architecture-zero-relations rm-warning', msg('main.architecture.zero_relations')));
     }
     if (DATA.architecture_canvas && window.RepomapArchitectureCanvas) {
       var card = el('section', 'rm-card rm-architecture-canvas-card');
@@ -8258,7 +8631,118 @@
       if (systemMap) root.appendChild(systemMap);
       else root.appendChild(txt('p', 'rm-empty-state', msg('main.chrome.open.one.of.the.suggested.source.files')));
     }
+    // Decision 217: compact unmapped-evidence disclosure preserving every
+    // exact item behind an expand action; a structured component list
+    // alternative next to the desktop map.
+    var unmapped = renderArchitectureUnmappedDisclosure();
+    if (unmapped) root.appendChild(unmapped);
+    var componentList = renderArchitectureComponentList();
+    if (componentList) root.appendChild(componentList);
     renderArchitectureReturn();
+  }
+
+  // architectureRelationships derives labeled relations from the grounding
+  // evidence: exact from/to anchors with a bounded kind label.
+  function architectureRelationships() {
+    var grounding = DATA.architecture_grounding || {};
+    var rels = Array.isArray(grounding.relationships) ? grounding.relationships : [];
+    if (!rels.length) return [];
+    var anchors = {};
+    (DATA.architecture_canvas && Array.isArray(DATA.architecture_canvas.behavior_anchors) ? DATA.architecture_canvas.behavior_anchors : []).forEach(function (anchor) {
+      if (anchor && anchor.id) anchors[String(anchor.id)] = String(anchor.label || anchor.name || anchor.id);
+    });
+    return rels.slice(0, 12).map(function (rel) {
+      return {
+        id: String(rel && rel.id || ''),
+        kind: String(rel && rel.kind || ''),
+        from: anchors[String(rel && rel.from_anchor_id || '')] || String(rel && rel.from_anchor_id || ''),
+        to: anchors[String(rel && rel.to_anchor_id || '')] || String(rel && rel.to_anchor_id || ''),
+      };
+    });
+  }
+
+  function renderArchitectureRelations(relations) {
+    var section = el('section', 'rm-workspace-section rm-architecture-relations');
+    section.appendChild(renderViewHeading(
+      msg('main.architecture.relations.kicker'),
+      msg('main.architecture.relations.title'),
+      msg('main.architecture.relations.copy')
+    ));
+    var list = el('ul', 'rm-architecture-relation-list');
+    relations.forEach(function (relation) {
+      var item = txt('li', 'rm-architecture-relation-item', '');
+      item.appendChild(txt('strong', '', relation.from));
+      item.appendChild(txt('span', 'rm-architecture-relation-kind', relation.kind));
+      item.appendChild(txt('strong', '', relation.to));
+      list.appendChild(item);
+    });
+    section.appendChild(list);
+    return section;
+  }
+
+  function renderArchitectureUnmappedDisclosure() {
+    var canvas = DATA.architecture_canvas || {};
+    var remainderID = String(canvas.local_remainder_component_id || '');
+    var remainder = null;
+    (Array.isArray(canvas.components) ? canvas.components : []).forEach(function (component) {
+      if (component && component.id === remainderID) remainder = component;
+    });
+    var members = remainder && Array.isArray(remainder.members) ? remainder.members : [];
+    if (!members.length) return null;
+    var details = el('details', 'rm-architecture-unmapped');
+    details.appendChild(txt('summary', 'rm-architecture-unmapped__summary', msg(
+      'main.architecture.unmapped.title',
+      { count: members.length }
+    )));
+    details.appendChild(txt('p', 'rm-architecture-unmapped__note', msg('main.architecture.unmapped.copy')));
+    var list = el('ul', 'rm-architecture-unmapped__list');
+    members.forEach(function (member) {
+      var name = String(member && member.name || member && member.id && member.id.value || '');
+      var item = txt('li', 'rm-architecture-unmapped__item', name);
+      list.appendChild(item);
+    });
+    details.appendChild(list);
+    return details;
+  }
+
+  function renderArchitectureComponentList() {
+    var canvas = DATA.architecture_canvas || {};
+    var remainderID = String(canvas.local_remainder_component_id || '');
+    var components = (Array.isArray(canvas.components) ? canvas.components : []).filter(function (component) {
+      return component && component.id !== remainderID;
+    });
+    if (!components.length) return null;
+    var section = el('section', 'rm-workspace-section rm-architecture-list');
+    section.appendChild(renderViewHeading(
+      msg('main.architecture.list.kicker'),
+      msg('main.architecture.list.title'),
+      msg('main.architecture.list.copy')
+    ));
+    var list = el('ol', 'rm-architecture-list__items');
+    components.forEach(function (component) {
+      var tier = componentEvidenceTier(component);
+      var item = txt('li', 'rm-architecture-list__item rm-architecture-list__item--' + tier, '');
+      var primary = el('button', 'rm-architecture-list__primary');
+      primary.type = 'button';
+      primary.appendChild(txt('strong', '', String(component.name || component.id)));
+      primary.appendChild(txt('span', 'rm-evidence-tier rm-evidence-tier--' + tier, componentEvidenceTierLabel(tier)));
+      primary.onclick = function () {
+        if (architectureCanvasView) {
+          architectureCanvasView.openComponent(String(component.id));
+        } else {
+          openArchitectureTarget({ kind: 'component', component_id: component.id }, null);
+        }
+      };
+      item.appendChild(primary);
+      if (component.description) item.appendChild(txt('p', 'rm-architecture-list__description', String(component.description)));
+      var memberCount = Array.isArray(component.members) ? component.members.length : 0;
+      if (memberCount > 0) {
+        item.appendChild(txt('span', 'rm-architecture-list__count', msg('main.architecture.list.member_count', { count: memberCount })));
+      }
+      list.appendChild(item);
+    });
+    section.appendChild(list);
+    return section;
   }
 
   function renderUserSystemMap(subsystems) {
@@ -8475,8 +8959,26 @@
   function renderRunDetails() {
     var details = document.getElementById('rm-run-details');
     if (!details) return;
-    details.hidden = !DEBUG_MODE;
-    if (!DEBUG_MODE) return;
+    // The "About this report" disclosure is a compact provenance row, never
+    // a debug-only telemetry dump (Decision 217).
+    details.hidden = false;
+    var provenanceRow = document.getElementById('rm-provenance-row');
+    if (provenanceRow) {
+      provenanceRow.replaceChildren();
+      var chips = [];
+      if (DATA.captured_revision) {
+        chips.push(msg('main.provenance.revision', { revision: DATA.captured_revision.slice(0, 12) }));
+      }
+      if (DATA.freshness && DATA.freshness.state) {
+        chips.push(msg('main.provenance.freshness', { state: provenanceFreshnessLabel(DATA.freshness.state) }));
+      }
+      if (DATA.report_language) {
+        chips.push(msg('main.provenance.language', { language: DATA.report_language }));
+      }
+      chips.forEach(function (chip) {
+        provenanceRow.appendChild(txt('span', 'rm-provenance-chip', chip));
+      });
+    }
     if (DATA.artifacts_dir) {
       document.getElementById('rm-artifacts-dir').textContent = msg('main.run.artifacts', {
         path: DATA.artifacts_dir,
@@ -8495,7 +8997,7 @@
     }
     if (DATA.freshness) {
       document.getElementById('rm-freshness-detail').textContent = msg('main.current_freshness', {
-        state: String(DATA.freshness.state || 'unavailable'),
+        state: provenanceFreshnessLabel(DATA.freshness.state),
       });
     }
     var submodules = DATA.repository_submodules || [];
@@ -8503,6 +9005,18 @@
       document.getElementById('rm-submodule-detail').textContent = msg('main.run.excluded_submodules', {
         count: submodules.length,
       });
+    }
+  }
+
+  function provenanceFreshnessLabel(state) {
+    var value = String(state || '');
+    switch (value) {
+      case 'fresh': return msg('main.freshness.state.fresh');
+      case 'dirty': return msg('main.freshness.state.dirty');
+      case 'stale': return msg('main.freshness.state.stale');
+      case 'missing': return msg('main.freshness.state.missing');
+      case 'unavailable': return msg('main.freshness.state.unavailable');
+      default: return value;
     }
   }
 
