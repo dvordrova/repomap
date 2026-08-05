@@ -311,15 +311,12 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 		"exactly one complete JSON object",
 		"Its only root field is records",
 		"A subsystem record contains exactly kind, ref, name, and description",
-		"A component record contains exactly kind, subsystem_ref, name, description, member_refs, anchor_refs, and hypothesis",
+		"A component record contains exactly kind, subsystem_ref, name, description, either unit_refs or member_refs, anchor_refs, and hypothesis",
 		"Do not nest records or emit a second root object",
 		"silently validate the complete JSON syntax",
-		"required_member_refs is the exhaustive flat set of conceptual candidates available for grouping",
-		"an exact partial grouping is valid",
-		"deterministic local unclassified remainder",
-		"every structural_context parent_refs/child_refs link are grouping context only and never satisfy conceptual coverage",
-		"self-check them separately by kind",
-		"every returned ref must be an exact typed member of that set",
+		"units is the exhaustive bounded local unit catalog available for grouping",
+		"An exact partial grouping is valid: omitted units remain",
+		"every returned unit ref must be an exact supplied unit ref",
 	} {
 		if !strings.Contains(prompt.System, required) {
 			t.Errorf("synthesis nesting contract misses %q", required)

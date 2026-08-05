@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	SynthesisRequestVersion = 10
-	SynthesisRecordVersion  = 10
-	SynthesisPromptVersion  = "architecture-grounding-v13"
+	SynthesisRequestVersion = 11
+	SynthesisRecordVersion  = 11
+	SynthesisPromptVersion  = "architecture-grounding-v14"
 
 	maxSynthesisRequestBytes  = 1 << 20
 	maxSynthesisPromptBytes   = maxSynthesisRequestBytes + (16 << 10)
@@ -124,15 +124,20 @@ type SynthesisAnchorBinding struct {
 // deliberately absent; they are bound privately by prompt/cache/record
 // identity.
 type SynthesisRequest struct {
-	RepositoryArchetype RepositoryArchetype          `json:"repository_archetype"`
-	GroundingMode       GroundingMode                `json:"grounding_mode"`
-	RequiredMemberRefs  []SynthesisMemberRef         `json:"required_member_refs"`
-	BehaviorAnchors     []SynthesisBehaviorAnchor    `json:"behavior_anchors,omitempty"`
-	Flows               []SynthesisFlow              `json:"flows,omitempty"`
-	Candidates          []SynthesisCandidate         `json:"candidates"`
-	StructuralContext   []SynthesisStructuralLocator `json:"structural_context,omitempty"`
-	Relations           []SynthesisRelation          `json:"supporting_relations,omitempty"`
-	AnchorBindings      []SynthesisAnchorBinding     `json:"flow_anchor_bindings,omitempty"`
+	RepositoryArchetype RepositoryArchetype       `json:"repository_archetype"`
+	GroundingMode       GroundingMode             `json:"grounding_mode"`
+	RequiredMemberRefs  []SynthesisMemberRef      `json:"required_member_refs,omitempty"`
+	BehaviorAnchors     []SynthesisBehaviorAnchor `json:"behavior_anchors,omitempty"`
+	Flows               []SynthesisFlow           `json:"flows,omitempty"`
+	Candidates          []SynthesisCandidate      `json:"candidates,omitempty"`
+	// Units is the Decision 216 bounded local unit catalog. When present,
+	// the model groups request-local unit refs (u*) instead of raw
+	// package/symbol candidates; backend expansion restores exact
+	// membership. Empty for legacy callers that still send raw candidates.
+	Units             []SynthesisUnit              `json:"units,omitempty"`
+	StructuralContext []SynthesisStructuralLocator `json:"structural_context,omitempty"`
+	Relations         []SynthesisRelation          `json:"supporting_relations,omitempty"`
+	AnchorBindings    []SynthesisAnchorBinding     `json:"flow_anchor_bindings,omitempty"`
 }
 
 // SynthesisPrompt is the provider-neutral instruction plus the exact bounded
@@ -582,6 +587,15 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 			MemberRef: catalog.membersByID[binding.MemberID], Certainty: binding.Certainty,
 		})
 	}
+	// Decision 216: compile the bounded local unit catalog alongside the raw
+	// candidate projection. The unit refs (u*) let the model group bounded
+	// units; backend expansion restores exact membership. Raw candidates
+	// remain in the wire until the response contract is unit-only.
+	unitCatalog, err := CompileUnitCatalog(bundle)
+	if err != nil {
+		return SynthesisRequest{}, nil, fmt.Errorf("componentmap: compile architecture units: %w", err)
+	}
+	request.Units = append([]SynthesisUnit(nil), unitCatalog.WireUnits...)
 	if err := validateSynthesisRequestCoverage(request); err != nil {
 		return SynthesisRequest{}, nil, err
 	}
@@ -908,11 +922,11 @@ Use conceptual member, anchor, and flow refs as opaque request-local typed value
 Local semantic facts, compact structural relations, structural locator containment, flow participation, anchor proof_mode, and certainty are read-only grouping context. They must never be returned, upgraded, replaced, or converted into execution order. A declaration_family anchor is static declaration context and never proves runtime behavior. Canonical repository identities, exact source locations, provider provenance, scenarios, catalog identity, versions, and hashes are private and absent from this request.
 
 Return exactly one compact JSON proposal object with one ordered records array. Use this exact tagged-record grammar:
-{"records":[{"kind":"subsystem","ref":"g1","name":"first subsystem","description":"first purpose"},{"kind":"component","subsystem_ref":"g1","name":"first component","description":"first responsibility","member_refs":[{"kind":"package","ref":"p1"}],"anchor_refs":[{"kind":"process_entry","ref":"a1"}],"hypothesis":false},{"kind":"subsystem","ref":"g2","name":"second subsystem","description":"second purpose"},{"kind":"component","subsystem_ref":"g2","name":"second component","description":"second responsibility","member_refs":[{"kind":"package","ref":"p2"}],"anchor_refs":[],"hypothesis":true}]}
+{"records":[{"kind":"subsystem","ref":"g1","name":"first subsystem","description":"first purpose"},{"kind":"component","subsystem_ref":"g1","name":"first component","description":"first responsibility","unit_refs":[{"kind":"package","ref":"u1"}],"anchor_refs":[{"kind":"process_entry","ref":"a1"}],"hypothesis":false},{"kind":"subsystem","ref":"g2","name":"second subsystem","description":"second purpose"},{"kind":"component","subsystem_ref":"g2","name":"second component","description":"second responsibility","unit_refs":[{"kind":"package","ref":"u2"}],"anchor_refs":[],"hypothesis":true}]}
 
-The entire response must parse as exactly one complete JSON object. Its only root field is records. A subsystem record contains exactly kind, ref, name, and description. Its ref is a unique response-local value g1, g2, and so on; it is not a supplied request ref. A component record contains exactly kind, subsystem_ref, name, description, member_refs, anchor_refs, and hypothesis. Copy subsystem_ref exactly from one subsystem record. Do not nest records or emit a second root object. Before returning, silently validate the complete JSON syntax, every record kind, every unique subsystem ref, and every exact subsystem_ref, then return only that one object.
+The entire response must parse as exactly one complete JSON object. Its only root field is records. A subsystem record contains exactly kind, ref, name, and description. Its ref is a unique response-local value g1, g2, and so on; it is not a supplied request ref. A component record contains exactly kind, subsystem_ref, name, description, either unit_refs or member_refs, anchor_refs, and hypothesis. When the request supplies a units catalog, group unit_refs (u*): copy each unit ref exactly as supplied and never split one unit across components. When the request has no units catalog, group member_refs (p*/s*/f*) instead; never mix unit_refs and member_refs in one component. Copy subsystem_ref exactly from one subsystem record. Do not nest records or emit a second root object. Before returning, silently validate the complete JSON syntax, every record kind, every unique subsystem ref, and every exact subsystem_ref, then return only that one object.
 
-Records are in conceptual display order. Emit each subsystem record followed by its component records. Never repeat a member ref within one component. A genuinely cross-cutting member may appear in several different conceptual components; this expresses participation, not ownership. Never repeat an anchor ref within one component. required_member_refs is the exhaustive flat set of conceptual candidates available for grouping, not permission to invent or rewrite identities. Group every member you can classify coherently, but an exact partial grouping is valid: omitted refs remain in a deterministic local unclassified remainder and must not be echoed, renamed, or placed in a model-authored remainder. At least one supplied conceptual member ref must be returned. A candidate parent_ref and every structural_context parent_refs/child_refs link are grouping context only and never satisfy conceptual coverage. Never return a structural_context ref. Before returning, collect the distinct member_refs from every component and self-check them separately by kind against required_member_refs: every returned ref must be an exact typed member of that set, with no structural-locator, unknown, or wrong-kind ref. Cross-cutting repeats count once for this identity self-check. Every component must contain at least one supplied conceptual member ref.
+Records are in conceptual display order. Emit each subsystem record followed by its component records. Never repeat a unit ref within one component. Never repeat an anchor ref within one component. units is the exhaustive bounded local unit catalog available for grouping: group units coherently, do not invent, rename, or rewrite unit refs. An exact partial grouping is valid: omitted units remain in a deterministic local unclassified remainder and must not be echoed, renamed, or placed in a model-authored remainder. At least one supplied unit ref must be returned. Before returning, collect the distinct unit_refs from every component and self-check them: every returned unit ref must be an exact supplied unit ref, with no unknown or wrong-kind ref. Cross-cutting repeats count once for this identity self-check. Every component must contain at least one supplied unit ref (or, under the legacy member contract, at least one supplied conceptual member ref).
 
 Repository archetype and grounding mode are local facts. A primary pillar is one subsystem record; component records are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, prefer four to seven distinct subsystem records when the supplied evidence supports that many, never more than eight. Tiny, library, and package-landscape requests may honestly use one to three. Prefer one to four component records per subsystem and no more than eighteen component records in total. hypothesis is required wire syntax but only advisory model input: the backend derives the product hypothesis status exclusively from exact process_entry/call_target proof scoped to every component member. declaration_family never proves operational grounding. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
 
@@ -1543,7 +1557,11 @@ func evaluateSynthesisResponse(
 	if err != nil {
 		return Landscape{}, SynthesisMembershipCounts{}, err
 	}
-	proposal, resolveErr := resolveSynthesisWireProposal(catalog, wireProposal)
+	unitCatalog, unitErr := CompileUnitCatalog(bundle)
+	if unitErr != nil {
+		return Landscape{}, SynthesisMembershipCounts{}, unitErr
+	}
+	proposal, resolveErr := resolveSynthesisWireProposal(catalog, unitCatalog, wireProposal)
 	if resolveErr != nil {
 		landscape, err := synthesisResponseFallback(bundle, newDiagnostic(resolveErr.code, resolveErr.message))
 		return landscape, SynthesisMembershipCounts{}, err
@@ -1705,8 +1723,15 @@ type synthesisWireRecord struct {
 	Name         string
 	Description  string
 	MemberRefs   []SynthesisMemberRef
+	UnitRefs     []SynthesisUnitRef
 	AnchorRefs   []SynthesisAnchorRef
 	Hypothesis   bool
+}
+
+// SynthesisUnitRef is a request-local unit reference (Decision 216).
+type SynthesisUnitRef struct {
+	Kind MemberKind `json:"kind"`
+	Ref  string     `json:"ref"`
 }
 
 func (record synthesisWireRecord) MarshalJSON() ([]byte, error) {
@@ -1719,9 +1744,15 @@ func (record synthesisWireRecord) MarshalJSON() ([]byte, error) {
 			Description string                  `json:"description"`
 		}{record.Kind, record.Ref, record.Name, record.Description})
 	case synthesisWireComponentRecord:
+		// member_refs XOR unit_refs stays exact on the wire: the used field
+		// serializes even when empty ([]), the unused field is omitted.
 		memberRefs := record.MemberRefs
 		if memberRefs == nil {
 			memberRefs = []SynthesisMemberRef{}
+		}
+		var unitRefs []SynthesisUnitRef
+		if len(record.UnitRefs) > 0 {
+			unitRefs = record.UnitRefs
 		}
 		anchorRefs := record.AnchorRefs
 		if anchorRefs == nil {
@@ -1732,10 +1763,11 @@ func (record synthesisWireRecord) MarshalJSON() ([]byte, error) {
 			SubsystemRef string                  `json:"subsystem_ref"`
 			Name         string                  `json:"name"`
 			Description  string                  `json:"description"`
-			MemberRefs   []SynthesisMemberRef    `json:"member_refs"`
+			MemberRefs   []SynthesisMemberRef    `json:"member_refs,omitempty"`
+			UnitRefs     []SynthesisUnitRef      `json:"unit_refs,omitempty"`
 			AnchorRefs   []SynthesisAnchorRef    `json:"anchor_refs"`
 			Hypothesis   bool                    `json:"hypothesis"`
-		}{record.Kind, record.SubsystemRef, record.Name, record.Description, memberRefs, anchorRefs, record.Hypothesis})
+		}{record.Kind, record.SubsystemRef, record.Name, record.Description, memberRefs, unitRefs, anchorRefs, record.Hypothesis})
 	default:
 		return nil, fmt.Errorf("componentmap: unsupported synthesis wire record kind")
 	}
@@ -1798,6 +1830,10 @@ func SynthesisResponseMembershipCounts(raw []byte) (bool, int, int) {
 			occurrences++
 			distinct[memberRef.key()] = struct{}{}
 		}
+		for _, unitRef := range record.UnitRefs {
+			occurrences++
+			distinct["unit\x00"+unitRef.Ref] = struct{}{}
+		}
 	}
 	if !seenComponent {
 		return false, 0, 0
@@ -1836,8 +1872,14 @@ func decodeSynthesisWireRecord(raw json.RawMessage) (synthesisWireRecord, error)
 			Kind: kind, Ref: ref, Name: name, Description: description,
 		}, nil
 	case synthesisWireComponentRecord:
+		// Decision 216: a component groups either raw member refs (legacy
+		// flat contract) or request-local unit refs (u*, bounded unit
+		// contract) — never both. The exact field set therefore has two
+		// legal shapes.
 		if !hasExactSynthesisFields(
 			fields, "kind", "subsystem_ref", "name", "description", "member_refs", "anchor_refs", "hypothesis",
+		) && !hasExactSynthesisFields(
+			fields, "kind", "subsystem_ref", "name", "description", "unit_refs", "anchor_refs", "hypothesis",
 		) {
 			return synthesisWireRecord{}, fmt.Errorf("proposal component record fields do not match the bounded contract")
 		}
@@ -1853,20 +1895,44 @@ func decodeSynthesisWireRecord(raw json.RawMessage) (synthesisWireRecord, error)
 		if err != nil {
 			return synthesisWireRecord{}, err
 		}
-		if isJSONNull(fields["member_refs"]) || isJSONNull(fields["anchor_refs"]) || isJSONNull(fields["hypothesis"]) {
+		if isJSONNull(fields["anchor_refs"]) || isJSONNull(fields["hypothesis"]) {
 			return synthesisWireRecord{}, fmt.Errorf("proposal component fields must not be null")
 		}
-		var rawMemberRefs []json.RawMessage
-		if err := json.Unmarshal(fields["member_refs"], &rawMemberRefs); err != nil {
-			return synthesisWireRecord{}, fmt.Errorf("proposal member refs have invalid type")
+		_, memberRefsFieldExists := fields["member_refs"]
+		_, unitRefsFieldExists := fields["unit_refs"]
+		hasMemberRefs := memberRefsFieldExists && !isJSONNull(fields["member_refs"])
+		hasUnitRefs := unitRefsFieldExists && !isJSONNull(fields["unit_refs"])
+		if hasMemberRefs == hasUnitRefs {
+			return synthesisWireRecord{}, fmt.Errorf("proposal component must group either member_refs or unit_refs, not both and not neither")
 		}
-		memberRefs := make([]SynthesisMemberRef, 0, len(rawMemberRefs))
-		for _, rawMemberRef := range rawMemberRefs {
-			memberRef, err := decodeSynthesisMemberRef(rawMemberRef)
-			if err != nil {
-				return synthesisWireRecord{}, err
+		memberRefs := []SynthesisMemberRef{}
+		unitRefs := []SynthesisUnitRef{}
+		if hasMemberRefs {
+			var rawMemberRefs []json.RawMessage
+			if err := json.Unmarshal(fields["member_refs"], &rawMemberRefs); err != nil {
+				return synthesisWireRecord{}, fmt.Errorf("proposal member refs have invalid type")
 			}
-			memberRefs = append(memberRefs, memberRef)
+			memberRefs = make([]SynthesisMemberRef, 0, len(rawMemberRefs))
+			for _, rawMemberRef := range rawMemberRefs {
+				memberRef, err := decodeSynthesisMemberRef(rawMemberRef)
+				if err != nil {
+					return synthesisWireRecord{}, err
+				}
+				memberRefs = append(memberRefs, memberRef)
+			}
+		} else {
+			var rawUnitRefs []json.RawMessage
+			if err := json.Unmarshal(fields["unit_refs"], &rawUnitRefs); err != nil {
+				return synthesisWireRecord{}, fmt.Errorf("proposal unit refs have invalid type")
+			}
+			unitRefs = make([]SynthesisUnitRef, 0, len(rawUnitRefs))
+			for _, rawUnitRef := range rawUnitRefs {
+				unitRef, err := decodeSynthesisUnitRef(rawUnitRef)
+				if err != nil {
+					return synthesisWireRecord{}, err
+				}
+				unitRefs = append(unitRefs, unitRef)
+			}
 		}
 		var rawAnchorRefs []json.RawMessage
 		if err := json.Unmarshal(fields["anchor_refs"], &rawAnchorRefs); err != nil {
@@ -1886,7 +1952,7 @@ func decodeSynthesisWireRecord(raw json.RawMessage) (synthesisWireRecord, error)
 		}
 		return synthesisWireRecord{
 			Kind: kind, SubsystemRef: subsystemRef, Name: name, Description: description,
-			MemberRefs: memberRefs, AnchorRefs: anchorRefs, Hypothesis: hypothesis,
+			MemberRefs: memberRefs, UnitRefs: unitRefs, AnchorRefs: anchorRefs, Hypothesis: hypothesis,
 		}, nil
 	default:
 		return synthesisWireRecord{}, fmt.Errorf("proposal record kind is invalid")
@@ -1912,6 +1978,25 @@ func decodeSynthesisMemberRef(raw json.RawMessage) (SynthesisMemberRef, error) {
 	return SynthesisMemberRef{Kind: MemberKind(kind), Ref: ref}, nil
 }
 
+func decodeSynthesisUnitRef(raw json.RawMessage) (SynthesisUnitRef, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
+		return SynthesisUnitRef{}, fmt.Errorf("proposal unit ref is not an object")
+	}
+	if !hasExactSynthesisFields(fields, "kind", "ref") {
+		return SynthesisUnitRef{}, fmt.Errorf("proposal unit ref fields do not match the bounded contract")
+	}
+	kind, err := decodeRequiredProposalString(fields, "kind")
+	if err != nil {
+		return SynthesisUnitRef{}, err
+	}
+	ref, err := decodeRequiredProposalString(fields, "ref")
+	if err != nil {
+		return SynthesisUnitRef{}, err
+	}
+	return SynthesisUnitRef{Kind: MemberKind(kind), Ref: ref}, nil
+}
+
 func decodeSynthesisAnchorRef(raw json.RawMessage) (SynthesisAnchorRef, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
@@ -1933,6 +2018,7 @@ func decodeSynthesisAnchorRef(raw json.RawMessage) (SynthesisAnchorRef, error) {
 
 func resolveSynthesisWireProposal(
 	catalog synthesisPrivateCatalog,
+	unitCatalog UnitCatalog,
 	wire synthesisWireProposal,
 ) (Proposal, *synthesisResponseError) {
 	proposal := Proposal{Version: ProposalVersion}
@@ -2016,7 +2102,7 @@ func resolveSynthesisWireProposal(
 		component := ProposedComponent{
 			Name: record.Name, Description: record.Description,
 			Hypothesis: record.Hypothesis,
-			MemberIDs:  make([]MemberID, 0, len(record.MemberRefs)),
+			MemberIDs:  make([]MemberID, 0, len(record.MemberRefs)+len(record.UnitRefs)),
 			AnchorIDs:  make([]string, 0, len(record.AnchorRefs)),
 		}
 		for _, memberRef := range record.MemberRefs {
@@ -2037,6 +2123,33 @@ func resolveSynthesisWireProposal(
 				}
 			}
 			component.MemberIDs = append(component.MemberIDs, memberID)
+		}
+		// Decision 216: a component grouping unit refs (u*) expands locally
+		// to the exact unit members. Unknown, duplicate, or wrong-kind unit
+		// refs fail closed — never repaired, never guessed.
+		if len(record.UnitRefs) > 0 {
+			unitMembersByRef := unitCatalogUnitMembersByWireRef(unitCatalog)
+			seenUnits := make(map[string]struct{}, len(record.UnitRefs))
+			for _, unitRef := range record.UnitRefs {
+				if unitRef.Kind != MemberPackage {
+					return Proposal{}, &synthesisResponseError{
+						code: "proposal.unknown_unit_ref", message: "proposal unit ref has the wrong request-local kind",
+					}
+				}
+				members, exists := unitMembersByRef[unitRef.Ref]
+				if !exists {
+					return Proposal{}, &synthesisResponseError{
+						code: "proposal.unknown_unit_ref", message: "proposal references an unknown request-local unit ref",
+					}
+				}
+				if _, duplicate := seenUnits[unitRef.Ref]; duplicate {
+					return Proposal{}, &synthesisResponseError{
+						code: "proposal.duplicate_unit_ref", message: "proposal repeats a unit ref within one component",
+					}
+				}
+				seenUnits[unitRef.Ref] = struct{}{}
+				component.MemberIDs = append(component.MemberIDs, members...)
+			}
 		}
 		seenAnchors := make(map[string]struct{}, len(record.AnchorRefs))
 		for _, anchorRef := range record.AnchorRefs {
