@@ -7058,9 +7058,35 @@
 			group.prefix = prefix && group.units.every(function (unit) {
 				return unit.name === prefix || unit.name.indexOf(prefix + '/') === 0;
 			}) ? prefix : '';
+			// Owner preference: packages are a plain sorted list. The module's
+			// root package comes first, its sub-packages follow lexically, and
+			// unrelated (external) package names sort last — even when the
+			// prefix is not factored (mixed module, e.g. one external package).
+			var moduleName = group.module && group.module.name || '';
+			group.units.sort(function (left, right) {
+				var lm = moduleName && (left.name === moduleName);
+				var rm = moduleName && (right.name === moduleName);
+				if (lm && !rm) return -1;
+				if (!lm && rm) return 1;
+				var li = moduleName ? left.name.indexOf(moduleName + '/') === 0 : false;
+				var ri = moduleName ? right.name.indexOf(moduleName + '/') === 0 : false;
+				if (li && !ri) return -1;
+				if (!li && ri) return 1;
+				return left.name < right.name ? -1 : left.name > right.name ? 1 : 0;
+			});
+		});
+		// Groups themselves are sorted by module name so the shelf is stable;
+		// unparented packages (no exact module parent) always sort last.
+		groups.sort(function (left, right) {
+			var l = left.module && left.module.name || '';
+			var r = right.module && right.module.name || '';
+			if (!l && !r) return 0;
+			if (!l) return 1;
+			if (!r) return -1;
+			return l < r ? -1 : l > r ? 1 : 0;
 		});
 		return groups;
-	}
+		}
 
 	function repositoryAtlasWorkspaceShelf() {
 		var atlas = DATA.repository_atlas;

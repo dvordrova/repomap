@@ -209,11 +209,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-atlas-package-groups { display: grid; gap: .75rem; margin-top: .7rem; }
 .rm-atlas-package-group { display: grid; gap: .35rem; }
 .rm-atlas-package-prefix { color: #475569; font-size: .69rem; overflow-wrap: anywhere; padding: 0 .25rem; }
-.rm-atlas-package-list { display: grid; gap: .18rem .55rem; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); list-style: none; margin: 0; padding: 0; }
+.rm-atlas-package-list { display: block; list-style: none; margin: 0; padding: 0; }
 .rm-atlas-package-row { min-width: 0; }
-.rm-atlas-package-action, .rm-atlas-package-unavailable { align-items: center; border-radius: 6px; box-sizing: border-box; display: flex; gap: .45rem; justify-content: space-between; min-height: 1.8rem; padding: .3rem .45rem; width: 100%; }
-.rm-atlas-package-action { background: #fff; border: 1px solid var(--rm-border); color: var(--rm-fg); cursor: pointer; font: inherit; text-align: left; }
-.rm-atlas-package-action:hover { border-color: var(--rm-accent); color: var(--rm-accent); }
+.rm-atlas-package-action, .rm-atlas-package-unavailable { align-items: center; border-radius: 4px; box-sizing: border-box; display: flex; gap: .45rem; justify-content: space-between; min-height: 1.5rem; padding: .15rem .35rem; width: 100%; }
+.rm-atlas-package-action { background: transparent; border: 1px solid transparent; color: var(--rm-fg); cursor: pointer; font: inherit; text-align: left; }
+.rm-atlas-package-action:hover { background: var(--rm-accent-soft, rgba(79, 70, 229, .08)); border-color: var(--rm-accent); color: var(--rm-accent); }
 .rm-atlas-package-action:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: 1px; }
 .rm-atlas-package-unavailable { border: 1px solid transparent; color: #64748b; }
 .rm-atlas-package-name { color: inherit; font-size: .69rem; min-width: 0; overflow-wrap: anywhere; }
@@ -874,7 +874,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   .rm-repository-nav .rm-tabs { flex-direction: row; overflow-x: auto; position: static; }
   .rm-repository-nav .rm-tab { flex: 0 0 auto; }
   .rm-main-content { padding: 1.25rem 1rem; }
-	.rm-atlas-package-list { grid-template-columns: minmax(0, 1fr); }
 	.rm-atlas-package-action, .rm-atlas-package-unavailable { min-width: 0; }
   .rm-repository-area-grid, .rm-mechanism-grid, .rm-operation-grid, .rm-operation-landmark-grid { grid-template-columns: minmax(0, 1fr); }
 	.rm-operation-literal { align-items: stretch; flex-direction: column; }
@@ -10863,9 +10862,35 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			group.prefix = prefix && group.units.every(function (unit) {
 				return unit.name === prefix || unit.name.indexOf(prefix + '/') === 0;
 			}) ? prefix : '';
+			// Owner preference: packages are a plain sorted list. The module's
+			// root package comes first, its sub-packages follow lexically, and
+			// unrelated (external) package names sort last — even when the
+			// prefix is not factored (mixed module, e.g. one external package).
+			var moduleName = group.module && group.module.name || '';
+			group.units.sort(function (left, right) {
+				var lm = moduleName && (left.name === moduleName);
+				var rm = moduleName && (right.name === moduleName);
+				if (lm && !rm) return -1;
+				if (!lm && rm) return 1;
+				var li = moduleName ? left.name.indexOf(moduleName + '/') === 0 : false;
+				var ri = moduleName ? right.name.indexOf(moduleName + '/') === 0 : false;
+				if (li && !ri) return -1;
+				if (!li && ri) return 1;
+				return left.name < right.name ? -1 : left.name > right.name ? 1 : 0;
+			});
+		});
+		// Groups themselves are sorted by module name so the shelf is stable;
+		// unparented packages (no exact module parent) always sort last.
+		groups.sort(function (left, right) {
+			var l = left.module && left.module.name || '';
+			var r = right.module && right.module.name || '';
+			if (!l && !r) return 0;
+			if (!l) return 1;
+			if (!r) return -1;
+			return l < r ? -1 : l > r ? 1 : 0;
 		});
 		return groups;
-	}
+		}
 
 	function repositoryAtlasWorkspaceShelf() {
 		var atlas = DATA.repository_atlas;
