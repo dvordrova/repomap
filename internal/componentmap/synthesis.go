@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	SynthesisRequestVersion = 11
+	SynthesisRequestVersion = 12
 	SynthesisRecordVersion  = 11
-	SynthesisPromptVersion  = "architecture-grounding-v14"
+	SynthesisPromptVersion  = "architecture-grounding-v15"
 
 	maxSynthesisRequestBytes  = 1 << 20
 	maxSynthesisPromptBytes   = maxSynthesisRequestBytes + (16 << 10)
@@ -565,9 +565,26 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 	}
 	relations := append([]LocalRelation(nil), bundle.Relations...)
 	sort.Slice(relations, func(i, j int) bool { return relations[i].ID < relations[j].ID })
+	// Decision 216: compile the bounded local unit catalog alongside the raw
+	// candidate projection. The unit refs (u*) let the model group bounded
+	// units; backend expansion restores exact membership. Raw candidates
+	// remain in the wire until the response contract is unit-only.
+	unitCatalog, err := CompileUnitCatalog(bundle)
+	if err != nil {
+		return SynthesisRequest{}, nil, fmt.Errorf("componentmap: compile architecture units: %w", err)
+	}
+	request.Units = append([]SynthesisUnit(nil), unitCatalog.WireUnits...)
 	for _, relation := range relations {
 		if candidatesByID[relation.From].Role != CandidateRoleConceptualMember ||
 			candidatesByID[relation.To].Role != CandidateRoleConceptualMember {
+			continue
+		}
+		// Decision 223 (completing Decision 216): when a unit catalog is
+		// present the model groups u* unit refs and cannot act on raw
+		// p*-level package-import edges. Those edges are represented by
+		// the per-unit RelationOutCount aggregate; behavior_handoff
+		// relations stay as exact read-only grouping context.
+		if len(unitCatalog.WireUnits) > 0 && relation.Kind == StructuralRelationPackageImport {
 			continue
 		}
 		request.Relations = append(request.Relations, SynthesisRelation{
@@ -587,15 +604,6 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 			MemberRef: catalog.membersByID[binding.MemberID], Certainty: binding.Certainty,
 		})
 	}
-	// Decision 216: compile the bounded local unit catalog alongside the raw
-	// candidate projection. The unit refs (u*) let the model group bounded
-	// units; backend expansion restores exact membership. Raw candidates
-	// remain in the wire until the response contract is unit-only.
-	unitCatalog, err := CompileUnitCatalog(bundle)
-	if err != nil {
-		return SynthesisRequest{}, nil, fmt.Errorf("componentmap: compile architecture units: %w", err)
-	}
-	request.Units = append([]SynthesisUnit(nil), unitCatalog.WireUnits...)
 	if err := validateSynthesisRequestCoverage(request); err != nil {
 		return SynthesisRequest{}, nil, err
 	}

@@ -1752,8 +1752,18 @@ func TestPrepareAuthorizedArchitectureUsesCompleteCasdoorGraph(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildSynthesisRequest: %v", err)
 	}
-	if len(requestBefore.Relations) != edgeCount {
-		t.Fatalf("pre-provider relations = %d, want %d", len(requestBefore.Relations), edgeCount)
+	if len(requestBefore.Relations) != 0 {
+		t.Fatalf("pre-provider relations = %d, want 0 (Decision 223: package imports aggregate into units)", len(requestBefore.Relations))
+	}
+	if len(requestBefore.Units) == 0 {
+		t.Fatalf("pre-provider units = 0, want the bounded unit catalog")
+	}
+	totalOut := 0
+	for _, unit := range requestBefore.Units {
+		totalOut += unit.RelationOutCount
+	}
+	if totalOut == 0 {
+		t.Fatalf("unit relation_out_count aggregate is empty; the complete casdoor import graph is missing")
 	}
 
 	provider := &architectureSynthesisStub{
@@ -1784,8 +1794,18 @@ func TestPrepareAuthorizedArchitectureUsesCompleteCasdoorGraph(t *testing.T) {
 	); err != nil {
 		t.Fatalf("decode exact sent Architecture request: %v", err)
 	}
-	if len(sent.Relations) != edgeCount {
-		t.Fatalf("exact sent supporting_relations = %d, want %d", len(sent.Relations), edgeCount)
+	if len(sent.Relations) != 0 {
+		t.Fatalf("exact sent supporting_relations = %d, want 0 (Decision 223: package imports aggregate into units)", len(sent.Relations))
+	}
+	if len(sent.Units) == 0 {
+		t.Fatalf("exact sent units = 0, want the bounded unit catalog")
+	}
+	sentTotalOut := 0
+	for _, unit := range sent.Units {
+		sentTotalOut += unit.RelationOutCount
+	}
+	if sentTotalOut == 0 {
+		t.Fatalf("exact sent unit relation_out_count aggregate is empty; the complete casdoor import graph is missing")
 	}
 	if err := persistArchitectureSynthesisStatus(runDir, outcome, nil); err != nil {
 		t.Fatalf("persist Architecture status: %v", err)
@@ -1805,6 +1825,12 @@ func TestPrepareAuthorizedArchitectureUsesCompleteCasdoorGraph(t *testing.T) {
 	}
 	if !bytes.Equal(requestBytesAfter, requestBytesBefore) {
 		t.Fatalf("authorized Architecture request changed after replay")
+	}
+	// Decision 223: raw package-import edges are gone; the request must be
+	// materially smaller than the equivalent raw-edges request. 90 edges at
+	// ~40 bytes each would add ~3.6KB; the aggregate keeps the wire compact.
+	if len(requestBytesBefore) > 30000 {
+		t.Fatalf("request bytes = %d, want compact unit-aggregated wire under 30KB", len(requestBytesBefore))
 	}
 	replayedPrompt, err := componentmap.BuildSynthesisPromptForLanguage(
 		replayedInput.CandidateBundle,

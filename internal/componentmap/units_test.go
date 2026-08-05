@@ -1,6 +1,7 @@
 package componentmap
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/evidence"
@@ -192,4 +193,107 @@ func containsSubstring(value, substring string) bool {
 		}
 	}
 	return false
+}
+
+// TestCompileUnitCatalogFillsRelationOutCountAggregate covers Decision 223:
+// the per-unit outgoing package-import aggregate replaces the raw edges on
+// the wire and is counted deterministically (source unit -> other unit).
+func TestCompileUnitCatalogFillsRelationOutCountAggregate(t *testing.T) {
+	t.Parallel()
+
+	bundle := unitFixtureBundle()
+	prodID := MemberID{Kind: MemberPackage, Value: "member-package-prod-a"}
+	testID := MemberID{Kind: MemberPackage, Value: "member-package-test-e2e"}
+	toolID := MemberID{Kind: MemberPackage, Value: "member-package-tools-gen"}
+	rel := func(id string, from, to MemberID) LocalRelation {
+		return LocalRelation{
+			ID: id, From: from, To: to, Kind: StructuralRelationPackageImport,
+			Certainty: evidence.CertaintyStatic,
+			Provenance: []evidence.Provenance{{
+				Provider: "fixture", Version: "v1", Operation: "relate_members",
+			}},
+			Scenarios: []ScenarioContext{{ID: "go:test", Name: "test build"}},
+		}
+	}
+	bundle.Relations = []LocalRelation{
+		rel("prod-imports-test", prodID, testID),
+		rel("prod-imports-tool", prodID, toolID),
+		rel("test-imports-prod", testID, prodID),
+	}
+	catalog, err := CompileUnitCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byLabel := map[string]SynthesisUnit{}
+	for _, wire := range catalog.WireUnits {
+		byLabel[wire.Label] = wire
+	}
+	prod, ok := byLabel["api"]
+	if !ok {
+		t.Fatalf("production unit not found in wire: %#v", catalog.WireUnits)
+	}
+	// prod (api) imports test + tool (2 distinct targets); test imports api (1).
+	if prod.RelationOutCount != 2 {
+		t.Fatalf("production relation_out_count = %d, want 2", prod.RelationOutCount)
+	}
+	test, ok := byLabel["server"]
+	if !ok {
+		t.Fatalf("test unit not found in wire: %#v", catalog.WireUnits)
+	}
+	if test.RelationOutCount != 1 {
+		t.Fatalf("test relation_out_count = %d, want 1", test.RelationOutCount)
+	}
+}
+
+// TestBuildSynthesisRequestDropsPackageImportsKeepsHandoffs covers Decision
+// 223 wire behavior: with a unit catalog present, package_import relations
+// vanish while behavior_handoff relations remain; a bundle whose units
+// compile to zero units (defensive legacy path) keeps raw relations.
+func TestBuildSynthesisRequestDropsPackageImportsKeepsHandoffs(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	request, encoded, err := BuildSynthesisRequest(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(request.Units) == 0 {
+		t.Fatal("fixture bundle produced no units; test premise broken")
+	}
+	for _, relation := range request.Relations {
+		if relation.Kind == StructuralRelationPackageImport {
+			t.Fatalf("package_import relation survived unit-catalog request: %#v", relation)
+		}
+	}
+	if strings.Contains(string(encoded), "package_import") {
+		t.Fatalf("request JSON leaked package_import: %s", encoded)
+	}
+
+	// behavior_handoff relations must survive the filter.
+	handoff := bundle
+	handoff.Relations = append(append([]LocalRelation(nil), bundle.Relations...), LocalRelation{
+		ID: "handoff-1", From: MemberID{Kind: MemberEntrypoint, Value: "backup-command"},
+		To: MemberID{Kind: MemberFile, Value: "repo-file"}, Kind: StructuralRelationBehaviorHandoff,
+		Certainty: evidence.CertaintyStatic,
+		Provenance: []evidence.Provenance{{
+			Provider: "fixture", Version: "v1", Operation: "relate_members",
+		}},
+		Scenarios: []ScenarioContext{{ID: "go:test", Name: "test build"}},
+	})
+	handoffRequest, handoffEncoded, err := BuildSynthesisRequest(handoff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, relation := range handoffRequest.Relations {
+		if relation.Kind == StructuralRelationBehaviorHandoff {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("behavior_handoff relation was dropped: %s", handoffEncoded)
+	}
+	if strings.Contains(string(handoffEncoded), "package_import") {
+		t.Fatalf("request JSON leaked package_import beside handoff: %s", handoffEncoded)
+	}
 }

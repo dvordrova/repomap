@@ -327,13 +327,52 @@ func CompileUnitCatalog(bundle CandidateBundle) (UnitCatalog, error) {
 		catalog.OmittedRoles = append(catalog.OmittedRoles, role)
 	}
 	sort.Slice(catalog.OmittedRoles, func(i, j int) bool { return catalog.OmittedRoles[i] < catalog.OmittedRoles[j] })
-	catalog.WireUnits = projectUnitWire(units, canonicalOpaqueIDs)
+	// Decision 223: fill the per-unit outgoing package-import aggregate that
+	// Decision 216 promised (projectUnitWire used to hardcode 0). Count
+	// exact package_import relations whose source member belongs to the
+	// unit and whose target member belongs to a different unit — the raw
+	// edges are dropped from the wire in favor of this aggregate.
+	outCounts := unitOutgoingRelationCounts(bundle.Relations, units, memberToUnit)
+	catalog.WireUnits = projectUnitWire(units, canonicalOpaqueIDs, outCounts)
 	catalog.SHA256 = catalogDigest(catalog.Units)
 	return catalog, nil
 }
 
+// unitOutgoingRelationCounts counts, per unit canonical ID, the exact
+// outgoing package-import relations from members of the unit to members of
+// other units. It resolves membership against the final post-split units
+// (memberToUnit is filled before oversized units are split, so its keys do
+// not carry the -N suffix). Deterministic and provider-free; only the wire
+// aggregate is published, never the raw edges.
+func unitOutgoingRelationCounts(
+	relations []LocalRelation,
+	units []ArchitectureUnit,
+	memberToUnit map[MemberID]string,
+) map[string]int {
+	// Map every exact member to its final post-split unit canonical ID.
+	memberToFinalUnit := make(map[MemberID]string, len(memberToUnit))
+	for _, unit := range units {
+		for _, memberID := range unit.MemberIDs {
+			memberToFinalUnit[memberID] = unit.CanonicalID
+		}
+	}
+	outCounts := make(map[string]int, len(units))
+	for _, relation := range relations {
+		if relation.Kind != StructuralRelationPackageImport {
+			continue
+		}
+		fromUnit, fromOK := memberToFinalUnit[relation.From]
+		toUnit, toOK := memberToFinalUnit[relation.To]
+		if !fromOK || !toOK || fromUnit == toUnit {
+			continue
+		}
+		outCounts[fromUnit]++
+	}
+	return outCounts
+}
+
 // projectUnitWire builds the bounded provider-visible unit projection.
-func projectUnitWire(units []ArchitectureUnit, canonicalOpaqueIDs map[string]struct{}) []SynthesisUnit {
+func projectUnitWire(units []ArchitectureUnit, canonicalOpaqueIDs map[string]struct{}, outCounts map[string]int) []SynthesisUnit {
 	wire := make([]SynthesisUnit, 0, len(units))
 	for index, unit := range units {
 		labels := representativeLabels(unit, 4, canonicalOpaqueIDs)
@@ -348,7 +387,7 @@ func projectUnitWire(units []ArchitectureUnit, canonicalOpaqueIDs map[string]str
 			MemberKindCounts:     unit.MemberKinds,
 			RepresentativeLabels: labels,
 			AnchorRefCount:       len(unit.AnchorIDs),
-			RelationOutCount:     0,
+			RelationOutCount:     outCounts[unit.CanonicalID],
 		})
 	}
 	return wire

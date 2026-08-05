@@ -284,10 +284,16 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 			t.Errorf("provider request leaked canonical anchor id %q", anchor.ID)
 		}
 	}
-	if !strings.Contains(encoded, "supporting_relations") || !strings.Contains(encoded, "flow_anchor_bindings") ||
+	if !strings.Contains(encoded, `"units":`) || !strings.Contains(encoded, `"relation_out_count"`) ||
 		!strings.Contains(encoded, `"required_member_refs":[`) ||
 		!strings.Contains(encoded, `"ref":{"kind":"package","ref":"p1"}`) {
-		t.Fatalf("request omitted compact typed relations/bindings: %s", encoded)
+		t.Fatalf("request omitted compact typed units/checklist: %s", encoded)
+	}
+	// Decision 223: with a unit catalog present, raw package_import edges
+	// are replaced by the per-unit relation_out_count aggregate; the wire
+	// must not carry the raw import edge.
+	if strings.Contains(encoded, `"supporting_relations"`) || strings.Contains(encoded, `"package_import"`) {
+		t.Fatalf("request leaked raw package-import edges beside the unit aggregate: %s", encoded)
 	}
 	prompt, err := BuildSynthesisPrompt(firstBundle)
 	if err != nil {
