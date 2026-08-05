@@ -8,6 +8,7 @@ Active decisions (each approved by the repository owner via its supervisory goal
 4. decisions/220-surface-discovery-v2.md
 5. decisions/221-overview-truth-first-action.md
 6. decisions/222-architecture-truth-model-relations-ux.md
+7. decisions/223-architecture-wire-aggregated-unit-edges.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
@@ -1069,3 +1070,26 @@ Notes:
     Decision 219 (Study content integrity) is deferred by the same review;
     its partial implementation is preserved as a patch and will resume after
     Surface Discovery v2 and the Study deep-reading contract.
+
+## Decision 223
+
+Status:
+    Decision 223 active (Phase 1 of the overnight program
+    hermes-repomap-overnight-goal-v3.txt): the Architecture provider wire
+    replaces raw package_import supporting relations with the per-unit
+    RelationOutCount aggregate that Decision 216 promised but never
+    delivered (projectUnitWire hardcoded 0; raw edges kept shipping at
+    59-65% of request bytes on Archive 6 runs: etcd 86KB of 141KB, restic
+    35KB of 54KB). BuildSynthesisRequest compiles the unit catalog before
+    serialization and, when units are present, drops package_import edges
+    (behavior_handoff remains as exact read-only grouping context);
+    unitOutgoingRelationCounts resolves membership against final post-split
+    units so the aggregate is correct. SynthesisRequestVersion 11->12,
+    SynthesisPromptVersion v14->v15; old cache identities miss closed. The
+    model groups u* unit refs and cannot act on p*-level import edges, so
+    no grouping signal is lost. Saved accepted responses (telebot/restic)
+    replay under the new request identity; etcd/casdoor rejections remain
+    honest (missing component ref / duplicate member set). Provider-free
+    acceptance: full gates green, etcd output-exhaustion CLI replay green,
+    casdoor complete-graph test asserts 0 raw relations + non-empty
+    aggregate + compact request.
