@@ -1036,11 +1036,83 @@ func writeFixtureFile(t *testing.T, path, content string) {
 	}
 }
 
-func TestAnalyzeCustomRouterRoutesRemainUnsupportedButServerRootIsRetained(t *testing.T) {
+func TestAnalyzeCustomRouterTypedRegistrationAndServerRoot(t *testing.T) {
+	// Decision 220 B: a repository-local typed registration shape
+	// (path string, handler) is now recorded as an exact route by the
+	// generic detector, while the exact server root is retained.
 	result := analyzeFixture(t, "custom_router")
-	if len(result.Catalog.Triggers) != 1 || result.Catalog.Triggers[0].Kind != "http_server" ||
-		!hasFrontier(result.Catalog.Triggers[0].DynamicFrontier, "unresolved_dispatch_inventory") {
-		t.Fatalf("custom routes were promoted or the exact server root was lost: %#v", result.Catalog.Triggers)
+	var routes, servers int
+	for _, trigger := range result.Catalog.Triggers {
+		switch trigger.Kind {
+		case "http_route":
+			routes++
+			if trigger.Producer != "typed_registration_detector" ||
+				trigger.Identity.Path.Text != "/custom" ||
+				!trigger.Identity.Path.Known || !trigger.Handler.Known ||
+				trigger.Resolution != "exact" {
+				t.Fatalf("typed route = %#v", trigger)
+			}
+		case "http_server":
+			servers++
+			if trigger.ServerStartSite == nil || trigger.Resolution == "dynamic" {
+				t.Fatalf("server root = %#v", trigger)
+			}
+		}
+	}
+	if routes != 1 || servers != 1 {
+		t.Fatalf("custom router counts = routes %d, servers %d: %#v", routes, servers, result.Catalog.Triggers)
+	}
+}
+
+func TestAnalyzeBeegoNamespaceAssemblyFrontier(t *testing.T) {
+	// Decision 220 A: Beego namespaces are recorded as route-assembly
+	// frontiers (controller-bound paths are not statically enumerable), so
+	// the surface is never silently invisible.
+	result := analyzeFixture(t, "beego")
+	var assemblies, routes int
+	for _, trigger := range result.Catalog.Triggers {
+		switch trigger.Kind {
+		case "http_route_frontier":
+			assemblies++
+			if trigger.Framework != "beego" || trigger.Resolution != "dynamic" ||
+				!hasFrontier(trigger.DynamicFrontier, "configuration_assembled_route_inventory") {
+				t.Fatalf("beego assembly = %#v", trigger)
+			}
+		case "http_route":
+			routes++
+		}
+	}
+	if assemblies == 0 {
+		t.Fatalf("beego namespace assembly was not recorded: %#v", result.Catalog.Triggers)
+	}
+	if routes != 0 {
+		t.Fatalf("beego exact routes must not be invented: %#v", result.Catalog.Triggers)
+	}
+}
+
+func TestAnalyzeConnectGoServeMuxTypedRegistration(t *testing.T) {
+	// Decision 220 B: connect-go ServeMux.Handle(pattern, http.Handler) is
+	// the closed typed registration shape; the detector records it exactly.
+	result := analyzeFixture(t, "connect_go")
+	var routes, servers int
+	for _, trigger := range result.Catalog.Triggers {
+		switch trigger.Kind {
+		case "http_route":
+			routes++
+			if trigger.Producer != "typed_registration_detector" ||
+				!trigger.Identity.Path.Known || !trigger.Handler.Known ||
+				trigger.Resolution != "exact" {
+				t.Fatalf("connect-go typed route = %#v", trigger)
+			}
+		case "http_server":
+			servers++
+			if trigger.ServerStartSite == nil {
+				t.Fatalf("connect-go server root = %#v", trigger)
+			}
+		}
+	}
+	if routes == 0 || servers == 0 {
+		t.Fatalf("connect-go counts = routes %d, servers %d: %#v", routes, servers, result.Catalog.Triggers)
 	}
 }
 
