@@ -25,11 +25,12 @@ import (
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 	"github.com/dvordrova/repomap/internal/sourcecatalog"
 	"github.com/dvordrova/repomap/internal/tasklens"
+	"github.com/dvordrova/repomap/internal/themestudy"
 	"github.com/dvordrova/repomap/internal/workspacesnapshot"
 )
 
 const (
-	CurrentRunManifestVersion = 11
+	CurrentRunManifestVersion = 12
 	RunManifestFilename       = "run_manifest.json"
 
 	maxRunManifestBytes             = 4 * 1024 * 1024
@@ -74,6 +75,18 @@ type MaterialInputs struct {
 	AtlasStudyRequestSHA256           string `json:"atlas_study_request_sha256,omitempty"`
 	AtlasStudyResultSHA256            string `json:"atlas_study_result_sha256,omitempty"`
 	AtlasStudyStatusSHA256            string `json:"atlas_study_status_sha256,omitempty"`
+	// Decision 213 theme artifacts. The retired single-stage atlas-study
+	// provider call no longer contributes request/result/status to new runs;
+	// the two semantic stages and the local expansion/reducer are bound by the
+	// eight theme digests below.
+	ThemeScoutRequestSHA256      string `json:"theme_scout_request_sha256,omitempty"`
+	ThemeScoutResultSHA256       string `json:"theme_scout_result_sha256,omitempty"`
+	ThemeScoutStatusSHA256       string `json:"theme_scout_status_sha256,omitempty"`
+	ThemeSourceExpansionSHA256   string `json:"theme_source_expansion_sha256,omitempty"`
+	ThemeAdjudicationRequestSHA256 string `json:"theme_adjudication_request_sha256,omitempty"`
+	ThemeAdjudicationResultSHA256  string `json:"theme_adjudication_result_sha256,omitempty"`
+	ThemeAdjudicationStatusSHA256  string `json:"theme_adjudication_status_sha256,omitempty"`
+	StudyThemesSHA256             string `json:"study_themes_sha256,omitempty"`
 	TaskBundleSHA256                  string `json:"task_bundle_sha256,omitempty"`
 	TaskAttemptSHA256                 string `json:"task_attempt_sha256,omitempty"`
 	TaskPackSHA256                    string `json:"task_pack_sha256,omitempty"`
@@ -223,6 +236,55 @@ func (m RunManifest) Validate() error {
 	}
 	if atlasStudyDigestCount != 0 && m.MaterialInputs.RepositoryAtlasSHA256 == "" {
 		return fmt.Errorf("report manifest: Atlas Study artifacts require repository Atlas authority")
+	}
+	themeDigests := []string{
+		m.MaterialInputs.ThemeScoutRequestSHA256,
+		m.MaterialInputs.ThemeScoutResultSHA256,
+		m.MaterialInputs.ThemeScoutStatusSHA256,
+		m.MaterialInputs.ThemeSourceExpansionSHA256,
+		m.MaterialInputs.ThemeAdjudicationRequestSHA256,
+		m.MaterialInputs.ThemeAdjudicationResultSHA256,
+		m.MaterialInputs.ThemeAdjudicationStatusSHA256,
+		m.MaterialInputs.StudyThemesSHA256,
+	}
+	themeDigestCount := 0
+	for _, digest := range themeDigests {
+		if digest == "" {
+			continue
+		}
+		themeDigestCount++
+		if !validManifestSHA256(digest) {
+			return fmt.Errorf("report manifest: theme artifact sha256 is invalid")
+		}
+	}
+	if themeDigestCount != 0 && m.MaterialInputs.RepositoryAtlasSHA256 == "" {
+		return fmt.Errorf("report manifest: theme artifacts require repository Atlas authority")
+	}
+	if themeDigestCount != 0 &&
+		(m.MaterialInputs.ThemeScoutRequestSHA256 == "" || m.MaterialInputs.ThemeScoutStatusSHA256 == "") {
+		return fmt.Errorf("report manifest: theme artifact identity requires Scout request and status")
+	}
+	// A theme digest present without its stage predecessors is a broken
+	// prefix: a Scout result implies the Scout request/status pair; the
+	// expansion implies the Scout result; the Adjudication request implies
+	// the expansion; the Adjudication result implies the Adjudication
+	// request; study_themes implies the Adjudication result. Failure states
+	// legitimately stop earlier, so the strict all-eight rule lives in the
+	// state-specific projection gate.
+	if m.MaterialInputs.ThemeScoutResultSHA256 != "" && m.MaterialInputs.ThemeScoutStatusSHA256 == "" {
+		return fmt.Errorf("report manifest: Scout result requires Scout status")
+	}
+	if m.MaterialInputs.ThemeSourceExpansionSHA256 != "" && m.MaterialInputs.ThemeScoutResultSHA256 == "" {
+		return fmt.Errorf("report manifest: source expansion requires Scout result")
+	}
+	if m.MaterialInputs.ThemeAdjudicationRequestSHA256 != "" && m.MaterialInputs.ThemeSourceExpansionSHA256 == "" {
+		return fmt.Errorf("report manifest: Adjudication request requires source expansion")
+	}
+	if m.MaterialInputs.ThemeAdjudicationResultSHA256 != "" && m.MaterialInputs.ThemeAdjudicationRequestSHA256 == "" {
+		return fmt.Errorf("report manifest: Adjudication result requires Adjudication request")
+	}
+	if m.MaterialInputs.StudyThemesSHA256 != "" && m.MaterialInputs.ThemeAdjudicationResultSHA256 == "" {
+		return fmt.Errorf("report manifest: study_themes requires Adjudication result")
 	}
 	taskDigests := []string{
 		m.MaterialInputs.TaskBundleSHA256,
@@ -676,20 +738,48 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 	hasAtlasStudyRequest := m.MaterialInputs.AtlasStudyRequestSHA256 != ""
 	hasAtlasStudyResult := m.MaterialInputs.AtlasStudyResultSHA256 != ""
 	hasAtlasStudyStatus := m.MaterialInputs.AtlasStudyStatusSHA256 != ""
-	if report.AtlasStudy == nil && (hasAtlasStudyRequest || hasAtlasStudyResult || hasAtlasStudyStatus) {
+	hasThemeScoutRequest := m.MaterialInputs.ThemeScoutRequestSHA256 != ""
+	hasThemeScoutResult := m.MaterialInputs.ThemeScoutResultSHA256 != ""
+	hasThemeScoutStatus := m.MaterialInputs.ThemeScoutStatusSHA256 != ""
+	hasThemeExpansion := m.MaterialInputs.ThemeSourceExpansionSHA256 != ""
+	hasThemeAdjRequest := m.MaterialInputs.ThemeAdjudicationRequestSHA256 != ""
+	hasThemeAdjResult := m.MaterialInputs.ThemeAdjudicationResultSHA256 != ""
+	hasThemeAdjStatus := m.MaterialInputs.ThemeAdjudicationStatusSHA256 != ""
+	hasStudyThemes := m.MaterialInputs.StudyThemesSHA256 != ""
+	hasAnyThemeArtifact := hasThemeScoutRequest || hasThemeScoutResult || hasThemeScoutStatus ||
+		hasThemeExpansion || hasThemeAdjRequest || hasThemeAdjResult || hasThemeAdjStatus || hasStudyThemes
+	if report.AtlasStudy == nil && (hasAtlasStudyRequest || hasAtlasStudyResult || hasAtlasStudyStatus ||
+		hasAnyThemeArtifact) {
 		return fmt.Errorf("report manifest: Atlas Study artifact identity does not match report")
 	}
+	if report.AtlasStudy != nil && hasAnyThemeArtifact &&
+		(hasAtlasStudyRequest || hasAtlasStudyResult || hasAtlasStudyStatus) {
+		// A theme run that also binds the retired single-stage atlas-study
+		// artifacts would have three Study semantic calls, which Decision 213
+		// forbids. The artifact verifier also fails closed on the physical
+		// files; this gate rejects the manifest identity itself.
+		return fmt.Errorf("report manifest: legacy atlas-study artifact is bound in a theme run")
+	}
 	if report.AtlasStudy != nil {
-		if !hasRepositoryAtlas || report.AtlasStudy.Version != atlasstudy.ResultVersion ||
+		// Decision 213: the Study report section is derived from the eight
+		// theme artifacts (two semantic stages + local expansion + reducer).
+		// Legacy single-stage atlas-study runs fail closed: their v11
+		// manifests never reach this gate and their v7 projections never pass
+		// the version check.
+		if !hasRepositoryAtlas || report.AtlasStudy.Version != themestudy.ScoutResultVersion ||
 			report.AtlasStudy.ProjectionVersion != AtlasStudyReportProjectionVersion {
 			return fmt.Errorf("report manifest: Atlas Study report projection is incomplete")
 		}
-		if err := validateAtlasStudyReportProjection(
+		if err := validateThemeStudyReportProjection(
 			report.AtlasStudy,
-			report.StudyMap,
-			hasAtlasStudyRequest,
-			hasAtlasStudyResult,
-			hasAtlasStudyStatus,
+			hasThemeScoutRequest,
+			hasThemeScoutResult,
+			hasThemeScoutStatus,
+			hasThemeExpansion,
+			hasThemeAdjRequest,
+			hasThemeAdjResult,
+			hasThemeAdjStatus,
+			hasStudyThemes,
 		); err != nil {
 			return fmt.Errorf("report manifest: %w", err)
 		}
@@ -727,12 +817,24 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 	return nil
 }
 
-func validateAtlasStudyReportProjection(
+// validateThemeStudyReportProjection validates the Decision 213 Study report
+// section against the theme artifact identity. The retired single-stage
+// atlas-study direction portfolio is gone: the four-stage browse is re-based
+// onto the two semantic stages (considered / seed-advertised / scout-anchored
+// / published) and the editorial theme shelf (Themes) carries the published
+// cards. Failure states stop the artifact prefix early (Scout failure: request
+// + status only; Adjudication failure: through the expansion), so the strict
+// all-eight rule applies only to accepted/accepted_partial states.
+func validateThemeStudyReportProjection(
 	status *AtlasStudyReportStatus,
-	studyMap *RepositoryStudyMap,
-	hasRequest bool,
-	hasResult bool,
-	hasStatus bool,
+	hasScoutRequest bool,
+	hasScoutResult bool,
+	hasScoutStatus bool,
+	hasExpansion bool,
+	hasAdjRequest bool,
+	hasAdjResult bool,
+	hasAdjStatus bool,
+	hasStudyThemes bool,
 ) error {
 	if status == nil {
 		return fmt.Errorf("Atlas Study projection is absent")
@@ -743,73 +845,68 @@ func validateAtlasStudyReportProjection(
 		!status.SupportCoverageComplete && !status.PortfolioTargetMet
 	switch status.State {
 	case atlasstudy.ProductStateAccepted, atlasstudy.ProductStateAcceptedPartial:
-		// Four-stage contract mirroring validateStatus projected onto the
-		// public report: advertised <= considered, the model-selected stage is
-		// between the accepted direction count and the advertised frontier,
-		// the locally accepted span count equals the accepted direction count,
-		// and the four coverage flags are recorded independently. An advertised
-		// span with no returned direction is normal not_selected: it never
-		// turns an otherwise exact result into accepted_partial.
-		if !hasRequest || !hasResult || !hasStatus || studyMap == nil ||
+		// The four-stage chain published ⊆ scout-anchored ⊆ seed-advertised
+		// ⊆ considered is re-verified with exact tally equality, the theme
+		// shelf is present with at least one card (never truncated), and the
+		// full eight-artifact prefix is bound. accepted means every
+		// Scout-accepted candidate published (zero adjudication/reducer
+		// drops); accepted_partial keeps at least one card.
+		if !hasScoutRequest || !hasScoutResult || !hasScoutStatus || !hasExpansion ||
+			!hasAdjRequest || !hasAdjResult || !hasAdjStatus || !hasStudyThemes ||
 			status.UnavailableCode != "" || status.FailureCode != "" ||
-			status.CandidateCoverage == nil || status.DirectionCount < 1 ||
-			status.PublishedDirectionCount < 1 ||
-			status.PublishedDirectionCount != len(studyMap.Directions) ||
-			status.HiddenDirectionCount != len(studyMap.HiddenDirections) ||
-			status.DirectionCount != status.PublishedDirectionCount+status.HiddenDirectionCount ||
-			status.DirectionCount != status.AcceptedSpanCount ||
+			status.Themes == nil || len(status.Themes.Cards) < 1 ||
+			status.Themes.Total != len(status.Themes.Cards) ||
+			status.Themes.Shown != len(status.Themes.Cards) ||
 			status.ConsideredSpanCount <= 0 || status.AdvertisedSpanCount <= 0 ||
 			status.AdvertisedSpanCount > status.ConsideredSpanCount ||
-			status.ModelSelectedSpanCount < status.AcceptedSpanCount ||
 			status.ModelSelectedSpanCount > status.AdvertisedSpanCount ||
+			status.AcceptedSpanCount > status.ModelSelectedSpanCount ||
 			status.FrontierComplete != (status.AdvertisedSpanCount == status.ConsideredSpanCount) ||
 			status.SelectedItemsComplete != (status.State == atlasstudy.ProductStateAccepted) ||
-			!status.SupportCoverageComplete ||
-			status.PortfolioTargetMet != (status.DirectionCount >= atlasstudy.MinPortfolioDirections &&
-				status.DirectionCount <= atlasstudy.MaxDirections) {
-			return fmt.Errorf("accepted Atlas Study projection is invalid")
+			!status.SupportCoverageComplete {
+			return fmt.Errorf("accepted Atlas Study projection is invalid: %+v", status)
 		}
-		if err := status.CandidateCoverage.validate(); err != nil {
-			return err
+		if status.FrontierBrowse == nil || status.FrontierBrowse.Total != status.ConsideredSpanCount {
+			return fmt.Errorf("accepted Atlas Study browse projection is invalid")
 		}
-		if err := validateAtlasStudyOmissionProjection(status.Omissions); err != nil {
-			return err
-		}
-		if status.CandidateCoverage.SpansSelected != status.AdvertisedSpanCount {
-			return fmt.Errorf("accepted Atlas Study candidate/span counts do not match")
-		}
-		// Accepted means every returned selected item is locally valid: the
-		// model-selected stage collapses onto the locally accepted span count
-		// (zero rejected siblings). accepted_partial keeps at least one valid
-		// direction while a returned sibling is rejected; a rejected sibling
-		// may reference an already-selected span, so its count may still equal
-		// the accepted count and the flag remains the exact disambiguator.
-		if status.State == atlasstudy.ProductStateAccepted &&
-			(status.ModelSelectedSpanCount != status.AcceptedSpanCount || !status.SelectedItemsComplete) {
-			return fmt.Errorf("complete Atlas Study projection is invalid")
+		for _, card := range status.Themes.Cards {
+			if card.Ordinal < 1 || card.FinalTitle == "" || card.FinalQuestion == "" ||
+				len(card.Readings) < 1 {
+				return fmt.Errorf("accepted Atlas Study theme card is invalid")
+			}
 		}
 		if status.State == atlasstudy.ProductStateAcceptedPartial &&
-			(status.SelectedItemsComplete || status.ModelSelectedSpanCount < status.AcceptedSpanCount) {
+			(status.SelectedItemsComplete || len(status.Themes.Cards) < 1) {
 			return fmt.Errorf("partial Atlas Study projection is invalid")
 		}
 	case atlasstudy.ProductStateUnavailable:
-		if hasRequest || hasResult || hasStatus || studyMap != nil ||
+		if hasScoutRequest || hasScoutResult || hasScoutStatus || hasExpansion ||
+			hasAdjRequest || hasAdjResult || hasAdjStatus || hasStudyThemes ||
 			(status.UnavailableCode != AtlasStudyUnavailableOffline &&
 				status.UnavailableCode != AtlasStudyUnavailableInsufficientCatalog) ||
 			status.FailureCode != "" || status.CandidateCoverage != nil ||
 			status.DirectionCount != 0 || status.PublishedDirectionCount != 0 ||
 			status.HiddenDirectionCount != 0 || !zeroStageCounts || !zeroFlags ||
+			status.Themes != nil || status.FrontierBrowse != nil ||
 			len(status.Omissions) != 0 {
 			return fmt.Errorf("unavailable Atlas Study projection is invalid")
 		}
 	case atlasstudy.ProductStateFailed:
-		if !hasRequest || hasResult || !hasStatus || studyMap != nil ||
-			status.UnavailableCode != "" || status.CandidateCoverage == nil ||
+		// Scout failure: request + status only. Adjudication failure after a
+		// successful Scout: through the expansion. Either way the browse is
+		// the neutral local-question surface (every row considered) and the
+		// theme shelf is absent — no synthetic shelf, no retry.
+		if !hasScoutRequest || !hasScoutStatus || hasStudyThemes ||
+			status.UnavailableCode != "" ||
 			!status.FailureCode.Valid() || status.FailureCode == atlasstudy.FailureResource ||
-			status.FailureCode == atlasstudy.FailureCanceled || status.DirectionCount != 0 ||
-			status.PublishedDirectionCount != 0 || status.HiddenDirectionCount != 0 ||
-			!zeroStageCounts || !zeroFlags {
+			status.FailureCode == atlasstudy.FailureCanceled ||
+			status.DirectionCount != 0 || status.PublishedDirectionCount != 0 ||
+			status.HiddenDirectionCount != 0 || !zeroStageCounts || !zeroFlags ||
+			status.Themes != nil {
 			return fmt.Errorf("failed Atlas Study projection is invalid")
+		}
+		if hasAdjRequest != hasAdjStatus || hasExpansion != hasAdjRequest {
+			return fmt.Errorf("failed Atlas Study projection has inconsistent stage artifacts")
 		}
 		if err := status.CandidateCoverage.validate(); err != nil {
 			return err
@@ -981,11 +1078,14 @@ func (m RunManifest) VerifyNavigatorArtifacts(runDir string, reportJSON []byte) 
 	return nil
 }
 
-// VerifyAtlasStudyArtifacts binds the exact Atlas Study request/result/status
-// files to the authorized report. Semantic decoding and projection equality
-// are enforced by the shared Atlas Study report reader after the byte identity
-// checks below succeed.
-func (m RunManifest) VerifyAtlasStudyArtifacts(runDir string, reportJSON []byte) error {
+// VerifyThemesArtifacts binds the exact Decision 213 theme artifacts (eight
+// files: Scout request/result/status, source expansion, Adjudication
+// request/result/status, study_themes) to the authorized report. Semantic
+// decoding and projection equality are enforced by the shared theme Study
+// report reader after the byte identity checks below succeed. The legacy
+// single-stage atlas-study request/result/status artifacts are superseded for
+// new runs and must be absent (fail closed).
+func (m RunManifest) VerifyThemesArtifacts(runDir string, reportJSON []byte) error {
 	if m.Version != CurrentRunManifestVersion {
 		return fmt.Errorf("report manifest: unsupported version %d", m.Version)
 	}
@@ -994,46 +1094,67 @@ func (m RunManifest) VerifyAtlasStudyArtifacts(runDir string, reportJSON []byte)
 		want  string
 		limit int
 	}{
-		{atlasstudy.RequestArtifactFilename, m.MaterialInputs.AtlasStudyRequestSHA256, atlasstudy.MaxRequestArtifactBytes},
-		{atlasstudy.ResultArtifactFilename, m.MaterialInputs.AtlasStudyResultSHA256, atlasstudy.MaxResultArtifactBytes},
-		{atlasstudy.StatusArtifactFilename, m.MaterialInputs.AtlasStudyStatusSHA256, atlasstudy.MaxStatusArtifactBytes},
+		{themestudy.ScoutRequestArtifactFilename, m.MaterialInputs.ThemeScoutRequestSHA256, themestudy.MaxScoutRequestArtifactBytes},
+		{themestudy.ScoutResultArtifactFilename, m.MaterialInputs.ThemeScoutResultSHA256, themestudy.MaxScoutResultArtifactBytes},
+		{themestudy.ScoutStatusArtifactFilename, m.MaterialInputs.ThemeScoutStatusSHA256, themestudy.MaxScoutStatusArtifactBytes},
+		{themestudy.ExpansionArtifactFilename, m.MaterialInputs.ThemeSourceExpansionSHA256, themestudy.MaxExpansionArtifactBytes},
+		{themestudy.AdjudicationRequestArtifactFilename, m.MaterialInputs.ThemeAdjudicationRequestSHA256, themestudy.MaxAdjRequestArtifactBytes},
+		{themestudy.AdjudicationResultArtifactFilename, m.MaterialInputs.ThemeAdjudicationResultSHA256, themestudy.MaxAdjResultArtifactBytes},
+		{themestudy.AdjudicationStatusArtifactFilename, m.MaterialInputs.ThemeAdjudicationStatusSHA256, themestudy.MaxAdjStatusArtifactBytes},
+		{themestudy.StudyThemesArtifactFilename, m.MaterialInputs.StudyThemesSHA256, themestudy.MaxStudyThemesArtifactBytes},
 	}
 	root, err := os.OpenRoot(runDir)
 	if err != nil {
-		return fmt.Errorf("report manifest: open Atlas Study run: %w", err)
+		return fmt.Errorf("report manifest: open theme Study run: %w", err)
 	}
 	defer root.Close()
+	// The legacy single-stage artifacts must be absent: a run that kept the
+	// atlas-study provider call would have three Study semantic calls, which
+	// Decision 213 forbids.
+	legacy := []struct{ name, want string }{
+		{atlasstudy.RequestArtifactFilename, m.MaterialInputs.AtlasStudyRequestSHA256},
+		{atlasstudy.ResultArtifactFilename, m.MaterialInputs.AtlasStudyResultSHA256},
+		{atlasstudy.StatusArtifactFilename, m.MaterialInputs.AtlasStudyStatusSHA256},
+	}
+	for _, artifact := range legacy {
+		if artifact.want != "" {
+			return fmt.Errorf("report manifest: legacy atlas-study artifact %s is bound in a theme run", artifact.name)
+		}
+		if _, statErr := root.Lstat(artifact.name); statErr == nil {
+			return fmt.Errorf("report manifest: legacy atlas-study artifact %s is present in a theme run", artifact.name)
+		}
+	}
 	for _, artifact := range artifacts {
 		if artifact.want == "" {
 			if _, statErr := root.Lstat(artifact.name); statErr == nil {
-				return fmt.Errorf("report manifest: unbound Atlas Study artifact %s is present", artifact.name)
+				return fmt.Errorf("report manifest: unbound theme artifact %s is present", artifact.name)
 			} else if !errors.Is(statErr, fs.ErrNotExist) {
-				return fmt.Errorf("report manifest: inspect Atlas Study artifact %s: %w", artifact.name, statErr)
+				return fmt.Errorf("report manifest: inspect theme artifact %s: %w", artifact.name, statErr)
 			}
 			continue
 		}
 		encoded, readErr := readManifestFile(root, artifact.name, artifact.limit)
 		if readErr != nil || manifestSHA256(encoded) != artifact.want {
-			return fmt.Errorf("report manifest: Atlas Study artifact %s sha256 mismatch", artifact.name)
+			return fmt.Errorf("report manifest: theme artifact %s sha256 mismatch", artifact.name)
 		}
 	}
 	var persisted ReportData
 	if err := json.Unmarshal(reportJSON, &persisted); err != nil {
-		return fmt.Errorf("report manifest: decode Atlas Study report projection: %w", err)
+		return fmt.Errorf("report manifest: decode theme Study report projection: %w", err)
 	}
 	if persisted.AtlasStudy == nil &&
-		m.MaterialInputs.AtlasStudyRequestSHA256 == "" &&
-		m.MaterialInputs.AtlasStudyResultSHA256 == "" &&
-		m.MaterialInputs.AtlasStudyStatusSHA256 == "" {
+		m.MaterialInputs.ThemeScoutRequestSHA256 == "" &&
+		m.MaterialInputs.ThemeScoutStatusSHA256 == "" &&
+		m.MaterialInputs.StudyThemesSHA256 == "" {
 		return nil
 	}
 	status, studyMap, err := readAtlasStudyReportProduct(runDir, &persisted)
 	if err != nil {
-		return fmt.Errorf("report manifest: Atlas Study artifacts: %w", err)
+		return fmt.Errorf("report manifest: theme Study artifacts: %w", err)
 	}
 	if !reflect.DeepEqual(status, persisted.AtlasStudy) ||
 		!reflect.DeepEqual(studyMap, persisted.StudyMap) {
-		return fmt.Errorf("report manifest: Atlas Study artifacts do not match report")
+		return fmt.Errorf("report manifest: theme Study artifacts do not match report")
 	}
 	return nil
 }
@@ -1185,7 +1306,7 @@ func ReadRunManifest(runDir string) (RunManifest, error) {
 	if err := manifest.VerifyNavigatorArtifacts(runDir, reportJSON); err != nil {
 		return RunManifest{}, err
 	}
-	if err := manifest.VerifyAtlasStudyArtifacts(runDir, reportJSON); err != nil {
+	if err := manifest.VerifyThemesArtifacts(runDir, reportJSON); err != nil {
 		return RunManifest{}, err
 	}
 	return manifest, nil
@@ -1260,9 +1381,17 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 	navigatorRequestDigest := savedArtifactSHA256(runDir, navigator.RequestArtifactFilename)
 	navigatorResultDigest := savedArtifactSHA256(runDir, navigator.RecordArtifactFilename)
 	navigatorStatusDigest := savedArtifactSHA256(runDir, navigator.StatusArtifactFilename)
-	atlasStudyRequestDigest := savedArtifactSHA256(runDir, atlasstudy.RequestArtifactFilename)
-	atlasStudyResultDigest := savedArtifactSHA256(runDir, atlasstudy.ResultArtifactFilename)
-	atlasStudyStatusDigest := savedArtifactSHA256(runDir, atlasstudy.StatusArtifactFilename)
+	// Decision 213: the Study pipeline is bound by the eight theme artifacts.
+	// The retired single-stage atlas-study files are never read here and their
+	// digest fields stay empty (a legacy binding fails the theme gate).
+	themeScoutRequestDigest := savedArtifactSHA256(runDir, themestudy.ScoutRequestArtifactFilename)
+	themeScoutResultDigest := savedArtifactSHA256(runDir, themestudy.ScoutResultArtifactFilename)
+	themeScoutStatusDigest := savedArtifactSHA256(runDir, themestudy.ScoutStatusArtifactFilename)
+	themeExpansionDigest := savedArtifactSHA256(runDir, themestudy.ExpansionArtifactFilename)
+	themeAdjRequestDigest := savedArtifactSHA256(runDir, themestudy.AdjudicationRequestArtifactFilename)
+	themeAdjResultDigest := savedArtifactSHA256(runDir, themestudy.AdjudicationResultArtifactFilename)
+	themeAdjStatusDigest := savedArtifactSHA256(runDir, themestudy.AdjudicationStatusArtifactFilename)
+	themeStudyThemesDigest := savedArtifactSHA256(runDir, themestudy.StudyThemesArtifactFilename)
 	manifest := RunManifest{
 		Version:               CurrentRunManifestVersion,
 		RepositoryState:       authority.repository,
@@ -1283,9 +1412,17 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 			NavigatorRequestSHA256:            navigatorRequestDigest,
 			NavigatorResultSHA256:             navigatorResultDigest,
 			NavigatorStatusSHA256:             navigatorStatusDigest,
-			AtlasStudyRequestSHA256:           atlasStudyRequestDigest,
-			AtlasStudyResultSHA256:            atlasStudyResultDigest,
-			AtlasStudyStatusSHA256:            atlasStudyStatusDigest,
+			AtlasStudyRequestSHA256:           "",
+			AtlasStudyResultSHA256:            "",
+			AtlasStudyStatusSHA256:            "",
+			ThemeScoutRequestSHA256:           themeScoutRequestDigest,
+			ThemeScoutResultSHA256:            themeScoutResultDigest,
+			ThemeScoutStatusSHA256:            themeScoutStatusDigest,
+			ThemeSourceExpansionSHA256:        themeExpansionDigest,
+			ThemeAdjudicationRequestSHA256:    themeAdjRequestDigest,
+			ThemeAdjudicationResultSHA256:     themeAdjResultDigest,
+			ThemeAdjudicationStatusSHA256:     themeAdjStatusDigest,
+			StudyThemesSHA256:                 themeStudyThemesDigest,
 			TaskBundleSHA256:                  savedArtifactSHA256(runDir, tasklens.BundleFile),
 			TaskAttemptSHA256:                 savedArtifactSHA256(runDir, tasklens.AttemptFile),
 			TaskPackSHA256:                    savedArtifactSHA256(runDir, tasklens.PackFile),
@@ -1308,7 +1445,7 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 	if err := manifest.VerifyNavigatorArtifacts(runDir, reportJSON); err != nil {
 		return err
 	}
-	if err := manifest.VerifyAtlasStudyArtifacts(runDir, reportJSON); err != nil {
+	if err := manifest.VerifyThemesArtifacts(runDir, reportJSON); err != nil {
 		return err
 	}
 	return writeRunManifestAtomic(runDir, manifest)

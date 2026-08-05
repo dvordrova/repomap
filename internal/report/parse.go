@@ -20,6 +20,7 @@ import (
 	"github.com/dvordrova/repomap/internal/flowproof"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/modelresearch"
+	"github.com/dvordrova/repomap/internal/repositoryatlas/goadapter"
 	"github.com/dvordrova/repomap/internal/sourcesignals"
 	"github.com/dvordrova/repomap/internal/studymap"
 )
@@ -838,6 +839,17 @@ func collectOpenablePaths(data *ReportData) {
 	}
 	for _, item := range exactRepositoryAtlasPackageEvidence(data) {
 		add(item.Location.Path)
+	}
+	// D214: every observed resource-boundary call site must be openable —
+	// the Atlas boundary evidence is exact source the report must open.
+	if data.RepositoryAtlas != nil {
+		for _, item := range data.RepositoryAtlas.Evidence {
+			if item.Provenance.Provider != goadapter.BoundaryObservationEvidenceProvider ||
+				item.Provenance.Operation != goadapter.BoundaryObservationEvidenceOperation {
+				continue
+			}
+			add(item.Location.Path)
+		}
 	}
 	data.OpenablePaths = data.OpenablePaths[:0]
 	for path := range paths {

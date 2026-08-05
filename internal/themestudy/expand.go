@@ -85,6 +85,7 @@ func ExpandFiles(files []FileRef, reader SourceReader, totalLines TotalLines) (S
 		accLines += entry.ExpandedLines
 	}
 	expansion.Requested = requestedRefs(files)
+	expansion.OmittedRefs = budgetOmitted
 	expansion.ExpandedLines = accLines
 	expansion.ExpandedBytes = accBytes
 	expansion.CandidateSHA256 = candidateDigest(pathsOf(files))

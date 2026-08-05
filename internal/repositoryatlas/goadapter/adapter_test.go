@@ -7,6 +7,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/boundary"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
@@ -457,4 +458,125 @@ func reverseCopy[T any](values []T) []T {
 		result[left], result[right] = result[right], result[left]
 	}
 	return result
+}
+
+func TestProjectEmitsTypedBoundaryAndResourceEntitiesWithExactEvidence(t *testing.T) {
+	input := singleAppInput(
+		"fixture", "module-fixture", "example.com/fixture", ".",
+		"example.com/fixture/cmd/app", "cmd/app", "cmd/app/main.go", 7, "trigger-app",
+	)
+	input.BoundaryObservations = []boundary.Observation{
+		{
+			Class: boundary.ClassPersistentStorage, ImportPath: "database/sql",
+			PackagePath: "example.com/fixture/cmd/app",
+			Location:    evidence.Location{Path: "cmd/app/main.go", Line: 41, Column: 9},
+			Symbol:      "main",
+		},
+		{
+			Class: boundary.ClassOutboundClient, ImportPath: "net/http",
+			PackagePath: "example.com/fixture/cmd/app",
+			Location:    evidence.Location{Path: "cmd/app/main.go", Line: 42, Column: 9},
+			Symbol:      "main",
+		},
+	}
+	atlas, err := Project(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packageUnit := unitOfKind(t, atlas, repositoryatlas.UnitPackage)
+	if packageUnit.ID == "" {
+		t.Fatal("package unit missing")
+	}
+
+	var boundaryEntities, resourceEntities []repositoryatlas.Entity
+	for _, entity := range atlas.Entities {
+		switch entity.Kind {
+		case repositoryatlas.EntityBoundary:
+			boundaryEntities = append(boundaryEntities, entity)
+		case repositoryatlas.EntityResource:
+			resourceEntities = append(resourceEntities, entity)
+		}
+	}
+	if len(boundaryEntities) != 2 {
+		t.Fatalf("boundary entities = %#v", boundaryEntities)
+	}
+	if len(resourceEntities) != 2 {
+		t.Fatalf("resource entities = %#v", resourceEntities)
+	}
+	for _, entity := range append(append([]repositoryatlas.Entity{}, boundaryEntities...), resourceEntities...) {
+		if entity.UnitID != packageUnit.ID {
+			t.Fatalf("boundary/resource entity %s not on package unit %s", entity.ID, packageUnit.ID)
+		}
+	}
+
+	var boundaryEvidence []repositoryatlas.Evidence
+	for _, item := range atlas.Evidence {
+		if item.Provenance.Provider == BoundaryObservationEvidenceProvider {
+			boundaryEvidence = append(boundaryEvidence, item)
+		}
+	}
+	if len(boundaryEvidence) != 2 {
+		t.Fatalf("boundary evidence = %#v", boundaryEvidence)
+	}
+	for _, item := range boundaryEvidence {
+		if item.UnitID != packageUnit.ID || item.Location.Path != "cmd/app/main.go" ||
+			item.Symbol != "main" || item.Provenance.Version != BoundaryObservationEvidenceVersion ||
+			item.Provenance.Operation != BoundaryObservationEvidenceOperation {
+			t.Fatalf("boundary evidence = %#v", item)
+		}
+	}
+
+	boundaryObservationCount := 0
+	resourceObservationCount := 0
+	for _, observation := range atlas.Observations {
+		switch observation.Subject.Kind {
+		case repositoryatlas.EntityBoundary:
+			boundaryObservationCount++
+		case repositoryatlas.EntityResource:
+			resourceObservationCount++
+		default:
+			// Pre-existing process-entry observations remain untouched.
+			continue
+		}
+		if observation.UnitID != packageUnit.ID || len(observation.EvidenceRefs) != 1 {
+			t.Fatalf("observation = %#v", observation)
+		}
+	}
+	if boundaryObservationCount != 2 || resourceObservationCount != 2 {
+		t.Fatalf("boundary observations=%d resource observations=%d", boundaryObservationCount, resourceObservationCount)
+	}
+
+	// Validation must accept the new entity kinds and observations.
+	if err := atlas.Validate(); err != nil {
+		t.Fatalf("validated Atlas with boundary entities: %v", err)
+	}
+}
+
+func TestProjectOmitsBoundaryObservationOutsideKnownPackage(t *testing.T) {
+	input := singleAppInput(
+		"fixture", "module-fixture", "example.com/fixture", ".",
+		"example.com/fixture/cmd/app", "cmd/app", "cmd/app/main.go", 7, "trigger-app",
+	)
+	input.BoundaryObservations = []boundary.Observation{
+		{
+			Class: boundary.ClassPersistentStorage, ImportPath: "database/sql",
+			PackagePath: "example.com/unknown/package",
+			Location:    evidence.Location{Path: "elsewhere/main.go", Line: 3, Column: 5},
+			Symbol:      "Run",
+		},
+	}
+	atlas, err := Project(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entity := range atlas.Entities {
+		if entity.Kind == repositoryatlas.EntityBoundary || entity.Kind == repositoryatlas.EntityResource {
+			t.Fatalf("unexpected boundary/resource entity for unknown package: %#v", entity)
+		}
+	}
+	for _, item := range atlas.Evidence {
+		if item.Provenance.Provider == BoundaryObservationEvidenceProvider {
+			t.Fatalf("unexpected boundary evidence for unknown package: %#v", item)
+		}
+	}
 }

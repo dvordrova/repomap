@@ -184,17 +184,17 @@ func TestRunManifestAllowsLocalReportWithoutArchitectureStatus(t *testing.T) {
 	}
 }
 
-func TestVersionTenManifestIsRejectedBeforeAtlasStudyV3Artifacts(t *testing.T) {
+func TestVersionTenManifestIsRejectedBeforeThemeArtifacts(t *testing.T) {
 	t.Parallel()
 
 	manifest := validRunManifestFixture(t)
 	manifest.Version = 10
-	err := manifest.VerifyAtlasStudyArtifacts(
-		filepath.Join(t.TempDir(), "missing-v3-run"),
+	err := manifest.VerifyThemesArtifacts(
+		filepath.Join(t.TempDir(), "missing-theme-run"),
 		[]byte(`{"format_version":30}`),
 	)
 	if err == nil || !strings.Contains(err.Error(), "unsupported version 10") {
-		t.Fatalf("v10 Atlas Study v3 authority error = %v", err)
+		t.Fatalf("v10 theme authority error = %v", err)
 	}
 }
 

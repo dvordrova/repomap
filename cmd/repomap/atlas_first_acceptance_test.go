@@ -23,14 +23,17 @@ import (
 	"github.com/dvordrova/repomap/internal/navigator"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/studymap"
+	"github.com/dvordrova/repomap/internal/themestudy"
 )
 
 type atlasFirstAcceptanceStage string
 
 const (
-	atlasFirstStageNavigator    atlasFirstAcceptanceStage = "navigator"
-	atlasFirstStageArchitecture atlasFirstAcceptanceStage = "architecture"
-	atlasFirstStageStudy        atlasFirstAcceptanceStage = "atlas_study"
+	atlasFirstStageNavigator           atlasFirstAcceptanceStage = "navigator"
+	atlasFirstStageArchitecture        atlasFirstAcceptanceStage = "architecture"
+	atlasFirstStageStudyScout          atlasFirstAcceptanceStage = "theme_scout"
+	atlasFirstStageStudyAdjudication   atlasFirstAcceptanceStage = "theme_adjudication"
+	atlasFirstStageStudy               atlasFirstAcceptanceStage = "atlas_study"
 )
 
 type atlasFirstAcceptanceProvider struct {
@@ -58,7 +61,8 @@ func TestRunDefaultAtlasFirstPublishesNavigatorArchitectureAndStudy(t *testing.T
 	provider.assertStages(t,
 		atlasFirstStageNavigator,
 		atlasFirstStageArchitecture,
-		atlasFirstStageStudy,
+		atlasFirstStageStudyScout,
+		atlasFirstStageStudyAdjudication,
 	)
 	if data.Navigator == nil || data.Navigator.State != navigator.ProductStateSelected ||
 		data.Navigator.Recommendation == nil {
@@ -75,7 +79,7 @@ func TestRunDefaultAtlasFirstPublishesNavigatorArchitectureAndStudy(t *testing.T
 	assertAtlasFirstAcceptedArchitecture(t, data)
 	assertAtlasFirstAcceptedStudy(t, data)
 	assertAtlasFirstLocalSubstrateUnchanged(t, data)
-	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
+	assertAtlasFirstDiagnostics(t, runDir, 4, map[string]string{
 		debugdump.SemanticStageNavigator:    "accepted",
 		debugdump.SemanticStageArchitecture: "accepted",
 		debugdump.SemanticStageAtlasStudy:   "accepted_partial",
@@ -90,20 +94,35 @@ func TestRunDefaultAtlasFirstPublishesNavigatorArchitectureAndStudy(t *testing.T
 	assertNoLegacyAtlasFirstArtifacts(t, runDir)
 	assertNoLegacyOrientationWarning(t, data)
 
-	resultBytes, err := os.ReadFile(filepath.Join(runDir, atlasstudy.ResultArtifactFilename))
+	scoutBytes, err := os.ReadFile(filepath.Join(runDir, themestudy.ScoutResultArtifactFilename))
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := atlasstudy.DecodeResultRecord(resultBytes)
+	scout, err := themestudy.DecodeScoutResult(scoutBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Diagnostics.DirectionsReceived != len(result.Directions)+1 ||
-		result.Diagnostics.DirectionsAccepted != len(result.Directions) ||
-		result.Diagnostics.DirectionsRejected != 1 ||
-		len(result.Diagnostics.Issues) != 1 ||
-		result.Diagnostics.Issues[0].Code != atlasstudy.IssueUnknownRef {
-		t.Fatalf("invalid sibling did not preserve valid Brief/route: %#v", result.Diagnostics)
+	if scout.Version != themestudy.ScoutResultVersion || scout.State != "accepted_partial" ||
+		scout.Status.Received != 2 || scout.Status.Accepted != 1 || scout.Status.Rejected != 1 ||
+		len(scout.Status.Issues) != 1 || scout.Status.Issues[0].Code != themestudy.ScoutIssueUnknownRef {
+		t.Fatalf("invalid sibling did not preserve the valid theme candidate: %#v", scout.Status)
+	}
+	themesBytes, err := os.ReadFile(filepath.Join(runDir, themestudy.StudyThemesArtifactFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	themes, err := themestudy.DecodeStudyThemes(themesBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(themes.Cards) == 0 {
+		t.Fatalf("theme shelf = %#v, want at least one published card", themes)
+	}
+	// The Scout rejection is recorded in the Scout result (accepted_partial);
+	// the published shelf is the surviving candidate. The report projection
+	// carries the final partial state.
+	if data.AtlasStudy.State != atlasstudy.ProductStateAcceptedPartial {
+		t.Fatalf("study state = %q, want accepted_partial after a rejected Scout sibling", data.AtlasStudy.State)
 	}
 }
 
@@ -147,7 +166,7 @@ func TestRunDefaultAtlasFirstEmptyNavigatorLibraryStillPublishesArchitectureAndS
 	}
 	runDir, manifest, data := runAtlasFirstAcceptance(t, repo, provider)
 
-	provider.assertStages(t, atlasFirstStageArchitecture, atlasFirstStageStudy)
+	provider.assertStages(t, atlasFirstStageArchitecture, atlasFirstStageStudyScout, atlasFirstStageStudyAdjudication)
 	if data.Navigator == nil || data.Navigator.State != navigator.ProductStateEmpty ||
 		data.Navigator.Recommendation != nil {
 		t.Fatalf("library Navigator report = %#v, want explicit empty result", data.Navigator)
@@ -161,7 +180,7 @@ func TestRunDefaultAtlasFirstEmptyNavigatorLibraryStillPublishesArchitectureAndS
 	assertAtlasFirstAcceptedArchitecture(t, data)
 	assertAtlasFirstAcceptedStudy(t, data)
 	assertAtlasFirstLocalSubstrateUnchanged(t, data)
-	assertAtlasFirstDiagnostics(t, runDir, 2, map[string]string{
+	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
 		debugdump.SemanticStageNavigator:    "empty",
 		debugdump.SemanticStageArchitecture: "accepted",
 		debugdump.SemanticStageAtlasStudy:   "accepted",
@@ -183,7 +202,7 @@ func TestRunDefaultAtlasFirstRejectedArchitectureKeepsLocalCanvasAndCallsStudy(t
 	}
 	runDir, manifest, data := runAtlasFirstAcceptance(t, repo, provider)
 
-	provider.assertStages(t, atlasFirstStageArchitecture, atlasFirstStageStudy)
+	provider.assertStages(t, atlasFirstStageArchitecture, atlasFirstStageStudyScout, atlasFirstStageStudyAdjudication)
 	if data.ArchitectureSynthesis == nil ||
 		data.ArchitectureSynthesis.State != report.ArchitectureSynthesisFailed ||
 		!data.ArchitectureSynthesis.ProposalRejected ||
@@ -197,7 +216,7 @@ func TestRunDefaultAtlasFirstRejectedArchitectureKeepsLocalCanvasAndCallsStudy(t
 		t.Fatalf("rejected enrichment erased canonical local canvas: %#v", data.ArchitectureCanvas)
 	}
 	assertAtlasFirstAcceptedStudy(t, data)
-	assertAtlasFirstDiagnostics(t, runDir, 2, map[string]string{
+	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
 		debugdump.SemanticStageNavigator:    "empty",
 		debugdump.SemanticStageArchitecture: "rejected",
 		debugdump.SemanticStageAtlasStudy:   "accepted",
@@ -213,9 +232,14 @@ func TestRunDefaultAtlasFirstRejectedArchitectureKeepsLocalCanvasAndCallsStudy(t
 		navigator.StatusArtifactFilename,
 		navigator.RecordArtifactFilename,
 		report.ArchitectureSynthesisStatusFile,
-		atlasstudy.RequestArtifactFilename,
-		atlasstudy.ResultArtifactFilename,
-		atlasstudy.StatusArtifactFilename,
+		themestudy.ScoutRequestArtifactFilename,
+		themestudy.ScoutResultArtifactFilename,
+		themestudy.ScoutStatusArtifactFilename,
+		themestudy.ExpansionArtifactFilename,
+		themestudy.AdjudicationRequestArtifactFilename,
+		themestudy.AdjudicationResultArtifactFilename,
+		themestudy.AdjudicationStatusArtifactFilename,
+		themestudy.StudyThemesArtifactFilename,
 		"report.json",
 		"report.html",
 		report.RunManifestFilename,
@@ -239,7 +263,8 @@ func TestRunDefaultAtlasFirstNavigatorFailureDoesNotGateArchitectureOrStudy(t *t
 	provider.assertStages(t,
 		atlasFirstStageNavigator,
 		atlasFirstStageArchitecture,
-		atlasFirstStageStudy,
+		atlasFirstStageStudyScout,
+		atlasFirstStageStudyAdjudication,
 	)
 	if data.Navigator == nil || data.Navigator.State != navigator.ProductStateFailed ||
 		data.Navigator.Recommendation != nil {
@@ -247,7 +272,7 @@ func TestRunDefaultAtlasFirstNavigatorFailureDoesNotGateArchitectureOrStudy(t *t
 	}
 	assertAtlasFirstAcceptedArchitecture(t, data)
 	assertAtlasFirstAcceptedStudy(t, data)
-	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
+	assertAtlasFirstDiagnostics(t, runDir, 4, map[string]string{
 		debugdump.SemanticStageNavigator:    "failed",
 		debugdump.SemanticStageArchitecture: "accepted",
 		debugdump.SemanticStageAtlasStudy:   "accepted",
@@ -270,7 +295,8 @@ func TestRunDefaultAtlasFirstNavigatorProviderFailureDoesNotGateArchitectureOrSt
 	provider.assertStages(t,
 		atlasFirstStageNavigator,
 		atlasFirstStageArchitecture,
-		atlasFirstStageStudy,
+		atlasFirstStageStudyScout,
+		atlasFirstStageStudyAdjudication,
 	)
 	if data.Navigator == nil || data.Navigator.State != navigator.ProductStateFailed ||
 		data.Navigator.FailureCode != navigator.FailureProvider ||
@@ -279,7 +305,7 @@ func TestRunDefaultAtlasFirstNavigatorProviderFailureDoesNotGateArchitectureOrSt
 	}
 	assertAtlasFirstAcceptedArchitecture(t, data)
 	assertAtlasFirstAcceptedStudy(t, data)
-	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
+	assertAtlasFirstDiagnostics(t, runDir, 4, map[string]string{
 		debugdump.SemanticStageNavigator:    "failed",
 		debugdump.SemanticStageArchitecture: "accepted",
 		debugdump.SemanticStageAtlasStudy:   "accepted",
@@ -297,7 +323,8 @@ func TestRunDefaultAtlasFirstArchitectureProviderFailureKeepsLocalCanvas(t *test
 	provider.assertStages(t,
 		atlasFirstStageNavigator,
 		atlasFirstStageArchitecture,
-		atlasFirstStageStudy,
+		atlasFirstStageStudyScout,
+		atlasFirstStageStudyAdjudication,
 	)
 	if data.ArchitectureSynthesis == nil ||
 		data.ArchitectureSynthesis.State != report.ArchitectureSynthesisFailed ||
@@ -312,7 +339,7 @@ func TestRunDefaultAtlasFirstArchitectureProviderFailureKeepsLocalCanvas(t *test
 		t.Fatalf("provider failure erased canonical local canvas: %#v", data.ArchitectureCanvas)
 	}
 	assertAtlasFirstAcceptedStudy(t, data)
-	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
+	assertAtlasFirstDiagnostics(t, runDir, 4, map[string]string{
 		debugdump.SemanticStageNavigator:    "accepted",
 		debugdump.SemanticStageArchitecture: "failed",
 		debugdump.SemanticStageAtlasStudy:   "accepted",
@@ -398,12 +425,13 @@ func (provider *atlasFirstAcceptanceProvider) ServeHTTP(
 		}
 	case atlasFirstStageArchitecture:
 		response, err = atlasFirstAcceptanceArchitectureResponse(combined, provider.rejectArchitecture)
-	case atlasFirstStageStudy:
-		response, err = atlasFirstAcceptanceStudyResponse(
+	case atlasFirstStageStudyScout:
+		response, err = atlasFirstAcceptanceScoutResponse(
 			combined,
-			provider.repositoryType,
 			provider.includeBadStudySibling,
 		)
+	case atlasFirstStageStudyAdjudication:
+		response, err = atlasFirstAcceptanceAdjudicationResponse(combined)
 	default:
 		err = fmt.Errorf("unsupported stage %q", stage)
 	}
@@ -488,10 +516,12 @@ func atlasFirstAcceptanceRequestStage(
 		strings.Contains(combined, "Refs under structural_context are read-only locator context") &&
 		strings.Contains(combined, "Bounded candidate request:\n"):
 		return atlasFirstStageArchitecture, combined, nil
-	case strings.Contains(combined, "Catalog JSON:\n") &&
-		strings.Contains(combined, "\"reading_targets\"") &&
-		strings.Contains(combined, "Response schema: {\"repository_type\""):
-		return atlasFirstStageStudy, combined, nil
+	case strings.Contains(combined, "theme_kind is one of: user_journey") &&
+		strings.Contains(combined, "Request bundle JSON:\n"):
+		return atlasFirstStageStudyScout, combined, nil
+	case strings.Contains(combined, "fit is one of: direct, supporting") &&
+		strings.Contains(combined, "Request bundle JSON:\n"):
+		return atlasFirstStageStudyAdjudication, combined, nil
 	default:
 		return "", combined, fmt.Errorf("request is not a current Atlas-first stage")
 	}
@@ -558,184 +588,152 @@ func atlasFirstAcceptanceArchitectureResponse(
 	return atlasFirstAcceptanceCompletion(content, 211, 73), nil
 }
 
-func atlasFirstAcceptanceStudyResponse(
-	combined string,
-	repositoryType atlasstudy.RepositoryType,
-	includeBadSibling bool,
-) ([]byte, error) {
-	const startMarker = "Catalog JSON:\n"
-	const endMarker = "\n\nResponse schema:"
-	start := strings.LastIndex(combined, startMarker)
-	if start < 0 {
-		return nil, fmt.Errorf("Atlas Study catalog marker is absent")
+// atlasFirstAcceptanceWireBundle extracts the model-visible request bundle
+// JSON that BuildScoutPrompt/BuildAdjudicationPrompt embed after the
+// "Request bundle JSON:" marker.
+func atlasFirstAcceptanceWireBundle(combined string) ([]byte, error) {
+	const marker = "Request bundle JSON:\n"
+	index := strings.LastIndex(combined, marker)
+	if index < 0 {
+		return nil, fmt.Errorf("theme request bundle marker is absent")
 	}
-	start += len(startMarker)
-	end := strings.Index(combined[start:], endMarker)
-	if end < 0 {
-		return nil, fmt.Errorf("Atlas Study schema marker is absent")
-	}
-	var wire struct {
-		Components []struct {
-			Ref               string   `json:"ref"`
-			ReadingTargetRefs []string `json:"reading_target_refs"`
-		} `json:"components"`
-		Surfaces []struct {
-			Ref               string   `json:"ref"`
-			ReadingTargetRefs []string `json:"reading_target_refs"`
-		} `json:"surfaces"`
-		ReadingTargets []struct {
-			Ref           string   `json:"ref"`
-			Path          string   `json:"path"`
-			PrincipalRefs []string `json:"principal_refs"`
-		} `json:"reading_targets"`
-		RouteSpans []struct {
-			Ref                 string                   `json:"span_ref"`
-			TargetJob           atlasstudy.TargetJob     `json:"target_job"`
-			LearningStage       atlasstudy.LearningStage `json:"learning_stage"`
-			RequiredSupportRefs []string                 `json:"required_support_refs"`
-			AllowedTargetRefs   []string                 `json:"allowed_target_refs"`
-		} `json:"route_spans"`
-	}
-	if err := json.Unmarshal([]byte(combined[start:start+end]), &wire); err != nil {
-		return nil, fmt.Errorf("decode Atlas Study wire: %w", err)
-	}
-	if len(wire.Components) == 0 {
-		return nil, fmt.Errorf("Atlas Study wire has no component")
-	}
-	componentRef := wire.Components[0].Ref
-	knownPrincipals := make(map[string]struct{}, len(wire.Components)+len(wire.Surfaces))
-	componentPrincipals := make(map[string]struct{}, len(wire.Components))
-	for _, component := range wire.Components {
-		knownPrincipals[component.Ref] = struct{}{}
-		componentPrincipals[component.Ref] = struct{}{}
-	}
-	for _, surface := range wire.Surfaces {
-		knownPrincipals[surface.Ref] = struct{}{}
-	}
-	targetByRef := make(map[string]struct {
-		Path          string
-		PrincipalRefs []string
-	}, len(wire.ReadingTargets))
-	for _, target := range wire.ReadingTargets {
-		if target.Path == "a_package.go" {
-			return nil, fmt.Errorf("package-declaration-only source became a Study reading target")
-		}
-		targetByRef[target.Ref] = struct {
-			Path          string
-			PrincipalRefs []string
-		}{Path: target.Path, PrincipalRefs: target.PrincipalRefs}
-	}
-	if len(wire.RouteSpans) == 0 {
-		return nil, fmt.Errorf("Atlas Study wire has no typed route span")
-	}
-	if len(wire.RouteSpans) > atlasstudy.MaxDirections {
-		return nil, fmt.Errorf("Atlas Study wire advertises too many typed route spans")
-	}
-	brief := map[string]any{
-		"what_it_is": map[string]any{
-			"text":         "A repository described by an accepted conceptual component.",
-			"support_refs": []string{componentRef},
-		},
-		"problem": map[string]any{
-			"text":         "It provides a bounded codebase for repository work.",
-			"support_refs": []string{componentRef},
-		},
-		"main_input": map[string]any{
-			"text":         "Repository work is represented by exact local facts.",
-			"support_refs": []string{componentRef},
-		},
-		"central_responsibility": map[string]any{
-			"text":         "The accepted component groups related repository responsibilities.",
-			"support_refs": []string{componentRef},
-		},
-		"observable_result": map[string]any{
-			"text":         "The report exposes source-backed reading targets.",
-			"support_refs": []string{componentRef},
-		},
-	}
-	directions := make([]any, 0, len(wire.RouteSpans)+1)
-	for _, span := range wire.RouteSpans {
-		if span.Ref == "" || len(span.RequiredSupportRefs) == 0 || len(span.AllowedTargetRefs) == 0 {
-			return nil, fmt.Errorf("Atlas Study wire has incomplete typed route span")
-		}
-		principalSet := make(map[string]struct{})
-		var principalRefs []string
-		reading := make([]any, 0, len(span.AllowedTargetRefs))
-		for index, targetRef := range span.AllowedTargetRefs {
-			target, ok := targetByRef[targetRef]
-			if !ok {
-				return nil, fmt.Errorf("typed span %s advertises unknown target %s", span.Ref, targetRef)
-			}
-			for _, principal := range target.PrincipalRefs {
-				if _, known := knownPrincipals[principal]; !known {
-					continue
-				}
-				if _, duplicate := principalSet[principal]; duplicate {
-					continue
-				}
-				principalSet[principal] = struct{}{}
-				principalRefs = append(principalRefs, principal)
-			}
-			label := atlasstudy.ReadingContinue
-			if index == 0 {
-				label = atlasstudy.ReadingStart
-			}
-			reading = append(reading, map[string]any{
-				"target_ref": targetRef, "label": string(label),
-				"what_to_look_for": "Inspect the exact producer-supported source boundary.",
-			})
-		}
-		if len(reading) == 0 || len(reading) > atlasstudy.MaxDirectionReadingCount {
-			return nil, fmt.Errorf("typed span %s has invalid target count %d", span.Ref, len(reading))
-		}
-		hasComponent := false
-		for _, principal := range principalRefs {
-			if _, ok := componentPrincipals[principal]; ok {
-				hasComponent = true
-				break
-			}
-		}
-		if !hasComponent {
-			return nil, fmt.Errorf("typed span %s has no component principal", span.Ref)
-		}
-		if len(principalRefs) > 5 {
-			return nil, fmt.Errorf("typed span %s requires too many principals", span.Ref)
-		}
-		directions = append(directions, map[string]any{
-			"span_ref":         span.Ref,
-			"why_it_matters":   "The route stays bound to exact producer-owned supports.",
-			"learning_outcome": "The reader can inspect the exact source boundaries authorized by this span.",
-			"target_job":       string(span.TargetJob),
-			"learning_stage":   string(span.LearningStage),
-			"principal_refs":   principalRefs,
-			"reading":          reading,
-		})
-	}
-	if includeBadSibling {
-		first := wire.RouteSpans[0]
-		firstTarget := first.AllowedTargetRefs[0]
-		directions = append(directions, map[string]any{
-			"span_ref":         first.Ref,
-			"why_it_matters":   "This deliberately invalid sibling proves item-local rejection.",
-			"learning_outcome": "The valid Brief and route remain available.",
-			"target_job":       string(first.TargetJob),
-			"learning_stage":   string(first.LearningStage),
-			"principal_refs":   []string{componentRef},
-			"reading": []any{
-				map[string]any{"target_ref": firstTarget, "label": string(atlasstudy.ReadingStart), "what_to_look_for": "Inspect the exact source."},
-				map[string]any{"target_ref": "a999999", "label": string(atlasstudy.ReadingVerify), "what_to_look_for": "This ref is deliberately unknown."},
-			},
-		})
-	}
-	content, err := json.Marshal(map[string]any{
-		"repository_type": string(repositoryType),
-		"brief":           brief,
-		"directions":      directions,
-	})
+	return []byte(combined[index+len(marker):]), nil
+}
+
+// atlasFirstAcceptanceScoutResponse builds a valid Theme Scout response from
+// the request bundle: candidate themes over the exact a* anchors and f*
+// expansion refs, with one deliberately unknown-ref sibling when requested so
+// the run exercises item-local rejection (accepted_partial).
+func atlasFirstAcceptanceScoutResponse(combined string, includeBadSibling bool) ([]byte, error) {
+	raw, err := atlasFirstAcceptanceWireBundle(combined)
 	if err != nil {
 		return nil, err
 	}
-	return atlasFirstAcceptanceCompletion(content, 377, 211), nil
+	var wire struct {
+		Vocabulary struct {
+			Files []struct {
+				Ref string `json:"ref"`
+			} `json:"files"`
+		} `json:"vocabulary"`
+		SeedPacks struct {
+			Packs []struct {
+				Seed struct {
+					Ref string `json:"ref"`
+				} `json:"seed"`
+			} `json:"packs"`
+		} `json:"seed_packs"`
+	}
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		return nil, fmt.Errorf("decode Theme Scout wire: %w", err)
+	}
+	var anchorRefs []string
+	for _, pack := range wire.SeedPacks.Packs {
+		if pack.Seed.Ref != "" {
+			anchorRefs = append(anchorRefs, pack.Seed.Ref)
+		}
+	}
+	if len(anchorRefs) == 0 {
+		return nil, fmt.Errorf("Theme Scout wire has no a* seed anchor")
+	}
+	var fileRefs []string
+	for _, file := range wire.Vocabulary.Files {
+		if file.Ref != "" {
+			fileRefs = append(fileRefs, file.Ref)
+		}
+	}
+	expansionRef := ""
+	if len(fileRefs) > 0 {
+		expansionRef = fileRefs[0]
+	}
+	theme := func(title string, refs []string) map[string]any {
+		return map[string]any{
+			"title":               title,
+			"question":            "How do the exact anchors work together in this repository?",
+			"theme_kind":          string(themestudy.KindSiblingImplementationFamily),
+			"anchor_refs":         refs,
+			"expansion_file_refs": []string{expansionRef},
+			"why_it_matters":      "The accepted anchors participate in one bounded editorial responsibility.",
+			"expected_learning":   "The reader can inspect the exact anchors and their bounded source.",
+			"relation_claim":      "editorial_only",
+			"focused":             false,
+		}
+	}
+	themes := []any{theme("Shared responsibilities across exact anchors", anchorRefs)}
+	if includeBadSibling {
+		themes = append(themes, map[string]any{
+			"title":               "Deliberately invalid sibling",
+			"question":            "This candidate references an unknown anchor to prove item-local rejection.",
+			"theme_kind":          string(themestudy.KindCrossCuttingPolicy),
+			"anchor_refs":         []string{"a999999"},
+			"expansion_file_refs": []string{expansionRef},
+			"why_it_matters":      "The unknown ref must reject only this candidate.",
+			"expected_learning":   "The valid sibling survives.",
+			"relation_claim":      "editorial_only",
+			"focused":             true,
+		})
+	}
+	content, err := json.Marshal(map[string]any{"themes": themes})
+	if err != nil {
+		return nil, err
+	}
+	return atlasFirstAcceptanceCompletion(content, 211, 31), nil
+}
+
+// atlasFirstAcceptanceAdjudicationResponse builds a valid Theme Adjudication
+// response from the request bundle: for every t* candidate, a direct
+// assessment over its own a* anchors with a supported observation and reading
+// order.
+func atlasFirstAcceptanceAdjudicationResponse(combined string) ([]byte, error) {
+	raw, err := atlasFirstAcceptanceWireBundle(combined)
+	if err != nil {
+		return nil, err
+	}
+	var wire struct {
+		Candidates []struct {
+			Ref        string   `json:"ref"`
+			AnchorRefs []string `json:"anchor_refs"`
+		} `json:"candidates"`
+	}
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		return nil, fmt.Errorf("decode Theme Adjudication wire: %w", err)
+	}
+	if len(wire.Candidates) == 0 {
+		return nil, fmt.Errorf("Theme Adjudication wire has no candidate")
+	}
+	themes := make([]any, 0, len(wire.Candidates))
+	for _, candidate := range wire.Candidates {
+		if len(candidate.AnchorRefs) == 0 {
+			return nil, fmt.Errorf("Theme Adjudication candidate %s has no anchor", candidate.Ref)
+		}
+		assessments := make([]any, 0, len(candidate.AnchorRefs))
+		readingOrder := make([]string, 0, len(candidate.AnchorRefs))
+		for index, anchor := range candidate.AnchorRefs {
+			role := "supporting"
+			if index == 0 {
+				role = "public_entry"
+			}
+			assessments = append(assessments, map[string]any{
+				"anchor_ref":           anchor,
+				"fit":                  "direct",
+				"role":                 role,
+				"supported_observation": "The exact source pack shows this anchor participating in the theme.",
+			})
+			readingOrder = append(readingOrder, anchor)
+		}
+		themes = append(themes, map[string]any{
+			"candidate_ref":     candidate.Ref,
+			"final_title":       "Accepted theme for " + candidate.Ref,
+			"final_question":    "What shared responsibility do the exact anchors implement?",
+			"anchor_assessments": assessments,
+			"reading_order":     readingOrder,
+			"unknowns":          []string{},
+		})
+	}
+	content, err := json.Marshal(map[string]any{"themes": themes})
+	if err != nil {
+		return nil, err
+	}
+	return atlasFirstAcceptanceCompletion(content, 211, 73), nil
 }
 
 func atlasFirstAcceptanceRejectedNavigator(combined string) ([]byte, error) {
@@ -859,30 +857,21 @@ func assertAtlasFirstAcceptedArchitecture(t *testing.T, data *report.ReportData)
 
 func assertAtlasFirstAcceptedStudy(t *testing.T, data *report.ReportData) {
 	t.Helper()
-	if data.AtlasStudy == nil || data.AtlasStudy.DirectionCount == 0 || data.StudyMap == nil ||
-		len(data.StudyMap.Directions) != data.AtlasStudy.DirectionCount || len(data.StudyMap.Brief.WhatItIs) == 0 {
-		t.Fatalf("accepted Atlas Study = %#v / %#v", data.AtlasStudy, data.StudyMap)
+	if data.AtlasStudy == nil || data.AtlasStudy.Version != themestudy.ScoutResultVersion ||
+		data.AtlasStudy.Themes == nil || len(data.AtlasStudy.Themes.Cards) == 0 {
+		t.Fatalf("accepted theme Study = %#v", data.AtlasStudy)
 	}
-	// D211 admits exactly two accepted state combinations: a fully accepted
-	// selection (accepted + complete) or a partial acceptance with rejected
-	// siblings uncovered (accepted_partial + incomplete). Anything else —
+	// D213 admits exactly the accepted state pairs: a fully accepted shelf or
+	// a partial acceptance with rejected siblings uncovered. Anything else —
 	// including a third state value — is a failure.
 	switch data.AtlasStudy.State {
-	case atlasstudy.ProductStateAccepted:
-		if !data.AtlasStudy.SelectedItemsComplete {
-			t.Fatalf("accepted Atlas Study = %#v / %#v", data.AtlasStudy, data.StudyMap)
-		}
-	case atlasstudy.ProductStateAcceptedPartial:
-		if data.AtlasStudy.SelectedItemsComplete {
-			t.Fatalf("accepted Atlas Study = %#v / %#v", data.AtlasStudy, data.StudyMap)
-		}
+	case atlasstudy.ProductStateAccepted, atlasstudy.ProductStateAcceptedPartial:
 	default:
-		t.Fatalf("accepted Atlas Study = %#v / %#v", data.AtlasStudy, data.StudyMap)
+		t.Fatalf("accepted theme Study = %#v", data.AtlasStudy)
 	}
-	for _, direction := range data.StudyMap.Directions {
-		if len(direction.ReadingAnchors) < atlasstudy.MinDirectionReadingCount ||
-			len(direction.ReadingAnchors) > atlasstudy.MaxDirectionReadingCount {
-			t.Fatalf("Study route has invalid exact reading cardinality: %#v", direction)
+	for _, card := range data.AtlasStudy.Themes.Cards {
+		if len(card.Readings) == 0 {
+			t.Fatalf("theme card has no exact reading: %#v", card)
 		}
 	}
 }
@@ -959,7 +948,9 @@ func assertAtlasFirstDiagnostics(
 	t.Helper()
 	// Exact call totals describe this first Atlas-backed implementation. They
 	// diagnose accidental legacy fan-out; they are not a permanent product
-	// ceiling on future independently approved Atlas questions.
+	// ceiling on future independently approved Atlas questions. D213's Study
+	// stage makes exactly two semantic calls (Theme Scout + Theme
+	// Adjudication); other stages make one.
 	metadataBytes, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -977,8 +968,12 @@ func assertAtlasFirstDiagnostics(
 		if !ok || attempt.State != wantState {
 			t.Fatalf("Atlas-first stage diagnostic = %#v, want states %#v", attempt, wantStates)
 		}
-		if attempt.ProviderCallCount < 0 || attempt.ProviderCallCount > 1 {
-			t.Fatalf("Atlas-first stage call count is not diagnostic one-call state: %#v", attempt)
+		maxCalls := 1
+		if attempt.Stage == debugdump.SemanticStageAtlasStudy {
+			maxCalls = 2 // D213: exactly Theme Scout + Theme Adjudication
+		}
+		if attempt.ProviderCallCount < 0 || attempt.ProviderCallCount > maxCalls {
+			t.Fatalf("Atlas-first stage call count is not diagnostic one/two-call state: %#v", attempt)
 		}
 	}
 }
@@ -986,8 +981,13 @@ func assertAtlasFirstDiagnostics(
 func assertAtlasFirstSemanticStages(t *testing.T, runDir string, want ...string) {
 	t.Helper()
 	entries := readSemanticJournalEntries(t, runDir)
-	got := make([]string, 0, len(entries))
+	seen := make(map[string]struct{}, len(entries))
+	var got []string
 	for _, entry := range entries {
+		if _, dup := seen[entry.record.Stage]; dup {
+			continue
+		}
+		seen[entry.record.Stage] = struct{}{}
 		got = append(got, entry.record.Stage)
 	}
 	sort.Strings(got)
@@ -999,18 +999,24 @@ func assertAtlasFirstSemanticStages(t *testing.T, runDir string, want ...string)
 
 func assertAtlasFirstAcceptedArtifacts(t *testing.T, runDir string, navigatorSelected bool) {
 	t.Helper()
-	for _, name := range []string{
+	artifactNames := []string{
 		navigator.StatusArtifactFilename,
 		navigator.RecordArtifactFilename,
 		report.ArchitectureSynthesisFile,
 		report.ArchitectureSynthesisStatusFile,
-		atlasstudy.RequestArtifactFilename,
-		atlasstudy.ResultArtifactFilename,
-		atlasstudy.StatusArtifactFilename,
+		themestudy.ScoutRequestArtifactFilename,
+		themestudy.ScoutResultArtifactFilename,
+		themestudy.ScoutStatusArtifactFilename,
+		themestudy.ExpansionArtifactFilename,
+		themestudy.AdjudicationRequestArtifactFilename,
+		themestudy.AdjudicationResultArtifactFilename,
+		themestudy.AdjudicationStatusArtifactFilename,
+		themestudy.StudyThemesArtifactFilename,
 		"report.json",
 		"report.html",
 		report.RunManifestFilename,
-	} {
+	}
+	for _, name := range artifactNames {
 		if _, err := os.Stat(filepath.Join(runDir, name)); err != nil {
 			t.Fatalf("accepted Atlas-first run missing %s: %v", name, err)
 		}
@@ -1035,9 +1041,14 @@ func assertAtlasFirstAcceptedManifest(
 		inputs.NavigatorStatusSHA256 == "" ||
 		(inputs.NavigatorRequestSHA256 != "") != navigatorSelected ||
 		inputs.NavigatorResultSHA256 == "" ||
-		inputs.AtlasStudyRequestSHA256 == "" ||
-		inputs.AtlasStudyResultSHA256 == "" ||
-		inputs.AtlasStudyStatusSHA256 == "" ||
+		inputs.ThemeScoutRequestSHA256 == "" ||
+		inputs.ThemeScoutResultSHA256 == "" ||
+		inputs.ThemeScoutStatusSHA256 == "" ||
+		inputs.ThemeSourceExpansionSHA256 == "" ||
+		inputs.ThemeAdjudicationRequestSHA256 == "" ||
+		inputs.ThemeAdjudicationResultSHA256 == "" ||
+		inputs.ThemeAdjudicationStatusSHA256 == "" ||
+		inputs.StudyThemesSHA256 == "" ||
 		inputs.ModelBundleSHA256 != "" ||
 		inputs.OrientationContextSelectionSHA256 != "" {
 		t.Fatalf("Atlas-first manifest bindings = %#v", inputs)

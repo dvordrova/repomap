@@ -9,11 +9,14 @@ import (
 )
 
 // AnchorInfo is the exact backend-owned identity for one a* anchor used to
-// build a Reading (never prose).
+// build a Reading (never prose). CanonicalSpanID, when non-empty, binds the
+// anchor to the canonical route span it was compiled from so the re-based
+// browse can derive the published stage from study_themes.v1.json readings.
 type AnchorInfo struct {
-	Path   string `json:"path"`
-	Symbol string `json:"symbol"`
-	Line   int    `json:"line"`
+	Path            string `json:"path"`
+	Symbol          string `json:"symbol"`
+	Line            int    `json:"line"`
+	CanonicalSpanID string `json:"canonical_span_id,omitempty"`
 }
 
 // ReducerInput is the exact input to the deterministic reducer: the accepted
@@ -196,7 +199,7 @@ func publishEntries(theme AdjudicatedTheme, anchors map[string]AnchorInfo) []pub
 		info := anchors[ref]
 		entries = append(entries, publishedEntry{
 			ref:     ref,
-			reading: Reading{Label: info.Symbol, Symbol: info.Symbol, Path: info.Path, Line: info.Line},
+			reading: Reading{Label: info.Symbol, Symbol: info.Symbol, Path: info.Path, Line: info.Line, CanonicalSpanID: info.CanonicalSpanID},
 			fit:     fitByRef[ref],
 		})
 	}

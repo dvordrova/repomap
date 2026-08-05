@@ -21,8 +21,9 @@ import (
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
+	"github.com/dvordrova/repomap/internal/repositoryatlas/goadapter"
 	"github.com/dvordrova/repomap/internal/secretscan"
-	"github.com/dvordrova/repomap/internal/studymap"
+	"github.com/dvordrova/repomap/internal/themestudy"
 )
 
 const AtlasStudyUnavailableInsufficientCatalog AtlasStudyUnavailableCode = "insufficient_catalog"
@@ -488,6 +489,67 @@ func atlasStudyReadingShelf(
 			addHandoffTarget(handoff.Callee, false)
 		}
 	}
+	// D214: every observed resource-boundary call site is producer-owned Study
+	// eligibility, exactly like an entry handoff. The call site becomes a
+	// reading target when the Atlas carries adapter-owned boundary evidence
+	// for it and the local association supplies a support proof. The label is
+	// fixed identity-free prose (real symbols may legitimately contain the
+	// repository name); the exact symbol rides in the Symbol field.
+	if data.RepositoryAtlas != nil {
+		addBoundaryTarget := func(item repositoryatlas.Evidence) {
+			if item.Location.Path == "" || item.Location.Line <= 0 || item.Symbol == "" {
+				return
+			}
+			if _, ok := openable[item.Location.Path]; !ok {
+				return
+			}
+			physicalKey := item.Location.Path + "\x00" + fmt.Sprint(item.Location.Line)
+			if existing, exists := physicalTargets[physicalKey]; exists && existing == item.Symbol {
+				return
+			}
+			association := atlasStudyReadingAssociation(
+				data, advertisedSurfaces, item.Location.Path, item.Location.Line, item.Symbol,
+			)
+			if len(association.supports) == 0 || len(association.principalRefs) == 0 {
+				return
+			}
+			label := "Observed resource boundary call site"
+			if item.Provenance.Detail == "database/sql" || strings.HasPrefix(item.Provenance.Detail, "gorm") ||
+				strings.HasPrefix(item.Provenance.Detail, "xorm") || strings.Contains(item.Provenance.Detail, "redis") ||
+				strings.Contains(item.Provenance.Detail, "mongo") || item.Provenance.Detail == "os" {
+				label = "Observed persistent storage boundary call site"
+			} else if item.Provenance.Detail == "net/http" || strings.Contains(item.Provenance.Detail, "grpc") {
+				label = "Observed outbound network client call site"
+			}
+			locatorKey := strings.Join([]string{
+				string(atlasstudy.ReadingTargetFunction), item.Location.Path,
+				fmt.Sprint(item.Location.Line), item.Symbol,
+			}, "\x00")
+			targetsByLocator[locatorKey] = atlasstudy.ReadingTarget{
+				ID: "reading-target-" + atlasStudyDigest(locatorKey), Owner: association.owner,
+				RelatedComponentIDs: association.relatedComponentIDs,
+				PrincipalRefs:       association.principalRefs,
+				Kind:                atlasstudy.ReadingTargetFunction,
+				Label:               label,
+				Fact:                "Exact observed resource-boundary call site.",
+				Authority:           repositoryatlas.AuthorityObserved,
+				Location:            evidence.Location{Path: item.Location.Path, Line: item.Location.Line},
+				Symbol:              item.Symbol,
+			}
+			if existing, exists := physicalTargets[physicalKey]; exists && existing != item.Symbol {
+				physicalTargets[physicalKey] = ""
+			} else {
+				physicalTargets[physicalKey] = item.Symbol
+			}
+		}
+		for _, item := range data.RepositoryAtlas.Evidence {
+			if item.Provenance.Provider != goadapter.BoundaryObservationEvidenceProvider ||
+				item.Provenance.Operation != goadapter.BoundaryObservationEvidenceOperation {
+				continue
+			}
+			addBoundaryTarget(item)
+		}
+	}
 	result := atlasStudyReadingShelfResult{
 		targets: make([]atlasstudy.ReadingTarget, 0, len(targetsByLocator)),
 	}
@@ -719,6 +781,36 @@ func atlasStudyReadingAssociation(
 					role:          atlasstudy.SupportEntryHandoff,
 					producerID:    "entry-handoff-callee:" + handoff.ID,
 					packageBucket: atlasStudyPackageBucketID(handoff.TargetPackage),
+					authority:     repositoryatlas.AuthorityObserved,
+				})
+			}
+		}
+	}
+	// D214: an observed resource-boundary call site (exact Atlas boundary
+	// evidence at this exact path:line) is producer-owned Study eligibility,
+	// exactly like an entry handoff. Only adapter-owned boundary evidence
+	// (provenance provider "boundary", operation "call_site") creates it;
+	// canonical IDs never reach the wire.
+	if data.RepositoryAtlas != nil {
+		boundaryEvidenceByLocation := make(map[string]string)
+		for _, item := range data.RepositoryAtlas.Evidence {
+			if item.Provenance.Provider != goadapter.BoundaryObservationEvidenceProvider ||
+				item.Provenance.Operation != goadapter.BoundaryObservationEvidenceOperation {
+				continue
+			}
+			key := item.Location.Path + "\x00" + fmt.Sprint(item.Location.Line)
+			if existing, ok := boundaryEvidenceByLocation[key]; ok && existing != item.ID {
+				boundaryEvidenceByLocation[key] = ""
+			} else if !ok {
+				boundaryEvidenceByLocation[key] = item.ID
+			}
+		}
+		if evidenceID, ok := boundaryEvidenceByLocation[sourcePath+"\x00"+fmt.Sprint(line)]; ok && evidenceID != "" {
+			if packageBucket := atlasStudyExactPackageBucket(data, sourcePath, symbol); packageBucket != "" {
+				result.supports = append(result.supports, atlasStudySupportProof{
+					role:          atlasstudy.SupportObservedCallBoundary,
+					producerID:    "resource-boundary:" + evidenceID,
+					packageBucket: packageBucket,
 					authority:     repositoryatlas.AuthorityObserved,
 				})
 			}
@@ -1569,336 +1661,6 @@ func atlasStudyEvidence(
 	return result
 }
 
-func readAtlasStudyReportProduct(
-	runDir string,
-	data *ReportData,
-) (*AtlasStudyReportStatus, *RepositoryStudyMap, error) {
-	root, err := os.OpenRoot(runDir)
-	if err != nil {
-		return nil, nil, fmt.Errorf("atlas study report: open run directory: %w", err)
-	}
-	defer root.Close()
-	requestRaw, hasRequest, err := readOptionalAtlasStudyArtifact(
-		root, atlasstudy.RequestArtifactFilename, atlasstudy.MaxRequestArtifactBytes,
-	)
-	if err != nil {
-		return nil, nil, err
-	}
-	resultRaw, hasResult, err := readOptionalAtlasStudyArtifact(
-		root, atlasstudy.ResultArtifactFilename, atlasstudy.MaxResultArtifactBytes,
-	)
-	if err != nil {
-		return nil, nil, err
-	}
-	statusRaw, hasStatus, err := readOptionalAtlasStudyArtifact(
-		root, atlasstudy.StatusArtifactFilename, atlasstudy.MaxStatusArtifactBytes,
-	)
-	if err != nil {
-		return nil, nil, err
-	}
-	if !hasRequest && !hasResult && !hasStatus {
-		return uncalledAtlasStudyReportStatus(data), nil, nil
-	}
-	if !hasRequest || !hasStatus {
-		return nil, nil, fmt.Errorf("atlas study report: artifact set requires request and status")
-	}
-	request, err := atlasstudy.DecodeRequestRecord(requestRaw)
-	if err != nil {
-		return nil, nil, fmt.Errorf("atlas study report: request: %w", err)
-	}
-	status, err := atlasstudy.DecodeStatus(statusRaw)
-	if err != nil {
-		return nil, nil, fmt.Errorf("atlas study report: status: %w", err)
-	}
-	input, err := BuildAtlasStudyInput(data, request.Language)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := atlasstudy.ValidateRequestRecordAgainstInput(request, input); err != nil {
-		return nil, nil, fmt.Errorf("atlas study report: request binding: %w", err)
-	}
-	if err := atlasstudy.ValidateStatusAgainstInput(status, input); err != nil {
-		return nil, nil, fmt.Errorf("atlas study report: status binding: %w", err)
-	}
-	reportStatus := &AtlasStudyReportStatus{
-		Version: status.Version, ProjectionVersion: AtlasStudyReportProjectionVersion,
-		State:           status.State,
-		UnavailableCode: AtlasStudyUnavailableCode(status.UnavailableCode),
-		FailureCode:     status.FailureCode, DirectionCount: status.DirectionCount,
-		ConsideredSpanCount:    status.ConsideredSpanCount,
-		AdvertisedSpanCount:    status.AdvertisedSpanCount,
-		ModelSelectedSpanCount: status.ModelSelectedSpanCount,
-		AcceptedSpanCount:      status.AcceptedSpanCount,
-		FrontierComplete:        status.FrontierComplete,
-		SelectedItemsComplete:   status.SelectedItemsComplete,
-		SupportCoverageComplete: status.SupportCoverageComplete,
-		PortfolioTargetMet:      status.PortfolioTargetMet,
-	}
-	if status.State == atlasstudy.ProductStateAccepted ||
-		status.State == atlasstudy.ProductStateAcceptedPartial ||
-		status.State == atlasstudy.ProductStateFailed {
-		reportStatus.CandidateCoverage, err = projectAtlasStudyCandidateCoverage(status.CandidateCoverage)
-		if err != nil {
-			return nil, nil, err
-		}
-		reportStatus.Omissions = projectAtlasStudyOmissions(status.CandidateCoverage.Omissions)
-	}
-	switch status.State {
-	case atlasstudy.ProductStateAccepted, atlasstudy.ProductStateAcceptedPartial:
-		if !hasResult {
-			return nil, nil, fmt.Errorf("atlas study report: accepted status requires result")
-		}
-		result, decodeErr := atlasstudy.DecodeResultRecord(resultRaw)
-		if decodeErr != nil {
-			return nil, nil, fmt.Errorf("atlas study report: result: %w", decodeErr)
-		}
-		if validateErr := atlasstudy.ValidateResultRecordAgainstInput(result, input); validateErr != nil {
-			return nil, nil, fmt.Errorf("atlas study report: result binding: %w", validateErr)
-		}
-		if status.DirectionCount != len(result.Directions) {
-			return nil, nil, fmt.Errorf("atlas study report: result/status direction count mismatch")
-		}
-		studyData, localErr := atlasStudyLocalD177Data(data)
-		if localErr != nil {
-			return nil, nil, localErr
-		}
-		studyMap, projectErr := projectAtlasStudyMap(
-			studyData,
-			data.ArchitectureCanvas,
-			input,
-			result,
-		)
-		if projectErr != nil {
-			return nil, nil, projectErr
-		}
-		browse, browseErr := deriveAtlasStudyFrontierBrowse(
-			request, result, input, status, data, studyMap.Directions,
-		)
-		if browseErr != nil {
-			return nil, nil, browseErr
-		}
-		reportStatus.FrontierBrowse = browse
-		// DirectionCount remains the exact accepted result/status count.
-		// Publication counts are an explicit versioned report projection; exact
-		// duplicate reading sets remain available as hidden diagnostics.
-		reportStatus.PublishedDirectionCount = len(studyMap.Directions)
-		reportStatus.HiddenDirectionCount = len(studyMap.HiddenDirections)
-		return reportStatus, studyMap, nil
-	case atlasstudy.ProductStateFailed:
-		if hasResult {
-			return nil, nil, fmt.Errorf("atlas study report: terminal non-accepted status cannot contain result")
-		}
-		// The failed-state browse is a distinct neutral local surface: every
-		// row is the considered stage, the total comes from the rebuilt input
-		// count, and the surface is exempt from accepted-stage tally checks
-		// because there is no result artifact and no direction portfolio.
-		browse, browseErr := deriveAtlasStudyFailedBrowse(input, data)
-		if browseErr != nil {
-			return nil, nil, browseErr
-		}
-		reportStatus.FrontierBrowse = browse
-		return reportStatus, nil, nil
-	case atlasstudy.ProductStateUnavailable:
-		if hasResult {
-			return nil, nil, fmt.Errorf("atlas study report: terminal non-accepted status cannot contain result")
-		}
-		return reportStatus, nil, nil
-	case atlasstudy.ProductStatePrepared:
-		return nil, nil, fmt.Errorf("atlas study report: prepared status is not publishable")
-	default:
-		return nil, nil, fmt.Errorf("atlas study report: unsupported state %q", status.State)
-	}
-}
-
-// atlasStudyBrowseRow is one pre-truncation browse row. spanID, learningStage
-// and representative are internal sort keys only and are never serialized.
-type atlasStudyBrowseRow struct {
-	spanID        string
-	learningStage atlasstudy.LearningStage
-	stage         AtlasStudySpanStage
-	title         string
-	question      string
-	source        UserCodeLocation
-	endpoint      *UserCodeLocation
-	directionID   string
-	// representative marks an advertised_budget omission representative: a
-	// DERIVED first row of the Local (considered) group, emitted before the
-	// remaining considered rows in canonical span-ID order (D212 §4).
-	representative bool
-}
-
-// deriveAtlasStudyFrontierBrowse computes the provider-free per-span browse of
-// the complete considered Study question set for accepted/accepted_partial
-// runs. It runs ONLY inside readAtlasStudyReportProduct after the result
-// record was decoded and validated against the rebuilt input, so the manifest
-// DeepEqual round-trip (manifest.go:1030–1037) re-derives byte-identical
-// browse bytes. Fail-closed invariants: the chain
-// accepted ⊆ model_selected ⊆ advertised ⊆ considered is re-verified, the four
-// stage-set sizes equal the four status counts, every accepted row's
-// DirectionID (derived from the validated result.Directions array order, model
-// rank) resolves to exactly one published direction whose span matches, and
-// only then the 256 ceiling is applied with truthful Total/Shown. Considered
-// always comes from the rebuilt input.RouteSpans — never from the request
-// catalog, which carries only the advertised frontier.
-func deriveAtlasStudyFrontierBrowse(
-	request atlasstudy.RequestRecord,
-	result atlasstudy.ResultRecord,
-	input atlasstudy.Input,
-	status atlasstudy.Status,
-	data *ReportData,
-	publishedDirections []StudyDirection,
-) (*FrontierBrowse, error) {
-	considered := make(map[string]struct{}, len(input.RouteSpans))
-	for _, span := range input.RouteSpans {
-		considered[span.ID] = struct{}{}
-	}
-	advertised := make(map[string]struct{}, len(request.Catalog))
-	for _, object := range request.Catalog {
-		if object.Kind == atlasstudy.RefRouteSpan {
-			advertised[object.CanonicalID] = struct{}{}
-		}
-	}
-	modelSelected := make(map[string]struct{}, len(result.ModelSelectedSpanRefs))
-	for _, ref := range result.ModelSelectedSpanRefs {
-		if ref.Kind != atlasstudy.RefRouteSpan {
-			return nil, fmt.Errorf("atlas study report: browse model-selected ref has wrong kind")
-		}
-		modelSelected[ref.ID] = struct{}{}
-	}
-	accepted := make(map[string]struct{}, len(result.Directions))
-	directionBySpan := make(map[string]string, len(result.Directions))
-	for _, direction := range result.Directions {
-		if direction.Span.Kind != atlasstudy.RefRouteSpan {
-			return nil, fmt.Errorf("atlas study report: browse accepted ref has wrong kind")
-		}
-		if _, duplicate := accepted[direction.Span.ID]; duplicate {
-			return nil, fmt.Errorf("atlas study report: browse accepted spans are not unique")
-		}
-		accepted[direction.Span.ID] = struct{}{}
-		directionBySpan[direction.Span.ID] = direction.ID
-	}
-	// Re-verify accepted ⊆ model_selected ⊆ advertised ⊆ considered.
-	for spanID := range accepted {
-		if _, ok := modelSelected[spanID]; !ok {
-			return nil, fmt.Errorf("atlas study report: browse accepted span is outside model-selected")
-		}
-	}
-	for spanID := range modelSelected {
-		if _, ok := advertised[spanID]; !ok {
-			return nil, fmt.Errorf("atlas study report: browse model-selected span is outside advertised")
-		}
-	}
-	for spanID := range advertised {
-		if _, ok := considered[spanID]; !ok {
-			return nil, fmt.Errorf("atlas study report: browse advertised span is outside considered")
-		}
-	}
-	// Per-stage tallies over the FULL pre-truncation row set must equal the
-	// four status counts (never per-role tallies: candidateCoverage counts
-	// support pairs, not spans).
-	if len(considered) != status.ConsideredSpanCount ||
-		len(advertised) != status.AdvertisedSpanCount ||
-		len(modelSelected) != status.ModelSelectedSpanCount ||
-		len(accepted) != status.AcceptedSpanCount {
-		return nil, fmt.Errorf("atlas study report: browse stage counts do not match status")
-	}
-	published := make(map[string]struct{}, len(publishedDirections))
-	for _, direction := range publishedDirections {
-		published[direction.ID] = struct{}{}
-	}
-	// The advertised_budget omission representatives are DERIVED rows of the
-	// Local (considered) group: the browse re-derives them from the rebuilt
-	// input and the status omission aggregates, so they render as the first
-	// clickable rows of the group in canonical span-ID order (D212 §4).
-	representativeIDs := make(map[string]struct{})
-	for _, omission := range status.CandidateCoverage.Omissions {
-		if omission.Reason != atlasstudy.OmissionAdvertisedBudget {
-			continue
-		}
-		for _, ref := range omission.Representatives {
-			if ref.Kind != atlasstudy.RefRouteSpan {
-				return nil, fmt.Errorf("atlas study report: browse representative ref has wrong kind")
-			}
-			representativeIDs[ref.ID] = struct{}{}
-		}
-	}
-	rows := make([]atlasStudyBrowseRow, 0, len(input.RouteSpans))
-	for _, span := range input.RouteSpans {
-		stage := AtlasStudySpanStageConsidered
-		if _, ok := accepted[span.ID]; ok {
-			stage = AtlasStudySpanStageAccepted
-		} else if _, ok := modelSelected[span.ID]; ok {
-			stage = AtlasStudySpanStageModelSelected
-		} else if _, ok := advertised[span.ID]; ok {
-			stage = AtlasStudySpanStageAdvertised
-		}
-		title, question, source, endpoint, err := atlasStudyBrowseRowContent(input, span, data)
-		if err != nil {
-			return nil, err
-		}
-		row := atlasStudyBrowseRow{
-			spanID: span.ID, learningStage: span.LearningStage, stage: stage,
-			title: title, question: question, source: source, endpoint: endpoint,
-		}
-		if _, ok := representativeIDs[span.ID]; ok {
-			// A representative is a considered span that was omitted from the
-			// advertised frontier; a representative with a higher stage means
-			// the status omission aggregate does not match the rebuilt input
-			// that produced this projection — fail closed.
-			if stage != AtlasStudySpanStageConsidered {
-				return nil, fmt.Errorf("atlas study report: browse representative ref %q is not a considered span (fail closed)", span.ID)
-			}
-			row.representative = true
-		}
-		if stage == AtlasStudySpanStageAccepted {
-			// DirectionID is the public study_map direction id derived from the
-			// validated result.Directions array order (model rank). It must
-			// resolve to exactly one published direction whose span matches;
-			// any mismatch fails closed with no partial browse.
-			directionID := directionBySpan[span.ID]
-			if directionID == "" {
-				return nil, fmt.Errorf("atlas study report: accepted browse row has no matching direction")
-			}
-			if _, ok := published[directionID]; !ok {
-				return nil, fmt.Errorf("atlas study report: accepted browse row direction is not published")
-			}
-			row.directionID = directionID
-		}
-		rows = append(rows, row)
-	}
-	// Every representative ref must resolve to a considered span: the status
-	// digest binds the artifact to the rebuilt input, so an unresolved
-	// representative means the omission aggregate does not match the input
-	// that produced this projection — fail closed rather than silently
-	// dropping the derived row.
-	for id := range representativeIDs {
-		if _, ok := considered[id]; !ok {
-			return nil, fmt.Errorf("atlas study report: browse representative ref %q does not resolve to a considered span (fail closed)", id)
-		}
-	}
-	return finishAtlasStudyBrowse(rows, representativeIDs), nil
-}
-
-// deriveAtlasStudyFailedBrowse builds the neutral local-question browse for a
-// failed Study run. Every row carries the considered stage and the surface is
-// exempt from accepted-stage tally checks (no result artifact, no directions,
-// no DirectionID resolution). Total comes from the rebuilt input count.
-func deriveAtlasStudyFailedBrowse(input atlasstudy.Input, data *ReportData) (*FrontierBrowse, error) {
-	rows := make([]atlasStudyBrowseRow, 0, len(input.RouteSpans))
-	for _, span := range input.RouteSpans {
-		title, question, source, endpoint, err := atlasStudyBrowseRowContent(input, span, data)
-		if err != nil {
-			return nil, err
-		}
-		rows = append(rows, atlasStudyBrowseRow{
-			spanID: span.ID, learningStage: span.LearningStage,
-			stage: AtlasStudySpanStageConsidered,
-			title: title, question: question, source: source, endpoint: endpoint,
-		})
-	}
-	return finishAtlasStudyBrowse(rows, nil), nil
-}
-
 // atlasStudyBrowseRowContent derives the report-language question, the exact
 // source-card title and the OpenablePaths-gated source locations for one
 // browse row. Focused spans present the exact readable target reference;
@@ -1989,15 +1751,35 @@ func openableAtlasStudyBrowsePath(data *ReportData, sourcePath string) bool {
 	return false
 }
 
-// atlasStudySpanStageOrder is the user-facing display order of the four-stage
-// pipeline: locally accepted ("Model pick") first, then model-selected
-// (rejected siblings), then advertised not_selected, and the Local
-// (considered ∖ advertised) group last. Locale-independent: it makes the
-// browse order byte-identical across EN/RU (D212 §1/§4).
+// atlasStudyBrowseRow is one pre-truncation browse row. spanID, learningStage
+// and representative are internal sort keys only and are never serialized.
+type atlasStudyBrowseRow struct {
+	spanID        string
+	learningStage atlasstudy.LearningStage
+	stage         AtlasStudySpanStage
+	title         string
+	question      string
+	source        UserCodeLocation
+	endpoint      *UserCodeLocation
+	// themeRefs lists every matching published theme ordinal in canonical
+	// theme order (published rows ONLY; D213 B1/N5). Internal link targets,
+	// never canonical identities.
+	themeRefs []int
+	// representative marks an advertised_budget omission representative: a
+	// DERIVED first row of the Local (considered) group, emitted before the
+	// remaining considered rows in canonical span-ID order (D212 §4).
+	representative bool
+}
+
+// atlasStudySpanStageOrder is the user-facing display order of the re-based
+// four-stage pipeline (Decision 213): published first, then scout-anchored,
+// then seed-advertised, and the Local (considered ∖ seed-advertised) group
+// last. Locale-independent: it makes the browse order byte-identical across
+// EN/RU (D212 §1/§4, D213 B1).
 var atlasStudySpanStageOrder = []AtlasStudySpanStage{
-	AtlasStudySpanStageAccepted,
-	AtlasStudySpanStageModelSelected,
-	AtlasStudySpanStageAdvertised,
+	AtlasStudySpanStagePublished,
+	AtlasStudySpanStageScoutAnchored,
+	AtlasStudySpanStageSeedAdvertised,
 	AtlasStudySpanStageConsidered,
 }
 
@@ -2032,11 +1814,17 @@ func finishAtlasStudyBrowse(rows []atlasStudyBrowseRow, representativeIDs map[st
 	}
 	browse := &FrontierBrowse{Total: total, Shown: shown, Spans: make([]Span, 0, shown)}
 	for index, row := range rows[:shown] {
-		browse.Spans = append(browse.Spans, Span{
+		span := Span{
 			Ordinal: index + 1, Title: row.title, Question: row.question,
 			Stage: row.stage, Source: row.source, Endpoint: row.endpoint,
-			DirectionID: row.directionID,
-		})
+		}
+		if row.stage == AtlasStudySpanStagePublished {
+			// ThemeRefs publish ONLY on published rows; they list every
+			// matching published theme ordinal in canonical theme order
+			// (D213 B1/N5). Internal canonical span IDs never serialize.
+			span.ThemeRefs = row.themeRefs
+		}
+		browse.Spans = append(browse.Spans, span)
 	}
 	return browse
 }
@@ -2069,7 +1857,7 @@ func uncalledAtlasStudyReportStatus(data *ReportData) *AtlasStudyReportStatus {
 	if status := data.ArchitectureSynthesis; status != nil &&
 		status.State == ArchitectureSynthesisUnavailable && status.UnavailableCode == "offline" {
 		return &AtlasStudyReportStatus{
-			Version: atlasstudy.ResultVersion, ProjectionVersion: AtlasStudyReportProjectionVersion,
+			Version: themestudy.ScoutResultVersion, ProjectionVersion: AtlasStudyReportProjectionVersion,
 			State:           atlasstudy.ProductStateUnavailable,
 			UnavailableCode: AtlasStudyUnavailableOffline,
 		}
@@ -2084,208 +1872,13 @@ func uncalledAtlasStudyReportStatus(data *ReportData) *AtlasStudyReportStatus {
 		}
 		if insufficient {
 			return &AtlasStudyReportStatus{
-				Version: atlasstudy.ResultVersion, ProjectionVersion: AtlasStudyReportProjectionVersion,
+				Version: themestudy.ScoutResultVersion, ProjectionVersion: AtlasStudyReportProjectionVersion,
 				State:           atlasstudy.ProductStateUnavailable,
 				UnavailableCode: AtlasStudyUnavailableInsufficientCatalog,
 			}
 		}
 	}
 	return nil
-}
-
-func projectAtlasStudyMap(
-	data *ReportData,
-	publishedCanvas *ArchitectureCanvas,
-	input atlasstudy.Input,
-	result atlasstudy.ResultRecord,
-) (*RepositoryStudyMap, error) {
-	components := make(map[string]ArchitectureComponent, len(data.ArchitectureCanvas.Components))
-	for _, component := range data.ArchitectureCanvas.Components {
-		id := string(component.ID)
-		if _, duplicate := components[id]; duplicate {
-			return nil, fmt.Errorf("atlas study report: duplicate Architecture component %q", id)
-		}
-		components[id] = component
-	}
-	targets := make(map[string]atlasstudy.ReadingTarget, len(input.ReadingTargets))
-	for _, target := range input.ReadingTargets {
-		targets[target.ID] = target
-	}
-	area := func(ref atlasstudy.CanonicalRef) (RepositoryStudyArea, error) {
-		component, ok := components[ref.ID]
-		if ref.Kind != atlasstudy.RefComponent || !ok {
-			return RepositoryStudyArea{}, fmt.Errorf("atlas study report: Shape references unavailable component")
-		}
-		projected := RepositoryStudyArea{
-			ID: ref.ID, Name: component.Name, Responsibility: component.Description,
-		}
-		projected.MapTarget = exactPublishedStudyComponentTarget(component, publishedCanvas)
-		var owned []atlasstudy.ReadingTarget
-		for _, target := range input.ReadingTargets {
-			if target.Owner != ref {
-				continue
-			}
-			owned = append(owned, target)
-		}
-		// A Shape component is conceptual and can legitimately own several
-		// exact reading locations. The provider selected only the component,
-		// not one representative location, so publish a source action only when
-		// local producer proof leaves exactly one possible target.
-		if len(owned) == 1 {
-			source, sourceErr := exactAtlasStudySource(data, owned[0])
-			if sourceErr != nil {
-				return RepositoryStudyArea{}, sourceErr
-			}
-			projected.CodeLocation = &UserCodeLocation{
-				Path: owned[0].Location.Path, Line: owned[0].Location.Line,
-			}
-			projected.Source = &source
-		}
-		return projected, nil
-	}
-	studyMap := &RepositoryStudyMap{
-		Version: result.Version, RepositoryType: studymap.RepositoryType(result.RepositoryType),
-		Brief: RepositoryBrief{
-			WhatItIs: result.Brief.WhatItIs.Text, Problem: result.Brief.Problem.Text,
-			MainInput:             result.Brief.MainInput.Text,
-			CentralResponsibility: result.Brief.CentralResponsibility.Text,
-			ObservableResult:      result.Brief.ObservableResult.Text,
-		},
-	}
-	for _, term := range result.Brief.DomainTerms {
-		studyMap.Brief.DomainTerms = append(studyMap.Brief.DomainTerms, RepositoryBriefDomainTerm{
-			Term: term.Term, Meaning: term.Meaning,
-		})
-	}
-	for _, ref := range result.ShapeComponentRefs {
-		projected, err := area(ref)
-		if err != nil {
-			return nil, err
-		}
-		studyMap.Shape = append(studyMap.Shape, projected)
-	}
-	seenReadingSets := make(map[string]struct{}, len(result.Directions))
-	for _, direction := range result.Directions {
-		readingSetKey, err := atlasStudyDirectionReadingSetKey(direction, targets)
-		if err != nil {
-			return nil, err
-		}
-		projected := StudyDirection{
-			ID: direction.ID, Question: direction.Question,
-			WhyItMatters: direction.WhyItMatters, LearningOutcome: direction.LearningOutcome,
-			TargetUserJob: studymap.TargetJob(direction.TargetJob),
-			LearningStage: studymap.LearningStage(direction.LearningStage),
-		}
-		seenAnchors := make(map[StudyCodeAnchor]struct{})
-		for _, reading := range direction.Reading {
-			target, ok := targets[reading.Target.ID]
-			if reading.Target.Kind != atlasstudy.RefReadingTarget || !ok {
-				return nil, fmt.Errorf("atlas study report: direction references unavailable reading target")
-			}
-			source, err := exactAtlasStudySource(data, target)
-			if err != nil {
-				return nil, err
-			}
-			projected.ReadingAnchors = append(projected.ReadingAnchors, StudyReadingAnchor{
-				Label: string(reading.Label), WhatToLookFor: reading.WhatToLookFor,
-				Symbol:   target.Symbol,
-				Location: UserCodeLocation{Path: target.Location.Path, Line: target.Location.Line},
-				Source:   source,
-			})
-			anchor := StudyCodeAnchor{
-				Path: target.Location.Path, Symbol: target.Symbol, Line: target.Location.Line,
-			}
-			if _, duplicate := seenAnchors[anchor]; !duplicate {
-				seenAnchors[anchor] = struct{}{}
-				projected.PrincipalAnchors = append(projected.PrincipalAnchors, anchor)
-			}
-		}
-		for _, principal := range direction.PrincipalRefs {
-			if principal.Kind != atlasstudy.RefComponent {
-				continue
-			}
-			projectedArea, err := area(principal)
-			if err != nil {
-				return nil, err
-			}
-			projected.Areas = append(projected.Areas, projectedArea)
-		}
-		projected.DebugCoverage = studyDirectionCoverage(projected)
-		if _, duplicate := seenReadingSets[readingSetKey]; duplicate {
-			markStudyDirectionUserVisible(&projected, false, "duplicate_reading_set")
-			studyMap.HiddenDirections = append(studyMap.HiddenDirections, projected)
-			continue
-		}
-		seenReadingSets[readingSetKey] = struct{}{}
-		studyMap.Directions = append(studyMap.Directions, projected)
-	}
-	return studyMap, nil
-}
-
-// exactPublishedStudyComponentTarget bridges the local D177 component used by
-// Atlas Study to the independently accepted component projection that is
-// actually visible in this report. The join uses only exact typed member IDs.
-// Ambiguous many-to-many conceptual membership deliberately produces no
-// singular focus instead of choosing a component by order.
-func exactPublishedStudyComponentTarget(
-	local ArchitectureComponent,
-	published *ArchitectureCanvas,
-) *UserMapTarget {
-	if published == nil {
-		return nil
-	}
-	localMembers := make(map[componentmap.MemberID]struct{}, len(local.Members))
-	for _, member := range local.Members {
-		localMembers[member.ID] = struct{}{}
-	}
-	if len(localMembers) == 0 {
-		return nil
-	}
-	var matched componentmap.ComponentID
-	for _, component := range published.Components {
-		if component.ID == published.LocalRemainderComponentID {
-			continue
-		}
-		intersects := false
-		for _, member := range component.Members {
-			if _, ok := localMembers[member.ID]; ok {
-				intersects = true
-				break
-			}
-		}
-		if !intersects {
-			continue
-		}
-		if matched != "" {
-			return nil
-		}
-		matched = component.ID
-	}
-	if matched == "" {
-		return nil
-	}
-	return &UserMapTarget{
-		Kind: SemanticSearchTargetComponent, ComponentID: matched,
-	}
-}
-
-func atlasStudyDirectionReadingSetKey(
-	direction atlasstudy.Direction,
-	targets map[string]atlasstudy.ReadingTarget,
-) (string, error) {
-	locators := make([]string, 0, len(direction.Reading))
-	for _, reading := range direction.Reading {
-		target, ok := targets[reading.Target.ID]
-		if reading.Target.Kind != atlasstudy.RefReadingTarget || !ok {
-			return "", fmt.Errorf("atlas study report: direction references unavailable reading target")
-		}
-		locators = append(locators, strings.Join([]string{
-			target.ID, string(target.Kind), target.Location.Path,
-			fmt.Sprint(target.Location.Line), target.Symbol,
-		}, "\x00"))
-	}
-	sort.Strings(locators)
-	return direction.Span.ID + "\x02" + strings.Join(locators, "\x01"), nil
 }
 
 func exactAtlasStudySource(

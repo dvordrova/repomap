@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
+	"github.com/dvordrova/repomap/internal/repositoryatlas/goadapter"
 )
 
 func readRepositoryAtlasArtifact(runDir string) (*repositoryatlas.Atlas, error) {
@@ -96,6 +97,8 @@ func validateRepositoryAtlasForReport(data *ReportData) error {
 	entityByID := make(map[string]repositoryatlas.Entity, len(atlas.Entities))
 	surfaceIDs := make(map[string]struct{})
 	operationIDs := make(map[string]struct{})
+	boundaryIDs := make(map[string]struct{})
+	resourceIDs := make(map[string]struct{})
 	for _, entity := range atlas.Entities {
 		entityByID[entity.ID] = entity
 		switch entity.Kind {
@@ -103,8 +106,12 @@ func validateRepositoryAtlasForReport(data *ReportData) error {
 			surfaceIDs[entity.ID] = struct{}{}
 		case repositoryatlas.EntityOperation:
 			operationIDs[entity.ID] = struct{}{}
+		case repositoryatlas.EntityBoundary:
+			boundaryIDs[entity.ID] = struct{}{}
+		case repositoryatlas.EntityResource:
+			resourceIDs[entity.ID] = struct{}{}
 		default:
-			return fmt.Errorf("repository atlas: entity %q is outside the persisted process-entry vertical", entity.ID)
+			return fmt.Errorf("repository atlas: entity %q is outside the persisted process-entry or resource-boundary vertical", entity.ID)
 		}
 	}
 	for surfaceID := range surfaceIDs {
@@ -162,7 +169,48 @@ func validateRepositoryAtlasForReport(data *ReportData) error {
 			return fmt.Errorf("repository atlas: operation %q requires one exact surface relation", operationID)
 		}
 	}
+	// D214 resource-boundary vertical: every boundary/resource entity must
+	// carry at least one observation bound to adapter-owned exact boundary
+	// evidence at exact call sites. Canonical identities never leak.
+	for _, boundaryID := range append(append([]string{}, boundaryKeys(boundaryIDs)...), resourceKeys(resourceIDs)...) {
+		entity := entityByID[boundaryID]
+		entityObservations := observations[boundaryID]
+		if len(entityObservations) < 1 {
+			return fmt.Errorf("repository atlas: entity %q requires at least one exact boundary observation", boundaryID)
+		}
+		for _, entityObservation := range entityObservations {
+			if len(entityObservation.EvidenceRefs) != 1 {
+				return fmt.Errorf("repository atlas: entity %q requires one exact boundary evidence ref per observation", boundaryID)
+			}
+			item, ok := evidenceByID[entityObservation.EvidenceRefs[0]]
+			if !ok {
+				return fmt.Errorf("repository atlas: entity %q references unknown boundary evidence", boundaryID)
+			}
+			if item.Provenance.Provider != goadapter.BoundaryObservationEvidenceProvider ||
+				item.Provenance.Operation != goadapter.BoundaryObservationEvidenceOperation ||
+				item.Location.Path == "" || item.Location.Line <= 0 || item.Location.Column <= 0 ||
+				item.UnitID != entity.UnitID {
+				return fmt.Errorf("repository atlas: entity %q has non-boundary evidence", boundaryID)
+			}
+		}
+	}
 	return nil
+}
+
+func boundaryKeys(values map[string]struct{}) []string {
+	result := make([]string, 0, len(values))
+	for id := range values {
+		result = append(result, id)
+	}
+	return result
+}
+
+func resourceKeys(values map[string]struct{}) []string {
+	result := make([]string, 0, len(values))
+	for id := range values {
+		result = append(result, id)
+	}
+	return result
 }
 
 func triggerHasAtlasEvidence(trigger DiscoveredTrigger, item repositoryatlas.Evidence) bool {

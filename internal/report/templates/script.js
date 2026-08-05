@@ -80,6 +80,7 @@
 		taskID: TASK_INVESTIGATION && TASK_INVESTIGATION.task_id || '',
     artifactID: '',
 		directionID: '',
+		themeCardOrdinal: 0,
 		operationID: '',
     stepIndex: 0,
     sourceLocation: null,
@@ -173,6 +174,22 @@
 		return null;
 	}
 
+	// D213: the source-grounded theme shelf. Cards are locally reduced from
+	// the two semantic stages; readings carry exact source locations only.
+	function themeCards() {
+		var study = DATA.atlas_study;
+		var themes = study && study.themes;
+		return themes && Array.isArray(themes.cards) ? themes.cards : [];
+	}
+
+	function themeCardByOrdinal(ordinal) {
+		var cards = themeCards();
+		for (var index = 0; index < cards.length; index++) {
+			if (cards[index] && Number(cards[index].ordinal) === Number(ordinal)) return cards[index];
+		}
+		return null;
+	}
+
 	function pavedPathByID(pavedPathID) {
 		for (var index = 0; index < PAVED_PATHS.length; index++) {
 			if (PAVED_PATHS[index] && PAVED_PATHS[index].id === pavedPathID) return PAVED_PATHS[index];
@@ -238,6 +255,7 @@
 			taskID: TASK_INVESTIGATION && TASK_INVESTIGATION.task_id || '',
       artifactID: '',
 		directionID: '',
+		themeCardOrdinal: 0,
 		operationID: '',
       stepIndex: 0,
       sourceLocation: null,
@@ -312,7 +330,7 @@
 			return defaultWorkspaceHash();
 		}
     if (state.view === 'mechanisms') return '#/mechanisms';
-    if (state.view === 'study_overview' && STUDY_DIRECTIONS.length) return '#/study';
+    if (state.view === 'study_overview' && (STUDY_DIRECTIONS.length || themeCards().length)) return '#/study';
     if (state.view === 'architecture') {
       var focus = architectureFocusValue(state.mapTarget);
       return '#/architecture' + (focus ? '?focus=' + encodeURIComponent(focus) : '');
@@ -323,6 +341,9 @@
     }
 		if (state.view === 'study' && state.directionID) {
 			return '#/study/' + encodeRoutePart(state.directionID);
+		}
+		if (state.view === 'study' && state.themeCardOrdinal) {
+			return '#/study/theme/' + Number(state.themeCardOrdinal);
 		}
 		if (state.view === 'operate' && state.operationID) {
 			return '#/operate/' + encodeRoutePart(state.operationID);
@@ -341,6 +362,9 @@
 		}
 		if (state.view === 'study' && state.directionID) {
 			return 'study:' + state.directionID;
+		}
+		if (state.view === 'study' && state.themeCardOrdinal) {
+			return 'study:theme:' + state.themeCardOrdinal;
 		}
 		if (state.view === 'study_overview') return 'view:study_overview';
 		if (state.view === 'operate' && state.operationID) {
@@ -385,7 +409,7 @@
       valid = state.view === 'mechanisms';
       canonicalHash = valid ? '#/mechanisms' : '#/overview';
 		} else if (segments.length === 1 && segments[0] === 'study') {
-			state.view = STUDY_DIRECTIONS.length ? 'study_overview' : 'overview';
+			state.view = (STUDY_DIRECTIONS.length || themeCards().length) ? 'study_overview' : 'overview';
 			valid = state.view === 'study_overview';
 			canonicalHash = valid ? '#/study' : '#/overview';
     } else if (segments.length === 1 && segments[0] === 'architecture') {
@@ -420,6 +444,16 @@
 			} else {
 				state.view = 'study';
 				state.directionID = routeDirectionID;
+				canonicalHash = workspaceHashForState(state);
+			}
+		} else if (segments.length === 3 && segments[0] === 'study' && segments[1] === 'theme') {
+			var routeOrdinal = Number(segments[2]);
+			if (!themeCardByOrdinal(routeOrdinal)) {
+				valid = false;
+			} else {
+				state.view = 'study';
+				state.themeCardOrdinal = routeOrdinal;
+				state.directionID = '';
 				canonicalHash = workspaceHashForState(state);
 			}
 		} else if (segments.length === 2 && segments[0] === 'operate') {
@@ -459,6 +493,7 @@
 			taskID: state.taskID || '',
       artifactID: state.artifactID || '',
 		directionID: state.directionID || '',
+		themeCardOrdinal: Number(state.themeCardOrdinal) || 0,
 		operationID: state.operationID || '',
       stepIndex: Number(state.stepIndex) || 0,
       sourceLocation: state.sourceLocation || null,
@@ -490,6 +525,18 @@
 			if (!direction || direction.mechanism_id) return next;
 			next.view = 'study';
 			next.directionID = direction.id;
+			next.themeCardOrdinal = 0;
+			next.artifactID = '';
+			next.operationID = '';
+			next.stepIndex = 0;
+			next.mapTarget = null;
+			next.mapReturn = null;
+			return next;
+		case 'open_study_theme':
+			if (!themeCardByOrdinal(action.ordinal)) return next;
+			next.view = 'study';
+			next.directionID = '';
+			next.themeCardOrdinal = Number(action.ordinal) || 0;
 			next.artifactID = '';
 			next.operationID = '';
 			next.stepIndex = 0;
@@ -4287,6 +4334,13 @@
 		commitWorkspaceState(next);
 	}
 
+	function openThemeCard(ordinal) {
+		var next = reduceWorkspaceState(workspaceState, {
+			type: 'open_study_theme', ordinal: Number(ordinal) || 0,
+		}, USER_MECHANISMS);
+		commitWorkspaceState(next);
+	}
+
 	function openPavedPath(operationID) {
 		if (!pavedPathByID(operationID)) {
 			commitWorkspaceState(emptyWorkspaceState());
@@ -4426,6 +4480,14 @@
 		var root = document.getElementById('rm-study-overview');
 		if (!root) return;
 		root.replaceChildren();
+		// D213: the source-grounded theme shelf is the primary Study surface
+		// when present; the legacy direction surface only renders when no
+		// theme cards exist.
+		var cards = themeCards();
+		if (cards.length) {
+			renderAtlasStudyThemeShelf(root, cards);
+			return;
+		}
 		if (COMPLETE_STUDY_DIRECTIONS.length) {
 			renderStudyMapOverview(root, false);
 			return;
@@ -4441,6 +4503,73 @@
 			directionList.appendChild(renderStudyDirectionCard(direction, index));
 		});
 		root.appendChild(directionList);
+	}
+
+	// D213: renders the source-grounded theme shelf (cards with exact
+	// readings), the diagnostics panel and the four-stage frontier browse.
+	function renderAtlasStudyThemeShelf(root, cards) {
+		root.appendChild(renderViewHeading(
+			msg('main.study'),
+			msg('main.study.themes.title'),
+			msg('main.study.themes.copy')
+		));
+		var shelf = el('div', 'rm-study-theme-shelf');
+		cards.forEach(function (card, index) {
+			shelf.appendChild(renderThemeCard(card, index));
+		});
+		root.appendChild(shelf);
+		var diagnostics = renderAtlasStudyDiagnostics();
+		if (diagnostics) root.appendChild(diagnostics);
+		var browse = renderAtlasStudyBrowse();
+		if (browse) root.appendChild(browse);
+	}
+
+	function renderThemeCard(card, index) {
+		var article = el('article', 'rm-study-theme-card' + (card.badge ? ' rm-study-theme-card--' + String(card.badge).toLowerCase() : ''));
+		var title = txt('h3', 'rm-study-theme-card__title', card.final_title || '');
+		title.onclick = function () { openThemeCard(card.ordinal); };
+		article.appendChild(title);
+		if (card.final_question) article.appendChild(txt('p', 'rm-study-theme-card__question', card.final_question));
+		if (card.why_it_matters) article.appendChild(txt('span', 'rm-study-theme-card__reason', card.why_it_matters));
+		var readings = el('ul', 'rm-study-theme-card__readings');
+		(card.readings || []).forEach(function (reading) {
+			var action = renderStudySourceAction(reading, 'rm-study-theme-card__reading', true);
+			if (action) {
+				var item = txt('li', 'rm-study-theme-card__reading-item', '');
+				item.appendChild(action);
+				readings.appendChild(item);
+			}
+		});
+		if (readings.childNodes.length) article.appendChild(readings);
+		return article;
+	}
+
+	function renderThemeDetailWorkspace() {
+		var root = document.getElementById('rm-study-detail');
+		if (!root) return;
+		root.replaceChildren();
+		var card = themeCardByOrdinal(workspaceState.themeCardOrdinal);
+		if (!card) return;
+		var back = txt('button', 'rm-secondary-action rm-study-back', msg('main.all.study.directions'));
+		back.type = 'button';
+		back.onclick = function () { navigateWorkspace('study_overview'); };
+		root.appendChild(back);
+		root.appendChild(renderViewHeading(
+			card.badge || '',
+			card.final_title || '',
+			card.final_question || ''
+		));
+		if (card.why_it_matters) {
+			var reason = el('aside', 'rm-study-outcome');
+			reason.appendChild(txt('strong', '', card.why_it_matters));
+			root.appendChild(reason);
+		}
+		var anchors = el('div', 'rm-study-reading-list');
+		(card.readings || []).forEach(function (reading, index) {
+			var item = renderStudyReadingAnchor(reading, index);
+			if (item) anchors.appendChild(item);
+		});
+		root.appendChild(anchors);
 	}
 
 // repomap-source-episode:start
@@ -4676,15 +4805,16 @@
 		return panel;
 	}
 
-	// D212: provider-free browse of the complete considered Study question set.
-	// Derived only inside readAtlasStudyReportProduct from already-validated
-	// local artifacts; never a model verdict and never per-span model state.
+	// D213: provider-free browse of the complete considered Study question set
+	// over the two semantic stages. Re-based four-stage membership:
+	// published / scout_anchored / seed_advertised / considered. The failed
+	// state renders the distinct neutral "Local question" label.
 	function atlasStudyBrowseStageLabel(stage, failedState) {
 		if (failedState) return msg('main.study.frontier.stage_local_failed');
 		switch (String(stage || '')) {
-			case 'accepted': return msg('main.study.frontier.stage_accepted');
-			case 'model_selected': return msg('main.study.frontier.stage_rejected_sibling');
-			case 'advertised': return msg('main.study.frontier.stage_advertised');
+			case 'published': return msg('main.study.frontier.stage_published');
+			case 'scout_anchored': return msg('main.study.frontier.stage_scout_anchored');
+			case 'seed_advertised': return msg('main.study.frontier.stage_seed_advertised');
 			case 'considered': return msg('main.study.frontier.stage_considered');
 			default: return msg('main.study.frontier.stage_local_failed');
 		}
@@ -4708,27 +4838,18 @@
 		);
 	}
 
-	function atlasStudyBrowseDirectionCardNumber(directionID) {
-		var direction = studyDirectionByID(directionID);
-		if (!direction) return 0;
-		return COMPLETE_STUDY_DIRECTIONS.indexOf(direction) + 1;
-	}
-
 	function renderAtlasStudyBrowseRow(row, failedState, statusState) {
 		var item = el('li', 'rm-study-browse-row');
 		var stageLabel = atlasStudyBrowseStageLabel(row.stage, failedState);
-		if (!failedState && String(row.stage) === 'accepted' && row.direction_id) {
-			var badge = txt('button', 'rm-study-browse-row__stage rm-study-browse-row__stage-accepted', stageLabel);
+		if (!failedState && String(row.stage) === 'published' && row.theme_refs && row.theme_refs.length) {
+			var badge = txt('button', 'rm-study-browse-row__stage rm-study-browse-row__stage-published', stageLabel);
 			badge.type = 'button';
-			var cardNumber = atlasStudyBrowseDirectionCardNumber(row.direction_id);
-			badge.title = cardNumber > 0 ? msg('main.study.frontier.open_direction', { count: cardNumber }) : stageLabel;
-			badge.onclick = function () { openStudyDirection(row.direction_id); };
+			var card = themeCardByOrdinal(row.theme_refs[0]);
+			badge.title = card ? msg('main.study.frontier.open_theme', { count: card.ordinal }) : stageLabel;
+			badge.onclick = function () { openThemeCard(row.theme_refs[0]); };
 			item.appendChild(badge);
 		} else {
 			item.appendChild(txt('span', 'rm-study-browse-row__stage', stageLabel));
-		}
-		if (!failedState && String(row.stage) === 'model_selected' && statusState === 'accepted_partial') {
-			item.appendChild(txt('span', 'rm-study-browse-row__not-accepted', msg('main.study.frontier.not_accepted')));
 		}
 		var question = renderAtlasStudyBrowseRowSource(row);
 		if (question) {
@@ -4889,6 +5010,15 @@
 
 	function studyReadingLocation(reading) {
 		if (!reading) return null;
+		// D213 theme readings carry a flat exact location ({path, line}).
+		if (reading.path) {
+			return {
+				path: reading.path,
+				line: Number(reading.line) || 0,
+				column: 0,
+				end_line: 0,
+			};
+		}
 		var location = reading.location || sourceSnippetLocation(reading.source);
 		if (!location || !location.path) return null;
 		return {
@@ -6762,6 +6892,13 @@
 				if (document && document.source) result.push(document.source);
 			});
 		});
+		// D213: theme card readings carry exact source; embedded snippets stay
+		// available for the browse source actions.
+		themeCards().forEach(function (card) {
+			(card.readings || []).forEach(function (reading) {
+				if (reading && reading.source) result.push(reading.source);
+			});
+		});
 		((STUDY_MAP && STUDY_MAP.shape) || []).forEach(function (area) {
 			if (area && area.source) result.push(area.source);
 		});
@@ -8302,7 +8439,7 @@
 		var navView = view === 'mechanism'
 			? 'mechanisms'
 			: view === 'study'
-				? (STUDY_DIRECTIONS.length ? 'study_overview' : 'overview')
+				? ((STUDY_DIRECTIONS.length || themeCards().length) ? 'study_overview' : 'overview')
 				: view === 'operate'
 					? 'overview'
 					: view;
@@ -8318,7 +8455,10 @@
 		if (workspaceState.view === 'investigate') renderTaskInvestigationWorkspace();
     if (workspaceState.view === 'mechanism') renderMechanismDetailWorkspace();
 		if (workspaceState.view === 'study_overview') renderIncompleteStudyOverview();
-		if (workspaceState.view === 'study') renderStudyDetailWorkspace();
+		if (workspaceState.view === 'study') {
+			if (workspaceState.themeCardOrdinal) renderThemeDetailWorkspace();
+			else renderStudyDetailWorkspace();
+		}
 		if (workspaceState.view === 'operate') renderOperateDetailWorkspace();
     if (workspaceState.view === 'architecture') {
       if (!architectureCanvasHost) renderArchitectureWorkspace();
@@ -8375,7 +8515,7 @@
 		} else {
 			addWorkspaceTab(msg('main.overview'), 'overview');
 			if (!ATLAS_FIRST && USER_MECHANISMS.length) addWorkspaceTab(msg('main.mechanisms'), 'mechanisms');
-			if (STUDY_DIRECTIONS.length) addWorkspaceTab(msg('main.study'), 'study_overview');
+			if (STUDY_DIRECTIONS.length || themeCards().length) addWorkspaceTab(msg('main.study'), 'study_overview');
 			if (userArchitectureAvailable()) addWorkspaceTab(msg('main.architecture'), 'architecture');
 		}
 		if (DEBUG_MODE) addWorkspaceTab(msg('main.provenance'), 'provenance');

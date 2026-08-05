@@ -85,7 +85,7 @@ func architectureAtlasFirstDiagnostic(
 }
 
 func atlasStudyAtlasFirstDiagnostic(
-	outcome atlasStudyRunOutcome,
+	outcome themeStudyRunOutcome,
 	stageErr error,
 	called bool,
 ) atlasFirstStageDiagnostic {

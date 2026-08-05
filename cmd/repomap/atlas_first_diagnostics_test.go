@@ -12,7 +12,7 @@ import (
 )
 
 func TestAtlasStudyDiagnosticPreservesAcceptedPartial(t *testing.T) {
-	diagnostic := atlasStudyAtlasFirstDiagnostic(atlasStudyRunOutcome{
+	diagnostic := atlasStudyAtlasFirstDiagnostic(themeStudyRunOutcome{
 		State: atlasstudy.ProductStateAcceptedPartial, SemanticCalls: 1,
 		TransportAttempts: 1, RequestBytes: 123,
 	}, nil, true)
@@ -21,7 +21,7 @@ func TestAtlasStudyDiagnosticPreservesAcceptedPartial(t *testing.T) {
 		t.Fatalf("partial Atlas Study diagnostic = %#v", diagnostic)
 	}
 
-	cached := atlasStudyAtlasFirstDiagnostic(atlasStudyRunOutcome{
+	cached := atlasStudyAtlasFirstDiagnostic(themeStudyRunOutcome{
 		State: atlasstudy.ProductStateAcceptedPartial, Cached: true, RequestBytes: 123,
 	}, nil, true)
 	if cached.State != "cache_hit" || cached.SemanticCalls != 0 || cached.TransportAttempts != 0 {

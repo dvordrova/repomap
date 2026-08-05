@@ -11,6 +11,19 @@
 // never appear on a Study card.
 package themestudy
 
+// Language is the closed prose language of a theme-stage request. Prose is
+// model-authored in this language; exact symbols, paths and refs never change.
+type Language string
+
+const (
+	LanguageEnglish Language = "en"
+	LanguageRussian Language = "ru"
+)
+
+func (language Language) Valid() bool {
+	return language == LanguageEnglish || language == LanguageRussian
+}
+
 // Role is the closed role vocabulary of the f* file layer and of the a* seed
 // anchors. These are internal producer roles and must never be rendered as
 // user-facing UI labels.
@@ -96,8 +109,16 @@ const (
 	MaxSourceObjectBytes       = 32 << 10
 	MaxExpansionFileLines      = 1200
 	MaxExpansionFileBytes      = 128 << 10
-	MaxExpansionFiles          = 32
-	MaxExpansionBytes          = 256 << 10
+	// MaxExpansionFiles is a generous per-run file ceiling; the honest bound
+	// is MaxExpansionBytes. Requested files beyond the byte budget are
+	// recorded under OmittedRefs, never dropped silently (D190/D195).
+	MaxExpansionFiles          = 128
+	// MaxExpansionBytes bounds the source-evidence expansion the Scout's
+	// requested files are allowed to occupy. It must fit the full requested
+	// set on reference repositories (casdoor requests 50+ files once the
+	// D214 resource-boundary seeds widen the catalog) while staying well
+	// under the 1 MiB Adjudication wire bound that embeds it.
+	MaxExpansionBytes          = 512 << 10
 	MaxOmissionRepresentatives = 12
 
 	// Scout portfolio bounds: desired 8-12 candidates, valid 1-12.
@@ -166,6 +187,11 @@ type SeedSpec struct {
 	Provenance string `json:"provenance"` // e.g. "d211_span_reading_target"
 	Kind       string `json:"kind"`       // system_path | focused
 	Role       Role   `json:"role"`
+	// CanonicalSpanID is the canonical route-span identity this seed was
+	// compiled from (when the seed derives from a span). It is an internal
+	// binding used by the re-based four-stage browse derivation; it is never
+	// model-visible and never serialized to a report.
+	CanonicalSpanID string `json:"canonical_span_id,omitempty"`
 
 	// system_path separation (exact positive lines, zero means "unused").
 	CallerSymbol string `json:"caller_symbol,omitempty"`
@@ -238,6 +264,7 @@ type SourceExpansion struct {
 	Version         string          `json:"version"`
 	Requested       []string        `json:"requested_refs"`
 	Files           []ExpansionFile `json:"files"`
+	OmittedRefs     []string        `json:"omitted_refs,omitempty"`
 	ExpandedLines   int             `json:"expanded_lines"`
 	ExpandedBytes   int             `json:"expanded_bytes"`
 	CandidateSHA256 string          `json:"candidate_sha256"`
@@ -246,8 +273,10 @@ type SourceExpansion struct {
 
 // ScoutCandidate is one Theme Scout proposal (contract C). Title, question and
 // prose are editorial only. anchor_refs (a*) and expansion_file_refs (f*) carry
-// request-local typed refs, never raw paths or canonical IDs.
+// request-local typed refs, never raw paths or canonical IDs. Ref is the
+// request-local t* catalog ref assigned by the compile layer, never model prose.
 type ScoutCandidate struct {
+	Ref               string        `json:"ref,omitempty"`
 	Title             string        `json:"title"`
 	Question          string        `json:"question"`
 	ThemeKind         ThemeKind     `json:"theme_kind"`
@@ -362,12 +391,17 @@ type AdjudicationIssue struct {
 	Code     AdjudicationIssueCode `json:"code"`
 }
 
-// It never carries source bytes.
+// It never carries source bytes. CanonicalSpanID is an internal binding used
+// by the re-based browse derivation (published stage); it is never serialized
+// to a report.
 type Reading struct {
 	Label  string `json:"label"`
 	Symbol string `json:"symbol"`
 	Path   string `json:"path"`
 	Line   int    `json:"line"`
+	// CanonicalSpanID is an internal binding used by the re-based browse
+	// derivation (published stage). It is never serialized to a report.
+	CanonicalSpanID string `json:"canonical_span_id,omitempty"`
 }
 
 // ThemeCard is the reduced, published Study card (contract F / projection).

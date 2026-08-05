@@ -88,34 +88,32 @@ function snippet(path, symbol, line) {
   };
 }
 const paths = [];
-const directions = [1, 1].map((count, directionIndex) => {
+const themeCards = [1, 1].map((count, themeIndex) => {
   const readings = [];
   for (let readingIndex = 0; readingIndex < count; readingIndex++) {
-    const path = "study/route-" + (directionIndex + 1) + ".go";
+    const path = "study/route-" + (themeIndex + 1) + ".go";
     const line = 10 + readingIndex;
     paths.push(path);
     readings.push({
       label: "Start here",
-      symbol: "Read" + (directionIndex + 1),
-      what_to_look_for: "Inspect exact reading " + (directionIndex + 1) + ".",
-      location: { path, line },
-      source: snippet(path, "Read" + (directionIndex + 1), line),
+      symbol: "Read" + (themeIndex + 1),
+      path,
+      line,
+      source: snippet(path, "Read" + (themeIndex + 1), line),
     });
   }
   return {
-    id: "study-route-" + (directionIndex + 1),
-    question: "Study question " + (directionIndex + 1) + "?",
-    why_it_matters: "Reason " + (directionIndex + 1) + ".",
-    learning_outcome: "Outcome " + (directionIndex + 1) + ".",
-    principal_anchors: [{
-      path: readings[0].location.path,
-      symbol: readings[0].source.enclosing_symbol,
-      line: readings[0].location.line,
-    }],
-    reading_anchors: readings,
+    ordinal: themeIndex + 1,
+    final_title: "Theme " + (themeIndex + 1),
+    final_question: "Study question " + (themeIndex + 1) + "?",
+    why_it_matters: "Reason " + (themeIndex + 1) + ".",
+    expected_learning: "Outcome " + (themeIndex + 1) + ".",
+    theme_kind: "sibling_implementation_family",
+    badge: "editorial_source_backed",
+    readings,
   };
 });
-function browseSpan(ordinal, stage, directionID, openable, symbol) {
+function browseSpan(ordinal, stage, themeRefs, openable, symbol) {
   const path = openable ? "study/route-" + ((ordinal % 2) + 1) + ".go" : "hidden/internal/unopenable.go";
   const span = {
     ordinal,
@@ -124,13 +122,13 @@ function browseSpan(ordinal, stage, directionID, openable, symbol) {
     stage,
     source: { path, line: 10 + (ordinal % 5) },
   };
-  if (directionID) span.direction_id = directionID;
+  if (themeRefs) span.theme_refs = themeRefs;
   return span;
 }
 const browseSpans = [];
 let browseOrdinal = 1;
-for (let i = 0; i < 10; i++) browseSpans.push(browseSpan(browseOrdinal++, "accepted", "study-route-" + ((i % 2) + 1), true));
-for (let i = 0; i < 22; i++) browseSpans.push(browseSpan(browseOrdinal++, "advertised", null, true));
+for (let i = 0; i < 10; i++) browseSpans.push(browseSpan(browseOrdinal++, "published", [(i % 2) + 1], true));
+for (let i = 0; i < 22; i++) browseSpans.push(browseSpan(browseOrdinal++, "seed_advertised", null, true));
 for (let i = 0; i < 36; i++) browseSpans.push(browseSpan(browseOrdinal++, "considered", null, i < 34, "Local" + i));
 const report = {
   repo_name: "fixture", report_language: process.argv[3] || "en", user_mechanisms: [], user_topics: [], user_sources: [],
@@ -147,17 +145,8 @@ const report = {
     entities: [], evidence: [], relations: [],
   },
   study_publication: { version: 1, state: "accepted" },
-  study_map: {
-    brief: {
-      what_it_is: "A saved repository brief.", problem: "It solves a bounded problem.",
-      main_input: "Input", central_responsibility: "Responsibility", observable_result: "Result",
-      domain_terms: [{ term: "Fixture term", meaning: "Fixture meaning" }],
-    },
-    shape: [], directions,
-  },
   atlas_study: {
-    version: 8, projection_version: 7, state: "accepted",
-    direction_count: 2,
+    version: 1, projection_version: 8, state: "accepted",
     considered_span_count: 68,
     advertised_span_count: 32,
     model_selected_span_count: 10,
@@ -166,7 +155,8 @@ const report = {
     selected_items_complete: true,
     support_coverage_complete: true,
     portfolio_target_met: true,
-    omissions: [{ reason: "advertised_budget", count: 36, representative_count: 12 }],
+    omissions: [{ reason: "seed_budget", count: 36, representative_count: 12 }],
+    themes: { total: 2, shown: 2, cards: themeCards },
     frontier_browse: { total: 68, shown: 68, spans: browseSpans },
   },
   architecture_synthesis: { state: "failed" },
@@ -266,7 +256,7 @@ const browseRoot = browsePanel || roots["rm-study-overview"];
 const browseRows = byClass(browseRoot, "rm-study-browse-row");
 const browseStageTexts = byClass(browseRoot, "rm-study-browse-row__stage").map((node) => text(node));
 const unavailableRows = byClass(browseRoot, "rm-study-browse-row__unavailable").map((node) => text(node));
-const modelPickBadges = byClass(browseRoot, "rm-study-browse-row__stage-accepted");
+const modelPickBadges = byClass(browseRoot, "rm-study-browse-row__stage-published");
 const localGroup = browsePanel ? browsePanel.querySelector(".rm-study-browse-group--local") : null;
 const beyondBefore = localGroup ? byClass(localGroup, "rm-study-browse-row--beyond").length : 0;
 const localCollapsedBefore = localGroup ? String(localGroup.className).split(/\s+/).includes("rm-study-browse-group--collapsed") : false;
@@ -279,7 +269,8 @@ if (modelPickBadges.length) {
 if (showAllButtons.length) showAllButtons[0].onclick();
 const localCollapsedAfter = localGroup ? String(localGroup.className).split(/\s+/).includes("rm-study-browse-group--collapsed") : false;
   const questionLinks = byClass(browseRoot, "rm-study-browse-row__question").map((node) => ({ tag: node.tagName, href: (node.attributes && node.attributes.href) || "" }));
-  return { overviewText, studyOverviewText, stageCounts, flagItems, omissionItems, architectureText, browseRowCount: browseRows.length, browseStageTexts, unavailableRows, modelPickCount: modelPickBadges.length, directionCardAfterPick, beyondBefore, localCollapsedBefore, localCollapsedAfter, showAllCount: showAllButtons.length, browsePanelPresent: !!browsePanel, questionLinks };
+  const themeShelf = byClass(roots["rm-study-overview"], "rm-study-theme-shelf")[0] || null;
+  return { overviewText, studyOverviewText, stageCounts, flagItems, omissionItems, architectureText, browseRowCount: browseRows.length, browseStageTexts, unavailableRows, modelPickCount: modelPickBadges.length, directionCardAfterPick, beyondBefore, localCollapsedBefore, localCollapsedAfter, showAllCount: showAllButtons.length, browsePanelPresent: !!browsePanel, questionLinks, themeShelfPresent: !!themeShelf };
 }
 const strippedReport = JSON.parse(JSON.stringify(report));
 strippedReport.user_sources = [];
@@ -313,6 +304,7 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 		ShowAllCount         int            `json:"showAllCount"`
 		BrowsePanelPresent   bool           `json:"browsePanelPresent"`
 		QuestionLinks        []questionLink `json:"questionLinks"`
+		ThemeShelfPresent    bool           `json:"themeShelfPresent"`
 	}
 	type journeySet struct {
 		En       journey `json:"en"`
@@ -348,13 +340,23 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 	if strings.Join(en.FlagItems, "|") != wantFlagText {
 		t.Fatalf("flag presentation = %#v, want %q", en.FlagItems, wantFlagText)
 	}
-	// The raw advertised_budget chip is replaced by the human omission
+	// The raw seed_budget chip is replaced by the human omission
 	// sentence and a "Show all N" disclosure button.
 	if len(en.OmissionItems) != 1 ||
 		!strings.Contains(en.OmissionItems[0], "Left out of the model's review to keep the request bounded — these are full local questions.") ||
 		!strings.Contains(en.OmissionItems[0], "Show all 36") ||
-		strings.Contains(en.OmissionItems[0], "advertised_budget") {
+		strings.Contains(en.OmissionItems[0], "seed_budget") {
 		t.Fatalf("omission aggregates = %#v", en.OmissionItems)
+	}
+	// D213 source-grounded theme shelf renders first with exact readings.
+	if !en.ThemeShelfPresent {
+		t.Fatalf("theme shelf missing from the Study overview:\n%s", en.StudyOverviewText)
+	}
+	if !strings.Contains(en.StudyOverviewText, "Source-grounded study themes") ||
+		!strings.Contains(en.StudyOverviewText, "Theme 1") ||
+		!strings.Contains(en.StudyOverviewText, "Theme 2") ||
+		!strings.Contains(en.StudyOverviewText, "Study question 1?") {
+		t.Fatalf("theme shelf copy missing:\n%s", en.StudyOverviewText)
 	}
 	// D212 frontier browse renders below the diagnostics panel.
 	if !en.BrowsePanelPresent {
@@ -377,8 +379,8 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 		}
 		return count
 	}
-	if en.ModelPickCount != 10 || stageCount("Model pick") != 10 {
-		t.Fatalf("Model pick badges = %d/%d, want 10", en.ModelPickCount, stageCount("Model pick"))
+	if en.ModelPickCount != 10 || stageCount("Published in a theme") != 10 {
+		t.Fatalf("Model pick badges = %d/%d, want 10", en.ModelPickCount, stageCount("Published in a theme"))
 	}
 	if stageCount("Shown to the model, not picked") != 22 {
 		t.Fatalf("advertised rows = %d, want 22", stageCount("Shown to the model, not picked"))
@@ -386,9 +388,9 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 	if stageCount("Local question — not shown to the model") != 36 {
 		t.Fatalf("considered rows = %d, want 36", stageCount("Local question — not shown to the model"))
 	}
-	// A Model pick badge opens exactly one numbered direction card.
+	// A published badge opens exactly one numbered theme card.
 	if !strings.Contains(en.DirectionCardAfter, "Study question 1?") {
-		t.Fatalf("Model pick badge did not open the matching direction card:\n%s", en.DirectionCardAfter)
+		t.Fatalf("published badge did not open the matching theme card:\n%s", en.DirectionCardAfter)
 	}
 	// Show all N reveals the Local group (12 representatives visible first).
 	if en.ShowAllCount < 1 || en.BeyondBefore != 24 || !en.LocalCollapsedBefore || en.LocalCollapsedAfter {
@@ -414,6 +416,9 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 		!strings.Contains(ru.StudyOverviewText, "Каждый вопрос, который локальный анализ может поставить для этого репозитория, в фиксированном локальном порядке. Это не ранжирование моделью.") {
 		t.Fatalf("RU frontier browse title/caption missing:\n%s", ru.StudyOverviewText)
 	}
+	if !ru.ThemeShelfPresent || !strings.Contains(ru.StudyOverviewText, "Темы изучения на основе источников") {
+		t.Fatalf("RU theme shelf missing:\n%s", ru.StudyOverviewText)
+	}
 	ruStageCount := func(label string) int {
 		count := 0
 		for _, item := range ru.BrowseStageTexts {
@@ -423,12 +428,12 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 		}
 		return count
 	}
-	if ru.BrowseRowCount != 68 || ruStageCount("Выбор модели") != 10 ||
+	if ru.BrowseRowCount != 68 || ruStageCount("Опубликовано в теме") != 10 ||
 		ruStageCount("Показано модели, не выбрано") != 22 ||
 		ruStageCount("Локальный вопрос — модели не показывался") != 36 ||
 		len(ru.UnavailableRows) != 2 || !strings.Contains(ru.UnavailableRows[0], "Источник недоступен") {
 		t.Fatalf("RU browse journey failed: rows=%d badges=%d/%d/%d unavailable=%#v",
-			ru.BrowseRowCount, ruStageCount("Выбор модели"), ruStageCount("Показано модели, не выбрано"),
+			ru.BrowseRowCount, ruStageCount("Опубликовано в теме"), ruStageCount("Показано модели, не выбрано"),
 			ruStageCount("Локальный вопрос — модели не показывался"), ru.UnavailableRows)
 	}
 	// Stripped static report: no embedded source bodies; the browse still
@@ -447,12 +452,12 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 		}
 		return count
 	}
-	if strippedStageCount("Model pick") != 10 ||
+	if strippedStageCount("Published in a theme") != 10 ||
 		strippedStageCount("Shown to the model, not picked") != 22 ||
 		strippedStageCount("Local question — not shown to the model") != 36 ||
 		len(stripped.UnavailableRows) != 2 || !strings.Contains(stripped.UnavailableRows[0], "Source unavailable") {
 		t.Fatalf("stripped browse counts failed: badges=%d/%d/%d unavailable=%#v",
-			strippedStageCount("Model pick"), strippedStageCount("Shown to the model, not picked"),
+			strippedStageCount("Published in a theme"), strippedStageCount("Shown to the model, not picked"),
 			strippedStageCount("Local question — not shown to the model"), stripped.UnavailableRows)
 	}
 	if len(stripped.QuestionLinks) < 66 {
