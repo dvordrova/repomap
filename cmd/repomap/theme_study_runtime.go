@@ -393,9 +393,28 @@ func runThemeStudyProductForRun(
 		Anchors: anchors,
 	})
 	if err != nil {
+		// A reducer failure must not leave accepted_partial scout/adjudication
+		// status records behind without the themes artifact: the report read
+		// path would demand the missing artifact and the run would fail late.
+		if cleanupErr := resetThemeStudyArtifacts(runDir); cleanupErr != nil {
+			return outcome, errors.Join(
+				fmt.Errorf("theme study run: reducer: %w", err),
+				cleanupErr,
+			)
+		}
 		return outcome, fmt.Errorf("theme study run: reducer: %w", err)
 	}
 	if len(reduction.Cards) == 0 {
+		// The published scout/adjudication status records already claim an
+		// accepted_partial state; a reducer rejection must reset the theme
+		// artifact set so the report read path sees a consistent neutral
+		// browse instead of demanding the missing themes artifact.
+		if cleanupErr := resetThemeStudyArtifacts(runDir); cleanupErr != nil {
+			return outcome, errors.Join(
+				fmt.Errorf("theme study run: reducer accepted no valid theme: %w", err),
+				cleanupErr,
+			)
+		}
 		outcome.State = atlasstudy.ProductStateFailed
 		outcome.FailureCode = atlasstudy.FailureValidation
 		output.Warn("Study themes unavailable", "the local reducer accepted no valid theme", "local Atlas and Architecture remain available")

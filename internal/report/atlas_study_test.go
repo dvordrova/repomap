@@ -1092,6 +1092,27 @@ func TestReadAtlasStudyReportProductTerminalStateMatrix(t *testing.T) {
 			t.Fatal("request without terminal status was accepted")
 		}
 	})
+
+	t.Run("accepted scout without themes artifact is an inconsistent set", func(t *testing.T) {
+		// A reducer rejection resets the whole theme artifact set, so an
+		// accepted_partial Scout status without the themes artifact must
+		// never be produced; the read path fails closed on it.
+		data := atlasStudyReportFixture(t)
+		runDir := t.TempDir()
+		product := compileAtlasStudyFixture(t, data)
+		scoutRequest := themeScoutRequestFromProduct(t, data, product)
+		writeThemeArtifact(t, runDir, themestudy.ScoutRequestArtifactFilename, mustEncodeTheme(t, scoutRequest))
+		writeThemeArtifact(t, runDir, themestudy.ScoutStatusArtifactFilename, mustEncodeTheme(t, themestudy.ScoutStatusRecord{
+			Version: themestudy.ScoutRequestVersion, State: string(atlasstudy.ProductStateAcceptedPartial),
+			PromptVersion: themestudy.ScoutPromptVersion, Language: themestudy.LanguageEnglish,
+			CatalogSHA256: scoutRequest.CatalogSHA256,
+			Status: themestudy.ScoutStatus{State: string(atlasstudy.ProductStateAcceptedPartial)},
+		}))
+		if _, _, err := readAtlasStudyReportProduct(runDir, data); err == nil ||
+			!strings.Contains(err.Error(), "requires all theme stage artifacts") {
+			t.Fatalf("inconsistent accepted set read = %v, want theme stage artifact error", err)
+		}
+	})
 }
 
 // themeScoutRequestFromProduct compiles the theme Scout request over the
