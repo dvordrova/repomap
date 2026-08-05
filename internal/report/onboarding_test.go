@@ -256,6 +256,55 @@ func TestDeriveRepositoryThesisPrefersDocumentedPurposeAndExactAreas(t *testing.
 	}
 }
 
+func TestSkipUnsafePurposeSentencesFiltersWarningsQuotesAndProtocolLists(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input []string
+		want  []string
+	}{
+		{
+			name:  "unstable warning is removed",
+			input: []string{"**Note**: The `main` branch may be in an *unstable or even broken state* during development.", "Example stores durable records."},
+			want:  []string{"Example stores durable records."},
+		},
+		{
+			name:  "quoted marketing quote is removed",
+			input: []string{">\"I never knew creating bots could be so _sexy_!\"", "Example builds bots."},
+			want:  []string{"Example builds bots."},
+		},
+		{
+			name:  "protocol capability list is removed",
+			input: []string{"Supporting MCP, A2A, OAuth 2.0, OIDC (OAuth 2.x), SAML, CAS, LDAP, SCIM.", "Example is an identity server."},
+			want:  []string{"Example is an identity server."},
+		},
+		{
+			name:  "all unsafe sentences leave an empty result",
+			input: []string{"**Note**: Work in progress.", "\"Marketing quote!\""},
+			want:  nil,
+		},
+		{
+			name:  "clean purpose is preserved",
+			input: []string{"restic is a backup program that is fast, efficient and secure."},
+			want:  []string{"restic is a backup program that is fast, efficient and secure."},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := skipUnsafePurposeSentences(test.input)
+			if len(got) != len(test.want) {
+				t.Fatalf("got %#v, want %#v", got, test.want)
+			}
+			for index := range got {
+				if got[index] != test.want[index] {
+					t.Fatalf("sentence %d = %q, want %q", index, got[index], test.want[index])
+				}
+			}
+		})
+	}
+}
+
 func TestFinalizeRepositoryOnboardingSelectsPrimaryAndKeepsExtension(t *testing.T) {
 	t.Parallel()
 

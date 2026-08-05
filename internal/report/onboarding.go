@@ -775,6 +775,11 @@ func DeriveRepositoryThesis(data *ReportData) *RepositoryThesis {
 		return nil
 	}
 	documented := documentedPurposeSentences(data.DocumentedPurpose, data.RepoName)
+	// Decision 221 A: a README warning, badge, release note, capability list,
+	// or quote is never the sole product purpose when a stronger bounded
+	// sentence exists. Unsafe leading sentences are skipped deterministically
+	// (no repository-specific table).
+	documented = skipUnsafePurposeSentences(documented)
 	purpose := ""
 	var documentedStory []string
 	if len(documented) > 0 {
@@ -793,6 +798,65 @@ func DeriveRepositoryThesis(data *ReportData) *RepositoryThesis {
 		SystemStory: repositorySystemStory(documentedStory, areas),
 		Areas:       areas,
 	}
+}
+
+// skipUnsafePurposeSentences removes leading README sentences that are not
+// trustworthy product purpose (Decision 221 A): unstable/release warnings,
+// quotes, capability/protocol lists, badges, and build-status notes. The
+// remaining sentences are returned in order; an empty result means no
+// README sentence is safe as purpose.
+func skipUnsafePurposeSentences(sentences []string) []string {
+	result := make([]string, 0, len(sentences))
+	for _, sentence := range sentences {
+		lower := strings.ToLower(sentence)
+		if purposeSentenceIsUnsafe(lower) {
+			continue
+		}
+		result = append(result, sentence)
+	}
+	return result
+}
+
+func purposeSentenceIsUnsafe(lower string) bool {
+	// Unstable/main-branch/release warnings.
+	for _, phrase := range []string{
+		"main branch may be in an unstable", "unstable or even",
+		"**note**", "note:", "caution:", "warning:",
+		"not ready for production", "do not use in production",
+		"under development", "work in progress", "experimental",
+		"beta version", "release note", "changelog",
+	} {
+		if strings.Contains(lower, phrase) {
+			return true
+		}
+	}
+	// Quoted marketing or joke material.
+	if strings.HasPrefix(lower, "\"") || strings.HasPrefix(lower, ">") ||
+		strings.HasPrefix(lower, "«") || strings.HasPrefix(lower, "“") {
+		return true
+	}
+	if strings.Contains(lower, "never knew") || strings.Contains(lower, "so _sexy_") {
+		return true
+	}
+	// Capability/protocol/badge lists dominate the sentence.
+	if strings.Contains(lower, "supports the three major operating systems") {
+		return true
+	}
+	protocolList := 0
+	for _, protocol := range []string{"oauth 2.0", "oidc", "saml", "cas", "mcp", "a2a", "ldap", "smtp", "rest api", "graphql"} {
+		if strings.Contains(lower, protocol) {
+			protocolList++
+		}
+	}
+	if protocolList >= 2 {
+		return true
+	}
+	// Build-status badges.
+	if strings.Contains(lower, "build status") || strings.Contains(lower, "coverage") ||
+		strings.Contains(lower, "ci status") || strings.Contains(lower, "[![") {
+		return true
+	}
+	return false
 }
 
 func documentedPurposeSentences(value, repoName string) []string {
