@@ -1,22 +1,40 @@
 # Current approved implementation decision
 
-Decision:
-    decisions/214-locally-observed-resource-boundaries.md
+Active decisions (each approved by the repository owner via its supervisory goal):
+
+1. decisions/215-etcd-architecture-output-exhaustion-isolation.md
+2. decisions/217-report-ui-ux-acceptance-repair.md
+
+## Decision 215
 
 Status:
-    Decision 214 active and ACCEPTED: the local Atlas gains typed,
-    evidence-exact resource boundaries for two classes — persistent storage
-    (databases/object stores) and outbound network clients (HTTP/gRPC/SDK) —
-    each connected to the exact observed call-site operation and visible in
-    the Atlas surface and D213 Study seed catalog
+    Decision 215 active: attempted Architecture output/response resource
+    exhaustion (finish_reason=length or response-byte overflow after the
+    provider call was attempted) is isolated as an optional publishable
+    failure — durable failed status v9 with the closed provider_output_limit
+    code, exact failed-call accounting, one redacted exchange, and
+    continuation to Study + report/manifest with the canonical local Canvas.
+    D194's whole-run termination is superseded for exactly this clause; every
+    other stage and every pre-call limit stays terminal.
 
 Approved by:
-    Repository owner via the Monster council gate (red-team REVISE→PASS,
-    council/20-red-team-214.md); implementation accepted 20260805 after the
-    live Casdoor RU A/B (exit 0, Atlas 17 boundary + 22 resource entities,
-    108 exact call sites, Study 10 cards with 25/33 Atlas-proven anchors)
+    Repository owner via the active supervisory goal
+    (repomap-hermes-d215-etcd-failure-isolation-goal.txt, 2026-08-05).
 
 Notes:
+    The etcd incident (run 20260805-064730-etcd-4d99f0f8a558) proved a
+    visible 56-ref generation repetition loop (6,390 package refs, 90 unique,
+    finish_reason=length at 64,000 output tokens), not capacity shortage, so
+    the global 64,000-token ceiling is deliberately retained (no 128k). The
+    partial response stays diagnostic-only: never parsed, applied, cached, or
+    presented. Status version advances 8→9 with bounded configured/observed
+    token evidence and no partial-response publication. D216 (bounded local
+    Architecture units before one unit-grouping semantic call) is recorded as
+    the next proposed root correction, not implemented. Provider-free
+    acceptance: full CLI replay on the real etcd repo with a deterministic
+    loop fixture passes — failed status + accounting durable, no synthesis
+    record, Study executes, report + manifest publish, exit 0.
+
     Decision 214 builds the first slice of locally observed Boundaries and
     Resources on top of the accepted Atlas-first base. The Atlas schema
     already defines EntityBoundary and EntityResource (repositoryatlas/
@@ -967,3 +985,35 @@ Notes:
     131, 132, or 133.
     Unified surface accounting, behavior-grounded architecture, and
     Operational Flow Discovery remain part of the existing product.
+
+## Decision 217
+
+Status:
+    Report UI/UX acceptance repair across application, CLI, service, and
+    library reports — presentation/view-model corrective (no provider
+    behavior, no pipeline change). Verified on the owner-supplied saved-run
+    matrix (casdoor/telebot/restic/chatto plus the format-30 casdoor-old
+    comparison): global shell (localization strip → collapsed "About this
+    report" disclosure, provenance row, markdown-safe README labeled as
+    source, localized guide hero), Overview "At a glance" four questions,
+    deterministic evidence tiers (exact source / package-backed / hypothesis /
+    unmapped), Study learning plan with coverage wording and collapsed
+    "Coverage and provenance", Architecture relation honesty (labeled
+    relations or explicit zero-relation notice), compact expandable
+    unmapped-evidence disclosure, component list alternative, mobile list
+    default, dialog drawer (role/aria-modal/focus trap/Escape/focus return),
+    zero horizontal overflow at 390 px on all 15 route×repo combinations
+    (baseline Casdoor Study 748 px → 390 px). Full suite, vet, build, node
+    checks, quality and localization gates green; browser acceptance captured
+    at 1440x1000 and 390x844.
+
+Approved by:
+    Repository owner via the active supervisory goal
+    (report UI/UX acceptance repair, 2026-08-05).
+
+Notes:
+    Upstream data-quality candidates recorded for follow-up (not scope
+    expansion): restic/chatto anchors published under persistence_limit,
+    all-format-31 conceptual components carry hypothesis:true, zero
+    flow_count/orientation_confidence across the matrix, study-theme overlap
+    surfaced as limitation rather than rewritten.

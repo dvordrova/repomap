@@ -64,6 +64,14 @@ class Element {
     const className = selector.slice(1);
     return walk(this).find((node) => node !== this && String(node.className).split(/\s+/).includes(className)) || null;
   }
+  querySelectorAll(selector) {
+    if (!selector.startsWith(".")) return [];
+    const className = selector.slice(1);
+    return walk(this).filter((node) => node !== this && String(node.className).split(/\s+/).includes(className));
+  }
+  addEventListener() {}
+  contains(node) { return walk(this).includes(node); }
+  focus() { this.focused = true; }
   onclick = null;
   scrollIntoView() {}
 }
@@ -159,7 +167,7 @@ const report = {
     themes: { total: 2, shown: 2, cards: themeCards },
     frontier_browse: { total: 68, shown: 68, spans: browseSpans },
   },
-  architecture_synthesis: { state: "failed" },
+  architecture_synthesis: { state: "failed", error_code: "provider_output_limit" },
   architecture_canvas: {
     version: 8, validation_outcome: "accepted_partial", architecture_source: "partial_model",
     local_remainder_component_id: "component-remainder",
@@ -270,7 +278,17 @@ if (showAllButtons.length) showAllButtons[0].onclick();
 const localCollapsedAfter = localGroup ? String(localGroup.className).split(/\s+/).includes("rm-study-browse-group--collapsed") : false;
   const questionLinks = byClass(browseRoot, "rm-study-browse-row__question").map((node) => ({ tag: node.tagName, href: (node.attributes && node.attributes.href) || "" }));
   const themeShelf = byClass(roots["rm-study-overview"], "rm-study-theme-shelf")[0] || null;
-  return { overviewText, studyOverviewText, stageCounts, flagItems, omissionItems, architectureText, browseRowCount: browseRows.length, browseStageTexts, unavailableRows, modelPickCount: modelPickBadges.length, directionCardAfterPick, beyondBefore, localCollapsedBefore, localCollapsedAfter, showAllCount: showAllButtons.length, browsePanelPresent: !!browsePanel, questionLinks, themeShelfPresent: !!themeShelf };
+  // Decision 217 drawer accessibility: open a source snippet and verify the
+  // drawer becomes a real dialog (role, aria-modal, descriptive label).
+  const studyReadings = byClass(roots["rm-study-overview"], "rm-study-theme-card__reading");
+  if (studyReadings.length && studyReadings[0].onclick) studyReadings[0].onclick();
+  const drawerEl = roots["rm-source-drawer"];
+  const drawerDialog = {
+    role: drawerEl.getAttribute("role"),
+    ariaModal: drawerEl.getAttribute("aria-modal"),
+    ariaLabel: drawerEl.getAttribute("aria-label"),
+  };
+  return { overviewText, studyOverviewText, stageCounts, flagItems, omissionItems, architectureText, browseRowCount: browseRows.length, browseStageTexts, unavailableRows, modelPickCount: modelPickBadges.length, directionCardAfterPick, beyondBefore, localCollapsedBefore, localCollapsedAfter, showAllCount: showAllButtons.length, browsePanelPresent: !!browsePanel, questionLinks, themeShelfPresent: !!themeShelf, drawerDialog };
 }
 const strippedReport = JSON.parse(JSON.stringify(report));
 strippedReport.user_sources = [];
@@ -305,6 +323,11 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 		BrowsePanelPresent   bool           `json:"browsePanelPresent"`
 		QuestionLinks        []questionLink `json:"questionLinks"`
 		ThemeShelfPresent    bool           `json:"themeShelfPresent"`
+		DrawerDialog         struct {
+			Role      string `json:"role"`
+			AriaModal string `json:"ariaModal"`
+			AriaLabel string `json:"ariaLabel"`
+		} `json:"drawerDialog"`
 	}
 	type journeySet struct {
 		En       journey `json:"en"`
@@ -408,8 +431,8 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 	if strings.Contains(en.OverviewText, "Accepted conceptual components open on the map") {
 		t.Fatalf("Overview still shows the unconditional acceptance copy:\n%s", en.OverviewText)
 	}
-	if !strings.Contains(en.ArchitectureText, "Architecture synthesis failed; showing the locally available architecture.") {
-		t.Fatalf("Architecture tab does not show the synthesis-failed notice:\n%s", en.ArchitectureText)
+	if !strings.Contains(en.ArchitectureText, "Conceptual grouping is unavailable because the model exceeded its response budget. The partial response was not used; exact local Architecture remains available.") {
+		t.Fatalf("Architecture tab does not show the output-limit notice:\n%s", en.ArchitectureText)
 	}
 	// RU journey: same browse with the Russian catalog.
 	if !strings.Contains(ru.StudyOverviewText, "Все вопросы изучения") ||
@@ -435,6 +458,9 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 		t.Fatalf("RU browse journey failed: rows=%d badges=%d/%d/%d unavailable=%#v",
 			ru.BrowseRowCount, ruStageCount("Опубликовано в теме"), ruStageCount("Показано модели, не выбрано"),
 			ruStageCount("Локальный вопрос — модели не показывался"), ru.UnavailableRows)
+	}
+	if !strings.Contains(ru.ArchitectureText, "Концептуальная группировка недоступна: модель исчерпала лимит ответа. Частичный ответ не использован; точная локальная архитектура остаётся доступна.") {
+		t.Fatalf("RU Architecture tab does not show the output-limit notice:\n%s", ru.ArchitectureText)
 	}
 	// Stripped static report: no embedded source bodies; the browse still
 	// renders 68 rows with the same stage counts, and every openable row
@@ -470,5 +496,12 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 	}
 	if !strings.Contains(stripped.DirectionCardAfter, "Study question 1?") {
 		t.Fatalf("stripped Model pick badge did not open the matching direction card:\n%s", stripped.DirectionCardAfter)
+	}
+	// Decision 217 drawer accessibility: opening a source snippet makes the
+	// drawer a real dialog with a descriptive label.
+	for name, j := range map[string]journey{"en": en, "ru": ru} {
+		if j.DrawerDialog.Role != "dialog" || j.DrawerDialog.AriaModal != "true" || j.DrawerDialog.AriaLabel == "" {
+			t.Fatalf("%s drawer dialog semantics = %#v, want role=dialog aria-modal=true with label", name, j.DrawerDialog)
+		}
 	}
 }

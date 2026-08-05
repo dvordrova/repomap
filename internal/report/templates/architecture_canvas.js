@@ -833,25 +833,32 @@ function architecturePartialTruth(data) {
     if (this.traceList) this.root.appendChild(this.traceList);
 
     if (this.userMode && this.partialTruth) {
-	 const partial = element("aside", "rm-arch__partial-truth");
-     partial.appendChild(element(
-      "strong",
-      "rm-arch__partial-truth-label",
-      this.msg("architecture.value.accepted_partial")
-     ));
-     partial.appendChild(element(
-      "p",
-      "rm-arch__copy",
-      this.msg("architecture.copy.accepted_partial")
-     ));
+	 // Decision 217: the unassigned-evidence wall becomes a compact
+	 // collapsed disclosure — count in the summary, every exact item
+	 // preserved behind the expand action.
+	 const partial = element("details", "rm-arch__partial-truth");
+	 const summary = element("summary", "rm-arch__partial-truth-label");
+	 summary.appendChild(element(
+	  "strong",
+	  "rm-arch__partial-truth-label-text",
+	  this.msg("architecture.value.accepted_partial")
+	 ));
 	 if (this.partialTruth.members.length > 0) {
-	  partial.appendChild(element(
+	  summary.appendChild(element(
 	   "span",
 	   "rm-arch__partial-count",
 	   this.msg("architecture.count.local_remainder_members", {
 	    count: this.partialTruth.members.length,
 	   })
 	  ));
+	 }
+	 partial.appendChild(summary);
+	 partial.appendChild(element(
+	  "p",
+	  "rm-arch__copy",
+	  this.msg("architecture.copy.accepted_partial")
+	 ));
+	 if (this.partialTruth.members.length > 0) {
 	  const members = element("div", "rm-arch__partial-member-list");
 	  this.partialTruth.members.forEach((member) => {
 	   const sources = array(member.sources);

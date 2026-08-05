@@ -58,6 +58,14 @@ class Element {
     const className = selector.slice(1);
     return walk(this).find((node) => node !== this && String(node.className).split(/\s+/).includes(className)) || null;
   }
+  querySelectorAll(selector) {
+    if (!selector.startsWith(".")) return [];
+    const className = selector.slice(1);
+    return walk(this).filter((node) => node !== this && String(node.className).split(/\s+/).includes(className));
+  }
+  addEventListener() {}
+  contains(node) { return this === node || (this.children || []).includes(node); }
+  focus() { this.focused = true; }
 }
 function walk(root) {
   const result = [];

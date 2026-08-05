@@ -588,7 +588,7 @@ func TestWriteReportHTML_DirectionCanOpenSavedLocalEvidence(t *testing.T) {
 		[]byte("Explore this direction"),
 		[]byte("Suggested files are selected from repository facts"),
 		[]byte("Suggested files to inspect"),
-		[]byte("Run details"),
+		[]byte("About this report"),
 		[]byte("rm-candidate-direction--clickable"),
 	} {
 		if !bytes.Contains(html, want) {

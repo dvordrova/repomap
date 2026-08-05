@@ -675,6 +675,10 @@ class Element {
   prepend(child) { this.children.unshift(child); }
   replaceChildren(...children) { this.children = children; }
   querySelector() { return null; }
+  querySelectorAll() { return []; }
+  addEventListener() {}
+  contains(node) { return this === node || (this.children || []).includes(node); }
+  focus() { this.focused = true; }
   remove() {}
 }
 function snippet(path, line, sha) {
@@ -1192,7 +1196,10 @@ process.stdout.write(JSON.stringify({
 			atlasPosition = index
 		}
 	}
-	if anatomyPosition < 0 || atlasPosition < 0 || atlasPosition >= anatomyPosition ||
+	// Decision 217: the Atlas unit ontology is demoted below the
+	// user-facing orientation — anatomy zones (entry surfaces, components)
+	// precede the unit shelf.
+	if anatomyPosition < 0 || atlasPosition < 0 || atlasPosition < anatomyPosition ||
 		got.AtlasFirstOverview.StudyDirectionCount != 1 || got.AtlasFirstOverview.SurfaceCount != 2 ||
 		got.AtlasFirstOverview.ComponentCount != 4 {
 		t.Fatalf("Atlas-first Overview order/dedup = %#v", got.AtlasFirstOverview)
@@ -1207,16 +1214,22 @@ process.stdout.write(JSON.stringify({
 			studyOnlyAtlasPosition = index
 		}
 	}
-	if studyPosition < 0 || studyOnlyAtlasPosition < 0 || studyOnlyAtlasPosition >= studyPosition ||
+	// Decision 217: the Atlas unit shelf is demoted below user-facing
+	// orientation here as well — study routes precede the unit ontology.
+	if studyPosition < 0 || studyOnlyAtlasPosition < 0 || studyOnlyAtlasPosition < studyPosition ||
 		got.AtlasFirstStudyOnlyOverview.StudyDirectionCount != 1 ||
 		got.AtlasFirstStudyOnlyOverview.SurfaceCount != 0 ||
 		got.AtlasFirstStudyOnlyOverview.ComponentCount != 4 ||
 		!strings.Contains(got.AtlasFirstStudyOnlyOverview.Rendered, "Where should I read next?") {
 		t.Fatalf("Atlas-first Study fallback / Atlas order = %#v", got.AtlasFirstStudyOnlyOverview)
 	}
+	// Decision 217: component cards show at most one representative exact
+	// anchor (plus a bounded "+N more" note), so the stripped-source static
+	// anatomy exposes one pinned source action per exact-backed component
+	// (component-a, component-b, ambiguous) rather than the full list.
 	if got.StrippedStaticOverview.SurfaceCount != 4 || got.StrippedStaticOverview.ComponentCount != 4 ||
 		len(got.StrippedStaticOverview.PrimaryTargets) != 8 ||
-		len(got.StrippedStaticOverview.SourceTargets) != 4 {
+		len(got.StrippedStaticOverview.SourceTargets) != 3 {
 		t.Fatalf("stripped-source static anatomy = %#v", got.StrippedStaticOverview)
 	}
 	for _, target := range got.StrippedStaticOverview.PrimaryTargets {
@@ -1233,8 +1246,10 @@ process.stdout.write(JSON.stringify({
 			t.Fatalf("stripped-source component source target = %#v", target)
 		}
 	}
+	// Decision 217: one representative exact source action per component;
+	// the ambiguous component carries no exact-unambiguous source.
 	if got.MixedServedOverview.SurfaceCount != 2 || got.MixedServedOverview.ComponentCount != 4 ||
-		len(got.MixedServedOverview.PrimaryTargets) != 6 || len(got.MixedServedOverview.SourceTargets) != 3 {
+		len(got.MixedServedOverview.PrimaryTargets) != 6 || len(got.MixedServedOverview.SourceTargets) != 2 {
 		t.Fatalf("mixed served report escaped excerpt-only anatomy = %#v", got.MixedServedOverview)
 	}
 	for _, target := range append(got.MixedServedOverview.PrimaryTargets, got.MixedServedOverview.SourceTargets...) {
