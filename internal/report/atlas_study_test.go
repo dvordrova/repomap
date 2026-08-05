@@ -21,6 +21,7 @@ import (
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 	"github.com/dvordrova/repomap/internal/repositoryatlas/goadapter"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
+	"github.com/dvordrova/repomap/internal/themestudy"
 )
 
 func TestAtlasStudyCasdoorShapedPackageDrawerSourcesDoNotExpandReadingCatalog(t *testing.T) {
@@ -970,183 +971,41 @@ func TestBuildAtlasStudyInputOwnerRequiresOneExactProducerProof(t *testing.T) {
 func TestReadAtlasStudyReportProductAcceptedProjectsExactSources(t *testing.T) {
 	data := atlasStudyReportFixture(t)
 	runDir := t.TempDir()
-	writeAcceptedAtlasStudyArtifacts(t, runDir, data)
+	writeThemeStudyAcceptedArtifacts(t, runDir, data)
 	status, studyMap, err := readAtlasStudyReportProduct(runDir, data)
 	if err != nil {
 		t.Fatalf("readAtlasStudyReportProduct: %v", err)
 	}
 	if status == nil || status.State != atlasstudy.ProductStateAccepted ||
 		status.ProjectionVersion != AtlasStudyReportProjectionVersion ||
-		status.DirectionCount != 1 || status.PublishedDirectionCount != 1 ||
-		status.HiddenDirectionCount != 0 || status.ConsideredSpanCount != 4 ||
-		status.AdvertisedSpanCount != 4 || status.ModelSelectedSpanCount != 1 ||
-		status.AcceptedSpanCount != 1 || !status.FrontierComplete ||
-		!status.SelectedItemsComplete || !status.SupportCoverageComplete ||
-		status.PortfolioTargetMet || studyMap == nil || len(studyMap.Directions) != 1 ||
-		len(studyMap.Directions[0].ReadingAnchors) != 1 || len(studyMap.Shape) != 1 {
+		status.ConsideredSpanCount != 4 || status.AdvertisedSpanCount != 3 ||
+		status.ModelSelectedSpanCount != 3 || status.AcceptedSpanCount != 3 ||
+		status.FrontierComplete || !status.SelectedItemsComplete || !status.SupportCoverageComplete ||
+		studyMap != nil || status.Themes == nil || len(status.Themes.Cards) < 1 ||
+		status.FrontierBrowse == nil || status.FrontierBrowse.Total != status.ConsideredSpanCount {
 		t.Fatalf("accepted report projection = %#v / %#v", status, studyMap)
 	}
-	for _, reading := range studyMap.Directions[0].ReadingAnchors {
-		if reading.Source.Path != reading.Location.Path || reading.Source.Validate() != nil {
-			t.Fatalf("reading lost exact saved source: %#v", reading)
+	for _, card := range status.Themes.Cards {
+		for _, reading := range card.Readings {
+			if reading.Path == "" || reading.Line < 1 || reading.Symbol == "" || reading.Label == "" {
+				t.Fatalf("theme reading lost exact saved source: %#v", reading)
+			}
 		}
 	}
 
-	data.DocumentedPurpose += " Changed after the request was saved."
-	if _, _, err := readAtlasStudyReportProduct(runDir, data); err == nil {
-		t.Fatal("request bound to prior report input was accepted after purpose tamper")
-	}
-}
-
-func TestProjectAtlasStudyMapDeduplicatesExactReadingSetsAndKeepsDiagnostic(t *testing.T) {
-	data := atlasStudyReportFixture(t)
-	input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
-	if err != nil {
-		t.Fatalf("BuildAtlasStudyInput: %v", err)
-	}
-	if len(input.ReadingTargets) != 3 {
-		t.Fatalf("reading targets = %d, want 3", len(input.ReadingTargets))
-	}
-	readings := make([]atlasstudy.ResolvedReading, 0, len(input.ReadingTargets))
-	for _, target := range input.ReadingTargets {
-		readings = append(readings, atlasstudy.ResolvedReading{
-			Target: atlasstudy.CanonicalRef{Kind: atlasstudy.RefReadingTarget, ID: target.ID},
-			Label:  atlasstudy.ReadingContinue, WhatToLookFor: "Inspect local evidence.",
-		})
-	}
-	reversed := append([]atlasstudy.ResolvedReading(nil), readings...)
-	for left, right := 0, len(reversed)-1; left < right; left, right = left+1, right-1 {
-		reversed[left], reversed[right] = reversed[right], reversed[left]
-	}
-	result := atlasstudy.ResultRecord{
-		Version: atlasstudy.ResultVersion, RepositoryType: atlasstudy.RepositoryService,
-		Directions: []atlasstudy.Direction{
-			{ID: "first-accepted", Question: "First wording?", Reading: readings},
-			{ID: "later-duplicate", Question: "Different wording, same reading set?", Reading: reversed},
-		},
-	}
-	if len(input.Architecture.Components) == 0 {
-		t.Fatal("fixture has no Architecture component")
-	}
-	localRef := atlasstudy.CanonicalRef{
-		Kind: atlasstudy.RefComponent, ID: input.Architecture.Components[0].ID,
-	}
-	result.ShapeComponentRefs = []atlasstudy.CanonicalRef{localRef}
-	for index := range result.Directions {
-		result.Directions[index].PrincipalRefs = []atlasstudy.CanonicalRef{localRef}
-	}
-	var localComponent ArchitectureComponent
-	for _, component := range data.ArchitectureCanvas.Components {
-		if string(component.ID) == localRef.ID {
-			localComponent = component
-			break
+	// The Scout request binds the exact substrate: a changed reading target
+	// identity (path/symbol) must fail the request-input binding.
+	data2 := cloneAtlasStudyReportData(t, data)
+	for index := range data2.UserSources {
+		if data2.UserSources[index].Path == "internal/app/run.go" {
+			data2.UserSources[index] = atlasStudySourceFixture(
+				t, "internal/app/run.go", 11, "example.com/fixture/internal/app.RunRenamed",
+				"func Run() {}",
+			)
 		}
 	}
-	if len(localComponent.Members) == 0 {
-		t.Fatalf("fixture local component %q has no exact members", localRef.ID)
-	}
-	publishedCanvas := &ArchitectureCanvas{Components: []ArchitectureComponent{{
-		ID: "published-visible-component", Members: localComponent.Members,
-	}}}
-	studyMap, err := projectAtlasStudyMap(data, publishedCanvas, input, result)
-	if err != nil {
-		t.Fatalf("projectAtlasStudyMap: %v", err)
-	}
-	if len(studyMap.Directions) != 1 || studyMap.Directions[0].ID != "first-accepted" ||
-		len(studyMap.HiddenDirections) != 1 || studyMap.HiddenDirections[0].ID != "later-duplicate" {
-		t.Fatalf("visible/diagnostic directions = %#v / %#v",
-			studyMap.Directions, studyMap.HiddenDirections)
-	}
-	if len(studyMap.Shape) != 1 || studyMap.Shape[0].MapTarget == nil ||
-		studyMap.Shape[0].MapTarget.ComponentID != "published-visible-component" ||
-		len(studyMap.Directions[0].Areas) != 1 ||
-		studyMap.Directions[0].Areas[0].MapTarget == nil ||
-		studyMap.Directions[0].Areas[0].MapTarget.ComponentID != "published-visible-component" {
-		t.Fatalf("Study projection did not bridge exact local identity to visible Architecture: %#v", studyMap)
-	}
-	for index, target := range input.ReadingTargets {
-		if got := studyMap.Directions[0].ReadingAnchors[index].Symbol; got != target.Symbol {
-			t.Fatalf("reading[%d] symbol = %q, want exact target symbol %q", index, got, target.Symbol)
-		}
-		if got := studyMap.HiddenDirections[0].ReadingAnchors[len(reversed)-1-index].Symbol; got != target.Symbol {
-			t.Fatalf("reversed reading[%d] symbol = %q, want %q", index, got, target.Symbol)
-		}
-	}
-	hiddenCoverage := studyMap.HiddenDirections[0].DebugCoverage
-	if hiddenCoverage == nil || hiddenCoverage.UserVisible ||
-		!containsString(hiddenCoverage.Reasons, "duplicate_reading_set") ||
-		len(studyMap.Directions)+len(studyMap.HiddenDirections) != len(result.Directions) {
-		t.Fatalf("duplicate diagnostic = %#v", hiddenCoverage)
-	}
-}
-
-func TestExactPublishedStudyComponentTargetRequiresOneExactVisibleMatch(t *testing.T) {
-	member := func(kind componentmap.MemberKind, value string) componentmap.Candidate {
-		return componentmap.Candidate{ID: componentmap.MemberID{Kind: kind, Value: value}}
-	}
-	local := ArchitectureComponent{
-		ID: "local-d177-component",
-		Members: []componentmap.Candidate{
-			member(componentmap.MemberPackage, "package-main"),
-			member(componentmap.MemberSymbol, "symbol-run"),
-		},
-	}
-	published := &ArchitectureCanvas{
-		LocalRemainderComponentID: "published-remainder",
-		Components: []ArchitectureComponent{
-			{ID: "published-entry", Members: []componentmap.Candidate{
-				member(componentmap.MemberPackage, "package-main"),
-			}},
-			{ID: "published-unrelated", Members: []componentmap.Candidate{
-				member(componentmap.MemberPackage, "package-storage"),
-			}},
-			{ID: "published-remainder", Members: []componentmap.Candidate{
-				member(componentmap.MemberSymbol, "symbol-run"),
-			}},
-		},
-	}
-	target := exactPublishedStudyComponentTarget(local, published)
-	if target == nil || target.Kind != SemanticSearchTargetComponent ||
-		target.ComponentID != "published-entry" {
-		t.Fatalf("exact visible target = %#v", target)
-	}
-
-	// A second exact conceptual association is valid many-to-many membership,
-	// but cannot be collapsed into one navigation owner by array order.
-	published.Components = append(published.Components, ArchitectureComponent{
-		ID: "published-runtime", Members: []componentmap.Candidate{
-			member(componentmap.MemberSymbol, "symbol-run"),
-		},
-	})
-	if target := exactPublishedStudyComponentTarget(local, published); target != nil {
-		t.Fatalf("ambiguous conceptual membership chose a target: %#v", target)
-	}
-
-	published.Components = published.Components[:2]
-	if target := exactPublishedStudyComponentTarget(
-		ArchitectureComponent{ID: "local-missing", Members: []componentmap.Candidate{
-			member(componentmap.MemberPackage, "package-missing"),
-		}},
-		published,
-	); target != nil {
-		t.Fatalf("missing exact membership produced target: %#v", target)
-	}
-}
-
-func TestReadAtlasStudyReportProductCountsDistinctPublishedDirections(t *testing.T) {
-	data := atlasStudyReportFixture(t)
-	runDir := t.TempDir()
-	writeAcceptedAtlasStudyArtifactsWithDirectionCopies(t, runDir, data, 2)
-	status, studyMap, err := readAtlasStudyReportProduct(runDir, data)
-	if err != nil {
-		t.Fatalf("readAtlasStudyReportProduct: %v", err)
-	}
-	if status == nil || status.ProjectionVersion != AtlasStudyReportProjectionVersion ||
-		status.DirectionCount != 2 || status.PublishedDirectionCount != 2 ||
-		status.HiddenDirectionCount != 0 || studyMap == nil ||
-		len(studyMap.Directions) != 2 || len(studyMap.HiddenDirections) != 0 ||
-		len(studyMap.Directions)+len(studyMap.HiddenDirections) != 2 {
-		t.Fatalf("published/raw diagnostic count = status:%#v map:%#v", status, studyMap)
+	if _, _, err := readAtlasStudyReportProduct(runDir, data2); err == nil {
+		t.Fatal("request bound to prior report input was accepted after reading-target tamper")
 	}
 }
 
@@ -1175,67 +1034,38 @@ func TestReadAtlasStudyReportProductResolvesDerivedExactTargetContext(t *testing
 		t.Fatalf("derived exact target context = %#v", input.ReadingTargets)
 	}
 	runDir := t.TempDir()
-	writeAcceptedAtlasStudyArtifacts(t, runDir, data)
-	if _, studyMap, err := readAtlasStudyReportProduct(runDir, data); err != nil || studyMap == nil {
-		t.Fatalf("derived exact target report replay = %#v, %v", studyMap, err)
+	writeThemeStudyAcceptedArtifacts(t, runDir, data)
+	status, studyMap, err := readAtlasStudyReportProduct(runDir, data)
+	if err != nil {
+		t.Fatalf("derived exact target report replay: %v", err)
 	}
-}
-
-func TestProjectAtlasStudyShapeSourceRequiresOneExactOwnedLocator(t *testing.T) {
-	t.Run("one exact producer location", func(t *testing.T) {
-		data := atlasStudyReportFixture(t)
-		data.ArchitectureCanvas.Surfaces[0].OwningComponentID = "component-fixture-app"
-		runDir := t.TempDir()
-		writeAcceptedAtlasStudyArtifacts(t, runDir, data)
-		_, studyMap, err := readAtlasStudyReportProduct(runDir, data)
-		if err != nil {
-			t.Fatalf("read accepted product: %v", err)
-		}
-		if len(studyMap.Shape) != 1 || studyMap.Shape[0].CodeLocation == nil ||
-			studyMap.Shape[0].Source == nil ||
-			studyMap.Shape[0].CodeLocation.Path != "cmd/app/main.go" {
-			t.Fatalf("sole exact owner was not projected: %#v", studyMap.Shape)
-		}
-	})
-
-	t.Run("multiple exact producer locations", func(t *testing.T) {
-		data := atlasStudyReportFixture(t)
-		data.ArchitectureCanvas.Surfaces[0].OwningComponentID = "component-fixture-app"
-		data.ArchitectureCanvas.Flows = []ArchitectureFlow{{
-			ID: "flow-second-owned-locator", Name: "Second exact owned locator",
-			Steps: []ArchitectureFlowStep{{
-				ID: "step-second-owned-locator", ComponentID: "component-fixture-app",
-				Location: &evidence.Location{Path: "internal/app/run.go", Line: 11},
-			}},
-		}}
-		runDir := t.TempDir()
-		writeAcceptedAtlasStudyArtifacts(t, runDir, data)
-		_, studyMap, err := readAtlasStudyReportProduct(runDir, data)
-		if err != nil {
-			t.Fatalf("read accepted product: %v", err)
-		}
-		if len(studyMap.Shape) != 1 || studyMap.Shape[0].CodeLocation != nil ||
-			studyMap.Shape[0].Source != nil {
-			t.Fatalf("conceptual Shape selected an arbitrary owned source: %#v", studyMap.Shape)
-		}
-	})
+	if status == nil || status.Themes == nil || studyMap != nil {
+		t.Fatalf("derived exact target report replay = %#v, %#v", status, studyMap)
+	}
 }
 
 func TestReadAtlasStudyReportProductTerminalStateMatrix(t *testing.T) {
 	t.Run("failed called stage", func(t *testing.T) {
 		data := atlasStudyReportFixture(t)
 		runDir := t.TempDir()
+		// A failed Scout leaves request + status only: write the compiled
+		// theme Scout request and a failure status.
 		product := compileAtlasStudyFixture(t, data)
-		writeAtlasStudyRequest(t, runDir, product)
-		status, err := product.FailureStatus(atlasstudy.FailureProvider)
-		if err != nil {
-			t.Fatalf("FailureStatus: %v", err)
-		}
-		writeAtlasStudyStatus(t, runDir, status)
+		scoutRequest := themeScoutRequestFromProduct(t, data, product)
+		writeThemeArtifact(t, runDir, themestudy.ScoutRequestArtifactFilename, mustEncodeTheme(t, scoutRequest))
+		writeThemeArtifact(t, runDir, themestudy.ScoutStatusArtifactFilename, mustEncodeTheme(t, themestudy.ScoutStatusRecord{
+			Version: themestudy.ScoutRequestVersion, State: string(atlasstudy.ProductStateFailed),
+			PromptVersion: themestudy.ScoutPromptVersion, Language: themestudy.LanguageEnglish,
+			CatalogSHA256: scoutRequest.CatalogSHA256, FailureCode: string(atlasstudy.FailureProvider),
+			Status: themestudy.ScoutStatus{State: string(atlasstudy.ProductStateFailed)},
+		}))
 		projected, studyMap, err := readAtlasStudyReportProduct(runDir, data)
 		if err != nil || projected == nil || projected.State != atlasstudy.ProductStateFailed ||
 			projected.FailureCode != atlasstudy.FailureProvider || studyMap != nil {
 			t.Fatalf("failed projection = %#v / %#v / %v", projected, studyMap, err)
+		}
+		if projected.FrontierBrowse == nil || projected.Themes != nil {
+			t.Fatalf("failed projection must carry the neutral browse and no shelf: %#v", projected)
 		}
 	})
 
@@ -1255,11 +1085,74 @@ func TestReadAtlasStudyReportProductTerminalStateMatrix(t *testing.T) {
 	t.Run("partial artifact set", func(t *testing.T) {
 		data := atlasStudyReportFixture(t)
 		runDir := t.TempDir()
-		writeAtlasStudyRequest(t, runDir, compileAtlasStudyFixture(t, data))
+		product := compileAtlasStudyFixture(t, data)
+		scoutRequest := themeScoutRequestFromProduct(t, data, product)
+		writeThemeArtifact(t, runDir, themestudy.ScoutRequestArtifactFilename, mustEncodeTheme(t, scoutRequest))
 		if _, _, err := readAtlasStudyReportProduct(runDir, data); err == nil {
 			t.Fatal("request without terminal status was accepted")
 		}
 	})
+}
+
+// themeScoutRequestFromProduct compiles the theme Scout request over the
+// fixture substrate: vocabulary from openable paths, focused seeds from the
+// compiled reading targets (span-bound where possible).
+func themeScoutRequestFromProduct(
+	t *testing.T,
+	data *ReportData,
+	product atlasstudy.Product,
+) themestudy.ScoutRequest {
+	t.Helper()
+	input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+	if err != nil {
+		t.Fatalf("BuildAtlasStudyInput: %v", err)
+	}
+	seen := make(map[string]struct{})
+	var files []themestudy.FileRef
+	for _, path := range data.OpenablePaths {
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		files = append(files, themestudy.FileRef{
+			Ref: "f" + string(rune('1'+len(files))), Path: path, Language: "go", Role: "production_source",
+		})
+	}
+	vocabulary := themestudy.BuildFileVocabulary(data.OpenablePaths, 0, func(path string) bool { return true })
+	_ = files // vocabulary owns the f* layer; files kept for the caller's reads
+	spanByTarget := make(map[string]string)
+	for _, span := range input.RouteSpans {
+		if len(span.AllowedTargetIDs) == 1 {
+			spanByTarget[span.AllowedTargetIDs[0]] = span.ID
+		}
+	}
+	var seeds []themestudy.SeedSpec
+	for index, target := range input.ReadingTargets {
+		spec := themestudy.SeedSpec{
+			Ref: "a" + string(rune('1' + index)), Path: target.Location.Path,
+			Line: target.Location.Line, Symbol: target.Symbol,
+			Provenance: "d211_span_reading_target", Kind: "focused",
+		}
+		if spanID, ok := spanByTarget[target.ID]; ok {
+			spec.CanonicalSpanID = spanID
+		}
+		seeds = append(seeds, spec)
+	}
+	reader := themeFixtureReader(data)
+	packs, err := themestudy.BuildSeedPacks(
+		seeds, 0, 0, 0, 0, reader, func(path string) (int, error) { return 40, nil },
+	)
+	if err != nil {
+		t.Fatalf("BuildSeedPacks: %v", err)
+	}
+	scoutRequest, err := themestudy.CompileScout(
+		themestudy.LanguageEnglish, vocabulary, packs,
+		themestudy.ScoutContext{RepositoryName: data.RepoName}, "",
+	)
+	if err != nil {
+		t.Fatalf("CompileScout: %v", err)
+	}
+	return scoutRequest
 }
 
 func TestReplayAcceptedArchitectureRequiresStatusArtifactAgreement(t *testing.T) {
@@ -1290,10 +1183,66 @@ func TestReplayAcceptedArchitectureRequiresStatusArtifactAgreement(t *testing.T)
 	}
 }
 
-func TestRunManifestVerifiesAtlasStudyProjectionAndTampering(t *testing.T) {
+func TestRunManifestVerifiesThemesProjectionAndTampering(t *testing.T) {
 	data := atlasStudyReportFixture(t)
 	runDir := t.TempDir()
-	writeAcceptedAtlasStudyArtifacts(t, runDir, data)
+	writeThemeStudyAcceptedArtifacts(t, runDir, data)
+	status, studyMap, err := readAtlasStudyReportProduct(runDir, data)
+	if err != nil {
+		t.Fatalf("read accepted product: %v", err)
+	}
+	if studyMap != nil {
+		t.Fatal("theme run must not produce a RepositoryStudyMap")
+	}
+	data.FormatVersion = CurrentFormatVersion
+	data.AtlasStudy, data.StudyMap = status, studyMap
+	reportJSON, err := json.Marshal(data)
+	if err != nil {
+		t.Fatalf("marshal report: %v", err)
+	}
+	material := MaterialInputs{
+		ThemeScoutRequestSHA256:       manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ScoutRequestArtifactFilename)),
+		ThemeScoutResultSHA256:        manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ScoutResultArtifactFilename)),
+		ThemeScoutStatusSHA256:        manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ScoutStatusArtifactFilename)),
+		ThemeSourceExpansionSHA256:    manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ExpansionArtifactFilename)),
+		ThemeAdjudicationRequestSHA256: manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.AdjudicationRequestArtifactFilename)),
+		ThemeAdjudicationResultSHA256:  manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.AdjudicationResultArtifactFilename)),
+		ThemeAdjudicationStatusSHA256:  manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.AdjudicationStatusArtifactFilename)),
+		StudyThemesSHA256:             manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.StudyThemesArtifactFilename)),
+	}
+	manifest := RunManifest{Version: CurrentRunManifestVersion, MaterialInputs: material}
+	if err := manifest.VerifyThemesArtifacts(runDir, reportJSON); err != nil {
+		t.Fatalf("VerifyThemesArtifacts: %v", err)
+	}
+
+	var tampered ReportData
+	if err := json.Unmarshal(reportJSON, &tampered); err != nil {
+		t.Fatalf("unmarshal report: %v", err)
+	}
+	tampered.AtlasStudy.Themes.Cards[0].FinalQuestion = "A different unsupported report question?"
+	tamperedJSON, _ := json.Marshal(tampered)
+	if err := manifest.VerifyThemesArtifacts(runDir, tamperedJSON); err == nil {
+		t.Fatal("tampered report projection matched exact theme artifacts")
+	}
+
+	resultPath := filepath.Join(runDir, themestudy.StudyThemesArtifactFilename)
+	resultRaw := mustReadAtlasStudyFile(t, runDir, themestudy.StudyThemesArtifactFilename)
+	if err := os.WriteFile(resultPath, append(resultRaw, ' '), 0o600); err != nil {
+		t.Fatalf("tamper study_themes: %v", err)
+	}
+	if err := manifest.VerifyThemesArtifacts(runDir, reportJSON); err == nil {
+		t.Fatal("tampered study_themes bytes matched manifest")
+	}
+}
+
+// TestRunManifestRejectsLegacyAtlasStudyArtifactsInThemeRun verifies the
+// Decision 213 cardinality gate: a theme run that also carries the retired
+// single-stage atlas-study request/result/status artifacts fails closed
+// (a run with both would have three Study semantic calls — forbidden).
+func TestRunManifestRejectsLegacyAtlasStudyArtifactsInThemeRun(t *testing.T) {
+	data := atlasStudyReportFixture(t)
+	runDir := t.TempDir()
+	writeThemeStudyAcceptedArtifacts(t, runDir, data)
 	status, studyMap, err := readAtlasStudyReportProduct(runDir, data)
 	if err != nil {
 		t.Fatalf("read accepted product: %v", err)
@@ -1304,32 +1253,24 @@ func TestRunManifestVerifiesAtlasStudyProjectionAndTampering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal report: %v", err)
 	}
-	manifest := RunManifest{Version: CurrentRunManifestVersion, MaterialInputs: MaterialInputs{
-		AtlasStudyRequestSHA256: manifestSHA256(mustReadAtlasStudyFile(t, runDir, atlasstudy.RequestArtifactFilename)),
-		AtlasStudyResultSHA256:  manifestSHA256(mustReadAtlasStudyFile(t, runDir, atlasstudy.ResultArtifactFilename)),
-		AtlasStudyStatusSHA256:  manifestSHA256(mustReadAtlasStudyFile(t, runDir, atlasstudy.StatusArtifactFilename)),
-	}}
-	if err := manifest.VerifyAtlasStudyArtifacts(runDir, reportJSON); err != nil {
-		t.Fatalf("VerifyAtlasStudyArtifacts: %v", err)
+	material := MaterialInputs{
+		ThemeScoutRequestSHA256:        manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ScoutRequestArtifactFilename)),
+		ThemeScoutResultSHA256:         manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ScoutResultArtifactFilename)),
+		ThemeScoutStatusSHA256:         manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ScoutStatusArtifactFilename)),
+		ThemeSourceExpansionSHA256:     manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ExpansionArtifactFilename)),
+		ThemeAdjudicationRequestSHA256: manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.AdjudicationRequestArtifactFilename)),
+		ThemeAdjudicationResultSHA256:  manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.AdjudicationResultArtifactFilename)),
+		ThemeAdjudicationStatusSHA256:  manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.AdjudicationStatusArtifactFilename)),
+		StudyThemesSHA256:              manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.StudyThemesArtifactFilename)),
 	}
-
-	var tampered ReportData
-	if err := json.Unmarshal(reportJSON, &tampered); err != nil {
-		t.Fatalf("unmarshal report: %v", err)
+	manifest := RunManifest{Version: CurrentRunManifestVersion, MaterialInputs: material}
+	// A legacy artifact present in the run dir must fail closed.
+	legacy := filepath.Join(runDir, atlasstudy.ResultArtifactFilename)
+	if err := os.WriteFile(legacy, []byte(`{}`), 0o600); err != nil {
+		t.Fatalf("write legacy artifact: %v", err)
 	}
-	tampered.StudyMap.Directions[0].Question = "A different unsupported report question?"
-	tamperedJSON, _ := json.Marshal(tampered)
-	if err := manifest.VerifyAtlasStudyArtifacts(runDir, tamperedJSON); err == nil {
-		t.Fatal("tampered report projection matched exact Atlas Study artifacts")
-	}
-
-	resultPath := filepath.Join(runDir, atlasstudy.ResultArtifactFilename)
-	resultRaw := mustReadAtlasStudyFile(t, runDir, atlasstudy.ResultArtifactFilename)
-	if err := os.WriteFile(resultPath, append(resultRaw, ' '), 0o600); err != nil {
-		t.Fatalf("tamper result: %v", err)
-	}
-	if err := manifest.VerifyAtlasStudyArtifacts(runDir, reportJSON); err == nil {
-		t.Fatal("tampered result bytes matched manifest")
+	if err := manifest.VerifyThemesArtifacts(runDir, reportJSON); err == nil {
+		t.Fatal("legacy atlas-study artifact present in a theme run must fail closed")
 	}
 }
 
@@ -1344,7 +1285,7 @@ func TestRunManifestAcceptsInsufficientCatalogIndependentlyOfArchitectureEnrichm
 		FormatVersion: CurrentFormatVersion, RepositoryAtlas: &atlas,
 		Navigator: &navigatorFixture.projection,
 		AtlasStudy: &AtlasStudyReportStatus{
-			Version: atlasstudy.ResultVersion, ProjectionVersion: AtlasStudyReportProjectionVersion,
+			Version: themestudy.ScoutResultVersion, ProjectionVersion: AtlasStudyReportProjectionVersion,
 			State:           atlasstudy.ProductStateUnavailable,
 			UnavailableCode: AtlasStudyUnavailableInsufficientCatalog,
 		},
@@ -1367,7 +1308,7 @@ func TestReadAtlasStudyReportProductRejectsObviousCredentialWithoutEcho(t *testi
 	runDir := t.TempDir()
 	const secret = "actual-secret-value"
 	if err := os.WriteFile(
-		filepath.Join(runDir, atlasstudy.RequestArtifactFilename),
+		filepath.Join(runDir, themestudy.ScoutRequestArtifactFilename),
 		[]byte(`{"api_key":"`+secret+`"}`), 0o600,
 	); err != nil {
 		t.Fatal(err)

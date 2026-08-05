@@ -32,6 +32,7 @@ import (
 	"github.com/dvordrova/repomap/internal/reportserver"
 	"github.com/dvordrova/repomap/internal/secretscan"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
+	"github.com/dvordrova/repomap/internal/themestudy"
 	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/tasklens"
 )
@@ -98,22 +99,22 @@ func main() {
 		}
 	case "dev":
 		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "Usage: repomap dev render-report <run-dir> [--repo <repo>] | atlas-study-response-replay --run-dir <copied-run> --request-sha256 <sha> --response <file> --response-sha256 <sha> | atlas-study-request-rebuild --run-dir <copied-run> [--repo <repo>] | atlas-study-response-mock --run-dir <copied-run> [--out <file>] | localization-check <run-dir> | localization-replay <run-dir> <projection.json> | localization-stage <run-dir> [<projection.json>] | localization-record <run-dir> [<projection.json>] | v32-refresh --run-dir <copied-run-dir> --repo <repo> [--reuse-study | --operate-only | --replay-saved] | fresh-repo-onboarding --run-dir <run-dir> [--repo <repo> [--replan-saved] | --replay-saved] | guided-tour <run-dir> | guided-tour-fanout <run-dir> | guided-tour-experiment <run-dir> | semantic-discovery <run-dir> | semantic-discovery-experiment <run-dir> | golden-mechanism <run-dir> [--probe-only] | golden-mechanism-v01 <run-dir> [--replay-old] | golden-mechanism-v02 <run-dir> [--prepare | --replay] | golden-mechanism-v03 <run-dir> [--replay] | golden-mechanism-v1 <run-dir> [--prepare | --replay] | chi-request-dispatch <run-dir> [--prepare | --replay-response | --replay] | mechanism-v1 <run-dir> [--replay] | review-cockpit --caddy-run <run-dir> --chi-run <run-dir> --out <output-dir> | prompt-versions")
+			fmt.Fprintln(os.Stderr, "Usage: repomap dev render-report <run-dir> [--repo <repo>] | theme-study-response-replay --run-dir <copied-run> --request-sha256 <sha> --response <file> --response-sha256 <sha> [--stage scout|adjudication] | theme-study-scout-request-rebuild --run-dir <copied-run> [--repo <repo>] | theme-study-response-mock --run-dir <copied-run> [--stage scout|adjudication] [--out <file>] | localization-check <run-dir> | localization-replay <run-dir> <projection.json> | localization-stage <run-dir> [<projection.json>] | localization-record <run-dir> [<projection.json>] | v32-refresh --run-dir <copied-run-dir> --repo <repo> [--reuse-study | --operate-only | --replay-saved] | fresh-repo-onboarding --run-dir <run-dir> [--repo <repo> [--replan-saved] | --replay-saved] | guided-tour <run-dir> | guided-tour-fanout <run-dir> | guided-tour-experiment <run-dir> | semantic-discovery <run-dir> | semantic-discovery-experiment <run-dir> | golden-mechanism <run-dir> [--probe-only] | golden-mechanism-v01 <run-dir> [--replay-old] | golden-mechanism-v02 <run-dir> [--prepare | --replay] | golden-mechanism-v03 <run-dir> [--replay] | golden-mechanism-v1 <run-dir> [--prepare | --replay] | chi-request-dispatch <run-dir> [--prepare | --replay-response | --replay] | mechanism-v1 <run-dir> [--replay] | review-cockpit --caddy-run <run-dir> --chi-run <run-dir> --out <output-dir> | prompt-versions")
 			os.Exit(2)
 		}
 		switch os.Args[2] {
-		case "atlas-study-response-replay":
-			if err := runAtlasStudyResponseReplayCLI(os.Args[3:], os.Stdout); err != nil {
+		case "theme-study-response-replay":
+			if err := runThemeStudyResponseReplayCLI(os.Args[3:], os.Stdout); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
-		case "atlas-study-request-rebuild":
-			if err := runAtlasStudyRequestRebuildCLI(os.Args[3:], os.Stdout); err != nil {
+		case "theme-study-scout-request-rebuild":
+			if err := runThemeStudyScoutRequestRebuildCLI(os.Args[3:], os.Stdout); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
-		case "atlas-study-response-mock":
-			if err := runAtlasStudyResponseMockCLI(os.Args[3:], os.Stdout); err != nil {
+		case "theme-study-response-mock":
+			if err := runThemeStudyResponseMockCLI(os.Args[3:], os.Stdout); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
@@ -820,28 +821,28 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		return fmt.Errorf("prepare exact Atlas Study source coverage: %w", err)
 	}
 
-	var studyOutcome atlasStudyRunOutcome
+	var studyOutcome themeStudyRunOutcome
 	var studyErr error
 	studyCalled := true
 	switch {
 	case *offline:
-		if cleanupErr := resetAtlasStudyArtifacts(runDir); cleanupErr != nil {
+		if cleanupErr := resetThemeStudyArtifacts(runDir); cleanupErr != nil {
 			studyErr = cleanupErr
 		} else {
-			studyOutcome = atlasStudyRunOutcome{
+			studyOutcome = themeStudyRunOutcome{
 				State: atlasstudy.ProductStateUnavailable, ProviderSkipped: true,
 			}
 			humanOutput.State("Study", "unavailable", "provider calls: 0", "reason: offline requested")
 		}
 	default:
-		studyOutcome, studyErr = runAtlasStudyForRun(
-			ctx, reportData, runDir, dDir,
+		studyOutcome, studyErr = runThemeStudyForRun(
+			ctx, reportData, runDir, dDir, analysisRoot,
 			researchRepositoryContext(initialState, repo), researchPolicy,
-			*noCache, true, atlasstudy.Language(reportLanguage), humanOutput,
+			*noCache, true, themestudy.Language(reportLanguage), humanOutput,
 		)
 	}
 	if ctxErr := ctx.Err(); ctxErr != nil && studyErr == nil {
-		if cleanupErr := resetAtlasStudyArtifacts(runDir); cleanupErr != nil {
+		if cleanupErr := resetThemeStudyArtifacts(runDir); cleanupErr != nil {
 			studyErr = errors.Join(ctxErr, cleanupErr)
 		} else {
 			studyErr = ctxErr

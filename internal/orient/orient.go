@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dvordrova/repomap/internal/boundary"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/flowexplain"
@@ -310,11 +311,16 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		boundaryResult, err := boundary.Observe(ctx, opts.RepoPath, s.FilteredFiles, *s.GoFacts)
+		if err != nil {
+			return nil, err
+		}
 		atlas, err := goadapter.Project(goadapter.Input{
-			RepositoryName:      s.RepoName,
-			Facts:               *s.GoFacts,
-			Catalog:             catalog,
-			PackageDeclarations: packageDeclarations,
+			RepositoryName:       s.RepoName,
+			Facts:                *s.GoFacts,
+			Catalog:              catalog,
+			PackageDeclarations:  packageDeclarations,
+			BoundaryObservations: boundaryResult.Observations,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("project repository Atlas: %w", err)
@@ -760,6 +766,11 @@ func runAtlasFirstLocalArtifacts(
 			return nil, err
 		}
 		atlasInput.PackageDeclarations = packageDeclarations
+		boundaryResult, err := boundary.Observe(ctx, opts.RepoPath, s.FilteredFiles, atlasInput.Facts)
+		if err != nil {
+			return nil, err
+		}
+		atlasInput.BoundaryObservations = boundaryResult.Observations
 		atlas, err := goadapter.Project(atlasInput)
 		if err != nil {
 			return nil, fmt.Errorf("project repository Atlas: %w", err)

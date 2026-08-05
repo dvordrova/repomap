@@ -7,16 +7,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dvordrova/repomap/internal/atlasstudy"
+	"github.com/dvordrova/repomap/internal/themestudy"
 )
 
-// TestAtlasStudyRequestRebuildRefusesOriginalCanonicalRun verifies the seam
-// never mutates the original canonical run: the copied-run metadata rule from
-// atlas-study-response-replay is enforced identically.
-func TestAtlasStudyRequestRebuildRefusesOriginalCanonicalRun(t *testing.T) {
+// TestThemeStudyScoutRequestRebuildRefusesOriginalCanonicalRun verifies the
+// seam never mutates the original canonical run: the copied-run metadata rule
+// from theme-study-response-replay is enforced identically.
+func TestThemeStudyScoutRequestRebuildRefusesOriginalCanonicalRun(t *testing.T) {
 	fixture := writeAtlasStudyResponseReplayFixture(t, "canonical-run", "canonical-run")
 	var stdout bytes.Buffer
-	err := runAtlasStudyRequestRebuildCLI([]string{"--run-dir", fixture.runDir}, &stdout)
+	err := runThemeStudyScoutRequestRebuildCLI([]string{"--run-dir", fixture.runDir}, &stdout)
 	if err == nil {
 		t.Fatalf("rebuild accepted the original canonical run")
 	}
@@ -25,25 +25,27 @@ func TestAtlasStudyRequestRebuildRefusesOriginalCanonicalRun(t *testing.T) {
 	}
 }
 
-// TestAtlasStudyRequestRebuildRefusesWhenResultOrStatusPersisted verifies the
-// seam only runs for a run that has not yet resolved a provider exchange.
-func TestAtlasStudyRequestRebuildRefusesWhenResultOrStatusPersisted(t *testing.T) {
+// TestThemeStudyScoutRequestRebuildRefusesWhenResultOrStatusPersisted
+// verifies the seam only runs for a run that has not yet resolved a provider
+// exchange.
+func TestThemeStudyScoutRequestRebuildRefusesWhenResultOrStatusPersisted(t *testing.T) {
 	fixture := writeAtlasStudyResponseReplayFixture(t, "copied-review", "original-canonical-run")
 	stale := []byte("stale result must not be read or changed\n")
-	mustWriteAtlasStudyReplayTestFile(t, filepath.Join(fixture.runDir, atlasstudy.ResultArtifactFilename), stale)
+	mustWriteAtlasStudyReplayTestFile(t, filepath.Join(fixture.runDir, themestudy.ScoutResultArtifactFilename), stale)
 	var stdout bytes.Buffer
-	err := runAtlasStudyRequestRebuildCLI([]string{"--run-dir", fixture.runDir}, &stdout)
+	err := runThemeStudyScoutRequestRebuildCLI([]string{"--run-dir", fixture.runDir}, &stdout)
 	if err == nil {
 		t.Fatalf("rebuild accepted a run with a persisted result")
 	}
 }
 
-// TestAtlasStudyRequestRebuildRefusesExistingRequest verifies the exclusive
-// write rule: the caller must delete the stale request from the copy first.
-func TestAtlasStudyRequestRebuildRefusesExistingRequest(t *testing.T) {
+// TestThemeStudyScoutRequestRebuildRefusesExistingRequest verifies the
+// exclusive write rule: the caller must delete the stale request from the
+// copy first.
+func TestThemeStudyScoutRequestRebuildRefusesExistingRequest(t *testing.T) {
 	fixture := writeAtlasStudyResponseReplayFixture(t, "copied-review", "original-canonical-run")
 	var stdout bytes.Buffer
-	err := runAtlasStudyRequestRebuildCLI([]string{"--run-dir", fixture.runDir}, &stdout)
+	err := runThemeStudyScoutRequestRebuildCLI([]string{"--run-dir", fixture.runDir}, &stdout)
 	if err == nil {
 		t.Fatalf("rebuild accepted a run with an existing request artifact")
 	}
@@ -52,22 +54,21 @@ func TestAtlasStudyRequestRebuildRefusesExistingRequest(t *testing.T) {
 	}
 }
 
-// TestAtlasStudyRequestRebuildFailsCleanlyWithoutFullRunData verifies that a
-// run dir without the canonical repository artifacts (snapshot, repository
-// Atlas) fails with an error and publishes nothing: no partial request may
-// ever be left behind.
-func TestAtlasStudyRequestRebuildFailsCleanlyWithoutFullRunData(t *testing.T) {
+// TestThemeStudyScoutRequestRebuildFailsCleanlyWithoutFullRunData verifies
+// that a run dir without the canonical repository artifacts fails with an
+// error and publishes nothing: no partial request may ever be left behind.
+func TestThemeStudyScoutRequestRebuildFailsCleanlyWithoutFullRunData(t *testing.T) {
 	fixture := writeAtlasStudyResponseReplayFixture(t, "copied-review", "original-canonical-run")
-	if err := os.Remove(filepath.Join(fixture.runDir, atlasstudy.RequestArtifactFilename)); err != nil {
+	if err := os.Remove(filepath.Join(fixture.runDir, themestudy.ScoutRequestArtifactFilename)); err != nil {
 		t.Fatalf("remove fixture request: %v", err)
 	}
 	var stdout bytes.Buffer
-	err := runAtlasStudyRequestRebuildCLI([]string{"--run-dir", fixture.runDir}, &stdout)
+	err := runThemeStudyScoutRequestRebuildCLI([]string{"--run-dir", fixture.runDir}, &stdout)
 	if err == nil {
 		t.Fatalf("rebuild succeeded without full run data")
 	}
 	for _, name := range []string{
-		atlasstudy.RequestArtifactFilename, atlasstudy.ResultArtifactFilename, atlasstudy.StatusArtifactFilename,
+		themestudy.ScoutRequestArtifactFilename, themestudy.ScoutResultArtifactFilename, themestudy.ScoutStatusArtifactFilename,
 	} {
 		if _, statErr := os.Lstat(filepath.Join(fixture.runDir, name)); !os.IsNotExist(statErr) {
 			t.Fatalf("rebuild failure left artifact %q behind", name)
@@ -78,17 +79,17 @@ func TestAtlasStudyRequestRebuildFailsCleanlyWithoutFullRunData(t *testing.T) {
 	}
 }
 
-// TestAtlasStudyRequestRebuildAuthorityModeFailsCleanlyWithoutManifestSeed
+// TestThemeStudyScoutRequestRebuildAuthorityModeFailsCleanlyWithoutManifestSeed
 // verifies the --repo authority mode refuses to compile a request when the
 // copied run carries no run_manifest.json authority seed, and publishes
 // nothing: no partial request may ever be left behind.
-func TestAtlasStudyRequestRebuildAuthorityModeFailsCleanlyWithoutManifestSeed(t *testing.T) {
+func TestThemeStudyScoutRequestRebuildAuthorityModeFailsCleanlyWithoutManifestSeed(t *testing.T) {
 	fixture := writeAtlasStudyResponseReplayFixture(t, "copied-review", "original-canonical-run")
-	if err := os.Remove(filepath.Join(fixture.runDir, atlasstudy.RequestArtifactFilename)); err != nil {
+	if err := os.Remove(filepath.Join(fixture.runDir, themestudy.ScoutRequestArtifactFilename)); err != nil {
 		t.Fatalf("remove fixture request: %v", err)
 	}
 	var stdout bytes.Buffer
-	err := runAtlasStudyRequestRebuildCLI(
+	err := runThemeStudyScoutRequestRebuildCLI(
 		[]string{"--run-dir", fixture.runDir, "--repo", fixture.runDir},
 		&stdout,
 	)
@@ -99,7 +100,7 @@ func TestAtlasStudyRequestRebuildAuthorityModeFailsCleanlyWithoutManifestSeed(t 
 		t.Fatalf("rebuild --repo error does not explain the missing seed: %v", err)
 	}
 	for _, name := range []string{
-		atlasstudy.RequestArtifactFilename, atlasstudy.ResultArtifactFilename, atlasstudy.StatusArtifactFilename,
+		themestudy.ScoutRequestArtifactFilename, themestudy.ScoutResultArtifactFilename, themestudy.ScoutStatusArtifactFilename,
 	} {
 		if _, statErr := os.Lstat(filepath.Join(fixture.runDir, name)); !os.IsNotExist(statErr) {
 			t.Fatalf("rebuild --repo failure left artifact %q behind", name)

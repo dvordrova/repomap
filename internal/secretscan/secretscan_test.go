@@ -95,6 +95,30 @@ func TestDetectKeepsQuotedDottedCredentialLiteralFailClosed(t *testing.T) {
 	}
 }
 
+func TestDetectIgnoresCredentialShapedWordsInsideMessageTemplates(t *testing.T) {
+	t.Parallel()
+
+	// Real source legitimately mentions credential-shaped words in log and
+	// error messages; a format template is prose, never a credential
+	// assignment (regression from the casdoor Scout request rejection).
+	for _, input := range []string{
+		`fmt.Sprintf(i18n.Translate(lang, "token:Grant_type: %s is not supported in this application"), responseType)`,
+		`fmt.Errorf("password: %s is invalid", name)`,
+		`log.Printf("client_secret: %v", clientSecret)`,
+		`PrivateKey:      tokenJwtPrivateKey,`,
+		`Password:        myRuntimePassword,`,
+		`clientSecret:    cfg.ClientSecret,`,
+	} {
+		if kind, found := Detect(input); found {
+			t.Errorf("Detect(%q) = %q, true; want message template ignored", input, kind)
+		}
+	}
+	// A real quoted credential literal must still fail closed.
+	if kind, found := Detect(`token: "actual-secret-value-1234567890"`); !found || kind != "credential assignment" {
+		t.Fatalf("Detect(quoted token) = %q, %v, want credential assignment", kind, found)
+	}
+}
+
 func TestDetectAlwaysIgnoresUnsafeOverride(t *testing.T) {
 	restore := SetDisabled(true)
 	defer restore()

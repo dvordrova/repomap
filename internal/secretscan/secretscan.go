@@ -24,6 +24,8 @@ var patterns = []struct {
 }
 
 var dynamicCredentialReference = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$`)
+var formatSpecifier = regexp.MustCompile(`%[sdvqxTtbf]`)
+var bareIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 var disabled atomic.Bool
 
 const (
@@ -97,12 +99,29 @@ func detect(text string) (string, bool) {
 	return "", false
 }
 
+func isBareIdentifier(value string) bool {
+	return bareIdentifier.MatchString(value)
+}
+
 func looksLikeCredentialAssignment(match string) bool {
 	value := credentialAssignmentValue(match)
 	if value == "" {
 		return false
 	}
+	// A message-template or format string ("token: %s is not supported") is
+	// not a credential assignment: the quoted tail is prose, not a secret.
+	// Real source legitimately mentions credential-shaped words in log and
+	// error messages; those must never fail a provider request.
+	if strings.ContainsAny(value, "%") && formatSpecifier.MatchString(value) {
+		return false
+	}
 	if !credentialAssignmentValueIsQuoted(match) && dynamicCredentialReference.MatchString(value) {
+		return false
+	}
+	// A bare runtime identifier ("PrivateKey: tokenJwtPrivateKey",
+	// "password: myVar") is a variable reference, not a credential literal.
+	// Only a literal — quoted, long, or digit/symbol-bearing — fails closed.
+	if !credentialAssignmentValueIsQuoted(match) && isBareIdentifier(value) {
 		return false
 	}
 	valueStart := strings.Index(match, value)
@@ -116,10 +135,14 @@ func looksLikeCredentialAssignment(match string) bool {
 		return false
 	}
 	for _, character := range value {
-		if character >= '0' && character <= '9' || strings.ContainsRune("-_./+=~", character) {
+		if character >= '0' && character <= '9' || strings.ContainsRune(".-/+=~", character) {
 			return true
 		}
 	}
+	// A short, unquoted, pure-identifier value is a variable or enum
+	// reference, not a credential literal ("token:Grant_type" in a message,
+	// "password: my_secret" in a runtime selector). Underscores alone are not
+	// credential evidence.
 	return false
 }
 

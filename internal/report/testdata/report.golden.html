@@ -871,7 +871,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     </aside>
   </div>
   <div class="rm-toast" id="rm-toast" role="status" aria-live="polite" hidden></div>
-  <script type="application/json" id="rm-report-data">{"format_version":30,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
+  <script type="application/json" id="rm-report-data">{"format_version":31,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
   <script id="rm-ui-messages-js">(function (global) {
   'use strict';
 
@@ -1028,11 +1028,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.diagnostics.support_coverage_complete": { params: [], text: "Support coverage complete" },
     "main.study.diagnostics.portfolio_target_met": { params: [], text: "Portfolio target met" },
     "main.study.diagnostics.omissions": { params: [], text: "Frontier omissions" },
+    "main.study.themes.title": { params: [], text: "Source-grounded study themes" },
+    "main.study.themes.copy": { params: [], text: "Editorial themes over exact anchors, each with its exact source readings. The model proposes; local reduction publishes only what the source supports." },
     "main.study.frontier.browse_title": { params: [], text: "All study questions" },
+    "main.study.frontier.open_theme": { params: ["count"], format: function (params) { return "Open theme " + params.count; } },
     "main.study.frontier.browse_copy": { params: [], text: "Every question the local analysis can answer for this repository, in a fixed local order. This is not a model ranking." },
-    "main.study.frontier.stage_accepted": { params: [], text: "Model pick" },
-    "main.study.frontier.stage_rejected_sibling": { params: [], text: "Picked by the model, rejected by local checks" },
-    "main.study.frontier.stage_advertised": { params: [], text: "Shown to the model, not picked" },
+    "main.study.frontier.stage_published": { params: [], text: "Published in a theme" },
+    "main.study.frontier.stage_scout_anchored": { params: [], text: "Picked by the model, not yet published" },
+    "main.study.frontier.stage_seed_advertised": { params: [], text: "Shown to the model, not picked" },
     "main.study.frontier.stage_considered": { params: [], text: "Local question — not shown to the model" },
     "main.study.frontier.stage_local_failed": { params: [], text: "Local question" },
     "main.study.frontier.source_unavailable": { params: [], text: "Source unavailable" },
@@ -1040,8 +1043,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.frontier.omission_sentence": { params: [], text: "Left out of the model's review to keep the request bounded — these are full local questions." },
     "main.study.frontier.failed_banner": { params: [], text: "The model study could not be completed; showing the local question set." },
     "main.study.frontier.ceiling_note": { params: ["shown", "total"], format: function (params) { return "Showing " + params.shown + " of " + params.total; } },
-    "main.study.frontier.not_accepted": { params: [], text: "not accepted" },
-    "main.study.frontier.open_direction": { params: ["count"], format: function (params) { return "Open direction card " + params.count; } },
     "main.study.diagnostics.yes": { params: [], text: "Yes" },
     "main.study.diagnostics.no": { params: [], text: "No" },
     "main.back.to.reading.path": { params: [], text: "← Back to reading path" },
@@ -2320,11 +2321,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.diagnostics.support_coverage_complete": { params: [], text: "Покрытие поддержки полное" },
     "main.study.diagnostics.portfolio_target_met": { params: [], text: "Целевой размер портфеля достигнут" },
     "main.study.diagnostics.omissions": { params: [], text: "Опущено из фронтира" },
+    "main.study.themes.title": { params: [], text: "Темы изучения на основе источников" },
+    "main.study.themes.copy": { params: [], text: "Редакционные темы над точными якорями, каждая с точными чтениями исходников. Модель предлагает; локальная редукция публикует только то, что подтверждает источник." },
     "main.study.frontier.browse_title": { params: [], text: "Все вопросы изучения" },
+    "main.study.frontier.open_theme": { params: ["count"], format: function (params) { return "Открыть тему " + params.count; } },
     "main.study.frontier.browse_copy": { params: [], text: "Каждый вопрос, который локальный анализ может поставить для этого репозитория, в фиксированном локальном порядке. Это не ранжирование моделью." },
-    "main.study.frontier.stage_accepted": { params: [], text: "Выбор модели" },
-    "main.study.frontier.stage_rejected_sibling": { params: [], text: "Выбрано моделью, отклонено локальными проверками" },
-    "main.study.frontier.stage_advertised": { params: [], text: "Показано модели, не выбрано" },
+    "main.study.frontier.stage_published": { params: [], text: "Опубликовано в теме" },
+    "main.study.frontier.stage_scout_anchored": { params: [], text: "Выбрано моделью, ещё не опубликовано" },
+    "main.study.frontier.stage_seed_advertised": { params: [], text: "Показано модели, не выбрано" },
     "main.study.frontier.stage_considered": { params: [], text: "Локальный вопрос — модели не показывался" },
     "main.study.frontier.stage_local_failed": { params: [], text: "Локальный вопрос" },
     "main.study.frontier.source_unavailable": { params: [], text: "Источник недоступен" },
@@ -2332,8 +2336,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.frontier.omission_sentence": { params: [], text: "Не вошли в рассмотрение моделью, чтобы запрос оставался ограниченным, — это полные локальные вопросы." },
     "main.study.frontier.failed_banner": { params: [], text: "Модельное исследование не выполнено; показан локальный набор вопросов." },
     "main.study.frontier.ceiling_note": { params: ["shown", "total"], format: function (params) { return "Показано " + params.shown + " из " + params.total; } },
-    "main.study.frontier.not_accepted": { params: [], text: "не принято" },
-    "main.study.frontier.open_direction": { params: ["count"], format: function (params) { return "Открыть карточку направления " + params.count; } },
     "main.study.diagnostics.yes": { params: [], text: "Да" },
     "main.study.diagnostics.no": { params: [], text: "Нет" },
     "main.back.to.reading.path": { params: [], text: "← Назад к пути изучения" },
@@ -3679,6 +3681,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		taskID: TASK_INVESTIGATION && TASK_INVESTIGATION.task_id || '',
     artifactID: '',
 		directionID: '',
+		themeCardOrdinal: 0,
 		operationID: '',
     stepIndex: 0,
     sourceLocation: null,
@@ -3772,6 +3775,22 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		return null;
 	}
 
+	// D213: the source-grounded theme shelf. Cards are locally reduced from
+	// the two semantic stages; readings carry exact source locations only.
+	function themeCards() {
+		var study = DATA.atlas_study;
+		var themes = study && study.themes;
+		return themes && Array.isArray(themes.cards) ? themes.cards : [];
+	}
+
+	function themeCardByOrdinal(ordinal) {
+		var cards = themeCards();
+		for (var index = 0; index < cards.length; index++) {
+			if (cards[index] && Number(cards[index].ordinal) === Number(ordinal)) return cards[index];
+		}
+		return null;
+	}
+
 	function pavedPathByID(pavedPathID) {
 		for (var index = 0; index < PAVED_PATHS.length; index++) {
 			if (PAVED_PATHS[index] && PAVED_PATHS[index].id === pavedPathID) return PAVED_PATHS[index];
@@ -3837,6 +3856,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			taskID: TASK_INVESTIGATION && TASK_INVESTIGATION.task_id || '',
       artifactID: '',
 		directionID: '',
+		themeCardOrdinal: 0,
 		operationID: '',
       stepIndex: 0,
       sourceLocation: null,
@@ -3911,7 +3931,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			return defaultWorkspaceHash();
 		}
     if (state.view === 'mechanisms') return '#/mechanisms';
-    if (state.view === 'study_overview' && STUDY_DIRECTIONS.length) return '#/study';
+    if (state.view === 'study_overview' && (STUDY_DIRECTIONS.length || themeCards().length)) return '#/study';
     if (state.view === 'architecture') {
       var focus = architectureFocusValue(state.mapTarget);
       return '#/architecture' + (focus ? '?focus=' + encodeURIComponent(focus) : '');
@@ -3922,6 +3942,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     }
 		if (state.view === 'study' && state.directionID) {
 			return '#/study/' + encodeRoutePart(state.directionID);
+		}
+		if (state.view === 'study' && state.themeCardOrdinal) {
+			return '#/study/theme/' + Number(state.themeCardOrdinal);
 		}
 		if (state.view === 'operate' && state.operationID) {
 			return '#/operate/' + encodeRoutePart(state.operationID);
@@ -3940,6 +3963,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		}
 		if (state.view === 'study' && state.directionID) {
 			return 'study:' + state.directionID;
+		}
+		if (state.view === 'study' && state.themeCardOrdinal) {
+			return 'study:theme:' + state.themeCardOrdinal;
 		}
 		if (state.view === 'study_overview') return 'view:study_overview';
 		if (state.view === 'operate' && state.operationID) {
@@ -3984,7 +4010,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       valid = state.view === 'mechanisms';
       canonicalHash = valid ? '#/mechanisms' : '#/overview';
 		} else if (segments.length === 1 && segments[0] === 'study') {
-			state.view = STUDY_DIRECTIONS.length ? 'study_overview' : 'overview';
+			state.view = (STUDY_DIRECTIONS.length || themeCards().length) ? 'study_overview' : 'overview';
 			valid = state.view === 'study_overview';
 			canonicalHash = valid ? '#/study' : '#/overview';
     } else if (segments.length === 1 && segments[0] === 'architecture') {
@@ -4019,6 +4045,16 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			} else {
 				state.view = 'study';
 				state.directionID = routeDirectionID;
+				canonicalHash = workspaceHashForState(state);
+			}
+		} else if (segments.length === 3 && segments[0] === 'study' && segments[1] === 'theme') {
+			var routeOrdinal = Number(segments[2]);
+			if (!themeCardByOrdinal(routeOrdinal)) {
+				valid = false;
+			} else {
+				state.view = 'study';
+				state.themeCardOrdinal = routeOrdinal;
+				state.directionID = '';
 				canonicalHash = workspaceHashForState(state);
 			}
 		} else if (segments.length === 2 && segments[0] === 'operate') {
@@ -4058,6 +4094,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			taskID: state.taskID || '',
       artifactID: state.artifactID || '',
 		directionID: state.directionID || '',
+		themeCardOrdinal: Number(state.themeCardOrdinal) || 0,
 		operationID: state.operationID || '',
       stepIndex: Number(state.stepIndex) || 0,
       sourceLocation: state.sourceLocation || null,
@@ -4089,6 +4126,18 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			if (!direction || direction.mechanism_id) return next;
 			next.view = 'study';
 			next.directionID = direction.id;
+			next.themeCardOrdinal = 0;
+			next.artifactID = '';
+			next.operationID = '';
+			next.stepIndex = 0;
+			next.mapTarget = null;
+			next.mapReturn = null;
+			return next;
+		case 'open_study_theme':
+			if (!themeCardByOrdinal(action.ordinal)) return next;
+			next.view = 'study';
+			next.directionID = '';
+			next.themeCardOrdinal = Number(action.ordinal) || 0;
 			next.artifactID = '';
 			next.operationID = '';
 			next.stepIndex = 0;
@@ -7886,6 +7935,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		commitWorkspaceState(next);
 	}
 
+	function openThemeCard(ordinal) {
+		var next = reduceWorkspaceState(workspaceState, {
+			type: 'open_study_theme', ordinal: Number(ordinal) || 0,
+		}, USER_MECHANISMS);
+		commitWorkspaceState(next);
+	}
+
 	function openPavedPath(operationID) {
 		if (!pavedPathByID(operationID)) {
 			commitWorkspaceState(emptyWorkspaceState());
@@ -8025,6 +8081,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		var root = document.getElementById('rm-study-overview');
 		if (!root) return;
 		root.replaceChildren();
+		// D213: the source-grounded theme shelf is the primary Study surface
+		// when present; the legacy direction surface only renders when no
+		// theme cards exist.
+		var cards = themeCards();
+		if (cards.length) {
+			renderAtlasStudyThemeShelf(root, cards);
+			return;
+		}
 		if (COMPLETE_STUDY_DIRECTIONS.length) {
 			renderStudyMapOverview(root, false);
 			return;
@@ -8040,6 +8104,73 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			directionList.appendChild(renderStudyDirectionCard(direction, index));
 		});
 		root.appendChild(directionList);
+	}
+
+	// D213: renders the source-grounded theme shelf (cards with exact
+	// readings), the diagnostics panel and the four-stage frontier browse.
+	function renderAtlasStudyThemeShelf(root, cards) {
+		root.appendChild(renderViewHeading(
+			msg('main.study'),
+			msg('main.study.themes.title'),
+			msg('main.study.themes.copy')
+		));
+		var shelf = el('div', 'rm-study-theme-shelf');
+		cards.forEach(function (card, index) {
+			shelf.appendChild(renderThemeCard(card, index));
+		});
+		root.appendChild(shelf);
+		var diagnostics = renderAtlasStudyDiagnostics();
+		if (diagnostics) root.appendChild(diagnostics);
+		var browse = renderAtlasStudyBrowse();
+		if (browse) root.appendChild(browse);
+	}
+
+	function renderThemeCard(card, index) {
+		var article = el('article', 'rm-study-theme-card' + (card.badge ? ' rm-study-theme-card--' + String(card.badge).toLowerCase() : ''));
+		var title = txt('h3', 'rm-study-theme-card__title', card.final_title || '');
+		title.onclick = function () { openThemeCard(card.ordinal); };
+		article.appendChild(title);
+		if (card.final_question) article.appendChild(txt('p', 'rm-study-theme-card__question', card.final_question));
+		if (card.why_it_matters) article.appendChild(txt('span', 'rm-study-theme-card__reason', card.why_it_matters));
+		var readings = el('ul', 'rm-study-theme-card__readings');
+		(card.readings || []).forEach(function (reading) {
+			var action = renderStudySourceAction(reading, 'rm-study-theme-card__reading', true);
+			if (action) {
+				var item = txt('li', 'rm-study-theme-card__reading-item', '');
+				item.appendChild(action);
+				readings.appendChild(item);
+			}
+		});
+		if (readings.childNodes.length) article.appendChild(readings);
+		return article;
+	}
+
+	function renderThemeDetailWorkspace() {
+		var root = document.getElementById('rm-study-detail');
+		if (!root) return;
+		root.replaceChildren();
+		var card = themeCardByOrdinal(workspaceState.themeCardOrdinal);
+		if (!card) return;
+		var back = txt('button', 'rm-secondary-action rm-study-back', msg('main.all.study.directions'));
+		back.type = 'button';
+		back.onclick = function () { navigateWorkspace('study_overview'); };
+		root.appendChild(back);
+		root.appendChild(renderViewHeading(
+			card.badge || '',
+			card.final_title || '',
+			card.final_question || ''
+		));
+		if (card.why_it_matters) {
+			var reason = el('aside', 'rm-study-outcome');
+			reason.appendChild(txt('strong', '', card.why_it_matters));
+			root.appendChild(reason);
+		}
+		var anchors = el('div', 'rm-study-reading-list');
+		(card.readings || []).forEach(function (reading, index) {
+			var item = renderStudyReadingAnchor(reading, index);
+			if (item) anchors.appendChild(item);
+		});
+		root.appendChild(anchors);
 	}
 
 	function renderRepositoryBriefHero() {
@@ -8144,15 +8275,16 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		return panel;
 	}
 
-	// D212: provider-free browse of the complete considered Study question set.
-	// Derived only inside readAtlasStudyReportProduct from already-validated
-	// local artifacts; never a model verdict and never per-span model state.
+	// D213: provider-free browse of the complete considered Study question set
+	// over the two semantic stages. Re-based four-stage membership:
+	// published / scout_anchored / seed_advertised / considered. The failed
+	// state renders the distinct neutral "Local question" label.
 	function atlasStudyBrowseStageLabel(stage, failedState) {
 		if (failedState) return msg('main.study.frontier.stage_local_failed');
 		switch (String(stage || '')) {
-			case 'accepted': return msg('main.study.frontier.stage_accepted');
-			case 'model_selected': return msg('main.study.frontier.stage_rejected_sibling');
-			case 'advertised': return msg('main.study.frontier.stage_advertised');
+			case 'published': return msg('main.study.frontier.stage_published');
+			case 'scout_anchored': return msg('main.study.frontier.stage_scout_anchored');
+			case 'seed_advertised': return msg('main.study.frontier.stage_seed_advertised');
 			case 'considered': return msg('main.study.frontier.stage_considered');
 			default: return msg('main.study.frontier.stage_local_failed');
 		}
@@ -8176,27 +8308,18 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		);
 	}
 
-	function atlasStudyBrowseDirectionCardNumber(directionID) {
-		var direction = studyDirectionByID(directionID);
-		if (!direction) return 0;
-		return COMPLETE_STUDY_DIRECTIONS.indexOf(direction) + 1;
-	}
-
 	function renderAtlasStudyBrowseRow(row, failedState, statusState) {
 		var item = el('li', 'rm-study-browse-row');
 		var stageLabel = atlasStudyBrowseStageLabel(row.stage, failedState);
-		if (!failedState && String(row.stage) === 'accepted' && row.direction_id) {
-			var badge = txt('button', 'rm-study-browse-row__stage rm-study-browse-row__stage-accepted', stageLabel);
+		if (!failedState && String(row.stage) === 'published' && row.theme_refs && row.theme_refs.length) {
+			var badge = txt('button', 'rm-study-browse-row__stage rm-study-browse-row__stage-published', stageLabel);
 			badge.type = 'button';
-			var cardNumber = atlasStudyBrowseDirectionCardNumber(row.direction_id);
-			badge.title = cardNumber > 0 ? msg('main.study.frontier.open_direction', { count: cardNumber }) : stageLabel;
-			badge.onclick = function () { openStudyDirection(row.direction_id); };
+			var card = themeCardByOrdinal(row.theme_refs[0]);
+			badge.title = card ? msg('main.study.frontier.open_theme', { count: card.ordinal }) : stageLabel;
+			badge.onclick = function () { openThemeCard(row.theme_refs[0]); };
 			item.appendChild(badge);
 		} else {
 			item.appendChild(txt('span', 'rm-study-browse-row__stage', stageLabel));
-		}
-		if (!failedState && String(row.stage) === 'model_selected' && statusState === 'accepted_partial') {
-			item.appendChild(txt('span', 'rm-study-browse-row__not-accepted', msg('main.study.frontier.not_accepted')));
 		}
 		var question = renderAtlasStudyBrowseRowSource(row);
 		if (question) {
@@ -8352,6 +8475,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
 	function studyReadingLocation(reading) {
 		if (!reading) return null;
+		// D213 theme readings carry a flat exact location ({path, line}).
+		if (reading.path) {
+			return {
+				path: reading.path,
+				line: Number(reading.line) || 0,
+				column: 0,
+				end_line: 0,
+			};
+		}
 		var location = reading.location || sourceSnippetLocation(reading.source);
 		if (!location || !location.path) return null;
 		return {
@@ -10220,6 +10352,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 				if (document && document.source) result.push(document.source);
 			});
 		});
+		// D213: theme card readings carry exact source; embedded snippets stay
+		// available for the browse source actions.
+		themeCards().forEach(function (card) {
+			(card.readings || []).forEach(function (reading) {
+				if (reading && reading.source) result.push(reading.source);
+			});
+		});
 		((STUDY_MAP && STUDY_MAP.shape) || []).forEach(function (area) {
 			if (area && area.source) result.push(area.source);
 		});
@@ -11760,7 +11899,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		var navView = view === 'mechanism'
 			? 'mechanisms'
 			: view === 'study'
-				? (STUDY_DIRECTIONS.length ? 'study_overview' : 'overview')
+				? ((STUDY_DIRECTIONS.length || themeCards().length) ? 'study_overview' : 'overview')
 				: view === 'operate'
 					? 'overview'
 					: view;
@@ -11776,7 +11915,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		if (workspaceState.view === 'investigate') renderTaskInvestigationWorkspace();
     if (workspaceState.view === 'mechanism') renderMechanismDetailWorkspace();
 		if (workspaceState.view === 'study_overview') renderIncompleteStudyOverview();
-		if (workspaceState.view === 'study') renderStudyDetailWorkspace();
+		if (workspaceState.view === 'study') {
+			if (workspaceState.themeCardOrdinal) renderThemeDetailWorkspace();
+			else renderStudyDetailWorkspace();
+		}
 		if (workspaceState.view === 'operate') renderOperateDetailWorkspace();
     if (workspaceState.view === 'architecture') {
       if (!architectureCanvasHost) renderArchitectureWorkspace();
@@ -11833,7 +11975,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		} else {
 			addWorkspaceTab(msg('main.overview'), 'overview');
 			if (!ATLAS_FIRST && USER_MECHANISMS.length) addWorkspaceTab(msg('main.mechanisms'), 'mechanisms');
-			if (STUDY_DIRECTIONS.length) addWorkspaceTab(msg('main.study'), 'study_overview');
+			if (STUDY_DIRECTIONS.length || themeCards().length) addWorkspaceTab(msg('main.study'), 'study_overview');
 			if (userArchitectureAvailable()) addWorkspaceTab(msg('main.architecture'), 'architecture');
 		}
 		if (DEBUG_MODE) addWorkspaceTab(msg('main.provenance'), 'provenance');

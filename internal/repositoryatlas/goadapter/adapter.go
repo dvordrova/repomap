@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/boundary"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
@@ -23,13 +24,18 @@ const (
 	PackageDeclarationEvidenceProvider  = "gofacts"
 	PackageDeclarationEvidenceVersion   = "package-declaration-v1"
 	PackageDeclarationEvidenceOperation = "package_declaration"
+
+	BoundaryObservationEvidenceProvider  = "boundary"
+	BoundaryObservationEvidenceVersion   = "resource-boundary-v1"
+	BoundaryObservationEvidenceOperation = "call_site"
 )
 
 type Input struct {
-	RepositoryName      string
-	Facts               gofacts.Facts
-	Catalog             surfacediscovery.TriggerCatalog
-	PackageDeclarations map[string]evidence.Location
+	RepositoryName       string
+	Facts                gofacts.Facts
+	Catalog              surfacediscovery.TriggerCatalog
+	PackageDeclarations  map[string]evidence.Location
+	BoundaryObservations []boundary.Observation
 }
 
 type exactEntrypoint struct {
@@ -64,6 +70,9 @@ func Project(input Input) (repositoryatlas.Atlas, error) {
 	}
 	entrypoints := projectEntrypoints(&atlas, input.Facts.EntrypointPackages, modules)
 	projectProcessEntries(&atlas, input.Catalog.Triggers, entrypoints)
+	if err := projectBoundaryObservations(&atlas, input.BoundaryObservations, input.Facts); err != nil {
+		return repositoryatlas.Atlas{}, err
+	}
 
 	canonical, err := repositoryatlas.Canonical(atlas)
 	if err != nil {
@@ -387,6 +396,136 @@ func exactProcessEvidence(
 
 func entrypointKey(packagePath, sourcePath string, line int) string {
 	return strings.Join([]string{packagePath, sourcePath, strconv.Itoa(line)}, "\x00")
+}
+
+// projectBoundaryObservations emits typed boundary/resource entities with
+// exact call-site evidence for every observed resource-boundary operation.
+// Each observation produces one EntityBoundary (typed operation class) and
+// one EntityResource (external target), one exact Evidence record at the call
+// site, and observations binding both entities to that evidence. Emission is
+// additive; the model never receives these canonical IDs.
+func projectBoundaryObservations(
+	atlas *repositoryatlas.Atlas,
+	values []boundary.Observation,
+	facts gofacts.Facts,
+) error {
+	if len(values) == 0 {
+		return nil
+	}
+	// Resolve the exact package unit the same way projectPackages does:
+	// stableID("unit-package", moduleID, canonicalPath).
+	moduleByID := make(map[string]gofacts.ModuleFact, len(facts.Modules))
+	for _, module := range facts.Modules {
+		moduleByID[module.ID] = module
+	}
+	type boundaryKey struct {
+		unitID string
+		class  boundary.Class
+	}
+	type resourceKey struct {
+		unitID     string
+		class      boundary.Class
+		importPath string
+	}
+	boundaries := make(map[boundaryKey]string)
+	resources := make(map[resourceKey]string)
+	emittedEvidence := make(map[string]bool)
+	unitForPackage := func(packagePath string) string {
+		for _, pkg := range facts.Packages {
+			if pkg.CanonicalPath == packagePath {
+				return stableID("unit-package", pkg.ModuleID, pkg.CanonicalPath)
+			}
+		}
+		return ""
+	}
+
+	// First pass: register boundary and resource entity identities.
+	for _, observation := range values {
+		if !observation.Class.Valid() || observation.ImportPath == "" ||
+			observation.PackagePath == "" || observation.Location.Path == "" ||
+			observation.Location.Line <= 0 {
+			continue
+		}
+		unitID := unitForPackage(observation.PackagePath)
+		if unitID == "" {
+			continue
+		}
+		key := boundaryKey{unitID: unitID, class: observation.Class}
+		if _, ok := boundaries[key]; !ok {
+			boundaries[key] = stableID("boundary", unitID, string(observation.Class))
+		}
+		resource := resourceKey{unitID: unitID, class: observation.Class, importPath: observation.ImportPath}
+		if _, ok := resources[resource]; !ok {
+			resources[resource] = stableID(
+				"resource", unitID, string(observation.Class), observation.ImportPath,
+			)
+		}
+	}
+
+	for key, id := range boundaries {
+		atlas.Entities = append(atlas.Entities, repositoryatlas.Entity{
+			ID: id, Kind: repositoryatlas.EntityBoundary, UnitID: key.unitID,
+		})
+	}
+	for key, id := range resources {
+		atlas.Entities = append(atlas.Entities, repositoryatlas.Entity{
+			ID: id, Kind: repositoryatlas.EntityResource, UnitID: key.unitID,
+		})
+	}
+
+	// Second pass: emit exact evidence + observations for each call site.
+	for _, observation := range values {
+		if !observation.Class.Valid() || observation.ImportPath == "" ||
+			observation.PackagePath == "" || observation.Location.Path == "" ||
+			observation.Location.Line <= 0 {
+			continue
+		}
+		unitID := unitForPackage(observation.PackagePath)
+		if unitID == "" {
+			continue
+		}
+		boundaryID := boundaries[boundaryKey{unitID: unitID, class: observation.Class}]
+		resourceID := resources[resourceKey{unitID: unitID, class: observation.Class, importPath: observation.ImportPath}]
+		if boundaryID == "" || resourceID == "" {
+			continue
+		}
+		evidenceID := stableID(
+			"evidence", unitID, string(observation.Class), observation.ImportPath,
+			observation.Location.Path, strconv.Itoa(observation.Location.Line),
+			strconv.Itoa(observation.Location.Column), observation.Symbol,
+		)
+		if emittedEvidence[evidenceID] {
+			continue
+		}
+		emittedEvidence[evidenceID] = true
+		atlas.Evidence = append(atlas.Evidence, repositoryatlas.Evidence{
+			ID: evidenceID, UnitID: unitID,
+			Location: evidence.Location{
+				Path: observation.Location.Path, Line: observation.Location.Line,
+				Column: observation.Location.Column,
+			},
+			Symbol: observation.Symbol,
+			Provenance: evidence.Provenance{
+				Provider:  BoundaryObservationEvidenceProvider,
+				Version:   BoundaryObservationEvidenceVersion,
+				Operation: BoundaryObservationEvidenceOperation,
+				Detail:    observation.ImportPath,
+			},
+		})
+		atlas.Observations = append(atlas.Observations,
+			repositoryatlas.Observation{
+				ID: stableID("observation", boundaryID, evidenceID), UnitID: unitID,
+				Subject:      repositoryatlas.EntityRef{Kind: repositoryatlas.EntityBoundary, ID: boundaryID},
+				EvidenceRefs: []string{evidenceID},
+			},
+			repositoryatlas.Observation{
+				ID: stableID("observation", resourceID, evidenceID), UnitID: unitID,
+				Subject:      repositoryatlas.EntityRef{Kind: repositoryatlas.EntityResource, ID: resourceID},
+				EvidenceRefs: []string{evidenceID},
+			},
+		)
+	}
+	return nil
 }
 
 func stableID(prefix string, parts ...string) string {

@@ -6,10 +6,114 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlasstudy"
+	"github.com/dvordrova/repomap/internal/navigator"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
+	"github.com/dvordrova/repomap/internal/themestudy"
 )
 
-func TestD210ManifestAcceptsCompleteAndPartialAtlasStudyCoverage(t *testing.T) {
+// d210ThemeManifestFixture builds an accepted/accepted_partial theme-run
+// manifest: the eight theme artifacts are written into a temp run dir and the
+// report carries the re-based v8 Study projection derived from them.
+func d210ThemeManifestFixture(t *testing.T, state atlasstudy.ProductState) (RunManifest, []byte, string) {
+	t.Helper()
+	data := atlasStudyReportFixture(t)
+	runDir := t.TempDir()
+	writeThemeStudyAcceptedArtifacts(t, runDir, data)
+	status, studyMap, err := readAtlasStudyReportProduct(runDir, data)
+	if err != nil {
+		t.Fatalf("read accepted product: %v", err)
+	}
+	if studyMap != nil {
+		t.Fatal("theme run must not produce a RepositoryStudyMap")
+	}
+	if state == atlasstudy.ProductStateAcceptedPartial && status.State == atlasstudy.ProductStateAccepted {
+		// Force the partial state: the report projection must agree with the
+		// artifacts, so we re-derive with a partial Adjudication result by
+		// re-reading after tampering the Adjudication result artifact.
+		adjResultRaw := mustReadAtlasStudyFile(t, runDir, themestudy.AdjudicationResultArtifactFilename)
+		var adjResult themestudy.AdjudicationResult
+		if err := json.Unmarshal(adjResultRaw, &adjResult); err != nil {
+			t.Fatal(err)
+		}
+		if len(adjResult.Themes) > 1 {
+			adjResult.Themes = adjResult.Themes[:1]
+		}
+		adjResult.State = string(atlasstudy.ProductStateAcceptedPartial)
+		adjResult.Status.Accepted = len(adjResult.Themes)
+		encoded, err := json.Marshal(adjResult)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeThemeArtifact(t, runDir, themestudy.AdjudicationResultArtifactFilename, encoded)
+		status, studyMap, err = readAtlasStudyReportProduct(runDir, data)
+		if err != nil {
+			t.Fatalf("re-read partial product: %v", err)
+		}
+		if studyMap != nil || status == nil || status.State != atlasstudy.ProductStateAcceptedPartial {
+			t.Fatalf("partial re-derivation failed: %#v / %#v", status, studyMap)
+		}
+	}
+	data.FormatVersion = CurrentFormatVersion
+	data.AtlasStudy, data.StudyMap = status, studyMap
+	// The manifest validates the navigation projection against the canvas, so
+	// derive it exactly like a real run does.
+	navigation, err := ProjectArchitectureComponentNavigation(data.ArchitectureCanvas, data.OpenablePaths)
+	if err != nil {
+		t.Fatalf("ProjectArchitectureComponentNavigation: %v", err)
+	}
+	data.ArchitectureComponentNavigation = navigation
+	// A real run carries a Navigator alongside the Atlas authority: the gate
+	// requires hasRepositoryAtlas == hasNavigatorStatus, so bind a local
+	// selected Navigator exactly like the run wiring would.
+	navigatorFixture := makeNavigatorArtifactFixture(t, *data.RepositoryAtlas, navigator.ProductStateSelected)
+	data.Navigator = &navigatorFixture.projection
+	reportJSON, err := json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Bind the repository Atlas artifact exactly as a real run does.
+	atlasJSON, err := repositoryatlas.CanonicalJSON(*data.RepositoryAtlas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeThemeArtifact(t, runDir, repositoryatlas.ArtifactFilename, atlasJSON)
+	writeThemeArtifact(t, runDir, navigator.RequestArtifactFilename, navigatorFixture.request)
+	writeThemeArtifact(t, runDir, navigator.RecordArtifactFilename, navigatorFixture.result)
+	writeThemeArtifact(t, runDir, navigator.StatusArtifactFilename, navigatorFixture.status)
+	material := MaterialInputs{
+		RepositoryAtlasSHA256:         manifestSHA256(atlasJSON),
+		NavigatorRequestSHA256:        manifestSHA256(navigatorFixture.request),
+		NavigatorResultSHA256:         manifestSHA256(navigatorFixture.result),
+		NavigatorStatusSHA256:         manifestSHA256(navigatorFixture.status),
+		ThemeScoutRequestSHA256:       manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ScoutRequestArtifactFilename)),
+		ThemeScoutResultSHA256:        manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ScoutResultArtifactFilename)),
+		ThemeScoutStatusSHA256:        manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ScoutStatusArtifactFilename)),
+		ThemeSourceExpansionSHA256:    manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ExpansionArtifactFilename)),
+		ThemeAdjudicationRequestSHA256: manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.AdjudicationRequestArtifactFilename)),
+		ThemeAdjudicationResultSHA256:  manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.AdjudicationResultArtifactFilename)),
+		ThemeAdjudicationStatusSHA256:  manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.AdjudicationStatusArtifactFilename)),
+		StudyThemesSHA256:             manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.StudyThemesArtifactFilename)),
+	}
+	manifest := validRunManifestFixture(t)
+	manifest.OpenablePaths = append([]string(nil), data.OpenablePaths...)
+	manifest.Components = nil
+	manifest.ReportSHA256 = manifestSHA256(reportJSON)
+	manifest.MaterialInputs.RepositoryAtlasSHA256 = material.RepositoryAtlasSHA256
+	manifest.MaterialInputs.NavigatorRequestSHA256 = material.NavigatorRequestSHA256
+	manifest.MaterialInputs.NavigatorResultSHA256 = material.NavigatorResultSHA256
+	manifest.MaterialInputs.NavigatorStatusSHA256 = material.NavigatorStatusSHA256
+	manifest.MaterialInputs.ThemeScoutRequestSHA256 = material.ThemeScoutRequestSHA256
+	manifest.MaterialInputs.ThemeScoutResultSHA256 = material.ThemeScoutResultSHA256
+	manifest.MaterialInputs.ThemeScoutStatusSHA256 = material.ThemeScoutStatusSHA256
+	manifest.MaterialInputs.ThemeSourceExpansionSHA256 = material.ThemeSourceExpansionSHA256
+	manifest.MaterialInputs.ThemeAdjudicationRequestSHA256 = material.ThemeAdjudicationRequestSHA256
+	manifest.MaterialInputs.ThemeAdjudicationResultSHA256 = material.ThemeAdjudicationResultSHA256
+	manifest.MaterialInputs.ThemeAdjudicationStatusSHA256 = material.ThemeAdjudicationStatusSHA256
+	manifest.MaterialInputs.StudyThemesSHA256 = material.StudyThemesSHA256
+	return manifest, reportJSON, runDir
+}
+
+func TestD210ManifestAcceptsCompleteAndPartialThemeStudy(t *testing.T) {
 	t.Parallel()
 
 	for _, state := range []atlasstudy.ProductState{
@@ -19,7 +123,7 @@ func TestD210ManifestAcceptsCompleteAndPartialAtlasStudyCoverage(t *testing.T) {
 		state := state
 		t.Run(string(state), func(t *testing.T) {
 			t.Parallel()
-			manifest, reportJSON := d210AtlasStudyManifestFixture(t, state)
+			manifest, reportJSON, _ := d210ThemeManifestFixture(t, state)
 			if err := manifest.VerifyReportJSON(reportJSON); err != nil {
 				t.Fatalf("VerifyReportJSON: %v", err)
 			}
@@ -27,7 +131,7 @@ func TestD210ManifestAcceptsCompleteAndPartialAtlasStudyCoverage(t *testing.T) {
 	}
 }
 
-func TestD210ManifestRejectsAtlasStudyCoverageDriftAndHistoricalProjection(t *testing.T) {
+func TestD210ManifestRejectsThemeStudyDriftAndHistoricalProjection(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -43,11 +147,18 @@ func TestD210ManifestRejectsAtlasStudyCoverageDriftAndHistoricalProjection(t *te
 			want: "projection is incomplete",
 		},
 		{
-			name: "accepted collapses the model-selected stage onto accepted spans",
+			name: "scout-anchored stage cannot exceed the seed-advertised frontier",
 			mutate: func(report *ReportData) {
-				report.AtlasStudy.ModelSelectedSpanCount = report.AtlasStudy.AcceptedSpanCount + 1
+				report.AtlasStudy.ModelSelectedSpanCount = report.AtlasStudy.AdvertisedSpanCount + 1
 			},
-			want: "complete Atlas Study projection",
+			want: "accepted Atlas Study projection is invalid",
+		},
+		{
+			name: "published stage cannot exceed scout-anchored",
+			mutate: func(report *ReportData) {
+				report.AtlasStudy.AcceptedSpanCount = report.AtlasStudy.ModelSelectedSpanCount + 1
+			},
+			want: "accepted Atlas Study projection is invalid",
 		},
 		{
 			name: "accepted_partial only with a rejected sibling",
@@ -57,33 +168,25 @@ func TestD210ManifestRejectsAtlasStudyCoverageDriftAndHistoricalProjection(t *te
 			want: "accepted Atlas Study projection is invalid",
 		},
 		{
-			name: "model-selected stage cannot exceed the advertised frontier",
+			name: "browse total must equal the considered count",
 			mutate: func(report *ReportData) {
-				report.AtlasStudy.ModelSelectedSpanCount = report.AtlasStudy.AdvertisedSpanCount + 1
+				report.AtlasStudy.FrontierBrowse.Total++
 			},
-			want: "accepted Atlas Study projection is invalid",
+			want: "accepted Atlas Study browse projection is invalid",
 		},
 		{
-			name: "accepted span count must equal the direction counts",
+			name: "theme card must carry prose and readings",
 			mutate: func(report *ReportData) {
-				report.AtlasStudy.AcceptedSpanCount = report.AtlasStudy.DirectionCount + 1
+				report.AtlasStudy.Themes.Cards[0].FinalTitle = ""
 			},
-			want: "accepted Atlas Study projection is invalid",
-		},
-		{
-			name: "advertised spans differ from candidate shelf",
-			mutate: func(report *ReportData) {
-				report.AtlasStudy.CandidateCoverage.SpansConsidered++
-				report.AtlasStudy.CandidateCoverage.SpansSelected++
-			},
-			want: "accepted Atlas Study candidate/span counts do not match",
+			want: "accepted Atlas Study theme card is invalid",
 		},
 	}
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			manifest, encoded := d210AtlasStudyManifestFixture(t, atlasstudy.ProductStateAccepted)
+			manifest, encoded, _ := d210ThemeManifestFixture(t, atlasstudy.ProductStateAccepted)
 			var report ReportData
 			if err := json.Unmarshal(encoded, &report); err != nil {
 				t.Fatal(err)
@@ -98,6 +201,23 @@ func TestD210ManifestRejectsAtlasStudyCoverageDriftAndHistoricalProjection(t *te
 				t.Fatalf("VerifyReportJSON error = %v, want %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestD210ManifestRejectsLegacySingleStageBindingInThemeRun(t *testing.T) {
+	t.Parallel()
+
+	manifest, reportJSON, _ := d210ThemeManifestFixture(t, atlasstudy.ProductStateAccepted)
+	// A legacy atlas-study artifact digest bound in the manifest must fail
+	// closed: a run with both the retired single stage and the theme stages
+	// would have three Study semantic calls, which Decision 213 forbids.
+	manifest.MaterialInputs.AtlasStudyRequestSHA256 = strings.Repeat("d", 64)
+	manifest.MaterialInputs.AtlasStudyResultSHA256 = strings.Repeat("e", 64)
+	manifest.MaterialInputs.AtlasStudyStatusSHA256 = strings.Repeat("f", 64)
+	manifest.ReportSHA256 = manifestSHA256(reportJSON)
+	if err := manifest.VerifyReportJSON(reportJSON); err == nil ||
+		!strings.Contains(err.Error(), "legacy atlas-study artifact") {
+		t.Fatalf("legacy single-stage binding error = %v", err)
 	}
 }
 
@@ -134,70 +254,5 @@ func TestD210CandidateCoverageProjectionKeepsExactCountsWithoutPrivateBucketIDs(
 	}
 }
 
-func d210AtlasStudyManifestFixture(
-	t *testing.T,
-	state atlasstudy.ProductState,
-) (RunManifest, []byte) {
-	t.Helper()
-	atlas := repositoryAtlasFixture()
-	atlasJSON, err := repositoryatlas.CanonicalJSON(atlas)
-	if err != nil {
-		t.Fatal(err)
-	}
-	navigatorFixture := makeNavigatorArtifactFixture(t, atlas, "selected")
-	// Four-stage projection: two considered spans, both advertised, one
-	// returned direction locally accepted. The second advertised span receives
-	// no returned direction — normal not_selected under D211 — and never turns
-	// the accepted result into accepted_partial.
-	status := &AtlasStudyReportStatus{
-		Version: atlasstudy.ResultVersion, ProjectionVersion: AtlasStudyReportProjectionVersion,
-		State: state,
-		CandidateCoverage: &AtlasStudyCandidateCoverage{
-			TargetsConsidered: 3, TargetsSelected: 2,
-			SpansConsidered: 2, SpansSelected: 2, Complete: false,
-			PerRole: []AtlasStudyRoleCandidateCoverage{
-				{Role: atlasstudy.SupportEntryHandoff, Considered: 2, Selected: 1},
-				{Role: atlasstudy.SupportProcessEntry, Considered: 1, Selected: 1},
-			},
-			PackageBuckets: []AtlasStudyAnonymousCoverage{
-				{Considered: 1, Selected: 1},
-				{Considered: 2, Selected: 1},
-			},
-		},
-		DirectionCount: 1, PublishedDirectionCount: 1,
-		ConsideredSpanCount:    2,
-		AdvertisedSpanCount:    2,
-		ModelSelectedSpanCount: 1,
-		AcceptedSpanCount:      1,
-		FrontierComplete:       true,
-		SupportCoverageComplete: true,
-	}
-	if state == atlasstudy.ProductStateAccepted {
-		status.SelectedItemsComplete = true
-	} else {
-		// A rejected returned sibling keeps the model-selected stage above the
-		// locally accepted count while the flag stays false.
-		status.ModelSelectedSpanCount = 2
-	}
-	reportJSON, err := json.Marshal(&ReportData{
-		FormatVersion:   CurrentFormatVersion,
-		RepositoryAtlas: &atlas,
-		Navigator:       &navigatorFixture.projection,
-		AtlasStudy:      status,
-		StudyMap:        &RepositoryStudyMap{Directions: []StudyDirection{{ID: "direction-1"}}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	manifest := validRunManifestFixture(t)
-	manifest.OpenablePaths, manifest.Components = nil, nil
-	manifest.ReportSHA256 = manifestSHA256(reportJSON)
-	manifest.MaterialInputs.RepositoryAtlasSHA256 = manifestSHA256(atlasJSON)
-	manifest.MaterialInputs.NavigatorRequestSHA256 = manifestSHA256(navigatorFixture.request)
-	manifest.MaterialInputs.NavigatorResultSHA256 = manifestSHA256(navigatorFixture.result)
-	manifest.MaterialInputs.NavigatorStatusSHA256 = manifestSHA256(navigatorFixture.status)
-	manifest.MaterialInputs.AtlasStudyRequestSHA256 = strings.Repeat("d", 64)
-	manifest.MaterialInputs.AtlasStudyResultSHA256 = strings.Repeat("e", 64)
-	manifest.MaterialInputs.AtlasStudyStatusSHA256 = strings.Repeat("f", 64)
-	return manifest, reportJSON
-}
+// keep the repositoryatlas import used by the fixture builder.
+var _ = repositoryatlas.CanonicalJSON

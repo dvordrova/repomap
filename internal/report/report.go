@@ -25,14 +25,20 @@ import (
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 )
 
-const CurrentFormatVersion = 30
+const CurrentFormatVersion = 31
 
-const AtlasStudyReportProjectionVersion = 7
+const AtlasStudyReportProjectionVersion = 8
 
 // MaxAtlasStudyBrowseSpans bounds the report-side provider-free per-span
 // browse. Truthful Total/Shown keep larger repositories honest; the complete
 // considered set stays bound by the status artifact's CandidateSHA256 digest.
 const MaxAtlasStudyBrowseSpans = 256
+
+// The Study theme shelf is not capped: every published card is shown.
+// The complete reduced portfolio stays bound by the study_themes artifact
+// digest and its bounded encode (MaxStudyThemesArtifactBytes), so the
+// report-side projection never needs to hide cards — more facts is better,
+// the product investigates as far as the evidence goes.
 
 const maxAtlasStudyReportCoverageCount = 1_000_000
 
@@ -284,9 +290,10 @@ type NavigatorReportProduct struct {
 
 // AtlasStudyReportStatus deliberately excludes provider prose, raw errors and
 // private request identities. The exact request/result/status artifacts stay
-// hash-bound material inputs of the authorized report. It carries the four
-// distinct span stage counts and the four independent coverage flags instead
-// of one overloaded coverage_complete.
+// hash-bound material inputs of the authorized report. Under Decision 213 the
+// Study section carries the editorial theme shelf (Themes) plus the re-based
+// four-stage browse; the retired single-stage atlas-study provider call no
+// longer contributes a Brief or per-span directions to new runs.
 type AtlasStudyReportStatus struct {
 	Version                 int                          `json:"version"`
 	ProjectionVersion       int                          `json:"projection_version"`
@@ -297,15 +304,15 @@ type AtlasStudyReportStatus struct {
 	DirectionCount          int                          `json:"direction_count,omitempty"`
 	PublishedDirectionCount int                          `json:"published_direction_count,omitempty"`
 	HiddenDirectionCount    int                          `json:"hidden_direction_count,omitempty"`
-	// Four-stage span counts: considered (complete set), advertised (request
-	// frontier), model-selected (returned directions, rejected siblings
-	// included) and locally accepted (valid directions only).
+	// Four-stage span counts: considered (complete set), seed-advertised (a*
+	// seeds in the Scout request catalog), scout-anchored (anchors in a
+	// Scout-accepted candidate), published (anchors in final theme readings).
 	ConsideredSpanCount    int `json:"considered_span_count,omitempty"`
 	AdvertisedSpanCount    int `json:"advertised_span_count,omitempty"`
 	ModelSelectedSpanCount int `json:"model_selected_span_count,omitempty"`
 	AcceptedSpanCount      int `json:"accepted_span_count,omitempty"`
 	// Four independent coverage flags. They are recorded independently and are
-	// part of the documented projection v6 contract, so they serialize even
+	// part of the documented projection contract, so they serialize even
 	// when false.
 	FrontierComplete        bool `json:"frontier_complete"`
 	SelectedItemsComplete   bool `json:"selected_items_complete"`
@@ -321,18 +328,63 @@ type AtlasStudyReportStatus struct {
 	// readAtlasStudyReportProduct from already-validated local artifacts and
 	// stays nil for unavailable/prepared/uncalled states.
 	FrontierBrowse *FrontierBrowse `json:"frontier_browse,omitempty"`
+	// Themes is the editorial, source-grounded Study theme shelf (Decision
+	// 213). It is derived only inside readAtlasStudyReportProduct from the
+	// SHA-bound theme artifacts and stays nil for unavailable/prepared/
+	// uncalled states and on Scout failure.
+	Themes *AtlasStudyThemesProjection `json:"themes,omitempty"`
 }
 
 // AtlasStudySpanStage is the highest reached stage of one span, derived by
 // exact set arithmetic at projection time. It is never provider-authored.
-type AtlasStudySpanStage string // "considered" | "advertised" | "model_selected" | "accepted"
+// Under Decision 213 the four stages are re-based onto the two-stage theme
+// pipeline: considered / seed-advertised / scout-anchored / published.
+type AtlasStudySpanStage string // "considered" | "seed_advertised" | "scout_anchored" | "published"
 
 const (
 	AtlasStudySpanStageConsidered      AtlasStudySpanStage = "considered"
 	AtlasStudySpanStageAdvertised      AtlasStudySpanStage = "advertised"
 	AtlasStudySpanStageModelSelected   AtlasStudySpanStage = "model_selected"
 	AtlasStudySpanStageAccepted        AtlasStudySpanStage = "accepted"
+	AtlasStudySpanStageSeedAdvertised  AtlasStudySpanStage = "seed_advertised"
+	AtlasStudySpanStageScoutAnchored   AtlasStudySpanStage = "scout_anchored"
+	AtlasStudySpanStagePublished       AtlasStudySpanStage = "published"
 )
+
+// AtlasStudyThemesProjection is the bounded public-safe theme shelf.
+// Total/Shown are always truthful and equal: every published card renders,
+// never truncated.
+type AtlasStudyThemesProjection struct {
+	Total int              `json:"total"`
+	Shown int              `json:"shown"`
+	Cards []StudyThemeCard `json:"cards"`
+}
+
+// StudyThemeCard is one published theme card. It carries editorial prose,
+// ordered exact readings and an honest badge, and zero source bytes. The
+// public Ordinal is manifest-relative (canonical theme order); CanonicalID is
+// never serialized here.
+type StudyThemeCard struct {
+	Ordinal          int                  `json:"ordinal"`
+	FinalTitle       string               `json:"final_title"`
+	FinalQuestion    string               `json:"final_question"`
+	WhyItMatters     string               `json:"why_it_matters"`
+	ExpectedLearning string               `json:"expected_learning"`
+	ThemeKind        string               `json:"theme_kind"`
+	Readings         []StudyThemeReading  `json:"readings"`
+	Badge            string               `json:"badge"`
+	Limitation       string               `json:"limitation,omitempty"`
+}
+
+// StudyThemeReading is one ordered exact reading on a theme card. Path/line
+// publish only for paths in OpenablePaths; otherwise the neutral unavailable
+// state renders (no dead buttons).
+type StudyThemeReading struct {
+	Label  string `json:"label"`
+	Symbol string `json:"symbol"`
+	Path   string `json:"path,omitempty"`
+	Line   int    `json:"line,omitempty"`
+}
 
 // FrontierBrowse is the bounded provider-free per-span browse of the complete
 // considered Study question set. Total/Shown are always truthful; Spans never
@@ -348,12 +400,11 @@ type FrontierBrowse struct {
 // Stage is the four-value membership. Source/Endpoint are exact user-code
 // locations published only for paths in OpenablePaths; a row whose source
 // cannot open carries the neutral unavailable state instead of a dead button.
-// DirectionID is present ONLY on accepted rows: it is the public
-// manifest-relative report direction id (matching the study_map direction id
-// used by openStudyDirection), derived at projection time from the validated
-// result.Directions array order (model rank); no canonical span ID is
-// serialized. An accepted row with no matching published direction (should not
-// occur — fail closed) is a projection error.
+// ThemeRefs is present ONLY on published rows: it lists every matching
+// published theme ordinal in canonical theme order (all matching themes
+// render, D213 B1/N5); no canonical span ID is serialized. A published row
+// with no matching theme (should not occur — fail closed) renders without
+// links.
 type Span struct {
 	Ordinal     int                 `json:"ordinal"`
 	Title       string              `json:"title"`    // exact source-card symbol/label; system-path "from → to" endpoints
@@ -361,7 +412,7 @@ type Span struct {
 	Stage       AtlasStudySpanStage `json:"stage"`
 	Source      UserCodeLocation    `json:"source"`             // only when Source.Path ∈ data.OpenablePaths
 	Endpoint    *UserCodeLocation   `json:"endpoint,omitempty"` // only for system-path spans whose endpoint path ∈ data.OpenablePaths
-	DirectionID string              `json:"direction_id,omitempty"` // accepted rows ONLY; public study_map direction id (model rank)
+	ThemeRefs   []int               `json:"theme_refs,omitempty"` // published rows ONLY; canonical theme ordinals
 }
 
 // AtlasStudyOmissionAggregate is the public-safe report projection of one

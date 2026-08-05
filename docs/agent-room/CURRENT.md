@@ -1,19 +1,62 @@
 # Current approved implementation decision
 
 Decision:
-    decisions/213-atlas-backed-source-grounded-study-themes.md
+    decisions/214-locally-observed-resource-boundaries.md
 
 Status:
-    Decision 213 active: an Atlas-backed, source-grounded editorial Study theme
-    shelf produced by exactly two bounded semantic stages (Theme Scout, then
-    Source Review / Theme Adjudication) with local source expansion and a
-    deterministic reducer; the D212 local browse is kept and re-based onto it
+    Decision 214 active and ACCEPTED: the local Atlas gains typed,
+    evidence-exact resource boundaries for two classes — persistent storage
+    (databases/object stores) and outbound network clients (HTTP/gRPC/SDK) —
+    each connected to the exact observed call-site operation and visible in
+    the Atlas surface and D213 Study seed catalog
 
 Approved by:
-    Repository owner via the Monster council gate (red-team PASS,
-    council/31-red-team-213.md) in the current session
+    Repository owner via the Monster council gate (red-team REVISE→PASS,
+    council/20-red-team-214.md); implementation accepted 20260805 after the
+    live Casdoor RU A/B (exit 0, Atlas 17 boundary + 22 resource entities,
+    108 exact call sites, Study 10 cards with 25/33 Atlas-proven anchors)
 
 Notes:
+    Decision 214 builds the first slice of locally observed Boundaries and
+    Resources on top of the accepted Atlas-first base. The Atlas schema
+    already defines EntityBoundary and EntityResource (repositoryatlas/
+    model.go:34-35) but the Go adapter emits only surface+operation entities
+    (goadapter/adapter.go:318-321) — the accepted casdoor product proves the
+    gap: the Atlas contains zero occurrences of http., database/sql, sql.,
+    redis, mysql, postgres, grpc, smtp, os.file, ioutil while the D213 Study
+    cards correctly claim DB lifecycle (object/ormer.go), SOCKS5 proxy
+    (proxy/proxy.go), TLS certificates (certificate/) — source-true but not
+    Atlas-proven. The model layer knows; the local evidence layer is blind.
+    The slice is bounded (red-team P1-1) to exactly two boundary classes:
+    persistent storage and outbound network clients, observed at exact AST
+    call sites (the gofacts/entrypoints.go:48 findMainFunctionAnchors
+    pattern) — NOT import classification (which already exists). The
+    differentiator is exact call-site evidence: (path, line, column,
+    enclosing symbol) bound to the boundary entity. Message publish/consume,
+    caches/locks, config/secrets, OS boundaries, and Overview boundary canvas
+    rendering are explicitly deferred (recorded list, not silently dropped).
+    Emission is additive into the existing Go adapter: EntityResource for
+    the storage/network target, EntityBoundary for the typed operation
+    class, each with exact evidence observations — no new artifact family,
+    no new semantic stage, no provider call. The D213 Study Scout consumes
+    the new entities as additional exact seeds. No silent truncation
+    (red-team P1-2): every observed boundary call site is either published
+    or recorded in a closed wire-visible omission; the D213 seed-pack
+    omission wart (seed_budget count=5 hidden as omitted:0 on the wire) is
+    recorded as a separate corrective, not inherited. Fixed detector list in
+    code, not a plugin registry (red-team contract condition). Privacy:
+    producer is local/deterministic, the import graph stays in gofacts and
+    never reaches any wire, canonical Atlas IDs never reach the model, no
+    legacy adapter/migration, old Atlas versions fail closed. Acceptance is
+    provider-free first (go test ./..., go vet ./..., detector contract
+    tests, offline casdoor + service runs with typed boundary entities, D213
+    shelf still rendering, make build → PATH binary), then exactly ONE fresh
+    live Casdoor semantic A/B run (owner credentials in the zsh session,
+    `repomap cache clear && repomap --github-url ... --no-secrets --lang ru`)
+    judged by M1–M9 material improvement: the Atlas must show observable
+    storage/network boundaries with exact source and the Study must cite
+    them. Acceptance, never a tuning loop, no second live calibration.
+
     Decision 213 restores the editorial multi-anchor Study theme layer on top of
     the accepted Atlas-first base. One new deterministic local package
     `internal/themestudy` produces a flat names-only `f*` file vocabulary, bounded
