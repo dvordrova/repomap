@@ -12,7 +12,7 @@ REPOMAP_LLM_ENDPOINT      required full chat/completions URL
 REPOMAP_LLM_MODEL         model name
 REPOMAP_LLM_API_KEY       required for bearer auth
 REPOMAP_LLM_AUTH          bearer (default) or none
-REPOMAP_LLM_MAX_TOKENS    positive integer (default 64000; sole output-ceiling override)
+REPOMAP_LLM_MAX_TOKENS    positive integer (default 128000; sole output-ceiling override)
 REPOMAP_LLM_TIMEOUT       Go duration (default 10m)
 ```
 
@@ -126,11 +126,15 @@ DeepSeek-mode default: `deepseek-v4-flash`.
 - Prompt must contain the word **json** (case-insensitive match is fine).
 - Prompt must include an example JSON shape so the model knows the expected schema.
 - Every semantic request serializes the exact configured global output ceiling.
-  The default is 64,000 and `REPOMAP_LLM_MAX_TOKENS` is its only override.
+  The default is 128,000 and `REPOMAP_LLM_MAX_TOKENS` is its only override.
   Request builders do not raise, lower, or double it for a stage or endpoint.
   Historical Pebble calibration returned empty content at 1,600 tokens and
   succeeded at the then-configured 6,000-token ceiling; that evidence motivated
   removing smaller stage-specific caps, not a current per-stage exception.
+  A 64,000 default truncated the etcd architecture-synthesis response
+  (`finish_reason=length`, JSON cut mid-array); the provider accepts a
+  128,000-token ceiling, so the global default now reflects that measured
+  headroom.
 - DeepSeek V4 enables thinking by default. The architecture grouping request is
   a bounded classification task, so the official DeepSeek endpoint receives
   `"thinking": {"type":"disabled"}` for that request only. Generic compatible
@@ -148,7 +152,7 @@ DeepSeek-mode default: `deepseek-v4-flash`.
 - Guided editor, fan-in, and leaf requests all use the exact global ceiling.
   Historical Chatto and self-experiment runs showed `thinking/max` consuming
   6,000 and 12,000-token envelopes before completing the strict JSON wrapper;
-  the current 64,000 default replaces those former stage floors. An explicit
+  the current 128,000 default replaces those former stage floors. An explicit
   `finish_reason=length`, malformed or incomplete semantic content, or local
   Guided Tour rejection is terminal for that semantic request. It is never
   resent for more output or replaced by a fresh proposal. Only a locally
@@ -163,7 +167,7 @@ DeepSeek-mode default: `deepseek-v4-flash`.
   fields. Historical scans exhausted 6,000 and 12,000 output-token envelopes
   and ended in locally rejected truncated JSON; no invalid response was
   accepted or written to the semantic replay record. Those measurements
-  informed the current global 64,000 default rather than creating per-stage
+  informed the current global 128,000 default rather than creating per-stage
   minimums.
 - Study reading-pack review is a bounded classification over three to five
   exact anchors. The official endpoint receives explicit disabled thinking for
