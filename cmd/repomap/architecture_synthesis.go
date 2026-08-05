@@ -94,6 +94,54 @@ func isPublishableArchitectureFailure(err error) bool {
 	return errors.As(err, &failure)
 }
 
+// architectureOutputResourceExhausted marks an attempted Architecture provider
+// output/response resource exhaustion (Decision 215). It preserves the
+// underlying ResourceLimitError via Unwrap so classification can extract exact
+// bounded evidence, and it becomes publishable only after the failed status
+// and model-research accounting are durable (see
+// persistAndClassifyArchitectureSynthesisStatus). Pre-call resource limits
+// never take this type.
+type architectureOutputResourceExhausted struct {
+	cause error
+}
+
+func (failure *architectureOutputResourceExhausted) Error() string {
+	if failure == nil || failure.cause == nil {
+		return "architecture synthesis: provider output resource exhausted"
+	}
+	return failure.cause.Error()
+}
+
+func (failure *architectureOutputResourceExhausted) Unwrap() error {
+	if failure == nil {
+		return nil
+	}
+	return failure.cause
+}
+
+func isArchitectureOutputResourceExhausted(err error) bool {
+	var failure *architectureOutputResourceExhausted
+	return errors.As(err, &failure)
+}
+
+// classifyArchitectureOutputResourceExhaustion records the attempted
+// Architecture call exactly once in model-research state (Decision 215 C) and
+// returns the typed publishable failure. An accounting-write failure joins the
+// original resource error and remains terminal. The caller has already
+// attempted the provider call, so this never classifies a pre-call rejection.
+func classifyArchitectureOutputResourceExhaustion(
+	runDir string,
+	outcome architectureSynthesisOutcome,
+	policy modelresearch.Policy,
+	usage modelresearch.Usage,
+	cause error,
+) error {
+	if recordErr := recordArchitectureResearch(runDir, outcome, "resource_limited", false, policy, usage); recordErr != nil {
+		return errors.Join(cause, recordErr)
+	}
+	return &architectureOutputResourceExhausted{cause: cause}
+}
+
 type componentLandscapeSynthesizer interface {
 	ComponentSynthesisPromptJSON(componentmap.SynthesisPrompt) ([]byte, error)
 	SynthesizeComponentLandscapeBodyMeasured(context.Context, []byte) (modelresearch.ProviderResult, error)
@@ -579,7 +627,9 @@ func ensureArchitectureSynthesisWithOptions(
 		)
 		callErr := fmt.Errorf("architecture synthesis: provider call: %w", err)
 		if isSemanticResourceLimit(callErr) {
-			return outcome, callErr
+			return outcome, classifyArchitectureOutputResourceExhaustion(
+				runDir, outcome, policy, usage, callErr,
+			)
 		}
 		if recordErr := recordArchitectureResearch(runDir, outcome, "failed", false, policy, usage); recordErr != nil {
 			return outcome, errors.Join(callErr, recordErr)
@@ -604,7 +654,9 @@ func ensureArchitectureSynthesisWithOptions(
 		)
 		validationErr := fmt.Errorf("architecture synthesis: validate response: %w", err)
 		if isSemanticResourceLimit(validationErr) {
-			return outcome, validationErr
+			return outcome, classifyArchitectureOutputResourceExhaustion(
+				runDir, outcome, policy, usage, validationErr,
+			)
 		}
 		if recordErr := recordArchitectureResearch(runDir, outcome, "rejected", false, policy, usage); recordErr != nil {
 			return outcome, errors.Join(validationErr, recordErr)
@@ -1085,6 +1137,63 @@ func normalizeArchitectureSynthesisOutputLanguage(value string) (string, error) 
 	}
 }
 
+// architectureSynthesisOutputLimitStatus builds the Decision 215 v9 failed
+// status for an attempted Architecture output/response resource exhaustion.
+// It carries only bounded operational evidence: exact request bytes, known
+// partial response bytes, transport attempts, reported usage, the configured
+// output ceiling and the observed completion tokens, finish_reason=length,
+// response_complete=false, and the local/requested/structural/anchor input
+// counts. It never carries an accepted proposal, partial membership counts, a
+// model Architecture source or level, a fallback, provider prose, or the raw
+// response.
+func architectureSynthesisOutputLimitStatus(
+	outcome architectureSynthesisOutcome,
+	synthesisErr error,
+) report.ArchitectureSynthesisStatus {
+	var limitErr *modelresearch.ResourceLimitError
+	if !errors.As(synthesisErr, &limitErr) {
+		limitErr = &modelresearch.ResourceLimitError{}
+	}
+	status := report.ArchitectureSynthesisStatus{
+		Version:                  report.ArchitectureSynthesisStatusVersion,
+		State:                    report.ArchitectureSynthesisFailed,
+		ErrorCode:                report.ArchitectureSynthesisErrorProviderOutputLimit,
+		RequestBytes:             outcome.InputBytes,
+		ResponseBytes:            outcome.ResponseBytes,
+		ResponseContentBytes:     outcome.ResponseContentBytes,
+		LatencyMillis:            outcome.LatencyMillis,
+		ProviderRequestCount:     1,
+		TransportAttempts:        outcome.TransportAttempts,
+		LocalCandidateCount:      outcome.LocalCandidateCount,
+		RequestedConceptualCount: outcome.RequestedConceptualCount,
+		StructuralLocatorCount:   outcome.StructuralLocatorCount,
+		AnchorCount:              outcome.AnchorCount,
+		UsageReported:            outcome.UsageReported,
+		InputTokens:              outcome.InputTokens,
+		OutputTokens:             outcome.OutputTokens,
+		ConfiguredMaxTokens:      limitErr.ConfiguredMaxTokens,
+		ObservedOutputTokens:     outcome.OutputTokens,
+		FinishReason:             outcome.FinishReason,
+		ResponseComplete:         outcome.ResponseComplete,
+	}
+	if status.ConfiguredMaxTokens == 0 {
+		status.ConfiguredMaxTokens = limitErr.Limit
+	}
+	if status.ConfiguredMaxTokens == 0 {
+		// The response-byte overflow limit error carries no token ceiling; the
+		// exact global output ceiling is the configured budget for the
+		// attempted call.
+		status.ConfiguredMaxTokens = 64_000
+	}
+	if status.ObservedOutputTokens == 0 {
+		status.ObservedOutputTokens = limitErr.OutputTokens
+	}
+	if status.FinishReason == "" {
+		status.FinishReason = limitErr.FinishReason
+	}
+	return status
+}
+
 func removeArchitectureSynthesisRunRecord(path string) error {
 	err := os.Remove(path)
 	if err == nil || errors.Is(err, os.ErrNotExist) {
@@ -1098,6 +1207,12 @@ func persistArchitectureSynthesisStatus(
 	outcome architectureSynthesisOutcome,
 	synthesisErr error,
 ) error {
+	if isArchitectureOutputResourceExhausted(synthesisErr) {
+		return writeArchitectureSynthesisStatus(
+			runDir,
+			architectureSynthesisOutputLimitStatus(outcome, synthesisErr),
+		)
+	}
 	if isSemanticResourceLimit(synthesisErr) {
 		return nil
 	}
@@ -1124,6 +1239,13 @@ func persistAndClassifyArchitectureSynthesisStatus(
 			return errors.Join(synthesisErr, statusErr)
 		}
 		return statusErr
+	}
+	if isArchitectureOutputResourceExhausted(synthesisErr) {
+		// Decision 215: the failed status and model-research accounting are
+		// durable, so the attempted Architecture output exhaustion is
+		// publishable. main continues to Study and the report with the
+		// canonical local Canvas.
+		return &publishableArchitectureFailure{cause: synthesisErr}
 	}
 	if errors.Is(synthesisErr, errArchitectureSynthesisRejected) {
 		return &publishableArchitectureFailure{cause: synthesisErr}

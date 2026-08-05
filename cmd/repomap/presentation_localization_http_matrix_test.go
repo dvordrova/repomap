@@ -14,7 +14,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/localization"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
@@ -102,7 +101,13 @@ func TestSemanticResourceLimitStopsBeforeAuthorizedPublication(t *testing.T) {
 		wantErrorStage string
 	}{
 		{
-			name:           "representative earlier optional architecture stage",
+			// Decision 215 supersedes D194's whole-run termination for an
+			// attempted Architecture output exhaustion: the failed status and
+			// accounting are durable, the partial response stays
+			// diagnostic-only, and the run continues to Study and the report
+			// with the canonical local Canvas. Pre-call and other-stage
+			// resource limits remain terminal (covered elsewhere).
+			name:           "attempted architecture output exhaustion continues",
 			terminalStage:  "architecture",
 			wantErrorStage: "architecture_synthesis",
 		},
@@ -136,6 +141,9 @@ func TestSemanticResourceLimitStopsBeforeAuthorizedPublication(t *testing.T) {
 				calls.add(kind)
 				finishReason := "stop"
 				if kind == test.terminalStage {
+					// The architecture stage exhausts its output budget with a
+					// partial response and no closing JSON (etcd-shaped).
+					content = []byte(`{"records":[{"kind":"subsystem","ref":"g1","name":"Fixture core","description":"Fixture"},{"kind":"component","ref":"c1","subsystem_ref":"g1","name":"Fixture component","description":"Fixture grouping","member_refs":[{"kind":"package","ref":"p1"},{"kind":"package","ref":"p2"},{"kind":"package","ref":"p3"},{"kind":"package","ref":"p1"}`)
 					finishReason = "length"
 				}
 				writer.Header().Set("Content-Type", "application/json")
@@ -179,48 +187,60 @@ func TestSemanticResourceLimitStopsBeforeAuthorizedPublication(t *testing.T) {
 					return nil
 				},
 			})
-			var limitErr *deepseek.ResourceLimitError
-			if !errors.As(err, &limitErr) {
+			if err != nil {
 				t.Fatalf(
-					"runDefaultWithDeps() error = %v, want ResourceLimitError\nstderr:\n%s",
+					"runDefaultWithDeps() error = %v, want continuation\nstderr:\n%s",
 					err,
 					stderr.String(),
 				)
 			}
-			if limitErr.Stage != test.wantErrorStage ||
-				limitErr.Kind != deepseek.ResourceLimitOutputTokens ||
-				limitErr.FinishReason != "length" {
-				t.Fatalf("terminal ResourceLimitError = %#v", limitErr)
-			}
-
 			sequence := calls.sequence()
 			if len(sequence) == 0 || sequence[len(sequence)-1] != test.terminalStage {
 				t.Fatalf("semantic call sequence = %v, want final %q", sequence, test.terminalStage)
 			}
-			if test.terminalStage == "architecture" {
-				if len(sequence) != 1 {
-					t.Fatalf(
-						"architecture-limit call sequence = %v, want [architecture]",
-						sequence,
-					)
-				}
-			}
-			if opened != 0 || served != 0 {
-				t.Fatalf("publication side effects: open=%d serve=%d", opened, served)
-			}
-
+			// D215: the run continues past the attempted Architecture output
+			// exhaustion and publishes the report; the failed status binds the
+			// local Canvas.
 			runDir := presentationLocalizationResourceRunDir(t, debugDir)
 			for _, name := range []string{
 				"report.json",
 				"report.html",
 				report.RunManifestFilename,
 			} {
-				if _, statErr := os.Lstat(filepath.Join(runDir, name)); !errors.Is(statErr, os.ErrNotExist) {
-					t.Fatalf("terminal resource outcome published %s: %v", name, statErr)
+				if _, statErr := os.Lstat(filepath.Join(runDir, name)); errors.Is(statErr, os.ErrNotExist) {
+					t.Fatalf("continuation did not publish %s: %v", name, statErr)
 				}
 			}
-			if _, statErr := os.Lstat(filepath.Join(debugDir, "latest")); !errors.Is(statErr, os.ErrNotExist) {
-				t.Fatalf("terminal resource outcome linked latest: %v", statErr)
+			statusData, err := os.ReadFile(filepath.Join(runDir, report.ArchitectureSynthesisStatusFile))
+			if err != nil {
+				t.Fatalf("failed Architecture status missing after continuation: %v", err)
+			}
+			var status report.ArchitectureSynthesisStatus
+			if err := json.Unmarshal(statusData, &status); err != nil {
+				t.Fatal(err)
+			}
+			if status.State != report.ArchitectureSynthesisFailed ||
+				status.ErrorCode != report.ArchitectureSynthesisErrorProviderOutputLimit ||
+				status.FinishReason != "length" || status.ResponseComplete {
+				t.Fatalf("continuation failed status = %#v", status)
+			}
+			if _, statErr := os.Lstat(filepath.Join(runDir, report.ArchitectureSynthesisFile)); !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatalf("continuation published a synthesis record: %v", statErr)
+			}
+			reportData, err := report.ReadRunDir(runDir)
+			if err != nil {
+				t.Fatalf("read published report: %v", err)
+			}
+			if reportData.ArchitectureCanvas == nil || reportData.ArchitectureCanvas.Fallback ||
+				len(reportData.ArchitectureCanvas.Components) == 0 {
+				t.Fatalf("continuation lost the canonical local Canvas: %#v", reportData.ArchitectureCanvas)
+			}
+			if reportData.ArchitectureSynthesis == nil ||
+				reportData.ArchitectureSynthesis.ErrorCode != report.ArchitectureSynthesisErrorProviderOutputLimit {
+				t.Fatalf("report.json did not bind the failed Architecture status: %#v", reportData.ArchitectureSynthesis)
+			}
+			if _, statErr := os.Lstat(filepath.Join(debugDir, "latest")); errors.Is(statErr, os.ErrNotExist) {
+				t.Fatalf("continuation did not link latest: %v", statErr)
 			}
 		})
 	}

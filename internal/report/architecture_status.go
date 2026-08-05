@@ -11,7 +11,7 @@ import (
 
 const (
 	ArchitectureSynthesisStatusFile    = "architecture_synthesis_status.json"
-	ArchitectureSynthesisStatusVersion = 8
+	ArchitectureSynthesisStatusVersion = 9
 
 	ArchitectureSynthesisSucceeded   = "succeeded"
 	ArchitectureSynthesisCached      = "cached"
@@ -20,6 +20,13 @@ const (
 
 	ArchitectureSynthesisUnavailableOfflineCode             = "offline"
 	ArchitectureSynthesisUnavailableExactWorkspaceGraphCode = "exact_workspace_graph_unavailable"
+
+	// ArchitectureSynthesisErrorProviderOutputLimit is the closed failed
+	// status code for an attempted Architecture provider call that exhausted
+	// its output-token or response-byte budget (Decision 215). The partial
+	// response is diagnostic-only; the exact local Canvas remains the visible
+	// Architecture.
+	ArchitectureSynthesisErrorProviderOutputLimit = "provider_output_limit"
 )
 
 // architectureStatusValidationCodes is the complete diagnostic vocabulary
@@ -115,23 +122,30 @@ type ArchitectureSynthesisStatus struct {
 	UsageReported            bool                    `json:"usage_reported,omitempty"`
 	InputTokens              int                     `json:"input_tokens,omitempty"`
 	OutputTokens             int                     `json:"output_tokens,omitempty"`
-	FinishReason             string                  `json:"finish_reason,omitempty"`
-	ResponseComplete         bool                    `json:"response_complete,omitempty"`
-	ResponseState            string                  `json:"response_state,omitempty"`
-	ValidationCodes          []string                `json:"validation_diagnostic_codes,omitempty"`
-	ProviderCallSucceeded    bool                    `json:"provider_call_succeeded,omitempty"`
-	ResponseParsed           bool                    `json:"response_parsed,omitempty"`
-	ProposalAccepted         bool                    `json:"proposal_accepted,omitempty"`
-	ProposalPartial          bool                    `json:"proposal_partial,omitempty"`
-	ProposalNormalized       bool                    `json:"proposal_normalized,omitempty"`
-	ProposalRejected         bool                    `json:"proposal_rejected,omitempty"`
-	FallbackSelected         bool                    `json:"fallback_selected,omitempty"`
-	ArchitectureSource       string                  `json:"architecture_source,omitempty"`
-	ArchitectureLevel        int                     `json:"architecture_level,omitempty"`
-	NormalizationCount       int                     `json:"normalization_count,omitempty"`
-	FallbackReason           string                  `json:"fallback_reason,omitempty"`
-	ErrorCode                string                  `json:"error_code,omitempty"`
-	UnavailableCode          string                  `json:"unavailable_code,omitempty"`
+	// ConfiguredMaxTokens and ObservedOutputTokens carry the bounded output
+	// envelope evidence for the failed provider_output_limit state (Decision
+	// 215): the exact configured global ceiling and the observed completion
+	// token count that exhausted it. They are never populated for accepted,
+	// cached, unavailable, or other failed states.
+	ConfiguredMaxTokens   int      `json:"configured_max_tokens,omitempty"`
+	ObservedOutputTokens  int      `json:"observed_output_tokens,omitempty"`
+	FinishReason          string   `json:"finish_reason,omitempty"`
+	ResponseComplete      bool     `json:"response_complete,omitempty"`
+	ResponseState         string   `json:"response_state,omitempty"`
+	ValidationCodes       []string `json:"validation_diagnostic_codes,omitempty"`
+	ProviderCallSucceeded bool     `json:"provider_call_succeeded,omitempty"`
+	ResponseParsed        bool     `json:"response_parsed,omitempty"`
+	ProposalAccepted      bool     `json:"proposal_accepted,omitempty"`
+	ProposalPartial       bool     `json:"proposal_partial,omitempty"`
+	ProposalNormalized    bool     `json:"proposal_normalized,omitempty"`
+	ProposalRejected      bool     `json:"proposal_rejected,omitempty"`
+	FallbackSelected      bool     `json:"fallback_selected,omitempty"`
+	ArchitectureSource    string   `json:"architecture_source,omitempty"`
+	ArchitectureLevel     int      `json:"architecture_level,omitempty"`
+	NormalizationCount    int      `json:"normalization_count,omitempty"`
+	FallbackReason        string   `json:"fallback_reason,omitempty"`
+	ErrorCode             string   `json:"error_code,omitempty"`
+	UnavailableCode       string   `json:"unavailable_code,omitempty"`
 }
 
 func (status ArchitectureSynthesisStatus) Validate() error {
@@ -146,6 +160,11 @@ func (status ArchitectureSynthesisStatus) Validate() error {
 	case ArchitectureSynthesisFailed:
 		if status.ErrorCode == "" || status.UnavailableCode != "" {
 			return fmt.Errorf("failed architecture synthesis status requires an error code")
+		}
+		if status.ErrorCode == ArchitectureSynthesisErrorProviderOutputLimit {
+			if err := status.validateProviderOutputLimitEvidence(); err != nil {
+				return err
+			}
 		}
 	case ArchitectureSynthesisUnavailable:
 		if status.Version < 3 || !validArchitectureUnavailableCode(status.UnavailableCode) || status.ErrorCode != "" ||
@@ -164,6 +183,7 @@ func (status ArchitectureSynthesisStatus) Validate() error {
 			status.UncoveredConceptualCount != 0 || len(status.UncoveredConceptualIDs) != 0 ||
 			status.UsageReported ||
 			status.InputTokens != 0 || status.OutputTokens != 0 ||
+			status.ConfiguredMaxTokens != 0 || status.ObservedOutputTokens != 0 ||
 			status.FinishReason != "" || status.ResponseComplete ||
 			status.ResponseState != "" || len(status.ValidationCodes) != 0 {
 			return fmt.Errorf("unavailable architecture synthesis status is inconsistent")
@@ -298,6 +318,15 @@ func (status ArchitectureSynthesisStatus) validateResolvedMembershipEvidence() e
 	} else if status.MemberOccurrences != 0 || status.DistinctMembers != 0 {
 		return fmt.Errorf("uncounted architecture response cannot contain membership counts")
 	}
+	// Decision 215: an attempted Architecture provider call that exhausted its
+	// output budget carries exact bounded evidence and nothing else. The
+	// partial response is diagnostic-only and the local Canvas is the visible
+	// Architecture.
+	if status.ErrorCode == ArchitectureSynthesisErrorProviderOutputLimit {
+		if err := status.validateProviderOutputLimitEvidence(); err != nil {
+			return err
+		}
+	}
 	if err := status.validateConceptualCoverage(); err != nil {
 		return err
 	}
@@ -306,6 +335,14 @@ func (status ArchitectureSynthesisStatus) validateResolvedMembershipEvidence() e
 	}
 	switch status.FinishReason {
 	case "", "stop", "content_filter", "tool_calls", "insufficient_system_resource":
+	case "length":
+		// Decision 215: a v9 failed provider_output_limit status truthfully
+		// records finish_reason=length with response_complete=false. Every
+		// other state rejects a length-ended claim below.
+		if status.State != ArchitectureSynthesisFailed ||
+			status.ErrorCode != ArchitectureSynthesisErrorProviderOutputLimit {
+			return fmt.Errorf("architecture synthesis status has unsupported finish reason %q", status.FinishReason)
+		}
 	default:
 		return fmt.Errorf("architecture synthesis status has unsupported finish reason %q", status.FinishReason)
 	}
@@ -348,6 +385,50 @@ func (status ArchitectureSynthesisStatus) validateResolvedMembershipEvidence() e
 			return fmt.Errorf("architecture synthesis status contains duplicate validation diagnostic code")
 		}
 		seen[code] = struct{}{}
+	}
+	return nil
+}
+
+func (status ArchitectureSynthesisStatus) validateProviderOutputLimitEvidence() error {
+	if status.Version < 9 {
+		return fmt.Errorf("provider output limit status requires version 9")
+	}
+	if status.State != ArchitectureSynthesisFailed {
+		return fmt.Errorf("provider output limit evidence requires a failed state")
+	}
+	if status.ProviderRequestCount != 1 || status.RequestBytes == 0 || status.TransportAttempts == 0 {
+		return fmt.Errorf("provider output limit status requires exact attempted request evidence")
+	}
+	if status.ResponseBytes == 0 {
+		return fmt.Errorf("provider output limit status requires known partial response bytes")
+	}
+	if status.ConfiguredMaxTokens <= 0 {
+		return fmt.Errorf("provider output limit status requires configured output token evidence")
+	}
+	// Output-token exhaustion (finish_reason=length) and local response-byte
+	// overflow are both Decision 215 attempted output exhaustion, but only the
+	// former carries provider finish/usage evidence.
+	if status.FinishReason == "length" {
+		if status.ResponseComplete {
+			return fmt.Errorf("provider output limit status requires response_complete=false")
+		}
+		if status.ObservedOutputTokens <= 0 {
+			return fmt.Errorf("provider output limit status requires observed output token evidence")
+		}
+		if status.OutputTokens != status.ObservedOutputTokens {
+			return fmt.Errorf("provider output limit observed tokens do not match usage")
+		}
+		if status.UsageReported != (status.InputTokens != 0 || status.OutputTokens != 0) {
+			return fmt.Errorf("provider output limit token counts are inconsistent with reported usage")
+		}
+	} else if status.FinishReason != "" && status.FinishReason != "stop" {
+		return fmt.Errorf("provider output limit status has unsupported finish reason %q", status.FinishReason)
+	}
+	if status.ProviderCallSucceeded || status.ResponseParsed || status.MembershipCounted ||
+		status.MemberOccurrences != 0 || status.DistinctMembers != 0 ||
+		status.CoveredConceptualCount != 0 || status.UncoveredConceptualCount != 0 ||
+		len(status.UncoveredConceptualIDs) != 0 || len(status.ValidationCodes) != 0 {
+		return fmt.Errorf("provider output limit status cannot publish partial response evidence")
 	}
 	return nil
 }

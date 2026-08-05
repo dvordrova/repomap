@@ -425,6 +425,96 @@ func TestArchitectureSynthesisV4RejectsUnknownHistoricalAndDuplicateDiagnosticCo
 	}
 }
 
+func TestArchitectureSynthesisV9ProviderOutputLimitStatus(t *testing.T) {
+	t.Parallel()
+	base := func() ArchitectureSynthesisStatus {
+		return ArchitectureSynthesisStatus{
+			Version: 9, State: ArchitectureSynthesisFailed,
+			ErrorCode:    ArchitectureSynthesisErrorProviderOutputLimit,
+			RequestBytes: 5904, ResponseBytes: 201396, ResponseContentBytes: 201396,
+			ProviderRequestCount: 1, TransportAttempts: 1,
+			LocalCandidateCount: 3, RequestedConceptualCount: 2, StructuralLocatorCount: 1,
+			AnchorCount: 4, UsageReported: true, InputTokens: 42197, OutputTokens: 64000,
+			ConfiguredMaxTokens: 64000, ObservedOutputTokens: 64000,
+			FinishReason: "length", ResponseComplete: false,
+		}
+	}
+	t.Run("valid length-ended status", func(t *testing.T) {
+		if err := base().Validate(); err != nil {
+			t.Fatalf("valid v9 provider output limit status rejected: %v", err)
+		}
+	})
+	t.Run("requires exact attempted request evidence", func(t *testing.T) {
+		for _, mutate := range []func(*ArchitectureSynthesisStatus){
+			func(status *ArchitectureSynthesisStatus) { status.ProviderRequestCount = 0 },
+			func(status *ArchitectureSynthesisStatus) { status.RequestBytes = 0 },
+			func(status *ArchitectureSynthesisStatus) { status.TransportAttempts = 0 },
+		} {
+			status := base()
+			mutate(&status)
+			if err := status.Validate(); err == nil {
+				t.Fatalf("accepted incomplete attempted evidence: %#v", status)
+			}
+		}
+	})
+	t.Run("rejects partial response publication", func(t *testing.T) {
+		for _, mutate := range []func(*ArchitectureSynthesisStatus){
+			func(status *ArchitectureSynthesisStatus) { status.ProposalAccepted = true },
+			func(status *ArchitectureSynthesisStatus) { status.MembershipCounted = true },
+			func(status *ArchitectureSynthesisStatus) { status.ProviderCallSucceeded = true },
+			func(status *ArchitectureSynthesisStatus) { status.ResponseParsed = true },
+			func(status *ArchitectureSynthesisStatus) { status.ArchitectureSource = "model" },
+			func(status *ArchitectureSynthesisStatus) { status.ValidationCodes = []string{"response.incomplete"} },
+		} {
+			status := base()
+			mutate(&status)
+			if err := status.Validate(); err == nil {
+				t.Fatalf("accepted partial-response publication: %#v", status)
+			}
+		}
+	})
+	t.Run("rejects inconsistent token evidence", func(t *testing.T) {
+		status := base()
+		status.OutputTokens = 32000
+		if err := status.Validate(); err == nil {
+			t.Fatal("accepted mismatched observed tokens")
+		}
+		status = base()
+		status.UsageReported = false
+		if err := status.Validate(); err == nil {
+			t.Fatal("accepted tokens without reported usage")
+		}
+	})
+	t.Run("response byte overflow shape", func(t *testing.T) {
+		status := base()
+		status.FinishReason = "stop"
+		status.ResponseComplete = true
+		status.UsageReported = false
+		status.InputTokens = 0
+		status.OutputTokens = 0
+		status.ObservedOutputTokens = 0
+		if err := status.Validate(); err != nil {
+			t.Fatalf("valid response-byte overflow status rejected: %v", err)
+		}
+	})
+	t.Run("length claim rejected outside failed state", func(t *testing.T) {
+		status := base()
+		status.State = ArchitectureSynthesisSucceeded
+		status.ErrorCode = ""
+		status.ResponseComplete = true
+		if err := status.Validate(); err == nil {
+			t.Fatal("accepted length-ended claim in succeeded state")
+		}
+	})
+	t.Run("v8 rejects v9 evidence fields", func(t *testing.T) {
+		status := base()
+		status.Version = 8
+		if err := status.Validate(); err == nil {
+			t.Fatal("v8 accepted v9 provider output limit evidence")
+		}
+	})
+}
+
 func TestArchitectureFailureWarningKeepsLocalCanvasAuthoritative(t *testing.T) {
 	t.Parallel()
 	status := &ArchitectureSynthesisStatus{
