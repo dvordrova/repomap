@@ -6428,10 +6428,13 @@
 		var hero = renderRepositoryBriefHero();
 		if (!hero) {
 			var story = Array.isArray(thesis.system_story) ? thesis.system_story : [];
-			var purpose = thesis.purpose || DATA.documented_purpose || DATA.project_guess;
-			var isReadmePurpose = !!DATA.documented_purpose &&
-				(!purpose || purpose === DATA.documented_purpose || purpose === thesis.purpose && !!DATA.documented_purpose);
-			var useFallback = isReadmePurpose && readmePurposeHasResidue(purpose);
+			// Decision 221 A: the hero purpose is the backend-filtered thesis
+			// purpose (README warnings/quotes/lists removed deterministically)
+			// or a neutral local fallback — never raw README residue as the
+			// sole purpose. Raw README stays labeled source material.
+			var purpose = thesis.purpose || '';
+			var hasDocumented = !!DATA.documented_purpose;
+			var useReadmeSource = hasDocumented && purpose !== DATA.documented_purpose;
 			hero = el('section', 'rm-overview-hero rm-purpose-hero');
 			hero.appendChild(txt('div', 'rm-view-kicker', msg('main.overview')));
 			hero.appendChild(txt('h2', '', DATA.repo_name || msg('main.repository.overview')));
@@ -6444,29 +6447,17 @@
 					storyNode.appendChild(txt('p', 'rm-hero-story__entry', String(entry || '')));
 				});
 				hero.appendChild(storyNode);
-				if (purpose) {
-					var readmeQuote = el('blockquote', 'rm-hero-readme');
-					readmeQuote.appendChild(txt('p', '', normalizeMarkdownProse(purpose)));
-					readmeQuote.appendChild(txt('span', 'rm-purpose-source', purposeSourceLabel()));
-					hero.appendChild(readmeQuote);
-				}
-			} else if (useFallback) {
-				// Decision 218 (G): raw README head that begins with
-				// warning/badge/ASCII-art/marketing residue is preserved as
-				// labeled source material under disclosure, never claimed as
-				// the product purpose. The hero shows a neutral local
-				// fallback assembled from repository name and archetype.
+			}
+			if (purpose) {
+				hero.appendChild(txt('p', 'rm-brief-lead', normalizeMarkdownProse(purpose)));
+			} else {
 				hero.appendChild(txt('p', 'rm-purpose-fallback', neutralPurposeFallback()));
+			}
+			if (hasDocumented) {
 				var readmeQuote = el('blockquote', 'rm-hero-readme');
-				readmeQuote.appendChild(txt('p', '', normalizeMarkdownProse(purpose)));
+				readmeQuote.appendChild(txt('p', '', normalizeMarkdownProse(DATA.documented_purpose)));
 				readmeQuote.appendChild(txt('span', 'rm-purpose-source', purposeSourceLabel()));
 				hero.appendChild(readmeQuote);
-			} else {
-				var purposeNode = txt('p', '', purpose ? normalizeMarkdownProse(purpose) : neutralPurposeFallback());
-				hero.appendChild(purposeNode);
-				if (isReadmePurpose) {
-					hero.appendChild(txt('span', 'rm-purpose-source', purposeSourceLabel()));
-				}
 			}
 		}
 		root.appendChild(hero);
@@ -6499,7 +6490,18 @@
 		var name = DATA.repo_name || '';
 		var pieces = [];
 		if (name) pieces.push(name);
-		if (archetype) pieces.push(String(archetype));
+		// Decision 221 A: a localized closed archetype label, never raw
+		// README residue. Unknown archetypes collapse to a neutral noun.
+		// Literal keys keep the typed catalog acceptance test satisfiable.
+		var archetypeLabels = {
+			application: msg('main.overview.archetype.application'),
+			library_framework: msg('main.overview.archetype.library_framework'),
+			modular_platform_server: msg('main.overview.archetype.modular_platform_server'),
+			daemon_worker_system: msg('main.overview.archetype.daemon_worker_system'),
+			cli_tool: msg('main.overview.archetype.cli_tool'),
+		};
+		var archetypeLabel = archetypeLabels[String(archetype || '')] || msg('main.overview.archetype.unknown');
+		if (archetype) pieces.push(archetypeLabel);
 		if (!pieces.length) return msg('main.overview.glance.what_fallback');
 		return pieces.join(' · ');
 	}
@@ -6524,7 +6526,22 @@
 		}
 		var entryObjects = anatomy && anatomy.entries && anatomy.entries.objects || [];
 		if (entryObjects.length) {
-			var entryLabels = entryObjects.slice(0, 3).map(function (object) {
+			// Decision 221 B: the entry answer leads with production entries
+			// (primary process, service), never tests/tooling first.
+			var entryOrder = entryObjects.slice().sort(function (left, right) {
+				var rank = function (object) {
+					if (object.entryKind === 'process_entry' && object.entryRole === 'primary_application') return 0;
+					if (object.entryKind === 'http_server' || object.entryKind === 'grpc_server' ||
+						object.entryKind === 'service' || object.entryRole === 'secondary_service') return 1;
+					if (object.entryKind === 'library_api' || object.entryKind === 'exported_api') return 2;
+					if (object.entryKind === 'cli_command' || object.entryRole === 'tooling') return 3;
+					return 4;
+				};
+				var leftRank = rank(left), rightRank = rank(right);
+				if (leftRank !== rightRank) return leftRank - rightRank;
+				return String(left.title || '').localeCompare(String(right.title || ''));
+			});
+			var entryLabels = entryOrder.slice(0, 3).map(function (object) {
 				return object.title;
 			});
 			rows.push([msg('main.overview.glance.entry'), entryLabels.join(' · ')]);
@@ -6536,10 +6553,6 @@
 			});
 			rows.push([msg('main.overview.glance.areas'), componentLabels.join(' · ')]);
 		}
-		var firstReading = recommendedNextReading(anatomy);
-		if (firstReading) {
-			rows.push([msg('main.overview.glance.open_first'), firstReading]);
-		}
 		if (!rows.length) return null;
 		var glance = el('section', 'rm-overview-glance');
 		glance.appendChild(txt('h3', 'rm-overview-glance__title', msg('main.overview.glance.title')));
@@ -6549,7 +6562,209 @@
 			line.appendChild(txt('p', 'rm-overview-glance__value', row[1]));
 			glance.appendChild(line);
 		});
+		// Decision 221 C: the first action is an independent, clickable,
+		// keyboard-accessible source action — never a theme-ordinal pick.
+		var firstAction = overviewFirstAction(anatomy, atlantisWorkspaceShelf());
+		if (firstAction) {
+			glance.appendChild(renderOverviewFirstAction(firstAction));
+		} else if (window.firstActionAvailable === false || !anatomy.entries.objects.length) {
+			glance.appendChild(txt('p', 'rm-overview-first-action rm-overview-first-action--unavailable',
+				msg('main.overview.first_action.unavailable')));
+		}
 		return glance;
+	}
+
+	function atlantisWorkspaceShelf() {
+		try {
+			return repositoryAtlasWorkspaceShelf && repositoryAtlasWorkspaceShelf() || null;
+		} catch (error) {
+			return null;
+		}
+	}
+
+	// renderOverviewFirstAction renders the independent first action as a
+	// prominent clickable row with its reason and authority (Decision 221 C).
+	function renderOverviewFirstAction(action) {
+		var block = el('div', 'rm-overview-first-action');
+		block.appendChild(txt('span', 'rm-overview-first-action__label', msg('main.overview.first_action.title')));
+		var button = txt('button', 'rm-overview-first-action__button', action.label);
+		button.type = 'button';
+		button.onclick = action.action;
+		block.appendChild(button);
+		if (action.path) {
+			var location = action.line ? action.path + ':' + action.line : action.path;
+			if (action.symbol) location += ' · ' + action.symbol;
+			block.appendChild(txt('p', 'rm-overview-first-action__location', location));
+		}
+		if (action.reason) block.appendChild(txt('p', 'rm-overview-first-action__reason', action.reason));
+		if (action.authority) block.appendChild(txt('p', 'rm-overview-first-action__authority', action.authority));
+		return block;
+	}
+
+	// overviewFirstAction implements the independent «Open first» selector
+	// (Decision 221 C). It never derives the action from theme array order.
+	// Priority: usable Navigator startup action with exact evidence, primary
+	// production process entry, library constructor/start/use entry, a core
+	// Study theme's first exact reading, then an explicit unavailable state.
+	function overviewFirstAction(anatomy, atlasShelf) {
+		// 1. Navigator startup action — backend-owned, already validated
+		// against the exact persisted Repository Atlas. Only usable when the
+		// recommended surface is a production entry, not test/helper tooling
+		// (Decision 221 C: production entries rank before tests/tooling).
+		if (NAVIGATOR && NAVIGATOR.state === 'selected' && NAVIGATOR.recommendation &&
+			atlasShelf && atlasShelf.recommendation) {
+			var nav = atlasShelf.recommendation;
+			var navEntry = overviewSurfaceObjectForTriggerId(nav && nav.location);
+			var navUsable = !navEntry || (navEntry.entryRole !== 'test_or_helper' &&
+				navEntry.entryRole !== 'tooling');
+			if (navUsable && nav && nav.snippet && nav.location) {
+				return {
+					label: msg('main.overview.first_action.navigator'),
+					path: nav.location.path,
+					line: nav.location.line,
+					symbol: nav.unit && nav.unit.name || '',
+					reason: msg('main.overview.first_action.reason.navigator'),
+					action: function () {
+						openSourceSnippet(nav.snippet, nav.location, false, { drawerFirst: true });
+					},
+					authority: msg('main.overview.first_action.authority.navigator'),
+					kind: 'navigator',
+				};
+			}
+		}
+		// 2. Primary production process entry (not tests/tooling).
+		var entries = anatomy && anatomy.entries && anatomy.entries.objects || [];
+		var primary = entries.filter(function (object) {
+			return object.entryKind === 'process_entry' && object.entryRole === 'primary_application';
+		});
+		if (primary.length) {
+			var action = overviewFirstActionFromEntry(primary[0]);
+			if (action) {
+				action.label = msg('main.overview.first_action.process_entry');
+				action.reason = msg('main.overview.first_action.reason.process_entry');
+				action.authority = msg('main.overview.first_action.authority.process_entry');
+				action.kind = 'process_entry';
+				return action;
+			}
+		}
+		// 3. Library constructor/start/use entry.
+		var library = entries.filter(function (object) {
+			return object.entryKind === 'library_api' || object.entryKind === 'exported_api';
+		});
+		if (library.length) {
+			var libAction = overviewFirstActionFromEntry(library[0]);
+			if (libAction) {
+				libAction.label = msg('main.overview.first_action.library');
+				libAction.reason = msg('main.overview.first_action.reason.library');
+				libAction.authority = msg('main.overview.first_action.authority.library');
+				libAction.kind = 'library';
+				return libAction;
+			}
+		}
+		// 4. A core Study theme's first exact reading (theme ordinal is
+		// irrelevant — the first reading with an exact source wins, with
+		// constructor/start symbols ranked ahead deterministically).
+		var cards = themeCards();
+		var ranked = [];
+		for (var cardIndex = 0; cardIndex < cards.length; cardIndex++) {
+			var card = cards[cardIndex];
+			if (!card || !Array.isArray(card.readings)) continue;
+			for (var readingIndex = 0; readingIndex < card.readings.length; readingIndex++) {
+				var reading = card.readings[readingIndex];
+				if (!reading || !reading.path || !Number.isInteger(reading.line)) continue;
+				var readingLocation = {
+					path: reading.path,
+					line: reading.line,
+					column: Number.isInteger(reading.column) && reading.column > 0 ? reading.column : 0,
+				};
+				var resolution = exactOverviewActionResolutionForLocation(readingLocation);
+				if (!resolution || resolution.conflict || !resolution.source) continue;
+				ranked.push({
+					reading: reading,
+					location: readingLocation,
+					source: resolution.source,
+				});
+			}
+		}
+		ranked.sort(function (left, right) {
+			var rank = function (entry) {
+				var symbol = String(entry.reading.symbol || entry.reading.label || '');
+				if (/^(New|Create|Start|Run|Serve|Launch|Init|Open)/.test(symbol)) return 0;
+				return 1;
+			};
+			var leftRank = rank(left), rightRank = rank(right);
+			if (leftRank !== rightRank) return leftRank - rightRank;
+			// Decision 221 C: permutation invariance — a deterministic
+			// tie-breaker (symbol, then path, then line) so reordering theme
+			// cards never changes the first action.
+			var leftSymbol = String(left.reading.symbol || left.reading.label || '');
+			var rightSymbol = String(right.reading.symbol || right.reading.label || '');
+			if (leftSymbol !== rightSymbol) return leftSymbol < rightSymbol ? -1 : 1;
+			if (left.location.path !== right.location.path) {
+				return left.location.path < right.location.path ? -1 : 1;
+			}
+			return left.location.line - right.location.line;
+		});
+		if (ranked.length) {
+			var chosen = ranked[0];
+			var chosenReading = chosen.reading;
+			var themeAction = {
+				label: msg('main.overview.first_action.study_reading'),
+				path: chosen.location.path,
+				line: chosen.location.line,
+				symbol: chosenReading.symbol || chosenReading.label || '',
+				reason: msg('main.overview.first_action.reason.study_reading'),
+				action: function () {
+					openSourceSnippet(chosen.source.snippet, chosen.location, false, { drawerFirst: true });
+				},
+				authority: msg('main.overview.first_action.authority.study_reading'),
+				kind: 'study_reading',
+			};
+			return themeAction;
+		}
+		// 5. Explicit unavailable state — never an invented path.
+		return null;
+	}
+
+	// overviewSurfaceObjectForTriggerId finds the raw discovered-surface
+	// trigger whose registration site matches the given path/line. Navigator
+	// atlas entity ids differ from trigger ids, so identity is matched by
+	// exact location; test/helper triggers are excluded from Overview cards
+	// but must still be found here to judge recommendation usability.
+	function overviewSurfaceObjectForTriggerId(navLocation) {
+		if (!navLocation || !navLocation.path) return null;
+		var triggers = DATA.discovered_surfaces && Array.isArray(DATA.discovered_surfaces.triggers)
+			? DATA.discovered_surfaces.triggers : [];
+		for (var index = 0; index < triggers.length; index++) {
+			var trigger = triggers[index];
+			var site = trigger && (trigger.registration_site || trigger.location);
+			if (site && site.path === navLocation.path && site.line === navLocation.line) {
+				return {
+					id: trigger.id,
+					entryKind: String(trigger.kind || ''),
+					entryRole: String(trigger.executable_role || ''),
+				};
+			}
+		}
+		return null;
+	}
+
+	function overviewFirstActionFromEntry(object) {
+		if (!object || !object.location) return null;
+		var resolution = exactOverviewActionResolutionForLocation(object.location);
+		if (!resolution || resolution.conflict || !resolution.source) return null;
+		return {
+			label: msg('main.overview.first_action.generic'),
+			path: object.location.path,
+			line: object.location.line,
+			symbol: object.title || '',
+			reason: '',
+			action: function () {
+				openSourceSnippet(object.snippet || resolution.source.snippet, object.location, false, { drawerFirst: true });
+			},
+			authority: '',
+			kind: 'entry',
+		};
 	}
 
 	// recommendedNextReading derives one next action from existing Study data:
@@ -6595,7 +6810,21 @@
 						grid.appendChild(renderOverviewObjectCard(object, 'surface'));
 					});
 					groupBlock.appendChild(grid);
-					entrySection.appendChild(groupBlock);
+					// Decision 221 B: production entries (primary product
+					// entry, service entry) stay visible; the complete
+					// taxonomy (tooling, library, other) remains accessible
+					// under a collapsed disclosure — never hidden.
+					if (group.key === 'primary' || group.key === 'service') {
+						entrySection.appendChild(groupBlock);
+					} else {
+						var disclosure = el('details', 'rm-overview-entry-disclosure');
+						var summary = el('summary', '');
+						summary.appendChild(txt('span', 'rm-overview-entry-disclosure__count',
+							msg('main.overview.entry.disclosure_count', { count: group.items.length })));
+						disclosure.appendChild(summary);
+						disclosure.appendChild(groupBlock);
+						entrySection.appendChild(disclosure);
+					}
 				});
 				root.appendChild(entrySection);
 			} else {
