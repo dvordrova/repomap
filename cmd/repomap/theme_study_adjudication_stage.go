@@ -78,7 +78,7 @@ func runThemeAdjudicationStage(
 	if err != nil {
 		return themeAdjErr(outcome, request, themeTerminalResource(err, 0))
 	}
-	if unsafeErr := themeUnsafePayload("adjudication_request", requestBytes); unsafeErr != nil {
+	if unsafeErr := themeUnsafeSourcePayload("adjudication_request", requestBytes); unsafeErr != nil {
 		return themeAdjErr(outcome, request,
 			themeAdjTerminalFailure(writer, request, outcome, atlasstudy.FailureProvider, unsafeErr))
 	}
@@ -105,7 +105,7 @@ func runThemeAdjudicationStage(
 		}
 		return themeAdjOrdinaryFailure(writer, request, outcome, atlasstudy.FailureProvider, err, output)
 	}
-	if unsafeErr := themeUnsafePayload("adjudication_provider_request", providerRequest); unsafeErr != nil {
+	if unsafeErr := themeUnsafeSourcePayload("adjudication_provider_request", providerRequest); unsafeErr != nil {
 		return themeAdjErr(outcome, request,
 			themeAdjTerminalFailure(writer, request, outcome, atlasstudy.FailureProvider, unsafeErr))
 	}

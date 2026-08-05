@@ -65,6 +65,10 @@ const taskID = "task-1234567890abcdef";
 const report = {
   repo_name: "example.test/fuego", openable_paths: anchors.map((anchor) => anchor.path),
   source_ids: {}, source_context_ids: {}, user_sources: [],
+  github_source_links: {
+    repository_url: "https://github.com/example/fuego",
+    revision: "1".repeat(40),
+  },
   user_mechanisms: [{ artifact_id: "generic", title: "GENERIC_ORIENTATION_SHOULD_NOT_RENDER", steps: [{ title: "Start here" }] }],
   project_guess: "GENERIC_ORIENTATION_SHOULD_NOT_RENDER",
   task_investigation: {
@@ -108,6 +112,7 @@ const window = {
 };
 const document = {
 	  createElement(tag) { return new Element(tag); },
+	  createTextNode(value) { const node = new Element("#text"); node.textContent = String(value); return node; },
 	  getElementById(id) {
 	    if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
 	    if (roots[id]) return roots[id];
@@ -137,6 +142,8 @@ const root = roots["rm-task-investigation"];
 	const citation = buttonNodes.find((node) => String(node.className).includes("rm-task-citation") && text(node).includes("Anchor 2"));
 	if (citation && typeof citation.onclick === "function") citation.onclick();
 	const buttons = buttonNodes.map(text);
+	const sourceLinks = descendants(root).filter((node) => String(node.tagName).toUpperCase() === "A")
+	  .map((node) => text(node) + "|" + (node.attributes.href || ""));
 	const scrolledAnchorIDs = descendants(root).filter((node) => node.scrolled).map((node) => node.id);
 const exactRoute = api.parseWorkspaceHash("#/investigate/" + taskID, [], null);
 const defaultRoute = api.parseWorkspaceHash("", [], null);
@@ -147,7 +154,7 @@ api.renderTaskInvestigationWorkspace();
 const russianRendered = text(roots["rm-task-investigation"]);
 const unknownRussianEnum = api.taskLensEnumLabel("task_kind", "future_task_kind");
 process.stdout.write(JSON.stringify({
-	  rendered, buttons, exactRoute, defaultRoute, overviewRoute,
+	  rendered, buttons, sourceLinks, exactRoute, defaultRoute, overviewRoute,
 	  restoredSourcePath: restoredSource && restoredSource.path || "", scrolledAnchorIDs,
 	  russianRendered, unknownRussianEnum,
 }));
@@ -161,9 +168,10 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("run Task Lens workspace smoke: %v\n%s", err, output)
 	}
 	var got struct {
-		Rendered   string   `json:"rendered"`
-		Buttons    []string `json:"buttons"`
-		ExactRoute struct {
+		Rendered    string   `json:"rendered"`
+		Buttons     []string `json:"buttons"`
+		SourceLinks []string `json:"sourceLinks"`
+		ExactRoute  struct {
 			Valid         bool   `json:"valid"`
 			CanonicalHash string `json:"canonicalHash"`
 			State         struct {
@@ -233,9 +241,10 @@ process.stdout.write(JSON.stringify({
 			t.Errorf("task-first projection exposed %q: %s", forbidden, got.Rendered)
 		}
 	}
-	if countString(got.Buttons, "Show source") != 3 ||
+	if len(got.SourceLinks) != 6 ||
+		!strings.Contains(strings.Join(got.SourceLinks, "\n"), "github.com/example/fuego/blob") ||
 		countString(got.Buttons, "Anchor 3 · TestValidate") == 0 {
-		t.Fatalf("task source actions = %#v", got.Buttons)
+		t.Fatalf("task source actions = buttons %#v links %#v", got.Buttons, got.SourceLinks)
 	}
 	if !slices.Equal(got.ScrolledAnchorIDs, []string{"rm-task-anchor-2"}) {
 		t.Fatalf("task citation did not scroll to its retained anchor: %#v", got.ScrolledAnchorIDs)

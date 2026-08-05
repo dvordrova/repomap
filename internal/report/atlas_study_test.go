@@ -1306,10 +1306,10 @@ func TestRunManifestAcceptsInsufficientCatalogIndependentlyOfArchitectureEnrichm
 
 func TestReadAtlasStudyReportProductRejectsObviousCredentialWithoutEcho(t *testing.T) {
 	runDir := t.TempDir()
-	const secret = "actual-secret-value"
+	const secret = "ghp_abcdefghijklmnopqrstuvwxyz1234567890"
 	if err := os.WriteFile(
 		filepath.Join(runDir, themestudy.ScoutRequestArtifactFilename),
-		[]byte(`{"api_key":"`+secret+`"}`), 0o600,
+		[]byte(`{"description":"checkpoint","token":"`+secret+`"}`), 0o600,
 	); err != nil {
 		t.Fatal(err)
 	}

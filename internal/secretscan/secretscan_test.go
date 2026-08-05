@@ -119,6 +119,37 @@ func TestDetectIgnoresCredentialShapedWordsInsideMessageTemplates(t *testing.T) 
 	}
 }
 
+func TestDetectSourceMaterialIgnoresCredentialAssignmentsButBlocksRealSecrets(t *testing.T) {
+	t.Parallel()
+
+	// Locally expanded production source legitimately contains credential-shaped
+	// assignments (owner doctrine: a repo that mentions credentials is not our
+	// reason to make Study unavailable). DetectSourceMaterial must pass them.
+	for _, input := range []string{
+		`Password:        "some-runtime-password-value",`,
+		`ClientSecret:    "a-client-secret-value",`,
+		`token = "an-opaque-token-value"`,
+		`api_key := "a-test-api-key-value"`,
+		`accessToken: "a-long-access-token-value"`,
+	} {
+		if kind, found := DetectSourceMaterial(input); found {
+			t.Errorf("DetectSourceMaterial(%q) = %q, true; want credential assignment ignored", input, kind)
+		}
+	}
+	// Real credential material always fails closed, even in source material.
+	for _, input := range []string{
+		"-----BEGIN RSA PRIVATE KEY-----\nMIIE",
+		"Authorization: Bearer abcdefghijklmnopqrstuvwxyz0123456789",
+		"sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456",
+		"ghp_abcdefghijklmnopqrstuvwxyz1234567890",
+		"AKIAIOSFODNN7EXAMPLE",
+	} {
+		if kind, found := DetectSourceMaterial(input); !found {
+			t.Errorf("DetectSourceMaterial(%q) = %q, false; want real secret blocked", input, kind)
+		}
+	}
+}
+
 func TestDetectAlwaysIgnoresUnsafeOverride(t *testing.T) {
 	restore := SetDisabled(true)
 	defer restore()

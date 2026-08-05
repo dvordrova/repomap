@@ -92,7 +92,7 @@ func runThemeScoutStage(
 	if err != nil {
 		return themeScoutErr(outcome, request, themeTerminalResource(err, 0))
 	}
-	if unsafeErr := themeUnsafePayload("scout_request", requestBytes); unsafeErr != nil {
+	if unsafeErr := themeUnsafeSourcePayload("scout_request", requestBytes); unsafeErr != nil {
 		themeRecordUnsafe(writer, requestBytes)
 		return themeScoutErr(outcome, request,
 			themeScoutTerminalFailure(writer, request, outcome, atlasstudy.FailureProvider, unsafeErr))
@@ -120,7 +120,7 @@ func runThemeScoutStage(
 		}
 		return themeScoutOrdinaryFailure(writer, request, outcome, atlasstudy.FailureProvider, err, output)
 	}
-	if unsafeErr := themeUnsafePayload("scout_provider_request", providerRequest); unsafeErr != nil {
+	if unsafeErr := themeUnsafeSourcePayload("scout_provider_request", providerRequest); unsafeErr != nil {
 		return themeScoutErr(outcome, request,
 			themeScoutTerminalFailure(writer, request, outcome, atlasstudy.FailureProvider, unsafeErr))
 	}
@@ -431,13 +431,30 @@ func themeScoutTerminalFailure(
 }
 
 func themeUnsafePayload(label string, data []byte) error {
-	if kind, found := secretscan.DetectAlways(string(data)); found {
-		return fmt.Errorf(
-			"theme study run: unsafe %s rejected by mandatory secret scan: kind=%s",
-			label, secretscan.ClosedKind(kind),
-		)
+	kind, found := secretscan.DetectAlways(string(data))
+	if !found {
+		return nil
 	}
-	return nil
+	return fmt.Errorf(
+		"theme study run: unsafe %s rejected by mandatory secret scan: kind=%s",
+		label, secretscan.ClosedKind(kind),
+	)
+}
+
+// themeUnsafeSourcePayload scans locally expanded repository source before it
+// is sent to a model provider. Real credential material still fails closed;
+// credential-shaped assignments in production code are legitimate (per the
+// owner doctrine, a repo that mentions credentials is not our reason to make
+// Study unavailable).
+func themeUnsafeSourcePayload(label string, data []byte) error {
+	kind, found := secretscan.DetectSourceMaterial(string(data))
+	if !found {
+		return nil
+	}
+	return fmt.Errorf(
+		"theme study run: unsafe %s rejected by mandatory secret scan: kind=%s",
+		label, secretscan.ClosedKind(kind),
+	)
 }
 
 func themeRecordUnsafe(writer *debugdump.Writer, request []byte) {

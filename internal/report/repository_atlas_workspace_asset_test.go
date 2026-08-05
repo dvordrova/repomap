@@ -103,7 +103,7 @@ function run(report, language) {
     return api.workspaceStateSnapshot().sourceLocation;
   });
   if (navigatorButtons.length) navigatorButtons[0].onclick();
-  else if (sourceButtons.length) sourceButtons[0].onclick();
+  else if (sourceButtons.length && typeof sourceButtons[0].onclick === "function") sourceButtons[0].onclick();
   return {
     units: shelf && shelf.units.length || 0,
     relations: shelf && shelf.relations.length || 0,
@@ -158,6 +158,10 @@ const secondPackageSource = {
 const report = {
   user_mechanisms: [], user_topics: [], user_sources: [source],
   openable_paths: ["cmd/server/startup.go", "cmd/server/uncovered.go"], source_ids: {},
+  github_source_links: {
+    repository_url: "https://github.com/example/fixture",
+    revision: "1".repeat(40),
+  },
   repository_atlas: {
     version: 1,
     units: [
@@ -222,6 +226,10 @@ const missingBinding = run(missingBindingReport, "en");
 const etcdReport = {
   user_mechanisms: [], user_topics: [], user_sources: [source, secondPackageSource],
   openable_paths: ["cmd/server/startup.go", "pkg/one/package.go"], source_ids: {},
+  github_source_links: {
+    repository_url: "https://github.com/example/fixture",
+    revision: "1".repeat(40),
+  },
   repository_atlas: { version: 1, units: [], entities: [], evidence: [], relations: [] },
 };
 etcdReport.repository_atlas.units.push({ id: "etcd-repository", kind: "repository", name: "etcd" });
@@ -413,8 +421,10 @@ process.stdout.write(JSON.stringify({ en, ru, selectedEN, selectedRU, offline, e
 			current.PackagePosition >= current.RelationPosition {
 			t.Fatalf("%s useful shelf order/status = %#v", language, current)
 		}
-		if current.SourceState == nil || current.SourceState.Path != "cmd/server/startup.go" || current.SourceState.Line != 10 || !current.SourceState.DrawerFirst {
-			t.Fatalf("%s exact source action = %#v", language, current.SourceState)
+		// Decision 222: the exact source action is a GitHub/GitLab jump in a
+		// new tab — it never opens an inline code drawer or mutates state.
+		if current.SourceState != nil {
+			t.Fatalf("%s exact source action mutated workspace state: %#v", language, current.SourceState)
 		}
 		for _, forbidden := range []string{
 			"unit-secret", "entity-secret", "evidence-secret", "relation-secret",
@@ -439,9 +449,7 @@ process.stdout.write(JSON.stringify({ en, ru, selectedEN, selectedRU, offline, e
 		if current.NavigatorButtons != 1 || current.NavigatorPosition < 0 ||
 			current.CompactStatusCount != 0 || current.UnitsPosition < 0 || current.PackagePosition < 0 ||
 			current.UnitsPosition >= current.PackagePosition || current.PackagePosition >= current.NavigatorPosition ||
-			current.NavigatorPosition >= current.RelationPosition || current.SourceState == nil ||
-			current.SourceState.Path != "cmd/server/startup.go" || current.SourceState.Line != 10 ||
-			!current.SourceState.DrawerFirst {
+			current.NavigatorPosition >= current.RelationPosition || current.SourceState != nil {
 			t.Fatalf("%s selected Navigator state = %#v", language, current)
 		}
 		for _, forbidden := range []string{
@@ -497,11 +505,13 @@ process.stdout.write(JSON.stringify({ en, ru, selectedEN, selectedRU, offline, e
 			t.Fatalf("%s etcd shelf counts = %#v", language, current)
 		}
 		if len(current.PackagePrefixes) != 1 || current.PackagePrefixes[0] != "go.etcd.io/etcd/" ||
-			len(current.PackageNames) != 183 || len(current.PackageSourceStates) != 2 ||
-			current.PackageSourceStates[0].Path != "cmd/server/startup.go" ||
-			current.PackageSourceStates[0].Line != 10 || !current.PackageSourceStates[0].DrawerFirst ||
-			current.PackageSourceStates[1].Path != "pkg/one/package.go" ||
-			current.PackageSourceStates[1].Line != 1 || !current.PackageSourceStates[1].DrawerFirst {
+			len(current.PackageNames) != 183 ||
+			len(current.PackageActionTargets) != 2 ||
+			current.PackageActionTargets[0].Tag != "a" ||
+			!strings.Contains(current.PackageActionTargets[0].Href, "github.com/example/fixture/blob") ||
+			!strings.Contains(current.PackageActionTargets[0].Href, "cmd/server/startup.go") ||
+			current.PackageActionTargets[1].Tag != "a" ||
+			!strings.Contains(current.PackageActionTargets[1].Href, "pkg/one/package.go") {
 			t.Fatalf("%s package prefix/source = %#v", language, current)
 		}
 		if len(current.PackageSourceSummaries) != 1 {

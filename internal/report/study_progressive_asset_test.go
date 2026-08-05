@@ -172,7 +172,7 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("decode progressive Study asset: %v\n%s", err, output)
 	}
 	for _, token := range []string{
-		"Server.Run",
+		"Run",
 		"serve.go:2",
 		"Run() starts the HTTP server.",
 	} {

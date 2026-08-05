@@ -814,6 +814,7 @@ const roots = {
 };
 const workspace = new Element("main");
 let openedURLs = 0;
+let openedFirstURL = "";
 const window = {
   location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   history: {
@@ -822,7 +823,7 @@ const window = {
     replaceState(state, _, hash) { this.state = state; window.location.hash = hash; },
     back() {},
   },
-  open() { openedURLs += 1; },
+  open(url) { openedURLs += 1; if (!openedFirstURL) openedFirstURL = String(url || ""); },
   scrollTo() {},
   __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
 };
@@ -1014,7 +1015,7 @@ process.stdout.write(JSON.stringify({
   surfaceIDs: surfaceCards.map((card) => card.attributes["data-rm-object-id"]),
   componentIDs: componentCards.map((card) => card.attributes["data-rm-object-id"]),
   cardText: surfaceCards.concat(componentCards).map(text), renderedText,
-  drawerState, drawerHash, drawerHistory, drawerHidden, openedURLs,
+  drawerState, drawerHash, drawerHistory, drawerHidden, openedURLs, openedFirstURL,
   studyState, studyHash, architectureState, architectureHash,
   exactStart: exactStart && exactStart.snippet.presentation_sha256,
   exactEnd: exactEnd && exactEnd.snippet.presentation_sha256,
@@ -1070,6 +1071,7 @@ process.stdout.write(JSON.stringify({
 		} `json:"drawerHistory"`
 		DrawerHidden      bool                               `json:"drawerHidden"`
 		OpenedURLs        int                                `json:"openedURLs"`
+		OpenedFirstURL    string                             `json:"openedFirstURL"`
 		StudyState        struct{ View, DirectionID string } `json:"studyState"`
 		StudyHash         string                             `json:"studyHash"`
 		ArchitectureState struct {
@@ -1258,13 +1260,12 @@ process.stdout.write(JSON.stringify({
 			t.Fatalf("mixed served anatomy target = %#v", target)
 		}
 	}
-	if got.DrawerState.View != "overview" || got.DrawerState.SourceLocation == nil ||
-		got.DrawerState.SourceLocation.Path != "surface-a.go" || got.DrawerState.SourceLocation.Line != 10 ||
-		!got.DrawerState.SourceLocation.DrawerFirst || got.DrawerHash != "#/overview" ||
-		got.DrawerHistory.Path != "surface-a.go" || got.DrawerHistory.Line != 10 ||
-		!got.DrawerHistory.DrawerFirst || got.DrawerHidden || got.OpenedURLs != 0 {
-		t.Fatalf("primary click did not stay in exact embedded drawer: state %#v hash %q history %#v hidden=%t opened=%d",
-			got.DrawerState, got.DrawerHash, got.DrawerHistory, got.DrawerHidden, got.OpenedURLs)
+	if got.DrawerState.View != "overview" || got.DrawerState.SourceLocation != nil ||
+		got.DrawerHash != "#/overview" ||
+		got.OpenedURLs != 1 ||
+		!strings.Contains(got.OpenedFirstURL, "github.com/example/fixture/blob") {
+		t.Fatalf("primary click did not jump to GitHub source: state %#v hash %q history %#v hidden=%t opened=%d first=%q",
+			got.DrawerState, got.DrawerHash, got.DrawerHistory, got.DrawerHidden, got.OpenedURLs, got.OpenedFirstURL)
 	}
 	if got.StudyState.View != "study" || got.StudyState.DirectionID != "study-exact" ||
 		got.StudyHash != "#/study/study-exact" {
@@ -2417,14 +2418,18 @@ process.stdout.write(JSON.stringify({
 	if got.Backed.View != "mechanism" || got.Backed.StepIndex != 0 {
 		t.Fatalf("back state = %#v", got.Backed)
 	}
-	if got.DrawerHash != "#/mechanism/mechanism-1/step/4" || !got.DrawerHistory {
+	// Decision 222: without a GitHub/GitLab (or server) jump, opening a
+	// source is a no-op — never an inline code drawer, never a route change.
+	if got.DrawerHash != "#/mechanism/mechanism-1/step/4" || got.DrawerHistory {
 		t.Fatalf("drawer history = hash %q, state %t", got.DrawerHash, got.DrawerHistory)
 	}
 	if got.Closed.View != "mechanism" || got.Closed.StepIndex != 3 || string(got.Closed.SourceLocation) != "null" {
 		t.Fatalf("closed drawer state = %#v", got.Closed)
 	}
+	// Decision 222: source opening is a no-op without a jump; the mechanism
+	// remains the active context but no source drawer is opened.
 	if got.OverviewHash != "#/overview" || got.OverviewDrawer.View != "overview" ||
-		got.OverviewDrawer.SourceLocation == nil || got.OverviewDrawerHasMechanism {
+		string(got.OverviewDrawer.SourceLocation) != "null" {
 		t.Fatalf("Overview navigation did not clear mechanism ownership: hash %q, state %#v, has mechanism %t",
 			got.OverviewHash, got.OverviewDrawer, got.OverviewDrawerHasMechanism)
 	}
