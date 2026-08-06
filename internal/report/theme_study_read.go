@@ -374,18 +374,32 @@ func deriveThemeStudyFrontierBrowse(
 			scoutAnchored[seed.CanonicalSpanID] = struct{}{}
 		}
 	}
-	// published: spans in final theme readings.
+	// published: spans in final theme readings. Decision 233 (F6, fresh
+	// review): co-projected ALTERNATE readings are visible on the card and
+	// therefore count as published (deduplicated by span; the chain
+	// published ⊆ scout-anchored is re-verified below).
 	published := make(map[string]struct{})
+	includeReading := func(reading themestudy.Reading, card themestudy.ThemeCard) error {
+		if reading.CanonicalSpanID == "" {
+			return nil
+		}
+		if _, ok := considered[reading.CanonicalSpanID]; !ok {
+			return fmt.Errorf(
+				"atlas study report: theme reading binds unavailable span %q (fail closed)", reading.CanonicalSpanID)
+		}
+		published[reading.CanonicalSpanID] = struct{}{}
+		return nil
+	}
 	for _, card := range themes.Cards {
 		for _, reading := range card.Readings {
-			if reading.CanonicalSpanID == "" {
-				continue
+			if err := includeReading(reading, card); err != nil {
+				return nil, themeStageCounts{}, err
 			}
-			if _, ok := considered[reading.CanonicalSpanID]; !ok {
-				return nil, themeStageCounts{}, fmt.Errorf(
-					"atlas study report: theme reading binds unavailable span %q (fail closed)", reading.CanonicalSpanID)
+		}
+		for _, reading := range card.AlternateReadings {
+			if err := includeReading(reading, card); err != nil {
+				return nil, themeStageCounts{}, err
 			}
-			published[reading.CanonicalSpanID] = struct{}{}
 		}
 	}
 	// Re-verify published ⊆ scout-anchored ⊆ seed-advertised ⊆ considered.
@@ -405,15 +419,22 @@ func deriveThemeStudyFrontierBrowse(
 		}
 	}
 	// ThemeRefs: published rows list every matching published theme ordinal in
-	// canonical theme order (D213 B1/N5).
+	// canonical theme order (D213 B1/N5). Decision 233 (F6): alternate
+	// readings map their spans into the same ordinal list.
 	themeOrdinalsBySpan := make(map[string][]int)
 	for _, card := range themes.Cards {
-		for _, reading := range card.Readings {
+		linkSpan := func(reading themestudy.Reading) {
 			if reading.CanonicalSpanID == "" {
-				continue
+				return
 			}
 			themeOrdinalsBySpan[reading.CanonicalSpanID] = append(
 				themeOrdinalsBySpan[reading.CanonicalSpanID], card.Ordinal)
+		}
+		for _, reading := range card.Readings {
+			linkSpan(reading)
+		}
+		for _, reading := range card.AlternateReadings {
+			linkSpan(reading)
 		}
 	}
 	for spanID := range themeOrdinalsBySpan {
@@ -486,12 +507,49 @@ func projectThemeShelf(themes themestudy.StudyThemes, data *ReportData) (*AtlasS
 			Readings:         readings,
 			Badge:            card.Badge,
 			Limitation:       themeLimitation(themes, card),
+			// Decision 233 (Archive 9): semantic-equivalent co-projected
+			// themes publish their alternates as provenance — nothing
+			// silently vanishes.
+			AlternateTitles:     card.AlternateTitles,
+			AlternateQuestions:  card.AlternateQuestions,
+			AlternateReadings:   projectAlternateReadings(card.AlternateReadings, data),
+			ConcentrationMarker: card.ConcentrationDiagnostic,
 		})
 	}
 	total := len(cards)
 	// No truncation: every published card renders. The portfolio is already
 	// bounded by the study_themes artifact encode (MaxStudyThemesArtifactBytes).
 	return &AtlasStudyThemesProjection{Total: total, Shown: total, Cards: cards}, nil
+}
+
+// projectAlternateReadings projects the co-projected alternate readings of a
+// semantic-equivalent theme with the same openable-path rule as the primary
+// readings (Decision 233).
+func projectAlternateReadings(readings []themestudy.Reading, data *ReportData) []StudyThemeReading {
+	if len(readings) == 0 {
+		// Keep the artifact canonical: an empty non-nil slice would not
+		// survive the omitempty encode→decode round-trip.
+		return nil
+	}
+	projected := make([]StudyThemeReading, 0, len(readings))
+	for _, reading := range readings {
+		item := StudyThemeReading{
+			Label: reading.Label, Symbol: reading.Symbol,
+			SupportedObservation: reading.SupportedObservation,
+		}
+		switch reading.Fit {
+		case themestudy.FitDirect:
+			item.Role = "direct"
+		case themestudy.FitSupporting:
+			item.Role = "supporting"
+		}
+		if openableAtlasStudyBrowsePath(data, reading.Path) {
+			item.Path = reading.Path
+			item.Line = reading.Line
+		}
+		projected = append(projected, item)
+	}
+	return projected
 }
 
 // themeLimitation is the honest per-card limitation line: a partial badge is

@@ -192,7 +192,7 @@ func TestMockAndReplayAdjudicationRoundTrip(t *testing.T) {
 		t.Fatalf("reducer published no cards")
 	}
 	encoded, err := EncodeStudyThemes(StudyThemes{
-		Version: "v1", ScoutSHA256: request.CatalogSHA256,
+		Version: "v2", ScoutSHA256: request.CatalogSHA256,
 		AdjSHA256: adjRequest.CatalogSHA256, Cards: reduction.Cards,
 		Omitted: reduction.Omitted, Partial: reduction.Partial, Diagnostics: reduction.Diagnostics,
 	})

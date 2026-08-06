@@ -1112,3 +1112,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-mechanism-fragment__touchpoint-list { display: grid; gap: .25rem; list-style: none; margin: .25rem 0 0; padding: 0 0 0 1rem; }
 .rm-mechanism-fragment__touchpoint-item { align-items: baseline; display: flex; flex-wrap: wrap; gap: .4rem; font-size: .76rem; }
 .rm-mechanism-fragment__touchpoint-label { color: var(--rm-dim); }
+
+/* Decision 233 (Archive 9): entry category summaries — quiet Show-all
+   toggle, collapsed full grid below the representatives. */
+.rm-overview-entry-group__show-all {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+.rm-overview-entry-group__all {
+  margin-top: 0.5rem;
+}

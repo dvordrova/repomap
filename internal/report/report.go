@@ -27,10 +27,12 @@ import (
 
 // Decision 232 (Archive 9): Study projection gains adjudication anchor
 // coverage (reviewed/unreviewed) and the semantic-empty state.
-const CurrentFormatVersion = 33
+// Decision 233: alternate co-projection + concentration marker.
+const CurrentFormatVersion = 34
 
 // Decision 232: adjudication anchor coverage + semantic-empty browse.
-const AtlasStudyReportProjectionVersion = 10
+// Decision 233: alternate co-projection + concentration marker.
+const AtlasStudyReportProjectionVersion = 11
 
 // MaxAtlasStudyBrowseSpans bounds the report-side provider-free per-span
 // browse. Truthful Total/Shown keep larger repositories honest; the complete
@@ -391,6 +393,13 @@ type StudyThemeCard struct {
 	Readings         []StudyThemeReading `json:"readings"`
 	Badge            string              `json:"badge"`
 	Limitation       string              `json:"limitation,omitempty"`
+	// Decision 233 (Archive 9): semantic-equivalent co-projected themes
+	// publish alternate titles/questions/readings as provenance and the
+	// portfolio-concentration marker as an exact count string.
+	AlternateTitles     []string             `json:"alternate_titles,omitempty"`
+	AlternateQuestions  []string             `json:"alternate_questions,omitempty"`
+	AlternateReadings   []StudyThemeReading  `json:"alternate_readings,omitempty"`
+	ConcentrationMarker string               `json:"concentration_marker,omitempty"`
 }
 
 // StudyThemeReading is one ordered exact reading on a theme card. Path/line
