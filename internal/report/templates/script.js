@@ -9875,6 +9875,8 @@
      label = msg('main.architecture.mechanism.label.resource') + ' · ' + label.slice('resource '.length);
     } else if (label.indexOf('operation') === 0) {
      label = msg('main.architecture.mechanism.label.operation');
+    } else if (label.indexOf('surface') === 0) {
+     label = msg('main.architecture.mechanism.label.surface');
     }
     if (transition.symbol && transition.symbol.indexOf('member-symbol') !== 0) {
      item.appendChild(txt('span', 'rm-mechanism-fragment__label', String(transition.symbol)));

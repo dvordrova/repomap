@@ -666,6 +666,15 @@ func TestArchitectureUserInspectorStaysCompactAndSourceBacked(t *testing.T) {
 		"detail: symbol",
 		"lowInformationComponent",
 		"has-user-compact-inspector",
+		// Decision 229 D1: all nine inspector questions answer or state a
+		// truthful empty explanation — no silent section omissions.
+		`this.msg("architecture.copy.no_observed_entry")`,
+		`this.msg("architecture.copy.no_observed_sources")`,
+		`this.msg("architecture.copy.no_observed_used_by")`,
+		`this.msg("architecture.copy.no_observed_uses")`,
+		`this.msg("architecture.copy.no_observed_studies")`,
+		`this.msg("architecture.copy.no_observed_callsites")`,
+		"rm-arch__inspector-empty",
 	} {
 		if !strings.Contains(reportJS+js+css, token) {
 			t.Errorf("compact architecture inspector is missing %q", token)

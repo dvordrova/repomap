@@ -454,9 +454,11 @@ func DeriveRepositoryGuide(data *ReportData) *RepositoryGuide {
 		guide.SystemStory = append([]string(nil), data.RepositoryThesis.SystemStory...)
 		guide.Areas = append([]RepositoryThesisArea(nil), data.RepositoryThesis.Areas...)
 	}
-	if guide.Purpose == "" {
-		guide.Purpose = repositoryPurpose(data.DocumentedPurpose, data.ProjectGuess, data.RepoName)
-	}
+	// Decision 221 A / 229 D3: the guide purpose is the backend-filtered
+	// thesis purpose ONLY. Raw README (DocumentedPurpose) is source
+	// material that renders as a labeled quote; it is never silently
+	// promoted to the primary purpose when the filtered thesis purpose is
+	// empty — the frontend shows the neutral local fallback instead.
 	for _, mechanism := range data.UserMechanisms {
 		switch mechanism.Role {
 		case OnboardingRoleExtensionPoint:

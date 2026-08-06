@@ -1656,6 +1656,13 @@
  margin: 7px 0 0;
 }
 
+.rm-arch__inspector-empty {
+  color: var(--rm-arch-muted);
+  font-size: .78rem;
+  font-style: italic;
+  margin: 0;
+}
+
 .rm-arch__compact-reference {
  border: 1px solid var(--rm-arch-line);
  border-radius: 9px;

@@ -524,7 +524,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-kind--config { background: #e0f2fe; color: var(--rm-info); }
 
 /* Cards */
-.rm-card { background: var(--rm-card); border: 1px solid var(--rm-border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; }
+.rm-card { background: var(--rm-card); border: 1px solid var(--rm-border); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
 .rm-explore { background: linear-gradient(145deg, #f8fbff, #f5f3ff); border-color: #cbd5e1; }
 .rm-explore__title { margin-bottom: .25rem; }
 .rm-explore__intro { color: var(--rm-dim); font-size: .82rem; margin: 0 0 1rem; }
@@ -1214,6 +1214,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.architecture.mechanism.label.boundary": { params: [], text: "Observed boundary" },
     "main.architecture.mechanism.label.resource": { params: [], text: "Observed resource" },
     "main.architecture.mechanism.label.operation": { params: [], text: "Observed operation" },
+    "main.architecture.mechanism.label.surface": { params: [], text: "Observed surface" },
     "main.architecture.mechanism.ordering.resolved_path_order": { params: [], text: "Local callsite order" },
     "main.architecture.mechanism.ordering.not_established": { params: [], text: "Continuation not recovered" },
     "main.architecture.mechanism.evidence_details": { params: [], text: "Evidence details" },
@@ -2176,6 +2177,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.section.observed_callsites": { params: [], text: "Observed external / state callsites" },
     "architecture.copy.observed_callsites_limit": { params: [], text: "Boundary and resource callsites observed inside this component's exact member scope. This states where an external/state touch occurs — it does not prove runtime dependency, reachability, ownership, or read/write semantics." },
     "architecture.copy.association_limitations": { params: [], text: "Limitations: physical target unknown; runtime reachability not proven; read/write/order semantics not proven." },
+    "architecture.copy.no_observed_entry": { params: [], text: "No observed launch point or entry surface for this component in the recorded analysis." },
+    "architecture.copy.no_observed_sources": { params: [], text: "No exact source start recorded for this component in the recorded analysis." },
+    "architecture.copy.no_observed_used_by": { params: [], text: "No observed one-hop structural relation where this component is the target." },
+    "architecture.copy.no_observed_uses": { params: [], text: "No observed one-hop structural relation where this component is the source." },
+    "architecture.copy.no_observed_studies": { params: [], text: "No study theme maps to this component in the recorded analysis." },
+    "architecture.copy.no_observed_callsites": { params: [], text: "No boundary/resource observation rows for this component in the recorded analysis." },
     "architecture.label.observation_count": { params: ["count"], format: function (params) { return formatCountTemplate("{count} observation(s)", params); } },
     "architecture.value.paired_boundary_resource": { params: [], text: "paired boundary + resource" },
     "architecture.value.interaction_boundary_resource": { params: [], text: "Observed external/state interaction" },
@@ -2680,6 +2687,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.architecture.mechanism.label.boundary": { params: [], text: "Наблюдаемая граница" },
     "main.architecture.mechanism.label.resource": { params: [], text: "Наблюдаемый ресурс" },
     "main.architecture.mechanism.label.operation": { params: [], text: "Наблюдаемая операция" },
+    "main.architecture.mechanism.label.surface": { params: [], text: "Наблюдаемая поверхность" },
     "main.architecture.mechanism.ordering.resolved_path_order": { params: [], text: "Локальный порядок вызовов" },
     "main.architecture.mechanism.ordering.not_established": { params: [], text: "Продолжение не восстановлено" },
     "main.architecture.mechanism.evidence_details": { params: [], text: "Детали свидетельств" },
@@ -3642,6 +3650,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.section.observed_callsites": { params: [], text: "Наблюдаемые внешние / state-вызовы" },
     "architecture.copy.observed_callsites_limit": { params: [], text: "Вызовы границ и ресурсов, наблюдаемые внутри точного скоупа членов этого компонента. Здесь указано, где происходит внешнее/state-касание — это не доказывает зависимость во время выполнения, достижимость, владение или семантику чтения/записи." },
     "architecture.copy.association_limitations": { params: [], text: "Ограничения: физическая цель неизвестна; достижимость во время выполнения не доказана; семантика чтения/записи/порядка не доказана." },
+    "architecture.copy.no_observed_entry": { params: [], text: "Для этого компонента в записанном анализе не найдена точка запуска или поверхность входа." },
+    "architecture.copy.no_observed_sources": { params: [], text: "Для этого компонента в записанном анализе не найдена точная исходная точка." },
+    "architecture.copy.no_observed_used_by": { params: [], text: "Не найдено однопереходное структурное отношение, где этот компонент — цель." },
+    "architecture.copy.no_observed_uses": { params: [], text: "Не найдено однопереходное структурное отношение, где этот компонент — источник." },
+    "architecture.copy.no_observed_studies": { params: [], text: "Ни одна тема изучения не связана с этим компонентом в записанном анализе." },
+    "architecture.copy.no_observed_callsites": { params: [], text: "Для этого компонента в записанном анализе не найдено наблюдений границ/ресурсов." },
     "architecture.label.observation_count": { params: ["count"], format: function (params) { return russianCount(params.count, "наблюдение", "наблюдения", "наблюдений"); } },
     "architecture.value.paired_boundary_resource": { params: [], text: "парные граница + ресурс" },
     "architecture.value.interaction_boundary_resource": { params: [], text: "Наблюдаемое внешнее / state-взаимодействие" },
@@ -13884,6 +13898,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
      label = msg('main.architecture.mechanism.label.resource') + ' · ' + label.slice('resource '.length);
     } else if (label.indexOf('operation') === 0) {
      label = msg('main.architecture.mechanism.label.operation');
+    } else if (label.indexOf('surface') === 0) {
+     label = msg('main.architecture.mechanism.label.surface');
     }
     if (transition.symbol && transition.symbol.indexOf('member-symbol') !== 0) {
      item.appendChild(txt('span', 'rm-mechanism-fragment__label', String(transition.symbol)));
