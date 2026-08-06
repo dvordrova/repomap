@@ -99,7 +99,7 @@ CURRENT.md updated (decisions 223-226 registered; D219 remains DEFERRED/history)
 - `go test -count=1 ./...` → EXIT 0, 74 ok, 0 FAIL
 - `go vet ./...` → EXIT 0
 - `go build -trimpath -o .bin/repomap ./cmd/repomap` → EXIT 0
-- binary SHA-256 (trimpath): `1ff06be9daf6cd55bb7598cdebc02886b0a6ad504d25dc468d531c52493a790d`
+- binary SHA-256 (trimpath): `0dc6bb46d2ac9d7e98109e317fe2213907d6dd8df8c0fb05708f9228551a1cef`
 - `node --check` script.js / ui_messages.js / architecture_canvas.js → EXIT 0
 - gofmt: only pre-existing dirty files remain (none from this program);
   report.go style fix committed
