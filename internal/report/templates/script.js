@@ -10222,6 +10222,24 @@
    return section;
   }
 
+  // Decision 230 (diagram review minor): closed-set deterministic
+  // mechanism limitation strings are localized for the RU product; only
+  // display text changes, never evidence identity.
+  var MECHANISM_LIMITATION_RU = {
+    'No locally saved transitions beyond the observed handoffs; execution order beyond them is not established.': 'Нет локально сохранённых переходов за пределами наблюдаемых передач управления; порядок выполнения за ними не установлен.',
+    'physical target unknown; runtime reachability not proven; read/write/order semantics not proven': 'Физическая цель неизвестна; достижимость в рантайме не доказана; семантика чтения/записи/порядка не доказана.',
+    'execution order and further transitions not established': 'Порядок выполнения и дальнейшие переходы не установлены.',
+    'process entry identity only; runtime reachability not proven': 'Только идентичность точки входа процесса; достижимость в рантайме не доказана.',
+    'runtime dispatch beyond the recorded build scenario not proven': 'Диспетчеризация в рантайме за пределами записанного сценария сборки не доказана.',
+  };
+  function mechanismLimitationText(value) {
+    if (REPORT_LANGUAGE === 'ru') {
+      var localized = MECHANISM_LIMITATION_RU[String(value)];
+      if (localized) return localized;
+    }
+    return String(value);
+  }
+
   function mechanismTransitionLabel(transition) {
    var rawLabel = String(transition && transition.label || '');
    var label = rawLabel.indexOf('process entry ') === 0 ? rawLabel.slice('process entry '.length) : rawLabel;
@@ -10280,7 +10298,7 @@
   function renderMechanismFrontier(frontier, fragment) {
    var box = el('div', 'rm-mechanism-fragment__frontier');
    box.appendChild(txt('strong', null, msg('main.architecture.mechanism.frontier_title')));
-   box.appendChild(txt('p', 'rm-arch__limitation', String(frontier.limitation || msg('main.architecture.mechanism.frontier_default'))));
+   box.appendChild(txt('p', 'rm-arch__limitation', mechanismLimitationText(frontier.limitation) || msg('main.architecture.mechanism.frontier_default')));
    (Array.isArray(frontier.unresolved) ? frontier.unresolved : []).forEach(function (item) {
     if (String(item || '').trim()) box.appendChild(txt('p', 'rm-mechanism-fragment__frontier-item', String(item)));
    });
@@ -10338,7 +10356,7 @@
    }
    var ordering = mechanismOrderingLabel(transition);
    if (ordering) item.appendChild(txt('span', 'rm-mechanism-fragment__ordering', ordering));
-   if (transition.limitation) item.appendChild(txt('p', 'rm-arch__limitation rm-mechanism-fragment__limitation', String(transition.limitation)));
+   if (transition.limitation) item.appendChild(txt('p', 'rm-arch__limitation rm-mechanism-fragment__limitation', mechanismLimitationText(transition.limitation)));
    var details = el('details', 'rm-mechanism-fragment__evidence-details');
    details.appendChild(txt('summary', 'rm-mechanism-fragment__evidence-summary', msg('main.architecture.mechanism.evidence_details')));
    var raw = [];
@@ -10557,6 +10575,12 @@
     if (staticSourceMode()) {
       options.openLocation = function (filePath, line) {
         return openStaticSource({ path: filePath, line: line || 0 });
+      };
+      // Decision 230 (fresh review task-4 minor): static reports render
+      // witness/edge jumps as real links (pinned revision, target=_blank,
+      // rel=noopener noreferrer) instead of buttons that call window.open.
+      options.staticSourceURL = function (filePath, line) {
+        return staticSourceURL(filePath, line || 0, 0);
       };
     } else if (serverMode() && currentRunID()) {
       options.openLocation = function (filePath, line, column) {

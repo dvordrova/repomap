@@ -2378,3 +2378,9 @@
 .rm-overview-remainder__summary {
   cursor: pointer;
 }
+
+/* Decision 230 (fresh review task-4 minor): static-report witness jumps
+   are links; keep the exact button look without UA link styling. */
+.rm-arch__edge-jump--link {
+  text-decoration: none;
+}
