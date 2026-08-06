@@ -19,27 +19,27 @@
 }
 
 .rm-arch {
- --rm-arch-ink: #152033;
- --rm-arch-muted: #64748b;
+ --rm-arch-ink: #14213a;
+ --rm-arch-muted: #526176;
  --rm-arch-faint: #94a3b8;
  --rm-arch-line: #d8e0ea;
  --rm-arch-panel: #ffffff;
  --rm-arch-canvas: #f6f8fb;
- --rm-arch-blue: #2563eb;
- --rm-arch-blue-soft: #dbeafe;
+ --rm-arch-blue: #3157d5;
+ --rm-arch-blue-soft: #eef2ff;
  --rm-arch-teal: #0f766e;
  --rm-arch-teal-soft: #ccfbf1;
  --rm-arch-violet: #6d5da8;
- --rm-arch-violet-soft: #ede9fe;
- --rm-arch-amber: #b45309;
+ --rm-arch-violet-soft: #f0edff;
+ --rm-arch-amber: #a16207;
  --rm-arch-amber-soft: #fef3c7;
  --rm-arch-task: #0891b2;
  --rm-arch-task-soft: #cffafe;
- --rm-arch-cancel: #dc2626;
- --rm-arch-cancel-soft: #fee2e2;
+ --rm-arch-cancel: #c2410c;
+ --rm-arch-cancel-soft: #ffedd5;
  --rm-arch-join: #7c3aed;
- --rm-arch-join-soft: #ede9fe;
- --rm-arch-frontier: #d97706;
+ --rm-arch-join-soft: #f0edff;
+ --rm-arch-frontier: #87570c;
  --rm-arch-frontier-soft: #fef3c7;
  --rm-arch-scale: 1;
  color: var(--rm-arch-ink);
