@@ -480,6 +480,54 @@ func TestReducerDeduplicatesByExactSourceIdentity(t *testing.T) {
 	}
 }
 
+// TestReducerIdentityCollisionPrefersDirectReading covers D224 R2: when two
+// anchors share the exact public identity (path,line,symbol) but differ in
+// fit, a supporting anchor listed FIRST in ReadingOrder must not cause the
+// theme's only direct reading to be dropped (which would silently omit the
+// whole theme). The direct winner replaces the supporting incumbent.
+func TestReducerIdentityCollisionPrefersDirectReading(t *testing.T) {
+	anchors := map[string]AnchorInfo{
+		"supporting-first": {Path: "webhooks.go", Symbol: "SendWebhook", Line: 42},
+		"direct-second":    {Path: "webhooks.go", Symbol: "SendWebhook", Line: 42},
+	}
+	input := ReducerInput{
+		Themes: []AdjudicatedTheme{{
+			CandidateRef: "t1", FinalTitle: "webhook dispatch", FinalQuestion: "how are webhooks dispatched?",
+			AnchorAssessments: []AnchorAssessment{
+				{AnchorRef: "supporting-first", Fit: FitSupporting, SupportedObservation: "webhook send is referenced"},
+				{AnchorRef: "direct-second", Fit: FitDirect, SupportedObservation: "webhook send is implemented here"},
+			},
+			ReadingOrder: []string{"supporting-first", "direct-second"},
+		}},
+		Candidates: map[string]*ScoutCandidate{
+			"t1": {Title: "webhook dispatch", Question: "how are webhooks dispatched?", ThemeKind: KindUserJourney,
+				AnchorRefs: []string{"supporting-first", "direct-second"}, WhyItMatters: "w", ExpectedLearning: "l", RelationClaim: RelationClaimEditorialOnly},
+		},
+		Anchors: anchors,
+	}
+	reduction, err := Reduce(input)
+	if err != nil {
+		t.Fatalf("Reduce: %v", err)
+	}
+	if len(reduction.Cards) != 1 {
+		t.Fatalf("cards = %d, want 1 (theme must not be silently omitted)", len(reduction.Cards))
+	}
+	card := reduction.Cards[0]
+	if len(card.Readings) != 1 {
+		t.Fatalf("readings = %d, want 1", len(card.Readings))
+	}
+	// The direct reading must have won the identity collision.
+	if card.Readings[0].Fit != FitDirect {
+		t.Fatalf("winning reading fit = %q, want direct (direct beats supporting)", card.Readings[0].Fit)
+	}
+	if card.Readings[0].SupportedObservation != "webhook send is implemented here" {
+		t.Fatalf("winning reading observation = %q, want the direct reading's observation", card.Readings[0].SupportedObservation)
+	}
+	if card.Badge != "editorial_source_backed" {
+		t.Fatalf("badge = %q, want editorial_source_backed (only direct reading, no unknowns)", card.Badge)
+	}
+}
+
 // TestReducerHonestCoverageBadge covers Decision 224 (D219 D): a theme with
 // a supporting-only facet or unresolved unknowns is partial, never fully
 // supported; a theme whose readings are all direct and unknowns empty is
