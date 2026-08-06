@@ -901,6 +901,11 @@ function architecturePartialTruth(data) {
     this.listen(this.drawerBackdrop, "click", () => this.closeInspector());
      this.inspector = element("aside", "rm-arch__inspector");
     this.inspector.setAttribute("aria-label", this.msg("architecture.aria.inspector"));
+    // Decision 230 D4: the fixed overlay drawer is a modal dialog —
+    // background pointer/keyboard policy is explicit (backdrop blocks
+    // pointer; focus trap keeps keyboard inside; Escape closes).
+    this.inspector.setAttribute("role", "dialog");
+    this.inspector.setAttribute("aria-modal", "true");
     workspace.appendChild(this.inspector);
     this.root.append(workspace, this.drawerBackdrop);
 
@@ -3225,7 +3230,21 @@ function architecturePartialTruth(data) {
      this.finishGuidedTour(false);
      return;
     }
+    const returnComponentID = this.selection.component;
     this.setSelection({ component: "", surface: "", step: "", edge: "" }, true);
+    // Decision 230 D4: focus returns to the component that opened the
+    // inspector — never to <body>.
+    if (returnComponentID) {
+     requestAnimationFrame(() => {
+      if (this.destroyed) return;
+      const card = this.componentElements.get(text(returnComponentID));
+      if (card && card.querySelector && card.querySelector(".rm-arch__component-card")) {
+       card.querySelector(".rm-arch__component-card").focus({ preventScroll: true });
+      } else if (card) {
+       card.focus({ preventScroll: true });
+      }
+     });
+    }
    }
 
   hasInspectorSelection(selection) {
@@ -3448,6 +3467,36 @@ function architecturePartialTruth(data) {
     close.setAttribute("aria-label", this.msg("architecture.aria.close_inspector"));
     this.listen(close, "click", () => this.closeInspector());
     this.inspector.appendChild(close);
+    // Decision 230 D4: when the inspector opens as a drawer the focus
+    // enters the close control (Escape already closes it). Applies to
+    // the modal overlay and the compact bottom sheet alike.
+    requestAnimationFrame(() => {
+     if (this.destroyed || this.inspector.hidden) return;
+     close.focus({ preventScroll: true });
+    });
+    if (!this.userMode) {
+     // Keyboard focus stays inside the drawer while it is open: Tab
+     // cycles between the first and last focusable element. Background
+     // map nodes are never keyboard-reachable through the overlay.
+     const trapFocus = (event) => {
+      if (this.inspector.hidden) return;
+      if (event.key !== "Tab") return;
+      const focusables = this.inspector.querySelectorAll(
+       'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"]), input, select, textarea'
+      );
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+       event.preventDefault();
+       last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+       event.preventDefault();
+       first.focus();
+      }
+     };
+     this.listen(this.inspector, "keydown", trapFocus);
+    }
     if (semanticArtifactActive) return this.renderSemanticArtifactInspector();
     if (this.guidedTour.active) return this.renderGuidedTourInspector();
    if (this.selection.step && this.selection.flow) {

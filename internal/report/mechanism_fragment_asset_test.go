@@ -157,10 +157,13 @@ if (!architectureTab) {
 }
 architectureTab.onclick();
 const root = roots["rm-architecture"];
-// Decision 229 D5: lanes (entry + transitions) render as separate cards —
-// never one linearized numbered sequence.
+// Decision 230 D8: connected fragments — the entry chain renders as a
+// graph (entry → lifecycle continuation → frontier) plus independent
+// fragments and side touchpoint groups; array order is never path order.
 const items = root.querySelectorAll(".rm-mechanism-fragment__lane");
 const frontier = root.querySelector(".rm-mechanism-fragment__frontier");
+const graphs = root.querySelectorAll(".rm-mechanism-fragment__graph");
+const touchpointGroups = root.querySelectorAll(".rm-mechanism-fragment__touchpoint-group");
 const kinds = items.map((item) => {
   const strong = item.querySelector(".rm-mechanism-fragment__kind");
   return strong ? strong.textContent : "";
@@ -191,6 +194,8 @@ process.stdout.write(JSON.stringify({
   evidenceSpans,
   limitationSpans,
   labels,
+  graphCount: graphs.length,
+  touchpointGroupCount: touchpointGroups.length,
   frontierPresent: !!frontier,
   frontierText: frontier ? frontier.textContent.replace(/\s+/g, " ").trim() : "",
   architectureText: root.textContent.slice(0, 400),
@@ -205,28 +210,34 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("run mechanism fragment workspace: %v\n%s", err, output)
 	}
 	var out struct {
-		ItemCount        int      `json:"itemCount"`
-		Kinds            []string `json:"kinds"`
-		Orderings        []string `json:"orderings"`
-		EvidenceSpans    []string `json:"evidenceSpans"`
-		LimitationSpans  []string `json:"limitationSpans"`
-		Labels           []string `json:"labels"`
-		FrontierPresent  bool     `json:"frontierPresent"`
-		FrontierText     string   `json:"frontierText"`
-		ArchitectureText string   `json:"architectureText"`
+		ItemCount           int      `json:"itemCount"`
+		Kinds               []string `json:"kinds"`
+		Orderings           []string `json:"orderings"`
+		EvidenceSpans       []string `json:"evidenceSpans"`
+		LimitationSpans     []string `json:"limitationSpans"`
+		Labels              []string `json:"labels"`
+		GraphCount          int      `json:"graphCount"`
+		TouchpointGroupCount int     `json:"touchpointGroupCount"`
+		FrontierPresent     bool     `json:"frontierPresent"`
+		FrontierText        string   `json:"frontierText"`
+		ArchitectureText    string   `json:"architectureText"`
 	}
 	if err := json.Unmarshal(output, &out); err != nil {
 		t.Fatalf("decode mechanism fragment workspace: %v\n%s", err, output)
 	}
-	// Entry + direct_static_call + unresolved_continuation + boundary +
-	// resource lanes, all as human copy (Decision 229 D4: raw enums never
-	// primary UI).
-	if out.ItemCount != 5 {
-		t.Fatalf("items = %d, want 5: %#v", out.ItemCount, out.Kinds)
+	// Decision 230 D8: the entry chain (entry + lifecycle direct call)
+	// renders as connected lanes with exact joins; the unresolved
+	// continuation is the frontier; boundary/resource observations become
+	// side touchpoint groups. Raw enums never primary UI.
+	if out.ItemCount != 2 {
+		t.Fatalf("items = %d, want 2 entry-chain lanes: %#v", out.ItemCount, out.Kinds)
+	}
+	if out.GraphCount < 1 || out.TouchpointGroupCount < 1 || !out.FrontierPresent {
+		t.Fatalf("fragment structure incomplete: graphs=%d touchpoints=%d frontier=%v",
+			out.GraphCount, out.TouchpointGroupCount, out.FrontierPresent)
 	}
 	wantKinds := []string{
-		"Process entry", "Direct static call", "Continuation not recovered",
-		"Observed boundary callsite", "Observed outbound client callsite",
+		"Process entry", "Direct static call",
 	}
 	for index, want := range wantKinds {
 		if index >= len(out.Kinds) || out.Kinds[index] != want {
@@ -243,27 +254,18 @@ process.stdout.write(JSON.stringify({
 			t.Fatalf("raw enum leaked into primary mechanism copy: %q", kind)
 		}
 	}
-	// Boundary/resource observation labels become human copy
-	// ("Observed boundary · net", "Observed resource · database").
-	if len(out.Labels) != 5 || !strings.Contains(out.Labels[3], "Observed boundary") ||
-		!strings.Contains(out.Labels[4], "Observed resource") ||
-		strings.Contains(out.Labels[3], "boundary net") || strings.Contains(out.Labels[4], "resource database") {
-		t.Fatalf("boundary/resource labels are not human copy: %#v", out.Labels)
-	}
-	// Orderings: human copy — Local callsite order, Continuation not
-	// recovered (resolved_path_order / not_established stay in details).
-	if len(out.Orderings) != 5 || out.Orderings[1] != "Local callsite order" || out.Orderings[2] != "Continuation not recovered" {
+	// Orderings: human copy — Local callsite order (resolved_path_order /
+	// not_established stay in details).
+	if len(out.Orderings) != 2 || out.Orderings[1] != "Local callsite order" {
 		t.Fatalf("orderings = %#v", out.Orderings)
 	}
 	// Evidence (including raw enums) under Evidence details — always
 	// present, never hover-only.
-	if len(out.EvidenceSpans) != 5 || out.EvidenceSpans[0] == "" || out.EvidenceSpans[1] == "" || out.EvidenceSpans[2] == "" ||
-		out.EvidenceSpans[3] == "" || out.EvidenceSpans[4] == "" {
-		t.Fatalf("evidence spans = %#v, want 5 non-empty", out.EvidenceSpans)
+	if len(out.EvidenceSpans) != 2 || out.EvidenceSpans[0] == "" || out.EvidenceSpans[1] == "" {
+		t.Fatalf("evidence spans = %#v, want 2 non-empty", out.EvidenceSpans)
 	}
-	if len(out.LimitationSpans) != 5 || out.LimitationSpans[0] == "" || out.LimitationSpans[1] == "" || out.LimitationSpans[2] == "" ||
-		out.LimitationSpans[3] == "" || out.LimitationSpans[4] == "" {
-		t.Fatalf("limitation spans = %#v, want 5 non-empty", out.LimitationSpans)
+	if len(out.LimitationSpans) != 2 || out.LimitationSpans[0] == "" || out.LimitationSpans[1] == "" {
+		t.Fatalf("limitation spans = %#v, want 2 non-empty", out.LimitationSpans)
 	}
 	// Frontier always visible without hover, and carries the unresolved item.
 	if !out.FrontierPresent || !strings.Contains(out.FrontierText, "No locally saved transitions") ||
