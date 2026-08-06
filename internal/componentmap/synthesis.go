@@ -20,9 +20,13 @@ import (
 )
 
 const (
-	SynthesisRequestVersion = 14
-	SynthesisRecordVersion  = 11
-	SynthesisPromptVersion  = "architecture-grounding-v17"
+	// Decision 231 (Archive 9): shared participation and prompt v18 —
+	// the model names units and responsibilities; the backend owns ref
+	// kinds, ordering, duplicates, coverage and validation. Any saved
+	// v17/v14/v10 record fails replay closed (versioned identity).
+	SynthesisRequestVersion = 15
+	SynthesisRecordVersion  = 12
+	SynthesisPromptVersion  = "architecture-grounding-v18"
 
 	maxSynthesisRequestBytes  = 1 << 20
 	maxSynthesisPromptBytes   = maxSynthesisRequestBytes + (16 << 10)
@@ -250,7 +254,10 @@ type synthesisPrivateCatalog struct {
 	memberRoles  map[string]CandidateRole
 	anchorsByID        map[string]SynthesisAnchorRef
 	anchorsByRef       map[string]string
-	anchorKinds        map[string]BehaviorAnchorKind
+	// Decision 231 (Archive 9): ref-only anchor lookup for responses that
+	// omit the backend-owned kind ({"ref":"a1"}).
+	anchorsByRefOnly map[string]string
+	anchorKinds      map[string]BehaviorAnchorKind
 	// Decision 230 D9.7: exact members owned by each behavior anchor
 	// (anchor-specific slice for repeated broad units).
 	anchorMemberIDs map[string]map[MemberID]struct{}
@@ -298,6 +305,7 @@ func buildSynthesisPrivateCatalog(bundle CandidateBundle) (synthesisPrivateCatal
 		memberRoles:        make(map[string]CandidateRole, len(bundle.Candidates)),
 		anchorsByID:        make(map[string]SynthesisAnchorRef, len(bundle.BehaviorAnchors)),
 		anchorsByRef:       make(map[string]string, len(bundle.BehaviorAnchors)),
+		anchorsByRefOnly:   make(map[string]string, len(bundle.BehaviorAnchors)),
 		anchorKinds:        make(map[string]BehaviorAnchorKind, len(bundle.BehaviorAnchors)),
 		anchorMemberIDs:    make(map[string]map[MemberID]struct{}, len(bundle.BehaviorAnchors)),
 		memberParentIDs:    make(map[MemberID]MemberID, len(bundle.Candidates)),
@@ -359,6 +367,7 @@ func buildSynthesisPrivateCatalog(bundle CandidateBundle) (synthesisPrivateCatal
 		ref := SynthesisAnchorRef{Kind: anchor.Kind, Ref: refValue}
 		catalog.anchorsByID[anchor.ID] = ref
 		catalog.anchorsByRef[ref.key()] = anchor.ID
+		catalog.anchorsByRefOnly[ref.Ref] = anchor.ID
 		catalog.anchorKinds[ref.Ref] = ref.Kind
 		if len(anchor.MemberIDs) > 0 {
 			memberSet := make(map[MemberID]struct{}, len(anchor.MemberIDs))
@@ -945,17 +954,17 @@ func buildSynthesisPromptForLanguage(
 	}
 	system := `You create a compact conceptual architecture landscape from bounded local repository facts.
 
-Use conceptual member, anchor, and flow refs as opaque request-local typed values. Copy a ref only into a response field of the same kind. Do not rewrite refs, infer new refs, or mention members absent from the request. Refs under structural_context are read-only locator context and must never occur in response member_refs.
+Use conceptual member, anchor, and unit refs as opaque request-local values. Copy a ref exactly as supplied; never rewrite refs, infer new refs, or mention members absent from the request. Refs under structural_context are read-only locator context and must never occur in response unit_refs, member_refs, or anchor_refs.
 Local semantic facts, compact structural relations, structural locator containment, flow participation, anchor proof_mode, and certainty are read-only grouping context. They must never be returned, upgraded, replaced, or converted into execution order. A declaration_family anchor is static declaration context and never proves runtime behavior. Canonical repository identities, exact source locations, provider provenance, scenarios, catalog identity, versions, and hashes are private and absent from this request.
 
-Return exactly one compact JSON proposal object with one ordered records array. Use this exact tagged-record grammar:
-{"records":[{"kind":"subsystem","ref":"g1","name":"first subsystem","description":"first purpose"},{"kind":"component","subsystem_ref":"g1","name":"first component","description":"first responsibility","unit_refs":[{"kind":"package","ref":"u1"}],"anchor_refs":[{"kind":"process_entry","ref":"a1"}],"hypothesis":false},{"kind":"subsystem","ref":"g2","name":"second subsystem","description":"second purpose"},{"kind":"component","subsystem_ref":"g2","name":"second component","description":"second responsibility","unit_refs":[{"kind":"package","ref":"u2"}],"anchor_refs":[],"hypothesis":true}]}
+Return exactly one compact JSON proposal object with one ordered records array. Use this tagged-record grammar:
+{"records":[{"kind":"subsystem","ref":"g1","name":"first subsystem","description":"first purpose"},{"kind":"component","subsystem_ref":"g1","name":"first component","description":"first responsibility","unit_refs":[{"ref":"u1"}],"anchor_refs":[{"ref":"a1"}]},{"kind":"subsystem","ref":"g2","name":"second subsystem","description":"second purpose"},{"kind":"component","subsystem_ref":"g2","name":"second component","description":"second responsibility","unit_refs":[{"ref":"u2"}],"anchor_refs":[]}]}
 
-The entire response must parse as exactly one complete JSON object. Its only root field is records. A subsystem record contains exactly kind, ref, name, and description. Its ref is a unique response-local value g1, g2, and so on; it is not a supplied request ref. A component record contains exactly kind, subsystem_ref, name, description, either unit_refs or member_refs, anchor_refs, and hypothesis. When the request supplies a units catalog, group unit_refs (u*): copy each unit ref exactly as supplied and never split one unit across components. When the request has no units catalog, group member_refs (p*/s*/f*) instead; never mix unit_refs and member_refs in one component. Copy subsystem_ref exactly from one subsystem record. Do not nest records or emit a second root object. Before returning, silently validate the complete JSON syntax, every record kind, every unique subsystem ref, and every exact subsystem_ref, then return only that one object.
+The entire response must parse as exactly one complete JSON object. Its only root field is records. A subsystem record contains exactly kind, ref, name, and description. Its ref is a unique response-local value g1, g2, and so on. A component record contains exactly kind, subsystem_ref, name, description, unit_refs or member_refs, and anchor_refs. When the request supplies a units catalog, group unit_refs (u*) by copying each unit ref exactly as supplied; when the request has no units catalog, group member_refs (p*/s*/f*) instead; never mix unit_refs and member_refs in one component. Copy subsystem_ref exactly from one subsystem record. Do not nest records or emit a second root object.
 
-Records are in conceptual display order. Emit each subsystem record followed by its component records. Never repeat a unit ref within one component. Never repeat an anchor ref within one component. units is the exhaustive bounded local unit catalog available for grouping: group units coherently, do not invent, rename, or rewrite unit refs. A unit may legitimately participate in several components when it genuinely serves several conceptual roles; this expresses participation, not exclusive ownership, and is accepted. An exact partial grouping is valid: omitted units remain in a deterministic local unclassified remainder and must not be echoed, renamed, or placed in a model-authored remainder. At least one supplied unit ref must be returned. Before returning, collect the distinct unit_refs from every component and self-check them: every returned unit ref must be an exact supplied unit ref, with no unknown or wrong-kind ref. Cross-cutting repeats count once for this identity self-check. Every component must contain at least one supplied unit ref (or, under the legacy member contract, at least one supplied conceptual member ref).
+Records are in conceptual display order. Emit each subsystem record followed by its component records. A unit may legitimately participate in several components when it genuinely serves several distinct conceptual roles — this is shared participation, not exclusive ownership, and is accepted; the backend classifies ownership mechanics. Name what distinguishes each component from its siblings. An exact partial grouping is valid: omitted units remain in a deterministic local unclassified remainder and must not be echoed, renamed, or placed in a model-authored remainder. Fewer groups are better than padding: when evidence is weak, return fewer components honestly. A component may be anchor-backed shared participation with zero exclusive unit members; anchor_refs are optional per component, not required.
 
-Repository archetype and grounding mode are local facts. A primary pillar is one subsystem record; component records are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, prefer four to seven distinct subsystem records when the supplied evidence supports that many, never more than twelve. Tiny, library, and package-landscape requests may honestly use one to three. Prefer one to four component records per subsystem and no more than forty-eight component records in total. hypothesis is required wire syntax but only advisory model input: the backend derives the product hypothesis status exclusively from exact process_entry/call_target proof scoped to every component member. declaration_family never proves operational grounding. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
+Repository archetype and grounding mode are local facts. A primary pillar is one subsystem record; component records are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, prefer four to seven distinct subsystem records when the supplied evidence supports that many, never more than twelve. Tiny, library, and package-landscape requests may honestly use one to three. Prefer one to four component records per subsystem and no more than forty-eight component records in total. hypothesis is not part of the response; the backend derives product hypothesis status exclusively from exact process_entry/call_target proof scoped to every component member. declaration_family never proves operational grounding. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
 
 Do not return versions, catalog identity, hashes, canonical IDs, edges, relations, flow definitions or transitions, fact payloads, repository paths, qualified symbols, test details, evidence, certainty, provenance, scenarios, source locations, coordinates, dimensions, ports, colors, styles, UI settings, markdown, or explanatory prose. Do not claim temporal or runtime behavior from static relations.`
 	if language == "ru" {
@@ -2048,18 +2057,24 @@ func decodeSynthesisUnitRef(raw json.RawMessage) (SynthesisUnitRef, error) {
 	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
 		return SynthesisUnitRef{}, fmt.Errorf("proposal unit ref is not an object")
 	}
-	if !hasExactSynthesisFields(fields, "kind", "ref") {
+	// Decision 231 (Archive 9): ref kind is backend-owned — the model may
+	// omit it entirely ({"ref":"u1"}); a supplied kind is still validated.
+	if !hasExactSynthesisFields(fields, "ref") && !hasExactSynthesisFields(fields, "kind", "ref") {
 		return SynthesisUnitRef{}, fmt.Errorf("proposal unit ref fields do not match the bounded contract")
-	}
-	kind, err := decodeRequiredProposalString(fields, "kind")
-	if err != nil {
-		return SynthesisUnitRef{}, err
 	}
 	ref, err := decodeRequiredProposalString(fields, "ref")
 	if err != nil {
 		return SynthesisUnitRef{}, err
 	}
-	return SynthesisUnitRef{Kind: MemberKind(kind), Ref: ref}, nil
+	kind := MemberPackage
+	if rawKind, exists := fields["kind"]; exists && !isJSONNull(rawKind) {
+		decodedKind, kindErr := decodeRequiredProposalString(fields, "kind")
+		if kindErr != nil {
+			return SynthesisUnitRef{}, kindErr
+		}
+		kind = MemberKind(decodedKind)
+	}
+	return SynthesisUnitRef{Kind: kind, Ref: ref}, nil
 }
 
 func decodeSynthesisAnchorRef(raw json.RawMessage) (SynthesisAnchorRef, error) {
@@ -2067,18 +2082,24 @@ func decodeSynthesisAnchorRef(raw json.RawMessage) (SynthesisAnchorRef, error) {
 	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
 		return SynthesisAnchorRef{}, fmt.Errorf("proposal anchor ref is not an object")
 	}
-	if !hasExactSynthesisFields(fields, "kind", "ref") {
+	// Decision 231 (Archive 9): anchor kind is backend-owned — the model
+	// may omit it ({"ref":"a1"}); a supplied kind is still validated.
+	if !hasExactSynthesisFields(fields, "ref") && !hasExactSynthesisFields(fields, "kind", "ref") {
 		return SynthesisAnchorRef{}, fmt.Errorf("proposal anchor ref fields do not match the bounded contract")
-	}
-	kind, err := decodeRequiredProposalString(fields, "kind")
-	if err != nil {
-		return SynthesisAnchorRef{}, err
 	}
 	ref, err := decodeRequiredProposalString(fields, "ref")
 	if err != nil {
 		return SynthesisAnchorRef{}, err
 	}
-	return SynthesisAnchorRef{Kind: BehaviorAnchorKind(kind), Ref: ref}, nil
+	var kind BehaviorAnchorKind
+	if rawKind, exists := fields["kind"]; exists && !isJSONNull(rawKind) {
+		decodedKind, kindErr := decodeRequiredProposalString(fields, "kind")
+		if kindErr != nil {
+			return SynthesisAnchorRef{}, kindErr
+		}
+		kind = BehaviorAnchorKind(decodedKind)
+	}
+	return SynthesisAnchorRef{Kind: kind, Ref: ref}, nil
 }
 
 func resolveSynthesisWireProposal(
@@ -2219,21 +2240,28 @@ func resolveSynthesisWireProposal(
 			}
 			component.MemberIDs = append(component.MemberIDs, memberID)
 		}
-		// Decision 230 D9.7: anchors resolve BEFORE units so a repeated
-		// broad unit can be reduced to its anchor-specific slice. A unit
-		// holds package members while behavior anchors usually own exact
-		// symbol members, so the slice covers both the anchor members and
-		// their parent packages (fresh review B1: the raw intersection is
-		// empty for package units and would whole-reject every component).
-		anchorMemberSet := make(map[MemberID]struct{})
+		// Decision 230 D9.7 / 231: anchors resolve with exact catalog
+		// kinds; anchor membership stays attached for grounding and UI
+		// (shared participation needs no exclusive member slice).
 		seenAnchors := make(map[string]struct{}, len(record.AnchorRefs))
 		for _, anchorRef := range record.AnchorRefs {
-			if expectedKind, exists := catalog.anchorKinds[anchorRef.Ref]; exists && expectedKind != anchorRef.Kind {
-				salvageComponent("proposal.unknown_anchor_id", "proposal anchor ref has the wrong request-local kind")
-				componentSalvaged = true
-				break
+			// Decision 231 (Archive 9): a model may omit the anchor kind
+			// ({"ref":"a1"}); the catalog owns kinds. A supplied wrong
+			// kind still fails item-scope. With an omitted kind the ref is
+			// resolved by the ref-only catalog key.
+			if anchorRef.Kind != "" {
+				if expectedKind, exists := catalog.anchorKinds[anchorRef.Ref]; exists && expectedKind != anchorRef.Kind {
+					salvageComponent("proposal.unknown_anchor_id", "proposal anchor ref has the wrong request-local kind")
+					componentSalvaged = true
+					break
+				}
 			}
-			anchorID, exists := catalog.anchorsByRef[anchorRef.key()]
+			var anchorID string
+			if anchorRef.Kind == "" {
+				anchorID, exists = catalog.anchorsByRefOnly[anchorRef.Ref]
+			} else {
+				anchorID, exists = catalog.anchorsByRef[anchorRef.key()]
+			}
 			if !exists {
 				salvageComponent("proposal.unknown_anchor_id", "proposal references an unknown request-local anchor ref")
 				componentSalvaged = true
@@ -2246,14 +2274,6 @@ func resolveSynthesisWireProposal(
 			}
 			seenAnchors[anchorID] = struct{}{}
 			component.AnchorIDs = append(component.AnchorIDs, anchorID)
-			if anchorMembers, exists := catalog.anchorMemberIDs[anchorID]; exists {
-				for memberID := range anchorMembers {
-					anchorMemberSet[memberID] = struct{}{}
-					if parentID, parentExists := catalog.memberParentIDs[memberID]; parentExists {
-						anchorMemberSet[parentID] = struct{}{}
-					}
-				}
-			}
 		}
 		if !componentSalvaged && len(record.UnitRefs) > 0 {
 			// Decision 216: a component grouping unit refs (u*) expands locally
@@ -2262,7 +2282,10 @@ func resolveSynthesisWireProposal(
 			unitMembersByRef := unitCatalogUnitMembersByWireRef(unitCatalog)
 			seenUnits := make(map[string]struct{}, len(record.UnitRefs))
 			for _, unitRef := range record.UnitRefs {
-				if unitRef.Kind != MemberPackage {
+				// Decision 231 (Archive 9): the model may omit the unit
+				// kind ({"ref":"u1"}); units are package scope by
+				// contract. A supplied wrong kind still fails item-scope.
+				if unitRef.Kind != "" && unitRef.Kind != MemberPackage {
 					salvageComponent("proposal.unknown_unit_ref", "proposal unit ref has the wrong request-local kind")
 					componentSalvaged = true
 					break
@@ -2280,41 +2303,18 @@ func resolveSynthesisWireProposal(
 				}
 				seenUnits[unitRef.Ref] = struct{}{}
 				if unitUsage[unitRef.Ref] > 1 {
-					// Decision 230 D9.7: repeated broad unit = shared
-					// scope. Keep only the anchor-specific slice (the
-					// exact members this component's anchors own — or,
-					// when the unit holds packages and the anchors hold
-					// only symbols, the anchors' exact symbol members);
-					// never hand a full broad unit to several owners.
-					sliceFound := false
-					for _, memberID := range members {
-						if _, covered := anchorMemberSet[memberID]; covered {
-							component.MemberIDs = append(component.MemberIDs, memberID)
-							sliceFound = true
-						}
-					}
-					if !sliceFound && len(anchorMemberSet) > 0 {
-						// Fresh review B1: the unit may contain only
-						// package members while the anchors own exact
-						// symbol members. The anchor-specific slice
-						// survives as the anchors' exact members — the
-						// component keeps real, verified ownership
-						// instead of being dropped.
-						sliceMemberIDs := make([]MemberID, 0, len(anchorMemberSet))
-						for memberID := range anchorMemberSet {
-							sliceMemberIDs = append(sliceMemberIDs, memberID)
-						}
-						sort.Slice(sliceMemberIDs, func(i, j int) bool {
-							return sliceMemberIDs[i].key() < sliceMemberIDs[j].key()
-						})
-						component.MemberIDs = append(component.MemberIDs, sliceMemberIDs...)
-					}
-					salvageComponent("proposal.shared_unit_slice", "proposal reuses one unit ref across several components; the component keeps only its anchor-specific slice")
-					if len(component.MemberIDs) == 0 {
-						salvageComponent("proposal.empty_anchor_slice", "component's anchors own no exact member of the shared unit; component skipped item-scope")
-						componentSalvaged = true
-						break
-					}
+					// Decision 231 (Archive 9): repeated broad unit = shared
+					// participation, never exclusive ownership. The component
+					// keeps the unit ref in SharedUnitRefs and its exact
+					// anchors; it does NOT need an exclusive member slice to
+					// survive. Package units and symbol anchors legitimately
+					// differ in kind — the old package∩symbol slice was empty
+					// by type and deleted useful roles (Telebot/Chatto whole
+					// reject, Restic dispatcher loss). Anchors stay attached
+					// for grounding and UI; Apply emits the counted
+					// shared_unit_slice finding when the participation
+					// publishes.
+					component.SharedUnitRefs = append(component.SharedUnitRefs, unitRef.Ref)
 				} else {
 					component.MemberIDs = append(component.MemberIDs, members...)
 				}

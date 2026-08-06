@@ -69,8 +69,13 @@ func diagnosticSeverity(code string) FindingSeverity {
 		// anchor-specific slice is a recoverable normalization; an empty
 		// slice drops only the referencing component.
 		"proposal.shared_unit_slice",
-		"proposal.empty_anchor_slice":
-		return FindingRecoverable
+		"proposal.empty_anchor_slice",
+		// Decision 231 (Archive 9): a structurally valid proposal that
+		// covers no conceptual members is an honest zero-useful-semantic
+		// result — the exact local landscape publishes with this
+		// recoverable finding, never a malformed-schema label.
+		"proposal.zero_useful_semantic_components":
+			return FindingRecoverable
 	default:
 		return FindingAdvisory
 	}
@@ -219,10 +224,11 @@ func cloneProposal(proposal Proposal) Proposal {
 		for componentIndex, component := range subsystem.Components {
 			result.Subsystems[subsystemIndex].Components[componentIndex] = ProposedComponent{
 				Name: component.Name, Description: component.Description,
-				MemberIDs:  append([]MemberID(nil), component.MemberIDs...),
-				AnchorIDs:  append([]string(nil), component.AnchorIDs...),
-				Hypothesis: component.Hypothesis,
-				sourceIDs:  append([]ComponentID(nil), component.sourceIDs...),
+				MemberIDs:      append([]MemberID(nil), component.MemberIDs...),
+				SharedUnitRefs: append([]string(nil), component.SharedUnitRefs...),
+				AnchorIDs:      append([]string(nil), component.AnchorIDs...),
+				Hypothesis:     component.Hypothesis,
+				sourceIDs:      append([]ComponentID(nil), component.sourceIDs...),
 			}
 		}
 	}
@@ -361,6 +367,17 @@ func fallbackReasonForDiagnostics(diagnostics []Diagnostic, hasAnchors bool) Fal
 func hasFatalDiagnostics(diagnostics []Diagnostic) bool {
 	for _, diagnostic := range diagnostics {
 		if diagnostic.Severity == FindingFatal {
+			return true
+		}
+	}
+	return false
+}
+
+// hasDiagnosticCode reports whether the diagnostics carry the exact code
+// (Decision 231 zero-useful-semantic local-only outcome).
+func hasDiagnosticCode(diagnostics []Diagnostic, code string) bool {
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Code == code {
 			return true
 		}
 	}

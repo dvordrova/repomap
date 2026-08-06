@@ -14,7 +14,9 @@ import (
 
 // ArchitectureCanvasVersion changes when the saved projection semantics or
 // identity rules change. It is independent of the landscape and proof versions.
-const ArchitectureCanvasVersion = 9
+// Decision 231 (Archive 9): shared participation projects shared scope and
+// shared members (ArchitectureCanvasVersion 10).
+const ArchitectureCanvasVersion = 10
 
 type ArchitectureCanvasInput struct {
 	CandidateBundle componentmap.CandidateBundle
@@ -89,6 +91,12 @@ type ArchitectureComponent struct {
 	// alternatives in details instead of dropping them silently.
 	AlternateNames        []string `json:"alternate_names,omitempty"`
 	AlternateDescriptions []string `json:"alternate_descriptions,omitempty"`
+	// Decision 231 (Archive 9): shared participation. SharedUnitRefs name
+	// the units this component participates in without exclusive
+	// ownership; SharedMembers is their exact local expansion. The
+	// product shows shared package scope instead of cloned ownership.
+	SharedUnitRefs []string                  `json:"shared_unit_refs,omitempty"`
+	SharedMembers  []componentmap.Candidate  `json:"shared_members,omitempty"`
 }
 
 // ArchitectureStructuralLocator retains an exact producer-owned source or
@@ -421,6 +429,12 @@ func projectArchitectureLandscape(
 		bindings:         make(map[architectureBindingKey]componentmap.FlowAnchorBinding),
 		flowNames:        make(map[componentmap.FlowID]string, len(bundle.Flows)),
 	}
+	// Decision 231 (Archive 9): shared participation projects its exact
+	// local expansion; the candidate index resolves SharedMemberIDs.
+	known := make(map[componentmap.MemberID]componentmap.Candidate, len(bundle.Candidates))
+	for _, candidate := range bundle.Candidates {
+		known[candidate.ID] = candidate
+	}
 	for _, flow := range bundle.Flows {
 		index.flowNames[flow.ID] = flow.Name
 	}
@@ -444,6 +458,19 @@ func projectArchitectureLandscape(
 					}
 				}
 			}
+			// Decision 231 (Archive 9): shared participation projects its
+			// exact local expansion as SharedMembers (scope visible, no
+			// cloned ownership). Candidates are value types; the shallow
+			// copy matches the exclusive Members projection.
+			sharedMembers := make([]componentmap.Candidate, 0, len(component.SharedMemberIDs))
+			for _, memberID := range component.SharedMemberIDs {
+				if exact, exists := known[memberID]; exists {
+					sharedMembers = append(sharedMembers, exact)
+				}
+			}
+			sort.Slice(sharedMembers, func(i, j int) bool {
+				return memberIDSortKey(sharedMembers[i].ID) < memberIDSortKey(sharedMembers[j].ID)
+			})
 			canvas.Components = append(canvas.Components, ArchitectureComponent{
 				ID: component.ID, SubsystemID: subsystem.ID,
 				Name: component.Name, Description: component.Description, Members: members,
@@ -454,6 +481,8 @@ func projectArchitectureLandscape(
 				// keep every alternate label/description as provenance.
 				AlternateNames:        append([]string(nil), component.AlternateNames...),
 				AlternateDescriptions: append([]string(nil), component.AlternateDescriptions...),
+				SharedUnitRefs:        append([]string(nil), component.SharedUnitRefs...),
+				SharedMembers:         sharedMembers,
 			})
 		}
 		canvas.Subsystems = append(canvas.Subsystems, projected)

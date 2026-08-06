@@ -19,11 +19,16 @@ const (
 	// or locally validated landscape semantics change.
 	// Decision 230 D4: equivalent resolved member-set collisions coalesce
 	// into one representative component (ContractVersion 10).
-	ContractVersion = 10
+	// Decision 231 (Archive 9): shared participation — a component may
+	// publish with shared unit scope plus exact anchors and zero exclusive
+	// members; shared members are part of the accepted landscape
+	// (ContractVersion 11).
+	ContractVersion = 11
 	// ProposalVersion changes whenever the wire proposal shape or its
 	// acceptance semantics change; D4 equivalence coalescing is
-	// acceptance semantics (ProposalVersion 10).
-	ProposalVersion = 10
+	// acceptance semantics (ProposalVersion 10); shared participation is
+	// acceptance semantics (ProposalVersion 11).
+	ProposalVersion = 11
 
 	maxCandidates        = 512
 	maxFlows             = 64
@@ -404,9 +409,14 @@ type ProposedComponent struct {
 	Name        string     `json:"name"`
 	Description string     `json:"description,omitempty"`
 	MemberIDs   []MemberID `json:"member_ids"`
-	AnchorIDs   []string   `json:"anchor_ids,omitempty"`
-	Hypothesis  bool       `json:"hypothesis,omitempty"`
-	sourceIDs   []ComponentID
+	// Decision 231 (Archive 9): shared participation. A unit referenced by
+	// several components is shared scope; each participant names the unit
+	// here instead of claiming exclusive member IDs. The backend derives
+	// the shared vs owned classification from unit usage across components.
+	SharedUnitRefs []string `json:"shared_unit_refs,omitempty"`
+	AnchorIDs      []string `json:"anchor_ids,omitempty"`
+	Hypothesis     bool     `json:"hypothesis,omitempty"`
+	sourceIDs      []ComponentID
 }
 
 type ComponentID string
@@ -437,6 +447,14 @@ type Component struct {
 	// provenance instead of being silently dropped.
 	AlternateNames        []string `json:"alternate_names,omitempty"`
 	AlternateDescriptions []string `json:"alternate_descriptions,omitempty"`
+	// Decision 231 (Archive 9): shared participation. SharedUnitRefs are
+	// the units this component participates in without exclusive ownership
+	// (several components name the same unit because it serves several
+	// roles). SharedMemberIDs is their exact local expansion, kept separate
+	// from exclusive Members so the product can show shared package scope
+	// without cloned ownership.
+	SharedUnitRefs []string   `json:"shared_unit_refs,omitempty"`
+	SharedMemberIDs []MemberID `json:"shared_member_ids,omitempty"`
 }
 
 type SubsystemCategory string
@@ -585,7 +603,7 @@ func Apply(bundle CandidateBundle, proposal Proposal) (Landscape, error) {
 			itemSalvaged = true
 		}
 	}
-	if !usable && !hasFatalDiagnostics(diagnostics) {
+	if !usable && !hasFatalDiagnostics(diagnostics) && !hasDiagnosticCode(diagnostics, "proposal.zero_useful_semantic_components") {
 		return Landscape{}, fmt.Errorf("componentmap: rejected proposal has no fatal diagnostic")
 	}
 	if !usable {
@@ -597,6 +615,12 @@ func Apply(bundle CandidateBundle, proposal Proposal) (Landscape, error) {
 			hasAnyOperationalBehaviorAnchor(bundle.BehaviorAnchors),
 		)
 		landscape.Fallback = true
+		// Decision 231 (Archive 9): a zero-useful-semantic proposal is an
+		// honest local-only result, not a provider failure — the exact
+		// reason is preserved in the recoverable finding.
+		if hasDiagnosticCode(diagnostics, "proposal.zero_useful_semantic_components") {
+			landscape.FallbackReason = FallbackRejectedUnknownMember
+		}
 	} else if len(landscape.LocalRemainderMemberIDs) > 0 {
 		landscape.ValidationOutcome = ValidationAcceptedPartial
 		landscape.Source = SourcePartialModel
@@ -1028,8 +1052,8 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 			if err := validateDisplayText("component description", component.Description, maxDescriptionBytes, false); err != nil {
 				return err
 			}
-			if len(component.Members) == 0 {
-				return fmt.Errorf("componentmap: subsystem[%d].components[%d] has no members", subsystemIndex, componentIndex)
+			if len(component.Members) == 0 && len(component.SharedMemberIDs) == 0 {
+				return fmt.Errorf("componentmap: subsystem[%d].components[%d] has no members or shared scope", subsystemIndex, componentIndex)
 			}
 			if len(component.AnchorIDs) > maxAnchorMembers {
 				return fmt.Errorf("componentmap: component has too many behavior anchors")
@@ -1057,8 +1081,8 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 					return fmt.Errorf("componentmap: grounded component lacks an operational anchor or explicit hypothesis")
 				}
 			}
-			memberIDs := make([]MemberID, 0, len(component.Members))
-			seenComponentMembers := make(map[MemberID]struct{}, len(component.Members))
+			memberIDs := make([]MemberID, 0, len(component.Members)+len(component.SharedMemberIDs))
+			seenComponentMembers := make(map[MemberID]struct{}, len(component.Members)+len(component.SharedMemberIDs))
 			for _, member := range component.Members {
 				exact, exists := known[member.ID]
 				if !exists {
@@ -1090,6 +1114,27 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 				}
 				memberIDs = append(memberIDs, member.ID)
 			}
+			// Decision 231 (Archive 9): shared participation members are
+			// exact local candidates too — they are covered once (scope
+			// participation, never cloned ownership) and participate in
+			// the component id so shared components stay deterministic.
+			sharedMemberIDs := make([]MemberID, 0, len(component.SharedMemberIDs))
+			for _, memberID := range component.SharedMemberIDs {
+				exact, exists := known[memberID]
+				if !exists {
+					return fmt.Errorf("componentmap: component references unknown shared member %q", memberID.key())
+				}
+				if exact.Role != CandidateRoleConceptualMember {
+					return fmt.Errorf("componentmap: component contains structural locator in shared scope %q", memberID.key())
+				}
+				if _, exists := seenComponentMembers[memberID]; exists {
+					return fmt.Errorf("componentmap: component repeats shared membership for %q", memberID.key())
+				}
+				seenComponentMembers[memberID] = struct{}{}
+				seenMembers[memberID] = struct{}{}
+				sharedMemberIDs = append(sharedMemberIDs, memberID)
+			}
+			memberIDs = append(memberIDs, sharedMemberIDs...)
 			if expected := nextComponentID(memberIDs, seenComponents); component.ID != expected {
 				return fmt.Errorf("componentmap: component id %q does not match exact membership (expected %q)", component.ID, expected)
 			}
@@ -1154,6 +1199,13 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 	invalid := func(code, message string) {
 		diagnostics = append(diagnostics, newDiagnostic(code, message))
 	}
+	// Decision 231 (Archive 9): shared participation needs the unit catalog
+	// to expand SharedUnitRefs into exact member IDs without cloning
+	// ownership. Compile once; a compile failure is a bundle-level error.
+	unitMembersByRef := map[string][]MemberID{}
+	if unitCatalog, unitErr := CompileUnitCatalog(bundle); unitErr == nil {
+		unitMembersByRef = unitCatalogUnitMembersByWireRef(unitCatalog)
+	}
 	if proposal.Version != ProposalVersion {
 		invalid("proposal.unsupported_version", "proposal version is missing or unsupported")
 		return Landscape{}, diagnostics, false, false
@@ -1216,9 +1268,13 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 			}
 			componentName := strings.TrimSpace(proposedComponent.Name)
 			componentDescription := strings.TrimSpace(proposedComponent.Description)
+			// Decision 231 (Archive 9): a component is valid when it has
+			// exclusive members OR shared unit participation (plus its
+			// anchors). Shared participation with zero exclusive members
+			// is valid product value — never an "empty component".
 			if validateDisplayText("component name", componentName, maxNameBytes, true) != nil ||
 				validateDisplayText("component description", componentDescription, maxDescriptionBytes, false) != nil ||
-				len(proposedComponent.MemberIDs) == 0 {
+				(len(proposedComponent.MemberIDs) == 0 && len(proposedComponent.SharedUnitRefs) == 0) {
 				invalid("proposal.invalid_component", "proposal contains an empty or malformed component")
 				return Landscape{}, diagnostics, false, componentSalvaged
 			}
@@ -1269,8 +1325,44 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 				// dropped, valid siblings continue.
 				continue
 			}
-			if len(members) == 0 {
-				invalid("proposal.invalid_component", "proposal component has no usable exact members")
+			// Decision 231 (Archive 9): shared participation. A component
+			// with shared unit refs but no exclusive member slice is valid
+			// when it carries exact anchors; the shared unit's members are
+			// published as SharedMemberIDs (scope visible, no cloned
+			// ownership). Members-only components keep the old path.
+			// Shared members are covered exactly once each — participation
+			// claims scope, not exclusive ownership (monotonic law: no
+			// valid member disappears).
+			sharedMembers := make([]Candidate, 0, len(proposedComponent.SharedUnitRefs)*4)
+			seenSharedMembers := make(map[MemberID]struct{})
+			for _, unitRef := range proposedComponent.SharedUnitRefs {
+				for _, memberID := range unitMembersByRef[unitRef] {
+					candidate, exists := known[memberID]
+					if !exists {
+						continue
+					}
+					if _, duplicate := seenSharedMembers[memberID]; duplicate {
+						continue
+					}
+					seenSharedMembers[memberID] = struct{}{}
+					if _, alreadyCovered := seenMembers[memberID]; !alreadyCovered {
+						seenMembers[memberID] = struct{}{}
+					}
+					sharedMembers = append(sharedMembers, cloneCandidate(candidate))
+				}
+			}
+			sortCandidates(sharedMembers)
+			if len(sharedMembers) > 0 {
+				// Decision 231 (Archive 9): shared participation publishes
+				// with a counted recoverable finding. The diagnostic is
+				// emitted HERE (inside Apply) so the partial-state
+				// validation sees an item-scope salvage class — the wire
+				// diagnostics are attached after Apply and cannot
+				// influence this decision.
+				invalid("proposal.shared_unit_slice", "component participates in a shared unit with exact anchors; scope participation published instead of exclusive ownership")
+			}
+			if len(members) == 0 && len(sharedMembers) == 0 && len(proposedComponent.AnchorIDs) == 0 {
+				invalid("proposal.invalid_component", "proposal component has no usable exact members, shared scope, or anchors")
 				return Landscape{}, diagnostics, false, componentSalvaged
 			}
 			anchorIDs := make([]string, 0, len(proposedComponent.AnchorIDs))
@@ -1305,7 +1397,14 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 				proposedComponent.MemberIDs, anchorIDs, knownAnchors,
 			)
 			sortCandidates(members)
-			id := nextComponentID(candidateIDs(members), seenComponentIDs)
+			// Decision 231 (Archive 9): the component id is derived from
+			// exclusive AND shared members so shared-participation
+			// components with different scopes stay distinct.
+			idMemberIDs := candidateIDs(members)
+			for _, sharedMember := range sharedMembers {
+				idMemberIDs = append(idMemberIDs, sharedMember.ID)
+			}
+			id := nextComponentID(idMemberIDs, seenComponentIDs)
 			// Decision 227: a unit may participate in several components
 			// (participation, not ownership). Sharing the same exact member
 			// set is therefore NOT a hard rejection — the components express
@@ -1313,26 +1412,27 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 			// exact twin — identical name, description, member set AND anchor
 			// set — is a literal copy with no added knowledge and still fails
 			// closed.
-			twinKey := componentTwinKey(componentName, componentDescription, members, anchorIDs)
+			twinKey := componentTwinKey(componentName, componentDescription, members, anchorIDs, proposedComponent.SharedUnitRefs)
 			if _, duplicate := seenComponentTwins[twinKey]; duplicate {
 				// Decision 229 D7 D4: equivalent component collision affects
 				// only its equivalence class — the second identical
 				// component is skipped item-scope, never a whole-stage
 				// rejection; unrelated components publish.
-				invalid("proposal.duplicate_component_identity", "proposal contains two identical components (same name, description, member set and anchor set); duplicate skipped item-scope")
+				invalid("proposal.duplicate_component_identity", "proposal contains two identical components (same name, description, member set, shared scope and anchor set); duplicate skipped item-scope")
 				componentSalvaged = true
 				continue
 			}
 			seenComponentTwins[twinKey] = struct{}{}
-			// Decision 230 D4: two components with the SAME resolved member
-			// set AND anchor set but different names/roles are an
-			// equivalence collision, not independent ownership. They
-			// coalesce into one representative; the alternate labels stay
-			// as provenance (charter: "coalesce deterministically and
-			// retain alternate labels/descriptions as provenance").
-			// Detached hypothesis-only components (no anchors) that
-			// resolve to the same members are the common case.
-			memberSetKey := equivalentComponentSetKey(members, anchorIDs)
+			// Decision 230 D4 / 231: two components with the SAME resolved
+			// member set, shared scope AND anchor set but different
+			// names/roles are an equivalence collision, not independent
+			// ownership. They coalesce into one representative; the
+			// alternate labels stay as provenance. Decision 231: shared
+			// participation is part of the equivalence key — components
+			// over the same shared unit with distinct anchor families stay
+			// distinct cross-cutting roles, while detached hypothesis-only
+			// components with the same shared scope coalesce.
+			memberSetKey := equivalentComponentSetKey(members, anchorIDs, proposedComponent.SharedUnitRefs)
 			if representativeRef, exists := seenComponentMemberSets[memberSetKey]; exists {
 				// The representative may live in the subsystem being
 				// built (not yet appended to landscape.Subsystems) or in
@@ -1354,10 +1454,13 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 				componentIndex: len(subsystem.Components),
 			}
 			seenComponentIDs[id] = struct{}{}
+			sharedMemberIDs := candidateIDs(sharedMembers)
 			subsystem.Components = append(subsystem.Components, Component{
 				ID: id, Name: componentName, Description: componentDescription,
 				Members: members, AnchorIDs: anchorIDs, Hypothesis: hypothesis,
-				SourceIDs: append([]ComponentID(nil), proposedComponent.sourceIDs...),
+				SharedUnitRefs:  append([]string(nil), proposedComponent.SharedUnitRefs...),
+				SharedMemberIDs: sharedMemberIDs,
+				SourceIDs:       append([]ComponentID(nil), proposedComponent.sourceIDs...),
 			})
 		}
 		if len(subsystem.Components) == 0 {
@@ -1379,7 +1482,12 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 		return Landscape{}, diagnostics, false, componentSalvaged
 	}
 	if len(seenMembers) == 0 {
-		invalid("proposal.empty_member_coverage", "proposal covers none of the requested conceptual members")
+		// Decision 231 (Archive 9): a structurally valid proposal that
+		// covers none of the requested conceptual members is an honest
+		// zero-useful-semantic-result — the product publishes the exact
+		// local landscape with this recoverable finding, never a generic
+		// malformed-schema label.
+		invalid("proposal.zero_useful_semantic_components", "proposal covers none of the requested conceptual members; publishing the exact local landscape")
 		return Landscape{}, diagnostics, false, componentSalvaged
 	}
 	remainder := make([]Candidate, 0)
@@ -1439,6 +1547,14 @@ func proposalMembershipDiagnostics(bundle CandidateBundle, proposal Proposal) []
 	memberReferenceCounts := make(map[MemberID]int)
 	distinctReferencedMembers := make(map[MemberID]struct{})
 	knownMembers := conceptualCandidateIndex(bundle)
+	// Decision 231 (Archive 9): shared unit refs expand to exact members
+	// for coverage accounting (scope participation covers, never clones).
+	proposalSharedUnitMembers := func() map[string][]MemberID {
+		if unitCatalog, unitErr := CompileUnitCatalog(bundle); unitErr == nil {
+			return unitCatalogUnitMembersByWireRef(unitCatalog)
+		}
+		return map[string][]MemberID{}
+	}()
 	for _, subsystem := range proposal.Subsystems {
 		// Decision 230 D7: a subsystem that ended empty after item-scope
 		// salvage is skipped here too (applyProposal counts it as a
@@ -1448,7 +1564,7 @@ func proposalMembershipDiagnostics(bundle CandidateBundle, proposal Proposal) []
 			continue
 		}
 		for _, component := range subsystem.Components {
-			if len(component.MemberIDs) == 0 {
+			if len(component.MemberIDs) == 0 && len(component.SharedUnitRefs) == 0 {
 				return []Diagnostic{newDiagnostic(
 					"proposal.invalid_component",
 					"proposal contains an empty or malformed component",
@@ -1467,7 +1583,7 @@ func proposalMembershipDiagnostics(bundle CandidateBundle, proposal Proposal) []
 					"proposal exceeds the conceptual membership limit",
 				)}
 			}
-			seenComponentMembers := make(map[MemberID]struct{}, len(component.MemberIDs))
+			seenComponentMembers := make(map[MemberID]struct{}, len(component.MemberIDs)+len(component.SharedUnitRefs))
 			for _, memberID := range component.MemberIDs {
 				if validateMemberID(memberID) != nil {
 					return []Diagnostic{newDiagnostic(
@@ -1491,11 +1607,30 @@ func proposalMembershipDiagnostics(bundle CandidateBundle, proposal Proposal) []
 					)}
 				}
 			}
+			// Decision 231 (Archive 9): shared unit participation covers
+			// the unit's exact members once each — scope participation is
+			// coverage, never cloned ownership. This keeps
+			// empty_member_coverage honest: a proposal whose components
+			// only participate in shared units still covers members.
+			if len(component.SharedUnitRefs) > 0 {
+				for _, unitRef := range component.SharedUnitRefs {
+					for _, memberID := range proposalSharedUnitMembers[unitRef] {
+						if _, known := knownMembers[memberID]; !known {
+							continue
+						}
+						if _, duplicate := seenComponentMembers[memberID]; duplicate {
+							continue
+						}
+						seenComponentMembers[memberID] = struct{}{}
+						distinctReferencedMembers[memberID] = struct{}{}
+					}
+				}
+			}
 		}
 	}
 	if len(distinctReferencedMembers) == 0 {
 		return []Diagnostic{newDiagnostic(
-			"proposal.empty_member_coverage",
+			"proposal.zero_useful_semantic_components",
 			"proposal covers none of the requested conceptual members",
 		)}
 	}
@@ -2088,7 +2223,7 @@ func nextComponentID(memberIDs []MemberID, seen map[ComponentID]struct{}) Compon
 // name, description, sorted member ids and sorted anchor ids. Decision 227
 // keeps this as the ONLY duplicate-component hard rejection; sharing a
 // member set across differently-named components is participation.
-func componentTwinKey(name, description string, members []Candidate, anchorIDs []string) string {
+func componentTwinKey(name, description string, members []Candidate, anchorIDs []string, sharedUnitRefs []string) string {
 	memberKeys := make([]string, len(members))
 	for index, member := range members {
 		memberKeys[index] = member.ID.key()
@@ -2096,8 +2231,11 @@ func componentTwinKey(name, description string, members []Candidate, anchorIDs [
 	sort.Strings(memberKeys)
 	anchors := append([]string(nil), anchorIDs...)
 	sort.Strings(anchors)
+	shared := append([]string(nil), sharedUnitRefs...)
+	sort.Strings(shared)
 	parts := append([]string{name, description}, memberKeys...)
 	parts = append(parts, anchors...)
+	parts = append(parts, shared...)
 	return strings.Join(parts, "\x00")
 }
 
@@ -2106,7 +2244,7 @@ func componentTwinKey(name, description string, members []Candidate, anchorIDs [
 // excluded. Two components sharing this key express the same exact
 // membership under different labels (Decision 230 D4 equivalence
 // collision). Members and anchors are already sorted by their callers.
-func equivalentComponentSetKey(members []Candidate, anchorIDs []string) string {
+func equivalentComponentSetKey(members []Candidate, anchorIDs []string, sharedUnitRefs []string) string {
 	memberKeys := make([]string, len(members))
 	for index, member := range members {
 		memberKeys[index] = "m:" + member.ID.key()
@@ -2117,7 +2255,12 @@ func equivalentComponentSetKey(members []Candidate, anchorIDs []string) string {
 		anchors[index] = "a:" + anchorID
 	}
 	sort.Strings(anchors)
-	return strings.Join(append(memberKeys, anchors...), "\x00")
+	shared := make([]string, len(sharedUnitRefs))
+	for index, ref := range sharedUnitRefs {
+		shared[index] = "s:" + ref
+	}
+	sort.Strings(shared)
+	return strings.Join(append(append(memberKeys, anchors...), shared...), "\x00")
 }
 
 func subsystemID(componentIDs []ComponentID) SubsystemID {
@@ -2816,6 +2959,19 @@ func conceptualMembershipsFromSubsystemsExcluding(
 				memberships = append(memberships, ConceptualMembership{
 					ComponentID: component.ID,
 					MemberID:    member.ID,
+				})
+			}
+			// Decision 231 (Archive 9): shared participation members are
+			// conceptual memberships too — the component participates in
+			// the exact members of its shared units without exclusive
+			// ownership.
+			for _, sharedMemberID := range component.SharedMemberIDs {
+				if _, skip := excluded[sharedMemberID]; skip {
+					continue
+				}
+				memberships = append(memberships, ConceptualMembership{
+					ComponentID: component.ID,
+					MemberID:    sharedMemberID,
 				})
 			}
 		}
