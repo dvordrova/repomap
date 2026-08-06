@@ -271,8 +271,8 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 	}
 	if len(core.PackageTargets) != 1 ||
 		core.PackageTargets[0].Path != "example.test/project/core" ||
-		core.PackageTargets[0].Location.Path != "" ||
-		core.PackageTargets[0].Location.Line != 0 ||
+		core.PackageTargets[0].Location.Path != "core/a.go" ||
+		core.PackageTargets[0].Location.Line != 1 ||
 		core.PackageTargets[0].Actionable {
 		t.Fatalf("package targets = %#v", core.PackageTargets)
 	}
@@ -316,8 +316,8 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 		packageOnly.FileCount != 2 || len(packageOnly.Sources) != 0 ||
 		len(packageOnly.PackageTargets) != 1 ||
 		packageOnly.PackageTargets[0].Path != "example.test/project/worker" ||
-		packageOnly.PackageTargets[0].Location.Path != "" ||
-		packageOnly.PackageTargets[0].Location.Line != 0 ||
+		packageOnly.PackageTargets[0].Location.Path != "worker/a.go" ||
+		packageOnly.PackageTargets[0].Location.Line != 1 ||
 		packageOnly.PackageTargets[0].Actionable ||
 		len(packageOnly.Studies) != 1 || packageOnly.Studies[0].ID != "study-worker" {
 		t.Fatalf("package-only context = %#v, present %v", packageOnly, ok)
@@ -673,7 +673,6 @@ func TestArchitectureUserInspectorStaysCompactAndSourceBacked(t *testing.T) {
 	}
 	for _, forbidden := range []string{
 		"array(context.sources).find((candidate)",
-		"packageFiles[0]",
 	} {
 		if strings.Contains(reportJS+js, forbidden) {
 			t.Errorf("compact architecture inspector retains choose-first source logic %q", forbidden)
@@ -686,6 +685,12 @@ func TestArchitectureUserInspectorStaysCompactAndSourceBacked(t *testing.T) {
 		t.Fatal("cannot isolate user component inspector")
 	}
 	componentInspector := js[start:end]
+	// P7-B: package rows resolve to a deterministic representative file
+	// (the package has no single line); this lives in the component
+	// CONTEXTS builder, never in the inspector's per-source rendering.
+	if strings.Contains(componentInspector, "packageFiles[0]") {
+		t.Errorf("compact architecture inspector retains choose-first source logic %q", "packageFiles[0]")
+	}
 	for _, forbidden := range []string{"participating_flow_ids", "Mechanism", "Paved", "Runtime surfaces"} {
 		if strings.Contains(componentInspector, forbidden) {
 			t.Errorf("component inspector infers or expands an unsupported relation through %q", forbidden)

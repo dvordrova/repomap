@@ -7046,6 +7046,26 @@
 		return displayUnits;
 	}
 
+	function repositoryAtlasPackageRepresentativeLocation(packageName) {
+		var graph = DATA.repository_graph || {};
+		var packages = Array.isArray(graph.packages) ? graph.packages : [];
+		var pkg = null;
+		packages.some(function (candidate) {
+			if (candidate && candidate.canonical_package_path === packageName) {
+				pkg = candidate;
+				return true;
+			}
+			return false;
+		});
+		if (!pkg) return null;
+		var files = (Array.isArray(pkg.files) ? pkg.files : []).map(String).filter(function (filePath) {
+			return !!(filePath && OPENABLE_PATH_SET[filePath]);
+		}).sort();
+		if (!files.length) return null;
+		var location = { path: files[0], line: 1, column: 0 };
+		return sourceLocationActionAvailable(location) ? location : null;
+	}
+
 	function repositoryAtlasPackageGroups(packageUnits, unitsByID) {
 		var groups = [];
 		var groupsByKey = Object.create(null);
@@ -7179,6 +7199,15 @@
 			unit.source = !unitSourceConflicts[unit.id] && sources.length === 1 ? sources[0] : null;
 			unit.sourceState = unitSourceConflicts[unit.id] || sources.length > 1
 				? 'conflict' : unit.source ? 'available' : 'unavailable';
+			// P7-B: without an exact saved source, a package row still
+			// navigates to its representative file — the first openable
+			// file of the package in the saved repository graph, in sorted
+			// path order. The package itself has no single line; the file
+			// is the exact boundary a reader can open. No openable file →
+			// the row stays a plain unavailable reference.
+			if (!unit.source && unit.sourceState === 'unavailable') {
+				unit.representativeLocation = repositoryAtlasPackageRepresentativeLocation(unit.name);
+			}
 		});
 
 		var eligible = 0;
@@ -7384,6 +7413,32 @@
 					action.appendChild(txt('span', 'rm-atlas-package-open', '↗'));
 					item.appendChild(action);
 				} else {
+					// P7-B: a package without an exact saved source still
+					// opens its representative file when the repository
+					// graph proves one (GitHub/GitLab jump or server open).
+					// Without either, the row stays a plain unavailable
+					// reference — no dead button, no drawer.
+					var representative = unit.representativeLocation || null;
+					var representativeAction = representative
+						? sourceActionElement(
+							'',
+							'rm-atlas-package-action',
+							representative,
+							0,
+							function () { openSourceLocation(representative); }
+						)
+						: null;
+					if (representativeAction) {
+						representativeAction.setAttribute('aria-label', msg(
+							'main.atlas.workspace.open_package_source',
+							{ package: unit.name }
+						));
+						representativeAction.appendChild(txt('code', 'rm-atlas-package-name', label));
+						representativeAction.appendChild(txt('span', 'rm-atlas-package-open', '↗'));
+						item.appendChild(representativeAction);
+						list.appendChild(item);
+						return;
+					}
 					var unavailable = el('span', 'rm-atlas-package-unavailable');
 					var sourceStateLabel = repositoryAtlasPackageSourceStateLabel(unit.sourceState, unit.name);
 					if (unit.sourceState === 'conflict') conflictCount += 1;
@@ -9101,11 +9156,22 @@
 				var packageFiles = (packageByPath[packagePath].files || []).map(String).filter(function (filePath) {
 					return !!(filePath && OPENABLE_PATH_SET[filePath]);
 				}).sort();
+				// P7-B: a package navigates to its first openable file as a
+				// deterministic representative target (sorted path order).
+				// The package itself has no single line; the file is the
+				// exact boundary a reader can open. No file openable → the
+				// target stays non-actionable (honest unavailable state).
+				var location = null;
+				var actionable = false;
+				if (packageFiles.length > 0) {
+					location = { path: packageFiles[0], line: 1, column: 0 };
+					actionable = sourceLocationActionAvailable(location);
+				}
 				return {
 					path: packagePath,
 					file_count: packageFiles.length,
-					location: null,
-					actionable: false,
+					location: location,
+					actionable: actionable,
 				};
 			});
 
