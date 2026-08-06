@@ -217,13 +217,23 @@ func TestRejectedCaddyProposalUsesAnchorFirstFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Landscape.Fallback || result.Landscape.Source != SourceLocalAnchors || result.Landscape.Level != 3 ||
-		result.Landscape.FallbackReason != FallbackRejectedUnknownAnchor {
-		t.Fatalf("fallback ladder result = %#v", result.Landscape)
+	// Decision 229 D7: an unknown anchor ref rejects only the referencing
+	// component item-scope — the remaining valid components publish as
+	// accepted_partial with the exact reason counted. Whole-stage
+	// rejection (anchor-first fallback) fires only when zero valid items
+	// remain.
+	if result.Landscape.Fallback {
+		t.Fatalf("fallback fired for an item-scope anchor salvage: %#v", result.Landscape)
+	}
+	if result.Landscape.ValidationOutcome != ValidationAcceptedPartial {
+		t.Fatalf("outcome = %v, want accepted_partial: %#v", result.Landscape.ValidationOutcome, result.Landscape)
+	}
+	if !hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.unknown_anchor_id") {
+		t.Fatalf("unknown anchor reason not counted: %#v", result.Landscape.Diagnostics)
 	}
 	for _, subsystem := range result.Landscape.Subsystems {
 		if subsystem.Name == "Packages" || subsystem.Name == "Files" || subsystem.Name == "Symbols" {
-			t.Fatalf("anchor-first fallback exposed raw kind group %q", subsystem.Name)
+			t.Fatalf("item-scope salvage exposed raw kind group %q", subsystem.Name)
 		}
 	}
 }

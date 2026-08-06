@@ -56,7 +56,15 @@ func diagnosticSeverity(code string) FindingSeverity {
 		"proposal.unknown_member_id",
 		"proposal.unknown_anchor_id",
 		"proposal.duplicate_member_id",
-		"proposal.duplicate_component_identity":
+		"proposal.duplicate_component_identity",
+		// Decision 229 D7: ref-resolution failures during wire
+		// resolution drop only the referencing component.
+		"proposal.unknown_unit_ref",
+		"proposal.duplicate_unit_ref",
+		"proposal.duplicate_anchor_id",
+		// Decision 229 D7: a subsystem emptied by item-scope salvage is
+		// skipped with a counted recoverable finding, never a fatal.
+		"proposal.salvaged_empty_subsystem":
 		return FindingRecoverable
 	default:
 		return FindingAdvisory
@@ -363,7 +371,11 @@ func landscapeHasItemScopeSalvage(diagnostics []Diagnostic) bool {
 		case "proposal.unknown_member_id",
 			"proposal.unknown_anchor_id",
 			"proposal.duplicate_member_id",
-			"proposal.duplicate_component_identity":
+			"proposal.duplicate_component_identity",
+			"proposal.unknown_unit_ref",
+			"proposal.duplicate_unit_ref",
+			"proposal.duplicate_anchor_id",
+			"proposal.salvaged_empty_subsystem":
 			if diagnostic.Severity == FindingRecoverable {
 				return true
 			}
