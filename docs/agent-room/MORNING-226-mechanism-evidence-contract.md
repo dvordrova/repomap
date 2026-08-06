@@ -103,7 +103,7 @@ CURRENT.md updated (decisions 223-226 registered; D219 remains DEFERRED/history)
 - `go test -count=1 ./...` → EXIT 0, 74 ok, 0 FAIL
 - `go vet ./...` → EXIT 0
 - `go build -trimpath -o .bin/repomap ./cmd/repomap` → EXIT 0
-- binary SHA-256 (trimpath): `0dc6bb46d2ac9d7e98109e317fe2213907d6dd8df8c0fb05708f9228551a1cef`
+- binary SHA-256 (trimpath): `4ef69729ba7da999ab95974eb3bffb8efabcf0d9fb0719ff68174c3f7626f95c`
 - `node --check` script.js / ui_messages.js / architecture_canvas.js → EXIT 0
 - gofmt: only pre-existing dirty files remain (none from this program);
   report.go style fix committed
@@ -139,6 +139,28 @@ CURRENT.md updated (decisions 223-226 registered; D219 remains DEFERRED/history)
 | restic `205940-58c9354b0d45` | ok | — | full | «Границы безопасности» = root scope (60 obs) — honestly wide, UI shows counts + omissions |
 
 Fresh dev-runs have no `github_source_links` (no jump actions offered — plain references per contract); the original 5 Archive-5 fixture runs do have them.
+
+## Tail wrap-up (post-program loose ends)
+
+- Full reviewer verdicts applied: D225 4 decision-doc wording edits (Q8
+  unknowns is NEW work; family source = `evidence[].provenance.detail`;
+  scope set = package-member facts; pairing key = shared evidence refs) and
+  D226 6 bounded fixes (entry `process_entry` + proof-mode evidence;
+  ordinals post-sort; per-row evidence/limitation in UI; frontier items;
+  DOM test; decision closed set) — commit `8ee0f88`.
+- P7-B package clickability: a package without an exact saved source opens
+  its deterministic representative file (first openable file of the package
+  in the repository graph); component-context package targets carry the
+  same location; no dead buttons — commit `51b3786`.
+- P5 (goal 05) source roles: association rows carry a closed
+  production/test/tooling split classified deterministically from the exact
+  callsite path; counts reconcile to observation_count; UI badges on rows
+  and witnesses — commit `46c9997`.
+- Chatto reducer-rejection regression: 3 new tests prove
+  `resetThemeStudyArtifacts` clears the theme set, leaves non-theme
+  artifacts intact, reports real errors (reproduces chatto 205935 artifact
+  shape) — commit `525bbe5`.
+- Consolidated Archive 6 run table for the expert (above).
 
 ## Known bounds / honest limitations
 
