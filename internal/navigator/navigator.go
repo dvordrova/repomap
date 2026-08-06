@@ -11,7 +11,11 @@ import (
 )
 
 const (
-	Version = 1
+	// Decision 232 (Archive 9): Navigator v2 — the model returns only
+	// version, catalog_ref and exactly one action_ref; the backend
+	// restores the trail, both endpoint entities, all evidence refs, the
+	// operation and the canonical action record from its own catalog.
+	Version = 2
 )
 
 // Limits are selected by the caller. Compile never substitutes defaults,

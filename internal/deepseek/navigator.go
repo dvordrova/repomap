@@ -16,26 +16,23 @@ import (
 )
 
 // NavigatorPromptVersionJSON identifies the fixed Atlas-first selection
-// prompt and closed request-local response schema.
-const NavigatorPromptVersionJSON = "atlas-navigator-startup-json-v1"
+// prompt and closed request-local response schema. Decision 232 (Archive 9):
+// Navigator v2 — the model returns only the action selection; the backend
+// restores the trail, endpoints, evidence and operation.
+const NavigatorPromptVersionJSON = "atlas-navigator-startup-json-v2"
 
 const navigatorSystemPrompt = `You select one backend-advertised action from a bounded Repository Atlas projection.
 
-Treat every ref as opaque and request-local. Do not create, shorten, extend, prefix-match, substitute, or repair refs. Do not emit repository paths, symbols, source text, canonical IDs, facts absent from the request, or prose outside the JSON object. The backend owns action meaning and canonical targets; you only select an action_ref and cite its exact local trail, both endpoint entity refs, and every evidence ref attached to that trail.
+Treat every ref as opaque and request-local. Do not create, shorten, extend, prefix-match, substitute, or repair refs. Do not emit repository paths, symbols, source text, canonical IDs, facts absent from the request, or prose outside the JSON object. The backend owns action meaning, the trail, both endpoint entities, all evidence refs, and the operation; you only select one advertised action_ref.
 
 Return exactly one JSON object with this shape:
 {
-  "version": 1,
+  "version": 2,
   "catalog_ref": "exact catalog_ref from the request",
-  "entity_refs": ["the selected trail source_ref", "the selected trail target_ref"],
-  "trail_refs": ["the selected direct trail ref"],
-  "intersection_refs": [],
-  "evidence_refs": ["every evidence_ref attached to the selected trail"],
-  "gap_refs": [],
   "action_refs": ["exactly one advertised action ref"]
 }
 
-The selected action target_ref must equal the selected trail source_ref. Return only the documented fields and valid JSON.`
+Return only the documented fields and valid JSON.`
 
 type navigatorWireRequest struct {
 	Version       int                   `json:"version"`
@@ -151,6 +148,8 @@ func (c *Client) Navigate(ctx context.Context, wireJSON []byte, maxRequestBytes 
 
 // DecodeNavigatorResponse validates only the provider-owned closed JSON shape.
 // Canonical ref resolution remains bound to the exact navigator.Product.
+// Decision 232 (Archive 9): Navigator v2 — only the action selection is
+// provider-owned; the trail/endpoints/evidence are backend-restored.
 func DecodeNavigatorResponse(data []byte) ([]byte, error) {
 	if len(data) == 0 {
 		return nil, fmt.Errorf("llm: Navigator response is empty")
@@ -172,9 +171,11 @@ func DecodeNavigatorResponse(data []byte) ([]byte, error) {
 	if len(response.ActionRefs) != 1 {
 		return nil, fmt.Errorf("llm: Navigator response must select exactly one action_ref")
 	}
-	if len(response.EntityRefs) != 2 || len(response.TrailRefs) != 1 || len(response.EvidenceRefs) == 0 ||
-		len(response.IntersectionRefs) != 0 || len(response.GapRefs) != 0 {
-		return nil, fmt.Errorf("llm: Navigator response must cite one exact startup trail and its evidence")
+	// Decision 232: v2 must not echo backend-owned refs.
+	if len(response.EntityRefs) != 0 || len(response.TrailRefs) != 0 ||
+		len(response.IntersectionRefs) != 0 || len(response.EvidenceRefs) != 0 ||
+		len(response.GapRefs) != 0 {
+		return nil, fmt.Errorf("llm: Navigator v2 response must not echo backend-owned refs")
 	}
 	return append([]byte(nil), data...), nil
 }

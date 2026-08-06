@@ -1,17 +1,17 @@
 {
-  "choices": [
-    {
-      "finish_reason": "stop",
-      "message": {
-        "role": "assistant",
-        "content": "{\"version\":1,\"catalog_ref\":\"navigator-v1-20f1d1e592ca55328a1c22e57ce2f67ece0b39aeedd5b2962a0228a3d287ee6d\",\"entity_refs\":[\"s1\",\"o1\"],\"trail_refs\":[\"t1\"],\"intersection_refs\":[],\"evidence_refs\":[\"e1\"],\"gap_refs\":[],\"action_refs\":[\"a1\"]}"
-      }
-    }
-  ],
-  "usage": {
-    "prompt_tokens": 211,
-    "completion_tokens": 37,
-    "prompt_cache_hit_tokens": 0,
-    "prompt_cache_miss_tokens": 211
+ "choices": [
+  {
+   "finish_reason": "stop",
+   "message": {
+    "role": "assistant",
+    "content": "{\"version\": 2, \"catalog_ref\": \"navigator-v1-20f1d1e592ca55328a1c22e57ce2f67ece0b39aeedd5b2962a0228a3d287ee6d\", \"action_refs\": [\"a1\"]}"
+   }
   }
+ ],
+ "usage": {
+  "prompt_tokens": 211,
+  "completion_tokens": 37,
+  "prompt_cache_hit_tokens": 0,
+  "prompt_cache_miss_tokens": 211
+ }
 }

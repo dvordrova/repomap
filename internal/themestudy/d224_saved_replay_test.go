@@ -124,7 +124,15 @@ func readSavedScoutRequest(t *testing.T, runDir string) (ScoutRequest, error) {
 	if err != nil {
 		return ScoutRequest{}, err
 	}
-	return DecodeScoutRequest(raw)
+	// Decision 232 (Archive 9): the saved D224 request artifact carries
+	// prompt v1 identity, which fails closed under the v2 contract. The
+	// replay tests validate RAW model responses, so the request is read
+	// structurally (wire + vocabulary) without the strict identity gate.
+	var request ScoutRequest
+	if err := json.Unmarshal(raw, &request); err != nil {
+		return ScoutRequest{}, err
+	}
+	return request, nil
 }
 
 // TestD224SavedEtcdRawAdjudicationKeepsPopulatedObservations covers the
@@ -183,8 +191,10 @@ func TestD224SavedEtcdRawAdjudicationKeepsPopulatedObservations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read saved adjudication request: %v", err)
 	}
-	adjRequest, err := DecodeAdjudicationRequest(adjRequestRaw)
-	if err != nil {
+	// Decision 232: the saved D224 request carries prompt v1 identity and
+	// fails closed under v2; the candidates are read structurally.
+	var adjRequest AdjudicationRequest
+	if err := json.Unmarshal(adjRequestRaw, &adjRequest); err != nil {
 		t.Fatalf("decode saved adjudication request: %v", err)
 	}
 	candidateByRef := map[string]*ScoutCandidate{}

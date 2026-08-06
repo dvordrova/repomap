@@ -48,9 +48,10 @@ func ResolveAdjudicationResponse(request AdjudicationRequest, raw []byte) (Adjud
 	if err != nil {
 		return AdjudicationResult{}, AdjudicationStatusRecord{}, err
 	}
-	if status.State == "failed" {
-		return AdjudicationResult{}, AdjudicationStatusRecord{}, fmt.Errorf("theme adjudication: zero accepted themes (semantic failure)")
-	}
+	// Decision 232 (Archive 9): zero accepted themes is an honest
+	// semantic-empty result, NOT a transport failure. The result and the
+	// failed status publish so the report renders the complete local
+	// question browse (never fabricated cards, never hidden information).
 	result := AdjudicationResult{
 		Version:       AdjudicationResultVersion,
 		State:         status.State,

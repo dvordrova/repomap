@@ -651,26 +651,17 @@ func atlasFirstAcceptanceSelectedNavigator(combined string) ([]byte, error) {
 		return nil, fmt.Errorf("Navigator wire has no advertised action")
 	}
 	action := wire.Actions[0]
-	for _, trail := range wire.DirectTrails {
-		if trail.SourceRef != action.TargetRef {
-			continue
-		}
-		content, err := json.Marshal(map[string]any{
-			"version":           wire.Version,
-			"catalog_ref":       wire.CatalogRef,
-			"entity_refs":       []string{trail.SourceRef, trail.TargetRef},
-			"trail_refs":        []string{trail.Ref},
-			"intersection_refs": []string{},
-			"evidence_refs":     trail.EvidenceRefs,
-			"gap_refs":          []string{},
-			"action_refs":       []string{action.Ref},
-		})
-		if err != nil {
-			return nil, err
-		}
-		return atlasFirstAcceptanceCompletion(content, 211, 31), nil
+	// Decision 232 (Navigator v2): the provider selects the action only;
+	// trail/endpoints/evidence are backend-restored and never echoed.
+	content, err := json.Marshal(map[string]any{
+		"version":     wire.Version,
+		"catalog_ref": wire.CatalogRef,
+		"action_refs": []string{action.Ref},
+	})
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("Navigator action %q has no matching direct trail", action.Ref)
+	return atlasFirstAcceptanceCompletion(content, 211, 31), nil
 }
 
 func atlasFirstAcceptanceRequestStage(
@@ -690,10 +681,9 @@ func atlasFirstAcceptanceRequestStage(
 	}
 	combined := request.Messages[0].Content + "\n" + request.Messages[1].Content
 	switch {
-	case strings.Contains(combined, "atlas-navigator-startup-json-v1"):
+	case strings.Contains(combined, "atlas-navigator-startup-json-v2"):
 		return atlasFirstStageNavigator, combined, nil
-	case strings.Contains(combined, "Use conceptual member, anchor, and flow refs as opaque request-local typed values.") &&
-		strings.Contains(combined, "Refs under structural_context are read-only locator context") &&
+	case strings.Contains(combined, "Use conceptual member, anchor, and unit refs as opaque request-local values.") &&
 		strings.Contains(combined, "Bounded candidate request:\n"):
 		return atlasFirstStageArchitecture, combined, nil
 	case strings.Contains(combined, "theme_kind is one of: user_journey") &&
@@ -942,14 +932,9 @@ func atlasFirstAcceptanceRejectedNavigator(combined string) ([]byte, error) {
 		return nil, fmt.Errorf("decode Navigator wire: %w", err)
 	}
 	content, err := json.Marshal(map[string]any{
-		"version":           wire.Version,
-		"catalog_ref":       wire.CatalogRef,
-		"entity_refs":       []string{},
-		"trail_refs":        []string{},
-		"intersection_refs": []string{},
-		"evidence_refs":     []string{},
-		"gap_refs":          []string{},
-		"action_refs":       []string{"a999"},
+		"version":     wire.Version,
+		"catalog_ref": wire.CatalogRef,
+		"action_refs": []string{"a999"},
 	})
 	if err != nil {
 		return nil, err

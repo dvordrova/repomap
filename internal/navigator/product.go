@@ -11,7 +11,10 @@ import (
 )
 
 const (
-	ProductVersion = 1
+	// ProductVersion is the record/status artifact version. Decision 232
+	// (Archive 9): Navigator v2 changed the provider contract and the record
+	// identity (ProductVersion 2).
+	ProductVersion = 2
 
 	ProductQuestion        = "Which locally resolved application startup should a newcomer inspect first?"
 	StartupActionOperation = "inspect exact startup evidence"
@@ -134,9 +137,11 @@ func (product Product) Actions() []RecommendationAction {
 	return cloneRecommendationActions(product.actions)
 }
 
-// ResolveRecommendation accepts exactly one coherent advertised action. The
-// provider must select its matching trail, both endpoints, and all exact
-// evidence refs; unrelated request-local refs cannot be used as an explanation.
+// ResolveRecommendation accepts exactly one coherent advertised action.
+// Decision 232 (Archive 9): Navigator v2 — the provider selects the action
+// ref only; the trail, both endpoints, the evidence and the operation are
+// restored by the backend from its own catalog (no model echo of
+// backend-owned evidence).
 func (product Product) ResolveRecommendation(data []byte) (RecommendationRecord, error) {
 	if product.empty {
 		return RecommendationRecord{}, fmt.Errorf("navigator product: empty local result requires no provider response")
@@ -153,8 +158,25 @@ func (product Product) ResolveRecommendation(data []byte) (RecommendationRecord,
 		resolved.Actions[0].Target != selected.Surface {
 		return RecommendationRecord{}, fmt.Errorf("navigator product: selected action does not match the backend catalog")
 	}
-	if !slices.Equal(resolved.RelationIDs, []string{selected.RelationID}) {
-		return RecommendationRecord{}, fmt.Errorf("navigator product: response must cite the selected startup relation")
+	// Decision 232: the backend owns the trail/endpoints/evidence — they
+	// are restored from the selected action record (the model never
+	// echoes them), then validated exactly.
+	restored := ResolvedResponse{
+		ActionKeys:  resolved.ActionKeys,
+		Actions:     resolved.Actions,
+		RelationIDs: []string{selected.RelationID},
+		Entities:    []repositoryatlas.EntityRef{selected.Surface, selected.Application},
+		EvidenceIDs: append([]string(nil), selected.EvidenceIDs...),
+	}
+	sort.Slice(restored.Entities, func(i, j int) bool {
+		if restored.Entities[i].Kind != restored.Entities[j].Kind {
+			return restored.Entities[i].Kind < restored.Entities[j].Kind
+		}
+		return restored.Entities[i].ID < restored.Entities[j].ID
+	})
+	sort.Strings(restored.EvidenceIDs)
+	if !slices.Equal(restored.RelationIDs, []string{selected.RelationID}) {
+		return RecommendationRecord{}, fmt.Errorf("navigator product: action must map to the selected startup relation")
 	}
 	wantEntities := []repositoryatlas.EntityRef{selected.Surface, selected.Application}
 	sort.Slice(wantEntities, func(i, j int) bool {
@@ -163,22 +185,13 @@ func (product Product) ResolveRecommendation(data []byte) (RecommendationRecord,
 		}
 		return wantEntities[i].ID < wantEntities[j].ID
 	})
-	gotEntities := append([]repositoryatlas.EntityRef(nil), resolved.Entities...)
-	sort.Slice(gotEntities, func(i, j int) bool {
-		if gotEntities[i].Kind != gotEntities[j].Kind {
-			return gotEntities[i].Kind < gotEntities[j].Kind
-		}
-		return gotEntities[i].ID < gotEntities[j].ID
-	})
-	if !slices.Equal(gotEntities, wantEntities) {
-		return RecommendationRecord{}, fmt.Errorf("navigator product: response must cite both selected startup endpoints")
+	if !slices.Equal(restored.Entities, wantEntities) {
+		return RecommendationRecord{}, fmt.Errorf("navigator product: action must map to both selected startup endpoints")
 	}
-	gotEvidence := append([]string(nil), resolved.EvidenceIDs...)
-	sort.Strings(gotEvidence)
-	if !slices.Equal(gotEvidence, selected.EvidenceIDs) {
-		return RecommendationRecord{}, fmt.Errorf("navigator product: response must cite the selected startup evidence")
+	if !slices.Equal(restored.EvidenceIDs, selected.EvidenceIDs) {
+		return RecommendationRecord{}, fmt.Errorf("navigator product: action must map to the selected startup evidence")
 	}
-	if len(resolved.IntersectionEntityIDs) != 0 || len(resolved.GapKeys) != 0 {
+	if len(restored.IntersectionEntityIDs) != 0 || len(restored.GapKeys) != 0 {
 		return RecommendationRecord{}, fmt.Errorf("navigator product: response contains refs outside the first startup question")
 	}
 	return product.record(ProductStateSelected, &selected), nil

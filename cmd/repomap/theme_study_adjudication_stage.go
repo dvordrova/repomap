@@ -261,7 +261,9 @@ func runThemeAdjudicationStage(
 
 // themeValidateAdjudication validates one raw Adjudication response against
 // its exact request identity with item-local rejection. Zero valid themes is
-// a semantic failure.
+// an honest semantic-empty result (Decision 232): the failed status and the
+// empty result publish so the report renders the complete local question
+// browse — never fabricated cards, never hidden information.
 func themeValidateAdjudication(
 	request themestudy.AdjudicationRequest,
 	raw []byte,
@@ -282,10 +284,8 @@ func themeValidateAdjudication(
 		return themestudy.AdjudicationResult{}, themestudy.AdjudicationStatusRecord{},
 			debugdump.SemanticValidationResponse, err
 	}
-	if len(themes) == 0 {
-		return themestudy.AdjudicationResult{}, themestudy.AdjudicationStatusRecord{},
-			debugdump.SemanticValidationResponse, fmt.Errorf("theme adjudication run: zero valid themes")
-	}
+	// Decision 232: zero valid themes is a legitimate semantic-empty
+	// outcome, published as a failed state with the empty result retained.
 	// The artifact contract serializes Unknowns with omitempty, so an empty
 	// non-nil slice would not survive the encode→decode round-trip. Normalize
 	// to nil so the persisted result always equals the in-memory record.

@@ -38,10 +38,13 @@ func ValidateAdjudication(data []byte, candidateByRef map[string]*ScoutCandidate
 			rejectAdj(&status, position, AdjIssueDecodeCandidate)
 			continue
 		}
-		// Decision 224 (D219 B): bound overlong observations/unknowns first
-		// — populated evidence is normalized, never erased as "empty".
-		// Identity/fit/directness/refs and the unknowns count are validated
-		// against the normalized theme below.
+		// Decision 232 (Archive 9): duplicate assessments normalize
+		// deterministically (keep first) and count — never reject the theme.
+		deduped, duplicateAssessments := dedupeAssessments(theme.AnchorAssessments)
+		if duplicateAssessments > 0 {
+			status.Normalized["duplicate_assessment"] += duplicateAssessments
+		}
+		theme.AnchorAssessments = deduped
 		normalized, counts := normalizeAdjudicatedTheme(theme)
 		if code := adjThemeIssue(normalized, candidateByRef, seen); code != "" {
 			rejectAdj(&status, position, code)
@@ -55,8 +58,22 @@ func ValidateAdjudication(data []byte, candidateByRef map[string]*ScoutCandidate
 		for kind, count := range counts {
 			status.Normalized[kind] += count
 		}
+		// Decision 232 (Archive 9): anchor coverage accounting — the
+		// theme's reviewed anchors are its assessments; the candidate's
+		// unassessed anchors are counted as unreviewed (never published,
+		// never fatal).
 		accepted = append(accepted, normalized)
 		status.Accepted++
+		status.ReviewedAnchors += len(normalized.AnchorAssessments)
+	}
+	for _, candidate := range candidateByRef {
+		status.UnreviewedAnchors += len(candidate.AnchorRefs)
+	}
+	status.UnreviewedAnchors -= status.ReviewedAnchors
+	if status.UnreviewedAnchors < 0 {
+		// Defensive: assessments are anchor-subset-validated per theme, so
+		// this cannot happen; clamp rather than fabricate negative counts.
+		status.UnreviewedAnchors = 0
 	}
 	status.Rejected = status.Received - status.Accepted
 	if len(status.Normalized) == 0 {
@@ -87,13 +104,14 @@ func adjThemeIssue(theme AdjudicatedTheme, candidateByRef map[string]*ScoutCandi
 	if strings.TrimSpace(theme.FinalTitle) == "" || strings.TrimSpace(theme.FinalQuestion) == "" {
 		return AdjIssueEmptyFinalProse
 	}
-	if len(theme.AnchorAssessments) == 0 {
-		return AdjIssueNoDirect
-	}
 	candidateAnchors := make(map[string]struct{}, len(candidate.AnchorRefs))
 	for _, ref := range candidate.AnchorRefs {
 		candidateAnchors[ref] = struct{}{}
 	}
+	// Decision 232 (Archive 9): empty or partial assessments are NOT a
+	// theme rejection by themselves — unassessed anchors become local
+	// `unreviewed`. A theme still needs at least one direct reading to
+	// publish (checked by the caller via adjHasDirect).
 	seenAssess := make(map[string]struct{}, len(theme.AnchorAssessments))
 	for _, assessment := range theme.AnchorAssessments {
 		if !assessment.Fit.Valid() {
@@ -102,11 +120,16 @@ func adjThemeIssue(theme AdjudicatedTheme, candidateByRef map[string]*ScoutCandi
 		if _, ok := candidateAnchors[assessment.AnchorRef]; !ok {
 			return AdjIssueAnchorOutsideCandidate
 		}
-		if _, seen := seenAssess[assessment.AnchorRef]; seen {
-			return AdjIssueDuplicateAssessment
-		}
+		// Decision 232 (Archive 9): duplicate assessments are normalized
+		// deterministically (keep first occurrence) and counted by the
+		// caller; a duplicate that reaches here is structurally impossible.
 		seenAssess[assessment.AnchorRef] = struct{}{}
-		if strings.TrimSpace(assessment.SupportedObservation) == "" {
+		// Decision 232 (Archive 9): a supported observation is required
+		// only for direct/supporting anchors; weak/irrelevant anchors may
+		// carry an optional short rejection reason. Anchors without an
+		// assessment become local `unreviewed` (never poison the theme).
+		if (assessment.Fit == FitDirect || assessment.Fit == FitSupporting) &&
+			strings.TrimSpace(assessment.SupportedObservation) == "" {
 			return AdjIssueEmptyObservation
 		}
 		// Decision 224: overlong observation is a distinct closed reason,
@@ -163,6 +186,26 @@ func adjHasDirect(theme AdjudicatedTheme) bool {
 		}
 	}
 	return false
+}
+
+// dedupeAssessments keeps the first assessment per anchor ref and returns
+// the deduplicated slice plus the removed duplicate count (Decision 232).
+func dedupeAssessments(assessments []AnchorAssessment) ([]AnchorAssessment, int) {
+	if len(assessments) < 2 {
+		return assessments, 0
+	}
+	seen := make(map[string]struct{}, len(assessments))
+	result := make([]AnchorAssessment, 0, len(assessments))
+	duplicates := 0
+	for _, assessment := range assessments {
+		if _, ok := seen[assessment.AnchorRef]; ok {
+			duplicates++
+			continue
+		}
+		seen[assessment.AnchorRef] = struct{}{}
+		result = append(result, assessment)
+	}
+	return result, duplicates
 }
 
 func rejectAdj(status *AdjudicationStatus, position int, code AdjudicationIssueCode) {

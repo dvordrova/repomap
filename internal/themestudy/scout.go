@@ -46,6 +46,26 @@ func truncateRunes(value string, limit int) string {
 	return string(runes[:limit])
 }
 
+// dedupeRefs keeps the first occurrence of each exact ref and returns the
+// deduplicated slice plus the count of removed duplicates (Decision 232).
+func dedupeRefs(refs []string) ([]string, int) {
+	if len(refs) < 2 {
+		return append([]string(nil), refs...), 0
+	}
+	seen := make(map[string]struct{}, len(refs))
+	result := make([]string, 0, len(refs))
+	duplicates := 0
+	for _, ref := range refs {
+		if _, ok := seen[ref]; ok {
+			duplicates++
+			continue
+		}
+		seen[ref] = struct{}{}
+		result = append(result, ref)
+	}
+	return result, duplicates
+}
+
 // ValidateScout validates a Theme Scout response (contract C) item-locally
 // against the request-local catalog. anchorRefs and fileRefs are the advertised
 // a*/f* ref sets; catalogDigest binds the request catalog (cross-request refs
@@ -78,6 +98,19 @@ func ValidateScout(data []byte, anchorRefs map[string]struct{}, fileRefs map[str
 			reject(&status, position, ScoutIssueDecodeCandidate)
 			continue
 		}
+		// Decision 232 (Archive 9): exact duplicate anchor/file refs are
+		// normalized deterministically (keep first occurrence) and
+		// counted — they never reject a valid candidate.
+		dedupedAnchors, duplicateAnchors := dedupeRefs(candidate.AnchorRefs)
+		dedupedFiles, duplicateFiles := dedupeRefs(candidate.ExpansionFileRefs)
+		if duplicateAnchors > 0 {
+			status.Normalized["duplicate_anchor_refs"] += duplicateAnchors
+		}
+		if duplicateFiles > 0 {
+			status.Normalized["duplicate_file_refs"] += duplicateFiles
+		}
+		candidate.AnchorRefs = dedupedAnchors
+		candidate.ExpansionFileRefs = dedupedFiles
 		if code := scoutCandidateIssue(candidate, anchorRefs, fileRefs, catalogDigest, seenNormalized); code != "" {
 			reject(&status, position, code)
 			continue
@@ -137,9 +170,8 @@ func scoutCandidateIssue(candidate ScoutCandidate, anchorRefs, fileRefs map[stri
 		if _, ok := anchorRefs[ref]; !ok {
 			return ScoutIssueUnknownRef
 		}
-		if _, dup := seenAnchor[ref]; dup {
-			return ScoutIssueDuplicateRef
-		}
+		// Decision 232: duplicates were already deduplicated by the
+		// caller; a remaining duplicate here is structurally impossible.
 		seenAnchor[ref] = struct{}{}
 	}
 	for _, ref := range candidate.ExpansionFileRefs {

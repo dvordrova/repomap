@@ -13,8 +13,10 @@ import (
 )
 
 func TestSemanticDiscoveryReportFormatVersion(t *testing.T) {
-	if CurrentFormatVersion != 32 {
-		t.Fatalf("CurrentFormatVersion = %d, want 32 for theme Study publication", CurrentFormatVersion)
+	// Decision 232 (Archive 9): Study projection gains adjudication anchor
+	// coverage and the semantic-empty state (CurrentFormatVersion 33).
+	if CurrentFormatVersion != 33 {
+		t.Fatalf("CurrentFormatVersion = %d, want 33 for adjudication anchor coverage projection", CurrentFormatVersion)
 	}
 }
 
