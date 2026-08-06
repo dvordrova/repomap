@@ -20,6 +20,7 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 		name   string
 		asset  string
 		tokens []string
+		absent []string
 	}{
 		{
 			name:  "runtime API and one-shot ELK layout",
@@ -152,7 +153,10 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 				"focusComponent(componentID, animate)",
 				"componentContextBounds(componentID)",
 				"FOCUS_MIN_SCALE",
-				"FIT_MIN_SCALE",
+				// Decision 234 (F1): the fit scale clamps only the upper
+				// bound — a huge landscape fits entirely inside the
+				// viewport (all principal node centers hit-testable).
+				"FIT_MAX_SCALE",
 				"rm-arch__surface.is-focusing",
 				"rm-arch__viewport-hint",
 			},
@@ -180,7 +184,7 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			},
 		},
 		{
-			name:  "wheel zoom scales with normalized input",
+			name:  "wheel zoom scales with normalized input (Decision 234: canvas owns wheel over the map)",
 			asset: js,
 			tokens: []string{
 				"WHEEL_ZOOM_SENSITIVITY",
@@ -188,6 +192,23 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 				"WheelEvent.DOM_DELTA_LINE",
 				"WheelEvent.DOM_DELTA_PAGE",
 				"Math.exp(-delta * WHEEL_ZOOM_SENSITIVITY)",
+			},
+		},
+		{
+			name:  "wheel zoom no longer requires a modifier (Decision 234 supersedes D230 D3)",
+			asset: js,
+			tokens: []string{
+				"Decision 234 (Archive 9, owner corrective 1)",
+				"the canvas OWNS the",
+				"event.preventDefault()",
+				"const factor = Math.exp(-delta * WHEEL_ZOOM_SENSITIVITY);",
+			},
+		},
+		{
+			name:  "wheel handler must not gate on ctrlKey/metaKey (Decision 234)",
+			asset: js,
+			absent: []string{
+				"if (!event.ctrlKey && !event.metaKey) return;",
 			},
 		},
 		{
@@ -444,6 +465,11 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			for _, token := range test.tokens {
 				if !strings.Contains(test.asset, token) {
 					t.Errorf("asset is missing integration token %q", token)
+				}
+			}
+			for _, token := range test.absent {
+				if strings.Contains(test.asset, token) {
+					t.Errorf("asset must not contain %q (Decision 234 supersedes the D230 D3 modifier gate)", token)
 				}
 			}
 		})

@@ -21,7 +21,7 @@
  const MAX_WHEEL_DELTA = 120;
  const INITIAL_MIN_SCALE = 0.72;
  const INITIAL_MAX_SCALE = 1;
- const FIT_MIN_SCALE = 0.16;
+ const FIT_MAX_SCALE = 1.35;
  const FOCUS_MIN_SCALE = 0.88;
  const FOCUS_MAX_SCALE = 1.05;
  const LANDSCAPE_COMPONENT_HEIGHT = 108;
@@ -270,8 +270,13 @@
   };
  }
 
+ // readableFitScale clamps only the UPPER bound (magnification). Decision
+ // 234 (F1, fresh review): the LOWER bound must not exist — a huge landscape
+ // must fit ENTIRELY inside the viewport (all principal node centers
+ // hit-testable), even at very small scales. The data-semantic-scale
+ // overview mode keeps tiny scales honest (title/count only).
  function readableFitScale(bounds, viewport, padding) {
-  return clamp(scaleToBounds(bounds, viewport, padding), FIT_MIN_SCALE, 1.35);
+  return Math.min(scaleToBounds(bounds, viewport, padding), FIT_MAX_SCALE);
  }
 
  function componentFocusScale(bounds, viewport, padding) {
@@ -891,6 +896,11 @@ function architecturePartialTruth(data) {
      this.flowFocus = element("div", "rm-arch__flow-focus");
      this.flowFocus.hidden = true;
      this.viewportHint = element("div", "rm-arch__viewport-hint", this.msg("architecture.hint.drag_to_explore"));
+     // Decision 234 (fresh review): the persistent interaction hint is
+     // announced as a note with an explicit label naming the exact
+     // behavior (wheel zooms, drag pans) — quiet, never occluding.
+     this.viewportHint.setAttribute("role", "note");
+     this.viewportHint.setAttribute("aria-label", this.msg("architecture.hint.drag_groups_fit", { count: 0 }));
      this.viewport.append(this.loading, this.flowFocus, this.viewportHint);
    workspace.appendChild(this.viewport);
 
@@ -2788,12 +2798,15 @@ function architecturePartialTruth(data) {
   }
 
   installViewportInteractions() {
-   // Decision 230 D3: ordinary wheel scrolls the page; Ctrl/Cmd+wheel
-   // zooms the canvas; +/- controls zoom; Fit/Overview resets; drag on
-   // blank canvas pans. Page scrolling is never trapped by the canvas.
+   // Decision 234 (Archive 9, owner corrective 1): the canvas OWNS the
+   // wheel/trackpad input while the pointer is over the map — wheel zooms
+   // (one documented stable behavior, no modifier required; Ctrl/Cmd+wheel
+   // keeps zooming as a harmless superset). Blank-space drag pans. Pointer
+   // outside the canvas: the report page scrolls normally (the handler is
+   // installed only on the viewport element, never on the page root). This
+   // supersedes the D230 D3 clause that required Ctrl/Cmd+wheel to zoom.
    this.listen(this.viewport, "wheel", (event) => {
     if (!this.surface || this.selection.flow) return;
-    if (!event.ctrlKey && !event.metaKey) return;
     event.preventDefault();
     let delta = event.deltaY;
     if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) delta *= 16;

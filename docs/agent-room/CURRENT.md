@@ -19,6 +19,7 @@ Active decisions (each approved by the repository owner via its supervisory goal
 15. decisions/231-architecture-model-backend-boundary.md
 16. decisions/232-navigator-theme-contract-simplification.md
 17. decisions/233-study-equivalence-overview-prominence.md
+18. decisions/234-canvas-interaction-tls-bias.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
