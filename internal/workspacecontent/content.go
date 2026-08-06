@@ -164,6 +164,8 @@ func (s *Service) Read(ctx context.Context, request Request) (Result, error) {
 		current.Bytes,
 		startLine,
 		endLine,
+		request.Range.StartLine,
+		request.Range.EndLine,
 		limits.MaxBytes,
 		limits.MaxLineBytes,
 		limits.MaxLines,
@@ -302,7 +304,7 @@ func selectRange(
 
 func selectLines(
 	content []byte,
-	startLine, endLine, textLimit, lineLimit, countLimit int,
+	startLine, endLine, requestStart, requestEnd, textLimit, lineLimit, countLimit int,
 ) ([]Line, string, error) {
 	capacity := min(endLine-startLine+1, countLimit)
 	lines := make([]Line, 0, capacity)
@@ -321,7 +323,19 @@ func selectLines(
 		}
 		if lineNumber >= startLine && lineNumber <= endLine {
 			rawLine := content[lineStart:index]
+			// Decision 231 (Archive 9, ghz live run): the context
+			// padding (selectRange ±10) must never drag an oversized
+			// line into the read. An oversized line OUTSIDE the exact
+			// requested span is skipped (it is context, not content);
+			// an oversized line INSIDE the requested span stays a
+			// hard LimitLine — the caller asked for it exactly and it
+			// cannot be served faithfully.
 			if len(rawLine) > lineLimit {
+				if lineNumber < requestStart || lineNumber > requestEnd {
+					lineNumber++
+					lineStart = index + 1
+					continue
+				}
 				return nil, "", workspaceContentLimit(LimitLine)
 			}
 			added := len(rawLine)
