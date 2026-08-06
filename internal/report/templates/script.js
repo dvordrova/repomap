@@ -9665,8 +9665,20 @@
     //    safe component edge was created;
     //  - no_supported_relation_evidence: the view is labeled a conceptual /
     //    package grouping and the structured list is primary.
+    // Decision 230 D5: the Architecture page is a bounded workspace —
+    // the map is the primary surface; relations, mechanism fragments and
+    // the component list live behind explicit disclosures with compact
+    // default counts. All information is preserved; nothing is deleted
+    // to shorten the page.
     if (relations.length) {
-      root.appendChild(renderArchitectureRelations(relations));
+      var relationDisclosure = el('details', 'rm-architecture-disclosure rm-architecture-relations-disclosure');
+      relationDisclosure.open = false;
+      var relationSummary = el('summary', 'rm-architecture-disclosure__summary');
+      relationSummary.appendChild(txt('span', 'rm-architecture-disclosure__title', msg('main.architecture.relations.kicker')));
+      relationSummary.appendChild(txt('span', 'rm-architecture-disclosure__count', msg('main.architecture.disclosure.count', { count: relations.length })));
+      relationDisclosure.appendChild(relationSummary);
+      relationDisclosure.appendChild(renderArchitectureRelations(relations));
+      root.appendChild(relationDisclosure);
     } else if (relationState === 'member_relations_unprojected') {
       root.appendChild(renderArchitectureUnprojectedRelations());
     } else {
@@ -9678,12 +9690,28 @@
     // complete process proof; no invented edges.
     var fragment = DATA.mechanism_fragment;
     if (fragment && fragment.version === 1) {
-      root.appendChild(renderMechanismFragment(fragment));
+      var transitionCount = Array.isArray(fragment.transitions) ? fragment.transitions.length : 0;
+      var mechanismDisclosure = el('details', 'rm-architecture-disclosure rm-architecture-mechanism-disclosure');
+      mechanismDisclosure.open = false;
+      var mechanismSummary = el('summary', 'rm-architecture-disclosure__summary');
+      mechanismSummary.appendChild(txt('span', 'rm-architecture-disclosure__title', msg('main.architecture.mechanism.title')));
+      mechanismSummary.appendChild(txt('span', 'rm-architecture-disclosure__count', msg('main.architecture.disclosure.count', { count: transitionCount })));
+      mechanismDisclosure.appendChild(mechanismSummary);
+      mechanismDisclosure.appendChild(renderMechanismFragment(fragment));
+      root.appendChild(mechanismDisclosure);
     }
     if (componentList) {
       // With no supported relation evidence the structured list is the
       // primary representation (it already follows the map in layout).
-      root.appendChild(componentList);
+      var listDisclosure = el('details', 'rm-architecture-disclosure rm-architecture-list-disclosure');
+      listDisclosure.open = false;
+      var listSummary = el('summary', 'rm-architecture-disclosure__summary');
+      listSummary.appendChild(txt('span', 'rm-architecture-disclosure__title', msg('main.architecture.component_list.title')));
+      var componentCount = DATA.architecture_canvas && Array.isArray(DATA.architecture_canvas.components) ? DATA.architecture_canvas.components.length : 0;
+      listSummary.appendChild(txt('span', 'rm-architecture-disclosure__count', msg('main.architecture.disclosure.count', { count: componentCount })));
+      listDisclosure.appendChild(listSummary);
+      listDisclosure.appendChild(componentList);
+      root.appendChild(listDisclosure);
     }
     // Decision 217: compact unmapped-evidence disclosure preserving every
     // exact item behind an expand action.
@@ -9956,102 +9984,246 @@
    ));
    var entry = fragment.entry || {};
    var transitions = Array.isArray(fragment.transitions) ? fragment.transitions : [];
-   // Decision 229 D5: disconnected evidence is never linearized into one
-   // numbered sequence. The entry lane is its own fragment; every
-   // transition renders as a separate lane card with explicit source
-   // (callsite path:line) → target (symbol) → support/ordering/evidence/
-   // limitation. Ordinals never imply adjacency between unrelated lanes.
-   var lanes = [];
-   if (entry.path || entry.label) {
-    lanes.push({ kind: 'entry', transition: entry });
-   }
-   transitions.forEach(function (transition) {
-    lanes.push({ kind: 'transition', transition: transition });
+   // Decision 230 D8: connected mechanism fragments. Array order is never
+   // path order. A path exists only through exact supported joins: the
+   // entry handoffs recorded by the local grounding pass. Direct static
+   // handoffs whose target is a lifecycle continuation stay in the entry
+   // chain; handoffs into boundary/resource targets become independent
+   // fragments; boundary/resource observations without a path join become
+   // side touchpoint groups (never "next steps").
+   var grounding = DATA.architecture_grounding || {};
+   var handoffs = Array.isArray(grounding.entry_handoffs) ? grounding.entry_handoffs : [];
+   var anchorsByID = {};
+   (Array.isArray(grounding.behavior_anchors) ? grounding.behavior_anchors : []).forEach(function (anchor) {
+    if (anchor && anchor.id) anchorsByID[anchor.id] = anchor;
    });
-   var list = el('div', 'rm-mechanism-fragment__lanes');
-   lanes.forEach(function (lane) {
-    var transition = lane.transition || {};
-    var item = el('article', 'rm-mechanism-fragment__lane' + (lane.kind === 'entry' ? ' rm-mechanism-fragment__lane--entry' : ''));
-    var head = el('div', 'rm-mechanism-fragment__lane-head');
-    head.appendChild(txt('strong', 'rm-mechanism-fragment__kind', mechanismClaimKindLabel(transition)));
-    head.appendChild(txt('span', 'rm-mechanism-fragment__mode', mechanismSupportModeLabel(transition)));
-    item.appendChild(head);
-    var callsite = transition.path ? transition.path + (transition.line ? ':' + transition.line : '') : '';
-    if (callsite) {
-      // Decision 230 D1: every mechanism path:line is a real source
-      // action when an exact snippet resolves it; otherwise it renders
-      // as a neutral non-link location (never a dead button).
-      var location = { path: transition.path, line: Number(transition.line) || 0 };
-      var resolution = exactOverviewActionResolutionForLocation(location);
-      var snippet = resolution && resolution.source && resolution.source.snippet;
-      if (snippet) {
-        var locationAction = el('button', 'rm-mechanism-fragment__location rm-source-action-link');
-        locationAction.type = 'button';
-        locationAction.textContent = callsite;
-        locationAction.onclick = function () {
-          openSourceSnippet(snippet, resolution.source.location, false, { drawerFirst: true });
-        };
-        item.appendChild(locationAction);
-      } else {
-        item.appendChild(txt('code', 'rm-mechanism-fragment__location rm-mechanism-fragment__location--text', callsite));
-      }
-    }
-    // Decision 229 D4: the entry lane's raw label starts with the claim
-    // kind ("process entry …"), which the kind badge already states —
-    // strip the prefix so primary copy never repeats a raw enum.
-    var rawLabel = String(transition.label || '');
-    var label = rawLabel.indexOf('process entry ') === 0 ? rawLabel.slice('process entry '.length) : rawLabel;
-    // Decision 229 D4: boundary/resource observation labels ("boundary
-    // net", "resource os") become human copy; the raw kind stays under
-    // Evidence details.
-    if (label.indexOf('boundary ') === 0) {
-     label = msg('main.architecture.mechanism.label.boundary') + ' · ' + label.slice('boundary '.length);
-    } else if (label.indexOf('resource ') === 0) {
-     label = msg('main.architecture.mechanism.label.resource') + ' · ' + label.slice('resource '.length);
-    } else if (label.indexOf('operation') === 0) {
-     label = msg('main.architecture.mechanism.label.operation');
-    } else if (label.indexOf('surface') === 0) {
-     label = msg('main.architecture.mechanism.label.surface');
-    }
-    if (transition.symbol && transition.symbol.indexOf('member-symbol') !== 0) {
-     item.appendChild(txt('span', 'rm-mechanism-fragment__label', String(transition.symbol)));
-    } else if (label && label !== 'handoff') {
-     item.appendChild(txt('span', 'rm-mechanism-fragment__label', label));
-    }
-    // Human copy: ordering and limitation are primary; raw enums live
-    // under Evidence details.
-    var ordering = mechanismOrderingLabel(transition);
-    if (ordering) item.appendChild(txt('span', 'rm-mechanism-fragment__ordering', ordering));
-    if (transition.limitation) item.appendChild(txt('p', 'rm-arch__limitation rm-mechanism-fragment__limitation', String(transition.limitation)));
-    var details = el('details', 'rm-mechanism-fragment__evidence-details');
-    details.appendChild(txt('summary', 'rm-mechanism-fragment__evidence-summary', msg('main.architecture.mechanism.evidence_details')));
-    var raw = [];
-    if (transition.claim_kind) raw.push('claim_kind: ' + transition.claim_kind);
-    if (transition.support_mode) raw.push('support_mode: ' + transition.support_mode);
-    if (transition.ordering) raw.push('ordering: ' + transition.ordering);
-    if (transition.evidence) raw.push('evidence: ' + transition.evidence);
-    if (transition.scenario) raw.push('scenario: ' + transition.scenario);
-    if (transition.path && transition.line) raw.push('exact source: ' + transition.path + ':' + transition.line);
-    if (raw.length) {
-     var rawList = el('ul', 'rm-mechanism-fragment__evidence-raw');
-     raw.forEach(function (line) { rawList.appendChild(txt('li', '', line)); });
-     details.appendChild(rawList);
-     item.appendChild(details);
-    }
-    list.appendChild(item);
+   // Resolve each direct handoff's target anchor kind from the
+   // relationships recorded at the same callsite.
+   var relationships = Array.isArray(grounding.relationships) ? grounding.relationships : [];
+   var callsiteTargetKind = {};
+   relationships.forEach(function (rel) {
+    if (!rel || !rel.location) return;
+    var key = String(rel.location.path || '') + ':' + String(rel.location.line || 0);
+    var target = anchorsByID[rel.to_anchor_id] || {};
+    callsiteTargetKind[key] = String(target.kind || '');
    });
-   section.appendChild(list);
-   // Unresolved frontier: always visible, never hover-only. Renders the
-   // limitation AND the explicit unresolved items.
+
+   var directCalls = transitions.filter(function (t) {
+    return t && t.claim_kind === 'direct_static_call';
+   });
+   var touchpoints = transitions.filter(function (t) {
+    return t && (t.claim_kind === 'storage_boundary_callsite' || t.claim_kind === 'outbound_client_callsite');
+   });
    var frontier = fragment.frontier || {};
-   var frontierBox = el('div', 'rm-mechanism-fragment__frontier');
-   frontierBox.appendChild(txt('strong', null, msg('main.architecture.mechanism.frontier_title')));
-   frontierBox.appendChild(txt('p', 'rm-arch__limitation', String(frontier.limitation || msg('main.architecture.mechanism.frontier_default'))));
-   (Array.isArray(frontier.unresolved) ? frontier.unresolved : []).forEach(function (item) {
-    if (String(item || '').trim()) frontierBox.appendChild(txt('p', 'rm-mechanism-fragment__frontier-item', String(item)));
+   var hasUnresolvedContinuation = transitions.some(function (t) {
+    return t && t.claim_kind === 'unresolved_continuation';
    });
-   section.appendChild(frontierBox);
+
+   var workspace = el('div', 'rm-mechanism-fragment__workspace');
+   // --- Entry fragment: entry → lifecycle continuation → frontier ---
+   var entryFragment = el('div', 'rm-mechanism-fragment__graph rm-mechanism-fragment__graph--entry');
+   entryFragment.appendChild(txt('h4', 'rm-mechanism-fragment__fragment-title', msg('main.architecture.mechanism.fragment.entry')));
+   var entryNode = renderMechanismLane({ transition: entry, kind: 'entry' });
+   entryFragment.appendChild(entryNode);
+   var chainNext = [];
+   directCalls.forEach(function (t) {
+    var key = String(t.path || '') + ':' + String(t.line || 0);
+    if (String(callsiteTargetKind[key]).indexOf('lifecycle_') === 0) chainNext.push(t);
+   });
+   // Deterministic ordering by exact line, never array position.
+   chainNext.sort(function (a, b) { return (Number(a.line) || 0) - (Number(b.line) || 0); });
+   chainNext.forEach(function (t) {
+    var arrow = el('div', 'rm-mechanism-fragment__arrow');
+    arrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-line', '→'));
+    arrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-mode', mechanismSupportModeLabel(t)));
+    entryFragment.appendChild(arrow);
+    entryFragment.appendChild(renderMechanismLane({ transition: t, kind: 'transition' }));
+   });
+   if (chainNext.length || hasUnresolvedContinuation) {
+    var frontierArrow = el('div', 'rm-mechanism-fragment__arrow rm-mechanism-fragment__arrow--frontier');
+    frontierArrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-line', '⇢'));
+    frontierArrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-mode', msg('main.architecture.mechanism.fragment.unknown_continuation')));
+    entryFragment.appendChild(frontierArrow);
+    entryFragment.appendChild(renderMechanismFrontier(frontier, fragment));
+   }
+   workspace.appendChild(entryFragment);
+
+   // --- Independent fragments: handoffs whose target is not a lifecycle
+   // continuation (boundary/resource targets) ---
+   var independent = directCalls.filter(function (t) {
+    var key = String(t.path || '') + ':' + String(t.line || 0);
+    return String(callsiteTargetKind[key]).indexOf('lifecycle_') !== 0;
+   });
+   independent.forEach(function (t) {
+    var frag = el('div', 'rm-mechanism-fragment__graph rm-mechanism-fragment__graph--independent');
+    frag.appendChild(txt('h4', 'rm-mechanism-fragment__fragment-title', msg('main.architecture.mechanism.fragment.independent')));
+    var sourceNode = renderMechanismLane({ transition: t, kind: 'transition' });
+    frag.appendChild(sourceNode);
+    var arrow = el('div', 'rm-mechanism-fragment__arrow');
+    arrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-line', '→'));
+    arrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-mode', mechanismSupportModeLabel(t)));
+    frag.appendChild(arrow);
+    // The target symbol comes from the recorded anchor at the same callsite.
+    var key = String(t.path || '') + ':' + String(t.line || 0);
+    var rel = relationships.filter(function (r) {
+     return r && r.location && String(r.location.path || '') + ':' + String(r.location.line || 0) === key;
+    })[0];
+    var targetAnchor = rel ? (anchorsByID[rel.to_anchor_id] || {}) : {};
+    var targetNode = el('div', 'rm-mechanism-fragment__target');
+    var targetSymbol = String(targetAnchor.label || '').replace(/^[a-z_]+ /, '');
+    targetNode.appendChild(txt('strong', 'rm-mechanism-fragment__target-symbol', targetSymbol || t.symbol || ''));
+    if (targetAnchor.location) {
+     targetNode.appendChild(renderMechanismLocationAction(targetAnchor.location, t));
+    }
+    frag.appendChild(targetNode);
+    workspace.appendChild(frag);
+   });
+
+   // --- Side touchpoint groups: boundary/resource observations without a
+   // path join are grouped by family — never rendered as next steps. ---
+   var touchpointGroups = {};
+   touchpoints.forEach(function (t) {
+    var family = mechanismTouchpointFamily(t);
+    if (!touchpointGroups[family]) touchpointGroups[family] = [];
+    touchpointGroups[family].push(t);
+   });
+   var familyNames = Object.keys(touchpointGroups).sort();
+   if (familyNames.length) {
+    var touchSection = el('div', 'rm-mechanism-fragment__touchpoints');
+    touchSection.appendChild(txt('h4', 'rm-mechanism-fragment__fragment-title', msg('main.architecture.mechanism.fragment.touchpoints')));
+    touchSection.appendChild(txt('p', 'rm-mechanism-fragment__touchpoints-copy', msg('main.architecture.mechanism.fragment.touchpoints_copy')));
+    familyNames.forEach(function (family) {
+     var group = touchpointGroups[family];
+     var details = el('details', 'rm-mechanism-fragment__touchpoint-group');
+     details.open = false;
+     var summary = el('summary', 'rm-mechanism-fragment__touchpoint-summary');
+     summary.appendChild(txt('span', 'rm-mechanism-fragment__touchpoint-family', family));
+     summary.appendChild(txt('span', 'rm-mechanism-fragment__touchpoint-count', msg('main.architecture.disclosure.count', { count: group.length })));
+     details.appendChild(summary);
+     var list = el('ul', 'rm-mechanism-fragment__touchpoint-list');
+     group.forEach(function (t) {
+      var item = txt('li', 'rm-mechanism-fragment__touchpoint-item', '');
+      var label = mechanismTransitionLabel(t);
+      if (label) item.appendChild(txt('span', 'rm-mechanism-fragment__touchpoint-label', label));
+      if (t.path && t.line) item.appendChild(renderMechanismLocationAction({ path: t.path, line: t.line }, t));
+      list.appendChild(item);
+     });
+     details.appendChild(list);
+     touchSection.appendChild(details);
+    });
+    workspace.appendChild(touchSection);
+   }
+
+   section.appendChild(workspace);
+   if (!chainNext.length && !independent.length && !familyNames.length) {
+    section.appendChild(txt('p', 'rm-arch__copy rm-arch__inspector-empty', msg('main.architecture.mechanism.no_transitions')));
+   }
    return section;
+  }
+
+  function mechanismTransitionLabel(transition) {
+   var rawLabel = String(transition && transition.label || '');
+   var label = rawLabel.indexOf('process entry ') === 0 ? rawLabel.slice('process entry '.length) : rawLabel;
+   if (label.indexOf('boundary ') === 0) {
+    label = msg('main.architecture.mechanism.label.boundary') + ' · ' + label.slice('boundary '.length);
+   } else if (label.indexOf('resource ') === 0) {
+    label = msg('main.architecture.mechanism.label.resource') + ' · ' + label.slice('resource '.length);
+   } else if (label.indexOf('operation') === 0) {
+    label = msg('main.architecture.mechanism.label.operation');
+   } else if (label.indexOf('surface') === 0) {
+    label = msg('main.architecture.mechanism.label.surface');
+   }
+   return label;
+  }
+
+  function mechanismTouchpointFamily(transition) {
+   var raw = String(transition && transition.label || '');
+   // "boundary net", "resource github.com/casdoor/notify2" → the last token.
+   var tokens = raw.split(/\s+/);
+   if (tokens.length >= 2 && (tokens[0] === 'boundary' || tokens[0] === 'resource')) {
+    return tokens.slice(1).join(' ') || 'unknown';
+   }
+   return msg('main.architecture.mechanism.fragment.touchpoint_misc');
+  }
+
+  function renderMechanismLocationAction(location, transition) {
+   var callsite = location.path + (location.line ? ':' + location.line : '');
+   var resolution = exactOverviewActionResolutionForLocation({ path: location.path, line: Number(location.line) || 0 });
+   var snippet = resolution && resolution.source && resolution.source.snippet;
+   if (snippet) {
+    var action = el('button', 'rm-mechanism-fragment__location rm-source-action-link');
+    action.type = 'button';
+    action.textContent = callsite;
+    action.onclick = function () {
+     openSourceSnippet(snippet, resolution.source.location, false, { drawerFirst: true });
+    };
+    return action;
+   }
+   return txt('code', 'rm-mechanism-fragment__location rm-mechanism-fragment__location--text', callsite);
+  }
+
+  function renderMechanismFrontier(frontier, fragment) {
+   var box = el('div', 'rm-mechanism-fragment__frontier');
+   box.appendChild(txt('strong', null, msg('main.architecture.mechanism.frontier_title')));
+   box.appendChild(txt('p', 'rm-arch__limitation', String(frontier.limitation || msg('main.architecture.mechanism.frontier_default'))));
+   (Array.isArray(frontier.unresolved) ? frontier.unresolved : []).forEach(function (item) {
+    if (String(item || '').trim()) box.appendChild(txt('p', 'rm-mechanism-fragment__frontier-item', String(item)));
+   });
+   return box;
+  }
+
+  function renderMechanismLane(lane) {
+   var transition = lane.transition || {};
+   var item = el('article', 'rm-mechanism-fragment__lane' + (lane.kind === 'entry' ? ' rm-mechanism-fragment__lane--entry' : ''));
+   var head = el('div', 'rm-mechanism-fragment__lane-head');
+   head.appendChild(txt('strong', 'rm-mechanism-fragment__kind', mechanismClaimKindLabel(transition)));
+   head.appendChild(txt('span', 'rm-mechanism-fragment__mode', mechanismSupportModeLabel(transition)));
+   item.appendChild(head);
+   var callsite = transition.path ? transition.path + (transition.line ? ':' + transition.line : '') : '';
+   if (callsite) {
+    var location = { path: transition.path, line: Number(transition.line) || 0 };
+    var resolution = exactOverviewActionResolutionForLocation(location);
+    var snippet = resolution && resolution.source && resolution.source.snippet;
+    if (snippet) {
+     var locationAction = el('button', 'rm-mechanism-fragment__location rm-source-action-link');
+     locationAction.type = 'button';
+     locationAction.textContent = callsite;
+     locationAction.onclick = function () {
+      openSourceSnippet(snippet, resolution.source.location, false, { drawerFirst: true });
+     };
+     item.appendChild(locationAction);
+    } else {
+     item.appendChild(txt('code', 'rm-mechanism-fragment__location rm-mechanism-fragment__location--text', callsite));
+    }
+   }
+   // Decision 229 D4: the entry lane's raw label starts with the claim
+   // kind ("process entry …"), which the kind badge already states —
+   // strip the prefix so primary copy never repeats a raw enum.
+   var label = mechanismTransitionLabel(transition);
+   if (transition.symbol && transition.symbol.indexOf('member-symbol') !== 0) {
+    item.appendChild(txt('span', 'rm-mechanism-fragment__label', String(transition.symbol)));
+   } else if (label && label !== 'handoff') {
+    item.appendChild(txt('span', 'rm-mechanism-fragment__label', label));
+   }
+   var ordering = mechanismOrderingLabel(transition);
+   if (ordering) item.appendChild(txt('span', 'rm-mechanism-fragment__ordering', ordering));
+   if (transition.limitation) item.appendChild(txt('p', 'rm-arch__limitation rm-mechanism-fragment__limitation', String(transition.limitation)));
+   var details = el('details', 'rm-mechanism-fragment__evidence-details');
+   details.appendChild(txt('summary', 'rm-mechanism-fragment__evidence-summary', msg('main.architecture.mechanism.evidence_details')));
+   var raw = [];
+   if (transition.claim_kind) raw.push('claim_kind: ' + transition.claim_kind);
+   if (transition.support_mode) raw.push('support_mode: ' + transition.support_mode);
+   if (transition.ordering) raw.push('ordering: ' + transition.ordering);
+   if (transition.evidence) raw.push('evidence: ' + transition.evidence);
+   if (transition.scenario) raw.push('scenario: ' + transition.scenario);
+   if (transition.path && transition.line) raw.push('exact source: ' + transition.path + ':' + transition.line);
+   if (raw.length) {
+    var rawList = el('ul', 'rm-mechanism-fragment__evidence-raw');
+    raw.forEach(function (line) { rawList.appendChild(txt('li', '', line)); });
+    details.appendChild(rawList);
+    item.appendChild(details);
+   }
+   return item;
   }
 
   function renderArchitectureUnmappedDisclosure() {

@@ -1478,6 +1478,7 @@
  max-width: 42vw;
  min-width: 440px;
  overflow: auto;
+ overscroll-behavior: contain;
  padding: 28px 24px 40px;
  position: fixed;
  right: 0;
