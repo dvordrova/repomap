@@ -338,6 +338,13 @@ func TestArchitectureSynthesisV6AcceptsExactClosedProducerDiagnosticRegistry(t *
 		"proposal.unknown_anchor_id",
 		"proposal.unknown_member_id",
 		"proposal.unsupported_version",
+		// Decision 229 D7 / Decision 230 D4 item-scope vocabulary.
+		"proposal.salvaged_empty_subsystem",
+		"proposal.unknown_unit_ref",
+		"proposal.duplicate_unit_ref",
+		"proposal.duplicate_anchor_id",
+		"proposal.empty_member_coverage",
+		"proposal.equivalent_member_set_collision",
 		"response.ambiguous_json",
 		"response.invalid_proposal",
 		"response.no_json",

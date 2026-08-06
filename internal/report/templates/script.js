@@ -9262,6 +9262,77 @@
     }));
   }
 
+  // Decision 230 D7: closed deterministic fallback component names are
+  // localized for the RU product. Only the exact deterministic set from
+  // the local fallback (componentmap deterministicLocalComponents) is
+  // translated; everything else passes through untouched.
+  var DETERMINISTIC_COMPONENT_NAMES_RU = {
+    'Primary application': 'Основное приложение',
+    'Secondary services': 'Вторичные сервисы',
+    'Tool entrypoints': 'Точки входа инструментов',
+    'Test and helper entrypoints': 'Тестовые и вспомогательные точки входа',
+    'Other process entrypoints': 'Прочие точки входа процессов',
+    'Command dispatch': 'Диспетчеризация команд',
+    'Extension registration': 'Регистрация расширений',
+    'Lifecycle startup': 'Запуск жизненного цикла',
+    'Request dispatch': 'Диспетчеризация запросов',
+    'TLS and security boundary': 'TLS и граница безопасности',
+    'Supporting repository evidence': 'Вспомогательные свидетельства репозитория',
+  };
+  var DETERMINISTIC_COMPONENT_DESCRIPTIONS_RU = {
+    'Primary application': 'Точка входа процесса, названная по репозиторию, подтверждённая точным объявлением main.',
+    'Secondary services': 'Сервисные точки входа репозитория, отличные от основного приложения.',
+    'Tool entrypoints': 'Точки входа для разработки, сборки, релизов и обслуживания.',
+    'Test and helper entrypoints': 'Тестовые, примерные и вспомогательные точки входа процессов.',
+    'Other process entrypoints': 'Точные точки входа процессов, чья продуктовая роль не определена.',
+    'Command dispatch': 'Детерминированная группировка по точным якорям command_dispatch.',
+    'Extension registration': 'Детерминированная группировка по точным якорям registry_write.',
+    'Lifecycle startup': 'Детерминированная группировка по точным якорям lifecycle_start.',
+    'Request dispatch': 'Детерминированная группировка по точным якорям request_dispatch_root.',
+    'TLS and security boundary': 'Детерминированная группировка по точным якорям tls_or_security_boundary.',
+    'Supporting repository evidence': 'Точные локальные элементы, не отнесённые ограниченным набором якорей.',
+  };
+
+  function localizeDeterministicComponentName(name) {
+    if (typeof name !== 'string') return name;
+    return DETERMINISTIC_COMPONENT_NAMES_RU[name] || name;
+  }
+
+  function localizeDeterministicComponentDescription(name, description) {
+    if (typeof description !== 'string' || typeof name !== 'string') return description;
+    return DETERMINISTIC_COMPONENT_DESCRIPTIONS_RU[name] || description;
+  }
+
+  // Closed deterministic local fallback subsystem names (anchorFirstLocalLandscape).
+  var DETERMINISTIC_SUBSYSTEM_NAMES_RU = {
+    'Entry and dispatch': 'Вход и диспетчеризация',
+    'Configuration': 'Конфигурация',
+    'Runtime and extensions': 'Среда выполнения и расширения',
+    'Control plane': 'Плоскость управления',
+    'Request and data plane': 'Плоскость запросов и данных',
+    'Security': 'Безопасность',
+    'Supporting evidence': 'Вспомогательные свидетельства',
+  };
+  var DETERMINISTIC_SUBSYSTEM_DESCRIPTIONS_RU = {
+    'Entry and dispatch': 'Якоря точек входа и диспетчеризации команд.',
+    'Configuration': 'Якоря входа, адаптации и применения конфигурации.',
+    'Runtime and extensions': 'Якоря реестра, расширений и жизненного цикла.',
+    'Control plane': 'Административные якоря плоскости управления.',
+    'Request and data plane': 'Якоря диспетчеризации запросов и плоскости данных приложения.',
+    'Security': 'Якоря TLS и границ безопасности.',
+    'Supporting evidence': 'Свидетельства пакетов, файлов, символов и потоков, сохранённые вне остальных групп.',
+  };
+
+  function localizeDeterministicSubsystemName(name) {
+    if (typeof name !== 'string') return name;
+    return DETERMINISTIC_SUBSYSTEM_NAMES_RU[name] || name;
+  }
+
+  function localizeDeterministicSubsystemDescription(name, description) {
+    if (typeof description !== 'string' || typeof name !== 'string') return description;
+    return DETERMINISTIC_SUBSYSTEM_DESCRIPTIONS_RU[name] || description;
+  }
+
   function userArchitectureData() {
 		if (!DATA.architecture_canvas || !userArchitectureAvailable()) return null;
     if (DEBUG_MODE) return DATA.architecture_canvas;
@@ -9284,11 +9355,27 @@
       delete component.diagnostics;
       delete component.hash;
       delete component.source_component_ids;
+      // Decision 230 D7: deterministic local fallback component names
+      // and descriptions are localized for the RU product (audit §10).
+      // Only the closed deterministic set is translated; model-authored
+      // names and exact technical identifiers never change.
+      if (REPORT_LANGUAGE === 'ru') {
+        var originalName = component.name;
+        component.name = localizeDeterministicComponentName(component.name);
+        component.description = localizeDeterministicComponentDescription(originalName, component.description);
+      }
     });
     (canvas.subsystems || []).forEach(function (subsystem) {
       delete subsystem.diagnostics;
       delete subsystem.hash;
       delete subsystem.source_subsystem_ids;
+      // Decision 230 D7: deterministic local fallback subsystem names
+      // and descriptions are localized for the RU product (audit §10).
+      if (REPORT_LANGUAGE === 'ru') {
+        var originalSubsystemName = subsystem.name;
+        subsystem.name = localizeDeterministicSubsystemName(subsystem.name);
+        subsystem.description = localizeDeterministicSubsystemDescription(originalSubsystemName, subsystem.description);
+      }
     });
     (canvas.flows || []).forEach(function (flow) {
       delete flow.frontier;

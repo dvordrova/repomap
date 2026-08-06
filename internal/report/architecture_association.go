@@ -289,11 +289,18 @@ func ProjectArchitectureAssociations(
 	return projection, nil
 }
 
-// scopeContains reports whether unitPath equals a scope path or lies under
-// it at a '/' boundary (never a bare prefix: sibling packages do not match).
+// scopeContains reports whether unitPath equals a scope path exactly.
+// Decision 230 D9 (salvage contract v6): package paths match by exact
+// package identity; prefix matching is not package ownership and a root
+// package does not own its descendants.
 func scopeContains(scopePaths []string, unitPath string) bool {
+	// Decision 230 D9 (salvage contract v6): package paths match by EXACT
+	// package identity. Prefix matching is not package ownership — a root
+	// package scope must never absorb observations from its descendants
+	// (casdoor «Запуск» inherited all 218 observations through the root
+	// prefix). Descendant units reach their own exact component scopes.
 	for _, path := range scopePaths {
-		if unitPath == path || strings.HasPrefix(unitPath, path+"/") {
+		if unitPath == path {
 			return true
 		}
 	}
