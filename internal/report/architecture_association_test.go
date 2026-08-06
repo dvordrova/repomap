@@ -250,3 +250,43 @@ func TestArchitectureAssociationsRoundTripValidate(t *testing.T) {
 		t.Fatal("ValidateArchitectureAssociations accepted drifted projection")
 	}
 }
+
+// TestArchitectureAssociationsPairedBoundaryResource (Decision 229 D2):
+// Boundary and Resource observations sharing the same exact witness are
+// marked paired — one user-facing "Observed external/state interaction"
+// row; canonical records stay distinct.
+func TestArchitectureAssociationsPairedBoundaryResource(t *testing.T) {
+	canvas, atlas := associationFixture()
+	// Give the resource observation the SAME witness as the boundary
+	// observation (same callsite, two ontology roles over one fact).
+	atlas.Observations[1].EvidenceRefs = []string{"ev-1"}
+	projection, err := ProjectArchitectureAssociations(canvas, atlas)
+	if err != nil {
+		t.Fatalf("ProjectArchitectureAssociations: %v", err)
+	}
+	var service *ArchitectureComponentAssociations
+	for index := range projection.Components {
+		if projection.Components[index].ComponentID == "component-service" {
+			service = &projection.Components[index]
+		}
+	}
+	if service == nil {
+		t.Fatalf("service component missing")
+	}
+	var boundary, resource *ArchitectureBoundaryResourceRow
+	for index := range service.Associations {
+		switch service.Associations[index].Kind {
+		case "boundary":
+			boundary = &service.Associations[index]
+		case "resource":
+			resource = &service.Associations[index]
+		}
+	}
+	if boundary == nil || resource == nil {
+		t.Fatalf("paired boundary/resource rows missing: %#v", service.Associations)
+	}
+	if !boundary.Paired || !resource.Paired {
+		t.Fatalf("Decision 229 D2: same-witness boundary/resource must be paired: boundary=%v resource=%v",
+			boundary.Paired, resource.Paired)
+	}
+}

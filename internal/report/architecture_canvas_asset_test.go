@@ -112,17 +112,20 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			},
 		},
 		{
-			name:  "flow navigation and evidence remain keyboard reachable",
+			name:  "flow navigation and evidence remain keyboard reachable; edges are passive",
 			asset: js,
 			tokens: []string{
 				`component: "", step: "", edge: ""`,
 				`"architecture.nav.saved_traces"`,
 				`"architecture.label.target_declaration"`,
-				`role: "button", tabindex: "0"`,
-				`event.key !== "Enter" && event.key !== " "`,
+				// Decision 229 D1: flow step nodes are real HTML buttons
+				// (keyboard-native); edges are passive visual evidence.
+				`button.type = "button";`,
+				`button.appendChild(element("span", "rm-arch__step-dot"))`,
 				"openFlowStep(flowID, stepID)",
 				"this.flowStepsByKey.get(flowStepKey(flowID, stepID))",
 				"openFlowStep: (flowID, stepID) => app.openFlowStep(flowID, stepID)",
+				"rm-arch__edge-visible",
 			},
 		},
 		{
@@ -454,6 +457,17 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 	for _, forbidden := range []string{"fetch(", "XMLHttpRequest", "WebSocket"} {
 		if strings.Contains(js, forbidden) {
 			t.Errorf("architecture canvas must not initiate network or analysis work: found %q", forbidden)
+		}
+	}
+	// Decision 229 D1: edges are passive visual evidence — no role, no
+	// tabindex, no hit path, no click/keyboard handler on edge groups.
+	for _, edgeInteractive := range []string{
+		`class: className, role: "button", tabindex`,
+		`rm-arch__edge-hit`,
+		`this.listen(group, "click"`,
+	} {
+		if strings.Contains(js, edgeInteractive) {
+			t.Errorf("architecture canvas edges must be passive (no role/tabindex/hitbox/click): found %q", edgeInteractive)
 		}
 	}
 	if strings.Contains(js, `"Command path"`) {

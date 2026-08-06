@@ -178,7 +178,10 @@
  function setSVGVisible(node, visible) {
   node.style.display = visible ? "" : "none";
   node.setAttribute("aria-hidden", visible ? "false" : "true");
-  node.setAttribute("tabindex", visible ? "0" : "-1");
+  // Decision 229 D1: SVG edge groups are passive visual evidence — no
+  // tabindex (keyboard reachability lives on the real HTML buttons: flow
+  // step nodes and connection rows). Legacy groups without a tabindex
+  // contract never become focus targets.
  }
 
  function clamp(value, low, high) {
@@ -2753,19 +2756,18 @@ function architecturePartialTruth(data) {
   }
 
   interactiveSVGPath(route, className, label, handler) {
-   const group = svgElement("g", { class: className, role: "button", tabindex: "0", "aria-label": label });
-   group.appendChild(svgElement("path", { class: "rm-arch__edge-hit", d: route }));
+   const group = svgElement("g", { class: className });
+   // Decision 229 D1: edges are passive visual evidence — no role, no
+   // tabindex, no hitbox, no click/keyboard handler. An optional <title>
+   // may describe the line; the same information exists in the
+   // selected-node panel (nodes and connection rows are the primary
+   // controls).
+   if (label) {
+    const title = svgElement("title", {});
+    title.textContent = label;
+    group.appendChild(title);
+   }
    group.appendChild(svgElement("path", { class: "rm-arch__edge-visible", d: route }));
-   this.listen(group, "click", (event) => {
-    event.stopPropagation();
-    handler();
-   });
-   this.listen(group, "keydown", (event) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    event.preventDefault();
-    event.stopPropagation();
-    handler();
-   });
    return group;
   }
 
@@ -3324,13 +3326,20 @@ function architecturePartialTruth(data) {
     this.syncFocusedSelection();
 
    const relatedComponents = this.flowComponentIDs.get(flowID) || new Set();
+    // Decision 229 D1 selected-node focus: one-hop incoming/outgoing exact
+    // neighbors stay prominent; unrelated principal nodes dim but remain
+    // spatially stable. Dimming is purely visual (is-dimmed), never
+    // removes or repositions a node.
+    const focusComponentID = this.selection.component && !hasFlow ? this.selection.component : "";
+    const focusNeighbors = focusComponentID ? this.structuralNeighborComponentIDs(focusComponentID) : new Set();
     this.componentElements.forEach((node, id) => {
      node.classList.toggle("is-selected", id === this.selection.component);
     node.classList.toggle("is-guided-tour-highlight", guidedComponentIDs.has(id));
     node.classList.toggle("is-semantic-artifact-highlight", semanticComponentIDs.has(id));
     node.classList.toggle("is-unrelated", hasFlow && !relatedComponents.has(id));
-     node.classList.toggle("is-flow-related", hasFlow && relatedComponents.has(id));
-     node.classList.toggle("is-return-highlighted", !hasFlow && this.returnHighlightIDs.has(id));
+    node.classList.toggle("is-flow-related", hasFlow && relatedComponents.has(id));
+    node.classList.toggle("is-dimmed", Boolean(focusComponentID) && id !== focusComponentID && !focusNeighbors.has(id));
+    node.classList.toggle("is-return-highlighted", !hasFlow && this.returnHighlightIDs.has(id));
    });
 
    this.structuralSVG.classList.remove("is-suppressed");
@@ -3379,6 +3388,21 @@ function architecturePartialTruth(data) {
     group.classList.toggle("is-selected", key === selectionKey(flowID, this.selection.edge));
    });
    this.renderInspector();
+  }
+
+  // structuralNeighborComponentIDs returns the exact one-hop incoming and
+  // outgoing structural neighbor component IDs of the given component
+  // (Decision 229 D1 selected-node focus). Derived only from the local
+  // structural edges — never runtime dependency or reachability.
+  structuralNeighborComponentIDs(componentID) {
+   const ids = new Set();
+   this.structuralEdgeByID.forEach((edge) => {
+    const from = text(edge && edge.from_component_id);
+    const to = text(edge && edge.to_component_id);
+    if (from === componentID && to) ids.add(to);
+    if (to === componentID && from) ids.add(from);
+   });
+   return ids;
   }
 
   renderInspector() {
@@ -3926,6 +3950,52 @@ function architecturePartialTruth(data) {
     });
    }
 
+   // Decision 229 D1 inspector questions 4 and 5: "Used by" (incoming one-
+   // hop exact neighbors) and "Uses" (outgoing one-hop exact neighbors).
+   // Both are exact structural relations from the local graph — never
+   // runtime dependency, ownership, or reachability claims.
+   const neighbors = this.associationEntryFor(component);
+   const incoming = array(neighbors && neighbors.incoming);
+   const outgoing = array(neighbors && neighbors.outgoing);
+   if (incoming.length > 0) {
+    const usedBySection = this.inspectorSection(this.msg("architecture.section.used_by"));
+    incoming.forEach((neighbor) => {
+     const reference = element("div", "rm-arch__compact-reference");
+     reference.appendChild(element(
+      "strong", null, neighbor.name || this.msg("architecture.fallback.repository_component")
+     ));
+     if (this.options.openComponent) {
+      const button = element("button", "rm-arch__edge-jump rm-arch__compact-action");
+      button.type = "button";
+      button.appendChild(element(
+       "span", null, this.msg("architecture.action.open_related_component")
+      ));
+      this.listen(button, "click", () => this.options.openComponent(neighbor.component_id));
+      reference.appendChild(button);
+     }
+     usedBySection.appendChild(reference);
+    });
+   }
+   if (outgoing.length > 0) {
+    const usesSection = this.inspectorSection(this.msg("architecture.section.uses"));
+    outgoing.forEach((neighbor) => {
+     const reference = element("div", "rm-arch__compact-reference");
+     reference.appendChild(element(
+      "strong", null, neighbor.name || this.msg("architecture.fallback.repository_component")
+     ));
+     if (this.options.openComponent) {
+      const button = element("button", "rm-arch__edge-jump rm-arch__compact-action");
+      button.type = "button";
+      button.appendChild(element(
+       "span", null, this.msg("architecture.action.open_related_component")
+      ));
+      this.listen(button, "click", () => this.options.openComponent(neighbor.component_id));
+      reference.appendChild(button);
+     }
+     usesSection.appendChild(reference);
+    });
+   }
+
    // Why it matters: study directions touching this component.
    const studyActions = actions.filter((action) => action.kind === "study");
    if (studyActions.length > 0) {
@@ -3977,13 +4047,44 @@ function architecturePartialTruth(data) {
     section.appendChild(element(
      "p", "rm-arch__copy", this.msg("architecture.copy.observed_callsites_limit")
     ));
-    array(associationEntry.associations).forEach((row) => {
+    // Decision 229 D2: Boundary and Resource rows sharing the same exact
+    // witness coalesce into ONE visible "Observed external/state
+    // interaction" row (canonical records stay distinct). Paired rows
+    // render once with every witness retained.
+    const rows = array(associationEntry.associations);
+    const pairedKeys = new Set();
+    rows.forEach((row) => {
+     if (!row.paired || row.kind !== "boundary") return;
+     const key = String(row.owning_unit || "") + "\u0000" + String(row.imported_family || "");
+     if (!pairedKeys.has(key)) pairedKeys.add(key);
+    });
+    const merged = [];
+    const mergedBoundary = new Set();
+    rows.forEach((row) => {
+     const key = String(row.owning_unit || "") + "\u0000" + String(row.imported_family || "");
+     if (row.paired && row.kind === "resource" && mergedBoundary.has(key)) return;
+     if (row.paired && row.kind === "boundary") mergedBoundary.add(key);
+     merged.push(row);
+    });
+    // Decision 229 D2 precision tiers: exact symbol/file/narrow-package
+    // rows show as normal rows; broad-package observations collapse under
+    // "Additional observations from broad package membership · N".
+    const broadRows = [];
+    const principalRows = [];
+    merged.forEach((row) => {
+     if (this.associationPrecision(row) === "broad_package_scope") broadRows.push(row);
+     else principalRows.push(row);
+    });
+    principalRows.forEach((row) => {
      const rowEl = element("button", "rm-arch__association-row");
      rowEl.type = "button";
      const head = element("div", "rm-arch__association-row__head");
+     const paired = row.paired && row.kind === "boundary";
      head.appendChild(element(
-      "strong", null, this.msg(row.kind === "boundary"
-       ? "architecture.value.category_boundary" : "architecture.value.category_resource")
+      "strong", null, paired
+       ? this.msg("architecture.value.interaction_boundary_resource")
+       : this.msg(row.kind === "boundary"
+        ? "architecture.value.category_boundary" : "architecture.value.category_resource")
      ));
      if (row.imported_family) head.appendChild(element("span", "rm-arch__association-family", row.imported_family));
      head.appendChild(element("span", "rm-arch__association-unit", row.owning_unit));
@@ -3992,6 +4093,12 @@ function architecturePartialTruth(data) {
      meta.appendChild(element(
       "span", "rm-arch__association-count",
       this.msg("architecture.label.observation_count", { count: Number(row.observation_count) || 0 })
+     ));
+     // Decision 229 D2: the visible row states its exact precision tier —
+     // never a stronger claim than the evidence supports.
+     meta.appendChild(element(
+      "span", "rm-arch__association-precision rm-arch__association-precision--" + this.associationPrecision(row),
+      this.msg(this.associationPrecisionMessageID(this.associationPrecision(row)))
      ));
      // Goal 05 source roles: closed production/test/tooling split,
      // reconciled to the observation count, always visible.
@@ -4024,11 +4131,96 @@ function architecturePartialTruth(data) {
      this.listen(rowEl, "click", () => { witnesses.hidden = !witnesses.hidden; });
      section.appendChild(rowEl);
     });
+    // Broad-package observations collapse under a bounded disclosure.
+    if (broadRows.length) {
+     const broad = element("details", "rm-arch__association-broad");
+     const summary = element("summary", "rm-arch__association-broad__summary");
+     summary.appendChild(element(
+      "span", "rm-arch__association-broad__label",
+      this.msg("architecture.label.broad_package_observations", { count: broadRows.length })
+     ));
+     broad.appendChild(summary);
+     broadRows.forEach((row) => {
+      const rowEl = element("button", "rm-arch__association-row rm-arch__association-row--broad");
+      rowEl.type = "button";
+      const head = element("div", "rm-arch__association-row__head");
+      head.appendChild(element(
+       "strong", null, this.msg(row.kind === "boundary"
+        ? "architecture.value.category_boundary" : "architecture.value.category_resource")
+      ));
+      if (row.imported_family) head.appendChild(element("span", "rm-arch__association-family", row.imported_family));
+      head.appendChild(element("span", "rm-arch__association-unit", row.owning_unit));
+      rowEl.appendChild(head);
+      const meta = element("div", "rm-arch__association-row__meta");
+      meta.appendChild(element(
+       "span", "rm-arch__association-count",
+       this.msg("architecture.label.observation_count", { count: Number(row.observation_count) || 0 })
+      ));
+      const roles = row.source_roles || {};
+      const roleParts = [];
+      if (Number(roles.production) > 0) roleParts.push(this.msg("architecture.role.production") + " " + roles.production);
+      if (Number(roles.test) > 0) roleParts.push(this.msg("architecture.role.test") + " " + roles.test);
+      if (Number(roles.tooling) > 0) roleParts.push(this.msg("architecture.role.tooling") + " " + roles.tooling);
+      if (roleParts.length) meta.appendChild(element("span", "rm-arch__association-roles", roleParts.join(" · ")));
+      rowEl.appendChild(meta);
+      const witnesses = element("div", "rm-arch__association-witnesses");
+      witnesses.hidden = true;
+      array(row.witnesses).forEach((witness) => {
+       const jump = element("button", "rm-arch__edge-jump rm-arch__compact-action");
+       jump.type = "button";
+       jump.appendChild(element("strong", null, witness.symbol || witness.path));
+       jump.appendChild(element("span", null, witness.path + (witness.line ? ":" + witness.line : "")));
+       if (typeof this.options.openLocation === "function" && witness.path) {
+        this.listen(jump, "click", () => this.options.openLocation(witness.path, witness.line || 0, 0));
+       }
+       witnesses.appendChild(jump);
+      });
+      rowEl.appendChild(witnesses);
+      this.listen(rowEl, "click", () => { witnesses.hidden = !witnesses.hidden; });
+      broad.appendChild(rowEl);
+     });
+     section.appendChild(broad);
+    }
     // Limitations always visible, never hover-only.
     section.appendChild(element(
      "p", "rm-arch__limitation", this.msg("architecture.copy.association_limitations")
     ));
    }
+  }
+
+  // associationPrecision derives the closed Decision 229 D2 presentation
+  // precision tier deterministically from the row's exact evidence — never
+  // inferred from prose:
+  //   exact_symbol_scope    — every witness has an exact symbol+path+line;
+  //   exact_file_scope      — every witness has an exact path+line;
+  //   narrow_package_scope  — witnesses share a narrow package scope;
+  //   broad_package_scope   — broad imported-family scope (aggregate);
+  //   diagnostic_remainder  — unclassified exact scope.
+  associationPrecision(row) {
+   if (!row) return "diagnostic_remainder";
+   const witnesses = array(row.witnesses);
+   if (!witnesses.length) return "broad_package_scope";
+   let hasSymbol = true;
+   let hasLine = true;
+   witnesses.forEach((witness) => {
+    if (!witness.symbol) hasSymbol = false;
+    if (!witness.path || !witness.line) hasLine = false;
+   });
+   if (hasSymbol) return "exact_symbol_scope";
+   if (hasLine) return "exact_file_scope";
+   if (row.imported_family) return "broad_package_scope";
+   return "narrow_package_scope";
+  }
+
+  associationPrecisionMessageID(precision) {
+   const ids = {
+    exact_symbol_scope: "architecture.precision.exact_symbol_scope",
+    exact_file_scope: "architecture.precision.exact_file_scope",
+    narrow_package_scope: "architecture.precision.narrow_package_scope",
+    broad_package_scope: "architecture.precision.broad_package_scope",
+    diagnostic_remainder: "architecture.precision.diagnostic_remainder",
+   };
+   return ids[precision] || "architecture.precision.narrow_package_scope";
   }
 
   associationEntryFor(component) {
