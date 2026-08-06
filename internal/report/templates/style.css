@@ -548,7 +548,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-kind--config { background: #e0f2fe; color: var(--rm-info); }
 
 /* Cards */
-.rm-card { background: var(--rm-card); border: 1px solid var(--rm-border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; }
+.rm-card { background: var(--rm-card); border: 1px solid var(--rm-border); border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
 .rm-explore { background: linear-gradient(145deg, #f8fbff, #f5f3ff); border-color: #cbd5e1; }
 .rm-explore__title { margin-bottom: .25rem; }
 .rm-explore__intro { color: var(--rm-dim); font-size: .82rem; margin: 0 0 1rem; }

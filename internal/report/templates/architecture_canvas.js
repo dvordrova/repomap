@@ -3904,8 +3904,8 @@ function architecturePartialTruth(data) {
    const surfaceStarts = array(context.surface_starts).filter((start) => (
     start && locationLabel(start.location)
    ));
+   const entersSection = this.inspectorSection(this.msg("architecture.section.how_work_enters"));
    if (surfaceStarts.length > 0) {
-    const entersSection = this.inspectorSection(this.msg("architecture.section.how_work_enters"));
     surfaceStarts.forEach((start) => {
      if (!start.actionable || typeof this.options.openSourceLocation !== "function") {
       const reference = element("div", "rm-arch__compact-reference");
@@ -3929,12 +3929,18 @@ function architecturePartialTruth(data) {
      this.listen(button, "click", () => this.options.openSourceLocation(start.location));
      entersSection.appendChild(button);
     });
+   } else {
+    // Decision 229 D1: a section with no observed data still answers the
+    // question truthfully — an explicit empty explanation, never silence.
+    entersSection.appendChild(element(
+     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_entry")
+    ));
    }
 
    // Where to start reading: representative exact sources.
    const sourceActions = actions.filter((action) => action.kind === "source");
+   const sourceSection = this.inspectorSection(this.msg("architecture.section.start_in_code"));
    if (sourceActions.length > 0) {
-    const sourceSection = this.inspectorSection(this.msg("architecture.section.start_in_code"));
     sourceActions.forEach((action) => {
      const source = action.value;
      const button = element("button", "rm-arch__edge-jump rm-arch__compact-action");
@@ -3948,6 +3954,10 @@ function architecturePartialTruth(data) {
      this.listen(button, "click", () => this.options.openSourceLocation(source.location));
      sourceSection.appendChild(button);
     });
+   } else {
+    sourceSection.appendChild(element(
+     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_sources")
+    ));
    }
 
    // Decision 229 D1 inspector questions 4 and 5: "Used by" (incoming one-
@@ -3957,8 +3967,8 @@ function architecturePartialTruth(data) {
    const neighbors = this.associationEntryFor(component);
    const incoming = array(neighbors && neighbors.incoming);
    const outgoing = array(neighbors && neighbors.outgoing);
+   const usedBySection = this.inspectorSection(this.msg("architecture.section.used_by"));
    if (incoming.length > 0) {
-    const usedBySection = this.inspectorSection(this.msg("architecture.section.used_by"));
     incoming.forEach((neighbor) => {
      const reference = element("div", "rm-arch__compact-reference");
      reference.appendChild(element(
@@ -3975,9 +3985,13 @@ function architecturePartialTruth(data) {
      }
      usedBySection.appendChild(reference);
     });
+   } else {
+    usedBySection.appendChild(element(
+     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_used_by")
+    ));
    }
+   const usesSection = this.inspectorSection(this.msg("architecture.section.uses"));
    if (outgoing.length > 0) {
-    const usesSection = this.inspectorSection(this.msg("architecture.section.uses"));
     outgoing.forEach((neighbor) => {
      const reference = element("div", "rm-arch__compact-reference");
      reference.appendChild(element(
@@ -3994,12 +4008,16 @@ function architecturePartialTruth(data) {
      }
      usesSection.appendChild(reference);
     });
+   } else {
+    usesSection.appendChild(element(
+     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_uses")
+    ));
    }
 
    // Why it matters: study directions touching this component.
    const studyActions = actions.filter((action) => action.kind === "study");
+   const studySection = this.inspectorSection(this.msg("architecture.section.why_it_matters"));
    if (studyActions.length > 0) {
-    const studySection = this.inspectorSection(this.msg("architecture.section.why_it_matters"));
     studyActions.forEach((action) => {
      const study = action.value;
      const button = element("button", "rm-arch__edge-jump rm-arch__compact-action");
@@ -4009,6 +4027,10 @@ function architecturePartialTruth(data) {
      this.listen(button, "click", () => this.options.openStudyDirection(study.id));
      studySection.appendChild(button);
     });
+   } else {
+    studySection.appendChild(element(
+     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_studies")
+    ));
    }
 
    // Operations: exact code relations observed for this component.
@@ -4042,11 +4064,11 @@ function architecturePartialTruth(data) {
    // in an exact member scope" is stated — never runtime dependency,
    // ownership, reachability, read/write/order or target identity.
    const associationEntry = this.associationEntryFor(component);
+   const associationSection = this.inspectorSection(this.msg("architecture.section.observed_callsites"));
+   associationSection.appendChild(element(
+    "p", "rm-arch__copy", this.msg("architecture.copy.observed_callsites_limit")
+   ));
    if (associationEntry && array(associationEntry.associations).length > 0) {
-    const section = this.inspectorSection(this.msg("architecture.section.observed_callsites"));
-    section.appendChild(element(
-     "p", "rm-arch__copy", this.msg("architecture.copy.observed_callsites_limit")
-    ));
     // Decision 229 D2: Boundary and Resource rows sharing the same exact
     // witness coalesce into ONE visible "Observed external/state
     // interaction" row (canonical records stay distinct). Paired rows
@@ -4129,7 +4151,7 @@ function architecturePartialTruth(data) {
      });
      rowEl.appendChild(witnesses);
      this.listen(rowEl, "click", () => { witnesses.hidden = !witnesses.hidden; });
-     section.appendChild(rowEl);
+     associationSection.appendChild(rowEl);
     });
     // Broad-package observations collapse under a bounded disclosure.
     if (broadRows.length) {
@@ -4179,14 +4201,21 @@ function architecturePartialTruth(data) {
       this.listen(rowEl, "click", () => { witnesses.hidden = !witnesses.hidden; });
       broad.appendChild(rowEl);
      });
-     section.appendChild(broad);
-    }
-    // Limitations always visible, never hover-only.
-    section.appendChild(element(
+     associationSection.appendChild(broad);
+     }
+     // Limitations always visible, never hover-only.
+     associationSection.appendChild(element(
      "p", "rm-arch__limitation", this.msg("architecture.copy.association_limitations")
-    ));
-   }
-  }
+     ));
+     } else {
+     // Decision 229 D1: no observed boundary/resource rows for this
+     // component — explicit truthful explanation instead of a silent
+     // section omission.
+     associationSection.appendChild(element(
+     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_callsites")
+     ));
+     }
+     }
 
   // associationPrecision derives the closed Decision 229 D2 presentation
   // precision tier deterministically from the row's exact evidence — never
