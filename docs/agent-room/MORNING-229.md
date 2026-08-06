@@ -25,12 +25,12 @@ Offline-прогоны точным бинарём: **casdoor, etcd, restic, tel
 
 ## PHASE 8 — ревью и repair
 
-Три fresh-context ревьюера (`deleg_f4b9b4ed`):
-- **Code/regression (завершён):** `::root` → `:root` (палитра D9 не применялась!), D4-фикстура, мобильный инспектор, overflow.
-- **Product/UX + a11y (завершён):** инспектор молча пропускал секции → все 9 вопросов отвечают или дают truthful-empty; raw label'ы `operation`/`surface` → human copy; hero дублировал README (Go подставлял DocumentedPurpose в guide.Purpose) → фикс на Go-стороне + neutral fallback; `rm-card` radius 12px.
-- **Semantic/authority:** субагент завис на BLOCKED-команде (hardline) — вердикт реконструирован из tool-трассы; его зона (item-scope salvage, authority wording) покрыта собственными проверками и D7-тестами.
+Три fresh-context ревьюера (`deleg_f4b9b4ed`, полные вердикты получены после завершения батча):
+- **Code/regression — NOT PASS (4 fixes):** `::root` → `:root` (палитра D9 не применялась!), D4 mechanism fixture, **sibling-poisoning** (пустая после salvage подсистема резала валидные sibling-подсистемы), **missing componentSalvaged** в duplicate-member ветке. Все применены.
+- **Semantic/authority — CONDITIONAL PASS (2 fixes):** **R1 wire-path whole-reject** — resolveSynthesisWireProposal возвращал whole-response ошибки на unknown refs, делая D7 item-scope salvage недостижимым из live-пайплайна; теперь ref-resolution failures дропают только компонент (recoverable), valid siblings публикуются accepted_partial, zero-valid → whole reject с точной причиной. **R2 mixed-component monotonic regression** — valid members, собранные до item-scope drop, исчезали из ландшафта; reference-counted release возвращает их в remainder.
+- **Product/UX + a11y — NOT PASS (5 fixes):** truthful-empty инспектор (9 вопросов), hero-дубликат README (Go-fix), raw label'ы operation/surface → human copy, **R1 Overview entry surfaces ванишали** без github links → location-only text spans (только когда нет embedded snippets), **R3 relations inventory raw enums** → human group labels («Настраивает границу безопасности», «Статическая структурная поддержка») с raw под details.
 
-Итог: **74/74 Go-тестов green, 0 FAIL; vet чист; golden актуален.**
+Итог: **74/74 Go-тестов green, 0 FAIL; vet чист; golden актуален; 2 новых детерминированных теста** (subsystem sibling-poisoning, mixed-member remainder release).
 
 ## Верификация (реальный бинарь)
 
@@ -45,9 +45,9 @@ Offline-прогоны точным бинарём: **casdoor, etcd, restic, tel
 - Тесты: `overview_projection_d229_test.go`, `study_progressive_disclosure_d229_test.go`, обновлённые asset-тесты.
 - Артефакты: `tmp/hermes-product-projection-20260806-094500/` (STATE.json, RUN_LOG.md, checks/, screenshots/).
 
-## Коммиты (11)
+## Коммиты (13)
 
-a31e1dc decision · c648df5 P2 · f84efe1 P3 · 9575358 P4 · e1d8c44 P5 · 9a0f088 P6 · da57888 P7 · 2ce476c mobile · 53ad898 mechanism-human · 035efa5 :root · fbb4d8c PHASE 8 repairs
+a31e1dc decision · c648df5 P2 · f84efe1 P3 · 9575358 P4 · e1d8c44 P5 · 9a0f088 P6 · da57888 P7 · 2ce476c mobile · 53ad898 mechanism-human · 035efa5 :root · fbb4d8c PHASE 8 repairs · NEW 9412a72 full review verdicts (semantic wire salvage, monotonic release, location-only entries, relations labels)
 
 ## Ожидает владельца
 
