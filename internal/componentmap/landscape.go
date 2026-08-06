@@ -537,24 +537,33 @@ func Apply(bundle CandidateBundle, proposal Proposal) (Landscape, error) {
 	}
 
 	var (
-		landscape   Landscape
-		diagnostics []Diagnostic
-		operations  []NormalizationOperation
-		usable      bool
+		landscape    Landscape
+		diagnostics  []Diagnostic
+		operations   []NormalizationOperation
+		usable       bool
+		itemSalvaged bool
 	)
 	if rawDiagnostics := proposalMembershipDiagnostics(bundle, proposal); len(rawDiagnostics) > 0 {
 		// Membership cardinality belongs to the exact resolved response. Check it
 		// before hierarchy normalization can merge components and deduplicate a
-		// cross-cutting member into an apparently bounded relation.
+		// cross-cutting member into an apparently bounded relation. These are
+		// fatal structural failures — the whole proposal is unusable.
 		diagnostics = rawDiagnostics
 	} else {
 		normalized, shapeOperations, shapeDiagnostics := normalizeProposalShape(bundle, proposal)
 		deriveLocalComponentHypotheses(bundle, &normalized)
 		operations = shapeOperations
 		var applyDiagnostics []Diagnostic
-		landscape, applyDiagnostics, usable = applyProposal(bundle, normalized)
+		var salvaged bool
+		landscape, applyDiagnostics, usable, salvaged = applyProposal(bundle, normalized)
 		diagnostics = shapeDiagnostics
 		diagnostics = append(diagnostics, applyDiagnostics...)
+		// Decision 229 D7: item-scope salvage (unknown member/anchor refs,
+		// duplicate member within a component, exact twins) publishes as
+		// accepted_partial — valid siblings survive.
+		if salvaged && usable {
+			itemSalvaged = true
+		}
 	}
 	if !usable && !hasFatalDiagnostics(diagnostics) {
 		return Landscape{}, fmt.Errorf("componentmap: rejected proposal has no fatal diagnostic")
@@ -569,6 +578,17 @@ func Apply(bundle CandidateBundle, proposal Proposal) (Landscape, error) {
 		)
 		landscape.Fallback = true
 	} else if len(landscape.LocalRemainderMemberIDs) > 0 {
+		landscape.ValidationOutcome = ValidationAcceptedPartial
+		landscape.Source = SourcePartialModel
+		landscape.Level = 2
+		if len(operations) > 0 {
+			landscape.Normalizations = operations
+		}
+		landscape.Diagnostics = diagnostics
+	} else if itemSalvaged {
+		// Decision 229 D7: item-scope salvage without an unmapped remainder
+		// is still accepted_partial — some proposed components were dropped
+		// or locally normalized.
 		landscape.ValidationOutcome = ValidationAcceptedPartial
 		landscape.Source = SourcePartialModel
 		landscape.Level = 2
@@ -883,7 +903,8 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 		return fmt.Errorf("componentmap: normalized model source has inconsistent state")
 	}
 	if landscape.Source == SourcePartialModel && (landscape.Level != 2 || landscape.Fallback ||
-		landscape.ValidationOutcome != ValidationAcceptedPartial || len(landscape.LocalRemainderMemberIDs) == 0) {
+		landscape.ValidationOutcome != ValidationAcceptedPartial ||
+		(len(landscape.LocalRemainderMemberIDs) == 0 && !landscapeHasItemScopeSalvage(landscape.Diagnostics))) {
 		return fmt.Errorf("componentmap: partial model source has inconsistent state")
 	}
 	if landscape.ValidationOutcome == ValidationAcceptedPartial && landscape.Source != SourcePartialModel {
@@ -1064,11 +1085,17 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 		return fmt.Errorf("componentmap: landscape exceeds %d components", maxComponents)
 	}
 	if landscape.ValidationOutcome == ValidationAcceptedPartial {
-		if diagnosticSubsystems != 1 || len(modelMembers) == 0 {
-			return fmt.Errorf("componentmap: partial landscape must contain model coverage and one local remainder")
-		}
-		if len(seenMembers) != len(modelMembers)+len(remainderSet) {
-			return fmt.Errorf("componentmap: partial model and local remainder membership overlap")
+		// Decision 229 D7: a partial outcome either carries the classic
+		// unmapped local remainder (one diagnostic subsystem) or an
+		// item-scope salvage (specific components dropped/normalized with
+		// no unmapped remainder). Both are legitimate partial products.
+		if !landscapeHasItemScopeSalvage(landscape.Diagnostics) {
+			if diagnosticSubsystems != 1 || len(modelMembers) == 0 {
+				return fmt.Errorf("componentmap: partial landscape must contain model coverage and one local remainder")
+			}
+			if len(seenMembers) != len(modelMembers)+len(remainderSet) {
+				return fmt.Errorf("componentmap: partial model and local remainder membership overlap")
+			}
 		}
 	}
 	expectedMemberships := conceptualMembershipsFromSubsystemsExcluding(
@@ -1101,22 +1128,23 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 	return nil
 }
 
-func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diagnostic, bool) {
+func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diagnostic, bool, bool) {
 	diagnostics := make([]Diagnostic, 0)
+	componentSalvaged := false
 	invalid := func(code, message string) {
 		diagnostics = append(diagnostics, newDiagnostic(code, message))
 	}
 	if proposal.Version != ProposalVersion {
 		invalid("proposal.unsupported_version", "proposal version is missing or unsupported")
-		return Landscape{}, diagnostics, false
+		return Landscape{}, diagnostics, false, false
 	}
 	if len(proposal.Subsystems) == 0 {
 		invalid("proposal.invalid_subsystem_count", "proposal has no subsystems")
-		return Landscape{}, diagnostics, false
+		return Landscape{}, diagnostics, false, false
 	}
 	if membershipDiagnostics := proposalMembershipDiagnostics(bundle, proposal); len(membershipDiagnostics) > 0 {
 		diagnostics = append(diagnostics, membershipDiagnostics...)
-		return Landscape{}, diagnostics, false
+		return Landscape{}, diagnostics, false, false
 	}
 	proposedSubsystems := proposal.Subsystems
 
@@ -1140,14 +1168,14 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 			validateDisplayText("subsystem description", description, maxDescriptionBytes, false) != nil ||
 			len(proposedSubsystem.Components) == 0 {
 			invalid("proposal.invalid_subsystem", "proposal contains an empty or malformed subsystem")
-			return Landscape{}, diagnostics, false
+			return Landscape{}, diagnostics, false, componentSalvaged
 		}
 		subsystem := Subsystem{Name: name, Description: description, Components: make([]Component, 0, len(proposedSubsystem.Components))}
 		for _, proposedComponent := range proposedSubsystem.Components {
 			componentCount++
 			if componentCount > maxComponents {
 				invalid("proposal.invalid_component_count", "proposal exceeds the complete component limit")
-				return Landscape{}, diagnostics, false
+				return Landscape{}, diagnostics, false, componentSalvaged
 			}
 			componentName := strings.TrimSpace(proposedComponent.Name)
 			componentDescription := strings.TrimSpace(proposedComponent.Description)
@@ -1155,34 +1183,60 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 				validateDisplayText("component description", componentDescription, maxDescriptionBytes, false) != nil ||
 				len(proposedComponent.MemberIDs) == 0 {
 				invalid("proposal.invalid_component", "proposal contains an empty or malformed component")
-				return Landscape{}, diagnostics, false
+				return Landscape{}, diagnostics, false, componentSalvaged
 			}
 			members := make([]Candidate, 0, len(proposedComponent.MemberIDs))
+			seenComponentMembers := make(map[MemberID]struct{}, len(proposedComponent.MemberIDs))
 			for _, memberID := range proposedComponent.MemberIDs {
 				candidate, exists := known[memberID]
 				if !exists {
-					invalid("proposal.unknown_member_id", "proposal references a member id absent from the local candidate bundle")
-					return Landscape{}, diagnostics, false
+					// Decision 229 D7 item-scope: a component referencing an
+					// unknown member ref is rejected item-scope with the
+					// exact reason counted; all other components publish.
+					invalid("proposal.unknown_member_id", "component references a member id absent from the local candidate bundle; component skipped item-scope")
+					componentSalvaged = true
+					members = nil
+					break
 				}
+				if _, duplicate := seenComponentMembers[memberID]; duplicate {
+					// Decision 229 D7 D1: repeated member within one
+					// component normalizes locally — keep the first
+					// occurrence, keep the component.
+					invalid("proposal.duplicate_member_id", "proposal repeats one exact member within a component; duplicate normalized locally")
+					continue
+				}
+				seenComponentMembers[memberID] = struct{}{}
 				seenMembers[memberID] = struct{}{}
 				members = append(members, cloneCandidate(candidate))
 			}
+			if members == nil {
+				// Item-scope rejection: the referencing component is
+				// dropped, valid siblings continue.
+				continue
+			}
 			if len(members) == 0 {
 				invalid("proposal.invalid_component", "proposal component has no usable exact members")
-				return Landscape{}, diagnostics, false
+				return Landscape{}, diagnostics, false, componentSalvaged
 			}
 			anchorIDs := make([]string, 0, len(proposedComponent.AnchorIDs))
 			seenAnchorIDs := make(map[string]struct{}, len(proposedComponent.AnchorIDs))
 			for _, anchorID := range proposedComponent.AnchorIDs {
 				if _, exists := knownAnchors[anchorID]; !exists {
-					invalid("proposal.unknown_anchor_id", "proposal references an anchor id absent from the local grounding bundle")
-					return Landscape{}, diagnostics, false
+					// Decision 229 D7 item-scope: unknown anchor ref rejects
+					// only the referencing component.
+					invalid("proposal.unknown_anchor_id", "component references an anchor id absent from the local grounding bundle; component skipped item-scope")
+					componentSalvaged = true
+					members = nil
+					break
 				}
 				if _, duplicate := seenAnchorIDs[anchorID]; duplicate {
 					continue
 				}
 				seenAnchorIDs[anchorID] = struct{}{}
 				anchorIDs = append(anchorIDs, anchorID)
+			}
+			if members == nil {
+				continue
 			}
 			sort.Strings(anchorIDs)
 			// Decision 228: hypothesis is advisory model input (the prompt says
@@ -1205,8 +1259,13 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 			// closed.
 			twinKey := componentTwinKey(componentName, componentDescription, members, anchorIDs)
 			if _, duplicate := seenComponentTwins[twinKey]; duplicate {
-				invalid("proposal.duplicate_component_identity", "proposal contains two identical components (same name, description, member set and anchor set)")
-				return Landscape{}, diagnostics, false
+				// Decision 229 D7 D4: equivalent component collision affects
+				// only its equivalence class — the second identical
+				// component is skipped item-scope, never a whole-stage
+				// rejection; unrelated components publish.
+				invalid("proposal.duplicate_component_identity", "proposal contains two identical components (same name, description, member set and anchor set); duplicate skipped item-scope")
+				componentSalvaged = true
+				continue
 			}
 			seenComponentTwins[twinKey] = struct{}{}
 			seenComponentIDs[id] = struct{}{}
@@ -1218,7 +1277,7 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 		}
 		if len(subsystem.Components) == 0 {
 			invalid("proposal.invalid_subsystem", "proposal subsystem has no usable nested components")
-			return Landscape{}, diagnostics, false
+			return Landscape{}, diagnostics, false, componentSalvaged
 		}
 		subsystem.ID = subsystemID(componentIDs(subsystem.Components))
 		subsystem.SourceIDs = append([]SubsystemID(nil), proposedSubsystem.sourceIDs...)
@@ -1226,11 +1285,11 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 	}
 	if len(landscape.Subsystems) == 0 {
 		invalid("proposal.no_usable_subsystems", "no proposed subsystem retained a unique known member")
-		return Landscape{}, diagnostics, false
+		return Landscape{}, diagnostics, false, componentSalvaged
 	}
 	if len(seenMembers) == 0 {
 		invalid("proposal.empty_member_coverage", "proposal covers none of the requested conceptual members")
-		return Landscape{}, diagnostics, false
+		return Landscape{}, diagnostics, false, componentSalvaged
 	}
 	remainder := make([]Candidate, 0)
 	for memberID, candidate := range known {
@@ -1272,12 +1331,15 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 		landscape.Subsystems,
 		memberIDSet(landscape.LocalRemainderMemberIDs),
 	)
-	return landscape, diagnostics, true
+	return landscape, diagnostics, true, componentSalvaged
 }
 
 // proposalMembershipDiagnostics validates the exact resolved response before
-// any readable-shape normalization. It deliberately returns at most one fatal
-// diagnostic so rejection remains closed and bounded.
+// any readable-shape normalization. It deliberately returns only FATAL
+// diagnostics — structurally unusable proposals. Decision 229 D7 item-scope
+// classes (unknown member/anchor refs, duplicate member within one
+// component, exact twins) are NOT fatal here: they are salvaged inside
+// applyProposal so valid siblings publish as accepted_partial.
 func proposalMembershipDiagnostics(bundle CandidateBundle, proposal Proposal) []Diagnostic {
 	if proposal.Version != ProposalVersion || len(proposal.Subsystems) == 0 {
 		return nil
@@ -1322,16 +1384,10 @@ func proposalMembershipDiagnostics(bundle CandidateBundle, proposal Proposal) []
 					)}
 				}
 				if _, known := knownMembers[memberID]; !known {
-					return []Diagnostic{newDiagnostic(
-						"proposal.unknown_member_id",
-						"proposal references a member id absent from the local candidate bundle",
-					)}
-				}
-				if _, duplicate := seenComponentMembers[memberID]; duplicate {
-					return []Diagnostic{newDiagnostic(
-						"proposal.duplicate_member_id",
-						"proposal repeats one exact member within a component",
-					)}
+					// Decision 229 D7 item-scope: an unknown member ref
+					// rejects only the referencing component, never the
+					// whole proposal. Not fatal here.
+					continue
 				}
 				seenComponentMembers[memberID] = struct{}{}
 				distinctReferencedMembers[memberID] = struct{}{}

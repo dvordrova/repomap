@@ -182,29 +182,39 @@ func TestApplyAcceptsCrossCuttingParticipation(t *testing.T) {
 	}
 }
 
-// Decision 227: only an exact twin — same name, description, member set AND
-// anchor set — is a literal copy with no added knowledge and still fails
-// closed with proposal.duplicate_component_identity.
+// Decision 227 + Decision 229 D7 D4: an exact twin — same name, description,
+// member set AND anchor set — is a literal copy with no added knowledge. It
+// is skipped item-scope (equivalent collision affects only its equivalence
+// class); the valid first component and unrelated components publish.
 func TestApplyRejectsExactTwinComponents(t *testing.T) {
 	t.Parallel()
 
-	bundle := candidateBundleWithPackages(2)
+	bundle := candidateBundleWithPackages(3)
 	ids := candidateIDs(bundle.Candidates)
 	result, err := Apply(bundle, Proposal{
 		Version: ContractVersion,
 		Subsystems: []ProposedSubsystem{{
 			Name: "Repository",
 			Components: []ProposedComponent{
-				{Name: "Same role", Description: "same responsibility", MemberIDs: ids},
-				{Name: "Same role", Description: "same responsibility", MemberIDs: ids},
+				{Name: "Same role", Description: "same responsibility", MemberIDs: ids[:2]},
+				{Name: "Same role", Description: "same responsibility", MemberIDs: ids[:2]},
+				{Name: "Unrelated", Description: "a different role", MemberIDs: ids[2:]},
 			},
 		}},
 	})
 	if err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
-	if !result.Fallback || !hasLandscapeDiagnostic(result.Diagnostics, "proposal.duplicate_component_identity") {
-		t.Fatalf("exact twin components were not rejected: %#v", result.Diagnostics)
+	if result.Fallback || result.ValidationOutcome != ValidationAcceptedPartial {
+		t.Fatalf("exact twin must publish accepted_partial with valid siblings: %#v", result.Diagnostics)
+	}
+	if !hasLandscapeDiagnostic(result.Diagnostics, "proposal.duplicate_component_identity") {
+		t.Fatalf("diagnostics = %#v, want duplicate_component_identity counted item-scope", result.Diagnostics)
+	}
+	// The twin is skipped; the valid first component and the unrelated
+	// component publish (2 components, not 3, not 1).
+	if len(result.Subsystems[0].Components) != 2 {
+		t.Fatalf("components = %d, want 2 (twin skipped item-scope, valid siblings publish)", len(result.Subsystems[0].Components))
 	}
 }
 
@@ -264,25 +274,36 @@ func TestApplyAcceptsManyToManyConceptualMembership(t *testing.T) {
 	}
 }
 
+// Decision 229 D7 D1: a repeated member within one component normalizes
+// locally — the first occurrence wins, the component survives.
 func TestApplyRejectsDuplicateMemberWithinOneComponent(t *testing.T) {
 	t.Parallel()
 
 	bundle := landscapeTestBundle()
 	memberID := bundle.Candidates[0].ID
+	otherID := bundle.Candidates[1].ID
 	result, err := Apply(bundle, Proposal{
 		Version: ProposalVersion,
 		Subsystems: []ProposedSubsystem{{
 			Name: "Repository",
 			Components: []ProposedComponent{{
-				Name: "Repeated", MemberIDs: []MemberID{memberID, memberID},
+				Name: "Repeated", MemberIDs: []MemberID{memberID, memberID, otherID},
 			}},
 		}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Fallback || !hasLandscapeDiagnostic(result.Diagnostics, "proposal.duplicate_member_id") {
-		t.Fatalf("same-component duplicate was not rejected: %#v", result)
+	if result.Fallback || result.ValidationOutcome != ValidationAcceptedPartial {
+		t.Fatalf("duplicate member must normalize locally (accepted_partial), not reject: %#v", result.Diagnostics)
+	}
+	if !hasLandscapeDiagnostic(result.Diagnostics, "proposal.duplicate_member_id") {
+		t.Fatalf("diagnostics = %#v, want duplicate_member_id counted", result.Diagnostics)
+	}
+	// The component survives with the first occurrence plus the distinct
+	// sibling member.
+	if len(result.Subsystems[0].Components[0].Members) != 2 {
+		t.Fatalf("component members = %d, want 2 (duplicate normalized locally)", len(result.Subsystems[0].Components[0].Members))
 	}
 }
 
@@ -1084,8 +1105,113 @@ func declarationFamilyTestAnchor(memberID MemberID) BehaviorAnchor {
 	}
 }
 
-func TestApplyDoesNotNormalizeUnknownOrNonPackageUngroundedComponent(t *testing.T) {
+// Decision 229 D7: a component referencing an unknown member ref is rejected
+// item-scope — the valid sibling component still publishes (accepted_partial);
+// the exact reason is counted. Whole-stage rejection only when zero
+// independently valid items remain.
+func TestApplyItemScopeUnknownMemberKeepsValidSiblings(t *testing.T) {
 	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	result, err := Apply(bundle, Proposal{
+		Version: ContractVersion,
+		Subsystems: []ProposedSubsystem{{
+			Name: "Storage",
+			Components: []ProposedComponent{
+				{
+					Name:      "Repository",
+					MemberIDs: []MemberID{bundle.Candidates[1].ID},
+				},
+				{
+					Name:      "Invented",
+					MemberIDs: []MemberID{testMemberID(MemberFile, "invented-by-provider")},
+				},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if result.Fallback || result.ValidationOutcome != ValidationAcceptedPartial {
+		t.Fatalf("valid sibling must publish accepted_partial after item-scope drop: %#v", result.Diagnostics)
+	}
+	if !hasLandscapeDiagnostic(result.Diagnostics, "proposal.unknown_member_id") {
+		t.Fatalf("diagnostics = %#v, want unknown member diagnostic counted", result.Diagnostics)
+	}
+	if len(result.Subsystems[0].Components) != 1 {
+		t.Fatalf("components = %d, want 1 (invented component dropped item-scope)", len(result.Subsystems[0].Components))
+	}
+}
+
+// Decision 229 D7: incompatible response-local ID reuse (duplicate member
+// within one component) rejects only the dependent duplicate — the component
+// survives with the first occurrence.
+func TestApplyItemScopeDuplicateMemberKeepsComponent(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	memberID := bundle.Candidates[0].ID
+	otherID := bundle.Candidates[1].ID
+	result, err := Apply(bundle, Proposal{
+		Version: ContractVersion,
+		Subsystems: []ProposedSubsystem{{
+			Name: "Storage",
+			Components: []ProposedComponent{{
+				Name:      "Repository",
+				MemberIDs: []MemberID{memberID, memberID, otherID},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if result.Fallback || result.ValidationOutcome != ValidationAcceptedPartial {
+		t.Fatalf("duplicate member must normalize locally (accepted_partial): %#v", result.Diagnostics)
+	}
+	if !hasLandscapeDiagnostic(result.Diagnostics, "proposal.duplicate_member_id") {
+		t.Fatalf("diagnostics = %#v, want duplicate member diagnostic counted", result.Diagnostics)
+	}
+	if len(result.Subsystems[0].Components[0].Members) != 2 {
+		t.Fatalf("component members = %d, want 2 (duplicate normalized locally)", len(result.Subsystems[0].Components[0].Members))
+	}
+}
+
+// Decision 229 D7: adding unrelated exact evidence cannot remove prior
+// published facts — the same valid proposal over the same bundle publishes
+// the identical component set on every replay.
+func TestApplyReplayIsIdempotentAndCounted(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	proposal := Proposal{
+		Version: ContractVersion,
+		Subsystems: []ProposedSubsystem{{
+			Name: "Storage",
+			Components: []ProposedComponent{{
+				Name:      "Repository",
+				MemberIDs: []MemberID{bundle.Candidates[1].ID, bundle.Candidates[0].ID},
+			}},
+		}},
+	}
+	first, err := Apply(bundle, proposal)
+	if err != nil {
+		t.Fatalf("Apply(first) error = %v", err)
+	}
+	second, err := Apply(bundle, proposal)
+	if err != nil {
+		t.Fatalf("Apply(second) error = %v", err)
+	}
+	if len(first.Subsystems) != len(second.Subsystems) {
+		t.Fatalf("replay changed subsystem count: %d vs %d", len(first.Subsystems), len(second.Subsystems))
+	}
+	for index := range first.Subsystems {
+		if len(first.Subsystems[index].Components) != len(second.Subsystems[index].Components) {
+			t.Fatalf("replay changed component count at subsystem %d", index)
+		}
+	}
+}
+
+func TestApplyDoesNotNormalizeUnknownOrNonPackageUngroundedComponent(t *testing.T) {
 
 	tests := []struct {
 		name        string
