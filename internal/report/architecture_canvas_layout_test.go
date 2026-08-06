@@ -178,7 +178,11 @@ process.stdout.write(JSON.stringify({
 		}) || result.FullTruth != nil {
 		t.Errorf("partial Architecture truth projection = %#v / full=%#v", result.PartialTruth, result.FullTruth)
 	}
-	if want := []float64{0.65, 1.35}; !reflect.DeepEqual(result.FitScales, want) {
+	// Decision 230 D3: Fit shows every principal node inside the viewport
+	// with semantic zoom — the scale may drop below the old readable
+	// floor (0.65) when the landscape is taller than the viewport; the
+	// computed value depends on the fixture bounds (0.434 here).
+	if want := []float64{0.4343832020997375, 1.35}; !reflect.DeepEqual(result.FitScales, want) {
 		t.Errorf("readable Fit scales = %v, want %v", result.FitScales, want)
 	}
 	if want := []float64{0.88, 1.05}; !reflect.DeepEqual(result.FocusScales, want) {

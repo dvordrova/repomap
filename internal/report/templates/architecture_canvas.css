@@ -49,6 +49,15 @@
  min-width: 0;
 }
 
+/* Decision 230 D3 semantic zoom: at overview scale the cards show
+   title/count only; descriptions and metadata appear at readable scale.
+   The scale factor is set by the canvas on --rm-arch-scale. */
+.rm-arch[data-semantic-scale="overview"] .rm-arch__component-description,
+.rm-arch[data-semantic-scale="overview"] .rm-arch__component-meta,
+.rm-arch[data-semantic-scale="overview"] .rm-arch__group-caption {
+  display: none;
+}
+
 .rm-arch *,
 .rm-arch *::before,
 .rm-arch *::after {
@@ -2205,19 +2214,52 @@
 /* Decision 225: connection rows for observed boundary/resource callsites.
    Rows — not edges — are the primary controls; witnesses expand in place. */
 .rm-arch__association-row {
-  align-items: stretch;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   color: #0f172a;
-  cursor: pointer;
   display: flex;
   flex-direction: column;
   gap: 4px;
   margin-top: 7px;
   padding: 8px 9px;
+  width: 100%;
+}
+
+/* Decision 230 D2: the toggle is the interactive part of the row; the
+   container is a noninteractive wrapper (no cursor, no hover elevation). */
+.rm-arch__association-row__toggle {
+  align-items: stretch;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  font: inherit;
+  gap: 4px;
+  padding: 2px;
   text-align: left;
   width: 100%;
+}
+
+.rm-arch__association-row__toggle:hover {
+  background: #eef2ff;
+}
+
+.rm-arch__association-row__toggle:focus-visible {
+  outline: 2px solid #3157d5;
+  outline-offset: 1px;
+}
+
+.rm-arch__association-chevron {
+  align-self: flex-end;
+  color: #64748b;
+  font-size: 0.8rem;
+  line-height: 1;
+  margin-top: 2px;
+  transition: transform 0.12s ease;
 }
 
 .rm-arch__association-row__head {
