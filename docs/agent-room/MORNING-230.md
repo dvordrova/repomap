@@ -3,7 +3,7 @@
 **Goal:** `hermes-repomap-archive8-interaction-canvas-goal-v9.txt` (Архив 8.zip + interaction audit v9 + information preservation charter v5 + architecture distinctness salvage v6 + diagram representation v8)
 **Date:** 2026-08-06
 **Decision:** `docs/agent-room/decisions/230-archive8-interaction-corrective.md`
-**HEAD:** `7753f5e` (9 commits, a72cd13..HEAD)
+**HEAD:** `0778b35` (11 commits, a72cd13..HEAD)
 **Status:** COMPLETE — all fresh-review verdicts applied
 
 ## Baseline
@@ -16,7 +16,7 @@
 
 Candidate B (behavioral corrective using existing data). Rejected A (CSS-only) and C (new analyzer). Two decision critics applied before the decision commit.
 
-## Commits (9)
+## Commits (11)
 
 1. `b0a315e` decision + CURRENT.md
 2. `abc9832` PHASE 3-5 source actions + disclosure + canvas
@@ -27,6 +27,7 @@ Candidate B (behavioral corrective using existing data). Rejected A (CSS-only) a
 7. `092deec` review B1/B2: salvage registry (full-coalescence small bundles)
 8. `03e15c2` review B2+S1+S3: prompt version, association nesting regression test, gofmt
 9. `7753f5e` review verdicts: symbol-anchor slice resolution, D4 alternates projection, mechanism/relations static actions, focus trap, hover states
+10. `0778b35` review minors: RU mechanism limitation prose, witness jumps as `<a>` in static reports, aria-controls names exact witness list
 
 ## Fresh reviews (5 critics, all applied)
 
@@ -52,4 +53,5 @@ Candidate B (behavioral corrective using existing data). Rejected A (CSS-only) a
 
 - `go test ./...` SUITE_EXIT=0 (0 FAIL); `go vet` clean; node --check all 3 JS; quality/localization/surface-check green; golden regenerated; diff --check clean.
 - Version identities: ContractVersion 10, ProposalVersion 10, prompt v17; status registry +9 codes.
-- Browser-verified: mechanism locations 3/3 static links (0 inert), relation sources 3/3 links, focus trap excludes 18 hidden controls, backdrop tabIndex -1, nested-interactive 0.
+- Browser-verified (etcd-live2, fresh D230 binary): mechanism locations 3/3 static links (0 inert), relation sources 3/3 links, witness jumps 37/37 `<a>` pinned revision, aria-controls valid for 27/27 toggles, RU mechanism limitations 2/2 localized, focus trap excludes 18 hidden controls, backdrop tabIndex -1, nested-interactive 0.
+- etcd-live2 (with symbol-anchor slice fix): 229/251 requested units covered (was 111/251 at the earlier fix stage) — accepted_partial, shared_unit_slice counted.
