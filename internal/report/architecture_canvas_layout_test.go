@@ -79,6 +79,11 @@ process.stdout.write(JSON.stringify({
   fitScales: [
     api.readableFitScale({ x: 28, y: 28, width: 1296, height: 1524 }, { width: 1204, height: 718 }, 28),
     api.readableFitScale({ x: 0, y: 0, width: 500, height: 300 }, { width: 1204, height: 718 }, 28),
+    // Decision 234 F1: a HUGE landscape must fit entirely inside the
+    // viewport — the fit scale clamps only the upper bound, so a
+    // 9000px-wide ELK landscape in a 1280px viewport goes below the old
+    // 0.16 floor (0.136) instead of clipping ~108px strips per side.
+    api.readableFitScale({ x: 0, y: 0, width: 9000, height: 4000 }, { width: 1224, height: 718 }, 28),
   ],
   focusScales: [
     api.componentFocusScale({ x: 0, y: 0, width: 1300, height: 1000 }, { width: 1204, height: 718 }, 56),
@@ -182,7 +187,11 @@ process.stdout.write(JSON.stringify({
 	// with semantic zoom — the scale may drop below the old readable
 	// floor (0.65) when the landscape is taller than the viewport; the
 	// computed value depends on the fixture bounds (0.434 here).
-	if want := []float64{0.4343832020997375, 1.35}; !reflect.DeepEqual(result.FitScales, want) {
+	// Decision 234 (F1): a huge landscape fits ENTIRELY inside the viewport
+	// — the scale clamps only the upper bound, so the 9000px-wide fixture
+	// yields 1168/9000 ≈ 0.1298 (below the removed 0.16 floor), not a
+	// clipped 0.16 that would leave edge node centers outside the viewport.
+	if want := []float64{0.4343832020997375, 1.35, 0.12977777777777778}; !reflect.DeepEqual(result.FitScales, want) {
 		t.Errorf("readable Fit scales = %v, want %v", result.FitScales, want)
 	}
 	if want := []float64{0.88, 1.05}; !reflect.DeepEqual(result.FocusScales, want) {
