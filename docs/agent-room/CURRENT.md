@@ -16,6 +16,7 @@ Active decisions (each approved by the repository owner via its supervisory goal
 12. decisions/228-loosen-architecture-caps.md
 13. decisions/229-product-projection-vertical.md
 14. decisions/230-archive8-interaction-corrective.md
+15. decisions/231-architecture-model-backend-boundary.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
