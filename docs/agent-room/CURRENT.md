@@ -9,6 +9,9 @@ Active decisions (each approved by the repository owner via its supervisory goal
 5. decisions/221-overview-truth-first-action.md
 6. decisions/222-architecture-truth-model-relations-ux.md
 7. decisions/223-architecture-wire-aggregated-unit-edges.md
+8. decisions/224-study-content-integrity-normalization.md
+9. decisions/225-component-boundary-resource-association.md
+10. decisions/226-mechanism-evidence-contract.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
