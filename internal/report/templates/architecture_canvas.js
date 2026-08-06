@@ -3993,6 +3993,14 @@ function architecturePartialTruth(data) {
       "span", "rm-arch__association-count",
       this.msg("architecture.label.observation_count", { count: Number(row.observation_count) || 0 })
      ));
+     // Goal 05 source roles: closed production/test/tooling split,
+     // reconciled to the observation count, always visible.
+     const roles = row.source_roles || {};
+     const roleParts = [];
+     if (Number(roles.production) > 0) roleParts.push(this.msg("architecture.role.production") + " " + roles.production);
+     if (Number(roles.test) > 0) roleParts.push(this.msg("architecture.role.test") + " " + roles.test);
+     if (Number(roles.tooling) > 0) roleParts.push(this.msg("architecture.role.tooling") + " " + roles.tooling);
+     if (roleParts.length) meta.appendChild(element("span", "rm-arch__association-roles", roleParts.join(" · ")));
      if (row.paired) meta.appendChild(element("span", "rm-arch__association-paired", this.msg("architecture.value.paired_boundary_resource")));
      rowEl.appendChild(meta);
      // Exact witnesses expand in place (connection row click).
@@ -4004,6 +4012,9 @@ function architecturePartialTruth(data) {
       jump.type = "button";
       jump.appendChild(element("strong", null, witness.symbol || witness.path));
       jump.appendChild(element("span", null, witness.path + (witness.line ? ":" + witness.line : "")));
+      if (witness.role === "test") jump.appendChild(element("span", "rm-arch__association-witness-role", this.msg("architecture.role.test")));
+      else if (witness.role === "tooling") jump.appendChild(element("span", "rm-arch__association-witness-role", this.msg("architecture.role.tooling")));
+      else if (witness.role) jump.appendChild(element("span", "rm-arch__association-witness-role", this.msg("architecture.role.production")));
       if (typeof this.options.openLocation === "function" && witness.path) {
        this.listen(jump, "click", () => this.options.openLocation(witness.path, witness.line || 0, 0));
       }

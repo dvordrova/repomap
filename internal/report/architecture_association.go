@@ -58,6 +58,19 @@ type ArchitectureBoundaryResourceRow struct {
 	Witnesses        []ArchitectureAssociationWitness `json:"witnesses"`
 	Paired           bool                             `json:"paired,omitempty"` // same callsite also observed as the other kind
 	ObservationCount int                              `json:"observation_count"`
+	// SourceRoles (Decision 225 / goal 05) reconcile every witness into a
+	// closed production/test/tooling split, classified deterministically
+	// from the exact callsite path — never from a model.
+	SourceRoles ArchitectureSourceRoleCounts `json:"source_roles,omitempty"`
+}
+
+// ArchitectureSourceRoleCounts is the closed production/test/tooling
+// reconciliation for one association row (goal 05 acceptance: counts must
+// reconcile with observation_count).
+type ArchitectureSourceRoleCounts struct {
+	Production int `json:"production"`
+	Test       int `json:"test"`
+	Tooling    int `json:"tooling"`
 }
 
 // ArchitectureAssociationWitness is one exact callsite in the member scope.
@@ -65,6 +78,36 @@ type ArchitectureAssociationWitness struct {
 	Path   string `json:"path"`
 	Line   int    `json:"line"`
 	Symbol string `json:"symbol,omitempty"`
+	Role   string `json:"role,omitempty"` // production | test | tooling
+}
+
+// classifySourceRole classifies a callsite path deterministically (goal 05
+// source roles). Test paths: _test.go suffix and test/ trees. Tooling
+// paths: contrib/examples/docs/tools/hack/scripts trees. Everything else is
+// production. The classification is exact-path based, never a model claim.
+func classifySourceRole(path string) string {
+	if path == "" {
+		return "production"
+	}
+	lower := strings.ToLower(path)
+	if strings.HasSuffix(lower, "_test.go") ||
+		strings.Contains(lower, "/test/") ||
+		strings.Contains(lower, "/tests/") ||
+		strings.HasPrefix(lower, "test/") ||
+		strings.HasPrefix(lower, "tests/") {
+		return "test"
+	}
+	for _, segment := range []string{"/contrib/", "/examples/", "/example/", "/docs/", "/tools/", "/tool/", "/hack/", "/scripts/", "/integration_test"} {
+		if strings.Contains(lower, segment) {
+			return "tooling"
+		}
+	}
+	for _, prefix := range []string{"contrib/", "examples/", "example/", "docs/", "tools/", "tool/", "hack/", "scripts/"} {
+		if strings.HasPrefix(lower, prefix) {
+			return "tooling"
+		}
+	}
+	return "production"
 }
 
 // ArchitectureAssociationOmission lists observations that could not be
@@ -282,9 +325,18 @@ func aggregateAssociationRows(rows []obsRow) []ArchitectureBoundaryResourceRow {
 			})
 		}
 		for _, e := range row.evidence {
+			role := classifySourceRole(e.Location.Path)
 			out[idx].Witnesses = append(out[idx].Witnesses, ArchitectureAssociationWitness{
-				Path: e.Location.Path, Line: e.Location.Line, Symbol: e.Symbol,
+				Path: e.Location.Path, Line: e.Location.Line, Symbol: e.Symbol, Role: role,
 			})
+			switch role {
+			case "test":
+				out[idx].SourceRoles.Test++
+			case "tooling":
+				out[idx].SourceRoles.Tooling++
+			default:
+				out[idx].SourceRoles.Production++
+			}
 		}
 		out[idx].ObservationCount++
 	}
