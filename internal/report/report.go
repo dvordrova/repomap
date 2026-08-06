@@ -188,8 +188,8 @@ type ReportData struct {
 	// entry → supported transitions → observed boundary/resource →
 	// explicit unresolved frontier, built from saved local evidence only.
 	MechanismFragment *MechanismFragmentProjection `json:"mechanism_fragment,omitempty"`
-	GuidedTour                      *guidedtour.Story                          `json:"guided_tour,omitempty"`
-	SemanticArtifacts               []semanticdiscovery.Artifact               `json:"semantic_artifacts,omitempty"`
+	GuidedTour        *guidedtour.Story            `json:"guided_tour,omitempty"`
+	SemanticArtifacts []semanticdiscovery.Artifact `json:"semantic_artifacts,omitempty"`
 	// UserMechanisms is a presentation-only supported slice of independently
 	// replayed canonical Mechanisms. Raw artifacts remain available for replay
 	// and provenance, but default onboarding renders this narrower projection.
