@@ -44,6 +44,7 @@ type publishedEntry struct {
 	fit     FitClass
 }
 
+// workTheme carries one adjudicated theme through the publish pipeline.
 type workTheme struct {
 	theme       AdjudicatedTheme
 	kind        ThemeKind
@@ -52,14 +53,24 @@ type workTheme struct {
 	normalKey   string
 }
 
-func (w workTheme) directCount() int {
-	n := 0
-	for _, e := range w.entries {
-		if e.fit == FitDirect {
-			n++
-		}
+// themeKindPortfolioRank orders theme kinds deterministically for the
+// default shelf: production/user-facing concerns first, peripheral
+// integration families last (Decision 224 / D219 F). It is a closed local
+// contract — no repository-specific keyword table — and display-only;
+// canonical identity never changes.
+func themeKindPortfolioRank(kind ThemeKind) int {
+	switch kind {
+	case KindUserJourney, KindLifecycleConcern:
+		return 0
+	case KindSharedDomainResponsibility, KindCrossCuttingPolicy:
+		return 1
+	case KindSiblingImplementationFamily:
+		return 2
+	case KindIntegrationFamily:
+		return 3
+	default:
+		return 4
 	}
-	return n
 }
 
 // Reduce publishes the final Study cards deterministically (contract F). It
@@ -113,10 +124,18 @@ func Reduce(input ReducerInput) (Reduction, error) {
 		all = applyBalanceCap(all, &reduction)
 	}
 
-	// Ordinal order: canonical identity so the reduced portfolio is
-	// byte-identical across locales. (Learning-stage ordering is applied by the
-	// caller from local contract data without changing published contents.)
-	sort.SliceStable(all, func(i, j int) bool { return all[i].canonicalID < all[j].canonicalID })
+	// Ordinal order: deterministic portfolio rank (Decision 224 / D219 F) —
+	// production/user-facing kinds before peripheral integration families —
+	// with canonical identity as the stable locale-independent tiebreak.
+	// Display order only; canonical identity never changes.
+	sort.SliceStable(all, func(i, j int) bool {
+		leftRank := themeKindPortfolioRank(all[i].kind)
+		rightRank := themeKindPortfolioRank(all[j].kind)
+		if leftRank != rightRank {
+			return leftRank < rightRank
+		}
+		return all[i].canonicalID < all[j].canonicalID
+	})
 
 	for ordinal, w := range all {
 		direct, supporting := 0, 0
@@ -127,8 +146,13 @@ func Reduce(input ReducerInput) (Reduction, error) {
 				supporting++
 			}
 		}
+		// Decision 224 (D219 D): the badge must match the final visible
+		// promise. Full support only when every published reading is direct
+		// AND the theme carries no unresolved unknowns that materially
+		// qualify the question. Any supporting-only facet, any unknown, or
+		// a narrowed reading set makes the badge partial.
 		badge := "editorial_source_backed"
-		if w.directCount() < len(w.entries) || supporting > 0 && direct < len(w.entries) {
+		if supporting > 0 || len(w.theme.Unknowns) > 0 || direct < len(w.entries) {
 			badge = "partial"
 		}
 		readings := make([]Reading, 0, len(w.entries))
@@ -160,13 +184,19 @@ func Reduce(input ReducerInput) (Reduction, error) {
 // orders readings by the adjudicator's reading order, then any remaining
 // published anchors in canonical order. Weak and irrelevant anchors never
 // appear as readings. Every reading ref must resolve to an exact anchor.
+// Decision 224: readings deduplicate by exact public identity
+// (path,line,symbol), so two anchors resolving to the same exact source
+// never produce a repeated reading.
 func publishEntries(theme AdjudicatedTheme, anchors map[string]AnchorInfo) []publishedEntry {
 	fitByRef := make(map[string]FitClass, len(theme.AnchorAssessments))
+	observationByRef := make(map[string]string, len(theme.AnchorAssessments))
 	for _, assessment := range theme.AnchorAssessments {
 		fitByRef[assessment.AnchorRef] = assessment.Fit
+		observationByRef[assessment.AnchorRef] = assessment.SupportedObservation
 	}
 	var ordered []string
 	seen := make(map[string]struct{}, len(theme.AnchorAssessments))
+	seenIdentity := make(map[string]struct{}, len(theme.AnchorAssessments))
 	add := func(ref string) {
 		if _, ok := seen[ref]; ok {
 			return
@@ -175,10 +205,16 @@ func publishEntries(theme AdjudicatedTheme, anchors map[string]AnchorInfo) []pub
 		if !ok || (fit != FitDirect && fit != FitSupporting) {
 			return
 		}
-		if _, ok := anchors[ref]; !ok {
+		info, ok := anchors[ref]
+		if !ok {
+			return
+		}
+		identity := fmt.Sprintf("%s\x00%d\x00%s", info.Path, info.Line, info.Symbol)
+		if _, dup := seenIdentity[identity]; dup {
 			return
 		}
 		seen[ref] = struct{}{}
+		seenIdentity[identity] = struct{}{}
 		ordered = append(ordered, ref)
 	}
 	for _, ref := range theme.ReadingOrder {
@@ -198,9 +234,13 @@ func publishEntries(theme AdjudicatedTheme, anchors map[string]AnchorInfo) []pub
 	for _, ref := range ordered {
 		info := anchors[ref]
 		entries = append(entries, publishedEntry{
-			ref:     ref,
-			reading: Reading{Label: info.Symbol, Symbol: info.Symbol, Path: info.Path, Line: info.Line, CanonicalSpanID: info.CanonicalSpanID},
-			fit:     fitByRef[ref],
+			ref: ref,
+			reading: Reading{
+				Label: info.Symbol, Symbol: info.Symbol, Path: info.Path, Line: info.Line,
+				SupportedObservation: observationByRef[ref], Fit: fitByRef[ref],
+				CanonicalSpanID: info.CanonicalSpanID,
+			},
+			fit: fitByRef[ref],
 		})
 	}
 	return entries

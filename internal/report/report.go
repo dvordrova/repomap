@@ -25,9 +25,9 @@ import (
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 )
 
-const CurrentFormatVersion = 31
+const CurrentFormatVersion = 32
 
-const AtlasStudyReportProjectionVersion = 8
+const AtlasStudyReportProjectionVersion = 9
 
 // MaxAtlasStudyBrowseSpans bounds the report-side provider-free per-span
 // browse. Truthful Total/Shown keep larger repositories honest; the complete
@@ -342,13 +342,13 @@ type AtlasStudyReportStatus struct {
 type AtlasStudySpanStage string // "considered" | "seed_advertised" | "scout_anchored" | "published"
 
 const (
-	AtlasStudySpanStageConsidered      AtlasStudySpanStage = "considered"
-	AtlasStudySpanStageAdvertised      AtlasStudySpanStage = "advertised"
-	AtlasStudySpanStageModelSelected   AtlasStudySpanStage = "model_selected"
-	AtlasStudySpanStageAccepted        AtlasStudySpanStage = "accepted"
-	AtlasStudySpanStageSeedAdvertised  AtlasStudySpanStage = "seed_advertised"
-	AtlasStudySpanStageScoutAnchored   AtlasStudySpanStage = "scout_anchored"
-	AtlasStudySpanStagePublished       AtlasStudySpanStage = "published"
+	AtlasStudySpanStageConsidered     AtlasStudySpanStage = "considered"
+	AtlasStudySpanStageAdvertised     AtlasStudySpanStage = "advertised"
+	AtlasStudySpanStageModelSelected  AtlasStudySpanStage = "model_selected"
+	AtlasStudySpanStageAccepted       AtlasStudySpanStage = "accepted"
+	AtlasStudySpanStageSeedAdvertised AtlasStudySpanStage = "seed_advertised"
+	AtlasStudySpanStageScoutAnchored  AtlasStudySpanStage = "scout_anchored"
+	AtlasStudySpanStagePublished      AtlasStudySpanStage = "published"
 )
 
 // AtlasStudyThemesProjection is the bounded public-safe theme shelf.
@@ -365,25 +365,29 @@ type AtlasStudyThemesProjection struct {
 // public Ordinal is manifest-relative (canonical theme order); CanonicalID is
 // never serialized here.
 type StudyThemeCard struct {
-	Ordinal          int                  `json:"ordinal"`
-	FinalTitle       string               `json:"final_title"`
-	FinalQuestion    string               `json:"final_question"`
-	WhyItMatters     string               `json:"why_it_matters"`
-	ExpectedLearning string               `json:"expected_learning"`
-	ThemeKind        string               `json:"theme_kind"`
-	Readings         []StudyThemeReading  `json:"readings"`
-	Badge            string               `json:"badge"`
-	Limitation       string               `json:"limitation,omitempty"`
+	Ordinal          int                 `json:"ordinal"`
+	FinalTitle       string              `json:"final_title"`
+	FinalQuestion    string              `json:"final_question"`
+	WhyItMatters     string              `json:"why_it_matters"`
+	ExpectedLearning string              `json:"expected_learning"`
+	ThemeKind        string              `json:"theme_kind"`
+	Readings         []StudyThemeReading `json:"readings"`
+	Badge            string              `json:"badge"`
+	Limitation       string              `json:"limitation,omitempty"`
 }
 
 // StudyThemeReading is one ordered exact reading on a theme card. Path/line
 // publish only for paths in OpenablePaths; otherwise the neutral unavailable
-// state renders (no dead buttons).
+// state renders (no dead buttons). SupportedObservation is the bounded
+// per-anchor model interpretation; Role is the user-facing support role
+// (direct/supporting) derived from the adjudicator's classification.
 type StudyThemeReading struct {
-	Label  string `json:"label"`
-	Symbol string `json:"symbol"`
-	Path   string `json:"path,omitempty"`
-	Line   int    `json:"line,omitempty"`
+	Label                string `json:"label"`
+	Symbol               string `json:"symbol"`
+	Path                 string `json:"path,omitempty"`
+	Line                 int    `json:"line,omitempty"`
+	SupportedObservation string `json:"supported_observation,omitempty"`
+	Role                 string `json:"role,omitempty"`
 }
 
 // FrontierBrowse is the bounded provider-free per-span browse of the complete
@@ -406,13 +410,13 @@ type FrontierBrowse struct {
 // with no matching theme (should not occur — fail closed) renders without
 // links.
 type Span struct {
-	Ordinal     int                 `json:"ordinal"`
-	Title       string              `json:"title"`    // exact source-card symbol/label; system-path "from → to" endpoints
-	Question    string              `json:"question"` // backend-compiled question in the report language
-	Stage       AtlasStudySpanStage `json:"stage"`
-	Source      UserCodeLocation    `json:"source"`             // only when Source.Path ∈ data.OpenablePaths
-	Endpoint    *UserCodeLocation   `json:"endpoint,omitempty"` // only for system-path spans whose endpoint path ∈ data.OpenablePaths
-	ThemeRefs   []int               `json:"theme_refs,omitempty"` // published rows ONLY; canonical theme ordinals
+	Ordinal   int                 `json:"ordinal"`
+	Title     string              `json:"title"`    // exact source-card symbol/label; system-path "from → to" endpoints
+	Question  string              `json:"question"` // backend-compiled question in the report language
+	Stage     AtlasStudySpanStage `json:"stage"`
+	Source    UserCodeLocation    `json:"source"`               // only when Source.Path ∈ data.OpenablePaths
+	Endpoint  *UserCodeLocation   `json:"endpoint,omitempty"`   // only for system-path spans whose endpoint path ∈ data.OpenablePaths
+	ThemeRefs []int               `json:"theme_refs,omitempty"` // published rows ONLY; canonical theme ordinals
 }
 
 // AtlasStudyOmissionAggregate is the public-safe report projection of one

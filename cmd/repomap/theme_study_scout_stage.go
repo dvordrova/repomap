@@ -312,7 +312,7 @@ func themeValidateScout(
 		Candidates: candidates, Status: status,
 	}
 	record := themestudy.ScoutStatusRecord{
-		Version: themestudy.ScoutRequestVersion, State: status.State,
+		Version: themestudy.ScoutResultVersion, State: status.State,
 		PromptVersion: themestudy.ScoutPromptVersion, Language: request.Language,
 		CatalogSHA256: request.CatalogSHA256, Status: status,
 	}
@@ -358,7 +358,7 @@ func persistThemeScoutAccepted(
 		return err
 	}
 	statusBytes, err := themestudy.EncodeScoutStatus(themestudy.ScoutStatusRecord{
-		Version: themestudy.ScoutRequestVersion, State: result.State,
+		Version: themestudy.ScoutResultVersion, State: result.State,
 		PromptVersion: themestudy.ScoutPromptVersion, Language: result.Language,
 		CatalogSHA256: result.CatalogSHA256, Status: result.Status,
 	})
@@ -386,7 +386,7 @@ func themeScoutOrdinaryFailure(
 	output *runOutput,
 ) themeScoutStageResult {
 	status := themestudy.ScoutStatusRecord{
-		Version: themestudy.ScoutRequestVersion, State: string(atlasstudy.ProductStateFailed),
+		Version: themestudy.ScoutResultVersion, State: string(atlasstudy.ProductStateFailed),
 		PromptVersion: themestudy.ScoutPromptVersion, Language: request.Language,
 		CatalogSHA256: request.CatalogSHA256, FailureCode: string(code),
 		Status: themestudy.ScoutStatus{State: string(atlasstudy.ProductStateFailed)},
@@ -415,7 +415,7 @@ func themeScoutTerminalFailure(
 	cause error,
 ) error {
 	status := themestudy.ScoutStatusRecord{
-		Version: themestudy.ScoutRequestVersion, State: string(atlasstudy.ProductStateFailed),
+		Version: themestudy.ScoutResultVersion, State: string(atlasstudy.ProductStateFailed),
 		PromptVersion: themestudy.ScoutPromptVersion, Language: request.Language,
 		CatalogSHA256: request.CatalogSHA256, FailureCode: string(code),
 		Status: themestudy.ScoutStatus{State: string(atlasstudy.ProductStateFailed)},

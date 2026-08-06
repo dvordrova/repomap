@@ -407,7 +407,16 @@ func projectThemeShelf(themes themestudy.StudyThemes, data *ReportData) (*AtlasS
 	for _, card := range themes.Cards {
 		readings := make([]StudyThemeReading, 0, len(card.Readings))
 		for _, reading := range card.Readings {
-			projected := StudyThemeReading{Label: reading.Label, Symbol: reading.Symbol}
+			projected := StudyThemeReading{
+				Label: reading.Label, Symbol: reading.Symbol,
+				SupportedObservation: reading.SupportedObservation,
+			}
+			switch reading.Fit {
+			case themestudy.FitDirect:
+				projected.Role = "direct"
+			case themestudy.FitSupporting:
+				projected.Role = "supporting"
+			}
 			if openableAtlasStudyBrowsePath(data, reading.Path) {
 				projected.Path = reading.Path
 				projected.Line = reading.Line

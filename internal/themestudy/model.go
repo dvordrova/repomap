@@ -102,17 +102,17 @@ func (claim RelationClaim) Valid() bool {
 // Bounds are explicit producer-owned constants (safety bounds), never flags
 // and never tuning knobs tuned to any one fixture.
 const (
-	MaxFileVocabularyBytes     = 64 << 10
-	MaxSeedAnchors             = 64
-	MaxSeedSourceBytes         = 256 << 10
-	MaxSourceObjectLines       = 200
-	MaxSourceObjectBytes       = 32 << 10
-	MaxExpansionFileLines      = 1200
-	MaxExpansionFileBytes      = 128 << 10
+	MaxFileVocabularyBytes = 64 << 10
+	MaxSeedAnchors         = 64
+	MaxSeedSourceBytes     = 256 << 10
+	MaxSourceObjectLines   = 200
+	MaxSourceObjectBytes   = 32 << 10
+	MaxExpansionFileLines  = 1200
+	MaxExpansionFileBytes  = 128 << 10
 	// MaxExpansionFiles is a generous per-run file ceiling; the honest bound
 	// is MaxExpansionBytes. Requested files beyond the byte budget are
 	// recorded under OmittedRefs, never dropped silently (D190/D195).
-	MaxExpansionFiles          = 128
+	MaxExpansionFiles = 128
 	// MaxExpansionBytes bounds the source-evidence expansion the Scout's
 	// requested files are allowed to occupy. It must fit the full requested
 	// set on reference repositories (casdoor requests 50+ files once the
@@ -328,6 +328,11 @@ type ScoutStatus struct {
 	Issues        []ScoutIssue `json:"issues,omitempty"`
 	SeedCoverage  int          `json:"seed_coverage"`
 	VocabCoverage int          `json:"vocab_coverage"`
+	// Normalized records typed per-field editorial truncation counts
+	// (Decision 224): title/question/why_it_matters/expected_learning. A
+	// non-empty map means overlong provisional prose was bounded, never
+	// silently dropped.
+	Normalized map[string]int `json:"normalized,omitempty"`
 }
 
 // AnchorAssessment is one per-anchor classification from Theme Adjudication
@@ -368,6 +373,9 @@ const (
 	AdjIssueDuplicateAssessment    AdjudicationIssueCode = "duplicate_assessment"
 	AdjIssueInvalidFit             AdjudicationIssueCode = "invalid_fit"
 	AdjIssueEmptyObservation       AdjudicationIssueCode = "empty_observation"
+	AdjIssueObservationTooLong     AdjudicationIssueCode = "observation_too_long"
+	AdjIssueUnknownTooLong         AdjudicationIssueCode = "unknown_too_long"
+	AdjIssueTooManyUnknowns        AdjudicationIssueCode = "too_many_unknowns"
 	AdjIssueUnknownReadingRef      AdjudicationIssueCode = "unknown_reading_ref"
 	AdjIssueNoDirect               AdjudicationIssueCode = "no_direct"
 )
@@ -383,6 +391,10 @@ type AdjudicationStatus struct {
 	Accepted int                 `json:"accepted"`
 	Rejected int                 `json:"rejected"`
 	Issues   []AdjudicationIssue `json:"issues,omitempty"`
+	// Normalized records typed editorial truncation counts (Decision 224):
+	// observation / unknown / unknowns_capped. Non-empty means overlong
+	// bounded evidence was retained, never dropped as empty.
+	Normalized map[string]int `json:"normalized,omitempty"`
 }
 
 // AdjudicationIssue records one item-local rejected theme.
@@ -399,6 +411,14 @@ type Reading struct {
 	Symbol string `json:"symbol"`
 	Path   string `json:"path"`
 	Line   int    `json:"line"`
+	// SupportedObservation is the bounded per-anchor model interpretation
+	// over the supplied exact source (Decision 224 / D219 C). It is a
+	// model interpretation, never a locally proven runtime fact, and is
+	// bounded to MaxEditorialRunes by the adjudication normalizer.
+	SupportedObservation string `json:"supported_observation,omitempty"`
+	// Fit is the user-facing support role derived from the adjudicator's
+	// classification: direct or supporting (weak/irrelevant never publish).
+	Fit FitClass `json:"fit,omitempty"`
 	// CanonicalSpanID is an internal binding used by the re-based browse
 	// derivation (published stage). It is never serialized to a report.
 	CanonicalSpanID string `json:"canonical_span_id,omitempty"`

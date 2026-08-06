@@ -1054,7 +1054,7 @@ func TestReadAtlasStudyReportProductTerminalStateMatrix(t *testing.T) {
 		scoutRequest := themeScoutRequestFromProduct(t, data, product)
 		writeThemeArtifact(t, runDir, themestudy.ScoutRequestArtifactFilename, mustEncodeTheme(t, scoutRequest))
 		writeThemeArtifact(t, runDir, themestudy.ScoutStatusArtifactFilename, mustEncodeTheme(t, themestudy.ScoutStatusRecord{
-			Version: themestudy.ScoutRequestVersion, State: string(atlasstudy.ProductStateFailed),
+			Version: themestudy.ScoutResultVersion, State: string(atlasstudy.ProductStateFailed),
 			PromptVersion: themestudy.ScoutPromptVersion, Language: themestudy.LanguageEnglish,
 			CatalogSHA256: scoutRequest.CatalogSHA256, FailureCode: string(atlasstudy.FailureProvider),
 			Status: themestudy.ScoutStatus{State: string(atlasstudy.ProductStateFailed)},
@@ -1103,7 +1103,7 @@ func TestReadAtlasStudyReportProductTerminalStateMatrix(t *testing.T) {
 		scoutRequest := themeScoutRequestFromProduct(t, data, product)
 		writeThemeArtifact(t, runDir, themestudy.ScoutRequestArtifactFilename, mustEncodeTheme(t, scoutRequest))
 		writeThemeArtifact(t, runDir, themestudy.ScoutStatusArtifactFilename, mustEncodeTheme(t, themestudy.ScoutStatusRecord{
-			Version: themestudy.ScoutRequestVersion, State: string(atlasstudy.ProductStateAcceptedPartial),
+			Version: themestudy.ScoutResultVersion, State: string(atlasstudy.ProductStateAcceptedPartial),
 			PromptVersion: themestudy.ScoutPromptVersion, Language: themestudy.LanguageEnglish,
 			CatalogSHA256: scoutRequest.CatalogSHA256,
 			Status: themestudy.ScoutStatus{State: string(atlasstudy.ProductStateAcceptedPartial)},

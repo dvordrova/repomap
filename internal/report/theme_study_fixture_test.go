@@ -150,7 +150,7 @@ func writeThemeStudyAcceptedArtifacts(t *testing.T, runDir string, data *ReportD
 	}
 	writeThemeArtifact(t, runDir, themestudy.ScoutResultArtifactFilename, mustEncodeTheme(t, scoutResult))
 	writeThemeArtifact(t, runDir, themestudy.ScoutStatusArtifactFilename, mustEncodeTheme(t, themestudy.ScoutStatusRecord{
-		Version: themestudy.ScoutRequestVersion, State: scoutStatus.State,
+		Version: themestudy.ScoutResultVersion, State: scoutStatus.State,
 		PromptVersion: themestudy.ScoutPromptVersion, Language: themestudy.LanguageEnglish,
 		CatalogSHA256: scoutRequest.CatalogSHA256, Status: scoutStatus,
 	}))
@@ -199,7 +199,7 @@ func writeThemeStudyAcceptedArtifacts(t *testing.T, runDir string, data *ReportD
 	}
 	writeThemeArtifact(t, runDir, themestudy.AdjudicationResultArtifactFilename, mustEncodeTheme(t, adjResult))
 	writeThemeArtifact(t, runDir, themestudy.AdjudicationStatusArtifactFilename, mustEncodeTheme(t, themestudy.AdjudicationStatusRecord{
-		Version: themestudy.AdjudicationRequestVersion, State: adjStatus.State,
+		Version: themestudy.AdjudicationResultVersion, State: adjStatus.State,
 		PromptVersion: themestudy.AdjudicationPromptVersion, Language: themestudy.LanguageEnglish,
 		CatalogSHA256: adjRequest.CatalogSHA256, Status: adjStatus,
 	}))

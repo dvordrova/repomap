@@ -34,6 +34,18 @@ func normalizeProse(value string) string {
 	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(value)), " "))
 }
 
+// truncateRunes deterministically shortens value to at most limit whole
+// runes, preserving Unicode boundaries. It never splits a rune and never
+// appends markers: the caller records the normalization count so the
+// truncation is visible in status, never silent.
+func truncateRunes(value string, limit int) string {
+	if utf8.RuneCountInString(value) <= limit {
+		return value
+	}
+	runes := []rune(value)
+	return string(runes[:limit])
+}
+
 // ValidateScout validates a Theme Scout response (contract C) item-locally
 // against the request-local catalog. anchorRefs and fileRefs are the advertised
 // a*/f* ref sets; catalogDigest binds the request catalog (cross-request refs
@@ -56,7 +68,7 @@ func ValidateScout(data []byte, anchorRefs map[string]struct{}, fileRefs map[str
 	if err := json.Unmarshal(raw, &rawThemes); err != nil {
 		return nil, ScoutStatus{}, fmt.Errorf("theme scout: themes not an array: %w", err)
 	}
-	status := ScoutStatus{State: "accepted"}
+	status := ScoutStatus{State: "accepted", Normalized: map[string]int{}}
 	status.Received = len(rawThemes)
 	accepted := make([]ScoutCandidate, 0, len(rawThemes))
 	seenNormalized := make(map[string]struct{}, len(rawThemes))
@@ -70,11 +82,22 @@ func ValidateScout(data []byte, anchorRefs map[string]struct{}, fileRefs map[str
 			reject(&status, position, code)
 			continue
 		}
-		seenNormalized[normalizeProse(candidate.Question)+"|"+normalizeProse(candidate.ExpectedLearning)] = struct{}{}
-		accepted = append(accepted, candidate)
+		// Decision 224: bound overlong provisional prose deterministically
+		// and record the truncation counts — never a silent editorial loss.
+		normalized, counts := normalizeScoutCandidate(candidate)
+		for field, count := range counts {
+			status.Normalized[field] += count
+		}
+		seenNormalized[normalizeProse(normalized.Question)+"|"+normalizeProse(normalized.ExpectedLearning)] = struct{}{}
+		accepted = append(accepted, normalized)
 		status.Accepted++
 	}
 	status.Rejected = status.Received - status.Accepted
+	if len(status.Normalized) == 0 {
+		// Keep the artifact canonical: an empty Normalized map with omitempty
+		// would decode as nil and break encode/decode DeepEqual.
+		status.Normalized = nil
+	}
 	switch {
 	case status.Accepted == 0:
 		status.State = "failed"
@@ -91,12 +114,12 @@ func scoutCandidateIssue(candidate ScoutCandidate, anchorRefs, fileRefs map[stri
 		strings.TrimSpace(candidate.WhyItMatters) == "" || strings.TrimSpace(candidate.ExpectedLearning) == "" {
 		return ScoutIssueEmptyProse
 	}
-	if utf8.RuneCountInString(candidate.Title) > MaxTitleRunes ||
-		utf8.RuneCountInString(candidate.Question) > MaxQuestionRunes ||
-		utf8.RuneCountInString(candidate.WhyItMatters) > MaxEditorialRunes ||
-		utf8.RuneCountInString(candidate.ExpectedLearning) > MaxEditorialRunes {
-		return ScoutIssueProseTooLong
-	}
+	// Decision 224 (resuming D219): overlong provisional prose is NOT a
+	// rejection — Adjudication may rewrite title/question, and a long
+	// provisional why/expected must not erase an otherwise valid
+	// source-referenced candidate. The caller normalizes deterministically
+	// and records typed counts. Only schema/identity/ref/kind/cardinality
+	// failures remain hard rejections below.
 	if !candidate.ThemeKind.Valid() {
 		return ScoutIssueInvalidThemeKind
 	}
@@ -132,6 +155,32 @@ func scoutCandidateIssue(candidate ScoutCandidate, anchorRefs, fileRefs map[stri
 		return ScoutIssueDuplicateCandidate
 	}
 	return ""
+}
+
+// normalizeScoutCandidate bounds every editorial field to its closed limit
+// deterministically (whole-rune truncation, Decision 224). It returns the
+// normalized candidate plus typed counts of truncated fields so the status
+// records every normalization — never a silent truncation.
+func normalizeScoutCandidate(candidate ScoutCandidate) (ScoutCandidate, map[string]int) {
+	normalized := candidate
+	counts := map[string]int{}
+	if utf8.RuneCountInString(normalized.Title) > MaxTitleRunes {
+		normalized.Title = truncateRunes(normalized.Title, MaxTitleRunes)
+		counts["title"]++
+	}
+	if utf8.RuneCountInString(normalized.Question) > MaxQuestionRunes {
+		normalized.Question = truncateRunes(normalized.Question, MaxQuestionRunes)
+		counts["question"]++
+	}
+	if utf8.RuneCountInString(normalized.WhyItMatters) > MaxEditorialRunes {
+		normalized.WhyItMatters = truncateRunes(normalized.WhyItMatters, MaxEditorialRunes)
+		counts["why_it_matters"]++
+	}
+	if utf8.RuneCountInString(normalized.ExpectedLearning) > MaxEditorialRunes {
+		normalized.ExpectedLearning = truncateRunes(normalized.ExpectedLearning, MaxEditorialRunes)
+		counts["expected_learning"]++
+	}
+	return normalized, counts
 }
 
 func reject(status *ScoutStatus, position int, code ScoutIssueCode) {

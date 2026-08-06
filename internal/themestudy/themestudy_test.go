@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // fakeSource builds a SourceReader + TotalLines over an in-memory file map.
@@ -344,5 +345,239 @@ func TestReducerDedupeAndBalanceCap(t *testing.T) {
 			}
 			_ = rootAnchor
 		}
+	}
+}
+
+// TestScoutNormalizesOverlongProseInsteadOfRejecting covers Decision 224
+// (D219 A): a structurally valid candidate with overlong provisional prose
+// is accepted with deterministic whole-rune truncation and a typed
+// normalization count — never erased as prose_too_long.
+func TestScoutNormalizesOverlongProseInsteadOfRejecting(t *testing.T) {
+	anchorRefs := map[string]struct{}{"a1": {}, "a2": {}}
+	fileRefs := map[string]struct{}{"f1": {}}
+	longTitle := strings.Repeat("т", MaxTitleRunes+20)
+	longQuestion := strings.Repeat("в", MaxQuestionRunes+15)
+	longWhy := strings.Repeat("п", MaxEditorialRunes+30)
+	longExpected := strings.Repeat("о", MaxEditorialRunes+40)
+	raw := `{"themes":[{"title":"` + longTitle + `","question":"` + longQuestion +
+		`","theme_kind":"user_journey","anchor_refs":["a1","a2"],"why_it_matters":"` + longWhy +
+		`","expected_learning":"` + longExpected + `","relation_claim":"editorial_only"}]}`
+	accepted, status, err := ValidateScout([]byte(raw), anchorRefs, fileRefs, "d")
+	if err != nil {
+		t.Fatalf("ValidateScout: %v", err)
+	}
+	if status.Accepted != 1 || status.Rejected != 0 || len(accepted) != 1 {
+		t.Fatalf("want 1 accepted / 0 rejected, got %d/%d", status.Accepted, status.Rejected)
+	}
+	if utf8.RuneCountInString(accepted[0].Title) > MaxTitleRunes ||
+		utf8.RuneCountInString(accepted[0].Question) > MaxQuestionRunes ||
+		utf8.RuneCountInString(accepted[0].WhyItMatters) > MaxEditorialRunes ||
+		utf8.RuneCountInString(accepted[0].ExpectedLearning) > MaxEditorialRunes {
+		t.Fatalf("normalized candidate still exceeds a bound")
+	}
+	if status.Normalized["title"] != 1 || status.Normalized["question"] != 1 ||
+		status.Normalized["why_it_matters"] != 1 || status.Normalized["expected_learning"] != 1 {
+		t.Fatalf("typed normalization counts = %v, want 1 per field", status.Normalized)
+	}
+}
+
+// TestAdjudicationSplitIssueVocabulary covers Decision 224 (D219 B): the
+// conflated empty_observation is split into empty / too_long / unknown_too_long
+// / too_many_unknowns, and overlong populated observations are normalized —
+// never rejected as empty.
+func TestAdjudicationSplitIssueVocabulary(t *testing.T) {
+	candidates := map[string]*ScoutCandidate{
+		"t1": {Title: "t1", Question: "q1?", ThemeKind: KindUserJourney, AnchorRefs: []string{"a1", "a2"}, WhyItMatters: "w", ExpectedLearning: "l", RelationClaim: RelationClaimEditorialOnly},
+	}
+	// Overlong observation: accepted, normalized, counted.
+	overlongObs := strings.Repeat("н", MaxEditorialRunes+50)
+	good := `{"themes":[{"candidate_ref":"t1","final_title":"x","final_question":"y?",` +
+		`"anchor_assessments":[{"anchor_ref":"a1","fit":"direct","supported_observation":"` + overlongObs + `"}],` +
+		`"reading_order":["a1"]}]}`
+	accepted, status, err := ValidateAdjudication([]byte(good), candidates)
+	if err != nil {
+		t.Fatalf("ValidateAdjudication: %v", err)
+	}
+	if status.Accepted != 1 || len(accepted) != 1 {
+		t.Fatalf("overlong observation was rejected: accepted=%d", status.Accepted)
+	}
+	if utf8.RuneCountInString(accepted[0].AnchorAssessments[0].SupportedObservation) > MaxEditorialRunes {
+		t.Fatalf("observation not truncated to limit")
+	}
+	if status.Normalized["observation"] != 1 {
+		t.Fatalf("observation normalization count = %v, want 1", status.Normalized)
+	}
+
+	// Empty observation: still a hard rejection with the distinct code.
+	empty := `{"themes":[{"candidate_ref":"t1","final_title":"x","final_question":"y?",` +
+		`"anchor_assessments":[{"anchor_ref":"a1","fit":"direct","supported_observation":""}],"reading_order":["a1"]}]}`
+	_, status, err = ValidateAdjudication([]byte(empty), candidates)
+	if err != nil || status.Accepted != 0 || status.Rejected != 1 {
+		t.Fatalf("empty observation must reject: accepted=%d err=%v", status.Accepted, err)
+	}
+	found := false
+	for _, issue := range status.Issues {
+		if issue.Code == AdjIssueEmptyObservation {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected empty_observation issue, got %v", status.Issues)
+	}
+
+	// Too many unknowns: distinct code.
+	tooMany := `{"themes":[{"candidate_ref":"t1","final_title":"x","final_question":"y?",` +
+		`"anchor_assessments":[{"anchor_ref":"a1","fit":"direct","supported_observation":"o"}],` +
+		`"reading_order":["a1"],"unknowns":["u1","u2","u3","u4","u5"]}]}`
+	_, status, err = ValidateAdjudication([]byte(tooMany), candidates)
+	if err != nil || status.Accepted != 0 {
+		t.Fatalf("too-many-unknowns must reject: accepted=%d err=%v", status.Accepted, err)
+	}
+	found = false
+	for _, issue := range status.Issues {
+		if issue.Code == AdjIssueTooManyUnknowns {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected too_many_unknowns issue, got %v", status.Issues)
+	}
+}
+
+// TestReducerDeduplicatesByExactSourceIdentity covers Decision 224 (D219 E):
+// two anchors resolving to the same (path,line,symbol) publish one reading.
+func TestReducerDeduplicatesByExactSourceIdentity(t *testing.T) {
+	// a1 and a2 both resolve to controllers/account.go:40 Signup — the
+	// Casdoor webhook defect class (sendWebhook twice).
+	anchors := map[string]AnchorInfo{
+		"a1": {Path: "controllers/account.go", Symbol: "Signup", Line: 40},
+		"a2": {Path: "controllers/account.go", Symbol: "Signup", Line: 40},
+	}
+	input := ReducerInput{
+		Themes: []AdjudicatedTheme{{
+			CandidateRef: "t1", FinalTitle: "signup validation", FinalQuestion: "how does signup validate?",
+			AnchorAssessments: []AnchorAssessment{
+				{AnchorRef: "a1", Fit: FitDirect, SupportedObservation: "signup coordinates account creation"},
+				{AnchorRef: "a2", Fit: FitDirect, SupportedObservation: "signup coordinates account creation"},
+			},
+			ReadingOrder: []string{"a1", "a2"},
+		}},
+		Candidates: map[string]*ScoutCandidate{
+			"t1": {Title: "signup validation", Question: "how does signup validate?", ThemeKind: KindUserJourney,
+				AnchorRefs: []string{"a1", "a2"}, WhyItMatters: "w", ExpectedLearning: "l", RelationClaim: RelationClaimEditorialOnly},
+		},
+		Anchors: anchors,
+	}
+	reduction, err := Reduce(input)
+	if err != nil {
+		t.Fatalf("Reduce: %v", err)
+	}
+	if len(reduction.Cards) != 1 {
+		t.Fatalf("cards = %d, want 1", len(reduction.Cards))
+	}
+	if len(reduction.Cards[0].Readings) != 1 {
+		t.Fatalf("readings = %d, want 1 (exact (path,line,symbol) dedup)", len(reduction.Cards[0].Readings))
+	}
+}
+
+// TestReducerHonestCoverageBadge covers Decision 224 (D219 D): a theme with
+// a supporting-only facet or unresolved unknowns is partial, never fully
+// supported; a theme whose readings are all direct and unknowns empty is
+// fully supported.
+func TestReducerHonestCoverageBadge(t *testing.T) {
+	anchors := map[string]AnchorInfo{
+		"a1": {Path: "a.go", Symbol: "A", Line: 1},
+		"a2": {Path: "b.go", Symbol: "B", Line: 2},
+	}
+	candidates := map[string]*ScoutCandidate{
+		"t1": {Title: "t1", Question: "q?", ThemeKind: KindUserJourney, AnchorRefs: []string{"a1", "a2"}, WhyItMatters: "w", ExpectedLearning: "l", RelationClaim: RelationClaimEditorialOnly},
+	}
+	// Supporting facet present → partial.
+	input := ReducerInput{
+		Themes: []AdjudicatedTheme{{
+			CandidateRef: "t1", FinalTitle: "x", FinalQuestion: "y?",
+			AnchorAssessments: []AnchorAssessment{
+				{AnchorRef: "a1", Fit: FitDirect, SupportedObservation: "o1"},
+				{AnchorRef: "a2", Fit: FitSupporting, SupportedObservation: "o2"},
+			},
+			ReadingOrder: []string{"a1", "a2"},
+		}},
+		Candidates: candidates, Anchors: anchors,
+	}
+	reduction, err := Reduce(input)
+	if err != nil {
+		t.Fatalf("Reduce: %v", err)
+	}
+	if len(reduction.Cards) != 1 || reduction.Cards[0].Badge != "partial" {
+		t.Fatalf("supporting facet must be partial: %#v", reduction.Cards)
+	}
+
+	// All direct, no unknowns → full support.
+	input.Themes[0].AnchorAssessments = []AnchorAssessment{
+		{AnchorRef: "a1", Fit: FitDirect, SupportedObservation: "o1"},
+		{AnchorRef: "a2", Fit: FitDirect, SupportedObservation: "o2"},
+	}
+	input.Themes[0].Unknowns = nil
+	reduction, err = Reduce(input)
+	if err != nil {
+		t.Fatalf("Reduce: %v", err)
+	}
+	if len(reduction.Cards) != 1 || reduction.Cards[0].Badge != "editorial_source_backed" {
+		t.Fatalf("all-direct theme must be fully supported: %#v", reduction.Cards)
+	}
+
+	// Unknowns present → partial even when all direct.
+	input.Themes[0].Unknowns = []string{"runtime order not proven"}
+	reduction, err = Reduce(input)
+	if err != nil {
+		t.Fatalf("Reduce: %v", err)
+	}
+	if reduction.Cards[0].Badge != "partial" {
+		t.Fatalf("unknowns must force partial: %#v", reduction.Cards[0])
+	}
+}
+
+// TestReducerPortfolioRankOrdersCoreBeforePeripheral covers Decision 224
+// (D219 F): user-facing/lifecycle kinds sort before integration families.
+func TestReducerPortfolioRankOrdersCoreBeforePeripheral(t *testing.T) {
+	anchors := map[string]AnchorInfo{"a1": {Path: "a.go", Symbol: "A", Line: 1}}
+	mk := func(tref, kind string) AdjudicatedTheme {
+		return AdjudicatedTheme{
+			CandidateRef: tref, FinalTitle: tref, FinalQuestion: tref + "?",
+			AnchorAssessments: []AnchorAssessment{{AnchorRef: "a1", Fit: FitDirect, SupportedObservation: "o"}},
+			ReadingOrder:      []string{"a1"},
+		}
+	}
+	input := ReducerInput{
+		Themes: []AdjudicatedTheme{
+			mk("t1", string(KindIntegrationFamily)),
+			mk("t2", string(KindUserJourney)),
+			mk("t3", string(KindLifecycleConcern)),
+		},
+		Candidates: map[string]*ScoutCandidate{
+			"t1": {Title: "t1", Question: "t1?", ThemeKind: KindIntegrationFamily, AnchorRefs: []string{"a1"}, WhyItMatters: "w", ExpectedLearning: "l", RelationClaim: RelationClaimEditorialOnly},
+			"t2": {Title: "t2", Question: "t2?", ThemeKind: KindUserJourney, AnchorRefs: []string{"a1"}, WhyItMatters: "w", ExpectedLearning: "l", RelationClaim: RelationClaimEditorialOnly},
+			"t3": {Title: "t3", Question: "t3?", ThemeKind: KindLifecycleConcern, AnchorRefs: []string{"a1"}, WhyItMatters: "w", ExpectedLearning: "l", RelationClaim: RelationClaimEditorialOnly},
+		},
+		Anchors: anchors,
+	}
+	reduction, err := Reduce(input)
+	if err != nil {
+		t.Fatalf("Reduce: %v", err)
+	}
+	if len(reduction.Cards) != 3 {
+		t.Fatalf("cards = %d, want 3", len(reduction.Cards))
+	}
+	// user_journey and lifecycle must precede integration_family.
+	lastKind := ""
+	integrationSeen := false
+	for _, card := range reduction.Cards {
+		if string(card.ThemeKind) == string(KindIntegrationFamily) {
+			integrationSeen = true
+		}
+		if integrationSeen && string(card.ThemeKind) != string(KindIntegrationFamily) {
+			t.Fatalf("core theme %s sorted after integration family", card.ThemeKind)
+		}
+		_ = lastKind
 	}
 }

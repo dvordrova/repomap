@@ -301,7 +301,7 @@ func themeValidateAdjudication(
 		Themes: themes, Status: status,
 	}
 	record := themestudy.AdjudicationStatusRecord{
-		Version: themestudy.AdjudicationRequestVersion, State: status.State,
+		Version: themestudy.AdjudicationResultVersion, State: status.State,
 		PromptVersion: themestudy.AdjudicationPromptVersion, Language: request.Language,
 		CatalogSHA256: request.CatalogSHA256, Status: status,
 	}
@@ -372,7 +372,7 @@ func themeAdjOrdinaryFailure(
 	output *runOutput,
 ) themeAdjStageResult {
 	status := themestudy.AdjudicationStatusRecord{
-		Version: themestudy.AdjudicationRequestVersion, State: string(atlasstudy.ProductStateFailed),
+		Version: themestudy.AdjudicationResultVersion, State: string(atlasstudy.ProductStateFailed),
 		PromptVersion: themestudy.AdjudicationPromptVersion, Language: request.Language,
 		CatalogSHA256: request.CatalogSHA256, FailureCode: string(code),
 		Status: themestudy.AdjudicationStatus{State: string(atlasstudy.ProductStateFailed)},
@@ -401,7 +401,7 @@ func themeAdjTerminalFailure(
 	cause error,
 ) error {
 	status := themestudy.AdjudicationStatusRecord{
-		Version: themestudy.AdjudicationRequestVersion, State: string(atlasstudy.ProductStateFailed),
+		Version: themestudy.AdjudicationResultVersion, State: string(atlasstudy.ProductStateFailed),
 		PromptVersion: themestudy.AdjudicationPromptVersion, Language: request.Language,
 		CatalogSHA256: request.CatalogSHA256, FailureCode: string(code),
 		Status: themestudy.AdjudicationStatus{State: string(atlasstudy.ProductStateFailed)},
