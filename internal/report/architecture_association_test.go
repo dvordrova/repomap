@@ -173,6 +173,68 @@ func TestProjectArchitectureAssociationsScopeBoundaryIsExact(t *testing.T) {
 	}
 }
 
+func TestClassifySourceRole(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		path string
+		want string
+	}{
+		{"object/ormer.go", "production"},
+		{"object/ormer_test.go", "test"},
+		{"test/helpers.go", "test"},
+		{"tests/integration/setup.go", "test"},
+		{"contrib/analyzers/main.go", "tooling"},
+		{"examples/server/main.go", "tooling"},
+		{"docs/examples/main.go", "tooling"},
+		{"tools/release/main.go", "tooling"},
+		{"hack/verify.sh", "tooling"},
+		{"", "production"},
+	}
+	for _, tc := range cases {
+		if got := classifySourceRole(tc.path); got != tc.want {
+			t.Errorf("classifySourceRole(%q) = %q, want %q", tc.path, got, tc.want)
+		}
+	}
+}
+
+// TestArchitectureAssociationsSourceRolesReconcile proves goal 05 source
+// roles: every witness is classified deterministically and the row's
+// production+test+tooling counts sum exactly to the observation count.
+func TestArchitectureAssociationsSourceRolesReconcile(t *testing.T) {
+	t.Parallel()
+	canvas, atlas := associationFixture()
+	fragment, err := ProjectArchitectureAssociations(canvas, atlas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rows, witnessed, reconciled int
+	for _, component := range fragment.Components {
+		for _, row := range component.Associations {
+			rows++
+			for _, witness := range row.Witnesses {
+				witnessed++
+				if witness.Role != "production" && witness.Role != "test" && witness.Role != "tooling" {
+					t.Fatalf("witness role out of closed set: %q", witness.Role)
+				}
+				if classifySourceRole(witness.Path) != witness.Role {
+					t.Fatalf("witness role %q does not match deterministic classification of %q", witness.Role, witness.Path)
+				}
+			}
+			sum := row.SourceRoles.Production + row.SourceRoles.Test + row.SourceRoles.Tooling
+			if sum != len(row.Witnesses) || sum != row.ObservationCount {
+				t.Fatalf("row %s/%s roles %d+%d+%d=%d != witnesses %d != observations %d",
+					row.Kind, row.OwningUnit,
+					row.SourceRoles.Production, row.SourceRoles.Test, row.SourceRoles.Tooling,
+					sum, len(row.Witnesses), row.ObservationCount)
+			}
+			reconciled++
+		}
+	}
+	if rows == 0 || witnessed == 0 || reconciled != rows {
+		t.Fatalf("no association rows exercised: rows=%d witnessed=%d", rows, witnessed)
+	}
+}
+
 func TestArchitectureAssociationsRoundTripValidate(t *testing.T) {
 	canvas, atlas := associationFixture()
 	projection, err := ProjectArchitectureAssociations(canvas, atlas)
