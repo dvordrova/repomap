@@ -30,14 +30,10 @@ func diagnosticSeverity(code string) FindingSeverity {
 		"proposal.invalid_component_count",
 		"proposal.invalid_members",
 		"proposal.invalid_member_id",
-		"proposal.duplicate_member_id",
-		"proposal.duplicate_component_identity",
 		"proposal.membership_limit_exceeded",
 		"proposal.member_participation_limit_exceeded",
 		"proposal.incomplete_member_coverage",
 		"proposal.empty_member_coverage",
-		"proposal.unknown_member_id",
-		"proposal.unknown_anchor_id",
 		"proposal.invalid_subsystem",
 		"proposal.invalid_component",
 		"proposal.no_usable_subsystems",
@@ -53,7 +49,14 @@ func diagnosticSeverity(code string) FindingSeverity {
 		"proposal.normalized_components_per_subsystem",
 		"proposal.normalized_total_components",
 		"proposal.normalized_package_only_hypothesis",
-		"proposal.normalized_description":
+		"proposal.normalized_description",
+		// Decision 229 D7 item-scope salvage classes: the referencing
+		// component is dropped or locally normalized, valid siblings
+		// publish as accepted_partial — never a whole-stage rejection.
+		"proposal.unknown_member_id",
+		"proposal.unknown_anchor_id",
+		"proposal.duplicate_member_id",
+		"proposal.duplicate_component_identity":
 		return FindingRecoverable
 	default:
 		return FindingAdvisory
@@ -306,6 +309,22 @@ func truncateDisplayText(value string, limit int) string {
 
 func fallbackReasonForDiagnostics(diagnostics []Diagnostic, hasAnchors bool) FallbackReason {
 	for _, diagnostic := range diagnostics {
+		// Decision 229 D7: item-scope salvage classes are recoverable, but
+		// when EVERY component was dropped (zero independently valid items
+		// remain) the exact original reason must surface in the fallback —
+		// never a generic malformed-schema label.
+		if diagnostic.Severity == FindingFatal || diagnostic.Severity == FindingRecoverable {
+			switch diagnostic.Code {
+			case "proposal.unknown_member_id":
+				return FallbackRejectedUnknownMember
+			case "proposal.unknown_anchor_id":
+				return FallbackRejectedUnknownAnchor
+			case "proposal.ungrounded_primary_component":
+				return FallbackRejectedUngrounded
+			}
+		}
+	}
+	for _, diagnostic := range diagnostics {
 		if diagnostic.Severity != FindingFatal {
 			continue
 		}
@@ -330,6 +349,24 @@ func hasFatalDiagnostics(diagnostics []Diagnostic) bool {
 	for _, diagnostic := range diagnostics {
 		if diagnostic.Severity == FindingFatal {
 			return true
+		}
+	}
+	return false
+}
+
+// landscapeHasItemScopeSalvage reports whether the diagnostics carry any
+// Decision 229 D7 item-scope salvage class — a recoverable finding that
+// dropped or normalized a specific component while valid siblings publish.
+func landscapeHasItemScopeSalvage(diagnostics []Diagnostic) bool {
+	for _, diagnostic := range diagnostics {
+		switch diagnostic.Code {
+		case "proposal.unknown_member_id",
+			"proposal.unknown_anchor_id",
+			"proposal.duplicate_member_id",
+			"proposal.duplicate_component_identity":
+			if diagnostic.Severity == FindingRecoverable {
+				return true
+			}
 		}
 	}
 	return false
