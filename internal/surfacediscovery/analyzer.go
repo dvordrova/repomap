@@ -333,10 +333,20 @@ func (a *analyzer) load() error {
 	finishLoad := a.startPhase("package_load", "loading build-selected packages and dependency type information")
 	var loaded []*packages.Package
 	fileSet := token.NewFileSet()
+	// REPOMAP_GOTOOLCHAIN=auto is repomap's own knob (owner preference):
+	// the binary may be older than the target module's go directive, and
+	// the Go loader resolves the toolchain. It is translated to the go
+	// command's GOTOOLCHAIN env for the loader only — repomap never
+	// mutates the caller's environment.
+	loadEnv := os.Environ()
+	if auto, ok := repomapGotoolchainEnv(); ok {
+		loadEnv = append(loadEnv, "GOTOOLCHAIN="+auto)
+	}
 	for _, moduleRoot := range moduleRoots {
 		config := &packages.Config{
 			Context: a.ctx,
 			Dir:     moduleRoot,
+			Env:     loadEnv,
 			Fset:    fileSet,
 			Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
 				packages.NeedImports | packages.NeedExportFile | packages.NeedSyntax |
@@ -544,6 +554,18 @@ func ssaPackagePath(pkg *ssa.Package) string {
 	return pkg.Pkg.Path()
 }
 
+// repomapGotoolchainEnv returns the GOTOOLCHAIN value repomap's own
+// REPOMAP_GOTOOLCHAIN knob requests ("auto" or "local+auto"), or false when
+// the knob is unset. repomap owns this variable — a plain GOTOOLCHAIN value
+// from the caller's environment must not change repomap behavior.
+func repomapGotoolchainEnv() (string, bool) {
+	value := os.Getenv("REPOMAP_GOTOOLCHAIN")
+	if value == "auto" || value == "local+auto" {
+		return value, true
+	}
+	return "", false
+}
+
 func checkSurfaceGoVersion(root string) error {
 	file, err := os.Open(filepath.Join(root, "go.mod"))
 	if err != nil {
@@ -553,6 +575,16 @@ func checkSurfaceGoVersion(root string) error {
 		return fmt.Errorf("surface discovery: read go.mod: %w", err)
 	}
 	defer file.Close()
+
+	// REPOMAP_GOTOOLCHAIN=auto (owner preference) defers the toolchain
+	// decision to the Go loader: the repomap binary may be older than the
+	// target module's go directive, and package loading itself resolves
+	// the toolchain. The runtime version check is then not an admission
+	// gate. A plain GOTOOLCHAIN value is deliberately NOT honored — that
+	// variable belongs to the Go toolchain; repomap owns its own knob.
+	if _, auto := repomapGotoolchainEnv(); auto {
+		return nil
+	}
 
 	scanner := bufio.NewScanner(io.LimitReader(file, 1024*1024))
 	for scanner.Scan() {
