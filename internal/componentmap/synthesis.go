@@ -1908,11 +1908,19 @@ func decodeSynthesisWireRecord(raw json.RawMessage) (synthesisWireRecord, error)
 		// Decision 216: a component groups either raw member refs (legacy
 		// flat contract) or request-local unit refs (u*, bounded unit
 		// contract) — never both. The exact field set therefore has two
-		// legal shapes.
+		// legal shapes. Decision 230 D9: `hypothesis` is advisory model
+		// input (the prompt says the backend derives the product
+		// hypothesis status exclusively from exact proof, and Decision
+		// 228 applies it deterministically); a provider that omits it
+		// does not invalidate an otherwise well-formed proposal.
 		if !hasExactSynthesisFields(
 			fields, "kind", "subsystem_ref", "name", "description", "member_refs", "anchor_refs", "hypothesis",
 		) && !hasExactSynthesisFields(
 			fields, "kind", "subsystem_ref", "name", "description", "unit_refs", "anchor_refs", "hypothesis",
+		) && !hasExactSynthesisFields(
+			fields, "kind", "subsystem_ref", "name", "description", "member_refs", "anchor_refs",
+		) && !hasExactSynthesisFields(
+			fields, "kind", "subsystem_ref", "name", "description", "unit_refs", "anchor_refs",
 		) {
 			return synthesisWireRecord{}, fmt.Errorf("proposal component record fields do not match the bounded contract")
 		}
@@ -1980,9 +1988,14 @@ func decodeSynthesisWireRecord(raw json.RawMessage) (synthesisWireRecord, error)
 			anchorRefs = append(anchorRefs, anchorRef)
 		}
 		var hypothesis bool
-		if err := json.Unmarshal(fields["hypothesis"], &hypothesis); err != nil {
-			return synthesisWireRecord{}, fmt.Errorf("proposal hypothesis has invalid type")
+		if rawHypothesis, exists := fields["hypothesis"]; exists && !isJSONNull(rawHypothesis) {
+			if err := json.Unmarshal(rawHypothesis, &hypothesis); err != nil {
+				return synthesisWireRecord{}, fmt.Errorf("proposal hypothesis has invalid type")
+			}
 		}
+		// Decision 230 D9: absent hypothesis defaults to false; the
+		// backend derives the product hypothesis deterministically from
+		// exact proof (Decision 228) and overwrites this advisory input.
 		return synthesisWireRecord{
 			Kind: kind, SubsystemRef: subsystemRef, Name: name, Description: description,
 			MemberRefs: memberRefs, UnitRefs: unitRefs, AnchorRefs: anchorRefs, Hypothesis: hypothesis,

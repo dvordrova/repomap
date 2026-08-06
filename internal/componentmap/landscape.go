@@ -17,8 +17,13 @@ import (
 const (
 	// ContractVersion changes whenever candidate identity, proposal authority,
 	// or locally validated landscape semantics change.
-	ContractVersion = 9
-	ProposalVersion = 9
+	// Decision 230 D4: equivalent resolved member-set collisions coalesce
+	// into one representative component (ContractVersion 10).
+	ContractVersion = 10
+	// ProposalVersion changes whenever the wire proposal shape or its
+	// acceptance semantics change; D4 equivalence coalescing is
+	// acceptance semantics (ProposalVersion 10).
+	ProposalVersion = 10
 
 	maxCandidates        = 512
 	maxFlows             = 64
@@ -386,6 +391,15 @@ type ProposedSubsystem struct {
 	sourceIDs   []SubsystemID
 }
 
+// componentSetKeyRef locates an accepted representative component after an
+// equivalence collision: subsystemIndex is its position in
+// landscape.Subsystems (the subsystem currently being built uses the index
+// it will receive once appended).
+type componentSetKeyRef struct {
+	subsystemIndex int
+	componentIndex int
+}
+
 type ProposedComponent struct {
 	Name        string     `json:"name"`
 	Description string     `json:"description,omitempty"`
@@ -417,6 +431,12 @@ type Component struct {
 	AnchorIDs   []string      `json:"anchor_ids,omitempty"`
 	Hypothesis  bool          `json:"hypothesis,omitempty"`
 	SourceIDs   []ComponentID `json:"source_component_ids,omitempty"`
+	// Decision 230 D4: equivalent resolved member sets (same members AND
+	// same anchors, different names/roles) coalesce into one representative
+	// component; the alternate labels/descriptions are retained verbatim as
+	// provenance instead of being silently dropped.
+	AlternateNames        []string `json:"alternate_names,omitempty"`
+	AlternateDescriptions []string `json:"alternate_descriptions,omitempty"`
 }
 
 type SubsystemCategory string
@@ -1157,6 +1177,10 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 	memberCoverCounts := make(map[MemberID]int)
 	seenComponentIDs := make(map[ComponentID]struct{})
 	seenComponentTwins := make(map[string]struct{})
+	// Decision 230 D4: equivalent resolved member-set collisions coalesce
+	// into one representative component (memberSetKey → index inside the
+	// current subsystem).
+	seenComponentMemberSets := make(map[string]componentSetKeyRef)
 	landscape := Landscape{
 		Version:            ContractVersion,
 		Subsystems:         make([]Subsystem, 0, len(proposal.Subsystems)),
@@ -1169,10 +1193,19 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 		name := strings.TrimSpace(proposedSubsystem.Name)
 		description := strings.TrimSpace(proposedSubsystem.Description)
 		if validateDisplayText("subsystem name", name, maxNameBytes, true) != nil ||
-			validateDisplayText("subsystem description", description, maxDescriptionBytes, false) != nil ||
-			len(proposedSubsystem.Components) == 0 {
+			validateDisplayText("subsystem description", description, maxDescriptionBytes, false) != nil {
 			invalid("proposal.invalid_subsystem", "proposal contains an empty or malformed subsystem")
 			return Landscape{}, diagnostics, false, componentSalvaged
+		}
+		if len(proposedSubsystem.Components) == 0 {
+			// Decision 230 D7: a subsystem that ended empty after
+			// item-scope salvage (all its components dropped on
+			// unknown refs) is skipped, not fatal — valid sibling
+			// subsystems publish. Whole-stage rejection fires only
+			// when every subsystem ends empty (no_usable_subsystems).
+			invalid("proposal.salvaged_empty_subsystem", "proposal subsystem retained no components after item-scope salvage; subsystem skipped")
+			componentSalvaged = true
+			continue
 		}
 		subsystem := Subsystem{Name: name, Description: description, Components: make([]Component, 0, len(proposedSubsystem.Components))}
 		for _, proposedComponent := range proposedSubsystem.Components {
@@ -1291,6 +1324,35 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 				continue
 			}
 			seenComponentTwins[twinKey] = struct{}{}
+			// Decision 230 D4: two components with the SAME resolved member
+			// set AND anchor set but different names/roles are an
+			// equivalence collision, not independent ownership. They
+			// coalesce into one representative; the alternate labels stay
+			// as provenance (charter: "coalesce deterministically and
+			// retain alternate labels/descriptions as provenance").
+			// Detached hypothesis-only components (no anchors) that
+			// resolve to the same members are the common case.
+			memberSetKey := equivalentComponentSetKey(members, anchorIDs)
+			if representativeRef, exists := seenComponentMemberSets[memberSetKey]; exists {
+				// The representative may live in the subsystem being
+				// built (not yet appended to landscape.Subsystems) or in
+				// an already-published subsystem.
+				var representative *Component
+				if representativeRef.subsystemIndex == len(landscape.Subsystems) {
+					representative = &subsystem.Components[representativeRef.componentIndex]
+				} else {
+					representative = &landscape.Subsystems[representativeRef.subsystemIndex].Components[representativeRef.componentIndex]
+				}
+				representative.AlternateNames = append(representative.AlternateNames, componentName)
+				representative.AlternateDescriptions = append(representative.AlternateDescriptions, componentDescription)
+				invalid("proposal.equivalent_member_set_collision", "proposal contains multiple components with the same resolved member set and anchor set but different names; they coalesce into one representative component with alternates retained")
+				componentSalvaged = true
+				continue
+			}
+			seenComponentMemberSets[memberSetKey] = componentSetKeyRef{
+				subsystemIndex: len(landscape.Subsystems),
+				componentIndex: len(subsystem.Components),
+			}
 			seenComponentIDs[id] = struct{}{}
 			subsystem.Components = append(subsystem.Components, Component{
 				ID: id, Name: componentName, Description: componentDescription,
@@ -1378,11 +1440,12 @@ func proposalMembershipDiagnostics(bundle CandidateBundle, proposal Proposal) []
 	distinctReferencedMembers := make(map[MemberID]struct{})
 	knownMembers := conceptualCandidateIndex(bundle)
 	for _, subsystem := range proposal.Subsystems {
+		// Decision 230 D7: a subsystem that ended empty after item-scope
+		// salvage is skipped here too (applyProposal counts it as a
+		// recoverable salvaged-empty-subsystem finding); only genuinely
+		// malformed display text is fatal.
 		if len(subsystem.Components) == 0 {
-			return []Diagnostic{newDiagnostic(
-				"proposal.invalid_subsystem",
-				"proposal contains an empty or malformed subsystem",
-			)}
+			continue
 		}
 		for _, component := range subsystem.Components {
 			if len(component.MemberIDs) == 0 {
@@ -2036,6 +2099,25 @@ func componentTwinKey(name, description string, members []Candidate, anchorIDs [
 	parts := append([]string{name, description}, memberKeys...)
 	parts = append(parts, anchors...)
 	return strings.Join(parts, "\x00")
+}
+
+// equivalentComponentSetKey builds a deterministic key over the resolved
+// member set AND anchor set only — name/description are deliberately
+// excluded. Two components sharing this key express the same exact
+// membership under different labels (Decision 230 D4 equivalence
+// collision). Members and anchors are already sorted by their callers.
+func equivalentComponentSetKey(members []Candidate, anchorIDs []string) string {
+	memberKeys := make([]string, len(members))
+	for index, member := range members {
+		memberKeys[index] = "m:" + member.ID.key()
+	}
+	sort.Strings(memberKeys)
+	anchors := make([]string, len(anchorIDs))
+	for index, anchorID := range anchorIDs {
+		anchors[index] = "a:" + anchorID
+	}
+	sort.Strings(anchors)
+	return strings.Join(append(memberKeys, anchors...), "\x00")
 }
 
 func subsystemID(componentIDs []ComponentID) SubsystemID {

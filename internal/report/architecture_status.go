@@ -62,6 +62,14 @@ var architectureStatusValidationCodes = map[string]struct{}{
 	"proposal.unknown_anchor_id":                        {},
 	"proposal.unknown_member_id":                        {},
 	"proposal.unsupported_version":                      {},
+	// Decision 229 D7 item-scope salvage vocabulary: recoverable
+	// findings emitted while dropping only the referencing component.
+	"proposal.salvaged_empty_subsystem":        {},
+	"proposal.unknown_unit_ref":                {},
+	"proposal.duplicate_unit_ref":              {},
+	"proposal.duplicate_anchor_id":             {},
+	"proposal.empty_member_coverage":           {},
+	"proposal.equivalent_member_set_collision": {},
 
 	// Provider response extraction and request-local reference diagnostics.
 	"response.ambiguous_json":    {},

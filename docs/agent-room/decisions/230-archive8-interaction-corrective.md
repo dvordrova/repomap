@@ -248,3 +248,31 @@ generation; no full call graph; no fuzzy path/ref repair; no production
 repository-specific keyword rules; no provider tuning loop; no redesign of
 `--no-secrets`. Mobile-only issues do not block; existing responsive CSS is
 not intentionally regressed. No push without the owner's explicit signal.
+
+## PHASE 9 repair log (2026-08-06)
+
+- **D9.1 etcd whole-reject → accepted_partial**: a subsystem left empty after
+  item-scope salvage was treated as `proposal.invalid_subsystem` (fatal) in
+  two places. Empty-after-salvage is now a recoverable
+  `proposal.salvaged_empty_subsystem` skip; whole-stage rejection fires only
+  when every subsystem ends empty. Replay of the Archive 8 etcd saved
+  response now publishes 4 subsystems / 139 memberships as accepted_partial.
+- **D9.2 status vocabulary**: D7/D4 recoverable codes (`salvaged_empty_subsystem`,
+  `unknown_unit_ref`, `duplicate_unit_ref`, `duplicate_anchor_id`,
+  `empty_member_coverage`, `equivalent_member_set_collision`) added to the
+  closed Architecture status registry.
+- **D9.3 equivalent member-set collision (D4)**: components with the same
+  resolved member set AND anchor set but different names coalesce into one
+  representative; alternate names/descriptions are retained verbatim as
+  provenance (charter v5 D4). `ContractVersion` 9→10, `ProposalVersion` 9→10.
+- **D9.4 optional `hypothesis`**: the provider may omit the advisory
+  `hypothesis` field on component records; the backend derives product
+  hypothesis deterministically (Decision 228) and defaults absent input to
+  false.
+- **D9.5 association scope exact-match**: `scopeContains` now matches exact
+  package identity only; root package no longer absorbs descendant
+  observations (casdoor «Запуск» dropped from 44 rows / 218 witnesses to its
+  exact scope).
+- **D9.6 deterministic fallback localization (RU)**: closed sets of local
+  fallback component and subsystem names/descriptions are localized for the
+  RU product; model-authored names and technical identifiers never change.

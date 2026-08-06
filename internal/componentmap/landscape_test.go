@@ -153,8 +153,10 @@ func TestApplyFallsBackForInvalidOrEmptyProposal(t *testing.T) {
 
 // Decision 227: a unit may participate in several components when the
 // components express different conceptual roles (participation, not
-// exclusive ownership). Sharing the same exact member set under different
-// names/descriptions is accepted.
+// exclusive ownership). Decision 230 D4: components that resolve to the
+// SAME member set AND anchor set with no distinguishing anchors coalesce
+// into one representative; the alternate roles stay verbatim as
+// provenance (charter v5 D4) instead of being silently dropped.
 func TestApplyAcceptsCrossCuttingParticipation(t *testing.T) {
 	t.Parallel()
 
@@ -177,8 +179,18 @@ func TestApplyAcceptsCrossCuttingParticipation(t *testing.T) {
 	if result.Fallback || result.ValidationOutcome == ValidationRejected {
 		t.Fatalf("cross-cutting participation was rejected: %#v", result.Diagnostics)
 	}
-	if len(result.Subsystems[0].Components) != 3 {
-		t.Fatalf("components = %d, want 3 (all roles preserved)", len(result.Subsystems[0].Components))
+	// Decision 230 D4: identical resolved member sets with no anchors
+	// coalesce into one representative; every alternate role is retained
+	// as provenance (information preservation).
+	if len(result.Subsystems[0].Components) != 1 {
+		t.Fatalf("components = %d, want 1 coalesced representative (D4 equivalence)", len(result.Subsystems[0].Components))
+	}
+	representative := result.Subsystems[0].Components[0]
+	if len(representative.AlternateNames) != 2 {
+		t.Fatalf("alternate names = %#v, want the two coalesced roles preserved", representative.AlternateNames)
+	}
+	if !hasLandscapeDiagnostic(result.Diagnostics, "proposal.equivalent_member_set_collision") {
+		t.Fatalf("diagnostics = %#v, want equivalence collision counted", result.Diagnostics)
 	}
 }
 
@@ -215,6 +227,54 @@ func TestApplyRejectsExactTwinComponents(t *testing.T) {
 	// component publish (2 components, not 3, not 1).
 	if len(result.Subsystems[0].Components) != 2 {
 		t.Fatalf("components = %d, want 2 (twin skipped item-scope, valid siblings publish)", len(result.Subsystems[0].Components))
+	}
+}
+
+// Decision 230 D4 (audit §10, telebot/chatto/restic): components that
+// resolve to the SAME member set AND anchor set but carry different
+// names/roles coalesce into one representative component; the alternate
+// labels/descriptions are retained as provenance. The equivalence class
+// is counted, never a whole-stage rejection; unrelated components publish.
+func TestApplyCoalescesEquivalentMemberSetComponents(t *testing.T) {
+	t.Parallel()
+
+	bundle := candidateBundleWithPackages(3)
+	ids := candidateIDs(bundle.Candidates)
+	result, err := Apply(bundle, Proposal{
+		Version: ContractVersion,
+		Subsystems: []ProposedSubsystem{{
+			Name: "Telebot-like",
+			Components: []ProposedComponent{
+				{Name: "Middleware-обработка", MemberIDs: ids[:1]},
+				{Name: "Реактивные элементы", MemberIDs: ids[:1]},
+				{Name: "Компоновка", MemberIDs: ids[:1]},
+				{Name: "Independent", MemberIDs: ids[2:]},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if result.Fallback || result.ValidationOutcome != ValidationAcceptedPartial {
+		t.Fatalf("equivalence collision must publish accepted_partial: %#v", result.Diagnostics)
+	}
+	if len(result.Subsystems[0].Components) != 2 {
+		t.Fatalf("components = %d, want 2 (one coalesced representative + unrelated sibling)", len(result.Subsystems[0].Components))
+	}
+	var representative *Component
+	for index := range result.Subsystems[0].Components {
+		if result.Subsystems[0].Components[index].Name == "Middleware-обработка" {
+			representative = &result.Subsystems[0].Components[index]
+		}
+	}
+	if representative == nil {
+		t.Fatalf("representative component missing: %#v", result.Subsystems[0].Components)
+	}
+	if len(representative.AlternateNames) != 2 {
+		t.Fatalf("alternate names = %#v, want both coalesced roles retained", representative.AlternateNames)
+	}
+	if !hasLandscapeDiagnostic(result.Diagnostics, "proposal.equivalent_member_set_collision") {
+		t.Fatalf("diagnostics = %#v, want equivalence collision counted", result.Diagnostics)
 	}
 }
 
