@@ -67,6 +67,9 @@ func writeReportJSON(data *ReportData, path string, maxBytes int) error {
 	if err := ensureArchitectureComponentNavigation(data); err != nil {
 		return err
 	}
+	if err := ensureArchitectureAssociations(data); err != nil {
+		return err
+	}
 	persisted := reportDataForPersistence(data)
 	// SourceIDs are issued by the local report server after manifest
 	// verification. They are session navigation IDs, not persistent evidence.
@@ -118,6 +121,9 @@ func RenderHTML(data *ReportData) ([]byte, error) {
 	if err := ensureArchitectureComponentNavigation(data); err != nil {
 		return nil, err
 	}
+	if err := ensureArchitectureAssociations(data); err != nil {
+		return nil, err
+	}
 	return buildHTML(data)
 }
 
@@ -129,6 +135,9 @@ func RenderHTMLWithSourceEpisode(data *ReportData, episodeJSON []byte) ([]byte, 
 		return nil, fmt.Errorf("report: data is required")
 	}
 	if err := ensureArchitectureComponentNavigation(data); err != nil {
+		return nil, err
+	}
+	if err := ensureArchitectureAssociations(data); err != nil {
 		return nil, err
 	}
 	canonicalEpisode, err := projectApprovedSourceEpisode(data, episodeJSON)

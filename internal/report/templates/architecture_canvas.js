@@ -3964,6 +3964,67 @@ function architecturePartialTruth(data) {
      relations.appendChild(reference);
     });
    }
+
+   // Decision 225: observed external/state callsites in exact member scope.
+   // Connection rows — not edges — are the primary controls: click a row to
+   // highlight the node and expand exact witnesses in place; exact source in
+   // at most two actions. Only "an observed boundary/resource callsite occurs
+   // in an exact member scope" is stated — never runtime dependency,
+   // ownership, reachability, read/write/order or target identity.
+   const associationEntry = this.associationEntryFor(component);
+   if (associationEntry && array(associationEntry.associations).length > 0) {
+    const section = this.inspectorSection(this.msg("architecture.section.observed_callsites"));
+    section.appendChild(element(
+     "p", "rm-arch__copy", this.msg("architecture.copy.observed_callsites_limit")
+    ));
+    array(associationEntry.associations).forEach((row) => {
+     const rowEl = element("button", "rm-arch__association-row");
+     rowEl.type = "button";
+     const head = element("div", "rm-arch__association-row__head");
+     head.appendChild(element(
+      "strong", null, this.msg(row.kind === "boundary"
+       ? "architecture.value.category_boundary" : "architecture.value.category_resource")
+     ));
+     if (row.imported_family) head.appendChild(element("span", "rm-arch__association-family", row.imported_family));
+     head.appendChild(element("span", "rm-arch__association-unit", row.owning_unit));
+     rowEl.appendChild(head);
+     const meta = element("div", "rm-arch__association-row__meta");
+     meta.appendChild(element(
+      "span", "rm-arch__association-count",
+      this.msg("architecture.label.observation_count", { count: Number(row.observation_count) || 0 })
+     ));
+     if (row.paired) meta.appendChild(element("span", "rm-arch__association-paired", this.msg("architecture.value.paired_boundary_resource")));
+     rowEl.appendChild(meta);
+     // Exact witnesses expand in place (connection row click).
+     const witnesses = element("div", "rm-arch__association-witnesses");
+     witnesses.hidden = true;
+     array(row.witnesses).forEach((witness) => {
+      const label = [witness.symbol, witness.path + ":" + witness.line].filter(Boolean).join(" · ");
+      const jump = element("button", "rm-arch__edge-jump rm-arch__compact-action");
+      jump.type = "button";
+      jump.appendChild(element("strong", null, witness.symbol || witness.path));
+      jump.appendChild(element("span", null, witness.path + (witness.line ? ":" + witness.line : "")));
+      if (typeof this.options.openLocation === "function" && witness.path) {
+       this.listen(jump, "click", () => this.options.openLocation(witness.path, witness.line || 0, 0));
+      }
+      witnesses.appendChild(jump);
+     });
+     rowEl.appendChild(witnesses);
+     this.listen(rowEl, "click", () => { witnesses.hidden = !witnesses.hidden; });
+     section.appendChild(rowEl);
+    });
+    // Limitations always visible, never hover-only.
+    section.appendChild(element(
+     "p", "rm-arch__limitation", this.msg("architecture.copy.association_limitations")
+    ));
+   }
+  }
+
+  associationEntryFor(component) {
+   const associations = this.options.associations || null;
+   if (!associations || !component) return null;
+   const componentID = text(component.id);
+   return array(associations.components).find((entry) => text(entry.component_id) === componentID) || null;
   }
 
   appendParticipantComponentLinks(record, excludedComponentID) {

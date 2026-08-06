@@ -179,6 +179,11 @@ type ReportData struct {
 	// from producer-owned source starts and never selects a representative
 	// package, file, or symbol by presentation order.
 	ArchitectureComponentNavigation *ArchitectureComponentNavigationProjection `json:"architecture_component_navigation,omitempty"`
+	// ArchitectureAssociations is the Decision 225 provider-free join of
+	// Atlas boundary/resource observations onto accepted component member
+	// scopes. It states only that an observed callsite occurs in an exact
+	// member scope; it never claims runtime dependency or semantics.
+	ArchitectureAssociations *ArchitectureAssociationProjection `json:"architecture_associations,omitempty"`
 	GuidedTour                      *guidedtour.Story                          `json:"guided_tour,omitempty"`
 	SemanticArtifacts               []semanticdiscovery.Artifact               `json:"semantic_artifacts,omitempty"`
 	// UserMechanisms is a presentation-only supported slice of independently
