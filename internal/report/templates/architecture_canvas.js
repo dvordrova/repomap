@@ -21,7 +21,7 @@
  const MAX_WHEEL_DELTA = 120;
  const INITIAL_MIN_SCALE = 0.72;
  const INITIAL_MAX_SCALE = 1;
- const FIT_MIN_SCALE = 0.65;
+ const FIT_MIN_SCALE = 0.16;
  const FOCUS_MIN_SCALE = 0.88;
  const FOCUS_MAX_SCALE = 1.05;
  const LANDSCAPE_COMPONENT_HEIGHT = 108;
@@ -2772,8 +2772,12 @@ function architecturePartialTruth(data) {
   }
 
   installViewportInteractions() {
+   // Decision 230 D3: ordinary wheel scrolls the page; Ctrl/Cmd+wheel
+   // zooms the canvas; +/- controls zoom; Fit/Overview resets; drag on
+   // blank canvas pans. Page scrolling is never trapped by the canvas.
    this.listen(this.viewport, "wheel", (event) => {
     if (!this.surface || this.selection.flow) return;
+    if (!event.ctrlKey && !event.metaKey) return;
     event.preventDefault();
     let delta = event.deltaY;
     if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) delta *= 16;
@@ -2869,15 +2873,17 @@ function architecturePartialTruth(data) {
 
   landscapeBounds() {
    if (this.selection.flow) return null;
+   // Decision 230 D3: fit bounds are the union of every group AND every
+   // principal node position. A singleton/unassigned principal node must
+   // never fall outside the fitted viewport just because it has no group.
    const positions = Array.from(this.groupPositions.values());
-   if (positions.length === 0) {
-    this.nodePositions.forEach((position, id) => {
-     if (id !== UNASSIGNED_ID) positions.push(position);
-    });
-   }
+   this.nodePositions.forEach((position, id) => {
+    if (id === UNASSIGNED_ID) return;
+    positions.push(position);
+   });
    if (positions.length === 0) return null;
-    return this.boundsForPositions(positions);
-   }
+   return this.boundsForPositions(positions);
+  }
 
    componentContextBounds(componentID) {
     const component = this.componentByID.get(text(componentID));
@@ -2963,7 +2969,13 @@ function architecturePartialTruth(data) {
     }
    this.surface.style.transform = "translate(" + this.view.x + "px," + this.view.y + "px) scale(" + this.view.scale + ")";
    this.root.style.setProperty("--rm-arch-scale", this.view.scale);
-  }
+   // Decision 230 D3 semantic zoom: overview scale shows title/count
+   // only; readable scale reveals descriptions and metadata.
+   this.root.setAttribute(
+    "data-semantic-scale",
+    this.view.scale < 0.9 ? "overview" : "readable"
+   );
+   }
 
    guidedTourStep() {
     if (!this.guidedTour.active) return null;
@@ -4098,8 +4110,14 @@ function architecturePartialTruth(data) {
      else principalRows.push(row);
     });
     principalRows.forEach((row) => {
-     const rowEl = element("button", "rm-arch__association-row");
-     rowEl.type = "button";
+     // Decision 230 D2: valid disclosure structure — a noninteractive
+     // container holding a toggle button (head + meta + chevron) and a
+     // sibling witness list. Witness source actions are NEVER nested
+     // inside the toggle; a witness click opens the source without
+     // toggling the disclosure.
+     const rowEl = element("div", "rm-arch__association-row");
+     const toggle = element("button", "rm-arch__association-row__toggle");
+     toggle.type = "button";
      const head = element("div", "rm-arch__association-row__head");
      const paired = row.paired && row.kind === "boundary";
      head.appendChild(element(
@@ -4110,7 +4128,7 @@ function architecturePartialTruth(data) {
      ));
      if (row.imported_family) head.appendChild(element("span", "rm-arch__association-family", row.imported_family));
      head.appendChild(element("span", "rm-arch__association-unit", row.owning_unit));
-     rowEl.appendChild(head);
+     toggle.appendChild(head);
      const meta = element("div", "rm-arch__association-row__meta");
      meta.appendChild(element(
       "span", "rm-arch__association-count",
@@ -4131,8 +4149,14 @@ function architecturePartialTruth(data) {
      if (Number(roles.tooling) > 0) roleParts.push(this.msg("architecture.role.tooling") + " " + roles.tooling);
      if (roleParts.length) meta.appendChild(element("span", "rm-arch__association-roles", roleParts.join(" · ")));
      if (row.paired) meta.appendChild(element("span", "rm-arch__association-paired", this.msg("architecture.value.paired_boundary_resource")));
-     rowEl.appendChild(meta);
-     // Exact witnesses expand in place (connection row click).
+     toggle.appendChild(meta);
+     const chevron = element("span", "rm-arch__association-chevron");
+     chevron.setAttribute("aria-hidden", "true");
+     chevron.textContent = "▸";
+     toggle.appendChild(chevron);
+     rowEl.appendChild(toggle);
+     // Exact witnesses expand in place (toggle click). Sibling list —
+     // source buttons are not descendants of the toggle button.
      const witnesses = element("div", "rm-arch__association-witnesses");
      witnesses.hidden = true;
      array(row.witnesses).forEach((witness) => {
@@ -4150,7 +4174,20 @@ function architecturePartialTruth(data) {
       witnesses.appendChild(jump);
      });
      rowEl.appendChild(witnesses);
-     this.listen(rowEl, "click", () => { witnesses.hidden = !witnesses.hidden; });
+     const witnessCount = array(row.witnesses).length;
+     if (witnessCount > 0) {
+      toggle.setAttribute("aria-expanded", "false");
+      toggle.setAttribute("aria-controls", "");
+      toggle.setAttribute("title", this.msg("architecture.label.expand_witnesses", { count: witnessCount }));
+      this.listen(toggle, "click", () => {
+       const willOpen = witnesses.hidden;
+       witnesses.hidden = !willOpen;
+       toggle.setAttribute("aria-expanded", String(willOpen));
+       chevron.textContent = willOpen ? "▾" : "▸";
+      });
+     } else {
+      toggle.setAttribute("aria-disabled", "true");
+     }
      associationSection.appendChild(rowEl);
     });
     // Broad-package observations collapse under a bounded disclosure.
@@ -4163,8 +4200,10 @@ function architecturePartialTruth(data) {
      ));
      broad.appendChild(summary);
      broadRows.forEach((row) => {
-      const rowEl = element("button", "rm-arch__association-row rm-arch__association-row--broad");
-      rowEl.type = "button";
+      // Decision 230 D2: same valid disclosure structure as principal rows.
+      const rowEl = element("div", "rm-arch__association-row rm-arch__association-row--broad");
+      const toggle = element("button", "rm-arch__association-row__toggle");
+      toggle.type = "button";
       const head = element("div", "rm-arch__association-row__head");
       head.appendChild(element(
        "strong", null, this.msg(row.kind === "boundary"
@@ -4172,7 +4211,7 @@ function architecturePartialTruth(data) {
       ));
       if (row.imported_family) head.appendChild(element("span", "rm-arch__association-family", row.imported_family));
       head.appendChild(element("span", "rm-arch__association-unit", row.owning_unit));
-      rowEl.appendChild(head);
+      toggle.appendChild(head);
       const meta = element("div", "rm-arch__association-row__meta");
       meta.appendChild(element(
        "span", "rm-arch__association-count",
@@ -4184,7 +4223,12 @@ function architecturePartialTruth(data) {
       if (Number(roles.test) > 0) roleParts.push(this.msg("architecture.role.test") + " " + roles.test);
       if (Number(roles.tooling) > 0) roleParts.push(this.msg("architecture.role.tooling") + " " + roles.tooling);
       if (roleParts.length) meta.appendChild(element("span", "rm-arch__association-roles", roleParts.join(" · ")));
-      rowEl.appendChild(meta);
+      toggle.appendChild(meta);
+      const chevron = element("span", "rm-arch__association-chevron");
+      chevron.setAttribute("aria-hidden", "true");
+      chevron.textContent = "▸";
+      toggle.appendChild(chevron);
+      rowEl.appendChild(toggle);
       const witnesses = element("div", "rm-arch__association-witnesses");
       witnesses.hidden = true;
       array(row.witnesses).forEach((witness) => {
@@ -4198,7 +4242,19 @@ function architecturePartialTruth(data) {
        witnesses.appendChild(jump);
       });
       rowEl.appendChild(witnesses);
-      this.listen(rowEl, "click", () => { witnesses.hidden = !witnesses.hidden; });
+      const witnessCount = array(row.witnesses).length;
+      if (witnessCount > 0) {
+       toggle.setAttribute("aria-expanded", "false");
+       toggle.setAttribute("title", this.msg("architecture.label.expand_witnesses", { count: witnessCount }));
+       this.listen(toggle, "click", () => {
+        const willOpen = witnesses.hidden;
+        witnesses.hidden = !willOpen;
+        toggle.setAttribute("aria-expanded", String(willOpen));
+        chevron.textContent = willOpen ? "▾" : "▸";
+       });
+      } else {
+       toggle.setAttribute("aria-disabled", "true");
+      }
       broad.appendChild(rowEl);
      });
      associationSection.appendChild(broad);

@@ -101,8 +101,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-overview-glance__row { display: grid; gap: .4rem 1rem; grid-template-columns: 150px minmax(0, 1fr); padding: .32rem 0; }
 .rm-overview-first-action { margin-top: .75rem; padding: .75rem .9rem; border: 1px solid var(--rm-border); border-radius: 10px; background: var(--rm-surface-raised, #fff); }
 .rm-overview-first-action__label { display: block; font-size: .76rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--rm-dim); margin-bottom: .4rem; }
-.rm-overview-first-action__button { display: inline-block; font: inherit; font-weight: 600; color: var(--rm-accent-contrast, #fff); background: var(--rm-accent, #2563eb); border: 0; border-radius: 8px; padding: .5rem .9rem; cursor: pointer; }
+.rm-overview-first-action__button { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: .4rem; font: inherit; font-weight: 600; color: var(--rm-accent-contrast, #fff); background: var(--rm-accent, #2563eb); border: 0; border-radius: 8px; padding: .5rem .9rem; cursor: pointer; }
+.rm-overview-first-action__button:hover { filter: brightness(1.08); }
 .rm-overview-first-action__button:focus-visible { outline: 2px solid var(--rm-accent, #2563eb); outline-offset: 2px; }
+.rm-overview-first-action__path { color: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78em; font-weight: 500; opacity: .92; }
 .rm-overview-first-action__location { margin: .45rem 0 0; font-size: .82rem; font-family: var(--rm-mono, ui-monospace, SFMono-Regular, Menlo, monospace); overflow-wrap: anywhere; }
 .rm-overview-first-action__reason { margin: .4rem 0 0; font-size: .84rem; color: var(--rm-dim); }
 .rm-overview-first-action__authority { margin: .25rem 0 0; font-size: .76rem; color: var(--rm-dim); font-style: italic; }
@@ -969,6 +971,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 /* Decision 229 D6 Study progressive disclosure: collapsed cards with
    independent evidence/scope badges, bounded previews, +N disclosure. */
 .rm-study-theme-card__title { background: transparent; border: 0; color: inherit; cursor: pointer; font: inherit; padding: 0; text-align: left; }
+.rm-study-theme-card__title:hover { color: var(--rm-accent); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.rm-study-theme-card__title:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: 2px; }
 .rm-study-theme-card__question { color: var(--rm-dim); font-size: .85rem; margin: .1rem 0 0; }
 .rm-study-theme-card__why { color: var(--rm-dim); font-size: .78rem; margin: .15rem 0 0; }
 .rm-study-theme-card__badges { align-items: center; display: flex; flex-wrap: wrap; gap: .4rem; }
@@ -979,6 +983,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-study-theme-card__kind { color: var(--rm-muted); font-size: .66rem; letter-spacing: .05em; text-transform: uppercase; }
 .rm-study-theme-card__previews { display: grid; gap: .3rem; list-style: none; margin: .1rem 0 0; padding: 0; }
 .rm-study-theme-card__preview { align-items: baseline; display: flex; gap: .4rem; font-size: .78rem; min-width: 0; }
+.rm-study-theme-card__preview-action { align-items: baseline; background: transparent; border: 0; border-radius: 6px; color: inherit; cursor: pointer; display: inline-flex; font: inherit; gap: .4rem; padding: .1rem .25rem; text-align: left; text-decoration: none; }
+.rm-study-theme-card__preview-action:hover { background: #f1f5f9; color: var(--rm-accent); }
+.rm-study-theme-card__preview-action:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: 1px; }
+.rm-study-theme-card__preview-action--unavailable { cursor: default; }
+.rm-study-theme-card__preview-action--unavailable:hover { background: transparent; color: inherit; }
+.rm-study-theme-card__preview-action--unavailable code { color: var(--rm-muted); }
+.rm-study-theme-card__preview-unavailable { color: var(--rm-muted); font-size: .66rem; font-style: italic; }
 .rm-study-theme-card__preview-code { color: var(--rm-dim); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .72rem; overflow-wrap: anywhere; }
 .rm-study-theme-card__preview-count { color: var(--rm-muted); font-size: .68rem; }
 .rm-study-theme-card__more { color: var(--rm-dim); font-size: .72rem; margin: .15rem 0 0; }
@@ -1013,7 +1024,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-mechanism-fragment__lane-head { align-items: center; display: flex; flex-wrap: wrap; gap: .45rem; }
 .rm-mechanism-fragment__kind { font-size: .78rem; font-weight: 750; }
 .rm-mechanism-fragment__mode { border-radius: 999px; background: #eef2ff; color: #3157d5; font-size: .62rem; font-weight: 700; padding: .14rem .45rem; }
-.rm-mechanism-fragment__location { color: var(--rm-dim); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .72rem; overflow-wrap: anywhere; }
+.rm-mechanism-fragment__location { background: transparent; border: 0; border-radius: 5px; color: var(--rm-dim); cursor: pointer; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .72rem; overflow-wrap: anywhere; padding: .05rem .2rem; }
+.rm-mechanism-fragment__location:hover { background: #f1f5f9; color: var(--rm-accent); }
+.rm-mechanism-fragment__location:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: 1px; }
+.rm-mechanism-fragment__location--text { color: var(--rm-muted); cursor: default; }
+.rm-mechanism-fragment__location--text:hover { background: transparent; color: var(--rm-muted); }
 .rm-mechanism-fragment__label { color: var(--rm-fg); font-size: .8rem; font-weight: 650; }
 .rm-mechanism-fragment__ordering { color: var(--rm-muted); font-size: .68rem; }
 .rm-mechanism-fragment__limitation { margin: .2rem 0 0; }
@@ -1316,6 +1331,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.theme.kind.learning": { params: [], text: "Learning theme" },
     "main.study.theme.callsite_count": { params: ["count"], format: function (params) { return "· " + params.count + " callsites"; } },
     "main.study.theme.more_readings": { params: ["count"], format: function (params) { return "+" + params.count + " readings"; } },
+    "main.study.theme.source_unavailable": { params: [], text: "exact source unavailable in this report" },
     "main.study.theme.expected_learning": { params: ["learning"], format: function (params) { return "Expected learning: " + params.learning; } },
     "main.study.theme.limitations": { params: [], text: "Limitations and provenance" },
     "main.study.theme.supported_explanation": { params: [], text: "Every reading in this theme is backed by an exact source anchor." },
@@ -2047,7 +2063,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.aria.inspector": { params: [], text: "Architecture inspector" },
     "architecture.error.layout_failed": { params: [], text: "Architecture layout could not be generated." },
     "architecture.error.renderer_unavailable": { params: [], text: "Architecture renderer is unavailable." },
-    "architecture.hint.drag_groups_fit": { params: ["count"], format: function (params) { return formatCountTemplate("Drag to explore · {count} architecture groups · Fit keeps labels readable", params); } },
+    "architecture.hint.drag_groups_fit": { params: ["count"], format: function (params) { return formatCountTemplate("Drag to explore · {count} architecture groups · wheel scrolls the page, Ctrl/Cmd+wheel zooms, Fit shows every area", params); } },
     "architecture.fallback.repository_area": { params: [], text: "Repository area" },
     "architecture.label.unassigned_subsystem": { params: [], text: "Unassigned subsystem" },
     "architecture.label.unresolved": { params: [], text: "Unresolved" },
@@ -2188,6 +2204,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.copy.no_observed_studies": { params: [], text: "No study theme maps to this component in the recorded analysis." },
     "architecture.copy.no_observed_callsites": { params: [], text: "No boundary/resource observation rows for this component in the recorded analysis." },
     "architecture.label.observation_count": { params: ["count"], format: function (params) { return formatCountTemplate("{count} observation(s)", params); } },
+    "architecture.label.expand_witnesses": { params: ["count"], format: function (params) { return "Show " + params.count + " witness source(s)"; } },
     "architecture.value.paired_boundary_resource": { params: [], text: "paired boundary + resource" },
     "architecture.value.interaction_boundary_resource": { params: [], text: "Observed external/state interaction" },
     "architecture.precision.exact_symbol_scope": { params: [], text: "observed in exact symbol scope" },
@@ -2792,6 +2809,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.theme.kind.learning": { params: [], text: "Обучающая тема" },
     "main.study.theme.callsite_count": { params: ["count"], format: function (params) { return "· " + params.count + " вызовов"; } },
     "main.study.theme.more_readings": { params: ["count"], format: function (params) { return "+" + params.count + " чтений"; } },
+    "main.study.theme.source_unavailable": { params: [], text: "точный источник недоступен в этом отчёте" },
     "main.study.theme.expected_learning": { params: ["learning"], format: function (params) { return "Ожидаемый результат изучения: " + params.learning; } },
     "main.study.theme.limitations": { params: [], text: "Ограничения и происхождение" },
     "main.study.theme.supported_explanation": { params: [], text: "Каждое чтение этой темы опирается на точный исходный якорь." },
@@ -3523,7 +3541,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.aria.inspector": { params: [], text: "Инспектор архитектуры" },
     "architecture.error.layout_failed": { params: [], text: "Не удалось построить компоновку архитектуры." },
     "architecture.error.renderer_unavailable": { params: [], text: "Средство отрисовки архитектуры недоступно." },
-    "architecture.hint.drag_groups_fit": { params: ["count"], format: function (params) { return formatCountTemplate("Перетаскивайте карту · архитектурных групп: {count} · кнопка «Вместить» сохраняет читаемость", params); } },
+    "architecture.hint.drag_groups_fit": { params: ["count"], format: function (params) { return formatCountTemplate("Перетаскивайте карту · архитектурных групп: {count} · колесо скроллит страницу, Ctrl/Cmd+колесо — масштаб, «Вместить» показывает все области", params); } },
     "architecture.fallback.repository_area": { params: [], text: "Область репозитория" },
     "architecture.label.unassigned_subsystem": { params: [], text: "Подсистема без группы" },
     "architecture.label.unresolved": { params: [], text: "Не определено" },
@@ -3664,6 +3682,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.copy.no_observed_studies": { params: [], text: "Ни одна тема изучения не связана с этим компонентом в записанном анализе." },
     "architecture.copy.no_observed_callsites": { params: [], text: "Для этого компонента в записанном анализе не найдено наблюдений границ/ресурсов." },
     "architecture.label.observation_count": { params: ["count"], format: function (params) { return russianCount(params.count, "наблюдение", "наблюдения", "наблюдений"); } },
+    "architecture.label.expand_witnesses": { params: ["count"], format: function (params) { return "Показать " + params.count + " исходник(а/ов) свидетелей"; } },
     "architecture.value.paired_boundary_resource": { params: [], text: "парные граница + ресурс" },
     "architecture.value.interaction_boundary_resource": { params: [], text: "Наблюдаемое внешнее / state-взаимодействие" },
     "architecture.precision.exact_symbol_scope": { params: [], text: "наблюдается в точном скоупе символа" },
@@ -8880,13 +8899,24 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			var previews = el('ul', 'rm-study-theme-card__previews');
 			previewRows.forEach(function (group) {
 				var item = txt('li', 'rm-study-theme-card__preview', '');
-				var row = el('div', 'rm-study-theme-card__preview-row');
-				row.appendChild(txt('span', 'rm-study-theme-card__preview-symbol', bareSourceSymbol(group.symbol)));
-				var callsiteCount = group.count > 1 ? msg('main.study.theme.callsite_count', { count: group.count }) : '';
-				if (callsiteCount) row.appendChild(txt('span', 'rm-study-theme-card__preview-count', callsiteCount));
 				var firstLocation = studyReadingLocation(group.first);
-				if (firstLocation) row.appendChild(txt('code', 'rm-study-theme-card__preview-location', formatCodeLocation(firstLocation)));
-				item.appendChild(row);
+				// Decision 230 D1: each preview symbol+path is ONE
+				// independent source action (never a link plus inert
+				// location, never an unexplained inert value). When no
+				// source action is available the preview renders as a
+				// neutral non-link row with a visible reason.
+				var action = renderStudySourceAction(group.first, 'rm-study-theme-card__preview-action', true);
+				if (action) {
+					item.appendChild(action);
+				} else if (firstLocation) {
+					var unavailable = el('div', 'rm-study-theme-card__preview-action rm-study-theme-card__preview-action--unavailable');
+					unavailable.appendChild(txt('span', 'rm-study-theme-card__preview-symbol', bareSourceSymbol(group.symbol)));
+					unavailable.appendChild(txt('code', 'rm-study-theme-card__preview-location', formatCodeLocation(firstLocation)));
+					unavailable.appendChild(txt('span', 'rm-study-theme-card__preview-unavailable', msg('main.study.theme.source_unavailable')));
+					item.appendChild(unavailable);
+				}
+				var callsiteCount = group.count > 1 ? msg('main.study.theme.callsite_count', { count: group.count }) : '';
+				if (callsiteCount) item.appendChild(txt('span', 'rm-study-theme-card__preview-count', callsiteCount));
 				previews.appendChild(item);
 			});
 			article.appendChild(previews);
@@ -9309,21 +9339,38 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		// package is already stated by the location (path:line) right next
 		// to it. Full qualified paths are noise on the card.
 		var symbol = bareSourceSymbol(String(reading && reading.symbol || ''));
-		var embedded = reading && sourceSnippetAvailable(reading.source) ? reading.source : null;
+		// Decision 230 D1: embedded snippets are resolved by exact
+		// location too (atlas readings do not carry a .source field), so
+		// the source action works in embedded reports without a server or
+		// GitHub/GitLab jump — same contract as Overview object cards.
+		var embedded = reading && sourceSnippetAvailable(reading.source) ? reading.source : (embeddedSourceForLocation(location) || null);
 		if (!location || !symbol || (!embedded && !sourceLocationActionAvailable(location))) return null;
-		var action = sourceActionElement(
-			symbol,
-			(cls || '') + ' rm-source-action-link',
-			location,
-			location.end_line,
-			function () {
-				if (embedded) {
-					openSourceSnippet(embedded, location, false, { drawerFirst: true });
-					return;
+		// Decision 230 D1 priority: a pinned static link (GitHub/GitLab,
+		// target=_blank) is the primary source action; the embedded
+		// snippet drawer button is the fallback when no static or server
+		// jump exists.
+		var action;
+		if (embedded && sourceSnippetHasCode(embedded) && !staticSourceMode() && !(serverMode() && currentRunID() && SOURCE_IDS[location.path])) {
+			action = el('button', (cls || '') + ' rm-source-action-link');
+			action.type = 'button';
+			action.onclick = function () {
+				openSourceSnippet(embedded, location, false, { drawerFirst: true });
+			};
+			// The embedded button carries the same visible label the
+			// static/server action would: the bare symbol (or symbol +
+			// location when includeLocation is set below).
+			action.appendChild(txt('', '', symbol));
+		} else {
+			action = sourceActionElement(
+				symbol,
+				(cls || '') + ' rm-source-action-link',
+				location,
+				location.end_line,
+				function () {
+					openSourceLocation(location);
 				}
-				openSourceLocation(location);
-			}
-		);
+			);
+		}
 		if (!action) return null;
 		action.setAttribute('aria-label', symbol + ' · ' + formatCodeLocation(location));
 		if (includeLocation) {
@@ -9370,13 +9417,18 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		// just without a click action.
 		var symbol = String(reading && reading.symbol || '');
 		var bare = bareSourceSymbol(symbol);
-		var open = renderStudySourceAction(reading, 'rm-study-reading-anchor__open', false);
+		// Decision 230 D1: symbol AND path:line form ONE coherent source
+		// action (never a link plus an inert location beside it).
+		var open = renderStudySourceAction(reading, 'rm-study-reading-anchor__open', true);
 		if (open) {
 			row.appendChild(open);
 		} else {
-			// Decision 222: the plain fallback shows the bare symbol name;
-			// the package is already stated by the location next to it.
-			var plain = txt('span', 'rm-study-reading-anchor__open rm-study-reading-anchor__open--plain', bare);
+			// Decision 222/230 D1: the plain fallback shows the bare
+			// symbol name AND the exact location as a neutral non-link
+			// row (never a dead button, never a silently missing path).
+			var plain = el('span', 'rm-study-reading-anchor__open rm-study-reading-anchor__open--plain');
+			plain.appendChild(txt('', '', bare));
+			plain.appendChild(txt('code', 'rm-study-reading-anchor__location', formatCodeLocation(location)));
 			row.appendChild(plain);
 		}
 		var meta = el('div', 'rm-study-reading-anchor__meta');
@@ -9385,7 +9437,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		// (direct/supporting) next to the typed kind.
 		if (reading.role === 'direct') meta.appendChild(txt('span', 'rm-study-theme-card__reading-role', msg('main.study.theme.reading.role.direct')));
 		else if (reading.role === 'supporting') meta.appendChild(txt('span', 'rm-study-theme-card__reading-role', msg('main.study.theme.reading.role.supporting')));
-		meta.appendChild(txt('code', 'rm-study-reading-anchor__location', formatCodeLocation(location)));
+		// Decision 230 D1: path:line lives inside the single source
+		// action above; it is not duplicated as an inert code node here.
 		row.appendChild(meta);
 		copy.appendChild(row);
 		if (reading.what_to_look_for) copy.appendChild(txt('p', 'rm-study-reading-anchor__explain', reading.what_to_look_for));
@@ -10881,18 +10934,20 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
 	// renderOverviewFirstAction renders the independent first action as a
 	// prominent clickable row with its reason and authority (Decision 221 C).
+	// Decision 230 D1: the action label AND exact path live inside the one
+	// coherent action control — never a button plus inert source text.
 	function renderOverviewFirstAction(action) {
 		var block = el('div', 'rm-overview-first-action');
 		block.appendChild(txt('span', 'rm-overview-first-action__label', msg('main.overview.first_action.title')));
 		var button = txt('button', 'rm-overview-first-action__button', action.label);
 		button.type = 'button';
 		button.onclick = action.action;
-		block.appendChild(button);
 		if (action.path) {
 			var location = action.line ? action.path + ':' + action.line : action.path;
 			if (action.symbol) location += ' · ' + action.symbol;
-			block.appendChild(txt('p', 'rm-overview-first-action__location', location));
+			button.appendChild(txt('code', 'rm-overview-first-action__path', location));
 		}
+		block.appendChild(button);
 		if (action.reason) block.appendChild(txt('p', 'rm-overview-first-action__reason', action.reason));
 		if (action.authority) block.appendChild(txt('p', 'rm-overview-first-action__authority', action.authority));
 		return block;
@@ -13971,7 +14026,25 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     head.appendChild(txt('span', 'rm-mechanism-fragment__mode', mechanismSupportModeLabel(transition)));
     item.appendChild(head);
     var callsite = transition.path ? transition.path + (transition.line ? ':' + transition.line : '') : '';
-    if (callsite) item.appendChild(txt('code', 'rm-mechanism-fragment__location', callsite));
+    if (callsite) {
+      // Decision 230 D1: every mechanism path:line is a real source
+      // action when an exact snippet resolves it; otherwise it renders
+      // as a neutral non-link location (never a dead button).
+      var location = { path: transition.path, line: Number(transition.line) || 0 };
+      var resolution = exactOverviewActionResolutionForLocation(location);
+      var snippet = resolution && resolution.source && resolution.source.snippet;
+      if (snippet) {
+        var locationAction = el('button', 'rm-mechanism-fragment__location rm-source-action-link');
+        locationAction.type = 'button';
+        locationAction.textContent = callsite;
+        locationAction.onclick = function () {
+          openSourceSnippet(snippet, resolution.source.location, false, { drawerFirst: true });
+        };
+        item.appendChild(locationAction);
+      } else {
+        item.appendChild(txt('code', 'rm-mechanism-fragment__location rm-mechanism-fragment__location--text', callsite));
+      }
+    }
     // Decision 229 D4: the entry lane's raw label starts with the claim
     // kind ("process entry …"), which the kind badge already states —
     // strip the prefix so primary copy never repeats a raw enum.

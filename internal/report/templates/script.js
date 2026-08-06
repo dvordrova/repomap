@@ -4706,13 +4706,24 @@
 			var previews = el('ul', 'rm-study-theme-card__previews');
 			previewRows.forEach(function (group) {
 				var item = txt('li', 'rm-study-theme-card__preview', '');
-				var row = el('div', 'rm-study-theme-card__preview-row');
-				row.appendChild(txt('span', 'rm-study-theme-card__preview-symbol', bareSourceSymbol(group.symbol)));
-				var callsiteCount = group.count > 1 ? msg('main.study.theme.callsite_count', { count: group.count }) : '';
-				if (callsiteCount) row.appendChild(txt('span', 'rm-study-theme-card__preview-count', callsiteCount));
 				var firstLocation = studyReadingLocation(group.first);
-				if (firstLocation) row.appendChild(txt('code', 'rm-study-theme-card__preview-location', formatCodeLocation(firstLocation)));
-				item.appendChild(row);
+				// Decision 230 D1: each preview symbol+path is ONE
+				// independent source action (never a link plus inert
+				// location, never an unexplained inert value). When no
+				// source action is available the preview renders as a
+				// neutral non-link row with a visible reason.
+				var action = renderStudySourceAction(group.first, 'rm-study-theme-card__preview-action', true);
+				if (action) {
+					item.appendChild(action);
+				} else if (firstLocation) {
+					var unavailable = el('div', 'rm-study-theme-card__preview-action rm-study-theme-card__preview-action--unavailable');
+					unavailable.appendChild(txt('span', 'rm-study-theme-card__preview-symbol', bareSourceSymbol(group.symbol)));
+					unavailable.appendChild(txt('code', 'rm-study-theme-card__preview-location', formatCodeLocation(firstLocation)));
+					unavailable.appendChild(txt('span', 'rm-study-theme-card__preview-unavailable', msg('main.study.theme.source_unavailable')));
+					item.appendChild(unavailable);
+				}
+				var callsiteCount = group.count > 1 ? msg('main.study.theme.callsite_count', { count: group.count }) : '';
+				if (callsiteCount) item.appendChild(txt('span', 'rm-study-theme-card__preview-count', callsiteCount));
 				previews.appendChild(item);
 			});
 			article.appendChild(previews);
@@ -5274,21 +5285,38 @@
 		// package is already stated by the location (path:line) right next
 		// to it. Full qualified paths are noise on the card.
 		var symbol = bareSourceSymbol(String(reading && reading.symbol || ''));
-		var embedded = reading && sourceSnippetAvailable(reading.source) ? reading.source : null;
+		// Decision 230 D1: embedded snippets are resolved by exact
+		// location too (atlas readings do not carry a .source field), so
+		// the source action works in embedded reports without a server or
+		// GitHub/GitLab jump — same contract as Overview object cards.
+		var embedded = reading && sourceSnippetAvailable(reading.source) ? reading.source : (embeddedSourceForLocation(location) || null);
 		if (!location || !symbol || (!embedded && !sourceLocationActionAvailable(location))) return null;
-		var action = sourceActionElement(
-			symbol,
-			(cls || '') + ' rm-source-action-link',
-			location,
-			location.end_line,
-			function () {
-				if (embedded) {
-					openSourceSnippet(embedded, location, false, { drawerFirst: true });
-					return;
+		// Decision 230 D1 priority: a pinned static link (GitHub/GitLab,
+		// target=_blank) is the primary source action; the embedded
+		// snippet drawer button is the fallback when no static or server
+		// jump exists.
+		var action;
+		if (embedded && sourceSnippetHasCode(embedded) && !staticSourceMode() && !(serverMode() && currentRunID() && SOURCE_IDS[location.path])) {
+			action = el('button', (cls || '') + ' rm-source-action-link');
+			action.type = 'button';
+			action.onclick = function () {
+				openSourceSnippet(embedded, location, false, { drawerFirst: true });
+			};
+			// The embedded button carries the same visible label the
+			// static/server action would: the bare symbol (or symbol +
+			// location when includeLocation is set below).
+			action.appendChild(txt('', '', symbol));
+		} else {
+			action = sourceActionElement(
+				symbol,
+				(cls || '') + ' rm-source-action-link',
+				location,
+				location.end_line,
+				function () {
+					openSourceLocation(location);
 				}
-				openSourceLocation(location);
-			}
-		);
+			);
+		}
 		if (!action) return null;
 		action.setAttribute('aria-label', symbol + ' · ' + formatCodeLocation(location));
 		if (includeLocation) {
@@ -5335,13 +5363,18 @@
 		// just without a click action.
 		var symbol = String(reading && reading.symbol || '');
 		var bare = bareSourceSymbol(symbol);
-		var open = renderStudySourceAction(reading, 'rm-study-reading-anchor__open', false);
+		// Decision 230 D1: symbol AND path:line form ONE coherent source
+		// action (never a link plus an inert location beside it).
+		var open = renderStudySourceAction(reading, 'rm-study-reading-anchor__open', true);
 		if (open) {
 			row.appendChild(open);
 		} else {
-			// Decision 222: the plain fallback shows the bare symbol name;
-			// the package is already stated by the location next to it.
-			var plain = txt('span', 'rm-study-reading-anchor__open rm-study-reading-anchor__open--plain', bare);
+			// Decision 222/230 D1: the plain fallback shows the bare
+			// symbol name AND the exact location as a neutral non-link
+			// row (never a dead button, never a silently missing path).
+			var plain = el('span', 'rm-study-reading-anchor__open rm-study-reading-anchor__open--plain');
+			plain.appendChild(txt('', '', bare));
+			plain.appendChild(txt('code', 'rm-study-reading-anchor__location', formatCodeLocation(location)));
 			row.appendChild(plain);
 		}
 		var meta = el('div', 'rm-study-reading-anchor__meta');
@@ -5350,7 +5383,8 @@
 		// (direct/supporting) next to the typed kind.
 		if (reading.role === 'direct') meta.appendChild(txt('span', 'rm-study-theme-card__reading-role', msg('main.study.theme.reading.role.direct')));
 		else if (reading.role === 'supporting') meta.appendChild(txt('span', 'rm-study-theme-card__reading-role', msg('main.study.theme.reading.role.supporting')));
-		meta.appendChild(txt('code', 'rm-study-reading-anchor__location', formatCodeLocation(location)));
+		// Decision 230 D1: path:line lives inside the single source
+		// action above; it is not duplicated as an inert code node here.
 		row.appendChild(meta);
 		copy.appendChild(row);
 		if (reading.what_to_look_for) copy.appendChild(txt('p', 'rm-study-reading-anchor__explain', reading.what_to_look_for));
@@ -6846,18 +6880,20 @@
 
 	// renderOverviewFirstAction renders the independent first action as a
 	// prominent clickable row with its reason and authority (Decision 221 C).
+	// Decision 230 D1: the action label AND exact path live inside the one
+	// coherent action control — never a button plus inert source text.
 	function renderOverviewFirstAction(action) {
 		var block = el('div', 'rm-overview-first-action');
 		block.appendChild(txt('span', 'rm-overview-first-action__label', msg('main.overview.first_action.title')));
 		var button = txt('button', 'rm-overview-first-action__button', action.label);
 		button.type = 'button';
 		button.onclick = action.action;
-		block.appendChild(button);
 		if (action.path) {
 			var location = action.line ? action.path + ':' + action.line : action.path;
 			if (action.symbol) location += ' · ' + action.symbol;
-			block.appendChild(txt('p', 'rm-overview-first-action__location', location));
+			button.appendChild(txt('code', 'rm-overview-first-action__path', location));
 		}
+		block.appendChild(button);
 		if (action.reason) block.appendChild(txt('p', 'rm-overview-first-action__reason', action.reason));
 		if (action.authority) block.appendChild(txt('p', 'rm-overview-first-action__authority', action.authority));
 		return block;
@@ -9941,7 +9977,25 @@
     head.appendChild(txt('span', 'rm-mechanism-fragment__mode', mechanismSupportModeLabel(transition)));
     item.appendChild(head);
     var callsite = transition.path ? transition.path + (transition.line ? ':' + transition.line : '') : '';
-    if (callsite) item.appendChild(txt('code', 'rm-mechanism-fragment__location', callsite));
+    if (callsite) {
+      // Decision 230 D1: every mechanism path:line is a real source
+      // action when an exact snippet resolves it; otherwise it renders
+      // as a neutral non-link location (never a dead button).
+      var location = { path: transition.path, line: Number(transition.line) || 0 };
+      var resolution = exactOverviewActionResolutionForLocation(location);
+      var snippet = resolution && resolution.source && resolution.source.snippet;
+      if (snippet) {
+        var locationAction = el('button', 'rm-mechanism-fragment__location rm-source-action-link');
+        locationAction.type = 'button';
+        locationAction.textContent = callsite;
+        locationAction.onclick = function () {
+          openSourceSnippet(snippet, resolution.source.location, false, { drawerFirst: true });
+        };
+        item.appendChild(locationAction);
+      } else {
+        item.appendChild(txt('code', 'rm-mechanism-fragment__location rm-mechanism-fragment__location--text', callsite));
+      }
+    }
     // Decision 229 D4: the entry lane's raw label starts with the claim
     // kind ("process entry …"), which the kind badge already states —
     // strip the prefix so primary copy never repeats a raw enum.
