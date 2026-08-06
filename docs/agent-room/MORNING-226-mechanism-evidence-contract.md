@@ -129,6 +129,17 @@ CURRENT.md updated (decisions 223-226 registered; D219 remains DEFERRED/history)
 - Binary: SHA-256 above
 - Golden: internal/report/testdata/report.golden.html (regenerated, green)
 
+## Run table (Archive 6, consolidated for the expert)
+
+| Run | Synthesis | Why | Report | Notes |
+|---|---|---|---|---|
+| etcd `205931-55b7b3a7610b` | failed (`response.invalid_proposal`) | components without `ref` — violated D216 `{"ref":"c1",…}` contract | local units fallback (215 units, 27 relations) | honest fail-closed; request was 141–178KB, 59% package_import — now removed by D223 |
+| casdoor `205718-0d14b5ff7dc5` | failed (`proposal.duplicate_component_identity`) | same member (u1) in «Точка входа» and «Провайдерах аутентификации» | local units fallback; associations 218/218; fragment built | honest fail-closed; full association rows + mechanism fragment verified in UI |
+| telebot `205933` | ok | — | full | 8/8 association observations |
+| restic `205940-58c9354b0d45` | ok | — | full | «Границы безопасности» = root scope (60 obs) — honestly wide, UI shows counts + omissions |
+
+Fresh dev-runs have no `github_source_links` (no jump actions offered — plain references per contract); the original 5 Archive-5 fixture runs do have them.
+
 ## Known bounds / honest limitations
 
 - No push (program rule); owner reviews.
