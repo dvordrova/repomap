@@ -1230,9 +1230,14 @@ process.stdout.write(JSON.stringify({
 	// anchor (plus a bounded "+N more" note), so the stripped-source static
 	// anatomy exposes one pinned source action per exact-backed component
 	// (component-a, component-b, ambiguous) rather than the full list.
-	if got.StrippedStaticOverview.SurfaceCount != 4 || got.StrippedStaticOverview.ComponentCount != 4 ||
-		len(got.StrippedStaticOverview.PrimaryTargets) != 8 ||
-		len(got.StrippedStaticOverview.SourceTargets) != 3 {
+	// Decision 233 F4: the entry grid builds LAZILY — the static anatomy
+	// renders the 3 representatives plus the Show-all N toggle (the full
+	// 4-card grid appears only on demand).
+	if got.StrippedStaticOverview.SurfaceCount != 3 || got.StrippedStaticOverview.ComponentCount != 4 ||
+		len(got.StrippedStaticOverview.PrimaryTargets) != 7 ||
+		len(got.StrippedStaticOverview.SourceTargets) != 3 ||
+		!strings.Contains(got.StrippedStaticOverview.Rendered, "Unclassified entries") ||
+		!strings.Contains(got.StrippedStaticOverview.Rendered, "Show all 4") {
 		t.Fatalf("stripped-source static anatomy = %#v", got.StrippedStaticOverview)
 	}
 	for _, target := range got.StrippedStaticOverview.PrimaryTargets {

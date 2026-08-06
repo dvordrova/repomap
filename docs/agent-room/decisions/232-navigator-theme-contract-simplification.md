@@ -43,10 +43,10 @@ Backend restores from the selected action record, exactly and closed:
 - the canonical action record for product projection.
 
 Keep exact catalog validation and exact action_ref validation (unknown
-action ref → item-scope reject with the counted finding; no fallback
-silently). Remove the "selected action target_ref must equal the selected
-trail source_ref" model-side constraint (backend re-derives and validates).
-No model echo of backend-owned evidence.
+action ref → whole-response ReferenceError, closed, with the code in the
+counted finding; no fallback silently). Remove the "selected action target_ref
+must equal the selected trail source_ref" model-side constraint (backend
+re-derives and validates). No model echo of backend-owned evidence.
 
 ### Theme Scout (`internal/themestudy`)
 

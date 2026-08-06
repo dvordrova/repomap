@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // AnchorInfo is the exact backend-owned identity for one a* anchor used to
@@ -51,6 +52,118 @@ type workTheme struct {
 	entries     []publishedEntry
 	canonicalID string
 	normalKey   string
+	// Decision 233: semantic-equivalent co-projected themes retain their
+	// title/question/readings as alternates on the representative card.
+	alternateTitles    []string
+	alternateQuestions []string
+	alternateReadings  []Reading
+}
+
+// coProjectTheme folds a semantic-equivalent theme into the representative
+// workTheme (Decision 233): the alternate title/question are retained as
+// provenance and every distinct published reading appends (deduplicated by
+// exact public identity, bounded by the published-set limits).
+func coProjectTheme(target *workTheme, theme AdjudicatedTheme, entries []publishedEntry, anchors map[string]AnchorInfo) {
+	target.alternateTitles = append(target.alternateTitles, theme.FinalTitle)
+	target.alternateQuestions = append(target.alternateQuestions, theme.FinalQuestion)
+	seenIdentity := make(map[string]struct{}, len(target.alternateReadings))
+	for _, existing := range target.alternateReadings {
+		seenIdentity[readingPublicIdentity(existing)] = struct{}{}
+	}
+	for _, existing := range target.entries {
+		seenIdentity[readingPublicIdentity(existing.reading)] = struct{}{}
+	}
+	for _, entry := range entries {
+		identity := readingPublicIdentity(entry.reading)
+		if _, dup := seenIdentity[identity]; dup {
+			continue
+		}
+		seenIdentity[identity] = struct{}{}
+		target.alternateReadings = append(target.alternateReadings, entry.reading)
+	}
+}
+
+func readingPublicIdentity(reading Reading) string {
+	return fmt.Sprintf("%s\x00%d\x00%s", reading.Path, reading.Line, reading.Symbol)
+}
+
+// anchorFamily derives a repository-independent source family from an
+// anchor's exact path: the top-level directory ("" for a root path). This
+// is a generic lexical rule — no hard-coded TLS/logging/config keyword
+// anywhere — so any overrepresented family (TLS/certificates, logging,
+// metrics, config, serialization, tests, release tooling, ...) triggers the
+// same concentration control.
+func anchorFamily(info AnchorInfo) string {
+	trimmed := strings.TrimPrefix(strings.TrimPrefix(info.Path, "/"), "./")
+	if index := strings.IndexByte(trimmed, '/'); index > 0 {
+		return trimmed[:index]
+	}
+	return ""
+}
+
+// portfolioConcentration counts accepted themes by source family and
+// returns the dominating family when one family holds more than half of the
+// principal shelf, at least two themes share it, AND other families hold
+// exact evidence (F7, fresh review: a homogeneous single-family repository
+// is not "dominated" — it has no alternative evidence to rank behind). It
+// never deletes or re-ranks; the Study status publishes the exact
+// before/after counts.
+func portfolioConcentration(all []workTheme) (family string, count, total int) {
+	total = len(all)
+	if total < 2 {
+		return "", 0, total
+	}
+	counts := make(map[string]int, total)
+	for _, theme := range all {
+		// The family of a theme is the family of its first published
+		// reading (stable: entries are ordered by the adjudicator's
+		// reading order, then canonical order).
+		if len(theme.entries) == 0 {
+			continue
+		}
+		counts[anchorFamily(AnchorInfo{
+			Path:   theme.entries[0].reading.Path,
+			Line:   theme.entries[0].reading.Line,
+			Symbol: theme.entries[0].reading.Symbol,
+		})]++
+	}
+	if len(counts) < 2 {
+		return "", 0, total
+	}
+	for candidate, n := range counts {
+		if n*2 > total && n >= 2 {
+			return candidate, n, total
+		}
+	}
+	return "", 0, total
+}
+
+// applyConcentration marks every card whose first-reading family matches the
+// dominating family with an exact-count marker and records the diagnostic
+// counts. It never deletes or re-ranks (Decision 233).
+func applyConcentration(cards []ThemeCard, all []workTheme, diagnostics map[string]int) {
+	family, count, total := portfolioConcentration(all)
+	if family == "" {
+		return
+	}
+	for index, w := range all {
+		if len(w.entries) == 0 {
+			continue
+		}
+		themeFamily := anchorFamily(AnchorInfo{
+			Path:   w.entries[0].reading.Path,
+			Line:   w.entries[0].reading.Line,
+			Symbol: w.entries[0].reading.Symbol,
+		})
+		if themeFamily != family {
+			continue
+		}
+		cards[index].ConcentrationDiagnostic = fmt.Sprintf(
+			"%s:%d/%d", family, count, total)
+	}
+	diagnostics["concentrated_family"] = count
+	diagnostics["portfolio_total"] = total
+	diagnostics["concentration_other"] = total - count
 }
 
 // themeKindPortfolioRank orders theme kinds deterministically for the
@@ -85,7 +198,7 @@ func Reduce(input ReducerInput) (Reduction, error) {
 
 	var all []workTheme
 	seenCanonical := make(map[string]struct{})
-	seenNormal := make(map[string]struct{})
+	seenNormal := make(map[string]int) // normalKey -> index into all
 	for _, theme := range input.Themes {
 		candidate, ok := input.Candidates[theme.CandidateRef]
 		if !ok {
@@ -103,12 +216,17 @@ func Reduce(input ReducerInput) (Reduction, error) {
 			continue
 		}
 		normalKey := normalizeProse(theme.FinalQuestion) + "|" + normalizeProse(theme.FinalTitle)
-		if _, dup := seenNormal[normalKey]; dup {
-			reduction.Omitted++
+		if earlier, dup := seenNormal[normalKey]; dup {
+			// Decision 233 (Archive 9): a semantic-equivalent theme
+			// CO-PROJECTS into the earlier card instead of being dropped.
+			// Its title/question become alternate provenance and its
+			// distinct readings append (bounded, deduplicated by exact
+			// public identity).
+			coProjectTheme(&all[earlier], theme, entries, input.Anchors)
 			continue
 		}
 		seenCanonical[canonicalID] = struct{}{}
-		seenNormal[normalKey] = struct{}{}
+		seenNormal[normalKey] = len(all)
 		all = append(all, workTheme{theme: theme, kind: candidate.ThemeKind, entries: entries, canonicalID: canonicalID, normalKey: normalKey})
 	}
 
@@ -152,7 +270,18 @@ func Reduce(input ReducerInput) (Reduction, error) {
 		// qualify the question. Any supporting-only facet, any unknown, or
 		// a narrowed reading set makes the badge partial.
 		badge := "editorial_source_backed"
-		if supporting > 0 || len(w.theme.Unknowns) > 0 || direct < len(w.entries) {
+		// Decision 233 (F5, fresh review): co-projected alternate readings
+		// are part of the visible card — a supporting/weak alternate makes
+		// the badge partial (the badge must match the final visible
+		// promise, never overstate).
+		alternateHasSupportingOrUnknown := false
+		for _, alternate := range w.alternateReadings {
+			if alternate.Fit != FitDirect {
+				alternateHasSupportingOrUnknown = true
+				break
+			}
+		}
+		if supporting > 0 || len(w.theme.Unknowns) > 0 || direct < len(w.entries) || alternateHasSupportingOrUnknown {
 			badge = "partial"
 		}
 		readings := make([]Reading, 0, len(w.entries))
@@ -171,9 +300,16 @@ func Reduce(input ReducerInput) (Reduction, error) {
 			Badge:            badge,
 			DirectCount:      direct,
 			SupportingCount:  supporting,
+			// Decision 233: co-projected semantic equivalents are retained
+			// as alternate provenance (titles/questions/readings) — nothing
+			// silently vanishes.
+			AlternateTitles:    w.alternateTitles,
+			AlternateQuestions: w.alternateQuestions,
+			AlternateReadings:  w.alternateReadings,
 		})
 	}
 	reduction.Diagnostics["published"] = len(reduction.Cards)
+	applyConcentration(reduction.Cards, all, reduction.Diagnostics)
 	if reduction.Omitted > 0 {
 		reduction.Partial = true
 	}

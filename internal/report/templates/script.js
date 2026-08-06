@@ -6303,11 +6303,15 @@
 	}
 
 	// overviewEntryClassifications groups eligible entry surfaces into
-	// user-facing classes derived from existing fields only (Decision 217):
-	// primary product entry, secondary service, tooling/CLI, library API.
-	// Duplicate "HTTP server" cards with no behavioral distinction are
-	// coalesced into one classified group.
+	// user-facing classes derived from existing fields only. Decision 233
+	// (Archive 9): the grouping is repository-shape + product-role aware —
+	// cli_command is PRIMARY on CLI-shaped repositories, exact HTTP routes
+	// group as primary on service/application shapes, library APIs on
+	// library shapes, jobs/consumers on worker shapes — instead of the old
+	// kind-only collapse that treated every cli_command as tooling.
 	function overviewEntryClassifications(objects) {
+		var archetype = String(DATA.repository_archetype ||
+			(DATA.architecture_canvas && DATA.architecture_canvas.repository_archetype) || '');
 		var groups = [];
 		var byClass = {};
 		var push = function (key, labelMessageID, items) {
@@ -6315,11 +6319,36 @@
 			byClass[key] = { key: key, labelMessageID: labelMessageID, items: items };
 			groups.push(byClass[key]);
 		};
-		var primary = [], service = [], tooling = [], library = [], other = [];
+		var primary = [], service = [], tooling = [], library = [], worker = [], other = [];
+		var isPrimaryProduct = function (kind, role) {
+			// Shape-specific priority (Decision 233): the primary entry
+			// family depends on the repository shape, never on the kind
+			// alone.
+			if (kind === 'process_entry' && role === 'primary_application') return true;
+			if (archetype === 'cli_tool' && (kind === 'cli_command' || role === 'tooling')) return true;
+			// F1 (fresh review): a CLI tree on a daemon/worker repository is
+			// still the primary operational surface for a CLI-shaped product
+			// (restic: 36 cli_command on daemon_worker_system).
+			if (archetype === 'daemon_worker_system' && kind === 'cli_command') return true;
+			if ((archetype === 'application' || archetype === 'modular_platform_server') &&
+				(kind === 'http_server' || kind === 'grpc_server' || kind === 'service' ||
+				 kind === 'http_route' || kind === 'http_handler')) return true;
+			if (archetype === 'library_framework' &&
+				(kind === 'library_api' || kind === 'exported_api')) return true;
+			if (archetype === 'daemon_worker_system' &&
+				(kind === 'http_server' || kind === 'grpc_server' || kind === 'service' ||
+				 kind === 'http_route' || kind === 'http_handler')) return true;
+			// F2 (fresh review): monorepo_mixed promotes its per-app
+			// process/routes the same way an application repository does.
+			if (archetype === 'monorepo_mixed' &&
+				(kind === 'http_server' || kind === 'grpc_server' || kind === 'service' ||
+				 kind === 'http_route' || kind === 'http_handler')) return true;
+			return false;
+		};
 		objects.forEach(function (object) {
 			var kind = object.entryKind;
 			var role = object.entryRole;
-			if (kind === 'process_entry' && role === 'primary_application') { primary.push(object); return; }
+			if (isPrimaryProduct(kind, role)) { primary.push(object); return; }
 			if (kind === 'http_server' || kind === 'grpc_server' || kind === 'service' ||
 				(kind === 'process_entry' && role === 'secondary_service')) { service.push(object); return; }
 			if (kind === 'cli_command' || kind === 'tool' || role === 'tooling') { tooling.push(object); return; }
@@ -6330,8 +6359,23 @@
 		push('service', 'main.overview.entry.service', service);
 		push('tooling', 'main.overview.entry.tooling', tooling);
 		push('library', 'main.overview.entry.library', library);
+		push('worker', 'main.overview.entry.worker', worker);
 		push('other', 'main.overview.entry.other', other);
 		return groups;
+	}
+
+	// overviewEntryGroupIsPrimaryTooling reports whether a tooling group is
+	// the repository's primary product surface on a CLI-shaped repository
+	// (Decision 233): cli_command entries are PRIMARY on cli_tool
+	// repositories and on daemon/worker repositories whose CLI is the
+	// operational product (F1), never a collapsed secondary.
+	function overviewEntryGroupIsPrimaryTooling(group) {
+		var archetype = String(DATA.repository_archetype ||
+			(DATA.architecture_canvas && DATA.architecture_canvas.repository_archetype) || '');
+		if (archetype !== 'cli_tool' && archetype !== 'daemon_worker_system') return false;
+		return group.items.some(function (object) {
+			return object.entryKind === 'cli_command';
+		});
 	}
 
 	// componentEvidenceTier derives a small non-numeric presentation tier from
@@ -7184,17 +7228,52 @@
 				));
 				entryGroups.forEach(function (group) {
 					var groupBlock = el('div', 'rm-overview-entry-group');
-					groupBlock.appendChild(txt('h4', 'rm-overview-entry-group__label', msg(group.labelMessageID)));
+					groupBlock.appendChild(txt('h4', 'rm-overview-entry-group__label',
+						msg('main.overview.entry.group_label', {
+							label: msg(group.labelMessageID),
+							count: group.items.length,
+						})));
+					// Decision 233 (Archive 9): every category summary shows
+					// the exact total count, 1-3 representative exact
+					// entries, and a "Show all N" action; the full set is
+					// one disclosure away. Do not render hundreds of handler
+					// cards above the fold.
+					var representativeCount = Math.min(group.items.length, 3);
 					var grid = el('div', 'rm-overview-object-grid');
-					group.items.forEach(function (object) {
+					group.items.slice(0, representativeCount).forEach(function (object) {
 						grid.appendChild(renderOverviewObjectCard(object, 'surface'));
 					});
 					groupBlock.appendChild(grid);
-					// Decision 221 B: production entries (primary product
-					// entry, service entry) stay visible; the complete
-					// taxonomy (tooling, library, other) remains accessible
-					// under a collapsed disclosure — never hidden.
-					if (group.key === 'primary' || group.key === 'service') {
+					var isVisible = group.key === 'primary' || group.key === 'service' ||
+						(group.key === 'tooling' && overviewEntryGroupIsPrimaryTooling(group)) ||
+						group.key === 'library' || group.key === 'worker';
+					if (group.items.length > representativeCount) {
+						var allButton = el('button', 'rm-quiet-action rm-overview-entry-group__show-all');
+						allButton.type = 'button';
+						allButton.textContent = msg('main.overview.entry.show_all', { count: group.items.length });
+						// F4 (fresh review): the hidden full grid is built
+						// LAZILY on first click — a hundreds-of-routes
+						// category pays no upfront render cost for cards
+						// that are not yet visible.
+						var allGrid = null;
+						allButton.addEventListener('click', function () {
+							if (allGrid === null) {
+								allGrid = el('div', 'rm-overview-object-grid rm-overview-entry-group__all');
+								group.items.slice(representativeCount).forEach(function (object) {
+									allGrid.appendChild(renderOverviewObjectCard(object, 'surface'));
+								});
+							}
+							allGrid.hidden = !allGrid.hidden;
+							allButton.textContent = allGrid.hidden
+								? msg('main.overview.entry.show_all', { count: group.items.length })
+								: msg('main.overview.entry.hide_all');
+							if (allGrid.parentNode !== groupBlock) {
+								groupBlock.appendChild(allGrid);
+							}
+						});
+						groupBlock.appendChild(allButton);
+					}
+					if (isVisible) {
 						entrySection.appendChild(groupBlock);
 					} else {
 						var disclosure = el('details', 'rm-overview-entry-disclosure');
@@ -7206,6 +7285,22 @@
 						entrySection.appendChild(disclosure);
 					}
 				});
+				// F3 (fresh review): value-shaped/unresolved/unavailable
+				// entries are dropped before classification; they stay
+				// COUNTED and reachable under a bounded disclosure so the
+				// category summary reconciles to the complete surface
+				// catalog (entries.total = Σ groups + omitted).
+				if (anatomy.entries && anatomy.entries.omitted) {
+					var omittedBlock = el('details', 'rm-overview-entry-disclosure');
+					var omittedSummary = el('summary', '');
+					omittedSummary.appendChild(txt('span', 'rm-overview-entry-disclosure__count',
+						msg('main.overview.entry.unclassified_count', { count: anatomy.entries.omitted })));
+					var omittedNote = el('p', 'rm-overview-entry-omitted-note');
+					omittedNote.textContent = msg('main.overview.entry.unclassified_copy');
+					omittedBlock.appendChild(omittedSummary);
+					omittedBlock.appendChild(omittedNote);
+					entrySection.appendChild(omittedBlock);
+				}
 				root.appendChild(entrySection);
 			} else {
 				root.appendChild(renderOverviewAnatomyZone(

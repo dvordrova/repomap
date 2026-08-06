@@ -12,11 +12,13 @@ import (
 // Contract versions and prompt versions of the two semantic theme stages.
 // They are producer-owned constants, never flags and never tuning knobs.
 const (
-	ScoutRequestVersion        = 1
-	ScoutResultVersion         = 2
-	AdjudicationRequestVersion = 1
-	AdjudicationResultVersion  = 2
-	StudyThemesVersion         = 1
+	ScoutRequestVersion          = 1
+	ScoutResultVersion           = 2
+	AdjudicationRequestVersion   = 1
+	AdjudicationResultVersion    = 2
+	// Decision 233 (Archive 9): the reduced portfolio gains alternate
+	// co-projection and the concentration diagnostic (StudyThemesVersion 2).
+	StudyThemesVersion = 2
 	// Decision 232 (Archive 9): prompt contract v2 — target-cardinality
 	// wording, duplicate normalization, backend-owned anchor role,
 	// observation only for direct/supporting, unreviewed anchors.

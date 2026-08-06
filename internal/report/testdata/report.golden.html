@@ -1083,6 +1083,16 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-mechanism-fragment__touchpoint-list { display: grid; gap: .25rem; list-style: none; margin: .25rem 0 0; padding: 0 0 0 1rem; }
 .rm-mechanism-fragment__touchpoint-item { align-items: baseline; display: flex; flex-wrap: wrap; gap: .4rem; font-size: .76rem; }
 .rm-mechanism-fragment__touchpoint-label { color: var(--rm-dim); }
+
+/* Decision 233 (Archive 9): entry category summaries — quiet Show-all
+   toggle, collapsed full grid below the representatives. */
+.rm-overview-entry-group__show-all {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+.rm-overview-entry-group__all {
+  margin-top: 0.5rem;
+}
 </style>
 
 
@@ -1139,7 +1149,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     </aside>
   </div>
   <div class="rm-toast" id="rm-toast" role="status" aria-live="polite" hidden></div>
-  <script type="application/json" id="rm-report-data">{"format_version":33,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
+  <script type="application/json" id="rm-report-data">{"format_version":34,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
   <script id="rm-ui-messages-js">(function (global) {
   'use strict';
 
@@ -1527,7 +1537,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.overview.entry.service": { params: [], text: "Service entry" },
     "main.overview.entry.tooling": { params: [], text: "CLI and tooling" },
     "main.overview.entry.library": { params: [], text: "Library API" },
+    "main.overview.entry.worker": { params: [], text: "Workers and consumers" },
     "main.overview.entry.other": { params: [], text: "Other entry points" },
+    "main.overview.entry.group_label": { params: ["label", "count"], format: function (params) { return params.label + " (" + params.count + ")"; } },
+    "main.overview.entry.show_all": { params: ["count"], format: function (params) { return "Show all " + params.count; } },
+    "main.overview.entry.hide_all": { params: [], text: "Hide" },
+    "main.overview.entry.unclassified_count": { params: ["count"], format: function (params) { return "Unclassified entries (" + params.count + ")"; } },
+    "main.overview.entry.unclassified_copy": { params: [], text: "Value-shaped, unresolved, or unavailable surfaces — counted, not classified into product categories." },
     "main.overview.entry.disclosure_count": { params: ["count"], format: function (params) { return "More entries (" + params.count + ")"; } },
     "main.overview.object.package_count": { params: ["count"], format: function (params) { return englishCount(params.count, "package", "packages"); } },
     "main.overview.object.more_sources": { params: ["count"], format: function (params) { return "+" + params.count + " more exact sources"; } },
@@ -3018,7 +3034,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.overview.entry.service": { params: [], text: "Точка входа сервиса" },
     "main.overview.entry.tooling": { params: [], text: "CLI и инструменты" },
     "main.overview.entry.library": { params: [], text: "API библиотеки" },
+    "main.overview.entry.worker": { params: [], text: "Воркеры и потребители" },
     "main.overview.entry.other": { params: [], text: "Прочие точки входа" },
+    "main.overview.entry.group_label": { params: ["label", "count"], format: function (params) { return params.label + " — " + params.count; } },
+    "main.overview.entry.show_all": { params: ["count"], format: function (params) { return "Показать все " + params.count; } },
+    "main.overview.entry.hide_all": { params: [], text: "Скрыть" },
+    "main.overview.entry.unclassified_count": { params: ["count"], format: function (params) { return "Неклассифицированные записи (" + params.count + ")"; } },
+    "main.overview.entry.unclassified_copy": { params: [], text: "Значениевые, неразрешённые или недоступные поверхности — учтены, не отнесены к категориям продукта." },
     "main.overview.entry.disclosure_count": { params: ["count"], format: function (params) { return "Ещё записи (" + params.count + ")"; } },
     "main.overview.object.package_count": { params: ["count"], format: function (params) { return russianCount(params.count, "пакет", "пакета", "пакетов"); } },
     "main.overview.object.more_sources": { params: ["count"], format: function (params) { return "ещё " + params.count + " точных источника"; } },
@@ -10429,11 +10451,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 	}
 
 	// overviewEntryClassifications groups eligible entry surfaces into
-	// user-facing classes derived from existing fields only (Decision 217):
-	// primary product entry, secondary service, tooling/CLI, library API.
-	// Duplicate "HTTP server" cards with no behavioral distinction are
-	// coalesced into one classified group.
+	// user-facing classes derived from existing fields only. Decision 233
+	// (Archive 9): the grouping is repository-shape + product-role aware —
+	// cli_command is PRIMARY on CLI-shaped repositories, exact HTTP routes
+	// group as primary on service/application shapes, library APIs on
+	// library shapes, jobs/consumers on worker shapes — instead of the old
+	// kind-only collapse that treated every cli_command as tooling.
 	function overviewEntryClassifications(objects) {
+		var archetype = String(DATA.repository_archetype ||
+			(DATA.architecture_canvas && DATA.architecture_canvas.repository_archetype) || '');
 		var groups = [];
 		var byClass = {};
 		var push = function (key, labelMessageID, items) {
@@ -10441,11 +10467,36 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			byClass[key] = { key: key, labelMessageID: labelMessageID, items: items };
 			groups.push(byClass[key]);
 		};
-		var primary = [], service = [], tooling = [], library = [], other = [];
+		var primary = [], service = [], tooling = [], library = [], worker = [], other = [];
+		var isPrimaryProduct = function (kind, role) {
+			// Shape-specific priority (Decision 233): the primary entry
+			// family depends on the repository shape, never on the kind
+			// alone.
+			if (kind === 'process_entry' && role === 'primary_application') return true;
+			if (archetype === 'cli_tool' && (kind === 'cli_command' || role === 'tooling')) return true;
+			// F1 (fresh review): a CLI tree on a daemon/worker repository is
+			// still the primary operational surface for a CLI-shaped product
+			// (restic: 36 cli_command on daemon_worker_system).
+			if (archetype === 'daemon_worker_system' && kind === 'cli_command') return true;
+			if ((archetype === 'application' || archetype === 'modular_platform_server') &&
+				(kind === 'http_server' || kind === 'grpc_server' || kind === 'service' ||
+				 kind === 'http_route' || kind === 'http_handler')) return true;
+			if (archetype === 'library_framework' &&
+				(kind === 'library_api' || kind === 'exported_api')) return true;
+			if (archetype === 'daemon_worker_system' &&
+				(kind === 'http_server' || kind === 'grpc_server' || kind === 'service' ||
+				 kind === 'http_route' || kind === 'http_handler')) return true;
+			// F2 (fresh review): monorepo_mixed promotes its per-app
+			// process/routes the same way an application repository does.
+			if (archetype === 'monorepo_mixed' &&
+				(kind === 'http_server' || kind === 'grpc_server' || kind === 'service' ||
+				 kind === 'http_route' || kind === 'http_handler')) return true;
+			return false;
+		};
 		objects.forEach(function (object) {
 			var kind = object.entryKind;
 			var role = object.entryRole;
-			if (kind === 'process_entry' && role === 'primary_application') { primary.push(object); return; }
+			if (isPrimaryProduct(kind, role)) { primary.push(object); return; }
 			if (kind === 'http_server' || kind === 'grpc_server' || kind === 'service' ||
 				(kind === 'process_entry' && role === 'secondary_service')) { service.push(object); return; }
 			if (kind === 'cli_command' || kind === 'tool' || role === 'tooling') { tooling.push(object); return; }
@@ -10456,8 +10507,23 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		push('service', 'main.overview.entry.service', service);
 		push('tooling', 'main.overview.entry.tooling', tooling);
 		push('library', 'main.overview.entry.library', library);
+		push('worker', 'main.overview.entry.worker', worker);
 		push('other', 'main.overview.entry.other', other);
 		return groups;
+	}
+
+	// overviewEntryGroupIsPrimaryTooling reports whether a tooling group is
+	// the repository's primary product surface on a CLI-shaped repository
+	// (Decision 233): cli_command entries are PRIMARY on cli_tool
+	// repositories and on daemon/worker repositories whose CLI is the
+	// operational product (F1), never a collapsed secondary.
+	function overviewEntryGroupIsPrimaryTooling(group) {
+		var archetype = String(DATA.repository_archetype ||
+			(DATA.architecture_canvas && DATA.architecture_canvas.repository_archetype) || '');
+		if (archetype !== 'cli_tool' && archetype !== 'daemon_worker_system') return false;
+		return group.items.some(function (object) {
+			return object.entryKind === 'cli_command';
+		});
 	}
 
 	// componentEvidenceTier derives a small non-numeric presentation tier from
@@ -11310,17 +11376,52 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 				));
 				entryGroups.forEach(function (group) {
 					var groupBlock = el('div', 'rm-overview-entry-group');
-					groupBlock.appendChild(txt('h4', 'rm-overview-entry-group__label', msg(group.labelMessageID)));
+					groupBlock.appendChild(txt('h4', 'rm-overview-entry-group__label',
+						msg('main.overview.entry.group_label', {
+							label: msg(group.labelMessageID),
+							count: group.items.length,
+						})));
+					// Decision 233 (Archive 9): every category summary shows
+					// the exact total count, 1-3 representative exact
+					// entries, and a "Show all N" action; the full set is
+					// one disclosure away. Do not render hundreds of handler
+					// cards above the fold.
+					var representativeCount = Math.min(group.items.length, 3);
 					var grid = el('div', 'rm-overview-object-grid');
-					group.items.forEach(function (object) {
+					group.items.slice(0, representativeCount).forEach(function (object) {
 						grid.appendChild(renderOverviewObjectCard(object, 'surface'));
 					});
 					groupBlock.appendChild(grid);
-					// Decision 221 B: production entries (primary product
-					// entry, service entry) stay visible; the complete
-					// taxonomy (tooling, library, other) remains accessible
-					// under a collapsed disclosure — never hidden.
-					if (group.key === 'primary' || group.key === 'service') {
+					var isVisible = group.key === 'primary' || group.key === 'service' ||
+						(group.key === 'tooling' && overviewEntryGroupIsPrimaryTooling(group)) ||
+						group.key === 'library' || group.key === 'worker';
+					if (group.items.length > representativeCount) {
+						var allButton = el('button', 'rm-quiet-action rm-overview-entry-group__show-all');
+						allButton.type = 'button';
+						allButton.textContent = msg('main.overview.entry.show_all', { count: group.items.length });
+						// F4 (fresh review): the hidden full grid is built
+						// LAZILY on first click — a hundreds-of-routes
+						// category pays no upfront render cost for cards
+						// that are not yet visible.
+						var allGrid = null;
+						allButton.addEventListener('click', function () {
+							if (allGrid === null) {
+								allGrid = el('div', 'rm-overview-object-grid rm-overview-entry-group__all');
+								group.items.slice(representativeCount).forEach(function (object) {
+									allGrid.appendChild(renderOverviewObjectCard(object, 'surface'));
+								});
+							}
+							allGrid.hidden = !allGrid.hidden;
+							allButton.textContent = allGrid.hidden
+								? msg('main.overview.entry.show_all', { count: group.items.length })
+								: msg('main.overview.entry.hide_all');
+							if (allGrid.parentNode !== groupBlock) {
+								groupBlock.appendChild(allGrid);
+							}
+						});
+						groupBlock.appendChild(allButton);
+					}
+					if (isVisible) {
 						entrySection.appendChild(groupBlock);
 					} else {
 						var disclosure = el('details', 'rm-overview-entry-disclosure');
@@ -11332,6 +11433,22 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 						entrySection.appendChild(disclosure);
 					}
 				});
+				// F3 (fresh review): value-shaped/unresolved/unavailable
+				// entries are dropped before classification; they stay
+				// COUNTED and reachable under a bounded disclosure so the
+				// category summary reconciles to the complete surface
+				// catalog (entries.total = Σ groups + omitted).
+				if (anatomy.entries && anatomy.entries.omitted) {
+					var omittedBlock = el('details', 'rm-overview-entry-disclosure');
+					var omittedSummary = el('summary', '');
+					omittedSummary.appendChild(txt('span', 'rm-overview-entry-disclosure__count',
+						msg('main.overview.entry.unclassified_count', { count: anatomy.entries.omitted })));
+					var omittedNote = el('p', 'rm-overview-entry-omitted-note');
+					omittedNote.textContent = msg('main.overview.entry.unclassified_copy');
+					omittedBlock.appendChild(omittedSummary);
+					omittedBlock.appendChild(omittedNote);
+					entrySection.appendChild(omittedBlock);
+				}
 				root.appendChild(entrySection);
 			} else {
 				root.appendChild(renderOverviewAnatomyZone(

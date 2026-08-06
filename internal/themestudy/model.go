@@ -450,4 +450,14 @@ type ThemeCard struct {
 	Badge            string    `json:"badge"` // editorial source-backed | partial
 	DirectCount      int       `json:"direct_count"`
 	SupportingCount  int       `json:"supporting_count"`
+	// Decision 233 (Archive 9): semantic-equivalent themes co-project. A
+	// theme whose normalized question+title matches an earlier accepted
+	// theme is NOT dropped: its title/question remain as alternate
+	// provenance and its distinct readings append (bounded, deduplicated
+	// by exact public identity). AlternateReadings mirror the D4-alternates
+	// pattern of the Architecture canvas.
+	AlternateTitles         []string  `json:"alternate_titles,omitempty"`
+	AlternateQuestions      []string  `json:"alternate_questions,omitempty"`
+	AlternateReadings       []Reading `json:"alternate_readings,omitempty"`
+	ConcentrationDiagnostic string    `json:"concentration_diagnostic,omitempty"`
 }

@@ -421,7 +421,9 @@ func runThemeStudyProductForRun(
 		return outcome, nil
 	}
 	themes := themestudy.StudyThemes{
-		Version: "v1", ScoutSHA256: scoutRequest.CatalogSHA256,
+		// Decision 233: StudyThemesVersion 2 (alternate co-projection +
+		// concentration diagnostic).
+		Version: "v2", ScoutSHA256: scoutRequest.CatalogSHA256,
 		AdjSHA256: adjRequest.CatalogSHA256,
 		Cards:     reduction.Cards, Omitted: reduction.Omitted,
 		Partial: reduction.Partial, Diagnostics: reduction.Diagnostics,

@@ -215,7 +215,7 @@ func writeThemeStudyAcceptedArtifacts(t *testing.T, runDir string, data *ReportD
 		t.Fatal("reducer produced zero cards")
 	}
 	themes := themestudy.StudyThemes{
-		Version: "v1", ScoutSHA256: scoutRequest.CatalogSHA256,
+		Version: "v2", ScoutSHA256: scoutRequest.CatalogSHA256,
 		AdjSHA256: adjRequest.CatalogSHA256,
 		Cards:     reduction.Cards, Omitted: reduction.Omitted,
 		Partial: reduction.Partial, Diagnostics: reduction.Diagnostics,
