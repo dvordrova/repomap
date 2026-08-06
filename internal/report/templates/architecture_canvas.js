@@ -897,6 +897,10 @@ function architecturePartialTruth(data) {
     this.drawerBackdrop = element("button", "rm-arch__drawer-backdrop");
     this.drawerBackdrop.type = "button";
      this.drawerBackdrop.setAttribute("aria-label", this.msg("architecture.aria.close_inspector"));
+    // Decision 230 (fresh review task-4 B1): the backdrop is a pointer
+    // scrim, never a keyboard tab stop — it must not sit between the
+    // last inspector control and the focus-trap wrap.
+    this.drawerBackdrop.tabIndex = -1;
     this.drawerBackdrop.hidden = true;
     this.listen(this.drawerBackdrop, "click", () => this.closeInspector());
      this.inspector = element("aside", "rm-arch__inspector");
@@ -3481,9 +3485,24 @@ function architecturePartialTruth(data) {
      const trapFocus = (event) => {
       if (this.inspector.hidden) return;
       if (event.key !== "Tab") return;
-      const focusables = this.inspector.querySelectorAll(
+      // Decision 230 (fresh review task-4 B1): collapsed witness lists and
+      // other hidden groups must not be tab stops — filter out elements
+      // that are hidden themselves or inside a hidden ancestor so the
+      // wrap check fires at the true last VISIBLE control and Tab never
+      // falls through the modal into the background.
+      const rawFocusables = this.inspector.querySelectorAll(
        'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"]), input, select, textarea'
       );
+      const focusables = Array.from(rawFocusables).filter((candidate) => {
+       let node = candidate;
+       while (node && node !== this.inspector) {
+        if (node.hidden) return false;
+        if (node.getAttribute && node.getAttribute("aria-hidden") === "true") return false;
+        node = node.parentNode || null;
+        if (node && node.parentNode === node) break;
+       }
+       return true;
+      });
       if (!focusables.length) return;
       const first = focusables[0];
       const last = focusables[focusables.length - 1];
@@ -3951,6 +3970,27 @@ function architecturePartialTruth(data) {
    this.appendKeyValue(truth, this.msg("architecture.label.member_evidence"), evidenceValue);
    if (Number(context.member_count) > 0) {
     this.appendKeyValue(truth, this.msg("architecture.label.scope"), this.msg("architecture.label.member_scope", { count: Number(context.member_count) }));
+   }
+
+   // Decision 230 D4 (fresh review B2): equivalent member-set collisions
+   // coalesce into one representative; the product shows every alternate
+   // label/description as exact provenance instead of dropping it.
+   const alternates = array(component.alternate_names);
+   const alternateDescriptions = array(component.alternate_descriptions);
+   if (alternates.length > 0 || alternateDescriptions.length > 0) {
+    const alternatesSection = this.inspectorSection(this.msg("architecture.section.equivalent_components"));
+    alternates.forEach((name, index) => {
+     const row = element("div", "rm-arch__alternate");
+     row.appendChild(element("strong", "rm-arch__alternate-name", name));
+     const description = alternateDescriptions[index];
+     if (description) row.appendChild(element("span", "rm-arch__alternate-description", description));
+     alternatesSection.appendChild(row);
+    });
+    if (alternateDescriptions.length > alternates.length) {
+     for (let index = alternates.length; index < alternateDescriptions.length; index++) {
+      alternatesSection.appendChild(element("p", "rm-arch__alternate-description", alternateDescriptions[index]));
+     }
+    }
    }
 
    // What remains unknown: model hypothesis / not-covered statement.

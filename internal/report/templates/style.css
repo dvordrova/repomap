@@ -8,6 +8,8 @@
  --rm-border: #d8e0ea;
  --rm-accent: #3157d5;
  --rm-accent-soft: #eef2ff;
+ --rm-accent-strong: #1d4ed8;
+ --rm-surface-alt: #f1f5f9;
  --rm-accent-contrast: #ffffff;
  --rm-dim: #526176;
  --rm-code: #6d5da8;
@@ -33,6 +35,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-provenance-chip { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22); border-radius: 999px; padding: .08rem .5rem; font-size: .68rem; white-space: nowrap; }
 .rm-run-details { font-size: .78rem; color: rgba(255,255,255,.75); text-align: right; }
 .rm-run-details summary { cursor: pointer; user-select: none; }
+/* Decision 230 (fresh review task-4 B2): visible hover for the About
+   disclosure instead of cursor-only affordance. */
+.rm-run-details summary:hover { color: #ffffff; }
 .rm-artifacts { font-size: .7rem; opacity: .7; margin-top: .35rem; font-family: monospace; overflow-wrap: anywhere; }
 .rm-run-picker { align-items: center; display: flex; gap: .45rem; font-size: .72rem; color: rgba(255,255,255,.75); }
 .rm-run-picker[hidden], .rm-run-details[hidden], .rm-source-drawer[hidden] { display: none !important; }
@@ -382,6 +387,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-primary-action { background: var(--rm-accent); color: #fff; }
 .rm-secondary-action { background: #fff; color: var(--rm-accent); }
 .rm-quiet-action { background: transparent; border-color: var(--rm-border); color: var(--rm-dim); }
+/* Decision 230 (fresh review task-4 B2): pointer controls need a visible
+   hover state, not cursor-only affordance. */
+.rm-primary-action:not(:disabled):hover { background: var(--rm-accent-strong, #1d4ed8); }
+.rm-secondary-action:not(:disabled):hover { background: var(--rm-accent-soft, #eff6ff); border-color: var(--rm-accent); }
+.rm-quiet-action:not(:disabled):hover { background: var(--rm-surface-alt, #f1f5f9); border-color: var(--rm-dim); }
 .rm-primary-action:disabled, .rm-secondary-action:disabled, .rm-quiet-action:disabled { cursor: default; opacity: .38; }
 .rm-mechanism-grid { display: grid; gap: .85rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
 .rm-mechanism-card { background: #fff; border: 1px solid var(--rm-border); border-radius: 10px; color: var(--rm-fg); cursor: pointer; display: flex; flex-direction: column; font: inherit; gap: .55rem; padding: 1rem; text-align: left; }

@@ -276,3 +276,42 @@ not intentionally regressed. No push without the owner's explicit signal.
 - **D9.6 deterministic fallback localization (RU)**: closed sets of local
   fallback component and subsystem names/descriptions are localized for the
   RU product; model-authored names and technical identifiers never change.
+- **D9.7 repeated broad unit → shared scope (fresh reviews)**: when several
+  components reference the SAME unit ref, the unit is shared scope — each
+  component keeps only its anchor-specific slice. The slice resolves anchor
+  members AND their parent packages (behavior anchors usually own exact
+  symbol members while units hold package members; raw intersection would
+  whole-reject real bundles — review B1). When a package unit has no
+  package-level slice, the anchors' exact symbol members survive as the
+  component's ownership. A component with no anchors and no slice is dropped
+  item-scope (`proposal.empty_anchor_slice`); `ContractVersion` 10.
+- **D9.8 item-scope salvage registry (review B1/B2)**: `equivalent_member_set_collision`,
+  `shared_unit_slice` and `empty_anchor_slice` count as item-scope salvage
+  classes in `landscapeHasItemScopeSalvage`, so a small bundle where every
+  component coalesces (no local remainder) still validates as partial model
+  (Apply and wire paths covered by `d230_review_regression_test.go`).
+- **D9.9 alternate projection (review B2)**: `alternate_names` /
+  `alternate_descriptions` are projected into the report canvas and rendered
+  in the component inspector under "Equivalent components (coalesced)".
+- **D9.10 mechanism/relations static source actions (reviews task-2/task-3)**:
+  mechanism callsites and relation paths with a location-only resolution
+  render as exact static/server source actions (pinned revision link) —
+  only genuinely unavailable locations stay inert text.
+- **D9.11 a11y corrective (review task-4)**: focus trap filters hidden
+  controls (collapsed witness lists) and the drawer backdrop is not a tab
+  stop; hover states added for primary/secondary/quiet actions, edge-jump,
+  inspector close, summaries and remainder disclosure.
+- **Version identities**: `ContractVersion` 10, `ProposalVersion` 10,
+  `SynthesisPromptVersion` v17 (restored — the v18 phrasing experiment made
+  chatto emit p*-refs in unit_refs; the backend slice is the safety net).
+  Replay identities changed whenever acceptance semantics changed; old
+  records fail closed ("synthesis record cache key does not match").
+- **Verified counts (live matrix, fresh runs)**: casdoor 53/56 requested
+  units covered, 218 association witnesses redistributed (no deletion);
+  etcd 111 covered + 140 uncovered = 251 requested (accepted_partial);
+  restic 6 components over distinct anchor slices (16/2/1/2/4) + remainder 63.
+- **Correction**: D9.1's "4 subsystems / 139 memberships" reflected the
+  pre-D9.7 replay; at HEAD the etcd replay publishes 3 subsystems /
+  129 memberships (D9.7 slice moved the shared-u12 components to the
+  remainder). `empty_member_coverage` remains FATAL by design (whole-stage
+  coverage floor), not recoverable.

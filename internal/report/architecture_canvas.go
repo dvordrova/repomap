@@ -83,6 +83,12 @@ type ArchitectureComponent struct {
 	AnchorIDs                 []string                   `json:"anchor_ids,omitempty"`
 	Hypothesis                bool                       `json:"hypothesis,omitempty"`
 	SourceIDs                 []componentmap.ComponentID `json:"source_component_ids,omitempty"`
+	// Decision 230 D4 (fresh review B2): equivalent member-set collisions
+	// coalesce into one representative; every alternate label/description
+	// is retained as provenance and projected so the product shows exact
+	// alternatives in details instead of dropping them silently.
+	AlternateNames        []string `json:"alternate_names,omitempty"`
+	AlternateDescriptions []string `json:"alternate_descriptions,omitempty"`
 }
 
 // ArchitectureStructuralLocator retains an exact producer-owned source or
@@ -444,6 +450,10 @@ func projectArchitectureLandscape(
 				ParticipatingFlowIDs: sortedArchitectureFlowIDs(participatingFlows),
 				AnchorIDs:            append([]string(nil), component.AnchorIDs...), Hypothesis: component.Hypothesis,
 				SourceIDs: append([]componentmap.ComponentID(nil), component.SourceIDs...),
+				// Decision 230 D4 (fresh review B2): equivalent collisions
+				// keep every alternate label/description as provenance.
+				AlternateNames:        append([]string(nil), component.AlternateNames...),
+				AlternateDescriptions: append([]string(nil), component.AlternateDescriptions...),
 			})
 		}
 		canvas.Subsystems = append(canvas.Subsystems, projected)

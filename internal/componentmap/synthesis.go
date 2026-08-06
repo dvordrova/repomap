@@ -248,12 +248,16 @@ type synthesisPrivateCatalog struct {
 	membersByRef map[string]MemberID
 	memberKinds  map[string]MemberKind
 	memberRoles  map[string]CandidateRole
-	anchorsByID  map[string]SynthesisAnchorRef
-	anchorsByRef map[string]string
-	anchorKinds  map[string]BehaviorAnchorKind
+	anchorsByID        map[string]SynthesisAnchorRef
+	anchorsByRef       map[string]string
+	anchorKinds        map[string]BehaviorAnchorKind
 	// Decision 230 D9.7: exact members owned by each behavior anchor
 	// (anchor-specific slice for repeated broad units).
-	anchorMemberIDs    map[string]map[MemberID]struct{}
+	anchorMemberIDs map[string]map[MemberID]struct{}
+	// memberParentIDs maps a child member (symbol/file) to its exact
+	// parent package member so an anchor-owned symbol can be resolved to
+	// the package member a broad unit actually contains.
+	memberParentIDs map[MemberID]MemberID
 	flowsByID          map[FlowID]SynthesisFlowRef
 	canonicalOpaqueIDs map[string]struct{}
 	identitySHA256     string
@@ -296,6 +300,7 @@ func buildSynthesisPrivateCatalog(bundle CandidateBundle) (synthesisPrivateCatal
 		anchorsByRef:       make(map[string]string, len(bundle.BehaviorAnchors)),
 		anchorKinds:        make(map[string]BehaviorAnchorKind, len(bundle.BehaviorAnchors)),
 		anchorMemberIDs:    make(map[string]map[MemberID]struct{}, len(bundle.BehaviorAnchors)),
+		memberParentIDs:    make(map[MemberID]MemberID, len(bundle.Candidates)),
 		flowsByID:          make(map[FlowID]SynthesisFlowRef, len(bundle.Flows)),
 		canonicalOpaqueIDs: make(map[string]struct{}, len(bundle.Candidates)+len(bundle.BehaviorAnchors)+len(bundle.Flows)),
 	}
@@ -338,6 +343,9 @@ func buildSynthesisPrivateCatalog(bundle CandidateBundle) (synthesisPrivateCatal
 		catalog.membersByRef[ref.key()] = candidate.ID
 		catalog.memberKinds[ref.Ref] = ref.Kind
 		catalog.memberRoles[ref.key()] = candidate.Role
+		if candidate.ParentID != nil {
+			catalog.memberParentIDs[candidate.ID] = *candidate.ParentID
+		}
 		identity.Members = append(identity.Members, synthesisCatalogMemberIdentity{
 			Ref: ref, ID: candidate.ID, Role: candidate.Role, ParentID: cloneMemberID(candidate.ParentID),
 		})
@@ -2212,7 +2220,11 @@ func resolveSynthesisWireProposal(
 			component.MemberIDs = append(component.MemberIDs, memberID)
 		}
 		// Decision 230 D9.7: anchors resolve BEFORE units so a repeated
-		// broad unit can be reduced to its anchor-specific slice.
+		// broad unit can be reduced to its anchor-specific slice. A unit
+		// holds package members while behavior anchors usually own exact
+		// symbol members, so the slice covers both the anchor members and
+		// their parent packages (fresh review B1: the raw intersection is
+		// empty for package units and would whole-reject every component).
 		anchorMemberSet := make(map[MemberID]struct{})
 		seenAnchors := make(map[string]struct{}, len(record.AnchorRefs))
 		for _, anchorRef := range record.AnchorRefs {
@@ -2237,6 +2249,9 @@ func resolveSynthesisWireProposal(
 			if anchorMembers, exists := catalog.anchorMemberIDs[anchorID]; exists {
 				for memberID := range anchorMembers {
 					anchorMemberSet[memberID] = struct{}{}
+					if parentID, parentExists := catalog.memberParentIDs[memberID]; parentExists {
+						anchorMemberSet[parentID] = struct{}{}
+					}
 				}
 			}
 		}
@@ -2267,12 +2282,32 @@ func resolveSynthesisWireProposal(
 				if unitUsage[unitRef.Ref] > 1 {
 					// Decision 230 D9.7: repeated broad unit = shared
 					// scope. Keep only the anchor-specific slice (the
-					// exact members this component's anchors own);
+					// exact members this component's anchors own — or,
+					// when the unit holds packages and the anchors hold
+					// only symbols, the anchors' exact symbol members);
 					// never hand a full broad unit to several owners.
+					sliceFound := false
 					for _, memberID := range members {
 						if _, covered := anchorMemberSet[memberID]; covered {
 							component.MemberIDs = append(component.MemberIDs, memberID)
+							sliceFound = true
 						}
+					}
+					if !sliceFound && len(anchorMemberSet) > 0 {
+						// Fresh review B1: the unit may contain only
+						// package members while the anchors own exact
+						// symbol members. The anchor-specific slice
+						// survives as the anchors' exact members — the
+						// component keeps real, verified ownership
+						// instead of being dropped.
+						sliceMemberIDs := make([]MemberID, 0, len(anchorMemberSet))
+						for memberID := range anchorMemberSet {
+							sliceMemberIDs = append(sliceMemberIDs, memberID)
+						}
+						sort.Slice(sliceMemberIDs, func(i, j int) bool {
+							return sliceMemberIDs[i].key() < sliceMemberIDs[j].key()
+						})
+						component.MemberIDs = append(component.MemberIDs, sliceMemberIDs...)
 					}
 					salvageComponent("proposal.shared_unit_slice", "proposal reuses one unit ref across several components; the component keeps only its anchor-specific slice")
 					if len(component.MemberIDs) == 0 {

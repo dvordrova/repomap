@@ -2602,3 +2602,91 @@ func TestSynthesisSharedUnitReducesToAnchorSlice(t *testing.T) {
 	}
 	t.Fatalf("anchored component lost its exact anchor slice member: %#v", anchored.Members)
 }
+
+// Decision 230 D9.7 fresh-review B1 regression: real bundles attach symbol
+// members to behavior anchors while units hold package members. The slice
+// must resolve the anchored symbols to their parent packages (or keep the
+// exact symbol members) instead of whole-rejecting the component.
+func TestSynthesisSharedUnitSliceResolvesSymbolAnchorsToPackages(t *testing.T) {
+	t.Parallel()
+
+	bundle := unitFixtureBundle()
+	// unitFixtureBundle's anchor owns the production PACKAGE member;
+	// build a bundle where the anchor owns a SYMBOL child of that package.
+	symbolID := MemberID{Kind: MemberSymbol, Value: "member-symbol-prod-handler"}
+	prodID := MemberID{Kind: MemberPackage, Value: "member-package-prod-a"}
+	bundle.BehaviorAnchors[0].MemberIDs = []MemberID{symbolID}
+	unitCatalog, unitErr := CompileUnitCatalog(bundle)
+	if unitErr != nil {
+		t.Fatalf("unit catalog: %v", unitErr)
+	}
+	membersByRef := unitCatalogUnitMembersByWireRef(unitCatalog)
+	var sharedUnitRef string
+	for ref, members := range membersByRef {
+		for _, memberID := range members {
+			if memberID == prodID {
+				sharedUnitRef = ref
+			}
+		}
+	}
+	if sharedUnitRef == "" {
+		t.Fatal("no unit ref covers the production package")
+	}
+	anchorRef := SynthesisAnchorRef{Kind: AnchorProcessEntry, Ref: "a1"}
+	wire := synthesisWireProposal{Records: []synthesisWireRecord{
+		{Kind: synthesisWireSubsystemRecord, Ref: "g1", Name: "Repository", Description: ""},
+		{
+			Kind: synthesisWireComponentRecord, SubsystemRef: "g1",
+			Name: "Anchored component", Description: "",
+			UnitRefs:   []SynthesisUnitRef{{Kind: MemberPackage, Ref: sharedUnitRef}},
+			AnchorRefs: []SynthesisAnchorRef{anchorRef},
+			Hypothesis: false,
+		},
+		{
+			Kind: synthesisWireComponentRecord, SubsystemRef: "g1",
+			Name: "Detached component", Description: "",
+			UnitRefs:   []SynthesisUnitRef{{Kind: MemberPackage, Ref: sharedUnitRef}},
+			AnchorRefs: []SynthesisAnchorRef{},
+			Hypothesis: true,
+		},
+	}}
+	response, err := json.Marshal(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := RecordSynthesisResponse(bundle, "revision-symbol-anchor", "test", "test", time.Millisecond, response)
+	if err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	if result.Landscape.Fallback {
+		t.Fatalf("symbol-anchor shared unit must not reject whole-stage: %#v", result.Landscape.Diagnostics)
+	}
+	var anchored *Component
+	for _, subsystem := range result.Landscape.Subsystems {
+		for index := range subsystem.Components {
+			component := &subsystem.Components[index]
+			if component.Name == "Anchored component" {
+				anchored = component
+			}
+			if component.Name == "Detached component" {
+				t.Fatalf("detached component published without an anchor slice: %#v", component)
+			}
+		}
+	}
+	if anchored == nil {
+		t.Fatal("anchored component missing")
+	}
+	sawPackage := false
+	sawSymbol := false
+	for _, memberID := range anchored.Members {
+		if memberID.ID == prodID {
+			sawPackage = true
+		}
+		if memberID.ID == symbolID {
+			sawSymbol = true
+		}
+	}
+	if !sawPackage && !sawSymbol {
+		t.Fatalf("anchored component kept neither the parent package nor the exact symbol: %#v", anchored.Members)
+	}
+}
