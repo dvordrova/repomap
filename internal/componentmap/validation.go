@@ -380,7 +380,15 @@ func landscapeHasItemScopeSalvage(diagnostics []Diagnostic) bool {
 			"proposal.unknown_unit_ref",
 			"proposal.duplicate_unit_ref",
 			"proposal.duplicate_anchor_id",
-			"proposal.salvaged_empty_subsystem":
+			"proposal.salvaged_empty_subsystem",
+			// Decision 230 D4/D9.7: equivalence coalescing and shared-unit
+			// slicing are item-scope salvage classes too — a small bundle
+			// where every component coalesces may leave no local remainder
+			// while the recoverable finding still proves partial-model
+			// provenance.
+			"proposal.equivalent_member_set_collision",
+			"proposal.shared_unit_slice",
+			"proposal.empty_anchor_slice":
 			if diagnostic.Severity == FindingRecoverable {
 				return true
 			}
