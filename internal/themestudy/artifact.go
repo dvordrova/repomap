@@ -11,10 +11,10 @@ import (
 // Artifact filenames (Decision 213 §6). They are persisted in the run
 // directory and bound by RunManifest v12 SHA-256 fields.
 const (
-	ScoutRequestArtifactFilename       = "theme_scout_request.v1.json"
-	ScoutResultArtifactFilename        = "theme_scout_result.v1.json"
-	ScoutStatusArtifactFilename        = "theme_scout_status.v1.json"
-	ExpansionArtifactFilename          = "theme_source_expansion.v1.json"
+	ScoutRequestArtifactFilename        = "theme_scout_request.v1.json"
+	ScoutResultArtifactFilename         = "theme_scout_result.v1.json"
+	ScoutStatusArtifactFilename         = "theme_scout_status.v1.json"
+	ExpansionArtifactFilename           = "theme_source_expansion.v1.json"
 	AdjudicationRequestArtifactFilename = "theme_adjudication_request.v1.json"
 	AdjudicationResultArtifactFilename  = "theme_adjudication_result.v1.json"
 	AdjudicationStatusArtifactFilename  = "theme_adjudication_status.v1.json"

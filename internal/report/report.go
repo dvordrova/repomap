@@ -404,10 +404,10 @@ type StudyThemeCard struct {
 	// Decision 233 (Archive 9): semantic-equivalent co-projected themes
 	// publish alternate titles/questions/readings as provenance and the
 	// portfolio-concentration marker as an exact count string.
-	AlternateTitles     []string             `json:"alternate_titles,omitempty"`
-	AlternateQuestions  []string             `json:"alternate_questions,omitempty"`
-	AlternateReadings   []StudyThemeReading  `json:"alternate_readings,omitempty"`
-	ConcentrationMarker string               `json:"concentration_marker,omitempty"`
+	AlternateTitles     []string            `json:"alternate_titles,omitempty"`
+	AlternateQuestions  []string            `json:"alternate_questions,omitempty"`
+	AlternateReadings   []StudyThemeReading `json:"alternate_readings,omitempty"`
+	ConcentrationMarker string              `json:"concentration_marker,omitempty"`
 }
 
 // StudyThemeReading is one ordered exact reading on a theme card. Path/line
