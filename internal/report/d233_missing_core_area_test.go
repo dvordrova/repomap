@@ -182,14 +182,14 @@ process.stdout.write(JSON.stringify({ en, ru }));
 	}
 	var out struct {
 		En struct {
-			MissingItems  []string `json:"missingItems"`
+			MissingItems   []string `json:"missingItems"`
 			MissingHeading []string `json:"missingHeading"`
-			OverviewText  string   `json:"overviewText"`
+			OverviewText   string   `json:"overviewText"`
 		} `json:"en"`
 		Ru struct {
-			MissingItems  []string `json:"missingItems"`
+			MissingItems   []string `json:"missingItems"`
 			MissingHeading []string `json:"missingHeading"`
-			OverviewText  string   `json:"overviewText"`
+			OverviewText   string   `json:"overviewText"`
 		} `json:"ru"`
 	}
 	if err := json.Unmarshal(output, &out); err != nil {

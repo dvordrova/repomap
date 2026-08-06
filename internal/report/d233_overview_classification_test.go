@@ -223,7 +223,7 @@ process.stdout.write(JSON.stringify({ service: journey(service), cli: journey(cl
 	}
 	type result struct {
 		Groups       []overviewGroup `json:"groups"`
-		OverviewText string  `json:"overviewText"`
+		OverviewText string          `json:"overviewText"`
 	}
 	output, err := exec.Command(node, runnerPath, assetPath).CombinedOutput()
 	if err != nil {
