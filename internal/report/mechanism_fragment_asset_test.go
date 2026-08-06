@@ -143,23 +143,27 @@ if (!architectureTab) {
 }
 architectureTab.onclick();
 const root = roots["rm-architecture"];
-const items = root.querySelectorAll(".rm-mechanism-fragment__item");
+// Decision 229 D5: lanes (entry + transitions) render as separate cards —
+// never one linearized numbered sequence.
+const items = root.querySelectorAll(".rm-mechanism-fragment__lane");
 const frontier = root.querySelector(".rm-mechanism-fragment__frontier");
 const kinds = items.map((item) => {
-  const strong = item.children.find((n) => String(n.className || "").includes("rm-mechanism-fragment__kind"));
+  const strong = item.querySelector(".rm-mechanism-fragment__kind");
   return strong ? strong.textContent : "";
 });
 const orderings = items.map((item) => {
-  const el = item.children.find((n) => String(n.className || "").includes("rm-mechanism-fragment__ordering"));
+  const el = item.querySelector(".rm-mechanism-fragment__ordering");
   return el ? el.textContent : "";
 });
-// Decision 226: evidence and limitation are always visible per transition.
+// Decision 226/229: evidence and limitation are visible per transition —
+// evidence (including raw enums) under a secondary disclosure, limitation
+// as primary copy.
 const evidenceSpans = items.map((item) => {
-  const el = item.children.find((n) => String(n.className || "").includes("rm-mechanism-fragment__evidence"));
-  return el ? el.textContent : "";
+  const details = item.querySelector(".rm-mechanism-fragment__evidence-details");
+  return details ? details.textContent.replace(/\s+/g, " ").trim() : "";
 });
 const limitationSpans = items.map((item) => {
-  const el = item.children.find((n) => String(n.className || "").includes("rm-mechanism-fragment__limitation"));
+  const el = item.querySelector(".rm-mechanism-fragment__limitation");
   return el ? el.textContent : "";
 });
 process.stdout.write(JSON.stringify({
@@ -194,21 +198,31 @@ process.stdout.write(JSON.stringify({
 	if err := json.Unmarshal(output, &out); err != nil {
 		t.Fatalf("decode mechanism fragment workspace: %v\n%s", err, output)
 	}
-	// Entry + direct_static_call + unresolved_continuation.
+	// Entry + direct_static_call + unresolved_continuation, as human copy
+	// (Decision 229 D4: raw enums never primary UI).
 	if out.ItemCount != 3 {
 		t.Fatalf("items = %d, want 3: %#v", out.ItemCount, out.Kinds)
 	}
-	wantKinds := []string{"entry", "direct_static_call", "unresolved_continuation"}
+	wantKinds := []string{"Process entry", "Direct static call", "Continuation not recovered"}
 	for index, want := range wantKinds {
 		if index >= len(out.Kinds) || out.Kinds[index] != want {
 			t.Fatalf("kinds = %#v, want %#v", out.Kinds, wantKinds)
 		}
 	}
-	// Orderings: exact_local_order, resolved_path_order, not_established.
-	if len(out.Orderings) != 3 || out.Orderings[1] != "resolved_path_order" || out.Orderings[2] != "not_established" {
+	// Raw enums never appear as primary kind copy.
+	for _, kind := range out.Kinds {
+		if kind == "direct_static_call" || kind == "resolved_static" ||
+			kind == "resolved_path_order" || kind == "not_established" || kind == "entry" {
+			t.Fatalf("raw enum leaked into primary mechanism copy: %q", kind)
+		}
+	}
+	// Orderings: human copy — Local callsite order, Continuation not
+	// recovered (resolved_path_order / not_established stay in details).
+	if len(out.Orderings) != 3 || out.Orderings[1] != "Local callsite order" || out.Orderings[2] != "Continuation not recovered" {
 		t.Fatalf("orderings = %#v", out.Orderings)
 	}
-	// Evidence and limitation always visible on every row (never hover-only).
+	// Evidence (including raw enums) under Evidence details — always
+	// present, never hover-only.
 	if len(out.EvidenceSpans) != 3 || out.EvidenceSpans[0] == "" || out.EvidenceSpans[1] == "" || out.EvidenceSpans[2] == "" {
 		t.Fatalf("evidence spans = %#v, want 3 non-empty", out.EvidenceSpans)
 	}
