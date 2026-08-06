@@ -9793,47 +9793,115 @@
   // ordering — ALL always visible, never hover-only; the unresolved
   // frontier renders with its items. This is a repository-perimeter
   // fragment, never a complete process proof.
+  // Decision 229 D4/D5: raw contract enums (direct_static_call,
+  // resolved_static, resolved_path_order, not_established) are never
+  // primary user copy. Human phrases carry the primary meaning; the raw
+  // enum stays under "Evidence details".
+  var MECHANISM_CLAIM_KIND_COPY = {
+   process_entry: 'main.architecture.mechanism.kind.process_entry',
+   direct_static_call: 'main.architecture.mechanism.kind.direct_static_call',
+   unresolved_continuation: 'main.architecture.mechanism.kind.unresolved_continuation',
+  };
+  var MECHANISM_SUPPORT_MODE_COPY = {
+   resolved_static: 'main.architecture.mechanism.support.resolved_static',
+   unknown: 'main.architecture.mechanism.support.unknown',
+  };
+  var MECHANISM_ORDERING_COPY = {
+   exact_local_order: 'main.architecture.mechanism.ordering.resolved_path_order',
+   resolved_path_order: 'main.architecture.mechanism.ordering.resolved_path_order',
+   not_established: 'main.architecture.mechanism.ordering.not_established',
+  };
+
+  function mechanismClaimKindLabel(transition) {
+   var copy = MECHANISM_CLAIM_KIND_COPY[String(transition && transition.claim_kind || '')];
+   return copy ? msg(copy) : String(transition && transition.claim_kind || '');
+  }
+
+  function mechanismSupportModeLabel(transition) {
+   var copy = MECHANISM_SUPPORT_MODE_COPY[String(transition && transition.support_mode || '')];
+   return copy ? msg(copy) : String(transition && transition.support_mode || '');
+  }
+
+  function mechanismOrderingLabel(transition) {
+   var copy = MECHANISM_ORDERING_COPY[String(transition && transition.ordering || '')];
+   return copy ? msg(copy) : String(transition && transition.ordering || '');
+  }
+
   function renderMechanismFragment(fragment) {
-    var section = el('section', 'rm-workspace-section rm-mechanism-fragment');
-    section.appendChild(renderViewHeading(
-      msg('main.architecture.mechanism.kicker'),
-      msg('main.architecture.mechanism.title'),
-      msg('main.architecture.mechanism.copy')
-    ));
-    var list = el('ol', 'rm-mechanism-fragment__items');
-    var entry = fragment.entry || {};
-    var entryItem = txt('li', 'rm-mechanism-fragment__item rm-mechanism-fragment__item--entry', '');
-    entryItem.appendChild(txt('strong', 'rm-mechanism-fragment__kind', msg('main.architecture.mechanism.entry')));
-    entryItem.appendChild(txt('span', 'rm-mechanism-fragment__mode', String(entry.support_mode || '')));
-    entryItem.appendChild(txt('span', 'rm-mechanism-fragment__label', String(entry.label || '')));
-    entryItem.appendChild(txt('code', 'rm-mechanism-fragment__location', String(entry.path || '') + (entry.line ? ':' + entry.line : '')));
-    entryItem.appendChild(txt('span', 'rm-mechanism-fragment__ordering', String(entry.ordering || '')));
-    entryItem.appendChild(txt('span', 'rm-mechanism-fragment__evidence', String(entry.evidence || '')));
-    entryItem.appendChild(txt('span', 'rm-mechanism-fragment__limitation', String(entry.limitation || '')));
-    list.appendChild(entryItem);
-    (Array.isArray(fragment.transitions) ? fragment.transitions : []).forEach(function (transition) {
-      var item = txt('li', 'rm-mechanism-fragment__item', '');
-      item.appendChild(txt('strong', 'rm-mechanism-fragment__kind', String(transition.claim_kind || '')));
-      item.appendChild(txt('span', 'rm-mechanism-fragment__mode', String(transition.support_mode || '')));
-      item.appendChild(txt('span', 'rm-mechanism-fragment__label', String(transition.label || '')));
-      item.appendChild(txt('code', 'rm-mechanism-fragment__location', String(transition.path || '') + (transition.line ? ':' + transition.line : '')));
-      item.appendChild(txt('span', 'rm-mechanism-fragment__ordering', String(transition.ordering || '')));
-      item.appendChild(txt('span', 'rm-mechanism-fragment__evidence', String(transition.evidence || '')));
-      item.appendChild(txt('span', 'rm-mechanism-fragment__limitation', String(transition.limitation || '')));
-      list.appendChild(item);
-    });
-    section.appendChild(list);
-    // Unresolved frontier: always visible, never hover-only. Renders the
-    // limitation AND the explicit unresolved items.
-    var frontier = fragment.frontier || {};
-    var frontierBox = el('div', 'rm-mechanism-fragment__frontier');
-    frontierBox.appendChild(txt('strong', null, msg('main.architecture.mechanism.frontier_title')));
-    frontierBox.appendChild(txt('p', 'rm-arch__limitation', String(frontier.limitation || msg('main.architecture.mechanism.frontier_default'))));
-    (Array.isArray(frontier.unresolved) ? frontier.unresolved : []).forEach(function (item) {
-      if (String(item || '').trim()) frontierBox.appendChild(txt('p', 'rm-mechanism-fragment__frontier-item', String(item)));
-    });
-    section.appendChild(frontierBox);
-    return section;
+   var section = el('section', 'rm-workspace-section rm-mechanism-fragment');
+   section.appendChild(renderViewHeading(
+    msg('main.architecture.mechanism.kicker'),
+    msg('main.architecture.mechanism.title'),
+    msg('main.architecture.mechanism.copy')
+   ));
+   var entry = fragment.entry || {};
+   var transitions = Array.isArray(fragment.transitions) ? fragment.transitions : [];
+   // Decision 229 D5: disconnected evidence is never linearized into one
+   // numbered sequence. The entry lane is its own fragment; every
+   // transition renders as a separate lane card with explicit source
+   // (callsite path:line) → target (symbol) → support/ordering/evidence/
+   // limitation. Ordinals never imply adjacency between unrelated lanes.
+   var lanes = [];
+   if (entry.path || entry.label) {
+    lanes.push({ kind: 'entry', transition: entry });
+   }
+   transitions.forEach(function (transition) {
+    lanes.push({ kind: 'transition', transition: transition });
+   });
+   var list = el('div', 'rm-mechanism-fragment__lanes');
+   lanes.forEach(function (lane) {
+    var transition = lane.transition || {};
+    var item = el('article', 'rm-mechanism-fragment__lane' + (lane.kind === 'entry' ? ' rm-mechanism-fragment__lane--entry' : ''));
+    var head = el('div', 'rm-mechanism-fragment__lane-head');
+    head.appendChild(txt('strong', 'rm-mechanism-fragment__kind', mechanismClaimKindLabel(transition)));
+    head.appendChild(txt('span', 'rm-mechanism-fragment__mode', mechanismSupportModeLabel(transition)));
+    item.appendChild(head);
+    var callsite = transition.path ? transition.path + (transition.line ? ':' + transition.line : '') : '';
+    if (callsite) item.appendChild(txt('code', 'rm-mechanism-fragment__location', callsite));
+    // Decision 229 D4: the entry lane's raw label starts with the claim
+    // kind ("process entry …"), which the kind badge already states —
+    // strip the prefix so primary copy never repeats a raw enum.
+    var rawLabel = String(transition.label || '');
+    var label = rawLabel.indexOf('process entry ') === 0 ? rawLabel.slice('process entry '.length) : rawLabel;
+    if (transition.symbol && transition.symbol.indexOf('member-symbol') !== 0) {
+     item.appendChild(txt('span', 'rm-mechanism-fragment__label', String(transition.symbol)));
+    } else if (label && label !== 'handoff') {
+     item.appendChild(txt('span', 'rm-mechanism-fragment__label', label));
+    }
+    // Human copy: ordering and limitation are primary; raw enums live
+    // under Evidence details.
+    var ordering = mechanismOrderingLabel(transition);
+    if (ordering) item.appendChild(txt('span', 'rm-mechanism-fragment__ordering', ordering));
+    if (transition.limitation) item.appendChild(txt('p', 'rm-arch__limitation rm-mechanism-fragment__limitation', String(transition.limitation)));
+    var details = el('details', 'rm-mechanism-fragment__evidence-details');
+    details.appendChild(txt('summary', 'rm-mechanism-fragment__evidence-summary', msg('main.architecture.mechanism.evidence_details')));
+    var raw = [];
+    if (transition.claim_kind) raw.push('claim_kind: ' + transition.claim_kind);
+    if (transition.support_mode) raw.push('support_mode: ' + transition.support_mode);
+    if (transition.ordering) raw.push('ordering: ' + transition.ordering);
+    if (transition.evidence) raw.push('evidence: ' + transition.evidence);
+    if (transition.scenario) raw.push('scenario: ' + transition.scenario);
+    if (transition.path && transition.line) raw.push('exact source: ' + transition.path + ':' + transition.line);
+    if (raw.length) {
+     var rawList = el('ul', 'rm-mechanism-fragment__evidence-raw');
+     raw.forEach(function (line) { rawList.appendChild(txt('li', '', line)); });
+     details.appendChild(rawList);
+     item.appendChild(details);
+    }
+    list.appendChild(item);
+   });
+   section.appendChild(list);
+   // Unresolved frontier: always visible, never hover-only. Renders the
+   // limitation AND the explicit unresolved items.
+   var frontier = fragment.frontier || {};
+   var frontierBox = el('div', 'rm-mechanism-fragment__frontier');
+   frontierBox.appendChild(txt('strong', null, msg('main.architecture.mechanism.frontier_title')));
+   frontierBox.appendChild(txt('p', 'rm-arch__limitation', String(frontier.limitation || msg('main.architecture.mechanism.frontier_default'))));
+   (Array.isArray(frontier.unresolved) ? frontier.unresolved : []).forEach(function (item) {
+    if (String(item || '').trim()) frontierBox.appendChild(txt('p', 'rm-mechanism-fragment__frontier-item', String(item)));
+   });
+   section.appendChild(frontierBox);
+   return section;
   }
 
   function renderArchitectureUnmappedDisclosure() {
