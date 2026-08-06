@@ -22,7 +22,7 @@ import (
 const (
 	SynthesisRequestVersion = 14
 	SynthesisRecordVersion  = 11
-	SynthesisPromptVersion  = "architecture-grounding-v18"
+	SynthesisPromptVersion  = "architecture-grounding-v17"
 
 	maxSynthesisRequestBytes  = 1 << 20
 	maxSynthesisPromptBytes   = maxSynthesisRequestBytes + (16 << 10)
