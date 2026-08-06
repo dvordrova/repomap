@@ -286,6 +286,7 @@ func TestCheckSurfaceGoVersionRejectsNewerTargetBeforePackageLoading(t *testing.
 		t.Fatal(err)
 	}
 
+	t.Setenv("GOTOOLCHAIN", "")
 	err := checkSurfaceGoVersion(root)
 	if err == nil {
 		t.Fatal("error = nil, want an incompatible-toolchain error")
@@ -294,5 +295,31 @@ func TestCheckSurfaceGoVersionRejectsNewerTargetBeforePackageLoading(t *testing.
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error = %q, want %q", err, want)
 		}
+	}
+}
+
+// Decision 231 owner preference: REPOMAP_GOTOOLCHAIN=auto (or local+auto)
+// defers the toolchain decision to the Go loader — a module requiring a
+// newer Go is NOT an admission-gate failure in that environment. The loader
+// resolves the toolchain; the runtime-version check would otherwise produce
+// a false negative on machines whose go command can auto-download. A plain
+// GOTOOLCHAIN value must NOT change repomap behavior.
+func TestCheckSurfaceGoVersionAutoToolchainDefersToLoader(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(root, "go.mod"),
+		[]byte("module example.com/future\n\ngo 99.0\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("REPOMAP_GOTOOLCHAIN", "auto")
+	if err := checkSurfaceGoVersion(root); err != nil {
+		t.Fatalf("REPOMAP_GOTOOLCHAIN=auto: error = %v, want nil (defer to loader)", err)
+	}
+	t.Setenv("REPOMAP_GOTOOLCHAIN", "local+auto")
+	if err := checkSurfaceGoVersion(root); err != nil {
+		t.Fatalf("REPOMAP_GOTOOLCHAIN=local+auto: error = %v, want nil (defer to loader)", err)
 	}
 }
