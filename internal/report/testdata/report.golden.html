@@ -66,7 +66,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-workspace-section { margin-top: 2.25rem; }
 .rm-overview-hero { background: linear-gradient(145deg, #f8fbff, #f0edff); border: 1px solid #d8e0ea; border-radius: 14px; padding: clamp(1.25rem, 3vw, 2rem); }
 .rm-overview-hero h2 { font-size: clamp(1.6rem, 3vw, 2.35rem); line-height: 1.15; margin: .35rem 0 .8rem; }
-.rm-overview-hero p { color: #526176; font-size: .95rem; max-width: 54rem; }
+.rm-overview-hero p { color: #526176; font-size: .95rem; max-width: 54rem; overflow-wrap: anywhere; }
 .rm-overview-anatomy-zone { display: grid; gap: .75rem; }
 .rm-overview-object-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
 .rm-overview-spine-grid { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
@@ -116,7 +116,16 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-overview-entry-group__label { font-size: .78rem; margin: 0 0 .45rem; }
 @media (max-width: 560px) {
   .rm-overview-glance__row { grid-template-columns: 1fr; gap: .1rem; }
-  .rm-architecture-canvas-card { display: none; }
+  /* Decision 229 D8: the canvas CARD stays in the DOM on mobile — hiding
+     it (display:none) would also hide the position:fixed inspector, which
+     is mounted inside it. Hide only the visual map surface; the inspector
+     opens as an independent bottom sheet above the component list. */
+  .rm-architecture-canvas-card .rm-arch__viewport,
+  .rm-architecture-canvas-card .rm-arch__toolbar,
+  .rm-architecture-canvas-card .rm-arch__flow-focus,
+  .rm-architecture-canvas-card .rm-arch__canvas-hint { display: none; }
+  .rm-architecture-canvas-card .rm-arch__workspace { display: block; }
+  .rm-architecture-canvas-card .rm-arch__inspector { position: fixed; }
   .rm-architecture-list { margin-top: 0; }
 }
 /* Decision 217: the canvas renders its own compact unassigned-evidence
