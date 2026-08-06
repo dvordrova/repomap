@@ -12,6 +12,9 @@ Active decisions (each approved by the repository owner via its supervisory goal
 8. decisions/224-study-content-integrity-normalization.md
 9. decisions/225-component-boundary-resource-association.md
 10. decisions/226-mechanism-evidence-contract.md
+11. decisions/227-cross-cutting-member-participation.md
+12. decisions/228-loosen-architecture-caps.md
+13. decisions/229-product-projection-vertical.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
