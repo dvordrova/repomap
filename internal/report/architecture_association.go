@@ -311,6 +311,69 @@ func aggregateAssociationRows(rows []obsRow) []ArchitectureBoundaryResourceRow {
 	return out
 }
 
+// ensureMechanismFragment derives the Decision 226 vertical fragment when
+// the report carries an accepted canvas. Provider-free; absent when no
+// process entry with call_target proof exists.
+func ensureMechanismFragment(data *ReportData) error {
+	if data == nil {
+		return fmt.Errorf("mechanism fragment: report is required")
+	}
+	// Historical/manual render fixtures with unsupported canvas versions stay
+	// displayable without a fragment; authorized manifest verification
+	// independently rejects unsupported Canvas versions.
+	if data.MechanismFragment == nil && data.ArchitectureCanvas != nil &&
+		data.ArchitectureCanvas.Version != ArchitectureCanvasVersion {
+		return nil
+	}
+	if data.MechanismFragment != nil {
+		return ValidateMechanismFragment(
+			data.ArchitectureCanvas,
+			data.ArchitectureAssociations,
+			data.RepositoryAtlas,
+			data.MechanismFragment,
+		)
+	}
+	fragment, err := ProjectMechanismFragment(
+		data.ArchitectureCanvas,
+		data.ArchitectureAssociations,
+		data.RepositoryAtlas,
+	)
+	if err != nil {
+		return err
+	}
+	data.MechanismFragment = fragment
+	return nil
+}
+
+// ValidateMechanismFragment re-derives the exact fragment and rejects drift.
+func ValidateMechanismFragment(
+	canvas *ArchitectureCanvas,
+	associations *ArchitectureAssociationProjection,
+	atlas *repositoryatlas.Atlas,
+	fragment *MechanismFragmentProjection,
+) error {
+	expected, err := ProjectMechanismFragment(canvas, associations, atlas)
+	if err != nil {
+		return err
+	}
+	if expected == nil {
+		if fragment == nil {
+			return nil
+		}
+		return fmt.Errorf("mechanism fragment: projection has no process entry")
+	}
+	if fragment == nil {
+		return fmt.Errorf("mechanism fragment: projection is missing")
+	}
+	if fragment.Version != MechanismFragmentVersion {
+		return fmt.Errorf("mechanism fragment: unsupported version %d", fragment.Version)
+	}
+	if !reflect.DeepEqual(fragment, expected) {
+		return fmt.Errorf("mechanism fragment: persisted projection does not match exact local evidence")
+	}
+	return nil
+}
+
 // familyFromImportPath extracts the broad imported family from a canonical
 // import path: stdlib first segment (net, os, database) or module root for
 // external modules (github.com/org/...).
