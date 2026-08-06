@@ -4250,14 +4250,28 @@ function architecturePartialTruth(data) {
      witnesses.hidden = true;
      array(row.witnesses).forEach((witness) => {
       const label = [witness.symbol, witness.path + ":" + witness.line].filter(Boolean).join(" · ");
-      const jump = element("button", "rm-arch__edge-jump rm-arch__compact-action");
-      jump.type = "button";
+      // Decision 230 (fresh review task-4 minor): in static reports the
+      // witness jump is a real link (pinned revision, target=_blank,
+      // rel=noopener noreferrer); served mode keeps the exact button.
+      const staticURL = typeof this.options.staticSourceURL === "function" && witness.path
+       ? this.options.staticSourceURL(witness.path, witness.line || 0)
+       : "";
+      const jump = staticURL
+       ? element("a", "rm-arch__edge-jump rm-arch__compact-action rm-arch__edge-jump--link")
+       : element("button", "rm-arch__edge-jump rm-arch__compact-action");
+      if (staticURL) {
+       jump.href = staticURL;
+       jump.target = "_blank";
+       jump.rel = "noopener noreferrer";
+      } else {
+       jump.type = "button";
+      }
       jump.appendChild(element("strong", null, witness.symbol || witness.path));
       jump.appendChild(element("span", null, witness.path + (witness.line ? ":" + witness.line : "")));
       if (witness.role === "test") jump.appendChild(element("span", "rm-arch__association-witness-role", this.msg("architecture.role.test")));
       else if (witness.role === "tooling") jump.appendChild(element("span", "rm-arch__association-witness-role", this.msg("architecture.role.tooling")));
       else if (witness.role) jump.appendChild(element("span", "rm-arch__association-witness-role", this.msg("architecture.role.production")));
-      if (typeof this.options.openLocation === "function" && witness.path) {
+      if (!staticURL && typeof this.options.openLocation === "function" && witness.path) {
        this.listen(jump, "click", () => this.options.openLocation(witness.path, witness.line || 0, 0));
       }
       witnesses.appendChild(jump);
@@ -4265,8 +4279,12 @@ function architecturePartialTruth(data) {
      rowEl.appendChild(witnesses);
      const witnessCount = array(row.witnesses).length;
      if (witnessCount > 0) {
+      // Decision 230 (fresh review task-4 minor): aria-controls names the
+      // exact sibling witness list, never an empty value.
+      const witnessListID = "rm-arch-assoc-" + text(row.owning_unit) + "-" + text(row.imported_family) + "-" + witnessCount;
+      witnesses.setAttribute("id", witnessListID);
       toggle.setAttribute("aria-expanded", "false");
-      toggle.setAttribute("aria-controls", "");
+      toggle.setAttribute("aria-controls", witnessListID);
       toggle.setAttribute("title", this.msg("architecture.label.expand_witnesses", { count: witnessCount }));
       this.listen(toggle, "click", () => {
        const willOpen = witnesses.hidden;
@@ -4321,11 +4339,24 @@ function architecturePartialTruth(data) {
       const witnesses = element("div", "rm-arch__association-witnesses");
       witnesses.hidden = true;
       array(row.witnesses).forEach((witness) => {
-       const jump = element("button", "rm-arch__edge-jump rm-arch__compact-action");
-       jump.type = "button";
+       // Decision 230 (fresh review task-4 minor): static witnesses are
+       // real links; served mode keeps exact buttons.
+       const staticURL = typeof this.options.staticSourceURL === "function" && witness.path
+        ? this.options.staticSourceURL(witness.path, witness.line || 0)
+        : "";
+       const jump = staticURL
+        ? element("a", "rm-arch__edge-jump rm-arch__compact-action rm-arch__edge-jump--link")
+        : element("button", "rm-arch__edge-jump rm-arch__compact-action");
+       if (staticURL) {
+        jump.href = staticURL;
+        jump.target = "_blank";
+        jump.rel = "noopener noreferrer";
+       } else {
+        jump.type = "button";
+       }
        jump.appendChild(element("strong", null, witness.symbol || witness.path));
        jump.appendChild(element("span", null, witness.path + (witness.line ? ":" + witness.line : "")));
-       if (typeof this.options.openLocation === "function" && witness.path) {
+       if (!staticURL && typeof this.options.openLocation === "function" && witness.path) {
         this.listen(jump, "click", () => this.options.openLocation(witness.path, witness.line || 0, 0));
        }
        witnesses.appendChild(jump);
@@ -4333,7 +4364,10 @@ function architecturePartialTruth(data) {
       rowEl.appendChild(witnesses);
       const witnessCount = array(row.witnesses).length;
       if (witnessCount > 0) {
+       const witnessListID = "rm-arch-assoc-broad-" + text(row.owning_unit) + "-" + text(row.imported_family) + "-" + witnessCount;
+       witnesses.setAttribute("id", witnessListID);
        toggle.setAttribute("aria-expanded", "false");
+       toggle.setAttribute("aria-controls", witnessListID);
        toggle.setAttribute("title", this.msg("architecture.label.expand_witnesses", { count: witnessCount }));
        this.listen(toggle, "click", () => {
         const willOpen = witnesses.hidden;
@@ -4341,10 +4375,10 @@ function architecturePartialTruth(data) {
         toggle.setAttribute("aria-expanded", String(willOpen));
         chevron.textContent = willOpen ? "▾" : "▸";
        });
-      } else {
+       } else {
        toggle.setAttribute("aria-disabled", "true");
-      }
-      broad.appendChild(rowEl);
+       }
+       broad.appendChild(rowEl);
      });
      associationSection.appendChild(broad);
      }
