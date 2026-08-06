@@ -74,11 +74,14 @@ CURRENT.md updated (decisions 223-226 registered; D219 remains DEFERRED/history)
   in ≤2 actions); limitations always visible; EN/RU.
 - Browser-verified: TLS component shows 8 rows (database/sql, aws-sdk-go,
   go-sms-sender), witnesses expand, limitations visible.
-- Fresh-context review: PASS (4 decision-doc wording refinements applied).
+- Fresh-context review: PASS (4 decision-doc wording refinements applied —
+  Q8 unknowns is a NEW section; family source = evidence[].provenance.detail;
+  scope-set rule pinned; pairing join key = shared evidence refs).
 
 ### Phase 4 — Mechanism Evidence Contract (D226)
-- Closed per-transition claim contract: claim_kind / support_mode / evidence
-  refs / scenario / limitations / ordering on every transition.
+- Closed per-transition claim contract: claim_kind (incl. process_entry) /
+  support_mode / evidence refs / scenario / limitations / ordering on every
+  transition.
 - One honest vertical fragment from saved local evidence only: process entry
   (main main.go:36) → SSA behavior-handoff transitions (main.go:150 →
   service.Start; ldap/server.go:61 → ldap.getTLSconfig) → observed
@@ -86,13 +89,14 @@ CURRENT.md updated (decisions 223-226 registered; D219 remains DEFERRED/history)
   support_mode unknown, ordering not_established). No invented edges; a
   downstream handoff (service.Start → …) is NOT chained because local
   evidence doesn't prove the connection from entry.
-- UI: compact DFD-like list with contract fields per transition, frontier
-  always visible; no BPMN/SIPOC/swimlane/FFBD claims (test-asserted).
-- Fresh-context review: NOT PASS → bounded fixes applied (unresolved_
-  continuation made an explicit contract transition present in code;
-  DOM/asset test added covering kinds/orderings/frontier; entry proof_mode
-  wording corrected in the decision; ordering fixed so the continuation is
-  last). All suites green after fixes.
+- UI: compact DFD-like list; per-row evidence/limitation/ordering ALWAYS
+  visible; frontier renders limitation + unresolved items; no
+  BPMN/SIPOC/swimlane/FFBD claims (test-asserted).
+- Fresh-context review: NOT PASS → all bounded fixes applied (unresolved_
+  continuation explicit; entry claim_kind process_entry with proof-mode
+  evidence; ordinals post-sort; per-row evidence/limitation in UI; DOM test
+  covering kinds/orderings/evidence/limitation/frontier items; decision
+  closed set + mapping corrected). 74/74 green after fixes.
 
 ## Final gates (exact commands, all at final HEAD)
 
