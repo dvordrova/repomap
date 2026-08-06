@@ -1248,7 +1248,7 @@ func TestSynthesisWireRejectsOverBoundComponentsBeforeNormalization(t *testing.T
 	bundle := CandidateBundle{
 		Version: ContractVersion, RepositoryArchetype: ArchetypeApplication, GroundingMode: GroundingPackages,
 	}
-	for index := 0; index < 10; index++ {
+	for index := 0; index < MaxComponentsPerSubsystem+1; index++ {
 		path := fmt.Sprintf("package-%02d/package.go", index)
 		bundle.Candidates = append(bundle.Candidates, Candidate{
 			ID:   MemberID{Kind: MemberPackage, Value: fmt.Sprintf("package-%02d", index)},
@@ -1271,17 +1271,17 @@ func TestSynthesisWireRejectsOverBoundComponentsBeforeNormalization(t *testing.T
 			MemberRefs: []SynthesisMemberRef{catalog.membersByID[bundle.Candidates[index].ID]},
 		}
 	}
-	sharedRef := catalog.membersByID[bundle.Candidates[9].ID]
-	components[7] = synthesisWireRecord{
+	sharedRef := catalog.membersByID[bundle.Candidates[MaxComponentsPerSubsystem-1].ID]
+	components[MaxComponentsPerSubsystem-1] = synthesisWireRecord{
 		Kind: synthesisWireComponentRecord, SubsystemRef: "g1", Name: "Cross-cut A",
 		MemberRefs: []SynthesisMemberRef{
-			catalog.membersByID[bundle.Candidates[7].ID], sharedRef,
+			catalog.membersByID[bundle.Candidates[MaxComponentsPerSubsystem-1].ID], sharedRef,
 		},
 	}
-	components[8] = synthesisWireRecord{
+	components[MaxComponentsPerSubsystem] = synthesisWireRecord{
 		Kind: synthesisWireComponentRecord, SubsystemRef: "g1", Name: "Cross-cut B",
 		MemberRefs: []SynthesisMemberRef{
-			catalog.membersByID[bundle.Candidates[8].ID], sharedRef,
+			catalog.membersByID[bundle.Candidates[MaxComponentsPerSubsystem].ID], sharedRef,
 		},
 	}
 	records := append([]synthesisWireRecord{{

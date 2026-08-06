@@ -12,11 +12,11 @@ import (
 
 const (
 	PreferredPrimarySubsystems   = 7
-	MaxPrimarySubsystems         = 8
+	MaxPrimarySubsystems         = 12
 	PreferredComponentsPerSystem = 4
-	MaxComponentsPerSubsystem    = 8
+	MaxComponentsPerSubsystem    = 24
 	PreferredTotalComponents     = 18
-	MaxTotalNestedComponents     = 24
+	MaxTotalNestedComponents     = 48
 )
 
 func newDiagnostic(code, message string) Diagnostic {

@@ -7,6 +7,7 @@ import (
 	"path"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -24,17 +25,17 @@ const (
 	maxRelations         = 1_024
 	maxAnchorBindings    = 2_048
 	maxBehaviorAnchors   = 256
-	maxAnchorMembers     = 16
+	maxAnchorMembers     = 64
 	maxLimitations       = 8
 	maxFactsPerCandidate = 16
 	maxFlowsPerCandidate = 16
-	maxSubsystems        = 16
-	maxComponents        = 32
+	maxSubsystems        = 24
+	maxComponents        = 64
 	// Conceptual membership is many-to-many. Bound relation cardinality
 	// independently from the number of exact local candidates so a single
 	// cross-cutting member cannot consume an unbounded response budget.
 	maxConceptualMemberships          = 2_048
-	maxConceptualMembershipsPerMember = 8
+	maxConceptualMembershipsPerMember = 32
 	maxProvenanceItems                = 8
 	maxScenarioContexts               = 8
 	maxResearchFindings               = 64
@@ -1048,11 +1049,8 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 				}
 				memberIDs = append(memberIDs, member.ID)
 			}
-			if expected := componentID(memberIDs); component.ID != expected {
-				return fmt.Errorf("componentmap: component id %q does not match exact membership", component.ID)
-			}
-			if _, exists := seenComponents[component.ID]; exists {
-				return fmt.Errorf("componentmap: duplicate component id %q", component.ID)
+			if expected := nextComponentID(memberIDs, seenComponents); component.ID != expected {
+				return fmt.Errorf("componentmap: component id %q does not match exact membership (expected %q)", component.ID, expected)
 			}
 			seenComponents[component.ID] = struct{}{}
 			componentIDs = append(componentIDs, component.ID)
@@ -1126,6 +1124,7 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 	knownAnchors := behaviorAnchorIndex(bundle.BehaviorAnchors)
 	seenMembers := make(map[MemberID]struct{})
 	seenComponentIDs := make(map[ComponentID]struct{})
+	seenComponentTwins := make(map[string]struct{})
 	landscape := Landscape{
 		Version:            ContractVersion,
 		Subsystems:         make([]Subsystem, 0, len(proposal.Subsystems)),
@@ -1186,22 +1185,34 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 				anchorIDs = append(anchorIDs, anchorID)
 			}
 			sort.Strings(anchorIDs)
-			if proposedComponent.Hypothesis != !componentHasCompleteOperationalGrounding(
+			// Decision 228: hypothesis is advisory model input (the prompt says
+			// so explicitly — "the backend derives the product hypothesis
+			// status exclusively from exact process_entry/call_target proof").
+			// The backend derives it deterministically and overwrites the
+			// model's flag instead of rejecting the whole proposal over an
+			// advisory field.
+			hypothesis := !componentHasCompleteOperationalGrounding(
 				proposedComponent.MemberIDs, anchorIDs, knownAnchors,
-			) {
-				invalid("proposal.ungrounded_primary_component", "component hypothesis is not derived from exact local operational proof for every member")
-				return Landscape{}, diagnostics, false
-			}
+			)
 			sortCandidates(members)
-			id := componentID(candidateIDs(members))
-			if _, duplicate := seenComponentIDs[id]; duplicate {
-				invalid("proposal.duplicate_component_identity", "proposal contains two components with the same exact member set")
+			id := nextComponentID(candidateIDs(members), seenComponentIDs)
+			// Decision 227: a unit may participate in several components
+			// (participation, not ownership). Sharing the same exact member
+			// set is therefore NOT a hard rejection — the components express
+			// different conceptual roles over the same package(s). Only an
+			// exact twin — identical name, description, member set AND anchor
+			// set — is a literal copy with no added knowledge and still fails
+			// closed.
+			twinKey := componentTwinKey(componentName, componentDescription, members, anchorIDs)
+			if _, duplicate := seenComponentTwins[twinKey]; duplicate {
+				invalid("proposal.duplicate_component_identity", "proposal contains two identical components (same name, description, member set and anchor set)")
 				return Landscape{}, diagnostics, false
 			}
+			seenComponentTwins[twinKey] = struct{}{}
 			seenComponentIDs[id] = struct{}{}
 			subsystem.Components = append(subsystem.Components, Component{
 				ID: id, Name: componentName, Description: componentDescription,
-				Members: members, AnchorIDs: anchorIDs, Hypothesis: proposedComponent.Hypothesis,
+				Members: members, AnchorIDs: anchorIDs, Hypothesis: hypothesis,
 				SourceIDs: append([]ComponentID(nil), proposedComponent.sourceIDs...),
 			})
 		}
@@ -1905,6 +1916,41 @@ func componentID(memberIDs []MemberID) ComponentID {
 	}
 	sort.Strings(keys)
 	return ComponentID("component-" + stableDigest("component", keys))
+}
+
+// nextComponentID returns the deterministic component id for the member
+// set, disambiguating exact-set participation (Decision 227): when the
+// base id is already taken, an ordinal suffix -2, -3, … is appended, the
+// same way units are disambiguated with -N suffixes. Deterministic across
+// Apply and Validate because both walk components in the same order.
+func nextComponentID(memberIDs []MemberID, seen map[ComponentID]struct{}) ComponentID {
+	base := componentID(memberIDs)
+	if _, exists := seen[base]; !exists {
+		return base
+	}
+	for ordinal := 2; ; ordinal++ {
+		candidate := ComponentID(string(base) + "-" + strconv.Itoa(ordinal))
+		if _, exists := seen[candidate]; !exists {
+			return candidate
+		}
+	}
+}
+
+// componentTwinKey is the exact-twin identity of a proposed component:
+// name, description, sorted member ids and sorted anchor ids. Decision 227
+// keeps this as the ONLY duplicate-component hard rejection; sharing a
+// member set across differently-named components is participation.
+func componentTwinKey(name, description string, members []Candidate, anchorIDs []string) string {
+	memberKeys := make([]string, len(members))
+	for index, member := range members {
+		memberKeys[index] = member.ID.key()
+	}
+	sort.Strings(memberKeys)
+	anchors := append([]string(nil), anchorIDs...)
+	sort.Strings(anchors)
+	parts := append([]string{name, description}, memberKeys...)
+	parts = append(parts, anchors...)
+	return strings.Join(parts, "\x00")
 }
 
 func subsystemID(componentIDs []ComponentID) SubsystemID {

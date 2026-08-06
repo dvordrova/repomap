@@ -151,6 +151,63 @@ func TestApplyFallsBackForInvalidOrEmptyProposal(t *testing.T) {
 	}
 }
 
+// Decision 227: a unit may participate in several components when the
+// components express different conceptual roles (participation, not
+// exclusive ownership). Sharing the same exact member set under different
+// names/descriptions is accepted.
+func TestApplyAcceptsCrossCuttingParticipation(t *testing.T) {
+	t.Parallel()
+
+	bundle := candidateBundleWithPackages(3)
+	ids := candidateIDs(bundle.Candidates)
+	result, err := Apply(bundle, Proposal{
+		Version: ContractVersion,
+		Subsystems: []ProposedSubsystem{{
+			Name: "Casdoor-like",
+			Components: []ProposedComponent{
+				{Name: "Server", MemberIDs: ids[:1]},
+				{Name: "Certificates", MemberIDs: ids[:1]},
+				{Name: "Lifecycle providers", MemberIDs: ids[:1]},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if result.Fallback || result.ValidationOutcome == ValidationRejected {
+		t.Fatalf("cross-cutting participation was rejected: %#v", result.Diagnostics)
+	}
+	if len(result.Subsystems[0].Components) != 3 {
+		t.Fatalf("components = %d, want 3 (all roles preserved)", len(result.Subsystems[0].Components))
+	}
+}
+
+// Decision 227: only an exact twin — same name, description, member set AND
+// anchor set — is a literal copy with no added knowledge and still fails
+// closed with proposal.duplicate_component_identity.
+func TestApplyRejectsExactTwinComponents(t *testing.T) {
+	t.Parallel()
+
+	bundle := candidateBundleWithPackages(2)
+	ids := candidateIDs(bundle.Candidates)
+	result, err := Apply(bundle, Proposal{
+		Version: ContractVersion,
+		Subsystems: []ProposedSubsystem{{
+			Name: "Repository",
+			Components: []ProposedComponent{
+				{Name: "Same role", Description: "same responsibility", MemberIDs: ids},
+				{Name: "Same role", Description: "same responsibility", MemberIDs: ids},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if !result.Fallback || !hasLandscapeDiagnostic(result.Diagnostics, "proposal.duplicate_component_identity") {
+		t.Fatalf("exact twin components were not rejected: %#v", result.Diagnostics)
+	}
+}
+
 func TestPackageLandscapeIgnoresProviderGroundingClaim(t *testing.T) {
 	t.Parallel()
 
