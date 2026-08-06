@@ -70,6 +70,8 @@ var architectureStatusValidationCodes = map[string]struct{}{
 	"proposal.duplicate_anchor_id":             {},
 	"proposal.empty_member_coverage":           {},
 	"proposal.equivalent_member_set_collision": {},
+	"proposal.shared_unit_slice":               {},
+	"proposal.empty_anchor_slice":              {},
 
 	// Provider response extraction and request-local reference diagnostics.
 	"response.ambiguous_json":    {},

@@ -22,7 +22,7 @@ import (
 const (
 	SynthesisRequestVersion = 14
 	SynthesisRecordVersion  = 11
-	SynthesisPromptVersion  = "architecture-grounding-v17"
+	SynthesisPromptVersion  = "architecture-grounding-v18"
 
 	maxSynthesisRequestBytes  = 1 << 20
 	maxSynthesisPromptBytes   = maxSynthesisRequestBytes + (16 << 10)
@@ -244,13 +244,16 @@ func (counts SynthesisMembershipCounts) CoverageComplete() bool {
 }
 
 type synthesisPrivateCatalog struct {
-	membersByID        map[MemberID]SynthesisMemberRef
-	membersByRef       map[string]MemberID
-	memberKinds        map[string]MemberKind
-	memberRoles        map[string]CandidateRole
-	anchorsByID        map[string]SynthesisAnchorRef
-	anchorsByRef       map[string]string
-	anchorKinds        map[string]BehaviorAnchorKind
+	membersByID  map[MemberID]SynthesisMemberRef
+	membersByRef map[string]MemberID
+	memberKinds  map[string]MemberKind
+	memberRoles  map[string]CandidateRole
+	anchorsByID  map[string]SynthesisAnchorRef
+	anchorsByRef map[string]string
+	anchorKinds  map[string]BehaviorAnchorKind
+	// Decision 230 D9.7: exact members owned by each behavior anchor
+	// (anchor-specific slice for repeated broad units).
+	anchorMemberIDs    map[string]map[MemberID]struct{}
 	flowsByID          map[FlowID]SynthesisFlowRef
 	canonicalOpaqueIDs map[string]struct{}
 	identitySHA256     string
@@ -292,6 +295,7 @@ func buildSynthesisPrivateCatalog(bundle CandidateBundle) (synthesisPrivateCatal
 		anchorsByID:        make(map[string]SynthesisAnchorRef, len(bundle.BehaviorAnchors)),
 		anchorsByRef:       make(map[string]string, len(bundle.BehaviorAnchors)),
 		anchorKinds:        make(map[string]BehaviorAnchorKind, len(bundle.BehaviorAnchors)),
+		anchorMemberIDs:    make(map[string]map[MemberID]struct{}, len(bundle.BehaviorAnchors)),
 		flowsByID:          make(map[FlowID]SynthesisFlowRef, len(bundle.Flows)),
 		canonicalOpaqueIDs: make(map[string]struct{}, len(bundle.Candidates)+len(bundle.BehaviorAnchors)+len(bundle.Flows)),
 	}
@@ -348,6 +352,13 @@ func buildSynthesisPrivateCatalog(bundle CandidateBundle) (synthesisPrivateCatal
 		catalog.anchorsByID[anchor.ID] = ref
 		catalog.anchorsByRef[ref.key()] = anchor.ID
 		catalog.anchorKinds[ref.Ref] = ref.Kind
+		if len(anchor.MemberIDs) > 0 {
+			memberSet := make(map[MemberID]struct{}, len(anchor.MemberIDs))
+			for _, memberID := range anchor.MemberIDs {
+				memberSet[memberID] = struct{}{}
+			}
+			catalog.anchorMemberIDs[anchor.ID] = memberSet
+		}
 		identity.Anchors = append(identity.Anchors, synthesisCatalogAnchorIdentity{
 			Ref: ref, ID: anchor.ID, ProofMode: anchor.ProofMode,
 		})
@@ -932,7 +943,7 @@ Local semantic facts, compact structural relations, structural locator containme
 Return exactly one compact JSON proposal object with one ordered records array. Use this exact tagged-record grammar:
 {"records":[{"kind":"subsystem","ref":"g1","name":"first subsystem","description":"first purpose"},{"kind":"component","subsystem_ref":"g1","name":"first component","description":"first responsibility","unit_refs":[{"kind":"package","ref":"u1"}],"anchor_refs":[{"kind":"process_entry","ref":"a1"}],"hypothesis":false},{"kind":"subsystem","ref":"g2","name":"second subsystem","description":"second purpose"},{"kind":"component","subsystem_ref":"g2","name":"second component","description":"second responsibility","unit_refs":[{"kind":"package","ref":"u2"}],"anchor_refs":[],"hypothesis":true}]}
 
-The entire response must parse as exactly one complete JSON object. Its only root field is records. A subsystem record contains exactly kind, ref, name, and description. Its ref is a unique response-local value g1, g2, and so on; it is not a supplied request ref. A component record contains exactly kind, subsystem_ref, name, description, either unit_refs or member_refs, anchor_refs, and hypothesis. When the request supplies a units catalog, group unit_refs (u*): copy each unit ref exactly as supplied and never split one unit across components. When the request has no units catalog, group member_refs (p*/s*/f*) instead; never mix unit_refs and member_refs in one component. Copy subsystem_ref exactly from one subsystem record. Do not nest records or emit a second root object. Before returning, silently validate the complete JSON syntax, every record kind, every unique subsystem ref, and every exact subsystem_ref, then return only that one object.
+The entire response must parse as exactly one complete JSON object. Its only root field is records. A subsystem record contains exactly kind, ref, name, and description. Its ref is a unique response-local value g1, g2, and so on; it is not a supplied request ref. A component record contains exactly kind, subsystem_ref, name, description, either unit_refs or member_refs, anchor_refs, and hypothesis. When the request supplies a units catalog, group unit_refs (u*): copy each unit ref exactly as supplied. Prefer grouping each unit under exactly one component; if a unit is genuinely shared, it is treated as shared scope and only anchor-specific members survive, so assign each unit to the single component that owns it. When the request has no units catalog, group member_refs (p*/s*/f*) instead; never mix unit_refs and member_refs in one component. Copy subsystem_ref exactly from one subsystem record. Do not nest records or emit a second root object. Before returning, silently validate the complete JSON syntax, every record kind, every unique subsystem ref, and every exact subsystem_ref, then return only that one object.
 
 Records are in conceptual display order. Emit each subsystem record followed by its component records. Never repeat a unit ref within one component. Never repeat an anchor ref within one component. units is the exhaustive bounded local unit catalog available for grouping: group units coherently, do not invent, rename, or rewrite unit refs. A unit may legitimately participate in several components when it genuinely serves several conceptual roles; this expresses participation, not exclusive ownership, and is accepted. An exact partial grouping is valid: omitted units remain in a deterministic local unclassified remainder and must not be echoed, renamed, or placed in a model-authored remainder. At least one supplied unit ref must be returned. Before returning, collect the distinct unit_refs from every component and self-check them: every returned unit ref must be an exact supplied unit ref, with no unknown or wrong-kind ref. Cross-cutting repeats count once for this identity self-check. Every component must contain at least one supplied unit ref (or, under the legacy member contract, at least one supplied conceptual member ref).
 
@@ -2127,6 +2138,21 @@ func resolveSynthesisWireProposal(
 			code: "response.invalid_proposal", message: "proposal component count exceeds the bounded contract",
 		}
 	}
+	// Decision 230 D9.7 (salvage contract v6 "repeated broad unit"): when
+	// several components reference the SAME unit ref, that unit is shared
+	// scope, not independent ownership — each referencing component keeps
+	// only its anchor-specific slice (the exact members its anchors own)
+	// instead of the full broad unit. A unit referenced exactly once keeps
+	// its full expansion.
+	unitUsage := make(map[string]int)
+	for _, record := range wire.Records {
+		if record.Kind != synthesisWireComponentRecord {
+			continue
+		}
+		for _, unitRef := range record.UnitRefs {
+			unitUsage[unitRef.Ref]++
+		}
+	}
 	for subsystemRef, componentCount := range componentCounts {
 		if _, exists := subsystemIndexes[subsystemRef]; !exists {
 			return Proposal{}, wireDiagnostics, &synthesisResponseError{
@@ -2185,6 +2211,35 @@ func resolveSynthesisWireProposal(
 			}
 			component.MemberIDs = append(component.MemberIDs, memberID)
 		}
+		// Decision 230 D9.7: anchors resolve BEFORE units so a repeated
+		// broad unit can be reduced to its anchor-specific slice.
+		anchorMemberSet := make(map[MemberID]struct{})
+		seenAnchors := make(map[string]struct{}, len(record.AnchorRefs))
+		for _, anchorRef := range record.AnchorRefs {
+			if expectedKind, exists := catalog.anchorKinds[anchorRef.Ref]; exists && expectedKind != anchorRef.Kind {
+				salvageComponent("proposal.unknown_anchor_id", "proposal anchor ref has the wrong request-local kind")
+				componentSalvaged = true
+				break
+			}
+			anchorID, exists := catalog.anchorsByRef[anchorRef.key()]
+			if !exists {
+				salvageComponent("proposal.unknown_anchor_id", "proposal references an unknown request-local anchor ref")
+				componentSalvaged = true
+				break
+			}
+			if _, duplicate := seenAnchors[anchorID]; duplicate {
+				salvageComponent("proposal.duplicate_anchor_id", "proposal repeats an anchor ref within one component")
+				componentSalvaged = true
+				break
+			}
+			seenAnchors[anchorID] = struct{}{}
+			component.AnchorIDs = append(component.AnchorIDs, anchorID)
+			if anchorMembers, exists := catalog.anchorMemberIDs[anchorID]; exists {
+				for memberID := range anchorMembers {
+					anchorMemberSet[memberID] = struct{}{}
+				}
+			}
+		}
 		if !componentSalvaged && len(record.UnitRefs) > 0 {
 			// Decision 216: a component grouping unit refs (u*) expands locally
 			// to the exact unit members. Unknown, duplicate, or wrong-kind unit
@@ -2209,30 +2264,25 @@ func resolveSynthesisWireProposal(
 					break
 				}
 				seenUnits[unitRef.Ref] = struct{}{}
-				component.MemberIDs = append(component.MemberIDs, members...)
-			}
-		}
-		if !componentSalvaged {
-			seenAnchors := make(map[string]struct{}, len(record.AnchorRefs))
-			for _, anchorRef := range record.AnchorRefs {
-				if expectedKind, exists := catalog.anchorKinds[anchorRef.Ref]; exists && expectedKind != anchorRef.Kind {
-					salvageComponent("proposal.unknown_anchor_id", "proposal anchor ref has the wrong request-local kind")
-					componentSalvaged = true
-					break
+				if unitUsage[unitRef.Ref] > 1 {
+					// Decision 230 D9.7: repeated broad unit = shared
+					// scope. Keep only the anchor-specific slice (the
+					// exact members this component's anchors own);
+					// never hand a full broad unit to several owners.
+					for _, memberID := range members {
+						if _, covered := anchorMemberSet[memberID]; covered {
+							component.MemberIDs = append(component.MemberIDs, memberID)
+						}
+					}
+					salvageComponent("proposal.shared_unit_slice", "proposal reuses one unit ref across several components; the component keeps only its anchor-specific slice")
+					if len(component.MemberIDs) == 0 {
+						salvageComponent("proposal.empty_anchor_slice", "component's anchors own no exact member of the shared unit; component skipped item-scope")
+						componentSalvaged = true
+						break
+					}
+				} else {
+					component.MemberIDs = append(component.MemberIDs, members...)
 				}
-				anchorID, exists := catalog.anchorsByRef[anchorRef.key()]
-				if !exists {
-					salvageComponent("proposal.unknown_anchor_id", "proposal references an unknown request-local anchor ref")
-					componentSalvaged = true
-					break
-				}
-				if _, duplicate := seenAnchors[anchorID]; duplicate {
-					salvageComponent("proposal.duplicate_anchor_id", "proposal repeats an anchor ref within one component")
-					componentSalvaged = true
-					break
-				}
-				seenAnchors[anchorID] = struct{}{}
-				component.AnchorIDs = append(component.AnchorIDs, anchorID)
 			}
 		}
 		if componentSalvaged {

@@ -64,7 +64,12 @@ func diagnosticSeverity(code string) FindingSeverity {
 		"proposal.duplicate_anchor_id",
 		// Decision 229 D7: a subsystem emptied by item-scope salvage is
 		// skipped with a counted recoverable finding, never a fatal.
-		"proposal.salvaged_empty_subsystem":
+		"proposal.salvaged_empty_subsystem",
+		// Decision 230 D9.7: repeated broad unit reduced to its
+		// anchor-specific slice is a recoverable normalization; an empty
+		// slice drops only the referencing component.
+		"proposal.shared_unit_slice",
+		"proposal.empty_anchor_slice":
 		return FindingRecoverable
 	default:
 		return FindingAdvisory

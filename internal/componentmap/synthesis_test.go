@@ -2505,3 +2505,100 @@ func caddyArchitectureReplayFixture(t *testing.T) (CandidateBundle, []byte) {
 	sort.Slice(bundle.BehaviorAnchors, func(i, j int) bool { return bundle.BehaviorAnchors[i].ID < bundle.BehaviorAnchors[j].ID })
 	return bundle, response
 }
+
+// Decision 230 D9.7 (salvage contract v6 "repeated broad unit"): when
+// several components reference the SAME unit ref, each keeps only its
+// anchor-specific slice; a component whose anchors own no member of the
+// shared unit is dropped item-scope. Siblings still publish.
+func TestSynthesisSharedUnitReducesToAnchorSlice(t *testing.T) {
+	t.Parallel()
+
+	bundle := unitFixtureBundle()
+	request, _, err := BuildSynthesisRequest(bundle)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	if len(request.Units) == 0 {
+		t.Fatal("fixture has no units catalog")
+	}
+	// Find the unit whose expansion contains the anchored production
+	// package member.
+	prodID := MemberID{Kind: MemberPackage, Value: "member-package-prod-a"}
+	unitCatalog, unitErr := CompileUnitCatalog(bundle)
+	if unitErr != nil {
+		t.Fatalf("unit catalog: %v", unitErr)
+	}
+	membersByRef := unitCatalogUnitMembersByWireRef(unitCatalog)
+	var sharedUnitRef string
+	for ref, members := range membersByRef {
+		for _, memberID := range members {
+			if memberID == prodID {
+				sharedUnitRef = ref
+			}
+		}
+	}
+	if sharedUnitRef == "" {
+		t.Fatal("no unit ref covers the anchored production member")
+	}
+	anchorRef := SynthesisAnchorRef{Kind: AnchorProcessEntry, Ref: "a1"}
+	// Two components reuse the same unit; the first has the anchor that
+	// owns production members, the second has no anchor.
+	wire := synthesisWireProposal{Records: []synthesisWireRecord{
+		{Kind: synthesisWireSubsystemRecord, Ref: "g1", Name: "Repository", Description: ""},
+		{
+			Kind: synthesisWireComponentRecord, SubsystemRef: "g1",
+			Name: "Anchored component", Description: "",
+			UnitRefs:   []SynthesisUnitRef{{Kind: MemberPackage, Ref: sharedUnitRef}},
+			AnchorRefs: []SynthesisAnchorRef{anchorRef},
+			Hypothesis: false,
+		},
+		{
+			Kind: synthesisWireComponentRecord, SubsystemRef: "g1",
+			Name: "Detached component", Description: "",
+			UnitRefs:   []SynthesisUnitRef{{Kind: MemberPackage, Ref: sharedUnitRef}},
+			AnchorRefs: []SynthesisAnchorRef{},
+			Hypothesis: true,
+		},
+	}}
+	response, err := json.Marshal(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := RecordSynthesisResponse(bundle, "revision-shared", "test", "test", time.Millisecond, response)
+	if err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	if result.Landscape.Fallback {
+		t.Fatalf("shared unit must not reject whole-stage: %#v", result.Landscape.Diagnostics)
+	}
+	if !hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.shared_unit_slice") {
+		t.Fatalf("shared_unit_slice not counted: %#v", result.Landscape.Diagnostics)
+	}
+	if !hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.empty_anchor_slice") {
+		t.Fatalf("empty_anchor_slice not counted for the detached component: %#v", result.Landscape.Diagnostics)
+	}
+	// The anchored component survives with the anchor slice (its own
+	// members), never the full broad unit; the detached one is dropped
+	// item-scope.
+	var anchored *Component
+	for _, subsystem := range result.Landscape.Subsystems {
+		for index := range subsystem.Components {
+			component := &subsystem.Components[index]
+			if component.Name == "Anchored component" {
+				anchored = component
+			}
+			if component.Name == "Detached component" {
+				t.Fatalf("detached component published without an anchor slice: %#v", component)
+			}
+		}
+	}
+	if anchored == nil {
+		t.Fatal("anchored component missing")
+	}
+	for _, memberID := range anchored.Members {
+		if memberID.ID == prodID {
+			return
+		}
+	}
+	t.Fatalf("anchored component lost its exact anchor slice member: %#v", anchored.Members)
+}
