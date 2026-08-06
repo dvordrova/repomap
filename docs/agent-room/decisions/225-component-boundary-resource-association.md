@@ -32,7 +32,10 @@ association; a naive approach would claim runtime dependencies
   + `symbol` + `provenance`.
 - Deterministic match: an observed boundary/resource callsite belongs to a
   component's exact member scope when the observation's unit package path
-  equals a member package path or lies under it (prefix).
+  equals a member package path or lies under it (prefix). The scope set is
+  the exact package-path values of package-member `FactDeclaration` facts;
+  symbol/file/flow member identities are excluded (they cannot equal or
+  prefix a unit package path at a `/` boundary).
 
 Archive 6 match results:
 - Casdoor: 218/218 observations in component scopes (17 boundary, 22
@@ -61,19 +64,21 @@ Archive 6 match results:
   prefix), deterministically, from the same canonical data the report
   already carries. No model call, no new stage.
 - Produce per-component association rows, each row = one boundary/resource
-  entity kind + imported API/package family (from evidence provenance
-  families) + owning exact unit + exact witness list (path:line:symbol,
-  bounded) + observation/omission counts.
+  entity kind + imported API/package family (derived deterministically from
+  the exact import path already recorded in `evidence[].provenance.detail` —
+  stdlib first segment or external module root) + owning exact unit + exact
+  witness list (path:line:symbol, bounded) + observation/omission counts.
 - Complete counts/omissions: no first-N silent loss; the card states how
   many observations fall in scope and how many were not associated (none
   for matched; any unmatched are listed as omissions with the honest
   reason).
 - Canonical Atlas IDs remain private: association rows carry display-safe
   package paths and evidence locations only.
-- Optional same-observation Boundary↔Resource pairing: when the same
-  evidence location appears in both a boundary and a resource observation
-  of the same unit, present them as one paired row with a distinct pair
-  class — still without semantic claims.
+- Optional same-observation Boundary↔Resource pairing: when a boundary
+  observation and a resource observation of the same unit share the same
+  evidence ref (`evidence_refs` → same evidence id, hence same callsite
+  location), present them as one paired row with a distinct pair class —
+  still without semantic claims.
 
 ### Architecture interaction (node-centered, truth-first)
 - Default remains the structured list plus optional canvas; nothing is
@@ -103,12 +108,16 @@ Archive 6 match results:
 5. observed external/state callsites in exact member scope (new rows);
 6. relevant source-grounded Study themes (existing theme refs);
 7. 3–5 typed places to start reading (exact readings);
-8. what remains unknown/unclassified/unresolved (existing unknowns +
-   association limitations).
+8. what remains unknown/unclassified/unresolved (NEW component-card unknowns
+   section: association limitations, unassociated observations with reasons,
+   and unclassified member state — flow-level unknowns are separate and
+   already rendered on study flow cards).
 
 ### Boundary/resource card (restricted to what local data proves)
 - broad observed class (boundary|resource);
-- imported API/package family (evidence provenance family labels);
+- imported API/package family (derived deterministically from the exact
+  import path already recorded in `evidence[].provenance.detail` — stdlib
+  first segment or external module root);
 - owning exact package/unit;
 - exact callsites (path:line, enclosing symbol);
 - observation and omission counts;

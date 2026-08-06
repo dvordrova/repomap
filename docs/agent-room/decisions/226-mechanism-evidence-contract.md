@@ -22,10 +22,11 @@ exact saved evidence. No new model call is added.
 Every displayed mechanism transition carries exactly:
 
 - `claim_kind` — closed set:
-  `exact_registration | direct_static_call | resolved_static_dispatch |
-  structural_dependency | publish_callsite | consume_registration |
-  storage_boundary_callsite | outbound_client_callsite |
-  runtime_observed_transition | interpreted_role | unresolved_continuation`
+  `process_entry | exact_registration | direct_static_call |
+  resolved_static_dispatch | structural_dependency | publish_callsite |
+  consume_registration | storage_boundary_callsite |
+  outbound_client_callsite | runtime_observed_transition |
+  interpreted_role | unresolved_continuation`
 - `support_mode` — closed set:
   `observed_local | resolved_static | runtime_observed | corroborated |
   interpreted | unknown`
@@ -43,10 +44,10 @@ Mappings from current local data (Archive 6 verified):
   ordering=`resolved_path_order`;
 - the process entry anchor (kind `process_entry`, proof_mode
   `process_entry` or `call_target`, exact location) →
-  claim_kind=`exact_registration`, support_mode=`resolved_static`,
-  ordering=`exact_local_order` — the entry identity is exact and
-  locally proven; it is an entry declaration, never a runtime
-  dependency claim;
+  claim_kind=`process_entry`, support_mode=`resolved_static`,
+  ordering=`exact_local_order`, evidence derived from the anchor's actual
+  proof mode — a process entry is a declaration/entry anchor, never a
+  runtime dependency or registration claim;
 - behavior anchor with proof_mode `call_target` →
   support_mode=`resolved_static`; `declaration_family` →
   support_mode=`observed_local`;
@@ -82,7 +83,7 @@ Surface/process entry → locally supported operation transitions → observed
 boundary/resource → exact evidence and explicit unresolved frontier.
 
 1. `process entry` — `github.com/casdoor/casdoor.main`, main.go:36,
-   anchor kind process_entry (proof_mode call_target).
+   anchor kind process_entry (proof_mode process_entry).
 2. `direct_static_call` — main.go:150:16 → `service.Start`
    (behavior_handoff, go_ssa, scenario "Recorded Go build scenario"),
    ordering `resolved_path_order`.

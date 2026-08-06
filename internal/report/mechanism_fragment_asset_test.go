@@ -70,9 +70,10 @@ const report = {
   mechanism_fragment: {
     version: 1,
     entry: {
-      ordinal: 0, claim_kind: "exact_registration", support_mode: "resolved_static",
+      ordinal: 0, claim_kind: "process_entry", support_mode: "resolved_static",
       label: "process entry fixture.main", path: "main.go", line: 36,
-      evidence: "behavior anchor", scenario: "go:linux", limitation: "entry identity only",
+      evidence: "behavior anchor proof_mode process_entry", scenario: "go:linux",
+      limitation: "process entry identity only; runtime reachability not proven",
       ordering: "exact_local_order",
     },
     transitions: [
@@ -152,10 +153,21 @@ const orderings = items.map((item) => {
   const el = item.children.find((n) => String(n.className || "").includes("rm-mechanism-fragment__ordering"));
   return el ? el.textContent : "";
 });
+// Decision 226: evidence and limitation are always visible per transition.
+const evidenceSpans = items.map((item) => {
+  const el = item.children.find((n) => String(n.className || "").includes("rm-mechanism-fragment__evidence"));
+  return el ? el.textContent : "";
+});
+const limitationSpans = items.map((item) => {
+  const el = item.children.find((n) => String(n.className || "").includes("rm-mechanism-fragment__limitation"));
+  return el ? el.textContent : "";
+});
 process.stdout.write(JSON.stringify({
   itemCount: items.length,
   kinds,
   orderings,
+  evidenceSpans,
+  limitationSpans,
   frontierPresent: !!frontier,
   frontierText: frontier ? frontier.textContent.replace(/\s+/g, " ").trim() : "",
   architectureText: root.textContent.slice(0, 400),
@@ -173,6 +185,8 @@ process.stdout.write(JSON.stringify({
 		ItemCount        int      `json:"itemCount"`
 		Kinds            []string `json:"kinds"`
 		Orderings        []string `json:"orderings"`
+		EvidenceSpans    []string `json:"evidenceSpans"`
+		LimitationSpans  []string `json:"limitationSpans"`
 		FrontierPresent  bool     `json:"frontierPresent"`
 		FrontierText     string   `json:"frontierText"`
 		ArchitectureText string   `json:"architectureText"`
@@ -194,9 +208,17 @@ process.stdout.write(JSON.stringify({
 	if len(out.Orderings) != 3 || out.Orderings[1] != "resolved_path_order" || out.Orderings[2] != "not_established" {
 		t.Fatalf("orderings = %#v", out.Orderings)
 	}
-	// Frontier always visible without hover.
-	if !out.FrontierPresent || !strings.Contains(out.FrontierText, "No locally saved transitions") {
-		t.Fatalf("frontier missing or hover-only: %#v", out.FrontierText)
+	// Evidence and limitation always visible on every row (never hover-only).
+	if len(out.EvidenceSpans) != 3 || out.EvidenceSpans[0] == "" || out.EvidenceSpans[1] == "" || out.EvidenceSpans[2] == "" {
+		t.Fatalf("evidence spans = %#v, want 3 non-empty", out.EvidenceSpans)
+	}
+	if len(out.LimitationSpans) != 3 || out.LimitationSpans[0] == "" || out.LimitationSpans[1] == "" || out.LimitationSpans[2] == "" {
+		t.Fatalf("limitation spans = %#v, want 3 non-empty", out.LimitationSpans)
+	}
+	// Frontier always visible without hover, and carries the unresolved item.
+	if !out.FrontierPresent || !strings.Contains(out.FrontierText, "No locally saved transitions") ||
+		!strings.Contains(out.FrontierText, "further locally saved transitions beyond the observed handoffs") {
+		t.Fatalf("frontier missing/hover-only or unresolved item dropped: %#v", out.FrontierText)
 	}
 	// No BPMN/SIPOC/swimlane/FFBD claims in the fragment copy.
 	lower := strings.ToLower(out.ArchitectureText)
