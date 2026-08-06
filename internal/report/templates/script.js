@@ -9801,9 +9801,12 @@
    process_entry: 'main.architecture.mechanism.kind.process_entry',
    direct_static_call: 'main.architecture.mechanism.kind.direct_static_call',
    unresolved_continuation: 'main.architecture.mechanism.kind.unresolved_continuation',
+   storage_boundary_callsite: 'main.architecture.mechanism.kind.storage_boundary_callsite',
+   outbound_client_callsite: 'main.architecture.mechanism.kind.outbound_client_callsite',
   };
   var MECHANISM_SUPPORT_MODE_COPY = {
    resolved_static: 'main.architecture.mechanism.support.resolved_static',
+   observed_local: 'main.architecture.mechanism.support.observed_local',
    unknown: 'main.architecture.mechanism.support.unknown',
   };
   var MECHANISM_ORDERING_COPY = {
@@ -9863,6 +9866,16 @@
     // strip the prefix so primary copy never repeats a raw enum.
     var rawLabel = String(transition.label || '');
     var label = rawLabel.indexOf('process entry ') === 0 ? rawLabel.slice('process entry '.length) : rawLabel;
+    // Decision 229 D4: boundary/resource observation labels ("boundary
+    // net", "resource os") become human copy; the raw kind stays under
+    // Evidence details.
+    if (label.indexOf('boundary ') === 0) {
+     label = msg('main.architecture.mechanism.label.boundary') + ' · ' + label.slice('boundary '.length);
+    } else if (label.indexOf('resource ') === 0) {
+     label = msg('main.architecture.mechanism.label.resource') + ' · ' + label.slice('resource '.length);
+    } else if (label.indexOf('operation') === 0) {
+     label = msg('main.architecture.mechanism.label.operation');
+    }
     if (transition.symbol && transition.symbol.indexOf('member-symbol') !== 0) {
      item.appendChild(txt('span', 'rm-mechanism-fragment__label', String(transition.symbol)));
     } else if (label && label !== 'handoff') {
