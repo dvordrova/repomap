@@ -994,6 +994,11 @@ func architectureBuildMemberID(kind componentmap.MemberKind, identity string) co
 	}
 }
 
+// memberIDSortKey orders MemberIDs deterministically for projection lists.
+func memberIDSortKey(id componentmap.MemberID) string {
+	return string(id.Kind) + "\x00" + id.Value
+}
+
 func architectureBuildStableID(kind string, values ...string) string {
 	hash := sha256.New()
 	fmt.Fprintf(hash, "%s/%s\n", architectureBuildContractVersion, kind)

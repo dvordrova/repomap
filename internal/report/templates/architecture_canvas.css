@@ -2384,3 +2384,8 @@
 .rm-arch__edge-jump--link {
   text-decoration: none;
 }
+
+/* Decision 231 (Archive 9): shared participation cards — scope evidence
+   without cloned ownership; visually quieter than exclusive members. */
+.rm-arch__shared-member { border-left-color: var(--rm-accent-soft, #eef2ff); }
+.rm-arch__shared-member .rm-arch__evidence-title { font-weight: 500; }

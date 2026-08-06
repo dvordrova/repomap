@@ -56,9 +56,9 @@ func TestBuildArchitectureLocalizationRussianPromptIsExactAndReadOnly(t *testing
 		t.Fatalf("stage prompt does not match localization contract:\n%s\n%s", first, want)
 	}
 	digest := sha256.Sum256(first)
-	// Decision 230 D4: ContractVersion 10 (equivalent member-set
-	// coalescing) flows into LandscapeVersion, so the prompt SHA changes.
-	const wantPromptSHA256 = "7a16d5fb1557194394115301632145bd2739d8abe3243194381ce8404b28be41"
+	// Decision 231 (Archive 9): shared participation + prompt v18 flow
+	// into the landscape contract, so the prompt SHA changes (v18).
+	const wantPromptSHA256 = "142b4828b9a0123e49f02793c197e23733af19243fd883e545fef62185d1517d"
 	if got := hex.EncodeToString(digest[:]); got != wantPromptSHA256 {
 		t.Fatalf("Architecture prompt SHA-256 = %q, want %q", got, wantPromptSHA256)
 	}

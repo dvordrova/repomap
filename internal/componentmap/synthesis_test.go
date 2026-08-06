@@ -312,7 +312,7 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 	if prompt.Version != SynthesisPromptVersion || prompt.OutputLanguage != "en" || !strings.Contains(prompt.User, encoded) {
 		t.Fatalf("prompt is not bound to the versioned request: %#v", prompt)
 	}
-	for _, required := range []string{"request-local typed", "member_refs", "anchor_refs", "Do not return versions", "coordinates", "provenance"} {
+	for _, required := range []string{"request-local", "member_refs", "anchor_refs", "Do not return versions", "coordinates", "provenance"} {
 		if !strings.Contains(prompt.System, required) {
 			t.Errorf("synthesis instruction misses %q", required)
 		}
@@ -327,16 +327,26 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 		"exactly one complete JSON object",
 		"Its only root field is records",
 		"A subsystem record contains exactly kind, ref, name, and description",
-		"A component record contains exactly kind, subsystem_ref, name, description, either unit_refs or member_refs, anchor_refs, and hypothesis",
+		// Decision 231 (Archive 9): the v18 grammar drops hypothesis and
+		// ref-kind from the model contract — the backend owns them.
+		"A component record contains exactly kind, subsystem_ref, name, description, unit_refs or member_refs, and anchor_refs",
 		"Do not nest records or emit a second root object",
-		"silently validate the complete JSON syntax",
-		"units is the exhaustive bounded local unit catalog available for grouping",
 		"An exact partial grouping is valid: omitted units remain",
-		"every returned unit ref must be an exact supplied unit ref",
+		"shared participation, not exclusive ownership",
+		"Fewer groups are better than padding",
 	} {
 		if !strings.Contains(prompt.System, required) {
 			t.Errorf("synthesis nesting contract misses %q", required)
 		}
+	}
+	if strings.Contains(prompt.System, "silently validate the complete JSON syntax") {
+		t.Error("synthesis prompt still asks the model to simulate backend validation")
+	}
+	if strings.Contains(prompt.System, "every returned unit ref must be an exact supplied unit ref") {
+		t.Error("synthesis prompt still asks the model to self-check refs")
+	}
+	if strings.Contains(prompt.System, "At least one supplied unit ref must be returned") {
+		t.Error("synthesis prompt still requires a mandatory one-unit filler")
 	}
 	if strings.Contains(prompt.System, "Omit an uncertain member") {
 		t.Fatal("synthesis prompt still permits incomplete candidate coverage")
@@ -2574,13 +2584,14 @@ func TestSynthesisSharedUnitReducesToAnchorSlice(t *testing.T) {
 	if !hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.shared_unit_slice") {
 		t.Fatalf("shared_unit_slice not counted: %#v", result.Landscape.Diagnostics)
 	}
-	if !hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.empty_anchor_slice") {
-		t.Fatalf("empty_anchor_slice not counted for the detached component: %#v", result.Landscape.Diagnostics)
-	}
-	// The anchored component survives with the anchor slice (its own
-	// members), never the full broad unit; the detached one is dropped
-	// item-scope.
+	// Decision 231 (Archive 9): shared participation replaces the
+	// type-blind slice. Both components keep the shared unit as scope:
+	// the anchored one also keeps its exact anchor; the detached one
+	// publishes as shared participation too (scope, not exclusive
+	// ownership). No empty_anchor_slice is emitted — a component with
+	// shared scope plus anchors (or distinct responsibility) is valid.
 	var anchored *Component
+	var detached *Component
 	for _, subsystem := range result.Landscape.Subsystems {
 		for index := range subsystem.Components {
 			component := &subsystem.Components[index]
@@ -2588,19 +2599,31 @@ func TestSynthesisSharedUnitReducesToAnchorSlice(t *testing.T) {
 				anchored = component
 			}
 			if component.Name == "Detached component" {
-				t.Fatalf("detached component published without an anchor slice: %#v", component)
+				detached = component
 			}
 		}
 	}
 	if anchored == nil {
 		t.Fatal("anchored component missing")
 	}
-	for _, memberID := range anchored.Members {
-		if memberID.ID == prodID {
+	if detached == nil {
+		t.Fatal("detached shared-participation component missing")
+	}
+	if len(anchored.SharedUnitRefs) == 0 {
+		t.Fatalf("anchored component lost its shared unit scope: %#v", anchored.SharedUnitRefs)
+	}
+	if len(anchored.AnchorIDs) == 0 {
+		t.Fatalf("anchored component lost its exact anchor: %#v", anchored.AnchorIDs)
+	}
+	if len(detached.SharedUnitRefs) == 0 {
+		t.Fatalf("detached component lost its shared unit scope: %#v", detached.SharedUnitRefs)
+	}
+	for _, memberID := range anchored.SharedMemberIDs {
+		if memberID == prodID {
 			return
 		}
 	}
-	t.Fatalf("anchored component lost its exact anchor slice member: %#v", anchored.Members)
+	t.Fatalf("anchored component lost the shared production member: %#v", anchored.SharedMemberIDs)
 }
 
 // Decision 230 D9.7 fresh-review B1 regression: real bundles attach symbol
@@ -2661,7 +2684,11 @@ func TestSynthesisSharedUnitSliceResolvesSymbolAnchorsToPackages(t *testing.T) {
 	if result.Landscape.Fallback {
 		t.Fatalf("symbol-anchor shared unit must not reject whole-stage: %#v", result.Landscape.Diagnostics)
 	}
+	// Decision 231: shared participation — both components publish with
+	// the shared unit scope; the anchor stays attached to the anchored
+	// component; nothing is dropped for differing member kinds.
 	var anchored *Component
+	var detached *Component
 	for _, subsystem := range result.Landscape.Subsystems {
 		for index := range subsystem.Components {
 			component := &subsystem.Components[index]
@@ -2669,24 +2696,34 @@ func TestSynthesisSharedUnitSliceResolvesSymbolAnchorsToPackages(t *testing.T) {
 				anchored = component
 			}
 			if component.Name == "Detached component" {
-				t.Fatalf("detached component published without an anchor slice: %#v", component)
+				detached = component
 			}
 		}
 	}
 	if anchored == nil {
 		t.Fatal("anchored component missing")
 	}
+	if detached == nil {
+		t.Fatal("detached component missing")
+	}
+	if len(anchored.SharedUnitRefs) == 0 || len(detached.SharedUnitRefs) == 0 {
+		t.Fatalf("shared unit scope lost: anchored=%v detached=%v", anchored.SharedUnitRefs, detached.SharedUnitRefs)
+	}
+	if len(anchored.AnchorIDs) == 0 {
+		t.Fatalf("anchored component lost its exact anchor: %#v", anchored.AnchorIDs)
+	}
 	sawPackage := false
 	sawSymbol := false
-	for _, memberID := range anchored.Members {
-		if memberID.ID == prodID {
+	for _, memberID := range anchored.SharedMemberIDs {
+		if memberID == prodID {
 			sawPackage = true
 		}
-		if memberID.ID == symbolID {
+		if memberID == symbolID {
 			sawSymbol = true
 		}
 	}
-	if !sawPackage && !sawSymbol {
-		t.Fatalf("anchored component kept neither the parent package nor the exact symbol: %#v", anchored.Members)
+	if !sawPackage {
+		t.Fatalf("anchored component lost the shared production package scope: %#v", anchored.SharedMemberIDs)
 	}
+	_ = sawSymbol
 }

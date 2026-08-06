@@ -11,7 +11,10 @@ import (
 
 const (
 	ArchitectureSynthesisStatusFile    = "architecture_synthesis_status.json"
-	ArchitectureSynthesisStatusVersion = 9
+	// Decision 231 (Archive 9): shared participation changed acceptance
+	// semantics (zero useful semantic components → honest local-only with
+	// the exact reason code; shared_unit_slice repurposed to recoverable).
+	ArchitectureSynthesisStatusVersion = 10
 
 	ArchitectureSynthesisSucceeded   = "succeeded"
 	ArchitectureSynthesisCached      = "cached"
@@ -72,6 +75,10 @@ var architectureStatusValidationCodes = map[string]struct{}{
 	"proposal.equivalent_member_set_collision": {},
 	"proposal.shared_unit_slice":               {},
 	"proposal.empty_anchor_slice":              {},
+	// Decision 231 (Archive 9): zero-useful-semantic result — the exact
+	// local landscape publishes with this recoverable finding instead of
+	// a generic malformed-schema label.
+	"proposal.zero_useful_semantic_components": {},
 
 	// Provider response extraction and request-local reference diagnostics.
 	"response.ambiguous_json":    {},

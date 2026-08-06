@@ -1689,6 +1689,13 @@ function architecturePartialTruth(data) {
         metadata.push(this.msg("architecture.count.suggested_investigations", { count: suggestionCount }));
        }
        const anchorCount = array(component.anchor_ids).length;
+       // Decision 231 (Archive 9): shared participation is visible on the
+       // card — the component participates in shared units without
+       // exclusive ownership; exact anchors still show.
+       const sharedCount = array(component.shared_unit_refs).length;
+       if (!this.userMode && sharedCount > 0) {
+        metadata.push(this.msg("architecture.count.shared_scope", { count: sharedCount }));
+       }
        if (!this.userMode && anchorCount > 0) metadata.push(this.msg("architecture.count.exact_anchors", { count: anchorCount }));
        if (!this.userMode && metadata.length === 0) {
         const memberCount = array(component.members).length;
@@ -4830,6 +4837,29 @@ function architecturePartialTruth(data) {
     ));
     members.appendChild(card);
    });
+
+   // Decision 231 (Archive 9): shared participation — the exact shared
+   // scope renders as its own section so the user sees "participates in
+   // these packages" without cloned exclusive ownership.
+   const sharedMembers = array(component.shared_members);
+   if (sharedMembers.length > 0) {
+    const shared = this.inspectorSection(this.msg("architecture.section.shared_scope"));
+    shared.appendChild(element(
+     "p",
+     "rm-arch__empty",
+     this.msg("architecture.copy.shared_scope_copy", { count: array(component.shared_unit_refs).length })
+    ));
+    sharedMembers.forEach((member) => {
+     const card = element("article", "rm-arch__evidence-card rm-arch__shared-member");
+     card.appendChild(element(
+      "strong",
+      "rm-arch__evidence-title",
+      member.name || memberLabel(member.id, this.message)
+     ));
+     card.appendChild(element("code", "rm-arch__member-id", memberLabel(member.id, this.message)));
+     shared.appendChild(card);
+    });
+   }
 
    const evidence = this.inspectorSection(this.msg("architecture.section.evidence"));
    const anchorIDs = array(component.anchor_ids);

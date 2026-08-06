@@ -347,6 +347,8 @@ func TestArchitectureSynthesisV6AcceptsExactClosedProducerDiagnosticRegistry(t *
 		"proposal.equivalent_member_set_collision",
 		"proposal.shared_unit_slice",
 		"proposal.empty_anchor_slice",
+		// Decision 231 (Archive 9) zero-useful-semantic result.
+		"proposal.zero_useful_semantic_components",
 		"response.ambiguous_json",
 		"response.invalid_proposal",
 		"response.no_json",

@@ -570,8 +570,10 @@ func TestProjectArchitectureCanvasKeepsPartialRemainderOutOfModelAssociations(t 
 func TestArchitectureCanvasVersionRejectsHistoricalRemainderSemantics(t *testing.T) {
 	t.Parallel()
 
-	if ArchitectureCanvasVersion != 9 {
-		t.Fatalf("ArchitectureCanvasVersion = %d, want 9 for member-level structural relation identity", ArchitectureCanvasVersion)
+	// Decision 231 (Archive 9): shared participation projection advanced
+	// the canvas version to 10 (shared scope + shared members).
+	if ArchitectureCanvasVersion != 10 {
+		t.Fatalf("ArchitectureCanvasVersion = %d, want 10 for shared participation projection", ArchitectureCanvasVersion)
 	}
 	if err := validateSemanticSearchCanvasVersion(&ArchitectureCanvas{Version: ArchitectureCanvasVersion - 1}); err == nil || !strings.Contains(err.Error(), "unsupported architecture canvas version") {
 		t.Fatalf("historical Architecture Canvas version error = %v", err)
