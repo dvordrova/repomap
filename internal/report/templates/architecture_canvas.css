@@ -2317,6 +2317,23 @@
   font-size: 0.64rem;
 }
 
+.rm-mechanism-fragment__evidence {
+  color: #475569;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.62rem;
+}
+
+.rm-mechanism-fragment__limitation {
+  color: #92400e;
+  font-size: 0.64rem;
+}
+
+.rm-mechanism-fragment__frontier-item {
+  color: #475569;
+  font-size: 0.66rem;
+  margin: 2px 0 0;
+}
+
 .rm-mechanism-fragment__frontier {
   border: 1px dashed #cbd5e1;
   border-radius: 8px;

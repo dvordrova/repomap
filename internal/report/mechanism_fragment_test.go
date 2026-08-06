@@ -84,10 +84,13 @@ func TestProjectMechanismFragmentHonestVerticalSlice(t *testing.T) {
 	if fragment.Version != MechanismFragmentVersion {
 		t.Fatalf("version = %d, want %d", fragment.Version, MechanismFragmentVersion)
 	}
-	// Entry carries the closed contract fields.
+	// Entry carries the closed contract fields. A process entry is a
+	// declaration/entry anchor: claim_kind process_entry, support_mode
+	// resolved_static, evidence from the actual proof mode.
 	entry := fragment.Entry
-	if entry.ClaimKind != "exact_registration" || entry.SupportMode != "resolved_static" ||
-		entry.Path != "main.go" || entry.Line != 36 || entry.Ordering != "exact_local_order" {
+	if entry.ClaimKind != "process_entry" || entry.SupportMode != "resolved_static" ||
+		entry.Path != "main.go" || entry.Line != 36 || entry.Ordering != "exact_local_order" ||
+		entry.Evidence != "behavior anchor proof_mode call_target" {
 		t.Fatalf("entry = %#v", entry)
 	}
 	// Only the handoff FROM the entry symbol is a supported transition; the

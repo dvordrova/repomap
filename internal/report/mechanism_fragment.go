@@ -81,6 +81,7 @@ func ProjectMechanismFragment(
 	transitions := []MechanismTransition{}
 	frontier := MechanismFrontier{Ordering: "not_established", Limitation: "No locally saved transitions beyond the observed handoffs; execution order beyond them is not established."}
 	// Behavior-handoff edges from the entry symbol (exact, SSA-supported).
+	// Ordinals are assigned AFTER sorting so wire order is 1..N.
 	var handoffTargets []MechanismTransition
 	for _, edge := range canvas.StructuralEdges {
 		witness := edge.Witness
@@ -90,8 +91,7 @@ func ProjectMechanismFragment(
 		if !memberIDEquals(witness.From, entryMember) {
 			continue
 		}
-		transition := transitionFromWitness(edge, witness, len(handoffTargets)+1)
-		handoffTargets = append(handoffTargets, transition)
+		handoffTargets = append(handoffTargets, transitionFromWitness(edge, witness))
 	}
 	sort.Slice(handoffTargets, func(i, j int) bool {
 		if handoffTargets[i].Path != handoffTargets[j].Path {
@@ -99,6 +99,9 @@ func ProjectMechanismFragment(
 		}
 		return handoffTargets[i].Line < handoffTargets[j].Line
 	})
+	for index := range handoffTargets {
+		handoffTargets[index].Ordinal = index + 1
+	}
 	transitions = append(transitions, handoffTargets...)
 	frontier.Unresolved = []string{"further locally saved transitions beyond the observed handoffs"}
 
@@ -142,15 +145,22 @@ func ProjectMechanismFragment(
 		Ordering:    "not_established",
 	})
 
+	// Entry: a process entry is a declaration/entry anchor — claim_kind
+	// process_entry, support_mode resolved_static, and evidence derived from
+	// the anchor's actual proof mode (process_entry or call_target), never a
+	// hardcoded call_target. The label keeps the anchor label; the Symbol
+	// carries the bare entry identity (member id), consistent with
+	// transitions.
+	entrySymbol := entryMember.Value
 	entry := MechanismTransition{
 		Ordinal:     0,
-		ClaimKind:   "exact_registration",
+		ClaimKind:   "process_entry",
 		SupportMode: "resolved_static",
 		Label:       entryAnchor.Label,
 		Path:        entryAnchor.Location.Path,
 		Line:        entryAnchor.Location.Line,
-		Symbol:      entryAnchor.Label,
-		Evidence:    "behavior anchor call_target",
+		Symbol:      entrySymbol,
+		Evidence:    "behavior anchor proof_mode " + string(entryAnchor.ProofMode),
 		Scenario:    entryAnchor.Scenario.ID,
 		Limitation:  "process entry identity only; runtime reachability not proven",
 		Ordering:    "exact_local_order",
@@ -214,10 +224,8 @@ func componentForAnchor(canvas *ArchitectureCanvas, anchor *componentmap.Behavio
 func transitionFromWitness(
 	edge ArchitectureStructuralEdge,
 	witness componentmap.LocalRelation,
-	ordinal int,
 ) MechanismTransition {
 	transition := MechanismTransition{
-		Ordinal:     ordinal,
 		ClaimKind:   "direct_static_call",
 		SupportMode: "resolved_static",
 		Label:       "handoff",

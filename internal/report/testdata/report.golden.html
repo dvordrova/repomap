@@ -13314,8 +13314,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
   // Decision 226: render the honest vertical mechanism fragment as a
   // compact DFD-like list. Every transition carries its closed contract
-  // fields; the unresolved frontier is always visible. This is a
-  // repository-perimeter fragment, never a complete process proof.
+  // fields — claim_kind, support_mode, evidence, scenario, limitation,
+  // ordering — ALL always visible, never hover-only; the unresolved
+  // frontier renders with its items. This is a repository-perimeter
+  // fragment, never a complete process proof.
   function renderMechanismFragment(fragment) {
     var section = el('section', 'rm-workspace-section rm-mechanism-fragment');
     section.appendChild(renderViewHeading(
@@ -13327,8 +13329,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var entry = fragment.entry || {};
     var entryItem = txt('li', 'rm-mechanism-fragment__item rm-mechanism-fragment__item--entry', '');
     entryItem.appendChild(txt('strong', 'rm-mechanism-fragment__kind', msg('main.architecture.mechanism.entry')));
+    entryItem.appendChild(txt('span', 'rm-mechanism-fragment__mode', String(entry.support_mode || '')));
     entryItem.appendChild(txt('span', 'rm-mechanism-fragment__label', String(entry.label || '')));
     entryItem.appendChild(txt('code', 'rm-mechanism-fragment__location', String(entry.path || '') + (entry.line ? ':' + entry.line : '')));
+    entryItem.appendChild(txt('span', 'rm-mechanism-fragment__ordering', String(entry.ordering || '')));
+    entryItem.appendChild(txt('span', 'rm-mechanism-fragment__evidence', String(entry.evidence || '')));
+    entryItem.appendChild(txt('span', 'rm-mechanism-fragment__limitation', String(entry.limitation || '')));
     list.appendChild(entryItem);
     (Array.isArray(fragment.transitions) ? fragment.transitions : []).forEach(function (transition) {
       var item = txt('li', 'rm-mechanism-fragment__item', '');
@@ -13337,14 +13343,20 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       item.appendChild(txt('span', 'rm-mechanism-fragment__label', String(transition.label || '')));
       item.appendChild(txt('code', 'rm-mechanism-fragment__location', String(transition.path || '') + (transition.line ? ':' + transition.line : '')));
       item.appendChild(txt('span', 'rm-mechanism-fragment__ordering', String(transition.ordering || '')));
+      item.appendChild(txt('span', 'rm-mechanism-fragment__evidence', String(transition.evidence || '')));
+      item.appendChild(txt('span', 'rm-mechanism-fragment__limitation', String(transition.limitation || '')));
       list.appendChild(item);
     });
     section.appendChild(list);
-    // Unresolved frontier: always visible, never hover-only.
+    // Unresolved frontier: always visible, never hover-only. Renders the
+    // limitation AND the explicit unresolved items.
     var frontier = fragment.frontier || {};
     var frontierBox = el('div', 'rm-mechanism-fragment__frontier');
     frontierBox.appendChild(txt('strong', null, msg('main.architecture.mechanism.frontier_title')));
     frontierBox.appendChild(txt('p', 'rm-arch__limitation', String(frontier.limitation || msg('main.architecture.mechanism.frontier_default'))));
+    (Array.isArray(frontier.unresolved) ? frontier.unresolved : []).forEach(function (item) {
+      if (String(item || '').trim()) frontierBox.appendChild(txt('p', 'rm-mechanism-fragment__frontier-item', String(item)));
+    });
     section.appendChild(frontierBox);
     return section;
   }
