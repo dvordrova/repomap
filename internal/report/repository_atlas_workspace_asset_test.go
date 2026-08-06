@@ -267,6 +267,23 @@ for (let index = 0; index < 18; index++) {
 }
 const etcdEN = run(etcdReport, "en");
 const etcdRU = run(etcdReport, "ru");
+// P7-B: a package without an exact saved source still navigates to its
+// representative file — the first openable file of the package in the
+// saved repository graph. The graph proves the file exists; the package
+// itself has no single line, so the file is the exact boundary opened.
+const representativeReport = JSON.parse(JSON.stringify(report));
+representativeReport.repository_graph = {
+  version: 1,
+  packages: [
+    {
+      canonical_package_path: "github.com/casdoor/casdoor",
+      files: ["cmd/server/startup.go"],
+    },
+  ],
+};
+representativeReport.openable_paths.push("cmd/server/startup.go");
+const representative = run(representativeReport, "en");
+const representativeWithoutGraph = run(JSON.parse(JSON.stringify(report)), "en");
 const conflictReport = JSON.parse(JSON.stringify(report));
 conflictReport.repository_atlas.evidence.push({
   id: "evidence-secret-package", unit_id: "unit-secret-package",
@@ -323,7 +340,7 @@ prototypeNameReport.repository_atlas.units.forEach((unit) => {
   if (unit.kind !== "package") unit.name = "__proto__";
 });
 const prototypeName = run(prototypeNameReport, "en");
-process.stdout.write(JSON.stringify({ en, ru, selectedEN, selectedRU, offline, empty, unavailable, nonUserSource, missingBinding, etcdEN, etcdRU, conflict, multipleDeclarations, mixedPrefix, strippedStatic, prototypeName }));
+process.stdout.write(JSON.stringify({ en, ru, selectedEN, selectedRU, offline, empty, unavailable, nonUserSource, missingBinding, etcdEN, etcdRU, conflict, multipleDeclarations, mixedPrefix, strippedStatic, prototypeName, representative, representativeWithoutGraph }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "repository-atlas-workspace-test.js")
 	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
@@ -377,22 +394,24 @@ process.stdout.write(JSON.stringify({ en, ru, selectedEN, selectedRU, offline, e
 		} `json:"packageSourceStates"`
 	}
 	var got struct {
-		EN                   result `json:"en"`
-		RU                   result `json:"ru"`
-		SelectedEN           result `json:"selectedEN"`
-		SelectedRU           result `json:"selectedRU"`
-		Offline              result `json:"offline"`
-		Empty                result `json:"empty"`
-		Unavailable          result `json:"unavailable"`
-		NonUserSource        result `json:"nonUserSource"`
-		MissingBinding       result `json:"missingBinding"`
-		EtcdEN               result `json:"etcdEN"`
-		EtcdRU               result `json:"etcdRU"`
-		Conflict             result `json:"conflict"`
-		MultipleDeclarations result `json:"multipleDeclarations"`
-		MixedPrefix          result `json:"mixedPrefix"`
-		StrippedStatic       result `json:"strippedStatic"`
-		PrototypeName        result `json:"prototypeName"`
+		EN                    result `json:"en"`
+		RU                    result `json:"ru"`
+		SelectedEN            result `json:"selectedEN"`
+		SelectedRU            result `json:"selectedRU"`
+		Offline               result `json:"offline"`
+		Empty                 result `json:"empty"`
+		Unavailable           result `json:"unavailable"`
+		NonUserSource         result `json:"nonUserSource"`
+		MissingBinding        result `json:"missingBinding"`
+		EtcdEN                result `json:"etcdEN"`
+		EtcdRU                result `json:"etcdRU"`
+		Conflict              result `json:"conflict"`
+		MultipleDeclarations  result `json:"multipleDeclarations"`
+		MixedPrefix           result `json:"mixedPrefix"`
+		StrippedStatic        result `json:"strippedStatic"`
+		PrototypeName         result `json:"prototypeName"`
+		Representative        result `json:"representative"`
+		RepresentativeNoGraph result `json:"representativeWithoutGraph"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode Repository Atlas workspace result: %v\n%s", err, output)
@@ -556,6 +575,15 @@ process.stdout.write(JSON.stringify({ en, ru, selectedEN, selectedRU, offline, e
 	}
 	if got.PrototypeName.TopologyCards != 1 || len(got.PrototypeName.UnitTags) != 3 {
 		t.Fatalf("prototype-like exact unit name broke coalescing: %#v", got.PrototypeName)
+	}
+	// P7-B: a package without an exact saved source opens its representative
+	// file from the repository graph (first openable file, sorted order);
+	// without a graph the row stays a plain unavailable reference.
+	if got.Representative.PackageActions != 1 || len(got.Representative.PackageUnavailable) != 0 {
+		t.Fatalf("P7-B representative package row did not become actionable: %#v", got.Representative)
+	}
+	if got.RepresentativeNoGraph.PackageActions != 0 || len(got.RepresentativeNoGraph.PackageUnavailable) != 1 {
+		t.Fatalf("P7-B without graph must stay unavailable: %#v", got.RepresentativeNoGraph)
 	}
 }
 
