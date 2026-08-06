@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
@@ -351,6 +352,26 @@ func aggregateAssociationRows(rows []obsRow) []ArchitectureBoundaryResourceRow {
 			return out[index].Witnesses[i].Symbol < out[index].Witnesses[j].Symbol
 		})
 	}
+	// Decision 229 D2: Boundary and Resource observations sharing the same
+	// exact witness are one user-facing "Observed external/state
+	// interaction" row (charter D6: two ontology roles over one fact).
+	// Canonical records stay distinct; the projection marks the pair so the
+	// UI can coalesce them and keep every witness.
+	for i := range out {
+		if out[i].Kind != "boundary" {
+			continue
+		}
+		for j := range out {
+			if out[j].Kind != "resource" || out[j].OwningUnit != out[i].OwningUnit ||
+				out[j].ImportedFamily != out[i].ImportedFamily {
+				continue
+			}
+			if associationWitnessSetsOverlap(out[i].Witnesses, out[j].Witnesses) {
+				out[i].Paired = true
+				out[j].Paired = true
+			}
+		}
+	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Kind != out[j].Kind {
 			return out[i].Kind < out[j].Kind
@@ -361,6 +382,22 @@ func aggregateAssociationRows(rows []obsRow) []ArchitectureBoundaryResourceRow {
 		return out[i].ImportedFamily < out[j].ImportedFamily
 	})
 	return out
+}
+
+// associationWitnessSetsOverlap reports whether two association rows share
+// at least one exact witness (path + line). Used for Decision 229 D2
+// boundary/resource coalescing.
+func associationWitnessSetsOverlap(left, right []ArchitectureAssociationWitness) bool {
+	seen := make(map[string]struct{}, len(left))
+	for _, witness := range left {
+		seen[witness.Path+"\x00"+strconv.Itoa(witness.Line)] = struct{}{}
+	}
+	for _, witness := range right {
+		if _, exists := seen[witness.Path+"\x00"+strconv.Itoa(witness.Line)]; exists {
+			return true
+		}
+	}
+	return false
 }
 
 // ensureMechanismFragment derives the Decision 226 vertical fragment when
