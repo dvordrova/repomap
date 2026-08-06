@@ -196,7 +196,7 @@ func publishEntries(theme AdjudicatedTheme, anchors map[string]AnchorInfo) []pub
 	}
 	var ordered []string
 	seen := make(map[string]struct{}, len(theme.AnchorAssessments))
-	seenIdentity := make(map[string]struct{}, len(theme.AnchorAssessments))
+	seenIdentity := make(map[string]string, len(theme.AnchorAssessments)) // identity -> winning ref
 	add := func(ref string) {
 		if _, ok := seen[ref]; ok {
 			return
@@ -210,11 +210,29 @@ func publishEntries(theme AdjudicatedTheme, anchors map[string]AnchorInfo) []pub
 			return
 		}
 		identity := fmt.Sprintf("%s\x00%d\x00%s", info.Path, info.Line, info.Symbol)
-		if _, dup := seenIdentity[identity]; dup {
+		if winner, dup := seenIdentity[identity]; dup {
+			// Two anchors share the exact public identity but differ in
+			// fit. A direct reading must never be dropped in favor of a
+			// supporting one (D219 E / D224 C: preserve at least one
+			// direct reading): swap the winner when the newcomer is
+			// direct and the incumbent is supporting. Both anchors keep
+			// their exact references; the identity publishes once.
+			winnerFit := fitByRef[winner]
+			if fit == FitDirect && winnerFit == FitSupporting {
+				delete(seen, winner)
+				seen[ref] = struct{}{}
+				seenIdentity[identity] = ref
+				for index, existing := range ordered {
+					if existing == winner {
+						ordered[index] = ref
+						break
+					}
+				}
+			}
 			return
 		}
 		seen[ref] = struct{}{}
-		seenIdentity[identity] = struct{}{}
+		seenIdentity[identity] = ref
 		ordered = append(ordered, ref)
 	}
 	for _, ref := range theme.ReadingOrder {
