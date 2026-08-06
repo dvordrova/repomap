@@ -144,6 +144,13 @@ Product: HOLD with 10 bounded defects (D1–D10), all applied:
 - D9: monorepo_mixed branch added (http/process promotion).
 - D10: StudyThemesVersion 1→2, projection/format bumps executed, pinned
   tests amended.
+- AREA COVERAGE (goal PHASE 4, bounded repair): the Study status now
+  publishes an exact missing-core-area diagnostic — accepted principal
+  Architecture components whose member source paths have no published theme
+  reading (primary or alternate) are counted (`missing_core_area_count`)
+  and named (bounded `missing_core_areas`), rendered as a distinct panel in
+  the Study diagnostics (EN+RU). Never filler; projection v11→12,
+  CurrentFormatVersion 34→35.
 
 Red-team: PASS with 8 bounded findings (F1–F8), all applied:
 - F1/F3: daemon_worker_system promotes its CLI tree to primary; the omitted

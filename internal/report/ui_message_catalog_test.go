@@ -365,6 +365,9 @@ process.stdout.write(JSON.stringify({
 		t.Errorf("catalog rejection contract = %#v", got.Failures)
 	}
 	wantIdentical := []string{
+		// Decision 233 AREA COVERAGE: the missing-core-area item is an
+		// opaque component name — identical in both locales by design.
+		"main.study.diagnostics.missing_core_area",
 		"surfaces.identity.http_route",
 		"surfaces.location.open",
 		"surfaces.value.http",

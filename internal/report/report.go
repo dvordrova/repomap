@@ -28,11 +28,13 @@ import (
 // Decision 232 (Archive 9): Study projection gains adjudication anchor
 // coverage (reviewed/unreviewed) and the semantic-empty state.
 // Decision 233: alternate co-projection + concentration marker.
-const CurrentFormatVersion = 34
+// Decision 233 AREA COVERAGE: missing-core-area diagnostic.
+const CurrentFormatVersion = 35
 
 // Decision 232: adjudication anchor coverage + semantic-empty browse.
 // Decision 233: alternate co-projection + concentration marker.
-const AtlasStudyReportProjectionVersion = 11
+// Decision 233 AREA COVERAGE: missing-core-area diagnostic.
+const AtlasStudyReportProjectionVersion = 12
 
 // MaxAtlasStudyBrowseSpans bounds the report-side provider-free per-span
 // browse. Truthful Total/Shown keep larger repositories honest; the complete
@@ -337,6 +339,12 @@ type AtlasStudyReportStatus struct {
 	SelectedItemsComplete   bool `json:"selected_items_complete"`
 	SupportCoverageComplete bool `json:"support_coverage_complete"`
 	PortfolioTargetMet      bool `json:"portfolio_target_met"`
+	// Decision 233 (Archive 9, AREA COVERAGE): exact missing-core-area
+	// diagnostic — accepted principal Architecture components whose member
+	// source paths are not covered by any published theme reading. Exact
+	// count + bounded names; never filler.
+	MissingCoreAreaCount int      `json:"missing_core_area_count,omitempty"`
+	MissingCoreAreas     []string `json:"missing_core_areas,omitempty"`
 	// Omissions are bounded public-safe aggregates of considered spans omitted
 	// from the advertised frontier: exact counts by closed reason plus the
 	// bounded representative count. Canonical identities never enter the
