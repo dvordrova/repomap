@@ -2332,3 +2332,49 @@
    D5: separate lane cards with human copy; raw enums under evidence
    details). The legacy item-list styles below were superseded — keeping
    them would override the new lane card tokens with stale colors. */
+
+/* Decision 230 D4 (fresh review B2): equivalent-component alternates are
+   exact provenance shown in the component inspector. */
+.rm-arch__alternate {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--rm-border, #e5e7eb);
+}
+.rm-arch__alternate:last-child {
+  border-bottom: none;
+}
+.rm-arch__alternate-name {
+  font-weight: 600;
+}
+.rm-arch__alternate-description {
+  color: var(--rm-muted, #6b7280);
+  font-size: 0.9em;
+}
+
+/* Decision 230 (fresh review task-4 B2): visible hover states for canvas
+   pointer controls — never cursor-only affordance. */
+.rm-arch__edge-jump:hover {
+  background: #dbeafe;
+  border-color: var(--rm-accent);
+}
+.rm-arch__inspector-close:hover {
+  background: #fee2e2;
+  border-color: #dc2626;
+  color: #991b1b;
+}
+.rm-arch__partial-truth-label:hover,
+.rm-mechanism-fragment__evidence-summary:hover,
+.rm-mechanism-fragment__touchpoint-summary:hover {
+  background: #f1f5f9;
+  border-color: var(--rm-dim);
+}
+.rm-atlas-package-summary:hover,
+.rm-study-provenance__summary:hover,
+.rm-overview-remainder__summary:hover {
+  background: #f1f5f9;
+}
+.rm-overview-remainder__summary {
+  cursor: pointer;
+}

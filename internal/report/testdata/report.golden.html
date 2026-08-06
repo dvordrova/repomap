@@ -15,6 +15,8 @@
  --rm-border: #d8e0ea;
  --rm-accent: #3157d5;
  --rm-accent-soft: #eef2ff;
+ --rm-accent-strong: #1d4ed8;
+ --rm-surface-alt: #f1f5f9;
  --rm-accent-contrast: #ffffff;
  --rm-dim: #526176;
  --rm-code: #6d5da8;
@@ -40,6 +42,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-provenance-chip { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22); border-radius: 999px; padding: .08rem .5rem; font-size: .68rem; white-space: nowrap; }
 .rm-run-details { font-size: .78rem; color: rgba(255,255,255,.75); text-align: right; }
 .rm-run-details summary { cursor: pointer; user-select: none; }
+/* Decision 230 (fresh review task-4 B2): visible hover for the About
+   disclosure instead of cursor-only affordance. */
+.rm-run-details summary:hover { color: #ffffff; }
 .rm-artifacts { font-size: .7rem; opacity: .7; margin-top: .35rem; font-family: monospace; overflow-wrap: anywhere; }
 .rm-run-picker { align-items: center; display: flex; gap: .45rem; font-size: .72rem; color: rgba(255,255,255,.75); }
 .rm-run-picker[hidden], .rm-run-details[hidden], .rm-source-drawer[hidden] { display: none !important; }
@@ -358,6 +363,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-primary-action { background: var(--rm-accent); color: #fff; }
 .rm-secondary-action { background: #fff; color: var(--rm-accent); }
 .rm-quiet-action { background: transparent; border-color: var(--rm-border); color: var(--rm-dim); }
+/* Decision 230 (fresh review task-4 B2): pointer controls need a visible
+   hover state, not cursor-only affordance. */
+.rm-primary-action:not(:disabled):hover { background: var(--rm-accent-strong, #1d4ed8); }
+.rm-secondary-action:not(:disabled):hover { background: var(--rm-accent-soft, #eff6ff); border-color: var(--rm-accent); }
+.rm-quiet-action:not(:disabled):hover { background: var(--rm-surface-alt, #f1f5f9); border-color: var(--rm-dim); }
 .rm-primary-action:disabled, .rm-secondary-action:disabled, .rm-quiet-action:disabled { cursor: default; opacity: .38; }
 .rm-mechanism-grid { display: grid; gap: .85rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
 .rm-mechanism-card { background: #fff; border: 1px solid var(--rm-border); border-radius: 10px; color: var(--rm-fg); cursor: pointer; display: flex; flex-direction: column; font: inherit; gap: .55rem; padding: 1rem; text-align: left; }
@@ -2263,6 +2273,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.role.tooling": { params: [], text: "tooling" },
     "architecture.value.category_resource": { params: [], text: "Resource" },
     "architecture.section.what_remains_unknown": { params: [], text: "What remains unknown" },
+    "architecture.section.equivalent_components": { params: [], text: "Equivalent components (coalesced)" },
     "architecture.label.grouping_authority": { params: [], text: "Grouping" },
     "architecture.label.member_evidence": { params: [], text: "Evidence" },
     "architecture.label.member_scope": { params: ["count"], format: function (params) { return formatCountTemplate("{count} member(s)", params); } },
@@ -3750,6 +3761,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.role.tooling": { params: [], text: "инструменты" },
     "architecture.value.category_resource": { params: [], text: "Ресурс" },
     "architecture.section.what_remains_unknown": { params: [], text: "Что остаётся неизвестным" },
+    "architecture.section.equivalent_components": { params: [], text: "Эквивалентные компоненты (объединены)" },
     "architecture.label.grouping_authority": { params: [], text: "Группировка" },
     "architecture.label.member_evidence": { params: [], text: "Доказательность" },
     "architecture.label.member_scope": { params: ["count"], format: function (params) { return russianCount(params.count, "элемент", "элемента", "элементов"); } },
@@ -14097,10 +14109,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
         item.appendChild(txt('span', 'rm-architecture-relation-arrow', '→'));
         item.appendChild(txt('strong', '', relation.to));
         if (relation.path) {
-          // Decision 221: an exact source action is shown only when the
-          // persisted evidence actually contains the code for that line
-          // (embedded snippet); a location-only resolution stays text-only —
-          // never a dead button.
+          // Decision 221 + 230 (fresh reviews task-2/task-3): an exact
+          // source action renders whenever the location is openable —
+          // embedded snippet (drawer button) OR static/server jump
+          // (source action link). Only genuinely unavailable locations
+          // stay text-only; never a dead button.
           var resolution = exactOverviewActionResolutionForLocation({ path: relation.path, line: relation.line || 0 });
           if (resolution && resolution.source && resolution.source.snippet) {
             var action = el('button', 'rm-source-action-link rm-architecture-relation-source', '');
@@ -14110,6 +14123,19 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
               openSourceSnippet(resolution.source.snippet, resolution.source.location, false, { drawerFirst: true });
             };
             item.appendChild(action);
+          } else if (resolution && resolution.source && resolution.source.location) {
+            var staticRelationAction = sourceActionElement(
+              relation.path + ':' + relation.line,
+              'rm-source-action-link rm-architecture-relation-source',
+              resolution.source.location,
+              0,
+              function () { openSourceLocation(resolution.source.location); }
+            );
+            if (staticRelationAction) {
+              item.appendChild(staticRelationAction);
+            } else {
+              item.appendChild(txt('span', 'rm-architecture-relation-source rm-architecture-relation-source--text', relation.path + ':' + relation.line));
+            }
           } else {
             item.appendChild(txt('span', 'rm-architecture-relation-source rm-architecture-relation-source--text', relation.path + ':' + relation.line));
           }
@@ -14349,6 +14375,20 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     };
     return action;
    }
+   // Decision 230 (fresh reviews task-2/task-3): a mechanism callsite with
+   // no embedded snippet is still openable in static/server mode — render
+   // the exact static source action (pinned revision link) instead of
+   // inert text; only genuinely unavailable locations stay text.
+   if (resolution && resolution.source && resolution.source.location) {
+    var staticAction = sourceActionElement(
+     callsite,
+     'rm-mechanism-fragment__location rm-source-action-link',
+     resolution.source.location,
+     0,
+     function () { openSourceLocation(resolution.source.location); }
+    );
+    if (staticAction) return staticAction;
+   }
    return txt('code', 'rm-mechanism-fragment__location rm-mechanism-fragment__location--text', callsite);
   }
 
@@ -14382,6 +14422,22 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       openSourceSnippet(snippet, resolution.source.location, false, { drawerFirst: true });
      };
      item.appendChild(locationAction);
+    } else if (resolution && resolution.source && resolution.source.location) {
+     // Decision 230 (fresh reviews task-2/task-3): no embedded snippet
+     // does not mean unavailable — render the exact static/server source
+     // action; only genuinely unavailable locations stay inert text.
+     var staticLaneAction = sourceActionElement(
+      callsite,
+      'rm-mechanism-fragment__location rm-source-action-link',
+      resolution.source.location,
+      0,
+      function () { openSourceLocation(resolution.source.location); }
+     );
+     if (staticLaneAction) {
+      item.appendChild(staticLaneAction);
+     } else {
+      item.appendChild(txt('code', 'rm-mechanism-fragment__location rm-mechanism-fragment__location--text', callsite));
+     }
     } else {
      item.appendChild(txt('code', 'rm-mechanism-fragment__location rm-mechanism-fragment__location--text', callsite));
     }

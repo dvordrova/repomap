@@ -9994,10 +9994,11 @@
         item.appendChild(txt('span', 'rm-architecture-relation-arrow', '→'));
         item.appendChild(txt('strong', '', relation.to));
         if (relation.path) {
-          // Decision 221: an exact source action is shown only when the
-          // persisted evidence actually contains the code for that line
-          // (embedded snippet); a location-only resolution stays text-only —
-          // never a dead button.
+          // Decision 221 + 230 (fresh reviews task-2/task-3): an exact
+          // source action renders whenever the location is openable —
+          // embedded snippet (drawer button) OR static/server jump
+          // (source action link). Only genuinely unavailable locations
+          // stay text-only; never a dead button.
           var resolution = exactOverviewActionResolutionForLocation({ path: relation.path, line: relation.line || 0 });
           if (resolution && resolution.source && resolution.source.snippet) {
             var action = el('button', 'rm-source-action-link rm-architecture-relation-source', '');
@@ -10007,6 +10008,19 @@
               openSourceSnippet(resolution.source.snippet, resolution.source.location, false, { drawerFirst: true });
             };
             item.appendChild(action);
+          } else if (resolution && resolution.source && resolution.source.location) {
+            var staticRelationAction = sourceActionElement(
+              relation.path + ':' + relation.line,
+              'rm-source-action-link rm-architecture-relation-source',
+              resolution.source.location,
+              0,
+              function () { openSourceLocation(resolution.source.location); }
+            );
+            if (staticRelationAction) {
+              item.appendChild(staticRelationAction);
+            } else {
+              item.appendChild(txt('span', 'rm-architecture-relation-source rm-architecture-relation-source--text', relation.path + ':' + relation.line));
+            }
           } else {
             item.appendChild(txt('span', 'rm-architecture-relation-source rm-architecture-relation-source--text', relation.path + ':' + relation.line));
           }
@@ -10246,6 +10260,20 @@
     };
     return action;
    }
+   // Decision 230 (fresh reviews task-2/task-3): a mechanism callsite with
+   // no embedded snippet is still openable in static/server mode — render
+   // the exact static source action (pinned revision link) instead of
+   // inert text; only genuinely unavailable locations stay text.
+   if (resolution && resolution.source && resolution.source.location) {
+    var staticAction = sourceActionElement(
+     callsite,
+     'rm-mechanism-fragment__location rm-source-action-link',
+     resolution.source.location,
+     0,
+     function () { openSourceLocation(resolution.source.location); }
+    );
+    if (staticAction) return staticAction;
+   }
    return txt('code', 'rm-mechanism-fragment__location rm-mechanism-fragment__location--text', callsite);
   }
 
@@ -10279,6 +10307,22 @@
       openSourceSnippet(snippet, resolution.source.location, false, { drawerFirst: true });
      };
      item.appendChild(locationAction);
+    } else if (resolution && resolution.source && resolution.source.location) {
+     // Decision 230 (fresh reviews task-2/task-3): no embedded snippet
+     // does not mean unavailable — render the exact static/server source
+     // action; only genuinely unavailable locations stay inert text.
+     var staticLaneAction = sourceActionElement(
+      callsite,
+      'rm-mechanism-fragment__location rm-source-action-link',
+      resolution.source.location,
+      0,
+      function () { openSourceLocation(resolution.source.location); }
+     );
+     if (staticLaneAction) {
+      item.appendChild(staticLaneAction);
+     } else {
+      item.appendChild(txt('code', 'rm-mechanism-fragment__location rm-mechanism-fragment__location--text', callsite));
+     }
     } else {
      item.appendChild(txt('code', 'rm-mechanism-fragment__location rm-mechanism-fragment__location--text', callsite));
     }
