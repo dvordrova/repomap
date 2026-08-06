@@ -1206,8 +1206,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.architecture.mechanism.kind.process_entry": { params: [], text: "Process entry" },
     "main.architecture.mechanism.kind.direct_static_call": { params: [], text: "Direct static call" },
     "main.architecture.mechanism.kind.unresolved_continuation": { params: [], text: "Continuation not recovered" },
+    "main.architecture.mechanism.kind.storage_boundary_callsite": { params: [], text: "Observed boundary callsite" },
+    "main.architecture.mechanism.kind.outbound_client_callsite": { params: [], text: "Observed outbound client callsite" },
     "main.architecture.mechanism.support.resolved_static": { params: [], text: "Resolved in the recorded build" },
+    "main.architecture.mechanism.support.observed_local": { params: [], text: "Observed in the local build" },
     "main.architecture.mechanism.support.unknown": { params: [], text: "Support unknown" },
+    "main.architecture.mechanism.label.boundary": { params: [], text: "Observed boundary" },
+    "main.architecture.mechanism.label.resource": { params: [], text: "Observed resource" },
+    "main.architecture.mechanism.label.operation": { params: [], text: "Observed operation" },
     "main.architecture.mechanism.ordering.resolved_path_order": { params: [], text: "Local callsite order" },
     "main.architecture.mechanism.ordering.not_established": { params: [], text: "Continuation not recovered" },
     "main.architecture.mechanism.evidence_details": { params: [], text: "Evidence details" },
@@ -2666,8 +2672,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.architecture.mechanism.kind.process_entry": { params: [], text: "Точка входа процесса" },
     "main.architecture.mechanism.kind.direct_static_call": { params: [], text: "Прямой статический вызов" },
     "main.architecture.mechanism.kind.unresolved_continuation": { params: [], text: "Продолжение не восстановлено" },
+    "main.architecture.mechanism.kind.storage_boundary_callsite": { params: [], text: "Наблюдаемый вызов границы" },
+    "main.architecture.mechanism.kind.outbound_client_callsite": { params: [], text: "Наблюдаемый исходящий клиентский вызов" },
     "main.architecture.mechanism.support.resolved_static": { params: [], text: "Разрешено в записанной сборке" },
+    "main.architecture.mechanism.support.observed_local": { params: [], text: "Наблюдается в локальной сборке" },
     "main.architecture.mechanism.support.unknown": { params: [], text: "Поддержка неизвестна" },
+    "main.architecture.mechanism.label.boundary": { params: [], text: "Наблюдаемая граница" },
+    "main.architecture.mechanism.label.resource": { params: [], text: "Наблюдаемый ресурс" },
+    "main.architecture.mechanism.label.operation": { params: [], text: "Наблюдаемая операция" },
     "main.architecture.mechanism.ordering.resolved_path_order": { params: [], text: "Локальный порядок вызовов" },
     "main.architecture.mechanism.ordering.not_established": { params: [], text: "Продолжение не восстановлено" },
     "main.architecture.mechanism.evidence_details": { params: [], text: "Детали свидетельств" },
@@ -13798,9 +13810,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
    process_entry: 'main.architecture.mechanism.kind.process_entry',
    direct_static_call: 'main.architecture.mechanism.kind.direct_static_call',
    unresolved_continuation: 'main.architecture.mechanism.kind.unresolved_continuation',
+   storage_boundary_callsite: 'main.architecture.mechanism.kind.storage_boundary_callsite',
+   outbound_client_callsite: 'main.architecture.mechanism.kind.outbound_client_callsite',
   };
   var MECHANISM_SUPPORT_MODE_COPY = {
    resolved_static: 'main.architecture.mechanism.support.resolved_static',
+   observed_local: 'main.architecture.mechanism.support.observed_local',
    unknown: 'main.architecture.mechanism.support.unknown',
   };
   var MECHANISM_ORDERING_COPY = {
@@ -13860,6 +13875,16 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     // strip the prefix so primary copy never repeats a raw enum.
     var rawLabel = String(transition.label || '');
     var label = rawLabel.indexOf('process entry ') === 0 ? rawLabel.slice('process entry '.length) : rawLabel;
+    // Decision 229 D4: boundary/resource observation labels ("boundary
+    // net", "resource os") become human copy; the raw kind stays under
+    // Evidence details.
+    if (label.indexOf('boundary ') === 0) {
+     label = msg('main.architecture.mechanism.label.boundary') + ' · ' + label.slice('boundary '.length);
+    } else if (label.indexOf('resource ') === 0) {
+     label = msg('main.architecture.mechanism.label.resource') + ' · ' + label.slice('resource '.length);
+    } else if (label.indexOf('operation') === 0) {
+     label = msg('main.architecture.mechanism.label.operation');
+    }
     if (transition.symbol && transition.symbol.indexOf('member-symbol') !== 0) {
      item.appendChild(txt('span', 'rm-mechanism-fragment__label', String(transition.symbol)));
     } else if (label && label !== 'handoff') {

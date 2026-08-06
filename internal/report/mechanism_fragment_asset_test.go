@@ -92,6 +92,20 @@ const report = {
         limitation: "execution order and further transitions not established",
         ordering: "not_established",
       },
+      {
+        ordinal: 3, claim_kind: "storage_boundary_callsite", support_mode: "observed_local",
+        label: "boundary net", path: "github.com/example/repo/controllers", line: 0,
+        evidence: "atlas boundary/resource observation", scenario: "Recorded build scenario",
+        limitation: "physical target unknown; runtime reachability not proven",
+        ordering: "not_established",
+      },
+      {
+        ordinal: 4, claim_kind: "outbound_client_callsite", support_mode: "observed_local",
+        label: "resource database", path: "github.com/example/repo/service", line: 0,
+        evidence: "atlas boundary/resource observation", scenario: "Recorded build scenario",
+        limitation: "physical target unknown; runtime reachability not proven",
+        ordering: "not_established",
+      },
     ],
     frontier: {
       ordering: "not_established",
@@ -166,12 +180,17 @@ const limitationSpans = items.map((item) => {
   const el = item.querySelector(".rm-mechanism-fragment__limitation");
   return el ? el.textContent : "";
 });
+const labels = items.map((item) => {
+  const el = item.querySelector(".rm-mechanism-fragment__label");
+  return el ? el.textContent : "";
+});
 process.stdout.write(JSON.stringify({
   itemCount: items.length,
   kinds,
   orderings,
   evidenceSpans,
   limitationSpans,
+  labels,
   frontierPresent: !!frontier,
   frontierText: frontier ? frontier.textContent.replace(/\s+/g, " ").trim() : "",
   architectureText: root.textContent.slice(0, 400),
@@ -191,6 +210,7 @@ process.stdout.write(JSON.stringify({
 		Orderings        []string `json:"orderings"`
 		EvidenceSpans    []string `json:"evidenceSpans"`
 		LimitationSpans  []string `json:"limitationSpans"`
+		Labels           []string `json:"labels"`
 		FrontierPresent  bool     `json:"frontierPresent"`
 		FrontierText     string   `json:"frontierText"`
 		ArchitectureText string   `json:"architectureText"`
@@ -198,36 +218,52 @@ process.stdout.write(JSON.stringify({
 	if err := json.Unmarshal(output, &out); err != nil {
 		t.Fatalf("decode mechanism fragment workspace: %v\n%s", err, output)
 	}
-	// Entry + direct_static_call + unresolved_continuation, as human copy
-	// (Decision 229 D4: raw enums never primary UI).
-	if out.ItemCount != 3 {
-		t.Fatalf("items = %d, want 3: %#v", out.ItemCount, out.Kinds)
+	// Entry + direct_static_call + unresolved_continuation + boundary +
+	// resource lanes, all as human copy (Decision 229 D4: raw enums never
+	// primary UI).
+	if out.ItemCount != 5 {
+		t.Fatalf("items = %d, want 5: %#v", out.ItemCount, out.Kinds)
 	}
-	wantKinds := []string{"Process entry", "Direct static call", "Continuation not recovered"}
+	wantKinds := []string{
+		"Process entry", "Direct static call", "Continuation not recovered",
+		"Observed boundary callsite", "Observed outbound client callsite",
+	}
 	for index, want := range wantKinds {
 		if index >= len(out.Kinds) || out.Kinds[index] != want {
 			t.Fatalf("kinds = %#v, want %#v", out.Kinds, wantKinds)
 		}
 	}
-	// Raw enums never appear as primary kind copy.
+	// Raw enums never appear as primary kind copy (including the new
+	// storage_boundary_callsite / observed_local classes).
 	for _, kind := range out.Kinds {
 		if kind == "direct_static_call" || kind == "resolved_static" ||
-			kind == "resolved_path_order" || kind == "not_established" || kind == "entry" {
+			kind == "resolved_path_order" || kind == "not_established" || kind == "entry" ||
+			kind == "storage_boundary_callsite" || kind == "observed_local" ||
+			kind == "outbound_client_callsite" || kind == "unknown" {
 			t.Fatalf("raw enum leaked into primary mechanism copy: %q", kind)
 		}
 	}
+	// Boundary/resource observation labels become human copy
+	// ("Observed boundary · net", "Observed resource · database").
+	if len(out.Labels) != 5 || !strings.Contains(out.Labels[3], "Observed boundary") ||
+		!strings.Contains(out.Labels[4], "Observed resource") ||
+		strings.Contains(out.Labels[3], "boundary net") || strings.Contains(out.Labels[4], "resource database") {
+		t.Fatalf("boundary/resource labels are not human copy: %#v", out.Labels)
+	}
 	// Orderings: human copy — Local callsite order, Continuation not
 	// recovered (resolved_path_order / not_established stay in details).
-	if len(out.Orderings) != 3 || out.Orderings[1] != "Local callsite order" || out.Orderings[2] != "Continuation not recovered" {
+	if len(out.Orderings) != 5 || out.Orderings[1] != "Local callsite order" || out.Orderings[2] != "Continuation not recovered" {
 		t.Fatalf("orderings = %#v", out.Orderings)
 	}
 	// Evidence (including raw enums) under Evidence details — always
 	// present, never hover-only.
-	if len(out.EvidenceSpans) != 3 || out.EvidenceSpans[0] == "" || out.EvidenceSpans[1] == "" || out.EvidenceSpans[2] == "" {
-		t.Fatalf("evidence spans = %#v, want 3 non-empty", out.EvidenceSpans)
+	if len(out.EvidenceSpans) != 5 || out.EvidenceSpans[0] == "" || out.EvidenceSpans[1] == "" || out.EvidenceSpans[2] == "" ||
+		out.EvidenceSpans[3] == "" || out.EvidenceSpans[4] == "" {
+		t.Fatalf("evidence spans = %#v, want 5 non-empty", out.EvidenceSpans)
 	}
-	if len(out.LimitationSpans) != 3 || out.LimitationSpans[0] == "" || out.LimitationSpans[1] == "" || out.LimitationSpans[2] == "" {
-		t.Fatalf("limitation spans = %#v, want 3 non-empty", out.LimitationSpans)
+	if len(out.LimitationSpans) != 5 || out.LimitationSpans[0] == "" || out.LimitationSpans[1] == "" || out.LimitationSpans[2] == "" ||
+		out.LimitationSpans[3] == "" || out.LimitationSpans[4] == "" {
+		t.Fatalf("limitation spans = %#v, want 5 non-empty", out.LimitationSpans)
 	}
 	// Frontier always visible without hover, and carries the unresolved item.
 	if !out.FrontierPresent || !strings.Contains(out.FrontierText, "No locally saved transitions") ||
