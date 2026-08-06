@@ -210,17 +210,17 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("run mechanism fragment workspace: %v\n%s", err, output)
 	}
 	var out struct {
-		ItemCount           int      `json:"itemCount"`
-		Kinds               []string `json:"kinds"`
-		Orderings           []string `json:"orderings"`
-		EvidenceSpans       []string `json:"evidenceSpans"`
-		LimitationSpans     []string `json:"limitationSpans"`
-		Labels              []string `json:"labels"`
-		GraphCount          int      `json:"graphCount"`
-		TouchpointGroupCount int     `json:"touchpointGroupCount"`
-		FrontierPresent     bool     `json:"frontierPresent"`
-		FrontierText        string   `json:"frontierText"`
-		ArchitectureText    string   `json:"architectureText"`
+		ItemCount            int      `json:"itemCount"`
+		Kinds                []string `json:"kinds"`
+		Orderings            []string `json:"orderings"`
+		EvidenceSpans        []string `json:"evidenceSpans"`
+		LimitationSpans      []string `json:"limitationSpans"`
+		Labels               []string `json:"labels"`
+		GraphCount           int      `json:"graphCount"`
+		TouchpointGroupCount int      `json:"touchpointGroupCount"`
+		FrontierPresent      bool     `json:"frontierPresent"`
+		FrontierText         string   `json:"frontierText"`
+		ArchitectureText     string   `json:"architectureText"`
 	}
 	if err := json.Unmarshal(output, &out); err != nil {
 		t.Fatalf("decode mechanism fragment workspace: %v\n%s", err, output)
