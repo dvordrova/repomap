@@ -287,15 +287,26 @@ const localCollapsedAfter = localGroup ? String(localGroup.className).split(/\s+
   const questionLinks = byClass(browseRoot, "rm-study-browse-row__question").map((node) => ({ tag: node.tagName, href: (node.attributes && node.attributes.href) || "" }));
   const themeShelf = byClass(roots["rm-study-overview"], "rm-study-theme-shelf")[0] || null;
   // Decision 224 (D219 C/G): per-reading role badges and bounded
-  // observations render on the theme cards.
-  const readingRoleBadges = byClass(roots["rm-study-overview"], "rm-study-theme-card__reading-role");
-  const readingExplains = byClass(roots["rm-study-overview"], "rm-study-theme-card__reading-explain");
-  // Decision 217 drawer accessibility: open a source snippet and verify the
-  // drawer becomes a real dialog (role, aria-modal, descriptive label).
-  const studyReadings = byClass(roots["rm-study-overview"], "rm-study-theme-card__reading");
-  const readingJump = studyReadings.length
-    ? { tag: String(studyReadings[0].tagName || "").toLowerCase(), href: (studyReadings[0].attributes && studyReadings[0].attributes.href) || "" }
-    : null;
+  // observations render on the expanded theme detail.
+  // Decision 229 D6: cards are collapsed by default with at most two
+  // previews — the complete reading plan (role badges, observations,
+  // exact source jumps) lives in the expanded detail workspace.
+  const themeTitles = byClass(roots["rm-study-overview"], "rm-study-theme-card__title");
+  let readingRoleBadges = [];
+  let readingExplains = [];
+  let readingJump = null;
+  // Decision 229 D6: cards are collapsed by default — open every theme and
+  // aggregate role badges/observations/jumps from the expanded details.
+  themeTitles.forEach((title) => {
+    title.onclick();
+    const detailRoot = roots["rm-study-detail"];
+    readingRoleBadges = readingRoleBadges.concat(byClass(detailRoot, "rm-study-theme-card__reading-role"));
+    readingExplains = readingExplains.concat(byClass(detailRoot, "rm-study-theme-card__reading-explain"));
+    const detailReadings = byClass(detailRoot, "rm-study-reading-anchor__open");
+    if (!readingJump && detailReadings.length) {
+      readingJump = { tag: String(detailReadings[0].tagName || "").toLowerCase(), href: (detailReadings[0].attributes && detailReadings[0].attributes.href) || "" };
+    }
+  });
   const drawerEl = roots["rm-source-drawer"];
   const drawerDialog = {
     role: drawerEl.getAttribute("role"),

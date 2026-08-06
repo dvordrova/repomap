@@ -4572,6 +4572,69 @@
 			: msg('main.study.theme.partial');
 	}
 
+	// themeScopeState derives the Decision 229 D6 scope axis
+	// deterministically from the card readings: the theme scope is "exact"
+	// when every reading carries an exact resolvable source location with a
+	// direct role, and "partial" otherwise. Scope and evidence are
+	// independent axes — "Source-backed" is never contradicted by "Scope
+	// partial", and a narrow-but-exact theme is not failed evidence.
+	function themeScopeState(card) {
+		var readings = card && Array.isArray(card.readings) ? card.readings : [];
+		if (!readings.length) return 'partial';
+		for (var index = 0; index < readings.length; index++) {
+			var reading = readings[index];
+			if (!reading) return 'partial';
+			if (!reading.path || !Number.isInteger(reading.line) || reading.line <= 0) return 'partial';
+			if (reading.role === 'supporting') return 'partial';
+		}
+		return 'exact';
+	}
+
+	function themeScopeLabel(card) {
+		return themeScopeState(card) === 'exact'
+			? msg('main.study.theme.scope_exact')
+			: msg('main.study.theme.scope_partial');
+	}
+
+	// themeKindLabel maps the stored theme kind to user-facing copy.
+	// Unknown kinds fall back to the neutral "Learning theme" label — raw
+	// enum values are never primary user copy (D229 D4).
+	var THEME_KIND_MESSAGE_IDS = {
+		user_journey: 'main.study.theme.kind.user_journey',
+		lifecycle_concern: 'main.study.theme.kind.lifecycle_concern',
+		cross_cutting_policy: 'main.study.theme.kind.cross_cutting_policy',
+		sibling_implementation_family: 'main.study.theme.kind.sibling_family',
+	};
+	function themeKindLabel(card) {
+		var kind = String((card && card.theme_kind) || '');
+		return msg(THEME_KIND_MESSAGE_IDS[kind] || 'main.study.theme.kind.learning');
+	}
+
+	// themeReadingPreviewRows collapses the reading previews of a collapsed
+	// card: at most two preview rows (Decision 229 D6), with repeated public
+	// symbols grouped visually ("HttpEmailProvider.Send · 2 callsites")
+	// while every exact source location stays in the expanded detail.
+	function themeReadingPreviewRows(card) {
+		var readings = card && Array.isArray(card.readings) ? card.readings : [];
+		var rows = [];
+		var bySymbol = {};
+		var ordered = [];
+		readings.forEach(function (reading) {
+			if (!reading || !reading.path || !Number.isInteger(reading.line)) return;
+			var symbol = String(reading.symbol || '');
+			if (!bySymbol[symbol]) {
+				bySymbol[symbol] = { symbol: symbol, count: 0, first: reading };
+				ordered.push(bySymbol[symbol]);
+			}
+			bySymbol[symbol].count += 1;
+		});
+		ordered.forEach(function (group) {
+			if (rows.length >= 2) return;
+			rows.push(group);
+		});
+		return rows;
+	}
+
 	// themeCoverageExplanation renders the coverage limitation in user-facing
 	// terms. A "1 of 1 anchors passed source review" limitation is explained
 	// as supported-but-narrow rather than as failed evidence.
@@ -4620,51 +4683,44 @@
 	function renderThemeCard(card, index) {
 		var article = el('article', 'rm-study-theme-card' + (card.badge ? ' rm-study-theme-card--' + String(card.badge).toLowerCase() : ''));
 		var titleRow = el('div', 'rm-study-theme-card__title-row');
-		var title = txt('h3', 'rm-study-theme-card__title', card.final_title || '');
+		var title = txt('button', 'rm-study-theme-card__title', card.final_title || '');
+		title.type = 'button';
+		title.onclick = function () { openThemeCard(Number(card.ordinal) || (index + 1)); };
 		titleRow.appendChild(title);
-		// Decision 222: the "Source-backed" badge is dropped — it carries no
-		// user information; partial coverage stays visible as it is meaningful.
-		if (themeCoverageState(card) !== 'supported') {
-			titleRow.appendChild(txt('span', 'rm-study-theme-card__coverage rm-study-theme-card__coverage--' + themeCoverageState(card), themeCoverageLabel(card)));
-		}
+		// Decision 229 D6: evidence and scope are independent axes. The
+		// evidence badge shows source-backed vs partial coverage; the scope
+		// badge shows exact vs partial thematic scope. A narrow-but-exact
+		// theme is not a warning.
+		titleRow.appendChild(txt('span', 'rm-study-theme-card__badge rm-study-theme-card__evidence rm-study-theme-card__evidence--' + themeCoverageState(card), themeCoverageLabel(card)));
+		titleRow.appendChild(txt('span', 'rm-study-theme-card__badge rm-study-theme-card__scope rm-study-theme-card__scope--' + themeScopeState(card), themeScopeLabel(card)));
+		titleRow.appendChild(txt('span', 'rm-study-theme-card__kind', themeKindLabel(card)));
 		article.appendChild(titleRow);
 		if (card.final_question) article.appendChild(txt('p', 'rm-study-theme-card__question', card.final_question));
 		if (card.why_it_matters) article.appendChild(txt('span', 'rm-study-theme-card__reason', card.why_it_matters));
-		var readings = el('ul', 'rm-study-theme-card__readings');
-		// Decision 222: the full reading plan is always shown on the card —
-		// plans are short and truncating them hid the actual plan behind a
-		// button. Each reading is a typed source row: bare symbol, kind ·
-		// path:line as separate DOM nodes.
-		(card.readings || []).forEach(function (reading) {
-			var kind = sourceKindFor(reading && reading.symbol, reading && reading.path);
-			var location = studyReadingLocation(reading);
-			if (!location) return;
-			var item = txt('li', 'rm-study-theme-card__reading-item', '');
-			var row = el('div', 'rm-study-theme-card__reading-row');
-			var action = renderStudySourceAction(reading, 'rm-study-theme-card__reading', false);
-			if (action) {
-				row.appendChild(action);
-			} else {
-				// Decision 218 (B): the reading is still visible and typed
-				// when no exact saved source is available for this run.
-				// Decision 222: bare symbol only — package is in the location.
-				row.appendChild(txt('span', 'rm-study-theme-card__reading rm-study-theme-card__reading--plain', bareSourceSymbol(String(reading && reading.symbol || ''))));
-			}
-			var meta = el('div', 'rm-study-theme-card__reading-meta');
-			meta.appendChild(txt('span', 'rm-study-theme-card__reading-kind', sourceKindLabel(kind)));
-			// Decision 224 (D219 G): every reading shows its user-facing
-			// support role (direct/supporting) next to the typed kind.
-			if (reading.role === 'direct') meta.appendChild(txt('span', 'rm-study-theme-card__reading-role', msg('main.study.theme.reading.role.direct')));
-			else if (reading.role === 'supporting') meta.appendChild(txt('span', 'rm-study-theme-card__reading-role', msg('main.study.theme.reading.role.supporting')));
-			meta.appendChild(txt('code', 'rm-study-theme-card__reading-location', formatCodeLocation(location)));
-			row.appendChild(meta);
-			item.appendChild(row);
-			// Decision 224 (D219 C): the bounded per-anchor model observation
-			// tells the reader what to inspect at this exact source.
-			if (reading.supported_observation) item.appendChild(txt('p', 'rm-study-theme-card__reading-explain', reading.supported_observation));
-			readings.appendChild(item);
-		});
-		if (readings.childNodes.length) article.appendChild(readings);
+		// Decision 229 D6: collapsed by default — at most two reading
+		// previews; the complete reading plan lives in the expanded detail
+		// (renderThemeDetailWorkspace), never hidden, never truncated.
+		var previewRows = themeReadingPreviewRows(card);
+		var totalReadings = Array.isArray(card.readings) ? card.readings.length : 0;
+		if (previewRows.length) {
+			var previews = el('ul', 'rm-study-theme-card__previews');
+			previewRows.forEach(function (group) {
+				var item = txt('li', 'rm-study-theme-card__preview', '');
+				var row = el('div', 'rm-study-theme-card__preview-row');
+				row.appendChild(txt('span', 'rm-study-theme-card__preview-symbol', bareSourceSymbol(group.symbol)));
+				var callsiteCount = group.count > 1 ? msg('main.study.theme.callsite_count', { count: group.count }) : '';
+				if (callsiteCount) row.appendChild(txt('span', 'rm-study-theme-card__preview-count', callsiteCount));
+				var firstLocation = studyReadingLocation(group.first);
+				if (firstLocation) row.appendChild(txt('code', 'rm-study-theme-card__preview-location', formatCodeLocation(firstLocation)));
+				item.appendChild(row);
+				previews.appendChild(item);
+			});
+			article.appendChild(previews);
+		}
+		if (totalReadings > previewRows.length) {
+			article.appendChild(txt('p', 'rm-study-theme-card__more',
+				msg('main.study.theme.more_readings', { count: totalReadings - previewRows.length })));
+		}
 		return article;
 	}
 
@@ -4683,7 +4739,21 @@
 			card.final_title || '',
 			card.final_question || ''
 		));
+		// Decision 229 D6: evidence and scope are independent badges in the
+		// detail header too — a source-backed theme with partial scope is
+		// not failed evidence.
+		var badgeRow = el('div', 'rm-study-theme-card__badge-row');
+		badgeRow.appendChild(txt('span', 'rm-study-theme-card__badge rm-study-theme-card__evidence rm-study-theme-card__evidence--' + themeCoverageState(card), themeCoverageLabel(card)));
+		badgeRow.appendChild(txt('span', 'rm-study-theme-card__badge rm-study-theme-card__scope rm-study-theme-card__scope--' + themeScopeState(card), themeScopeLabel(card)));
+		badgeRow.appendChild(txt('span', 'rm-study-theme-card__kind', themeKindLabel(card)));
+		root.appendChild(badgeRow);
 		root.appendChild(txt('p', 'rm-study-theme-card__coverage-explanation', themeCoverageExplanation(card)));
+		// Decision 229 D6: expected learning is its own section in the
+		// expanded card (never hidden behind hover).
+		if (card.expected_learning) {
+			root.appendChild(txt('p', 'rm-study-theme-card__expected-learning',
+				msg('main.study.theme.expected_learning', { learning: card.expected_learning })));
+		}
 		if (card.why_it_matters) {
 			var reason = el('aside', 'rm-study-outcome');
 			reason.appendChild(txt('strong', '', card.why_it_matters));
@@ -4695,6 +4765,15 @@
 			if (item) anchors.appendChild(item);
 		});
 		root.appendChild(anchors);
+		// Decision 229 D6: limitations and provenance under a secondary
+		// disclosure — present, never hover-only, out of the primary path.
+		var limitation = String(card.limitation || '');
+		if (limitation && limitation !== card.expected_learning) {
+			var details = el('details', 'rm-study-theme-card__limitations');
+			details.appendChild(txt('summary', 'rm-study-theme-card__limitations-summary', msg('main.study.theme.limitations')));
+			details.appendChild(txt('p', 'rm-study-theme-card__limitations-body', limitation));
+			root.appendChild(details);
+		}
 	}
 
 // repomap-source-episode:start
@@ -5267,10 +5346,15 @@
 		}
 		var meta = el('div', 'rm-study-reading-anchor__meta');
 		meta.appendChild(txt('span', 'rm-study-reading-anchor__kind', sourceKindLabel(kind)));
+		// Decision 229 D6: the expanded reading shows its support role
+		// (direct/supporting) next to the typed kind.
+		if (reading.role === 'direct') meta.appendChild(txt('span', 'rm-study-theme-card__reading-role', msg('main.study.theme.reading.role.direct')));
+		else if (reading.role === 'supporting') meta.appendChild(txt('span', 'rm-study-theme-card__reading-role', msg('main.study.theme.reading.role.supporting')));
 		meta.appendChild(txt('code', 'rm-study-reading-anchor__location', formatCodeLocation(location)));
 		row.appendChild(meta);
 		copy.appendChild(row);
 		if (reading.what_to_look_for) copy.appendChild(txt('p', 'rm-study-reading-anchor__explain', reading.what_to_look_for));
+		else if (reading.supported_observation) copy.appendChild(txt('p', 'rm-study-theme-card__reading-explain', reading.supported_observation));
 		card.appendChild(copy);
 		return card;
 	}
