@@ -99,6 +99,14 @@ Remove/soften fatal bookkeeping clauses:
   (a component may be anchor-backed shared participation);
 - remove `hypothesis` from the response grammar (backend derives it);
 - unit/anchor refs may omit the backend-owned `kind` (`{"ref":"u1"}`);
+- **member refs may omit `kind` too (`{"ref":"p11"}`)** — gap closure from
+  the miniflux live run (20260806-223340): the model returned kind-less
+  member refs (exactly the D231 spirit), but `decodeSynthesisMemberRef`
+  still required `kind`, whole-rejecting the proposal with
+  `response.invalid_proposal`. The decode now accepts `{"ref":...}` and
+  resolves by the ref-only catalog key; a supplied wrong kind still fails
+  item-scope. `SynthesisMemberRef`/`SynthesisAnchorRef` kinds are
+  `json:",omitempty"` so a kind-less ref stays off the wire;
 - keep: choose supplied refs, partial grouping valid, no model remainder,
   bounded prose, honest authority (no runtime order from static facts),
   language contract.
