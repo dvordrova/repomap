@@ -43,14 +43,20 @@ const (
 // is meaningful only within the exact private catalog compiled for one
 // request. Canonical member IDs never enter the provider wire.
 type SynthesisMemberRef struct {
-	Kind MemberKind `json:"kind"`
+	// Decision 231 (Archive 9, gap closure): kind is backend-owned and may
+	// be omitted by the model ({"ref":"p11"}); a supplied kind is still
+	// validated. omitempty keeps a kind-less ref off the wire entirely.
+	Kind MemberKind `json:"kind,omitempty"`
 	Ref  string     `json:"ref"`
 }
 
 // SynthesisAnchorRef is one short request-local typed grounding identity.
 // Canonical anchor IDs stay in the private catalog.
 type SynthesisAnchorRef struct {
-	Kind BehaviorAnchorKind `json:"kind"`
+	// Decision 231 (Archive 9): anchor kind is backend-owned and may be
+	// omitted by the model ({"ref":"a1"}); a supplied kind is still
+	// validated. omitempty keeps a kind-less ref off the wire entirely.
+	Kind BehaviorAnchorKind `json:"kind,omitempty"`
 	Ref  string             `json:"ref"`
 }
 
@@ -252,8 +258,14 @@ type synthesisPrivateCatalog struct {
 	membersByRef map[string]MemberID
 	memberKinds  map[string]MemberKind
 	memberRoles  map[string]CandidateRole
-	anchorsByID        map[string]SynthesisAnchorRef
-	anchorsByRef       map[string]string
+	// Decision 231 (Archive 9, gap closure): ref-only member lookup for
+	// responses that omit the backend-owned kind ({"ref":"p11"}). The
+	// request-local member ref is unique by ref alone; kind is owned by
+	// the backend catalog.
+	membersByRefOnly     map[string]MemberID
+	memberRolesByRefOnly map[string]CandidateRole
+	anchorsByID          map[string]SynthesisAnchorRef
+	anchorsByRef         map[string]string
 	// Decision 231 (Archive 9): ref-only anchor lookup for responses that
 	// omit the backend-owned kind ({"ref":"a1"}).
 	anchorsByRefOnly map[string]string
@@ -264,7 +276,7 @@ type synthesisPrivateCatalog struct {
 	// memberParentIDs maps a child member (symbol/file) to its exact
 	// parent package member so an anchor-owned symbol can be resolved to
 	// the package member a broad unit actually contains.
-	memberParentIDs map[MemberID]MemberID
+	memberParentIDs    map[MemberID]MemberID
 	flowsByID          map[FlowID]SynthesisFlowRef
 	canonicalOpaqueIDs map[string]struct{}
 	identitySHA256     string
@@ -299,18 +311,20 @@ func buildSynthesisPrivateCatalog(bundle CandidateBundle) (synthesisPrivateCatal
 		return synthesisPrivateCatalog{}, err
 	}
 	catalog := synthesisPrivateCatalog{
-		membersByID:        make(map[MemberID]SynthesisMemberRef, len(bundle.Candidates)),
-		membersByRef:       make(map[string]MemberID, len(bundle.Candidates)),
-		memberKinds:        make(map[string]MemberKind, len(bundle.Candidates)),
-		memberRoles:        make(map[string]CandidateRole, len(bundle.Candidates)),
-		anchorsByID:        make(map[string]SynthesisAnchorRef, len(bundle.BehaviorAnchors)),
-		anchorsByRef:       make(map[string]string, len(bundle.BehaviorAnchors)),
-		anchorsByRefOnly:   make(map[string]string, len(bundle.BehaviorAnchors)),
-		anchorKinds:        make(map[string]BehaviorAnchorKind, len(bundle.BehaviorAnchors)),
-		anchorMemberIDs:    make(map[string]map[MemberID]struct{}, len(bundle.BehaviorAnchors)),
-		memberParentIDs:    make(map[MemberID]MemberID, len(bundle.Candidates)),
-		flowsByID:          make(map[FlowID]SynthesisFlowRef, len(bundle.Flows)),
-		canonicalOpaqueIDs: make(map[string]struct{}, len(bundle.Candidates)+len(bundle.BehaviorAnchors)+len(bundle.Flows)),
+		membersByID:          make(map[MemberID]SynthesisMemberRef, len(bundle.Candidates)),
+		membersByRef:         make(map[string]MemberID, len(bundle.Candidates)),
+		membersByRefOnly:     make(map[string]MemberID, len(bundle.Candidates)),
+		memberKinds:          make(map[string]MemberKind, len(bundle.Candidates)),
+		memberRoles:          make(map[string]CandidateRole, len(bundle.Candidates)),
+		memberRolesByRefOnly: make(map[string]CandidateRole, len(bundle.Candidates)),
+		anchorsByID:          make(map[string]SynthesisAnchorRef, len(bundle.BehaviorAnchors)),
+		anchorsByRef:         make(map[string]string, len(bundle.BehaviorAnchors)),
+		anchorsByRefOnly:     make(map[string]string, len(bundle.BehaviorAnchors)),
+		anchorKinds:          make(map[string]BehaviorAnchorKind, len(bundle.BehaviorAnchors)),
+		anchorMemberIDs:      make(map[string]map[MemberID]struct{}, len(bundle.BehaviorAnchors)),
+		memberParentIDs:      make(map[MemberID]MemberID, len(bundle.Candidates)),
+		flowsByID:            make(map[FlowID]SynthesisFlowRef, len(bundle.Flows)),
+		canonicalOpaqueIDs:   make(map[string]struct{}, len(bundle.Candidates)+len(bundle.BehaviorAnchors)+len(bundle.Flows)),
 	}
 	identity := synthesisCatalogIdentity{
 		Members: make([]synthesisCatalogMemberIdentity, 0, len(bundle.Candidates)),
@@ -349,6 +363,11 @@ func buildSynthesisPrivateCatalog(bundle CandidateBundle) (synthesisPrivateCatal
 		}
 		catalog.membersByID[candidate.ID] = ref
 		catalog.membersByRef[ref.key()] = candidate.ID
+		// Decision 231 (Archive 9, gap closure): the request-local member ref
+		// is unique by ref alone — the ref-only key is the backend-owned-kind
+		// resolution for models that omit kind.
+		catalog.membersByRefOnly[ref.Ref] = candidate.ID
+		catalog.memberRolesByRefOnly[ref.Ref] = candidate.Role
 		catalog.memberKinds[ref.Ref] = ref.Kind
 		catalog.memberRoles[ref.key()] = candidate.Role
 		if candidate.ParentID != nil {
@@ -2038,18 +2057,27 @@ func decodeSynthesisMemberRef(raw json.RawMessage) (SynthesisMemberRef, error) {
 	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
 		return SynthesisMemberRef{}, fmt.Errorf("proposal member ref is not an object")
 	}
-	if !hasExactSynthesisFields(fields, "kind", "ref") {
+	// Decision 231 (Archive 9): ref kind is backend-owned — the model may
+	// omit it entirely ({"ref":"p11"}); a supplied kind is still validated.
+	// This closes the D231 gap where unit_refs/anchor_refs allowed kind
+	// omission but member_refs still required it, whole-rejecting otherwise
+	// valid proposals (miniflux live run 20260806-223340).
+	if !hasExactSynthesisFields(fields, "ref") && !hasExactSynthesisFields(fields, "kind", "ref") {
 		return SynthesisMemberRef{}, fmt.Errorf("proposal member ref fields do not match the bounded contract")
-	}
-	kind, err := decodeRequiredProposalString(fields, "kind")
-	if err != nil {
-		return SynthesisMemberRef{}, err
 	}
 	ref, err := decodeRequiredProposalString(fields, "ref")
 	if err != nil {
 		return SynthesisMemberRef{}, err
 	}
-	return SynthesisMemberRef{Kind: MemberKind(kind), Ref: ref}, nil
+	var kind MemberKind
+	if rawKind, exists := fields["kind"]; exists && !isJSONNull(rawKind) {
+		decodedKind, kindErr := decodeRequiredProposalString(fields, "kind")
+		if kindErr != nil {
+			return SynthesisMemberRef{}, kindErr
+		}
+		kind = MemberKind(decodedKind)
+	}
+	return SynthesisMemberRef{Kind: kind, Ref: ref}, nil
 }
 
 func decodeSynthesisUnitRef(raw json.RawMessage) (SynthesisUnitRef, error) {
@@ -2222,18 +2250,36 @@ func resolveSynthesisWireProposal(
 		// count bounds) remain whole-response errors above.
 		componentSalvaged := false
 		for _, memberRef := range record.MemberRefs {
-			if expectedKind, exists := catalog.memberKinds[memberRef.Ref]; exists && expectedKind != memberRef.Kind {
-				salvageComponent("proposal.unknown_member_id", "proposal member ref has the wrong request-local kind")
-				componentSalvaged = true
-				break
+			// Decision 231 (Archive 9, gap closure): a model may omit the
+			// member kind ({"ref":"p11"}); the catalog owns kinds. A
+			// supplied wrong kind still fails item-scope. With an omitted
+			// kind the ref is resolved by the ref-only catalog key.
+			if memberRef.Kind != "" {
+				if expectedKind, exists := catalog.memberKinds[memberRef.Ref]; exists && expectedKind != memberRef.Kind {
+					salvageComponent("proposal.unknown_member_id", "proposal member ref has the wrong request-local kind")
+					componentSalvaged = true
+					break
+				}
 			}
-			memberID, exists := catalog.membersByRef[memberRef.key()]
+			var memberID MemberID
+			var exists bool
+			if memberRef.Kind == "" {
+				memberID, exists = catalog.membersByRefOnly[memberRef.Ref]
+			} else {
+				memberID, exists = catalog.membersByRef[memberRef.key()]
+			}
 			if !exists {
 				salvageComponent("proposal.unknown_member_id", "proposal references an unknown request-local member ref")
 				componentSalvaged = true
 				break
 			}
-			if catalog.memberRoles[memberRef.key()] != CandidateRoleConceptualMember {
+			var memberRole CandidateRole
+			if memberRef.Kind == "" {
+				memberRole = catalog.memberRolesByRefOnly[memberRef.Ref]
+			} else {
+				memberRole = catalog.memberRoles[memberRef.key()]
+			}
+			if memberRole != CandidateRoleConceptualMember {
 				salvageComponent("proposal.unknown_member_id", "proposal returned a structural locator as conceptual membership")
 				componentSalvaged = true
 				break
