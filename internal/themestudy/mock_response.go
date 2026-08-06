@@ -177,7 +177,6 @@ func MockAdjudicationResponse(request AdjudicationRequest) ([]byte, error) {
 			assessments = append(assessments, AnchorAssessment{
 				AnchorRef:            ref,
 				Fit:                  FitDirect,
-				Role:                 "exact_anchor",
 				SupportedObservation: "The exact source-backed anchor contributes to the final question.",
 			})
 		}

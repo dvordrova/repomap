@@ -173,6 +173,32 @@ func readThemeStudyAccepted(
 	adjStatusRaw []byte, hasAdjStatus bool,
 	themesRaw []byte, hasThemes bool,
 ) (*AtlasStudyReportStatus, *RepositoryStudyMap, error) {
+	// Decision 232 (Archive 9): zero accepted themes is an honest
+	// semantic-empty outcome. It is detected BEFORE the all-artifacts
+	// requirement: an Adjudication failure after a successful Scout keeps
+	// the scout/expansion/adj artifacts but writes no study_themes, and the
+	// report renders the complete local question browse (never fabricated
+	// cards, never hidden information).
+	if hasAdjStatus {
+		adjStatusEarly, decodeErr := themestudy.DecodeAdjudicationStatus(adjStatusRaw)
+		if decodeErr == nil && adjStatusEarly.Status.State == string(atlasstudy.ProductStateFailed) &&
+			hasAdjResult && !hasThemes {
+			adjResultEarly, decodeErr := themestudy.DecodeAdjudicationResult(adjResultRaw)
+			if decodeErr == nil && len(adjResultEarly.Themes) == 0 {
+				browse, browseErr := deriveAtlasStudyFailedBrowse(input, data)
+				if browseErr != nil {
+					return nil, nil, browseErr
+				}
+				return &AtlasStudyReportStatus{
+					Version:           scoutStatus.Version,
+					ProjectionVersion: AtlasStudyReportProjectionVersion,
+					State:             atlasstudy.ProductStateFailed,
+					FailureCode:       atlasstudy.FailureValidation,
+					FrontierBrowse:    browse,
+				}, nil, nil
+			}
+		}
+	}
 	if !hasScoutResult || !hasExpansion || !hasAdjRequest || !hasAdjResult || !hasAdjStatus || !hasThemes {
 		return nil, nil, fmt.Errorf("atlas study report: accepted Scout status requires all theme stage artifacts")
 	}
@@ -208,6 +234,29 @@ func readThemeStudyAccepted(
 	if err := validateThemeAdjResult(adjResult, adjStatus, adjRequest); err != nil {
 		return nil, nil, fmt.Errorf("atlas study report: Adjudication result binding: %w", err)
 	}
+	// Decision 232 (Archive 9): zero accepted themes is an honest
+	// semantic-empty outcome. The report renders the complete local
+	// question browse with a failed state — never fabricated cards, never
+	// hidden information.
+	if adjResult.State == string(atlasstudy.ProductStateFailed) {
+		if len(adjResult.Themes) != 0 {
+			return nil, nil, fmt.Errorf("atlas study report: failed Adjudication result contains themes")
+		}
+		if hasThemes {
+			return nil, nil, fmt.Errorf("atlas study report: semantic-empty Adjudication cannot carry study_themes")
+		}
+		browse, browseErr := deriveAtlasStudyFailedBrowse(input, data)
+		if browseErr != nil {
+			return nil, nil, browseErr
+		}
+		return &AtlasStudyReportStatus{
+			Version:           scoutResult.Version,
+			ProjectionVersion: AtlasStudyReportProjectionVersion,
+			State:             atlasstudy.ProductStateFailed,
+			FailureCode:       atlasstudy.FailureValidation,
+			FrontierBrowse:    browse,
+		}, nil, nil
+	}
 	themes, err := themestudy.DecodeStudyThemes(themesRaw)
 	if err != nil {
 		return nil, nil, fmt.Errorf("atlas study report: study_themes: %w", err)
@@ -240,6 +289,10 @@ func readThemeStudyAccepted(
 	reportStatus.AdvertisedSpanCount = counts.seedAdvertised
 	reportStatus.ModelSelectedSpanCount = counts.scoutAnchored
 	reportStatus.AcceptedSpanCount = counts.published
+	// Decision 232: adjudication anchor coverage is projected as exact
+	// counts (never published for unreviewed anchors).
+	reportStatus.ReviewedAnchors = adjStatus.Status.ReviewedAnchors
+	reportStatus.UnreviewedAnchors = adjStatus.Status.UnreviewedAnchors
 	reportStatus.FrontierComplete = counts.seedAdvertised == counts.considered
 	reportStatus.SelectedItemsComplete = reportStatus.State == atlasstudy.ProductStateAccepted
 	reportStatus.SupportCoverageComplete = true

@@ -92,7 +92,9 @@ func TestNavigatorReportArtifactsBindOfflineEmptySelectedAndFailedStates(t *test
 				t.Fatal(err)
 			}
 			manifest := validRunManifestFixture(t)
-			if manifest.Version != 12 || manifest.ReportFormatVersion != 32 {
+			// Decision 232 (Archive 9): CurrentFormatVersion 33 (adjudication
+			// anchor coverage projection); manifest artifact set unchanged (12).
+			if manifest.Version != 12 || manifest.ReportFormatVersion != 33 {
 				t.Fatalf("Atlas-first wire versions = %d/%d", manifest.Version, manifest.ReportFormatVersion)
 			}
 			manifest.OpenablePaths = nil

@@ -47,9 +47,16 @@ func TestNavigatorPromptJSONPreservesClosedProductContract(t *testing.T) {
 			t.Fatalf("Navigator user prompt missing %q: %s", want, user)
 		}
 	}
-	for _, want := range []string{`"trail_refs"`, `"entity_refs"`, `"evidence_refs"`, "request-local"} {
+	for _, want := range []string{`"action_refs"`, `"catalog_ref"`, "request-local", "backend owns"} {
 		if !strings.Contains(request.Messages[0].Content, want) {
 			t.Fatalf("Navigator system prompt missing %q", want)
+		}
+	}
+	// Decision 232 (Navigator v2): the model must NOT echo backend-owned
+	// refs — the prompt no longer teaches trail/endpoints/evidence output.
+	for _, forbidden := range []string{`"trail_refs"`, `"entity_refs"`, `"evidence_refs"`} {
+		if strings.Contains(request.Messages[0].Content, forbidden) {
+			t.Fatalf("Navigator v2 prompt still teaches backend-owned echo %q", forbidden)
 		}
 	}
 	for _, forbidden := range []string{
@@ -136,9 +143,11 @@ func TestDecodeNavigatorResponseRequiresOneExactStartupExplanation(t *testing.T)
 		{name: "wrong version", mutate: func(value *navigatorResponse) { value.Version++ }, want: "identity"},
 		{name: "zero action", mutate: func(value *navigatorResponse) { value.ActionRefs = nil }, want: "exactly one"},
 		{name: "multiple actions", mutate: func(value *navigatorResponse) { value.ActionRefs = append(value.ActionRefs, "a9999") }, want: "exactly one"},
-		{name: "no trail", mutate: func(value *navigatorResponse) { value.TrailRefs = nil }, want: "one exact startup trail"},
-		{name: "no evidence", mutate: func(value *navigatorResponse) { value.EvidenceRefs = nil }, want: "one exact startup trail"},
-		{name: "gap", mutate: func(value *navigatorResponse) { value.GapRefs = []string{"g0001"} }, want: "one exact startup trail"},
+		// Decision 232 (Navigator v2): echoing backend-owned refs is
+		// rejected closed — the model never returns trail/endpoints/evidence.
+		{name: "echo trail", mutate: func(value *navigatorResponse) { value.TrailRefs = []string{"t1"} }, want: "must not echo"},
+		{name: "echo evidence", mutate: func(value *navigatorResponse) { value.EvidenceRefs = []string{"e1"} }, want: "must not echo"},
+		{name: "echo gap", mutate: func(value *navigatorResponse) { value.GapRefs = []string{"g0001"} }, want: "must not echo"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -418,11 +427,11 @@ func navigatorProviderResponse(t *testing.T, compiled navigator.Compiled) naviga
 	if len(wire.Actions) != 1 || len(wire.DirectTrails) != 1 {
 		t.Fatalf("fixture wire = %#v", wire)
 	}
-	trail := wire.DirectTrails[0]
+	// Decision 232 (Navigator v2): the provider selects the action only;
+	// trail/endpoints/evidence are backend-restored and never echoed.
 	return navigatorResponse{
 		Version: navigator.Version, CatalogRef: compiled.CatalogRef(),
-		EntityRefs: []string{trail.SourceRef, trail.TargetRef}, TrailRefs: []string{trail.Ref},
-		EvidenceRefs: append([]string(nil), trail.EvidenceRefs...), ActionRefs: []string{wire.Actions[0].Ref},
+		ActionRefs: []string{wire.Actions[0].Ref},
 	}
 }
 

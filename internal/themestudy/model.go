@@ -336,11 +336,13 @@ type ScoutStatus struct {
 }
 
 // AnchorAssessment is one per-anchor classification from Theme Adjudication
-// (contract E). fit and role are internal enums, never UX.
+// (contract E). fit is an internal enum, never UX. Decision 232 (Archive 9):
+// role is backend-owned (derived from the catalog) and no longer part of the
+// model response contract; unassessed candidate anchors become local
+// `unreviewed` — counted, unpublished, never fatal.
 type AnchorAssessment struct {
 	AnchorRef            string   `json:"anchor_ref"`
 	Fit                  FitClass `json:"fit"`
-	Role                 string   `json:"role,omitempty"`
 	SupportedObservation string   `json:"supported_observation"`
 }
 
@@ -391,9 +393,17 @@ type AdjudicationStatus struct {
 	Accepted int                 `json:"accepted"`
 	Rejected int                 `json:"rejected"`
 	Issues   []AdjudicationIssue `json:"issues,omitempty"`
+	// Decision 232 (Archive 9): anchor coverage — reviewed anchors are
+	// those with an assessment across the accepted themes; unreviewed are
+	// the candidate anchors the model did not assess (counted, unpublished,
+	// never fatal). Published readings are direct/supporting only and are
+	// ≤ reviewed.
+	ReviewedAnchors   int `json:"reviewed_anchors,omitempty"`
+	UnreviewedAnchors int `json:"unreviewed_anchors,omitempty"`
 	// Normalized records typed editorial truncation counts (Decision 224):
-	// observation / unknown / unknowns_capped. Non-empty means overlong
-	// bounded evidence was retained, never dropped as empty.
+	// observation / unknown / unknowns_capped, and Decision 232:
+	// duplicate_assessment. Non-empty means bounded evidence was retained,
+	// never dropped as empty.
 	Normalized map[string]int `json:"normalized,omitempty"`
 }
 

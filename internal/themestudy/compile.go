@@ -12,13 +12,16 @@ import (
 // Contract versions and prompt versions of the two semantic theme stages.
 // They are producer-owned constants, never flags and never tuning knobs.
 const (
-	ScoutRequestVersion          = 1
-	ScoutResultVersion           = 2
-	AdjudicationRequestVersion   = 1
-	AdjudicationResultVersion    = 2
-	StudyThemesVersion           = 1
-	ScoutPromptVersion           = "theme-scout-prompt-v1"
-	AdjudicationPromptVersion    = "theme-adjudication-prompt-v1"
+	ScoutRequestVersion        = 1
+	ScoutResultVersion         = 2
+	AdjudicationRequestVersion = 1
+	AdjudicationResultVersion  = 2
+	StudyThemesVersion         = 1
+	// Decision 232 (Archive 9): prompt contract v2 — target-cardinality
+	// wording, duplicate normalization, backend-owned anchor role,
+	// observation only for direct/supporting, unreviewed anchors.
+	ScoutPromptVersion           = "theme-scout-prompt-v2"
+	AdjudicationPromptVersion    = "theme-adjudication-prompt-v2"
 	ScoutCacheContract           = "theme-scout-accepted-v1"
 	AdjudicationCacheContract    = "theme-adjudication-accepted-v1"
 	ScoutStage                   = "theme_scout"
@@ -38,10 +41,10 @@ const (
 // identity that binds it. Source bytes appear only inside seed pack objects and
 // are provider evidence, never card content.
 type ScoutRequest struct {
-	Version       int          `json:"version"`
-	PromptVersion string       `json:"prompt_version"`
-	Language      Language     `json:"language"`
-	Vocabulary    Vocabulary   `json:"vocabulary"`
+	Version       int            `json:"version"`
+	PromptVersion string         `json:"prompt_version"`
+	Language      Language       `json:"language"`
+	Vocabulary    Vocabulary     `json:"vocabulary"`
 	SeedPacks     SeedPackResult `json:"seed_packs"`
 	// WireSHA256 hashes the exact model-visible wire JSON below.
 	WireSHA256 string `json:"wire_sha256"`
@@ -57,14 +60,14 @@ type ScoutRequest struct {
 // diagnostics; zero accepted candidates is a semantic failure and never
 // produces this record.
 type ScoutResult struct {
-	Version       int             `json:"version"`
-	State         string          `json:"state"` // accepted | accepted_partial
-	PromptVersion string          `json:"prompt_version"`
-	Language      Language        `json:"language"`
-	CatalogSHA256 string          `json:"catalog_sha256"`
-	WireSHA256    string          `json:"wire_sha256"`
+	Version       int              `json:"version"`
+	State         string           `json:"state"` // accepted | accepted_partial
+	PromptVersion string           `json:"prompt_version"`
+	Language      Language         `json:"language"`
+	CatalogSHA256 string           `json:"catalog_sha256"`
+	WireSHA256    string           `json:"wire_sha256"`
 	Candidates    []ScoutCandidate `json:"candidates"`
-	Status        ScoutStatus     `json:"status"`
+	Status        ScoutStatus      `json:"status"`
 }
 
 // ScoutStatusRecord is the persisted Theme Scout status artifact. It is a
@@ -89,15 +92,15 @@ type ScoutStatusRecord struct {
 // identities; it may narrow, reorder, or reject. Source bytes appear only in
 // the expansion and are provider evidence.
 type AdjudicationRequest struct {
-	Version       int          `json:"version"`
-	PromptVersion string       `json:"prompt_version"`
-	Language      Language     `json:"language"`
-	Candidates    []ScoutCandidate `json:"candidates"` // accepted Scout candidates (t* catalog)
-	Expansion     SourceExpansion  `json:"expansion"`  // contract D, provider-free, persisted
-	Anchors       map[string]AnchorInfo `json:"anchors"` // a* ref -> exact backend-owned identity
-	WireSHA256    string       `json:"wire_sha256"`
-	WireJSON      string       `json:"wire_json"`
-	CatalogSHA256 string       `json:"catalog_sha256"`
+	Version       int                   `json:"version"`
+	PromptVersion string                `json:"prompt_version"`
+	Language      Language              `json:"language"`
+	Candidates    []ScoutCandidate      `json:"candidates"` // accepted Scout candidates (t* catalog)
+	Expansion     SourceExpansion       `json:"expansion"`  // contract D, provider-free, persisted
+	Anchors       map[string]AnchorInfo `json:"anchors"`    // a* ref -> exact backend-owned identity
+	WireSHA256    string                `json:"wire_sha256"`
+	WireJSON      string                `json:"wire_json"`
+	CatalogSHA256 string                `json:"catalog_sha256"`
 }
 
 // AdjudicationResult is the validated Theme Adjudication result (contract E
@@ -131,14 +134,14 @@ type AdjudicationStatusRecord struct {
 // (contract F). Cards carry editorial prose + exact readings + a badge and
 // zero source bytes. The digest binds the complete artifact.
 type StudyThemes struct {
-	Version       string      `json:"version"`
-	Revision      string      `json:"revision,omitempty"`
-	ScoutSHA256   string      `json:"scout_catalog_sha256,omitempty"`
-	AdjSHA256     string      `json:"adjudication_catalog_sha256,omitempty"`
-	Cards         []ThemeCard `json:"cards"`
-	Omitted       int         `json:"omitted"`
-	Partial       bool        `json:"partial"`
-	Diagnostics   map[string]int `json:"diagnostics,omitempty"`
+	Version     string         `json:"version"`
+	Revision    string         `json:"revision,omitempty"`
+	ScoutSHA256 string         `json:"scout_catalog_sha256,omitempty"`
+	AdjSHA256   string         `json:"adjudication_catalog_sha256,omitempty"`
+	Cards       []ThemeCard    `json:"cards"`
+	Omitted     int            `json:"omitted"`
+	Partial     bool           `json:"partial"`
+	Diagnostics map[string]int `json:"diagnostics,omitempty"`
 }
 
 // AnchorRefs returns the exact set of advertised a* seed refs.
@@ -184,8 +187,8 @@ type ScoutContext struct {
 // ScoutArchContext is a compact labels-only projection of the accepted local
 // Architecture Canvas (tolerant of failed/absent Architecture).
 type ScoutArchContext struct {
-	Title       string   `json:"title,omitempty"`
-	Subtitle    string   `json:"subtitle,omitempty"`
+	Title          string   `json:"title,omitempty"`
+	Subtitle       string   `json:"subtitle,omitempty"`
 	SubsystemNames []string `json:"subsystem_names,omitempty"`
 	ComponentNames []string `json:"component_names,omitempty"`
 }
@@ -202,9 +205,9 @@ type ScoutSpanQuestion struct {
 // bindings) never reach the provider, so the wire carries its own
 // wire-safe copies of the vocabulary and the seed packs.
 type wireScout struct {
-	Context    ScoutContext        `json:"context"`
-	Vocabulary wireVocabulary      `json:"vocabulary"`
-	SeedPacks  wireSeedPackResult  `json:"seed_packs"`
+	Context    ScoutContext       `json:"context"`
+	Vocabulary wireVocabulary     `json:"vocabulary"`
+	SeedPacks  wireSeedPackResult `json:"seed_packs"`
 }
 
 // wireVocabulary is the names-only f* vocabulary projection. It never carries
@@ -226,10 +229,10 @@ type wireSeedPackResult struct {
 }
 
 type wireSeedPack struct {
-	Seed        wireSeedSpec    `json:"seed"`
-	Objects     []SourceObject  `json:"objects"`
-	TotalBytes  int             `json:"total_bytes"`
-	Limitations string          `json:"limitations,omitempty"`
+	Seed        wireSeedSpec   `json:"seed"`
+	Objects     []SourceObject `json:"objects"`
+	TotalBytes  int            `json:"total_bytes"`
+	Limitations string         `json:"limitations,omitempty"`
 }
 
 // wireSeedSpec is SeedSpec minus the internal CanonicalSpanID binding.
@@ -355,21 +358,21 @@ func scoutCatalogDigest(vocabulary Vocabulary, packs SeedPackResult) (string, er
 // construction: each candidate section carries only its own anchors and the
 // expanded sources are shared once.
 type wireAdjudication struct {
-	Language   Language                `json:"language"`
-	Candidates []wireAdjCandidate      `json:"candidates"`
-	Expansion  SourceExpansion         `json:"expansion"`
-	Anchors    map[string]wireAnchor   `json:"anchors"`
+	Language   Language              `json:"language"`
+	Candidates []wireAdjCandidate    `json:"candidates"`
+	Expansion  SourceExpansion       `json:"expansion"`
+	Anchors    map[string]wireAnchor `json:"anchors"`
 }
 
 type wireAdjCandidate struct {
-	Ref          string    `json:"ref"` // t* ref
-	Title        string    `json:"title"`
-	Question     string    `json:"question"`
-	ThemeKind    ThemeKind `json:"theme_kind"`
-	AnchorRefs   []string  `json:"anchor_refs"`
-	ExpansionFileRefs []string `json:"expansion_file_refs,omitempty"`
-	WhyItMatters string    `json:"why_it_matters"`
-	ExpectedLearning string `json:"expected_learning"`
+	Ref               string    `json:"ref"` // t* ref
+	Title             string    `json:"title"`
+	Question          string    `json:"question"`
+	ThemeKind         ThemeKind `json:"theme_kind"`
+	AnchorRefs        []string  `json:"anchor_refs"`
+	ExpansionFileRefs []string  `json:"expansion_file_refs,omitempty"`
+	WhyItMatters      string    `json:"why_it_matters"`
+	ExpectedLearning  string    `json:"expected_learning"`
 }
 
 type wireAnchor struct {
@@ -410,7 +413,7 @@ func CompileAdjudication(
 			Ref: candidate.Ref, Title: candidate.Title, Question: candidate.Question,
 			ThemeKind: candidate.ThemeKind, AnchorRefs: append([]string(nil), candidate.AnchorRefs...),
 			ExpansionFileRefs: append([]string(nil), candidate.ExpansionFileRefs...),
-			WhyItMatters: candidate.WhyItMatters, ExpectedLearning: candidate.ExpectedLearning,
+			WhyItMatters:      candidate.WhyItMatters, ExpectedLearning: candidate.ExpectedLearning,
 		})
 	}
 	wireJSON, err := json.Marshal(wire)
@@ -533,7 +536,7 @@ Propose meaningfully distinct themes. Do not restate individual direct calls and
 Return exactly one JSON object and no markdown. Keep all enum values and refs unchanged. Write model-authored prose in the requested language.`
 
 const scoutPromptUserShape = `Requested prose language: %s.
-Propose %d-%d themes (valid %d-%d, no padding). Use %d-%d anchor_refs per theme; a one-anchor focused theme is permitted only when marked "focused":true and must not dominate.
+Aim for %d-%d themes when distinct evidence supports them. Return %d-%d; fewer is better than overlap or filler. Use %d-%d anchor_refs per theme; a one-anchor focused theme is permitted only when marked "focused":true and must not dominate. Exact duplicate anchor or file refs are normalized and counted by the backend; do not repeat them.
 theme_kind is one of: user_journey, cross_cutting_policy, sibling_implementation_family, integration_family, lifecycle_concern, shared_domain_responsibility.
 Response schema: {"themes":[{"title":"...","question":"...","theme_kind":"...","anchor_refs":["a1"],"expansion_file_refs":["f1"],"why_it_matters":"...","expected_learning":"...","relation_claim":"editorial_only","focused":false}]}
 Request bundle JSON:
@@ -555,17 +558,17 @@ func BuildScoutPrompt(request ScoutRequest) ScoutPrompt {
 }
 
 const adjudicationPromptSystem = `Review each proposed Study theme against its exact source packs.
-For every anchor classify: direct, supporting, weak, or irrelevant.
-Write one bounded supported observation from supplied source. The theme may remain editorial, but its question must be answerable by the accepted anchors together.
+For the anchors you assess, classify: direct, supporting, weak, or irrelevant. Anchors you do not assess are treated by the backend as unreviewed — counted, not published, never fatal.
+Write one bounded supported observation from supplied source for direct and supporting anchors. The theme may remain editorial, but its question must be answerable by the accepted anchors together.
 Do not infer execution order without an exact relation. Do not retain an anchor merely because its filename sounds relevant.
 You may narrow or rewrite the title/question, remove weak anchors, reorder the reading path, or reject the complete theme. Do not pad.
 Return exactly one JSON object and no markdown. Keep all enum values and refs unchanged. Write model-authored prose in the requested language.`
 
 const adjudicationPromptUserShape = `Requested prose language: %s.
 Review %d-%d candidate themes (valid %d-%d, no padding). For each candidate return exactly one section.
-Every anchor of the candidate must receive an assessment. fit is one of: direct, supporting, weak, irrelevant. Only direct and supporting anchors publish as readings; keep at least one direct anchor.
+Assess the anchors that matter; fit is one of: direct, supporting, weak, irrelevant. Only direct and supporting anchors publish as readings; keep at least one direct anchor. Anchor role is backend-owned: do not return a role field. Supported observations are required only for direct and supporting anchors; weak and irrelevant anchors may carry an optional short rejection reason. Exact duplicate assessments are normalized and counted by the backend.
 reading_order is an ordered subset of the candidate's own anchor_refs. unknowns are bounded and optional.
-Response schema: {"themes":[{"candidate_ref":"t1","final_title":"...","final_question":"...","anchor_assessments":[{"anchor_ref":"a1","fit":"direct","role":"public_entry","supported_observation":"..."}],"reading_order":["a1"],"unknowns":["..."]}]}
+Response schema: {"themes":[{"candidate_ref":"t1","final_title":"...","final_question":"...","anchor_assessments":[{"anchor_ref":"a1","fit":"direct","supported_observation":"..."}],"reading_order":["a1"],"unknowns":["..."]}]}
 Request bundle JSON:
 %s`
 

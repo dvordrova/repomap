@@ -239,19 +239,19 @@ func TestValidateResponseJSONResolvesExactRefsAndRejectsRepair(t *testing.T) {
 	}
 	valid := responseEnvelope{
 		Version: Version, CatalogRef: compiled.CatalogRef(),
-		EntityRefs: []string{wire.SeedRefs[0]}, TrailRefs: []string{wire.DirectTrails[0].Ref},
-		EvidenceRefs: []string{wire.Evidence[0].Ref}, GapRefs: []string{wire.Gaps[0].Ref},
 		ActionRefs: []string{wire.Actions[0].Ref},
 	}
 	resolved, err := compiled.ValidateResponseJSON(mustJSON(t, valid))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resolved.Entities) != 1 || resolved.Entities[0].ID != "surface-a-canonical" ||
-		!reflect.DeepEqual(resolved.RelationIDs, []string{"relation-a-canonical"}) ||
-		!reflect.DeepEqual(resolved.EvidenceIDs, []string{"evidence-a-canonical"}) ||
-		!reflect.DeepEqual(resolved.GapKeys, []string{"missing-shutdown"}) ||
-		!reflect.DeepEqual(resolved.ActionKeys, []string{"inspect-evidence"}) ||
+	// Decision 232 (Navigator v2): the model selects the action only; the
+	// trail/endpoints/evidence are backend-restored and not echoed.
+	if len(resolved.Entities) != 0 || len(resolved.RelationIDs) != 0 ||
+		len(resolved.EvidenceIDs) != 0 || len(resolved.GapKeys) != 0 {
+		t.Fatalf("v2 response resolved backend-owned refs from the wire: %#v", resolved)
+	}
+	if !reflect.DeepEqual(resolved.ActionKeys, []string{"inspect-evidence"}) ||
 		!reflect.DeepEqual(resolved.Actions, []ResolvedAction{{
 			Key: "inspect-evidence", Operation: "inspect exact supporting evidence",
 			Target: repositoryatlas.EntityRef{Kind: repositoryatlas.EntitySurface, ID: "surface-a-canonical"},
@@ -271,11 +271,13 @@ func TestValidateResponseJSONResolvesExactRefsAndRejectsRepair(t *testing.T) {
 		want  string
 	}{
 		{name: "cross request", value: responseEnvelope{Version: Version, CatalogRef: drifted.CatalogRef()}, want: "catalog_ref_mismatch"},
-		{name: "wrong kind", value: responseEnvelope{Version: Version, CatalogRef: compiled.CatalogRef(), EntityRefs: []string{wire.DirectTrails[0].Ref}}, want: "wrong_kind_ref"},
-		{name: "duplicate", value: responseEnvelope{Version: Version, CatalogRef: compiled.CatalogRef(), EntityRefs: []string{wire.SeedRefs[0], wire.SeedRefs[0]}}, want: "duplicate_ref"},
-		{name: "unknown substituted ref", value: responseEnvelope{Version: Version, CatalogRef: compiled.CatalogRef(), EntityRefs: []string{"s2"}}, want: "unknown_ref"},
-		{name: "cross-unit canonical ref", value: responseEnvelope{Version: Version, CatalogRef: compiled.CatalogRef(), EntityRefs: []string{"surface-b-canonical"}}, want: "cross_scope_ref"},
-		{name: "raw canonical", value: responseEnvelope{Version: Version, CatalogRef: compiled.CatalogRef(), EntityRefs: []string{"surface-a-canonical"}}, want: "raw_canonical_ref"},
+		{name: "wrong kind", value: responseEnvelope{Version: Version, CatalogRef: compiled.CatalogRef(), ActionRefs: []string{wire.SeedRefs[0]}}, want: "wrong_kind_ref"},
+		{name: "duplicate", value: responseEnvelope{Version: Version, CatalogRef: compiled.CatalogRef(), ActionRefs: []string{wire.Actions[0].Ref, wire.Actions[0].Ref}}, want: "duplicate_ref"},
+		{name: "unknown substituted ref", value: responseEnvelope{Version: Version, CatalogRef: compiled.CatalogRef(), ActionRefs: []string{"a9"}}, want: "unknown_ref"},
+		{name: "cross-unit canonical ref", value: responseEnvelope{Version: Version, CatalogRef: compiled.CatalogRef(), ActionRefs: []string{"surface-b-canonical"}}, want: "cross_scope_ref"},
+		{name: "raw canonical", value: responseEnvelope{Version: Version, CatalogRef: compiled.CatalogRef(), ActionRefs: []string{"surface-a-canonical"}}, want: "raw_canonical_ref"},
+		{name: "echo forbidden", value: responseEnvelope{Version: Version, CatalogRef: compiled.CatalogRef(), ActionRefs: []string{wire.Actions[0].Ref}, EntityRefs: []string{wire.SeedRefs[0]}}, want: "must not echo"},
+		{name: "no action", value: responseEnvelope{Version: Version, CatalogRef: compiled.CatalogRef()}, want: "exactly one advertised action"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

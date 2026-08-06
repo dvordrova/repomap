@@ -361,7 +361,7 @@ func assertNavigatorAcceptanceProviderRequest(t *testing.T, body []byte, wireJSO
 	}
 	combined := request.Messages[0].Content + "\n" + request.Messages[1].Content
 	for _, want := range []string{
-		"atlas-navigator-startup-json-v1",
+		"atlas-navigator-startup-json-v2",
 		navigator.ProductQuestion,
 		wireJSON,
 	} {
@@ -471,6 +471,16 @@ func assertNavigatorAcceptanceRequestArtifact(t *testing.T, runDir string) {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(got, want) {
+		// Decision 232: regenerating the canonical request fixture after
+		// the Navigator v2 contract bump — set
+		// REPOMAP_UPDATE_NAVIGATOR_FIXTURE=1 to persist the new bytes.
+		if os.Getenv("REPOMAP_UPDATE_NAVIGATOR_FIXTURE") == "1" {
+			if writeErr := os.WriteFile(filepath.Join(navigatorAcceptanceFixtureDir, navigator.RequestArtifactFilename), got, 0o600); writeErr != nil {
+				t.Fatal(writeErr)
+			}
+			t.Logf("navigator request fixture regenerated (%d bytes)", len(got))
+			return
+		}
 		t.Fatalf("Navigator request artifact changed\ngot:  %s\nwant: %s", got, want)
 	}
 }

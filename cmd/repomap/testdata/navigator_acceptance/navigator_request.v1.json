@@ -1,9 +1,9 @@
 {
-  "version": 1,
+  "version": 2,
   "atlas_sha256": "1898aeea3c62d209fe2590f3ef2fb665789d81e3dac291b9ca3cacffe7fddfb7",
-  "wire_sha256": "7ff07dcc36fb068d5a1c41f74d63caa8f8d309a81c0f17897dcd5546916c0da1",
-  "catalog_sha256": "20f1d1e592ca55328a1c22e57ce2f67ece0b39aeedd5b2962a0228a3d287ee6d",
-  "catalog_ref": "navigator-v1-20f1d1e592ca55328a1c22e57ce2f67ece0b39aeedd5b2962a0228a3d287ee6d",
+  "wire_sha256": "08ed757c01fafc937eefba76ac0f44f912d02355855ba2952df395ce00698d84",
+  "catalog_sha256": "0f173f514fc8772f2a41190263a30ee2ad48b09f15ae873620970bf64425f0ea",
+  "catalog_ref": "navigator-v1-0f173f514fc8772f2a41190263a30ee2ad48b09f15ae873620970bf64425f0ea",
   "question": "Which locally resolved application startup should a newcomer inspect first?",
   "actions": [
     {
@@ -23,5 +23,5 @@
       ]
     }
   ],
-  "wire_json": "{\"version\":1,\"catalog_ref\":\"navigator-v1-20f1d1e592ca55328a1c22e57ce2f67ece0b39aeedd5b2962a0228a3d287ee6d\",\"question\":\"Which locally resolved application startup should a newcomer inspect first?\",\"scope_ref\":\"u3\",\"units\":[{\"ref\":\"u1\",\"kind\":\"module\",\"label\":\"example.com/navigator-acceptance\",\"parent_ref\":\"u3\"},{\"ref\":\"u2\",\"kind\":\"app\",\"label\":\"example.com/navigator-acceptance\",\"parent_ref\":\"u1\"},{\"ref\":\"u3\",\"kind\":\"repository\",\"label\":\"example.com/navigator-acceptance\"}],\"entities\":[{\"ref\":\"o1\",\"kind\":\"operation\",\"role\":\"application_start\",\"unit_ref\":\"u2\"},{\"ref\":\"s1\",\"kind\":\"surface\",\"role\":\"process_entry\",\"unit_ref\":\"u2\"}],\"seed_refs\":[\"s1\"],\"direct_trails\":[{\"ref\":\"t1\",\"source_ref\":\"s1\",\"target_ref\":\"o1\",\"kind\":\"exposes\",\"phase\":\"startup\",\"authority\":\"resolved\",\"evidence_refs\":[\"e1\"]}],\"intersections\":[],\"evidence\":[{\"ref\":\"e1\",\"subject_refs\":[\"o1\",\"s1\"],\"exact_locator\":true}],\"gaps\":[],\"actions\":[{\"ref\":\"a1\",\"operation\":\"inspect exact startup evidence\",\"target_ref\":\"s1\"}]}"
+  "wire_json": "{\"version\":2,\"catalog_ref\":\"navigator-v1-0f173f514fc8772f2a41190263a30ee2ad48b09f15ae873620970bf64425f0ea\",\"question\":\"Which locally resolved application startup should a newcomer inspect first?\",\"scope_ref\":\"u3\",\"units\":[{\"ref\":\"u1\",\"kind\":\"module\",\"label\":\"example.com/navigator-acceptance\",\"parent_ref\":\"u3\"},{\"ref\":\"u2\",\"kind\":\"app\",\"label\":\"example.com/navigator-acceptance\",\"parent_ref\":\"u1\"},{\"ref\":\"u3\",\"kind\":\"repository\",\"label\":\"example.com/navigator-acceptance\"}],\"entities\":[{\"ref\":\"o1\",\"kind\":\"operation\",\"role\":\"application_start\",\"unit_ref\":\"u2\"},{\"ref\":\"s1\",\"kind\":\"surface\",\"role\":\"process_entry\",\"unit_ref\":\"u2\"}],\"seed_refs\":[\"s1\"],\"direct_trails\":[{\"ref\":\"t1\",\"source_ref\":\"s1\",\"target_ref\":\"o1\",\"kind\":\"exposes\",\"phase\":\"startup\",\"authority\":\"resolved\",\"evidence_refs\":[\"e1\"]}],\"intersections\":[],\"evidence\":[{\"ref\":\"e1\",\"subject_refs\":[\"o1\",\"s1\"],\"exact_locator\":true}],\"gaps\":[],\"actions\":[{\"ref\":\"a1\",\"operation\":\"inspect exact startup evidence\",\"target_ref\":\"s1\"}]}"
 }

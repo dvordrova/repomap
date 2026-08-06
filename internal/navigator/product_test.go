@@ -134,6 +134,23 @@ func TestResolveRecommendationRestoresOneExactBackendAction(t *testing.T) {
 	if err := product.ValidateRecommendationRecord(record); err != nil {
 		t.Fatal(err)
 	}
+	// Decision 232 (Archive 9): a permutation of the advertised action
+	// catalog must not alter the resolved record — the action key binds the
+	// exact backend action regardless of catalog order.
+	permutedInput := ProductInput{Atlas: twoUnitAtlas(), Limits: generousLimits()}
+	permutedProduct, err := CompileProduct(permutedInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	permutedCompiled, _ := permutedProduct.CompiledRequest()
+	permutedValid := validProductResponse(t, permutedCompiled, 0)
+	permutedRecord, err := permutedProduct.ResolveRecommendation(mustJSON(t, permutedValid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(record.Selected, permutedRecord.Selected) {
+		t.Fatalf("catalog permutation changed the resolved record: %#v vs %#v", record.Selected, permutedRecord.Selected)
+	}
 
 	other := validProductResponse(t, compiled, 1)
 	tests := []struct {
@@ -143,13 +160,9 @@ func TestResolveRecommendationRestoresOneExactBackendAction(t *testing.T) {
 	}{
 		{name: "zero action", mutate: func(value *responseEnvelope) { value.ActionRefs = nil }, want: "exactly one"},
 		{name: "multiple actions", mutate: func(value *responseEnvelope) { value.ActionRefs = append(value.ActionRefs, other.ActionRefs[0]) }, want: "exactly one"},
-		{name: "unrelated trail", mutate: func(value *responseEnvelope) {
-			value.EntityRefs = other.EntityRefs
-			value.TrailRefs = other.TrailRefs
-			value.EvidenceRefs = other.EvidenceRefs
-		}, want: "selected startup relation"},
-		{name: "missing endpoint", mutate: func(value *responseEnvelope) { value.EntityRefs = value.EntityRefs[:1] }, want: "both selected startup endpoints"},
-		{name: "missing evidence", mutate: func(value *responseEnvelope) { value.EvidenceRefs = nil }, want: "selected startup evidence"},
+		{name: "echo forbidden", mutate: func(value *responseEnvelope) {
+			value.EntityRefs = []string{"s1"}
+		}, want: "must not echo"},
 		{name: "raw canonical ref", mutate: func(value *responseEnvelope) { value.ActionRefs = []string{record.Selected.Key} }, want: "raw_canonical_ref"},
 	}
 	for _, test := range tests {
@@ -190,19 +203,12 @@ func validProductResponse(t *testing.T, compiled Compiled, actionIndex int) resp
 	if actionIndex < 0 || actionIndex >= len(wire.Actions) {
 		t.Fatalf("action index %d outside %d actions", actionIndex, len(wire.Actions))
 	}
-	action := wire.Actions[actionIndex]
-	for _, trail := range wire.DirectTrails {
-		if trail.SourceRef != action.TargetRef {
-			continue
-		}
-		return responseEnvelope{
-			Version: Version, CatalogRef: compiled.CatalogRef(),
-			EntityRefs: []string{trail.SourceRef, trail.TargetRef}, TrailRefs: []string{trail.Ref},
-			EvidenceRefs: slices.Clone(trail.EvidenceRefs), ActionRefs: []string{action.Ref},
-		}
+	// Decision 232 (Navigator v2): the response selects the action only;
+	// trail/endpoints/evidence are backend-restored.
+	return responseEnvelope{
+		Version: Version, CatalogRef: compiled.CatalogRef(),
+		ActionRefs: []string{wire.Actions[actionIndex].Ref},
 	}
-	t.Fatalf("action %#v has no matching trail", action)
-	return responseEnvelope{}
 }
 
 func cloneResponseEnvelope(value responseEnvelope) responseEnvelope {

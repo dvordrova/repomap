@@ -25,9 +25,12 @@ import (
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 )
 
-const CurrentFormatVersion = 32
+// Decision 232 (Archive 9): Study projection gains adjudication anchor
+// coverage (reviewed/unreviewed) and the semantic-empty state.
+const CurrentFormatVersion = 33
 
-const AtlasStudyReportProjectionVersion = 9
+// Decision 232: adjudication anchor coverage + semantic-empty browse.
+const AtlasStudyReportProjectionVersion = 10
 
 // MaxAtlasStudyBrowseSpans bounds the report-side provider-free per-span
 // browse. Truthful Total/Shown keep larger repositories honest; the complete
@@ -320,6 +323,11 @@ type AtlasStudyReportStatus struct {
 	AdvertisedSpanCount    int `json:"advertised_span_count,omitempty"`
 	ModelSelectedSpanCount int `json:"model_selected_span_count,omitempty"`
 	AcceptedSpanCount      int `json:"accepted_span_count,omitempty"`
+	// Decision 232 (Archive 9): adjudication anchor coverage — reviewed
+	// anchors carry an assessment; unreviewed candidate anchors are counted
+	// but never published. Published readings are direct/supporting only.
+	ReviewedAnchors   int `json:"reviewed_anchors,omitempty"`
+	UnreviewedAnchors int `json:"unreviewed_anchors,omitempty"`
 	// Four independent coverage flags. They are recorded independently and are
 	// part of the documented projection contract, so they serialize even
 	// when false.

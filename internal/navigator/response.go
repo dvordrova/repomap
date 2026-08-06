@@ -12,6 +12,9 @@ import (
 
 // ValidateResponseJSON resolves only exact refs from this Compiled request.
 // It performs no prefix matching, substitution, or cross-request repair.
+// Decision 232 (Archive 9): Navigator v2 — the model selects exactly one
+// action_ref; the trail, endpoint entities, evidence and operation are
+// backend-owned and restored by the Product from its own catalog.
 func (compiled Compiled) ValidateResponseJSON(data []byte) (ResolvedResponse, error) {
 	if compiled.catalogRef == "" || len(compiled.catalog.entries) == 0 {
 		return ResolvedResponse{}, fmt.Errorf("navigator response: compiled catalog is unavailable")
@@ -43,47 +46,22 @@ func (compiled Compiled) ValidateResponseJSON(data []byte) (ResolvedResponse, er
 		return ResolvedResponse{}, &ReferenceError{Field: "catalog_ref", Position: 0, Code: "catalog_ref_mismatch"}
 	}
 
-	entityEntries, err := compiled.resolveRefs("entity_refs", envelope.EntityRefs, catalogEntity)
-	if err != nil {
-		return ResolvedResponse{}, err
-	}
-	trailEntries, err := compiled.resolveRefs("trail_refs", envelope.TrailRefs, catalogTrail)
-	if err != nil {
-		return ResolvedResponse{}, err
-	}
-	intersectionEntries, err := compiled.resolveRefs("intersection_refs", envelope.IntersectionRefs, catalogIntersection)
-	if err != nil {
-		return ResolvedResponse{}, err
-	}
-	evidenceEntries, err := compiled.resolveRefs("evidence_refs", envelope.EvidenceRefs, catalogEvidence)
-	if err != nil {
-		return ResolvedResponse{}, err
-	}
-	gapEntries, err := compiled.resolveRefs("gap_refs", envelope.GapRefs, catalogGap)
-	if err != nil {
-		return ResolvedResponse{}, err
+	// Decision 232: v2 drops the model echo of trail/endpoints/evidence/
+	// gaps. The single action ref is the entire provider contract.
+	if len(envelope.EntityRefs) != 0 || len(envelope.TrailRefs) != 0 ||
+		len(envelope.IntersectionRefs) != 0 || len(envelope.EvidenceRefs) != 0 ||
+		len(envelope.GapRefs) != 0 {
+		return ResolvedResponse{}, fmt.Errorf("navigator response: v2 must not echo backend-owned refs")
 	}
 	actionEntries, err := compiled.resolveRefs("action_refs", envelope.ActionRefs, catalogAction)
 	if err != nil {
 		return ResolvedResponse{}, err
 	}
+	if len(actionEntries) != 1 {
+		return ResolvedResponse{}, fmt.Errorf("navigator response: must select exactly one advertised action")
+	}
 
 	resolved := ResolvedResponse{}
-	for _, entry := range entityEntries {
-		resolved.Entities = append(resolved.Entities, repositoryEntityRef(entry))
-	}
-	for _, entry := range trailEntries {
-		resolved.RelationIDs = append(resolved.RelationIDs, entry.CanonicalID)
-	}
-	for _, entry := range intersectionEntries {
-		resolved.IntersectionEntityIDs = append(resolved.IntersectionEntityIDs, entry.CanonicalID)
-	}
-	for _, entry := range evidenceEntries {
-		resolved.EvidenceIDs = append(resolved.EvidenceIDs, entry.CanonicalID)
-	}
-	for _, entry := range gapEntries {
-		resolved.GapKeys = append(resolved.GapKeys, entry.CanonicalID)
-	}
 	for _, entry := range actionEntries {
 		resolved.ActionKeys = append(resolved.ActionKeys, entry.CanonicalID)
 		action, ok := compiled.actions[entry.CanonicalID]
