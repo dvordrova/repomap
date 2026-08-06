@@ -345,6 +345,8 @@ func TestArchitectureSynthesisV6AcceptsExactClosedProducerDiagnosticRegistry(t *
 		"proposal.duplicate_anchor_id",
 		"proposal.empty_member_coverage",
 		"proposal.equivalent_member_set_collision",
+		"proposal.shared_unit_slice",
+		"proposal.empty_anchor_slice",
 		"response.ambiguous_json",
 		"response.invalid_proposal",
 		"response.no_json",
