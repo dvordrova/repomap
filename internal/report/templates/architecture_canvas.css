@@ -2188,3 +2188,73 @@
   flex-direction: column;
  }
 }
+
+/* Decision 225: connection rows for observed boundary/resource callsites.
+   Rows — not edges — are the primary controls; witnesses expand in place. */
+.rm-arch__association-row {
+  align-items: stretch;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #0f172a;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 7px;
+  padding: 8px 9px;
+  text-align: left;
+  width: 100%;
+}
+
+.rm-arch__association-row__head {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rm-arch__association-row__meta {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rm-arch__association-family {
+  color: #475569;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.66rem;
+}
+
+.rm-arch__association-unit {
+  color: #64748b;
+  font-size: 0.66rem;
+  overflow-wrap: anywhere;
+}
+
+.rm-arch__association-count {
+  color: #64748b;
+  font-size: 0.66rem;
+}
+
+.rm-arch__association-paired {
+  background: rgba(79, 70, 229, 0.08);
+  border-radius: 4px;
+  color: #4f46e5;
+  font-size: 0.62rem;
+  font-weight: 600;
+  padding: 0.05rem 0.35rem;
+}
+
+.rm-arch__association-witnesses {
+  border-top: 1px dashed #e2e8f0;
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.rm-arch__limitation {
+  color: #64748b;
+  font-size: 0.66rem;
+  margin-top: 8px;
+}

@@ -9668,9 +9668,10 @@
       stalePaths: new Set((DATA.freshness && DATA.freshness.affected_paths) || []),
     };
 		if (!DEBUG_MODE) {
-			options.componentContexts = architectureComponentContexts();
-			options.openStudyDirection = openStudyDirection;
-			options.openSourceLocation = openSourceLocation;
+		options.componentContexts = architectureComponentContexts();
+		options.openStudyDirection = openStudyDirection;
+		options.openSourceLocation = openSourceLocation;
+		options.associations = DATA.architecture_associations || null;
 		}
     if (staticSourceMode()) {
       options.openLocation = function (filePath, line) {
