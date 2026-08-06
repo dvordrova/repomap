@@ -1569,7 +1569,7 @@ func evaluateSynthesisResponse(
 	if unitErr != nil {
 		return Landscape{}, SynthesisMembershipCounts{}, unitErr
 	}
-	proposal, resolveErr := resolveSynthesisWireProposal(catalog, unitCatalog, wireProposal)
+	proposal, wireDiagnostics, resolveErr := resolveSynthesisWireProposal(catalog, unitCatalog, wireProposal)
 	if resolveErr != nil {
 		landscape, err := synthesisResponseFallback(bundle, newDiagnostic(resolveErr.code, resolveErr.message))
 		return landscape, SynthesisMembershipCounts{}, err
@@ -1578,6 +1578,31 @@ func evaluateSynthesisResponse(
 	landscape, err := Apply(bundle, proposal)
 	if err != nil {
 		return Landscape{}, SynthesisMembershipCounts{}, err
+	}
+	if len(wireDiagnostics) > 0 {
+		// Decision 229 D7: unknown/wrong-kind member, unit and anchor
+		// refs drop only the referencing component during wire
+		// resolution; valid siblings publish as accepted_partial. The
+		// counted recoverable findings travel with the landscape.
+		landscape.Diagnostics = append(wireDiagnostics, landscape.Diagnostics...)
+		if landscape.ValidationOutcome == ValidationAccepted ||
+			landscape.ValidationOutcome == ValidationAcceptedNormalized {
+			landscape.ValidationOutcome = ValidationAcceptedPartial
+			landscape.Source = SourcePartialModel
+			landscape.Level = 2
+		} else if landscape.ValidationOutcome == ValidationRejected {
+			// Zero independently valid items remained after item-scope
+			// salvage: the exact original reason (unknown member/anchor
+			// ref, ...) must surface in the fallback, never a generic
+			// malformed-schema label.
+			landscape.FallbackReason = fallbackReasonForDiagnostics(
+				landscape.Diagnostics,
+				hasAnyOperationalBehaviorAnchor(bundle.BehaviorAnchors),
+			)
+		}
+		if err := landscape.Validate(bundle); err != nil {
+			return Landscape{}, SynthesisMembershipCounts{}, err
+		}
 	}
 	if landscape.ValidationOutcome != ValidationRejected {
 		// Accepted status describes the canonical model-authored relation after
@@ -2028,26 +2053,35 @@ func resolveSynthesisWireProposal(
 	catalog synthesisPrivateCatalog,
 	unitCatalog UnitCatalog,
 	wire synthesisWireProposal,
-) (Proposal, *synthesisResponseError) {
+) (Proposal, []Diagnostic, *synthesisResponseError) {
 	proposal := Proposal{Version: ProposalVersion}
+	// Decision 229 D7: recoverable findings collected while dropping
+	// components with unknown/wrong-kind refs item-scope during wire
+	// resolution. Structural contract violations stay whole-response
+	// errors; ref resolution failures drop only the referencing
+	// component so valid siblings publish.
+	var wireDiagnostics []Diagnostic
+	salvageComponent := func(code, message string) {
+		wireDiagnostics = append(wireDiagnostics, newDiagnostic(code, message))
+	}
 	subsystemIndexes := make(map[string]int)
 	componentCounts := make(map[string]int)
 	totalComponents := 0
 	for _, record := range wire.Records {
 		if err := validateSynthesisResponseDisplay(record); err != nil {
-			return Proposal{}, &synthesisResponseError{
+			return Proposal{}, wireDiagnostics, &synthesisResponseError{
 				code: "response.invalid_proposal", message: "proposal display text is outside the bounded contract",
 			}
 		}
 		switch record.Kind {
 		case synthesisWireSubsystemRecord:
 			if !validSynthesisSubsystemRef(record.Ref) {
-				return Proposal{}, &synthesisResponseError{
+				return Proposal{}, wireDiagnostics, &synthesisResponseError{
 					code: "response.invalid_proposal", message: "proposal subsystem ref is malformed",
 				}
 			}
 			if _, duplicate := subsystemIndexes[record.Ref]; duplicate {
-				return Proposal{}, &synthesisResponseError{
+				return Proposal{}, wireDiagnostics, &synthesisResponseError{
 					code: "response.invalid_proposal", message: "proposal repeats a response-local subsystem ref",
 				}
 			}
@@ -2057,12 +2091,12 @@ func resolveSynthesisWireProposal(
 			})
 		case synthesisWireComponentRecord:
 			if !validSynthesisSubsystemRef(record.SubsystemRef) {
-				return Proposal{}, &synthesisResponseError{
+				return Proposal{}, wireDiagnostics, &synthesisResponseError{
 					code: "response.invalid_proposal", message: "proposal component subsystem ref is malformed",
 				}
 			}
 			if len(record.AnchorRefs) > maxAnchorMembers {
-				return Proposal{}, &synthesisResponseError{
+				return Proposal{}, wireDiagnostics, &synthesisResponseError{
 					code: "response.invalid_proposal", message: "proposal component anchor count exceeds the bounded contract",
 				}
 			}
@@ -2071,23 +2105,23 @@ func resolveSynthesisWireProposal(
 		}
 	}
 	if len(proposal.Subsystems) == 0 || len(proposal.Subsystems) > MaxPrimarySubsystems {
-		return Proposal{}, &synthesisResponseError{
+		return Proposal{}, wireDiagnostics, &synthesisResponseError{
 			code: "response.invalid_proposal", message: "proposal subsystem count is outside the bounded contract",
 		}
 	}
 	if totalComponents == 0 || totalComponents > MaxTotalNestedComponents {
-		return Proposal{}, &synthesisResponseError{
+		return Proposal{}, wireDiagnostics, &synthesisResponseError{
 			code: "response.invalid_proposal", message: "proposal component count exceeds the bounded contract",
 		}
 	}
 	for subsystemRef, componentCount := range componentCounts {
 		if _, exists := subsystemIndexes[subsystemRef]; !exists {
-			return Proposal{}, &synthesisResponseError{
+			return Proposal{}, wireDiagnostics, &synthesisResponseError{
 				code: "response.invalid_proposal", message: "proposal component references an unknown response-local subsystem ref",
 			}
 		}
 		if componentCount > MaxComponentsPerSubsystem {
-			return Proposal{}, &synthesisResponseError{
+			return Proposal{}, wireDiagnostics, &synthesisResponseError{
 				code: "response.invalid_proposal", message: "proposal component count exceeds the bounded contract",
 			}
 		}
@@ -2097,13 +2131,13 @@ func resolveSynthesisWireProposal(
 			continue
 		}
 		if !validSynthesisSubsystemRef(record.SubsystemRef) {
-			return Proposal{}, &synthesisResponseError{
+			return Proposal{}, wireDiagnostics, &synthesisResponseError{
 				code: "response.invalid_proposal", message: "proposal component subsystem ref is malformed",
 			}
 		}
 		subsystemIndex, exists := subsystemIndexes[record.SubsystemRef]
 		if !exists {
-			return Proposal{}, &synthesisResponseError{
+			return Proposal{}, wireDiagnostics, &synthesisResponseError{
 				code: "response.invalid_proposal", message: "proposal component references an unknown response-local subsystem ref",
 			}
 		}
@@ -2113,72 +2147,85 @@ func resolveSynthesisWireProposal(
 			MemberIDs:  make([]MemberID, 0, len(record.MemberRefs)+len(record.UnitRefs)),
 			AnchorIDs:  make([]string, 0, len(record.AnchorRefs)),
 		}
+		// Decision 229 D7: ref-resolution failures are item-scope — the
+		// referencing component is dropped with a counted recoverable
+		// finding; valid sibling components still publish. Structural
+		// contract violations (malformed refs, unknown subsystem refs,
+		// count bounds) remain whole-response errors above.
+		componentSalvaged := false
 		for _, memberRef := range record.MemberRefs {
 			if expectedKind, exists := catalog.memberKinds[memberRef.Ref]; exists && expectedKind != memberRef.Kind {
-				return Proposal{}, &synthesisResponseError{
-					code: "proposal.unknown_member_id", message: "proposal member ref has the wrong request-local kind",
-				}
+				salvageComponent("proposal.unknown_member_id", "proposal member ref has the wrong request-local kind")
+				componentSalvaged = true
+				break
 			}
 			memberID, exists := catalog.membersByRef[memberRef.key()]
 			if !exists {
-				return Proposal{}, &synthesisResponseError{
-					code: "proposal.unknown_member_id", message: "proposal references an unknown request-local member ref",
-				}
+				salvageComponent("proposal.unknown_member_id", "proposal references an unknown request-local member ref")
+				componentSalvaged = true
+				break
 			}
 			if catalog.memberRoles[memberRef.key()] != CandidateRoleConceptualMember {
-				return Proposal{}, &synthesisResponseError{
-					code: "proposal.unknown_member_id", message: "proposal returned a structural locator as conceptual membership",
-				}
+				salvageComponent("proposal.unknown_member_id", "proposal returned a structural locator as conceptual membership")
+				componentSalvaged = true
+				break
 			}
 			component.MemberIDs = append(component.MemberIDs, memberID)
 		}
-		// Decision 216: a component grouping unit refs (u*) expands locally
-		// to the exact unit members. Unknown, duplicate, or wrong-kind unit
-		// refs fail closed — never repaired, never guessed.
-		if len(record.UnitRefs) > 0 {
+		if !componentSalvaged && len(record.UnitRefs) > 0 {
+			// Decision 216: a component grouping unit refs (u*) expands locally
+			// to the exact unit members. Unknown, duplicate, or wrong-kind unit
+			// refs fail closed — never repaired, never guessed.
 			unitMembersByRef := unitCatalogUnitMembersByWireRef(unitCatalog)
 			seenUnits := make(map[string]struct{}, len(record.UnitRefs))
 			for _, unitRef := range record.UnitRefs {
 				if unitRef.Kind != MemberPackage {
-					return Proposal{}, &synthesisResponseError{
-						code: "proposal.unknown_unit_ref", message: "proposal unit ref has the wrong request-local kind",
-					}
+					salvageComponent("proposal.unknown_unit_ref", "proposal unit ref has the wrong request-local kind")
+					componentSalvaged = true
+					break
 				}
 				members, exists := unitMembersByRef[unitRef.Ref]
 				if !exists {
-					return Proposal{}, &synthesisResponseError{
-						code: "proposal.unknown_unit_ref", message: "proposal references an unknown request-local unit ref",
-					}
+					salvageComponent("proposal.unknown_unit_ref", "proposal references an unknown request-local unit ref")
+					componentSalvaged = true
+					break
 				}
 				if _, duplicate := seenUnits[unitRef.Ref]; duplicate {
-					return Proposal{}, &synthesisResponseError{
-						code: "proposal.duplicate_unit_ref", message: "proposal repeats a unit ref within one component",
-					}
+					salvageComponent("proposal.duplicate_unit_ref", "proposal repeats a unit ref within one component")
+					componentSalvaged = true
+					break
 				}
 				seenUnits[unitRef.Ref] = struct{}{}
 				component.MemberIDs = append(component.MemberIDs, members...)
 			}
 		}
-		seenAnchors := make(map[string]struct{}, len(record.AnchorRefs))
-		for _, anchorRef := range record.AnchorRefs {
-			if expectedKind, exists := catalog.anchorKinds[anchorRef.Ref]; exists && expectedKind != anchorRef.Kind {
-				return Proposal{}, &synthesisResponseError{
-					code: "proposal.unknown_anchor_id", message: "proposal anchor ref has the wrong request-local kind",
+		if !componentSalvaged {
+			seenAnchors := make(map[string]struct{}, len(record.AnchorRefs))
+			for _, anchorRef := range record.AnchorRefs {
+				if expectedKind, exists := catalog.anchorKinds[anchorRef.Ref]; exists && expectedKind != anchorRef.Kind {
+					salvageComponent("proposal.unknown_anchor_id", "proposal anchor ref has the wrong request-local kind")
+					componentSalvaged = true
+					break
 				}
-			}
-			anchorID, exists := catalog.anchorsByRef[anchorRef.key()]
-			if !exists {
-				return Proposal{}, &synthesisResponseError{
-					code: "proposal.unknown_anchor_id", message: "proposal references an unknown request-local anchor ref",
+				anchorID, exists := catalog.anchorsByRef[anchorRef.key()]
+				if !exists {
+					salvageComponent("proposal.unknown_anchor_id", "proposal references an unknown request-local anchor ref")
+					componentSalvaged = true
+					break
 				}
-			}
-			if _, duplicate := seenAnchors[anchorID]; duplicate {
-				return Proposal{}, &synthesisResponseError{
-					code: "response.invalid_proposal", message: "proposal repeats an anchor ref within one component",
+				if _, duplicate := seenAnchors[anchorID]; duplicate {
+					salvageComponent("proposal.duplicate_anchor_id", "proposal repeats an anchor ref within one component")
+					componentSalvaged = true
+					break
 				}
+				seenAnchors[anchorID] = struct{}{}
+				component.AnchorIDs = append(component.AnchorIDs, anchorID)
 			}
-			seenAnchors[anchorID] = struct{}{}
-			component.AnchorIDs = append(component.AnchorIDs, anchorID)
+		}
+		if componentSalvaged {
+			// Item-scope drop: the component is skipped; valid sibling
+			// components still publish (Decision 229 D7).
+			continue
 		}
 		proposal.Subsystems[subsystemIndex].Components = append(
 			proposal.Subsystems[subsystemIndex].Components, component,
@@ -2186,12 +2233,15 @@ func resolveSynthesisWireProposal(
 	}
 	for _, subsystem := range proposal.Subsystems {
 		if len(subsystem.Components) == 0 {
-			return Proposal{}, &synthesisResponseError{
-				code: "response.invalid_proposal", message: "proposal subsystem has no component records",
-			}
+			// Decision 229 D7: a subsystem whose components were all
+			// dropped item-scope during wire resolution is left empty —
+			// Apply decides: valid sibling subsystems publish, and a
+			// proposal where every subsystem ends empty rejects
+			// whole-stage with the exact original reason.
+			continue
 		}
 	}
-	return proposal, nil
+	return proposal, wireDiagnostics, nil
 }
 
 func decodeRequiredProposalString(fields map[string]json.RawMessage, name string) (string, error) {

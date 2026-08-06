@@ -69,6 +69,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-overview-spine-all { margin-top: .75rem; }
 .rm-overview-object-card { background: var(--rm-card); border: 1px solid var(--rm-border); border-radius: 12px; display: grid; overflow: hidden; }
 .rm-overview-object-primary { align-items: flex-start; background: transparent; border: 0; color: inherit; cursor: pointer; display: flex; flex-direction: column; gap: .42rem; padding: 1rem; text-align: left; text-decoration: none; width: 100%; }
+.rm-overview-object-primary--location-only { cursor: default; }
 .rm-overview-object-primary:hover { background: #f8fafc; }
 .rm-overview-object-primary:focus-visible, .rm-overview-object-source:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: -2px; }
 .rm-overview-object-detail { color: var(--rm-dim); font-size: .78rem; }

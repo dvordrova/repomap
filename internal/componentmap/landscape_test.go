@@ -1179,6 +1179,97 @@ func TestApplyItemScopeDuplicateMemberKeepsComponent(t *testing.T) {
 // Decision 229 D7: adding unrelated exact evidence cannot remove prior
 // published facts — the same valid proposal over the same bundle publishes
 // the identical component set on every replay.
+// Decision 229 D7: a subsystem whose components were all dropped
+// item-scope must not poison independently valid sibling subsystems —
+// whole-stage rejection fires only when every subsystem ends empty.
+func TestApplyItemScopeEmptySubsystemDoesNotPoisonSibling(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	result, err := Apply(bundle, Proposal{
+		Version: ContractVersion,
+		Subsystems: []ProposedSubsystem{
+			{
+				Name: "Invented",
+				Components: []ProposedComponent{
+					{Name: "Ghost", MemberIDs: []MemberID{testMemberID(MemberFile, "invented-by-provider")}},
+				},
+			},
+			{
+				Name: "Storage",
+				Components: []ProposedComponent{
+					{Name: "Repository", MemberIDs: []MemberID{bundle.Candidates[1].ID}},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if result.Fallback || result.ValidationOutcome != ValidationAcceptedPartial {
+		t.Fatalf("valid sibling subsystem must publish accepted_partial: %#v", result.Diagnostics)
+	}
+	if !hasLandscapeDiagnostic(result.Diagnostics, "proposal.salvaged_empty_subsystem") {
+		t.Fatalf("diagnostics = %#v, want salvaged empty subsystem counted", result.Diagnostics)
+	}
+	if len(result.Subsystems) != 2 || result.Subsystems[0].Name != "Storage" {
+		t.Fatalf("subsystems = %#v, want Storage plus the deterministic remainder", result.Subsystems)
+	}
+}
+
+// Decision 229 D7 / charter monotonic law: a mixed component whose valid
+// members were collected before an unknown ref triggered the item-scope
+// drop must release those members back into the deterministic remainder —
+// unrelated previously valid information never disappears.
+func TestApplyItemScopeDropReleasesValidMembersToRemainder(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	validMember := bundle.Candidates[1].ID
+	result, err := Apply(bundle, Proposal{
+		Version: ContractVersion,
+		Subsystems: []ProposedSubsystem{{
+			Name: "Storage",
+			Components: []ProposedComponent{
+				{
+					Name:      "Repository",
+					MemberIDs: []MemberID{validMember},
+				},
+				{
+					Name:      "Mixed",
+					MemberIDs: []MemberID{validMember, testMemberID(MemberFile, "invented-by-provider")},
+				},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if result.Fallback || result.ValidationOutcome != ValidationAcceptedPartial {
+		t.Fatalf("mixed component drop must publish accepted_partial: %#v", result.Diagnostics)
+	}
+	remainderHasValid := false
+	for _, memberID := range result.LocalRemainderMemberIDs {
+		if memberID == validMember {
+			remainderHasValid = true
+			break
+		}
+	}
+	componentHasValid := false
+	for _, subsystem := range result.Subsystems {
+		for _, component := range subsystem.Components {
+			for _, member := range component.Members {
+				if member.ID == validMember {
+					componentHasValid = true
+				}
+			}
+		}
+	}
+	if !remainderHasValid && !componentHasValid {
+		t.Fatalf("valid member %v vanished from the landscape: %#v", validMember, result.LocalRemainderMemberIDs)
+	}
+}
+
 func TestApplyReplayIsIdempotentAndCounted(t *testing.T) {
 	t.Parallel()
 

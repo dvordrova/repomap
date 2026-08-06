@@ -6119,6 +6119,21 @@
 		return sourceLocationActionAvailable(location);
 	}
 
+	// overviewLocationOnlyText builds a location-only reference from a
+	// surface location when no snippet/source is resolvable (Decision 222:
+	// no-snippet locations stay text spans, never vanish).
+	function overviewLocationOnlyText(location) {
+		if (!location) return null;
+		var path = String(location.path || '');
+		var line = Number(location.line) || 0;
+		if (!path || line <= 0) return null;
+		return {
+			path: path,
+			line: line,
+			column: Number.isInteger(location.column) && location.column > 0 ? location.column : 0,
+		};
+	}
+
 	function overviewSurfaceLocation(trigger) {
 		if (!trigger) return null;
 		return trigger.handler_location || trigger.registration_site || trigger.descriptor_site ||
@@ -6205,8 +6220,35 @@
 			// names never become primary surface titles. They remain in
 			// DATA (never lost); they are counted in `omitted` below.
 			if (overviewSurfaceTitleIsValueShaped(title)) return;
-			var source = exactOverviewActionResolutionForLocation(overviewSurfaceLocation(trigger)).source;
-			if (!source) return;
+			var surfaceLocation = overviewSurfaceLocation(trigger);
+			var resolved = exactOverviewActionResolutionForLocation(surfaceLocation);
+			var source = resolved.source;
+			if (!source) {
+				// Decision 229 D3 / 222: without a resolvable source the
+				// entry still answers "how work enters" as a location-only
+				// text span (D222: no-snippet locations stay text spans).
+				// Only a resolved snippet makes it an actionable button.
+				// This applies ONLY when no embedded snippet exists at all
+				// (plain offline report): with saved snippets present,
+				// unsourced surfaces stay excluded (ambiguous/dead never
+				// render, Decision 217).
+				var hasAnyEmbeddedSnippet = allEmbeddedSourceSnippets().some(sourceSnippetHasCode);
+				if (hasAnyEmbeddedSnippet || resolved.conflict) return;
+				var fallbackLocation = surfaceLocation && overviewLocationOnlyText(surfaceLocation);
+				if (!fallbackLocation) return;
+				objects.push({
+					id: trigger.id,
+					title: title,
+					detail: overviewSurfaceKindLabel(trigger.kind),
+					snippet: null,
+					location: fallbackLocation,
+					entryKind: String(trigger.kind || ''),
+					entryRole: String(trigger.executable_role || ''),
+					entryFramework: String(trigger.framework || ''),
+					locationOnly: true,
+				});
+				return;
+			}
 			objects.push({
 				id: trigger.id,
 				title: title,
@@ -6216,6 +6258,7 @@
 				entryKind: String(trigger.kind || ''),
 				entryRole: String(trigger.executable_role || ''),
 				entryFramework: String(trigger.framework || ''),
+				locationOnly: false,
 			});
 		});
 		return {
@@ -6580,7 +6623,19 @@
 			return card;
 		}
 		var hasEmbeddedSource = sourceSnippetHasCode(object.snippet);
-		var primary = hasEmbeddedSource
+		var primary;
+		if (object.locationOnly || !hasEmbeddedSource && !sourceLocationActionAvailable(object.location)) {
+			// Decision 222/229 D3: a location-only entry stays a plain
+			// text span — the answer "how work enters" is preserved even
+			// when no exact-source jump can be offered.
+			primary = el('div', 'rm-overview-object-primary rm-overview-object-primary--location-only');
+			primary.appendChild(txt('strong', '', object.title));
+			if (object.detail) primary.appendChild(txt('span', 'rm-overview-object-detail', object.detail));
+			primary.appendChild(txt('code', 'rm-overview-object-location', formatCodeLocation(object.location)));
+			card.appendChild(primary);
+			return card;
+		}
+		primary = hasEmbeddedSource
 			? el('button', 'rm-overview-object-primary')
 			: sourceActionElement(
 				'',
@@ -6589,6 +6644,16 @@
 				0,
 				function () { openSourceLocation(object.location); }
 			);
+		if (!primary) {
+			// Decision 222: without a resolvable jump the entry stays a
+			// location-only text span rather than vanishing.
+			primary = el('div', 'rm-overview-object-primary rm-overview-object-primary--location-only');
+			primary.appendChild(txt('strong', '', object.title));
+			if (object.detail) primary.appendChild(txt('span', 'rm-overview-object-detail', object.detail));
+			primary.appendChild(txt('code', 'rm-overview-object-location', formatCodeLocation(object.location)));
+			card.appendChild(primary);
+			return card;
+		}
 		if (hasEmbeddedSource) primary.type = 'button';
 		primary.appendChild(txt('strong', '', object.title));
 		if (object.detail) primary.appendChild(txt('span', 'rm-overview-object-detail', object.detail));
@@ -9715,6 +9780,17 @@
     return { byKind: byKind, staticCount: staticCount, runtimeCount: runtimeCount, total: relations.length };
   }
 
+  // architectureRelationKindLabel maps the closed relation-kind set to
+  // human copy (Decision 229 D4: relations inventory uses human group
+  // labels; raw kinds stay under Evidence details).
+  function architectureRelationKindLabel(kind) {
+    var copy = {
+      configures_security_boundary: 'main.architecture.relations.kind.configures_security_boundary',
+      static_call_supporting_relation: 'main.architecture.relations.kind.static_call_supporting_relation',
+    };
+    return msg(copy[kind] || 'main.architecture.relations.kind.other');
+  }
+
   function renderArchitectureRelations(relations) {
     var section = el('section', 'rm-workspace-section rm-architecture-relations');
     section.appendChild(renderViewHeading(
@@ -9736,7 +9812,7 @@
         var kindList = el('ul', 'rm-architecture-relation-kinds');
         kindNames.forEach(function (kind) {
           var item = txt('li', 'rm-architecture-relation-kind-row', '');
-          item.appendChild(txt('span', 'rm-architecture-relation-kind-name', kind));
+          item.appendChild(txt('span', 'rm-architecture-relation-kind-name', architectureRelationKindLabel(kind)));
           item.appendChild(txt('span', 'rm-architecture-relation-kind-count', String(summary.byKind[kind])));
           kindList.appendChild(item);
         });
@@ -9754,7 +9830,12 @@
     var kindNames = Object.keys(groups).sort();
     kindNames.forEach(function (kind) {
       var groupSection = el('section', 'rm-architecture-relation-group');
-      groupSection.appendChild(txt('h4', 'rm-architecture-relation-group__label', kind));
+      groupSection.appendChild(txt('h4', 'rm-architecture-relation-group__label', architectureRelationKindLabel(kind)));
+      // Raw kind stays under Evidence details (Decision 229 D4) — the
+      // human label is primary, the enum is the exact identifier.
+      var rawKind = txt('span', 'rm-architecture-relation-group__raw-kind', kind);
+      rawKind.hidden = true;
+      groupSection.appendChild(rawKind);
       var list = el('ul', 'rm-architecture-relation-list');
       groups[kind].forEach(function (relation) {
         var item = txt('li', 'rm-architecture-relation-item', '');

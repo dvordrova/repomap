@@ -1151,6 +1151,10 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 	known := conceptualCandidateIndex(bundle)
 	knownAnchors := behaviorAnchorIndex(bundle.BehaviorAnchors)
 	seenMembers := make(map[MemberID]struct{})
+	// Reference counts for member coverage across accepted components:
+	// item-scope release decrements and only unclaims a member when no
+	// accepted component still covers it (Decision 229 D7 monotonic law).
+	memberCoverCounts := make(map[MemberID]int)
 	seenComponentIDs := make(map[ComponentID]struct{})
 	seenComponentTwins := make(map[string]struct{})
 	landscape := Landscape{
@@ -1187,6 +1191,21 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 			}
 			members := make([]Candidate, 0, len(proposedComponent.MemberIDs))
 			seenComponentMembers := make(map[MemberID]struct{}, len(proposedComponent.MemberIDs))
+			releaseComponentMembers := func() {
+				// Decision 229 D7 / charter monotonic law: a component
+				// dropped item-scope must not take its already-collected
+				// valid members with it — they fall back into the
+				// deterministic remainder instead of disappearing.
+				// Members still covered by another accepted component
+				// stay claimed (reference-counted release).
+				for memberID := range seenComponentMembers {
+					memberCoverCounts[memberID]--
+					if memberCoverCounts[memberID] <= 0 {
+						delete(seenMembers, memberID)
+						delete(memberCoverCounts, memberID)
+					}
+				}
+			}
 			for _, memberID := range proposedComponent.MemberIDs {
 				candidate, exists := known[memberID]
 				if !exists {
@@ -1195,6 +1214,7 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 					// exact reason counted; all other components publish.
 					invalid("proposal.unknown_member_id", "component references a member id absent from the local candidate bundle; component skipped item-scope")
 					componentSalvaged = true
+					releaseComponentMembers()
 					members = nil
 					break
 				}
@@ -1203,10 +1223,12 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 					// component normalizes locally — keep the first
 					// occurrence, keep the component.
 					invalid("proposal.duplicate_member_id", "proposal repeats one exact member within a component; duplicate normalized locally")
+					componentSalvaged = true
 					continue
 				}
 				seenComponentMembers[memberID] = struct{}{}
 				seenMembers[memberID] = struct{}{}
+				memberCoverCounts[memberID]++
 				members = append(members, cloneCandidate(candidate))
 			}
 			if members == nil {
@@ -1226,6 +1248,7 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 					// only the referencing component.
 					invalid("proposal.unknown_anchor_id", "component references an anchor id absent from the local grounding bundle; component skipped item-scope")
 					componentSalvaged = true
+					releaseComponentMembers()
 					members = nil
 					break
 				}
@@ -1276,8 +1299,14 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 			})
 		}
 		if len(subsystem.Components) == 0 {
-			invalid("proposal.invalid_subsystem", "proposal subsystem has no usable nested components")
-			return Landscape{}, diagnostics, false, componentSalvaged
+			// Decision 229 D7: a subsystem whose components were all
+			// dropped item-scope is skipped, not fatal — other
+			// subsystems may hold independently valid components.
+			// Whole-stage rejection fires only when every subsystem
+			// ends empty (no_usable_subsystems below).
+			invalid("proposal.salvaged_empty_subsystem", "proposal subsystem retained no usable components after item-scope salvage; subsystem skipped")
+			componentSalvaged = true
+			continue
 		}
 		subsystem.ID = subsystemID(componentIDs(subsystem.Components))
 		subsystem.SourceIDs = append([]SubsystemID(nil), proposedSubsystem.sourceIDs...)
