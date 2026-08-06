@@ -5020,6 +5020,21 @@
 				panel.appendChild(omissionList);
 			}
 		}
+		// Decision 233 (Archive 9, AREA COVERAGE): exact missing-core-area
+		// diagnostic — accepted principal Architecture components with no
+		// published theme reading over their member paths. Never filler.
+		if (Number(study.missing_core_area_count) > 0) {
+			var missingList = el('ul', 'rm-study-diagnostics-missing-core');
+			(Array.isArray(study.missing_core_areas) ? study.missing_core_areas : []).forEach(function (name) {
+				var item = el('li', 'rm-study-diagnostics-missing-core-item');
+				item.appendChild(document.createTextNode(msg('main.study.diagnostics.missing_core_area', { name: name })));
+				missingList.appendChild(item);
+			});
+			var missingHeading = el('h3', 'rm-study-diagnostics-subheading');
+			missingHeading.appendChild(document.createTextNode(msg('main.study.diagnostics.missing_core_heading', { count: study.missing_core_area_count })));
+			panel.appendChild(missingHeading);
+			panel.appendChild(missingList);
+		}
 		return panel;
 	}
 

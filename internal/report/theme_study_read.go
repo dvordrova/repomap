@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/dvordrova/repomap/internal/atlasstudy"
+	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/themestudy"
 )
 
@@ -303,7 +304,72 @@ func readThemeStudyAccepted(
 		return nil, nil, err
 	}
 	reportStatus.Themes = projected
+	// Decision 233 (Archive 9, PHASE 4 AREA COVERAGE): represent
+	// high-authority accepted Architecture areas when candidates exist;
+	// otherwise publish an EXACT missing-core-area diagnostic — never
+	// filler. Coverage is measured over exact member paths: an accepted
+	// principal component is covered when at least one of its member
+	// source paths appears in a published theme reading (primary or
+	// alternate).
+	reportStatus.MissingCoreAreaCount, reportStatus.MissingCoreAreas =
+		deriveMissingCoreAreas(themes, data)
 	return reportStatus, nil, nil
+}
+
+// deriveMissingCoreAreas counts accepted (non-hypothesis, non-remainder)
+// Architecture components whose exact member source paths are not covered by
+// any published theme reading. It is a closed local computation — no model
+// involvement, no repository-specific names — and never fabricates filler
+// themes. The bounded list names each uncovered principal component.
+func deriveMissingCoreAreas(themes themestudy.StudyThemes, data *ReportData) (int, []string) {
+	if data == nil || data.ArchitectureCanvas == nil {
+		return 0, nil
+	}
+	covered := make(map[string]struct{})
+	for _, card := range themes.Cards {
+		for _, reading := range card.Readings {
+			if reading.Path != "" {
+				covered[reading.Path] = struct{}{}
+			}
+		}
+		for _, reading := range card.AlternateReadings {
+			if reading.Path != "" {
+				covered[reading.Path] = struct{}{}
+			}
+		}
+	}
+	var missing []string
+	for _, component := range data.ArchitectureCanvas.Components {
+		if component.Hypothesis {
+			continue
+		}
+		if data.ArchitectureCanvas.LocalRemainderComponentID != "" &&
+			component.ID == data.ArchitectureCanvas.LocalRemainderComponentID {
+			continue
+		}
+		coveredPath := false
+		for _, member := range component.Members {
+			for _, fact := range member.Facts {
+				if fact.Kind == componentmap.FactRepositoryPath && fact.Location != nil && fact.Location.Path != "" {
+					if _, ok := covered[fact.Location.Path]; ok {
+						coveredPath = true
+						break
+					}
+				}
+			}
+			if coveredPath {
+				break
+			}
+		}
+		if !coveredPath {
+			missing = append(missing, component.Name)
+		}
+	}
+	sort.Strings(missing)
+	if len(missing) > 12 {
+		missing = missing[:12]
+	}
+	return len(missing), missing
 }
 
 // themeStageCounts is the exact per-stage span tally of the re-based browse.
