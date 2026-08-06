@@ -507,6 +507,63 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 	}
 }
 
+// TestArchitectureCanvasMobileInspectorSurvivesMediaQuery (Decision 229 D8):
+// on mobile (<=560px) the architecture CANVAS CARD must not be display:none
+// — the position:fixed inspector is mounted INSIDE it, so hiding the card
+// would hide the inspector with it. The media query hides only the visual
+// map surface (viewport/toolbar/flow-focus); the inspector opens as an
+// independent bottom sheet above the component list.
+func TestArchitectureCanvasMobileInspectorSurvivesMediaQuery(t *testing.T) {
+	t.Parallel()
+
+	styleCSS := readCanvasAsset(t, "style.css")
+	if !strings.Contains(styleCSS, "@media (max-width: 560px)") {
+		t.Fatal("mobile breakpoint @media (max-width: 560px) is missing from style.css")
+	}
+	mediaBlock := styleCSS[strings.Index(styleCSS, "@media (max-width: 560px)"):]
+	// Find the matching closing brace accounting for nested blocks.
+	depth := 0
+	end := -1
+	for index, char := range mediaBlock {
+		switch char {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				end = index + 1
+			}
+		}
+		if end >= 0 {
+			break
+		}
+	}
+	if end < 0 {
+		t.Fatal("mobile media query block is unterminated in style.css")
+	}
+	mediaBlock = mediaBlock[:end]
+	if strings.Contains(mediaBlock, ".rm-architecture-canvas-card { display: none") {
+		t.Fatal("Decision 229 D8: mobile media query hides the canvas card, which would hide the mounted inspector")
+	}
+	for _, token := range []string{
+		".rm-architecture-canvas-card .rm-arch__viewport",
+		".rm-architecture-canvas-card .rm-arch__toolbar",
+		".rm-architecture-canvas-card .rm-arch__flow-focus",
+		".rm-architecture-canvas-card .rm-arch__inspector { position: fixed",
+	} {
+		if !strings.Contains(mediaBlock, token) {
+			t.Errorf("mobile media query is missing %q — the inspector must stay visible outside the hidden map surface", token)
+		}
+	}
+	canvasJS := readCanvasAsset(t, "architecture_canvas.js")
+	if !strings.Contains(canvasJS, "rm-arch__inspector-close") {
+		t.Error("inspector close control (rm-arch__inspector-close) is missing — close/back must work on mobile")
+	}
+	if !strings.Contains(canvasJS, "closeInspector") {
+		t.Error("inspector close handler (closeInspector) is missing — close/back must work on mobile")
+	}
+}
+
 func readCanvasAsset(t *testing.T, name string) string {
 	t.Helper()
 
