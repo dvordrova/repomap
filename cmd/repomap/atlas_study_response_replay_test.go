@@ -184,7 +184,7 @@ func TestAtlasStudyResponseReplayCLIExactSavedResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode current status: %v", err)
 	}
-	if status.Version != themestudy.ScoutRequestVersion ||
+	if status.Version != themestudy.ScoutResultVersion ||
 		(status.Status.Accepted == 0 && status.State != string(atlasstudy.ProductStateFailed)) {
 		t.Fatalf("status = %+v", status)
 	}

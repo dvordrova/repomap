@@ -13,9 +13,9 @@ import (
 // They are producer-owned constants, never flags and never tuning knobs.
 const (
 	ScoutRequestVersion          = 1
-	ScoutResultVersion           = 1
+	ScoutResultVersion           = 2
 	AdjudicationRequestVersion   = 1
-	AdjudicationResultVersion    = 1
+	AdjudicationResultVersion    = 2
 	StudyThemesVersion           = 1
 	ScoutPromptVersion           = "theme-scout-prompt-v1"
 	AdjudicationPromptVersion    = "theme-adjudication-prompt-v1"

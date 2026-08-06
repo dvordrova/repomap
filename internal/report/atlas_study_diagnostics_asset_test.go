@@ -107,6 +107,10 @@ const themeCards = [1, 1].map((count, themeIndex) => {
       symbol: "Read" + (themeIndex + 1),
       path,
       line,
+      // Decision 224 (D219 C/G): per-reading role and bounded model
+      // observation render next to the exact source row.
+      role: readingIndex % 2 === 0 ? "direct" : "supporting",
+      supported_observation: "Inspect exact reading " + (readingIndex + 1) + ".",
       source: snippet(path, "Read" + (themeIndex + 1), line),
     });
   }
@@ -158,7 +162,7 @@ const report = {
   },
   study_publication: { version: 1, state: "accepted" },
   atlas_study: {
-    version: 1, projection_version: 8, state: "accepted",
+    version: 1, projection_version: 9, state: "accepted",
     considered_span_count: 68,
     advertised_span_count: 32,
     model_selected_span_count: 10,
@@ -282,6 +286,10 @@ if (showAllButtons.length) showAllButtons[0].onclick();
 const localCollapsedAfter = localGroup ? String(localGroup.className).split(/\s+/).includes("rm-study-browse-group--collapsed") : false;
   const questionLinks = byClass(browseRoot, "rm-study-browse-row__question").map((node) => ({ tag: node.tagName, href: (node.attributes && node.attributes.href) || "" }));
   const themeShelf = byClass(roots["rm-study-overview"], "rm-study-theme-shelf")[0] || null;
+  // Decision 224 (D219 C/G): per-reading role badges and bounded
+  // observations render on the theme cards.
+  const readingRoleBadges = byClass(roots["rm-study-overview"], "rm-study-theme-card__reading-role");
+  const readingExplains = byClass(roots["rm-study-overview"], "rm-study-theme-card__reading-explain");
   // Decision 217 drawer accessibility: open a source snippet and verify the
   // drawer becomes a real dialog (role, aria-modal, descriptive label).
   const studyReadings = byClass(roots["rm-study-overview"], "rm-study-theme-card__reading");
@@ -294,7 +302,7 @@ const localCollapsedAfter = localGroup ? String(localGroup.className).split(/\s+
     ariaModal: drawerEl.getAttribute("aria-modal"),
     ariaLabel: drawerEl.getAttribute("aria-label"),
   };
-  return { overviewText, studyOverviewText, stageCounts, flagItems, omissionItems, architectureText, browseRowCount: browseRows.length, browseStageTexts, unavailableRows, modelPickCount: modelPickBadges.length, directionCardAfterPick, beyondBefore, localCollapsedBefore, localCollapsedAfter, showAllCount: showAllButtons.length, browsePanelPresent: !!browsePanel, questionLinks, themeShelfPresent: !!themeShelf, drawerDialog, readingJump };
+  return { overviewText, studyOverviewText, stageCounts, flagItems, omissionItems, architectureText, browseRowCount: browseRows.length, browseStageTexts, unavailableRows, modelPickCount: modelPickBadges.length, directionCardAfterPick, beyondBefore, localCollapsedBefore, localCollapsedAfter, showAllCount: showAllButtons.length, browsePanelPresent: !!browsePanel, questionLinks, themeShelfPresent: !!themeShelf, drawerDialog, readingJump, readingRoleBadgeCount: readingRoleBadges.length, readingExplainCount: readingExplains.length };
 }
 const strippedReport = JSON.parse(JSON.stringify(report));
 strippedReport.user_sources = [];
@@ -338,6 +346,8 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 			Tag  string `json:"tag"`
 			Href string `json:"href"`
 		} `json:"readingJump"`
+		ReadingRoleBadgeCount int `json:"readingRoleBadgeCount"`
+		ReadingExplainCount   int `json:"readingExplainCount"`
 	}
 	type journeySet struct {
 		En       journey `json:"en"`
@@ -513,6 +523,14 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 		if j.ReadingJump == nil || j.ReadingJump.Tag != "a" ||
 			!strings.Contains(j.ReadingJump.Href, "github.com/example/repository/blob") {
 			t.Fatalf("%s reading jump = %#v, want GitHub blob link", name, j.ReadingJump)
+		}
+		// Decision 224 (D219 G): every reading renders a role badge and the
+		// bounded supported observation on the theme card.
+		if j.ReadingRoleBadgeCount < 2 {
+			t.Fatalf("%s reading role badges = %d, want >= 2", name, j.ReadingRoleBadgeCount)
+		}
+		if j.ReadingExplainCount < 2 {
+			t.Fatalf("%s reading explanations = %d, want >= 2", name, j.ReadingExplainCount)
 		}
 	}
 }

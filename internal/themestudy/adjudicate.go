@@ -28,7 +28,7 @@ func ValidateAdjudication(data []byte, candidateByRef map[string]*ScoutCandidate
 	if err := json.Unmarshal(raw, &rawThemes); err != nil {
 		return nil, AdjudicationStatus{}, fmt.Errorf("theme adjudication: themes not an array: %w", err)
 	}
-	status := AdjudicationStatus{State: "accepted"}
+	status := AdjudicationStatus{State: "accepted", Normalized: map[string]int{}}
 	status.Received = len(rawThemes)
 	accepted := make([]AdjudicatedTheme, 0, len(rawThemes))
 	seen := make(map[string]struct{}, len(rawThemes))
@@ -38,19 +38,32 @@ func ValidateAdjudication(data []byte, candidateByRef map[string]*ScoutCandidate
 			rejectAdj(&status, position, AdjIssueDecodeCandidate)
 			continue
 		}
-		if code := adjThemeIssue(theme, candidateByRef, seen); code != "" {
+		// Decision 224 (D219 B): bound overlong observations/unknowns first
+		// — populated evidence is normalized, never erased as "empty".
+		// Identity/fit/directness/refs and the unknowns count are validated
+		// against the normalized theme below.
+		normalized, counts := normalizeAdjudicatedTheme(theme)
+		if code := adjThemeIssue(normalized, candidateByRef, seen); code != "" {
 			rejectAdj(&status, position, code)
 			continue
 		}
-		seen[theme.CandidateRef] = struct{}{}
-		if !adjHasDirect(theme) {
+		seen[normalized.CandidateRef] = struct{}{}
+		if !adjHasDirect(normalized) {
 			rejectAdj(&status, position, AdjIssueNoDirect)
 			continue
 		}
-		accepted = append(accepted, theme)
+		for kind, count := range counts {
+			status.Normalized[kind] += count
+		}
+		accepted = append(accepted, normalized)
 		status.Accepted++
 	}
 	status.Rejected = status.Received - status.Accepted
+	if len(status.Normalized) == 0 {
+		// Keep the artifact canonical: an empty Normalized map with omitempty
+		// would decode as nil and break encode/decode DeepEqual.
+		status.Normalized = nil
+	}
 	switch {
 	case status.Accepted == 0:
 		status.State = "failed"
@@ -96,8 +109,11 @@ func adjThemeIssue(theme AdjudicatedTheme, candidateByRef map[string]*ScoutCandi
 		if strings.TrimSpace(assessment.SupportedObservation) == "" {
 			return AdjIssueEmptyObservation
 		}
+		// Decision 224: overlong observation is a distinct closed reason,
+		// normalized by the caller when identity/fit are valid — never
+		// conflated with empty evidence.
 		if utf8.RuneCountInString(assessment.SupportedObservation) > MaxEditorialRunes {
-			return AdjIssueEmptyObservation
+			return AdjIssueObservationTooLong
 		}
 	}
 	for _, ref := range theme.ReadingOrder {
@@ -107,13 +123,37 @@ func adjThemeIssue(theme AdjudicatedTheme, candidateByRef map[string]*ScoutCandi
 	}
 	for _, unknown := range theme.Unknowns {
 		if utf8.RuneCountInString(unknown) > MaxUnknownRunes {
-			return AdjIssueEmptyObservation
+			return AdjIssueUnknownTooLong
 		}
 	}
 	if len(theme.Unknowns) > MaxUnknownsPerTheme {
-		return AdjIssueEmptyObservation
+		return AdjIssueTooManyUnknowns
 	}
 	return ""
+}
+
+// normalizeAdjudicatedTheme bounds overlong observations and unknowns to
+// their closed limits deterministically (whole-rune truncation, Decision
+// 224) and returns typed per-kind truncation counts. Identity, fit, refs,
+// reading order and the unknowns COUNT are never repaired (too many
+// unknowns stays a hard rejection — capping would silently drop evidence).
+func normalizeAdjudicatedTheme(theme AdjudicatedTheme) (AdjudicatedTheme, map[string]int) {
+	normalized := theme
+	counts := map[string]int{}
+	for index, assessment := range normalized.AnchorAssessments {
+		if utf8.RuneCountInString(assessment.SupportedObservation) > MaxEditorialRunes {
+			assessment.SupportedObservation = truncateRunes(assessment.SupportedObservation, MaxEditorialRunes)
+			counts["observation"]++
+		}
+		normalized.AnchorAssessments[index] = assessment
+	}
+	for index, unknown := range normalized.Unknowns {
+		if utf8.RuneCountInString(unknown) > MaxUnknownRunes {
+			normalized.Unknowns[index] = truncateRunes(unknown, MaxUnknownRunes)
+			counts["unknown"]++
+		}
+	}
+	return normalized, counts
 }
 
 func adjHasDirect(theme AdjudicatedTheme) bool {

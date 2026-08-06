@@ -119,6 +119,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-study-theme-card__reading-row { align-items: baseline; display: flex; flex-wrap: wrap; gap: .5rem; }
 .rm-study-theme-card__reading-meta { align-items: baseline; display: flex; flex-wrap: wrap; gap: .35rem; min-width: 0; }
 .rm-study-theme-card__reading-kind { color: var(--rm-dim); font-size: .64rem; font-weight: 650; text-transform: lowercase; white-space: nowrap; }
+.rm-study-theme-card__reading-role { background: var(--rm-accent-soft, rgba(79, 70, 229, .08)); border-radius: 4px; color: var(--rm-accent); font-size: .62rem; font-weight: 600; padding: .05rem .35rem; white-space: nowrap; }
 .rm-study-theme-card__reading-location { color: #64748b; font-size: .66rem; overflow-wrap: anywhere; }
 .rm-study-reading-anchor__row { align-items: baseline; display: flex; flex-wrap: wrap; gap: .5rem; }
 .rm-study-reading-anchor__meta { align-items: baseline; display: flex; flex-wrap: wrap; gap: .35rem; min-width: 0; }

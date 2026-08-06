@@ -4652,10 +4652,16 @@
 			}
 			var meta = el('div', 'rm-study-theme-card__reading-meta');
 			meta.appendChild(txt('span', 'rm-study-theme-card__reading-kind', sourceKindLabel(kind)));
+			// Decision 224 (D219 G): every reading shows its user-facing
+			// support role (direct/supporting) next to the typed kind.
+			if (reading.role === 'direct') meta.appendChild(txt('span', 'rm-study-theme-card__reading-role', msg('main.study.theme.reading.role.direct')));
+			else if (reading.role === 'supporting') meta.appendChild(txt('span', 'rm-study-theme-card__reading-role', msg('main.study.theme.reading.role.supporting')));
 			meta.appendChild(txt('code', 'rm-study-theme-card__reading-location', formatCodeLocation(location)));
 			row.appendChild(meta);
 			item.appendChild(row);
-			if (reading.what_to_look_for) item.appendChild(txt('p', 'rm-study-theme-card__reading-explain', reading.what_to_look_for));
+			// Decision 224 (D219 C): the bounded per-anchor model observation
+			// tells the reader what to inspect at this exact source.
+			if (reading.supported_observation) item.appendChild(txt('p', 'rm-study-theme-card__reading-explain', reading.supported_observation));
 			readings.appendChild(item);
 		});
 		if (readings.childNodes.length) article.appendChild(readings);
