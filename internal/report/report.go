@@ -184,6 +184,10 @@ type ReportData struct {
 	// scopes. It states only that an observed callsite occurs in an exact
 	// member scope; it never claims runtime dependency or semantics.
 	ArchitectureAssociations *ArchitectureAssociationProjection `json:"architecture_associations,omitempty"`
+	// MechanismFragment is the Decision 226 honest vertical fragment:
+	// entry → supported transitions → observed boundary/resource →
+	// explicit unresolved frontier, built from saved local evidence only.
+	MechanismFragment *MechanismFragmentProjection `json:"mechanism_fragment,omitempty"`
 	GuidedTour                      *guidedtour.Story                          `json:"guided_tour,omitempty"`
 	SemanticArtifacts               []semanticdiscovery.Artifact               `json:"semantic_artifacts,omitempty"`
 	// UserMechanisms is a presentation-only supported slice of independently

@@ -9268,6 +9268,14 @@
     } else {
       root.appendChild(txt('p', 'rm-architecture-no-relation-evidence rm-warning', msg('main.architecture.no_relation_evidence')));
     }
+    // Decision 226: one honest vertical fragment — entry → locally
+    // supported transitions → observed boundary/resource → explicit
+    // unresolved frontier. Rendered as a compact DFD-like list, never a
+    // complete process proof; no invented edges.
+    var fragment = DATA.mechanism_fragment;
+    if (fragment && fragment.version === 1) {
+      root.appendChild(renderMechanismFragment(fragment));
+    }
     if (componentList) {
       // With no supported relation evidence the structured list is the
       // primary representation (it already follows the map in layout).
@@ -9473,6 +9481,43 @@
       groupSection.appendChild(list);
       section.appendChild(groupSection);
     });
+    return section;
+  }
+
+  // Decision 226: render the honest vertical mechanism fragment as a
+  // compact DFD-like list. Every transition carries its closed contract
+  // fields; the unresolved frontier is always visible. This is a
+  // repository-perimeter fragment, never a complete process proof.
+  function renderMechanismFragment(fragment) {
+    var section = el('section', 'rm-workspace-section rm-mechanism-fragment');
+    section.appendChild(renderViewHeading(
+      msg('main.architecture.mechanism.kicker'),
+      msg('main.architecture.mechanism.title'),
+      msg('main.architecture.mechanism.copy')
+    ));
+    var list = el('ol', 'rm-mechanism-fragment__items');
+    var entry = fragment.entry || {};
+    var entryItem = txt('li', 'rm-mechanism-fragment__item rm-mechanism-fragment__item--entry', '');
+    entryItem.appendChild(txt('strong', 'rm-mechanism-fragment__kind', msg('main.architecture.mechanism.entry')));
+    entryItem.appendChild(txt('span', 'rm-mechanism-fragment__label', String(entry.label || '')));
+    entryItem.appendChild(txt('code', 'rm-mechanism-fragment__location', String(entry.path || '') + (entry.line ? ':' + entry.line : '')));
+    list.appendChild(entryItem);
+    (Array.isArray(fragment.transitions) ? fragment.transitions : []).forEach(function (transition) {
+      var item = txt('li', 'rm-mechanism-fragment__item', '');
+      item.appendChild(txt('strong', 'rm-mechanism-fragment__kind', String(transition.claim_kind || '')));
+      item.appendChild(txt('span', 'rm-mechanism-fragment__mode', String(transition.support_mode || '')));
+      item.appendChild(txt('span', 'rm-mechanism-fragment__label', String(transition.label || '')));
+      item.appendChild(txt('code', 'rm-mechanism-fragment__location', String(transition.path || '') + (transition.line ? ':' + transition.line : '')));
+      item.appendChild(txt('span', 'rm-mechanism-fragment__ordering', String(transition.ordering || '')));
+      list.appendChild(item);
+    });
+    section.appendChild(list);
+    // Unresolved frontier: always visible, never hover-only.
+    var frontier = fragment.frontier || {};
+    var frontierBox = el('div', 'rm-mechanism-fragment__frontier');
+    frontierBox.appendChild(txt('strong', null, msg('main.architecture.mechanism.frontier_title')));
+    frontierBox.appendChild(txt('p', 'rm-arch__limitation', String(frontier.limitation || msg('main.architecture.mechanism.frontier_default'))));
+    section.appendChild(frontierBox);
     return section;
   }
 
