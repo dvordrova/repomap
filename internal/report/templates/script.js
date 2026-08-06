@@ -6056,6 +6056,33 @@
 		return String(trigger && trigger.id || '');
 	}
 
+	// overviewSurfaceTitleIsValueShaped implements the Decision 229 D3
+	// presentation-quality gate: a title that names a local value or callback
+	// local (amount, payer, application_context, unresolved value, TrimSpace/
+	// Sprintf results, …) is never a primary surface title. Deterministic,
+	// closed-list based; case-insensitive; prefix/suffix tolerant.
+	var OVERVIEW_VALUE_SHAPED_TITLE_WORDS = [
+		'amount', 'payer', 'application_context', 'unresolved value',
+		'unresolved_value', 'result of strings.trimspace', 'result of fmt.sprintf',
+		'result of strings.trim', 'result of fmt.sprintf',
+		'error', 'err', 'result', 'response', 'request', 'ctx', 'context',
+		'value', 'val', 'ret', 'payload', 'body', 'params', 'args',
+	];
+	function overviewSurfaceTitleIsValueShaped(title) {
+		if (!title) return true;
+		var lower = String(title).toLowerCase().trim();
+		if (!lower) return true;
+		var words = lower.split(/[^a-z0-9_]+/).filter(Boolean);
+		var joined = words.join(' ');
+		if (OVERVIEW_VALUE_SHAPED_TITLE_WORDS.indexOf(joined) >= 0) return true;
+		// Multi-word phrases that are pure value shapes: "result of …",
+		// "unresolved …", single-word callback locals.
+		if (/^result of /.test(lower)) return true;
+		if (/^unresolved /.test(lower)) return true;
+		if (words.length === 1 && OVERVIEW_VALUE_SHAPED_TITLE_WORDS.indexOf(words[0]) >= 0) return true;
+		return false;
+	}
+
 	var OVERVIEW_SURFACE_KIND_MESSAGE_IDS = {
 		async_task: 'main.overview.anatomy.surface_kind.async_task',
 		cli_command: 'main.overview.anatomy.surface_kind.cli_command',
@@ -6089,11 +6116,16 @@
 		var objects = [];
 		eligible.forEach(function (trigger) {
 			if (counts[trigger.id] !== 1) return;
+			var title = overviewSurfaceTitle(trigger);
+			// Decision 229 D3 presentation-quality gate: value-shaped local
+			// names never become primary surface titles. They remain in
+			// DATA (never lost); they are counted in `omitted` below.
+			if (overviewSurfaceTitleIsValueShaped(title)) return;
 			var source = exactOverviewActionResolutionForLocation(overviewSurfaceLocation(trigger)).source;
 			if (!source) return;
 			objects.push({
 				id: trigger.id,
-				title: overviewSurfaceTitle(trigger),
+				title: title,
 				detail: overviewSurfaceKindLabel(trigger.kind),
 				snippet: source.snippet,
 				location: source.location,
@@ -6190,8 +6222,30 @@
 	function overviewComponentObjects() {
 		var canvas = DATA.architecture_canvas || {};
 		var remainderComponentID = String(canvas.local_remainder_component_id || '');
+		// Decision 229 D3: a diagnostic subsystem (category === 'diagnostic',
+		// e.g. "Supporting repository evidence") is unclassified exact scope —
+		// never a principal product area. It is counted and rendered as a
+		// collapsed disclosure, not as a principal component card.
+		var diagnosticSubsystemIDs = {};
+		(Array.isArray(canvas.subsystems) ? canvas.subsystems : []).forEach(function (subsystem) {
+			if (subsystem && subsystem.category === 'diagnostic' && typeof subsystem.id === 'string') {
+				diagnosticSubsystemIDs[subsystem.id] = true;
+			}
+		});
 		var components = (Array.isArray(canvas.components) ? canvas.components : []).filter(function (component) {
-			return !remainderComponentID || !component || component.id !== remainderComponentID;
+			if (!component) return false;
+			if (remainderComponentID && component.id === remainderComponentID) return false;
+			if (diagnosticSubsystemIDs[component.subsystem_id]) return false;
+			return true;
+		});
+		var remainderComponents = (Array.isArray(canvas.components) ? canvas.components : []).filter(function (component) {
+			if (!component) return false;
+			if (remainderComponentID && component.id === remainderComponentID) return true;
+			return !!diagnosticSubsystemIDs[component.subsystem_id];
+		});
+		var remainderPackageCount = 0;
+		remainderComponents.forEach(function (component) {
+			remainderPackageCount += Array.isArray(component.members) ? component.members.length : 0;
 		});
 		var contexts = architectureComponentContexts();
 		var navigationByComponent = {};
@@ -6253,6 +6307,8 @@
 			objects: objects,
 			total: Object.keys(counts).length,
 			omitted: Object.keys(counts).length - objects.length,
+			remainderPackageCount: remainderPackageCount,
+			hasDiagnosticRemainder: remainderComponents.length > 0,
 		};
 	}
 
@@ -6844,11 +6900,93 @@
 		return '';
 	}
 
+	// renderRepositoryPerimeter projects the repository perimeter
+	// (Decision 229 D3, design contract v4): observed use/entry →
+	// analyzed repository scope ⋯ observed touchpoints. It is not C4 System
+	// Context: every touchpoint is an observation in exact member scope from
+	// the D225 association rows, never a runtime dependency or external
+	// system identity.
+	function renderRepositoryPerimeter(anatomy) {
+		var entries = anatomy && anatomy.entries && anatomy.entries.objects || [];
+		if (!entries.length) return null;
+		var associations = DATA.architecture_associations || {};
+		var touchpointFamilies = {};
+		(Array.isArray(associations.components) ? associations.components : []).forEach(function (component) {
+			(Array.isArray(component.associations) ? component.associations : []).forEach(function (row) {
+				if (!row) return;
+				var family = String(row.imported_family || row.name || '');
+				if (!family) return;
+				var key = String(row.kind || '') + '\u0000' + family;
+				if (!touchpointFamilies[key]) {
+					touchpointFamilies[key] = {
+						kind: String(row.kind || ''),
+						family: family,
+						count: 0,
+						componentCount: 0,
+						components: {},
+					};
+				}
+				touchpointFamilies[key].count += Number(row.observation_count) || 1;
+				var componentName = String(component.name || component.component_id || '');
+				if (!touchpointFamilies[key].components[componentName]) {
+					touchpointFamilies[key].components[componentName] = true;
+					touchpointFamilies[key].componentCount += 1;
+				}
+			});
+		});
+		var families = Object.keys(touchpointFamilies).map(function (key) {
+			return touchpointFamilies[key];
+		}).sort(function (left, right) {
+			return right.count - left.count || String(left.family).localeCompare(String(right.family));
+		}).slice(0, 8);
+		if (!families.length) return null;
+		var scope = DATA.architecture_canvas || {};
+		var packageCount = 0;
+		(Array.isArray(scope.components) ? scope.components : []).forEach(function (component) {
+			packageCount += Array.isArray(component.members) ? component.members.length : 0;
+		});
+		var section = el('section', 'rm-overview-perimeter');
+		section.appendChild(renderViewHeading(
+			msg('main.overview.perimeter.kicker'),
+			msg('main.overview.perimeter.title'),
+			msg('main.overview.perimeter.copy')
+		));
+		var flow = el('div', 'rm-overview-perimeter__flow');
+		flow.appendChild(txt('div', 'rm-overview-perimeter__entry', msg('main.overview.perimeter.entry')));
+		flow.appendChild(txt('div', 'rm-overview-perimeter__arrow', '\u2193'));
+		flow.appendChild(txt('div', 'rm-overview-perimeter__scope',
+			msg('main.overview.perimeter.scope', { count: packageCount })));
+		flow.appendChild(txt('div', 'rm-overview-perimeter__dots', '\u22ef'));
+		flow.appendChild(txt('div', 'rm-overview-perimeter__touchpoints', msg('main.overview.perimeter.touchpoints')));
+		section.appendChild(flow);
+		var list = el('ul', 'rm-overview-perimeter__families');
+		families.forEach(function (family) {
+			var item = el('li', 'rm-overview-perimeter__family rm-overview-perimeter__family--' + family.kind);
+			item.appendChild(txt('span', 'rm-overview-perimeter__family-kind', msg(family.kind === 'boundary' ? 'main.overview.perimeter.kind.boundary' : 'main.overview.perimeter.kind.resource')));
+			item.appendChild(txt('span', 'rm-overview-perimeter__family-name', family.family));
+			item.appendChild(txt('span', 'rm-overview-perimeter__family-count',
+				msg('main.overview.perimeter.observed_count', { count: family.count })));
+			list.appendChild(item);
+		});
+		section.appendChild(list);
+		return section;
+	}
+
+	// renderRepositoryOverviewAnatomy renders the anatomy zones in fixed
+	// order: glance, perimeter, entries, system spine, diagnostics remainder
+	// disclosure, integrations, study directions.
 	function renderRepositoryOverviewAnatomy(root, anatomy, includeBrief) {
 		if (includeBrief !== false) renderRepositoryOverviewLead(root);
 
 		var glance = renderOverviewAtAGlance(anatomy);
 		if (glance) root.appendChild(glance);
+
+		// Decision 229 D3: repository-perimeter projection (not C4) —
+		// observed use/entry → analyzed repository scope ⋯ observed
+		// touchpoints. Touchpoints are observations in exact member scope
+		// (D225 association rows), never runtime dependencies.
+		var perimeter = renderRepositoryPerimeter(anatomy);
+		if (perimeter) root.appendChild(perimeter);
 
 		if (anatomy.entries.objects.length) {
 			var entryGroups = overviewEntryClassifications(anatomy.entries.objects);
@@ -6917,6 +7055,21 @@
 					'component'
 				));
 			}
+		}
+
+		// Decision 229 D3: unclassified exact scope (diagnostic remainder,
+		// e.g. "Supporting repository evidence") is a collapsed disclosure —
+		// never a principal product area. Count-reconciled, always reachable.
+		var remainderCount = anatomy.components && anatomy.components.remainderPackageCount || 0;
+		if (anatomy.components && anatomy.components.hasDiagnosticRemainder && remainderCount > 0) {
+			var remainderSection = el('section', 'rm-workspace-section rm-overview-remainder');
+			var remainderDetails = el('details', 'rm-overview-remainder__disclosure');
+			remainderSection.appendChild(remainderDetails);
+			remainderDetails.appendChild(txt('summary', 'rm-overview-remainder__summary',
+				msg('main.overview.remainder.summary', { count: remainderCount })));
+			remainderDetails.appendChild(txt('p', 'rm-overview-remainder__note',
+				msg('main.overview.remainder.copy')));
+			root.appendChild(remainderSection);
 		}
 
 		if (anatomy.integrations && anatomy.integrations.length) {
