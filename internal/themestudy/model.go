@@ -114,22 +114,26 @@ const (
 	// recorded under OmittedRefs, never dropped silently (D190/D195).
 	MaxExpansionFiles = 128
 	// MaxExpansionBytes bounds the source-evidence expansion the Scout's
-	// requested files are allowed to occupy. It must fit the full requested
-	// set on reference repositories (casdoor requests 50+ files once the
-	// D214 resource-boundary seeds widen the catalog) while staying well
-	// under the 1 MiB Adjudication wire bound that embeds it.
+	// requested files are allowed to occupy, measured on the ENCODED
+	// artifact bytes (the persisted provider-free expansion and the
+	// Adjudication wire that embeds its compact projection). It must fit
+	// the full requested set on reference repositories (casdoor requests
+	// 50+ files once the D214 resource-boundary seeds widen the catalog)
+	// while staying well under the 1 MiB Adjudication wire bound.
 	//
 	// The budget is a strict sub-budget of the persisted artifact bound:
 	// the encoded expansion artifact must fit MaxExpansionArtifactBytes
-	// (384 KiB) AFTER JSON escaping and per-object envelope overhead, which
-	// grow real source ~3x. A raw-byte budget at the artifact limit would
-	// overflow the encoded artifact on dense repositories (casdoor live
-	// run 2026-08-07: "theme source expansion artifact exceeds 393216
-	// bytes" — first file appended unconditionally, budget never consulted
-	// against the artifact bound). 256 KiB of raw source keeps the encoded
-	// artifact inside 384 KiB on reference repositories; excess requested
-	// files are recorded under OmittedRefs, never dropped silently
-	// (D190/D195).
+	// (384 KiB) AFTER JSON escaping and per-object envelope overhead,
+	// which grow real source ~1.3-2x. The budget is therefore measured on
+	// the encoded bytes (ExpandFiles marshals each entry and accumulates
+	// its encoded size), never on raw source bytes — a raw-byte budget at
+	// the artifact limit overflowed the encoded artifact on dense
+	// repositories and terminated the whole Study stage (casdoor live run
+	// 2026-08-07: "theme source expansion artifact exceeds 393216 bytes"
+	// despite accepted Scout state). 256 KiB of encoded source keeps the
+	// full artifact inside 384 KiB and the Adjudication wire well inside
+	// its 1 MiB bound on reference repositories; excess requested files
+	// are recorded under OmittedRefs, never dropped silently (D190/D195).
 	MaxExpansionBytes          = 256 << 10
 	MaxOmissionRepresentatives = 12
 
