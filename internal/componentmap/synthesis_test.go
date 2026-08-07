@@ -294,8 +294,12 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 			t.Errorf("provider request leaked canonical anchor id %q", anchor.ID)
 		}
 	}
+	// Phase 1 prompt cleanup: required_member_refs is removed from the
+	// provider wire — it duplicated the candidates checklist exactly
+	// (validateSynthesisRequestCoverage proved the identity). The
+	// candidates array is the coverage checklist.
 	if !strings.Contains(encoded, `"units":`) || !strings.Contains(encoded, `"relation_out_count"`) ||
-		!strings.Contains(encoded, `"required_member_refs":[`) ||
+		strings.Contains(encoded, `"required_member_refs"`) ||
 		!strings.Contains(encoded, `"ref":{"kind":"package","ref":"p1"}`) {
 		t.Fatalf("request omitted compact typed units/checklist: %s", encoded)
 	}
@@ -318,22 +322,15 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 		}
 	}
 	for _, required := range []string{
-		`{"records":[{"kind":"subsystem","ref":"g1"`,
-		`{"kind":"component","subsystem_ref":"g1"`,
-		`{"kind":"subsystem","ref":"g2"`,
-		"one ordered records array",
-		"prefer four to seven distinct subsystem records when the supplied evidence supports that many",
-		"Tiny, library, and package-landscape requests may honestly use one to three",
+		`{"subsystems":[{"name":"first subsystem"`,
+		`"components":[{"name":"first component"`,
+		`"member_refs":["p1","s2"]`,
 		"exactly one complete JSON object",
-		"Its only root field is records",
-		"A subsystem record contains exactly kind, ref, name, and description",
-		// Decision 231 (Archive 9): the v18 grammar drops hypothesis and
-		// ref-kind from the model contract — the backend owns them.
-		// Decision 235 (v11): one member_refs-only grammar — unit_refs is
-		// not part of the response grammar.
-		"A component record contains exactly kind, subsystem_ref, name, description, member_refs, and anchor_refs",
-		"Do not nest records or emit a second root object",
-		"unit_refs is not part of the response grammar",
+		"Its only root field is subsystems",
+		"Each subsystem contains exactly name, description, and components",
+		// Phase 1 prompt cleanup: nested grammar, backend-owned IDs/kinds.
+		"Do not emit response-local IDs, kind tags, parent references",
+		"Choose representative supplied members needed to distinguish each component",
 		"An exact partial grouping is valid: omitted members remain",
 		"shared participation, not exclusive ownership",
 		"Fewer groups are better than padding",
@@ -553,10 +550,13 @@ func TestSynthesisV11CacheIdentityDoesNotReuseV10Record(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Mirror the exact v10 request struct rather than round-tripping through a
-	// map, whose key order could manufacture a false cache miss.
+	// map, whose key order could manufacture a false cache miss. The v10 wire
+	// carried required_member_refs; the current wire removed it (Phase 1:
+	// the checklist duplicated candidates[].ref exactly).
 	legacyRequestJSON, err := json.Marshal(struct {
 		RepositoryArchetype RepositoryArchetype       `json:"repository_archetype"`
 		GroundingMode       GroundingMode             `json:"grounding_mode"`
+		RequiredMemberRefs  []SynthesisMemberRef      `json:"required_member_refs,omitempty"`
 		BehaviorAnchors     []SynthesisBehaviorAnchor `json:"behavior_anchors,omitempty"`
 		Flows               []SynthesisFlow           `json:"flows,omitempty"`
 		Candidates          []SynthesisCandidate      `json:"candidates"`
@@ -565,6 +565,7 @@ func TestSynthesisV11CacheIdentityDoesNotReuseV10Record(t *testing.T) {
 	}{
 		RepositoryArchetype: request.RepositoryArchetype,
 		GroundingMode:       request.GroundingMode,
+		RequiredMemberRefs:  request.RequiredMemberRefs,
 		BehaviorAnchors:     request.BehaviorAnchors,
 		Flows:               request.Flows,
 		Candidates:          request.Candidates,
@@ -574,9 +575,9 @@ func TestSynthesisV11CacheIdentityDoesNotReuseV10Record(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(legacyRequestJSON, []byte(`"required_member_refs"`)) ||
-		!bytes.Contains(requestJSON, []byte(`"required_member_refs"`)) {
-		t.Fatal("v10/v11 request fixtures do not isolate the explicit coverage checklist")
+	if !bytes.Contains(legacyRequestJSON, []byte(`"required_member_refs"`)) ||
+		bytes.Contains(requestJSON, []byte(`"required_member_refs"`)) {
+		t.Fatal("v10/v11 request fixtures do not isolate the coverage checklist removal")
 	}
 
 	// With every version field held at v11, replacing only the current wire by
