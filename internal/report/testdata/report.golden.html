@@ -146,6 +146,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-overview-anatomy-omitted { color: var(--rm-dim); font-size: .78rem; margin: 0; }
 .rm-overview-integrations-empty { margin: 0; }
 .rm-study-theme-shelf { display: grid; gap: 1rem; }
+.rm-study-theme-shelf__more { margin-top: 0.25rem; }
+.rm-study-theme-shelf__more-summary { cursor: pointer; color: var(--rm-accent, #2563eb); font-weight: 600; }
+.rm-study-theme-shelf__more-list { display: grid; gap: 1rem; margin-top: 1rem; }
 .rm-study-theme-card { background: #fff; border: 1px solid var(--rm-border); border-radius: 12px; display: flex; flex-direction: column; gap: .55rem; min-width: 0; padding: 1rem 1.1rem; }
 .rm-study-theme-card__title-row { align-items: baseline; display: flex; flex-wrap: wrap; gap: .5rem; justify-content: space-between; min-width: 0; }
 .rm-study-theme-card__title { cursor: default; font-size: 1.05rem; margin: 0; min-width: 0; overflow-wrap: anywhere; }
@@ -1430,6 +1433,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.theme.reading.role.supporting": { params: [], text: "supporting" },
     "main.study.provenance.title": { params: [], text: "Coverage and provenance" },
     "main.study.themes.copy": { params: [], text: "Editorial themes over exact anchors, each with its exact source readings. The model proposes; local reduction publishes only what the source supports." },
+    "main.study.themes.show_all": { params: ["count"], format: function (params) { return "Show all themes (" + params.count + " more)"; } },
     "main.study.frontier.browse_title": { params: [], text: "All study questions" },
     "main.study.frontier.open_theme": { params: ["count"], format: function (params) { return "Open theme " + params.count; } },
     "main.study.frontier.browse_copy": { params: [], text: "Every question the local analysis can answer for this repository, in a fixed local order. This is not a model ranking." },
@@ -2948,6 +2952,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.theme.reading.role.supporting": { params: [], text: "дополняющая" },
     "main.study.provenance.title": { params: [], text: "Покрытие и происхождение" },
     "main.study.themes.copy": { params: [], text: "Редакционные темы над точными якорями, каждая с точными чтениями исходников. Модель предлагает; локальная редукция публикует только то, что подтверждает источник." },
+    "main.study.themes.show_all": { params: ["count"], format: function (params) { return "Показать все темы (ещё " + params.count + ")"; } },
     "main.study.frontier.browse_title": { params: [], text: "Все вопросы изучения" },
     "main.study.frontier.open_theme": { params: ["count"], format: function (params) { return "Открыть тему " + params.count; } },
     "main.study.frontier.browse_copy": { params: [], text: "Каждый вопрос, который локальный анализ может поставить для этого репозитория, в фиксированном локальном порядке. Это не ранжирование моделью." },
@@ -4338,6 +4343,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
   var DATA = JSON.parse(document.getElementById('rm-report-data').textContent);
   var REPORT_LANGUAGE = DATA.report_language === 'ru' ? 'ru' : 'en';
+  // Archive 12 P0 (review): the default Study shelf is bounded and
+  // core-first (cards already arrive in portfolio-rank order); the
+  // complete shelf is one "Show all" press away, never truncated.
+  var maxPrimaryShelfThemes = 8;
   var UI = window.RepomapUI;
   if (!UI || typeof UI.message !== 'function' || typeof UI.hasMessage !== 'function') {
     throw new Error('repomap UI message catalog is unavailable');
@@ -9037,10 +9046,31 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		// theme — no "show more" for peer theme existence. Progressive
 		// disclosure may collapse card detail, reading previews, and
 		// provenance, never the themes themselves.
+		// Archive 12 P0 (review): the DEFAULT shelf is now bounded and
+		// core-first — the reducer already orders cards by portfolio rank
+		// (production/user-facing kinds first). The primary shelf shows the
+		// first maxPrimaryShelfThemes cards; the COMPLETE shelf (every accepted
+		// theme and exact reading) is one "Show all" press away and is never
+		// truncated in the expanded state. This is progressive disclosure of a
+		// bounded default, not the removal of peer themes.
 		var shelf = el('div', 'rm-study-theme-shelf');
-		cards.forEach(function (card, index) {
+		var primaryCards = cards.slice(0, maxPrimaryShelfThemes);
+		var remainderCards = cards.slice(maxPrimaryShelfThemes);
+		primaryCards.forEach(function (card, index) {
 			shelf.appendChild(renderThemeCard(card, index));
 		});
+		if (remainderCards.length) {
+			var more = el('details', 'rm-study-theme-shelf__more');
+			var summary = txt('summary', 'rm-study-theme-shelf__more-summary',
+				msg('main.study.themes.show_all', { count: remainderCards.length }));
+			more.appendChild(summary);
+			var moreList = el('div', 'rm-study-theme-shelf__more-list');
+			remainderCards.forEach(function (card, index) {
+				moreList.appendChild(renderThemeCard(card, primaryCards.length + index));
+			});
+			more.appendChild(moreList);
+			shelf.appendChild(more);
+		}
 		root.appendChild(shelf);
 		// Raw span/model/frontier diagnostics and the machine question
 		// inventory move into a collapsed "Coverage and provenance" section
@@ -9069,6 +9099,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		titleRow.appendChild(txt('span', 'rm-study-theme-card__badge rm-study-theme-card__evidence rm-study-theme-card__evidence--' + themeCoverageState(card), themeCoverageLabel(card)));
 		titleRow.appendChild(txt('span', 'rm-study-theme-card__badge rm-study-theme-card__scope rm-study-theme-card__scope--' + themeScopeState(card), themeScopeLabel(card)));
 		titleRow.appendChild(txt('span', 'rm-study-theme-card__kind', themeKindLabel(card)));
+		// Decision 233 (Archive 9): the portfolio-concentration marker is
+		// visible on every card whose first reading belongs to the
+		// dominating source family — the user sees WHY the shelf looks
+		// concentrated (e.g. TLS/certificates) without opening evidence
+		// details.
+		if (card.concentration_marker) {
+			titleRow.appendChild(txt('span', 'rm-study-theme-card__badge rm-study-theme-card__concentration', card.concentration_marker));
+		}
 		article.appendChild(titleRow);
 		if (card.final_question) article.appendChild(txt('p', 'rm-study-theme-card__question', card.final_question));
 		if (card.why_it_matters) article.appendChild(txt('span', 'rm-study-theme-card__reason', card.why_it_matters));
