@@ -553,6 +553,11 @@ func validateProposedPath(
 		}
 		seen[key] = struct{}{}
 		action := Action{EvidenceID: item.ID, Instruction: strings.TrimSpace(proposedAction.Instruction)}
+		// Phase 6 prompt cleanup: the model selects evidence IDs and writes
+		// editorial instruction; the backend restores the exact command,
+		// endpoint and safe-to-copy metadata from the evidence. A model that
+		// still echoes an exact value is validated against the evidence as
+		// before; an omitted value is restored deterministically.
 		if proposedAction.Command != "" {
 			command, exact := commandByValue(item.Commands, proposedAction.Command)
 			if !exact {
@@ -564,11 +569,20 @@ func validateProposedPath(
 			action.Command = command.Value
 			action.SafeToCopy = command.SafeToCopy
 			concrete++
+		} else if command, restored := restorePrimaryCommand(item); restored {
+			action.Command = command.Value
+			action.SafeToCopy = command.SafeToCopy
+			concrete++
 		}
 		if proposedAction.Endpoint != "" {
 			if proposedAction.Endpoint != item.Endpoint || !publishableEndpoint(item.Endpoint) {
 				return Path{}, "endpoint_not_in_evidence"
 			}
+			action.Endpoint = item.Endpoint
+			concrete++
+		} else if item.Endpoint != "" && publishableEndpoint(item.Endpoint) {
+			// Backend-owned restoration: the model never needs to echo the
+			// endpoint; the exact value is derived from the selected evidence.
 			action.Endpoint = item.Endpoint
 			concrete++
 		}
@@ -971,6 +985,31 @@ func explicitPrerequisiteEvidence(item Evidence) bool {
 		}
 	}
 	return false
+}
+
+// restorePrimaryCommand restores the single substantive structural command of
+// an evidence item deterministically (Phase 6 prompt cleanup: the model never
+// needs to echo exact command bytes; the backend owns command identity).
+// Returns false when the item carries no unique substantive command.
+func restorePrimaryCommand(item Evidence) (Command, bool) {
+	var primary *Command
+	for index := range item.Commands {
+		command := item.Commands[index]
+		if !substantiveStructuralCommand(item, command) {
+			continue
+		}
+		if primary != nil {
+			// Ambiguous: more than one substantive command — leave
+			// restoration to the caller's explicit echo path.
+			return Command{}, false
+		}
+		commandCopy := command
+		primary = &commandCopy
+	}
+	if primary == nil {
+		return Command{}, false
+	}
+	return *primary, true
 }
 
 func publicationActionSequenceClosed(saved Path, evidence map[string]Evidence) bool {
