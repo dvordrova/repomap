@@ -116,11 +116,11 @@ func TestD210EveryRequestEncodableCoverageCanPersistAllStatusStates(t *testing.T
 	}
 	coverage := product.Coverage()
 	partial := product.status(ProductStateAcceptedPartial, 1, SpanCoverage{
-		ConsideredSpanCount:    coverage.SpansConsidered,
-		AdvertisedSpanCount:    len(product.selectedSpanIDs),
-		ModelSelectedSpanCount: 1,
-		AcceptedSpanCount:      1,
-		FrontierComplete:       len(product.selectedSpanIDs) == coverage.SpansConsidered,
+		ConsideredSpanCount:     coverage.SpansConsidered,
+		AdvertisedSpanCount:     len(product.selectedSpanIDs),
+		ModelSelectedSpanCount:  1,
+		AcceptedSpanCount:       1,
+		FrontierComplete:        len(product.selectedSpanIDs) == coverage.SpansConsidered,
 		SupportCoverageComplete: true,
 	}, "", "")
 	_ = requested

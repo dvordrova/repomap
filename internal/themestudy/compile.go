@@ -12,18 +12,27 @@ import (
 // Contract versions and prompt versions of the two semantic theme stages.
 // They are producer-owned constants, never flags and never tuning knobs.
 const (
-	ScoutRequestVersion          = 1
-	ScoutResultVersion           = 2
-	AdjudicationRequestVersion   = 1
-	AdjudicationResultVersion    = 2
+	// Decision 235 (v11): the Study rebase (final Architecture context,
+	// populated span questions) changes the Scout/Adjudication request
+	// bytes and prompts — request 1→2, result 2→3, prompts v2→v3.
+	ScoutRequestVersion        = 2
+	ScoutResultVersion         = 3
+	AdjudicationRequestVersion = 2
+	AdjudicationResultVersion  = 3
+	// Decision 235 (v11): rebased Architecture context + non-empty span
+	// questions — prompt contract v3.
+	ScoutPromptVersion        = "theme-scout-prompt-v3"
+	AdjudicationPromptVersion = "theme-adjudication-prompt-v3"
 	// Decision 233 (Archive 9): the reduced portfolio gains alternate
 	// co-projection and the concentration diagnostic (StudyThemesVersion 2).
-	StudyThemesVersion = 2
+	// Decision 235 (v11): theme equivalence accounting lands with the
+	// final-reducer changes (StudyThemesVersion 3).
+	StudyThemesVersion = 3
 	// Decision 232 (Archive 9): prompt contract v2 — target-cardinality
 	// wording, duplicate normalization, backend-owned anchor role,
 	// observation only for direct/supporting, unreviewed anchors.
-	ScoutPromptVersion           = "theme-scout-prompt-v2"
-	AdjudicationPromptVersion    = "theme-adjudication-prompt-v2"
+	// (Prompt constants advanced to v3 above; this comment records the v2
+	// rationale that still applies.)
 	ScoutCacheContract           = "theme-scout-accepted-v1"
 	AdjudicationCacheContract    = "theme-adjudication-accepted-v1"
 	ScoutStage                   = "theme_scout"

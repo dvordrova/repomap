@@ -20,13 +20,16 @@ import (
 )
 
 const (
-	// Decision 231 (Archive 9): shared participation and prompt v18 —
-	// the model names units and responsibilities; the backend owns ref
-	// kinds, ordering, duplicates, coverage and validation. Any saved
-	// v17/v14/v10 record fails replay closed (versioned identity).
-	SynthesisRequestVersion = 15
-	SynthesisRecordVersion  = 12
-	SynthesisPromptVersion  = "architecture-grounding-v18"
+	// Decision 235 (v11): one Architecture response grammar — member_refs
+	// only; unit_refs is read-only context (corpus: 266/266 accepted
+	// components use member_refs). Request 15→16 and record 12→13 because
+	// the response grammar changed (member-only) and the prompt changed.
+	SynthesisRequestVersion = 16
+	SynthesisRecordVersion  = 13
+	// Decision 235 (v11): one Architecture response grammar — member_refs
+	// only; unit_refs is read-only context (corpus: 266/266 accepted
+	// components use member_refs).
+	SynthesisPromptVersion = "architecture-grounding-v19"
 
 	maxSynthesisRequestBytes  = 1 << 20
 	maxSynthesisPromptBytes   = maxSynthesisRequestBytes + (16 << 10)
@@ -977,11 +980,11 @@ Use conceptual member, anchor, and unit refs as opaque request-local values. Cop
 Local semantic facts, compact structural relations, structural locator containment, flow participation, anchor proof_mode, and certainty are read-only grouping context. They must never be returned, upgraded, replaced, or converted into execution order. A declaration_family anchor is static declaration context and never proves runtime behavior. Canonical repository identities, exact source locations, provider provenance, scenarios, catalog identity, versions, and hashes are private and absent from this request.
 
 Return exactly one compact JSON proposal object with one ordered records array. Use this tagged-record grammar:
-{"records":[{"kind":"subsystem","ref":"g1","name":"first subsystem","description":"first purpose"},{"kind":"component","subsystem_ref":"g1","name":"first component","description":"first responsibility","unit_refs":[{"ref":"u1"}],"anchor_refs":[{"ref":"a1"}]},{"kind":"subsystem","ref":"g2","name":"second subsystem","description":"second purpose"},{"kind":"component","subsystem_ref":"g2","name":"second component","description":"second responsibility","unit_refs":[{"ref":"u2"}],"anchor_refs":[]}]}
+{"records":[{"kind":"subsystem","ref":"g1","name":"first subsystem","description":"first purpose"},{"kind":"component","subsystem_ref":"g1","name":"first component","description":"first responsibility","member_refs":[{"ref":"p1"}],"anchor_refs":[{"ref":"a1"}]},{"kind":"subsystem","ref":"g2","name":"second subsystem","description":"second purpose"},{"kind":"component","subsystem_ref":"g2","name":"second component","description":"second responsibility","member_refs":[{"ref":"s1"}],"anchor_refs":[]}]}
 
-The entire response must parse as exactly one complete JSON object. Its only root field is records. A subsystem record contains exactly kind, ref, name, and description. Its ref is a unique response-local value g1, g2, and so on. A component record contains exactly kind, subsystem_ref, name, description, unit_refs or member_refs, and anchor_refs. When the request supplies a units catalog, group unit_refs (u*) by copying each unit ref exactly as supplied; when the request has no units catalog, group member_refs (p*/s*/f*) instead; never mix unit_refs and member_refs in one component. Copy subsystem_ref exactly from one subsystem record. Do not nest records or emit a second root object.
+The entire response must parse as exactly one complete JSON object. Its only root field is records. A subsystem record contains exactly kind, ref, name, and description. Its ref is a unique response-local value g1, g2, and so on. A component record contains exactly kind, subsystem_ref, name, description, member_refs, and anchor_refs. Group member_refs (p*/s*/f*) by copying each ref exactly as supplied. unit_refs is not part of the response grammar — the units catalog is read-only grouping context and must never be returned. Copy subsystem_ref exactly from one subsystem record. Do not nest records or emit a second root object.
 
-Records are in conceptual display order. Emit each subsystem record followed by its component records. A unit may legitimately participate in several components when it genuinely serves several distinct conceptual roles — this is shared participation, not exclusive ownership, and is accepted; the backend classifies ownership mechanics. Name what distinguishes each component from its siblings. An exact partial grouping is valid: omitted units remain in a deterministic local unclassified remainder and must not be echoed, renamed, or placed in a model-authored remainder. Fewer groups are better than padding: when evidence is weak, return fewer components honestly. A component may be anchor-backed shared participation with zero exclusive unit members; anchor_refs are optional per component, not required.
+Records are in conceptual display order. Emit each subsystem record followed by its component records. A member may legitimately participate in several components when it genuinely serves several distinct conceptual roles — this is shared participation, not exclusive ownership, and is accepted; the backend classifies ownership mechanics. Name what distinguishes each component from its siblings. An exact partial grouping is valid: omitted members remain in a deterministic local unclassified remainder and must not be echoed, renamed, or placed in a model-authored remainder. Fewer groups are better than padding: when evidence is weak, return fewer components honestly. A component may be anchor-backed shared participation with zero exclusive members; anchor_refs are optional per component, not required.
 
 Repository archetype and grounding mode are local facts. A primary pillar is one subsystem record; component records are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, prefer four to seven distinct subsystem records when the supplied evidence supports that many, never more than twelve. Tiny, library, and package-landscape requests may honestly use one to three. Prefer one to four component records per subsystem and no more than forty-eight component records in total. hypothesis is not part of the response; the backend derives product hypothesis status exclusively from exact process_entry/call_target proof scoped to every component member. declaration_family never proves operational grounding. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
 
@@ -1763,12 +1766,110 @@ func extractProposalObject(raw []byte) ([]byte, *Diagnostic, *synthesisResponseE
 		if !bytes.Contains(trimmed, []byte("{")) {
 			return nil, nil, &synthesisResponseError{code: "response.no_json", message: "provider response contains no json object"}
 		}
+		// Decision 235 (v11) Gotify Option 1: deterministic normalization
+		// ONLY when exactly one complete JSON object parses and every
+		// trailing byte is whitespace or a bounded sequence of unmatched
+		// closing ] / } delimiters (Gotify corpus response ended with a
+		// redundant "]}"). Any other trailing content stays invalid; no
+		// broad JSON repair and no embedded-object extraction.
+		if normalized, ok := normalizeTrailingClosingDelimiters(trimmed); ok {
+			diag := newDiagnostic(
+				"response.trailing_closing_delimiters_normalized",
+				"provider response had a bounded sequence of unmatched trailing closing delimiters; normalized deterministically",
+			)
+			return normalized, &diag, nil
+		}
 		return nil, nil, &synthesisResponseError{code: "response.invalid_proposal", message: "provider response is not exactly one complete json object"}
 	}
 	if trimmed[0] != '{' {
 		return nil, nil, &synthesisResponseError{code: "response.invalid_proposal", message: "provider response is json but not a proposal object"}
 	}
 	return append([]byte(nil), trimmed...), nil, nil
+}
+
+// normalizeTrailingClosingDelimiters implements Decision 235 Gotify Option 1:
+// if the raw bytes contain exactly one complete JSON object and every byte
+// after its end is whitespace or an unmatched closing ] / } delimiter (at
+// most maxTrailingClosingDelimiters of them), return the trimmed object.
+// The returned object must itself validate as exactly one complete JSON
+// object; any other trailing content (letters, digits, extra opening
+// brackets, second object fragments) fails closed.
+func normalizeTrailingClosingDelimiters(raw []byte) ([]byte, bool) {
+	const maxTrailingClosingDelimiters = 8
+	// The greedy scan: find the first index where the prefix is valid JSON.
+	// Scanning from the end is unsafe (the object may end with nested ]}),
+	// so scan candidate end indices by bracket depth instead.
+	depth := 0
+	inString := false
+	escaped := false
+	objectEnd := -1
+	for index, b := range raw {
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if b == '\\' {
+				escaped = true
+				continue
+			}
+			if b == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch b {
+		case '"':
+			inString = true
+		case '{', '[':
+			depth++
+		case '}', ']':
+			depth--
+			if depth == 0 && objectEnd < 0 {
+				// Candidate end of the outermost JSON object. The object
+				// must start with '{' and the prefix must parse as valid
+				// JSON on its own.
+				if index > 0 && raw[0] == '{' && json.Valid(raw[:index+1]) {
+					objectEnd = index
+				}
+			}
+			if depth < 0 {
+				// Unbalanced early: the prefix before this byte may still
+				// be a complete object only if depth went negative on the
+				// FIRST closing delimiter beyond the object — that case is
+				// handled by the trailing scan below, so stop looking for
+				// more complete objects.
+				if objectEnd < 0 {
+					return nil, false
+				}
+			}
+		}
+		if objectEnd >= 0 && depth < 0 {
+			break
+		}
+	}
+	if objectEnd < 0 {
+		return nil, false
+	}
+	trailing := raw[objectEnd+1:]
+	trailing = bytes.TrimSpace(trailing)
+	if len(trailing) == 0 {
+		// Exact single complete object — normal path already handled this.
+		return append([]byte(nil), raw[:objectEnd+1]...), true
+	}
+	if len(trailing) > maxTrailingClosingDelimiters {
+		return nil, false
+	}
+	for _, b := range trailing {
+		if b != ']' && b != '}' {
+			return nil, false
+		}
+	}
+	object := append([]byte(nil), raw[:objectEnd+1]...)
+	if !json.Valid(object) || len(bytes.TrimSpace(object)) == 0 {
+		return nil, false
+	}
+	return object, true
 }
 
 func synthesisResourceLimit(
@@ -1806,6 +1907,10 @@ type synthesisWireRecord struct {
 	UnitRefs     []SynthesisUnitRef
 	AnchorRefs   []SynthesisAnchorRef
 	Hypothesis   bool
+	// Decision 235 (v11): set by the decoder when the provider omitted the
+	// optional anchor_refs field; the resolver counts it as a mechanical
+	// normalization instead of a schema violation.
+	NormalizedMissingAnchorRefs bool
 }
 
 // SynthesisUnitRef is a request-local unit reference (Decision 216).
@@ -1960,6 +2065,10 @@ func decodeSynthesisWireRecord(raw json.RawMessage) (synthesisWireRecord, error)
 		// hypothesis status exclusively from exact proof, and Decision
 		// 228 applies it deterministically); a provider that omits it
 		// does not invalidate an otherwise well-formed proposal.
+		// Decision 235 (v11): `anchor_refs` is OPTIONAL — a provider that
+		// omits it is normalized to [] with a counted normalization
+		// (Soft Serve: 14 useful components, 0 anchor_refs). The field
+		// set therefore accepts member_refs|unit_refs without anchor_refs.
 		if !hasExactSynthesisFields(
 			fields, "kind", "subsystem_ref", "name", "description", "member_refs", "anchor_refs", "hypothesis",
 		) && !hasExactSynthesisFields(
@@ -1968,9 +2077,21 @@ func decodeSynthesisWireRecord(raw json.RawMessage) (synthesisWireRecord, error)
 			fields, "kind", "subsystem_ref", "name", "description", "member_refs", "anchor_refs",
 		) && !hasExactSynthesisFields(
 			fields, "kind", "subsystem_ref", "name", "description", "unit_refs", "anchor_refs",
+		) && !hasExactSynthesisFields(
+			fields, "kind", "subsystem_ref", "name", "description", "member_refs", "hypothesis",
+		) && !hasExactSynthesisFields(
+			fields, "kind", "subsystem_ref", "name", "description", "unit_refs", "hypothesis",
+		) && !hasExactSynthesisFields(
+			fields, "kind", "subsystem_ref", "name", "description", "member_refs",
+		) && !hasExactSynthesisFields(
+			fields, "kind", "subsystem_ref", "name", "description", "unit_refs",
 		) {
 			return synthesisWireRecord{}, fmt.Errorf("proposal component record fields do not match the bounded contract")
 		}
+		// Decision 235 (v11): missing anchor_refs normalizes to an empty
+		// array — optional-field omission is a mechanical default, not a
+		// schema violation.
+		_, anchorRefsFieldExists := fields["anchor_refs"]
 		subsystemRef, err := decodeRequiredProposalString(fields, "subsystem_ref")
 		if err != nil {
 			return synthesisWireRecord{}, err
@@ -1983,8 +2104,17 @@ func decodeSynthesisWireRecord(raw json.RawMessage) (synthesisWireRecord, error)
 		if err != nil {
 			return synthesisWireRecord{}, err
 		}
-		if isJSONNull(fields["anchor_refs"]) || isJSONNull(fields["hypothesis"]) {
+		if !anchorRefsFieldExists && isJSONNull(fields["hypothesis"]) {
 			return synthesisWireRecord{}, fmt.Errorf("proposal component fields must not be null")
+		}
+		if anchorRefsFieldExists && isJSONNull(fields["anchor_refs"]) {
+			return synthesisWireRecord{}, fmt.Errorf("proposal component fields must not be null")
+		}
+		// Decision 235 (v11): a missing anchor_refs field normalizes to an
+		// empty array (recorded via NormalizedMissingAnchorRefs so the
+		// resolver can count it as a mechanical normalization).
+		if !anchorRefsFieldExists {
+			fields["anchor_refs"] = json.RawMessage(`[]`)
 		}
 		_, memberRefsFieldExists := fields["member_refs"]
 		_, unitRefsFieldExists := fields["unit_refs"]
@@ -2043,10 +2173,17 @@ func decodeSynthesisWireRecord(raw json.RawMessage) (synthesisWireRecord, error)
 		// Decision 230 D9: absent hypothesis defaults to false; the
 		// backend derives the product hypothesis deterministically from
 		// exact proof (Decision 228) and overwrites this advisory input.
-		return synthesisWireRecord{
+		record := synthesisWireRecord{
 			Kind: kind, SubsystemRef: subsystemRef, Name: name, Description: description,
 			MemberRefs: memberRefs, UnitRefs: unitRefs, AnchorRefs: anchorRefs, Hypothesis: hypothesis,
-		}, nil
+		}
+		// Decision 235 (v11): the decoder records a missing-anchor-refs
+		// normalization so the resolver can surface it as a counted
+		// mechanical normalization (Soft Serve class).
+		if !anchorRefsFieldExists {
+			record.NormalizedMissingAnchorRefs = true
+		}
+		return record, nil
 	default:
 		return synthesisWireRecord{}, fmt.Errorf("proposal record kind is invalid")
 	}
@@ -2209,6 +2346,21 @@ func resolveSynthesisWireProposal(
 		for _, unitRef := range record.UnitRefs {
 			unitUsage[unitRef.Ref]++
 		}
+	}
+	// Decision 235 (v11): a provider that omits the optional anchor_refs
+	// field is normalized to [] — a counted mechanical normalization, never
+	// a rejection (Soft Serve class: 14 useful components, 0 anchor_refs).
+	normalizedAnchorCount := 0
+	for _, record := range wire.Records {
+		if record.Kind == synthesisWireComponentRecord && record.NormalizedMissingAnchorRefs {
+			normalizedAnchorCount++
+		}
+	}
+	if normalizedAnchorCount > 0 {
+		wireDiagnostics = append(wireDiagnostics, newDiagnostic(
+			"proposal.normalized_missing_anchor_refs",
+			fmt.Sprintf("proposal omitted optional anchor_refs on %d component(s); normalized to empty arrays", normalizedAnchorCount),
+		))
 	}
 	for subsystemRef, componentCount := range componentCounts {
 		if _, exists := subsystemIndexes[subsystemRef]; !exists {

@@ -329,9 +329,12 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 		"A subsystem record contains exactly kind, ref, name, and description",
 		// Decision 231 (Archive 9): the v18 grammar drops hypothesis and
 		// ref-kind from the model contract — the backend owns them.
-		"A component record contains exactly kind, subsystem_ref, name, description, unit_refs or member_refs, and anchor_refs",
+		// Decision 235 (v11): one member_refs-only grammar — unit_refs is
+		// not part of the response grammar.
+		"A component record contains exactly kind, subsystem_ref, name, description, member_refs, and anchor_refs",
 		"Do not nest records or emit a second root object",
-		"An exact partial grouping is valid: omitted units remain",
+		"unit_refs is not part of the response grammar",
+		"An exact partial grouping is valid: omitted members remain",
 		"shared participation, not exclusive ownership",
 		"Fewer groups are better than padding",
 	} {

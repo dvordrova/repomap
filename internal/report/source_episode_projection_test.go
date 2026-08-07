@@ -656,13 +656,13 @@ process.stdout.write(JSON.stringify({
 			}
 			firstAnchor := episode.Anchors[0]
 			reportJSON, err := json.Marshal(struct {
-				RepoName        string                   `json:"repo_name"`
-				OpenablePaths   []string                 `json:"openable_paths"`
-				SourceIDs       map[string]string        `json:"source_ids"`
-				GitHubSource    map[string]any           `json:"github_source_links"`
-				UserSources     []map[string]any         `json:"user_sources"`
-				SemanticSearch  map[string]any           `json:"semantic_search"`
-				SourceEpisode   *sourceEpisodeProjection `json:"source_episode"`
+				RepoName       string                   `json:"repo_name"`
+				OpenablePaths  []string                 `json:"openable_paths"`
+				SourceIDs      map[string]string        `json:"source_ids"`
+				GitHubSource   map[string]any           `json:"github_source_links"`
+				UserSources    []map[string]any         `json:"user_sources"`
+				SemanticSearch map[string]any           `json:"semantic_search"`
+				SourceEpisode  *sourceEpisodeProjection `json:"source_episode"`
 			}{
 				RepoName:      episode.Repository.Name,
 				OpenablePaths: data.OpenablePaths,

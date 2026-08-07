@@ -24,6 +24,14 @@ var errNoCanonicalArchitectureCandidates = errors.New(
 	"architecture canvas build: no canonical local candidates",
 )
 
+// IsNoCanonicalArchitectureCandidates reports whether the error means the
+// repository produced no canonical Architecture candidates at all (Decision
+// 235 1D sqlc/syn/bench: a minimal local report publishes instead of a
+// terminal failure).
+func IsNoCanonicalArchitectureCandidates(err error) bool {
+	return errors.Is(err, errNoCanonicalArchitectureCandidates)
+}
+
 // ArchitectureSynthesisFile is the optional, replayable conceptual synthesis
 // record stored beside other run artifacts.
 const ArchitectureSynthesisFile = "architecture_synthesis.json"
@@ -135,6 +143,9 @@ type architectureCandidateBuilder struct {
 	groundedPaths         map[string]struct{}
 	researchFindings      []componentmap.ResearchInterpretation
 	researchPolicyVersion string
+	// Decision 235 (v11) 1D caddy: exact candidates whose facts were
+	// deterministically capped to MaxFactsPerCandidate (typed omission).
+	candidateFactOmissions []componentmap.MemberID
 }
 
 func (b *architectureCandidateBuilder) addResearchFindings(state *modelresearch.State) {
@@ -866,6 +877,14 @@ func (b *architectureCandidateBuilder) bundle() componentmap.CandidateBundle {
 		sort.Slice(candidate.Facts, func(i, j int) bool {
 			return architectureBuildFactIdentity(candidate.Facts[i]) < architectureBuildFactIdentity(candidate.Facts[j])
 		})
+		// Decision 235 (v11) 1D caddy: cap facts deterministically (sorted
+		// canonical order, keep the first MaxFactsPerCandidate, typed
+		// omission count) so the componentmap bundle validator never trips
+		// whole-bundle — valid siblings survive.
+		if len(candidate.Facts) > componentmap.MaxFactsPerCandidate {
+			candidate.Facts = candidate.Facts[:componentmap.MaxFactsPerCandidate]
+			b.candidateFactOmissions = append(b.candidateFactOmissions, candidate.ID)
+		}
 		for _, flowID := range flowIDs {
 			candidate.Participations = append(candidate.Participations, componentmap.FlowParticipation{
 				FlowID:   flowID,
@@ -899,6 +918,24 @@ func (b *architectureCandidateBuilder) bundle() componentmap.CandidateBundle {
 	})
 	sort.Slice(b.flowFacts, func(i, j int) bool { return b.flowFacts[i].ID < b.flowFacts[j].ID })
 	sort.Slice(b.researchFindings, func(i, j int) bool { return b.researchFindings[i].ID < b.researchFindings[j].ID })
+
+	// Decision 235 (v11) 1D caddy: a deterministic bounded-omission
+	// diagnostic accompanies any candidate whose facts were capped, so the
+	// exact omission count is recorded, never silent.
+	if len(b.candidateFactOmissions) > 0 {
+		omitted := make([]string, 0, len(b.candidateFactOmissions))
+		for _, id := range b.candidateFactOmissions {
+			omitted = append(omitted, string(id.Value))
+		}
+		sort.Strings(omitted)
+		b.diagnostics = append(b.diagnostics, componentmap.Diagnostic{
+			Code: "builder.candidate_facts_capped", Severity: componentmap.FindingAdvisory,
+			Message: fmt.Sprintf(
+				"candidate facts deterministically capped to %d per candidate for %d candidate(s): %s",
+				componentmap.MaxFactsPerCandidate, len(omitted), strings.Join(omitted, ","),
+			),
+		})
+	}
 
 	return componentmap.CandidateBundle{
 		Version:               componentmap.ContractVersion,

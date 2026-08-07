@@ -255,6 +255,12 @@ type ExpansionFile struct {
 	Omitted       []LineRange    `json:"omitted_ranges,omitempty"`
 	ExpandedLines int            `json:"expanded_lines"`
 	TotalLines    int            `json:"total_lines"`
+	// Decision 235 (v11) 1D maddy: a file whose payload fails the
+	// mandatory secret scan is closed per-file — omitted with a typed
+	// closed reason (no content echo), never a whole-run rejection. The
+	// ref stays in the artifact so contract-D binding survives.
+	Closed       bool   `json:"closed,omitempty"`
+	ClosedReason string `json:"closed_reason,omitempty"`
 }
 
 // SourceExpansion is the persisted provider-free expansion artifact

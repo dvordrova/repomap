@@ -79,23 +79,23 @@ type MaterialInputs struct {
 	// provider call no longer contributes request/result/status to new runs;
 	// the two semantic stages and the local expansion/reducer are bound by the
 	// eight theme digests below.
-	ThemeScoutRequestSHA256      string `json:"theme_scout_request_sha256,omitempty"`
-	ThemeScoutResultSHA256       string `json:"theme_scout_result_sha256,omitempty"`
-	ThemeScoutStatusSHA256       string `json:"theme_scout_status_sha256,omitempty"`
-	ThemeSourceExpansionSHA256   string `json:"theme_source_expansion_sha256,omitempty"`
-	ThemeAdjudicationRequestSHA256 string `json:"theme_adjudication_request_sha256,omitempty"`
-	ThemeAdjudicationResultSHA256  string `json:"theme_adjudication_result_sha256,omitempty"`
-	ThemeAdjudicationStatusSHA256  string `json:"theme_adjudication_status_sha256,omitempty"`
-	StudyThemesSHA256             string `json:"study_themes_sha256,omitempty"`
-	TaskBundleSHA256                  string `json:"task_bundle_sha256,omitempty"`
-	TaskAttemptSHA256                 string `json:"task_attempt_sha256,omitempty"`
-	TaskPackSHA256                    string `json:"task_pack_sha256,omitempty"`
-	TaskStatusSHA256                  string `json:"task_status_sha256,omitempty"`
-	TaskRetrievalTraceSHA256          string `json:"task_retrieval_trace_sha256,omitempty"`
-	TaskRetrievalTraceMarkdownSHA256  string `json:"task_retrieval_trace_markdown_sha256,omitempty"`
-	InputPolicyVersion                string `json:"input_policy_version"`
-	ArchitectureContract              int    `json:"architecture_contract"`
-	ReportContract                    int    `json:"report_contract"`
+	ThemeScoutRequestSHA256          string `json:"theme_scout_request_sha256,omitempty"`
+	ThemeScoutResultSHA256           string `json:"theme_scout_result_sha256,omitempty"`
+	ThemeScoutStatusSHA256           string `json:"theme_scout_status_sha256,omitempty"`
+	ThemeSourceExpansionSHA256       string `json:"theme_source_expansion_sha256,omitempty"`
+	ThemeAdjudicationRequestSHA256   string `json:"theme_adjudication_request_sha256,omitempty"`
+	ThemeAdjudicationResultSHA256    string `json:"theme_adjudication_result_sha256,omitempty"`
+	ThemeAdjudicationStatusSHA256    string `json:"theme_adjudication_status_sha256,omitempty"`
+	StudyThemesSHA256                string `json:"study_themes_sha256,omitempty"`
+	TaskBundleSHA256                 string `json:"task_bundle_sha256,omitempty"`
+	TaskAttemptSHA256                string `json:"task_attempt_sha256,omitempty"`
+	TaskPackSHA256                   string `json:"task_pack_sha256,omitempty"`
+	TaskStatusSHA256                 string `json:"task_status_sha256,omitempty"`
+	TaskRetrievalTraceSHA256         string `json:"task_retrieval_trace_sha256,omitempty"`
+	TaskRetrievalTraceMarkdownSHA256 string `json:"task_retrieval_trace_markdown_sha256,omitempty"`
+	InputPolicyVersion               string `json:"input_policy_version"`
+	ArchitectureContract             int    `json:"architecture_contract"`
+	ReportContract                   int    `json:"report_contract"`
 }
 
 // RunAuthority is a repository state that was captured before repository

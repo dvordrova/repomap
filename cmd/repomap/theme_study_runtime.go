@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,39 +17,40 @@ import (
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/report"
+	"github.com/dvordrova/repomap/internal/secretscan"
 	"github.com/dvordrova/repomap/internal/themestudy"
 )
 
 // themeCacheContracts are the Decision 213 accepted-only stage cache
 // contracts. New semantics — new contract names, never reinterpreted.
 const (
-	themeScoutCacheContract       = themestudy.ScoutCacheContract
+	themeScoutCacheContract        = themestudy.ScoutCacheContract
 	themeAdjudicationCacheContract = themestudy.AdjudicationCacheContract
-	themeScoutCacheStage          = "theme_scout"
-	themeAdjudicationCacheStage   = "theme_adjudication"
+	themeScoutCacheStage           = "theme_scout"
+	themeAdjudicationCacheStage    = "theme_adjudication"
 )
 
 // themeStudyRunOutcome is the run-wiring summary of the two-stage theme
 // pipeline (Decision 213). The retired single-stage atlas-study call no longer
 // contributes a DirectionCount; the theme shelf is summarized by card counts.
 type themeStudyRunOutcome struct {
-	State           atlasstudy.ProductState
-	FailureCode     atlasstudy.FailureCode
-	ProviderSkipped bool
-	Cached          bool
-	SemanticCalls   int
-	ScoutAccepted   int
-	ScoutRejected   int
-	AdjAccepted     int
-	AdjRejected     int
-	PublishedCards  int
-	Partial         bool
-	RequestBytes    int
-	ResponseBytes   int
-	InputTokens     int
-	OutputTokens    int
+	State             atlasstudy.ProductState
+	FailureCode       atlasstudy.FailureCode
+	ProviderSkipped   bool
+	Cached            bool
+	SemanticCalls     int
+	ScoutAccepted     int
+	ScoutRejected     int
+	AdjAccepted       int
+	AdjRejected       int
+	PublishedCards    int
+	Partial           bool
+	RequestBytes      int
+	ResponseBytes     int
+	InputTokens       int
+	OutputTokens      int
 	TransportAttempts int
-	LatencyMillis   int64
+	LatencyMillis     int64
 }
 
 // themeStudyClient mirrors the deepseek client seam for the two theme stages.
@@ -174,8 +176,15 @@ func themeScoutContext(product atlasstudy.Product, repoName string) themestudy.S
 				context.Architecture.ComponentNames, object.Label,
 			)
 		case atlasstudy.RefRouteSpan:
+			// Decision 235 (v11): span questions are backend-owned — read
+			// the span's real question and kind, never the empty catalog
+			// label. A span without a backend-owned question is omitted
+			// entirely (no placeholder objects: corpus had 712/712 empty).
+			if strings.TrimSpace(object.Question) == "" {
+				continue
+			}
 			context.SpanQuestions = append(context.SpanQuestions, themestudy.ScoutSpanQuestion{
-				Kind: string(object.SupportRole), Question: object.Label,
+				Kind: string(object.SpanKind), Question: object.Question,
 			})
 		}
 	}
@@ -336,6 +345,29 @@ func runThemeStudyProductForRun(
 		return outcome, fmt.Errorf("theme study run: local source expansion: %w", err)
 	}
 	expansion.Requested = requested
+	// Decision 235 (v11) 1D maddy: the mandatory secret scan is
+	// partitioned per file — an unsafe file is closed with a typed reason
+	// (never echoing content), safe files and the accepted Scout result
+	// survive. The whole-payload scan remains as the final net after
+	// closure so nothing unsafe is ever persisted.
+	for index := range expansion.Files {
+		file := &expansion.Files[index]
+		if len(file.Objects) == 0 {
+			continue
+		}
+		payloadBytes, err := json.Marshal(file.Objects)
+		if err != nil {
+			return outcome, fmt.Errorf("theme study run: encode expansion file: %w", err)
+		}
+		if kind, found := secretscan.DetectSourceMaterial(string(payloadBytes)); found {
+			expansion.ExpandedLines -= file.ExpandedLines
+			file.Objects = nil
+			file.ExpandedLines = 0
+			file.Closed = true
+			file.ClosedReason = "secret_scan:" + string(secretscan.ClosedKind(kind))
+			expansion.OmittedRefs = append(expansion.OmittedRefs, file.Ref)
+		}
+	}
 	expansionBytes, err := themestudy.EncodeExpansion(expansion)
 	if err != nil {
 		return outcome, fmt.Errorf("theme study run: encode expansion: %w", err)
@@ -363,8 +395,20 @@ func runThemeStudyProductForRun(
 		scoutRequest, scoutResult, expansion, anchors, language, writer, output, clients,
 	)
 	if adjStage.err != nil {
+		// Decision 235 (v11) 1D chatto: a local failure after an accepted
+		// Scout writes a typed terminal status (the adjudication stage
+		// persists it) and the run CONTINUES to the report — accepted
+		// upstream artifacts (Scout) remain inspectable instead of the
+		// whole run terminating at main.go.
 		outcome.SemanticCalls = 2
-		return outcome, adjStage.err
+		outcome.State = atlasstudy.ProductStateFailed
+		outcome.FailureCode = adjStage.outcome.FailureCode
+		if outcome.FailureCode == "" {
+			outcome.FailureCode = atlasstudy.FailureValidation
+		}
+		outcome.AdjAccepted = adjStage.outcome.AdjAccepted
+		outcome.AdjRejected = adjStage.outcome.AdjRejected
+		return outcome, nil
 	}
 	adjOutcome, adjRequest, adjResult := adjStage.outcome, adjStage.request, adjStage.result
 	if adjOutcome.State != atlasstudy.ProductStateAccepted &&
@@ -422,8 +466,10 @@ func runThemeStudyProductForRun(
 	}
 	themes := themestudy.StudyThemes{
 		// Decision 233: StudyThemesVersion 2 (alternate co-projection +
-		// concentration diagnostic).
-		Version: "v2", ScoutSHA256: scoutRequest.CatalogSHA256,
+		// concentration diagnostic); Decision 235: version 3 (theme
+		// equivalence accounting). Version literal must track the
+		// constant (D233 literal-drift defect closed).
+		Version: "v3", ScoutSHA256: scoutRequest.CatalogSHA256,
 		AdjSHA256: adjRequest.CatalogSHA256,
 		Cards:     reduction.Cards, Omitted: reduction.Omitted,
 		Partial: reduction.Partial, Diagnostics: reduction.Diagnostics,

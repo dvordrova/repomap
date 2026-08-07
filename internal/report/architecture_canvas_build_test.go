@@ -369,7 +369,7 @@ func TestBuildArchitectureCanvasKeepsExactSurfaceRoleWithoutPublishingDirectionO
 			BehaviorAnchors: []ArchitectureBehaviorAnchor{{
 				ID: "inspect-entry", Kind: componentmap.AnchorProcessEntry,
 				ProofMode: componentmap.AnchorProofProcessEntry,
-				Label: "process entry example.com/project/cmd/inspect.main", Location: location,
+				Label:     "process entry example.com/project/cmd/inspect.main", Location: location,
 				Scenario:  architectureGroundingScenario{ID: "go:test", GOOS: "test", GOARCH: "test"},
 				Producer:  evidence.Provenance{Provider: "gofacts", Version: "entrypoint-anchor-v1", Operation: "classify_exact_process_entry"},
 				Certainty: evidence.CertaintyStatic,

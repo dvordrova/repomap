@@ -1513,9 +1513,18 @@ func collectDiscoveredSurfacePaths(surfaces *DiscoveredSurfaces, add func(string
 	}
 	paths := make(map[string]struct{})
 	addLocation := func(location *SurfaceLocation) {
-		if location != nil {
-			paths[location.Path] = struct{}{}
+		if location == nil {
+			return
 		}
+		// Decision 235 (v11) 1D container-registry: external/non-repo
+		// paths ($GOROOT, module cache) can never become required
+		// repository source actions — they stay explicit external
+		// frontier evidence, never openable repo paths.
+		if location.Path == "" || strings.HasPrefix(location.Path, "<external>/") ||
+			filepath.IsAbs(location.Path) {
+			return
+		}
+		paths[location.Path] = struct{}{}
 	}
 	for _, trigger := range surfaces.Triggers {
 		addLocation(trigger.ProcessEntrypoint.Location)

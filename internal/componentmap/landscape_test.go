@@ -126,7 +126,7 @@ func TestApplyFallsBackForInvalidOrEmptyProposal(t *testing.T) {
 			proposal: Proposal{Version: ContractVersion, Subsystems: []ProposedSubsystem{{
 				Name: "Repository", Components: []ProposedComponent{{Name: "Empty"}},
 			}}},
-			diagnostic: "proposal.invalid_component",
+			diagnostic: "proposal.zero_useful_semantic_components",
 		},
 	}
 
@@ -138,8 +138,19 @@ func TestApplyFallsBackForInvalidOrEmptyProposal(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Apply() error = %v", err)
 			}
-			if !result.Fallback || result.FallbackReason != FallbackRejectedMalformed {
-				t.Fatalf("fallback = %v (%q), want explicit invalid proposal fallback", result.Fallback, result.FallbackReason)
+			// Decision 235 (v11): an EMPTY component is rejected
+			// item-local; when that leaves zero usable components the
+			// proposal publishes local-only (zero_useful_semantic_components)
+			// instead of a malformed whole fallback. Only a proposal with
+			// no subsystems at all stays a structural invalid fallback.
+			if test.diagnostic == "proposal.invalid_subsystem_count" {
+				if !result.Fallback || result.FallbackReason != FallbackRejectedMalformed {
+					t.Fatalf("fallback = %v (%q), want explicit invalid proposal fallback", result.Fallback, result.FallbackReason)
+				}
+			} else {
+				if !result.Fallback || result.FallbackReason != FallbackRejectedUnknownMember {
+					t.Fatalf("fallback = %v (%q), want local-only fallback for zero usable components", result.Fallback, result.FallbackReason)
+				}
 			}
 			if !hasLandscapeDiagnostic(result.Diagnostics, test.diagnostic) {
 				t.Fatalf("diagnostics = %#v, want %q", result.Diagnostics, test.diagnostic)
