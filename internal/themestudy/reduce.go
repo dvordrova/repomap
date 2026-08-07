@@ -432,7 +432,12 @@ func themeIdentity(entries []publishedEntry, kind ThemeKind) string {
 		identities = append(identities, readingPublicIdentity(entry.reading))
 	}
 	sort.Strings(identities)
-	payload, _ := json.Marshal(map[string]any{"readings": identities, "kind": string(kind)})
+	// Long-horizon program Phase 3 (syn live run): identity is the EXACT
+	// public reading set only — kind is model classification, never
+	// evidence identity. Four accepted themes over the same exact reading
+	// (different kind labels from the model) are one study card with the
+	// extras co-projected as alternate provenance.
+	payload, _ := json.Marshal(map[string]any{"readings": identities})
 	hash := sha256.Sum256(payload)
 	return "theme-" + hex.EncodeToString(hash[:])[:24]
 }
