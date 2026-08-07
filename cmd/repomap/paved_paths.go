@@ -40,9 +40,7 @@ const pavedPathUserPrompt = `Return exactly this JSON shape:
       "actions": [
         {
           "evidence_id": "exact supplied evidence id",
-          "instruction": "bounded instruction about this exact evidence",
-          "command": "exact supplied command or empty",
-          "endpoint": "exact supplied endpoint or empty"
+          "instruction": "bounded editorial instruction about this exact evidence"
         }
       ],
       "expected_evidence_ids": ["zero or more exact evidence ids"],
@@ -56,7 +54,7 @@ const pavedPathUserPrompt = `Return exactly this JSON shape:
 Rules:
 - Produce zero to eight paths. A smaller exact result is better than a generic recipe.
 - Use only supplied opaque evidence and study IDs.
-- Copy command and endpoint values byte-for-byte from the selected evidence. Leave them empty when absent.
+- You select evidence IDs and write editorial instruction only. The backend restores the exact command, endpoint and safe-to-copy metadata from the selected evidence; do not copy command or endpoint values into the response.
 - A multi-step path needs at least two meaningful actions. One action is allowed only for a genuinely sufficient exact command.
 - Preserve documented ordering when one source describes a procedure. Otherwise label the order editorial; do not imply execution proof.
 - Documentation expresses intended procedure. Scripts and configuration express executable structure. Neither proves success.
