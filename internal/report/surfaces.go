@@ -606,12 +606,35 @@ func projectDiscoveredSurfaces(
 ) *DiscoveredSurfaces {
 	uniqueDynamicFrontiers := uniqueRawSurfaceFrontiers(coverage.DynamicFrontiers)
 	rawTriggers := slices.Clone(catalog.Triggers)
+	// Long-horizon program Phase 1 (GitLab CLI): exact triggers are local
+	// evidence (process entries, exact HTTP routes) that Atlas surface
+	// entities bind to. A display cap must NEVER drop them — the cap
+	// bounds only provisional derived candidates (e.g. Cobra command
+	// fan-out). Exact evidence always projects; provisional candidates
+	// beyond the cap are counted and omitted, never silently.
 	sort.SliceStable(rawTriggers, func(i, j int) bool {
+		exactI := !rawTriggers[i].ProvisionalID
+		exactJ := !rawTriggers[j].ProvisionalID
+		if exactI != exactJ {
+			return exactI
+		}
 		return rawTriggers[i].ID < rawTriggers[j].ID
 	})
 	totalCount := len(rawTriggers)
+	// The display cap bounds ONLY provisional derived candidates: exact
+	// evidence always projects (a provisional-heavy repo like a Cobra CLI
+	// may have hundreds of command triggers; exact process entries are few
+	// and must never be dropped from the published surface set).
 	if len(rawTriggers) > maxDiscoveredSurfaceTriggers {
-		rawTriggers = rawTriggers[:maxDiscoveredSurfaceTriggers]
+		cut := maxDiscoveredSurfaceTriggers
+		for index := cut; index < len(rawTriggers); index++ {
+			if !rawTriggers[index].ProvisionalID {
+				// Exact evidence beyond the cap still projects: widen the
+				// window to include it (evidence is never truncated).
+				cut = index + 1
+			}
+		}
+		rawTriggers = rawTriggers[:cut]
 	}
 
 	triggers := make([]DiscoveredTrigger, 0, len(rawTriggers))
