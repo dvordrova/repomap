@@ -76,7 +76,13 @@ func ExpandFiles(files []FileRef, reader SourceReader, totalLines TotalLines) (S
 		for _, object := range entry.Objects {
 			fileBytes += linesBytes(object.Lines)
 		}
-		if len(expansion.Files) > 0 && accBytes+fileBytes > MaxExpansionBytes {
+		if accBytes+fileBytes > MaxExpansionBytes {
+			// Budget check applies to the FIRST file as well: a single
+			// oversized requested file must not overflow the encoded
+			// artifact (casdoor live run 2026-08-07 — the unconditional
+			// first-append overflowed MaxExpansionArtifactBytes and
+			// terminated the whole Study stage). Excess requested files are
+			// recorded under OmittedRefs, never dropped silently (D190/D195).
 			budgetOmitted = append(budgetOmitted, file.Ref)
 			continue
 		}

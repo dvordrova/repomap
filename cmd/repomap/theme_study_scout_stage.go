@@ -395,7 +395,10 @@ func themeScoutOrdinaryFailure(
 	if err != nil {
 		return themeScoutErr(outcome, request, errors.Join(cause, err))
 	}
-	if err := writer.WriteValidatedFile(themestudy.ScoutStatusArtifactFilename, statusBytes, nil); err != nil {
+	if err := writer.WriteValidatedFile(themestudy.ScoutStatusArtifactFilename, statusBytes, func(saved []byte) error {
+		_, decodeErr := themestudy.DecodeScoutStatus(saved)
+		return decodeErr
+	}); err != nil {
 		return themeScoutErr(outcome, request,
 			errors.Join(cause, themeTerminalResource(err, 0)))
 	}
@@ -424,7 +427,10 @@ func themeScoutTerminalFailure(
 	if err != nil {
 		return errors.Join(cause, err)
 	}
-	if err := writer.WriteValidatedFile(themestudy.ScoutStatusArtifactFilename, statusBytes, nil); err != nil {
+	if err := writer.WriteValidatedFile(themestudy.ScoutStatusArtifactFilename, statusBytes, func(saved []byte) error {
+		_, decodeErr := themestudy.DecodeScoutStatus(saved)
+		return decodeErr
+	}); err != nil {
 		return errors.Join(cause, err)
 	}
 	return cause

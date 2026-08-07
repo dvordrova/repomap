@@ -118,7 +118,19 @@ const (
 	// set on reference repositories (casdoor requests 50+ files once the
 	// D214 resource-boundary seeds widen the catalog) while staying well
 	// under the 1 MiB Adjudication wire bound that embeds it.
-	MaxExpansionBytes          = 512 << 10
+	//
+	// The budget is a strict sub-budget of the persisted artifact bound:
+	// the encoded expansion artifact must fit MaxExpansionArtifactBytes
+	// (384 KiB) AFTER JSON escaping and per-object envelope overhead, which
+	// grow real source ~3x. A raw-byte budget at the artifact limit would
+	// overflow the encoded artifact on dense repositories (casdoor live
+	// run 2026-08-07: "theme source expansion artifact exceeds 393216
+	// bytes" — first file appended unconditionally, budget never consulted
+	// against the artifact bound). 256 KiB of raw source keeps the encoded
+	// artifact inside 384 KiB on reference repositories; excess requested
+	// files are recorded under OmittedRefs, never dropped silently
+	// (D190/D195).
+	MaxExpansionBytes          = 256 << 10
 	MaxOmissionRepresentatives = 12
 
 	// Scout portfolio bounds: desired 8-12 candidates, valid 1-12.
@@ -386,6 +398,10 @@ const (
 	AdjIssueTooManyUnknowns        AdjudicationIssueCode = "too_many_unknowns"
 	AdjIssueUnknownReadingRef      AdjudicationIssueCode = "unknown_reading_ref"
 	AdjIssueNoDirect               AdjudicationIssueCode = "no_direct"
+	// Archive 12 P0 (owner directive): reading_order may only list anchors
+	// assessed direct or supporting in the returned theme — a wider order
+	// would silently change meaning when the reducer publishes readings.
+	AdjIssueReadingOrderNotDirectOrSupporting AdjudicationIssueCode = "reading_order_not_direct_or_supporting"
 )
 
 // Reading is one exact ordered reading on a Study card. It carries only the

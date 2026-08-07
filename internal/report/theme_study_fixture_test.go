@@ -173,7 +173,7 @@ func writeThemeStudyAcceptedArtifacts(t *testing.T, runDir string, data *ReportD
 		}
 	}
 	adjRequest, err := themestudy.CompileAdjudication(
-		themestudy.LanguageEnglish, candidates, expansion, anchors,
+		themestudy.LanguageEnglish, candidates, expansion, anchors, nil,
 	)
 	if err != nil {
 		t.Fatalf("CompileAdjudication: %v", err)

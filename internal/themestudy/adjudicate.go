@@ -144,6 +144,22 @@ func adjThemeIssue(theme AdjudicatedTheme, candidateByRef map[string]*ScoutCandi
 			return AdjIssueUnknownReadingRef
 		}
 	}
+	// Archive 12 P0 (owner directive): reading_order may contain only anchors
+	// assessed direct or supporting in THIS returned theme — never an anchor
+	// the model assessed weak/irrelevant or left unassessed. The reducer
+	// publishes only direct/supporting readings, so a wider order would
+	// silently change meaning.
+	assessedDirectOrSupporting := make(map[string]struct{}, len(theme.AnchorAssessments))
+	for _, assessment := range theme.AnchorAssessments {
+		if assessment.Fit == FitDirect || assessment.Fit == FitSupporting {
+			assessedDirectOrSupporting[assessment.AnchorRef] = struct{}{}
+		}
+	}
+	for _, ref := range theme.ReadingOrder {
+		if _, ok := assessedDirectOrSupporting[ref]; !ok {
+			return AdjIssueReadingOrderNotDirectOrSupporting
+		}
+	}
 	for _, unknown := range theme.Unknowns {
 		if utf8.RuneCountInString(unknown) > MaxUnknownRunes {
 			return AdjIssueUnknownTooLong

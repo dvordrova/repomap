@@ -151,7 +151,7 @@ func TestMockAndReplayAdjudicationRoundTrip(t *testing.T) {
 		t.Fatalf("ExpandFiles: %v", err)
 	}
 	anchors := anchorInfoFromPacks(request.SeedPacks)
-	adjRequest, err := CompileAdjudication(LanguageEnglish, scoutResult.Candidates, expansion, anchors)
+	adjRequest, err := CompileAdjudication(LanguageEnglish, scoutResult.Candidates, expansion, anchors, request.SeedPacks.Packs)
 	if err != nil {
 		t.Fatalf("CompileAdjudication: %v", err)
 	}
