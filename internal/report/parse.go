@@ -763,9 +763,15 @@ func collectOpenablePaths(data *ReportData) {
 	paths := make(map[string]struct{}, len(data.OpenablePaths))
 	add := func(value string) {
 		value = strings.TrimSpace(value)
-		if value != "" {
-			paths[value] = struct{}{}
+		// Long-horizon program Phase 1B: external/GOROOT/module-cache
+		// pseudo-paths (<external>/...) can never become mandatory
+		// repository source reads. They stay typed external frontier
+		// evidence in their own artifacts and never enter the authorized
+		// openable catalog.
+		if value == "" || strings.HasPrefix(value, "<external>/") || filepath.IsAbs(value) {
+			return
 		}
+		paths[value] = struct{}{}
 	}
 	for _, path := range data.OpenablePaths {
 		add(path)

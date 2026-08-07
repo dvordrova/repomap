@@ -32,6 +32,12 @@ type Options struct {
 	MaxTasks   int
 	MaxTargets int
 	Progress   func(PhaseProgress)
+	// Offline (long-horizon program Phase 1A): offline analysis cannot
+	// acquire a Go toolchain, so the target-module go directive is an
+	// honest admission gate that degrades visibly. Online/default analysis
+	// defers toolchain selection to the Go loader (automatic acquisition)
+	// and never gates on the repomap runtime version.
+	Offline bool
 }
 
 type PhaseProgress struct {

@@ -124,13 +124,17 @@ func projectPackages(
 		if pkg.CanonicalPath == "" || pkg.ModuleID == "" {
 			return nil, fmt.Errorf("repository atlas Go adapter: package path and module id are required")
 		}
-		if previous, duplicate := packages[pkg.CanonicalPath]; duplicate {
+		// Long-horizon program Phase 1D (Gemnasium): package identity is
+		// scoped by module/unit. The same textual import path under two
+		// captured modules is an explicit qualified identity (two
+		// module-scoped packages), never a whole-run crash. The map key is
+		// (moduleID, canonicalPath); an exact duplicate under the SAME
+		// module is a deterministic merge (keep the first).
+		packageKey := pkg.ModuleID + "\x00" + pkg.CanonicalPath
+		if previous, duplicate := packages[packageKey]; duplicate {
 			// Decision 235 (v11) 1D gemnasium: an exact duplicate package
-			// path (same owning module) is a deterministic merge — keep
-			// the first, never fail the whole Atlas. A path owned by two
-			// DIFFERENT modules is a genuine conflict and stays an error
-			// (the adapter has no diagnostic channel; failing loudly beats
-			// silently choosing an owner).
+			// path under the same owning module is a deterministic merge —
+			// keep the first, never fail the whole Atlas.
 			if previous.ModuleID != pkg.ModuleID {
 				return nil, fmt.Errorf(
 					"repository atlas Go adapter: package path %q is owned by modules %q and %q",
@@ -144,7 +148,7 @@ func projectPackages(
 			return nil, fmt.Errorf("repository atlas Go adapter: package %q has inconsistent module ownership", pkg.CanonicalPath)
 		}
 		unitID := stableID("unit-package", pkg.ModuleID, pkg.CanonicalPath)
-		packages[pkg.CanonicalPath] = pkg
+		packages[packageKey] = pkg
 		atlas.Units = append(atlas.Units, repositoryatlas.Unit{
 			ID: unitID, Kind: repositoryatlas.UnitPackage,
 			ParentID: pkg.ModuleID, Name: pkg.CanonicalPath,

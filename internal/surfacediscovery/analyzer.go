@@ -322,7 +322,7 @@ func (a *analyzer) load() error {
 	moduleRoots := make([]string, 0, len(a.input.ModuleDirs))
 	for _, moduleDir := range a.input.ModuleDirs {
 		moduleRoot := filepath.Join(a.root, filepath.FromSlash(moduleDir))
-		if err := checkSurfaceGoVersion(moduleRoot); err != nil {
+		if err := checkSurfaceGoVersion(moduleRoot, a.opts.Offline); err != nil {
 			return err
 		}
 		moduleRoots = append(moduleRoots, moduleRoot)
@@ -338,10 +338,15 @@ func (a *analyzer) load() error {
 	// the binary may be older than the target module's go directive, and
 	// the Go loader resolves the toolchain. It is translated to the go
 	// command's GOTOOLCHAIN env for the loader only — repomap never
-	// mutates the caller's environment.
+	// mutates the caller's environment. Long-horizon program Phase 1A:
+	// online/default analysis also defers toolchain selection to the Go
+	// loader (automatic acquisition); only offline analysis is gated on
+	// the runtime version.
 	loadEnv := os.Environ()
 	if auto, ok := repomapGotoolchainEnv(); ok {
 		loadEnv = append(loadEnv, "GOTOOLCHAIN="+auto)
+	} else if !a.opts.Offline {
+		loadEnv = append(loadEnv, "GOTOOLCHAIN=auto")
 	}
 	for _, moduleRoot := range moduleRoots {
 		config := &packages.Config{
@@ -575,7 +580,7 @@ func repomapGotoolchainEnv() (string, bool) {
 	return "", false
 }
 
-func checkSurfaceGoVersion(root string) error {
+func checkSurfaceGoVersion(root string, offline bool) error {
 	file, err := os.Open(filepath.Join(root, "go.mod"))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -585,13 +590,17 @@ func checkSurfaceGoVersion(root string) error {
 	}
 	defer file.Close()
 
-	// REPOMAP_GOTOOLCHAIN=auto (owner preference) defers the toolchain
-	// decision to the Go loader: the repomap binary may be older than the
-	// target module's go directive, and package loading itself resolves
-	// the toolchain. The runtime version check is then not an admission
-	// gate. A plain GOTOOLCHAIN value is deliberately NOT honored — that
-	// variable belongs to the Go toolchain; repomap owns its own knob.
+	// Long-horizon program Phase 1A: online/default analysis always defers
+	// toolchain selection to the Go loader (automatic acquisition); the
+	// runtime version check is an honest admission gate ONLY for offline
+	// analysis, which cannot acquire a toolchain. REPOMAP_GOTOOLCHAIN=auto
+	// (owner preference) keeps deferring for both modes. A plain GOTOOLCHAIN
+	// value is deliberately NOT honored — that variable belongs to the Go
+	// toolchain; repomap owns its own knob.
 	if _, auto := repomapGotoolchainEnv(); auto {
+		return nil
+	}
+	if !offline {
 		return nil
 	}
 
