@@ -41,11 +41,16 @@ func TestNavigatorPromptJSONPreservesClosedProductContract(t *testing.T) {
 	user := request.Messages[1].Content
 	for _, want := range []string{
 		navigator.ProductQuestion, string(compiled.WireJSON()),
-		canonicalEnglishUserContract,
 	} {
 		if !strings.Contains(user, want) {
 			t.Fatalf("Navigator user prompt missing %q: %s", want, user)
 		}
+	}
+	// Phase 4 prompt cleanup: Navigator is a no_prose stage — its response
+	// is refs only, so the canonical-English prose wrapper must be absent.
+	if strings.Contains(user, canonicalEnglishUserContract) ||
+		strings.Contains(request.Messages[0].Content, canonicalEnglishSystemContract) {
+		t.Fatalf("Navigator must not receive the prose output-language wrapper: %s", user)
 	}
 	for _, want := range []string{`"action_refs"`, `"catalog_ref"`, "request-local", "backend owns"} {
 		if !strings.Contains(request.Messages[0].Content, want) {

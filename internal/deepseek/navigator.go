@@ -90,7 +90,10 @@ func (c *Client) NavigatorPromptJSON(wireJSON []byte, maxRequestBytes int) ([]by
 	}
 	userPrompt := "NAVIGATOR PROMPT CONTRACT: " + NavigatorPromptVersionJSON +
 		"\n\nAnswer the exact product question using only this request-local projection:\n" + string(wireJSON)
-	request := c.canonicalSemanticRequest(userPrompt, navigatorSystemPrompt, true)
+	// Phase 4 prompt cleanup: Navigator is a no_prose stage — its response is
+	// refs only, so it must not receive the canonical-English prose wrapper.
+	// The versioned Navigator prompt owns its output contract.
+	request := c.semanticRequest(userPrompt, navigatorSystemPrompt, true)
 	if isOfficialDeepSeekEndpoint(c.Endpoint) {
 		request.Thinking = &thinkingConfig{Type: "disabled"}
 	}
