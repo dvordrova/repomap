@@ -408,6 +408,8 @@ type StudyThemeCard struct {
 	Readings         []StudyThemeReading `json:"readings"`
 	Badge            string              `json:"badge"`
 	Limitation       string              `json:"limitation,omitempty"`
+	// Phase 8 reviewer finding: unknowns (honest caveats) reach the card.
+	Unknowns []string `json:"unknowns,omitempty"`
 	// Decision 233 (Archive 9): semantic-equivalent co-projected themes
 	// publish alternate titles/questions/readings as provenance and the
 	// portfolio-concentration marker as an exact count string.

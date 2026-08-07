@@ -52,9 +52,16 @@ func TestNavigatorPromptJSONPreservesClosedProductContract(t *testing.T) {
 		strings.Contains(request.Messages[0].Content, canonicalEnglishSystemContract) {
 		t.Fatalf("Navigator must not receive the prose output-language wrapper: %s", user)
 	}
-	for _, want := range []string{`"action_refs"`, `"catalog_ref"`, "request-local", "backend owns"} {
+	for _, want := range []string{`"action_refs"`, "request-local", "backend owns"} {
 		if !strings.Contains(request.Messages[0].Content, want) {
 			t.Fatalf("Navigator system prompt missing %q", want)
+		}
+	}
+	// Phase 8 reviewer finding: version/catalog_ref are backend-owned
+	// identity — the prompt must not ask the model to echo them.
+	for _, forbidden := range []string{`"version"`, `"catalog_ref"`} {
+		if strings.Contains(request.Messages[0].Content, forbidden) {
+			t.Fatalf("Navigator system prompt still asks for backend-owned echo %q", forbidden)
 		}
 	}
 	// Decision 232 (Navigator v2): the model must NOT echo backend-owned
@@ -140,12 +147,26 @@ func TestDecodeNavigatorResponseRequiresOneExactStartupExplanation(t *testing.T)
 		t.Fatalf("decoded response changed bytes: %s / %s", decoded, encoded)
 	}
 
+	// Phase 8 reviewer finding: version and catalog_ref are backend-owned
+	// identity — the model is not asked to echo them. A response that
+	// omits both is legal (backend stamps identity).
+	minimal := valid
+	minimal.Version = 0
+	minimal.CatalogRef = ""
+	minimalBytes, err := json.Marshal(minimal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeNavigatorResponse(minimalBytes); err != nil {
+		t.Fatalf("minimal Navigator response (no version/catalog_ref) rejected: %v", err)
+	}
+
 	tests := []struct {
 		name   string
 		mutate func(*navigatorResponse)
 		want   string
 	}{
-		{name: "wrong version", mutate: func(value *navigatorResponse) { value.Version++ }, want: "identity"},
+		{name: "wrong version", mutate: func(value *navigatorResponse) { value.Version++ }, want: "version"},
 		{name: "zero action", mutate: func(value *navigatorResponse) { value.ActionRefs = nil }, want: "exactly one"},
 		{name: "multiple actions", mutate: func(value *navigatorResponse) { value.ActionRefs = append(value.ActionRefs, "a9999") }, want: "exactly one"},
 		// Decision 232 (Navigator v2): echoing backend-owned refs is

@@ -4867,7 +4867,21 @@
 			details.appendChild(txt('p', 'rm-study-theme-card__limitations-body', limitation));
 			root.appendChild(details);
 		}
-	}
+		// Phase 8 reviewer finding: unknowns are the honest caveats of the
+		// retained readings — render them under the same secondary disclosure
+		// instead of discarding them (product usefulness).
+		var unknowns = card.unknowns || [];
+		if (unknowns.length) {
+			var unknownsDetails = el('details', 'rm-study-theme-card__limitations');
+			unknownsDetails.appendChild(txt('summary', 'rm-study-theme-card__limitations-summary', msg('main.study.theme.unknowns')));
+			var unknownsBody = el('ul', 'rm-study-theme-card__unknowns');
+			unknowns.forEach(function (unknown) {
+				unknownsBody.appendChild(txt('li', 'rm-study-theme-card__unknowns-item', unknown));
+			});
+			unknownsDetails.appendChild(unknownsBody);
+			root.appendChild(unknownsDetails);
+		}
+}
 
 // repomap-source-episode:start
 	function sourceEpisodeStateLabel(state) {

@@ -582,6 +582,7 @@ func projectThemeShelf(themes themestudy.StudyThemes, data *ReportData) (*AtlasS
 			Readings:         readings,
 			Badge:            card.Badge,
 			Limitation:       themeLimitation(themes, card),
+			Unknowns:         append([]string(nil), card.Unknowns...),
 			// Decision 233 (Archive 9): semantic-equivalent co-projected
 			// themes publish their alternates as provenance — nothing
 			// silently vanishes.
@@ -628,13 +629,19 @@ func projectAlternateReadings(readings []themestudy.Reading, data *ReportData) [
 }
 
 // themeLimitation is the honest per-card limitation line: a partial badge is
-// always accompanied by the exact partial count statement.
+// always accompanied by the exact partial count statement. Phase 8 reviewer
+// finding: the denominator is the number of anchors that passed source
+// review (ReviewedAnchorCount), never the published count itself.
 func themeLimitation(themes themestudy.StudyThemes, card themestudy.ThemeCard) string {
 	if !themes.Partial {
 		return ""
 	}
 	if card.DirectCount+card.SupportingCount > 0 {
-		return fmt.Sprintf("partial — %d of %d anchors passed source review", card.DirectCount+card.SupportingCount, card.DirectCount+card.SupportingCount)
+		reviewed := card.ReviewedAnchorCount
+		if reviewed < card.DirectCount+card.SupportingCount {
+			reviewed = card.DirectCount + card.SupportingCount
+		}
+		return fmt.Sprintf("partial — %d of %d anchors passed source review", card.DirectCount+card.SupportingCount, reviewed)
 	}
 	return "partial"
 }

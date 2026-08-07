@@ -304,6 +304,12 @@ func Reduce(input ReducerInput) (Reduction, error) {
 			Badge:            badge,
 			DirectCount:      direct,
 			SupportingCount:  supporting,
+			// Phase 8 reviewer finding: unknowns are the honest caveats of
+			// the retained readings — they must reach the report card, not
+			// only drive the partial badge. ReviewedAnchorCount is the
+			// exact denominator for the per-card limitation line.
+			Unknowns:            append([]string(nil), w.theme.Unknowns...),
+			ReviewedAnchorCount: len(w.theme.AnchorAssessments),
 			// Decision 233: co-projected semantic equivalents are retained
 			// as alternate provenance (titles/questions/readings) — nothing
 			// silently vanishes.

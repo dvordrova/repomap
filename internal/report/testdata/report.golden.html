@@ -1426,6 +1426,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.theme.source_unavailable": { params: [], text: "exact source unavailable in this report" },
     "main.study.theme.expected_learning": { params: ["learning"], format: function (params) { return "Expected learning: " + params.learning; } },
     "main.study.theme.limitations": { params: [], text: "Limitations and provenance" },
+    "main.study.theme.unknowns": { params: [], text: "Unknowns and open questions" },
     "main.study.theme.supported_explanation": { params: [], text: "Every reading in this theme is backed by an exact source anchor." },
     "main.study.theme.partial_explanation": { params: ["passed", "total"], format: function (params) { return params.passed + " of " + params.total + " anchors passed source review. Thematic coverage can still be partial: the theme spans more source than was reviewed, or some anchors could not be pinned exactly."; } },
     "main.study.theme.partial_explanation_generic": { params: [], text: "Thematic coverage is partial: some anchors could not be pinned to exact source, or the theme spans more source than was reviewed." },
@@ -2945,6 +2946,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.theme.source_unavailable": { params: [], text: "точный источник недоступен в этом отчёте" },
     "main.study.theme.expected_learning": { params: ["learning"], format: function (params) { return "Ожидаемый результат изучения: " + params.learning; } },
     "main.study.theme.limitations": { params: [], text: "Ограничения и происхождение" },
+    "main.study.theme.unknowns": { params: [], text: "Неизвестное и открытые вопросы" },
     "main.study.theme.supported_explanation": { params: [], text: "Каждое чтение этой темы опирается на точный исходный якорь." },
     "main.study.theme.partial_explanation": { params: ["passed", "total"], format: function (params) { return params.passed + " из " + params.total + " якорей прошли проверку источника. Покрытие темы может оставаться неполным: тема охватывает больше исходников, чем было проверено, или часть якорей не удалось привязать точно."; } },
     "main.study.theme.partial_explanation_generic": { params: [], text: "Покрытие темы неполное: часть якорей не удалось привязать к точному исходнику, или тема охватывает больше исходников, чем было проверено." },
@@ -9204,7 +9206,21 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			details.appendChild(txt('p', 'rm-study-theme-card__limitations-body', limitation));
 			root.appendChild(details);
 		}
-	}
+		// Phase 8 reviewer finding: unknowns are the honest caveats of the
+		// retained readings — render them under the same secondary disclosure
+		// instead of discarding them (product usefulness).
+		var unknowns = card.unknowns || [];
+		if (unknowns.length) {
+			var unknownsDetails = el('details', 'rm-study-theme-card__limitations');
+			unknownsDetails.appendChild(txt('summary', 'rm-study-theme-card__limitations-summary', msg('main.study.theme.unknowns')));
+			var unknownsBody = el('ul', 'rm-study-theme-card__unknowns');
+			unknowns.forEach(function (unknown) {
+				unknownsBody.appendChild(txt('li', 'rm-study-theme-card__unknowns-item', unknown));
+			});
+			unknownsDetails.appendChild(unknownsBody);
+			root.appendChild(unknownsDetails);
+		}
+}
 
 	function renderRepositoryBriefHero() {
 		var brief = STUDY_MAP && STUDY_MAP.brief || {};
