@@ -194,6 +194,185 @@
   return "hybrid";
  }
 
+ // Decision 236 (v11): the pure lens projection. It answers, from the
+ // backend-owned view-model only:
+ //   - which principal component IDs a lens emphasizes (exact set), and
+ //   - which first-class objects the lens makes visible (entry categories,
+ //     touchpoint families, mechanism flows).
+ // It never touches the DOM, never reads geometry, and never guesses from
+ // renderer state — the backend owns entry/touchpoint/mechanism identity.
+ function mapLensEmphasisProjection(input) {
+  const lens = input && input.lens || "landscape";
+  const components = array(input && input.components);
+  const surfaces = array(input && input.surfaces);
+  const associations = array(input && input.associations);
+  const flowEdges = array(input && input.flowEdges);
+  const componentByID = new Map(components.map((component) => [text(component && component.id), component]));
+  const emphasized = [];
+  const objects = { entrypoints: [], touchpoints: [], mechanisms: [] };
+  const add = (componentID) => {
+   if (componentByID.has(componentID) && emphasized.indexOf(componentID) < 0) emphasized.push(componentID);
+  };
+
+  if (lens === "entrypoints") {
+   // Entry objects are the exact surface catalog entries (backend-joined
+   // participation: surface.participating_component_ids /
+   // component.participating_surface_ids), grouped by kind. The
+   // emphasized set is every component those entries reach.
+   const byKind = new Map();
+   surfaces.forEach((surface) => {
+    const kind = text(surface && surface.kind);
+    const entry = {
+     id: text(surface && surface.id),
+     kind: kind,
+     label: text(surface && surface.name),
+     component_ids: array(surface && surface.participating_component_ids)
+      .filter((id) => componentByID.has(text(id))),
+    };
+    entry.component_ids = Array.from(new Set(entry.component_ids));
+    if (!entry.component_ids.length) return;
+    if (!byKind.has(kind)) byKind.set(kind, []);
+    byKind.get(kind).push(entry);
+   });
+   components.forEach((component) => {
+    if (array(component && component.participating_surface_ids).length > 0 ||
+        array(component && component.owned_surface_ids).length > 0 ||
+        array(component && component.entry_surface_ids).length > 0) {
+     add(text(component.id));
+    }
+   });
+   byKind.forEach((entries, kind) => {
+    objects.entrypoints.push({ kind: kind, entries: entries });
+   });
+   return { lens: lens, emphasized: emphasized, objects: objects };
+  }
+
+  if (lens === "integrations") {
+   // Touchpoint objects are the exact association families observed for a
+   // component (backend-owned `family` — the CLOSED generic classification;
+   // raw imported_family stays available as evidence detail).
+   const families = new Map();
+   associations.forEach((association) => {
+    const componentID = text(association && (association.component_id || association.from_component_id));
+    const family = text(association && association.family) ||
+     text(association && association.imported_family) || "other";
+    if (!componentByID.has(componentID)) return;
+    add(componentID);
+    const key = componentID + "\u0000" + family;
+    if (!families.has(key)) {
+     families.set(key, {
+      component_id: componentID,
+      family: family,
+      kind: text(association && association.kind),
+      witness_count: Number(association && association.observation_count) || 0,
+      paired: association && association.paired === true,
+     });
+    }
+   });
+   families.forEach((touchpoint) => objects.touchpoints.push(touchpoint));
+   return { lens: lens, emphasized: emphasized, objects: objects };
+  }
+
+  if (lens === "mechanisms") {
+   // Mechanism objects are the exact supported flows whose edges touch a
+   // component — a flow is only shown when it has at least one edge
+   // between two principal components (a connected fragment).
+   const flowByID = new Map();
+   flowEdges.forEach((edge) => {
+    const flowID = text(edge && edge.flow_id);
+    const from = text(edge && edge.from_component_id);
+    const to = text(edge && edge.to_component_id);
+    if (!flowID || !componentByID.has(from) || !componentByID.has(to)) return;
+    if (!flowByID.has(flowID)) {
+     flowByID.set(flowID, { id: flowID, component_ids: [] });
+    }
+    const record = flowByID.get(flowID);
+    [from, to].forEach((componentID) => {
+     if (record.component_ids.indexOf(componentID) < 0) record.component_ids.push(componentID);
+     add(componentID);
+    });
+   });
+   flowByID.forEach((flow) => objects.mechanisms.push(flow));
+   return { lens: lens, emphasized: emphasized, objects: objects };
+  }
+
+  // landscape: no emphasis, no extra objects.
+  return { lens: "landscape", emphasized: [], objects: objects };
+ }
+
+ function associationsForComponent(associations, componentID) {
+  componentID = text(componentID);
+  return array(associations).filter((association) => (
+   text(association && (association.component_id || association.from_component_id)) === componentID ||
+   text(association && (association.related_component_id || association.to_component_id)) === componentID
+  ));
+ }
+
+ // Decision 236 (v11): projectArchitectureLens(reportData, lens) — the
+ // DOM-free entry point the workspace and the canvas both use. It reads
+ // ONLY backend-owned report view-model fields (architecture_canvas +
+ // architecture_associations) and returns plain deterministic values:
+ // visible/emphasized/dimmed principal IDs, entry-category objects,
+ // touchpoint-family objects, mechanism-fragment refs, counts and
+ // omissions. It never touches the DOM, never reads geometry, never mounts.
+ function projectArchitectureLens(reportData, lens) {
+  const canvas = (reportData && reportData.architecture_canvas) || {};
+  const components = array(canvas.components);
+  const surfaces = array(canvas.surfaces);
+  const flowEdges = array(canvas.flow_edges);
+  const projection = mapLensEmphasisProjection({
+   lens: lens,
+   components: components,
+   surfaces: surfaces,
+   associations: flatReportAssociations(reportData && reportData.architecture_associations),
+   flowEdges: flowEdges,
+  });
+  const componentCount = components.length;
+  return {
+   lens: projection.lens,
+   visible: components.map((component) => text(component && component.id)),
+   emphasized: projection.emphasized,
+   dimmed: componentCount - projection.emphasized.length,
+   entrypoints: projection.objects.entrypoints,
+   touchpoints: projection.objects.touchpoints,
+   mechanisms: projection.objects.mechanisms,
+   counts: {
+    components: componentCount,
+    surfaces: surfaces.length,
+    entries: projection.objects.entrypoints.reduce((sum, group) => sum + (group.entries || []).length, 0),
+    touchpoints: projection.objects.touchpoints.length,
+    mechanisms: projection.objects.mechanisms.length,
+   },
+   omissions: {
+    // Honest bounded scope: associations/flows not joinable to a principal
+    // component are never shown in a lens.
+    unjoined_surfaces: surfaces.filter((surface) =>
+     !array(surface && surface.participating_component_ids).some((id) =>
+      components.some((component) => text(component && component.id) === text(id))
+     )
+    ).length,
+   },
+  };
+ }
+
+ // flatReportAssociations normalizes the backend association view-model
+ // (architecture_associations.components[].associations[] with the owning
+ // component on the parent) into the flat rows the pure projection
+ // consumes. A flat array is passed through unchanged.
+ function flatReportAssociations(viewModel) {
+  if (Array.isArray(viewModel)) return viewModel.slice();
+  const components = array(viewModel && viewModel.components);
+  const out = [];
+  components.forEach((entry) => {
+   const componentID = text(entry && entry.component_id);
+   array(entry && entry.associations).forEach((row) => {
+    if (!row || typeof row !== "object") return;
+    out.push(Object.assign({}, row, { component_id: componentID }));
+   });
+  });
+  return out;
+ }
+
  function boardProfileForWidth(value) {
   const width = Math.max(320, Number(value || 1200));
   if (width >= 1160) return { columns: 4, groupWidth: 300 };
@@ -953,6 +1132,10 @@ function architecturePartialTruth(data) {
      if (target === this.drawerBackdrop) return;
      if (typeof target.closest === "function" && target.closest(".rm-explore")) return;
      if (typeof target.closest === "function" && target.closest(".rm-arch__component-card")) return;
+     // Decision 236 (v11): the Map lens control is a map-scope control —
+     // switching a lens must never close the inspector or drop the
+     // selection.
+     if (typeof target.closest === "function" && target.closest(".rm-map-lens-control")) return;
      this.closeInspector();
     }, { capture: true });
     this.listen(global.document, "click", (event) => {
@@ -1627,10 +1810,10 @@ function architecturePartialTruth(data) {
       const singleton = this.singletonGroupIDs.has(text(component.subsystem_id));
       const category = this.semanticCategory(component, this.semanticCategory(subsystem, "neutral"));
       const shell = element("article", "rm-arch__component is-" + category + (singleton ? " is-singleton" : ""));
-    shell.style.left = position.x + "px";
-    shell.style.top = position.y + "px";
-    shell.style.width = position.width + "px";
-    shell.style.height = position.height + "px";
+   shell.style.left = position.x + "px";
+   shell.style.top = position.y + "px";
+   shell.style.width = position.width + "px";
+   shell.style.height = position.height + "px";
 
       const button = element("button", "rm-arch__component-card");
       button.type = "button";
@@ -3005,6 +3188,69 @@ function architecturePartialTruth(data) {
     this.view.scale < 0.9 ? "overview" : "readable"
    );
    }
+
+   // Decision 236 (v11): Map lenses are emphasis projections over the
+   // SAME landscape layout — one ELK layout, switch by emphasis/dimming,
+   // never a relayout and never a view transform write.
+   setLens(lens) {
+    const value = ["landscape", "entrypoints", "integrations", "mechanisms"].indexOf(lens) >= 0
+     ? lens : "landscape";
+    this.lens = value;
+    if (this.root) this.root.setAttribute("data-lens", value);
+    if (value === "landscape") {
+     this.components.forEach((component) => {
+      const node = this.componentElements.get(text(component && component.id));
+      if (node) node.classList.remove("rm-arch__is-lens-emphasized");
+     });
+     return value;
+    }
+    const projection = mapLensEmphasisProjection({
+     lens: value,
+     components: this.components,
+     surfaces: this.surfaces,
+     associations: this.flatAssociations(),
+     flowEdges: this.flowEdges,
+    });
+    this.components.forEach((component) => {
+     const componentID = text(component && component.id);
+     const node = this.componentElements.get(componentID);
+     if (!node) return;
+     const active = projection.emphasized.indexOf(componentID) >= 0;
+     node.classList.toggle("rm-arch__is-lens-emphasized", active);
+    });
+    return value;
+   }
+
+   // Decision 236 (v11): lens emphasis and visible objects are derived by
+   // the pure projection below, never guessed from component properties in
+   // the renderer — the backend owns entry/touchpoint/mechanism identity.
+
+   // Decision 236 (v11): the DOM-free lens projection is the single source
+   // of truth for both the canvas emphasis and the workspace objects panel
+   // (projectArchitectureLens on the module) — never a per-instance copy.
+
+   // Decision 236: normalize the backend association view-model
+   // (components[].associations[] with the owning component on the parent)
+   // into the flat rows the pure projection consumes.
+   flatAssociations() {
+    const raw = this.options && this.options.associations;
+    const out = [];
+    if (Array.isArray(raw)) {
+     // Flat view-model (component_id on each row) — use as-is.
+     raw.forEach((row) => { if (row && typeof row === "object") out.push(row); });
+     return out;
+    }
+    const components = array(raw && raw.components);
+    components.forEach((entry) => {
+     const componentID = text(entry && entry.component_id);
+     array(entry && entry.associations).forEach((row) => {
+      if (!row || typeof row !== "object") return;
+      out.push(Object.assign({}, row, { component_id: componentID }));
+     });
+    });
+    return out;
+   }
+
 
    guidedTourStep() {
     if (!this.guidedTour.active) return null;
@@ -5344,13 +5590,27 @@ function architecturePartialTruth(data) {
    openFlowStep: (flowID, stepID) => app.openFlowStep(flowID, stepID),
    openSurface: (surfaceID) => app.openSurface(surfaceID),
    openComponent: (componentID) => app.openComponent(componentID),
+   // Decision 236 (v11): Map lens switching is an emphasis projection
+   // over the same layout — exposed so the workspace can switch lenses.
+   setLens: (lens) => app.setLens(lens),
+   // Decision 236 (v11): the DOM-free lens projection for the workspace
+   // objects panel — same function the emphasis uses, so visible objects
+   // and dimmed nodes can never disagree.
+   projectArchitectureLens: projectArchitectureLens,
    openSemanticArtifact: (artifactID, index) => app.openSemanticArtifact(artifactID, index),
    openGuidedTourStep: (index) => app.openGuidedTourStep(index),
    destroy: () => app.destroy(),
   });
  }
 
- global.RepomapArchitectureCanvas = Object.freeze({ mount: mount });
+ global.RepomapArchitectureCanvas = Object.freeze({
+  mount: mount,
+  // Decision 236 (v11): the DOM-free lens projection — a real product
+  // consumer (the workspace objects panel) calls it with the report data;
+  // the canvas instance uses the same function for emphasis. Never a
+  // test-only hook.
+  projectArchitectureLens: projectArchitectureLens,
+});
  if (global.__REPOMAP_LAYOUT_TEST__ && typeof global.__REPOMAP_LAYOUT_TEST__ === "object") {
   Object.assign(global.__REPOMAP_LAYOUT_TEST__, {
    landscapeLayoutMode: landscapeLayoutMode,
@@ -5375,6 +5635,10 @@ function architecturePartialTruth(data) {
     step,
     new Map(array(componentIDs).map((componentID) => [text(componentID), true]))
    ),
+   // Decision 236 (v11): the pure lens projection — no DOM, no geometry.
+   mapLensEmphasisProjection: mapLensEmphasisProjection,
+   projectArchitectureLens: projectArchitectureLens,
+   associationsForComponent: associationsForComponent,
   });
  }
 })(window);

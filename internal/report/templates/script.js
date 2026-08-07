@@ -9826,6 +9826,121 @@
 		return contexts;
 	}
 
+  // Decision 236 (v11): the active Map lens. One of landscape /
+  // entrypoints / integrations / mechanisms. Not part of workspaceState
+  // (a view state, not a route); it persists across selection/source
+  // open and never writes the canvas transform.
+  var activeMapLens = 'landscape';
+
+  function renderMapLensControl() {
+    var control = el('div', 'rm-map-lens-control');
+    control.setAttribute('role', 'group');
+    control.setAttribute('aria-label', msg('main.map.lenses'));
+    [
+      { id: 'landscape', label: msg('main.map.lens.landscape') },
+      { id: 'entrypoints', label: msg('main.map.lens.entrypoints') },
+      { id: 'integrations', label: msg('main.map.lens.integrations') },
+      { id: 'mechanisms', label: msg('main.map.lens.mechanisms') },
+    ].forEach(function (lens) {
+      var button = txt('button', 'rm-map-lens-button' + (activeMapLens === lens.id ? ' rm-active' : ''), lens.label);
+      button.type = 'button';
+      button.setAttribute('data-map-lens', lens.id);
+      if (activeMapLens === lens.id) button.setAttribute('aria-current', 'page');
+      button.onclick = function () {
+        activeMapLens = lens.id;
+        control.querySelectorAll('[data-map-lens]').forEach(function (node) {
+          node.classList.toggle('rm-active', node.getAttribute('data-map-lens') === activeMapLens);
+          if (node.getAttribute('data-map-lens') === activeMapLens) node.setAttribute('aria-current', 'page');
+          else node.removeAttribute('aria-current');
+        });
+        if (architectureCanvasView && typeof architectureCanvasView.setLens === 'function') {
+          architectureCanvasView.setLens(activeMapLens);
+        }
+        renderMapLensObjects();
+      };
+      control.appendChild(button);
+    });
+    return control;
+  }
+
+  // Decision 236 (v11): the lens objects panel makes the FIRST-CLASS
+  // backend objects of the active lens visibly present next to the map:
+  // entry categories (how work enters), touchpoint families (what external
+  // state is observed), mechanism flows (which connected fragment is
+  // shown). The objects come from the SAME DOM-free projection the canvas
+  // emphasis uses (projectArchitectureLens) — never guessed from dimmed
+  // boxes and never from renderer state.
+  function renderMapLensObjects() {
+    var host = document.getElementById('rm-map-lens-objects');
+    if (!host) return;
+    host.replaceChildren();
+    var api = window.RepomapArchitectureCanvas && window.RepomapArchitectureCanvas.projectArchitectureLens;
+    if (typeof api !== 'function') return;
+    var projection = api(DATA, activeMapLens);
+    if (!projection) return;
+    var mechanisms = projection.objects && projection.objects.mechanisms || projection.mechanisms || [];
+    var entrypoints = projection.objects && projection.objects.entrypoints || projection.entrypoints || [];
+    var touchpoints = projection.objects && projection.objects.touchpoints || projection.touchpoints || [];
+    if (activeMapLens === 'landscape' || activeMapLens === 'mechanisms') {
+      mechanisms.forEach(function (flow) {
+        var row = el('div', 'rm-map-lens-object');
+        row.appendChild(txt('strong', '', msg('main.map.lens.object.flow', { id: flow.id })));
+        row.appendChild(txt('span', 'rm-map-lens-object__detail', msg('main.map.lens.object.components', { count: flow.component_ids.length })));
+        host.appendChild(row);
+      });
+      if (!mechanisms.length && activeMapLens === 'mechanisms') {
+        host.appendChild(txt('p', 'rm-map-lens-object rm-map-lens-object--empty', msg('main.map.lens.empty.mechanisms')));
+      }
+      return;
+    }
+    if (activeMapLens === 'entrypoints') {
+      entrypoints.forEach(function (group) {
+        var section = el('div', 'rm-map-lens-object');
+        section.appendChild(txt('strong', '', mapLensEntryKindLabel(group.kind)));
+        var entries = group.entries || [];
+        if (entries.length > 0) {
+          section.appendChild(txt('span', 'rm-map-lens-object__detail',
+            msg('main.map.lens.object.entries', { count: entries.length })));
+          entries.slice(0, 5).forEach(function (entry) {
+            section.appendChild(txt('div', 'rm-map-lens-object__item', String(entry.label || entry.id)));
+          });
+        }
+        host.appendChild(section);
+      });
+      if (!entrypoints.length) {
+        host.appendChild(txt('p', 'rm-map-lens-object rm-map-lens-object--empty', msg('main.map.lens.empty.entrypoints')));
+      }
+      return;
+    }
+    // integrations: touchpoint families with honest scope.
+    touchpoints.forEach(function (touchpoint) {
+      var row = el('div', 'rm-map-lens-object');
+      row.appendChild(txt('strong', '', String(touchpoint.family || 'other')));
+      row.appendChild(txt('span', 'rm-map-lens-object__detail',
+        msg('main.map.lens.object.witnesses', { count: touchpoint.witness_count }) +
+        (touchpoint.paired ? ' · ' + msg('main.map.lens.object.paired') : '')));
+      var component = (DATA.architecture_canvas && DATA.architecture_canvas.components || [])
+        .filter(function (c) { return c && c.id === touchpoint.component_id; })[0];
+      if (component) {
+        row.appendChild(txt('span', 'rm-map-lens-object__item', String(component.name || component.id)));
+      }
+      host.appendChild(row);
+    });
+    if (!touchpoints.length) {
+      host.appendChild(txt('p', 'rm-map-lens-object rm-map-lens-object--empty', msg('main.map.lens.empty.integrations')));
+    }
+  }
+
+  function mapLensEntryKindLabel(kind) {
+    switch (String(kind || '')) {
+      case 'cli_command': return msg('main.map.lens.entry.cli');
+      case 'http_route': case 'http_server': return msg('main.map.lens.entry.http');
+      case 'process_entry': return msg('main.map.lens.entry.process');
+      case 'worker': case 'async_task': return msg('main.map.lens.entry.worker');
+      default: return String(kind || msg('main.map.lens.entry.other'));
+    }
+  }
+
   function renderArchitectureReturn() {
     var root = document.getElementById('rm-architecture');
     if (!root) return;
@@ -9902,6 +10017,14 @@
       if (relationState === 'no_supported_relation_evidence') {
         canvasCard.appendChild(txt('p', 'rm-architecture-canvas-conceptual rm-warning', msg('main.architecture.canvas.conceptual')));
       }
+      // Decision 236 (v11): Map lenses — Landscape/Entrypoints/
+      // Integrations/Mechanisms. One layout; the lens emphasizes or dims
+      // principal nodes without relayout (canvas.setLens) and the objects
+      // panel shows the first-class backend objects of the active lens.
+      canvasCard.appendChild(renderMapLensControl());
+      var lensObjects = el('div', 'rm-map-lens-objects');
+      lensObjects.id = 'rm-map-lens-objects';
+      canvasCard.appendChild(lensObjects);
       architectureCanvasHost = el('div', 'rm-architecture-canvas-host');
       canvasCard.appendChild(architectureCanvasHost);
       root.appendChild(canvasCard);
@@ -10843,6 +10966,9 @@
       message: msg,
       architectureSurfaces: (DATA.architecture_canvas && DATA.architecture_canvas.surfaces) || [],
       architectureAnchorCount: DATA.run && DATA.run.architecture_anchor_count || 0,
+      // Decision 236 (v11): backend association view-model for the
+      // Integrations lens (closed family touchpoint objects).
+      associations: DATA.architecture_associations || [],
       openTrace: function (flowID) {
         openArchitectureTarget({ kind: 'flow', flow_id: flowID }, null);
       },
@@ -10912,7 +11038,13 @@
       else renderArchitectureReturn();
       activateWorkspaceView(workspaceState.view);
       var ready = architectureCanvasView ? (architectureReady || Promise.resolve(architectureCanvasView)) : mountArchitectureCanvas();
-      ready.then(function () { focusArchitectureTarget(workspaceState.mapTarget); });
+      ready.then(function () {
+        if (architectureCanvasView && typeof architectureCanvasView.setLens === 'function') {
+          architectureCanvasView.setLens(activeMapLens);
+        }
+        renderMapLensObjects();
+        focusArchitectureTarget(workspaceState.mapTarget);
+      });
     } else {
       activateWorkspaceView(workspaceState.view);
     }

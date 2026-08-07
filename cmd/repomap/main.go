@@ -128,6 +128,11 @@ func main() {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
+		case "ui":
+			if err := runDevUICLI(os.Args[3:], os.Stdout); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
 		case "localization-check":
 			if err := runLocalizationCheckCLI(os.Args[3:], os.Stdout); err != nil {
 				fmt.Fprintln(os.Stderr, err)
@@ -1708,4 +1713,78 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  repomap serve\n")
 	fmt.Fprintf(os.Stderr, "  repomap cache clear\n")
 	fmt.Fprintf(os.Stderr, "  repomap --help\n")
+}
+
+// runDevUICLI re-renders a SAVED run directory from the current embedded
+// report templates into a standalone report.html — the UI development
+// playground. It makes no repository analysis and no provider calls: the
+// saved run's report.json is read as-is and re-rendered with today's
+// JS/CSS, so a template change is visible after a single rebuild.
+//
+//	repomap dev ui <run-dir> [--out <file>] [--state <hash>]
+//
+// The printed URL is the direct fixture URL (with the optional state hash).
+func runDevUICLI(args []string, stdout io.Writer) error {
+	runDir := ""
+	outPath := ""
+	stateHash := ""
+	for index := 0; index < len(args); index++ {
+		switch args[index] {
+		case "--out":
+			index++
+			if index >= len(args) || args[index] == "" {
+				return fmt.Errorf("dev ui: --out requires a file path")
+			}
+			outPath = args[index]
+		case "--state":
+			index++
+			if index >= len(args) || args[index] == "" {
+				return fmt.Errorf("dev ui: --state requires a hash like #/map or #/map?focus=...")
+			}
+			stateHash = args[index]
+		default:
+			if runDir == "" {
+				runDir = args[index]
+			} else {
+				return fmt.Errorf("usage: repomap dev ui <run-dir> [--out <file>] [--state <hash>]")
+			}
+		}
+	}
+	if runDir == "" {
+		return fmt.Errorf("usage: repomap dev ui <run-dir> [--out <file>] [--state <hash>]")
+	}
+	if stdout == nil {
+		return fmt.Errorf("dev ui: stdout is required")
+	}
+	absDir, err := filepath.Abs(runDir)
+	if err != nil {
+		return fmt.Errorf("dev ui: resolve run dir: %w", err)
+	}
+	data, err := report.ReadRunDir(absDir)
+	if err != nil {
+		return fmt.Errorf("dev ui: read saved run %s: %w", absDir, err)
+	}
+	if outPath == "" {
+		outPath = filepath.Join(absDir, "report.ui-dev.html")
+	}
+	absOut, err := filepath.Abs(outPath)
+	if err != nil {
+		return fmt.Errorf("dev ui: resolve out path: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(absOut), 0o755); err != nil {
+		return fmt.Errorf("dev ui: create out directory: %w", err)
+	}
+	if err := report.WriteReportHTML(data, absOut); err != nil {
+		return fmt.Errorf("dev ui: render from current templates: %w", err)
+	}
+	url := "file://" + absOut
+	if stateHash != "" {
+		hash := stateHash
+		if !strings.HasPrefix(hash, "#") {
+			hash = "#" + hash
+		}
+		url += hash
+	}
+	fmt.Fprintln(stdout, url)
+	return nil
 }
