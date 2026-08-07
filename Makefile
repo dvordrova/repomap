@@ -8,7 +8,7 @@ TMP_DIR  ?= tmp
 ETCD_REPO ?= ../etcd
 RUN_ARGS ?=
 
-.PHONY: help test vet check quality-check localization-check localization-replay localization-stage localization-record build doctor doctor-check generic-deepseek-doctor guided-tour-run guided-tour-fanout guided-tour-experiment semantic-discovery semantic-discovery-experiment fresh-repo-onboarding fresh-repo-onboarding-replan fresh-repo-onboarding-replay golden-mechanism golden-mechanism-v01 golden-mechanism-v02 golden-mechanism-v02-prepare golden-mechanism-v02-replay golden-mechanism-v03 golden-mechanism-v03-prepare golden-mechanism-v03-replay golden-mechanism-v1 golden-mechanism-v1-prepare golden-mechanism-v1-replay mechanism-v1 mechanism-v1-replay chi-request-dispatch chi-request-dispatch-prepare chi-request-dispatch-response-replay chi-request-dispatch-replay review-cockpit review-serve serve run run-offline
+.PHONY: help test vet check quality-check localization-check localization-replay localization-stage localization-record build doctor doctor-check generic-deepseek-doctor guided-tour-run guided-tour-fanout guided-tour-experiment semantic-discovery semantic-discovery-experiment fresh-repo-onboarding fresh-repo-onboarding-replan fresh-repo-onboarding-replay golden-mechanism golden-mechanism-v01 golden-mechanism-v02 golden-mechanism-v02-prepare golden-mechanism-v02-replay golden-mechanism-v03 golden-mechanism-v03-prepare golden-mechanism-v03-replay golden-mechanism-v1 golden-mechanism-v1-prepare golden-mechanism-v1-replay mechanism-v1 mechanism-v1-replay chi-request-dispatch chi-request-dispatch-prepare chi-request-dispatch-response-replay chi-request-dispatch-replay review-cockpit review-serve serve run run-offline dev-ui
 
 help: ## Print available targets
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -232,6 +232,20 @@ run: build ## Run the built binary with the configured OpenAI-compatible LLM
 
 run-offline: build ## Run the built binary locally without a model call
 	$(BIN_DIR)/repomap $(ETCD_REPO) --offline --no-open --no-serve
+
+# --- Decision 236 (v11): UI development playground ---
+#
+# Re-renders a SAVED run from current embedded templates — no analysis, no
+# provider calls. OUT defaults to <run-dir>/report.ui-dev.html. STATE is an
+# optional route hash like "#/map?focus=<id>".
+
+UI_RUN ?=
+UI_OUT ?=
+UI_STATE ?= "#/map"
+
+dev-ui: build ## Re-render a saved run from current templates (UI dev loop)
+	@if [[ -z "$(UI_RUN)" ]]; then echo "UI_RUN=<run-dir> is required" >&2; exit 2; fi
+	@$(BIN_DIR)/repomap dev ui "$(UI_RUN)" $(if $(UI_OUT),--out "$(UI_OUT)") $(if $(UI_STATE),--state "$(UI_STATE)")
 
 # --- Task Lens v0 experiment harness ---
 

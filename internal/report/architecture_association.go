@@ -53,8 +53,15 @@ type ArchitectureStructuralNeighbor struct {
 // resource observed in the component's exact member scope, with bounded
 // witnesses and explicit limitations.
 type ArchitectureBoundaryResourceRow struct {
-	Kind             string                           `json:"kind"` // boundary | resource
-	ImportedFamily   string                           `json:"imported_family,omitempty"`
+	Kind           string `json:"kind"` // boundary | resource
+	ImportedFamily string `json:"imported_family,omitempty"`
+	// Family (Decision 236): the CLOSED generic touchpoint-family
+	// classification of the imported path — database, broker/pub-sub,
+	// filesystem, object-storage, cache-lock, config-secrets, process-OS,
+	// HTTP-gRPC-SDK, other. Deterministic in the backend; never guessed
+	// from component properties in JavaScript and never a per-repository
+	// keyword table (DO-NOT-ADD).
+	Family           string                           `json:"family,omitempty"`
 	OwningUnit       string                           `json:"owning_unit"` // display-safe package path
 	Witnesses        []ArchitectureAssociationWitness `json:"witnesses"`
 	Paired           bool                             `json:"paired,omitempty"` // same callsite also observed as the other kind
@@ -315,9 +322,11 @@ func aggregateAssociationRows(rows []obsRow) []ArchitectureBoundaryResourceRow {
 	var out []ArchitectureBoundaryResourceRow
 	for _, row := range rows {
 		importedFamily := ""
+		detailPath := ""
 		for _, e := range row.evidence {
 			if detail := e.Provenance.Detail; detail != "" {
 				importedFamily = familyFromImportPath(detail)
+				detailPath = detail
 				break
 			}
 		}
@@ -329,7 +338,10 @@ func aggregateAssociationRows(rows []obsRow) []ArchitectureBoundaryResourceRow {
 			out = append(out, ArchitectureBoundaryResourceRow{
 				Kind:           row.entityKind,
 				ImportedFamily: importedFamily,
-				OwningUnit:     row.unitPath,
+				// Decision 236: closed generic touchpoint family,
+				// backend-owned (never guessed in JavaScript).
+				Family:     touchpointFamilyFromImportPath(detailPath),
+				OwningUnit: row.unitPath,
 			})
 		}
 		for _, e := range row.evidence {
@@ -487,6 +499,92 @@ func familyFromImportPath(importPath string) string {
 		return importPath
 	}
 	return first
+}
+
+// touchpointFamilyFromImportPath classifies an imported canonical path into
+// the CLOSED generic touchpoint-family taxonomy (Decision 236). The
+// classification is deterministic, backend-owned and generic — the same
+// rules apply to every repository, so it is never a per-repository keyword
+// table. The first stdlib segment and a bounded set of well-known module
+// prefixes map to a family; everything else is "other" (the raw
+// imported_family stays available for evidence details).
+func touchpointFamilyFromImportPath(importPath string) string {
+	importPath = strings.ToLower(strings.TrimSpace(importPath))
+	if importPath == "" {
+		return ""
+	}
+	// Standard library first segments.
+	switch {
+	case strings.HasPrefix(importPath, "database/") || strings.HasPrefix(importPath, "database.") ||
+		strings.HasPrefix(importPath, "github.com/jmoiron/sqlx") ||
+		strings.HasPrefix(importPath, "github.com/jackc/") ||
+		strings.HasPrefix(importPath, "github.com/go-sql-driver/") ||
+		strings.HasPrefix(importPath, "github.com/lib/pq") ||
+		strings.HasPrefix(importPath, "github.com/mattn/go-sqlite3") ||
+		strings.HasPrefix(importPath, "github.com/mongodb/") ||
+		strings.HasPrefix(importPath, "gorm.io/") ||
+		strings.HasPrefix(importPath, "github.com/uptrace/bun") ||
+		strings.HasPrefix(importPath, "github.com/go-gorm/"):
+		return "database"
+	case strings.HasPrefix(importPath, "net/http") || strings.HasPrefix(importPath, "google.golang.org/grpc") ||
+		strings.HasPrefix(importPath, "github.com/gin-gonic/") ||
+		strings.HasPrefix(importPath, "github.com/labstack/echo") ||
+		strings.HasPrefix(importPath, "github.com/go-chi/") ||
+		strings.HasPrefix(importPath, "github.com/gorilla/") ||
+		strings.HasPrefix(importPath, "github.com/valyala/fasthttp") ||
+		strings.HasPrefix(importPath, "golang.org/x/net") ||
+		strings.HasPrefix(importPath, "github.com/go-resty/") ||
+		strings.HasPrefix(importPath, "github.com/google/go-github") ||
+		strings.HasPrefix(importPath, "github.com/bufbuild/") ||
+		strings.HasPrefix(importPath, "google.golang.org/api"):
+		return "HTTP-gRPC-SDK"
+	case strings.HasPrefix(importPath, "kafka") || strings.HasPrefix(importPath, "github.com/segmentio/kafka-go") ||
+		strings.HasPrefix(importPath, "github.com/Shopify/sarama") ||
+		strings.HasPrefix(importPath, "github.com/rabbitmq/") ||
+		strings.HasPrefix(importPath, "github.com/streadway/amqp") ||
+		strings.HasPrefix(importPath, "github.com/nats-io/") ||
+		strings.HasPrefix(importPath, "github.com/eclipse/paho") ||
+		strings.HasPrefix(importPath, "google.golang.org/grpc") ||
+		strings.HasPrefix(importPath, "github.com/apache/pulsar") ||
+		strings.HasPrefix(importPath, "github.com/IBM/sarama") ||
+		strings.HasPrefix(importPath, "github.com/nsqio/"):
+		return "broker/pub-sub"
+	case strings.HasPrefix(importPath, "os/exec") || strings.HasPrefix(importPath, "syscall") ||
+		strings.HasPrefix(importPath, "github.com/mitchellh/go-ps") ||
+		strings.HasPrefix(importPath, "github.com/shirou/gopsutil"):
+		return "process-OS"
+	case strings.HasPrefix(importPath, "os") || strings.HasPrefix(importPath, "io") ||
+		strings.HasPrefix(importPath, "path/filepath") ||
+		strings.HasPrefix(importPath, "github.com/spf13/afero") ||
+		strings.HasPrefix(importPath, "github.com/fsnotify/") ||
+		strings.HasPrefix(importPath, "github.com/bmatcuk/doublestar"):
+		return "filesystem"
+	case strings.HasPrefix(importPath, "github.com/aws/aws-sdk-go") ||
+		strings.HasPrefix(importPath, "cloud.google.com/go/storage") ||
+		strings.HasPrefix(importPath, "github.com/minio/") ||
+		strings.HasPrefix(importPath, "github.com/azure/azure-sdk-for-go") ||
+		strings.HasPrefix(importPath, "github.com/googleapis/gcs-fuse-go"):
+		return "object-storage"
+	case strings.HasPrefix(importPath, "github.com/redis/") ||
+		strings.HasPrefix(importPath, "github.com/go-redis/") ||
+		strings.HasPrefix(importPath, "github.com/bradfitz/gomemcache") ||
+		strings.HasPrefix(importPath, "github.com/allegro/bigcache") ||
+		strings.HasPrefix(importPath, "github.com/patrickmn/go-cache") ||
+		strings.HasPrefix(importPath, "github.com/golang/groupcache") ||
+		strings.HasPrefix(importPath, "github.com/hashicorp/golang-lru") ||
+		strings.HasPrefix(importPath, "github.com/coocood/freecache"):
+		return "cache-lock"
+	case strings.HasPrefix(importPath, "github.com/spf13/viper") ||
+		strings.HasPrefix(importPath, "github.com/kelseyhightower/envconfig") ||
+		strings.HasPrefix(importPath, "github.com/caarlos0/env") ||
+		strings.HasPrefix(importPath, "github.com/joho/godotenv") ||
+		strings.HasPrefix(importPath, "github.com/hashicorp/vault") ||
+		strings.HasPrefix(importPath, "gopkg.in/yaml") ||
+		strings.HasPrefix(importPath, "github.com/knadh/koanf") ||
+		strings.HasPrefix(importPath, "github.com/mitchellh/mapstructure"):
+		return "config-secrets"
+	}
+	return "other"
 }
 
 // ensureArchitectureAssociations derives the Decision 225 association
