@@ -31,6 +31,19 @@
   data that exists without a canvas.
 - Architecture becomes the **Landscape lens** (one of four Map lenses).
 
+## Task Lens (out of v11 scope, preserved contract)
+
+`repomap investigate <repo> --task-file <task.md>` is a SEPARATE command
+(decisions 124/125) that produces its own run with `task_investigation` in
+the report. It is NOT part of the v11 Map/Study product surface and is not
+gated by v11 acceptance: the ordinary report never populates
+`task_investigation` (omitempty, report.go:250), so the `#/investigate/…`
+route and the `investigate` view are unreachable without an explicit
+investigate run. This decision does NOT remove, re-review, or extend Task
+Lens; the route branch, `defaultWorkspaceView()` task guard, and
+`task_lens_asset_test.go` are preserved as-is so a future change cannot
+delete the mechanism by accident.
+
 ## Map workspace
 
 Desktop structure (one viewport at 1440×1000):

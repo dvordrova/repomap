@@ -264,7 +264,8 @@ const diagnosticsPanel = byClass(roots["rm-study-overview"], "rm-study-diagnosti
 const stageCounts = byClass(diagnosticsPanel || roots["rm-study-overview"], "rm-study-diagnostics-stage").map((node) => text(node));
 const flagItems = byClass(diagnosticsPanel || roots["rm-study-overview"], "rm-study-diagnostics-flag").map((node) => text(node));
 const omissionItems = byClass(diagnosticsPanel || roots["rm-study-overview"], "rm-study-diagnostics-omission").map((node) => text(node));
-const architectureTab = nav.find((node) => node.attributes["data-workspace-view"] === "architecture");
+// Decision 236 (v11): the map tab replaces the architecture tab.
+const architectureTab = nav.find((node) => node.attributes["data-workspace-view"] === "map");
 architectureTab.onclick();
 const architectureText = text(roots["rm-architecture"]);
 const browsePanel = byClass(roots["rm-study-overview"], "rm-study-frontier-browse")[0] || null;

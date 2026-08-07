@@ -150,7 +150,8 @@ if (!api || typeof api.renderWorkspaceTabs !== "function") {
 }
 api.renderWorkspaceTabs();
 const nav = roots["rm-tabs"].children.slice();
-const architectureTab = nav.find((node) => node.attributes && node.attributes["data-workspace-view"] === "architecture");
+// Decision 236 (v11): the map tab replaces the architecture tab.
+const architectureTab = nav.find((node) => node.attributes && node.attributes["data-workspace-view"] === "map");
 if (!architectureTab) {
   process.stderr.write("architecture tab missing: " + JSON.stringify(nav.map((n) => n.attributes["data-workspace-view"])) + "\n");
   process.exit(2);

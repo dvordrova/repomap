@@ -16,8 +16,8 @@ func TestSemanticDiscoveryReportFormatVersion(t *testing.T) {
 	// Decision 232 (Archive 9): Study projection gains adjudication anchor
 	// coverage and the semantic-empty state (CurrentFormatVersion 33).
 	// Decision 235 (v11): final-Architecture rebase into Study (36).
-	if CurrentFormatVersion != 36 {
-		t.Fatalf("CurrentFormatVersion = %d, want 36 for the v11 Study rebase projection", CurrentFormatVersion)
+	if CurrentFormatVersion != 37 {
+		t.Fatalf("CurrentFormatVersion = %d, want 37 for the v11 Study rebase projection", CurrentFormatVersion)
 	}
 }
 

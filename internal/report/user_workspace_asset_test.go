@@ -172,7 +172,7 @@ process.stdout.write(JSON.stringify(snapshots));
 	if got.Closed.SourceLocation != nil || got.Closed.View != "mechanism" || got.Closed.ArtifactID != "mechanism-1" || got.Closed.StepIndex != 1 {
 		t.Fatalf("closing source did not restore the same mechanism step: %#v", got.Closed)
 	}
-	if got.Map.View != "architecture" || got.Map.MapReturn == nil || got.Map.MapReturn.ArtifactID != "mechanism-1" || got.Map.MapReturn.StepIndex != 1 {
+	if got.Map.View != "map" || got.Map.MapReturn == nil || got.Map.MapReturn.ArtifactID != "mechanism-1" || got.Map.MapReturn.StepIndex != 1 {
 		t.Fatalf("map state = %#v", got.Map)
 	}
 	if got.Returned.View != "mechanism" || got.Returned.ArtifactID != "mechanism-1" || got.Returned.StepIndex != 1 {
@@ -321,7 +321,7 @@ const roots = {
   "rm-study-detail": new Element("section"),
 };
 const window = {
-  location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  location: { search: "", hash: "#/map", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
 };
 const document = {
@@ -374,7 +374,7 @@ delete report.study_map;
 report.user_mechanisms.length = 0;
 const topicRoots = { "rm-overview": new Element("section") };
 const topicWindow = {
-  location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  location: { search: "", hash: "#/map", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
 };
 const topicDocument = {
@@ -396,7 +396,7 @@ report.user_topics.length = 0;
 report.study_map = canonicalStudyMap;
 const emptyRoots = { "rm-overview": new Element("section") };
 const emptyWindow = {
-  location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  location: { search: "", hash: "#/map", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
 };
 const emptyDocument = {
@@ -524,7 +524,7 @@ process.stdout.write(JSON.stringify({
 		got.IncompleteRoute.State.DirectionID != "study-incomplete" {
 		t.Fatalf("incomplete Study detail route = %#v", got.IncompleteRoute)
 	}
-	if got.InvalidRoute.Valid || got.InvalidRoute.CanonicalHash != "#/overview" {
+	if got.InvalidRoute.Valid || got.InvalidRoute.CanonicalHash != "#/map" {
 		t.Fatalf("invalid route = %#v", got.InvalidRoute)
 	}
 	if got.SourceState.View != "study" || got.SourceState.DirectionID != "study-routing" || got.SourceState.SourceLocation == nil ||
@@ -816,7 +816,7 @@ const workspace = new Element("main");
 let openedURLs = 0;
 let openedFirstURL = "";
 const window = {
-  location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  location: { search: "", hash: "#/map", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   history: {
     state: null,
     pushState(state, _, hash) { this.state = state; window.location.hash = hash; },
@@ -876,7 +876,7 @@ const exactEnd = api.exactOverviewSourceForLocation({ path: "surface-a.go", line
 function renderIsolatedOverview(isolatedReport, isolatedLocation) {
   const isolatedRoot = new Element("section");
   const isolatedWindow = {
-    location: isolatedLocation || { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+    location: isolatedLocation || { search: "", hash: "#/map", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
     __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
   };
   const isolatedDocument = {
@@ -941,14 +941,14 @@ mixedServedReport.openable_paths.forEach((path, index) => {
   mixedServedReport.source_ids[path] = "source-" + index;
 });
 const mixedServedOverview = renderIsolatedOverview(mixedServedReport, {
-  search: "", hash: "#/overview", hostname: "127.0.0.1", protocol: "http:",
+  search: "", hash: "#/map", hostname: "127.0.0.1", protocol: "http:",
   pathname: "/_repomap/token/runs/run/report.html",
 });
 const fallbackReport = JSON.parse(JSON.stringify(report));
 fallbackReport.user_sources = [componentA];
 const fallbackRoot = new Element("section");
 const fallbackWindow = {
-  location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  location: { search: "", hash: "#/map", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
 };
 const fallbackDocument = {
@@ -979,7 +979,7 @@ noStudyReport.study_publication = {
 };
 const noStudyRoot = new Element("section");
 const noStudyWindow = {
-  location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  location: { search: "", hash: "#/map", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
 };
 const noStudyDocument = {
@@ -1265,8 +1265,8 @@ process.stdout.write(JSON.stringify({
 			t.Fatalf("mixed served anatomy target = %#v", target)
 		}
 	}
-	if got.DrawerState.View != "overview" || got.DrawerState.SourceLocation != nil ||
-		got.DrawerHash != "#/overview" ||
+	if got.DrawerState.View != "map" || got.DrawerState.SourceLocation != nil ||
+		got.DrawerHash != "#/map" ||
 		got.OpenedURLs != 1 ||
 		!strings.Contains(got.OpenedFirstURL, "github.com/example/fixture/blob") {
 		t.Fatalf("primary click did not jump to GitHub source: state %#v hash %q history %#v hidden=%t opened=%d first=%q",
@@ -1276,9 +1276,9 @@ process.stdout.write(JSON.stringify({
 		got.StudyHash != "#/study/study-exact" {
 		t.Fatalf("Study route = state %#v hash %q", got.StudyState, got.StudyHash)
 	}
-	if got.ArchitectureState.View != "architecture" || got.ArchitectureState.MapTarget.Kind != "component" ||
+	if got.ArchitectureState.View != "map" || got.ArchitectureState.MapTarget.Kind != "component" ||
 		got.ArchitectureState.MapTarget.ComponentID != "component-a" ||
-		got.ArchitectureHash != "#/architecture?focus=component%3Acomponent-a" {
+		got.ArchitectureHash != "#/map?focus=component%3Acomponent-a" {
 		t.Fatalf("same-ID Architecture focus = state %#v hash %q", got.ArchitectureState, got.ArchitectureHash)
 	}
 	if got.ExactStart != strings.Repeat("a", 64) || got.ExactEnd != strings.Repeat("a", 64) ||
@@ -1602,7 +1602,7 @@ const report = {
 };
 const roots = { "rm-overview": new Element("section") };
 const window = {
-  location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  location: { search: "", hash: "#/map", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   RepomapSemanticSearch: {}, __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
 };
 const document = {
@@ -1795,7 +1795,7 @@ const roots = {
   "rm-mechanism-detail": new Element("section"),
 };
 const window = {
-  location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  location: { search: "", hash: "#/map", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   RepomapSemanticSearch: {}, __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
 };
 const document = {
@@ -2051,11 +2051,11 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("step deep link = %#v", step)
 	}
 	missing := got.Parsed["#/mechanism/missing/step/2"]
-	if missing.Valid || missing.State.View != "overview" || missing.CanonicalHash != "#/overview" {
+	if missing.Valid || missing.State.View != "map" || missing.CanonicalHash != "#/map" {
 		t.Fatalf("invalid mechanism route = %#v", missing)
 	}
 	search := got.Parsed["#/search"]
-	if search.Valid || search.State.View != "overview" || search.CanonicalHash != "#/overview" {
+	if search.Valid || search.State.View != "map" || search.CanonicalHash != "#/map" {
 		t.Fatalf("Search route = %#v, want normal-report Overview canonicalization", search)
 	}
 	bounded := got.Parsed["#/mechanism/mechanism%2Fone/step/99"]
@@ -2433,12 +2433,12 @@ process.stdout.write(JSON.stringify({
 	}
 	// Decision 222: source opening is a no-op without a jump; the mechanism
 	// remains the active context but no source drawer is opened.
-	if got.OverviewHash != "#/overview" || got.OverviewDrawer.View != "overview" ||
+	if got.OverviewHash != "#/map" || got.OverviewDrawer.View != "overview" ||
 		string(got.OverviewDrawer.SourceLocation) != "null" {
 		t.Fatalf("Overview navigation did not clear mechanism ownership: hash %q, state %#v, has mechanism %t",
 			got.OverviewHash, got.OverviewDrawer, got.OverviewDrawerHasMechanism)
 	}
-	if got.MapHash != "#/architecture?focus=component%3Arouter" ||
+	if got.MapHash != "#/map?focus=component%3Arouter" ||
 		got.MapReturnHash != "#/mechanism/mechanism-1/step/2" ||
 		got.MapReturned.View != "mechanism" || got.MapReturned.StepIndex != 1 {
 		t.Fatalf("explicit architecture return = map %q, return %q, state %#v",

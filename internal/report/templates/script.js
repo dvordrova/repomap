@@ -76,7 +76,9 @@
 	var OPERATIONAL_LANDMARKS = OPERATIONS && Array.isArray(OPERATIONS.landmarks) ? OPERATIONS.landmarks : [];
 	var TASK_INVESTIGATION = DATA.task_investigation || null;
   var workspaceState = {
-		view: TASK_INVESTIGATION ? 'investigate' : 'overview',
+		// Decision 236 (v11): Map is the default view for ordinary
+		// workspaces.
+		view: defaultWorkspaceView(),
 		taskID: TASK_INVESTIGATION && TASK_INVESTIGATION.task_id || '',
     artifactID: '',
 		directionID: '',
@@ -251,12 +253,12 @@
 
   function emptyWorkspaceState() {
     return {
-			view: TASK_INVESTIGATION ? 'investigate' : 'overview',
+			view: defaultWorkspaceView(),
 			taskID: TASK_INVESTIGATION && TASK_INVESTIGATION.task_id || '',
       artifactID: '',
-		directionID: '',
-		themeCardOrdinal: 0,
-		operationID: '',
+			directionID: '',
+			themeCardOrdinal: 0,
+			operationID: '',
       stepIndex: 0,
       sourceLocation: null,
       mapReturn: null,
@@ -264,11 +266,18 @@
     };
   }
 
+  // Decision 236 (v11): Map is the primary product — the default view is
+  // 'map' for every ordinary (non-task-investigation) workspace.
+  function defaultWorkspaceView() {
+    return TASK_INVESTIGATION ? 'investigate' : 'map';
+  }
+
 	function defaultWorkspaceHash() {
-		if (TASK_INVESTIGATION && TASK_INVESTIGATION.task_id) {
-			return '#/investigate/' + encodeRoutePart(TASK_INVESTIGATION.task_id);
-		}
-		return '#/overview';
+	if (TASK_INVESTIGATION && TASK_INVESTIGATION.task_id) {
+	return '#/investigate/' + encodeRoutePart(TASK_INVESTIGATION.task_id);
+	}
+	// Decision 236 (v11): Map is the default route.
+	return '#/map';
 	}
 
   function encodeRoutePart(value) {
@@ -335,6 +344,12 @@
       var focus = architectureFocusValue(state.mapTarget);
       return '#/architecture' + (focus ? '?focus=' + encodeURIComponent(focus) : '');
     }
+		// Decision 236 (v11): map is the primary route — a map view (with
+		// an optional focus target) hashes to #/map.
+    if (state.view === 'map') {
+      var mapFocus = architectureFocusValue(state.mapTarget);
+      return '#/map' + (mapFocus ? '?focus=' + encodeURIComponent(mapFocus) : '');
+    }
     if (state.view === 'mechanism' && state.artifactID) {
       var mechanismHash = '#/mechanism/' + encodeRoutePart(state.artifactID);
       return mechanismRoot ? mechanismHash : mechanismHash + '/step/' + (Number(state.stepIndex) + 1);
@@ -349,7 +364,11 @@
 			return '#/operate/' + encodeRoutePart(state.operationID);
 		}
     if (state.view === 'provenance' && DEBUG_MODE) return '#/provenance';
-    return '#/overview';
+		// Decision 236 (v11): the overview view is legacy — its information
+		// lives in the empty-selection map inspector, so its hash
+		// canonicalizes to the map.
+    if (state.view === 'overview') return defaultWorkspaceHash();
+    return '#/map';
   }
 
 	function workspaceRouteFamily(state) {
@@ -370,7 +389,10 @@
 		if (state.view === 'operate' && state.operationID) {
 			return 'operate:' + state.operationID;
 		}
-		return 'view:' + (state.view || 'overview');
+		// Decision 236 (v11): map is the primary route; architecture is
+		// an alias to the map with the Landscape lens.
+		if (state.view === 'architecture') return 'view:map';
+		return 'view:' + (state.view || defaultWorkspaceView());
 	}
 
 	function resetWorkspaceScroll() {
@@ -389,12 +411,24 @@
 		var canonicalHash = defaultWorkspaceHash();
 
     if (segments.length === 1 && segments[0] === 'overview') {
+			// Decision 236 (v11): Overview is no longer a competing
+			// destination — its information lives in the empty-selection
+			// Map inspector. The legacy route canonicalizes to the map.
 			if (TASK_INVESTIGATION) {
 				state = emptyWorkspaceState();
 				valid = false;
 			} else {
-				canonicalHash = '#/overview';
+				state.view = 'map';
+				canonicalHash = defaultWorkspaceHash();
 			}
+		} else if (segments.length === 1 && segments[0] === 'map') {
+			state.view = 'map';
+			var focus = new URLSearchParams(query).get('focus') || '';
+			if (focus) {
+				state.mapTarget = architectureTargetFromFocus(focus);
+			}
+			state.mapReturn = historyState && historyState.mapReturn || null;
+			canonicalHash = workspaceHashForState(state);
 		} else if (segments.length === 2 && segments[0] === 'investigate') {
 			var routeTaskID = decodeRoutePart(segments[1]);
 			if (!TASK_INVESTIGATION || routeTaskID !== TASK_INVESTIGATION.task_id) {
@@ -404,6 +438,14 @@
 				state.taskID = routeTaskID;
 				canonicalHash = defaultWorkspaceHash();
 			}
+		} else if (segments.length === 1 && segments[0] === 'architecture') {
+			// Decision 236 (v11): the Architecture route aliases to the map
+			// with the Landscape lens (the map is the primary product).
+      state.view = 'map';
+      var focus = new URLSearchParams(query).get('focus') || '';
+      state.mapTarget = architectureTargetFromFocus(focus);
+      state.mapReturn = historyState && historyState.mapReturn || null;
+      canonicalHash = workspaceHashForState(state);
     } else if (segments.length === 1 && segments[0] === 'mechanisms') {
       state.view = mechanisms && mechanisms.length ? 'mechanisms' : 'overview';
       valid = state.view === 'mechanisms';
@@ -412,12 +454,6 @@
 			state.view = (STUDY_DIRECTIONS.length || themeCards().length) ? 'study_overview' : 'overview';
 			valid = state.view === 'study_overview';
 			canonicalHash = valid ? '#/study' : '#/overview';
-    } else if (segments.length === 1 && segments[0] === 'architecture') {
-      state.view = 'architecture';
-      var focus = new URLSearchParams(query).get('focus') || '';
-      state.mapTarget = architectureTargetFromFocus(focus);
-      state.mapReturn = historyState && historyState.mapReturn || null;
-      canonicalHash = workspaceHashForState(state);
     } else if (segments.length === 1 && segments[0] === 'provenance' && DEBUG_MODE) {
       state.view = 'provenance';
       canonicalHash = '#/provenance';
@@ -503,8 +539,10 @@
     var mechanism;
     switch (action.type) {
     case 'view':
-      next.view = action.view || 'overview';
-      if (next.view !== 'architecture') {
+			// Decision 236 (v11): 'architecture' is an alias of the map
+			// with the Landscape lens; the canonical view is 'map'.
+      next.view = action.view === 'architecture' ? 'map' : (action.view || defaultWorkspaceView());
+      if (next.view !== 'map' && next.view !== 'architecture') {
         next.mapTarget = null;
         if (!action.keepReturn) next.mapReturn = null;
       }
@@ -576,7 +614,8 @@
       if (!action.target) return next;
       next.mapReturn = { artifactID: next.artifactID, stepIndex: next.stepIndex };
       next.mapTarget = action.target;
-      next.view = 'architecture';
+			// Decision 236 (v11): the map is the primary product.
+      next.view = 'map';
       return next;
     case 'return_from_map':
       if (!next.mapReturn) return next;
@@ -3873,7 +3912,9 @@
 		if (view === 'study_overview') return 'rm-study-overview';
 		if (view === 'study') return 'rm-study-detail';
 		if (view === 'operate') return 'rm-operate-detail';
-    if (view === 'architecture') return 'rm-architecture';
+		// Decision 236 (v11): map is the primary product — it reuses the
+		// architecture canvas host; architecture is the Landscape lens.
+    if (view === 'map' || view === 'architecture') return 'rm-architecture';
     if (view === 'provenance') return 'rm-provenance';
     return 'rm-overview';
   }
@@ -3998,11 +4039,13 @@
   }
 
   function navigateWorkspace(view) {
-    if (view === 'architecture') {
-		if (!userArchitectureAvailable()) {
-			commitWorkspaceState(emptyWorkspaceState());
-			return;
-		}
+		// Decision 236 (v11): architecture is the Landscape lens of the
+		// map — navigating to it opens the map with the given focus.
+    if (view === 'architecture' || view === 'map') {
+			if (view === 'architecture' && !userArchitectureAvailable()) {
+				commitWorkspaceState(emptyWorkspaceState());
+				return;
+			}
       openArchitectureTarget(null, null);
       return;
     }
@@ -8072,6 +8115,17 @@
 		var root = document.getElementById('rm-overview');
 		if (!root) return;
 		root.replaceChildren();
+		renderMapSummaryInto('rm-overview');
+	}
+
+	// Decision 236 (v11): the repository summary (thesis/brief/atlas shelf,
+	// entry perimeter, entries, remainder — the former Overview content)
+	// renders into the given section. Used by the overview section and by
+	// the map workspace when no architecture canvas exists.
+	function renderMapSummaryInto(sectionID) {
+		var root = document.getElementById(sectionID);
+		if (!root) return;
+		root.replaceChildren();
 		renderStudyPublicationNotice(root);
 		renderAtlasStudyFailedBrowse(root);
 		var anatomy = repositoryOverviewAnatomy();
@@ -10743,7 +10797,7 @@
 			commitWorkspaceState(emptyWorkspaceState());
 			return;
 		}
-    var next = reduceWorkspaceState(workspaceState, { type: 'view', view: 'architecture' }, USER_MECHANISMS);
+    var next = reduceWorkspaceState(workspaceState, { type: 'view', view: 'map' }, USER_MECHANISMS);
     next.mapReturn = returnTarget || null;
     next.mapTarget = target || null;
     commitWorkspaceState(next);
@@ -10842,10 +10896,21 @@
 			else renderStudyDetailWorkspace();
 		}
 		if (workspaceState.view === 'operate') renderOperateDetailWorkspace();
-    if (workspaceState.view === 'architecture') {
+		// Decision 236 (v11): map is the primary product — it renders the
+		// architecture workspace (Landscape lens); architecture remains an
+		// accepted alias. A canvas-less report still shows the map
+		// workspace with the repository summary (thesis/brief/atlas shelf).
+    if ((workspaceState.view === 'map' || workspaceState.view === 'architecture') && !DATA.architecture_canvas) {
+      // Decision 236 (v11): a canvas-less report still shows the map
+      // workspace — the repository summary renders into the map section
+      // (thesis/brief/atlas shelf) from report data that exists without a
+      // canvas.
+      renderMapSummaryInto('rm-architecture');
+      activateWorkspaceView(workspaceState.view);
+    } else if (workspaceState.view === 'map' || workspaceState.view === 'architecture') {
       if (!architectureCanvasHost) renderArchitectureWorkspace();
       else renderArchitectureReturn();
-      activateWorkspaceView('architecture');
+      activateWorkspaceView(workspaceState.view);
       var ready = architectureCanvasView ? (architectureReady || Promise.resolve(architectureCanvasView)) : mountArchitectureCanvas();
       ready.then(function () { focusArchitectureTarget(workspaceState.mapTarget); });
     } else {
@@ -10925,10 +10990,12 @@
 		if (TASK_INVESTIGATION) {
 			addWorkspaceTab(msg('main.task'), 'investigate');
 		} else {
-			addWorkspaceTab(msg('main.overview'), 'overview');
+			// Decision 236 (v11): Map is the primary product — the
+			// Overview tab is replaced by the Map tab; Study and
+			// Mechanisms follow.
+			addWorkspaceTab(msg('main.map'), 'map');
 			if (!ATLAS_FIRST && USER_MECHANISMS.length) addWorkspaceTab(msg('main.mechanisms'), 'mechanisms');
 			if (STUDY_DIRECTIONS.length || themeCards().length) addWorkspaceTab(msg('main.study'), 'study_overview');
-			if (userArchitectureAvailable()) addWorkspaceTab(msg('main.architecture'), 'architecture');
 		}
 		if (DEBUG_MODE) addWorkspaceTab(msg('main.provenance'), 'provenance');
 	}
