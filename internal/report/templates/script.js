@@ -3,6 +3,10 @@
 
   var DATA = JSON.parse(document.getElementById('rm-report-data').textContent);
   var REPORT_LANGUAGE = DATA.report_language === 'ru' ? 'ru' : 'en';
+  // Archive 12 P0 (review): the default Study shelf is bounded and
+  // core-first (cards already arrive in portfolio-rank order); the
+  // complete shelf is one "Show all" press away, never truncated.
+  var maxPrimaryShelfThemes = 8;
   var UI = window.RepomapUI;
   if (!UI || typeof UI.message !== 'function' || typeof UI.hasMessage !== 'function') {
     throw new Error('repomap UI message catalog is unavailable');
@@ -4705,10 +4709,31 @@
 		// theme — no "show more" for peer theme existence. Progressive
 		// disclosure may collapse card detail, reading previews, and
 		// provenance, never the themes themselves.
+		// Archive 12 P0 (review): the DEFAULT shelf is now bounded and
+		// core-first — the reducer already orders cards by portfolio rank
+		// (production/user-facing kinds first). The primary shelf shows the
+		// first maxPrimaryShelfThemes cards; the COMPLETE shelf (every accepted
+		// theme and exact reading) is one "Show all" press away and is never
+		// truncated in the expanded state. This is progressive disclosure of a
+		// bounded default, not the removal of peer themes.
 		var shelf = el('div', 'rm-study-theme-shelf');
-		cards.forEach(function (card, index) {
+		var primaryCards = cards.slice(0, maxPrimaryShelfThemes);
+		var remainderCards = cards.slice(maxPrimaryShelfThemes);
+		primaryCards.forEach(function (card, index) {
 			shelf.appendChild(renderThemeCard(card, index));
 		});
+		if (remainderCards.length) {
+			var more = el('details', 'rm-study-theme-shelf__more');
+			var summary = txt('summary', 'rm-study-theme-shelf__more-summary',
+				msg('main.study.themes.show_all', { count: remainderCards.length }));
+			more.appendChild(summary);
+			var moreList = el('div', 'rm-study-theme-shelf__more-list');
+			remainderCards.forEach(function (card, index) {
+				moreList.appendChild(renderThemeCard(card, primaryCards.length + index));
+			});
+			more.appendChild(moreList);
+			shelf.appendChild(more);
+		}
 		root.appendChild(shelf);
 		// Raw span/model/frontier diagnostics and the machine question
 		// inventory move into a collapsed "Coverage and provenance" section
@@ -4737,6 +4762,14 @@
 		titleRow.appendChild(txt('span', 'rm-study-theme-card__badge rm-study-theme-card__evidence rm-study-theme-card__evidence--' + themeCoverageState(card), themeCoverageLabel(card)));
 		titleRow.appendChild(txt('span', 'rm-study-theme-card__badge rm-study-theme-card__scope rm-study-theme-card__scope--' + themeScopeState(card), themeScopeLabel(card)));
 		titleRow.appendChild(txt('span', 'rm-study-theme-card__kind', themeKindLabel(card)));
+		// Decision 233 (Archive 9): the portfolio-concentration marker is
+		// visible on every card whose first reading belongs to the
+		// dominating source family — the user sees WHY the shelf looks
+		// concentrated (e.g. TLS/certificates) without opening evidence
+		// details.
+		if (card.concentration_marker) {
+			titleRow.appendChild(txt('span', 'rm-study-theme-card__badge rm-study-theme-card__concentration', card.concentration_marker));
+		}
 		article.appendChild(titleRow);
 		if (card.final_question) article.appendChild(txt('p', 'rm-study-theme-card__question', card.final_question));
 		if (card.why_it_matters) article.appendChild(txt('span', 'rm-study-theme-card__reason', card.why_it_matters));

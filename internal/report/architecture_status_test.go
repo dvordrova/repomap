@@ -357,6 +357,11 @@ func TestArchitectureSynthesisV6AcceptsExactClosedProducerDiagnosticRegistry(t *
 		"response.membership_unavailable",
 		"response.not_captured",
 		"status.invalid_evidence",
+		// Decision 235 (v11) bounded normalization vocabulary.
+		"response.trailing_closing_delimiters_normalized",
+		// Archive 12 P0 (etcd) bounded response membership.
+		"response.member_refs_per_component_ceiling",
+		"response.member_refs_total_ceiling",
 	}
 	if len(architectureStatusValidationCodes) != len(producerCodes) {
 		t.Fatalf(

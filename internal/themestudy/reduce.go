@@ -31,8 +31,12 @@ type ReducerInput struct {
 
 // Reduction is the reduced, published Study-card portfolio.
 type Reduction struct {
-	Cards       []ThemeCard    `json:"cards"`
-	Omitted     int            `json:"omitted"`
+	Cards   []ThemeCard `json:"cards"`
+	Omitted int         `json:"omitted"`
+	// CoProjected (Decision 233 / Archive 12 P0): how many accepted themes
+	// folded into an earlier card as alternates (identical reading set or
+	// identical normalized prose) instead of publishing a duplicate card.
+	CoProjected int            `json:"co_projected,omitempty"`
 	Partial     bool           `json:"partial"`
 	Diagnostics map[string]int `json:"diagnostics,omitempty"`
 }
@@ -197,8 +201,8 @@ func Reduce(input ReducerInput) (Reduction, error) {
 	}
 
 	var all []workTheme
-	seenCanonical := make(map[string]struct{})
-	seenNormal := make(map[string]int) // normalKey -> index into all
+	seenCanonical := make(map[string]int) // canonicalID -> index into all
+	seenNormal := make(map[string]int)    // normalKey -> index into all
 	for _, theme := range input.Themes {
 		candidate, ok := input.Candidates[theme.CandidateRef]
 		if !ok {
@@ -210,9 +214,15 @@ func Reduce(input ReducerInput) (Reduction, error) {
 			reduction.Omitted++
 			continue
 		}
-		canonicalID := themeIdentity(publishedRefs(entries), candidate.ThemeKind)
-		if _, dup := seenCanonical[canonicalID]; dup {
-			reduction.Omitted++
+		canonicalID := themeIdentity(entries, candidate.ThemeKind)
+		if earlier, dup := seenCanonical[canonicalID]; dup {
+			// Decision 233 + Archive 12 P0: a theme whose published reading
+			// set is EXACTLY identical to an earlier card (even through
+			// different anchor refs) is the same study card — it CO-PROJECTS
+			// as alternate provenance (title/question/readings) instead of
+			// being dropped or publishing a duplicate card.
+			coProjectTheme(&all[earlier], theme, entries, input.Anchors)
+			reduction.CoProjected++
 			continue
 		}
 		normalKey := normalizeProse(theme.FinalQuestion) + "|" + normalizeProse(theme.FinalTitle)
@@ -225,7 +235,7 @@ func Reduce(input ReducerInput) (Reduction, error) {
 			coProjectTheme(&all[earlier], theme, entries, input.Anchors)
 			continue
 		}
-		seenCanonical[canonicalID] = struct{}{}
+		seenCanonical[canonicalID] = len(all)
 		seenNormal[normalKey] = len(all)
 		all = append(all, workTheme{theme: theme, kind: candidate.ThemeKind, entries: entries, canonicalID: canonicalID, normalKey: normalKey})
 	}
@@ -410,20 +420,19 @@ func directIn(entries []publishedEntry) int {
 	return n
 }
 
-func publishedRefs(entries []publishedEntry) []string {
-	out := make([]string, 0, len(entries))
-	for _, e := range entries {
-		out = append(out, e.ref)
+// themeIdentity derives the canonical identity of a published theme from the
+// EXACT public reading identities (path,line,symbol) plus kind — never from
+// anchor refs. Two themes whose readings resolve to the same exact source set
+// (even through different anchor refs) are the SAME study card: Archive 12 P0
+// (Telebot 3 pairs, Casdoor 2 cards with identical exact reading sets) showed
+// ref-based identity let duplicate reading sets publish as separate cards.
+func themeIdentity(entries []publishedEntry, kind ThemeKind) string {
+	identities := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		identities = append(identities, readingPublicIdentity(entry.reading))
 	}
-	return out
-}
-
-// themeIdentity derives the canonical id from accepted exact refs + local
-// contract data (theme_kind), never model prose.
-func themeIdentity(anchorRefs []string, kind ThemeKind) string {
-	sorted := append([]string(nil), anchorRefs...)
-	sort.Strings(sorted)
-	payload, _ := json.Marshal(map[string]any{"anchors": sorted, "kind": string(kind)})
+	sort.Strings(identities)
+	payload, _ := json.Marshal(map[string]any{"readings": identities, "kind": string(kind)})
 	hash := sha256.Sum256(payload)
 	return "theme-" + hex.EncodeToString(hash[:])[:24]
 }

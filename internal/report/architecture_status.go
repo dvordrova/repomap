@@ -92,6 +92,15 @@ var architectureStatusValidationCodes = map[string]struct{}{
 	"response.membership_unavailable": {},
 	"response.not_captured":           {},
 	"status.invalid_evidence":         {},
+
+	// Decision 235 (v11): bounded deterministic normalization diagnostics —
+	// the run continues with the normalized response, never a rejection.
+	"response.trailing_closing_delimiters_normalized": {},
+	// Archive 12 P0 (etcd): bounded response membership — the ceiling is a
+	// normalization (trimmed deterministically, members stay in the local
+	// remainder), never a rejection.
+	"response.member_refs_per_component_ceiling": {},
+	"response.member_refs_total_ceiling":         {},
 }
 
 // Versions through v5 used exclusive membership, deterministic remainder,

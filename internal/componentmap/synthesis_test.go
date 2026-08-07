@@ -1495,7 +1495,30 @@ func TestSavedCasdoorD202ResponseBecomesExactD204ConceptualCoverage(t *testing.T
 	}
 
 	completeProposal := validSynthesisProposal(bundle)
+	// Decision 236 / Archive 12 P0 (etcd): response membership is BOUNDED
+	// (maxMemberRefsPerComponent per component, maxTotalMemberRefs total).
+	// A synthetic "full checklist" response must split members across
+	// components within the ceiling to keep full coverage; a single
+	// component listing every member is exactly the degenerate shape the
+	// ceiling trims (members not returned stay in the local remainder).
+	splitMembers := completeProposal.Subsystems[0].Components[0].MemberIDs
+	first := splitMembers
+	second := []MemberID(nil)
+	if len(first) > maxMemberRefsPerComponent {
+		first = first[:maxMemberRefsPerComponent]
+		second = splitMembers[maxMemberRefsPerComponent:]
+	}
+	completeProposal.Subsystems[0].Components[0].MemberIDs = first
 	completeProposal.Subsystems[0].Components[0].Hypothesis = true
+	if len(second) > 0 {
+		completeProposal.Subsystems[0].Components = append(
+			completeProposal.Subsystems[0].Components,
+			ProposedComponent{
+				Name: "Local architecture (remainder)", Description: "Bounded continuation.",
+				MemberIDs: second,
+			},
+		)
+	}
 	completeRaw := synthesisWireProposalJSON(t, bundle, completeProposal)
 	complete, err := RecordSynthesisResponseForLanguage(
 		bundle, "casdoor-d203-complete", "openai-compatible/bearer",

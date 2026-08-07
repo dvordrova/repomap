@@ -26,11 +26,16 @@ const (
 	// the response grammar changed (member-only) and the prompt changed.
 	SynthesisRequestVersion = 16
 	SynthesisRecordVersion  = 13
-	// Decision 235 (v11): one Architecture response grammar — member_refs
-	// only; unit_refs is read-only context (corpus: 266/266 accepted
-	// components use member_refs).
-	SynthesisPromptVersion = "architecture-grounding-v19"
+)
 
+// SynthesisPromptVersion is the prompt contract identity — the short SHA-256
+// of the exact language-independent system text (owner directive 2026-08-07:
+// short prompt SHA instead of a hand-bumped version). Any edit to the prompt
+// instructions automatically changes this value, so cache keys and
+// saved-record replays fail closed on their own.
+var SynthesisPromptVersion = "architecture-grounding-" + shortSynthesisPromptSystemSHA()
+
+const (
 	maxSynthesisRequestBytes  = 1 << 20
 	maxSynthesisPromptBytes   = maxSynthesisRequestBytes + (16 << 10)
 	maxSynthesisResponseBytes = modelresearch.ProviderResponseByteLimit
@@ -966,15 +971,15 @@ func BuildSynthesisPromptForLanguage(
 	return buildSynthesisPromptForLanguage(bundle, language)
 }
 
-func buildSynthesisPromptForLanguage(
-	bundle CandidateBundle,
-	language string,
-) (SynthesisPrompt, error) {
-	_, requestJSON, err := BuildSynthesisRequest(bundle)
-	if err != nil {
-		return SynthesisPrompt{}, err
-	}
-	system := `You create a compact conceptual architecture landscape from bounded local repository facts.
+// synthesisPromptSystemText is the EXACT language-independent system text of
+// the Architecture prompt. The prompt contract version is the short SHA-256
+// of this text (owner directive 2026-08-07): editing any instruction
+// automatically invalidates cache keys and saved-record replays — there is no
+// version constant to bump by hand. The language suffix is appended by
+// buildSynthesisPromptForLanguage and deliberately NOT part of the contract
+// hash: en/ru share one contract.
+func synthesisPromptSystemText() string {
+	return `You create a compact conceptual architecture landscape from bounded local repository facts.
 
 Use conceptual member, anchor, and unit refs as opaque request-local values. Copy a ref exactly as supplied; never rewrite refs, infer new refs, or mention members absent from the request. Refs under structural_context are read-only locator context and must never occur in response unit_refs, member_refs, or anchor_refs.
 Local semantic facts, compact structural relations, structural locator containment, flow participation, anchor proof_mode, and certainty are read-only grouping context. They must never be returned, upgraded, replaced, or converted into execution order. A declaration_family anchor is static declaration context and never proves runtime behavior. Canonical repository identities, exact source locations, provider provenance, scenarios, catalog identity, versions, and hashes are private and absent from this request.
@@ -986,9 +991,29 @@ The entire response must parse as exactly one complete JSON object. Its only roo
 
 Records are in conceptual display order. Emit each subsystem record followed by its component records. A member may legitimately participate in several components when it genuinely serves several distinct conceptual roles — this is shared participation, not exclusive ownership, and is accepted; the backend classifies ownership mechanics. Name what distinguishes each component from its siblings. An exact partial grouping is valid: omitted members remain in a deterministic local unclassified remainder and must not be echoed, renamed, or placed in a model-authored remainder. Fewer groups are better than padding: when evidence is weak, return fewer components honestly. A component may be anchor-backed shared participation with zero exclusive members; anchor_refs are optional per component, not required.
 
-Repository archetype and grounding mode are local facts. A primary pillar is one subsystem record; component records are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, prefer four to seven distinct subsystem records when the supplied evidence supports that many, never more than twelve. Tiny, library, and package-landscape requests may honestly use one to three. Prefer one to four component records per subsystem and no more than forty-eight component records in total. hypothesis is not part of the response; the backend derives product hypothesis status exclusively from exact process_entry/call_target proof scoped to every component member. declaration_family never proves operational grounding. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
+Repository archetype and grounding mode are local facts. A primary pillar is one subsystem record; component records are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, prefer four to seven distinct subsystem records when the supplied evidence supports that many, never more than twelve. Tiny, library, and package-landscape requests may honestly use one to three. Prefer one to four component records per subsystem and no more than forty-eight component records in total. List the most representative members first and cap each component's member_refs at twenty-four distinct refs; cap the entire response at three hundred twenty member refs in total. Every member not listed stays in the deterministic local remainder — listing every member is never required and is the single largest cause of response failure. hypothesis is not part of the response; the backend derives product hypothesis status exclusively from exact process_entry/call_target proof scoped to every component member. declaration_family never proves operational grounding. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
 
 Do not return versions, catalog identity, hashes, canonical IDs, edges, relations, flow definitions or transitions, fact payloads, repository paths, qualified symbols, test details, evidence, certainty, provenance, scenarios, source locations, coordinates, dimensions, ports, colors, styles, UI settings, markdown, or explanatory prose. Do not claim temporal or runtime behavior from static relations.`
+}
+
+// shortSynthesisPromptSystemSHA returns the first 12 hex chars of the SHA-256
+// of the exact language-independent system text — the prompt contract
+// identity (owner directive 2026-08-07: short prompt SHA instead of a
+// hand-bumped version).
+func shortSynthesisPromptSystemSHA() string {
+	digest := sha256.Sum256([]byte(synthesisPromptSystemText()))
+	return hex.EncodeToString(digest[:])[:12]
+}
+
+func buildSynthesisPromptForLanguage(
+	bundle CandidateBundle,
+	language string,
+) (SynthesisPrompt, error) {
+	_, requestJSON, err := BuildSynthesisRequest(bundle)
+	if err != nil {
+		return SynthesisPrompt{}, err
+	}
+	system := synthesisPromptSystemText()
 	if language == "ru" {
 		system += `
 
@@ -1611,6 +1636,21 @@ func evaluateSynthesisResponse(
 		))
 		return landscape, SynthesisMembershipCounts{}, fallbackErr
 	}
+	// Decision 236 / Archive 12 P0 (etcd): the single member_refs grammar
+	// stays, but the response membership is BOUNDED. Without a ceiling a
+	// large repository makes the model serialize an unbounded member list,
+	// the output degenerates into repeated p* refs, hits the provider
+	// output limit mid-array and dies with provider_output_limit. The
+	// ceiling is deterministic, item-local and backend-owned: each
+	// component keeps at most maxMemberRefsPerComponent distinct refs and
+	// the whole response at most maxTotalMemberRefs; every member that was
+	// NOT returned stays in the local remainder (existing accounting).
+	// Never solved with prose ("never repeat") and never by raising the
+	// provider ceiling.
+	ceilingApplied, ceilingDiagnostics, ceilingErr := applyMemberRefsCeiling(&wireProposal)
+	if ceilingErr != nil {
+		return Landscape{}, SynthesisMembershipCounts{}, ceilingErr
+	}
 	catalog, err := buildSynthesisPrivateCatalog(bundle)
 	if err != nil {
 		return Landscape{}, SynthesisMembershipCounts{}, err
@@ -1623,6 +1663,9 @@ func evaluateSynthesisResponse(
 	if resolveErr != nil {
 		landscape, err := synthesisResponseFallback(bundle, newDiagnostic(resolveErr.code, resolveErr.message))
 		return landscape, SynthesisMembershipCounts{}, err
+	}
+	if ceilingApplied {
+		wireDiagnostics = append(ceilingDiagnostics, wireDiagnostics...)
 	}
 	membership := synthesisMembershipCounts(bundle, proposal)
 	landscape, err := Apply(bundle, proposal)
@@ -2265,6 +2308,92 @@ func decodeSynthesisAnchorRef(raw json.RawMessage) (SynthesisAnchorRef, error) {
 		kind = BehaviorAnchorKind(decodedKind)
 	}
 	return SynthesisAnchorRef{Kind: kind, Ref: ref}, nil
+}
+
+// Decision 236 / Archive 12 P0 (etcd): bounded response membership. Each
+// component keeps at most maxMemberRefsPerComponent distinct member refs
+// and the whole proposal at most maxTotalMemberRefs total member refs.
+// The bounds are generous for real repositories but stop the degenerate
+// "serialize every member, repeat p* refs, blow the provider budget"
+// failure mode. Members not returned stay in the existing local remainder
+// accounting — the ceiling never fabricates membership and never drops a
+// component.
+const (
+	maxMemberRefsPerComponent = 24
+	maxTotalMemberRefs        = 320
+)
+
+// applyMemberRefsCeiling trims each component's member_refs to the bounded
+// maximum, then the whole proposal to the total maximum. It returns true
+// and exact diagnostics when any trimming happened; the diagnostics carry
+// the precise counts so the report can state what was bounded.
+func applyMemberRefsCeiling(proposal *synthesisWireProposal) (bool, []Diagnostic, error) {
+	if proposal == nil {
+		return false, nil, fmt.Errorf("componentmap: member refs ceiling requires a proposal")
+	}
+	applied := false
+	perComponentTrimmed := 0
+	for recordIndex := range proposal.Records {
+		record := &proposal.Records[recordIndex]
+		if record.Kind != synthesisWireComponentRecord {
+			continue
+		}
+		if len(record.MemberRefs) > maxMemberRefsPerComponent {
+			trimmed := len(record.MemberRefs) - maxMemberRefsPerComponent
+			// Keep the FIRST refs in wire order (the model's stated
+			// priority); the rest stay in the local remainder.
+			record.MemberRefs = record.MemberRefs[:maxMemberRefsPerComponent]
+			perComponentTrimmed += trimmed
+			applied = true
+		}
+	}
+	var diagnostics []Diagnostic
+	total := 0
+	for _, record := range proposal.Records {
+		if record.Kind != synthesisWireComponentRecord {
+			continue
+		}
+		total += len(record.MemberRefs)
+	}
+	if total > maxTotalMemberRefs {
+		// Total bound: drop from the END of the last component that still
+		// has refs, then backwards, so the earliest components (the
+		// model's stated priority) keep their membership.
+		toDrop := total - maxTotalMemberRefs
+		for recordIndex := len(proposal.Records) - 1; recordIndex >= 0 && toDrop > 0; recordIndex-- {
+			record := &proposal.Records[recordIndex]
+			if record.Kind != synthesisWireComponentRecord {
+				continue
+			}
+			if len(record.MemberRefs) == 0 {
+				continue
+			}
+			drop := len(record.MemberRefs)
+			if drop > toDrop {
+				drop = toDrop
+			}
+			record.MemberRefs = record.MemberRefs[:len(record.MemberRefs)-drop]
+			toDrop -= drop
+		}
+		diagnostics = append(diagnostics, newDiagnostic(
+			"response.member_refs_total_ceiling",
+			fmt.Sprintf(
+				"provider response membership exceeded the bounded total (%d); trimmed deterministically to %d refs; remaining members stay in the local remainder",
+				maxTotalMemberRefs, maxTotalMemberRefs,
+			),
+		))
+		applied = true
+	}
+	if perComponentTrimmed > 0 {
+		diagnostics = append(diagnostics, newDiagnostic(
+			"response.member_refs_per_component_ceiling",
+			fmt.Sprintf(
+				"provider response membership exceeded the bounded per-component maximum (%d distinct refs); trimmed %d refs across components; remaining members stay in the local remainder",
+				maxMemberRefsPerComponent, perComponentTrimmed,
+			),
+		))
+	}
+	return applied, diagnostics, nil
 }
 
 func resolveSynthesisWireProposal(

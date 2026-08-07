@@ -139,6 +139,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-overview-anatomy-omitted { color: var(--rm-dim); font-size: .78rem; margin: 0; }
 .rm-overview-integrations-empty { margin: 0; }
 .rm-study-theme-shelf { display: grid; gap: 1rem; }
+.rm-study-theme-shelf__more { margin-top: 0.25rem; }
+.rm-study-theme-shelf__more-summary { cursor: pointer; color: var(--rm-accent, #2563eb); font-weight: 600; }
+.rm-study-theme-shelf__more-list { display: grid; gap: 1rem; margin-top: 1rem; }
 .rm-study-theme-card { background: #fff; border: 1px solid var(--rm-border); border-radius: 12px; display: flex; flex-direction: column; gap: .55rem; min-width: 0; padding: 1rem 1.1rem; }
 .rm-study-theme-card__title-row { align-items: baseline; display: flex; flex-wrap: wrap; gap: .5rem; justify-content: space-between; min-width: 0; }
 .rm-study-theme-card__title { cursor: default; font-size: 1.05rem; margin: 0; min-width: 0; overflow-wrap: anywhere; }
