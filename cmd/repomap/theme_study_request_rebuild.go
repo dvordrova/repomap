@@ -115,7 +115,7 @@ func runThemeStudyScoutRequestRebuildCLI(args []string, stdout io.Writer) error 
 		return fmt.Errorf("theme scout request rebuild: build seed packs: %w", err)
 	}
 	request, err := themestudy.CompileScout(
-		language, vocabulary, packs, themeScoutContext(product, data.RepoName), "",
+		language, vocabulary, packs, themeScoutContext(product, data.RepoName, themeSpanAnchorRefsFromPacks(packs)), "",
 	)
 	if err != nil {
 		return fmt.Errorf("theme scout request rebuild: compile scout request: %w", err)

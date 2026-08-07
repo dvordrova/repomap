@@ -222,10 +222,13 @@ type ScoutArchContext struct {
 }
 
 // ScoutSpanQuestion is one backend-owned question label for a canonical route
-// span. It carries no canonical IDs.
+// span. AnchorRef (a*) is the exact seed the span compiled to, when the span
+// owns a single reading target — the model never has to guess which anchor a
+// question belongs to (Phase 3 validation audit). It carries no canonical IDs.
 type ScoutSpanQuestion struct {
-	Kind     string `json:"kind"` // focused | system_path
-	Question string `json:"question"`
+	Kind      string `json:"kind"` // focused | system_path
+	Question  string `json:"question"`
+	AnchorRef string `json:"anchor_ref,omitempty"`
 }
 
 // wireScout is the exact model-visible request bundle (contract C). It is a
@@ -668,14 +671,14 @@ const scoutPromptSystem = `You are proposing useful Study themes for a developer
 A Study theme is a question that several exact source anchors can help answer together. It is not required to be a proven runtime path.
 You may group anchors because they participate in one user journey, cross-cutting policy, sibling implementation family, integration family, lifecycle concern, or shared domain responsibility.
 Use a* source refs as current support. Use f* names-only refs only to request local source expansion. A names-only file is never evidence.
-Do not claim execution order, ownership, reachability or data flow unless an exact supplied relation proves it; relation_claim must always be "editorial_only".
+Do not claim execution order, ownership, reachability or data flow unless an exact supplied relation proves it; the backend records relation_claim itself.
 Propose meaningfully distinct themes. Do not restate individual direct calls and do not pad.
 Return exactly one JSON object and no markdown. Keep all enum values and refs unchanged. Write model-authored prose in the requested language.`
 
 const scoutPromptUserShape = `Requested prose language: %s.
-Aim for %d-%d themes when distinct evidence supports them. Return %d-%d; fewer is better than overlap or filler. Use %d-%d anchor_refs per theme; a one-anchor focused theme is permitted only when marked "focused":true and must not dominate. Exact duplicate anchor or file refs are normalized and counted by the backend; do not repeat them.
+Aim for %d-%d themes when distinct evidence supports them. Return %d-%d; fewer is better than overlap or filler. Use %d-%d anchor_refs per theme; a one-anchor focused theme is permitted and must not dominate. Exact duplicate anchor or file refs are normalized and counted by the backend; do not repeat them.
 theme_kind is one of: user_journey, cross_cutting_policy, sibling_implementation_family, integration_family, lifecycle_concern, shared_domain_responsibility.
-Response schema: {"themes":[{"title":"...","question":"...","theme_kind":"...","anchor_refs":["a1"],"expansion_file_refs":["f1"],"why_it_matters":"...","expected_learning":"...","relation_claim":"editorial_only","focused":false}]}
+Response schema: {"themes":[{"title":"...","question":"...","theme_kind":"...","anchor_refs":["a1"],"expansion_file_refs":["f1"],"why_it_matters":"...","expected_learning":"..."}]}
 Request bundle JSON:
 %s`
 

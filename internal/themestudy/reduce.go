@@ -99,10 +99,28 @@ func readingPublicIdentity(reading Reading) string {
 // same concentration control.
 func anchorFamily(info AnchorInfo) string {
 	trimmed := strings.TrimPrefix(strings.TrimPrefix(info.Path, "/"), "./")
+	first := trimmed
 	if index := strings.IndexByte(trimmed, '/'); index > 0 {
-		return trimmed[:index]
+		first = trimmed[:index]
 	}
-	return ""
+	// Long-horizon program Phase 3 (Miniflux live run): Go's `internal/`
+	// is a structural wrapper, not a source family — a shelf whose first
+	// reading always sits under internal/ (every Go repository) would
+	// hide real family concentration (config, tls, storage) behind a
+	// trivial 100% `internal` bucket. Skip the structural prefix and use
+	// the first domain-bearing segment. Generic rule: only `internal`
+	// (and `pkg` — another Go structural convention) is skipped; any
+	// other first segment is the family as before.
+	if first == "internal" || first == "pkg" {
+		rest := trimmed[len(first)+1:]
+		if index := strings.IndexByte(rest, '/'); index > 0 {
+			return rest[:index]
+		}
+		if rest != "" {
+			return rest
+		}
+	}
+	return first
 }
 
 // portfolioConcentration counts accepted themes by source family and

@@ -26,6 +26,7 @@ type themeScoutStageOutcome struct {
 	ResponseBytes     int
 	InputTokens       int
 	OutputTokens      int
+	SemanticCalls     int
 	TransportAttempts int
 	LatencyMillis     int64
 }
@@ -82,7 +83,7 @@ func runThemeScoutStage(
 ) themeScoutStageResult {
 	outcome := themeScoutStageOutcome{State: atlasstudy.ProductStatePrepared}
 	output.Stage("Study", "Theme Scout: proposing source-grounded themes")
-	contextBlock := themeScoutContext(product, repoName)
+	contextBlock := themeScoutContext(product, repoName, themeSpanAnchorRefsFromPacks(packs))
 	request, err := themestudy.CompileScout(language, vocabulary, packs, contextBlock, "")
 	if err != nil {
 		return themeScoutErr(outcome, themestudy.ScoutRequest{},
@@ -197,6 +198,8 @@ func runThemeScoutStage(
 	started := time.Now()
 	providerResult, err := promptClient.ThemeScoutMeasured(ctx, prompt, maxRequestBytes)
 	if err != nil {
+		outcome.SemanticCalls = 1
+		outcome.TransportAttempts = providerResult.Attempts
 		writer.RecordSemanticExchange(debugdump.SemanticExchange{
 			Stage: debugdump.SemanticStageAtlasStudy, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1, State: debugdump.SemanticStateProviderFailed,
 			ValidationCode:      debugdump.SemanticValidationProvider,
@@ -207,6 +210,7 @@ func runThemeScoutStage(
 		return themeScoutOrdinaryFailure(writer, request, outcome, atlasstudy.FailureProvider, err, output)
 	}
 	outcome.TransportAttempts = providerResult.Attempts
+	outcome.SemanticCalls = 1
 	outcome.LatencyMillis = time.Since(started).Milliseconds()
 	outcome.InputTokens = providerResult.InputTokens
 	outcome.OutputTokens = providerResult.OutputTokens

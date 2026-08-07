@@ -155,6 +155,7 @@ func themeOutcomeFromScout(outcome themeScoutStageOutcome) themeStudyRunOutcome 
 		ScoutAccepted: outcome.ScoutAccepted, ScoutRejected: outcome.ScoutRejected,
 		RequestBytes: outcome.RequestBytes, ResponseBytes: outcome.ResponseBytes,
 		InputTokens: outcome.InputTokens, OutputTokens: outcome.OutputTokens,
+		SemanticCalls:     outcome.SemanticCalls,
 		TransportAttempts: outcome.TransportAttempts, LatencyMillis: outcome.LatencyMillis,
 	}
 }
@@ -162,8 +163,11 @@ func themeOutcomeFromScout(outcome themeScoutStageOutcome) themeStudyRunOutcome 
 // themeScoutContext builds the compact, bounded context block of the Scout
 // wire from the compiled product: repository name plus the labels-only
 // Architecture projection and the backend-owned span questions. It never
-// carries source bytes, raw trees, or canonical identities.
-func themeScoutContext(product atlasstudy.Product, repoName string) themestudy.ScoutContext {
+// carries source bytes, raw trees, or canonical identities. Phase 3
+// validation audit: each span question carries the exact a* anchor ref it
+// compiled to (spanAnchorRefs) so the model never has to guess which
+// anchor a backend-owned question belongs to.
+func themeScoutContext(product atlasstudy.Product, repoName string, spanAnchorRefs map[string]string) themestudy.ScoutContext {
 	request, err := product.RequestRecord()
 	if err != nil {
 		return themestudy.ScoutContext{RepositoryName: repoName}
@@ -183,12 +187,34 @@ func themeScoutContext(product atlasstudy.Product, repoName string) themestudy.S
 			if strings.TrimSpace(object.Question) == "" {
 				continue
 			}
-			context.SpanQuestions = append(context.SpanQuestions, themestudy.ScoutSpanQuestion{
+			question := themestudy.ScoutSpanQuestion{
 				Kind: string(object.SpanKind), Question: object.Question,
-			})
+			}
+			if ref, ok := spanAnchorRefs[object.CanonicalID]; ok {
+				question.AnchorRef = ref
+			}
+			context.SpanQuestions = append(context.SpanQuestions, question)
 		}
 	}
 	return context
+}
+
+// themeSpanAnchorRefsFromPacks compiles the span-ID → a* anchor-ref binding
+// from the accepted seed packs (each pack's seed carries its canonical span
+// identity). A span that owns exactly one reading target binds to that
+// anchor; multi-target spans have no single anchor and are left unbounded
+// (the model still sees the question, just without a forced anchor).
+func themeSpanAnchorRefsFromPacks(packs themestudy.SeedPackResult) map[string]string {
+	binding := make(map[string]string)
+	for _, pack := range packs.Packs {
+		if pack.Seed.CanonicalSpanID == "" {
+			continue
+		}
+		if _, taken := binding[pack.Seed.CanonicalSpanID]; !taken {
+			binding[pack.Seed.CanonicalSpanID] = pack.Seed.Ref
+		}
+	}
+	return binding
 }
 
 // themeStudyCandidateUnavailableOutcome handles the typed unavailable catalog.
