@@ -780,9 +780,18 @@ func validateThemeAdjRequest(
 			}
 		}
 	}
-	expanded := make(map[string]struct{}, len(expansion.Files))
+	// Long-horizon program Phase 1C (Caddy): a candidate may reference an
+	// f* file that the local source expansion budget omitted (OmittedRefs).
+	// That is an honest bounded omission, not a binding error — the file
+	// was advertised in the vocabulary and requested by the candidate, and
+	// the model sees the same refs in the wire. Only a ref that is neither
+	// expanded nor omitted (never advertised) fails closed.
+	expanded := make(map[string]struct{}, len(expansion.Files)+len(expansion.OmittedRefs))
 	for _, file := range expansion.Files {
 		expanded[file.Ref] = struct{}{}
+	}
+	for _, ref := range expansion.OmittedRefs {
+		expanded[ref] = struct{}{}
 	}
 	for _, candidate := range request.Candidates {
 		for _, ref := range candidate.ExpansionFileRefs {

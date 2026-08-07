@@ -743,12 +743,16 @@ func TestParseDiscoveredSurfacesSortsAndCapsStableIDs(t *testing.T) {
 	if len(warnings) != 0 || surfaces == nil {
 		t.Fatalf("surfaces = %#v, warnings = %#v", surfaces, warnings)
 	}
-	if surfaces.TotalCount != maxDiscoveredSurfaceTriggers+3 || !surfaces.Truncated ||
-		len(surfaces.Triggers) != maxDiscoveredSurfaceTriggers {
+	// Long-horizon program Phase 1 (GitLab CLI): the fixture template is
+	// exact (provisional_id=false) evidence — exact triggers are never
+	// dropped by the display cap, so all 259 project and nothing is
+	// truncated. The cap bounds only provisional derived candidates.
+	if surfaces.TotalCount != maxDiscoveredSurfaceTriggers+3 || surfaces.Truncated ||
+		len(surfaces.Triggers) != maxDiscoveredSurfaceTriggers+3 {
 		t.Fatalf("bounded triggers = total %d truncated %v displayed %d", surfaces.TotalCount, surfaces.Truncated, len(surfaces.Triggers))
 	}
 	if surfaces.Triggers[0].ID != "trigger-000" ||
-		surfaces.Triggers[len(surfaces.Triggers)-1].ID != "trigger-255" {
+		surfaces.Triggers[len(surfaces.Triggers)-1].ID != "trigger-258" {
 		t.Fatalf(
 			"bounded trigger range = %q ... %q",
 			surfaces.Triggers[0].ID,
@@ -771,19 +775,27 @@ func TestParseDiscoveredSurfacesSortsAndCapsStableIDs(t *testing.T) {
 func TestProjectDiscoveredSurfacesCountsCobraBeforeMixedCatalogTruncation(t *testing.T) {
 	t.Parallel()
 
+	// Long-horizon program Phase 1 (GitLab CLI): the display cap bounds
+	// ONLY provisional derived candidates. Exact evidence (http_route /
+	// process_entry with a resolved identity) always projects — it is what
+	// Atlas surface entities bind to. Cobra command fan-out is provisional
+	// in production (ProvisionalID=true) and is the class the cap bounds.
 	total := maxDiscoveredSurfaceTriggers + 20
 	raw := make([]rawSurfaceTrigger, 0, total)
 	for index := range total {
 		producer := SurfaceProducerGeneric
 		kind := "http_route"
+		provisional := false
 		if index%3 == 0 {
 			producer = SurfaceProducerCobra
 			kind = "cli_command"
+			provisional = true
 		}
 		raw = append(raw, rawSurfaceTrigger{
 			ID:             fmt.Sprintf("trigger-%03d", total-index-1),
 			Kind:           kind,
 			Producer:       producer,
+			ProvisionalID:  provisional,
 			ScenarioID:     "scenario",
 			Availability:   SurfaceAvailabilityAvailable,
 			ExecutableRole: ExecutableRoleUnknown,
@@ -791,19 +803,24 @@ func TestProjectDiscoveredSurfacesCountsCobraBeforeMixedCatalogTruncation(t *tes
 	}
 
 	projected := projectDiscoveredSurfaces(rawSurfaceCatalog{Triggers: raw}, rawSurfaceCoverage{})
+	// Exact evidence projects first; the cap then bounds provisional
+	// cli_command triggers to fill the window. The typed counts reflect
+	// the FULL catalog (raw counts are preserved when truncated — the
+	// window is a display bound, never a truncation of evidence counts).
+	exactCount := total - (total+2)/3
 	wantCLICommands := (total + 2) / 3
 	if !projected.Truncated ||
 		len(projected.Triggers) != maxDiscoveredSurfaceTriggers ||
 		projected.TotalCount != total ||
 		projected.CLICommandCount != wantCLICommands ||
-		projected.GenericSurfaceCount != total-wantCLICommands {
+		projected.GenericSurfaceCount != exactCount {
 		t.Fatalf("mixed truncated counts = %#v", projected)
 	}
 
 	refreshSurfaceCatalogCounts(projected)
 	if projected.TotalCount != total ||
 		projected.CLICommandCount != wantCLICommands ||
-		projected.GenericSurfaceCount != total-wantCLICommands ||
+		projected.GenericSurfaceCount != exactCount ||
 		projected.UnassignedCount != total {
 		t.Fatalf("refresh rewrote raw mixed counts from retained subset: %#v", projected)
 	}
