@@ -124,10 +124,10 @@ type Command struct {
 }
 
 // Proposal is model-authored editorial grouping over supplied evidence IDs.
-// Commands and endpoints are repeated so local validation can require exact
-// equality with the selected Evidence object.
+// Version is backend-owned contract identity (Phase 8 reviewer finding): the
+// model is not asked to echo it; the decoder stamps ProposalVersion.
 type Proposal struct {
-	Version int            `json:"version"`
+	Version int            `json:"version,omitempty"`
 	Paths   []ProposedPath `json:"paths"`
 }
 
@@ -230,8 +230,15 @@ func DecodeProposal(raw []byte) (Proposal, error) {
 	if err := requireEOF(decoder); err != nil {
 		return Proposal{}, err
 	}
-	if proposal.Version != ProposalVersion || len(proposal.Paths) > MaxPaths {
-		return Proposal{}, fmt.Errorf("paved paths: unsupported or oversized proposal")
+	// Phase 8 reviewer finding (backend-authority leakage): version is
+	// backend-owned contract identity — a model response that omits it is
+	// stamped with ProposalVersion; a legacy echo is validated as before.
+	if proposal.Version != 0 && proposal.Version != ProposalVersion {
+		return Proposal{}, fmt.Errorf("paved paths: unsupported proposal version")
+	}
+	proposal.Version = ProposalVersion
+	if len(proposal.Paths) > MaxPaths {
+		return Proposal{}, fmt.Errorf("paved paths: oversized proposal")
 	}
 	return proposal, nil
 }
