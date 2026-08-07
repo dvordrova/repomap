@@ -538,7 +538,7 @@ const elements = {
   "rm-tabs": new Element("nav"),
 };
 const window = {
-  location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  location: { search: "", hash: "#/map", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   __REPOMAP_WORKSPACE_TEST__: {},
   RepomapSemanticSearch: { mount() { return { destroy() {} }; } },
   addEventListener(name, callback) { listeners[name] = callback; },
@@ -753,7 +753,7 @@ process.stdout.write(JSON.stringify({
 					got.TabSearchDestinations,
 				)
 			}
-			if got.DirectSearchValid || got.DirectSearchCanonicalHash != "#/overview" {
+			if got.DirectSearchValid || got.DirectSearchCanonicalHash != "#/map" {
 				t.Fatalf(
 					"source episode direct Search route = valid %t canonical %q",
 					got.DirectSearchValid,
@@ -763,7 +763,7 @@ process.stdout.write(JSON.stringify({
 			if got.PreCount != 0 {
 				t.Fatal("source code was placed on first paint")
 			}
-			if got.Route != "#/overview" {
+			if got.Route != "#/map" {
 				t.Fatalf("episode rendering created a route: %q", got.Route)
 			}
 		})

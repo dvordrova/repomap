@@ -1149,11 +1149,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     </aside>
   </div>
   <div class="rm-toast" id="rm-toast" role="status" aria-live="polite" hidden></div>
-  <script type="application/json" id="rm-report-data">{"format_version":36,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
+  <script type="application/json" id="rm-report-data">{"format_version":37,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
   <script id="rm-ui-messages-js">(function (global) {
   'use strict';
 
-  var VERSION = 9;
+  // Decision 236 (v11): Map primary product — new map view/lenses,
+  // entry categories (worker/library data sources), touchpoint families,
+  // inspector tabs, line-contract rows (catalog VERSION 10).
+  var VERSION = 10;
   var EN = {
     "main.bundle.docs_selected": { params: ["count"], format: function (params) { return "Docs selected:         " + params.count; } },
     "main.bundle.packages_selected": { params: ["count"], format: function (params) { return "Packages selected:     " + params.count; } },
@@ -1259,6 +1262,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.freshness.state.unavailable": { params: [], text: "unavailable" },
     "main.repository.navigation": { params: [], text: "Repository navigation" },
     "main.repository.workspace": { params: [], text: "Repository workspace" },
+    "main.map": { params: [], text: "Map" },
     "main.overview": { params: [], text: "Overview" },
     "main.study": { params: [], text: "Study" },
     "main.architecture": { params: [], text: "Architecture" },
@@ -2758,6 +2762,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.freshness.state.unavailable": { params: [], text: "недоступен" },
     "main.repository.navigation": { params: [], text: "Навигация по репозиторию" },
     "main.repository.workspace": { params: [], text: "Рабочее пространство репозитория" },
+    "main.map": { params: [], text: "Карта" },
     "main.overview": { params: [], text: "Обзор" },
     "main.study": { params: [], text: "Изучение" },
     "main.architecture": { params: [], text: "Архитектура" },
@@ -4367,7 +4372,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 	var OPERATIONAL_LANDMARKS = OPERATIONS && Array.isArray(OPERATIONS.landmarks) ? OPERATIONS.landmarks : [];
 	var TASK_INVESTIGATION = DATA.task_investigation || null;
   var workspaceState = {
-		view: TASK_INVESTIGATION ? 'investigate' : 'overview',
+		// Decision 236 (v11): Map is the default view for ordinary
+		// workspaces.
+		view: defaultWorkspaceView(),
 		taskID: TASK_INVESTIGATION && TASK_INVESTIGATION.task_id || '',
     artifactID: '',
 		directionID: '',
@@ -4542,12 +4549,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
   function emptyWorkspaceState() {
     return {
-			view: TASK_INVESTIGATION ? 'investigate' : 'overview',
+			view: defaultWorkspaceView(),
 			taskID: TASK_INVESTIGATION && TASK_INVESTIGATION.task_id || '',
       artifactID: '',
-		directionID: '',
-		themeCardOrdinal: 0,
-		operationID: '',
+			directionID: '',
+			themeCardOrdinal: 0,
+			operationID: '',
       stepIndex: 0,
       sourceLocation: null,
       mapReturn: null,
@@ -4555,11 +4562,18 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     };
   }
 
+  // Decision 236 (v11): Map is the primary product — the default view is
+  // 'map' for every ordinary (non-task-investigation) workspace.
+  function defaultWorkspaceView() {
+    return TASK_INVESTIGATION ? 'investigate' : 'map';
+  }
+
 	function defaultWorkspaceHash() {
-		if (TASK_INVESTIGATION && TASK_INVESTIGATION.task_id) {
-			return '#/investigate/' + encodeRoutePart(TASK_INVESTIGATION.task_id);
-		}
-		return '#/overview';
+	if (TASK_INVESTIGATION && TASK_INVESTIGATION.task_id) {
+	return '#/investigate/' + encodeRoutePart(TASK_INVESTIGATION.task_id);
+	}
+	// Decision 236 (v11): Map is the default route.
+	return '#/map';
 	}
 
   function encodeRoutePart(value) {
@@ -4626,6 +4640,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       var focus = architectureFocusValue(state.mapTarget);
       return '#/architecture' + (focus ? '?focus=' + encodeURIComponent(focus) : '');
     }
+		// Decision 236 (v11): map is the primary route — a map view (with
+		// an optional focus target) hashes to #/map.
+    if (state.view === 'map') {
+      var mapFocus = architectureFocusValue(state.mapTarget);
+      return '#/map' + (mapFocus ? '?focus=' + encodeURIComponent(mapFocus) : '');
+    }
     if (state.view === 'mechanism' && state.artifactID) {
       var mechanismHash = '#/mechanism/' + encodeRoutePart(state.artifactID);
       return mechanismRoot ? mechanismHash : mechanismHash + '/step/' + (Number(state.stepIndex) + 1);
@@ -4640,7 +4660,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			return '#/operate/' + encodeRoutePart(state.operationID);
 		}
     if (state.view === 'provenance' && DEBUG_MODE) return '#/provenance';
-    return '#/overview';
+		// Decision 236 (v11): the overview view is legacy — its information
+		// lives in the empty-selection map inspector, so its hash
+		// canonicalizes to the map.
+    if (state.view === 'overview') return defaultWorkspaceHash();
+    return '#/map';
   }
 
 	function workspaceRouteFamily(state) {
@@ -4661,7 +4685,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		if (state.view === 'operate' && state.operationID) {
 			return 'operate:' + state.operationID;
 		}
-		return 'view:' + (state.view || 'overview');
+		// Decision 236 (v11): map is the primary route; architecture is
+		// an alias to the map with the Landscape lens.
+		if (state.view === 'architecture') return 'view:map';
+		return 'view:' + (state.view || defaultWorkspaceView());
 	}
 
 	function resetWorkspaceScroll() {
@@ -4680,12 +4707,24 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		var canonicalHash = defaultWorkspaceHash();
 
     if (segments.length === 1 && segments[0] === 'overview') {
+			// Decision 236 (v11): Overview is no longer a competing
+			// destination — its information lives in the empty-selection
+			// Map inspector. The legacy route canonicalizes to the map.
 			if (TASK_INVESTIGATION) {
 				state = emptyWorkspaceState();
 				valid = false;
 			} else {
-				canonicalHash = '#/overview';
+				state.view = 'map';
+				canonicalHash = defaultWorkspaceHash();
 			}
+		} else if (segments.length === 1 && segments[0] === 'map') {
+			state.view = 'map';
+			var focus = new URLSearchParams(query).get('focus') || '';
+			if (focus) {
+				state.mapTarget = architectureTargetFromFocus(focus);
+			}
+			state.mapReturn = historyState && historyState.mapReturn || null;
+			canonicalHash = workspaceHashForState(state);
 		} else if (segments.length === 2 && segments[0] === 'investigate') {
 			var routeTaskID = decodeRoutePart(segments[1]);
 			if (!TASK_INVESTIGATION || routeTaskID !== TASK_INVESTIGATION.task_id) {
@@ -4695,6 +4734,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 				state.taskID = routeTaskID;
 				canonicalHash = defaultWorkspaceHash();
 			}
+		} else if (segments.length === 1 && segments[0] === 'architecture') {
+			// Decision 236 (v11): the Architecture route aliases to the map
+			// with the Landscape lens (the map is the primary product).
+      state.view = 'map';
+      var focus = new URLSearchParams(query).get('focus') || '';
+      state.mapTarget = architectureTargetFromFocus(focus);
+      state.mapReturn = historyState && historyState.mapReturn || null;
+      canonicalHash = workspaceHashForState(state);
     } else if (segments.length === 1 && segments[0] === 'mechanisms') {
       state.view = mechanisms && mechanisms.length ? 'mechanisms' : 'overview';
       valid = state.view === 'mechanisms';
@@ -4703,12 +4750,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			state.view = (STUDY_DIRECTIONS.length || themeCards().length) ? 'study_overview' : 'overview';
 			valid = state.view === 'study_overview';
 			canonicalHash = valid ? '#/study' : '#/overview';
-    } else if (segments.length === 1 && segments[0] === 'architecture') {
-      state.view = 'architecture';
-      var focus = new URLSearchParams(query).get('focus') || '';
-      state.mapTarget = architectureTargetFromFocus(focus);
-      state.mapReturn = historyState && historyState.mapReturn || null;
-      canonicalHash = workspaceHashForState(state);
     } else if (segments.length === 1 && segments[0] === 'provenance' && DEBUG_MODE) {
       state.view = 'provenance';
       canonicalHash = '#/provenance';
@@ -4794,8 +4835,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var mechanism;
     switch (action.type) {
     case 'view':
-      next.view = action.view || 'overview';
-      if (next.view !== 'architecture') {
+			// Decision 236 (v11): 'architecture' is an alias of the map
+			// with the Landscape lens; the canonical view is 'map'.
+      next.view = action.view === 'architecture' ? 'map' : (action.view || defaultWorkspaceView());
+      if (next.view !== 'map' && next.view !== 'architecture') {
         next.mapTarget = null;
         if (!action.keepReturn) next.mapReturn = null;
       }
@@ -4867,7 +4910,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       if (!action.target) return next;
       next.mapReturn = { artifactID: next.artifactID, stepIndex: next.stepIndex };
       next.mapTarget = action.target;
-      next.view = 'architecture';
+			// Decision 236 (v11): the map is the primary product.
+      next.view = 'map';
       return next;
     case 'return_from_map':
       if (!next.mapReturn) return next;
@@ -8164,7 +8208,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		if (view === 'study_overview') return 'rm-study-overview';
 		if (view === 'study') return 'rm-study-detail';
 		if (view === 'operate') return 'rm-operate-detail';
-    if (view === 'architecture') return 'rm-architecture';
+		// Decision 236 (v11): map is the primary product — it reuses the
+		// architecture canvas host; architecture is the Landscape lens.
+    if (view === 'map' || view === 'architecture') return 'rm-architecture';
     if (view === 'provenance') return 'rm-provenance';
     return 'rm-overview';
   }
@@ -8289,11 +8335,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   }
 
   function navigateWorkspace(view) {
-    if (view === 'architecture') {
-		if (!userArchitectureAvailable()) {
-			commitWorkspaceState(emptyWorkspaceState());
-			return;
-		}
+		// Decision 236 (v11): architecture is the Landscape lens of the
+		// map — navigating to it opens the map with the given focus.
+    if (view === 'architecture' || view === 'map') {
+			if (view === 'architecture' && !userArchitectureAvailable()) {
+				commitWorkspaceState(emptyWorkspaceState());
+				return;
+			}
       openArchitectureTarget(null, null);
       return;
     }
@@ -12224,6 +12272,17 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		var root = document.getElementById('rm-overview');
 		if (!root) return;
 		root.replaceChildren();
+		renderMapSummaryInto('rm-overview');
+	}
+
+	// Decision 236 (v11): the repository summary (thesis/brief/atlas shelf,
+	// entry perimeter, entries, remainder — the former Overview content)
+	// renders into the given section. Used by the overview section and by
+	// the map workspace when no architecture canvas exists.
+	function renderMapSummaryInto(sectionID) {
+		var root = document.getElementById(sectionID);
+		if (!root) return;
+		root.replaceChildren();
 		renderStudyPublicationNotice(root);
 		renderAtlasStudyFailedBrowse(root);
 		var anatomy = repositoryOverviewAnatomy();
@@ -14890,7 +14949,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			commitWorkspaceState(emptyWorkspaceState());
 			return;
 		}
-    var next = reduceWorkspaceState(workspaceState, { type: 'view', view: 'architecture' }, USER_MECHANISMS);
+    var next = reduceWorkspaceState(workspaceState, { type: 'view', view: 'map' }, USER_MECHANISMS);
     next.mapReturn = returnTarget || null;
     next.mapTarget = target || null;
     commitWorkspaceState(next);
@@ -14989,10 +15048,21 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			else renderStudyDetailWorkspace();
 		}
 		if (workspaceState.view === 'operate') renderOperateDetailWorkspace();
-    if (workspaceState.view === 'architecture') {
+		// Decision 236 (v11): map is the primary product — it renders the
+		// architecture workspace (Landscape lens); architecture remains an
+		// accepted alias. A canvas-less report still shows the map
+		// workspace with the repository summary (thesis/brief/atlas shelf).
+    if ((workspaceState.view === 'map' || workspaceState.view === 'architecture') && !DATA.architecture_canvas) {
+      // Decision 236 (v11): a canvas-less report still shows the map
+      // workspace — the repository summary renders into the map section
+      // (thesis/brief/atlas shelf) from report data that exists without a
+      // canvas.
+      renderMapSummaryInto('rm-architecture');
+      activateWorkspaceView(workspaceState.view);
+    } else if (workspaceState.view === 'map' || workspaceState.view === 'architecture') {
       if (!architectureCanvasHost) renderArchitectureWorkspace();
       else renderArchitectureReturn();
-      activateWorkspaceView('architecture');
+      activateWorkspaceView(workspaceState.view);
       var ready = architectureCanvasView ? (architectureReady || Promise.resolve(architectureCanvasView)) : mountArchitectureCanvas();
       ready.then(function () { focusArchitectureTarget(workspaceState.mapTarget); });
     } else {
@@ -15072,10 +15142,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		if (TASK_INVESTIGATION) {
 			addWorkspaceTab(msg('main.task'), 'investigate');
 		} else {
-			addWorkspaceTab(msg('main.overview'), 'overview');
+			// Decision 236 (v11): Map is the primary product — the
+			// Overview tab is replaced by the Map tab; Study and
+			// Mechanisms follow.
+			addWorkspaceTab(msg('main.map'), 'map');
 			if (!ATLAS_FIRST && USER_MECHANISMS.length) addWorkspaceTab(msg('main.mechanisms'), 'mechanisms');
 			if (STUDY_DIRECTIONS.length || themeCards().length) addWorkspaceTab(msg('main.study'), 'study_overview');
-			if (userArchitectureAvailable()) addWorkspaceTab(msg('main.architecture'), 'architecture');
 		}
 		if (DEBUG_MODE) addWorkspaceTab(msg('main.provenance'), 'provenance');
 	}

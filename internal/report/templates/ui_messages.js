@@ -1,7 +1,10 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 9;
+  // Decision 236 (v11): Map primary product — new map view/lenses,
+  // entry categories (worker/library data sources), touchpoint families,
+  // inspector tabs, line-contract rows (catalog VERSION 10).
+  var VERSION = 10;
   var EN = {
     "main.bundle.docs_selected": { params: ["count"], format: function (params) { return "Docs selected:         " + params.count; } },
     "main.bundle.packages_selected": { params: ["count"], format: function (params) { return "Packages selected:     " + params.count; } },
@@ -107,6 +110,7 @@
     "main.freshness.state.unavailable": { params: [], text: "unavailable" },
     "main.repository.navigation": { params: [], text: "Repository navigation" },
     "main.repository.workspace": { params: [], text: "Repository workspace" },
+    "main.map": { params: [], text: "Map" },
     "main.overview": { params: [], text: "Overview" },
     "main.study": { params: [], text: "Study" },
     "main.architecture": { params: [], text: "Architecture" },
@@ -1606,6 +1610,7 @@
     "main.freshness.state.unavailable": { params: [], text: "недоступен" },
     "main.repository.navigation": { params: [], text: "Навигация по репозиторию" },
     "main.repository.workspace": { params: [], text: "Рабочее пространство репозитория" },
+    "main.map": { params: [], text: "Карта" },
     "main.overview": { params: [], text: "Обзор" },
     "main.study": { params: [], text: "Изучение" },
     "main.architecture": { params: [], text: "Архитектура" },

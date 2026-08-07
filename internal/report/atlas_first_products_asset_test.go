@@ -269,7 +269,8 @@ directionCards.forEach((directionCard, directionIndex) => {
     exactClicks,
   });
 });
-const architectureTab = nav.find((node) => node.attributes["data-workspace-view"] === "architecture");
+// Decision 236 (v11): the map tab replaces the architecture tab.
+const architectureTab = nav.find((node) => node.attributes["data-workspace-view"] === "map");
 architectureTab.onclick();
 process.stdout.write(JSON.stringify({
   navLabels, navViews, overviewText, studyOverviewText,
@@ -329,8 +330,8 @@ process.stdout.write(JSON.stringify({
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode Atlas-first product workspace: %v\n%s", err, output)
 	}
-	if strings.Join(got.NavLabels, ",") != "Overview,Study,Architecture" ||
-		strings.Join(got.NavViews, ",") != "overview,study_overview,architecture" {
+	if strings.Join(got.NavLabels, ",") != "Map,Study" ||
+		strings.Join(got.NavViews, ",") != "map,study_overview" {
 		t.Fatalf("Atlas-first product navigation = labels %#v views %#v", got.NavLabels, got.NavViews)
 	}
 	if got.DirectionCards != 6 || len(got.RouteResults) != 6 ||
@@ -373,7 +374,7 @@ process.stdout.write(JSON.stringify({
 		}
 	}
 	if len(got.Mounts) != 1 || got.ArchitectureCurrent != "page" ||
-		got.ArchitectureHash != "#/architecture" ||
+		got.ArchitectureHash != "#/map" ||
 		!strings.Contains(got.ArchitectureText, "Explore the repository map") {
 		t.Fatalf("Atlas-first Architecture route = mounts %d current %q hash %q text %q",
 			len(got.Mounts), got.ArchitectureCurrent, got.ArchitectureHash, got.ArchitectureText)

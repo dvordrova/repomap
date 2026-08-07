@@ -264,7 +264,7 @@ process.stdout.write(JSON.stringify({
 		got.ValidRoute.State.View != "operate" || got.ValidRoute.State.OperationID != "operate/server" {
 		t.Fatalf("valid operation route = %#v", got.ValidRoute)
 	}
-	if got.InvalidRoute.Valid || got.InvalidRoute.CanonicalHash != "#/overview" {
+	if got.InvalidRoute.Valid || got.InvalidRoute.CanonicalHash != "#/map" {
 		t.Fatalf("invalid operation route = %#v", got.InvalidRoute)
 	}
 	if strings.Index(got.OverviewText, "What to study") < 0 ||
