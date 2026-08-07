@@ -4657,6 +4657,8 @@
 		lifecycle_concern: 'main.study.theme.kind.lifecycle_concern',
 		cross_cutting_policy: 'main.study.theme.kind.cross_cutting_policy',
 		sibling_implementation_family: 'main.study.theme.kind.sibling_family',
+		integration_family: 'main.study.theme.kind.integration_family',
+		shared_domain_responsibility: 'main.study.theme.kind.shared_domain',
 	};
 	function themeKindLabel(card) {
 		var kind = String((card && card.theme_kind) || '');
@@ -4715,13 +4717,14 @@
 		// theme — no "show more" for peer theme existence. Progressive
 		// disclosure may collapse card detail, reading previews, and
 		// provenance, never the themes themselves.
-		// Archive 12 P0 (review): the DEFAULT shelf is now bounded and
-		// core-first — the reducer already orders cards by portfolio rank
-		// (production/user-facing kinds first). The primary shelf shows the
-		// first maxPrimaryShelfThemes cards; the COMPLETE shelf (every accepted
-		// theme and exact reading) is one "Show all" press away and is never
-		// truncated in the expanded state. This is progressive disclosure of a
-		// bounded default, not the removal of peer themes.
+		// Archive 12 P0 (review): the DEFAULT shelf is bounded — the reducer
+		// preserves the model's comparative editorial order (Phase 2 prompt
+		// cleanup: portfolio rank removed, model order survives). The
+		// primary shelf shows the first maxPrimaryShelfThemes cards; the
+		// COMPLETE shelf (every accepted theme and exact reading) is one
+		// "Show all" press away and is never truncated in the expanded
+		// state. This is progressive disclosure of a bounded default, not
+		// the removal of peer themes.
 		var shelf = el('div', 'rm-study-theme-shelf');
 		var primaryCards = cards.slice(0, maxPrimaryShelfThemes);
 		var remainderCards = cards.slice(maxPrimaryShelfThemes);
