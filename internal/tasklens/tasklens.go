@@ -561,7 +561,7 @@ type ProposedArea struct {
 }
 
 type ProposedAnchor struct {
-	AnchorID string     `json:"anchor_id"`
+	AnchorID string `json:"anchor_id"`
 	// Phase 5 prompt cleanup: role is backend-owned — the model selects
 	// anchors; the backend restores the locally allowed role. A model that
 	// omits it is normalized to the anchor's first role hint by the reducer.
