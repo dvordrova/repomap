@@ -142,12 +142,16 @@ type SynthesisAnchorBinding struct {
 // deliberately absent; they are bound privately by prompt/cache/record
 // identity.
 type SynthesisRequest struct {
-	RepositoryArchetype RepositoryArchetype       `json:"repository_archetype"`
-	GroundingMode       GroundingMode             `json:"grounding_mode"`
-	RequiredMemberRefs  []SynthesisMemberRef      `json:"required_member_refs,omitempty"`
-	BehaviorAnchors     []SynthesisBehaviorAnchor `json:"behavior_anchors,omitempty"`
-	Flows               []SynthesisFlow           `json:"flows,omitempty"`
-	Candidates          []SynthesisCandidate      `json:"candidates,omitempty"`
+	RepositoryArchetype RepositoryArchetype `json:"repository_archetype"`
+	GroundingMode       GroundingMode       `json:"grounding_mode"`
+	// Phase 1 prompt cleanup: required_member_refs is the exact same
+	// candidate checklist as candidates[].ref (validateSynthesisRequestCoverage
+	// proves the identity), so it is removed from the provider-visible wire.
+	// It stays local for coverage accounting via the candidates array.
+	RequiredMemberRefs []SynthesisMemberRef      `json:"-"`
+	BehaviorAnchors    []SynthesisBehaviorAnchor `json:"behavior_anchors,omitempty"`
+	Flows              []SynthesisFlow           `json:"flows,omitempty"`
+	Candidates         []SynthesisCandidate      `json:"candidates,omitempty"`
 	// Units is the Decision 216 bounded local unit catalog. When present,
 	// the model groups request-local unit refs (u*) instead of raw
 	// package/symbol candidates; backend expansion restores exact
@@ -981,17 +985,17 @@ func BuildSynthesisPromptForLanguage(
 func synthesisPromptSystemText() string {
 	return `You create a compact conceptual architecture landscape from bounded local repository facts.
 
-Use conceptual member, anchor, and unit refs as opaque request-local values. Copy a ref exactly as supplied; never rewrite refs, infer new refs, or mention members absent from the request. Refs under structural_context are read-only locator context and must never occur in response unit_refs, member_refs, or anchor_refs.
+Use conceptual member, anchor, and unit refs as opaque request-local values. Copy a ref exactly as supplied; never rewrite refs, infer new refs, or mention members absent from the request. Refs under structural_context are read-only locator context and must never occur in response member_refs, unit_refs, or anchor_refs.
 Local semantic facts, compact structural relations, structural locator containment, flow participation, anchor proof_mode, and certainty are read-only grouping context. They must never be returned, upgraded, replaced, or converted into execution order. A declaration_family anchor is static declaration context and never proves runtime behavior. Canonical repository identities, exact source locations, provider provenance, scenarios, catalog identity, versions, and hashes are private and absent from this request.
 
-Return exactly one compact JSON proposal object with one ordered records array. Use this tagged-record grammar:
-{"records":[{"kind":"subsystem","ref":"g1","name":"first subsystem","description":"first purpose"},{"kind":"component","subsystem_ref":"g1","name":"first component","description":"first responsibility","member_refs":[{"ref":"p1"}],"anchor_refs":[{"ref":"a1"}]},{"kind":"subsystem","ref":"g2","name":"second subsystem","description":"second purpose"},{"kind":"component","subsystem_ref":"g2","name":"second component","description":"second responsibility","member_refs":[{"ref":"s1"}],"anchor_refs":[]}]}
+Return exactly one compact JSON proposal object with this nested grammar:
+{"subsystems":[{"name":"first subsystem","description":"first purpose","components":[{"name":"first component","description":"first responsibility","member_refs":["p1","s2"],"anchor_refs":["a1"]}]},{"name":"second subsystem","description":"second purpose","components":[{"name":"second component","description":"second responsibility","member_refs":["s1"],"anchor_refs":[]}]}]}
 
-The entire response must parse as exactly one complete JSON object. Its only root field is records. A subsystem record contains exactly kind, ref, name, and description. Its ref is a unique response-local value g1, g2, and so on. A component record contains exactly kind, subsystem_ref, name, description, member_refs, and anchor_refs. Group member_refs (p*/s*/f*) by copying each ref exactly as supplied. unit_refs is not part of the response grammar — the units catalog is read-only grouping context and must never be returned. Copy subsystem_ref exactly from one subsystem record. Do not nest records or emit a second root object.
+The entire response must parse as exactly one complete JSON object. Its only root field is subsystems. Each subsystem contains exactly name, description, and components. Each component contains exactly name, description, and at least one of member_refs (p*/s*/f*) or unit_refs (u*) — never both — plus optional anchor_refs (a*). Every ref is a plain string; do not wrap refs in objects and do not add kind fields. Do not emit response-local IDs, kind tags, parent references, or any adjacency field: nesting already expresses which components belong to which subsystem. Do not nest objects inside objects or emit a second root object.
 
-Records are in conceptual display order. Emit each subsystem record followed by its component records. A member may legitimately participate in several components when it genuinely serves several distinct conceptual roles — this is shared participation, not exclusive ownership, and is accepted; the backend classifies ownership mechanics. Name what distinguishes each component from its siblings. An exact partial grouping is valid: omitted members remain in a deterministic local unclassified remainder and must not be echoed, renamed, or placed in a model-authored remainder. Fewer groups are better than padding: when evidence is weak, return fewer components honestly. A component may be anchor-backed shared participation with zero exclusive members; anchor_refs are optional per component, not required.
+Subsystems and components are in conceptual display order. Choose representative supplied members needed to distinguish each component; exhaustive membership is not required. A member may legitimately participate in several components when it genuinely serves several distinct conceptual roles — this is shared participation, not exclusive ownership. Name what distinguishes each component from its siblings. An exact partial grouping is valid: omitted members remain in a deterministic local unclassified remainder and must not be echoed, renamed, or placed in a model-authored remainder. Fewer groups are better than padding: when evidence is weak, return fewer components honestly. A component may be anchor-backed shared participation with zero exclusive members; anchor_refs are optional per component, not required.
 
-Repository archetype and grounding mode are local facts. A primary pillar is one subsystem record; component records are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, prefer four to seven distinct subsystem records when the supplied evidence supports that many, never more than twelve. Tiny, library, and package-landscape requests may honestly use one to three. Prefer one to four component records per subsystem and no more than forty-eight component records in total. List the most representative members first and cap each component's member_refs at twenty-four distinct refs; cap the entire response at three hundred twenty member refs in total. Every member not listed stays in the deterministic local remainder — listing every member is never required and is the single largest cause of response failure. hypothesis is not part of the response; the backend derives product hypothesis status exclusively from exact process_entry/call_target proof scoped to every component member. declaration_family never proves operational grounding. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
+Repository archetype and grounding mode are local facts. A primary pillar is one subsystem; components are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, prefer a bounded handful of distinct subsystems when the supplied evidence supports that many. Tiny, library, and package-landscape requests may honestly use fewer. Every member not listed stays in the deterministic local remainder — listing every member is never required. hypothesis is not part of the response; the backend derives product hypothesis status exclusively from exact process_entry/call_target proof scoped to every component member. declaration_family never proves operational grounding. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
 
 Do not return versions, catalog identity, hashes, canonical IDs, edges, relations, flow definitions or transitions, fact payloads, repository paths, qualified symbols, test details, evidence, certainty, provenance, scenarios, source locations, coordinates, dimensions, ports, colors, styles, UI settings, markdown, or explanatory prose. Do not claim temporal or runtime behavior from static relations.`
 }
@@ -2004,6 +2008,38 @@ func (record synthesisWireRecord) MarshalJSON() ([]byte, error) {
 // decodeSynthesisWireProposalJSON rejects every field outside the exact
 // tagged-record contract. Canonical IDs have no field in the active response
 // shape and are never copied from provider bytes.
+// synthesisWireNestedSubsystem is the provider-visible nested Architecture
+// response grammar (Phase 1 prompt contract cleanup). The model chooses
+// meaning only: subsystem/component names, descriptions, and which supplied
+// member/anchor refs distinguish each component. The model never invents
+// g* IDs, never emits kind/subsystem_ref, never maintains parent/child
+// adjacency foreign keys, and never counts refs/components.
+type synthesisWireNestedSubsystem struct {
+	Name        string                         `json:"name"`
+	Description string                         `json:"description,omitempty"`
+	Components  []synthesisWireNestedComponent `json:"components"`
+}
+
+type synthesisWireNestedComponent struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	MemberRefs  []string `json:"member_refs,omitempty"`
+	UnitRefs    []string `json:"unit_refs,omitempty"`
+	AnchorRefs  []string `json:"anchor_refs,omitempty"`
+}
+
+type synthesisWireNested struct {
+	Subsystems []synthesisWireNestedSubsystem `json:"subsystems"`
+}
+
+// decodeSynthesisWireProposalJSON decodes the nested semantic Architecture
+// response (Phase 1) and projects it onto the internal flat record shape:
+// the backend assigns g* subsystem refs in wire order and derives
+// subsystem_ref adjacency from nesting, so the model never carries foreign
+// keys. Refs are plain request-local strings; the backend restores kinds.
+// Historical flat tagged-record responses remain readable (Phase 6: immutable
+// saved artifacts stay replayable without a live provider route); the active
+// provider contract is the nested grammar only.
 func decodeSynthesisWireProposalJSON(raw []byte) (synthesisWireProposal, error) {
 	if !utf8.Valid(raw) {
 		return synthesisWireProposal{}, fmt.Errorf("proposal is not valid utf-8")
@@ -2011,6 +2047,108 @@ func decodeSynthesisWireProposalJSON(raw []byte) (synthesisWireProposal, error) 
 	if err := rejectDuplicateSynthesisJSONKeys(raw); err != nil {
 		return synthesisWireProposal{}, err
 	}
+	// Active contract: nested subsystems grammar (Phase 1). Try it first;
+	// a response whose root is an object without a `subsystems` array falls
+	// through to the historical flat records grammar.
+	if bytes.Contains(raw, []byte(`"subsystems"`)) {
+		nested, err := decodeSynthesisWireNestedJSON(raw)
+		if err == nil {
+			return nested, nil
+		}
+		// Fall through to the historical grammar only when the bytes carry
+		// both shapes ambiguously; a pure nested response must not be
+		// re-read as flat.
+		if !bytes.Contains(raw, []byte(`"records"`)) {
+			return synthesisWireProposal{}, err
+		}
+	}
+	return decodeSynthesisWireFlatJSON(raw)
+}
+
+// decodeSynthesisWireNestedJSON decodes the active nested grammar.
+func decodeSynthesisWireNestedJSON(raw []byte) (synthesisWireProposal, error) {
+	var nested synthesisWireNested
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&nested); err != nil {
+		return synthesisWireProposal{}, fmt.Errorf("proposal is not a nested subsystems object: %w", err)
+	}
+	if len(nested.Subsystems) == 0 || len(nested.Subsystems) > MaxPrimarySubsystems {
+		return synthesisWireProposal{}, fmt.Errorf("proposal subsystem count is outside the bounded contract")
+	}
+	proposal := synthesisWireProposal{Records: make([]synthesisWireRecord, 0, maxSynthesisWireRecords)}
+	totalComponents := 0
+	for index, subsystem := range nested.Subsystems {
+		if strings.TrimSpace(subsystem.Name) == "" {
+			return synthesisWireProposal{}, fmt.Errorf("proposal subsystem name is empty")
+		}
+		if err := validateSynthesisProposalProse("subsystem description", subsystem.Description); err != nil {
+			return synthesisWireProposal{}, err
+		}
+		subsystemRef := fmt.Sprintf("g%d", index+1)
+		proposal.Records = append(proposal.Records, synthesisWireRecord{
+			Kind: synthesisWireSubsystemRecord, Ref: subsystemRef,
+			Name: subsystem.Name, Description: subsystem.Description,
+		})
+		if len(subsystem.Components) == 0 {
+			return synthesisWireProposal{}, fmt.Errorf("proposal subsystem %q has no components", subsystem.Name)
+		}
+		if len(subsystem.Components) > MaxComponentsPerSubsystem {
+			return synthesisWireProposal{}, fmt.Errorf("proposal component count exceeds the bounded contract")
+		}
+		for _, component := range subsystem.Components {
+			if strings.TrimSpace(component.Name) == "" {
+				return synthesisWireProposal{}, fmt.Errorf("proposal component name is empty")
+			}
+			if err := validateSynthesisProposalProse("component description", component.Description); err != nil {
+				return synthesisWireProposal{}, err
+			}
+			memberRefs, err := nestedMemberRefs(component.MemberRefs, "member_refs")
+			if err != nil {
+				return synthesisWireProposal{}, err
+			}
+			unitRefs, err := nestedUnitRefs(component.UnitRefs, "unit_refs")
+			if err != nil {
+				return synthesisWireProposal{}, err
+			}
+			if len(memberRefs) > 0 && len(unitRefs) > 0 {
+				return synthesisWireProposal{}, fmt.Errorf("proposal component must group either member_refs or unit_refs, not both")
+			}
+			if len(memberRefs) == 0 && len(unitRefs) == 0 {
+				return synthesisWireProposal{}, fmt.Errorf("proposal component must group at least one member_refs or unit_refs")
+			}
+			anchorRefs, err := nestedAnchorRefs(component.AnchorRefs, "anchor_refs")
+			if err != nil {
+				return synthesisWireProposal{}, err
+			}
+			if len(anchorRefs) > maxAnchorMembers {
+				return synthesisWireProposal{}, fmt.Errorf("proposal component anchor count exceeds the bounded contract")
+			}
+			record := synthesisWireRecord{
+				Kind: synthesisWireComponentRecord, SubsystemRef: subsystemRef,
+				Name: component.Name, Description: component.Description,
+				MemberRefs: memberRefs, UnitRefs: unitRefs, AnchorRefs: anchorRefs,
+			}
+			if len(component.AnchorRefs) == 0 {
+				// Backend-owned normalization: omitted anchor_refs on a
+				// component is a mechanical default, counted like the
+				// flat contract's missing-anchor-refs normalization.
+				record.NormalizedMissingAnchorRefs = true
+			}
+			proposal.Records = append(proposal.Records, record)
+			totalComponents++
+		}
+	}
+	if totalComponents == 0 || totalComponents > MaxTotalNestedComponents {
+		return synthesisWireProposal{}, fmt.Errorf("proposal component count exceeds the bounded contract")
+	}
+	return proposal, nil
+}
+
+// decodeSynthesisWireFlatJSON decodes the historical flat tagged-record
+// grammar (pre-Phase-1). It stays readable so immutable saved responses
+// replay deterministically; it is not the live provider contract.
+func decodeSynthesisWireFlatJSON(raw []byte) (synthesisWireProposal, error) {
 	var root map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &root); err != nil || root == nil {
 		return synthesisWireProposal{}, fmt.Errorf("proposal is not an object")
@@ -2034,6 +2172,56 @@ func decodeSynthesisWireProposalJSON(raw []byte) (synthesisWireProposal, error) 
 		proposal.Records = append(proposal.Records, record)
 	}
 	return proposal, nil
+}
+
+// nestedStringRefs decodes a plain request-local string ref array. Kinds are
+// backend-owned: the model returns bare refs, never {"kind":...,"ref":...}.
+func nestedStringRefs(raw []string, field string) ([]SynthesisMemberRef, error) {
+	refs := make([]SynthesisMemberRef, 0, len(raw))
+	for index, value := range raw {
+		if strings.TrimSpace(value) == "" {
+			return nil, fmt.Errorf("proposal %s[%d] is empty", field, index)
+		}
+		refs = append(refs, SynthesisMemberRef{Ref: value})
+	}
+	return refs, nil
+}
+
+// nestedMemberRefs decodes plain member refs (p*/s*/f*).
+func nestedMemberRefs(raw []string, field string) ([]SynthesisMemberRef, error) {
+	return nestedStringRefs(raw, field)
+}
+
+// nestedUnitRefs decodes plain unit refs (u*).
+func nestedUnitRefs(raw []string, field string) ([]SynthesisUnitRef, error) {
+	refs := make([]SynthesisUnitRef, 0, len(raw))
+	for index, value := range raw {
+		if strings.TrimSpace(value) == "" {
+			return nil, fmt.Errorf("proposal %s[%d] is empty", field, index)
+		}
+		refs = append(refs, SynthesisUnitRef{Ref: value})
+	}
+	return refs, nil
+}
+
+// nestedAnchorRefs decodes plain anchor refs (a*).
+func nestedAnchorRefs(raw []string, field string) ([]SynthesisAnchorRef, error) {
+	refs := make([]SynthesisAnchorRef, 0, len(raw))
+	for index, value := range raw {
+		if strings.TrimSpace(value) == "" {
+			return nil, fmt.Errorf("proposal %s[%d] is empty", field, index)
+		}
+		refs = append(refs, SynthesisAnchorRef{Ref: value})
+	}
+	return refs, nil
+}
+
+// validateSynthesisProposalProse bounds a nested proposal prose value.
+func validateSynthesisProposalProse(label, value string) error {
+	if err := validateDisplayText(label, value, maxNameBytes, false); err != nil {
+		return err
+	}
+	return nil
 }
 
 // SynthesisResponseMembershipCounts returns raw conceptual-membership
