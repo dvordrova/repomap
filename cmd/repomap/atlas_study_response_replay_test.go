@@ -69,7 +69,7 @@ func writeAtlasStudyResponseReplayFixture(t *testing.T, dirName, metadataRunID s
 	}
 	request, err := themestudy.CompileScout(
 		themestudy.LanguageEnglish, vocabulary, packs,
-		themeScoutContext(product, "runtime-fixture"), "",
+		themeScoutContext(product, "runtime-fixture", themeSpanAnchorRefsFromPacks(packs)), "",
 	)
 	if err != nil {
 		t.Fatalf("compile scout request: %v", err)

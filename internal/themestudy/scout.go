@@ -111,6 +111,12 @@ func ValidateScout(data []byte, anchorRefs map[string]struct{}, fileRefs map[str
 		}
 		candidate.AnchorRefs = dedupedAnchors
 		candidate.ExpansionFileRefs = dedupedFiles
+		// Phase 3 validation audit: relation_claim is backend-owned — the
+		// design rule says a model may never create runtime facts, so its
+		// value is ALWAYS editorial_only and we assign it ourselves. The
+		// model is not asked to echo it and a stray value in the
+		// unrequested field never rejects the theme.
+		candidate.RelationClaim = RelationClaimEditorialOnly
 		if code := scoutCandidateIssue(candidate, anchorRefs, fileRefs, catalogDigest, seenNormalized); code != "" {
 			reject(&status, position, code)
 			continue
@@ -155,9 +161,6 @@ func scoutCandidateIssue(candidate ScoutCandidate, anchorRefs, fileRefs map[stri
 	// failures remain hard rejections below.
 	if !candidate.ThemeKind.Valid() {
 		return ScoutIssueInvalidThemeKind
-	}
-	if !candidate.RelationClaim.Valid() {
-		return ScoutIssueInvalidRelationClaim
 	}
 	if len(candidate.AnchorRefs) < MinThemeAnchors || len(candidate.AnchorRefs) > MaxThemeAnchors {
 		return ScoutIssueInvalidAnchorCount

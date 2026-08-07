@@ -166,7 +166,11 @@ func TestScoutItemLocalRejection(t *testing.T) {
 		t.Fatalf("good scout rejected or wrong state: accepted=%d state=%s err=%v", status.Accepted, status.State, err)
 	}
 
-	// One bad candidate (invalid relation_claim) must not poison a sibling.
+	// Phase 3 validation audit: relation_claim is backend-owned — the
+	// design rule says a model may never create runtime facts, so its
+	// value is ALWAYS editorial_only and we assign it ourselves. A stray
+	// value in this unrequested field must NOT poison a sibling (and must
+	// not reject the theme itself): it is ignored and overwritten.
 	mixed := `{"themes":[` +
 		`{"title":"t1","question":"q1?","theme_kind":"user_journey","anchor_refs":["a1"],"why_it_matters":"w","expected_learning":"l","relation_claim":"runtime_proven"},` +
 		`{"title":"t2","question":"q2?","theme_kind":"shared_domain_responsibility","anchor_refs":["a2","a3"],"why_it_matters":"w","expected_learning":"l","relation_claim":"editorial_only"}` +
@@ -175,17 +179,16 @@ func TestScoutItemLocalRejection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mixed scout err: %v", err)
 	}
-	if status.Accepted != 1 || status.Rejected != 1 || len(accepted) != 1 || status.State != "accepted_partial" {
-		t.Fatalf("want 1 accepted / 1 rejected / accepted_partial, got %d/%d/%s", status.Accepted, status.Rejected, status.State)
+	if status.Accepted != 2 || status.Rejected != 0 || len(accepted) != 2 || status.State != "accepted" {
+		t.Fatalf("stray relation_claim must not reject: want 2 accepted / 0 rejected / accepted, got %d/%d/%s", status.Accepted, status.Rejected, status.State)
 	}
-	found := false
 	for _, issue := range status.Issues {
 		if issue.Code == ScoutIssueInvalidRelationClaim {
-			found = true
+			t.Fatalf("relation_claim must never produce an issue (backend-owned)")
 		}
 	}
-	if !found {
-		t.Fatalf("expected invalid_relation_claim issue, got %v", status.Issues)
+	if accepted[0].RelationClaim != RelationClaimEditorialOnly || accepted[1].RelationClaim != RelationClaimEditorialOnly {
+		t.Fatalf("relation_claim must be assigned editorial_only by the backend, got %q and %q", accepted[0].RelationClaim, accepted[1].RelationClaim)
 	}
 
 	// wrong-kind f* in anchor_refs → item-local failure of the whole candidate set.
