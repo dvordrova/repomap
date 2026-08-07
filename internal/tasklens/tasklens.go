@@ -573,7 +573,12 @@ type ProposedJoin struct {
 	LeftID      string      `json:"left_anchor_id"`
 	RightID     string      `json:"right_anchor_id"`
 	RelationID  string      `json:"relation_id,omitempty"`
-	Kind        string      `json:"relation_kind"`
+	// Phase 8 reviewer finding (backend-authority leakage): relation_kind
+	// is backend-owned — the backend restores it from the exact local
+	// relation record the model selects by relation_id. A legacy response
+	// that still echoes a kind is validated against the relation as before;
+	// omission is legal and the backend stamps the exact kind.
+	Kind        string      `json:"relation_kind,omitempty"`
 	SupportType SupportType `json:"support_type"`
 	SupportIDs  []string    `json:"support_ids"`
 	Explanation string      `json:"explanation"`
@@ -2074,9 +2079,14 @@ func buildJoin(proposed ProposedJoin, selected map[string]struct{}, index bundle
 			!sameEndpoints(relation.LeftID, relation.RightID, proposed.LeftID, proposed.RightID) {
 			return EvidenceJoin{}, fmt.Errorf("locally observed support lacks a matching local relation")
 		}
-		if proposed.Kind != relation.Kind {
+		// Phase 8 reviewer finding (backend-authority leakage): relation_kind
+		// is backend-owned. When the model omits it, the backend stamps the
+		// exact kind from the selected local relation; a legacy echo is still
+		// validated against the relation as before.
+		if proposed.Kind != "" && proposed.Kind != relation.Kind {
 			return EvidenceJoin{}, fmt.Errorf("locally observed support changes the local relation kind")
 		}
+		kind = relation.Kind
 		if !subset(proposed.SupportIDs, relation.EvidenceIDs) || len(proposed.SupportIDs) == 0 {
 			return EvidenceJoin{}, fmt.Errorf("locally observed support is outside relation evidence")
 		}

@@ -31,7 +31,6 @@ const pavedPathSystemPrompt = `You edit a small operating guide from bounded rep
 
 const pavedPathUserPrompt = `Return exactly this JSON shape:
 {
-  "version": 1,
   "paths": [
     {
       "title": "short human title",
