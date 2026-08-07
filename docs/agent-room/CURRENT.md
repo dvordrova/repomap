@@ -1117,3 +1117,16 @@ containment (maddy per-file secret closure, sqlc/syn/bench Study without
 canvas, container-registry external frontier, chatto post-Scout typed
 status, caddy facts cap, gemnasium duplicate merge). MAP_READY gate precedes
 Decision 236 (Repository Map primary product).
+
+## 19. Decision 236 — Repository Map as primary product (v11 program, ACTIVE)
+
+Map is the default route (new `map` view, `#/map`; Overview content moves to
+the empty-selection inspector); Architecture becomes the Landscape lens.
+Lenses (Landscape/Entrypoints/Integrations/Mechanisms) are projections over
+the single architecture_canvas object. Entry categories (worker =
+runtime_activity classification; library = anchor-derived), closed generic
+touchpoint family classification, banded map composition, line contract
+with dotted-association and dashed-frontier data sources, inspector tabs
+(Summary/Connections/Read code), entry-participation consistency (F3),
+inspector-aware Fit, shared-band style, per-entry mechanism fragments.
+Identity: CurrentFormatVersion 37, projection 14, UI catalog VERSION 10.
