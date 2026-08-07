@@ -39,10 +39,15 @@ func (compiled Compiled) ValidateResponseJSON(data []byte) (ResolvedResponse, er
 		}
 		return ResolvedResponse{}, fmt.Errorf("navigator response: trailing data: %w", err)
 	}
-	if envelope.Version != Version {
+	// Phase 8 reviewer finding (backend-authority leakage): version and
+	// catalog_ref are backend-owned identity — the model is not asked to
+	// echo them. Legacy responses that still carry them are validated as
+	// before (historical replay); omission is legal and the backend stamps
+	// identity onto the resolved record.
+	if envelope.Version != 0 && envelope.Version != Version {
 		return ResolvedResponse{}, fmt.Errorf("navigator response: unsupported version %d", envelope.Version)
 	}
-	if envelope.CatalogRef != compiled.catalogRef {
+	if envelope.CatalogRef != "" && envelope.CatalogRef != compiled.catalogRef {
 		return ResolvedResponse{}, &ReferenceError{Field: "catalog_ref", Position: 0, Code: "catalog_ref_mismatch"}
 	}
 

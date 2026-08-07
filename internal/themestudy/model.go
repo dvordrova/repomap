@@ -481,6 +481,12 @@ type ThemeCard struct {
 	Badge            string    `json:"badge"` // editorial source-backed | partial
 	DirectCount      int       `json:"direct_count"`
 	SupportingCount  int       `json:"supporting_count"`
+	// Phase 8 reviewer finding: unknowns are the honest caveats of the
+	// retained readings — published on the card, not only driving the
+	// partial badge. ReviewedAnchorCount is the exact denominator for the
+	// per-card limitation statement (anchors that passed source review).
+	Unknowns            []string `json:"unknowns,omitempty"`
+	ReviewedAnchorCount int      `json:"reviewed_anchor_count,omitempty"`
 	// Decision 233 (Archive 9): semantic-equivalent themes co-project. A
 	// theme whose normalized question+title matches an earlier accepted
 	// theme is NOT dropped: its title/question remain as alternate

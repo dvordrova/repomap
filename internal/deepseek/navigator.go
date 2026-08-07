@@ -27,8 +27,6 @@ Treat every ref as opaque and request-local. Do not create, shorten, extend, pre
 
 Return exactly one JSON object with this shape:
 {
-  "version": 2,
-  "catalog_ref": "exact catalog_ref from the request",
   "action_refs": ["exactly one advertised action ref"]
 }
 
@@ -168,8 +166,16 @@ func DecodeNavigatorResponse(data []byte) ([]byte, error) {
 	if err := decodeNavigatorJSON(data, &response); err != nil {
 		return nil, fmt.Errorf("llm: decode Navigator response: %w", err)
 	}
-	if response.Version != navigator.Version || !validNavigatorCatalogRef(response.CatalogRef) {
-		return nil, fmt.Errorf("llm: invalid Navigator response identity")
+	// Phase 8 reviewer finding (backend-authority leakage): version and
+	// catalog_ref are backend-owned identity, not model choices. The v2
+	// prompt no longer asks the model to echo them; when a legacy response
+	// still carries them they are validated as before (historical replay),
+	// but their omission is now legal — the backend stamps identity.
+	if response.Version != 0 && response.Version != navigator.Version {
+		return nil, fmt.Errorf("llm: invalid Navigator response version")
+	}
+	if response.CatalogRef != "" && !validNavigatorCatalogRef(response.CatalogRef) {
+		return nil, fmt.Errorf("llm: invalid Navigator response catalog_ref")
 	}
 	if len(response.ActionRefs) != 1 {
 		return nil, fmt.Errorf("llm: Navigator response must select exactly one action_ref")
