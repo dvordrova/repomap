@@ -58,6 +58,9 @@ var architectureStatusValidationCodes = map[string]struct{}{
 	"proposal.normalized_description":                   {},
 	"proposal.normalized_package_only_hypothesis":       {},
 	"proposal.normalized_primary_subsystems":            {},
+	// Phase 1 prompt cleanup: a component without an anchor_refs field is
+	// a mechanical default, counted as a normalization (nested grammar).
+	"proposal.normalized_missing_anchor_refs": {},
 	"proposal.normalized_total_components":              {},
 	"proposal.partial_member_coverage":                  {},
 	"proposal.primary_subsystems_above_preferred":       {},
