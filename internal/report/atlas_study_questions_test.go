@@ -102,20 +102,20 @@ func TestAtlasStudyRouteSpansTargetSpecificQuestions(t *testing.T) {
 	targets := []atlasstudy.ReadingTarget{
 		{
 			ID: "target-main", Kind: "symbol", Label: "main",
-			Symbol: "github.com/casdoor/casdoor.main",
-			Location: evidence.Location{Path: "main.go", Line: 36},
+			Symbol:    "github.com/casdoor/casdoor.main",
+			Location:  evidence.Location{Path: "main.go", Line: 36},
 			Authority: repositoryatlas.AuthorityInferred,
 		},
 		{
 			ID: "target-initdb", Kind: "symbol", Label: "Repository function",
-			Symbol: "github.com/casdoor/casdoor/object.InitDb",
-			Location: evidence.Location{Path: "object/init.go", Line: 27},
+			Symbol:    "github.com/casdoor/casdoor/object.InitDb",
+			Location:  evidence.Location{Path: "object/init.go", Line: 27},
 			Authority: repositoryatlas.AuthorityInferred,
 		},
 		{
 			ID: "target-godaddy", Kind: "symbol", Label: "Function ObtainCertificateGoDaddy",
-			Symbol: "ObtainCertificateGoDaddy",
-			Location: evidence.Location{Path: "certificate/dns.go", Line: 135},
+			Symbol:    "ObtainCertificateGoDaddy",
+			Location:  evidence.Location{Path: "certificate/dns.go", Line: 135},
 			Authority: repositoryatlas.AuthorityInferred,
 		},
 	}
@@ -197,13 +197,13 @@ func TestAtlasStudyRouteSpanIDsIgnoreQuestionWording(t *testing.T) {
 		return []atlasstudy.ReadingTarget{
 			{
 				ID: "target-main", Kind: "symbol", Label: "main", Symbol: symbol,
-				Location: evidence.Location{Path: "main.go", Line: 36},
+				Location:  evidence.Location{Path: "main.go", Line: 36},
 				Authority: repositoryatlas.AuthorityInferred,
 			},
 			{
 				ID: "target-callee", Kind: "symbol", Label: "Repository function",
-				Symbol: symbol + "/object.InitDb",
-				Location: evidence.Location{Path: "object/init.go", Line: 27},
+				Symbol:    symbol + "/object.InitDb",
+				Location:  evidence.Location{Path: "object/init.go", Line: 27},
 				Authority: repositoryatlas.AuthorityInferred,
 			},
 		}

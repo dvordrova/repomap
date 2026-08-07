@@ -23,21 +23,28 @@ const (
 	// publish with shared unit scope plus exact anchors and zero exclusive
 	// members; shared members are part of the accepted landscape
 	// (ContractVersion 11).
-	ContractVersion = 11
+	// Decision 235 (v11): one member_refs response grammar + missing-anchor
+	// normalization + empty-component item-local rejection change accepted
+	// landscape semantics (ContractVersion 12).
+	ContractVersion = 12
 	// ProposalVersion changes whenever the wire proposal shape or its
 	// acceptance semantics change; D4 equivalence coalescing is
 	// acceptance semantics (ProposalVersion 10); shared participation is
-	// acceptance semantics (ProposalVersion 11).
-	ProposalVersion = 11
+	// acceptance semantics (ProposalVersion 11); member-only grammar +
+	// normalization + item-local empty rejection (ProposalVersion 12).
+	ProposalVersion = 12
 
-	maxCandidates        = 512
-	maxFlows             = 64
-	maxRelations         = 1_024
-	maxAnchorBindings    = 2_048
-	maxBehaviorAnchors   = 256
-	maxAnchorMembers     = 64
-	maxLimitations       = 8
-	maxFactsPerCandidate = 16
+	maxCandidates      = 512
+	maxFlows           = 64
+	maxRelations       = 1_024
+	maxAnchorBindings  = 2_048
+	maxBehaviorAnchors = 256
+	maxAnchorMembers   = 64
+	maxLimitations     = 8
+	// MaxFactsPerCandidate bounds the exact facts a candidate may carry;
+	// the architecture builder caps deterministically (Decision 235 1D
+	// caddy) so the bundle validator never trips whole-bundle.
+	MaxFactsPerCandidate = 16
 	maxFlowsPerCandidate = 16
 	maxSubsystems        = 24
 	maxComponents        = 64
@@ -453,7 +460,7 @@ type Component struct {
 	// roles). SharedMemberIDs is their exact local expansion, kept separate
 	// from exclusive Members so the product can show shared package scope
 	// without cloned ownership.
-	SharedUnitRefs []string   `json:"shared_unit_refs,omitempty"`
+	SharedUnitRefs  []string   `json:"shared_unit_refs,omitempty"`
 	SharedMemberIDs []MemberID `json:"shared_member_ids,omitempty"`
 }
 
@@ -1273,9 +1280,13 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 			// anchors). Shared participation with zero exclusive members
 			// is valid product value — never an "empty component".
 			if validateDisplayText("component name", componentName, maxNameBytes, true) != nil ||
-				validateDisplayText("component description", componentDescription, maxDescriptionBytes, false) != nil ||
-				(len(proposedComponent.MemberIDs) == 0 && len(proposedComponent.SharedUnitRefs) == 0) {
-				invalid("proposal.invalid_component", "proposal contains an empty or malformed component")
+				validateDisplayText("component description", componentDescription, maxDescriptionBytes, false) != nil {
+				// Decision 235 (v11): malformed display text remains a
+				// whole-response failure (it poisons the component's
+				// identity); an EMPTY component (no members, no shared
+				// scope, no anchors) is rejected item-local after
+				// resolution so valid siblings publish (goargs class).
+				invalid("proposal.invalid_component", "proposal contains a malformed component")
 				return Landscape{}, diagnostics, false, componentSalvaged
 			}
 			members := make([]Candidate, 0, len(proposedComponent.MemberIDs))
@@ -1362,8 +1373,18 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 				invalid("proposal.shared_unit_slice", "component participates in a shared unit with exact anchors; scope participation published instead of exclusive ownership")
 			}
 			if len(members) == 0 && len(sharedMembers) == 0 && len(proposedComponent.AnchorIDs) == 0 {
-				invalid("proposal.invalid_component", "proposal component has no usable exact members, shared scope, or anchors")
-				return Landscape{}, diagnostics, false, componentSalvaged
+				// Decision 235 (v11): an empty component (no exact
+				// members, no shared scope, no anchors) is rejected
+				// ITEM-LOCAL with a recoverable finding — the valid
+				// sibling components publish (goargs: «Линтеры»
+				// dropped, «Плагин» accepted, state
+				// accepted_partial). Zero valid components in total
+				// still publish local-only via
+				// proposal.zero_useful_semantic_components below.
+				invalid("proposal.empty_component", "proposal component has no usable exact members, shared scope, or anchors; component skipped item-scope")
+				componentSalvaged = true
+				releaseComponentMembers()
+				continue
 			}
 			anchorIDs := make([]string, 0, len(proposedComponent.AnchorIDs))
 			seenAnchorIDs := make(map[string]struct{}, len(proposedComponent.AnchorIDs))
@@ -1564,12 +1585,11 @@ func proposalMembershipDiagnostics(bundle CandidateBundle, proposal Proposal) []
 			continue
 		}
 		for _, component := range subsystem.Components {
-			if len(component.MemberIDs) == 0 && len(component.SharedUnitRefs) == 0 {
-				return []Diagnostic{newDiagnostic(
-					"proposal.invalid_component",
-					"proposal contains an empty or malformed component",
-				)}
-			}
+			// Decision 235 (v11): an empty component is rejected
+			// ITEM-LOCAL in applyProposal (valid siblings publish);
+			// it must not be a fatal membership diagnostic here. Only
+			// structurally unusable proposals (excessive memberships)
+			// stay fatal.
 			if len(component.MemberIDs) > maxCandidates {
 				return []Diagnostic{newDiagnostic(
 					"proposal.invalid_members",
@@ -2291,7 +2311,7 @@ func validateCandidate(candidate Candidate) error {
 	if err := validateDisplayText("candidate name", candidate.Name, maxNameBytes, true); err != nil {
 		return err
 	}
-	if len(candidate.Facts) == 0 || len(candidate.Facts) > maxFactsPerCandidate {
+	if len(candidate.Facts) == 0 || len(candidate.Facts) > MaxFactsPerCandidate {
 		return fmt.Errorf("candidate fact count is out of bounds")
 	}
 	for index, fact := range candidate.Facts {
@@ -2336,7 +2356,7 @@ func validateFlow(flow Flow) error {
 	if err := validateDisplayText("flow name", flow.Name, maxNameBytes, true); err != nil {
 		return err
 	}
-	if len(flow.Facts) == 0 || len(flow.Facts) > maxFactsPerCandidate {
+	if len(flow.Facts) == 0 || len(flow.Facts) > MaxFactsPerCandidate {
 		return fmt.Errorf("flow fact count is out of bounds")
 	}
 	for index, fact := range flow.Facts {

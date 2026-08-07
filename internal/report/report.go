@@ -29,12 +29,16 @@ import (
 // coverage (reviewed/unreviewed) and the semantic-empty state.
 // Decision 233: alternate co-projection + concentration marker.
 // Decision 233 AREA COVERAGE: missing-core-area diagnostic.
-const CurrentFormatVersion = 35
+// Decision 235 (v11): final-Architecture rebase into Study (model canvas
+// components as Scout context), populated span questions, theme
+// equivalence accounting — Study wire and report projection changed.
+const CurrentFormatVersion = 36
 
 // Decision 232: adjudication anchor coverage + semantic-empty browse.
 // Decision 233: alternate co-projection + concentration marker.
 // Decision 233 AREA COVERAGE: missing-core-area diagnostic.
-const AtlasStudyReportProjectionVersion = 12
+// Decision 235 (v11): rebased Scout context + equivalence accounting.
+const AtlasStudyReportProjectionVersion = 13
 
 // MaxAtlasStudyBrowseSpans bounds the report-side provider-free per-span
 // browse. Truthful Total/Shown keep larger repositories honest; the complete

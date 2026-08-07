@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/constant"
@@ -362,6 +363,14 @@ func (a *analyzer) load() error {
 		}
 		if err != nil {
 			finishLoad(len(loaded), len(loaded))
+			// Decision 235 (v11) 1C: with online toolchain selection the
+			// loader itself may fail to acquire the required Go toolchain
+			// (download/network). That is a typed failure — the generic
+			// snapshot/report remains available downstream.
+			if _, wantsAuto := repomapGotoolchainEnv(); wantsAuto &&
+				toolchainAcquisitionError(err) {
+				return &analysisToolchainUnavailableError{cause: err, module: repositoryRelativeModuleDir(a.root, moduleRoot)}
+			}
 			return fmt.Errorf(
 				"surface discovery: load packages from %s: %w",
 				repositoryRelativeModuleDir(a.root, moduleRoot),
@@ -607,6 +616,41 @@ func checkSurfaceGoVersion(root string) error {
 		return fmt.Errorf("surface discovery: read go.mod: %w", err)
 	}
 	return nil
+}
+
+// analysisToolchainUnavailableError is the Decision 235 1C typed failure:
+// online toolchain selection could not acquire the required Go toolchain.
+// The generic snapshot/report remains available downstream.
+type analysisToolchainUnavailableError struct {
+	cause  error
+	module string
+}
+
+func (e *analysisToolchainUnavailableError) Error() string {
+	return fmt.Sprintf("analysis_toolchain_unavailable: acquire Go toolchain for module %s: %v", e.module, e.cause)
+}
+
+func (e *analysisToolchainUnavailableError) Unwrap() error { return e.cause }
+
+// IsAnalysisToolchainUnavailable reports whether the error is the typed
+// toolchain-acquisition failure (Decision 235 1C).
+func IsAnalysisToolchainUnavailable(err error) bool {
+	var target *analysisToolchainUnavailableError
+	return errors.As(err, &target)
+}
+
+// toolchainAcquisitionError detects Go toolchain acquisition failures in a
+// packages.Load error — the go command reports them with a distinctive
+// message about downloading the go toolchain or a missing go.mod go line.
+func toolchainAcquisitionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "go toolchain") ||
+		strings.Contains(message, "downloading go") ||
+		strings.Contains(message, "module go@") ||
+		strings.Contains(message, "toolchain switch")
 }
 
 func (a *analyzer) prepare() {
@@ -4211,6 +4255,12 @@ func (a *analyzer) location(position token.Pos) Location {
 	path := resolved.Filename
 	if relative, err := filepath.Rel(a.root, path); err == nil && !strings.HasPrefix(relative, "..") {
 		path = filepath.ToSlash(relative)
+	} else if path != "" {
+		// Decision 235 (v11) 1D container-registry: out-of-root files
+		// ($GOROOT/stdlib, module cache) are marked external instead of
+		// leaking an absolute host path that later becomes a required
+		// repository source action. Local callsite evidence is retained.
+		path = "<external>/" + filepath.Base(path)
 	}
 	return Location{Path: path, Line: resolved.Line, Column: resolved.Column}
 }
@@ -4219,6 +4269,8 @@ func (a *analyzer) sourceLocation(filename string, line, column int) Location {
 	path := filename
 	if relative, err := filepath.Rel(a.root, filename); err == nil && !strings.HasPrefix(relative, "..") {
 		path = filepath.ToSlash(relative)
+	} else if path != "" {
+		path = "<external>/" + filepath.Base(path)
 	}
 	return Location{Path: path, Line: line, Column: column}
 }

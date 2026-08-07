@@ -1253,6 +1253,12 @@ func persistAndClassifyArchitectureSynthesisStatus(
 	if report.IsExactWorkspaceGraphUnavailable(synthesisErr) {
 		return &publishableArchitectureFailure{cause: synthesisErr}
 	}
+	// Decision 235 (v11) 1D sqlc/syn/bench: no canonical candidates is a
+	// publishable local-only Architecture — the run continues to Study and
+	// the minimal local report instead of terminating.
+	if report.IsNoCanonicalArchitectureCandidates(synthesisErr) {
+		return &publishableArchitectureFailure{cause: synthesisErr}
+	}
 	var providerFailure *architectureProviderCallFailed
 	if errors.As(synthesisErr, &providerFailure) {
 		return &publishableArchitectureFailure{cause: synthesisErr}

@@ -222,10 +222,10 @@ app.ready.then(() => {
 		t.Fatalf("run association nesting check: %v\n%s", err, output)
 	}
 	var result struct {
-		NestedCount   int      `json:"nestedCount"`
-		Nested        []string `json:"nested"`
-		WitnessButtons int     `json:"witnessButtons"`
-		MountError    string   `json:"mountError"`
+		NestedCount    int      `json:"nestedCount"`
+		Nested         []string `json:"nested"`
+		WitnessButtons int      `json:"witnessButtons"`
+		MountError     string   `json:"mountError"`
 	}
 	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatalf("parse runner output: %v\n%s", err, output)

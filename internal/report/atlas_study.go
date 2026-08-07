@@ -40,10 +40,18 @@ func BuildAtlasStudyInput(
 	if data == nil || data.RepositoryAtlas == nil {
 		return atlasstudy.Input{}, fmt.Errorf("atlas study report: repository Atlas is required")
 	}
+	// Decision 235 (v11) 1D sqlc: a usable Atlas/local reading catalog is
+	// sufficient for Study — model Architecture is enrichment, not a
+	// prerequisite. When no canonical Architecture exists (failed/
+	// unavailable/local-only with no candidates), Study proceeds from the
+	// exact Atlas with an explicit local-source empty Architecture block.
 	if data.ArchitectureCanvas == nil {
-		return atlasstudy.Input{}, fmt.Errorf("atlas study report: architecture canvas is required")
+		return atlasStudyInputWithoutCanvas(data, language)
 	}
 	if err := validateUsableAtlasStudyCanvas(data); err != nil {
+		if isArchitectureUnavailable(data) {
+			return atlasStudyInputWithoutCanvas(data, language)
+		}
 		return atlasstudy.Input{}, err
 	}
 	studyData, err := atlasStudyLocalD177Data(data)
@@ -118,15 +126,77 @@ func BuildAtlasStudyInput(
 	return input, nil
 }
 
-// atlasStudyLocalD177Data keeps Study independent from optional Architecture
-// grouping. The complete exact RepositoryGraph and grounding facts rebuild the
-// same deterministic D177 landscape for full, partial, and rejected model
-// outcomes. Producer-owned anchors, Surfaces, and saved flows remain exact
-// local evidence; only their model-derived component joins are ignored when
-// they do not resolve in the rebuilt local landscape.
+// isArchitectureUnavailable reports whether the run produced no usable
+// canonical Architecture (failed synthesis, proposal rejection, or zero
+// canonical candidates) — the state where Study must proceed without one.
+func isArchitectureUnavailable(data *ReportData) bool {
+	if data == nil || data.ArchitectureCanvas == nil {
+		return true
+	}
+	status := data.ArchitectureSynthesis
+	if status == nil {
+		return true
+	}
+	return status.State == ArchitectureSynthesisFailed || status.ProposalRejected
+}
+
+// atlasStudyInputWithoutCanvas builds the Study input from the exact Atlas
+// and local reading catalog alone (Decision 235 1D sqlc/syn/bench: model
+// Architecture is enrichment, not a prerequisite). The Architecture block is
+// an explicit local-source empty state so Scout sees no stale grouping.
+func atlasStudyInputWithoutCanvas(data *ReportData, language atlasstudy.Language) (atlasstudy.Input, error) {
+	atlas, err := repositoryatlas.Canonical(*data.RepositoryAtlas)
+	if err != nil {
+		return atlasstudy.Input{}, fmt.Errorf("atlas study report: repository Atlas: %w", err)
+	}
+	input := atlasstudy.Input{
+		Atlas: atlas, Language: language, Limits: atlasstudy.DefaultLimits(),
+		Architecture: atlasstudy.ArchitectureInput{
+			Source: string(componentmap.SourceLocalPackages),
+			Title:  "Local repository landscape",
+		},
+	}
+	input.Surfaces = atlasStudySurfaces(data, atlas)
+	shelf := atlasStudyReadingShelf(data, input.Surfaces)
+	input.ReadingTargets = shelf.targets
+	input.ReadingSupports = shelf.supports
+	input.ProducerRelations = shelf.relations
+	input.RouteSpans = shelf.spans
+	bindAtlasStudyReadingTargets(&input)
+	input.Evidence = atlasStudyEvidence(atlas, input.Surfaces)
+	if claim := atlasStudyDocumentedPurpose(data.DocumentedPurpose); claim != "" {
+		input.Documents = []atlasstudy.DocumentClaim{{
+			ID:    "documented-purpose-" + atlasStudyDigest(claim),
+			Label: "Repository documentation", Claim: claim,
+			Authority: repositoryatlas.AuthorityObserved,
+		}}
+	}
+	return input, nil
+}
+
+// atlasStudyLocalD177Data keeps Study independent from OPTIONAL Architecture
+// grouping. Decision 235 (v11): when a model Architecture was ACCEPTED
+// (validated_model / partial_model / normalized_model, non-fallback), the
+// final accepted components ARE the Architecture context for Study — the
+// local D177 rebuild is used ONLY for failed/unavailable/local outcomes.
+// Producer-owned anchors, Surfaces, and saved flows remain exact local
+// evidence; only model-derived component joins that do not resolve in the
+// local landscape are dropped.
 func atlasStudyLocalD177Data(data *ReportData) (*ReportData, error) {
 	if data == nil || data.ArchitectureCanvas == nil {
 		return nil, fmt.Errorf("atlas study report: architecture canvas is required")
+	}
+	active := data.ArchitectureCanvas
+	// Decision 235 (v11 rebase): accepted model Architecture wins. The
+	// model chose the components; Study must read the FINAL names, not a
+	// stale local landscape (corpus: 0/25 Scout contexts used the final
+	// names). Fallback/empty model canvases still rebuild locally.
+	modelCanvas := active.ArchitectureSource == componentmap.SourceValidatedModel ||
+		active.ArchitectureSource == componentmap.SourceNormalizedModel ||
+		active.ArchitectureSource == componentmap.SourcePartialModel
+	if modelCanvas && !active.Fallback &&
+		len(active.Subsystems) > 0 && len(active.Components) > 0 {
+		return data, nil
 	}
 	localInput, err := BuildArchitectureCanvasInput(data)
 	if err != nil {
@@ -143,7 +213,6 @@ func atlasStudyLocalD177Data(data *ReportData) (*ReportData, error) {
 	if err != nil {
 		return nil, fmt.Errorf("atlas study report: rebuild local D177 canvas: %w", err)
 	}
-	active := data.ArchitectureCanvas
 	localCanvas.BehaviorAnchors = append(
 		[]componentmap.BehaviorAnchor(nil), active.BehaviorAnchors...,
 	)
@@ -274,8 +343,15 @@ func atlasStudySurfaces(data *ReportData, atlas repositoryatlas.Atlas) []atlasst
 			unitBySurface[entity.ID] = entity.UnitID
 		}
 	}
-	result := make([]atlasstudy.Surface, 0, len(data.ArchitectureCanvas.Surfaces))
-	for _, surface := range data.ArchitectureCanvas.Surfaces {
+	// Decision 235 (v11) 1D sqlc: with no canonical Architecture the
+	// surface shelf comes from the exact Atlas entities (RelationExposes
+	// surface observations) instead of the missing canvas.
+	var canvasSurfaces []ArchitectureSurface
+	if data != nil && data.ArchitectureCanvas != nil {
+		canvasSurfaces = data.ArchitectureCanvas.Surfaces
+	}
+	result := make([]atlasstudy.Surface, 0, len(canvasSurfaces)+len(unitBySurface))
+	for _, surface := range canvasSurfaces {
 		unitID := unitBySurface[surface.ID]
 		if surface.ID == "" || unitID == "" {
 			continue
@@ -285,8 +361,55 @@ func atlasStudySurfaces(data *ReportData, atlas repositoryatlas.Atlas) []atlasst
 			Kind: surface.Kind, Authority: atlasStudySurfaceAuthority(atlas, surface),
 		})
 	}
+	// Canvas-less Atlas surface entities (sqlc class): exact observed
+	// surface entities with no canvas projection still advertise Study
+	// span candidates — only when there is no canonical canvas to join
+	// them into (Decision 235 1D). Label avoids echoing the canonical ID.
+	canvasLess := data == nil || data.ArchitectureCanvas == nil
+	if !canvasLess {
+		unitBySurface = nil
+	}
+	for entityID, unitID := range unitBySurface {
+		already := false
+		for _, surface := range result {
+			if surface.ID == entityID {
+				already = true
+				break
+			}
+		}
+		if already {
+			continue
+		}
+		result = append(result, atlasstudy.Surface{
+			ID: entityID, UnitID: unitID,
+			Name: "Observed repository surface", Kind: "atlas_surface",
+			Authority: atlasStudySurfaceEntityAuthority(atlas, entityID),
+		})
+	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result
+}
+
+// atlasStudySurfaceEntityAuthority derives the authority of an Atlas-only
+// surface entity from its exposing relation (canvas-less Study path).
+func atlasStudySurfaceEntityAuthority(atlas repositoryatlas.Atlas, entityID string) repositoryatlas.Authority {
+	var authority repositoryatlas.Authority
+	for _, relation := range atlas.Relations {
+		if relation.Kind != repositoryatlas.RelationExposes ||
+			relation.Source.Kind != repositoryatlas.EntitySurface ||
+			relation.Source.ID != entityID {
+			continue
+		}
+		if authority == "" {
+			authority = relation.Authority
+		} else if authority != relation.Authority {
+			return repositoryatlas.AuthorityConflicted
+		}
+	}
+	if authority == "" {
+		return repositoryatlas.AuthorityObserved
+	}
+	return authority
 }
 
 func atlasStudySurfaceAuthority(

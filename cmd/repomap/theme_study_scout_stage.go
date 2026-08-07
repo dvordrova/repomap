@@ -164,9 +164,9 @@ func runThemeScoutStage(
 				outcome.LatencyMillis = cached.LatencyMillis
 				writer.RecordSemanticExchange(debugdump.SemanticExchange{
 					Stage: debugdump.SemanticStageAtlasStudy, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1, State: debugdump.SemanticStateCacheHit,
-					ValidationCode: debugdump.SemanticValidationCache,
+					ValidationCode:    debugdump.SemanticValidationCache,
 					RequestProvenance: debugdump.SemanticRequestPrepared,
-					Request: requestBytes, Response: cached.Content,
+					Request:           requestBytes, Response: cached.Content,
 				})
 				if err := persistThemeScoutAccepted(writer, request, result); err != nil {
 					err = themeTerminalResource(err, config.MaxTokens)
@@ -199,9 +199,9 @@ func runThemeScoutStage(
 	if err != nil {
 		writer.RecordSemanticExchange(debugdump.SemanticExchange{
 			Stage: debugdump.SemanticStageAtlasStudy, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1, State: debugdump.SemanticStateProviderFailed,
-			ValidationCode:    debugdump.SemanticValidationProvider,
+			ValidationCode:      debugdump.SemanticValidationProvider,
 			ResponseUnavailable: themeResponseUnavailable(err, 0, nil),
-			SemanticCalls: 1, RequestProvenance: debugdump.SemanticRequestExactSent,
+			SemanticCalls:       1, RequestProvenance: debugdump.SemanticRequestExactSent,
 			Request: providerRequest,
 		})
 		return themeScoutOrdinaryFailure(writer, request, outcome, atlasstudy.FailureProvider, err, output)
@@ -214,9 +214,9 @@ func runThemeScoutStage(
 		writer.RecordSemanticExchange(debugdump.SemanticExchange{
 			Stage: debugdump.SemanticStageAtlasStudy, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1, State: debugdump.SemanticStateRejected,
 			ValidationCode: debugdump.SemanticValidationSecret,
-			SemanticCalls: 1, TransportAttempts: providerResult.Attempts,
+			SemanticCalls:  1, TransportAttempts: providerResult.Attempts,
 			RequestProvenance: debugdump.SemanticRequestExactSent,
-			Request: providerRequest, Response: providerResult.Content,
+			Request:           providerRequest, Response: providerResult.Content,
 		})
 		return themeScoutErr(outcome, request,
 			themeScoutTerminalFailure(writer, request, outcome, atlasstudy.FailureProvider, unsafeErr))
@@ -229,7 +229,7 @@ func runThemeScoutStage(
 			ValidationCode: validation, SemanticCalls: 1,
 			TransportAttempts: providerResult.Attempts,
 			RequestProvenance: debugdump.SemanticRequestExactSent,
-			Request: providerRequest, Response: providerResult.Content,
+			Request:           providerRequest, Response: providerResult.Content,
 		})
 		if isSemanticResourceLimit(validationErr) || validation == debugdump.SemanticValidationSecret {
 			return themeScoutErr(outcome, request,
@@ -240,9 +240,9 @@ func runThemeScoutStage(
 	writer.RecordSemanticExchange(debugdump.SemanticExchange{
 		Stage: debugdump.SemanticStageAtlasStudy, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1, State: debugdump.SemanticStateAccepted,
 		ValidationCode: debugdump.SemanticValidationAccepted,
-		SemanticCalls: 1, TransportAttempts: providerResult.Attempts,
+		SemanticCalls:  1, TransportAttempts: providerResult.Attempts,
 		RequestProvenance: debugdump.SemanticRequestExactSent,
-		Request: providerRequest, Response: providerResult.Content,
+		Request:           providerRequest, Response: providerResult.Content,
 	})
 	outcome.State = atlasstudy.ProductState(result.State)
 	outcome.ScoutAccepted = result.Status.Accepted
@@ -460,9 +460,9 @@ func themeUnsafeSourcePayload(label string, data []byte) error {
 func themeRecordUnsafe(writer *debugdump.Writer, request []byte) {
 	writer.RecordSemanticExchange(debugdump.SemanticExchange{
 		Stage: debugdump.SemanticStageAtlasStudy, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1, State: debugdump.SemanticStateRejected,
-		ValidationCode: debugdump.SemanticValidationSecret,
+		ValidationCode:    debugdump.SemanticValidationSecret,
 		RequestProvenance: debugdump.SemanticRequestPrepared,
-		Request: request,
+		Request:           request,
 	})
 }
 

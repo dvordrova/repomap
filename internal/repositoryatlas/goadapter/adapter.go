@@ -124,8 +124,20 @@ func projectPackages(
 		if pkg.CanonicalPath == "" || pkg.ModuleID == "" {
 			return nil, fmt.Errorf("repository atlas Go adapter: package path and module id are required")
 		}
-		if _, duplicate := packages[pkg.CanonicalPath]; duplicate {
-			return nil, fmt.Errorf("repository atlas Go adapter: duplicate package path %q", pkg.CanonicalPath)
+		if previous, duplicate := packages[pkg.CanonicalPath]; duplicate {
+			// Decision 235 (v11) 1D gemnasium: an exact duplicate package
+			// path (same owning module) is a deterministic merge — keep
+			// the first, never fail the whole Atlas. A path owned by two
+			// DIFFERENT modules is a genuine conflict and stays an error
+			// (the adapter has no diagnostic channel; failing loudly beats
+			// silently choosing an owner).
+			if previous.ModuleID != pkg.ModuleID {
+				return nil, fmt.Errorf(
+					"repository atlas Go adapter: package path %q is owned by modules %q and %q",
+					pkg.CanonicalPath, previous.ModuleID, pkg.ModuleID,
+				)
+			}
+			continue
 		}
 		module, exists := modules[pkg.ModuleID]
 		if !exists || module.ModulePath != pkg.ModulePath {

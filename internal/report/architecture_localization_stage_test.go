@@ -58,7 +58,8 @@ func TestBuildArchitectureLocalizationRussianPromptIsExactAndReadOnly(t *testing
 	digest := sha256.Sum256(first)
 	// Decision 231 (Archive 9): shared participation + prompt v18 flow
 	// into the landscape contract, so the prompt SHA changes (v18).
-	const wantPromptSHA256 = "142b4828b9a0123e49f02793c197e23733af19243fd883e545fef62185d1517d"
+	// Decision 235 (v11): member-only grammar (prompt v19) — SHA changes.
+	const wantPromptSHA256 = "09ba729effe6dd5b0374f5e30d0361ff4343e4a657ea56b85e21c2d6da9601c9"
 	if got := hex.EncodeToString(digest[:]); got != wantPromptSHA256 {
 		t.Fatalf("Architecture prompt SHA-256 = %q, want %q", got, wantPromptSHA256)
 	}

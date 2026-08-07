@@ -352,8 +352,14 @@ func compileCatalog(input Input) (
 	if !input.Language.Valid() {
 		return nil, nil, nil, fmt.Errorf("atlas study: unsupported language %q", input.Language)
 	}
-	if input.Architecture.Version <= 0 ||
-		len(input.Architecture.Subsystems) == 0 || len(input.Architecture.Components) == 0 ||
+	// Decision 235 (v11) 1D sqlc: model Architecture is enrichment, not a
+	// prerequisite. A local-source empty Architecture block (unavailable
+	// synthesis — no canonical candidates) is a valid input; the typed
+	// reading supports/spans remain mandatory.
+	architectureBlocked := input.Architecture.Source == "" ||
+		len(input.Architecture.Subsystems) > 0 && len(input.Architecture.Components) == 0 ||
+		len(input.Architecture.Components) > 0 && len(input.Architecture.Subsystems) == 0
+	if architectureBlocked ||
 		len(input.ReadingTargets) == 0 || len(input.ReadingSupports) == 0 || len(input.RouteSpans) == 0 {
 		return nil, nil, nil, fmt.Errorf("atlas study: canonical Architecture and typed reading supports/spans are required")
 	}

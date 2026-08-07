@@ -146,9 +146,9 @@ func runThemeAdjudicationStage(
 				outcome.LatencyMillis = cached.LatencyMillis
 				writer.RecordSemanticExchange(debugdump.SemanticExchange{
 					Stage: debugdump.SemanticStageAtlasStudy, InstanceOrdinal: 2, SemanticAttemptOrdinal: 1, State: debugdump.SemanticStateCacheHit,
-					ValidationCode: debugdump.SemanticValidationCache,
+					ValidationCode:    debugdump.SemanticValidationCache,
 					RequestProvenance: debugdump.SemanticRequestPrepared,
-					Request: requestBytes, Response: cached.Content,
+					Request:           requestBytes, Response: cached.Content,
 				})
 				if err := persistThemeAdjAccepted(writer, request, result, status); err != nil {
 					err = themeTerminalResource(err, config.MaxTokens)
@@ -181,9 +181,9 @@ func runThemeAdjudicationStage(
 	if err != nil {
 		writer.RecordSemanticExchange(debugdump.SemanticExchange{
 			Stage: debugdump.SemanticStageAtlasStudy, InstanceOrdinal: 2, SemanticAttemptOrdinal: 1, State: debugdump.SemanticStateProviderFailed,
-			ValidationCode: debugdump.SemanticValidationProvider,
+			ValidationCode:      debugdump.SemanticValidationProvider,
 			ResponseUnavailable: themeResponseUnavailable(err, 0, nil),
-			SemanticCalls: 1, RequestProvenance: debugdump.SemanticRequestExactSent,
+			SemanticCalls:       1, RequestProvenance: debugdump.SemanticRequestExactSent,
 			Request: providerRequest,
 		})
 		return themeAdjOrdinaryFailure(writer, request, outcome, atlasstudy.FailureProvider, err, output)
@@ -196,9 +196,9 @@ func runThemeAdjudicationStage(
 		writer.RecordSemanticExchange(debugdump.SemanticExchange{
 			Stage: debugdump.SemanticStageAtlasStudy, InstanceOrdinal: 2, SemanticAttemptOrdinal: 1, State: debugdump.SemanticStateRejected,
 			ValidationCode: debugdump.SemanticValidationSecret,
-			SemanticCalls: 1, TransportAttempts: providerResult.Attempts,
+			SemanticCalls:  1, TransportAttempts: providerResult.Attempts,
 			RequestProvenance: debugdump.SemanticRequestExactSent,
-			Request: providerRequest, Response: providerResult.Content,
+			Request:           providerRequest, Response: providerResult.Content,
 		})
 		return themeAdjErr(outcome, request,
 			themeAdjTerminalFailure(writer, request, outcome, atlasstudy.FailureProvider, unsafeErr))
@@ -211,7 +211,7 @@ func runThemeAdjudicationStage(
 			ValidationCode: validation, SemanticCalls: 1,
 			TransportAttempts: providerResult.Attempts,
 			RequestProvenance: debugdump.SemanticRequestExactSent,
-			Request: providerRequest, Response: providerResult.Content,
+			Request:           providerRequest, Response: providerResult.Content,
 		})
 		if isSemanticResourceLimit(validationErr) || validation == debugdump.SemanticValidationSecret {
 			return themeAdjErr(outcome, request,
@@ -222,9 +222,9 @@ func runThemeAdjudicationStage(
 	writer.RecordSemanticExchange(debugdump.SemanticExchange{
 		Stage: debugdump.SemanticStageAtlasStudy, InstanceOrdinal: 2, SemanticAttemptOrdinal: 1, State: debugdump.SemanticStateAccepted,
 		ValidationCode: debugdump.SemanticValidationAccepted,
-		SemanticCalls: 1, TransportAttempts: providerResult.Attempts,
+		SemanticCalls:  1, TransportAttempts: providerResult.Attempts,
 		RequestProvenance: debugdump.SemanticRequestExactSent,
-		Request: providerRequest, Response: providerResult.Content,
+		Request:           providerRequest, Response: providerResult.Content,
 	})
 	outcome.State = atlasstudy.ProductState(result.State)
 	outcome.AdjAccepted = result.Status.Accepted

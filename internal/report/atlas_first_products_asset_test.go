@@ -307,10 +307,10 @@ process.stdout.write(JSON.stringify({
 				ExpectedLine int    `json:"expectedLine"`
 			} `json:"directionExactClicks"`
 			ExactClicks []struct {
-				Href          string `json:"href"`
-				DrawerHidden  bool   `json:"drawerHidden"`
-				ExpectedPath  string `json:"expectedPath"`
-				ExpectedLine  int    `json:"expectedLine"`
+				Href         string `json:"href"`
+				DrawerHidden bool   `json:"drawerHidden"`
+				ExpectedPath string `json:"expectedPath"`
+				ExpectedLine int    `json:"expectedLine"`
 			} `json:"exactClicks"`
 		} `json:"routeResults"`
 		ArchitectureText    string `json:"architectureText"`

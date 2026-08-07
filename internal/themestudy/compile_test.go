@@ -10,8 +10,8 @@ import (
 func buildTestScoutRequest(t *testing.T) ScoutRequest {
 	t.Helper()
 	files := map[string][]string{
-		"main.go":        {"package main", "func main() {", "  svc.Start()", "}"},
-		"svc.go":         {"package svc", "func Start() {", "  go serve()", "}"},
+		"main.go":          {"package main", "func main() {", "  svc.Start()", "}"},
+		"svc.go":           {"package svc", "func Start() {", "  go serve()", "}"},
 		"routers/route.go": {"package routers", "func Handle() {", "  auth.Check()", "}"},
 		"cred/argon2id.go": {"package cred", "func Hash() {", "  return", "}"},
 	}
@@ -192,7 +192,8 @@ func TestMockAndReplayAdjudicationRoundTrip(t *testing.T) {
 		t.Fatalf("reducer published no cards")
 	}
 	encoded, err := EncodeStudyThemes(StudyThemes{
-		Version: "v2", ScoutSHA256: request.CatalogSHA256,
+		// Decision 235 (v11): themes artifact v3.
+		Version: "v3", ScoutSHA256: request.CatalogSHA256,
 		AdjSHA256: adjRequest.CatalogSHA256, Cards: reduction.Cards,
 		Omitted: reduction.Omitted, Partial: reduction.Partial, Diagnostics: reduction.Diagnostics,
 	})

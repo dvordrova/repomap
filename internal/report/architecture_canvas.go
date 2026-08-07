@@ -16,7 +16,9 @@ import (
 // identity rules change. It is independent of the landscape and proof versions.
 // Decision 231 (Archive 9): shared participation projects shared scope and
 // shared members (ArchitectureCanvasVersion 10).
-const ArchitectureCanvasVersion = 10
+// Decision 235 (v11): one member grammar + normalization + item-local
+// empty rejection change accepted landscape semantics (Canvas 11).
+const ArchitectureCanvasVersion = 11
 
 type ArchitectureCanvasInput struct {
 	CandidateBundle componentmap.CandidateBundle
@@ -95,8 +97,8 @@ type ArchitectureComponent struct {
 	// the units this component participates in without exclusive
 	// ownership; SharedMembers is their exact local expansion. The
 	// product shows shared package scope instead of cloned ownership.
-	SharedUnitRefs []string                  `json:"shared_unit_refs,omitempty"`
-	SharedMembers  []componentmap.Candidate  `json:"shared_members,omitempty"`
+	SharedUnitRefs []string                 `json:"shared_unit_refs,omitempty"`
+	SharedMembers  []componentmap.Candidate `json:"shared_members,omitempty"`
 }
 
 // ArchitectureStructuralLocator retains an exact producer-owned source or

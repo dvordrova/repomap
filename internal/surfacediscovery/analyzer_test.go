@@ -995,7 +995,7 @@ func (g *RouterGroup) GET(path string, handlers ...HandlerFunc) { g.Handle(http.
 			firstRoute := onlyTriggerOfKind(t, first, "http_route")
 			secondRoute := onlyTriggerOfKind(t, second, "http_route")
 			if firstRoute.Identity.Path.Text != "/health" || firstRoute.Identity.Method != "GET" ||
-				!filepath.IsAbs(firstRoute.RegistrationSite.Path) || firstRoute.ID != secondRoute.ID {
+				!strings.HasPrefix(firstRoute.RegistrationSite.Path, "<external>/") || firstRoute.ID != secondRoute.ID {
 				t.Fatalf("external %s routes = %#v / %#v", test.name, firstRoute, secondRoute)
 			}
 			if len(firstRoute.WrapperChain) == 0 || firstRoute.WrapperChain[0].Callsite.Path != "main.go" {

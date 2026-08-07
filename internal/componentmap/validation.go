@@ -62,6 +62,12 @@ func diagnosticSeverity(code string) FindingSeverity {
 		"proposal.unknown_unit_ref",
 		"proposal.duplicate_unit_ref",
 		"proposal.duplicate_anchor_id",
+		// Decision 235 (v11): an empty component (no exact members, no
+		// shared scope, no anchors) is rejected item-local — valid
+		// siblings publish as accepted_partial. Distinct from the fatal
+		// proposal.invalid_component (malformed display text), so the
+		// severity/fallback mapping stays honest.
+		"proposal.empty_component",
 		// Decision 229 D7: a subsystem emptied by item-scope salvage is
 		// skipped with a counted recoverable finding, never a fatal.
 		"proposal.salvaged_empty_subsystem",
@@ -70,12 +76,18 @@ func diagnosticSeverity(code string) FindingSeverity {
 		// slice drops only the referencing component.
 		"proposal.shared_unit_slice",
 		"proposal.empty_anchor_slice",
+		// Decision 235 (v11): a provider that omits optional anchor_refs
+		// is normalized to [] with a counted finding; a response with a
+		// bounded trailing-closer sequence (Gotify `]}`) is normalized
+		// deterministically — both recoverable.
+		"proposal.normalized_missing_anchor_refs",
+		"response.trailing_closing_delimiters_normalized",
 		// Decision 231 (Archive 9): a structurally valid proposal that
 		// covers no conceptual members is an honest zero-useful-semantic
 		// result — the exact local landscape publishes with this
 		// recoverable finding, never a malformed-schema label.
 		"proposal.zero_useful_semantic_components":
-			return FindingRecoverable
+		return FindingRecoverable
 	default:
 		return FindingAdvisory
 	}

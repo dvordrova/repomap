@@ -81,18 +81,18 @@ func d210ThemeManifestFixture(t *testing.T, state atlasstudy.ProductState) (RunM
 	writeThemeArtifact(t, runDir, navigator.RecordArtifactFilename, navigatorFixture.result)
 	writeThemeArtifact(t, runDir, navigator.StatusArtifactFilename, navigatorFixture.status)
 	material := MaterialInputs{
-		RepositoryAtlasSHA256:         manifestSHA256(atlasJSON),
-		NavigatorRequestSHA256:        manifestSHA256(navigatorFixture.request),
-		NavigatorResultSHA256:         manifestSHA256(navigatorFixture.result),
-		NavigatorStatusSHA256:         manifestSHA256(navigatorFixture.status),
-		ThemeScoutRequestSHA256:       manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ScoutRequestArtifactFilename)),
-		ThemeScoutResultSHA256:        manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ScoutResultArtifactFilename)),
-		ThemeScoutStatusSHA256:        manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ScoutStatusArtifactFilename)),
-		ThemeSourceExpansionSHA256:    manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ExpansionArtifactFilename)),
+		RepositoryAtlasSHA256:          manifestSHA256(atlasJSON),
+		NavigatorRequestSHA256:         manifestSHA256(navigatorFixture.request),
+		NavigatorResultSHA256:          manifestSHA256(navigatorFixture.result),
+		NavigatorStatusSHA256:          manifestSHA256(navigatorFixture.status),
+		ThemeScoutRequestSHA256:        manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ScoutRequestArtifactFilename)),
+		ThemeScoutResultSHA256:         manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ScoutResultArtifactFilename)),
+		ThemeScoutStatusSHA256:         manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ScoutStatusArtifactFilename)),
+		ThemeSourceExpansionSHA256:     manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ExpansionArtifactFilename)),
 		ThemeAdjudicationRequestSHA256: manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.AdjudicationRequestArtifactFilename)),
 		ThemeAdjudicationResultSHA256:  manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.AdjudicationResultArtifactFilename)),
 		ThemeAdjudicationStatusSHA256:  manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.AdjudicationStatusArtifactFilename)),
-		StudyThemesSHA256:             manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.StudyThemesArtifactFilename)),
+		StudyThemesSHA256:              manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.StudyThemesArtifactFilename)),
 	}
 	manifest := validRunManifestFixture(t)
 	manifest.OpenablePaths = append([]string(nil), data.OpenablePaths...)

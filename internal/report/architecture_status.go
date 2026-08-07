@@ -10,11 +10,12 @@ import (
 )
 
 const (
-	ArchitectureSynthesisStatusFile    = "architecture_synthesis_status.json"
+	ArchitectureSynthesisStatusFile = "architecture_synthesis_status.json"
 	// Decision 231 (Archive 9): shared participation changed acceptance
 	// semantics (zero useful semantic components → honest local-only with
 	// the exact reason code; shared_unit_slice repurposed to recoverable).
-	ArchitectureSynthesisStatusVersion = 10
+	// Decision 235 (v11): normalization/empty-item semantics (status 11).
+	ArchitectureSynthesisStatusVersion = 11
 
 	ArchitectureSynthesisSucceeded   = "succeeded"
 	ArchitectureSynthesisCached      = "cached"

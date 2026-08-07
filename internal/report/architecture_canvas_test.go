@@ -572,8 +572,10 @@ func TestArchitectureCanvasVersionRejectsHistoricalRemainderSemantics(t *testing
 
 	// Decision 231 (Archive 9): shared participation projection advanced
 	// the canvas version to 10 (shared scope + shared members).
-	if ArchitectureCanvasVersion != 10 {
-		t.Fatalf("ArchitectureCanvasVersion = %d, want 10 for shared participation projection", ArchitectureCanvasVersion)
+	// Decision 235 (v11): member grammar + normalization + item-local
+	// empty rejection advanced it to 11.
+	if ArchitectureCanvasVersion != 11 {
+		t.Fatalf("ArchitectureCanvasVersion = %d, want 11 for the v11 normalization semantics", ArchitectureCanvasVersion)
 	}
 	if err := validateSemanticSearchCanvasVersion(&ArchitectureCanvas{Version: ArchitectureCanvasVersion - 1}); err == nil || !strings.Contains(err.Error(), "unsupported architecture canvas version") {
 		t.Fatalf("historical Architecture Canvas version error = %v", err)
