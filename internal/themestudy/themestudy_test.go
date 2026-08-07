@@ -588,10 +588,12 @@ func TestReducerHonestCoverageBadge(t *testing.T) {
 	}
 }
 
-// TestReducerPortfolioRankOrdersCoreBeforePeripheral covers Decision 224
-// (D219 F): user-facing/lifecycle kinds sort before integration families.
-func TestReducerPortfolioRankOrdersCoreBeforePeripheral(t *testing.T) {
-	// Distinct exact readings per theme so the rank order is exercised
+// TestReducerPreservesModelComparativeOrder covers Phase 2 prompt cleanup:
+// Scout returns themes ordered by decreasing usefulness, and the backend
+// preserves that order. theme_kind is presentation metadata only — unstable
+// model classification, never evidence identity, never default prominence.
+func TestReducerPreservesModelComparativeOrder(t *testing.T) {
+	// Distinct exact readings per theme so ordering is exercised
 	// independently of the identical-reading-set co-projection (Phase 3:
 	// kind is model classification, never evidence identity — themes over
 	// the same exact reading collapse into one card regardless of kind).
@@ -608,6 +610,8 @@ func TestReducerPortfolioRankOrdersCoreBeforePeripheral(t *testing.T) {
 		}
 	}
 	input := ReducerInput{
+		// Deliberately NOT core-first: integration_family comes first in
+		// model order. The reducer must preserve it — kind never re-ranks.
 		Themes: []AdjudicatedTheme{
 			mk("t1", "a1", string(KindIntegrationFamily)),
 			mk("t2", "a2", string(KindUserJourney)),
@@ -627,16 +631,10 @@ func TestReducerPortfolioRankOrdersCoreBeforePeripheral(t *testing.T) {
 	if len(reduction.Cards) != 3 {
 		t.Fatalf("cards = %d, want 3", len(reduction.Cards))
 	}
-	// user_journey and lifecycle must precede integration_family.
-	lastKind := ""
-	integrationSeen := false
-	for _, card := range reduction.Cards {
-		if string(card.ThemeKind) == string(KindIntegrationFamily) {
-			integrationSeen = true
-		}
-		if integrationSeen && string(card.ThemeKind) != string(KindIntegrationFamily) {
-			t.Fatalf("core theme %s sorted after integration family", card.ThemeKind)
-		}
-		_ = lastKind
+	// Model comparative order survives: t1 (integration_family) stays first
+	// even though user_journey/lifecycle appear later — kind never re-ranks.
+	if reduction.Cards[0].FinalTitle != "t1" || reduction.Cards[1].FinalTitle != "t2" || reduction.Cards[2].FinalTitle != "t3" {
+		t.Fatalf("model comparative order not preserved: %s, %s, %s",
+			reduction.Cards[0].FinalTitle, reduction.Cards[1].FinalTitle, reduction.Cards[2].FinalTitle)
 	}
 }

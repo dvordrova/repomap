@@ -137,11 +137,16 @@ const (
 	MaxExpansionBytes          = 256 << 10
 	MaxOmissionRepresentatives = 12
 
-	// Scout portfolio bounds: desired 8-12 candidates, valid 1-12.
-	MinScoutCandidates = 1
-	MaxScoutCandidates = 12
-	DesiredScoutMin    = 8
-	DesiredScoutMax    = 12
+	// Scout portfolio bounds (Phase 2 prompt cleanup): cardinality is a
+	// semantic prior, not a quota. Most repositories need no more than
+	// about ScoutCardinalityPrior materially distinct high-value themes;
+	// fewer is preferable whenever they cover the important learning
+	// outcomes. The prior is expressed in the prompt only — there is NO
+	// hard cap on the accepted response (owner directive 2026-08-07:
+	// publication preserves every materially distinct accepted theme;
+	// an arbitrary semantic cardinality ceiling is never imposed).
+	MinScoutCandidates    = 1
+	ScoutCardinalityPrior = 12
 
 	// Per-theme anchor bounds: desired 2-5, valid 1-5.
 	MinThemeAnchors = 1

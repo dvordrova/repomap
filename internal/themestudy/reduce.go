@@ -188,26 +188,6 @@ func applyConcentration(cards []ThemeCard, all []workTheme, diagnostics map[stri
 	diagnostics["concentration_other"] = total - count
 }
 
-// themeKindPortfolioRank orders theme kinds deterministically for the
-// default shelf: production/user-facing concerns first, peripheral
-// integration families last (Decision 224 / D219 F). It is a closed local
-// contract — no repository-specific keyword table — and display-only;
-// canonical identity never changes.
-func themeKindPortfolioRank(kind ThemeKind) int {
-	switch kind {
-	case KindUserJourney, KindLifecycleConcern:
-		return 0
-	case KindSharedDomainResponsibility, KindCrossCuttingPolicy:
-		return 1
-	case KindSiblingImplementationFamily:
-		return 2
-	case KindIntegrationFamily:
-		return 3
-	default:
-		return 4
-	}
-}
-
 // Reduce publishes the final Study cards deterministically (contract F). It
 // never re-ranks model output, never retries, and never lets model prose become
 // identity, relation, or acceptance. Published cards carry editorial prose +
@@ -270,18 +250,14 @@ func Reduce(input ReducerInput) (Reduction, error) {
 		all = applyBalanceCap(all, &reduction)
 	}
 
-	// Ordinal order: deterministic portfolio rank (Decision 224 / D219 F) —
-	// production/user-facing kinds before peripheral integration families —
-	// with canonical identity as the stable locale-independent tiebreak.
+	// Ordinal order: the model's comparative editorial ranking survives
+	// (Phase 2 prompt cleanup: Scout returns themes ordered by decreasing
+	// usefulness, and the backend preserves that order). theme_kind is
+	// presentation metadata only — it is unstable model classification,
+	// not evidence identity, and never decides default prominence. The
+	// slice is already in model order (co-projection folds into the
+	// earlier card in place; balance cap preserves order); no re-rank.
 	// Display order only; canonical identity never changes.
-	sort.SliceStable(all, func(i, j int) bool {
-		leftRank := themeKindPortfolioRank(all[i].kind)
-		rightRank := themeKindPortfolioRank(all[j].kind)
-		if leftRank != rightRank {
-			return leftRank < rightRank
-		}
-		return all[i].canonicalID < all[j].canonicalID
-	})
 
 	for ordinal, w := range all {
 		direct, supporting := 0, 0

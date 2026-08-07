@@ -107,25 +107,23 @@ func MockScoutResponse(request ScoutRequest) ([]byte, error) {
 			}
 		}
 	}
-	// Reach the desired 8-12 range on small fixtures by composing distinct
-	// cross-provenance groupings (themes may share anchors; the reducer
-	// dedupes). Deterministic sliding pairs over the canonical anchor order.
-	if len(candidates) < DesiredScoutMin {
+	// Mock fixture only: compose at least 8 candidates on small fixtures so
+	// UI/reducer paths see a realistic portfolio. This is not a product
+	// contract — Scout cardinality is a semantic prior, not a quota.
+	const fixtureMinCandidates = 8
+	if len(candidates) < fixtureMinCandidates {
 		ordered := make([]string, 0, len(anchorRefs))
 		for ref := range anchorRefs {
 			ordered = append(ordered, ref)
 		}
 		sort.Strings(ordered)
-		for start := 0; len(candidates) < DesiredScoutMin && start < len(ordered); start++ {
+		for start := 0; len(candidates) < fixtureMinCandidates && start < len(ordered); start++ {
 			group := []string{ordered[start], ordered[(start+1)%len(ordered)]}
 			if group[0] == group[1] {
 				continue
 			}
 			addCandidate(nextKind(), group, false)
 		}
-	}
-	if len(candidates) > MaxScoutCandidates {
-		candidates = candidates[:MaxScoutCandidates]
 	}
 	if len(candidates) < MinScoutCandidates {
 		return nil, fmt.Errorf("theme scout mock response: no buildable candidates")
