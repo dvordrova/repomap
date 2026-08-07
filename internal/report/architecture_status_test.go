@@ -330,6 +330,8 @@ func TestArchitectureSynthesisV6AcceptsExactClosedProducerDiagnosticRegistry(t *
 		"proposal.normalized_description",
 		"proposal.normalized_package_only_hypothesis",
 		"proposal.normalized_primary_subsystems",
+		// Phase 1 prompt cleanup: nested grammar missing-anchor-refs default.
+		"proposal.normalized_missing_anchor_refs",
 		"proposal.normalized_total_components",
 		"proposal.partial_member_coverage",
 		"proposal.primary_subsystems_above_preferred",
