@@ -39,17 +39,15 @@ func BuildSynthesisPrompt(bundle Bundle) (SynthesisPrompt, error) {
 
 Return exactly this JSON shape (all fields are required unless marked optional):
 {
-  "version": 1,
   "task_interpretation": {
     "restatement": "concise task restatement",
-    "task_kind": "bug | feature | extension | configuration | operational | compatibility | unknown",
-    "observable_or_outcome": "observable symptom or requested outcome"
+    "task_kind": "bug | feature | extension | configuration | operational | compatibility | unknown"
   },
   "likely_areas": [
     {"label": "1-3 area label", "why": "bounded reason", "target_ids": ["anchor-id"]}
   ],
   "anchors": [
-    {"anchor_id": "exact supplied anchor id", "role": "copy exactly one role from that anchor's supplied role_hints", "why": "task relevance"}
+    {"anchor_id": "exact supplied anchor id", "why": "task relevance"}
   ],
   "evidence_joins": [
     {"left_anchor_id": "selected anchor id", "right_anchor_id": "selected anchor id", "relation_id": "supplied relation id only for locally_observed, otherwise omit", "relation_kind": "short relation name", "support_type": "locally_observed | document_supported | model_hypothesis | unresolved", "support_ids": ["exact evidence ids"], "explanation": "bounded connection", "scope_non_guarantees": "what this evidence does not prove"}
@@ -61,7 +59,6 @@ Return exactly this JSON shape (all fields are required unless marked optional):
     {"text": "grounded step or exact missing evidence", "authority": "task_provided | repository_document | repository_test_or_example | repository_observation | missing_evidence", "evidence_ids": ["exact evidence ids, empty only for missing_evidence"]}
   ],
   "verify": {
-    "effect_to_observe": "specific effect",
     "steps": [
       {"text": "grounded verification or exact missing evidence", "authority": "task_provided | repository_document | repository_test_or_example | repository_observation | missing_evidence", "evidence_ids": ["exact evidence ids, empty only for missing_evidence"]}
     ]
@@ -71,24 +68,24 @@ Return exactly this JSON shape (all fields are required unless marked optional):
   ]
 }
 
-Hard rules:
+Semantic decisions:
 - Select 3-8 anchors when that many are supplied. A sparse partial bundle may supply only 1-2; retain every supplied anchor and do not invent replacements. A zero-anchor bundle is a local insufficient-evidence exit and is never sent for synthesis. Select only exact supplied opaque IDs. Do not invent paths, symbols, IDs, commands, endpoints, configuration values, or tests.
 - Every selected anchor must have an exact task-relevance reason: a meaningful supplied task term in its evidence, a required or supporting role witness, membership in the strong local component containing decisive_relation_id, or an exact verification_frontier item. Do not select generic auxiliary anchors outside those lanes.
 - Stay compact: at most 6 evidence joins, 3 hypothesis clauses, 4 reproduction/observation steps, and 4 verification steps. Keep each prose field to one or two short sentences.
 - likely_areas.target_ids and next_probes.anchor_ids must name selected anchors.
-- The supplied role_contract and role_coverage were derived before synthesis and are immutable. Select every anchor needed to preserve represented key roles before supporting or optional anchors. Every selected anchor role must be copied exactly from that anchor's supplied role_hints; do not infer a new role label or claim a missing key role is represented.
 - Preserve fact types. task_provided supports only what the task says. document_claim is not runtime proof. model inference is not locally observed.
-- A locally_observed join must copy one supplied local relation ID, its endpoints, and its relation_kind exactly, plus a non-empty subset of that relation's evidence IDs. Allowed supplied relation kinds are direct_call, field_copy, field_read, field_write, error_created, error_mapped, error_exposed, value_transformed, type_name_generated, config_applied, script_invokes, test_exercises, fixture_records, documented_uses, shared_state_alias, and scope_unknown. These describe exact retained syntax only; they do not prove runtime reachability, order, or callee behavior.
-- document_supported is only for evidence whose kind is exactly document_claim. A source-to-test comparison without a supplied matching local relation is not document-supported; label it model_hypothesis. A model_hypothesis explanation must name both endpoint symbols or their full supplied paths and cite each endpoint's exact evidence; for example, "Config.Copy may omit the field later read by Handler.Serve." Unresolved must stay visibly unresolved.
+- A locally_observed join must copy one supplied local relation ID, its endpoints, its relation_kind exactly, and a non-empty subset of that relation's evidence IDs. Allowed supplied relation kinds are direct_call, field_copy, field_read, field_write, error_created, error_mapped, error_exposed, value_transformed, type_name_generated, config_applied, script_invokes, test_exercises, fixture_records, documented_uses, shared_state_alias, and scope_unknown. These describe exact retained syntax only; they do not prove runtime reachability, order, or callee behavior.
+- document_supported is only for evidence whose kind is exactly document_claim. A source-to-test comparison without a supplied matching local relation is not document-supported; label it model_hypothesis. A model_hypothesis explanation must name both endpoint symbols or their full supplied paths and cite each endpoint's exact evidence. Unresolved must stay visibly unresolved.
 - Mark a hypothesis supported only for facts directly shown by repository evidence. Any runtime sequence or causal claim needs a supplied local relation; otherwise label it plausible or unresolved.
-- A plausible hypothesis must state the concrete gap using the literal form "Missing evidence: ..." and name every cited anchor. Do not emit a generic statement that two anchors may be related.
-- When a hypothesis includes relation_ids, its support_ids must include every evidence ID supplied by every cited relation. Do not cite a relation while omitting one of that relation's evidence IDs.
+- A plausible hypothesis must state the concrete gap and name every cited anchor. Do not emit a generic statement that two anchors may be related.
+- When a hypothesis includes relation_ids, the backend completes its support_ids from the exact local relation evidence; supply the relation_ids and any additional support_ids you choose.
 - Each anchor's source_scope is authoritative. A complete_enclosing_symbol, complete_document_section, or complete_file may support bounded absence only inside that declared scope. matched_fragments and partial_window never support an absence claim. Do not turn task_matches_outside_window or any truncated scope into a complete-file conclusion.
-- The supplied verification_frontier is immutable and distinguishes exact_existing_test, exact_generated_fixture, exact_example, documented_command, proposed_test_location, and missing_evidence. Reproduce/observe and verify may use only task-provided steps, the exact frontier, repository docs, exact repository source/configuration observations, or missing_evidence. task_provided must cite the exact evidence whose kind is task_provided. Every repository evidence ID used by guidance must belong to one of the selected anchors. repository_observation must cite repository_fact evidence; local projection quotes one bounded exact line and labels it not executed. Never invent a command. proposed_test_location and missing_evidence are not historical test evidence and must not use repository_test_or_example authority.
-- effect_to_observe is reconstructed locally from the supplied task observable; do not introduce a new expected effect.
+- The supplied verification_frontier is immutable and distinguishes exact_existing_test, exact_generated_fixture, exact_example, documented_command, proposed_test_location, and missing_evidence. Reproduce/observe and verify may use only task-provided steps, the exact frontier, repository docs, exact repository source/configuration observations, or missing_evidence. task_provided must cite the exact evidence whose kind is task_provided. Every repository evidence ID used by guidance must belong to one of the selected anchors. repository_observation must cite repository_fact evidence. Never invent a command. proposed_test_location and missing_evidence are not historical test evidence and must not use repository_test_or_example authority.
 - Use exact full paths only if a path appears in allowed_paths. Prefer talking through anchor IDs and symbols.
 - Return 1-3 next probes, never a vague request to read the codebase.
 - The retained subset is bounded. Do not claim omitted files or relations are absent.
+
+The backend restores mechanically derivable details: anchor roles, the exact observable effect for verification, missing-evidence presentation, and the complete evidence closure of cited relations.
 
 Bounded task evidence JSON:
 ` + string(projected)

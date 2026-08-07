@@ -562,8 +562,11 @@ type ProposedArea struct {
 
 type ProposedAnchor struct {
 	AnchorID string     `json:"anchor_id"`
-	Role     AnchorRole `json:"role"`
-	Why      string     `json:"why"`
+	// Phase 5 prompt cleanup: role is backend-owned — the model selects
+	// anchors; the backend restores the locally allowed role. A model that
+	// omits it is normalized to the anchor's first role hint by the reducer.
+	Role AnchorRole `json:"role,omitempty"`
+	Why  string     `json:"why"`
 }
 
 type ProposedJoin struct {
@@ -779,9 +782,10 @@ func DecodeProposal(raw []byte) (Proposal, error) {
 	if err := requireEOF(decoder); err != nil {
 		return Proposal{}, err
 	}
-	if proposal.Version != ProposalVersion {
-		return Proposal{}, fmt.Errorf("task lens: unsupported proposal version %d", proposal.Version)
-	}
+	// Phase 5 prompt cleanup: version is backend-owned — the model never
+	// echoes it (array position and contract identity are local). The
+	// backend stamps the current proposal contract version.
+	proposal.Version = ProposalVersion
 	return proposal, nil
 }
 
