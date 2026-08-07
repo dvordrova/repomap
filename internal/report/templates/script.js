@@ -692,6 +692,12 @@
   }
 
   function txt(tag, cls, text) {
+    // Archive 12 P0 (live casdoor run): an empty tag name creates a bare
+    // text node — document.createElement('') throws InvalidCharacterError
+    // and would abort the whole Study shelf render.
+    if (!tag) {
+      return document.createTextNode(text == null ? '' : String(text));
+    }
     var e = el(tag, cls);
     var value = text == null ? '' : String(text);
     e.textContent = value;

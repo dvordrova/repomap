@@ -19,20 +19,32 @@ const (
 	ScoutResultVersion         = 3
 	AdjudicationRequestVersion = 2
 	AdjudicationResultVersion  = 3
-	// Decision 235 (v11): rebased Architecture context + non-empty span
-	// questions — prompt contract v3.
-	ScoutPromptVersion        = "theme-scout-prompt-v3"
-	AdjudicationPromptVersion = "theme-adjudication-prompt-v3"
-	// Decision 233 (Archive 9): the reduced portfolio gains alternate
-	// co-projection and the concentration diagnostic (StudyThemesVersion 2).
-	// Decision 235 (v11): theme equivalence accounting lands with the
-	// final-reducer changes (StudyThemesVersion 3).
-	StudyThemesVersion = 3
-	// Decision 232 (Archive 9): prompt contract v2 — target-cardinality
-	// wording, duplicate normalization, backend-owned anchor role,
-	// observation only for direct/supporting, unreviewed anchors.
-	// (Prompt constants advanced to v3 above; this comment records the v2
-	// rationale that still applies.)
+)
+
+// Theme prompt contract identities — the short SHA-256 of the exact
+// language-independent prompt template text (owner directive 2026-08-07:
+// short prompt SHA instead of a hand-bumped version). Any edit to the
+// system text or the user shape automatically changes the identity, so
+// cache keys and saved-record replays fail closed on their own. The request
+// bundle JSON is NOT part of the identity — it is already bound by the
+// exact request digest.
+var (
+	ScoutPromptVersion        = "theme-scout-prompt-" + shortSHA256(scoutPromptSystem+scoutPromptUserShape)
+	AdjudicationPromptVersion = "theme-adjudication-prompt-" + shortSHA256(adjudicationPromptSystem+adjudicationPromptUserShape)
+)
+
+// Decision 233 (Archive 9): the reduced portfolio gains alternate
+// co-projection and the concentration diagnostic (StudyThemesVersion 2).
+// Decision 235 (v11): theme equivalence accounting lands with the
+// final-reducer changes (StudyThemesVersion 3).
+const StudyThemesVersion = 3
+
+// Decision 232 (Archive 9): prompt contract v2 — target-cardinality
+// wording, duplicate normalization, backend-owned anchor role,
+// observation only for direct/supporting, unreviewed anchors.
+// (Prompt constants advanced to SHA identity above; this comment records the
+// v2 rationale that still applies.)
+const (
 	ScoutCacheContract           = "theme-scout-accepted-v1"
 	AdjudicationCacheContract    = "theme-adjudication-accepted-v1"
 	ScoutStage                   = "theme_scout"
@@ -112,6 +124,11 @@ type AdjudicationRequest struct {
 	WireSHA256    string                `json:"wire_sha256"`
 	WireJSON      string                `json:"wire_json"`
 	CatalogSHA256 string                `json:"catalog_sha256"`
+	// WireBreakdown is the exact byte breakdown of the model-visible wire
+	// sections (Archive 12 P0): candidates / anchor_evidence / sources /
+	// envelope. Backend-owned diagnostics for incident investigation,
+	// never model-visible.
+	WireBreakdown map[string]int `json:"wire_breakdown,omitempty"`
 }
 
 // AdjudicationResult is the validated Theme Adjudication result (contract E
@@ -369,10 +386,20 @@ func scoutCatalogDigest(vocabulary Vocabulary, packs SeedPackResult) (string, er
 // construction: each candidate section carries only its own anchors and the
 // expanded sources are shared once.
 type wireAdjudication struct {
-	Language   Language              `json:"language"`
-	Candidates []wireAdjCandidate    `json:"candidates"`
-	Expansion  SourceExpansion       `json:"expansion"`
-	Anchors    map[string]wireAnchor `json:"anchors"`
+	Language   Language           `json:"language"`
+	Candidates []wireAdjCandidate `json:"candidates"`
+	// AnchorEvidence carries the exact bounded source object for every a*
+	// anchor the candidates actually reference (union of candidate
+	// anchor_refs) — the same seed evidence the Scout used, never a bare
+	// symbol. f* expanded sources below are additional context, not a
+	// replacement for anchor evidence (Archive 12 P0, owner directive).
+	AnchorEvidence map[string]wireAnchorEvidence `json:"anchor_evidence"`
+	// Sources is the COMPACT provider wire for the locally expanded f*
+	// files: only path/partial/lines/omitted ranges per object. Backend
+	// bookkeeping (hashes, byte totals, artifact version, revision,
+	// provenance) stays in the persisted SourceExpansion artifact and is
+	// never model-visible (Archive 12 P0, owner directive).
+	Sources map[string]wireExpandedFile `json:"sources"`
 }
 
 type wireAdjCandidate struct {
@@ -386,19 +413,42 @@ type wireAdjCandidate struct {
 	ExpectedLearning  string    `json:"expected_learning"`
 }
 
-type wireAnchor struct {
-	Symbol string `json:"symbol"`
+type wireAnchorEvidence struct {
+	Symbol string           `json:"symbol"`
+	Source wireSourceObject `json:"source"`
+}
+
+// wireSourceObject is the compact model-visible projection of one exact
+// bounded source object: location + lines + explicit omitted ranges only.
+type wireSourceObject struct {
+	Path    string      `json:"path"`
+	Line    int         `json:"line"`
+	Symbol  string      `json:"symbol,omitempty"`
+	Partial bool        `json:"partial,omitempty"`
+	Lines   []string    `json:"lines"`
+	Omitted []LineRange `json:"omitted_ranges,omitempty"`
+}
+
+// wireExpandedFile is the compact model-visible projection of one expanded
+// f* file: path + object windows, no bookkeeping.
+type wireExpandedFile struct {
+	Path    string             `json:"path"`
+	Partial bool               `json:"partial,omitempty"`
+	Objects []wireSourceObject `json:"objects,omitempty"`
 }
 
 // CompileAdjudication compiles the bounded Source Review / Theme Adjudication
 // request (contract E) from the Scout-accepted candidates, the locally
-// expanded sources, and the exact anchor identities. It performs no I/O and
-// never calls a provider.
+// expanded sources, the exact anchor identities, and the exact a* seed
+// evidence packs the Scout already received. It performs no I/O and never
+// calls a provider. Only anchors referenced by the candidates enter the wire
+// (Archive 12 P0: no whole-catalog anchor dump).
 func CompileAdjudication(
 	language Language,
 	candidates []ScoutCandidate,
 	expansion SourceExpansion,
 	anchors map[string]AnchorInfo,
+	seedPacks []SeedPack,
 ) (AdjudicationRequest, error) {
 	if !language.Valid() {
 		return AdjudicationRequest{}, fmt.Errorf("theme adjudication: unsupported language %q", language)
@@ -412,12 +462,21 @@ func CompileAdjudication(
 	if len(anchors) == 0 {
 		return AdjudicationRequest{}, fmt.Errorf("theme adjudication: anchor identities are missing")
 	}
-	wire := wireAdjudication{
-		Language: language, Expansion: expansion,
-		Anchors: make(map[string]wireAnchor, len(anchors)),
+	usedAnchors := make(map[string]struct{})
+	for _, candidate := range candidates {
+		for _, ref := range candidate.AnchorRefs {
+			usedAnchors[ref] = struct{}{}
+		}
 	}
-	for ref, info := range anchors {
-		wire.Anchors[ref] = wireAnchor{Symbol: info.Symbol}
+	seedEvidenceByRef := make(map[string]SeedPack, len(seedPacks))
+	for _, pack := range seedPacks {
+		seedEvidenceByRef[pack.Seed.Ref] = pack
+	}
+
+	wire := wireAdjudication{
+		Language:       language,
+		AnchorEvidence: make(map[string]wireAnchorEvidence, len(usedAnchors)),
+		Sources:        make(map[string]wireExpandedFile, len(expansion.Files)),
 	}
 	for _, candidate := range candidates {
 		wire.Candidates = append(wire.Candidates, wireAdjCandidate{
@@ -426,6 +485,41 @@ func CompileAdjudication(
 			ExpansionFileRefs: append([]string(nil), candidate.ExpansionFileRefs...),
 			WhyItMatters:      candidate.WhyItMatters, ExpectedLearning: candidate.ExpectedLearning,
 		})
+	}
+	// Anchor evidence: the exact bounded source object from the Scout seed
+	// pack for every referenced anchor. A referenced anchor without a seed
+	// pack still carries its backend-owned identity (symbol), never a bare
+	// ref with no location.
+	for ref := range usedAnchors {
+		info, ok := anchors[ref]
+		if !ok {
+			continue
+		}
+		evidence := wireAnchorEvidence{Symbol: info.Symbol}
+		if pack, ok := seedEvidenceByRef[ref]; ok {
+			for _, object := range pack.Objects {
+				evidence.Source = wireSourceObject{
+					Path: object.Path, Line: object.Line, Symbol: object.Symbol,
+					Partial: object.Partial, Lines: object.Lines, Omitted: object.Omitted,
+				}
+				break
+			}
+		}
+		wire.AnchorEvidence[ref] = evidence
+	}
+	// Compact f* source projection: model-visible windows only.
+	for _, file := range expansion.Files {
+		if file.Closed {
+			continue
+		}
+		entry := wireExpandedFile{Path: file.Path, Partial: !file.Small}
+		for _, object := range file.Objects {
+			entry.Objects = append(entry.Objects, wireSourceObject{
+				Path: object.Path, Line: object.Line, Symbol: object.Symbol,
+				Partial: object.Partial, Lines: object.Lines, Omitted: object.Omitted,
+			})
+		}
+		wire.Sources[file.Ref] = entry
 	}
 	wireJSON, err := json.Marshal(wire)
 	if err != nil {
@@ -438,6 +532,12 @@ func CompileAdjudication(
 	if err != nil {
 		return AdjudicationRequest{}, err
 	}
+	// Archive 12 P0 (owner directive): exact request-byte breakdown by wire
+	// section — incident investigation without re-parsing the wire.
+	breakdown, breakdownErr := wireBreakdownBytes(wire)
+	if breakdownErr != nil {
+		return AdjudicationRequest{}, fmt.Errorf("theme adjudication: wire breakdown: %w", breakdownErr)
+	}
 	return AdjudicationRequest{
 		Version:       AdjudicationRequestVersion,
 		PromptVersion: AdjudicationPromptVersion,
@@ -448,7 +548,33 @@ func CompileAdjudication(
 		WireSHA256:    contentSHA256Bytes(wireJSON),
 		WireJSON:      string(wireJSON),
 		CatalogSHA256: catalogDigest,
+		WireBreakdown: breakdown,
 	}, nil
+}
+
+// wireBreakdownBytes reports the exact JSON byte size of each model-visible
+// wire section plus the shared envelope.
+func wireBreakdownBytes(wire wireAdjudication) (map[string]int, error) {
+	breakdown := make(map[string]int, 4)
+	section := func(key string, value any) error {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		breakdown[key] = len(encoded)
+		return nil
+	}
+	if err := section("candidates", wire.Candidates); err != nil {
+		return nil, err
+	}
+	if err := section("anchor_evidence", wire.AnchorEvidence); err != nil {
+		return nil, err
+	}
+	if err := section("sources", wire.Sources); err != nil {
+		return nil, err
+	}
+	breakdown["total"] = breakdown["candidates"] + breakdown["anchor_evidence"] + breakdown["sources"]
+	return breakdown, nil
 }
 
 func adjudicationCatalogDigest(
@@ -568,7 +694,8 @@ func BuildScoutPrompt(request ScoutRequest) ScoutPrompt {
 	}
 }
 
-const adjudicationPromptSystem = `Review each proposed Study theme against its exact source packs.
+const adjudicationPromptSystem = `Review each proposed Study theme against its exact source evidence.
+For each candidate, anchor_evidence carries the exact bounded source object for its anchors; expanded_sources (f*) are additional context for deeper investigation, never a replacement for anchor evidence.
 For the anchors you assess, classify: direct, supporting, weak, or irrelevant. Anchors you do not assess are treated by the backend as unreviewed — counted, not published, never fatal.
 Write one bounded supported observation from supplied source for direct and supporting anchors. The theme may remain editorial, but its question must be answerable by the accepted anchors together.
 Do not infer execution order without an exact relation. Do not retain an anchor merely because its filename sounds relevant.
@@ -576,9 +703,11 @@ You may narrow or rewrite the title/question, remove weak anchors, reorder the r
 Return exactly one JSON object and no markdown. Keep all enum values and refs unchanged. Write model-authored prose in the requested language.`
 
 const adjudicationPromptUserShape = `Requested prose language: %s.
-Review %d-%d candidate themes (valid %d-%d, no padding). For each candidate return exactly one section.
+This request contains %d candidate themes. Review them independently and in order.
+Return 0..%d supported theme reviews (valid 0..%d, no padding): omit a candidate entirely when the supplied evidence does not support a useful theme, and never return placeholder or rejected sections. Fewer supported themes are better than padded or weakly grounded ones.
 Assess the anchors that matter; fit is one of: direct, supporting, weak, irrelevant. Only direct and supporting anchors publish as readings; keep at least one direct anchor. Anchor role is backend-owned: do not return a role field. Supported observations are required only for direct and supporting anchors; weak and irrelevant anchors may carry an optional short rejection reason. Exact duplicate assessments are normalized and counted by the backend.
-reading_order is an ordered subset of the candidate's own anchor_refs. unknowns are bounded and optional.
+reading_order is an ordered subset of the anchors you assessed as direct or supporting in this returned theme.
+unknowns are bounded and optional.
 Response schema: {"themes":[{"candidate_ref":"t1","final_title":"...","final_question":"...","anchor_assessments":[{"anchor_ref":"a1","fit":"direct","supported_observation":"..."}],"reading_order":["a1"],"unknowns":["..."]}]}
 Request bundle JSON:
 %s`
@@ -591,8 +720,8 @@ func BuildAdjudicationPrompt(request AdjudicationRequest) AdjudicationPrompt {
 		System:   adjudicationPromptSystem,
 		User: fmt.Sprintf(
 			adjudicationPromptUserShape,
-			request.Language, DesiredFinalMin, DesiredFinalMax,
-			MinFinalThemes, MaxFinalThemes, request.WireJSON,
+			request.Language, len(request.Candidates),
+			MaxFinalThemes, MaxFinalThemes, request.WireJSON,
 		),
 	}
 }

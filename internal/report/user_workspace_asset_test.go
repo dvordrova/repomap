@@ -326,6 +326,7 @@ const window = {
 };
 const document = {
   createElement(tag) { return new Element(tag); },
+  createTextNode(text) { return { nodeType: 3, textContent: String(text), children: [], attributes: {}, appendChild() {} }; },
   getElementById(id) {
     if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
     return roots[id] || null;
@@ -379,6 +380,7 @@ const topicWindow = {
 };
 const topicDocument = {
   createElement(tag) { return new Element(tag); },
+  createTextNode(text) { return { nodeType: 3, textContent: String(text), children: [], attributes: {}, appendChild() {} }; },
   getElementById(id) {
     if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
     return topicRoots[id] || null;
@@ -401,6 +403,7 @@ const emptyWindow = {
 };
 const emptyDocument = {
   createElement(tag) { return new Element(tag); },
+  createTextNode(text) { return { nodeType: 3, textContent: String(text), children: [], attributes: {}, appendChild() {} }; },
   getElementById(id) {
     if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
     return emptyRoots[id] || null;
@@ -829,6 +832,7 @@ const window = {
 };
 const document = {
   createElement(tag) { return new Element(tag); },
+  createTextNode(text) { return { nodeType: 3, textContent: String(text), children: [], attributes: {}, appendChild() {} }; },
   createTextNode(value) { const node = new Element("#text"); node.textContent = String(value); return node; },
   getElementById(id) {
     if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
@@ -881,6 +885,7 @@ function renderIsolatedOverview(isolatedReport, isolatedLocation) {
   };
   const isolatedDocument = {
     createElement(tag) { return new Element(tag); },
+  createTextNode(text) { return { nodeType: 3, textContent: String(text), children: [], attributes: {}, appendChild() {} }; },
     createTextNode(value) { const node = new Element("#text"); node.textContent = String(value); return node; },
     getElementById(id) {
       if (id === "rm-report-data") return { textContent: JSON.stringify(isolatedReport) };
@@ -953,6 +958,7 @@ const fallbackWindow = {
 };
 const fallbackDocument = {
   createElement(tag) { return new Element(tag); },
+  createTextNode(text) { return { nodeType: 3, textContent: String(text), children: [], attributes: {}, appendChild() {} }; },
   createTextNode(value) { const node = new Element("#text"); node.textContent = String(value); return node; },
   getElementById(id) {
     if (id === "rm-report-data") return { textContent: JSON.stringify(fallbackReport) };
@@ -984,6 +990,7 @@ const noStudyWindow = {
 };
 const noStudyDocument = {
   createElement(tag) { return new Element(tag); },
+  createTextNode(text) { return { nodeType: 3, textContent: String(text), children: [], attributes: {}, appendChild() {} }; },
   createTextNode(value) { const node = new Element("#text"); node.textContent = String(value); return node; },
   getElementById(id) {
     if (id === "rm-report-data") return { textContent: JSON.stringify(noStudyReport) };
@@ -1386,6 +1393,7 @@ const window = {
 };
 const document = {
   createElement(tag) { return new Element(tag); },
+  createTextNode(text) { return { nodeType: 3, textContent: String(text), children: [], attributes: {}, appendChild() {} }; },
   getElementById(id) {
     if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
     return null;
@@ -1607,6 +1615,7 @@ const window = {
 };
 const document = {
   createElement(tag) { return new Element(tag); },
+  createTextNode(text) { return { nodeType: 3, textContent: String(text), children: [], attributes: {}, appendChild() {} }; },
   getElementById(id) {
     if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
     return roots[id] || null;
@@ -1800,6 +1809,7 @@ const window = {
 };
 const document = {
   createElement(tag) { return new Element(tag); },
+  createTextNode(text) { return { nodeType: 3, textContent: String(text), children: [], attributes: {}, appendChild() {} }; },
   getElementById(id) {
     if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
     return roots[id] || null;

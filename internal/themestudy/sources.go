@@ -40,6 +40,15 @@ func contentSHA(lines []string) string {
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
+// shortSHA256 returns the first 12 hex chars of the SHA-256 of the exact
+// text — the contract identity for prompts whose content is the contract
+// (owner directive 2026-08-07: short prompt SHA instead of a hand-bumped
+// version).
+func shortSHA256(text string) string {
+	digest := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(digest[:])[:12]
+}
+
 // buildObject reads one bounded source object (full-body-or-partial) starting
 // at line start.
 func buildObject(reader SourceReader, totalLines TotalLines, role SourceRole, seed SeedSpec, startLine, maxLines, maxBytes int) (SourceObject, error) {

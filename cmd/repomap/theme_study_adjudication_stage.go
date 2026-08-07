@@ -69,7 +69,10 @@ func runThemeAdjudicationStage(
 ) themeAdjStageResult {
 	outcome := themeAdjStageOutcome{State: atlasstudy.ProductStatePrepared}
 	output.Stage("Study", "Theme Adjudication: reviewing themes against exact sources")
-	request, err := themestudy.CompileAdjudication(language, scoutResult.Candidates, expansion, anchors)
+	// Archive 12 P0 (owner directive): carry the exact a* seed evidence the
+	// Scout already received into the Adjudication wire — f* expansion is
+	// additional context, not a replacement for anchor evidence.
+	request, err := themestudy.CompileAdjudication(language, scoutResult.Candidates, expansion, anchors, scoutRequest.SeedPacks.Packs)
 	if err != nil {
 		return themeAdjErr(outcome, themestudy.AdjudicationRequest{},
 			fmt.Errorf("theme adjudication run: compile request: %w", err))
@@ -178,20 +181,27 @@ func runThemeAdjudicationStage(
 
 	started := time.Now()
 	providerResult, err := promptClient.ThemeAdjudicationMeasured(ctx, prompt, maxRequestBytes)
+	// Archive 12 P0 (owner directive): preserve every known failure
+	// telemetry metric BEFORE branching on error — attempts, latency,
+	// input/output tokens when the transport measured them, response bytes
+	// when safely known. A provider failure must be investigable from the
+	// outcome alone, not only after success.
+	outcome.TransportAttempts = providerResult.Attempts
+	outcome.LatencyMillis = time.Since(started).Milliseconds()
+	outcome.InputTokens = providerResult.InputTokens
+	outcome.OutputTokens = providerResult.OutputTokens
+	outcome.ResponseBytes = len(providerResult.Content)
 	if err != nil {
 		writer.RecordSemanticExchange(debugdump.SemanticExchange{
 			Stage: debugdump.SemanticStageAtlasStudy, InstanceOrdinal: 2, SemanticAttemptOrdinal: 1, State: debugdump.SemanticStateProviderFailed,
 			ValidationCode:      debugdump.SemanticValidationProvider,
-			ResponseUnavailable: themeResponseUnavailable(err, 0, nil),
+			ResponseUnavailable: themeResponseUnavailable(err, providerResult.Attempts, providerResult.Content),
 			SemanticCalls:       1, RequestProvenance: debugdump.SemanticRequestExactSent,
 			Request: providerRequest,
 		})
 		return themeAdjOrdinaryFailure(writer, request, outcome, atlasstudy.FailureProvider, err, output)
 	}
-	outcome.TransportAttempts = providerResult.Attempts
-	outcome.LatencyMillis = time.Since(started).Milliseconds()
-	outcome.InputTokens = providerResult.InputTokens
-	outcome.OutputTokens = providerResult.OutputTokens
+	outcome.ResponseBytes = len(providerResult.Content)
 	if unsafeErr := themeUnsafePayload("adjudication_provider_response", providerResult.Content); unsafeErr != nil {
 		writer.RecordSemanticExchange(debugdump.SemanticExchange{
 			Stage: debugdump.SemanticStageAtlasStudy, InstanceOrdinal: 2, SemanticAttemptOrdinal: 1, State: debugdump.SemanticStateRejected,
@@ -381,7 +391,10 @@ func themeAdjOrdinaryFailure(
 	if err != nil {
 		return themeAdjErr(outcome, request, errors.Join(cause, err))
 	}
-	if err := writer.WriteValidatedFile(themestudy.AdjudicationStatusArtifactFilename, statusBytes, nil); err != nil {
+	if err := writer.WriteValidatedFile(themestudy.AdjudicationStatusArtifactFilename, statusBytes, func(saved []byte) error {
+		_, decodeErr := themestudy.DecodeAdjudicationStatus(saved)
+		return decodeErr
+	}); err != nil {
 		return themeAdjErr(outcome, request,
 			errors.Join(cause, themeTerminalResource(err, 0)))
 	}
@@ -410,7 +423,10 @@ func themeAdjTerminalFailure(
 	if err != nil {
 		return errors.Join(cause, err)
 	}
-	if err := writer.WriteValidatedFile(themestudy.AdjudicationStatusArtifactFilename, statusBytes, nil); err != nil {
+	if err := writer.WriteValidatedFile(themestudy.AdjudicationStatusArtifactFilename, statusBytes, func(saved []byte) error {
+		_, decodeErr := themestudy.DecodeAdjudicationStatus(saved)
+		return decodeErr
+	}); err != nil {
 		return errors.Join(cause, err)
 	}
 	return cause

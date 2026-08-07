@@ -152,6 +152,7 @@ window.history = {
 };
 const document = {
   createElement(tag) { return new Element(tag); },
+  createTextNode(text) { return { nodeType: 3, textContent: String(text), children: [], attributes: {}, appendChild() {} }; },
   getElementById(id) {
     if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
     return roots[id] || null;
