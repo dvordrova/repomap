@@ -312,7 +312,6 @@ type ScoutCandidate struct {
 	WhyItMatters      string        `json:"why_it_matters"`
 	ExpectedLearning  string        `json:"expected_learning"`
 	RelationClaim     RelationClaim `json:"relation_claim"`
-	Focused           bool          `json:"focused,omitempty"`
 }
 
 // ScoutResponse is the decoded Theme Scout result for a request-local catalog

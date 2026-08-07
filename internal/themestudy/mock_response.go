@@ -69,7 +69,7 @@ func MockScoutResponse(request ScoutRequest) ([]byte, error) {
 		}
 		return kinds[(kindIndex)%len(kinds)]
 	}
-	addCandidate := func(kind ThemeKind, group []string, focused bool) {
+	addCandidate := func(kind ThemeKind, group []string) {
 		question := fmt.Sprintf("How do the exact anchors %s work together in this repository?", strings.Join(group, ", "))
 		if _, dup := usedQuestions[normalizeProse(question)]; dup {
 			question = fmt.Sprintf("What responsibilities do anchors %s share?", strings.Join(group, ", "))
@@ -83,7 +83,6 @@ func MockScoutResponse(request ScoutRequest) ([]byte, error) {
 			WhyItMatters:     "The accepted anchors participate in one bounded editorial responsibility that a reader can inspect together.",
 			ExpectedLearning: "The reader can locate the exact anchors and read their bounded source to answer the question.",
 			RelationClaim:    RelationClaimEditorialOnly,
-			Focused:          focused,
 		}
 		if len(fileRefList) > 0 {
 			candidate.ExpansionFileRefs = []string{fileRefList[len(candidates)%len(fileRefList)]}
@@ -100,11 +99,7 @@ func MockScoutResponse(request ScoutRequest) ([]byte, error) {
 				end = len(refs)
 			}
 			group := refs[start:end]
-			if len(group) == 1 {
-				addCandidate(nextKind(), group, true)
-			} else {
-				addCandidate(nextKind(), group, false)
-			}
+			addCandidate(nextKind(), group)
 		}
 	}
 	// Mock fixture only: compose at least 8 candidates on small fixtures so
@@ -122,7 +117,7 @@ func MockScoutResponse(request ScoutRequest) ([]byte, error) {
 			if group[0] == group[1] {
 				continue
 			}
-			addCandidate(nextKind(), group, false)
+			addCandidate(nextKind(), group)
 		}
 	}
 	if len(candidates) < MinScoutCandidates {
