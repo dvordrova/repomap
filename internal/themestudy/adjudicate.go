@@ -7,6 +7,67 @@ import (
 	"unicode/utf8"
 )
 
+// adjudicationWireTheme is the provider-visible Theme Adjudication response
+// (Phase 3 prompt cleanup, owner canonical wording): one `readings` array
+// where array position IS the reading order — no separate selection/order
+// serialization, no weak/irrelevant rows (unassessed candidate anchors are
+// locally accounted as unreviewed by the backend). support is direct or
+// supporting only.
+type adjudicationWireTheme struct {
+	CandidateRef  string                    `json:"candidate_ref"`
+	FinalTitle    string                    `json:"final_title"`
+	FinalQuestion string                    `json:"final_question"`
+	Readings      []adjudicationWireReading `json:"readings"`
+	Unknowns      []string                  `json:"unknowns,omitempty"`
+}
+
+type adjudicationWireReading struct {
+	AnchorRef   string `json:"anchor_ref"`
+	Support     string `json:"support"`
+	Observation string `json:"observation"`
+}
+
+// decodeAdjudicationTheme decodes one theme with the active readings grammar
+// and projects it onto the internal flat shape: readings map to
+// AnchorAssessments (support -> fit) and ReadingOrder is exactly the
+// readings array order. Historical anchor_assessments/reading_order
+// responses remain readable (Phase 6: immutable saved artifacts stay
+// replayable without a live provider route).
+func decodeAdjudicationTheme(raw json.RawMessage) (AdjudicatedTheme, bool, error) {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &probe); err != nil || probe == nil {
+		return AdjudicatedTheme{}, false, fmt.Errorf("theme is not an object")
+	}
+	if _, hasReadings := probe["readings"]; hasReadings {
+		var wire adjudicationWireTheme
+		decoder := json.NewDecoder(strings.NewReader(string(raw)))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&wire); err != nil {
+			return AdjudicatedTheme{}, false, fmt.Errorf("theme readings do not match the bounded contract: %w", err)
+		}
+		theme := AdjudicatedTheme{
+			CandidateRef: wire.CandidateRef, FinalTitle: wire.FinalTitle,
+			FinalQuestion: wire.FinalQuestion, Unknowns: wire.Unknowns,
+			ReadingOrder: make([]string, 0, len(wire.Readings)),
+		}
+		for _, reading := range wire.Readings {
+			theme.AnchorAssessments = append(theme.AnchorAssessments, AnchorAssessment{
+				AnchorRef: reading.AnchorRef, Fit: FitClass(reading.Support),
+				SupportedObservation: reading.Observation,
+			})
+			theme.ReadingOrder = append(theme.ReadingOrder, reading.AnchorRef)
+		}
+		return theme, true, nil
+	}
+	// Historical flat grammar (pre-Phase-3): anchor_assessments +
+	// reading_order. Readable for replay; not the live provider contract.
+	var legacy AdjudicatedTheme
+	if err := json.Unmarshal(raw, &legacy); err != nil {
+		return AdjudicatedTheme{}, false, fmt.Errorf("theme is not a valid adjudication response: %w", err)
+	}
+	return legacy, false, nil
+}
+
 // ValidateAdjudication validates a Theme Adjudication response (contract E)
 // item-locally against the Scout-accepted candidates (keyed by t* ref). Every
 // theme's assessments must stay within its own candidate's anchor set; weak and
@@ -33,8 +94,8 @@ func ValidateAdjudication(data []byte, candidateByRef map[string]*ScoutCandidate
 	accepted := make([]AdjudicatedTheme, 0, len(rawThemes))
 	seen := make(map[string]struct{}, len(rawThemes))
 	for position, rawTheme := range rawThemes {
-		var theme AdjudicatedTheme
-		if err := json.Unmarshal(rawTheme, &theme); err != nil {
+		theme, _, err := decodeAdjudicationTheme(rawTheme)
+		if err != nil {
 			rejectAdj(&status, position, AdjIssueDecodeCandidate)
 			continue
 		}

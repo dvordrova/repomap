@@ -242,67 +242,59 @@ type wireScout struct {
 }
 
 // wireVocabulary is the names-only f* vocabulary projection. It never carries
-// canonical identities.
+// canonical identities or bookkeeping (advertised counts, candidate SHA,
+// omission accounting stay local — Phase 2 prompt cleanup: only fields the
+// model can reason over reach the wire).
 type wireVocabulary struct {
-	Version         string     `json:"version"`
-	Advertised      int        `json:"advertised"`
-	CandidateSHA256 string     `json:"candidate_sha256"`
-	Files           []FileRef  `json:"files,omitempty"`
-	Omissions       []Omission `json:"omissions,omitempty"`
+	Files []FileRef `json:"files,omitempty"`
 }
 
 // wireSeedPackResult is the wire-safe projection of the seed packs: every
-// field the provider needs, with canonical span bindings removed.
+// field the provider needs, with canonical span bindings and byte/omission
+// bookkeeping removed (Phase 2 prompt cleanup).
 type wireSeedPackResult struct {
-	Packs      []wireSeedPack `json:"packs"`
-	TotalBytes int            `json:"total_bytes"`
-	Omitted    int            `json:"omitted"`
+	Packs []wireSeedPack `json:"packs"`
 }
 
 type wireSeedPack struct {
 	Seed        wireSeedSpec   `json:"seed"`
 	Objects     []SourceObject `json:"objects"`
-	TotalBytes  int            `json:"total_bytes"`
 	Limitations string         `json:"limitations,omitempty"`
 }
 
-// wireSeedSpec is SeedSpec minus the internal CanonicalSpanID binding.
+// wireSeedSpec is SeedSpec minus the internal CanonicalSpanID binding and
+// the backend-owned provenance tag (Phase 2: provenance is bookkeeping the
+// model cannot act on).
 type wireSeedSpec struct {
-	Ref        string `json:"ref"`
-	Path       string `json:"path"`
-	Line       int    `json:"line"`
-	Symbol     string `json:"symbol"`
-	Provenance string `json:"provenance"`
-	Kind       string `json:"kind"`
-	Role       Role   `json:"role"`
+	Ref    string `json:"ref"`
+	Path   string `json:"path"`
+	Line   int    `json:"line"`
+	Symbol string `json:"symbol"`
+	Kind   string `json:"kind"`
+	Role   Role   `json:"role"`
 }
 
 // wireScoutFrom projects the local compile inputs into the provider-visible
 // bundle: the f* vocabulary and the a* seed packs keep every field the
-// provider needs, while the internal CanonicalSpanID bindings (canonical Atlas
-// identities) are stripped and never reach the wire.
+// provider needs, while internal CanonicalSpanID bindings, provenance tags
+// and byte/omission bookkeeping stay local and never reach the wire.
 func wireScoutFrom(vocabulary Vocabulary, packs SeedPackResult, context ScoutContext) wireScout {
 	wire := wireScout{
 		Context: context,
 		Vocabulary: wireVocabulary{
-			Version: vocabulary.Version, Advertised: vocabulary.Advertised,
-			CandidateSHA256: vocabulary.CandidateSHA256,
-			Files:           vocabulary.Files, Omissions: vocabulary.Omissions,
+			Files: vocabulary.Files,
 		},
 		SeedPacks: wireSeedPackResult{
-			Packs:      make([]wireSeedPack, 0, len(packs.Packs)),
-			TotalBytes: packs.TotalBytes,
+			Packs: make([]wireSeedPack, 0, len(packs.Packs)),
 		},
 	}
 	for _, pack := range packs.Packs {
 		wire.SeedPacks.Packs = append(wire.SeedPacks.Packs, wireSeedPack{
 			Seed: wireSeedSpec{
 				Ref: pack.Seed.Ref, Path: pack.Seed.Path, Line: pack.Seed.Line,
-				Symbol: pack.Seed.Symbol, Provenance: pack.Seed.Provenance,
-				Kind: pack.Seed.Kind, Role: pack.Seed.Role,
+				Symbol: pack.Seed.Symbol, Kind: pack.Seed.Kind, Role: pack.Seed.Role,
 			},
 			Objects:     pack.Objects,
-			TotalBytes:  pack.TotalBytes,
 			Limitations: pack.Limitations,
 		})
 	}
@@ -668,15 +660,17 @@ type AdjudicationPrompt struct {
 }
 
 const scoutPromptSystem = `You are proposing useful Study themes for a developer inside a large unfamiliar repository.
-A Study theme is a question that several exact source anchors can help answer together. It is not required to be a proven runtime path.
-You may group anchors because they participate in one user journey, cross-cutting policy, sibling implementation family, integration family, lifecycle concern, or shared domain responsibility.
+A Study theme is a question that one or more exact source anchors can help answer. It is not required to be a proven runtime path.
+You may group anchors because they help explain one user journey, cross-cutting policy, sibling implementation family, integration family, lifecycle concern, or shared domain responsibility.
 Use a* source refs as current support. Use f* names-only refs only to request local source expansion. A names-only file is never evidence.
-Do not claim execution order, ownership, reachability or data flow unless an exact supplied relation proves it; the backend records relation_claim itself.
-Propose meaningfully distinct themes. Do not restate individual direct calls and do not pad.
+Do not claim execution order, ownership, reachability, or data flow unless the supplied exact evidence establishes it.
+Return themes in decreasing usefulness for a developer trying to understand this repository, with the most useful theme first.
+Each additional theme must add a materially distinct learning outcome. Do not restate individual direct calls and do not pad.
 Return exactly one JSON object and no markdown. Keep all enum values and refs unchanged. Write model-authored prose in the requested language.`
 
 const scoutPromptUserShape = `Requested prose language: %s.
-Aim for %d-%d themes when distinct evidence supports them. Return %d-%d; fewer is better than overlap or filler. Use %d-%d anchor_refs per theme; a one-anchor focused theme is permitted and must not dominate. Exact duplicate anchor or file refs are normalized and counted by the backend; do not repeat them.
+Most repositories need no more than about %d materially distinct, high-value themes. Use fewer when they cover the important learning outcomes; return more only when additional themes add substantial distinct understanding. Do not pad toward a target.
+Prefer a small set of distinct anchor_refs that together support one coherent learning outcome. Use a single anchor when it is sufficient on its own. Do not add anchors merely to reach a count, and do not repeat refs within a theme.
 theme_kind is one of: user_journey, cross_cutting_policy, sibling_implementation_family, integration_family, lifecycle_concern, shared_domain_responsibility.
 Response schema: {"themes":[{"title":"...","question":"...","theme_kind":"...","anchor_refs":["a1"],"expansion_file_refs":["f1"],"why_it_matters":"...","expected_learning":"..."}]}
 Request bundle JSON:
@@ -690,28 +684,23 @@ func BuildScoutPrompt(request ScoutRequest) ScoutPrompt {
 		System:   scoutPromptSystem,
 		User: fmt.Sprintf(
 			scoutPromptUserShape,
-			request.Language, DesiredScoutMin, DesiredScoutMax,
-			MinScoutCandidates, MaxScoutCandidates, MinThemeAnchors, MaxThemeAnchors,
+			request.Language, ScoutCardinalityPrior,
 			request.WireJSON,
 		),
 	}
 }
 
-const adjudicationPromptSystem = `Review each proposed Study theme against its exact source evidence.
-For each candidate, anchor_evidence carries the exact bounded source object for its anchors; expanded_sources (f*) are additional context for deeper investigation, never a replacement for anchor evidence.
-For the anchors you assess, classify: direct, supporting, weak, or irrelevant. Anchors you do not assess are treated by the backend as unreviewed — counted, not published, never fatal.
-Write one bounded supported observation from supplied source for direct and supporting anchors. The theme may remain editorial, but its question must be answerable by the accepted anchors together.
-Do not infer execution order without an exact relation. Do not retain an anchor merely because its filename sounds relevant.
-You may narrow or rewrite the title/question, remove weak anchors, reorder the reading path, or reject the complete theme. Do not pad.
-Return exactly one JSON object and no markdown. Keep all enum values and refs unchanged. Write model-authored prose in the requested language.`
+const adjudicationPromptSystem = `Review proposed Study themes against their exact source evidence.
+For each candidate, anchor_evidence contains exact bounded source for its anchors. sources contains additional context requested during local expansion; it supplements anchor evidence rather than replacing it.
+Keep only anchors that materially help answer the candidate question. For every retained anchor, classify its support as direct or supporting and write one short observation bounded to the supplied source.
+You may narrow or rewrite a title or question when the retained evidence supports a more precise learning outcome. Omit a candidate when the supplied evidence does not support a useful source-backed theme.
+Do not infer execution order, causality, ownership, reachability, or data flow beyond what the supplied evidence establishes. Do not retain an anchor because its filename or symbol name merely sounds relevant.
+Return exactly one JSON object and no markdown. Keep all refs unchanged. Write model-authored prose in the requested language.`
 
 const adjudicationPromptUserShape = `Requested prose language: %s.
-This request contains %d candidate themes. Review them independently and in order.
-Return 0..%d supported theme reviews (valid 0..%d, no padding): omit a candidate entirely when the supplied evidence does not support a useful theme, and never return placeholder or rejected sections. Fewer supported themes are better than padded or weakly grounded ones.
-Assess the anchors that matter; fit is one of: direct, supporting, weak, irrelevant. Only direct and supporting anchors publish as readings; keep at least one direct anchor. Anchor role is backend-owned: do not return a role field. Supported observations are required only for direct and supporting anchors; weak and irrelevant anchors may carry an optional short rejection reason. Exact duplicate assessments are normalized and counted by the backend.
-reading_order is an ordered subset of the anchors you assessed as direct or supporting in this returned theme.
-unknowns are bounded and optional.
-Response schema: {"themes":[{"candidate_ref":"t1","final_title":"...","final_question":"...","anchor_assessments":[{"anchor_ref":"a1","fit":"direct","supported_observation":"..."}],"reading_order":["a1"],"unknowns":["..."]}]}
+This request contains %d candidate themes. Review each candidate independently. Return every candidate that remains a useful source-backed theme after review; omit unsupported candidates. Do not create placeholders or pad the result.
+Within each returned theme, order readings in the order you recommend a developer inspect them. Include at least one direct reading. Include only unknowns that materially qualify what the retained readings establish.
+Response schema: {"themes":[{"candidate_ref":"t1","final_title":"...","final_question":"...","readings":[{"anchor_ref":"a1","support":"direct","observation":"..."}],"unknowns":["..."]}]}
 Request bundle JSON:
 %s`
 
@@ -723,8 +712,7 @@ func BuildAdjudicationPrompt(request AdjudicationRequest) AdjudicationPrompt {
 		System:   adjudicationPromptSystem,
 		User: fmt.Sprintf(
 			adjudicationPromptUserShape,
-			request.Language, len(request.Candidates),
-			MaxFinalThemes, MaxFinalThemes, request.WireJSON,
+			request.Language, len(request.Candidates), request.WireJSON,
 		),
 	}
 }

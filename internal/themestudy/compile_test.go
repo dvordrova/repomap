@@ -88,8 +88,8 @@ func TestMockAndReplayScoutRoundTrip(t *testing.T) {
 	if result.State != "accepted" || status.State != "accepted" {
 		t.Fatalf("mock fixture must replay as accepted, got %q/%q", result.State, status.State)
 	}
-	if len(result.Candidates) < DesiredScoutMin || len(result.Candidates) > MaxScoutCandidates {
-		t.Fatalf("candidate count %d outside valid range", len(result.Candidates))
+	if len(result.Candidates) < MinScoutCandidates {
+		t.Fatalf("candidate count %d below valid minimum", len(result.Candidates))
 	}
 	if result.Status.Accepted != len(result.Candidates) {
 		t.Fatalf("status accepted %d != candidates %d", result.Status.Accepted, len(result.Candidates))

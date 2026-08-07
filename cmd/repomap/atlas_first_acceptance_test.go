@@ -689,7 +689,7 @@ func atlasFirstAcceptanceRequestStage(
 	case strings.Contains(combined, "theme_kind is one of: user_journey") &&
 		strings.Contains(combined, "Request bundle JSON:\n"):
 		return atlasFirstStageStudyScout, combined, nil
-	case strings.Contains(combined, "fit is one of: direct, supporting") &&
+	case strings.Contains(combined, "Review proposed Study themes against their exact source evidence") &&
 		strings.Contains(combined, "Request bundle JSON:\n"):
 		return atlasFirstStageStudyAdjudication, combined, nil
 	default:
@@ -887,28 +887,22 @@ func atlasFirstAcceptanceAdjudicationResponse(combined string) ([]byte, error) {
 		if len(candidate.AnchorRefs) == 0 {
 			return nil, fmt.Errorf("Theme Adjudication candidate %s has no anchor", candidate.Ref)
 		}
-		assessments := make([]any, 0, len(candidate.AnchorRefs))
-		readingOrder := make([]string, 0, len(candidate.AnchorRefs))
-		for index, anchor := range candidate.AnchorRefs {
-			role := "supporting"
-			if index == 0 {
-				role = "public_entry"
-			}
-			assessments = append(assessments, map[string]any{
-				"anchor_ref":            anchor,
-				"fit":                   "direct",
-				"role":                  role,
-				"supported_observation": "The exact source pack shows this anchor participating in the theme.",
+		// Phase 3 canonical wire: one readings array whose position IS the
+		// reading order; support is direct/supporting only, no role field.
+		readings := make([]any, 0, len(candidate.AnchorRefs))
+		for _, anchor := range candidate.AnchorRefs {
+			readings = append(readings, map[string]any{
+				"anchor_ref":  anchor,
+				"support":     "direct",
+				"observation": "The exact source pack shows this anchor participating in the theme.",
 			})
-			readingOrder = append(readingOrder, anchor)
 		}
 		themes = append(themes, map[string]any{
-			"candidate_ref":      candidate.Ref,
-			"final_title":        "Accepted theme for " + candidate.Ref,
-			"final_question":     "What shared responsibility do the exact anchors implement?",
-			"anchor_assessments": assessments,
-			"reading_order":      readingOrder,
-			"unknowns":           []string{},
+			"candidate_ref":  candidate.Ref,
+			"final_title":    "Accepted theme for " + candidate.Ref,
+			"final_question": "What shared responsibility do the exact anchors implement?",
+			"readings":       readings,
+			"unknowns":       []string{},
 		})
 	}
 	content, err := json.Marshal(map[string]any{"themes": themes})
