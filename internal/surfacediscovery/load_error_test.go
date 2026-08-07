@@ -287,7 +287,7 @@ func TestCheckSurfaceGoVersionRejectsNewerTargetBeforePackageLoading(t *testing.
 	}
 
 	t.Setenv("GOTOOLCHAIN", "")
-	err := checkSurfaceGoVersion(root)
+	err := checkSurfaceGoVersion(root, true)
 	if err == nil {
 		t.Fatal("error = nil, want an incompatible-toolchain error")
 	}
@@ -315,11 +315,36 @@ func TestCheckSurfaceGoVersionAutoToolchainDefersToLoader(t *testing.T) {
 	}
 
 	t.Setenv("REPOMAP_GOTOOLCHAIN", "auto")
-	if err := checkSurfaceGoVersion(root); err != nil {
+	if err := checkSurfaceGoVersion(root, true); err != nil {
 		t.Fatalf("REPOMAP_GOTOOLCHAIN=auto: error = %v, want nil (defer to loader)", err)
 	}
 	t.Setenv("REPOMAP_GOTOOLCHAIN", "local+auto")
-	if err := checkSurfaceGoVersion(root); err != nil {
+	if err := checkSurfaceGoVersion(root, true); err != nil {
 		t.Fatalf("REPOMAP_GOTOOLCHAIN=local+auto: error = %v, want nil (defer to loader)", err)
+	}
+}
+
+// Long-horizon program Phase 1A: ONLINE/default analysis defers toolchain
+// selection to the Go loader (automatic acquisition) — a module requiring a
+// newer Go is not an admission-gate failure. Only OFFLINE analysis, which
+// cannot acquire a toolchain, keeps the honest runtime-version gate.
+func TestCheckSurfaceGoVersionOnlineDefaultDefersOfflineGates(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(root, "go.mod"),
+		[]byte("module example.com/future\n\ngo 99.0\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("REPOMAP_GOTOOLCHAIN", "")
+	t.Setenv("GOTOOLCHAIN", "")
+	// Online default: defer to loader, never a gate.
+	if err := checkSurfaceGoVersion(root, false); err != nil {
+		t.Fatalf("online default must defer to the Go loader: %v", err)
+	}
+	// Offline: honest admission gate remains.
+	if err := checkSurfaceGoVersion(root, true); err == nil {
+		t.Fatal("offline must keep the runtime-version admission gate")
 	}
 }

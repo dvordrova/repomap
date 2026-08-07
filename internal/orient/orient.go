@@ -248,6 +248,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			RepoName: s.RepoName,
 		})
 		surfaceOptions := surfacediscovery.DefaultOptions(opts.RepoPath)
+		surfaceOptions.Offline = opts.Offline
 		surfaceOptions.Progress = func(progress surfacediscovery.PhaseProgress) {
 			emitProgress(opts, ProgressEvent{
 				Stage: ProgressSurfacePhase, RepoName: s.RepoName,
@@ -704,6 +705,7 @@ func runAtlasFirstLocalArtifacts(
 		surfaceStarted := time.Now()
 		emitProgress(opts, ProgressEvent{Stage: ProgressSurfaceStarted, RepoName: s.RepoName})
 		surfaceOptions := surfacediscovery.DefaultOptions(opts.RepoPath)
+		surfaceOptions.Offline = opts.Offline
 		surfaceOptions.Progress = func(progress surfacediscovery.PhaseProgress) {
 			emitProgress(opts, ProgressEvent{
 				Stage: ProgressSurfacePhase, RepoName: s.RepoName,
