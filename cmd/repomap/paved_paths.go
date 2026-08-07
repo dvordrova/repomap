@@ -40,7 +40,7 @@ const pavedPathUserPrompt = `Return exactly this JSON shape:
       "actions": [
         {
           "evidence_id": "exact supplied evidence id",
-          "instruction": "bounded editorial instruction about this exact evidence"
+          "instruction": "bounded editorial instruction tied to this exact evidence"
         }
       ],
       "expected_evidence_ids": ["zero or more exact evidence ids"],
@@ -61,7 +61,7 @@ Rules:
 - Do not merge conflicting versions, ports, paths, or alternative workflows.
 - Do not include credentials or reconstruct redacted values.
 - Do not tell the user to run a command that is absent from the supplied evidence.
-- Use concise human language. Do not mention evidence, validation, confidence, gaps, provider metadata, or internal IDs in prose.
+- Use concise human language. Write each instruction as the user-facing step itself; do not mention evidence IDs, validation, confidence, gaps, provider metadata, or internal IDs in prose.
 
 Variable bounded operational bundle JSON:
 `
