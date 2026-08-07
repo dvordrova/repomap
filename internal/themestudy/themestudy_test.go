@@ -588,24 +588,32 @@ func TestReducerHonestCoverageBadge(t *testing.T) {
 // TestReducerPortfolioRankOrdersCoreBeforePeripheral covers Decision 224
 // (D219 F): user-facing/lifecycle kinds sort before integration families.
 func TestReducerPortfolioRankOrdersCoreBeforePeripheral(t *testing.T) {
-	anchors := map[string]AnchorInfo{"a1": {Path: "a.go", Symbol: "A", Line: 1}}
-	mk := func(tref, kind string) AdjudicatedTheme {
+	// Distinct exact readings per theme so the rank order is exercised
+	// independently of the identical-reading-set co-projection (Phase 3:
+	// kind is model classification, never evidence identity — themes over
+	// the same exact reading collapse into one card regardless of kind).
+	anchors := map[string]AnchorInfo{
+		"a1": {Path: "a.go", Symbol: "A", Line: 1},
+		"a2": {Path: "b.go", Symbol: "B", Line: 1},
+		"a3": {Path: "c.go", Symbol: "C", Line: 1},
+	}
+	mk := func(tref, anchor, kind string) AdjudicatedTheme {
 		return AdjudicatedTheme{
 			CandidateRef: tref, FinalTitle: tref, FinalQuestion: tref + "?",
-			AnchorAssessments: []AnchorAssessment{{AnchorRef: "a1", Fit: FitDirect, SupportedObservation: "o"}},
-			ReadingOrder:      []string{"a1"},
+			AnchorAssessments: []AnchorAssessment{{AnchorRef: anchor, Fit: FitDirect, SupportedObservation: "o"}},
+			ReadingOrder:      []string{anchor},
 		}
 	}
 	input := ReducerInput{
 		Themes: []AdjudicatedTheme{
-			mk("t1", string(KindIntegrationFamily)),
-			mk("t2", string(KindUserJourney)),
-			mk("t3", string(KindLifecycleConcern)),
+			mk("t1", "a1", string(KindIntegrationFamily)),
+			mk("t2", "a2", string(KindUserJourney)),
+			mk("t3", "a3", string(KindLifecycleConcern)),
 		},
 		Candidates: map[string]*ScoutCandidate{
 			"t1": {Title: "t1", Question: "t1?", ThemeKind: KindIntegrationFamily, AnchorRefs: []string{"a1"}, WhyItMatters: "w", ExpectedLearning: "l", RelationClaim: RelationClaimEditorialOnly},
-			"t2": {Title: "t2", Question: "t2?", ThemeKind: KindUserJourney, AnchorRefs: []string{"a1"}, WhyItMatters: "w", ExpectedLearning: "l", RelationClaim: RelationClaimEditorialOnly},
-			"t3": {Title: "t3", Question: "t3?", ThemeKind: KindLifecycleConcern, AnchorRefs: []string{"a1"}, WhyItMatters: "w", ExpectedLearning: "l", RelationClaim: RelationClaimEditorialOnly},
+			"t2": {Title: "t2", Question: "t2?", ThemeKind: KindUserJourney, AnchorRefs: []string{"a2"}, WhyItMatters: "w", ExpectedLearning: "l", RelationClaim: RelationClaimEditorialOnly},
+			"t3": {Title: "t3", Question: "t3?", ThemeKind: KindLifecycleConcern, AnchorRefs: []string{"a3"}, WhyItMatters: "w", ExpectedLearning: "l", RelationClaim: RelationClaimEditorialOnly},
 		},
 		Anchors: anchors,
 	}
