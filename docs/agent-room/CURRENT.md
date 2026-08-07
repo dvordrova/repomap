@@ -1104,3 +1104,16 @@ Status:
     acceptance: full gates green, etcd output-exhaustion CLI replay green,
     casdoor complete-graph test asserts 0 raw relations + non-empty
     aggregate + compact request.
+
+## 18. Decision 235 — v10 closure / MAP-READY contracts (v11 program, ACTIVE)
+
+One member_refs response grammar (prompt v19, unit_refs decoder retained for
+pre-v19 replay); backend normalization (missing anchor_refs → []+count, empty
+component → item-local, Gotify trailing `]}` → bounded normalization); final
+Architecture rebased into Study (accepted model canvas IS the Scout context);
+span questions populated from backend-owned questions or omitted; theme
+equivalence accounting; GOTOOLCHAIN=auto provenance; local failure
+containment (maddy per-file secret closure, sqlc/syn/bench Study without
+canvas, container-registry external frontier, chatto post-Scout typed
+status, caddy facts cap, gemnasium duplicate merge). MAP_READY gate precedes
+Decision 236 (Repository Map primary product).
