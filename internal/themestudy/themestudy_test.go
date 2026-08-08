@@ -44,7 +44,7 @@ func TestBuildFileVocabularyComplete(t *testing.T) {
 			t.Fatalf("duplicate path %q in vocabulary", f.Path)
 		}
 		seen[f.Path] = true
-		if f.Role != RoleProductionSource && f.Role != RoleDocumentation {
+		if !f.Role.Valid() {
 			t.Fatalf("bad role %q for %s", f.Role, f.Path)
 		}
 	}

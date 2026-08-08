@@ -25,8 +25,10 @@ const (
 	// coverage. The prompt identity is derived automatically from its exact
 	// text below. Request v19 also binds collision-safe private unit grouping:
 	// command namespaces no longer merge with same-named top-level packages.
+	// Decision 241: record v16 binds item-local empty/supporting-only salvage;
+	// the provider request remains the exact-anchor v19 contract.
 	SynthesisRequestVersion = 19
-	SynthesisRecordVersion  = 15
+	SynthesisRecordVersion  = 16
 )
 
 // SynthesisPromptVersion is the prompt contract identity — the short SHA-256
@@ -1859,7 +1861,7 @@ func evaluateSynthesisResponse(
 	// NOT returned stays in the local remainder (existing accounting).
 	// Never solved with prose ("never repeat") and never by raising the
 	// provider ceiling.
-	ceilingApplied, ceilingDiagnostics, ceilingErr := applyMemberRefsCeiling(&wireProposal)
+	ceilingApplied, ceilingDiagnostics, ceilingDroppedRefs, ceilingErr := applyMemberRefsCeiling(&wireProposal)
 	if ceilingErr != nil {
 		return Landscape{}, SynthesisMembershipCounts{}, ceilingErr
 	}
@@ -1883,11 +1885,36 @@ func evaluateSynthesisResponse(
 	if ceilingApplied {
 		wireDiagnostics = append(ceilingDiagnostics, wireDiagnostics...)
 	}
+	providerProposal := cloneProposal(proposal)
+	proposal, supportingOnlyMembersDropped, supportingOnlyComponentsAffected,
+		supportingOnlyComponentsDropped, supportingOnlyAnchorsDropped := salvageSupportingOnlyProductionUnits(
+		bundle,
+		catalog,
+		unitCatalog,
+		contexts,
+		ceilingDroppedRefs,
+		proposal,
+	)
+	if supportingOnlyMembersDropped > 0 {
+		wireDiagnostics = append(wireDiagnostics, newDiagnostic(
+			"proposal.supporting_only_unit_coverage_salvaged",
+			fmt.Sprintf(
+				"retained valid model grouping after moving %d supporting-only production member participation(s) from %d component(s) to the deterministic local remainder; removed %d emptied component(s) and %d now-unbound anchor association(s)",
+				supportingOnlyMembersDropped,
+				supportingOnlyComponentsAffected,
+				supportingOnlyComponentsDropped,
+				supportingOnlyAnchorsDropped,
+			),
+		))
+	}
 	membership := synthesisMembershipCounts(bundle, contexts, proposal)
 	landscape, err := Apply(bundle, proposal)
 	if err != nil {
 		return Landscape{}, SynthesisMembershipCounts{}, err
 	}
+	// The durable digest identifies the exact resolved provider proposal,
+	// before backend-owned item-local salvage changes its publishable shape.
+	landscape.OriginalProposalSHA256 = proposalSHA256(providerProposal)
 	if len(wireDiagnostics) > 0 {
 		// Decision 229 D7: unknown/wrong-kind member, unit and anchor
 		// refs drop only the referencing component during wire
@@ -1921,7 +1948,7 @@ func evaluateSynthesisResponse(
 		qualityDiagnostics := synthesisPrimaryScopeDiagnostics(contexts, landscape)
 		if len(qualityDiagnostics) > 0 {
 			diagnostics := append(cloneDiagnostics(landscape.Diagnostics), qualityDiagnostics...)
-			landscape, err = synthesisQualityFallback(bundle, proposal, diagnostics)
+			landscape, err = synthesisQualityFallback(bundle, providerProposal, diagnostics)
 			if err != nil {
 				return Landscape{}, SynthesisMembershipCounts{}, err
 			}
@@ -1940,6 +1967,156 @@ func evaluateSynthesisResponse(
 	return landscape, membership, nil
 }
 
+// salvageSupportingOnlyProductionUnits keeps a locally recoverable quality
+// failure item-scoped. A model may select package-owned supporting symbols
+// without selecting their production package in the same unit. Those child
+// participations do not establish primary scope, so they return to the exact
+// local remainder; valid sibling components remain publishable. The backend
+// never invents the missing parent placement.
+func salvageSupportingOnlyProductionUnits(
+	bundle CandidateBundle,
+	catalog synthesisPrivateCatalog,
+	unitCatalog UnitCatalog,
+	contexts map[MemberID]synthesisCandidateContext,
+	ceilingDroppedRefs []SynthesisMemberRef,
+	proposal Proposal,
+) (Proposal, int, int, int, int) {
+	unitMembers := unitCatalogUnitMembersByWireRef(unitCatalog)
+	effectiveMembers := func(component ProposedComponent) map[MemberID]struct{} {
+		members := make(map[MemberID]struct{}, len(component.MemberIDs)+len(component.SharedUnitRefs))
+		for _, memberID := range component.MemberIDs {
+			members[memberID] = struct{}{}
+		}
+		for _, unitRef := range component.SharedUnitRefs {
+			for _, memberID := range unitMembers[unitRef] {
+				members[memberID] = struct{}{}
+			}
+		}
+		return members
+	}
+
+	primaryUnits := make(map[UnitWireRef]struct{})
+	for _, subsystem := range proposal.Subsystems {
+		for _, component := range subsystem.Components {
+			for memberID := range effectiveMembers(component) {
+				context, exists := contexts[memberID]
+				if exists && context.CoverageRole == SynthesisCoveragePrimaryScope {
+					primaryUnits[context.UnitRef] = struct{}{}
+				}
+			}
+		}
+	}
+
+	// A backend ceiling must not manufacture a supporting-only condition by
+	// trimming a primary ref the model did return. Leave such a unit to the
+	// existing quality gate rather than silently changing its semantics.
+	ceilingDroppedPrimaryUnits := make(map[UnitWireRef]struct{})
+	for _, ref := range ceilingDroppedRefs {
+		memberID, exists := catalog.membersByRef[ref.key()]
+		if !exists {
+			memberID, exists = catalog.membersByRefOnly[ref.Ref]
+		}
+		if !exists {
+			continue
+		}
+		context, exists := contexts[memberID]
+		if exists && context.CoverageRole == SynthesisCoveragePrimaryScope {
+			ceilingDroppedPrimaryUnits[context.UnitRef] = struct{}{}
+		}
+	}
+
+	supportingOnlyUnits := make(map[UnitWireRef]struct{})
+	for _, subsystem := range proposal.Subsystems {
+		for _, component := range subsystem.Components {
+			for _, memberID := range component.MemberIDs {
+				context, exists := contexts[memberID]
+				if !exists || context.CoverageRole != SynthesisCoverageSupportingEvidence ||
+					context.UnitRole != UnitRoleProduction {
+					continue
+				}
+				if _, covered := primaryUnits[context.UnitRef]; covered {
+					continue
+				}
+				if _, trimmedPrimary := ceilingDroppedPrimaryUnits[context.UnitRef]; trimmedPrimary {
+					continue
+				}
+				supportingOnlyUnits[context.UnitRef] = struct{}{}
+			}
+		}
+	}
+	if len(supportingOnlyUnits) == 0 {
+		return proposal, 0, 0, 0, 0
+	}
+
+	anchors := behaviorAnchorIndex(bundle.BehaviorAnchors)
+	result := cloneProposal(proposal)
+	sourceSubsystems := result.Subsystems
+	result.Subsystems = make([]ProposedSubsystem, 0, len(sourceSubsystems))
+	droppedMembers := 0
+	affectedComponents := 0
+	droppedComponents := 0
+	droppedAnchors := 0
+	for _, subsystem := range sourceSubsystems {
+		keptSubsystem := subsystem
+		keptSubsystem.Components = make([]ProposedComponent, 0, len(subsystem.Components))
+		for _, component := range subsystem.Components {
+			originalMembers := effectiveMembers(component)
+			keptComponent := component
+			keptComponent.MemberIDs = make([]MemberID, 0, len(component.MemberIDs))
+			componentChanged := false
+			for _, memberID := range component.MemberIDs {
+				context, exists := contexts[memberID]
+				if exists && context.CoverageRole == SynthesisCoverageSupportingEvidence &&
+					context.UnitRole == UnitRoleProduction {
+					if _, supportingOnly := supportingOnlyUnits[context.UnitRef]; supportingOnly {
+						droppedMembers++
+						componentChanged = true
+						continue
+					}
+				}
+				keptComponent.MemberIDs = append(keptComponent.MemberIDs, memberID)
+			}
+			if componentChanged {
+				affectedComponents++
+				retainedMembers := effectiveMembers(keptComponent)
+				keptAnchors := make([]string, 0, len(component.AnchorIDs))
+				for _, anchorID := range component.AnchorIDs {
+					anchor, exists := anchors[anchorID]
+					if !exists {
+						keptAnchors = append(keptAnchors, anchorID)
+						continue
+					}
+					hadOriginalMember := false
+					hasRetainedMember := false
+					for _, memberID := range anchor.MemberIDs {
+						if _, exists := originalMembers[memberID]; exists {
+							hadOriginalMember = true
+						}
+						if _, exists := retainedMembers[memberID]; exists {
+							hasRetainedMember = true
+						}
+					}
+					if hadOriginalMember && !hasRetainedMember {
+						droppedAnchors++
+						continue
+					}
+					keptAnchors = append(keptAnchors, anchorID)
+				}
+				keptComponent.AnchorIDs = keptAnchors
+			}
+			if len(keptComponent.MemberIDs) == 0 && len(keptComponent.SharedUnitRefs) == 0 {
+				droppedComponents++
+				continue
+			}
+			keptSubsystem.Components = append(keptSubsystem.Components, keptComponent)
+		}
+		if len(keptSubsystem.Components) > 0 {
+			result.Subsystems = append(result.Subsystems, keptSubsystem)
+		}
+	}
+	return result, droppedMembers, affectedComponents, droppedComponents, droppedAnchors
+}
+
 func synthesisMembershipCounts(
 	bundle CandidateBundle,
 	contexts map[MemberID]synthesisCandidateContext,
@@ -1955,7 +2132,11 @@ func synthesisMembershipCounts(
 			}
 		}
 	}
-	return synthesisMembershipCountsFromSets(bundle, contexts, len(proposal.Subsystems) > 0, occurrences, distinct)
+	// Reaching this point means the provider response was decoded and resolved.
+	// Item-local salvage may legitimately remove every component, but that is
+	// still exact counted evidence of zero accepted response membership, with
+	// every requested conceptual member remaining in the local remainder.
+	return synthesisMembershipCountsFromSets(bundle, contexts, true, occurrences, distinct)
 }
 
 func acceptedSynthesisMembershipCounts(
@@ -2380,8 +2561,8 @@ type synthesisWireNestedSubsystem struct {
 type synthesisWireNestedComponent struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
-	MemberRefs  []string        `json:"member_refs,omitempty"`
-	UnitRefs    []string        `json:"unit_refs,omitempty"`
+	MemberRefs  json.RawMessage `json:"member_refs,omitempty"`
+	UnitRefs    json.RawMessage `json:"unit_refs,omitempty"`
 	AnchorRefs  json.RawMessage `json:"anchor_refs,omitempty"`
 }
 
@@ -2460,20 +2641,43 @@ func decodeSynthesisWireNestedJSON(raw []byte) (synthesisWireProposal, error) {
 			if err := validateSynthesisProposalProse("component description", component.Description); err != nil {
 				return synthesisWireProposal{}, err
 			}
-			memberRefs, err := nestedMemberRefs(component.MemberRefs, "member_refs")
+			memberRefsFieldExists := component.MemberRefs != nil
+			unitRefsFieldExists := component.UnitRefs != nil
+			if !memberRefsFieldExists && !unitRefsFieldExists {
+				return synthesisWireProposal{}, fmt.Errorf("proposal component is missing member_refs or unit_refs")
+			}
+			if (memberRefsFieldExists && isJSONNull(component.MemberRefs)) ||
+				(unitRefsFieldExists && isJSONNull(component.UnitRefs)) {
+				return synthesisWireProposal{}, fmt.Errorf("proposal component fields must not be null")
+			}
+			rawMemberRefs := []string{}
+			if memberRefsFieldExists {
+				if err := json.Unmarshal(component.MemberRefs, &rawMemberRefs); err != nil {
+					return synthesisWireProposal{}, fmt.Errorf("proposal member refs have invalid type")
+				}
+			}
+			memberRefs, err := nestedMemberRefs(rawMemberRefs, "member_refs")
 			if err != nil {
 				return synthesisWireProposal{}, err
 			}
-			unitRefs, err := nestedUnitRefs(component.UnitRefs, "unit_refs")
+			rawUnitRefs := []string{}
+			if unitRefsFieldExists {
+				if err := json.Unmarshal(component.UnitRefs, &rawUnitRefs); err != nil {
+					return synthesisWireProposal{}, fmt.Errorf("proposal unit refs have invalid type")
+				}
+			}
+			unitRefs, err := nestedUnitRefs(rawUnitRefs, "unit_refs")
 			if err != nil {
 				return synthesisWireProposal{}, err
 			}
 			if len(memberRefs) > 0 && len(unitRefs) > 0 {
 				return synthesisWireProposal{}, fmt.Errorf("proposal component must group either member_refs or unit_refs, not both")
 			}
-			if len(memberRefs) == 0 && len(unitRefs) == 0 {
-				return synthesisWireProposal{}, fmt.Errorf("proposal component must group at least one member_refs or unit_refs")
-			}
+			// An explicitly empty membership array is an item-local model
+			// placeholder. Keep it until Apply, which already owns the
+			// recoverable proposal.empty_component salvage contract, so one
+			// empty item cannot discard every valid sibling. Omitted, null and
+			// non-array membership fields remain strict schema failures above.
 			// Decision 237: field presence is semantically distinct from array
 			// cardinality. An omitted optional field is normalized, an explicit
 			// empty array is already valid, and null/non-array values fail closed.
@@ -2885,12 +3089,13 @@ const (
 // maximum, then the whole proposal to the total maximum. It returns true
 // and exact diagnostics when any trimming happened; the diagnostics carry
 // the precise counts so the report can state what was bounded.
-func applyMemberRefsCeiling(proposal *synthesisWireProposal) (bool, []Diagnostic, error) {
+func applyMemberRefsCeiling(proposal *synthesisWireProposal) (bool, []Diagnostic, []SynthesisMemberRef, error) {
 	if proposal == nil {
-		return false, nil, fmt.Errorf("componentmap: member refs ceiling requires a proposal")
+		return false, nil, nil, fmt.Errorf("componentmap: member refs ceiling requires a proposal")
 	}
 	applied := false
 	perComponentTrimmed := 0
+	droppedRefs := make([]SynthesisMemberRef, 0)
 	for recordIndex := range proposal.Records {
 		record := &proposal.Records[recordIndex]
 		if record.Kind != synthesisWireComponentRecord {
@@ -2900,6 +3105,7 @@ func applyMemberRefsCeiling(proposal *synthesisWireProposal) (bool, []Diagnostic
 			trimmed := len(record.MemberRefs) - maxMemberRefsPerComponent
 			// Keep the FIRST refs in wire order (the model's stated
 			// priority); the rest stay in the local remainder.
+			droppedRefs = append(droppedRefs, record.MemberRefs[maxMemberRefsPerComponent:]...)
 			record.MemberRefs = record.MemberRefs[:maxMemberRefsPerComponent]
 			perComponentTrimmed += trimmed
 			applied = true
@@ -2930,7 +3136,9 @@ func applyMemberRefsCeiling(proposal *synthesisWireProposal) (bool, []Diagnostic
 			if drop > toDrop {
 				drop = toDrop
 			}
-			record.MemberRefs = record.MemberRefs[:len(record.MemberRefs)-drop]
+			keep := len(record.MemberRefs) - drop
+			droppedRefs = append(droppedRefs, record.MemberRefs[keep:]...)
+			record.MemberRefs = record.MemberRefs[:keep]
 			toDrop -= drop
 		}
 		diagnostics = append(diagnostics, newDiagnostic(
@@ -2951,7 +3159,7 @@ func applyMemberRefsCeiling(proposal *synthesisWireProposal) (bool, []Diagnostic
 			),
 		))
 	}
-	return applied, diagnostics, nil
+	return applied, diagnostics, droppedRefs, nil
 }
 
 func resolveSynthesisWireProposal(

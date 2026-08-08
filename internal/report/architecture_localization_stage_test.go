@@ -63,7 +63,9 @@ func TestBuildArchitectureLocalizationRussianPromptIsExactAndReadOnly(t *testing
 	// primary-before-supporting response instruction.
 	// D239 makes the embedded Architecture contract and coverage semantics
 	// production-aware.
-	const wantPromptSHA256 = "ea4c9c74b3b3593c1313ba42a1745e5d565961ea1f87cb01a2eecc638ef51cd0"
+	// D241 advances the embedded Architecture record/status identities for
+	// item-local empty/supporting-only salvage.
+	const wantPromptSHA256 = "e5f41b9d500ab26e3c075874e63bc90ef6f7deefa07a9e1a90696e46a7176dfa"
 	if got := hex.EncodeToString(digest[:]); got != wantPromptSHA256 {
 		t.Fatalf("Architecture prompt SHA-256 = %q, want %q", got, wantPromptSHA256)
 	}

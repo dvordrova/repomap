@@ -22,7 +22,9 @@ const (
 	// (status 13).
 	// Decision 239: primary/supporting counters become production-aware
 	// (status 14).
-	ArchitectureSynthesisStatusVersion = 14
+	// Decision 241: item-local empty/supporting-only response salvage and its
+	// closed diagnostics change accepted/partial status semantics (status 15).
+	ArchitectureSynthesisStatusVersion = 15
 
 	ArchitectureSynthesisSucceeded   = "succeeded"
 	ArchitectureSynthesisCached      = "cached"
@@ -80,14 +82,16 @@ var architectureStatusValidationCodes = map[string]struct{}{
 	"proposal.unsupported_version":                {},
 	// Decision 229 D7 item-scope salvage vocabulary: recoverable
 	// findings emitted while dropping only the referencing component.
-	"proposal.salvaged_empty_subsystem":        {},
-	"proposal.unknown_unit_ref":                {},
-	"proposal.duplicate_unit_ref":              {},
-	"proposal.duplicate_anchor_id":             {},
-	"proposal.empty_member_coverage":           {},
-	"proposal.equivalent_member_set_collision": {},
-	"proposal.shared_unit_slice":               {},
-	"proposal.empty_anchor_slice":              {},
+	"proposal.salvaged_empty_subsystem":               {},
+	"proposal.unknown_unit_ref":                       {},
+	"proposal.duplicate_unit_ref":                     {},
+	"proposal.duplicate_anchor_id":                    {},
+	"proposal.empty_member_coverage":                  {},
+	"proposal.equivalent_member_set_collision":        {},
+	"proposal.shared_unit_slice":                      {},
+	"proposal.empty_anchor_slice":                     {},
+	"proposal.empty_component":                        {},
+	"proposal.supporting_only_unit_coverage_salvaged": {},
 	// Decision 231 (Archive 9): zero-useful-semantic result — the exact
 	// local landscape publishes with this recoverable finding instead of
 	// a generic malformed-schema label.
@@ -794,6 +798,10 @@ func validArchitectureStatusCodeForVersion(version int, code string) bool {
 	}
 	if (code == "proposal.empty_primary_scope_coverage" ||
 		code == "proposal.supporting_only_unit_coverage") && version < 13 {
+		return false
+	}
+	if (code == "proposal.empty_component" ||
+		code == "proposal.supporting_only_unit_coverage_salvaged") && version < 15 {
 		return false
 	}
 	if validArchitectureStatusCode(code) {

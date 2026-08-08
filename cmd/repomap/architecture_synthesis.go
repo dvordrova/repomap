@@ -299,11 +299,15 @@ func synthesizeArchitectureForRun(
 			state = "cached_partial"
 		}
 	}
-	output.State(
-		"Architecture",
-		state,
-		architectureSuccessConsoleLines(runDir, outcome)...,
-	)
+	lines := architectureSuccessConsoleLines(runDir, outcome)
+	if outcome.ValidationOutcome == componentmap.ValidationAcceptedPartial {
+		output.Warn(
+			"Architecture model grouping is partial",
+			append([]string{"state: " + state}, lines...)...,
+		)
+	} else {
+		output.State("Architecture", state, lines...)
+	}
 	return outcome, nil
 }
 
@@ -333,6 +337,9 @@ func architectureSuccessConsoleLines(
 	}
 	if shape := outcome.ResponseShape; shape != nil {
 		lines = append(lines, architectureResponseShapeConsoleLine(shape))
+	}
+	if len(outcome.ValidationCodes) > 0 {
+		lines = append(lines, "validation diagnostics: "+strings.Join(outcome.ValidationCodes, ","))
 	}
 	lines = append(lines,
 		fmt.Sprintf("request bytes: %d", outcome.InputBytes),

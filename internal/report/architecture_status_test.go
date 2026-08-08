@@ -118,16 +118,16 @@ func TestArchitectureSynthesisUnavailableIsExplicitAndProviderFree(t *testing.T)
 	}
 }
 
-func TestArchitectureSynthesisV14IdentifiesProductionAwareCoverage(t *testing.T) {
+func TestArchitectureSynthesisV15PreservesProductionAwareCoverage(t *testing.T) {
 	t.Parallel()
 
-	if ArchitectureSynthesisStatusVersion != 14 {
+	if ArchitectureSynthesisStatusVersion != 15 {
 		t.Fatalf("production-aware Architecture status version = %d", ArchitectureSynthesisStatusVersion)
 	}
 	historical := architectureSynthesisV4AcceptedFixture()
-	historical.Version = 13
+	historical.Version = 14
 	if err := historical.Validate(); err != nil {
-		t.Fatalf("historical v13 primary-scope status became unreadable: %v", err)
+		t.Fatalf("historical v14 primary-scope status became unreadable: %v", err)
 	}
 }
 
@@ -536,6 +536,9 @@ func TestArchitectureSynthesisV6AcceptsExactClosedProducerDiagnosticRegistry(t *
 		"proposal.equivalent_member_set_collision",
 		"proposal.shared_unit_slice",
 		"proposal.empty_anchor_slice",
+		// Decision 241 item-local empty/supporting-only salvage.
+		"proposal.empty_component",
+		"proposal.supporting_only_unit_coverage_salvaged",
 		// Decision 231 (Archive 9) zero-useful-semantic result.
 		"proposal.zero_useful_semantic_components",
 		"response.ambiguous_json",

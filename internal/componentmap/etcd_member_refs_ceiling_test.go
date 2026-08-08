@@ -139,7 +139,7 @@ func TestMemberRefsTotalCeilingDropsFromEnd(t *testing.T) {
 			Hypothesis:  false,
 		})
 	}
-	applied, diagnostics, err := applyMemberRefsCeiling(proposal)
+	applied, diagnostics, _, err := applyMemberRefsCeiling(proposal)
 	if err != nil {
 		t.Fatalf("ceiling: %v", err)
 	}

@@ -26,6 +26,7 @@ Active decisions (each approved by the repository owner via its supervisory goal
 22. decisions/238-architecture-primary-scope-context-quality.md
 23. decisions/239-ordinary-provider-request-effectiveness.md
 24. decisions/240-remove-obsolete-navigator-semantic-stage.md
+25. decisions/241-ordinary-provider-request-effectiveness-conclusions.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
@@ -1193,3 +1194,22 @@ flag, hidden candidate gate, or cosmetic badge is added. The ordinary cold path
 now has at most Architecture + Theme Scout + Theme Adjudication provider calls;
 exact local Surface/Atlas evidence and offline behavior remain authoritative.
 Identity advances: report format 38, run manifest 13, UI catalog 11.
+
+## 24. Decision 241 — Ordinary provider-request effectiveness conclusions (ACTIVE)
+
+D239's bounded experiments accept production-aware generic Theme roles/order,
+truthful disclosure of the existing Theme prose bounds, item-local salvage for
+explicit-empty nested Architecture components, and item-local supporting-only
+production participation with ceiling/shared-scope protection, anchor pruning,
+and deterministic remainder. Every accepted partial Architecture is a console
+`WARN` with closed safe diagnostics; report JSON/HTML remain product docs.
+
+Prompt-only exhaustive/cohesive Architecture wording, blind anchor dedup,
+caller-aware anchor context in its tested form, full unit import adjacency,
+Architecture-backed Theme source seeds, and whole-file Adjudication source
+dedup are rejected by the real A/B evidence. No call, flag, retry, analysis
+layer, or privacy expansion is added. D239 remains incomplete until focused and
+full gates, six fresh ordinary corpus runs, and fresh etcd/casdoor acceptance
+all pass on one exact candidate. Theme artifacts support only the current
+request/result/status identities; older formats fail closed and remain in git
+rather than carrying production compatibility readers.

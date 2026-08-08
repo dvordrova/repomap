@@ -32,7 +32,9 @@ const (
 	// Decision 239: only production-unit top-level scope is primary; covering
 	// test, tooling, or documentation scope cannot satisfy the quality gate
 	// (ContractVersion 14).
-	ContractVersion = 14
+	// Decision 241: explicitly empty/supporting-only items are salvaged into
+	// the local remainder (ContractVersion 15).
+	ContractVersion = 15
 	// ProposalVersion changes whenever the wire proposal shape or its
 	// acceptance semantics change; D4 equivalence coalescing is
 	// acceptance semantics (ProposalVersion 10); shared participation is
@@ -40,8 +42,9 @@ const (
 	// normalization + item-local empty rejection (ProposalVersion 12);
 	// primary-scope quality rejection is acceptance semantics
 	// (ProposalVersion 13); production-aware primary-scope classification
-	// changes acceptance semantics (ProposalVersion 14).
-	ProposalVersion = 14
+	// changes acceptance semantics (ProposalVersion 14); item-local validation
+	// salvage changes proposal semantics (ProposalVersion 15).
+	ProposalVersion = 15
 
 	maxCandidates      = 512
 	maxFlows           = 64
@@ -1381,16 +1384,19 @@ func applyProposal(bundle CandidateBundle, proposal Proposal) (Landscape, []Diag
 				// influence this decision.
 				invalid("proposal.shared_unit_slice", "component participates in a shared unit with exact anchors; scope participation published instead of exclusive ownership")
 			}
-			if len(members) == 0 && len(sharedMembers) == 0 && len(proposedComponent.AnchorIDs) == 0 {
+			if len(members) == 0 && len(sharedMembers) == 0 {
 				// Decision 235 (v11): an empty component (no exact
-				// members, no shared scope, no anchors) is rejected
+				// members or shared scope) is rejected
 				// ITEM-LOCAL with a recoverable finding — the valid
 				// sibling components publish (goargs: «Линтеры»
 				// dropped, «Плагин» accepted, state
 				// accepted_partial). Zero valid components in total
 				// still publish local-only via
 				// proposal.zero_useful_semantic_components below.
-				invalid("proposal.empty_component", "proposal component has no usable exact members, shared scope, or anchors; component skipped item-scope")
+				// Decision 241: anchors are evidence for component
+				// membership, never a substitute for the required member
+				// identity itself.
+				invalid("proposal.empty_component", "proposal component has no usable exact members or shared scope; component skipped item-scope")
 				componentSalvaged = true
 				releaseComponentMembers()
 				continue

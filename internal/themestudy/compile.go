@@ -19,10 +19,12 @@ const (
 	// anchors is normalized item-locally instead of being discarded whole;
 	// the typed result/status contract advances 3→4. D239 also removes the
 	// duplicated Vocabulary/SeedPack source projection from the persisted
-	// Scout request: request v3 stores the exact wire once plus private metadata
-	// and restores the same in-memory request losslessly. The provider wire and
-	// prompt are unchanged; historical v2 request artifacts remain replayable.
-	ScoutRequestVersion        = 3
+	// Scout request. The current request artifact stores the exact wire once
+	// plus private metadata and restores the same in-memory request losslessly.
+	// Older request versions fail closed; git retains their implementation.
+	// Theme-input experiment T1 advances request 3→4 and cache v1→v2 because
+	// the wire now exposes generic artifact roles and production-aware ordering.
+	ScoutRequestVersion        = 4
 	ScoutResultVersion         = 4
 	AdjudicationRequestVersion = 2
 	AdjudicationResultVersion  = 3
@@ -52,7 +54,7 @@ const StudyThemesVersion = 3
 // (Prompt constants advanced to SHA identity above; this comment records the
 // v2 rationale that still applies.)
 const (
-	ScoutCacheContract           = "theme-scout-accepted-v1"
+	ScoutCacheContract           = "theme-scout-accepted-v2"
 	AdjudicationCacheContract    = "theme-adjudication-accepted-v1"
 	ScoutStage                   = "theme_scout"
 	AdjudicationStage            = "theme_adjudication"
@@ -68,7 +70,7 @@ const (
 
 // ScoutRequest is the compiled, bounded in-memory Theme Scout request
 // (contract C): the model-visible wire plus the backend-owned identity that
-// binds it. The v3 artifact stores the exact wire once and only the private
+// binds it. The current artifact stores the exact wire once and only the private
 // metadata needed to losslessly restore this value; source bytes appear only
 // once on disk and remain provider evidence, never card content.
 type ScoutRequest struct {
@@ -671,6 +673,7 @@ const scoutPromptSystem = `You are proposing useful Study themes for a developer
 A Study theme is a question that one or more exact source anchors can help answer. It is not required to be a proven runtime path.
 You may group anchors because they help explain one user journey, cross-cutting policy, sibling implementation family, integration family, lifecycle concern, or shared domain responsibility.
 Use a* source refs as current support. Use f* names-only refs only to request local source expansion. A names-only file is never evidence.
+The backend-owned role on every a* and f* item is a navigation priority, not runtime proof. Prefer primary_production_entry, production_core, effect_integration_boundary, and public_api when explaining the product. Use example, test, fixture, generated, playground_preview_evaluator, experimental, or documentation items only when they materially clarify the selected production theme.
 Do not claim execution order, ownership, reachability, or data flow unless the supplied exact evidence establishes it.
 Return themes in decreasing usefulness for a developer trying to understand this repository, with the most useful theme first.
 Each additional theme must add a materially distinct learning outcome. Do not restate individual direct calls and do not pad.
@@ -680,6 +683,7 @@ const scoutPromptUserShape = `Requested prose language: %s.
 Most repositories need no more than about %d materially distinct, high-value themes. Use fewer when they cover the important learning outcomes; return more only when additional themes add substantial distinct understanding. Do not pad toward a target.
 Prefer a small set of distinct anchor_refs that together support one coherent learning outcome; return 1 to %d per theme. Use a single anchor when it is sufficient on its own. Do not add anchors merely to reach a count, and do not repeat refs within a theme.
 theme_kind is one of: user_journey, cross_cutting_policy, sibling_implementation_family, integration_family, lifecycle_concern, shared_domain_responsibility.
+The backend retains at most 80 Unicode characters for title, 200 for question, and 240 each for why_it_matters and expected_learning. Stay below these existing limits. Use a compact title and short, complete sentences; do not pad prose toward a limit or leave a sentence unfinished.
 Response schema: {"themes":[{"title":"...","question":"...","theme_kind":"...","anchor_refs":["a1"],"expansion_file_refs":["f1"],"why_it_matters":"...","expected_learning":"..."}]}
 Request bundle JSON:
 %s`
@@ -708,6 +712,7 @@ Return exactly one JSON object and no markdown. Keep all refs unchanged. Write m
 const adjudicationPromptUserShape = `Requested prose language: %s.
 This request contains %d candidate themes. Review each candidate independently. Return every candidate that remains a useful source-backed theme after review; omit unsupported candidates. Do not create placeholders or pad the result.
 Within each returned theme, order readings in the order you recommend a developer inspect them. Include at least one direct reading. Include only unknowns that materially qualify what the retained readings establish.
+The backend retains at most 240 Unicode characters for each observation and 120 for each unknown, and accepts at most 4 unknowns per theme. Stay below these existing limits. Keep final_title and final_question concise and complete. Use short, complete sentences for observations and unknowns; do not pad prose toward a limit or leave a sentence unfinished.
 Response schema: {"themes":[{"candidate_ref":"t1","final_title":"...","final_question":"...","readings":[{"anchor_ref":"a1","support":"direct","observation":"..."}],"unknowns":["..."]}]}
 Request bundle JSON:
 %s`

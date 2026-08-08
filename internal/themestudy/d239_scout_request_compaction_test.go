@@ -1,14 +1,13 @@
 package themestudy
 
 import (
-	"bytes"
 	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
 )
 
-func TestD239ScoutRequestV3CompactsWireAndRestoresPrivateMetadata(t *testing.T) {
+func TestScoutRequestCompactsWireAndRestoresPrivateMetadata(t *testing.T) {
 	request := buildTestScoutRequest(t)
 	request.Vocabulary.Complete = false
 	request.Vocabulary.Considered++
@@ -23,11 +22,11 @@ func TestD239ScoutRequestV3CompactsWireAndRestoresPrivateMetadata(t *testing.T) 
 	if err != nil {
 		t.Fatalf("EncodeScoutRequest: %v", err)
 	}
-	var artifact scoutRequestArtifactV3
+	var artifact scoutRequestArtifact
 	if err := json.Unmarshal(encoded, &artifact); err != nil {
 		t.Fatalf("decode compact artifact shape: %v", err)
 	}
-	if artifact.Version != 3 || len(artifact.WireJSON) == 0 || artifact.WireJSON[0] != '{' {
+	if artifact.Version != ScoutRequestVersion || len(artifact.WireJSON) == 0 || artifact.WireJSON[0] != '{' {
 		t.Fatalf("compact artifact identity/wire = version %d wire %q", artifact.Version, artifact.WireJSON)
 	}
 	var raw map[string]json.RawMessage
@@ -39,7 +38,7 @@ func TestD239ScoutRequestV3CompactsWireAndRestoresPrivateMetadata(t *testing.T) 
 		t.Fatal(err)
 	}
 	if _, duplicated := vocabularyFields["files"]; duplicated {
-		t.Fatal("v3 artifact duplicated model-visible vocabulary files")
+		t.Fatal("compact artifact duplicated model-visible vocabulary files")
 	}
 	var seedFields struct {
 		Packs []map[string]json.RawMessage `json:"packs"`
@@ -126,13 +125,13 @@ func TestD239ScoutRequestCompactionFitsWhenDuplicatedShapeWouldOverflow(t *testi
 	}
 }
 
-func TestD239ScoutRequestV3RejectsWirePrivateCatalogDisagreement(t *testing.T) {
+func TestScoutRequestRejectsWirePrivateCatalogDisagreement(t *testing.T) {
 	request := buildTestScoutRequest(t)
 	encoded, err := EncodeScoutRequest(request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var artifact scoutRequestArtifactV3
+	var artifact scoutRequestArtifact
 	if err := json.Unmarshal(encoded, &artifact); err != nil {
 		t.Fatal(err)
 	}
@@ -144,37 +143,5 @@ func TestD239ScoutRequestV3RejectsWirePrivateCatalogDisagreement(t *testing.T) {
 	if _, err := DecodeScoutRequest(tampered); err == nil ||
 		!strings.Contains(err.Error(), "seed metadata and wire disagree") {
 		t.Fatalf("DecodeScoutRequest error = %v", err)
-	}
-}
-
-func TestD239ScoutRequestV2HistoricalArtifactStillReplaysExactly(t *testing.T) {
-	request := buildTestScoutRequest(t)
-	request.Version = legacyScoutRequestVersion
-	// Historical v2 persisted the complete in-memory request directly. Current
-	// production encoding is v3-only; this fixture exercises decode/replay of
-	// the old canonical bytes without reopening v2 writes.
-	legacy, err := json.Marshal(request)
-	if err != nil {
-		t.Fatalf("marshal historical v2 fixture: %v", err)
-	}
-	if !bytes.Contains(legacy, []byte(`"wire_json":"{`)) {
-		t.Fatal("historical v2 artifact no longer uses its original full shape")
-	}
-	decoded, err := DecodeScoutRequest(legacy)
-	if err != nil {
-		t.Fatalf("decode historical v2: %v", err)
-	}
-	if !reflect.DeepEqual(decoded, request) {
-		t.Fatal("historical v2 decode changed the request")
-	}
-	if _, err := EncodeScoutRequest(decoded); err == nil {
-		t.Fatal("current encoder unexpectedly accepted historical v2 request")
-	}
-	mock, err := MockScoutResponse(decoded)
-	if err != nil {
-		t.Fatalf("mock historical response: %v", err)
-	}
-	if _, _, err := ReplayScoutResponse(decoded, mock); err != nil {
-		t.Fatalf("historical v2 replay: %v", err)
 	}
 }

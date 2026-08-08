@@ -86,14 +86,12 @@ func requireCanonicalArtifact(name string, data []byte, value any) error {
 	return nil
 }
 
-const legacyScoutRequestVersion = 2
-
-// scoutRequestArtifactV3 stores the exact model-visible wire once. Vocabulary
+// scoutRequestArtifact stores the exact model-visible wire once. Vocabulary
 // files and SeedPack source objects are restored from WireJSON on decode; only
 // private coverage/identity metadata that is absent from the wire is repeated.
 // This removes the former full-catalog + escaped-wire duplication without
 // discarding any provider evidence or backend-owned identity.
-type scoutRequestArtifactV3 struct {
+type scoutRequestArtifact struct {
 	Version       int                         `json:"version"`
 	PromptVersion string                      `json:"prompt_version"`
 	Language      Language                    `json:"language"`
@@ -182,8 +180,8 @@ func validateScoutRequestIdentity(request ScoutRequest, expectedVersion int) err
 	return nil
 }
 
-func scoutRequestArtifactFromRequest(request ScoutRequest) scoutRequestArtifactV3 {
-	artifact := scoutRequestArtifactV3{
+func scoutRequestArtifactFromRequest(request ScoutRequest) scoutRequestArtifact {
+	artifact := scoutRequestArtifact{
 		Version: request.Version, PromptVersion: request.PromptVersion, Language: request.Language,
 		Vocabulary: scoutVocabularyMetadata{
 			Version: request.Vocabulary.Version, Complete: request.Vocabulary.Complete,
@@ -206,7 +204,7 @@ func scoutRequestArtifactFromRequest(request ScoutRequest) scoutRequestArtifactV
 	return artifact
 }
 
-func scoutRequestFromArtifact(artifact scoutRequestArtifactV3) (ScoutRequest, error) {
+func scoutRequestFromArtifact(artifact scoutRequestArtifact) (ScoutRequest, error) {
 	wire, err := decodeCanonicalScoutWire(artifact.WireJSON)
 	if err != nil {
 		return ScoutRequest{}, err
@@ -259,20 +257,6 @@ func EncodeScoutRequest(request ScoutRequest) ([]byte, error) {
 	)
 }
 
-// encodeScoutRequestForReplay canonicalizes either the live v3 shape or the
-// historical duplicated v2 shape. It is deliberately private: new writers
-// can emit only v3, while provider-free replay can still prove the exact bytes
-// and identity of a previously persisted v2 request.
-func encodeScoutRequestForReplay(request ScoutRequest) ([]byte, error) {
-	if request.Version != legacyScoutRequestVersion {
-		return EncodeScoutRequest(request)
-	}
-	if err := validateScoutRequestIdentity(request, legacyScoutRequestVersion); err != nil {
-		return nil, err
-	}
-	return encodeBoundedArtifact("theme scout request", MaxScoutRequestArtifactBytes, request)
-}
-
 // DecodeScoutRequest decodes and validates one bounded Theme Scout request.
 func DecodeScoutRequest(data []byte) (ScoutRequest, error) {
 	if len(data) == 0 {
@@ -289,32 +273,21 @@ func DecodeScoutRequest(data []byte) (ScoutRequest, error) {
 	if err := json.Unmarshal(data, &header); err != nil {
 		return ScoutRequest{}, fmt.Errorf("theme scout request artifact: decode version: %w", err)
 	}
-	switch header.Version {
-	case ScoutRequestVersion:
-		var artifact scoutRequestArtifactV3
-		if err := decodeArtifact("theme scout request", data, MaxScoutRequestArtifactBytes, &artifact); err != nil {
-			return ScoutRequest{}, err
-		}
-		request, err := scoutRequestFromArtifact(artifact)
-		if err != nil {
-			return ScoutRequest{}, err
-		}
-		if err := validateScoutRequestIdentity(request, ScoutRequestVersion); err != nil {
-			return ScoutRequest{}, err
-		}
-		return request, requireCanonicalArtifact("theme scout request", data, artifact)
-	case legacyScoutRequestVersion:
-		var request ScoutRequest
-		if err := decodeArtifact("theme scout request", data, MaxScoutRequestArtifactBytes, &request); err != nil {
-			return ScoutRequest{}, err
-		}
-		if err := validateScoutRequestIdentity(request, legacyScoutRequestVersion); err != nil {
-			return ScoutRequest{}, err
-		}
-		return request, requireCanonicalArtifact("theme scout request", data, request)
-	default:
+	if header.Version != ScoutRequestVersion {
 		return ScoutRequest{}, fmt.Errorf("theme scout request artifact: unsupported version %d", header.Version)
 	}
+	var artifact scoutRequestArtifact
+	if err := decodeArtifact("theme scout request", data, MaxScoutRequestArtifactBytes, &artifact); err != nil {
+		return ScoutRequest{}, err
+	}
+	request, err := scoutRequestFromArtifact(artifact)
+	if err != nil {
+		return ScoutRequest{}, err
+	}
+	if err := validateScoutRequestIdentity(request, ScoutRequestVersion); err != nil {
+		return ScoutRequest{}, err
+	}
+	return request, requireCanonicalArtifact("theme scout request", data, artifact)
 }
 
 // EncodeScoutResult encodes the validated Theme Scout result artifact.
