@@ -130,6 +130,28 @@
 		return null;
 	}
 
+	function currentStudyInvestigation(card) {
+		var investigation = card && card.investigation;
+		if (!investigation || Number(investigation.version) !== 1 || !investigation.id ||
+			['mechanism', 'prepared_investigation'].indexOf(String(investigation.outcome || '')) < 0 ||
+			!Array.isArray(investigation.mechanisms)) return null;
+		return investigation;
+	}
+
+	function studyMechanismForTarget(target) {
+		if (!target || String(target.kind || '') !== 'study_mechanism') return null;
+		var card = themeCardByOrdinal(Number(target.theme_ordinal));
+		var investigation = currentStudyInvestigation(card);
+		if (!card || !investigation || String(investigation.id) !== String(target.investigation_id || '')) return null;
+		for (var index = 0; index < investigation.mechanisms.length; index++) {
+			var mechanism = investigation.mechanisms[index];
+			if (mechanism && String(mechanism.id || '') === String(target.mechanism_id || '')) {
+				return { card: card, investigation: investigation, mechanism: mechanism };
+			}
+		}
+		return null;
+	}
+
 	function pavedPathByID(pavedPathID) {
 		for (var index = 0; index < PAVED_PATHS.length; index++) {
 			if (PAVED_PATHS[index] && PAVED_PATHS[index].id === pavedPathID) return PAVED_PATHS[index];
@@ -364,6 +386,8 @@
 			var focus = new URLSearchParams(query).get('focus') || '';
 			if (focus) {
 				state.mapTarget = architectureTargetFromFocus(focus);
+			} else if (historyState && studyMechanismForTarget(historyState.mapTarget)) {
+				state.mapTarget = historyState.mapTarget;
 			}
 			state.mapReturn = historyState && historyState.mapReturn || null;
 			canonicalHash = workspaceHashForState(state);
@@ -382,6 +406,9 @@
       state.view = 'map';
       var focus = new URLSearchParams(query).get('focus') || '';
       state.mapTarget = architectureTargetFromFocus(focus);
+      if (!state.mapTarget && historyState && studyMechanismForTarget(historyState.mapTarget)) {
+        state.mapTarget = historyState.mapTarget;
+      }
       state.mapReturn = historyState && historyState.mapReturn || null;
       canonicalHash = workspaceHashForState(state);
     } else if (segments.length === 1 && segments[0] === 'mechanisms') {
@@ -550,13 +577,28 @@
       return next;
     case 'show_map':
       if (!action.target) return next;
-      next.mapReturn = { artifactID: next.artifactID, stepIndex: next.stepIndex };
+		if (next.themeCardOrdinal && studyMechanismForTarget(action.target)) {
+			next.mapReturn = { themeCardOrdinal: next.themeCardOrdinal };
+		} else {
+			next.mapReturn = { artifactID: next.artifactID, stepIndex: next.stepIndex };
+		}
       next.mapTarget = action.target;
 			// Decision 236 (v11): the map is the primary product.
       next.view = 'map';
       return next;
     case 'return_from_map':
       if (!next.mapReturn) return next;
+		if (next.mapReturn.themeCardOrdinal) {
+			var returnTheme = themeCardByOrdinal(next.mapReturn.themeCardOrdinal);
+			if (!returnTheme) return next;
+			next.view = 'study';
+			next.themeCardOrdinal = Number(returnTheme.ordinal) || Number(next.mapReturn.themeCardOrdinal);
+			next.directionID = '';
+			next.artifactID = '';
+			next.mapTarget = null;
+			next.mapReturn = null;
+			return next;
+		}
 		if (next.mapReturn.directionID) {
 			var returnDirection = studyDirectionByID(next.mapReturn.directionID);
 			if (!returnDirection) return next;
@@ -1174,9 +1216,18 @@
   }
 
   function workspaceHistoryPayload(state, sourceDrawer) {
+    var studyTarget = state && studyMechanismForTarget(state.mapTarget)
+      ? {
+        kind: 'study_mechanism',
+        theme_ordinal: Number(state.mapTarget.theme_ordinal),
+        investigation_id: String(state.mapTarget.investigation_id),
+        mechanism_id: String(state.mapTarget.mechanism_id),
+      }
+      : null;
     return {
       repomapWorkspace: true,
       mapReturn: state && state.mapReturn || null,
+      mapTarget: studyTarget,
       sourceDrawer: sourceDrawer || null,
     };
   }
@@ -2139,6 +2190,133 @@
 		return article;
 	}
 
+	function studyInvestigationLocation(value) {
+		var path = String(value && value.path || '');
+		var line = Number(value && value.line);
+		if (!path || !Number.isInteger(line) || line <= 0) return null;
+		return {
+			path: path,
+			line: line,
+			column: Number.isInteger(Number(value.column)) && Number(value.column) > 0 ? Number(value.column) : 0,
+		};
+	}
+
+	function renderStudyInvestigationSourceAction(location, label, cls) {
+		var exact = studyInvestigationLocation(location);
+		if (!exact) return null;
+		var visible = String(label || '') + ' · ' + formatCodeLocation(exact);
+		var resolution = exactReportSourceActionResolutionForLocation(exact);
+		var snippet = resolution && resolution.source && resolution.source.snippet;
+		if (snippet) {
+			var button = txt('button', (cls || '') + ' rm-source-action-link', visible);
+			button.type = 'button';
+			button.onclick = function () {
+				openSourceSnippet(snippet, resolution.source.location, false, { drawerFirst: true });
+			};
+			return button;
+		}
+		if (resolution && resolution.source && resolution.source.location) {
+			return sourceActionElement(
+				visible,
+				(cls || '') + ' rm-source-action-link',
+				resolution.source.location,
+				0,
+				function () { openSourceLocation(resolution.source.location); }
+			);
+		}
+		return txt('code', (cls || '') + ' rm-study-investigation__source--plain', visible);
+	}
+
+	function studyInvestigationInvocationLabel(invocation) {
+		var ids = {
+			synchronous: 'main.study.investigation.invocation.synchronous',
+			goroutine: 'main.study.investigation.invocation.goroutine',
+			deferred: 'main.study.investigation.invocation.deferred',
+		};
+		return msg(ids[String(invocation || '')] || ids.synchronous);
+	}
+
+	function showStudyMechanismOnMap(card, investigation, mechanism) {
+		if (!card || !investigation || !mechanism || !userArchitectureAvailable()) return;
+		activeMapLens = 'landscape';
+		showMechanismStepOnMap({
+			kind: 'study_mechanism',
+			theme_ordinal: Number(card.ordinal),
+			investigation_id: String(investigation.id || ''),
+			mechanism_id: String(mechanism.id || ''),
+		});
+	}
+
+	function renderStudyMechanismPath(card, investigation, mechanism, index, options) {
+		options = options || {};
+		var article = el('article', 'rm-study-investigation__mechanism');
+		article.setAttribute('data-study-mechanism-id', String(mechanism && mechanism.id || ''));
+		var heading = el('div', 'rm-study-investigation__heading');
+		heading.appendChild(txt('h4', '', msg('main.study.investigation.path', {
+			ordinal: Number(mechanism && mechanism.ordinal) || (index + 1),
+		})));
+		if (options.showMap !== false && userArchitectureAvailable()) {
+			var showMap = txt('button', 'rm-secondary-action rm-study-investigation__map', msg('main.study.investigation.show_on_map'));
+			showMap.type = 'button';
+			showMap.onclick = function () { showStudyMechanismOnMap(card, investigation, mechanism); };
+			heading.appendChild(showMap);
+		}
+		article.appendChild(heading);
+
+		var nodes = Array.isArray(mechanism && mechanism.nodes) ? mechanism.nodes : [];
+		var edges = Array.isArray(mechanism && mechanism.edges) ? mechanism.edges : [];
+		var path = el('div', 'rm-study-investigation__path');
+		nodes.forEach(function (node, nodeIndex) {
+			var nodeCard = el('div', 'rm-study-investigation__node');
+			nodeCard.appendChild(txt('strong', 'rm-study-investigation__node-label', String(node && node.label || '')));
+			var declaration = renderStudyInvestigationSourceAction(
+				node && node.declaration,
+				msg('main.study.investigation.declaration'),
+				'rm-study-investigation__source'
+			);
+			if (declaration) nodeCard.appendChild(declaration);
+			path.appendChild(nodeCard);
+
+			var edge = edges[nodeIndex];
+			if (!edge) return;
+			var transition = el('div', 'rm-study-investigation__transition');
+			var arrow = txt('span', 'rm-study-investigation__arrow', '→');
+			arrow.setAttribute('aria-hidden', 'true');
+			transition.appendChild(arrow);
+			transition.appendChild(txt('span', 'rm-study-investigation__invocation', studyInvestigationInvocationLabel(edge.invocation)));
+			transition.appendChild(txt('span', 'rm-study-investigation__witnesses', msg('main.study.investigation.witnesses', {
+				count: Number(edge.witness_count) || 1,
+			})));
+			var callsite = renderStudyInvestigationSourceAction(
+				edge.callsite,
+				msg('main.study.investigation.callsite'),
+				'rm-study-investigation__source'
+			);
+			if (callsite) transition.appendChild(callsite);
+			path.appendChild(transition);
+		});
+		article.appendChild(path);
+		return article;
+	}
+
+	function renderStudyInvestigation(card) {
+		var investigation = currentStudyInvestigation(card);
+		if (!investigation) return null;
+		var section = el('section', 'rm-study-investigation rm-study-investigation--' + String(investigation.outcome));
+		section.appendChild(txt('h3', 'rm-study-investigation__title', msg('main.study.investigation.title')));
+		if (investigation.outcome === 'prepared_investigation') {
+			section.appendChild(txt('p', 'rm-study-investigation__prepared', msg('main.study.investigation.prepared')));
+			return section;
+		}
+		section.appendChild(txt('p', 'rm-study-investigation__copy', msg('main.study.investigation.copy')));
+		var paths = el('div', 'rm-study-investigation__paths');
+		investigation.mechanisms.slice(0, 3).forEach(function (mechanism, index) {
+			paths.appendChild(renderStudyMechanismPath(card, investigation, mechanism, index));
+		});
+		if (paths.childNodes.length) section.appendChild(paths);
+		return section;
+	}
+
 	function renderThemeDetailWorkspace() {
 		var root = document.getElementById('rm-study-detail');
 		if (!root) return;
@@ -2180,6 +2358,8 @@
 			if (item) anchors.appendChild(item);
 		});
 		root.appendChild(anchors);
+		var investigation = renderStudyInvestigation(card);
+		if (investigation) root.appendChild(investigation);
 		var alternates = renderThemeAlternates(card);
 		if (alternates) root.appendChild(alternates);
 		// Unknowns materially qualify the retained readings. Keep every one
@@ -2753,8 +2933,14 @@
 		var receiver = '';
 		var open = value.indexOf('(');
 		if (open >= 0) {
-			receiver = value.slice(0, value.indexOf(')') + 1);
-			last = value.slice(value.indexOf(')') + 1);
+			var close = value.indexOf(')', open);
+			if (close >= 0) {
+				// A qualified Go method is commonly encoded as
+				// "module/package.(*Type).Method". Keep the receiver, but
+				// discard the package prefix just as we do for functions.
+				receiver = value.slice(open, close + 1);
+				last = value.slice(close + 1);
+			}
 		}
 		if (last) {
 			var dot = last.lastIndexOf('.');
@@ -6501,8 +6687,25 @@
   }
 
 	function activeSourceDrawerStudy() {
-		if (workspaceState.view !== 'study') return null;
-		return studyDirectionByID(workspaceState.directionID);
+		if (workspaceState.view === 'study') {
+			if (workspaceState.themeCardOrdinal) {
+				var theme = themeCardByOrdinal(workspaceState.themeCardOrdinal);
+				return theme ? {
+					question: theme.final_question || theme.final_title || msg('main.study'),
+					learning_outcome: theme.expected_learning || theme.why_it_matters || '',
+				} : null;
+			}
+			return studyDirectionByID(workspaceState.directionID);
+		}
+		if ((workspaceState.view === 'map' || workspaceState.view === 'architecture') &&
+			workspaceState.mapReturn && workspaceState.mapReturn.themeCardOrdinal) {
+			var mapTheme = themeCardByOrdinal(workspaceState.mapReturn.themeCardOrdinal);
+			return mapTheme ? {
+				question: mapTheme.final_question || mapTheme.final_title || msg('main.study'),
+				learning_outcome: mapTheme.expected_learning || mapTheme.why_it_matters || '',
+			} : null;
+		}
+		return null;
 	}
 
 	function activeSourceDrawerOperation() {
@@ -7181,12 +7384,109 @@
     }
   }
 
+	function activeStudyMechanismMapSelection() {
+		if (workspaceState.view !== 'map' && workspaceState.view !== 'architecture') return null;
+		return studyMechanismForTarget(workspaceState.mapTarget);
+	}
+
+	function architectureComponentName(componentID) {
+		var components = DATA.architecture_canvas && Array.isArray(DATA.architecture_canvas.components)
+			? DATA.architecture_canvas.components : [];
+		for (var index = 0; index < components.length; index++) {
+			if (components[index] && String(components[index].id || '') === String(componentID || '')) {
+				return String(components[index].name || components[index].id || '');
+			}
+		}
+		return '';
+	}
+
+	function studyMechanismSideRowLabel(row) {
+		if (!row) return '';
+		if (row.reason === 'same_component') {
+			var componentID = row.from_component_ids && row.from_component_ids[0];
+			return msg('main.study.investigation.map.same_component', {
+				component: architectureComponentName(componentID) || msg('main.study.investigation.map.one_area'),
+			});
+		}
+		if (row.reason === 'plural_components') {
+			return msg('main.study.investigation.map.plural_components');
+		}
+		return msg('main.study.investigation.map.zero_component');
+	}
+
+	function renderStudyMechanismMapContext() {
+		var selection = activeStudyMechanismMapSelection();
+		if (!selection) return null;
+		var section = el('section', 'rm-study-investigation-map');
+		section.appendChild(txt('h3', 'rm-study-investigation-map__title', msg('main.study.investigation.map.title')));
+		section.appendChild(txt('p', 'rm-study-investigation-map__copy', msg('main.study.investigation.map.copy')));
+		section.appendChild(renderStudyMechanismPath(
+			selection.card,
+			selection.investigation,
+			selection.mechanism,
+			Math.max(0, Number(selection.mechanism.ordinal) - 1),
+			{ showMap: false }
+		));
+
+		var project = window.RepomapArchitectureCanvas &&
+			window.RepomapArchitectureCanvas.projectStudyMechanismOverlay;
+		var componentIDs = (DATA.architecture_canvas && DATA.architecture_canvas.components || []).map(function (component) {
+			return String(component && component.id || '');
+		}).filter(Boolean);
+		var projection = typeof project === 'function'
+			? project(selection.mechanism, componentIDs)
+			: { side_rows: [] };
+		var sideRows = Array.isArray(projection.side_rows) ? projection.side_rows : [];
+		if (sideRows.length) {
+			var aside = el('div', 'rm-study-investigation-map__side');
+			aside.appendChild(txt('h4', '', msg('main.study.investigation.map.side_title')));
+			sideRows.forEach(function (row) {
+				var item = el('div', 'rm-study-investigation-map__side-row rm-study-investigation-map__side-row--' + String(row.reason || 'zero_component'));
+				item.appendChild(txt('strong', '', [
+					String(row.from_node && row.from_node.label || ''),
+					String(row.to_node && row.to_node.label || ''),
+				].filter(Boolean).join(' → ')));
+				item.appendChild(txt('span', '', studyMechanismSideRowLabel(row)));
+				var source = renderStudyInvestigationSourceAction(
+					row.edge && row.edge.callsite,
+					msg('main.study.investigation.callsite'),
+					'rm-study-investigation__source'
+				);
+				if (source) item.appendChild(source);
+				aside.appendChild(item);
+			});
+			section.appendChild(aside);
+		}
+		return section;
+	}
+
+	function renderStudyMechanismMapContextIntoHost() {
+		var host = document.getElementById('rm-study-investigation-map-context');
+		if (!host) return;
+		host.replaceChildren();
+		var context = renderStudyMechanismMapContext();
+		if (context) host.appendChild(context);
+		host.hidden = !context;
+	}
+
   function renderArchitectureReturn() {
     var root = document.getElementById('rm-architecture');
     if (!root) return;
     var existing = root.querySelector('.rm-architecture-return');
     if (existing) existing.remove();
     if (!workspaceState.mapReturn) return;
+		if (workspaceState.mapReturn.themeCardOrdinal) {
+			var theme = themeCardByOrdinal(workspaceState.mapReturn.themeCardOrdinal);
+			if (!theme) return;
+			var themeBanner = el('div', 'rm-architecture-return');
+			themeBanner.appendChild(txt('span', '', msg('main.map.context', { title: theme.final_title || theme.final_question || msg('main.study') })));
+			var themeBack = txt('button', 'rm-secondary-action', msg('main.study.investigation.back_to_study'));
+			themeBack.type = 'button';
+			themeBack.onclick = returnFromArchitecture;
+			themeBanner.appendChild(themeBack);
+			root.prepend(themeBanner);
+			return;
+		}
 		if (workspaceState.mapReturn.directionID) {
 			var direction = studyDirectionByID(workspaceState.mapReturn.directionID);
 			if (!direction) return;
@@ -7243,12 +7543,16 @@
       // principal nodes without relayout (canvas.setLens) and the objects
       // panel shows the first-class backend objects of the active lens.
       canvasCard.appendChild(renderMapLensControl());
+			var studyMechanismContext = el('div', 'rm-study-investigation-map-context');
+			studyMechanismContext.id = 'rm-study-investigation-map-context';
+			canvasCard.appendChild(studyMechanismContext);
       var lensObjects = el('div', 'rm-map-lens-objects');
       lensObjects.id = 'rm-map-lens-objects';
       canvasCard.appendChild(lensObjects);
       architectureCanvasHost = el('div', 'rm-architecture-canvas-host');
       canvasCard.appendChild(architectureCanvasHost);
       root.appendChild(canvasCard);
+			renderStudyMechanismMapContextIntoHost();
     } else {
       var systemMap = renderUserSystemMap(DATA.high_level_map || []);
       if (systemMap) root.appendChild(systemMap);
@@ -7276,11 +7580,10 @@
     renderArchitectureReturn();
   }
 
-  // Canvas 15 publishes exact D210 first-hop groups as context for a process
-  // Entrypoint. The list selects ONE group for the Canvas overlay; backend
-  // transition.component_ids are the only join. Diagnostic archaeology stays
-  // in saved evidence, while exact source actions remain directly available.
-  function exactEntrypointActionResolutionForLocation(location) {
+  // Resolve an already-authorized exact report location without inferring a
+  // path, symbol, or source range. Entrypoints and Study mechanisms share
+  // this presentation-only source action; their graph joins remain separate.
+  function exactReportSourceActionResolutionForLocation(location) {
    var sourceResolution = exactOverviewSourceResolutionForLocation(location);
    if (sourceResolution.conflict || sourceResolution.source) return sourceResolution;
    if (!location || exactOverviewSourcePath(location.path) !== location.path ||
@@ -7298,6 +7601,10 @@
    }, conflict: false };
   }
 
+  // Canvas 15 publishes exact D210 first-hop groups as context for a process
+  // Entrypoint. The list selects ONE group for the Canvas overlay; backend
+  // transition.component_ids are the only join. Diagnostic archaeology stays
+  // in saved evidence, while exact source actions remain directly available.
   function renderEntrypointLocationAction(location, label) {
    var exact = {
     path: String(location && location.path || ''),
@@ -7305,7 +7612,7 @@
     column: Number(location && location.column) || 0,
    };
    var visible = String(label || '') + ' · ' + formatCodeLocation(exact);
-   var resolution = exactEntrypointActionResolutionForLocation(exact);
+   var resolution = exactReportSourceActionResolutionForLocation(exact);
    var snippet = resolution && resolution.source && resolution.source.snippet;
    if (snippet) {
     var action = el('button', 'rm-map-entry-context__source rm-source-action-link');
@@ -7659,6 +7966,12 @@
 
   function focusArchitectureTarget(target) {
     if (!architectureCanvasView) return Promise.resolve(null);
+		// D246 Study paths are transient overlays, not focus targets. Keeping
+		// them out of the focus/reset path preserves the existing layout and
+		// Canvas transform exactly.
+		if (target && String(target.kind || '') === 'study_mechanism') {
+			return Promise.resolve(architectureCanvasView);
+		}
     if (architectureFocusNeedsReset(architectureAppliedFocus, target)) {
       return mountArchitectureCanvas().then(function () {
         return focusArchitectureTarget(target);
@@ -7675,6 +7988,27 @@
     architectureAppliedFocus = architectureFocusValue(target);
     return Promise.resolve(architectureCanvasView);
   }
+
+	function applyStudyMechanismMapOverlay() {
+		if (!architectureCanvasView) return false;
+		var selection = activeStudyMechanismMapSelection();
+		if (selection && typeof architectureCanvasView.setStudyMechanismOverlay === 'function') {
+			return architectureCanvasView.setStudyMechanismOverlay(selection.mechanism);
+		}
+		if (typeof architectureCanvasView.clearStudyMechanismOverlay === 'function') {
+			architectureCanvasView.clearStudyMechanismOverlay();
+		}
+		return false;
+	}
+
+	function syncMapLensControl() {
+		document.querySelectorAll('[data-map-lens]').forEach(function (node) {
+			var active = node.getAttribute('data-map-lens') === activeMapLens;
+			node.classList.toggle('rm-active', active);
+			if (active) node.setAttribute('aria-current', 'page');
+			else node.removeAttribute('aria-current');
+		});
+	}
 
   function showMechanismStepOnMap(target) {
 		if (!target || !userArchitectureAvailable()) return;
@@ -7802,13 +8136,16 @@
       activateWorkspaceView(workspaceState.view);
     } else if (workspaceState.view === 'map' || workspaceState.view === 'architecture') {
       if (!architectureCanvasHost) renderArchitectureWorkspace();
-      else renderArchitectureReturn();
+		else renderArchitectureReturn();
+		renderStudyMechanismMapContextIntoHost();
       activateWorkspaceView(workspaceState.view);
       var ready = architectureCanvasView ? (architectureReady || Promise.resolve(architectureCanvasView)) : mountArchitectureCanvas();
       ready.then(function () {
+			applyStudyMechanismMapOverlay();
         if (architectureCanvasView && typeof architectureCanvasView.setLens === 'function') {
           architectureCanvasView.setLens(activeMapLens);
         }
+			syncMapLensControl();
         renderMapLensObjects();
         focusArchitectureTarget(workspaceState.mapTarget);
       });
@@ -7970,6 +8307,10 @@
       renderMechanismDetailWorkspace: renderMechanismDetailWorkspace,
       renderStudyDetailWorkspace: renderStudyDetailWorkspace,
       renderIncompleteStudyOverview: renderIncompleteStudyOverview,
+		renderThemeDetailWorkspace: renderThemeDetailWorkspace,
+		renderStudyInvestigation: renderStudyInvestigation,
+		renderStudyMechanismMapContext: renderStudyMechanismMapContext,
+		studyMechanismForTarget: studyMechanismForTarget,
 		renderStudyDirectionCard: renderStudyDirectionCard,
 		renderStudyReadingAnchor: renderStudyReadingAnchor,
 		renderReadableDocument: renderReadableDocument,
@@ -7990,6 +8331,7 @@
 		activeSourceDrawerOperation: activeSourceDrawerOperation,
       navigateWorkspace: navigateWorkspace,
       showMechanismStepOnMap: showMechanismStepOnMap,
+		showStudyMechanismOnMap: showStudyMechanismOnMap,
       returnFromArchitecture: returnFromArchitecture,
       restoreWorkspaceFromRoute: restoreWorkspaceFromRoute,
       workspaceStateSnapshot: function () { return JSON.parse(JSON.stringify(workspaceState)); },

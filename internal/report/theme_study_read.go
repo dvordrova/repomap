@@ -122,7 +122,7 @@ func readAtlasStudyReportProduct(
 	switch scoutStatus.State {
 	case string(atlasstudy.ProductStateAccepted), string(atlasstudy.ProductStateAcceptedPartial):
 		return readThemeStudyAccepted(
-			root, data, input, scoutRequest, scoutStatus,
+			root, runDir, data, input, scoutRequest, scoutStatus,
 			scoutResultRaw, hasScoutResult, expansionRaw, hasExpansion,
 			adjRequestRaw, hasAdjRequest, adjResultRaw, hasAdjResult,
 			adjStatusRaw, hasAdjStatus, themesRaw, hasThemes,
@@ -163,6 +163,7 @@ func readAtlasStudyReportProduct(
 // the re-based four-stage browse are derived.
 func readThemeStudyAccepted(
 	root *os.Root,
+	runDir string,
 	data *ReportData,
 	input atlasstudy.Input,
 	scoutRequest themestudy.ScoutRequest,
@@ -272,8 +273,20 @@ func readThemeStudyAccepted(
 	if err != nil {
 		return nil, nil, fmt.Errorf("atlas study report: study_themes: %w", err)
 	}
+	if data != nil && data.CapturedRevision != "" && themes.Revision != data.CapturedRevision {
+		return nil, nil, fmt.Errorf(
+			"atlas study report: study_themes revision does not match captured repository revision",
+		)
+	}
 	if err := validateThemeStudyThemes(themes, adjResult, scoutRequest); err != nil {
 		return nil, nil, fmt.Errorf("atlas study report: study_themes binding: %w", err)
+	}
+	expectedRevision := ""
+	if data != nil {
+		expectedRevision = data.CapturedRevision
+	}
+	if err := loadStudyInvestigationArtifacts(runDir, data, expectedRevision, ""); err != nil {
+		return nil, nil, err
 	}
 
 	reportStatus := &AtlasStudyReportStatus{
@@ -312,6 +325,17 @@ func readThemeStudyAccepted(
 	projected, err := projectThemeShelf(themes, data)
 	if err != nil {
 		return nil, nil, err
+	}
+	if data != nil && data.studyInvestigationInput != nil {
+		if err := ProjectStudyInvestigations(
+			projected,
+			data.ArchitectureCanvas,
+			data.RepositoryGraph,
+			data.OpenablePaths,
+			*data.studyInvestigationInput,
+		); err != nil {
+			return nil, nil, err
+		}
 	}
 	reportStatus.Themes = projected
 	// Decision 233 (Archive 9, PHASE 4 AREA COVERAGE): represent

@@ -57,6 +57,8 @@ func (compilation *Compilation) Validate() error {
 	}
 	seenCards := make(map[string]struct{}, len(compilation.Cards))
 	seenRefs := make(map[string]struct{})
+	seenCanonical := make(map[string]struct{}, len(compilation.Cards))
+	previousOrdinal := 0
 	for position, card := range compilation.Cards {
 		if _, duplicate := seenCards[card.Ref]; duplicate || !typedRef(card.Ref, 't') {
 			return fmt.Errorf("mechanism study: invalid card ref %q", card.Ref)
@@ -66,6 +68,14 @@ func (compilation *Compilation) Validate() error {
 		if !ok {
 			return fmt.Errorf("mechanism study: missing card authority %q", card.Ref)
 		}
+		if authority.sourceOrdinal <= previousOrdinal || strings.TrimSpace(authority.sourceCanonical) == "" {
+			return fmt.Errorf("mechanism study: invalid source card authority")
+		}
+		if _, duplicate := seenCanonical[authority.sourceCanonical]; duplicate {
+			return fmt.Errorf("mechanism study: duplicate source card authority")
+		}
+		seenCanonical[authority.sourceCanonical] = struct{}{}
+		previousOrdinal = authority.sourceOrdinal
 		if err := validateCard(card, authority, seenRefs); err != nil {
 			return fmt.Errorf("mechanism study: card %s: %w", card.Ref, err)
 		}
@@ -77,27 +87,42 @@ func (compilation *Compilation) Validate() error {
 }
 
 func validateDigestCard(digest digestCard, card Card, authority cardAuthority) error {
-	if strings.TrimSpace(digest.Canonical) == "" || !reflect.DeepEqual(digest.Card, card) ||
+	if digest.Ordinal <= 0 || digest.Ordinal != authority.sourceOrdinal ||
+		strings.TrimSpace(digest.Canonical) == "" || digest.Canonical != authority.sourceCanonical ||
+		!reflect.DeepEqual(digest.Card, card) ||
 		len(digest.Nodes) != len(card.Nodes) || len(digest.Edges) != len(card.Edges) ||
 		len(digest.Readings) != len(card.Readings) {
 		return fmt.Errorf("public card mismatch")
 	}
 	for position, node := range digest.Nodes {
-		if node.Ref != card.Nodes[position].Ref || node.ID == "" || authority.nodeIDByRef[node.Ref] != node.ID ||
-			authority.nodeRefByID[node.ID] != node.Ref {
+		if node.Ref != card.Nodes[position].Ref || node.Node.ID == "" ||
+			authority.nodeIDByRef[node.Ref] != node.Node.ID ||
+			authority.nodeRefByID[node.Node.ID] != node.Ref ||
+			!reflect.DeepEqual(authority.nodeByRef[node.Ref], node.Node) ||
+			!validPublicationNode(node.Node, node.Node.ScenarioID) {
 			return fmt.Errorf("node restoration mismatch")
 		}
 	}
 	for position, edge := range digest.Edges {
 		exact, ok := authority.edgeByRef[edge.Ref]
-		if edge.Ref != card.Edges[position].Ref || edge.ID == "" || !ok || exact.ID != edge.ID {
+		if edge.Ref != card.Edges[position].Ref || edge.Edge.ID == "" || !ok ||
+			!reflect.DeepEqual(exact, edge.Edge) || !validPublicationEdge(edge.Edge, edge.Edge.ScenarioID) ||
+			authority.nodeRefByID[edge.Edge.CallerID] != card.Edges[position].CallerRef ||
+			authority.nodeRefByID[edge.Edge.CalleeID] != card.Edges[position].CalleeRef {
 			return fmt.Errorf("edge restoration mismatch")
 		}
 	}
+	seenOrdinals := make(map[int]struct{}, len(digest.Readings))
 	for position, reading := range digest.Readings {
-		if reading.Ref != card.Readings[position].Ref {
+		if reading.Ref != card.Readings[position].Ref || reading.Ordinal <= 0 ||
+			authority.readingOrdinalByRef[reading.Ref] != reading.Ordinal || reading.Path == "" ||
+			reading.Line <= 0 {
 			return fmt.Errorf("reading restoration mismatch")
 		}
+		if _, duplicate := seenOrdinals[reading.Ordinal]; duplicate {
+			return fmt.Errorf("duplicate reading ordinal")
+		}
+		seenOrdinals[reading.Ordinal] = struct{}{}
 		rootRef := authority.nodeRefByID[reading.RootID]
 		if reading.RootID == "" {
 			rootRef = ""
@@ -116,6 +141,11 @@ func validateCard(card Card, authority cardAuthority, globalRefs map[string]stru
 		len(card.Frontier) > MaxFrontierRecordsPerCard {
 		return fmt.Errorf("invalid public bounds")
 	}
+	if len(authority.nodeIDByRef) != len(card.Nodes) || len(authority.nodeRefByID) != len(card.Nodes) ||
+		len(authority.nodeByRef) != len(card.Nodes) || len(authority.edgeByRef) != len(card.Edges) ||
+		len(authority.readingOrdinalByRef) != len(card.Readings) {
+		return fmt.Errorf("invalid restoration authority bounds")
+	}
 	nodes := make(map[string]struct{}, len(card.Nodes))
 	for _, node := range card.Nodes {
 		if !typedRef(node.Ref, 'n') || !publicLabelValid(node.Label, maxNodeLabelRunes) {
@@ -128,6 +158,10 @@ func validateCard(card Card, authority cardAuthority, globalRefs map[string]stru
 		nodes[node.Ref] = struct{}{}
 		if authority.nodeIDByRef[node.Ref] == "" || authority.nodeRefByID[authority.nodeIDByRef[node.Ref]] != node.Ref {
 			return fmt.Errorf("node authority mismatch")
+		}
+		exact, ok := authority.nodeByRef[node.Ref]
+		if !ok || exact.ID != authority.nodeIDByRef[node.Ref] {
+			return fmt.Errorf("node restoration authority mismatch")
 		}
 	}
 	for _, reading := range card.Readings {
@@ -144,6 +178,9 @@ func validateCard(card Card, authority cardAuthority, globalRefs map[string]stru
 			}
 		} else if authority.readingRootByRef[reading.Ref] != "" {
 			return fmt.Errorf("hidden reading root authority")
+		}
+		if authority.readingOrdinalByRef[reading.Ref] <= 0 {
+			return fmt.Errorf("missing reading ordinal authority")
 		}
 	}
 	seenEdges := make(map[string]struct{}, len(card.Edges))
@@ -194,13 +231,24 @@ func typedRef(value string, prefix byte) bool {
 	return value[1] != '0'
 }
 
-// BuildRequestBatches returns the smallest deterministic provider API seam:
-// each returned value is one independent exact semantic request. A caller may
-// execute at most MaxProviderCalls such values for one experiment and must not
-// issue a semantic repair/retry or follow-up graph request.
-func BuildRequestBatches(compilation *Compilation) ([]RequestBatch, error) {
+// PlanRequestBatches returns the smallest deterministic production API seam.
+// It never plans more than MaxProviderCalls independent semantic requests.
+// Any otherwise eligible suffix remains explicit and prepared instead of
+// turning the planner ceiling into a terminal run error.
+func PlanRequestBatches(compilation *Compilation) (RequestPlan, error) {
 	if err := compilation.Validate(); err != nil {
-		return nil, err
+		return RequestPlan{}, err
+	}
+	return planRequestBatchesUnchecked(compilation)
+}
+
+func planRequestBatchesUnchecked(compilation *Compilation) (RequestPlan, error) {
+	return planRequestBatchesWithCallLimit(compilation, MaxProviderCalls)
+}
+
+func planRequestBatchesWithCallLimit(compilation *Compilation, callLimit int) (RequestPlan, error) {
+	if callLimit < 0 || callLimit > MaxProviderCalls {
+		return RequestPlan{}, fmt.Errorf("mechanism study: invalid provider call limit")
 	}
 	eligible := make([]Card, 0, len(compilation.Cards))
 	for _, card := range compilation.Cards {
@@ -209,12 +257,12 @@ func BuildRequestBatches(compilation *Compilation) ([]RequestBatch, error) {
 		}
 	}
 	if len(eligible) == 0 {
-		return []RequestBatch{}, nil
+		return RequestPlan{Batches: []RequestBatch{}, UnrequestedCardRefs: []string{}}, nil
 	}
 
-	var batches []RequestBatch
-	for len(eligible) > 0 {
-		batchNumber := len(batches) + 1
+	plan := RequestPlan{Batches: []RequestBatch{}, UnrequestedCardRefs: []string{}}
+	for len(eligible) > 0 && len(plan.Batches) < callLimit {
+		batchNumber := len(plan.Batches) + 1
 		request := Request{
 			Version: RequestVersion, PromptVersion: PromptVersion,
 			CatalogRef: compilation.CatalogRef, CatalogSHA256: compilation.CatalogSHA256,
@@ -230,7 +278,7 @@ func BuildRequestBatches(compilation *Compilation) ([]RequestBatch, error) {
 			trial.Cards = append(append([]Card(nil), request.Cards...), candidate)
 			encoded, err := json.Marshal(trial)
 			if err != nil {
-				return nil, fmt.Errorf("mechanism study: encode request: %w", err)
+				return RequestPlan{}, fmt.Errorf("mechanism study: encode request: %w", err)
 			}
 			if len(encoded) > MaxRequestBytes {
 				break
@@ -241,18 +289,52 @@ func BuildRequestBatches(compilation *Compilation) ([]RequestBatch, error) {
 			eligible = eligible[1:]
 		}
 		if len(request.Cards) == 0 {
-			return nil, fmt.Errorf("mechanism study: one bounded card exceeds request envelope")
+			return RequestPlan{}, fmt.Errorf("mechanism study: one bounded card exceeds request envelope")
 		}
 		batch, err := makeRequestBatch(request)
 		if err != nil {
-			return nil, err
+			return RequestPlan{}, err
 		}
-		batches = append(batches, batch)
-		if len(batches) > MaxProviderCalls {
-			return nil, fmt.Errorf("mechanism study: request batches exceed four-call ceiling")
+		plan.Batches = append(plan.Batches, batch)
+	}
+	for _, card := range eligible {
+		plan.UnrequestedCardRefs = append(plan.UnrequestedCardRefs, card.Ref)
+	}
+	return plan, nil
+}
+
+// BuildRequestBatches preserves the experiment-facing v2 API. Production
+// callers use PlanRequestBatches so the prepared suffix is visible.
+func BuildRequestBatches(compilation *Compilation) ([]RequestBatch, error) {
+	plan, err := PlanRequestBatches(compilation)
+	if err != nil {
+		return nil, err
+	}
+	return append([]RequestBatch(nil), plan.Batches...), nil
+}
+
+// Validate proves a plan is the exact deterministic prefix/suffix partition
+// for one current compilation, including the private request seals.
+func (plan RequestPlan) Validate(compilation *Compilation) error {
+	if err := compilation.Validate(); err != nil {
+		return err
+	}
+	want, err := planRequestBatchesUnchecked(compilation)
+	if err != nil {
+		return err
+	}
+	if len(plan.Batches) != len(want.Batches) || len(plan.UnrequestedCardRefs) != len(want.UnrequestedCardRefs) {
+		return fmt.Errorf("mechanism study: request plan shape does not match exact compilation")
+	}
+	for position := range plan.Batches {
+		if !reflect.DeepEqual(plan.Batches[position], want.Batches[position]) {
+			return fmt.Errorf("mechanism study: request plan batch %d does not match exact compilation", position+1)
 		}
 	}
-	return batches, nil
+	if !reflect.DeepEqual(plan.UnrequestedCardRefs, want.UnrequestedCardRefs) {
+		return fmt.Errorf("mechanism study: request plan suffix does not match exact compilation")
+	}
+	return nil
 }
 
 func makeRequestBatch(request Request) (RequestBatch, error) {
@@ -406,10 +488,18 @@ func cardCanContainMechanism(card Card) bool {
 }
 
 func copyCard(card Card) Card {
-	card.Readings = append([]Reading(nil), card.Readings...)
-	card.Nodes = append([]Node(nil), card.Nodes...)
-	card.Edges = append([]Edge(nil), card.Edges...)
-	card.Frontier = append([]Frontier(nil), card.Frontier...)
+	if card.Readings != nil {
+		card.Readings = append([]Reading{}, card.Readings...)
+	}
+	if card.Nodes != nil {
+		card.Nodes = append([]Node{}, card.Nodes...)
+	}
+	if card.Edges != nil {
+		card.Edges = append([]Edge{}, card.Edges...)
+	}
+	if card.Frontier != nil {
+		card.Frontier = append([]Frontier{}, card.Frontier...)
+	}
 	return card
 }
 

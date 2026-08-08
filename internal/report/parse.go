@@ -475,6 +475,23 @@ func readRunDir(
 		parseWarnings = append(parseWarnings, warning)
 	}
 	ensureArchitectureGrounding(data)
+	expectedInvestigationRevision := data.CapturedRevision
+	expectedInvestigationFreshness := ""
+	if authority != nil {
+		expectedInvestigationRevision = authority.repository.Head
+		expectedInvestigationFreshness, err = authority.repository.Digest()
+		if err != nil {
+			return nil, fmt.Errorf("read Study investigation repository binding: %w", err)
+		}
+	}
+	if err := loadStudyInvestigationArtifacts(
+		absDir,
+		data,
+		expectedInvestigationRevision,
+		expectedInvestigationFreshness,
+	); err != nil {
+		return nil, err
+	}
 
 	flowWarnings, err := parseFlows(filepath.Join(absDir, "flows"), data)
 	if err != nil {
@@ -864,6 +881,9 @@ func collectOpenablePaths(data *ReportData) {
 		for _, anchor := range data.TaskInvestigation.Anchors {
 			add(anchor.Path)
 		}
+	}
+	for _, location := range data.studyInvestigationSourceLocations {
+		add(location.Path)
 	}
 	for _, item := range exactRepositoryAtlasPackageEvidence(data) {
 		add(item.Location.Path)

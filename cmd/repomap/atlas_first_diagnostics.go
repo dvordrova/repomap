@@ -11,6 +11,7 @@ import (
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/mechanismstudy"
 	"github.com/dvordrova/repomap/internal/report"
 )
 
@@ -125,6 +126,48 @@ func atlasStudyAtlasFirstDiagnostic(
 		Stage: debugdump.SemanticStageAtlasStudy, State: state,
 		RequestBytes: outcome.RequestBytes, SemanticCalls: outcome.SemanticCalls,
 		TransportAttempts: outcome.TransportAttempts, LatencyMillis: outcome.LatencyMillis,
+	}
+}
+
+func studyInvestigationAtlasFirstDiagnostic(
+	outcome studyInvestigationRunOutcome,
+	called bool,
+) atlasFirstStageDiagnostic {
+	state := "not_called"
+	if called {
+		switch outcome.Status.State {
+		case mechanismstudy.StatusComplete:
+			state = "accepted"
+		case mechanismstudy.StatusPartial:
+			state = "accepted_partial"
+		case mechanismstudy.StatusFailed:
+			state = failedStudyInvestigationDiagnosticState(outcome.Status)
+		default:
+			state = "failed"
+		}
+	}
+	return atlasFirstStageDiagnostic{
+		Stage: debugdump.SemanticStageMechanismStudy, State: state,
+		RequestBytes: outcome.RequestBytes, SemanticCalls: outcome.SemanticCalls,
+		TransportAttempts: outcome.TransportAttempts, LatencyMillis: outcome.LatencyMillis,
+	}
+}
+
+func failedStudyInvestigationDiagnosticState(status mechanismstudy.Status) string {
+	if len(status.Batches) == 0 {
+		return "failed"
+	}
+	switch status.Batches[len(status.Batches)-1].State {
+	case mechanismstudy.BatchCanceled:
+		return "canceled"
+	case mechanismstudy.BatchOutputLimit:
+		return "resource_exhausted"
+	case mechanismstudy.BatchResponseInvalid:
+		return "response_validation_failed"
+	case mechanismstudy.BatchProviderFailed:
+		return "provider_failed"
+	default:
+		return "failed"
 	}
 }
 

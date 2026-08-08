@@ -1246,6 +1246,7 @@ func TestRunManifestVerifiesThemesProjectionAndTampering(t *testing.T) {
 		StudyThemesSHA256:              manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.StudyThemesArtifactFilename)),
 	}
 	manifest := RunManifest{Version: CurrentRunManifestVersion, MaterialInputs: material}
+	manifest.RepositoryState.Head = data.CapturedRevision
 	if err := manifest.VerifyThemesArtifacts(runDir, reportJSON); err != nil {
 		t.Fatalf("VerifyThemesArtifacts: %v", err)
 	}

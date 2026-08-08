@@ -107,6 +107,7 @@ const (
 	SemanticStageStudyBrief        = "repository_brief_shape"
 	SemanticStageStudyDirections   = "study_direction_candidates"
 	SemanticStageStudyReview       = "reading_pack_review"
+	SemanticStageMechanismStudy    = "mechanism_study"
 	SemanticStageLocalization      = "localization"
 	SemanticRequestPrepared        = "prepared_request"
 	SemanticRequestExactSent       = "exact_sent_request"
@@ -735,6 +736,7 @@ func validSemanticStage(stage string) bool {
 		SemanticStageStudyBrief,
 		SemanticStageStudyDirections,
 		SemanticStageStudyReview,
+		SemanticStageMechanismStudy,
 		SemanticStageLocalization:
 		return true
 	default:

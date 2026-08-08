@@ -96,6 +96,56 @@ func persist() {}
 	}
 }
 
+func TestDirectCallIndexSnapshotOwnsAllMutableStorage(t *testing.T) {
+	source := DirectCallIndex{
+		Version: DirectCallIndexVersion,
+		State:   DirectCallIndexReady,
+		Scenario: Scenario{
+			ID: "scenario", GOOS: "test-os", GOARCH: "test-arch", Tags: []string{"tag"},
+		},
+		Modules: []DirectCallModule{{ID: "module", Path: "example.com/module", Directory: "."}},
+		Nodes: []DirectCallNode{
+			{ID: "caller", Symbol: Symbol{ID: "example.com/module.caller", EquivalentIDs: []string{"caller-alias"}}},
+			{ID: "callee", Symbol: Symbol{ID: "example.com/module.callee", EquivalentIDs: []string{"callee-alias"}}},
+		},
+		Edges: []DirectCallEdge{{
+			ID: "edge", CallerID: "caller", CalleeID: "callee", Invocation: DirectCallSynchronous,
+		}},
+		Frontiers: []DirectCallNodeFrontier{{CallerID: "caller", ExternalCalleesExcluded: 1}},
+	}
+	source.initializeLookups()
+	snapshot := source.Snapshot()
+	if !reflect.DeepEqual(snapshot.Scenario, source.Scenario) ||
+		!reflect.DeepEqual(snapshot.Modules, source.Modules) ||
+		!reflect.DeepEqual(snapshot.Nodes, source.Nodes) ||
+		!reflect.DeepEqual(snapshot.Edges, source.Edges) ||
+		!reflect.DeepEqual(snapshot.Frontiers, source.Frontiers) {
+		t.Fatalf("Snapshot() = %#v, want exact value copy of %#v", snapshot, source)
+	}
+
+	snapshot.Scenario.Tags[0] = "changed-tag"
+	snapshot.Modules[0].Path = "changed/module"
+	snapshot.Nodes[0].Symbol.EquivalentIDs[0] = "changed-alias"
+	snapshot.Edges[0].CallerID = "changed-caller"
+	snapshot.Frontiers[0].ExternalCalleesExcluded = 99
+	snapshot.nodeLookup["caller"] = 1
+	snapshot.moduleLookup["module"] = 99
+	snapshot.incomingLookup["callee"][0] = 99
+	snapshot.outgoingLookup["caller"][0] = 99
+	snapshot.frontierLookup["caller"] = 99
+
+	if source.Scenario.Tags[0] != "tag" || source.Modules[0].Path != "example.com/module" ||
+		source.Nodes[0].Symbol.EquivalentIDs[0] != "caller-alias" ||
+		source.Edges[0].CallerID != "caller" || source.Frontiers[0].ExternalCalleesExcluded != 1 {
+		t.Fatalf("Snapshot mutation changed source public storage: %#v", source)
+	}
+	if source.nodeLookup["caller"] != 0 || source.moduleLookup["module"] != 0 ||
+		source.incomingLookup["callee"][0] != 0 || source.outgoingLookup["caller"][0] != 0 ||
+		source.frontierLookup["caller"] != 0 {
+		t.Fatalf("Snapshot mutation changed source lookup storage: %#v", source)
+	}
+}
+
 func TestDirectCallIndexExcludesInterfaceDispatchCandidates(t *testing.T) {
 	repository := t.TempDir()
 	writeFixtureFile(t, filepath.Join(repository, "go.mod"), "module example.com/dynamic\n\ngo 1.25\n")
@@ -295,6 +345,24 @@ func TestDirectCallIndexUnavailableStateRetainsNoPartialGraph(t *testing.T) {
 	}
 	if err := index.Validate(); err != nil {
 		t.Fatalf("Validate closed index: %v", err)
+	}
+}
+
+func TestUnavailableDirectCallIndexIsCanonicalAndEmpty(t *testing.T) {
+	t.Parallel()
+
+	first := UnavailableDirectCallIndex()
+	second := UnavailableDirectCallIndex()
+	if err := first.Validate(); err != nil {
+		t.Fatalf("UnavailableDirectCallIndex: %v", err)
+	}
+	if first.State != DirectCallIndexUnavailable ||
+		first.ClosedReason != DirectCallIndexClosedSSAUnavailable ||
+		len(first.Nodes) != 0 || len(first.Edges) != 0 || first.SHA256 == "" {
+		t.Fatalf("closed index = %#v", first)
+	}
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("closed index is not deterministic:\nfirst  %#v\nsecond %#v", first, second)
 	}
 }
 

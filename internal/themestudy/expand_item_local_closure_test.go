@@ -107,7 +107,8 @@ func TestExpandFilesUnreadableSiblingClosesAndPublishedThemePipelineContinues(t 
 		t.Fatalf("publishable reduction after sibling closure = %#v, err=%v", reduction, err)
 	}
 	if _, err := EncodeStudyThemes(StudyThemes{
-		Version: StudyThemesVersion, Cards: reduction.Cards,
+		Version: StudyThemesVersion, Revision: studyThemesFixtureRevision,
+		Cards:   reduction.Cards,
 		Omitted: reduction.Omitted, CoProjected: reduction.CoProjected,
 		Partial: reduction.Partial, Diagnostics: reduction.Diagnostics,
 	}); err != nil {

@@ -26,6 +26,7 @@ var patterns = []struct {
 var dynamicCredentialReference = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$`)
 var formatSpecifier = regexp.MustCompile(`%[sdvqxTtbf]`)
 var bareIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var bearerCredentialContext = regexp.MustCompile(`(?i)(?:authorization|auth|access[_-]?token|token|header)\b["']?\s*(?::=|=|:)\s*["']?$`)
 var disabled atomic.Bool
 
 const (
@@ -99,7 +100,12 @@ func DetectSourceMaterial(text string) (string, bool) {
 		if candidate.kind == "credential assignment" {
 			continue
 		}
-		if candidate.pattern.MatchString(text) {
+		for _, location := range candidate.pattern.FindAllStringIndex(text, -1) {
+			match := text[location[0]:location[1]]
+			if candidate.kind == "bearer credential" &&
+				!looksLikeBearerCredential(text, location, match) {
+				continue
+			}
 			return candidate.kind, true
 		}
 	}
@@ -108,7 +114,12 @@ func DetectSourceMaterial(text string) (string, bool) {
 
 func detect(text string) (string, bool) {
 	for _, candidate := range patterns {
-		for _, match := range candidate.pattern.FindAllString(text, -1) {
+		for _, location := range candidate.pattern.FindAllStringIndex(text, -1) {
+			match := text[location[0]:location[1]]
+			if candidate.kind == "bearer credential" &&
+				!looksLikeBearerCredential(text, location, match) {
+				continue
+			}
 			if candidate.kind == "credential assignment" {
 				if looksLikePlaceholder(match) || !looksLikeCredentialAssignment(match) {
 					continue
@@ -118,6 +129,46 @@ func detect(text string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// looksLikeBearerCredential distinguishes an obvious token from ordinary use
+// of the authentication scheme name. A long opaque-looking value always
+// closes; a shorter all-lowercase word closes only in an exact credential
+// assignment/header context. This avoids an unbounded prose dictionary while
+// retaining `Authorization: Bearer ...` and `auth = "Bearer ..."` detection.
+func looksLikeBearerCredential(text string, location []int, match string) bool {
+	fields := strings.Fields(match)
+	if len(fields) != 2 || !strings.EqualFold(fields[0], "bearer") {
+		return true
+	}
+	token := fields[1]
+	if len(token) >= 24 {
+		return true
+	}
+	hyphens := 0
+	uppercase := 0
+	for position, character := range token {
+		switch {
+		case character >= '0' && character <= '9':
+			return true
+		case strings.ContainsRune("._~+/=", character):
+			return true
+		case character == '-':
+			hyphens++
+		case character >= 'A' && character <= 'Z':
+			uppercase++
+			if position != 0 {
+				return true
+			}
+		case character < 'a' || character > 'z':
+			return true
+		}
+	}
+	if hyphens >= 2 || uppercase > 1 {
+		return true
+	}
+	prefixStart := max(0, location[0]-96)
+	return bearerCredentialContext.MatchString(text[prefixStart:location[0]])
 }
 
 func isBareIdentifier(value string) bool {

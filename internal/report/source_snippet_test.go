@@ -1338,6 +1338,33 @@ func TestCompleteOverviewSourceCoverageRebindsSelfConsistentStoredExcerpt(t *tes
 	}
 }
 
+func TestOverviewSourceTargetRequiresExactHighlightedLineNotIncidentalFunctionContext(t *testing.T) {
+	t.Parallel()
+
+	snippet := SourceSnippet{
+		Path:            "runner/engine.go",
+		EnclosingSymbol: "github.com/air-verse/air/runner.(*Engine).Run",
+		StartLine:       113,
+		EndLine:         134,
+		HighlightRanges: []SourceHighlight{{StartLine: 113, EndLine: 113}},
+	}
+	for line := snippet.StartLine; line <= snippet.EndLine; line++ {
+		snippet.Lines = append(snippet.Lines, SourceSnippetLine{
+			Line: line, Text: fmt.Sprintf("// line %d", line), Highlight: line == 113,
+		})
+	}
+	target := overviewSourceTarget{path: "runner/engine.go", line: 134}
+	if overviewSourceSnippetCoversTarget(snippet, target) {
+		t.Fatal("incidental function context satisfied an exact callsite target")
+	}
+
+	snippet.HighlightRanges = append(snippet.HighlightRanges, SourceHighlight{StartLine: 134, EndLine: 134})
+	snippet.Lines[len(snippet.Lines)-1].Highlight = true
+	if !overviewSourceSnippetCoversTarget(snippet, target) {
+		t.Fatal("exact highlighted callsite did not satisfy its source target")
+	}
+}
+
 func TestCompleteOverviewSourceCoverageExistingExcerptFailsAtomicallyWhenCaptureChanges(t *testing.T) {
 	t.Parallel()
 

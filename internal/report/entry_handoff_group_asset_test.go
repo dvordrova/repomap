@@ -247,6 +247,7 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("entry selector labels are ambiguous or guessed: %#v", en.SelectorLabels)
 	}
 	if !strings.Contains(en.Text, "Not drawn as map arrows: 13") ||
+		!strings.Contains(en.Text, "1 entry") || strings.Contains(en.Text, "1 entries") ||
 		!strings.Contains(en.Text, "Static first hop only; runtime order and continuation are not established.") {
 		t.Fatalf("English Entrypoints context copy incomplete: %s", en.Text)
 	}
@@ -261,6 +262,7 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("entry selector identity changed across EN/RU: EN %#v RU %#v", en.SelectorLabels, ru.SelectorLabels)
 	}
 	if !strings.Contains(ru.Text, "Не показано стрелками на карте: 13") ||
+		!strings.Contains(ru.Text, "1 точка входа") || strings.Contains(ru.Text, "1 точек входа") ||
 		!strings.Contains(ru.Text, "Только статический первый переход") {
 		t.Fatalf("Russian Entrypoints context copy incomplete: %s", ru.Text)
 	}
@@ -388,10 +390,44 @@ app.ready.then(() => {
   const after = JSON.stringify({ transform: surface.style.transform, nodes: components.map((node) => [node.style.left, node.style.top]) });
   app.selectEntrypointHandoffGroup("group-b");
   const edgesB = host.querySelectorAll(".rm-arch__edge--entry-handoff");
+  const studyMechanism = {
+    id: "study-mechanism-1", ordinal: 1,
+    nodes: [
+      { id: "n1", label: "fixture.main", component_ids: ["c1"] },
+      { id: "n2", label: "fixture.start", component_ids: ["c2"] },
+      { id: "n3", label: "fixture.local", component_ids: ["c2"] },
+      { id: "n4", label: "fixture.offmap", component_ids: [] },
+      { id: "n5", label: "fixture.shared", component_ids: ["c1", "c2"] },
+      { id: "n6", label: "fixture.finish", component_ids: ["c1"] },
+    ],
+    edges: [
+      { id: "e1", from_node_id: "n1", to_node_id: "n2", invocation: "synchronous" },
+      { id: "e2", from_node_id: "n2", to_node_id: "n3", invocation: "goroutine" },
+      { id: "e3", from_node_id: "n3", to_node_id: "n4", invocation: "deferred" },
+      { id: "e4", from_node_id: "n4", to_node_id: "n5", invocation: "synchronous" },
+      { id: "e5", from_node_id: "n5", to_node_id: "n6", invocation: "synchronous" },
+    ],
+  };
+  app.setLens("landscape");
+  const studyBefore = JSON.stringify({ transform: surface.style.transform, nodes: components.map((node) => [node.style.left, node.style.top]) });
+  app.setStudyMechanismOverlay(studyMechanism);
+  const studyEdges = host.querySelectorAll(".rm-arch__edge--study-mechanism");
+  const studyParticipants = components.filter((node) => String(node.className).split(/\s+/).includes("rm-arch__is-study-mechanism-participant"));
+  const studyMarkers = studyEdges.map((edge) => edge.querySelector(".rm-arch__edge-visible")).filter(Boolean)
+    .map((path) => path.getAttribute("marker-end"));
+  const studyProjection = window.RepomapArchitectureCanvas.projectStudyMechanismOverlay(studyMechanism, ["c1", "c2"]);
+  const studyAfter = JSON.stringify({ transform: surface.style.transform, nodes: components.map((node) => [node.style.left, node.style.top]) });
+  app.clearStudyMechanismOverlay();
   process.stdout.write(JSON.stringify({
     edgesA: edgesA.length, badgesA: badgesA.length, markersA,
     participantsA: participantsA.length, badgeText: badgesA.map((item) => item.textContent),
     opened, layoutUnchanged: before === after, edgesB: edgesB.length,
+    studyEdges: studyEdges.length, studyParticipants: studyParticipants.length,
+    studyMarkers, studySideReasons: studyProjection.side_rows.map((row) => row.reason),
+    studyComponentIDs: studyProjection.component_ids,
+    studyLayoutUnchanged: studyBefore === studyAfter,
+    studyEdgesAfterClear: host.querySelectorAll(".rm-arch__edge--study-mechanism").length,
+    studyParticipantsAfterClear: components.filter((node) => String(node.className).split(/\s+/).includes("rm-arch__is-study-mechanism-participant")).length,
   }));
 }).catch((error) => { process.stderr.write(String(error && error.stack || error)); process.exit(2); });
 `
@@ -404,14 +440,22 @@ app.ready.then(() => {
 		t.Fatalf("run entry handoff overlay: %v\n%s", err, output)
 	}
 	var got struct {
-		EdgesA          int      `json:"edgesA"`
-		BadgesA         int      `json:"badgesA"`
-		MarkersA        []string `json:"markersA"`
-		ParticipantsA   int      `json:"participantsA"`
-		BadgeText       []string `json:"badgeText"`
-		Opened          [][]any  `json:"opened"`
-		LayoutUnchanged bool     `json:"layoutUnchanged"`
-		EdgesB          int      `json:"edgesB"`
+		EdgesA                      int      `json:"edgesA"`
+		BadgesA                     int      `json:"badgesA"`
+		MarkersA                    []string `json:"markersA"`
+		ParticipantsA               int      `json:"participantsA"`
+		BadgeText                   []string `json:"badgeText"`
+		Opened                      [][]any  `json:"opened"`
+		LayoutUnchanged             bool     `json:"layoutUnchanged"`
+		EdgesB                      int      `json:"edgesB"`
+		StudyEdges                  int      `json:"studyEdges"`
+		StudyParticipants           int      `json:"studyParticipants"`
+		StudyMarkers                []string `json:"studyMarkers"`
+		StudySideReasons            []string `json:"studySideReasons"`
+		StudyComponentIDs           []string `json:"studyComponentIDs"`
+		StudyLayoutUnchanged        bool     `json:"studyLayoutUnchanged"`
+		StudyEdgesAfterClear        int      `json:"studyEdgesAfterClear"`
+		StudyParticipantsAfterClear int      `json:"studyParticipantsAfterClear"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode entry handoff overlay: %v\n%s", err, output)
@@ -430,6 +474,20 @@ app.ready.then(() => {
 	if len(got.Opened) != 1 || len(got.Opened[0]) != 3 || got.Opened[0][0] != "main.go" ||
 		got.Opened[0][1] != float64(15) || got.Opened[0][2] != float64(9) {
 		t.Fatalf("overlay source action lost exact column: %#v", got.Opened)
+	}
+	if got.StudyEdges != 1 || got.StudyParticipants != 2 || !got.StudyLayoutUnchanged {
+		t.Fatalf("Study overlay = edges:%d participants:%d layout unchanged:%t",
+			got.StudyEdges, got.StudyParticipants, got.StudyLayoutUnchanged)
+	}
+	if strings.Join(got.StudyMarkers, ",") != "url(#rm-arch-study-mechanism-arrow)" ||
+		strings.Join(got.StudySideReasons, ",") != "same_component,zero_component,zero_component,plural_components" ||
+		strings.Join(got.StudyComponentIDs, ",") != "c1,c2" {
+		t.Fatalf("Study projection = markers %#v sides %#v participants %#v",
+			got.StudyMarkers, got.StudySideReasons, got.StudyComponentIDs)
+	}
+	if got.StudyEdgesAfterClear != 0 || got.StudyParticipantsAfterClear != 0 {
+		t.Fatalf("cleared Study overlay retained edges %d or participants %d",
+			got.StudyEdgesAfterClear, got.StudyParticipantsAfterClear)
 	}
 }
 

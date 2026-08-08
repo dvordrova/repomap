@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlasstudy"
+	"github.com/dvordrova/repomap/internal/mechanismstudy"
+	"github.com/dvordrova/repomap/internal/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/themestudy"
 )
 
@@ -18,6 +20,8 @@ type themeFixtureSource struct {
 	lines  []string
 	offset int // line number of lines[0] (1-based)
 }
+
+const themeStudyFixtureRevision = "0123456789abcdef0123456789abcdef01234567"
 
 // themeFixtureReader returns a themestudy.SourceReader over the fixture's
 // saved sources plus synthetic fallback content for any other openable path.
@@ -67,6 +71,9 @@ func themeFixtureReader(data *ReportData) themestudy.SourceReader {
 // accepted-state report tests bind against.
 func writeThemeStudyAcceptedArtifacts(t *testing.T, runDir string, data *ReportData) {
 	t.Helper()
+	if data.CapturedRevision == "" {
+		data.CapturedRevision = themeStudyFixtureRevision
+	}
 	product := compileAtlasStudyFixture(t, data)
 	_ = product // the local compile is the seed producer; the wire is compiled below
 	input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
@@ -216,13 +223,79 @@ func writeThemeStudyAcceptedArtifacts(t *testing.T, runDir string, data *ReportD
 	}
 	themes := themestudy.StudyThemes{
 		// Decision 235 (v11): themes artifact v3 (rebase + equivalence).
-		Version: themestudy.StudyThemesVersion, ScoutSHA256: scoutRequest.CatalogSHA256,
-		AdjSHA256: adjRequest.CatalogSHA256,
-		Cards:     reduction.Cards, Omitted: reduction.Omitted,
+		Version:     themestudy.StudyThemesVersion,
+		Revision:    data.CapturedRevision,
+		ScoutSHA256: scoutRequest.CatalogSHA256,
+		AdjSHA256:   adjRequest.CatalogSHA256,
+		Cards:       reduction.Cards, Omitted: reduction.Omitted,
 		CoProjected: reduction.CoProjected, Partial: reduction.Partial,
 		Diagnostics: reduction.Diagnostics,
 	}
 	writeThemeArtifact(t, runDir, themestudy.StudyThemesArtifactFilename, mustEncodeTheme(t, themes))
+	writePreparedStudyInvestigationArtifacts(
+		t,
+		runDir,
+		data,
+		strings.Repeat("e", 64),
+	)
+}
+
+func writePreparedStudyInvestigationArtifacts(
+	t *testing.T,
+	runDir string,
+	data *ReportData,
+	repositoryFreshnessSHA256 string,
+) {
+	t.Helper()
+	themesRaw := mustReadAtlasStudyFile(t, runDir, themestudy.StudyThemesArtifactFilename)
+	themes, err := themestudy.DecodeStudyThemes(themesRaw)
+	if err != nil {
+		t.Fatalf("decode Study themes for investigation fixture: %v", err)
+	}
+	index := surfacediscovery.UnavailableDirectCallIndex()
+	compilation, err := mechanismstudy.Compile(themes, &index, mechanismstudy.Binding{
+		StudyThemesSHA256:         manifestSHA256(themesRaw),
+		AtlasStudyCatalogSHA256:   themes.ScoutSHA256,
+		RepositoryRevision:        themes.Revision,
+		RepositoryFreshnessSHA256: repositoryFreshnessSHA256,
+	})
+	if err != nil {
+		t.Fatalf("compile prepared Study investigation fixture: %v", err)
+	}
+	plan, err := mechanismstudy.PlanRequestBatches(compilation)
+	if err != nil {
+		t.Fatalf("plan prepared Study investigation fixture: %v", err)
+	}
+	factsRaw, err := mechanismstudy.EncodeFacts(compilation, plan)
+	if err != nil {
+		t.Fatalf("encode Study investigation facts fixture: %v", err)
+	}
+	candidatesRaw, err := mechanismstudy.EncodeCandidates(factsRaw, nil)
+	if err != nil {
+		t.Fatalf("encode Study investigation candidates fixture: %v", err)
+	}
+	resultRaw, err := mechanismstudy.EncodeResult(factsRaw, candidatesRaw)
+	if err != nil {
+		t.Fatalf("encode Study investigation result fixture: %v", err)
+	}
+	statusRaw, err := mechanismstudy.EncodeStatus(
+		factsRaw,
+		candidatesRaw,
+		resultRaw,
+		mechanismstudy.StatusExecution{},
+	)
+	if err != nil {
+		t.Fatalf("encode Study investigation status fixture: %v", err)
+	}
+	writeThemeArtifact(t, runDir, mechanismstudy.FactsArtifactFilename, factsRaw)
+	writeThemeArtifact(t, runDir, mechanismstudy.CandidatesArtifactFilename, candidatesRaw)
+	writeThemeArtifact(t, runDir, mechanismstudy.ResultArtifactFilename, resultRaw)
+	writeThemeArtifact(t, runDir, mechanismstudy.StatusArtifactFilename, statusRaw)
+	if data != nil {
+		data.studyInvestigationArtifactsChecked = false
+		data.studyInvestigationInput = nil
+		data.studyInvestigationSourceLocations = nil
+	}
 }
 
 func mustEncodeTheme(t *testing.T, value any) []byte {

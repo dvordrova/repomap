@@ -60,7 +60,9 @@ var (
 // final-reducer changes (StudyThemesVersion 3).
 // Decision 241 persists the already-computed co-projection count so a
 // backend-owned many-to-one reduction is durable and console-explainable.
-const StudyThemesVersion = "v4"
+// Decision 246 binds the final portfolio to the exact repository revision
+// used by the in-memory direct-call investigation substrate.
+const StudyThemesVersion = "v5"
 
 // Decision 232 (Archive 9): prompt contract v2 — target-cardinality
 // wording, duplicate normalization, backend-owned anchor role,
@@ -187,7 +189,7 @@ type AdjudicationStatusRecord struct {
 // zero source bytes. The digest binds the complete artifact.
 type StudyThemes struct {
 	Version     string         `json:"version"`
-	Revision    string         `json:"revision,omitempty"`
+	Revision    string         `json:"revision"`
 	ScoutSHA256 string         `json:"scout_catalog_sha256,omitempty"`
 	AdjSHA256   string         `json:"adjudication_catalog_sha256,omitempty"`
 	Cards       []ThemeCard    `json:"cards"`

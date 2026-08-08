@@ -201,6 +201,59 @@ func TestMechanismStudyBodyMeasuredDoesNotRetrySemanticContent(t *testing.T) {
 	}
 }
 
+func TestMechanismStudyBodyMeasuredPreservesNon2xxResponseEvidence(t *testing.T) {
+	t.Parallel()
+	var calls int
+	response := []byte(`{"error":"unsupported response_format"}`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write(response)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		HTTPClient: server.Client(), Endpoint: server.URL, Auth: authNone,
+		Model: "fixture-model", MaxTokens: 64_000,
+	}
+	exactBody := []byte(`{"exact":true}`)
+	result, err := client.MechanismStudyBodyMeasured(t.Context(), exactBody)
+	if err == nil || !strings.Contains(err.Error(), "status 400") ||
+		!strings.Contains(err.Error(), "unsupported response_format") {
+		t.Fatalf("MechanismStudyBodyMeasured() error = %v", err)
+	}
+	if calls != 1 || result.Attempts != 1 || result.RequestBytes != len(exactBody) ||
+		result.ResponseBytes != len(response) || !bytes.Equal(result.Content, response) {
+		t.Fatalf("calls/result = %d/%#v", calls, result)
+	}
+}
+
+func TestMechanismStudyBodyMeasuredPreservesMalformedEnvelopeEvidenceWithoutRetry(t *testing.T) {
+	t.Parallel()
+	var calls int
+	response := []byte(`{"choices":[`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(response)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		HTTPClient: server.Client(), Endpoint: server.URL, Auth: authNone,
+		Model: "fixture-model", MaxTokens: 64_000,
+	}
+	exactBody := []byte(`{"exact":true}`)
+	result, err := client.MechanismStudyBodyMeasured(t.Context(), exactBody)
+	if !errors.Is(err, errResponseEnvelopeMalformed) {
+		t.Fatalf("MechanismStudyBodyMeasured() error = %v, want malformed envelope", err)
+	}
+	if calls != 1 || result.Attempts != 1 || result.RequestBytes != len(exactBody) ||
+		result.ResponseBytes != len(response) || !bytes.Equal(result.Content, response) {
+		t.Fatalf("semantic response was retried or lost: calls=%d result=%#v", calls, result)
+	}
+}
+
 func TestMechanismStudyBodyMeasuredTreatsLengthAsTerminal(t *testing.T) {
 	t.Parallel()
 	var calls int

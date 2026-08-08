@@ -763,12 +763,18 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		retry := isRetryableHTTP(resp.StatusCode)
-		return chatCompletion{}, retry, fmt.Errorf("llm request failed with status %d: %s", resp.StatusCode, safeProviderErrorText(respBody))
+		return chatCompletion{
+			Content:       append([]byte(nil), respBody...),
+			ResponseBytes: len(respBody),
+		}, retry, fmt.Errorf("llm request failed with status %d: %s", resp.StatusCode, safeProviderErrorText(respBody))
 	}
 
 	var parsed chatResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return chatCompletion{}, false, fmt.Errorf("%w: %v", errResponseEnvelopeMalformed, err)
+		return chatCompletion{
+			Content:       append([]byte(nil), respBody...),
+			ResponseBytes: len(respBody),
+		}, false, fmt.Errorf("%w: %v", errResponseEnvelopeMalformed, err)
 	}
 	usage := chatUsage{}
 	usageReported := parsed.Usage != nil

@@ -20,21 +20,9 @@ func ResolveResponse(compilation *Compilation, batch RequestBatch, raw []byte) (
 	if err := validateBatchAgainstCompilation(compilation, batch); err != nil {
 		return Result{}, err
 	}
-	if len(raw) == 0 || len(raw) > MaxResponseBytes {
-		return Result{}, fmt.Errorf("mechanism study: response exceeds bounded envelope")
-	}
-	var response Response
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&response); err != nil {
-		return Result{}, fmt.Errorf("mechanism study: decode response: %w", err)
-	}
-	if err := ensureJSONEOF(decoder); err != nil {
+	response, err := decodeResponseEnvelope(batch, raw)
+	if err != nil {
 		return Result{}, err
-	}
-	if response.Version != ResultVersion || response.CatalogRef != batch.Request.CatalogRef ||
-		response.CatalogSHA256 != batch.Request.CatalogSHA256 || response.RequestRef != batch.Request.RequestRef {
-		return Result{}, fmt.Errorf("mechanism study: response identity mismatch")
 	}
 
 	result := Result{
@@ -85,6 +73,26 @@ func ResolveResponse(compilation *Compilation, batch RequestBatch, raw []byte) (
 		validateCandidates(requestCard, responseCard.Mechanisms, cardResult)
 	}
 	return result, nil
+}
+
+func decodeResponseEnvelope(batch RequestBatch, raw []byte) (Response, error) {
+	if len(raw) == 0 || len(raw) > MaxResponseBytes {
+		return Response{}, fmt.Errorf("mechanism study: response exceeds bounded envelope")
+	}
+	var response Response
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&response); err != nil {
+		return Response{}, fmt.Errorf("mechanism study: decode response: %w", err)
+	}
+	if err := ensureJSONEOF(decoder); err != nil {
+		return Response{}, err
+	}
+	if response.Version != ResultVersion || response.CatalogRef != batch.Request.CatalogRef ||
+		response.CatalogSHA256 != batch.Request.CatalogSHA256 || response.RequestRef != batch.Request.RequestRef {
+		return Response{}, fmt.Errorf("mechanism study: response identity mismatch")
+	}
+	return response, nil
 }
 
 func validateBatchAgainstCompilation(compilation *Compilation, batch RequestBatch) error {

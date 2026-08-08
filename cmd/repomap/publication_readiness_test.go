@@ -11,6 +11,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/mechanismstudy"
 	"github.com/dvordrova/repomap/internal/report"
 )
 
@@ -98,6 +99,33 @@ func TestAssessPublicationDistinguishesReadyDegradedAndFailed(t *testing.T) {
 	if got := assessPublication(nil); got.Status != publicationFailed ||
 		!reflect.DeepEqual(got.Reasons, []publicationReason{publicationReasonArtifactsInvalid}) {
 		t.Fatalf("nil publication assessment = %#v", got)
+	}
+}
+
+func TestStudyInvestigationPublicationReasonsRemainConsoleOnly(t *testing.T) {
+	t.Parallel()
+
+	if got, err := studyInvestigationPublicationReasons(t.TempDir(), report.MaterialInputs{}); err != nil || len(got) != 0 {
+		t.Fatalf("absent family = %#v, %v, want no reason", got, err)
+	}
+	for _, test := range []struct {
+		state mechanismstudy.StatusState
+		want  []publicationReason
+	}{
+		{state: mechanismstudy.StatusComplete},
+		{state: mechanismstudy.StatusPartial, want: []publicationReason{publicationReasonInvestigationPartial}},
+		{state: mechanismstudy.StatusFailed, want: []publicationReason{publicationReasonInvestigationFailed}},
+	} {
+		got, err := studyInvestigationStatusReasons(mechanismstudy.Status{State: test.state})
+		if err != nil || !reflect.DeepEqual(got, test.want) {
+			t.Fatalf("state %q reasons = %#v, %v, want %#v", test.state, got, err, test.want)
+		}
+		if len(got) != 0 {
+			assessment := publicationAssessment{Status: publicationDegraded, Reasons: got}
+			if detail := assessment.consoleDetails(); len(detail) != 1 || !strings.Contains(detail[0], "Study investigation") {
+				t.Fatalf("state %q console details = %#v", test.state, detail)
+			}
+		}
 	}
 }
 
