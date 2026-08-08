@@ -461,9 +461,10 @@ func DecodeAdjudicationStatus(data []byte) (AdjudicationStatusRecord, error) {
 func EncodeStudyThemes(themes StudyThemes) ([]byte, error) {
 	// Decision 233: StudyThemesVersion 2 (alternate co-projection +
 	// concentration diagnostic); Decision 235: version 3 (theme
-	// equivalence accounting). The artifact version advances with the
+	// equivalence accounting); Decision 241: version 4 (durable
+	// co-projection count). The artifact version advances with the
 	// constant — no literal drift (D233 defect closed).
-	if themes.Version != "v3" {
+	if themes.Version != StudyThemesVersion || themes.Omitted < 0 || themes.CoProjected < 0 {
 		return nil, fmt.Errorf("study themes artifact: invalid version")
 	}
 	return encodeBoundedArtifact("study themes", MaxStudyThemesArtifactBytes, themes)
@@ -475,7 +476,7 @@ func DecodeStudyThemes(data []byte) (StudyThemes, error) {
 	if err := decodeArtifact("study themes", data, MaxStudyThemesArtifactBytes, &themes); err != nil {
 		return StudyThemes{}, err
 	}
-	if themes.Version != "v3" {
+	if themes.Version != StudyThemesVersion || themes.Omitted < 0 || themes.CoProjected < 0 {
 		return StudyThemes{}, fmt.Errorf("study themes artifact: invalid version")
 	}
 	return themes, requireCanonicalArtifact("study themes", data, themes)

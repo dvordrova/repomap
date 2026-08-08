@@ -44,6 +44,23 @@ func d210ThemeManifestFixture(t *testing.T, state atlasstudy.ProductState) (RunM
 			t.Fatal(err)
 		}
 		writeThemeArtifact(t, runDir, themestudy.AdjudicationResultArtifactFilename, encoded)
+
+		themesRaw := mustReadAtlasStudyFile(t, runDir, themestudy.StudyThemesArtifactFilename)
+		themes, decodeErr := themestudy.DecodeStudyThemes(themesRaw)
+		if decodeErr != nil {
+			t.Fatal(decodeErr)
+		}
+		if len(themes.Cards) > 1 {
+			themes.Cards = themes.Cards[:1]
+		}
+		themes.Omitted = 0
+		themes.CoProjected = 0
+		themesEncoded, encodeErr := themestudy.EncodeStudyThemes(themes)
+		if encodeErr != nil {
+			t.Fatal(encodeErr)
+		}
+		writeThemeArtifact(t, runDir, themestudy.StudyThemesArtifactFilename, themesEncoded)
+
 		status, studyMap, err = readAtlasStudyReportProduct(runDir, data)
 		if err != nil {
 			t.Fatalf("re-read partial product: %v", err)

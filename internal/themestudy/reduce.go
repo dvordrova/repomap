@@ -231,6 +231,7 @@ func Reduce(input ReducerInput) (Reduction, error) {
 			// distinct readings append (bounded, deduplicated by exact
 			// public identity).
 			coProjectTheme(&all[earlier], theme, entries, input.Anchors)
+			reduction.CoProjected++
 			continue
 		}
 		seenCanonical[canonicalID] = len(all)

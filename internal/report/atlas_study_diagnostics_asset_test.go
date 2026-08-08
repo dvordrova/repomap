@@ -455,15 +455,14 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 	if len(en.UnavailableRows) != 2 || !strings.Contains(en.UnavailableRows[0], "Source unavailable") {
 		t.Fatalf("unavailable rows = %#v, want 2 neutral states", en.UnavailableRows)
 	}
-	// Honest synthesis-failed copy replaces the unconditional acceptance copy.
-	if !strings.Contains(en.OverviewText, "Architecture synthesis failed; showing the locally available architecture with exact symbol sources.") {
-		t.Fatalf("Overview does not show the synthesis-failed copy:\n%s", en.OverviewText)
+	// Provider failure belongs to the ordinary console. The generated HTML is
+	// calm user documentation and keeps only the useful local product surface.
+	if strings.Contains(en.OverviewText, "Architecture synthesis failed") ||
+		strings.Contains(en.ArchitectureText, "model exceeded its response budget") {
+		t.Fatalf("provider failure leaked into generated HTML:\noverview: %s\narchitecture: %s", en.OverviewText, en.ArchitectureText)
 	}
-	if strings.Contains(en.OverviewText, "Accepted conceptual components open on the map") {
-		t.Fatalf("Overview still shows the unconditional acceptance copy:\n%s", en.OverviewText)
-	}
-	if !strings.Contains(en.ArchitectureText, "Conceptual grouping is unavailable because the model exceeded its response budget. The partial response was not used; exact local Architecture remains available.") {
-		t.Fatalf("Architecture tab does not show the output-limit notice:\n%s", en.ArchitectureText)
+	if !strings.Contains(en.OverviewText, "Accepted conceptual components open on the map") {
+		t.Fatalf("Overview lost the calm component copy:\n%s", en.OverviewText)
 	}
 	// RU journey: same browse with the Russian catalog.
 	if !strings.Contains(ru.StudyOverviewText, "Все вопросы изучения") ||
@@ -490,8 +489,8 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 			ru.BrowseRowCount, ruStageCount("Опубликовано в теме"), ruStageCount("Показано модели, не выбрано"),
 			ruStageCount("Локальный вопрос — модели не показывался"), ru.UnavailableRows)
 	}
-	if !strings.Contains(ru.ArchitectureText, "Концептуальная группировка недоступна: модель исчерпала лимит ответа. Частичный ответ не использован; точная локальная архитектура остаётся доступна.") {
-		t.Fatalf("RU Architecture tab does not show the output-limit notice:\n%s", ru.ArchitectureText)
+	if strings.Contains(ru.ArchitectureText, "модель исчерпала лимит ответа") {
+		t.Fatalf("provider failure leaked into RU generated HTML:\n%s", ru.ArchitectureText)
 	}
 	// Stripped static report: no embedded source bodies; the browse still
 	// renders 68 rows with the same stage counts, and every openable row

@@ -24,10 +24,16 @@ const (
 	// Older request versions fail closed; git retains their implementation.
 	// Theme-input experiment T1 advances request 3→4 and cache v1→v2 because
 	// the wire now exposes generic artifact roles and production-aware ordering.
-	ScoutRequestVersion        = 4
-	ScoutResultVersion         = 4
+	// The final D241 gate advances request 4→5 and cache v2→v3: generic
+	// observed calls no longer masquerade as integration boundaries, and
+	// test/tooling path roles are represented truthfully.
+	// Decision 241 advances Scout result 4→5 and Adjudication result 3→4:
+	// over-limit prose is retained at a readable sentence/word boundary instead
+	// of a raw rune boundary. Request schemas remain unchanged.
+	ScoutRequestVersion        = 5
+	ScoutResultVersion         = 5
 	AdjudicationRequestVersion = 2
-	AdjudicationResultVersion  = 3
+	AdjudicationResultVersion  = 4
 )
 
 // Theme prompt contract identities — the short SHA-256 of the exact
@@ -46,7 +52,9 @@ var (
 // co-projection and the concentration diagnostic (StudyThemesVersion 2).
 // Decision 235 (v11): theme equivalence accounting lands with the
 // final-reducer changes (StudyThemesVersion 3).
-const StudyThemesVersion = 3
+// Decision 241 persists the already-computed co-projection count so a
+// backend-owned many-to-one reduction is durable and console-explainable.
+const StudyThemesVersion = "v4"
 
 // Decision 232 (Archive 9): prompt contract v2 — target-cardinality
 // wording, duplicate normalization, backend-owned anchor role,
@@ -54,7 +62,7 @@ const StudyThemesVersion = 3
 // (Prompt constants advanced to SHA identity above; this comment records the
 // v2 rationale that still applies.)
 const (
-	ScoutCacheContract           = "theme-scout-accepted-v2"
+	ScoutCacheContract           = "theme-scout-accepted-v3"
 	AdjudicationCacheContract    = "theme-adjudication-accepted-v1"
 	ScoutStage                   = "theme_scout"
 	AdjudicationStage            = "theme_adjudication"
@@ -178,6 +186,7 @@ type StudyThemes struct {
 	AdjSHA256   string         `json:"adjudication_catalog_sha256,omitempty"`
 	Cards       []ThemeCard    `json:"cards"`
 	Omitted     int            `json:"omitted"`
+	CoProjected int            `json:"co_projected,omitempty"`
 	Partial     bool           `json:"partial"`
 	Diagnostics map[string]int `json:"diagnostics,omitempty"`
 }
@@ -673,7 +682,7 @@ const scoutPromptSystem = `You are proposing useful Study themes for a developer
 A Study theme is a question that one or more exact source anchors can help answer. It is not required to be a proven runtime path.
 You may group anchors because they help explain one user journey, cross-cutting policy, sibling implementation family, integration family, lifecycle concern, or shared domain responsibility.
 Use a* source refs as current support. Use f* names-only refs only to request local source expansion. A names-only file is never evidence.
-The backend-owned role on every a* and f* item is a navigation priority, not runtime proof. Prefer primary_production_entry, production_core, effect_integration_boundary, and public_api when explaining the product. Use example, test, fixture, generated, playground_preview_evaluator, experimental, or documentation items only when they materially clarify the selected production theme.
+The backend-owned role on every a* and f* item is a navigation priority, not runtime proof. Prefer primary_production_entry, production_core, effect_integration_boundary, and public_api when explaining the product. Use tooling, example, test, fixture, generated, playground_preview_evaluator, experimental, or documentation items only when they materially clarify the selected production theme.
 Do not claim execution order, ownership, reachability, or data flow unless the supplied exact evidence establishes it.
 Return themes in decreasing usefulness for a developer trying to understand this repository, with the most useful theme first.
 Each additional theme must add a materially distinct learning outcome. Do not restate individual direct calls and do not pad.

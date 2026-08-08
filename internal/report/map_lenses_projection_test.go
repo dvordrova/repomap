@@ -12,7 +12,7 @@ import (
 // (A) a PURE projection test — no DOM, no fake Element, no mount, no
 // geometry — and (B) a real-browser product test (see BROWSER_ACCEPTANCE).
 // This test verifies the pure projection only: given backend-owned
-// components/surfaces/associations/flow-edges, which component IDs each
+// components/surfaces/associations/mechanism-fragments, which component IDs each
 // lens emphasizes and which first-class objects it makes visible.
 func TestArchitectureCanvasMapLensPureProjection(t *testing.T) {
 	node, err := exec.LookPath("node")
@@ -43,9 +43,41 @@ const input = {
     { component_id: "c1", family: "database", imported_family: "github.com/jackc/pgx/v5", kind: "boundary", observation_count: 2, paired: true },
     { component_id: "c2", family: "cache-lock", imported_family: "github.com/redis/go-redis/v9", kind: "boundary", observation_count: 1, paired: false },
   ],
+  // Adversarial saved flows: Decision 242 requires that they do not change
+  // Mechanisms objects or emphasis.
   flowEdges: [
     { flow_id: "flow-1", from_component_id: "c1", to_component_id: "c3" },
     { flow_id: "flow-1", from_component_id: "c3", to_component_id: "c1" },
+  ],
+  mechanismFragments: [
+    {
+      version: 3, id: "fragment-a", component_ids: ["c1", "c3"],
+      entry: {
+        claim_kind: "process_entry", support_mode: "resolved_static",
+        label: "process entry fixture.main", path: "main.go", line: 10,
+        evidence: "exact entry", limitation: "runtime not proven", ordering: "exact_local_order",
+      },
+      handoffs: [{
+        claim_kind: "direct_static_call", support_mode: "resolved_static",
+        label: "handoff to Service.Start", path: "main.go", line: 11,
+        evidence: "exact handoff", limitation: "runtime not proven", ordering: "resolved_path_order",
+      }],
+      frontier: { ordering: "not_established", unresolved: ["continuation unknown"], limitation: "continuation unknown" },
+    },
+    {
+      version: 3, id: "fragment-b", component_ids: [],
+      entry: {
+        claim_kind: "process_entry", support_mode: "resolved_static",
+        label: "process entry other.main", path: "other.go", line: 5,
+        evidence: "exact entry", limitation: "runtime not proven", ordering: "exact_local_order",
+      },
+      handoffs: [{
+        claim_kind: "direct_static_call", support_mode: "resolved_static",
+        label: "handoff to unknown", path: "other.go", line: 6,
+        evidence: "exact handoff", limitation: "runtime not proven", ordering: "resolved_path_order",
+      }],
+      frontier: { ordering: "not_established", limitation: "continuation unknown" },
+    },
   ],
 };
 const landscape = api.mapLensEmphasisProjection({ lens: "landscape", ...input });
@@ -72,7 +104,43 @@ const full = api.projectArchitectureLens({
     ],
   },
 }, "integrations");
-process.stdout.write(JSON.stringify({ landscape, entrypoints, integrations, mechanisms, structuralEdges, full }));
+const fragmentOnly = api.projectArchitectureLens({
+  architecture_canvas: {
+    version: 13,
+    components: input.components,
+    surfaces: input.surfaces,
+    flow_edges: [],
+    mechanism_fragments: input.mechanismFragments,
+  },
+}, "mechanisms");
+const unsupportedFragment = api.projectArchitectureLens({
+  architecture_canvas: {
+    version: 13, components: input.components, surfaces: [], flow_edges: [],
+    mechanism_fragments: [{ version: 2, id: "historical", entry: { label: "historical" } }],
+  },
+}, "mechanisms");
+const malformedFragment = api.projectArchitectureLens({
+  architecture_canvas: {
+    version: 13, components: input.components, surfaces: [], flow_edges: [],
+    mechanism_fragments: [{
+      version: 3, id: "malformed", component_ids: [],
+      entry: {
+        claim_kind: "process_entry", support_mode: "resolved_static",
+        label: "process entry valid", path: "main.go", line: 10,
+        evidence: "exact entry", limitation: "runtime not proven", ordering: "exact_local_order",
+      },
+      handoffs: [],
+      frontier: { ordering: "not_established", limitation: "continuation unknown" },
+    }],
+  },
+}, "mechanisms");
+const historicalCanvas = api.projectArchitectureLens({
+  architecture_canvas: {
+    version: 12, components: input.components, surfaces: [], flow_edges: [],
+    mechanism_fragments: input.mechanismFragments,
+  },
+}, "mechanisms");
+process.stdout.write(JSON.stringify({ landscape, entrypoints, integrations, mechanisms, structuralEdges, full, fragmentOnly, unsupportedFragment, malformedFragment, historicalCanvas }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "map-lens-projection-test.js")
 	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
@@ -91,7 +159,11 @@ process.stdout.write(JSON.stringify({ landscape, entrypoints, integrations, mech
 			ID           string `json:"id"`
 			WitnessCount int    `json:"witness_count"`
 		} `json:"structuralEdges"`
-		Full fullLens `json:"full"`
+		Full                fullLens `json:"full"`
+		FragmentOnly        fullLens `json:"fragmentOnly"`
+		UnsupportedFragment fullLens `json:"unsupportedFragment"`
+		MalformedFragment   fullLens `json:"malformedFragment"`
+		HistoricalCanvas    fullLens `json:"historicalCanvas"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode lens projection result: %v\n%s", err, output)
@@ -116,8 +188,8 @@ process.stdout.write(JSON.stringify({ landscape, entrypoints, integrations, mech
 	if join(got.Mechanisms.Emphasized) != "c1,c3" {
 		t.Fatalf("mechanisms emphasized = %#v, want [c1 c3]", got.Mechanisms.Emphasized)
 	}
-	if len(got.Mechanisms.Objects.Mechanisms) != 1 {
-		t.Fatalf("mechanisms flow objects = %#v, want 1 connected flow", got.Mechanisms.Objects.Mechanisms)
+	if len(got.Mechanisms.Objects.Mechanisms) != 2 {
+		t.Fatalf("mechanisms objects = %#v, want the two exact Canvas fragments", got.Mechanisms.Objects.Mechanisms)
 	}
 	if len(got.StructuralEdges) != 1 || got.StructuralEdges[0].ID != "import-pair" || got.StructuralEdges[0].WitnessCount != 2 {
 		t.Fatalf("Map structural edges = %#v, want the singular cross-component aggregate", got.StructuralEdges)
@@ -130,6 +202,31 @@ process.stdout.write(JSON.stringify({ landscape, entrypoints, integrations, mech
 	if got.Full.Counts.Touchpoints != 2 || got.Full.Counts.Components != 3 {
 		t.Fatalf("full projection counts = %#v, want components=3 touchpoints=2", got.Full.Counts)
 	}
+	// Decision 242: Canvas v13 fragments are the sole Mechanisms authority.
+	// Exact component IDs are emphasized; a second unjoined fragment remains
+	// visible without guessing. Empty flow_edges are ordinary, and the
+	// adversarial flow rows above cannot change this result.
+	if join(got.FragmentOnly.Emphasized) != "c1,c3" || got.FragmentOnly.Dimmed != 1 {
+		t.Fatalf("fragment-only emphasis = %#v dimmed=%d, want exact [c1 c3] with only c2 dimmed",
+			got.FragmentOnly.Emphasized, got.FragmentOnly.Dimmed)
+	}
+	if got.FragmentOnly.Counts.Mechanisms != 2 || len(got.FragmentOnly.Mechanisms) != 2 {
+		t.Fatalf("fragment-only mechanisms = %#v counts=%#v, want two", got.FragmentOnly.Mechanisms, got.FragmentOnly.Counts)
+	}
+	fragment := got.FragmentOnly.Mechanisms[0]
+	if fragment.Kind != "mechanism_fragment" || fragment.Fragment.Version != 3 ||
+		fragment.Fragment.Entry.Label != "process entry fixture.main" || join(fragment.ComponentIDs) != "c1,c3" {
+		t.Fatalf("fragment-only object = %#v, want exact v3 fragment and backend IDs [c1 c3]", fragment)
+	}
+	if got.UnsupportedFragment.Counts.Mechanisms != 0 || len(got.UnsupportedFragment.Mechanisms) != 0 {
+		t.Fatalf("unsupported fragment projected = %#v", got.UnsupportedFragment.Mechanisms)
+	}
+	if got.MalformedFragment.Counts.Mechanisms != 0 || len(got.MalformedFragment.Mechanisms) != 0 {
+		t.Fatalf("malformed current fragment projected = %#v", got.MalformedFragment.Mechanisms)
+	}
+	if got.HistoricalCanvas.Counts.Mechanisms != 0 || len(got.HistoricalCanvas.Mechanisms) != 0 {
+		t.Fatalf("historical Canvas projected current mechanism fragments = %#v", got.HistoricalCanvas.Mechanisms)
+	}
 }
 
 type fullLens struct {
@@ -137,7 +234,17 @@ type fullLens struct {
 	Visible    []string `json:"visible"`
 	Emphasized []string `json:"emphasized"`
 	Dimmed     int      `json:"dimmed"`
-	Counts     struct {
+	Mechanisms []struct {
+		Kind         string   `json:"kind"`
+		ComponentIDs []string `json:"component_ids"`
+		Fragment     struct {
+			Version int `json:"version"`
+			Entry   struct {
+				Label string `json:"label"`
+			} `json:"entry"`
+		} `json:"fragment"`
+	} `json:"mechanisms"`
+	Counts struct {
 		Components  int `json:"components"`
 		Surfaces    int `json:"surfaces"`
 		Entries     int `json:"entries"`

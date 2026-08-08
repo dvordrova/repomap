@@ -442,81 +442,87 @@ func associationWitnessSetsOverlap(left, right []ArchitectureAssociationWitness)
 	return false
 }
 
-// ensureMechanismFragment derives the Decision 226 vertical fragment when
-// the report carries an accepted canvas. Provider-free; absent when no
-// process entry with call_target proof exists.
-func ensureMechanismFragment(data *ReportData) error {
+// ensureMechanismFragments derives the Decision 242 per-entry first-hop
+// fan-outs when the report carries an accepted canvas. Provider-free;
+// absent when no exact process entry has a supported first-hop handoff.
+func ensureMechanismFragments(data *ReportData) error {
 	if data == nil {
 		return fmt.Errorf("mechanism fragment: report is required")
 	}
-	// Historical/manual render fixtures with unsupported canvas versions stay
-	// displayable without a fragment; authorized manifest verification
-	// independently rejects unsupported Canvas versions.
-	if data.MechanismFragment == nil && data.ArchitectureCanvas != nil &&
-		data.ArchitectureCanvas.Version != ArchitectureCanvasVersion {
+	if data.ArchitectureCanvas == nil {
 		return nil
 	}
-	if data.MechanismFragment != nil {
-		return validateMechanismFragmentForProduct(
+	// Historical/manual render fixtures with unsupported canvas versions stay
+	// displayable without fragments; authorized manifest verification
+	// independently rejects unsupported Canvas versions.
+	if data.ArchitectureCanvas.Version != ArchitectureCanvasVersion {
+		if data.ArchitectureCanvas.MechanismFragments == nil {
+			return nil
+		}
+		return fmt.Errorf(
+			"mechanism fragment: unsupported canvas version %d",
+			data.ArchitectureCanvas.Version,
+		)
+	}
+	if data.ArchitectureCanvas.MechanismFragments != nil {
+		return validateMechanismFragmentsForProduct(
 			data.ArchitectureCanvas,
-			data.ArchitectureAssociations,
-			data.MechanismFragment,
+			data.ArchitectureCanvas.MechanismFragments,
 			data.ArchitectureGrounding,
 		)
 	}
-	fragment, err := projectMechanismFragmentForProduct(
+	fragments, err := projectMechanismFragmentsForProduct(
 		data.ArchitectureCanvas,
-		data.ArchitectureAssociations,
 		data.ArchitectureGrounding,
 	)
 	if err != nil {
 		return err
 	}
-	data.MechanismFragment = fragment
+	data.ArchitectureCanvas.MechanismFragments = fragments
 	return nil
 }
 
-// ValidateMechanismFragment re-derives the exact fragment and rejects drift.
-func ValidateMechanismFragment(
+// ValidateMechanismFragments re-derives the exact per-entry fragments and
+// rejects version or evidence drift.
+func ValidateMechanismFragments(
 	canvas *ArchitectureCanvas,
-	associations *ArchitectureAssociationProjection,
-	fragment *MechanismFragmentProjection,
+	fragments []MechanismFragmentProjection,
 ) error {
-	return validateMechanismFragment(canvas, associations, fragment, nil)
+	return validateMechanismFragments(canvas, fragments, nil)
 }
 
-func validateMechanismFragment(
+func validateMechanismFragments(
 	canvas *ArchitectureCanvas,
-	associations *ArchitectureAssociationProjection,
-	fragment *MechanismFragmentProjection,
+	fragments []MechanismFragmentProjection,
 	grounding *ArchitectureGrounding,
 ) error {
-	return validateMechanismFragmentForProduct(canvas, associations, fragment, grounding)
+	return validateMechanismFragmentsForProduct(canvas, fragments, grounding)
 }
 
-func validateMechanismFragmentForProduct(
+func validateMechanismFragmentsForProduct(
 	canvas *ArchitectureCanvas,
-	associations *ArchitectureAssociationProjection,
-	fragment *MechanismFragmentProjection,
+	fragments []MechanismFragmentProjection,
 	grounding *ArchitectureGrounding,
 ) error {
-	expected, err := projectMechanismFragmentForProduct(canvas, associations, grounding)
+	expected, err := projectMechanismFragmentsForProduct(canvas, grounding)
 	if err != nil {
 		return err
 	}
 	if expected == nil {
-		if fragment == nil {
+		if fragments == nil {
 			return nil
 		}
-		return fmt.Errorf("mechanism fragment: projection has no process entry")
+		return fmt.Errorf("mechanism fragment: projection has no supported first-hop handoffs")
 	}
-	if fragment == nil {
+	if fragments == nil {
 		return fmt.Errorf("mechanism fragment: projection is missing")
 	}
-	if fragment.Version != MechanismFragmentVersion {
-		return fmt.Errorf("mechanism fragment: unsupported version %d", fragment.Version)
+	for index, fragment := range fragments {
+		if fragment.Version != MechanismFragmentVersion {
+			return fmt.Errorf("mechanism fragment: fragment %d has unsupported version %d", index, fragment.Version)
+		}
 	}
-	if !reflect.DeepEqual(fragment, expected) {
+	if !reflect.DeepEqual(fragments, expected) {
 		return fmt.Errorf("mechanism fragment: persisted projection does not match exact local evidence")
 	}
 	return nil

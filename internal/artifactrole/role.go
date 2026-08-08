@@ -24,6 +24,7 @@ const (
 	RoleGenerated               Role = "generated"
 	RolePlayground              Role = "playground_preview_evaluator"
 	RoleExperimental            Role = "experimental"
+	RoleTooling                 Role = "tooling"
 	RoleCurrentDocumentation    Role = "current_documentation"
 	RoleHistoricalDocumentation Role = "historical_decision_documentation"
 )
@@ -63,6 +64,8 @@ func Classify(filePath string, hints Hints) Role {
 		return RoleExample
 	case hasSegment(segments, "experiment", "experiments", "experimental", "prototype", "prototypes", "lab", "labs"):
 		return RoleExperimental
+	case hasSegment(segments, "script", "scripts"):
+		return RoleTooling
 	case hints.Documentation || isDocumentationPath(base):
 		if isHistoricalDocumentation(lower, segments, base) {
 			return RoleHistoricalDocumentation
@@ -94,6 +97,8 @@ func SelectionPriority(role Role) int {
 		return 90
 	case RoleExperimental:
 		return 45
+	case RoleTooling:
+		return 40
 	case RoleExample:
 		return 35
 	case RoleHistoricalDocumentation:
@@ -158,6 +163,7 @@ func SortPaths(paths []string) []string {
 		RoleProductionCore,
 		RoleCurrentDocumentation,
 		RoleExperimental,
+		RoleTooling,
 		RoleExample,
 		RoleHistoricalDocumentation,
 		RolePlayground,
@@ -282,7 +288,7 @@ func isTestPath(base string, segments []string) bool {
 		return true
 	}
 	for _, segment := range segments {
-		if segment == "test" || segment == "tests" || strings.HasSuffix(segment, "-test") ||
+		if segment == "test" || segment == "tests" || segment == "testing" || strings.HasSuffix(segment, "-test") ||
 			strings.HasSuffix(segment, "_test") {
 			return true
 		}

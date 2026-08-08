@@ -171,7 +171,7 @@ func TestArchitecturePresentationInventoryCoversRenderedAnchorAndMemberProse(
 
 	location := evidence.Location{Path: "cmd/server/main.go", Line: 42}
 	symbolID := componentmap.MemberID{
-		Kind: componentmap.MemberEntrypoint, Value: "member-entry-opaque-id",
+		Kind: componentmap.MemberSymbol, Value: "member-entry-opaque-id",
 	}
 	flowID := componentmap.MemberID{
 		Kind: componentmap.MemberFlow, Value: "member-flow-opaque-id",
@@ -184,10 +184,12 @@ func TestArchitecturePresentationInventoryCoversRenderedAnchorAndMemberProse(
 		ArchitectureCanvas: &ArchitectureCanvas{
 			Version: ArchitectureCanvasVersion,
 			BehaviorAnchors: []componentmap.BehaviorAnchor{{
-				ID:       "anchor-process-entry",
-				Kind:     componentmap.AnchorProcessEntry,
-				Label:    "process entry main",
-				Location: location,
+				ID:        "anchor-process-entry",
+				Kind:      componentmap.AnchorProcessEntry,
+				Label:     "process entry main",
+				Location:  location,
+				ProofMode: componentmap.AnchorProofProcessEntry,
+				Scenario:  componentmap.ScenarioContext{ID: "scenario-product"},
 				MemberIDs: []componentmap.MemberID{
 					symbolID,
 				},

@@ -874,6 +874,9 @@ func validateThemeStudyThemes(
 	if themes.AdjSHA256 != result.CatalogSHA256 {
 		return fmt.Errorf("study_themes Adjudication digest does not match Adjudication result")
 	}
+	if len(result.Themes) != len(themes.Cards)+themes.Omitted+themes.CoProjected {
+		return fmt.Errorf("study_themes reduction accounting does not partition accepted themes")
+	}
 	// Zero source bytes: cards carry no lines, no content hashes, no pack
 	// bytes. Re-encoding the cards must not contain source-bearing fields.
 	encoded, err := json.Marshal(themes.Cards)

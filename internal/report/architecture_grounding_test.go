@@ -207,6 +207,16 @@ func TestArchitectureEntryHandoffsRemainOutsideCanvasAndAreOpenable(t *testing.T
 			t.Fatalf("entry handoff path %q is not openable: %#v", want, data.OpenablePaths)
 		}
 	}
+	callsiteFound := false
+	for _, target := range overviewSourceTargets(data) {
+		if target.path == "cmd/app/main.go" && target.line == 14 {
+			callsiteFound = true
+			break
+		}
+	}
+	if !callsiteFound {
+		t.Fatalf("entry handoff callsite is absent from source coverage: %#v", overviewSourceTargets(data))
+	}
 }
 
 func TestReadRunDirAcceptsExactProducerEntryHandoffArtifact(t *testing.T) {

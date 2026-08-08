@@ -576,8 +576,10 @@ func TestArchitectureCanvasVersionRejectsHistoricalRemainderSemantics(t *testing
 	// empty rejection advanced it to 11.
 	// Decision 239 (v12): final exclusive package ownership now projects
 	// bounded, aggregated package-import edges for Map.
-	if ArchitectureCanvasVersion != 12 {
-		t.Fatalf("ArchitectureCanvasVersion = %d, want 12 for package-import edge projection", ArchitectureCanvasVersion)
+	// Decision 242 (v13): plural per-entry mechanisms are persisted on the
+	// authoritative Canvas and re-derived from exact local evidence.
+	if ArchitectureCanvasVersion != 13 {
+		t.Fatalf("ArchitectureCanvasVersion = %d, want 13 for plural mechanism projection", ArchitectureCanvasVersion)
 	}
 	if err := validateSemanticSearchCanvasVersion(&ArchitectureCanvas{Version: ArchitectureCanvasVersion - 1}); err == nil || !strings.Contains(err.Error(), "unsupported architecture canvas version") {
 		t.Fatalf("historical Architecture Canvas version error = %v", err)

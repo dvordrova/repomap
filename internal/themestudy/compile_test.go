@@ -193,9 +193,10 @@ func TestMockAndReplayAdjudicationRoundTrip(t *testing.T) {
 	}
 	encoded, err := EncodeStudyThemes(StudyThemes{
 		// Decision 235 (v11): themes artifact v3.
-		Version: "v3", ScoutSHA256: request.CatalogSHA256,
+		Version: StudyThemesVersion, ScoutSHA256: request.CatalogSHA256,
 		AdjSHA256: adjRequest.CatalogSHA256, Cards: reduction.Cards,
-		Omitted: reduction.Omitted, Partial: reduction.Partial, Diagnostics: reduction.Diagnostics,
+		Omitted: reduction.Omitted, CoProjected: reduction.CoProjected,
+		Partial: reduction.Partial, Diagnostics: reduction.Diagnostics,
 	})
 	if err != nil {
 		t.Fatalf("EncodeStudyThemes: %v", err)
@@ -212,6 +213,60 @@ func TestMockAndReplayAdjudicationRoundTrip(t *testing.T) {
 			if strings.Contains(reading.Symbol, "func ") || reading.Path == "" {
 				t.Fatalf("card reading carries source bytes or no path: %+v", reading)
 			}
+		}
+	}
+}
+
+func TestStudyThemesV4PersistsCoProjectionAndRejectsStaleOrNegativeAccounting(t *testing.T) {
+	themes := StudyThemes{
+		Version:     StudyThemesVersion,
+		Cards:       []ThemeCard{},
+		Omitted:     1,
+		CoProjected: 2,
+		Partial:     true,
+	}
+	encoded, err := EncodeStudyThemes(themes)
+	if err != nil {
+		t.Fatalf("EncodeStudyThemes: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"co_projected":2`) {
+		t.Fatalf("encoded v4 artifact lost co_projected: %s", encoded)
+	}
+	decoded, err := DecodeStudyThemes(encoded)
+	if err != nil {
+		t.Fatalf("DecodeStudyThemes: %v", err)
+	}
+	if decoded.CoProjected != themes.CoProjected || decoded.Omitted != themes.Omitted {
+		t.Fatalf("accounting round-trip = omitted %d, co_projected %d; want %d, %d",
+			decoded.Omitted, decoded.CoProjected, themes.Omitted, themes.CoProjected)
+	}
+
+	if _, err := DecodeStudyThemes([]byte(`{"version":"v3","cards":[],"omitted":0,"partial":false}`)); err == nil {
+		t.Fatal("StudyThemes v3 must fail closed after co_projected became durable")
+	}
+	negative := themes
+	negative.CoProjected = -1
+	if _, err := EncodeStudyThemes(negative); err == nil {
+		t.Fatal("negative co_projected must be rejected on encode")
+	}
+	if _, err := DecodeStudyThemes([]byte(`{"version":"v4","cards":[],"omitted":0,"co_projected":-1,"partial":false}`)); err == nil {
+		t.Fatal("negative co_projected must be rejected on decode")
+	}
+}
+
+func TestD241CurrentThemeIdentityTuple(t *testing.T) {
+	got := []any{
+		ScoutRequestVersion,
+		vocabularyVersion,
+		ScoutCacheContract,
+		ScoutResultVersion,
+		AdjudicationResultVersion,
+		StudyThemesVersion,
+	}
+	want := []any{5, "v3", "theme-scout-accepted-v3", 5, 4, "v4"}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("D241 identity tuple[%d] = %v, want %v (full tuple: %v)", index, got[index], want[index], got)
 		}
 	}
 }

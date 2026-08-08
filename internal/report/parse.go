@@ -819,10 +819,38 @@ func collectOpenablePaths(data *ReportData) {
 				add(member.Location.Path)
 			}
 		}
+		for _, relationship := range data.ArchitectureGrounding.Relationships {
+			add(relationship.Location.Path)
+			for _, location := range relationship.RepresentativeLocations {
+				add(location.Path)
+			}
+		}
 		for _, handoff := range data.ArchitectureGrounding.EntryHandoffs {
 			add(handoff.ProcessEntrypoint.Location.Path)
 			add(handoff.Callee.Location.Path)
 			add(handoff.RepresentativeCallsite.Path)
+		}
+	}
+	if data.ArchitectureCanvas != nil {
+		for _, edge := range data.ArchitectureCanvas.StructuralEdges {
+			if edge.Witness.Kind != componentmap.StructuralRelationBehaviorHandoff {
+				continue
+			}
+			for index := range data.ArchitectureCanvas.BehaviorAnchors {
+				anchor := &data.ArchitectureCanvas.BehaviorAnchors[index]
+				if anchor.Kind == componentmap.AnchorProcessEntry &&
+					anchor.ProofMode == componentmap.AnchorProofProcessEntry &&
+					containsMechanismMemberID(processEntryMemberIDs(anchor), edge.Witness.From) &&
+					mechanismRelationHasScenario(edge.Witness, anchor.Scenario.ID) {
+					add(anchor.Location.Path)
+				}
+			}
+			if edge.Witness.Location != nil {
+				add(edge.Witness.Location.Path)
+			}
+			if target := exactMechanismTargetForMemberID(data.ArchitectureCanvas, edge.Witness.To); target != nil {
+				add(target.Path)
+			}
 		}
 	}
 	if data.ModelResearch != nil {

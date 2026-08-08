@@ -233,10 +233,11 @@ func adjThemeIssue(theme AdjudicatedTheme, candidateByRef map[string]*ScoutCandi
 }
 
 // normalizeAdjudicatedTheme bounds overlong observations and unknowns to
-// their closed limits deterministically (whole-rune truncation, Decision
-// 224) and returns typed per-kind truncation counts. Identity, fit, refs,
-// reading order and the unknowns COUNT are never repaired (too many
-// unknowns stays a hard rejection — capping would silently drop evidence).
+// their closed limits deterministically (readable word-boundary
+// truncation, Decision 224/D241) and returns typed per-kind truncation counts.
+// Identity, fit, refs, reading order and the unknowns COUNT are never repaired
+// (too many unknowns stays a hard rejection — capping would silently drop
+// evidence).
 func normalizeAdjudicatedTheme(theme AdjudicatedTheme) (AdjudicatedTheme, map[string]int) {
 	normalized := theme
 	counts := map[string]int{}

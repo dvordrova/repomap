@@ -1125,7 +1125,8 @@ func validRole(value artifactrole.Role) bool {
 		artifactrole.RoleEffectBoundary, artifactrole.RolePublicAPI,
 		artifactrole.RoleExample, artifactrole.RoleTest, artifactrole.RoleFixture,
 		artifactrole.RoleGenerated, artifactrole.RolePlayground,
-		artifactrole.RoleExperimental, artifactrole.RoleCurrentDocumentation,
+		artifactrole.RoleExperimental, artifactrole.RoleTooling,
+		artifactrole.RoleCurrentDocumentation,
 		artifactrole.RoleHistoricalDocumentation:
 		return true
 	default:

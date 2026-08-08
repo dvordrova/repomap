@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -35,15 +36,49 @@ func normalizeProse(value string) string {
 }
 
 // truncateRunes deterministically shortens value to at most limit whole
-// runes, preserving Unicode boundaries. It never splits a rune and never
-// appends markers: the caller records the normalization count so the
-// truncation is visible in status, never silent.
+// runes. It keeps the largest complete-word prefix that fits with an explicit
+// ellipsis when Unicode whitespace supplies a word boundary; text without
+// whitespace keeps the largest rune-safe prefix. The caller records the
+// normalization count, so the bounded loss remains explicit in status.
 func truncateRunes(value string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
 	if utf8.RuneCountInString(value) <= limit {
 		return value
 	}
-	runes := []rune(value)
-	return string(runes[:limit])
+	runes := []rune(strings.TrimSpace(value))
+	if len(runes) <= limit {
+		return string(runes)
+	}
+	if limit == 1 {
+		return "…"
+	}
+	prefix := runes[:limit-1]
+	wordEnd := len(prefix)
+	if !unicode.IsSpace(runes[limit-1]) {
+		for index := len(prefix) - 1; index >= 0; index-- {
+			if unicode.IsSpace(prefix[index]) {
+				wordEnd = index
+				break
+			}
+		}
+	}
+	result := strings.TrimSpace(string(prefix[:wordEnd]))
+	if result == "" {
+		result = string(prefix)
+	}
+	// A one- or two-rune token at the artificial boundary is usually a
+	// dangling connector (for example Russian "и" or English "to"). Rolling
+	// it back keeps the explicit ellipsis honest without publishing visibly
+	// unfinished copy. Longer technical tokens remain untouched.
+	if lastSpace := strings.LastIndexFunc(result, unicode.IsSpace); lastSpace >= 0 {
+		lastToken := strings.TrimSpace(result[lastSpace+1:])
+		if utf8.RuneCountInString(lastToken) <= 2 {
+			result = strings.TrimSpace(result[:lastSpace])
+		}
+	}
+	return result + "…"
 }
 
 // dedupeRefs keeps the first occurrence of each exact ref and returns the
@@ -209,9 +244,10 @@ func scoutCandidateReferenceIssue(
 }
 
 // normalizeScoutCandidate normalizes presentation-only metadata and bounds
-// every editorial field to its closed limit deterministically (whole-rune
-// truncation, Decision 224). It returns typed per-field counts so the status
-// records every normalization — never a silent rewrite.
+// every editorial field to its closed limit deterministically (readable
+// word-boundary truncation, Decision 224/D241). It returns typed
+// per-field counts so the status records every normalization — never a silent
+// rewrite.
 func normalizeScoutCandidate(candidate ScoutCandidate) (ScoutCandidate, map[string]int) {
 	normalized := candidate
 	counts := map[string]int{}
