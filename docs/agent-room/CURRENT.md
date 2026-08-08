@@ -29,6 +29,8 @@ Active decisions (each approved by the repository owner via its supervisory goal
 25. decisions/241-ordinary-provider-request-effectiveness-conclusions.md
 26. decisions/242-mechanisms-map-lens-single-authority.md
 27. decisions/243-publication-truth-and-direct-mechanism-authority.md
+28. decisions/244-exact-package-member-entry-handoff-join.md
+29. decisions/245-fresh-report-publication-truth-closure.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
@@ -52,7 +54,7 @@ Approved by:
 ## Decision 243
 
 Status:
-    ACTIVE. A shared verified publication classifier distinguishes READY,
+    ACTIVE HISTORICAL BASELINE. A shared verified publication classifier distinguishes READY,
     DEGRADED, and FAILED in ordinary console/corpus output; optional source
     expansion closes item-locally; and current Map entry, association, mobile,
     and wrapping truth is repaired without report diagnostics. Canvas14 /
@@ -78,7 +80,9 @@ Status:
     authorizes up to four independent semantic calls for bounded
     small-repository experiments. There is no semantic retry; the shared
     transport may replay the same immutable bytes after a retryable network
-    failure.
+    failure. D244 supersedes only the target cube join and the resulting group,
+    Canvas, and report identities; D243's publication truth and true Study
+    mechanism contract remain active.
 
 Approved by:
     Repository owner through the persistent linked-review corrective goal and
@@ -87,6 +91,49 @@ Approved by:
     product evidence, and operational explanations stay in the console. The
     owner approved the refs-only unordered v2/root-budget correction on
     2026-08-09 after inspecting all four small-repository responses.
+
+## Decision 244
+
+Status:
+    ACTIVE. EntrypointHandoffGroup v2 / Canvas15 / report41 retain D243's exact
+    callee declaration-member join first. Only when it has zero accepted
+    non-remainder owners, the backend joins the exact D210 target declaration
+    path to an exact RepositoryGraph package file and then to every accepted
+    component carrying that exact package member. Zero, unique, and plural
+    ownership remain explicit; LocalRemainder, names, basenames, path prefixes,
+    model prose, structural edges, and sorted-first selection never join a
+    cube. A unique same-component handoff stays joined and highlighted but is
+    compact `same_component` side detail rather than a self-loop arrow; only a
+    distinct unique component pair draws a cube jump. Manifest13 now re-derives
+    the groups with the saved package inventory. D244 itself adds no UI message
+    identity; the combined candidate's UI14 belongs to the follow-up hard-review
+    truth-copy corrective.
+
+Approved by:
+    Repository owner through the persistent linked-review corrective goal and
+    the 2026-08-09 fresh Age report review: calls must connect to exact cubes
+    where backend-owned package membership proves the endpoint, without
+    reviving Navigator or adding fuzzy browser inference.
+
+## Decision 245
+
+Status:
+    ACTIVE. A zero-survivor Study Adjudication now persists a truthful
+    status-only validation failure and still publishes a DEGRADED report;
+    unexpected persistence failures remain terminal. Ordinary early failure,
+    corpus accounting, absent retired-orientation handling, embedded/package
+    source actions, mobile component access, accessible Canvas counts, and
+    Study truth copy share the same current product contract. UI catalog14
+    explicitly distinguishes exact source attachment from semantic proof and
+    hides internal concentration accounting. Report41 / Canvas15 / group-v2
+    identities remain those of D244. The Age overwrite-protection statement
+    proves semantic entailment is still open; D245 does not rename that gap as
+    solved.
+
+Approved by:
+    Repository owner through the persistent linked hard-review goal and the
+    2026-08-09 instruction to inspect a freshly generated HTML report end to
+    end and take concrete corrective steps.
 
 ## Decision 241 follow-up
 

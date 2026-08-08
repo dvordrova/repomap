@@ -105,7 +105,7 @@ func entrypointHandoffGroupFixture() *ReportData {
 
 func TestProjectEntrypointHandoffGroupsHonestFirstHopFanout(t *testing.T) {
 	data := entrypointHandoffGroupFixture()
-	groups, err := ProjectEntrypointHandoffGroups(data.ArchitectureCanvas, data.ArchitectureGrounding)
+	groups, err := ProjectEntrypointHandoffGroups(data.ArchitectureCanvas, data.ArchitectureGrounding, data.RepositoryGraph)
 	if err != nil {
 		t.Fatalf("ProjectEntrypointHandoffGroups: %v", err)
 	}
@@ -171,21 +171,21 @@ func TestProjectEntrypointHandoffGroupsHonestFirstHopFanout(t *testing.T) {
 		t.Fatalf("frontier = %#v", group.Frontier)
 	}
 	// Round-trip drift rejection.
-	if err := ValidateEntrypointHandoffGroups(data.ArchitectureCanvas, data.ArchitectureGrounding, groups); err != nil {
+	if err := ValidateEntrypointHandoffGroups(data.ArchitectureCanvas, data.ArchitectureGrounding, data.RepositoryGraph, groups); err != nil {
 		t.Fatalf("ValidateEntrypointHandoffGroups: %v", err)
 	}
 	group.Version = EntrypointHandoffGroupVersion - 1
-	if err := ValidateEntrypointHandoffGroups(data.ArchitectureCanvas, data.ArchitectureGrounding, groups); err == nil || !strings.Contains(err.Error(), "unsupported version") {
+	if err := ValidateEntrypointHandoffGroups(data.ArchitectureCanvas, data.ArchitectureGrounding, data.RepositoryGraph, groups); err == nil || !strings.Contains(err.Error(), "unsupported version") {
 		t.Fatalf("historical group version error = %v", err)
 	}
 	group.Version = EntrypointHandoffGroupVersion
 	group.EntryHandoffs[0].EvidenceRef.ID = "entry-handoff-tampered"
-	if err := ValidateEntrypointHandoffGroups(data.ArchitectureCanvas, data.ArchitectureGrounding, groups); err == nil {
+	if err := ValidateEntrypointHandoffGroups(data.ArchitectureCanvas, data.ArchitectureGrounding, data.RepositoryGraph, groups); err == nil {
 		t.Fatal("ValidateEntrypointHandoffGroups accepted a drifted D210 relation ref")
 	}
 	group.EntryHandoffs[0].EvidenceRef.ID = handoff.ID
 	group.EntryHandoffs[0].Path = "mutated.go"
-	if err := ValidateEntrypointHandoffGroups(data.ArchitectureCanvas, data.ArchitectureGrounding, groups); err == nil {
+	if err := ValidateEntrypointHandoffGroups(data.ArchitectureCanvas, data.ArchitectureGrounding, data.RepositoryGraph, groups); err == nil {
 		t.Fatal("ValidateEntrypointHandoffGroups accepted drifted group")
 	}
 }
@@ -303,7 +303,7 @@ func TestEnsureEntrypointHandoffGroupsRejectsPersistedProjectionOnHistoricalCanv
 	t.Parallel()
 
 	data := entrypointHandoffGroupFixture()
-	groups, err := ProjectEntrypointHandoffGroups(data.ArchitectureCanvas, data.ArchitectureGrounding)
+	groups, err := ProjectEntrypointHandoffGroups(data.ArchitectureCanvas, data.ArchitectureGrounding, data.RepositoryGraph)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -513,7 +513,7 @@ func TestEnsureEntrypointHandoffGroupsUsesExactEntryHandoffOutsideCanvas(t *test
 		canvas.Components[4],
 		canvas.Components[5],
 	)
-	withoutCalleeGroups, err := projectEntrypointHandoffGroupsForProduct(&withoutCallee, &grounding)
+	withoutCalleeGroups, err := projectEntrypointHandoffGroupsForProduct(&withoutCallee, &grounding, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -537,6 +537,7 @@ func TestEnsureEntrypointHandoffGroupsUsesExactEntryHandoffOutsideCanvas(t *test
 		canvas,
 		data.ArchitectureCanvas.EntryHandoffGroups,
 		&grounding,
+		data.RepositoryGraph,
 	); err != nil {
 		t.Fatalf("grounded group validation: %v", err)
 	}
@@ -619,7 +620,7 @@ func TestProjectEntrypointHandoffGroupsRejectsMalformedD210Authority(t *testing.
 		t.Run(test.name, func(t *testing.T) {
 			data := entrypointHandoffGroupFixture()
 			test.mutate(&data.ArchitectureGrounding.EntryHandoffs[0])
-			if _, err := ProjectEntrypointHandoffGroups(data.ArchitectureCanvas, data.ArchitectureGrounding); err == nil ||
+			if _, err := ProjectEntrypointHandoffGroups(data.ArchitectureCanvas, data.ArchitectureGrounding, data.RepositoryGraph); err == nil ||
 				!strings.Contains(err.Error(), "not exact D210 evidence") {
 				t.Fatalf("malformed D210 authority error = %v", err)
 			}
@@ -781,12 +782,12 @@ func TestProjectEntrypointHandoffGroupsUsesEveryExactEntryMemberAndScenario(t *t
 	}
 
 	firstCanvas, firstGrounding := makeEvidence(false)
-	first, err := ProjectEntrypointHandoffGroups(firstCanvas, firstGrounding)
+	first, err := ProjectEntrypointHandoffGroups(firstCanvas, firstGrounding, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	reversedCanvas, reversedGrounding := makeEvidence(true)
-	reversed, err := ProjectEntrypointHandoffGroups(reversedCanvas, reversedGrounding)
+	reversed, err := ProjectEntrypointHandoffGroups(reversedCanvas, reversedGrounding, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -811,7 +812,7 @@ func TestProjectEntrypointHandoffGroupsRejectsInexactProcessEntry(t *testing.T) 
 
 	data := entrypointHandoffGroupFixture()
 	data.ArchitectureCanvas.BehaviorAnchors[0].ProofMode = componentmap.AnchorProofCallTarget
-	if _, err := ProjectEntrypointHandoffGroups(data.ArchitectureCanvas, data.ArchitectureGrounding); err == nil ||
+	if _, err := ProjectEntrypointHandoffGroups(data.ArchitectureCanvas, data.ArchitectureGrounding, data.RepositoryGraph); err == nil ||
 		!strings.Contains(err.Error(), "process entry anchor") {
 		t.Fatalf("inexact process entry error = %v", err)
 	}
@@ -856,7 +857,7 @@ func TestProjectEntrypointHandoffGroupsNeverMultipliesCanvasHandoffsAcrossEntrie
 			},
 		})
 	}
-	groups, err := ProjectEntrypointHandoffGroups(canvas, nil)
+	groups, err := ProjectEntrypointHandoffGroups(canvas, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

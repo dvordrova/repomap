@@ -10,7 +10,7 @@ import (
 
 // The Map lens projection is pure: it consumes only backend-owned Canvas and
 // association view-model fields and never performs a browser-side grounding
-// join. Canvas 14 entry_handoff_groups are Entrypoints context, not a lens.
+// join. Canvas 15 entry_handoff_groups are Entrypoints context, not a lens.
 func TestArchitectureCanvasMapLensPureProjection(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -54,7 +54,7 @@ const input = {
   ],
   entryHandoffGroups: [
     {
-      version: 1, id: "entry-group-a", component_ids: ["c1", "c3"],
+      version: 2, id: "entry-group-a", component_ids: ["c1", "c3"],
       entry: transition("main.go", 10, 6, "fixture.main", null, ["c1"]),
       entry_handoffs: [transition("main.go", 11, 9, "fixture.Service.Start", {
         label: "fixture.Service.Start", path: "service.go", line: 20, column: 4,
@@ -62,7 +62,7 @@ const input = {
       frontier: { ordering: "not_established", limitation: "continuation unknown" },
     },
     {
-      version: 1, id: "entry-group-b", component_ids: [],
+      version: 2, id: "entry-group-b", component_ids: [],
       entry: transition("worker.go", 5, 6, "fixture.worker.main", null, []),
       entry_handoffs: [transition("worker.go", 6, 3, "fixture.client.Send", {
         label: "fixture.client.Send", path: "client.go", line: 30, column: 2,
@@ -93,7 +93,7 @@ const full = api.projectArchitectureLens({
 }, "integrations");
 const groupOnly = api.projectArchitectureLens({
   architecture_canvas: {
-    version: 14, components: input.components, surfaces: input.surfaces,
+    version: 15, components: input.components, surfaces: input.surfaces,
     entry_handoff_groups: input.entryHandoffGroups,
   },
 }, "entrypoints");
@@ -105,9 +105,9 @@ const unsupportedCanvas = api.projectArchitectureLens({
 }, "entrypoints");
 const malformedGroup = api.projectArchitectureLens({
   architecture_canvas: {
-    version: 14, components: input.components, surfaces: [],
+    version: 15, components: input.components, surfaces: [],
     entry_handoff_groups: [{
-      version: 1, id: "malformed", component_ids: ["c1"],
+      version: 2, id: "malformed", component_ids: ["c1"],
       entry: transition("main.go", 10, 6, "fixture.main", null, ["c1"]),
       entry_handoffs: [],
       frontier: { ordering: "not_established", limitation: "continuation unknown" },
@@ -118,7 +118,7 @@ const overlay = api.entryHandoffOverlayProjection(
   input.entryHandoffGroups[0], input.components.map((item) => item.id)
 );
 const mixedOverlayGroup = {
-  version: 1, id: "entry-group-mixed", component_ids: ["c1"],
+  version: 2, id: "entry-group-mixed", component_ids: ["c1"],
   entry: transition("main.go", 10, 6, "fixture.main", null, ["c1"]),
   entry_handoffs: [
     transition("main.go", 11, 9, "fixture.local", {
@@ -137,7 +137,7 @@ const noEntryOverlay = api.entryHandoffOverlayProjection(
   input.entryHandoffGroups[1], input.components.map((item) => item.id)
 );
 const pluralOverlayGroup = {
-  version: 1, id: "entry-group-plural", component_ids: ["c1", "c2", "c3"],
+  version: 2, id: "entry-group-plural", component_ids: ["c1", "c2", "c3"],
   entry: transition("main.go", 10, 6, "fixture.main", null, ["c2", "c1"]),
   entry_handoffs: [transition("main.go", 14, 8, "fixture.plural", {
     label: "fixture.plural", path: "plural.go", line: 20, column: 5,
@@ -147,17 +147,33 @@ const pluralOverlayGroup = {
 const pluralOverlay = api.entryHandoffOverlayProjection(
   pluralOverlayGroup, input.components.map((item) => item.id)
 );
+const ageLikeGroup = {
+  version: 2, id: "entry-group-age-like", component_ids: ["c1", "c2"],
+  entry: transition("cmd/age/age.go", 105, 6, "fixture.main", null, ["c1"]),
+  entry_handoffs: Array.from({ length: 13 }, (_, index) => transition(
+    "cmd/age/age.go", 170 + index, 4, "fixture.local" + index,
+    { label: "fixture.local" + index, path: "cmd/age/age.go", line: 300 + index, column: 6 },
+    ["c1"]
+  )).concat([transition(
+    "cmd/age/age.go", 253, 5, "fixture.term.IsTerminal",
+    { label: "fixture.term.IsTerminal", path: "internal/term/term.go", line: 120, column: 6 },
+    ["c2"]
+  )]),
+  frontier: { ordering: "not_established", limitation: "continuation unknown" },
+};
+const ageLikeOverlay = api.entryHandoffOverlayProjection(
+  ageLikeGroup, input.components.map((item) => item.id)
+);
 const fromBox = { x: 10, y: 20, width: 180, height: 100 };
 const toBox = { x: 300, y: 40, width: 180, height: 100 };
 const boxesBefore = JSON.stringify([fromBox, toBox]);
 const crossGeometry = api.entryHandoffConnectionGeometry(fromBox, toBox, 0);
-const loopGeometry = api.entryHandoffConnectionGeometry(fromBox, fromBox, 0);
 const boxesAfter = JSON.stringify([fromBox, toBox]);
 process.stdout.write(JSON.stringify({
   landscape, entrypoints, integrations, removedMechanisms, structuralEdges,
   full, groupOnly, unsupportedCanvas, malformedGroup, overlay, mixedOverlay,
-  noEntryOverlay, pluralOverlay,
-  crossGeometry, loopGeometry, boxesUnchanged: boxesBefore === boxesAfter,
+  noEntryOverlay, pluralOverlay, ageLikeOverlay,
+  crossGeometry, boxesUnchanged: boxesBefore === boxesAfter,
 }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "map-lens-projection-test.js")
@@ -185,14 +201,10 @@ process.stdout.write(JSON.stringify({
 		MixedOverlay      entryHandoffOverlayResult `json:"mixedOverlay"`
 		NoEntryOverlay    entryHandoffOverlayResult `json:"noEntryOverlay"`
 		PluralOverlay     entryHandoffOverlayResult `json:"pluralOverlay"`
+		AgeLikeOverlay    entryHandoffOverlayResult `json:"ageLikeOverlay"`
 		CrossGeometry     struct {
-			Path     string `json:"path"`
-			SelfLoop bool   `json:"self_loop"`
+			Path string `json:"path"`
 		} `json:"crossGeometry"`
-		LoopGeometry struct {
-			Path     string `json:"path"`
-			SelfLoop bool   `json:"self_loop"`
-		} `json:"loopGeometry"`
 		BoxesUnchanged bool `json:"boxesUnchanged"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
@@ -221,10 +233,10 @@ process.stdout.write(JSON.stringify({
 	}
 	if join(got.GroupOnly.Emphasized) != "c1,c3" || got.GroupOnly.Dimmed != 1 ||
 		got.GroupOnly.Counts.EntryHandoffGroups != 2 || len(got.GroupOnly.EntryHandoffGroups) != 2 {
-		t.Fatalf("Canvas14 Entrypoints context = %#v", got.GroupOnly)
+		t.Fatalf("Canvas15 Entrypoints context = %#v", got.GroupOnly)
 	}
 	group := got.GroupOnly.EntryHandoffGroups[0]
-	if group.Kind != "entry_handoff_group" || group.Group.Version != 1 ||
+	if group.Kind != "entry_handoff_group" || group.Group.Version != 2 ||
 		group.Group.Entry.Symbol != "fixture.main" || join(group.ComponentIDs) != "c1,c3" {
 		t.Fatalf("entry handoff group = %#v", group)
 	}
@@ -235,34 +247,40 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("malformed entry context projected = %#v", got.MalformedGroup)
 	}
 	if len(got.Overlay.Edges) != 1 || got.Overlay.Edges[0].FromComponentID != "c1" ||
-		got.Overlay.Edges[0].ToComponentID != "c3" || len(got.Overlay.SelfLoops) != 0 ||
+		got.Overlay.Edges[0].ToComponentID != "c3" ||
 		len(got.Overlay.Overflow) != 0 {
 		t.Fatalf("exact selected-entry overlay = %#v", got.Overlay)
 	}
-	if len(got.MixedOverlay.Edges) != 0 || len(got.MixedOverlay.SelfLoops) != 1 ||
-		got.MixedOverlay.SelfLoops[0].FromComponentID != "c1" || len(got.MixedOverlay.Overflow) != 1 ||
-		got.MixedOverlay.Overflow[0].Reason != "target_unjoined" {
-		t.Fatalf("self-loop/unjoined overlay = %#v", got.MixedOverlay)
+	if len(got.MixedOverlay.Edges) != 0 || len(got.MixedOverlay.Overflow) != 2 ||
+		got.MixedOverlay.Overflow[0].Reason != "same_component" ||
+		got.MixedOverlay.Overflow[1].Reason != "target_unjoined" {
+		t.Fatalf("same-component/unjoined overflow = %#v", got.MixedOverlay)
 	}
 	if len(got.NoEntryOverlay.Overflow) != 1 || got.NoEntryOverlay.Overflow[0].Reason != "entry_unjoined" {
 		t.Fatalf("unjoined entry overlay = %#v", got.NoEntryOverlay)
 	}
-	if len(got.PluralOverlay.Edges) != 0 || len(got.PluralOverlay.SelfLoops) != 0 ||
+	if len(got.PluralOverlay.Edges) != 0 ||
 		len(got.PluralOverlay.Overflow) != 1 || got.PluralOverlay.Overflow[0].Reason != "entry_target_plural" ||
 		join(got.PluralOverlay.ComponentIDs) != "c2,c1,c3" {
 		t.Fatalf("plural exact owners were collapsed, sorted-first, or Cartesian-expanded: %#v", got.PluralOverlay)
 	}
-	if !got.BoxesUnchanged || got.CrossGeometry.SelfLoop || got.CrossGeometry.Path == "" ||
-		!got.LoopGeometry.SelfLoop || got.LoopGeometry.Path == "" {
-		t.Fatalf("overlay geometry mutated layout or lost route: cross=%#v loop=%#v unchanged=%t",
-			got.CrossGeometry, got.LoopGeometry, got.BoxesUnchanged)
+	if len(got.AgeLikeOverlay.Edges) != 1 || len(got.AgeLikeOverlay.Overflow) != 13 {
+		t.Fatalf("Age-like overlay = %#v, want one cross-cube arrow and 13 compact side rows", got.AgeLikeOverlay)
+	}
+	for index, item := range got.AgeLikeOverlay.Overflow {
+		if item.Reason != "same_component" {
+			t.Fatalf("Age-like overflow[%d] reason = %q, want same_component", index, item.Reason)
+		}
+	}
+	if !got.BoxesUnchanged || got.CrossGeometry.Path == "" {
+		t.Fatalf("overlay geometry mutated layout or lost cross route: cross=%#v unchanged=%t",
+			got.CrossGeometry, got.BoxesUnchanged)
 	}
 }
 
 type entryHandoffOverlayResult struct {
 	ComponentIDs []string                  `json:"component_ids"`
 	Edges        []entryHandoffOverlayEdge `json:"edges"`
-	SelfLoops    []entryHandoffOverlayEdge `json:"self_loops"`
 	Overflow     []struct {
 		Reason string `json:"reason"`
 	} `json:"overflow"`

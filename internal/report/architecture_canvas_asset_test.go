@@ -160,6 +160,23 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 				"FIT_MAX_SCALE",
 				"rm-arch__surface.is-focusing",
 				"rm-arch__viewport-hint",
+				`const viewportHint = this.msg("architecture.hint.drag_groups_fit"`,
+				"this.viewportHint.textContent = viewportHint",
+				`this.viewportHint.setAttribute("aria-label", viewportHint)`,
+			},
+		},
+		{
+			name:  "entry handoffs draw only distinct-component arrows",
+			asset: js + css,
+			tokens: []string{
+				`reason: "same_component"`,
+				"projection.edges.forEach((item)",
+			},
+			absent: []string{
+				"self_loops",
+				"geometry.self_loop",
+				".rm-arch__edge--entry-handoff.is-self-loop",
+				".rm-arch__entry-handoff-source.is-self-loop",
 			},
 		},
 		{

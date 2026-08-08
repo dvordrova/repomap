@@ -106,7 +106,14 @@ func atlasStudyAtlasFirstDiagnostic(
 	case outcome.ProviderSkipped || outcome.State == atlasstudy.ProductStateUnavailable:
 		state = "unavailable"
 	case outcome.State == atlasstudy.ProductStateFailed:
-		state = "failed"
+		switch outcome.FailureCode {
+		case atlasstudy.FailureValidation, atlasstudy.FailureReference:
+			state = "response_validation_failed"
+		case atlasstudy.FailureDecode:
+			state = "response_parse_failed"
+		default:
+			state = "failed"
+		}
 	case outcome.Cached:
 		state = "cache_hit"
 	case outcome.State == atlasstudy.ProductStateAcceptedPartial:

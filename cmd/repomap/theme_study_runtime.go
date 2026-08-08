@@ -415,17 +415,12 @@ func runThemeStudyProductForRun(
 	)
 	outcome = themeOutcomeWithAdjudication(outcome, adjStage.outcome)
 	if adjStage.err != nil {
-		// Decision 235 (v11) 1D chatto: a local failure after an accepted
-		// Scout writes a typed terminal status (the adjudication stage
-		// persists it) and the run CONTINUES to the report — accepted
-		// upstream artifacts (Scout) remain inspectable instead of the
-		// whole run terminating at main.go.
-		outcome.State = atlasstudy.ProductStateFailed
-		outcome.FailureCode = adjStage.outcome.FailureCode
-		if outcome.FailureCode == "" {
-			outcome.FailureCode = atlasstudy.FailureValidation
-		}
-		return outcome, nil
+		// Ordinary provider and response-validation failures return err=nil
+		// only after persisting their typed terminal status. A remaining
+		// error means that durable closure itself failed (or a mandatory
+		// integrity/resource gate fired), so attempting report publication
+		// would turn an accepted Scout prefix into a false complete product.
+		return outcome, adjStage.err
 	}
 	adjOutcome, adjRequest, adjResult := adjStage.outcome, adjStage.request, adjStage.result
 	if adjOutcome.State != atlasstudy.ProductStateAccepted &&

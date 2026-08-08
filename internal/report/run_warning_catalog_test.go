@@ -141,6 +141,16 @@ func TestProviderConfidenceWarningLookalikeWithoutCappedStateRemainsProse(t *tes
 	}
 }
 
+func TestAbsentRetiredOrientationReportIsNotAWarning(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "orientation_report.json")
+	data := &ReportData{}
+	if warning := parseOrientationReport(path, data); warning != "" {
+		t.Fatalf("absent retired orientation artifact warning = %q", warning)
+	}
+}
+
 func TestOrientationConfidenceWarningUsesValidatedProducerSidecar(t *testing.T) {
 	t.Parallel()
 

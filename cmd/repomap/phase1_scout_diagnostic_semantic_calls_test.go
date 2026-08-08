@@ -22,7 +22,8 @@ func TestAtlasStudyDiagnosticValidationFailureKeepsSemanticCalls(t *testing.T) {
 		RequestBytes:      2000,
 	}
 	diagnostic := atlasStudyAtlasFirstDiagnostic(outcome, nil, true)
-	if diagnostic.Stage != debugdump.SemanticStageAtlasStudy || diagnostic.State != "failed" {
+	if diagnostic.Stage != debugdump.SemanticStageAtlasStudy ||
+		diagnostic.State != "response_validation_failed" {
 		t.Fatalf("diagnostic = %#v", diagnostic)
 	}
 	if err := recordAtlasFirstStageDiagnostic(t.TempDir()+"/nonexistent", diagnostic); err == nil {

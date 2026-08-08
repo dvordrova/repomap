@@ -184,17 +184,18 @@ func readThemeStudyAccepted(
 		adjStatusEarly, decodeErr := themestudy.DecodeAdjudicationStatus(adjStatusRaw)
 		if decodeErr == nil && adjStatusEarly.Status.State == string(atlasstudy.ProductStateFailed) &&
 			!hasThemes {
-			// D235 contract: accepted Scout + failed/unavailable
-			// Adjudication publishes a durable failed status — never a
-			// terminal run failure. Two legal artifact shapes reach here:
-			// (a) a rejected/empty adjudication result still present
-			// (semantic-empty outcome, zero themes), and (b) an ordinary
-			// provider failure with NO result artifact at all (adj
-			// status only). Both render the complete local question
-			// browse; the failure code distinguishes them.
-			failureCode := atlasstudy.FailureValidation
-			if !hasAdjResult {
-				failureCode = atlasstudy.FailureProvider
+			// D235 contract: accepted Scout + failed Adjudication publishes
+			// a durable failed status — never a terminal run failure. The
+			// status is the failure-code authority: both provider failure and
+			// item-local validation exhaustion correctly have no accepted
+			// result artifact, so artifact absence cannot distinguish them.
+			failureCode := atlasstudy.FailureCode(adjStatusEarly.FailureCode)
+			if !failureCode.Valid() || failureCode == atlasstudy.FailureResource ||
+				failureCode == atlasstudy.FailureCanceled {
+				return nil, nil, fmt.Errorf(
+					"atlas study report: failed Adjudication status has invalid failure code %q",
+					adjStatusEarly.FailureCode,
+				)
 			}
 			browse, browseErr := deriveAtlasStudyFailedBrowse(input, data)
 			if browseErr != nil {

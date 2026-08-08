@@ -220,7 +220,7 @@
  function currentEntrypointHandoffGroup(value) {
   const entry = value && value.entry;
   const frontier = value && value.frontier;
-  return Number(value && value.version) === 1 && text(value && value.id) &&
+  return Number(value && value.version) === 2 && text(value && value.id) &&
    Array.isArray(value.component_ids) &&
    currentEntrypointTransition(entry) &&
    text(entry.claim_kind) === "process_entry" &&
@@ -233,16 +233,16 @@
    text(frontier.ordering) && text(frontier.limitation);
  }
 
- // Canvas 14/group v1 publishes exact component ownership on the entry and
- // on every D210 handoff. This projection consumes those IDs directly. It
- // deliberately has no symbol/path/member fallback: zero or plural endpoint
+ // Canvas 15/group v2 publishes backend-owned component ownership on the
+ // entry and every D210 handoff. This projection consumes those IDs directly.
+ // It deliberately has no symbol/path/member fallback: zero or plural endpoint
  // ownership belongs in the side overflow. Participation highlights every
- // exact ID, but only unique→unique authority can draw an arrow/self-loop;
- // the browser never picks a sorted-first owner or fabricates a Cartesian
+ // exact ID, but only unique→unique authority between distinct components
+ // can draw an arrow. The browser never picks a sorted-first owner or fabricates a Cartesian
  // component relation.
  function entryHandoffOverlayProjection(group, knownComponentIDs) {
   const empty = {
-   group_id: "", entry: null, component_ids: [], edges: [], self_loops: [],
+   group_id: "", entry: null, component_ids: [], edges: [],
    overflow: [], frontier: null,
   };
   if (!currentEntrypointHandoffGroup(group)) return empty;
@@ -258,7 +258,6 @@
   const entryIDs = exactIDs(group.entry);
   const componentIDs = [];
   const edges = [];
-  const selfLoops = [];
   const overflow = [];
   const addComponent = (componentID) => {
    if (componentIDs.indexOf(componentID) < 0) componentIDs.push(componentID);
@@ -287,15 +286,21 @@
     to_component_id: targetIDs[0],
     handoff: handoff,
    };
-   if (entryIDs[0] === targetIDs[0]) selfLoops.push(item);
-   else edges.push(item);
+   if (entryIDs[0] === targetIDs[0]) {
+    overflow.push({
+     id: text(group.id) + ":overflow:" + handoffIndex,
+     reason: "same_component",
+     handoff: handoff,
+    });
+    return;
+   }
+   edges.push(item);
   });
   return {
    group_id: text(group.id),
    entry: group.entry,
    component_ids: componentIDs,
    edges: edges,
-   self_loops: selfLoops,
    overflow: overflow,
    frontier: group.frontier,
   };
@@ -311,25 +316,11 @@
  // entry never asks ELK for a new layout and never changes the viewport.
  function entryHandoffConnectionGeometry(from, to, lane) {
   if (!from || !to) return null;
-  const offset = entryHandoffLaneOffset(Number(lane) || 0);
+ const offset = entryHandoffLaneOffset(Number(lane) || 0);
   if (from === to || (
    Number(from.x) === Number(to.x) && Number(from.y) === Number(to.y) &&
    Number(from.width) === Number(to.width) && Number(from.height) === Number(to.height)
-  )) {
-   const startX = Number(from.x) + Number(from.width) - 24;
-   const startY = Number(from.y) + 8;
-   const outerX = Number(from.x) + Number(from.width) + 28 + Math.abs(offset);
-   const outerY = Number(from.y) - 18 - Math.abs(offset);
-   const endX = Number(from.x) + Number(from.width) - 7;
-   const endY = Number(from.y) + 42;
-   return {
-    path: "M" + startX + " " + startY + " C" + outerX + " " + outerY + " " +
-     outerX + " " + (Number(from.y) + 54 + Math.abs(offset)) + " " + endX + " " + endY,
-    badge_x: outerX - 9,
-    badge_y: Number(from.y) + 13 + offset,
-    self_loop: true,
-   };
-  }
+  )) return null;
   const fromCenter = {
    x: Number(from.x) + Number(from.width) / 2,
    y: Number(from.y) + Number(from.height) / 2,
@@ -350,7 +341,6 @@
      " L" + middleX + " " + endY + " L" + endX + " " + endY,
     badge_x: middleX,
     badge_y: (startY + endY) / 2,
-    self_loop: false,
    };
   }
   const downward = toCenter.y >= fromCenter.y;
@@ -364,7 +354,6 @@
     " L" + endX + " " + middleY + " L" + endX + " " + endY,
    badge_x: (startX + endX) / 2,
    badge_y: middleY,
-   self_loop: false,
   };
  }
 
@@ -413,7 +402,7 @@
      add(text(component.id));
     }
    });
-   // Canvas 14 owns the exact D210→entry join. These groups are context for
+   // Canvas 15 owns the exact D210→entry join. These groups are context for
    // Entrypoints, not a fourth lens and not a client-side join over grounding.
    entryHandoffGroups.forEach((group) => {
     if (!currentEntrypointHandoffGroup(group)) return;
@@ -496,7 +485,7 @@
    components: components,
    surfaces: surfaces,
    associations: flatReportAssociations(reportData && reportData.architecture_associations),
-   entryHandoffGroups: Number(canvas.version) === 14 ? canvas.entry_handoff_groups : [],
+   entryHandoffGroups: Number(canvas.version) === 15 ? canvas.entry_handoff_groups : [],
   });
   const componentCount = components.length;
   return {
@@ -905,7 +894,7 @@ function architecturePartialTruth(data) {
    this.subsystems = array(this.data.subsystems);
    this.components = array(this.data.components);
    this.structuralEdges = mapStructuralEdges(this.data);
-   this.entryHandoffGroups = Number(this.data.version) === 14
+   this.entryHandoffGroups = Number(this.data.version) === 15
     ? array(this.data.entry_handoff_groups).filter(currentEntrypointHandoffGroup)
     : [];
    this.entryHandoffGroupByID = new Map(
@@ -1871,9 +1860,11 @@ function architecturePartialTruth(data) {
    this.surface.append(this.groupLayer, this.nodeLayer, this.stepLayer, this.entryHandoffBadgeLayer);
     this.viewport.appendChild(this.surface);
     if (this.landscapeProjection) {
-     this.viewportHint.textContent = this.msg("architecture.hint.drag_groups_fit", {
+     const viewportHint = this.msg("architecture.hint.drag_groups_fit", {
       count: this.landscapeProjection.groups.length,
      });
+     this.viewportHint.textContent = viewportHint;
+     this.viewportHint.setAttribute("aria-label", viewportHint);
     }
 
    this.renderGroups();
@@ -2443,8 +2434,8 @@ function architecturePartialTruth(data) {
    if (!actionable) return null;
    const control = element(
     staticURL ? "a" : "button",
-    "rm-arch__entry-handoff-source" + (geometry.self_loop ? " is-self-loop" : ""),
-    (geometry.self_loop ? "↻ " : "↗ ") + formatted
+    "rm-arch__entry-handoff-source",
+    "↗ " + formatted
    );
    if (staticURL) {
     control.setAttribute("href", staticURL);
@@ -2488,7 +2479,7 @@ function architecturePartialTruth(data) {
     if (node) node.classList.add("rm-arch__is-entry-handoff-participant");
    });
    const lanes = new Map();
-   projection.edges.concat(projection.self_loops).forEach((item) => {
+   projection.edges.forEach((item) => {
     const from = this.nodePositions.get(item.from_component_id);
     const to = this.nodePositions.get(item.to_component_id);
     if (!from || !to) return;
@@ -2499,7 +2490,7 @@ function architecturePartialTruth(data) {
     if (!geometry) return;
     const edge = this.interactiveSVGPath(
      geometry.path,
-     "rm-arch__edge rm-arch__edge--entry-handoff" + (geometry.self_loop ? " is-self-loop" : ""),
+     "rm-arch__edge rm-arch__edge--entry-handoff",
      [
       text(item.handoff && item.handoff.symbol),
       locationLabel(item.handoff),
@@ -3472,7 +3463,7 @@ function architecturePartialTruth(data) {
      components: this.components,
      surfaces: this.surfaces,
      associations: this.flatAssociations(),
-     entryHandoffGroups: Number(this.data && this.data.version) === 14
+     entryHandoffGroups: Number(this.data && this.data.version) === 15
       ? this.data.entry_handoff_groups : [],
     });
     const hasEmphasis = projection.emphasized.length > 0;
@@ -4448,10 +4439,26 @@ function architecturePartialTruth(data) {
    if (!context) return [];
    const actions = [];
    if (typeof this.options.openSourceLocation === "function") {
-	array(context.sources).forEach((source) => {
+	const sourceLocations = new Set();
+	const appendSource = (source) => {
 	 if (!source || source.actionable === false || !locationLabel(source.location)) return;
+	 const location = source.location;
+	 const key = text(location.path) + "\u0000" + (Number(location.line) || 0) + "\u0000" + (Number(location.column) || 0);
+	 if (sourceLocations.has(key)) return;
+	 sourceLocations.add(key);
 	 actions.push({ kind: "source", value: source });
-	});
+	};
+	array(context.sources).forEach(appendSource);
+	if (sourceLocations.size === 0) {
+	 array(context.package_targets).forEach((target) => {
+	  appendSource({
+	   detail: target && target.path,
+	   label: target && target.path,
+	   location: target && target.location,
+	   actionable: target && target.actionable,
+	  });
+	 });
+	}
    }
    if (typeof this.options.openStudyDirection === "function") {
     array(context.studies).slice(0, 3).forEach((study) => {
@@ -5862,7 +5869,7 @@ function architecturePartialTruth(data) {
    // Decision 236 (v11): Map lens switching is an emphasis projection
    // over the same layout — exposed so the workspace can switch lenses.
    setLens: (lens) => app.setLens(lens),
-   // Canvas 14/group v1: one exact entry group at a time overlays the
+   // Canvas 15/group v2: one exact entry group at a time overlays the
    // existing component geometry. Selection never relayouts or pans.
    selectEntrypointHandoffGroup: (groupID) => app.selectEntrypointHandoffGroup(groupID),
    // Decision 236 (v11): the DOM-free lens projection for the workspace

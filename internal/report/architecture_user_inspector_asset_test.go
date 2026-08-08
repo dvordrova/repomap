@@ -476,6 +476,96 @@ process.stdout.write(JSON.stringify({
 	}
 }
 
+func TestManifestServerSourceActionRemainsAuthorizedEditorRequest(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is unavailable")
+	}
+	assetPath, err := filepath.Abs(filepath.Join("templates", "script.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := `
+const fs = require("fs");
+const vm = require("vm");
+const snippet = {
+  path: "pkg/file.go", start_line: 7, end_line: 9,
+  lines: [{ line: 8, text: "work()", highlight: true }],
+};
+const report = {
+  user_mechanisms: [], user_sources: [snippet],
+  openable_paths: ["pkg/file.go"],
+  source_ids: { "pkg/file.go": "opaque-source-id" },
+};
+const fetchCalls = [];
+const fetch = (url, options) => {
+  fetchCalls.push({ url, options });
+  return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+};
+const window = {
+  location: {
+    hash: "#/map", search: "", hostname: "127.0.0.1", protocol: "http:",
+    pathname: "/_repomap/session-token/runs/run-1/report.html",
+  },
+  history: { state: null, pushState() {}, replaceState() {} },
+  __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
+  setTimeout() { return 1; }, clearTimeout() {},
+};
+const document = {
+  documentElement: { lang: "en" },
+  getElementById(id) { return id === "rm-report-data" ? { textContent: JSON.stringify(report) } : null; },
+  querySelector() { return null; }, querySelectorAll() { return []; },
+};
+window.document = document;
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window });
+vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
+  window, document, fetch, URLSearchParams, Set, Map, AbortController, Promise,
+});
+const api = window.__REPOMAP_WORKSPACE_TEST__;
+api.openSourceLocation({ path: "pkg/file.go", line: 8, column: 3 });
+const call = fetchCalls[0] || {};
+const body = call.options ? JSON.parse(call.options.body) : null;
+process.stdout.write(JSON.stringify({
+  serverMode: api.serverMode(),
+  fetchCount: fetchCalls.length,
+  url: call.url,
+  action: call.options && call.options.headers["X-Repomap-Action"],
+  body,
+  sourceLocation: api.workspaceStateSnapshot().sourceLocation,
+}));
+`
+	runnerPath := filepath.Join(t.TempDir(), "manifest-server-source-action-test.js")
+	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := exec.Command(node, runnerPath, assetPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run manifest-server source action: %v\n%s", err, output)
+	}
+	var got struct {
+		ServerMode     bool   `json:"serverMode"`
+		FetchCount     int    `json:"fetchCount"`
+		URL            string `json:"url"`
+		Action         string `json:"action"`
+		SourceLocation any    `json:"sourceLocation"`
+		Body           struct {
+			RunID    string `json:"run_id"`
+			SourceID string `json:"source_id"`
+			Line     int    `json:"line"`
+			Column   int    `json:"column"`
+		} `json:"body"`
+	}
+	if err := json.Unmarshal(output, &got); err != nil {
+		t.Fatalf("decode manifest-server source action: %v\n%s", err, output)
+	}
+	if !got.ServerMode || got.FetchCount != 1 ||
+		got.URL != "/_repomap/session-token/api/open" || got.Action != "open-file" ||
+		got.Body.RunID != "run-1" || got.Body.SourceID != "opaque-source-id" ||
+		got.Body.Line != 8 || got.Body.Column != 3 || got.SourceLocation != nil {
+		t.Fatalf("manifest-server source action = %#v", got)
+	}
+}
+
 func TestArchitectureAvailabilityDependsOnlyOnCanonicalCanvas(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -538,6 +628,192 @@ process.stdout.write(JSON.stringify({
 	}
 	if !got.Accepted || !got.Rejected || !got.Failed || !got.Diagnostic || !got.LocalOnly {
 		t.Fatalf("architecture publication contract = %#v", got)
+	}
+}
+
+func TestArchitecturePackageOnlyComponentReachesDedupedExactSourceInTwoClicks(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is unavailable")
+	}
+	canvasPath, err := filepath.Abs(filepath.Join("templates", "architecture_canvas.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := `
+const fs = require("fs");
+const vm = require("vm");
+class Element {
+  constructor(tag) {
+    this.tagName = String(tag || "div").toUpperCase();
+    this.children = [];
+    this.attributes = {};
+    this.className = "";
+    this.textContent = "";
+    this.hidden = false;
+    this.style = {};
+    this.dataset = {};
+    this.parentNode = null;
+    this.listeners = {};
+    this.clientWidth = 960;
+    this.clientHeight = 640;
+    this.classList = {
+      add: (...names) => {
+        const values = new Set(String(this.className).split(/\s+/).filter(Boolean));
+        names.forEach((name) => values.add(name));
+        this.className = Array.from(values).join(" ");
+      },
+      remove: (...names) => {
+        const removed = new Set(names);
+        this.className = String(this.className).split(/\s+/).filter((name) => name && !removed.has(name)).join(" ");
+      },
+      toggle: (name, force) => {
+        const values = new Set(String(this.className).split(/\s+/).filter(Boolean));
+        const enabled = force === undefined ? !values.has(name) : !!force;
+        if (enabled) values.add(name); else values.delete(name);
+        this.className = Array.from(values).join(" ");
+        return enabled;
+      },
+      contains: (name) => String(this.className).split(/\s+/).includes(name),
+    };
+  }
+  get childNodes() { return this.children; }
+  appendChild(child) { if (child) { child.parentNode = this; this.children.push(child); } return child; }
+  append(...children) { children.forEach((child) => this.appendChild(child)); }
+  prepend(child) { if (child) { child.parentNode = this; this.children.unshift(child); } }
+  replaceChildren(...children) { this.children = []; this.textContent = ""; this.append(...children); }
+  remove() {
+    if (!this.parentNode) return;
+    this.parentNode.children = this.parentNode.children.filter((child) => child !== this);
+    this.parentNode = null;
+  }
+  setAttribute(name, value) { this.attributes[name] = String(value); }
+  getAttribute(name) { return this.attributes[name] == null ? null : this.attributes[name]; }
+  removeAttribute(name) { delete this.attributes[name]; }
+  addEventListener(type, handler) {
+    if (!this.listeners[type]) this.listeners[type] = [];
+    this.listeners[type].push(handler);
+  }
+  removeEventListener() {}
+  click() {
+    (this.listeners.click || []).forEach((handler) => handler({
+      currentTarget: this, target: this, stopPropagation() {}, preventDefault() {},
+    }));
+  }
+  focus() { document.activeElement = this; }
+  contains(candidate) {
+    if (candidate === this) return true;
+    return this.children.some((child) => child && typeof child.contains === "function" && child.contains(candidate));
+  }
+  getBoundingClientRect() { return { left: 0, top: 0, right: 300, bottom: 180, width: 300, height: 180 }; }
+  querySelector() { return null; }
+  querySelectorAll() { return []; }
+  scrollIntoView() {}
+}
+function walk(root) {
+  const result = [];
+  (function visit(node) { if (!node) return; result.push(node); (node.children || []).forEach(visit); })(root);
+  return result;
+}
+function nodeText(root) { return walk(root).map((node) => String(node.textContent || "")).join(""); }
+const document = {
+  createElement: (tag) => new Element(tag),
+  createElementNS: (_ns, tag) => new Element(tag),
+  createTextNode(value) { const node = new Element("#text"); node.textContent = String(value); return node; },
+  getElementById: () => null,
+  querySelector: () => null,
+  querySelectorAll: () => [],
+  addEventListener() {}, removeEventListener() {},
+  body: new Element("body"), documentElement: new Element("html"),
+};
+document.activeElement = document.body;
+const window = {
+  document, AbortController, Set, Map, URLSearchParams, Promise,
+  requestAnimationFrame: (callback) => callback(),
+  clearTimeout, setTimeout, innerWidth: 1440, innerHeight: 1000,
+  addEventListener() {}, removeEventListener() {},
+  RepomapUI: { message(id) { return id; } },
+};
+const sandbox = {
+  window, document, Element, AbortController, Set, Map, URLSearchParams, Promise,
+  requestAnimationFrame: (callback) => callback(), clearTimeout, setTimeout, console,
+  addEventListener() {}, removeEventListener() {},
+};
+sandbox.global = sandbox;
+vm.createContext(sandbox);
+vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), sandbox);
+const host = new Element("div");
+const data = {
+  components: [{
+    id: "package-only", name: "Worker package",
+    members: [{ id: { kind: "package", value: "opaque-package" }, name: "worker" }],
+  }],
+  subsystems: [{ id: "application", name: "Application", component_ids: ["package-only"] }],
+  groups: [], structural_edges: [], behavior_anchors: [], relations: [], surfaces: [], flows: [],
+};
+const opened = [];
+const exactTarget = {
+  path: "example.test/project/worker", file_count: 2,
+  location: { path: "worker/a.go", line: 1, column: 0 }, actionable: true,
+};
+const app = window.RepomapArchitectureCanvas.mount(host, data, {
+  userMode: true,
+  message: (id) => id,
+  openSourceLocation: (location) => opened.push(location),
+  componentContexts: {
+    "package-only": {
+      package_paths: ["example.test/project/worker"],
+      package_targets: [exactTarget, { ...exactTarget }],
+      sources: [], surface_starts: [], studies: [], structural_relations: [],
+      member_count: 1, authority: "validated", evidence_composition: "package",
+    },
+  },
+});
+app.ready.then(() => {
+  app.openComponent("package-only"); // first click: cube/component
+  const sourceButtons = walk(host).filter((node) =>
+    node.tagName === "BUTTON" && String(node.className).split(/\s+/).includes("rm-arch__compact-action") &&
+    nodeText(node).includes("example.test/project/worker"));
+  if (sourceButtons[0]) sourceButtons[0].click(); // second click: exact source
+  process.stdout.write(JSON.stringify({
+    sourceButtonCount: sourceButtons.length,
+    opened,
+    sourceButtonText: sourceButtons[0] ? nodeText(sourceButtons[0]) : "",
+  }));
+}).catch((error) => {
+  process.stdout.write(JSON.stringify({ mountError: String(error && error.stack || error) }));
+  process.exit(2);
+});
+`
+	runnerPath := filepath.Join(t.TempDir(), "architecture-package-target-test.js")
+	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := exec.Command(node, runnerPath, canvasPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run package-only Architecture source journey: %v\n%s", err, output)
+	}
+	var got struct {
+		SourceButtonCount int `json:"sourceButtonCount"`
+		Opened            []struct {
+			Path   string `json:"path"`
+			Line   int    `json:"line"`
+			Column int    `json:"column"`
+		} `json:"opened"`
+		SourceButtonText string `json:"sourceButtonText"`
+		MountError       string `json:"mountError"`
+	}
+	if err := json.Unmarshal(output, &got); err != nil {
+		t.Fatalf("decode package-only Architecture source journey: %v\n%s", err, output)
+	}
+	if got.MountError != "" {
+		t.Fatalf("canvas mount failed: %s", got.MountError)
+	}
+	if got.SourceButtonCount != 1 || len(got.Opened) != 1 ||
+		got.Opened[0].Path != "worker/a.go" || got.Opened[0].Line != 1 ||
+		got.Opened[0].Column != 0 ||
+		!strings.Contains(got.SourceButtonText, "example.test/project/worker") {
+		t.Fatalf("package-only two-click source action = %#v", got)
 	}
 }
 
@@ -636,7 +912,9 @@ func TestArchitectureUserInspectorStaysCompactAndSourceBacked(t *testing.T) {
 		"message: msg",
 		"this.msg(",
 		"userComponentActions(component)",
-		"array(context.sources).forEach((source)",
+		"array(context.sources).forEach(appendSource)",
+		"array(context.package_targets).forEach((target)",
+		"sourceLocations.has(key)",
 		"array(context.studies).slice(0, 3)",
 		"package_targets: packageTargets",
 		"surface_starts: surfaceStarts",

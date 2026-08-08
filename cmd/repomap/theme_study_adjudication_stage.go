@@ -39,6 +39,8 @@ type themeAdjStageResult struct {
 	err     error
 }
 
+var errThemeAdjudicationZeroValidThemes = errors.New("theme adjudication run: zero valid themes")
+
 func themeAdjErr(outcome themeAdjStageOutcome, request themestudy.AdjudicationRequest, err error) themeAdjStageResult {
 	return themeAdjStageResult{outcome: outcome, request: request, err: err}
 }
@@ -229,6 +231,9 @@ func runThemeAdjudicationStage(
 			return themeAdjErr(outcome, request,
 				themeAdjTerminalFailure(writer, request, outcome, atlasstudy.FailureResource, validationErr))
 		}
+		if errors.Is(validationErr, errThemeAdjudicationZeroValidThemes) {
+			return themeAdjValidationFailure(writer, request, status, outcome, validationErr, output)
+		}
 		return themeAdjOrdinaryFailure(writer, request, outcome, atlasstudy.FailureValidation, validationErr, output)
 	}
 	writer.RecordSemanticExchange(debugdump.SemanticExchange{
@@ -296,7 +301,8 @@ func themeValidateAdjudication(
 			debugdump.SemanticValidationResponse, err
 	}
 	// Decision 232: zero valid themes is a legitimate semantic-empty
-	// outcome, published as a failed state with the empty result retained.
+	// outcome. It persists as a failed status only: an accepted result
+	// artifact cannot truthfully carry zero accepted themes.
 	// The artifact contract serializes Unknowns with omitempty, so an empty
 	// non-nil slice would not survive the encode→decode round-trip. Normalize
 	// to nil so the persisted result always equals the in-memory record.
@@ -305,16 +311,21 @@ func themeValidateAdjudication(
 			themes[index].Unknowns = nil
 		}
 	}
+	record := themestudy.AdjudicationStatusRecord{
+		Version: themestudy.AdjudicationResultVersion, State: status.State,
+		PromptVersion: themestudy.AdjudicationPromptVersion, Language: request.Language,
+		CatalogSHA256: request.CatalogSHA256, Status: status,
+	}
+	if len(themes) == 0 {
+		record.FailureCode = string(atlasstudy.FailureValidation)
+		return themestudy.AdjudicationResult{}, record,
+			debugdump.SemanticValidationResponse, errThemeAdjudicationZeroValidThemes
+	}
 	result := themestudy.AdjudicationResult{
 		Version: themestudy.AdjudicationResultVersion, State: status.State,
 		PromptVersion: themestudy.AdjudicationPromptVersion, Language: request.Language,
 		CatalogSHA256: request.CatalogSHA256, WireSHA256: request.WireSHA256,
 		Themes: themes, Status: status,
-	}
-	record := themestudy.AdjudicationStatusRecord{
-		Version: themestudy.AdjudicationResultVersion, State: status.State,
-		PromptVersion: themestudy.AdjudicationPromptVersion, Language: request.Language,
-		CatalogSHA256: request.CatalogSHA256, Status: status,
 	}
 	return result, record, debugdump.SemanticValidationAccepted, nil
 }
@@ -413,6 +424,59 @@ func themeAdjOrdinaryFailure(
 		)
 	}
 	return themeAdjErr(outcome, request, nil)
+}
+
+// themeAdjValidationFailure closes an item-locally rejected Adjudication
+// response with its exact bounded rejection accounting. The accepted Scout,
+// source expansion, and Adjudication request remain inspectable, while the
+// absence of an accepted result can no longer leave an inconsistent artifact
+// prefix that aborts report publication.
+func themeAdjValidationFailure(
+	writer *debugdump.Writer,
+	request themestudy.AdjudicationRequest,
+	status themestudy.AdjudicationStatusRecord,
+	outcome themeAdjStageOutcome,
+	cause error,
+	output *runOutput,
+) themeAdjStageResult {
+	if status.State != string(atlasstudy.ProductStateFailed) ||
+		status.Status.State != string(atlasstudy.ProductStateFailed) ||
+		status.Status.Accepted != 0 || status.CatalogSHA256 != request.CatalogSHA256 {
+		return themeAdjErr(outcome, request, fmt.Errorf(
+			"theme adjudication run: invalid failed validation status: %w", cause,
+		))
+	}
+	status.FailureCode = string(atlasstudy.FailureValidation)
+	statusBytes, err := themestudy.EncodeAdjudicationStatus(status)
+	if err != nil {
+		return themeAdjErr(outcome, request, errors.Join(cause, err))
+	}
+	if err := writer.WriteValidatedFile(themestudy.AdjudicationStatusArtifactFilename, statusBytes, func(saved []byte) error {
+		decoded, decodeErr := themestudy.DecodeAdjudicationStatus(saved)
+		if decodeErr != nil {
+			return decodeErr
+		}
+		if !reflect.DeepEqual(decoded, status) {
+			return fmt.Errorf("theme adjudication failed status changed before publication")
+		}
+		return nil
+	}); err != nil {
+		return themeAdjErr(outcome, request,
+			errors.Join(cause, themeTerminalResource(err, 0)))
+	}
+	outcome.State = atlasstudy.ProductStateFailed
+	outcome.FailureCode = atlasstudy.FailureValidation
+	outcome.AdjAccepted = status.Status.Accepted
+	outcome.AdjRejected = status.Status.Rejected
+	if output != nil {
+		output.Warn(
+			"Study themes unavailable",
+			"Theme Adjudication rejected every proposed theme",
+			fmt.Sprintf("reviewed themes: %d · rejected: %d", status.Status.Received, status.Status.Rejected),
+			"local Atlas and Architecture remain available",
+		)
+	}
+	return themeAdjOK(outcome, request, themestudy.AdjudicationResult{})
 }
 
 func themeAdjTerminalFailure(

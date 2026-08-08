@@ -469,11 +469,13 @@ func ensureEntrypointHandoffGroups(data *ReportData) error {
 			data.ArchitectureCanvas,
 			data.ArchitectureCanvas.EntryHandoffGroups,
 			data.ArchitectureGrounding,
+			data.RepositoryGraph,
 		)
 	}
 	groups, err := projectEntrypointHandoffGroupsForProduct(
 		data.ArchitectureCanvas,
 		data.ArchitectureGrounding,
+		data.RepositoryGraph,
 	)
 	if err != nil {
 		return err
@@ -487,25 +489,28 @@ func ensureEntrypointHandoffGroups(data *ReportData) error {
 func ValidateEntrypointHandoffGroups(
 	canvas *ArchitectureCanvas,
 	grounding *ArchitectureGrounding,
+	repositoryGraph *RepositoryGraph,
 	groups []EntrypointHandoffGroup,
 ) error {
-	return validateEntrypointHandoffGroups(canvas, groups, grounding)
+	return validateEntrypointHandoffGroups(canvas, groups, grounding, repositoryGraph)
 }
 
 func validateEntrypointHandoffGroups(
 	canvas *ArchitectureCanvas,
 	groups []EntrypointHandoffGroup,
 	grounding *ArchitectureGrounding,
+	repositoryGraph *RepositoryGraph,
 ) error {
-	return validateEntrypointHandoffGroupsForProduct(canvas, groups, grounding)
+	return validateEntrypointHandoffGroupsForProduct(canvas, groups, grounding, repositoryGraph)
 }
 
 func validateEntrypointHandoffGroupsForProduct(
 	canvas *ArchitectureCanvas,
 	groups []EntrypointHandoffGroup,
 	grounding *ArchitectureGrounding,
+	repositoryGraph *RepositoryGraph,
 ) error {
-	expected, err := projectEntrypointHandoffGroupsForProduct(canvas, grounding)
+	expected, err := projectEntrypointHandoffGroupsForProduct(canvas, grounding, repositoryGraph)
 	if err != nil {
 		return err
 	}

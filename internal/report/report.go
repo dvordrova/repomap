@@ -38,7 +38,9 @@ import (
 // authoritative Architecture Canvas and removed the singular report field.
 // Format 40 correctly publishes that context as Canvas v14 entry-handoff
 // groups derived only from exact D210 evidence, not as Mechanisms.
-const CurrentFormatVersion = 40
+// Format 41 adds the exact RepositoryGraph package-member fallback for D210
+// targets that the accepted Canvas did not retain as symbol members.
+const CurrentFormatVersion = 41
 
 // Decision 232: adjudication anchor coverage + semantic-empty browse.
 // Decision 233: alternate co-projection + concentration marker.

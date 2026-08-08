@@ -313,10 +313,10 @@ process.stdout.write(JSON.stringify({
 	if len(got.RedactedButtons) != 0 {
 		t.Fatalf("redacted source exposed navigation actions: %#v", got.RedactedButtons)
 	}
-	// Decision 222: without a GitHub/GitLab (or server) jump, opening the
-	// source is a no-op — never an inline code drawer, never a route change.
+	// A generic host keeps the operation route/context and opens the already
+	// embedded exact source in the drawer.
 	if got.SourceHash != "#/operate/operate%2Fserver" || got.SourceState.View != "operate" ||
-		got.SourceState.OperationID != "operate/server" || got.SourceState.SourceLocation != nil {
+		got.SourceState.OperationID != "operate/server" || got.SourceState.SourceLocation == nil {
 		t.Fatalf("operation source opening changed route/context: hash %q state %#v", got.SourceHash, got.SourceState)
 	}
 	if got.ClosedHash != "#/operate/operate%2Fserver" || got.ClosedState.View != "operate" ||

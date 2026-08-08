@@ -124,6 +124,39 @@ func TestAssessRunPublicationFailsClosedWithoutManifestIntegrity(t *testing.T) {
 	}
 }
 
+func TestVerifyPublishedHTMLRejectsMissingAndInvalidApplicationShells(t *testing.T) {
+	t.Parallel()
+
+	runDir := t.TempDir()
+	path := filepath.Join(runDir, "report.html")
+	if err := verifyPublishedHTML(path); err == nil {
+		t.Fatal("missing report HTML was accepted")
+	}
+	for _, test := range []struct {
+		name string
+		raw  string
+	}{
+		{name: "empty", raw: ""},
+		{name: "arbitrary html", raw: "<html><body>not a repomap report</body></html>"},
+		{name: "data marker without html shell", raw: `<script id="rm-report-data">{}</script>`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := os.WriteFile(path, []byte(test.raw), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := verifyPublishedHTML(path); err == nil {
+				t.Fatalf("invalid report HTML was accepted: %q", test.raw)
+			}
+		})
+	}
+	if err := os.WriteFile(path, []byte(`<html><script id="rm-report-data">{}</script></html>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyPublishedHTML(path); err != nil {
+		t.Fatalf("bounded report application shell rejected: %v", err)
+	}
+}
+
 func TestRunCorpusCLIRecordsMissingRepositoryAsFailed(t *testing.T) {
 	t.Parallel()
 
