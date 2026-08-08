@@ -10119,7 +10119,7 @@
     // unresolved frontier. Rendered as a compact DFD-like list, never a
     // complete process proof; no invented edges.
     var fragment = DATA.mechanism_fragment;
-    if (fragment && fragment.version === 1) {
+    if (fragment && fragment.version === 2) {
       var transitionCount = Array.isArray(fragment.transitions) ? fragment.transitions.length : 0;
       var mechanismDisclosure = el('details', 'rm-architecture-disclosure rm-architecture-mechanism-disclosure');
       mechanismDisclosure.open = false;

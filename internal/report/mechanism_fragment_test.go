@@ -9,6 +9,8 @@ import (
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/navigator"
+	"github.com/dvordrova/repomap/internal/repositoryatlas"
 )
 
 func mechanismFragmentFixture() *ReportData {
@@ -142,5 +144,107 @@ func TestEnsureMechanismFragmentAbsentWithoutProcessEntry(t *testing.T) {
 	}
 	if data.MechanismFragment != nil {
 		t.Fatalf("fragment must be absent without a process entry: %#v", data.MechanismFragment)
+	}
+}
+
+func TestEnsureMechanismFragmentUsesExactEntryHandoffOutsideCanvas(t *testing.T) {
+	t.Parallel()
+
+	grounding := architectureGroundingWithEntryHandoff()
+	entryMember := componentmap.MemberID{Kind: componentmap.MemberSymbol, Value: "entry-member"}
+	canvas := &ArchitectureCanvas{
+		Version: ArchitectureCanvasVersion,
+		BehaviorAnchors: []componentmap.BehaviorAnchor{{
+			ID:        "decoy-entry-anchor",
+			Kind:      componentmap.AnchorProcessEntry,
+			ProofMode: componentmap.AnchorProofCallTarget,
+			Label:     "different process entry",
+			Location:  evidence.Location{Path: "cmd/helper/main.go", Line: 7, Column: 1},
+			Scenario:  componentmap.ScenarioContext{ID: "go:linux:tags="},
+			MemberIDs: []componentmap.MemberID{{Kind: componentmap.MemberSymbol, Value: "helper-main"}},
+		}, {
+			ID:        "entry-anchor",
+			Kind:      componentmap.AnchorProcessEntry,
+			ProofMode: componentmap.AnchorProofCallTarget,
+			Label:     "process entry main",
+			Location:  grounding.EntryHandoffs[0].ProcessEntrypoint.Location,
+			Scenario:  componentmap.ScenarioContext{ID: grounding.EntryHandoffs[0].Scenario.ID},
+			MemberIDs: []componentmap.MemberID{entryMember},
+		}},
+		Components: []ArchitectureComponent{{
+			ID: "application", Name: "Application",
+			Members: []componentmap.Candidate{{
+				ID: entryMember, Role: componentmap.CandidateRoleConceptualMember, Name: "main",
+			}},
+		}},
+		StructuralEdges: []ArchitectureStructuralEdge{{
+			ID: "legacy-overlap",
+			Witness: componentmap.LocalRelation{
+				ID: "legacy-overlap-witness", Kind: componentmap.StructuralRelationBehaviorHandoff,
+				From: entryMember,
+				To:   componentmap.MemberID{Kind: componentmap.MemberSymbol, Value: "opaque-callee-id"},
+				Location: &evidence.Location{
+					Path:   grounding.EntryHandoffs[0].RepresentativeCallsite.Path,
+					Line:   grounding.EntryHandoffs[0].RepresentativeCallsite.Line,
+					Column: grounding.EntryHandoffs[0].RepresentativeCallsite.Column,
+				},
+			},
+			WitnessIDs: []string{"legacy-overlap-witness"}, WitnessCount: 1,
+		}, {
+			ID: "same-line-distinct-call",
+			Witness: componentmap.LocalRelation{
+				ID: "same-line-distinct-call-witness", Kind: componentmap.StructuralRelationBehaviorHandoff,
+				From: entryMember,
+				To:   componentmap.MemberID{Kind: componentmap.MemberSymbol, Value: "second-callee"},
+				Location: &evidence.Location{
+					Path:   grounding.EntryHandoffs[0].RepresentativeCallsite.Path,
+					Line:   grounding.EntryHandoffs[0].RepresentativeCallsite.Line,
+					Column: grounding.EntryHandoffs[0].RepresentativeCallsite.Column + 1,
+				},
+			},
+			WitnessIDs: []string{"same-line-distinct-call-witness"}, WitnessCount: 1,
+		}},
+	}
+	data := &ReportData{
+		ArchitectureCanvas:       canvas,
+		ArchitectureGrounding:    &grounding,
+		ArchitectureAssociations: &ArchitectureAssociationProjection{Version: ArchitectureAssociationVersion},
+		RepositoryAtlas: &repositoryatlas.Atlas{Evidence: []repositoryatlas.Evidence{{
+			ID: "selected-entry", Location: grounding.EntryHandoffs[0].ProcessEntrypoint.Location,
+		}}},
+		Navigator: &NavigatorReportProduct{
+			Recommendation: &navigator.RecommendationAction{EvidenceIDs: []string{"selected-entry"}},
+		},
+	}
+	if err := ensureMechanismFragment(data); err != nil {
+		t.Fatal(err)
+	}
+	if data.MechanismFragment == nil || len(data.MechanismFragment.Transitions) != 3 {
+		t.Fatalf("fragment = %#v, want exact handoff, distinct same-line call, plus frontier", data.MechanismFragment)
+	}
+	transition := data.MechanismFragment.Transitions[0]
+	handoff := grounding.EntryHandoffs[0]
+	if transition.ClaimKind != "direct_static_call" ||
+		transition.Path != handoff.RepresentativeCallsite.Path ||
+		transition.Line != handoff.RepresentativeCallsite.Line ||
+		transition.Column != handoff.RepresentativeCallsite.Column ||
+		transition.Symbol != handoff.Callee.Name ||
+		transition.WitnessCount != handoff.WitnessCount ||
+		transition.Evidence != handoff.Producer.Provider+" "+handoff.Producer.Version+" "+handoff.Producer.Operation ||
+		transition.Limitation != handoff.Limitations[0] {
+		t.Fatalf("entry handoff transition = %#v", transition)
+	}
+	if len(canvas.StructuralEdges) != 2 || canvas.StructuralEdges[0].ID != "legacy-overlap" {
+		t.Fatalf("exact entry handoff mutated canonical Canvas: %#v", canvas.StructuralEdges)
+	}
+	if err := validateMechanismFragmentForProduct(
+		canvas,
+		data.ArchitectureAssociations,
+		data.RepositoryAtlas,
+		data.MechanismFragment,
+		&grounding,
+		data.Navigator,
+	); err != nil {
+		t.Fatalf("grounded fragment validation: %v", err)
 	}
 }

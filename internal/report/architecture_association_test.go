@@ -142,6 +142,48 @@ func TestProjectArchitectureAssociationsJoinsExactObservations(t *testing.T) {
 	}
 }
 
+func TestProjectArchitectureAssociationsKeepsStructuralOnlyNeighborsAndCounts(t *testing.T) {
+	t.Parallel()
+
+	canvas, atlas := associationFixture()
+	canvas.StructuralEdges[0].WitnessIDs = []string{"import-a", "import-b", "import-c"}
+	canvas.StructuralEdges[0].WitnessCount = 3
+	// component-other now has no boundary/resource rows. Its exact outgoing
+	// structural neighbor must still be available to the component inspector.
+	observations := make([]repositoryatlas.Observation, 0, len(atlas.Observations)-1)
+	for _, observation := range atlas.Observations {
+		if observation.ID != "obs-3" {
+			observations = append(observations, observation)
+		}
+	}
+	atlas.Observations = observations
+
+	projection, err := ProjectArchitectureAssociations(canvas, atlas)
+	if err != nil {
+		t.Fatalf("ProjectArchitectureAssociations: %v", err)
+	}
+	var service, other *ArchitectureComponentAssociations
+	for index := range projection.Components {
+		switch projection.Components[index].ComponentID {
+		case "component-service":
+			service = &projection.Components[index]
+		case "component-other":
+			other = &projection.Components[index]
+		}
+	}
+	if service == nil || other == nil {
+		t.Fatalf("structural-only endpoint missing: %#v", projection.Components)
+	}
+	if len(other.Associations) != 0 || len(other.Outgoing) != 1 ||
+		other.Outgoing[0].ComponentID != "component-service" || other.Outgoing[0].RelationCount != 3 {
+		t.Fatalf("structural-only outgoing projection = %#v", other)
+	}
+	if len(service.Incoming) != 1 || service.Incoming[0].ComponentID != "component-other" ||
+		service.Incoming[0].RelationCount != 3 {
+		t.Fatalf("incoming projection = %#v", service.Incoming)
+	}
+}
+
 func TestProjectArchitectureAssociationsScopeBoundaryIsExact(t *testing.T) {
 	canvas, atlas := associationFixture()
 	// A sibling package with a shared prefix must NOT match: repo/utilx is

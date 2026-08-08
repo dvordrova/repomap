@@ -354,10 +354,10 @@ type ScoutStatus struct {
 	Issues        []ScoutIssue `json:"issues,omitempty"`
 	SeedCoverage  int          `json:"seed_coverage"`
 	VocabCoverage int          `json:"vocab_coverage"`
-	// Normalized records typed per-field editorial truncation counts
-	// (Decision 224): title/question/why_it_matters/expected_learning. A
-	// non-empty map means overlong provisional prose was bounded, never
-	// silently dropped.
+	// Normalized records typed per-field presentation normalization counts:
+	// title/question/why_it_matters/expected_learning truncation, bounded refs,
+	// and neutral theme_kind fallback. A non-empty map means provider output
+	// was normalized visibly, never silently rewritten or dropped.
 	Normalized map[string]int `json:"normalized,omitempty"`
 }
 

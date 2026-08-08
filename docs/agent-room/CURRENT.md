@@ -24,6 +24,7 @@ Active decisions (each approved by the repository owner via its supervisory goal
 20. decisions/236-repository-map-primary-product.md
 21. decisions/237-semantic-diagnostics-anchor-presence.md
 22. decisions/238-architecture-primary-scope-context-quality.md
+23. decisions/239-ordinary-provider-request-effectiveness.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
@@ -1159,3 +1160,21 @@ honest partial primary coverage and exact local remainder remain valid.
 Architecture status v13 and the console expose bounded primary/supporting
 coverage. One clean uncached ghz provider call is owner-authorized after all
 provider-free gates pass; no D238 retry/tuning loop is authorized.
+
+## 22. Decision 239 — Ordinary provider-request effectiveness (ACTIVE)
+
+The ordinary remote-specific product command (`--github-url` for GitHub and
+`--gitlab-url` for GitLab) is investigated end to end across every LLM request
+it actually emits. Fresh uncached runs over sqlc, Gotify, Maddy,
+PocketBase, Dive, and goargs may run concurrently; exact request/response,
+locally available omitted context, response grammar, validation, salvage, and
+final projection are reviewed rather than inferred from terminal state. Only
+simple evidence-backed, high-impact corrections to deterministic preparation,
+bounded request context, prompt/response burden, backend assembly, validation,
+or durable diagnostics are in scope. No new user flags, ad-hoc scripts,
+cosmetic substitutions, or privacy-boundary expansion is allowed. Fresh etcd
+and casdoor runs are the final regression gate. Provider calls for this bounded
+investigation and its final acceptance are owner-authorized, including up to
+seven concurrent runs. The producer/consumer semantics of `structural_facts`,
+`structural_edges`, and `mechanism_fragment.transitions`, and Map's choice of
+connectivity authority, are a first-priority systemic question.

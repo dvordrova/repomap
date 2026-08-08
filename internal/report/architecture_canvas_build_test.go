@@ -952,6 +952,127 @@ func TestBuildArchitectureCanvasInputPreservesCandidateBundleLimitError(t *testi
 	}
 }
 
+func TestBuildArchitectureCanvasInputOmitsNestedFixtureModuleAtomically(t *testing.T) {
+	t.Parallel()
+
+	const (
+		rootPackageCount    = 92
+		fixturePackageCount = 893
+		rootEdgeCount       = 206
+	)
+	graph := &RepositoryGraph{
+		Version: 2,
+		Modules: []ModuleInfo{
+			{ID: "root", Path: "example.com/product", Dir: ""},
+			{ID: "fixture", Path: "example.com/product/endtoend", Dir: "internal/endtoend/testdata"},
+		},
+		Packages: make([]PackageInfo, 0, rootPackageCount+fixturePackageCount),
+	}
+	rootPaths := make([]string, rootPackageCount)
+	for index := range rootPackageCount {
+		packagePath := fmt.Sprintf("example.com/product/pkg/p%03d", index)
+		rootPaths[index] = packagePath
+		graph.Packages = append(graph.Packages, PackageInfo{
+			CanonicalPath: packagePath,
+			Name:          fmt.Sprintf("p%03d", index),
+			ModuleID:      "root",
+			ModulePath:    "example.com/product",
+			Dir:           fmt.Sprintf("pkg/p%03d", index),
+			DisplayPath:   fmt.Sprintf("pkg/p%03d", index),
+			Locality:      "local",
+		})
+	}
+	fixturePaths := make([]string, fixturePackageCount)
+	for index := range fixturePackageCount {
+		packagePath := fmt.Sprintf("example.com/product/endtoend/case%03d", index)
+		fixturePaths[index] = packagePath
+		graph.Packages = append(graph.Packages, PackageInfo{
+			CanonicalPath: packagePath,
+			Name:          fmt.Sprintf("case%03d", index),
+			ModuleID:      "fixture",
+			ModulePath:    "example.com/product/endtoend",
+			Dir:           fmt.Sprintf("internal/endtoend/testdata/case%03d", index),
+			DisplayPath:   fmt.Sprintf("internal/endtoend/testdata/case%03d", index),
+			Locality:      "local",
+		})
+	}
+	for offset := 1; len(graph.PackageEdges) < rootEdgeCount; offset++ {
+		for index := 0; index < rootPackageCount && len(graph.PackageEdges) < rootEdgeCount; index++ {
+			graph.PackageEdges = append(graph.PackageEdges, EdgeInfo{
+				From: rootPaths[index], To: rootPaths[(index+offset)%rootPackageCount],
+			})
+		}
+	}
+	graph.PackageEdges = append(graph.PackageEdges,
+		EdgeInfo{From: fixturePaths[0], To: fixturePaths[1]},
+		EdgeInfo{From: fixturePaths[1], To: fixturePaths[2]},
+		EdgeInfo{From: fixturePaths[2], To: fixturePaths[0]},
+	)
+
+	scenario := architectureGroundingScenario{ID: "go:test", GOOS: "linux", GOARCH: "amd64"}
+	producer := evidence.Provenance{Provider: "go_ssa", Version: "fixture", Operation: "entry_handoff"}
+	rootAnchor := architectureGroundingTestAnchor(
+		"root-entry", componentmap.AnchorProcessEntry,
+		"pkg/p000/main.go", 7, "example.com/product/pkg/p000.main", scenario, producer,
+	)
+	fixtureAnchor := architectureGroundingTestAnchor(
+		"fixture-entry", componentmap.AnchorProcessEntry,
+		"internal/endtoend/testdata/case000/main.go", 9,
+		"example.com/product/endtoend/case000.main", scenario, producer,
+	)
+	crossModuleAnchor := architectureGroundingTestAnchor(
+		"fixture-callsite-production-target", componentmap.AnchorLifecycleStart,
+		"internal/endtoend/testdata/case001/fixture.go", 11,
+		"example.com/product/pkg/p001.Start", scenario, producer,
+	)
+	crossModuleAnchor.AssociatedMembers[0].Location = evidence.Location{
+		Path: "pkg/p001/start.go", Line: 13, Column: 1,
+	}
+	input, err := BuildArchitectureCanvasInput(&ReportData{
+		RepositoryGraph: graph,
+		ArchitectureGrounding: &ArchitectureGrounding{
+			RepositoryArchetype: ArchitectureArchetype{Selected: componentmap.ArchetypeApplication},
+			GroundingMode:       componentmap.GroundingMixed,
+			BehaviorAnchors: []ArchitectureBehaviorAnchor{
+				rootAnchor, fixtureAnchor, crossModuleAnchor,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildArchitectureCanvasInput: %v", err)
+	}
+	if got := len(input.CandidateBundle.Candidates); got != rootPackageCount+2 {
+		t.Fatalf("Architecture candidates = %d, want %d root packages plus root file/symbol", got, rootPackageCount+2)
+	}
+	if got := len(input.CandidateBundle.Relations); got != rootEdgeCount {
+		t.Fatalf("Architecture relations = %d, want %d retained root edges", got, rootEdgeCount)
+	}
+	if len(input.CandidateBundle.BehaviorAnchors) != 1 ||
+		input.CandidateBundle.BehaviorAnchors[0].ID != rootAnchor.ID {
+		t.Fatalf("scoped behavior anchors = %#v, fixture anchor re-entered Architecture scope", input.CandidateBundle.BehaviorAnchors)
+	}
+	for _, candidate := range input.CandidateBundle.Candidates {
+		if strings.Contains(candidate.Name, "internal/endtoend/testdata") ||
+			strings.Contains(candidate.Name, "endtoend/case000") {
+			t.Fatalf("fixture grounding candidate re-entered Architecture scope: %#v", candidate)
+		}
+	}
+	if len(graph.Packages) != rootPackageCount+fixturePackageCount ||
+		len(graph.PackageEdges) != rootEdgeCount+3 {
+		t.Fatalf("complete saved graph was mutated: packages=%d edges=%d", len(graph.Packages), len(graph.PackageEdges))
+	}
+	wantScope := ArchitectureProductScope{
+		ObservedModules: 2, RetainedModules: 1, OmittedModules: 1,
+		ObservedPackages: rootPackageCount + fixturePackageCount,
+		RetainedPackages: rootPackageCount,
+		ObservedEdges:    rootEdgeCount + 3,
+		RetainedEdges:    rootEdgeCount,
+	}
+	if got := DescribeArchitectureProductScope(graph); !reflect.DeepEqual(got, wantScope) {
+		t.Fatalf("Architecture scope = %#v, want %#v", got, wantScope)
+	}
+}
+
 func TestBuildArchitectureCanvasInputAllowsRepositoryLandscapeWithoutFlowProof(t *testing.T) {
 	t.Parallel()
 
@@ -1005,6 +1126,40 @@ func TestBuildArchitectureCanvasInputKeepsExactPackageWithoutImportEdge(t *testi
 	t.Fatal("exact package without an import edge was omitted")
 }
 
+func TestBuildArchitectureCanvasInputKeepsRootAnchorWhenPackageDirIsDot(t *testing.T) {
+	t.Parallel()
+
+	scenario := architectureGroundingScenario{ID: "go:test", GOOS: "linux", GOARCH: "amd64"}
+	producer := evidence.Provenance{Provider: "go_ssa", Version: "fixture", Operation: "root_entry"}
+	rootAnchor := architectureGroundingTestAnchor(
+		"root-entry", componentmap.AnchorProcessEntry,
+		"main.go", 7, "example.com/product.main", scenario, producer,
+	)
+	input, err := BuildArchitectureCanvasInput(&ReportData{
+		RepositoryGraph: &RepositoryGraph{
+			Version: 2,
+			Modules: []ModuleInfo{{ID: "root", Path: "example.com/product", Dir: "."}},
+			Packages: []PackageInfo{{
+				CanonicalPath: "example.com/product", Name: "main",
+				ModuleID: "root", ModulePath: "example.com/product", Dir: ".",
+				DisplayPath: ".", Locality: "local",
+			}},
+		},
+		ArchitectureGrounding: &ArchitectureGrounding{
+			RepositoryArchetype: ArchitectureArchetype{Selected: componentmap.ArchetypeApplication},
+			GroundingMode:       componentmap.GroundingMixed,
+			BehaviorAnchors:     []ArchitectureBehaviorAnchor{rootAnchor},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(input.CandidateBundle.BehaviorAnchors) != 1 ||
+		input.CandidateBundle.BehaviorAnchors[0].ID != rootAnchor.ID {
+		t.Fatalf("root behavior anchors = %#v", input.CandidateBundle.BehaviorAnchors)
+	}
+}
+
 func TestBuildArchitectureCanvasInputPrioritizesGroundedBehavior(t *testing.T) {
 	t.Parallel()
 
@@ -1045,11 +1200,15 @@ func TestBuildArchitectureCanvasInputPrioritizesGroundedBehavior(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if canvas.Title != "Evidence-backed architecture skeleton" || len(canvas.StructuralFacts) != 2 || len(canvas.StructuralEdges) != 1 {
+	if canvas.Title != "Evidence-backed architecture skeleton" || len(canvas.StructuralFacts) != 2 || len(canvas.StructuralEdges) != 2 {
 		t.Fatalf("canvas grounding/edges = %q / %#v / %#v", canvas.Title, canvas.StructuralFacts, canvas.StructuralEdges)
 	}
-	if canvas.StructuralEdges[0].Witness.Kind != componentmap.StructuralRelationBehaviorHandoff {
-		t.Fatalf("primary edge = %#v", canvas.StructuralEdges[0])
+	kinds := make(map[componentmap.StructuralRelationKind]bool, len(canvas.StructuralEdges))
+	for _, edge := range canvas.StructuralEdges {
+		kinds[edge.Witness.Kind] = true
+	}
+	if !kinds[componentmap.StructuralRelationBehaviorHandoff] || !kinds[componentmap.StructuralRelationPackageImport] {
+		t.Fatalf("grounded structural edge kinds = %#v", canvas.StructuralEdges)
 	}
 }
 

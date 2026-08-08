@@ -15,8 +15,11 @@ const (
 	// Decision 235 (v11): the Study rebase (final Architecture context,
 	// populated span questions) changes the Scout/Adjudication request
 	// bytes and prompts — request 1→2, result 2→3, prompts v2→v3.
+	// Decision 239: an otherwise valid Scout theme with more than five exact
+	// anchors is normalized item-locally instead of being discarded whole;
+	// the typed result/status contract advances 3→4.
 	ScoutRequestVersion        = 2
-	ScoutResultVersion         = 3
+	ScoutResultVersion         = 4
 	AdjudicationRequestVersion = 2
 	AdjudicationResultVersion  = 3
 )
@@ -670,7 +673,7 @@ Return exactly one JSON object and no markdown. Keep all enum values and refs un
 
 const scoutPromptUserShape = `Requested prose language: %s.
 Most repositories need no more than about %d materially distinct, high-value themes. Use fewer when they cover the important learning outcomes; return more only when additional themes add substantial distinct understanding. Do not pad toward a target.
-Prefer a small set of distinct anchor_refs that together support one coherent learning outcome. Use a single anchor when it is sufficient on its own. Do not add anchors merely to reach a count, and do not repeat refs within a theme.
+Prefer a small set of distinct anchor_refs that together support one coherent learning outcome; return 1 to %d per theme. Use a single anchor when it is sufficient on its own. Do not add anchors merely to reach a count, and do not repeat refs within a theme.
 theme_kind is one of: user_journey, cross_cutting_policy, sibling_implementation_family, integration_family, lifecycle_concern, shared_domain_responsibility.
 Response schema: {"themes":[{"title":"...","question":"...","theme_kind":"...","anchor_refs":["a1"],"expansion_file_refs":["f1"],"why_it_matters":"...","expected_learning":"..."}]}
 Request bundle JSON:
@@ -684,7 +687,7 @@ func BuildScoutPrompt(request ScoutRequest) ScoutPrompt {
 		System:   scoutPromptSystem,
 		User: fmt.Sprintf(
 			scoutPromptUserShape,
-			request.Language, ScoutCardinalityPrior,
+			request.Language, ScoutCardinalityPrior, MaxThemeAnchors,
 			request.WireJSON,
 		),
 	}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dvordrova/repomap/internal/orient"
+	"github.com/dvordrova/repomap/internal/report"
 )
 
 const (
@@ -80,6 +81,48 @@ func (output *runOutput) Warn(summary string, details ...string) {
 
 func (output *runOutput) Error(summary string, details ...string) {
 	output.level("ERROR", summary, details...)
+}
+
+// MapConnectivity explains the local fact-to-edge projection in the console,
+// not in the report. A report is user-facing documentation; operational
+// suppression counts belong beside the run that produced it.
+func (output *runOutput) MapConnectivity(counts report.ArchitectureStructuralConnectivity) {
+	if counts.PackageImportFactCount == 0 {
+		return
+	}
+	details := []string{
+		fmt.Sprintf("exact package-import facts: %d", counts.PackageImportFactCount),
+		fmt.Sprintf(
+			"projected: %d witness(es) across %d component-pair edge(s)",
+			counts.ProjectedWitnessCount,
+			counts.ProjectedPairEdgeCount,
+		),
+		fmt.Sprintf("retained inside one component (no Map edge): %d", counts.SuppressedIntraComponentCount),
+		fmt.Sprintf("suppressed because an endpoint has no final component: %d", counts.SuppressedUnjoinedEndpointCount),
+		fmt.Sprintf("suppressed because final ownership is plural: %d", counts.SuppressedPluralOwnershipCount),
+	}
+	if counts.SuppressedUnjoinedEndpointCount > 0 || counts.SuppressedPluralOwnershipCount > 0 {
+		output.Warn("Map package connectivity is partial", details...)
+		return
+	}
+	output.State("Map connectivity", "complete", details...)
+}
+
+// ArchitectureScope explains deterministic model-input omissions in the
+// console. The complete saved RepositoryGraph and the user report remain free
+// of operational selector diagnostics.
+func (output *runOutput) ArchitectureScope(scope report.ArchitectureProductScope) {
+	if scope.OmittedModules == 0 {
+		return
+	}
+	output.Warn(
+		"Architecture model scope omits non-production modules",
+		fmt.Sprintf("modules retained: %d/%d", scope.RetainedModules, scope.ObservedModules),
+		fmt.Sprintf("packages retained: %d/%d", scope.RetainedPackages, scope.ObservedPackages),
+		fmt.Sprintf("exact package edges retained: %d/%d", scope.RetainedEdges, scope.ObservedEdges),
+		fmt.Sprintf("whole non-production modules omitted: %d", scope.OmittedModules),
+		"the complete local repository graph remains available",
+	)
 }
 
 func (output *runOutput) level(level, summary string, details ...string) {

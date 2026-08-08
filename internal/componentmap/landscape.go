@@ -29,15 +29,19 @@ const (
 	// Decision 238: backend-owned primary-scope coverage can reject an
 	// otherwise structurally valid proposal and publish the exact local
 	// landscape instead (ContractVersion 13).
-	ContractVersion = 13
+	// Decision 239: only production-unit top-level scope is primary; covering
+	// test, tooling, or documentation scope cannot satisfy the quality gate
+	// (ContractVersion 14).
+	ContractVersion = 14
 	// ProposalVersion changes whenever the wire proposal shape or its
 	// acceptance semantics change; D4 equivalence coalescing is
 	// acceptance semantics (ProposalVersion 10); shared participation is
 	// acceptance semantics (ProposalVersion 11); member-only grammar +
 	// normalization + item-local empty rejection (ProposalVersion 12);
 	// primary-scope quality rejection is acceptance semantics
-	// (ProposalVersion 13).
-	ProposalVersion = 13
+	// (ProposalVersion 13); production-aware primary-scope classification
+	// changes acceptance semantics (ProposalVersion 14).
+	ProposalVersion = 14
 
 	maxCandidates      = 512
 	maxFlows           = 64

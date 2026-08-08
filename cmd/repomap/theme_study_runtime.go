@@ -150,15 +150,45 @@ func themeScoutSeedBudget(vocabularyFiles int) int {
 }
 
 func themeOutcomeFromScout(outcome themeScoutStageOutcome) themeStudyRunOutcome {
-	return themeStudyRunOutcome{
+	combined := themeStudyRunOutcome{
 		State: outcome.State, FailureCode: outcome.FailureCode,
 		ProviderSkipped: false, Cached: outcome.Cached,
 		ScoutAccepted: outcome.ScoutAccepted, ScoutRejected: outcome.ScoutRejected,
-		RequestBytes: outcome.RequestBytes, ResponseBytes: outcome.ResponseBytes,
-		InputTokens: outcome.InputTokens, OutputTokens: outcome.OutputTokens,
-		SemanticCalls:     outcome.SemanticCalls,
-		TransportAttempts: outcome.TransportAttempts, LatencyMillis: outcome.LatencyMillis,
+		SemanticCalls: outcome.SemanticCalls,
 	}
+	if outcome.SemanticCalls > 0 {
+		combined.RequestBytes = outcome.RequestBytes
+		combined.ResponseBytes = outcome.ResponseBytes
+		combined.InputTokens = outcome.InputTokens
+		combined.OutputTokens = outcome.OutputTokens
+		combined.TransportAttempts = outcome.TransportAttempts
+		combined.LatencyMillis = outcome.LatencyMillis
+	}
+	return combined
+}
+
+// themeOutcomeWithAdjudication adds only provider work performed by the
+// current run. Cache records retain historical response metadata so they can
+// be revalidated, but those bytes, tokens and latency are not current external
+// traffic. A combined run is a cache hit only when both reached semantic
+// stages were cache hits.
+func themeOutcomeWithAdjudication(
+	outcome themeStudyRunOutcome,
+	adjudication themeAdjStageOutcome,
+) themeStudyRunOutcome {
+	outcome.Cached = outcome.Cached && adjudication.Cached
+	outcome.SemanticCalls += adjudication.SemanticCalls
+	outcome.AdjAccepted = adjudication.AdjAccepted
+	outcome.AdjRejected = adjudication.AdjRejected
+	if adjudication.SemanticCalls > 0 {
+		outcome.RequestBytes += adjudication.RequestBytes
+		outcome.ResponseBytes += adjudication.ResponseBytes
+		outcome.InputTokens += adjudication.InputTokens
+		outcome.OutputTokens += adjudication.OutputTokens
+		outcome.TransportAttempts += adjudication.TransportAttempts
+		outcome.LatencyMillis += adjudication.LatencyMillis
+	}
+	return outcome
 }
 
 // themeScoutContext builds the compact, bounded context block of the Scout
@@ -349,14 +379,7 @@ func runThemeStudyProductForRun(
 		scoutOutcome.State != atlasstudy.ProductStateAcceptedPartial {
 		return themeOutcomeFromScout(scoutOutcome), nil
 	}
-	outcome := themeStudyRunOutcome{
-		State: scoutOutcome.State, Cached: scoutOutcome.Cached,
-		SemanticCalls: 1, ScoutAccepted: scoutOutcome.ScoutAccepted,
-		ScoutRejected: scoutOutcome.ScoutRejected,
-		RequestBytes:  scoutOutcome.RequestBytes, ResponseBytes: scoutOutcome.ResponseBytes,
-		InputTokens: scoutOutcome.InputTokens, OutputTokens: scoutOutcome.OutputTokens,
-		TransportAttempts: scoutOutcome.TransportAttempts, LatencyMillis: scoutOutcome.LatencyMillis,
-	}
+	outcome := themeOutcomeFromScout(scoutOutcome)
 
 	// Contract D — local source expansion (backend executes, never the model).
 	// Only the f* refs the Scout candidates requested are expanded: the
@@ -421,42 +444,31 @@ func runThemeStudyProductForRun(
 		ctx, runDir, runsDir, repository, policy, noCache,
 		scoutRequest, scoutResult, expansion, anchors, language, writer, output, clients,
 	)
+	outcome = themeOutcomeWithAdjudication(outcome, adjStage.outcome)
 	if adjStage.err != nil {
 		// Decision 235 (v11) 1D chatto: a local failure after an accepted
 		// Scout writes a typed terminal status (the adjudication stage
 		// persists it) and the run CONTINUES to the report — accepted
 		// upstream artifacts (Scout) remain inspectable instead of the
 		// whole run terminating at main.go.
-		outcome.SemanticCalls = 2
 		outcome.State = atlasstudy.ProductStateFailed
 		outcome.FailureCode = adjStage.outcome.FailureCode
 		if outcome.FailureCode == "" {
 			outcome.FailureCode = atlasstudy.FailureValidation
 		}
-		outcome.AdjAccepted = adjStage.outcome.AdjAccepted
-		outcome.AdjRejected = adjStage.outcome.AdjRejected
 		return outcome, nil
 	}
 	adjOutcome, adjRequest, adjResult := adjStage.outcome, adjStage.request, adjStage.result
 	if adjOutcome.State != atlasstudy.ProductStateAccepted &&
 		adjOutcome.State != atlasstudy.ProductStateAcceptedPartial {
 		// Adjudication failure after a successful Scout is honest: no shelf,
-		// the neutral browse survives. Semantic calls stay at 2 (the second
-		// stage ran and failed).
-		outcome.SemanticCalls = 2
+		// the neutral browse survives. Provider accounting reflects whether
+		// each stage was live or served by its accepted-only cache.
 		outcome.State = adjOutcome.State
 		outcome.FailureCode = adjOutcome.FailureCode
-		outcome.AdjAccepted = adjOutcome.AdjAccepted
-		outcome.AdjRejected = adjOutcome.AdjRejected
 		return outcome, nil
 	}
-	outcome.SemanticCalls = 2
 	outcome.State = adjOutcome.State
-	outcome.AdjAccepted = adjOutcome.AdjAccepted
-	outcome.AdjRejected = adjOutcome.AdjRejected
-	if adjOutcome.Cached {
-		outcome.Cached = true
-	}
 
 	// Local reducer (contract F) — deterministic, no retry, no re-ranking.
 	reduction, err := themestudy.Reduce(themestudy.ReducerInput{
@@ -543,6 +555,10 @@ func runThemeStudyProductForRun(
 		fmt.Sprintf("scout %d/%d · adjudication %d/%d",
 			outcome.ScoutAccepted, outcome.ScoutAccepted+outcome.ScoutRejected,
 			outcome.AdjAccepted, outcome.AdjAccepted+outcome.AdjRejected),
+		fmt.Sprintf("provider calls: %d · transport attempts: %d", outcome.SemanticCalls, outcome.TransportAttempts),
+		fmt.Sprintf("request/response bytes: %d/%d", outcome.RequestBytes, outcome.ResponseBytes),
+		formatRunOutputTokens(outcome.InputTokens, outcome.OutputTokens),
+		formatRunOutputDuration(outcome.LatencyMillis),
 	)
 	return outcome, nil
 }

@@ -907,6 +907,12 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 			formatRunOutputDuration(time.Since(studyReconciliationStarted).Milliseconds()),
 		)
 	}
+	humanOutput.ArchitectureScope(
+		report.DescribeArchitectureProductScope(reportData.RepositoryGraph),
+	)
+	humanOutput.MapConnectivity(
+		report.DescribeArchitectureStructuralConnectivity(reportData.ArchitectureCanvas),
+	)
 	if err := finalizeAtlasFirstStageDiagnostics(runDir); err != nil {
 		return err
 	}

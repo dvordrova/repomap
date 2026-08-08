@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/artifactrole"
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/flowexplain"
@@ -47,8 +48,9 @@ func BuildArchitectureCanvasInput(data *ReportData) (ArchitectureCanvasInput, er
 		return ArchitectureCanvasInput{}, fmt.Errorf("architecture canvas build: report data is nil")
 	}
 
-	builder := newArchitectureCandidateBuilder(data.RepositoryGraph, data.ArchitectureGrounding)
-	builder.addRepositoryGraph(data.RepositoryGraph)
+	architectureGraph, _ := architectureProductScopeGraph(data.RepositoryGraph)
+	builder := newArchitectureCandidateBuilder(architectureGraph, data.ArchitectureGrounding)
+	builder.addRepositoryGraph(architectureGraph)
 	builder.addArchitectureGrounding(data.ArchitectureGrounding)
 	builder.addExecutableRoles(data.DiscoveredSurfaces)
 
@@ -94,6 +96,105 @@ func BuildArchitectureCanvasInput(data *ReportData) (ArchitectureCanvasInput, er
 		Landscape:       landscape,
 		Flows:           nil,
 	}, nil
+}
+
+type ArchitectureProductScope struct {
+	ObservedModules  int
+	RetainedModules  int
+	OmittedModules   int
+	ObservedPackages int
+	RetainedPackages int
+	ObservedEdges    int
+	RetainedEdges    int
+}
+
+// DescribeArchitectureProductScope returns console-only omission accounting.
+// The complete RepositoryGraph remains product authority and the operational
+// selector does not add diagnostics to the user-facing Architecture Canvas.
+func DescribeArchitectureProductScope(graph *RepositoryGraph) ArchitectureProductScope {
+	_, counts := architectureProductScopeGraph(graph)
+	return counts
+}
+
+// architectureProductScopeGraph keeps the saved RepositoryGraph complete and
+// derives only the bounded Architecture candidate scope. A nested module whose
+// directory the shared artifact-role classifier marks non-production is
+// omitted atomically: packages are never prefix-clipped and an import survives
+// only when both exact endpoints survive. Root and production-classified
+// modules remain eligible. Incomplete legacy module metadata fails open to the
+// complete graph so this selector cannot silently reinterpret unknown
+// ownership.
+func architectureProductScopeGraph(graph *RepositoryGraph) (*RepositoryGraph, ArchitectureProductScope) {
+	counts := ArchitectureProductScope{}
+	if graph == nil {
+		return nil, counts
+	}
+	counts.ObservedModules = len(graph.Modules)
+	counts.ObservedPackages = len(graph.Packages)
+	counts.ObservedEdges = len(graph.PackageEdges)
+
+	type moduleIdentity struct {
+		id   string
+		path string
+	}
+	omittedModules := make(map[moduleIdentity]struct{})
+	knownModules := make(map[moduleIdentity]struct{}, len(graph.Modules))
+	for _, module := range graph.Modules {
+		identity := moduleIdentity{id: module.ID, path: module.Path}
+		knownModules[identity] = struct{}{}
+		if module.Dir == "" {
+			continue
+		}
+		role := artifactrole.Classify(module.Dir, artifactrole.Hints{})
+		if !artifactrole.IsProduction(role) {
+			omittedModules[identity] = struct{}{}
+		}
+	}
+	counts.OmittedModules = len(omittedModules)
+	if counts.OmittedModules == 0 {
+		counts.RetainedModules = counts.ObservedModules
+		counts.RetainedPackages = counts.ObservedPackages
+		counts.RetainedEdges = counts.ObservedEdges
+		return graph, counts
+	}
+
+	selected := cloneRepositoryGraph(graph)
+	selected.Modules = selected.Modules[:0]
+	for _, module := range graph.Modules {
+		identity := moduleIdentity{id: module.ID, path: module.Path}
+		if _, omitted := omittedModules[identity]; omitted {
+			continue
+		}
+		selected.Modules = append(selected.Modules, module)
+	}
+
+	selected.Packages = selected.Packages[:0]
+	retainedPackagePaths := make(map[string]struct{}, len(graph.Packages))
+	for _, pkg := range graph.Packages {
+		identity := moduleIdentity{id: pkg.ModuleID, path: pkg.ModulePath}
+		if _, known := knownModules[identity]; known {
+			if _, omitted := omittedModules[identity]; omitted {
+				continue
+			}
+		}
+		selected.Packages = append(selected.Packages, pkg)
+		retainedPackagePaths[pkg.CanonicalPath] = struct{}{}
+	}
+
+	selected.PackageEdges = selected.PackageEdges[:0]
+	for _, edge := range graph.PackageEdges {
+		if _, retained := retainedPackagePaths[edge.From]; !retained {
+			continue
+		}
+		if _, retained := retainedPackagePaths[edge.To]; !retained {
+			continue
+		}
+		selected.PackageEdges = append(selected.PackageEdges, edge)
+	}
+	counts.RetainedModules = len(selected.Modules)
+	counts.RetainedPackages = len(selected.Packages)
+	counts.RetainedEdges = len(selected.PackageEdges)
+	return selected, counts
 }
 
 // ReplayArchitectureSynthesis replaces only conceptual naming and membership
@@ -263,14 +364,23 @@ func (b *architectureCandidateBuilder) addArchitectureGrounding(grounding *Archi
 		return
 	}
 	for _, anchor := range sortedArchitectureGroundingAnchors(grounding.BehaviorAnchors) {
-		b.groundedPaths[anchor.Location.Path] = struct{}{}
+		if b.graph != nil && len(b.graph.Packages) > 0 && b.packageForFile(anchor.Location.Path) == "" {
+			continue
+		}
 		memberIDs := make([]componentmap.MemberID, 0, len(anchor.AssociatedMembers))
 		for _, member := range anchor.AssociatedMembers {
 			location := member.Location
+			packagePath := b.packageForFile(location.Path)
+			// A complete exact package graph is the Architecture scope authority.
+			// When whole non-production modules were omitted, their grounding
+			// anchors must not re-enter as parentless file/symbol candidates.
+			if b.graph != nil && len(b.graph.Packages) > 0 && packagePath == "" {
+				continue
+			}
 			b.groundedPaths[location.Path] = struct{}{}
 			fileID := architectureBuildMemberID(componentmap.MemberFile, location.Path)
 			var packageID *componentmap.MemberID
-			if packagePath := b.packageForFile(location.Path); packagePath != "" {
+			if packagePath != "" {
 				id := b.knownPackages[packagePath]
 				packageID = &id
 			}
@@ -304,6 +414,7 @@ func (b *architectureCandidateBuilder) addArchitectureGrounding(grounding *Archi
 		if len(memberIDs) == 0 {
 			continue
 		}
+		b.groundedPaths[anchor.Location.Path] = struct{}{}
 		sort.Slice(memberIDs, func(i, j int) bool { return memberIDs[i].Value < memberIDs[j].Value })
 		b.behaviorMembers[anchor.ID] = memberIDs[0]
 		producer := anchor.Producer
@@ -831,7 +942,12 @@ func (b *architectureCandidateBuilder) packageForFile(filePath string) string {
 	}
 	if len(b.graph.Packages) > 0 {
 		for _, pkg := range b.graph.Packages {
-			if pkg.Dir == dir {
+			packageDir := path.Clean(pkg.Dir)
+			if packageDir == "." {
+				packageDir = ""
+			}
+			packageDir = strings.TrimPrefix(packageDir, "./")
+			if packageDir == dir {
 				return pkg.CanonicalPath
 			}
 		}

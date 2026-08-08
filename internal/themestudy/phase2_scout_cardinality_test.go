@@ -23,6 +23,7 @@ func TestScoutPromptCardinalityIsSemanticPriorNotQuota(t *testing.T) {
 		"return more only when additional themes add substantial distinct understanding",
 		"Do not pad toward a target",
 		"Prefer a small set of distinct anchor_refs",
+		"return 1 to 5 per theme",
 		"Use a single anchor when it is sufficient on its own",
 		"Do not add anchors merely to reach a count",
 	} {

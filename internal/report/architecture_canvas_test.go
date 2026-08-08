@@ -574,8 +574,10 @@ func TestArchitectureCanvasVersionRejectsHistoricalRemainderSemantics(t *testing
 	// the canvas version to 10 (shared scope + shared members).
 	// Decision 235 (v11): member grammar + normalization + item-local
 	// empty rejection advanced it to 11.
-	if ArchitectureCanvasVersion != 11 {
-		t.Fatalf("ArchitectureCanvasVersion = %d, want 11 for the v11 normalization semantics", ArchitectureCanvasVersion)
+	// Decision 239 (v12): final exclusive package ownership now projects
+	// bounded, aggregated package-import edges for Map.
+	if ArchitectureCanvasVersion != 12 {
+		t.Fatalf("ArchitectureCanvasVersion = %d, want 12 for package-import edge projection", ArchitectureCanvasVersion)
 	}
 	if err := validateSemanticSearchCanvasVersion(&ArchitectureCanvas{Version: ArchitectureCanvasVersion - 1}); err == nil || !strings.Contains(err.Error(), "unsupported architecture canvas version") {
 		t.Fatalf("historical Architecture Canvas version error = %v", err)
@@ -608,7 +610,7 @@ func TestArchitectureCanvasRejectsRemainderIdentityNotBoundToExactMembers(t *tes
 	}
 }
 
-func TestProjectArchitectureCanvasKeepsPackageImportAsSupportingFact(t *testing.T) {
+func TestProjectArchitectureCanvasProjectsPackageImportFromFinalExclusiveOwners(t *testing.T) {
 	t.Parallel()
 
 	input, landscape := architectureCanvasInput(t, architectureResticProof(), nil)
@@ -616,7 +618,7 @@ func TestProjectArchitectureCanvasKeepsPackageImportAsSupportingFact(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(canvas.StructuralFacts) != 1 || len(canvas.StructuralEdges) != 0 {
+	if len(canvas.StructuralFacts) != 1 || len(canvas.StructuralEdges) != 1 {
 		t.Fatalf("facts=%#v edges=%#v", canvas.StructuralFacts, canvas.StructuralEdges)
 	}
 	relation := landscape.Relations[0]
@@ -625,6 +627,83 @@ func TestProjectArchitectureCanvasKeepsPackageImportAsSupportingFact(t *testing.
 		fact.Location == nil || fact.Location.Line != 12 || !reflect.DeepEqual(fact.Provenance, relation.Provenance) ||
 		!reflect.DeepEqual(fact.Scenarios, relation.Scenarios) {
 		t.Fatalf("structural fact lost witness data: %#v", fact)
+	}
+	edge := canvas.StructuralEdges[0]
+	if edge.FromComponentID == "" || edge.ToComponentID == "" || edge.FromComponentID == edge.ToComponentID ||
+		len(edge.FromComponentIDs) != 1 || len(edge.ToComponentIDs) != 1 ||
+		edge.Witness.ID != relation.ID || edge.WitnessCount != 1 ||
+		!reflect.DeepEqual(edge.WitnessIDs, []string{relation.ID}) {
+		t.Fatalf("package import edge = %#v", edge)
+	}
+}
+
+func TestProjectArchitectureStructuralFactsAggregatesCrossComponentPackageImports(t *testing.T) {
+	t.Parallel()
+
+	from := architectureMember(componentmap.MemberPackage, "from")
+	to := architectureMember(componentmap.MemberPackage, "to")
+	intra := architectureMember(componentmap.MemberPackage, "intra")
+	unmapped := architectureMember(componentmap.MemberPackage, "unmapped")
+	plural := architectureMember(componentmap.MemberPackage, "plural")
+	owners := map[componentmap.MemberID][]componentmap.ComponentID{
+		from:   {"component-a"},
+		to:     {"component-b"},
+		intra:  {"component-a"},
+		plural: {"component-b", "component-c"},
+		// unmapped intentionally has no final non-remainder owner.
+	}
+	relations := []componentmap.LocalRelation{
+		{ID: "z-import", From: from, To: to, Kind: componentmap.StructuralRelationPackageImport},
+		{ID: "a-import", From: from, To: to, Kind: componentmap.StructuralRelationPackageImport},
+		{ID: "intra-import", From: from, To: intra, Kind: componentmap.StructuralRelationPackageImport},
+		{ID: "unmapped-import", From: from, To: unmapped, Kind: componentmap.StructuralRelationPackageImport},
+		{ID: "plural-import", From: from, To: plural, Kind: componentmap.StructuralRelationPackageImport},
+	}
+
+	var canvas ArchitectureCanvas
+	projectArchitectureStructuralFacts(relations, owners, &canvas)
+	if len(canvas.StructuralFacts) != len(relations) {
+		t.Fatalf("structural facts = %d, want every exact relation (%d)", len(canvas.StructuralFacts), len(relations))
+	}
+	if len(canvas.StructuralEdges) != 1 {
+		t.Fatalf("structural edges = %#v, want one aggregated cross-component pair", canvas.StructuralEdges)
+	}
+	wantConnectivity := ArchitectureStructuralConnectivity{
+		PackageImportFactCount:          5,
+		ProjectedWitnessCount:           2,
+		ProjectedPairEdgeCount:          1,
+		SuppressedIntraComponentCount:   1,
+		SuppressedUnjoinedEndpointCount: 1,
+		SuppressedPluralOwnershipCount:  1,
+	}
+	connectivity := architectureStructuralConnectivity(relations, owners)
+	connectivity.ProjectedPairEdgeCount = len(canvas.StructuralEdges)
+	if !reflect.DeepEqual(connectivity, wantConnectivity) {
+		t.Fatalf("structural connectivity = %#v, want %#v", connectivity, wantConnectivity)
+	}
+	if got := connectivity.ProjectedWitnessCount; got != canvas.StructuralEdges[0].WitnessCount {
+		t.Fatalf("projected witness count = %d, edge witness sum = %d", got, canvas.StructuralEdges[0].WitnessCount)
+	}
+	edge := canvas.StructuralEdges[0]
+	if edge.FromComponentID != "component-a" || edge.ToComponentID != "component-b" ||
+		edge.Witness.ID != "a-import" || edge.WitnessCount != 2 ||
+		!reflect.DeepEqual(edge.WitnessIDs, []string{"a-import", "z-import"}) {
+		t.Fatalf("aggregated package import edge = %#v", edge)
+	}
+
+	reversed := append([]componentmap.LocalRelation(nil), relations...)
+	for left, right := 0, len(reversed)-1; left < right; left, right = left+1, right-1 {
+		reversed[left], reversed[right] = reversed[right], reversed[left]
+	}
+	var second ArchitectureCanvas
+	projectArchitectureStructuralFacts(reversed, owners, &second)
+	if !reflect.DeepEqual(canvas.StructuralEdges, second.StructuralEdges) {
+		t.Fatalf("aggregate changed with relation order: first=%#v second=%#v", canvas.StructuralEdges, second.StructuralEdges)
+	}
+	secondConnectivity := architectureStructuralConnectivity(reversed, owners)
+	secondConnectivity.ProjectedPairEdgeCount = len(second.StructuralEdges)
+	if !reflect.DeepEqual(connectivity, secondConnectivity) {
+		t.Fatalf("connectivity accounting changed with relation order: first=%#v second=%#v", connectivity, secondConnectivity)
 	}
 }
 

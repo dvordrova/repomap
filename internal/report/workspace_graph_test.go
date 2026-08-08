@@ -126,6 +126,66 @@ func TestWorkspacePackageGraphProjectionMaterializesExactEdges(t *testing.T) {
 	}
 }
 
+func TestDecodeSnapshotExactGoFactsAcceptsBoundedSQLCScale(t *testing.T) {
+	t.Parallel()
+
+	const (
+		rootPackages    = 92
+		fixturePackages = 893
+		edgeCount       = 209
+	)
+	saved := snapshotExactGoFacts{
+		Modules: []snapshotExactModuleFact{
+			{ID: "root", ModulePath: "example.com/product", ModuleDir: ".", Main: true},
+			{ID: "fixture", ModulePath: "example.com/product/endtoend", ModuleDir: "internal/endtoend/testdata", Main: true},
+		},
+		Packages: make([]snapshotExactPackageFact, 0, rootPackages+fixturePackages),
+	}
+	rootPaths := make([]string, rootPackages)
+	for index := range rootPackages {
+		packagePath := fmt.Sprintf("example.com/product/pkg/p%03d", index)
+		rootPaths[index] = packagePath
+		saved.Packages = append(saved.Packages, snapshotExactPackageFact{
+			CanonicalPath:     packagePath,
+			Name:              fmt.Sprintf("p%03d", index),
+			ModuleID:          "root",
+			ModulePath:        "example.com/product",
+			PackageDir:        fmt.Sprintf("pkg/p%03d", index),
+			ModuleRelativeDir: fmt.Sprintf("pkg/p%03d", index),
+		})
+	}
+	for index := range fixturePackages {
+		saved.Packages = append(saved.Packages, snapshotExactPackageFact{
+			CanonicalPath:     fmt.Sprintf("example.com/product/endtoend/case%03d", index),
+			Name:              fmt.Sprintf("case%03d", index),
+			ModuleID:          "fixture",
+			ModulePath:        "example.com/product/endtoend",
+			PackageDir:        fmt.Sprintf("internal/endtoend/testdata/case%03d", index),
+			ModuleRelativeDir: fmt.Sprintf("case%03d", index),
+		})
+	}
+	for offset := 1; len(saved.InternalEdges) < edgeCount; offset++ {
+		for index := 0; index < rootPackages && len(saved.InternalEdges) < edgeCount; index++ {
+			saved.InternalEdges = append(saved.InternalEdges, gofacts.Edge{
+				From: rootPaths[index], To: rootPaths[(index+offset)%rootPackages],
+			})
+		}
+	}
+
+	raw := mustJSON(t, map[string]any{"go_facts": saved})
+	facts, err := decodeSnapshotExactGoFacts(raw)
+	if err != nil {
+		t.Fatalf("decodeSnapshotExactGoFacts: %v", err)
+	}
+	if len(facts.Modules) != 2 || len(facts.Packages) != rootPackages+fixturePackages ||
+		len(facts.InternalEdges) != edgeCount {
+		t.Fatalf(
+			"decoded facts modules/packages/edges = %d/%d/%d",
+			len(facts.Modules), len(facts.Packages), len(facts.InternalEdges),
+		)
+	}
+}
+
 func TestWorkspacePackageGraphCasdoorShapeFeedsArchitectureRelations(t *testing.T) {
 	const edgeCount = 90
 	facts := casdoorShapedGraphFacts(edgeCount)

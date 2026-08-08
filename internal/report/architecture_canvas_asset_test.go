@@ -93,6 +93,7 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 				"setSVGVisible(group",
 				"rm-arch__edges--structural",
 				"rm-arch__edges--flow",
+				"mapStructuralEdges(this.data)",
 				"from_branch_id",
 				"to_branch_id",
 				"cross_branch",

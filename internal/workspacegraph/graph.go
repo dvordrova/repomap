@@ -17,7 +17,7 @@ import (
 
 const (
 	maxModules              = 600
-	maxPackages             = 600
+	maxPackages             = 4096
 	maxFilesPerPackage      = 4096
 	maxAggregateFiles       = 20_000
 	maxEdges                = 1000

@@ -12,12 +12,15 @@ import (
 	"sort"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 )
 
 // MechanismFragmentVersion changes when the persisted fragment projection
 // shape or its exact derivation rules change.
-const MechanismFragmentVersion = 1
+// Decision 239 (v2): exact producer-owned entry handoffs remain outside the
+// canonical Canvas but participate in this separate mechanism projection.
+const MechanismFragmentVersion = 2
 
 // MechanismFragmentProjection is the bounded provider-free vertical
 // fragment for a selected mechanism/process entry.
@@ -30,17 +33,19 @@ type MechanismFragmentProjection struct {
 
 // MechanismTransition is one contract-carrying transition (Decision 226).
 type MechanismTransition struct {
-	Ordinal     int    `json:"ordinal"`
-	ClaimKind   string `json:"claim_kind"`
-	SupportMode string `json:"support_mode"`
-	Label       string `json:"label"`
-	Path        string `json:"path"`
-	Line        int    `json:"line"`
-	Symbol      string `json:"symbol,omitempty"`
-	Evidence    string `json:"evidence"` // provenance provider/version/operation
-	Scenario    string `json:"scenario,omitempty"`
-	Limitation  string `json:"limitation"`
-	Ordering    string `json:"ordering"`
+	Ordinal      int    `json:"ordinal"`
+	ClaimKind    string `json:"claim_kind"`
+	SupportMode  string `json:"support_mode"`
+	Label        string `json:"label"`
+	Path         string `json:"path"`
+	Line         int    `json:"line"`
+	Column       int    `json:"column,omitempty"`
+	Symbol       string `json:"symbol,omitempty"`
+	WitnessCount int    `json:"witness_count,omitempty"`
+	Evidence     string `json:"evidence"` // provenance provider/version/operation
+	Scenario     string `json:"scenario,omitempty"`
+	Limitation   string `json:"limitation"`
+	Ordering     string `json:"ordering"`
 }
 
 // MechanismFrontier states what is NOT locally supported.
@@ -61,6 +66,25 @@ func ProjectMechanismFragment(
 	associations *ArchitectureAssociationProjection,
 	atlas *repositoryatlas.Atlas,
 ) (*MechanismFragmentProjection, error) {
+	return projectMechanismFragment(canvas, associations, atlas, nil)
+}
+
+func projectMechanismFragment(
+	canvas *ArchitectureCanvas,
+	associations *ArchitectureAssociationProjection,
+	atlas *repositoryatlas.Atlas,
+	grounding *ArchitectureGrounding,
+) (*MechanismFragmentProjection, error) {
+	return projectMechanismFragmentForProduct(canvas, associations, atlas, grounding, nil)
+}
+
+func projectMechanismFragmentForProduct(
+	canvas *ArchitectureCanvas,
+	associations *ArchitectureAssociationProjection,
+	atlas *repositoryatlas.Atlas,
+	grounding *ArchitectureGrounding,
+	navigatorProduct *NavigatorReportProduct,
+) (*MechanismFragmentProjection, error) {
 	if canvas == nil {
 		return nil, nil
 	}
@@ -68,8 +92,12 @@ func ProjectMechanismFragment(
 		return nil, fmt.Errorf("mechanism fragment: unsupported canvas version %d", canvas.Version)
 	}
 
-	// Exact entry: first process_entry anchor with call_target proof.
-	entryAnchor := findProcessEntryAnchor(canvas)
+	// Exact entry: when ordinary Navigator selected a startup, use its
+	// backend-owned evidence to select the matching process-entry anchor.
+	// Falling back to a different entry would make the product's horizontal
+	// and vertical views disagree. Runs without a selected Navigator retain the
+	// historical deterministic first-entry behavior.
+	entryAnchor := findProcessEntryAnchor(canvas, navigatorProduct, atlas)
 	if entryAnchor == nil {
 		return nil, nil
 	}
@@ -80,9 +108,23 @@ func ProjectMechanismFragment(
 
 	transitions := []MechanismTransition{}
 	frontier := MechanismFrontier{Ordering: "not_established", Limitation: "No locally saved transitions beyond the observed handoffs; execution order beyond them is not established."}
+	// Exact D210 handoffs are the authoritative first-hop projection. Record
+	// their callsites before consulting the older Canvas relation store so the
+	// same callsite is not published twice under two different target labels.
+	var handoffTargets []MechanismTransition
+	entryHandoffCallsites := make(map[string]struct{})
+	if grounding != nil {
+		for _, handoff := range grounding.EntryHandoffs {
+			if !architectureLocationsEqual(handoff.ProcessEntrypoint.Location, entryAnchor.Location) {
+				continue
+			}
+			transition := transitionFromEntryHandoff(handoff)
+			handoffTargets = append(handoffTargets, transition)
+			entryHandoffCallsites[mechanismCallsiteKey(transition.Path, transition.Line, transition.Column)] = struct{}{}
+		}
+	}
 	// Behavior-handoff edges from the entry symbol (exact, SSA-supported).
 	// Ordinals are assigned AFTER sorting so wire order is 1..N.
-	var handoffTargets []MechanismTransition
 	for _, edge := range canvas.StructuralEdges {
 		witness := edge.Witness
 		if witness.Kind != componentmap.StructuralRelationBehaviorHandoff {
@@ -91,13 +133,24 @@ func ProjectMechanismFragment(
 		if !memberIDEquals(witness.From, entryMember) {
 			continue
 		}
-		handoffTargets = append(handoffTargets, transitionFromWitness(edge, witness))
+		transition := transitionFromWitness(edge, witness)
+		if _, exactEntryHandoff := entryHandoffCallsites[mechanismCallsiteKey(transition.Path, transition.Line, transition.Column)]; exactEntryHandoff {
+			continue
+		}
+		handoffTargets = append(handoffTargets, transition)
 	}
+	handoffTargets = compactMechanismTransitions(handoffTargets)
 	sort.Slice(handoffTargets, func(i, j int) bool {
 		if handoffTargets[i].Path != handoffTargets[j].Path {
 			return handoffTargets[i].Path < handoffTargets[j].Path
 		}
-		return handoffTargets[i].Line < handoffTargets[j].Line
+		if handoffTargets[i].Line != handoffTargets[j].Line {
+			return handoffTargets[i].Line < handoffTargets[j].Line
+		}
+		if handoffTargets[i].Column != handoffTargets[j].Column {
+			return handoffTargets[i].Column < handoffTargets[j].Column
+		}
+		return handoffTargets[i].Symbol < handoffTargets[j].Symbol
 	})
 	for index := range handoffTargets {
 		handoffTargets[index].Ordinal = index + 1
@@ -173,6 +226,59 @@ func ProjectMechanismFragment(
 	}, nil
 }
 
+func architectureLocationsEqual(left, right evidence.Location) bool {
+	return left.Path == right.Path && left.Line == right.Line && left.Column == right.Column
+}
+
+func transitionFromEntryHandoff(handoff ArchitectureEntryHandoff) MechanismTransition {
+	transition := MechanismTransition{
+		ClaimKind:    "direct_static_call",
+		SupportMode:  "resolved_static",
+		Label:        "handoff to " + handoff.Callee.Name,
+		Path:         handoff.RepresentativeCallsite.Path,
+		Line:         handoff.RepresentativeCallsite.Line,
+		Column:       handoff.RepresentativeCallsite.Column,
+		Symbol:       handoff.Callee.Name,
+		WitnessCount: max(handoff.WitnessCount, 1),
+		Evidence:     handoff.Producer.Provider + " " + handoff.Producer.Version + " " + handoff.Producer.Operation,
+		Scenario:     handoff.Scenario.ID,
+		Limitation:   architectureEntryHandoffLimitation,
+		Ordering:     "resolved_path_order",
+	}
+	if len(handoff.Limitations) > 0 {
+		transition.Limitation = handoff.Limitations[0]
+	}
+	return transition
+}
+
+func compactMechanismTransitions(transitions []MechanismTransition) []MechanismTransition {
+	seen := make(map[string]int, len(transitions))
+	result := transitions[:0]
+	for _, transition := range transitions {
+		key := fmt.Sprintf(
+			"%s\x00%s\x00%d\x00%d\x00%s",
+			transition.ClaimKind,
+			transition.Path,
+			transition.Line,
+			transition.Column,
+			transition.Symbol,
+		)
+		if existing, duplicate := seen[key]; duplicate {
+			if transition.WitnessCount > result[existing].WitnessCount {
+				result[existing].WitnessCount = transition.WitnessCount
+			}
+			continue
+		}
+		seen[key] = len(result)
+		result = append(result, transition)
+	}
+	return result
+}
+
+func mechanismCallsiteKey(path string, line, column int) string {
+	return fmt.Sprintf("%s\x00%d\x00%d", path, line, column)
+}
+
 func mechanismClaimKindForRow(row ArchitectureBoundaryResourceRow) string {
 	if row.Kind == "boundary" {
 		return "storage_boundary_callsite"
@@ -180,7 +286,38 @@ func mechanismClaimKindForRow(row ArchitectureBoundaryResourceRow) string {
 	return "outbound_client_callsite"
 }
 
-func findProcessEntryAnchor(canvas *ArchitectureCanvas) *componentmap.BehaviorAnchor {
+func findProcessEntryAnchor(
+	canvas *ArchitectureCanvas,
+	navigatorProduct *NavigatorReportProduct,
+	atlas *repositoryatlas.Atlas,
+) *componentmap.BehaviorAnchor {
+	if navigatorProduct != nil && navigatorProduct.Recommendation != nil {
+		if atlas == nil {
+			return nil
+		}
+		selectedEvidence := make(map[string]struct{}, len(navigatorProduct.Recommendation.EvidenceIDs))
+		for _, evidenceID := range navigatorProduct.Recommendation.EvidenceIDs {
+			selectedEvidence[evidenceID] = struct{}{}
+		}
+		selectedLocations := make([]evidence.Location, 0, len(selectedEvidence))
+		for _, item := range atlas.Evidence {
+			if _, selected := selectedEvidence[item.ID]; selected {
+				selectedLocations = append(selectedLocations, item.Location)
+			}
+		}
+		for index := range canvas.BehaviorAnchors {
+			anchor := &canvas.BehaviorAnchors[index]
+			if anchor.Kind != componentmap.AnchorProcessEntry || anchor.Location.Path == "" {
+				continue
+			}
+			for _, location := range selectedLocations {
+				if architectureLocationsEqual(anchor.Location, location) {
+					return anchor
+				}
+			}
+		}
+		return nil
+	}
 	for index := range canvas.BehaviorAnchors {
 		anchor := &canvas.BehaviorAnchors[index]
 		if anchor.Kind != componentmap.AnchorProcessEntry {
@@ -234,9 +371,17 @@ func transitionFromWitness(
 		Limitation:  "runtime dispatch beyond the recorded build scenario not proven",
 		Ordering:    "resolved_path_order",
 	}
+	transition.WitnessCount = edge.WitnessCount
+	if transition.WitnessCount == 0 {
+		transition.WitnessCount = len(edge.WitnessIDs)
+	}
+	if transition.WitnessCount == 0 {
+		transition.WitnessCount = 1
+	}
 	if witness.Location != nil {
 		transition.Path = witness.Location.Path
 		transition.Line = witness.Location.Line
+		transition.Column = witness.Location.Column
 	}
 	if len(witness.Provenance) > 0 {
 		prov := witness.Provenance[0]

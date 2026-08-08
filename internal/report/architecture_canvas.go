@@ -18,7 +18,9 @@ import (
 // shared members (ArchitectureCanvasVersion 10).
 // Decision 235 (v11): one member grammar + normalization + item-local
 // empty rejection change accepted landscape semantics (Canvas 11).
-const ArchitectureCanvasVersion = 11
+// Decision 239 (v12): bounded package-import facts project onto final
+// exclusive component ownership and aggregate by directed component pair.
+const ArchitectureCanvasVersion = 12
 
 type ArchitectureCanvasInput struct {
 	CandidateBundle componentmap.CandidateBundle
@@ -158,6 +160,50 @@ type ArchitectureStructuralEdge struct {
 	FromComponentID  componentmap.ComponentID   `json:"from_component_id,omitempty"`
 	ToComponentID    componentmap.ComponentID   `json:"to_component_id,omitempty"`
 	Witness          componentmap.LocalRelation `json:"witness"`
+	WitnessIDs       []string                   `json:"witness_ids,omitempty"`
+	WitnessCount     int                        `json:"witness_count,omitempty"`
+}
+
+// ArchitectureStructuralConnectivity is a console/debug diagnostic derived
+// from an Architecture Canvas, never a persisted product field. It accounts
+// for every exact package-import fact at the final conceptual-ownership join.
+// ProjectedWitnessCount counts exact import facts; one displayed pair edge may
+// aggregate several such witnesses.
+type ArchitectureStructuralConnectivity struct {
+	PackageImportFactCount          int
+	ProjectedWitnessCount           int
+	ProjectedPairEdgeCount          int
+	SuppressedIntraComponentCount   int
+	SuppressedUnjoinedEndpointCount int
+	SuppressedPluralOwnershipCount  int
+}
+
+// DescribeArchitectureStructuralConnectivity derives closed Map-connectivity
+// counts for console diagnostics. The product Canvas remains focused on the
+// actual facts and edges; operational explanations do not become user-facing
+// report content.
+func DescribeArchitectureStructuralConnectivity(
+	canvas *ArchitectureCanvas,
+) ArchitectureStructuralConnectivity {
+	if canvas == nil {
+		return ArchitectureStructuralConnectivity{}
+	}
+	owners := make(map[componentmap.MemberID][]componentmap.ComponentID)
+	for _, component := range canvas.Components {
+		if component.ID == canvas.LocalRemainderComponentID {
+			continue
+		}
+		for _, member := range component.Members {
+			owners[member.ID] = append(owners[member.ID], component.ID)
+		}
+	}
+	counts := architectureStructuralConnectivity(canvas.StructuralFacts, owners)
+	for _, edge := range canvas.StructuralEdges {
+		if edge.Witness.Kind == componentmap.StructuralRelationPackageImport {
+			counts.ProjectedPairEdgeCount++
+		}
+	}
+	return counts
 }
 
 type ArchitectureFlow struct {
@@ -500,9 +546,32 @@ func projectArchitectureStructuralFacts(
 	memberComponents map[componentmap.MemberID][]componentmap.ComponentID,
 	canvas *ArchitectureCanvas,
 ) {
+	type componentPair struct {
+		from componentmap.ComponentID
+		to   componentmap.ComponentID
+	}
+	packageImports := make(map[componentPair][]componentmap.LocalRelation)
+
 	for _, relation := range relations {
 		canvas.StructuralFacts = append(canvas.StructuralFacts, relation)
 		if relation.Kind == componentmap.StructuralRelationPackageImport {
+			// Package imports become Map edges only after the accepted landscape
+			// gives both exact package members one singular, non-remainder owner.
+			// memberComponents is built from final exclusive Members and excludes
+			// the diagnostic local remainder; shared/unmapped/plural ownership
+			// therefore remains an exact fact without becoming a conceptual edge.
+			fromComponents := uniqueArchitectureComponentIDs(memberComponents[relation.From])
+			toComponents := uniqueArchitectureComponentIDs(memberComponents[relation.To])
+			switch {
+			case len(fromComponents) == 0 || len(toComponents) == 0:
+				continue
+			case len(fromComponents) != 1 || len(toComponents) != 1:
+				continue
+			case fromComponents[0] == toComponents[0]:
+				continue
+			}
+			pair := componentPair{from: fromComponents[0], to: toComponents[0]}
+			packageImports[pair] = append(packageImports[pair], relation)
 			continue
 		}
 
@@ -511,7 +580,7 @@ func projectArchitectureStructuralFacts(
 		edge := ArchitectureStructuralEdge{
 			ID:               architectureStableID("structural-edge", relation.ID),
 			FromComponentIDs: fromComponents, ToComponentIDs: toComponents,
-			Witness: relation,
+			Witness: relation, WitnessIDs: []string{relation.ID}, WitnessCount: 1,
 		}
 		// Singular endpoints are a presentation convenience only. Plural or
 		// absent conceptual participation remains preserved on the exact
@@ -524,6 +593,50 @@ func projectArchitectureStructuralFacts(
 		}
 		canvas.StructuralEdges = append(canvas.StructuralEdges, edge)
 	}
+
+	for pair, witnesses := range packageImports {
+		sort.Slice(witnesses, func(i, j int) bool { return witnesses[i].ID < witnesses[j].ID })
+		witnessIDs := make([]string, 0, len(witnesses))
+		for _, witness := range witnesses {
+			witnessIDs = append(witnessIDs, witness.ID)
+		}
+		canvas.StructuralEdges = append(canvas.StructuralEdges, ArchitectureStructuralEdge{
+			ID:               architectureStableID("structural-package-import-edge", string(pair.from), string(pair.to)),
+			FromComponentIDs: []componentmap.ComponentID{pair.from},
+			ToComponentIDs:   []componentmap.ComponentID{pair.to},
+			FromComponentID:  pair.from,
+			ToComponentID:    pair.to,
+			Witness:          witnesses[0],
+			WitnessIDs:       witnessIDs,
+			WitnessCount:     len(witnesses),
+		})
+	}
+}
+
+func architectureStructuralConnectivity(
+	relations []componentmap.LocalRelation,
+	memberComponents map[componentmap.MemberID][]componentmap.ComponentID,
+) ArchitectureStructuralConnectivity {
+	counts := ArchitectureStructuralConnectivity{}
+	for _, relation := range relations {
+		if relation.Kind != componentmap.StructuralRelationPackageImport {
+			continue
+		}
+		counts.PackageImportFactCount++
+		fromComponents := uniqueArchitectureComponentIDs(memberComponents[relation.From])
+		toComponents := uniqueArchitectureComponentIDs(memberComponents[relation.To])
+		switch {
+		case len(fromComponents) == 0 || len(toComponents) == 0:
+			counts.SuppressedUnjoinedEndpointCount++
+		case len(fromComponents) != 1 || len(toComponents) != 1:
+			counts.SuppressedPluralOwnershipCount++
+		case fromComponents[0] == toComponents[0]:
+			counts.SuppressedIntraComponentCount++
+		default:
+			counts.ProjectedWitnessCount++
+		}
+	}
+	return counts
 }
 
 func architectureGroundingWording(source componentmap.ArchitectureSource, mode componentmap.GroundingMode) (string, string) {

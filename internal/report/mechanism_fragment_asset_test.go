@@ -14,6 +14,9 @@ import (
 )
 
 func TestMechanismFragmentAssetRendersContractFieldsAndFrontier(t *testing.T) {
+	if MechanismFragmentVersion != 2 {
+		t.Fatalf("MechanismFragmentVersion = %d, fixture requires current v2", MechanismFragmentVersion)
+	}
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node unavailable")
@@ -68,7 +71,7 @@ const report = {
   openable_paths: [], source_ids: {},
   architecture_canvas: { version: 1, local_remainder_component_id: "component-r", components: [], behavior_anchors: [], surfaces: [], flows: [], structural_edges: [] },
   mechanism_fragment: {
-    version: 1,
+    version: 2,
     entry: {
       ordinal: 0, claim_kind: "process_entry", support_mode: "resolved_static",
       label: "process entry fixture.main", path: "main.go", line: 36,

@@ -20,12 +20,12 @@ import (
 )
 
 const (
-	// Decision 238: request-local package ownership, unit association and
-	// closed coverage roles change the provider request; primary-scope
-	// quality accounting changes the saved result contract. The prompt
-	// identity is derived automatically from its exact text below.
-	SynthesisRequestVersion = 17
-	SynthesisRecordVersion  = 14
+	// Decision 239: production-aware unit roles change the provider-visible
+	// primary/supporting classification and the meaning of saved primary-scope
+	// coverage. The prompt identity is derived automatically from its exact
+	// text below.
+	SynthesisRequestVersion = 18
+	SynthesisRecordVersion  = 15
 )
 
 // SynthesisPromptVersion is the prompt contract identity — the short SHA-256
@@ -542,6 +542,7 @@ func synthesisMemberRefPrefix(kind MemberKind) string {
 type synthesisCandidateContext struct {
 	ParentID     *MemberID
 	UnitRef      UnitWireRef
+	UnitRole     UnitRole
 	CoverageRole SynthesisCoverageRole
 }
 
@@ -557,16 +558,22 @@ func synthesisCandidateContexts(
 		return nil, fmt.Errorf("componentmap: architecture unit wire catalog is inconsistent")
 	}
 	known := candidateIndex(bundle)
-	seenUnitRefs := make(map[UnitWireRef]struct{}, len(unitCatalog.WireUnits))
-	for _, unit := range unitCatalog.WireUnits {
+	unitRoles := make(map[UnitWireRef]UnitRole, len(unitCatalog.WireUnits))
+	for index, unit := range unitCatalog.WireUnits {
 		wireRef := unit.Ref
 		if wireRef == "" {
 			return nil, fmt.Errorf("componentmap: architecture unit wire ref is empty")
 		}
-		if _, duplicate := seenUnitRefs[wireRef]; duplicate {
+		if _, duplicate := unitRoles[wireRef]; duplicate {
 			return nil, fmt.Errorf("componentmap: architecture unit wire ref is duplicated")
 		}
-		seenUnitRefs[wireRef] = struct{}{}
+		if unit.Role != unitCatalog.Units[index].Role {
+			return nil, fmt.Errorf("componentmap: architecture unit wire role is inconsistent")
+		}
+		if _, err := synthesisTopLevelCoverageRole(unit.Role); err != nil {
+			return nil, err
+		}
+		unitRoles[wireRef] = unit.Role
 	}
 
 	contexts := make(map[MemberID]synthesisCandidateContext)
@@ -578,12 +585,18 @@ func synthesisCandidateContexts(
 		if !exists {
 			return nil, fmt.Errorf("componentmap: conceptual member has no architecture unit")
 		}
-		if _, advertised := seenUnitRefs[unitRef]; !advertised {
+		unitRole, advertised := unitRoles[unitRef]
+		if !advertised {
 			return nil, fmt.Errorf("componentmap: conceptual member has an unadvertised architecture unit")
+		}
+		coverageRole, err := synthesisTopLevelCoverageRole(unitRole)
+		if err != nil {
+			return nil, err
 		}
 		context := synthesisCandidateContext{
 			UnitRef:      unitRef,
-			CoverageRole: SynthesisCoveragePrimaryScope,
+			UnitRole:     unitRole,
+			CoverageRole: coverageRole,
 		}
 		if ownerID, owned := nearestConceptualPackageOwner(candidate.ID, known); owned && ownerID != candidate.ID {
 			context.ParentID = &ownerID
@@ -592,6 +605,21 @@ func synthesisCandidateContexts(
 		contexts[candidate.ID] = context
 	}
 	return contexts, nil
+}
+
+// synthesisTopLevelCoverageRole is the single closed conversion from local
+// unit purpose to provider-visible coverage priority. Package-owned children
+// are downgraded to supporting evidence by synthesisCandidateContexts after
+// this top-level classification is established.
+func synthesisTopLevelCoverageRole(role UnitRole) (SynthesisCoverageRole, error) {
+	switch role {
+	case UnitRoleProduction:
+		return SynthesisCoveragePrimaryScope, nil
+	case UnitRoleTest, UnitRoleTooling, UnitRoleDocumentation:
+		return SynthesisCoverageSupportingEvidence, nil
+	default:
+		return "", fmt.Errorf("componentmap: architecture unit has invalid role %q", role)
+	}
 }
 
 // BuildSynthesisRequest validates and canonically orders the bounded local
@@ -793,7 +821,7 @@ func validateSynthesisRequestCoverage(request SynthesisRequest) error {
 			len(request.RequiredMemberRefs), len(request.Candidates),
 		)
 	}
-	knownUnits := make(map[UnitWireRef]struct{}, len(request.Units))
+	knownUnits := make(map[UnitWireRef]UnitRole, len(request.Units))
 	for index, unit := range request.Units {
 		if unit.Ref == "" {
 			return fmt.Errorf("componentmap: units[%d].ref is empty", index)
@@ -801,7 +829,10 @@ func validateSynthesisRequestCoverage(request SynthesisRequest) error {
 		if _, duplicate := knownUnits[unit.Ref]; duplicate {
 			return fmt.Errorf("componentmap: units[%d].ref duplicates an earlier unit", index)
 		}
-		knownUnits[unit.Ref] = struct{}{}
+		if _, err := synthesisTopLevelCoverageRole(unit.Role); err != nil {
+			return fmt.Errorf("componentmap: units[%d].role is invalid", index)
+		}
+		knownUnits[unit.Ref] = unit.Role
 	}
 	seen := make(map[string]struct{}, len(request.RequiredMemberRefs))
 	candidatesByRef := make(map[string]SynthesisCandidate, len(request.Candidates))
@@ -824,14 +855,23 @@ func validateSynthesisRequestCoverage(request SynthesisRequest) error {
 		if !candidate.CoverageRole.valid() {
 			return fmt.Errorf("componentmap: candidates[%d].coverage_role is invalid", index)
 		}
-		if _, known := knownUnits[candidate.UnitRef]; !known {
+		unitRole, known := knownUnits[candidate.UnitRef]
+		if !known {
 			return fmt.Errorf("componentmap: candidates[%d].unit_ref is not an advertised unit", index)
 		}
-		if candidate.Ref.Kind == MemberPackage && candidate.CoverageRole != SynthesisCoveragePrimaryScope {
-			return fmt.Errorf("componentmap: candidates[%d] package is not primary scope", index)
-		}
-		if candidate.CoverageRole == SynthesisCoverageSupportingEvidence && candidate.ParentRef == nil {
-			return fmt.Errorf("componentmap: candidates[%d] supporting evidence has no package parent", index)
+		if candidate.ParentRef == nil {
+			expectedRole, err := synthesisTopLevelCoverageRole(unitRole)
+			if err != nil {
+				return err
+			}
+			if candidate.CoverageRole != expectedRole {
+				return fmt.Errorf("componentmap: candidates[%d] top-level coverage role does not match its unit role", index)
+			}
+			if candidate.CoverageRole == SynthesisCoverageSupportingEvidence && candidate.Ref.Kind != MemberPackage {
+				return fmt.Errorf("componentmap: candidates[%d] supporting evidence has no package parent", index)
+			}
+		} else if candidate.CoverageRole != SynthesisCoverageSupportingEvidence {
+			return fmt.Errorf("componentmap: candidates[%d] package-owned member is not supporting evidence", index)
 		}
 		candidatesByRef[key] = candidate
 	}
@@ -840,11 +880,11 @@ func validateSynthesisRequestCoverage(request SynthesisRequest) error {
 			continue
 		}
 		parent, known := candidatesByRef[candidate.ParentRef.key()]
-		if !known || parent.Ref.Kind != MemberPackage || parent.CoverageRole != SynthesisCoveragePrimaryScope {
-			return fmt.Errorf("componentmap: candidates[%d].parent_ref is not a primary package candidate", index)
+		if !known || parent.Ref.Kind != MemberPackage {
+			return fmt.Errorf("componentmap: candidates[%d].parent_ref is not a package candidate", index)
 		}
-		if candidate.Ref.Kind != MemberPackage && candidate.CoverageRole != SynthesisCoverageSupportingEvidence {
-			return fmt.Errorf("componentmap: candidates[%d] package-owned member is not supporting evidence", index)
+		if candidate.Ref.Kind == MemberPackage {
+			return fmt.Errorf("componentmap: candidates[%d] package candidate cannot have a package parent", index)
 		}
 	}
 	seenLocatorRefs := make(map[string]struct{}, len(request.StructuralContext))
@@ -1131,7 +1171,7 @@ Return exactly one compact JSON proposal object with this nested grammar:
 
 The entire response must parse as exactly one complete JSON object. Its only root field is subsystems. Each subsystem contains exactly name, description, and components. Each component contains exactly name, description, a non-empty member_refs array (p*/s*/f*), and optional anchor_refs (a*). Every ref is a plain string; do not wrap refs in objects and do not add kind fields. Do not emit response-local IDs, kind tags, parent references, unit refs, coverage roles, or any adjacency field: nesting already expresses which components belong to which subsystem. Do not nest objects inside objects or emit a second root object.
 
-Candidates marked primary_scope form the conceptual repository surface. Cover defensible primary_scope across the supplied units before selecting supporting_evidence. Supporting evidence and anchors may ground or distinguish responsibilities, but they do not substitute for primary-scope coverage. Honest partial primary coverage is valid; never pad, invent, or exhaustively enumerate uncertain scope.
+Candidates marked primary_scope form the top-level production conceptual repository surface. Top-level package candidates in test, tooling, or documentation units and package-owned child candidates are supporting_evidence. Cover defensible primary_scope across the supplied production units before selecting supporting_evidence. Supporting evidence and anchors may ground or distinguish responsibilities, but coverage of them never compensates for uncovered production primary_scope. Honest partial primary coverage is valid; never pad, invent, or exhaustively enumerate uncertain scope.
 
 Subsystems and components are in conceptual display order. Choose representative supplied members needed to distinguish each component; exhaustive membership is not required. A member may legitimately participate in several components when it genuinely serves several distinct conceptual roles — this is shared participation, not exclusive ownership. Name what distinguishes each component from its siblings. An exact partial grouping is valid: omitted members remain in a deterministic local unclassified remainder and must not be echoed, renamed, or placed in a model-authored remainder. Fewer groups are better than padding: when evidence is weak, return fewer components honestly. A component may be anchor-backed shared participation with zero exclusive members: every one of its members is shared with sibling components, but the component still lists at least one member_refs (never only anchor_refs); anchor_refs are optional per component, not required.
 
@@ -1736,12 +1776,19 @@ func validateSynthesisMembershipMetadata(bundle CandidateBundle, metadata Synthe
 			return fmt.Errorf("componentmap: synthesis record membership partition is not exact")
 		}
 	}
-	requestedPrimary, _, _, _ := synthesisCoverageCounts(bundle, nil)
-	conceptualMembers, _ := bundle.CandidateRoleCounts()
+	unitCatalog, err := CompileUnitCatalog(bundle)
+	if err != nil {
+		return err
+	}
+	contexts, err := synthesisCandidateContexts(bundle, unitCatalog)
+	if err != nil {
+		return err
+	}
+	requestedPrimary, coveredPrimary, uncoveredPrimary, coveredSupporting := synthesisCoverageCounts(contexts, covered)
 	if metadata.RequestedPrimaryScope != requestedPrimary ||
-		metadata.CoveredPrimaryScope > requestedPrimary ||
-		metadata.UncoveredPrimaryScope != requestedPrimary-metadata.CoveredPrimaryScope ||
-		metadata.CoveredSupportingEvidence > conceptualMembers-requestedPrimary {
+		metadata.CoveredPrimaryScope != coveredPrimary ||
+		metadata.UncoveredPrimaryScope != uncoveredPrimary ||
+		metadata.CoveredSupportingEvidence != coveredSupporting {
 		return fmt.Errorf("componentmap: synthesis record primary-scope coverage counts do not match")
 	}
 	return nil
@@ -1823,6 +1870,10 @@ func evaluateSynthesisResponse(
 	if unitErr != nil {
 		return Landscape{}, SynthesisMembershipCounts{}, unitErr
 	}
+	contexts, contextErr := synthesisCandidateContexts(bundle, unitCatalog)
+	if contextErr != nil {
+		return Landscape{}, SynthesisMembershipCounts{}, contextErr
+	}
 	proposal, wireDiagnostics, resolveErr := resolveSynthesisWireProposal(catalog, unitCatalog, wireProposal)
 	if resolveErr != nil {
 		landscape, err := synthesisResponseFallback(bundle, newDiagnostic(resolveErr.code, resolveErr.message))
@@ -1831,7 +1882,7 @@ func evaluateSynthesisResponse(
 	if ceilingApplied {
 		wireDiagnostics = append(ceilingDiagnostics, wireDiagnostics...)
 	}
-	membership := synthesisMembershipCounts(bundle, proposal)
+	membership := synthesisMembershipCounts(bundle, contexts, proposal)
 	landscape, err := Apply(bundle, proposal)
 	if err != nil {
 		return Landscape{}, SynthesisMembershipCounts{}, err
@@ -1865,11 +1916,8 @@ func evaluateSynthesisResponse(
 		// Accepted status describes the canonical model-authored relation after
 		// local readable-shape normalization, not a raw response cardinality that
 		// normalization may have merged.
-		membership = acceptedSynthesisMembershipCounts(bundle, landscape)
-		qualityDiagnostics, qualityErr := synthesisPrimaryScopeDiagnostics(bundle, unitCatalog, landscape)
-		if qualityErr != nil {
-			return Landscape{}, SynthesisMembershipCounts{}, qualityErr
-		}
+		membership = acceptedSynthesisMembershipCounts(bundle, contexts, landscape)
+		qualityDiagnostics := synthesisPrimaryScopeDiagnostics(contexts, landscape)
 		if len(qualityDiagnostics) > 0 {
 			diagnostics := append(cloneDiagnostics(landscape.Diagnostics), qualityDiagnostics...)
 			landscape, err = synthesisQualityFallback(bundle, proposal, diagnostics)
@@ -1891,7 +1939,11 @@ func evaluateSynthesisResponse(
 	return landscape, membership, nil
 }
 
-func synthesisMembershipCounts(bundle CandidateBundle, proposal Proposal) SynthesisMembershipCounts {
+func synthesisMembershipCounts(
+	bundle CandidateBundle,
+	contexts map[MemberID]synthesisCandidateContext,
+	proposal Proposal,
+) SynthesisMembershipCounts {
 	distinct := make(map[MemberID]struct{})
 	occurrences := 0
 	for _, subsystem := range proposal.Subsystems {
@@ -1902,10 +1954,14 @@ func synthesisMembershipCounts(bundle CandidateBundle, proposal Proposal) Synthe
 			}
 		}
 	}
-	return synthesisMembershipCountsFromSets(bundle, len(proposal.Subsystems) > 0, occurrences, distinct)
+	return synthesisMembershipCountsFromSets(bundle, contexts, len(proposal.Subsystems) > 0, occurrences, distinct)
 }
 
-func acceptedSynthesisMembershipCounts(bundle CandidateBundle, landscape Landscape) SynthesisMembershipCounts {
+func acceptedSynthesisMembershipCounts(
+	bundle CandidateBundle,
+	contexts map[MemberID]synthesisCandidateContext,
+	landscape Landscape,
+) SynthesisMembershipCounts {
 	exclusiveDistinct := make(map[MemberID]struct{})
 	sharedDistinct := make(map[MemberID]struct{})
 	occurrences := 0
@@ -1936,11 +1992,12 @@ func acceptedSynthesisMembershipCounts(bundle CandidateBundle, landscape Landsca
 			occurrences++
 		}
 	}
-	return synthesisMembershipCountsFromSets(bundle, true, occurrences, covered)
+	return synthesisMembershipCountsFromSets(bundle, contexts, true, occurrences, covered)
 }
 
 func synthesisMembershipCountsFromSets(
 	bundle CandidateBundle,
+	contexts map[MemberID]synthesisCandidateContext,
 	counted bool,
 	occurrences int,
 	covered map[MemberID]struct{},
@@ -1963,7 +2020,7 @@ func synthesisMembershipCountsFromSets(
 	}
 	requestedPrimary, coveredPrimary, uncoveredPrimary, coveredSupporting := 0, 0, 0, 0
 	if counted {
-		requestedPrimary, coveredPrimary, uncoveredPrimary, coveredSupporting = synthesisCoverageCounts(bundle, covered)
+		requestedPrimary, coveredPrimary, uncoveredPrimary, coveredSupporting = synthesisCoverageCounts(contexts, covered)
 	}
 	return SynthesisMembershipCounts{
 		Counted:                   counted,
@@ -1980,17 +2037,12 @@ func synthesisMembershipCountsFromSets(
 }
 
 func synthesisCoverageCounts(
-	bundle CandidateBundle,
+	contexts map[MemberID]synthesisCandidateContext,
 	covered map[MemberID]struct{},
 ) (requestedPrimary, coveredPrimary, uncoveredPrimary, coveredSupporting int) {
-	known := candidateIndex(bundle)
-	for _, candidate := range bundle.Candidates {
-		if candidate.Role != CandidateRoleConceptualMember {
-			continue
-		}
-		role := synthesisCoverageRoleForCandidate(candidate, known)
-		_, isCovered := covered[candidate.ID]
-		if role == SynthesisCoveragePrimaryScope {
+	for memberID, context := range contexts {
+		_, isCovered := covered[memberID]
+		if context.CoverageRole == SynthesisCoveragePrimaryScope {
 			requestedPrimary++
 			if isCovered {
 				coveredPrimary++
@@ -2003,25 +2055,10 @@ func synthesisCoverageCounts(
 	return requestedPrimary, coveredPrimary, uncoveredPrimary, coveredSupporting
 }
 
-func synthesisCoverageRoleForCandidate(
-	candidate Candidate,
-	known map[MemberID]Candidate,
-) SynthesisCoverageRole {
-	if ownerID, owned := nearestConceptualPackageOwner(candidate.ID, known); owned && ownerID != candidate.ID {
-		return SynthesisCoverageSupportingEvidence
-	}
-	return SynthesisCoveragePrimaryScope
-}
-
 func synthesisPrimaryScopeDiagnostics(
-	bundle CandidateBundle,
-	unitCatalog UnitCatalog,
+	contexts map[MemberID]synthesisCandidateContext,
 	landscape Landscape,
-) ([]Diagnostic, error) {
-	contexts, err := synthesisCandidateContexts(bundle, unitCatalog)
-	if err != nil {
-		return nil, err
-	}
+) []Diagnostic {
 	covered := make(map[MemberID]struct{})
 	for _, subsystem := range landscape.Subsystems {
 		if subsystem.Category == SubsystemCategoryDiagnostic {
@@ -2050,7 +2087,10 @@ func synthesisPrimaryScopeDiagnostics(
 		if context.CoverageRole == SynthesisCoveragePrimaryScope {
 			coveredPrimary++
 			primaryUnits[context.UnitRef] = struct{}{}
-		} else {
+		} else if context.UnitRole == UnitRoleProduction {
+			// A production child without production primary coverage in its
+			// final unit remains a quality finding. All-supporting test, tooling
+			// and documentation units are intentional and do not enter this gate.
 			supportingUnits[context.UnitRef] = struct{}{}
 		}
 	}
@@ -2076,7 +2116,7 @@ func synthesisPrimaryScopeDiagnostics(
 			),
 		))
 	}
-	return diagnostics, nil
+	return diagnostics
 }
 
 func synthesisResponseFallback(bundle CandidateBundle, warning Diagnostic) (Landscape, error) {
