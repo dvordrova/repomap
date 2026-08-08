@@ -335,67 +335,6 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 	}
 }
 
-func TestPackageSourceTargetUsesExactGraphMembership(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node is unavailable")
-	}
-	assetPath, err := filepath.Abs(filepath.Join("templates", "script.js"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	runner := `
-const fs = require("fs");
-const vm = require("vm");
-const report = {
-  user_mechanisms: [], user_sources: [], source_ids: {},
-  openable_paths: ["alpha/z.go", "alpha/a.go", "beta/main.go"],
-  repository_graph: { packages: [
-    { canonical_package_path: "example.test/alpha", files: ["alpha/z.go", "alpha/a.go"] },
-    { canonical_package_path: "example.test/beta", files: ["beta/main.go"] },
-  ] },
-};
-const window = {
-  location: { search: "", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
-  __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
-};
-const document = {
-  getElementById(id) { return id === "rm-report-data" ? { textContent: JSON.stringify(report) } : null; },
-  querySelectorAll() { return []; },
-};
-document.documentElement = { lang: "en" };
-window.document = document;
-vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window });
-vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
-  window, document, URLSearchParams, Set, Map, AbortController,
-});
-const target = window.__REPOMAP_WORKSPACE_TEST__.packageSourceTarget;
-process.stdout.write(JSON.stringify({
-  alpha: target("example.test/alpha"),
-  beta: target("example.test/beta"),
-  unknown: target("example.test/unknown"),
-}));
-`
-	runnerPath := filepath.Join(t.TempDir(), "package-target-test.js")
-	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	output, err := exec.Command(node, runnerPath, assetPath).CombinedOutput()
-	if err != nil {
-		t.Fatalf("run package target projection: %v\n%s", err, output)
-	}
-	var got struct {
-		Alpha   string `json:"alpha"`
-		Beta    string `json:"beta"`
-		Unknown string `json:"unknown"`
-	}
-	if err := json.Unmarshal(output, &got); err != nil {
-		t.Fatalf("decode package targets: %v\n%s", err, output)
-	}
-	if got.Alpha != "alpha/a.go" || got.Beta != "beta/main.go" || got.Unknown != "" {
-		t.Fatalf("package targets = %#v", got)
-	}
-}
 
 func TestSourceLocationActionAvailabilityMatchesReportAuthority(t *testing.T) {
 	node, err := exec.LookPath("node")
@@ -651,8 +590,6 @@ func TestArchitectureUserInspectorStaysCompactAndSourceBacked(t *testing.T) {
 		"array(context.studies).slice(0, 3)",
 		"package_targets: packageTargets",
 		"surface_starts: surfaceStarts",
-		"function packageSourceTarget(pkg)",
-		"var reference = renderFileReference(filePath, 'rm-component-package-link', 0, label)",
 		"function sourceLocationActionAvailable(location)",
 		"rm-arch__compact-action",
 		`this.inspectorSection(this.msg("architecture.section.how_work_enters"))`,

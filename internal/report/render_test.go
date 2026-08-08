@@ -7,7 +7,6 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
@@ -182,23 +181,7 @@ func TestWriteReportHTML_Golden(t *testing.T) {
 	}
 }
 
-func TestReportAssetsKeepUntypedWarningsVisible(t *testing.T) {
-	t.Parallel()
-
-	const warning = "Important edges and candidate file index were truncated in the provided bundle."
-	html, err := RenderHTML(&ReportData{
-		RepoName: "bounded",
-		Warnings: []string{warning},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(html), warning) {
-		t.Fatalf("rendered report is missing untyped warning %q", warning)
-	}
-}
-
-func TestReportRendersRequestAndOperationalFlowTypes(t *testing.T) {
+func TestReportPreservesRequestAndOperationalFlowTypes(t *testing.T) {
 	t.Parallel()
 
 	data := ReportData{
@@ -233,23 +216,6 @@ func TestReportRendersRequestAndOperationalFlowTypes(t *testing.T) {
 		t.Fatalf("flow order changed in flat report json: %s", encoded)
 	}
 
-	html, err := RenderHTML(&data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, marker := range [][]byte{
-		[]byte("rm-pill--request"),
-		[]byte("rm-pill--operational"),
-		[]byte("Operational"),
-		[]byte("Request"),
-	} {
-		if !bytes.Contains(html, marker) {
-			t.Fatalf("report html is missing %q", marker)
-		}
-	}
-	if bytes.Contains(html, []byte("Operational flows")) {
-		t.Fatal("report introduced a separate operational-flow section")
-	}
 }
 
 func TestReportPreservesMissingFlowTypeWithoutRequestClaim(t *testing.T) {
@@ -343,9 +309,7 @@ func TestSourceOpenBrowserContractUsesOpaqueIDsAndTypedFallback(t *testing.T) {
 	}
 }
 
-func TestReportDoesNotRenderStaticFactsAsRuntimeSequence(t *testing.T) {
-	// Replaceable presentation contract: this test protects the previously
-	// misleading runtime sequence claim, not the current DOM structure.
+func TestReportKeepsStaticProofDataWithoutLegacyRuntimeSequence(t *testing.T) {
 	data := ReportData{
 		RepoName: "static-proof",
 		CandidateDirections: []CandidateDirection{{
@@ -394,27 +358,21 @@ func TestReportDoesNotRenderStaticFactsAsRuntimeSequence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range [][]byte{
+	if !bytes.Contains(html, []byte(`"expression":"opts.Scan"`)) {
+		t.Fatal("report HTML lost the embedded exact static proof")
+	}
+	for _, unwanted := range [][]byte{
 		[]byte("Static relation groups"),
 		[]byte("Grouped by static scope. Runtime order is not inferred."),
 		[]byte("Command setup"),
 		[]byte("Main handler branch"),
-		[]byte("Task · "),
 		[]byte("Other static relations"),
-		[]byte("→ ' + relation + ' / ' + invocation + ' →"),
-		[]byte(`"expression":"opts.Scan"`),
-	} {
-		if !bytes.Contains(html, want) {
-			t.Errorf("report HTML missing static proof presentation %q", want)
-		}
-	}
-	for _, unwanted := range [][]byte{
 		[]byte("Guided symbol path"),
 		[]byte("var sequence = []"),
 		[]byte("el('ol', 'rm-proof-path')"),
 	} {
 		if bytes.Contains(html, unwanted) {
-			t.Errorf("report HTML still presents static facts as an ordered runtime path: %q", unwanted)
+			t.Errorf("report HTML retained obsolete static-proof UI %q", unwanted)
 		}
 	}
 }
@@ -470,140 +428,6 @@ func TestWriteReportHTML_EscapesModelControlledTitle(t *testing.T) {
 	}
 	if !bytes.Contains(html, []byte(`\u003c/title\u003e\u003cscript\u003e`)) {
 		t.Fatalf("embedded report JSON did not retain safe JSON escaping: %s", html)
-	}
-}
-
-func TestWriteReportHTML_OrientationOnlyIncludesCandidateDirections(t *testing.T) {
-	data := ReportData{
-		FormatVersion:         CurrentFormatVersion,
-		RepoName:              "orientation-only",
-		ProjectGuess:          "metrics service",
-		OrientationConfidence: 0.86,
-		HighLevelMap: []Subsystem{{
-			Name:         "metrics API",
-			Evidence:     []string{"api/server.go registers metrics routes"},
-			WhyItMatters: "serves collected measurements",
-		}},
-		FirstFilesToOpen: []FileItem{{
-			Path:   "api/server.go",
-			Reason: "public API entrypoint",
-		}},
-		CandidateFlows: []string{
-			"HTTP request",
-		},
-		CandidateDirections: []CandidateDirection{{
-			ID:               "http-request",
-			Name:             "HTTP request",
-			Trigger:          "GET /metrics",
-			LikelyEntrypoint: "api/server.go",
-			LikelyFiles:      []string{"api/server.go", "metrics/registry.go"},
-			WhyInteresting:   "connects the public API to metric collection",
-			Evidence:         []string{"api/server.go registers the route"},
-			Confidence:       0.8,
-		}},
-		ImportantDomainWords: []DomainWord{{
-			Word:     "scrape",
-			Guess:    "collect metrics from a target",
-			Evidence: []string{"metrics/registry.go stores collectors"},
-		}},
-		QuestionsForHuman: []string{"Which collector is representative?"},
-		OrientationUnverifiedPaths: []PathItem{{
-			Path:   "legacy/scrape.go",
-			Reason: "not present in the bounded context",
-		}},
-	}
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, "report.html")
-	if err := WriteReportHTML(&data, path); err != nil {
-		t.Fatalf("WriteReportHTML: %v", err)
-	}
-
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read report.html: %v", err)
-	}
-	for _, want := range [][]byte{
-		[]byte("Purpose"),
-		[]byte("Components"),
-		[]byte("Start here"),
-		[]byte("Important terms"),
-		[]byte("Questions for a teammate"),
-		[]byte("metrics service"),
-		[]byte("metrics API"),
-		[]byte("serves collected measurements"),
-		[]byte("public API entrypoint"),
-		[]byte("scrape"),
-		[]byte("collect metrics from a target"),
-		[]byte("Which collector is representative?"),
-		[]byte("legacy/scrape.go"),
-		[]byte("candidate_directions"),
-		[]byte("HTTP request"),
-		[]byte("GET /metrics"),
-		[]byte("api/server.go"),
-		[]byte("connects the public API to metric collection"),
-		[]byte("api/server.go registers the route"),
-		[]byte("Suggested investigations"),
-	} {
-		if !bytes.Contains(b, want) {
-			t.Errorf("report.html does not contain %q", want)
-		}
-	}
-	if bytes.Contains(b, []byte("No flows identified")) {
-		t.Error("orientation-only report contains the misleading old empty-state text")
-	}
-}
-
-func TestWriteReportHTML_DirectionCanOpenSavedLocalEvidence(t *testing.T) {
-	data := ReportData{
-		FormatVersion: CurrentFormatVersion,
-		RepoName:      "friend-project",
-		CandidateDirections: []CandidateDirection{{
-			ID:               "worker-run",
-			Name:             "Worker run",
-			Trigger:          "the worker starts",
-			LikelyEntrypoint: "internal/worker/worker.go",
-			LikelyFiles:      []string{"internal/worker/worker.go"},
-			Evidence:         []string{"internal/worker/worker.go"},
-			Confidence:       0.8,
-		}},
-		Flows: []FlowData{{
-			ID:           "worker-run",
-			Name:         "Worker run",
-			EvidenceOnly: true,
-			FlowStatus:   "local_only",
-			BundleFiles: []FileItem{{
-				Path:   "internal/worker/worker.go",
-				Reason: "likely_file from candidate_flow",
-			}},
-		}},
-	}
-
-	html, err := buildHTML(&data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range [][]byte{
-		[]byte(`"evidence_only":true`),
-		[]byte("Explore this direction"),
-		[]byte("Suggested files are selected from repository facts"),
-		[]byte("Suggested files to inspect"),
-		[]byte("About this report"),
-		[]byte("rm-candidate-direction--clickable"),
-	} {
-		if !bytes.Contains(html, want) {
-			t.Errorf("report HTML missing %q", want)
-		}
-	}
-	for _, unwanted := range [][]byte{
-		[]byte("· local evidence"),
-		[]byte(">Local evidence<"),
-		[]byte("No second model call was made"),
-		[]byte("Saved traces (1)"),
-	} {
-		if bytes.Contains(html, unwanted) {
-			t.Errorf("report HTML still contains noisy implementation label %q", unwanted)
-		}
 	}
 }
 

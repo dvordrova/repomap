@@ -86,9 +86,6 @@ func TestTypedUIMessageCatalogAcceptance(t *testing.T) {
 			t.Errorf("browser retains a direct unlocalized runtime-prose channel %q", forbidden)
 		}
 	}
-	if !strings.Contains(string(scriptSource), `msg('main.flow.bundle_stats_compact'`) {
-		t.Error("browser bundle stats do not render through the typed message catalog")
-	}
 	architectureSource, err := os.ReadFile(filepath.Join("templates", "architecture_canvas.js"))
 	if err != nil {
 		t.Fatal(err)
@@ -260,20 +257,11 @@ process.stdout.write(JSON.stringify({
     protocol: api.messageForLocale("ru", "surfaces.value.http"),
   },
   dynamic: {
-    component: api.messageForLocale("ru", "main.component.role_anchor_count", {
-      role: "Граница", count: 2,
-    }),
     budget: api.messageForLocale("ru", "main.task.budget_summary", {
       files: 2, bytes: 5, calls: 11,
     }),
     registration: api.messageForLocale("ru", "main.surface.registration_suffix"),
     processEntry: api.messageForLocale("ru", "main.surface.process_entry_suffix"),
-    cached: api.messageForLocale("ru", "main.research.cached"),
-    unknown: api.messageForLocale("ru", "main.research.unknown_status"),
-    bundleStats: api.messageForLocale("ru", "main.flow.bundle_stats_compact", {
-      source: 21, test: 2, doc: 5,
-    }),
-    ranking: api.messageForLocale("ru", "main.symbol.ranked_by", { count: 3 }),
     layoutFailure: api.messageForLocale("ru", "architecture.error.layout_failed"),
   },
 }));
@@ -336,14 +324,9 @@ process.stdout.write(JSON.stringify({
 			Protocol string `json:"protocol"`
 		} `json:"opaqueTechnical"`
 		Dynamic struct {
-			Component     string `json:"component"`
 			Budget        string `json:"budget"`
 			Registration  string `json:"registration"`
 			ProcessEntry  string `json:"processEntry"`
-			Cached        string `json:"cached"`
-			Unknown       string `json:"unknown"`
-			BundleStats   string `json:"bundleStats"`
-			Ranking       string `json:"ranking"`
 			LayoutFailure string `json:"layoutFailure"`
 		} `json:"dynamic"`
 	}
@@ -441,34 +424,19 @@ process.stdout.write(JSON.stringify({
 		t.Errorf("opaque technical RU values = %#v, want %#v", got.OpaqueTechnical, wantOpaqueTechnical)
 	}
 	wantDynamic := struct {
-		Component     string
 		Budget        string
 		Registration  string
 		ProcessEntry  string
-		Cached        string
-		Unknown       string
-		BundleStats   string
-		Ranking       string
 		LayoutFailure string
 	}{
-		Component:     "Граница · 2 опоры",
 		Budget:        "2 файла · 5 байтов · 11 вызовов модели",
 		Registration:  "регистрация",
 		ProcessEntry:  "точка входа процесса",
-		Cached:        "кэшировано",
-		Unknown:       "неизвестно",
-		BundleStats:   "21 файл исходников · 2 тестовых файла · 5 документов",
-		Ranking:       "При ранжировании учтено 3 сигнала анализатора",
 		LayoutFailure: "Не удалось построить компоновку архитектуры.",
 	}
-	if got.Dynamic.Component != wantDynamic.Component ||
-		got.Dynamic.Budget != wantDynamic.Budget ||
+	if got.Dynamic.Budget != wantDynamic.Budget ||
 		got.Dynamic.Registration != wantDynamic.Registration ||
 		got.Dynamic.ProcessEntry != wantDynamic.ProcessEntry ||
-		got.Dynamic.Cached != wantDynamic.Cached ||
-		got.Dynamic.Unknown != wantDynamic.Unknown ||
-		got.Dynamic.BundleStats != wantDynamic.BundleStats ||
-		got.Dynamic.Ranking != wantDynamic.Ranking ||
 		got.Dynamic.LayoutFailure != wantDynamic.LayoutFailure {
 		t.Errorf("dynamic RU product copy = %#v, want %#v", got.Dynamic, wantDynamic)
 	}

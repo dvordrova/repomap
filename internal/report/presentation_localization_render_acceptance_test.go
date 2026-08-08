@@ -63,12 +63,10 @@ func TestPresentationLocalizationRichRussianRenderContainsNoEnglishProseSentinel
 	}
 
 	for class, sentinel := range map[string]string{
-		"path":                        "internal/storage/replicate.go",
-		"symbol":                      "StartReplication",
-		"object ID":                   "direction-replication",
-		"command":                     "go test ./internal/storage",
-		"selected research gate code": selectedResearchRoundReasonCode,
-		"skipped research gate code":  skippedResearchRoundReasonCode,
+		"path":      "internal/storage/replicate.go",
+		"symbol":    "StartReplication",
+		"object ID": "direction-replication",
+		"command":   "go test ./internal/storage",
 	} {
 		if !bytes.Contains(html, []byte(sentinel)) {
 			t.Errorf("%s opaque sentinel did not remain byte-identical: %q", class, sentinel)

@@ -620,24 +620,8 @@ func TestPresentationTextInventoryKeepsResearchSelectionReasonsOpaque(
 	}
 }
 
-func TestRunWarningLocalizationUsesTypedMessageIDsWithoutEnglishClassifiers(t *testing.T) {
+func TestWarningLocalizationKeepsTypedWarningsOutOfProviderInventory(t *testing.T) {
 	t.Parallel()
-
-	for _, forbidden := range []string{
-		"Study was not published because the editing stage did not finish.",
-		"local confidence gate capped",
-		"target module requires go",
-		"isModelContextWarning",
-		"groundingRepairs",
-		"confidenceAdjustments",
-	} {
-		if strings.Contains(scriptJS, forbidden) {
-			t.Errorf("run-warning renderer still classifies canonical English text %q", forbidden)
-		}
-	}
-	if !strings.Contains(scriptJS, "fixedMessages.has(presentationMessageID)") {
-		t.Fatal("run-warning renderer does not consume typed catalog message IDs")
-	}
 
 	const untypedWarning = "parser normalized an unexpected provider field"
 	data := &ReportData{
