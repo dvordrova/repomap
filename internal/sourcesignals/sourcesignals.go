@@ -3,6 +3,8 @@ package sourcesignals
 import (
 	"bufio"
 	"bytes"
+	"errors"
+	"io"
 	"regexp"
 	"sort"
 	"strings"
@@ -287,16 +289,26 @@ func scanContentWithTrace(
 ) ([]Signal, int, []ScanCutoffSample) {
 	var signals []Signal
 
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	scanner.Buffer(make([]byte, 0, 128*1024), 128*1024)
+	// ReadBytes has no token-size ceiling (unlike bufio.Scanner) — a
+	// generated single-line file (statik-style payloads, minified assets)
+	// must be scanned whole, never silently truncated by a scanner buffer.
+	reader := bufio.NewReader(bytes.NewReader(data))
 
 	var lines []string
-	lineNum := 0
-	for scanner.Scan() {
-		lineNum++
-		lines = append(lines, scanner.Text())
+	for {
+		raw, err := reader.ReadBytes('\n')
+		if len(raw) > 0 {
+			lines = append(lines, strings.TrimSuffix(string(raw), "\n"))
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			// A read error cannot occur on an in-memory reader; if it
+			// ever does, surface it instead of silently truncating.
+			break
+		}
 	}
-	_ = scanner.Err()
 
 	type match struct {
 		line     int

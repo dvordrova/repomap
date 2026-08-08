@@ -1,7 +1,6 @@
 package tasklens
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -1280,9 +1279,8 @@ func gitGrep(ctx context.Context, repo, term string) ([]grepMatch, error) {
 		return nil, fmt.Errorf("task lens: git grep paths: %w: %s", err, strings.TrimSpace(pathStderr.String()))
 	}
 	var paths []string
-	pathScanner := bufio.NewScanner(bytes.NewReader(pathOutput.bytes))
-	for pathScanner.Scan() {
-		filePath := filepath.ToSlash(strings.TrimSpace(pathScanner.Text()))
+	for _, line := range splitLines(pathOutput.bytes) {
+		filePath := filepath.ToSlash(strings.TrimSpace(line))
 		if filePath != "" {
 			paths = append(paths, filePath)
 		}
@@ -1321,9 +1319,10 @@ func gitGrep(ctx context.Context, repo, term string) ([]grepMatch, error) {
 		return nil, fmt.Errorf("task lens: git grep: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	var result []grepMatch
-	scanner := bufio.NewScanner(bytes.NewReader(stdout.bytes))
-	for scanner.Scan() {
-		line := scanner.Text()
+	// ReadBytes has no token-size ceiling (unlike bufio.Scanner) — a git
+	// grep hit inside a generated single-line file (statik-style payloads)
+	// must not fail the whole stage.
+	for _, line := range splitLines(stdout.bytes) {
 		filePath, rest, found := strings.Cut(line, ":")
 		if !found {
 			continue
@@ -1341,6 +1340,19 @@ func gitGrep(ctx context.Context, repo, term string) ([]grepMatch, error) {
 		})
 	}
 	return result, nil
+}
+
+// splitLines splits arbitrary-length text on newlines without a scanner
+// token ceiling. A trailing newline does not add a phantom empty line.
+func splitLines(data []byte) []string {
+	if len(data) == 0 {
+		return nil
+	}
+	lines := strings.Split(string(data), "\n")
+	if lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
 }
 
 type limitedBuffer struct {
