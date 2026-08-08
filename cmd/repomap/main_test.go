@@ -922,8 +922,9 @@ func TestRunDefaultStrictSnapshotRejectsChangedAnalyzedInput(t *testing.T) {
 	}}
 	captures := []freshness.RepositoryState{initial, changed}
 	captureCount := 0
+	var stderr bytes.Buffer
 	err = runDefaultWithDeps(repo, []string{"--offline", "--strict-snapshot", "--no-open", "--no-serve", "--debug-dir", t.TempDir()}, defaultRunDeps{
-		stdout: io.Discard, stderr: io.Discard,
+		stdout: io.Discard, stderr: &stderr,
 		captureRepo: func(context.Context, string) (freshness.RepositoryState, error) {
 			state := captures[captureCount]
 			captureCount++
@@ -932,6 +933,9 @@ func TestRunDefaultStrictSnapshotRejectsChangedAnalyzedInput(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "strict snapshot is partially_stale") {
 		t.Fatalf("strict snapshot error = %v", err)
+	}
+	if !strings.Contains(stderr.String(), "Run:\n  state: failed\n  report publication did not complete") {
+		t.Fatalf("failed run did not emit terminal publication state:\n%s", stderr.String())
 	}
 }
 

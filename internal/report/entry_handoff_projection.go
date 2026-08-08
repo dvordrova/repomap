@@ -20,8 +20,12 @@ import (
 // v1: exact D210 entry handoffs are the sole handoff authority. Every
 // transition carries typed producer provenance and an exact relation ref;
 // generic Canvas behavior relationships cannot enter this projection.
+// v2: an otherwise unjoined exact callee declaration may join through the
+// exact RepositoryGraph package whose file inventory contains that declaration
+// path, then only to accepted non-remainder Canvas members for that exact
+// package. The declaration-member join remains authoritative when present.
 const (
-	EntrypointHandoffGroupVersion     = 1
+	EntrypointHandoffGroupVersion     = 2
 	entrypointEvidenceRefEntryHandoff = "architecture_entry_handoff"
 
 	// These output ceilings mirror the validated upstream evidence ceilings:
@@ -82,8 +86,9 @@ type EntrypointProvenance struct {
 }
 
 // EntrypointHandoffTarget is the exact producer-owned callee declaration for a
-// first-hop handoff. Symbol is published only when that same declaration
-// identity and location join an accepted non-remainder Canvas member.
+// first-hop handoff. Symbol is published only when the exact declaration joins
+// an accepted non-remainder Canvas member directly or through the exact
+// RepositoryGraph package member that owns its declaration file.
 type EntrypointHandoffTarget struct {
 	Label  string `json:"label"`
 	Path   string `json:"path"`
@@ -108,20 +113,23 @@ type EntrypointFrontier struct {
 func ProjectEntrypointHandoffGroups(
 	canvas *ArchitectureCanvas,
 	grounding *ArchitectureGrounding,
+	repositoryGraph *RepositoryGraph,
 ) ([]EntrypointHandoffGroup, error) {
-	return projectEntrypointHandoffGroups(canvas, grounding)
+	return projectEntrypointHandoffGroups(canvas, grounding, repositoryGraph)
 }
 
 func projectEntrypointHandoffGroups(
 	canvas *ArchitectureCanvas,
 	grounding *ArchitectureGrounding,
+	repositoryGraph *RepositoryGraph,
 ) ([]EntrypointHandoffGroup, error) {
-	return projectEntrypointHandoffGroupsForProduct(canvas, grounding)
+	return projectEntrypointHandoffGroupsForProduct(canvas, grounding, repositoryGraph)
 }
 
 func projectEntrypointHandoffGroupsForProduct(
 	canvas *ArchitectureCanvas,
 	grounding *ArchitectureGrounding,
+	repositoryGraph *RepositoryGraph,
 ) ([]EntrypointHandoffGroup, error) {
 	if canvas == nil {
 		return nil, nil
@@ -148,7 +156,7 @@ func projectEntrypointHandoffGroupsForProduct(
 	groupIDs := make(map[string]struct{}, len(entryAnchors))
 	totalHandoffs := 0
 	for _, entryAnchor := range entryAnchors {
-		group, err := projectEntrypointHandoffGroupForEntry(canvas, grounding, entryAnchor)
+		group, err := projectEntrypointHandoffGroupForEntry(canvas, grounding, repositoryGraph, entryAnchor)
 		if err != nil {
 			return nil, err
 		}
@@ -205,6 +213,7 @@ type entrypointHandoffTarget struct {
 func projectEntrypointHandoffGroupForEntry(
 	canvas *ArchitectureCanvas,
 	grounding *ArchitectureGrounding,
+	repositoryGraph *RepositoryGraph,
 	entryAnchor *componentmap.BehaviorAnchor,
 ) (*EntrypointHandoffGroup, error) {
 	entryMembers := processEntryMemberIDs(entryAnchor)
@@ -227,7 +236,7 @@ func projectEntrypointHandoffGroupForEntry(
 				!entrypointHandoffMatchesAnchor(canvas, entryAnchor, handoff) {
 				continue
 			}
-			componentIDs := componentIDsForEntryHandoffCallee(canvas, handoff)
+			componentIDs := componentIDsForEntryHandoffCallee(canvas, repositoryGraph, handoff)
 			transition := transitionFromEntryHandoff(handoff, componentIDs)
 			handoffTargets = append(handoffTargets, entrypointHandoffTarget{
 				transition:   transition,
@@ -605,6 +614,7 @@ func componentIDsForMemberID(
 
 func componentIDsForEntryHandoffCallee(
 	canvas *ArchitectureCanvas,
+	repositoryGraph *RepositoryGraph,
 	handoff ArchitectureEntryHandoff,
 ) []componentmap.ComponentID {
 	if canvas == nil || handoff.Callee.ID == "" || handoff.Callee.Location.Path == "" {
@@ -631,7 +641,91 @@ func componentIDsForEntryHandoffCallee(
 			result = append(result, component.ID)
 		}
 	}
+	exactDeclarationOwners := mergeEntrypointComponentIDs(nil, result)
+	if len(exactDeclarationOwners) > 0 {
+		return exactDeclarationOwners
+	}
+	return componentIDsForExactPackageMember(
+		canvas,
+		repositoryGraph,
+		handoff.Callee.Location.Path,
+	)
+}
+
+// componentIDsForExactPackageMember is the bounded fallback for an exact D210
+// callee declaration that was not retained as a symbol member by the accepted
+// Canvas. It performs two exact backend joins only:
+//
+//	declaration path == RepositoryGraph.PackageInfo.Files item
+//	package canonical path == accepted Canvas package declaration fact
+//
+// It deliberately does not use package-directory prefixes, basenames, symbol
+// names, component names, model prose, or sorted-first ownership. Every exact
+// non-remainder owner is returned so plural ownership stays explicit.
+func componentIDsForExactPackageMember(
+	canvas *ArchitectureCanvas,
+	repositoryGraph *RepositoryGraph,
+	declarationPath string,
+) []componentmap.ComponentID {
+	if canvas == nil || repositoryGraph == nil || declarationPath == "" {
+		return nil
+	}
+	packages := make(map[string]struct{})
+	for _, pkg := range repositoryGraph.Packages {
+		if pkg.CanonicalPath == "" {
+			continue
+		}
+		for _, filePath := range pkg.Files {
+			if filePath == declarationPath {
+				packages[pkg.CanonicalPath] = struct{}{}
+				break
+			}
+		}
+	}
+	if len(packages) == 0 {
+		return nil
+	}
+
+	var result []componentmap.ComponentID
+	for _, component := range canvas.Components {
+		if canvas.LocalRemainderComponentID != "" && component.ID == canvas.LocalRemainderComponentID {
+			continue
+		}
+		matched := false
+		for _, members := range [][]componentmap.Candidate{component.Members, component.SharedMembers} {
+			for _, member := range members {
+				if exactEntrypointPackageMember(member, packages) {
+					matched = true
+					break
+				}
+			}
+			if matched {
+				break
+			}
+		}
+		if matched {
+			result = append(result, component.ID)
+		}
+	}
 	return mergeEntrypointComponentIDs(nil, result)
+}
+
+func exactEntrypointPackageMember(
+	candidate componentmap.Candidate,
+	packages map[string]struct{},
+) bool {
+	if candidate.ID.Kind != componentmap.MemberPackage {
+		return false
+	}
+	for _, fact := range candidate.Facts {
+		if fact.Kind != componentmap.FactDeclaration {
+			continue
+		}
+		if _, exists := packages[fact.Value]; exists {
+			return true
+		}
+	}
+	return false
 }
 
 func exactEntrypointDeclarationMember(

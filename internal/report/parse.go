@@ -1063,6 +1063,13 @@ func repositoryGraphHasModule(modules []ModuleInfo, modulePath, moduleDir string
 func parseOrientationReport(path string, data *ReportData) string {
 	b, err := os.ReadFile(path)
 	if err != nil {
+		// orientation_report.json belonged to the retired Orientation product
+		// path. Current Atlas-first runs do not produce it, so its absence is
+		// neither degradation nor useful operator diagnostics. Existing but
+		// unreadable artifacts still fail visibly below.
+		if os.IsNotExist(err) {
+			return ""
+		}
 		return fmt.Sprintf("orientation: %v", err)
 	}
 	var or orientationReportJSON

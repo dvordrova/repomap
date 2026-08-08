@@ -1483,10 +1483,6 @@
  stroke-width: 2.6;
 }
 
-.rm-arch__edge--entry-handoff.is-self-loop .rm-arch__edge-visible {
- stroke-dasharray: 4 3;
-}
-
 .rm-arch__entry-handoff-source {
  background: #ecfdf5;
  border: 1px solid #5eead4;
@@ -1505,10 +1501,6 @@
  text-align: left;
  text-decoration: none;
  transform: translate(-50%, -50%);
-}
-
-.rm-arch__entry-handoff-source.is-self-loop {
- border-style: dashed;
 }
 
 .rm-arch__entry-handoff-source:hover {

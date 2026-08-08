@@ -2,9 +2,9 @@
   'use strict';
 
   // Decision 240: remove the obsolete Navigator product copy and actions.
-  // Canvas 14: exact first-hop handoffs are compact Entrypoint context;
+  // Canvas 15: exact first-hop handoffs are compact Entrypoint context;
   // persisted evidence labels remain exact and language-neutral.
-  var VERSION = 13;
+  var VERSION = 14;
   var EN = {
     "main.browser_error.invalid_report_artifact": { params: [], text: "The saved report is invalid or exceeds the supported size." },
     "main.browser_error.no_saved_reports": { params: [], text: "No saved reports are available." },
@@ -135,8 +135,8 @@
     "main.study.diagnostics.omissions": { params: [], text: "Frontier omissions" },
     "main.study.diagnostics.missing_core_heading": { params: ["count"], format: function (params) { return "Core areas without a published theme (" + params.count + ")"; } },
     "main.study.diagnostics.missing_core_area": { params: ["name"], format: function (params) { return params.name; } },
-    "main.study.themes.title": { params: [], text: "Source-grounded study themes" },
-    "main.study.theme.supported": { params: [], text: "Source-backed" },
+    "main.study.themes.title": { params: [], text: "Study themes with exact source links" },
+    "main.study.theme.supported": { params: [], text: "Exact source attached" },
     "main.study.theme.partial": { params: [], text: "Partial coverage" },
     "main.study.theme.scope_exact": { params: [], text: "Exact scope" },
     "main.study.theme.scope_partial": { params: [], text: "Partial scope" },
@@ -150,7 +150,7 @@
     "main.study.theme.callsite_count": { params: ["count"], format: function (params) { return "· " + params.count + " callsites"; } },
     "main.study.theme.more_readings": { params: ["count"], format: function (params) { return "+" + params.count + " readings"; } },
     "main.study.theme.source_unavailable": { params: [], text: "exact source unavailable in this report" },
-    "main.study.theme.expected_learning": { params: ["learning"], format: function (params) { return "Expected learning: " + params.learning; } },
+    "main.study.theme.expected_learning": { params: ["learning"], format: function (params) { return "What to verify: " + params.learning; } },
     "main.study.theme.first_limitation": { params: ["limitation"], format: function (params) { return "Limitation: " + params.limitation; } },
     "main.study.theme.partial_limitation_short": { params: [], text: "Some evidence or source scope for this theme remains partial." },
     "main.study.theme.limitations": { params: [], text: "Limitations" },
@@ -159,13 +159,13 @@
     "main.study.theme.alternates.title_wording": { params: ["title"], format: function (params) { return "Also titled: " + params.title; } },
     "main.study.theme.alternates.question_wording": { params: ["question"], format: function (params) { return "Also asks: " + params.question; } },
     "main.study.theme.alternates.readings": { params: [], text: "Additional exact readings" },
-    "main.study.theme.supported_explanation": { params: [], text: "Every reading in this theme is backed by an exact source anchor." },
+    "main.study.theme.supported_explanation": { params: [], text: "Every reading has an exact source anchor. The theme wording is a model interpretation to verify against that code." },
     "main.study.theme.partial_explanation": { params: ["passed", "total"], format: function (params) { return params.passed + " of " + params.total + " anchors passed source review. Thematic coverage can still be partial: the theme spans more source than was reviewed, or some anchors could not be pinned exactly."; } },
     "main.study.theme.partial_explanation_generic": { params: [], text: "Thematic coverage is partial: some anchors could not be pinned to exact source, or the theme spans more source than was reviewed." },
     "main.study.theme.reading.role.direct": { params: [], text: "direct support" },
     "main.study.theme.reading.role.supporting": { params: [], text: "supporting" },
     "main.study.provenance.title": { params: [], text: "Coverage and provenance" },
-    "main.study.themes.copy": { params: [], text: "Editorial themes over exact anchors, each with its exact source readings. The model proposes; local reduction publishes only what the source supports." },
+    "main.study.themes.copy": { params: [], text: "The model proposes themes over exact source readings. Local checks verify the source links and structure, not the interpretation; verify each conclusion against the cited code." },
     "main.study.themes.show_all": { params: ["count"], format: function (params) { return "Show all themes (" + params.count + " more)"; } },
     "main.study.frontier.browse_title": { params: [], text: "All study questions" },
     "main.study.frontier.open_theme": { params: ["count"], format: function (params) { return "Open theme " + params.count; } },
@@ -1327,8 +1327,8 @@
     "main.study.diagnostics.omissions": { params: [], text: "Опущено из фронтира" },
     "main.study.diagnostics.missing_core_heading": { params: ["count"], format: function (params) { return "Ключевые области без опубликованной темы (" + params.count + ")"; } },
     "main.study.diagnostics.missing_core_area": { params: ["name"], format: function (params) { return params.name; } },
-    "main.study.themes.title": { params: [], text: "Темы изучения на основе источников" },
-    "main.study.theme.supported": { params: [], text: "Подтверждено источниками" },
+    "main.study.themes.title": { params: [], text: "Темы изучения с точными ссылками на код" },
+    "main.study.theme.supported": { params: [], text: "Привязан точный код" },
     "main.study.theme.partial": { params: [], text: "Неполное покрытие" },
     "main.study.theme.scope_exact": { params: [], text: "Точный скоуп" },
     "main.study.theme.scope_partial": { params: [], text: "Частичный скоуп" },
@@ -1342,7 +1342,7 @@
     "main.study.theme.callsite_count": { params: ["count"], format: function (params) { return "· " + params.count + " вызовов"; } },
     "main.study.theme.more_readings": { params: ["count"], format: function (params) { return "+" + params.count + " чтений"; } },
     "main.study.theme.source_unavailable": { params: [], text: "точный источник недоступен в этом отчёте" },
-    "main.study.theme.expected_learning": { params: ["learning"], format: function (params) { return "Ожидаемый результат изучения: " + params.learning; } },
+    "main.study.theme.expected_learning": { params: ["learning"], format: function (params) { return "Что проверить: " + params.learning; } },
     "main.study.theme.first_limitation": { params: ["limitation"], format: function (params) { return "Ограничение: " + params.limitation; } },
     "main.study.theme.partial_limitation_short": { params: [], text: "Часть свидетельств или исходного кода в рамках этой темы остаётся неполной." },
     "main.study.theme.limitations": { params: [], text: "Ограничения" },
@@ -1351,13 +1351,13 @@
     "main.study.theme.alternates.title_wording": { params: ["title"], format: function (params) { return "Другое название: " + params.title; } },
     "main.study.theme.alternates.question_wording": { params: ["question"], format: function (params) { return "Другой вопрос: " + params.question; } },
     "main.study.theme.alternates.readings": { params: [], text: "Дополнительные точные чтения" },
-    "main.study.theme.supported_explanation": { params: [], text: "Каждое чтение этой темы опирается на точный исходный якорь." },
+    "main.study.theme.supported_explanation": { params: [], text: "К каждому чтению привязана точная строка кода. Формулировка темы — интерпретация модели, которую нужно проверить по этому коду." },
     "main.study.theme.partial_explanation": { params: ["passed", "total"], format: function (params) { return params.passed + " из " + params.total + " якорей прошли проверку источника. Покрытие темы может оставаться неполным: тема охватывает больше исходников, чем было проверено, или часть якорей не удалось привязать точно."; } },
     "main.study.theme.partial_explanation_generic": { params: [], text: "Покрытие темы неполное: часть якорей не удалось привязать к точному исходнику, или тема охватывает больше исходников, чем было проверено." },
     "main.study.theme.reading.role.direct": { params: [], text: "прямая опора" },
     "main.study.theme.reading.role.supporting": { params: [], text: "дополняющая" },
     "main.study.provenance.title": { params: [], text: "Покрытие и происхождение" },
-    "main.study.themes.copy": { params: [], text: "Редакционные темы над точными якорями, каждая с точными чтениями исходников. Модель предлагает; локальная редукция публикует только то, что подтверждает источник." },
+    "main.study.themes.copy": { params: [], text: "Модель предлагает темы над точными чтениями исходников. Локальные проверки подтверждают ссылки и структуру, но не интерпретацию; каждый вывод нужно сверять с указанным кодом." },
     "main.study.themes.show_all": { params: ["count"], format: function (params) { return "Показать все темы (ещё " + params.count + ")"; } },
     "main.study.frontier.browse_title": { params: [], text: "Все вопросы изучения" },
     "main.study.frontier.open_theme": { params: ["count"], format: function (params) { return "Открыть тему " + params.count; } },

@@ -266,8 +266,12 @@ func collectCorpusRunFacts(repo corpusRepo, runDir string) corpusRunFacts {
 					} `json:"cards"`
 				} `json:"themes"`
 			} `json:"atlas_study"`
-			DiscoveredSurfaces any `json:"discovered_surfaces"`
-			Associations       any `json:"architecture_associations"`
+			DiscoveredSurfaces struct {
+				TotalCount int `json:"total_count"`
+			} `json:"discovered_surfaces"`
+			Associations struct {
+				Total int `json:"total"`
+			} `json:"architecture_associations"`
 		}
 		if err := json.Unmarshal(raw, &report); err != nil {
 			f.Revision = "unmarshal-error: " + err.Error()
@@ -278,15 +282,8 @@ func collectCorpusRunFacts(repo corpusRepo, runDir string) corpusRunFacts {
 			f.ArchComponents = len(report.Architecture.Components)
 			f.StudyState = report.Study.State
 			f.StudyCards = len(report.Study.Themes.Cards)
-			f.Surfaces = 0
-			switch v := report.DiscoveredSurfaces.(type) {
-			case []any:
-				f.Surfaces = len(v)
-			}
-			switch v := report.Associations.(type) {
-			case []any:
-				f.Associations = len(v)
-			}
+			f.Surfaces = report.DiscoveredSurfaces.TotalCount
+			f.Associations = report.Associations.Total
 			f.EntryHandoffGroups = len(report.Architecture.EntryHandoffGroups)
 			for _, group := range report.Architecture.EntryHandoffGroups {
 				f.EntryHandoffs += len(group.EntryHandoffs)

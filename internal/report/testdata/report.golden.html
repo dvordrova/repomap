@@ -744,14 +744,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     </aside>
   </div>
   <div class="rm-toast" id="rm-toast" role="status" aria-live="polite" hidden></div>
-  <script type="application/json" id="rm-report-data">{"format_version":40,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
+  <script type="application/json" id="rm-report-data">{"format_version":41,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
   <script id="rm-ui-messages-js">(function (global) {
   'use strict';
 
   // Decision 240: remove the obsolete Navigator product copy and actions.
-  // Canvas 14: exact first-hop handoffs are compact Entrypoint context;
+  // Canvas 15: exact first-hop handoffs are compact Entrypoint context;
   // persisted evidence labels remain exact and language-neutral.
-  var VERSION = 13;
+  var VERSION = 14;
   var EN = {
     "main.browser_error.invalid_report_artifact": { params: [], text: "The saved report is invalid or exceeds the supported size." },
     "main.browser_error.no_saved_reports": { params: [], text: "No saved reports are available." },
@@ -882,8 +882,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.diagnostics.omissions": { params: [], text: "Frontier omissions" },
     "main.study.diagnostics.missing_core_heading": { params: ["count"], format: function (params) { return "Core areas without a published theme (" + params.count + ")"; } },
     "main.study.diagnostics.missing_core_area": { params: ["name"], format: function (params) { return params.name; } },
-    "main.study.themes.title": { params: [], text: "Source-grounded study themes" },
-    "main.study.theme.supported": { params: [], text: "Source-backed" },
+    "main.study.themes.title": { params: [], text: "Study themes with exact source links" },
+    "main.study.theme.supported": { params: [], text: "Exact source attached" },
     "main.study.theme.partial": { params: [], text: "Partial coverage" },
     "main.study.theme.scope_exact": { params: [], text: "Exact scope" },
     "main.study.theme.scope_partial": { params: [], text: "Partial scope" },
@@ -897,7 +897,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.theme.callsite_count": { params: ["count"], format: function (params) { return "· " + params.count + " callsites"; } },
     "main.study.theme.more_readings": { params: ["count"], format: function (params) { return "+" + params.count + " readings"; } },
     "main.study.theme.source_unavailable": { params: [], text: "exact source unavailable in this report" },
-    "main.study.theme.expected_learning": { params: ["learning"], format: function (params) { return "Expected learning: " + params.learning; } },
+    "main.study.theme.expected_learning": { params: ["learning"], format: function (params) { return "What to verify: " + params.learning; } },
     "main.study.theme.first_limitation": { params: ["limitation"], format: function (params) { return "Limitation: " + params.limitation; } },
     "main.study.theme.partial_limitation_short": { params: [], text: "Some evidence or source scope for this theme remains partial." },
     "main.study.theme.limitations": { params: [], text: "Limitations" },
@@ -906,13 +906,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.theme.alternates.title_wording": { params: ["title"], format: function (params) { return "Also titled: " + params.title; } },
     "main.study.theme.alternates.question_wording": { params: ["question"], format: function (params) { return "Also asks: " + params.question; } },
     "main.study.theme.alternates.readings": { params: [], text: "Additional exact readings" },
-    "main.study.theme.supported_explanation": { params: [], text: "Every reading in this theme is backed by an exact source anchor." },
+    "main.study.theme.supported_explanation": { params: [], text: "Every reading has an exact source anchor. The theme wording is a model interpretation to verify against that code." },
     "main.study.theme.partial_explanation": { params: ["passed", "total"], format: function (params) { return params.passed + " of " + params.total + " anchors passed source review. Thematic coverage can still be partial: the theme spans more source than was reviewed, or some anchors could not be pinned exactly."; } },
     "main.study.theme.partial_explanation_generic": { params: [], text: "Thematic coverage is partial: some anchors could not be pinned to exact source, or the theme spans more source than was reviewed." },
     "main.study.theme.reading.role.direct": { params: [], text: "direct support" },
     "main.study.theme.reading.role.supporting": { params: [], text: "supporting" },
     "main.study.provenance.title": { params: [], text: "Coverage and provenance" },
-    "main.study.themes.copy": { params: [], text: "Editorial themes over exact anchors, each with its exact source readings. The model proposes; local reduction publishes only what the source supports." },
+    "main.study.themes.copy": { params: [], text: "The model proposes themes over exact source readings. Local checks verify the source links and structure, not the interpretation; verify each conclusion against the cited code." },
     "main.study.themes.show_all": { params: ["count"], format: function (params) { return "Show all themes (" + params.count + " more)"; } },
     "main.study.frontier.browse_title": { params: [], text: "All study questions" },
     "main.study.frontier.open_theme": { params: ["count"], format: function (params) { return "Open theme " + params.count; } },
@@ -2074,8 +2074,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.diagnostics.omissions": { params: [], text: "Опущено из фронтира" },
     "main.study.diagnostics.missing_core_heading": { params: ["count"], format: function (params) { return "Ключевые области без опубликованной темы (" + params.count + ")"; } },
     "main.study.diagnostics.missing_core_area": { params: ["name"], format: function (params) { return params.name; } },
-    "main.study.themes.title": { params: [], text: "Темы изучения на основе источников" },
-    "main.study.theme.supported": { params: [], text: "Подтверждено источниками" },
+    "main.study.themes.title": { params: [], text: "Темы изучения с точными ссылками на код" },
+    "main.study.theme.supported": { params: [], text: "Привязан точный код" },
     "main.study.theme.partial": { params: [], text: "Неполное покрытие" },
     "main.study.theme.scope_exact": { params: [], text: "Точный скоуп" },
     "main.study.theme.scope_partial": { params: [], text: "Частичный скоуп" },
@@ -2089,7 +2089,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.theme.callsite_count": { params: ["count"], format: function (params) { return "· " + params.count + " вызовов"; } },
     "main.study.theme.more_readings": { params: ["count"], format: function (params) { return "+" + params.count + " чтений"; } },
     "main.study.theme.source_unavailable": { params: [], text: "точный источник недоступен в этом отчёте" },
-    "main.study.theme.expected_learning": { params: ["learning"], format: function (params) { return "Ожидаемый результат изучения: " + params.learning; } },
+    "main.study.theme.expected_learning": { params: ["learning"], format: function (params) { return "Что проверить: " + params.learning; } },
     "main.study.theme.first_limitation": { params: ["limitation"], format: function (params) { return "Ограничение: " + params.limitation; } },
     "main.study.theme.partial_limitation_short": { params: [], text: "Часть свидетельств или исходного кода в рамках этой темы остаётся неполной." },
     "main.study.theme.limitations": { params: [], text: "Ограничения" },
@@ -2098,13 +2098,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.theme.alternates.title_wording": { params: ["title"], format: function (params) { return "Другое название: " + params.title; } },
     "main.study.theme.alternates.question_wording": { params: ["question"], format: function (params) { return "Другой вопрос: " + params.question; } },
     "main.study.theme.alternates.readings": { params: [], text: "Дополнительные точные чтения" },
-    "main.study.theme.supported_explanation": { params: [], text: "Каждое чтение этой темы опирается на точный исходный якорь." },
+    "main.study.theme.supported_explanation": { params: [], text: "К каждому чтению привязана точная строка кода. Формулировка темы — интерпретация модели, которую нужно проверить по этому коду." },
     "main.study.theme.partial_explanation": { params: ["passed", "total"], format: function (params) { return params.passed + " из " + params.total + " якорей прошли проверку источника. Покрытие темы может оставаться неполным: тема охватывает больше исходников, чем было проверено, или часть якорей не удалось привязать точно."; } },
     "main.study.theme.partial_explanation_generic": { params: [], text: "Покрытие темы неполное: часть якорей не удалось привязать к точному исходнику, или тема охватывает больше исходников, чем было проверено." },
     "main.study.theme.reading.role.direct": { params: [], text: "прямая опора" },
     "main.study.theme.reading.role.supporting": { params: [], text: "дополняющая" },
     "main.study.provenance.title": { params: [], text: "Покрытие и происхождение" },
-    "main.study.themes.copy": { params: [], text: "Редакционные темы над точными якорями, каждая с точными чтениями исходников. Модель предлагает; локальная редукция публикует только то, что подтверждает источник." },
+    "main.study.themes.copy": { params: [], text: "Модель предлагает темы над точными чтениями исходников. Локальные проверки подтверждают ссылки и структуру, но не интерпретацию; каждый вывод нужно сверять с указанным кодом." },
     "main.study.themes.show_all": { params: ["count"], format: function (params) { return "Показать все темы (ещё " + params.count + ")"; } },
     "main.study.frontier.browse_title": { params: [], text: "Все вопросы изучения" },
     "main.study.frontier.open_theme": { params: ["count"], format: function (params) { return "Открыть тему " + params.count; } },
@@ -5122,9 +5122,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 	// themeScopeState derives the Decision 229 D6 scope axis
 	// deterministically from the card readings: the theme scope is "exact"
 	// when every reading carries an exact resolvable source location with a
-	// direct role, and "partial" otherwise. Scope and evidence are
-	// independent axes — "Source-backed" is never contradicted by "Scope
-	// partial", and a narrow-but-exact theme is not failed evidence.
+	// direct role, and "partial" otherwise. Scope and exact-source attachment
+	// are independent axes: partial scope does not remove an exact anchor, and
+	// a narrow-but-exact theme is not failed evidence.
 	function themeScopeState(card) {
 		var readings = card && Array.isArray(card.readings) ? card.readings : [];
 		if (!readings.length) return 'partial';
@@ -5368,14 +5368,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		titleRow.appendChild(txt('span', 'rm-study-theme-card__badge rm-study-theme-card__evidence rm-study-theme-card__evidence--' + themeCoverageState(card), themeCoverageLabel(card)));
 		titleRow.appendChild(txt('span', 'rm-study-theme-card__badge rm-study-theme-card__scope rm-study-theme-card__scope--' + themeScopeState(card), themeScopeLabel(card)));
 		titleRow.appendChild(txt('span', 'rm-study-theme-card__kind', themeKindLabel(card)));
-		// Decision 233 (Archive 9): the portfolio-concentration marker is
-		// visible on every card whose first reading belongs to the
-		// dominating source family — the user sees WHY the shelf looks
-		// concentrated (e.g. TLS/certificates) without opening evidence
-		// details.
-		if (card.concentration_marker) {
-			titleRow.appendChild(txt('span', 'rm-study-theme-card__badge rm-study-theme-card__concentration', card.concentration_marker));
-		}
 		article.appendChild(titleRow);
 		if (card.final_question) article.appendChild(txt('p', 'rm-study-theme-card__question', card.final_question));
 		if (card.why_it_matters) article.appendChild(txt('span', 'rm-study-theme-card__reason', card.why_it_matters));
@@ -9576,20 +9568,44 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 	  if (openStaticSource(location, location.end_line)) return;
 	  if (serverMode() && currentRunID() && SOURCE_IDS[location.path]) {
 	    requestOpenFile(location.path, Number(location.line) || 0, Number(location.column) || 0);
+	    return;
 	  }
+	  var snippet = embeddedSourceForLocation(location);
+	  if (snippet) openSourceSnippet(snippet, location);
 	}
 
-  // Decision 222: source actions never open an inline code drawer in the
-  // user surface — they always jump: GitHub/GitLab (static source mode) or
-  // the repository server open action. When neither is available the action
-  // is simply not offered (callers show the plain location text).
+  // Static source hosts and the manifest-authorized local server stay the
+  // preferred source actions. A generic host has neither authority, so an
+  // already embedded exact snippet opens in the existing source drawer.
   function openSourceSnippet(snippet, location, expanded, options) {
     options = options || {};
     var resolved = sourceSnippetLocation(snippet, location);
     if (openStaticSource(resolved, snippet && snippet.end_line)) return;
     if (serverMode() && currentRunID() && snippet && OPENABLE_PATH_SET[snippet.path]) {
       requestOpenFile(snippet.path, Number(resolved.line) || 0, Number(resolved.column) || 0);
+	  return;
     }
+	if (!sourceSnippetHasCode(snippet) || !OPENABLE_PATH_SET[snippet.path]) return;
+	var next = reduceWorkspaceState(workspaceState, {
+	  type: 'open_source',
+	  selection: {
+	    path: snippet.path,
+	    line: resolved.line,
+	    column: resolved.column,
+	    snippet: snippet,
+	    expanded: !!expanded,
+	    drawerFirst: !!options.drawerFirst,
+	  },
+	}, USER_MECHANISMS);
+	var reference = sourceDrawerHistoryReference(next.sourceLocation);
+	var replacingDrawer = !!(window.history && window.history.state && window.history.state.sourceDrawer);
+	writeWorkspaceHistory(
+	  String(window.location && window.location.hash || workspaceHashForState(next)),
+	  next,
+	  { replace: replacingDrawer, sourceDrawer: reference }
+	);
+	workspaceState = next;
+	renderSourceDrawer();
   }
 
   function closeSourceDrawer() {
@@ -10391,7 +10407,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     renderArchitectureReturn();
   }
 
-  // Canvas 14 publishes exact D210 first-hop groups as context for a process
+  // Canvas 15 publishes exact D210 first-hop groups as context for a process
   // Entrypoint. The list selects ONE group for the Canvas overlay; backend
   // transition.component_ids are the only join. Diagnostic archaeology stays
   // in saved evidence, while exact source actions remain directly available.
@@ -10452,6 +10468,26 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
    return null;
   }
 
+  function entryHandoffSelectorLabel(group) {
+   var entry = group && group.entry || {};
+   var ownerIDs = Array.from(new Set((Array.isArray(entry.component_ids) ? entry.component_ids : [])
+    .map(function (value) { return String(value || ''); }).filter(Boolean)));
+   var ownerName = '';
+   if (ownerIDs.length === 1) {
+    (DATA.architecture_canvas && DATA.architecture_canvas.components || []).some(function (component) {
+     if (!component || String(component.id || '') !== ownerIDs[0]) return false;
+     ownerName = String(component.name || '').trim();
+     return true;
+    });
+   }
+   var exactPath = String(entry.path || '');
+   var pathParts = exactPath.split('/').filter(Boolean);
+   var pathLeaf = pathParts.length ? pathParts[pathParts.length - 1] : '';
+   var symbol = bareSourceSymbol(entry.symbol);
+   return [ownerName || pathLeaf, symbol].filter(Boolean).join(' · ') ||
+    msg('main.map.lens.entry.process');
+  }
+
   function activateEntrypointHandoffGroup(groupID, host, projectedGroups) {
    var projected = entryHandoffProjectionByID(projectedGroups, groupID);
    if (!projected || !projected.group) return false;
@@ -10473,16 +10509,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
   function renderEntrypointHandoffSelector(group, host, projectedGroups) {
    var entry = group && group.entry || {};
+   var handoffCount = Array.isArray(group && group.entry_handoffs) ? group.entry_handoffs.length : 0;
    var row = el('div', 'rm-map-entry-selector-row');
    var selector = el('button', 'rm-map-entry-selector');
    selector.type = 'button';
    selector.setAttribute('data-entry-handoff-group-id', String(group && group.id || ''));
    selector.setAttribute('aria-pressed', String(group && group.id || '') === selectedEntrypointHandoffGroupID ? 'true' : 'false');
    selector.appendChild(txt('strong', 'rm-map-entry-selector__entry',
-    bareSourceSymbol(entry.symbol) || msg('main.map.lens.entry.process')));
-   selector.appendChild(txt('span', 'rm-map-lens-object__detail', msg('main.architecture.disclosure.count', {
-    count: Array.isArray(group && group.entry_handoffs) ? group.entry_handoffs.length : 0,
-   })));
+    entryHandoffSelectorLabel(group)));
+   selector.appendChild(txt('span', 'rm-map-lens-object__detail', '— ' + handoffCount));
    var activate = function () {
     activateEntrypointHandoffGroup(String(group && group.id || ''), host, projectedGroups);
    };

@@ -2439,18 +2439,19 @@ process.stdout.write(JSON.stringify({
 	if got.Backed.View != "mechanism" || got.Backed.StepIndex != 0 {
 		t.Fatalf("back state = %#v", got.Backed)
 	}
-	// Decision 222: without a GitHub/GitLab (or server) jump, opening a
-	// source is a no-op — never an inline code drawer, never a route change.
-	if got.DrawerHash != "#/mechanism/mechanism-1/step/4" || got.DrawerHistory {
+	// A generic host keeps the route but binds the exact embedded snippet to
+	// source-drawer history. Static hosts and the local manifest server retain
+	// their external/editor actions in separate authority tests.
+	if got.DrawerHash != "#/mechanism/mechanism-1/step/4" || !got.DrawerHistory {
 		t.Fatalf("drawer history = hash %q, state %t", got.DrawerHash, got.DrawerHistory)
 	}
 	if got.Closed.View != "mechanism" || got.Closed.StepIndex != 3 || string(got.Closed.SourceLocation) != "null" {
 		t.Fatalf("closed drawer state = %#v", got.Closed)
 	}
-	// Decision 222: source opening is a no-op without a jump; the mechanism
-	// remains the active context but no source drawer is opened.
+	// The same fallback is context-neutral: Overview owns no Mechanism, but
+	// its exact embedded source still opens without changing the route.
 	if got.OverviewHash != "#/map" || got.OverviewDrawer.View != "overview" ||
-		string(got.OverviewDrawer.SourceLocation) != "null" {
+		string(got.OverviewDrawer.SourceLocation) == "null" {
 		t.Fatalf("Overview navigation did not clear mechanism ownership: hash %q, state %#v, has mechanism %t",
 			got.OverviewHash, got.OverviewDrawer, got.OverviewDrawerHasMechanism)
 	}
@@ -2462,6 +2463,187 @@ process.stdout.write(JSON.stringify({
 	}
 	if got.ExplicitMapReturnBackCalls != 0 {
 		t.Fatalf("explicit architecture return called history.back %d time(s)", got.ExplicitMapReturnBackCalls)
+	}
+}
+
+// A report hosted by a generic static server has neither a revision-pinned
+// GitHub/GitLab jump nor the manifest-authorized editor API. When its exact
+// snippet is already embedded, the second product click (source from an open
+// inspector/card) must open that snippet in the existing source drawer.
+func TestGenericHostedSourceActionOpensExactEmbeddedDrawer(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is unavailable")
+	}
+	assetPath, err := filepath.Abs(filepath.Join("templates", "script.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := `
+const fs = require("fs");
+const vm = require("vm");
+class Element {
+  constructor(tag) {
+    this.tagName = String(tag || "div").toUpperCase();
+    this.children = [];
+    this.attributes = {};
+    this.className = "";
+    this.textContent = "";
+    this.hidden = false;
+    this.parentNode = null;
+    this.style = {};
+    this.classList = {
+      add: (...names) => {
+        const values = new Set(String(this.className).split(/\s+/).filter(Boolean));
+        names.forEach((name) => values.add(name));
+        this.className = Array.from(values).join(" ");
+      },
+      remove: (...names) => {
+        const removed = new Set(names);
+        this.className = String(this.className).split(/\s+/).filter((name) => name && !removed.has(name)).join(" ");
+      },
+      contains: (name) => String(this.className).split(/\s+/).includes(name),
+    };
+  }
+  get childNodes() { return this.children; }
+  appendChild(child) { if (child) { child.parentNode = this; this.children.push(child); } return child; }
+  append(...children) { children.forEach((child) => this.appendChild(child)); }
+  replaceChildren(...children) { this.children = []; this.textContent = ""; this.append(...children); }
+  setAttribute(name, value) { this.attributes[name] = String(value); }
+  getAttribute(name) { return this.attributes[name] == null ? null : this.attributes[name]; }
+  addEventListener() {}
+  contains(candidate) {
+    if (candidate === this) return true;
+    return this.children.some((child) => child && typeof child.contains === "function" && child.contains(candidate));
+  }
+  focus() { document.activeElement = this; }
+  querySelector() { return null; }
+  querySelectorAll() { return []; }
+}
+function walk(root) {
+  const result = [];
+  (function visit(node) { if (!node) return; result.push(node); (node.children || []).forEach(visit); })(root);
+  return result;
+}
+const snippet = {
+  path: "pkg/router.go", start_line: 40, end_line: 42,
+  presentation_sha256: "a".repeat(64),
+  highlight_ranges: [{ start_line: 41, end_line: 41 }],
+  lines: [
+    { line: 40, text: "func route() {" },
+    { line: 41, text: "  dispatch()", highlight: true },
+    { line: 42, text: "}" },
+  ],
+};
+const report = {
+  user_mechanisms: [], user_sources: [snippet],
+  openable_paths: ["pkg/router.go"], source_ids: {},
+};
+const workspace = new Element("main");
+workspace.className = "rm-workspace";
+const drawer = new Element("aside");
+drawer.hidden = true;
+const content = new Element("div");
+const close = new Element("button");
+const body = new Element("body");
+body.append(workspace, drawer);
+const secondClick = new Element("button");
+workspace.appendChild(secondClick);
+const historyEntries = [{ hash: "#/map", state: null }];
+let historyIndex = 0;
+const window = {
+  location: {
+    hash: "#/map", search: "", hostname: "127.0.0.1", protocol: "http:",
+    pathname: "/saved-run/report.html",
+  },
+  __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
+  setTimeout, clearTimeout,
+};
+window.history = {
+  get state() { return historyEntries[historyIndex].state; },
+  pushState(state, _title, hash) {
+    historyEntries.splice(historyIndex + 1);
+    historyEntries.push({ state, hash });
+    historyIndex = historyEntries.length - 1;
+    window.location.hash = hash;
+  },
+  replaceState(state, _title, hash) {
+    historyEntries[historyIndex] = { state, hash };
+    window.location.hash = hash;
+  },
+  back() {},
+};
+const roots = {
+  "rm-source-drawer": drawer,
+  "rm-source-drawer-content": content,
+  "rm-source-drawer-close": close,
+};
+const document = {
+  body, activeElement: secondClick,
+  documentElement: { lang: "en" },
+  createElement: (tag) => new Element(tag),
+  createTextNode(value) { const node = new Element("#text"); node.textContent = String(value); return node; },
+  getElementById(id) {
+    if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
+    return roots[id] || null;
+  },
+  querySelector(selector) { return selector === ".rm-workspace" ? workspace : null; },
+  querySelectorAll() { return []; },
+};
+window.document = document;
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window });
+vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
+  window, document, URLSearchParams, Set, Map, AbortController, Promise, setTimeout, clearTimeout,
+});
+const api = window.__REPOMAP_WORKSPACE_TEST__;
+const location = { path: "pkg/router.go", line: 41, column: 3 };
+const available = api.sourceLocationActionAvailable(location);
+secondClick.onclick = () => api.openSourceLocation(location);
+secondClick.onclick();
+const state = api.workspaceStateSnapshot();
+const sourceCard = walk(content).find((node) => node.attributes["data-source-path"] === "pkg/router.go");
+const highlighted = walk(content).filter((node) =>
+  String(node.className).split(/\s+/).includes("is-highlighted") &&
+  node.attributes["data-source-line"] === "41");
+process.stdout.write(JSON.stringify({
+  available,
+  drawerVisible: !drawer.hidden,
+  workspaceHasDrawer: workspace.classList.contains("has-source-drawer"),
+  sourcePath: state.sourceLocation && state.sourceLocation.path,
+  sourceLine: state.sourceLocation && state.sourceLocation.line,
+  sourceColumn: state.sourceLocation && state.sourceLocation.column,
+  historyHasDrawer: !!(window.history.state && window.history.state.sourceDrawer),
+  renderedPath: sourceCard && sourceCard.attributes["data-source-path"],
+  exactHighlightedLines: highlighted.length,
+}));
+`
+	runnerPath := filepath.Join(t.TempDir(), "generic-host-source-drawer-test.js")
+	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := exec.Command(node, runnerPath, assetPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run generic-host source drawer journey: %v\n%s", err, output)
+	}
+	var got struct {
+		Available             bool   `json:"available"`
+		DrawerVisible         bool   `json:"drawerVisible"`
+		WorkspaceHasDrawer    bool   `json:"workspaceHasDrawer"`
+		SourcePath            string `json:"sourcePath"`
+		SourceLine            int    `json:"sourceLine"`
+		SourceColumn          int    `json:"sourceColumn"`
+		HistoryHasDrawer      bool   `json:"historyHasDrawer"`
+		RenderedPath          string `json:"renderedPath"`
+		ExactHighlightedLines int    `json:"exactHighlightedLines"`
+	}
+	if err := json.Unmarshal(output, &got); err != nil {
+		t.Fatalf("decode generic-host source drawer journey: %v\n%s", err, output)
+	}
+	if !got.Available || !got.DrawerVisible || !got.WorkspaceHasDrawer ||
+		!got.HistoryHasDrawer || got.SourcePath != "pkg/router.go" ||
+		got.SourceLine != 41 || got.SourceColumn != 3 ||
+		got.RenderedPath != "pkg/router.go" || got.ExactHighlightedLines != 1 {
+		t.Fatalf("generic-host embedded source action = %#v", got)
 	}
 }
 

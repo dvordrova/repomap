@@ -406,7 +406,7 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 	if !en.ThemeShelfPresent {
 		t.Fatalf("theme shelf missing from the Study overview:\n%s", en.StudyOverviewText)
 	}
-	if !strings.Contains(en.StudyOverviewText, "Source-grounded study themes") ||
+	if !strings.Contains(en.StudyOverviewText, "Study themes with exact source links") ||
 		!strings.Contains(en.StudyOverviewText, "Theme 1") ||
 		!strings.Contains(en.StudyOverviewText, "Theme 2") ||
 		!strings.Contains(en.StudyOverviewText, "Study question 1?") {
@@ -469,7 +469,7 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 		!strings.Contains(ru.StudyOverviewText, "Каждый вопрос, который локальный анализ может поставить для этого репозитория, в фиксированном локальном порядке. Это не ранжирование моделью.") {
 		t.Fatalf("RU frontier browse title/caption missing:\n%s", ru.StudyOverviewText)
 	}
-	if !ru.ThemeShelfPresent || !strings.Contains(ru.StudyOverviewText, "Темы изучения на основе источников") {
+	if !ru.ThemeShelfPresent || !strings.Contains(ru.StudyOverviewText, "Темы изучения с точными ссылками на код") {
 		t.Fatalf("RU theme shelf missing:\n%s", ru.StudyOverviewText)
 	}
 	ruStageCount := func(label string) int {

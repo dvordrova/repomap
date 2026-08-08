@@ -9,12 +9,13 @@ import (
 	"testing"
 )
 
-// Canvas 14 exact first hops are selectable Entrypoints context. Selecting
+// Canvas 15 exact first hops are selectable Entrypoints context. Selecting
 // the entry selects one exact group for the Canvas overlay, while every entry
-// keeps a direct source action and only unjoined calls use the slim overflow.
+// keeps a direct source action and same-component/unjoined calls use the slim
+// overflow.
 func TestEntrypointHandoffGroupAssetRendersDirectSourceActions(t *testing.T) {
-	if ArchitectureCanvasVersion != 14 || EntrypointHandoffGroupVersion != 1 {
-		t.Fatalf("fixture requires Canvas14/group v1, got %d/%d", ArchitectureCanvasVersion, EntrypointHandoffGroupVersion)
+	if ArchitectureCanvasVersion != 15 || EntrypointHandoffGroupVersion != 2 {
+		t.Fatalf("fixture requires Canvas15/group v2, got %d/%d", ArchitectureCanvasVersion, EntrypointHandoffGroupVersion)
 	}
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -74,16 +75,33 @@ function transition(label, path, line, column, target, componentIDs) {
     ordering: "resolved_path_order", target,
   };
 }
-function group(id, entrySymbol, entryPath, componentIDs, handoff) {
+function group(id, entrySymbol, entryPath, componentIDs, handoffs) {
   const entry = transition(entrySymbol || "process entry", entryPath, 10, 6, null, [componentIDs[0]]);
   entry.symbol = entrySymbol;
   return {
-    version: 1, id, component_ids: componentIDs,
+    version: 2, id, component_ids: componentIDs,
     entry,
-    entry_handoffs: [handoff],
+    entry_handoffs: Array.isArray(handoffs) ? handoffs : [handoffs],
     frontier: { ordering: "not_established", unresolved: ["continuation beyond first hop"], limitation: "raw frontier limitation" },
   };
 }
+const sameComponentHandoffs = Array.from({ length: 13 }, (_, index) =>
+  transition(
+    "fixture.local" + index, "main.go", 30 + index, 4,
+    { label: "fixture.local" + index, path: "main.go", line: 200 + index, column: 6 },
+    ["c1"]
+  )
+);
+const groupA = group("entry-group-a", "fixture.main", "main.go", ["c1", "c2"], [
+  transition("fixture.service.Start", "main.go", 15, 9,
+    { label: "fixture.service.Start", path: "service.go", line: 20, column: 4 }, ["c2"]),
+].concat(sameComponentHandoffs));
+const groupB = group("entry-group-b", "fixture.main", "worker.go", ["c3"],
+  transition("fixture.client.Send", "worker.go", 25, 8,
+    { label: "fixture.client.Send", path: "client.go", line: 30, column: 3 }, []));
+// Zero/plural entry ownership must fall back to the exact path leaf, never a
+// guessed component from group.component_ids.
+groupB.entry.component_ids = [];
 const report = {
   repo_name: "fixture", report_language: process.argv[3] || "en",
   github_source_links: { repository_url: "https://github.com/acme/fixture", revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
@@ -92,19 +110,14 @@ const report = {
   user_sources: [{ path: "other.go", start_line: 1, end_line: 1, lines: ["package fixture"] }],
   openable_paths: ["client.go", "main.go", "other.go", "service.go", "worker.go"], source_ids: {},
   architecture_canvas: {
-    version: 14, local_remainder_component_id: "component-r",
+    version: 15, local_remainder_component_id: "component-r",
     components: [
       { id: "c1", name: "Entry", participating_surface_ids: ["surface-main"] },
       { id: "c2", name: "Service" }, { id: "c3", name: "Client" },
     ],
     subsystems: [], behavior_anchors: [], flows: [], structural_edges: [],
     surfaces: [{ id: "surface-main", kind: "process_entry", name: "main", participating_component_ids: ["c1"] }],
-    entry_handoff_groups: [
-      group("entry-group-a", "fixture.main", "main.go", ["c1", "c2"],
-        transition("fixture.service.Start", "main.go", 15, 9, { label: "fixture.service.Start", path: "service.go", line: 20, column: 4 }, ["c2"])),
-      group("entry-group-b", "", "worker.go", ["c3"],
-        transition("fixture.client.Send", "worker.go", 25, 8, { label: "fixture.client.Send", path: "client.go", line: 30, column: 3 }, [])),
-    ],
+    entry_handoff_groups: [groupA, groupB],
   },
   repository_atlas: { version: 1, units: [], entities: [], observations: [], evidence: [], relations: [] },
 };
@@ -156,13 +169,14 @@ const defaultSelectionCount = selectedGroups.length;
 const defaultSelectedStates = selectors.map((item) => item.getAttribute("aria-pressed"));
 if (selectors[1] && typeof selectors[1].onfocus === "function") selectors[1].onfocus();
 const focusSelectionCount = selectedGroups.length;
-if (selectors[1] && typeof selectors[1].onclick === "function") selectors[1].onclick();
+if (selectors[0] && typeof selectors[0].onclick === "function") selectors[0].onclick();
 const sourceActions = root.querySelectorAll(".rm-source-action-link");
 const overflowCalls = root.querySelectorAll(".rm-map-entry-overflow__call");
 const lensHost = root.querySelector(".rm-map-lens-objects");
 const contextDetails = walk(lensHost).filter((node) => node.tagName === "DETAILS");
 process.stdout.write(JSON.stringify({
   lensIDs: lenses.map((node) => node.attributes["data-map-lens"]),
+  selectorLabels: selectors.map((node) => node.textContent),
   selectorCount: selectors.length, overflowCallCount: overflowCalls.length,
   immediateSourceActionCount: immediateSourceActions.length,
   defaultSelectionCount, defaultSelectedStates, focusSelectionCount,
@@ -196,11 +210,11 @@ process.stdout.write(JSON.stringify({
 	if strings.Join(en.LensIDs, ",") != "landscape,entrypoints,integrations" {
 		t.Fatalf("Map lenses = %#v, want exactly three without Mechanisms", en.LensIDs)
 	}
-	if en.SelectorCount != 2 || en.OverflowCallCount != 1 || en.ContextDetails != 0 {
+	if en.SelectorCount != 2 || en.OverflowCallCount != 13 || en.ContextDetails != 0 {
 		t.Fatalf("Entrypoints DOM = selectors %d overflow calls %d details %d",
 			en.SelectorCount, en.OverflowCallCount, en.ContextDetails)
 	}
-	if en.ImmediateSourceActionCount != 2 || en.SourceActionCount != 4 {
+	if en.ImmediateSourceActionCount != 2 || en.SourceActionCount != 28 {
 		t.Fatalf("entry/unjoined source actions = immediate %d selected %d: %#v",
 			en.ImmediateSourceActionCount, en.SourceActionCount, en.SourceHrefs)
 	}
@@ -211,8 +225,8 @@ process.stdout.write(JSON.stringify({
 	if en.FocusSelectionCount != 0 {
 		t.Fatalf("focus alone activated %d entry overlays", en.FocusSelectionCount)
 	}
-	if strings.Join(en.SelectedGroups, ",") != "entry-group-b" ||
-		strings.Join(en.SelectedStates, ",") != "false,true" {
+	if strings.Join(en.SelectedGroups, ",") != "entry-group-a" ||
+		strings.Join(en.SelectedStates, ",") != "true,false" {
 		t.Fatalf("single selected entry overlay = calls %#v states %#v", en.SelectedGroups, en.SelectedStates)
 	}
 	for _, href := range en.SourceHrefs {
@@ -220,12 +234,19 @@ process.stdout.write(JSON.stringify({
 			t.Fatalf("entry source action is not pinned to the captured revision: %q", href)
 		}
 	}
-	for _, exact := range []string{"main.go:10:6", "worker.go:10:6", "worker.go:25:8", "client.go:30:3"} {
+	for _, exact := range []string{"main.go:10:6", "worker.go:10:6", "main.go:30:4", "main.go:200:6"} {
 		if !strings.Contains(en.Text, exact) {
 			t.Fatalf("column-preserving location %q missing: %s", exact, en.Text)
 		}
 	}
-	if !strings.Contains(en.Text, "Not drawn as map arrows: 1") ||
+	if len(en.SelectorLabels) != 2 ||
+		!strings.Contains(en.SelectorLabels[0], "Entry · main") ||
+		!strings.Contains(en.SelectorLabels[0], "— 14") ||
+		!strings.Contains(en.SelectorLabels[1], "worker.go · main") ||
+		strings.Contains(en.SelectorLabels[1], "Client · main") {
+		t.Fatalf("entry selector labels are ambiguous or guessed: %#v", en.SelectorLabels)
+	}
+	if !strings.Contains(en.Text, "Not drawn as map arrows: 13") ||
 		!strings.Contains(en.Text, "Static first hop only; runtime order and continuation are not established.") {
 		t.Fatalf("English Entrypoints context copy incomplete: %s", en.Text)
 	}
@@ -236,7 +257,10 @@ process.stdout.write(JSON.stringify({
 	}
 
 	ru := run("ru")
-	if !strings.Contains(ru.Text, "Не показано стрелками на карте: 1") ||
+	if strings.Join(ru.SelectorLabels, "|") != strings.Join(en.SelectorLabels, "|") {
+		t.Fatalf("entry selector identity changed across EN/RU: EN %#v RU %#v", en.SelectorLabels, ru.SelectorLabels)
+	}
+	if !strings.Contains(ru.Text, "Не показано стрелками на карте: 13") ||
 		!strings.Contains(ru.Text, "Только статический первый переход") {
 		t.Fatalf("Russian Entrypoints context copy incomplete: %s", ru.Text)
 	}
@@ -324,22 +348,24 @@ function transition(path, line, column, symbol, componentIDs, target) {
     label: symbol, path, line, column, symbol, component_ids: componentIDs, target };
 }
 function group(id, entryIDs, handoffs) {
-  return { version: 1, id, component_ids: Array.from(new Set(entryIDs.concat(...handoffs.map((item) => item.component_ids)))),
+  return { version: 2, id, component_ids: Array.from(new Set(entryIDs.concat(...handoffs.map((item) => item.component_ids)))),
     entry: transition("main.go", 10, 6, "fixture.main", entryIDs, null), entry_handoffs: handoffs,
     frontier: { ordering: "not_established", limitation: "continuation unknown" } };
 }
 const cross = transition("main.go", 15, 9, "fixture.service.Start", ["c2"],
   { label: "fixture.service.Start", path: "service.go", line: 20, column: 4 });
-const local = transition("main.go", 18, 5, "fixture.local", ["c1"],
-  { label: "fixture.local", path: "main.go", line: 30, column: 2 });
-const second = transition("worker.go", 12, 7, "fixture.worker.local", ["c2"],
+const local = Array.from({ length: 13 }, (_, index) => transition(
+  "main.go", 30 + index, 5, "fixture.local" + index, ["c1"],
+  { label: "fixture.local" + index, path: "main.go", line: 100 + index, column: 2 }
+));
+const second = transition("worker.go", 12, 7, "fixture.worker.cross", ["c1"],
   { label: "fixture.worker.local", path: "worker.go", line: 22, column: 3 });
 const data = {
-  version: 14,
+  version: 15,
   components: [{ id: "c1", name: "Entry" }, { id: "c2", name: "Service" }],
   subsystems: [{ id: "s1", name: "Application", component_ids: ["c1", "c2"] }],
   structural_edges: [], behavior_anchors: [], flows: [], flow_edges: [], surfaces: [],
-  entry_handoff_groups: [group("group-a", ["c1"], [cross, local]), group("group-b", ["c2"], [second])],
+  entry_handoff_groups: [group("group-a", ["c1"], [cross].concat(local)), group("group-b", ["c2"], [second])],
 };
 const opened = [];
 const host = new Element("div");
@@ -355,7 +381,6 @@ app.ready.then(() => {
   app.selectEntrypointHandoffGroup("group-a");
   const edgesA = host.querySelectorAll(".rm-arch__edge--entry-handoff");
   const badgesA = host.querySelectorAll(".rm-arch__entry-handoff-source");
-  const loopsA = edgesA.filter((edge) => String(edge.className).split(/\s+/).includes("is-self-loop"));
   const markersA = edgesA.map((edge) => edge.querySelector(".rm-arch__edge-visible")).filter(Boolean)
     .map((path) => path.getAttribute("marker-end"));
   const participantsA = components.filter((node) => String(node.className).split(/\s+/).includes("rm-arch__is-entry-handoff-participant"));
@@ -364,7 +389,7 @@ app.ready.then(() => {
   app.selectEntrypointHandoffGroup("group-b");
   const edgesB = host.querySelectorAll(".rm-arch__edge--entry-handoff");
   process.stdout.write(JSON.stringify({
-    edgesA: edgesA.length, badgesA: badgesA.length, loopsA: loopsA.length, markersA,
+    edgesA: edgesA.length, badgesA: badgesA.length, markersA,
     participantsA: participantsA.length, badgeText: badgesA.map((item) => item.textContent),
     opened, layoutUnchanged: before === after, edgesB: edgesB.length,
   }));
@@ -381,7 +406,6 @@ app.ready.then(() => {
 	var got struct {
 		EdgesA          int      `json:"edgesA"`
 		BadgesA         int      `json:"badgesA"`
-		LoopsA          int      `json:"loopsA"`
 		MarkersA        []string `json:"markersA"`
 		ParticipantsA   int      `json:"participantsA"`
 		BadgeText       []string `json:"badgeText"`
@@ -392,15 +416,15 @@ app.ready.then(() => {
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode entry handoff overlay: %v\n%s", err, output)
 	}
-	if got.EdgesA != 2 || got.BadgesA != 2 || got.LoopsA != 1 || got.ParticipantsA != 2 || !got.LayoutUnchanged {
-		t.Fatalf("selected overlay = edges:%d badges:%d loops:%d participants:%d layout unchanged:%t",
-			got.EdgesA, got.BadgesA, got.LoopsA, got.ParticipantsA, got.LayoutUnchanged)
+	if got.EdgesA != 1 || got.BadgesA != 1 || got.ParticipantsA != 2 || !got.LayoutUnchanged {
+		t.Fatalf("selected overlay = edges:%d badges:%d participants:%d layout unchanged:%t",
+			got.EdgesA, got.BadgesA, got.ParticipantsA, got.LayoutUnchanged)
 	}
 	if got.EdgesB != 1 {
 		t.Fatalf("second selection rendered %d edges, want exactly its one edge", got.EdgesB)
 	}
-	if len(got.MarkersA) != 2 || got.MarkersA[0] != "url(#rm-arch-entry-handoff-arrow)" ||
-		len(got.BadgeText) != 2 || !strings.Contains(strings.Join(got.BadgeText, " "), "main.go:15:9") {
+	if len(got.MarkersA) != 1 || got.MarkersA[0] != "url(#rm-arch-entry-handoff-arrow)" ||
+		len(got.BadgeText) != 1 || !strings.Contains(strings.Join(got.BadgeText, " "), "main.go:15:9") {
 		t.Fatalf("overlay arrows/source badges = markers %#v labels %#v", got.MarkersA, got.BadgeText)
 	}
 	if len(got.Opened) != 1 || len(got.Opened[0]) != 3 || got.Opened[0][0] != "main.go" ||
@@ -411,6 +435,7 @@ app.ready.then(() => {
 
 type entryHandoffAssetResult struct {
 	LensIDs                    []string `json:"lensIDs"`
+	SelectorLabels             []string `json:"selectorLabels"`
 	SelectorCount              int      `json:"selectorCount"`
 	OverflowCallCount          int      `json:"overflowCallCount"`
 	ImmediateSourceActionCount int      `json:"immediateSourceActionCount"`

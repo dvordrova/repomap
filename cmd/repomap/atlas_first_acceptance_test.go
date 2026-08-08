@@ -40,6 +40,7 @@ type atlasFirstAcceptanceProvider struct {
 	failArchitectureCall   bool
 	lengthArchitectureCall bool
 	includeBadStudySibling bool
+	rejectAllAdjudication  bool
 
 	mu     sync.Mutex
 	stages []atlasFirstAcceptanceStage
@@ -227,6 +228,90 @@ func TestRunDefaultAtlasFirstArchitectureProviderFailureKeepsLocalCanvas(t *test
 		debugdump.SemanticStageArchitecture: "failed",
 		debugdump.SemanticStageAtlasStudy:   "accepted",
 	})
+}
+
+// Syn corpus regression: the model used f* file refs as Adjudication
+// readings even though only the candidate's a* anchor refs are eligible.
+// Item-local validation rejects every theme. The accepted Scout prefix must
+// close with a durable failed Adjudication status so the ordinary run can
+// still publish a manifest-bound report and classify it as DEGRADED.
+func TestRunDefaultAtlasFirstRejectedAdjudicationPublishesDegradedReport(t *testing.T) {
+	repo := atlasFirstAcceptanceRepository(t, "testdata/atlas_first_service")
+	provider := &atlasFirstAcceptanceProvider{
+		t: t, repositoryType: atlasstudy.RepositoryService,
+		rejectAllAdjudication: true,
+	}
+	runDir, manifest, data := runAtlasFirstAcceptance(t, repo, provider)
+
+	provider.assertStages(t,
+		atlasFirstStageArchitecture,
+		atlasFirstStageStudyScout,
+		atlasFirstStageStudyAdjudication,
+	)
+	assertAtlasFirstAcceptedArchitecture(t, data)
+	if data.AtlasStudy == nil || data.AtlasStudy.State != atlasstudy.ProductStateFailed ||
+		data.AtlasStudy.FailureCode != atlasstudy.FailureValidation || data.AtlasStudy.Themes != nil {
+		t.Fatalf("rejected Adjudication Study = %#v", data.AtlasStudy)
+	}
+	publication, err := assessRunPublication(runDir)
+	if err != nil {
+		t.Fatalf("assess degraded publication: %v", err)
+	}
+	if publication.Status != publicationDegraded ||
+		!reflect.DeepEqual(publication.Reasons, []publicationReason{publicationReasonStudyFailed}) {
+		t.Fatalf("rejected Adjudication publication = %#v", publication)
+	}
+	if manifest.ReportSHA256 == "" {
+		t.Fatal("degraded publication is not report-bound")
+	}
+	for _, name := range []string{
+		"report.json", "report.html", report.RunManifestFilename,
+		themestudy.ScoutRequestArtifactFilename,
+		themestudy.ScoutResultArtifactFilename,
+		themestudy.ScoutStatusArtifactFilename,
+		themestudy.ExpansionArtifactFilename,
+		themestudy.AdjudicationRequestArtifactFilename,
+		themestudy.AdjudicationStatusArtifactFilename,
+	} {
+		if _, err := os.Stat(filepath.Join(runDir, name)); err != nil {
+			t.Fatalf("degraded run missing %s: %v", name, err)
+		}
+	}
+	for _, name := range []string{
+		themestudy.AdjudicationResultArtifactFilename,
+		themestudy.StudyThemesArtifactFilename,
+	} {
+		if _, err := os.Lstat(filepath.Join(runDir, name)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("rejected Adjudication published %s: %v", name, err)
+		}
+	}
+	statusBytes, err := os.ReadFile(filepath.Join(runDir, themestudy.AdjudicationStatusArtifactFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err := themestudy.DecodeAdjudicationStatus(statusBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.State != string(atlasstudy.ProductStateFailed) ||
+		status.FailureCode != string(atlasstudy.FailureValidation) ||
+		status.Status.Received == 0 || status.Status.Accepted != 0 ||
+		status.Status.Rejected != status.Status.Received || len(status.Status.Issues) == 0 ||
+		status.Status.Issues[0].Code != themestudy.AdjIssueAnchorOutsideCandidate {
+		t.Fatalf("failed Adjudication status = %#v", status)
+	}
+	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
+		debugdump.SemanticStageArchitecture: "accepted",
+		debugdump.SemanticStageAtlasStudy:   "response_validation_failed",
+	})
+	entries := readSemanticJournalEntries(t, runDir)
+	if len(entries) != 3 ||
+		entries[2].record.Stage != debugdump.SemanticStageAtlasStudy ||
+		entries[2].record.InstanceOrdinal != 2 ||
+		entries[2].record.State != debugdump.SemanticStateRejected ||
+		entries[2].record.ValidationCode != debugdump.SemanticValidationResponse {
+		t.Fatalf("rejected Adjudication journal = %#v", entries)
+	}
 }
 
 // TestRunDefaultAtlasFirstArchitectureOutputExhaustionPublishesLocalProduct
@@ -583,7 +668,7 @@ func (provider *atlasFirstAcceptanceProvider) ServeHTTP(
 			provider.includeBadStudySibling,
 		)
 	case atlasFirstStageStudyAdjudication:
-		response, err = atlasFirstAcceptanceAdjudicationResponse(combined)
+		response, err = atlasFirstAcceptanceAdjudicationResponse(combined, provider.rejectAllAdjudication)
 	default:
 		err = fmt.Errorf("unsupported stage %q", stage)
 	}
@@ -795,7 +880,7 @@ func atlasFirstAcceptanceScoutResponse(combined string, includeBadSibling bool) 
 // response from the request bundle: for every t* candidate, a direct
 // reading over its own a* anchors with a supported observation, final
 // question-aligned editorial prose, and stable reading order.
-func atlasFirstAcceptanceAdjudicationResponse(combined string) ([]byte, error) {
+func atlasFirstAcceptanceAdjudicationResponse(combined string, rejectAll bool) ([]byte, error) {
 	raw, err := atlasFirstAcceptanceWireBundle(combined)
 	if err != nil {
 		return nil, err
@@ -819,8 +904,14 @@ func atlasFirstAcceptanceAdjudicationResponse(combined string) ([]byte, error) {
 		}
 		// Phase 3 canonical wire: one readings array whose position IS the
 		// reading order; support is direct/supporting only, no role field.
-		readings := make([]any, 0, len(candidate.AnchorRefs))
-		for _, anchor := range candidate.AnchorRefs {
+		readingRefs := candidate.AnchorRefs
+		if rejectAll {
+			// Reproduce the fresh Syn response shape: f* is a valid file ref in
+			// the request, but it is never an eligible exact reading anchor.
+			readingRefs = []string{"f2", "f4", "f3"}
+		}
+		readings := make([]any, 0, len(readingRefs))
+		for _, anchor := range readingRefs {
 			readings = append(readings, map[string]any{
 				"anchor_ref":  anchor,
 				"support":     "direct",

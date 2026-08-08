@@ -511,7 +511,7 @@ func readSourceEpisodeFile(filePath string) ([]byte, error) {
 	return data, nil
 }
 
-func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) error {
+func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (runErr error) {
 	fs := flag.NewFlagSet("repomap", flag.ContinueOnError)
 	fs.SetOutput(deps.stderr)
 
@@ -533,6 +533,15 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 		return err
 	}
 	humanOutput := newRunOutput(deps.stderr)
+	publicationStateEmitted := false
+	defer func() {
+		if runErr != nil && !publicationStateEmitted {
+			humanOutput.State(
+				"Run", "failed",
+				"report publication did not complete",
+			)
+		}
+	}()
 	if fs.NArg() > 0 {
 		if repo != "." || fs.NArg() != 1 {
 			return fmt.Errorf("unexpected positional arguments: %s", strings.Join(fs.Args(), " "))
@@ -1117,6 +1126,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	})
 	publicationDetails := append([]string{"report: " + reportPath}, publication.consoleDetails()...)
 	humanOutput.State("Run", publication.consoleState(), publicationDetails...)
+	publicationStateEmitted = true
 
 	interactiveReport := reportPath != ""
 	if interactiveReport && !*noServe && deps.serveReport != nil {

@@ -1847,9 +1847,9 @@
 	// themeScopeState derives the Decision 229 D6 scope axis
 	// deterministically from the card readings: the theme scope is "exact"
 	// when every reading carries an exact resolvable source location with a
-	// direct role, and "partial" otherwise. Scope and evidence are
-	// independent axes — "Source-backed" is never contradicted by "Scope
-	// partial", and a narrow-but-exact theme is not failed evidence.
+	// direct role, and "partial" otherwise. Scope and exact-source attachment
+	// are independent axes: partial scope does not remove an exact anchor, and
+	// a narrow-but-exact theme is not failed evidence.
 	function themeScopeState(card) {
 		var readings = card && Array.isArray(card.readings) ? card.readings : [];
 		if (!readings.length) return 'partial';
@@ -2093,14 +2093,6 @@
 		titleRow.appendChild(txt('span', 'rm-study-theme-card__badge rm-study-theme-card__evidence rm-study-theme-card__evidence--' + themeCoverageState(card), themeCoverageLabel(card)));
 		titleRow.appendChild(txt('span', 'rm-study-theme-card__badge rm-study-theme-card__scope rm-study-theme-card__scope--' + themeScopeState(card), themeScopeLabel(card)));
 		titleRow.appendChild(txt('span', 'rm-study-theme-card__kind', themeKindLabel(card)));
-		// Decision 233 (Archive 9): the portfolio-concentration marker is
-		// visible on every card whose first reading belongs to the
-		// dominating source family — the user sees WHY the shelf looks
-		// concentrated (e.g. TLS/certificates) without opening evidence
-		// details.
-		if (card.concentration_marker) {
-			titleRow.appendChild(txt('span', 'rm-study-theme-card__badge rm-study-theme-card__concentration', card.concentration_marker));
-		}
 		article.appendChild(titleRow);
 		if (card.final_question) article.appendChild(txt('p', 'rm-study-theme-card__question', card.final_question));
 		if (card.why_it_matters) article.appendChild(txt('span', 'rm-study-theme-card__reason', card.why_it_matters));
@@ -6445,20 +6437,44 @@
 	  if (openStaticSource(location, location.end_line)) return;
 	  if (serverMode() && currentRunID() && SOURCE_IDS[location.path]) {
 	    requestOpenFile(location.path, Number(location.line) || 0, Number(location.column) || 0);
+	    return;
 	  }
+	  var snippet = embeddedSourceForLocation(location);
+	  if (snippet) openSourceSnippet(snippet, location);
 	}
 
-  // Decision 222: source actions never open an inline code drawer in the
-  // user surface — they always jump: GitHub/GitLab (static source mode) or
-  // the repository server open action. When neither is available the action
-  // is simply not offered (callers show the plain location text).
+  // Static source hosts and the manifest-authorized local server stay the
+  // preferred source actions. A generic host has neither authority, so an
+  // already embedded exact snippet opens in the existing source drawer.
   function openSourceSnippet(snippet, location, expanded, options) {
     options = options || {};
     var resolved = sourceSnippetLocation(snippet, location);
     if (openStaticSource(resolved, snippet && snippet.end_line)) return;
     if (serverMode() && currentRunID() && snippet && OPENABLE_PATH_SET[snippet.path]) {
       requestOpenFile(snippet.path, Number(resolved.line) || 0, Number(resolved.column) || 0);
+	  return;
     }
+	if (!sourceSnippetHasCode(snippet) || !OPENABLE_PATH_SET[snippet.path]) return;
+	var next = reduceWorkspaceState(workspaceState, {
+	  type: 'open_source',
+	  selection: {
+	    path: snippet.path,
+	    line: resolved.line,
+	    column: resolved.column,
+	    snippet: snippet,
+	    expanded: !!expanded,
+	    drawerFirst: !!options.drawerFirst,
+	  },
+	}, USER_MECHANISMS);
+	var reference = sourceDrawerHistoryReference(next.sourceLocation);
+	var replacingDrawer = !!(window.history && window.history.state && window.history.state.sourceDrawer);
+	writeWorkspaceHistory(
+	  String(window.location && window.location.hash || workspaceHashForState(next)),
+	  next,
+	  { replace: replacingDrawer, sourceDrawer: reference }
+	);
+	workspaceState = next;
+	renderSourceDrawer();
   }
 
   function closeSourceDrawer() {
@@ -7260,7 +7276,7 @@
     renderArchitectureReturn();
   }
 
-  // Canvas 14 publishes exact D210 first-hop groups as context for a process
+  // Canvas 15 publishes exact D210 first-hop groups as context for a process
   // Entrypoint. The list selects ONE group for the Canvas overlay; backend
   // transition.component_ids are the only join. Diagnostic archaeology stays
   // in saved evidence, while exact source actions remain directly available.
@@ -7321,6 +7337,26 @@
    return null;
   }
 
+  function entryHandoffSelectorLabel(group) {
+   var entry = group && group.entry || {};
+   var ownerIDs = Array.from(new Set((Array.isArray(entry.component_ids) ? entry.component_ids : [])
+    .map(function (value) { return String(value || ''); }).filter(Boolean)));
+   var ownerName = '';
+   if (ownerIDs.length === 1) {
+    (DATA.architecture_canvas && DATA.architecture_canvas.components || []).some(function (component) {
+     if (!component || String(component.id || '') !== ownerIDs[0]) return false;
+     ownerName = String(component.name || '').trim();
+     return true;
+    });
+   }
+   var exactPath = String(entry.path || '');
+   var pathParts = exactPath.split('/').filter(Boolean);
+   var pathLeaf = pathParts.length ? pathParts[pathParts.length - 1] : '';
+   var symbol = bareSourceSymbol(entry.symbol);
+   return [ownerName || pathLeaf, symbol].filter(Boolean).join(' · ') ||
+    msg('main.map.lens.entry.process');
+  }
+
   function activateEntrypointHandoffGroup(groupID, host, projectedGroups) {
    var projected = entryHandoffProjectionByID(projectedGroups, groupID);
    if (!projected || !projected.group) return false;
@@ -7342,16 +7378,15 @@
 
   function renderEntrypointHandoffSelector(group, host, projectedGroups) {
    var entry = group && group.entry || {};
+   var handoffCount = Array.isArray(group && group.entry_handoffs) ? group.entry_handoffs.length : 0;
    var row = el('div', 'rm-map-entry-selector-row');
    var selector = el('button', 'rm-map-entry-selector');
    selector.type = 'button';
    selector.setAttribute('data-entry-handoff-group-id', String(group && group.id || ''));
    selector.setAttribute('aria-pressed', String(group && group.id || '') === selectedEntrypointHandoffGroupID ? 'true' : 'false');
    selector.appendChild(txt('strong', 'rm-map-entry-selector__entry',
-    bareSourceSymbol(entry.symbol) || msg('main.map.lens.entry.process')));
-   selector.appendChild(txt('span', 'rm-map-lens-object__detail', msg('main.architecture.disclosure.count', {
-    count: Array.isArray(group && group.entry_handoffs) ? group.entry_handoffs.length : 0,
-   })));
+    entryHandoffSelectorLabel(group)));
+   selector.appendChild(txt('span', 'rm-map-lens-object__detail', '— ' + handoffCount));
    var activate = function () {
     activateEntrypointHandoffGroup(String(group && group.id || ''), host, projectedGroups);
    };

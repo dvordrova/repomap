@@ -618,6 +618,7 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 		FormatVersion                   int                                        `json:"format_version"`
 		OpenablePaths                   []string                                   `json:"openable_paths"`
 		Components                      []Component                                `json:"components"`
+		RepositoryGraph                 *RepositoryGraph                           `json:"repository_graph"`
 		RepositoryAtlas                 *repositoryatlas.Atlas                     `json:"repository_atlas"`
 		ArchitectureCanvas              *ArchitectureCanvas                        `json:"architecture_canvas"`
 		ArchitectureGrounding           *ArchitectureGrounding                     `json:"architecture_grounding"`
@@ -652,6 +653,7 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 			report.ArchitectureCanvas,
 			report.ArchitectureCanvas.EntryHandoffGroups,
 			report.ArchitectureGrounding,
+			report.RepositoryGraph,
 		); err != nil {
 			return fmt.Errorf("report manifest: entry handoff groups: %w", err)
 		}
@@ -850,8 +852,14 @@ func validateThemeStudyReportProjection(
 		if hasAdjRequest != hasAdjStatus || hasExpansion != hasAdjRequest {
 			return fmt.Errorf("failed Atlas Study projection has inconsistent stage artifacts")
 		}
-		if err := status.CandidateCoverage.validate(); err != nil {
-			return err
+		// Current Theme Study failure projections do not carry the retired
+		// single-stage candidate-coverage object. Historical projections that
+		// do carry it still have to validate, but nil is the expected current
+		// failed-stage shape and must not panic report publication.
+		if status.CandidateCoverage != nil {
+			if err := status.CandidateCoverage.validate(); err != nil {
+				return err
+			}
 		}
 		if err := validateAtlasStudyOmissionProjection(status.Omissions); err != nil {
 			return err

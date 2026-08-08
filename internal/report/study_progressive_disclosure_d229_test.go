@@ -108,6 +108,7 @@ const themeCards = [1, 2, 4, 2, 1, 4, 3, 4, 5, 4, 3].map((count, themeIndex) => 
     why_it_matters: "Reason " + (themeIndex + 1) + ".",
     expected_learning: "Outcome " + (themeIndex + 1) + ".",
     theme_kind: kinds[themeIndex % kinds.length],
+    concentration_marker: "cmd:7/11",
     readings,
     badge: themeIndex % 3 === 0 ? "source_backed" : "partial",
     limitation: themeIndex === 0 ? "Coverage spans more source than was reviewed in this run." : "",
@@ -216,6 +217,7 @@ const moreCounts = cards.map((card) => {
 // Evidence and scope badges are independent and both present.
 const evidenceBadges = byClass(studyRoot, "rm-study-theme-card__evidence").map((node) => text(node));
 const scopeBadges = byClass(studyRoot, "rm-study-theme-card__scope").map((node) => text(node));
+const concentrationBadges = byClass(studyRoot, "rm-study-theme-card__concentration");
 // Repeated symbol grouping: the theme with the repeated "Send" symbol shows
 // a callsite count in its preview.
 const previewTexts = cards.map((card) => text(card));
@@ -228,7 +230,8 @@ const firstTitle = titles.length ? byClass(studyRoot, "rm-study-theme-card__titl
 firstTitle.onclick();
 const detailRoot = roots["rm-study-detail"];
 const detailText = text(detailRoot);
-const detailHasExpectedLearning = detailText.includes("Expected learning: Outcome 1.");
+const detailHasExpectedLearning = detailText.includes("What to verify: Outcome 1.");
+const detailHasSupportedExplanation = detailText.includes("Every reading has an exact source anchor. The theme wording is a model interpretation to verify against that code.");
 const detailHasReading = detailText.includes("study/theme-1-reading-1.go");
 const detailHasRole = detailText.includes("direct");
 const detailHasObservation = detailText.includes("Inspect exact reading 1.");
@@ -251,8 +254,11 @@ process.stdout.write(JSON.stringify({
   moreCounts,
   evidenceBadges,
   scopeBadges,
+  concentrationBadgeCount: concentrationBadges.length,
+  shelfLeaksRawConcentrationMarker: text(studyRoot).includes("cmd:7/11"),
   sendGrouped,
   detailHasExpectedLearning,
+  detailHasSupportedExplanation,
   detailHasReading,
   detailHasRole,
   detailHasObservation,
@@ -275,26 +281,29 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("node journey failed: %v\n%s", err, output)
 	}
 	var got struct {
-		CardCount                   int      `json:"cardCount"`
-		Titles                      []string `json:"titles"`
-		PreviewCounts               []int    `json:"previewCounts"`
-		MoreCounts                  []int    `json:"moreCounts"`
-		EvidenceBadges              []string `json:"evidenceBadges"`
-		ScopeBadges                 []string `json:"scopeBadges"`
-		SendGrouped                 bool     `json:"sendGrouped"`
-		DetailHasExpectedLearning   bool     `json:"detailHasExpectedLearning"`
-		DetailHasReading            bool     `json:"detailHasReading"`
-		DetailHasRole               bool     `json:"detailHasRole"`
-		DetailHasObservation        bool     `json:"detailHasObservation"`
-		DetailHasLimitations        bool     `json:"detailHasLimitations"`
-		DetailHasAllLimitations     bool     `json:"detailHasAllLimitations"`
-		DetailHasNoNestedDisclosure bool     `json:"detailHasNoNestedDisclosure"`
-		DetailHasAlternateWording   bool     `json:"detailHasAlternateWording"`
-		DetailHasAlternateReading   bool     `json:"detailHasAlternateReading"`
-		DetailReadingRows           int      `json:"detailReadingRows"`
-		AlternateSourceIsAction     bool     `json:"alternateSourceIsAction"`
-		ShelfHasFirstLimitation     bool     `json:"shelfHasFirstLimitation"`
-		PreviewTexts                []string `json:"previewTexts"`
+		CardCount                        int      `json:"cardCount"`
+		Titles                           []string `json:"titles"`
+		PreviewCounts                    []int    `json:"previewCounts"`
+		MoreCounts                       []int    `json:"moreCounts"`
+		EvidenceBadges                   []string `json:"evidenceBadges"`
+		ScopeBadges                      []string `json:"scopeBadges"`
+		ConcentrationBadgeCount          int      `json:"concentrationBadgeCount"`
+		ShelfLeaksRawConcentrationMarker bool     `json:"shelfLeaksRawConcentrationMarker"`
+		SendGrouped                      bool     `json:"sendGrouped"`
+		DetailHasExpectedLearning        bool     `json:"detailHasExpectedLearning"`
+		DetailHasSupportedExplanation    bool     `json:"detailHasSupportedExplanation"`
+		DetailHasReading                 bool     `json:"detailHasReading"`
+		DetailHasRole                    bool     `json:"detailHasRole"`
+		DetailHasObservation             bool     `json:"detailHasObservation"`
+		DetailHasLimitations             bool     `json:"detailHasLimitations"`
+		DetailHasAllLimitations          bool     `json:"detailHasAllLimitations"`
+		DetailHasNoNestedDisclosure      bool     `json:"detailHasNoNestedDisclosure"`
+		DetailHasAlternateWording        bool     `json:"detailHasAlternateWording"`
+		DetailHasAlternateReading        bool     `json:"detailHasAlternateReading"`
+		DetailReadingRows                int      `json:"detailReadingRows"`
+		AlternateSourceIsAction          bool     `json:"alternateSourceIsAction"`
+		ShelfHasFirstLimitation          bool     `json:"shelfHasFirstLimitation"`
+		PreviewTexts                     []string `json:"previewTexts"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode study D229 journey: %v\n%s", err, output)
@@ -317,9 +326,13 @@ process.stdout.write(JSON.stringify({
 	if len(got.EvidenceBadges) != 11 || len(got.ScopeBadges) != 11 {
 		t.Fatalf("evidence badges = %d, scope badges = %d, want 11 each (independent axes)", len(got.EvidenceBadges), len(got.ScopeBadges))
 	}
-	if !strings.Contains(strings.Join(got.EvidenceBadges, " "), "Source-backed") ||
+	if got.ConcentrationBadgeCount != 0 || got.ShelfLeaksRawConcentrationMarker {
+		t.Fatalf("Study shelf leaked raw concentration marker: badges=%d raw=%v",
+			got.ConcentrationBadgeCount, got.ShelfLeaksRawConcentrationMarker)
+	}
+	if !strings.Contains(strings.Join(got.EvidenceBadges, " "), "Exact source attached") ||
 		!strings.Contains(strings.Join(got.EvidenceBadges, " "), "Partial coverage") {
-		t.Fatalf("evidence badges do not distinguish source-backed vs partial: %#v", got.EvidenceBadges)
+		t.Fatalf("evidence badges do not distinguish exact-source attachment vs partial: %#v", got.EvidenceBadges)
 	}
 	if !strings.Contains(strings.Join(got.ScopeBadges, " "), "Exact scope") ||
 		!strings.Contains(strings.Join(got.ScopeBadges, " "), "Partial scope") {
@@ -328,10 +341,10 @@ process.stdout.write(JSON.stringify({
 	if !got.SendGrouped {
 		t.Fatalf("repeated public symbol (Send) was not grouped with a callsite count")
 	}
-	if !got.DetailHasExpectedLearning || !got.DetailHasReading || !got.DetailHasRole ||
+	if !got.DetailHasExpectedLearning || !got.DetailHasSupportedExplanation || !got.DetailHasReading || !got.DetailHasRole ||
 		!got.DetailHasObservation || !got.DetailHasLimitations {
-		t.Fatalf("expanded detail incomplete: learning=%v reading=%v role=%v observation=%v limitations=%v",
-			got.DetailHasExpectedLearning, got.DetailHasReading, got.DetailHasRole, got.DetailHasObservation, got.DetailHasLimitations)
+		t.Fatalf("expanded detail incomplete: verification=%v source_truth=%v reading=%v role=%v observation=%v limitations=%v",
+			got.DetailHasExpectedLearning, got.DetailHasSupportedExplanation, got.DetailHasReading, got.DetailHasRole, got.DetailHasObservation, got.DetailHasLimitations)
 	}
 	if !got.ShelfHasFirstLimitation {
 		t.Fatal("collapsed theme card does not expose exactly the first material limitation")

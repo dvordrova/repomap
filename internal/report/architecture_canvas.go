@@ -25,7 +25,10 @@ import (
 // v14: that projection is correctly typed as entry-handoff context rather
 // than Mechanisms. Only exact D210 handoffs participate and each carries a
 // typed relation ref and producer provenance.
-const ArchitectureCanvasVersion = 14
+// v15: an exact D210 target declaration that is absent as a Canvas symbol may
+// join to every accepted non-remainder component owning the exact package
+// member found through RepositoryGraph.PackageInfo.Files.
+const ArchitectureCanvasVersion = 15
 
 type ArchitectureCanvasInput struct {
 	CandidateBundle componentmap.CandidateBundle
