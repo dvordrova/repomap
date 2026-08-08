@@ -442,88 +442,89 @@ func associationWitnessSetsOverlap(left, right []ArchitectureAssociationWitness)
 	return false
 }
 
-// ensureMechanismFragments derives the Decision 242 per-entry first-hop
-// fan-outs when the report carries an accepted canvas. Provider-free;
+// ensureEntrypointHandoffGroups derives per-entry first-hop context when the
+// report carries an accepted Canvas. Provider-free;
 // absent when no exact process entry has a supported first-hop handoff.
-func ensureMechanismFragments(data *ReportData) error {
+func ensureEntrypointHandoffGroups(data *ReportData) error {
 	if data == nil {
-		return fmt.Errorf("mechanism fragment: report is required")
+		return fmt.Errorf("entry handoff group: report is required")
 	}
 	if data.ArchitectureCanvas == nil {
 		return nil
 	}
 	// Historical/manual render fixtures with unsupported canvas versions stay
-	// displayable without fragments; authorized manifest verification
+	// displayable without groups; authorized manifest verification
 	// independently rejects unsupported Canvas versions.
 	if data.ArchitectureCanvas.Version != ArchitectureCanvasVersion {
-		if data.ArchitectureCanvas.MechanismFragments == nil {
+		if data.ArchitectureCanvas.EntryHandoffGroups == nil {
 			return nil
 		}
 		return fmt.Errorf(
-			"mechanism fragment: unsupported canvas version %d",
+			"entry handoff group: unsupported canvas version %d",
 			data.ArchitectureCanvas.Version,
 		)
 	}
-	if data.ArchitectureCanvas.MechanismFragments != nil {
-		return validateMechanismFragmentsForProduct(
+	if data.ArchitectureCanvas.EntryHandoffGroups != nil {
+		return validateEntrypointHandoffGroupsForProduct(
 			data.ArchitectureCanvas,
-			data.ArchitectureCanvas.MechanismFragments,
+			data.ArchitectureCanvas.EntryHandoffGroups,
 			data.ArchitectureGrounding,
 		)
 	}
-	fragments, err := projectMechanismFragmentsForProduct(
+	groups, err := projectEntrypointHandoffGroupsForProduct(
 		data.ArchitectureCanvas,
 		data.ArchitectureGrounding,
 	)
 	if err != nil {
 		return err
 	}
-	data.ArchitectureCanvas.MechanismFragments = fragments
+	data.ArchitectureCanvas.EntryHandoffGroups = groups
 	return nil
 }
 
-// ValidateMechanismFragments re-derives the exact per-entry fragments and
+// ValidateEntrypointHandoffGroups re-derives the exact per-entry groups and
 // rejects version or evidence drift.
-func ValidateMechanismFragments(
+func ValidateEntrypointHandoffGroups(
 	canvas *ArchitectureCanvas,
-	fragments []MechanismFragmentProjection,
+	grounding *ArchitectureGrounding,
+	groups []EntrypointHandoffGroup,
 ) error {
-	return validateMechanismFragments(canvas, fragments, nil)
+	return validateEntrypointHandoffGroups(canvas, groups, grounding)
 }
 
-func validateMechanismFragments(
+func validateEntrypointHandoffGroups(
 	canvas *ArchitectureCanvas,
-	fragments []MechanismFragmentProjection,
+	groups []EntrypointHandoffGroup,
 	grounding *ArchitectureGrounding,
 ) error {
-	return validateMechanismFragmentsForProduct(canvas, fragments, grounding)
+	return validateEntrypointHandoffGroupsForProduct(canvas, groups, grounding)
 }
 
-func validateMechanismFragmentsForProduct(
+func validateEntrypointHandoffGroupsForProduct(
 	canvas *ArchitectureCanvas,
-	fragments []MechanismFragmentProjection,
+	groups []EntrypointHandoffGroup,
 	grounding *ArchitectureGrounding,
 ) error {
-	expected, err := projectMechanismFragmentsForProduct(canvas, grounding)
+	expected, err := projectEntrypointHandoffGroupsForProduct(canvas, grounding)
 	if err != nil {
 		return err
 	}
 	if expected == nil {
-		if fragments == nil {
+		if groups == nil {
 			return nil
 		}
-		return fmt.Errorf("mechanism fragment: projection has no supported first-hop handoffs")
+		return fmt.Errorf("entry handoff group: projection has no supported first-hop handoffs")
 	}
-	if fragments == nil {
-		return fmt.Errorf("mechanism fragment: projection is missing")
+	if groups == nil {
+		return fmt.Errorf("entry handoff group: projection is missing")
 	}
-	for index, fragment := range fragments {
-		if fragment.Version != MechanismFragmentVersion {
-			return fmt.Errorf("mechanism fragment: fragment %d has unsupported version %d", index, fragment.Version)
+	for index, group := range groups {
+		if group.Version != EntrypointHandoffGroupVersion {
+			return fmt.Errorf("entry handoff group: group %d has unsupported version %d", index, group.Version)
 		}
 	}
-	if !reflect.DeepEqual(fragments, expected) {
-		return fmt.Errorf("mechanism fragment: persisted projection does not match exact local evidence")
+	if !reflect.DeepEqual(groups, expected) {
+		return fmt.Errorf("entry handoff group: persisted projection does not match exact local evidence")
 	}
 	return nil
 }

@@ -33,6 +33,14 @@ const report = {
   architecture_canvas: {
     behavior_anchors: [
       {
+        id: "process-anchor", kind: "process_entry", label: "Process entry main",
+        location: { path: "core/a.go", line: 7 },
+      },
+      {
+        id: "process-anchor-only", kind: "process_entry", label: "Process entry worker",
+        location: { path: "shared2.go", line: 12 },
+      },
+      {
         id: "shared-anchor", label: "Shared behavior family",
         location: { path: "shared.go", line: 3 },
       },
@@ -43,8 +51,9 @@ const report = {
     ],
     components: [
       {
-        id: "core", anchor_ids: ["shared-anchor"],
-        owned_surface_ids: ["http-get-widgets", "http-post-widgets"], members: [
+        id: "core", anchor_ids: ["process-anchor", "shared-anchor"],
+        owned_surface_ids: ["http-get-widgets"],
+        participating_surface_ids: ["http-post-widgets", "process-main"], members: [
         {
           id: { kind: "package", value: "opaque-package-id" },
           facts: [{ kind: "declaration", value: "example.test/project/core" }],
@@ -73,6 +82,7 @@ const report = {
         facts: [{ kind: "declaration", value: "example.test/project/worker" }],
       }] },
       { id: "anchor-only", anchor_ids: ["shared-anchor", "second-anchor"], members: [] },
+	  { id: "process-anchor-only", anchor_ids: ["process-anchor-only"], members: [] },
 	  { id: "relation-only", members: [{
 		id: { kind: "symbol", value: "relation-source" }, name: "Request dispatcher", facts: [],
 	  }] },
@@ -100,6 +110,10 @@ const report = {
         id: "http-post-widgets", name: "POST /widgets",
         evidence: [{ path: "core/a.go", line: 27 }],
       },
+      {
+        id: "process-main", name: "main", kind: "process_entry",
+        evidence: [{ path: "core/a.go", line: 7 }],
+      },
     ],
   },
   architecture_component_navigation: {
@@ -126,6 +140,7 @@ const report = {
         package_participant_ids: [{ kind: "package", value: "opaque-package-id-3" }],
       },
       { component_id: "anchor-only", map_target: { kind: "component", component_id: "anchor-only" } },
+      { component_id: "process-anchor-only", map_target: { kind: "component", component_id: "process-anchor-only" } },
       { component_id: "relation-only", map_target: { kind: "component", component_id: "relation-only" } },
     ],
   },
@@ -146,6 +161,12 @@ const report = {
         handler: { text: "CreateWidget", known: true },
         registration_site: { path: "core/a.go", line: 27, column: 6 },
         process_entrypoint: { name: "main", location: { path: "core/a.go", line: 7 } },
+      },
+      {
+        id: "process-main", kind: "process_entry",
+        handler: { text: "example.test/project/core.main", known: true },
+        registration_site: { path: "core/b.go", line: 99, column: 1 },
+        process_entrypoint: { name: "main", location: { path: "core/a.go", line: 7, column: 3 } },
       },
     ],
   },
@@ -243,6 +264,7 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 			} `json:"location"`
 		} `json:"sources"`
 		SurfaceStarts []struct {
+			ID         string `json:"id"`
 			Label      string `json:"label"`
 			Actionable bool   `json:"actionable"`
 			Location   struct {
@@ -281,17 +303,38 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 		core.Sources[0].Location.Column != 9 {
 		t.Fatalf("source joins = %#v", core.Sources)
 	}
-	if len(core.SurfaceStarts) != 2 ||
-		core.SurfaceStarts[0].Label != "GET /widgets → ServeWidget" ||
-		core.SurfaceStarts[0].Location.Path != "core/b.go" ||
-		core.SurfaceStarts[0].Location.Line != 33 ||
-		core.SurfaceStarts[0].Location.Column != 4 ||
-		core.SurfaceStarts[0].Actionable ||
-		core.SurfaceStarts[1].Label != "POST /widgets → CreateWidget · registration" ||
-		core.SurfaceStarts[1].Location.Path != "core/a.go" ||
-		core.SurfaceStarts[1].Location.Line != 27 ||
-		core.SurfaceStarts[1].Location.Column != 6 ||
-		core.SurfaceStarts[1].Actionable {
+	startsByID := make(map[string]struct {
+		Label      string
+		Path       string
+		Line       int
+		Column     int
+		Actionable bool
+	})
+	for _, start := range core.SurfaceStarts {
+		startsByID[start.ID] = struct {
+			Label      string
+			Path       string
+			Line       int
+			Column     int
+			Actionable bool
+		}{start.Label, start.Location.Path, start.Location.Line, start.Location.Column, start.Actionable}
+	}
+	if len(core.SurfaceStarts) != 3 ||
+		startsByID["http-get-widgets"].Label != "GET /widgets → ServeWidget" ||
+		startsByID["http-get-widgets"].Path != "core/b.go" ||
+		startsByID["http-get-widgets"].Line != 33 ||
+		startsByID["http-get-widgets"].Column != 4 ||
+		startsByID["http-get-widgets"].Actionable ||
+		startsByID["http-post-widgets"].Label != "POST /widgets → CreateWidget · registration" ||
+		startsByID["http-post-widgets"].Path != "core/a.go" ||
+		startsByID["http-post-widgets"].Line != 27 ||
+		startsByID["http-post-widgets"].Column != 6 ||
+		startsByID["http-post-widgets"].Actionable ||
+		startsByID["process-main"].Label != "main · process entry" ||
+		startsByID["process-main"].Path != "core/a.go" ||
+		startsByID["process-main"].Line != 7 ||
+		startsByID["process-main"].Column != 3 ||
+		startsByID["process-main"].Actionable {
 		t.Fatalf("surface starts = %#v", core.SurfaceStarts)
 	}
 	if len(core.Studies) != 1 || core.Studies[0].ID != "study-one" {
@@ -327,6 +370,14 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 		len(anchorOnly.Studies) != 1 || anchorOnly.Studies[0].ID != "study-shared" {
 		t.Fatalf("anchor-only context = %#v, present %v", anchorOnly, ok)
 	}
+	processAnchorOnly, ok := contexts["process-anchor-only"]
+	if !ok || len(processAnchorOnly.SurfaceStarts) != 1 ||
+		processAnchorOnly.SurfaceStarts[0].ID != "process-anchor-only" ||
+		processAnchorOnly.SurfaceStarts[0].Label != "Process entry worker" ||
+		processAnchorOnly.SurfaceStarts[0].Location.Path != "shared2.go" ||
+		processAnchorOnly.SurfaceStarts[0].Location.Line != 12 {
+		t.Fatalf("exact process anchor fallback = %#v, present %v", processAnchorOnly, ok)
+	}
 	relationOnly, ok := contexts["relation-only"]
 	if !ok || len(relationOnly.StructuralRelations) != 1 ||
 		relationOnly.StructuralRelations[0].FromLabel != "Request dispatcher" ||
@@ -334,7 +385,6 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 		t.Fatalf("relation-only context lost exact named relation: %#v, present %v", relationOnly, ok)
 	}
 }
-
 
 func TestSourceLocationActionAvailabilityMatchesReportAuthority(t *testing.T) {
 	node, err := exec.LookPath("node")
@@ -596,7 +646,10 @@ func TestArchitectureUserInspectorStaysCompactAndSourceBacked(t *testing.T) {
 		"this.msg(\"architecture.action.open_launch_point\")",
 		"array(context.package_paths).length > 0",
 		"(component.members || []).forEach(function (member)",
-		"(component.owned_surface_ids || []).forEach(function (surfaceID)",
+		".concat(component.participating_surface_ids || [])",
+		".concat(array(component && component.participating_surface_ids))",
+		"(component.anchor_ids || []).forEach(function (anchorID)",
+		"String(anchor.kind || '') !== 'process_entry'",
 		"var handlerLocation = trigger.handler_location",
 		"trigger.registration_site",
 		"surfaceName + ' → ' + handlerName",
@@ -612,6 +665,10 @@ func TestArchitectureUserInspectorStaysCompactAndSourceBacked(t *testing.T) {
 		`this.msg("architecture.copy.no_observed_studies")`,
 		`this.msg("architecture.copy.no_observed_callsites")`,
 		"rm-arch__inspector-empty",
+		"min-width: 0",
+		"overflow-wrap: anywhere",
+		".rm-arch__compact-action strong",
+		"word-break: break-word",
 	} {
 		if !strings.Contains(reportJS+js+css, token) {
 			t.Errorf("compact architecture inspector is missing %q", token)

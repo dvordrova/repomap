@@ -20,10 +20,10 @@ func TestReduceIdenticalReadingSetAcrossDifferentKindsCoProjects(t *testing.T) {
 		"t4": {Ref: "t4", ThemeKind: KindIntegrationFamily, AnchorRefs: []string{"a1"}},
 	}
 	themes := []AdjudicatedTheme{
-		{CandidateRef: "t1", FinalTitle: "Entry point", FinalQuestion: "Where does the service start?", AnchorAssessments: []AnchorAssessment{{AnchorRef: "a1", Fit: FitDirect, SupportedObservation: "o1"}}, ReadingOrder: []string{"a1"}},
-		{CandidateRef: "t2", FinalTitle: "Startup config", FinalQuestion: "When is configuration loaded?", AnchorAssessments: []AnchorAssessment{{AnchorRef: "a1", Fit: FitDirect, SupportedObservation: "o2"}}, ReadingOrder: []string{"a1"}},
-		{CandidateRef: "t3", FinalTitle: "Error handling", FinalQuestion: "How are startup errors surfaced?", AnchorAssessments: []AnchorAssessment{{AnchorRef: "a1", Fit: FitDirect, SupportedObservation: "o3"}}, ReadingOrder: []string{"a1"}},
-		{CandidateRef: "t4", FinalTitle: "Server wiring", FinalQuestion: "How is the server wired?", AnchorAssessments: []AnchorAssessment{{AnchorRef: "a1", Fit: FitDirect, SupportedObservation: "o4"}}, ReadingOrder: []string{"a1"}},
+		{CandidateRef: "t1", FinalTitle: "Entry point", FinalQuestion: "Where does the service start?", WhyItMatters: "Service startup matters.", ExpectedLearning: "Learn where the service starts.", AnchorAssessments: []AnchorAssessment{{AnchorRef: "a1", Fit: FitDirect, SupportedObservation: "o1"}}, ReadingOrder: []string{"a1"}},
+		{CandidateRef: "t2", FinalTitle: "Startup config", FinalQuestion: "When is configuration loaded?", WhyItMatters: "Startup configuration matters.", ExpectedLearning: "Learn when configuration is loaded.", AnchorAssessments: []AnchorAssessment{{AnchorRef: "a1", Fit: FitDirect, SupportedObservation: "o2"}}, ReadingOrder: []string{"a1"}},
+		{CandidateRef: "t3", FinalTitle: "Error handling", FinalQuestion: "How are startup errors surfaced?", WhyItMatters: "Startup errors matter.", ExpectedLearning: "Learn how startup errors are surfaced.", AnchorAssessments: []AnchorAssessment{{AnchorRef: "a1", Fit: FitDirect, SupportedObservation: "o3"}}, ReadingOrder: []string{"a1"}},
+		{CandidateRef: "t4", FinalTitle: "Server wiring", FinalQuestion: "How is the server wired?", WhyItMatters: "Server wiring matters.", ExpectedLearning: "Learn how the server is wired.", AnchorAssessments: []AnchorAssessment{{AnchorRef: "a1", Fit: FitDirect, SupportedObservation: "o4"}}, ReadingOrder: []string{"a1"}},
 	}
 	reduction, err := Reduce(ReducerInput{Themes: themes, Candidates: candidates, Anchors: anchors})
 	if err != nil {

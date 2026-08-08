@@ -28,6 +28,7 @@ Active decisions (each approved by the repository owner via its supervisory goal
 24. decisions/240-remove-obsolete-navigator-semantic-stage.md
 25. decisions/241-ordinary-provider-request-effectiveness-conclusions.md
 26. decisions/242-mechanisms-map-lens-single-authority.md
+27. decisions/243-publication-truth-and-direct-mechanism-authority.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
@@ -35,21 +36,57 @@ Active decisions (each approved by the repository owner via its supervisory goal
 ## Decision 242
 
 Status:
-    ACTIVE. ArchitectureCanvas v13 owns one exact mechanism fragment per
-    process entry that has a supported first-hop handoff; zero-hop entries
-    remain in Entrypoints. Fragment v3 carries stable identity, exact component
-    participation and typed handoffs/frontier without guessed joins.
-    Boundary/resource touchpoints remain owned by Integrations. The Map's
-    Mechanisms lens consumes only this plural backend
-    projection; the duplicate below-map disclosure and legacy competing
-    relation inventory are removed. Report format advances 38→39 and the typed
-    UI message catalog 11→12. No provider
-    call, prompt, flag, retry, or new repository analysis is added.
+    ACTIVE HISTORICAL BASELINE. ArchitectureCanvas v13/report39 closed the
+    competing first-hop authorities and retained one exact D210 fan-out per
+    process entry with a supported handoff; zero-hop entries stayed in
+    Entrypoints. D243 supersedes only D242's product classification and
+    presentation: the fan-out is now EntrypointHandoffGroup v1 under
+    Entrypoints, not a Mechanism or separate Mechanisms lens. D242's source
+    decision remains unchanged in history.
 
 Approved by:
     Repository owner in the D241 follow-up review, 2026-08-08: fix
     Mechanisms, treat report.html as user documentation, keep Map primary,
     and validate the hosted final HTML through browser automation.
+
+## Decision 243
+
+Status:
+    ACTIVE. A shared verified publication classifier distinguishes READY,
+    DEGRADED, and FAILED in ordinary console/corpus output; optional source
+    expansion closes item-locally; and current Map entry, association, mobile,
+    and wrapping truth is repaired without report diagnostics. Canvas14 /
+    report40 / UI13 retype exact D210 first hops as EntrypointHandoffGroup v1:
+    selecting an entry draws an exact per-transition component overlay, with
+    off-map overflow only and no Mechanisms lens/card wall. True plural
+    mechanisms move to one bounded direct mechanism query: reuse one private
+    exact StaticCallee DirectCallIndex, compile balanced context-local graphs
+    to absolute depth two with separate 8-root/8-continuation neighbor bounds,
+    let the model return an unordered refs-only set of at most three connected
+    candidate paths, and validate them locally without model prose, a follow-up
+    selector, or graph expansion. Compilation/request/result v2 derives exact
+    path order, reading ties, and invocation display in the backend; no
+    candidate-array position may win an aggregate budget. Its prompt identity
+    is `mechanism-study-prompt-218f4d98678d`. Production Study uses exact final
+    direct readings; the
+    small-repository experiment may instead use one caller-supplied exact
+    entrypoint root without running Scout or Adjudication. No backend or model
+    chooses that root. Only a connected directed path of at least two
+    edges/three nodes tied to a supplied direct reading is
+    `mechanism`; every honest lesser result is `prepared_investigation`.
+    Provider-free substrate measurement comes first; the owner explicitly
+    authorizes up to four independent semantic calls for bounded
+    small-repository experiments. There is no semantic retry; the shared
+    transport may replay the same immutable bytes after a retryable network
+    failure.
+
+Approved by:
+    Repository owner through the persistent linked-review corrective goal and
+    the 2026-08-08 product pivot: first-hop truth belongs to Entrypoints,
+    Mechanisms require a real connected Study vertical, generated HTML is
+    product evidence, and operational explanations stay in the console. The
+    owner approved the refs-only unordered v2/root-budget correction on
+    2026-08-09 after inspecting all four small-repository responses.
 
 ## Decision 241 follow-up
 
@@ -58,7 +95,10 @@ Status:
     `scripts` scope as tooling, while a generic observed call no longer
     masquerades as an effect boundary. Current identities are Scout request
     v5, vocabulary v3, cache contract v3, Scout result v5, Adjudication
-    result v4, and StudyThemes v4. Backend-equivalent Theme reductions retain
+    request v3, result/status v5, accepted-cache v2, and StudyThemes v4.
+    Adjudication owns the final question, `why_it_matters`, and
+    `expected_learning`; narrowed questions cannot retain broader Scout
+    promises. Backend-equivalent Theme reductions retain
     alternate readings, persist `co_projected`, and are explained in the
     console rather than as report diagnostics. Bounded prose truncation is
     word-aware and visibly marked with an ellipsis.
@@ -1211,10 +1251,11 @@ and casdoor runs are the final regression gate. Provider calls for this bounded
 investigation and its final acceptance are owner-authorized, including up to
 seven concurrent runs. The producer/consumer semantics of `structural_facts`,
 drawable `structural_edges`, and
-`architecture_canvas.mechanism_fragments[].handoffs`, and Map's choice of
-connectivity authority are a first-priority systemic question. Decision 242
-closes their product-facing authority split without using mechanism handoffs
-as Landscape connectivity.
+`architecture_canvas.entry_handoff_groups[].entry_handoffs`, and Map's choice
+of connectivity authority are a first-priority systemic question. D242 closed
+their product-facing authority split; D243 clarifies that these exact first-hop
+handoffs are Entrypoints overlay context, not Landscape connectivity or a
+complete Mechanism.
 
 ## 23. Decision 240 — Remove the obsolete Navigator semantic stage (ACTIVE)
 

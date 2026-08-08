@@ -840,15 +840,15 @@ func collectOpenablePaths(data *ReportData) {
 				anchor := &data.ArchitectureCanvas.BehaviorAnchors[index]
 				if anchor.Kind == componentmap.AnchorProcessEntry &&
 					anchor.ProofMode == componentmap.AnchorProofProcessEntry &&
-					containsMechanismMemberID(processEntryMemberIDs(anchor), edge.Witness.From) &&
-					mechanismRelationHasScenario(edge.Witness, anchor.Scenario.ID) {
+					containsMemberID(processEntryMemberIDs(anchor), edge.Witness.From) &&
+					localRelationHasScenario(edge.Witness, anchor.Scenario.ID) {
 					add(anchor.Location.Path)
 				}
 			}
 			if edge.Witness.Location != nil {
 				add(edge.Witness.Location.Path)
 			}
-			if target := exactMechanismTargetForMemberID(data.ArchitectureCanvas, edge.Witness.To); target != nil {
+			if target := exactCanvasDeclarationTargetForMemberID(data.ArchitectureCanvas, edge.Witness.To); target != nil {
 				add(target.Path)
 			}
 		}

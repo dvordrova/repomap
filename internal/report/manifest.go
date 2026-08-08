@@ -648,12 +648,12 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 		)
 	}
 	if report.ArchitectureCanvas != nil {
-		if err := validateMechanismFragmentsForProduct(
+		if err := validateEntrypointHandoffGroupsForProduct(
 			report.ArchitectureCanvas,
-			report.ArchitectureCanvas.MechanismFragments,
+			report.ArchitectureCanvas.EntryHandoffGroups,
 			report.ArchitectureGrounding,
 		); err != nil {
-			return fmt.Errorf("report manifest: mechanism fragments: %w", err)
+			return fmt.Errorf("report manifest: entry handoff groups: %w", err)
 		}
 	}
 	if err := ValidateArchitectureComponentNavigation(

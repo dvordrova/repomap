@@ -33,6 +33,7 @@ func TestReducePortfolioConcentrationSkipsInternalStructuralPrefix(t *testing.T)
 		themes = append(themes, AdjudicatedTheme{
 			CandidateRef: candidate.Ref,
 			FinalTitle:   "Title " + candidate.Ref, FinalQuestion: "Question " + candidate.Ref + "?",
+			WhyItMatters: "The final question matters.", ExpectedLearning: "Learn from the retained reading.",
 			AnchorAssessments: []AnchorAssessment{
 				{AnchorRef: ref, Fit: FitDirect, SupportedObservation: "obs"},
 			},

@@ -247,21 +247,21 @@ func TestAdjudicationItemLocalRejection(t *testing.T) {
 		"t1": {Title: "t1", Question: "q1?", ThemeKind: KindUserJourney, AnchorRefs: []string{"a1", "a2", "a3"}, WhyItMatters: "w", ExpectedLearning: "l", RelationClaim: RelationClaimEditorialOnly},
 		"t2": {Title: "t2", Question: "q2?", ThemeKind: KindSharedDomainResponsibility, AnchorRefs: []string{"a2", "a3"}, WhyItMatters: "w", ExpectedLearning: "l", RelationClaim: RelationClaimEditorialOnly},
 	}
-	good := `{"themes":[{"candidate_ref":"t1","final_title":"validated signup","final_question":"how does signup validate?","anchor_assessments":[{"anchor_ref":"a1","fit":"direct","supported_observation":"signup coordinates account creation"},{"anchor_ref":"a2","fit":"supporting","supported_observation":"validation filter guards input"}],"reading_order":["a1","a2"],"unknowns":["no runtime order proven"]}]}`
+	good := `{"themes":[{"candidate_ref":"t1","final_title":"validated signup","final_question":"how does signup validate?","why_it_matters":"Signup validation protects account creation.","expected_learning":"Learn how the retained sources validate signup.","readings":[{"anchor_ref":"a1","support":"direct","observation":"signup coordinates account creation"},{"anchor_ref":"a2","support":"supporting","observation":"validation filter guards input"}],"unknowns":["no runtime order proven"]}]}`
 	accepted, status, err := ValidateAdjudication([]byte(good), candidates)
 	if err != nil || status.Accepted != 1 || len(accepted) != 1 {
 		t.Fatalf("good adjudication rejected: accepted=%d err=%v", status.Accepted, err)
 	}
 
-	// reading_order containing an unknown ref → theme rejected item-locally.
-	badOrder := `{"themes":[{"candidate_ref":"t1","final_title":"x","final_question":"y?","anchor_assessments":[{"anchor_ref":"a1","fit":"direct","supported_observation":"o"}],"reading_order":["a99"]}]}`
+	// A reading containing an anchor outside the candidate → item-local reject.
+	badOrder := `{"themes":[{"candidate_ref":"t1","final_title":"x","final_question":"y?","why_it_matters":"Y matters.","expected_learning":"Learn Y.","readings":[{"anchor_ref":"a99","support":"direct","observation":"o"}]}]}`
 	_, status, err = ValidateAdjudication([]byte(badOrder), candidates)
 	if err != nil || status.Accepted != 0 || status.State != "failed" {
 		t.Fatalf("unknown reading ref should fail: accepted=%d err=%v", status.Accepted, err)
 	}
 
 	// No direct anchor → no_direct reject.
-	noDirect := `{"themes":[{"candidate_ref":"t1","final_title":"x","final_question":"y?","anchor_assessments":[{"anchor_ref":"a1","fit":"supporting","supported_observation":"o"}],"reading_order":["a1"]}]}`
+	noDirect := `{"themes":[{"candidate_ref":"t1","final_title":"x","final_question":"y?","why_it_matters":"Y matters.","expected_learning":"Learn Y.","readings":[{"anchor_ref":"a1","support":"supporting","observation":"o"}]}]}`
 	_, status, err = ValidateAdjudication([]byte(noDirect), candidates)
 	if err != nil || status.Accepted != 0 {
 		t.Fatalf("no-direct theme should be rejected: accepted=%d err=%v", status.Accepted, err)
@@ -273,6 +273,7 @@ func reducerFixture() ReducerInput {
 		Themes: []AdjudicatedTheme{
 			{
 				CandidateRef: "t1", FinalTitle: "signup validation", FinalQuestion: "how does validation support signup?",
+				WhyItMatters: "Signup validation protects account creation.", ExpectedLearning: "Learn how the retained sources validate signup.",
 				AnchorAssessments: []AnchorAssessment{
 					{AnchorRef: "a1", Fit: FitDirect, SupportedObservation: "controller coordinates signup"},
 					{AnchorRef: "a2", Fit: FitSupporting, SupportedObservation: "filter guards input"},
@@ -359,6 +360,7 @@ func TestReducerDedupeAndBalanceCap(t *testing.T) {
 			AnchorRefs: []string{"a0", "a" + string(rune('1'+i))}, WhyItMatters: "w", ExpectedLearning: "l", RelationClaim: RelationClaimEditorialOnly}
 		themes = append(themes, AdjudicatedTheme{
 			CandidateRef: tref, FinalTitle: tref, FinalQuestion: "q" + string(rune('1'+i)) + "?",
+			WhyItMatters: "The final question matters.", ExpectedLearning: "Learn from the retained readings.",
 			AnchorAssessments: []AnchorAssessment{
 				{AnchorRef: "a0", Fit: FitDirect, SupportedObservation: "root"},
 				{AnchorRef: "a" + string(rune('1'+i)), Fit: FitDirect, SupportedObservation: "leaf"},
@@ -465,8 +467,8 @@ func TestAdjudicationSplitIssueVocabulary(t *testing.T) {
 	// Overlong observation: accepted, normalized, counted.
 	overlongObs := strings.Repeat("н", MaxEditorialRunes+50)
 	good := `{"themes":[{"candidate_ref":"t1","final_title":"x","final_question":"y?",` +
-		`"anchor_assessments":[{"anchor_ref":"a1","fit":"direct","supported_observation":"` + overlongObs + `"}],` +
-		`"reading_order":["a1"]}]}`
+		`"why_it_matters":"Y matters.","expected_learning":"Learn Y.",` +
+		`"readings":[{"anchor_ref":"a1","support":"direct","observation":"` + overlongObs + `"}]}]}`
 	accepted, status, err := ValidateAdjudication([]byte(good), candidates)
 	if err != nil {
 		t.Fatalf("ValidateAdjudication: %v", err)
@@ -483,7 +485,8 @@ func TestAdjudicationSplitIssueVocabulary(t *testing.T) {
 
 	// Empty observation: still a hard rejection with the distinct code.
 	empty := `{"themes":[{"candidate_ref":"t1","final_title":"x","final_question":"y?",` +
-		`"anchor_assessments":[{"anchor_ref":"a1","fit":"direct","supported_observation":""}],"reading_order":["a1"]}]}`
+		`"why_it_matters":"Y matters.","expected_learning":"Learn Y.",` +
+		`"readings":[{"anchor_ref":"a1","support":"direct","observation":""}]}]}`
 	_, status, err = ValidateAdjudication([]byte(empty), candidates)
 	if err != nil || status.Accepted != 0 || status.Rejected != 1 {
 		t.Fatalf("empty observation must reject: accepted=%d err=%v", status.Accepted, err)
@@ -500,8 +503,9 @@ func TestAdjudicationSplitIssueVocabulary(t *testing.T) {
 
 	// Too many unknowns: distinct code.
 	tooMany := `{"themes":[{"candidate_ref":"t1","final_title":"x","final_question":"y?",` +
-		`"anchor_assessments":[{"anchor_ref":"a1","fit":"direct","supported_observation":"o"}],` +
-		`"reading_order":["a1"],"unknowns":["u1","u2","u3","u4","u5"]}]}`
+		`"why_it_matters":"Y matters.","expected_learning":"Learn Y.",` +
+		`"readings":[{"anchor_ref":"a1","support":"direct","observation":"o"}],` +
+		`"unknowns":["u1","u2","u3","u4","u5"]}]}`
 	_, status, err = ValidateAdjudication([]byte(tooMany), candidates)
 	if err != nil || status.Accepted != 0 {
 		t.Fatalf("too-many-unknowns must reject: accepted=%d err=%v", status.Accepted, err)
@@ -529,6 +533,7 @@ func TestReducerDeduplicatesByExactSourceIdentity(t *testing.T) {
 	input := ReducerInput{
 		Themes: []AdjudicatedTheme{{
 			CandidateRef: "t1", FinalTitle: "signup validation", FinalQuestion: "how does signup validate?",
+			WhyItMatters: "Signup validation protects account creation.", ExpectedLearning: "Learn how the retained sources validate signup.",
 			AnchorAssessments: []AnchorAssessment{
 				{AnchorRef: "a1", Fit: FitDirect, SupportedObservation: "signup coordinates account creation"},
 				{AnchorRef: "a2", Fit: FitDirect, SupportedObservation: "signup coordinates account creation"},
@@ -566,6 +571,7 @@ func TestReducerIdentityCollisionPrefersDirectReading(t *testing.T) {
 	input := ReducerInput{
 		Themes: []AdjudicatedTheme{{
 			CandidateRef: "t1", FinalTitle: "webhook dispatch", FinalQuestion: "how are webhooks dispatched?",
+			WhyItMatters: "Webhook dispatch connects outbound notifications.", ExpectedLearning: "Learn how the retained source dispatches webhooks.",
 			AnchorAssessments: []AnchorAssessment{
 				{AnchorRef: "supporting-first", Fit: FitSupporting, SupportedObservation: "webhook send is referenced"},
 				{AnchorRef: "direct-second", Fit: FitDirect, SupportedObservation: "webhook send is implemented here"},
@@ -617,6 +623,7 @@ func TestReducerHonestCoverageBadge(t *testing.T) {
 	input := ReducerInput{
 		Themes: []AdjudicatedTheme{{
 			CandidateRef: "t1", FinalTitle: "x", FinalQuestion: "y?",
+			WhyItMatters: "Y matters.", ExpectedLearning: "Learn Y.",
 			AnchorAssessments: []AnchorAssessment{
 				{AnchorRef: "a1", Fit: FitDirect, SupportedObservation: "o1"},
 				{AnchorRef: "a2", Fit: FitSupporting, SupportedObservation: "o2"},
@@ -675,6 +682,7 @@ func TestReducerPreservesModelComparativeOrder(t *testing.T) {
 	mk := func(tref, anchor, kind string) AdjudicatedTheme {
 		return AdjudicatedTheme{
 			CandidateRef: tref, FinalTitle: tref, FinalQuestion: tref + "?",
+			WhyItMatters: "The final question matters.", ExpectedLearning: "Learn from the retained reading.",
 			AnchorAssessments: []AnchorAssessment{{AnchorRef: anchor, Fit: FitDirect, SupportedObservation: "o"}},
 			ReadingOrder:      []string{anchor},
 		}

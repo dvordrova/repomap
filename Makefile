@@ -8,7 +8,7 @@ TMP_DIR  ?= tmp
 ETCD_REPO ?= ../etcd
 RUN_ARGS ?=
 
-.PHONY: help test vet check quality-check localization-check localization-replay localization-stage localization-record build doctor doctor-check generic-deepseek-doctor guided-tour-run guided-tour-fanout guided-tour-experiment semantic-discovery semantic-discovery-experiment fresh-repo-onboarding fresh-repo-onboarding-replan fresh-repo-onboarding-replay golden-mechanism golden-mechanism-v01 golden-mechanism-v02 golden-mechanism-v02-prepare golden-mechanism-v02-replay golden-mechanism-v03 golden-mechanism-v03-prepare golden-mechanism-v03-replay golden-mechanism-v1 golden-mechanism-v1-prepare golden-mechanism-v1-replay mechanism-v1 mechanism-v1-replay chi-request-dispatch chi-request-dispatch-prepare chi-request-dispatch-response-replay chi-request-dispatch-replay review-cockpit review-serve serve run run-offline dev-ui
+.PHONY: help test vet check quality-check localization-check localization-replay localization-stage localization-record build doctor doctor-check generic-deepseek-doctor guided-tour-run guided-tour-fanout guided-tour-experiment semantic-discovery semantic-discovery-experiment mechanism-study-experiment fresh-repo-onboarding fresh-repo-onboarding-replan fresh-repo-onboarding-replay golden-mechanism golden-mechanism-v01 golden-mechanism-v02 golden-mechanism-v02-prepare golden-mechanism-v02-replay golden-mechanism-v03 golden-mechanism-v03-prepare golden-mechanism-v03-replay golden-mechanism-v1 golden-mechanism-v1-prepare golden-mechanism-v1-replay mechanism-v1 mechanism-v1-replay chi-request-dispatch chi-request-dispatch-prepare chi-request-dispatch-response-replay chi-request-dispatch-replay review-cockpit review-serve serve run run-offline dev-ui
 
 help: ## Print available targets
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -112,6 +112,8 @@ guided-tour-experiment: ## Compare monolithic and fan-out tours for one saved ru
 SEMANTIC_DISCOVERY_RUN ?=
 FRESH_ONBOARDING_RUN ?=
 FRESH_ONBOARDING_REPO ?=
+MECHANISM_STUDY_BIN ?= $(BIN_DIR)/repomap
+MECHANISM_STUDY_ARGS ?=
 
 semantic-discovery: ## Build semantic artifacts from one existing saved run
 	@test -n "$(SEMANTIC_DISCOVERY_RUN)" || (echo "SEMANTIC_DISCOVERY_RUN is required" >&2; exit 2)
@@ -120,6 +122,10 @@ semantic-discovery: ## Build semantic artifacts from one existing saved run
 semantic-discovery-experiment: ## Compare monolithic and fan-out semantic synthesis on a saved run
 	@test -n "$(SEMANTIC_DISCOVERY_RUN)" || (echo "SEMANTIC_DISCOVERY_RUN is required" >&2; exit 2)
 	go run ./cmd/repomap dev semantic-discovery-experiment "$(SEMANTIC_DISCOVERY_RUN)"
+
+mechanism-study-experiment: ## Run one explicit-root bounded mechanism experiment with the configured provider
+	@test -x "$(MECHANISM_STUDY_BIN)" || (echo "MECHANISM_STUDY_BIN must name a built repomap binary" >&2; exit 2)
+	"$(MECHANISM_STUDY_BIN)" dev mechanism-study-experiment $(value MECHANISM_STUDY_ARGS)
 
 fresh-repo-onboarding: ## Add bounded central onboarding paths to one existing saved run
 	@test -n "$(FRESH_ONBOARDING_RUN)" || (echo "FRESH_ONBOARDING_RUN is required" >&2; exit 2)

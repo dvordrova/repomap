@@ -55,6 +55,11 @@ type Options struct {
 	RequireArtifacts          bool
 	DiscoverSurfaces          bool
 	ExplainFlows              int
+	// DirectCallIndexSink receives the complete bounded in-memory direct-call
+	// index produced by the existing surface SSA pass. It is a live-run handoff
+	// only: the index remains excluded from snapshot, debug, Atlas, and report
+	// artifacts, and no second package load or SSA build is performed.
+	DirectCallIndexSink func(surfacediscovery.DirectCallIndex)
 	// Progress callbacks may run from heartbeat goroutines. They must be
 	// concurrency-safe and return promptly.
 	Progress          func(ProgressEvent)
@@ -290,6 +295,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			})
 		} else {
 			successfulSurfaceResult = &surfaceResult
+			deliverDirectCallIndex(opts, surfaceResult.DirectCallIndex)
 			emitProgress(opts, ProgressEvent{
 				Stage:         ProgressSurfaceReady,
 				RepoName:      s.RepoName,
@@ -743,6 +749,7 @@ func runAtlasFirstLocalArtifacts(
 			})
 		} else {
 			successfulSurfaceResult = &surfaceResult
+			deliverDirectCallIndex(opts, surfaceResult.DirectCallIndex)
 			emitProgress(opts, ProgressEvent{
 				Stage: ProgressSurfaceReady, RepoName: s.RepoName,
 				SurfaceCount: len(surfaceResult.Catalog.Triggers), LatencyMillis: surfaceLatency,
@@ -800,6 +807,13 @@ func runAtlasFirstLocalArtifacts(
 		return append(out, '\n'), nil
 	}
 	return nil, nil
+}
+
+func deliverDirectCallIndex(opts Options, index *surfacediscovery.DirectCallIndex) {
+	if opts.DirectCallIndexSink == nil || index == nil {
+		return
+	}
+	opts.DirectCallIndexSink(*index)
 }
 
 func orientationFileLimit(explicitLimit, inputCount int) int {

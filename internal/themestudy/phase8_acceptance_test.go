@@ -80,6 +80,7 @@ func TestAdjudicationReadingsWireMechanicalFieldsRemoved(t *testing.T) {
 			RelationClaim: RelationClaimEditorialOnly},
 	}
 	raw := []byte(`{"themes":[{"candidate_ref":"t1","final_title":"T","final_question":"Q?",` +
+		`"why_it_matters":"Q matters.","expected_learning":"Learn Q.",` +
 		`"readings":[{"anchor_ref":"a1","support":"direct","observation":"o"}],"unknowns":[]}]}`)
 	accepted, _, err := ValidateAdjudication(raw, candidateByRef)
 	if err != nil {

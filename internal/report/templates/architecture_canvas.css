@@ -906,6 +906,7 @@
 .rm-arch__groups,
 .rm-arch__nodes,
 .rm-arch__steps,
+.rm-arch__entry-handoff-badges,
 .rm-arch__edges {
  height: 100%;
  inset: 0;
@@ -945,6 +946,15 @@
 .rm-arch__steps {
  pointer-events: none;
  z-index: 4;
+}
+
+.rm-arch__edges--entry-handoff {
+ z-index: 5;
+}
+
+.rm-arch__entry-handoff-badges {
+ pointer-events: none;
+ z-index: 6;
 }
 
 .rm-arch__group {
@@ -1467,6 +1477,50 @@
  stroke-width: 4;
 }
 
+.rm-arch__edge--entry-handoff .rm-arch__edge-visible {
+ filter: drop-shadow(0 1px 1px rgba(15, 118, 110, 0.2));
+ stroke: #0f766e;
+ stroke-width: 2.6;
+}
+
+.rm-arch__edge--entry-handoff.is-self-loop .rm-arch__edge-visible {
+ stroke-dasharray: 4 3;
+}
+
+.rm-arch__entry-handoff-source {
+ background: #ecfdf5;
+ border: 1px solid #5eead4;
+ border-radius: 999px;
+ box-shadow: 0 2px 8px rgba(15, 23, 42, 0.14);
+ color: #115e59;
+ cursor: pointer;
+ display: block;
+ font: 650 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+ max-width: 168px;
+ min-width: 0;
+ overflow-wrap: anywhere;
+ padding: 4px 7px;
+ pointer-events: auto;
+ position: absolute;
+ text-align: left;
+ text-decoration: none;
+ transform: translate(-50%, -50%);
+}
+
+.rm-arch__entry-handoff-source.is-self-loop {
+ border-style: dashed;
+}
+
+.rm-arch__entry-handoff-source:hover {
+ background: #ccfbf1;
+ border-color: #0f766e;
+}
+
+.rm-arch__entry-handoff-source:focus-visible {
+ outline: 3px solid rgba(13, 148, 136, 0.35);
+ outline-offset: 2px;
+}
+
 .rm-arch__inspector {
  background: #ffffff;
  border: 0;
@@ -1693,7 +1747,17 @@
 
 .rm-arch__compact-action {
  margin-top: 8px;
+ min-width: 0;
+ overflow-wrap: anywhere;
  padding: 10px 11px;
+}
+
+.rm-arch__compact-action strong,
+.rm-arch__compact-action span {
+ max-width: 100%;
+ min-width: 0;
+ overflow-wrap: anywhere;
+ word-break: break-word;
 }
 
 .rm-arch__compact-action:first-of-type {
@@ -1983,6 +2047,8 @@
  flex-direction: column;
  gap: 3px;
  margin-top: 7px;
+ min-width: 0;
+ overflow-wrap: anywhere;
  padding: 8px 9px;
  text-align: left;
  width: 100%;
@@ -2364,8 +2430,7 @@
   border-color: #dc2626;
   color: #991b1b;
 }
-.rm-arch__partial-truth-label:hover,
-.rm-mechanism-fragment__evidence-summary:hover {
+.rm-arch__partial-truth-label:hover {
   background: #f1f5f9;
   border-color: var(--rm-dim);
 }
@@ -2393,16 +2458,21 @@
    relayout. Non-emphasized principal nodes dim; the lens is recorded on
    the root so CSS can also fade non-relevant edges in later lenses. */
 .rm-arch[data-lens-has-emphasis="true"][data-lens="entrypoints"] .rm-arch__component:not(.rm-arch__is-lens-emphasized),
-.rm-arch[data-lens-has-emphasis="true"][data-lens="integrations"] .rm-arch__component:not(.rm-arch__is-lens-emphasized),
-.rm-arch[data-lens-has-emphasis="true"][data-lens="mechanisms"] .rm-arch__component:not(.rm-arch__is-lens-emphasized) {
+.rm-arch[data-lens-has-emphasis="true"][data-lens="integrations"] .rm-arch__component:not(.rm-arch__is-lens-emphasized) {
   opacity: 0.38;
   filter: saturate(0.45);
 }
 .rm-arch[data-lens-has-emphasis="true"][data-lens="entrypoints"] .rm-arch__component.rm-arch__is-lens-emphasized,
-.rm-arch[data-lens-has-emphasis="true"][data-lens="integrations"] .rm-arch__component.rm-arch__is-lens-emphasized,
-.rm-arch[data-lens-has-emphasis="true"][data-lens="mechanisms"] .rm-arch__component.rm-arch__is-lens-emphasized {
+.rm-arch[data-lens-has-emphasis="true"][data-lens="integrations"] .rm-arch__component.rm-arch__is-lens-emphasized {
   opacity: 1;
   filter: none;
+}
+.rm-arch[data-lens="entrypoints"] .rm-arch__component.rm-arch__is-entry-handoff-participant {
+  filter: none;
+  opacity: 1;
+}
+.rm-arch[data-lens="entrypoints"] .rm-arch__component.rm-arch__is-entry-handoff-participant .rm-arch__component-card {
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.3), 0 8px 22px rgba(15, 118, 110, 0.12);
 }
 .rm-arch__lens { transition: opacity 120ms ease; }
 
@@ -2437,8 +2507,8 @@
   gap: 4px;
   padding: 4px 0 10px;
 }
-.rm-map-lens-objects[data-lens="mechanisms"] {
-  max-height: min(42vh, 520px);
+.rm-map-lens-objects[data-lens="entrypoints"] {
+  max-height: min(52vh, 640px);
   overflow: auto;
   overscroll-behavior: contain;
 }
@@ -2453,17 +2523,89 @@
 .rm-map-lens-object__detail { color: var(--rm-muted, #6b7280); }
 .rm-map-lens-object__item { color: var(--rm-muted, #6b7280); font-size: 12px; }
 .rm-map-lens-object--empty { color: var(--rm-muted, #6b7280); font-style: italic; }
-.rm-map-lens-object--mechanism-fragment {
-  display: block;
-  margin-top: 4px;
+.rm-map-entry-selector-row,
+.rm-map-entry-overflow__call,
+.rm-map-entry-context__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 9px;
+  min-width: 0;
+}
+.rm-map-entry-selector-row {
+  border-top: 1px solid var(--rm-border, #d8dee6);
+  padding: 6px 0;
+}
+.rm-map-entry-selector {
+  align-items: baseline;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 1 1 220px;
+  flex-wrap: wrap;
+  font: inherit;
+  gap: 5px 8px;
+  min-width: 0;
+  padding: 5px 7px;
+  text-align: left;
+}
+.rm-map-entry-selector:hover { background: #f0fdfa; }
+.rm-map-entry-selector.is-selected {
+  background: #ecfdf5;
+  box-shadow: inset 3px 0 #0f766e;
+}
+.rm-map-entry-selector:focus-visible {
+  outline: 2px solid #0f766e;
+  outline-offset: 1px;
+}
+.rm-map-entry-selector__entry,
+.rm-map-entry-context__target { min-width: 0; overflow-wrap: anywhere; }
+.rm-map-entry-overflow-host { min-width: 0; }
+.rm-map-entry-overflow {
+  align-items: center;
+  background: #f8fafc;
   border: 1px solid var(--rm-border, #d8dee6);
-  border-radius: 8px;
+  border-radius: 7px;
+  display: grid;
+  gap: 5px 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
   padding: 6px 8px;
 }
-.rm-map-lens-object__mechanism-summary {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  cursor: pointer;
+.rm-map-entry-overflow__heading {
+  color: var(--rm-muted, #6b7280);
+  font-size: 11px;
+  font-weight: 650;
+  grid-column: 1 / -1;
 }
-.rm-map-lens-object--mechanism-fragment > .rm-mechanism-fragment { margin-top: 8px; }
+.rm-map-entry-overflow__call {
+  grid-column: 1 / -1;
+}
+.rm-map-entry-context__source {
+  background: transparent;
+  border: 0;
+  color: var(--rm-accent, #4f6ef7);
+  cursor: pointer;
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 1px 2px;
+  text-align: left;
+  text-decoration: none;
+}
+.rm-map-entry-context__source:hover { text-decoration: underline; }
+.rm-map-entry-context__source:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: 1px; }
+.rm-map-entry-context__source--text { color: var(--rm-muted, #6b7280); cursor: default; }
+.rm-map-entry-context__limit {
+  color: var(--rm-muted, #6b7280);
+  font-size: 11px;
+  grid-column: 1 / -1;
+  line-height: 1.35;
+  margin: 0;
+}

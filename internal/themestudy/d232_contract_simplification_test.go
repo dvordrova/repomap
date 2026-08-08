@@ -1,9 +1,6 @@
 package themestudy
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
 // Decision 232 (Archive 9): duplicate anchor/file refs in a Scout response
 // normalize deterministically (keep first) and count — they never reject a
@@ -51,12 +48,12 @@ func TestAdjudicationDuplicateAssessmentsNormalizeAndCount(t *testing.T) {
 	}
 	raw := []byte(`{"themes":[{
 		"candidate_ref":"t1","final_title":"T","final_question":"Q",
-		"anchor_assessments":[
-			{"anchor_ref":"a1","fit":"direct","supported_observation":"obs1"},
-			{"anchor_ref":"a2","fit":"supporting","supported_observation":"obs2"},
-			{"anchor_ref":"a1","fit":"direct","supported_observation":"obs1-dup"}
-		],
-		"reading_order":["a1","a2"],"unknowns":[]
+		"why_it_matters":"Q matters.","expected_learning":"Learn Q.",
+		"readings":[
+			{"anchor_ref":"a1","support":"direct","observation":"obs1"},
+			{"anchor_ref":"a2","support":"supporting","observation":"obs2"},
+			{"anchor_ref":"a1","support":"direct","observation":"obs1-dup"}
+		],"unknowns":[]
 	}]}`)
 	themes, status, err := ValidateAdjudication(raw, map[string]*ScoutCandidate{"t1": candidate})
 	if err != nil {
@@ -84,10 +81,10 @@ func TestAdjudicationUnreviewedAnchorsAreCounted(t *testing.T) {
 	}
 	raw := []byte(`{"themes":[{
 		"candidate_ref":"t1","final_title":"T","final_question":"Q",
-		"anchor_assessments":[
-			{"anchor_ref":"a1","fit":"direct","supported_observation":"obs1"}
-		],
-		"reading_order":["a1"],"unknowns":[]
+		"why_it_matters":"Q matters.","expected_learning":"Learn Q.",
+		"readings":[
+			{"anchor_ref":"a1","support":"direct","observation":"obs1"}
+		],"unknowns":[]
 	}]}`)
 	themes, status, err := ValidateAdjudication(raw, map[string]*ScoutCandidate{"t1": candidate})
 	if err != nil {
@@ -118,10 +115,10 @@ func TestAdjudicationZeroAcceptedIsSemanticEmpty(t *testing.T) {
 	// accepted themes must be a failed state with an empty theme list.
 	raw := []byte(`{"themes":[{
 		"candidate_ref":"t1","final_title":"T","final_question":"Q",
-		"anchor_assessments":[
-			{"anchor_ref":"a1","fit":"weak"}
-		],
-		"reading_order":[],"unknowns":[]
+		"why_it_matters":"Q matters.","expected_learning":"Learn Q.",
+		"readings":[
+			{"anchor_ref":"a1","support":"weak","observation":""}
+		],"unknowns":[]
 	}]}`)
 	themes, status, err := ValidateAdjudication(raw, map[string]*ScoutCandidate{"t1": candidate})
 	if err != nil {
@@ -138,9 +135,10 @@ func TestAdjudicationZeroAcceptedIsSemanticEmpty(t *testing.T) {
 	}
 }
 
-// Decision 232: a weak/irrelevant assessment may omit the observation (the
-// empty-observation rejection applies only to direct/supporting).
-func TestAdjudicationWeakMayOmitObservation(t *testing.T) {
+// The current response contract permits only direct/supporting readings. A
+// non-publishing support row cannot enter the derived reading order, even when
+// its observation is empty.
+func TestAdjudicationNonPublishingSupportCannotEnterReadings(t *testing.T) {
 	t.Parallel()
 	candidate := &ScoutCandidate{
 		Ref: "t1", Title: "T", Question: "Q", WhyItMatters: "W", ExpectedLearning: "E",
@@ -149,25 +147,20 @@ func TestAdjudicationWeakMayOmitObservation(t *testing.T) {
 	}
 	raw := []byte(`{"themes":[{
 		"candidate_ref":"t1","final_title":"T","final_question":"Q",
-		"anchor_assessments":[
-			{"anchor_ref":"a1","fit":"direct","supported_observation":"obs"},
-			{"anchor_ref":"a2","fit":"irrelevant"}
-		],
-		"reading_order":["a1"],"unknowns":[]
+		"why_it_matters":"Q matters.","expected_learning":"Learn Q.",
+		"readings":[
+			{"anchor_ref":"a1","support":"direct","observation":"obs"},
+			{"anchor_ref":"a2","support":"irrelevant","observation":""}
+		],"unknowns":[]
 	}]}`)
 	themes, status, err := ValidateAdjudication(raw, map[string]*ScoutCandidate{"t1": candidate})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(themes) != 1 {
-		t.Fatalf("irrelevant without observation must not reject: %#v", status)
+	if len(themes) != 0 || status.Accepted != 0 || status.Rejected != 1 {
+		t.Fatalf("non-publishing support must be rejected: themes=%#v status=%#v", themes, status)
 	}
-	if status.Issues != nil && len(status.Issues) != 0 {
-		t.Fatalf("unexpected issues: %#v", status.Issues)
-	}
-	for _, issue := range status.Issues {
-		if strings.Contains(string(issue.Code), "empty_observation") {
-			t.Fatalf("weak/irrelevant observation requirement leaked: %#v", issue)
-		}
+	if len(status.Issues) != 1 || status.Issues[0].Code != AdjIssueReadingOrderNotDirectOrSupporting {
+		t.Fatalf("wrong rejection for non-publishing support: %#v", status.Issues)
 	}
 }

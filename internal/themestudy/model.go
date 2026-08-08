@@ -294,13 +294,25 @@ type ExpansionFile struct {
 	Omitted       []LineRange    `json:"omitted_ranges,omitempty"`
 	ExpandedLines int            `json:"expanded_lines"`
 	TotalLines    int            `json:"total_lines"`
-	// Decision 235 (v11) 1D maddy: a file whose payload fails the
-	// mandatory secret scan is closed per-file — omitted with a typed
-	// closed reason (no content echo), never a whole-run rejection. The
-	// ref stays in the artifact so contract-D binding survives.
+	// Decision 235 (v11) 1D maddy plus the Publication Truth Gate: a file
+	// whose payload fails the mandatory per-file secret scan or whose local
+	// source cannot be read safely inside the expansion bounds is closed
+	// per-file — omitted with a typed reason and no error/content echo. The ref
+	// stays in the artifact so contract-D binding survives.
 	Closed       bool   `json:"closed,omitempty"`
 	ClosedReason string `json:"closed_reason,omitempty"`
 }
+
+// Expansion source-read failures are item-local and persist only one of these
+// closed backend reasons. They never retain an OS error, repository path, or
+// source prose in diagnostic text. Secret-scan closure has its own existing
+// bounded `secret_scan:<kind>` vocabulary.
+const (
+	ExpansionClosedReasonUnreadable = "source_expansion:unreadable"
+	ExpansionClosedReasonInvalid    = "source_expansion:invalid"
+	ExpansionClosedReasonOversized  = "source_expansion:oversized"
+	ExpansionClosedReasonBudget     = "source_expansion:budget"
+)
 
 // SourceExpansion is the persisted provider-free expansion artifact
 // (contract D). Persisting it makes the Adjudication request rebuildable and
@@ -395,6 +407,8 @@ type AdjudicatedTheme struct {
 	CandidateRef      string             `json:"candidate_ref"`
 	FinalTitle        string             `json:"final_title"`
 	FinalQuestion     string             `json:"final_question"`
+	WhyItMatters      string             `json:"why_it_matters"`
+	ExpectedLearning  string             `json:"expected_learning"`
 	AnchorAssessments []AnchorAssessment `json:"anchor_assessments"`
 	ReadingOrder      []string           `json:"reading_order"`
 	Unknowns          []string           `json:"unknowns,omitempty"`
@@ -449,7 +463,8 @@ type AdjudicationStatus struct {
 	ReviewedAnchors   int `json:"reviewed_anchors,omitempty"`
 	UnreviewedAnchors int `json:"unreviewed_anchors,omitempty"`
 	// Normalized records typed editorial truncation counts (Decision 224):
-	// observation / unknown / unknowns_capped, and Decision 232:
+	// why_it_matters / expected_learning / observation / unknown /
+	// unknowns_capped, and Decision 232:
 	// duplicate_assessment. Non-empty means bounded evidence was retained,
 	// never dropped as empty.
 	Normalized map[string]int `json:"normalized,omitempty"`

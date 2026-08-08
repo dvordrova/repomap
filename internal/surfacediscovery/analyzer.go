@@ -93,6 +93,7 @@ type analyzer struct {
 	detachedWalk                              bool
 	currentPhase                              string
 	currentPhaseStarted                       time.Time
+	directCallIndex                           *directCallIndexBuilder
 }
 
 const (
@@ -194,6 +195,7 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 			Tags: append([]string{}, opts.BuildTags...),
 		},
 	}
+	a.directCallIndex = newDirectCallIndexBuilder(a.scenario)
 	if err := a.load(); err != nil {
 		return Result{}, err
 	}
@@ -212,7 +214,11 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 		a.discoverCobraCommandInventory(limits)
 		discovered := len(a.result.Catalog.Triggers) - before
 		finishCobra(discovered, a.result.Coverage.CobraDescriptorCount)
+	} else {
+		a.directCallIndex.close(DirectCallIndexClosedSSAUnavailable)
 	}
+	directCallIndex := a.directCallIndex.finish()
+	a.result.DirectCallIndex = &directCallIndex
 	if err := ctx.Err(); err != nil {
 		return Result{}, fmt.Errorf("surface discovery: %w", err)
 	}
@@ -680,6 +686,7 @@ func (a *analyzer) prepare() {
 		if function == nil || function.Blocks == nil {
 			continue
 		}
+		a.directCallIndex.recordFunction(a, function)
 		a.functionByID[a.functionID(function)] = function
 		a.functionByID[cleanFunctionID(a.functionID(function))] = function
 		for _, block := range function.Blocks {
@@ -692,6 +699,7 @@ func (a *analyzer) prepare() {
 				}
 				call, ok := instruction.(ssa.CallInstruction)
 				if ok {
+					a.directCallIndex.recordCall(a, call)
 					for _, argument := range call.Common().Args {
 						a.recordFunctionReference(argument)
 					}

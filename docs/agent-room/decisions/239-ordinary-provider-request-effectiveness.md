@@ -78,11 +78,13 @@ field.
 
 The first systemic Map question is the relationship between the three existing
 connectivity stores: `structural_facts`, `structural_edges`, and
-`mechanism_fragment.transitions`. Establish their exact semantics, producers,
-dependencies, and consumers; account for why their counts may diverge; and
-verify whether Map selects connectivity from the correct authoritative layer.
-Do not assume that sparse Map edges mean analysis is absent when richer bounded
-connectivity already exists in another retained projection.
+`architecture_canvas.entry_handoff_groups[].entry_handoffs`. Establish their
+exact semantics, producers, dependencies, and consumers; account for why their
+counts may diverge; and verify whether Map selects connectivity from the correct
+authoritative layer. Entry handoffs are Entrypoints context, not Landscape
+connectivity or complete Mechanisms. Do not assume that sparse Map edges mean
+analysis is absent when richer bounded connectivity already exists in another
+retained projection.
 
 ## 3. Candidate selection and corrective threshold
 

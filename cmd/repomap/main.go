@@ -99,7 +99,7 @@ func main() {
 		}
 	case "dev":
 		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "Usage: repomap dev render-report <run-dir> [--repo <repo>] | theme-study-response-replay --run-dir <copied-run> --request-sha256 <sha> --response <file> --response-sha256 <sha> [--stage scout|adjudication] | theme-study-scout-request-rebuild --run-dir <copied-run> [--repo <repo>] | theme-study-response-mock --run-dir <copied-run> [--stage scout|adjudication] [--out <file>] | localization-check <run-dir> | localization-replay <run-dir> <projection.json> | localization-stage <run-dir> [<projection.json>] | localization-record <run-dir> [<projection.json>] | v32-refresh --run-dir <copied-run-dir> --repo <repo> [--reuse-study | --operate-only | --replay-saved] | fresh-repo-onboarding --run-dir <run-dir> [--repo <repo> [--replan-saved] | --replay-saved] | guided-tour <run-dir> | guided-tour-fanout <run-dir> | guided-tour-experiment <run-dir> | semantic-discovery <run-dir> | semantic-discovery-experiment <run-dir> | golden-mechanism <run-dir> [--probe-only] | golden-mechanism-v01 <run-dir> [--replay-old] | golden-mechanism-v02 <run-dir> [--prepare | --replay] | golden-mechanism-v03 <run-dir> [--replay] | golden-mechanism-v1 <run-dir> [--prepare | --replay] | chi-request-dispatch <run-dir> [--prepare | --replay-response | --replay] | mechanism-v1 <run-dir> [--replay] | review-cockpit --caddy-run <run-dir> --chi-run <run-dir> --out <output-dir> | prompt-versions | corpus <root> [--matrix <json>] [--run] [--binary <path>]")
+			fmt.Fprintln(os.Stderr, "Usage: repomap dev render-report <run-dir> [--repo <repo>] | theme-study-response-replay --run-dir <copied-run> --request-sha256 <sha> --response <file> --response-sha256 <sha> [--stage scout|adjudication] | theme-study-scout-request-rebuild --run-dir <copied-run> [--repo <repo>] | theme-study-response-mock --run-dir <copied-run> [--stage scout|adjudication] [--out <file>] | localization-check <run-dir> | localization-replay <run-dir> <projection.json> | localization-stage <run-dir> [<projection.json>] | localization-record <run-dir> [<projection.json>] | v32-refresh --run-dir <copied-run-dir> --repo <repo> [--reuse-study | --operate-only | --replay-saved] | fresh-repo-onboarding --run-dir <run-dir> [--repo <repo> [--replan-saved] | --replay-saved] | guided-tour <run-dir> | guided-tour-fanout <run-dir> | guided-tour-experiment <run-dir> | semantic-discovery <run-dir> | semantic-discovery-experiment <run-dir> | golden-mechanism <run-dir> [--probe-only] | golden-mechanism-v01 <run-dir> [--replay-old] | golden-mechanism-v02 <run-dir> [--prepare | --replay] | golden-mechanism-v03 <run-dir> [--replay] | golden-mechanism-v1 <run-dir> [--prepare | --replay] | chi-request-dispatch <run-dir> [--prepare | --replay-response | --replay] | mechanism-v1 <run-dir> [--replay] | mechanism-study-experiment --repo <repo> --root-path <path> --root-line <line> --root-symbol <exact-symbol> --label <label> --question <question> --out <directory> [--request-only] | review-cockpit --caddy-run <run-dir> --chi-run <run-dir> --out <output-dir> | prompt-versions | corpus <root> [--matrix <json>]")
 			os.Exit(2)
 		}
 		switch os.Args[2] {
@@ -241,6 +241,11 @@ func main() {
 			}
 		case "mechanism-v1":
 			if err := runMechanismV1CLI(os.Args[3:], os.Stdout); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		case "mechanism-study-experiment":
+			if err := runMechanismStudyExperimentCLI(os.Args[3:], os.Stdout, os.Stderr); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
@@ -1103,10 +1108,15 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 			)
 		}
 	}
+	publication, err := assessRunPublication(runDir)
+	if err != nil {
+		return fmt.Errorf("verify generated report publication: %w", err)
+	}
 	linkLatest(dDir, runDir, runOutputWarningSink{
 		output: humanOutput, summary: "could not update latest report link",
 	})
-	humanOutput.State("Run", "ready", "report: "+reportPath)
+	publicationDetails := append([]string{"report: " + reportPath}, publication.consoleDetails()...)
+	humanOutput.State("Run", publication.consoleState(), publicationDetails...)
 
 	interactiveReport := reportPath != ""
 	if interactiveReport && !*noServe && deps.serveReport != nil {

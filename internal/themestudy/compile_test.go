@@ -254,19 +254,21 @@ func TestStudyThemesV4PersistsCoProjectionAndRejectsStaleOrNegativeAccounting(t 
 	}
 }
 
-func TestD241CurrentThemeIdentityTuple(t *testing.T) {
+func TestCurrentThemeIdentityTuple(t *testing.T) {
 	got := []any{
 		ScoutRequestVersion,
 		vocabularyVersion,
 		ScoutCacheContract,
 		ScoutResultVersion,
+		AdjudicationRequestVersion,
+		AdjudicationCacheContract,
 		AdjudicationResultVersion,
 		StudyThemesVersion,
 	}
-	want := []any{5, "v3", "theme-scout-accepted-v3", 5, 4, "v4"}
+	want := []any{5, "v3", "theme-scout-accepted-v3", 5, 3, "theme-adjudication-accepted-v2", 5, "v4"}
 	for index := range want {
 		if got[index] != want[index] {
-			t.Fatalf("D241 identity tuple[%d] = %v, want %v (full tuple: %v)", index, got[index], want[index], got)
+			t.Fatalf("theme identity tuple[%d] = %v, want %v (full tuple: %v)", index, got[index], want[index], got)
 		}
 	}
 }

@@ -12,22 +12,14 @@ import (
 )
 
 // Long-horizon program Phase 0: the 37-repo acceptance matrix as the release
-// harness. `repomap dev corpus <root> [--matrix <json>] [--run]` reads every
-// per-repository run directory and emits the acceptance matrix facts (exit,
-// revision, report/manifest publication, stage states, Architecture
+// harness. `repomap dev corpus <root> [--matrix <json>]` reads every
+// per-repository run directory and emits the acceptance matrix facts:
+// revision, verified publication readiness, stage states, Architecture
 // source/coverage, Study card counts, duplicate reading pairs, surface
-// counts, provider accounting, timing). With --run it launches the fresh
-// binary against each repository first.
+// counts, provider accounting, and timing).
 
 type corpusMatrix struct {
-	Repositories []corpusRepo  `json:"repositories"`
-	Summary      corpusSummary `json:"summary"`
-}
-
-type corpusSummary struct {
-	CorpusRepos int `json:"corpus_repos"`
-	CommandPass int `json:"command_pass"`
-	CommandFail int `json:"command_fail"`
+	Repositories []corpusRepo `json:"repositories"`
 }
 
 type corpusRepo struct {
@@ -38,25 +30,28 @@ type corpusRepo struct {
 }
 
 type corpusRunFacts struct {
-	Repository            string            `json:"repository"`
-	CommandStatus         string            `json:"command_status"`
-	Seconds               float64           `json:"seconds"`
-	Revision              string            `json:"revision"`
-	ReportPublished       bool              `json:"report_published"`
-	ManifestPublished     bool              `json:"manifest_published"`
-	StageStates           map[string]string `json:"stage_states"`
-	ArchSource            string            `json:"architecture_source"`
-	ArchOutcome           string            `json:"architecture_outcome"`
-	ArchComponents        int               `json:"architecture_components"`
-	StudyState            string            `json:"study_state"`
-	StudyCards            int               `json:"study_cards"`
-	DuplicateReadingPairs int               `json:"duplicate_reading_pairs"`
-	Surfaces              int               `json:"surfaces"`
-	Associations          int               `json:"associations"`
-	Mechanisms            int               `json:"mechanisms"`
-	ProviderCalls         int               `json:"provider_calls"`
-	ProviderLatencyMS     int64             `json:"provider_latency_ms"`
-	ExternalRequestBytes  int               `json:"external_request_bytes"`
+	Repository            string               `json:"repository"`
+	PublicationStatus     publicationReadiness `json:"publication_status"`
+	PublicationReasons    []publicationReason  `json:"publication_reasons,omitempty"`
+	Seconds               float64              `json:"seconds"`
+	Revision              string               `json:"revision"`
+	ReportPublished       bool                 `json:"report_published"`
+	ReportHTMLPublished   bool                 `json:"report_html_published"`
+	ManifestPublished     bool                 `json:"manifest_published"`
+	StageStates           map[string]string    `json:"stage_states"`
+	ArchSource            string               `json:"architecture_source"`
+	ArchOutcome           string               `json:"architecture_outcome"`
+	ArchComponents        int                  `json:"architecture_components"`
+	StudyState            string               `json:"study_state"`
+	StudyCards            int                  `json:"study_cards"`
+	DuplicateReadingPairs int                  `json:"duplicate_reading_pairs"`
+	Surfaces              int                  `json:"surfaces"`
+	Associations          int                  `json:"associations"`
+	EntryHandoffGroups    int                  `json:"entry_handoff_groups"`
+	EntryHandoffs         int                  `json:"entry_handoffs"`
+	ProviderCalls         int                  `json:"provider_calls"`
+	ProviderLatencyMS     int64                `json:"provider_latency_ms"`
+	ExternalRequestBytes  int                  `json:"external_request_bytes"`
 }
 
 func runCorpusCLI(args []string, stdout io.Writer) error {
@@ -103,26 +98,52 @@ func runCorpusCLI(args []string, stdout io.Writer) error {
 			return err
 		}
 	}
+	if len(repos) == 0 {
+		return fmt.Errorf("corpus: no repositories found")
+	}
 	var facts []corpusRunFacts
+	failed := 0
 	for _, repo := range repos {
 		runDir := latestCorpusRun(absRoot, repo.Repository)
 		if runDir == "" {
-			fmt.Fprintf(stdout, "corpus: %s: no run dir\n", repo.Repository)
+			f := corpusRunFacts{
+				Repository:         repo.Repository,
+				PublicationStatus:  publicationFailed,
+				PublicationReasons: []publicationReason{publicationReasonArtifactsInvalid},
+				StageStates:        map[string]string{},
+			}
+			facts = append(facts, f)
+			printCorpusFact(stdout, f)
+			failed++
 			continue
 		}
 		f := collectCorpusRunFacts(repo, runDir)
 		facts = append(facts, f)
 		printCorpusFact(stdout, f)
+		if f.PublicationStatus == publicationFailed {
+			failed++
+		}
 	}
-	writeCorpusMatrix(absRoot, facts)
+	if err := writeCorpusMatrix(absRoot, facts); err != nil {
+		return err
+	}
+	if failed > 0 {
+		return fmt.Errorf("corpus: %d publication(s) failed integrity", failed)
+	}
 	return nil
 }
 
 func printCorpusFact(stdout io.Writer, f corpusRunFacts) {
-	fmt.Fprintf(stdout, "%s	%s	%s	report=%t	arch=%s/%d	study=%s/%d	dup=%d	sec=%.0f	surf=%d	assoc=%d	mech=%d\n",
-		f.Repository, f.CommandStatus, f.ArchOutcome, f.ReportPublished,
+	reasons := make([]string, 0, len(f.PublicationReasons))
+	for _, reason := range f.PublicationReasons {
+		reasons = append(reasons, string(reason))
+	}
+	fmt.Fprintf(stdout, "%s	%s	%s	report=%t	html=%t	arch=%s/%d	study=%s/%d	dup=%d	sec=%.0f	surf=%d	assoc=%d	entry_groups=%d	entry_handoffs=%d	reasons=%s\n",
+		f.Repository, f.PublicationStatus, f.ArchOutcome, f.ReportPublished, f.ReportHTMLPublished,
 		f.ArchSource, f.ArchComponents, f.StudyState, f.StudyCards,
-		f.DuplicateReadingPairs, f.Seconds, f.Surfaces, f.Associations, f.Mechanisms)
+		f.DuplicateReadingPairs, f.Seconds, f.Surfaces, f.Associations,
+		f.EntryHandoffGroups, f.EntryHandoffs,
+		strings.Join(reasons, ","))
 }
 
 func discoverCorpusRepos(root string) ([]corpusRepo, error) {
@@ -214,6 +235,10 @@ func collectCorpusRunFacts(repo corpusRepo, runDir string) corpusRunFacts {
 		}
 	}
 	reportPath := filepath.Join(runDir, "report.json")
+	if info, err := os.Lstat(filepath.Join(runDir, "report.html")); err == nil &&
+		info.Mode().IsRegular() && info.Size() > 0 {
+		f.ReportHTMLPublished = true
+	}
 	if info, err := os.Stat(reportPath); err == nil && !createdAt.IsZero() {
 		f.Seconds = info.ModTime().Sub(createdAt).Seconds()
 	}
@@ -225,7 +250,9 @@ func collectCorpusRunFacts(repo corpusRepo, runDir string) corpusRunFacts {
 				Source             string `json:"architecture_source"`
 				Outcome            string `json:"validation_outcome"`
 				Components         []any  `json:"components"`
-				MechanismFragments []any  `json:"mechanism_fragments"`
+				EntryHandoffGroups []struct {
+					EntryHandoffs []any `json:"entry_handoffs"`
+				} `json:"entry_handoff_groups"`
 			} `json:"architecture_canvas"`
 			Study struct {
 				State  string `json:"state"`
@@ -260,18 +287,19 @@ func collectCorpusRunFacts(repo corpusRepo, runDir string) corpusRunFacts {
 			case []any:
 				f.Associations = len(v)
 			}
-			f.Mechanisms = len(report.Architecture.MechanismFragments)
+			f.EntryHandoffGroups = len(report.Architecture.EntryHandoffGroups)
+			for _, group := range report.Architecture.EntryHandoffGroups {
+				f.EntryHandoffs += len(group.EntryHandoffs)
+			}
 			f.DuplicateReadingPairs = countDuplicateReadingPairs(report.Study.Themes.Cards)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(runDir, "run_manifest.json")); err == nil {
 		f.ManifestPublished = true
 	}
-	if f.ReportPublished {
-		f.CommandStatus = "PASS"
-	} else {
-		f.CommandStatus = "FAIL"
-	}
+	publication, _ := assessRunPublication(runDir)
+	f.PublicationStatus = publication.Status
+	f.PublicationReasons = publication.Reasons
 	return f
 }
 
@@ -304,11 +332,14 @@ func countDuplicateReadingPairs(cards []struct {
 	return duplicates
 }
 
-func writeCorpusMatrix(root string, facts []corpusRunFacts) {
+func writeCorpusMatrix(root string, facts []corpusRunFacts) error {
 	outPath := filepath.Join(root, "corpus_acceptance.json")
 	raw, err := json.MarshalIndent(facts, "", "  ")
 	if err != nil {
-		return
+		return fmt.Errorf("corpus: encode acceptance matrix: %w", err)
 	}
-	_ = os.WriteFile(outPath, raw, 0o600)
+	if err := os.WriteFile(outPath, raw, 0o600); err != nil {
+		return fmt.Errorf("corpus: write acceptance matrix: %w", err)
+	}
+	return nil
 }

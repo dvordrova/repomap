@@ -17,8 +17,8 @@ func TestSemanticDiscoveryReportFormatVersion(t *testing.T) {
 	// coverage and the semantic-empty state (CurrentFormatVersion 33).
 	// Decision 235 (v11): final-Architecture rebase into Study (36).
 	// Decision 242: plural per-entry mechanisms move onto Canvas 13 (39).
-	if CurrentFormatVersion != 39 {
-		t.Fatalf("CurrentFormatVersion = %d, want 39 for the plural mechanism projection", CurrentFormatVersion)
+	if CurrentFormatVersion != 40 {
+		t.Fatalf("CurrentFormatVersion = %d, want 40 for exact D210 entry-handoff groups", CurrentFormatVersion)
 	}
 }
 

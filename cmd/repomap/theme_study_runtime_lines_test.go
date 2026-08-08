@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/themestudy"
 )
 
 // Regression: statik-style generated files contain one multi-megabyte line
@@ -62,6 +66,82 @@ func TestCountFileLinesMatchesPhysicalLines(t *testing.T) {
 	}
 	if len(lines) != 2 || lines[0] != "" || lines[1] != "func main() {}" {
 		t.Fatalf("readFileLines(2,3) = %#v", lines)
+	}
+}
+
+func TestPrepareThemeSourceExpansionClosesHugeOrUnreadableSiblingAndContinues(t *testing.T) {
+	root := t.TempDir()
+	acceptedPath := filepath.Join(root, "accepted.go")
+	if err := os.WriteFile(acceptedPath, []byte("package accepted\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	hugePayload := strings.Repeat("AQIDBA==", 256*1024) // 2 MiB, one physical line.
+	hugePath := filepath.Join(root, "huge.go")
+	if err := os.WriteFile(hugePath, []byte(hugePayload), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name       string
+		problem    string
+		wantReason string
+	}{
+		{name: "huge single line", problem: "huge.go", wantReason: themestudy.ExpansionClosedReasonOversized},
+		{name: "unreadable file", problem: "missing.go", wantReason: themestudy.ExpansionClosedReasonUnreadable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runDir := t.TempDir()
+			writer, err := debugdump.OpenWriter(runDir, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer writer.Close()
+
+			var console bytes.Buffer
+			expansion, err := prepareThemeSourceExpansionForRun(
+				[]themestudy.FileRef{
+					{Ref: "f1", Path: tc.problem},
+					{Ref: "f2", Path: "accepted.go"},
+				},
+				[]string{"f1", "f2"},
+				themeExpansionSourceReader(root), themeTotalLines(root), writer, newRunOutput(&console),
+			)
+			if err != nil {
+				t.Fatalf("item-local source closure terminated the report pipeline: %v", err)
+			}
+			if len(expansion.Files) != 2 {
+				t.Fatalf("files = %#v, want one closed source plus one accepted sibling", expansion.Files)
+			}
+			closed, accepted := expansion.Files[0], expansion.Files[1]
+			if !closed.Closed || closed.ClosedReason != tc.wantReason ||
+				len(closed.Objects) != 0 || closed.ExpandedLines != 0 {
+				t.Fatalf("closed source = %#v", closed)
+			}
+			if accepted.Closed || accepted.Ref != "f2" || len(accepted.Objects) != 1 ||
+				len(accepted.Objects[0].Lines) != 1 || accepted.Objects[0].Lines[0] != "package accepted" {
+				t.Fatalf("accepted sibling = %#v", accepted)
+			}
+			if len(expansion.OmittedRefs) != 1 || expansion.OmittedRefs[0] != "f1" {
+				t.Fatalf("omitted refs = %#v, want [f1]", expansion.OmittedRefs)
+			}
+
+			persisted, err := os.ReadFile(filepath.Join(runDir, themestudy.ExpansionArtifactFilename))
+			if err != nil {
+				t.Fatalf("read persisted expansion: %v", err)
+			}
+			if _, err := themestudy.DecodeExpansion(persisted); err != nil {
+				t.Fatalf("persisted expansion integrity: %v", err)
+			}
+			gotConsole := console.String()
+			if strings.Count(gotConsole, "WARN") != 1 ||
+				!strings.Contains(gotConsole, "source files skipped: 1") ||
+				!strings.Contains(gotConsole, "remaining exact source context continues") {
+				t.Fatalf("console warning = %q", gotConsole)
+			}
+			if strings.Contains(gotConsole, tc.problem) || strings.Contains(gotConsole, hugePayload[:64]) {
+				t.Fatalf("console warning leaked path or source prose: %q", gotConsole)
+			}
+		})
 	}
 }
 

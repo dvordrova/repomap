@@ -30,10 +30,16 @@ const (
 	// Decision 241 advances Scout result 4→5 and Adjudication result 3→4:
 	// over-limit prose is retained at a readable sentence/word boundary instead
 	// of a raw rune boundary. Request schemas remain unchanged.
+	// The Study integrity corrective advances Adjudication request 2→3,
+	// result 4→5, prompt identity, and accepted-cache v1→v2. The final review
+	// now owns why_it_matters and expected_learning alongside the final title
+	// and question, so a narrowed question cannot publish the broader Scout
+	// promises. Older responses miss closed; no prose is synthesized from
+	// Scout output during reduction.
 	ScoutRequestVersion        = 5
 	ScoutResultVersion         = 5
-	AdjudicationRequestVersion = 2
-	AdjudicationResultVersion  = 4
+	AdjudicationRequestVersion = 3
+	AdjudicationResultVersion  = 5
 )
 
 // Theme prompt contract identities — the short SHA-256 of the exact
@@ -63,7 +69,7 @@ const StudyThemesVersion = "v4"
 // v2 rationale that still applies.)
 const (
 	ScoutCacheContract           = "theme-scout-accepted-v3"
-	AdjudicationCacheContract    = "theme-adjudication-accepted-v1"
+	AdjudicationCacheContract    = "theme-adjudication-accepted-v2"
 	ScoutStage                   = "theme_scout"
 	AdjudicationStage            = "theme_adjudication"
 	MaxScoutRequestArtifactBytes = 384 << 10
@@ -714,15 +720,15 @@ func BuildScoutPrompt(request ScoutRequest) ScoutPrompt {
 const adjudicationPromptSystem = `Review proposed Study themes against their exact source evidence.
 For each candidate, anchor_evidence contains exact bounded source for its anchors. sources contains additional context requested during local expansion; it supplements anchor evidence rather than replacing it.
 Keep only anchors that materially help answer the candidate question. For every retained anchor, classify its support as direct or supporting and write one short observation bounded to the supplied source.
-You may narrow or rewrite a title or question when the retained evidence supports a more precise learning outcome. Omit a candidate when the supplied evidence does not support a useful source-backed theme.
+You may narrow or rewrite a title or question when the retained evidence supports a more precise learning outcome. For every retained candidate, rewrite why_it_matters and expected_learning so both describe exactly the final_question and what the retained readings can support. Never preserve a broader candidate promise after narrowing the question. Omit a candidate when the supplied evidence does not support a useful source-backed theme.
 Do not infer execution order, causality, ownership, reachability, or data flow beyond what the supplied evidence establishes. Do not retain an anchor because its filename or symbol name merely sounds relevant.
 Return exactly one JSON object and no markdown. Keep all refs unchanged. Write model-authored prose in the requested language.`
 
 const adjudicationPromptUserShape = `Requested prose language: %s.
 This request contains %d candidate themes. Review each candidate independently. Return every candidate that remains a useful source-backed theme after review; omit unsupported candidates. Do not create placeholders or pad the result.
 Within each returned theme, order readings in the order you recommend a developer inspect them. Include at least one direct reading. Include only unknowns that materially qualify what the retained readings establish.
-The backend retains at most 240 Unicode characters for each observation and 120 for each unknown, and accepts at most 4 unknowns per theme. Stay below these existing limits. Keep final_title and final_question concise and complete. Use short, complete sentences for observations and unknowns; do not pad prose toward a limit or leave a sentence unfinished.
-Response schema: {"themes":[{"candidate_ref":"t1","final_title":"...","final_question":"...","readings":[{"anchor_ref":"a1","support":"direct","observation":"..."}],"unknowns":["..."]}]}
+The backend retains at most 240 Unicode characters for why_it_matters, expected_learning, and each observation, and 120 for each unknown, and accepts at most 4 unknowns per theme. Stay below these existing limits. Keep final_title and final_question concise and complete. why_it_matters must explain the developer relevance of final_question. expected_learning must promise only what the retained readings can teach. Use short, complete sentences for editorial prose, observations, and unknowns; do not pad prose toward a limit or leave a sentence unfinished.
+Response schema: {"themes":[{"candidate_ref":"t1","final_title":"...","final_question":"...","why_it_matters":"...","expected_learning":"...","readings":[{"anchor_ref":"a1","support":"direct","observation":"..."}],"unknowns":["..."]}]}
 Request bundle JSON:
 %s`
 
