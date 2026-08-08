@@ -64,8 +64,8 @@ func diagnosticSeverity(code string) FindingSeverity {
 		"proposal.unknown_unit_ref",
 		"proposal.duplicate_unit_ref",
 		"proposal.duplicate_anchor_id",
-		// Decision 235 (v11): an empty component (no exact members, no
-		// shared scope, no anchors) is rejected item-local — valid
+		// Decision 235/D241: an empty component (no exact members or
+		// shared scope) is rejected item-local — valid
 		// siblings publish as accepted_partial. Distinct from the fatal
 		// proposal.invalid_component (malformed display text), so the
 		// severity/fallback mapping stays honest.
@@ -78,6 +78,9 @@ func diagnosticSeverity(code string) FindingSeverity {
 		// slice drops only the referencing component.
 		"proposal.shared_unit_slice",
 		"proposal.empty_anchor_slice",
+		// Decision 241: supporting children whose production unit has no
+		// selected primary member return to the deterministic remainder.
+		"proposal.supporting_only_unit_coverage_salvaged",
 		// Decision 235 (v11): a provider that omits optional anchor_refs
 		// is normalized to [] with a counted finding; a response with a
 		// bounded trailing-closer sequence (Gotify `]}`) is normalized
@@ -354,7 +357,8 @@ func fallbackReasonForDiagnostics(diagnostics []Diagnostic, hasAnchors bool) Fal
 				return FallbackRejectedUnknownAnchor
 			case "proposal.ungrounded_primary_component":
 				return FallbackRejectedUngrounded
-			case "proposal.empty_primary_scope_coverage", "proposal.supporting_only_unit_coverage":
+			case "proposal.empty_primary_scope_coverage", "proposal.supporting_only_unit_coverage",
+				"proposal.supporting_only_unit_coverage_salvaged":
 				return FallbackRejectedUngrounded
 			}
 		}
@@ -370,7 +374,8 @@ func fallbackReasonForDiagnostics(diagnostics []Diagnostic, hasAnchors bool) Fal
 			return FallbackRejectedUnknownAnchor
 		case "proposal.ungrounded_primary_component":
 			return FallbackRejectedUngrounded
-		case "proposal.empty_primary_scope_coverage", "proposal.supporting_only_unit_coverage":
+		case "proposal.empty_primary_scope_coverage", "proposal.supporting_only_unit_coverage",
+			"proposal.supporting_only_unit_coverage_salvaged":
 			return FallbackRejectedUngrounded
 		default:
 			return FallbackRejectedMalformed
@@ -412,6 +417,7 @@ func landscapeHasItemScopeSalvage(diagnostics []Diagnostic) bool {
 			"proposal.unknown_anchor_id",
 			"proposal.duplicate_member_id",
 			"proposal.duplicate_component_identity",
+			"proposal.empty_component",
 			"proposal.unknown_unit_ref",
 			"proposal.duplicate_unit_ref",
 			"proposal.duplicate_anchor_id",
@@ -423,7 +429,8 @@ func landscapeHasItemScopeSalvage(diagnostics []Diagnostic) bool {
 			// provenance.
 			"proposal.equivalent_member_set_collision",
 			"proposal.shared_unit_slice",
-			"proposal.empty_anchor_slice":
+			"proposal.empty_anchor_slice",
+			"proposal.supporting_only_unit_coverage_salvaged":
 			if diagnostic.Severity == FindingRecoverable {
 				return true
 			}

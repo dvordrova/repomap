@@ -11,8 +11,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/artifactrole"
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
@@ -338,8 +340,10 @@ func runThemeStudyProductForRun(
 
 	// Seed producer: flat names-only f* vocabulary over the eligible openable
 	// paths, and bounded exact a* seed packs over the compiled substrate.
-	vocabulary := themestudy.BuildFileVocabulary(
+	readingRolesByPath := themeReadingRolesByPath(input)
+	vocabulary := themestudy.BuildFileVocabularyWithRoles(
 		preparedData.OpenablePaths, 0, func(string) bool { return true },
+		func(path string) themestudy.Role { return themestudy.Role(readingRolesByPath[path]) },
 	)
 	if len(vocabulary.Files) == 0 {
 		outcome := themeStudyRunOutcome{
@@ -580,8 +584,9 @@ func themeSeedSpecsFromInput(input atlasstudy.Input) []themestudy.SeedSpec {
 		}
 		spanByTarget[span.AllowedTargetIDs[0]] = span.ID
 	}
-	seeds := make([]themestudy.SeedSpec, 0, len(input.ReadingTargets))
-	for index, target := range input.ReadingTargets {
+	orderedTargets := themeOrderedReadingTargets(input)
+	seeds := make([]themestudy.SeedSpec, 0, len(orderedTargets))
+	for index, target := range orderedTargets {
 		spec := themestudy.SeedSpec{
 			Ref:        fmt.Sprintf("a%d", index+1),
 			Path:       target.Location.Path,
@@ -589,6 +594,7 @@ func themeSeedSpecsFromInput(input atlasstudy.Input) []themestudy.SeedSpec {
 			Symbol:     target.Symbol,
 			Provenance: "d211_span_reading_target",
 			Kind:       "focused",
+			Role:       themestudy.Role(themeReadingTargetRole(input, target)),
 		}
 		if spanID, ok := spanByTarget[target.ID]; ok {
 			spec.CanonicalSpanID = spanID
@@ -608,8 +614,9 @@ func themeAnchorInfo(input atlasstudy.Input) map[string]themestudy.AnchorInfo {
 		}
 		spanByTarget[span.AllowedTargetIDs[0]] = span.ID
 	}
-	anchors := make(map[string]themestudy.AnchorInfo, len(input.ReadingTargets))
-	for index, target := range input.ReadingTargets {
+	orderedTargets := themeOrderedReadingTargets(input)
+	anchors := make(map[string]themestudy.AnchorInfo, len(orderedTargets))
+	for index, target := range orderedTargets {
 		info := themestudy.AnchorInfo{
 			Path: target.Location.Path, Symbol: target.Symbol, Line: target.Location.Line,
 		}
@@ -619,6 +626,67 @@ func themeAnchorInfo(input atlasstudy.Input) map[string]themestudy.AnchorInfo {
 		anchors[fmt.Sprintf("a%d", index+1)] = info
 	}
 	return anchors
+}
+
+// themeReadingTargetRole projects only producer-owned generic evidence into
+// the shared artifact-role vocabulary. Target names and repository words are
+// deliberately irrelevant.
+func themeReadingTargetRole(input atlasstudy.Input, target atlasstudy.ReadingTarget) artifactrole.Role {
+	hints := artifactrole.Hints{
+		PrimaryEntry:  target.Kind == atlasstudy.ReadingTargetEntrypoint,
+		Documentation: target.Kind == atlasstudy.ReadingTargetDocument,
+	}
+	for _, support := range input.ReadingSupports {
+		if support.TargetID != target.ID {
+			continue
+		}
+		switch support.Role {
+		case atlasstudy.SupportProcessEntry:
+			hints.PrimaryEntry = true
+		case atlasstudy.SupportObservedCallBoundary:
+			hints.EffectBoundary = true
+		}
+	}
+	return artifactrole.Classify(target.Location.Path, hints)
+}
+
+// themeOrderedReadingTargets makes the seed budget production-aware before
+// refs are allocated. Stable exact locator/identity ties preserve replayable
+// ordering without a repository-specific vocabulary.
+func themeOrderedReadingTargets(input atlasstudy.Input) []atlasstudy.ReadingTarget {
+	ordered := append([]atlasstudy.ReadingTarget(nil), input.ReadingTargets...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		leftRole := themeReadingTargetRole(input, ordered[i])
+		rightRole := themeReadingTargetRole(input, ordered[j])
+		leftPriority := artifactrole.SelectionPriority(leftRole)
+		rightPriority := artifactrole.SelectionPriority(rightRole)
+		if leftPriority != rightPriority {
+			return leftPriority > rightPriority
+		}
+		if ordered[i].Location.Path != ordered[j].Location.Path {
+			return artifactrole.LessPath(ordered[i].Location.Path, ordered[j].Location.Path, leftRole)
+		}
+		if ordered[i].Location.Line != ordered[j].Location.Line {
+			return ordered[i].Location.Line < ordered[j].Location.Line
+		}
+		if ordered[i].Symbol != ordered[j].Symbol {
+			return ordered[i].Symbol < ordered[j].Symbol
+		}
+		return ordered[i].ID < ordered[j].ID
+	})
+	return ordered
+}
+
+func themeReadingRolesByPath(input atlasstudy.Input) map[string]artifactrole.Role {
+	roles := make(map[string]artifactrole.Role)
+	for _, target := range input.ReadingTargets {
+		role := themeReadingTargetRole(input, target)
+		current, found := roles[target.Location.Path]
+		if !found || artifactrole.SelectionPriority(role) > artifactrole.SelectionPriority(current) {
+			roles[target.Location.Path] = role
+		}
+	}
+	return roles
 }
 
 func themeCandidatesByRef(candidates []themestudy.ScoutCandidate) map[string]*themestudy.ScoutCandidate {

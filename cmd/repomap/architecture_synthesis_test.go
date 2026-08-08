@@ -90,6 +90,7 @@ func TestArchitectureSuccessConsoleExplainsPartialCoverage(t *testing.T) {
 	outcome.CoveredPrimaryScopeCount = 6
 	outcome.UncoveredPrimaryScopeCount = 12
 	outcome.CoveredSupportingEvidenceCount = 4
+	outcome.ValidationCodes = []string{"proposal.partial_member_coverage"}
 	outcome.ResponseShape = &report.ArchitectureSynthesisResponseShape{
 		JSONValid: true, Grammar: "nested", SubsystemCount: 3,
 		ComponentCount: 4, MemberRefCount: 10, AnchorRefCount: 9,
@@ -103,6 +104,7 @@ func TestArchitectureSuccessConsoleExplainsPartialCoverage(t *testing.T) {
 		"local unclassified remainder: 18",
 		"primary scope coverage: 6/18 (uncovered=12)",
 		"supporting evidence covered: 4",
+		"validation diagnostics: proposal.partial_member_coverage",
 		"response shape: grammar=nested subsystems=3 components=4 member_refs=10",
 		"status: /tmp/run/architecture_synthesis_status.json",
 		"exchange: /tmp/run/semantic_exchanges/" + strings.Repeat("a", 64) + "/exchange.v2.json",
@@ -459,7 +461,7 @@ func TestEnsureArchitectureSynthesisSendsAndJournalsOneExactPreparedBody(t *test
 	}
 }
 
-func TestArchitecturePrimaryScopeQualityRejectionKeepsStatusExchangeAndMetadataInParity(t *testing.T) {
+func TestArchitectureAllDroppedSupportingOnlySalvageKeepsStatusExchangeAndMetadataInParity(t *testing.T) {
 	t.Parallel()
 
 	bundle := architectureSynthesisTestBundle()
@@ -516,13 +518,18 @@ func TestArchitecturePrimaryScopeQualityRejectionKeepsStatusExchangeAndMetadataI
 	}
 	if !errors.Is(synthesisErr, errArchitectureSynthesisRejected) || outcome.Failure == nil ||
 		outcome.Failure.Code != "architecture.proposal_rejected" ||
-		!slices.Contains(outcome.ValidationCodes, "proposal.empty_primary_scope_coverage") ||
-		!slices.Contains(outcome.ValidationCodes, "proposal.supporting_only_unit_coverage") {
-		t.Fatalf("quality rejection outcome/error = %#v / %v", outcome, synthesisErr)
+		!slices.Contains(outcome.ValidationCodes, "proposal.supporting_only_unit_coverage_salvaged") ||
+		!slices.Contains(outcome.ValidationCodes, "proposal.invalid_subsystem_count") ||
+		slices.Contains(outcome.ValidationCodes, "proposal.empty_primary_scope_coverage") ||
+		slices.Contains(outcome.ValidationCodes, "proposal.supporting_only_unit_coverage") {
+		t.Fatalf("all-dropped supporting-only salvage outcome/error = %#v / %v", outcome, synthesisErr)
 	}
-	if outcome.RequestedPrimaryScopeCount != 1 || outcome.CoveredPrimaryScopeCount != 0 ||
-		outcome.UncoveredPrimaryScopeCount != 1 || outcome.CoveredSupportingEvidenceCount != 1 {
-		t.Fatalf("quality rejection role counts = %#v", outcome)
+	if !outcome.MembershipCounted || outcome.MemberOccurrences != 0 || outcome.DistinctMembers != 0 ||
+		outcome.CoveredConceptualCount != 0 || outcome.UncoveredConceptualCount != 2 ||
+		len(outcome.UncoveredConceptualIDs) != 2 ||
+		outcome.RequestedPrimaryScopeCount != 1 || outcome.CoveredPrimaryScopeCount != 0 ||
+		outcome.UncoveredPrimaryScopeCount != 1 || outcome.CoveredSupportingEvidenceCount != 0 {
+		t.Fatalf("all-dropped supporting-only salvage accounting = %#v", outcome)
 	}
 	if err := persistArchitectureSynthesisStatus(runDir, outcome, synthesisErr); err != nil {
 		t.Fatal(err)
@@ -536,17 +543,19 @@ func TestArchitecturePrimaryScopeQualityRejectionKeepsStatusExchangeAndMetadataI
 		t.Fatal(err)
 	}
 	if err := status.Validate(); err != nil {
-		t.Fatalf("quality status: %v; status=%#v", err, status)
+		t.Fatalf("all-dropped salvage status: %v; status=%#v", err, status)
 	}
-	if status.CoveredConceptualCount != 0 || status.UncoveredConceptualCount != 0 ||
+	if !status.MembershipCounted || status.MemberOccurrences != 0 || status.DistinctMembers != 0 ||
+		status.CoveredConceptualCount != 0 || status.UncoveredConceptualCount != 0 ||
+		len(status.UncoveredConceptualIDs) != 0 || !status.ProposalRejected ||
 		status.RequestedPrimaryScopeCount != 1 || status.CoveredPrimaryScopeCount != 0 ||
-		status.UncoveredPrimaryScopeCount != 1 || status.CoveredSupportingEvidenceCount != 1 {
-		t.Fatalf("quality rejection status = %#v", status)
+		status.UncoveredPrimaryScopeCount != 1 || status.CoveredSupportingEvidenceCount != 0 {
+		t.Fatalf("all-dropped salvage status = %#v", status)
 	}
 
 	records := readArchitectureSemanticExchangeRecords(t, runDir)
 	if len(records) != 1 || records[0].Outcome.Code != "architecture.proposal_rejected" {
-		t.Fatalf("quality rejection exchange = %#v", records)
+		t.Fatalf("all-dropped salvage exchange = %#v", records)
 	}
 	exchangeMetrics := make(map[string]int, len(records[0].Outcome.Metrics))
 	for _, metric := range records[0].Outcome.Metrics {
@@ -559,7 +568,7 @@ func TestArchitecturePrimaryScopeQualityRejectionKeepsStatusExchangeAndMetadataI
 		exchangeMetrics["covered_primary_scope_count"] != status.CoveredPrimaryScopeCount ||
 		exchangeMetrics["uncovered_primary_scope_count"] != status.UncoveredPrimaryScopeCount ||
 		exchangeMetrics["covered_supporting_evidence_count"] != status.CoveredSupportingEvidenceCount {
-		t.Fatalf("quality status/exchange mismatch: status=%#v metrics=%#v", status, exchangeMetrics)
+		t.Fatalf("all-dropped salvage status/exchange mismatch: status=%#v metrics=%#v", status, exchangeMetrics)
 	}
 
 	diagnostic := architectureAtlasFirstDiagnostic(outcome, synthesisErr, false)
@@ -574,7 +583,7 @@ func TestArchitecturePrimaryScopeQualityRejectionKeepsStatusExchangeAndMetadataI
 		}
 	}
 	if metadataOutcome == nil || metadataOutcome.Code != "architecture.proposal_rejected" {
-		t.Fatalf("quality rejection metadata = %#v", metadata)
+		t.Fatalf("all-dropped salvage metadata = %#v", metadata)
 	}
 	metadataMetrics := make(map[string]int, len(metadataOutcome.Metrics))
 	for _, metric := range metadataOutcome.Metrics {
@@ -585,7 +594,7 @@ func TestArchitecturePrimaryScopeQualityRejectionKeepsStatusExchangeAndMetadataI
 		"uncovered_primary_scope_count", "covered_supporting_evidence_count",
 	} {
 		if metadataMetrics[name] != exchangeMetrics[name] {
-			t.Fatalf("quality exchange/metadata metric %s = %d/%d", name, exchangeMetrics[name], metadataMetrics[name])
+			t.Fatalf("all-dropped salvage exchange/metadata metric %s = %d/%d", name, exchangeMetrics[name], metadataMetrics[name])
 		}
 	}
 }

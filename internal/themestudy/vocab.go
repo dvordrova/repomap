@@ -8,9 +8,11 @@ import (
 	"path"
 	"sort"
 	"strings"
+
+	"github.com/dvordrova/repomap/internal/artifactrole"
 )
 
-const vocabularyVersion = "v1"
+const vocabularyVersion = "v2"
 
 // refName maps a 1-based index to a typed short ref: f1..fN, a1..aN, t1..tN.
 func refName(prefix string, index int) string {
@@ -47,19 +49,10 @@ func languageForPath(filePath string) string {
 	}
 }
 
-// FileRole classifies a tracked path into the closed production/test/doc role.
+// FileRole classifies a tracked path with the shared generic artifact-role
+// classifier used by the other bounded context selectors.
 func FileRole(filePath string) Role {
-	lower := strings.ToLower(filePath)
-	if strings.HasSuffix(lower, "_test.go") || strings.HasSuffix(lower, "_test.py") ||
-		strings.HasSuffix(lower, "_test.js") || strings.Contains(lower, "/test/") {
-		return RoleTest
-	}
-	switch strings.ToLower(path.Ext(filePath)) {
-	case ".md", ".markdown", ".rst", ".txt", ".adoc":
-		return RoleDocumentation
-	default:
-		return RoleProductionSource
-	}
+	return Role(artifactrole.Classify(filePath, artifactrole.Hints{}))
 }
 
 // candidateDigest hashes the complete canonical candidate set (repo-relative
@@ -119,6 +112,19 @@ func fileRefItemSize(item FileRef) int {
 // (eligible_not_advertisable, vocabulary_budget) that exactly partition
 // considered - advertised. It never silently becomes first-N.
 func BuildFileVocabulary(paths []string, maxBytes int, advertisable func(path string) bool) Vocabulary {
+	return BuildFileVocabularyWithRoles(paths, maxBytes, advertisable, nil)
+}
+
+// BuildFileVocabularyWithRoles is BuildFileVocabulary with an optional
+// producer-owned role resolver. It lets already-known entrypoint/boundary
+// evidence refine the generic path role without introducing repository words
+// or another classifier.
+func BuildFileVocabularyWithRoles(
+	paths []string,
+	maxBytes int,
+	advertisable func(path string) bool,
+	roleForPath func(path string) Role,
+) Vocabulary {
 	if maxBytes <= 0 {
 		maxBytes = MaxFileVocabularyBytes
 	}
@@ -136,12 +142,39 @@ func BuildFileVocabulary(paths []string, maxBytes int, advertisable func(path st
 	}
 	eligible = dedupeSorted(eligible)
 	cand := summarizeCandidates(eligible)
-	refs := make([]FileRef, 0, len(eligible))
+	type rankedPath struct {
+		path string
+		role Role
+	}
+	ranked := make([]rankedPath, 0, len(eligible))
+	for _, filePath := range eligible {
+		role := FileRole(filePath)
+		if roleForPath != nil {
+			if resolved := roleForPath(filePath); resolved.Valid() {
+				role = resolved
+			}
+		}
+		ranked = append(ranked, rankedPath{path: filePath, role: role})
+	}
+	sort.SliceStable(ranked, func(i, j int) bool {
+		leftRole := artifactrole.Role(ranked[i].role)
+		rightRole := artifactrole.Role(ranked[j].role)
+		leftPriority := artifactrole.SelectionPriority(leftRole)
+		rightPriority := artifactrole.SelectionPriority(rightRole)
+		if leftPriority != rightPriority {
+			return leftPriority > rightPriority
+		}
+		return artifactrole.LessPath(ranked[i].path, ranked[j].path, leftRole)
+	})
+	refs := make([]FileRef, 0, len(ranked))
 	acc := 0
 	budgetOmitted := 0
 	var budgetReps []string
-	for index, p := range eligible {
-		item := FileRef{Ref: refName("f", index+1), Path: p, Language: languageForPath(p), Role: FileRole(p)}
+	for index, rankedFile := range ranked {
+		item := FileRef{
+			Ref: refName("f", index+1), Path: rankedFile.path,
+			Language: languageForPath(rankedFile.path), Role: rankedFile.role,
+		}
 		size := fileRefItemSize(item)
 		if len(refs) > 0 && acc+size > maxBytes {
 			budgetOmitted++
@@ -155,7 +188,7 @@ func BuildFileVocabulary(paths []string, maxBytes int, advertisable func(path st
 	}
 	vocab := Vocabulary{
 		Version:         vocabularyVersion,
-		Complete:        budgetOmitted == 0 && len(refs) == len(eligible),
+		Complete:        budgetOmitted == 0 && len(refs) == len(ranked),
 		Considered:      len(paths),
 		Advertised:      len(refs),
 		CandidateSHA256: cand.Digest,

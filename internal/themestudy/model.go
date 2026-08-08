@@ -24,20 +24,37 @@ func (language Language) Valid() bool {
 	return language == LanguageEnglish || language == LanguageRussian
 }
 
-// Role is the closed role vocabulary of the f* file layer and of the a* seed
-// anchors. These are internal producer roles and must never be rendered as
-// user-facing UI labels.
+// Role is the closed artifactrole vocabulary of the f* file layer and of the
+// a* seed anchors. These are internal producer roles and must never be
+// rendered as user-facing UI labels.
 type Role string
 
 const (
-	RoleProductionSource Role = "production_source"
-	RoleTest             Role = "test"
-	RoleDocumentation    Role = "documentation"
+	RolePrimaryProductionEntry  Role = "primary_production_entry"
+	RoleProductionCore          Role = "production_core"
+	RoleEffectBoundary          Role = "effect_integration_boundary"
+	RolePublicAPI               Role = "public_api"
+	RoleExample                 Role = "example"
+	RoleTest                    Role = "test"
+	RoleFixture                 Role = "fixture"
+	RoleGenerated               Role = "generated"
+	RolePlayground              Role = "playground_preview_evaluator"
+	RoleExperimental            Role = "experimental"
+	RoleCurrentDocumentation    Role = "current_documentation"
+	RoleHistoricalDocumentation Role = "historical_decision_documentation"
+
+	// Compatibility names used by provider-free fixtures. New Scout inputs
+	// emit the precise generic artifact role above.
+	RoleProductionSource Role = RoleProductionCore
+	RoleDocumentation    Role = RoleCurrentDocumentation
 )
 
 func (role Role) Valid() bool {
 	switch role {
-	case RoleProductionSource, RoleTest, RoleDocumentation:
+	case RolePrimaryProductionEntry, RoleProductionCore, RoleEffectBoundary,
+		RolePublicAPI, RoleExample, RoleTest, RoleFixture, RoleGenerated,
+		RolePlayground, RoleExperimental, RoleCurrentDocumentation,
+		RoleHistoricalDocumentation:
 		return true
 	default:
 		return false

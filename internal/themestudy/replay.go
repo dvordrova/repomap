@@ -11,7 +11,7 @@ import (
 // has no provider, cache, or semantic-journal dependency. The request is
 // re-encoded and decoded so only canonical in-memory records are accepted.
 func ReplayScoutResponse(request ScoutRequest, raw []byte) (ScoutResult, ScoutStatusRecord, error) {
-	canonical, err := encodeScoutRequestForReplay(request)
+	canonical, err := EncodeScoutRequest(request)
 	if err != nil {
 		return ScoutResult{}, ScoutStatusRecord{}, fmt.Errorf("theme scout response replay: validate request: %w", err)
 	}
@@ -19,7 +19,7 @@ func ReplayScoutResponse(request ScoutRequest, raw []byte) (ScoutResult, ScoutSt
 	if err != nil {
 		return ScoutResult{}, ScoutStatusRecord{}, fmt.Errorf("theme scout response replay: canonical request: %w", err)
 	}
-	reencoded, err := encodeScoutRequestForReplay(decoded)
+	reencoded, err := EncodeScoutRequest(decoded)
 	if err != nil {
 		return ScoutResult{}, ScoutStatusRecord{}, err
 	}

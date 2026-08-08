@@ -1346,7 +1346,7 @@ func TestSynthesisWireRejectsOverBoundComponentsBeforeNormalization(t *testing.T
 	}
 }
 
-func TestSavedCasdoorP21ManyToManyResponseFailsD238SupportingOnlyUnitQuality(t *testing.T) {
+func TestSavedCasdoorP21ManyToManyResponseSalvagesSupportingOnlyUnits(t *testing.T) {
 	t.Parallel()
 
 	legacyRaw, err := os.ReadFile("testdata/casdoor_architecture_many_to_many_v1.json")
@@ -1377,19 +1377,37 @@ func TestSavedCasdoorP21ManyToManyResponseFailsD238SupportingOnlyUnitQuality(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationRejected ||
+	if result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationAcceptedPartial ||
 		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.partial_member_coverage") ||
-		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.supporting_only_unit_coverage") {
-		t.Fatalf("incomplete saved Casdoor response bypassed D238 unit quality: %#v", result.Landscape)
+		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.supporting_only_unit_coverage_salvaged") ||
+		hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.supporting_only_unit_coverage") {
+		t.Fatalf("saved Casdoor response did not salvage supporting-only items: %#v", result.Landscape)
 	}
-	if !result.Membership.Counted || result.Membership.MemberOccurrences != 29 ||
-		result.Membership.DistinctMembers != 28 || len(result.Membership.UncoveredMemberIDs) == 0 {
+	if !result.Membership.Counted || result.Membership.MemberOccurrences != 26 ||
+		result.Membership.DistinctMembers != 25 || len(result.Membership.UncoveredMemberIDs) != 17 ||
+		result.Membership.RequestedPrimaryScope != 34 || result.Membership.CoveredPrimaryScope != 20 ||
+		result.Membership.UncoveredPrimaryScope != 14 || result.Membership.CoveredSupportingEvidence != 5 {
 		t.Fatalf("saved Casdoor membership counts = %#v", result.Membership)
 	}
 	if result.Record.Call == nil || !result.Record.Call.Metadata.MembershipCounted ||
-		result.Record.Call.Metadata.MemberOccurrences != 29 ||
-		result.Record.Call.Metadata.DistinctMembers != 28 {
+		result.Record.Call.Metadata.MemberOccurrences != result.Membership.MemberOccurrences ||
+		result.Record.Call.Metadata.DistinctMembers != result.Membership.DistinctMembers ||
+		!reflect.DeepEqual(result.Record.Call.Metadata.CoveredMemberIDs, result.Membership.CoveredMemberIDs) ||
+		!reflect.DeepEqual(result.Record.Call.Metadata.UncoveredMemberIDs, result.Membership.UncoveredMemberIDs) ||
+		result.Record.Call.Metadata.RequestedPrimaryScope != result.Membership.RequestedPrimaryScope ||
+		result.Record.Call.Metadata.CoveredPrimaryScope != result.Membership.CoveredPrimaryScope ||
+		result.Record.Call.Metadata.UncoveredPrimaryScope != result.Membership.UncoveredPrimaryScope ||
+		result.Record.Call.Metadata.CoveredSupportingEvidence != result.Membership.CoveredSupportingEvidence {
 		t.Fatalf("saved Casdoor record counts = %#v", result.Record.Call)
+	}
+	if !reflect.DeepEqual(result.Landscape.LocalRemainderMemberIDs, result.Membership.UncoveredMemberIDs) {
+		t.Fatalf("saved Casdoor local remainder = %#v, want %#v",
+			result.Landscape.LocalRemainderMemberIDs, result.Membership.UncoveredMemberIDs)
+	}
+	if result.Landscape.OriginalProposalSHA256 == "" ||
+		result.Landscape.OriginalProposalSHA256 != result.Record.Call.Metadata.OriginalProposalSHA256 {
+		t.Fatalf("saved Casdoor provider proposal digest = landscape %q, record %q",
+			result.Landscape.OriginalProposalSHA256, result.Record.Call.Metadata.OriginalProposalSHA256)
 	}
 	if !reflect.DeepEqual(result.Landscape.Relations, bundle.Relations) {
 		t.Fatal("quality fallback changed exact local relations")

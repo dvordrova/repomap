@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -158,7 +159,7 @@ func TestD238SynthesisPromptPrioritizesPrimaryScopeAndKeepsMemberOnlyOutput(t *t
 	}
 }
 
-func TestD238GHZLikeAllSupportingResponseFailsPrimaryScopeQuality(t *testing.T) {
+func TestD238GHZLikeAllSupportingResponseSalvagesToZeroAcceptedMembership(t *testing.T) {
 	t.Parallel()
 
 	bundle, packageIDs, symbolIDs := d238GHZLikeBundle()
@@ -205,20 +206,40 @@ func TestD238GHZLikeAllSupportingResponseFailsPrimaryScopeQuality(t *testing.T) 
 	if !result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationRejected {
 		t.Fatalf("all-supporting proposal was not rejected: %#v", result.Landscape)
 	}
-	for _, code := range []string{"proposal.empty_primary_scope_coverage", "proposal.supporting_only_unit_coverage"} {
-		if !d238HasDiagnostic(result.Landscape.Diagnostics, code) {
-			t.Fatalf("quality diagnostics omitted %q: %#v", code, result.Landscape.Diagnostics)
+	if !d238HasDiagnostic(result.Landscape.Diagnostics, "proposal.supporting_only_unit_coverage_salvaged") {
+		t.Fatalf("all-supporting salvage diagnostic omitted: %#v", result.Landscape.Diagnostics)
+	}
+	for _, staleCode := range []string{"proposal.empty_primary_scope_coverage", "proposal.supporting_only_unit_coverage"} {
+		if d238HasDiagnostic(result.Landscape.Diagnostics, staleCode) {
+			t.Fatalf("all-supporting salvage retained stale whole-reject diagnostic %q: %#v", staleCode, result.Landscape.Diagnostics)
 		}
 	}
 	counts := result.Membership
-	if !counts.Counted || counts.RequestedPrimaryScope != 18 || counts.CoveredPrimaryScope != 0 ||
-		counts.UncoveredPrimaryScope != 18 || counts.CoveredSupportingEvidence != 10 {
-		t.Fatalf("quality rejection coverage = %#v", counts)
+	if !counts.Counted || counts.MemberOccurrences != 0 || counts.DistinctMembers != 0 ||
+		len(counts.RequestedMemberIDs) != 28 || len(counts.CoveredMemberIDs) != 0 ||
+		len(counts.UncoveredMemberIDs) != 28 || counts.RequestedPrimaryScope != 18 ||
+		counts.CoveredPrimaryScope != 0 || counts.UncoveredPrimaryScope != 18 ||
+		counts.CoveredSupportingEvidence != 0 {
+		t.Fatalf("zero accepted membership accounting = %#v", counts)
+	}
+	if result.Record.Call == nil {
+		t.Fatal("all-supporting response record omitted provider call")
 	}
 	metadata := result.Record.Call.Metadata
-	if metadata.RequestedPrimaryScope != 18 || metadata.CoveredPrimaryScope != 0 ||
-		metadata.UncoveredPrimaryScope != 18 || metadata.CoveredSupportingEvidence != 10 {
-		t.Fatalf("quality rejection metadata = %#v", metadata)
+	if !metadata.MembershipCounted || metadata.MemberOccurrences != 0 || metadata.DistinctMembers != 0 ||
+		!reflect.DeepEqual(metadata.RequestedMemberIDs, counts.RequestedMemberIDs) ||
+		!reflect.DeepEqual(metadata.CoveredMemberIDs, counts.CoveredMemberIDs) ||
+		!reflect.DeepEqual(metadata.UncoveredMemberIDs, counts.UncoveredMemberIDs) ||
+		metadata.RequestedPrimaryScope != 18 || metadata.CoveredPrimaryScope != 0 ||
+		metadata.UncoveredPrimaryScope != 18 || metadata.CoveredSupportingEvidence != 0 {
+		t.Fatalf("zero accepted membership metadata = %#v", metadata)
+	}
+	emptyProposalDigest := proposalSHA256(Proposal{})
+	if result.Landscape.OriginalProposalSHA256 == "" ||
+		result.Landscape.OriginalProposalSHA256 == emptyProposalDigest ||
+		metadata.OriginalProposalSHA256 != result.Landscape.OriginalProposalSHA256 {
+		t.Fatalf("provider proposal digest was replaced by salvaged empty proposal: landscape=%q metadata=%q empty=%q",
+			result.Landscape.OriginalProposalSHA256, metadata.OriginalProposalSHA256, emptyProposalDigest)
 	}
 }
 
@@ -259,7 +280,7 @@ func TestD238PackageAndSeparateSupportingEvidenceRemainAcceptedPartial(t *testin
 	}
 }
 
-func TestD238SupportingEvidenceFromUncoveredUnitFailsQuality(t *testing.T) {
+func TestD238SupportingEvidenceFromUncoveredUnitIsSalvagedItemLocally(t *testing.T) {
 	t.Parallel()
 
 	fixture := d238PrimaryScopeBundle()
@@ -275,11 +296,37 @@ func TestD238SupportingEvidenceFromUncoveredUnitFailsQuality(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Landscape.Fallback || !d238HasDiagnostic(result.Landscape.Diagnostics, "proposal.supporting_only_unit_coverage") {
-		t.Fatalf("supporting-only unit coverage was accepted: %#v", result.Landscape)
+	if result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationAcceptedPartial ||
+		!d238HasDiagnostic(result.Landscape.Diagnostics, "proposal.supporting_only_unit_coverage_salvaged") {
+		t.Fatalf("supporting-only item was not salvaged: %#v", result.Landscape)
 	}
-	if d238HasDiagnostic(result.Landscape.Diagnostics, "proposal.empty_primary_scope_coverage") {
-		t.Fatalf("non-empty primary coverage received empty-primary finding: %#v", result.Landscape.Diagnostics)
+	if d238HasDiagnostic(result.Landscape.Diagnostics, "proposal.empty_primary_scope_coverage") ||
+		d238HasDiagnostic(result.Landscape.Diagnostics, "proposal.supporting_only_unit_coverage") {
+		t.Fatalf("item-local salvage retained a whole-reject finding: %#v", result.Landscape.Diagnostics)
+	}
+	counts := result.Membership
+	if !counts.Counted || counts.MemberOccurrences != 1 || counts.DistinctMembers != 1 ||
+		counts.RequestedPrimaryScope != 2 || counts.CoveredPrimaryScope != 1 ||
+		counts.UncoveredPrimaryScope != 1 || counts.CoveredSupportingEvidence != 0 {
+		t.Fatalf("item-local salvage membership = %#v", counts)
+	}
+	if !reflect.DeepEqual(result.Landscape.LocalRemainderMemberIDs, counts.UncoveredMemberIDs) {
+		t.Fatalf("item-local salvage remainder = %#v, want %#v",
+			result.Landscape.LocalRemainderMemberIDs, counts.UncoveredMemberIDs)
+	}
+	if result.Record.Call == nil {
+		t.Fatal("item-local salvage record omitted provider call")
+	}
+	metadata := result.Record.Call.Metadata
+	if !metadata.MembershipCounted || metadata.MemberOccurrences != counts.MemberOccurrences ||
+		metadata.DistinctMembers != counts.DistinctMembers ||
+		!reflect.DeepEqual(metadata.CoveredMemberIDs, counts.CoveredMemberIDs) ||
+		!reflect.DeepEqual(metadata.UncoveredMemberIDs, counts.UncoveredMemberIDs) ||
+		metadata.RequestedPrimaryScope != counts.RequestedPrimaryScope ||
+		metadata.CoveredPrimaryScope != counts.CoveredPrimaryScope ||
+		metadata.UncoveredPrimaryScope != counts.UncoveredPrimaryScope ||
+		metadata.CoveredSupportingEvidence != counts.CoveredSupportingEvidence {
+		t.Fatalf("item-local salvage record accounting = %#v, want %#v", metadata, counts)
 	}
 }
 
