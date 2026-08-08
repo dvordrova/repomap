@@ -114,6 +114,36 @@ func TestCompileContextsNeedsNoStudyAndDoesNotSelectARoot(t *testing.T) {
 	}
 }
 
+func TestCompileStudyKeepsSymbolLessDirectReadingPrepared(t *testing.T) {
+	index := buildChainIndex(t)
+	study := themestudy.StudyThemes{
+		Version:  themestudy.StudyThemesVersion,
+		Revision: fixtureRevision,
+		Cards: []themestudy.ThemeCard{{
+			Ordinal: 1, CanonicalID: "symbol-less-direct-reading",
+			FinalTitle:    "A source location",
+			FinalQuestion: "What exact work continues from this location?",
+			Readings: []themestudy.Reading{{
+				Label: "Exact line without a symbol",
+				Path:  "main.go", Line: 1, Fit: themestudy.FitDirect,
+			}},
+		}},
+	}
+	compilation, err := Compile(study, index, studyBinding())
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if len(compilation.Cards) != 1 || len(compilation.Cards[0].Readings) != 1 ||
+		compilation.Cards[0].Readings[0].RootNodeRef != "" ||
+		frontierCount(compilation.Cards[0], FrontierNoExactFunction) != 1 {
+		t.Fatalf("symbol-less direct reading = %+v", compilation.Cards)
+	}
+	batches, err := BuildRequestBatches(compilation)
+	if err != nil || len(batches) != 0 {
+		t.Fatalf("symbol-less reading produced provider work: batches=%d err=%v", len(batches), err)
+	}
+}
+
 func TestCompileAccountsDynamicAndExternalFrontierPerSelectedCaller(t *testing.T) {
 	index := buildClosedFrontierIndex(t)
 	root := requireNodeBySymbol(t, index, "example.com/frontier.entry")

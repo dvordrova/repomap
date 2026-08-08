@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -164,6 +165,49 @@ type DirectCallIndex struct {
 	incomingLookup map[string][]int
 	outgoingLookup map[string][]int
 	frontierLookup map[string]int
+}
+
+// UnavailableDirectCallIndex returns the canonical closed substrate used when
+// an ordinary run has no Go surface SSA handoff. It performs no package load
+// or analysis and retains no partial graph; later Study cards can therefore
+// publish an honest prepared investigation instead of fabricating a graph or
+// omitting the current artifact family.
+func UnavailableDirectCallIndex() DirectCallIndex {
+	builder := newDirectCallIndexBuilder(Scenario{
+		ID:   scenarioID(runtime.GOOS, runtime.GOARCH, nil),
+		GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Tags: []string{},
+	})
+	builder.close(DirectCallIndexClosedSSAUnavailable)
+	return builder.finish()
+}
+
+// Snapshot returns an independently owned in-memory copy of the complete
+// direct-call index. The public slices, nested symbol aliases, scenario tags,
+// and private lookup tables share no backing storage with index. This is the
+// handoff boundary between surface discovery and a later live-run consumer:
+// either side may retain or query its copy without mutating the producer's
+// result. No serialization, package loading, or SSA work is performed.
+func (index DirectCallIndex) Snapshot() DirectCallIndex {
+	snapshot := index
+	snapshot.Scenario.Tags = cloneDirectCallSlice(index.Scenario.Tags)
+	snapshot.Modules = cloneDirectCallSlice(index.Modules)
+	snapshot.Nodes = cloneDirectCallSlice(index.Nodes)
+	for position := range snapshot.Nodes {
+		snapshot.Nodes[position] = copyDirectCallNode(snapshot.Nodes[position])
+	}
+	snapshot.Edges = cloneDirectCallSlice(index.Edges)
+	snapshot.Frontiers = cloneDirectCallSlice(index.Frontiers)
+	snapshot.initializeLookups()
+	return snapshot
+}
+
+func cloneDirectCallSlice[T any](values []T) []T {
+	if values == nil {
+		return nil
+	}
+	result := make([]T, len(values))
+	copy(result, values)
+	return result
 }
 
 type DirectCallRootState string

@@ -9,6 +9,8 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/mechanismstudy"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/report"
 )
 
@@ -40,6 +42,8 @@ const (
 	publicationReasonStudyFailed             publicationReason = "study_failed"
 	publicationReasonStudyUnavailable        publicationReason = "study_unavailable"
 	publicationReasonStudyIncomplete         publicationReason = "study_incomplete"
+	publicationReasonInvestigationPartial    publicationReason = "study_investigation_partial"
+	publicationReasonInvestigationFailed     publicationReason = "study_investigation_failed"
 )
 
 const maxPublicationHTMLBytes = 32 << 20
@@ -74,7 +78,91 @@ func assessRunPublication(runDir string) (publicationAssessment, error) {
 	if err := json.Unmarshal(reportJSON, &data); err != nil {
 		return failedPublication(), fmt.Errorf("decode verified report: %w", err)
 	}
-	return assessPublication(&data), nil
+	assessment := assessPublication(&data)
+	investigationReasons, err := studyInvestigationPublicationReasons(runDir, manifest.MaterialInputs)
+	if err != nil {
+		return failedPublication(), err
+	}
+	if len(investigationReasons) != 0 {
+		assessment.Status = publicationDegraded
+		assessment.Reasons = append(assessment.Reasons, investigationReasons...)
+	}
+	return assessment, nil
+}
+
+// studyInvestigationPublicationReasons keeps optional enrichment failure in
+// the console/corpus publication state without copying its status or failure
+// codes into report JSON/HTML. The current manifest has already verified the
+// family; decoding it again binds the exact bytes used for this assessment.
+func studyInvestigationPublicationReasons(
+	runDir string,
+	inputs report.MaterialInputs,
+) ([]publicationReason, error) {
+	digests := []string{
+		inputs.StudyInvestigationFactsSHA256,
+		inputs.StudyInvestigationCandidatesSHA256,
+		inputs.StudyInvestigationResultSHA256,
+		inputs.StudyInvestigationStatusSHA256,
+	}
+	bound := 0
+	for _, digest := range digests {
+		if digest != "" {
+			bound++
+		}
+	}
+	if bound == 0 {
+		return nil, nil
+	}
+	if bound != len(digests) {
+		return nil, fmt.Errorf("Study investigation manifest identity is incomplete")
+	}
+	facts, err := readStudyInvestigationArtifact(
+		runDir, mechanismstudy.FactsArtifactFilename, mechanismstudy.MaxFactsArtifactBytes,
+	)
+	if err != nil {
+		return nil, err
+	}
+	candidates, err := readStudyInvestigationArtifact(
+		runDir, mechanismstudy.CandidatesArtifactFilename, mechanismstudy.MaxCandidatesArtifactBytes,
+	)
+	if err != nil {
+		return nil, err
+	}
+	result, err := readStudyInvestigationArtifact(
+		runDir, mechanismstudy.ResultArtifactFilename, mechanismstudy.MaxResultArtifactBytes,
+	)
+	if err != nil {
+		return nil, err
+	}
+	statusRaw, err := readStudyInvestigationArtifact(
+		runDir, mechanismstudy.StatusArtifactFilename, mechanismstudy.MaxStatusArtifactBytes,
+	)
+	if err != nil {
+		return nil, err
+	}
+	for position, raw := range [][]byte{facts, candidates, result, statusRaw} {
+		if modelresearch.SHA256(raw) != digests[position] {
+			return nil, fmt.Errorf("Study investigation publication bytes changed after manifest verification")
+		}
+	}
+	status, err := mechanismstudy.DecodeStatus(facts, candidates, result, statusRaw)
+	if err != nil {
+		return nil, fmt.Errorf("decode Study investigation publication status: %w", err)
+	}
+	return studyInvestigationStatusReasons(status)
+}
+
+func studyInvestigationStatusReasons(status mechanismstudy.Status) ([]publicationReason, error) {
+	switch status.State {
+	case mechanismstudy.StatusComplete:
+		return nil, nil
+	case mechanismstudy.StatusPartial:
+		return []publicationReason{publicationReasonInvestigationPartial}, nil
+	case mechanismstudy.StatusFailed:
+		return []publicationReason{publicationReasonInvestigationFailed}, nil
+	default:
+		return nil, fmt.Errorf("unsupported Study investigation publication state %q", status.State)
+	}
 }
 
 func verifyPublishedHTML(path string) error {
@@ -222,6 +310,10 @@ func (assessment publicationAssessment) consoleDetails() []string {
 			details = append(details, "Study: unavailable")
 		case publicationReasonStudyIncomplete:
 			details = append(details, "Study: one or more tracked coverage dimensions are incomplete")
+		case publicationReasonInvestigationPartial:
+			details = append(details, "Study investigation: some planned mechanism batches were not completed")
+		case publicationReasonInvestigationFailed:
+			details = append(details, "Study investigation: mechanism enrichment was not completed")
 		case publicationReasonArtifactsInvalid:
 			details = append(details, "report artifacts are missing or failed integrity checks")
 		}

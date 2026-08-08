@@ -19,8 +19,10 @@ import (
 
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/llmbundle"
+	"github.com/dvordrova/repomap/internal/mechanismstudy"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 	"github.com/dvordrova/repomap/internal/sourcecatalog"
 	"github.com/dvordrova/repomap/internal/tasklens"
@@ -29,7 +31,7 @@ import (
 )
 
 const (
-	CurrentRunManifestVersion = 13
+	CurrentRunManifestVersion = 14
 	RunManifestFilename       = "run_manifest.json"
 
 	maxRunManifestBytes             = 4 * 1024 * 1024
@@ -75,23 +77,27 @@ type MaterialInputs struct {
 	// provider call no longer contributes request/result/status to new runs;
 	// the two semantic stages and the local expansion/reducer are bound by the
 	// eight theme digests below.
-	ThemeScoutRequestSHA256          string `json:"theme_scout_request_sha256,omitempty"`
-	ThemeScoutResultSHA256           string `json:"theme_scout_result_sha256,omitempty"`
-	ThemeScoutStatusSHA256           string `json:"theme_scout_status_sha256,omitempty"`
-	ThemeSourceExpansionSHA256       string `json:"theme_source_expansion_sha256,omitempty"`
-	ThemeAdjudicationRequestSHA256   string `json:"theme_adjudication_request_sha256,omitempty"`
-	ThemeAdjudicationResultSHA256    string `json:"theme_adjudication_result_sha256,omitempty"`
-	ThemeAdjudicationStatusSHA256    string `json:"theme_adjudication_status_sha256,omitempty"`
-	StudyThemesSHA256                string `json:"study_themes_sha256,omitempty"`
-	TaskBundleSHA256                 string `json:"task_bundle_sha256,omitempty"`
-	TaskAttemptSHA256                string `json:"task_attempt_sha256,omitempty"`
-	TaskPackSHA256                   string `json:"task_pack_sha256,omitempty"`
-	TaskStatusSHA256                 string `json:"task_status_sha256,omitempty"`
-	TaskRetrievalTraceSHA256         string `json:"task_retrieval_trace_sha256,omitempty"`
-	TaskRetrievalTraceMarkdownSHA256 string `json:"task_retrieval_trace_markdown_sha256,omitempty"`
-	InputPolicyVersion               string `json:"input_policy_version"`
-	ArchitectureContract             int    `json:"architecture_contract"`
-	ReportContract                   int    `json:"report_contract"`
+	ThemeScoutRequestSHA256            string `json:"theme_scout_request_sha256,omitempty"`
+	ThemeScoutResultSHA256             string `json:"theme_scout_result_sha256,omitempty"`
+	ThemeScoutStatusSHA256             string `json:"theme_scout_status_sha256,omitempty"`
+	ThemeSourceExpansionSHA256         string `json:"theme_source_expansion_sha256,omitempty"`
+	ThemeAdjudicationRequestSHA256     string `json:"theme_adjudication_request_sha256,omitempty"`
+	ThemeAdjudicationResultSHA256      string `json:"theme_adjudication_result_sha256,omitempty"`
+	ThemeAdjudicationStatusSHA256      string `json:"theme_adjudication_status_sha256,omitempty"`
+	StudyThemesSHA256                  string `json:"study_themes_sha256,omitempty"`
+	StudyInvestigationFactsSHA256      string `json:"study_investigation_facts_sha256,omitempty"`
+	StudyInvestigationCandidatesSHA256 string `json:"study_investigation_candidates_sha256,omitempty"`
+	StudyInvestigationResultSHA256     string `json:"study_investigation_result_sha256,omitempty"`
+	StudyInvestigationStatusSHA256     string `json:"study_investigation_status_sha256,omitempty"`
+	TaskBundleSHA256                   string `json:"task_bundle_sha256,omitempty"`
+	TaskAttemptSHA256                  string `json:"task_attempt_sha256,omitempty"`
+	TaskPackSHA256                     string `json:"task_pack_sha256,omitempty"`
+	TaskStatusSHA256                   string `json:"task_status_sha256,omitempty"`
+	TaskRetrievalTraceSHA256           string `json:"task_retrieval_trace_sha256,omitempty"`
+	TaskRetrievalTraceMarkdownSHA256   string `json:"task_retrieval_trace_markdown_sha256,omitempty"`
+	InputPolicyVersion                 string `json:"input_policy_version"`
+	ArchitectureContract               int    `json:"architecture_contract"`
+	ReportContract                     int    `json:"report_contract"`
 }
 
 // RunAuthority is a repository state that was captured before repository
@@ -260,6 +266,28 @@ func (m RunManifest) Validate() error {
 	}
 	if m.MaterialInputs.StudyThemesSHA256 != "" && m.MaterialInputs.ThemeAdjudicationResultSHA256 == "" {
 		return fmt.Errorf("report manifest: study_themes requires Adjudication result")
+	}
+	investigationDigests := []string{
+		m.MaterialInputs.StudyInvestigationFactsSHA256,
+		m.MaterialInputs.StudyInvestigationCandidatesSHA256,
+		m.MaterialInputs.StudyInvestigationResultSHA256,
+		m.MaterialInputs.StudyInvestigationStatusSHA256,
+	}
+	investigationDigestCount := 0
+	for _, digest := range investigationDigests {
+		if digest == "" {
+			continue
+		}
+		investigationDigestCount++
+		if !validManifestSHA256(digest) {
+			return fmt.Errorf("report manifest: Study investigation artifact sha256 is invalid")
+		}
+	}
+	if investigationDigestCount != 0 && investigationDigestCount != len(investigationDigests) {
+		return fmt.Errorf("report manifest: Study investigation artifact identity is incomplete")
+	}
+	if (investigationDigestCount != 0) != (m.MaterialInputs.StudyThemesSHA256 != "") {
+		return fmt.Errorf("report manifest: study_themes and the complete Study investigation family must be bound together")
 	}
 	taskDigests := []string{
 		m.MaterialInputs.TaskBundleSHA256,
@@ -690,6 +718,7 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 	hasThemeAdjResult := m.MaterialInputs.ThemeAdjudicationResultSHA256 != ""
 	hasThemeAdjStatus := m.MaterialInputs.ThemeAdjudicationStatusSHA256 != ""
 	hasStudyThemes := m.MaterialInputs.StudyThemesSHA256 != ""
+	hasStudyInvestigations := m.MaterialInputs.StudyInvestigationFactsSHA256 != ""
 	hasAnyThemeArtifact := hasThemeScoutRequest || hasThemeScoutResult || hasThemeScoutStatus ||
 		hasThemeExpansion || hasThemeAdjRequest || hasThemeAdjResult || hasThemeAdjStatus || hasStudyThemes
 	if report.AtlasStudy == nil && (hasAtlasStudyRequest || hasAtlasStudyResult || hasAtlasStudyStatus ||
@@ -724,6 +753,14 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 			hasThemeAdjResult,
 			hasThemeAdjStatus,
 			hasStudyThemes,
+		); err != nil {
+			return fmt.Errorf("report manifest: %w", err)
+		}
+		if err := validateStudyInvestigationReportProjection(
+			report.AtlasStudy.Themes,
+			hasStudyInvestigations,
+			report.OpenablePaths,
+			report.ArchitectureCanvas,
 		); err != nil {
 			return fmt.Errorf("report manifest: %w", err)
 		}
@@ -868,6 +905,142 @@ func validateThemeStudyReportProjection(
 		return fmt.Errorf("unsupported Atlas Study report state %q", status.State)
 	}
 	return nil
+}
+
+func validateStudyInvestigationReportProjection(
+	themes *AtlasStudyThemesProjection,
+	expected bool,
+	openablePaths []string,
+	canvas *ArchitectureCanvas,
+) error {
+	if themes == nil {
+		if expected {
+			return fmt.Errorf("Study investigation projection lacks a theme shelf")
+		}
+		return nil
+	}
+	openable := make(map[string]struct{}, len(openablePaths))
+	for _, sourcePath := range openablePaths {
+		openable[sourcePath] = struct{}{}
+	}
+	components := make(map[componentmap.ComponentID]struct{})
+	remainder := componentmap.ComponentID("")
+	if canvas != nil {
+		remainder = canvas.LocalRemainderComponentID
+		for _, component := range canvas.Components {
+			components[component.ID] = struct{}{}
+		}
+	}
+	expectedCount := len(themes.Cards)
+	if expectedCount > mechanismstudy.MaxCards {
+		expectedCount = mechanismstudy.MaxCards
+	}
+	for position, card := range themes.Cards {
+		investigation := card.Investigation
+		shouldExist := expected && position < expectedCount
+		if (investigation != nil) != shouldExist {
+			return fmt.Errorf("Study investigation coverage does not match the bounded Study prefix")
+		}
+		if investigation == nil {
+			continue
+		}
+		if investigation.Version != StudyInvestigationVersion ||
+			investigation.ID != fmt.Sprintf("study-investigation-%d", card.Ordinal) ||
+			investigation.ReadingOrdinals == nil || investigation.Mechanisms == nil ||
+			(investigation.Outcome != StudyInvestigationOutcomePrepared &&
+				investigation.Outcome != StudyInvestigationOutcomeMechanism) ||
+			validateStudyInvestigationReadingOrdinals(
+				investigation.ReadingOrdinals,
+				len(card.Readings),
+			) != nil || !strictlyIncreasingPositiveInts(investigation.ReadingOrdinals) {
+			return fmt.Errorf("Study investigation projection is invalid")
+		}
+		if investigation.Outcome == StudyInvestigationOutcomePrepared {
+			if len(investigation.Mechanisms) != 0 {
+				return fmt.Errorf("prepared Study investigation contains mechanisms")
+			}
+			continue
+		}
+		if len(investigation.Mechanisms) == 0 ||
+			len(investigation.Mechanisms) > maxStudyInvestigationMechanisms {
+			return fmt.Errorf("mechanism Study investigation has invalid path count")
+		}
+		readingUnion := make(map[int]struct{})
+		for mechanismPosition, mechanism := range investigation.Mechanisms {
+			mechanismOrdinal := mechanismPosition + 1
+			mechanismID := fmt.Sprintf("%s-mechanism-%d", investigation.ID, mechanismOrdinal)
+			if mechanism.ID != mechanismID || mechanism.Ordinal != mechanismOrdinal ||
+				mechanism.ReadingOrdinals == nil || mechanism.Nodes == nil || mechanism.Edges == nil ||
+				len(mechanism.ReadingOrdinals) == 0 ||
+				!strictlyIncreasingPositiveInts(mechanism.ReadingOrdinals) ||
+				validateStudyInvestigationReadingOrdinals(mechanism.ReadingOrdinals, len(card.Readings)) != nil ||
+				len(mechanism.Edges) < minStudyInvestigationEdges ||
+				len(mechanism.Edges) > maxStudyInvestigationEdges ||
+				len(mechanism.Nodes) != len(mechanism.Edges)+1 {
+				return fmt.Errorf("Study investigation mechanism projection is invalid")
+			}
+			for _, ordinal := range mechanism.ReadingOrdinals {
+				readingUnion[ordinal] = struct{}{}
+			}
+			for nodePosition, node := range mechanism.Nodes {
+				nodeOrdinal := nodePosition + 1
+				location := evidence.Location{
+					Path: node.Declaration.Path, Line: node.Declaration.Line, Column: node.Declaration.Column,
+				}
+				if node.ID != fmt.Sprintf("%s-node-%d", mechanismID, nodeOrdinal) ||
+					node.Ordinal != nodeOrdinal ||
+					!validStudyInvestigationText(node.Label, maxStudyInvestigationNodeLabelRunes) ||
+					!validGroundingLocation(location) || node.ComponentIDs == nil {
+					return fmt.Errorf("Study investigation node projection is invalid")
+				}
+				if _, ok := openable[location.Path]; !ok {
+					return fmt.Errorf("Study investigation node source is not authorized")
+				}
+				previous := componentmap.ComponentID("")
+				for _, componentID := range node.ComponentIDs {
+					_, known := components[componentID]
+					if componentID == "" || componentID == remainder || !known ||
+						(previous != "" && componentID <= previous) {
+						return fmt.Errorf("Study investigation component ownership is invalid")
+					}
+					previous = componentID
+				}
+			}
+			for edgePosition, edge := range mechanism.Edges {
+				edgeOrdinal := edgePosition + 1
+				callsite := evidence.Location{
+					Path: edge.Callsite.Path, Line: edge.Callsite.Line, Column: edge.Callsite.Column,
+				}
+				if edge.ID != fmt.Sprintf("%s-edge-%d", mechanismID, edgeOrdinal) ||
+					edge.Ordinal != edgeOrdinal ||
+					edge.FromNodeID != mechanism.Nodes[edgePosition].ID ||
+					edge.ToNodeID != mechanism.Nodes[edgePosition+1].ID ||
+					!edge.Invocation.Valid() || edge.WitnessCount <= 0 ||
+					edge.WitnessCount > maxStudyInvestigationWitnessCount ||
+					!validGroundingLocation(callsite) {
+					return fmt.Errorf("Study investigation edge projection is invalid")
+				}
+				if _, ok := openable[callsite.Path]; !ok {
+					return fmt.Errorf("Study investigation callsite source is not authorized")
+				}
+			}
+		}
+		if !studyInvestigationReadingSetEquals(investigation.ReadingOrdinals, readingUnion) {
+			return fmt.Errorf("Study investigation reading union is invalid")
+		}
+	}
+	return nil
+}
+
+func strictlyIncreasingPositiveInts(values []int) bool {
+	previous := 0
+	for _, value := range values {
+		if value <= previous {
+			return false
+		}
+		previous = value
+	}
+	return true
 }
 
 // VerifyTaskInvestigationArtifacts binds the canonical Task Lens files
@@ -1022,6 +1195,7 @@ func (m RunManifest) VerifyThemesArtifacts(runDir string, reportJSON []byte) err
 			return fmt.Errorf("report manifest: legacy atlas-study artifact %s is present in a theme run", artifact.name)
 		}
 	}
+	var studyThemesRaw []byte
 	for _, artifact := range artifacts {
 		if artifact.want == "" {
 			if _, statErr := root.Lstat(artifact.name); statErr == nil {
@@ -1034,6 +1208,20 @@ func (m RunManifest) VerifyThemesArtifacts(runDir string, reportJSON []byte) err
 		encoded, readErr := readManifestFile(root, artifact.name, artifact.limit)
 		if readErr != nil || manifestSHA256(encoded) != artifact.want {
 			return fmt.Errorf("report manifest: theme artifact %s sha256 mismatch", artifact.name)
+		}
+		if artifact.name == themestudy.StudyThemesArtifactFilename {
+			studyThemesRaw = encoded
+		}
+	}
+	if len(studyThemesRaw) > 0 {
+		themes, decodeErr := themestudy.DecodeStudyThemes(studyThemesRaw)
+		if decodeErr != nil {
+			return fmt.Errorf("report manifest: study themes artifact: %w", decodeErr)
+		}
+		if themes.Revision != m.RepositoryState.Head {
+			return fmt.Errorf(
+				"report manifest: study themes revision does not match authorized repository revision",
+			)
 		}
 	}
 	var persisted ReportData
@@ -1055,6 +1243,110 @@ func (m RunManifest) VerifyThemesArtifacts(runDir string, reportJSON []byte) err
 		return fmt.Errorf("report manifest: theme Study artifacts do not match report")
 	}
 	return nil
+}
+
+// VerifyStudyInvestigationArtifacts binds the complete four-file persisted
+// mechanism family to the authorized repository state and exact report bytes.
+// The public projection is never trusted independently: it is re-derived from
+// restored private authority and compared to the report's Study shelf.
+func (m RunManifest) VerifyStudyInvestigationArtifacts(runDir string, reportJSON []byte) error {
+	if m.Version != CurrentRunManifestVersion {
+		return fmt.Errorf("report manifest: unsupported version %d", m.Version)
+	}
+	artifacts := []struct {
+		name  string
+		want  string
+		limit int
+	}{
+		{mechanismstudy.FactsArtifactFilename, m.MaterialInputs.StudyInvestigationFactsSHA256, mechanismstudy.MaxFactsArtifactBytes},
+		{mechanismstudy.CandidatesArtifactFilename, m.MaterialInputs.StudyInvestigationCandidatesSHA256, mechanismstudy.MaxCandidatesArtifactBytes},
+		{mechanismstudy.ResultArtifactFilename, m.MaterialInputs.StudyInvestigationResultSHA256, mechanismstudy.MaxResultArtifactBytes},
+		{mechanismstudy.StatusArtifactFilename, m.MaterialInputs.StudyInvestigationStatusSHA256, mechanismstudy.MaxStatusArtifactBytes},
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return fmt.Errorf("report manifest: open Study investigation run: %w", err)
+	}
+	defer root.Close()
+
+	bound := artifacts[0].want != ""
+	verified := make(map[string][]byte, len(artifacts))
+	for _, artifact := range artifacts {
+		if !bound {
+			if artifact.want != "" {
+				return fmt.Errorf("report manifest: Study investigation artifact identity is incomplete")
+			}
+			if _, statErr := root.Lstat(artifact.name); statErr == nil {
+				return fmt.Errorf("report manifest: unbound Study investigation artifact %s is present", artifact.name)
+			} else if !errors.Is(statErr, fs.ErrNotExist) {
+				return fmt.Errorf("report manifest: inspect Study investigation artifact %s: %w", artifact.name, statErr)
+			}
+			continue
+		}
+		if artifact.want == "" {
+			return fmt.Errorf("report manifest: Study investigation artifact identity is incomplete")
+		}
+		encoded, readErr := readManifestFile(root, artifact.name, artifact.limit)
+		if readErr != nil || manifestSHA256(encoded) != artifact.want {
+			return fmt.Errorf("report manifest: Study investigation artifact %s sha256 mismatch", artifact.name)
+		}
+		verified[artifact.name] = encoded
+	}
+
+	var persisted ReportData
+	if err := json.Unmarshal(reportJSON, &persisted); err != nil {
+		return fmt.Errorf("report manifest: decode Study investigation report projection: %w", err)
+	}
+	if !bound {
+		if reportHasStudyInvestigations(&persisted) {
+			return fmt.Errorf("report manifest: Study investigation projection lacks artifact authority")
+		}
+		return nil
+	}
+	if persisted.CapturedRevision != "" && persisted.CapturedRevision != m.RepositoryState.Head {
+		return fmt.Errorf("report manifest: Study investigation report revision mismatch")
+	}
+	themesRaw, readErr := readManifestFile(
+		root,
+		themestudy.StudyThemesArtifactFilename,
+		themestudy.MaxStudyThemesArtifactBytes,
+	)
+	if readErr != nil || manifestSHA256(themesRaw) != m.MaterialInputs.StudyThemesSHA256 {
+		return fmt.Errorf("report manifest: Study investigation study_themes sha256 mismatch")
+	}
+	if err := hydrateStudyInvestigationArtifacts(
+		&persisted,
+		themesRaw,
+		verified[mechanismstudy.FactsArtifactFilename],
+		verified[mechanismstudy.CandidatesArtifactFilename],
+		verified[mechanismstudy.ResultArtifactFilename],
+		verified[mechanismstudy.StatusArtifactFilename],
+		m.RepositoryState.Head,
+		m.RepositoryStateSHA256,
+	); err != nil {
+		return fmt.Errorf("report manifest: Study investigation artifacts: %w", err)
+	}
+	status, studyMap, err := readAtlasStudyReportProduct(runDir, &persisted)
+	if err != nil {
+		return fmt.Errorf("report manifest: Study investigation projection: %w", err)
+	}
+	if !reflect.DeepEqual(status, persisted.AtlasStudy) ||
+		!reflect.DeepEqual(studyMap, persisted.StudyMap) {
+		return fmt.Errorf("report manifest: Study investigation artifacts do not match report")
+	}
+	return nil
+}
+
+func reportHasStudyInvestigations(data *ReportData) bool {
+	if data == nil || data.AtlasStudy == nil || data.AtlasStudy.Themes == nil {
+		return false
+	}
+	for _, card := range data.AtlasStudy.Themes.Cards {
+		if card.Investigation != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func orientationSelectionMatchesModelBundle(
@@ -1201,6 +1493,9 @@ func ReadRunManifest(runDir string) (RunManifest, error) {
 	if err := manifest.VerifyRepositoryAtlasArtifact(runDir, reportJSON); err != nil {
 		return RunManifest{}, err
 	}
+	if err := manifest.VerifyStudyInvestigationArtifacts(runDir, reportJSON); err != nil {
+		return RunManifest{}, err
+	}
 	if err := manifest.VerifyThemesArtifacts(runDir, reportJSON); err != nil {
 		return RunManifest{}, err
 	}
@@ -1297,28 +1592,32 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 		CapturedInputsSHA256:  inputsDigest,
 		Freshness:             authority.freshness,
 		MaterialInputs: MaterialInputs{
-			SelectedRevision:                  authority.repository.Head,
-			ModelBundleSHA256:                 modelBundleDigest,
-			OrientationContextSelectionSHA256: orientationSelectionDigest,
-			RepositoryAtlasSHA256:             repositoryAtlasDigest,
-			AtlasStudyRequestSHA256:           "",
-			AtlasStudyResultSHA256:            "",
-			AtlasStudyStatusSHA256:            "",
-			ThemeScoutRequestSHA256:           themeScoutRequestDigest,
-			ThemeScoutResultSHA256:            themeScoutResultDigest,
-			ThemeScoutStatusSHA256:            themeScoutStatusDigest,
-			ThemeSourceExpansionSHA256:        themeExpansionDigest,
-			ThemeAdjudicationRequestSHA256:    themeAdjRequestDigest,
-			ThemeAdjudicationResultSHA256:     themeAdjResultDigest,
-			ThemeAdjudicationStatusSHA256:     themeAdjStatusDigest,
-			StudyThemesSHA256:                 themeStudyThemesDigest,
-			TaskBundleSHA256:                  savedArtifactSHA256(runDir, tasklens.BundleFile),
-			TaskAttemptSHA256:                 savedArtifactSHA256(runDir, tasklens.AttemptFile),
-			TaskPackSHA256:                    savedArtifactSHA256(runDir, tasklens.PackFile),
-			TaskStatusSHA256:                  savedArtifactSHA256(runDir, tasklens.StatusFile),
-			TaskRetrievalTraceSHA256:          savedArtifactSHA256(runDir, tasklens.TraceJSONFile),
-			TaskRetrievalTraceMarkdownSHA256:  savedArtifactSHA256(runDir, tasklens.TraceMarkdownFile),
-			InputPolicyVersion:                "captured-inputs-v1", ArchitectureContract: componentmap.ContractVersion,
+			SelectedRevision:                   authority.repository.Head,
+			ModelBundleSHA256:                  modelBundleDigest,
+			OrientationContextSelectionSHA256:  orientationSelectionDigest,
+			RepositoryAtlasSHA256:              repositoryAtlasDigest,
+			AtlasStudyRequestSHA256:            "",
+			AtlasStudyResultSHA256:             "",
+			AtlasStudyStatusSHA256:             "",
+			ThemeScoutRequestSHA256:            themeScoutRequestDigest,
+			ThemeScoutResultSHA256:             themeScoutResultDigest,
+			ThemeScoutStatusSHA256:             themeScoutStatusDigest,
+			ThemeSourceExpansionSHA256:         themeExpansionDigest,
+			ThemeAdjudicationRequestSHA256:     themeAdjRequestDigest,
+			ThemeAdjudicationResultSHA256:      themeAdjResultDigest,
+			ThemeAdjudicationStatusSHA256:      themeAdjStatusDigest,
+			StudyThemesSHA256:                  themeStudyThemesDigest,
+			StudyInvestigationFactsSHA256:      savedArtifactSHA256(runDir, mechanismstudy.FactsArtifactFilename),
+			StudyInvestigationCandidatesSHA256: savedArtifactSHA256(runDir, mechanismstudy.CandidatesArtifactFilename),
+			StudyInvestigationResultSHA256:     savedArtifactSHA256(runDir, mechanismstudy.ResultArtifactFilename),
+			StudyInvestigationStatusSHA256:     savedArtifactSHA256(runDir, mechanismstudy.StatusArtifactFilename),
+			TaskBundleSHA256:                   savedArtifactSHA256(runDir, tasklens.BundleFile),
+			TaskAttemptSHA256:                  savedArtifactSHA256(runDir, tasklens.AttemptFile),
+			TaskPackSHA256:                     savedArtifactSHA256(runDir, tasklens.PackFile),
+			TaskStatusSHA256:                   savedArtifactSHA256(runDir, tasklens.StatusFile),
+			TaskRetrievalTraceSHA256:           savedArtifactSHA256(runDir, tasklens.TraceJSONFile),
+			TaskRetrievalTraceMarkdownSHA256:   savedArtifactSHA256(runDir, tasklens.TraceMarkdownFile),
+			InputPolicyVersion:                 "captured-inputs-v1", ArchitectureContract: componentmap.ContractVersion,
 			ReportContract: data.FormatVersion,
 		},
 	}
@@ -1329,6 +1628,9 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 		return err
 	}
 	if err := manifest.VerifyRepositoryAtlasArtifact(runDir, reportJSON); err != nil {
+		return err
+	}
+	if err := manifest.VerifyStudyInvestigationArtifacts(runDir, reportJSON); err != nil {
 		return err
 	}
 	if err := manifest.VerifyThemesArtifacts(runDir, reportJSON); err != nil {

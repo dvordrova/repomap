@@ -9,6 +9,7 @@ import (
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/mechanismstudy"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/report"
 )
@@ -28,6 +29,45 @@ func TestAtlasStudyDiagnosticPreservesAcceptedPartial(t *testing.T) {
 	}, nil, true)
 	if cached.State != "cache_hit" || cached.SemanticCalls != 0 || cached.TransportAttempts != 0 {
 		t.Fatalf("partial cached Atlas Study diagnostic = %#v", cached)
+	}
+}
+
+func TestStudyInvestigationDiagnosticPreservesTerminalFailureClass(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		batch mechanismstudy.BatchExecutionState
+		want  string
+	}{
+		{name: "canceled", batch: mechanismstudy.BatchCanceled, want: "canceled"},
+		{name: "output limit", batch: mechanismstudy.BatchOutputLimit, want: "resource_exhausted"},
+		{name: "response invalid", batch: mechanismstudy.BatchResponseInvalid, want: "response_validation_failed"},
+		{name: "provider failed", batch: mechanismstudy.BatchProviderFailed, want: "provider_failed"},
+		{name: "configuration failed", batch: mechanismstudy.BatchConfigurationFailed, want: "failed"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			diagnostic := studyInvestigationAtlasFirstDiagnostic(studyInvestigationRunOutcome{
+				Status: mechanismstudy.Status{
+					State:   mechanismstudy.StatusFailed,
+					Batches: []mechanismstudy.BatchExecution{{State: test.batch}},
+				},
+			}, true)
+			if diagnostic.State != test.want {
+				t.Fatalf("diagnostic state = %q, want %q", diagnostic.State, test.want)
+			}
+		})
+	}
+
+	partial := studyInvestigationAtlasFirstDiagnostic(studyInvestigationRunOutcome{
+		Status: mechanismstudy.Status{
+			State:   mechanismstudy.StatusPartial,
+			Batches: []mechanismstudy.BatchExecution{{State: mechanismstudy.BatchCanceled}},
+		},
+	}, true)
+	if partial.State != "accepted_partial" {
+		t.Fatalf("partial prefix state = %q", partial.State)
 	}
 }
 

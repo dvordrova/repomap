@@ -1483,6 +1483,12 @@
  stroke-width: 2.6;
 }
 
+.rm-arch__edge--study-mechanism .rm-arch__edge-visible {
+ filter: drop-shadow(0 1px 2px rgba(124, 58, 237, 0.24));
+ stroke: #7c3aed;
+ stroke-width: 3;
+}
+
 .rm-arch__entry-handoff-source {
  background: #ecfdf5;
  border: 1px solid #5eead4;
@@ -2465,6 +2471,17 @@
 }
 .rm-arch[data-lens="entrypoints"] .rm-arch__component.rm-arch__is-entry-handoff-participant .rm-arch__component-card {
   box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.3), 0 8px 22px rgba(15, 118, 110, 0.12);
+}
+.rm-arch[data-lens="landscape"][data-study-mechanism-overlay="true"] .rm-arch__component:not(.rm-arch__is-study-mechanism-participant) {
+  filter: saturate(0.55);
+  opacity: 0.42;
+}
+.rm-arch[data-lens="landscape"][data-study-mechanism-overlay="true"] .rm-arch__component.rm-arch__is-study-mechanism-participant {
+  filter: none;
+  opacity: 1;
+}
+.rm-arch[data-lens="landscape"] .rm-arch__component.rm-arch__is-study-mechanism-participant .rm-arch__component-card {
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.3), 0 8px 22px rgba(91, 33, 182, 0.14);
 }
 .rm-arch__lens { transition: opacity 120ms ease; }
 

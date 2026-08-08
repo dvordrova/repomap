@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlasstudy"
+	"github.com/dvordrova/repomap/internal/mechanismstudy"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 	"github.com/dvordrova/repomap/internal/themestudy"
 )
@@ -16,6 +17,7 @@ import (
 func d210ThemeManifestFixture(t *testing.T, state atlasstudy.ProductState) (RunManifest, []byte, string) {
 	t.Helper()
 	data := atlasStudyReportFixture(t)
+	data.CapturedRevision = strings.Repeat("a", 40)
 	runDir := t.TempDir()
 	writeThemeStudyAcceptedArtifacts(t, runDir, data)
 	status, studyMap, err := readAtlasStudyReportProduct(runDir, data)
@@ -60,6 +62,7 @@ func d210ThemeManifestFixture(t *testing.T, state atlasstudy.ProductState) (RunM
 			t.Fatal(encodeErr)
 		}
 		writeThemeArtifact(t, runDir, themestudy.StudyThemesArtifactFilename, themesEncoded)
+		writePreparedStudyInvestigationArtifacts(t, runDir, data, strings.Repeat("e", 64))
 
 		status, studyMap, err = readAtlasStudyReportProduct(runDir, data)
 		if err != nil {
@@ -100,6 +103,14 @@ func d210ThemeManifestFixture(t *testing.T, state atlasstudy.ProductState) (RunM
 		StudyThemesSHA256:              manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.StudyThemesArtifactFilename)),
 	}
 	manifest := validRunManifestFixture(t)
+	manifest.RepositoryState.Head = data.CapturedRevision
+	repositoryDigest, err := manifest.RepositoryState.Digest()
+	if err != nil {
+		t.Fatalf("digest theme manifest repository state: %v", err)
+	}
+	manifest.RepositoryStateSHA256 = repositoryDigest
+	manifest.MaterialInputs.SelectedRevision = data.CapturedRevision
+	writePreparedStudyInvestigationArtifacts(t, runDir, data, repositoryDigest)
 	manifest.OpenablePaths = append([]string(nil), data.OpenablePaths...)
 	manifest.Components = nil
 	manifest.ReportSHA256 = manifestSHA256(reportJSON)
@@ -112,6 +123,18 @@ func d210ThemeManifestFixture(t *testing.T, state atlasstudy.ProductState) (RunM
 	manifest.MaterialInputs.ThemeAdjudicationResultSHA256 = material.ThemeAdjudicationResultSHA256
 	manifest.MaterialInputs.ThemeAdjudicationStatusSHA256 = material.ThemeAdjudicationStatusSHA256
 	manifest.MaterialInputs.StudyThemesSHA256 = material.StudyThemesSHA256
+	manifest.MaterialInputs.StudyInvestigationFactsSHA256 = manifestSHA256(
+		mustReadAtlasStudyFile(t, runDir, mechanismstudy.FactsArtifactFilename),
+	)
+	manifest.MaterialInputs.StudyInvestigationCandidatesSHA256 = manifestSHA256(
+		mustReadAtlasStudyFile(t, runDir, mechanismstudy.CandidatesArtifactFilename),
+	)
+	manifest.MaterialInputs.StudyInvestigationResultSHA256 = manifestSHA256(
+		mustReadAtlasStudyFile(t, runDir, mechanismstudy.ResultArtifactFilename),
+	)
+	manifest.MaterialInputs.StudyInvestigationStatusSHA256 = manifestSHA256(
+		mustReadAtlasStudyFile(t, runDir, mechanismstudy.StatusArtifactFilename),
+	)
 	return manifest, reportJSON, runDir
 }
 
@@ -220,6 +243,40 @@ func TestD210ManifestRejectsLegacySingleStageBindingInThemeRun(t *testing.T) {
 	if err := manifest.VerifyReportJSON(reportJSON); err == nil ||
 		!strings.Contains(err.Error(), "legacy atlas-study artifact") {
 		t.Fatalf("legacy single-stage binding error = %v", err)
+	}
+}
+
+func TestD246ManifestRejectsStudyThemesFromAnotherRepositoryRevision(t *testing.T) {
+	manifest, reportJSON, runDir := d210ThemeManifestFixture(t, atlasstudy.ProductStateAccepted)
+
+	themesRaw := mustReadAtlasStudyFile(t, runDir, themestudy.StudyThemesArtifactFilename)
+	themes, err := themestudy.DecodeStudyThemes(themesRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	themes.Revision = strings.Repeat("f", 40)
+	themesRaw, err = themestudy.EncodeStudyThemes(themes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeThemeArtifact(t, runDir, themestudy.StudyThemesArtifactFilename, themesRaw)
+	manifest.MaterialInputs.StudyThemesSHA256 = manifestSHA256(themesRaw)
+
+	// Rebind the report-side revision too, isolating the manifest's repository
+	// authority check from the report hydration mismatch check.
+	var data ReportData
+	if err := json.Unmarshal(reportJSON, &data); err != nil {
+		t.Fatal(err)
+	}
+	data.CapturedRevision = themes.Revision
+	reportJSON, err = json.Marshal(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.ReportSHA256 = manifestSHA256(reportJSON)
+	if err := manifest.VerifyThemesArtifacts(runDir, reportJSON); err == nil ||
+		!strings.Contains(err.Error(), "does not match authorized repository revision") {
+		t.Fatalf("cross-revision Study themes error = %v", err)
 	}
 }
 

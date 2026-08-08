@@ -5,6 +5,8 @@ import (
 	"testing"
 )
 
+const studyThemesFixtureRevision = "0123456789abcdef0123456789abcdef01234567"
+
 // buildTestScoutRequest compiles a deterministic Scout request over a small
 // synthetic substrate (names-only vocabulary + bounded seed packs).
 func buildTestScoutRequest(t *testing.T) ScoutRequest {
@@ -193,8 +195,9 @@ func TestMockAndReplayAdjudicationRoundTrip(t *testing.T) {
 	}
 	encoded, err := EncodeStudyThemes(StudyThemes{
 		// Decision 235 (v11): themes artifact v3.
-		Version: StudyThemesVersion, ScoutSHA256: request.CatalogSHA256,
-		AdjSHA256: adjRequest.CatalogSHA256, Cards: reduction.Cards,
+		Version: StudyThemesVersion, Revision: studyThemesFixtureRevision,
+		ScoutSHA256: request.CatalogSHA256,
+		AdjSHA256:   adjRequest.CatalogSHA256, Cards: reduction.Cards,
 		Omitted: reduction.Omitted, CoProjected: reduction.CoProjected,
 		Partial: reduction.Partial, Diagnostics: reduction.Diagnostics,
 	})
@@ -217,9 +220,10 @@ func TestMockAndReplayAdjudicationRoundTrip(t *testing.T) {
 	}
 }
 
-func TestStudyThemesV4PersistsCoProjectionAndRejectsStaleOrNegativeAccounting(t *testing.T) {
+func TestStudyThemesV5PersistsRevisionAndCoProjectionAndRejectsStaleOrNegativeAccounting(t *testing.T) {
 	themes := StudyThemes{
 		Version:     StudyThemesVersion,
+		Revision:    studyThemesFixtureRevision,
 		Cards:       []ThemeCard{},
 		Omitted:     1,
 		CoProjected: 2,
@@ -229,8 +233,9 @@ func TestStudyThemesV4PersistsCoProjectionAndRejectsStaleOrNegativeAccounting(t 
 	if err != nil {
 		t.Fatalf("EncodeStudyThemes: %v", err)
 	}
-	if !strings.Contains(string(encoded), `"co_projected":2`) {
-		t.Fatalf("encoded v4 artifact lost co_projected: %s", encoded)
+	if !strings.Contains(string(encoded), `"revision":"`+studyThemesFixtureRevision+`"`) ||
+		!strings.Contains(string(encoded), `"co_projected":2`) {
+		t.Fatalf("encoded v5 artifact lost revision or co_projected: %s", encoded)
 	}
 	decoded, err := DecodeStudyThemes(encoded)
 	if err != nil {
@@ -241,15 +246,20 @@ func TestStudyThemesV4PersistsCoProjectionAndRejectsStaleOrNegativeAccounting(t 
 			decoded.Omitted, decoded.CoProjected, themes.Omitted, themes.CoProjected)
 	}
 
-	if _, err := DecodeStudyThemes([]byte(`{"version":"v3","cards":[],"omitted":0,"partial":false}`)); err == nil {
-		t.Fatal("StudyThemes v3 must fail closed after co_projected became durable")
+	if _, err := DecodeStudyThemes([]byte(`{"version":"v4","revision":"` + studyThemesFixtureRevision + `","cards":[],"omitted":0,"partial":false}`)); err == nil {
+		t.Fatal("StudyThemes v4 must fail closed after revision became mandatory")
+	}
+	missingRevision := themes
+	missingRevision.Revision = ""
+	if _, err := EncodeStudyThemes(missingRevision); err == nil {
+		t.Fatal("StudyThemes without exact revision must fail closed")
 	}
 	negative := themes
 	negative.CoProjected = -1
 	if _, err := EncodeStudyThemes(negative); err == nil {
 		t.Fatal("negative co_projected must be rejected on encode")
 	}
-	if _, err := DecodeStudyThemes([]byte(`{"version":"v4","cards":[],"omitted":0,"co_projected":-1,"partial":false}`)); err == nil {
+	if _, err := DecodeStudyThemes([]byte(`{"version":"v5","revision":"` + studyThemesFixtureRevision + `","cards":[],"omitted":0,"co_projected":-1,"partial":false}`)); err == nil {
 		t.Fatal("negative co_projected must be rejected on decode")
 	}
 }
@@ -265,7 +275,7 @@ func TestCurrentThemeIdentityTuple(t *testing.T) {
 		AdjudicationResultVersion,
 		StudyThemesVersion,
 	}
-	want := []any{5, "v3", "theme-scout-accepted-v3", 5, 3, "theme-adjudication-accepted-v2", 5, "v4"}
+	want := []any{5, "v3", "theme-scout-accepted-v3", 5, 3, "theme-adjudication-accepted-v2", 5, "v5"}
 	for index := range want {
 		if got[index] != want[index] {
 			t.Fatalf("theme identity tuple[%d] = %v, want %v (full tuple: %v)", index, got[index], want[index], got)

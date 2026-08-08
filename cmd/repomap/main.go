@@ -33,6 +33,7 @@ import (
 	"github.com/dvordrova/repomap/internal/secretscan"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
 	"github.com/dvordrova/repomap/internal/snapshot"
+	"github.com/dvordrova/repomap/internal/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/tasklens"
 	"github.com/dvordrova/repomap/internal/themestudy"
 )
@@ -452,22 +453,24 @@ func runDefault(repo string, extraArgs []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	return runDefaultWithDeps(repo, extraArgs, defaultRunDeps{
-		ctx:         ctx,
-		stdout:      os.Stdout,
-		stderr:      os.Stderr,
-		openReport:  openReport,
-		serveReport: reportserver.Serve,
-		captureRepo: freshness.CaptureRepository,
+		ctx:                         ctx,
+		stdout:                      os.Stdout,
+		stderr:                      os.Stderr,
+		openReport:                  openReport,
+		serveReport:                 reportserver.Serve,
+		captureRepo:                 freshness.CaptureRepository,
+		newStudyInvestigationClient: defaultStudyInvestigationClientFactory,
 	})
 }
 
 type defaultRunDeps struct {
-	ctx         context.Context
-	stdout      io.Writer
-	stderr      io.Writer
-	openReport  func(string) error
-	serveReport func(context.Context, reportserver.Options) error
-	captureRepo func(context.Context, string) (freshness.RepositoryState, error)
+	ctx                         context.Context
+	stdout                      io.Writer
+	stderr                      io.Writer
+	openReport                  func(string) error
+	serveReport                 func(context.Context, reportserver.Options) error
+	captureRepo                 func(context.Context, string) (freshness.RepositoryState, error)
+	newStudyInvestigationClient studyInvestigationClientFactory
 }
 
 func readSourceEpisodeFile(filePath string) ([]byte, error) {
@@ -533,6 +536,10 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		return err
 	}
 	humanOutput := newRunOutput(deps.stderr)
+	newStudyInvestigationClient := deps.newStudyInvestigationClient
+	if newStudyInvestigationClient == nil {
+		newStudyInvestigationClient = defaultStudyInvestigationClientFactory
+	}
 	publicationStateEmitted := false
 	defer func() {
 		if runErr != nil && !publicationStateEmitted {
@@ -654,6 +661,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	}
 
 	researchPolicy := modelresearch.DefaultPolicy()
+	var directCallIndex *surfacediscovery.DirectCallIndex
 	opts := orient.Options{
 		RepoPath:                  repo,
 		AtlasFirst:                true,
@@ -680,6 +688,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		MaxGoEdges:                0,
 		ResearchPolicy:            researchPolicy,
 		RepositoryContext:         researchRepositoryContext(initialState, repo),
+		DirectCallIndexSink: func(index surfacediscovery.DirectCallIndex) {
+			directCallIndex = &index
+		},
 		EffectiveOptions: debugdump.EffectiveOptions{
 			Offline:          *offline,
 			NoCache:          *noCache,
@@ -700,7 +711,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if err != nil {
 		return fmt.Errorf("%w\nrequest diagnostics: %s", err, filepath.Join(runDir, "metadata.json"))
 	}
-
 	var reportPath string
 	var architectureAuthority report.RunAuthority
 	if !*offline {
@@ -874,11 +884,53 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		return studyErr
 	}
 
-	if studyOutcome.SemanticCalls > 0 {
+	var investigationOutcome studyInvestigationRunOutcome
+	var investigationErr error
+	investigationCalled := studyOutcome.PublishedCards > 0
+	if investigationCalled {
+		repositoryFreshnessSHA256, digestErr := initialState.Digest()
+		if digestErr != nil {
+			investigationErr = fmt.Errorf("bind Study investigation repository state: %w", digestErr)
+		} else {
+			investigationOutcome, investigationErr = runStudyInvestigationForRun(
+				ctx,
+				runDir,
+				directCallIndex,
+				initialState.Head,
+				repositoryFreshnessSHA256,
+				humanOutput,
+				newStudyInvestigationClient,
+			)
+		}
+	}
+	if diagnosticErr := recordAtlasFirstStageDiagnostic(
+		runDir,
+		studyInvestigationAtlasFirstDiagnostic(investigationOutcome, investigationCalled),
+	); diagnosticErr != nil {
+		if investigationErr != nil {
+			return errors.Join(investigationErr, diagnosticErr)
+		}
+		return diagnosticErr
+	}
+	if investigationErr != nil {
+		return investigationErr
+	}
+
+	reconciliationContext, releaseReconciliation := studyInvestigationPublicationContext(
+		ctx,
+		investigationOutcome.Status,
+	)
+	defer releaseReconciliation()
+	if studyOutcome.SemanticCalls > 0 || investigationOutcome.SemanticCalls > 0 || investigationCalled {
 		studyReconciliationStarted := time.Now()
-		postStudyState, captureErr := captureRepo(ctx, repo)
+		postStudyState, captureErr := captureRepo(reconciliationContext, repo)
 		if captureErr != nil {
 			return fmt.Errorf("capture repository state after Atlas Study: %w", captureErr)
+		}
+		if investigationCalled {
+			if err := validateStudyInvestigationRepositoryFreshness(initialState, postStudyState); err != nil {
+				return err
+			}
 		}
 		if staticSourceHost != "" && postStudyState.Head != initialState.Head {
 			return fmt.Errorf(
@@ -887,14 +939,24 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			)
 		}
 		authority, err = report.ConfirmRunAuthorityScoped(
-			ctx, analysisRoot, initialState, postStudyState,
+			reconciliationContext, analysisRoot, initialState, postStudyState,
 			report.CapturedInputPaths(reportData), *strictSnapshot,
 		)
 		if err != nil {
 			return fmt.Errorf("confirm browser report authority after Atlas Study: %w", err)
 		}
-		if err := report.PrepareAuthorizedSourceCoverage(ctx, reportData, &authority); err != nil {
+		if err := report.PrepareAuthorizedSourceCoverage(reconciliationContext, reportData, &authority); err != nil {
 			return fmt.Errorf("reprepare exact source coverage after Atlas Study: %w", err)
+		}
+		if investigationOutcome.Status.MechanismCount > 0 {
+			if err := report.PrepareAuthorizedStudyInvestigationSourceCoverage(
+				reconciliationContext,
+				reportData,
+				&authority,
+				investigationOutcome.ReportInput,
+			); err != nil {
+				return fmt.Errorf("prepare exact Study investigation source coverage: %w", err)
+			}
 		}
 		humanOutput.State(
 			"Repository authority", "reconfirmed after Study",
@@ -1127,6 +1189,12 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	publicationDetails := append([]string{"report: " + reportPath}, publication.consoleDetails()...)
 	humanOutput.State("Run", publication.consoleState(), publicationDetails...)
 	publicationStateEmitted = true
+	if studyInvestigationCanceled(investigationOutcome.Status) && ctx.Err() != nil {
+		// The optional stage consumed the cancellation into a durable failed/
+		// partial status. The report is now safely published; do not start an
+		// interactive server under the already-canceled caller context.
+		return nil
+	}
 
 	interactiveReport := reportPath != ""
 	if interactiveReport && !*noServe && deps.serveReport != nil {

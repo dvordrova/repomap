@@ -31,6 +31,7 @@ Active decisions (each approved by the repository owner via its supervisory goal
 27. decisions/243-publication-truth-and-direct-mechanism-authority.md
 28. decisions/244-exact-package-member-entry-handoff-join.md
 29. decisions/245-fresh-report-publication-truth-closure.md
+30. decisions/246-persisted-study-mechanisms.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
@@ -134,6 +135,27 @@ Approved by:
     Repository owner through the persistent linked hard-review goal and the
     2026-08-09 instruction to inspect a freshly generated HTML report end to
     end and take concrete corrective steps.
+
+## Decision 246
+
+Status:
+    ACTIVE. The owner-authorized refs-only v2 mechanism calls are now sufficient
+    for production publication: issue-bot/Syn/Air returned three locally valid
+    mechanisms each, grpcurl returned one and retained it while a disconnected
+    sibling failed item-locally. Production reuses one private DirectCallIndex
+    from the existing SSA build, compiles final direct Study readings without a
+    selector, persists separate hash-verified facts/candidates/result/status,
+    and publishes only backend-derived connected paths inside Study. A transient
+    Landscape overlay reuses existing cube geometry; no Navigator, D210
+    Mechanism, new top-level lens, model prose or second SSA build is added.
+    Identities advance to StudyThemes v5, Atlas Study projection15, report42,
+    manifest14 and UI15; mechanism v2/prompt identity and Canvas15/group-v2 stay
+    unchanged.
+
+Approved by:
+    Repository owner after explicitly authorizing the expensive small-repository
+    calls and accepting that call cost is secondary to proving useful connected
+    paths, 2026-08-09.
 
 ## Decision 241 follow-up
 

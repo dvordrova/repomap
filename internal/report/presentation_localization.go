@@ -1167,6 +1167,14 @@ func cloneReportData(data *ReportData) (*ReportData, error) {
 		return nil, fmt.Errorf("report localization: clone canonical report: %w", err)
 	}
 	cloned.evidenceLocations = append(cloned.evidenceLocations, data.evidenceLocations...)
+	cloned.studyInvestigationSourceLocations = append(
+		cloned.studyInvestigationSourceLocations,
+		data.studyInvestigationSourceLocations...,
+	)
+	cloned.studyInvestigationInput = cloneStudyInvestigationInput(data.studyInvestigationInput)
+	cloned.studyInvestigationArtifactsChecked = data.studyInvestigationArtifactsChecked
+	cloned.studyInvestigationRepositoryRevision = data.studyInvestigationRepositoryRevision
+	cloned.studyInvestigationFreshnessSHA256 = data.studyInvestigationFreshnessSHA256
 	cloned.sourceSignals = append(cloned.sourceSignals, data.sourceSignals...)
 	cloned.studyDocumentSourceRoot = data.studyDocumentSourceRoot
 	cloned.standaloneLocalRoots = append([]string(nil), data.standaloneLocalRoots...)

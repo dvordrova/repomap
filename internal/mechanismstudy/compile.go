@@ -36,6 +36,7 @@ type selectedGraph struct {
 
 type digestCard struct {
 	Card      Card            `json:"card"`
+	Ordinal   int             `json:"ordinal"`
 	Canonical string          `json:"canonical"`
 	Nodes     []digestNode    `json:"nodes"`
 	Edges     []digestEdge    `json:"edges"`
@@ -43,21 +44,22 @@ type digestCard struct {
 }
 
 type digestNode struct {
-	Ref string `json:"ref"`
-	ID  string `json:"id"`
+	Ref  string                          `json:"ref"`
+	Node surfacediscovery.DirectCallNode `json:"node"`
 }
 
 type digestEdge struct {
-	Ref string `json:"ref"`
-	ID  string `json:"id"`
+	Ref  string                          `json:"ref"`
+	Edge surfacediscovery.DirectCallEdge `json:"edge"`
 }
 
 type digestReading struct {
-	Ref    string `json:"ref"`
-	RootID string `json:"root_id,omitempty"`
-	Path   string `json:"path"`
-	Line   int    `json:"line"`
-	Symbol string `json:"symbol"`
+	Ref     string `json:"ref"`
+	Ordinal int    `json:"ordinal"`
+	RootID  string `json:"root_id,omitempty"`
+	Path    string `json:"path"`
+	Line    int    `json:"line"`
+	Symbol  string `json:"symbol"`
 }
 
 type compilationDigest struct {
@@ -74,10 +76,11 @@ type compilationDigest struct {
 }
 
 type sourceReading struct {
-	Label  string
-	Path   string
-	Line   int
-	Symbol string
+	Ordinal int
+	Label   string
+	Path    string
+	Line    int
+	Symbol  string
 }
 
 type sourceCard struct {
@@ -131,13 +134,14 @@ func Compile(study themestudy.StudyThemes, index *surfacediscovery.DirectCallInd
 			Label: card.FinalTitle, Question: card.FinalQuestion,
 			UnsupportedReading: len(card.AlternateReadings),
 		}
-		for _, reading := range card.Readings {
+		for position, reading := range card.Readings {
 			if reading.Fit != themestudy.FitDirect {
 				source.UnsupportedReading++
 				continue
 			}
 			source.Readings = append(source.Readings, sourceReading{
-				Label: reading.Label, Path: reading.Path, Line: reading.Line, Symbol: reading.Symbol,
+				Ordinal: position + 1,
+				Label:   reading.Label, Path: reading.Path, Line: reading.Line, Symbol: reading.Symbol,
 			})
 		}
 		sources = append(sources, source)
@@ -174,8 +178,11 @@ func CompileContexts(contexts []ExactContext, index *surfacediscovery.DirectCall
 			Canonical: fmt.Sprintf("explicit-context-%d-%s", position+1, binding.ContextSHA256),
 			Label:     context.Label, Question: context.Question,
 		}
-		for _, reading := range context.Readings {
-			source.Readings = append(source.Readings, sourceReading(reading))
+		for readingPosition, reading := range context.Readings {
+			source.Readings = append(source.Readings, sourceReading{
+				Ordinal: readingPosition + 1, Label: reading.Label, Path: reading.Path,
+				Line: reading.Line, Symbol: reading.Symbol,
+			})
 		}
 		sources = append(sources, source)
 	}
@@ -318,7 +325,8 @@ func compileCard(
 		Nodes:    make([]Node, 0, len(nodeIDs)),
 		Edges:    []Edge{},
 	}
-	digestEntry := digestCard{Card: card, Canonical: source.Canonical}
+	digestEntry := digestCard{Card: card, Ordinal: source.Ordinal, Canonical: source.Canonical}
+	nodeByRef := make(map[string]surfacediscovery.DirectCallNode, len(nodeIDs))
 	for _, id := range nodeIDs {
 		node := graph.nodes[id]
 		ref := fmt.Sprintf("n%d", nextNodeRef)
@@ -327,9 +335,11 @@ func compileCard(
 		card.Nodes = append(card.Nodes, Node{
 			Ref: ref, Label: nodeLabel(node),
 		})
-		digestEntry.Nodes = append(digestEntry.Nodes, digestNode{Ref: ref, ID: id})
+		nodeByRef[ref] = node
+		digestEntry.Nodes = append(digestEntry.Nodes, digestNode{Ref: ref, Node: node})
 	}
 	readingRootByRef := make(map[string]string, len(bindings))
+	readingOrdinalByRef := make(map[string]int, len(bindings))
 	for _, binding := range bindings {
 		rootRef := nodeRefByID[binding.rootID]
 		card.Readings = append(card.Readings, Reading{
@@ -340,8 +350,9 @@ func compileCard(
 		if rootRef != "" {
 			readingRootByRef[binding.ref] = rootRef
 		}
+		readingOrdinalByRef[binding.ref] = binding.reading.Ordinal
 		digestEntry.Readings = append(digestEntry.Readings, digestReading{
-			Ref: binding.ref, RootID: binding.rootID,
+			Ref: binding.ref, Ordinal: binding.reading.Ordinal, RootID: binding.rootID,
 			Path: binding.reading.Path, Line: binding.reading.Line, Symbol: binding.reading.Symbol,
 		})
 	}
@@ -367,13 +378,15 @@ func compileCard(
 			Invocation: edge.Invocation, WitnessCount: edge.WitnessCount,
 		})
 		edgeByRef[ref] = edge
-		digestEntry.Edges = append(digestEntry.Edges, digestEdge{Ref: ref, ID: id})
+		digestEntry.Edges = append(digestEntry.Edges, digestEdge{Ref: ref, Edge: edge})
 	}
 	card.Frontier = frontierFromCounts(frontierCounts)
 	digestEntry.Card = card
 	authority := cardAuthority{
-		nodeIDByRef: nodeIDByRef, nodeRefByID: nodeRefByID,
+		sourceOrdinal: source.Ordinal, sourceCanonical: source.Canonical,
+		nodeIDByRef: nodeIDByRef, nodeRefByID: nodeRefByID, nodeByRef: nodeByRef,
 		edgeByRef: edgeByRef, readingRootByRef: readingRootByRef,
+		readingOrdinalByRef: readingOrdinalByRef,
 	}
 	return card, authority, digestEntry, nextReadingRef, nextNodeRef, nextEdgeRef, nil
 }

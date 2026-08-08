@@ -55,10 +55,12 @@ type Options struct {
 	RequireArtifacts          bool
 	DiscoverSurfaces          bool
 	ExplainFlows              int
-	// DirectCallIndexSink receives the complete bounded in-memory direct-call
-	// index produced by the existing surface SSA pass. It is a live-run handoff
-	// only: the index remains excluded from snapshot, debug, Atlas, and report
-	// artifacts, and no second package load or SSA build is performed.
+	// DirectCallIndexSink receives one independently owned snapshot of the
+	// complete bounded in-memory direct-call index produced by the successful
+	// existing surface SSA pass. It is a live-run handoff only: the index remains
+	// excluded from snapshot, debug, Atlas, and report artifacts, and no second
+	// package load or SSA build is performed. Disabled and non-Go runs do not
+	// invoke the sink.
 	DirectCallIndexSink func(surfacediscovery.DirectCallIndex)
 	// Progress callbacks may run from heartbeat goroutines. They must be
 	// concurrency-safe and return promptly.
@@ -813,7 +815,7 @@ func deliverDirectCallIndex(opts Options, index *surfacediscovery.DirectCallInde
 	if opts.DirectCallIndexSink == nil || index == nil {
 		return
 	}
-	opts.DirectCallIndexSink(*index)
+	opts.DirectCallIndexSink(index.Snapshot())
 }
 
 func orientationFileLimit(explicitLimit, inputCount int) int {

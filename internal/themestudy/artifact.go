@@ -10,7 +10,7 @@ import (
 )
 
 // Artifact filenames (Decision 213 §6). They are persisted in the run
-// directory and bound by RunManifest v12 SHA-256 fields.
+// directory and bound by the current RunManifest SHA-256 fields.
 const (
 	ScoutRequestArtifactFilename        = "theme_scout_request.v1.json"
 	ScoutResultArtifactFilename         = "theme_scout_result.v1.json"
@@ -22,7 +22,7 @@ const (
 	StudyThemesArtifactFilename         = "study_themes.v1.json"
 )
 
-// The eight theme artifacts in canonical binding order (RunManifest v12).
+// The eight theme artifacts in canonical binding order.
 var ThemeArtifactFilenames = []string{
 	ScoutRequestArtifactFilename,
 	ScoutResultArtifactFilename,
@@ -519,9 +519,11 @@ func EncodeStudyThemes(themes StudyThemes) ([]byte, error) {
 	// concentration diagnostic); Decision 235: version 3 (theme
 	// equivalence accounting); Decision 241: version 4 (durable
 	// co-projection count). The artifact version advances with the
-	// constant — no literal drift (D233 defect closed).
-	if themes.Version != StudyThemesVersion || themes.Omitted < 0 || themes.CoProjected < 0 {
-		return nil, fmt.Errorf("study themes artifact: invalid version")
+	// constant — no literal drift (D233 defect closed). Decision 246 makes the
+	// exact repository revision mandatory for the post-Study mechanism binding.
+	if themes.Version != StudyThemesVersion || !validStudyRevision(themes.Revision) ||
+		themes.Omitted < 0 || themes.CoProjected < 0 {
+		return nil, fmt.Errorf("study themes artifact: invalid identity")
 	}
 	return encodeBoundedArtifact("study themes", MaxStudyThemesArtifactBytes, themes)
 }
@@ -532,8 +534,23 @@ func DecodeStudyThemes(data []byte) (StudyThemes, error) {
 	if err := decodeArtifact("study themes", data, MaxStudyThemesArtifactBytes, &themes); err != nil {
 		return StudyThemes{}, err
 	}
-	if themes.Version != StudyThemesVersion || themes.Omitted < 0 || themes.CoProjected < 0 {
-		return StudyThemes{}, fmt.Errorf("study themes artifact: invalid version")
+	if themes.Version != StudyThemesVersion || !validStudyRevision(themes.Revision) ||
+		themes.Omitted < 0 || themes.CoProjected < 0 {
+		return StudyThemes{}, fmt.Errorf("study themes artifact: invalid identity")
 	}
 	return themes, requireCanonicalArtifact("study themes", data, themes)
+}
+
+func validStudyRevision(value string) bool {
+	if len(value) != 40 && len(value) != 64 {
+		return false
+	}
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			if char < 'a' || char > 'f' {
+				return false
+			}
+		}
+	}
+	return true
 }

@@ -306,6 +306,93 @@
   };
  }
 
+ // D246: one published Study mechanism is already a backend-validated,
+ // ordered direct-call path. The browser consumes only its public node/edge
+ // projection and exact component_ids. It never repairs identities or picks
+ // one owner from a plural set. Every exact participant can be highlighted;
+ // only unique -> unique joins between distinct components become arrows.
+ function currentStudyMechanism(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !text(value.id)) return false;
+  const nodes = array(value.nodes);
+  const edges = array(value.edges);
+  if (nodes.length < 3 || edges.length < 2 || edges.length !== nodes.length - 1) return false;
+  const nodeIDs = new Set();
+  for (let index = 0; index < nodes.length; index++) {
+   const node = nodes[index];
+   if (!node || !text(node.id) || !text(node.label) || !Array.isArray(node.component_ids) ||
+    nodeIDs.has(text(node.id))) return false;
+   nodeIDs.add(text(node.id));
+  }
+  for (let index = 0; index < edges.length; index++) {
+   const edge = edges[index];
+   if (!edge || !text(edge.id) || !nodeIDs.has(text(edge.from_node_id)) ||
+    !nodeIDs.has(text(edge.to_node_id)) ||
+    ["synchronous", "goroutine", "deferred"].indexOf(text(edge.invocation)) < 0) return false;
+  }
+  return true;
+ }
+
+ function studyMechanismOverlayProjection(mechanism, knownComponentIDs) {
+  const empty = { mechanism_id: "", component_ids: [], edges: [], side_rows: [] };
+  if (!currentStudyMechanism(mechanism)) return empty;
+  const restrictToKnown = Array.isArray(knownComponentIDs);
+  const known = new Set(array(knownComponentIDs).map(text).filter(Boolean));
+  const accept = (value) => {
+   const componentID = text(value);
+   return componentID && (!restrictToKnown || known.has(componentID));
+  };
+  const nodeByID = new Map(array(mechanism.nodes).map((node) => [text(node.id), node]));
+  const componentIDs = [];
+  const exactIDs = (node) => Array.from(new Set(
+   array(node && node.component_ids).map(text).filter(Boolean)
+  ));
+  const joinedIDs = (node) => exactIDs(node).filter(accept);
+  array(mechanism.nodes).forEach((node) => {
+   joinedIDs(node).forEach((componentID) => {
+    if (componentIDs.indexOf(componentID) < 0) componentIDs.push(componentID);
+   });
+  });
+  const edges = [];
+  const sideRows = [];
+  array(mechanism.edges).forEach((edge) => {
+   const fromNode = nodeByID.get(text(edge.from_node_id));
+   const toNode = nodeByID.get(text(edge.to_node_id));
+   const fromIDs = exactIDs(fromNode);
+   const toIDs = exactIDs(toNode);
+   const joinedFromIDs = joinedIDs(fromNode);
+   const joinedToIDs = joinedIDs(toNode);
+   const item = {
+    id: text(edge.id), edge: edge, from_node: fromNode, to_node: toNode,
+    from_component_ids: fromIDs, to_component_ids: toIDs,
+   };
+   if (fromIDs.length === 0 || toIDs.length === 0 ||
+    joinedFromIDs.length === 0 || joinedToIDs.length === 0) {
+    item.reason = "zero_component";
+    sideRows.push(item);
+    return;
+   }
+   if (fromIDs.length !== 1 || toIDs.length !== 1) {
+    item.reason = "plural_components";
+    sideRows.push(item);
+    return;
+   }
+   if (fromIDs[0] === toIDs[0]) {
+    item.reason = "same_component";
+    sideRows.push(item);
+    return;
+   }
+   item.from_component_id = fromIDs[0];
+   item.to_component_id = toIDs[0];
+   edges.push(item);
+  });
+  return {
+   mechanism_id: text(mechanism.id),
+   component_ids: componentIDs,
+   edges: edges,
+   side_rows: sideRows,
+  };
+ }
+
  function entryHandoffLaneOffset(index) {
   if (!(index > 0)) return 0;
   const distance = Math.ceil(index / 2) * 9;
@@ -901,6 +988,7 @@ function architecturePartialTruth(data) {
     this.entryHandoffGroups.map((group) => [text(group.id), group])
    );
    this.selectedEntryHandoffGroupID = "";
+   this.studyMechanismOverlay = null;
      this.flows = array(this.data.flows).filter((flow) => (
       !this.userMode || array(flow && flow.steps).length >= 2
      ));
@@ -953,6 +1041,7 @@ function architecturePartialTruth(data) {
    this.structuralEdgeElements = new Map();
    this.flowEdgeElements = new Map();
    this.entryHandoffOverlayElements = [];
+   this.studyMechanismOverlayElements = [];
      this.flowComponentIDs = new Map();
      this.flowButtons = new Map();
       this.focusFlowID = "";
@@ -1851,7 +1940,8 @@ function architecturePartialTruth(data) {
    this.structuralSVG = this.createSVG("rm-arch__edges rm-arch__edges--structural");
    this.flowSVG = this.createSVG("rm-arch__edges rm-arch__edges--flow");
    this.entryHandoffSVG = this.createSVG("rm-arch__edges rm-arch__edges--entry-handoff");
-   this.surface.append(this.structuralSVG, this.flowSVG, this.entryHandoffSVG);
+   this.studyMechanismSVG = this.createSVG("rm-arch__edges rm-arch__edges--study-mechanism");
+   this.surface.append(this.structuralSVG, this.flowSVG, this.entryHandoffSVG, this.studyMechanismSVG);
 
    this.groupLayer = element("div", "rm-arch__groups");
    this.nodeLayer = element("div", "rm-arch__nodes");
@@ -1874,6 +1964,7 @@ function architecturePartialTruth(data) {
    this.renderFlowSteps();
    this.renderFlowEdges();
    this.renderEntrypointHandoffOverlay();
+   this.renderStudyMechanismOverlay();
    this.applyView();
 
   }
@@ -2518,6 +2609,73 @@ function architecturePartialTruth(data) {
   clearEntrypointHandoffGroup() {
    this.selectedEntryHandoffGroupID = "";
    this.renderEntrypointHandoffOverlay();
+  }
+
+  renderStudyMechanismOverlay() {
+   if (!this.studyMechanismSVG) return;
+   const defs = svgElement("defs");
+   defs.appendChild(this.arrowMarker("rm-arch-study-mechanism-arrow", "#7c3aed"));
+   this.studyMechanismSVG.replaceChildren(defs);
+   this.studyMechanismOverlayElements = [];
+   this.componentElements.forEach((node) => {
+    node.classList.remove("rm-arch__is-study-mechanism-participant");
+   });
+   const projection = this.lens === "landscape"
+    ? studyMechanismOverlayProjection(
+     this.studyMechanismOverlay,
+     Array.from(this.componentByID.keys())
+    )
+    : { mechanism_id: "", component_ids: [], edges: [] };
+   if (this.root) {
+    this.root.setAttribute(
+     "data-study-mechanism-overlay",
+     projection.mechanism_id ? "true" : "false"
+    );
+   }
+   if (!projection.mechanism_id) return;
+   projection.component_ids.forEach((componentID) => {
+    const node = this.componentElements.get(componentID);
+    if (node) node.classList.add("rm-arch__is-study-mechanism-participant");
+   });
+   const lanes = new Map();
+   projection.edges.forEach((item) => {
+    const from = this.nodePositions.get(item.from_component_id);
+    const to = this.nodePositions.get(item.to_component_id);
+    if (!from || !to) return;
+    const pair = item.from_component_id + "\u0000" + item.to_component_id;
+    const lane = lanes.get(pair) || 0;
+    lanes.set(pair, lane + 1);
+    const geometry = entryHandoffConnectionGeometry(from, to, lane);
+    if (!geometry) return;
+    const edge = this.interactiveSVGPath(
+     geometry.path,
+     "rm-arch__edge rm-arch__edge--study-mechanism",
+     this.msg("architecture.aria.study_mechanism_transition", {
+      from: text(item.from_node && item.from_node.label),
+      to: text(item.to_node && item.to_node.label),
+     }),
+     null
+    );
+    const visible = edge.querySelector(".rm-arch__edge-visible");
+    if (visible) visible.setAttribute("marker-end", "url(#rm-arch-study-mechanism-arrow)");
+    edge.setAttribute("data-study-mechanism-edge", text(item.id));
+    this.studyMechanismSVG.appendChild(edge);
+    this.studyMechanismOverlayElements.push(edge);
+   });
+  }
+
+  // D246: this is a transient paint operation over existing node positions.
+  // It deliberately does not call layout, fit, focus, or applyView, so the
+  // user's current Canvas transform is byte-for-byte stable.
+  setStudyMechanismOverlay(mechanism) {
+   this.studyMechanismOverlay = currentStudyMechanism(mechanism) ? mechanism : null;
+   this.renderStudyMechanismOverlay();
+   return !!this.studyMechanismOverlay;
+  }
+
+  clearStudyMechanismOverlay() {
+   this.studyMechanismOverlay = null;
+   this.renderStudyMechanismOverlay();
   }
 
   primaryFlowSteps(flow) {
@@ -3453,9 +3611,10 @@ function architecturePartialTruth(data) {
    if (value === "landscape") {
      if (this.root) this.root.setAttribute("data-lens-has-emphasis", "false");
      this.components.forEach((component) => {
-      const node = this.componentElements.get(text(component && component.id));
-      if (node) node.classList.remove("rm-arch__is-lens-emphasized");
+     const node = this.componentElements.get(text(component && component.id));
+     if (node) node.classList.remove("rm-arch__is-lens-emphasized");
      });
+     this.renderStudyMechanismOverlay();
      return value;
     }
     const projection = mapLensEmphasisProjection({
@@ -3476,6 +3635,7 @@ function architecturePartialTruth(data) {
      node.classList.toggle("rm-arch__is-lens-emphasized", active);
     });
     if (value === "entrypoints") this.renderEntrypointHandoffOverlay();
+    this.renderStudyMechanismOverlay();
     return value;
    }
 
@@ -5872,6 +6032,10 @@ function architecturePartialTruth(data) {
    // Canvas 15/group v2: one exact entry group at a time overlays the
    // existing component geometry. Selection never relayouts or pans.
    selectEntrypointHandoffGroup: (groupID) => app.selectEntrypointHandoffGroup(groupID),
+   // D246: one backend-published Study path overlays the existing
+   // Landscape geometry. It never relayouts, focuses, or pans.
+   setStudyMechanismOverlay: (mechanism) => app.setStudyMechanismOverlay(mechanism),
+   clearStudyMechanismOverlay: () => app.clearStudyMechanismOverlay(),
    // Decision 236 (v11): the DOM-free lens projection for the workspace
    // objects panel — same function the emphasis uses, so visible objects
    // and dimmed nodes can never disagree.
@@ -5890,6 +6054,7 @@ function architecturePartialTruth(data) {
   // test-only hook.
   projectArchitectureLens: projectArchitectureLens,
   projectEntrypointHandoffOverlay: entryHandoffOverlayProjection,
+  projectStudyMechanismOverlay: studyMechanismOverlayProjection,
  });
  if (global.__REPOMAP_LAYOUT_TEST__ && typeof global.__REPOMAP_LAYOUT_TEST__ === "object") {
   Object.assign(global.__REPOMAP_LAYOUT_TEST__, {
@@ -5921,6 +6086,8 @@ function architecturePartialTruth(data) {
    currentEntrypointHandoffGroup: currentEntrypointHandoffGroup,
    entryHandoffOverlayProjection: entryHandoffOverlayProjection,
    entryHandoffConnectionGeometry: entryHandoffConnectionGeometry,
+   currentStudyMechanism: currentStudyMechanism,
+   studyMechanismOverlayProjection: studyMechanismOverlayProjection,
    projectArchitectureLens: projectArchitectureLens,
    associationsForComponent: associationsForComponent,
   });

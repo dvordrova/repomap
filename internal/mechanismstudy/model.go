@@ -176,10 +176,14 @@ type Compilation struct {
 }
 
 type cardAuthority struct {
-	nodeIDByRef      map[string]string
-	nodeRefByID      map[string]string
-	edgeByRef        map[string]surfacediscovery.DirectCallEdge
-	readingRootByRef map[string]string
+	sourceOrdinal       int
+	sourceCanonical     string
+	nodeIDByRef         map[string]string
+	nodeRefByID         map[string]string
+	nodeByRef           map[string]surfacediscovery.DirectCallNode
+	edgeByRef           map[string]surfacediscovery.DirectCallEdge
+	readingRootByRef    map[string]string
+	readingOrdinalByRef map[string]int
 }
 
 // Request is the only graph value embedded in the provider prompt.
@@ -267,4 +271,13 @@ type Result struct {
 	RequestRef    string       `json:"request_ref"`
 	RequestSHA256 string       `json:"request_sha256"`
 	Cards         []CardResult `json:"cards"`
+}
+
+// RequestPlan is the complete deterministic production call plan. Batches are
+// the bounded prefix that may be sent to the provider. UnrequestedCardRefs is
+// the canonical suffix that honestly remains prepared when the four-call
+// ceiling is reached.
+type RequestPlan struct {
+	Batches             []RequestBatch `json:"-"`
+	UnrequestedCardRefs []string       `json:"-"`
 }

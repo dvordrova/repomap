@@ -150,6 +150,39 @@ func TestDetectSourceMaterialIgnoresCredentialAssignmentsButBlocksRealSecrets(t 
 	}
 }
 
+func TestDetectAlwaysDistinguishesBearerProseFromOpaqueCredentials(t *testing.T) {
+	t.Parallel()
+
+	for _, input := range []string{
+		`{"title":"Bearer authentication"}`,
+		`{"question":"How does Bearer authorization reach the handler?"}`,
+		`Bearer configuration`,
+		`Bearer integration`,
+		`Bearer implementation`,
+		`Bearer verification`,
+		`Bearer introspection`,
+		`Bearer compatibility`,
+		`Bearer Authentication`,
+		`Bearer authentication-based`,
+	} {
+		if kind, found := DetectAlways(input); found {
+			t.Errorf("DetectAlways(%q) = %q, true; want ordinary Bearer prose", input, kind)
+		}
+		if kind, found := DetectSourceMaterial(input); found {
+			t.Errorf("DetectSourceMaterial(%q) = %q, true; want ordinary Bearer prose", input, kind)
+		}
+	}
+	for _, input := range []string{
+		`Authorization: Bearer abcdefghijklmnopqrstuvwxyz0123456789`,
+		`{"response":"Bearer company-secret-token-value"}`,
+		`const auth = "Bearer abcdefghijklmnop"`,
+	} {
+		if kind, found := DetectAlways(input); !found || kind != "bearer credential" {
+			t.Errorf("DetectAlways(%q) = %q, %v; want bearer credential", input, kind, found)
+		}
+	}
+}
+
 func TestDetectAlwaysIgnoresUnsafeOverride(t *testing.T) {
 	restore := SetDisabled(true)
 	defer restore()

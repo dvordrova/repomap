@@ -40,14 +40,15 @@ import (
 // groups derived only from exact D210 evidence, not as Mechanisms.
 // Format 41 adds the exact RepositoryGraph package-member fallback for D210
 // targets that the accepted Canvas did not retain as symbol members.
-const CurrentFormatVersion = 41
+// Format 42 adds persisted, locally re-derived Study mechanism paths.
+const CurrentFormatVersion = 42
 
 // Decision 232: adjudication anchor coverage + semantic-empty browse.
 // Decision 233: alternate co-projection + concentration marker.
 // Decision 233 AREA COVERAGE: missing-core-area diagnostic.
 // Decision 235 (v11): rebased Scout context + equivalence accounting.
 // Decision 236 (v11): Map projection/lenses (projection 14).
-const AtlasStudyReportProjectionVersion = 14
+const AtlasStudyReportProjectionVersion = 15
 
 // MaxAtlasStudyBrowseSpans bounds the report-side provider-free per-span
 // browse. Truthful Total/Shown keep larger repositories honest; the complete
@@ -260,28 +261,35 @@ type ReportData struct {
 	// used while replaying one bounded semantic experiment. It is deliberately
 	// excluded from report.json; the authoritative copy remains the saved local
 	// probe artifact beside the replay record.
-	SemanticSupplementalFacts     []semanticdiscovery.Fact     `json:"-"`
-	SemanticSearchDisabled        bool                         `json:"semantic_search_disabled,omitempty"`
-	SemanticSearch                *SemanticSearchIndex         `json:"semantic_search,omitempty"`
-	ArchitectureSynthesis         *ArchitectureSynthesisStatus `json:"architecture_synthesis,omitempty"`
-	ArchitectureGrounding         *ArchitectureGrounding       `json:"architecture_grounding,omitempty"`
-	ModelResearch                 *modelresearch.State         `json:"model_research,omitempty"`
-	DiscoveredSurfaces            *DiscoveredSurfaces          `json:"discovered_surfaces,omitempty"`
-	CommandTraces                 []gofacts.CommandTrace       `json:"command_traces,omitempty"`
-	Freshness                     *freshness.FreshnessResult   `json:"freshness,omitempty"`
-	CapturedRevision              string                       `json:"captured_revision,omitempty"`
-	CapturedInputCount            int                          `json:"captured_input_count,omitempty"`
-	RepositorySubmodules          []freshness.SubmoduleState   `json:"repository_submodules,omitempty"`
-	evidenceLocations             []evidence.Location
-	sourceSignals                 []SourceSignal
-	studyDocumentSourceRoot       string
-	standaloneLocalRoots          []string
-	externalImports               []externalImportUsage
-	repositoryGoFacts             *gofacts.Facts
-	repositoryEntrypointFacts     *gofacts.Facts
-	architectureDebugPresentation map[string]string
-	semanticAttempted             int
-	semanticInvestigated          int
+	SemanticSupplementalFacts []semanticdiscovery.Fact     `json:"-"`
+	SemanticSearchDisabled    bool                         `json:"semantic_search_disabled,omitempty"`
+	SemanticSearch            *SemanticSearchIndex         `json:"semantic_search,omitempty"`
+	ArchitectureSynthesis     *ArchitectureSynthesisStatus `json:"architecture_synthesis,omitempty"`
+	ArchitectureGrounding     *ArchitectureGrounding       `json:"architecture_grounding,omitempty"`
+	ModelResearch             *modelresearch.State         `json:"model_research,omitempty"`
+	DiscoveredSurfaces        *DiscoveredSurfaces          `json:"discovered_surfaces,omitempty"`
+	CommandTraces             []gofacts.CommandTrace       `json:"command_traces,omitempty"`
+	Freshness                 *freshness.FreshnessResult   `json:"freshness,omitempty"`
+	CapturedRevision          string                       `json:"captured_revision,omitempty"`
+	CapturedInputCount        int                          `json:"captured_input_count,omitempty"`
+	RepositorySubmodules      []freshness.SubmoduleState   `json:"repository_submodules,omitempty"`
+	evidenceLocations         []evidence.Location
+	sourceSignals             []SourceSignal
+	studyDocumentSourceRoot   string
+	standaloneLocalRoots      []string
+	externalImports           []externalImportUsage
+	repositoryGoFacts         *gofacts.Facts
+	repositoryEntrypointFacts *gofacts.Facts
+	// studyInvestigationSourceLocations is transient exact authority installed
+	// before source coverage. It is never serialized.
+	studyInvestigationSourceLocations    []evidence.Location
+	studyInvestigationInput              *StudyInvestigationInput
+	studyInvestigationArtifactsChecked   bool
+	studyInvestigationRepositoryRevision string
+	studyInvestigationFreshnessSHA256    string
+	architectureDebugPresentation        map[string]string
+	semanticAttempted                    int
+	semanticInvestigated                 int
 	// Presentation localization is transient render state loaded from a
 	// separately validated sidecar. It is never part of canonical report JSON.
 	presentationLocalizationState     string
@@ -404,6 +412,11 @@ type StudyThemeCard struct {
 	AlternateQuestions  []string            `json:"alternate_questions,omitempty"`
 	AlternateReadings   []StudyThemeReading `json:"alternate_readings,omitempty"`
 	ConcentrationMarker string              `json:"concentration_marker,omitempty"`
+	// Investigation is an optional bounded backend projection over validated
+	// direct-static Study mechanism evidence. It contains report-local IDs and
+	// exact source/component joins only; private provider refs and operational
+	// diagnostics remain outside report JSON.
+	Investigation *StudyInvestigation `json:"investigation,omitempty"`
 }
 
 // StudyThemeReading is one ordered exact reading on a theme card. Path/line

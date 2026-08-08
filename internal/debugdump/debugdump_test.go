@@ -411,6 +411,32 @@ func TestSemanticExchangeSupportsConcurrentDistinctOwners(t *testing.T) {
 	}
 }
 
+func TestSemanticExchangeAcceptsMechanismStudyStage(t *testing.T) {
+	t.Parallel()
+
+	w, err := NewWriter(t.TempDir(), "semantic-mechanism-study", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	w.RecordSemanticExchange(SemanticExchange{
+		Stage:                  SemanticStageMechanismStudy,
+		InstanceOrdinal:        1,
+		SemanticAttemptOrdinal: 1,
+		RequestProvenance:      SemanticRequestExactSent,
+		State:                  SemanticStateAccepted,
+		ValidationCode:         SemanticValidationAccepted,
+		SemanticCalls:          1,
+		TransportAttempts:      1,
+		Request:                []byte(`{"request":1}`),
+		Response:               []byte(`{"response":1}`),
+	})
+	records := readSemanticExchangeRecords(t, w.RunDir())
+	if len(records) != 1 || records[0].Stage != SemanticStageMechanismStudy {
+		t.Fatalf("mechanism-study semantic records = %#v", records)
+	}
+}
+
 func TestOpenWriterRejectsRunSymlink(t *testing.T) {
 	t.Parallel()
 

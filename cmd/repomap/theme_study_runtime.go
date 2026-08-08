@@ -470,11 +470,12 @@ func runThemeStudyProductForRun(
 	themes := themestudy.StudyThemes{
 		// Decision 233: StudyThemesVersion 2 (alternate co-projection +
 		// concentration diagnostic); Decision 235: version 3 (theme
-		// equivalence accounting). Version literal must track the
-		// constant (D233 literal-drift defect closed).
-		Version: themestudy.StudyThemesVersion, ScoutSHA256: scoutRequest.CatalogSHA256,
-		AdjSHA256: adjRequest.CatalogSHA256,
-		Cards:     reduction.Cards, Omitted: reduction.Omitted,
+		// equivalence accounting); Decision 246: version 5 binds the exact
+		// repository revision. The literal must track the constant.
+		Version: themestudy.StudyThemesVersion, Revision: repository.Revision,
+		ScoutSHA256: scoutRequest.CatalogSHA256,
+		AdjSHA256:   adjRequest.CatalogSHA256,
+		Cards:       reduction.Cards, Omitted: reduction.Omitted,
 		CoProjected: reduction.CoProjected, Partial: reduction.Partial,
 		Diagnostics: reduction.Diagnostics,
 	}

@@ -1572,6 +1572,7 @@ func authorizedOverviewSourceSnippetMatches(
 func overviewSourceSnippetCoversTarget(snippet SourceSnippet, target overviewSourceTarget) bool {
 	return snippet.Path == target.path &&
 		(target.symbol == "" || snippet.EnclosingSymbol == target.symbol) &&
+		sourceLineIsHighlighted(target.line, snippet.HighlightRanges) &&
 		sourceSnippetContainsRange(snippet.Lines, SourceHighlight{
 			StartLine: target.line,
 			EndLine:   target.line,
@@ -1666,6 +1667,31 @@ func overviewSourceTargetsWithPackageEvidence(
 			path: sourcePath, line: line, symbol: symbol,
 			relatedEvidenceIDs: sortedUniqueSourceEvidenceIDs(evidenceIDs),
 		})
+	}
+	// D246: restored Study mechanism declarations and representative
+	// callsites enter source authorization before their public card projection.
+	// They carry no provider ref, model prose, or canonical symbol into saved
+	// source snippets.
+	for _, location := range data.studyInvestigationSourceLocations {
+		appendTarget(location.Path, location.Line, "")
+	}
+	// Once projected, the public exact locations keep later idempotent source
+	// coverage passes from discarding their authorized snippets.
+	if data.AtlasStudy != nil && data.AtlasStudy.Themes != nil {
+		for _, card := range data.AtlasStudy.Themes.Cards {
+			investigation := card.Investigation
+			if investigation == nil || investigation.Version != StudyInvestigationVersion {
+				continue
+			}
+			for _, mechanism := range investigation.Mechanisms {
+				for _, node := range mechanism.Nodes {
+					appendTarget(node.Declaration.Path, node.Declaration.Line, "")
+				}
+				for _, edge := range mechanism.Edges {
+					appendTarget(edge.Callsite.Path, edge.Callsite.Line, "")
+				}
+			}
+		}
 	}
 
 	if data.DiscoveredSurfaces != nil {
