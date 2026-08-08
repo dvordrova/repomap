@@ -675,10 +675,6 @@ function architecturePartialTruth(data) {
 	  return productMessage(message, "architecture.relation.continues");
  }
 
- function layoutComponentID(id) {
-  return "component:" + text(id);
- }
-
  function layoutSubsystemID(id) {
   return "subsystem:" + text(id);
  }
@@ -697,28 +693,6 @@ function architecturePartialTruth(data) {
 
  function flowStepKey(flowID, stepID) {
   return selectionKey(flowID, stepID);
- }
-
- function pathFromSections(sections, offsetX, offsetY) {
-  const parts = [];
-  array(sections).forEach((section) => {
-   if (!section || !section.startPoint || !section.endPoint) return;
-   const points = [section.startPoint]
-    .concat(array(section.bendPoints))
-    .concat([section.endPoint]);
-   if (points.length < 2) return;
-   parts.push(
-    points
-     .map((point, index) =>
-      (index === 0 ? "M" : "L") +
-      (Number(point.x || 0) + offsetX) +
-      " " +
-      (Number(point.y || 0) + offsetY)
-     )
-     .join(" ")
-   );
-  });
-  return parts.join(" ");
  }
 
  class ArchitectureCanvasApp {

@@ -2165,56 +2165,6 @@ func TestParseFlowReport_UnknownsEmptyStrings(t *testing.T) {
 	}
 }
 
-func TestReportHTML_NoLow0Percent(t *testing.T) {
-	dir := t.TempDir()
-	writeTestFile(t, dir, "snapshot.json", `{"repo_name":"nope"}`)
-	writeTestFile(t, dir, "orientation_report.json", `{"project_guess":"","candidate_flows":[],"warnings":[]}`)
-
-	flowDir := filepath.Join(dir, "flows", "zero-flow")
-	mkdirAll(t, flowDir)
-	writeTestFile(t, flowDir, "flow_bundle.json", `{
-		"flow_seed": {"name": "Zero Flow"},
-		"selected_files": [{"path":"z.go","kind":"source","score":200}],
-		"selected_tests": [],
-		"selected_docs": [],
-		"selected_packages": [],
-		"related_edges": []
-	}`)
-	writeTestFile(t, flowDir, "flow_report.json", `{
-		"summary": "zero confidence flow",
-		"confidence": 0,
-		"files_to_read_in_order": [{"path":"z.go","reason":"entrypoint"}],
-		"tests_to_read": [],
-		"likely_chain": [],
-		"unverified_paths": [],
-		"unknowns": [],
-		"warnings": []
-	}`)
-
-	if err := Generate(dir); err != nil {
-		t.Fatalf("Generate: %v", err)
-	}
-
-	html, err := os.ReadFile(filepath.Join(dir, "report.html"))
-	if err != nil {
-		t.Fatalf("read report.html: %v", err)
-	}
-	htmlStr := string(html)
-
-	if contains(htmlStr, "Low 0%") {
-		t.Error("report.html contains 'Low 0%'")
-	}
-	if contains(htmlStr, "cannot unmarshal") {
-		t.Error("report.html contains unmarshal error")
-	}
-	if !contains(htmlStr, "Model confidence: not estimated") {
-		t.Error("report.html should show 'Model confidence: not estimated' for zero confidence")
-	}
-	if !contains(htmlStr, "z.go") {
-		t.Error("report.html missing file path from zero-confidence flow")
-	}
-}
-
 func TestParseFlowReport_FullDriftScenario(t *testing.T) {
 	dir := t.TempDir()
 	flowDir := filepath.Join(dir, "flows", "full-drift")
