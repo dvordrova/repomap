@@ -9,8 +9,6 @@ import (
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
-	"github.com/dvordrova/repomap/internal/navigator"
-	"github.com/dvordrova/repomap/internal/repositoryatlas"
 )
 
 func mechanismFragmentFixture() *ReportData {
@@ -75,7 +73,7 @@ func mechanismFragmentFixture() *ReportData {
 func TestProjectMechanismFragmentHonestVerticalSlice(t *testing.T) {
 	data := mechanismFragmentFixture()
 	fragment, err := ProjectMechanismFragment(
-		data.ArchitectureCanvas, data.ArchitectureAssociations, nil,
+		data.ArchitectureCanvas, data.ArchitectureAssociations,
 	)
 	if err != nil {
 		t.Fatalf("ProjectMechanismFragment: %v", err)
@@ -124,13 +122,13 @@ func TestProjectMechanismFragmentHonestVerticalSlice(t *testing.T) {
 	}
 	// Round-trip drift rejection.
 	if err := ValidateMechanismFragment(
-		data.ArchitectureCanvas, data.ArchitectureAssociations, nil, fragment,
+		data.ArchitectureCanvas, data.ArchitectureAssociations, fragment,
 	); err != nil {
 		t.Fatalf("ValidateMechanismFragment: %v", err)
 	}
 	fragment.Transitions[0].Path = "mutated.go"
 	if err := ValidateMechanismFragment(
-		data.ArchitectureCanvas, data.ArchitectureAssociations, nil, fragment,
+		data.ArchitectureCanvas, data.ArchitectureAssociations, fragment,
 	); err == nil {
 		t.Fatal("ValidateMechanismFragment accepted drifted fragment")
 	}
@@ -155,19 +153,14 @@ func TestEnsureMechanismFragmentUsesExactEntryHandoffOutsideCanvas(t *testing.T)
 	canvas := &ArchitectureCanvas{
 		Version: ArchitectureCanvasVersion,
 		BehaviorAnchors: []componentmap.BehaviorAnchor{{
-			ID:        "decoy-entry-anchor",
-			Kind:      componentmap.AnchorProcessEntry,
-			ProofMode: componentmap.AnchorProofCallTarget,
-			Label:     "different process entry",
-			Location:  evidence.Location{Path: "cmd/helper/main.go", Line: 7, Column: 1},
-			Scenario:  componentmap.ScenarioContext{ID: "go:linux:tags="},
-			MemberIDs: []componentmap.MemberID{{Kind: componentmap.MemberSymbol, Value: "helper-main"}},
-		}, {
 			ID:        "entry-anchor",
 			Kind:      componentmap.AnchorProcessEntry,
 			ProofMode: componentmap.AnchorProofCallTarget,
 			Label:     "process entry main",
-			Location:  grounding.EntryHandoffs[0].ProcessEntrypoint.Location,
+			Location: evidence.Location{
+				Path: grounding.EntryHandoffs[0].ProcessEntrypoint.Location.Path,
+				Line: grounding.EntryHandoffs[0].ProcessEntrypoint.Location.Line,
+			},
 			Scenario:  componentmap.ScenarioContext{ID: grounding.EntryHandoffs[0].Scenario.ID},
 			MemberIDs: []componentmap.MemberID{entryMember},
 		}},
@@ -206,21 +199,25 @@ func TestEnsureMechanismFragmentUsesExactEntryHandoffOutsideCanvas(t *testing.T)
 		}},
 	}
 	data := &ReportData{
-		ArchitectureCanvas:       canvas,
-		ArchitectureGrounding:    &grounding,
-		ArchitectureAssociations: &ArchitectureAssociationProjection{Version: ArchitectureAssociationVersion},
-		RepositoryAtlas: &repositoryatlas.Atlas{Evidence: []repositoryatlas.Evidence{{
-			ID: "selected-entry", Location: grounding.EntryHandoffs[0].ProcessEntrypoint.Location,
-		}}},
-		Navigator: &NavigatorReportProduct{
-			Recommendation: &navigator.RecommendationAction{EvidenceIDs: []string{"selected-entry"}},
+		ArchitectureCanvas:    canvas,
+		ArchitectureGrounding: &grounding,
+		ArchitectureAssociations: &ArchitectureAssociationProjection{
+			Version: ArchitectureAssociationVersion,
+			Components: []ArchitectureComponentAssociations{{
+				ComponentID: "application",
+				Name:        "Application",
+				Associations: []ArchitectureBoundaryResourceRow{
+					{Kind: "operation", OwningUnit: "github.com/example/application"},
+					{Kind: "surface", OwningUnit: "github.com/example/application"},
+				},
+			}},
 		},
 	}
 	if err := ensureMechanismFragment(data); err != nil {
 		t.Fatal(err)
 	}
 	if data.MechanismFragment == nil || len(data.MechanismFragment.Transitions) != 3 {
-		t.Fatalf("fragment = %#v, want exact handoff, distinct same-line call, plus frontier", data.MechanismFragment)
+		t.Fatalf("fragment = %#v, want exact handoff, distinct same-line call, plus frontier; generic association rows must stay out", data.MechanismFragment)
 	}
 	transition := data.MechanismFragment.Transitions[0]
 	handoff := grounding.EntryHandoffs[0]
@@ -240,11 +237,80 @@ func TestEnsureMechanismFragmentUsesExactEntryHandoffOutsideCanvas(t *testing.T)
 	if err := validateMechanismFragmentForProduct(
 		canvas,
 		data.ArchitectureAssociations,
-		data.RepositoryAtlas,
 		data.MechanismFragment,
 		&grounding,
-		data.Navigator,
 	); err != nil {
 		t.Fatalf("grounded fragment validation: %v", err)
+	}
+}
+
+func TestEnsureMechanismFragmentAbsentWithMultipleProcessEntries(t *testing.T) {
+	t.Parallel()
+
+	for _, reverse := range []bool{false, true} {
+		data := mechanismFragmentFixture()
+		data.ArchitectureCanvas.BehaviorAnchors = append(
+			data.ArchitectureCanvas.BehaviorAnchors,
+			componentmap.BehaviorAnchor{
+				ID:        "secondary-entry-anchor",
+				Kind:      componentmap.AnchorProcessEntry,
+				ProofMode: componentmap.AnchorProofCallTarget,
+				Label:     "different process entry",
+				Location:  evidence.Location{Path: "cmd/helper/main.go", Line: 7, Column: 1},
+				Scenario:  componentmap.ScenarioContext{ID: "go:linux:tags="},
+				MemberIDs: []componentmap.MemberID{{Kind: componentmap.MemberSymbol, Value: "helper-main"}},
+			},
+		)
+		if reverse {
+			anchors := data.ArchitectureCanvas.BehaviorAnchors
+			anchors[0], anchors[len(anchors)-1] = anchors[len(anchors)-1], anchors[0]
+		}
+		if err := ensureMechanismFragment(data); err != nil {
+			t.Fatal(err)
+		}
+		if data.MechanismFragment != nil {
+			t.Fatalf("ambiguous repository entry produced a global mechanism (reverse=%t): %#v", reverse, data.MechanismFragment)
+		}
+	}
+}
+
+func TestArchitectureDeclarationLocationsCompatible(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name        string
+		left, right evidence.Location
+		want        bool
+	}{
+		{
+			name:  "missing column is compatible",
+			left:  evidence.Location{Path: "cmd/dive/main.go", Line: 43},
+			right: evidence.Location{Path: "cmd/dive/main.go", Line: 43, Column: 6},
+			want:  true,
+		},
+		{
+			name:  "equal exact columns",
+			left:  evidence.Location{Path: "cmd/dive/main.go", Line: 43, Column: 6},
+			right: evidence.Location{Path: "cmd/dive/main.go", Line: 43, Column: 6},
+			want:  true,
+		},
+		{
+			name:  "different known columns",
+			left:  evidence.Location{Path: "cmd/dive/main.go", Line: 43, Column: 6},
+			right: evidence.Location{Path: "cmd/dive/main.go", Line: 43, Column: 7},
+			want:  false,
+		},
+		{
+			name:  "different declaration line",
+			left:  evidence.Location{Path: "cmd/dive/main.go", Line: 43},
+			right: evidence.Location{Path: "cmd/dive/main.go", Line: 44},
+			want:  false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := architectureDeclarationLocationsCompatible(test.left, test.right); got != test.want {
+				t.Fatalf("compatible(%#v, %#v) = %t, want %t", test.left, test.right, got, test.want)
+			}
+		})
 	}
 }

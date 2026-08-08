@@ -209,13 +209,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-overview-hero + .rm-atlas-shelf--overview { margin-top: .9rem; }
 .rm-atlas-shelf--overview { background: #fbfdff; }
 .rm-atlas-shelf--overview .rm-atlas-units-heading { margin-top: 0; }
-.rm-atlas-overview-status { color: #92400e; font-size: .7rem; margin: .75rem 0 0; }
 .rm-atlas-shelf .rm-view-heading { margin-bottom: 1rem; }
-.rm-atlas-recommendation { background: #eff6ff; border: 1px solid #93c5fd; border-radius: 10px; display: grid; gap: .6rem; margin-bottom: 1.1rem; padding: .9rem; }
-.rm-atlas-recommendation h3, .rm-atlas-recommendation p { margin: 0; }
-.rm-atlas-recommendation .rm-atlas-relation-roles { max-width: 34rem; }
-.rm-atlas-evidence-count { color: #475569; font-size: .7rem; }
-.rm-atlas-navigator-action { justify-self: start; }
 .rm-atlas-shelf-heading { color: #334155; font-size: .76rem; letter-spacing: .04em; margin: 0 0 .6rem; text-transform: uppercase; }
 .rm-atlas-relations-heading { margin-top: 1.25rem; }
 .rm-atlas-unit-grid, .rm-atlas-relation-grid { display: grid; gap: .65rem; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }

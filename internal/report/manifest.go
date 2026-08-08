@@ -21,7 +21,6 @@ import (
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/llmbundle"
-	"github.com/dvordrova/repomap/internal/navigator"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 	"github.com/dvordrova/repomap/internal/sourcecatalog"
 	"github.com/dvordrova/repomap/internal/tasklens"
@@ -30,7 +29,7 @@ import (
 )
 
 const (
-	CurrentRunManifestVersion = 12
+	CurrentRunManifestVersion = 13
 	RunManifestFilename       = "run_manifest.json"
 
 	maxRunManifestBytes             = 4 * 1024 * 1024
@@ -69,9 +68,6 @@ type MaterialInputs struct {
 	ModelBundleSHA256                 string `json:"model_bundle_sha256,omitempty"`
 	OrientationContextSelectionSHA256 string `json:"orientation_context_selection_sha256,omitempty"`
 	RepositoryAtlasSHA256             string `json:"repository_atlas_sha256,omitempty"`
-	NavigatorRequestSHA256            string `json:"navigator_request_sha256,omitempty"`
-	NavigatorResultSHA256             string `json:"navigator_result_sha256,omitempty"`
-	NavigatorStatusSHA256             string `json:"navigator_status_sha256,omitempty"`
 	AtlasStudyRequestSHA256           string `json:"atlas_study_request_sha256,omitempty"`
 	AtlasStudyResultSHA256            string `json:"atlas_study_result_sha256,omitempty"`
 	AtlasStudyStatusSHA256            string `json:"atlas_study_status_sha256,omitempty"`
@@ -192,27 +188,6 @@ func (m RunManifest) Validate() error {
 	if m.MaterialInputs.RepositoryAtlasSHA256 != "" &&
 		!validManifestSHA256(m.MaterialInputs.RepositoryAtlasSHA256) {
 		return fmt.Errorf("report manifest: repository Atlas sha256 is invalid")
-	}
-	navigatorDigests := []string{
-		m.MaterialInputs.NavigatorRequestSHA256,
-		m.MaterialInputs.NavigatorResultSHA256,
-		m.MaterialInputs.NavigatorStatusSHA256,
-	}
-	navigatorDigestCount := 0
-	for _, digest := range navigatorDigests {
-		if digest == "" {
-			continue
-		}
-		navigatorDigestCount++
-		if !validManifestSHA256(digest) {
-			return fmt.Errorf("report manifest: Navigator artifact sha256 is invalid")
-		}
-	}
-	if navigatorDigestCount != 0 && m.MaterialInputs.NavigatorStatusSHA256 == "" {
-		return fmt.Errorf("report manifest: Navigator artifact identity requires status")
-	}
-	if navigatorDigestCount != 0 && m.MaterialInputs.RepositoryAtlasSHA256 == "" {
-		return fmt.Errorf("report manifest: Navigator artifacts require repository Atlas authority")
 	}
 	atlasStudyDigests := []string{
 		m.MaterialInputs.AtlasStudyRequestSHA256,
@@ -644,7 +619,6 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 		OpenablePaths                   []string                                   `json:"openable_paths"`
 		Components                      []Component                                `json:"components"`
 		RepositoryAtlas                 *repositoryatlas.Atlas                     `json:"repository_atlas"`
-		Navigator                       *NavigatorReportProduct                    `json:"navigator"`
 		ArchitectureCanvas              *ArchitectureCanvas                        `json:"architecture_canvas"`
 		ArchitectureComponentNavigation *ArchitectureComponentNavigationProjection `json:"architecture_component_navigation"`
 		Architecture                    *ArchitectureSynthesisStatus               `json:"architecture_synthesis"`
@@ -691,48 +665,6 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 	if report.RepositoryAtlas != nil {
 		if _, err := repositoryatlas.CanonicalJSON(*report.RepositoryAtlas); err != nil {
 			return fmt.Errorf("report manifest: repository Atlas: %w", err)
-		}
-	}
-	hasNavigatorResult := m.MaterialInputs.NavigatorResultSHA256 != ""
-	hasNavigatorStatus := m.MaterialInputs.NavigatorStatusSHA256 != ""
-	if (report.Navigator != nil) != hasNavigatorStatus ||
-		hasRepositoryAtlas != hasNavigatorStatus {
-		return fmt.Errorf("report manifest: Navigator artifact identity does not match report")
-	}
-	if report.Navigator != nil {
-		hasNavigatorRequest := m.MaterialInputs.NavigatorRequestSHA256 != ""
-		switch report.Navigator.State {
-		case navigator.ProductStateEmpty:
-			if hasNavigatorRequest || !hasNavigatorResult ||
-				report.Navigator.UnavailableCode != "" || report.Navigator.FailureCode != "" ||
-				report.Navigator.Recommendation != nil {
-				return fmt.Errorf("report manifest: empty Navigator report projection is invalid")
-			}
-		case navigator.ProductStateSelected:
-			if !hasNavigatorRequest || !hasNavigatorResult ||
-				report.Navigator.UnavailableCode != "" || report.Navigator.FailureCode != "" ||
-				report.Navigator.Recommendation == nil {
-				return fmt.Errorf("report manifest: selected Navigator report projection is incomplete")
-			}
-		case navigator.ProductStateUnavailable:
-			if !hasNavigatorRequest || hasNavigatorResult ||
-				report.Navigator.UnavailableCode != navigator.UnavailableOffline ||
-				report.Navigator.FailureCode != "" ||
-				report.Navigator.Recommendation != nil {
-				return fmt.Errorf("report manifest: unavailable Navigator report projection is invalid")
-			}
-		case navigator.ProductStateFailed:
-			if !hasNavigatorRequest || hasNavigatorResult ||
-				report.Navigator.UnavailableCode != "" ||
-				!publishableNavigatorFailure(report.Navigator.FailureCode) ||
-				report.Navigator.Recommendation != nil {
-				return fmt.Errorf("report manifest: failed Navigator report projection is invalid")
-			}
-		default:
-			return fmt.Errorf("report manifest: unsupported Navigator report state %q", report.Navigator.State)
-		}
-		if report.Navigator.Version != navigator.ProductVersion {
-			return fmt.Errorf("report manifest: unsupported Navigator report version %d", report.Navigator.Version)
 		}
 	}
 	hasAtlasStudyRequest := m.MaterialInputs.AtlasStudyRequestSHA256 != ""
@@ -1026,58 +958,6 @@ func (m RunManifest) VerifyRepositoryAtlasArtifact(runDir string, reportJSON []b
 	return nil
 }
 
-// VerifyNavigatorArtifacts binds the exact Navigator request/result/status
-// files to the Atlas and the deliberately small recommendation projection in
-// the authorized report. Selected runs require all three files; a local empty
-// result requires result and status; an offline run requires its compiled
-// request and status and forbids a result artifact.
-func (m RunManifest) VerifyNavigatorArtifacts(runDir string, reportJSON []byte) error {
-	artifacts := []struct {
-		name  string
-		want  string
-		limit int
-	}{
-		{navigator.RequestArtifactFilename, m.MaterialInputs.NavigatorRequestSHA256, repositoryatlas.MaxArtifactBytes},
-		{navigator.RecordArtifactFilename, m.MaterialInputs.NavigatorResultSHA256, repositoryatlas.MaxArtifactBytes},
-		{navigator.StatusArtifactFilename, m.MaterialInputs.NavigatorStatusSHA256, navigator.MaxStatusArtifactBytes},
-	}
-	root, err := os.OpenRoot(runDir)
-	if err != nil {
-		return fmt.Errorf("report manifest: open Navigator run: %w", err)
-	}
-	defer root.Close()
-	for _, artifact := range artifacts {
-		if artifact.want == "" {
-			if _, statErr := root.Lstat(artifact.name); statErr == nil {
-				return fmt.Errorf("report manifest: unbound Navigator artifact %s is present", artifact.name)
-			} else if !errors.Is(statErr, fs.ErrNotExist) {
-				return fmt.Errorf("report manifest: inspect Navigator artifact %s: %w", artifact.name, statErr)
-			}
-			continue
-		}
-		encoded, readErr := readManifestFile(root, artifact.name, artifact.limit)
-		if readErr != nil || manifestSHA256(encoded) != artifact.want {
-			return fmt.Errorf("report manifest: Navigator artifact %s sha256 mismatch", artifact.name)
-		}
-	}
-
-	var persisted struct {
-		RepositoryAtlas *repositoryatlas.Atlas  `json:"repository_atlas"`
-		Navigator       *NavigatorReportProduct `json:"navigator"`
-	}
-	if err := json.Unmarshal(reportJSON, &persisted); err != nil {
-		return fmt.Errorf("report manifest: decode report Navigator projection: %w", err)
-	}
-	projected, err := readNavigatorReportProduct(runDir, persisted.RepositoryAtlas)
-	if err != nil {
-		return fmt.Errorf("report manifest: Navigator artifacts: %w", err)
-	}
-	if !reflect.DeepEqual(projected, persisted.Navigator) {
-		return fmt.Errorf("report manifest: Navigator artifacts do not match report")
-	}
-	return nil
-}
-
 // VerifyThemesArtifacts binds the exact Decision 213 theme artifacts (eight
 // files: Scout request/result/status, source expansion, Adjudication
 // request/result/status, study_themes) to the authorized report. Semantic
@@ -1303,9 +1183,6 @@ func ReadRunManifest(runDir string) (RunManifest, error) {
 	if err := manifest.VerifyRepositoryAtlasArtifact(runDir, reportJSON); err != nil {
 		return RunManifest{}, err
 	}
-	if err := manifest.VerifyNavigatorArtifacts(runDir, reportJSON); err != nil {
-		return RunManifest{}, err
-	}
 	if err := manifest.VerifyThemesArtifacts(runDir, reportJSON); err != nil {
 		return RunManifest{}, err
 	}
@@ -1378,9 +1255,6 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 	if err != nil {
 		return err
 	}
-	navigatorRequestDigest := savedArtifactSHA256(runDir, navigator.RequestArtifactFilename)
-	navigatorResultDigest := savedArtifactSHA256(runDir, navigator.RecordArtifactFilename)
-	navigatorStatusDigest := savedArtifactSHA256(runDir, navigator.StatusArtifactFilename)
 	// Decision 213: the Study pipeline is bound by the eight theme artifacts.
 	// The retired single-stage atlas-study files are never read here and their
 	// digest fields stay empty (a legacy binding fails the theme gate).
@@ -1409,9 +1283,6 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 			ModelBundleSHA256:                 modelBundleDigest,
 			OrientationContextSelectionSHA256: orientationSelectionDigest,
 			RepositoryAtlasSHA256:             repositoryAtlasDigest,
-			NavigatorRequestSHA256:            navigatorRequestDigest,
-			NavigatorResultSHA256:             navigatorResultDigest,
-			NavigatorStatusSHA256:             navigatorStatusDigest,
 			AtlasStudyRequestSHA256:           "",
 			AtlasStudyResultSHA256:            "",
 			AtlasStudyStatusSHA256:            "",
@@ -1440,9 +1311,6 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 		return err
 	}
 	if err := manifest.VerifyRepositoryAtlasArtifact(runDir, reportJSON); err != nil {
-		return err
-	}
-	if err := manifest.VerifyNavigatorArtifacts(runDir, reportJSON); err != nil {
 		return err
 	}
 	if err := manifest.VerifyThemesArtifacts(runDir, reportJSON); err != nil {

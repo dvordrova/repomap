@@ -453,14 +453,8 @@ func readRunDir(
 	if err != nil {
 		return nil, err
 	}
-	data.Navigator, err = readNavigatorReportProduct(absDir, data.RepositoryAtlas)
-	if err != nil {
-		return nil, err
-	}
-	if data.Navigator == nil {
-		if w := parseOrientationReport(filepath.Join(absDir, "orientation_report.json"), data); w != "" {
-			parseWarnings = append(parseWarnings, w)
-		}
+	if w := parseOrientationReport(filepath.Join(absDir, "orientation_report.json"), data); w != "" {
+		parseWarnings = append(parseWarnings, w)
 	}
 	if w := parseLLMBundle(filepath.Join(absDir, "llm_bundle.json"), data); w != "" {
 		parseWarnings = append(parseWarnings, w)

@@ -94,16 +94,20 @@ func runThemeStudyScoutRequestRebuildCLI(args []string, stdout io.Writer) error 
 	if err != nil {
 		return fmt.Errorf("theme scout request rebuild: build exact input: %w", err)
 	}
+	compileInput, _, err := shapeThemeStudyCompileInput(input)
+	if err != nil {
+		return fmt.Errorf("theme scout request rebuild: shape exact input: %w", err)
+	}
 	// The local compile is the exact seed producer (Decision 213); the retired
 	// single-stage provider call is never invoked by this seam.
-	product, err := atlasstudy.Compile(input)
+	product, err := atlasstudy.Compile(compileInput)
 	if err != nil {
 		return fmt.Errorf("theme scout request rebuild: compile exact substrate: %w", err)
 	}
 	vocabulary := themestudy.BuildFileVocabulary(
 		data.OpenablePaths, 0, func(string) bool { return true },
 	)
-	seedSpecs := themeSeedSpecsFromInput(input)
+	seedSpecs := themeSeedSpecsFromInput(compileInput)
 	packs, err := themestudy.BuildSeedPacks(
 		seedSpecs, 0, 0, 0, 0,
 		func(path string, startLine, endLine int) ([]string, error) {

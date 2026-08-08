@@ -19,7 +19,6 @@ import (
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/guidedtour"
 	"github.com/dvordrova/repomap/internal/modelresearch"
-	"github.com/dvordrova/repomap/internal/navigator"
 	"github.com/dvordrova/repomap/internal/orient"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 	"github.com/dvordrova/repomap/internal/semanticdiscovery"
@@ -34,7 +33,8 @@ import (
 // equivalence accounting — Study wire and report projection changed.
 // Decision 236 (v11): Map primary product — map projection/lenses,
 // entry categories, touchpoint families, inspector tabs (format 37).
-const CurrentFormatVersion = 37
+// Decision 240 removes the obsolete Navigator product field (format 38).
+const CurrentFormatVersion = 38
 
 // Decision 232: adjudication anchor coverage + semantic-empty browse.
 // Decision 233: alternate co-projection + concentration marker.
@@ -181,10 +181,6 @@ type ReportData struct {
 	// observations, evidence and relations; files and symbols remain evidence
 	// locators rather than entities.
 	RepositoryAtlas *repositoryatlas.Atlas `json:"repository_atlas,omitempty"`
-	// Navigator is the deliberately small report projection of the exact
-	// persisted Atlas-first result. The full request and action catalog remain
-	// separate, hash-bound run artifacts.
-	Navigator          *NavigatorReportProduct `json:"navigator,omitempty"`
 	Components         []Component             `json:"components,omitempty"`
 	ComponentRelations []ComponentRelation     `json:"component_relations,omitempty"`
 	ArchitectureCanvas *ArchitectureCanvas     `json:"architecture_canvas,omitempty"`
@@ -298,17 +294,6 @@ type ReportData struct {
 
 	RecommendedFlow string `json:"recommended_flow,omitempty"`
 	FlowCount       int    `json:"flow_count"`
-}
-
-// NavigatorReportProduct carries only the product state and, when selected,
-// the backend-owned action already validated against the exact persisted
-// Repository Atlas. It contains no provider-authored prose.
-type NavigatorReportProduct struct {
-	Version         int                             `json:"version"`
-	State           navigator.ProductState          `json:"state"`
-	UnavailableCode navigator.UnavailableCode       `json:"unavailable_code,omitempty"`
-	FailureCode     navigator.FailureCode           `json:"failure_code,omitempty"`
-	Recommendation  *navigator.RecommendationAction `json:"recommendation,omitempty"`
 }
 
 // AtlasStudyReportStatus deliberately excludes provider prose, raw errors and

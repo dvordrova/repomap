@@ -13,7 +13,6 @@ import (
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
-	"github.com/dvordrova/repomap/internal/repositoryatlas"
 )
 
 // MechanismFragmentVersion changes when the persisted fragment projection
@@ -55,8 +54,8 @@ type MechanismFrontier struct {
 	Limitation string   `json:"limitation"`
 }
 
-// ProjectMechanismFragment derives the honest vertical fragment for the
-// repository's primary process entry from saved local evidence only.
+// ProjectMechanismFragment derives the honest vertical fragment when the
+// repository has exactly one locally evidenced process entry.
 // Provider-free and deterministic: entries are exact process_entry anchors
 // with call_target proof; transitions are behavior_handoff edges whose from
 // member matches the entry symbol; boundary/resource rows come from the
@@ -64,26 +63,22 @@ type MechanismFrontier struct {
 func ProjectMechanismFragment(
 	canvas *ArchitectureCanvas,
 	associations *ArchitectureAssociationProjection,
-	atlas *repositoryatlas.Atlas,
 ) (*MechanismFragmentProjection, error) {
-	return projectMechanismFragment(canvas, associations, atlas, nil)
+	return projectMechanismFragment(canvas, associations, nil)
 }
 
 func projectMechanismFragment(
 	canvas *ArchitectureCanvas,
 	associations *ArchitectureAssociationProjection,
-	atlas *repositoryatlas.Atlas,
 	grounding *ArchitectureGrounding,
 ) (*MechanismFragmentProjection, error) {
-	return projectMechanismFragmentForProduct(canvas, associations, atlas, grounding, nil)
+	return projectMechanismFragmentForProduct(canvas, associations, grounding)
 }
 
 func projectMechanismFragmentForProduct(
 	canvas *ArchitectureCanvas,
 	associations *ArchitectureAssociationProjection,
-	atlas *repositoryatlas.Atlas,
 	grounding *ArchitectureGrounding,
-	navigatorProduct *NavigatorReportProduct,
 ) (*MechanismFragmentProjection, error) {
 	if canvas == nil {
 		return nil, nil
@@ -92,12 +87,10 @@ func projectMechanismFragmentForProduct(
 		return nil, fmt.Errorf("mechanism fragment: unsupported canvas version %d", canvas.Version)
 	}
 
-	// Exact entry: when ordinary Navigator selected a startup, use its
-	// backend-owned evidence to select the matching process-entry anchor.
-	// Falling back to a different entry would make the product's horizontal
-	// and vertical views disagree. Runs without a selected Navigator retain the
-	// historical deterministic first-entry behavior.
-	entryAnchor := findProcessEntryAnchor(canvas, navigatorProduct, atlas)
+	// The fragment stays provider-free and never invents a global primary entry.
+	// Multiple exact process anchors require the future per-entry Mechanisms
+	// projection, so the current single-fragment contract remains absent.
+	entryAnchor := findProcessEntryAnchor(canvas)
 	if entryAnchor == nil {
 		return nil, nil
 	}
@@ -115,7 +108,7 @@ func projectMechanismFragmentForProduct(
 	entryHandoffCallsites := make(map[string]struct{})
 	if grounding != nil {
 		for _, handoff := range grounding.EntryHandoffs {
-			if !architectureLocationsEqual(handoff.ProcessEntrypoint.Location, entryAnchor.Location) {
+			if !architectureDeclarationLocationsCompatible(handoff.ProcessEntrypoint.Location, entryAnchor.Location) {
 				continue
 			}
 			transition := transitionFromEntryHandoff(handoff)
@@ -167,6 +160,9 @@ func projectMechanismFragmentForProduct(
 				continue
 			}
 			for _, row := range component.Associations {
+				if row.Kind != "boundary" && row.Kind != "resource" {
+					continue
+				}
 				transitions = append(transitions, MechanismTransition{
 					Ordinal:     len(transitions) + 1,
 					ClaimKind:   mechanismClaimKindForRow(row),
@@ -226,8 +222,11 @@ func projectMechanismFragmentForProduct(
 	}, nil
 }
 
-func architectureLocationsEqual(left, right evidence.Location) bool {
-	return left.Path == right.Path && left.Line == right.Line && left.Column == right.Column
+func architectureDeclarationLocationsCompatible(left, right evidence.Location) bool {
+	if left.Path != right.Path || left.Line != right.Line {
+		return false
+	}
+	return left.Column == 0 || right.Column == 0 || left.Column == right.Column
 }
 
 func transitionFromEntryHandoff(handoff ArchitectureEntryHandoff) MechanismTransition {
@@ -286,38 +285,8 @@ func mechanismClaimKindForRow(row ArchitectureBoundaryResourceRow) string {
 	return "outbound_client_callsite"
 }
 
-func findProcessEntryAnchor(
-	canvas *ArchitectureCanvas,
-	navigatorProduct *NavigatorReportProduct,
-	atlas *repositoryatlas.Atlas,
-) *componentmap.BehaviorAnchor {
-	if navigatorProduct != nil && navigatorProduct.Recommendation != nil {
-		if atlas == nil {
-			return nil
-		}
-		selectedEvidence := make(map[string]struct{}, len(navigatorProduct.Recommendation.EvidenceIDs))
-		for _, evidenceID := range navigatorProduct.Recommendation.EvidenceIDs {
-			selectedEvidence[evidenceID] = struct{}{}
-		}
-		selectedLocations := make([]evidence.Location, 0, len(selectedEvidence))
-		for _, item := range atlas.Evidence {
-			if _, selected := selectedEvidence[item.ID]; selected {
-				selectedLocations = append(selectedLocations, item.Location)
-			}
-		}
-		for index := range canvas.BehaviorAnchors {
-			anchor := &canvas.BehaviorAnchors[index]
-			if anchor.Kind != componentmap.AnchorProcessEntry || anchor.Location.Path == "" {
-				continue
-			}
-			for _, location := range selectedLocations {
-				if architectureLocationsEqual(anchor.Location, location) {
-					return anchor
-				}
-			}
-		}
-		return nil
-	}
+func findProcessEntryAnchor(canvas *ArchitectureCanvas) *componentmap.BehaviorAnchor {
+	var selected *componentmap.BehaviorAnchor
 	for index := range canvas.BehaviorAnchors {
 		anchor := &canvas.BehaviorAnchors[index]
 		if anchor.Kind != componentmap.AnchorProcessEntry {
@@ -326,9 +295,12 @@ func findProcessEntryAnchor(
 		if anchor.Location.Path == "" {
 			continue
 		}
-		return anchor
+		if selected != nil {
+			return nil
+		}
+		selected = anchor
 	}
-	return nil
+	return selected
 }
 
 func symbolMemberID(anchor *componentmap.BehaviorAnchor) componentmap.MemberID {

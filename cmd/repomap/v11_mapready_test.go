@@ -51,12 +51,6 @@ func TestV11MapReadyFixtures(t *testing.T) {
 			} {
 				_ = os.Remove(filepath.Join(readDir, artifact))
 			}
-			// Navigator contract changed between the v10 corpus and v11
-			// (D232 v2): stage a v2 status so the local facts read
-			// (archive9 pattern).
-			if err := stageV2NavigatorStatus(readDir); err != nil {
-				t.Fatalf("stage v2 navigator status: %v", err)
-			}
 			// Saved synthesis records predate the v11 record version and
 			// fail closed on replay — drop them so the RAW saved response
 			// replays under the current contract (archive9 pattern).

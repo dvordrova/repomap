@@ -1703,7 +1703,7 @@ func TestRunDefaultAtlasFirstCallPlanExcludesLegacyStages(t *testing.T) {
 
 	requests := run()
 	if len(requests) != 1 {
-		t.Fatalf("model request count = %d, want one Architecture parity-bridge request after empty Navigator", len(requests))
+		t.Fatalf("model request count = %d, want one Architecture request", len(requests))
 	}
 	wantStageMarkers := []string{
 		"compact conceptual architecture landscape",

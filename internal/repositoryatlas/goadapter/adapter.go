@@ -317,7 +317,8 @@ func projectProcessEntries(
 	entrypoints map[string]exactEntrypoint,
 ) {
 	for _, record := range values {
-		if !eligibleStartupProcessEntry(record) {
+		if record.Kind != "process_entry" || record.ID == "" || record.ProvisionalID ||
+			record.Resolution != "exact" || record.Certainty != "static" {
 			continue
 		}
 		location := record.ProcessEntrypoint.Location
@@ -372,32 +373,6 @@ func projectProcessEntries(
 			EvidenceRefs: []string{evidenceID},
 		})
 	}
-}
-
-// eligibleStartupProcessEntry is the ordinary Navigator admission boundary.
-// Available exact process entries are useful only for application or service
-// executables; tooling, tests/helpers, and unknown roles remain local Surface
-// evidence and must not become newcomer startup actions. An unavailable
-// primary application is the one bounded exception: its exact application-
-// owned entry identity can still seed a partial trace when only the typed
-// downstream closure is missing.
-func eligibleStartupProcessEntry(record surfacediscovery.TriggerRecord) bool {
-	if record.Kind != "process_entry" || record.ID == "" || record.ProvisionalID ||
-		record.Resolution != "exact" || record.Certainty != "static" {
-		return false
-	}
-	if record.ExecutableRole != surfacediscovery.ExecutableRolePrimaryApplication &&
-		record.ExecutableRole != surfacediscovery.ExecutableRoleSecondaryService {
-		return false
-	}
-	if record.Availability == surfacediscovery.AvailabilityAvailable {
-		return true
-	}
-	return record.Availability == surfacediscovery.AvailabilityUnavailable &&
-		record.ExecutableRole == surfacediscovery.ExecutableRolePrimaryApplication &&
-		record.ApplicationClass == surfacediscovery.ApplicationSurface &&
-		record.SurfaceRole == surfacediscovery.SurfaceRoleEntrySurface &&
-		record.TraceReadiness == surfacediscovery.TraceReadinessPartial
 }
 
 func exactProcessSymbol(record surfacediscovery.TriggerRecord, entrypoint exactEntrypoint) bool {

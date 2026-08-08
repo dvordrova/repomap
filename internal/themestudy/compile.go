@@ -17,8 +17,12 @@ const (
 	// bytes and prompts — request 1→2, result 2→3, prompts v2→v3.
 	// Decision 239: an otherwise valid Scout theme with more than five exact
 	// anchors is normalized item-locally instead of being discarded whole;
-	// the typed result/status contract advances 3→4.
-	ScoutRequestVersion        = 2
+	// the typed result/status contract advances 3→4. D239 also removes the
+	// duplicated Vocabulary/SeedPack source projection from the persisted
+	// Scout request: request v3 stores the exact wire once plus private metadata
+	// and restores the same in-memory request losslessly. The provider wire and
+	// prompt are unchanged; historical v2 request artifacts remain replayable.
+	ScoutRequestVersion        = 3
 	ScoutResultVersion         = 4
 	AdjudicationRequestVersion = 2
 	AdjudicationResultVersion  = 3
@@ -62,10 +66,11 @@ const (
 	MaxStudyThemesArtifactBytes  = 256 << 10
 )
 
-// ScoutRequest is the compiled, bounded Theme Scout request (contract C). It
-// is the exact artifact payload: the model-visible wire plus the backend-owned
-// identity that binds it. Source bytes appear only inside seed pack objects and
-// are provider evidence, never card content.
+// ScoutRequest is the compiled, bounded in-memory Theme Scout request
+// (contract C): the model-visible wire plus the backend-owned identity that
+// binds it. The v3 artifact stores the exact wire once and only the private
+// metadata needed to losslessly restore this value; source bytes appear only
+// once on disk and remain provider evidence, never card content.
 type ScoutRequest struct {
 	Version       int            `json:"version"`
 	PromptVersion string         `json:"prompt_version"`

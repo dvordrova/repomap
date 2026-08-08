@@ -19,7 +19,7 @@ import (
 const (
 	// UnitCatalogVersion changes whenever unit identity, role separation, or
 	// the unit compiler contract changes.
-	UnitCatalogVersion = 2
+	UnitCatalogVersion = 3
 
 	// targetMinUnits / targetMaxUnits bound the advertised catalog. Hard
 	// bounds are contract-owned and provider-free tested (Decision 216.9).
@@ -28,6 +28,11 @@ const (
 
 	// maxUnitMembers caps one unit before deterministic splitting.
 	maxUnitMembers = 48
+
+	// semanticModuleRefinementThreshold keeps one broad structural namespace
+	// from becoming the only context for dozens of otherwise distinct package
+	// families. Refinement remains subordinate to targetMaxUnits.
+	semanticModuleRefinementThreshold = 24
 
 	// maxUnitWireLabelBytes bounds the semantic label on the wire.
 	maxUnitWireLabelBytes = 96
@@ -221,8 +226,9 @@ func CompileUnitCatalog(bundle CandidateBundle) (UnitCatalog, error) {
 		}
 		relativeName := relativePackageNames[candidate.ID]
 		module := topLevelModule(relativeName)
+		moduleGroupingKey := topLevelModuleGroupingKey(relativeName)
 		role := unitRoleForPackage(candidate, relativeName)
-		if module == "" {
+		if module == "" || moduleGroupingKey == "" {
 			unit := ArchitectureUnit{
 				CanonicalID:  "unit-" + stableUnitID(candidate),
 				Role:         role,
@@ -235,11 +241,11 @@ func CompileUnitCatalog(bundle CandidateBundle) (UnitCatalog, error) {
 			units = append(units, unit)
 			continue
 		}
-		moduleKey := string(role) + "\x00" + module
+		moduleKey := string(role) + "\x00" + moduleGroupingKey
 		unitIndex, exists := moduleUnits[moduleKey]
 		if !exists {
 			unit := ArchitectureUnit{
-				CanonicalID:  "unit-module-" + stableModuleID(role, module),
+				CanonicalID:  "unit-module-" + stableModuleID(role, moduleGroupingKey),
 				Role:         role,
 				Label:        sanitizeUnitLabel(module, canonicalOpaqueIDs),
 				MemberIDs:    []MemberID{candidate.ID},
@@ -256,6 +262,50 @@ func CompileUnitCatalog(bundle CandidateBundle) (UnitCatalog, error) {
 		unit.MemberKinds[candidate.ID.Kind]++
 		unit.PackagePaths = append(unit.PackagePaths, candidate.ID.Value)
 		packageUnitIndex[candidate.ID] = unitIndex
+	}
+
+	// Count the exact final conceptual ownership before refining package-only
+	// units. Non-package members are attached below, but their current package
+	// ownership must already participate in the hard post-split unit budget.
+	conceptualMemberCountsByPackage := make(map[MemberID]int, len(packageCandidates))
+	for _, candidate := range packageCandidates {
+		conceptualMemberCountsByPackage[candidate.ID] = 1
+	}
+	unattachedConceptualCount := 0
+	for _, candidate := range nonPackageCandidates {
+		owner, resolved := packageOwnerByMember[candidate.ID]
+		if !resolved {
+			unattachedConceptualCount++
+			continue
+		}
+		if _, exists := conceptualMemberCountsByPackage[owner]; !exists {
+			unattachedConceptualCount++
+			continue
+		}
+		conceptualMemberCountsByPackage[owner]++
+	}
+
+	// Refine only broad semantic module buckets, using the next exact
+	// repository-relative segment. The refinement is all-or-nothing per
+	// bucket and consumes only the remaining hard unit budget after exact
+	// non-package attachment and deterministic maxUnitMembers splitting; when
+	// the child families would exceed targetMaxUnits the original bucket is
+	// preserved unchanged. Private grouping keys may contain structural paths,
+	// but provider-visible labels remain one sanitized segment.
+	units = refineBroadModuleUnits(
+		units,
+		relativePackageNames,
+		conceptualMemberCountsByPackage,
+		unattachedConceptualCount,
+		canonicalOpaqueIDs,
+	)
+	packageUnitIndex = make(map[MemberID]int, len(packageCandidates))
+	for unitIndex, unit := range units {
+		for _, memberID := range unit.MemberIDs {
+			if memberID.Kind == MemberPackage {
+				packageUnitIndex[memberID] = unitIndex
+			}
+		}
 	}
 
 	// Attach non-package conceptual members to their exact owning package unit
@@ -722,28 +772,209 @@ func unitLabelForPackage(displayName string) string {
 // topLevelModule returns one repository-relative semantic segment. Command
 // packages use the command name rather than the generic cmd directory.
 func topLevelModule(displayName string) string {
-	name := strings.TrimSuffix(strings.TrimSpace(displayName), "/")
-	if name == "" || strings.HasPrefix(name, "member-") {
-		return ""
-	}
-	segments := strings.Split(name, "/")
-	if len(segments) == 0 {
-		return ""
-	}
-	module := segments[0]
-	if module == "cmd" && len(segments) > 1 {
-		module = segments[1]
-	}
-	if module == "" || module == "." || module == ".." || strings.Contains(module, ".") {
-		return ""
-	}
+	module, _ := topLevelModuleIdentity(displayName)
 	return module
 }
 
+// topLevelModuleGroupingKey returns the private structural identity used to
+// cluster packages. A command namespace is deliberately distinct from an
+// ordinary top-level package with the same display label (cmd/dive/... versus
+// dive/...). The key never enters the provider wire; both groups may retain
+// the same short semantic label without conflating their exact membership.
+func topLevelModuleGroupingKey(displayName string) string {
+	_, groupingKey := topLevelModuleIdentity(displayName)
+	return groupingKey
+}
+
+func topLevelModuleIdentity(displayName string) (module string, groupingKey string) {
+	name := strings.TrimSuffix(strings.TrimSpace(displayName), "/")
+	if name == "" || strings.HasPrefix(name, "member-") {
+		return "", ""
+	}
+	segments := strings.Split(name, "/")
+	if len(segments) == 0 {
+		return "", ""
+	}
+	module = segments[0]
+	if module == "cmd" && len(segments) > 1 {
+		module = segments[1]
+		groupingKey = "cmd/" + module
+	} else {
+		groupingKey = module
+	}
+	if module == "" || module == "." || module == ".." || strings.Contains(module, ".") {
+		return "", ""
+	}
+	return module, groupingKey
+}
+
+type broadModuleRefinement struct {
+	canonicalID        string
+	replacedChunkCount int
+	units              []ArchitectureUnit
+}
+
+func refineBroadModuleUnits(
+	units []ArchitectureUnit,
+	relativePackageNames map[MemberID]string,
+	conceptualMemberCountsByPackage map[MemberID]int,
+	unattachedConceptualCount int,
+	canonicalOpaqueIDs map[string]struct{},
+) []ArchitectureUnit {
+	plans := make([]broadModuleRefinement, 0)
+	for _, unit := range units {
+		if !strings.HasPrefix(unit.CanonicalID, "unit-module-") ||
+			len(unit.MemberIDs) <= semanticModuleRefinementThreshold {
+			continue
+		}
+		children := refineBroadModuleUnit(unit, relativePackageNames, canonicalOpaqueIDs)
+		if len(children) <= 1 {
+			continue
+		}
+		plans = append(plans, broadModuleRefinement{
+			canonicalID:        unit.CanonicalID,
+			replacedChunkCount: projectedArchitectureUnitChunkCount(unit, conceptualMemberCountsByPackage),
+			units:              children,
+		})
+	}
+	sort.Slice(plans, func(i, j int) bool { return plans[i].canonicalID < plans[j].canonicalID })
+
+	accepted := make(map[string][]ArchitectureUnit, len(plans))
+	projectedCount := projectedArchitectureUnitCount(
+		units,
+		conceptualMemberCountsByPackage,
+		unattachedConceptualCount,
+	)
+	for _, plan := range plans {
+		candidateCount := projectedCount - plan.replacedChunkCount +
+			projectedArchitectureUnitCount(plan.units, conceptualMemberCountsByPackage, 0)
+		if candidateCount > targetMaxUnits {
+			continue
+		}
+		accepted[plan.canonicalID] = plan.units
+		projectedCount = candidateCount
+	}
+	if len(accepted) == 0 {
+		return units
+	}
+	refined := make([]ArchitectureUnit, 0, projectedCount)
+	for _, unit := range units {
+		if replacements, ok := accepted[unit.CanonicalID]; ok {
+			refined = append(refined, replacements...)
+			continue
+		}
+		refined = append(refined, unit)
+	}
+	return refined
+}
+
+// projectedArchitectureUnitCount returns the exact number of final wire units
+// after non-package attachment, local-remainder construction, and deterministic
+// maxUnitMembers splitting. At refinement time units contain package members,
+// so conceptualMemberCountsByPackage restores every already-resolved child.
+func projectedArchitectureUnitCount(
+	units []ArchitectureUnit,
+	conceptualMemberCountsByPackage map[MemberID]int,
+	unattachedConceptualCount int,
+) int {
+	count := splitUnitChunkCount(unattachedConceptualCount)
+	for _, unit := range units {
+		count += projectedArchitectureUnitChunkCount(unit, conceptualMemberCountsByPackage)
+	}
+	return count
+}
+
+func projectedArchitectureUnitChunkCount(
+	unit ArchitectureUnit,
+	conceptualMemberCountsByPackage map[MemberID]int,
+) int {
+	memberCount := 0
+	for _, memberID := range unit.MemberIDs {
+		if ownedCount, exists := conceptualMemberCountsByPackage[memberID]; exists {
+			memberCount += ownedCount
+			continue
+		}
+		memberCount++
+	}
+	return splitUnitChunkCount(memberCount)
+}
+
+func splitUnitChunkCount(memberCount int) int {
+	if memberCount <= 0 {
+		return 0
+	}
+	return (memberCount + maxUnitMembers - 1) / maxUnitMembers
+}
+
+func refineBroadModuleUnit(
+	unit ArchitectureUnit,
+	relativePackageNames map[MemberID]string,
+	canonicalOpaqueIDs map[string]struct{},
+) []ArchitectureUnit {
+	byKey := make(map[string]*ArchitectureUnit)
+	for _, memberID := range unit.MemberIDs {
+		relativeName, exists := relativePackageNames[memberID]
+		if !exists {
+			return nil
+		}
+		label, groupingKey := nextModuleFamilyIdentity(relativeName)
+		if label == "" || groupingKey == "" {
+			return nil
+		}
+		child := byKey[groupingKey]
+		if child == nil {
+			child = &ArchitectureUnit{
+				CanonicalID: "unit-module-" + stableModuleID(unit.Role, groupingKey),
+				Role:        unit.Role,
+				Label:       sanitizeUnitLabel(label, canonicalOpaqueIDs),
+				MemberKinds: map[MemberKind]int{},
+			}
+			byKey[groupingKey] = child
+		}
+		child.MemberIDs = append(child.MemberIDs, memberID)
+		child.MemberKinds[memberID.Kind]++
+		child.PackagePaths = append(child.PackagePaths, memberID.Value)
+	}
+	children := make([]ArchitectureUnit, 0, len(byKey))
+	for _, child := range byKey {
+		sort.Slice(child.MemberIDs, func(i, j int) bool {
+			return child.MemberIDs[i].key() < child.MemberIDs[j].key()
+		})
+		sort.Strings(child.PackagePaths)
+		children = append(children, *child)
+	}
+	sort.Slice(children, func(i, j int) bool { return children[i].CanonicalID < children[j].CanonicalID })
+	return children
+}
+
+// nextModuleFamilyIdentity returns the exact next segment beneath the private
+// top-level grouping identity. A package located at the grouping root remains
+// in that parent family, so refinement never omits it.
+func nextModuleFamilyIdentity(displayName string) (label string, groupingKey string) {
+	module, parentKey := topLevelModuleIdentity(displayName)
+	if module == "" || parentKey == "" {
+		return "", ""
+	}
+	name := strings.TrimSuffix(strings.TrimSpace(displayName), "/")
+	segments := strings.Split(name, "/")
+	nextIndex := 1
+	if len(segments) > 1 && segments[0] == "cmd" {
+		nextIndex = 2
+	}
+	if len(segments) <= nextIndex {
+		return module, parentKey
+	}
+	child := strings.TrimSpace(segments[nextIndex])
+	if child == "" || child == "." || child == ".." {
+		return "", ""
+	}
+	return child, parentKey + "/" + child
+}
+
 // stableModuleID derives a stable identity for a module-cluster unit.
-func stableModuleID(role UnitRole, module string) string {
+func stableModuleID(role UnitRole, groupingKey string) string {
 	hash := sha256.New()
-	fmt.Fprintf(hash, "module-v%d/%s/%s\n", UnitCatalogVersion, role, module)
+	fmt.Fprintf(hash, "module-v%d/%s/%s\n", UnitCatalogVersion, role, groupingKey)
 	return hex.EncodeToString(hash.Sum(nil)[:12])
 }
 

@@ -100,7 +100,6 @@ const (
 	SemanticExchangeMetaFile = "exchange.v2.json"
 
 	SemanticStageOrientation       = "orientation"
-	SemanticStageNavigator         = "navigator"
 	SemanticStageAtlasStudy        = "atlas_study"
 	SemanticStageTargetedResearch  = "targeted_research"
 	SemanticStageArchitecture      = "architecture_synthesis"
@@ -729,7 +728,6 @@ func validateSemanticOutcomeForStage(stage string, outcome SemanticOutcome) erro
 func validSemanticStage(stage string) bool {
 	switch stage {
 	case SemanticStageOrientation,
-		SemanticStageNavigator,
 		SemanticStageAtlasStudy,
 		SemanticStageTargetedResearch,
 		SemanticStageArchitecture,

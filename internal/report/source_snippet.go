@@ -1688,20 +1688,6 @@ func overviewSourceTargetsWithPackageEvidence(
 		}
 	}
 
-	if data.RepositoryAtlas != nil && data.Navigator != nil &&
-		data.Navigator.Recommendation != nil {
-		evidenceByID := make(map[string]repositoryatlas.Evidence, len(data.RepositoryAtlas.Evidence))
-		for _, item := range data.RepositoryAtlas.Evidence {
-			evidenceByID[item.ID] = item
-		}
-		for _, evidenceID := range data.Navigator.Recommendation.EvidenceIDs {
-			item, ok := evidenceByID[evidenceID]
-			if !ok {
-				continue
-			}
-			appendTarget(item.Location.Path, item.Location.Line, "")
-		}
-	}
 	if includePackageEvidence {
 		for _, item := range exactRepositoryAtlasPackageEvidence(data) {
 			appendTarget(item.Location.Path, item.Location.Line, "", item.ID)

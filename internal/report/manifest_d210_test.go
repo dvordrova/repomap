@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlasstudy"
-	"github.com/dvordrova/repomap/internal/navigator"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 	"github.com/dvordrova/repomap/internal/themestudy"
 )
@@ -62,11 +61,6 @@ func d210ThemeManifestFixture(t *testing.T, state atlasstudy.ProductState) (RunM
 		t.Fatalf("ProjectArchitectureComponentNavigation: %v", err)
 	}
 	data.ArchitectureComponentNavigation = navigation
-	// A real run carries a Navigator alongside the Atlas authority: the gate
-	// requires hasRepositoryAtlas == hasNavigatorStatus, so bind a local
-	// selected Navigator exactly like the run wiring would.
-	navigatorFixture := makeNavigatorArtifactFixture(t, *data.RepositoryAtlas, navigator.ProductStateSelected)
-	data.Navigator = &navigatorFixture.projection
 	reportJSON, err := json.Marshal(data)
 	if err != nil {
 		t.Fatal(err)
@@ -77,14 +71,8 @@ func d210ThemeManifestFixture(t *testing.T, state atlasstudy.ProductState) (RunM
 		t.Fatal(err)
 	}
 	writeThemeArtifact(t, runDir, repositoryatlas.ArtifactFilename, atlasJSON)
-	writeThemeArtifact(t, runDir, navigator.RequestArtifactFilename, navigatorFixture.request)
-	writeThemeArtifact(t, runDir, navigator.RecordArtifactFilename, navigatorFixture.result)
-	writeThemeArtifact(t, runDir, navigator.StatusArtifactFilename, navigatorFixture.status)
 	material := MaterialInputs{
 		RepositoryAtlasSHA256:          manifestSHA256(atlasJSON),
-		NavigatorRequestSHA256:         manifestSHA256(navigatorFixture.request),
-		NavigatorResultSHA256:          manifestSHA256(navigatorFixture.result),
-		NavigatorStatusSHA256:          manifestSHA256(navigatorFixture.status),
 		ThemeScoutRequestSHA256:        manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ScoutRequestArtifactFilename)),
 		ThemeScoutResultSHA256:         manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ScoutResultArtifactFilename)),
 		ThemeScoutStatusSHA256:         manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.ScoutStatusArtifactFilename)),
@@ -99,9 +87,6 @@ func d210ThemeManifestFixture(t *testing.T, state atlasstudy.ProductState) (RunM
 	manifest.Components = nil
 	manifest.ReportSHA256 = manifestSHA256(reportJSON)
 	manifest.MaterialInputs.RepositoryAtlasSHA256 = material.RepositoryAtlasSHA256
-	manifest.MaterialInputs.NavigatorRequestSHA256 = material.NavigatorRequestSHA256
-	manifest.MaterialInputs.NavigatorResultSHA256 = material.NavigatorResultSHA256
-	manifest.MaterialInputs.NavigatorStatusSHA256 = material.NavigatorStatusSHA256
 	manifest.MaterialInputs.ThemeScoutRequestSHA256 = material.ThemeScoutRequestSHA256
 	manifest.MaterialInputs.ThemeScoutResultSHA256 = material.ThemeScoutResultSHA256
 	manifest.MaterialInputs.ThemeScoutStatusSHA256 = material.ThemeScoutStatusSHA256

@@ -3,10 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,9 +11,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/freshness"
-	"github.com/dvordrova/repomap/internal/navigator"
 	"github.com/dvordrova/repomap/internal/report"
-	"github.com/dvordrova/repomap/internal/repositoryatlas"
 )
 
 // copyRunDirForReplay stages a run directory into a temp dir so the test can
@@ -50,80 +45,6 @@ func copyRunDirForReplay(src, dst string) error {
 		_, err = io.Copy(out, in)
 		return err
 	})
-}
-
-// stageV2NavigatorStatus rewrites the staged navigator_status.v1.json with a
-// freshly derived v2 status compiled from the run's own repository Atlas
-// (Decision 232). The Archive 9 navigator records are v1 and fail closed
-// under the v2 contract; the staged read needs an identity-consistent local
-// navigator row (unavailable/prepared — no provider call) so the
-// architecture synthesis replay is unaffected.
-func stageV2NavigatorStatus(runDir string) error {
-	atlasRaw, err := os.ReadFile(filepath.Join(runDir, "repository_atlas.v1.json"))
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil // no Atlas: no navigator row either
-		}
-		return err
-	}
-	atlas, err := repositoryatlas.DecodeCanonicalJSON(atlasRaw)
-	if err != nil {
-		return fmt.Errorf("decode repository atlas: %w", err)
-	}
-	product, err := navigator.CompileProduct(navigator.ProductInput{
-		Atlas: atlas,
-		Limits: navigator.Limits{
-			MaxWireBytes: 128 << 10, MaxResponseBytes: 128 << 10,
-			MaxUnitLabelBytes: 512,
-			MaxSeeds:          32, MaxDirectTrails: 64,
-			MaxIntersections: 32, MaxEvidence: 128, MaxGaps: 32, MaxActions: 32,
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("compile navigator product: %w", err)
-	}
-	var status navigator.Status
-	if product.Empty() {
-		status = product.PreparedStatus()
-		// Empty local state requires its exact empty result artifact
-		// (report read discipline), so stage it from the compiled product.
-		record, err := product.EmptyRecord()
-		if err != nil {
-			return fmt.Errorf("navigator empty record: %w", err)
-		}
-		encodedResult, err := navigator.EncodeRecommendationRecord(record)
-		if err != nil {
-			return fmt.Errorf("encode navigator result: %w", err)
-		}
-		if err := os.WriteFile(filepath.Join(runDir, "navigator_result.v1.json"), encodedResult, 0o600); err != nil {
-			return err
-		}
-	} else {
-		status, err = product.UnavailableStatus(navigator.UnavailableOffline)
-		if err != nil {
-			return fmt.Errorf("navigator unavailable status: %w", err)
-		}
-		// Unavailable local state requires its exact request artifact and
-		// must NOT carry a recommendation artifact (stale v1 result from
-		// the archived run is dropped).
-		_ = os.Remove(filepath.Join(runDir, "navigator_result.v1.json"))
-		request, err := product.RequestRecord()
-		if err != nil {
-			return fmt.Errorf("navigator request record: %w", err)
-		}
-		encodedRequest, err := navigator.EncodeRequestRecord(request)
-		if err != nil {
-			return fmt.Errorf("encode navigator request: %w", err)
-		}
-		if err := os.WriteFile(filepath.Join(runDir, "navigator_request.v1.json"), encodedRequest, 0o600); err != nil {
-			return err
-		}
-	}
-	encoded, err := navigator.EncodeStatus(status)
-	if err != nil {
-		return fmt.Errorf("encode navigator status: %w", err)
-	}
-	return os.WriteFile(filepath.Join(runDir, "navigator_status.v1.json"), encoded, 0o600)
 }
 
 // TestArchive9ReplaySharedParticipation replays all five Archive 9 saved
@@ -192,19 +113,6 @@ func TestArchive9ReplaySharedParticipation(t *testing.T) {
 			}
 			_ = os.Remove(filepath.Join(readDir, "architecture_synthesis.json"))
 			_ = os.Remove(filepath.Join(readDir, "architecture_synthesis_status.json"))
-			// Decision 232 (Archive 9): Archive 9 navigator records are v1
-			// and fail closed under the v2 contract (versioned-identity
-			// invariant). The replay under test is the ARCHITECTURE
-			// synthesis path, so the staged read replaces the v1 navigator
-			// status with a freshly generated v2 status derived from the
-			// SAME repository Atlas (identity-consistent: the navigator
-			// row is an honest local state under the current contract, and
-			// the architecture replay is unaffected). The v1 navigator
-			// request/result artifacts are dropped — the v2 status has no
-			// provider call.
-			if err := stageV2NavigatorStatus(readDir); err != nil {
-				t.Fatalf("stage v2 navigator status: %v", err)
-			}
 			data, err := report.ReadRunDirForAuthorizedArchitecture(readDir, authority)
 			if err != nil {
 				t.Fatalf("read run dir: %v", err)

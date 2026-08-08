@@ -70,6 +70,16 @@ const report = {
   user_mechanisms: [], user_sources: [], user_topics: [],
   openable_paths: [], source_ids: {},
   architecture_canvas: { version: 1, local_remainder_component_id: "component-r", components: [], behavior_anchors: [], surfaces: [], flows: [], structural_edges: [] },
+  architecture_grounding: {
+    behavior_anchors: [
+      { id: "anchor-lifecycle", kind: "lifecycle_start", label: "lifecycle start service.Start", location: { path: "service.go", line: 20, column: 6 } },
+      { id: "anchor-boundary", kind: "tls_or_security_boundary", label: "security boundary client.Send", location: { path: "client.go", line: 30, column: 6 } },
+    ],
+    relationships: [
+      { from_anchor_id: "anchor-entry", to_anchor_id: "anchor-lifecycle", location: { path: "main.go", line: 150, column: 16 } },
+      { from_anchor_id: "anchor-entry", to_anchor_id: "anchor-boundary", location: { path: "main.go", line: 150, column: 17 } },
+    ],
+  },
   mechanism_fragment: {
     version: 2,
     entry: {
@@ -82,28 +92,36 @@ const report = {
     transitions: [
       {
         ordinal: 1, claim_kind: "direct_static_call", support_mode: "resolved_static",
-        label: "handoff", path: "main.go", line: 150, symbol: "service.Start",
+        label: "handoff", path: "main.go", line: 150, column: 16, symbol: "service.Start",
         evidence: "go_ssa surface-ssa-v12 connect_architecture_anchors",
         scenario: "Recorded Go build scenario",
         limitation: "runtime dispatch beyond the recorded build scenario not proven",
         ordering: "resolved_path_order",
       },
       {
-        ordinal: 2, claim_kind: "unresolved_continuation", support_mode: "unknown",
+        ordinal: 2, claim_kind: "direct_static_call", support_mode: "resolved_static",
+        label: "handoff", path: "main.go", line: 150, column: 17, symbol: "client.Send",
+        evidence: "go_ssa surface-ssa-v12 connect_architecture_anchors",
+        scenario: "Recorded Go build scenario",
+        limitation: "runtime dispatch beyond the recorded build scenario not proven",
+        ordering: "resolved_path_order",
+      },
+      {
+        ordinal: 3, claim_kind: "unresolved_continuation", support_mode: "unknown",
         label: "beyond the observed handoffs", path: "", line: 0,
         evidence: "no locally saved transition", scenario: "",
         limitation: "execution order and further transitions not established",
         ordering: "not_established",
       },
       {
-        ordinal: 3, claim_kind: "storage_boundary_callsite", support_mode: "observed_local",
+        ordinal: 4, claim_kind: "storage_boundary_callsite", support_mode: "observed_local",
         label: "boundary net", path: "github.com/example/repo/controllers", line: 0,
         evidence: "atlas boundary/resource observation", scenario: "Recorded build scenario",
         limitation: "physical target unknown; runtime reachability not proven",
         ordering: "not_established",
       },
       {
-        ordinal: 4, claim_kind: "outbound_client_callsite", support_mode: "observed_local",
+        ordinal: 5, claim_kind: "outbound_client_callsite", support_mode: "observed_local",
         label: "resource database", path: "github.com/example/repo/service", line: 0,
         evidence: "atlas boundary/resource observation", scenario: "Recorded build scenario",
         limitation: "physical target unknown; runtime reachability not proven",
@@ -116,7 +134,6 @@ const report = {
       limitation: "No locally saved transitions beyond the observed handoffs; execution order beyond them is not established.",
     },
   },
-  navigator: { version: 1, state: "empty" },
   repository_atlas: { version: 1, units: [], entities: [], observations: [], evidence: [], relations: [] },
 };
 const window = {
@@ -167,6 +184,8 @@ const root = roots["rm-architecture"];
 const items = root.querySelectorAll(".rm-mechanism-fragment__lane");
 const frontier = root.querySelector(".rm-mechanism-fragment__frontier");
 const graphs = root.querySelectorAll(".rm-mechanism-fragment__graph");
+const entryGraph = root.querySelector(".rm-mechanism-fragment__graph--entry");
+const independentGraphs = root.querySelectorAll(".rm-mechanism-fragment__graph--independent");
 const touchpointGroups = root.querySelectorAll(".rm-mechanism-fragment__touchpoint-group");
 const kinds = items.map((item) => {
   const strong = item.querySelector(".rm-mechanism-fragment__kind");
@@ -199,6 +218,8 @@ process.stdout.write(JSON.stringify({
   limitationSpans,
   labels,
   graphCount: graphs.length,
+  entryLaneCount: entryGraph ? entryGraph.querySelectorAll(".rm-mechanism-fragment__lane").length : 0,
+  independentGraphCount: independentGraphs.length,
   touchpointGroupCount: touchpointGroups.length,
   frontierPresent: !!frontier,
   frontierText: frontier ? frontier.textContent.replace(/\s+/g, " ").trim() : "",
@@ -214,17 +235,19 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("run mechanism fragment workspace: %v\n%s", err, output)
 	}
 	var out struct {
-		ItemCount            int      `json:"itemCount"`
-		Kinds                []string `json:"kinds"`
-		Orderings            []string `json:"orderings"`
-		EvidenceSpans        []string `json:"evidenceSpans"`
-		LimitationSpans      []string `json:"limitationSpans"`
-		Labels               []string `json:"labels"`
-		GraphCount           int      `json:"graphCount"`
-		TouchpointGroupCount int      `json:"touchpointGroupCount"`
-		FrontierPresent      bool     `json:"frontierPresent"`
-		FrontierText         string   `json:"frontierText"`
-		ArchitectureText     string   `json:"architectureText"`
+		ItemCount             int      `json:"itemCount"`
+		Kinds                 []string `json:"kinds"`
+		Orderings             []string `json:"orderings"`
+		EvidenceSpans         []string `json:"evidenceSpans"`
+		LimitationSpans       []string `json:"limitationSpans"`
+		Labels                []string `json:"labels"`
+		GraphCount            int      `json:"graphCount"`
+		EntryLaneCount        int      `json:"entryLaneCount"`
+		IndependentGraphCount int      `json:"independentGraphCount"`
+		TouchpointGroupCount  int      `json:"touchpointGroupCount"`
+		FrontierPresent       bool     `json:"frontierPresent"`
+		FrontierText          string   `json:"frontierText"`
+		ArchitectureText      string   `json:"architectureText"`
 	}
 	if err := json.Unmarshal(output, &out); err != nil {
 		t.Fatalf("decode mechanism fragment workspace: %v\n%s", err, output)
@@ -233,15 +256,16 @@ process.stdout.write(JSON.stringify({
 	// renders as connected lanes with exact joins; the unresolved
 	// continuation is the frontier; boundary/resource observations become
 	// side touchpoint groups. Raw enums never primary UI.
-	if out.ItemCount != 2 {
-		t.Fatalf("items = %d, want 2 entry-chain lanes: %#v", out.ItemCount, out.Kinds)
+	if out.ItemCount != 3 {
+		t.Fatalf("items = %d, want entry plus two same-line exact calls: %#v", out.ItemCount, out.Kinds)
 	}
-	if out.GraphCount < 1 || out.TouchpointGroupCount < 1 || !out.FrontierPresent {
+	if out.GraphCount < 2 || out.EntryLaneCount != 2 || out.IndependentGraphCount != 1 ||
+		out.TouchpointGroupCount < 1 || !out.FrontierPresent {
 		t.Fatalf("fragment structure incomplete: graphs=%d touchpoints=%d frontier=%v",
 			out.GraphCount, out.TouchpointGroupCount, out.FrontierPresent)
 	}
 	wantKinds := []string{
-		"Process entry", "Direct static call",
+		"Process entry", "Direct static call", "Direct static call",
 	}
 	for index, want := range wantKinds {
 		if index >= len(out.Kinds) || out.Kinds[index] != want {
@@ -260,16 +284,16 @@ process.stdout.write(JSON.stringify({
 	}
 	// Orderings: human copy — Local callsite order (resolved_path_order /
 	// not_established stay in details).
-	if len(out.Orderings) != 2 || out.Orderings[1] != "Local callsite order" {
+	if len(out.Orderings) != 3 || out.Orderings[1] != "Local callsite order" || out.Orderings[2] != "Local callsite order" {
 		t.Fatalf("orderings = %#v", out.Orderings)
 	}
 	// Evidence (including raw enums) under Evidence details — always
 	// present, never hover-only.
-	if len(out.EvidenceSpans) != 2 || out.EvidenceSpans[0] == "" || out.EvidenceSpans[1] == "" {
-		t.Fatalf("evidence spans = %#v, want 2 non-empty", out.EvidenceSpans)
+	if len(out.EvidenceSpans) != 3 || out.EvidenceSpans[0] == "" || out.EvidenceSpans[1] == "" || out.EvidenceSpans[2] == "" {
+		t.Fatalf("evidence spans = %#v, want 3 non-empty", out.EvidenceSpans)
 	}
-	if len(out.LimitationSpans) != 2 || out.LimitationSpans[0] == "" || out.LimitationSpans[1] == "" {
-		t.Fatalf("limitation spans = %#v, want 2 non-empty", out.LimitationSpans)
+	if len(out.LimitationSpans) != 3 || out.LimitationSpans[0] == "" || out.LimitationSpans[1] == "" || out.LimitationSpans[2] == "" {
+		t.Fatalf("limitation spans = %#v, want 3 non-empty", out.LimitationSpans)
 	}
 	// Frontier always visible without hover, and carries the unresolved item.
 	if !out.FrontierPresent || !strings.Contains(out.FrontierText, "No locally saved transitions") ||

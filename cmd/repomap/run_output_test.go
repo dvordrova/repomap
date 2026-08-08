@@ -78,3 +78,30 @@ func TestRunOutputExplainsArchitectureScopeOmissionsInConsole(t *testing.T) {
 		}
 	}
 }
+
+func TestRunOutputExplainsThemeAtlasClosureInConsole(t *testing.T) {
+	t.Parallel()
+
+	var console bytes.Buffer
+	output := newRunOutput(&console)
+	output.ThemeInputClosure(themeStudyAtlasClosure{
+		ObservedUnits: 998, RetainedUnits: 5,
+		ObservedEntities: 35, RetainedEntities: 6,
+		ObservedEvidence: 1017, RetainedEvidence: 3,
+		ObservedObservations: 68, RetainedObservations: 6,
+		ObservedRelations: 3, RetainedRelations: 3,
+	})
+
+	got := console.String()
+	for _, want := range []string{
+		"Study request preparation:", "state: bounded",
+		"records needed to prepare this Study request: 5 (998 local Atlas records remain unchanged)",
+		"repository scope and Architecture groups: unchanged",
+		"provider-visible Study surfaces and evidence: unchanged",
+		"complete local Repository Atlas remains authoritative and unchanged",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("console output %q does not contain %q", got, want)
+		}
+	}
+}

@@ -70,7 +70,6 @@ const report = {
   openable_paths: ["main.go", "pp/paypal.go", "pp/wechatpay.go", "service/proxy.go", "scan/intranet_server.go"],
   source_ids: {},
   github_source_links: { repository_url: "https://github.com/example/fixture", revision: "1".repeat(40), working_tree_paths: [] },
-  navigator: { version: 1, state: "empty" },
   repository_atlas: { version: 1, units: [], entities: [], evidence: [], relations: [] },
   discovered_surfaces: {
     version: 7,

@@ -539,7 +539,7 @@ func canonicalEnglishPresentation(data *ReportData) *ReportData {
 }
 
 func hasStageOwnedPresentation(data *ReportData) bool {
-	return data != nil && data.RepositoryAtlas != nil && data.Navigator != nil
+	return data != nil && data.RepositoryAtlas != nil
 }
 
 func stageOwnedRussianPresentation(data *ReportData) *ReportData {

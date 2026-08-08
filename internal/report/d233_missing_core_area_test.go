@@ -82,7 +82,6 @@ const report = {
   repo_name: "fixture", report_language: "en",
   user_sources: [], user_mechanisms: [], user_topics: [], openable_paths: ["core/run.go", "core/store.go"],
   github_source_links: { repository_url: "https://github.com/example/fixture", revision: "a".repeat(40) },
-  navigator: { version: 2, state: "unavailable" },
   atlas_study: {
     version: 1, projection_version: 12, state: "accepted_partial",
     considered_span_count: 4, advertised_span_count: 4, model_selected_span_count: 2, accepted_span_count: 2,

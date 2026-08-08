@@ -334,13 +334,16 @@ Each card is intentionally runnable without completing the rest of the roadmap.
 - Challenge independently: change ranking limits or one fixture in
   `snapshot`, `gofacts`, or `llmbundle`; no provider call is needed.
 
-### C2 — Navigator startup selection without an LLM
+### C2 — Local entrypoint projection
 
-- Question: does the backend derive only exact resolved application startups?
-- Run: `go test ./internal/navigator`.
-- Inspect: the provider-free startup action and response-reference fixtures.
-- Pass signal: canonical actions and evidence are restored only from advertised refs.
-- Challenge independently: add an Atlas fixture without an eligible startup relation.
+- Question: does the backend retain exact process, CLI, HTTP, worker, and
+  library entry identities without asking a model to select one?
+- Run the focused Surface Discovery, Repository Atlas, and Map lens tests.
+- Inspect the exact trigger roles/evidence and the Entrypoints lens projection.
+- Pass signal: every shown entry restores local evidence; helpers/tooling remain
+  honestly categorized rather than becoming a hidden recommendation.
+- Challenge independently: add a repository fixture with several peer entry
+  roles and verify that no provider call or single-winner ranking appears.
 
 ### C4 — Evidence vocabulary
 

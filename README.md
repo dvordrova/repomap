@@ -130,9 +130,10 @@ synthetic JSON request:
 
 ## Explore a repository
 
-The default builds a complete local Repository Atlas, derives the exact
-locally-resolved application-startup actions, and may ask the configured model
-to select one bounded Navigator action:
+The default builds a complete local Repository Atlas and a Map of exact entry
+surfaces, conceptual components, observed integrations, and bounded mechanism
+evidence. The configured model may assist Architecture grouping and the two
+Theme Study stages; it never selects one repository startup:
 
 ```bash
 ./repomap
@@ -142,9 +143,10 @@ cd /path/to/python-repository
 repomap
 ```
 
-The browser starts with the Atlas workspace and its Navigator recommendation.
-Canonical repository identities and source evidence remain backend-owned; the
-provider sees only the bounded request-local projection and opaque refs.
+The browser starts with Map. Entrypoints are a deterministic local projection;
+canonical repository identities and source evidence remain backend-owned. A
+provider sees only bounded request-local Architecture/Study projections and
+opaque refs.
 
 When served by repomap, grounded file paths are visibly clickable and open the
 corresponding repository file (including a cited line when present) through the

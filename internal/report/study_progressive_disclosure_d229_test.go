@@ -118,7 +118,6 @@ const report = {
   openable_paths: [],
   source_ids: {},
   github_source_links: { repository_url: "https://github.com/example/fixture", revision: "1".repeat(40), working_tree_paths: [] },
-  navigator: { version: 1, state: "empty" },
   repository_atlas: { version: 1, units: [], entities: [], evidence: [], relations: [] },
   atlas_study: {
     version: 1, projection_version: 8, state: "accepted",

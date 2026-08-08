@@ -9,7 +9,7 @@ OpenAI-compatible provider.
 repomap ../etcd --offline --debug-dir .repomap-runs --no-open --no-serve
 ```
 
-This persists the complete local Atlas and explicit offline Navigator status
+This persists the complete local Atlas and local Map/Entrypoints projections
 without making a provider call.
 
 ## Capture a full provider run (requires configured auth)
@@ -22,9 +22,6 @@ Writes under `.repomap-runs/<run-id>/`:
 - `metadata.json`
 - `snapshot.json`
 - `repository_atlas.v1.json`
-- `navigator_request.v1.json` when eligible startup actions exist
-- `navigator_status.v1.json`
-- `navigator_result.v1.json` after an empty or accepted selection
 - `architecture_synthesis_status.json` with bounded conceptual and
   primary/supporting coverage evidence when Architecture is attempted
 - `semantic_exchanges/<content-addressed-id>/request.{json,txt}`
@@ -47,9 +44,6 @@ run. Open its `run_manifest.json`, `report.json` and `report.html` directly.
     metadata.json
     snapshot.json
     repository_atlas.v1.json
-    navigator_request.v1.json
-    navigator_status.v1.json
-    navigator_result.v1.json
     semantic_exchanges/
       <content-addressed-id>/
         request.json or request.txt

@@ -538,13 +538,10 @@ Artifacts produced:
 - `metadata.json` — run metadata (model, endpoint, command, exact local build identity)
 - `snapshot.json` — full local deterministic snapshot
 - `repository_atlas.v1.json` — complete canonical local Repository Atlas
-- `navigator_request.v1.json` — bounded request-local Navigator projection and backend catalog
 - `semantic_exchanges/<id>/request.{json,txt}` — bounded redacted semantic request
 - `semantic_exchanges/<id>/response.{json,txt}` — bounded redacted response, when available and safe
 - `semantic_exchanges/<id>/response.marker.json` — closed unavailable or unsafe marker
 - `semantic_exchanges/<id>/exchange.v2.json` — closed committed outcome metadata with safe phase/code/metrics
-- `navigator_status.v1.json` — closed Navigator state
-- `navigator_result.v1.json` — accepted or empty canonical recommendation
 - `report.json` — authoritative machine report
 - `error.txt` — error message if any step failed
 

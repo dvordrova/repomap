@@ -17,7 +17,6 @@ import (
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/gofacts"
-	"github.com/dvordrova/repomap/internal/navigator"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 	"github.com/dvordrova/repomap/internal/repositoryatlas/goadapter"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
@@ -210,24 +209,6 @@ func TestAtlasStudyReadingTargetRequiresIndependentExactOperationalSupport(t *te
 		}}
 		if input := build(t, data); !hasRunTarget(input) || !AtlasStudyInputHasMinimumCatalog(input) {
 			t.Fatalf("flow-supported catalog = %#v", input.ReadingTargets)
-		}
-	})
-
-	t.Run("exact Navigator evidence wins over declaration family", func(t *testing.T) {
-		data := atlasStudyReportFixture(t)
-		setRunProof(t, data, componentmap.AnchorProofDeclarationFamily)
-		navigatorEvidence := data.RepositoryAtlas.Evidence[0]
-		navigatorEvidence.ID = "evidence-navigator-run"
-		navigatorEvidence.Location = evidence.Location{Path: path, Line: line}
-		data.RepositoryAtlas.Evidence = append(data.RepositoryAtlas.Evidence, navigatorEvidence)
-		data.Navigator = &NavigatorReportProduct{
-			Version: navigator.ProductVersion, State: navigator.ProductStateSelected,
-			Recommendation: &navigator.RecommendationAction{
-				EvidenceIDs: []string{navigatorEvidence.ID},
-			},
-		}
-		if input := build(t, data); hasRunTarget(input) || !AtlasStudyInputHasMinimumCatalog(input) {
-			t.Fatalf("Navigator created Study eligibility = %#v", input.ReadingTargets)
 		}
 	})
 
@@ -1329,15 +1310,14 @@ func TestRunManifestRejectsLegacyAtlasStudyArtifactsInThemeRun(t *testing.T) {
 }
 
 func TestRunManifestAcceptsInsufficientCatalogIndependentlyOfArchitectureEnrichment(t *testing.T) {
-	atlas := repositoryAtlasWithoutStartup()
+	atlas := repositoryAtlasFixture()
+	atlas.Relations = nil
 	atlasJSON, err := repositoryatlas.CanonicalJSON(atlas)
 	if err != nil {
 		t.Fatal(err)
 	}
-	navigatorFixture := makeNavigatorArtifactFixture(t, atlas, navigator.ProductStateEmpty)
 	reportJSON, err := json.Marshal(&ReportData{
 		FormatVersion: CurrentFormatVersion, RepositoryAtlas: &atlas,
-		Navigator: &navigatorFixture.projection,
 		AtlasStudy: &AtlasStudyReportStatus{
 			Version: themestudy.ScoutResultVersion, ProjectionVersion: AtlasStudyReportProjectionVersion,
 			State:           atlasstudy.ProductStateUnavailable,
@@ -1351,8 +1331,6 @@ func TestRunManifestAcceptsInsufficientCatalogIndependentlyOfArchitectureEnrichm
 	manifest.OpenablePaths, manifest.Components = nil, nil
 	manifest.ReportSHA256 = manifestSHA256(reportJSON)
 	manifest.MaterialInputs.RepositoryAtlasSHA256 = manifestSHA256(atlasJSON)
-	manifest.MaterialInputs.NavigatorResultSHA256 = manifestSHA256(navigatorFixture.result)
-	manifest.MaterialInputs.NavigatorStatusSHA256 = manifestSHA256(navigatorFixture.status)
 	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
 		t.Fatalf("insufficient exact Study catalog report rejected: %v", err)
 	}
