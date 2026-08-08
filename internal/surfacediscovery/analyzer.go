@@ -604,10 +604,20 @@ func checkSurfaceGoVersion(root string, offline bool) error {
 		return nil
 	}
 
-	scanner := bufio.NewScanner(io.LimitReader(file, 1024*1024))
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
+	reader := bufio.NewReader(io.LimitReader(file, 1024*1024))
+	for {
+		raw, err := reader.ReadString('\n')
+		if len(raw) == 0 {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			break
+		}
+		fields := strings.Fields(raw)
 		if len(fields) != 2 || fields[0] != "go" {
+			if errors.Is(err, io.EOF) {
+				break
+			}
 			continue
 		}
 		required := "go" + fields[1]
@@ -620,9 +630,6 @@ func checkSurfaceGoVersion(root string, offline bool) error {
 			)
 		}
 		return nil
-	}
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("surface discovery: read go.mod: %w", err)
 	}
 	return nil
 }

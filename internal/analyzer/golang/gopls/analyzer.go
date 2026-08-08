@@ -4,8 +4,6 @@
 package gopls
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -715,9 +713,8 @@ func (a *Analyzer) run(ctx context.Context, repoPath string, args ...string) ([]
 
 func parseWorkspaceSymbols(output []byte) []symbol {
 	var symbols []symbol
-	scanner := bufio.NewScanner(bytes.NewReader(output))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	for _, line := range splitOutputLines(output) {
+		line = strings.TrimSpace(line)
 		lastSpace := strings.LastIndexByte(line, ' ')
 		if lastSpace <= 0 {
 			continue
@@ -740,9 +737,8 @@ func parseWorkspaceSymbols(output []byte) []symbol {
 func parseDocumentSymbols(output []byte, path string) []documentSymbol {
 	var symbols []documentSymbol
 	var parents []string
-	scanner := bufio.NewScanner(bytes.NewReader(output))
-	for scanner.Scan() {
-		raw := scanner.Text()
+	for _, line := range splitOutputLines(output) {
+		raw := line
 		depth := 0
 		for depth < len(raw) && raw[depth] == '\t' {
 			depth++
@@ -1005,9 +1001,8 @@ func canonicalizeHierarchyRoot(requested, reported symbol) symbol {
 func parseCallHierarchy(output []byte) (symbol, []callEdge) {
 	var root symbol
 	var edges []callEdge
-	scanner := bufio.NewScanner(bytes.NewReader(output))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	for _, line := range splitOutputLines(output) {
+		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "identifier: ") {
 			parsed, ok := parseDescriptor(strings.TrimPrefix(line, "identifier: "))
 			if ok {
@@ -1115,14 +1110,27 @@ func parseRangeLocation(value string) (evidence.Location, bool) {
 
 func parseLocations(output []byte) []evidence.Location {
 	var locations []evidence.Location
-	scanner := bufio.NewScanner(bytes.NewReader(output))
-	for scanner.Scan() {
-		location, ok := parseLocation(strings.TrimSpace(scanner.Text()))
+	for _, line := range splitOutputLines(output) {
+		location, ok := parseLocation(strings.TrimSpace(line))
 		if ok {
 			locations = append(locations, location)
 		}
 	}
 	return locations
+}
+
+// splitOutputLines splits gopls text output on newlines without a scanner
+// token ceiling — a generated file path or JSON payload line longer than
+// 64 KiB must not be silently truncated.
+func splitOutputLines(output []byte) []string {
+	if len(output) == 0 {
+		return nil
+	}
+	lines := strings.Split(string(output), "\n")
+	if lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
 }
 
 func parseLocation(value string) (evidence.Location, bool) {

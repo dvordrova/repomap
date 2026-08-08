@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -652,22 +653,29 @@ func readFileLines(path string, startLine, endLine int) ([]string, error) {
 		return nil, err
 	}
 	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64<<10), 1<<20)
+	// bufio.Reader.ReadBytes has no token-size ceiling (unlike bufio.Scanner),
+	// so generated single-line files (statik-style embedded payloads) read
+	// correctly; the encoded-expansion budget downstream bounds what is kept.
+	reader := bufio.NewReader(file)
 	lines := make([]string, 0, endLine-startLine+1)
 	lineNumber := 0
-	for scanner.Scan() {
-		lineNumber++
-		if lineNumber < startLine {
-			continue
+	for {
+		raw, readErr := reader.ReadBytes('\n')
+		if len(raw) > 0 {
+			lineNumber++
+			if lineNumber >= startLine && lineNumber <= endLine {
+				lines = append(lines, strings.TrimSuffix(string(raw), "\n"))
+			}
+			if lineNumber > endLine {
+				break
+			}
 		}
-		if lineNumber > endLine {
-			break
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				break
+			}
+			return nil, readErr
 		}
-		lines = append(lines, scanner.Text())
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
 	}
 	return lines, nil
 }
@@ -678,14 +686,28 @@ func countFileLines(path string) (int, error) {
 		return 0, err
 	}
 	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 64<<10), 1<<20)
+	// Byte counting is independent of line length — a generated file with
+	// one multi-megabyte line is one line, never a Scanner token error.
 	count := 0
-	for scanner.Scan() {
-		count++
+	totalBytes := int64(0)
+	chunk := make([]byte, 64<<10)
+	lastWasNewline := false
+	for {
+		n, readErr := file.Read(chunk)
+		if n > 0 {
+			totalBytes += int64(n)
+			count += bytes.Count(chunk[:n], []byte{'\n'})
+			lastWasNewline = chunk[n-1] == '\n'
+		}
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				break
+			}
+			return 0, readErr
+		}
 	}
-	if err := scanner.Err(); err != nil {
-		return 0, err
+	if totalBytes > 0 && !lastWasNewline {
+		count++
 	}
 	return count, nil
 }
