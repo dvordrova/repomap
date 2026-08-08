@@ -1,10 +1,8 @@
 (function (global) {
   'use strict';
 
-  // Decision 236 (v11): Map primary product — new map view/lenses,
-  // entry categories (worker/library data sources), touchpoint families,
-  // inspector tabs, line-contract rows (catalog VERSION 10).
-  var VERSION = 10;
+  // Decision 240: remove the obsolete Navigator product copy and actions.
+  var VERSION = 11;
   var EN = {
     "main.bundle.docs_selected": { params: ["count"], format: function (params) { return "Docs selected:         " + params.count; } },
     "main.bundle.packages_selected": { params: ["count"], format: function (params) { return "Packages selected:     " + params.count; } },
@@ -360,16 +358,6 @@
     "main.atlas.workspace.authority.resolved": { params: [], text: "Resolved" },
     "main.atlas.workspace.no_source_backed_relations": { params: [], text: "No resolved startup relation has an exact saved source excerpt for this run." },
     "main.atlas.workspace.omitted_relations": { params: ["count"], format: function (params) { return "Not shown without an exact saved source excerpt: " + params.count + "."; } },
-    "main.atlas.navigator.kicker": { params: [], text: "Navigator" },
-    "main.atlas.navigator.title": { params: [], text: "Recommended starting point" },
-    "main.atlas.navigator.unavailable_title": { params: [], text: "Recommendation unavailable" },
-    "main.atlas.navigator.copy": { params: [], text: "Start with the selected locally resolved application startup." },
-    "main.atlas.navigator.empty": { params: [], text: "No locally resolved application startup is available for this repository." },
-    "main.atlas.navigator.unavailable": { params: [], text: "Navigator is unavailable for this run." },
-    "main.atlas.navigator.unavailable_offline": { params: [], text: "Navigator was not called because this run is offline. Exact local Atlas facts remain available below." },
-    "main.atlas.navigator.source_unavailable": { params: [], text: "The selected startup has no exact saved source excerpt in this report." },
-    "main.atlas.navigator.evidence_count": { params: ["count"], format: function (params) { return "Exact evidence records: " + params.count; } },
-    "main.atlas.navigator.inspect_source": { params: [], text: "Inspect selected startup evidence" },
     "main.overview.anatomy.entry_surfaces_kicker": { params: [], text: "Saved taxonomy" },
     "main.overview.anatomy.entry_surfaces": { params: [], text: "Entry surfaces" },
     "main.overview.glance.title": { params: [], text: "At a glance" },
@@ -395,9 +383,6 @@
     "main.overview.glance.entry": { params: [], text: "Where does it start?" },
     "main.overview.glance.areas": { params: [], text: "Main areas" },
     "main.overview.first_action.title": { params: [], text: "Open first" },
-    "main.overview.first_action.navigator": { params: [], text: "Inspect exact startup evidence" },
-    "main.overview.first_action.reason.navigator": { params: [], text: "Backend-owned startup action validated against the exact persisted Repository Atlas." },
-    "main.overview.first_action.authority.navigator": { params: [], text: "Authority: persisted Navigator startup recommendation." },
     "main.overview.first_action.process_entry": { params: [], text: "Open the primary process entry" },
     "main.overview.first_action.reason.process_entry": { params: [], text: "Primary production process entry — normal use/execution begins here." },
     "main.overview.first_action.authority.process_entry": { params: [], text: "Authority: exact process-entry registration with local source." },
@@ -1882,16 +1867,6 @@
     "main.atlas.workspace.authority.resolved": { params: [], text: "локально подтверждено" },
     "main.atlas.workspace.no_source_backed_relations": { params: [], text: "Для этого запуска нет подтверждённой связи запуска с точным сохранённым фрагментом исходника." },
     "main.atlas.workspace.omitted_relations": { params: ["count"], format: function (params) { return "Не показаны без точного сохранённого фрагмента исходника: " + params.count + "."; } },
-    "main.atlas.navigator.kicker": { params: [], text: "Навигатор" },
-    "main.atlas.navigator.title": { params: [], text: "Рекомендуемая точка старта" },
-    "main.atlas.navigator.unavailable_title": { params: [], text: "Рекомендация недоступна" },
-    "main.atlas.navigator.copy": { params: [], text: "Начните с выбранного локально подтверждённого запуска приложения." },
-    "main.atlas.navigator.empty": { params: [], text: "Для этого репозитория нет локально подтверждённого запуска приложения." },
-    "main.atlas.navigator.unavailable": { params: [], text: "Навигатор недоступен для этого запуска." },
-    "main.atlas.navigator.unavailable_offline": { params: [], text: "Навигатор не вызывался, потому что запуск выполнен офлайн. Ниже остаются доступными точные локальные факты Атласа." },
-    "main.atlas.navigator.source_unavailable": { params: [], text: "Для выбранного запуска в этом отчёте нет точного сохранённого фрагмента исходника." },
-    "main.atlas.navigator.evidence_count": { params: ["count"], format: function (params) { return "Точных свидетельств: " + params.count; } },
-    "main.atlas.navigator.inspect_source": { params: [], text: "Открыть свидетельство выбранного запуска" },
     "main.overview.anatomy.entry_surfaces_kicker": { params: [], text: "Сохранённая таксономия" },
     "main.overview.anatomy.entry_surfaces": { params: [], text: "Точки входа" },
     "main.overview.glance.title": { params: [], text: "Кратко" },
@@ -1917,9 +1892,6 @@
     "main.overview.glance.entry": { params: [], text: "С чего начинается?" },
     "main.overview.glance.areas": { params: [], text: "Основные области" },
     "main.overview.first_action.title": { params: [], text: "Открыть первым" },
-    "main.overview.first_action.navigator": { params: [], text: "Открыть точные свидетельства запуска" },
-    "main.overview.first_action.reason.navigator": { params: [], text: "Действие запуска принадлежит бэкенду и проверено по точному сохранённому Atlas репозитория." },
-    "main.overview.first_action.authority.navigator": { params: [], text: "Источник: сохранённая рекомендация запуска Navigator." },
     "main.overview.first_action.process_entry": { params: [], text: "Открыть главную точку входа процесса" },
     "main.overview.first_action.reason.process_entry": { params: [], text: "Основная производственная точка входа — обычное использование начинается здесь." },
     "main.overview.first_action.authority.process_entry": { params: [], text: "Источник: точная регистрация точки входа с локальным исходником." },

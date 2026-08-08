@@ -1393,7 +1393,6 @@ func TestAtlasFirstRussianPresentationIsActiveWithoutLegacyLocalizationStatus(t 
 
 	canonical := presentationLocalizationFixture()
 	canonical.RepositoryAtlas = repositoryAtlasFixturePtr()
-	canonical.Navigator = &NavigatorReportProduct{Version: 1, State: "empty"}
 	projected, status := LoadPresentationLocalization(
 		t.TempDir(),
 		canonical,

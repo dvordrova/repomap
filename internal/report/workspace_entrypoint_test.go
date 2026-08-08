@@ -104,9 +104,9 @@ func TestWorkspaceEntrypointProjectionPreservesLegacyBytesAndConsumers(t *testin
 		string(mustJSON(t, projectedSearch)) != string(mustJSON(t, legacySearch)) {
 		t.Fatal("semantic Search projection changed")
 	}
-	if CurrentFormatVersion != 37 ||
+	if CurrentFormatVersion != 38 ||
 		SemanticSearchIndexVersion != 6 ||
-		CurrentRunManifestVersion != 12 {
+		CurrentRunManifestVersion != 13 {
 		t.Fatalf(
 			"wire versions changed: report=%d search=%d manifest=%d",
 			CurrentFormatVersion,

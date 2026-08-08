@@ -227,3 +227,17 @@ func TestAtlasStudyRequiresExactlyOneStoppedCompletion(t *testing.T) {
 		})
 	}
 }
+
+func completionProviderEnvelope(content, finishReason string, choiceCount int, includeFinish bool) string {
+	encodedContent, _ := json.Marshal(content)
+	choices := make([]string, 0, choiceCount)
+	for range choiceCount {
+		finish := ""
+		if includeFinish {
+			encodedFinish, _ := json.Marshal(finishReason)
+			finish = `"finish_reason":` + string(encodedFinish) + `,`
+		}
+		choices = append(choices, `{`+finish+`"message":{"content":`+string(encodedContent)+`}}`)
+	}
+	return `{"choices":[` + strings.Join(choices, ",") + `],"usage":{"prompt_tokens":7,"completion_tokens":3}}`
+}

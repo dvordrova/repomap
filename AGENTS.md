@@ -12,9 +12,8 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 
 1. **Local deterministic snapshot** — tracked files, documentation and language hints
 2. **Repository facts and Atlas** — language adapters produce canonical local entities and relations
-3. **Task-shaped Navigator projection** — one bounded question over exact eligible Atlas actions
-4. **Optional model selection** — the provider sees only request-local refs and compact labels
-5. **Browser/debug artifacts** — the authoritative Atlas, Navigator state and report under `--debug-dir`
+3. **Bounded semantic projections** — Architecture and Study interpret compact request-local facts
+4. **Browser/debug artifacts** — the authoritative Atlas, semantic state and report under `--debug-dir`
 
 ## Design rules
 
@@ -63,9 +62,8 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 ## Test invariants
 
 - Offline runs must not require provider credentials or make provider calls.
-- Navigator requests must not include the full file tree, raw internal edges,
+- Provider requests must not include the full file tree, raw internal edges,
   canonical Atlas IDs or unadvertised repository paths.
-- Every accepted Navigator ref must restore one exact backend-owned Atlas action.
 - Debug dumps must redact sensitive keys (api_key, token, authorization, password)
 - Debug dumps must never contain Authorization headers
 - Invalid DeepSeek JSON must return a clear error

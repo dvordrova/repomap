@@ -81,8 +81,7 @@ func defaultThemeStudyClientFactory(requireCredentials bool) (themeStudyClient, 
 //
 // The caller supplies the same authority-confirmed, source-covered ReportData
 // later used by final Generate. BuildAtlasStudyInput then reads only its
-// Atlas, usable canonical visible Architecture Canvas and exact saved sources;
-// Navigator is neither an input nor a prerequisite.
+// Atlas, usable canonical visible Architecture Canvas and exact saved sources.
 func runThemeStudyForRun(
 	ctx context.Context,
 	preparedData *report.ReportData,
@@ -103,9 +102,16 @@ func runThemeStudyForRun(
 	if err != nil {
 		return themeStudyRunOutcome{}, fmt.Errorf("theme study run: build exact input: %w", err)
 	}
+	compileInput, closure, err := shapeThemeStudyCompileInput(input)
+	if err != nil {
+		return themeStudyRunOutcome{}, themeTerminalResource(err, 0)
+	}
+	output.ThemeInputClosure(closure)
 	// The local compile is the exact seed producer (Decision 213 §2.5); it is
-	// never followed by the retired single-stage provider call.
-	product, err := atlasstudy.Compile(input)
+	// never followed by the retired single-stage provider call. The Theme-only
+	// Atlas closure removes unreferenced package scaffold; the authoritative
+	// saved Atlas and every semantic surface/target/span remain unchanged.
+	product, err := atlasstudy.Compile(compileInput)
 	if err != nil {
 		if outcome, handled, unavailableErr := themeStudyCandidateUnavailableOutcome(
 			err, runDir, output,
@@ -116,7 +122,7 @@ func runThemeStudyForRun(
 	}
 	return runThemeStudyProductForRun(
 		ctx, runDir, runsDir, analysisRoot, repository, policy, noCache, providerEnabled,
-		input, product, language, preparedData, output, defaultThemeStudyClientFactory,
+		compileInput, product, language, preparedData, output, defaultThemeStudyClientFactory,
 	)
 }
 
@@ -746,20 +752,17 @@ func themeTerminalResource(err error, maxTokens int) error {
 	var local *atlasstudy.ResourceLimitError
 	if errors.As(err, &local) {
 		details := modelresearch.ResourceLimitError{
-			Stage: "theme_study", Kind: modelresearch.ResourceLimitRequestBytes,
+			Stage: "theme_study", Kind: modelresearch.ResourceLimitCatalogItems,
 			ConfiguredMaxTokens: maxTokens,
+			Limit:               local.Limit, Observed: local.Actual, ObservedKnown: true,
 		}
 		switch {
+		case local.Section == "wire_bytes":
+			details.Kind = modelresearch.ResourceLimitRequestBytes
 		case local.Section == "response_bytes":
 			details.Kind = modelresearch.ResourceLimitResponseBytes
-			details.Limit = local.Limit
-			details.Observed = local.Actual
-			details.ObservedKnown = true
 		case strings.HasSuffix(local.Section, "_artifact_bytes"):
 			details.Kind = modelresearch.ResourceLimitRecordBytes
-			details.Limit = local.Limit
-			details.Observed = local.Actual
-			details.ObservedKnown = true
 		}
 		return modelresearch.NewResourceLimitError(details, nil)
 	}

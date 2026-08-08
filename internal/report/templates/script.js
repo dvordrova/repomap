@@ -54,12 +54,7 @@
 	var USER_MECHANISMS = Array.isArray(DATA.user_mechanisms) ? DATA.user_mechanisms : [];
 	var USER_TOPICS = Array.isArray(DATA.user_topics) ? DATA.user_topics : [];
 	var USER_SOURCES = Array.isArray(DATA.user_sources) ? DATA.user_sources : [];
-	var NAVIGATOR = DATA.navigator || null;
-	var ATLAS_FIRST = !!(
-		NAVIGATOR && Number(NAVIGATOR.version) === 1 &&
-		(NAVIGATOR.state === 'selected' || NAVIGATOR.state === 'empty' ||
-			NAVIGATOR.state === 'unavailable')
-	);
+	var ATLAS_FIRST = !!DATA.repository_atlas;
 	var REPOSITORY_GUIDE = DATA.repository_guide || null;
 	var STUDY_MAP = DATA.study_map || null;
 	var ARCHITECTURE_COMPONENT_NAVIGATION = DATA.architecture_component_navigation || null;
@@ -7059,36 +7054,10 @@
 
 	// overviewFirstAction implements the independent «Open first» selector
 	// (Decision 221 C). It never derives the action from theme array order.
-	// Priority: usable Navigator startup action with exact evidence, primary
-	// production process entry, library constructor/start/use entry, a core
+	// Priority: primary production process entry, library constructor/start/use entry, a core
 	// Study theme's first exact reading, then an explicit unavailable state.
 	function overviewFirstAction(anatomy, atlasShelf) {
-		// 1. Navigator startup action — backend-owned, already validated
-		// against the exact persisted Repository Atlas. Only usable when the
-		// recommended surface is a production entry, not test/helper tooling
-		// (Decision 221 C: production entries rank before tests/tooling).
-		if (NAVIGATOR && NAVIGATOR.state === 'selected' && NAVIGATOR.recommendation &&
-			atlasShelf && atlasShelf.recommendation) {
-			var nav = atlasShelf.recommendation;
-			var navEntry = overviewSurfaceObjectForTriggerId(nav && nav.location);
-			var navUsable = !navEntry || (navEntry.entryRole !== 'test_or_helper' &&
-				navEntry.entryRole !== 'tooling');
-			if (navUsable && nav && nav.snippet && nav.location) {
-				return {
-					label: msg('main.overview.first_action.navigator'),
-					path: nav.location.path,
-					line: nav.location.line,
-					symbol: nav.unit && nav.unit.name || '',
-					reason: msg('main.overview.first_action.reason.navigator'),
-					action: function () {
-						openSourceSnippet(nav.snippet, nav.location, false, { drawerFirst: true });
-					},
-					authority: msg('main.overview.first_action.authority.navigator'),
-					kind: 'navigator',
-				};
-			}
-		}
-		// 2. Primary production process entry (not tests/tooling).
+		// 1. Primary production process entry (not tests/tooling).
 		var entries = anatomy && anatomy.entries && anatomy.entries.objects || [];
 		var primary = entries.filter(function (object) {
 			return object.entryKind === 'process_entry' && object.entryRole === 'primary_application';
@@ -7103,7 +7072,7 @@
 				return action;
 			}
 		}
-		// 3. Library constructor/start/use entry.
+		// 2. Library constructor/start/use entry.
 		var library = entries.filter(function (object) {
 			return object.entryKind === 'library_api' || object.entryKind === 'exported_api';
 		});
@@ -7117,7 +7086,7 @@
 				return libAction;
 			}
 		}
-		// 4. A core Study theme's first exact reading (theme ordinal is
+		// 3. A core Study theme's first exact reading (theme ordinal is
 		// irrelevant — the first reading with an exact source wins, with
 		// constructor/start symbols ranked ahead deterministically).
 		var cards = themeCards();
@@ -7178,30 +7147,7 @@
 			};
 			return themeAction;
 		}
-		// 5. Explicit unavailable state — never an invented path.
-		return null;
-	}
-
-	// overviewSurfaceObjectForTriggerId finds the raw discovered-surface
-	// trigger whose registration site matches the given path/line. Navigator
-	// atlas entity ids differ from trigger ids, so identity is matched by
-	// exact location; test/helper triggers are excluded from Overview cards
-	// but must still be found here to judge recommendation usability.
-	function overviewSurfaceObjectForTriggerId(navLocation) {
-		if (!navLocation || !navLocation.path) return null;
-		var triggers = DATA.discovered_surfaces && Array.isArray(DATA.discovered_surfaces.triggers)
-			? DATA.discovered_surfaces.triggers : [];
-		for (var index = 0; index < triggers.length; index++) {
-			var trigger = triggers[index];
-			var site = trigger && (trigger.registration_site || trigger.location);
-			if (site && site.path === navLocation.path && site.line === navLocation.line) {
-				return {
-					id: trigger.id,
-					entryKind: String(trigger.kind || ''),
-					entryRole: String(trigger.executable_role || ''),
-				};
-			}
-		}
+		// 4. Explicit unavailable state — never an invented path.
 		return null;
 	}
 
@@ -7798,80 +7744,7 @@
 			packageGroups: repositoryAtlasPackageGroups(packageUnits, unitsByID),
 			relations: relations,
 			omittedRelations: eligible - relations.length,
-			recommendation: repositoryAtlasNavigatorRecommendation(relations),
 		};
-	}
-
-	function exactStringArraysEqual(left, right) {
-		if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
-		for (var index = 0; index < left.length; index++) {
-			if (String(left[index] || '') !== String(right[index] || '')) return false;
-		}
-		return true;
-	}
-
-	function repositoryAtlasNavigatorRecommendation(relations) {
-		if (!ATLAS_FIRST || NAVIGATOR.state !== 'selected' || !NAVIGATOR.recommendation) return null;
-		var selected = NAVIGATOR.recommendation;
-		if (!selected.surface || selected.surface.kind !== 'surface' ||
-			!selected.application_operation || selected.application_operation.kind !== 'operation' ||
-			typeof selected.relation_id !== 'string' || !selected.relation_id ||
-			!Array.isArray(selected.evidence_ids) || !selected.evidence_ids.length) return null;
-		var matches = relations.filter(function (relation) {
-			return relation.id === selected.relation_id &&
-				relation.surfaceID === selected.surface.id &&
-				relation.applicationID === selected.application_operation.id &&
-				exactStringArraysEqual(relation.evidenceIDs, selected.evidence_ids);
-		});
-		return matches.length === 1 ? matches[0] : null;
-	}
-
-	function renderRepositoryAtlasNavigatorRecommendation(shelf) {
-		var section = el('section', 'rm-atlas-recommendation');
-		section.appendChild(txt('div', 'rm-view-kicker', msg('main.atlas.navigator.kicker')));
-		section.appendChild(txt('h3', '', msg(
-			NAVIGATOR && NAVIGATOR.state === 'unavailable'
-				? 'main.atlas.navigator.unavailable_title'
-				: 'main.atlas.navigator.title'
-		)));
-		if (NAVIGATOR && NAVIGATOR.state === 'empty') {
-			section.appendChild(txt('p', 'rm-empty-state', msg('main.atlas.navigator.empty')));
-			return section;
-		}
-		if (NAVIGATOR && NAVIGATOR.state === 'unavailable') {
-			section.appendChild(txt('p', 'rm-empty-state', msg(
-				NAVIGATOR.unavailable_code === 'offline'
-					? 'main.atlas.navigator.unavailable_offline'
-					: 'main.atlas.navigator.unavailable'
-			)));
-			return section;
-		}
-		var recommendation = shelf && shelf.recommendation;
-		if (!recommendation) {
-			section.appendChild(txt('p', 'rm-empty-state', msg('main.atlas.navigator.source_unavailable')));
-			return section;
-		}
-		section.appendChild(txt('p', '', msg('main.atlas.navigator.copy')));
-		section.appendChild(txt('strong', 'rm-atlas-relation-unit', recommendation.unit.name));
-		var roles = el('div', 'rm-atlas-relation-roles');
-		roles.appendChild(txt('span', '', msg('main.atlas.workspace.process_entry')));
-		roles.appendChild(txt('span', '', msg('main.atlas.workspace.application_start')));
-		section.appendChild(roles);
-		section.appendChild(txt('span', 'rm-atlas-evidence-count', msg(
-			'main.atlas.navigator.evidence_count',
-			{ count: recommendation.evidenceIDs.length }
-		)));
-		var sourceButton = txt(
-			'button',
-			'rm-primary-action rm-atlas-navigator-action',
-			msg('main.atlas.navigator.inspect_source')
-		);
-		sourceButton.type = 'button';
-		sourceButton.onclick = function () {
-			openSourceSnippet(recommendation.snippet, recommendation.location, false, { drawerFirst: true });
-		};
-		section.appendChild(sourceButton);
-		return section;
 	}
 
 	function renderRepositoryAtlasUnitGrid(units) {
@@ -8019,40 +7892,14 @@
 		return container;
 	}
 
-	function repositoryAtlasNavigatorCompactStatus(shelf) {
-		if (!ATLAS_FIRST || shelf.recommendation) return null;
-		if (NAVIGATOR && NAVIGATOR.state === 'empty') {
-			return { code: 'empty', messageID: 'main.atlas.navigator.empty' };
-		}
-		if (NAVIGATOR && NAVIGATOR.state === 'unavailable') {
-			return {
-				code: NAVIGATOR.unavailable_code || 'unavailable',
-				messageID: NAVIGATOR.unavailable_code === 'offline'
-					? 'main.atlas.navigator.unavailable_offline'
-					: 'main.atlas.navigator.unavailable',
-			};
-		}
-		return { code: 'source_unavailable', messageID: 'main.atlas.navigator.source_unavailable' };
-	}
-
 	function renderRepositoryAtlasCompactDiagnostics(shelf) {
-		var navigatorStatus = repositoryAtlasNavigatorCompactStatus(shelf);
 		var startupUnavailable = !shelf.relations.length;
-		if (!navigatorStatus && !startupUnavailable) return null;
+		if (!startupUnavailable) return null;
 		var diagnostics = el('section', 'rm-atlas-compact-status');
 		diagnostics.appendChild(txt('strong', 'rm-atlas-compact-status__title', msg(
 			'main.atlas.workspace.compact_status'
 		)));
 		var list = el('ul', 'rm-atlas-compact-status__list');
-		if (navigatorStatus) {
-			var navigatorItem = el('li', 'rm-atlas-compact-status__item');
-			navigatorItem.setAttribute('data-rm-status-code', navigatorStatus.code);
-			navigatorItem.appendChild(txt('span', 'rm-atlas-compact-status__label', msg(
-				'main.atlas.navigator.kicker'
-			)));
-			navigatorItem.appendChild(txt('span', '', msg(navigatorStatus.messageID)));
-			list.appendChild(navigatorItem);
-		}
 		if (startupUnavailable) {
 			var startupItem = el('li', 'rm-atlas-compact-status__item');
 			startupItem.setAttribute('data-rm-status-code', 'no_exact_source_backed_relations');
@@ -8108,9 +7955,6 @@
 			section.appendChild(packageDisclosure);
 		}
 
-		if (!compactOverview && ATLAS_FIRST && shelf.recommendation) {
-			section.appendChild(renderRepositoryAtlasNavigatorRecommendation(shelf));
-		}
 		if (!compactOverview && shelf.relations.length) {
 			section.appendChild(txt(
 				'h3',
@@ -8155,14 +7999,6 @@
 		if (!compactOverview) {
 			var compactDiagnostics = renderRepositoryAtlasCompactDiagnostics(shelf);
 			if (compactDiagnostics) section.appendChild(compactDiagnostics);
-		} else if (NAVIGATOR && NAVIGATOR.state === 'unavailable') {
-			section.appendChild(txt(
-				'p',
-				'rm-atlas-overview-status',
-				msg(NAVIGATOR.unavailable_code === 'offline'
-					? 'main.atlas.navigator.unavailable_offline'
-					: 'main.atlas.navigator.unavailable')
-			));
 		}
 		root.appendChild(section);
 	}
@@ -10445,9 +10281,13 @@
    // relationships recorded at the same callsite.
    var relationships = Array.isArray(grounding.relationships) ? grounding.relationships : [];
    var callsiteTargetKind = {};
+   function mechanismCallsiteKey(value) {
+    value = value || {};
+    return String(value.path || '') + ':' + String(value.line || 0) + ':' + String(value.column || 0);
+   }
    relationships.forEach(function (rel) {
     if (!rel || !rel.location) return;
-    var key = String(rel.location.path || '') + ':' + String(rel.location.line || 0);
+    var key = mechanismCallsiteKey(rel.location);
     var target = anchorsByID[rel.to_anchor_id] || {};
     callsiteTargetKind[key] = String(target.kind || '');
    });
@@ -10471,11 +10311,18 @@
    entryFragment.appendChild(entryNode);
    var chainNext = [];
    directCalls.forEach(function (t) {
-    var key = String(t.path || '') + ':' + String(t.line || 0);
+    var key = mechanismCallsiteKey(t);
     if (String(callsiteTargetKind[key]).indexOf('lifecycle_') === 0) chainNext.push(t);
    });
-   // Deterministic ordering by exact line, never array position.
-   chainNext.sort(function (a, b) { return (Number(a.line) || 0) - (Number(b.line) || 0); });
+   // Deterministic ordering by exact callsite, never array position. Column is
+   // part of Mechanism v2 identity, so same-line calls remain distinguishable.
+   chainNext.sort(function (a, b) {
+    var pathOrder = String(a.path || '').localeCompare(String(b.path || ''));
+    if (pathOrder) return pathOrder;
+    var lineOrder = (Number(a.line) || 0) - (Number(b.line) || 0);
+    if (lineOrder) return lineOrder;
+    return (Number(a.column) || 0) - (Number(b.column) || 0);
+   });
    chainNext.forEach(function (t) {
     var arrow = el('div', 'rm-mechanism-fragment__arrow');
     arrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-line', '→'));
@@ -10495,7 +10342,7 @@
    // --- Independent fragments: handoffs whose target is not a lifecycle
    // continuation (boundary/resource targets) ---
    var independent = directCalls.filter(function (t) {
-    var key = String(t.path || '') + ':' + String(t.line || 0);
+    var key = mechanismCallsiteKey(t);
     return String(callsiteTargetKind[key]).indexOf('lifecycle_') !== 0;
    });
    independent.forEach(function (t) {
@@ -10508,9 +10355,9 @@
     arrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-mode', mechanismSupportModeLabel(t)));
     frag.appendChild(arrow);
     // The target symbol comes from the recorded anchor at the same callsite.
-    var key = String(t.path || '') + ':' + String(t.line || 0);
+    var key = mechanismCallsiteKey(t);
     var rel = relationships.filter(function (r) {
-     return r && r.location && String(r.location.path || '') + ':' + String(r.location.line || 0) === key;
+     return r && r.location && mechanismCallsiteKey(r.location) === key;
     })[0];
     var targetAnchor = rel ? (anchorsByID[rel.to_anchor_id] || {}) : {};
     var targetNode = el('div', 'rm-mechanism-fragment__target');

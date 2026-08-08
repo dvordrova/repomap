@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 )
 
 // Artifact filenames (Decision 213 §6). They are persisted in the run
@@ -85,12 +86,73 @@ func requireCanonicalArtifact(name string, data []byte, value any) error {
 	return nil
 }
 
-// validateScoutRequestIdentity verifies the request is self-consistent: the
-// wire digest matches the exact wire JSON and the catalog digest matches the
-// embedded vocabulary + seed packs. A tampered identity therefore fails closed
-// at encode/decode time, not only at replay time.
-func validateScoutRequestIdentity(request ScoutRequest) error {
-	if request.Version != ScoutRequestVersion || request.PromptVersion != ScoutPromptVersion ||
+const legacyScoutRequestVersion = 2
+
+// scoutRequestArtifactV3 stores the exact model-visible wire once. Vocabulary
+// files and SeedPack source objects are restored from WireJSON on decode; only
+// private coverage/identity metadata that is absent from the wire is repeated.
+// This removes the former full-catalog + escaped-wire duplication without
+// discarding any provider evidence or backend-owned identity.
+type scoutRequestArtifactV3 struct {
+	Version       int                         `json:"version"`
+	PromptVersion string                      `json:"prompt_version"`
+	Language      Language                    `json:"language"`
+	Vocabulary    scoutVocabularyMetadata     `json:"vocabulary"`
+	SeedPacks     scoutSeedPackResultMetadata `json:"seed_packs"`
+	WireSHA256    string                      `json:"wire_sha256"`
+	WireJSON      json.RawMessage             `json:"wire_json"`
+	CatalogSHA256 string                      `json:"catalog_sha256"`
+}
+
+type scoutVocabularyMetadata struct {
+	Version         string     `json:"version"`
+	Complete        bool       `json:"complete"`
+	Considered      int        `json:"considered"`
+	Advertised      int        `json:"advertised"`
+	CandidateSHA256 string     `json:"candidate_sha256"`
+	Omissions       []Omission `json:"omissions,omitempty"`
+}
+
+type scoutSeedPackResultMetadata struct {
+	Packs      []scoutSeedPackMetadata `json:"packs"`
+	Omissions  []Omission              `json:"omissions,omitempty"`
+	TotalBytes int                     `json:"total_bytes"`
+}
+
+type scoutSeedPackMetadata struct {
+	Seed        SeedSpec `json:"seed"`
+	TotalBytes  int      `json:"total_bytes"`
+	Limitations string   `json:"limitations,omitempty"`
+}
+
+func decodeCanonicalScoutWire(raw []byte) (wireScout, error) {
+	if len(raw) == 0 {
+		return wireScout{}, fmt.Errorf("theme scout request artifact: wire is empty")
+	}
+	var wire wireScout
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&wire); err != nil {
+		return wireScout{}, fmt.Errorf("theme scout request artifact: decode wire: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return wireScout{}, fmt.Errorf("theme scout request artifact: wire has trailing data")
+	}
+	canonical, err := json.Marshal(wire)
+	if err != nil {
+		return wireScout{}, fmt.Errorf("theme scout request artifact: encode wire: %w", err)
+	}
+	if !bytes.Equal(canonical, raw) {
+		return wireScout{}, fmt.Errorf("theme scout request artifact: wire is not canonical")
+	}
+	return wire, nil
+}
+
+// validateScoutRequestIdentity verifies both identities and the exact join
+// between the private catalogs and model-visible wire. A request cannot bind a
+// valid wire digest to different a*/f* evidence metadata.
+func validateScoutRequestIdentity(request ScoutRequest, expectedVersion int) error {
+	if request.Version != expectedVersion || request.PromptVersion != ScoutPromptVersion ||
 		!request.Language.Valid() || request.WireSHA256 == "" || request.WireJSON == "" ||
 		request.CatalogSHA256 == "" || len(request.Vocabulary.Files) == 0 ||
 		len(request.SeedPacks.Packs) == 0 {
@@ -98,6 +160,17 @@ func validateScoutRequestIdentity(request ScoutRequest) error {
 	}
 	if contentSHA256Bytes([]byte(request.WireJSON)) != request.WireSHA256 {
 		return fmt.Errorf("theme scout request artifact: wire digest mismatch")
+	}
+	wire, err := decodeCanonicalScoutWire([]byte(request.WireJSON))
+	if err != nil {
+		return err
+	}
+	projected, err := json.Marshal(wireScoutFrom(request.Vocabulary, request.SeedPacks, wire.Context))
+	if err != nil {
+		return fmt.Errorf("theme scout request artifact: project wire: %w", err)
+	}
+	if !bytes.Equal(projected, []byte(request.WireJSON)) {
+		return fmt.Errorf("theme scout request artifact: wire and private catalogs disagree")
 	}
 	want, err := scoutCatalogDigest(request.Vocabulary, request.SeedPacks)
 	if err != nil {
@@ -109,9 +182,92 @@ func validateScoutRequestIdentity(request ScoutRequest) error {
 	return nil
 }
 
+func scoutRequestArtifactFromRequest(request ScoutRequest) scoutRequestArtifactV3 {
+	artifact := scoutRequestArtifactV3{
+		Version: request.Version, PromptVersion: request.PromptVersion, Language: request.Language,
+		Vocabulary: scoutVocabularyMetadata{
+			Version: request.Vocabulary.Version, Complete: request.Vocabulary.Complete,
+			Considered: request.Vocabulary.Considered, Advertised: request.Vocabulary.Advertised,
+			CandidateSHA256: request.Vocabulary.CandidateSHA256,
+			Omissions:       request.Vocabulary.Omissions,
+		},
+		SeedPacks: scoutSeedPackResultMetadata{
+			Packs:     make([]scoutSeedPackMetadata, 0, len(request.SeedPacks.Packs)),
+			Omissions: request.SeedPacks.Omissions, TotalBytes: request.SeedPacks.TotalBytes,
+		},
+		WireSHA256: request.WireSHA256, WireJSON: json.RawMessage(request.WireJSON),
+		CatalogSHA256: request.CatalogSHA256,
+	}
+	for _, pack := range request.SeedPacks.Packs {
+		artifact.SeedPacks.Packs = append(artifact.SeedPacks.Packs, scoutSeedPackMetadata{
+			Seed: pack.Seed, TotalBytes: pack.TotalBytes, Limitations: pack.Limitations,
+		})
+	}
+	return artifact
+}
+
+func scoutRequestFromArtifact(artifact scoutRequestArtifactV3) (ScoutRequest, error) {
+	wire, err := decodeCanonicalScoutWire(artifact.WireJSON)
+	if err != nil {
+		return ScoutRequest{}, err
+	}
+	if len(artifact.SeedPacks.Packs) != len(wire.SeedPacks.Packs) {
+		return ScoutRequest{}, fmt.Errorf("theme scout request artifact: seed metadata count mismatch")
+	}
+	request := ScoutRequest{
+		Version: artifact.Version, PromptVersion: artifact.PromptVersion, Language: artifact.Language,
+		Vocabulary: Vocabulary{
+			Version: artifact.Vocabulary.Version, Complete: artifact.Vocabulary.Complete,
+			Considered: artifact.Vocabulary.Considered, Advertised: artifact.Vocabulary.Advertised,
+			CandidateSHA256: artifact.Vocabulary.CandidateSHA256,
+			Files:           append([]FileRef(nil), wire.Vocabulary.Files...),
+			Omissions:       append([]Omission(nil), artifact.Vocabulary.Omissions...),
+		},
+		SeedPacks: SeedPackResult{
+			Packs:      make([]SeedPack, 0, len(artifact.SeedPacks.Packs)),
+			Omissions:  append([]Omission(nil), artifact.SeedPacks.Omissions...),
+			TotalBytes: artifact.SeedPacks.TotalBytes,
+		},
+		WireSHA256: artifact.WireSHA256, WireJSON: string(artifact.WireJSON),
+		CatalogSHA256: artifact.CatalogSHA256,
+	}
+	for index, metadata := range artifact.SeedPacks.Packs {
+		wirePack := wire.SeedPacks.Packs[index]
+		projectedSeed := wireSeedSpec{
+			Ref: metadata.Seed.Ref, Path: metadata.Seed.Path, Line: metadata.Seed.Line,
+			Symbol: metadata.Seed.Symbol, Kind: metadata.Seed.Kind, Role: metadata.Seed.Role,
+		}
+		if !reflect.DeepEqual(projectedSeed, wirePack.Seed) || metadata.Limitations != wirePack.Limitations {
+			return ScoutRequest{}, fmt.Errorf("theme scout request artifact: seed metadata and wire disagree")
+		}
+		request.SeedPacks.Packs = append(request.SeedPacks.Packs, SeedPack{
+			Seed: metadata.Seed, Objects: wirePack.Objects,
+			TotalBytes: metadata.TotalBytes, Limitations: metadata.Limitations,
+		})
+	}
+	return request, nil
+}
+
 // EncodeScoutRequest encodes the bounded Theme Scout request artifact.
 func EncodeScoutRequest(request ScoutRequest) ([]byte, error) {
-	if err := validateScoutRequestIdentity(request); err != nil {
+	if err := validateScoutRequestIdentity(request, ScoutRequestVersion); err != nil {
+		return nil, err
+	}
+	return encodeBoundedArtifact(
+		"theme scout request", MaxScoutRequestArtifactBytes,
+		scoutRequestArtifactFromRequest(request),
+	)
+}
+
+// encodeScoutRequestForReplay canonicalizes either the live v3 shape or the
+// historical duplicated v2 shape. It is deliberately private: new writers
+// can emit only v3, while provider-free replay can still prove the exact bytes
+// and identity of a previously persisted v2 request.
+func encodeScoutRequestForReplay(request ScoutRequest) ([]byte, error) {
+	if request.Version != legacyScoutRequestVersion {
+		return EncodeScoutRequest(request)
+	}
+	if err := validateScoutRequestIdentity(request, legacyScoutRequestVersion); err != nil {
 		return nil, err
 	}
 	return encodeBoundedArtifact("theme scout request", MaxScoutRequestArtifactBytes, request)
@@ -119,14 +275,46 @@ func EncodeScoutRequest(request ScoutRequest) ([]byte, error) {
 
 // DecodeScoutRequest decodes and validates one bounded Theme Scout request.
 func DecodeScoutRequest(data []byte) (ScoutRequest, error) {
-	var request ScoutRequest
-	if err := decodeArtifact("theme scout request", data, MaxScoutRequestArtifactBytes, &request); err != nil {
-		return ScoutRequest{}, err
+	if len(data) == 0 {
+		return ScoutRequest{}, fmt.Errorf("theme scout request artifact: empty")
 	}
-	if err := validateScoutRequestIdentity(request); err != nil {
-		return ScoutRequest{}, err
+	if len(data) > MaxScoutRequestArtifactBytes {
+		return ScoutRequest{}, fmt.Errorf(
+			"theme scout request artifact exceeds %d bytes", MaxScoutRequestArtifactBytes,
+		)
 	}
-	return request, requireCanonicalArtifact("theme scout request", data, request)
+	var header struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal(data, &header); err != nil {
+		return ScoutRequest{}, fmt.Errorf("theme scout request artifact: decode version: %w", err)
+	}
+	switch header.Version {
+	case ScoutRequestVersion:
+		var artifact scoutRequestArtifactV3
+		if err := decodeArtifact("theme scout request", data, MaxScoutRequestArtifactBytes, &artifact); err != nil {
+			return ScoutRequest{}, err
+		}
+		request, err := scoutRequestFromArtifact(artifact)
+		if err != nil {
+			return ScoutRequest{}, err
+		}
+		if err := validateScoutRequestIdentity(request, ScoutRequestVersion); err != nil {
+			return ScoutRequest{}, err
+		}
+		return request, requireCanonicalArtifact("theme scout request", data, artifact)
+	case legacyScoutRequestVersion:
+		var request ScoutRequest
+		if err := decodeArtifact("theme scout request", data, MaxScoutRequestArtifactBytes, &request); err != nil {
+			return ScoutRequest{}, err
+		}
+		if err := validateScoutRequestIdentity(request, legacyScoutRequestVersion); err != nil {
+			return ScoutRequest{}, err
+		}
+		return request, requireCanonicalArtifact("theme scout request", data, request)
+	default:
+		return ScoutRequest{}, fmt.Errorf("theme scout request artifact: unsupported version %d", header.Version)
+	}
 }
 
 // EncodeScoutResult encodes the validated Theme Scout result artifact.

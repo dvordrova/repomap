@@ -921,7 +921,6 @@ function renderIsolatedOverview(isolatedReport, isolatedLocation) {
   };
 }
 const atlasFirstReport = JSON.parse(JSON.stringify(report));
-atlasFirstReport.navigator = { version: 1, state: "empty" };
 atlasFirstReport.repository_atlas = {
   version: 1,
   units: [{ id: "atlas-repository", kind: "repository", name: "fixture" }],

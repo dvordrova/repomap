@@ -79,16 +79,16 @@ tiny synthetic JSON compatibility request:
 ./repomap doctor llm --check
 ```
 
-The normal run builds the complete local Repository Atlas, then performs at
-most one bounded Navigator selection over exact locally-resolved application
-startups. Empty and offline outcomes make no provider call.
+The normal run builds the complete local Repository Atlas and deterministic
+Entrypoints projection. It may then perform Architecture synthesis and the two
+Theme Study calls. Offline runs make no provider call.
 
 ```bash
 ./repomap /path/to/repo
 ```
 
-The Navigator selects only an advertised opaque action ref. The backend restores
-the canonical startup relation, endpoints, and evidence before publication.
+Exact startup identities, roles, relations, and evidence stay backend-owned;
+no provider chooses one repository entry.
 
 Debug artifacts default to the user cache rather than the analysed repository.
 Ordinary runs persist their authoritative `report.json`; use `--debug-dir` to

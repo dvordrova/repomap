@@ -460,18 +460,14 @@ func ensureMechanismFragment(data *ReportData) error {
 		return validateMechanismFragmentForProduct(
 			data.ArchitectureCanvas,
 			data.ArchitectureAssociations,
-			data.RepositoryAtlas,
 			data.MechanismFragment,
 			data.ArchitectureGrounding,
-			data.Navigator,
 		)
 	}
 	fragment, err := projectMechanismFragmentForProduct(
 		data.ArchitectureCanvas,
 		data.ArchitectureAssociations,
-		data.RepositoryAtlas,
 		data.ArchitectureGrounding,
-		data.Navigator,
 	)
 	if err != nil {
 		return err
@@ -484,31 +480,27 @@ func ensureMechanismFragment(data *ReportData) error {
 func ValidateMechanismFragment(
 	canvas *ArchitectureCanvas,
 	associations *ArchitectureAssociationProjection,
-	atlas *repositoryatlas.Atlas,
 	fragment *MechanismFragmentProjection,
 ) error {
-	return validateMechanismFragment(canvas, associations, atlas, fragment, nil)
+	return validateMechanismFragment(canvas, associations, fragment, nil)
 }
 
 func validateMechanismFragment(
 	canvas *ArchitectureCanvas,
 	associations *ArchitectureAssociationProjection,
-	atlas *repositoryatlas.Atlas,
 	fragment *MechanismFragmentProjection,
 	grounding *ArchitectureGrounding,
 ) error {
-	return validateMechanismFragmentForProduct(canvas, associations, atlas, fragment, grounding, nil)
+	return validateMechanismFragmentForProduct(canvas, associations, fragment, grounding)
 }
 
 func validateMechanismFragmentForProduct(
 	canvas *ArchitectureCanvas,
 	associations *ArchitectureAssociationProjection,
-	atlas *repositoryatlas.Atlas,
 	fragment *MechanismFragmentProjection,
 	grounding *ArchitectureGrounding,
-	navigatorProduct *NavigatorReportProduct,
 ) error {
-	expected, err := projectMechanismFragmentForProduct(canvas, associations, atlas, grounding, navigatorProduct)
+	expected, err := projectMechanismFragmentForProduct(canvas, associations, grounding)
 	if err != nil {
 		return err
 	}

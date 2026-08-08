@@ -20,7 +20,6 @@ import (
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/debugdump"
-	"github.com/dvordrova/repomap/internal/navigator"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/studymap"
 	"github.com/dvordrova/repomap/internal/themestudy"
@@ -29,20 +28,16 @@ import (
 type atlasFirstAcceptanceStage string
 
 const (
-	atlasFirstStageNavigator         atlasFirstAcceptanceStage = "navigator"
 	atlasFirstStageArchitecture      atlasFirstAcceptanceStage = "architecture"
 	atlasFirstStageStudyScout        atlasFirstAcceptanceStage = "theme_scout"
 	atlasFirstStageStudyAdjudication atlasFirstAcceptanceStage = "theme_adjudication"
-	atlasFirstStageStudy             atlasFirstAcceptanceStage = "atlas_study"
 )
 
 type atlasFirstAcceptanceProvider struct {
 	t                      *testing.T
 	repositoryType         atlasstudy.RepositoryType
 	rejectArchitecture     bool
-	rejectNavigator        bool
 	failArchitectureCall   bool
-	failNavigatorCall      bool
 	lengthArchitectureCall bool
 	includeBadStudySibling bool
 
@@ -51,7 +46,7 @@ type atlasFirstAcceptanceProvider struct {
 	bodies map[atlasFirstAcceptanceStage][][]byte
 }
 
-func TestRunDefaultAtlasFirstPublishesNavigatorArchitectureAndStudy(t *testing.T) {
+func TestRunDefaultAtlasFirstPublishesArchitectureAndStudy(t *testing.T) {
 	repo := atlasFirstAcceptanceRepository(t, "testdata/atlas_first_service")
 	provider := &atlasFirstAcceptanceProvider{
 		t: t, repositoryType: atlasstudy.RepositoryService,
@@ -60,17 +55,10 @@ func TestRunDefaultAtlasFirstPublishesNavigatorArchitectureAndStudy(t *testing.T
 	runDir, manifest, data := runAtlasFirstAcceptance(t, repo, provider)
 
 	provider.assertStages(t,
-		atlasFirstStageNavigator,
 		atlasFirstStageArchitecture,
 		atlasFirstStageStudyScout,
 		atlasFirstStageStudyAdjudication,
 	)
-	if data.Navigator == nil || data.Navigator.State != navigator.ProductStateSelected ||
-		data.Navigator.Recommendation == nil {
-		t.Fatalf("Navigator report = %#v, want selected recommendation", data.Navigator)
-	}
-	assertNavigatorAcceptanceSemanticMinimum(t, data)
-	assertAtlasFirstNavigatorRequestArtifact(t, runDir, data)
 	if data.RepositoryGraph == nil || len(data.RepositoryGraph.PackageEdges) != 1 {
 		t.Fatalf(
 			"top-level Atlas-first exact package edges = %#v, want one preserved edge",
@@ -80,20 +68,17 @@ func TestRunDefaultAtlasFirstPublishesNavigatorArchitectureAndStudy(t *testing.T
 	assertAtlasFirstAcceptedArchitecture(t, data)
 	assertAtlasFirstAcceptedStudy(t, data)
 	assertAtlasFirstLocalSubstrateUnchanged(t, data)
-	assertAtlasFirstDiagnostics(t, runDir, 4, map[string]string{
-		debugdump.SemanticStageNavigator:    "accepted",
+	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
 		debugdump.SemanticStageArchitecture: "accepted",
 		debugdump.SemanticStageAtlasStudy:   "accepted_partial",
 	})
 	assertAtlasFirstSemanticStages(t, runDir,
-		debugdump.SemanticStageNavigator,
 		debugdump.SemanticStageArchitecture,
 		debugdump.SemanticStageAtlasStudy,
 	)
-	assertAtlasFirstAcceptedArtifacts(t, runDir, true)
-	assertAtlasFirstAcceptedManifest(t, manifest, true)
+	assertAtlasFirstAcceptedArtifacts(t, runDir)
+	assertAtlasFirstAcceptedManifest(t, manifest)
 	assertNoLegacyAtlasFirstArtifacts(t, runDir)
-	assertNoLegacyOrientationWarning(t, data)
 
 	scoutBytes, err := os.ReadFile(filepath.Join(runDir, themestudy.ScoutResultArtifactFilename))
 	if err != nil {
@@ -127,40 +112,7 @@ func TestRunDefaultAtlasFirstPublishesNavigatorArchitectureAndStudy(t *testing.T
 	}
 }
 
-func assertAtlasFirstNavigatorRequestArtifact(
-	t *testing.T,
-	runDir string,
-	data *report.ReportData,
-) {
-	t.Helper()
-	if data == nil || data.RepositoryAtlas == nil || data.Navigator == nil ||
-		data.Navigator.Recommendation == nil {
-		t.Fatal("selected Navigator report substrate is absent")
-	}
-	raw, err := os.ReadFile(filepath.Join(runDir, navigator.RequestArtifactFilename))
-	if err != nil {
-		t.Fatal(err)
-	}
-	record, err := navigator.DecodeRequestRecord(raw)
-	if err != nil {
-		t.Fatalf("DecodeRequestRecord: %v", err)
-	}
-	if err := navigator.ValidateRequestRecordAgainstAtlas(record, *data.RepositoryAtlas); err != nil {
-		t.Fatalf("Navigator request does not match the exact persisted Atlas: %v", err)
-	}
-	found := false
-	for _, action := range record.Actions {
-		if action.Key == data.Navigator.Recommendation.Key {
-			found = reflect.DeepEqual(action, *data.Navigator.Recommendation)
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("selected recommendation is absent from exact request artifact: %#v", record.Actions)
-	}
-}
-
-func TestRunDefaultAtlasFirstEmptyNavigatorLibraryStillPublishesArchitectureAndStudy(t *testing.T) {
+func TestRunDefaultAtlasFirstLibraryPublishesArchitectureAndStudy(t *testing.T) {
 	repo := atlasFirstAcceptanceRepository(t, "testdata/atlas_first_library")
 	provider := &atlasFirstAcceptanceProvider{
 		t: t, repositoryType: atlasstudy.RepositoryLibrary,
@@ -168,10 +120,6 @@ func TestRunDefaultAtlasFirstEmptyNavigatorLibraryStillPublishesArchitectureAndS
 	runDir, manifest, data := runAtlasFirstAcceptance(t, repo, provider)
 
 	provider.assertStages(t, atlasFirstStageArchitecture, atlasFirstStageStudyScout, atlasFirstStageStudyAdjudication)
-	if data.Navigator == nil || data.Navigator.State != navigator.ProductStateEmpty ||
-		data.Navigator.Recommendation != nil {
-		t.Fatalf("library Navigator report = %#v, want explicit empty result", data.Navigator)
-	}
 	if data.RepositoryGraph == nil || len(data.RepositoryGraph.Packages) != 1 {
 		t.Fatalf("library package graph = %#v, want exactly one package", data.RepositoryGraph)
 	}
@@ -182,7 +130,6 @@ func TestRunDefaultAtlasFirstEmptyNavigatorLibraryStillPublishesArchitectureAndS
 	assertAtlasFirstAcceptedStudy(t, data)
 	assertAtlasFirstLocalSubstrateUnchanged(t, data)
 	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
-		debugdump.SemanticStageNavigator:    "empty",
 		debugdump.SemanticStageArchitecture: "accepted",
 		debugdump.SemanticStageAtlasStudy:   "accepted",
 	})
@@ -190,8 +137,8 @@ func TestRunDefaultAtlasFirstEmptyNavigatorLibraryStillPublishesArchitectureAndS
 		debugdump.SemanticStageArchitecture,
 		debugdump.SemanticStageAtlasStudy,
 	)
-	assertAtlasFirstAcceptedArtifacts(t, runDir, false)
-	assertAtlasFirstAcceptedManifest(t, manifest, false)
+	assertAtlasFirstAcceptedArtifacts(t, runDir)
+	assertAtlasFirstAcceptedManifest(t, manifest)
 	assertNoLegacyAtlasFirstArtifacts(t, runDir)
 }
 
@@ -218,7 +165,6 @@ func TestRunDefaultAtlasFirstRejectedArchitectureKeepsLocalCanvasAndCallsStudy(t
 	}
 	assertAtlasFirstAcceptedStudy(t, data)
 	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
-		debugdump.SemanticStageNavigator:    "empty",
 		debugdump.SemanticStageArchitecture: "rejected",
 		debugdump.SemanticStageAtlasStudy:   "accepted",
 	})
@@ -230,8 +176,6 @@ func TestRunDefaultAtlasFirstRejectedArchitectureKeepsLocalCanvasAndCallsStudy(t
 		t.Fatalf("rejected Architecture persisted enrichment: %v", err)
 	}
 	for _, name := range []string{
-		navigator.StatusArtifactFilename,
-		navigator.RecordArtifactFilename,
 		report.ArchitectureSynthesisStatusFile,
 		themestudy.ScoutRequestArtifactFilename,
 		themestudy.ScoutResultArtifactFilename,
@@ -249,72 +193,12 @@ func TestRunDefaultAtlasFirstRejectedArchitectureKeepsLocalCanvasAndCallsStudy(t
 			t.Fatalf("rejected enrichment run missing %s: %v", name, err)
 		}
 	}
-	assertAtlasFirstAcceptedManifest(t, manifest, false)
+	assertAtlasFirstAcceptedManifest(t, manifest)
 	assertNoLegacyAtlasFirstArtifacts(t, runDir)
 }
 
-func TestRunDefaultAtlasFirstNavigatorFailureDoesNotGateArchitectureOrStudy(t *testing.T) {
-	repo := atlasFirstAcceptanceRepository(t, "testdata/atlas_first_service")
-	provider := &atlasFirstAcceptanceProvider{
-		t: t, repositoryType: atlasstudy.RepositoryService,
-		rejectNavigator: true,
-	}
-	runDir, _, data := runAtlasFirstAcceptance(t, repo, provider)
-
-	provider.assertStages(t,
-		atlasFirstStageNavigator,
-		atlasFirstStageArchitecture,
-		atlasFirstStageStudyScout,
-		atlasFirstStageStudyAdjudication,
-	)
-	if data.Navigator == nil || data.Navigator.State != navigator.ProductStateFailed ||
-		data.Navigator.Recommendation != nil {
-		t.Fatalf("failed Navigator report = %#v", data.Navigator)
-	}
-	assertAtlasFirstAcceptedArchitecture(t, data)
-	assertAtlasFirstAcceptedStudy(t, data)
-	assertAtlasFirstDiagnostics(t, runDir, 4, map[string]string{
-		debugdump.SemanticStageNavigator:    "failed",
-		debugdump.SemanticStageArchitecture: "accepted",
-		debugdump.SemanticStageAtlasStudy:   "accepted",
-	})
-	assertAtlasFirstSemanticStages(t, runDir,
-		debugdump.SemanticStageNavigator,
-		debugdump.SemanticStageArchitecture,
-		debugdump.SemanticStageAtlasStudy,
-	)
-}
-
-func TestRunDefaultAtlasFirstNavigatorProviderFailureDoesNotGateArchitectureOrStudy(t *testing.T) {
-	repo := atlasFirstAcceptanceRepository(t, "testdata/atlas_first_service")
-	provider := &atlasFirstAcceptanceProvider{
-		t: t, repositoryType: atlasstudy.RepositoryService,
-		failNavigatorCall: true,
-	}
-	runDir, _, data := runAtlasFirstAcceptance(t, repo, provider)
-
-	provider.assertStages(t,
-		atlasFirstStageNavigator,
-		atlasFirstStageArchitecture,
-		atlasFirstStageStudyScout,
-		atlasFirstStageStudyAdjudication,
-	)
-	if data.Navigator == nil || data.Navigator.State != navigator.ProductStateFailed ||
-		data.Navigator.FailureCode != navigator.FailureProvider ||
-		data.Navigator.Recommendation != nil {
-		t.Fatalf("provider-failed Navigator report = %#v", data.Navigator)
-	}
-	assertAtlasFirstAcceptedArchitecture(t, data)
-	assertAtlasFirstAcceptedStudy(t, data)
-	assertAtlasFirstDiagnostics(t, runDir, 4, map[string]string{
-		debugdump.SemanticStageNavigator:    "failed",
-		debugdump.SemanticStageArchitecture: "accepted",
-		debugdump.SemanticStageAtlasStudy:   "accepted",
-	})
-}
-
 func TestRunDefaultAtlasFirstArchitectureProviderFailureKeepsLocalCanvas(t *testing.T) {
-	repo := navigatorAcceptanceRepository(t)
+	repo := atlasFirstAcceptanceRepository(t, "testdata/atlas_first_service")
 	provider := &atlasFirstAcceptanceProvider{
 		t: t, repositoryType: atlasstudy.RepositoryService,
 		failArchitectureCall: true,
@@ -322,7 +206,6 @@ func TestRunDefaultAtlasFirstArchitectureProviderFailureKeepsLocalCanvas(t *test
 	runDir, _, data := runAtlasFirstAcceptance(t, repo, provider)
 
 	provider.assertStages(t,
-		atlasFirstStageNavigator,
 		atlasFirstStageArchitecture,
 		atlasFirstStageStudyScout,
 		atlasFirstStageStudyAdjudication,
@@ -340,8 +223,7 @@ func TestRunDefaultAtlasFirstArchitectureProviderFailureKeepsLocalCanvas(t *test
 		t.Fatalf("provider failure erased canonical local canvas: %#v", data.ArchitectureCanvas)
 	}
 	assertAtlasFirstAcceptedStudy(t, data)
-	assertAtlasFirstDiagnostics(t, runDir, 4, map[string]string{
-		debugdump.SemanticStageNavigator:    "accepted",
+	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
 		debugdump.SemanticStageArchitecture: "failed",
 		debugdump.SemanticStageAtlasStudy:   "accepted",
 	})
@@ -354,7 +236,7 @@ func TestRunDefaultAtlasFirstArchitectureProviderFailureKeepsLocalCanvas(t *test
 // response diagnostic-only, and the run continues through both D213 semantic
 // stages and the published report bound to the canonical local Canvas.
 func TestRunDefaultAtlasFirstArchitectureOutputExhaustionPublishesLocalProduct(t *testing.T) {
-	repo := navigatorAcceptanceRepository(t)
+	repo := atlasFirstAcceptanceRepository(t, "testdata/atlas_first_service")
 	provider := &atlasFirstAcceptanceProvider{
 		t: t, repositoryType: atlasstudy.RepositoryService,
 		lengthArchitectureCall: true,
@@ -362,7 +244,6 @@ func TestRunDefaultAtlasFirstArchitectureOutputExhaustionPublishesLocalProduct(t
 	runDir, _, data := runAtlasFirstAcceptance(t, repo, provider)
 
 	provider.assertStages(t,
-		atlasFirstStageNavigator,
 		atlasFirstStageArchitecture,
 		atlasFirstStageStudyScout,
 		atlasFirstStageStudyAdjudication,
@@ -387,8 +268,7 @@ func TestRunDefaultAtlasFirstArchitectureOutputExhaustionPublishesLocalProduct(t
 		t.Fatalf("output exhaustion erased canonical local canvas: %#v", data.ArchitectureCanvas)
 	}
 	assertAtlasFirstAcceptedStudy(t, data)
-	assertAtlasFirstDiagnostics(t, runDir, 4, map[string]string{
-		debugdump.SemanticStageNavigator:    "accepted",
+	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
 		debugdump.SemanticStageArchitecture: "resource_exhausted",
 		debugdump.SemanticStageAtlasStudy:   "accepted",
 	})
@@ -412,8 +292,8 @@ func TestRunDefaultAtlasFirstArchitectureOutputExhaustionPublishesLocalProduct(t
 
 // TestEtcdArchitectureOutputExhaustionReplayPublishesCompleteReport is the
 // Decision 215 etcd acceptance replay: the real CLI runs against the local
-// etcd repository with a deterministic provider that serves Navigator, the
-// exact etcd-shaped Architecture output exhaustion (one subsystem, one
+// etcd repository with a deterministic provider that serves the exact
+// etcd-shaped Architecture output exhaustion (one subsystem, one
 // component, an open member_refs repeating a bounded package-ref block,
 // finish_reason=length), and valid D213 Scout + Adjudication fixtures. The
 // run must complete: failed Architecture status and accounting durable, no
@@ -431,7 +311,6 @@ func TestEtcdArchitectureOutputExhaustionReplayPublishesCompleteReport(t *testin
 	runDir, manifest, data := runAtlasFirstAcceptance(t, repo, provider)
 
 	provider.assertStages(t,
-		atlasFirstStageNavigator,
 		atlasFirstStageArchitecture,
 		atlasFirstStageStudyScout,
 		atlasFirstStageStudyAdjudication,
@@ -496,7 +375,7 @@ func runAtlasFirstAcceptance(
 	runsDir := t.TempDir()
 	server := httptest.NewServer(provider)
 	defer server.Close()
-	configureNavigatorAcceptanceProvider(t, server.URL)
+	configureAtlasFirstAcceptanceProvider(t, server.URL)
 
 	var stderr bytes.Buffer
 	err := runDefaultWithDeps(
@@ -513,9 +392,101 @@ func runAtlasFirstAcceptance(
 	if err != nil {
 		t.Fatalf("runDefaultWithDeps() error = %v\nstderr:\n%s", err, stderr.String())
 	}
-	runDir := navigatorAcceptanceRunDir(t, runsDir)
-	manifest, data := readNavigatorAcceptanceRun(t, runDir)
+	runDir := atlasFirstAcceptanceRunDir(t, runsDir)
+	manifest, data := readAtlasFirstAcceptanceRun(t, runDir)
+	assertNavigatorRetiredFromRun(t, runDir)
 	return runDir, manifest, data
+}
+
+func assertNavigatorRetiredFromRun(t *testing.T, runDir string) {
+	t.Helper()
+	for _, name := range []string{
+		"navigator_request.v1.json",
+		"navigator_result.v1.json",
+		"navigator_status.v1.json",
+	} {
+		if _, err := os.Lstat(filepath.Join(runDir, name)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("retired Navigator artifact %s is present: %v", name, err)
+		}
+	}
+	for _, entry := range readSemanticJournalEntries(t, runDir) {
+		if entry.record.Stage == "navigator" {
+			t.Fatalf("retired Navigator semantic exchange is present: %#v", entry.record)
+		}
+	}
+	manifestJSON, err := os.ReadFile(filepath.Join(runDir, report.RunManifestFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(manifestJSON, []byte(`"navigator_`)) {
+		t.Fatalf("retired Navigator material binding is present: %s", manifestJSON)
+	}
+	reportJSON, err := os.ReadFile(filepath.Join(runDir, "report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(reportJSON, []byte(`"navigator":`)) {
+		t.Fatalf("retired Navigator report product is present")
+	}
+}
+
+func configureAtlasFirstAcceptanceProvider(t *testing.T, endpoint string) {
+	t.Helper()
+	t.Setenv("REPOMAP_LLM_ENDPOINT", endpoint)
+	t.Setenv("REPOMAP_LLM_MODEL", "fixture-atlas-first-model")
+	t.Setenv("REPOMAP_LLM_AUTH", "none")
+	t.Setenv("REPOMAP_LLM_MAX_TOKENS", "64000")
+	t.Setenv("REPOMAP_LLM_TIMEOUT", "5s")
+}
+
+func atlasFirstAcceptanceRunDir(t *testing.T, runsDir string) string {
+	t.Helper()
+	entries, err := os.ReadDir(runsDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var runDirs []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		candidate := filepath.Join(runsDir, entry.Name())
+		if _, err := os.Stat(filepath.Join(candidate, "metadata.json")); err == nil {
+			runDirs = append(runDirs, candidate)
+		}
+	}
+	if len(runDirs) != 1 {
+		t.Fatalf("run directories = %v, want exactly one", runDirs)
+	}
+	return runDirs[0]
+}
+
+func readAtlasFirstAcceptanceRun(
+	t *testing.T,
+	runDir string,
+) (report.RunManifest, *report.ReportData) {
+	t.Helper()
+	manifest, err := report.ReadRunManifest(runDir)
+	if err != nil {
+		t.Fatalf("ReadRunManifest(%s): %v", runDir, err)
+	}
+	reportJSON, err := os.ReadFile(filepath.Join(runDir, "report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data report.ReportData
+	if err := json.Unmarshal(reportJSON, &data); err != nil {
+		t.Fatal(err)
+	}
+	if manifest.Version != report.CurrentRunManifestVersion ||
+		manifest.ReportFormatVersion != report.CurrentFormatVersion ||
+		data.FormatVersion != report.CurrentFormatVersion {
+		t.Fatalf(
+			"Atlas-first versions manifest/report = %d/%d/%d",
+			manifest.Version, manifest.ReportFormatVersion, data.FormatVersion,
+		)
+	}
+	return manifest, &data
 }
 
 func (provider *atlasFirstAcceptanceProvider) ServeHTTP(
@@ -547,8 +518,7 @@ func (provider *atlasFirstAcceptanceProvider) ServeHTTP(
 	}
 	provider.bodies[stage] = append(provider.bodies[stage], append([]byte(nil), body...))
 	provider.mu.Unlock()
-	if (stage == atlasFirstStageNavigator && provider.failNavigatorCall) ||
-		(stage == atlasFirstStageArchitecture && provider.failArchitectureCall) {
+	if stage == atlasFirstStageArchitecture && provider.failArchitectureCall {
 		writer.Header().Set("Content-Type", "application/json")
 		writer.WriteHeader(http.StatusBadRequest)
 		_, _ = writer.Write([]byte(`{"error":{"message":"fixture provider call failed"}}`))
@@ -597,12 +567,6 @@ func (provider *atlasFirstAcceptanceProvider) ServeHTTP(
 
 	var response []byte
 	switch stage {
-	case atlasFirstStageNavigator:
-		if provider.rejectNavigator {
-			response, err = atlasFirstAcceptanceRejectedNavigator(combined)
-		} else {
-			response, err = atlasFirstAcceptanceSelectedNavigator(combined)
-		}
 	case atlasFirstStageArchitecture:
 		response, err = atlasFirstAcceptanceArchitectureResponse(combined, provider.rejectArchitecture)
 	case atlasFirstStageStudyScout:
@@ -624,46 +588,6 @@ func (provider *atlasFirstAcceptanceProvider) ServeHTTP(
 	_, _ = writer.Write(response)
 }
 
-func atlasFirstAcceptanceSelectedNavigator(combined string) ([]byte, error) {
-	const marker = "Answer the exact product question using only this request-local projection:\n"
-	index := strings.LastIndex(combined, marker)
-	if index < 0 {
-		return nil, fmt.Errorf("Navigator request marker is absent")
-	}
-	var wire struct {
-		Version      int    `json:"version"`
-		CatalogRef   string `json:"catalog_ref"`
-		DirectTrails []struct {
-			Ref          string   `json:"ref"`
-			SourceRef    string   `json:"source_ref"`
-			TargetRef    string   `json:"target_ref"`
-			EvidenceRefs []string `json:"evidence_refs"`
-		} `json:"direct_trails"`
-		Actions []struct {
-			Ref       string `json:"ref"`
-			TargetRef string `json:"target_ref"`
-		} `json:"actions"`
-	}
-	if err := json.Unmarshal([]byte(combined[index+len(marker):]), &wire); err != nil {
-		return nil, fmt.Errorf("decode Navigator wire: %w", err)
-	}
-	if len(wire.Actions) == 0 {
-		return nil, fmt.Errorf("Navigator wire has no advertised action")
-	}
-	action := wire.Actions[0]
-	// Decision 232 (Navigator v2): the provider selects the action only;
-	// trail/endpoints/evidence are backend-restored and never echoed.
-	content, err := json.Marshal(map[string]any{
-		"version":     wire.Version,
-		"catalog_ref": wire.CatalogRef,
-		"action_refs": []string{action.Ref},
-	})
-	if err != nil {
-		return nil, err
-	}
-	return atlasFirstAcceptanceCompletion(content, 211, 31), nil
-}
-
 func atlasFirstAcceptanceRequestStage(
 	body []byte,
 ) (atlasFirstAcceptanceStage, string, error) {
@@ -681,8 +605,6 @@ func atlasFirstAcceptanceRequestStage(
 	}
 	combined := request.Messages[0].Content + "\n" + request.Messages[1].Content
 	switch {
-	case strings.Contains(combined, "atlas-navigator-startup-json-v2"):
-		return atlasFirstStageNavigator, combined, nil
 	case strings.Contains(combined, "Use conceptual member, anchor, and unit refs as opaque request-local values.") &&
 		strings.Contains(combined, "Bounded candidate request:\n"):
 		return atlasFirstStageArchitecture, combined, nil
@@ -912,30 +834,6 @@ func atlasFirstAcceptanceAdjudicationResponse(combined string) ([]byte, error) {
 	return atlasFirstAcceptanceCompletion(content, 211, 73), nil
 }
 
-func atlasFirstAcceptanceRejectedNavigator(combined string) ([]byte, error) {
-	const marker = "Answer the exact product question using only this request-local projection:\n"
-	index := strings.LastIndex(combined, marker)
-	if index < 0 {
-		return nil, fmt.Errorf("Navigator request marker is absent")
-	}
-	var wire struct {
-		Version    int    `json:"version"`
-		CatalogRef string `json:"catalog_ref"`
-	}
-	if err := json.Unmarshal([]byte(combined[index+len(marker):]), &wire); err != nil {
-		return nil, fmt.Errorf("decode Navigator wire: %w", err)
-	}
-	content, err := json.Marshal(map[string]any{
-		"version":     wire.Version,
-		"catalog_ref": wire.CatalogRef,
-		"action_refs": []string{"a999"},
-	})
-	if err != nil {
-		return nil, err
-	}
-	return atlasFirstAcceptanceCompletion(content, 211, 31), nil
-}
-
 func atlasFirstAcceptanceCompletion(content []byte, inputTokens, outputTokens int) []byte {
 	envelope, _ := json.Marshal(map[string]any{
 		"choices": []any{map[string]any{
@@ -1117,11 +1015,8 @@ func assertAtlasFirstDiagnostics(
 	wantStates map[string]string,
 ) {
 	t.Helper()
-	// Exact call totals describe this first Atlas-backed implementation. They
-	// diagnose accidental legacy fan-out; they are not a permanent product
-	// ceiling on future independently approved Atlas questions. D213's Study
-	// stage makes exactly two semantic calls (Theme Scout + Theme
-	// Adjudication); other stages make one.
+	// The ordinary cold path has one Architecture call and D213's Study stage
+	// has exactly two semantic calls (Theme Scout + Theme Adjudication).
 	metadataBytes, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -1131,7 +1026,7 @@ func assertAtlasFirstDiagnostics(
 		t.Fatal(err)
 	}
 	if !metadata.ProviderAccountingComplete || metadata.ProviderRequestCount != wantCalls ||
-		len(metadata.RequestAttempts) != 3 {
+		len(metadata.RequestAttempts) != len(wantStates) {
 		t.Fatalf("Atlas-first diagnostic totals = %#v", metadata)
 	}
 	for _, attempt := range metadata.RequestAttempts {
@@ -1168,11 +1063,9 @@ func assertAtlasFirstSemanticStages(t *testing.T, runDir string, want ...string)
 	}
 }
 
-func assertAtlasFirstAcceptedArtifacts(t *testing.T, runDir string, navigatorSelected bool) {
+func assertAtlasFirstAcceptedArtifacts(t *testing.T, runDir string) {
 	t.Helper()
 	artifactNames := []string{
-		navigator.StatusArtifactFilename,
-		navigator.RecordArtifactFilename,
 		report.ArchitectureSynthesisFile,
 		report.ArchitectureSynthesisStatusFile,
 		themestudy.ScoutRequestArtifactFilename,
@@ -1192,26 +1085,15 @@ func assertAtlasFirstAcceptedArtifacts(t *testing.T, runDir string, navigatorSel
 			t.Fatalf("accepted Atlas-first run missing %s: %v", name, err)
 		}
 	}
-	_, err := os.Stat(filepath.Join(runDir, navigator.RequestArtifactFilename))
-	if navigatorSelected && err != nil {
-		t.Fatalf("selected Navigator missing request: %v", err)
-	}
-	if !navigatorSelected && !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("empty Navigator unexpectedly persisted a provider request: %v", err)
-	}
 }
 
 func assertAtlasFirstAcceptedManifest(
 	t *testing.T,
 	manifest report.RunManifest,
-	navigatorSelected bool,
 ) {
 	t.Helper()
 	inputs := manifest.MaterialInputs
 	if inputs.RepositoryAtlasSHA256 == "" ||
-		inputs.NavigatorStatusSHA256 == "" ||
-		(inputs.NavigatorRequestSHA256 != "") != navigatorSelected ||
-		inputs.NavigatorResultSHA256 == "" ||
 		inputs.ThemeScoutRequestSHA256 == "" ||
 		inputs.ThemeScoutResultSHA256 == "" ||
 		inputs.ThemeScoutStatusSHA256 == "" ||

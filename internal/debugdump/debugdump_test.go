@@ -112,7 +112,7 @@ func TestSemanticExchangeRejectsArchitectureMetricsOnAnotherStage(t *testing.T) 
 	}
 	defer w.Close()
 	err = w.writeSemanticExchange(SemanticExchange{
-		Stage: SemanticStageNavigator, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		Stage: SemanticStageAtlasStudy, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
 		RequestProvenance: SemanticRequestExactSent,
 		State:             SemanticStateAccepted, ValidationCode: SemanticValidationAccepted,
 		SemanticCalls: 1, TransportAttempts: 1,

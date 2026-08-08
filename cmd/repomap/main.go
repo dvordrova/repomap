@@ -688,34 +688,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	}
 
 	var reportPath string
-	navigatorOutcome, navigatorErr := runNavigatorForRun(
-		ctx, runDir, dDir,
-		researchRepositoryContext(initialState, repo), researchPolicy,
-		*noCache, !*offline, humanOutput,
-	)
-	if diagnosticErr := recordAtlasFirstStageDiagnostic(
-		runDir, navigatorAtlasFirstDiagnostic(navigatorOutcome, navigatorErr),
-	); diagnosticErr != nil {
-		if navigatorErr != nil {
-			return errors.Join(navigatorErr, diagnosticErr)
-		}
-		return diagnosticErr
-	}
-	if navigatorErr != nil {
-		state := "failed"
-		if errors.Is(navigatorErr, context.Canceled) || errors.Is(navigatorErr, context.DeadlineExceeded) {
-			state = "canceled"
-		}
-		humanOutput.State("Navigator", state)
-		if !isPublishableNavigatorFailure(navigatorErr) {
-			return fmt.Errorf("Atlas-first Navigator: %w", navigatorErr)
-		}
-		humanOutput.Warn(
-			"Navigator recommendation unavailable",
-			"state: failed",
-			"Architecture and Study remain independent and will continue",
-		)
-	}
 	var architectureAuthority report.RunAuthority
 	if !*offline {
 		architectureAuthorityStarted := time.Now()
@@ -839,6 +811,15 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 	if err := report.PrepareAuthorizedSourceCoverage(ctx, reportData, &authority); err != nil {
 		return fmt.Errorf("prepare exact Atlas Study source coverage: %w", err)
 	}
+	// These deterministic scope/connectivity facts are known before Study.
+	// Emit them here so a pre-call Study failure cannot hide already-observed
+	// Architecture omissions or Map connectivity loss from the ordinary console.
+	humanOutput.ArchitectureScope(
+		report.DescribeArchitectureProductScope(reportData.RepositoryGraph),
+	)
+	humanOutput.MapConnectivity(
+		report.DescribeArchitectureStructuralConnectivity(reportData.ArchitectureCanvas),
+	)
 
 	var studyOutcome themeStudyRunOutcome
 	var studyErr error
@@ -907,12 +888,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 			formatRunOutputDuration(time.Since(studyReconciliationStarted).Milliseconds()),
 		)
 	}
-	humanOutput.ArchitectureScope(
-		report.DescribeArchitectureProductScope(reportData.RepositoryGraph),
-	)
-	humanOutput.MapConnectivity(
-		report.DescribeArchitectureStructuralConnectivity(reportData.ArchitectureCanvas),
-	)
 	if err := finalizeAtlasFirstStageDiagnostics(runDir); err != nil {
 		return err
 	}

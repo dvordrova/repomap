@@ -28,6 +28,22 @@ type runOutput struct {
 	lastProgress map[string]runOutputProgress
 }
 
+// runOutputWarningSink adapts bounded warning writers to the ordinary console
+// without coupling them to any semantic stage.
+type runOutputWarningSink struct {
+	output  *runOutput
+	summary string
+}
+
+func (writer runOutputWarningSink) Write(data []byte) (int, error) {
+	if writer.output != nil {
+		detail := strings.TrimSpace(string(data))
+		detail = strings.TrimPrefix(detail, "warning: ")
+		writer.output.Warn(writer.summary, detail)
+	}
+	return len(data), nil
+}
+
 type runOutputProgress struct {
 	at        time.Time
 	completed int
@@ -122,6 +138,31 @@ func (output *runOutput) ArchitectureScope(scope report.ArchitectureProductScope
 		fmt.Sprintf("exact package edges retained: %d/%d", scope.RetainedEdges, scope.ObservedEdges),
 		fmt.Sprintf("whole non-production modules omitted: %d", scope.OmittedModules),
 		"the complete local repository graph remains available",
+	)
+}
+
+// ThemeInputClosure makes deterministic pre-provider Atlas shaping visible in
+// the ordinary console. The authoritative saved Atlas and the user report stay
+// unchanged; these counts explain why a large repository can still produce a
+// bounded Theme request without repeating a forensic artifact join.
+func (output *runOutput) ThemeInputClosure(closure themeStudyAtlasClosure) {
+	if closure.ObservedUnits == closure.RetainedUnits &&
+		closure.ObservedEntities == closure.RetainedEntities &&
+		closure.ObservedEvidence == closure.RetainedEvidence &&
+		closure.ObservedObservations == closure.RetainedObservations &&
+		closure.ObservedRelations == closure.RetainedRelations {
+		return
+	}
+	output.State(
+		"Study request preparation", "bounded",
+		fmt.Sprintf(
+			"records needed to prepare this Study request: %d (%d local Atlas records remain unchanged)",
+			closure.RetainedUnits,
+			closure.ObservedUnits,
+		),
+		"repository scope and Architecture groups: unchanged",
+		"provider-visible Study surfaces and evidence: unchanged",
+		"the complete local Repository Atlas remains authoritative and unchanged",
 	)
 }
 

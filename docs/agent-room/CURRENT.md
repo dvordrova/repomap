@@ -25,6 +25,7 @@ Active decisions (each approved by the repository owner via its supervisory goal
 21. decisions/237-semantic-diagnostics-anchor-presence.md
 22. decisions/238-architecture-primary-scope-context-quality.md
 23. decisions/239-ordinary-provider-request-effectiveness.md
+24. decisions/240-remove-obsolete-navigator-semantic-stage.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
@@ -1178,3 +1179,17 @@ investigation and its final acceptance are owner-authorized, including up to
 seven concurrent runs. The producer/consumer semantics of `structural_facts`,
 `structural_edges`, and `mechanism_fragment.transitions`, and Map's choice of
 connectivity authority, are a first-priority systemic question.
+
+## 23. Decision 240 — Remove the obsolete Navigator semantic stage (ACTIVE)
+
+Navigator is removed vertically from the ordinary product. Fresh D239 evidence
+showed that it returned only one opaque ref for an already backend-owned startup
+identity, while its selected recommendation was no longer first-class in the
+Map-first UI: the old Overview/Atlas renderers are unreachable for a normal
+canvas report, the Map empty-selection inspector does not consume Navigator,
+Entrypoints already retains exact entries, and Mechanisms must be per-entry /
+per-flow rather than rooted at one model-selected startup. No replacement call,
+flag, hidden candidate gate, or cosmetic badge is added. The ordinary cold path
+now has at most Architecture + Theme Scout + Theme Adjudication provider calls;
+exact local Surface/Atlas evidence and offline behavior remain authoritative.
+Identity advances: report format 38, run manifest 13, UI catalog 11.

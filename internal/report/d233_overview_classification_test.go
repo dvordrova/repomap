@@ -119,7 +119,6 @@ function reportFor(archetype, triggers) {
     user_sources: [], user_mechanisms: [], user_topics: [],
     openable_paths: ["cmd/service/main.go", "internal/api/handlers/users.go", "internal/api/handlers/orders.go", "cmd/service/cli.go", "cmd/cli/main.go"],
     github_source_links: { repository_url: "https://github.com/example/fixture", revision: "a".repeat(40) },
-    navigator: { version: 2, state: "unavailable" },
     repository_atlas: {
       version: 1,
       units: [{ id: "repo", kind: "repository", name: "fixture" }, { id: "app", kind: "app", parent_id: "repo", name: "fixture" }],

@@ -120,17 +120,14 @@ budgets. Current Go executors load only the package enclosing an already chosen
 callsite, use type information to resolve the target, and inspect one bounded
 goroutine lifecycle. Whole-repository SSA and VTA remain outside this path.
 
-### 4. Atlas-first Navigator (implemented)
+### 4. Atlas-first semantic products
 
-- the default run saves a complete canonical Repository Atlas locally;
-- the first product question derives only exact resolved application-startup
-  relations and compiles one backend-owned action per eligible relation;
-- the provider sees only a bounded request-local projection with opaque refs;
-- the backend restores and validates canonical identities and exact evidence;
-- empty and offline outcomes are explicit and make no provider call.
+The default run saves a complete canonical Repository Atlas locally. Exact
+startup identities remain local Surface/Atlas evidence and enter the Map
+through the Entrypoints projection; no provider selects one repository entry.
 
-Architecture and Study are independent task-shaped questions over this local
-base. The Architecture provider returns one complete flat ordered record list:
+Architecture and Study are bounded task-shaped questions over this local base.
+The Architecture provider returns one complete flat ordered record list:
 response-local subsystem refs plus components that cite exact request-local
 typed member and anchor refs. Model grouping is conceptual participation, not
 ownership, and it cannot replace or mutate the canonical local canvas or its

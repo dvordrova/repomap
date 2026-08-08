@@ -226,6 +226,17 @@ func writeThemeStudyAcceptedArtifacts(t *testing.T, runDir string, data *ReportD
 
 func mustEncodeTheme(t *testing.T, value any) []byte {
 	t.Helper()
+	// Scout request v3 has a compact persisted shape distinct from its
+	// losslessly restored in-memory value. Keep generic report fixtures on the
+	// production encoder so they cannot accidentally write a v3-versioned copy
+	// of the historical duplicated v2 shape.
+	if request, ok := value.(themestudy.ScoutRequest); ok {
+		encoded, err := themestudy.EncodeScoutRequest(request)
+		if err != nil {
+			t.Fatalf("encode theme Scout request artifact: %v", err)
+		}
+		return encoded
+	}
 	encoded, err := json.Marshal(value)
 	if err != nil {
 		t.Fatalf("encode theme artifact: %v", err)

@@ -395,6 +395,259 @@ func TestCompileUnitCatalogUsesRepositoryRelativeModuleLabels(t *testing.T) {
 	}
 }
 
+func TestCompileUnitCatalogDoesNotMergeCommandWithSameNamedTopLevelPackage(t *testing.T) {
+	t.Parallel()
+
+	definitions := []struct {
+		id, name string
+	}{
+		{"member-package-command-cli", "cmd/dive/cli"},
+		{"member-package-command-runtime", "cmd/dive/runtime"},
+		{"member-package-library-filetree", "dive/filetree"},
+		{"member-package-library-image", "dive/image"},
+	}
+	candidates := make([]Candidate, 0, len(definitions))
+	for _, definition := range definitions {
+		candidate := unitTestCandidate(
+			MemberPackage,
+			definition.id,
+			definition.name,
+			CandidateRoleConceptualMember,
+			nil,
+		)
+		candidate.Facts = []LocalFact{
+			unitTestFact(FactDeclaration, "github.com/wagoodman/dive/"+definition.name),
+		}
+		candidates = append(candidates, candidate)
+	}
+	entry := unitTestCandidate(
+		MemberPackage,
+		"member-package-entry",
+		"entry",
+		CandidateRoleConceptualMember,
+		nil,
+	)
+	entry.Facts = []LocalFact{
+		unitTestFact(FactDeclaration, "github.com/wagoodman/dive/entry"),
+	}
+	candidates = append(candidates, entry)
+	catalog, err := CompileUnitCatalog(unitTestBundle(
+		candidates,
+		[]BehaviorAnchor{unitTestAnchor("anchor-entry", AnchorExtensionFamily, entry.ID)},
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.WireUnits) > targetMaxUnits {
+		t.Fatalf("collision-safe grouping exceeded the hard unit bound: %d > %d", len(catalog.WireUnits), targetMaxUnits)
+	}
+	commandRef := catalog.MemberToWireUnit[candidates[0].ID]
+	libraryRef := catalog.MemberToWireUnit[candidates[2].ID]
+	if commandRef == "" || libraryRef == "" || commandRef == libraryRef {
+		t.Fatalf("command/library ownership refs = %q/%q, want two exact final units", commandRef, libraryRef)
+	}
+	if catalog.MemberToWireUnit[candidates[1].ID] != commandRef {
+		t.Fatalf("second command package did not share command unit %q", commandRef)
+	}
+	if catalog.MemberToWireUnit[candidates[3].ID] != libraryRef {
+		t.Fatalf("second library package did not share library unit %q", libraryRef)
+	}
+	commandUnit, commandOK := unitWireByRef(catalog, commandRef)
+	libraryUnit, libraryOK := unitWireByRef(catalog, libraryRef)
+	if !commandOK || !libraryOK || commandUnit.Label != "dive" || libraryUnit.Label != "dive" {
+		t.Fatalf("bounded wire labels changed: command=%#v library=%#v", commandUnit, libraryUnit)
+	}
+	for _, unit := range []SynthesisUnit{commandUnit, libraryUnit} {
+		if strings.Contains(unit.Label, "/") || strings.Contains(unit.Label, "cmd") {
+			t.Fatalf("private grouping identity leaked into wire label: %#v", unit)
+		}
+	}
+}
+
+func TestCompileUnitCatalogRefinesBroadModuleByNextExactSegment(t *testing.T) {
+	t.Parallel()
+
+	entry := unitTestCandidate(MemberPackage, "member-package-entry", "entry", CandidateRoleConceptualMember, nil)
+	entry.Facts = []LocalFact{unitTestFact(FactDeclaration, "github.com/foxcpp/maddy/entry")}
+	candidates := []Candidate{entry}
+	familyRefs := make(map[string]UnitWireRef)
+	for index := 0; index < 38; index++ {
+		family := fmt.Sprintf("family-%02d", index%8)
+		name := fmt.Sprintf("internal/%s/package-%02d", family, index)
+		candidate := unitTestCandidate(
+			MemberPackage,
+			fmt.Sprintf("member-package-internal-%02d", index),
+			name,
+			CandidateRoleConceptualMember,
+			nil,
+		)
+		candidate.Facts = []LocalFact{unitTestFact(FactDeclaration, "github.com/foxcpp/maddy/"+name)}
+		candidates = append(candidates, candidate)
+	}
+	catalog, err := CompileUnitCatalog(unitTestBundle(
+		candidates,
+		[]BehaviorAnchor{unitTestAnchor("anchor-entry", AnchorExtensionFamily, entry.ID)},
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.WireUnits) != 9 || len(catalog.WireUnits) > targetMaxUnits {
+		t.Fatalf("refined Maddy-like units = %d, want entry + 8 bounded families", len(catalog.WireUnits))
+	}
+	for index := 0; index < 38; index++ {
+		memberID := candidates[index+1].ID
+		family := fmt.Sprintf("family-%02d", index%8)
+		ref := catalog.MemberToWireUnit[memberID]
+		if ref == "" {
+			t.Fatalf("internal member %s lost exact ownership", memberID.key())
+		}
+		if previous := familyRefs[family]; previous != "" && previous != ref {
+			t.Fatalf("family %q split across refs %q and %q", family, previous, ref)
+		}
+		familyRefs[family] = ref
+		wire, ok := unitWireByRef(catalog, ref)
+		if !ok || wire.Label != family || strings.Contains(wire.Label, "/") || strings.Contains(wire.Label, "internal") {
+			t.Fatalf("family wire projection = %#v, found=%t", wire, ok)
+		}
+	}
+	if len(familyRefs) != 8 || catalog.CoveredMembers != 39 || len(catalog.MemberToWireUnit) != 39 {
+		t.Fatalf("refinement coverage/families = %d/%d/%d", catalog.CoveredMembers, len(catalog.MemberToWireUnit), len(familyRefs))
+	}
+}
+
+func TestCompileUnitCatalogKeepsBroadModuleWhenRefinementExceedsUnitBound(t *testing.T) {
+	t.Parallel()
+
+	candidates := make([]Candidate, 0, 68)
+	seedIDs := make([]MemberID, 0, 30)
+	for index := 0; index < 30; index++ {
+		name := fmt.Sprintf("service-%02d", index)
+		candidate := unitTestCandidate(
+			MemberPackage,
+			fmt.Sprintf("member-package-seed-%02d", index),
+			name,
+			CandidateRoleConceptualMember,
+			nil,
+		)
+		candidate.Facts = []LocalFact{unitTestFact(FactDeclaration, "github.com/example/large/"+name)}
+		candidates = append(candidates, candidate)
+		seedIDs = append(seedIDs, candidate.ID)
+	}
+	internalStart := len(candidates)
+	for index := 0; index < 38; index++ {
+		name := fmt.Sprintf("internal/family-%02d/package", index)
+		candidate := unitTestCandidate(
+			MemberPackage,
+			fmt.Sprintf("member-package-internal-%02d", index),
+			name,
+			CandidateRoleConceptualMember,
+			nil,
+		)
+		candidate.Facts = []LocalFact{unitTestFact(FactDeclaration, "github.com/example/large/"+name)}
+		candidates = append(candidates, candidate)
+	}
+	catalog, err := CompileUnitCatalog(unitTestBundle(
+		candidates,
+		[]BehaviorAnchor{unitTestAnchor("anchor-seeds", AnchorExtensionFamily, seedIDs...)},
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.WireUnits) != 31 || len(catalog.WireUnits) > targetMaxUnits {
+		t.Fatalf("fallback units = %d, want 30 seeds + one original broad bucket", len(catalog.WireUnits))
+	}
+	broadRef := catalog.MemberToWireUnit[candidates[internalStart].ID]
+	for _, candidate := range candidates[internalStart:] {
+		if got := catalog.MemberToWireUnit[candidate.ID]; got != broadRef {
+			t.Fatalf("over-budget refinement split original bucket: %s = %q, want %q", candidate.ID.key(), got, broadRef)
+		}
+	}
+	wire, ok := unitWireByRef(catalog, broadRef)
+	if !ok || wire.Label != "internal" || len(catalog.MemberToWireUnit) != len(candidates) {
+		t.Fatalf("fallback broad unit/coverage = %#v, found=%t map=%d", wire, ok, len(catalog.MemberToWireUnit))
+	}
+}
+
+func TestCompileUnitCatalogBudgetsBroadRefinementAfterAttachmentAndSplitting(t *testing.T) {
+	t.Parallel()
+
+	// Sixty-two exact seed units plus the unrefined broad unit's two chunks
+	// reach the hard bound exactly. Splitting the broad package bucket into a
+	// 49-member family and a one-member family would require three chunks and
+	// produce 65 final wire units, even though the package-only projection
+	// appears to fit as 62 + 2 units.
+	candidates := make([]Candidate, 0, 112)
+	seedIDs := make([]MemberID, 0, 62)
+	for index := 0; index < 62; index++ {
+		name := fmt.Sprintf("service-%02d", index)
+		candidate := unitTestCandidate(
+			MemberPackage,
+			fmt.Sprintf("member-package-seed-%02d", index),
+			name,
+			CandidateRoleConceptualMember,
+			nil,
+		)
+		candidate.Facts = []LocalFact{unitTestFact(FactDeclaration, "github.com/example/adversarial/"+name)}
+		candidates = append(candidates, candidate)
+		seedIDs = append(seedIDs, candidate.ID)
+	}
+	var symbolParent MemberID
+	for index := 0; index < 25; index++ {
+		family := "large"
+		if index == 24 {
+			family = "small"
+		}
+		name := fmt.Sprintf("internal/%s/package-%02d", family, index)
+		candidate := unitTestCandidate(
+			MemberPackage,
+			fmt.Sprintf("member-package-internal-%02d", index),
+			name,
+			CandidateRoleConceptualMember,
+			nil,
+		)
+		candidate.Facts = []LocalFact{unitTestFact(FactDeclaration, "github.com/example/adversarial/"+name)}
+		candidates = append(candidates, candidate)
+		if index == 0 {
+			symbolParent = candidate.ID
+		}
+	}
+	for index := 0; index < 25; index++ {
+		candidates = append(candidates, unitTestCandidate(
+			MemberSymbol,
+			fmt.Sprintf("member-symbol-internal-%02d", index),
+			fmt.Sprintf("internal.large.Symbol%02d", index),
+			CandidateRoleConceptualMember,
+			&symbolParent,
+		))
+	}
+
+	catalog, err := CompileUnitCatalog(unitTestBundle(
+		candidates,
+		[]BehaviorAnchor{unitTestAnchor("anchor-seeds", AnchorExtensionFamily, seedIDs...)},
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.WireUnits) != targetMaxUnits {
+		t.Fatalf("post-attachment wire units = %d, want exact hard bound %d", len(catalog.WireUnits), targetMaxUnits)
+	}
+	internalUnits := 0
+	for _, wire := range catalog.WireUnits {
+		if wire.Label == "large" || wire.Label == "small" {
+			t.Fatalf("over-budget refinement leaked child unit: %#v", wire)
+		}
+		if wire.Label == "internal" {
+			internalUnits++
+		}
+	}
+	if internalUnits != 2 {
+		t.Fatalf("unrefined broad bucket chunks = %d, want 2", internalUnits)
+	}
+	if catalog.CoveredMembers != len(candidates) || len(catalog.MemberToWireUnit) != len(candidates) {
+		t.Fatalf("exact coverage = %d/%d, ownership=%d", catalog.CoveredMembers, len(candidates), len(catalog.MemberToWireUnit))
+	}
+}
+
 func TestCompileUnitCatalogKeepsClosedRolesSeparate(t *testing.T) {
 	t.Parallel()
 

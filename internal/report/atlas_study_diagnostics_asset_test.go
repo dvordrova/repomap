@@ -149,7 +149,6 @@ const report = {
     repository_url: "https://github.com/example/repository",
     revision: "a".repeat(40),
   },
-  navigator: { version: 1, state: "empty" },
   repository_atlas: {
     version: 1,
     units: [

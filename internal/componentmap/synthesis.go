@@ -23,8 +23,9 @@ const (
 	// Decision 239: production-aware unit roles change the provider-visible
 	// primary/supporting classification and the meaning of saved primary-scope
 	// coverage. The prompt identity is derived automatically from its exact
-	// text below.
-	SynthesisRequestVersion = 18
+	// text below. Request v19 also binds collision-safe private unit grouping:
+	// command namespaces no longer merge with same-named top-level packages.
+	SynthesisRequestVersion = 19
 	SynthesisRecordVersion  = 15
 )
 

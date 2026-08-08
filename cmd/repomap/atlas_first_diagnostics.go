@@ -26,32 +26,6 @@ type atlasFirstStageDiagnostic struct {
 	Outcome           *debugdump.SemanticOutcome
 }
 
-func navigatorAtlasFirstDiagnostic(
-	outcome navigatorRunOutcome,
-	stageErr error,
-) atlasFirstStageDiagnostic {
-	state := "accepted"
-	switch {
-	case errors.Is(stageErr, context.Canceled), errors.Is(stageErr, context.DeadlineExceeded):
-		state = "canceled"
-	case isSemanticResourceLimit(stageErr):
-		state = "resource_exhausted"
-	case stageErr != nil:
-		state = "failed"
-	case outcome.Empty:
-		state = "empty"
-	case outcome.ProviderSkipped:
-		state = "unavailable"
-	case outcome.Cached:
-		state = "cache_hit"
-	}
-	return atlasFirstStageDiagnostic{
-		Stage: debugdump.SemanticStageNavigator, State: state,
-		RequestBytes: outcome.RequestBytes, SemanticCalls: outcome.SemanticCalls,
-		TransportAttempts: outcome.TransportAttempts, LatencyMillis: outcome.LatencyMillis,
-	}
-}
-
 func architectureAtlasFirstDiagnostic(
 	outcome architectureSynthesisOutcome,
 	stageErr error,

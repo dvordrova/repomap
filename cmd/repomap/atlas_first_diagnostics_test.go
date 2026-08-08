@@ -151,9 +151,8 @@ func TestAtlasFirstStageDiagnosticsAreExactIdempotentAndExplicitlyComplete(t *te
 	writer.Close()
 
 	observations := []atlasFirstStageDiagnostic{
-		{Stage: debugdump.SemanticStageNavigator, State: "accepted", RequestBytes: 101, SemanticCalls: 1, TransportAttempts: 1, LatencyMillis: 11},
 		{Stage: debugdump.SemanticStageArchitecture, State: "cached", RequestBytes: 202, LatencyMillis: 22},
-		{Stage: debugdump.SemanticStageAtlasStudy, State: "accepted", RequestBytes: 303, SemanticCalls: 1, TransportAttempts: 2, LatencyMillis: 33},
+		{Stage: debugdump.SemanticStageAtlasStudy, State: "accepted", RequestBytes: 303, SemanticCalls: 2, TransportAttempts: 2, LatencyMillis: 33},
 	}
 	for _, observation := range observations {
 		if err := recordAtlasFirstStageDiagnostic(runDir, observation); err != nil {
@@ -161,14 +160,14 @@ func TestAtlasFirstStageDiagnosticsAreExactIdempotentAndExplicitlyComplete(t *te
 		}
 	}
 	// Re-recording one owner replaces that observation instead of double-counting it.
-	observations[1].State = "cache_hit"
-	if err := recordAtlasFirstStageDiagnostic(runDir, observations[1]); err != nil {
+	observations[0].State = "cache_hit"
+	if err := recordAtlasFirstStageDiagnostic(runDir, observations[0]); err != nil {
 		t.Fatal(err)
 	}
 	metadata := readAtlasFirstMetadataFixture(t, runDir)
 	if metadata.ProviderAccountingComplete || metadata.ProviderRequestCount != 2 ||
-		metadata.ExternalRequestBytes != 404 || len(metadata.RequestAttempts) != 3 ||
-		metadata.ProviderLatencyMillis == nil || *metadata.ProviderLatencyMillis != 44 {
+		metadata.ExternalRequestBytes != 303 || len(metadata.RequestAttempts) != 2 ||
+		metadata.ProviderLatencyMillis == nil || *metadata.ProviderLatencyMillis != 33 {
 		t.Fatalf("in-progress metadata = %#v", metadata)
 	}
 	for _, attempt := range metadata.RequestAttempts {
@@ -181,7 +180,7 @@ func TestAtlasFirstStageDiagnosticsAreExactIdempotentAndExplicitlyComplete(t *te
 	}
 	metadata = readAtlasFirstMetadataFixture(t, runDir)
 	if !metadata.ProviderAccountingComplete || metadata.ProviderRequestCount != 2 ||
-		metadata.ExternalRequestBytes != 404 {
+		metadata.ExternalRequestBytes != 303 {
 		t.Fatalf("complete metadata = %#v", metadata)
 	}
 }
@@ -192,7 +191,7 @@ func TestAtlasFirstStageDiagnosticsRejectImpossibleCallAccounting(t *testing.T) 
 		t.Fatal(err)
 	}
 	err := recordAtlasFirstStageDiagnostic(runDir, atlasFirstStageDiagnostic{
-		Stage: debugdump.SemanticStageNavigator, State: "invalid",
+		Stage: debugdump.SemanticStageArchitecture, State: "invalid",
 		SemanticCalls: 0, TransportAttempts: 1,
 	})
 	if err == nil {

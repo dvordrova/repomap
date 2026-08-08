@@ -123,7 +123,6 @@ const report = {
     repository_url: "https://github.com/example/fixture",
     revision: "1".repeat(40),
   },
-  navigator: { version: 1, state: "empty" },
   repository_atlas: {
     version: 1,
     units: [

@@ -80,7 +80,6 @@ function run(report, language) {
   const unitTags = nodes.filter((node) => String(node.className).split(/\s+/).includes("rm-atlas-unit-tag"));
   const unitAuthorityBadges = unitCards.reduce((count, card) => count + walk(card).filter((node) => String(node.className).split(/\s+/).includes("rm-atlas-authority")).length, 0);
   const sourceButtons = nodes.filter((node) => String(node.className).split(/\s+/).includes("rm-atlas-source-action"));
-  const navigatorButtons = nodes.filter((node) => String(node.className).split(/\s+/).includes("rm-atlas-navigator-action"));
   const packageDisclosure = nodes.find((node) => String(node.className).split(/\s+/).includes("rm-atlas-package-disclosure"));
   const packageRows = packageDisclosure ? walk(packageDisclosure).filter((node) => String(node.className).split(/\s+/).includes("rm-atlas-package-row")) : [];
   const packageActions = packageDisclosure ? walk(packageDisclosure).filter((node) => String(node.className).split(/\s+/).includes("rm-atlas-package-action")) : [];
@@ -102,8 +101,7 @@ function run(report, language) {
     action.onclick();
     return api.workspaceStateSnapshot().sourceLocation;
   });
-  if (navigatorButtons.length) navigatorButtons[0].onclick();
-  else if (sourceButtons.length && typeof sourceButtons[0].onclick === "function") sourceButtons[0].onclick();
+  if (sourceButtons.length && typeof sourceButtons[0].onclick === "function") sourceButtons[0].onclick();
   return {
     units: shelf && shelf.units.length || 0,
     relations: shelf && shelf.relations.length || 0,
@@ -111,7 +109,6 @@ function run(report, language) {
     rendered: text(root),
     unitAuthorityBadges,
     sourceButtons: sourceButtons.length,
-    navigatorButtons: navigatorButtons.length,
     sourceState: api.workspaceStateSnapshot().sourceLocation,
     topologyCards: unitCards.length + unitHeaders.length,
     unitTags: unitTags.map((node) => String(node.textContent || "")),
@@ -130,7 +127,6 @@ function run(report, language) {
     packageSummary: packageSummary ? String(packageSummary.textContent || "") : "",
     packageDisclosureOpen: !!(packageDisclosure && packageDisclosure.open),
     relationPosition: sectionClasses.findIndex((name) => name.includes("rm-atlas-relations-heading")),
-    navigatorPosition: sectionClasses.findIndex((name) => name.includes("rm-atlas-recommendation")),
     unitsPosition: sectionClasses.findIndex((name) => name.includes("rm-atlas-units-heading")),
     packagePosition: sectionClasses.findIndex((name) => name.includes("rm-atlas-package-disclosure")),
     compactStatusPosition: sectionClasses.findIndex((name) => name.includes("rm-atlas-compact-status")),
@@ -192,28 +188,9 @@ const report = {
 };
 const en = run(report, "en");
 const ru = run(report, "ru");
-const selectedReport = JSON.parse(JSON.stringify(report));
-selectedReport.navigator = {
-  version: 1, state: "selected",
-  recommendation: {
-    key: "startup-action-exact", operation: "inspect exact startup evidence",
-    surface: { kind: "surface", id: "entity-secret-surface" },
-    application_operation: { kind: "operation", id: "entity-secret-operation" },
-    relation_id: "relation-secret-covered", evidence_ids: ["evidence-secret-covered"],
-  },
-};
-const selectedEN = run(selectedReport, "en");
-const selectedRU = run(selectedReport, "ru");
-const offlineReport = JSON.parse(JSON.stringify(report));
-offlineReport.navigator = { version: 1, state: "unavailable", unavailable_code: "offline" };
-const offline = run(offlineReport, "en");
-const emptyReport = JSON.parse(JSON.stringify(report));
-emptyReport.navigator = { version: 1, state: "empty" };
-const empty = run(emptyReport, "en");
 const unavailable = run(Object.assign({}, report, { repository_atlas: null }), "en");
 const nonUserSourceReport = JSON.parse(JSON.stringify(report));
 nonUserSourceReport.user_sources = [];
-nonUserSourceReport.navigator = { version: 1, state: "empty" };
 nonUserSourceReport.study_map = { directions: [{ reading_anchors: [{ source }] }] };
 const nonUserSource = run(nonUserSourceReport, "en");
 const missingBindingReport = JSON.parse(JSON.stringify(report));
@@ -340,7 +317,7 @@ prototypeNameReport.repository_atlas.units.forEach((unit) => {
   if (unit.kind !== "package") unit.name = "__proto__";
 });
 const prototypeName = run(prototypeNameReport, "en");
-process.stdout.write(JSON.stringify({ en, ru, selectedEN, selectedRU, offline, empty, unavailable, nonUserSource, missingBinding, etcdEN, etcdRU, conflict, multipleDeclarations, mixedPrefix, strippedStatic, prototypeName, representative, representativeWithoutGraph }));
+process.stdout.write(JSON.stringify({ en, ru, unavailable, nonUserSource, missingBinding, etcdEN, etcdRU, conflict, multipleDeclarations, mixedPrefix, strippedStatic, prototypeName, representative, representativeWithoutGraph }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "repository-atlas-workspace-test.js")
 	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
@@ -357,7 +334,6 @@ process.stdout.write(JSON.stringify({ en, ru, selectedEN, selectedRU, offline, e
 		Rendered             string     `json:"rendered"`
 		UnitAuthorityBadges  int        `json:"unitAuthorityBadges"`
 		SourceButtons        int        `json:"sourceButtons"`
-		NavigatorButtons     int        `json:"navigatorButtons"`
 		TopologyCards        int        `json:"topologyCards"`
 		UnitTags             []string   `json:"unitTags"`
 		TopologyUnitIDs      [][]string `json:"topologyUnitIDs"`
@@ -378,7 +354,6 @@ process.stdout.write(JSON.stringify({ en, ru, selectedEN, selectedRU, offline, e
 		PackageSummary         string   `json:"packageSummary"`
 		PackageDisclosureOpen  bool     `json:"packageDisclosureOpen"`
 		RelationPosition       int      `json:"relationPosition"`
-		NavigatorPosition      int      `json:"navigatorPosition"`
 		UnitsPosition          int      `json:"unitsPosition"`
 		PackagePosition        int      `json:"packagePosition"`
 		CompactStatusPosition  int      `json:"compactStatusPosition"`
@@ -396,10 +371,6 @@ process.stdout.write(JSON.stringify({ en, ru, selectedEN, selectedRU, offline, e
 	var got struct {
 		EN                    result `json:"en"`
 		RU                    result `json:"ru"`
-		SelectedEN            result `json:"selectedEN"`
-		SelectedRU            result `json:"selectedRU"`
-		Offline               result `json:"offline"`
-		Empty                 result `json:"empty"`
 		Unavailable           result `json:"unavailable"`
 		NonUserSource         result `json:"nonUserSource"`
 		MissingBinding        result `json:"missingBinding"`
@@ -464,51 +435,13 @@ process.stdout.write(JSON.stringify({ en, ru, selectedEN, selectedRU, offline, e
 			t.Fatalf("Russian shelf missing %q in %q", want, got.RU.Rendered)
 		}
 	}
-	for language, current := range map[string]result{"en": got.SelectedEN, "ru": got.SelectedRU} {
-		if current.NavigatorButtons != 1 || current.NavigatorPosition < 0 ||
-			current.CompactStatusCount != 0 || current.UnitsPosition < 0 || current.PackagePosition < 0 ||
-			current.UnitsPosition >= current.PackagePosition || current.PackagePosition >= current.NavigatorPosition ||
-			current.NavigatorPosition >= current.RelationPosition || current.SourceState != nil {
-			t.Fatalf("%s selected Navigator state = %#v", language, current)
-		}
-		for _, forbidden := range []string{
-			"startup-action-exact", "entity-secret", "relation-secret", "evidence-secret",
-			"cmd/server/startup.go",
-		} {
-			if strings.Contains(current.Rendered, forbidden) {
-				t.Fatalf("%s Navigator leaked backend identity or path %q in %q", language, forbidden, current.Rendered)
-			}
-		}
-	}
-	for _, want := range []string{"Navigator", "Recommended starting point", "Inspect selected startup evidence"} {
-		if !strings.Contains(got.SelectedEN.Rendered, want) {
-			t.Fatalf("English Navigator missing %q in %q", want, got.SelectedEN.Rendered)
-		}
-	}
-	for _, want := range []string{"Навигатор", "Рекомендуемая точка старта", "Открыть свидетельство выбранного запуска"} {
-		if !strings.Contains(got.SelectedRU.Rendered, want) {
-			t.Fatalf("Russian Navigator missing %q in %q", want, got.SelectedRU.Rendered)
-		}
-	}
-	if got.Offline.NavigatorButtons != 0 || got.Offline.CompactStatusCount != 1 ||
-		strings.Join(got.Offline.CompactStatusCodes, ",") != "offline" ||
-		got.Offline.CompactStatusPosition <= got.Offline.RelationPosition ||
-		!strings.Contains(got.Offline.Rendered, "Navigator was not called because this run is offline") {
-		t.Fatalf("offline Navigator state = %#v", got.Offline)
-	}
-	if got.Empty.NavigatorButtons != 0 || got.Empty.CompactStatusCount != 1 ||
-		strings.Join(got.Empty.CompactStatusCodes, ",") != "empty" ||
-		got.Empty.CompactStatusPosition <= got.Empty.RelationPosition ||
-		!strings.Contains(got.Empty.Rendered, "No locally resolved application startup") {
-		t.Fatalf("empty Navigator state = %#v", got.Empty)
-	}
 	if !strings.Contains(got.Unavailable.Rendered, "Repository Atlas is unavailable for this run.") || got.Unavailable.SourceButtons != 0 {
 		t.Fatalf("unavailable Atlas state = %#v", got.Unavailable)
 	}
 	if got.NonUserSource.Relations != 0 || got.NonUserSource.Omitted != 2 || got.NonUserSource.SourceButtons != 0 ||
-		got.NonUserSource.NavigatorPosition >= 0 || got.NonUserSource.RelationPosition >= 0 ||
+		got.NonUserSource.RelationPosition >= 0 ||
 		got.NonUserSource.CompactStatusCount != 1 ||
-		strings.Join(got.NonUserSource.CompactStatusCodes, ",") != "empty,no_exact_source_backed_relations" ||
+		strings.Join(got.NonUserSource.CompactStatusCodes, ",") != "no_exact_source_backed_relations" ||
 		got.NonUserSource.CompactStatusPosition <= got.NonUserSource.PackagePosition {
 		t.Fatalf("non-UserSource evidence became clickable: %#v", got.NonUserSource)
 	}

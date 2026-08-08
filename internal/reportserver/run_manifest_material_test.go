@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dvordrova/repomap/internal/navigator"
 	reportpkg "github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 )
@@ -88,10 +87,7 @@ func TestLoadRunsUsesFullManifestAuthorityForAtlasFirstMaterial(t *testing.T) {
 	tests := []struct {
 		name     string
 		artifact string
-	}{
-		{name: "repository Atlas", artifact: repositoryatlas.ArtifactFilename},
-		{name: "Navigator status", artifact: navigator.StatusArtifactFilename},
-	}
+	}{{name: "repository Atlas", artifact: repositoryatlas.ArtifactFilename}}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			repository := t.TempDir()
@@ -155,27 +151,8 @@ func writeAtlasFirstMaterial(t *testing.T, runDir string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	product, err := navigator.CompileProduct(navigator.ProductInput{Atlas: atlas})
-	if err != nil {
-		t.Fatal(err)
-	}
-	result, err := product.EmptyRecord()
-	if err != nil {
-		t.Fatal(err)
-	}
-	resultJSON, err := navigator.EncodeRecommendationRecord(result)
-	if err != nil {
-		t.Fatal(err)
-	}
-	status := product.PreparedStatus()
-	statusJSON, err := navigator.EncodeStatus(status)
-	if err != nil {
-		t.Fatal(err)
-	}
 	for name, data := range map[string][]byte{
 		repositoryatlas.ArtifactFilename: atlasJSON,
-		navigator.RecordArtifactFilename: resultJSON,
-		navigator.StatusArtifactFilename: statusJSON,
 	} {
 		if err := os.WriteFile(filepath.Join(runDir, name), data, 0o600); err != nil {
 			t.Fatal(err)
@@ -192,10 +169,6 @@ func writeAtlasFirstMaterial(t *testing.T, runDir string) {
 		t.Fatal(err)
 	}
 	reportData.RepositoryAtlas = &atlas
-	reportData.Navigator = &reportpkg.NavigatorReportProduct{
-		Version: navigator.ProductVersion,
-		State:   status.State,
-	}
 	reportJSON, err = json.Marshal(reportData)
 	if err != nil {
 		t.Fatal(err)
@@ -215,8 +188,6 @@ func writeAtlasFirstMaterial(t *testing.T, runDir string) {
 	}
 	manifest.ReportSHA256 = serverMaterialSHA256(reportJSON)
 	manifest.MaterialInputs.RepositoryAtlasSHA256 = serverMaterialSHA256(atlasJSON)
-	manifest.MaterialInputs.NavigatorResultSHA256 = serverMaterialSHA256(resultJSON)
-	manifest.MaterialInputs.NavigatorStatusSHA256 = serverMaterialSHA256(statusJSON)
 	manifestJSON, err = json.Marshal(manifest)
 	if err != nil {
 		t.Fatal(err)
