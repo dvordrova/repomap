@@ -26,6 +26,7 @@ type themeAdjStageOutcome struct {
 	ResponseBytes     int
 	InputTokens       int
 	OutputTokens      int
+	SemanticCalls     int
 	TransportAttempts int
 	LatencyMillis     int64
 }
@@ -180,6 +181,7 @@ func runThemeAdjudicationStage(
 	}
 
 	started := time.Now()
+	outcome.SemanticCalls = 1
 	providerResult, err := promptClient.ThemeAdjudicationMeasured(ctx, prompt, maxRequestBytes)
 	// Archive 12 P0 (owner directive): preserve every known failure
 	// telemetry metric BEFORE branching on error — attempts, latency,
@@ -190,18 +192,18 @@ func runThemeAdjudicationStage(
 	outcome.LatencyMillis = time.Since(started).Milliseconds()
 	outcome.InputTokens = providerResult.InputTokens
 	outcome.OutputTokens = providerResult.OutputTokens
-	outcome.ResponseBytes = len(providerResult.Content)
+	outcome.ResponseBytes = providerResultResponseBytes(providerResult)
 	if err != nil {
 		writer.RecordSemanticExchange(debugdump.SemanticExchange{
 			Stage: debugdump.SemanticStageAtlasStudy, InstanceOrdinal: 2, SemanticAttemptOrdinal: 1, State: debugdump.SemanticStateProviderFailed,
 			ValidationCode:      debugdump.SemanticValidationProvider,
-			ResponseUnavailable: themeResponseUnavailable(err, providerResult.Attempts, providerResult.Content),
+			ResponseUnavailable: themeResponseUnavailable(err, outcome.ResponseBytes, providerResult.Content),
 			SemanticCalls:       1, RequestProvenance: debugdump.SemanticRequestExactSent,
-			Request: providerRequest,
+			TransportAttempts: providerResult.Attempts,
+			Request:           providerRequest, Response: providerResult.Content,
 		})
 		return themeAdjOrdinaryFailure(writer, request, outcome, atlasstudy.FailureProvider, err, output)
 	}
-	outcome.ResponseBytes = len(providerResult.Content)
 	if unsafeErr := themeUnsafePayload("adjudication_provider_response", providerResult.Content); unsafeErr != nil {
 		writer.RecordSemanticExchange(debugdump.SemanticExchange{
 			Stage: debugdump.SemanticStageAtlasStudy, InstanceOrdinal: 2, SemanticAttemptOrdinal: 1, State: debugdump.SemanticStateRejected,
@@ -239,7 +241,6 @@ func runThemeAdjudicationStage(
 	outcome.State = atlasstudy.ProductState(result.State)
 	outcome.AdjAccepted = result.Status.Accepted
 	outcome.AdjRejected = result.Status.Rejected
-	outcome.ResponseBytes = len(providerResult.Content)
 	if err := persistThemeAdjAccepted(writer, request, result, status); err != nil {
 		err = themeTerminalResource(err, config.MaxTokens)
 		if isSemanticResourceLimit(err) {
@@ -401,7 +402,15 @@ func themeAdjOrdinaryFailure(
 	outcome.State = atlasstudy.ProductStateFailed
 	outcome.FailureCode = code
 	if output != nil {
-		output.Warn("Study themes unavailable", "Theme Adjudication failed: "+string(code), "local Atlas and Architecture remain available")
+		output.Warn(
+			"Study themes unavailable",
+			"Theme Adjudication failed: "+string(code),
+			fmt.Sprintf("provider calls: %d · transport attempts: %d", outcome.SemanticCalls, outcome.TransportAttempts),
+			fmt.Sprintf("request/response bytes: %d/%d", outcome.RequestBytes, outcome.ResponseBytes),
+			formatRunOutputTokens(outcome.InputTokens, outcome.OutputTokens),
+			formatRunOutputDuration(outcome.LatencyMillis),
+			"local Atlas and Architecture remain available",
+		)
 	}
 	return themeAdjErr(outcome, request, nil)
 }

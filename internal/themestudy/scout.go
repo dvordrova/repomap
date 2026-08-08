@@ -111,6 +111,18 @@ func ValidateScout(data []byte, anchorRefs map[string]struct{}, fileRefs map[str
 		}
 		candidate.AnchorRefs = dedupedAnchors
 		candidate.ExpansionFileRefs = dedupedFiles
+		// Decision 239: validate every returned identity before normalization,
+		// then keep a bounded first set instead of rejecting the complete useful
+		// theme for an editorial cardinality excess. Unknown/wrong-kind refs in
+		// the omitted suffix still fail closed; only known exact refs normalize.
+		if code := scoutCandidateReferenceIssue(candidate, anchorRefs, fileRefs); code != "" {
+			reject(&status, position, code)
+			continue
+		}
+		if len(candidate.AnchorRefs) > MaxThemeAnchors {
+			status.Normalized["anchor_refs_capped"] += len(candidate.AnchorRefs) - MaxThemeAnchors
+			candidate.AnchorRefs = candidate.AnchorRefs[:MaxThemeAnchors]
+		}
 		// Phase 3 validation audit: relation_claim is backend-owned — the
 		// design rule says a model may never create runtime facts, so its
 		// value is ALWAYS editorial_only and we assign it ourselves. The
@@ -157,15 +169,26 @@ func scoutCandidateIssue(candidate ScoutCandidate, anchorRefs, fileRefs map[stri
 	// rejection — Adjudication may rewrite title/question, and a long
 	// provisional why/expected must not erase an otherwise valid
 	// source-referenced candidate. The caller normalizes deterministically
-	// and records typed counts. Only schema/identity/ref/kind/cardinality
-	// failures remain hard rejections below.
-	if !candidate.ThemeKind.Valid() {
-		return ScoutIssueInvalidThemeKind
-	}
+	// and records typed counts. Theme kind is presentation metadata and is
+	// normalized by the caller; schema/identity/ref/cardinality failures remain
+	// hard rejections below.
 	if len(candidate.AnchorRefs) < MinThemeAnchors || len(candidate.AnchorRefs) > MaxThemeAnchors {
 		return ScoutIssueInvalidAnchorCount
 	}
-	seenAnchor := make(map[string]struct{}, len(candidate.AnchorRefs))
+	if code := scoutCandidateReferenceIssue(candidate, anchorRefs, fileRefs); code != "" {
+		return code
+	}
+	key := normalizeProse(candidate.Question) + "|" + normalizeProse(candidate.ExpectedLearning)
+	if _, ok := seenNormalized[key]; ok {
+		return ScoutIssueDuplicateCandidate
+	}
+	return ""
+}
+
+func scoutCandidateReferenceIssue(
+	candidate ScoutCandidate,
+	anchorRefs, fileRefs map[string]struct{},
+) ScoutIssueCode {
 	for _, ref := range candidate.AnchorRefs {
 		if refKind(ref) != "a" {
 			return ScoutIssueWrongKindRef
@@ -173,9 +196,6 @@ func scoutCandidateIssue(candidate ScoutCandidate, anchorRefs, fileRefs map[stri
 		if _, ok := anchorRefs[ref]; !ok {
 			return ScoutIssueUnknownRef
 		}
-		// Decision 232: duplicates were already deduplicated by the
-		// caller; a remaining duplicate here is structurally impossible.
-		seenAnchor[ref] = struct{}{}
 	}
 	for _, ref := range candidate.ExpansionFileRefs {
 		if refKind(ref) != "f" {
@@ -185,20 +205,23 @@ func scoutCandidateIssue(candidate ScoutCandidate, anchorRefs, fileRefs map[stri
 			return ScoutIssueUnknownRef
 		}
 	}
-	key := normalizeProse(candidate.Question) + "|" + normalizeProse(candidate.ExpectedLearning)
-	if _, ok := seenNormalized[key]; ok {
-		return ScoutIssueDuplicateCandidate
-	}
 	return ""
 }
 
-// normalizeScoutCandidate bounds every editorial field to its closed limit
-// deterministically (whole-rune truncation, Decision 224). It returns the
-// normalized candidate plus typed counts of truncated fields so the status
-// records every normalization — never a silent truncation.
+// normalizeScoutCandidate normalizes presentation-only metadata and bounds
+// every editorial field to its closed limit deterministically (whole-rune
+// truncation, Decision 224). It returns typed per-field counts so the status
+// records every normalization — never a silent rewrite.
 func normalizeScoutCandidate(candidate ScoutCandidate) (ScoutCandidate, map[string]int) {
 	normalized := candidate
 	counts := map[string]int{}
+	// Decision 239: theme_kind is presentation metadata, not evidence identity
+	// or authority. Preserve an otherwise source-backed candidate by mapping a
+	// missing or provider-invented kind to the neutral closed kind.
+	if !normalized.ThemeKind.Valid() {
+		normalized.ThemeKind = KindSharedDomainResponsibility
+		counts["theme_kind"]++
+	}
 	if utf8.RuneCountInString(normalized.Title) > MaxTitleRunes {
 		normalized.Title = truncateRunes(normalized.Title, MaxTitleRunes)
 		counts["title"]++

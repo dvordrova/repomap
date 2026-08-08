@@ -188,6 +188,13 @@
   return Math.min(high, Math.max(low, value));
  }
 
+ function mapStructuralEdges(data) {
+  return array(data && data.structural_edges).filter((edge) => (
+   text(edge && edge.from_component_id) && text(edge && edge.to_component_id) &&
+   text(edge.from_component_id) !== text(edge.to_component_id)
+  ));
+ }
+
  function landscapeLayoutMode(projection) {
   if (!projection || !projection.primaryRegion) return "board";
   if (projection.primaryRegion.groupIDs.length === projection.groups.length) return "graph";
@@ -756,10 +763,7 @@ function architecturePartialTruth(data) {
 
    this.subsystems = array(this.data.subsystems);
    this.components = array(this.data.components);
-   this.structuralEdges = array(this.data.structural_edges).filter((edge) => (
-    text(edge && edge.from_component_id) && text(edge && edge.to_component_id) &&
-    text(edge.from_component_id) !== text(edge.to_component_id)
-   ));
+   this.structuralEdges = mapStructuralEdges(this.data);
      this.flows = array(this.data.flows).filter((flow) => (
       !this.userMode || array(flow && flow.steps).length >= 2
      ));
@@ -5631,6 +5635,7 @@ function architecturePartialTruth(data) {
    architectureScenarioProductMessageID: architectureScenarioProductMessageID,
    architecturePresentationText: architecturePresentationText,
    architecturePartialTruth: architecturePartialTruth,
+   mapStructuralEdges: mapStructuralEdges,
    architectureStepComponentState: (step, componentIDs) => architectureStepComponentState(
     step,
     new Map(array(componentIDs).map((componentID) => [text(componentID), true]))

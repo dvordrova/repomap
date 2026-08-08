@@ -143,9 +143,9 @@ func TestD238SynthesisPromptPrioritizesPrimaryScopeAndKeepsMemberOnlyOutput(t *t
 		t.Fatal(err)
 	}
 	for _, required := range []string{
-		"Candidates marked primary_scope form the conceptual repository surface.",
-		"Cover defensible primary_scope across the supplied units before selecting supporting_evidence.",
-		"Supporting evidence and anchors may ground or distinguish responsibilities, but they do not substitute for primary-scope coverage.",
+		"Candidates marked primary_scope form the top-level production conceptual repository surface.",
+		"Cover defensible primary_scope across the supplied production units before selecting supporting_evidence.",
+		"coverage of them never compensates for uncovered production primary_scope.",
 		"a non-empty member_refs array",
 		"Candidate parent_ref, unit_ref, and coverage_role fields are read-only context and must never be returned.",
 	} {

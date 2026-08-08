@@ -10,6 +10,7 @@ import (
 	"github.com/dvordrova/repomap/internal/boundary"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/gofacts"
+	"github.com/dvordrova/repomap/internal/navigator"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
@@ -319,28 +320,162 @@ func TestProjectKeepsExactAppWhenPackageRowsWereExplicitlyCapped(t *testing.T) {
 	}
 }
 
-func TestProjectRejectsNonAvailableProcessEntries(t *testing.T) {
-	for _, availability := range []string{
-		"",
-		surfacediscovery.AvailabilityUnknown,
-		surfacediscovery.AvailabilityUnavailable,
-	} {
-		availability := availability
-		t.Run("availability="+availability, func(t *testing.T) {
+func TestProjectStartupEligibilityUsesClosedRoleAndAvailabilityContract(t *testing.T) {
+	markUnavailablePrimary := func(record *surfacediscovery.TriggerRecord) {
+		record.Availability = surfacediscovery.AvailabilityUnavailable
+		record.ApplicationClass = surfacediscovery.ApplicationSurface
+		record.SurfaceRole = surfacediscovery.SurfaceRoleEntrySurface
+		record.TraceReadiness = surfacediscovery.TraceReadinessPartial
+	}
+	tests := []struct {
+		name   string
+		mutate func(*surfacediscovery.TriggerRecord)
+		want   bool
+	}{
+		{name: "available primary application", want: true},
+		{name: "available secondary service", mutate: func(record *surfacediscovery.TriggerRecord) {
+			record.ExecutableRole = surfacediscovery.ExecutableRoleSecondaryService
+		}, want: true},
+		{name: "available tooling", mutate: func(record *surfacediscovery.TriggerRecord) {
+			record.ExecutableRole = surfacediscovery.ExecutableRoleTooling
+		}},
+		{name: "available test helper", mutate: func(record *surfacediscovery.TriggerRecord) {
+			record.ExecutableRole = surfacediscovery.ExecutableRoleTestOrHelper
+		}},
+		{name: "available unknown role", mutate: func(record *surfacediscovery.TriggerRecord) {
+			record.ExecutableRole = surfacediscovery.ExecutableRoleUnknown
+		}},
+		{name: "available missing role", mutate: func(record *surfacediscovery.TriggerRecord) {
+			record.ExecutableRole = ""
+		}},
+		{name: "unknown availability", mutate: func(record *surfacediscovery.TriggerRecord) {
+			record.Availability = surfacediscovery.AvailabilityUnknown
+		}},
+		{name: "unavailable exact primary partial entry", mutate: markUnavailablePrimary, want: true},
+		{name: "unavailable primary without application ownership", mutate: func(record *surfacediscovery.TriggerRecord) {
+			markUnavailablePrimary(record)
+			record.ApplicationClass = surfacediscovery.DependencyOnly
+		}},
+		{name: "unavailable primary without entry surface", mutate: func(record *surfacediscovery.TriggerRecord) {
+			markUnavailablePrimary(record)
+			record.SurfaceRole = surfacediscovery.SurfaceRoleRejected
+		}},
+		{name: "unavailable primary without partial readiness", mutate: func(record *surfacediscovery.TriggerRecord) {
+			markUnavailablePrimary(record)
+			record.TraceReadiness = surfacediscovery.TraceReadinessUnsupported
+		}},
+		{name: "unavailable secondary service", mutate: func(record *surfacediscovery.TriggerRecord) {
+			markUnavailablePrimary(record)
+			record.ExecutableRole = surfacediscovery.ExecutableRoleSecondaryService
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			input := singleAppInput(
 				"fixture", "module-fixture", "example.com/fixture", ".",
 				"example.com/fixture/cmd/app", "cmd/app", "cmd/app/main.go", 7, "trigger-app",
 			)
-			input.Catalog.Triggers[0].Availability = availability
+			if test.mutate != nil {
+				test.mutate(&input.Catalog.Triggers[0])
+			}
 			atlas, err := Project(input)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(atlas.Entities) != 0 || len(atlas.Evidence) != 0 ||
-				len(atlas.Observations) != 0 || len(atlas.Relations) != 0 {
-				t.Fatalf("non-available process entry became Atlas relation: %#v", atlas)
+			if got := len(atlas.Relations); got != boolCount(test.want) {
+				t.Fatalf("startup relations = %d, want eligible=%t; Atlas = %#v", got, test.want, atlas)
+			}
+			if test.want && (len(atlas.Entities) != 2 || len(atlas.Evidence) != 1 || len(atlas.Observations) != 2) {
+				t.Fatalf("eligible process entry Atlas vertical = %#v", atlas)
+			}
+			if !test.want && (len(atlas.Entities) != 0 || len(atlas.Evidence) != 0 || len(atlas.Observations) != 0) {
+				t.Fatalf("ineligible process entry became Atlas vertical: %#v", atlas)
 			}
 		})
+	}
+}
+
+func TestGotifyLikeUnavailablePrimaryIsOnlyNavigatorStartupAction(t *testing.T) {
+	root := singleAppInput(
+		"server", "module-server", "example.com/server", ".",
+		"example.com/server", ".", "app.go", 35, "trigger-root",
+	)
+	root.Catalog.Triggers[0].Availability = surfacediscovery.AvailabilityUnavailable
+	root.Catalog.Triggers[0].UnavailableReason = "package or dependency closure is ill-typed under the recorded build scenario"
+	root.Catalog.Triggers[0].ApplicationClass = surfacediscovery.ApplicationSurface
+	root.Catalog.Triggers[0].SurfaceRole = surfacediscovery.SurfaceRoleEntrySurface
+	root.Catalog.Triggers[0].TraceReadiness = surfacediscovery.TraceReadinessPartial
+
+	example := singleAppInput(
+		"server", "module-server", "example.com/server", ".",
+		"example.com/server/plugin/example/echo", "plugin/example/echo", "plugin/example/echo/main.go", 21, "trigger-example",
+	)
+	example.Catalog.Triggers[0].ExecutableRole = surfacediscovery.ExecutableRoleTooling
+	broken := singleAppInput(
+		"server", "module-server", "example.com/server", ".",
+		"example.com/server/plugin/testing/broken", "plugin/testing/broken", "plugin/testing/broken/main.go", 34, "trigger-broken",
+	)
+	broken.Catalog.Triggers[0].ExecutableRole = surfacediscovery.ExecutableRoleTestOrHelper
+
+	root.Facts.Packages = append(root.Facts.Packages, example.Facts.Packages[0], broken.Facts.Packages[0])
+	root.Facts.EntrypointPackages = append(
+		root.Facts.EntrypointPackages,
+		example.Facts.EntrypointPackages[0],
+		broken.Facts.EntrypointPackages[0],
+	)
+	root.Catalog.Triggers = append(root.Catalog.Triggers, example.Catalog.Triggers[0], broken.Catalog.Triggers[0])
+
+	atlas, err := Project(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(atlas.Relations) != 1 || len(atlas.Entities) != 2 || len(atlas.Evidence) != 1 ||
+		atlas.Evidence[0].Location.Path != "app.go" || atlas.Evidence[0].Location.Line != 35 {
+		t.Fatalf("Gotify-like startup Atlas = %#v", atlas)
+	}
+
+	product, err := navigator.CompileProduct(navigator.ProductInput{
+		Atlas: atlas,
+		Limits: navigator.Limits{
+			MaxWireBytes: 1 << 20, MaxResponseBytes: 64 << 10, MaxUnitLabelBytes: 512,
+			MaxSeeds: 16, MaxDirectTrails: 16, MaxIntersections: 16,
+			MaxEvidence: 32, MaxGaps: 0, MaxActions: 16,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := product.RequestRecord()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(request.Actions) != 1 || request.Actions[0].Surface.ID != "trigger-root" ||
+		len(request.Actions[0].EvidenceIDs) != 1 || request.Actions[0].EvidenceIDs[0] != atlas.Evidence[0].ID {
+		t.Fatalf("Navigator advertised actions = %#v", request.Actions)
+	}
+
+	var wire struct {
+		Actions []struct {
+			Ref string `json:"ref"`
+		} `json:"actions"`
+	}
+	if err := json.Unmarshal([]byte(request.WireJSON), &wire); err != nil {
+		t.Fatal(err)
+	}
+	if len(wire.Actions) != 1 || wire.Actions[0].Ref == "" {
+		t.Fatalf("Navigator wire actions = %#v", wire.Actions)
+	}
+	response, err := json.Marshal(map[string]any{"action_refs": []string{wire.Actions[0].Ref}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, err := product.ResolveRecommendation(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.Selected == nil || selected.Selected.Surface.ID != "trigger-root" ||
+		len(selected.Selected.EvidenceIDs) != 1 || selected.Selected.EvidenceIDs[0] != atlas.Evidence[0].ID {
+		t.Fatalf("Navigator selected recommendation = %#v", selected.Selected)
 	}
 }
 
@@ -371,7 +506,8 @@ func singleAppInput(
 		},
 		Catalog: surfacediscovery.TriggerCatalog{Triggers: []surfacediscovery.TriggerRecord{{
 			ID: triggerID, Kind: "process_entry", Identity: surfacediscovery.Identity{Name: "main"},
-			Availability: surfacediscovery.AvailabilityAvailable,
+			ExecutableRole: surfacediscovery.ExecutableRolePrimaryApplication,
+			Availability:   surfacediscovery.AvailabilityAvailable,
 			ProcessEntrypoint: surfacediscovery.Symbol{
 				ID: packagePath + ".main", Package: packagePath, Name: "main", Location: location,
 			},
@@ -384,6 +520,13 @@ func singleAppInput(
 			}},
 		}}},
 	}
+}
+
+func boolCount(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func unitOfKind(t *testing.T, atlas repositoryatlas.Atlas, kind repositoryatlas.UnitKind) repositoryatlas.Unit {

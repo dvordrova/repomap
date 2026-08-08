@@ -358,16 +358,17 @@ func deriveMissingCoreAreas(themes themestudy.StudyThemes, data *ReportData) (in
 		}
 		coveredPath := false
 		for _, member := range component.Members {
-			for _, fact := range member.Facts {
-				if fact.Kind == componentmap.FactRepositoryPath && fact.Location != nil && fact.Location.Path != "" {
-					if _, ok := covered[fact.Location.Path]; ok {
-						coveredPath = true
-						break
-					}
-				}
-			}
-			if coveredPath {
+			if architectureCandidateTouchesCoveredPath(member, covered) {
+				coveredPath = true
 				break
+			}
+		}
+		if !coveredPath {
+			for _, member := range component.SharedMembers {
+				if architectureCandidateTouchesCoveredPath(member, covered) {
+					coveredPath = true
+					break
+				}
 			}
 		}
 		if !coveredPath {
@@ -375,10 +376,31 @@ func deriveMissingCoreAreas(themes themestudy.StudyThemes, data *ReportData) (in
 		}
 	}
 	sort.Strings(missing)
+	count := len(missing)
 	if len(missing) > 12 {
 		missing = missing[:12]
 	}
-	return len(missing), missing
+	return count, missing
+}
+
+// architectureCandidateTouchesCoveredPath joins only backend-owned exact
+// evidence locations. A declaration fact is just as source-exact as a
+// repository_path fact when its Location is present; requiring the latter
+// kind made every symbol-backed component look uncovered even when Study
+// published a reading from the identical file.
+func architectureCandidateTouchesCoveredPath(
+	member componentmap.Candidate,
+	covered map[string]struct{},
+) bool {
+	for _, fact := range member.Facts {
+		if fact.Location == nil || fact.Location.Path == "" {
+			continue
+		}
+		if _, ok := covered[fact.Location.Path]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // themeStageCounts is the exact per-stage span tally of the re-based browse.

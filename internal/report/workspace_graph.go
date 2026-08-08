@@ -29,7 +29,7 @@ func IsExactWorkspaceGraphUnavailable(err error) bool {
 
 const (
 	maxReportGraphFactModules      = 600
-	maxReportGraphFactPackages     = 600
+	maxReportGraphFactPackages     = 4096
 	maxReportGraphFilesPerPackage  = 4096
 	maxReportGraphAggregateFiles   = 20_000
 	maxReportGraphFactEdges        = 1000

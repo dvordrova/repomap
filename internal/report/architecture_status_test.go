@@ -118,6 +118,19 @@ func TestArchitectureSynthesisUnavailableIsExplicitAndProviderFree(t *testing.T)
 	}
 }
 
+func TestArchitectureSynthesisV14IdentifiesProductionAwareCoverage(t *testing.T) {
+	t.Parallel()
+
+	if ArchitectureSynthesisStatusVersion != 14 {
+		t.Fatalf("production-aware Architecture status version = %d", ArchitectureSynthesisStatusVersion)
+	}
+	historical := architectureSynthesisV4AcceptedFixture()
+	historical.Version = 13
+	if err := historical.Validate(); err != nil {
+		t.Fatalf("historical v13 primary-scope status became unreadable: %v", err)
+	}
+}
+
 func TestArchitectureSynthesisV7SuccessRequiresExactConceptualCoverageAndTruthfulLocalRoles(t *testing.T) {
 	t.Parallel()
 	base := architectureSynthesisV4AcceptedFixture()

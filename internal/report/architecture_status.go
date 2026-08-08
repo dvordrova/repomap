@@ -20,7 +20,9 @@ const (
 	// response-shape evidence (status 12).
 	// Decision 238: backend-owned primary/supporting coverage evidence
 	// (status 13).
-	ArchitectureSynthesisStatusVersion = 13
+	// Decision 239: primary/supporting counters become production-aware
+	// (status 14).
+	ArchitectureSynthesisStatusVersion = 14
 
 	ArchitectureSynthesisSucceeded   = "succeeded"
 	ArchitectureSynthesisCached      = "cached"

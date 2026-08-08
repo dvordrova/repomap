@@ -11,7 +11,7 @@ import (
 
 const (
 	// MaxRows bounds the ordered candidate and selected package collections.
-	MaxRows = 600
+	MaxRows = 4096
 	// MaxScalarBytes bounds every consumed exact package identity scalar.
 	MaxScalarBytes = 4096
 	// MaxAggregateScalarBytes bounds all consumed identity scalars.

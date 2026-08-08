@@ -52,6 +52,11 @@ const landscape = api.mapLensEmphasisProjection({ lens: "landscape", ...input })
 const entrypoints = api.mapLensEmphasisProjection({ lens: "entrypoints", ...input });
 const integrations = api.mapLensEmphasisProjection({ lens: "integrations", ...input });
 const mechanisms = api.mapLensEmphasisProjection({ lens: "mechanisms", ...input });
+const structuralEdges = api.mapStructuralEdges({ structural_edges: [
+  { id: "import-pair", from_component_id: "c1", to_component_id: "c2", witness_count: 2 },
+  { id: "intra", from_component_id: "c1", to_component_id: "c1", witness_count: 1 },
+  { id: "unmapped", from_component_ids: ["c1"], to_component_ids: ["c3"], witness_count: 1 },
+] });
 const full = api.projectArchitectureLens({
   architecture_canvas: {
     components: input.components,
@@ -67,7 +72,7 @@ const full = api.projectArchitectureLens({
     ],
   },
 }, "integrations");
-process.stdout.write(JSON.stringify({ landscape, entrypoints, integrations, mechanisms, full }));
+process.stdout.write(JSON.stringify({ landscape, entrypoints, integrations, mechanisms, structuralEdges, full }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "map-lens-projection-test.js")
 	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
@@ -78,11 +83,15 @@ process.stdout.write(JSON.stringify({ landscape, entrypoints, integrations, mech
 		t.Fatalf("run lens pure projection: %v\n%s", err, output)
 	}
 	var got struct {
-		Landscape    lensResult `json:"landscape"`
-		Entrypoints  lensResult `json:"entrypoints"`
-		Integrations lensResult `json:"integrations"`
-		Mechanisms   lensResult `json:"mechanisms"`
-		Full         fullLens   `json:"full"`
+		Landscape       lensResult `json:"landscape"`
+		Entrypoints     lensResult `json:"entrypoints"`
+		Integrations    lensResult `json:"integrations"`
+		Mechanisms      lensResult `json:"mechanisms"`
+		StructuralEdges []struct {
+			ID           string `json:"id"`
+			WitnessCount int    `json:"witness_count"`
+		} `json:"structuralEdges"`
+		Full fullLens `json:"full"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode lens projection result: %v\n%s", err, output)
@@ -109,6 +118,9 @@ process.stdout.write(JSON.stringify({ landscape, entrypoints, integrations, mech
 	}
 	if len(got.Mechanisms.Objects.Mechanisms) != 1 {
 		t.Fatalf("mechanisms flow objects = %#v, want 1 connected flow", got.Mechanisms.Objects.Mechanisms)
+	}
+	if len(got.StructuralEdges) != 1 || got.StructuralEdges[0].ID != "import-pair" || got.StructuralEdges[0].WitnessCount != 2 {
+		t.Fatalf("Map structural edges = %#v, want the singular cross-component aggregate", got.StructuralEdges)
 	}
 	// projectArchitectureLens(reportData, lens): the DOM-free entry point —
 	// normalizes the nested association view-model and returns counts.

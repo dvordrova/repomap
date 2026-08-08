@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"path/filepath"
@@ -84,7 +85,9 @@ func TestThemeAdjudicationFailurePreservesKnownTelemetry(t *testing.T) {
 	expansion.Requested = themestudy.RefsForExpansion(candidates)
 
 	// Adjudication client that FAILS after reporting measured metrics.
-	failingClient := &failingThemeAdjClient{err: errors.New("transport timeout")}
+	failingClient := &failingThemeAdjClient{
+		err: errors.New("transport timeout"), content: []byte(`{"partial":true}`), responseBytes: 321,
+	}
 	clients := func(requireCredentials bool) (themeStudyClient, error) { return failingClient, nil }
 
 	stage := runThemeAdjudicationStage(
@@ -116,13 +119,61 @@ func TestThemeAdjudicationFailurePreservesKnownTelemetry(t *testing.T) {
 	if o.InputTokens != 111 || o.OutputTokens != 22 {
 		t.Errorf("expected measured tokens preserved on failure, got in=%d out=%d", o.InputTokens, o.OutputTokens)
 	}
-	if o.ResponseBytes <= 0 {
+	if o.ResponseBytes != 321 {
 		t.Errorf("expected measured response bytes preserved on failure, got %d", o.ResponseBytes)
+	}
+	if o.SemanticCalls != 1 || o.RequestBytes != len(`{"ok":true}`) {
+		t.Errorf("expected one exact live request, got calls=%d bytes=%d", o.SemanticCalls, o.RequestBytes)
+	}
+	entries := readSemanticJournalEntries(t, runDir)
+	partial := []byte(`{"partial":true}`)
+	if len(entries) != 1 ||
+		entries[0].record.State != debugdump.SemanticStateProviderFailed ||
+		entries[0].record.SemanticCalls != 1 ||
+		entries[0].record.TransportAttempts != 2 ||
+		entries[0].record.Response.Storage != "raw_content" ||
+		entries[0].record.Response.OriginalBytes != len(partial) ||
+		!bytes.Equal(entries[0].response, partial) {
+		t.Fatalf("adjudication failure exchange = %#v", entries)
+	}
+
+	// When the provider exposes only the response byte count, the unavailable
+	// marker carries that count — never the unrelated transport-attempt count.
+	emptyRunDir := t.TempDir()
+	emptyWriter, err := debugdump.OpenWriter(emptyRunDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer emptyWriter.Close()
+	emptyClient := &failingThemeAdjClient{
+		err: errors.New("transport timeout"), responseBytes: 321,
+	}
+	emptyStage := runThemeAdjudicationStage(
+		ctx, emptyRunDir, filepath.Join(emptyRunDir, "runs"), repository, policy, true,
+		scoutRequest, scoutResult, expansion,
+		map[string]themestudy.AnchorInfo{
+			"a1": {Path: "a.go", Symbol: "A", Line: 1},
+			"a2": {Path: "b.go", Symbol: "B", Line: 1},
+		},
+		themestudy.LanguageEnglish, emptyWriter, output,
+		func(bool) (themeStudyClient, error) { return emptyClient, nil },
+	)
+	if emptyStage.err != nil || emptyStage.outcome.ResponseBytes != 321 {
+		t.Fatalf("empty provider failure = %#v, err = %v", emptyStage.outcome, emptyStage.err)
+	}
+	emptyEntries := readSemanticJournalEntries(t, emptyRunDir)
+	if len(emptyEntries) != 1 ||
+		emptyEntries[0].record.Response.Storage != "raw_unavailable" ||
+		emptyEntries[0].record.Response.UnavailableCode != debugdump.SemanticUnavailableNoContent ||
+		emptyEntries[0].record.Response.OriginalBytes != 321 {
+		t.Fatalf("empty adjudication failure exchange = %#v", emptyEntries)
 	}
 }
 
 type failingThemeAdjClient struct {
-	err error
+	err           error
+	content       []byte
+	responseBytes int
 }
 
 func (c *failingThemeAdjClient) ThemeScoutPromptJSON(themestudy.ScoutPrompt, int) ([]byte, error) {
@@ -136,7 +187,7 @@ func (c *failingThemeAdjClient) ThemeAdjudicationPromptJSON(themestudy.Adjudicat
 }
 func (c *failingThemeAdjClient) ThemeAdjudicationMeasured(context.Context, themestudy.AdjudicationPrompt, int) (modelresearch.ProviderResult, error) {
 	return modelresearch.ProviderResult{
-		Content: []byte(`{"partial":true}`), Attempts: 2,
+		Content: c.content, Attempts: 2, ResponseBytes: c.responseBytes,
 		InputTokens: 111, OutputTokens: 22,
 	}, c.err
 }

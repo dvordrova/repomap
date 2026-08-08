@@ -13,7 +13,9 @@ import (
 
 // ArchitectureAssociationVersion changes when the persisted association
 // projection shape or its exact derivation rules change.
-const ArchitectureAssociationVersion = 1
+// Decision 239 (v2) retains structural-only component rows and exact relation
+// counts for aggregated one-hop neighbors.
+const ArchitectureAssociationVersion = 2
 
 // ArchitectureAssociationProjection is the provider-free join of Atlas
 // boundary/resource observations onto accepted component member scopes
@@ -44,9 +46,10 @@ type ArchitectureComponentAssociations struct {
 // ArchitectureStructuralNeighbor is one supported one-hop structural
 // neighbor (incoming = depends-on-this, outgoing = this-depends-on).
 type ArchitectureStructuralNeighbor struct {
-	ComponentID componentmap.ComponentID `json:"component_id"`
-	Name        string                   `json:"name"`
-	Kind        string                   `json:"kind"` // incoming | outgoing
+	ComponentID   componentmap.ComponentID `json:"component_id"`
+	Name          string                   `json:"name"`
+	Kind          string                   `json:"kind"` // incoming | outgoing
+	RelationCount int                      `json:"relation_count"`
 }
 
 // ArchitectureBoundaryResourceRow is one association row: a boundary or
@@ -242,9 +245,6 @@ func ProjectArchitectureAssociations(
 
 	for _, scope := range scopes {
 		rows := byComponent[scope.id]
-		if len(rows) == 0 {
-			continue
-		}
 		associations := aggregateAssociationRows(rows)
 		entry := ArchitectureComponentAssociations{
 			ComponentID:  scope.id,
@@ -256,17 +256,18 @@ func ProjectArchitectureAssociations(
 		// canvas edges — incoming (this component is the target) and
 		// outgoing (this component is the source) remain distinguishable.
 		for _, edge := range canvas.StructuralEdges {
-			if edge.ToComponentID == scope.id && edge.FromComponentID != "" {
-				entry.Incoming = append(entry.Incoming, ArchitectureStructuralNeighbor{
-					ComponentID: edge.FromComponentID,
-					Kind:        "incoming",
-				})
+			count := edge.WitnessCount
+			if count <= 0 {
+				count = len(edge.WitnessIDs)
 			}
-			if edge.FromComponentID == scope.id && edge.ToComponentID != "" {
-				entry.Outgoing = append(entry.Outgoing, ArchitectureStructuralNeighbor{
-					ComponentID: edge.ToComponentID,
-					Kind:        "outgoing",
-				})
+			if count <= 0 {
+				count = 1
+			}
+			if edge.ToComponentID == scope.id && edge.FromComponentID != "" && edge.FromComponentID != scope.id {
+				entry.Incoming = addArchitectureStructuralNeighbor(entry.Incoming, edge.FromComponentID, "incoming", count)
+			}
+			if edge.FromComponentID == scope.id && edge.ToComponentID != "" && edge.ToComponentID != scope.id {
+				entry.Outgoing = addArchitectureStructuralNeighbor(entry.Outgoing, edge.ToComponentID, "outgoing", count)
 			}
 		}
 		sort.Slice(entry.Incoming, func(i, j int) bool {
@@ -275,6 +276,9 @@ func ProjectArchitectureAssociations(
 		sort.Slice(entry.Outgoing, func(i, j int) bool {
 			return string(entry.Outgoing[i].ComponentID) < string(entry.Outgoing[j].ComponentID)
 		})
+		if len(entry.Associations) == 0 && len(entry.Incoming) == 0 && len(entry.Outgoing) == 0 {
+			continue
+		}
 		projection.Components = append(projection.Components, entry)
 	}
 	sort.Slice(projection.Components, func(i, j int) bool {
@@ -294,6 +298,25 @@ func ProjectArchitectureAssociations(
 		}
 	}
 	return projection, nil
+}
+
+func addArchitectureStructuralNeighbor(
+	neighbors []ArchitectureStructuralNeighbor,
+	componentID componentmap.ComponentID,
+	kind string,
+	count int,
+) []ArchitectureStructuralNeighbor {
+	for index := range neighbors {
+		if neighbors[index].ComponentID == componentID && neighbors[index].Kind == kind {
+			neighbors[index].RelationCount += count
+			return neighbors
+		}
+	}
+	return append(neighbors, ArchitectureStructuralNeighbor{
+		ComponentID:   componentID,
+		Kind:          kind,
+		RelationCount: count,
+	})
 }
 
 // scopeContains reports whether unitPath equals a scope path exactly.
@@ -434,17 +457,21 @@ func ensureMechanismFragment(data *ReportData) error {
 		return nil
 	}
 	if data.MechanismFragment != nil {
-		return ValidateMechanismFragment(
+		return validateMechanismFragmentForProduct(
 			data.ArchitectureCanvas,
 			data.ArchitectureAssociations,
 			data.RepositoryAtlas,
 			data.MechanismFragment,
+			data.ArchitectureGrounding,
+			data.Navigator,
 		)
 	}
-	fragment, err := ProjectMechanismFragment(
+	fragment, err := projectMechanismFragmentForProduct(
 		data.ArchitectureCanvas,
 		data.ArchitectureAssociations,
 		data.RepositoryAtlas,
+		data.ArchitectureGrounding,
+		data.Navigator,
 	)
 	if err != nil {
 		return err
@@ -460,7 +487,28 @@ func ValidateMechanismFragment(
 	atlas *repositoryatlas.Atlas,
 	fragment *MechanismFragmentProjection,
 ) error {
-	expected, err := ProjectMechanismFragment(canvas, associations, atlas)
+	return validateMechanismFragment(canvas, associations, atlas, fragment, nil)
+}
+
+func validateMechanismFragment(
+	canvas *ArchitectureCanvas,
+	associations *ArchitectureAssociationProjection,
+	atlas *repositoryatlas.Atlas,
+	fragment *MechanismFragmentProjection,
+	grounding *ArchitectureGrounding,
+) error {
+	return validateMechanismFragmentForProduct(canvas, associations, atlas, fragment, grounding, nil)
+}
+
+func validateMechanismFragmentForProduct(
+	canvas *ArchitectureCanvas,
+	associations *ArchitectureAssociationProjection,
+	atlas *repositoryatlas.Atlas,
+	fragment *MechanismFragmentProjection,
+	grounding *ArchitectureGrounding,
+	navigatorProduct *NavigatorReportProduct,
+) error {
+	expected, err := projectMechanismFragmentForProduct(canvas, associations, atlas, grounding, navigatorProduct)
 	if err != nil {
 		return err
 	}
