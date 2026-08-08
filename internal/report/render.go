@@ -70,7 +70,7 @@ func writeReportJSON(data *ReportData, path string, maxBytes int) error {
 	if err := ensureArchitectureAssociations(data); err != nil {
 		return err
 	}
-	if err := ensureMechanismFragment(data); err != nil {
+	if err := ensureMechanismFragments(data); err != nil {
 		return err
 	}
 	persisted := reportDataForPersistence(data)
@@ -127,7 +127,7 @@ func RenderHTML(data *ReportData) ([]byte, error) {
 	if err := ensureArchitectureAssociations(data); err != nil {
 		return nil, err
 	}
-	if err := ensureMechanismFragment(data); err != nil {
+	if err := ensureMechanismFragments(data); err != nil {
 		return nil, err
 	}
 	return buildHTML(data)
@@ -146,7 +146,7 @@ func RenderHTMLWithSourceEpisode(data *ReportData, episodeJSON []byte) ([]byte, 
 	if err := ensureArchitectureAssociations(data); err != nil {
 		return nil, err
 	}
-	if err := ensureMechanismFragment(data); err != nil {
+	if err := ensureMechanismFragments(data); err != nil {
 		return nil, err
 	}
 	canonicalEpisode, err := projectApprovedSourceEpisode(data, episodeJSON)

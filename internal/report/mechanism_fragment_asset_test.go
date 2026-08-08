@@ -1,9 +1,9 @@
 package report
 
-// Decision 226 DOM acceptance: the mechanism fragment renders as a compact
-// DFD-like list with every transition carrying claim_kind/support_mode/
-// ordering, the entry first, and the unresolved frontier always visible —
-// no BPMN/SIPOC/swimlane/FFBD claims, no hover-only limitations.
+// Decision 242 DOM acceptance: the real pure Canvas projection and workspace
+// renderer consume plural MechanismFragment v3 objects from the Canvas. Each
+// fragment is a compact first-hop fan-out, never a fabricated path; exact
+// component participation drives emphasis and the frontier stays explicit.
 import (
 	"encoding/json"
 	"os"
@@ -13,9 +13,9 @@ import (
 	"testing"
 )
 
-func TestMechanismFragmentAssetRendersContractFieldsAndFrontier(t *testing.T) {
-	if MechanismFragmentVersion != 2 {
-		t.Fatalf("MechanismFragmentVersion = %d, fixture requires current v2", MechanismFragmentVersion)
+func TestMechanismFragmentAssetRendersPluralFirstHopFanout(t *testing.T) {
+	if MechanismFragmentVersion != 3 {
+		t.Fatalf("MechanismFragmentVersion = %d, fixture requires current v3", MechanismFragmentVersion)
 	}
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -26,285 +26,230 @@ func TestMechanismFragmentAssetRendersContractFieldsAndFrontier(t *testing.T) {
 const fs = require("fs");
 const vm = require("vm");
 function Element(tag) {
-  this.tagName = String(tag).toUpperCase();
-  this._text = "";
-  this.children = [];
-  this.attributes = {};
-  this.hidden = false;
-  this.classList = { add() {}, remove() {}, toggle() {} };
+  this.tagName = String(tag).toUpperCase(); this._text = ""; this.children = [];
+  this.attributes = {}; this.hidden = false; this.className = "";
+  const self = this;
+  this.classList = {
+    add(value) { const parts = String(self.className || "").split(/\s+/).filter(Boolean); if (!parts.includes(value)) parts.push(value); self.className = parts.join(" "); },
+    remove(value) { self.className = String(self.className || "").split(/\s+/).filter((part) => part && part !== value).join(" "); },
+    toggle(value, active) { if (active) this.add(value); else this.remove(value); },
+  };
 }
 Object.defineProperty(Element.prototype, "childNodes", { get() { return this.children; } });
 Object.defineProperty(Element.prototype, "textContent", {
-  get() { return this._text + this.children.map((c) => c.textContent).join(""); },
+  get() { return this._text + this.children.map((child) => child.textContent).join(""); },
   set(value) { this._text = value == null ? "" : String(value); },
 });
-Element.prototype.setAttribute = function (name, value) { this.attributes[name] = String(value); };
-Element.prototype.appendChild = function (child) { this.children.push(child); return child; };
-Element.prototype.append = function (...children) { this.children.push(...children); };
-Element.prototype.replaceChildren = function (...children) { this.children = children; };
-Element.prototype.remove = function () { if (this.parentNode) { const i = this.parentNode.children.indexOf(this); if (i >= 0) this.parentNode.children.splice(i, 1); } };
-Element.prototype.prepend = function (...children) { this.children.unshift(...children); };
-function walk(node, out) {
-  out = out || [];
-  (node.children || []).forEach((child) => { out.push(child); walk(child, out); });
-  return out;
+Element.prototype.setAttribute = function (name, value) { this.attributes[name] = String(value); if (name === "id") this.id = String(value); };
+Element.prototype.getAttribute = function (name) { return Object.prototype.hasOwnProperty.call(this.attributes, name) ? this.attributes[name] : null; };
+Element.prototype.removeAttribute = function (name) { delete this.attributes[name]; };
+Element.prototype.appendChild = function (child) { child.parentNode = this; this.children.push(child); return child; };
+Element.prototype.append = function (...children) { children.forEach((child) => this.appendChild(child)); };
+Element.prototype.replaceChildren = function (...children) { this.children = []; children.forEach((child) => this.appendChild(child)); };
+Element.prototype.remove = function () { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter((child) => child !== this); };
+Element.prototype.prepend = function (...children) { children.reverse().forEach((child) => { child.parentNode = this; this.children.unshift(child); }); };
+function walk(node, out) { out = out || []; (node.children || []).forEach((child) => { out.push(child); walk(child, out); }); return out; }
+function matches(node, selector) {
+  if (selector[0] === ".") return String(node.className || "").split(/\s+/).includes(selector.slice(1));
+  const attr = selector.match(/^\[([^=\]]+)(?:=["']?([^"'\]]+)["']?)?\]$/);
+  if (attr) return Object.prototype.hasOwnProperty.call(node.attributes || {}, attr[1]) && (attr[2] == null || node.attributes[attr[1]] === attr[2]);
+  return false;
 }
-Element.prototype.querySelector = function (selector) {
-  const cls = selector.replace(".", "");
-  return walk(this).find((node) => String(node.className || "").split(/\s+/).includes(cls)) || null;
-};
-Element.prototype.querySelectorAll = function (selector) {
-  const cls = selector.replace(".", "");
-  return walk(this).filter((node) => String(node.className || "").split(/\s+/).includes(cls));
-};
+Element.prototype.querySelector = function (selector) { return walk(this).find((node) => matches(node, selector)) || null; };
+Element.prototype.querySelectorAll = function (selector) { return walk(this).filter((node) => matches(node, selector)); };
 const roots = {
-  "rm-overview": new Element("div"),
-  "rm-architecture": new Element("section"),
-  "rm-study-overview": new Element("div"),
-  "rm-study-detail": new Element("div"),
+  "rm-overview": new Element("div"), "rm-architecture": new Element("section"),
+  "rm-study-overview": new Element("div"), "rm-study-detail": new Element("div"),
   "rm-tabs": new Element("div"),
 };
 const workspace = new Element("div");
+const limitation = "Exact repository-local direct static call from a build-selected production process entry; runtime order, successful execution, ownership, and transitive reachability are not observed.";
+function transition(label, path, line, target) {
+  return {
+    claim_kind: "direct_static_call", support_mode: "resolved_static", label,
+    path, line, symbol: target && target.label || "", evidence: "go_ssa surface-ssa-v12 connect_architecture_anchors",
+    scenario: "go:linux", limitation, ordering: "resolved_path_order", target,
+  };
+}
+function fragment(id, entrySymbol, entryPath, componentIDs, handoff) {
+  return {
+    version: 3, id, component_ids: componentIDs,
+    entry: {
+      claim_kind: "process_entry", support_mode: "resolved_static",
+      label: entrySymbol ? "process entry " + entrySymbol : "process entry", symbol: entrySymbol, path: entryPath, line: 10,
+      evidence: "behavior anchor proof_mode process_entry", scenario: "go:linux",
+      limitation: "process entry identity only; runtime reachability not proven", ordering: "exact_local_order",
+    },
+    handoffs: [handoff],
+    frontier: {
+      ordering: "not_established", unresolved: ["continuation beyond the first-hop handoffs"],
+      limitation: "No further transition is locally proven to continue from these first-hop handoffs; execution order beyond them is not established.",
+    },
+  };
+}
 const report = {
   repo_name: "fixture", report_language: process.argv[3] || "en",
-  user_mechanisms: [], user_sources: [], user_topics: [],
-  openable_paths: [], source_ids: {},
-  architecture_canvas: { version: 1, local_remainder_component_id: "component-r", components: [], behavior_anchors: [], surfaces: [], flows: [], structural_edges: [] },
-  architecture_grounding: {
-    behavior_anchors: [
-      { id: "anchor-lifecycle", kind: "lifecycle_start", label: "lifecycle start service.Start", location: { path: "service.go", line: 20, column: 6 } },
-      { id: "anchor-boundary", kind: "tls_or_security_boundary", label: "security boundary client.Send", location: { path: "client.go", line: 30, column: 6 } },
+  github_source_links: { repository_url: "https://github.com/acme/fixture", revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+  user_mechanisms: [],
+  // A different embedded source makes this a mixed-snippet report. Exact
+  // mechanism locations must still fall back to pinned host actions.
+  user_sources: [{ path: "other.go", start_line: 1, end_line: 1, lines: ["package fixture"] }],
+  user_topics: [],
+  openable_paths: ["client.go", "main.go", "other.go", "service.go", "worker.go"], source_ids: {},
+  architecture_canvas: {
+    version: 13, local_remainder_component_id: "component-r",
+    components: [{ id: "c1", name: "Entry" }, { id: "c2", name: "Service" }, { id: "c3", name: "Client" }],
+    subsystems: [], behavior_anchors: [], surfaces: [], flows: [],
+    // Adversarial flow data cannot become Mechanisms authority.
+    flow_edges: [{ flow_id: "legacy-flow", from_component_id: "c2", to_component_id: "c3" }],
+    structural_edges: [],
+    mechanism_fragments: [
+      fragment("fragment-a", "fixture.main", "main.go", ["c1", "c2"],
+        transition("handoff to service.Start", "main.go", 15, { label: "service.Start", path: "service.go", line: 20 })),
+      fragment("fragment-b", "", "worker.go", ["c3"],
+        transition("handoff to client.Send", "worker.go", 25, { label: "client.Send", path: "client.go", line: 30 })),
     ],
-    relationships: [
-      { from_anchor_id: "anchor-entry", to_anchor_id: "anchor-lifecycle", location: { path: "main.go", line: 150, column: 16 } },
-      { from_anchor_id: "anchor-entry", to_anchor_id: "anchor-boundary", location: { path: "main.go", line: 150, column: 17 } },
-    ],
-  },
-  mechanism_fragment: {
-    version: 2,
-    entry: {
-      ordinal: 0, claim_kind: "process_entry", support_mode: "resolved_static",
-      label: "process entry fixture.main", path: "main.go", line: 36,
-      evidence: "behavior anchor proof_mode process_entry", scenario: "go:linux",
-      limitation: "process entry identity only; runtime reachability not proven",
-      ordering: "exact_local_order",
-    },
-    transitions: [
-      {
-        ordinal: 1, claim_kind: "direct_static_call", support_mode: "resolved_static",
-        label: "handoff", path: "main.go", line: 150, column: 16, symbol: "service.Start",
-        evidence: "go_ssa surface-ssa-v12 connect_architecture_anchors",
-        scenario: "Recorded Go build scenario",
-        limitation: "runtime dispatch beyond the recorded build scenario not proven",
-        ordering: "resolved_path_order",
-      },
-      {
-        ordinal: 2, claim_kind: "direct_static_call", support_mode: "resolved_static",
-        label: "handoff", path: "main.go", line: 150, column: 17, symbol: "client.Send",
-        evidence: "go_ssa surface-ssa-v12 connect_architecture_anchors",
-        scenario: "Recorded Go build scenario",
-        limitation: "runtime dispatch beyond the recorded build scenario not proven",
-        ordering: "resolved_path_order",
-      },
-      {
-        ordinal: 3, claim_kind: "unresolved_continuation", support_mode: "unknown",
-        label: "beyond the observed handoffs", path: "", line: 0,
-        evidence: "no locally saved transition", scenario: "",
-        limitation: "execution order and further transitions not established",
-        ordering: "not_established",
-      },
-      {
-        ordinal: 4, claim_kind: "storage_boundary_callsite", support_mode: "observed_local",
-        label: "boundary net", path: "github.com/example/repo/controllers", line: 0,
-        evidence: "atlas boundary/resource observation", scenario: "Recorded build scenario",
-        limitation: "physical target unknown; runtime reachability not proven",
-        ordering: "not_established",
-      },
-      {
-        ordinal: 5, claim_kind: "outbound_client_callsite", support_mode: "observed_local",
-        label: "resource database", path: "github.com/example/repo/service", line: 0,
-        evidence: "atlas boundary/resource observation", scenario: "Recorded build scenario",
-        limitation: "physical target unknown; runtime reachability not proven",
-        ordering: "not_established",
-      },
-    ],
-    frontier: {
-      ordering: "not_established",
-      unresolved: ["further locally saved transitions beyond the observed handoffs"],
-      limitation: "No locally saved transitions beyond the observed handoffs; execution order beyond them is not established.",
-    },
   },
   repository_atlas: { version: 1, units: [], entities: [], observations: [], evidence: [], relations: [] },
 };
 const window = {
   location: { hash: "#/architecture", host: "fixture.test", pathname: "/index.html", search: "" },
-  history: {
-    state: null,
-    pushState(state, _, hash) { this.state = state; window.location.hash = hash; },
-    replaceState(state, _, hash) { this.state = state; window.location.hash = hash; },
-    back() {},
-  },
-  __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {}, open() {}, scrollTo() {},
-};
-window.RepomapArchitectureCanvas = {
-  mount(host, data) { return { ready: Promise.resolve(), destroy() {}, openComponent() {} }; },
+  history: { state: null, pushState(state, _, hash) { this.state = state; window.location.hash = hash; }, replaceState(state, _, hash) { this.state = state; window.location.hash = hash; }, back() {} },
+  __REPOMAP_WORKSPACE_TEST__: {}, __REPOMAP_LAYOUT_TEST__: {}, addEventListener() {}, open() {}, scrollTo() {},
 };
 const document = {
   createElement(tag) { return new Element(tag); },
   createTextNode(value) { const node = new Element("#text"); node.textContent = String(value); return node; },
   getElementById(id) {
     if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
-    return roots[id] || null;
+    if (roots[id]) return roots[id];
+    return Object.values(roots).flatMap((root) => [root].concat(walk(root))).find((node) => node.id === id) || null;
   },
   querySelector(selector) { return selector === ".rm-workspace" ? workspace : null; },
-  querySelectorAll(selector) { return []; },
+  querySelectorAll() { return []; },
 };
-document.documentElement = { lang: "en" };
+document.documentElement = { lang: report.report_language };
 window.document = document;
-vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window });
-vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), { window, document, URLSearchParams, Set, Map, AbortController, Promise });
+const context = { window, document, Element, URLSearchParams, Set, Map, AbortController, Promise };
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), context);
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "architecture_canvas.js"), "utf8"), context);
+const realCanvas = window.RepomapArchitectureCanvas;
+window.RepomapArchitectureCanvas = {
+  projectArchitectureLens: realCanvas.projectArchitectureLens,
+  mount() { return { ready: Promise.resolve(), destroy() {}, openComponent() {}, setLens() {} }; },
+};
+vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), context);
 const api = window.__REPOMAP_WORKSPACE_TEST__;
-if (!api || typeof api.renderWorkspaceTabs !== "function") {
-  process.stderr.write("workspace test API missing\n");
-  process.exit(2);
-}
 api.renderWorkspaceTabs();
 const nav = roots["rm-tabs"].children.slice();
-// Decision 236 (v11): the map tab replaces the architecture tab.
-const architectureTab = nav.find((node) => node.attributes && node.attributes["data-workspace-view"] === "map");
-if (!architectureTab) {
-  process.stderr.write("architecture tab missing: " + JSON.stringify(nav.map((n) => n.attributes["data-workspace-view"])) + "\n");
-  process.exit(2);
-}
-architectureTab.onclick();
+const mapTab = nav.find((node) => node.attributes["data-workspace-view"] === "map");
+if (!mapTab) throw new Error("map tab missing");
+mapTab.onclick();
 const root = roots["rm-architecture"];
-// Decision 230 D8: connected fragments — the entry chain renders as a
-// graph (entry → lifecycle continuation → frontier) plus independent
-// fragments and side touchpoint groups; array order is never path order.
+const mechanismLens = walk(root).find((node) => node.attributes["data-map-lens"] === "mechanisms");
+if (!mechanismLens) throw new Error("mechanisms lens missing");
+mechanismLens.onclick();
+const projection = realCanvas.projectArchitectureLens(report, "mechanisms");
 const items = root.querySelectorAll(".rm-mechanism-fragment__lane");
-const frontier = root.querySelector(".rm-mechanism-fragment__frontier");
-const graphs = root.querySelectorAll(".rm-mechanism-fragment__graph");
-const entryGraph = root.querySelector(".rm-mechanism-fragment__graph--entry");
-const independentGraphs = root.querySelectorAll(".rm-mechanism-fragment__graph--independent");
-const touchpointGroups = root.querySelectorAll(".rm-mechanism-fragment__touchpoint-group");
-const kinds = items.map((item) => {
-  const strong = item.querySelector(".rm-mechanism-fragment__kind");
-  return strong ? strong.textContent : "";
-});
-const orderings = items.map((item) => {
-  const el = item.querySelector(".rm-mechanism-fragment__ordering");
-  return el ? el.textContent : "";
-});
-// Decision 226/229: evidence and limitation are visible per transition —
-// evidence (including raw enums) under a secondary disclosure, limitation
-// as primary copy.
-const evidenceSpans = items.map((item) => {
-  const details = item.querySelector(".rm-mechanism-fragment__evidence-details");
-  return details ? details.textContent.replace(/\s+/g, " ").trim() : "";
-});
-const limitationSpans = items.map((item) => {
-  const el = item.querySelector(".rm-mechanism-fragment__limitation");
-  return el ? el.textContent : "";
-});
-const labels = items.map((item) => {
-  const el = item.querySelector(".rm-mechanism-fragment__label");
-  return el ? el.textContent : "";
-});
+const details = root.querySelectorAll(".rm-map-lens-object--mechanism-fragment");
+const fanouts = root.querySelectorAll(".rm-mechanism-fragment__fanout");
+const targets = root.querySelectorAll(".rm-mechanism-fragment__target");
+const frontiers = root.querySelectorAll(".rm-mechanism-fragment__frontier");
+const empty = root.querySelectorAll(".rm-map-lens-object--empty");
+const legacy = root.querySelectorAll(".rm-architecture-mechanism-disclosure");
+const sourceActions = root.querySelectorAll(".rm-source-action-link");
+const labels = items.map((item) => { const node = item.querySelector(".rm-mechanism-fragment__label"); return node ? node.textContent : ""; });
+const orderings = items.map((item) => { const node = item.querySelector(".rm-mechanism-fragment__ordering"); return node ? node.textContent : ""; });
+const limitations = items.map((item) => { const node = item.querySelector(".rm-mechanism-fragment__limitation"); return node ? node.textContent : ""; });
 process.stdout.write(JSON.stringify({
-  itemCount: items.length,
-  kinds,
-  orderings,
-  evidenceSpans,
-  limitationSpans,
-  labels,
-  graphCount: graphs.length,
-  entryLaneCount: entryGraph ? entryGraph.querySelectorAll(".rm-mechanism-fragment__lane").length : 0,
-  independentGraphCount: independentGraphs.length,
-  touchpointGroupCount: touchpointGroups.length,
-  frontierPresent: !!frontier,
-  frontierText: frontier ? frontier.textContent.replace(/\s+/g, " ").trim() : "",
-  architectureText: root.textContent.slice(0, 400),
+  projectionCount: projection.mechanisms.length, emphasized: projection.emphasized,
+  detailCount: details.length, detailsOpen: details.map((item) => item.open === true),
+  itemCount: items.length, fanoutCount: fanouts.length, targetCount: targets.length,
+  frontierCount: frontiers.length, emptyCount: empty.length, legacyCount: legacy.length,
+  sourceActionCount: sourceActions.length,
+  sourceHrefs: sourceActions.map((item) => item.getAttribute("href") || ""),
+  labels, orderings, limitations, text: root.textContent.replace(/\s+/g, " ").trim(),
 }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "mechanism-fragment-test.js")
 	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	output, err := exec.Command(node, runnerPath, asset, "en").CombinedOutput()
-	if err != nil {
-		t.Fatalf("run mechanism fragment workspace: %v\n%s", err, output)
+
+	run := func(language string) mechanismAssetResult {
+		t.Helper()
+		output, err := exec.Command(node, runnerPath, asset, language).CombinedOutput()
+		if err != nil {
+			t.Fatalf("run mechanism fragment workspace (%s): %v\n%s", language, err, output)
+		}
+		var got mechanismAssetResult
+		if err := json.Unmarshal(output, &got); err != nil {
+			t.Fatalf("decode mechanism fragment workspace (%s): %v\n%s", language, err, output)
+		}
+		return got
 	}
-	var out struct {
-		ItemCount             int      `json:"itemCount"`
-		Kinds                 []string `json:"kinds"`
-		Orderings             []string `json:"orderings"`
-		EvidenceSpans         []string `json:"evidenceSpans"`
-		LimitationSpans       []string `json:"limitationSpans"`
-		Labels                []string `json:"labels"`
-		GraphCount            int      `json:"graphCount"`
-		EntryLaneCount        int      `json:"entryLaneCount"`
-		IndependentGraphCount int      `json:"independentGraphCount"`
-		TouchpointGroupCount  int      `json:"touchpointGroupCount"`
-		FrontierPresent       bool     `json:"frontierPresent"`
-		FrontierText          string   `json:"frontierText"`
-		ArchitectureText      string   `json:"architectureText"`
+
+	en := run("en")
+	if en.ProjectionCount != 2 || strings.Join(en.Emphasized, ",") != "c1,c2,c3" {
+		t.Fatalf("projection = count %d emphasized %#v, want two exact fragments and c1,c2,c3", en.ProjectionCount, en.Emphasized)
 	}
-	if err := json.Unmarshal(output, &out); err != nil {
-		t.Fatalf("decode mechanism fragment workspace: %v\n%s", err, output)
+	if en.DetailCount != 2 || en.FanoutCount != 2 || en.TargetCount != 2 || en.FrontierCount != 2 || en.ItemCount != 4 {
+		t.Fatalf("v3 DOM shape = details=%d fanouts=%d targets=%d frontiers=%d lanes=%d",
+			en.DetailCount, en.FanoutCount, en.TargetCount, en.FrontierCount, en.ItemCount)
 	}
-	// Decision 230 D8: the entry chain (entry + lifecycle direct call)
-	// renders as connected lanes with exact joins; the unresolved
-	// continuation is the frontier; boundary/resource observations become
-	// side touchpoint groups. Raw enums never primary UI.
-	if out.ItemCount != 3 {
-		t.Fatalf("items = %d, want entry plus two same-line exact calls: %#v", out.ItemCount, out.Kinds)
+	if en.EmptyCount != 0 || en.LegacyCount != 0 || len(en.DetailsOpen) != 2 || en.DetailsOpen[0] || en.DetailsOpen[1] {
+		t.Fatalf("Map-first disclosure = empty %d legacy %d open %#v", en.EmptyCount, en.LegacyCount, en.DetailsOpen)
 	}
-	if out.GraphCount < 2 || out.EntryLaneCount != 2 || out.IndependentGraphCount != 1 ||
-		out.TouchpointGroupCount < 1 || !out.FrontierPresent {
-		t.Fatalf("fragment structure incomplete: graphs=%d touchpoints=%d frontier=%v",
-			out.GraphCount, out.TouchpointGroupCount, out.FrontierPresent)
+	if en.SourceActionCount != 6 {
+		t.Fatalf("mixed-snippet mechanism source actions = %d, want 6 exact entry/callsite/target actions: %#v", en.SourceActionCount, en.SourceHrefs)
 	}
-	wantKinds := []string{
-		"Process entry", "Direct static call", "Direct static call",
-	}
-	for index, want := range wantKinds {
-		if index >= len(out.Kinds) || out.Kinds[index] != want {
-			t.Fatalf("kinds = %#v, want %#v", out.Kinds, wantKinds)
+	for _, href := range en.SourceHrefs {
+		if !strings.Contains(href, "https://github.com/acme/fixture/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/") {
+			t.Fatalf("mechanism source action is not pinned to the captured revision: %q", href)
 		}
 	}
-	// Raw enums never appear as primary kind copy (including the new
-	// storage_boundary_callsite / observed_local classes).
-	for _, kind := range out.Kinds {
-		if kind == "direct_static_call" || kind == "resolved_static" ||
-			kind == "resolved_path_order" || kind == "not_established" || kind == "entry" ||
-			kind == "storage_boundary_callsite" || kind == "observed_local" ||
-			kind == "outbound_client_callsite" || kind == "unknown" {
-			t.Fatalf("raw enum leaked into primary mechanism copy: %q", kind)
+	if !strings.Contains(en.Text, "Exact first-hop static calls from this entry") || !strings.Contains(en.Text, "Entry handoff · service.Start") ||
+		!strings.Contains(en.Text, "Continuation beyond these first-hop calls is not established") {
+		t.Fatalf("English mechanism copy incomplete: %s", en.Text)
+	}
+	if len(en.Orderings) != 4 || en.Orderings[0] != "Exact source identity" ||
+		en.Orderings[1] != "Canonical callsite display order; not runtime order" {
+		t.Fatalf("ordering copy = %#v", en.Orderings)
+	}
+	for _, limitation := range en.Limitations {
+		if limitation == "" {
+			t.Fatalf("primary limitation missing: %#v", en.Limitations)
 		}
 	}
-	// Orderings: human copy — Local callsite order (resolved_path_order /
-	// not_established stay in details).
-	if len(out.Orderings) != 3 || out.Orderings[1] != "Local callsite order" || out.Orderings[2] != "Local callsite order" {
-		t.Fatalf("orderings = %#v", out.Orderings)
-	}
-	// Evidence (including raw enums) under Evidence details — always
-	// present, never hover-only.
-	if len(out.EvidenceSpans) != 3 || out.EvidenceSpans[0] == "" || out.EvidenceSpans[1] == "" || out.EvidenceSpans[2] == "" {
-		t.Fatalf("evidence spans = %#v, want 3 non-empty", out.EvidenceSpans)
-	}
-	if len(out.LimitationSpans) != 3 || out.LimitationSpans[0] == "" || out.LimitationSpans[1] == "" || out.LimitationSpans[2] == "" {
-		t.Fatalf("limitation spans = %#v, want 3 non-empty", out.LimitationSpans)
-	}
-	// Frontier always visible without hover, and carries the unresolved item.
-	if !out.FrontierPresent || !strings.Contains(out.FrontierText, "No locally saved transitions") ||
-		!strings.Contains(out.FrontierText, "further locally saved transitions beyond the observed handoffs") {
-		t.Fatalf("frontier missing/hover-only or unresolved item dropped: %#v", out.FrontierText)
-	}
-	// No BPMN/SIPOC/swimlane/FFBD claims in the fragment copy.
-	lower := strings.ToLower(out.ArchitectureText)
-	for _, forbidden := range []string{"swimlane", "sipoc", "bpmn", "gateway", "ffbd"} {
-		if strings.Contains(lower, forbidden) {
-			t.Fatalf("fragment copy contains forbidden representation claim %q: %s", forbidden, out.ArchitectureText)
+
+	ru := run("ru")
+	for _, leaked := range []string{"process entry", "handoff to", "continuation beyond", "Exact repository-local", "No further transition"} {
+		if strings.Contains(ru.Text, leaked) {
+			t.Fatalf("English persisted mechanism copy leaked into RU HTML (%q): %s", leaked, ru.Text)
 		}
 	}
+	if !strings.Contains(ru.Text, "Точные статические вызовы первого уровня из этой точки входа") ||
+		!strings.Contains(ru.Text, "Вызов из точки входа · service.Start") ||
+		!strings.Contains(ru.Text, "Продолжение после этих вызовов первого уровня не установлено") {
+		t.Fatalf("Russian mechanism copy incomplete: %s", ru.Text)
+	}
+}
+
+type mechanismAssetResult struct {
+	ProjectionCount   int      `json:"projectionCount"`
+	Emphasized        []string `json:"emphasized"`
+	DetailCount       int      `json:"detailCount"`
+	DetailsOpen       []bool   `json:"detailsOpen"`
+	ItemCount         int      `json:"itemCount"`
+	FanoutCount       int      `json:"fanoutCount"`
+	TargetCount       int      `json:"targetCount"`
+	FrontierCount     int      `json:"frontierCount"`
+	EmptyCount        int      `json:"emptyCount"`
+	LegacyCount       int      `json:"legacyCount"`
+	SourceActionCount int      `json:"sourceActionCount"`
+	SourceHrefs       []string `json:"sourceHrefs"`
+	Labels            []string `json:"labels"`
+	Orderings         []string `json:"orderings"`
+	Limitations       []string `json:"limitations"`
+	Text              string   `json:"text"`
 }

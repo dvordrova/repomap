@@ -208,12 +208,32 @@
  //     touchpoint families, mechanism flows).
  // It never touches the DOM, never reads geometry, and never guesses from
  // renderer state — the backend owns entry/touchpoint/mechanism identity.
+ function currentMechanismTransition(value) {
+  return value && typeof value === "object" && !Array.isArray(value) &&
+   text(value.claim_kind) && text(value.support_mode) && text(value.label) &&
+   text(value.path) && Number(value.line) > 0 && text(value.evidence) &&
+   text(value.limitation) && text(value.ordering);
+ }
+
+ function currentMechanismFragment(value) {
+  const entry = value && value.entry;
+  const frontier = value && value.frontier;
+  return Number(value && value.version) === 3 && text(value && value.id) &&
+   Array.isArray(value.component_ids) &&
+   currentMechanismTransition(entry) &&
+   text(entry.claim_kind) === "process_entry" &&
+   Array.isArray(value.handoffs) && value.handoffs.length > 0 &&
+   value.handoffs.every(currentMechanismTransition) &&
+   frontier && typeof frontier === "object" && !Array.isArray(frontier) &&
+   text(frontier.ordering) && text(frontier.limitation);
+ }
+
  function mapLensEmphasisProjection(input) {
   const lens = input && input.lens || "landscape";
   const components = array(input && input.components);
   const surfaces = array(input && input.surfaces);
   const associations = array(input && input.associations);
-  const flowEdges = array(input && input.flowEdges);
+  const mechanismFragments = array(input && input.mechanismFragments);
   const componentByID = new Map(components.map((component) => [text(component && component.id), component]));
   const emphasized = [];
   const objects = { entrypoints: [], touchpoints: [], mechanisms: [] };
@@ -281,25 +301,25 @@
   }
 
   if (lens === "mechanisms") {
-   // Mechanism objects are the exact supported flows whose edges touch a
-   // component — a flow is only shown when it has at least one edge
-   // between two principal components (a connected fragment).
-   const flowByID = new Map();
-   flowEdges.forEach((edge) => {
-    const flowID = text(edge && edge.flow_id);
-    const from = text(edge && edge.from_component_id);
-    const to = text(edge && edge.to_component_id);
-    if (!flowID || !componentByID.has(from) || !componentByID.has(to)) return;
-    if (!flowByID.has(flowID)) {
-     flowByID.set(flowID, { id: flowID, component_ids: [] });
-    }
-    const record = flowByID.get(flowID);
-    [from, to].forEach((componentID) => {
-     if (record.component_ids.indexOf(componentID) < 0) record.component_ids.push(componentID);
+   // Decision 242 (v3): the Canvas-owned per-entry fragments are the sole
+   // Mechanisms authority. Saved flow_edges remain available to the flow
+   // renderer, but they cannot add, remove, or relabel a mechanism object.
+   mechanismFragments.forEach((fragment) => {
+    if (!currentMechanismFragment(fragment)) return;
+    const componentIDs = [];
+    array(fragment.component_ids).forEach((value) => {
+     const componentID = text(value);
+     if (!componentByID.has(componentID) || componentIDs.indexOf(componentID) >= 0) return;
+     componentIDs.push(componentID);
      add(componentID);
     });
+    objects.mechanisms.push({
+     id: text(fragment.id),
+     kind: "mechanism_fragment",
+     component_ids: componentIDs,
+     fragment: fragment,
+    });
    });
-   flowByID.forEach((flow) => objects.mechanisms.push(flow));
    return { lens: lens, emphasized: emphasized, objects: objects };
   }
 
@@ -326,20 +346,22 @@
   const canvas = (reportData && reportData.architecture_canvas) || {};
   const components = array(canvas.components);
   const surfaces = array(canvas.surfaces);
-  const flowEdges = array(canvas.flow_edges);
   const projection = mapLensEmphasisProjection({
    lens: lens,
    components: components,
    surfaces: surfaces,
    associations: flatReportAssociations(reportData && reportData.architecture_associations),
-   flowEdges: flowEdges,
+   mechanismFragments: Number(canvas.version) === 13 ? canvas.mechanism_fragments : [],
   });
   const componentCount = components.length;
   return {
    lens: projection.lens,
    visible: components.map((component) => text(component && component.id)),
    emphasized: projection.emphasized,
-   dimmed: componentCount - projection.emphasized.length,
+   // With no exact component join the lens is evidence-only. Keep the
+   // landscape neutral instead of claiming every component is irrelevant.
+   dimmed: projection.emphasized.length > 0
+    ? componentCount - projection.emphasized.length : 0,
    entrypoints: projection.objects.entrypoints,
    touchpoints: projection.objects.touchpoints,
    mechanisms: projection.objects.mechanisms,
@@ -3176,6 +3198,7 @@ function architecturePartialTruth(data) {
     this.lens = value;
     if (this.root) this.root.setAttribute("data-lens", value);
     if (value === "landscape") {
+     if (this.root) this.root.setAttribute("data-lens-has-emphasis", "false");
      this.components.forEach((component) => {
       const node = this.componentElements.get(text(component && component.id));
       if (node) node.classList.remove("rm-arch__is-lens-emphasized");
@@ -3187,8 +3210,11 @@ function architecturePartialTruth(data) {
      components: this.components,
      surfaces: this.surfaces,
      associations: this.flatAssociations(),
-     flowEdges: this.flowEdges,
+     mechanismFragments: Number(this.data && this.data.version) === 13
+      ? this.data.mechanism_fragments : [],
     });
+    const hasEmphasis = projection.emphasized.length > 0;
+    if (this.root) this.root.setAttribute("data-lens-has-emphasis", hasEmphasis ? "true" : "false");
     this.components.forEach((component) => {
      const componentID = text(component && component.id);
      const node = this.componentElements.get(componentID);
@@ -5588,7 +5614,7 @@ function architecturePartialTruth(data) {
   // the canvas instance uses the same function for emphasis. Never a
   // test-only hook.
   projectArchitectureLens: projectArchitectureLens,
-});
+ });
  if (global.__REPOMAP_LAYOUT_TEST__ && typeof global.__REPOMAP_LAYOUT_TEST__ === "object") {
   Object.assign(global.__REPOMAP_LAYOUT_TEST__, {
    landscapeLayoutMode: landscapeLayoutMode,
@@ -5616,6 +5642,7 @@ function architecturePartialTruth(data) {
    ),
    // Decision 236 (v11): the pure lens projection — no DOM, no geometry.
    mapLensEmphasisProjection: mapLensEmphasisProjection,
+   currentMechanismFragment: currentMechanismFragment,
    projectArchitectureLens: projectArchitectureLens,
    associationsForComponent: associationsForComponent,
   });

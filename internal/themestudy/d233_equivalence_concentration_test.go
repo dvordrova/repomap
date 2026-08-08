@@ -58,6 +58,9 @@ func TestReduceSemanticEquivalentThemesCoProject(t *testing.T) {
 	if reduction.Omitted != 0 {
 		t.Fatalf("co-projected theme must not count as omitted: %d", reduction.Omitted)
 	}
+	if reduction.CoProjected != 1 {
+		t.Fatalf("co-projected theme count = %d, want 1", reduction.CoProjected)
+	}
 }
 
 // Decision 233: the portfolio-concentration diagnostic is GENERIC — a

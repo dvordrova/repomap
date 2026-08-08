@@ -176,23 +176,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-architecture-zero-relations { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; color: #78350f; font-size: .85rem; margin: 0 0 1rem; padding: .7rem .9rem; }
 .rm-architecture-truth-strip { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0 0 1rem; }
 .rm-architecture-truth-strip__item { background: var(--rm-surface-2, #f3f4f6); border: 1px solid var(--rm-border, #e5e7eb); border-radius: 999px; font-size: .78rem; padding: .25rem .7rem; }
-.rm-architecture-relations__summary { font-size: .85rem; margin: 0 0 .6rem; }
-.rm-architecture-relation-kinds { display: flex; flex-wrap: wrap; gap: .4rem; list-style: none; margin: 0 0 .8rem; padding: 0; }
-.rm-architecture-relation-kind-row { align-items: baseline; background: var(--rm-surface-2, #f3f4f6); border-radius: 999px; display: flex; font-size: .78rem; gap: .35rem; padding: .2rem .6rem; }
-.rm-architecture-relation-kind-name { color: var(--rm-muted, #6b7280); }
-.rm-architecture-relation-kind-count { font-weight: 600; }
-.rm-architecture-relation-group { margin-bottom: .8rem; }
-.rm-architecture-relation-group__label { font-size: .8rem; margin: 0 0 .3rem; text-transform: uppercase; }
-.rm-architecture-relation-arrow { color: var(--rm-muted, #6b7280); }
-.rm-architecture-relation-source { font-size: .75rem; }
 .rm-evidence-composition { border-radius: 999px; font-size: .72rem; margin-left: .35rem; padding: .12rem .5rem; }
 .rm-evidence-composition--exact { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
 .rm-evidence-composition--mixed { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
 .rm-evidence-composition--package { background: #faf5ff; border: 1px solid #e9d5ff; color: #6b21a8; }
-.rm-architecture-relations { margin-bottom: .8rem; }
-.rm-architecture-relation-list { display: grid; gap: .35rem; list-style: none; margin: 0; padding: 0; }
-.rm-architecture-relation-item { align-items: baseline; display: flex; flex-wrap: wrap; gap: .4rem; font-size: .82rem; }
-.rm-architecture-relation-kind { background: #eff6ff; border-radius: 999px; color: #1d4ed8; font-size: .62rem; font-weight: 700; padding: .12rem .45rem; }
 .rm-architecture-unmapped { border: 1px solid var(--rm-border); border-radius: 10px; margin: .8rem 0; padding: .55rem .9rem; }
 .rm-architecture-unmapped__summary { cursor: pointer; font-size: .8rem; font-weight: 650; user-select: none; }
 .rm-architecture-unmapped__note { color: var(--rm-dim); font-size: .76rem; margin: .35rem 0; }
@@ -300,8 +287,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-study-browse-show-all { margin-top: .3rem; }
 .rm-study-diagnostics-omission-sentence { font-size: .8rem; line-height: 1.5; margin: 0 0 .35rem; }
 .rm-study-diagnostics-show-all { margin-top: .2rem; }
-.rm-study-failed-banner { margin: 0 0 .9rem; }
-
 .rm-study-outcome strong { color: #334155; font-size: .82rem; line-height: 1.5; }
 .rm-study-reading-list { display: grid; gap: .7rem; }
 .rm-study-reading-anchor { align-items: start; background: #fff; border: 1px solid var(--rm-border); border-radius: 10px; display: grid; gap: .8rem; grid-template-columns: 2rem minmax(0, 1fr); min-width: 0; padding: .85rem; }
@@ -741,28 +726,17 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-architecture-disclosure__title { font-size: .86rem; font-weight: 700; }
 .rm-architecture-disclosure__count { color: var(--rm-muted); font-size: .76rem; }
 
-/* Decision 230 D8: connected mechanism fragments. Each graph is a
-   vertical source → arrow → target chain; touchpoints group side
-   observations by family. Array order is never path order. */
-.rm-mechanism-fragment__workspace { display: grid; gap: 1.1rem; margin-top: .6rem; }
-.rm-mechanism-fragment__graph { background: #f8fafc; border: 1px solid var(--rm-border); border-radius: 12px; padding: .7rem .9rem; }
-.rm-mechanism-fragment__fragment-title { font-size: .74rem; font-weight: 750; letter-spacing: .04em; margin: 0 0 .45rem; text-transform: uppercase; color: var(--rm-dim); }
+/* Decision 242 (v3): a mechanism is a compact first-hop fan-out. Every
+   handoff is a sibling edge from the exact entry; display order never claims
+   runtime order or a deeper path. */
+.rm-mechanism-fragment__copy { margin: .25rem 0 .65rem; }
+.rm-mechanism-fragment__fanout { display: grid; gap: .65rem; margin-top: .65rem; }
+.rm-mechanism-fragment__handoff { background: #f8fafc; border: 1px solid var(--rm-border); border-radius: 12px; padding: .45rem .65rem .65rem; }
 .rm-mechanism-fragment__arrow { align-items: center; display: flex; gap: .5rem; padding: .2rem 0 .2rem .9rem; }
 .rm-mechanism-fragment__arrow-line { color: var(--rm-accent); font-size: 1.05rem; font-weight: 800; line-height: 1; }
-.rm-mechanism-fragment__arrow--frontier .rm-mechanism-fragment__arrow-line { color: #a16207; }
 .rm-mechanism-fragment__arrow-mode { color: var(--rm-muted); font-size: .68rem; }
-.rm-mechanism-fragment__target { border: 1px dashed #cbd5e1; border-radius: 8px; margin: 0 0 0 .9rem; padding: .45rem .6rem; }
+.rm-mechanism-fragment__target { border: 1px dashed #cbd5e1; border-radius: 8px; margin: .55rem 0 0 .9rem; padding: .45rem .6rem; }
 .rm-mechanism-fragment__target-symbol { display: block; font-size: .8rem; }
-.rm-mechanism-fragment__touchpoint-group { border-top: 1px solid var(--rm-border); margin-top: .35rem; padding-top: .3rem; }
-.rm-mechanism-fragment__touchpoint-summary { align-items: baseline; cursor: pointer; display: flex; gap: .5rem; list-style: none; padding: .25rem 0; }
-.rm-mechanism-fragment__touchpoint-summary::-webkit-details-marker { display: none; }
-.rm-mechanism-fragment__touchpoint-summary::before { color: var(--rm-dim); content: "▸"; font-size: .76rem; }
-.rm-mechanism-fragment__touchpoint-group[open] > .rm-mechanism-fragment__touchpoint-summary::before { transform: rotate(90deg); }
-.rm-mechanism-fragment__touchpoint-family { font-size: .8rem; font-weight: 700; }
-.rm-mechanism-fragment__touchpoint-count { color: var(--rm-muted); font-size: .72rem; }
-.rm-mechanism-fragment__touchpoint-list { display: grid; gap: .25rem; list-style: none; margin: .25rem 0 0; padding: 0 0 0 1rem; }
-.rm-mechanism-fragment__touchpoint-item { align-items: baseline; display: flex; flex-wrap: wrap; gap: .4rem; font-size: .76rem; }
-.rm-mechanism-fragment__touchpoint-label { color: var(--rm-dim); }
 
 /* Decision 233 (Archive 9): entry category summaries — quiet Show-all
    toggle, collapsed full grid below the representatives. */

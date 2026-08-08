@@ -1738,6 +1738,8 @@ func atlasStudyReportFixture(t *testing.T) *ReportData {
 					ID: "anchor-entry", Kind: componentmap.AnchorProcessEntry,
 					ProofMode: componentmap.AnchorProofProcessEntry,
 					Location:  evidence.Location{Path: "cmd/app/main.go", Line: 7},
+					Scenario:  componentmap.ScenarioContext{ID: "go:linux:tags="},
+					MemberIDs: []componentmap.MemberID{{Kind: componentmap.MemberSymbol, Value: "member-entry"}},
 					Certainty: evidence.CertaintyStatic,
 				},
 				{

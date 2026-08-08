@@ -1,11 +1,27 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/debugdump"
 )
+
+func TestThemeStudyCompletionExplainsCoProjection(t *testing.T) {
+	details := strings.Join(themeStudyCompletionDetails(themeStudyRunOutcome{
+		PublishedCards: 5, ScoutAccepted: 6, AdjAccepted: 6, CoProjected: 1,
+	}), "\n")
+	for _, want := range []string{
+		"theme cards: 5",
+		"scout 6/6 · adjudication 6/6",
+		"equivalent themes merged into existing cards: 1 · alternate readings retained",
+	} {
+		if !strings.Contains(details, want) {
+			t.Fatalf("completion details missing %q:\n%s", want, details)
+		}
+	}
+}
 
 func TestThemeStudyProviderAccountingAggregatesOnlyCurrentLiveCalls(t *testing.T) {
 	liveScout := themeScoutStageOutcome{

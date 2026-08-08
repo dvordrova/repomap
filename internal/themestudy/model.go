@@ -40,6 +40,7 @@ const (
 	RoleGenerated               Role = "generated"
 	RolePlayground              Role = "playground_preview_evaluator"
 	RoleExperimental            Role = "experimental"
+	RoleTooling                 Role = "tooling"
 	RoleCurrentDocumentation    Role = "current_documentation"
 	RoleHistoricalDocumentation Role = "historical_decision_documentation"
 
@@ -53,7 +54,7 @@ func (role Role) Valid() bool {
 	switch role {
 	case RolePrimaryProductionEntry, RoleProductionCore, RoleEffectBoundary,
 		RolePublicAPI, RoleExample, RoleTest, RoleFixture, RoleGenerated,
-		RolePlayground, RoleExperimental, RoleCurrentDocumentation,
+		RolePlayground, RoleExperimental, RoleTooling, RoleCurrentDocumentation,
 		RoleHistoricalDocumentation:
 		return true
 	default:

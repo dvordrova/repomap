@@ -183,23 +183,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-architecture-zero-relations { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; color: #78350f; font-size: .85rem; margin: 0 0 1rem; padding: .7rem .9rem; }
 .rm-architecture-truth-strip { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0 0 1rem; }
 .rm-architecture-truth-strip__item { background: var(--rm-surface-2, #f3f4f6); border: 1px solid var(--rm-border, #e5e7eb); border-radius: 999px; font-size: .78rem; padding: .25rem .7rem; }
-.rm-architecture-relations__summary { font-size: .85rem; margin: 0 0 .6rem; }
-.rm-architecture-relation-kinds { display: flex; flex-wrap: wrap; gap: .4rem; list-style: none; margin: 0 0 .8rem; padding: 0; }
-.rm-architecture-relation-kind-row { align-items: baseline; background: var(--rm-surface-2, #f3f4f6); border-radius: 999px; display: flex; font-size: .78rem; gap: .35rem; padding: .2rem .6rem; }
-.rm-architecture-relation-kind-name { color: var(--rm-muted, #6b7280); }
-.rm-architecture-relation-kind-count { font-weight: 600; }
-.rm-architecture-relation-group { margin-bottom: .8rem; }
-.rm-architecture-relation-group__label { font-size: .8rem; margin: 0 0 .3rem; text-transform: uppercase; }
-.rm-architecture-relation-arrow { color: var(--rm-muted, #6b7280); }
-.rm-architecture-relation-source { font-size: .75rem; }
 .rm-evidence-composition { border-radius: 999px; font-size: .72rem; margin-left: .35rem; padding: .12rem .5rem; }
 .rm-evidence-composition--exact { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
 .rm-evidence-composition--mixed { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; }
 .rm-evidence-composition--package { background: #faf5ff; border: 1px solid #e9d5ff; color: #6b21a8; }
-.rm-architecture-relations { margin-bottom: .8rem; }
-.rm-architecture-relation-list { display: grid; gap: .35rem; list-style: none; margin: 0; padding: 0; }
-.rm-architecture-relation-item { align-items: baseline; display: flex; flex-wrap: wrap; gap: .4rem; font-size: .82rem; }
-.rm-architecture-relation-kind { background: #eff6ff; border-radius: 999px; color: #1d4ed8; font-size: .62rem; font-weight: 700; padding: .12rem .45rem; }
 .rm-architecture-unmapped { border: 1px solid var(--rm-border); border-radius: 10px; margin: .8rem 0; padding: .55rem .9rem; }
 .rm-architecture-unmapped__summary { cursor: pointer; font-size: .8rem; font-weight: 650; user-select: none; }
 .rm-architecture-unmapped__note { color: var(--rm-dim); font-size: .76rem; margin: .35rem 0; }
@@ -307,8 +294,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-study-browse-show-all { margin-top: .3rem; }
 .rm-study-diagnostics-omission-sentence { font-size: .8rem; line-height: 1.5; margin: 0 0 .35rem; }
 .rm-study-diagnostics-show-all { margin-top: .2rem; }
-.rm-study-failed-banner { margin: 0 0 .9rem; }
-
 .rm-study-outcome strong { color: #334155; font-size: .82rem; line-height: 1.5; }
 .rm-study-reading-list { display: grid; gap: .7rem; }
 .rm-study-reading-anchor { align-items: start; background: #fff; border: 1px solid var(--rm-border); border-radius: 10px; display: grid; gap: .8rem; grid-template-columns: 2rem minmax(0, 1fr); min-width: 0; padding: .85rem; }
@@ -712,28 +697,17 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-architecture-disclosure__title { font-size: .86rem; font-weight: 700; }
 .rm-architecture-disclosure__count { color: var(--rm-muted); font-size: .76rem; }
 
-/* Decision 230 D8: connected mechanism fragments. Each graph is a
-   vertical source → arrow → target chain; touchpoints group side
-   observations by family. Array order is never path order. */
-.rm-mechanism-fragment__workspace { display: grid; gap: 1.1rem; margin-top: .6rem; }
-.rm-mechanism-fragment__graph { background: #f8fafc; border: 1px solid var(--rm-border); border-radius: 12px; padding: .7rem .9rem; }
-.rm-mechanism-fragment__fragment-title { font-size: .74rem; font-weight: 750; letter-spacing: .04em; margin: 0 0 .45rem; text-transform: uppercase; color: var(--rm-dim); }
+/* Decision 242 (v3): a mechanism is a compact first-hop fan-out. Every
+   handoff is a sibling edge from the exact entry; display order never claims
+   runtime order or a deeper path. */
+.rm-mechanism-fragment__copy { margin: .25rem 0 .65rem; }
+.rm-mechanism-fragment__fanout { display: grid; gap: .65rem; margin-top: .65rem; }
+.rm-mechanism-fragment__handoff { background: #f8fafc; border: 1px solid var(--rm-border); border-radius: 12px; padding: .45rem .65rem .65rem; }
 .rm-mechanism-fragment__arrow { align-items: center; display: flex; gap: .5rem; padding: .2rem 0 .2rem .9rem; }
 .rm-mechanism-fragment__arrow-line { color: var(--rm-accent); font-size: 1.05rem; font-weight: 800; line-height: 1; }
-.rm-mechanism-fragment__arrow--frontier .rm-mechanism-fragment__arrow-line { color: #a16207; }
 .rm-mechanism-fragment__arrow-mode { color: var(--rm-muted); font-size: .68rem; }
-.rm-mechanism-fragment__target { border: 1px dashed #cbd5e1; border-radius: 8px; margin: 0 0 0 .9rem; padding: .45rem .6rem; }
+.rm-mechanism-fragment__target { border: 1px dashed #cbd5e1; border-radius: 8px; margin: .55rem 0 0 .9rem; padding: .45rem .6rem; }
 .rm-mechanism-fragment__target-symbol { display: block; font-size: .8rem; }
-.rm-mechanism-fragment__touchpoint-group { border-top: 1px solid var(--rm-border); margin-top: .35rem; padding-top: .3rem; }
-.rm-mechanism-fragment__touchpoint-summary { align-items: baseline; cursor: pointer; display: flex; gap: .5rem; list-style: none; padding: .25rem 0; }
-.rm-mechanism-fragment__touchpoint-summary::-webkit-details-marker { display: none; }
-.rm-mechanism-fragment__touchpoint-summary::before { color: var(--rm-dim); content: "▸"; font-size: .76rem; }
-.rm-mechanism-fragment__touchpoint-group[open] > .rm-mechanism-fragment__touchpoint-summary::before { transform: rotate(90deg); }
-.rm-mechanism-fragment__touchpoint-family { font-size: .8rem; font-weight: 700; }
-.rm-mechanism-fragment__touchpoint-count { color: var(--rm-muted); font-size: .72rem; }
-.rm-mechanism-fragment__touchpoint-list { display: grid; gap: .25rem; list-style: none; margin: .25rem 0 0; padding: 0 0 0 1rem; }
-.rm-mechanism-fragment__touchpoint-item { align-items: baseline; display: flex; flex-wrap: wrap; gap: .4rem; font-size: .76rem; }
-.rm-mechanism-fragment__touchpoint-label { color: var(--rm-dim); }
 
 /* Decision 233 (Archive 9): entry category summaries — quiet Show-all
    toggle, collapsed full grid below the representatives. */
@@ -799,12 +773,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     </aside>
   </div>
   <div class="rm-toast" id="rm-toast" role="status" aria-live="polite" hidden></div>
-  <script type="application/json" id="rm-report-data">{"format_version":38,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
+  <script type="application/json" id="rm-report-data">{"format_version":39,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
   <script id="rm-ui-messages-js">(function (global) {
   'use strict';
 
   // Decision 240: remove the obsolete Navigator product copy and actions.
-  var VERSION = 11;
+  // Decision 242: first-hop mechanism handoffs have UI-owned EN/RU copy;
+  // persisted evidence labels remain exact and language-neutral.
+  var VERSION = 12;
   var EN = {
     "main.browser_error.invalid_report_artifact": { params: [], text: "The saved report is invalid or exceeds the supported size." },
     "main.browser_error.no_saved_reports": { params: [], text: "No saved reports are available." },
@@ -874,8 +850,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.map.lens.entrypoints": { params: [], text: "Entrypoints" },
     "main.map.lens.integrations": { params: [], text: "Integrations" },
     "main.map.lens.mechanisms": { params: [], text: "Mechanisms" },
-    "main.map.lens.object.flow": { params: ["id"], format: function (params) { return "Flow " + params.id; } },
-    "main.map.lens.object.components": { params: ["count"], format: function (params) { return params.count + " components"; } },
     "main.map.lens.object.entries": { params: ["count"], format: function (params) { return params.count + " entries"; } },
     "main.map.lens.object.witnesses": { params: ["count"], format: function (params) { return params.count + " witnesses"; } },
     "main.map.lens.object.paired": { params: [], text: "paired" },
@@ -886,55 +860,23 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.map.lens.entry.other": { params: [], text: "Other entries" },
     "main.map.lens.empty.entrypoints": { params: [], text: "No entry surfaces participate in a component in this run." },
     "main.map.lens.empty.integrations": { params: [], text: "No observed external/state associations in this run." },
-    "main.map.lens.empty.mechanisms": { params: [], text: "No connected flow fragments in this run." },
+    "main.map.lens.empty.mechanisms": { params: [], text: "No exact first-hop entry handoffs were recovered in this run." },
     "main.overview": { params: [], text: "Overview" },
     "main.study": { params: [], text: "Study" },
     "main.architecture": { params: [], text: "Architecture" },
-    "main.architecture.synthesis_failed": { params: [], text: "Architecture synthesis failed; showing the locally available architecture." },
-    "main.architecture.synthesis_partial": { params: ["covered", "requested"], format: function (params) { return "Model grouping accepted for " + params.covered + " of " + params.requested + " requested units; the local remainder is shown below."; } },
-    "main.architecture.synthesis_cached": { params: [], text: "Previously accepted model grouping replayed from cache." },
-    "main.architecture.synthesis_unavailable": { params: [], text: "Model grouping was not attempted (offline or unavailable); exact local Architecture is shown." },
-    "main.architecture.synthesis_rejected": { params: [], text: "The provider responded, but its proposal failed local validation and was rejected; exact local Architecture is shown." },
-    "main.architecture.no_relation_evidence": { params: [], text: "No supported relation evidence under current analysis coverage: the content below is a conceptual/package grouping, not a verified call graph. The structured component list is the primary representation." },
-    "main.architecture.unprojected.copy": { params: [], text: "Member relations exist under current coverage but cannot be safely projected as component edges." },
-    "main.architecture.unprojected.summary": { params: ["facts", "edges"], format: function (params) { return params.facts + " structural facts recorded, of which " + params.edges + " cross component boundaries; none was accepted as a proven component relationship. Package imports are structural dependencies, not execution order."; } },
-    "main.architecture.canvas.conceptual": { params: [], text: "Conceptual/package grouping — no proven inter-component relations; the map is not a runtime graph." },
-    "main.architecture.relations.kicker": { params: [], text: "Established relationships" },
     "main.architecture.disclosure.count": { params: ["count"], format: function (params) { return "· " + params.count; } },
     "main.architecture.component_list.title": { params: [], text: "Components" },
-    "main.architecture.relations.kind.configures_security_boundary": { params: [], text: "Configures security boundary" },
-    "main.architecture.relations.kind.static_call_supporting_relation": { params: [], text: "Static structural support" },
-    "main.architecture.relations.kind.other": { params: [], text: "Structural relation" },
-    "main.architecture.mechanism.kicker": { params: [], text: "Mechanism fragment" },
-    "main.architecture.mechanism.title": { params: [], text: "How work moves through this repository" },
-    "main.architecture.mechanism.copy": { params: [], text: "One honest vertical fragment: entry → locally supported transitions → observed boundary/resource → explicit unresolved frontier. Only locally observed transitions are shown; nothing is invented to make a continuous path." },
+    "main.architecture.mechanism.copy": { params: [], text: "Exact first-hop static calls from this entry. Display order is canonical, not runtime order; no continuation is inferred." },
     "main.architecture.mechanism.kind.process_entry": { params: [], text: "Process entry" },
     "main.architecture.mechanism.kind.direct_static_call": { params: [], text: "Direct static call" },
-    "main.architecture.mechanism.kind.unresolved_continuation": { params: [], text: "Continuation not recovered" },
-    "main.architecture.mechanism.kind.storage_boundary_callsite": { params: [], text: "Observed boundary callsite" },
-    "main.architecture.mechanism.kind.outbound_client_callsite": { params: [], text: "Observed outbound client callsite" },
     "main.architecture.mechanism.support.resolved_static": { params: [], text: "Resolved in the recorded build" },
-    "main.architecture.mechanism.support.observed_local": { params: [], text: "Observed in the local build" },
-    "main.architecture.mechanism.support.unknown": { params: [], text: "Support unknown" },
-    "main.architecture.mechanism.label.boundary": { params: [], text: "Observed boundary" },
-    "main.architecture.mechanism.label.resource": { params: [], text: "Observed resource" },
-    "main.architecture.mechanism.label.operation": { params: [], text: "Observed operation" },
-    "main.architecture.mechanism.label.surface": { params: [], text: "Observed surface" },
-    "main.architecture.mechanism.ordering.resolved_path_order": { params: [], text: "Local callsite order" },
-    "main.architecture.mechanism.ordering.not_established": { params: [], text: "Continuation not recovered" },
+    "main.architecture.mechanism.label.handoff": { params: [], text: "Entry handoff" },
+    "main.architecture.mechanism.label.handoff_to": { params: ["target"], format: function (params) { return "Entry handoff · " + params.target; } },
+    "main.architecture.mechanism.ordering.exact_entry": { params: [], text: "Exact source identity" },
+    "main.architecture.mechanism.ordering.resolved_path_order": { params: [], text: "Canonical callsite display order; not runtime order" },
     "main.architecture.mechanism.evidence_details": { params: [], text: "Evidence details" },
     "main.architecture.mechanism.frontier_title": { params: [], text: "Unresolved frontier" },
-    "main.architecture.mechanism.fragment.entry": { params: [], text: "Entry" },
-    "main.architecture.mechanism.fragment.independent": { params: [], text: "Independent fragment" },
-    "main.architecture.mechanism.fragment.touchpoints": { params: [], text: "Observed boundary/resource touchpoints" },
-    "main.architecture.mechanism.fragment.touchpoints_copy": { params: [], text: "Observations without a proven path join — side touchpoints, not next steps." },
-    "main.architecture.mechanism.fragment.touchpoint_misc": { params: [], text: "other" },
-    "main.architecture.mechanism.fragment.unknown_continuation": { params: [], text: "continuation not recovered" },
-    "main.architecture.mechanism.no_transitions": { params: [], text: "No locally observed transitions in this run." },
-    "main.architecture.mechanism.frontier_default": { params: [], text: "No locally saved transitions beyond the observed handoffs; execution order beyond them is not established." },
-    "main.architecture.relations.title": { params: [], text: "Observed relations" },
-    "main.architecture.relations.copy": { params: [], text: "Relationships between components, each bound to an exact source anchor." },
-    "main.architecture.relations.summary": { params: ["total", "staticCount", "runtimeCount"], format: function (params) { return params.total + " relations under current coverage: " + params.staticCount + " static structural support, " + params.runtimeCount + " runtime transition evidence. The raw inventory below is grouped by relation kind; select a source to open it."; } },
+    "main.architecture.mechanism.frontier.continuation": { params: [], text: "Continuation beyond these first-hop calls is not established." },
     "main.architecture.authority.validated": { params: [], text: "Grouping: validated model hypothesis" },
     "main.architecture.authority.partial": { params: [], text: "Grouping: partial validated model hypothesis" },
     "main.architecture.authority.local": { params: [], text: "Grouping: local deterministic architecture" },
@@ -950,7 +892,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.architecture.list.title": { params: [], text: "Component list" },
     "main.architecture.list.copy": { params: [], text: "Structured alternative to the map: every component with its evidence tier. Select one to focus it." },
     "main.architecture.list.member_count": { params: ["count"], format: function (params) { return englishCount(params.count, "member", "members"); } },
-    "main.architecture.synthesis_output_limit": { params: [], text: "Conceptual grouping is unavailable because the model exceeded its response budget. The partial response was not used; exact local Architecture remains available." },
     "main.provenance": { params: [], text: "Provenance" },
     "main.source.locations": { params: [], text: "Source locations" },
     "main.source.kind.function": { params: [], text: "function" },
@@ -1017,7 +958,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.frontier.source_unavailable": { params: [], text: "Source unavailable" },
     "main.study.frontier.show_all": { params: ["count"], format: function (params) { return "Show all " + params.count; } },
     "main.study.frontier.omission_sentence": { params: [], text: "Left out of the model's review to keep the request bounded — these are full local questions." },
-    "main.study.frontier.failed_banner": { params: [], text: "The model study could not be completed; showing the local question set." },
     "main.study.frontier.ceiling_note": { params: ["shown", "total"], format: function (params) { return "Showing " + params.shown + " of " + params.total; } },
     "main.study.diagnostics.yes": { params: [], text: "Yes" },
     "main.study.diagnostics.no": { params: [], text: "No" },
@@ -1131,7 +1071,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.overview.anatomy.components_kicker": { params: [], text: "Saved architecture" },
     "main.overview.anatomy.components": { params: [], text: "Components" },
     "main.overview.anatomy.components_copy": { params: [], text: "Accepted conceptual components open on the map; exact symbol sources remain available when present." },
-    "main.overview.anatomy.components_copy_synthesis_failed": { params: [], text: "Architecture synthesis failed; showing the locally available architecture with exact symbol sources." },
     "main.overview.anatomy.integrations_kicker": { params: [], text: "Saved evidence" },
     "main.overview.anatomy.integrations": { params: [], text: "Integrations" },
     "main.overview.anatomy.integrations_copy": { params: [], text: "Only exact integration objects already proven by this saved report can appear here." },
@@ -2107,8 +2046,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.map.lens.entrypoints": { params: [], text: "Точки входа" },
     "main.map.lens.integrations": { params: [], text: "Интеграции" },
     "main.map.lens.mechanisms": { params: [], text: "Механизмы" },
-    "main.map.lens.object.flow": { params: ["id"], format: function (params) { return "Поток " + params.id; } },
-    "main.map.lens.object.components": { params: ["count"], format: function (params) { return params.count + " компонентов"; } },
     "main.map.lens.object.entries": { params: ["count"], format: function (params) { return params.count + " точек входа"; } },
     "main.map.lens.object.witnesses": { params: ["count"], format: function (params) { return params.count + " свидетельств"; } },
     "main.map.lens.object.paired": { params: [], text: "парное" },
@@ -2119,55 +2056,23 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.map.lens.entry.other": { params: [], text: "Прочие точки входа" },
     "main.map.lens.empty.entrypoints": { params: [], text: "В этом прогоне нет точек входа, участвующих в компонентах." },
     "main.map.lens.empty.integrations": { params: [], text: "В этом прогоне нет наблюдаемых внешних/состояние-ассоциаций." },
-    "main.map.lens.empty.mechanisms": { params: [], text: "В этом прогоне нет связных фрагментов потоков." },
+    "main.map.lens.empty.mechanisms": { params: [], text: "В этом запуске не восстановлено точных вызовов первого уровня из точек входа." },
     "main.overview": { params: [], text: "Обзор" },
     "main.study": { params: [], text: "Изучение" },
     "main.architecture": { params: [], text: "Архитектура" },
-    "main.architecture.synthesis_failed": { params: [], text: "Синтез архитектуры не выполнен; показана локально доступная архитектура." },
-    "main.architecture.synthesis_partial": { params: ["covered", "requested"], format: function (params) { return "Модельная группировка принята для " + params.covered + " из " + params.requested + " запрошенных единиц; локальный остаток показан ниже."; } },
-    "main.architecture.synthesis_cached": { params: [], text: "Ранее принятая модельная группировка воспроизведена из кэша." },
-    "main.architecture.synthesis_unavailable": { params: [], text: "Модельная группировка не выполнялась (офлайн или недоступно); показана точная локальная архитектура." },
-    "main.architecture.synthesis_rejected": { params: [], text: "Провайдер ответил, но его предложение не прошло локальную проверку и было отклонено; показана точная локальная архитектура." },
-    "main.architecture.no_relation_evidence": { params: [], text: "Связи между компонентами не подтверждены в рамках текущего анализа: содержимое ниже — концептуальная/пакетная группировка, а не проверенный граф вызовов. Основное представление — структурированный список компонентов." },
-    "main.architecture.unprojected.copy": { params: [], text: "Связи между элементами существуют в рамках текущего анализа, но не могут быть безопасно спроецированы в рёбра компонентов." },
-    "main.architecture.unprojected.summary": { params: ["facts", "edges"], format: function (params) { return "Записано структурных фактов: " + params.facts + ", из них " + params.edges + " пересекают границы компонентов; ни один не принят как доказанная связь компонентов. Импорты пакетов — структурные зависимости, а не порядок выполнения."; } },
-    "main.architecture.canvas.conceptual": { params: [], text: "Концептуальная/пакетная группировка — доказанных связей между компонентами нет; карта не является графом выполнения." },
-    "main.architecture.relations.kicker": { params: [], text: "Установленные связи" },
     "main.architecture.disclosure.count": { params: ["count"], format: function (params) { return "— " + params.count; } },
     "main.architecture.component_list.title": { params: [], text: "Компоненты" },
-    "main.architecture.relations.kind.configures_security_boundary": { params: [], text: "Настраивает границу безопасности" },
-    "main.architecture.relations.kind.static_call_supporting_relation": { params: [], text: "Статическая структурная поддержка" },
-    "main.architecture.relations.kind.other": { params: [], text: "Структурная связь" },
-    "main.architecture.mechanism.kicker": { params: [], text: "Фрагмент механизма" },
-    "main.architecture.mechanism.title": { params: [], text: "Как работа движется по репозиторию" },
-    "main.architecture.mechanism.copy": { params: [], text: "Один честный вертикальный фрагмент: вход → локально подтверждённые переходы → наблюдаемые границы/ресурсы → явная неразрешённая граница. Показаны только локально наблюдаемые переходы; ничего не выдумывается ради непрерывного пути." },
+    "main.architecture.mechanism.copy": { params: [], text: "Точные статические вызовы первого уровня из этой точки входа. Порядок показа канонический, не порядок выполнения; продолжение не додумывается." },
     "main.architecture.mechanism.kind.process_entry": { params: [], text: "Точка входа процесса" },
     "main.architecture.mechanism.kind.direct_static_call": { params: [], text: "Прямой статический вызов" },
-    "main.architecture.mechanism.kind.unresolved_continuation": { params: [], text: "Продолжение не восстановлено" },
-    "main.architecture.mechanism.kind.storage_boundary_callsite": { params: [], text: "Наблюдаемый вызов границы" },
-    "main.architecture.mechanism.kind.outbound_client_callsite": { params: [], text: "Наблюдаемый исходящий клиентский вызов" },
     "main.architecture.mechanism.support.resolved_static": { params: [], text: "Разрешено в записанной сборке" },
-    "main.architecture.mechanism.support.observed_local": { params: [], text: "Наблюдается в локальной сборке" },
-    "main.architecture.mechanism.support.unknown": { params: [], text: "Поддержка неизвестна" },
-    "main.architecture.mechanism.label.boundary": { params: [], text: "Наблюдаемая граница" },
-    "main.architecture.mechanism.label.resource": { params: [], text: "Наблюдаемый ресурс" },
-    "main.architecture.mechanism.label.operation": { params: [], text: "Наблюдаемая операция" },
-    "main.architecture.mechanism.label.surface": { params: [], text: "Наблюдаемая поверхность" },
-    "main.architecture.mechanism.ordering.resolved_path_order": { params: [], text: "Локальный порядок вызовов" },
-    "main.architecture.mechanism.ordering.not_established": { params: [], text: "Продолжение не восстановлено" },
+    "main.architecture.mechanism.label.handoff": { params: [], text: "Вызов из точки входа" },
+    "main.architecture.mechanism.label.handoff_to": { params: ["target"], format: function (params) { return "Вызов из точки входа · " + params.target; } },
+    "main.architecture.mechanism.ordering.exact_entry": { params: [], text: "Точная идентичность в исходном коде" },
+    "main.architecture.mechanism.ordering.resolved_path_order": { params: [], text: "Канонический порядок показа мест вызова; не порядок выполнения" },
     "main.architecture.mechanism.evidence_details": { params: [], text: "Детали свидетельств" },
     "main.architecture.mechanism.frontier_title": { params: [], text: "Неразрешённая граница" },
-    "main.architecture.mechanism.fragment.entry": { params: [], text: "Вход" },
-    "main.architecture.mechanism.fragment.independent": { params: [], text: "Независимый фрагмент" },
-    "main.architecture.mechanism.fragment.touchpoints": { params: [], text: "Наблюдаемые границы/ресурсы" },
-    "main.architecture.mechanism.fragment.touchpoints_copy": { params: [], text: "Наблюдения без доказанного соединения пути — боковые точки касания, не следующие шаги." },
-    "main.architecture.mechanism.fragment.touchpoint_misc": { params: [], text: "другое" },
-    "main.architecture.mechanism.fragment.unknown_continuation": { params: [], text: "продолжение не восстановлено" },
-    "main.architecture.mechanism.no_transitions": { params: [], text: "В этом запуске локальных переходов не обнаружено." },
-    "main.architecture.mechanism.frontier_default": { params: [], text: "Локально сохранённых переходов за пределами наблюдаемых handoff нет; порядок выполнения за ними не установлен." },
-    "main.architecture.relations.title": { params: [], text: "Наблюдаемые связи" },
-    "main.architecture.relations.copy": { params: [], text: "Связи между компонентами, каждая привязана к точному исходному якорю." },
-    "main.architecture.relations.summary": { params: ["total", "staticCount", "runtimeCount"], format: function (params) { return "Связей в рамках текущего анализа: " + params.total + " — " + params.staticCount + " статическая структурная поддержка, " + params.runtimeCount + " свидетельств переходов времени выполнения. Полный список ниже сгруппирован по типу связи; выберите источник, чтобы открыть его."; } },
+    "main.architecture.mechanism.frontier.continuation": { params: [], text: "Продолжение после этих вызовов первого уровня не установлено." },
     "main.architecture.authority.validated": { params: [], text: "Группировка: подтверждённая модельная гипотеза" },
     "main.architecture.authority.partial": { params: [], text: "Группировка: частично подтверждённая модельная гипотеза" },
     "main.architecture.authority.local": { params: [], text: "Группировка: локальная детерминированная архитектура" },
@@ -2183,7 +2088,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.architecture.list.title": { params: [], text: "Список компонентов" },
     "main.architecture.list.copy": { params: [], text: "Структурированная альтернатива карте: каждый компонент с уровнем доказательности. Выберите, чтобы сфокусировать карту." },
     "main.architecture.list.member_count": { params: ["count"], format: function (params) { return russianCount(params.count, "элемент", "элемента", "элементов"); } },
-    "main.architecture.synthesis_output_limit": { params: [], text: "Концептуальная группировка недоступна: модель исчерпала лимит ответа. Частичный ответ не использован; точная локальная архитектура остаётся доступна." },
     "main.provenance": { params: [], text: "Происхождение данных" },
     "main.source.locations": { params: [], text: "Исходные позиции" },
     "main.source.kind.function": { params: [], text: "функция" },
@@ -2250,7 +2154,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.frontier.source_unavailable": { params: [], text: "Источник недоступен" },
     "main.study.frontier.show_all": { params: ["count"], format: function (params) { return "Показать все " + params.count; } },
     "main.study.frontier.omission_sentence": { params: [], text: "Не вошли в рассмотрение моделью, чтобы запрос оставался ограниченным, — это полные локальные вопросы." },
-    "main.study.frontier.failed_banner": { params: [], text: "Модельное исследование не выполнено; показан локальный набор вопросов." },
     "main.study.frontier.ceiling_note": { params: ["shown", "total"], format: function (params) { return "Показано " + params.shown + " из " + params.total; } },
     "main.study.diagnostics.yes": { params: [], text: "Да" },
     "main.study.diagnostics.no": { params: [], text: "Нет" },
@@ -2364,7 +2267,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.overview.anatomy.components_kicker": { params: [], text: "Сохранённая архитектура" },
     "main.overview.anatomy.components": { params: [], text: "Компоненты" },
     "main.overview.anatomy.components_copy": { params: [], text: "Принятые концептуальные компоненты открываются на карте; точные исходники символов доступны, когда они есть." },
-    "main.overview.anatomy.components_copy_synthesis_failed": { params: [], text: "Синтез архитектуры не выполнен; показана локально доступная архитектура с точными исходниками символов." },
     "main.overview.anatomy.integrations_kicker": { params: [], text: "Сохранённые свидетельства" },
     "main.overview.anatomy.integrations": { params: [], text: "Интеграции" },
     "main.overview.anatomy.integrations_copy": { params: [], text: "Здесь могут появиться только точные объекты интеграций, уже подтверждённые этим сохранённым отчётом." },
@@ -5762,7 +5664,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 	function renderAtlasStudyFailedBrowse(root) {
 		var study = DATA.atlas_study;
 		if (!study || study.state !== 'failed' || !study.frontier_browse || !root) return;
-		root.appendChild(txt('p', 'rm-study-failed-banner rm-warning', msg('main.study.frontier.failed_banner')));
 		var browse = renderAtlasStudyBrowse();
 		if (browse) root.appendChild(browse);
 	}
@@ -7871,9 +7772,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 				root.appendChild(renderOverviewAnatomyZone(
 					msg('main.overview.anatomy.components_kicker'),
 					msg('main.overview.anatomy.components'),
-					DATA.architecture_synthesis && DATA.architecture_synthesis.state === 'failed' ?
-						msg('main.overview.anatomy.components_copy_synthesis_failed') :
-						msg('main.overview.anatomy.components_copy'),
+					msg('main.overview.anatomy.components_copy'),
 					anatomy.components,
 					'component'
 				));
@@ -7932,7 +7831,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			var copy = candidates > 0
 				? msg('main.overview.surfaces.zero_handlers_candidates', { count: candidates })
 				: msg('main.overview.surfaces.zero_handlers_none');
-			root.appendChild(txt('p', 'rm-overview-zero-handlers rm-warning', copy));
+			root.appendChild(txt('p', 'rm-overview-zero-handlers', copy));
 		}
 	}
 
@@ -10239,6 +10138,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var host = document.getElementById('rm-map-lens-objects');
     if (!host) return;
     host.replaceChildren();
+    host.setAttribute('data-lens', activeMapLens);
     var api = window.RepomapArchitectureCanvas && window.RepomapArchitectureCanvas.projectArchitectureLens;
     if (typeof api !== 'function') return;
     var projection = api(DATA, activeMapLens);
@@ -10247,11 +10147,23 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var entrypoints = projection.objects && projection.objects.entrypoints || projection.entrypoints || [];
     var touchpoints = projection.objects && projection.objects.touchpoints || projection.touchpoints || [];
     if (activeMapLens === 'landscape' || activeMapLens === 'mechanisms') {
-      mechanisms.forEach(function (flow) {
-        var row = el('div', 'rm-map-lens-object');
-        row.appendChild(txt('strong', '', msg('main.map.lens.object.flow', { id: flow.id })));
-        row.appendChild(txt('span', 'rm-map-lens-object__detail', msg('main.map.lens.object.components', { count: flow.component_ids.length })));
-        host.appendChild(row);
+      mechanisms.forEach(function (mechanism) {
+        if (mechanism && mechanism.kind === 'mechanism_fragment' && mechanism.fragment) {
+          var fragment = mechanism.fragment;
+          var details = el('details', 'rm-map-lens-object rm-map-lens-object--mechanism-fragment');
+          details.open = false;
+          var summary = el('summary', 'rm-map-lens-object__mechanism-summary');
+          var entry = fragment.entry || {};
+          var entryIdentity = entry.symbol || (entry.path ? entry.path + (entry.line ? ':' + entry.line : '') : '') || fragment.id;
+          summary.appendChild(txt('strong', '', String(entryIdentity)));
+          summary.appendChild(txt('span', 'rm-map-lens-object__detail', msg('main.architecture.disclosure.count', {
+            count: Array.isArray(fragment.handoffs) ? fragment.handoffs.length : 0,
+          })));
+          details.appendChild(summary);
+          details.appendChild(renderMechanismFragment(fragment));
+          host.appendChild(details);
+          return;
+        }
       });
       if (!mechanisms.length && activeMapLens === 'mechanisms') {
         host.appendChild(txt('p', 'rm-map-lens-object rm-map-lens-object--empty', msg('main.map.lens.empty.mechanisms')));
@@ -10353,35 +10265,16 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       msg('main.explore.the.repository.map'),
       msg('main.select.a.component.runtime.surface.or.code.path.to.inspect.its.implementation.context')
     ));
-    // Decision 218 (E): truthful synthesis state. The visible copy maps the
-    // exact closed status; "not performed" is forbidden for attempted
-    // provider calls, and a rejected proposal still shows the local
-    // Architecture. Closed diagnostic codes stay under provenance.
-    var synthesis = DATA.architecture_synthesis || null;
-    if (synthesis) {
-      var synthesisNote = architectureSynthesisNote(synthesis);
-      if (synthesisNote) {
-        root.appendChild(txt('p', 'rm-architecture-synthesis-note' + (synthesisNote.warning ? ' rm-warning' : ''), synthesisNote.copy));
-      }
-    }
     // Decision 221 authority + coverage axes: one compact truth strip above
     // the relations area. Grouping authority and member evidence are never
     // conflated — the strip states who owns the grouping claim and how much
     // of the requested surface it covers.
     var truthStrip = renderArchitectureAuthorityStrip();
     if (truthStrip) root.appendChild(truthStrip);
-    // Decision 222: the map/scheme is the first-class content — everything
-    // else (relations inventory, component list) comes after it. The canvas
-    // never reads as a runtime graph when no relation evidence exists.
-    var relations = architectureRelationships();
-    var relationState = architectureRelationState();
     var componentList = renderArchitectureComponentList();
     var canvasCard = null;
     if (DATA.architecture_canvas && window.RepomapArchitectureCanvas) {
       canvasCard = el('section', 'rm-card rm-architecture-canvas-card');
-      if (relationState === 'no_supported_relation_evidence') {
-        canvasCard.appendChild(txt('p', 'rm-architecture-canvas-conceptual rm-warning', msg('main.architecture.canvas.conceptual')));
-      }
       // Decision 236 (v11): Map lenses — Landscape/Entrypoints/
       // Integrations/Mechanisms. One layout; the lens emphasizes or dims
       // principal nodes without relayout (canvas.setLens) and the objects
@@ -10397,48 +10290,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       var systemMap = renderUserSystemMap(DATA.high_level_map || []);
       if (systemMap) root.appendChild(systemMap);
     }
-    // Relation area after the map: a closed three-state presentation derived
-    // from exact evidence (Decision 218 D).
-    //  - proven_component_relations: labeled relation list (and canvas);
-    //  - member_relations_unprojected: exact structural-fact count and why no
-    //    safe component edge was created;
-    //  - no_supported_relation_evidence: the view is labeled a conceptual /
-    //    package grouping and the structured list is primary.
-    // Decision 230 D5: the Architecture page is a bounded workspace —
-    // the map is the primary surface; relations, mechanism fragments and
-    // the component list live behind explicit disclosures with compact
-    // default counts. All information is preserved; nothing is deleted
-    // to shorten the page.
-    if (relations.length) {
-      var relationDisclosure = el('details', 'rm-architecture-disclosure rm-architecture-relations-disclosure');
-      relationDisclosure.open = false;
-      var relationSummary = el('summary', 'rm-architecture-disclosure__summary');
-      relationSummary.appendChild(txt('span', 'rm-architecture-disclosure__title', msg('main.architecture.relations.kicker')));
-      relationSummary.appendChild(txt('span', 'rm-architecture-disclosure__count', msg('main.architecture.disclosure.count', { count: relations.length })));
-      relationDisclosure.appendChild(relationSummary);
-      relationDisclosure.appendChild(renderArchitectureRelations(relations));
-      root.appendChild(relationDisclosure);
-    } else if (relationState === 'member_relations_unprojected') {
-      root.appendChild(renderArchitectureUnprojectedRelations());
-    } else {
-      root.appendChild(txt('p', 'rm-architecture-no-relation-evidence rm-warning', msg('main.architecture.no_relation_evidence')));
-    }
-    // Decision 226: one honest vertical fragment — entry → locally
-    // supported transitions → observed boundary/resource → explicit
-    // unresolved frontier. Rendered as a compact DFD-like list, never a
-    // complete process proof; no invented edges.
-    var fragment = DATA.mechanism_fragment;
-    if (fragment && fragment.version === 2) {
-      var transitionCount = Array.isArray(fragment.transitions) ? fragment.transitions.length : 0;
-      var mechanismDisclosure = el('details', 'rm-architecture-disclosure rm-architecture-mechanism-disclosure');
-      mechanismDisclosure.open = false;
-      var mechanismSummary = el('summary', 'rm-architecture-disclosure__summary');
-      mechanismSummary.appendChild(txt('span', 'rm-architecture-disclosure__title', msg('main.architecture.mechanism.title')));
-      mechanismSummary.appendChild(txt('span', 'rm-architecture-disclosure__count', msg('main.architecture.disclosure.count', { count: transitionCount })));
-      mechanismDisclosure.appendChild(mechanismSummary);
-      mechanismDisclosure.appendChild(renderMechanismFragment(fragment));
-      root.appendChild(mechanismDisclosure);
-    }
+    // Decision 242: mechanism_fragment is rendered only by the Mechanisms
+    // Map lens. Keeping a second disclosure here made one HTML report claim
+    // both "no connected flows" and "mechanism fragment available".
     if (componentList) {
       // With no supported relation evidence the structured list is the
       // primary representation (it already follows the map in layout).
@@ -10459,238 +10313,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     renderArchitectureReturn();
   }
 
-  // architectureSynthesisNote maps the exact closed Architecture synthesis
-  // status to bounded user copy (Decision 218 E). It returns null when the
-  // synthesis was accepted cleanly (no note needed). The mapping is:
-  //  - unavailable/offline/uncalled -> not attempted;
-  //  - accepted -> accepted (no note);
-  //  - accepted_partial -> accepted for X/Y, local remainder shown;
-  //  - validation/invalid response -> provider responded, proposal rejected,
-  //    local Architecture shown;
-  //  - output/response limit -> partial response unused, local shown;
-  //  - cached -> accepted grouping replayed.
-  function architectureSynthesisNote(synthesis) {
-    if (!synthesis) return null;
-    var state = String(synthesis.state || '');
-    var warning = true;
-    if (state === 'succeeded' || state === 'accepted') {
-      if (synthesis.proposal_partial) {
-        var covered = Number(synthesis.covered_conceptual_count) || 0;
-        var requested = Number(synthesis.requested_conceptual_count) || 0;
-        return {
-          warning: false,
-          copy: msg('main.architecture.synthesis_partial', { covered: covered, requested: requested }),
-        };
-      }
-      return null;
-    }
-    if (state === 'cached') {
-      return { warning: false, copy: msg('main.architecture.synthesis_cached') };
-    }
-    if (state === 'unavailable') {
-      return { warning: false, copy: msg('main.architecture.synthesis_unavailable') };
-    }
-    if (state === 'failed') {
-      if (synthesis.error_code === 'provider_output_limit') {
-        return { warning: true, copy: msg('main.architecture.synthesis_output_limit') };
-      }
-      if (synthesis.provider_call_succeeded && synthesis.proposal_rejected) {
-        return { warning: true, copy: msg('main.architecture.synthesis_rejected') };
-      }
-      return { warning: true, copy: msg('main.architecture.synthesis_failed') };
-    }
-    return null;
-  }
-
-  // architectureRelationState compiles the closed three-state relation
-  // presentation (Decision 218 D) from exact local evidence: proven
-  // component relations, member relations that exist but were not safely
-  // projectable to component edges, or no supported relation evidence.
-  function architectureRelationState() {
-    var grounding = DATA.architecture_grounding || {};
-    var rels = Array.isArray(grounding.relationships) ? grounding.relationships : [];
-    if (rels.length) return 'proven_component_relations';
-    var canvas = DATA.architecture_canvas || {};
-    var facts = Array.isArray(canvas.structural_facts) ? canvas.structural_facts : [];
-    var edges = Array.isArray(canvas.structural_edges) ? canvas.structural_edges : [];
-    if (facts.length || edges.length) return 'member_relations_unprojected';
-    return 'no_supported_relation_evidence';
-  }
-
-  function renderArchitectureUnprojectedRelations() {
-    var canvas = DATA.architecture_canvas || {};
-    var facts = Array.isArray(canvas.structural_facts) ? canvas.structural_facts : [];
-    var edges = Array.isArray(canvas.structural_edges) ? canvas.structural_edges : [];
-    var factsCount = facts.length;
-    var edgesCount = edges.length;
-    var section = el('section', 'rm-workspace-section rm-architecture-unprojected');
-    section.appendChild(renderViewHeading(
-      msg('main.architecture.relations.kicker'),
-      msg('main.architecture.relations.title'),
-      msg('main.architecture.unprojected.copy')
-    ));
-    section.appendChild(txt('p', '', msg('main.architecture.unprojected.summary', {
-      facts: factsCount,
-      edges: edgesCount,
-    })));
-    return section;
-  }
-
-  // architectureRelationships derives labeled relations from the grounding
-  // evidence: exact from/to anchors with a bounded kind label.
-  function architectureRelationships() {
-    var grounding = DATA.architecture_grounding || {};
-    var rels = Array.isArray(grounding.relationships) ? grounding.relationships : [];
-    if (!rels.length) return [];
-    var anchors = {};
-    (DATA.architecture_canvas && Array.isArray(DATA.architecture_canvas.behavior_anchors) ? DATA.architecture_canvas.behavior_anchors : []).forEach(function (anchor) {
-      if (anchor && anchor.id) anchors[String(anchor.id)] = String(anchor.label || anchor.name || anchor.id);
-    });
-    return rels.slice(0, 40).map(function (rel) {
-      var location = rel && rel.location && rel.location.path ? rel.location : null;
-      return {
-        id: String(rel && rel.id || ''),
-        kind: String(rel && rel.kind || ''),
-        evidenceKind: String(rel && rel.evidence_kind || ''),
-        from: anchors[String(rel && rel.from_anchor_id || '')] || String(rel && rel.from_anchor_id || ''),
-        to: anchors[String(rel && rel.to_anchor_id || '')] || String(rel && rel.to_anchor_id || ''),
-        path: location && location.path || '',
-        line: location && location.line || 0,
-        certainty: String(rel && rel.certainty || ''),
-      };
-    });
-  }
-
-  // architectureRelationKinds groups relations by kind with a human summary
-  // of the proof shape before any raw inventory (Decision 221 relations
-  // storytelling). Static structural support is distinguished from runtime
-  // transition by the exact evidence kind.
-  function architectureRelationSummary(relations) {
-    if (!relations.length) return null;
-    var byKind = {};
-    var staticCount = 0;
-    var runtimeCount = 0;
-    relations.forEach(function (relation) {
-      var kind = relation.kind || 'relation';
-      byKind[kind] = (byKind[kind] || 0) + 1;
-      var evidence = String(relation.evidenceKind || '');
-      if (evidence.indexOf('runtime') >= 0 || evidence.indexOf('transition') >= 0 || evidence.indexOf('handoff') >= 0) {
-        runtimeCount++;
-      } else {
-        staticCount++;
-      }
-    });
-    return { byKind: byKind, staticCount: staticCount, runtimeCount: runtimeCount, total: relations.length };
-  }
-
-  // architectureRelationKindLabel maps the closed relation-kind set to
-  // human copy (Decision 229 D4: relations inventory uses human group
-  // labels; raw kinds stay under Evidence details).
-  function architectureRelationKindLabel(kind) {
-    var copy = {
-      configures_security_boundary: 'main.architecture.relations.kind.configures_security_boundary',
-      static_call_supporting_relation: 'main.architecture.relations.kind.static_call_supporting_relation',
-    };
-    return msg(copy[kind] || 'main.architecture.relations.kind.other');
-  }
-
-  function renderArchitectureRelations(relations) {
-    var section = el('section', 'rm-workspace-section rm-architecture-relations');
-    section.appendChild(renderViewHeading(
-      msg('main.architecture.relations.kicker'),
-      msg('main.architecture.relations.title'),
-      msg('main.architecture.relations.copy')
-    ));
-    var summary = architectureRelationSummary(relations);
-    if (summary) {
-      // Human-facing summary before the raw inventory: how many relations,
-      // how many are static structural support vs runtime transition, and
-      // the kind breakdown.
-      section.appendChild(txt('p', 'rm-architecture-relations__summary', msg(
-        'main.architecture.relations.summary',
-        { total: summary.total, staticCount: summary.staticCount, runtimeCount: summary.runtimeCount }
-      )));
-      var kindNames = Object.keys(summary.byKind).sort();
-      if (kindNames.length) {
-        var kindList = el('ul', 'rm-architecture-relation-kinds');
-        kindNames.forEach(function (kind) {
-          var item = txt('li', 'rm-architecture-relation-kind-row', '');
-          item.appendChild(txt('span', 'rm-architecture-relation-kind-name', architectureRelationKindLabel(kind)));
-          item.appendChild(txt('span', 'rm-architecture-relation-kind-count', String(summary.byKind[kind])));
-          kindList.appendChild(item);
-        });
-        section.appendChild(kindList);
-      }
-    }
-    // Grouped raw inventory: each relation is a labeled edge with an exact
-    // source action when the evidence has a location.
-    var groups = {};
-    relations.forEach(function (relation) {
-      var key = String(relation.kind || 'relation');
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(relation);
-    });
-    var kindNames = Object.keys(groups).sort();
-    kindNames.forEach(function (kind) {
-      var groupSection = el('section', 'rm-architecture-relation-group');
-      groupSection.appendChild(txt('h4', 'rm-architecture-relation-group__label', architectureRelationKindLabel(kind)));
-      // Raw kind stays under Evidence details (Decision 229 D4) — the
-      // human label is primary, the enum is the exact identifier.
-      var rawKind = txt('span', 'rm-architecture-relation-group__raw-kind', kind);
-      rawKind.hidden = true;
-      groupSection.appendChild(rawKind);
-      var list = el('ul', 'rm-architecture-relation-list');
-      groups[kind].forEach(function (relation) {
-        var item = txt('li', 'rm-architecture-relation-item', '');
-        item.appendChild(txt('strong', '', relation.from));
-        item.appendChild(txt('span', 'rm-architecture-relation-arrow', '→'));
-        item.appendChild(txt('strong', '', relation.to));
-        if (relation.path) {
-          // Decision 221 + 230 (fresh reviews task-2/task-3): an exact
-          // source action renders whenever the location is openable —
-          // embedded snippet (drawer button) OR static/server jump
-          // (source action link). Only genuinely unavailable locations
-          // stay text-only; never a dead button.
-          var resolution = exactOverviewActionResolutionForLocation({ path: relation.path, line: relation.line || 0 });
-          if (resolution && resolution.source && resolution.source.snippet) {
-            var action = el('button', 'rm-source-action-link rm-architecture-relation-source', '');
-            action.type = 'button';
-            action.textContent = relation.path + ':' + relation.line;
-            action.onclick = function () {
-              openSourceSnippet(resolution.source.snippet, resolution.source.location, false, { drawerFirst: true });
-            };
-            item.appendChild(action);
-          } else if (resolution && resolution.source && resolution.source.location) {
-            var staticRelationAction = sourceActionElement(
-              relation.path + ':' + relation.line,
-              'rm-source-action-link rm-architecture-relation-source',
-              resolution.source.location,
-              0,
-              function () { openSourceLocation(resolution.source.location); }
-            );
-            if (staticRelationAction) {
-              item.appendChild(staticRelationAction);
-            } else {
-              item.appendChild(txt('span', 'rm-architecture-relation-source rm-architecture-relation-source--text', relation.path + ':' + relation.line));
-            }
-          } else {
-            item.appendChild(txt('span', 'rm-architecture-relation-source rm-architecture-relation-source--text', relation.path + ':' + relation.line));
-          }
-        }
-        list.appendChild(item);
-      });
-      groupSection.appendChild(list);
-      section.appendChild(groupSection);
-    });
-    return section;
-  }
-
-  // Decision 226: render the honest vertical mechanism fragment as a
-  // compact DFD-like list. Every transition carries its closed contract
-  // fields — claim_kind, support_mode, evidence, scenario, limitation,
-  // ordering — ALL always visible, never hover-only; the unresolved
-  // frontier renders with its items. This is a repository-perimeter
-  // fragment, never a complete process proof.
+  // Decision 242: render one exact first-hop fan-out per entry. Every
+  // handoff carries its closed contract fields; sibling handoffs are never
+  // chained or presented as runtime order, and the frontier stays explicit.
   // Decision 229 D4/D5: raw contract enums (direct_static_call,
   // resolved_static, resolved_path_order, not_established) are never
   // primary user copy. Human phrases carry the primary meaning; the raw
@@ -10698,19 +10323,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   var MECHANISM_CLAIM_KIND_COPY = {
    process_entry: 'main.architecture.mechanism.kind.process_entry',
    direct_static_call: 'main.architecture.mechanism.kind.direct_static_call',
-   unresolved_continuation: 'main.architecture.mechanism.kind.unresolved_continuation',
-   storage_boundary_callsite: 'main.architecture.mechanism.kind.storage_boundary_callsite',
-   outbound_client_callsite: 'main.architecture.mechanism.kind.outbound_client_callsite',
   };
   var MECHANISM_SUPPORT_MODE_COPY = {
    resolved_static: 'main.architecture.mechanism.support.resolved_static',
-   observed_local: 'main.architecture.mechanism.support.observed_local',
-   unknown: 'main.architecture.mechanism.support.unknown',
   };
   var MECHANISM_ORDERING_COPY = {
-   exact_local_order: 'main.architecture.mechanism.ordering.resolved_path_order',
+   exact_local_order: 'main.architecture.mechanism.ordering.exact_entry',
    resolved_path_order: 'main.architecture.mechanism.ordering.resolved_path_order',
-   not_established: 'main.architecture.mechanism.ordering.not_established',
   };
 
   function mechanismClaimKindLabel(transition) {
@@ -10729,159 +10348,40 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   }
 
   function renderMechanismFragment(fragment) {
-   var section = el('section', 'rm-workspace-section rm-mechanism-fragment');
-   section.appendChild(renderViewHeading(
-    msg('main.architecture.mechanism.kicker'),
-    msg('main.architecture.mechanism.title'),
-    msg('main.architecture.mechanism.copy')
-   ));
+   var section = el('section', 'rm-mechanism-fragment');
    var entry = fragment.entry || {};
-   var transitions = Array.isArray(fragment.transitions) ? fragment.transitions : [];
-   // Decision 230 D8: connected mechanism fragments. Array order is never
-   // path order. A path exists only through exact supported joins: the
-   // entry handoffs recorded by the local grounding pass. Direct static
-   // handoffs whose target is a lifecycle continuation stay in the entry
-   // chain; handoffs into boundary/resource targets become independent
-   // fragments; boundary/resource observations without a path join become
-   // side touchpoint groups (never "next steps").
-   var grounding = DATA.architecture_grounding || {};
-   var handoffs = Array.isArray(grounding.entry_handoffs) ? grounding.entry_handoffs : [];
-   var anchorsByID = {};
-   (Array.isArray(grounding.behavior_anchors) ? grounding.behavior_anchors : []).forEach(function (anchor) {
-    if (anchor && anchor.id) anchorsByID[anchor.id] = anchor;
-   });
-   // Resolve each direct handoff's target anchor kind from the
-   // relationships recorded at the same callsite.
-   var relationships = Array.isArray(grounding.relationships) ? grounding.relationships : [];
-   var callsiteTargetKind = {};
-   function mechanismCallsiteKey(value) {
-    value = value || {};
-    return String(value.path || '') + ':' + String(value.line || 0) + ':' + String(value.column || 0);
-   }
-   relationships.forEach(function (rel) {
-    if (!rel || !rel.location) return;
-    var key = mechanismCallsiteKey(rel.location);
-    var target = anchorsByID[rel.to_anchor_id] || {};
-    callsiteTargetKind[key] = String(target.kind || '');
-   });
-
-   var directCalls = transitions.filter(function (t) {
-    return t && t.claim_kind === 'direct_static_call';
-   });
-   var touchpoints = transitions.filter(function (t) {
-    return t && (t.claim_kind === 'storage_boundary_callsite' || t.claim_kind === 'outbound_client_callsite');
-   });
+   var handoffs = Array.isArray(fragment.handoffs) ? fragment.handoffs.slice() : [];
    var frontier = fragment.frontier || {};
-   var hasUnresolvedContinuation = transitions.some(function (t) {
-    return t && t.claim_kind === 'unresolved_continuation';
-   });
-
-   var workspace = el('div', 'rm-mechanism-fragment__workspace');
-   // --- Entry fragment: entry → lifecycle continuation → frontier ---
-   var entryFragment = el('div', 'rm-mechanism-fragment__graph rm-mechanism-fragment__graph--entry');
-   entryFragment.appendChild(txt('h4', 'rm-mechanism-fragment__fragment-title', msg('main.architecture.mechanism.fragment.entry')));
-   var entryNode = renderMechanismLane({ transition: entry, kind: 'entry' });
-   entryFragment.appendChild(entryNode);
-   var chainNext = [];
-   directCalls.forEach(function (t) {
-    var key = mechanismCallsiteKey(t);
-    if (String(callsiteTargetKind[key]).indexOf('lifecycle_') === 0) chainNext.push(t);
-   });
-   // Deterministic ordering by exact callsite, never array position. Column is
-   // part of Mechanism v2 identity, so same-line calls remain distinguishable.
-   chainNext.sort(function (a, b) {
+   // Decision 242 (v3): every item is an independent first-hop edge from
+   // this entry. Canonical display sorting is not execution order, and the
+   // renderer never turns sibling calls into a chain.
+   handoffs.sort(function (a, b) {
     var pathOrder = String(a.path || '').localeCompare(String(b.path || ''));
     if (pathOrder) return pathOrder;
     var lineOrder = (Number(a.line) || 0) - (Number(b.line) || 0);
     if (lineOrder) return lineOrder;
     return (Number(a.column) || 0) - (Number(b.column) || 0);
    });
-   chainNext.forEach(function (t) {
+   section.appendChild(txt('p', 'rm-arch__copy rm-mechanism-fragment__copy', msg('main.architecture.mechanism.copy')));
+   section.appendChild(renderMechanismLane({ transition: entry, kind: 'entry' }));
+   var fanout = el('div', 'rm-mechanism-fragment__fanout');
+   handoffs.forEach(function (handoff) {
+    var edge = el('div', 'rm-mechanism-fragment__handoff');
     var arrow = el('div', 'rm-mechanism-fragment__arrow');
     arrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-line', '→'));
-    arrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-mode', mechanismSupportModeLabel(t)));
-    entryFragment.appendChild(arrow);
-    entryFragment.appendChild(renderMechanismLane({ transition: t, kind: 'transition' }));
-   });
-   if (chainNext.length || hasUnresolvedContinuation) {
-    var frontierArrow = el('div', 'rm-mechanism-fragment__arrow rm-mechanism-fragment__arrow--frontier');
-    frontierArrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-line', '⇢'));
-    frontierArrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-mode', msg('main.architecture.mechanism.fragment.unknown_continuation')));
-    entryFragment.appendChild(frontierArrow);
-    entryFragment.appendChild(renderMechanismFrontier(frontier, fragment));
-   }
-   workspace.appendChild(entryFragment);
-
-   // --- Independent fragments: handoffs whose target is not a lifecycle
-   // continuation (boundary/resource targets) ---
-   var independent = directCalls.filter(function (t) {
-    var key = mechanismCallsiteKey(t);
-    return String(callsiteTargetKind[key]).indexOf('lifecycle_') !== 0;
-   });
-   independent.forEach(function (t) {
-    var frag = el('div', 'rm-mechanism-fragment__graph rm-mechanism-fragment__graph--independent');
-    frag.appendChild(txt('h4', 'rm-mechanism-fragment__fragment-title', msg('main.architecture.mechanism.fragment.independent')));
-    var sourceNode = renderMechanismLane({ transition: t, kind: 'transition' });
-    frag.appendChild(sourceNode);
-    var arrow = el('div', 'rm-mechanism-fragment__arrow');
-    arrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-line', '→'));
-    arrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-mode', mechanismSupportModeLabel(t)));
-    frag.appendChild(arrow);
-    // The target symbol comes from the recorded anchor at the same callsite.
-    var key = mechanismCallsiteKey(t);
-    var rel = relationships.filter(function (r) {
-     return r && r.location && mechanismCallsiteKey(r.location) === key;
-    })[0];
-    var targetAnchor = rel ? (anchorsByID[rel.to_anchor_id] || {}) : {};
-    var targetNode = el('div', 'rm-mechanism-fragment__target');
-    var targetSymbol = String(targetAnchor.label || '').replace(/^[a-z_]+ /, '');
-    targetNode.appendChild(txt('strong', 'rm-mechanism-fragment__target-symbol', targetSymbol || t.symbol || ''));
-    if (targetAnchor.location) {
-     targetNode.appendChild(renderMechanismLocationAction(targetAnchor.location, t));
+    arrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-mode', mechanismSupportModeLabel(handoff)));
+    edge.appendChild(arrow);
+    edge.appendChild(renderMechanismLane({ transition: handoff, kind: 'transition' }));
+    if (handoff.target && handoff.target.path && handoff.target.line) {
+     var target = el('div', 'rm-mechanism-fragment__target');
+     target.appendChild(txt('strong', 'rm-mechanism-fragment__target-symbol', String(handoff.target.label || handoff.symbol || '')));
+     target.appendChild(renderMechanismLocationAction(handoff.target));
+     edge.appendChild(target);
     }
-    frag.appendChild(targetNode);
-    workspace.appendChild(frag);
+    fanout.appendChild(edge);
    });
-
-   // --- Side touchpoint groups: boundary/resource observations without a
-   // path join are grouped by family — never rendered as next steps. ---
-   var touchpointGroups = {};
-   touchpoints.forEach(function (t) {
-    var family = mechanismTouchpointFamily(t);
-    if (!touchpointGroups[family]) touchpointGroups[family] = [];
-    touchpointGroups[family].push(t);
-   });
-   var familyNames = Object.keys(touchpointGroups).sort();
-   if (familyNames.length) {
-    var touchSection = el('div', 'rm-mechanism-fragment__touchpoints');
-    touchSection.appendChild(txt('h4', 'rm-mechanism-fragment__fragment-title', msg('main.architecture.mechanism.fragment.touchpoints')));
-    touchSection.appendChild(txt('p', 'rm-mechanism-fragment__touchpoints-copy', msg('main.architecture.mechanism.fragment.touchpoints_copy')));
-    familyNames.forEach(function (family) {
-     var group = touchpointGroups[family];
-     var details = el('details', 'rm-mechanism-fragment__touchpoint-group');
-     details.open = false;
-     var summary = el('summary', 'rm-mechanism-fragment__touchpoint-summary');
-     summary.appendChild(txt('span', 'rm-mechanism-fragment__touchpoint-family', family));
-     summary.appendChild(txt('span', 'rm-mechanism-fragment__touchpoint-count', msg('main.architecture.disclosure.count', { count: group.length })));
-     details.appendChild(summary);
-     var list = el('ul', 'rm-mechanism-fragment__touchpoint-list');
-     group.forEach(function (t) {
-      var item = txt('li', 'rm-mechanism-fragment__touchpoint-item', '');
-      var label = mechanismTransitionLabel(t);
-      if (label) item.appendChild(txt('span', 'rm-mechanism-fragment__touchpoint-label', label));
-      if (t.path && t.line) item.appendChild(renderMechanismLocationAction({ path: t.path, line: t.line }, t));
-      list.appendChild(item);
-     });
-     details.appendChild(list);
-     touchSection.appendChild(details);
-    });
-    workspace.appendChild(touchSection);
-   }
-
-   section.appendChild(workspace);
-   if (!chainNext.length && !independent.length && !familyNames.length) {
-    section.appendChild(txt('p', 'rm-arch__copy rm-arch__inspector-empty', msg('main.architecture.mechanism.no_transitions')));
-   }
+   section.appendChild(fanout);
+   section.appendChild(renderMechanismFrontier(frontier));
    return section;
   }
 
@@ -10889,7 +10389,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   // mechanism limitation strings are localized for the RU product; only
   // display text changes, never evidence identity.
   var MECHANISM_LIMITATION_RU = {
-    'No locally saved transitions beyond the observed handoffs; execution order beyond them is not established.': 'Нет локально сохранённых переходов за пределами наблюдаемых передач управления; порядок выполнения за ними не установлен.',
+    'No further transition is locally proven to continue from these first-hop handoffs; execution order beyond them is not established.': 'Дальнейший переход от этих вызовов первого уровня локально не доказан; порядок выполнения после них не установлен.',
+    'Exact repository-local direct static call from a build-selected production process entry; runtime order, successful execution, ownership, and transitive reachability are not observed.': 'Точный прямой статический вызов внутри репозитория от выбранной сборкой рабочей точки входа процесса; порядок выполнения, успешное исполнение, владение и транзитивная достижимость не наблюдались.',
+    'Exact repository-local direct static call boundary; runtime reachability is not implied.': 'Точная граница прямого статического вызова внутри репозитория; достижимость во время выполнения из этого не следует.',
     'physical target unknown; runtime reachability not proven; read/write/order semantics not proven': 'Физическая цель неизвестна; достижимость в рантайме не доказана; семантика чтения/записи/порядка не доказана.',
     'execution order and further transitions not established': 'Порядок выполнения и дальнейшие переходы не установлены.',
     'process entry identity only; runtime reachability not proven': 'Только идентичность точки входа процесса; достижимость в рантайме не доказана.',
@@ -10905,32 +10407,41 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
   function mechanismTransitionLabel(transition) {
    var rawLabel = String(transition && transition.label || '');
-   var label = rawLabel.indexOf('process entry ') === 0 ? rawLabel.slice('process entry '.length) : rawLabel;
-   if (label.indexOf('boundary ') === 0) {
-    label = msg('main.architecture.mechanism.label.boundary') + ' · ' + label.slice('boundary '.length);
-   } else if (label.indexOf('resource ') === 0) {
-    label = msg('main.architecture.mechanism.label.resource') + ' · ' + label.slice('resource '.length);
-   } else if (label.indexOf('operation') === 0) {
-    label = msg('main.architecture.mechanism.label.operation');
-   } else if (label.indexOf('surface') === 0) {
-    label = msg('main.architecture.mechanism.label.surface');
+   var label = rawLabel === 'process entry' ? '' :
+    (rawLabel.indexOf('process entry ') === 0 ? rawLabel.slice('process entry '.length) : rawLabel);
+   if (label.indexOf('handoff to ') === 0) {
+    label = msg('main.architecture.mechanism.label.handoff_to', { target: label.slice('handoff to '.length) });
+   } else if (label === 'handoff') {
+    label = msg('main.architecture.mechanism.label.handoff');
    }
    return label;
   }
 
-  function mechanismTouchpointFamily(transition) {
-   var raw = String(transition && transition.label || '');
-   // "boundary net", "resource github.com/casdoor/notify2" → the last token.
-   var tokens = raw.split(/\s+/);
-   if (tokens.length >= 2 && (tokens[0] === 'boundary' || tokens[0] === 'resource')) {
-    return tokens.slice(1).join(' ') || 'unknown';
+  // Mechanism evidence owns exact callsite/target locations independently of
+  // the overview snippet shelf. A mixed-snippet report therefore falls back
+  // to the normal manifest-authorized server/static source action for this
+  // location instead of hiding it because an unrelated snippet exists.
+  function exactMechanismActionResolutionForLocation(location) {
+   var sourceResolution = exactOverviewSourceResolutionForLocation(location);
+   if (sourceResolution.conflict || sourceResolution.source) return sourceResolution;
+   if (!location || exactOverviewSourcePath(location.path) !== location.path ||
+    !Number.isInteger(location.line) || location.line <= 0 ||
+    !sourceLocationActionAvailable(location)) {
+    return { source: null, conflict: false };
    }
-   return msg('main.architecture.mechanism.fragment.touchpoint_misc');
+   return { source: {
+    snippet: null,
+    location: {
+     path: location.path,
+     line: location.line,
+     column: Number.isInteger(location.column) && location.column > 0 ? location.column : 0,
+    },
+   }, conflict: false };
   }
 
-  function renderMechanismLocationAction(location, transition) {
+  function renderMechanismLocationAction(location) {
    var callsite = location.path + (location.line ? ':' + location.line : '');
-   var resolution = exactOverviewActionResolutionForLocation({ path: location.path, line: Number(location.line) || 0 });
+   var resolution = exactMechanismActionResolutionForLocation({ path: location.path, line: Number(location.line) || 0 });
    var snippet = resolution && resolution.source && resolution.source.snippet;
    if (snippet) {
     var action = el('button', 'rm-mechanism-fragment__location rm-source-action-link');
@@ -10958,14 +10469,21 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
    return txt('code', 'rm-mechanism-fragment__location rm-mechanism-fragment__location--text', callsite);
   }
 
-  function renderMechanismFrontier(frontier, fragment) {
+  function renderMechanismFrontier(frontier) {
    var box = el('div', 'rm-mechanism-fragment__frontier');
    box.appendChild(txt('strong', null, msg('main.architecture.mechanism.frontier_title')));
-   box.appendChild(txt('p', 'rm-arch__limitation', mechanismLimitationText(frontier.limitation) || msg('main.architecture.mechanism.frontier_default')));
+   box.appendChild(txt('p', 'rm-arch__limitation', mechanismLimitationText(frontier.limitation)));
    (Array.isArray(frontier.unresolved) ? frontier.unresolved : []).forEach(function (item) {
-    if (String(item || '').trim()) box.appendChild(txt('p', 'rm-mechanism-fragment__frontier-item', String(item)));
+    if (String(item || '').trim()) box.appendChild(txt('p', 'rm-mechanism-fragment__frontier-item', mechanismFrontierItemText(item)));
    });
    return box;
+  }
+
+  function mechanismFrontierItemText(value) {
+   if (String(value) === 'continuation beyond the first-hop handoffs') {
+    return msg('main.architecture.mechanism.frontier.continuation');
+   }
+   return String(value);
   }
 
   function renderMechanismLane(lane) {
@@ -10978,7 +10496,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
    var callsite = transition.path ? transition.path + (transition.line ? ':' + transition.line : '') : '';
    if (callsite) {
     var location = { path: transition.path, line: Number(transition.line) || 0 };
-    var resolution = exactOverviewActionResolutionForLocation(location);
+    var resolution = exactMechanismActionResolutionForLocation(location);
     var snippet = resolution && resolution.source && resolution.source.snippet;
     if (snippet) {
      var locationAction = el('button', 'rm-mechanism-fragment__location rm-source-action-link');
@@ -11012,7 +10530,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
    // kind ("process entry …"), which the kind badge already states —
    // strip the prefix so primary copy never repeats a raw enum.
    var label = mechanismTransitionLabel(transition);
-   if (transition.symbol && transition.symbol.indexOf('member-symbol') !== 0) {
+   if (transition.claim_kind === 'process_entry' && transition.symbol && transition.symbol.indexOf('member-symbol') !== 0) {
     item.appendChild(txt('span', 'rm-mechanism-fragment__label', String(transition.symbol)));
    } else if (label && label !== 'handoff') {
     item.appendChild(txt('span', 'rm-mechanism-fragment__label', label));

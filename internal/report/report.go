@@ -34,7 +34,9 @@ import (
 // Decision 236 (v11): Map primary product — map projection/lenses,
 // entry categories, touchpoint families, inspector tabs (format 37).
 // Decision 240 removes the obsolete Navigator product field (format 38).
-const CurrentFormatVersion = 38
+// Decision 242 makes plural per-entry Mechanism fragments part of the
+// authoritative Architecture Canvas and removes the singular report field.
+const CurrentFormatVersion = 39
 
 // Decision 232: adjudication anchor coverage + semantic-empty browse.
 // Decision 233: alternate co-projection + concentration marker.
@@ -180,10 +182,10 @@ type ReportData struct {
 	// beside the report. It contains only locally proven Units, entities,
 	// observations, evidence and relations; files and symbols remain evidence
 	// locators rather than entities.
-	RepositoryAtlas *repositoryatlas.Atlas `json:"repository_atlas,omitempty"`
-	Components         []Component             `json:"components,omitempty"`
-	ComponentRelations []ComponentRelation     `json:"component_relations,omitempty"`
-	ArchitectureCanvas *ArchitectureCanvas     `json:"architecture_canvas,omitempty"`
+	RepositoryAtlas    *repositoryatlas.Atlas `json:"repository_atlas,omitempty"`
+	Components         []Component            `json:"components,omitempty"`
+	ComponentRelations []ComponentRelation    `json:"component_relations,omitempty"`
+	ArchitectureCanvas *ArchitectureCanvas    `json:"architecture_canvas,omitempty"`
 	// ArchitectureComponentNavigation is a report-owned navigation projection
 	// over the exact accepted Canvas. It keeps conceptual map targets separate
 	// from producer-owned source starts and never selects a representative
@@ -194,12 +196,8 @@ type ReportData struct {
 	// scopes. It states only that an observed callsite occurs in an exact
 	// member scope; it never claims runtime dependency or semantics.
 	ArchitectureAssociations *ArchitectureAssociationProjection `json:"architecture_associations,omitempty"`
-	// MechanismFragment is the Decision 226 honest vertical fragment:
-	// entry → supported transitions → observed boundary/resource →
-	// explicit unresolved frontier, built from saved local evidence only.
-	MechanismFragment *MechanismFragmentProjection `json:"mechanism_fragment,omitempty"`
-	GuidedTour        *guidedtour.Story            `json:"guided_tour,omitempty"`
-	SemanticArtifacts []semanticdiscovery.Artifact `json:"semantic_artifacts,omitempty"`
+	GuidedTour               *guidedtour.Story                  `json:"guided_tour,omitempty"`
+	SemanticArtifacts        []semanticdiscovery.Artifact       `json:"semantic_artifacts,omitempty"`
 	// UserMechanisms is a presentation-only supported slice of independently
 	// replayed canonical Mechanisms. Raw artifacts remain available for replay
 	// and provenance, but default onboarding renders this narrower projection.

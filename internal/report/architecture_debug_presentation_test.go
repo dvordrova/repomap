@@ -78,7 +78,9 @@ func TestArchitectureDebugPresentationClassifiesEveryRenderedDetailAndScenario(t
 			BehaviorAnchors: []componentmap.BehaviorAnchor{{
 				ID: "anchor-main", Kind: componentmap.AnchorProcessEntry,
 				Label: "Main process entry", Location: location,
-				Scenario: productBuild,
+				ProofMode: componentmap.AnchorProofProcessEntry,
+				MemberIDs: []componentmap.MemberID{{Kind: componentmap.MemberSymbol, Value: "member-main"}},
+				Scenario:  productBuild,
 				Producer: evidence.Provenance{
 					Provider: "repository_adapter", Version: "v2", Operation: "anchor",
 					Detail: "Anchor producer explains the detected entrypoint.", Location: &location,

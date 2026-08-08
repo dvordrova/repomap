@@ -37,15 +37,27 @@ do not participate. Higher-value production entries, core code, effect
 boundaries, and public APIs are advertised before examples, tests, fixtures,
 generated files, playgrounds, experiments, and documentation.
 
-The sqlc baseline considered 1,007 paths, advertised 503 in lexical order, and
-mislabelled all 503 as `production_source`. T1 advertised 574 within the same
-closed byte budget with truthful roles: 18 primary entries, 11 effect
-boundaries, 69 production-core files, one public API, 11 examples, and 464
-fixtures after the production frontier. Gotify and Dive remained complete while
-gaining the same truthful role distinctions. Request/cache identities advance
-and current-format requests remain replayable without provider access.
+The final ordinary gate exposed two remaining generic precedence errors: a
+`main.go` under an exact `testing` segment was promoted to a production entry,
+and a `main.go` under an exact `scripts` segment was promoted ahead of product
+code. Exact `testing` segments are now test/fixture scope and exact `scripts`
+segments are the closed `tooling` role; near-miss names such as
+`testingtools`/`scriptsupport` remain production paths. These roles are consumed
+by every closed local role list, so tooling is deferred rather than silently
+dropped. A generic observed static call is also no longer upgraded to
+`effect_integration_boundary`: only an effect-specific producer fact or the
+path classifier may make that claim.
 
-### 2.2 Theme T3 — tell the model the existing prose bounds
+The sqlc baseline considered 1,007 paths, advertised 503 in lexical order, and
+mislabelled all 503 as `production_source`. The first T1 observation advertised
+574 within the same closed byte budget and moved core compiler/analyzer files
+ahead of fixtures. The final gate then exposed the `scripts` and generic-call
+misclassifications above; the contract correction, rather than the now-stale
+intermediate role histogram, is authoritative. Gotify and Dive remained
+complete while gaining the same role distinctions. Scout request identity is
+v5, vocabulary identity v3, and accepted-cache contract v3.
+
+### 2.2 Theme T3 — align prose bounds and keep local truncation readable
 
 Scout is told the backend's already-enforced limits: at most 80 Unicode
 characters for a title, 200 for a question, and 240 each for `why_it_matters`
@@ -59,6 +71,17 @@ another provider call. Fresh Maddy and Gotify observations accepted 12 and 17
 themes respectively; their longest Scout fields stayed within the advertised
 bounds and their longest observations were 118 and 236 characters. The value
 of T3 is the truthful contract alignment, not those stochastic theme counts.
+
+The first final PocketBase gate still exceeded the disclosed observation limit
+once. The former raw-rune truncation published a final card ending mid-sentence
+(`OnTerminate и `). Therefore the existing bounded normalization now keeps
+the largest complete-word prefix that fits when whitespace supplies a boundary
+(otherwise the largest rune-safe prefix) and appends `…`. It preserves the
+useful bounded evidence instead of rolling back to a much earlier sentence.
+The typed normalization count remains in status, no model-authored fact is
+invented, and no useful theme is rejected.
+Scout result identity advances 4→5 and Adjudication result identity 3→4; request
+schemas and provider prompts do not change for this local correction.
 
 ### 2.3 Explicit-empty nested Architecture components are item-local
 
@@ -119,6 +142,19 @@ No provider prose, raw source, repository path, endpoint, credential, header,
 or arbitrary error string is added to console/status metadata. `report.json`
 and `report.html` remain user-facing product documentation and receive no
 debug-only archaeology.
+
+### 2.6 Equivalent Theme reductions are explained outside the report
+
+When two accepted Theme candidates reduce to one card because they have the
+same exact reading set or the same normalized title/question, the reducer
+retains alternate titles, questions, and readings and increments the exact
+`co_projected` count. `study_themes.v1.json` v4 persists that count and validates
+the partition `adjudicated = cards + omitted + co_projected`.
+
+The ordinary console explains the backend-owned reduction in product language:
+`equivalent themes merged into existing cards: N · alternate readings retained`.
+The HTML keeps the resulting card and alternate readings but does not show
+operational accounting jargon.
 
 ## 3. Rejected experiments
 

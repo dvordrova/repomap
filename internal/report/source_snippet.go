@@ -1707,6 +1707,17 @@ func overviewSourceTargetsWithPackageEvidence(
 				handoff.Callee.Location.Line,
 				handoff.Callee.ID,
 			)
+			appendTarget(
+				handoff.RepresentativeCallsite.Path,
+				handoff.RepresentativeCallsite.Line,
+				"",
+			)
+		}
+		for _, relationship := range grounding.Relationships {
+			appendTarget(relationship.Location.Path, relationship.Location.Line, "")
+			for _, location := range relationship.RepresentativeLocations {
+				appendTarget(location.Path, location.Line, "")
+			}
 		}
 	}
 
@@ -1730,6 +1741,17 @@ func overviewSourceTargetsWithPackageEvidence(
 	for _, locator := range data.ArchitectureCanvas.StructuralLocators {
 		for _, location := range overviewArchitectureStructuralLocatorLocations(locator, openable) {
 			appendTarget(location.Path, location.Line, "")
+		}
+	}
+	for _, edge := range data.ArchitectureCanvas.StructuralEdges {
+		if edge.Witness.Kind != componentmap.StructuralRelationBehaviorHandoff {
+			continue
+		}
+		if edge.Witness.Location != nil {
+			appendTarget(edge.Witness.Location.Path, edge.Witness.Location.Line, "")
+		}
+		if target := exactMechanismTargetForMemberID(data.ArchitectureCanvas, edge.Witness.To); target != nil {
+			appendTarget(target.Path, target.Line, target.Symbol)
 		}
 	}
 	return result

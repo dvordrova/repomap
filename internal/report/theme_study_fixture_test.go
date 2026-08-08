@@ -216,10 +216,11 @@ func writeThemeStudyAcceptedArtifacts(t *testing.T, runDir string, data *ReportD
 	}
 	themes := themestudy.StudyThemes{
 		// Decision 235 (v11): themes artifact v3 (rebase + equivalence).
-		Version: "v3", ScoutSHA256: scoutRequest.CatalogSHA256,
+		Version: themestudy.StudyThemesVersion, ScoutSHA256: scoutRequest.CatalogSHA256,
 		AdjSHA256: adjRequest.CatalogSHA256,
 		Cards:     reduction.Cards, Omitted: reduction.Omitted,
-		Partial: reduction.Partial, Diagnostics: reduction.Diagnostics,
+		CoProjected: reduction.CoProjected, Partial: reduction.Partial,
+		Diagnostics: reduction.Diagnostics,
 	}
 	writeThemeArtifact(t, runDir, themestudy.StudyThemesArtifactFilename, mustEncodeTheme(t, themes))
 }

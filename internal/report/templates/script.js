@@ -2486,7 +2486,6 @@
 	function renderAtlasStudyFailedBrowse(root) {
 		var study = DATA.atlas_study;
 		if (!study || study.state !== 'failed' || !study.frontier_browse || !root) return;
-		root.appendChild(txt('p', 'rm-study-failed-banner rm-warning', msg('main.study.frontier.failed_banner')));
 		var browse = renderAtlasStudyBrowse();
 		if (browse) root.appendChild(browse);
 	}
@@ -4600,9 +4599,7 @@
 				root.appendChild(renderOverviewAnatomyZone(
 					msg('main.overview.anatomy.components_kicker'),
 					msg('main.overview.anatomy.components'),
-					DATA.architecture_synthesis && DATA.architecture_synthesis.state === 'failed' ?
-						msg('main.overview.anatomy.components_copy_synthesis_failed') :
-						msg('main.overview.anatomy.components_copy'),
+					msg('main.overview.anatomy.components_copy'),
 					anatomy.components,
 					'component'
 				));
@@ -4661,7 +4658,7 @@
 			var copy = candidates > 0
 				? msg('main.overview.surfaces.zero_handlers_candidates', { count: candidates })
 				: msg('main.overview.surfaces.zero_handlers_none');
-			root.appendChild(txt('p', 'rm-overview-zero-handlers rm-warning', copy));
+			root.appendChild(txt('p', 'rm-overview-zero-handlers', copy));
 		}
 	}
 
@@ -6973,6 +6970,7 @@
     var host = document.getElementById('rm-map-lens-objects');
     if (!host) return;
     host.replaceChildren();
+    host.setAttribute('data-lens', activeMapLens);
     var api = window.RepomapArchitectureCanvas && window.RepomapArchitectureCanvas.projectArchitectureLens;
     if (typeof api !== 'function') return;
     var projection = api(DATA, activeMapLens);
@@ -6981,11 +6979,23 @@
     var entrypoints = projection.objects && projection.objects.entrypoints || projection.entrypoints || [];
     var touchpoints = projection.objects && projection.objects.touchpoints || projection.touchpoints || [];
     if (activeMapLens === 'landscape' || activeMapLens === 'mechanisms') {
-      mechanisms.forEach(function (flow) {
-        var row = el('div', 'rm-map-lens-object');
-        row.appendChild(txt('strong', '', msg('main.map.lens.object.flow', { id: flow.id })));
-        row.appendChild(txt('span', 'rm-map-lens-object__detail', msg('main.map.lens.object.components', { count: flow.component_ids.length })));
-        host.appendChild(row);
+      mechanisms.forEach(function (mechanism) {
+        if (mechanism && mechanism.kind === 'mechanism_fragment' && mechanism.fragment) {
+          var fragment = mechanism.fragment;
+          var details = el('details', 'rm-map-lens-object rm-map-lens-object--mechanism-fragment');
+          details.open = false;
+          var summary = el('summary', 'rm-map-lens-object__mechanism-summary');
+          var entry = fragment.entry || {};
+          var entryIdentity = entry.symbol || (entry.path ? entry.path + (entry.line ? ':' + entry.line : '') : '') || fragment.id;
+          summary.appendChild(txt('strong', '', String(entryIdentity)));
+          summary.appendChild(txt('span', 'rm-map-lens-object__detail', msg('main.architecture.disclosure.count', {
+            count: Array.isArray(fragment.handoffs) ? fragment.handoffs.length : 0,
+          })));
+          details.appendChild(summary);
+          details.appendChild(renderMechanismFragment(fragment));
+          host.appendChild(details);
+          return;
+        }
       });
       if (!mechanisms.length && activeMapLens === 'mechanisms') {
         host.appendChild(txt('p', 'rm-map-lens-object rm-map-lens-object--empty', msg('main.map.lens.empty.mechanisms')));
@@ -7087,35 +7097,16 @@
       msg('main.explore.the.repository.map'),
       msg('main.select.a.component.runtime.surface.or.code.path.to.inspect.its.implementation.context')
     ));
-    // Decision 218 (E): truthful synthesis state. The visible copy maps the
-    // exact closed status; "not performed" is forbidden for attempted
-    // provider calls, and a rejected proposal still shows the local
-    // Architecture. Closed diagnostic codes stay under provenance.
-    var synthesis = DATA.architecture_synthesis || null;
-    if (synthesis) {
-      var synthesisNote = architectureSynthesisNote(synthesis);
-      if (synthesisNote) {
-        root.appendChild(txt('p', 'rm-architecture-synthesis-note' + (synthesisNote.warning ? ' rm-warning' : ''), synthesisNote.copy));
-      }
-    }
     // Decision 221 authority + coverage axes: one compact truth strip above
     // the relations area. Grouping authority and member evidence are never
     // conflated — the strip states who owns the grouping claim and how much
     // of the requested surface it covers.
     var truthStrip = renderArchitectureAuthorityStrip();
     if (truthStrip) root.appendChild(truthStrip);
-    // Decision 222: the map/scheme is the first-class content — everything
-    // else (relations inventory, component list) comes after it. The canvas
-    // never reads as a runtime graph when no relation evidence exists.
-    var relations = architectureRelationships();
-    var relationState = architectureRelationState();
     var componentList = renderArchitectureComponentList();
     var canvasCard = null;
     if (DATA.architecture_canvas && window.RepomapArchitectureCanvas) {
       canvasCard = el('section', 'rm-card rm-architecture-canvas-card');
-      if (relationState === 'no_supported_relation_evidence') {
-        canvasCard.appendChild(txt('p', 'rm-architecture-canvas-conceptual rm-warning', msg('main.architecture.canvas.conceptual')));
-      }
       // Decision 236 (v11): Map lenses — Landscape/Entrypoints/
       // Integrations/Mechanisms. One layout; the lens emphasizes or dims
       // principal nodes without relayout (canvas.setLens) and the objects
@@ -7131,48 +7122,9 @@
       var systemMap = renderUserSystemMap(DATA.high_level_map || []);
       if (systemMap) root.appendChild(systemMap);
     }
-    // Relation area after the map: a closed three-state presentation derived
-    // from exact evidence (Decision 218 D).
-    //  - proven_component_relations: labeled relation list (and canvas);
-    //  - member_relations_unprojected: exact structural-fact count and why no
-    //    safe component edge was created;
-    //  - no_supported_relation_evidence: the view is labeled a conceptual /
-    //    package grouping and the structured list is primary.
-    // Decision 230 D5: the Architecture page is a bounded workspace —
-    // the map is the primary surface; relations, mechanism fragments and
-    // the component list live behind explicit disclosures with compact
-    // default counts. All information is preserved; nothing is deleted
-    // to shorten the page.
-    if (relations.length) {
-      var relationDisclosure = el('details', 'rm-architecture-disclosure rm-architecture-relations-disclosure');
-      relationDisclosure.open = false;
-      var relationSummary = el('summary', 'rm-architecture-disclosure__summary');
-      relationSummary.appendChild(txt('span', 'rm-architecture-disclosure__title', msg('main.architecture.relations.kicker')));
-      relationSummary.appendChild(txt('span', 'rm-architecture-disclosure__count', msg('main.architecture.disclosure.count', { count: relations.length })));
-      relationDisclosure.appendChild(relationSummary);
-      relationDisclosure.appendChild(renderArchitectureRelations(relations));
-      root.appendChild(relationDisclosure);
-    } else if (relationState === 'member_relations_unprojected') {
-      root.appendChild(renderArchitectureUnprojectedRelations());
-    } else {
-      root.appendChild(txt('p', 'rm-architecture-no-relation-evidence rm-warning', msg('main.architecture.no_relation_evidence')));
-    }
-    // Decision 226: one honest vertical fragment — entry → locally
-    // supported transitions → observed boundary/resource → explicit
-    // unresolved frontier. Rendered as a compact DFD-like list, never a
-    // complete process proof; no invented edges.
-    var fragment = DATA.mechanism_fragment;
-    if (fragment && fragment.version === 2) {
-      var transitionCount = Array.isArray(fragment.transitions) ? fragment.transitions.length : 0;
-      var mechanismDisclosure = el('details', 'rm-architecture-disclosure rm-architecture-mechanism-disclosure');
-      mechanismDisclosure.open = false;
-      var mechanismSummary = el('summary', 'rm-architecture-disclosure__summary');
-      mechanismSummary.appendChild(txt('span', 'rm-architecture-disclosure__title', msg('main.architecture.mechanism.title')));
-      mechanismSummary.appendChild(txt('span', 'rm-architecture-disclosure__count', msg('main.architecture.disclosure.count', { count: transitionCount })));
-      mechanismDisclosure.appendChild(mechanismSummary);
-      mechanismDisclosure.appendChild(renderMechanismFragment(fragment));
-      root.appendChild(mechanismDisclosure);
-    }
+    // Decision 242: mechanism_fragment is rendered only by the Mechanisms
+    // Map lens. Keeping a second disclosure here made one HTML report claim
+    // both "no connected flows" and "mechanism fragment available".
     if (componentList) {
       // With no supported relation evidence the structured list is the
       // primary representation (it already follows the map in layout).
@@ -7193,238 +7145,9 @@
     renderArchitectureReturn();
   }
 
-  // architectureSynthesisNote maps the exact closed Architecture synthesis
-  // status to bounded user copy (Decision 218 E). It returns null when the
-  // synthesis was accepted cleanly (no note needed). The mapping is:
-  //  - unavailable/offline/uncalled -> not attempted;
-  //  - accepted -> accepted (no note);
-  //  - accepted_partial -> accepted for X/Y, local remainder shown;
-  //  - validation/invalid response -> provider responded, proposal rejected,
-  //    local Architecture shown;
-  //  - output/response limit -> partial response unused, local shown;
-  //  - cached -> accepted grouping replayed.
-  function architectureSynthesisNote(synthesis) {
-    if (!synthesis) return null;
-    var state = String(synthesis.state || '');
-    var warning = true;
-    if (state === 'succeeded' || state === 'accepted') {
-      if (synthesis.proposal_partial) {
-        var covered = Number(synthesis.covered_conceptual_count) || 0;
-        var requested = Number(synthesis.requested_conceptual_count) || 0;
-        return {
-          warning: false,
-          copy: msg('main.architecture.synthesis_partial', { covered: covered, requested: requested }),
-        };
-      }
-      return null;
-    }
-    if (state === 'cached') {
-      return { warning: false, copy: msg('main.architecture.synthesis_cached') };
-    }
-    if (state === 'unavailable') {
-      return { warning: false, copy: msg('main.architecture.synthesis_unavailable') };
-    }
-    if (state === 'failed') {
-      if (synthesis.error_code === 'provider_output_limit') {
-        return { warning: true, copy: msg('main.architecture.synthesis_output_limit') };
-      }
-      if (synthesis.provider_call_succeeded && synthesis.proposal_rejected) {
-        return { warning: true, copy: msg('main.architecture.synthesis_rejected') };
-      }
-      return { warning: true, copy: msg('main.architecture.synthesis_failed') };
-    }
-    return null;
-  }
-
-  // architectureRelationState compiles the closed three-state relation
-  // presentation (Decision 218 D) from exact local evidence: proven
-  // component relations, member relations that exist but were not safely
-  // projectable to component edges, or no supported relation evidence.
-  function architectureRelationState() {
-    var grounding = DATA.architecture_grounding || {};
-    var rels = Array.isArray(grounding.relationships) ? grounding.relationships : [];
-    if (rels.length) return 'proven_component_relations';
-    var canvas = DATA.architecture_canvas || {};
-    var facts = Array.isArray(canvas.structural_facts) ? canvas.structural_facts : [];
-    var edges = Array.isArray(canvas.structural_edges) ? canvas.structural_edges : [];
-    if (facts.length || edges.length) return 'member_relations_unprojected';
-    return 'no_supported_relation_evidence';
-  }
-
-  function renderArchitectureUnprojectedRelations() {
-    var canvas = DATA.architecture_canvas || {};
-    var facts = Array.isArray(canvas.structural_facts) ? canvas.structural_facts : [];
-    var edges = Array.isArray(canvas.structural_edges) ? canvas.structural_edges : [];
-    var factsCount = facts.length;
-    var edgesCount = edges.length;
-    var section = el('section', 'rm-workspace-section rm-architecture-unprojected');
-    section.appendChild(renderViewHeading(
-      msg('main.architecture.relations.kicker'),
-      msg('main.architecture.relations.title'),
-      msg('main.architecture.unprojected.copy')
-    ));
-    section.appendChild(txt('p', '', msg('main.architecture.unprojected.summary', {
-      facts: factsCount,
-      edges: edgesCount,
-    })));
-    return section;
-  }
-
-  // architectureRelationships derives labeled relations from the grounding
-  // evidence: exact from/to anchors with a bounded kind label.
-  function architectureRelationships() {
-    var grounding = DATA.architecture_grounding || {};
-    var rels = Array.isArray(grounding.relationships) ? grounding.relationships : [];
-    if (!rels.length) return [];
-    var anchors = {};
-    (DATA.architecture_canvas && Array.isArray(DATA.architecture_canvas.behavior_anchors) ? DATA.architecture_canvas.behavior_anchors : []).forEach(function (anchor) {
-      if (anchor && anchor.id) anchors[String(anchor.id)] = String(anchor.label || anchor.name || anchor.id);
-    });
-    return rels.slice(0, 40).map(function (rel) {
-      var location = rel && rel.location && rel.location.path ? rel.location : null;
-      return {
-        id: String(rel && rel.id || ''),
-        kind: String(rel && rel.kind || ''),
-        evidenceKind: String(rel && rel.evidence_kind || ''),
-        from: anchors[String(rel && rel.from_anchor_id || '')] || String(rel && rel.from_anchor_id || ''),
-        to: anchors[String(rel && rel.to_anchor_id || '')] || String(rel && rel.to_anchor_id || ''),
-        path: location && location.path || '',
-        line: location && location.line || 0,
-        certainty: String(rel && rel.certainty || ''),
-      };
-    });
-  }
-
-  // architectureRelationKinds groups relations by kind with a human summary
-  // of the proof shape before any raw inventory (Decision 221 relations
-  // storytelling). Static structural support is distinguished from runtime
-  // transition by the exact evidence kind.
-  function architectureRelationSummary(relations) {
-    if (!relations.length) return null;
-    var byKind = {};
-    var staticCount = 0;
-    var runtimeCount = 0;
-    relations.forEach(function (relation) {
-      var kind = relation.kind || 'relation';
-      byKind[kind] = (byKind[kind] || 0) + 1;
-      var evidence = String(relation.evidenceKind || '');
-      if (evidence.indexOf('runtime') >= 0 || evidence.indexOf('transition') >= 0 || evidence.indexOf('handoff') >= 0) {
-        runtimeCount++;
-      } else {
-        staticCount++;
-      }
-    });
-    return { byKind: byKind, staticCount: staticCount, runtimeCount: runtimeCount, total: relations.length };
-  }
-
-  // architectureRelationKindLabel maps the closed relation-kind set to
-  // human copy (Decision 229 D4: relations inventory uses human group
-  // labels; raw kinds stay under Evidence details).
-  function architectureRelationKindLabel(kind) {
-    var copy = {
-      configures_security_boundary: 'main.architecture.relations.kind.configures_security_boundary',
-      static_call_supporting_relation: 'main.architecture.relations.kind.static_call_supporting_relation',
-    };
-    return msg(copy[kind] || 'main.architecture.relations.kind.other');
-  }
-
-  function renderArchitectureRelations(relations) {
-    var section = el('section', 'rm-workspace-section rm-architecture-relations');
-    section.appendChild(renderViewHeading(
-      msg('main.architecture.relations.kicker'),
-      msg('main.architecture.relations.title'),
-      msg('main.architecture.relations.copy')
-    ));
-    var summary = architectureRelationSummary(relations);
-    if (summary) {
-      // Human-facing summary before the raw inventory: how many relations,
-      // how many are static structural support vs runtime transition, and
-      // the kind breakdown.
-      section.appendChild(txt('p', 'rm-architecture-relations__summary', msg(
-        'main.architecture.relations.summary',
-        { total: summary.total, staticCount: summary.staticCount, runtimeCount: summary.runtimeCount }
-      )));
-      var kindNames = Object.keys(summary.byKind).sort();
-      if (kindNames.length) {
-        var kindList = el('ul', 'rm-architecture-relation-kinds');
-        kindNames.forEach(function (kind) {
-          var item = txt('li', 'rm-architecture-relation-kind-row', '');
-          item.appendChild(txt('span', 'rm-architecture-relation-kind-name', architectureRelationKindLabel(kind)));
-          item.appendChild(txt('span', 'rm-architecture-relation-kind-count', String(summary.byKind[kind])));
-          kindList.appendChild(item);
-        });
-        section.appendChild(kindList);
-      }
-    }
-    // Grouped raw inventory: each relation is a labeled edge with an exact
-    // source action when the evidence has a location.
-    var groups = {};
-    relations.forEach(function (relation) {
-      var key = String(relation.kind || 'relation');
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(relation);
-    });
-    var kindNames = Object.keys(groups).sort();
-    kindNames.forEach(function (kind) {
-      var groupSection = el('section', 'rm-architecture-relation-group');
-      groupSection.appendChild(txt('h4', 'rm-architecture-relation-group__label', architectureRelationKindLabel(kind)));
-      // Raw kind stays under Evidence details (Decision 229 D4) — the
-      // human label is primary, the enum is the exact identifier.
-      var rawKind = txt('span', 'rm-architecture-relation-group__raw-kind', kind);
-      rawKind.hidden = true;
-      groupSection.appendChild(rawKind);
-      var list = el('ul', 'rm-architecture-relation-list');
-      groups[kind].forEach(function (relation) {
-        var item = txt('li', 'rm-architecture-relation-item', '');
-        item.appendChild(txt('strong', '', relation.from));
-        item.appendChild(txt('span', 'rm-architecture-relation-arrow', '→'));
-        item.appendChild(txt('strong', '', relation.to));
-        if (relation.path) {
-          // Decision 221 + 230 (fresh reviews task-2/task-3): an exact
-          // source action renders whenever the location is openable —
-          // embedded snippet (drawer button) OR static/server jump
-          // (source action link). Only genuinely unavailable locations
-          // stay text-only; never a dead button.
-          var resolution = exactOverviewActionResolutionForLocation({ path: relation.path, line: relation.line || 0 });
-          if (resolution && resolution.source && resolution.source.snippet) {
-            var action = el('button', 'rm-source-action-link rm-architecture-relation-source', '');
-            action.type = 'button';
-            action.textContent = relation.path + ':' + relation.line;
-            action.onclick = function () {
-              openSourceSnippet(resolution.source.snippet, resolution.source.location, false, { drawerFirst: true });
-            };
-            item.appendChild(action);
-          } else if (resolution && resolution.source && resolution.source.location) {
-            var staticRelationAction = sourceActionElement(
-              relation.path + ':' + relation.line,
-              'rm-source-action-link rm-architecture-relation-source',
-              resolution.source.location,
-              0,
-              function () { openSourceLocation(resolution.source.location); }
-            );
-            if (staticRelationAction) {
-              item.appendChild(staticRelationAction);
-            } else {
-              item.appendChild(txt('span', 'rm-architecture-relation-source rm-architecture-relation-source--text', relation.path + ':' + relation.line));
-            }
-          } else {
-            item.appendChild(txt('span', 'rm-architecture-relation-source rm-architecture-relation-source--text', relation.path + ':' + relation.line));
-          }
-        }
-        list.appendChild(item);
-      });
-      groupSection.appendChild(list);
-      section.appendChild(groupSection);
-    });
-    return section;
-  }
-
-  // Decision 226: render the honest vertical mechanism fragment as a
-  // compact DFD-like list. Every transition carries its closed contract
-  // fields — claim_kind, support_mode, evidence, scenario, limitation,
-  // ordering — ALL always visible, never hover-only; the unresolved
-  // frontier renders with its items. This is a repository-perimeter
-  // fragment, never a complete process proof.
+  // Decision 242: render one exact first-hop fan-out per entry. Every
+  // handoff carries its closed contract fields; sibling handoffs are never
+  // chained or presented as runtime order, and the frontier stays explicit.
   // Decision 229 D4/D5: raw contract enums (direct_static_call,
   // resolved_static, resolved_path_order, not_established) are never
   // primary user copy. Human phrases carry the primary meaning; the raw
@@ -7432,19 +7155,13 @@
   var MECHANISM_CLAIM_KIND_COPY = {
    process_entry: 'main.architecture.mechanism.kind.process_entry',
    direct_static_call: 'main.architecture.mechanism.kind.direct_static_call',
-   unresolved_continuation: 'main.architecture.mechanism.kind.unresolved_continuation',
-   storage_boundary_callsite: 'main.architecture.mechanism.kind.storage_boundary_callsite',
-   outbound_client_callsite: 'main.architecture.mechanism.kind.outbound_client_callsite',
   };
   var MECHANISM_SUPPORT_MODE_COPY = {
    resolved_static: 'main.architecture.mechanism.support.resolved_static',
-   observed_local: 'main.architecture.mechanism.support.observed_local',
-   unknown: 'main.architecture.mechanism.support.unknown',
   };
   var MECHANISM_ORDERING_COPY = {
-   exact_local_order: 'main.architecture.mechanism.ordering.resolved_path_order',
+   exact_local_order: 'main.architecture.mechanism.ordering.exact_entry',
    resolved_path_order: 'main.architecture.mechanism.ordering.resolved_path_order',
-   not_established: 'main.architecture.mechanism.ordering.not_established',
   };
 
   function mechanismClaimKindLabel(transition) {
@@ -7463,159 +7180,40 @@
   }
 
   function renderMechanismFragment(fragment) {
-   var section = el('section', 'rm-workspace-section rm-mechanism-fragment');
-   section.appendChild(renderViewHeading(
-    msg('main.architecture.mechanism.kicker'),
-    msg('main.architecture.mechanism.title'),
-    msg('main.architecture.mechanism.copy')
-   ));
+   var section = el('section', 'rm-mechanism-fragment');
    var entry = fragment.entry || {};
-   var transitions = Array.isArray(fragment.transitions) ? fragment.transitions : [];
-   // Decision 230 D8: connected mechanism fragments. Array order is never
-   // path order. A path exists only through exact supported joins: the
-   // entry handoffs recorded by the local grounding pass. Direct static
-   // handoffs whose target is a lifecycle continuation stay in the entry
-   // chain; handoffs into boundary/resource targets become independent
-   // fragments; boundary/resource observations without a path join become
-   // side touchpoint groups (never "next steps").
-   var grounding = DATA.architecture_grounding || {};
-   var handoffs = Array.isArray(grounding.entry_handoffs) ? grounding.entry_handoffs : [];
-   var anchorsByID = {};
-   (Array.isArray(grounding.behavior_anchors) ? grounding.behavior_anchors : []).forEach(function (anchor) {
-    if (anchor && anchor.id) anchorsByID[anchor.id] = anchor;
-   });
-   // Resolve each direct handoff's target anchor kind from the
-   // relationships recorded at the same callsite.
-   var relationships = Array.isArray(grounding.relationships) ? grounding.relationships : [];
-   var callsiteTargetKind = {};
-   function mechanismCallsiteKey(value) {
-    value = value || {};
-    return String(value.path || '') + ':' + String(value.line || 0) + ':' + String(value.column || 0);
-   }
-   relationships.forEach(function (rel) {
-    if (!rel || !rel.location) return;
-    var key = mechanismCallsiteKey(rel.location);
-    var target = anchorsByID[rel.to_anchor_id] || {};
-    callsiteTargetKind[key] = String(target.kind || '');
-   });
-
-   var directCalls = transitions.filter(function (t) {
-    return t && t.claim_kind === 'direct_static_call';
-   });
-   var touchpoints = transitions.filter(function (t) {
-    return t && (t.claim_kind === 'storage_boundary_callsite' || t.claim_kind === 'outbound_client_callsite');
-   });
+   var handoffs = Array.isArray(fragment.handoffs) ? fragment.handoffs.slice() : [];
    var frontier = fragment.frontier || {};
-   var hasUnresolvedContinuation = transitions.some(function (t) {
-    return t && t.claim_kind === 'unresolved_continuation';
-   });
-
-   var workspace = el('div', 'rm-mechanism-fragment__workspace');
-   // --- Entry fragment: entry → lifecycle continuation → frontier ---
-   var entryFragment = el('div', 'rm-mechanism-fragment__graph rm-mechanism-fragment__graph--entry');
-   entryFragment.appendChild(txt('h4', 'rm-mechanism-fragment__fragment-title', msg('main.architecture.mechanism.fragment.entry')));
-   var entryNode = renderMechanismLane({ transition: entry, kind: 'entry' });
-   entryFragment.appendChild(entryNode);
-   var chainNext = [];
-   directCalls.forEach(function (t) {
-    var key = mechanismCallsiteKey(t);
-    if (String(callsiteTargetKind[key]).indexOf('lifecycle_') === 0) chainNext.push(t);
-   });
-   // Deterministic ordering by exact callsite, never array position. Column is
-   // part of Mechanism v2 identity, so same-line calls remain distinguishable.
-   chainNext.sort(function (a, b) {
+   // Decision 242 (v3): every item is an independent first-hop edge from
+   // this entry. Canonical display sorting is not execution order, and the
+   // renderer never turns sibling calls into a chain.
+   handoffs.sort(function (a, b) {
     var pathOrder = String(a.path || '').localeCompare(String(b.path || ''));
     if (pathOrder) return pathOrder;
     var lineOrder = (Number(a.line) || 0) - (Number(b.line) || 0);
     if (lineOrder) return lineOrder;
     return (Number(a.column) || 0) - (Number(b.column) || 0);
    });
-   chainNext.forEach(function (t) {
+   section.appendChild(txt('p', 'rm-arch__copy rm-mechanism-fragment__copy', msg('main.architecture.mechanism.copy')));
+   section.appendChild(renderMechanismLane({ transition: entry, kind: 'entry' }));
+   var fanout = el('div', 'rm-mechanism-fragment__fanout');
+   handoffs.forEach(function (handoff) {
+    var edge = el('div', 'rm-mechanism-fragment__handoff');
     var arrow = el('div', 'rm-mechanism-fragment__arrow');
     arrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-line', '→'));
-    arrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-mode', mechanismSupportModeLabel(t)));
-    entryFragment.appendChild(arrow);
-    entryFragment.appendChild(renderMechanismLane({ transition: t, kind: 'transition' }));
-   });
-   if (chainNext.length || hasUnresolvedContinuation) {
-    var frontierArrow = el('div', 'rm-mechanism-fragment__arrow rm-mechanism-fragment__arrow--frontier');
-    frontierArrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-line', '⇢'));
-    frontierArrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-mode', msg('main.architecture.mechanism.fragment.unknown_continuation')));
-    entryFragment.appendChild(frontierArrow);
-    entryFragment.appendChild(renderMechanismFrontier(frontier, fragment));
-   }
-   workspace.appendChild(entryFragment);
-
-   // --- Independent fragments: handoffs whose target is not a lifecycle
-   // continuation (boundary/resource targets) ---
-   var independent = directCalls.filter(function (t) {
-    var key = mechanismCallsiteKey(t);
-    return String(callsiteTargetKind[key]).indexOf('lifecycle_') !== 0;
-   });
-   independent.forEach(function (t) {
-    var frag = el('div', 'rm-mechanism-fragment__graph rm-mechanism-fragment__graph--independent');
-    frag.appendChild(txt('h4', 'rm-mechanism-fragment__fragment-title', msg('main.architecture.mechanism.fragment.independent')));
-    var sourceNode = renderMechanismLane({ transition: t, kind: 'transition' });
-    frag.appendChild(sourceNode);
-    var arrow = el('div', 'rm-mechanism-fragment__arrow');
-    arrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-line', '→'));
-    arrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-mode', mechanismSupportModeLabel(t)));
-    frag.appendChild(arrow);
-    // The target symbol comes from the recorded anchor at the same callsite.
-    var key = mechanismCallsiteKey(t);
-    var rel = relationships.filter(function (r) {
-     return r && r.location && mechanismCallsiteKey(r.location) === key;
-    })[0];
-    var targetAnchor = rel ? (anchorsByID[rel.to_anchor_id] || {}) : {};
-    var targetNode = el('div', 'rm-mechanism-fragment__target');
-    var targetSymbol = String(targetAnchor.label || '').replace(/^[a-z_]+ /, '');
-    targetNode.appendChild(txt('strong', 'rm-mechanism-fragment__target-symbol', targetSymbol || t.symbol || ''));
-    if (targetAnchor.location) {
-     targetNode.appendChild(renderMechanismLocationAction(targetAnchor.location, t));
+    arrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-mode', mechanismSupportModeLabel(handoff)));
+    edge.appendChild(arrow);
+    edge.appendChild(renderMechanismLane({ transition: handoff, kind: 'transition' }));
+    if (handoff.target && handoff.target.path && handoff.target.line) {
+     var target = el('div', 'rm-mechanism-fragment__target');
+     target.appendChild(txt('strong', 'rm-mechanism-fragment__target-symbol', String(handoff.target.label || handoff.symbol || '')));
+     target.appendChild(renderMechanismLocationAction(handoff.target));
+     edge.appendChild(target);
     }
-    frag.appendChild(targetNode);
-    workspace.appendChild(frag);
+    fanout.appendChild(edge);
    });
-
-   // --- Side touchpoint groups: boundary/resource observations without a
-   // path join are grouped by family — never rendered as next steps. ---
-   var touchpointGroups = {};
-   touchpoints.forEach(function (t) {
-    var family = mechanismTouchpointFamily(t);
-    if (!touchpointGroups[family]) touchpointGroups[family] = [];
-    touchpointGroups[family].push(t);
-   });
-   var familyNames = Object.keys(touchpointGroups).sort();
-   if (familyNames.length) {
-    var touchSection = el('div', 'rm-mechanism-fragment__touchpoints');
-    touchSection.appendChild(txt('h4', 'rm-mechanism-fragment__fragment-title', msg('main.architecture.mechanism.fragment.touchpoints')));
-    touchSection.appendChild(txt('p', 'rm-mechanism-fragment__touchpoints-copy', msg('main.architecture.mechanism.fragment.touchpoints_copy')));
-    familyNames.forEach(function (family) {
-     var group = touchpointGroups[family];
-     var details = el('details', 'rm-mechanism-fragment__touchpoint-group');
-     details.open = false;
-     var summary = el('summary', 'rm-mechanism-fragment__touchpoint-summary');
-     summary.appendChild(txt('span', 'rm-mechanism-fragment__touchpoint-family', family));
-     summary.appendChild(txt('span', 'rm-mechanism-fragment__touchpoint-count', msg('main.architecture.disclosure.count', { count: group.length })));
-     details.appendChild(summary);
-     var list = el('ul', 'rm-mechanism-fragment__touchpoint-list');
-     group.forEach(function (t) {
-      var item = txt('li', 'rm-mechanism-fragment__touchpoint-item', '');
-      var label = mechanismTransitionLabel(t);
-      if (label) item.appendChild(txt('span', 'rm-mechanism-fragment__touchpoint-label', label));
-      if (t.path && t.line) item.appendChild(renderMechanismLocationAction({ path: t.path, line: t.line }, t));
-      list.appendChild(item);
-     });
-     details.appendChild(list);
-     touchSection.appendChild(details);
-    });
-    workspace.appendChild(touchSection);
-   }
-
-   section.appendChild(workspace);
-   if (!chainNext.length && !independent.length && !familyNames.length) {
-    section.appendChild(txt('p', 'rm-arch__copy rm-arch__inspector-empty', msg('main.architecture.mechanism.no_transitions')));
-   }
+   section.appendChild(fanout);
+   section.appendChild(renderMechanismFrontier(frontier));
    return section;
   }
 
@@ -7623,7 +7221,9 @@
   // mechanism limitation strings are localized for the RU product; only
   // display text changes, never evidence identity.
   var MECHANISM_LIMITATION_RU = {
-    'No locally saved transitions beyond the observed handoffs; execution order beyond them is not established.': 'Нет локально сохранённых переходов за пределами наблюдаемых передач управления; порядок выполнения за ними не установлен.',
+    'No further transition is locally proven to continue from these first-hop handoffs; execution order beyond them is not established.': 'Дальнейший переход от этих вызовов первого уровня локально не доказан; порядок выполнения после них не установлен.',
+    'Exact repository-local direct static call from a build-selected production process entry; runtime order, successful execution, ownership, and transitive reachability are not observed.': 'Точный прямой статический вызов внутри репозитория от выбранной сборкой рабочей точки входа процесса; порядок выполнения, успешное исполнение, владение и транзитивная достижимость не наблюдались.',
+    'Exact repository-local direct static call boundary; runtime reachability is not implied.': 'Точная граница прямого статического вызова внутри репозитория; достижимость во время выполнения из этого не следует.',
     'physical target unknown; runtime reachability not proven; read/write/order semantics not proven': 'Физическая цель неизвестна; достижимость в рантайме не доказана; семантика чтения/записи/порядка не доказана.',
     'execution order and further transitions not established': 'Порядок выполнения и дальнейшие переходы не установлены.',
     'process entry identity only; runtime reachability not proven': 'Только идентичность точки входа процесса; достижимость в рантайме не доказана.',
@@ -7639,32 +7239,41 @@
 
   function mechanismTransitionLabel(transition) {
    var rawLabel = String(transition && transition.label || '');
-   var label = rawLabel.indexOf('process entry ') === 0 ? rawLabel.slice('process entry '.length) : rawLabel;
-   if (label.indexOf('boundary ') === 0) {
-    label = msg('main.architecture.mechanism.label.boundary') + ' · ' + label.slice('boundary '.length);
-   } else if (label.indexOf('resource ') === 0) {
-    label = msg('main.architecture.mechanism.label.resource') + ' · ' + label.slice('resource '.length);
-   } else if (label.indexOf('operation') === 0) {
-    label = msg('main.architecture.mechanism.label.operation');
-   } else if (label.indexOf('surface') === 0) {
-    label = msg('main.architecture.mechanism.label.surface');
+   var label = rawLabel === 'process entry' ? '' :
+    (rawLabel.indexOf('process entry ') === 0 ? rawLabel.slice('process entry '.length) : rawLabel);
+   if (label.indexOf('handoff to ') === 0) {
+    label = msg('main.architecture.mechanism.label.handoff_to', { target: label.slice('handoff to '.length) });
+   } else if (label === 'handoff') {
+    label = msg('main.architecture.mechanism.label.handoff');
    }
    return label;
   }
 
-  function mechanismTouchpointFamily(transition) {
-   var raw = String(transition && transition.label || '');
-   // "boundary net", "resource github.com/casdoor/notify2" → the last token.
-   var tokens = raw.split(/\s+/);
-   if (tokens.length >= 2 && (tokens[0] === 'boundary' || tokens[0] === 'resource')) {
-    return tokens.slice(1).join(' ') || 'unknown';
+  // Mechanism evidence owns exact callsite/target locations independently of
+  // the overview snippet shelf. A mixed-snippet report therefore falls back
+  // to the normal manifest-authorized server/static source action for this
+  // location instead of hiding it because an unrelated snippet exists.
+  function exactMechanismActionResolutionForLocation(location) {
+   var sourceResolution = exactOverviewSourceResolutionForLocation(location);
+   if (sourceResolution.conflict || sourceResolution.source) return sourceResolution;
+   if (!location || exactOverviewSourcePath(location.path) !== location.path ||
+    !Number.isInteger(location.line) || location.line <= 0 ||
+    !sourceLocationActionAvailable(location)) {
+    return { source: null, conflict: false };
    }
-   return msg('main.architecture.mechanism.fragment.touchpoint_misc');
+   return { source: {
+    snippet: null,
+    location: {
+     path: location.path,
+     line: location.line,
+     column: Number.isInteger(location.column) && location.column > 0 ? location.column : 0,
+    },
+   }, conflict: false };
   }
 
-  function renderMechanismLocationAction(location, transition) {
+  function renderMechanismLocationAction(location) {
    var callsite = location.path + (location.line ? ':' + location.line : '');
-   var resolution = exactOverviewActionResolutionForLocation({ path: location.path, line: Number(location.line) || 0 });
+   var resolution = exactMechanismActionResolutionForLocation({ path: location.path, line: Number(location.line) || 0 });
    var snippet = resolution && resolution.source && resolution.source.snippet;
    if (snippet) {
     var action = el('button', 'rm-mechanism-fragment__location rm-source-action-link');
@@ -7692,14 +7301,21 @@
    return txt('code', 'rm-mechanism-fragment__location rm-mechanism-fragment__location--text', callsite);
   }
 
-  function renderMechanismFrontier(frontier, fragment) {
+  function renderMechanismFrontier(frontier) {
    var box = el('div', 'rm-mechanism-fragment__frontier');
    box.appendChild(txt('strong', null, msg('main.architecture.mechanism.frontier_title')));
-   box.appendChild(txt('p', 'rm-arch__limitation', mechanismLimitationText(frontier.limitation) || msg('main.architecture.mechanism.frontier_default')));
+   box.appendChild(txt('p', 'rm-arch__limitation', mechanismLimitationText(frontier.limitation)));
    (Array.isArray(frontier.unresolved) ? frontier.unresolved : []).forEach(function (item) {
-    if (String(item || '').trim()) box.appendChild(txt('p', 'rm-mechanism-fragment__frontier-item', String(item)));
+    if (String(item || '').trim()) box.appendChild(txt('p', 'rm-mechanism-fragment__frontier-item', mechanismFrontierItemText(item)));
    });
    return box;
+  }
+
+  function mechanismFrontierItemText(value) {
+   if (String(value) === 'continuation beyond the first-hop handoffs') {
+    return msg('main.architecture.mechanism.frontier.continuation');
+   }
+   return String(value);
   }
 
   function renderMechanismLane(lane) {
@@ -7712,7 +7328,7 @@
    var callsite = transition.path ? transition.path + (transition.line ? ':' + transition.line : '') : '';
    if (callsite) {
     var location = { path: transition.path, line: Number(transition.line) || 0 };
-    var resolution = exactOverviewActionResolutionForLocation(location);
+    var resolution = exactMechanismActionResolutionForLocation(location);
     var snippet = resolution && resolution.source && resolution.source.snippet;
     if (snippet) {
      var locationAction = el('button', 'rm-mechanism-fragment__location rm-source-action-link');
@@ -7746,7 +7362,7 @@
    // kind ("process entry …"), which the kind badge already states —
    // strip the prefix so primary copy never repeats a raw enum.
    var label = mechanismTransitionLabel(transition);
-   if (transition.symbol && transition.symbol.indexOf('member-symbol') !== 0) {
+   if (transition.claim_kind === 'process_entry' && transition.symbol && transition.symbol.indexOf('member-symbol') !== 0) {
     item.appendChild(txt('span', 'rm-mechanism-fragment__label', String(transition.symbol)));
    } else if (label && label !== 'handoff') {
     item.appendChild(txt('span', 'rm-mechanism-fragment__label', label));

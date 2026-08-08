@@ -47,6 +47,7 @@ type themeStudyRunOutcome struct {
 	AdjAccepted       int
 	AdjRejected       int
 	PublishedCards    int
+	CoProjected       int
 	Partial           bool
 	RequestBytes      int
 	ResponseBytes     int
@@ -518,10 +519,11 @@ func runThemeStudyProductForRun(
 		// concentration diagnostic); Decision 235: version 3 (theme
 		// equivalence accounting). Version literal must track the
 		// constant (D233 literal-drift defect closed).
-		Version: "v3", ScoutSHA256: scoutRequest.CatalogSHA256,
+		Version: themestudy.StudyThemesVersion, ScoutSHA256: scoutRequest.CatalogSHA256,
 		AdjSHA256: adjRequest.CatalogSHA256,
 		Cards:     reduction.Cards, Omitted: reduction.Omitted,
-		Partial: reduction.Partial, Diagnostics: reduction.Diagnostics,
+		CoProjected: reduction.CoProjected, Partial: reduction.Partial,
+		Diagnostics: reduction.Diagnostics,
 	}
 	themesBytes, err := themestudy.EncodeStudyThemes(themes)
 	if err != nil {
@@ -549,6 +551,7 @@ func runThemeStudyProductForRun(
 		return outcome, ctxErr
 	}
 	outcome.PublishedCards = len(themes.Cards)
+	outcome.CoProjected = themes.CoProjected
 	outcome.Partial = themes.Partial
 	// The final state is partial when either semantic stage dropped an item:
 	// a Scout-rejected sibling, an Adjudication-rejected theme, or a
@@ -559,8 +562,12 @@ func runThemeStudyProductForRun(
 		adjOutcome.State == atlasstudy.ProductStateAcceptedPartial {
 		outcome.State = atlasstudy.ProductStateAcceptedPartial
 	}
-	output.State(
-		"Study", string(outcome.State),
+	output.State("Study", string(outcome.State), themeStudyCompletionDetails(outcome)...)
+	return outcome, nil
+}
+
+func themeStudyCompletionDetails(outcome themeStudyRunOutcome) []string {
+	details := []string{
 		fmt.Sprintf("theme cards: %d", outcome.PublishedCards),
 		fmt.Sprintf("scout %d/%d · adjudication %d/%d",
 			outcome.ScoutAccepted, outcome.ScoutAccepted+outcome.ScoutRejected,
@@ -569,8 +576,14 @@ func runThemeStudyProductForRun(
 		fmt.Sprintf("request/response bytes: %d/%d", outcome.RequestBytes, outcome.ResponseBytes),
 		formatRunOutputTokens(outcome.InputTokens, outcome.OutputTokens),
 		formatRunOutputDuration(outcome.LatencyMillis),
-	)
-	return outcome, nil
+	}
+	if outcome.CoProjected > 0 {
+		details = append(details, fmt.Sprintf(
+			"equivalent themes merged into existing cards: %d · alternate readings retained",
+			outcome.CoProjected,
+		))
+	}
+	return details
 }
 
 // themeSeedSpecsFromInput compiles the a* seed specs from the exact compiled
@@ -643,8 +656,6 @@ func themeReadingTargetRole(input atlasstudy.Input, target atlasstudy.ReadingTar
 		switch support.Role {
 		case atlasstudy.SupportProcessEntry:
 			hints.PrimaryEntry = true
-		case atlasstudy.SupportObservedCallBoundary:
-			hints.EffectBoundary = true
 		}
 	}
 	return artifactrole.Classify(target.Location.Path, hints)

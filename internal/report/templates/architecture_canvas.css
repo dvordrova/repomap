@@ -2365,8 +2365,7 @@
   color: #991b1b;
 }
 .rm-arch__partial-truth-label:hover,
-.rm-mechanism-fragment__evidence-summary:hover,
-.rm-mechanism-fragment__touchpoint-summary:hover {
+.rm-mechanism-fragment__evidence-summary:hover {
   background: #f1f5f9;
   border-color: var(--rm-dim);
 }
@@ -2393,15 +2392,15 @@
 /* Decision 236 (v11): Map lenses emphasize by dimming — one layout, no
    relayout. Non-emphasized principal nodes dim; the lens is recorded on
    the root so CSS can also fade non-relevant edges in later lenses. */
-.rm-arch[data-lens="entrypoints"] .rm-arch__component:not(.rm-arch__is-lens-emphasized),
-.rm-arch[data-lens="integrations"] .rm-arch__component:not(.rm-arch__is-lens-emphasized),
-.rm-arch[data-lens="mechanisms"] .rm-arch__component:not(.rm-arch__is-lens-emphasized) {
+.rm-arch[data-lens-has-emphasis="true"][data-lens="entrypoints"] .rm-arch__component:not(.rm-arch__is-lens-emphasized),
+.rm-arch[data-lens-has-emphasis="true"][data-lens="integrations"] .rm-arch__component:not(.rm-arch__is-lens-emphasized),
+.rm-arch[data-lens-has-emphasis="true"][data-lens="mechanisms"] .rm-arch__component:not(.rm-arch__is-lens-emphasized) {
   opacity: 0.38;
   filter: saturate(0.45);
 }
-.rm-arch[data-lens="entrypoints"] .rm-arch__component.rm-arch__is-lens-emphasized,
-.rm-arch[data-lens="integrations"] .rm-arch__component.rm-arch__is-lens-emphasized,
-.rm-arch[data-lens="mechanisms"] .rm-arch__component.rm-arch__is-lens-emphasized {
+.rm-arch[data-lens-has-emphasis="true"][data-lens="entrypoints"] .rm-arch__component.rm-arch__is-lens-emphasized,
+.rm-arch[data-lens-has-emphasis="true"][data-lens="integrations"] .rm-arch__component.rm-arch__is-lens-emphasized,
+.rm-arch[data-lens-has-emphasis="true"][data-lens="mechanisms"] .rm-arch__component.rm-arch__is-lens-emphasized {
   opacity: 1;
   filter: none;
 }
@@ -2438,6 +2437,11 @@
   gap: 4px;
   padding: 4px 0 10px;
 }
+.rm-map-lens-objects[data-lens="mechanisms"] {
+  max-height: min(42vh, 520px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
 .rm-map-lens-object {
   display: flex;
   align-items: baseline;
@@ -2449,3 +2453,17 @@
 .rm-map-lens-object__detail { color: var(--rm-muted, #6b7280); }
 .rm-map-lens-object__item { color: var(--rm-muted, #6b7280); font-size: 12px; }
 .rm-map-lens-object--empty { color: var(--rm-muted, #6b7280); font-style: italic; }
+.rm-map-lens-object--mechanism-fragment {
+  display: block;
+  margin-top: 4px;
+  border: 1px solid var(--rm-border, #d8dee6);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+.rm-map-lens-object__mechanism-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  cursor: pointer;
+}
+.rm-map-lens-object--mechanism-fragment > .rm-mechanism-fragment { margin-top: 8px; }

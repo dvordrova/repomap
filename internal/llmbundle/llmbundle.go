@@ -812,6 +812,8 @@ func fileRoleScore(role artifactrole.Role) int {
 		return 15
 	case artifactrole.RoleExperimental:
 		return -5
+	case artifactrole.RoleTooling:
+		return -10
 	case artifactrole.RoleExample:
 		return -15
 	case artifactrole.RoleHistoricalDocumentation:

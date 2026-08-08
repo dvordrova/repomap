@@ -222,9 +222,10 @@ func collectCorpusRunFacts(repo corpusRepo, runDir string) corpusRunFacts {
 		var report struct {
 			CapturedRevision string `json:"captured_revision"`
 			Architecture     struct {
-				Source     string `json:"architecture_source"`
-				Outcome    string `json:"validation_outcome"`
-				Components []any  `json:"components"`
+				Source             string `json:"architecture_source"`
+				Outcome            string `json:"validation_outcome"`
+				Components         []any  `json:"components"`
+				MechanismFragments []any  `json:"mechanism_fragments"`
 			} `json:"architecture_canvas"`
 			Study struct {
 				State  string `json:"state"`
@@ -240,7 +241,6 @@ func collectCorpusRunFacts(repo corpusRepo, runDir string) corpusRunFacts {
 			} `json:"atlas_study"`
 			DiscoveredSurfaces any `json:"discovered_surfaces"`
 			Associations       any `json:"architecture_associations"`
-			Mechanisms         any `json:"mechanism_fragment"`
 		}
 		if err := json.Unmarshal(raw, &report); err != nil {
 			f.Revision = "unmarshal-error: " + err.Error()
@@ -260,10 +260,7 @@ func collectCorpusRunFacts(repo corpusRepo, runDir string) corpusRunFacts {
 			case []any:
 				f.Associations = len(v)
 			}
-			switch v := report.Mechanisms.(type) {
-			case []any:
-				f.Mechanisms = len(v)
-			}
+			f.Mechanisms = len(report.Architecture.MechanismFragments)
 			f.DuplicateReadingPairs = countDuplicateReadingPairs(report.Study.Themes.Cards)
 		}
 	}

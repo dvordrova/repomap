@@ -20,7 +20,9 @@ import (
 // empty rejection change accepted landscape semantics (Canvas 11).
 // Decision 239 (v12): bounded package-import facts project onto final
 // exclusive component ownership and aggregate by directed component pair.
-const ArchitectureCanvasVersion = 12
+// Decision 242 (v13): per-entry mechanism fragments become a canonical,
+// backend-owned Canvas projection with exact component participation.
+const ArchitectureCanvasVersion = 13
 
 type ArchitectureCanvasInput struct {
 	CandidateBundle componentmap.CandidateBundle
@@ -61,6 +63,7 @@ type ArchitectureCanvas struct {
 	Suggestions               []ArchitectureSuggestion              `json:"suggested_investigations,omitempty"`
 	StructuralFacts           []componentmap.LocalRelation          `json:"structural_facts,omitempty"`
 	StructuralEdges           []ArchitectureStructuralEdge          `json:"structural_edges,omitempty"`
+	MechanismFragments        []MechanismFragmentProjection         `json:"mechanism_fragments,omitempty"`
 	Flows                     []ArchitectureFlow                    `json:"flows,omitempty"`
 	FlowEdges                 []ArchitectureFlowEdge                `json:"flow_edges,omitempty"`
 	Frontiers                 []ArchitectureFrontier                `json:"frontiers,omitempty"`

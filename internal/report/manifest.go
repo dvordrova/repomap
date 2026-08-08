@@ -153,7 +153,7 @@ func (m RunManifest) Validate() error {
 	if !validManifestSHA256(m.ReportSHA256) {
 		return fmt.Errorf("report manifest: report sha256 is invalid")
 	}
-	if m.ReportFormatVersion <= 0 || m.ReportFormatVersion > CurrentFormatVersion {
+	if m.ReportFormatVersion != CurrentFormatVersion {
 		return fmt.Errorf("report manifest: unsupported report format version %d", m.ReportFormatVersion)
 	}
 	if len(m.OpenablePaths) > maxManifestOpenablePaths {
@@ -620,6 +620,7 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 		Components                      []Component                                `json:"components"`
 		RepositoryAtlas                 *repositoryatlas.Atlas                     `json:"repository_atlas"`
 		ArchitectureCanvas              *ArchitectureCanvas                        `json:"architecture_canvas"`
+		ArchitectureGrounding           *ArchitectureGrounding                     `json:"architecture_grounding"`
 		ArchitectureComponentNavigation *ArchitectureComponentNavigationProjection `json:"architecture_component_navigation"`
 		Architecture                    *ArchitectureSynthesisStatus               `json:"architecture_synthesis"`
 		AtlasStudy                      *AtlasStudyReportStatus                    `json:"atlas_study"`
@@ -645,6 +646,15 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 			report.ArchitectureCanvas.Version,
 			ArchitectureCanvasVersion,
 		)
+	}
+	if report.ArchitectureCanvas != nil {
+		if err := validateMechanismFragmentsForProduct(
+			report.ArchitectureCanvas,
+			report.ArchitectureCanvas.MechanismFragments,
+			report.ArchitectureGrounding,
+		); err != nil {
+			return fmt.Errorf("report manifest: mechanism fragments: %w", err)
+		}
 	}
 	if err := ValidateArchitectureComponentNavigation(
 		report.ArchitectureCanvas,

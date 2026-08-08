@@ -12,7 +12,7 @@ import (
 	"github.com/dvordrova/repomap/internal/artifactrole"
 )
 
-const vocabularyVersion = "v2"
+const vocabularyVersion = "v3"
 
 // refName maps a 1-based index to a typed short ref: f1..fN, a1..aN, t1..tN.
 func refName(prefix string, index int) string {

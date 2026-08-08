@@ -78,6 +78,43 @@ func TestBuildFileVocabularyBudgetTruncation(t *testing.T) {
 	}
 }
 
+func TestBuildFileVocabularyClassifiesAuxiliaryMainsAndKeepsProductionFirstUnderBudget(t *testing.T) {
+	paths := []string{
+		"scripts/release/main.go",
+		"plugin/testing/broken/main.go",
+		"internal/scriptsupport/main.go",
+		"internal/testingtools/main.go",
+		"cmd/product/main.go",
+	}
+	complete := BuildFileVocabulary(paths, 0, nil)
+	roles := make(map[string]Role, len(complete.Files))
+	for _, file := range complete.Files {
+		roles[file.Path] = file.Role
+	}
+	for path, want := range map[string]Role{
+		"scripts/release/main.go":        RoleTooling,
+		"plugin/testing/broken/main.go":  RoleTest,
+		"internal/scriptsupport/main.go": RolePrimaryProductionEntry,
+		"internal/testingtools/main.go":  RolePrimaryProductionEntry,
+	} {
+		if got := roles[path]; got != want {
+			t.Fatalf("vocabulary role for %q = %q, want %q", path, got, want)
+		}
+	}
+
+	if len(complete.Files) == 0 || complete.Files[0].Role != RolePrimaryProductionEntry {
+		t.Fatalf("complete vocabulary is not production-first: %+v", complete.Files)
+	}
+	oneItemBudget := fileRefItemSize(complete.Files[0])
+	bounded := BuildFileVocabulary(paths, oneItemBudget, nil)
+	if bounded.Advertised != 1 || len(bounded.Files) != 1 {
+		t.Fatalf("bounded vocabulary advertised %d files (%+v), want exactly one", bounded.Advertised, bounded.Files)
+	}
+	if bounded.Files[0].Role != RolePrimaryProductionEntry {
+		t.Fatalf("auxiliary artifact consumed the sole bounded slot: %+v", bounded.Files[0])
+	}
+}
+
 func TestBuildFileVocabularyNotAdvertisable(t *testing.T) {
 	paths := []string{"a.go", "secret.env"}
 	vocab := BuildFileVocabulary(paths, 0, func(p string) bool { return p != "secret.env" })
@@ -353,7 +390,7 @@ func TestReducerDedupeAndBalanceCap(t *testing.T) {
 
 // TestScoutNormalizesOverlongProseInsteadOfRejecting covers Decision 224
 // (D219 A): a structurally valid candidate with overlong provisional prose
-// is accepted with deterministic whole-rune truncation and a typed
+// is accepted with deterministic readable-boundary truncation and a typed
 // normalization count — never erased as prose_too_long.
 func TestScoutNormalizesOverlongProseInsteadOfRejecting(t *testing.T) {
 	anchorRefs := map[string]struct{}{"a1": {}, "a2": {}}
@@ -381,6 +418,39 @@ func TestScoutNormalizesOverlongProseInsteadOfRejecting(t *testing.T) {
 	if status.Normalized["title"] != 1 || status.Normalized["question"] != 1 ||
 		status.Normalized["why_it_matters"] != 1 || status.Normalized["expected_learning"] != 1 {
 		t.Fatalf("typed normalization counts = %v, want 1 per field", status.Normalized)
+	}
+}
+
+func TestTruncateRunesKeepsReadableBoundary(t *testing.T) {
+	t.Parallel()
+
+	withSentence := "Первое предложение завершено. Второе предложение продолжается слишком долго"
+	if got := truncateRunes(withSentence, 42); got != "Первое предложение завершено. Второе…" {
+		t.Fatalf("maximal word-bound truncation = %q", got)
+	}
+	withoutSentence := "наблюдение содержит несколько слов и продолжается дальше"
+	got := truncateRunes(withoutSentence, 34)
+	if got != "наблюдение содержит несколько…" {
+		t.Fatalf("word-bound truncation = %q", got)
+	}
+	if utf8.RuneCountInString(got) > 34 {
+		t.Fatalf("word-bound truncation exceeds limit: %d", utf8.RuneCountInString(got))
+	}
+	if got := truncateRunes("alpha beta gamma", 11); got != "alpha beta…" {
+		t.Fatalf("word ending exactly at the boundary was lost: %q", got)
+	}
+	if got := truncateRunes("超長識別子沒有空格", 6); got != "超長識別子…" {
+		t.Fatalf("no-space rune-safe truncation = %q", got)
+	}
+
+	pocket := "Start() регистрирует системные команды (superuser, serve) и вызывает Execute(). Execute() выполняет Bootstrap (если не пропущен), запускает RootCmd в горутине, ожидает сигнал прерывания или завершения команды, затем триггерит OnTerminate и сбрасывает состояние."
+	pocketGot := truncateRunes(pocket, MaxEditorialRunes)
+	if utf8.RuneCountInString(pocketGot) > MaxEditorialRunes ||
+		!strings.Contains(pocketGot, "Bootstrap") ||
+		!strings.Contains(pocketGot, "ожидает сигнал") ||
+		!strings.HasSuffix(pocketGot, "OnTerminate…") ||
+		strings.Contains(pocketGot, "сбрасывает состояние") {
+		t.Fatalf("PocketBase observation truncation = %q", pocketGot)
 	}
 }
 

@@ -12,6 +12,7 @@ func TestClassify(t *testing.T) {
 		{name: "primary command", path: "cmd/litestream/restore.go", want: RolePrimaryProductionEntry},
 		{name: "preview before command", path: "cmd/canvas-preview/main.go", want: RolePlayground},
 		{name: "test binary before command", path: "cmd/litestream-test/main.go", want: RoleTest},
+		{name: "testing directory before entrypoint", path: "plugin/testing/broken/main.go", want: RoleTest},
 		{name: "fixture before test", path: "internal/testdata/app/main.go", want: RoleFixture},
 		{name: "mock support", path: "mock/replica_client.go", want: RoleFixture},
 		{name: "fake support", path: "internal/fakes/client.go", want: RoleFixture},
@@ -22,6 +23,9 @@ func TestClassify(t *testing.T) {
 		{name: "production core", path: "internal/scheduler/run.go", want: RoleProductionCore},
 		{name: "example", path: "_examples/library/main.go", want: RoleExample},
 		{name: "experimental", path: "internal/experiment/probe.go", want: RoleExperimental},
+		{name: "repository script", path: "scripts/release/main.go", want: RoleTooling},
+		{name: "script near miss", path: "internal/scriptsupport/main.go", want: RolePrimaryProductionEntry},
+		{name: "testing near miss", path: "internal/testingtools/main.go", want: RolePrimaryProductionEntry},
 		{name: "current docs", path: "docs/agent-room/CURRENT.md", want: RoleCurrentDocumentation},
 		{name: "decision docs", path: "docs/agent-room/114-product.md", want: RoleHistoricalDocumentation},
 		{name: "exact entry hint", path: "app/start.go", hints: Hints{PrimaryEntry: true}, want: RolePrimaryProductionEntry},
@@ -34,6 +38,12 @@ func TestClassify(t *testing.T) {
 				t.Fatalf("Classify(%q) = %q, want %q", test.path, got, test.want)
 			}
 		})
+	}
+}
+
+func TestToolingIsNotProduction(t *testing.T) {
+	if IsProduction(RoleTooling) {
+		t.Fatal("tooling must not consume a production context slot")
 	}
 }
 
