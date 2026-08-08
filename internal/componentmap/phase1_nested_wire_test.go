@@ -55,6 +55,95 @@ func TestSynthesisNestedWireDecodesBackendOwnedIdentity(t *testing.T) {
 	if !proposal.Records[2].NormalizedMissingAnchorRefs {
 		t.Fatalf("missing anchor_refs must be a counted normalization")
 	}
+	if proposal.Records[4].NormalizedMissingAnchorRefs {
+		t.Fatalf("explicit empty anchor_refs must not be treated as missing")
+	}
+}
+
+func TestSynthesisNestedWireRejectsNullAnchorRefs(t *testing.T) {
+	t.Parallel()
+	raw := []byte(`{"subsystems":[{"name":"Application","components":[` +
+		`{"name":"Runtime","member_refs":["p1"],"anchor_refs":null}` +
+		`]}]}`)
+	if _, err := decodeSynthesisWireProposalJSON(raw); err == nil ||
+		!strings.Contains(err.Error(), "must not be null") {
+		t.Fatalf("null anchor_refs error = %v, want bounded null rejection", err)
+	}
+}
+
+func TestSynthesisNestedExplicitEmptyAnchorRefsPreservesFullCoverage(t *testing.T) {
+	t.Parallel()
+
+	const candidateCount = 28
+	bundle := candidateBundleWithPackages(candidateCount)
+	request, _, err := BuildSynthesisRequest(bundle)
+	if err != nil {
+		t.Fatalf("BuildSynthesisRequest: %v", err)
+	}
+	if len(request.Candidates) != candidateCount {
+		t.Fatalf("request candidates = %d, want %d", len(request.Candidates), candidateCount)
+	}
+
+	type nestedComponent struct {
+		Name        string   `json:"name"`
+		Description string   `json:"description"`
+		MemberRefs  []string `json:"member_refs"`
+		AnchorRefs  []string `json:"anchor_refs"`
+	}
+	type nestedSubsystem struct {
+		Name        string            `json:"name"`
+		Description string            `json:"description"`
+		Components  []nestedComponent `json:"components"`
+	}
+
+	componentNames := []string{
+		"Runtime", "Storage", "Commands", "Transport",
+		"Configuration", "Clients", "Workers", "Utilities",
+	}
+	components := make([]nestedComponent, 0, len(componentNames))
+	for index, name := range componentNames {
+		start := index * len(request.Candidates) / len(componentNames)
+		end := (index + 1) * len(request.Candidates) / len(componentNames)
+		memberRefs := make([]string, 0, end-start)
+		for _, candidate := range request.Candidates[start:end] {
+			memberRefs = append(memberRefs, candidate.Ref.Ref)
+		}
+		components = append(components, nestedComponent{
+			Name:        name,
+			Description: "Distinct responsibility over exact request-local members.",
+			MemberRefs:  memberRefs,
+			AnchorRefs:  []string{},
+		})
+	}
+	response, err := json.Marshal(struct {
+		Subsystems []nestedSubsystem `json:"subsystems"`
+	}{Subsystems: []nestedSubsystem{{
+		Name:        "Repository",
+		Description: "Complete conceptual grouping.",
+		Components:  components,
+	}}})
+	if err != nil {
+		t.Fatalf("marshal nested response: %v", err)
+	}
+	if got := strings.Count(string(response), `"anchor_refs":[]`); got != len(componentNames) {
+		t.Fatalf("explicit empty anchor arrays = %d, want %d: %s", got, len(componentNames), response)
+	}
+
+	landscape, membership, err := evaluateSynthesisResponse(bundle, ResponseCaptured, response)
+	if err != nil {
+		t.Fatalf("full-coverage nested response with explicit empty anchors: %v", err)
+	}
+	if landscape.Fallback || landscape.ValidationOutcome != ValidationAccepted ||
+		landscape.Source != SourceValidatedModel {
+		t.Fatalf("full-coverage response = fallback:%v outcome:%s source:%s", landscape.Fallback, landscape.ValidationOutcome, landscape.Source)
+	}
+	if !membership.Counted || membership.DistinctMembers != candidateCount ||
+		membership.MemberOccurrences != candidateCount || !membership.CoverageComplete() {
+		t.Fatalf("full-coverage membership = %#v, want %d/%d", membership, candidateCount, candidateCount)
+	}
+	if hasLandscapeDiagnostic(landscape.Diagnostics, "proposal.normalized_missing_anchor_refs") {
+		t.Fatalf("explicit empty anchor arrays produced a missing-field normalization: %#v", landscape.Diagnostics)
+	}
 }
 
 // Phase 1: the model must not be asked to return response-local IDs, kind

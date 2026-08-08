@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
@@ -15,7 +16,11 @@ const (
 	// semantics (zero useful semantic components → honest local-only with
 	// the exact reason code; shared_unit_slice repurposed to recoverable).
 	// Decision 235 (v11): normalization/empty-item semantics (status 11).
-	ArchitectureSynthesisStatusVersion = 11
+	// Decision 237: failed-status cause, exchange reference, and bounded
+	// response-shape evidence (status 12).
+	// Decision 238: backend-owned primary/supporting coverage evidence
+	// (status 13).
+	ArchitectureSynthesisStatusVersion = 13
 
 	ArchitectureSynthesisSucceeded   = "succeeded"
 	ArchitectureSynthesisCached      = "cached"
@@ -60,15 +65,17 @@ var architectureStatusValidationCodes = map[string]struct{}{
 	"proposal.normalized_primary_subsystems":            {},
 	// Phase 1 prompt cleanup: a component without an anchor_refs field is
 	// a mechanical default, counted as a normalization (nested grammar).
-	"proposal.normalized_missing_anchor_refs": {},
-	"proposal.normalized_total_components":              {},
-	"proposal.partial_member_coverage":                  {},
-	"proposal.primary_subsystems_above_preferred":       {},
-	"proposal.total_components_above_preferred":         {},
-	"proposal.ungrounded_primary_component":             {},
-	"proposal.unknown_anchor_id":                        {},
-	"proposal.unknown_member_id":                        {},
-	"proposal.unsupported_version":                      {},
+	"proposal.normalized_missing_anchor_refs":     {},
+	"proposal.normalized_total_components":        {},
+	"proposal.partial_member_coverage":            {},
+	"proposal.empty_primary_scope_coverage":       {},
+	"proposal.supporting_only_unit_coverage":      {},
+	"proposal.primary_subsystems_above_preferred": {},
+	"proposal.total_components_above_preferred":   {},
+	"proposal.ungrounded_primary_component":       {},
+	"proposal.unknown_anchor_id":                  {},
+	"proposal.unknown_member_id":                  {},
+	"proposal.unsupported_version":                {},
 	// Decision 229 D7 item-scope salvage vocabulary: recoverable
 	// findings emitted while dropping only the referencing component.
 	"proposal.salvaged_empty_subsystem":        {},
@@ -138,44 +145,70 @@ type ArchitectureSynthesisStatus struct {
 	// CandidateCount is retained only for reading status versions 1-6. Version
 	// 7 separates the complete local candidate set from the smaller exact set
 	// of conceptual members requested from the provider.
-	CandidateCount           int                     `json:"candidate_count,omitempty"`
-	LocalCandidateCount      int                     `json:"local_candidate_count,omitempty"`
-	RequestedConceptualCount int                     `json:"requested_conceptual_count,omitempty"`
-	StructuralLocatorCount   int                     `json:"structural_locator_count,omitempty"`
-	AnchorCount              int                     `json:"anchor_count,omitempty"`
-	MembershipCounted        bool                    `json:"response_membership_counted,omitempty"`
-	MemberOccurrences        int                     `json:"response_member_occurrences,omitempty"`
-	DistinctMembers          int                     `json:"response_distinct_members,omitempty"`
-	CoveredConceptualCount   int                     `json:"covered_conceptual_count,omitempty"`
-	UncoveredConceptualCount int                     `json:"uncovered_conceptual_count,omitempty"`
-	UncoveredConceptualIDs   []componentmap.MemberID `json:"uncovered_conceptual_member_ids,omitempty"`
-	UsageReported            bool                    `json:"usage_reported,omitempty"`
-	InputTokens              int                     `json:"input_tokens,omitempty"`
-	OutputTokens             int                     `json:"output_tokens,omitempty"`
+	CandidateCount                 int                     `json:"candidate_count,omitempty"`
+	LocalCandidateCount            int                     `json:"local_candidate_count,omitempty"`
+	RequestedConceptualCount       int                     `json:"requested_conceptual_count,omitempty"`
+	StructuralLocatorCount         int                     `json:"structural_locator_count,omitempty"`
+	AnchorCount                    int                     `json:"anchor_count,omitempty"`
+	MembershipCounted              bool                    `json:"response_membership_counted,omitempty"`
+	MemberOccurrences              int                     `json:"response_member_occurrences,omitempty"`
+	DistinctMembers                int                     `json:"response_distinct_members,omitempty"`
+	CoveredConceptualCount         int                     `json:"covered_conceptual_count,omitempty"`
+	UncoveredConceptualCount       int                     `json:"uncovered_conceptual_count,omitempty"`
+	UncoveredConceptualIDs         []componentmap.MemberID `json:"uncovered_conceptual_member_ids,omitempty"`
+	RequestedPrimaryScopeCount     int                     `json:"requested_primary_scope_count,omitempty"`
+	CoveredPrimaryScopeCount       int                     `json:"covered_primary_scope_count,omitempty"`
+	UncoveredPrimaryScopeCount     int                     `json:"uncovered_primary_scope_count,omitempty"`
+	CoveredSupportingEvidenceCount int                     `json:"covered_supporting_evidence_count,omitempty"`
+	UsageReported                  bool                    `json:"usage_reported,omitempty"`
+	InputTokens                    int                     `json:"input_tokens,omitempty"`
+	OutputTokens                   int                     `json:"output_tokens,omitempty"`
 	// ConfiguredMaxTokens and ObservedOutputTokens carry the bounded output
 	// envelope evidence for the failed provider_output_limit state (Decision
 	// 215): the exact configured global ceiling and the observed completion
 	// token count that exhausted it. They are never populated for accepted,
 	// cached, unavailable, or other failed states.
-	ConfiguredMaxTokens   int      `json:"configured_max_tokens,omitempty"`
-	ObservedOutputTokens  int      `json:"observed_output_tokens,omitempty"`
-	FinishReason          string   `json:"finish_reason,omitempty"`
-	ResponseComplete      bool     `json:"response_complete,omitempty"`
-	ResponseState         string   `json:"response_state,omitempty"`
-	ValidationCodes       []string `json:"validation_diagnostic_codes,omitempty"`
-	ProviderCallSucceeded bool     `json:"provider_call_succeeded,omitempty"`
-	ResponseParsed        bool     `json:"response_parsed,omitempty"`
-	ProposalAccepted      bool     `json:"proposal_accepted,omitempty"`
-	ProposalPartial       bool     `json:"proposal_partial,omitempty"`
-	ProposalNormalized    bool     `json:"proposal_normalized,omitempty"`
-	ProposalRejected      bool     `json:"proposal_rejected,omitempty"`
-	FallbackSelected      bool     `json:"fallback_selected,omitempty"`
-	ArchitectureSource    string   `json:"architecture_source,omitempty"`
-	ArchitectureLevel     int      `json:"architecture_level,omitempty"`
-	NormalizationCount    int      `json:"normalization_count,omitempty"`
-	FallbackReason        string   `json:"fallback_reason,omitempty"`
-	ErrorCode             string   `json:"error_code,omitempty"`
-	UnavailableCode       string   `json:"unavailable_code,omitempty"`
+	ConfiguredMaxTokens   int                                 `json:"configured_max_tokens,omitempty"`
+	ObservedOutputTokens  int                                 `json:"observed_output_tokens,omitempty"`
+	FinishReason          string                              `json:"finish_reason,omitempty"`
+	ResponseComplete      bool                                `json:"response_complete,omitempty"`
+	ResponseState         string                              `json:"response_state,omitempty"`
+	ValidationCodes       []string                            `json:"validation_diagnostic_codes,omitempty"`
+	ProviderCallSucceeded bool                                `json:"provider_call_succeeded,omitempty"`
+	ResponseParsed        bool                                `json:"response_parsed,omitempty"`
+	ProposalAccepted      bool                                `json:"proposal_accepted,omitempty"`
+	ProposalPartial       bool                                `json:"proposal_partial,omitempty"`
+	ProposalNormalized    bool                                `json:"proposal_normalized,omitempty"`
+	ProposalRejected      bool                                `json:"proposal_rejected,omitempty"`
+	FallbackSelected      bool                                `json:"fallback_selected,omitempty"`
+	ArchitectureSource    string                              `json:"architecture_source,omitempty"`
+	ArchitectureLevel     int                                 `json:"architecture_level,omitempty"`
+	NormalizationCount    int                                 `json:"normalization_count,omitempty"`
+	FallbackReason        string                              `json:"fallback_reason,omitempty"`
+	ErrorCode             string                              `json:"error_code,omitempty"`
+	UnavailableCode       string                              `json:"unavailable_code,omitempty"`
+	Failure               *ArchitectureSynthesisFailure       `json:"failure,omitempty"`
+	ResponseShape         *ArchitectureSynthesisResponseShape `json:"response_shape,omitempty"`
+	SemanticExchangePath  string                              `json:"semantic_exchange_path,omitempty"`
+}
+
+type ArchitectureSynthesisFailure struct {
+	Stage  string `json:"stage"`
+	Code   string `json:"code"`
+	Detail string `json:"detail,omitempty"`
+}
+
+type ArchitectureSynthesisResponseShape struct {
+	JSONValid              bool   `json:"json_valid"`
+	Grammar                string `json:"grammar,omitempty"`
+	SubsystemCount         int    `json:"subsystem_count,omitempty"`
+	ComponentCount         int    `json:"component_count,omitempty"`
+	MemberRefCount         int    `json:"member_ref_count,omitempty"`
+	UnitRefCount           int    `json:"unit_ref_count,omitempty"`
+	AnchorRefCount         int    `json:"anchor_ref_count,omitempty"`
+	MissingAnchorRefsCount int    `json:"missing_anchor_refs_count,omitempty"`
+	EmptyAnchorRefsCount   int    `json:"explicit_empty_anchor_refs_count,omitempty"`
+	NullAnchorRefsCount    int    `json:"null_anchor_refs_count,omitempty"`
 }
 
 func (status ArchitectureSynthesisStatus) Validate() error {
@@ -184,7 +217,7 @@ func (status ArchitectureSynthesisStatus) Validate() error {
 	}
 	switch status.State {
 	case ArchitectureSynthesisSucceeded, ArchitectureSynthesisCached:
-		if status.ErrorCode != "" || status.UnavailableCode != "" {
+		if status.ErrorCode != "" || status.UnavailableCode != "" || status.Failure != nil {
 			return fmt.Errorf("successful architecture synthesis status cannot contain an error code")
 		}
 	case ArchitectureSynthesisFailed:
@@ -195,6 +228,9 @@ func (status ArchitectureSynthesisStatus) Validate() error {
 			if err := status.validateProviderOutputLimitEvidence(); err != nil {
 				return err
 			}
+		}
+		if status.Version >= 12 && status.Failure == nil {
+			return fmt.Errorf("failed architecture synthesis status requires a failure diagnostic")
 		}
 	case ArchitectureSynthesisUnavailable:
 		if status.Version < 3 || !validArchitectureUnavailableCode(status.UnavailableCode) || status.ErrorCode != "" ||
@@ -211,16 +247,38 @@ func (status ArchitectureSynthesisStatus) Validate() error {
 			status.MembershipCounted || status.MemberOccurrences != 0 ||
 			status.DistinctMembers != 0 || status.CoveredConceptualCount != 0 ||
 			status.UncoveredConceptualCount != 0 || len(status.UncoveredConceptualIDs) != 0 ||
+			status.RequestedPrimaryScopeCount != 0 || status.CoveredPrimaryScopeCount != 0 ||
+			status.UncoveredPrimaryScopeCount != 0 || status.CoveredSupportingEvidenceCount != 0 ||
 			status.UsageReported ||
 			status.InputTokens != 0 || status.OutputTokens != 0 ||
 			status.ConfiguredMaxTokens != 0 || status.ObservedOutputTokens != 0 ||
 			status.FinishReason != "" || status.ResponseComplete ||
-			status.ResponseState != "" || len(status.ValidationCodes) != 0 {
+			status.ResponseState != "" || len(status.ValidationCodes) != 0 ||
+			status.Failure != nil || status.ResponseShape != nil || status.SemanticExchangePath != "" {
 			return fmt.Errorf("unavailable architecture synthesis status is inconsistent")
 		}
 		return nil
 	default:
 		return fmt.Errorf("unsupported architecture synthesis state %q", status.State)
+	}
+	if status.Version < 12 && (status.Failure != nil || status.ResponseShape != nil || status.SemanticExchangePath != "") {
+		return fmt.Errorf("historical architecture synthesis status cannot use v12 diagnostics")
+	}
+	if status.Failure != nil {
+		if err := validateArchitectureSynthesisFailure(*status.Failure); err != nil {
+			return err
+		}
+	}
+	if status.ResponseShape != nil {
+		if err := status.ResponseShape.Validate(); err != nil {
+			return err
+		}
+		if status.ResponseBytes == 0 {
+			return fmt.Errorf("architecture response shape requires response byte evidence")
+		}
+	}
+	if status.SemanticExchangePath != "" && !validArchitectureSemanticExchangePath(status.SemanticExchangePath) {
+		return fmt.Errorf("architecture semantic exchange path is invalid")
 	}
 	if status.PromptBytes < 0 || status.RequestBytes < 0 || status.ResponseBytes < 0 ||
 		status.ResponseContentBytes < 0 || status.LatencyMillis < 0 ||
@@ -230,8 +288,13 @@ func (status ArchitectureSynthesisStatus) Validate() error {
 		status.StructuralLocatorCount < 0 ||
 		status.AnchorCount < 0 || status.MemberOccurrences < 0 ||
 		status.DistinctMembers < 0 || status.CoveredConceptualCount < 0 ||
-		status.UncoveredConceptualCount < 0 || status.InputTokens < 0 || status.OutputTokens < 0 {
+		status.UncoveredConceptualCount < 0 || status.RequestedPrimaryScopeCount < 0 ||
+		status.CoveredPrimaryScopeCount < 0 || status.UncoveredPrimaryScopeCount < 0 ||
+		status.CoveredSupportingEvidenceCount < 0 || status.InputTokens < 0 || status.OutputTokens < 0 {
 		return fmt.Errorf("architecture synthesis status contains invalid metrics")
+	}
+	if err := status.validatePrimaryScopeCoverage(); err != nil {
+		return err
 	}
 	if status.Version == 1 {
 		return nil
@@ -259,6 +322,11 @@ func (status ArchitectureSynthesisStatus) Validate() error {
 			status.ArchitectureSource != "" || status.ArchitectureLevel != 0 ||
 			status.NormalizationCount != 0) {
 			return fmt.Errorf("failed architecture synthesis status cannot publish enrichment")
+		}
+		if status.Version >= 12 {
+			if err := status.validateFailureEvidence(); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
@@ -288,6 +356,79 @@ func (status ArchitectureSynthesisStatus) Validate() error {
 		return fmt.Errorf("architecture fallback metrics are inconsistent")
 	}
 	return nil
+}
+
+func validateArchitectureSynthesisFailure(failure ArchitectureSynthesisFailure) error {
+	valid := false
+	switch failure.Stage + "\x00" + failure.Code {
+	case "input_preparation\x00architecture.preparation_failed",
+		"provider_configuration\x00architecture.provider_configuration_failed",
+		"provider_call\x00architecture.provider_call_failed",
+		"provider_call\x00architecture.provider_output_limit",
+		"response_decode\x00architecture.empty_response",
+		"response_validation\x00architecture.proposal_rejected",
+		"response_validation\x00componentmap.response_evaluation_failed",
+		"landscape_validation\x00componentmap.partial_model_inconsistent":
+		valid = true
+	}
+	if !valid {
+		return fmt.Errorf("architecture synthesis failure diagnostic is invalid")
+	}
+	wantDetail := ""
+	if failure.Code == componentmap.SynthesisFailureCodePartialModelInconsistent {
+		wantDetail = componentmap.DiagnoseSynthesisFailure(
+			componentmap.ErrPartialModelStateInconsistent,
+		).Detail
+	}
+	if failure.Detail != wantDetail {
+		return fmt.Errorf("architecture synthesis failure detail is invalid")
+	}
+	return nil
+}
+
+func (shape ArchitectureSynthesisResponseShape) Validate() error {
+	if shape.Grammar != "" && shape.Grammar != "nested" && shape.Grammar != "flat" {
+		return fmt.Errorf("architecture synthesis response shape grammar is invalid")
+	}
+	metrics := []int{
+		shape.SubsystemCount, shape.ComponentCount, shape.MemberRefCount,
+		shape.UnitRefCount, shape.AnchorRefCount, shape.MissingAnchorRefsCount,
+		shape.EmptyAnchorRefsCount, shape.NullAnchorRefsCount,
+	}
+	for _, metric := range metrics {
+		if metric < 0 {
+			return fmt.Errorf("architecture synthesis response shape contains invalid metrics")
+		}
+	}
+	if !shape.JSONValid && (shape.Grammar != "" || shape.SubsystemCount != 0 ||
+		shape.ComponentCount != 0 || shape.MemberRefCount != 0 || shape.UnitRefCount != 0 ||
+		shape.AnchorRefCount != 0 || shape.MissingAnchorRefsCount != 0 ||
+		shape.EmptyAnchorRefsCount != 0 || shape.NullAnchorRefsCount != 0) {
+		return fmt.Errorf("invalid JSON cannot carry decoded architecture response shape")
+	}
+	if shape.MissingAnchorRefsCount+shape.EmptyAnchorRefsCount+shape.NullAnchorRefsCount > shape.ComponentCount {
+		return fmt.Errorf("architecture synthesis anchor field counts exceed components")
+	}
+	return nil
+}
+
+func validArchitectureSemanticExchangePath(value string) bool {
+	local := filepath.FromSlash(value)
+	if value == "" || !filepath.IsLocal(local) || filepath.ToSlash(filepath.Clean(local)) != value {
+		return false
+	}
+	parts := strings.Split(value, "/")
+	if len(parts) != 3 || parts[0] != "semantic_exchanges" || len(parts[1]) != 64 ||
+		parts[2] != "exchange.v2.json" {
+		return false
+	}
+	for _, character := range parts[1] {
+		if !((character >= '0' && character <= '9') ||
+			(character >= 'a' && character <= 'f')) {
+			return false
+		}
+	}
+	return true
 }
 
 func validArchitectureUnavailableCode(code string) bool {
@@ -380,7 +521,7 @@ func (status ArchitectureSynthesisStatus) validateResolvedMembershipEvidence() e
 		return fmt.Errorf("architecture response completion evidence is inconsistent")
 	}
 	switch status.ResponseState {
-	case "", "captured", "oversize_omitted", "sensitive_omitted":
+	case "", "captured", "empty", "oversize_omitted", "sensitive_omitted":
 	default:
 		return fmt.Errorf("architecture synthesis status has unsupported response state %q", status.ResponseState)
 	}
@@ -415,6 +556,49 @@ func (status ArchitectureSynthesisStatus) validateResolvedMembershipEvidence() e
 			return fmt.Errorf("architecture synthesis status contains duplicate validation diagnostic code")
 		}
 		seen[code] = struct{}{}
+	}
+	return nil
+}
+
+func (status ArchitectureSynthesisStatus) validateFailureEvidence() error {
+	if status.Failure == nil {
+		return fmt.Errorf("failed architecture synthesis status requires a failure diagnostic")
+	}
+	code := status.Failure.Code
+	switch code {
+	case "architecture.preparation_failed", "architecture.provider_configuration_failed":
+		if status.ErrorCode != "provider_error" || status.ProviderRequestCount != 0 ||
+			status.ProviderCallSucceeded || status.ResponseBytes != 0 || status.ResponseState != "" ||
+			status.ResponseShape != nil || status.SemanticExchangePath != "" {
+			return fmt.Errorf("pre-call architecture failure evidence is inconsistent")
+		}
+	case "architecture.provider_call_failed":
+		if status.ErrorCode != "provider_error" || status.ProviderRequestCount != 1 ||
+			status.ProviderCallSucceeded {
+			return fmt.Errorf("architecture provider-call failure evidence is inconsistent")
+		}
+	case "architecture.provider_output_limit":
+		if status.ErrorCode != ArchitectureSynthesisErrorProviderOutputLimit {
+			return fmt.Errorf("architecture output-limit failure code is inconsistent")
+		}
+	case "architecture.empty_response":
+		if status.ErrorCode != "empty_response" || status.ProviderRequestCount != 1 ||
+			!status.ProviderCallSucceeded || status.ResponseParsed || status.ResponseBytes == 0 ||
+			status.ResponseContentBytes != 0 || status.ResponseState != "empty" {
+			return fmt.Errorf("empty architecture response evidence is inconsistent")
+		}
+	case "architecture.proposal_rejected", "componentmap.response_evaluation_failed":
+		if status.ErrorCode != "invalid_response" || status.ProviderRequestCount != 1 ||
+			!status.ProviderCallSucceeded || status.ResponseBytes == 0 {
+			return fmt.Errorf("architecture response rejection evidence is inconsistent")
+		}
+	case "componentmap.partial_model_inconsistent":
+		if status.ErrorCode != "invalid_response" || status.ProviderRequestCount != 1 ||
+			!status.ProviderCallSucceeded || !status.ResponseParsed || status.ResponseBytes == 0 {
+			return fmt.Errorf("architecture landscape failure evidence is inconsistent")
+		}
+	default:
+		return fmt.Errorf("architecture synthesis failure diagnostic is invalid")
 	}
 	return nil
 }
@@ -461,6 +645,82 @@ func (status ArchitectureSynthesisStatus) validateProviderOutputLimitEvidence() 
 		return fmt.Errorf("provider output limit status cannot publish partial response evidence")
 	}
 	return nil
+}
+
+func (status ArchitectureSynthesisStatus) validatePrimaryScopeCoverage() error {
+	if status.Version < 13 {
+		if status.RequestedPrimaryScopeCount != 0 || status.CoveredPrimaryScopeCount != 0 ||
+			status.UncoveredPrimaryScopeCount != 0 || status.CoveredSupportingEvidenceCount != 0 {
+			return fmt.Errorf("historical architecture synthesis status cannot use primary-scope coverage")
+		}
+		return nil
+	}
+	if status.RequestedPrimaryScopeCount == 0 {
+		if status.CoveredPrimaryScopeCount != 0 || status.UncoveredPrimaryScopeCount != 0 ||
+			status.CoveredSupportingEvidenceCount != 0 {
+			return fmt.Errorf("architecture primary-scope coverage lacks a requested scope")
+		}
+		if status.hasValidationCode("proposal.empty_primary_scope_coverage") ||
+			status.hasValidationCode("proposal.supporting_only_unit_coverage") {
+			return fmt.Errorf("architecture primary-scope diagnostic lacks a requested scope")
+		}
+		if status.State == ArchitectureSynthesisSucceeded || status.State == ArchitectureSynthesisCached {
+			return fmt.Errorf("accepted architecture synthesis requires primary-scope evidence")
+		}
+		return nil
+	}
+	if status.RequestedPrimaryScopeCount > status.RequestedConceptualCount ||
+		status.CoveredPrimaryScopeCount > status.RequestedPrimaryScopeCount ||
+		status.UncoveredPrimaryScopeCount > status.RequestedPrimaryScopeCount ||
+		status.CoveredSupportingEvidenceCount > status.RequestedConceptualCount-status.RequestedPrimaryScopeCount {
+		return fmt.Errorf("architecture primary-scope coverage exceeds the requested conceptual scope")
+	}
+	if !status.ProviderCallSucceeded || !status.ResponseParsed || !status.MembershipCounted {
+		return fmt.Errorf("architecture primary-scope coverage lacks parsed membership evidence")
+	}
+	if status.CoveredPrimaryScopeCount+status.UncoveredPrimaryScopeCount != status.RequestedPrimaryScopeCount {
+		return fmt.Errorf("architecture primary-scope coverage partition is inconsistent")
+	}
+	if status.CoveredPrimaryScopeCount+status.CoveredSupportingEvidenceCount != status.DistinctMembers {
+		return fmt.Errorf("architecture primary-scope coverage does not match resolved membership")
+	}
+	if status.State == ArchitectureSynthesisFailed && !status.ProposalRejected {
+		return fmt.Errorf("failed architecture primary-scope coverage requires a rejected proposal")
+	}
+	emptyPrimary := status.hasValidationCode("proposal.empty_primary_scope_coverage")
+	supportingOnly := status.hasValidationCode("proposal.supporting_only_unit_coverage")
+	qualityRejected := emptyPrimary || supportingOnly
+	if qualityRejected {
+		if status.State != ArchitectureSynthesisFailed || !status.ProposalRejected {
+			return fmt.Errorf("architecture primary-scope quality rejection lacks parsed membership evidence")
+		}
+		if status.Failure == nil || status.Failure.Stage != "response_validation" ||
+			status.Failure.Code != "architecture.proposal_rejected" {
+			return fmt.Errorf("architecture primary-scope quality diagnostic has the wrong failure cause")
+		}
+	}
+	if status.State == ArchitectureSynthesisSucceeded || status.State == ArchitectureSynthesisCached {
+		if status.CoveredPrimaryScopeCount == 0 ||
+			status.CoveredPrimaryScopeCount+status.CoveredSupportingEvidenceCount != status.CoveredConceptualCount {
+			return fmt.Errorf("accepted architecture primary-scope coverage is inconsistent")
+		}
+	}
+	if emptyPrimary && status.CoveredPrimaryScopeCount != 0 {
+		return fmt.Errorf("empty primary-scope diagnostic contradicts coverage evidence")
+	}
+	if supportingOnly && status.CoveredSupportingEvidenceCount == 0 {
+		return fmt.Errorf("supporting-only diagnostic requires supporting coverage evidence")
+	}
+	return nil
+}
+
+func (status ArchitectureSynthesisStatus) hasValidationCode(want string) bool {
+	for _, code := range status.ValidationCodes {
+		if code == want {
+			return true
+		}
+	}
+	return false
 }
 
 func (status ArchitectureSynthesisStatus) validateConceptualCoverage() error {
@@ -528,6 +788,10 @@ func validArchitectureStatusCode(code string) bool {
 
 func validArchitectureStatusCodeForVersion(version int, code string) bool {
 	if code == "proposal.partial_member_coverage" && version < 8 {
+		return false
+	}
+	if (code == "proposal.empty_primary_scope_coverage" ||
+		code == "proposal.supporting_only_unit_coverage") && version < 13 {
 		return false
 	}
 	if validArchitectureStatusCode(code) {

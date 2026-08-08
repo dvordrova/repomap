@@ -15,12 +15,24 @@ func architectureSynthesisV4AcceptedFixture() ArchitectureSynthesisStatus {
 		LocalCandidateCount: 3, RequestedConceptualCount: 2, StructuralLocatorCount: 1,
 		AnchorCount:       1,
 		MembershipCounted: true, MemberOccurrences: 2, DistinctMembers: 2,
-		CoveredConceptualCount: 2,
-		UsageReported:          true, InputTokens: 25, OutputTokens: 11,
-		FinishReason: "stop", ResponseComplete: true, ResponseState: "captured",
+		CoveredConceptualCount:         2,
+		RequestedPrimaryScopeCount:     2,
+		CoveredPrimaryScopeCount:       2,
+		CoveredSupportingEvidenceCount: 0,
+		UsageReported:                  true,
+		InputTokens:                    25,
+		OutputTokens:                   11,
+		FinishReason:                   "stop", ResponseComplete: true, ResponseState: "captured",
 		ProviderCallSucceeded: true, ResponseParsed: true, ProposalAccepted: true,
 		ArchitectureSource: "model", ArchitectureLevel: 2,
 	}
+}
+
+func clearArchitecturePrimaryScopeCoverage(status *ArchitectureSynthesisStatus) {
+	status.RequestedPrimaryScopeCount = 0
+	status.CoveredPrimaryScopeCount = 0
+	status.UncoveredPrimaryScopeCount = 0
+	status.CoveredSupportingEvidenceCount = 0
 }
 
 func TestArchitectureSynthesisUnavailableIsExplicitAndProviderFree(t *testing.T) {
@@ -64,6 +76,10 @@ func TestArchitectureSynthesisUnavailableIsExplicitAndProviderFree(t *testing.T)
 		{"requested conceptual count", func(value *ArchitectureSynthesisStatus) { value.RequestedConceptualCount = 1 }},
 		{"structural locator count", func(value *ArchitectureSynthesisStatus) { value.StructuralLocatorCount = 1 }},
 		{"anchor count", func(value *ArchitectureSynthesisStatus) { value.AnchorCount = 1 }},
+		{"primary scope coverage", func(value *ArchitectureSynthesisStatus) {
+			value.RequestedPrimaryScopeCount = 1
+			value.CoveredPrimaryScopeCount = 1
+		}},
 		{"membership count", func(value *ArchitectureSynthesisStatus) {
 			value.MembershipCounted = true
 			value.MemberOccurrences = 1
@@ -164,6 +180,7 @@ func TestArchitectureSynthesisV7SuccessRequiresExactConceptualCoverageAndTruthfu
 	legacyV4.RequestedConceptualCount = 0
 	legacyV4.StructuralLocatorCount = 0
 	legacyV4.CoveredConceptualCount = 0
+	clearArchitecturePrimaryScopeCoverage(&legacyV4)
 	if err := legacyV4.Validate(); err == nil {
 		t.Fatal("v4 status reinterpreted many-to-many membership under the v5 contract")
 	}
@@ -180,6 +197,10 @@ func TestArchitectureSynthesisV8AcceptsExactPartialCoverage(t *testing.T) {
 	status.DistinctMembers = 2
 	status.CoveredConceptualCount = 2
 	status.UncoveredConceptualCount = 1
+	status.RequestedPrimaryScopeCount = 3
+	status.CoveredPrimaryScopeCount = 2
+	status.UncoveredPrimaryScopeCount = 1
+	status.CoveredSupportingEvidenceCount = 0
 	status.UncoveredConceptualIDs = []componentmap.MemberID{{
 		Kind: componentmap.MemberPackage, Value: "member-package-service",
 	}}
@@ -223,12 +244,154 @@ func TestArchitectureSynthesisV8AcceptsExactPartialCoverage(t *testing.T) {
 	}
 }
 
+func TestArchitectureSynthesisV13RequiresTruthfulPrimaryScopeCoverage(t *testing.T) {
+	t.Parallel()
+
+	base := architectureSynthesisV4AcceptedFixture()
+	if err := base.Validate(); err != nil {
+		t.Fatalf("valid v13 primary-scope coverage: %v", err)
+	}
+	for name, mutate := range map[string]func(*ArchitectureSynthesisStatus){
+		"missing primary scope": func(status *ArchitectureSynthesisStatus) {
+			clearArchitecturePrimaryScopeCoverage(status)
+		},
+		"zero primary covered": func(status *ArchitectureSynthesisStatus) {
+			status.CoveredPrimaryScopeCount = 0
+			status.UncoveredPrimaryScopeCount = status.RequestedPrimaryScopeCount
+		},
+		"primary partition mismatch": func(status *ArchitectureSynthesisStatus) {
+			status.UncoveredPrimaryScopeCount = 1
+		},
+		"supporting exceeds request": func(status *ArchitectureSynthesisStatus) {
+			status.CoveredSupportingEvidenceCount = 1
+		},
+		"conceptual total mismatch": func(status *ArchitectureSynthesisStatus) {
+			status.CoveredPrimaryScopeCount = 1
+			status.UncoveredPrimaryScopeCount = 1
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			status := base
+			mutate(&status)
+			if err := status.Validate(); err == nil {
+				t.Fatalf("accepted inconsistent v13 coverage: %#v", status)
+			}
+		})
+	}
+}
+
+func TestArchitectureSynthesisV13RetainsClosedQualityRejectionCoverage(t *testing.T) {
+	t.Parallel()
+
+	qualityFailure := func(code string) ArchitectureSynthesisStatus {
+		status := architectureSynthesisV4AcceptedFixture()
+		status.State = ArchitectureSynthesisFailed
+		status.ErrorCode = "invalid_response"
+		status.ProposalAccepted = false
+		status.ProposalRejected = true
+		status.ArchitectureSource = ""
+		status.ArchitectureLevel = 0
+		status.CoveredConceptualCount = 0
+		status.UncoveredConceptualCount = 0
+		status.Failure = &ArchitectureSynthesisFailure{
+			Stage: "response_validation", Code: "architecture.proposal_rejected",
+		}
+		status.ValidationCodes = []string{code}
+		return status
+	}
+
+	empty := qualityFailure("proposal.empty_primary_scope_coverage")
+	empty.LocalCandidateCount = 5
+	empty.RequestedConceptualCount = 4
+	empty.DistinctMembers = 2
+	empty.MemberOccurrences = 2
+	empty.RequestedPrimaryScopeCount = 2
+	empty.CoveredPrimaryScopeCount = 0
+	empty.UncoveredPrimaryScopeCount = empty.RequestedPrimaryScopeCount
+	empty.CoveredSupportingEvidenceCount = 2
+	empty.ValidationCodes = []string{
+		"proposal.empty_primary_scope_coverage",
+		"proposal.supporting_only_unit_coverage",
+	}
+	if err := empty.Validate(); err != nil {
+		t.Fatalf("valid empty-primary rejection: %v", err)
+	}
+	contradictory := empty
+	contradictory.CoveredPrimaryScopeCount = 1
+	contradictory.UncoveredPrimaryScopeCount--
+	if err := contradictory.Validate(); err == nil {
+		t.Fatal("empty-primary rejection accepted covered primary evidence")
+	}
+	missingScope := empty
+	clearArchitecturePrimaryScopeCoverage(&missingScope)
+	if err := missingScope.Validate(); err == nil {
+		t.Fatal("primary-scope diagnostic accepted no requested primary scope")
+	}
+	missingRejection := empty
+	missingRejection.ProposalRejected = false
+	if err := missingRejection.Validate(); err == nil {
+		t.Fatal("primary-scope diagnostic accepted a non-rejected proposal")
+	}
+	uncounted := empty
+	uncounted.MembershipCounted = false
+	if err := uncounted.Validate(); err == nil {
+		t.Fatal("primary-scope diagnostic accepted uncounted membership")
+	}
+	wrongFailure := empty
+	wrongFailure.Failure = &ArchitectureSynthesisFailure{
+		Stage: "landscape_validation", Code: "componentmap.partial_model_inconsistent",
+		Detail: componentmap.DiagnoseSynthesisFailure(
+			componentmap.ErrPartialModelStateInconsistent,
+		).Detail,
+	}
+	if err := wrongFailure.Validate(); err == nil {
+		t.Fatal("primary-scope diagnostic accepted the wrong failure cause")
+	}
+
+	supportingOnly := qualityFailure("proposal.supporting_only_unit_coverage")
+	supportingOnly.LocalCandidateCount = 4
+	supportingOnly.RequestedConceptualCount = 3
+	supportingOnly.StructuralLocatorCount = 1
+	supportingOnly.RequestedPrimaryScopeCount = 2
+	supportingOnly.CoveredPrimaryScopeCount = 1
+	supportingOnly.UncoveredPrimaryScopeCount = 1
+	supportingOnly.CoveredSupportingEvidenceCount = 1
+	supportingOnly.DistinctMembers = 2
+	supportingOnly.MemberOccurrences = 2
+	if err := supportingOnly.Validate(); err != nil {
+		t.Fatalf("valid supporting-only-unit rejection: %v", err)
+	}
+	supportingOnly.CoveredSupportingEvidenceCount = 0
+	if err := supportingOnly.Validate(); err == nil {
+		t.Fatal("supporting-only rejection accepted no supporting coverage")
+	}
+}
+
+func TestArchitectureSynthesisV12CannotClaimV13PrimaryScopeEvidence(t *testing.T) {
+	t.Parallel()
+
+	historical := architectureSynthesisV4AcceptedFixture()
+	historical.Version = 12
+	if err := historical.Validate(); err == nil {
+		t.Fatal("v12 accepted v13 primary-scope fields")
+	}
+	clearArchitecturePrimaryScopeCoverage(&historical)
+	if err := historical.Validate(); err != nil {
+		t.Fatalf("historical v12 status became unreadable: %v", err)
+	}
+	historical.ValidationCodes = []string{"proposal.empty_primary_scope_coverage"}
+	if err := historical.Validate(); err == nil {
+		t.Fatal("v12 accepted v13 primary-scope diagnostic")
+	}
+}
+
 func TestArchitectureSynthesisV8KeepsV7FullCoverageReadable(t *testing.T) {
 	t.Parallel()
 
 	historical := architectureSynthesisV4AcceptedFixture()
 	historical.Version = 7
 	historical.CoveredConceptualCount = 0
+	clearArchitecturePrimaryScopeCoverage(&historical)
 	if err := historical.Validate(); err != nil {
 		t.Fatalf("historical v7 full Architecture status is unreadable: %v", err)
 	}
@@ -240,6 +403,7 @@ func TestArchitectureSynthesisV7RejectsD206PartialCoverageDiagnostic(t *testing.
 	historical := architectureSynthesisV4AcceptedFixture()
 	historical.Version = 7
 	historical.CoveredConceptualCount = 0
+	clearArchitecturePrimaryScopeCoverage(&historical)
 	historical.ValidationCodes = []string{"proposal.partial_member_coverage"}
 	if err := historical.Validate(); err == nil {
 		t.Fatal("historical v7 status accepted the D206 partial-coverage diagnostic")
@@ -256,6 +420,7 @@ func TestArchitectureSynthesisV7DoesNotReinterpretHistoricalCandidateCoverage(t 
 	historical.RequestedConceptualCount = 0
 	historical.StructuralLocatorCount = 0
 	historical.CoveredConceptualCount = 0
+	clearArchitecturePrimaryScopeCoverage(&historical)
 	if err := historical.Validate(); err != nil {
 		t.Fatalf("historical v6 Architecture status is unreadable: %v", err)
 	}
@@ -271,6 +436,9 @@ func TestArchitectureSynthesisV4UncalledFailureRejectsProviderResponseEvidence(t
 	base := ArchitectureSynthesisStatus{
 		Version: ArchitectureSynthesisStatusVersion,
 		State:   ArchitectureSynthesisFailed, ErrorCode: "provider_error",
+		Failure: &ArchitectureSynthesisFailure{
+			Stage: "input_preparation", Code: "architecture.preparation_failed",
+		},
 		RequestBytes: 100, LocalCandidateCount: 3, RequestedConceptualCount: 2,
 		StructuralLocatorCount: 1,
 	}
@@ -300,6 +468,10 @@ func TestArchitectureSynthesisV4UncalledFailureRejectsProviderResponseEvidence(t
 			value.ValidationCodes = []string{"response.no_json"}
 			value.ResponseParsed = true
 			value.ProposalRejected = true
+		},
+		"primary scope coverage": func(value *ArchitectureSynthesisStatus) {
+			value.RequestedPrimaryScopeCount = 1
+			value.CoveredPrimaryScopeCount = 1
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -334,6 +506,8 @@ func TestArchitectureSynthesisV6AcceptsExactClosedProducerDiagnosticRegistry(t *
 		"proposal.normalized_missing_anchor_refs",
 		"proposal.normalized_total_components",
 		"proposal.partial_member_coverage",
+		"proposal.empty_primary_scope_coverage",
+		"proposal.supporting_only_unit_coverage",
 		"proposal.primary_subsystems_above_preferred",
 		"proposal.total_components_above_preferred",
 		"proposal.ungrounded_primary_component",
@@ -383,10 +557,18 @@ func TestArchitectureSynthesisV6AcceptsExactClosedProducerDiagnosticRegistry(t *
 	base.ErrorCode = "invalid_response"
 	base.ProposalAccepted = false
 	base.CoveredConceptualCount = 0
+	clearArchitecturePrimaryScopeCoverage(&base)
 	base.ProposalRejected = true
+	base.Failure = &ArchitectureSynthesisFailure{
+		Stage: "response_validation", Code: "architecture.proposal_rejected",
+	}
 	base.ArchitectureSource = ""
 	base.ArchitectureLevel = 0
-	base.ValidationCodes = producerCodes
+	for _, code := range producerCodes {
+		if code != "proposal.empty_primary_scope_coverage" && code != "proposal.supporting_only_unit_coverage" {
+			base.ValidationCodes = append(base.ValidationCodes, code)
+		}
+	}
 	if err := base.Validate(); err != nil {
 		t.Fatalf("complete closed producer diagnostics: %v", err)
 	}
@@ -402,6 +584,7 @@ func TestArchitectureSynthesisV6RejectsRetiredDiagnosticsWhileV5RemainsReadable(
 			historical.RequestedConceptualCount = 0
 			historical.StructuralLocatorCount = 0
 			historical.CoveredConceptualCount = 0
+			clearArchitecturePrimaryScopeCoverage(&historical)
 			historical.ValidationCodes = []string{code}
 			if err := historical.Validate(); err != nil {
 				t.Fatalf("historical v5 diagnostic %q is unreadable: %v", code, err)

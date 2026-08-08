@@ -763,6 +763,10 @@ func architectureLocalizationSavedRunMode(t *testing.T, normalized, partial bool
 	status.DistinctMembers = metadata.DistinctMembers
 	status.CoveredConceptualCount = len(metadata.CoveredMemberIDs)
 	status.UncoveredConceptualCount = len(metadata.UncoveredMemberIDs)
+	status.RequestedPrimaryScopeCount = metadata.RequestedPrimaryScope
+	status.CoveredPrimaryScopeCount = metadata.CoveredPrimaryScope
+	status.UncoveredPrimaryScopeCount = metadata.UncoveredPrimaryScope
+	status.CoveredSupportingEvidenceCount = metadata.CoveredSupportingEvidence
 	status.UncoveredConceptualIDs = append(
 		[]componentmap.MemberID(nil), metadata.UncoveredMemberIDs...,
 	)

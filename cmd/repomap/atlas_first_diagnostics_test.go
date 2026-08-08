@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlasstudy"
+	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/report"
 )
 
@@ -40,6 +42,98 @@ func TestArchitectureDiagnosticReportsExactGraphUnavailableWithoutProviderCall(t
 	if diagnostic.State != "unavailable" || diagnostic.SemanticCalls != 0 ||
 		diagnostic.TransportAttempts != 0 || diagnostic.RequestBytes != 0 {
 		t.Fatalf("exact-graph diagnostic = %#v", diagnostic)
+	}
+}
+
+func TestArchitectureDiagnosticPreservesAcceptedPartialCoverage(t *testing.T) {
+	t.Parallel()
+
+	diagnostic := architectureAtlasFirstDiagnostic(architectureSynthesisOutcome{
+		Attempted: true, InputBytes: 1200, TransportAttempts: 1,
+		ValidationOutcome:        componentmap.ValidationAcceptedPartial,
+		RequestedConceptualCount: 28, CoveredConceptualCount: 10,
+		UncoveredConceptualCount:   18,
+		RequestedPrimaryScopeCount: 18, CoveredPrimaryScopeCount: 6,
+		UncoveredPrimaryScopeCount: 12, CoveredSupportingEvidenceCount: 4,
+	}, nil, false)
+	if diagnostic.State != "accepted_partial" || diagnostic.Outcome == nil ||
+		diagnostic.Outcome.Code != "accepted_partial" {
+		t.Fatalf("partial Architecture diagnostic = %#v", diagnostic)
+	}
+	metrics := make(map[string]int, len(diagnostic.Outcome.Metrics))
+	for _, metric := range diagnostic.Outcome.Metrics {
+		metrics[metric.Name] = metric.Value
+	}
+	if metrics["requested_conceptual_count"] != 28 ||
+		metrics["covered_conceptual_count"] != 10 ||
+		metrics["uncovered_conceptual_count"] != 18 ||
+		metrics["requested_primary_scope_count"] != 18 ||
+		metrics["covered_primary_scope_count"] != 6 ||
+		metrics["uncovered_primary_scope_count"] != 12 ||
+		metrics["covered_supporting_evidence_count"] != 4 {
+		t.Fatalf("partial Architecture metrics = %#v", metrics)
+	}
+}
+
+func TestArchitectureDiagnosticPreservesFullAndCachedPrimaryCoverage(t *testing.T) {
+	t.Parallel()
+
+	base := architectureSynthesisOutcome{
+		Attempted: true, InputBytes: 1200, TransportAttempts: 1,
+		ValidationOutcome:        componentmap.ValidationAccepted,
+		RequestedConceptualCount: 3, CoveredConceptualCount: 3,
+		RequestedPrimaryScopeCount: 2, CoveredPrimaryScopeCount: 2,
+		CoveredSupportingEvidenceCount: 1,
+	}
+	for _, test := range []struct {
+		name, state, code string
+		outcome           architectureSynthesisOutcome
+	}{
+		{name: "live", state: "accepted", code: "accepted", outcome: base},
+		{name: "cached", state: "cache_hit", code: "cache_hit", outcome: func() architectureSynthesisOutcome {
+			cached := base
+			cached.Cached = true
+			cached.Attempted = false
+			cached.TransportAttempts = 0
+			return cached
+		}()},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			diagnostic := architectureAtlasFirstDiagnostic(test.outcome, nil, false)
+			if diagnostic.State != test.state || diagnostic.Outcome == nil ||
+				diagnostic.Outcome.Code != test.code {
+				t.Fatalf("Architecture diagnostic = %#v", diagnostic)
+			}
+			metrics := make(map[string]int, len(diagnostic.Outcome.Metrics))
+			for _, metric := range diagnostic.Outcome.Metrics {
+				metrics[metric.Name] = metric.Value
+			}
+			if metrics["requested_primary_scope_count"] != 2 ||
+				metrics["covered_primary_scope_count"] != 2 ||
+				metrics["covered_supporting_evidence_count"] != 1 {
+				t.Fatalf("Architecture diagnostic metrics = %#v", metrics)
+			}
+		})
+	}
+}
+
+func TestArchitectureDiagnosticPreservesOutputLimitCode(t *testing.T) {
+	t.Parallel()
+
+	limitErr := &architectureOutputResourceExhausted{cause: &modelresearch.ResourceLimitError{
+		Stage: "architecture_synthesis", Kind: modelresearch.ResourceLimitOutputTokens,
+		Limit: 64_000,
+	}}
+	diagnostic := architectureAtlasFirstDiagnostic(architectureSynthesisOutcome{
+		Attempted: true, InputBytes: 1200, TransportAttempts: 1,
+		Failure: &report.ArchitectureSynthesisFailure{
+			Stage: "provider_call", Code: "architecture.provider_output_limit",
+		},
+	}, limitErr, false)
+	if diagnostic.State != "resource_exhausted" || diagnostic.Outcome == nil ||
+		diagnostic.Outcome.Phase != "provider_call" ||
+		diagnostic.Outcome.Code != "architecture.provider_output_limit" {
+		t.Fatalf("output-limit Architecture diagnostic = %#v", diagnostic)
 	}
 }
 

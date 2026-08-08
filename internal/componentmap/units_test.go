@@ -1,8 +1,11 @@
 package componentmap
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/evidence"
 )
@@ -136,6 +139,366 @@ func TestUnitCatalogUnitMembersByWireRefExpansion(t *testing.T) {
 	}
 }
 
+func TestNearestConceptualPackageOwnerResolvesBoundedStructuralChains(t *testing.T) {
+	t.Parallel()
+
+	packageCandidate := unitTestCandidate(MemberPackage, "member-package-runner", "runner", CandidateRoleConceptualMember, nil)
+	fileCandidate := unitTestCandidate(MemberFile, "member-file-options", "runner/options.go", CandidateRoleStructuralLocator, &packageCandidate.ID)
+	direct := unitTestCandidate(MemberSymbol, "member-symbol-direct", "runner.Direct", CandidateRoleConceptualMember, &packageCandidate.ID)
+	mediated := unitTestCandidate(MemberSymbol, "member-symbol-mediated", "runner.Mediated", CandidateRoleConceptualMember, &fileCandidate.ID)
+	known := map[MemberID]Candidate{
+		packageCandidate.ID: packageCandidate,
+		fileCandidate.ID:    fileCandidate,
+		direct.ID:           direct,
+		mediated.ID:         mediated,
+	}
+	for _, memberID := range []MemberID{packageCandidate.ID, direct.ID, mediated.ID} {
+		owner, ok := nearestConceptualPackageOwner(memberID, known)
+		if !ok || owner != packageCandidate.ID {
+			t.Fatalf("owner(%s) = %#v, %t; want %s", memberID.key(), owner, ok, packageCandidate.ID.key())
+		}
+	}
+
+	unknownParentID := MemberID{Kind: MemberFile, Value: "member-file-unknown"}
+	unresolved := unitTestCandidate(MemberSymbol, "member-symbol-unresolved", "Unresolved", CandidateRoleConceptualMember, &unknownParentID)
+	known[unresolved.ID] = unresolved
+	if owner, ok := nearestConceptualPackageOwner(unresolved.ID, known); ok {
+		t.Fatalf("unknown parent resolved to %#v", owner)
+	}
+
+	cycleAID := MemberID{Kind: MemberFile, Value: "member-file-cycle-a"}
+	cycleBID := MemberID{Kind: MemberFile, Value: "member-file-cycle-b"}
+	cyclicMember := unitTestCandidate(MemberSymbol, "member-symbol-cycle", "Cyclic", CandidateRoleConceptualMember, &cycleAID)
+	cycleA := unitTestCandidate(MemberFile, cycleAID.Value, "cycle/a.go", CandidateRoleStructuralLocator, &cycleBID)
+	cycleB := unitTestCandidate(MemberFile, cycleBID.Value, "cycle/b.go", CandidateRoleStructuralLocator, &cycleAID)
+	cycleKnown := map[MemberID]Candidate{cyclicMember.ID: cyclicMember, cycleA.ID: cycleA, cycleB.ID: cycleB}
+	if owner, ok := nearestConceptualPackageOwner(cyclicMember.ID, cycleKnown); ok {
+		t.Fatalf("cyclic parent graph resolved to %#v", owner)
+	}
+}
+
+func TestCompileUnitCatalogFileMediatedMembersShareFinalPackageUnit(t *testing.T) {
+	t.Parallel()
+
+	pkg := unitTestCandidate(MemberPackage, "member-package-runner", "runner", CandidateRoleConceptualMember, nil)
+	file := unitTestCandidate(MemberFile, "member-file-options", "runner/options.go", CandidateRoleStructuralLocator, &pkg.ID)
+	direct := unitTestCandidate(MemberSymbol, "member-symbol-direct", "runner.Direct", CandidateRoleConceptualMember, &pkg.ID)
+	mediated := unitTestCandidate(MemberSymbol, "member-symbol-mediated", "runner.Mediated", CandidateRoleConceptualMember, &file.ID)
+	entrypoint := unitTestCandidate(MemberEntrypoint, "member-entrypoint-main", "cmd/ghz.main", CandidateRoleConceptualMember, &file.ID)
+	bundle := unitTestBundle(
+		[]Candidate{pkg, file, direct, mediated, entrypoint},
+		[]BehaviorAnchor{unitTestAnchor("anchor-process", AnchorProcessEntry, entrypoint.ID)},
+	)
+	catalog, err := CompileUnitCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packageRef := catalog.MemberToWireUnit[pkg.ID]
+	for _, memberID := range []MemberID{direct.ID, mediated.ID, entrypoint.ID} {
+		if got := catalog.MemberToWireUnit[memberID]; got != packageRef {
+			t.Fatalf("member %s unit = %q, want package unit %q", memberID.key(), got, packageRef)
+		}
+	}
+	if _, leaked := catalog.MemberToWireUnit[file.ID]; leaked {
+		t.Fatalf("structural locator received conceptual unit ownership: %s", file.ID.key())
+	}
+	if catalog.TotalMembers != 4 || catalog.CoveredMembers != 4 || len(catalog.MemberToWireUnit) != 4 {
+		t.Fatalf("conceptual coverage = total %d covered %d map %d, want 4/4/4", catalog.TotalMembers, catalog.CoveredMembers, len(catalog.MemberToWireUnit))
+	}
+	for _, unit := range catalog.Units {
+		if strings.HasPrefix(unit.CanonicalID, "unit-local-remainder") {
+			t.Fatalf("file-mediated conceptual members fell into remainder: %#v", unit)
+		}
+	}
+	encoded, err := json.Marshal(catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "member_to_wire_unit") || strings.Contains(string(encoded), "MemberToWireUnit") {
+		t.Fatalf("private ownership map was serialized: %s", encoded)
+	}
+}
+
+func TestCompileUnitCatalogMapsEveryConceptualKindIncludingFlow(t *testing.T) {
+	t.Parallel()
+
+	bundle := landscapeTestBundle()
+	catalog, err := CompileUnitCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conceptualCount := 0
+	for _, candidate := range bundle.Candidates {
+		if candidate.Role != CandidateRoleConceptualMember {
+			continue
+		}
+		conceptualCount++
+		if ref := catalog.MemberToWireUnit[candidate.ID]; ref == "" {
+			t.Fatalf("conceptual %s member has no final unit", candidate.ID.Kind)
+		}
+	}
+	if len(catalog.MemberToWireUnit) != conceptualCount {
+		t.Fatalf("final ownership map = %d, want %d conceptual members", len(catalog.MemberToWireUnit), conceptualCount)
+	}
+}
+
+func TestCompileUnitCatalogAttachesAnchorsToExactFinalUnits(t *testing.T) {
+	t.Parallel()
+
+	t.Run("split", func(t *testing.T) {
+		pkg := unitTestCandidate(MemberPackage, "member-package-large", "runtime", CandidateRoleConceptualMember, nil)
+		candidates := []Candidate{pkg}
+		var target MemberID
+		for index := 0; index < maxUnitMembers+2; index++ {
+			candidate := unitTestCandidate(
+				MemberSymbol,
+				fmt.Sprintf("member-symbol-%03d", index),
+				fmt.Sprintf("runtime.Symbol%03d", index),
+				CandidateRoleConceptualMember,
+				&pkg.ID,
+			)
+			candidates = append(candidates, candidate)
+			if index == maxUnitMembers+1 {
+				target = candidate.ID
+			}
+		}
+		bundle := unitTestBundle(candidates, []BehaviorAnchor{
+			unitTestAnchor("anchor-split", AnchorExtensionFamily, target),
+		})
+		catalog, err := CompileUnitCatalog(bundle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		targetRef := catalog.MemberToWireUnit[target]
+		anchoredUnits := 0
+		for index, unit := range catalog.Units {
+			anchored := containsString(unit.AnchorIDs, "anchor-split")
+			containsTarget := catalog.WireUnits[index].Ref == targetRef
+			if anchored != containsTarget {
+				t.Fatalf("unit %q anchor=%t, contains target=%t", unit.CanonicalID, anchored, containsTarget)
+			}
+			if anchored {
+				anchoredUnits++
+				if catalog.WireUnits[index].AnchorRefCount != 1 {
+					t.Fatalf("anchored wire count = %d, want 1", catalog.WireUnits[index].AnchorRefCount)
+				}
+			}
+		}
+		if anchoredUnits != 1 {
+			t.Fatalf("anchor attached to %d split units, want exactly 1", anchoredUnits)
+		}
+	})
+
+	t.Run("remainder", func(t *testing.T) {
+		orphan := unitTestCandidate(MemberSymbol, "member-symbol-orphan", "Orphan", CandidateRoleConceptualMember, nil)
+		bundle := unitTestBundle([]Candidate{orphan}, []BehaviorAnchor{
+			unitTestAnchor("anchor-remainder", AnchorExtensionFamily, orphan.ID),
+		})
+		catalog, err := CompileUnitCatalog(bundle)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(catalog.Units) != 1 || !strings.HasPrefix(catalog.Units[0].CanonicalID, "unit-local-remainder") {
+			t.Fatalf("unexpected remainder units: %#v", catalog.Units)
+		}
+		if !containsString(catalog.Units[0].AnchorIDs, "anchor-remainder") || catalog.WireUnits[0].AnchorRefCount != 1 {
+			t.Fatalf("remainder anchor missing: unit=%#v wire=%#v", catalog.Units[0], catalog.WireUnits[0])
+		}
+	})
+}
+
+func TestCompileUnitCatalogRepresentativeLabelsUseSafeCandidateNames(t *testing.T) {
+	t.Parallel()
+
+	pkg := unitTestCandidate(MemberPackage, "member-package-router-private", "github.com/bojand/ghz/web/router", CandidateRoleConceptualMember, nil)
+	validator := unitTestCandidate(MemberSymbol, "member-symbol-validator-private", "github.com/bojand/ghz/web/router.Validator", CandidateRoleConceptualMember, &pkg.ID)
+	unsafe := unitTestCandidate(MemberSymbol, "member-symbol-secret-private", "web/router.member-symbol-secret-private", CandidateRoleConceptualMember, &pkg.ID)
+	long := unitTestCandidate(MemberSymbol, "member-symbol-unicode-private", "web/router."+strings.Repeat("界", 40), CandidateRoleConceptualMember, &pkg.ID)
+	rootFile := unitTestCandidate(MemberFile, "member-file-root-private", "main.go", CandidateRoleConceptualMember, &pkg.ID)
+	bundle := unitTestBundle(
+		[]Candidate{pkg, validator, unsafe, long, rootFile},
+		[]BehaviorAnchor{unitTestAnchor("anchor-router-private", AnchorExtensionFamily, pkg.ID)},
+	)
+	for index := range bundle.Candidates {
+		if bundle.Candidates[index].ID == pkg.ID {
+			bundle.Candidates[index].Facts = []LocalFact{unitTestFact(FactDeclaration, "github.com/bojand/ghz/web/router")}
+		}
+	}
+	catalog, err := CompileUnitCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.WireUnits) != 1 || len(catalog.WireUnits[0].RepresentativeLabels) == 0 {
+		t.Fatalf("representative labels are empty: %#v", catalog.WireUnits)
+	}
+	foundValidator := false
+	for _, label := range catalog.WireUnits[0].RepresentativeLabels {
+		if label == "Validator" {
+			foundValidator = true
+		}
+		if len(label) > maxUnitWireLabelBytes || !utf8.ValidString(label) {
+			t.Fatalf("representative label is not a valid %d-byte value: %q (%d bytes)", maxUnitWireLabelBytes, label, len(label))
+		}
+		if strings.Contains(label, "/") || strings.Contains(label, "github.com") || strings.Contains(label, "bojand") {
+			t.Fatalf("representative label leaked a path or qualified identity: %q", label)
+		}
+		if label == "main.go" {
+			t.Fatalf("representative label leaked a root repository path: %q", label)
+		}
+		for _, candidate := range bundle.Candidates {
+			if strings.Contains(label, candidate.ID.Value) {
+				t.Fatalf("representative label leaked canonical token %q: %q", candidate.ID.Value, label)
+			}
+		}
+	}
+	if !foundValidator {
+		t.Fatalf("candidate display name did not produce semantic representative: %#v", catalog.WireUnits[0].RepresentativeLabels)
+	}
+}
+
+func TestCompileUnitCatalogUsesRepositoryRelativeModuleLabels(t *testing.T) {
+	t.Parallel()
+
+	definitions := []struct {
+		id, name, declaration string
+	}{
+		{"member-package-runner", "runner", "github.com/bojand/ghz/runner"},
+		{"member-package-web-api", "web/api", "github.com/bojand/ghz/web/api"},
+		{"member-package-web-router", "web/router", "github.com/bojand/ghz/web/router"},
+		{"member-package-command", "cmd/ghz-web", "github.com/bojand/ghz/cmd/ghz-web"},
+		{"member-package-printer", "github.com/bojand/ghz/printer", "github.com/bojand/ghz/printer"},
+	}
+	candidates := make([]Candidate, 0, len(definitions))
+	for _, definition := range definitions {
+		candidate := unitTestCandidate(MemberPackage, definition.id, definition.name, CandidateRoleConceptualMember, nil)
+		candidate.Facts = []LocalFact{unitTestFact(FactDeclaration, definition.declaration)}
+		candidates = append(candidates, candidate)
+	}
+	bundle := unitTestBundle(candidates, []BehaviorAnchor{
+		unitTestAnchor("anchor-runner", AnchorExtensionFamily, candidates[0].ID),
+	})
+	catalog, err := CompileUnitCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels := map[string]bool{}
+	for _, wire := range catalog.WireUnits {
+		labels[wire.Label] = true
+		if strings.Contains(wire.Label, "/") || strings.Contains(wire.Label, "github.com") || strings.Contains(wire.Label, "bojand") {
+			t.Fatalf("unit label is not repository-relative semantic context: %q", wire.Label)
+		}
+	}
+	for _, want := range []string{"runner", "web", "ghz-web", "printer"} {
+		if !labels[want] {
+			t.Fatalf("missing semantic module label %q in %#v", want, catalog.WireUnits)
+		}
+	}
+}
+
+func TestCompileUnitCatalogKeepsClosedRolesSeparate(t *testing.T) {
+	t.Parallel()
+
+	api := unitTestCandidate(MemberPackage, "member-package-api", "server/api", CandidateRoleConceptualMember, nil)
+	tests := unitTestCandidate(MemberPackage, "member-package-tests", "server/tests/e2e", CandidateRoleConceptualMember, nil)
+	tools := unitTestCandidate(MemberPackage, "member-package-tools", "tools/generate", CandidateRoleConceptualMember, nil)
+	docs := unitTestCandidate(MemberPackage, "member-package-docs", "docs/guide", CandidateRoleConceptualMember, nil)
+	testament := unitTestCandidate(MemberPackage, "member-package-testament", "internal/testament", CandidateRoleConceptualMember, nil)
+	evidenced := unitTestCandidate(MemberPackage, "member-package-evidenced", "services/admin", CandidateRoleConceptualMember, nil)
+	evidenced.Facts = append(evidenced.Facts, unitTestFact(FactExecutableRole, "test_or_helper"))
+	candidates := []Candidate{api, tests, tools, docs, testament, evidenced}
+	bundle := unitTestBundle(candidates, []BehaviorAnchor{
+		unitTestAnchor("anchor-api", AnchorExtensionFamily, api.ID),
+	})
+	catalog, err := CompileUnitCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantRoles := map[MemberID]UnitRole{
+		api.ID:       UnitRoleProduction,
+		tests.ID:     UnitRoleTest,
+		tools.ID:     UnitRoleTooling,
+		docs.ID:      UnitRoleDocumentation,
+		testament.ID: UnitRoleProduction,
+		evidenced.ID: UnitRoleTest,
+	}
+	for memberID, want := range wantRoles {
+		ref := catalog.MemberToWireUnit[memberID]
+		wire, ok := unitWireByRef(catalog, ref)
+		if !ok || wire.Role != want {
+			t.Fatalf("member %s role = %#v, found=%t; want %q", memberID.key(), wire.Role, ok, want)
+		}
+	}
+	if catalog.MemberToWireUnit[api.ID] == catalog.MemberToWireUnit[tests.ID] {
+		t.Fatal("production and test packages from one module were merged")
+	}
+}
+
+func TestCompileUnitCatalogGhzLikeFileMediatedProjection(t *testing.T) {
+	t.Parallel()
+
+	packageNames := []string{
+		"web/router", "internal/helloworld", "web/model", "internal/wrapped", "printer", "internal/gtime",
+		"runner", "web/router/statik", "internal/sleep", "internal", "web/api", "web/config", "ghz",
+		"web/database", "cmd/ghz-web", "protodesc", "load", "cmd/ghz",
+	}
+	packages := make([]Candidate, 0, len(packageNames))
+	packageByName := make(map[string]Candidate, len(packageNames))
+	for index, name := range packageNames {
+		candidate := unitTestCandidate(MemberPackage, fmt.Sprintf("member-package-%02d", index), name, CandidateRoleConceptualMember, nil)
+		candidate.Facts = []LocalFact{unitTestFact(FactDeclaration, "github.com/bojand/ghz/"+name)}
+		if name == "ghz" {
+			candidate.Facts = []LocalFact{unitTestFact(FactDeclaration, "github.com/bojand/ghz")}
+		}
+		packages = append(packages, candidate)
+		packageByName[name] = candidate
+	}
+	owners := []string{"runner", "runner", "cmd/ghz-web", "cmd/ghz", "web/router", "web/config", "web/api", "load", "printer", "ghz"}
+	candidates := append([]Candidate(nil), packages...)
+	type ownership struct{ member, owner MemberID }
+	ownerships := make([]ownership, 0, len(owners))
+	var anchored MemberID
+	for index, ownerName := range owners {
+		owner := packageByName[ownerName]
+		file := unitTestCandidate(MemberFile, fmt.Sprintf("member-file-%02d", index), ownerName+fmt.Sprintf("/file-%02d.go", index), CandidateRoleStructuralLocator, &owner.ID)
+		symbol := unitTestCandidate(MemberSymbol, fmt.Sprintf("member-symbol-%02d", index), ownerName+fmt.Sprintf(".Symbol%02d", index), CandidateRoleConceptualMember, &file.ID)
+		candidates = append(candidates, file, symbol)
+		ownerships = append(ownerships, ownership{member: symbol.ID, owner: owner.ID})
+		if index == 0 {
+			anchored = symbol.ID
+		}
+	}
+	bundle := unitTestBundle(candidates, []BehaviorAnchor{
+		unitTestAnchor("anchor-ghz-symbol", AnchorExtensionFamily, anchored),
+	})
+	catalog, err := CompileUnitCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if catalog.TotalMembers != 28 || catalog.CoveredMembers != 28 || len(catalog.MemberToWireUnit) != 28 {
+		t.Fatalf("ghz conceptual coverage = %d/%d map=%d, want 28/28 map=28", catalog.CoveredMembers, catalog.TotalMembers, len(catalog.MemberToWireUnit))
+	}
+	for _, pair := range ownerships {
+		if catalog.MemberToWireUnit[pair.member] != catalog.MemberToWireUnit[pair.owner] {
+			t.Fatalf("mediated symbol %s is not in owner %s final unit", pair.member.key(), pair.owner.key())
+		}
+	}
+	for _, candidate := range candidates {
+		if candidate.Role == CandidateRoleStructuralLocator {
+			if _, exists := catalog.MemberToWireUnit[candidate.ID]; exists {
+				t.Fatalf("structural locator entered final unit map: %s", candidate.ID.key())
+			}
+		}
+	}
+	for index, unit := range catalog.Units {
+		if strings.HasPrefix(unit.CanonicalID, "unit-local-remainder") {
+			t.Fatalf("ghz-like mediated symbols produced a local remainder: %#v", unit)
+		}
+		if len(catalog.WireUnits[index].RepresentativeLabels) == 0 {
+			t.Fatalf("ghz-like unit %q has no representative labels", unit.CanonicalID)
+		}
+	}
+}
+
 // unitFixtureBundle builds a small mixed-role bundle for unit compiler tests.
 func unitFixtureBundle() CandidateBundle {
 	declarationFact := func(value string) []LocalFact {
@@ -184,6 +547,58 @@ func unitFixtureBundle() CandidateBundle {
 		Relations: []LocalRelation{},
 	}
 	return bundle
+}
+
+func unitTestFact(kind FactKind, value string) LocalFact {
+	return LocalFact{
+		Kind: kind, Value: value, Certainty: evidence.CertaintyStatic,
+		Provenance: []evidence.Provenance{{Provider: "fixture", Version: "v1", Operation: "local_fact"}},
+	}
+}
+
+func unitTestCandidate(
+	kind MemberKind,
+	id string,
+	name string,
+	role CandidateRole,
+	parentID *MemberID,
+) Candidate {
+	return Candidate{
+		ID: MemberID{Kind: kind, Value: id}, Role: role, Name: name, ParentID: parentID,
+		Facts: []LocalFact{unitTestFact(FactDeclaration, name)},
+	}
+}
+
+func unitTestAnchor(id string, kind BehaviorAnchorKind, memberIDs ...MemberID) BehaviorAnchor {
+	proofMode := AnchorProofDeclarationFamily
+	if kind == AnchorProcessEntry {
+		proofMode = AnchorProofProcessEntry
+	}
+	return BehaviorAnchor{
+		ID: id, Kind: kind, ProofMode: proofMode, Label: "unit projection anchor",
+		Location:  evidence.Location{Path: "fixture.go", Line: 1, Column: 1},
+		Scenario:  ScenarioContext{ID: "scenario-unit-projection", Name: "unit projection scenario"},
+		Producer:  evidence.Provenance{Provider: "fixture", Version: "v1", Operation: "anchor"},
+		Certainty: evidence.CertaintyStatic, MemberIDs: memberIDs,
+		Limitations: []string{"static unit projection fixture"},
+	}
+}
+
+func unitTestBundle(candidates []Candidate, anchors []BehaviorAnchor) CandidateBundle {
+	return CandidateBundle{
+		Version: ContractVersion, RepositoryArchetype: ArchetypeModularPlatformServer,
+		GroundingMode: GroundingMixed, Candidates: candidates, BehaviorAnchors: anchors,
+		Relations: []LocalRelation{},
+	}
+}
+
+func unitWireByRef(catalog UnitCatalog, ref UnitWireRef) (SynthesisUnit, bool) {
+	for _, wire := range catalog.WireUnits {
+		if wire.Ref == ref {
+			return wire, true
+		}
+	}
+	return SynthesisUnit{}, false
 }
 
 func containsSubstring(value, substring string) bool {

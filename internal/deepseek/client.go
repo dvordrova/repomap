@@ -283,6 +283,11 @@ const maxProviderResponseBytes = modelresearch.ProviderResponseByteLimit
 var (
 	errJSONCompletionInvalid     = errors.New("llm response content is not valid JSON")
 	errResponseEnvelopeMalformed = errors.New("llm response envelope is malformed")
+	// ErrResponseContentEmpty distinguishes an HTTP-successful, parsed
+	// provider envelope with no usable assistant content from transport or
+	// provider-call failures. Stage owners use it for closed response-decode
+	// diagnostics without matching provider error text.
+	ErrResponseContentEmpty = errors.New("llm response content is empty")
 )
 
 // IncompleteCompletionError reports an envelope that cannot represent one
@@ -818,9 +823,9 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 			details = append(details, "reasoning_content_present")
 		}
 		if len(details) > 0 {
-			return completion, false, fmt.Errorf("llm response content is empty (%s)", strings.Join(details, ", "))
+			return completion, false, fmt.Errorf("%w (%s)", ErrResponseContentEmpty, strings.Join(details, ", "))
 		}
-		return completion, false, fmt.Errorf("llm response content is empty")
+		return completion, false, ErrResponseContentEmpty
 	}
 
 	if validateJSON {

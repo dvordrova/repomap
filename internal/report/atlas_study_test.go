@@ -585,6 +585,10 @@ func TestAtlasStudyOutputIsInvariantAcrossFullPartialAndRejectedArchitecture(t *
 	partialStatus.DistinctMembers = 1
 	partialStatus.CoveredConceptualCount = 1
 	partialStatus.UncoveredConceptualCount = 1
+	partialStatus.RequestedPrimaryScopeCount = 2
+	partialStatus.CoveredPrimaryScopeCount = 1
+	partialStatus.UncoveredPrimaryScopeCount = 1
+	partialStatus.CoveredSupportingEvidenceCount = 0
 	partialStatus.UncoveredConceptualIDs = []componentmap.MemberID{remainderMember.ID}
 	partialStatus.ProposalPartial = true
 	partialStatus.ArchitectureSource = string(componentmap.SourcePartialModel)
@@ -599,9 +603,16 @@ func TestAtlasStudyOutputIsInvariantAcrossFullPartialAndRejectedArchitecture(t *
 	rejected.ArchitectureCanvas.ArchitectureSource = componentmap.SourceLocalAnchors
 	rejected.ArchitectureCanvas.ArchitectureLevel = 3
 	rejected.ArchitectureSynthesis = &ArchitectureSynthesisStatus{
-		Version:   ArchitectureSynthesisStatusVersion,
-		State:     ArchitectureSynthesisFailed,
-		ErrorCode: "response_invalid",
+		Version: ArchitectureSynthesisStatusVersion, State: ArchitectureSynthesisFailed,
+		ErrorCode: "invalid_response", ProposalRejected: true,
+		RequestBytes: 128, ResponseBytes: 96, ResponseContentBytes: 96,
+		ProviderRequestCount: 1, TransportAttempts: 1,
+		LocalCandidateCount: 2, RequestedConceptualCount: 2,
+		FinishReason: "stop", ResponseComplete: true, ResponseState: "captured",
+		ProviderCallSucceeded: true, ResponseParsed: true,
+		Failure: &ArchitectureSynthesisFailure{
+			Stage: "response_validation", Code: "architecture.proposal_rejected",
+		},
 	}
 
 	variants := []struct {

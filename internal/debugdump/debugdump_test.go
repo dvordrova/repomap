@@ -49,7 +49,8 @@ func TestSemanticExchangeRecordsExactSafeBytesAndUnsafeMarker(t *testing.T) {
 	}
 	safe := byStage[SemanticStageOrientation]
 	if safe.RequestProvenance != SemanticRequestPrepared || safe.State != SemanticStateAccepted ||
-		safe.SemanticCalls != 1 || safe.TransportAttempts != 2 {
+		safe.SemanticCalls != 1 || safe.TransportAttempts != 2 ||
+		safe.Version != 2 || safe.Outcome.Phase != "complete" || safe.Outcome.Code != "accepted" {
 		t.Fatalf("safe semantic metadata = %#v", safe)
 	}
 	assertSemanticPayloadIdentity(t, w.RunDir(), safe.Request, safeRequest)
@@ -65,6 +66,214 @@ func TestSemanticExchangeRecordsExactSafeBytesAndUnsafeMarker(t *testing.T) {
 	marker := readSemanticPayload(t, w.RunDir(), rejected.Response)
 	if bytes.Contains(marker, unsafe) || bytes.Contains(marker, []byte("abcdefghijklmnop")) {
 		t.Fatalf("unsafe marker leaked provider content: %s", marker)
+	}
+}
+
+func TestSemanticExchangeRecordsClosedDetailedOutcomeAndReturnsPath(t *testing.T) {
+	t.Parallel()
+
+	w, err := NewWriter(t.TempDir(), "semantic-outcome", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	reference := w.RecordSemanticExchange(SemanticExchange{
+		Stage: SemanticStageArchitecture, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: SemanticRequestExactSent,
+		State:             SemanticStateRejected, ValidationCode: SemanticValidationResponse,
+		SemanticCalls: 1, TransportAttempts: 1,
+		Request: []byte(`{"request":true}`), Response: []byte(`{"response":true}`),
+		Outcome: SemanticOutcome{
+			Phase:  "landscape_validation",
+			Code:   "componentmap.partial_model_inconsistent",
+			Detail: semanticOutcomeDetails["componentmap.partial_model_inconsistent"],
+			Metrics: []SemanticMetric{
+				{Name: "component_count", Value: 12},
+				{Name: "member_ref_count", Value: 28},
+			},
+		},
+	})
+	if !strings.HasSuffix(reference, "/"+SemanticExchangeMetaFile) {
+		t.Fatalf("semantic exchange reference = %q", reference)
+	}
+	records := readSemanticExchangeRecords(t, w.RunDir())
+	if len(records) != 1 || records[0].Outcome.Code != "componentmap.partial_model_inconsistent" ||
+		len(records[0].Outcome.Metrics) != 2 {
+		t.Fatalf("semantic outcome record = %#v", records)
+	}
+}
+
+func TestSemanticExchangeRejectsArchitectureMetricsOnAnotherStage(t *testing.T) {
+	t.Parallel()
+
+	w, err := NewWriter(t.TempDir(), "semantic-outcome-stage", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	err = w.writeSemanticExchange(SemanticExchange{
+		Stage: SemanticStageNavigator, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: SemanticRequestExactSent,
+		State:             SemanticStateAccepted, ValidationCode: SemanticValidationAccepted,
+		SemanticCalls: 1, TransportAttempts: 1,
+		Request: []byte(`{"request":true}`), Response: []byte(`{"response":true}`),
+		Outcome: SemanticOutcome{
+			Phase: "complete", Code: "accepted",
+			Metrics: []SemanticMetric{{Name: "covered_primary_scope_count", Value: 1}},
+		},
+	}, nil)
+	if err == nil || !strings.Contains(err.Error(), "not registered for stage") {
+		t.Fatalf("cross-stage Architecture metric error = %v", err)
+	}
+}
+
+func TestSemanticExchangeGenericOutcomeUsesValidationPhase(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		state, validation string
+		phase, code       string
+	}{
+		{SemanticStateAccepted, SemanticValidationAccepted, "complete", "accepted"},
+		{SemanticStateCacheHit, SemanticValidationCache, "cache", "cache_hit"},
+		{SemanticStateCanceled, SemanticValidationCanceled, "provider_call", "canceled"},
+		{SemanticStateProviderFailed, SemanticValidationProvider, "provider_call", "provider_failed"},
+		{SemanticStateRejected, SemanticValidationSecret, "response_secret_scan", "response_secret_scan"},
+		{SemanticStateRejected, SemanticValidationDecode, "response_decode", "response_decode"},
+		{SemanticStateRejected, SemanticValidationResponse, "response_validation", "response_validation"},
+		{SemanticStateRejected, SemanticValidationApply, "projection_apply", "projection_apply"},
+		{SemanticStateRejected, SemanticValidationQuality, "projection_quality", "projection_quality"},
+		// Study v3.2 can classify resource handling as provider_failed lifecycle
+		// after a response was already received; response_decode remains the
+		// more precise phase.
+		{SemanticStateProviderFailed, SemanticValidationDecode, "response_decode", "response_decode"},
+	}
+	for _, test := range tests {
+		t.Run(test.state+"/"+test.validation, func(t *testing.T) {
+			outcome := normalizedSemanticOutcome(SemanticExchange{
+				State: test.state, ValidationCode: test.validation,
+			})
+			if outcome.Phase != test.phase || outcome.Code != test.code {
+				t.Fatalf("outcome = %#v, want %s/%s", outcome, test.phase, test.code)
+			}
+			if err := validateSemanticOutcome(outcome); err != nil {
+				t.Fatalf("generic outcome is not registered: %v", err)
+			}
+		})
+	}
+}
+
+func TestSemanticOutcomeRegistryCoversArchitectureStatusV12Failures(t *testing.T) {
+	t.Parallel()
+
+	for _, outcome := range []SemanticOutcome{
+		{Phase: "input_preparation", Code: "architecture.preparation_failed"},
+		{Phase: "provider_configuration", Code: "architecture.provider_configuration_failed"},
+		{Phase: "provider_call", Code: "architecture.provider_call_failed"},
+		{Phase: "provider_call", Code: "architecture.provider_output_limit"},
+		{Phase: "response_decode", Code: "architecture.empty_response"},
+		{Phase: "response_validation", Code: "architecture.proposal_rejected"},
+		{Phase: "response_validation", Code: "componentmap.response_evaluation_failed"},
+		{
+			Phase: "landscape_validation", Code: "componentmap.partial_model_inconsistent",
+			Detail: semanticOutcomeDetails["componentmap.partial_model_inconsistent"],
+		},
+	} {
+		if err := validateSemanticOutcome(outcome); err != nil {
+			t.Errorf("Architecture v12 outcome %#v is not representable: %v", outcome, err)
+		}
+	}
+}
+
+func TestSemanticExchangeRejectsUnsafeOrUnboundedOutcome(t *testing.T) {
+	t.Parallel()
+
+	w, err := NewWriter(t.TempDir(), "semantic-outcome-invalid", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	base := SemanticExchange{
+		Stage: SemanticStageArchitecture, InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+		RequestProvenance: SemanticRequestExactSent,
+		State:             SemanticStateRejected, ValidationCode: SemanticValidationResponse,
+		SemanticCalls: 1, TransportAttempts: 1,
+		Request: []byte(`{"request":true}`), Response: []byte(`{"response":true}`),
+	}
+	tests := map[string]struct {
+		mutate func(*SemanticExchange)
+		want   string
+	}{
+		"unregistered unsafe detail": {
+			mutate: func(exchange *SemanticExchange) {
+				exchange.Outcome = SemanticOutcome{
+					Phase: "provider_call", Code: "architecture.provider_call_failed",
+					Detail: "sk-abcdefghijklmnop",
+				}
+			},
+			want: "unregistered outcome detail",
+		},
+		"oversized detail": {
+			mutate: func(exchange *SemanticExchange) {
+				exchange.Outcome = SemanticOutcome{
+					Phase: "provider_call", Code: "architecture.provider_call_failed",
+					Detail: strings.Repeat("x", 513),
+				}
+			},
+			want: "invalid outcome detail",
+		},
+		"duplicate metric": {
+			mutate: func(exchange *SemanticExchange) {
+				exchange.Outcome = SemanticOutcome{
+					Phase: "landscape_validation", Code: "componentmap.partial_model_inconsistent",
+					Metrics: []SemanticMetric{{Name: "component_count", Value: 1}, {Name: "component_count", Value: 2}},
+				}
+			},
+			want: "invalid outcome metrics",
+		},
+		"negative metric": {
+			mutate: func(exchange *SemanticExchange) {
+				exchange.Outcome = SemanticOutcome{
+					Phase: "landscape_validation", Code: "componentmap.partial_model_inconsistent",
+					Metrics: []SemanticMetric{{Name: "component_count", Value: -1}},
+				}
+			},
+			want: "invalid outcome metrics",
+		},
+		"unsorted metrics": {
+			mutate: func(exchange *SemanticExchange) {
+				exchange.Outcome = SemanticOutcome{
+					Phase: "landscape_validation", Code: "componentmap.partial_model_inconsistent",
+					Metrics: []SemanticMetric{{Name: "member_ref_count", Value: 1}, {Name: "component_count", Value: 1}},
+				}
+			},
+			want: "invalid outcome metrics",
+		},
+		"too many metrics": {
+			mutate: func(exchange *SemanticExchange) {
+				exchange.Outcome = SemanticOutcome{
+					Phase: "landscape_validation", Code: "componentmap.partial_model_inconsistent",
+					Metrics: make([]SemanticMetric, 33),
+				}
+			},
+			want: "too many outcome metrics",
+		},
+		"invalid code": {
+			mutate: func(exchange *SemanticExchange) {
+				exchange.Outcome = SemanticOutcome{Phase: "response validation", Code: "invalid_response"}
+			},
+			want: "invalid outcome diagnostic",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			exchange := base
+			test.mutate(&exchange)
+			if err := w.writeSemanticExchange(exchange, nil); err == nil ||
+				!strings.Contains(err.Error(), test.want) {
+				t.Fatalf("invalid semantic outcome error = %v, want %q", err, test.want)
+			}
+		})
 	}
 }
 
@@ -497,6 +706,178 @@ func TestNewWriterCreatesDir(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(runDir, "metadata.json")); os.IsNotExist(err) {
 		t.Fatal("metadata.json was not created")
+	}
+	encoded, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved RunMeta
+	if err := json.Unmarshal(encoded, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if !saved.BuildIdentity.Available || saved.BuildIdentity.GoVersion == "" || saved.BuildIdentity.ModulePath == "" {
+		t.Fatalf("build identity = %#v", saved.BuildIdentity)
+	}
+}
+
+func TestOpenWriterPreservesOriginalValidatedBuildIdentity(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	w, err := NewWriter(base, "preserved-build", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.WriteMetadata(RunMeta{RunID: "preserved-build"}); err != nil {
+		t.Fatal(err)
+	}
+	runDir := w.RunDir()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	beforeData, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before RunMeta
+	if err := json.Unmarshal(beforeData, &before); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := OpenWriter(runDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	malicious := RunMeta{
+		RunID: "preserved-build",
+		BuildIdentity: BuildIdentity{
+			Available: true, GoVersion: "go0", ModulePath: "/private/source/path",
+		},
+	}
+	if err := reopened.WriteMetadata(malicious); err != nil {
+		t.Fatal(err)
+	}
+	if err := reopened.Close(); err != nil {
+		t.Fatal(err)
+	}
+	afterData, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var after RunMeta
+	if err := json.Unmarshal(afterData, &after); err != nil {
+		t.Fatal(err)
+	}
+	beforeIdentity, _ := json.Marshal(before.BuildIdentity)
+	afterIdentity, _ := json.Marshal(after.BuildIdentity)
+	if !bytes.Equal(afterIdentity, beforeIdentity) {
+		t.Fatalf("reopened build identity changed = %#v, want %#v", after.BuildIdentity, before.BuildIdentity)
+	}
+}
+
+func TestOpenWriterBindsFirstMetadataToCurrentBuild(t *testing.T) {
+	t.Parallel()
+
+	runDir := t.TempDir()
+	w, err := OpenWriter(runDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.WriteMetadata(RunMeta{RunID: filepath.Base(runDir)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved RunMeta
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if !saved.BuildIdentity.Available || saved.BuildIdentity.GoVersion == "" ||
+		saved.BuildIdentity.ModulePath == "" {
+		t.Fatalf("first reopened metadata build identity = %#v", saved.BuildIdentity)
+	}
+}
+
+func TestOpenWriterRejectsMalformedPersistedBuildIdentity(t *testing.T) {
+	t.Parallel()
+
+	runDir := t.TempDir()
+	data := []byte(`{"build_identity":{"available":true,"go_version":"go1.26","module_path":"/private/source/path"}}`)
+	if err := os.WriteFile(filepath.Join(runDir, "metadata.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenWriter(runDir, true); err == nil || !strings.Contains(err.Error(), "module path is invalid") {
+		t.Fatalf("OpenWriter malformed identity error = %v", err)
+	}
+}
+
+func TestWriteMetadataRecomputesOutcomeWithoutMutatingCaller(t *testing.T) {
+	t.Parallel()
+
+	w, err := NewWriter(t.TempDir(), "metadata-transition", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	meta := RunMeta{RequestAttempts: []RequestAttempt{{
+		Stage: SemanticStageOrientation, State: "prepared", RequestBytes: 123,
+	}}}
+	if err := w.WriteMetadata(meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta.RequestAttempts[0].Outcome != nil {
+		t.Fatal("WriteMetadata mutated the caller-owned request attempt")
+	}
+	meta.RequestAttempts[0].State = "response_parse_failed"
+	if err := w.WriteMetadata(meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta.RequestAttempts[0].Outcome != nil {
+		t.Fatal("second WriteMetadata mutated the caller-owned request attempt")
+	}
+	data, err := os.ReadFile(filepath.Join(w.RunDir(), "metadata.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved RunMeta
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.RequestAttempts) != 1 || saved.RequestAttempts[0].Outcome == nil ||
+		saved.RequestAttempts[0].Outcome.Phase != "response_decode" ||
+		saved.RequestAttempts[0].Outcome.Code != "response_decode" {
+		t.Fatalf("transitioned metadata outcome = %#v", saved.RequestAttempts)
+	}
+}
+
+func TestRequestAttemptOutcomeUsesClosedStageSemantics(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		stage, state string
+		phase, code  string
+	}{
+		{"configuration", "failed", "provider_configuration", "provider_configuration_failed"},
+		{SemanticStageOrientation, "response_received", "provider_call", "response_received"},
+		{SemanticStageOrientation, "response_rejected", "response_secret_scan", "response_secret_scan"},
+		{SemanticStageOrientation, "response_parse_failed", "response_decode", "response_decode"},
+		{SemanticStageOrientation, "response_validation_failed", "response_validation", "response_validation"},
+		{SemanticStageAtlasStudy, "accepted_partial", "complete", "accepted_partial"},
+		{"task_investigation", "skipped_offline", "availability", "not_called"},
+	}
+	for _, test := range tests {
+		outcome := requestAttemptOutcome(RequestAttempt{Stage: test.stage, State: test.state})
+		if outcome.Phase != test.phase || outcome.Code != test.code {
+			t.Errorf("%s/%s outcome = %#v, want %s/%s", test.stage, test.state, outcome, test.phase, test.code)
+		}
+		if err := validateSemanticOutcome(outcome); err != nil {
+			t.Errorf("%s/%s outcome is not registered: %v", test.stage, test.state, err)
+		}
 	}
 }
 

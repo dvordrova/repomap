@@ -20,6 +20,10 @@ Active decisions (each approved by the repository owner via its supervisory goal
 16. decisions/232-navigator-theme-contract-simplification.md
 17. decisions/233-study-equivalence-overview-prominence.md
 18. decisions/234-canvas-interaction-tls-bias.md
+19. decisions/235-v10-closure-map-ready.md
+20. decisions/236-repository-map-primary-product.md
+21. decisions/237-semantic-diagnostics-anchor-presence.md
+22. decisions/238-architecture-primary-scope-context-quality.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
@@ -1130,3 +1134,28 @@ with dotted-association and dashed-frontier data sources, inspector tabs
 (Summary/Connections/Read code), entry-participation consistency (F3),
 inspector-aware Fit, shared-band style, per-entry mechanism fragments.
 Identity: CurrentFormatVersion 37, projection 14, UI catalog VERSION 10.
+
+## 20. Decision 237 — Semantic diagnostics and Architecture anchor presence (ACTIVE)
+
+Every provider-assisted semantic exchange gains a closed v2 outcome diagnostic
+(phase/code/safe detail/bounded metrics), run metadata gains exact build
+identity, and Architecture failed status v12 retains the provider/parse evidence,
+response-shape counts, exact failure class, and exchange path needed to diagnose
+the run without ad-hoc artifact searches. The D235 nested grammar is corrected:
+omitted `anchor_refs` normalizes to an empty array, explicit `anchor_refs: []` is
+already valid and is not marked missing, and `null` remains invalid. No new
+provider stage or model-visible payload is added. Two fresh uncached ghz provider
+runs (instrumented pre-fix and fixed) are owner-authorized acceptance evidence.
+
+## 21. Decision 238 — Architecture primary-scope context and quality (ACTIVE)
+
+The Architecture request now preserves bounded package ownership through
+structural locators, final unit/anchor membership, safe representative labels,
+and request-local `parent_ref`, `unit_ref`, and closed `coverage_role` context.
+The live prompt asks for `member_refs` only and requires defensible primary
+repository scope before supporting symbol/anchor evidence. A closed local gate
+rejects empty-primary and supporting-only unit coverage without repair or retry;
+honest partial primary coverage and exact local remainder remain valid.
+Architecture status v13 and the console expose bounded primary/supporting
+coverage. One clean uncached ghz provider call is owner-authorized after all
+provider-free gates pass; no D238 retry/tuning loop is authorized.

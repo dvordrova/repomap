@@ -89,8 +89,10 @@ ten minutes.
 
 Ordinary debug runs write every covered semantic request and its validated
 response, or a truthful closed unavailable marker, under `semantic_exchanges/`.
-The bounded payloads are redacted and secret-scanned, and `exchange.v1.json` is
-published last as the commit marker. Use request preview when the exact request
+The bounded payloads are redacted and secret-scanned, and `exchange.v2.json` is
+published last as the commit marker. Its closed outcome records a safe
+phase/code and bounded metrics for every semantic stage; it never copies raw
+provider or error text into metadata. Use request preview when the exact request
 must be inspected without making a provider call. Request-attempt metadata is
 still written before network access, so a failed or canceled request does not
 look as though no request was prepared.
@@ -143,6 +145,19 @@ DeepSeek-mode default: `deepseek-v4-flash`.
   a bounded classification task, so the official DeepSeek endpoint receives
   `"thinking": {"type":"disabled"}` for that request only. Generic compatible
   endpoints do not receive this DeepSeek-specific extension.
+- The Architecture request exposes only request-local opaque refs and bounded
+  local context. Each conceptual candidate may carry one opaque `parent_ref`,
+  one opaque final `unit_ref`, and the closed backend-owned `coverage_role`
+  (`primary_scope` or `supporting_evidence`). Labels are sanitized display
+  projections; canonical IDs, import paths, source, and raw dependency edges
+  remain local. The live response grammar accepts only `member_refs` and
+  optional `anchor_refs`; historical saved `unit_refs` remain replayable.
+  The prompt asks the model to cover defensible primary repository scope
+  across supplied units before adding supporting symbols. Local validation
+  rejects empty-primary and supporting-only-unit coverage without repair,
+  retry, or a second semantic call. Honest partial primary coverage remains
+  valid and stays explicit in the deterministic local remainder (Decision
+  238).
 - Orientation is likewise a bounded classification over an already compact
   local facts bundle. The official endpoint receives explicit disabled
   thinking; compatible endpoints do not. This prevents hidden reasoning from
@@ -520,14 +535,14 @@ The CLI prints the exact run directory near the start of the run. Inspect that
 directory directly; there is no second debug wrapper.
 
 Artifacts produced:
-- `metadata.json` — run metadata (model, endpoint, command)
+- `metadata.json` — run metadata (model, endpoint, command, exact local build identity)
 - `snapshot.json` — full local deterministic snapshot
 - `repository_atlas.v1.json` — complete canonical local Repository Atlas
 - `navigator_request.v1.json` — bounded request-local Navigator projection and backend catalog
 - `semantic_exchanges/<id>/request.{json,txt}` — bounded redacted semantic request
 - `semantic_exchanges/<id>/response.{json,txt}` — bounded redacted response, when available and safe
 - `semantic_exchanges/<id>/response.marker.json` — closed unavailable or unsafe marker
-- `semantic_exchanges/<id>/exchange.v1.json` — closed committed outcome metadata
+- `semantic_exchanges/<id>/exchange.v2.json` — closed committed outcome metadata with safe phase/code/metrics
 - `navigator_status.v1.json` — closed Navigator state
 - `navigator_result.v1.json` — accepted or empty canonical recommendation
 - `report.json` — authoritative machine report

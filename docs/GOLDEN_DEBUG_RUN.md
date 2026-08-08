@@ -25,9 +25,11 @@ Writes under `.repomap-runs/<run-id>/`:
 - `navigator_request.v1.json` when eligible startup actions exist
 - `navigator_status.v1.json`
 - `navigator_result.v1.json` after an empty or accepted selection
+- `architecture_synthesis_status.json` with bounded conceptual and
+  primary/supporting coverage evidence when Architecture is attempted
 - `semantic_exchanges/<content-addressed-id>/request.{json,txt}`
 - `semantic_exchanges/<content-addressed-id>/response.{json,txt}` or `response.marker.json`
-- `semantic_exchanges/<content-addressed-id>/exchange.v1.json`
+- `semantic_exchanges/<content-addressed-id>/exchange.v2.json`
 - `report.json`
 - `report.html`
 - `error.txt` (if failure)
@@ -52,7 +54,7 @@ run. Open its `run_manifest.json`, `report.json` and `report.html` directly.
       <content-addressed-id>/
         request.json or request.txt
         response.json, response.txt, or response.marker.json
-        exchange.v1.json
+        exchange.v2.json
     run_manifest.json
     report.json
     report.html
@@ -65,4 +67,11 @@ run. Open its `run_manifest.json`, `report.json` and `report.html` directly.
 - Debug artifacts never include API keys or Authorization headers.
 - Sensitive values are redacted (api_key, token, password, secret, authorization, bearer).
 - Semantic journal payloads are bounded; unavailable or unsafe raw bytes use closed markers.
+- Semantic journal v2 records a closed phase/code/safe-detail outcome and
+  bounded named metrics; raw provider and error text never enters metadata.
+- `metadata.json` binds the run to the exact Go/module/VCS build identity.
+- Architecture status v13 and its exchange/console projection distinguish
+  requested, covered, and uncovered primary scope from covered supporting
+  evidence. A symbol-only proposal is therefore reported as a closed quality
+  rejection instead of an ambiguous aggregate `N/M` result.
 - Directories use mode 0700, files use 0600.
