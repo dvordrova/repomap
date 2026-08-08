@@ -34,9 +34,11 @@ import (
 // Decision 236 (v11): Map primary product — map projection/lenses,
 // entry categories, touchpoint families, inspector tabs (format 37).
 // Decision 240 removes the obsolete Navigator product field (format 38).
-// Decision 242 makes plural per-entry Mechanism fragments part of the
-// authoritative Architecture Canvas and removes the singular report field.
-const CurrentFormatVersion = 39
+// Decision 242 made plural per-entry first-hop context part of the
+// authoritative Architecture Canvas and removed the singular report field.
+// Format 40 correctly publishes that context as Canvas v14 entry-handoff
+// groups derived only from exact D210 evidence, not as Mechanisms.
+const CurrentFormatVersion = 40
 
 // Decision 232: adjudication anchor coverage + semantic-empty browse.
 // Decision 233: alternate co-projection + concentration marker.

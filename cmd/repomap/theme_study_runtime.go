@@ -399,54 +399,12 @@ func runThemeStudyProductForRun(
 	// entries. Requested refs absent from the vocabulary resolve to nothing
 	// and the binding check fails closed downstream.
 	requested := themestudy.RefsForExpansion(scoutResult.Candidates)
-	expansion, err := themestudy.ExpandFiles(
-		themestudy.ExpansionFilesForRefs(vocabulary, requested), reader, themeTotalLines(analysisRoot),
+	expansion, err := prepareThemeSourceExpansionForRun(
+		themestudy.ExpansionFilesForRefs(vocabulary, requested), requested,
+		themeExpansionSourceReader(analysisRoot), themeTotalLines(analysisRoot), writer, output,
 	)
 	if err != nil {
-		return outcome, fmt.Errorf("theme study run: local source expansion: %w", err)
-	}
-	expansion.Requested = requested
-	// Decision 235 (v11) 1D maddy: the mandatory secret scan is
-	// partitioned per file — an unsafe file is closed with a typed reason
-	// (never echoing content), safe files and the accepted Scout result
-	// survive. The whole-payload scan remains as the final net after
-	// closure so nothing unsafe is ever persisted.
-	for index := range expansion.Files {
-		file := &expansion.Files[index]
-		if len(file.Objects) == 0 {
-			continue
-		}
-		payloadBytes, err := json.Marshal(file.Objects)
-		if err != nil {
-			return outcome, fmt.Errorf("theme study run: encode expansion file: %w", err)
-		}
-		if kind, found := secretscan.DetectSourceMaterial(string(payloadBytes)); found {
-			expansion.ExpandedLines -= file.ExpandedLines
-			file.Objects = nil
-			file.ExpandedLines = 0
-			file.Closed = true
-			file.ClosedReason = "secret_scan:" + string(secretscan.ClosedKind(kind))
-			expansion.OmittedRefs = append(expansion.OmittedRefs, file.Ref)
-		}
-	}
-	expansionBytes, err := themestudy.EncodeExpansion(expansion)
-	if err != nil {
-		return outcome, fmt.Errorf("theme study run: encode expansion: %w", err)
-	}
-	if unsafeErr := themeUnsafeSourcePayload("theme_source_expansion", expansionBytes); unsafeErr != nil {
-		return outcome, unsafeErr
-	}
-	if err := writer.WriteValidatedFile(themestudy.ExpansionArtifactFilename, expansionBytes, func(saved []byte) error {
-		decoded, decodeErr := themestudy.DecodeExpansion(saved)
-		if decodeErr != nil {
-			return decodeErr
-		}
-		if !reflect.DeepEqual(decoded, expansion) {
-			return fmt.Errorf("theme study expansion changed before publication")
-		}
-		return nil
-	}); err != nil {
-		return outcome, fmt.Errorf("theme study run: persist expansion: %w", err)
+		return outcome, err
 	}
 
 	// Stage 2 — Theme Adjudication (contract E).
@@ -564,6 +522,108 @@ func runThemeStudyProductForRun(
 	}
 	output.State("Study", string(outcome.State), themeStudyCompletionDetails(outcome)...)
 	return outcome, nil
+}
+
+func prepareThemeSourceExpansionForRun(
+	files []themestudy.FileRef,
+	requested []string,
+	reader themestudy.SourceReader,
+	totalLines themestudy.TotalLines,
+	writer *debugdump.Writer,
+	output *runOutput,
+) (themestudy.SourceExpansion, error) {
+	if writer == nil {
+		return themestudy.SourceExpansion{}, fmt.Errorf("theme study run: source expansion writer is required")
+	}
+	expansion, err := themestudy.ExpandFiles(files, reader, totalLines)
+	if err != nil {
+		return themestudy.SourceExpansion{}, fmt.Errorf("theme study run: local source expansion: %w", err)
+	}
+	expansion.Requested = append([]string(nil), requested...)
+	// Decision 235 (v11) 1D maddy: the mandatory secret scan is
+	// partitioned per file — an unsafe file is closed with a typed reason
+	// (never echoing content), safe files and the accepted Scout result
+	// survive. The whole-payload scan remains as the final net after
+	// closure so nothing unsafe is ever persisted.
+	for index := range expansion.Files {
+		file := &expansion.Files[index]
+		if len(file.Objects) == 0 {
+			continue
+		}
+		payloadBytes, err := json.Marshal(file.Objects)
+		if err != nil {
+			return themestudy.SourceExpansion{}, fmt.Errorf("theme study run: encode expansion file: %w", err)
+		}
+		if kind, found := secretscan.DetectSourceMaterial(string(payloadBytes)); found {
+			if file.ExpandedLines > expansion.ExpandedLines {
+				return themestudy.SourceExpansion{}, fmt.Errorf("theme study run: source expansion line accounting is invalid")
+			}
+			expansion.ExpandedLines -= file.ExpandedLines
+			for _, object := range file.Objects {
+				objectBytes := themeSourceObjectBytes(object)
+				if objectBytes > expansion.ExpandedBytes {
+					return themestudy.SourceExpansion{}, fmt.Errorf("theme study run: source expansion byte accounting is invalid")
+				}
+				expansion.ExpandedBytes -= objectBytes
+			}
+			file.Objects = nil
+			file.Omitted = nil
+			file.ExpandedLines = 0
+			file.Closed = true
+			file.ClosedReason = "secret_scan:" + string(secretscan.ClosedKind(kind))
+			expansion.OmittedRefs = append(expansion.OmittedRefs, file.Ref)
+		}
+	}
+	expansionBytes, err := themestudy.EncodeExpansion(expansion)
+	if err != nil {
+		return themestudy.SourceExpansion{}, fmt.Errorf("theme study run: encode expansion: %w", err)
+	}
+	if unsafeErr := themeUnsafeSourcePayload("theme_source_expansion", expansionBytes); unsafeErr != nil {
+		return themestudy.SourceExpansion{}, unsafeErr
+	}
+	if err := writer.WriteValidatedFile(themestudy.ExpansionArtifactFilename, expansionBytes, func(saved []byte) error {
+		decoded, decodeErr := themestudy.DecodeExpansion(saved)
+		if decodeErr != nil {
+			return decodeErr
+		}
+		if !reflect.DeepEqual(decoded, expansion) {
+			return fmt.Errorf("theme study expansion changed before publication")
+		}
+		return nil
+	}); err != nil {
+		return themestudy.SourceExpansion{}, fmt.Errorf("theme study run: persist expansion: %w", err)
+	}
+	warnThemeSourceExpansionClosures(output, expansion)
+	return expansion, nil
+}
+
+func themeSourceObjectBytes(object themestudy.SourceObject) int {
+	total := 0
+	for _, line := range object.Lines {
+		total += len(line)
+	}
+	return total
+}
+
+func warnThemeSourceExpansionClosures(output *runOutput, expansion themestudy.SourceExpansion) {
+	if output == nil {
+		return
+	}
+	refs := make(map[string]struct{}, len(expansion.OmittedRefs))
+	for _, ref := range expansion.OmittedRefs {
+		if ref != "" {
+			refs[ref] = struct{}{}
+		}
+	}
+	if len(refs) == 0 {
+		return
+	}
+	output.Warn(
+		"Some requested Study source context was skipped",
+		fmt.Sprintf("source files skipped: %d", len(refs)),
+		"unreadable, invalid, unsafe, or over-budget source stays excluded",
+		"remaining exact source context continues",
+	)
 }
 
 func themeStudyCompletionDetails(outcome themeStudyRunOutcome) []string {
@@ -713,22 +773,12 @@ func themeCandidatesByRef(candidates []themestudy.ScoutCandidate) map[string]*th
 // path escape fails closed.
 func themeSourceReader(analysisRoot string) themestudy.SourceReader {
 	return func(path string, startLine, endLine int) ([]string, error) {
-		if analysisRoot == "" || path == "" {
-			return nil, fmt.Errorf("theme study run: source reader without analysis root")
-		}
 		if startLine < 1 || endLine < startLine {
 			return nil, fmt.Errorf("theme study run: invalid line window %d..%d", startLine, endLine)
 		}
-		resolved, err := filepath.Abs(filepath.Join(analysisRoot, filepath.FromSlash(path)))
+		resolved, err := resolveThemeSourcePath(analysisRoot, path)
 		if err != nil {
 			return nil, err
-		}
-		rootAbs, err := filepath.Abs(analysisRoot)
-		if err != nil {
-			return nil, err
-		}
-		if resolved != rootAbs && !strings.HasPrefix(resolved, rootAbs+string(filepath.Separator)) {
-			return nil, fmt.Errorf("theme study run: source path escapes analysis root: %s", path)
 		}
 		lines, err := readFileLines(resolved, startLine, endLine)
 		if err != nil {
@@ -736,6 +786,42 @@ func themeSourceReader(analysisRoot string) themestudy.SourceReader {
 		}
 		return lines, nil
 	}
+}
+
+// themeExpansionSourceReader applies the f* per-file byte bound while reading,
+// so a generated multi-megabyte line is closed without first retaining the
+// entire line. Seed-pack reads keep their separate existing object bounds.
+func themeExpansionSourceReader(analysisRoot string) themestudy.SourceReader {
+	return func(path string, startLine, endLine int) ([]string, error) {
+		if startLine < 1 || endLine < startLine {
+			return nil, fmt.Errorf("theme study run: invalid line window %d..%d", startLine, endLine)
+		}
+		resolved, err := resolveThemeSourcePath(analysisRoot, path)
+		if err != nil {
+			return nil, err
+		}
+		return readFileLinesBounded(
+			resolved, startLine, endLine, themestudy.MaxExpansionFileBytes,
+		)
+	}
+}
+
+func resolveThemeSourcePath(analysisRoot, path string) (string, error) {
+	if analysisRoot == "" || path == "" {
+		return "", fmt.Errorf("theme study run: source reader without analysis root")
+	}
+	resolved, err := filepath.Abs(filepath.Join(analysisRoot, filepath.FromSlash(path)))
+	if err != nil {
+		return "", err
+	}
+	rootAbs, err := filepath.Abs(analysisRoot)
+	if err != nil {
+		return "", err
+	}
+	if resolved != rootAbs && !strings.HasPrefix(resolved, rootAbs+string(filepath.Separator)) {
+		return "", fmt.Errorf("theme study run: source path escapes analysis root: %s", path)
+	}
+	return resolved, nil
 }
 
 func themeTotalLines(analysisRoot string) themestudy.TotalLines {
@@ -776,6 +862,59 @@ func readFileLines(path string, startLine, endLine int) ([]string, error) {
 				break
 			}
 			return nil, readErr
+		}
+	}
+	return lines, nil
+}
+
+func readFileLinesBounded(path string, startLine, endLine, byteLimit int) ([]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	if byteLimit <= 0 {
+		return nil, themestudy.ErrExpansionSourceOversized
+	}
+
+	reader := bufio.NewReader(file)
+	lines := make([]string, 0, endLine-startLine+1)
+	lineNumber := 0
+	selectedBytes := 0
+	var selectedLine []byte
+	for {
+		fragment, readErr := reader.ReadSlice('\n')
+		if len(fragment) == 0 && errors.Is(readErr, io.EOF) {
+			break
+		}
+		selected := lineNumber+1 >= startLine && lineNumber+1 <= endLine
+		if selected {
+			payload := fragment
+			if !errors.Is(readErr, bufio.ErrBufferFull) && len(payload) > 0 && payload[len(payload)-1] == '\n' {
+				payload = payload[:len(payload)-1]
+			}
+			if selectedBytes+len(payload) > byteLimit {
+				return nil, themestudy.ErrExpansionSourceOversized
+			}
+			selectedLine = append(selectedLine, payload...)
+			selectedBytes += len(payload)
+		}
+		if errors.Is(readErr, bufio.ErrBufferFull) {
+			continue
+		}
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return nil, readErr
+		}
+		lineNumber++
+		if selected {
+			lines = append(lines, string(selectedLine))
+			selectedLine = nil
+		}
+		if lineNumber >= endLine {
+			break
+		}
+		if errors.Is(readErr, io.EOF) {
+			break
 		}
 	}
 	return lines, nil

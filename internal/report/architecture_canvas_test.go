@@ -578,8 +578,8 @@ func TestArchitectureCanvasVersionRejectsHistoricalRemainderSemantics(t *testing
 	// bounded, aggregated package-import edges for Map.
 	// Decision 242 (v13): plural per-entry mechanisms are persisted on the
 	// authoritative Canvas and re-derived from exact local evidence.
-	if ArchitectureCanvasVersion != 13 {
-		t.Fatalf("ArchitectureCanvasVersion = %d, want 13 for plural mechanism projection", ArchitectureCanvasVersion)
+	if ArchitectureCanvasVersion != 14 {
+		t.Fatalf("ArchitectureCanvasVersion = %d, want 14 for exact D210 entry-handoff groups", ArchitectureCanvasVersion)
 	}
 	if err := validateSemanticSearchCanvasVersion(&ArchitectureCanvas{Version: ArchitectureCanvasVersion - 1}); err == nil || !strings.Contains(err.Error(), "unsupported architecture canvas version") {
 		t.Fatalf("historical Architecture Canvas version error = %v", err)

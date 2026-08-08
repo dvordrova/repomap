@@ -295,6 +295,12 @@ type Result struct {
 	Coverage  SurfaceCoverage       `json:"surface_coverage"`
 	Summaries []SemanticSummary     `json:"semantic_summaries"`
 	Grounding ArchitectureGrounding `json:"architecture_grounding"`
+
+	// DirectCallIndex is the bounded in-memory substrate for a later
+	// Study-scoped investigation. It is deliberately absent from the persisted
+	// surface artifacts: consumers may retain it during the live run, but raw
+	// repository call graphs never enter report/debug JSON.
+	DirectCallIndex *DirectCallIndex `json:"-"`
 }
 
 type ArchitectureGrounding struct {

@@ -589,6 +589,16 @@ func TestArchitectureCanvasMobileInspectorSurvivesMediaQuery(t *testing.T) {
 	if !strings.Contains(canvasJS, "closeInspector") {
 		t.Error("inspector close handler (closeInspector) is missing — close/back must work on mobile")
 	}
+	reportJS := readCanvasAsset(t, "script.js")
+	for _, token := range []string{
+		"rm-architecture-list-disclosure",
+		"listDisclosure.open = typeof window.matchMedia === 'function'",
+		"window.matchMedia('(max-width: 560px)').matches",
+	} {
+		if !strings.Contains(reportJS, token) {
+			t.Errorf("mobile Map list fallback is missing %q — hidden canvas must not leave controls-only content", token)
+		}
+	}
 }
 
 func readCanvasAsset(t *testing.T, name string) string {

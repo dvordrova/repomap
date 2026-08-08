@@ -1750,7 +1750,7 @@ func overviewSourceTargetsWithPackageEvidence(
 		if edge.Witness.Location != nil {
 			appendTarget(edge.Witness.Location.Path, edge.Witness.Location.Line, "")
 		}
-		if target := exactMechanismTargetForMemberID(data.ArchitectureCanvas, edge.Witness.To); target != nil {
+		if target := exactCanvasDeclarationTargetForMemberID(data.ArchitectureCanvas, edge.Witness.To); target != nil {
 			appendTarget(target.Path, target.Line, target.Symbol)
 		}
 	}

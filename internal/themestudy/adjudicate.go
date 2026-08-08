@@ -14,11 +14,13 @@ import (
 // locally accounted as unreviewed by the backend). support is direct or
 // supporting only.
 type adjudicationWireTheme struct {
-	CandidateRef  string                    `json:"candidate_ref"`
-	FinalTitle    string                    `json:"final_title"`
-	FinalQuestion string                    `json:"final_question"`
-	Readings      []adjudicationWireReading `json:"readings"`
-	Unknowns      []string                  `json:"unknowns,omitempty"`
+	CandidateRef     string                    `json:"candidate_ref"`
+	FinalTitle       string                    `json:"final_title"`
+	FinalQuestion    string                    `json:"final_question"`
+	WhyItMatters     string                    `json:"why_it_matters"`
+	ExpectedLearning string                    `json:"expected_learning"`
+	Readings         []adjudicationWireReading `json:"readings"`
+	Unknowns         []string                  `json:"unknowns,omitempty"`
 }
 
 type adjudicationWireReading struct {
@@ -27,45 +29,32 @@ type adjudicationWireReading struct {
 	Observation string `json:"observation"`
 }
 
-// decodeAdjudicationTheme decodes one theme with the active readings grammar
-// and projects it onto the internal flat shape: readings map to
-// AnchorAssessments (support -> fit) and ReadingOrder is exactly the
-// readings array order. Historical anchor_assessments/reading_order
-// responses remain readable (Phase 6: immutable saved artifacts stay
-// replayable without a live provider route).
-func decodeAdjudicationTheme(raw json.RawMessage) (AdjudicatedTheme, bool, error) {
-	var probe map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &probe); err != nil || probe == nil {
-		return AdjudicatedTheme{}, false, fmt.Errorf("theme is not an object")
+// decodeAdjudicationTheme decodes the one current readings grammar and
+// projects it onto the internal flat shape: readings map to
+// AnchorAssessments (support -> fit) and ReadingOrder is exactly the readings
+// array order. Historical anchor_assessments/reading_order responses are not
+// a compatibility input; current result and cache identities miss them closed.
+func decodeAdjudicationTheme(raw json.RawMessage) (AdjudicatedTheme, error) {
+	var wire adjudicationWireTheme
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&wire); err != nil {
+		return AdjudicatedTheme{}, fmt.Errorf("theme readings do not match the bounded contract: %w", err)
 	}
-	if _, hasReadings := probe["readings"]; hasReadings {
-		var wire adjudicationWireTheme
-		decoder := json.NewDecoder(strings.NewReader(string(raw)))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&wire); err != nil {
-			return AdjudicatedTheme{}, false, fmt.Errorf("theme readings do not match the bounded contract: %w", err)
-		}
-		theme := AdjudicatedTheme{
-			CandidateRef: wire.CandidateRef, FinalTitle: wire.FinalTitle,
-			FinalQuestion: wire.FinalQuestion, Unknowns: wire.Unknowns,
-			ReadingOrder: make([]string, 0, len(wire.Readings)),
-		}
-		for _, reading := range wire.Readings {
-			theme.AnchorAssessments = append(theme.AnchorAssessments, AnchorAssessment{
-				AnchorRef: reading.AnchorRef, Fit: FitClass(reading.Support),
-				SupportedObservation: reading.Observation,
-			})
-			theme.ReadingOrder = append(theme.ReadingOrder, reading.AnchorRef)
-		}
-		return theme, true, nil
+	theme := AdjudicatedTheme{
+		CandidateRef: wire.CandidateRef, FinalTitle: wire.FinalTitle,
+		FinalQuestion: wire.FinalQuestion, WhyItMatters: wire.WhyItMatters,
+		ExpectedLearning: wire.ExpectedLearning, Unknowns: wire.Unknowns,
+		ReadingOrder: make([]string, 0, len(wire.Readings)),
 	}
-	// Historical flat grammar (pre-Phase-3): anchor_assessments +
-	// reading_order. Readable for replay; not the live provider contract.
-	var legacy AdjudicatedTheme
-	if err := json.Unmarshal(raw, &legacy); err != nil {
-		return AdjudicatedTheme{}, false, fmt.Errorf("theme is not a valid adjudication response: %w", err)
+	for _, reading := range wire.Readings {
+		theme.AnchorAssessments = append(theme.AnchorAssessments, AnchorAssessment{
+			AnchorRef: reading.AnchorRef, Fit: FitClass(reading.Support),
+			SupportedObservation: reading.Observation,
+		})
+		theme.ReadingOrder = append(theme.ReadingOrder, reading.AnchorRef)
 	}
-	return legacy, false, nil
+	return theme, nil
 }
 
 // ValidateAdjudication validates a Theme Adjudication response (contract E)
@@ -94,7 +83,7 @@ func ValidateAdjudication(data []byte, candidateByRef map[string]*ScoutCandidate
 	accepted := make([]AdjudicatedTheme, 0, len(rawThemes))
 	seen := make(map[string]struct{}, len(rawThemes))
 	for position, rawTheme := range rawThemes {
-		theme, _, err := decodeAdjudicationTheme(rawTheme)
+		theme, err := decodeAdjudicationTheme(rawTheme)
 		if err != nil {
 			rejectAdj(&status, position, AdjIssueDecodeCandidate)
 			continue
@@ -162,7 +151,7 @@ func adjThemeIssue(theme AdjudicatedTheme, candidateByRef map[string]*ScoutCandi
 	if !ok {
 		return AdjIssueUnknownCandidateRef
 	}
-	if strings.TrimSpace(theme.FinalTitle) == "" || strings.TrimSpace(theme.FinalQuestion) == "" {
+	if !hasAdjudicatedFinalProse(theme) {
 		return AdjIssueEmptyFinalProse
 	}
 	candidateAnchors := make(map[string]struct{}, len(candidate.AnchorRefs))
@@ -232,8 +221,20 @@ func adjThemeIssue(theme AdjudicatedTheme, candidateByRef map[string]*ScoutCandi
 	return ""
 }
 
-// normalizeAdjudicatedTheme bounds overlong observations and unknowns to
-// their closed limits deterministically (readable word-boundary
+func hasAdjudicatedFinalProse(theme AdjudicatedTheme) bool {
+	return strings.TrimSpace(theme.FinalTitle) != "" &&
+		strings.TrimSpace(theme.FinalQuestion) != "" &&
+		strings.TrimSpace(theme.WhyItMatters) != "" &&
+		strings.TrimSpace(theme.ExpectedLearning) != ""
+}
+
+func adjudicatedFinalEditorialProseBounded(theme AdjudicatedTheme) bool {
+	return utf8.RuneCountInString(theme.WhyItMatters) <= MaxEditorialRunes &&
+		utf8.RuneCountInString(theme.ExpectedLearning) <= MaxEditorialRunes
+}
+
+// normalizeAdjudicatedTheme bounds final editorial prose, observations, and
+// unknowns to their closed limits deterministically (readable word-boundary
 // truncation, Decision 224/D241) and returns typed per-kind truncation counts.
 // Identity, fit, refs, reading order and the unknowns COUNT are never repaired
 // (too many unknowns stays a hard rejection — capping would silently drop
@@ -241,6 +242,14 @@ func adjThemeIssue(theme AdjudicatedTheme, candidateByRef map[string]*ScoutCandi
 func normalizeAdjudicatedTheme(theme AdjudicatedTheme) (AdjudicatedTheme, map[string]int) {
 	normalized := theme
 	counts := map[string]int{}
+	if utf8.RuneCountInString(normalized.WhyItMatters) > MaxEditorialRunes {
+		normalized.WhyItMatters = truncateRunes(normalized.WhyItMatters, MaxEditorialRunes)
+		counts["why_it_matters"]++
+	}
+	if utf8.RuneCountInString(normalized.ExpectedLearning) > MaxEditorialRunes {
+		normalized.ExpectedLearning = truncateRunes(normalized.ExpectedLearning, MaxEditorialRunes)
+		counts["expected_learning"]++
+	}
 	for index, assessment := range normalized.AnchorAssessments {
 		if utf8.RuneCountInString(assessment.SupportedObservation) > MaxEditorialRunes {
 			assessment.SupportedObservation = truncateRunes(assessment.SupportedObservation, MaxEditorialRunes)

@@ -4,11 +4,10 @@ import (
 	"testing"
 )
 
-// Archive 12 P0 (owner directive): reading_order may contain only anchors
-// assessed direct or supporting in the returned theme. A reading order that
-// lists a weak/irrelevant or unassessed anchor would silently change meaning
-// when the reducer publishes readings — the theme must be rejected
-// item-locally.
+// Archive 12 P0 (owner directive): the current readings array derives the
+// internal reading order and may contain only direct/supporting anchors. A
+// weak/irrelevant row would silently change meaning when the reducer publishes
+// readings, so the theme must be rejected item-locally.
 func TestAdjudicationReadingOrderRequiresDirectOrSupporting(t *testing.T) {
 	t.Parallel()
 	candidate := &ScoutCandidate{
@@ -17,14 +16,14 @@ func TestAdjudicationReadingOrderRequiresDirectOrSupporting(t *testing.T) {
 		AnchorRefs: []string{"a1", "a2", "a3"},
 	}
 
-	// weak anchor in reading_order -> reject
+	// weak row in readings -> reject
 	rawWeak := []byte(`{"themes":[{
 		"candidate_ref":"t1","final_title":"T","final_question":"Q",
-		"anchor_assessments":[
-			{"anchor_ref":"a1","fit":"direct","supported_observation":"obs1"},
-			{"anchor_ref":"a2","fit":"weak","supported_observation":""}
-		],
-		"reading_order":["a1","a2"],"unknowns":[]
+		"why_it_matters":"Q matters.","expected_learning":"Learn Q.",
+		"readings":[
+			{"anchor_ref":"a1","support":"direct","observation":"obs1"},
+			{"anchor_ref":"a2","support":"weak","observation":""}
+		],"unknowns":[]
 	}]}`)
 	_, status, err := ValidateAdjudication(rawWeak, map[string]*ScoutCandidate{"t1": candidate})
 	if err != nil {
@@ -34,13 +33,14 @@ func TestAdjudicationReadingOrderRequiresDirectOrSupporting(t *testing.T) {
 		t.Fatalf("weak-anchor reading order must be rejected, got %#v", status)
 	}
 
-	// unassessed anchor in reading_order -> reject
+	// irrelevant row in the current readings array -> reject
 	rawUnassessed := []byte(`{"themes":[{
 		"candidate_ref":"t1","final_title":"T","final_question":"Q",
-		"anchor_assessments":[
-			{"anchor_ref":"a1","fit":"direct","supported_observation":"obs1"}
-		],
-		"reading_order":["a1","a3"],"unknowns":[]
+		"why_it_matters":"Q matters.","expected_learning":"Learn Q.",
+		"readings":[
+			{"anchor_ref":"a1","support":"direct","observation":"obs1"},
+			{"anchor_ref":"a3","support":"irrelevant","observation":""}
+		],"unknowns":[]
 	}]}`)
 	_, status, err = ValidateAdjudication(rawUnassessed, map[string]*ScoutCandidate{"t1": candidate})
 	if err != nil {
@@ -53,11 +53,11 @@ func TestAdjudicationReadingOrderRequiresDirectOrSupporting(t *testing.T) {
 	// direct+supporting only -> accepted
 	rawGood := []byte(`{"themes":[{
 		"candidate_ref":"t1","final_title":"T","final_question":"Q",
-		"anchor_assessments":[
-			{"anchor_ref":"a1","fit":"direct","supported_observation":"obs1"},
-			{"anchor_ref":"a2","fit":"supporting","supported_observation":"obs2"}
-		],
-		"reading_order":["a2","a1"],"unknowns":[]
+		"why_it_matters":"Q matters.","expected_learning":"Learn Q.",
+		"readings":[
+			{"anchor_ref":"a2","support":"supporting","observation":"obs2"},
+			{"anchor_ref":"a1","support":"direct","observation":"obs1"}
+		],"unknowns":[]
 	}]}`)
 	themes, status, err := ValidateAdjudication(rawGood, map[string]*ScoutCandidate{"t1": candidate})
 	if err != nil {

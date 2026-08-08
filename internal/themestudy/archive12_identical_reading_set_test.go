@@ -23,11 +23,13 @@ func TestReduceIdenticalReadingSetThroughDifferentAnchorRefsCoProjects(t *testin
 	themes := []AdjudicatedTheme{
 		{
 			CandidateRef: "t1", FinalTitle: "Certificate loading", FinalQuestion: "How are certificates loaded?",
+			WhyItMatters: "Certificate loading matters.", ExpectedLearning: "Learn how certificates are loaded.",
 			AnchorAssessments: []AnchorAssessment{{AnchorRef: "a1", Fit: FitDirect, SupportedObservation: "obs1"}},
 			ReadingOrder:      []string{"a1"},
 		},
 		{
 			CandidateRef: "t2", FinalTitle: "TLS bootstrap", FinalQuestion: "When does TLS configuration start?",
+			WhyItMatters: "TLS bootstrap matters.", ExpectedLearning: "Learn where TLS configuration starts.",
 			AnchorAssessments: []AnchorAssessment{{AnchorRef: "a2", Fit: FitDirect, SupportedObservation: "obs1"}},
 			ReadingOrder:      []string{"a2"},
 		},

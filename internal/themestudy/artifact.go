@@ -346,6 +346,9 @@ func EncodeExpansion(expansion SourceExpansion) ([]byte, error) {
 	if expansion.Version != expansionVersion || expansion.CandidateSHA256 == "" {
 		return nil, fmt.Errorf("theme source expansion artifact: invalid identity")
 	}
+	if err := validateExpansionClosures(expansion); err != nil {
+		return nil, err
+	}
 	return encodeBoundedArtifact("theme source expansion", MaxExpansionArtifactBytes, expansion)
 }
 
@@ -358,7 +361,52 @@ func DecodeExpansion(data []byte) (SourceExpansion, error) {
 	if expansion.Version != expansionVersion || expansion.CandidateSHA256 == "" {
 		return SourceExpansion{}, fmt.Errorf("theme source expansion artifact: invalid identity")
 	}
+	if err := validateExpansionClosures(expansion); err != nil {
+		return SourceExpansion{}, err
+	}
 	return expansion, requireCanonicalArtifact("theme source expansion", data, expansion)
+}
+
+func validateExpansionClosures(expansion SourceExpansion) error {
+	omitted := make(map[string]struct{}, len(expansion.OmittedRefs))
+	for _, ref := range expansion.OmittedRefs {
+		omitted[ref] = struct{}{}
+	}
+	for index, file := range expansion.Files {
+		if !file.Closed {
+			if file.ClosedReason != "" {
+				return fmt.Errorf("theme source expansion artifact: file %d has a reason without closure", index+1)
+			}
+			continue
+		}
+		if !validExpansionClosedReason(file.ClosedReason) || len(file.Objects) != 0 ||
+			len(file.Omitted) != 0 || file.ExpandedLines != 0 {
+			return fmt.Errorf("theme source expansion artifact: file %d has invalid closure", index+1)
+		}
+		if _, ok := omitted[file.Ref]; !ok {
+			return fmt.Errorf("theme source expansion artifact: file %d closure is not omitted", index+1)
+		}
+	}
+	return nil
+}
+
+func validExpansionClosedReason(reason string) bool {
+	switch reason {
+	case ExpansionClosedReasonUnreadable,
+		ExpansionClosedReasonInvalid,
+		ExpansionClosedReasonOversized,
+		ExpansionClosedReasonBudget,
+		"secret_scan:private_key",
+		"secret_scan:bearer_credential",
+		"secret_scan:secret_key",
+		"secret_scan:github_token",
+		"secret_scan:aws_access_key",
+		"secret_scan:credential_assignment",
+		"secret_scan:unknown":
+		return true
+	default:
+		return false
+	}
 }
 
 // validateAdjudicationRequestIdentity verifies the request is self-consistent:
@@ -407,12 +455,8 @@ func DecodeAdjudicationRequest(data []byte) (AdjudicationRequest, error) {
 
 // EncodeAdjudicationResult encodes the validated Theme Adjudication result.
 func EncodeAdjudicationResult(result AdjudicationResult) ([]byte, error) {
-	if result.Version != AdjudicationResultVersion || result.PromptVersion != AdjudicationPromptVersion ||
-		!result.Language.Valid() || result.CatalogSHA256 == "" || result.WireSHA256 == "" ||
-		(result.State != "accepted" && result.State != "accepted_partial") ||
-		len(result.Themes) == 0 || result.Status.Accepted != len(result.Themes) ||
-		result.Status.Accepted == 0 {
-		return nil, fmt.Errorf("theme adjudication result artifact: invalid identity")
+	if err := validateAdjudicationResultIdentity(result); err != nil {
+		return nil, err
 	}
 	return encodeBoundedArtifact("theme adjudication result", MaxAdjResultArtifactBytes, result)
 }
@@ -424,14 +468,26 @@ func DecodeAdjudicationResult(data []byte) (AdjudicationResult, error) {
 	if err := decodeArtifact("theme adjudication result", data, MaxAdjResultArtifactBytes, &result); err != nil {
 		return AdjudicationResult{}, err
 	}
+	if err := validateAdjudicationResultIdentity(result); err != nil {
+		return AdjudicationResult{}, err
+	}
+	return result, requireCanonicalArtifact("theme adjudication result", data, result)
+}
+
+func validateAdjudicationResultIdentity(result AdjudicationResult) error {
 	if result.Version != AdjudicationResultVersion || result.PromptVersion != AdjudicationPromptVersion ||
 		!result.Language.Valid() || result.CatalogSHA256 == "" || result.WireSHA256 == "" ||
 		(result.State != "accepted" && result.State != "accepted_partial") ||
 		len(result.Themes) == 0 || result.Status.Accepted != len(result.Themes) ||
 		result.Status.Accepted == 0 {
-		return AdjudicationResult{}, fmt.Errorf("theme adjudication result artifact: invalid identity")
+		return fmt.Errorf("theme adjudication result artifact: invalid identity")
 	}
-	return result, requireCanonicalArtifact("theme adjudication result", data, result)
+	for _, theme := range result.Themes {
+		if !hasAdjudicatedFinalProse(theme) || !adjudicatedFinalEditorialProseBounded(theme) {
+			return fmt.Errorf("theme adjudication result artifact: invalid final prose")
+		}
+	}
+	return nil
 }
 
 // EncodeAdjudicationStatus encodes the persisted Theme Adjudication status.

@@ -22,6 +22,7 @@ func TestReduceSemanticEquivalentThemesCoProject(t *testing.T) {
 	themes := []AdjudicatedTheme{
 		{
 			CandidateRef: "t1", FinalTitle: "Same title", FinalQuestion: "Same question?",
+			WhyItMatters: "The same question matters.", ExpectedLearning: "Learn from the retained readings.",
 			AnchorAssessments: []AnchorAssessment{
 				{AnchorRef: "a1", Fit: FitDirect, SupportedObservation: "obs1"},
 				{AnchorRef: "a2", Fit: FitDirect, SupportedObservation: "obs2"},
@@ -32,6 +33,7 @@ func TestReduceSemanticEquivalentThemesCoProject(t *testing.T) {
 			// Semantic equivalent (same normalized question+title) with a
 			// DISTINCT reading — must co-project, never drop.
 			CandidateRef: "t2", FinalTitle: "Same title", FinalQuestion: "Same question?",
+			WhyItMatters: "The same question matters.", ExpectedLearning: "Learn from the retained reading.",
 			AnchorAssessments: []AnchorAssessment{
 				{AnchorRef: "a3", Fit: FitDirect, SupportedObservation: "obs3"},
 			},
@@ -86,6 +88,7 @@ func TestReducePortfolioConcentrationIsGenericNonTLS(t *testing.T) {
 		themes = append(themes, AdjudicatedTheme{
 			CandidateRef: candidate.Ref,
 			FinalTitle:   "Title " + candidate.Ref, FinalQuestion: "Question " + candidate.Ref + "?",
+			WhyItMatters: "The final question matters.", ExpectedLearning: "Learn from the retained reading.",
 			AnchorAssessments: []AnchorAssessment{
 				{AnchorRef: ref, Fit: FitDirect, SupportedObservation: "obs"},
 			},
@@ -137,8 +140,10 @@ func TestReduceBalancedShelfHasNoConcentration(t *testing.T) {
 	}
 	themes := []AdjudicatedTheme{
 		{CandidateRef: "t1", FinalTitle: "T1", FinalQuestion: "Q1?",
+			WhyItMatters: "Q1 matters.", ExpectedLearning: "Learn Q1.",
 			AnchorAssessments: []AnchorAssessment{{AnchorRef: "a1", Fit: FitDirect, SupportedObservation: "o1"}}, ReadingOrder: []string{"a1"}},
 		{CandidateRef: "t2", FinalTitle: "T2", FinalQuestion: "Q2?",
+			WhyItMatters: "Q2 matters.", ExpectedLearning: "Learn Q2.",
 			AnchorAssessments: []AnchorAssessment{{AnchorRef: "a2", Fit: FitDirect, SupportedObservation: "o2"}}, ReadingOrder: []string{"a2"}},
 	}
 	reduction, err := Reduce(ReducerInput{Themes: themes, Candidates: candidates, Anchors: anchors})

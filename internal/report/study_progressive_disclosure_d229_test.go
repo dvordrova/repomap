@@ -111,11 +111,36 @@ const themeCards = [1, 2, 4, 2, 1, 4, 3, 4, 5, 4, 3].map((count, themeIndex) => 
     readings,
     badge: themeIndex % 3 === 0 ? "source_backed" : "partial",
     limitation: themeIndex === 0 ? "Coverage spans more source than was reviewed in this run." : "",
+    unknowns: themeIndex === 0
+      ? ["Runtime branch selection remains unresolved.", "Retry ordering remains unresolved."]
+      : [],
+    alternate_titles: themeIndex === 0 ? ["Lifecycle view of theme 1"] : [],
+    alternate_questions: themeIndex === 0 ? ["Where does theme 1 cross its lifecycle boundary?"] : [],
+    alternate_readings: themeIndex === 0 ? [
+      {
+        label: "Repeated primary",
+        symbol: readings[0].symbol,
+        path: readings[0].path,
+        line: readings[0].line,
+        role: readings[0].role,
+        supported_observation: readings[0].supported_observation,
+      },
+      {
+        label: "Alternate exact source",
+        symbol: "AlternateTheme1",
+        path: "study/theme-1-alternate.go",
+        line: 41,
+        role: "direct",
+        supported_observation: "Inspect the co-projected exact reading.",
+      },
+    ] : [],
   };
 });
+const openablePaths = Array.from(new Set(themeCards.flatMap((card) =>
+  card.readings.concat(card.alternate_readings || []).map((reading) => reading.path))));
 const report = {
   repo_name: "fixture", report_language: "en", user_mechanisms: [], user_topics: [], user_sources: [],
-  openable_paths: [],
+  openable_paths: openablePaths,
   source_ids: {},
   github_source_links: { repository_url: "https://github.com/example/fixture", revision: "1".repeat(40), working_tree_paths: [] },
   repository_atlas: { version: 1, units: [], entities: [], evidence: [], relations: [] },
@@ -195,15 +220,30 @@ const scopeBadges = byClass(studyRoot, "rm-study-theme-card__scope").map((node) 
 // a callsite count in its preview.
 const previewTexts = cards.map((card) => text(card));
 const sendGrouped = previewTexts.some((t) => t.includes("Send") && t.includes("callsites"));
+const firstCardText = cards.length ? text(cards[0]) : "";
+const shelfHasFirstLimitation = firstCardText.includes("Runtime branch selection remains unresolved.") &&
+  !firstCardText.includes("Retry ordering remains unresolved.");
 // Opening one card navigates to detail; siblings remain collapsed.
 const firstTitle = titles.length ? byClass(studyRoot, "rm-study-theme-card__title")[0] : null;
 firstTitle.onclick();
-const detailText = text(roots["rm-study-detail"]);
+const detailRoot = roots["rm-study-detail"];
+const detailText = text(detailRoot);
 const detailHasExpectedLearning = detailText.includes("Expected learning: Outcome 1.");
 const detailHasReading = detailText.includes("study/theme-1-reading-1.go");
 const detailHasRole = detailText.includes("direct");
 const detailHasObservation = detailText.includes("Inspect exact reading 1.");
-const detailHasLimitations = !!roots["rm-study-detail"].querySelector(".rm-study-theme-card__limitations");
+const detailHasLimitations = !!detailRoot.querySelector(".rm-study-theme-card__limitations");
+const detailHasAllLimitations = detailText.includes("Runtime branch selection remains unresolved.") &&
+  detailText.includes("Retry ordering remains unresolved.");
+const detailHasNoNestedDisclosure = !walk(detailRoot).some((node) => node.tagName === "details");
+const detailHasAlternateWording = detailText.includes("Lifecycle view of theme 1") &&
+  detailText.includes("Where does theme 1 cross its lifecycle boundary?");
+const detailHasAlternateReading = detailText.includes("study/theme-1-alternate.go") &&
+  detailText.includes("Inspect the co-projected exact reading.");
+const detailReadingRows = byClass(detailRoot, "rm-study-reading-anchor").length;
+const detailSourceActions = byClass(detailRoot, "rm-study-reading-anchor__open");
+const alternateSourceIsAction = detailSourceActions.some((node) =>
+  text(node).includes("study/theme-1-alternate.go") && (node.tagName === "a" || node.tagName === "button"));
 process.stdout.write(JSON.stringify({
   cardCount: cards.length,
   titles,
@@ -217,6 +257,13 @@ process.stdout.write(JSON.stringify({
   detailHasRole,
   detailHasObservation,
   detailHasLimitations,
+  detailHasAllLimitations,
+  detailHasNoNestedDisclosure,
+  detailHasAlternateWording,
+  detailHasAlternateReading,
+  detailReadingRows,
+  alternateSourceIsAction,
+  shelfHasFirstLimitation,
   previewTexts,
 }));`
 	if err := os.WriteFile(assetPath, []byte(asset), 0o600); err != nil {
@@ -228,19 +275,26 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("node journey failed: %v\n%s", err, output)
 	}
 	var got struct {
-		CardCount                 int      `json:"cardCount"`
-		Titles                    []string `json:"titles"`
-		PreviewCounts             []int    `json:"previewCounts"`
-		MoreCounts                []int    `json:"moreCounts"`
-		EvidenceBadges            []string `json:"evidenceBadges"`
-		ScopeBadges               []string `json:"scopeBadges"`
-		SendGrouped               bool     `json:"sendGrouped"`
-		DetailHasExpectedLearning bool     `json:"detailHasExpectedLearning"`
-		DetailHasReading          bool     `json:"detailHasReading"`
-		DetailHasRole             bool     `json:"detailHasRole"`
-		DetailHasObservation      bool     `json:"detailHasObservation"`
-		DetailHasLimitations      bool     `json:"detailHasLimitations"`
-		PreviewTexts              []string `json:"previewTexts"`
+		CardCount                   int      `json:"cardCount"`
+		Titles                      []string `json:"titles"`
+		PreviewCounts               []int    `json:"previewCounts"`
+		MoreCounts                  []int    `json:"moreCounts"`
+		EvidenceBadges              []string `json:"evidenceBadges"`
+		ScopeBadges                 []string `json:"scopeBadges"`
+		SendGrouped                 bool     `json:"sendGrouped"`
+		DetailHasExpectedLearning   bool     `json:"detailHasExpectedLearning"`
+		DetailHasReading            bool     `json:"detailHasReading"`
+		DetailHasRole               bool     `json:"detailHasRole"`
+		DetailHasObservation        bool     `json:"detailHasObservation"`
+		DetailHasLimitations        bool     `json:"detailHasLimitations"`
+		DetailHasAllLimitations     bool     `json:"detailHasAllLimitations"`
+		DetailHasNoNestedDisclosure bool     `json:"detailHasNoNestedDisclosure"`
+		DetailHasAlternateWording   bool     `json:"detailHasAlternateWording"`
+		DetailHasAlternateReading   bool     `json:"detailHasAlternateReading"`
+		DetailReadingRows           int      `json:"detailReadingRows"`
+		AlternateSourceIsAction     bool     `json:"alternateSourceIsAction"`
+		ShelfHasFirstLimitation     bool     `json:"shelfHasFirstLimitation"`
+		PreviewTexts                []string `json:"previewTexts"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode study D229 journey: %v\n%s", err, output)
@@ -278,5 +332,19 @@ process.stdout.write(JSON.stringify({
 		!got.DetailHasObservation || !got.DetailHasLimitations {
 		t.Fatalf("expanded detail incomplete: learning=%v reading=%v role=%v observation=%v limitations=%v",
 			got.DetailHasExpectedLearning, got.DetailHasReading, got.DetailHasRole, got.DetailHasObservation, got.DetailHasLimitations)
+	}
+	if !got.ShelfHasFirstLimitation {
+		t.Fatal("collapsed theme card does not expose exactly the first material limitation")
+	}
+	if !got.DetailHasAllLimitations || !got.DetailHasNoNestedDisclosure {
+		t.Fatalf("opened theme limitations are not directly complete: all=%v no_nested_disclosure=%v",
+			got.DetailHasAllLimitations, got.DetailHasNoNestedDisclosure)
+	}
+	if !got.DetailHasAlternateWording || !got.DetailHasAlternateReading || !got.AlternateSourceIsAction {
+		t.Fatalf("opened theme lost co-projected material: wording=%v reading=%v source_action=%v",
+			got.DetailHasAlternateWording, got.DetailHasAlternateReading, got.AlternateSourceIsAction)
+	}
+	if got.DetailReadingRows != 2 {
+		t.Fatalf("opened theme reading rows = %d, want 2 (primary + distinct alternate; repeated primary deduplicated)", got.DetailReadingRows)
 	}
 }

@@ -238,9 +238,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-atlas-compact-status__list { display: grid; gap: .3rem; list-style: none; margin: 0; padding: 0; }
 .rm-atlas-compact-status__item { color: #64748b; display: grid; font-size: .66rem; gap: .15rem .5rem; grid-template-columns: auto minmax(0, 1fr); line-height: 1.4; }
 .rm-atlas-compact-status__label { color: #475569; font-weight: 700; }
-.rm-study-publication-notice { background: #fff7ed; border: 1px solid #fdba74; border-radius: 10px; color: #7c2d12; margin-bottom: 1.25rem; padding: 1rem 1.15rem; }
-.rm-study-publication-notice h2 { font-size: 1rem; margin: 0 0 .35rem; }
-.rm-study-publication-notice p { font-size: .82rem; line-height: 1.5; margin: 0; max-width: 56rem; }
 .rm-brief-lead { color: #1e293b !important; font-size: 1.05rem !important; line-height: 1.65; }
 .rm-brief-facts { display: grid; gap: .7rem; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); margin-top: 1.25rem; }
 .rm-brief-fact { background: rgba(255,255,255,.78); border: 1px solid #dbeafe; border-radius: 8px; display: grid; gap: .3rem; padding: .75rem; }
@@ -669,7 +666,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-study-theme-card__preview-count { color: var(--rm-muted); font-size: .68rem; }
 .rm-study-theme-card__more { color: var(--rm-dim); font-size: .72rem; margin: .15rem 0 0; }
 .rm-study-theme-card__detail-link { color: var(--rm-accent); font-size: .78rem; font-weight: 650; margin-top: .35rem; }
-.rm-study-theme-card__limitations { border-top: 1px solid var(--rm-border); color: var(--rm-dim); font-size: .75rem; margin-top: .6rem; padding-top: .5rem; }
+.rm-study-theme-card__first-limitation { color: var(--rm-dim); display: -webkit-box; font-size: .72rem; line-height: 1.45; margin: .05rem 0 0; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.rm-study-theme-alternates, .rm-study-theme-card__limitations { border-top: 1px solid var(--rm-border); color: var(--rm-dim); margin-top: .85rem; padding-top: .75rem; }
+.rm-study-theme-alternates__title, .rm-study-theme-card__limitations-title { color: var(--rm-text); font-size: .9rem; margin: 0; }
+.rm-study-theme-alternates__copy { font-size: .76rem; line-height: 1.5; margin: .25rem 0 .55rem; max-width: 52rem; overflow-wrap: anywhere; }
+.rm-study-theme-alternates__perspectives, .rm-study-theme-card__unknowns { display: grid; gap: .35rem; margin: .4rem 0 0; padding-left: 1.2rem; }
+.rm-study-theme-alternates__perspective, .rm-study-theme-card__unknowns-item { font-size: .78rem; line-height: 1.5; overflow-wrap: anywhere; }
+.rm-study-theme-alternates__wording { margin: 0; }
+.rm-study-theme-alternates__readings-title { color: var(--rm-text); font-size: .78rem; margin: .8rem 0 .45rem; }
+.rm-study-theme-alternates__reading-list { margin-top: 0; }
 .rm-study-theme-card__reading-role { border-radius: 999px; font-size: .6rem; font-weight: 700; padding: .12rem .42rem; }
 .rm-study-theme-card__reading-role--direct { background: #ccfbf1; color: #0f766e; }
 .rm-study-theme-card__reading-role--supporting { background: #eef2ff; color: #3157d5; }
@@ -691,30 +696,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-overview-perimeter__arrow { color: var(--rm-muted); font-size: 1rem; }
 .rm-overview-perimeter__touchpoint { border-radius: 999px; background: #ccfbf1; color: #0f766e; font-size: .68rem; font-weight: 700; padding: .2rem .55rem; white-space: nowrap; }
 
-/* Decision 229 D5 mechanism fragment lanes: separate cards, never a
-   linearized numbered sequence. */
-.rm-mechanism-fragment__lanes { display: grid; gap: .7rem; }
-.rm-mechanism-fragment__lane { background: var(--rm-card); border: 1px solid var(--rm-border); border-radius: 12px; display: grid; gap: .35rem; padding: .85rem 1rem; }
-.rm-mechanism-fragment__lane--entry { border-color: #3157d5; box-shadow: 0 0 0 1px #3157d5; }
-.rm-mechanism-fragment__lane-head { align-items: center; display: flex; flex-wrap: wrap; gap: .45rem; }
-.rm-mechanism-fragment__kind { font-size: .78rem; font-weight: 750; }
-.rm-mechanism-fragment__mode { border-radius: 999px; background: #eef2ff; color: #3157d5; font-size: .62rem; font-weight: 700; padding: .14rem .45rem; }
-.rm-mechanism-fragment__location { background: transparent; border: 0; border-radius: 5px; color: var(--rm-dim); cursor: pointer; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .72rem; overflow-wrap: anywhere; padding: .05rem .2rem; }
-.rm-mechanism-fragment__location:hover { background: #f1f5f9; color: var(--rm-accent); }
-.rm-mechanism-fragment__location:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: 1px; }
-.rm-mechanism-fragment__location--text { color: var(--rm-muted); cursor: default; }
-.rm-mechanism-fragment__location--text:hover { background: transparent; color: var(--rm-muted); }
-.rm-mechanism-fragment__label { color: var(--rm-fg); font-size: .8rem; font-weight: 650; }
-.rm-mechanism-fragment__ordering { color: var(--rm-muted); font-size: .68rem; }
-.rm-mechanism-fragment__limitation { margin: .2rem 0 0; }
-.rm-mechanism-fragment__evidence-details { color: var(--rm-dim); font-size: .72rem; margin-top: .25rem; }
-.rm-mechanism-fragment__evidence-summary { cursor: pointer; font-size: .7rem; font-weight: 650; }
-.rm-mechanism-fragment__evidence-raw { margin: .3rem 0 0; padding-left: 1.1rem; }
-.rm-mechanism-fragment__frontier { background: #fef3c7; border: 1px solid #fde68a; border-radius: 12px; margin-top: .9rem; padding: .85rem 1rem; }
-.rm-mechanism-fragment__frontier-item { color: #87570c; font-size: .78rem; margin: .25rem 0 0; }
-
 /* Decision 230 D5: Architecture bounded workspace disclosures. The map is
-   primary; relations, mechanism fragments and the component list sit behind
+   primary; relations and the component list sit behind
    explicit summaries with compact counts. */
 .rm-architecture-disclosure { border-top: 1px solid var(--rm-border); margin-top: 1.1rem; padding-top: .7rem; }
 .rm-architecture-disclosure__summary { align-items: baseline; cursor: pointer; display: flex; gap: .5rem; list-style: none; padding: .35rem 0; }
@@ -725,18 +708,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-architecture-disclosure__summary:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: 2px; border-radius: 4px; }
 .rm-architecture-disclosure__title { font-size: .86rem; font-weight: 700; }
 .rm-architecture-disclosure__count { color: var(--rm-muted); font-size: .76rem; }
-
-/* Decision 242 (v3): a mechanism is a compact first-hop fan-out. Every
-   handoff is a sibling edge from the exact entry; display order never claims
-   runtime order or a deeper path. */
-.rm-mechanism-fragment__copy { margin: .25rem 0 .65rem; }
-.rm-mechanism-fragment__fanout { display: grid; gap: .65rem; margin-top: .65rem; }
-.rm-mechanism-fragment__handoff { background: #f8fafc; border: 1px solid var(--rm-border); border-radius: 12px; padding: .45rem .65rem .65rem; }
-.rm-mechanism-fragment__arrow { align-items: center; display: flex; gap: .5rem; padding: .2rem 0 .2rem .9rem; }
-.rm-mechanism-fragment__arrow-line { color: var(--rm-accent); font-size: 1.05rem; font-weight: 800; line-height: 1; }
-.rm-mechanism-fragment__arrow-mode { color: var(--rm-muted); font-size: .68rem; }
-.rm-mechanism-fragment__target { border: 1px dashed #cbd5e1; border-radius: 8px; margin: .55rem 0 0 .9rem; padding: .45rem .6rem; }
-.rm-mechanism-fragment__target-symbol { display: block; font-size: .8rem; }
 
 /* Decision 233 (Archive 9): entry category summaries — quiet Show-all
    toggle, collapsed full grid below the representatives. */

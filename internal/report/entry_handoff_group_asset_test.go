@@ -1,0 +1,426 @@
+package report
+
+import (
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// Canvas 14 exact first hops are selectable Entrypoints context. Selecting
+// the entry selects one exact group for the Canvas overlay, while every entry
+// keeps a direct source action and only unjoined calls use the slim overflow.
+func TestEntrypointHandoffGroupAssetRendersDirectSourceActions(t *testing.T) {
+	if ArchitectureCanvasVersion != 14 || EntrypointHandoffGroupVersion != 1 {
+		t.Fatalf("fixture requires Canvas14/group v1, got %d/%d", ArchitectureCanvasVersion, EntrypointHandoffGroupVersion)
+	}
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	asset := filepath.Join("templates", "script.js")
+	runner := `
+const fs = require("fs");
+const vm = require("vm");
+function Element(tag) {
+  this.tagName = String(tag).toUpperCase(); this._text = ""; this.children = [];
+  this.attributes = {}; this.hidden = false; this.className = "";
+  const self = this;
+  this.classList = {
+    add(value) { const parts = String(self.className || "").split(/\s+/).filter(Boolean); if (!parts.includes(value)) parts.push(value); self.className = parts.join(" "); },
+    remove(value) { self.className = String(self.className || "").split(/\s+/).filter((part) => part && part !== value).join(" "); },
+    toggle(value, active) { if (active) this.add(value); else this.remove(value); },
+  };
+}
+Object.defineProperty(Element.prototype, "childNodes", { get() { return this.children; } });
+Object.defineProperty(Element.prototype, "textContent", {
+  get() { return this._text + this.children.map((child) => child.textContent).join(""); },
+  set(value) { this._text = value == null ? "" : String(value); },
+});
+Element.prototype.setAttribute = function (name, value) { this.attributes[name] = String(value); if (name === "id") this.id = String(value); };
+Element.prototype.getAttribute = function (name) { return Object.prototype.hasOwnProperty.call(this.attributes, name) ? this.attributes[name] : null; };
+Element.prototype.removeAttribute = function (name) { delete this.attributes[name]; };
+Element.prototype.appendChild = function (child) { child.parentNode = this; this.children.push(child); return child; };
+Element.prototype.append = function (...children) { children.forEach((child) => this.appendChild(child)); };
+Element.prototype.replaceChildren = function (...children) { this.children = []; children.forEach((child) => this.appendChild(child)); };
+Element.prototype.remove = function () { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter((child) => child !== this); };
+Element.prototype.prepend = function (...children) { children.reverse().forEach((child) => { child.parentNode = this; this.children.unshift(child); }); };
+function walk(node, out) { out = out || []; (node.children || []).forEach((child) => { out.push(child); walk(child, out); }); return out; }
+function matches(node, selector) {
+  if (selector[0] === ".") return String(node.className || "").split(/\s+/).includes(selector.slice(1));
+  const attr = selector.match(/^\[([^=\]]+)(?:=["']?([^"'\]]+)["']?)?\]$/);
+  if (attr) return Object.prototype.hasOwnProperty.call(node.attributes || {}, attr[1]) && (attr[2] == null || node.attributes[attr[1]] === attr[2]);
+  return false;
+}
+Element.prototype.querySelector = function (selector) { return walk(this).find((node) => matches(node, selector)) || null; };
+Element.prototype.querySelectorAll = function (selector) { return walk(this).filter((node) => matches(node, selector)); };
+const roots = {
+  "rm-overview": new Element("div"), "rm-architecture": new Element("section"),
+  "rm-study-overview": new Element("div"), "rm-study-detail": new Element("div"),
+  "rm-tabs": new Element("div"),
+};
+const workspace = new Element("div");
+function transition(label, path, line, column, target, componentIDs) {
+  return {
+    claim_kind: target ? "direct_static_call" : "process_entry",
+    support_mode: "resolved_static", label, path, line, column,
+    component_ids: componentIDs || [],
+    symbol: label, evidence: "go_ssa secret diagnostic detail",
+    evidence_ref: { kind: "architecture_entry_handoff", id: "entry-handoff-secret" },
+    provenance: { provider: "go_ssa", version: "surface-ssa-v12", operation: "collect_entry_direct_static_handoff" },
+    scenario: "go:linux/amd64:tags=", limitation: "raw repeated limitation",
+    ordering: "resolved_path_order", target,
+  };
+}
+function group(id, entrySymbol, entryPath, componentIDs, handoff) {
+  const entry = transition(entrySymbol || "process entry", entryPath, 10, 6, null, [componentIDs[0]]);
+  entry.symbol = entrySymbol;
+  return {
+    version: 1, id, component_ids: componentIDs,
+    entry,
+    entry_handoffs: [handoff],
+    frontier: { ordering: "not_established", unresolved: ["continuation beyond first hop"], limitation: "raw frontier limitation" },
+  };
+}
+const report = {
+  repo_name: "fixture", report_language: process.argv[3] || "en",
+  github_source_links: { repository_url: "https://github.com/acme/fixture", revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+  user_mechanisms: [], user_topics: [],
+  // Mixed snippets must not suppress exact pinned source actions.
+  user_sources: [{ path: "other.go", start_line: 1, end_line: 1, lines: ["package fixture"] }],
+  openable_paths: ["client.go", "main.go", "other.go", "service.go", "worker.go"], source_ids: {},
+  architecture_canvas: {
+    version: 14, local_remainder_component_id: "component-r",
+    components: [
+      { id: "c1", name: "Entry", participating_surface_ids: ["surface-main"] },
+      { id: "c2", name: "Service" }, { id: "c3", name: "Client" },
+    ],
+    subsystems: [], behavior_anchors: [], flows: [], structural_edges: [],
+    surfaces: [{ id: "surface-main", kind: "process_entry", name: "main", participating_component_ids: ["c1"] }],
+    entry_handoff_groups: [
+      group("entry-group-a", "fixture.main", "main.go", ["c1", "c2"],
+        transition("fixture.service.Start", "main.go", 15, 9, { label: "fixture.service.Start", path: "service.go", line: 20, column: 4 }, ["c2"])),
+      group("entry-group-b", "", "worker.go", ["c3"],
+        transition("fixture.client.Send", "worker.go", 25, 8, { label: "fixture.client.Send", path: "client.go", line: 30, column: 3 }, [])),
+    ],
+  },
+  repository_atlas: { version: 1, units: [], entities: [], observations: [], evidence: [], relations: [] },
+};
+const window = {
+  location: { hash: "#/architecture", host: "fixture.test", pathname: "/index.html", search: "" },
+  history: { state: null, pushState(state, _, hash) { this.state = state; window.location.hash = hash; }, replaceState(state, _, hash) { this.state = state; window.location.hash = hash; }, back() {} },
+  __REPOMAP_WORKSPACE_TEST__: {}, __REPOMAP_LAYOUT_TEST__: {}, addEventListener() {}, open() {}, scrollTo() {},
+};
+const document = {
+  createElement(tag) { return new Element(tag); },
+  createTextNode(value) { const node = new Element("#text"); node.textContent = String(value); return node; },
+  getElementById(id) {
+    if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
+    if (roots[id]) return roots[id];
+    return Object.values(roots).flatMap((root) => [root].concat(walk(root))).find((node) => node.id === id) || null;
+  },
+  querySelector(selector) { return selector === ".rm-workspace" ? workspace : null; },
+  querySelectorAll() { return []; },
+};
+document.documentElement = { lang: report.report_language };
+window.document = document;
+const context = { window, document, Element, URLSearchParams, Set, Map, AbortController, Promise };
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), context);
+vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "architecture_canvas.js"), "utf8"), context);
+const realCanvas = window.RepomapArchitectureCanvas;
+const selectedGroups = [];
+window.RepomapArchitectureCanvas = {
+  projectArchitectureLens: realCanvas.projectArchitectureLens,
+  projectEntrypointHandoffOverlay: realCanvas.projectEntrypointHandoffOverlay,
+  mount() { return {
+    ready: Promise.resolve(), destroy() {}, openComponent() {}, setLens() {},
+    selectEntrypointHandoffGroup(id) { selectedGroups.push(id); },
+  }; },
+};
+vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), context);
+const api = window.__REPOMAP_WORKSPACE_TEST__;
+api.renderWorkspaceTabs();
+const mapTab = roots["rm-tabs"].children.find((node) => node.attributes["data-workspace-view"] === "map");
+if (!mapTab) throw new Error("map tab missing");
+mapTab.onclick();
+const root = roots["rm-architecture"];
+const lenses = walk(root).filter((node) => node.attributes["data-map-lens"]);
+const entrypointsLens = lenses.find((node) => node.attributes["data-map-lens"] === "entrypoints");
+if (!entrypointsLens) throw new Error("entrypoints lens missing");
+entrypointsLens.onclick();
+const selectors = root.querySelectorAll(".rm-map-entry-selector");
+const immediateSourceActions = root.querySelectorAll(".rm-source-action-link");
+const defaultSelectionCount = selectedGroups.length;
+const defaultSelectedStates = selectors.map((item) => item.getAttribute("aria-pressed"));
+if (selectors[1] && typeof selectors[1].onfocus === "function") selectors[1].onfocus();
+const focusSelectionCount = selectedGroups.length;
+if (selectors[1] && typeof selectors[1].onclick === "function") selectors[1].onclick();
+const sourceActions = root.querySelectorAll(".rm-source-action-link");
+const overflowCalls = root.querySelectorAll(".rm-map-entry-overflow__call");
+const lensHost = root.querySelector(".rm-map-lens-objects");
+const contextDetails = walk(lensHost).filter((node) => node.tagName === "DETAILS");
+process.stdout.write(JSON.stringify({
+  lensIDs: lenses.map((node) => node.attributes["data-map-lens"]),
+  selectorCount: selectors.length, overflowCallCount: overflowCalls.length,
+  immediateSourceActionCount: immediateSourceActions.length,
+  defaultSelectionCount, defaultSelectedStates, focusSelectionCount,
+  sourceActionCount: sourceActions.length,
+  sourceHrefs: sourceActions.map((item) => item.getAttribute("href") || ""),
+  selectedGroups,
+  selectedStates: selectors.map((item) => item.getAttribute("aria-pressed")),
+  contextDetails: contextDetails.length,
+  text: root.textContent.replace(/\s+/g, " ").trim(),
+}));
+`
+	runnerPath := filepath.Join(t.TempDir(), "entry-handoff-group-test.js")
+	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	run := func(language string) entryHandoffAssetResult {
+		t.Helper()
+		output, err := exec.Command(node, runnerPath, asset, language).CombinedOutput()
+		if err != nil {
+			t.Fatalf("run entry handoff workspace (%s): %v\n%s", language, err, output)
+		}
+		var got entryHandoffAssetResult
+		if err := json.Unmarshal(output, &got); err != nil {
+			t.Fatalf("decode entry handoff workspace (%s): %v\n%s", language, err, output)
+		}
+		return got
+	}
+
+	en := run("en")
+	if strings.Join(en.LensIDs, ",") != "landscape,entrypoints,integrations" {
+		t.Fatalf("Map lenses = %#v, want exactly three without Mechanisms", en.LensIDs)
+	}
+	if en.SelectorCount != 2 || en.OverflowCallCount != 1 || en.ContextDetails != 0 {
+		t.Fatalf("Entrypoints DOM = selectors %d overflow calls %d details %d",
+			en.SelectorCount, en.OverflowCallCount, en.ContextDetails)
+	}
+	if en.ImmediateSourceActionCount != 2 || en.SourceActionCount != 4 {
+		t.Fatalf("entry/unjoined source actions = immediate %d selected %d: %#v",
+			en.ImmediateSourceActionCount, en.SourceActionCount, en.SourceHrefs)
+	}
+	if en.DefaultSelectionCount != 0 || strings.Join(en.DefaultSelectedStates, ",") != "false,false" {
+		t.Fatalf("default Entrypoints selected a group: calls %d states %#v",
+			en.DefaultSelectionCount, en.DefaultSelectedStates)
+	}
+	if en.FocusSelectionCount != 0 {
+		t.Fatalf("focus alone activated %d entry overlays", en.FocusSelectionCount)
+	}
+	if strings.Join(en.SelectedGroups, ",") != "entry-group-b" ||
+		strings.Join(en.SelectedStates, ",") != "false,true" {
+		t.Fatalf("single selected entry overlay = calls %#v states %#v", en.SelectedGroups, en.SelectedStates)
+	}
+	for _, href := range en.SourceHrefs {
+		if !strings.Contains(href, "https://github.com/acme/fixture/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/") {
+			t.Fatalf("entry source action is not pinned to the captured revision: %q", href)
+		}
+	}
+	for _, exact := range []string{"main.go:10:6", "worker.go:10:6", "worker.go:25:8", "client.go:30:3"} {
+		if !strings.Contains(en.Text, exact) {
+			t.Fatalf("column-preserving location %q missing: %s", exact, en.Text)
+		}
+	}
+	if !strings.Contains(en.Text, "Not drawn as map arrows: 1") ||
+		!strings.Contains(en.Text, "Static first hop only; runtime order and continuation are not established.") {
+		t.Fatalf("English Entrypoints context copy incomplete: %s", en.Text)
+	}
+	for _, leaked := range []string{"claim_kind", "resolved_static", "architecture_entry_handoff", "entry-handoff-secret", "go:linux", "raw repeated limitation", "raw frontier limitation"} {
+		if strings.Contains(en.Text, leaked) {
+			t.Fatalf("diagnostic field %q leaked into ordinary HTML: %s", leaked, en.Text)
+		}
+	}
+
+	ru := run("ru")
+	if !strings.Contains(ru.Text, "Не показано стрелками на карте: 1") ||
+		!strings.Contains(ru.Text, "Только статический первый переход") {
+		t.Fatalf("Russian Entrypoints context copy incomplete: %s", ru.Text)
+	}
+	if strings.Contains(ru.Text, "process entry") {
+		t.Fatalf("persisted English entry label leaked into RU HTML: %s", ru.Text)
+	}
+}
+
+func TestEntrypointHandoffCanvasOverlayKeepsLayoutAndOneSelection(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	asset, err := filepath.Abs(filepath.Join("templates", "architecture_canvas.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := `
+const fs = require("fs");
+const vm = require("vm");
+class Element {
+  constructor(tag) {
+    this.tagName = String(tag || "div").toUpperCase(); this.children = []; this.attributes = {};
+    this.className = ""; this._text = ""; this.hidden = false; this.style = {}; this.dataset = {};
+    this.parentNode = null; this.handlers = {};
+    this.classList = {
+      add: (...names) => { const values = new Set(String(this.className).split(/\s+/).filter(Boolean)); names.forEach((name) => values.add(name)); this.className = Array.from(values).join(" "); },
+      remove: (...names) => { const removed = new Set(names); this.className = String(this.className).split(/\s+/).filter((name) => name && !removed.has(name)).join(" "); },
+      toggle: (name, force) => { const values = new Set(String(this.className).split(/\s+/).filter(Boolean)); const active = force === undefined ? !values.has(name) : !!force; if (active) values.add(name); else values.delete(name); this.className = Array.from(values).join(" "); return active; },
+      contains: (name) => String(this.className).split(/\s+/).includes(name),
+    };
+  }
+  get childNodes() { return this.children; }
+  get childElementCount() { return this.children.length; }
+  get textContent() { return this._text + this.children.map((child) => child.textContent).join(""); }
+  set textContent(value) { this._text = value == null ? "" : String(value); }
+  appendChild(child) { if (child) { child.parentNode = this; this.children.push(child); } return child; }
+  append(...children) { children.forEach((child) => this.appendChild(child)); }
+  prepend(child) { if (child) { child.parentNode = this; this.children.unshift(child); } }
+  replaceChildren(...children) { this.children = []; this._text = ""; children.forEach((child) => this.appendChild(child)); }
+  remove() { if (this.parentNode) this.parentNode.children = this.parentNode.children.filter((child) => child !== this); }
+  setAttribute(name, value) { this.attributes[name] = String(value); if (name === "class") this.className = String(value); }
+  getAttribute(name) { return this.attributes[name] == null ? null : String(this.attributes[name]); }
+  removeAttribute(name) { delete this.attributes[name]; }
+  addEventListener(name, handler) { (this.handlers[name] ||= []).push(handler); }
+  removeEventListener() {}
+  dispatch(name) { (this.handlers[name] || []).forEach((handler) => handler({ target: this, stopPropagation() {}, preventDefault() {} })); }
+  focus() {}
+  contains(node) { if (node === this) return true; return this.children.some((child) => child.contains && child.contains(node)); }
+  closest() { return null; }
+  getBoundingClientRect() { return { left: 0, top: 0, right: 900, bottom: 640, width: 900, height: 640 }; }
+  querySelector(selector) { return walk(this).find((node) => matches(node, selector)) || null; }
+  querySelectorAll(selector) { return walk(this).filter((node) => matches(node, selector)); }
+  scrollIntoView() {}
+}
+function walk(node, out) { out = out || []; (node.children || []).forEach((child) => { out.push(child); walk(child, out); }); return out; }
+function matches(node, selector) {
+  if (selector[0] === ".") return String(node.className || "").split(/\s+/).includes(selector.slice(1));
+  const attr = selector.match(/^\[([^=\]]+)(?:=["']?([^"'\]]+)["']?)?\]$/);
+  return !!(attr && Object.prototype.hasOwnProperty.call(node.attributes || {}, attr[1]) && (attr[2] == null || node.attributes[attr[1]] === attr[2]));
+}
+const document = {
+  createElement: (tag) => new Element(tag), createElementNS: (_, tag) => new Element(tag),
+  createTextNode: (value) => { const node = new Element("#text"); node.textContent = value; return node; },
+  querySelector: () => null, querySelectorAll: () => [], getElementById: () => null,
+  addEventListener() {}, removeEventListener() {}, body: new Element("body"), documentElement: new Element("html"),
+};
+function ELK() {}
+const window = {
+  document, ELK, AbortController, Set, Map, URLSearchParams, Promise,
+  requestAnimationFrame: (fn) => fn(), setTimeout, clearTimeout,
+  innerWidth: 1200, innerHeight: 800, location: { hash: "" }, history: { replaceState() {} },
+  addEventListener() {}, removeEventListener() {},
+  RepomapUI: { message(id) { return id; } },
+};
+const sandbox = {
+  window, document, Element, ELK, AbortController, Set, Map, URLSearchParams, Promise,
+  requestAnimationFrame: (fn) => fn(), setTimeout, clearTimeout, console,
+  addEventListener() {}, removeEventListener() {},
+};
+sandbox.global = sandbox; vm.createContext(sandbox);
+vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), sandbox);
+function transition(path, line, column, symbol, componentIDs, target) {
+  return { claim_kind: target ? "direct_static_call" : "process_entry", support_mode: "resolved_static",
+    label: symbol, path, line, column, symbol, component_ids: componentIDs, target };
+}
+function group(id, entryIDs, handoffs) {
+  return { version: 1, id, component_ids: Array.from(new Set(entryIDs.concat(...handoffs.map((item) => item.component_ids)))),
+    entry: transition("main.go", 10, 6, "fixture.main", entryIDs, null), entry_handoffs: handoffs,
+    frontier: { ordering: "not_established", limitation: "continuation unknown" } };
+}
+const cross = transition("main.go", 15, 9, "fixture.service.Start", ["c2"],
+  { label: "fixture.service.Start", path: "service.go", line: 20, column: 4 });
+const local = transition("main.go", 18, 5, "fixture.local", ["c1"],
+  { label: "fixture.local", path: "main.go", line: 30, column: 2 });
+const second = transition("worker.go", 12, 7, "fixture.worker.local", ["c2"],
+  { label: "fixture.worker.local", path: "worker.go", line: 22, column: 3 });
+const data = {
+  version: 14,
+  components: [{ id: "c1", name: "Entry" }, { id: "c2", name: "Service" }],
+  subsystems: [{ id: "s1", name: "Application", component_ids: ["c1", "c2"] }],
+  structural_edges: [], behavior_anchors: [], flows: [], flow_edges: [], surfaces: [],
+  entry_handoff_groups: [group("group-a", ["c1"], [cross, local]), group("group-b", ["c2"], [second])],
+};
+const opened = [];
+const host = new Element("div");
+const app = window.RepomapArchitectureCanvas.mount(host, data, {
+  userMode: true, message: (id) => id,
+  openLocation(path, line, column) { opened.push([path, line, column]); },
+});
+app.ready.then(() => {
+  app.setLens("entrypoints");
+  const surface = host.querySelector(".rm-arch__surface");
+  const components = host.querySelectorAll(".rm-arch__component");
+  const before = JSON.stringify({ transform: surface.style.transform, nodes: components.map((node) => [node.style.left, node.style.top]) });
+  app.selectEntrypointHandoffGroup("group-a");
+  const edgesA = host.querySelectorAll(".rm-arch__edge--entry-handoff");
+  const badgesA = host.querySelectorAll(".rm-arch__entry-handoff-source");
+  const loopsA = edgesA.filter((edge) => String(edge.className).split(/\s+/).includes("is-self-loop"));
+  const markersA = edgesA.map((edge) => edge.querySelector(".rm-arch__edge-visible")).filter(Boolean)
+    .map((path) => path.getAttribute("marker-end"));
+  const participantsA = components.filter((node) => String(node.className).split(/\s+/).includes("rm-arch__is-entry-handoff-participant"));
+  if (badgesA[0]) badgesA[0].dispatch("click");
+  const after = JSON.stringify({ transform: surface.style.transform, nodes: components.map((node) => [node.style.left, node.style.top]) });
+  app.selectEntrypointHandoffGroup("group-b");
+  const edgesB = host.querySelectorAll(".rm-arch__edge--entry-handoff");
+  process.stdout.write(JSON.stringify({
+    edgesA: edgesA.length, badgesA: badgesA.length, loopsA: loopsA.length, markersA,
+    participantsA: participantsA.length, badgeText: badgesA.map((item) => item.textContent),
+    opened, layoutUnchanged: before === after, edgesB: edgesB.length,
+  }));
+}).catch((error) => { process.stderr.write(String(error && error.stack || error)); process.exit(2); });
+`
+	runnerPath := filepath.Join(t.TempDir(), "entry-handoff-overlay-test.js")
+	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := exec.Command(node, runnerPath, asset).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run entry handoff overlay: %v\n%s", err, output)
+	}
+	var got struct {
+		EdgesA          int      `json:"edgesA"`
+		BadgesA         int      `json:"badgesA"`
+		LoopsA          int      `json:"loopsA"`
+		MarkersA        []string `json:"markersA"`
+		ParticipantsA   int      `json:"participantsA"`
+		BadgeText       []string `json:"badgeText"`
+		Opened          [][]any  `json:"opened"`
+		LayoutUnchanged bool     `json:"layoutUnchanged"`
+		EdgesB          int      `json:"edgesB"`
+	}
+	if err := json.Unmarshal(output, &got); err != nil {
+		t.Fatalf("decode entry handoff overlay: %v\n%s", err, output)
+	}
+	if got.EdgesA != 2 || got.BadgesA != 2 || got.LoopsA != 1 || got.ParticipantsA != 2 || !got.LayoutUnchanged {
+		t.Fatalf("selected overlay = edges:%d badges:%d loops:%d participants:%d layout unchanged:%t",
+			got.EdgesA, got.BadgesA, got.LoopsA, got.ParticipantsA, got.LayoutUnchanged)
+	}
+	if got.EdgesB != 1 {
+		t.Fatalf("second selection rendered %d edges, want exactly its one edge", got.EdgesB)
+	}
+	if len(got.MarkersA) != 2 || got.MarkersA[0] != "url(#rm-arch-entry-handoff-arrow)" ||
+		len(got.BadgeText) != 2 || !strings.Contains(strings.Join(got.BadgeText, " "), "main.go:15:9") {
+		t.Fatalf("overlay arrows/source badges = markers %#v labels %#v", got.MarkersA, got.BadgeText)
+	}
+	if len(got.Opened) != 1 || len(got.Opened[0]) != 3 || got.Opened[0][0] != "main.go" ||
+		got.Opened[0][1] != float64(15) || got.Opened[0][2] != float64(9) {
+		t.Fatalf("overlay source action lost exact column: %#v", got.Opened)
+	}
+}
+
+type entryHandoffAssetResult struct {
+	LensIDs                    []string `json:"lensIDs"`
+	SelectorCount              int      `json:"selectorCount"`
+	OverflowCallCount          int      `json:"overflowCallCount"`
+	ImmediateSourceActionCount int      `json:"immediateSourceActionCount"`
+	DefaultSelectionCount      int      `json:"defaultSelectionCount"`
+	DefaultSelectedStates      []string `json:"defaultSelectedStates"`
+	FocusSelectionCount        int      `json:"focusSelectionCount"`
+	SourceActionCount          int      `json:"sourceActionCount"`
+	SourceHrefs                []string `json:"sourceHrefs"`
+	SelectedGroups             []string `json:"selectedGroups"`
+	SelectedStates             []string `json:"selectedStates"`
+	ContextDetails             int      `json:"contextDetails"`
+	Text                       string   `json:"text"`
+}

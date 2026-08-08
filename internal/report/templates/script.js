@@ -1926,6 +1926,109 @@
 		return msg('main.study.theme.partial_explanation_generic');
 	}
 
+	function themeUnknowns(card) {
+		var seen = new Set();
+		var unknowns = [];
+		(card && Array.isArray(card.unknowns) ? card.unknowns : []).forEach(function (unknown) {
+			var value = String(unknown || '').trim();
+			if (!value || seen.has(value)) return;
+			seen.add(value);
+			unknowns.push(value);
+		});
+		return unknowns;
+	}
+
+	function themeFirstLimitation(card) {
+		var unknowns = themeUnknowns(card);
+		if (unknowns.length) return unknowns[0];
+		if (themeCoverageState(card) === 'partial' || String(card && card.limitation || '').trim()) {
+			return msg('main.study.theme.partial_limitation_short');
+		}
+		return '';
+	}
+
+	function themeReadingExactKey(reading) {
+		var path = String(reading && reading.path || '');
+		var line = Number(reading && reading.line);
+		if (!path || !Number.isInteger(line) || line <= 0) return '';
+		return JSON.stringify([path, line, String(reading && reading.symbol || '')]);
+	}
+
+	// Alternate readings are backend-deduplicated by exact public identity.
+	// Keep the presentation defensive as well: an exact primary source row is
+	// never rendered a second time if a malformed projection repeats it.
+	function distinctThemeAlternateReadings(card) {
+		var seen = new Set();
+		var result = [];
+		(card && Array.isArray(card.readings) ? card.readings : []).forEach(function (reading) {
+			var key = themeReadingExactKey(reading);
+			if (key) seen.add(key);
+		});
+		(card && Array.isArray(card.alternate_readings) ? card.alternate_readings : []).forEach(function (reading) {
+			var key = themeReadingExactKey(reading);
+			if (!key || seen.has(key)) return;
+			seen.add(key);
+			result.push(reading);
+		});
+		return result;
+	}
+
+	function renderThemeAlternates(card) {
+		var titles = card && Array.isArray(card.alternate_titles)
+			? card.alternate_titles.map(function (value) { return String(value || '').trim(); }).filter(Boolean)
+			: [];
+		var questions = card && Array.isArray(card.alternate_questions)
+			? card.alternate_questions.map(function (value) { return String(value || '').trim(); }).filter(Boolean)
+			: [];
+		var readings = distinctThemeAlternateReadings(card);
+		if (!titles.length && !questions.length && !readings.length) return null;
+
+		var section = el('section', 'rm-study-theme-alternates');
+		section.appendChild(txt('h3', 'rm-study-theme-alternates__title', msg('main.study.theme.alternates.title')));
+		section.appendChild(txt('p', 'rm-study-theme-alternates__copy', msg('main.study.theme.alternates.copy')));
+		var perspectiveCount = Math.max(titles.length, questions.length);
+		if (perspectiveCount) {
+			var perspectives = el('ul', 'rm-study-theme-alternates__perspectives');
+			for (var index = 0; index < perspectiveCount; index++) {
+				var perspective = el('li', 'rm-study-theme-alternates__perspective');
+				if (titles[index]) {
+					perspective.appendChild(txt('p', 'rm-study-theme-alternates__wording',
+						msg('main.study.theme.alternates.title_wording', { title: titles[index] })));
+				}
+				if (questions[index]) {
+					perspective.appendChild(txt('p', 'rm-study-theme-alternates__wording',
+						msg('main.study.theme.alternates.question_wording', { question: questions[index] })));
+				}
+				perspectives.appendChild(perspective);
+			}
+			section.appendChild(perspectives);
+		}
+		if (readings.length) {
+			section.appendChild(txt('h4', 'rm-study-theme-alternates__readings-title', msg('main.study.theme.alternates.readings')));
+			var readingList = el('div', 'rm-study-reading-list rm-study-theme-alternates__reading-list');
+			var primaryCount = card && Array.isArray(card.readings) ? card.readings.length : 0;
+			readings.forEach(function (reading, index) {
+				var item = renderStudyReadingAnchor(reading, primaryCount + index);
+				if (item) readingList.appendChild(item);
+			});
+			if (readingList.childNodes.length) section.appendChild(readingList);
+		}
+		return section;
+	}
+
+	function renderThemeLimitations(card) {
+		var unknowns = themeUnknowns(card);
+		if (!unknowns.length) return null;
+		var section = el('section', 'rm-study-theme-card__limitations');
+		section.appendChild(txt('h3', 'rm-study-theme-card__limitations-title', msg('main.study.theme.limitations')));
+		var list = el('ul', 'rm-study-theme-card__unknowns');
+		unknowns.forEach(function (unknown) {
+			list.appendChild(txt('li', 'rm-study-theme-card__unknowns-item', unknown));
+		});
+		section.appendChild(list);
+		return section;
+	}
+
 	function renderAtlasStudyThemeShelf(root, cards) {
 		root.appendChild(renderViewHeading(
 			msg('main.study'),
@@ -2001,6 +2104,11 @@
 		article.appendChild(titleRow);
 		if (card.final_question) article.appendChild(txt('p', 'rm-study-theme-card__question', card.final_question));
 		if (card.why_it_matters) article.appendChild(txt('span', 'rm-study-theme-card__reason', card.why_it_matters));
+		var firstLimitation = themeFirstLimitation(card);
+		if (firstLimitation) {
+			article.appendChild(txt('p', 'rm-study-theme-card__first-limitation',
+				msg('main.study.theme.first_limitation', { limitation: firstLimitation })));
+		}
 		// Decision 229 D6: collapsed by default — at most two reading
 		// previews; the complete reading plan lives in the expanded detail
 		// (renderThemeDetailWorkspace), never hidden, never truncated.
@@ -2080,29 +2188,13 @@
 			if (item) anchors.appendChild(item);
 		});
 		root.appendChild(anchors);
-		// Decision 229 D6: limitations and provenance under a secondary
-		// disclosure — present, never hover-only, out of the primary path.
-		var limitation = String(card.limitation || '');
-		if (limitation && limitation !== card.expected_learning) {
-			var details = el('details', 'rm-study-theme-card__limitations');
-			details.appendChild(txt('summary', 'rm-study-theme-card__limitations-summary', msg('main.study.theme.limitations')));
-			details.appendChild(txt('p', 'rm-study-theme-card__limitations-body', limitation));
-			root.appendChild(details);
-		}
-		// Phase 8 reviewer finding: unknowns are the honest caveats of the
-		// retained readings — render them under the same secondary disclosure
-		// instead of discarding them (product usefulness).
-		var unknowns = card.unknowns || [];
-		if (unknowns.length) {
-			var unknownsDetails = el('details', 'rm-study-theme-card__limitations');
-			unknownsDetails.appendChild(txt('summary', 'rm-study-theme-card__limitations-summary', msg('main.study.theme.unknowns')));
-			var unknownsBody = el('ul', 'rm-study-theme-card__unknowns');
-			unknowns.forEach(function (unknown) {
-				unknownsBody.appendChild(txt('li', 'rm-study-theme-card__unknowns-item', unknown));
-			});
-			unknownsDetails.appendChild(unknownsBody);
-			root.appendChild(unknownsDetails);
-		}
+		var alternates = renderThemeAlternates(card);
+		if (alternates) root.appendChild(alternates);
+		// Unknowns materially qualify the retained readings. Keep every one
+		// directly visible in the open theme; the card-level coverage sentence
+		// above already presents the separate source-review limitation.
+		var limitations = renderThemeLimitations(card);
+		if (limitations) root.appendChild(limitations);
 }
 
 // repomap-source-episode:start
@@ -5227,7 +5319,6 @@
 		var root = document.getElementById(sectionID);
 		if (!root) return;
 		root.replaceChildren();
-		renderStudyPublicationNotice(root);
 		renderAtlasStudyFailedBrowse(root);
 		var anatomy = repositoryOverviewAnatomy();
 		if (anatomy) {
@@ -5338,21 +5429,6 @@
       root.appendChild(exploreSection);
     }
   }
-
-	function renderStudyPublicationNotice(root) {
-		if (!root || COMPLETE_STUDY_DIRECTIONS.length || !STUDY_PUBLICATION ||
-			STUDY_PUBLICATION.state === 'published') return;
-		var notice = el('section', 'rm-study-publication-notice');
-		notice.appendChild(txt('h2', '', msg('main.study.unavailable.for.this.run')));
-		notice.appendChild(txt(
-			'p',
-			'',
-			STUDY_PUBLICATION.state === 'started'
-				? msg('main.study.stage.did.not.finish.so.no.study.directions.were.published.the.overview.below.uses.independently.accepted.inputs.it.is.not.a.substitute.study.result')
-				: msg('main.no.study.directions.were.published.because.the.editing.stage.did.not.pass.its.required.checks.the.overview.below.uses.independently.accepted.inputs.it.is.not.a.substitute.study.result')
-		));
-		root.appendChild(notice);
-	}
 
   function renderMechanismsWorkspace() {
     var root = document.getElementById('rm-mechanisms');
@@ -6792,7 +6868,25 @@
 					});
 				});
 				var surfaceStarts = [];
-				(component.owned_surface_ids || []).forEach(function (surfaceID) {
+				var surfaceStartKeys = {};
+				function addSurfaceStart(start, semanticKind) {
+					var location = start && start.location;
+					var processEntry = semanticKind === 'process_entry';
+					var key = processEntry
+						? 'process_entry\u0000' + String(location && location.path || '') + '\u0000' +
+							String(Number(location && location.line) || 0)
+						: 'surface\u0000' + String(start && start.id || '');
+					if (!location || !location.path || Number(location.line) <= 0 || surfaceStartKeys[key]) return;
+					surfaceStartKeys[key] = true;
+					surfaceStarts.push(start);
+				}
+				var componentSurfaceIDs = Array.from(new Set(
+					(component.owned_surface_ids || [])
+						.concat(component.participating_surface_ids || [])
+						.map(String)
+						.filter(Boolean)
+				));
+				componentSurfaceIDs.forEach(function (surfaceID) {
 					surfaceID = String(surfaceID || '');
 					var surface = architectureSurfaceByID[surfaceID];
 					var trigger = discoveredTriggerByID[surfaceID];
@@ -6801,7 +6895,9 @@
 					var registrationLocation = trigger.registration_site || trigger.descriptor_site ||
 						trigger.server_start_site;
 					var entryLocation = trigger.process_entrypoint && trigger.process_entrypoint.location;
-					var location = handlerLocation || registrationLocation || entryLocation;
+					var processEntry = String(trigger.kind || '') === 'process_entry';
+					var location = processEntry && entryLocation
+						? entryLocation : (handlerLocation || registrationLocation || entryLocation);
 					var filePath = String(location && location.path || '');
 					var line = Number(location && location.line) || 0;
 					if (!filePath || !OPENABLE_PATH_SET[filePath] || line <= 0) return;
@@ -6809,25 +6905,50 @@
 					var handlerName = String(trigger.handler && trigger.handler.known && trigger.handler.text || '');
 					var label = surfaceName || handlerName ||
 						String(trigger.process_entrypoint && trigger.process_entrypoint.name || filePath);
-					if (handlerName && handlerName !== surfaceName) {
+					if (!processEntry && handlerName && handlerName !== surfaceName) {
 						label = surfaceName ? surfaceName + ' → ' + handlerName : handlerName;
 					}
-        if (!handlerLocation && registrationLocation) {
-          label += ' · ' + msg('main.surface.registration_suffix');
-        } else if (!handlerLocation && !registrationLocation && entryLocation) {
-          label += ' · ' + msg('main.surface.process_entry_suffix');
-        }
+					if (processEntry && entryLocation) {
+						label += ' · ' + msg('main.surface.process_entry_suffix');
+					} else if (!handlerLocation && registrationLocation) {
+						label += ' · ' + msg('main.surface.registration_suffix');
+					} else if (!handlerLocation && !registrationLocation && entryLocation) {
+						label += ' · ' + msg('main.surface.process_entry_suffix');
+					}
 					var projectedLocation = {
 						path: filePath,
 						line: line,
 						column: Number(location.column) || 0,
 					};
-					surfaceStarts.push({
+					addSurfaceStart({
 						id: surfaceID,
 						label: label,
 						location: projectedLocation,
 						actionable: sourceLocationActionAvailable(projectedLocation),
-					});
+					}, processEntry ? 'process_entry' : String(trigger.kind || 'surface'));
+				});
+				// Exact process-entry anchors remain valid entry context even when
+				// the surface catalog has no matching trigger. They are backend-
+				// attached to the component; this is a bounded local join, not an
+				// inferred entrypoint.
+				(component.anchor_ids || []).forEach(function (anchorID) {
+					var anchor = behaviorAnchorByID[String(anchorID || '')];
+					if (!anchor || String(anchor.kind || '') !== 'process_entry') return;
+					var location = anchor.location;
+					var filePath = String(location && location.path || '');
+					var line = Number(location && location.line) || 0;
+					if (!filePath || !OPENABLE_PATH_SET[filePath] || line <= 0) return;
+					var projectedLocation = {
+						path: filePath,
+						line: line,
+						column: Number(location.column) || 0,
+					};
+					addSurfaceStart({
+						id: String(anchor.id || anchorID || ''),
+						label: String(anchor.label || msg('main.surface.process_entry_suffix')),
+						location: projectedLocation,
+						actionable: sourceLocationActionAvailable(projectedLocation),
+					}, 'process_entry');
 				});
 				surfaceStarts.sort(function (left, right) {
 					return String(left && left.label || '').localeCompare(String(right && right.label || '')) ||
@@ -6923,10 +7044,11 @@
 	}
 
   // Decision 236 (v11): the active Map lens. One of landscape /
-  // entrypoints / integrations / mechanisms. Not part of workspaceState
+  // entrypoints / integrations. Not part of workspaceState
   // (a view state, not a route); it persists across selection/source
   // open and never writes the canvas transform.
   var activeMapLens = 'landscape';
+  var selectedEntrypointHandoffGroupID = '';
 
   function renderMapLensControl() {
     var control = el('div', 'rm-map-lens-control');
@@ -6936,7 +7058,6 @@
       { id: 'landscape', label: msg('main.map.lens.landscape') },
       { id: 'entrypoints', label: msg('main.map.lens.entrypoints') },
       { id: 'integrations', label: msg('main.map.lens.integrations') },
-      { id: 'mechanisms', label: msg('main.map.lens.mechanisms') },
     ].forEach(function (lens) {
       var button = txt('button', 'rm-map-lens-button' + (activeMapLens === lens.id ? ' rm-active' : ''), lens.label);
       button.type = 'button';
@@ -6961,9 +7082,9 @@
 
   // Decision 236 (v11): the lens objects panel makes the FIRST-CLASS
   // backend objects of the active lens visibly present next to the map:
-  // entry categories (how work enters), touchpoint families (what external
-  // state is observed), mechanism flows (which connected fragment is
-  // shown). The objects come from the SAME DOM-free projection the canvas
+  // entry categories (how work enters), exact first-hop context for process
+  // entries, and touchpoint families (what external state is observed). The
+  // objects come from the SAME DOM-free projection the canvas
   // emphasis uses (projectArchitectureLens) — never guessed from dimmed
   // boxes and never from renderer state.
   function renderMapLensObjects() {
@@ -6975,33 +7096,11 @@
     if (typeof api !== 'function') return;
     var projection = api(DATA, activeMapLens);
     if (!projection) return;
-    var mechanisms = projection.objects && projection.objects.mechanisms || projection.mechanisms || [];
     var entrypoints = projection.objects && projection.objects.entrypoints || projection.entrypoints || [];
     var touchpoints = projection.objects && projection.objects.touchpoints || projection.touchpoints || [];
-    if (activeMapLens === 'landscape' || activeMapLens === 'mechanisms') {
-      mechanisms.forEach(function (mechanism) {
-        if (mechanism && mechanism.kind === 'mechanism_fragment' && mechanism.fragment) {
-          var fragment = mechanism.fragment;
-          var details = el('details', 'rm-map-lens-object rm-map-lens-object--mechanism-fragment');
-          details.open = false;
-          var summary = el('summary', 'rm-map-lens-object__mechanism-summary');
-          var entry = fragment.entry || {};
-          var entryIdentity = entry.symbol || (entry.path ? entry.path + (entry.line ? ':' + entry.line : '') : '') || fragment.id;
-          summary.appendChild(txt('strong', '', String(entryIdentity)));
-          summary.appendChild(txt('span', 'rm-map-lens-object__detail', msg('main.architecture.disclosure.count', {
-            count: Array.isArray(fragment.handoffs) ? fragment.handoffs.length : 0,
-          })));
-          details.appendChild(summary);
-          details.appendChild(renderMechanismFragment(fragment));
-          host.appendChild(details);
-          return;
-        }
-      });
-      if (!mechanisms.length && activeMapLens === 'mechanisms') {
-        host.appendChild(txt('p', 'rm-map-lens-object rm-map-lens-object--empty', msg('main.map.lens.empty.mechanisms')));
-      }
-      return;
-    }
+    var entryHandoffGroups = projection.objects && projection.objects.entry_handoff_groups ||
+      projection.entry_handoff_groups || [];
+    if (activeMapLens === 'landscape') return;
     if (activeMapLens === 'entrypoints') {
       entrypoints.forEach(function (group) {
         var section = el('div', 'rm-map-lens-object');
@@ -7016,7 +7115,23 @@
         }
         host.appendChild(section);
       });
-      if (!entrypoints.length) {
+      if (selectedEntrypointHandoffGroupID && !entryHandoffGroups.some(function (projected) {
+        return projected && projected.id === selectedEntrypointHandoffGroupID;
+      })) selectedEntrypointHandoffGroupID = '';
+      entryHandoffGroups.forEach(function (projected) {
+        if (!projected || projected.kind !== 'entry_handoff_group' || !projected.group) return;
+        host.appendChild(renderEntrypointHandoffSelector(projected.group, host, entryHandoffGroups));
+      });
+      var overflowHost = el('div', 'rm-map-entry-overflow-host');
+      host.appendChild(overflowHost);
+      if (selectedEntrypointHandoffGroupID) {
+        activateEntrypointHandoffGroup(
+          selectedEntrypointHandoffGroupID,
+          host,
+          entryHandoffGroups
+        );
+      }
+      if (!entrypoints.length && !entryHandoffGroups.length) {
         host.appendChild(txt('p', 'rm-map-lens-object rm-map-lens-object--empty', msg('main.map.lens.empty.entrypoints')));
       }
       return;
@@ -7108,7 +7223,7 @@
     if (DATA.architecture_canvas && window.RepomapArchitectureCanvas) {
       canvasCard = el('section', 'rm-card rm-architecture-canvas-card');
       // Decision 236 (v11): Map lenses — Landscape/Entrypoints/
-      // Integrations/Mechanisms. One layout; the lens emphasizes or dims
+      // Integrations. One layout; the lens emphasizes or dims
       // principal nodes without relayout (canvas.setLens) and the objects
       // panel shows the first-class backend objects of the active lens.
       canvasCard.appendChild(renderMapLensControl());
@@ -7122,14 +7237,14 @@
       var systemMap = renderUserSystemMap(DATA.high_level_map || []);
       if (systemMap) root.appendChild(systemMap);
     }
-    // Decision 242: mechanism_fragment is rendered only by the Mechanisms
-    // Map lens. Keeping a second disclosure here made one HTML report claim
-    // both "no connected flows" and "mechanism fragment available".
     if (componentList) {
       // With no supported relation evidence the structured list is the
       // primary representation (it already follows the map in layout).
       var listDisclosure = el('details', 'rm-architecture-disclosure rm-architecture-list-disclosure');
-      listDisclosure.open = false;
+      // The canvas and toolbar are hidden at the same breakpoint in CSS.
+      // Open the list by default there so Map never becomes controls-only.
+      listDisclosure.open = typeof window.matchMedia === 'function' &&
+        window.matchMedia('(max-width: 560px)').matches;
       var listSummary = el('summary', 'rm-architecture-disclosure__summary');
       listSummary.appendChild(txt('span', 'rm-architecture-disclosure__title', msg('main.architecture.component_list.title')));
       var componentCount = DATA.architecture_canvas && Array.isArray(DATA.architecture_canvas.components) ? DATA.architecture_canvas.components.length : 0;
@@ -7145,115 +7260,11 @@
     renderArchitectureReturn();
   }
 
-  // Decision 242: render one exact first-hop fan-out per entry. Every
-  // handoff carries its closed contract fields; sibling handoffs are never
-  // chained or presented as runtime order, and the frontier stays explicit.
-  // Decision 229 D4/D5: raw contract enums (direct_static_call,
-  // resolved_static, resolved_path_order, not_established) are never
-  // primary user copy. Human phrases carry the primary meaning; the raw
-  // enum stays under "Evidence details".
-  var MECHANISM_CLAIM_KIND_COPY = {
-   process_entry: 'main.architecture.mechanism.kind.process_entry',
-   direct_static_call: 'main.architecture.mechanism.kind.direct_static_call',
-  };
-  var MECHANISM_SUPPORT_MODE_COPY = {
-   resolved_static: 'main.architecture.mechanism.support.resolved_static',
-  };
-  var MECHANISM_ORDERING_COPY = {
-   exact_local_order: 'main.architecture.mechanism.ordering.exact_entry',
-   resolved_path_order: 'main.architecture.mechanism.ordering.resolved_path_order',
-  };
-
-  function mechanismClaimKindLabel(transition) {
-   var copy = MECHANISM_CLAIM_KIND_COPY[String(transition && transition.claim_kind || '')];
-   return copy ? msg(copy) : String(transition && transition.claim_kind || '');
-  }
-
-  function mechanismSupportModeLabel(transition) {
-   var copy = MECHANISM_SUPPORT_MODE_COPY[String(transition && transition.support_mode || '')];
-   return copy ? msg(copy) : String(transition && transition.support_mode || '');
-  }
-
-  function mechanismOrderingLabel(transition) {
-   var copy = MECHANISM_ORDERING_COPY[String(transition && transition.ordering || '')];
-   return copy ? msg(copy) : String(transition && transition.ordering || '');
-  }
-
-  function renderMechanismFragment(fragment) {
-   var section = el('section', 'rm-mechanism-fragment');
-   var entry = fragment.entry || {};
-   var handoffs = Array.isArray(fragment.handoffs) ? fragment.handoffs.slice() : [];
-   var frontier = fragment.frontier || {};
-   // Decision 242 (v3): every item is an independent first-hop edge from
-   // this entry. Canonical display sorting is not execution order, and the
-   // renderer never turns sibling calls into a chain.
-   handoffs.sort(function (a, b) {
-    var pathOrder = String(a.path || '').localeCompare(String(b.path || ''));
-    if (pathOrder) return pathOrder;
-    var lineOrder = (Number(a.line) || 0) - (Number(b.line) || 0);
-    if (lineOrder) return lineOrder;
-    return (Number(a.column) || 0) - (Number(b.column) || 0);
-   });
-   section.appendChild(txt('p', 'rm-arch__copy rm-mechanism-fragment__copy', msg('main.architecture.mechanism.copy')));
-   section.appendChild(renderMechanismLane({ transition: entry, kind: 'entry' }));
-   var fanout = el('div', 'rm-mechanism-fragment__fanout');
-   handoffs.forEach(function (handoff) {
-    var edge = el('div', 'rm-mechanism-fragment__handoff');
-    var arrow = el('div', 'rm-mechanism-fragment__arrow');
-    arrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-line', '→'));
-    arrow.appendChild(txt('span', 'rm-mechanism-fragment__arrow-mode', mechanismSupportModeLabel(handoff)));
-    edge.appendChild(arrow);
-    edge.appendChild(renderMechanismLane({ transition: handoff, kind: 'transition' }));
-    if (handoff.target && handoff.target.path && handoff.target.line) {
-     var target = el('div', 'rm-mechanism-fragment__target');
-     target.appendChild(txt('strong', 'rm-mechanism-fragment__target-symbol', String(handoff.target.label || handoff.symbol || '')));
-     target.appendChild(renderMechanismLocationAction(handoff.target));
-     edge.appendChild(target);
-    }
-    fanout.appendChild(edge);
-   });
-   section.appendChild(fanout);
-   section.appendChild(renderMechanismFrontier(frontier));
-   return section;
-  }
-
-  // Decision 230 (diagram review minor): closed-set deterministic
-  // mechanism limitation strings are localized for the RU product; only
-  // display text changes, never evidence identity.
-  var MECHANISM_LIMITATION_RU = {
-    'No further transition is locally proven to continue from these first-hop handoffs; execution order beyond them is not established.': 'Дальнейший переход от этих вызовов первого уровня локально не доказан; порядок выполнения после них не установлен.',
-    'Exact repository-local direct static call from a build-selected production process entry; runtime order, successful execution, ownership, and transitive reachability are not observed.': 'Точный прямой статический вызов внутри репозитория от выбранной сборкой рабочей точки входа процесса; порядок выполнения, успешное исполнение, владение и транзитивная достижимость не наблюдались.',
-    'Exact repository-local direct static call boundary; runtime reachability is not implied.': 'Точная граница прямого статического вызова внутри репозитория; достижимость во время выполнения из этого не следует.',
-    'physical target unknown; runtime reachability not proven; read/write/order semantics not proven': 'Физическая цель неизвестна; достижимость в рантайме не доказана; семантика чтения/записи/порядка не доказана.',
-    'execution order and further transitions not established': 'Порядок выполнения и дальнейшие переходы не установлены.',
-    'process entry identity only; runtime reachability not proven': 'Только идентичность точки входа процесса; достижимость в рантайме не доказана.',
-    'runtime dispatch beyond the recorded build scenario not proven': 'Диспетчеризация в рантайме за пределами записанного сценария сборки не доказана.',
-  };
-  function mechanismLimitationText(value) {
-    if (REPORT_LANGUAGE === 'ru') {
-      var localized = MECHANISM_LIMITATION_RU[String(value)];
-      if (localized) return localized;
-    }
-    return String(value);
-  }
-
-  function mechanismTransitionLabel(transition) {
-   var rawLabel = String(transition && transition.label || '');
-   var label = rawLabel === 'process entry' ? '' :
-    (rawLabel.indexOf('process entry ') === 0 ? rawLabel.slice('process entry '.length) : rawLabel);
-   if (label.indexOf('handoff to ') === 0) {
-    label = msg('main.architecture.mechanism.label.handoff_to', { target: label.slice('handoff to '.length) });
-   } else if (label === 'handoff') {
-    label = msg('main.architecture.mechanism.label.handoff');
-   }
-   return label;
-  }
-
-  // Mechanism evidence owns exact callsite/target locations independently of
-  // the overview snippet shelf. A mixed-snippet report therefore falls back
-  // to the normal manifest-authorized server/static source action for this
-  // location instead of hiding it because an unrelated snippet exists.
-  function exactMechanismActionResolutionForLocation(location) {
+  // Canvas 14 publishes exact D210 first-hop groups as context for a process
+  // Entrypoint. The list selects ONE group for the Canvas overlay; backend
+  // transition.component_ids are the only join. Diagnostic archaeology stays
+  // in saved evidence, while exact source actions remain directly available.
+  function exactEntrypointActionResolutionForLocation(location) {
    var sourceResolution = exactOverviewSourceResolutionForLocation(location);
    if (sourceResolution.conflict || sourceResolution.source) return sourceResolution;
    if (!location || exactOverviewSourcePath(location.path) !== location.path ||
@@ -7271,121 +7282,116 @@
    }, conflict: false };
   }
 
-  function renderMechanismLocationAction(location) {
-   var callsite = location.path + (location.line ? ':' + location.line : '');
-   var resolution = exactMechanismActionResolutionForLocation({ path: location.path, line: Number(location.line) || 0 });
+  function renderEntrypointLocationAction(location, label) {
+   var exact = {
+    path: String(location && location.path || ''),
+    line: Number(location && location.line) || 0,
+    column: Number(location && location.column) || 0,
+   };
+   var visible = String(label || '') + ' · ' + formatCodeLocation(exact);
+   var resolution = exactEntrypointActionResolutionForLocation(exact);
    var snippet = resolution && resolution.source && resolution.source.snippet;
    if (snippet) {
-    var action = el('button', 'rm-mechanism-fragment__location rm-source-action-link');
+    var action = el('button', 'rm-map-entry-context__source rm-source-action-link');
     action.type = 'button';
-    action.textContent = callsite;
+    action.textContent = visible;
     action.onclick = function () {
      openSourceSnippet(snippet, resolution.source.location, false, { drawerFirst: true });
     };
     return action;
    }
-   // Decision 230 (fresh reviews task-2/task-3): a mechanism callsite with
-   // no embedded snippet is still openable in static/server mode — render
-   // the exact static source action (pinned revision link) instead of
-   // inert text; only genuinely unavailable locations stay text.
    if (resolution && resolution.source && resolution.source.location) {
     var staticAction = sourceActionElement(
-     callsite,
-     'rm-mechanism-fragment__location rm-source-action-link',
+     visible,
+     'rm-map-entry-context__source rm-source-action-link',
      resolution.source.location,
      0,
      function () { openSourceLocation(resolution.source.location); }
     );
     if (staticAction) return staticAction;
    }
-   return txt('code', 'rm-mechanism-fragment__location rm-mechanism-fragment__location--text', callsite);
+   return txt('code', 'rm-map-entry-context__source rm-map-entry-context__source--text', visible);
   }
 
-  function renderMechanismFrontier(frontier) {
-   var box = el('div', 'rm-mechanism-fragment__frontier');
-   box.appendChild(txt('strong', null, msg('main.architecture.mechanism.frontier_title')));
-   box.appendChild(txt('p', 'rm-arch__limitation', mechanismLimitationText(frontier.limitation)));
-   (Array.isArray(frontier.unresolved) ? frontier.unresolved : []).forEach(function (item) {
-    if (String(item || '').trim()) box.appendChild(txt('p', 'rm-mechanism-fragment__frontier-item', mechanismFrontierItemText(item)));
+  function entryHandoffProjectionByID(projectedGroups, groupID) {
+   for (var index = 0; index < projectedGroups.length; index++) {
+    var projected = projectedGroups[index];
+    if (projected && String(projected.id || '') === String(groupID || '')) return projected;
+   }
+   return null;
+  }
+
+  function activateEntrypointHandoffGroup(groupID, host, projectedGroups) {
+   var projected = entryHandoffProjectionByID(projectedGroups, groupID);
+   if (!projected || !projected.group) return false;
+   selectedEntrypointHandoffGroupID = String(projected.id || '');
+   if (architectureCanvasView && typeof architectureCanvasView.selectEntrypointHandoffGroup === 'function') {
+    architectureCanvasView.selectEntrypointHandoffGroup(selectedEntrypointHandoffGroupID);
+   }
+   host.querySelectorAll('[data-entry-handoff-group-id]').forEach(function (node) {
+    var selected = node.getAttribute('data-entry-handoff-group-id') === selectedEntrypointHandoffGroupID;
+    node.classList.toggle('is-selected', selected);
+    node.setAttribute('aria-pressed', selected ? 'true' : 'false');
    });
-   return box;
+   var overflowHost = host.querySelector('.rm-map-entry-overflow-host');
+   if (overflowHost) {
+    overflowHost.replaceChildren(renderEntrypointHandoffOverflow(projected.group));
+   }
+   return true;
   }
 
-  function mechanismFrontierItemText(value) {
-   if (String(value) === 'continuation beyond the first-hop handoffs') {
-    return msg('main.architecture.mechanism.frontier.continuation');
-   }
-   return String(value);
+  function renderEntrypointHandoffSelector(group, host, projectedGroups) {
+   var entry = group && group.entry || {};
+   var row = el('div', 'rm-map-entry-selector-row');
+   var selector = el('button', 'rm-map-entry-selector');
+   selector.type = 'button';
+   selector.setAttribute('data-entry-handoff-group-id', String(group && group.id || ''));
+   selector.setAttribute('aria-pressed', String(group && group.id || '') === selectedEntrypointHandoffGroupID ? 'true' : 'false');
+   selector.appendChild(txt('strong', 'rm-map-entry-selector__entry',
+    bareSourceSymbol(entry.symbol) || msg('main.map.lens.entry.process')));
+   selector.appendChild(txt('span', 'rm-map-lens-object__detail', msg('main.architecture.disclosure.count', {
+    count: Array.isArray(group && group.entry_handoffs) ? group.entry_handoffs.length : 0,
+   })));
+   var activate = function () {
+    activateEntrypointHandoffGroup(String(group && group.id || ''), host, projectedGroups);
+   };
+   selector.onclick = activate;
+   row.appendChild(selector);
+   row.appendChild(renderEntrypointLocationAction(entry, msg('main.map.entry.context.entry_source')));
+   return row;
   }
 
-  function renderMechanismLane(lane) {
-   var transition = lane.transition || {};
-   var item = el('article', 'rm-mechanism-fragment__lane' + (lane.kind === 'entry' ? ' rm-mechanism-fragment__lane--entry' : ''));
-   var head = el('div', 'rm-mechanism-fragment__lane-head');
-   head.appendChild(txt('strong', 'rm-mechanism-fragment__kind', mechanismClaimKindLabel(transition)));
-   head.appendChild(txt('span', 'rm-mechanism-fragment__mode', mechanismSupportModeLabel(transition)));
-   item.appendChild(head);
-   var callsite = transition.path ? transition.path + (transition.line ? ':' + transition.line : '') : '';
-   if (callsite) {
-    var location = { path: transition.path, line: Number(transition.line) || 0 };
-    var resolution = exactMechanismActionResolutionForLocation(location);
-    var snippet = resolution && resolution.source && resolution.source.snippet;
-    if (snippet) {
-     var locationAction = el('button', 'rm-mechanism-fragment__location rm-source-action-link');
-     locationAction.type = 'button';
-     locationAction.textContent = callsite;
-     locationAction.onclick = function () {
-      openSourceSnippet(snippet, resolution.source.location, false, { drawerFirst: true });
-     };
-     item.appendChild(locationAction);
-    } else if (resolution && resolution.source && resolution.source.location) {
-     // Decision 230 (fresh reviews task-2/task-3): no embedded snippet
-     // does not mean unavailable — render the exact static/server source
-     // action; only genuinely unavailable locations stay inert text.
-     var staticLaneAction = sourceActionElement(
-      callsite,
-      'rm-mechanism-fragment__location rm-source-action-link',
-      resolution.source.location,
-      0,
-      function () { openSourceLocation(resolution.source.location); }
-     );
-     if (staticLaneAction) {
-      item.appendChild(staticLaneAction);
-     } else {
-      item.appendChild(txt('code', 'rm-mechanism-fragment__location rm-mechanism-fragment__location--text', callsite));
-     }
-    } else {
-     item.appendChild(txt('code', 'rm-mechanism-fragment__location rm-mechanism-fragment__location--text', callsite));
-    }
+  function renderEntrypointHandoffOverflow(group) {
+   var strip = el('div', 'rm-map-entry-overflow');
+   var project = window.RepomapArchitectureCanvas &&
+    window.RepomapArchitectureCanvas.projectEntrypointHandoffOverlay;
+   var componentIDs = (DATA.architecture_canvas && DATA.architecture_canvas.components || []).map(function (component) {
+    return String(component && component.id || '');
+   }).filter(Boolean);
+   var projection = typeof project === 'function'
+    ? project(group, componentIDs)
+    : { overflow: [], frontier: null };
+   var overflow = Array.isArray(projection.overflow) ? projection.overflow : [];
+   if (overflow.length) {
+    strip.appendChild(txt('span', 'rm-map-entry-overflow__heading',
+     msg('main.map.entry.context.not_drawn_calls', { count: overflow.length })));
+    overflow.forEach(function (item) {
+     var handoff = item && item.handoff || {};
+     var target = handoff.target || {};
+     var row = el('div', 'rm-map-entry-overflow__call');
+     row.appendChild(txt('strong', 'rm-map-entry-context__target',
+      bareSourceSymbol(target.symbol || target.label || handoff.symbol) || msg('main.map.entry.context.direct_call')));
+     var actions = el('div', 'rm-map-entry-context__actions');
+     actions.appendChild(renderEntrypointLocationAction(handoff, msg('main.map.entry.context.callsite')));
+     actions.appendChild(renderEntrypointLocationAction(target, msg('main.map.entry.context.target_source')));
+     row.appendChild(actions);
+     strip.appendChild(row);
+    });
    }
-   // Decision 229 D4: the entry lane's raw label starts with the claim
-   // kind ("process entry …"), which the kind badge already states —
-   // strip the prefix so primary copy never repeats a raw enum.
-   var label = mechanismTransitionLabel(transition);
-   if (transition.claim_kind === 'process_entry' && transition.symbol && transition.symbol.indexOf('member-symbol') !== 0) {
-    item.appendChild(txt('span', 'rm-mechanism-fragment__label', String(transition.symbol)));
-   } else if (label && label !== 'handoff') {
-    item.appendChild(txt('span', 'rm-mechanism-fragment__label', label));
+   if (projection.frontier) {
+    strip.appendChild(txt('p', 'rm-map-entry-context__limit', msg('main.map.entry.context.limit')));
    }
-   var ordering = mechanismOrderingLabel(transition);
-   if (ordering) item.appendChild(txt('span', 'rm-mechanism-fragment__ordering', ordering));
-   if (transition.limitation) item.appendChild(txt('p', 'rm-arch__limitation rm-mechanism-fragment__limitation', mechanismLimitationText(transition.limitation)));
-   var details = el('details', 'rm-mechanism-fragment__evidence-details');
-   details.appendChild(txt('summary', 'rm-mechanism-fragment__evidence-summary', msg('main.architecture.mechanism.evidence_details')));
-   var raw = [];
-   if (transition.claim_kind) raw.push('claim_kind: ' + transition.claim_kind);
-   if (transition.support_mode) raw.push('support_mode: ' + transition.support_mode);
-   if (transition.ordering) raw.push('ordering: ' + transition.ordering);
-   if (transition.evidence) raw.push('evidence: ' + transition.evidence);
-   if (transition.scenario) raw.push('scenario: ' + transition.scenario);
-   if (transition.path && transition.line) raw.push('exact source: ' + transition.path + ':' + transition.line);
-   if (raw.length) {
-    var rawList = el('ul', 'rm-mechanism-fragment__evidence-raw');
-    raw.forEach(function (line) { rawList.appendChild(txt('li', '', line)); });
-    details.appendChild(rawList);
-    item.appendChild(details);
-   }
-   return item;
+   return strip;
   }
 
   function renderArchitectureUnmappedDisclosure() {
@@ -7586,8 +7592,8 @@
 		options.associations = DATA.architecture_associations || null;
 		}
     if (staticSourceMode()) {
-      options.openLocation = function (filePath, line) {
-        return openStaticSource({ path: filePath, line: line || 0 });
+      options.openLocation = function (filePath, line, column) {
+        return openStaticSource({ path: filePath, line: line || 0, column: column || 0 });
       };
       // Decision 230 (fresh review task-4 minor): static reports render
       // witness/edge jumps as real links (pinned revision, target=_blank,

@@ -394,6 +394,14 @@ func runAtlasFirstAcceptance(
 	}
 	runDir := atlasFirstAcceptanceRunDir(t, runsDir)
 	manifest, data := readAtlasFirstAcceptanceRun(t, runDir)
+	publication, publicationErr := assessRunPublication(runDir)
+	if publicationErr != nil {
+		t.Fatalf("assess generated publication: %v", publicationErr)
+	}
+	wantRunState := "Run:\n  state: " + publication.consoleState()
+	if !strings.Contains(stderr.String(), wantRunState) {
+		t.Fatalf("final console is not bound to verified publication state %q:\n%s", wantRunState, stderr.String())
+	}
 	assertNavigatorRetiredFromRun(t, runDir)
 	return runDir, manifest, data
 }
@@ -785,8 +793,8 @@ func atlasFirstAcceptanceScoutResponse(combined string, includeBadSibling bool) 
 
 // atlasFirstAcceptanceAdjudicationResponse builds a valid Theme Adjudication
 // response from the request bundle: for every t* candidate, a direct
-// assessment over its own a* anchors with a supported observation and reading
-// order.
+// reading over its own a* anchors with a supported observation, final
+// question-aligned editorial prose, and stable reading order.
 func atlasFirstAcceptanceAdjudicationResponse(combined string) ([]byte, error) {
 	raw, err := atlasFirstAcceptanceWireBundle(combined)
 	if err != nil {
@@ -820,11 +828,13 @@ func atlasFirstAcceptanceAdjudicationResponse(combined string) ([]byte, error) {
 			})
 		}
 		themes = append(themes, map[string]any{
-			"candidate_ref":  candidate.Ref,
-			"final_title":    "Accepted theme for " + candidate.Ref,
-			"final_question": "What shared responsibility do the exact anchors implement?",
-			"readings":       readings,
-			"unknowns":       []string{},
+			"candidate_ref":     candidate.Ref,
+			"final_title":       "Accepted theme for " + candidate.Ref,
+			"final_question":    "What shared responsibility do the exact anchors implement?",
+			"why_it_matters":    "The final question identifies a source-backed responsibility worth understanding.",
+			"expected_learning": "The retained readings explain that bounded responsibility.",
+			"readings":          readings,
+			"unknowns":          []string{},
 		})
 	}
 	content, err := json.Marshal(map[string]any{"themes": themes})

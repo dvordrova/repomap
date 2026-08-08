@@ -205,27 +205,172 @@
  // backend-owned view-model only:
  //   - which principal component IDs a lens emphasizes (exact set), and
  //   - which first-class objects the lens makes visible (entry categories,
- //     touchpoint families, mechanism flows).
+ //     exact entry handoff context, and touchpoint families).
  // It never touches the DOM, never reads geometry, and never guesses from
- // renderer state — the backend owns entry/touchpoint/mechanism identity.
- function currentMechanismTransition(value) {
+ // renderer state — the backend owns every published identity and join.
+ function currentEntrypointLocation(value) {
   return value && typeof value === "object" && !Array.isArray(value) &&
-   text(value.claim_kind) && text(value.support_mode) && text(value.label) &&
-   text(value.path) && Number(value.line) > 0 && text(value.evidence) &&
-   text(value.limitation) && text(value.ordering);
+   text(value.path) && Number(value.line) > 0;
  }
 
- function currentMechanismFragment(value) {
+ function currentEntrypointTransition(value) {
+  return currentEntrypointLocation(value) && Array.isArray(value.component_ids);
+ }
+
+ function currentEntrypointHandoffGroup(value) {
   const entry = value && value.entry;
   const frontier = value && value.frontier;
-  return Number(value && value.version) === 3 && text(value && value.id) &&
+  return Number(value && value.version) === 1 && text(value && value.id) &&
    Array.isArray(value.component_ids) &&
-   currentMechanismTransition(entry) &&
+   currentEntrypointTransition(entry) &&
    text(entry.claim_kind) === "process_entry" &&
-   Array.isArray(value.handoffs) && value.handoffs.length > 0 &&
-   value.handoffs.every(currentMechanismTransition) &&
+   Array.isArray(value.entry_handoffs) && value.entry_handoffs.length > 0 &&
+   value.entry_handoffs.every((handoff) => (
+    currentEntrypointTransition(handoff) &&
+    handoff.target && currentEntrypointLocation(handoff.target)
+   )) &&
    frontier && typeof frontier === "object" && !Array.isArray(frontier) &&
    text(frontier.ordering) && text(frontier.limitation);
+ }
+
+ // Canvas 14/group v1 publishes exact component ownership on the entry and
+ // on every D210 handoff. This projection consumes those IDs directly. It
+ // deliberately has no symbol/path/member fallback: zero or plural endpoint
+ // ownership belongs in the side overflow. Participation highlights every
+ // exact ID, but only unique→unique authority can draw an arrow/self-loop;
+ // the browser never picks a sorted-first owner or fabricates a Cartesian
+ // component relation.
+ function entryHandoffOverlayProjection(group, knownComponentIDs) {
+  const empty = {
+   group_id: "", entry: null, component_ids: [], edges: [], self_loops: [],
+   overflow: [], frontier: null,
+  };
+  if (!currentEntrypointHandoffGroup(group)) return empty;
+  const restrictToKnown = Array.isArray(knownComponentIDs);
+  const known = new Set(array(knownComponentIDs).map(text).filter(Boolean));
+  const accept = (value) => {
+   const componentID = text(value);
+   return componentID && (!restrictToKnown || known.has(componentID));
+  };
+  const exactIDs = (transition) => Array.from(new Set(
+   array(transition && transition.component_ids).map(text).filter(accept)
+  ));
+  const entryIDs = exactIDs(group.entry);
+  const componentIDs = [];
+  const edges = [];
+  const selfLoops = [];
+  const overflow = [];
+  const addComponent = (componentID) => {
+   if (componentIDs.indexOf(componentID) < 0) componentIDs.push(componentID);
+  };
+  entryIDs.forEach(addComponent);
+  array(group.entry_handoffs).forEach((handoff, handoffIndex) => {
+   const targetIDs = exactIDs(handoff);
+   targetIDs.forEach(addComponent);
+   if (entryIDs.length !== 1 || targetIDs.length !== 1) {
+    let reason = "";
+    if (entryIDs.length === 0) reason = "entry_unjoined";
+    else if (targetIDs.length === 0) reason = "target_unjoined";
+    else if (entryIDs.length > 1 && targetIDs.length > 1) reason = "entry_target_plural";
+    else if (entryIDs.length > 1) reason = "entry_plural";
+    else reason = "target_plural";
+    overflow.push({
+     id: text(group.id) + ":overflow:" + handoffIndex,
+     reason: reason,
+     handoff: handoff,
+    });
+    return;
+   }
+   const item = {
+    id: text(group.id) + ":handoff:" + handoffIndex,
+    from_component_id: entryIDs[0],
+    to_component_id: targetIDs[0],
+    handoff: handoff,
+   };
+   if (entryIDs[0] === targetIDs[0]) selfLoops.push(item);
+   else edges.push(item);
+  });
+  return {
+   group_id: text(group.id),
+   entry: group.entry,
+   component_ids: componentIDs,
+   edges: edges,
+   self_loops: selfLoops,
+   overflow: overflow,
+   frontier: group.frontier,
+  };
+ }
+
+ function entryHandoffLaneOffset(index) {
+  if (!(index > 0)) return 0;
+  const distance = Math.ceil(index / 2) * 9;
+  return index % 2 ? distance : -distance;
+ }
+
+ // Pure geometry over the already-laid-out component boxes. Selecting an
+ // entry never asks ELK for a new layout and never changes the viewport.
+ function entryHandoffConnectionGeometry(from, to, lane) {
+  if (!from || !to) return null;
+  const offset = entryHandoffLaneOffset(Number(lane) || 0);
+  if (from === to || (
+   Number(from.x) === Number(to.x) && Number(from.y) === Number(to.y) &&
+   Number(from.width) === Number(to.width) && Number(from.height) === Number(to.height)
+  )) {
+   const startX = Number(from.x) + Number(from.width) - 24;
+   const startY = Number(from.y) + 8;
+   const outerX = Number(from.x) + Number(from.width) + 28 + Math.abs(offset);
+   const outerY = Number(from.y) - 18 - Math.abs(offset);
+   const endX = Number(from.x) + Number(from.width) - 7;
+   const endY = Number(from.y) + 42;
+   return {
+    path: "M" + startX + " " + startY + " C" + outerX + " " + outerY + " " +
+     outerX + " " + (Number(from.y) + 54 + Math.abs(offset)) + " " + endX + " " + endY,
+    badge_x: outerX - 9,
+    badge_y: Number(from.y) + 13 + offset,
+    self_loop: true,
+   };
+  }
+  const fromCenter = {
+   x: Number(from.x) + Number(from.width) / 2,
+   y: Number(from.y) + Number(from.height) / 2,
+  };
+  const toCenter = {
+   x: Number(to.x) + Number(to.width) / 2,
+   y: Number(to.y) + Number(to.height) / 2,
+  };
+  if (Math.abs(toCenter.x - fromCenter.x) >= Math.abs(toCenter.y - fromCenter.y)) {
+   const rightward = toCenter.x >= fromCenter.x;
+   const startX = rightward ? Number(from.x) + Number(from.width) : Number(from.x);
+   const endX = rightward ? Number(to.x) : Number(to.x) + Number(to.width);
+   const startY = clamp(fromCenter.y + offset, Number(from.y) + 12, Number(from.y) + Number(from.height) - 12);
+   const endY = clamp(toCenter.y + offset, Number(to.y) + 12, Number(to.y) + Number(to.height) - 12);
+   const middleX = (startX + endX) / 2;
+   return {
+    path: "M" + startX + " " + startY + " L" + middleX + " " + startY +
+     " L" + middleX + " " + endY + " L" + endX + " " + endY,
+    badge_x: middleX,
+    badge_y: (startY + endY) / 2,
+    self_loop: false,
+   };
+  }
+  const downward = toCenter.y >= fromCenter.y;
+  const startY = downward ? Number(from.y) + Number(from.height) : Number(from.y);
+  const endY = downward ? Number(to.y) : Number(to.y) + Number(to.height);
+  const startX = clamp(fromCenter.x + offset, Number(from.x) + 12, Number(from.x) + Number(from.width) - 12);
+  const endX = clamp(toCenter.x + offset, Number(to.x) + 12, Number(to.x) + Number(to.width) - 12);
+  const middleY = (startY + endY) / 2;
+  return {
+   path: "M" + startX + " " + startY + " L" + startX + " " + middleY +
+    " L" + endX + " " + middleY + " L" + endX + " " + endY,
+   badge_x: (startX + endX) / 2,
+   badge_y: middleY,
+   self_loop: false,
+  };
+ }
+
+ function externalStateAssociation(value) {
+  const kind = text(value && value.kind);
+  return kind === "boundary" || kind === "resource";
  }
 
  function mapLensEmphasisProjection(input) {
@@ -233,10 +378,10 @@
   const components = array(input && input.components);
   const surfaces = array(input && input.surfaces);
   const associations = array(input && input.associations);
-  const mechanismFragments = array(input && input.mechanismFragments);
+  const entryHandoffGroups = array(input && input.entryHandoffGroups);
   const componentByID = new Map(components.map((component) => [text(component && component.id), component]));
   const emphasized = [];
-  const objects = { entrypoints: [], touchpoints: [], mechanisms: [] };
+  const objects = { entrypoints: [], touchpoints: [], entry_handoff_groups: [] };
   const add = (componentID) => {
    if (componentByID.has(componentID) && emphasized.indexOf(componentID) < 0) emphasized.push(componentID);
   };
@@ -268,6 +413,24 @@
      add(text(component.id));
     }
    });
+   // Canvas 14 owns the exact D210→entry join. These groups are context for
+   // Entrypoints, not a fourth lens and not a client-side join over grounding.
+   entryHandoffGroups.forEach((group) => {
+    if (!currentEntrypointHandoffGroup(group)) return;
+    const componentIDs = [];
+    array(group.component_ids).forEach((value) => {
+     const componentID = text(value);
+     if (!componentByID.has(componentID) || componentIDs.indexOf(componentID) >= 0) return;
+     componentIDs.push(componentID);
+     add(componentID);
+    });
+    objects.entry_handoff_groups.push({
+     id: text(group.id),
+     kind: "entry_handoff_group",
+     component_ids: componentIDs,
+     group: group,
+    });
+   });
    byKind.forEach((entries, kind) => {
     objects.entrypoints.push({ kind: kind, entries: entries });
    });
@@ -280,6 +443,11 @@
    // raw imported_family stays available as evidence detail).
    const families = new Map();
    associations.forEach((association) => {
+    // Integrations is deliberately narrower than the canonical association
+    // artifact. Operation/surface rows describe local structure; presenting
+    // them as a Resource would turn an internal relation into an external or
+    // stateful interaction.
+    if (!externalStateAssociation(association)) return;
     const componentID = text(association && (association.component_id || association.from_component_id));
     const family = text(association && association.family) ||
      text(association && association.imported_family) || "other";
@@ -300,29 +468,6 @@
    return { lens: lens, emphasized: emphasized, objects: objects };
   }
 
-  if (lens === "mechanisms") {
-   // Decision 242 (v3): the Canvas-owned per-entry fragments are the sole
-   // Mechanisms authority. Saved flow_edges remain available to the flow
-   // renderer, but they cannot add, remove, or relabel a mechanism object.
-   mechanismFragments.forEach((fragment) => {
-    if (!currentMechanismFragment(fragment)) return;
-    const componentIDs = [];
-    array(fragment.component_ids).forEach((value) => {
-     const componentID = text(value);
-     if (!componentByID.has(componentID) || componentIDs.indexOf(componentID) >= 0) return;
-     componentIDs.push(componentID);
-     add(componentID);
-    });
-    objects.mechanisms.push({
-     id: text(fragment.id),
-     kind: "mechanism_fragment",
-     component_ids: componentIDs,
-     fragment: fragment,
-    });
-   });
-   return { lens: lens, emphasized: emphasized, objects: objects };
-  }
-
   // landscape: no emphasis, no extra objects.
   return { lens: "landscape", emphasized: [], objects: objects };
  }
@@ -340,7 +485,7 @@
  // ONLY backend-owned report view-model fields (architecture_canvas +
  // architecture_associations) and returns plain deterministic values:
  // visible/emphasized/dimmed principal IDs, entry-category objects,
- // touchpoint-family objects, mechanism-fragment refs, counts and
+ // touchpoint-family objects, entry-handoff context, counts and
  // omissions. It never touches the DOM, never reads geometry, never mounts.
  function projectArchitectureLens(reportData, lens) {
   const canvas = (reportData && reportData.architecture_canvas) || {};
@@ -351,7 +496,7 @@
    components: components,
    surfaces: surfaces,
    associations: flatReportAssociations(reportData && reportData.architecture_associations),
-   mechanismFragments: Number(canvas.version) === 13 ? canvas.mechanism_fragments : [],
+   entryHandoffGroups: Number(canvas.version) === 14 ? canvas.entry_handoff_groups : [],
   });
   const componentCount = components.length;
   return {
@@ -364,13 +509,13 @@
     ? componentCount - projection.emphasized.length : 0,
    entrypoints: projection.objects.entrypoints,
    touchpoints: projection.objects.touchpoints,
-   mechanisms: projection.objects.mechanisms,
+   entry_handoff_groups: projection.objects.entry_handoff_groups,
    counts: {
     components: componentCount,
     surfaces: surfaces.length,
     entries: projection.objects.entrypoints.reduce((sum, group) => sum + (group.entries || []).length, 0),
     touchpoints: projection.objects.touchpoints.length,
-    mechanisms: projection.objects.mechanisms.length,
+    entry_handoff_groups: projection.objects.entry_handoff_groups.length,
    },
    omissions: {
     // Honest bounded scope: associations/flows not joinable to a principal
@@ -760,6 +905,13 @@ function architecturePartialTruth(data) {
    this.subsystems = array(this.data.subsystems);
    this.components = array(this.data.components);
    this.structuralEdges = mapStructuralEdges(this.data);
+   this.entryHandoffGroups = Number(this.data.version) === 14
+    ? array(this.data.entry_handoff_groups).filter(currentEntrypointHandoffGroup)
+    : [];
+   this.entryHandoffGroupByID = new Map(
+    this.entryHandoffGroups.map((group) => [text(group.id), group])
+   );
+   this.selectedEntryHandoffGroupID = "";
      this.flows = array(this.data.flows).filter((flow) => (
       !this.userMode || array(flow && flow.steps).length >= 2
      ));
@@ -811,6 +963,7 @@ function architecturePartialTruth(data) {
    this.frontierElements = new Map();
    this.structuralEdgeElements = new Map();
    this.flowEdgeElements = new Map();
+   this.entryHandoffOverlayElements = [];
      this.flowComponentIDs = new Map();
      this.flowButtons = new Map();
       this.focusFlowID = "";
@@ -1708,12 +1861,14 @@ function architecturePartialTruth(data) {
 
    this.structuralSVG = this.createSVG("rm-arch__edges rm-arch__edges--structural");
    this.flowSVG = this.createSVG("rm-arch__edges rm-arch__edges--flow");
-   this.surface.append(this.structuralSVG, this.flowSVG);
+   this.entryHandoffSVG = this.createSVG("rm-arch__edges rm-arch__edges--entry-handoff");
+   this.surface.append(this.structuralSVG, this.flowSVG, this.entryHandoffSVG);
 
    this.groupLayer = element("div", "rm-arch__groups");
    this.nodeLayer = element("div", "rm-arch__nodes");
    this.stepLayer = element("div", "rm-arch__steps");
-   this.surface.append(this.groupLayer, this.nodeLayer, this.stepLayer);
+   this.entryHandoffBadgeLayer = element("div", "rm-arch__entry-handoff-badges");
+   this.surface.append(this.groupLayer, this.nodeLayer, this.stepLayer, this.entryHandoffBadgeLayer);
     this.viewport.appendChild(this.surface);
     if (this.landscapeProjection) {
      this.viewportHint.textContent = this.msg("architecture.hint.drag_groups_fit", {
@@ -1727,6 +1882,7 @@ function architecturePartialTruth(data) {
    this.renderStructuralEdges();
    this.renderFlowSteps();
    this.renderFlowEdges();
+   this.renderEntrypointHandoffOverlay();
    this.applyView();
 
   }
@@ -1797,7 +1953,15 @@ function architecturePartialTruth(data) {
   }
 
   componentSurfaces(component) {
-   const ids = Array.from(new Set(array(component && component.owned_surface_ids).map(text)));
+   // A component may participate in an exact entry surface without owning
+   // it. The card and inspector must agree with the Entrypoints lens, whose
+   // backend join is represented by participating_surface_ids.
+   const ids = Array.from(new Set(
+    array(component && component.owned_surface_ids)
+     .concat(array(component && component.participating_surface_ids))
+     .map(text)
+     .filter(Boolean)
+   ));
    return ids.map((id) => this.surfaceByID.get(id)).filter(Boolean);
   }
 
@@ -2266,6 +2430,103 @@ function architecturePartialTruth(data) {
     this.flowSVG.appendChild(group);
     this.flowEdgeElements.set(key, group);
     });
+  }
+
+  entryHandoffSourceBadge(item, geometry) {
+   const handoff = item && item.handoff;
+   const formatted = locationLabel(handoff);
+   if (!formatted || !geometry) return null;
+   const staticURL = typeof this.options.staticSourceURL === "function"
+    ? text(this.options.staticSourceURL(handoff.path, handoff.line || 0, handoff.column || 0))
+    : "";
+   const actionable = staticURL || typeof this.options.openLocation === "function";
+   if (!actionable) return null;
+   const control = element(
+    staticURL ? "a" : "button",
+    "rm-arch__entry-handoff-source" + (geometry.self_loop ? " is-self-loop" : ""),
+    (geometry.self_loop ? "↻ " : "↗ ") + formatted
+   );
+   if (staticURL) {
+    control.setAttribute("href", staticURL);
+    control.setAttribute("target", "_blank");
+    control.setAttribute("rel", "noopener noreferrer");
+   } else {
+    control.type = "button";
+    this.listen(control, "click", (event) => {
+     event.stopPropagation();
+     this.options.openLocation(handoff.path, handoff.line || 0, handoff.column || 0);
+    });
+   }
+   const target = handoff.target || {};
+   control.title = [
+    text(target.symbol || target.label || handoff.symbol) || this.msg("main.map.entry.context.direct_call"),
+    this.msg("main.map.entry.context.callsite"),
+    formatted,
+   ].join(" · ");
+   control.style.left = geometry.badge_x + "px";
+   control.style.top = geometry.badge_y + "px";
+   control.setAttribute("data-entry-handoff-source", text(item.id));
+   return control;
+  }
+
+  renderEntrypointHandoffOverlay() {
+   if (!this.entryHandoffSVG || !this.entryHandoffBadgeLayer) return;
+   const defs = svgElement("defs");
+   defs.appendChild(this.arrowMarker("rm-arch-entry-handoff-arrow", "#0f766e"));
+   this.entryHandoffSVG.replaceChildren(defs);
+   this.entryHandoffBadgeLayer.replaceChildren();
+   this.entryHandoffOverlayElements = [];
+   this.componentElements.forEach((node) => {
+    node.classList.remove("rm-arch__is-entry-handoff-participant");
+   });
+   if (this.lens !== "entrypoints" || !this.selectedEntryHandoffGroupID) return;
+   const group = this.entryHandoffGroupByID.get(this.selectedEntryHandoffGroupID);
+   const projection = entryHandoffOverlayProjection(group, Array.from(this.componentByID.keys()));
+   if (!projection.group_id) return;
+   projection.component_ids.forEach((componentID) => {
+    const node = this.componentElements.get(componentID);
+    if (node) node.classList.add("rm-arch__is-entry-handoff-participant");
+   });
+   const lanes = new Map();
+   projection.edges.concat(projection.self_loops).forEach((item) => {
+    const from = this.nodePositions.get(item.from_component_id);
+    const to = this.nodePositions.get(item.to_component_id);
+    if (!from || !to) return;
+    const pair = item.from_component_id + "\u0000" + item.to_component_id;
+    const lane = lanes.get(pair) || 0;
+    lanes.set(pair, lane + 1);
+    const geometry = entryHandoffConnectionGeometry(from, to, lane);
+    if (!geometry) return;
+    const edge = this.interactiveSVGPath(
+     geometry.path,
+     "rm-arch__edge rm-arch__edge--entry-handoff" + (geometry.self_loop ? " is-self-loop" : ""),
+     [
+      text(item.handoff && item.handoff.symbol),
+      locationLabel(item.handoff),
+     ].filter(Boolean).join(" · "),
+     null
+    );
+    const visible = edge.querySelector(".rm-arch__edge-visible");
+    if (visible) visible.setAttribute("marker-end", "url(#rm-arch-entry-handoff-arrow)");
+    edge.setAttribute("data-entry-handoff-edge", text(item.id));
+    this.entryHandoffSVG.appendChild(edge);
+    this.entryHandoffOverlayElements.push(edge);
+    const source = this.entryHandoffSourceBadge(item, geometry);
+    if (source) this.entryHandoffBadgeLayer.appendChild(source);
+   });
+  }
+
+  selectEntrypointHandoffGroup(groupID) {
+   const selected = text(groupID);
+   if (!this.entryHandoffGroupByID.has(selected)) return false;
+   this.selectedEntryHandoffGroupID = selected;
+   this.renderEntrypointHandoffOverlay();
+   return true;
+  }
+
+  clearEntrypointHandoffGroup() {
+   this.selectedEntryHandoffGroupID = "";
+   this.renderEntrypointHandoffOverlay();
   }
 
   primaryFlowSteps(flow) {
@@ -3193,11 +3454,12 @@ function architecturePartialTruth(data) {
    // SAME landscape layout — one ELK layout, switch by emphasis/dimming,
    // never a relayout and never a view transform write.
    setLens(lens) {
-    const value = ["landscape", "entrypoints", "integrations", "mechanisms"].indexOf(lens) >= 0
+    const value = ["landscape", "entrypoints", "integrations"].indexOf(lens) >= 0
      ? lens : "landscape";
-    this.lens = value;
-    if (this.root) this.root.setAttribute("data-lens", value);
-    if (value === "landscape") {
+   this.lens = value;
+   if (this.root) this.root.setAttribute("data-lens", value);
+   if (value !== "entrypoints") this.clearEntrypointHandoffGroup();
+   if (value === "landscape") {
      if (this.root) this.root.setAttribute("data-lens-has-emphasis", "false");
      this.components.forEach((component) => {
       const node = this.componentElements.get(text(component && component.id));
@@ -3210,8 +3472,8 @@ function architecturePartialTruth(data) {
      components: this.components,
      surfaces: this.surfaces,
      associations: this.flatAssociations(),
-     mechanismFragments: Number(this.data && this.data.version) === 13
-      ? this.data.mechanism_fragments : [],
+     entryHandoffGroups: Number(this.data && this.data.version) === 14
+      ? this.data.entry_handoff_groups : [],
     });
     const hasEmphasis = projection.emphasized.length > 0;
     if (this.root) this.root.setAttribute("data-lens-has-emphasis", hasEmphasis ? "true" : "false");
@@ -3222,12 +3484,13 @@ function architecturePartialTruth(data) {
      const active = projection.emphasized.indexOf(componentID) >= 0;
      node.classList.toggle("rm-arch__is-lens-emphasized", active);
     });
+    if (value === "entrypoints") this.renderEntrypointHandoffOverlay();
     return value;
    }
 
    // Decision 236 (v11): lens emphasis and visible objects are derived by
    // the pure projection below, never guessed from component properties in
-   // the renderer — the backend owns entry/touchpoint/mechanism identity.
+   // the renderer — the backend owns entry/touchpoint/context identity.
 
    // Decision 236 (v11): the DOM-free lens projection is the single source
    // of truth for both the canvas emphasis and the workspace objects panel
@@ -4435,16 +4698,18 @@ function architecturePartialTruth(data) {
    // in an exact member scope" is stated — never runtime dependency,
    // ownership, reachability, read/write/order or target identity.
    const associationEntry = this.associationEntryFor(component);
+   const associationRows = array(associationEntry && associationEntry.associations)
+    .filter(externalStateAssociation);
    const associationSection = this.inspectorSection(this.msg("architecture.section.observed_callsites"));
    associationSection.appendChild(element(
     "p", "rm-arch__copy", this.msg("architecture.copy.observed_callsites_limit")
    ));
-   if (associationEntry && array(associationEntry.associations).length > 0) {
+   if (associationRows.length > 0) {
     // Decision 229 D2: Boundary and Resource rows sharing the same exact
     // witness coalesce into ONE visible "Observed external/state
     // interaction" row (canonical records stay distinct). Paired rows
     // render once with every witness retained.
-    const rows = array(associationEntry.associations);
+    const rows = associationRows;
     const pairedKeys = new Set();
     rows.forEach((row) => {
      if (!row.paired || row.kind !== "boundary") return;
@@ -5597,6 +5862,9 @@ function architecturePartialTruth(data) {
    // Decision 236 (v11): Map lens switching is an emphasis projection
    // over the same layout — exposed so the workspace can switch lenses.
    setLens: (lens) => app.setLens(lens),
+   // Canvas 14/group v1: one exact entry group at a time overlays the
+   // existing component geometry. Selection never relayouts or pans.
+   selectEntrypointHandoffGroup: (groupID) => app.selectEntrypointHandoffGroup(groupID),
    // Decision 236 (v11): the DOM-free lens projection for the workspace
    // objects panel — same function the emphasis uses, so visible objects
    // and dimmed nodes can never disagree.
@@ -5614,6 +5882,7 @@ function architecturePartialTruth(data) {
   // the canvas instance uses the same function for emphasis. Never a
   // test-only hook.
   projectArchitectureLens: projectArchitectureLens,
+  projectEntrypointHandoffOverlay: entryHandoffOverlayProjection,
  });
  if (global.__REPOMAP_LAYOUT_TEST__ && typeof global.__REPOMAP_LAYOUT_TEST__ === "object") {
   Object.assign(global.__REPOMAP_LAYOUT_TEST__, {
@@ -5642,7 +5911,9 @@ function architecturePartialTruth(data) {
    ),
    // Decision 236 (v11): the pure lens projection — no DOM, no geometry.
    mapLensEmphasisProjection: mapLensEmphasisProjection,
-   currentMechanismFragment: currentMechanismFragment,
+   currentEntrypointHandoffGroup: currentEntrypointHandoffGroup,
+   entryHandoffOverlayProjection: entryHandoffOverlayProjection,
+   entryHandoffConnectionGeometry: entryHandoffConnectionGeometry,
    projectArchitectureLens: projectArchitectureLens,
    associationsForComponent: associationsForComponent,
   });

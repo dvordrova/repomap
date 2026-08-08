@@ -168,6 +168,24 @@ const options = {
           { symbol: "ServeHTTP", path: "server.go", line: 42, role: "production" },
           { symbol: "ListenAndServe", path: "main.go", line: 10, role: "production" },
         ],
+      }, {
+        kind: "resource",
+        imported_family: "database/sql",
+        owning_unit: "pkg/one",
+        observation_count: 1,
+        witnesses: [{ symbol: "QueryContext", path: "store.go", line: 20, role: "production" }],
+      }, {
+        kind: "operation",
+        imported_family: "example.test/internal",
+        owning_unit: "pkg/one",
+        observation_count: 1,
+        witnesses: [{ symbol: "internalOperation", path: "internal.go", line: 5, role: "production" }],
+      }, {
+        kind: "surface",
+        imported_family: "example.test/http",
+        owning_unit: "pkg/one",
+        observation_count: 1,
+        witnesses: [{ symbol: "localSurface", path: "surface.go", line: 8, role: "production" }],
       }],
     }],
   },
@@ -207,6 +225,10 @@ app.ready.then(() => {
   process.stdout.write(JSON.stringify({
     nestedCount: nested.length,
     nested,
+    associationToggles: toggles.length,
+    categoryLabels: rows
+      .filter((node) => node.tagName === "STRONG" && String(node.textContent).startsWith("architecture.value.category_"))
+      .map((node) => String(node.textContent)),
     witnessButtons: rows.filter((node) => String(node.className).includes("rm-arch__edge-jump")).length,
   }));
 }).catch((error) => {
@@ -222,10 +244,12 @@ app.ready.then(() => {
 		t.Fatalf("run association nesting check: %v\n%s", err, output)
 	}
 	var result struct {
-		NestedCount    int      `json:"nestedCount"`
-		Nested         []string `json:"nested"`
-		WitnessButtons int      `json:"witnessButtons"`
-		MountError     string   `json:"mountError"`
+		NestedCount        int      `json:"nestedCount"`
+		Nested             []string `json:"nested"`
+		AssociationToggles int      `json:"associationToggles"`
+		CategoryLabels     []string `json:"categoryLabels"`
+		WitnessButtons     int      `json:"witnessButtons"`
+		MountError         string   `json:"mountError"`
 	}
 	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatalf("parse runner output: %v\n%s", err, output)
@@ -236,7 +260,9 @@ app.ready.then(() => {
 	if result.NestedCount != 0 {
 		t.Fatalf("nested interactive elements = %d (%s); must be zero in the expanded association state", result.NestedCount, strings.Join(result.Nested, ", "))
 	}
-	if result.WitnessButtons < 2 {
-		t.Fatalf("expected at least 2 witness buttons, got %d", result.WitnessButtons)
+	if result.AssociationToggles != 2 || result.WitnessButtons != 3 ||
+		strings.Join(result.CategoryLabels, ",") != "architecture.value.category_boundary,architecture.value.category_resource" {
+		t.Fatalf("association filtering/labels = toggles:%d labels:%#v witnesses:%d; operation/surface rows must not masquerade as resources",
+			result.AssociationToggles, result.CategoryLabels, result.WitnessButtons)
 	}
 }

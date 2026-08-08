@@ -299,8 +299,8 @@ func Reduce(input ReducerInput) (Reduction, error) {
 			ThemeKind:        w.kind,
 			FinalTitle:       w.theme.FinalTitle,
 			FinalQuestion:    w.theme.FinalQuestion,
-			WhyItMatters:     candidateProse(w.theme.CandidateRef, input.Candidates, 0),
-			ExpectedLearning: candidateProse(w.theme.CandidateRef, input.Candidates, 1),
+			WhyItMatters:     w.theme.WhyItMatters,
+			ExpectedLearning: w.theme.ExpectedLearning,
 			Readings:         readings,
 			Badge:            badge,
 			DirectCount:      direct,
@@ -441,17 +441,6 @@ func themeIdentity(entries []publishedEntry, kind ThemeKind) string {
 	payload, _ := json.Marshal(map[string]any{"readings": identities})
 	hash := sha256.Sum256(payload)
 	return "theme-" + hex.EncodeToString(hash[:])[:24]
-}
-
-func candidateProse(candidateRef string, candidates map[string]*ScoutCandidate, which int) string {
-	c, ok := candidates[candidateRef]
-	if !ok {
-		return ""
-	}
-	if which == 0 {
-		return c.WhyItMatters
-	}
-	return c.ExpectedLearning
 }
 
 // applyBalanceCap enforces the catalog-relative guard that no one anchor

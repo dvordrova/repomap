@@ -10,21 +10,28 @@ import (
 	"testing"
 )
 
-func TestUserWorkspaceMakesFailedStudyPublicationVisible(t *testing.T) {
+func TestUserWorkspaceKeepsStudyPublicationFailuresOutOfHTML(t *testing.T) {
 	t.Parallel()
 
-	raw, err := os.ReadFile(filepath.Join("templates", "script.js"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := string(raw)
-	for _, marker := range []string{
-		"renderStudyPublicationNotice(root);",
-		"main.study.unavailable.for.this.run",
-		"main.no.study.directions.were.published.because.the.editing.stage.did.not.pass.its.required.checks.the.overview.below.uses.independently.accepted.inputs.it.is.not.a.substitute.study.result",
+	for name, markers := range map[string][]string{
+		"script.js": {
+			"renderStudyPublicationNotice(root);",
+			"function renderStudyPublicationNotice(root)",
+			"rm-study-publication-notice",
+			"main.study.unavailable.for.this.run",
+			"main.no.study.directions.were.published.because.the.editing.stage.did.not.pass.its.required.checks.the.overview.below.uses.independently.accepted.inputs.it.is.not.a.substitute.study.result",
+		},
+		"style.css":      {"rm-study-publication-notice"},
+		"ui_messages.js": {"main.study.unavailable.for.this.run"},
 	} {
-		if !strings.Contains(script, marker) {
-			t.Fatalf("workspace script does not expose failed Study stage marker %q", marker)
+		raw, err := os.ReadFile(filepath.Join("templates", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range markers {
+			if strings.Contains(string(raw), marker) {
+				t.Fatalf("ordinary report asset %s retains Study failure banner marker %q", name, marker)
+			}
 		}
 	}
 }
@@ -1318,17 +1325,17 @@ process.stdout.write(JSON.stringify({
 		!slices.Equal(got.RUSurfaceKinds, wantRUSurfaceKinds) {
 		t.Fatalf("Overview Surface labels = EN %#v RU %#v", got.ENSurfaceKinds, got.RUSurfaceKinds)
 	}
-	for _, token := range []string{
-		"Study unavailable for this run",
-		"No Study directions were published because the editing stage did not pass its required checks.",
-		"Entry surfaces",
-		"Components",
-	} {
+	for _, token := range []string{"Entry surfaces", "Components"} {
 		if !strings.Contains(got.NoStudyText, token) {
 			t.Errorf("failed-Study anatomy is missing %q: %q", token, got.NoStudyText)
 		}
 	}
-	for _, forbidden := range []string{"Repository brief", "Where should I read next?"} {
+	for _, forbidden := range []string{
+		"Study unavailable for this run",
+		"No Study directions were published because the editing stage did not pass its required checks.",
+		"Repository brief",
+		"Where should I read next?",
+	} {
 		if strings.Contains(got.NoStudyText, forbidden) {
 			t.Fatalf("failed-Study anatomy exposed fallback or invented Study content %q: %q", forbidden, got.NoStudyText)
 		}

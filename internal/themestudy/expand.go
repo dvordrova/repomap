@@ -2,18 +2,26 @@ package themestudy
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"unicode/utf8"
 )
 
 const expansionVersion = "v1"
 
+// ErrExpansionSourceOversized lets a bounded local SourceReader stop before it
+// materializes an arbitrarily large line. ExpandFiles converts it into the
+// same item-local closed reason as a post-read per-file byte overflow.
+var ErrExpansionSourceOversized = errors.New("source expansion exceeds the per-file byte bound")
+
 // ExpandFiles executes the local f* source expansion (contract D). It is
 // backend-executed and never performed by a model. Every requested file is
-// expanded in full-or-indexed form, never filtered by name — relevance is never
-// inferred from a filename alone. Small files become a bounded whole-source
-// object; large files become a bounded indexed window with explicit omitted
-// ranges. The result is persisted so the Adjudication request is rebuildable
-// and replayable provider-free.
+// expanded in full-or-indexed form or retained as a typed item-local closure;
+// relevance is never inferred from a filename. Small files become a bounded
+// whole-source object; large files become a bounded indexed window with
+// explicit omitted ranges. Unreadable, invalid, and oversized siblings do not
+// terminate valid exact sources. The result is persisted so the Adjudication
+// request is rebuildable and replayable provider-free.
 func ExpandFiles(files []FileRef, reader SourceReader, totalLines TotalLines) (SourceExpansion, error) {
 	if reader == nil {
 		return SourceExpansion{}, fmt.Errorf("source expansion requires a source reader")
@@ -25,21 +33,44 @@ func ExpandFiles(files []FileRef, reader SourceReader, totalLines TotalLines) (S
 	accBytes := 0
 	accEncoded := 0
 	accLines := 0
-	var budgetOmitted []string
+	var omittedRefs []string
 	for _, file := range files {
 		if len(expansion.Files) >= MaxExpansionFiles {
-			budgetOmitted = append(budgetOmitted, file.Ref)
+			omittedRefs = append(omittedRefs, file.Ref)
 			continue
 		}
 		fileLen, err := totalLines(file.Path)
 		if err != nil {
-			return SourceExpansion{}, fmt.Errorf("expand %s: total lines: %w", file.Path, err)
+			appendClosedExpansionFile(
+				&expansion, &omittedRefs, file, 0, false,
+				ExpansionClosedReasonUnreadable,
+			)
+			continue
+		}
+		if fileLen <= 0 {
+			appendClosedExpansionFile(
+				&expansion, &omittedRefs, file, fileLen, false,
+				ExpansionClosedReasonInvalid,
+			)
+			continue
 		}
 		entry := ExpansionFile{Ref: file.Ref, Path: file.Path, TotalLines: fileLen, Small: fileLen <= MaxExpansionFileLines}
+		expectedLines := fileLen
 		if entry.Small {
 			lines, err := reader(file.Path, 1, fileLen)
 			if err != nil {
-				return SourceExpansion{}, fmt.Errorf("expand %s: %w", file.Path, err)
+				appendClosedExpansionFile(
+					&expansion, &omittedRefs, file, fileLen, entry.Small,
+					expansionReadClosedReason(err),
+				)
+				continue
+			}
+			if !validExpansionLines(lines, expectedLines) {
+				appendClosedExpansionFile(
+					&expansion, &omittedRefs, file, fileLen, entry.Small,
+					ExpansionClosedReasonInvalid,
+				)
+				continue
 			}
 			entry.Objects = []SourceObject{{
 				Role:          SourceRoleDeclaration,
@@ -58,9 +89,21 @@ func ExpandFiles(files []FileRef, reader SourceReader, totalLines TotalLines) (S
 			if fileLen < limit {
 				limit = fileLen
 			}
+			expectedLines = limit
 			lines, err := reader(file.Path, 1, limit)
 			if err != nil {
-				return SourceExpansion{}, fmt.Errorf("expand %s: %w", file.Path, err)
+				appendClosedExpansionFile(
+					&expansion, &omittedRefs, file, fileLen, entry.Small,
+					expansionReadClosedReason(err),
+				)
+				continue
+			}
+			if !validExpansionLines(lines, expectedLines) {
+				appendClosedExpansionFile(
+					&expansion, &omittedRefs, file, fileLen, entry.Small,
+					ExpansionClosedReasonInvalid,
+				)
+				continue
 			}
 			omitted := []LineRange{{StartLine: limit + 1, EndLine: fileLen}}
 			entry.Objects = []SourceObject{{
@@ -80,6 +123,13 @@ func ExpandFiles(files []FileRef, reader SourceReader, totalLines TotalLines) (S
 		for _, object := range entry.Objects {
 			fileBytes += linesBytes(object.Lines)
 		}
+		if fileBytes > MaxExpansionFileBytes {
+			appendClosedExpansionFile(
+				&expansion, &omittedRefs, file, fileLen, entry.Small,
+				ExpansionClosedReasonOversized,
+			)
+			continue
+		}
 		// Decision 235 / long-horizon incident (casdoor 2026-08-07): the
 		// budget MUST be measured on the ENCODED artifact bytes, not raw
 		// source bytes. JSON escaping and the per-object envelope grow raw
@@ -96,8 +146,18 @@ func ExpandFiles(files []FileRef, reader SourceReader, totalLines TotalLines) (S
 			return SourceExpansion{}, fmt.Errorf("expand %s: encode entry: %w", file.Path, encodeErr)
 		}
 		encodedFileBytes := len(entryBytes)
+		if encodedFileBytes > MaxExpansionBytes {
+			appendClosedExpansionFile(
+				&expansion, &omittedRefs, file, fileLen, entry.Small,
+				ExpansionClosedReasonOversized,
+			)
+			continue
+		}
 		if accEncoded+encodedFileBytes > MaxExpansionBytes {
-			budgetOmitted = append(budgetOmitted, file.Ref)
+			appendClosedExpansionFile(
+				&expansion, &omittedRefs, file, fileLen, entry.Small,
+				ExpansionClosedReasonBudget,
+			)
 			continue
 		}
 		expansion.Files = append(expansion.Files, entry)
@@ -106,11 +166,45 @@ func ExpandFiles(files []FileRef, reader SourceReader, totalLines TotalLines) (S
 		accLines += entry.ExpandedLines
 	}
 	expansion.Requested = requestedRefs(files)
-	expansion.OmittedRefs = budgetOmitted
+	expansion.OmittedRefs = omittedRefs
 	expansion.ExpandedLines = accLines
 	expansion.ExpandedBytes = accBytes
 	expansion.CandidateSHA256 = candidateDigest(pathsOf(files))
 	return expansion, nil
+}
+
+func appendClosedExpansionFile(
+	expansion *SourceExpansion,
+	omittedRefs *[]string,
+	file FileRef,
+	totalLines int,
+	small bool,
+	reason string,
+) {
+	expansion.Files = append(expansion.Files, ExpansionFile{
+		Ref: file.Ref, Path: file.Path, TotalLines: totalLines, Small: small,
+		Closed: true, ClosedReason: reason,
+	})
+	*omittedRefs = append(*omittedRefs, file.Ref)
+}
+
+func validExpansionLines(lines []string, expected int) bool {
+	if expected <= 0 || len(lines) != expected {
+		return false
+	}
+	for _, line := range lines {
+		if !utf8.ValidString(line) {
+			return false
+		}
+	}
+	return true
+}
+
+func expansionReadClosedReason(err error) string {
+	if errors.Is(err, ErrExpansionSourceOversized) {
+		return ExpansionClosedReasonOversized
+	}
+	return ExpansionClosedReasonUnreadable
 }
 
 func requestedRefs(files []FileRef) []string {

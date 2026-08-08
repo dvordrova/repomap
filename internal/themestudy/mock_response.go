@@ -154,39 +154,39 @@ func provenanceLabel(provenance string) string {
 }
 
 // MockAdjudicationResponse builds one bounded, provider-free Theme
-// Adjudication response for an exact request. Every candidate receives an
-// assessment for each of its own anchors (all direct), a reading order equal
-// to the candidate's anchor order, and bounded unknowns, so the response
-// passes item-local validation and the replay status is accepted. It never
-// references provider prose or canonical identities.
+// Adjudication response for an exact request. Every candidate receives final
+// editorial prose plus one direct reading for each of its own anchors in
+// candidate order and bounded unknowns, so the response exercises the current
+// live wire and passes item-local validation. It never invents refs or
+// canonical identities.
 func MockAdjudicationResponse(request AdjudicationRequest) ([]byte, error) {
-	var themes []AdjudicatedTheme
+	var themes []adjudicationWireTheme
 	for index, candidate := range request.Candidates {
 		if index >= DesiredFinalMax {
 			break
 		}
-		assessments := make([]AnchorAssessment, 0, len(candidate.AnchorRefs))
+		readings := make([]adjudicationWireReading, 0, len(candidate.AnchorRefs))
 		for _, ref := range candidate.AnchorRefs {
-			assessments = append(assessments, AnchorAssessment{
-				AnchorRef:            ref,
-				Fit:                  FitDirect,
-				SupportedObservation: "The exact source-backed anchor contributes to the final question.",
+			readings = append(readings, adjudicationWireReading{
+				AnchorRef:   ref,
+				Support:     string(FitDirect),
+				Observation: "The exact source-backed anchor contributes to the final question.",
 			})
 		}
-		readingOrder := append([]string(nil), candidate.AnchorRefs...)
-		themes = append(themes, AdjudicatedTheme{
-			CandidateRef:      candidate.Ref,
-			FinalTitle:        candidate.Title,
-			FinalQuestion:     candidate.Question,
-			AnchorAssessments: assessments,
-			ReadingOrder:      readingOrder,
-			Unknowns:          []string{"The supplied source proves bounded local structure; complete runtime order remains unproven."},
+		themes = append(themes, adjudicationWireTheme{
+			CandidateRef:     candidate.Ref,
+			FinalTitle:       candidate.Title,
+			FinalQuestion:    candidate.Question,
+			WhyItMatters:     "The final question identifies a bounded source-backed responsibility worth understanding.",
+			ExpectedLearning: "The retained readings explain that responsibility without claiming unproven runtime order.",
+			Readings:         readings,
+			Unknowns:         []string{"The supplied source proves bounded local structure; complete runtime order remains unproven."},
 		})
 	}
 	if len(themes) == 0 {
 		return nil, fmt.Errorf("theme adjudication mock response: no buildable themes")
 	}
-	raw, err := json.Marshal(map[string][]AdjudicatedTheme{"themes": themes})
+	raw, err := json.Marshal(map[string][]adjudicationWireTheme{"themes": themes})
 	if err != nil {
 		return nil, fmt.Errorf("theme adjudication mock response: encode: %w", err)
 	}

@@ -19,6 +19,7 @@ func TestValidateAdjudicationReadingsWire(t *testing.T) {
 			RelationClaim: RelationClaimEditorialOnly},
 	}
 	raw := []byte(`{"themes":[{"candidate_ref":"t1","final_title":"Theme one","final_question":"Question one?",` +
+		`"why_it_matters":"The final question matters.","expected_learning":"Learn what the retained readings support.",` +
 		`"readings":[` +
 		`{"anchor_ref":"a2","support":"direct","observation":"second anchor directly supports"},` +
 		`{"anchor_ref":"a1","support":"supporting","observation":"first anchor supports context"}` +
@@ -62,6 +63,7 @@ func TestValidateAdjudicationReadingsOrderSurvives(t *testing.T) {
 			RelationClaim: RelationClaimEditorialOnly},
 	}
 	raw := []byte(`{"themes":[{"candidate_ref":"t1","final_title":"T","final_question":"Q?",` +
+		`"why_it_matters":"Q matters.","expected_learning":"Learn Q.",` +
 		`"readings":[` +
 		`{"anchor_ref":"a4","support":"direct","observation":"o4"},` +
 		`{"anchor_ref":"a2","support":"direct","observation":"o2"}` +
@@ -92,6 +94,9 @@ func TestAdjudicationPromptReadingsGrammar(t *testing.T) {
 		"omit unsupported candidates",
 		"order readings in the order you recommend a developer inspect them",
 		"Include at least one direct reading",
+		"why_it_matters must explain the developer relevance of final_question",
+		"expected_learning must promise only what the retained readings can teach",
+		`"why_it_matters":"...","expected_learning":"..."`,
 		`"readings":[{"anchor_ref":"a1","support":"direct","observation":"..."}]`,
 	} {
 		if !strings.Contains(user, required) {
