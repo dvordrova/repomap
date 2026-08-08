@@ -23,6 +23,7 @@ type atlasFirstStageDiagnostic struct {
 	SemanticCalls     int
 	TransportAttempts int
 	LatencyMillis     int64
+	Outcome           *debugdump.SemanticOutcome
 }
 
 func navigatorAtlasFirstDiagnostic(
@@ -72,16 +73,45 @@ func architectureAtlasFirstDiagnostic(
 		state = "failed"
 	case outcome.Cached:
 		state = "cache_hit"
+	case outcome.ValidationOutcome == componentmap.ValidationAcceptedPartial:
+		state = "accepted_partial"
 	}
 	semanticCalls := 0
 	if outcome.Attempted && !outcome.Cached {
 		semanticCalls = 1
 	}
-	return atlasFirstStageDiagnostic{
+	diagnostic := atlasFirstStageDiagnostic{
 		Stage: debugdump.SemanticStageArchitecture, State: state,
 		RequestBytes: outcome.InputBytes, SemanticCalls: semanticCalls,
 		TransportAttempts: outcome.TransportAttempts, LatencyMillis: outcome.LatencyMillis,
 	}
+	failure := outcome.Failure
+	if failure == nil && stageErr != nil && state != "canceled" && state != "resource_exhausted" && state != "unavailable" {
+		failure = architectureSynthesisFailureDiagnostic(outcome, stageErr)
+	}
+	if failure != nil {
+		diagnostic.Outcome = &debugdump.SemanticOutcome{
+			Phase: failure.Stage, Code: failure.Code,
+			Detail:  failure.Detail,
+			Metrics: architectureSynthesisFailureMetrics(outcome),
+		}
+	} else if state == "accepted_partial" {
+		diagnostic.Outcome = &debugdump.SemanticOutcome{
+			Phase: "complete", Code: "accepted_partial",
+			Metrics: architectureSynthesisOutcomeMetrics(outcome),
+		}
+	} else if state == "accepted" {
+		diagnostic.Outcome = &debugdump.SemanticOutcome{
+			Phase: "complete", Code: "accepted",
+			Metrics: architectureSynthesisOutcomeMetrics(outcome),
+		}
+	} else if state == "cache_hit" {
+		diagnostic.Outcome = &debugdump.SemanticOutcome{
+			Phase: "cache", Code: "cache_hit",
+			Metrics: architectureSynthesisOutcomeMetrics(outcome),
+		}
+	}
+	return diagnostic
 }
 
 func atlasStudyAtlasFirstDiagnostic(
@@ -139,6 +169,7 @@ func recordAtlasFirstStageDiagnostic(runDir string, diagnostic atlasFirstStageDi
 		ProviderCallCount:     diagnostic.SemanticCalls,
 		TransportAttemptCount: diagnostic.TransportAttempts,
 		LatencyMillis:         latency,
+		Outcome:               diagnostic.Outcome,
 	}
 	updated := make([]debugdump.RequestAttempt, 0, len(metadata.RequestAttempts)+1)
 	for _, existing := range metadata.RequestAttempts {

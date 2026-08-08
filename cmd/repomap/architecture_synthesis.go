@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -124,6 +125,10 @@ func isArchitectureOutputResourceExhausted(err error) bool {
 	return errors.As(err, &failure)
 }
 
+func isArchitectureEmptyResponse(err error) bool {
+	return errors.Is(err, deepseek.ErrResponseContentEmpty)
+}
+
 // classifyArchitectureOutputResourceExhaustion records the attempted
 // Architecture call exactly once in model-research state (Decision 215 C) and
 // returns the typed publishable failure. An accounting-write failure joins the
@@ -148,38 +153,45 @@ type componentLandscapeSynthesizer interface {
 }
 
 type architectureSynthesisOutcome struct {
-	Cached                   bool
-	InputBytes               int
-	LatencyMillis            int64
-	FallbackReason           componentmap.FallbackReason
-	ResponseBytes            int
-	ResponseContentBytes     int
-	Attempted                bool
-	TransportAttempts        int
-	ProviderCallSucceeded    bool
-	ResponseParsed           bool
-	ValidationOutcome        componentmap.ValidationOutcome
-	ArchitectureSource       componentmap.ArchitectureSource
-	ArchitectureLevel        int
-	NormalizationCount       int
-	FallbackSelected         bool
-	InputTokens              int
-	OutputTokens             int
-	UsageReported            bool
-	FinishReason             string
-	ResponseComplete         bool
-	ResponseState            componentmap.ResponseState
-	LocalCandidateCount      int
-	RequestedConceptualCount int
-	StructuralLocatorCount   int
-	AnchorCount              int
-	MembershipCounted        bool
-	MemberOccurrences        int
-	DistinctMembers          int
-	CoveredConceptualCount   int
-	UncoveredConceptualCount int
-	UncoveredConceptualIDs   []componentmap.MemberID
-	ValidationCodes          []string
+	Cached                         bool
+	InputBytes                     int
+	LatencyMillis                  int64
+	FallbackReason                 componentmap.FallbackReason
+	ResponseBytes                  int
+	ResponseContentBytes           int
+	Attempted                      bool
+	TransportAttempts              int
+	ProviderCallSucceeded          bool
+	ResponseParsed                 bool
+	ValidationOutcome              componentmap.ValidationOutcome
+	ArchitectureSource             componentmap.ArchitectureSource
+	ArchitectureLevel              int
+	NormalizationCount             int
+	FallbackSelected               bool
+	InputTokens                    int
+	OutputTokens                   int
+	UsageReported                  bool
+	FinishReason                   string
+	ResponseComplete               bool
+	ResponseState                  componentmap.ResponseState
+	LocalCandidateCount            int
+	RequestedConceptualCount       int
+	StructuralLocatorCount         int
+	AnchorCount                    int
+	MembershipCounted              bool
+	MemberOccurrences              int
+	DistinctMembers                int
+	CoveredConceptualCount         int
+	UncoveredConceptualCount       int
+	UncoveredConceptualIDs         []componentmap.MemberID
+	RequestedPrimaryScopeCount     int
+	CoveredPrimaryScopeCount       int
+	UncoveredPrimaryScopeCount     int
+	CoveredSupportingEvidenceCount int
+	ValidationCodes                []string
+	Failure                        *report.ArchitectureSynthesisFailure
+	ResponseShape                  *report.ArchitectureSynthesisResponseShape
+	SemanticExchangePath           string
 }
 
 func synthesizeArchitectureForRun(
@@ -266,13 +278,14 @@ func synthesizeArchitectureForRun(
 	}
 	err = persistAndClassifyArchitectureSynthesisStatus(runDir, outcome, err)
 	if err != nil {
-		if errors.Is(err, errArchitectureSynthesisRejected) {
-			output.Warn(
-				"Architecture proposal rejected",
-				"state: failed",
-				"validation: response",
-				"the exact local Architecture Canvas remains available",
-			)
+		if outcome.Failure != nil {
+			title := "Architecture model stage failed"
+			if errors.Is(err, errArchitectureSynthesisRejected) {
+				title = "Architecture proposal rejected"
+			} else if isArchitectureOutputResourceExhausted(err) {
+				title = "Architecture grouping unavailable"
+			}
+			output.Warn(title, architectureFailureConsoleLines(runDir, outcome)...)
 		}
 		return outcome, err
 	}
@@ -289,12 +302,115 @@ func synthesizeArchitectureForRun(
 	output.State(
 		"Architecture",
 		state,
+		architectureSuccessConsoleLines(runDir, outcome)...,
+	)
+	return outcome, nil
+}
+
+func architectureSuccessConsoleLines(
+	runDir string,
+	outcome architectureSynthesisOutcome,
+) []string {
+	lines := []string{
+		"source: " + string(outcome.ArchitectureSource),
+		fmt.Sprintf(
+			"conceptual coverage: %d/%d",
+			outcome.CoveredConceptualCount,
+			outcome.RequestedConceptualCount,
+		),
+		fmt.Sprintf("local unclassified remainder: %d", outcome.UncoveredConceptualCount),
+	}
+	if outcome.RequestedPrimaryScopeCount > 0 {
+		lines = append(lines,
+			fmt.Sprintf(
+				"primary scope coverage: %d/%d (uncovered=%d)",
+				outcome.CoveredPrimaryScopeCount,
+				outcome.RequestedPrimaryScopeCount,
+				outcome.UncoveredPrimaryScopeCount,
+			),
+			fmt.Sprintf("supporting evidence covered: %d", outcome.CoveredSupportingEvidenceCount),
+		)
+	}
+	if shape := outcome.ResponseShape; shape != nil {
+		lines = append(lines, architectureResponseShapeConsoleLine(shape))
+	}
+	lines = append(lines,
 		fmt.Sprintf("request bytes: %d", outcome.InputBytes),
 		fmt.Sprintf("response bytes: %d", outcome.ResponseBytes),
 		formatRunOutputTokens(outcome.InputTokens, outcome.OutputTokens),
 		formatRunOutputDuration(outcome.LatencyMillis),
+		"status: "+filepath.Join(runDir, report.ArchitectureSynthesisStatusFile),
 	)
-	return outcome, nil
+	if outcome.SemanticExchangePath != "" {
+		lines = append(lines, "exchange: "+filepath.Join(
+			runDir,
+			filepath.FromSlash(outcome.SemanticExchangePath),
+		))
+	}
+	return lines
+}
+
+func architectureFailureConsoleLines(
+	runDir string,
+	outcome architectureSynthesisOutcome,
+) []string {
+	lines := []string{"state: failed"}
+	if outcome.Failure != nil {
+		lines = append(lines,
+			"phase: "+outcome.Failure.Stage,
+			"code: "+outcome.Failure.Code,
+		)
+		if outcome.Failure.Detail != "" {
+			lines = append(lines, "detail: "+outcome.Failure.Detail)
+		}
+	}
+	if len(outcome.ValidationCodes) > 0 {
+		lines = append(lines, "validation diagnostics: "+strings.Join(outcome.ValidationCodes, ","))
+	}
+	lines = append(lines, fmt.Sprintf(
+		"provider: succeeded=%t parsed=%t finish_reason=%s complete=%t response_state=%s response_bytes=%d content_bytes=%d",
+		outcome.ProviderCallSucceeded,
+		outcome.ResponseParsed,
+		outcome.FinishReason,
+		outcome.ResponseComplete,
+		outcome.ResponseState,
+		outcome.ResponseBytes,
+		outcome.ResponseContentBytes,
+	))
+	if shape := outcome.ResponseShape; shape != nil {
+		lines = append(lines, architectureResponseShapeConsoleLine(shape))
+	}
+	if outcome.RequestedPrimaryScopeCount > 0 {
+		lines = append(lines,
+			fmt.Sprintf(
+				"primary scope coverage: %d/%d (uncovered=%d)",
+				outcome.CoveredPrimaryScopeCount,
+				outcome.RequestedPrimaryScopeCount,
+				outcome.UncoveredPrimaryScopeCount,
+			),
+			fmt.Sprintf("supporting evidence covered: %d", outcome.CoveredSupportingEvidenceCount),
+		)
+	}
+	lines = append(lines, "status: "+filepath.Join(runDir, report.ArchitectureSynthesisStatusFile))
+	if outcome.SemanticExchangePath != "" {
+		lines = append(lines, "exchange: "+filepath.Join(runDir, filepath.FromSlash(outcome.SemanticExchangePath)))
+	}
+	return append(lines, "the exact local Architecture Canvas remains available")
+}
+
+func architectureResponseShapeConsoleLine(shape *report.ArchitectureSynthesisResponseShape) string {
+	return fmt.Sprintf(
+		"response shape: grammar=%s subsystems=%d components=%d member_refs=%d unit_refs=%d anchor_refs=%d missing_anchor_refs=%d explicit_empty_anchor_refs=%d null_anchor_refs=%d",
+		shape.Grammar,
+		shape.SubsystemCount,
+		shape.ComponentCount,
+		shape.MemberRefCount,
+		shape.UnitRefCount,
+		shape.AnchorRefCount,
+		shape.MissingAnchorRefsCount,
+		shape.EmptyAnchorRefsCount,
+		shape.NullAnchorRefsCount,
+	)
 }
 
 func prepareArchitectureSynthesis(
@@ -555,7 +671,7 @@ func ensureArchitectureSynthesisWithOptions(
 					}
 					continue
 				}
-				recordArchitectureSemanticExchange(
+				cachedOutcome.SemanticExchangePath = recordArchitectureSemanticExchange(
 					options.exchangeWriter,
 					requestJSON,
 					cachedRecord.Call.Response,
@@ -564,6 +680,10 @@ func ensureArchitectureSynthesisWithOptions(
 					0,
 					debugdump.SemanticStateCacheHit,
 					debugdump.SemanticValidationCache,
+					debugdump.SemanticOutcome{
+						Phase: "cache", Code: "cache_hit",
+						Metrics: architectureSynthesisOutcomeMetrics(cachedOutcome),
+					},
 				)
 				if candidate.copyToRun {
 					if err := writeArchitectureSynthesisRecord(runPath, saved); err != nil {
@@ -602,7 +722,7 @@ func ensureArchitectureSynthesisWithOptions(
 	providerResponseBytes := providerResultResponseBytes(providerResult)
 	latency := time.Since(started)
 	outcome.LatencyMillis = latency.Milliseconds()
-	outcome.ResponseBytes = len(raw)
+	outcome.ResponseBytes = providerResponseBytes
 	outcome.ResponseContentBytes = len(raw)
 	outcome.TransportAttempts = providerResult.Attempts
 	outcome.InputTokens = providerResult.InputTokens
@@ -610,27 +730,72 @@ func ensureArchitectureSynthesisWithOptions(
 	outcome.UsageReported = providerResult.UsageReported
 	outcome.FinishReason = providerResult.FinishReason
 	outcome.ResponseComplete = providerResult.FinishReason == "stop"
+	emptyResponse := isArchitectureEmptyResponse(err)
+	outcome.ProviderCallSucceeded = err == nil || emptyResponse
+	outcome.ResponseState = componentmap.SynthesisResponseStateForDiagnostics(raw)
+	if outcome.ResponseState == componentmap.ResponseCaptured {
+		outcome.ResponseParsed = componentmap.InspectSynthesisResponseShape(raw).JSONValid
+		outcome.ResponseShape = architectureSynthesisResponseShape(raw)
+	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		recordArchitectureSemanticExchange(
-			options.exchangeWriter, requestJSON, raw, componentmap.ResponseCaptured,
+		outcome.SemanticExchangePath = recordArchitectureSemanticExchange(
+			options.exchangeWriter, requestJSON, raw, outcome.ResponseState,
 			providerResponseBytes, providerResult.Attempts,
 			debugdump.SemanticStateCanceled, debugdump.SemanticValidationCanceled,
+			debugdump.SemanticOutcome{},
 		)
 		return outcome, ctxErr
 	}
 	if err != nil {
-		recordArchitectureSemanticExchange(
-			options.exchangeWriter, requestJSON,
-			providerFailureContentForExchange(err, raw), componentmap.ResponseCaptured,
-			providerResponseBytes, providerResult.Attempts,
-			debugdump.SemanticStateProviderFailed, debugdump.SemanticValidationProvider,
-		)
 		callErr := fmt.Errorf("architecture synthesis: provider call: %w", err)
+		if emptyResponse {
+			outcome.Failure = &report.ArchitectureSynthesisFailure{
+				Stage: "response_decode", Code: "architecture.empty_response",
+			}
+			outcome.SemanticExchangePath = recordArchitectureSemanticExchange(
+				options.exchangeWriter, requestJSON, nil, outcome.ResponseState,
+				providerResponseBytes, providerResult.Attempts,
+				debugdump.SemanticStateRejected, debugdump.SemanticValidationDecode,
+				debugdump.SemanticOutcome{
+					Phase: outcome.Failure.Stage, Code: outcome.Failure.Code,
+				},
+			)
+			if recordErr := recordArchitectureResearch(runDir, outcome, "rejected", false, policy, usage); recordErr != nil {
+				return outcome, errors.Join(callErr, recordErr)
+			}
+			return outcome, &architectureResponseRejected{cause: callErr}
+		}
 		if isSemanticResourceLimit(callErr) {
+			outcome.Failure = &report.ArchitectureSynthesisFailure{
+				Stage: "provider_call", Code: "architecture.provider_output_limit",
+			}
+			outcome.SemanticExchangePath = recordArchitectureSemanticExchange(
+				options.exchangeWriter, requestJSON,
+				providerFailureContentForExchange(err, raw), outcome.ResponseState,
+				providerResponseBytes, providerResult.Attempts,
+				debugdump.SemanticStateProviderFailed, debugdump.SemanticValidationProvider,
+				debugdump.SemanticOutcome{
+					Phase: outcome.Failure.Stage, Code: outcome.Failure.Code,
+					Metrics: architectureSynthesisResponseMetrics(outcome.ResponseShape),
+				},
+			)
 			return outcome, classifyArchitectureOutputResourceExhaustion(
 				runDir, outcome, policy, usage, callErr,
 			)
 		}
+		outcome.ProviderCallSucceeded = false
+		outcome.Failure = &report.ArchitectureSynthesisFailure{
+			Stage: "provider_call", Code: "architecture.provider_call_failed",
+		}
+		outcome.SemanticExchangePath = recordArchitectureSemanticExchange(
+			options.exchangeWriter, requestJSON,
+			providerFailureContentForExchange(err, raw), outcome.ResponseState,
+			providerResponseBytes, providerResult.Attempts,
+			debugdump.SemanticStateProviderFailed, debugdump.SemanticValidationProvider,
+			debugdump.SemanticOutcome{
+				Phase: outcome.Failure.Stage, Code: outcome.Failure.Code,
+			},
+		)
 		if recordErr := recordArchitectureResearch(runDir, outcome, "failed", false, policy, usage); recordErr != nil {
 			return outcome, errors.Join(callErr, recordErr)
 		}
@@ -647,17 +812,37 @@ func ensureArchitectureSynthesisWithOptions(
 		raw,
 	)
 	if err != nil {
-		recordArchitectureSemanticExchange(
-			options.exchangeWriter, requestJSON, raw, componentmap.ResponseCaptured,
-			providerResponseBytes, providerResult.Attempts,
-			debugdump.SemanticStateRejected, debugdump.SemanticValidationResponse,
-		)
+		diagnostic := componentmap.DiagnoseSynthesisFailure(err)
 		validationErr := fmt.Errorf("architecture synthesis: validate response: %w", err)
 		if isSemanticResourceLimit(validationErr) {
+			outcome.Failure = &report.ArchitectureSynthesisFailure{
+				Stage: "provider_call", Code: "architecture.provider_output_limit",
+			}
+			outcome.SemanticExchangePath = recordArchitectureSemanticExchange(
+				options.exchangeWriter, requestJSON, raw, outcome.ResponseState,
+				providerResponseBytes, providerResult.Attempts,
+				debugdump.SemanticStateProviderFailed, debugdump.SemanticValidationDecode,
+				debugdump.SemanticOutcome{
+					Phase: outcome.Failure.Stage, Code: outcome.Failure.Code,
+					Metrics: architectureSynthesisResponseMetrics(outcome.ResponseShape),
+				},
+			)
 			return outcome, classifyArchitectureOutputResourceExhaustion(
 				runDir, outcome, policy, usage, validationErr,
 			)
 		}
+		outcome.Failure = &report.ArchitectureSynthesisFailure{
+			Stage: diagnostic.Stage, Code: diagnostic.Code, Detail: diagnostic.Detail,
+		}
+		outcome.SemanticExchangePath = recordArchitectureSemanticExchange(
+			options.exchangeWriter, requestJSON, raw, outcome.ResponseState,
+			providerResponseBytes, providerResult.Attempts,
+			debugdump.SemanticStateRejected, debugdump.SemanticValidationResponse,
+			debugdump.SemanticOutcome{
+				Phase: diagnostic.Stage, Code: diagnostic.Code, Detail: diagnostic.Detail,
+				Metrics: architectureSynthesisResponseMetrics(outcome.ResponseShape),
+			},
+		)
 		if recordErr := recordArchitectureResearch(runDir, outcome, "rejected", false, policy, usage); recordErr != nil {
 			return outcome, errors.Join(validationErr, recordErr)
 		}
@@ -670,37 +855,42 @@ func ensureArchitectureSynthesisWithOptions(
 	result.Record.Call.Metadata.TransportAttempts = providerResult.Attempts
 	result.Record.Call.Metadata.ResponseComplete = providerResult.FinishReason == "stop"
 	outcome = architectureSynthesisOutcome{
-		InputBytes:               len(requestJSON),
-		LatencyMillis:            result.Record.Call.Metadata.LatencyMillis,
-		FallbackReason:           result.Landscape.FallbackReason,
-		ResponseBytes:            result.Record.Call.ResponseBytes,
-		ResponseContentBytes:     len(result.Record.Call.Response),
-		Attempted:                true,
-		TransportAttempts:        providerResult.Attempts,
-		ProviderCallSucceeded:    true,
-		ResponseParsed:           architectureResponseParsed(result.Landscape),
-		ValidationOutcome:        result.Landscape.ValidationOutcome,
-		ArchitectureSource:       result.Landscape.Source,
-		ArchitectureLevel:        result.Landscape.Level,
-		NormalizationCount:       len(result.Landscape.Normalizations),
-		FallbackSelected:         result.Landscape.Fallback,
-		InputTokens:              providerResult.InputTokens,
-		OutputTokens:             providerResult.OutputTokens,
-		UsageReported:            providerResult.UsageReported,
-		FinishReason:             providerResult.FinishReason,
-		ResponseComplete:         providerResult.FinishReason == "stop",
-		ResponseState:            result.Record.Call.ResponseState,
-		LocalCandidateCount:      len(bundle.Candidates),
-		RequestedConceptualCount: conceptualCount,
-		StructuralLocatorCount:   structuralLocatorCount,
-		AnchorCount:              len(bundle.BehaviorAnchors),
-		ValidationCodes:          architectureSynthesisDiagnosticCodes(result.Landscape.Diagnostics),
-		MembershipCounted:        result.Membership.Counted,
-		MemberOccurrences:        result.Membership.MemberOccurrences,
-		DistinctMembers:          result.Membership.DistinctMembers,
-		CoveredConceptualCount:   len(result.Membership.CoveredMemberIDs),
-		UncoveredConceptualCount: len(result.Membership.UncoveredMemberIDs),
-		UncoveredConceptualIDs:   append([]componentmap.MemberID(nil), result.Membership.UncoveredMemberIDs...),
+		InputBytes:                     len(requestJSON),
+		LatencyMillis:                  result.Record.Call.Metadata.LatencyMillis,
+		FallbackReason:                 result.Landscape.FallbackReason,
+		ResponseBytes:                  result.Record.Call.ResponseBytes,
+		ResponseContentBytes:           len(result.Record.Call.Response),
+		Attempted:                      true,
+		TransportAttempts:              providerResult.Attempts,
+		ProviderCallSucceeded:          true,
+		ResponseParsed:                 architectureResponseParsed(result.Landscape),
+		ValidationOutcome:              result.Landscape.ValidationOutcome,
+		ArchitectureSource:             result.Landscape.Source,
+		ArchitectureLevel:              result.Landscape.Level,
+		NormalizationCount:             len(result.Landscape.Normalizations),
+		FallbackSelected:               result.Landscape.Fallback,
+		InputTokens:                    providerResult.InputTokens,
+		OutputTokens:                   providerResult.OutputTokens,
+		UsageReported:                  providerResult.UsageReported,
+		FinishReason:                   providerResult.FinishReason,
+		ResponseComplete:               providerResult.FinishReason == "stop",
+		ResponseState:                  result.Record.Call.ResponseState,
+		LocalCandidateCount:            len(bundle.Candidates),
+		RequestedConceptualCount:       conceptualCount,
+		StructuralLocatorCount:         structuralLocatorCount,
+		AnchorCount:                    len(bundle.BehaviorAnchors),
+		ValidationCodes:                architectureSynthesisDiagnosticCodes(result.Landscape.Diagnostics),
+		MembershipCounted:              result.Membership.Counted,
+		MemberOccurrences:              result.Membership.MemberOccurrences,
+		DistinctMembers:                result.Membership.DistinctMembers,
+		CoveredConceptualCount:         len(result.Membership.CoveredMemberIDs),
+		UncoveredConceptualCount:       len(result.Membership.UncoveredMemberIDs),
+		UncoveredConceptualIDs:         append([]componentmap.MemberID(nil), result.Membership.UncoveredMemberIDs...),
+		RequestedPrimaryScopeCount:     result.Membership.RequestedPrimaryScope,
+		CoveredPrimaryScopeCount:       result.Membership.CoveredPrimaryScope,
+		UncoveredPrimaryScopeCount:     result.Membership.UncoveredPrimaryScope,
+		CoveredSupportingEvidenceCount: result.Membership.CoveredSupportingEvidence,
+		ResponseShape:                  architectureSynthesisResponseShape(raw),
 	}
 	accepted := !result.Landscape.Fallback &&
 		(result.Landscape.ValidationOutcome == componentmap.ValidationAccepted ||
@@ -724,7 +914,26 @@ func ensureArchitectureSynthesisWithOptions(
 		state = debugdump.SemanticStateAccepted
 		validationCode = debugdump.SemanticValidationAccepted
 	}
-	recordArchitectureSemanticExchange(
+	semanticOutcome := debugdump.SemanticOutcome{}
+	if accepted {
+		code := "accepted"
+		if outcome.ValidationOutcome == componentmap.ValidationAcceptedPartial {
+			code = "accepted_partial"
+		}
+		semanticOutcome = debugdump.SemanticOutcome{
+			Phase: "complete", Code: code,
+			Metrics: architectureSynthesisOutcomeMetrics(outcome),
+		}
+	} else {
+		outcome.Failure = &report.ArchitectureSynthesisFailure{
+			Stage: "response_validation", Code: "architecture.proposal_rejected",
+		}
+		semanticOutcome = debugdump.SemanticOutcome{
+			Phase: outcome.Failure.Stage, Code: outcome.Failure.Code,
+			Metrics: architectureSynthesisFailureMetrics(outcome),
+		}
+	}
+	outcome.SemanticExchangePath = recordArchitectureSemanticExchange(
 		options.exchangeWriter,
 		requestJSON,
 		raw,
@@ -733,6 +942,7 @@ func ensureArchitectureSynthesisWithOptions(
 		providerResult.Attempts,
 		state,
 		validationCode,
+		semanticOutcome,
 	)
 	if !accepted {
 		if recordErr := recordArchitectureResearch(runDir, outcome, "rejected", false, policy, usage); recordErr != nil {
@@ -839,9 +1049,10 @@ func recordArchitectureSemanticExchange(
 	transportAttempts int,
 	state string,
 	validationCode string,
-) {
+	diagnostic debugdump.SemanticOutcome,
+) string {
 	if writer == nil {
-		return
+		return ""
 	}
 	semanticCalls := 1
 	if state == debugdump.SemanticStateCacheHit {
@@ -859,6 +1070,7 @@ func recordArchitectureSemanticExchange(
 		TransportAttempts:      transportAttempts,
 		Request:                request,
 		Response:               response,
+		Outcome:                diagnostic,
 	}
 	if len(response) == 0 {
 		unavailableCode := debugdump.SemanticUnavailableNoContent
@@ -879,7 +1091,78 @@ func recordArchitectureSemanticExchange(
 	if state == debugdump.SemanticStateCacheHit {
 		exchange.RequestProvenance = debugdump.SemanticRequestPrepared
 	}
-	writer.RecordSemanticExchange(exchange)
+	return writer.RecordSemanticExchange(exchange)
+}
+
+func architectureSynthesisResponseShape(raw []byte) *report.ArchitectureSynthesisResponseShape {
+	if len(raw) == 0 {
+		return nil
+	}
+	shape := componentmap.InspectSynthesisResponseShape(raw)
+	return &report.ArchitectureSynthesisResponseShape{
+		JSONValid: shape.JSONValid, Grammar: shape.Grammar,
+		SubsystemCount: shape.SubsystemCount, ComponentCount: shape.ComponentCount,
+		MemberRefCount: shape.MemberRefCount, UnitRefCount: shape.UnitRefCount,
+		AnchorRefCount:         shape.AnchorRefCount,
+		MissingAnchorRefsCount: shape.MissingAnchorRefsCount,
+		EmptyAnchorRefsCount:   shape.EmptyAnchorRefsCount,
+		NullAnchorRefsCount:    shape.NullAnchorRefsCount,
+	}
+}
+
+func architectureSynthesisResponseMetrics(
+	shape *report.ArchitectureSynthesisResponseShape,
+) []debugdump.SemanticMetric {
+	if shape == nil {
+		return nil
+	}
+	jsonValid := 0
+	if shape.JSONValid {
+		jsonValid = 1
+	}
+	return []debugdump.SemanticMetric{
+		{Name: "anchor_ref_count", Value: shape.AnchorRefCount},
+		{Name: "component_count", Value: shape.ComponentCount},
+		{Name: "explicit_empty_anchor_refs_count", Value: shape.EmptyAnchorRefsCount},
+		{Name: "json_valid", Value: jsonValid},
+		{Name: "member_ref_count", Value: shape.MemberRefCount},
+		{Name: "missing_anchor_refs_count", Value: shape.MissingAnchorRefsCount},
+		{Name: "null_anchor_refs_count", Value: shape.NullAnchorRefsCount},
+		{Name: "subsystem_count", Value: shape.SubsystemCount},
+		{Name: "unit_ref_count", Value: shape.UnitRefCount},
+	}
+}
+
+func architectureSynthesisOutcomeMetrics(outcome architectureSynthesisOutcome) []debugdump.SemanticMetric {
+	metrics := architectureSynthesisResponseMetrics(outcome.ResponseShape)
+	metrics = append(metrics,
+		debugdump.SemanticMetric{Name: "covered_conceptual_count", Value: outcome.CoveredConceptualCount},
+		debugdump.SemanticMetric{Name: "requested_conceptual_count", Value: outcome.RequestedConceptualCount},
+		debugdump.SemanticMetric{Name: "uncovered_conceptual_count", Value: outcome.UncoveredConceptualCount},
+	)
+	if outcome.RequestedPrimaryScopeCount > 0 {
+		metrics = append(metrics, architectureSynthesisPrimaryScopeMetrics(outcome)...)
+	}
+	sort.Slice(metrics, func(i, j int) bool { return metrics[i].Name < metrics[j].Name })
+	return metrics
+}
+
+func architectureSynthesisFailureMetrics(outcome architectureSynthesisOutcome) []debugdump.SemanticMetric {
+	metrics := architectureSynthesisResponseMetrics(outcome.ResponseShape)
+	if outcome.RequestedPrimaryScopeCount > 0 {
+		metrics = append(metrics, architectureSynthesisPrimaryScopeMetrics(outcome)...)
+	}
+	sort.Slice(metrics, func(i, j int) bool { return metrics[i].Name < metrics[j].Name })
+	return metrics
+}
+
+func architectureSynthesisPrimaryScopeMetrics(outcome architectureSynthesisOutcome) []debugdump.SemanticMetric {
+	return []debugdump.SemanticMetric{
+		{Name: "covered_primary_scope_count", Value: outcome.CoveredPrimaryScopeCount},
+		{Name: "covered_supporting_evidence_count", Value: outcome.CoveredSupportingEvidenceCount},
+		{Name: "requested_primary_scope_count", Value: outcome.RequestedPrimaryScopeCount},
+		{Name: "uncovered_primary_scope_count", Value: outcome.UncoveredPrimaryScopeCount},
+	}
 }
 
 func recordArchitectureResearch(
@@ -1007,35 +1290,40 @@ func replayArchitectureSynthesisOutcome(
 	}
 	conceptualCount, structuralLocatorCount := bundle.CandidateRoleCounts()
 	return architectureSynthesisOutcome{
-		InputBytes:               record.Call.Metadata.InputBytes,
-		LatencyMillis:            record.Call.Metadata.LatencyMillis,
-		FallbackReason:           landscape.FallbackReason,
-		ProviderCallSucceeded:    true,
-		ResponseParsed:           architectureResponseParsed(landscape),
-		ValidationOutcome:        landscape.ValidationOutcome,
-		ArchitectureSource:       landscape.Source,
-		ArchitectureLevel:        landscape.Level,
-		NormalizationCount:       len(landscape.Normalizations),
-		FallbackSelected:         landscape.Fallback,
-		UsageReported:            record.Call.Metadata.UsageReported,
-		InputTokens:              record.Call.Metadata.InputTokens,
-		OutputTokens:             record.Call.Metadata.OutputTokens,
-		FinishReason:             record.Call.Metadata.FinishReason,
-		ResponseComplete:         record.Call.Metadata.ResponseComplete,
-		TransportAttempts:        0,
-		ResponseState:            record.Call.ResponseState,
-		ResponseBytes:            record.Call.ResponseBytes,
-		ResponseContentBytes:     len(record.Call.Response),
-		ValidationCodes:          architectureSynthesisDiagnosticCodes(landscape.Diagnostics),
-		MembershipCounted:        result.Membership.Counted,
-		MemberOccurrences:        result.Membership.MemberOccurrences,
-		DistinctMembers:          result.Membership.DistinctMembers,
-		CoveredConceptualCount:   len(result.Membership.CoveredMemberIDs),
-		UncoveredConceptualCount: len(result.Membership.UncoveredMemberIDs),
-		UncoveredConceptualIDs:   append([]componentmap.MemberID(nil), result.Membership.UncoveredMemberIDs...),
-		LocalCandidateCount:      len(bundle.Candidates),
-		RequestedConceptualCount: conceptualCount,
-		StructuralLocatorCount:   structuralLocatorCount,
+		InputBytes:                     record.Call.Metadata.InputBytes,
+		LatencyMillis:                  record.Call.Metadata.LatencyMillis,
+		FallbackReason:                 landscape.FallbackReason,
+		ProviderCallSucceeded:          true,
+		ResponseParsed:                 architectureResponseParsed(landscape),
+		ValidationOutcome:              landscape.ValidationOutcome,
+		ArchitectureSource:             landscape.Source,
+		ArchitectureLevel:              landscape.Level,
+		NormalizationCount:             len(landscape.Normalizations),
+		FallbackSelected:               landscape.Fallback,
+		UsageReported:                  record.Call.Metadata.UsageReported,
+		InputTokens:                    record.Call.Metadata.InputTokens,
+		OutputTokens:                   record.Call.Metadata.OutputTokens,
+		FinishReason:                   record.Call.Metadata.FinishReason,
+		ResponseComplete:               record.Call.Metadata.ResponseComplete,
+		TransportAttempts:              0,
+		ResponseState:                  record.Call.ResponseState,
+		ResponseBytes:                  record.Call.ResponseBytes,
+		ResponseContentBytes:           len(record.Call.Response),
+		ValidationCodes:                architectureSynthesisDiagnosticCodes(landscape.Diagnostics),
+		MembershipCounted:              result.Membership.Counted,
+		MemberOccurrences:              result.Membership.MemberOccurrences,
+		DistinctMembers:                result.Membership.DistinctMembers,
+		CoveredConceptualCount:         len(result.Membership.CoveredMemberIDs),
+		UncoveredConceptualCount:       len(result.Membership.UncoveredMemberIDs),
+		UncoveredConceptualIDs:         append([]componentmap.MemberID(nil), result.Membership.UncoveredMemberIDs...),
+		RequestedPrimaryScopeCount:     result.Membership.RequestedPrimaryScope,
+		CoveredPrimaryScopeCount:       result.Membership.CoveredPrimaryScope,
+		UncoveredPrimaryScopeCount:     result.Membership.UncoveredPrimaryScope,
+		CoveredSupportingEvidenceCount: result.Membership.CoveredSupportingEvidence,
+		LocalCandidateCount:            len(bundle.Candidates),
+		RequestedConceptualCount:       conceptualCount,
+		StructuralLocatorCount:         structuralLocatorCount,
+		ResponseShape:                  architectureSynthesisResponseShape(record.Call.Response),
 	}, nil
 }
 
@@ -1044,42 +1332,49 @@ func architectureSynthesisStatus(
 	synthesisErr error,
 ) report.ArchitectureSynthesisStatus {
 	status := report.ArchitectureSynthesisStatus{
-		Version:                  report.ArchitectureSynthesisStatusVersion,
-		RequestBytes:             outcome.InputBytes,
-		ResponseBytes:            outcome.ResponseBytes,
-		ResponseContentBytes:     outcome.ResponseContentBytes,
-		LatencyMillis:            outcome.LatencyMillis,
-		TransportAttempts:        outcome.TransportAttempts,
-		LocalCandidateCount:      outcome.LocalCandidateCount,
-		RequestedConceptualCount: outcome.RequestedConceptualCount,
-		StructuralLocatorCount:   outcome.StructuralLocatorCount,
-		AnchorCount:              outcome.AnchorCount,
-		MembershipCounted:        outcome.MembershipCounted,
-		MemberOccurrences:        outcome.MemberOccurrences,
-		DistinctMembers:          outcome.DistinctMembers,
-		CoveredConceptualCount:   outcome.CoveredConceptualCount,
-		UncoveredConceptualCount: outcome.UncoveredConceptualCount,
-		UncoveredConceptualIDs:   append([]componentmap.MemberID(nil), outcome.UncoveredConceptualIDs...),
-		UsageReported:            outcome.UsageReported,
-		InputTokens:              outcome.InputTokens,
-		OutputTokens:             outcome.OutputTokens,
-		FinishReason:             outcome.FinishReason,
-		ResponseComplete:         outcome.ResponseComplete,
-		ResponseState:            string(outcome.ResponseState),
-		ValidationCodes:          append([]string(nil), outcome.ValidationCodes...),
-		ProviderCallSucceeded:    outcome.ProviderCallSucceeded,
-		ResponseParsed:           outcome.ResponseParsed,
+		Version:                        report.ArchitectureSynthesisStatusVersion,
+		RequestBytes:                   outcome.InputBytes,
+		ResponseBytes:                  outcome.ResponseBytes,
+		ResponseContentBytes:           outcome.ResponseContentBytes,
+		LatencyMillis:                  outcome.LatencyMillis,
+		TransportAttempts:              outcome.TransportAttempts,
+		LocalCandidateCount:            outcome.LocalCandidateCount,
+		RequestedConceptualCount:       outcome.RequestedConceptualCount,
+		StructuralLocatorCount:         outcome.StructuralLocatorCount,
+		AnchorCount:                    outcome.AnchorCount,
+		MembershipCounted:              outcome.MembershipCounted,
+		MemberOccurrences:              outcome.MemberOccurrences,
+		DistinctMembers:                outcome.DistinctMembers,
+		CoveredConceptualCount:         outcome.CoveredConceptualCount,
+		UncoveredConceptualCount:       outcome.UncoveredConceptualCount,
+		UncoveredConceptualIDs:         append([]componentmap.MemberID(nil), outcome.UncoveredConceptualIDs...),
+		RequestedPrimaryScopeCount:     outcome.RequestedPrimaryScopeCount,
+		CoveredPrimaryScopeCount:       outcome.CoveredPrimaryScopeCount,
+		UncoveredPrimaryScopeCount:     outcome.UncoveredPrimaryScopeCount,
+		CoveredSupportingEvidenceCount: outcome.CoveredSupportingEvidenceCount,
+		UsageReported:                  outcome.UsageReported,
+		InputTokens:                    outcome.InputTokens,
+		OutputTokens:                   outcome.OutputTokens,
+		FinishReason:                   outcome.FinishReason,
+		ResponseComplete:               outcome.ResponseComplete,
+		ResponseState:                  string(outcome.ResponseState),
+		ValidationCodes:                append([]string(nil), outcome.ValidationCodes...),
+		ProviderCallSucceeded:          outcome.ProviderCallSucceeded,
+		ResponseParsed:                 outcome.ResponseParsed,
 		ProposalAccepted: outcome.ValidationOutcome == componentmap.ValidationAccepted ||
 			outcome.ValidationOutcome == componentmap.ValidationAcceptedNormalized ||
 			outcome.ValidationOutcome == componentmap.ValidationAcceptedPartial,
-		ProposalPartial:    outcome.ValidationOutcome == componentmap.ValidationAcceptedPartial,
-		ProposalNormalized: outcome.NormalizationCount > 0,
-		ProposalRejected:   outcome.ValidationOutcome == componentmap.ValidationRejected,
-		FallbackSelected:   outcome.FallbackSelected,
-		ArchitectureSource: string(outcome.ArchitectureSource),
-		ArchitectureLevel:  outcome.ArchitectureLevel,
-		NormalizationCount: outcome.NormalizationCount,
-		FallbackReason:     string(outcome.FallbackReason),
+		ProposalPartial:      outcome.ValidationOutcome == componentmap.ValidationAcceptedPartial,
+		ProposalNormalized:   outcome.NormalizationCount > 0,
+		ProposalRejected:     outcome.ValidationOutcome == componentmap.ValidationRejected,
+		FallbackSelected:     outcome.FallbackSelected,
+		ArchitectureSource:   string(outcome.ArchitectureSource),
+		ArchitectureLevel:    outcome.ArchitectureLevel,
+		NormalizationCount:   outcome.NormalizationCount,
+		FallbackReason:       string(outcome.FallbackReason),
+		Failure:              outcome.Failure,
+		ResponseShape:        outcome.ResponseShape,
+		SemanticExchangePath: outcome.SemanticExchangePath,
 	}
 	if synthesisErr == nil {
 		if outcome.Cached {
@@ -1092,6 +1387,9 @@ func architectureSynthesisStatus(
 	}
 
 	status.State = report.ArchitectureSynthesisFailed
+	if status.Failure == nil {
+		status.Failure = architectureSynthesisFailureDiagnostic(outcome, synthesisErr)
+	}
 	if outcome.Attempted {
 		status.ProviderRequestCount = 1
 	}
@@ -1115,7 +1413,7 @@ func architectureSynthesisStatus(
 	status.FallbackReason = ""
 	message := synthesisErr.Error()
 	switch {
-	case strings.Contains(message, "response content is empty"):
+	case isArchitectureEmptyResponse(synthesisErr):
 		status.ErrorCode = "empty_response"
 	case errors.Is(synthesisErr, errArchitectureSynthesisRejected),
 		strings.Contains(message, "unusable"), strings.Contains(message, "validate response"):
@@ -1124,6 +1422,52 @@ func architectureSynthesisStatus(
 		status.ErrorCode = "provider_error"
 	}
 	return status
+}
+
+func architectureSynthesisFailureDiagnostic(
+	outcome architectureSynthesisOutcome,
+	synthesisErr error,
+) *report.ArchitectureSynthesisFailure {
+	message := ""
+	if synthesisErr != nil {
+		message = synthesisErr.Error()
+	}
+	if errors.Is(synthesisErr, componentmap.ErrPartialModelStateInconsistent) {
+		diagnostic := componentmap.DiagnoseSynthesisFailure(synthesisErr)
+		return &report.ArchitectureSynthesisFailure{
+			Stage: diagnostic.Stage, Code: diagnostic.Code, Detail: diagnostic.Detail,
+		}
+	}
+	if isArchitectureOutputResourceExhausted(synthesisErr) {
+		return &report.ArchitectureSynthesisFailure{
+			Stage: "provider_call", Code: "architecture.provider_output_limit",
+		}
+	}
+	if isArchitectureEmptyResponse(synthesisErr) {
+		return &report.ArchitectureSynthesisFailure{
+			Stage: "response_decode", Code: "architecture.empty_response",
+		}
+	}
+	var providerFailure *architectureProviderCallFailed
+	if errors.As(synthesisErr, &providerFailure) || outcome.Attempted && !outcome.ProviderCallSucceeded {
+		return &report.ArchitectureSynthesisFailure{
+			Stage: "provider_call", Code: "architecture.provider_call_failed",
+		}
+	}
+	if errors.Is(synthesisErr, errArchitectureSynthesisRejected) {
+		return &report.ArchitectureSynthesisFailure{
+			Stage: "response_validation", Code: "architecture.proposal_rejected",
+		}
+	}
+	if strings.Contains(message, "provider configuration") ||
+		strings.Contains(message, "provider cache identity") {
+		return &report.ArchitectureSynthesisFailure{
+			Stage: "provider_configuration", Code: "architecture.provider_configuration_failed",
+		}
+	}
+	return &report.ArchitectureSynthesisFailure{
+		Stage: "input_preparation", Code: "architecture.preparation_failed",
+	}
 }
 
 func normalizeArchitectureSynthesisOutputLanguage(value string) (string, error) {
@@ -1154,6 +1498,12 @@ func architectureSynthesisOutputLimitStatus(
 	if !errors.As(synthesisErr, &limitErr) {
 		limitErr = &modelresearch.ResourceLimitError{}
 	}
+	failure := outcome.Failure
+	if failure == nil {
+		failure = &report.ArchitectureSynthesisFailure{
+			Stage: "provider_call", Code: "architecture.provider_output_limit",
+		}
+	}
 	status := report.ArchitectureSynthesisStatus{
 		Version:                  report.ArchitectureSynthesisStatusVersion,
 		State:                    report.ArchitectureSynthesisFailed,
@@ -1175,6 +1525,10 @@ func architectureSynthesisOutputLimitStatus(
 		ObservedOutputTokens:     outcome.OutputTokens,
 		FinishReason:             outcome.FinishReason,
 		ResponseComplete:         outcome.ResponseComplete,
+		ResponseState:            string(outcome.ResponseState),
+		Failure:                  failure,
+		ResponseShape:            outcome.ResponseShape,
+		SemanticExchangePath:     outcome.SemanticExchangePath,
 	}
 	if status.ConfiguredMaxTokens == 0 {
 		status.ConfiguredMaxTokens = limitErr.Limit

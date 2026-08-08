@@ -39,6 +39,8 @@ func diagnosticSeverity(code string) FindingSeverity {
 		"proposal.no_usable_subsystems",
 		"proposal.omitted_members_exceed_bounds",
 		"proposal.ungrounded_primary_component",
+		"proposal.empty_primary_scope_coverage",
+		"proposal.supporting_only_unit_coverage",
 		"response.no_json",
 		"response.ambiguous_json",
 		"response.invalid_proposal",
@@ -352,6 +354,8 @@ func fallbackReasonForDiagnostics(diagnostics []Diagnostic, hasAnchors bool) Fal
 				return FallbackRejectedUnknownAnchor
 			case "proposal.ungrounded_primary_component":
 				return FallbackRejectedUngrounded
+			case "proposal.empty_primary_scope_coverage", "proposal.supporting_only_unit_coverage":
+				return FallbackRejectedUngrounded
 			}
 		}
 	}
@@ -365,6 +369,8 @@ func fallbackReasonForDiagnostics(diagnostics []Diagnostic, hasAnchors bool) Fal
 		case "proposal.unknown_anchor_id":
 			return FallbackRejectedUnknownAnchor
 		case "proposal.ungrounded_primary_component":
+			return FallbackRejectedUngrounded
+		case "proposal.empty_primary_scope_coverage", "proposal.supporting_only_unit_coverage":
 			return FallbackRejectedUngrounded
 		default:
 			return FallbackRejectedMalformed

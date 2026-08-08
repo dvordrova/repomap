@@ -14,6 +14,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/gofacts"
@@ -22,16 +23,19 @@ import (
 )
 
 type architectureSynthesisStub struct {
-	calls     int
-	response  []byte
-	err       error
-	maxTokens int
-	endpoint  string
-	prompts   []componentmap.SynthesisPrompt
-	pending   *componentmap.SynthesisPrompt
-	bodies    [][]byte
-	finish    string
-	onCall    func()
+	calls    int
+	response []byte
+	// responseBytes can retain measured provider-envelope bytes when Content
+	// is deliberately unavailable (for example response-byte overflow).
+	responseBytes int
+	err           error
+	maxTokens     int
+	endpoint      string
+	prompts       []componentmap.SynthesisPrompt
+	pending       *componentmap.SynthesisPrompt
+	bodies        [][]byte
+	finish        string
+	onCall        func()
 }
 
 type architectureSynthesisWireResponse struct {
@@ -67,7 +71,71 @@ func architectureSynthesisOutcomeFixture(
 		FinishReason: "stop", ResponseComplete: true, ResponseState: componentmap.ResponseCaptured,
 		LocalCandidateCount: 2, RequestedConceptualCount: 2, AnchorCount: 1,
 		MembershipCounted: true, MemberOccurrences: 2, DistinctMembers: 2,
-		CoveredConceptualCount: 2,
+		CoveredConceptualCount:     2,
+		RequestedPrimaryScopeCount: 2,
+		CoveredPrimaryScopeCount:   2,
+		UncoveredPrimaryScopeCount: 0,
+	}
+}
+
+func TestArchitectureSuccessConsoleExplainsPartialCoverage(t *testing.T) {
+	t.Parallel()
+
+	outcome := architectureSynthesisOutcomeFixture(componentmap.ValidationAcceptedPartial)
+	outcome.ArchitectureSource = componentmap.SourcePartialModel
+	outcome.RequestedConceptualCount = 28
+	outcome.CoveredConceptualCount = 10
+	outcome.UncoveredConceptualCount = 18
+	outcome.RequestedPrimaryScopeCount = 18
+	outcome.CoveredPrimaryScopeCount = 6
+	outcome.UncoveredPrimaryScopeCount = 12
+	outcome.CoveredSupportingEvidenceCount = 4
+	outcome.ResponseShape = &report.ArchitectureSynthesisResponseShape{
+		JSONValid: true, Grammar: "nested", SubsystemCount: 3,
+		ComponentCount: 4, MemberRefCount: 10, AnchorRefCount: 9,
+	}
+	outcome.SemanticExchangePath = "semantic_exchanges/" + strings.Repeat("a", 64) + "/exchange.v2.json"
+
+	lines := strings.Join(architectureSuccessConsoleLines("/tmp/run", outcome), "\n")
+	for _, want := range []string{
+		"source: partial_model",
+		"conceptual coverage: 10/28",
+		"local unclassified remainder: 18",
+		"primary scope coverage: 6/18 (uncovered=12)",
+		"supporting evidence covered: 4",
+		"response shape: grammar=nested subsystems=3 components=4 member_refs=10",
+		"status: /tmp/run/architecture_synthesis_status.json",
+		"exchange: /tmp/run/semantic_exchanges/" + strings.Repeat("a", 64) + "/exchange.v2.json",
+	} {
+		if !strings.Contains(lines, want) {
+			t.Fatalf("Architecture success log missing %q:\n%s", want, lines)
+		}
+	}
+}
+
+func TestArchitectureFailureConsoleExplainsPrimaryScopeQualityRejection(t *testing.T) {
+	t.Parallel()
+
+	outcome := architectureSynthesisOutcomeFixture(componentmap.ValidationRejected)
+	outcome.Failure = &report.ArchitectureSynthesisFailure{
+		Stage: "response_validation", Code: "architecture.proposal_rejected",
+	}
+	outcome.ValidationCodes = []string{"proposal.empty_primary_scope_coverage"}
+	outcome.RequestedPrimaryScopeCount = 18
+	outcome.CoveredPrimaryScopeCount = 0
+	outcome.UncoveredPrimaryScopeCount = 18
+	outcome.CoveredSupportingEvidenceCount = 10
+
+	lines := strings.Join(architectureFailureConsoleLines("/tmp/run", outcome), "\n")
+	for _, want := range []string{
+		"code: architecture.proposal_rejected",
+		"validation diagnostics: proposal.empty_primary_scope_coverage",
+		"primary scope coverage: 0/18 (uncovered=18)",
+		"supporting evidence covered: 10",
+	} {
+		if !strings.Contains(lines, want) {
+			t.Fatalf("Architecture failure log missing %q:\n%s", want, lines)
+		}
 	}
 }
 
@@ -96,6 +164,9 @@ func (stub *architectureSynthesisStub) SynthesizeComponentLandscapeBodyMeasured(
 	result := modelresearch.ProviderResult{
 		Content: append([]byte(nil), stub.response...), Attempts: 1,
 		RequestBytes: len(body), ResponseBytes: len(stub.response),
+	}
+	if stub.responseBytes > 0 {
+		result.ResponseBytes = stub.responseBytes
 	}
 	if stub.err == nil || stub.finish == "length" {
 		result.UsageReported = true
@@ -218,10 +289,21 @@ func TestEnsureArchitectureSynthesisCachesOneCallPerRevision(t *testing.T) {
 		t.Fatalf("first outcome = %#v, calls = %d", first, provider.calls)
 	}
 
-	second, err := ensureArchitectureSynthesis(
+	secondWriter, err := debugdump.OpenWriter(secondRun, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := ensureArchitectureSynthesisWithOptions(
 		context.Background(), bundle, secondRun, "revision-one",
 		"openai-compatible/bearer", "test-model", provider,
+		architectureSynthesisOptions{
+			exchangeWriter:         secondWriter,
+			providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256(),
+		},
 	)
+	if closeErr := secondWriter.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,6 +320,21 @@ func TestEnsureArchitectureSynthesisCachesOneCallPerRevision(t *testing.T) {
 	}
 	if landscape.Fallback || landscape.Subsystems[0].Components[0].Name != "Runtime" {
 		t.Fatalf("cached landscape = %#v", landscape)
+	}
+	records := readArchitectureSemanticExchangeRecords(t, secondRun)
+	if len(records) != 1 || records[0].State != debugdump.SemanticStateCacheHit ||
+		records[0].RequestProvenance != debugdump.SemanticRequestPrepared ||
+		records[0].Outcome.Code != "cache_hit" {
+		t.Fatalf("cached semantic exchange = %#v", records)
+	}
+	metrics := make(map[string]int, len(records[0].Outcome.Metrics))
+	for _, metric := range records[0].Outcome.Metrics {
+		metrics[metric.Name] = metric.Value
+	}
+	if metrics["requested_primary_scope_count"] != 1 ||
+		metrics["covered_primary_scope_count"] != 1 ||
+		metrics["uncovered_primary_scope_count"] != 0 {
+		t.Fatalf("cached primary-scope metrics = %#v", metrics)
 	}
 }
 
@@ -312,6 +409,8 @@ func TestEnsureArchitectureSynthesisSendsAndJournalsOneExactPreparedBody(t *test
 		status.LocalCandidateCount != 1 || status.RequestedConceptualCount != 1 ||
 		status.StructuralLocatorCount != 0 || status.AnchorCount != 0 ||
 		!status.MembershipCounted || status.MemberOccurrences != 1 || status.DistinctMembers != 1 ||
+		status.RequestedPrimaryScopeCount != 1 || status.CoveredPrimaryScopeCount != 1 ||
+		status.UncoveredPrimaryScopeCount != 0 || status.CoveredSupportingEvidenceCount != 0 ||
 		!status.UsageReported || status.InputTokens != 101 || status.OutputTokens != 53 ||
 		status.FinishReason != "stop" || !status.ResponseComplete ||
 		status.ResponseState != string(componentmap.ResponseCaptured) || status.TransportAttempts != 1 {
@@ -334,8 +433,19 @@ func TestEnsureArchitectureSynthesisSendsAndJournalsOneExactPreparedBody(t *test
 		t.Fatal(err)
 	}
 	if exchange.RequestProvenance != debugdump.SemanticRequestExactSent ||
-		exchange.SemanticCalls != 1 || exchange.TransportAttempts != 1 {
+		exchange.SemanticCalls != 1 || exchange.TransportAttempts != 1 ||
+		exchange.Outcome.Code != "accepted" {
 		t.Fatalf("semantic exchange = %#v", exchange)
+	}
+	metrics := make(map[string]int, len(exchange.Outcome.Metrics))
+	for _, metric := range exchange.Outcome.Metrics {
+		metrics[metric.Name] = metric.Value
+	}
+	if metrics["requested_primary_scope_count"] != status.RequestedPrimaryScopeCount ||
+		metrics["covered_primary_scope_count"] != status.CoveredPrimaryScopeCount ||
+		metrics["uncovered_primary_scope_count"] != status.UncoveredPrimaryScopeCount ||
+		metrics["covered_supporting_evidence_count"] != status.CoveredSupportingEvidenceCount {
+		t.Fatalf("live Architecture status/exchange coverage mismatch: status=%#v metrics=%#v", status, metrics)
 	}
 	savedRequest, err := os.ReadFile(filepath.Join(
 		runDir, debugdump.SemanticExchangesDir, directories[0].Name(),
@@ -346,6 +456,137 @@ func TestEnsureArchitectureSynthesisSendsAndJournalsOneExactPreparedBody(t *test
 	}
 	if !bytes.Equal(savedRequest, wantBody) {
 		t.Fatal("journaled Architecture request differs from the exact sent provider body")
+	}
+}
+
+func TestArchitecturePrimaryScopeQualityRejectionKeepsStatusExchangeAndMetadataInParity(t *testing.T) {
+	t.Parallel()
+
+	bundle := architectureSynthesisTestBundle()
+	packageID := bundle.Candidates[0].ID
+	symbol := bundle.Candidates[0]
+	symbol.ID = componentmap.MemberID{Kind: componentmap.MemberSymbol, Value: "opaque-runtime-start"}
+	symbol.Name = "Runtime.Start"
+	symbol.ParentID = &packageID
+	symbol.Facts = append([]componentmap.LocalFact(nil), symbol.Facts...)
+	symbol.Facts[0].Value = "Start"
+	bundle.Candidates = append(bundle.Candidates, symbol)
+
+	request, _, err := componentmap.BuildSynthesisRequest(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var supportingRef string
+	for _, candidate := range request.Candidates {
+		if candidate.CoverageRole == componentmap.SynthesisCoverageSupportingEvidence {
+			supportingRef = candidate.Ref.Ref
+		}
+	}
+	if supportingRef == "" {
+		t.Fatal("fixture has no supporting-evidence ref")
+	}
+	response := mustArchitectureJSON(t, map[string]any{
+		"subsystems": []any{map[string]any{
+			"name": "Runtime evidence", "description": "Supporting symbol only",
+			"components": []any{map[string]any{
+				"name": "Start", "description": "Startup evidence",
+				"member_refs": []string{supportingRef}, "anchor_refs": []string{},
+			}},
+		}},
+	})
+	provider := &architectureSynthesisStub{response: response}
+	runDir := t.TempDir()
+	writer, err := debugdump.OpenWriter(runDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.WriteMetadata(debugdump.RunMeta{RunID: "primary-quality", Command: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	outcome, synthesisErr := ensureArchitectureSynthesisWithOptions(
+		t.Context(), bundle, runDir, "revision-primary-quality",
+		"openai-compatible/bearer", "test-model", provider,
+		architectureSynthesisOptions{
+			disableCache: true, exchangeWriter: writer,
+			providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256(),
+		},
+	)
+	if closeErr := writer.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if !errors.Is(synthesisErr, errArchitectureSynthesisRejected) || outcome.Failure == nil ||
+		outcome.Failure.Code != "architecture.proposal_rejected" ||
+		!slices.Contains(outcome.ValidationCodes, "proposal.empty_primary_scope_coverage") ||
+		!slices.Contains(outcome.ValidationCodes, "proposal.supporting_only_unit_coverage") {
+		t.Fatalf("quality rejection outcome/error = %#v / %v", outcome, synthesisErr)
+	}
+	if outcome.RequestedPrimaryScopeCount != 1 || outcome.CoveredPrimaryScopeCount != 0 ||
+		outcome.UncoveredPrimaryScopeCount != 1 || outcome.CoveredSupportingEvidenceCount != 1 {
+		t.Fatalf("quality rejection role counts = %#v", outcome)
+	}
+	if err := persistArchitectureSynthesisStatus(runDir, outcome, synthesisErr); err != nil {
+		t.Fatal(err)
+	}
+	statusData, err := os.ReadFile(filepath.Join(runDir, report.ArchitectureSynthesisStatusFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status report.ArchitectureSynthesisStatus
+	if err := json.Unmarshal(statusData, &status); err != nil {
+		t.Fatal(err)
+	}
+	if err := status.Validate(); err != nil {
+		t.Fatalf("quality status: %v; status=%#v", err, status)
+	}
+	if status.CoveredConceptualCount != 0 || status.UncoveredConceptualCount != 0 ||
+		status.RequestedPrimaryScopeCount != 1 || status.CoveredPrimaryScopeCount != 0 ||
+		status.UncoveredPrimaryScopeCount != 1 || status.CoveredSupportingEvidenceCount != 1 {
+		t.Fatalf("quality rejection status = %#v", status)
+	}
+
+	records := readArchitectureSemanticExchangeRecords(t, runDir)
+	if len(records) != 1 || records[0].Outcome.Code != "architecture.proposal_rejected" {
+		t.Fatalf("quality rejection exchange = %#v", records)
+	}
+	exchangeMetrics := make(map[string]int, len(records[0].Outcome.Metrics))
+	for _, metric := range records[0].Outcome.Metrics {
+		exchangeMetrics[metric.Name] = metric.Value
+	}
+	if _, leaked := exchangeMetrics["covered_conceptual_count"]; leaked {
+		t.Fatalf("failed exchange published accepted conceptual coverage: %#v", exchangeMetrics)
+	}
+	if exchangeMetrics["requested_primary_scope_count"] != status.RequestedPrimaryScopeCount ||
+		exchangeMetrics["covered_primary_scope_count"] != status.CoveredPrimaryScopeCount ||
+		exchangeMetrics["uncovered_primary_scope_count"] != status.UncoveredPrimaryScopeCount ||
+		exchangeMetrics["covered_supporting_evidence_count"] != status.CoveredSupportingEvidenceCount {
+		t.Fatalf("quality status/exchange mismatch: status=%#v metrics=%#v", status, exchangeMetrics)
+	}
+
+	diagnostic := architectureAtlasFirstDiagnostic(outcome, synthesisErr, false)
+	if err := recordAtlasFirstStageDiagnostic(runDir, diagnostic); err != nil {
+		t.Fatal(err)
+	}
+	metadata := readAtlasFirstMetadataFixture(t, runDir)
+	var metadataOutcome *debugdump.SemanticOutcome
+	for _, attempt := range metadata.RequestAttempts {
+		if attempt.Stage == debugdump.SemanticStageArchitecture {
+			metadataOutcome = attempt.Outcome
+		}
+	}
+	if metadataOutcome == nil || metadataOutcome.Code != "architecture.proposal_rejected" {
+		t.Fatalf("quality rejection metadata = %#v", metadata)
+	}
+	metadataMetrics := make(map[string]int, len(metadataOutcome.Metrics))
+	for _, metric := range metadataOutcome.Metrics {
+		metadataMetrics[metric.Name] = metric.Value
+	}
+	for _, name := range []string{
+		"requested_primary_scope_count", "covered_primary_scope_count",
+		"uncovered_primary_scope_count", "covered_supporting_evidence_count",
+	} {
+		if metadataMetrics[name] != exchangeMetrics[name] {
+			t.Fatalf("quality exchange/metadata metric %s = %d/%d", name, exchangeMetrics[name], metadataMetrics[name])
+		}
 	}
 }
 
@@ -1021,6 +1262,20 @@ func TestEnsureArchitectureSynthesisResourceLimitPublishesOnlyFailedStatus(t *te
 				}
 			},
 		},
+		{
+			name: "provider response-byte resource error without retained content",
+			provider: func() *architectureSynthesisStub {
+				return &architectureSynthesisStub{
+					responseBytes: modelresearch.ProviderResponseByteLimit + 1,
+					err: &modelresearch.ResourceLimitError{
+						Stage: "architecture_synthesis", Kind: modelresearch.ResourceLimitResponseBytes,
+						Limit:         modelresearch.ProviderResponseByteLimit,
+						Observed:      modelresearch.ProviderResponseByteLimit + 1,
+						ObservedKnown: true, ObservedAtLeast: true,
+					},
+				}
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			runsDir := t.TempDir()
@@ -1094,6 +1349,9 @@ func TestEnsureArchitectureSynthesisResourceLimitPublishesOnlyFailedStatus(t *te
 				}
 			} else if status.ResponseBytes == 0 {
 				t.Fatalf("response-byte failed status = %#v", status)
+			}
+			if status.Failure == nil || status.Failure.Code != "architecture.provider_output_limit" {
+				t.Fatalf("resource-limit failure diagnostic = %#v", status.Failure)
 			}
 			if _, err := os.Lstat(filepath.Join(runDir, report.ArchitectureSynthesisFile)); !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("resource exhaustion published a synthesis record: %v", err)
@@ -1173,13 +1431,17 @@ func TestArchitectureOutputExhaustionJournalsOneRedactedExchange(t *testing.T) {
 	}
 	if recorded.Stage != debugdump.SemanticStageArchitecture ||
 		recorded.State != debugdump.SemanticStateProviderFailed ||
-		recorded.SemanticCalls != 1 || recorded.TransportAttempts != 1 {
+		recorded.SemanticCalls != 1 || recorded.TransportAttempts != 1 ||
+		recorded.Outcome.Phase != "provider_call" ||
+		recorded.Outcome.Code != "architecture.provider_output_limit" {
 		t.Fatalf("failed exchange metadata = %#v", recorded)
+	}
+	if outcome.Failure == nil || outcome.Failure.Code != recorded.Outcome.Code {
+		t.Fatalf("output-limit outcome/exchange mismatch = %#v / %#v", outcome.Failure, recorded.Outcome)
 	}
 	if _, err := os.Lstat(filepath.Join(runDir, report.ArchitectureSynthesisFile)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("failed attempt published a synthesis record: %v", err)
 	}
-	_ = outcome
 }
 
 func TestPersistArchitectureSynthesisStatusRetainsNonResourceFailure(t *testing.T) {
@@ -1246,8 +1508,12 @@ func TestArchitectureSemanticFailureIsPublishableOnlyAfterDurableFailedStatus(t 
 		providerCause := &architectureProviderCallFailed{
 			cause: errors.New("architecture synthesis: live provider unavailable"),
 		}
+		providerOutcome := architectureSynthesisOutcome{
+			InputBytes: 1200, Attempted: true, TransportAttempts: 1,
+			LocalCandidateCount: 2, RequestedConceptualCount: 2, AnchorCount: 1,
+		}
 		failure := persistAndClassifyArchitectureSynthesisStatus(
-			t.TempDir(), outcome, providerCause,
+			t.TempDir(), providerOutcome, providerCause,
 		)
 		if !isPublishableArchitectureFailure(failure) || !errors.Is(failure, providerCause) {
 			t.Fatalf("durable provider failure = %T / %v", failure, failure)
@@ -1399,8 +1665,11 @@ func TestArchitectureSynthesisStatusRecordsFailedProviderAttempt(t *testing.T) {
 		architectureSynthesisOutcome{
 			InputBytes: 1200, LatencyMillis: 4321, Attempted: true,
 			TransportAttempts: 1, LocalCandidateCount: 2, RequestedConceptualCount: 2,
+			ProviderCallSucceeded: true, ResponseBytes: 128,
+			ResponseState: componentmap.ResponseEmpty,
+			FinishReason:  "stop", ResponseComplete: true,
 		},
-		errors.New("architecture synthesis: provider call: llm response content is empty"),
+		fmt.Errorf("architecture synthesis: provider call: %w", deepseek.ErrResponseContentEmpty),
 	)
 	if status.State != report.ArchitectureSynthesisFailed ||
 		status.ErrorCode != "empty_response" ||
@@ -1408,6 +1677,64 @@ func TestArchitectureSynthesisStatusRecordsFailedProviderAttempt(t *testing.T) {
 		status.RequestBytes != 1200 ||
 		status.LatencyMillis != 4321 {
 		t.Fatalf("status = %#v", status)
+	}
+	if status.Failure == nil || status.Failure.Code != "architecture.empty_response" {
+		t.Fatalf("empty-response failure = %#v", status.Failure)
+	}
+	if err := status.Validate(); err != nil {
+		t.Fatalf("truthful empty-response status: %v; status=%#v", err, status)
+	}
+}
+
+func TestArchitectureEmptyResponseKeepsSuccessfulCallAndDecodeFailure(t *testing.T) {
+	t.Parallel()
+
+	runDir := t.TempDir()
+	writer, err := debugdump.OpenWriter(runDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &architectureSynthesisStub{
+		responseBytes: 128, finish: "stop", err: deepseek.ErrResponseContentEmpty,
+	}
+	outcome, synthesisErr := ensureArchitectureSynthesisWithOptions(
+		t.Context(), architectureSynthesisTestBundle(), runDir,
+		"revision-empty", "openai-compatible/bearer", "test-model", provider,
+		architectureSynthesisOptions{
+			disableCache: true, exchangeWriter: writer,
+			providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256(),
+		},
+	)
+	if closeErr := writer.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if !errors.Is(synthesisErr, errArchitectureSynthesisRejected) ||
+		!outcome.ProviderCallSucceeded || outcome.ResponseParsed ||
+		outcome.ResponseBytes != 128 || outcome.ResponseContentBytes != 0 ||
+		outcome.ResponseState != componentmap.ResponseEmpty || outcome.Failure == nil ||
+		outcome.Failure.Code != "architecture.empty_response" {
+		t.Fatalf("empty response outcome/error = %#v / %v", outcome, synthesisErr)
+	}
+	if err := persistArchitectureSynthesisStatus(runDir, outcome, synthesisErr); err != nil {
+		t.Fatal(err)
+	}
+	statusData, err := os.ReadFile(filepath.Join(runDir, report.ArchitectureSynthesisStatusFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status report.ArchitectureSynthesisStatus
+	if err := json.Unmarshal(statusData, &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Failure == nil || status.Failure.Code != "architecture.empty_response" ||
+		!status.ProviderCallSucceeded || status.ResponseState != "empty" {
+		t.Fatalf("empty response status = %#v", status)
+	}
+	records := readArchitectureSemanticExchangeRecords(t, runDir)
+	if len(records) != 1 || records[0].State != debugdump.SemanticStateRejected ||
+		records[0].ValidationCode != debugdump.SemanticValidationDecode ||
+		records[0].Outcome.Code != "architecture.empty_response" {
+		t.Fatalf("empty response exchange = %#v", records)
 	}
 }
 
@@ -1421,6 +1748,10 @@ func TestArchitectureSynthesisStatusSeparatesLocalCandidatesFromRequestedConcept
 	outcome.MemberOccurrences = 42
 	outcome.DistinctMembers = 42
 	outcome.CoveredConceptualCount = 42
+	outcome.RequestedPrimaryScopeCount = 42
+	outcome.CoveredPrimaryScopeCount = 42
+	outcome.UncoveredPrimaryScopeCount = 0
+	outcome.CoveredSupportingEvidenceCount = 0
 	status := architectureSynthesisStatus(outcome, nil)
 	if err := status.Validate(); err != nil {
 		t.Fatalf("truthful 50/42/8 Architecture status: %v; status=%#v", err, status)
@@ -1479,6 +1810,10 @@ func TestArchitectureSynthesisStatusSeparatesProposalLifecycle(t *testing.T) {
 				outcome.DistinctMembers = 2
 				outcome.CoveredConceptualCount = 2
 				outcome.UncoveredConceptualCount = 1
+				outcome.RequestedPrimaryScopeCount = 3
+				outcome.CoveredPrimaryScopeCount = 2
+				outcome.UncoveredPrimaryScopeCount = 1
+				outcome.CoveredSupportingEvidenceCount = 0
 				outcome.UncoveredConceptualIDs = []componentmap.MemberID{{
 					Kind: componentmap.MemberPackage, Value: "opaque-storage",
 				}}
@@ -2187,6 +2522,38 @@ func mustArchitectureJSON(t *testing.T, value any) []byte {
 		t.Fatal(err)
 	}
 	return encoded
+}
+
+func readArchitectureSemanticExchangeRecords(
+	t *testing.T,
+	runDir string,
+) []debugdump.SemanticExchangeRecord {
+	t.Helper()
+	directories, err := os.ReadDir(filepath.Join(runDir, debugdump.SemanticExchangesDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := make([]debugdump.SemanticExchangeRecord, 0, len(directories))
+	for _, directory := range directories {
+		if !directory.IsDir() {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(
+			runDir,
+			debugdump.SemanticExchangesDir,
+			directory.Name(),
+			debugdump.SemanticExchangeMetaFile,
+		))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var record debugdump.SemanticExchangeRecord
+		if err := json.Unmarshal(data, &record); err != nil {
+			t.Fatal(err)
+		}
+		records = append(records, record)
+	}
+	return records
 }
 
 func architectureSynthesisTestBundle() componentmap.CandidateBundle {

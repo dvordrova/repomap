@@ -685,6 +685,32 @@ func TestOrientEmptyContentIncludesSafeCompletionDiagnostics(t *testing.T) {
 	}
 }
 
+func TestOrientEmptyCompletedContentReturnsTypedSentinel(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"choices":[{"finish_reason":"stop","message":{"content":""}}],
+			"usage":{"prompt_tokens":11,"completion_tokens":0}
+		}`)
+	}))
+	defer srv.Close()
+
+	client := &Client{
+		HTTPClient: srv.Client(), Model: "fixture", MaxTokens: 100,
+		Endpoint: srv.URL, Auth: authNone,
+	}
+	result, err := client.OrientMeasured(context.Background(), []byte(`{}`))
+	if !errors.Is(err, ErrResponseContentEmpty) {
+		t.Fatalf("OrientMeasured() error = %v, want ErrResponseContentEmpty", err)
+	}
+	if result.Attempts != 1 || result.ResponseBytes == 0 || result.FinishReason != "stop" ||
+		!result.UsageReported || result.InputTokens != 11 || len(result.Content) != 0 {
+		t.Fatalf("empty response telemetry = %#v", result)
+	}
+}
+
 func TestOrientRetryOn500(t *testing.T) {
 	attempts := 0
 	var bodies [][]byte

@@ -1346,7 +1346,7 @@ func TestSynthesisWireRejectsOverBoundComponentsBeforeNormalization(t *testing.T
 	}
 }
 
-func TestSavedCasdoorP21ManyToManyResponseIsAcceptedWithExactLocalRemainder(t *testing.T) {
+func TestSavedCasdoorP21ManyToManyResponseFailsD238SupportingOnlyUnitQuality(t *testing.T) {
 	t.Parallel()
 
 	legacyRaw, err := os.ReadFile("testdata/casdoor_architecture_many_to_many_v1.json")
@@ -1377,9 +1377,10 @@ func TestSavedCasdoorP21ManyToManyResponseIsAcceptedWithExactLocalRemainder(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationAcceptedPartial ||
-		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.partial_member_coverage") {
-		t.Fatalf("incomplete saved Casdoor response was not accepted as exact partial: %#v", result.Landscape)
+	if !result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationRejected ||
+		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.partial_member_coverage") ||
+		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.supporting_only_unit_coverage") {
+		t.Fatalf("incomplete saved Casdoor response bypassed D238 unit quality: %#v", result.Landscape)
 	}
 	if !result.Membership.Counted || result.Membership.MemberOccurrences != 29 ||
 		result.Membership.DistinctMembers != 28 || len(result.Membership.UncoveredMemberIDs) == 0 {
@@ -1391,7 +1392,7 @@ func TestSavedCasdoorP21ManyToManyResponseIsAcceptedWithExactLocalRemainder(t *t
 		t.Fatalf("saved Casdoor record counts = %#v", result.Record.Call)
 	}
 	if !reflect.DeepEqual(result.Landscape.Relations, bundle.Relations) {
-		t.Fatal("partial saved Casdoor grouping changed exact local relations")
+		t.Fatal("quality fallback changed exact local relations")
 	}
 
 	result = bindSynthesisResultForTest(t, bundle, "casdoor-many-to-many-records-v2", result)
@@ -2645,12 +2646,41 @@ func TestSynthesisSharedUnitReducesToAnchorSlice(t *testing.T) {
 	if len(detached.SharedUnitRefs) == 0 {
 		t.Fatalf("detached component lost its shared unit scope: %#v", detached.SharedUnitRefs)
 	}
+	sawProduction := false
 	for _, memberID := range anchored.SharedMemberIDs {
 		if memberID == prodID {
-			return
+			sawProduction = true
 		}
 	}
-	t.Fatalf("anchored component lost the shared production member: %#v", anchored.SharedMemberIDs)
+	if !sawProduction {
+		t.Fatalf("anchored component lost the shared production member: %#v", anchored.SharedMemberIDs)
+	}
+	expectedCovered := append([]MemberID(nil), membersByRef[sharedUnitRef]...)
+	sortMemberIDs(expectedCovered)
+	if result.Membership.DistinctMembers != len(expectedCovered) ||
+		result.Membership.MemberOccurrences != len(expectedCovered) ||
+		!reflect.DeepEqual(result.Membership.CoveredMemberIDs, expectedCovered) {
+		t.Fatalf("shared unit membership parity = %#v, want one exact occurrence for %#v", result.Membership, expectedCovered)
+	}
+	if result.Record.Call == nil ||
+		result.Record.Call.Metadata.DistinctMembers != len(expectedCovered) ||
+		result.Record.Call.Metadata.MemberOccurrences != len(expectedCovered) ||
+		!reflect.DeepEqual(result.Record.Call.Metadata.CoveredMemberIDs, expectedCovered) {
+		t.Fatalf("shared unit record membership parity = %#v", result.Record.Call)
+	}
+	result = bindSynthesisResultForTest(t, bundle, "revision-shared", result)
+	saved, err := json.Marshal(result.Record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := ReplaySynthesisResult(bundle, "revision-shared", saved)
+	if err != nil {
+		t.Fatalf("replay repeated historical unit_refs: %v", err)
+	}
+	if !reflect.DeepEqual(replayed.Membership, result.Membership) ||
+		!reflect.DeepEqual(replayed.Landscape, result.Landscape) {
+		t.Fatal("historical repeated unit_refs did not replay with exact shared membership")
+	}
 }
 
 // Decision 230 D9.7 fresh-review B1 regression: real bundles attach symbol

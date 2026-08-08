@@ -25,15 +25,17 @@ func TestSynthesisMemberRefKindOmissionAccepted(t *testing.T) {
 	if len(request.Candidates) == 0 {
 		t.Fatal("fixture has no candidates")
 	}
-	// Take the first production candidate ref (p*) and first symbol ref (s*)
-	// from the request catalog; use them WITHOUT kind.
+	// Take one package-owned supporting ref and its exact primary package ref;
+	// use them WITHOUT kind. D238 requires primary scope from the same unit,
+	// while this regression remains solely about omitted backend-owned kinds.
 	var productionRef, symbolRef string
 	for _, candidate := range request.Candidates {
-		if strings.HasPrefix(candidate.Ref.Ref, "p") && productionRef == "" {
-			productionRef = candidate.Ref.Ref
-		}
-		if strings.HasPrefix(candidate.Ref.Ref, "s") && symbolRef == "" {
+		if strings.HasPrefix(candidate.Ref.Ref, "s") &&
+			candidate.CoverageRole == SynthesisCoverageSupportingEvidence &&
+			candidate.ParentRef != nil {
 			symbolRef = candidate.Ref.Ref
+			productionRef = candidate.ParentRef.Ref
+			break
 		}
 	}
 	if productionRef == "" || symbolRef == "" {

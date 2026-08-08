@@ -20,12 +20,12 @@ import (
 )
 
 const (
-	// Decision 235 (v11): one Architecture response grammar — member_refs
-	// only; unit_refs is read-only context (corpus: 266/266 accepted
-	// components use member_refs). Request 15→16 and record 12→13 because
-	// the response grammar changed (member-only) and the prompt changed.
-	SynthesisRequestVersion = 16
-	SynthesisRecordVersion  = 13
+	// Decision 238: request-local package ownership, unit association and
+	// closed coverage roles change the provider request; primary-scope
+	// quality accounting changes the saved result contract. The prompt
+	// identity is derived automatically from its exact text below.
+	SynthesisRequestVersion = 17
+	SynthesisRecordVersion  = 14
 )
 
 // SynthesisPromptVersion is the prompt contract identity — the short SHA-256
@@ -85,12 +85,28 @@ type SynthesisFlowParticipation struct {
 	Evidence SynthesisFact    `json:"evidence"`
 }
 
+// SynthesisCoverageRole is backend-owned request-local quality context. It
+// distinguishes the repository scope a conceptual Architecture should cover
+// from bounded evidence that may ground or distinguish that scope.
+type SynthesisCoverageRole string
+
+const (
+	SynthesisCoveragePrimaryScope       SynthesisCoverageRole = "primary_scope"
+	SynthesisCoverageSupportingEvidence SynthesisCoverageRole = "supporting_evidence"
+)
+
+func (role SynthesisCoverageRole) valid() bool {
+	return role == SynthesisCoveragePrimaryScope || role == SynthesisCoverageSupportingEvidence
+}
+
 // SynthesisCandidate is the provider-visible candidate shape. It exposes one
 // short typed ref plus bounded semantic labels, never canonical IDs, exact
 // paths, locations, providers or scenarios.
 type SynthesisCandidate struct {
 	Ref            SynthesisMemberRef           `json:"ref"`
 	ParentRef      *SynthesisMemberRef          `json:"parent_ref,omitempty"`
+	UnitRef        UnitWireRef                  `json:"unit_ref"`
+	CoverageRole   SynthesisCoverageRole        `json:"coverage_role"`
 	Label          string                       `json:"label"`
 	Participations []SynthesisFlowParticipation `json:"flow_participations,omitempty"`
 	Facts          []SynthesisFact              `json:"facts"`
@@ -152,10 +168,9 @@ type SynthesisRequest struct {
 	BehaviorAnchors    []SynthesisBehaviorAnchor `json:"behavior_anchors,omitempty"`
 	Flows              []SynthesisFlow           `json:"flows,omitempty"`
 	Candidates         []SynthesisCandidate      `json:"candidates,omitempty"`
-	// Units is the Decision 216 bounded local unit catalog. When present,
-	// the model groups request-local unit refs (u*) instead of raw
-	// package/symbol candidates; backend expansion restores exact
-	// membership. Empty for legacy callers that still send raw candidates.
+	// Units is the bounded read-only request-local context used to understand
+	// candidate unit association. Live responses still return member_refs;
+	// historical unit_refs remain accepted only by the replay decoder.
 	Units             []SynthesisUnit              `json:"units,omitempty"`
 	StructuralContext []SynthesisStructuralLocator `json:"structural_context,omitempty"`
 	Relations         []SynthesisRelation          `json:"supporting_relations,omitempty"`
@@ -178,6 +193,7 @@ type ResponseState string
 
 const (
 	ResponseCaptured         ResponseState = "captured"
+	ResponseEmpty            ResponseState = "empty"
 	ResponseOversize         ResponseState = "oversize_omitted"
 	ResponseSensitiveOmitted ResponseState = "sensitive_omitted"
 )
@@ -185,31 +201,35 @@ const (
 // SynthesisMetadata is saved beside the singular provider call. Validation
 // warnings and fallback are outcomes of local Apply, never provider claims.
 type SynthesisMetadata struct {
-	PromptVersion          string                   `json:"prompt_version"`
-	Profile                string                   `json:"profile"`
-	Model                  string                   `json:"model"`
-	OutputLanguage         string                   `json:"output_language"`
-	InputBytes             int                      `json:"input_bytes"`
-	LatencyMillis          int64                    `json:"latency_ms"`
-	UsageReported          bool                     `json:"usage_reported"`
-	InputTokens            int                      `json:"input_tokens,omitempty"`
-	OutputTokens           int                      `json:"output_tokens,omitempty"`
-	FinishReason           string                   `json:"finish_reason,omitempty"`
-	TransportAttempts      int                      `json:"transport_attempts"`
-	ResponseComplete       bool                     `json:"response_complete"`
-	MembershipCounted      bool                     `json:"response_membership_counted"`
-	MemberOccurrences      int                      `json:"response_member_occurrences,omitempty"`
-	DistinctMembers        int                      `json:"response_distinct_members,omitempty"`
-	RequestedMemberIDs     []MemberID               `json:"requested_member_ids,omitempty"`
-	CoveredMemberIDs       []MemberID               `json:"covered_member_ids,omitempty"`
-	UncoveredMemberIDs     []MemberID               `json:"uncovered_member_ids,omitempty"`
-	ValidationWarnings     []Diagnostic             `json:"validation_warnings,omitempty"`
-	ValidationOutcome      ValidationOutcome        `json:"validation_outcome"`
-	ArchitectureSource     ArchitectureSource       `json:"architecture_source"`
-	ArchitectureLevel      int                      `json:"architecture_level"`
-	Normalizations         []NormalizationOperation `json:"normalization_operations,omitempty"`
-	OriginalProposalSHA256 string                   `json:"original_proposal_sha256,omitempty"`
-	FallbackReason         FallbackReason           `json:"fallback_reason,omitempty"`
+	PromptVersion             string                   `json:"prompt_version"`
+	Profile                   string                   `json:"profile"`
+	Model                     string                   `json:"model"`
+	OutputLanguage            string                   `json:"output_language"`
+	InputBytes                int                      `json:"input_bytes"`
+	LatencyMillis             int64                    `json:"latency_ms"`
+	UsageReported             bool                     `json:"usage_reported"`
+	InputTokens               int                      `json:"input_tokens,omitempty"`
+	OutputTokens              int                      `json:"output_tokens,omitempty"`
+	FinishReason              string                   `json:"finish_reason,omitempty"`
+	TransportAttempts         int                      `json:"transport_attempts"`
+	ResponseComplete          bool                     `json:"response_complete"`
+	MembershipCounted         bool                     `json:"response_membership_counted"`
+	MemberOccurrences         int                      `json:"response_member_occurrences,omitempty"`
+	DistinctMembers           int                      `json:"response_distinct_members,omitempty"`
+	RequestedMemberIDs        []MemberID               `json:"requested_member_ids,omitempty"`
+	CoveredMemberIDs          []MemberID               `json:"covered_member_ids,omitempty"`
+	UncoveredMemberIDs        []MemberID               `json:"uncovered_member_ids,omitempty"`
+	RequestedPrimaryScope     int                      `json:"requested_primary_scope,omitempty"`
+	CoveredPrimaryScope       int                      `json:"covered_primary_scope,omitempty"`
+	UncoveredPrimaryScope     int                      `json:"uncovered_primary_scope,omitempty"`
+	CoveredSupportingEvidence int                      `json:"covered_supporting_evidence,omitempty"`
+	ValidationWarnings        []Diagnostic             `json:"validation_warnings,omitempty"`
+	ValidationOutcome         ValidationOutcome        `json:"validation_outcome"`
+	ArchitectureSource        ArchitectureSource       `json:"architecture_source"`
+	ArchitectureLevel         int                      `json:"architecture_level"`
+	Normalizations            []NormalizationOperation `json:"normalization_operations,omitempty"`
+	OriginalProposalSHA256    string                   `json:"original_proposal_sha256,omitempty"`
+	FallbackReason            FallbackReason           `json:"fallback_reason,omitempty"`
 }
 
 // SynthesisCall is one already-completed provider interaction. No provider
@@ -253,12 +273,16 @@ type SynthesisResult struct {
 // refs have been resolved against the private catalog. It is not inferred by
 // reparsing provider bytes in a downstream owner.
 type SynthesisMembershipCounts struct {
-	Counted            bool
-	MemberOccurrences  int
-	DistinctMembers    int
-	RequestedMemberIDs []MemberID
-	CoveredMemberIDs   []MemberID
-	UncoveredMemberIDs []MemberID
+	Counted                   bool
+	MemberOccurrences         int
+	DistinctMembers           int
+	RequestedMemberIDs        []MemberID
+	CoveredMemberIDs          []MemberID
+	UncoveredMemberIDs        []MemberID
+	RequestedPrimaryScope     int
+	CoveredPrimaryScope       int
+	UncoveredPrimaryScope     int
+	CoveredSupportingEvidence int
 }
 
 func (counts SynthesisMembershipCounts) CoverageComplete() bool {
@@ -515,6 +539,61 @@ func synthesisMemberRefPrefix(kind MemberKind) string {
 	}
 }
 
+type synthesisCandidateContext struct {
+	ParentID     *MemberID
+	UnitRef      UnitWireRef
+	CoverageRole SynthesisCoverageRole
+}
+
+// synthesisCandidateContexts restores only bounded backend-owned request
+// context. Parent resolution walks the already validated finite candidate
+// graph; exact unit association comes from the final private unit membership,
+// never from labels or provider prose.
+func synthesisCandidateContexts(
+	bundle CandidateBundle,
+	unitCatalog UnitCatalog,
+) (map[MemberID]synthesisCandidateContext, error) {
+	if len(unitCatalog.Units) != len(unitCatalog.WireUnits) {
+		return nil, fmt.Errorf("componentmap: architecture unit wire catalog is inconsistent")
+	}
+	known := candidateIndex(bundle)
+	seenUnitRefs := make(map[UnitWireRef]struct{}, len(unitCatalog.WireUnits))
+	for _, unit := range unitCatalog.WireUnits {
+		wireRef := unit.Ref
+		if wireRef == "" {
+			return nil, fmt.Errorf("componentmap: architecture unit wire ref is empty")
+		}
+		if _, duplicate := seenUnitRefs[wireRef]; duplicate {
+			return nil, fmt.Errorf("componentmap: architecture unit wire ref is duplicated")
+		}
+		seenUnitRefs[wireRef] = struct{}{}
+	}
+
+	contexts := make(map[MemberID]synthesisCandidateContext)
+	for _, candidate := range bundle.Candidates {
+		if candidate.Role != CandidateRoleConceptualMember {
+			continue
+		}
+		unitRef, exists := unitCatalog.MemberToWireUnit[candidate.ID]
+		if !exists {
+			return nil, fmt.Errorf("componentmap: conceptual member has no architecture unit")
+		}
+		if _, advertised := seenUnitRefs[unitRef]; !advertised {
+			return nil, fmt.Errorf("componentmap: conceptual member has an unadvertised architecture unit")
+		}
+		context := synthesisCandidateContext{
+			UnitRef:      unitRef,
+			CoverageRole: SynthesisCoveragePrimaryScope,
+		}
+		if ownerID, owned := nearestConceptualPackageOwner(candidate.ID, known); owned && ownerID != candidate.ID {
+			context.ParentID = &ownerID
+			context.CoverageRole = SynthesisCoverageSupportingEvidence
+		}
+		contexts[candidate.ID] = context
+	}
+	return contexts, nil
+}
+
 // BuildSynthesisRequest validates and canonically orders the bounded local
 // inputs before encoding the exact bytes intended for a provider.
 func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, error) {
@@ -574,10 +653,6 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 			Participations: make([]SynthesisFlowParticipation, 0, len(candidate.Participations)),
 			Facts:          make([]SynthesisFact, 0, len(candidate.Facts)),
 		}
-		if candidate.ParentID != nil && candidatesByID[*candidate.ParentID].Role == CandidateRoleConceptualMember {
-			parent := catalog.membersByID[*candidate.ParentID]
-			projected.ParentRef = &parent
-		}
 		for _, participation := range candidate.Participations {
 			projected.Participations = append(projected.Participations, SynthesisFlowParticipation{
 				FlowRef:  catalog.flowsByID[participation.FlowID],
@@ -631,6 +706,27 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 	unitCatalog, err := CompileUnitCatalog(bundle)
 	if err != nil {
 		return SynthesisRequest{}, nil, fmt.Errorf("componentmap: compile architecture units: %w", err)
+	}
+	contexts, err := synthesisCandidateContexts(bundle, unitCatalog)
+	if err != nil {
+		return SynthesisRequest{}, nil, err
+	}
+	for index := range request.Candidates {
+		candidate := &request.Candidates[index]
+		memberID, exists := catalog.membersByRef[candidate.Ref.key()]
+		if !exists {
+			return SynthesisRequest{}, nil, fmt.Errorf("componentmap: candidate ref is absent from the private catalog")
+		}
+		context, exists := contexts[memberID]
+		if !exists {
+			return SynthesisRequest{}, nil, fmt.Errorf("componentmap: candidate request context is missing")
+		}
+		candidate.UnitRef = context.UnitRef
+		candidate.CoverageRole = context.CoverageRole
+		if context.ParentID != nil {
+			parentRef := catalog.membersByID[*context.ParentID]
+			candidate.ParentRef = &parentRef
+		}
 	}
 	request.Units = append([]SynthesisUnit(nil), unitCatalog.WireUnits...)
 	for _, relation := range relations {
@@ -697,7 +793,18 @@ func validateSynthesisRequestCoverage(request SynthesisRequest) error {
 			len(request.RequiredMemberRefs), len(request.Candidates),
 		)
 	}
+	knownUnits := make(map[UnitWireRef]struct{}, len(request.Units))
+	for index, unit := range request.Units {
+		if unit.Ref == "" {
+			return fmt.Errorf("componentmap: units[%d].ref is empty", index)
+		}
+		if _, duplicate := knownUnits[unit.Ref]; duplicate {
+			return fmt.Errorf("componentmap: units[%d].ref duplicates an earlier unit", index)
+		}
+		knownUnits[unit.Ref] = struct{}{}
+	}
 	seen := make(map[string]struct{}, len(request.RequiredMemberRefs))
+	candidatesByRef := make(map[string]SynthesisCandidate, len(request.Candidates))
 	for index, required := range request.RequiredMemberRefs {
 		if required.Ref == "" {
 			return fmt.Errorf("componentmap: required_member_refs[%d] is empty", index)
@@ -712,6 +819,32 @@ func validateSynthesisRequestCoverage(request SynthesisRequest) error {
 				"componentmap: required_member_refs[%d] does not match candidates[%d].ref",
 				index, index,
 			)
+		}
+		candidate := request.Candidates[index]
+		if !candidate.CoverageRole.valid() {
+			return fmt.Errorf("componentmap: candidates[%d].coverage_role is invalid", index)
+		}
+		if _, known := knownUnits[candidate.UnitRef]; !known {
+			return fmt.Errorf("componentmap: candidates[%d].unit_ref is not an advertised unit", index)
+		}
+		if candidate.Ref.Kind == MemberPackage && candidate.CoverageRole != SynthesisCoveragePrimaryScope {
+			return fmt.Errorf("componentmap: candidates[%d] package is not primary scope", index)
+		}
+		if candidate.CoverageRole == SynthesisCoverageSupportingEvidence && candidate.ParentRef == nil {
+			return fmt.Errorf("componentmap: candidates[%d] supporting evidence has no package parent", index)
+		}
+		candidatesByRef[key] = candidate
+	}
+	for index, candidate := range request.Candidates {
+		if candidate.ParentRef == nil {
+			continue
+		}
+		parent, known := candidatesByRef[candidate.ParentRef.key()]
+		if !known || parent.Ref.Kind != MemberPackage || parent.CoverageRole != SynthesisCoveragePrimaryScope {
+			return fmt.Errorf("componentmap: candidates[%d].parent_ref is not a primary package candidate", index)
+		}
+		if candidate.Ref.Kind != MemberPackage && candidate.CoverageRole != SynthesisCoverageSupportingEvidence {
+			return fmt.Errorf("componentmap: candidates[%d] package-owned member is not supporting evidence", index)
 		}
 	}
 	seenLocatorRefs := make(map[string]struct{}, len(request.StructuralContext))
@@ -810,9 +943,14 @@ func synthesisRequestIdentityFields(request SynthesisRequest) []synthesisWireIde
 		})
 	}
 	for index, candidate := range request.Candidates {
-		fields = append(fields, synthesisWireIdentityField{
-			name: fmt.Sprintf("candidates[%d].ref", index), ref: candidate.Ref.Ref,
-		})
+		fields = append(fields,
+			synthesisWireIdentityField{
+				name: fmt.Sprintf("candidates[%d].ref", index), ref: candidate.Ref.Ref,
+			},
+			synthesisWireIdentityField{
+				name: fmt.Sprintf("candidates[%d].unit_ref", index), ref: string(candidate.UnitRef),
+			},
+		)
 		if candidate.ParentRef != nil {
 			fields = append(fields, synthesisWireIdentityField{
 				name: fmt.Sprintf("candidates[%d].parent_ref", index), ref: candidate.ParentRef.Ref,
@@ -985,15 +1123,17 @@ func BuildSynthesisPromptForLanguage(
 func synthesisPromptSystemText() string {
 	return `You create a compact conceptual architecture landscape from bounded local repository facts.
 
-Use conceptual member, anchor, and unit refs as opaque request-local values. Copy a ref exactly as supplied; never rewrite refs, infer new refs, or mention members absent from the request. Refs under structural_context are read-only locator context and must never occur in response member_refs, unit_refs, or anchor_refs.
+Use conceptual member, anchor, and unit refs as opaque request-local values. Copy a ref exactly as supplied; never rewrite refs, infer new refs, or mention members absent from the request. Refs under structural_context are read-only locator context and must never occur in response member_refs or anchor_refs. Candidate parent_ref, unit_ref, and coverage_role fields are read-only context and must never be returned.
 Local semantic facts, compact structural relations, structural locator containment, flow participation, anchor proof_mode, and certainty are read-only grouping context. They must never be returned, upgraded, replaced, or converted into execution order. A declaration_family anchor is static declaration context and never proves runtime behavior. Canonical repository identities, exact source locations, provider provenance, scenarios, catalog identity, versions, and hashes are private and absent from this request.
 
 Return exactly one compact JSON proposal object with this nested grammar:
 {"subsystems":[{"name":"first subsystem","description":"first purpose","components":[{"name":"first component","description":"first responsibility","member_refs":["p1","s2"],"anchor_refs":["a1"]}]},{"name":"second subsystem","description":"second purpose","components":[{"name":"second component","description":"second responsibility","member_refs":["s1"],"anchor_refs":[]}]}]}
 
-The entire response must parse as exactly one complete JSON object. Its only root field is subsystems. Each subsystem contains exactly name, description, and components. Each component contains exactly name, description, and at least one of member_refs (p*/s*/f*) or unit_refs (u*) — never both — plus optional anchor_refs (a*). Every ref is a plain string; do not wrap refs in objects and do not add kind fields. Do not emit response-local IDs, kind tags, parent references, or any adjacency field: nesting already expresses which components belong to which subsystem. Do not nest objects inside objects or emit a second root object.
+The entire response must parse as exactly one complete JSON object. Its only root field is subsystems. Each subsystem contains exactly name, description, and components. Each component contains exactly name, description, a non-empty member_refs array (p*/s*/f*), and optional anchor_refs (a*). Every ref is a plain string; do not wrap refs in objects and do not add kind fields. Do not emit response-local IDs, kind tags, parent references, unit refs, coverage roles, or any adjacency field: nesting already expresses which components belong to which subsystem. Do not nest objects inside objects or emit a second root object.
 
-Subsystems and components are in conceptual display order. Choose representative supplied members needed to distinguish each component; exhaustive membership is not required. A member may legitimately participate in several components when it genuinely serves several distinct conceptual roles — this is shared participation, not exclusive ownership. Name what distinguishes each component from its siblings. An exact partial grouping is valid: omitted members remain in a deterministic local unclassified remainder and must not be echoed, renamed, or placed in a model-authored remainder. Fewer groups are better than padding: when evidence is weak, return fewer components honestly. A component may be anchor-backed shared participation with zero exclusive members: every one of its members is shared with sibling components, but the component still lists at least one member_refs or unit_refs (never only anchor_refs); anchor_refs are optional per component, not required.
+Candidates marked primary_scope form the conceptual repository surface. Cover defensible primary_scope across the supplied units before selecting supporting_evidence. Supporting evidence and anchors may ground or distinguish responsibilities, but they do not substitute for primary-scope coverage. Honest partial primary coverage is valid; never pad, invent, or exhaustively enumerate uncertain scope.
+
+Subsystems and components are in conceptual display order. Choose representative supplied members needed to distinguish each component; exhaustive membership is not required. A member may legitimately participate in several components when it genuinely serves several distinct conceptual roles — this is shared participation, not exclusive ownership. Name what distinguishes each component from its siblings. An exact partial grouping is valid: omitted members remain in a deterministic local unclassified remainder and must not be echoed, renamed, or placed in a model-authored remainder. Fewer groups are better than padding: when evidence is weak, return fewer components honestly. A component may be anchor-backed shared participation with zero exclusive members: every one of its members is shared with sibling components, but the component still lists at least one member_refs (never only anchor_refs); anchor_refs are optional per component, not required.
 
 Repository archetype and grounding mode are local facts. A primary pillar is one subsystem; components are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, prefer a bounded handful of distinct subsystems when the supplied evidence supports that many. Tiny, library, and package-landscape requests may honestly use fewer. hypothesis is not part of the response; the backend derives product hypothesis status exclusively from exact process_entry/call_target proof scoped to every component member. declaration_family never proves operational grounding. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
 
@@ -1245,19 +1385,23 @@ func recordSynthesisResponseForLanguage(
 				Profile:       profile, Model: model,
 				OutputLanguage: language,
 				InputBytes:     synthesisPromptSize(prompt), LatencyMillis: latency.Milliseconds(),
-				MembershipCounted:      membership.Counted,
-				MemberOccurrences:      membership.MemberOccurrences,
-				DistinctMembers:        membership.DistinctMembers,
-				RequestedMemberIDs:     append([]MemberID(nil), membership.RequestedMemberIDs...),
-				CoveredMemberIDs:       append([]MemberID(nil), membership.CoveredMemberIDs...),
-				UncoveredMemberIDs:     append([]MemberID(nil), membership.UncoveredMemberIDs...),
-				ValidationWarnings:     cloneDiagnostics(landscape.Diagnostics),
-				ValidationOutcome:      landscape.ValidationOutcome,
-				ArchitectureSource:     landscape.Source,
-				ArchitectureLevel:      landscape.Level,
-				Normalizations:         append([]NormalizationOperation(nil), landscape.Normalizations...),
-				OriginalProposalSHA256: landscape.OriginalProposalSHA256,
-				FallbackReason:         landscape.FallbackReason,
+				MembershipCounted:         membership.Counted,
+				MemberOccurrences:         membership.MemberOccurrences,
+				DistinctMembers:           membership.DistinctMembers,
+				RequestedMemberIDs:        append([]MemberID(nil), membership.RequestedMemberIDs...),
+				CoveredMemberIDs:          append([]MemberID(nil), membership.CoveredMemberIDs...),
+				UncoveredMemberIDs:        append([]MemberID(nil), membership.UncoveredMemberIDs...),
+				RequestedPrimaryScope:     membership.RequestedPrimaryScope,
+				CoveredPrimaryScope:       membership.CoveredPrimaryScope,
+				UncoveredPrimaryScope:     membership.UncoveredPrimaryScope,
+				CoveredSupportingEvidence: membership.CoveredSupportingEvidence,
+				ValidationWarnings:        cloneDiagnostics(landscape.Diagnostics),
+				ValidationOutcome:         landscape.ValidationOutcome,
+				ArchitectureSource:        landscape.Source,
+				ArchitectureLevel:         landscape.Level,
+				Normalizations:            append([]NormalizationOperation(nil), landscape.Normalizations...),
+				OriginalProposalSHA256:    landscape.OriginalProposalSHA256,
+				FallbackReason:            landscape.FallbackReason,
 			},
 			ResponseState: state, ResponseBytes: len(rawResponse), Response: response,
 		},
@@ -1367,6 +1511,10 @@ func replaySynthesisResult(
 	if metadata.MembershipCounted != membership.Counted ||
 		metadata.MemberOccurrences != membership.MemberOccurrences ||
 		metadata.DistinctMembers != membership.DistinctMembers ||
+		metadata.RequestedPrimaryScope != membership.RequestedPrimaryScope ||
+		metadata.CoveredPrimaryScope != membership.CoveredPrimaryScope ||
+		metadata.UncoveredPrimaryScope != membership.UncoveredPrimaryScope ||
+		metadata.CoveredSupportingEvidence != membership.CoveredSupportingEvidence ||
 		!reflect.DeepEqual(metadata.RequestedMemberIDs, membership.RequestedMemberIDs) ||
 		!reflect.DeepEqual(metadata.CoveredMemberIDs, membership.CoveredMemberIDs) ||
 		!reflect.DeepEqual(metadata.UncoveredMemberIDs, membership.UncoveredMemberIDs) {
@@ -1536,13 +1684,17 @@ func validateSynthesisRecord(
 
 func validateSynthesisMembershipMetadata(bundle CandidateBundle, metadata SynthesisMetadata) error {
 	if metadata.MemberOccurrences < 0 || metadata.DistinctMembers < 0 ||
-		metadata.DistinctMembers > metadata.MemberOccurrences {
+		metadata.DistinctMembers > metadata.MemberOccurrences ||
+		metadata.RequestedPrimaryScope < 0 || metadata.CoveredPrimaryScope < 0 ||
+		metadata.UncoveredPrimaryScope < 0 || metadata.CoveredSupportingEvidence < 0 {
 		return fmt.Errorf("componentmap: synthesis record membership counts are inconsistent")
 	}
 	if !metadata.MembershipCounted {
 		if metadata.MemberOccurrences != 0 || metadata.DistinctMembers != 0 ||
 			len(metadata.RequestedMemberIDs) != 0 || len(metadata.CoveredMemberIDs) != 0 ||
-			len(metadata.UncoveredMemberIDs) != 0 {
+			len(metadata.UncoveredMemberIDs) != 0 || metadata.RequestedPrimaryScope != 0 ||
+			metadata.CoveredPrimaryScope != 0 || metadata.UncoveredPrimaryScope != 0 ||
+			metadata.CoveredSupportingEvidence != 0 {
 			return fmt.Errorf("componentmap: uncounted synthesis record carries membership coverage")
 		}
 		return nil
@@ -1583,6 +1735,14 @@ func validateSynthesisMembershipMetadata(bundle CandidateBundle, metadata Synthe
 		if isCovered == isUncovered {
 			return fmt.Errorf("componentmap: synthesis record membership partition is not exact")
 		}
+	}
+	requestedPrimary, _, _, _ := synthesisCoverageCounts(bundle, nil)
+	conceptualMembers, _ := bundle.CandidateRoleCounts()
+	if metadata.RequestedPrimaryScope != requestedPrimary ||
+		metadata.CoveredPrimaryScope > requestedPrimary ||
+		metadata.UncoveredPrimaryScope != requestedPrimary-metadata.CoveredPrimaryScope ||
+		metadata.CoveredSupportingEvidence > conceptualMembers-requestedPrimary {
+		return fmt.Errorf("componentmap: synthesis record primary-scope coverage counts do not match")
 	}
 	return nil
 }
@@ -1706,6 +1866,17 @@ func evaluateSynthesisResponse(
 		// local readable-shape normalization, not a raw response cardinality that
 		// normalization may have merged.
 		membership = acceptedSynthesisMembershipCounts(bundle, landscape)
+		qualityDiagnostics, qualityErr := synthesisPrimaryScopeDiagnostics(bundle, unitCatalog, landscape)
+		if qualityErr != nil {
+			return Landscape{}, SynthesisMembershipCounts{}, qualityErr
+		}
+		if len(qualityDiagnostics) > 0 {
+			diagnostics := append(cloneDiagnostics(landscape.Diagnostics), qualityDiagnostics...)
+			landscape, err = synthesisQualityFallback(bundle, proposal, diagnostics)
+			if err != nil {
+				return Landscape{}, SynthesisMembershipCounts{}, err
+			}
+		}
 	}
 	warnings := make([]Diagnostic, 0, 1)
 	if normalization != nil {
@@ -1735,7 +1906,8 @@ func synthesisMembershipCounts(bundle CandidateBundle, proposal Proposal) Synthe
 }
 
 func acceptedSynthesisMembershipCounts(bundle CandidateBundle, landscape Landscape) SynthesisMembershipCounts {
-	distinct := make(map[MemberID]struct{})
+	exclusiveDistinct := make(map[MemberID]struct{})
+	sharedDistinct := make(map[MemberID]struct{})
 	occurrences := 0
 	for _, subsystem := range landscape.Subsystems {
 		if subsystem.Category == SubsystemCategoryDiagnostic {
@@ -1744,11 +1916,27 @@ func acceptedSynthesisMembershipCounts(bundle CandidateBundle, landscape Landsca
 		for _, component := range subsystem.Components {
 			for _, member := range component.Members {
 				occurrences++
-				distinct[member.ID] = struct{}{}
+				exclusiveDistinct[member.ID] = struct{}{}
+			}
+			for _, memberID := range component.SharedMemberIDs {
+				sharedDistinct[memberID] = struct{}{}
 			}
 		}
 	}
-	return synthesisMembershipCountsFromSets(bundle, true, occurrences, distinct)
+	covered := make(map[MemberID]struct{}, len(exclusiveDistinct)+len(sharedDistinct))
+	for memberID := range exclusiveDistinct {
+		covered[memberID] = struct{}{}
+	}
+	for memberID := range sharedDistinct {
+		covered[memberID] = struct{}{}
+		if _, alreadyExclusive := exclusiveDistinct[memberID]; !alreadyExclusive {
+			// Shared participation may appear in several components, but it
+			// claims exact scope rather than repeated exclusive ownership.
+			// Count each shared-only member exactly once globally.
+			occurrences++
+		}
+	}
+	return synthesisMembershipCountsFromSets(bundle, true, occurrences, covered)
 }
 
 func synthesisMembershipCountsFromSets(
@@ -1773,14 +1961,122 @@ func synthesisMembershipCountsFromSets(
 			uncoveredIDs = append(uncoveredIDs, memberID)
 		}
 	}
-	return SynthesisMembershipCounts{
-		Counted:            counted,
-		MemberOccurrences:  occurrences,
-		DistinctMembers:    len(coveredIDs),
-		RequestedMemberIDs: requestedIDs,
-		CoveredMemberIDs:   coveredIDs,
-		UncoveredMemberIDs: uncoveredIDs,
+	requestedPrimary, coveredPrimary, uncoveredPrimary, coveredSupporting := 0, 0, 0, 0
+	if counted {
+		requestedPrimary, coveredPrimary, uncoveredPrimary, coveredSupporting = synthesisCoverageCounts(bundle, covered)
 	}
+	return SynthesisMembershipCounts{
+		Counted:                   counted,
+		MemberOccurrences:         occurrences,
+		DistinctMembers:           len(coveredIDs),
+		RequestedMemberIDs:        requestedIDs,
+		CoveredMemberIDs:          coveredIDs,
+		UncoveredMemberIDs:        uncoveredIDs,
+		RequestedPrimaryScope:     requestedPrimary,
+		CoveredPrimaryScope:       coveredPrimary,
+		UncoveredPrimaryScope:     uncoveredPrimary,
+		CoveredSupportingEvidence: coveredSupporting,
+	}
+}
+
+func synthesisCoverageCounts(
+	bundle CandidateBundle,
+	covered map[MemberID]struct{},
+) (requestedPrimary, coveredPrimary, uncoveredPrimary, coveredSupporting int) {
+	known := candidateIndex(bundle)
+	for _, candidate := range bundle.Candidates {
+		if candidate.Role != CandidateRoleConceptualMember {
+			continue
+		}
+		role := synthesisCoverageRoleForCandidate(candidate, known)
+		_, isCovered := covered[candidate.ID]
+		if role == SynthesisCoveragePrimaryScope {
+			requestedPrimary++
+			if isCovered {
+				coveredPrimary++
+			}
+		} else if isCovered {
+			coveredSupporting++
+		}
+	}
+	uncoveredPrimary = requestedPrimary - coveredPrimary
+	return requestedPrimary, coveredPrimary, uncoveredPrimary, coveredSupporting
+}
+
+func synthesisCoverageRoleForCandidate(
+	candidate Candidate,
+	known map[MemberID]Candidate,
+) SynthesisCoverageRole {
+	if ownerID, owned := nearestConceptualPackageOwner(candidate.ID, known); owned && ownerID != candidate.ID {
+		return SynthesisCoverageSupportingEvidence
+	}
+	return SynthesisCoveragePrimaryScope
+}
+
+func synthesisPrimaryScopeDiagnostics(
+	bundle CandidateBundle,
+	unitCatalog UnitCatalog,
+	landscape Landscape,
+) ([]Diagnostic, error) {
+	contexts, err := synthesisCandidateContexts(bundle, unitCatalog)
+	if err != nil {
+		return nil, err
+	}
+	covered := make(map[MemberID]struct{})
+	for _, subsystem := range landscape.Subsystems {
+		if subsystem.Category == SubsystemCategoryDiagnostic {
+			continue
+		}
+		for _, component := range subsystem.Components {
+			for _, member := range component.Members {
+				covered[member.ID] = struct{}{}
+			}
+			for _, memberID := range component.SharedMemberIDs {
+				covered[memberID] = struct{}{}
+			}
+		}
+	}
+	requestedPrimary := 0
+	coveredPrimary := 0
+	primaryUnits := make(map[UnitWireRef]struct{})
+	supportingUnits := make(map[UnitWireRef]struct{})
+	for memberID, context := range contexts {
+		if context.CoverageRole == SynthesisCoveragePrimaryScope {
+			requestedPrimary++
+		}
+		if _, exists := covered[memberID]; !exists {
+			continue
+		}
+		if context.CoverageRole == SynthesisCoveragePrimaryScope {
+			coveredPrimary++
+			primaryUnits[context.UnitRef] = struct{}{}
+		} else {
+			supportingUnits[context.UnitRef] = struct{}{}
+		}
+	}
+	diagnostics := make([]Diagnostic, 0, 2)
+	if requestedPrimary > 0 && coveredPrimary == 0 {
+		diagnostics = append(diagnostics, newDiagnostic(
+			"proposal.empty_primary_scope_coverage",
+			"proposal covers no primary repository scope; publishing the exact local landscape",
+		))
+	}
+	supportingOnlyUnits := 0
+	for unitRef := range supportingUnits {
+		if _, coveredByPrimary := primaryUnits[unitRef]; !coveredByPrimary {
+			supportingOnlyUnits++
+		}
+	}
+	if supportingOnlyUnits > 0 {
+		diagnostics = append(diagnostics, newDiagnostic(
+			"proposal.supporting_only_unit_coverage",
+			fmt.Sprintf(
+				"proposal covers supporting evidence in %d unit(s) without primary scope from the same unit; publishing the exact local landscape",
+				supportingOnlyUnits,
+			),
+		))
+	}
+	return diagnostics, nil
 }
 
 func synthesisResponseFallback(bundle CandidateBundle, warning Diagnostic) (Landscape, error) {
@@ -1790,6 +2086,26 @@ func synthesisResponseFallback(bundle CandidateBundle, warning Diagnostic) (Land
 	landscape.FallbackReason = fallbackReasonForDiagnostics(landscape.Diagnostics, len(bundle.BehaviorAnchors) > 0)
 	landscape.Fallback = true
 	landscape.OriginalProposalSHA256 = proposalSHA256(Proposal{})
+	if err := landscape.Validate(bundle); err != nil {
+		return Landscape{}, err
+	}
+	return landscape, nil
+}
+
+func synthesisQualityFallback(
+	bundle CandidateBundle,
+	proposal Proposal,
+	diagnostics []Diagnostic,
+) (Landscape, error) {
+	landscape := buildDeterministicLocalLandscape(bundle, SourcePackageFallback)
+	landscape.Diagnostics = cloneDiagnostics(diagnostics)
+	landscape.ValidationOutcome = ValidationRejected
+	landscape.FallbackReason = fallbackReasonForDiagnostics(
+		landscape.Diagnostics,
+		hasAnyOperationalBehaviorAnchor(bundle.BehaviorAnchors),
+	)
+	landscape.Fallback = true
+	landscape.OriginalProposalSHA256 = proposalSHA256(proposal)
 	if err := landscape.Validate(bundle); err != nil {
 		return Landscape{}, err
 	}
@@ -2021,11 +2337,11 @@ type synthesisWireNestedSubsystem struct {
 }
 
 type synthesisWireNestedComponent struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	MemberRefs  []string `json:"member_refs,omitempty"`
-	UnitRefs    []string `json:"unit_refs,omitempty"`
-	AnchorRefs  []string `json:"anchor_refs,omitempty"`
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	MemberRefs  []string        `json:"member_refs,omitempty"`
+	UnitRefs    []string        `json:"unit_refs,omitempty"`
+	AnchorRefs  json.RawMessage `json:"anchor_refs,omitempty"`
 }
 
 type synthesisWireNested struct {
@@ -2117,7 +2433,20 @@ func decodeSynthesisWireNestedJSON(raw []byte) (synthesisWireProposal, error) {
 			if len(memberRefs) == 0 && len(unitRefs) == 0 {
 				return synthesisWireProposal{}, fmt.Errorf("proposal component must group at least one member_refs or unit_refs")
 			}
-			anchorRefs, err := nestedAnchorRefs(component.AnchorRefs, "anchor_refs")
+			// Decision 237: field presence is semantically distinct from array
+			// cardinality. An omitted optional field is normalized, an explicit
+			// empty array is already valid, and null/non-array values fail closed.
+			anchorRefsFieldExists := component.AnchorRefs != nil
+			rawAnchorRefs := []string{}
+			if anchorRefsFieldExists {
+				if isJSONNull(component.AnchorRefs) {
+					return synthesisWireProposal{}, fmt.Errorf("proposal component fields must not be null")
+				}
+				if err := json.Unmarshal(component.AnchorRefs, &rawAnchorRefs); err != nil {
+					return synthesisWireProposal{}, fmt.Errorf("proposal anchor refs have invalid type")
+				}
+			}
+			anchorRefs, err := nestedAnchorRefs(rawAnchorRefs, "anchor_refs")
 			if err != nil {
 				return synthesisWireProposal{}, err
 			}
@@ -2129,7 +2458,7 @@ func decodeSynthesisWireNestedJSON(raw []byte) (synthesisWireProposal, error) {
 				Name: component.Name, Description: component.Description,
 				MemberRefs: memberRefs, UnitRefs: unitRefs, AnchorRefs: anchorRefs,
 			}
-			if len(component.AnchorRefs) == 0 {
+			if !anchorRefsFieldExists {
 				// Backend-owned normalization: omitted anchor_refs on a
 				// component is a mechanical default, counted like the
 				// flat contract's missing-anchor-refs normalization.

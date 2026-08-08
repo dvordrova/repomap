@@ -26,13 +26,18 @@ const (
 	// Decision 235 (v11): one member_refs response grammar + missing-anchor
 	// normalization + empty-component item-local rejection change accepted
 	// landscape semantics (ContractVersion 12).
-	ContractVersion = 12
+	// Decision 238: backend-owned primary-scope coverage can reject an
+	// otherwise structurally valid proposal and publish the exact local
+	// landscape instead (ContractVersion 13).
+	ContractVersion = 13
 	// ProposalVersion changes whenever the wire proposal shape or its
 	// acceptance semantics change; D4 equivalence coalescing is
 	// acceptance semantics (ProposalVersion 10); shared participation is
 	// acceptance semantics (ProposalVersion 11); member-only grammar +
-	// normalization + item-local empty rejection (ProposalVersion 12).
-	ProposalVersion = 12
+	// normalization + item-local empty rejection (ProposalVersion 12);
+	// primary-scope quality rejection is acceptance semantics
+	// (ProposalVersion 13).
+	ProposalVersion = 13
 
 	maxCandidates      = 512
 	maxFlows           = 64
@@ -956,7 +961,7 @@ func (landscape Landscape) Validate(bundle CandidateBundle) error {
 	if landscape.Source == SourcePartialModel && (landscape.Level != 2 || landscape.Fallback ||
 		landscape.ValidationOutcome != ValidationAcceptedPartial ||
 		(len(landscape.LocalRemainderMemberIDs) == 0 && !landscapeHasItemScopeSalvage(landscape.Diagnostics))) {
-		return fmt.Errorf("componentmap: partial model source has inconsistent state")
+		return ErrPartialModelStateInconsistent
 	}
 	if landscape.ValidationOutcome == ValidationAcceptedPartial && landscape.Source != SourcePartialModel {
 		return fmt.Errorf("componentmap: partial validation outcome has inconsistent source")

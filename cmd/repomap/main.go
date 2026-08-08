@@ -786,7 +786,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) er
 				"Architecture", "unavailable", "provider calls: 0",
 				"reason: exact local package graph unavailable",
 			)
-		} else if !errors.Is(architectureErr, errArchitectureSynthesisRejected) {
+		} else if architectureOutcome.Failure == nil && !errors.Is(architectureErr, errArchitectureSynthesisRejected) {
 			if isArchitectureOutputResourceExhausted(architectureErr) {
 				humanOutput.Warn(
 					"Architecture grouping unavailable",
