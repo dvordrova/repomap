@@ -174,6 +174,59 @@ func TestCompileAccountsDynamicAndExternalFrontierPerSelectedCaller(t *testing.T
 	}
 }
 
+func TestCompileKeepsExactRecursiveEdgesWithoutTreatingThemAsAPath(t *testing.T) {
+	index := analyzeSource(t, "example.com/recursive", `package main
+
+func main() {}
+func entry() { recursive() }
+func recursive() { recursive(); leaf() }
+func leaf() {}
+`)
+	root := requireNodeBySymbol(t, index, "example.com/recursive.entry")
+	compilation, err := CompileContexts([]ExactContext{{
+		Label: "Recursive work", Question: "How does entry reach the leaf?",
+		Readings: []ExactReading{{
+			Label: "entry", Path: root.Declaration.Path,
+			Line: root.Declaration.Line, Symbol: root.Symbol.ID,
+		}},
+	}}, index, repositoryBinding())
+	if err != nil {
+		t.Fatalf("CompileContexts: %v", err)
+	}
+	card := compilation.Cards[0]
+	selfEdges := 0
+	for _, edge := range card.Edges {
+		if edge.CallerRef == edge.CalleeRef {
+			selfEdges++
+		}
+	}
+	if selfEdges != 1 {
+		t.Fatalf("recursive edges = %d, want one exact advertised edge: %+v", selfEdges, card.Edges)
+	}
+	batches, err := BuildRequestBatches(compilation)
+	if err != nil || len(batches) != 1 {
+		t.Fatalf("BuildRequestBatches: batches=%d err=%v", len(batches), err)
+	}
+	response, err := MockResponse(batches[0])
+	if err != nil {
+		t.Fatalf("MockResponse: %v", err)
+	}
+	result, err := ResolveResponse(compilation, batches[0], response)
+	if err != nil {
+		t.Fatalf("ResolveResponse: %v", err)
+	}
+	if len(result.Cards) != 1 || result.Cards[0].State != OutcomeMechanism {
+		t.Fatalf("recursive graph result = %+v, want the simple entry-to-leaf path", result.Cards)
+	}
+	for _, mechanism := range result.Cards[0].Mechanisms {
+		for position, nodeRef := range mechanism.NodeRefs[1:] {
+			if nodeRef == mechanism.NodeRefs[position] {
+				t.Fatalf("recursive self edge entered a published simple path: %+v", mechanism)
+			}
+		}
+	}
+}
+
 func TestCompileIsDepthTwoBalancedAndAccountsFrontier(t *testing.T) {
 	index := buildFanoutIndex(t)
 	contexts := make([]ExactContext, 0, 5)

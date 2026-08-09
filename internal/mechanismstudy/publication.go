@@ -135,8 +135,10 @@ func validPublicationNode(node surfacediscovery.DirectCallNode, scenarioID strin
 }
 
 func validPublicationEdge(edge surfacediscovery.DirectCallEdge, scenarioID string) bool {
+	// A recursive call is valid exact graph authority even though the response
+	// validator deliberately excludes self-edges from a simple mechanism path.
 	return edge.ID != "" && edge.CallerID != "" && edge.CalleeID != "" &&
-		edge.CallerID != edge.CalleeID && edge.ScenarioID == scenarioID && edge.Invocation.Valid() &&
+		edge.ScenarioID == scenarioID && edge.Invocation.Valid() &&
 		edge.WitnessCount > 0 && validPublicationLocation(edge.RepresentativeCallsite)
 }
 
