@@ -5,101 +5,78 @@ import (
 	"testing"
 )
 
-func TestUserMechanismWorkspaceAssetContract(t *testing.T) {
+func TestCurrentWorkspaceHasOneAuthorityPerConcept(t *testing.T) {
 	t.Parallel()
 
-	for _, token := range []string{
-		"var USER_MECHANISMS = Array.isArray(DATA.user_mechanisms)",
-		"function reduceWorkspaceState(",
+	for _, forbidden := range []string{
+		"DATA.user_mechanisms",
+		"DATA.candidate_flows",
+		"DATA.flows",
+		"function openReportTarget(",
 		"function openUserMechanism(",
 		"function renderMechanismDetailWorkspace(",
-		"function mechanismNarrativeItems(",
-		"function renderImplementationDetails(",
-		"'main.primary_implementation'",
-		"'main.chrome.previous'",
-		"'main.chrome.next'",
-		"openSourceLocation(location)",
-		"if (includeMap && step.map_target && userArchitectureAvailable())",
+		"#/mechanism",
+		"kind === 'semantic_artifact'",
 	} {
-		if !strings.Contains(scriptJS, token) {
-			t.Errorf("report JS is missing User Mechanism workspace token %q", token)
+		if strings.Contains(scriptJS, forbidden) {
+			t.Errorf("current report JS still publishes legacy authority %q", forbidden)
+		}
+	}
+	for _, forbidden := range []string{
+		`id="rm-overview"`,
+		`id="rm-mechanisms"`,
+		`id="rm-mechanism-detail"`,
+	} {
+		if strings.Contains(templateHTML, forbidden) {
+			t.Errorf("current report template still publishes legacy DOM %q", forbidden)
 		}
 	}
 	for _, token := range []string{
-		`id="rm-tabs"`,
-		`id="rm-mechanisms"`,
-		`id="rm-mechanism-detail"`,
 		`id="rm-architecture"`,
+		`id="rm-study-overview"`,
+		`id="rm-study-detail"`,
+		`id="rm-task-investigation"`,
 		`id="rm-source-drawer"`,
 	} {
 		if !strings.Contains(templateHTML, token) {
-			t.Errorf("report template is missing User Report v2 token %q", token)
-		}
-	}
-	for _, token := range []string{
-		".rm-workspace",
-		".rm-repository-nav",
-		".rm-mechanism-layout",
-		".rm-step-workspace",
-		".rm-source-drawer",
-	} {
-		if !strings.Contains(styleCSS, token) {
-			t.Errorf("report CSS is missing User Report v2 token %q", token)
+			t.Errorf("current report template is missing authority %q", token)
 		}
 	}
 }
 
-func TestSemanticSearchArtifactTargetOpensDetailWithoutMap(t *testing.T) {
+func TestLegacyDeepLinksFailClosedToMap(t *testing.T) {
 	t.Parallel()
 
-	start := strings.Index(scriptJS, "if (kind === 'semantic_artifact') {")
-	if start < 0 {
-		t.Fatal("semantic artifact navigation branch is missing")
-	}
-	rest := scriptJS[start:]
-	end := strings.Index(rest, "if (kind === 'component') {")
-	if end < 0 {
-		t.Fatal("semantic artifact navigation branch has no bounded end")
-	}
-	branch := rest[:end]
-	if !strings.Contains(branch, "openUserMechanism(") {
-		t.Fatalf("semantic artifact branch does not open the mechanism detail: %s", branch)
-	}
 	for _, forbidden := range []string{
-		"architectureCanvasView",
-		"openArchitectureTarget",
-		"showArchitectureTarget",
-		"scrollIntoView",
+		"route.kind === 'mechanisms'",
+		"route.kind === 'mechanism'",
+		"route.kind === 'search'",
 	} {
-		if strings.Contains(branch, forbidden) {
-			t.Errorf("semantic artifact branch still redirects to architecture via %q", forbidden)
+		if strings.Contains(scriptJS, forbidden) {
+			t.Errorf("legacy deep-link route is still reachable through %q", forbidden)
+		}
+	}
+	for _, token := range []string{"function parseWorkspaceHash(", "defaultWorkspaceHash()", "if (!valid) state = emptyWorkspaceState()"} {
+		if !strings.Contains(scriptJS, token) {
+			t.Errorf("deep-link fail-close contract is missing %q", token)
 		}
 	}
 }
 
-func TestUserMechanismMapReturnAssetContract(t *testing.T) {
+func TestStudyMechanismMapReturnAssetContract(t *testing.T) {
 	t.Parallel()
 
 	for _, token := range []string{
-		"function showMechanismStepOnMap(",
+		"function showStudyMechanismTargetOnMap(",
+		"function showStudyMechanismOnMap(",
 		"type: 'show_map'",
 		"function returnFromArchitecture(",
 		"type: 'return_from_map'",
 		"workspaceState.mapReturn",
 		"workspaceState.mapTarget",
-		"else renderArchitectureReturn();",
 	} {
 		if !strings.Contains(scriptJS, token) {
-			t.Errorf("report JS is missing bounded map round-trip token %q", token)
-		}
-	}
-	for _, token := range []string{
-		".rm-architecture-return {",
-		"min-width: 0",
-		".rm-architecture-return .rm-secondary-action { flex: 0 0 auto; order: -1; }",
-	} {
-		if !strings.Contains(styleCSS, token) {
-			t.Errorf("report CSS is missing visible map-return token %q", token)
+			t.Errorf("report JS is missing bounded Study map round-trip token %q", token)
 		}
 	}
 }

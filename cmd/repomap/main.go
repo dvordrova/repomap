@@ -1211,7 +1211,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 				humanOutput.Stage("Server", fmt.Sprintf(format, args...))
 			},
 			OnReady: func(url string) error {
-				url = reportOverviewURL(url)
+				url = reportMapURL(url)
 				humanOutput.State("Server", "ready", "url: "+url, "Ctrl-C to stop")
 				if !*noOpen && deps.openReport != nil {
 					if err := deps.openReport(url); err != nil {
@@ -1370,7 +1370,7 @@ func runServeWithDeps(
 			fmt.Fprintf(stderr, "repomap: "+format+"\n", args...)
 		},
 		OnReady: func(url string) error {
-			url = reportOverviewURL(url)
+			url = reportMapURL(url)
 			fmt.Fprintf(stderr, "Serving reports: %s (press Ctrl-C to stop)\n", url)
 			if !*noOpen && open != nil {
 				if err := open(url); err != nil {
@@ -1639,9 +1639,9 @@ func repoRunLabel(repo string) string {
 	return filepath.Base(filepath.Clean(repo))
 }
 
-func reportOverviewURL(location string) string {
+func reportMapURL(location string) string {
 	base, _, _ := strings.Cut(location, "#")
-	return base + "#/overview"
+	return base + "#/map"
 }
 
 func runRenderReportCLI(args []string, stdout io.Writer) error {

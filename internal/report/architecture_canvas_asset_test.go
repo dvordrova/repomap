@@ -609,8 +609,10 @@ func TestArchitectureCanvasMobileInspectorSurvivesMediaQuery(t *testing.T) {
 	reportJS := readCanvasAsset(t, "script.js")
 	for _, token := range []string{
 		"rm-architecture-list-disclosure",
-		"listDisclosure.open = typeof window.matchMedia === 'function'",
-		"window.matchMedia('(max-width: 560px)').matches",
+		"bindArchitectureListDisclosureMobileDefault",
+		"window.matchMedia('(max-width: 560px)')",
+		"media.addEventListener('change', onChange)",
+		"userChoseState",
 	} {
 		if !strings.Contains(reportJS, token) {
 			t.Errorf("mobile Map list fallback is missing %q — hidden canvas must not leave controls-only content", token)

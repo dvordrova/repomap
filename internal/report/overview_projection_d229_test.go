@@ -157,7 +157,7 @@ vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_mess
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), { window, document, URLSearchParams, Set, Map, AbortController, Promise });
 const api = window.__REPOMAP_WORKSPACE_TEST__;
 api.renderWorkspaceTabs();
-api.renderOverviewWorkspace();
+api.renderMapSummaryInto("rm-overview");
 const overviewRoot = roots["rm-overview"];
 const overviewText = text(overviewRoot);
 // 1. Perimeter section present.

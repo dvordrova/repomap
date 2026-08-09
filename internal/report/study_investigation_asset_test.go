@@ -25,7 +25,7 @@ class Element {
   constructor(tag) {
     this.tagName = String(tag || "div").toUpperCase(); this.children = []; this.attributes = {};
     this.className = ""; this._text = ""; this.hidden = false; this.style = {}; this.dataset = {};
-    this.parentNode = null; this.id = "";
+    this.parentNode = null; this.id = ""; this.listeners = {};
     this.classList = {
       add: (...names) => { const values = new Set(String(this.className).split(/\s+/).filter(Boolean)); names.forEach((name) => values.add(name)); this.className = Array.from(values).join(" "); },
       remove: (...names) => { const removed = new Set(names); this.className = String(this.className).split(/\s+/).filter((name) => name && !removed.has(name)).join(" "); },
@@ -46,7 +46,8 @@ class Element {
   removeAttribute(name) { delete this.attributes[name]; }
   querySelector(selector) { return walk(this).find((node) => matches(node, selector)) || null; }
   querySelectorAll(selector) { return walk(this).filter((node) => matches(node, selector)); }
-  addEventListener() {}
+  addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); }
+  dispatchEvent(event) { (this.listeners[event && event.type] || []).forEach((listener) => listener.call(this, event)); }
   contains(node) { return this === node || walk(this).includes(node); }
   focus() {}
   scrollIntoView() {}
@@ -142,11 +143,17 @@ const history = {
   replaceState(state, _, hash) { this.state = state; window.location.hash = hash; },
   back() {},
 };
+const mobileMedia = {
+  matches: process.argv[4] === "mobile", listeners: [],
+  addEventListener(type, listener) { if (type === "change") this.listeners.push(listener); },
+  addListener(listener) { this.listeners.push(listener); },
+  set(value) { this.matches = !!value; this.listeners.forEach((listener) => listener({ matches: this.matches })); },
+};
 const window = {
   document, location: { hash: "#/study/theme/1", search: "", hostname: "fixture.test", protocol: "file:", pathname: "/report.html" },
   history, __REPOMAP_WORKSPACE_TEST__: {}, __REPOMAP_LAYOUT_TEST__: {},
   addEventListener() {}, removeEventListener() {}, open() {}, scrollTo() {},
-  matchMedia() { return { matches: false }; }, setTimeout, clearTimeout,
+  matchMedia() { return mobileMedia; }, setTimeout, clearTimeout,
 };
 document.activeElement = document.body; window.Element = Element;
 const context = { window, document, Element, URLSearchParams, Set, Map, AbortController, Promise, setTimeout, clearTimeout };
@@ -154,13 +161,14 @@ vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_mess
 vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "architecture_canvas.js"), "utf8"), context);
 const realCanvas = window.RepomapArchitectureCanvas;
 const overlays = [];
+const lenses = [];
 window.RepomapArchitectureCanvas = {
   projectArchitectureLens: realCanvas.projectArchitectureLens,
   projectEntrypointHandoffOverlay: realCanvas.projectEntrypointHandoffOverlay,
   projectStudyMechanismOverlay: realCanvas.projectStudyMechanismOverlay,
   mount() { return {
     ready: Promise.resolve(), destroy() {}, openComponent() {}, openTrace() {}, openFlowStep() {}, openSurface() {},
-    setLens() {}, setStudyMechanismOverlay(value) { overlays.push(value && value.id || ""); return true; },
+    setLens(value) { lenses.push(value); }, setStudyMechanismOverlay(value) { overlays.push(value && value.id || ""); return true; },
     clearStudyMechanismOverlay() { overlays.push(""); },
   }; },
 };
@@ -182,18 +190,61 @@ Promise.resolve().then(() => {}).then(() => {
   const mapContext = mapRoot.querySelector(".rm-study-investigation-map");
   const returnBanner = mapRoot.querySelector(".rm-architecture-return");
   const returnButton = returnBanner && walk(returnBanner).find((node) => node.tagName === "BUTTON");
-  const mapText = mapContext ? mapContext.textContent.replace(/\s+/g, " ").trim() : "";
-  const mapNodes = mapContext ? mapContext.querySelectorAll(".rm-study-investigation__node").length : 0;
-  const mapTransitions = mapContext ? mapContext.querySelectorAll(".rm-study-investigation__transition").length : 0;
-  const sideRows = mapContext ? mapContext.querySelectorAll(".rm-study-investigation-map__side-row").length : 0;
+  const desktopMapContext = mapContext && mapContext.querySelector(".rm-study-investigation-map__desktop");
+  const mobileMapContext = mapContext && mapContext.querySelector(".rm-study-investigation-map__mobile-path");
+  const mapText = desktopMapContext ? desktopMapContext.textContent.replace(/\s+/g, " ").trim() : "";
+  const mapNodes = desktopMapContext ? desktopMapContext.querySelectorAll(".rm-study-investigation__node").length : 0;
+  const mapTransitions = desktopMapContext ? desktopMapContext.querySelectorAll(".rm-study-investigation__transition").length : 0;
+  const sideRows = desktopMapContext ? desktopMapContext.querySelectorAll(".rm-study-investigation-map__side-row").length : 0;
+  const mapSources = desktopMapContext ? desktopMapContext.querySelectorAll(".rm-study-investigation__source") : [];
+  const mobileMapText = mobileMapContext ? mobileMapContext.textContent.replace(/\s+/g, " ").trim() : "";
+  const mobileMapNodes = mobileMapContext ? mobileMapContext.querySelectorAll(".rm-study-investigation__node").length : 0;
+  const mobileMapTransitions = mobileMapContext ? mobileMapContext.querySelectorAll(".rm-study-investigation__transition").length : 0;
+  const mobileMapSources = mobileMapContext ? mobileMapContext.querySelectorAll(".rm-study-investigation__source") : [];
+  const mapStage = mapRoot.querySelector(".rm-architecture-canvas-stage");
+  const mapContextFloatsInStage = !!(mapStage && mapContext && mapContext.parentNode && mapContext.parentNode.parentNode === mapStage);
   const mapHash = window.location.hash;
   const historyTarget = window.history.state && window.history.state.mapTarget;
+  const componentDisclosure = mapRoot.querySelector(".rm-architecture-list-disclosure");
+  const componentSummary = componentDisclosure && componentDisclosure.querySelector(".rm-architecture-disclosure__summary");
+  const componentDisclosureInitiallyOpen = !!(componentDisclosure && componentDisclosure.open);
+  let componentDisclosureOpensOnMobile = componentDisclosureInitiallyOpen;
+  let componentDisclosureClosesOnDesktop = !componentDisclosureInitiallyOpen;
+  let componentDisclosurePreservesUserClose = false;
+  if (componentDisclosure && componentSummary && !mobileMedia.matches) {
+    mobileMedia.set(true);
+    componentDisclosureOpensOnMobile = !!componentDisclosure.open;
+    mobileMedia.set(false);
+    componentDisclosureClosesOnDesktop = !componentDisclosure.open;
+    mobileMedia.set(true);
+    componentSummary.dispatchEvent({ type: "click" });
+    componentDisclosure.open = false;
+    mobileMedia.set(false);
+    mobileMedia.set(true);
+    componentDisclosurePreservesUserClose = !componentDisclosure.open;
+  }
+  const entrypointsLens = mapRoot.querySelector('[data-map-lens="entrypoints"]');
+  const landscapeLens = mapRoot.querySelector('[data-map-lens="landscape"]');
+  if (!entrypointsLens || !landscapeLens) throw new Error("Map lens controls missing");
+  entrypointsLens.onclick();
+  const contextHiddenOutsideLandscape = !mapRoot.querySelector(".rm-study-investigation-map");
+  const targetOutsideLandscape = api.workspaceStateSnapshot().mapTarget;
+  landscapeLens.onclick();
+  const contextRestoredInLandscape = !!mapRoot.querySelector(".rm-study-investigation-map");
+  const targetRestoredInLandscape = api.workspaceStateSnapshot().mapTarget;
   if (returnButton && typeof returnButton.onclick === "function") returnButton.onclick();
   process.stdout.write(JSON.stringify({
     detailText, detailNodes, detailTransitions,
     detailSourceCount: detailSources.length,
     sourceHrefs: detailSources.map((node) => node.getAttribute("href") || ""),
-    preparedText, mapText, mapNodes, mapTransitions, sideRows, overlays,
+    preparedText, mapText, mapNodes, mapTransitions, sideRows,
+    mobileMapText, mobileMapNodes, mobileMapTransitions,
+    mapSourceHrefs: mapSources.map((node) => node.getAttribute("href") || ""),
+    mobileMapSourceHrefs: mobileMapSources.map((node) => node.getAttribute("href") || ""),
+    mapContextFloatsInStage, contextHiddenOutsideLandscape, contextRestoredInLandscape,
+    targetOutsideLandscape, targetRestoredInLandscape, overlays, lenses,
+    componentDisclosureInitiallyOpen, componentDisclosureOpensOnMobile,
+    componentDisclosureClosesOnDesktop, componentDisclosurePreservesUserClose,
     mapHash, historyTarget,
     returned: api.workspaceStateSnapshot(), returnHash: window.location.hash,
   }));
@@ -204,9 +255,9 @@ Promise.resolve().then(() => {}).then(() => {
 		t.Fatal(err)
 	}
 
-	run := func(language string) studyInvestigationAssetResult {
+	run := func(language string, viewport string) studyInvestigationAssetResult {
 		t.Helper()
-		output, err := exec.Command(node, runnerPath, asset, language).CombinedOutput()
+		output, err := exec.Command(node, runnerPath, asset, language, viewport).CombinedOutput()
 		if err != nil {
 			t.Fatalf("run Study investigation asset (%s): %v\n%s", language, err, output)
 		}
@@ -217,16 +268,17 @@ Promise.resolve().then(() => {}).then(() => {
 		return got
 	}
 
-	en := run("en")
+	en := run("en", "desktop")
 	if en.DetailNodes != 6 || en.DetailTransitions != 5 || en.DetailSourceCount != 11 {
 		t.Fatalf("Study detail path = nodes %d transitions %d sources %d",
 			en.DetailNodes, en.DetailTransitions, en.DetailSourceCount)
 	}
-	if en.MapNodes != 6 || en.MapTransitions != 5 || en.SideRows != 4 {
-		t.Fatalf("Map path = nodes %d transitions %d side rows %d",
-			en.MapNodes, en.MapTransitions, en.SideRows)
+	if en.MapNodes != 0 || en.MapTransitions != 0 || en.SideRows != 4 ||
+		len(en.MapSourceHrefs) != 4 || !en.MapContextFloatsInStage {
+		t.Fatalf("Map context = nodes %d transitions %d side rows %d sources %d floats=%t",
+			en.MapNodes, en.MapTransitions, en.SideRows, len(en.MapSourceHrefs), en.MapContextFloatsInStage)
 	}
-	for _, href := range en.SourceHrefs {
+	for _, href := range append(append([]string{}, en.SourceHrefs...), en.MapSourceHrefs...) {
 		if !strings.Contains(href, "https://github.com/acme/fixture/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/") {
 			t.Fatalf("Study source is not pinned to the captured revision: %q", href)
 		}
@@ -249,23 +301,48 @@ Promise.resolve().then(() => {}).then(() => {
 		!strings.Contains(en.MapText, "several exact map areas") {
 		t.Fatalf("English prepared/map copy incomplete: prepared=%s map=%s", en.PreparedText, en.MapText)
 	}
+	for _, duplicated := range []string{"Study path on the map", "The complete path stays visible here", "Connected code paths"} {
+		if strings.Contains(en.MapText, duplicated) {
+			t.Fatalf("Map context duplicated the Study detail path %q: %s", duplicated, en.MapText)
+		}
+	}
 	for _, leaked := range []string{"SECRET MODEL EXPLANATION", "SECRET STATUS", "SECRET REF", "prepared_investigation", "provider_ref", "status_code"} {
 		if strings.Contains(en.DetailText+en.MapText+en.PreparedText, leaked) {
 			t.Fatalf("private/status field %q leaked into Study HTML", leaked)
 		}
 	}
-	if strings.Join(en.Overlays, ",") != "study-investigation-theme-1-mechanism-1" ||
+	if strings.Join(en.Overlays, ",") != "study-investigation-theme-1-mechanism-1,,study-investigation-theme-1-mechanism-1" ||
+		strings.Join(en.Lenses, ",") != "landscape,entrypoints,landscape" ||
+		!en.ContextHiddenOutsideLandscape || !en.ContextRestoredInLandscape ||
+		en.TargetOutsideLandscape != en.HistoryTarget || en.TargetRestoredInLandscape != en.HistoryTarget ||
 		en.MapHash != "#/map" || en.HistoryTarget.Kind != "study_mechanism" ||
 		en.HistoryTarget.ThemeOrdinal != 1 || en.HistoryTarget.InvestigationID != "study-investigation-theme-1" ||
 		en.HistoryTarget.MechanismID != "study-investigation-theme-1-mechanism-1" {
-		t.Fatalf("transient map selection = overlays %#v hash %q target %#v",
-			en.Overlays, en.MapHash, en.HistoryTarget)
+		t.Fatalf("transient map selection = overlays %#v lenses %#v hidden=%t restored=%t outside=%#v restoredTarget=%#v hash %q target %#v",
+			en.Overlays, en.Lenses, en.ContextHiddenOutsideLandscape, en.ContextRestoredInLandscape,
+			en.TargetOutsideLandscape, en.TargetRestoredInLandscape, en.MapHash, en.HistoryTarget)
 	}
 	if en.Returned.View != "study" || en.Returned.ThemeCardOrdinal != 1 || en.ReturnHash != "#/study/theme/1" {
 		t.Fatalf("return to Study = state %#v hash %q", en.Returned, en.ReturnHash)
 	}
+	if en.ComponentDisclosureInitiallyOpen || !en.ComponentDisclosureOpensOnMobile ||
+		!en.ComponentDisclosureClosesOnDesktop || !en.ComponentDisclosurePreservesUserClose {
+		t.Fatalf("responsive component disclosure = initial %t mobile %t desktop %t preserved %t",
+			en.ComponentDisclosureInitiallyOpen, en.ComponentDisclosureOpensOnMobile,
+			en.ComponentDisclosureClosesOnDesktop, en.ComponentDisclosurePreservesUserClose)
+	}
+	mobile := run("en", "mobile")
+	if !mobile.ComponentDisclosureInitiallyOpen {
+		t.Fatal("component disclosure is closed on an initially mobile Map")
+	}
+	if mobile.MobileMapNodes != 6 || mobile.MobileMapTransitions != 5 ||
+		len(mobile.MobileMapSourceHrefs) != 11 ||
+		!strings.Contains(mobile.MobileMapText, "Connected code paths") {
+		t.Fatalf("mobile Map lost the complete ordered mechanism: nodes=%d transitions=%d sources=%d text=%q",
+			mobile.MobileMapNodes, mobile.MobileMapTransitions, len(mobile.MobileMapSourceHrefs), mobile.MobileMapText)
+	}
 
-	ru := run("ru")
+	ru := run("ru", "desktop")
 	for _, required := range []string{
 		"Связанные пути по коду", "Прямой вызов", "Запуск goroutine", "Отложенный вызов",
 		"Объявление · main.go:10:2", "Место вызова · main.go:30:5", "Показать на карте",
@@ -276,7 +353,8 @@ Promise.resolve().then(() => {}).then(() => {
 				required, ru.DetailText, ru.PreparedText, ru.MapText)
 		}
 	}
-	if ru.DetailNodes != en.DetailNodes || ru.MapNodes != en.MapNodes || ru.SideRows != en.SideRows {
+	if ru.DetailNodes != en.DetailNodes || ru.MapNodes != en.MapNodes || ru.SideRows != en.SideRows ||
+		len(ru.MapSourceHrefs) != len(en.MapSourceHrefs) || ru.MapContextFloatsInStage != en.MapContextFloatsInStage {
 		t.Fatalf("EN/RU Study structure diverged: EN %#v RU %#v", en, ru)
 	}
 }
@@ -297,7 +375,12 @@ func TestStudyInvestigationAssetsKeepTheCompletePathOnMobile(t *testing.T) {
 	for _, required := range []string{
 		`.rm-study-investigation__path { flex-direction: column; overflow: visible;`,
 		`.rm-study-investigation__node, .rm-study-investigation__transition { box-sizing: border-box; flex-basis: auto; width: 100%; }`,
-		`.rm-study-investigation-map__side-row { align-items: flex-start; flex-direction: column; }`,
+		`.rm-architecture-canvas-stage { min-width: 0; position: relative; }`,
+		`position: absolute; right: .75rem; top: .75rem;`,
+		`.rm-study-investigation-map--mobile-only, .rm-study-investigation-map__mobile-path { display: none; }`,
+		`.rm-study-investigation-map, .rm-study-investigation-map--mobile-only { display: grid; margin: .65rem 0 0; max-height: none; overflow: visible; position: static; width: auto; }`,
+		`.rm-study-investigation-map__desktop { display: none; }`,
+		`.rm-study-investigation-map__mobile-path { display: grid; gap: .5rem; }`,
 	} {
 		if !strings.Contains(string(css), required) {
 			t.Errorf("mobile Study path CSS is missing %q", required)
@@ -324,27 +407,44 @@ func TestStudyInvestigationAssetsKeepTheCompletePathOnMobile(t *testing.T) {
 }
 
 type studyInvestigationAssetResult struct {
-	DetailText        string   `json:"detailText"`
-	DetailNodes       int      `json:"detailNodes"`
-	DetailTransitions int      `json:"detailTransitions"`
-	DetailSourceCount int      `json:"detailSourceCount"`
-	SourceHrefs       []string `json:"sourceHrefs"`
-	PreparedText      string   `json:"preparedText"`
-	MapText           string   `json:"mapText"`
-	MapNodes          int      `json:"mapNodes"`
-	MapTransitions    int      `json:"mapTransitions"`
-	SideRows          int      `json:"sideRows"`
-	Overlays          []string `json:"overlays"`
-	MapHash           string   `json:"mapHash"`
-	HistoryTarget     struct {
-		Kind            string `json:"kind"`
-		ThemeOrdinal    int    `json:"theme_ordinal"`
-		InvestigationID string `json:"investigation_id"`
-		MechanismID     string `json:"mechanism_id"`
-	} `json:"historyTarget"`
-	Returned struct {
+	DetailText                            string                      `json:"detailText"`
+	DetailNodes                           int                         `json:"detailNodes"`
+	DetailTransitions                     int                         `json:"detailTransitions"`
+	DetailSourceCount                     int                         `json:"detailSourceCount"`
+	SourceHrefs                           []string                    `json:"sourceHrefs"`
+	PreparedText                          string                      `json:"preparedText"`
+	MapText                               string                      `json:"mapText"`
+	MapNodes                              int                         `json:"mapNodes"`
+	MapTransitions                        int                         `json:"mapTransitions"`
+	SideRows                              int                         `json:"sideRows"`
+	MapSourceHrefs                        []string                    `json:"mapSourceHrefs"`
+	MobileMapText                         string                      `json:"mobileMapText"`
+	MobileMapNodes                        int                         `json:"mobileMapNodes"`
+	MobileMapTransitions                  int                         `json:"mobileMapTransitions"`
+	MobileMapSourceHrefs                  []string                    `json:"mobileMapSourceHrefs"`
+	MapContextFloatsInStage               bool                        `json:"mapContextFloatsInStage"`
+	ContextHiddenOutsideLandscape         bool                        `json:"contextHiddenOutsideLandscape"`
+	ContextRestoredInLandscape            bool                        `json:"contextRestoredInLandscape"`
+	TargetOutsideLandscape                studyInvestigationMapTarget `json:"targetOutsideLandscape"`
+	TargetRestoredInLandscape             studyInvestigationMapTarget `json:"targetRestoredInLandscape"`
+	Overlays                              []string                    `json:"overlays"`
+	Lenses                                []string                    `json:"lenses"`
+	ComponentDisclosureInitiallyOpen      bool                        `json:"componentDisclosureInitiallyOpen"`
+	ComponentDisclosureOpensOnMobile      bool                        `json:"componentDisclosureOpensOnMobile"`
+	ComponentDisclosureClosesOnDesktop    bool                        `json:"componentDisclosureClosesOnDesktop"`
+	ComponentDisclosurePreservesUserClose bool                        `json:"componentDisclosurePreservesUserClose"`
+	MapHash                               string                      `json:"mapHash"`
+	HistoryTarget                         studyInvestigationMapTarget `json:"historyTarget"`
+	Returned                              struct {
 		View             string `json:"view"`
 		ThemeCardOrdinal int    `json:"themeCardOrdinal"`
 	} `json:"returned"`
 	ReturnHash string `json:"returnHash"`
+}
+
+type studyInvestigationMapTarget struct {
+	Kind            string `json:"kind"`
+	ThemeOrdinal    int    `json:"theme_ordinal"`
+	InvestigationID string `json:"investigation_id"`
+	MechanismID     string `json:"mechanism_id"`
 }

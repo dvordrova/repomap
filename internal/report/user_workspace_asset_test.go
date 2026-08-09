@@ -36,7 +36,7 @@ func TestUserWorkspaceKeepsStudyPublicationFailuresOutOfHTML(t *testing.T) {
 	}
 }
 
-func TestUserWorkspaceReducerPreservesMechanismContext(t *testing.T) {
+func TestUserWorkspaceReducerCanonicalizesOverviewToMap(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is unavailable")
@@ -48,11 +48,18 @@ func TestUserWorkspaceReducerPreservesMechanismContext(t *testing.T) {
 	runner := `
 const fs = require("fs");
 const vm = require("vm");
-const report = { user_mechanisms: [], user_sources: [], openable_paths: [], source_ids: {} };
+const report = {
+  user_sources: [], openable_paths: [], source_ids: {},
+  study_map: { brief: {}, shape: [], directions: [
+    { id: "study-a", question: "Study A", reading_anchors: [] },
+  ] },
+  operations: { version: 1, paths: [
+    { id: "operate-a", title: "Operate A", actions: [] },
+  ], landmarks: [] },
+};
 const window = {
-  location: { search: "", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
-  __REPOMAP_WORKSPACE_TEST__: {},
-  addEventListener() {},
+  location: { search: "", hash: "#/map", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
 };
 const document = {
   getElementById(id) {
@@ -68,55 +75,13 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window, document, URLSearchParams, Set, Map, AbortController,
 });
 const api = window.__REPOMAP_WORKSPACE_TEST__;
-const mechanisms = [{
-  artifact_id: "mechanism-1",
-  steps: [{ title: "one" }, { title: "two" }, { title: "three" }],
-}];
-const snippet = {
-  path: "router.go",
-  start_line: 40,
-  end_line: 43,
-  lines: [
-    { line: 40, text: "func route() {" },
-    { line: 41, text: "  dispatch()", highlight: true },
-    { line: 42, text: "}" },
-  ],
-};
-let state = {
-  view: "overview", artifactID: "", stepIndex: 0,
-  sourceLocation: null, mapReturn: null, mapTarget: null,
-};
-const snapshots = {};
-state = api.reduceWorkspaceState(state, {
-  type: "open_mechanism", artifactID: "mechanism-1", stepIndex: 1,
-}, mechanisms);
-snapshots.open = state;
-state = api.reduceWorkspaceState(state, {
-  type: "open_source", location: { path: "router.go", line: 42, column: 3 },
-}, mechanisms);
-snapshots.bare = state;
-state = api.reduceWorkspaceState(state, {
-  type: "open_source",
-  selection: { path: "router.go", line: 41, column: 3, snippet },
-}, mechanisms);
-snapshots.source = state;
-state = api.reduceWorkspaceState(state, { type: "close_source" }, mechanisms);
-snapshots.closed = state;
-state = api.reduceWorkspaceState(state, {
-  type: "open_source",
-  selection: { path: "router.go", line: 41, column: 3, snippet },
-}, mechanisms);
-state = api.reduceWorkspaceState(state, {
-  type: "show_map", target: { kind: "component", component_id: "router" },
-}, mechanisms);
-snapshots.map = state;
-state = api.reduceWorkspaceState(state, { type: "return_from_map" }, mechanisms);
-snapshots.returned = state;
-state = api.reduceWorkspaceState(state, { type: "move_step", delta: 99 }, mechanisms);
-snapshots.bounded = state;
-process.stdout.write(JSON.stringify(snapshots));
+const initial = { view: "study", directionID: "study-a" };
+const overview = api.reduceWorkspaceState(initial, { type: "view", view: "overview" });
+const architecture = api.reduceWorkspaceState(initial, { type: "view", view: "architecture" });
+const operate = api.reduceWorkspaceState(initial, { type: "open_operation", operationID: "operate-a" });
+process.stdout.write(JSON.stringify({ overview, architecture, operate }));
 `
-	runnerPath := filepath.Join(t.TempDir(), "user-workspace-test.js")
+	runnerPath := filepath.Join(t.TempDir(), "user-workspace-reducer-test.js")
 	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -124,72 +89,27 @@ process.stdout.write(JSON.stringify(snapshots));
 	if err != nil {
 		t.Fatalf("run user workspace reducer: %v\n%s", err, output)
 	}
-	type sourceSelection struct {
-		Path    string `json:"path"`
-		Line    int    `json:"line"`
-		Snippet struct {
-			Path  string `json:"path"`
-			Lines []struct {
-				Line      int    `json:"line"`
-				Text      string `json:"text"`
-				Highlight bool   `json:"highlight"`
-			} `json:"lines"`
-		} `json:"snippet"`
-	}
-	type mechanismState struct {
-		View           string           `json:"view"`
-		ArtifactID     string           `json:"artifactID"`
-		StepIndex      int              `json:"stepIndex"`
-		SourceLocation *sourceSelection `json:"sourceLocation"`
-		MapReturn      *struct {
-			ArtifactID string `json:"artifactID"`
-			StepIndex  int    `json:"stepIndex"`
-		} `json:"mapReturn"`
-	}
 	var got struct {
-		Open     mechanismState `json:"open"`
-		Bare     mechanismState `json:"bare"`
-		Source   mechanismState `json:"source"`
-		Closed   mechanismState `json:"closed"`
-		Map      mechanismState `json:"map"`
-		Returned mechanismState `json:"returned"`
-		Bounded  mechanismState `json:"bounded"`
+		Overview struct {
+			View string `json:"view"`
+		} `json:"overview"`
+		Architecture struct {
+			View string `json:"view"`
+		} `json:"architecture"`
+		Operate struct {
+			View        string `json:"view"`
+			OperationID string `json:"operationID"`
+			DirectionID string `json:"directionID"`
+		} `json:"operate"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode reducer result: %v\n%s", err, output)
 	}
-	if got.Open.View != "mechanism" || got.Open.ArtifactID != "mechanism-1" || got.Open.StepIndex != 1 {
-		t.Fatalf("open mechanism state = %#v", got.Open)
+	if got.Overview.View != "map" || got.Architecture.View != "map" {
+		t.Fatalf("legacy view aliases = overview %q architecture %q, want map", got.Overview.View, got.Architecture.View)
 	}
-	if got.Bare.SourceLocation != nil {
-		t.Fatalf("bare path opened a source drawer: %#v", got.Bare.SourceLocation)
-	}
-	if got.Bare.ArtifactID != "mechanism-1" || got.Bare.StepIndex != 1 {
-		t.Fatalf("bare path changed mechanism context: %#v", got.Bare)
-	}
-	if got.Source.SourceLocation == nil || got.Source.SourceLocation.Path != "router.go" || got.Source.SourceLocation.Line != 41 {
-		t.Fatalf("real snippet did not open source: %#v", got.Source.SourceLocation)
-	}
-	if got.Source.SourceLocation.Snippet.Path != "router.go" || len(got.Source.SourceLocation.Snippet.Lines) != 3 || !got.Source.SourceLocation.Snippet.Lines[1].Highlight {
-		t.Fatalf("source selection lost code or highlights: %#v", got.Source.SourceLocation.Snippet)
-	}
-	if got.Source.ArtifactID != "mechanism-1" || got.Source.StepIndex != 1 {
-		t.Fatalf("source selection changed mechanism context: %#v", got.Source)
-	}
-	if got.Closed.SourceLocation != nil || got.Closed.View != "mechanism" || got.Closed.ArtifactID != "mechanism-1" || got.Closed.StepIndex != 1 {
-		t.Fatalf("closing source did not restore the same mechanism step: %#v", got.Closed)
-	}
-	if got.Map.View != "map" || got.Map.MapReturn == nil || got.Map.MapReturn.ArtifactID != "mechanism-1" || got.Map.MapReturn.StepIndex != 1 {
-		t.Fatalf("map state = %#v", got.Map)
-	}
-	if got.Returned.View != "mechanism" || got.Returned.ArtifactID != "mechanism-1" || got.Returned.StepIndex != 1 {
-		t.Fatalf("return state = %#v", got.Returned)
-	}
-	if got.Returned.SourceLocation == nil || got.Returned.SourceLocation.Path != "router.go" {
-		t.Fatalf("source selection was lost across map round-trip: %#v", got.Returned.SourceLocation)
-	}
-	if got.Bounded.StepIndex != 2 {
-		t.Fatalf("bounded step = %d, want 2", got.Bounded.StepIndex)
+	if got.Operate.View != "operate" || got.Operate.OperationID != "operate-a" || got.Operate.DirectionID != "" {
+		t.Fatalf("Study to Operate reducer state = %#v", got.Operate)
 	}
 }
 
@@ -368,7 +288,7 @@ const returned = api.reduceWorkspaceState({
   view: "architecture", artifactID: "", directionID: "study-routing", stepIndex: 0,
   sourceLocation: null, mapReturn: { directionID: "study-routing" }, mapTarget: { kind: "component", component_id: "router" },
 }, { type: "return_from_map" }, [mechanism]);
-api.renderOverviewWorkspace();
+api.renderMapSummaryInto("rm-overview");
 const shelfOverviewText = text(roots["rm-overview"]);
 api.renderIncompleteStudyOverview();
 const incompleteOverviewText = text(roots["rm-study-overview"]);
@@ -400,7 +320,7 @@ vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_mess
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window: topicWindow, document: topicDocument, URLSearchParams, Set, Map, AbortController,
 });
-topicWindow.__REPOMAP_WORKSPACE_TEST__.renderOverviewWorkspace();
+topicWindow.__REPOMAP_WORKSPACE_TEST__.renderMapSummaryInto("rm-overview");
 report.user_topics.length = 0;
 report.study_map = canonicalStudyMap;
 const emptyRoots = { "rm-overview": new Element("section") };
@@ -424,7 +344,7 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window: emptyWindow, document: emptyDocument, URLSearchParams, Set, Map, AbortController,
 });
 const emptyAPI = emptyWindow.__REPOMAP_WORKSPACE_TEST__;
-emptyAPI.renderOverviewWorkspace();
+emptyAPI.renderMapSummaryInto("rm-overview");
 const completeOverviewRoute = emptyAPI.parseWorkspaceHash("#/study", [], null);
 const card = api.renderStudyDirectionCard(reading, 0);
 process.stdout.write(JSON.stringify({
@@ -455,8 +375,8 @@ process.stdout.write(JSON.stringify({
 		AttachedRoute struct {
 			CanonicalHash string `json:"canonicalHash"`
 			State         struct {
-				View       string `json:"view"`
-				ArtifactID string `json:"artifactID"`
+				View        string `json:"view"`
+				DirectionID string `json:"directionID"`
 			} `json:"state"`
 		} `json:"attachedRoute"`
 		IncompleteOverviewRoute struct {
@@ -514,8 +434,8 @@ process.stdout.write(JSON.stringify({
 		got.Route.State.View != "study" || got.Route.State.DirectionID != "study-routing" {
 		t.Fatalf("reading route = %#v", got.Route)
 	}
-	if got.AttachedRoute.CanonicalHash != "#/mechanism/mechanism-dispatch" ||
-		got.AttachedRoute.State.View != "mechanism" || got.AttachedRoute.State.ArtifactID != "mechanism-dispatch" {
+	if got.AttachedRoute.CanonicalHash != "#/study/study-dispatch" ||
+		got.AttachedRoute.State.View != "study" || got.AttachedRoute.State.DirectionID != "study-dispatch" {
 		t.Fatalf("attached route = %#v", got.AttachedRoute)
 	}
 	if !got.IncompleteOverviewRoute.Valid ||
@@ -567,20 +487,17 @@ process.stdout.write(JSON.stringify({
 			t.Fatalf("canonical Study Overview exposed fallback %q: %q", forbidden, got.ShelfOverviewText)
 		}
 	}
-	for _, token := range []string{
+	for _, forbidden := range []string{
 		"Questions worth exploring",
 		"Message creation and real-time delivery",
 		"Asset upload and storage",
 		"Server initialization and bootstrap",
+		"Repository brief",
+		"Search",
 	} {
-		if !strings.Contains(got.TopicOverviewText, token) {
-			t.Errorf("topic and Study coexistence is missing %q: %q", token, got.TopicOverviewText)
-		}
-	}
-	for _, forbidden := range []string{"Repository brief", "Search"} {
 		if strings.Contains(got.TopicOverviewText, forbidden) {
 			t.Fatalf(
-				"topic Overview exposed fallback %q while Study remains routable: %q",
+				"Map summary exposed removed legacy topic authority %q: %q",
 				forbidden,
 				got.TopicOverviewText,
 			)
@@ -865,7 +782,7 @@ function cards(kind) {
   return walk(roots["rm-overview"]).filter((node) => node.attributes && node.attributes["data-rm-object-kind"] === kind);
 }
 const anatomy = api.repositoryOverviewAnatomy();
-api.renderOverviewWorkspace();
+api.renderMapSummaryInto("rm-overview");
 const surfaceCards = cards("surface");
 const componentCards = cards("component");
 const renderedText = text(roots["rm-overview"]);
@@ -907,7 +824,7 @@ function renderIsolatedOverview(isolatedReport, isolatedLocation) {
   vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
     window: isolatedWindow, document: isolatedDocument, URLSearchParams, Set, Map, AbortController, Promise,
   });
-  isolatedWindow.__REPOMAP_WORKSPACE_TEST__.renderOverviewWorkspace();
+  isolatedWindow.__REPOMAP_WORKSPACE_TEST__.renderMapSummaryInto("rm-overview");
   const isolatedNodes = walk(isolatedRoot);
   return {
     sections: isolatedRoot.children.map((node) => String(node.className || "")),
@@ -981,7 +898,7 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
 });
 const fallbackAPI = fallbackWindow.__REPOMAP_WORKSPACE_TEST__;
 const fallbackAnatomy = fallbackAPI.repositoryOverviewAnatomy();
-fallbackAPI.renderOverviewWorkspace();
+fallbackAPI.renderMapSummaryInto("rm-overview");
 const noStudyReport = JSON.parse(JSON.stringify(report));
 delete noStudyReport.study_map;
 delete noStudyReport.incomplete_study;
@@ -1013,7 +930,7 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
 });
 const noStudyAPI = noStudyWindow.__REPOMAP_WORKSPACE_TEST__;
 const noStudyAnatomy = noStudyAPI.repositoryOverviewAnatomy();
-noStudyAPI.renderOverviewWorkspace();
+noStudyAPI.renderMapSummaryInto("rm-overview");
 const savedSurfaceKinds = [
   "async_task", "cli_command", "http_route", "http_route_descriptor",
   "http_route_frontier", "http_server", "process_entry", "worker", "future_kind",
@@ -1573,387 +1490,6 @@ process.stdout.write(JSON.stringify({
 	}
 }
 
-func TestUserWorkspaceOverviewDoesNotSubstituteSavedCodeLandmarks(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node is unavailable")
-	}
-	assetPath, err := filepath.Abs(filepath.Join("templates", "script.js"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	runner := `
-const fs = require("fs");
-const vm = require("vm");
-class Element {
-  constructor(tag) {
-    this.tagName = tag;
-    this.className = "";
-    this.textContent = "";
-    this.children = [];
-    this.attributes = {};
-    this.hidden = false;
-  }
-  setAttribute(name, value) { this.attributes[name] = String(value); }
-  appendChild(child) { this.children.push(child); return child; }
-  append(...children) { this.children.push(...children); }
-  replaceChildren(...children) { this.children = children; }
-}
-const snippet = {
-  path: "api/public.go", enclosing_symbol: "Serve", start_line: 8, end_line: 10,
-  role: "core", landmark_kind: "public_api", landmark_reason: "Exported API: Serve.",
-  revision: "deadbeef", highlight_ranges: [{ start_line: 9, end_line: 9 }],
-  lines: [
-    { line: 8, text: "func Serve() {" },
-    { line: 9, text: "  run()", highlight: true },
-    { line: 10, text: "}" },
-  ],
-};
-const report = {
-  repo_name: "fixture", user_mechanisms: [], user_sources: [snippet],
-  openable_paths: ["api/public.go"], source_ids: {},
-  semantic_search: { version: 1, items: [], suggestions: [] },
-};
-const roots = { "rm-overview": new Element("section") };
-const window = {
-  location: { search: "", hash: "#/map", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
-  RepomapSemanticSearch: {}, __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
-};
-const document = {
-  createElement(tag) { return new Element(tag); },
-  createTextNode(text) { return { nodeType: 3, textContent: String(text), children: [], attributes: {}, appendChild() {} }; },
-  getElementById(id) {
-    if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
-    return roots[id] || null;
-  },
-  querySelectorAll() { return []; },
-};
-document.documentElement = { lang: "en" };
-window.document = document;
-vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window });
-vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
-  window, document, URLSearchParams, Set, Map, AbortController,
-});
-const api = window.__REPOMAP_WORKSPACE_TEST__;
-function walk(root) {
-  const result = [];
-  (function visit(node) { result.push(node); (node.children || []).forEach(visit); })(root);
-  return result;
-}
-function text(node) { return String(node.textContent || "") + (node.children || []).map(text).join(""); }
-api.renderOverviewWorkspace();
-const overviewNodes = walk(roots["rm-overview"]);
-const mechanismCard = api.renderUserMechanismCard({
-  artifact_id: "mechanism-1", question: "How does routing work?",
-  presentation_title: "How routing works", steps: [{ title: "Route" }], files: [{ path: "router.go" }],
-});
-process.stdout.write(JSON.stringify({
-  overviewText: text(roots["rm-overview"]),
-  sourceCards: overviewNodes.filter((node) => String(node.className).split(/\s+/).includes("rm-source-card")).length,
-  codeBlocks: overviewNodes.filter((node) => node.attributes && node.attributes["data-source-content"] === "true").length,
-  snapshots: overviewNodes.filter((node) => String(node.className).includes("rm-source-card__snapshot")).length,
-  mechanismCardText: text(mechanismCard),
-}));
-`
-	runnerPath := filepath.Join(t.TempDir(), "user-overview-renderer-test.js")
-	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	output, err := exec.Command(node, runnerPath, assetPath).CombinedOutput()
-	if err != nil {
-		t.Fatalf("run overview renderer: %v\n%s", err, output)
-	}
-	var got struct {
-		OverviewText      string `json:"overviewText"`
-		SourceCards       int    `json:"sourceCards"`
-		CodeBlocks        int    `json:"codeBlocks"`
-		Snapshots         int    `json:"snapshots"`
-		MechanismCardText string `json:"mechanismCardText"`
-	}
-	if err := json.Unmarshal(output, &got); err != nil {
-		t.Fatalf("decode overview renderer result: %v\n%s", err, output)
-	}
-	for _, token := range []string{"Where to start", "Public API", "Exported API: Serve.", "func Serve() {", "saved snapshot"} {
-		if strings.Contains(got.OverviewText, token) {
-			t.Errorf("overview unexpectedly rendered saved-source fallback %q: %q", token, got.OverviewText)
-		}
-	}
-	if got.SourceCards != 0 || got.CodeBlocks != 0 || got.Snapshots != 0 {
-		t.Fatalf("overview source rendering = %d cards, %d code blocks, %d snapshots; want none",
-			got.SourceCards, got.CodeBlocks, got.Snapshots)
-	}
-	if strings.Contains(got.OverviewText, "Search") {
-		t.Fatalf("empty-shelf overview exposed Search fallback: %q", got.OverviewText)
-	}
-	if !strings.Contains(got.MechanismCardText, "Open code path →") ||
-		strings.Contains(got.MechanismCardText, "Open a code path") {
-		t.Fatalf("mechanism CTA = %q", got.MechanismCardText)
-	}
-}
-
-func TestUserWorkspaceOnboardingRendersThesisRolesAndNarrativePhases(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node is unavailable")
-	}
-	assetPath, err := filepath.Abs(filepath.Join("templates", "script.js"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	runner := `
-const fs = require("fs");
-const vm = require("vm");
-class Element {
-  constructor(tag) {
-    this.tagName = tag;
-    this.className = "";
-    this.textContent = "";
-    this.children = [];
-    this.attributes = {};
-    this.hidden = false;
-  }
-  setAttribute(name, value) { this.attributes[name] = String(value); }
-  appendChild(child) { this.children.push(child); return child; }
-  append(...children) { this.children.push(...children); }
-  replaceChildren(...children) { this.children = children; }
-}
-function snippet(path, symbol, line) {
-  return {
-    path, enclosing_symbol: symbol, start_line: line, end_line: line + 2,
-    highlight_ranges: [{ start_line: line + 1, end_line: line + 1 }],
-    lines: [
-      { line, text: "func " + symbol + "() {" },
-      { line: line + 1, text: "  work()", highlight: true },
-      { line: line + 2, text: "}" },
-    ],
-  };
-}
-const receive = snippet("cmd/main.go", "receive", 10);
-const prepare = snippet("internal/prepare.go", "prepare", 20);
-const apply = snippet("internal/apply.go", "apply", 30);
-const publish = snippet("internal/publish.go", "publish", 40);
-const extension = snippet("internal/registry.go", "register", 50);
-const main = {
-  artifact_id: "main-mechanism",
-  role: "primary_behavior",
-  title: "How Fixture handles an input",
-  question: "How does Fixture handle an input?",
-  answer: "Fixture receives an input, prepares the core operation, applies it, and publishes the result.",
-  files: [
-    { path: "cmd/main.go" }, { path: "internal/prepare.go" },
-    { path: "internal/apply.go" }, { path: "internal/publish.go" },
-    { path: "internal/extra.go" },
-  ],
-  context: [{
-    label: "Configuration", responsibility: "Supplies settings used by this path.",
-    code_location: { path: "cmd/main.go", line: 11 },
-  }],
-  steps: [
-    { title: "Receive input", explanation: "Receive the input.", locations: [{ path: "cmd/main.go", line: 11 }], sources: [receive] },
-    { title: "Prepare work", explanation: "Prepare the operation.", locations: [{ path: "internal/prepare.go", line: 21 }], sources: [prepare] },
-    { title: "Apply work", explanation: "Apply the operation.", locations: [{ path: "internal/apply.go", line: 31 }], sources: [apply] },
-    { title: "Publish result", explanation: "Publish the result.", locations: [{ path: "internal/publish.go", line: 41 }], sources: [publish] },
-  ],
-  phases: [
-    { title: "Accept the input", explanation: "The boundary accepts the input.", locations: [{ path: "cmd/main.go", line: 11 }], sources: [receive], implementation_step_indexes: [0] },
-    { title: "Perform the core work", explanation: "The core prepares and applies the operation.", locations: [{ path: "internal/prepare.go", line: 21 }, { path: "internal/apply.go", line: 31 }], sources: [prepare, apply], implementation_step_indexes: [1, 2] },
-    { title: "Publish the result", explanation: "The boundary publishes the result.", locations: [{ path: "internal/publish.go", line: 41 }], sources: [publish], implementation_step_indexes: [3] },
-  ],
-};
-const secondary = {
-  artifact_id: "extension-mechanism", role: "extension_point",
-  title: "How Fixture registers extensions",
-  question: "How does Fixture register extensions?",
-  answer: "Fixture stores a validated extension factory for later lookup.",
-  files: [{ path: "internal/registry.go" }],
-  steps: [
-    { title: "Read registration", explanation: "Read registration.", sources: [extension] },
-    { title: "Validate factory", explanation: "Validate factory.", sources: [extension] },
-    { title: "Store factory", explanation: "Store factory.", sources: [extension] },
-  ],
-};
-const report = {
-  repo_name: "fixture",
-  repository_thesis: {
-    purpose: "Fixture turns incoming work into a published result.",
-    system_story: ["A boundary receives work.", "Core code prepares and applies it.", "An output boundary publishes the result."],
-    recommended_artifact_id: "main-mechanism",
-    areas: [
-      { label: "Command boundary", responsibility: "Receives work.", code_location: { path: "cmd/main.go", line: 11 } },
-      { label: "Core operation", responsibility: "Applies work.", code_location: { path: "internal/apply.go", line: 31 } },
-      { label: "Output boundary", responsibility: "Publishes results.", code_location: { path: "internal/publish.go", line: 41 } },
-    ],
-  },
-	repository_guide: {
-		purpose: "Fixture turns incoming work into a published result.",
-		system_story: ["A boundary receives work.", "Core code prepares and applies it.", "An output boundary publishes the result."],
-		start_here_artifact_id: "main-mechanism",
-		extension_artifact_ids: ["extension-mechanism"],
-		more_path_artifact_ids: [],
-		read_next: [
-			{ label: "prepare", path: "internal/prepare.go", line: 21, step_index: 1 },
-			{ label: "publish", path: "internal/publish.go", line: 41, step_index: 2 },
-		],
-		areas: [
-			{ label: "Command boundary", responsibility: "Receives work.", code_location: { path: "cmd/main.go", line: 11 } },
-			{ label: "Core operation", responsibility: "Applies work.", code_location: { path: "internal/apply.go", line: 31 } },
-			{ label: "Output boundary", responsibility: "Publishes results.", code_location: { path: "internal/publish.go", line: 41 } },
-		],
-		architecture_useful: false,
-	},
-  user_mechanisms: [main, secondary], user_sources: [],
-  openable_paths: ["cmd/main.go", "internal/prepare.go", "internal/apply.go", "internal/publish.go", "internal/registry.go", "internal/extra.go"],
-  source_ids: {}, architecture_canvas: {}, semantic_search: {},
-};
-const roots = {
-  "rm-overview": new Element("section"),
-  "rm-mechanism-detail": new Element("section"),
-};
-const window = {
-  location: { search: "", hash: "#/map", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
-  RepomapSemanticSearch: {}, __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
-};
-const document = {
-  createElement(tag) { return new Element(tag); },
-  createTextNode(text) { return { nodeType: 3, textContent: String(text), children: [], attributes: {}, appendChild() {} }; },
-  getElementById(id) {
-    if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
-    return roots[id] || null;
-  },
-  querySelector() { return null; },
-  querySelectorAll() { return []; },
-};
-document.documentElement = { lang: "en" };
-window.document = document;
-vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_messages.js"), "utf8"), { window });
-vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
-  window, document, URLSearchParams, Set, Map, AbortController, Promise,
-});
-const api = window.__REPOMAP_WORKSPACE_TEST__;
-function walk(root) {
-  const result = [];
-  (function visit(node) { result.push(node); (node.children || []).forEach(visit); })(root);
-  return result;
-}
-function text(node) { return String(node.textContent || "") + (node.children || []).map(text).join(""); }
-api.renderOverviewWorkspace();
-const overviewNodes = walk(roots["rm-overview"]);
-const mainCard = api.renderUserMechanismCard(main);
-const secondaryCard = api.renderUserMechanismCard(secondary);
-api.openUserMechanism("main-mechanism", 1, true);
-process.stdout.write(JSON.stringify({
-  overviewText: text(roots["rm-overview"]),
-  areaCards: overviewNodes.filter((node) => String(node.className).split(/\s+/).includes("rm-repository-area")).length,
-  mechanismCards: overviewNodes.filter((node) => String(node.className).split(/\s+/).includes("rm-mechanism-card")).length,
-  mainCardText: text(mainCard), secondaryCardText: text(secondaryCard),
-  principalFiles: walk(mainCard).filter((node) => node.tagName === "code").map((node) => node.textContent),
-  narrativeTitles: api.mechanismNarrativeItems(main).map((item) => item.title),
-  implementationTitles: api.mechanismImplementationSteps(main, main.phases[1]).map((item) => item.title),
-  searchStepPhase: api.narrativeIndexForImplementationStep(main, 2),
-  detailText: text(roots["rm-mechanism-detail"]),
-	detailSourceCards: walk(roots["rm-mechanism-detail"]).filter((node) => String(node.className).split(/\s+/).includes("rm-source-card")).length,
-  detailHash: window.location.hash,
-}));
-`
-	runnerPath := filepath.Join(t.TempDir(), "user-onboarding-renderer-test.js")
-	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	output, err := exec.Command(node, runnerPath, assetPath).CombinedOutput()
-	if err != nil {
-		t.Fatalf("run onboarding renderer: %v\n%s", err, output)
-	}
-	var got struct {
-		OverviewText         string   `json:"overviewText"`
-		AreaCards            int      `json:"areaCards"`
-		MechanismCards       int      `json:"mechanismCards"`
-		MainCardText         string   `json:"mainCardText"`
-		SecondaryCardText    string   `json:"secondaryCardText"`
-		PrincipalFiles       []string `json:"principalFiles"`
-		NarrativeTitles      []string `json:"narrativeTitles"`
-		ImplementationTitles []string `json:"implementationTitles"`
-		SearchStepPhase      int      `json:"searchStepPhase"`
-		DetailText           string   `json:"detailText"`
-		DetailSourceCards    int      `json:"detailSourceCards"`
-		DetailHash           string   `json:"detailHash"`
-	}
-	if err := json.Unmarshal(output, &got); err != nil {
-		t.Fatalf("decode onboarding renderer result: %v\n%s", err, output)
-	}
-	ordered := []string{
-		"Understand the repository",
-		"Pick a path worth following.",
-		"Complete mechanisms",
-		"Source-backed paths",
-	}
-	previous := -1
-	for _, token := range ordered {
-		index := strings.Index(got.OverviewText, token)
-		if index < 0 || index <= previous {
-			t.Fatalf("overview section %q is absent or out of order: %q", token, got.OverviewText)
-		}
-		previous = index
-	}
-	if got.AreaCards != 0 || got.MechanismCards != 2 {
-		t.Fatalf("overview cards = %d areas, %d mechanisms", got.AreaCards, got.MechanismCards)
-	}
-	for _, token := range []string{
-		"How does Fixture handle an input?",
-		"Full mechanism · 3 source-backed steps",
-		"Open code path →",
-	} {
-		if !strings.Contains(got.OverviewText, token) {
-			t.Errorf("mixed shelf is missing %q: %q", token, got.OverviewText)
-		}
-	}
-	for _, obsolete := range []string{
-		"Purpose", "Repository shape", "Primary path", "Extension paths", "Read next", "System story", "Explore", "Search",
-	} {
-		if strings.Contains(got.OverviewText, obsolete) {
-			t.Errorf("mixed shelf retained obsolete Overview heading %q: %q", obsolete, got.OverviewText)
-		}
-	}
-	for _, token := range []string{
-		"Main code path", "Fixture receives an input", "Accept the input", "Perform the core work", "Publish the result",
-	} {
-		if !strings.Contains(got.MainCardText, token) {
-			t.Errorf("main mechanism card is missing %q: %q", token, got.MainCardText)
-		}
-	}
-	if !strings.Contains(got.SecondaryCardText, "Extension path") {
-		t.Errorf("secondary mechanism role is absent: %q", got.SecondaryCardText)
-	}
-	if len(got.PrincipalFiles) != 4 || strings.Contains(strings.Join(got.PrincipalFiles, "\n"), "internal/extra.go") {
-		t.Fatalf("principal files = %#v", got.PrincipalFiles)
-	}
-	if strings.Join(got.NarrativeTitles, "|") != "Accept the input|Perform the core work|Publish the result" ||
-		strings.Join(got.ImplementationTitles, "|") != "Prepare work|Apply work" || got.SearchStepPhase != 1 {
-		t.Fatalf("narrative projection = phases %#v, implementation %#v, search phase %d",
-			got.NarrativeTitles, got.ImplementationTitles, got.SearchStepPhase)
-	}
-	for _, token := range []string{
-		"Phase 2 of 3", "Perform the core work", "Around this path", "Configuration",
-		"Show implementation details (2)", "Prepare work", "Apply work", "func prepare() {", "func apply() {",
-	} {
-		if !strings.Contains(got.DetailText, token) {
-			t.Errorf("phase detail is missing %q: %q", token, got.DetailText)
-		}
-	}
-	if got.DetailSourceCards != 2 {
-		t.Fatalf("phase source cards = %d, want both compact implementation sources visible", got.DetailSourceCards)
-	}
-	if got.DetailHash != "#/mechanism/main-mechanism/step/2" {
-		t.Fatalf("phase deep link = %q", got.DetailHash)
-	}
-	for _, forbidden := range []string{
-		"primary_behavior", "extension_point", "model verdict", "derived verdict", "Known gaps", "Unresolved",
-	} {
-		if strings.Contains(got.OverviewText+got.DetailText, forbidden) {
-			t.Errorf("default onboarding exposed internal text %q", forbidden)
-		}
-	}
-}
-
 func TestUserWorkspaceHashRoutes(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -1966,7 +1502,12 @@ func TestUserWorkspaceHashRoutes(t *testing.T) {
 	runner := `
 const fs = require("fs");
 const vm = require("vm");
-const report = { user_mechanisms: [], user_sources: [], openable_paths: [], source_ids: {} };
+const report = {
+  user_sources: [], openable_paths: [], source_ids: {},
+  study_map: { brief: {}, shape: [], directions: [
+    { id: "study-a", question: "Study A", reading_anchors: [] },
+  ] },
+};
 const window = {
   location: { hash: "", search: "", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   __REPOMAP_WORKSPACE_TEST__: {},
@@ -1986,38 +1527,22 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window, document, URLSearchParams, Set, Map, AbortController, Promise,
 });
 const api = window.__REPOMAP_WORKSPACE_TEST__;
-const mechanisms = [{
-  artifact_id: "mechanism/one",
-  title: "Machine Mechanism Title",
-  question: "How does the router dispatch a request?",
-  steps: [{ title: "one" }, { title: "two" }, { title: "three" }, { title: "four" }],
-}];
 const parsed = {};
 [
   "#/overview",
+  "#/map",
   "#/mechanisms",
   "#/search",
   "#/mechanism/mechanism%2Fone",
-  "#/mechanism/mechanism%2Fone/step/4",
-  "#/mechanism/missing/step/2",
-  "#/mechanism/mechanism%2Fone/step/99",
   "#/architecture?focus=component%3Arouter%252Fcore",
-].forEach((hash) => { parsed[hash] = api.parseWorkspaceHash(hash, mechanisms, null); });
+  "#/study/study-a",
+].forEach((hash) => { parsed[hash] = api.parseWorkspaceHash(hash, null); });
 const flowStep = { kind: "flow_step", flow_id: "flow/one", step_id: "step:two" };
 process.stdout.write(JSON.stringify({
   parsed,
-  mechanismStep: api.workspaceHashForState({ view: "mechanism", artifactID: "mechanism/one", stepIndex: 3 }),
-  mechanismRoot: api.workspaceHashForState({ view: "mechanism", artifactID: "mechanism/one", stepIndex: 0 }, true),
+  studyHash: api.workspaceHashForState({ view: "study", directionID: "study-a" }),
   flowFocus: api.architectureFocusValue(flowStep),
   flowRoundTrip: api.architectureTargetFromFocus(api.architectureFocusValue(flowStep)),
-  focusReset: {
-    initial: api.architectureFocusNeedsReset(null, { kind: "component", component_id: "router" }),
-    same: api.architectureFocusNeedsReset("component:router", { kind: "component", component_id: "router" }),
-    plain: api.architectureFocusNeedsReset("component:router", null),
-    changed: api.architectureFocusNeedsReset("component:router", { kind: "component", component_id: "server" }),
-  },
-  title: api.mechanismPresentationTitle(mechanisms[0]),
-  shortAnswer: api.mechanismShortAnswer({ answer: "Source-backed path: A → B" }),
 }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "user-workspace-route-test.js")
@@ -2033,66 +1558,46 @@ process.stdout.write(JSON.stringify({
 			Valid         bool   `json:"valid"`
 			CanonicalHash string `json:"canonicalHash"`
 			State         struct {
-				View       string `json:"view"`
-				ArtifactID string `json:"artifactID"`
-				StepIndex  int    `json:"stepIndex"`
-				MapTarget  *struct {
+				View      string `json:"view"`
+				Direction string `json:"directionID"`
+				MapTarget *struct {
 					Kind        string `json:"kind"`
 					ComponentID string `json:"component_id"`
 				} `json:"mapTarget"`
 			} `json:"state"`
 		} `json:"parsed"`
-		MechanismStep string `json:"mechanismStep"`
-		MechanismRoot string `json:"mechanismRoot"`
+		StudyHash     string `json:"studyHash"`
 		FlowFocus     string `json:"flowFocus"`
 		FlowRoundTrip struct {
 			Kind   string `json:"kind"`
 			FlowID string `json:"flow_id"`
 			StepID string `json:"step_id"`
 		} `json:"flowRoundTrip"`
-		FocusReset struct {
-			Initial bool `json:"initial"`
-			Same    bool `json:"same"`
-			Plain   bool `json:"plain"`
-			Changed bool `json:"changed"`
-		} `json:"focusReset"`
-		Title       string `json:"title"`
-		ShortAnswer string `json:"shortAnswer"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode workspace route result: %v\n%s", err, output)
 	}
-	step := got.Parsed["#/mechanism/mechanism%2Fone/step/4"]
-	if !step.Valid || step.State.View != "mechanism" || step.State.ArtifactID != "mechanism/one" || step.State.StepIndex != 3 {
-		t.Fatalf("step deep link = %#v", step)
+	for _, hash := range []string{"#/mechanisms", "#/search", "#/mechanism/mechanism%2Fone"} {
+		route := got.Parsed[hash]
+		if route.Valid || route.State.View != "map" || route.CanonicalHash != "#/map" {
+			t.Fatalf("legacy route %q did not fail closed: %#v", hash, route)
+		}
 	}
-	missing := got.Parsed["#/mechanism/missing/step/2"]
-	if missing.Valid || missing.State.View != "map" || missing.CanonicalHash != "#/map" {
-		t.Fatalf("invalid mechanism route = %#v", missing)
+	if overview := got.Parsed["#/overview"]; !overview.Valid || overview.State.View != "map" || overview.CanonicalHash != "#/map" {
+		t.Fatalf("overview alias = %#v", overview)
 	}
-	search := got.Parsed["#/search"]
-	if search.Valid || search.State.View != "map" || search.CanonicalHash != "#/map" {
-		t.Fatalf("Search route = %#v, want normal-report Overview canonicalization", search)
-	}
-	bounded := got.Parsed["#/mechanism/mechanism%2Fone/step/99"]
-	if !bounded.Valid || bounded.State.StepIndex != 3 || bounded.CanonicalHash != "#/mechanism/mechanism%2Fone/step/4" {
-		t.Fatalf("bounded mechanism route = %#v", bounded)
+	if study := got.Parsed["#/study/study-a"]; !study.Valid || study.State.View != "study" || study.State.Direction != "study-a" {
+		t.Fatalf("Study route = %#v", study)
 	}
 	focus := got.Parsed["#/architecture?focus=component%3Arouter%252Fcore"]
-	if !focus.Valid || focus.State.MapTarget == nil || focus.State.MapTarget.ComponentID != "router/core" {
+	if !focus.Valid || focus.State.View != "map" || focus.State.MapTarget == nil || focus.State.MapTarget.ComponentID != "router/core" {
 		t.Fatalf("architecture focus route = %#v", focus)
 	}
-	if got.MechanismStep != "#/mechanism/mechanism%2Fone/step/4" || got.MechanismRoot != "#/mechanism/mechanism%2Fone" {
-		t.Fatalf("mechanism hashes = step %q, root %q", got.MechanismStep, got.MechanismRoot)
+	if got.StudyHash != "#/study/study-a" {
+		t.Fatalf("Study hash = %q", got.StudyHash)
 	}
 	if got.FlowRoundTrip.Kind != "flow_step" || got.FlowRoundTrip.FlowID != "flow/one" || got.FlowRoundTrip.StepID != "step:two" {
 		t.Fatalf("flow focus round trip = %q %#v", got.FlowFocus, got.FlowRoundTrip)
-	}
-	if got.FocusReset.Initial || got.FocusReset.Same || !got.FocusReset.Plain || !got.FocusReset.Changed {
-		t.Fatalf("architecture focus reset decisions = %#v", got.FocusReset)
-	}
-	if got.Title != "How does the router dispatch a request" || got.ShortAnswer != "" {
-		t.Fatalf("presentation fallback = title %q, short answer %q", got.Title, got.ShortAnswer)
 	}
 }
 
@@ -2118,24 +1623,21 @@ const snippet = {
     { line: 42, text: "}" },
   ],
 };
-const mechanisms = [{
-  artifact_id: "mechanism-1",
-  steps: [{ title: "one" }, { title: "two" }],
-}];
-const directions = [
-  { id: "study-a", question: "Study A", reading_anchors: [] },
-  { id: "study-b", question: "Study B", reading_anchors: [] },
-];
 const report = {
-  user_mechanisms: mechanisms, user_sources: [],
-  openable_paths: ["router.go"], source_ids: {},
-  study_map: { brief: {}, shape: [], directions },
+  user_sources: [], openable_paths: ["router.go"], source_ids: {},
+  study_map: { brief: {}, shape: [], directions: [
+    { id: "study-a", question: "Study A", reading_anchors: [] },
+    { id: "study-b", question: "Study B", reading_anchors: [] },
+  ] },
+  operations: { version: 1, paths: [
+    { id: "operate-a", title: "Operate A", actions: [] },
+  ], landmarks: [] },
 };
-const entries = [{ hash: "#/overview", state: null }];
+const entries = [{ hash: "#/map", state: null }];
 let historyIndex = 0;
 const scrollCalls = [];
 const window = {
-  location: { hash: "#/overview", search: "", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  location: { hash: "#/map", search: "", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   scrollY: 0,
   __REPOMAP_WORKSPACE_TEST__: {},
   addEventListener() {},
@@ -2152,14 +1654,6 @@ window.history = {
   replaceState(state, _title, hash) {
     entries[historyIndex] = { hash, state };
     window.location.hash = hash;
-  },
-  back() {
-    if (historyIndex > 0) historyIndex--;
-    window.location.hash = entries[historyIndex].hash;
-  },
-  forward() {
-    if (historyIndex + 1 < entries.length) historyIndex++;
-    window.location.hash = entries[historyIndex].hash;
   },
 };
 const document = {
@@ -2186,46 +1680,22 @@ function snapshot() {
     view: state.view,
   };
 }
-
 window.scrollY = 840;
 api.openStudyDirection("study-a");
 const studyA = snapshot();
-
 window.scrollY = 510;
 api.openStudyDirection("study-b");
 const studyB = snapshot();
-
-window.history.back();
-window.scrollY = 510; // Native session-history restoration happens outside the workspace router.
-api.restoreWorkspaceFromRoute();
-const back = snapshot();
-
-window.history.forward();
-window.scrollY = 0;
-api.restoreWorkspaceFromRoute();
-const forward = snapshot();
-
 window.scrollY = 320;
 api.openSourceSnippet(snippet, { path: "router.go", line: 41 });
 const drawer = snapshot();
 api.closeSourceDrawer();
 api.restoreWorkspaceFromRoute();
 const closedDrawer = snapshot();
-
-api.openUserMechanism("mechanism-1", 0, false);
-const mechanism = snapshot();
-window.scrollY = 275;
-api.selectUserMechanismStep(1);
-const mechanismStep = snapshot();
-
 window.scrollY = 430;
-api.openStudyDirection("study-a");
-const mechanismStudy = snapshot();
-
-process.stdout.write(JSON.stringify({
-  studyA, studyB, back, forward, drawer, closedDrawer,
-  mechanism, mechanismStep, mechanismStudy,
-}));
+api.openPavedPath("operate-a");
+const operate = snapshot();
+process.stdout.write(JSON.stringify({ studyA, studyB, drawer, closedDrawer, operate }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "user-workspace-scroll-test.js")
 	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
@@ -2242,15 +1712,11 @@ process.stdout.write(JSON.stringify({
 		View        string `json:"view"`
 	}
 	var got struct {
-		StudyA         snapshot `json:"studyA"`
-		StudyB         snapshot `json:"studyB"`
-		Back           snapshot `json:"back"`
-		Forward        snapshot `json:"forward"`
-		Drawer         snapshot `json:"drawer"`
-		ClosedDrawer   snapshot `json:"closedDrawer"`
-		Mechanism      snapshot `json:"mechanism"`
-		MechanismStep  snapshot `json:"mechanismStep"`
-		MechanismStudy snapshot `json:"mechanismStudy"`
+		StudyA       snapshot `json:"studyA"`
+		StudyB       snapshot `json:"studyB"`
+		Drawer       snapshot `json:"drawer"`
+		ClosedDrawer snapshot `json:"closedDrawer"`
+		Operate      snapshot `json:"operate"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode workspace scroll result: %v\n%s", err, output)
@@ -2262,15 +1728,11 @@ process.stdout.write(JSON.stringify({
 				name, got, hash, view, scrollY, calls)
 		}
 	}
-	assertSnapshot("overview to Study A", got.StudyA, "#/study/study-a", "study", 0, 1)
+	assertSnapshot("Map to Study A", got.StudyA, "#/study/study-a", "study", 0, 1)
 	assertSnapshot("Study A to Study B", got.StudyB, "#/study/study-b", "study", 0, 2)
-	assertSnapshot("browser Back", got.Back, "#/study/study-a", "study", 510, 2)
-	assertSnapshot("browser Forward", got.Forward, "#/study/study-b", "study", 0, 2)
 	assertSnapshot("open source drawer", got.Drawer, "#/study/study-b", "study", 320, 2)
 	assertSnapshot("close source drawer", got.ClosedDrawer, "#/study/study-b", "study", 320, 2)
-	assertSnapshot("open Mechanism", got.Mechanism, "#/mechanism/mechanism-1", "mechanism", 0, 3)
-	assertSnapshot("select Mechanism step", got.MechanismStep, "#/mechanism/mechanism-1/step/2", "mechanism", 275, 3)
-	assertSnapshot("Mechanism to Study", got.MechanismStudy, "#/study/study-a", "study", 0, 4)
+	assertSnapshot("Study to Operate", got.Operate, "#/operate/operate-a", "operate", 0, 3)
 }
 
 func TestUserWorkspaceNavigationWritesAndRestoresHistory(t *testing.T) {
@@ -2285,36 +1747,35 @@ func TestUserWorkspaceNavigationWritesAndRestoresHistory(t *testing.T) {
 	runner := `
 const fs = require("fs");
 const vm = require("vm");
-const snippet = {
-  path: "router.go", start_line: 40, end_line: 42,
-  highlight_ranges: [{ start_line: 41, end_line: 41 }],
-  lines: [
-    { line: 40, text: "func route() {" },
-    { line: 41, text: "  dispatch()", highlight: true },
-    { line: 42, text: "}" },
-  ],
-};
-const mechanisms = [{
-  artifact_id: "mechanism-1", title: "How the router dispatches a request",
-  question: "How does the router dispatch a request?",
-  steps: [
-    { title: "one", explanation: "one", sources: [snippet] },
-    { title: "two", explanation: "two", sources: [snippet] },
-    { title: "three", explanation: "three", sources: [snippet] },
-    { title: "four", explanation: "four", sources: [snippet] },
-  ],
-}];
+function navButton(view) {
+  const values = new Set();
+  return {
+    attributes: { "data-workspace-view": view },
+    classList: {
+      toggle(name, force) { if (force) values.add(name); else values.delete(name); },
+      contains(name) { return values.has(name); },
+    },
+    getAttribute(name) { return this.attributes[name] || ""; },
+    setAttribute(name, value) { this.attributes[name] = String(value); },
+    removeAttribute(name) { delete this.attributes[name]; },
+  };
+}
+const mapTab = navButton("map");
+const studyTab = navButton("study_overview");
 const report = {
-  user_mechanisms: mechanisms, user_sources: [],
-  openable_paths: ["router.go"], source_ids: {}, architecture_canvas: {},
+  user_sources: [], openable_paths: [], source_ids: {},
+  study_map: { brief: {}, shape: [], directions: [
+    { id: "study-a", question: "Study A", reading_anchors: [] },
+  ] },
+  operations: { version: 1, paths: [
+    { id: "operate-a", title: "Operate A", actions: [] },
+  ], landmarks: [] },
 };
-const entries = [{ hash: "#/overview", state: null }];
+const entries = [{ hash: "#/study/study-a", state: null }];
 let historyIndex = 0;
-let backCalls = 0;
 const window = {
-  location: { hash: "#/overview", search: "", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
-  __REPOMAP_WORKSPACE_TEST__: {},
-  addEventListener() {},
+  location: { hash: "#/study/study-a", search: "", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {}, scrollTo() {},
 };
 window.history = {
   get state() { return entries[historyIndex].state; },
@@ -2329,9 +1790,7 @@ window.history = {
     window.location.hash = hash;
   },
   back() {
-    backCalls++;
-    if (historyIndex === 0) return;
-    historyIndex--;
+    if (historyIndex > 0) historyIndex--;
     window.location.hash = entries[historyIndex].hash;
   },
 };
@@ -2341,7 +1800,10 @@ const document = {
     return null;
   },
   querySelector() { return null; },
-  querySelectorAll() { return []; },
+  querySelectorAll(selector) {
+    if (selector === "[data-workspace-view]") return [mapTab, studyTab];
+    return [];
+  },
 };
 document.documentElement = { lang: "en" };
 window.document = document;
@@ -2350,45 +1812,23 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window, document, URLSearchParams, Set, Map, AbortController, Promise,
 });
 const api = window.__REPOMAP_WORKSPACE_TEST__;
-api.openUserMechanism("mechanism-1", 0, false);
-const openedHash = window.location.hash;
-api.selectUserMechanismStep(3);
-const stepHash = window.location.hash;
-const historyCountBeforeSameStep = entries.length;
-api.selectUserMechanismStep(3);
-const historyCountAfterSameStep = entries.length;
 api.restoreWorkspaceFromRoute();
-const reloaded = api.workspaceStateSnapshot();
+const study = api.workspaceStateSnapshot();
+api.openPavedPath("operate-a");
+const operate = api.workspaceStateSnapshot();
+const operateHash = window.location.hash;
+const operateMapActive = mapTab.classList.contains("rm-active") && mapTab.attributes["aria-current"] === "page";
 window.history.back();
 api.restoreWorkspaceFromRoute();
 const backed = api.workspaceStateSnapshot();
-
-api.selectUserMechanismStep(3);
-api.openSourceSnippet(snippet, { path: "router.go", line: 41 });
-const drawerHash = window.location.hash;
-const drawerState = window.history.state;
-api.closeSourceDrawer();
-api.restoreWorkspaceFromRoute();
-const closed = api.workspaceStateSnapshot();
+const backedHash = window.location.hash;
+const backStudyActive = studyTab.classList.contains("rm-active") && studyTab.attributes["aria-current"] === "page";
 api.navigateWorkspace("overview");
-api.openSourceSnippet(snippet, { path: "router.go", line: 41 });
-const overviewDrawer = api.workspaceStateSnapshot();
-const overviewDrawerHasMechanism = !!api.activeSourceDrawerMechanism();
-const overviewHash = window.location.hash;
-api.openUserMechanism("mechanism-1", 1, true);
-api.showMechanismStepOnMap({ kind: "component", component_id: "router" });
-const mapHash = window.location.hash;
-const backCallsBeforeMapReturn = backCalls;
-api.returnFromArchitecture();
-const mapReturnHash = window.location.hash;
-const mapReturned = api.workspaceStateSnapshot();
+const overviewAlias = api.workspaceStateSnapshot();
 process.stdout.write(JSON.stringify({
-  openedHash, stepHash, reloaded, backed, drawerHash,
-  historyCountBeforeSameStep, historyCountAfterSameStep,
-  drawerHistory: !!(drawerState && drawerState.sourceDrawer), closed,
-  overviewDrawer, overviewDrawerHasMechanism, overviewHash,
-  mapHash, mapReturnHash, mapReturned,
-  explicitMapReturnBackCalls: backCalls - backCallsBeforeMapReturn,
+  study, operate, operateHash, operateMapActive,
+  backed, backedHash, backStudyActive,
+  overviewAlias, overviewHash: window.location.hash,
 }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "user-workspace-navigation-test.js")
@@ -2400,76 +1840,42 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("run workspace navigation test: %v\n%s", err, output)
 	}
 	type state struct {
-		View           string          `json:"view"`
-		ArtifactID     string          `json:"artifactID"`
-		StepIndex      int             `json:"stepIndex"`
-		SourceLocation json.RawMessage `json:"sourceLocation"`
+		View        string `json:"view"`
+		DirectionID string `json:"directionID"`
+		OperationID string `json:"operationID"`
 	}
 	var got struct {
-		OpenedHash                 string `json:"openedHash"`
-		StepHash                   string `json:"stepHash"`
-		Reloaded                   state  `json:"reloaded"`
-		Backed                     state  `json:"backed"`
-		DrawerHash                 string `json:"drawerHash"`
-		DrawerHistory              bool   `json:"drawerHistory"`
-		Closed                     state  `json:"closed"`
-		OverviewDrawer             state  `json:"overviewDrawer"`
-		OverviewHash               string `json:"overviewHash"`
-		OverviewDrawerHasMechanism bool   `json:"overviewDrawerHasMechanism"`
-		MapHash                    string `json:"mapHash"`
-		MapReturnHash              string `json:"mapReturnHash"`
-		MapReturned                state  `json:"mapReturned"`
-		ExplicitMapReturnBackCalls int    `json:"explicitMapReturnBackCalls"`
-		HistoryCountBeforeSameStep int    `json:"historyCountBeforeSameStep"`
-		HistoryCountAfterSameStep  int    `json:"historyCountAfterSameStep"`
+		Study            state  `json:"study"`
+		Operate          state  `json:"operate"`
+		OperateHash      string `json:"operateHash"`
+		OperateMapActive bool   `json:"operateMapActive"`
+		Backed           state  `json:"backed"`
+		BackedHash       string `json:"backedHash"`
+		BackStudyActive  bool   `json:"backStudyActive"`
+		OverviewAlias    state  `json:"overviewAlias"`
+		OverviewHash     string `json:"overviewHash"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode workspace navigation result: %v\n%s", err, output)
 	}
-	if got.OpenedHash != "#/mechanism/mechanism-1" || got.StepHash != "#/mechanism/mechanism-1/step/4" {
-		t.Fatalf("navigation hashes = open %q, step %q", got.OpenedHash, got.StepHash)
+	if got.Study.View != "study" || got.Study.DirectionID != "study-a" {
+		t.Fatalf("initial Study state = %#v", got.Study)
 	}
-	if got.HistoryCountAfterSameStep != got.HistoryCountBeforeSameStep {
-		t.Fatalf("active step added a no-op history entry: before %d, after %d",
-			got.HistoryCountBeforeSameStep, got.HistoryCountAfterSameStep)
+	if got.OperateHash != "#/operate/operate-a" || got.Operate.View != "operate" ||
+		got.Operate.OperationID != "operate-a" || !got.OperateMapActive {
+		t.Fatalf("Study to Operate = hash %q state %#v map active %t",
+			got.OperateHash, got.Operate, got.OperateMapActive)
 	}
-	if got.Reloaded.View != "mechanism" || got.Reloaded.ArtifactID != "mechanism-1" || got.Reloaded.StepIndex != 3 {
-		t.Fatalf("reloaded state = %#v", got.Reloaded)
+	if got.BackedHash != "#/study/study-a" || got.Backed.View != "study" ||
+		got.Backed.DirectionID != "study-a" || !got.BackStudyActive {
+		t.Fatalf("Operate browser Back = hash %q state %#v Study active %t",
+			got.BackedHash, got.Backed, got.BackStudyActive)
 	}
-	if got.Backed.View != "mechanism" || got.Backed.StepIndex != 0 {
-		t.Fatalf("back state = %#v", got.Backed)
-	}
-	// A generic host keeps the route but binds the exact embedded snippet to
-	// source-drawer history. Static hosts and the local manifest server retain
-	// their external/editor actions in separate authority tests.
-	if got.DrawerHash != "#/mechanism/mechanism-1/step/4" || !got.DrawerHistory {
-		t.Fatalf("drawer history = hash %q, state %t", got.DrawerHash, got.DrawerHistory)
-	}
-	if got.Closed.View != "mechanism" || got.Closed.StepIndex != 3 || string(got.Closed.SourceLocation) != "null" {
-		t.Fatalf("closed drawer state = %#v", got.Closed)
-	}
-	// The same fallback is context-neutral: Overview owns no Mechanism, but
-	// its exact embedded source still opens without changing the route.
-	if got.OverviewHash != "#/map" || got.OverviewDrawer.View != "overview" ||
-		string(got.OverviewDrawer.SourceLocation) == "null" {
-		t.Fatalf("Overview navigation did not clear mechanism ownership: hash %q, state %#v, has mechanism %t",
-			got.OverviewHash, got.OverviewDrawer, got.OverviewDrawerHasMechanism)
-	}
-	if got.MapHash != "#/map?focus=component%3Arouter" ||
-		got.MapReturnHash != "#/mechanism/mechanism-1/step/2" ||
-		got.MapReturned.View != "mechanism" || got.MapReturned.StepIndex != 1 {
-		t.Fatalf("explicit architecture return = map %q, return %q, state %#v",
-			got.MapHash, got.MapReturnHash, got.MapReturned)
-	}
-	if got.ExplicitMapReturnBackCalls != 0 {
-		t.Fatalf("explicit architecture return called history.back %d time(s)", got.ExplicitMapReturnBackCalls)
+	if got.OverviewHash != "#/map" || got.OverviewAlias.View != "map" {
+		t.Fatalf("legacy Overview navigation = hash %q state %#v", got.OverviewHash, got.OverviewAlias)
 	}
 }
 
-// A report hosted by a generic static server has neither a revision-pinned
-// GitHub/GitLab jump nor the manifest-authorized editor API. When its exact
-// snippet is already embedded, the second product click (source from an open
-// inspector/card) must open that snippet in the existing source drawer.
 func TestGenericHostedSourceActionOpensExactEmbeddedDrawer(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -2647,7 +2053,7 @@ process.stdout.write(JSON.stringify({
 	}
 }
 
-func TestUserWorkspaceStaticSearchExposesOnlyCodeBackedLocations(t *testing.T) {
+func TestUserWorkspaceStaticSourceActionsRequireCodeBackedLocations(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is unavailable")
@@ -2691,10 +2097,10 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
 });
 const api = window.__REPOMAP_WORKSPACE_TEST__;
 process.stdout.write(JSON.stringify({
-  path: api.reportTargetAvailable({ kind: "location", location: { path: "router.go" } }),
-  exact: api.reportTargetAvailable({ kind: "location", location: { path: "router.go", line: 41 } }),
-  outsideSnippet: api.reportTargetAvailable({ kind: "location", location: { path: "router.go", line: 99 } }),
-  noCode: api.reportTargetAvailable({ kind: "location", location: { path: "other.go" } }),
+  path: api.sourceLocationActionAvailable({ path: "router.go" }),
+  exact: api.sourceLocationActionAvailable({ path: "router.go", line: 41 }),
+  outsideSnippet: api.sourceLocationActionAvailable({ path: "router.go", line: 99 }),
+  noCode: api.sourceLocationActionAvailable({ path: "other.go" }),
   outsideSnippetResolved: !!api.embeddedSourceForLocation({ path: "router.go", line: 99 }),
 }));
 `
@@ -2718,78 +2124,5 @@ process.stdout.write(JSON.stringify({
 	}
 	if !got.Path || !got.Exact || got.OutsideSnippet || got.NoCode || got.OutsideSnippetResolved {
 		t.Fatalf("static source eligibility = %#v", got)
-	}
-}
-
-func TestUserWorkspaceCodeFirstAssetContract(t *testing.T) {
-	t.Parallel()
-
-	for _, token := range []string{
-		"function sourceSnippetHasCode(",
-		"function renderSourceCode(",
-		"function renderSourceSnippetCard(",
-		"function sourceSnippetIdentity(",
-		"function uniqueSourceSnippets(",
-		"function remainingExactReferences(",
-		"function renderExactReferences(",
-		"'main.primary_implementation'",
-		"'main.open.in.editor'",
-		"'main.copy.file.line'",
-		"'main.source.show_code'",
-		"'main.show.full.function'",
-		"'main.chrome.what.to.notice'",
-		"'main.open.code.path'",
-		"'main.mechanism.all_files_more'",
-		"if (!action.selection || !action.selection.snippet",
-		"function parseWorkspaceHash(",
-		"window.addEventListener('hashchange'",
-		"window.addEventListener('popstate'",
-		"'/step/' + (Number(state.stepIndex) + 1)",
-		"function renderMobileStepControls(",
-		"'rm-step-actions is-before'",
-		"'rm-step-actions is-after'",
-		"function mechanismNarrativeItems(",
-		"function mechanismImplementationSteps(",
-		"function narrativeIndexForImplementationStep(",
-		"DATA.repository_thesis",
-		"DATA.repository_guide",
-		"function renderGuideReadNext(",
-		"function userArchitectureAvailable(",
-		"'main.chrome.main.code.path'",
-		"'main.mechanism_role.other'",
-		"'main.mechanism.show_implementation_details'",
-		"function returnFromArchitecture(",
-		"commitWorkspaceState(next, { replace: true })",
-	} {
-		if !strings.Contains(scriptJS, token) {
-			t.Errorf("report JS is missing code-first source token %q", token)
-		}
-	}
-	for _, token := range []string{
-		".rm-source-card",
-		".rm-source-code__line.is-highlighted",
-		".rm-source-code__gap",
-		".rm-exact-references",
-		".rm-source-notices",
-		".rm-mobile-step-controls",
-		".rm-system-story",
-		".rm-repository-area-grid",
-		".rm-mechanism-context",
-		".rm-implementation-details",
-		"position: sticky",
-	} {
-		if !strings.Contains(styleCSS, token) {
-			t.Errorf("report CSS is missing code-first source token %q", token)
-		}
-	}
-	for _, forbidden := range []string{
-		"function renderCodeLocationButton(",
-		"'Open a code path'",
-		"'Open this code'",
-		"'Open the implementation'",
-	} {
-		if strings.Contains(scriptJS, forbidden) {
-			t.Errorf("report JS still contains obsolete path-only action %q", forbidden)
-		}
 	}
 }

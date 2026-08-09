@@ -219,9 +219,6 @@ func architecturePublicationReasons(data *report.ReportData) []publicationReason
 	case report.ArchitectureSynthesisFailed:
 		return append(reasons, publicationReasonArchitectureFailed)
 	case report.ArchitectureSynthesisUnavailable:
-		if status.UnavailableCode == report.ArchitectureSynthesisUnavailableOfflineCode {
-			return reasons
-		}
 		return append(reasons, publicationReasonArchitectureUnavailable)
 	case report.ArchitectureSynthesisSucceeded, report.ArchitectureSynthesisCached:
 		if status.ProposalPartial ||
@@ -252,9 +249,6 @@ func studyPublicationReasons(data *report.ReportData) []publicationReason {
 	case atlasstudy.ProductStateFailed:
 		return []publicationReason{publicationReasonStudyFailed}
 	case atlasstudy.ProductStateUnavailable:
-		if status.UnavailableCode == report.AtlasStudyUnavailableOffline {
-			return nil
-		}
 		return []publicationReason{publicationReasonStudyUnavailable}
 	case atlasstudy.ProductStatePrepared:
 		return []publicationReason{publicationReasonStudyIncomplete}

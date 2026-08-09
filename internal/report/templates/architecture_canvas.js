@@ -160,6 +160,49 @@
   }
  }
 
+ // The backend's package landscape is a closed deterministic projection, not
+ // model-authored prose. Its component names are exact repository labels and
+ // stay byte-preserved; only the generated package grouping copy is product
+ // presentation. The source/level pair is the backend-validated closed type:
+ // anchor-first local output is local_anchors/3, while accepted model output
+ // has a model source and level 1 or 2 even when its grounding is packages.
+ function deterministicPackageLandscape(data) {
+  const source = text(data && data.architecture_source);
+  return (source === "local_packages" || source === "package_fallback") &&
+   Number(data && data.architecture_level) === 4;
+ }
+
+ function deterministicPackageComponent(component) {
+  return array(component && component.members).some((member) => (
+   text(member && member.id && member.id.kind) === "package"
+  ));
+ }
+
+ function projectArchitectureUserPresentation(data, message) {
+  const source = data && typeof data === "object" ? data : {};
+  if (!deterministicPackageLandscape(source)) return source;
+
+  const packageComponentIDs = new Set();
+  const components = array(source.components).map((component) => {
+   if (!deterministicPackageComponent(component)) return component;
+   packageComponentIDs.add(text(component.id));
+   return Object.assign({}, component, {
+    description: productMessage(message, "architecture.fallback.package_group.description"),
+   });
+  });
+  const subsystems = array(source.subsystems).map((subsystem) => {
+   const componentIDs = array(subsystem && subsystem.component_ids).map(text).filter(Boolean);
+   if (componentIDs.length === 0 || !componentIDs.every((id) => packageComponentIDs.has(id))) {
+    return subsystem;
+   }
+   return Object.assign({}, subsystem, {
+    name: productMessage(message, "architecture.fallback.package_group.name"),
+    description: productMessage(message, "architecture.fallback.package_group.description"),
+   });
+  });
+  return Object.assign({}, source, { components: components, subsystems: subsystems });
+ }
+
  function element(tag, className, content) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -944,7 +987,7 @@ function architecturePartialTruth(data) {
     throw new TypeError("RepomapArchitectureCanvas.mount requires a host Element");
    }
    this.host = host;
-   this.data = data && typeof data === "object" ? data : {};
+   const sourceData = data && typeof data === "object" ? data : {};
    this.options = options && typeof options === "object" ? options : {};
    const message = typeof this.options.message === "function"
     ? this.options.message
@@ -956,6 +999,9 @@ function architecturePartialTruth(data) {
    }
    this.message = (id, params) => message(id, params);
    this.userMode = this.options.userMode === true;
+   this.data = this.userMode
+    ? projectArchitectureUserPresentation(sourceData, this.message)
+    : sourceData;
    this.presentationText = this.options.presentationText && typeof this.options.presentationText === "object"
     ? this.options.presentationText
     : {};
@@ -977,6 +1023,7 @@ function architecturePartialTruth(data) {
      step: "",
      edge: "",
     };
+    this.inspectorVisible = null;
 
    this.subsystems = array(this.data.subsystems);
    this.components = array(this.data.components);
@@ -4133,6 +4180,12 @@ function architecturePartialTruth(data) {
    );
    const visible = semanticArtifactActive || this.guidedTour.active ||
     (this.hasInspectorSelection(this.selection) && !lowInformationComponent);
+   if (this.inspectorVisible !== visible) {
+    this.inspectorVisible = visible;
+    if (typeof this.options.onInspectorVisibilityChange === "function") {
+     this.options.onInspectorVisibilityChange(visible);
+    }
+   }
     this.inspector.setAttribute(
      "aria-label",
      semanticArtifactActive
@@ -4581,10 +4634,10 @@ function architecturePartialTruth(data) {
    if (subtitle) this.inspector.appendChild(element("p", "rm-arch__inspector-summary", subtitle));
   }
 
-  inspectorSection(title) {
+  inspectorSection(title, parent) {
    const section = element("section", "rm-arch__inspector-section");
    section.appendChild(element("h4", "rm-arch__inspector-section-title", title));
-   this.inspector.appendChild(section);
+   (parent || this.inspector).appendChild(section);
    return section;
   }
 
@@ -4616,6 +4669,7 @@ function architecturePartialTruth(data) {
 	   label: target && target.path,
 	   location: target && target.location,
 	   actionable: target && target.actionable,
+	   source_type: "package",
 	  });
 	 });
 	}
@@ -4639,23 +4693,207 @@ function architecturePartialTruth(data) {
    ));
   }
 
+  userComponentTabs(component) {
+   const serial = (this.componentInspectorTabSerial || 0) + 1;
+   this.componentInspectorTabSerial = serial;
+   const prefix = "rm-arch-component-inspector-" + serial + "-" +
+    text(component && component.id).replace(/[^A-Za-z0-9_-]/g, "-");
+   const definitions = [
+    { id: "summary", label: this.msg("architecture.tab.summary") },
+    { id: "connections", label: this.msg("architecture.tab.connections") },
+    { id: "read-code", label: this.msg("architecture.tab.read_code") },
+   ];
+   const tablist = element("div", "rm-arch__inspector-tabs");
+   tablist.setAttribute("role", "tablist");
+   tablist.setAttribute("aria-orientation", "horizontal");
+   tablist.setAttribute("aria-label", this.msg("architecture.aria.component_inspector_tabs"));
+   const tabs = [];
+   const panels = {};
+   const activate = (index, moveFocus) => {
+    tabs.forEach((tab, candidateIndex) => {
+     const active = candidateIndex === index;
+     tab.setAttribute("aria-selected", String(active));
+     tab.setAttribute("tabindex", active ? "0" : "-1");
+     panels[definitions[candidateIndex].id].hidden = !active;
+    });
+    if (moveFocus && tabs[index]) tabs[index].focus({ preventScroll: true });
+   };
+   definitions.forEach((definition, index) => {
+    const tab = element("button", "rm-arch__inspector-tab", definition.label);
+    const tabID = prefix + "-" + definition.id + "-tab";
+    const panelID = prefix + "-" + definition.id + "-panel";
+    tab.type = "button";
+    tab.setAttribute("id", tabID);
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-controls", panelID);
+    const panel = element("div", "rm-arch__inspector-panel rm-arch__inspector-panel--" + definition.id);
+    panel.setAttribute("id", panelID);
+    panel.setAttribute("role", "tabpanel");
+    panel.setAttribute("aria-labelledby", tabID);
+    panel.setAttribute("tabindex", "0");
+    panels[definition.id] = panel;
+    this.listen(tab, "click", () => activate(index, false));
+    this.listen(tab, "keydown", (event) => {
+     let target = -1;
+     if (event.key === "ArrowRight") target = (index + 1) % definitions.length;
+     else if (event.key === "ArrowLeft") target = (index + definitions.length - 1) % definitions.length;
+     else if (event.key === "Home") target = 0;
+     else if (event.key === "End") target = definitions.length - 1;
+     if (target < 0) return;
+     event.preventDefault();
+     activate(target, true);
+    });
+    tabs.push(tab);
+    tablist.appendChild(tab);
+   });
+   this.inspector.appendChild(tablist);
+   definitions.forEach((definition) => this.inspector.appendChild(panels[definition.id]));
+   activate(0, false);
+   return panels;
+  }
+
+  userComponentEntryKindLabel(kind) {
+   const ids = {
+    async_task: "main.overview.anatomy.surface_kind.async_task",
+    cli_command: "main.overview.anatomy.surface_kind.cli_command",
+    http_route: "main.overview.anatomy.surface_kind.http_route",
+    http_route_descriptor: "main.overview.anatomy.surface_kind.http_route_descriptor",
+    http_route_frontier: "main.overview.anatomy.surface_kind.http_route_frontier",
+    http_server: "main.overview.anatomy.surface_kind.http_server",
+    process_entry: "main.overview.anatomy.surface_kind.process_entry",
+    worker: "main.overview.anatomy.surface_kind.worker",
+    other: "main.overview.anatomy.surface_kind.other",
+   };
+   return ids[text(kind)] ? this.msg(ids[text(kind)]) : text(kind) || this.msg(ids.other);
+  }
+
+  userComponentEntryGroups(component, surfaceStarts) {
+   const startsByID = new Map(array(surfaceStarts).map((start) => [text(start && start.id), start]));
+   const groups = new Map();
+   const add = (id, kind, label, start) => {
+    id = text(id);
+    kind = text(kind) || "other";
+    if (!groups.has(kind)) groups.set(kind, []);
+    const entries = groups.get(kind);
+    if (entries.some((entry) => entry.id === id && id)) return;
+    entries.push({ id: id, kind: kind, label: text(label), start: start || null });
+   };
+   this.componentSurfaces(component).forEach((surface) => {
+    add(surface.id, surface.kind, surface.name || surface.kind, startsByID.get(text(surface.id)));
+   });
+   array(surfaceStarts).forEach((start) => {
+    const id = text(start && start.id);
+    const anchor = this.anchorByID.get(id);
+    add(id, anchor && anchor.kind, start && start.label, start);
+   });
+   return Array.from(groups).map((entry) => ({ kind: entry[0], entries: entry[1] }));
+  }
+
+  userComponentReadStarts(context, sourceActions, surfaceStarts) {
+   const starts = [];
+   const locations = new Set();
+   const append = (candidate) => {
+    const location = candidate && candidate.location;
+    if (!locationLabel(location)) return;
+    const key = text(location.path) + "\u0000" + (Number(location.line) || 0) + "\u0000" +
+     (Number(location.column) || 0);
+    if (locations.has(key)) return;
+    locations.add(key);
+    starts.push(candidate);
+   };
+   array(sourceActions).forEach((action) => {
+    const source = action && action.value;
+    append({
+     label: source && (source.detail || source.label),
+     location: source && source.location,
+     actionable: source && source.actionable !== false && typeof this.options.openSourceLocation === "function",
+     source_type: text(source && source.source_type) || text(source && source.member_id && source.member_id.kind) || "source",
+     open: () => this.options.openSourceLocation(source.location),
+    });
+   });
+   array(surfaceStarts).forEach((start) => {
+    const surface = this.surfaceByID.get(text(start && start.id));
+    const anchor = this.anchorByID.get(text(start && start.id));
+    const kind = text(surface && surface.kind) || text(anchor && anchor.kind) || "surface";
+    append({
+     label: start && start.label,
+     location: start && start.location,
+     actionable: start && start.actionable && typeof this.options.openSourceLocation === "function",
+     source_type: kind === "process_entry" ? "process_entry" : "surface",
+     open: () => this.options.openSourceLocation(start.location),
+    });
+   });
+   array(context && context.package_targets).forEach((target) => append({
+    label: target && target.path,
+    location: target && target.location,
+    actionable: target && target.actionable && typeof this.options.openSourceLocation === "function",
+    source_type: "package",
+    open: () => this.options.openSourceLocation(target.location),
+   }));
+   return starts;
+  }
+
+  userComponentSourceReasonID(sourceType) {
+   if (sourceType === "symbol") return "architecture.copy.source_reason_symbol";
+   if (sourceType === "package") return "architecture.copy.source_reason_package";
+   if (sourceType === "process_entry") return "architecture.copy.source_reason_process_entry";
+   if (sourceType === "surface") return "architecture.copy.source_reason_surface";
+   return "architecture.copy.source_reason_exact";
+  }
+
+  appendUserComponentSourceStart(parent, start, primary) {
+   const className = "rm-arch__edge-jump rm-arch__compact-action rm-arch__source-start" +
+    (primary ? " rm-arch__component-primary-source" : "");
+   const node = start.actionable ? element("button", className) : element("div", className);
+   if (start.actionable) node.type = "button";
+   node.appendChild(element("strong", null, start.label || this.msg("architecture.action.open_code")));
+   node.appendChild(element("span", null, locationLabel(start.location)));
+   if (!primary) node.appendChild(element(
+    "small", "rm-arch__source-reason", this.msg(start.actionable
+     ? this.userComponentSourceReasonID(start.source_type)
+     : "architecture.copy.source_unavailable")
+   ));
+   if (start.actionable) this.listen(node, "click", () => start.open());
+   parent.appendChild(node);
+   return node;
+  }
+
   inspectUserComponent(component) {
-   const subsystem = this.subsystemByID.get(text(component.subsystem_id));
    const context = this.userComponentContext(component);
    const actions = this.userComponentActions(component);
    if (!context) return;
-   // Decision 222: the detail card answers the seven product questions —
-   // what it is, why it matters, how work enters, what operations happen,
-   // which resources it touches, where to start reading, what remains
-   // unknown. Internal package/evidence roles stay detail material.
    this.inspectorHeading(
     this.msg("architecture.label.component"),
     component.name || this.msg("architecture.fallback.repository_component"),
     component.description
    );
+   const panels = this.userComponentTabs(component);
+   const summary = panels.summary;
+   const connections = panels.connections;
+   const readCode = panels["read-code"];
+   const surfaceStarts = array(context.surface_starts).filter((start) => (
+    start && locationLabel(start.location)
+   ));
+   const sourceActions = actions.filter((action) => action.kind === "source");
+   const studyActions = actions.filter((action) => action.kind === "study");
+   const readStarts = this.userComponentReadStarts(context, sourceActions, surfaceStarts);
+   const entryGroups = this.userComponentEntryGroups(component, surfaceStarts);
+   const neighbors = this.associationEntryFor(component);
+   const incoming = array(neighbors && neighbors.incoming);
+   const outgoing = array(neighbors && neighbors.outgoing);
+   const rawAssociationRows = array(neighbors && neighbors.associations).filter(externalStateAssociation);
+   const pairedBoundaryKeys = new Set(rawAssociationRows.filter((row) => (
+    row.paired && row.kind === "boundary"
+   )).map((row) => String(row.owning_unit || "") + "\u0000" + String(row.imported_family || "")));
+   const associationRows = rawAssociationRows.filter((row) => !(
+    row.paired && row.kind === "resource" && pairedBoundaryKeys.has(
+     String(row.owning_unit || "") + "\u0000" + String(row.imported_family || "")
+    )
+   ));
 
-   // Truth strip: grouping authority, member evidence composition, scope.
-   const truth = this.inspectorSection(this.msg("architecture.section.evidence"));
+   // Summary is deliberately bounded. It is the first-contact view and must
+   // not grow with repository cardinality.
+   const atAGlance = this.inspectorSection(this.msg("architecture.section.at_a_glance"), summary);
    const authorityValue = context.authority === "validated"
     ? this.msg("architecture.value.authority_validated")
     : context.authority === "partial"
@@ -4666,109 +4904,97 @@ function architecturePartialTruth(data) {
     : context.evidence_composition === "mixed"
      ? this.msg("architecture.value.evidence_mixed")
      : this.msg("architecture.value.evidence_package");
-   this.appendKeyValue(truth, this.msg("architecture.label.grouping_authority"), authorityValue);
-   this.appendKeyValue(truth, this.msg("architecture.label.member_evidence"), evidenceValue);
-   if (Number(context.member_count) > 0) {
-    this.appendKeyValue(truth, this.msg("architecture.label.scope"), this.msg("architecture.label.member_scope", { count: Number(context.member_count) }));
-   }
-
-   // Decision 230 D4 (fresh review B2): equivalent member-set collisions
-   // coalesce into one representative; the product shows every alternate
-   // label/description as exact provenance instead of dropping it.
-   const alternates = array(component.alternate_names);
-   const alternateDescriptions = array(component.alternate_descriptions);
-   if (alternates.length > 0 || alternateDescriptions.length > 0) {
-    const alternatesSection = this.inspectorSection(this.msg("architecture.section.equivalent_components"));
-    alternates.forEach((name, index) => {
-     const row = element("div", "rm-arch__alternate");
-     row.appendChild(element("strong", "rm-arch__alternate-name", name));
-     const description = alternateDescriptions[index];
-     if (description) row.appendChild(element("span", "rm-arch__alternate-description", description));
-     alternatesSection.appendChild(row);
-    });
-    if (alternateDescriptions.length > alternates.length) {
-     for (let index = alternates.length; index < alternateDescriptions.length; index++) {
-      alternatesSection.appendChild(element("p", "rm-arch__alternate-description", alternateDescriptions[index]));
-     }
-    }
-   }
-
-   // What remains unknown: model hypothesis / not-covered statement.
-   const unknown = this.inspectorSection(this.msg("architecture.section.what_remains_unknown"));
-   if (component.hypothesis) {
-    unknown.appendChild(element("p", "rm-arch__copy", this.msg("architecture.value.unknown_hypothesis")));
-   } else {
-    unknown.appendChild(element("p", "rm-arch__copy", this.msg("architecture.value.unknown_not_covered")));
-   }
-
-   // How work enters: launch points / entry surfaces (exact sources).
-   const surfaceStarts = array(context.surface_starts).filter((start) => (
-    start && locationLabel(start.location)
+   this.appendKeyValue(atAGlance, this.msg("architecture.label.grouping_authority"), authorityValue);
+   this.appendKeyValue(atAGlance, this.msg("architecture.label.member_evidence"), evidenceValue);
+   this.appendKeyValue(atAGlance, this.msg("architecture.label.scope"), this.msg(
+    "architecture.label.member_scope", { count: Number(context.member_count) || 0 }
    ));
-   const entersSection = this.inspectorSection(this.msg("architecture.section.how_work_enters"));
-   if (surfaceStarts.length > 0) {
-    surfaceStarts.forEach((start) => {
-     if (!start.actionable || typeof this.options.openSourceLocation !== "function") {
-      const reference = element("div", "rm-arch__compact-reference");
-      reference.appendChild(element(
-       "strong",
-       null,
-       start.label || this.msg("architecture.fallback.runtime_surface")
-      ));
-      reference.appendChild(element("span", null, locationLabel(start.location)));
-      entersSection.appendChild(reference);
-      return;
-     }
-     const button = element("button", "rm-arch__edge-jump rm-arch__compact-action");
-     button.type = "button";
-     button.appendChild(element(
-      "strong",
-      null,
-      start.label || this.msg("architecture.action.open_launch_point")
-     ));
-     button.appendChild(element("span", null, locationLabel(start.location)));
-     this.listen(button, "click", () => this.options.openSourceLocation(start.location));
-     entersSection.appendChild(button);
-    });
-   } else {
-    // Decision 229 D1: a section with no observed data still answers the
-    // question truthfully — an explicit empty explanation, never silence.
-    entersSection.appendChild(element(
+   const counts = element("div", "rm-arch__summary-counts");
+   [
+    this.msg("architecture.count.entry_groups", { count: entryGroups.length }),
+    this.msg("architecture.count.interactions", { count: associationRows.length }),
+    this.msg("architecture.count.source_starts", { count: readStarts.length }),
+   ].forEach((label) => counts.appendChild(element("span", "rm-arch__summary-count", label)));
+   atAGlance.appendChild(counts);
+
+   const summaryEntries = this.inspectorSection(this.msg("architecture.section.entry_groups"), summary);
+   summaryEntries.classList.add("rm-arch__summary-grid");
+   if (entryGroups.length === 0) {
+    summaryEntries.appendChild(element(
      "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_entry")
     ));
+   } else {
+    entryGroups.slice(0, 3).forEach((group) => {
+     const row = element("div", "rm-arch__compact-reference rm-arch__entry-group-summary");
+     row.appendChild(element("strong", null, this.userComponentEntryKindLabel(group.kind)));
+     row.appendChild(element(
+      "span", "rm-arch__summary-item-count",
+      this.msg("architecture.count.entries", { count: group.entries.length })
+     ));
+     summaryEntries.appendChild(row);
+    });
    }
 
-   // Where to start reading: representative exact sources.
-   const sourceActions = actions.filter((action) => action.kind === "source");
-   const sourceSection = this.inspectorSection(this.msg("architecture.section.start_in_code"));
-   if (sourceActions.length > 0) {
-    sourceActions.forEach((action) => {
-     const source = action.value;
-     const button = element("button", "rm-arch__edge-jump rm-arch__compact-action");
-     button.type = "button";
-     button.appendChild(element(
-      "strong",
-      null,
-      source.detail || source.label || this.msg("architecture.action.open_code")
-     ));
-     button.appendChild(element("span", null, locationLabel(source.location)));
-     this.listen(button, "click", () => this.options.openSourceLocation(source.location));
-     sourceSection.appendChild(button);
-    });
+   const interactionSummaries = associationRows.map((row) => ({
+    title: text(row.imported_family) || this.msg("architecture.value.interaction_boundary_resource"),
+    detail: text(row.owning_unit),
+   }));
+   array(context.structural_relations).forEach((relation) => interactionSummaries.push({
+    title: (text(relation && relation.from_label) || memberLabel(relation && relation.from, this.message)) +
+     " → " + (text(relation && relation.to_label) || memberLabel(relation && relation.to, this.message)),
+    detail: locationLabel(relation && relation.location),
+   }));
+   const summaryInteractions = this.inspectorSection(this.msg("architecture.section.key_interactions"), summary);
+   summaryInteractions.classList.add("rm-arch__summary-grid");
+   if (interactionSummaries.length === 0) {
+    summaryInteractions.appendChild(element(
+     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_callsites")
+    ));
    } else {
-    sourceSection.appendChild(element(
-     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_sources")
+    interactionSummaries.slice(0, 3).forEach((interaction) => {
+     const row = element("div", "rm-arch__compact-reference rm-arch__interaction-summary");
+     row.appendChild(element("strong", null, interaction.title));
+     summaryInteractions.appendChild(row);
+    });
+   }
+
+   const primaryStudy = studyActions[0];
+   const studySummary = this.inspectorSection(this.msg("architecture.section.why_it_matters"), summary);
+   if (primaryStudy) {
+    const study = primaryStudy.value;
+    const button = element("button", "rm-arch__edge-jump rm-arch__compact-action rm-arch__primary-study");
+    button.type = "button";
+    button.appendChild(element("strong", null, study.question));
+    button.appendChild(element("span", null, this.msg("architecture.action.study_this_area")));
+    this.listen(button, "click", () => this.options.openStudyDirection(study.id));
+    studySummary.appendChild(button);
+   } else {
+    studySummary.appendChild(element(
+     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_studies")
     ));
    }
 
-   // Decision 229 D1 inspector questions 4 and 5: "Used by" (incoming one-
-   // hop exact neighbors) and "Uses" (outgoing one-hop exact neighbors).
-   // Both are exact structural relations from the local graph — never
-   // runtime dependency, ownership, or reachability claims.
-   const neighbors = this.associationEntryFor(component);
-   const incoming = array(neighbors && neighbors.incoming);
-   const outgoing = array(neighbors && neighbors.outgoing);
-   const usedBySection = this.inspectorSection(this.msg("architecture.section.used_by"));
+   const unknownMessages = [component.hypothesis
+    ? this.msg("architecture.value.unknown_hypothesis")
+    : this.msg("architecture.value.unknown_not_covered")];
+   if (entryGroups.length === 0) unknownMessages.push(this.msg("architecture.copy.no_observed_entry"));
+   if (associationRows.length === 0) unknownMessages.push(this.msg("architecture.copy.no_observed_callsites"));
+   if (readStarts.length === 0) unknownMessages.push(this.msg("architecture.copy.no_observed_sources"));
+   const unknown = this.inspectorSection(this.msg("architecture.section.what_remains_unknown"), summary);
+   const unknownList = element("ul", "rm-arch__summary-unknowns");
+   unknownMessages.slice(0, 3).forEach((message) => unknownList.appendChild(element("li", null, message)));
+   unknown.appendChild(unknownList);
+
+   // One exact source remains on the default panel, preserving the cube →
+   // exact source journey in two actions.
+   const primarySource = this.inspectorSection(this.msg("architecture.section.start_in_code"), summary);
+   if (readStarts.length > 0) this.appendUserComponentSourceStart(primarySource, readStarts[0], true);
+   else primarySource.appendChild(element(
+    "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_sources")
+   ));
+
+   // Connections owns the complete relationship and entry context.
+   const usedBySection = this.inspectorSection(this.msg("architecture.section.used_by"), connections);
    if (incoming.length > 0) {
     incoming.forEach((neighbor) => {
      const reference = element("div", "rm-arch__compact-reference");
@@ -4791,7 +5017,7 @@ function architecturePartialTruth(data) {
      "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_used_by")
     ));
    }
-   const usesSection = this.inspectorSection(this.msg("architecture.section.uses"));
+   const usesSection = this.inspectorSection(this.msg("architecture.section.uses"), connections);
    if (outgoing.length > 0) {
     outgoing.forEach((neighbor) => {
      const reference = element("div", "rm-arch__compact-reference");
@@ -4815,28 +5041,50 @@ function architecturePartialTruth(data) {
     ));
    }
 
-   // Why it matters: study directions touching this component.
-   const studyActions = actions.filter((action) => action.kind === "study");
-   const studySection = this.inspectorSection(this.msg("architecture.section.why_it_matters"));
-   if (studyActions.length > 0) {
-    studyActions.forEach((action) => {
-     const study = action.value;
-     const button = element("button", "rm-arch__edge-jump rm-arch__compact-action");
-     button.type = "button";
-     button.appendChild(element("strong", null, study.question));
-     button.appendChild(element("span", null, this.msg("architecture.action.open_reading_path")));
-     this.listen(button, "click", () => this.options.openStudyDirection(study.id));
-     studySection.appendChild(button);
+   const entersSection = this.inspectorSection(this.msg("architecture.section.how_work_enters"), connections);
+   if (entryGroups.length > 0) {
+    entryGroups.forEach((group) => {
+     const groupCard = element("div", "rm-arch__entry-group");
+     groupCard.appendChild(element("strong", "rm-arch__entry-group-title", this.userComponentEntryKindLabel(group.kind)));
+     group.entries.forEach((entry) => {
+      const start = entry.start;
+      if (start && locationLabel(start.location)) {
+       this.appendUserComponentSourceStart(groupCard, {
+        label: start.label || entry.label,
+        location: start.location,
+        actionable: start.actionable && typeof this.options.openSourceLocation === "function",
+        source_type: group.kind === "process_entry" ? "process_entry" : "surface",
+        open: () => this.options.openSourceLocation(start.location),
+       }, false);
+      } else {
+       groupCard.appendChild(element("span", "rm-arch__entry-group-item", entry.label || entry.id));
+      }
+     });
+     entersSection.appendChild(groupCard);
     });
    } else {
-    studySection.appendChild(element(
-     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_studies")
+    entersSection.appendChild(element(
+     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_entry")
     ));
+   }
+
+   if (array(component.shared_unit_refs).length > 0 || array(component.shared_members).length > 0) {
+    const shared = this.inspectorSection(this.msg("architecture.section.shared_scope"), connections);
+    shared.appendChild(element(
+     "p", "rm-arch__copy", this.msg("architecture.copy.shared_scope_copy", {
+      count: array(component.shared_unit_refs).length,
+     })
+    ));
+    array(component.shared_members).forEach((member) => {
+     const row = element("div", "rm-arch__compact-reference");
+     row.appendChild(element("strong", null, memberLabel(member && member.id, this.message) || text(member && member.name)));
+     shared.appendChild(row);
+    });
    }
 
    // Operations: exact code relations observed for this component.
    if (array(context.structural_relations).length > 0) {
-    const relations = this.inspectorSection(this.msg("architecture.section.operations"));
+    const relations = this.inspectorSection(this.msg("architecture.section.operations"), connections);
     array(context.structural_relations).forEach((relation) => {
      const from = text(relation && relation.from_label) || memberLabel(relation && relation.from, this.message);
      const to = text(relation && relation.to_label) || memberLabel(relation && relation.to, this.message);
@@ -4864,10 +5112,14 @@ function architecturePartialTruth(data) {
    // at most two actions. Only "an observed boundary/resource callsite occurs
    // in an exact member scope" is stated — never runtime dependency,
    // ownership, reachability, read/write/order or target identity.
-   const associationEntry = this.associationEntryFor(component);
-   const associationRows = array(associationEntry && associationEntry.associations)
-    .filter(externalStateAssociation);
-   const associationSection = this.inspectorSection(this.msg("architecture.section.observed_callsites"));
+   const associationEvidence = element("details", "rm-arch__evidence-limitations");
+   associationEvidence.appendChild(element(
+    "summary", "rm-arch__evidence-limitations-summary", this.msg("architecture.section.evidence_limitations")
+   ));
+   connections.appendChild(associationEvidence);
+   const associationSection = this.inspectorSection(
+    this.msg("architecture.section.observed_callsites"), associationEvidence
+   );
    associationSection.appendChild(element(
     "p", "rm-arch__copy", this.msg("architecture.copy.observed_callsites_limit")
    ));
@@ -5084,19 +5336,80 @@ function architecturePartialTruth(data) {
      });
      associationSection.appendChild(broad);
      }
-     // Limitations always visible, never hover-only.
-     associationSection.appendChild(element(
+    associationSection.appendChild(element(
      "p", "rm-arch__limitation", this.msg("architecture.copy.association_limitations")
-     ));
-     } else {
-     // Decision 229 D1: no observed boundary/resource rows for this
-     // component — explicit truthful explanation instead of a silent
-     // section omission.
-     associationSection.appendChild(element(
+    ));
+   } else {
+    associationSection.appendChild(element(
      "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_callsites")
+    ));
+   }
+
+   // Read code is exact and deterministically ordered by the backend-owned
+   // context: exact symbol starts, entry starts, then package fallbacks.
+   const exactStarts = this.inspectorSection(this.msg("architecture.section.exact_starts"), readCode);
+   if (readStarts.length === 0) {
+    exactStarts.appendChild(element(
+     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_sources")
+    ));
+   } else {
+    readStarts.slice(0, 5).forEach((start) => this.appendUserComponentSourceStart(exactStarts, start, false));
+    if (readStarts.length > 5) {
+     const allSources = element("details", "rm-arch__source-starts-all");
+     allSources.appendChild(element(
+      "summary", "rm-arch__source-starts-all-summary",
+      this.msg("architecture.action.show_all_sources", { count: readStarts.length })
      ));
-     }
-     }
+     readStarts.slice(5).forEach((start) => this.appendUserComponentSourceStart(allSources, start, false));
+     exactStarts.appendChild(allSources);
+    }
+   }
+
+   const readStudy = this.inspectorSection(this.msg("architecture.section.why_it_matters"), readCode);
+   if (primaryStudy) {
+    const study = primaryStudy.value;
+    const button = element("button", "rm-arch__edge-jump rm-arch__compact-action rm-arch__study-this-area");
+    button.type = "button";
+    button.appendChild(element("strong", null, this.msg("architecture.action.study_this_area")));
+    button.appendChild(element("span", null, study.question));
+    this.listen(button, "click", () => this.options.openStudyDirection(study.id));
+    readStudy.appendChild(button);
+   } else {
+    readStudy.appendChild(element(
+     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_studies")
+    ));
+   }
+
+   const provenance = element("details", "rm-arch__evidence-limitations");
+   provenance.appendChild(element(
+    "summary", "rm-arch__evidence-limitations-summary", this.msg("architecture.section.evidence_limitations")
+   ));
+   readCode.appendChild(provenance);
+   const truth = this.inspectorSection(this.msg("architecture.section.evidence"), provenance);
+   this.appendKeyValue(truth, this.msg("architecture.label.grouping_authority"), authorityValue);
+   this.appendKeyValue(truth, this.msg("architecture.label.member_evidence"), evidenceValue);
+   array(context.package_paths).forEach((path) => truth.appendChild(element(
+    "code", "rm-arch__compact-package", path
+   )));
+   const alternates = array(component.alternate_names);
+   const alternateDescriptions = array(component.alternate_descriptions);
+   if (alternates.length > 0 || alternateDescriptions.length > 0) {
+    const alternatesSection = this.inspectorSection(
+     this.msg("architecture.section.equivalent_components"), provenance
+    );
+    alternates.forEach((name, index) => {
+     const row = element("div", "rm-arch__alternate");
+     row.appendChild(element("strong", "rm-arch__alternate-name", name));
+     if (alternateDescriptions[index]) row.appendChild(element(
+      "span", "rm-arch__alternate-description", alternateDescriptions[index]
+     ));
+     alternatesSection.appendChild(row);
+    });
+    alternateDescriptions.slice(alternates.length).forEach((description) => {
+     alternatesSection.appendChild(element("p", "rm-arch__alternate-description", description));
+    });
+   }
+  }
 
   // associationPrecision derives the closed Decision 229 D2 presentation
   // precision tier deterministically from the row's exact evidence — never
@@ -6011,6 +6324,9 @@ function architecturePartialTruth(data) {
   destroy() {
    if (this.destroyed) return;
    this.destroyed = true;
+   if (this.inspectorVisible && typeof this.options.onInspectorVisibilityChange === "function") {
+    this.options.onInspectorVisibilityChange(false);
+   }
    this.events.abort();
    this.host.replaceChildren();
   }
@@ -6053,6 +6369,7 @@ function architecturePartialTruth(data) {
   // the canvas instance uses the same function for emphasis. Never a
   // test-only hook.
   projectArchitectureLens: projectArchitectureLens,
+  projectUserPresentation: projectArchitectureUserPresentation,
   projectEntrypointHandoffOverlay: entryHandoffOverlayProjection,
   projectStudyMechanismOverlay: studyMechanismOverlayProjection,
  });

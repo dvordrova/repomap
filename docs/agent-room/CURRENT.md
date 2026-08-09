@@ -149,8 +149,20 @@ Status:
     Landscape overlay reuses existing cube geometry; no Navigator, D210
     Mechanism, new top-level lens, model prose or second SSA build is added.
     Identities advance to StudyThemes v5, Atlas Study projection15, report42,
-    manifest14 and UI15; mechanism v2/prompt identity and Canvas15/group-v2 stay
-    unchanged.
+    manifest14 and UI17; mechanism v2/prompt identity and Canvas15/group-v2 stay
+    unchanged. D246 initially introduced UI15. The UI16 follow-up
+    completes D236's bounded empty-selection Map rail and three-tab component
+    inspector, removes the obsolete Overview/Mechanisms client authorities,
+    keeps the full mechanism path inside Study, and leaves only exact
+    non-drawable transition rows beside the unchanged Canvas geometry. UI17
+    then localizes the typed deterministic package-fallback group without
+    rewriting exact package names, model prose, or local-anchor prose. These
+    follow-ups add no report, manifest, Canvas, provider, or semantic identity.
+
+    D246 supersedes D240's former three-call ordinary-path ceiling only after
+    accepted Study: up to four bounded refs-only mechanism batches may run over
+    the one reused private DirectCallIndex. They are not a Navigator, root
+    selector, ranker, follow-up query, semantic retry, or second SSA build.
 
 Approved by:
     Repository owner after explicitly authorizing the expensive small-repository
@@ -164,7 +176,8 @@ Status:
     `scripts` scope as tooling, while a generic observed call no longer
     masquerades as an effect boundary. Current identities are Scout request
     v5, vocabulary v3, cache contract v3, Scout result v5, Adjudication
-    request v3, result/status v5, accepted-cache v2, and StudyThemes v4.
+    request v3, result/status v5, accepted-cache v2, and StudyThemes v5 (v4 was
+    the pre-D246 identity).
     Adjudication owns the final question, `why_it_matters`, and
     `expected_learning`; narrowed questions cannot retain broader Scout
     promises. Backend-equivalent Theme reductions retain
@@ -1336,8 +1349,11 @@ canvas report, the Map empty-selection inspector does not consume Navigator,
 Entrypoints already retains exact entries, and Mechanisms must be per-entry /
 per-flow rather than rooted at one model-selected startup. No replacement call,
 flag, hidden candidate gate, or cosmetic badge is added. The ordinary cold path
-now has at most Architecture + Theme Scout + Theme Adjudication provider calls;
-exact local Surface/Atlas evidence and offline behavior remain authoritative.
+originally had at most Architecture + Theme Scout + Theme Adjudication provider
+calls. D246 supersedes only that numeric ceiling: after accepted Study, up to
+four bounded refs-only mechanism batches may run without selecting or ranking a
+root. Exact local Surface/Atlas evidence and offline behavior remain
+authoritative.
 Identity advances: report format 38, run manifest 13, UI catalog 11.
 
 ## 24. Decision 241 — Ordinary provider-request effectiveness conclusions (ACTIVE)

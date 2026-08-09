@@ -171,7 +171,7 @@ const api = window.__REPOMAP_WORKSPACE_TEST__;
 const validRoute = api.parseWorkspaceHash("#/operate/operate%2Fserver", [], null);
 const invalidRoute = api.parseWorkspaceHash("#/operate/missing", [], null);
 
-api.renderOverviewWorkspace();
+api.renderMapSummaryInto("rm-overview");
 const overviewText = text(roots["rm-overview"]);
 api.openPavedPath("operate/server");
 const openedHash = window.location.hash;
@@ -201,7 +201,7 @@ const relatedButton = descendants(roots["rm-operate-detail"]).find((node) =>
 );
 if (relatedButton) relatedButton.onclick();
 const relatedHash = window.location.hash;
-api.openReportTarget({ kind: "paved_path", paved_path_id: "operate/server" });
+api.openPavedPath("operate/server");
 
 process.stdout.write(JSON.stringify({
   validRoute, invalidRoute, overviewText, openedHash, openedState, detailText,

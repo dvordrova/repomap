@@ -155,12 +155,12 @@ type ReportData struct {
 	OrientationConfidence      float64              `json:"orientation_confidence"`
 	HighLevelMap               []Subsystem          `json:"high_level_map,omitempty"`
 	FirstFilesToOpen           []FileItem           `json:"first_files_to_open,omitempty"`
-	CandidateFlows             []string             `json:"candidate_flows"`
+	CandidateFlows             []string             `json:"candidate_flows,omitempty"`
 	CandidateDirections        []CandidateDirection `json:"candidate_directions,omitempty"`
 	ImportantDomainWords       []DomainWord         `json:"important_domain_words,omitempty"`
 	QuestionsForHuman          []string             `json:"questions_for_human,omitempty"`
 	OrientationUnverifiedPaths []PathItem           `json:"unverified_paths,omitempty"`
-	Flows                      []FlowData           `json:"flows"`
+	Flows                      []FlowData           `json:"flows,omitempty"`
 	ArtifactsDir               string               `json:"artifacts_dir"`
 	FeedbackPath               string               `json:"feedback_path,omitempty"`
 	Warnings                   []string             `json:"warnings,omitempty"`

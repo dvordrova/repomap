@@ -183,7 +183,7 @@ function journey(report) {
   });
   const api = window.__REPOMAP_WORKSPACE_TEST__;
   api.renderWorkspaceTabs();
-  api.renderOverviewWorkspace();
+  api.renderMapSummaryInto("rm-overview");
   const groups = byClass(roots["rm-overview"], "rm-overview-entry-group").map((group) => {
     const label = byClass(group, "rm-overview-entry-group__label").map((node) => text(node)).join("");
     const showAll = byClass(group, "rm-overview-entry-group__show-all").length;
