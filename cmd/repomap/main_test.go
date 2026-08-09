@@ -259,6 +259,54 @@ func TestRunDefaultNoOpenSuppressesBrowser(t *testing.T) {
 	}
 }
 
+func TestRunDefaultOfflinePublicationIsDegradedWithClosedSemanticStages(t *testing.T) {
+	clearLLMEnv(t)
+	repo := t.TempDir()
+	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/offline-publication\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(repo, "main.go"), "package main\nfunc main() {}\n")
+	runGit(t, repo, "init", "--quiet")
+	runGit(t, repo, "add", "--", "go.mod", "main.go")
+	commitTestRepository(t, repo)
+
+	debugDir := t.TempDir()
+	var stderr bytes.Buffer
+	if err := runDefaultWithDeps(repo, []string{
+		"--offline", "--no-open", "--no-serve", "--debug-dir", debugDir,
+	}, defaultRunDeps{
+		stdout: io.Discard,
+		stderr: &stderr,
+	}); err != nil {
+		t.Fatalf("runDefaultWithDeps() error = %v\nstderr:\n%s", err, stderr.String())
+	}
+
+	runDir, err := filepath.EvalSymlinks(filepath.Join(debugDir, "latest"))
+	if err != nil {
+		t.Fatalf("resolve published run: %v", err)
+	}
+	if _, err := report.ReadRunManifest(runDir); err != nil {
+		t.Fatalf("read published manifest: %v", err)
+	}
+	if _, err := report.ReadRunDir(runDir); err != nil {
+		t.Fatalf("read published report: %v", err)
+	}
+	if err := verifyPublishedHTML(filepath.Join(runDir, "report.html")); err != nil {
+		t.Fatalf("verify published report HTML: %v", err)
+	}
+
+	finalIndex := strings.LastIndex(stderr.String(), "Run:\n")
+	if finalIndex < 0 {
+		t.Fatalf("offline run missing terminal publication state:\n%s", stderr.String())
+	}
+	final := stderr.String()[finalIndex:]
+	wantPrefix := "Run:\n  state: degraded\n  report: "
+	wantDetails := "\n" +
+		"  Architecture: model grouping unavailable; the exact local Map remains available\n" +
+		"  Study: unavailable\n"
+	if !strings.HasPrefix(final, wantPrefix) || !strings.HasSuffix(final, wantDetails) {
+		t.Fatalf("offline run missing degraded terminal publication details:\n%s", stderr.String())
+	}
+}
+
 func TestRunDefaultNoServeSuppressesServer(t *testing.T) {
 	clearLLMEnv(t)
 	repo := t.TempDir()
@@ -1078,7 +1126,7 @@ func TestRunDefaultServesGeneratedReportAndOpensServerURL(t *testing.T) {
 	if served.SourceEpisodeJSON != nil {
 		t.Fatalf("ordinary report unexpectedly received %d source episode bytes", len(served.SourceEpisodeJSON))
 	}
-	if opened != "http://127.0.0.1:4321/runs/fixture/report.html#/overview" {
+	if opened != "http://127.0.0.1:4321/runs/fixture/report.html#/map" {
 		t.Fatalf("opened location = %q", opened)
 	}
 	metadataJSON, err := os.ReadFile(filepath.Join(debugDir, served.InitialRunID, "metadata.json"))
@@ -1767,7 +1815,7 @@ func TestRepoRunLabelResolvesCurrentDirectory(t *testing.T) {
 	}
 }
 
-func TestReportOverviewURL(t *testing.T) {
+func TestReportMapURL(t *testing.T) {
 	t.Parallel()
 
 	for _, test := range []struct {
@@ -1778,18 +1826,18 @@ func TestReportOverviewURL(t *testing.T) {
 		{
 			name:     "plain report",
 			location: "http://127.0.0.1:4321/runs/fixture/report.html",
-			want:     "http://127.0.0.1:4321/runs/fixture/report.html#/overview",
+			want:     "http://127.0.0.1:4321/runs/fixture/report.html#/map",
 		},
 		{
 			name:     "replace existing route",
 			location: "http://127.0.0.1:4321/runs/fixture/report.html#/mechanisms",
-			want:     "http://127.0.0.1:4321/runs/fixture/report.html#/overview",
+			want:     "http://127.0.0.1:4321/runs/fixture/report.html#/map",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			if got := reportOverviewURL(test.location); got != test.want {
-				t.Fatalf("reportOverviewURL(%q) = %q, want %q", test.location, got, test.want)
+			if got := reportMapURL(test.location); got != test.want {
+				t.Fatalf("reportMapURL(%q) = %q, want %q", test.location, got, test.want)
 			}
 		})
 	}

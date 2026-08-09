@@ -46,7 +46,7 @@ func TestAssessPublicationDistinguishesReadyDegradedAndFailed(t *testing.T) {
 			reasons: []publicationReason{publicationReasonStudyUnavailable},
 		},
 		{
-			name: "explicit offline stages satisfy the requested local mode",
+			name: "explicit offline stages leave semantic publication degraded",
 			mutate: func(data *report.ReportData) {
 				data.ArchitectureSynthesis = &report.ArchitectureSynthesisStatus{
 					State:           report.ArchitectureSynthesisUnavailable,
@@ -59,7 +59,11 @@ func TestAssessPublicationDistinguishesReadyDegradedAndFailed(t *testing.T) {
 					UnavailableCode: report.AtlasStudyUnavailableOffline,
 				}
 			},
-			want: publicationReady,
+			want: publicationDegraded,
+			reasons: []publicationReason{
+				publicationReasonArchitectureUnavailable,
+				publicationReasonStudyUnavailable,
+			},
 		},
 		{
 			name: "accepted but incomplete Study is degraded",

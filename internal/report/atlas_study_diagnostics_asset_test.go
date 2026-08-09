@@ -253,7 +253,7 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
 });
 const api = window.__REPOMAP_WORKSPACE_TEST__;
 api.renderWorkspaceTabs();
-api.renderOverviewWorkspace();
+api.renderMapSummaryInto("rm-overview");
 const overviewText = text(roots["rm-overview"]);
 const nav = roots["rm-tabs"].children.slice();
 const studyTab = nav.find((node) => node.attributes["data-workspace-view"] === "study_overview");

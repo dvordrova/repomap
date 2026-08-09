@@ -710,6 +710,7 @@ class Element {
   querySelectorAll() { return []; }
   scrollIntoView() {}
 }
+
 function walk(root) {
   const result = [];
   (function visit(node) { if (!node) return; result.push(node); (node.children || []).forEach(visit); })(root);
@@ -772,7 +773,7 @@ const app = window.RepomapArchitectureCanvas.mount(host, data, {
 app.ready.then(() => {
   app.openComponent("package-only"); // first click: cube/component
   const sourceButtons = walk(host).filter((node) =>
-    node.tagName === "BUTTON" && String(node.className).split(/\s+/).includes("rm-arch__compact-action") &&
+    node.tagName === "BUTTON" && String(node.className).split(/\s+/).includes("rm-arch__component-primary-source") &&
     nodeText(node).includes("example.test/project/worker"));
   if (sourceButtons[0]) sourceButtons[0].click(); // second click: exact source
   process.stdout.write(JSON.stringify({
@@ -814,6 +815,104 @@ app.ready.then(() => {
 		got.Opened[0].Column != 0 ||
 		!strings.Contains(got.SourceButtonText, "example.test/project/worker") {
 		t.Fatalf("package-only two-click source action = %#v", got)
+	}
+}
+
+func TestArchitectureHighCardinalityInspectorDefaultsToBoundedAccessibleSummary(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is unavailable")
+	}
+	canvasPath, err := filepath.Abs(filepath.Join("templates", "architecture_canvas.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := `
+const fs = require("fs"), vm = require("vm");
+class Element {
+ constructor(tag) {
+  this.tagName=String(tag||"div").toUpperCase(); this.children=[]; this.attributes={}; this.className="";
+  this.textContent=""; this.hidden=false; this.style={}; this.dataset={}; this.listeners={}; this.parentNode=null;
+  this.clientWidth=960; this.clientHeight=640;
+  this.classList={
+   add:(...xs)=>{const s=new Set(String(this.className).split(/\s+/).filter(Boolean));xs.forEach(x=>s.add(x));this.className=Array.from(s).join(" ");},
+   remove:(...xs)=>{const s=new Set(xs);this.className=String(this.className).split(/\s+/).filter(x=>x&&!s.has(x)).join(" ");},
+   toggle:(x,f)=>{const s=new Set(String(this.className).split(/\s+/).filter(Boolean)),v=f===undefined?!s.has(x):!!f;if(v)s.add(x);else s.delete(x);this.className=Array.from(s).join(" ");return v;},
+   contains:(x)=>String(this.className).split(/\s+/).includes(x),
+  };
+ }
+ get childNodes(){return this.children;} appendChild(x){if(x){x.parentNode=this;this.children.push(x);}return x;}
+ append(...xs){xs.forEach(x=>this.appendChild(x));} prepend(x){if(x){x.parentNode=this;this.children.unshift(x);}}
+ replaceChildren(...xs){this.children=[];this.textContent="";this.append(...xs);} remove(){}
+ setAttribute(k,v){this.attributes[k]=String(v);} getAttribute(k){return this.attributes[k]==null?null:this.attributes[k];}
+ removeAttribute(k){delete this.attributes[k];} addEventListener(k,f){(this.listeners[k]||(this.listeners[k]=[])).push(f);}
+ removeEventListener(){} click(){(this.listeners.click||[]).forEach(f=>f({preventDefault(){},stopPropagation(){}}));}
+ keydown(key){(this.listeners.keydown||[]).forEach(f=>f({key,preventDefault(){},stopPropagation(){}}));}
+ focus(){document.activeElement=this;} contains(x){return x===this||this.children.some(c=>c&&c.contains&&c.contains(x));}
+ getBoundingClientRect(){return {left:0,top:0,right:300,bottom:180,width:300,height:180};}
+ querySelector(){return null;} querySelectorAll(){return [];} scrollIntoView(){}
+}
+const walk=(root)=>{const out=[];(function visit(x){if(!x)return;out.push(x);(x.children||[]).forEach(visit);})(root);return out;};
+const has=(x,c)=>String(x.className).split(/\s+/).includes(c);
+const visible=(x)=>{for(let n=x;n;n=n.parentNode)if(n.hidden)return false;return true;};
+const document={createElement:t=>new Element(t),createElementNS:(_n,t)=>new Element(t),createTextNode:v=>{const n=new Element("#text");n.textContent=String(v);return n;},getElementById:()=>null,querySelector:()=>null,querySelectorAll:()=>[],addEventListener(){},removeEventListener(){},body:new Element("body"),documentElement:new Element("html")};
+document.activeElement=document.body;
+const window={document,location:{hash:"#/map"},AbortController,Set,Map,URLSearchParams,Promise,requestAnimationFrame:f=>f(),clearTimeout,setTimeout,innerWidth:1440,innerHeight:1000,addEventListener(){},removeEventListener(){},RepomapUI:{message:id=>id}};
+const sandbox={window,document,Element,AbortController,Set,Map,URLSearchParams,Promise,requestAnimationFrame:f=>f(),clearTimeout,setTimeout,console,addEventListener(){},removeEventListener(){}};
+sandbox.global=sandbox;vm.createContext(sandbox);vm.runInContext(fs.readFileSync(process.argv[2],"utf8"),sandbox);
+const kinds=["process_entry","cli_command","http_route","worker","async_task","http_server"];
+const surfaces=Array.from({length:18},(_,i)=>({id:"surface-"+i,name:"Surface "+i,kind:kinds[i%kinds.length],evidence:[{path:"pkg/entry"+i+".go",line:i+1}]}));
+const sources=Array.from({length:12},(_,i)=>({detail:"ExactSymbol"+i,location:{path:"pkg/source"+i+".go",line:i+10,column:2},actionable:true,source_type:"symbol"}));
+const starts=surfaces.map(s=>({id:s.id,label:s.name,location:s.evidence[0],actionable:true}));
+const studies=Array.from({length:10},(_,i)=>({id:"study-"+i,question:"Question "+i}));
+const associations=Array.from({length:14},(_,i)=>({kind:i===1?"resource":"boundary",paired:i<2,imported_family:i<2?"family/paired":"family/"+i,owning_unit:i<2?"pkg/paired":"pkg/unit"+i,observation_count:1,witnesses:[{symbol:"Call"+i,path:"pkg/call"+i+".go",line:i+1,role:"production"}]}));
+const host=new Element("div"),opened=[],visibility=[];
+const app=window.RepomapArchitectureCanvas.mount(host,{components:[{id:"core",name:"Core",description:"Main responsibility",owned_surface_ids:surfaces.map(s=>s.id),members:[]}],subsystems:[],groups:[],structural_edges:[],behavior_anchors:[],relations:[],surfaces,flows:[]},{userMode:true,message:(id,params)=>id+(params&&params.count!=null?":"+params.count:""),onInspectorVisibilityChange:value=>visibility.push(value),openSourceLocation:l=>opened.push(l),openStudyDirection(){},openComponent(){},componentContexts:{core:{sources,surface_starts:starts,studies,structural_relations:[],package_targets:[],package_paths:[],member_count:120,authority:"validated",evidence_composition:"exact"}},associations:{components:[{component_id:"core",incoming:[],outgoing:[],associations}]}});
+app.ready.then(()=>{
+ const surface=walk(host).find(n=>has(n,"rm-arch__surface")),transformBefore=surface&&surface.style.transform||"",hashBefore=window.location.hash;
+ app.openComponent("core"); const nodes=walk(host),tabs=nodes.filter(n=>n.getAttribute&&n.getAttribute("role")==="tab"),panels=nodes.filter(n=>n.getAttribute&&n.getAttribute("role")==="tabpanel");
+ const bounded={entryGroups:nodes.filter(n=>visible(n)&&has(n,"rm-arch__entry-group-summary")).length,interactions:nodes.filter(n=>visible(n)&&has(n,"rm-arch__interaction-summary")).length,studies:nodes.filter(n=>visible(n)&&has(n,"rm-arch__primary-study")).length,primarySources:nodes.filter(n=>visible(n)&&has(n,"rm-arch__component-primary-source")).length,primaryReasons:nodes.filter(n=>visible(n)&&has(n,"rm-arch__source-reason")&&n.parentNode&&has(n.parentNode,"rm-arch__component-primary-source")).length,summaryGrids:nodes.filter(n=>visible(n)&&has(n,"rm-arch__summary-grid")).length,unknowns:nodes.filter(n=>visible(n)&&n.tagName==="LI"&&n.parentNode&&has(n.parentNode,"rm-arch__summary-unknowns")).length};
+ const initialOnlySummary=panels.filter(p=>!p.hidden).length===1&&!panels[0].hidden,initialSelected=tabs[0].getAttribute("aria-selected"),interactionCountText=(nodes.find(n=>visible(n)&&has(n,"rm-arch__summary-count")&&String(n.textContent).startsWith("architecture.count.interactions"))||{}).textContent||"",primary=nodes.find(n=>visible(n)&&has(n,"rm-arch__component-primary-source"));if(primary)primary.click();
+ tabs[0].keydown("ArrowRight");const connectionsSelected=tabs[1].getAttribute("aria-selected")==="true"&&document.activeElement===tabs[1]&&!panels[1].hidden;
+ tabs[1].keydown("ArrowRight");const readCodeSelected=tabs[2].getAttribute("aria-selected")==="true"&&document.activeElement===tabs[2]&&!panels[2].hidden;
+ const readStarts=walk(panels[2]).filter(n=>has(n,"rm-arch__source-start")&&!has(n,"rm-arch__component-primary-source")).length;
+ const close=walk(host).find(n=>has(n,"rm-arch__inspector-close"));if(close)close.click();
+ process.stdout.write(JSON.stringify({tabCount:tabs.length,panelCount:panels.length,initialSelected,initialOnlySummary,interactionCountText,bounded,connectionsSelected,readCodeSelected,readStarts,opened,visibility,transformStable:transformBefore===(surface&&surface.style.transform||""),hashStable:hashBefore===window.location.hash}));
+}).catch(e=>{process.stdout.write(JSON.stringify({mountError:String(e&&e.stack||e)}));process.exit(2);});
+`
+	runnerPath := filepath.Join(t.TempDir(), "architecture-high-cardinality-inspector.js")
+	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := exec.Command(node, runnerPath, canvasPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run high-cardinality component inspector: %v\n%s", err, output)
+	}
+	var got struct {
+		TabCount, PanelCount                  int
+		InitialSelected                       string
+		InitialOnlySummary                    bool
+		InteractionCountText                  string
+		Bounded                               struct{ EntryGroups, Interactions, Studies, PrimarySources, PrimaryReasons, SummaryGrids, Unknowns int }
+		ConnectionsSelected, ReadCodeSelected bool
+		ReadStarts                            int
+		Opened                                []struct{ Path string }
+		Visibility                            []bool
+		TransformStable, HashStable           bool
+		MountError                            string
+	}
+	if err := json.Unmarshal(output, &got); err != nil {
+		t.Fatalf("decode high-cardinality component inspector: %v\n%s", err, output)
+	}
+	visibilityOK := len(got.Visibility) == 3 && !got.Visibility[0] && got.Visibility[1] && !got.Visibility[2]
+	if got.MountError != "" || got.TabCount != 3 || got.PanelCount != 3 || got.InitialSelected != "true" || !got.InitialOnlySummary || got.InteractionCountText != "architecture.count.interactions:13" || got.Bounded.EntryGroups != 3 || got.Bounded.Interactions != 3 || got.Bounded.Studies != 1 || got.Bounded.PrimarySources != 1 || got.Bounded.PrimaryReasons != 0 || got.Bounded.SummaryGrids != 2 || got.Bounded.Unknowns > 3 || !got.ConnectionsSelected || !got.ReadCodeSelected || got.ReadStarts < 5 || len(got.Opened) != 1 || got.Opened[0].Path != "pkg/source0.go" || !visibilityOK || !got.TransformStable || !got.HashStable {
+		t.Fatalf("high-cardinality inspector contract = %#v", got)
+	}
+	css := readCanvasAsset(t, "architecture_canvas.css")
+	for _, token := range []string{".rm-arch__inspector-panel[hidden]", ".rm-arch__summary-grid", "grid-template-columns: repeat(3, minmax(0, 1fr))", ".rm-arch__inspector-panel--summary .rm-arch__compact-action", "overflow-x: hidden", "min-width: 0"} {
+		if !strings.Contains(css, token) {
+			t.Errorf("component inspector horizontal containment is missing %q", token)
+		}
 	}
 }
 
@@ -920,8 +1019,12 @@ func TestArchitectureUserInspectorStaysCompactAndSourceBacked(t *testing.T) {
 		"surface_starts: surfaceStarts",
 		"function sourceLocationActionAvailable(location)",
 		"rm-arch__compact-action",
-		`this.inspectorSection(this.msg("architecture.section.how_work_enters"))`,
-		"this.msg(\"architecture.action.open_launch_point\")",
+		`this.inspectorSection(this.msg("architecture.section.how_work_enters"), connections)`,
+		"this.userComponentTabs(component)",
+		`this.msg("architecture.tab.summary")`,
+		`this.msg("architecture.tab.connections")`,
+		`this.msg("architecture.tab.read_code")`,
+		"rm-arch__component-primary-source",
 		"array(context.package_paths).length > 0",
 		"(component.members || []).forEach(function (member)",
 		".concat(component.participating_surface_ids || [])",

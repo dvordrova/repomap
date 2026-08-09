@@ -237,9 +237,6 @@ process.stdout.write(JSON.stringify({
     workspace: api.messageForLocale("ru", "main.repository.workspace"),
     study: api.messageForLocale("ru", "main.study.incomplete_direction"),
     taskLens: api.messageForLocale("ru", "main.task_lens.working_hypothesis"),
-    progress: api.messageForLocale("ru", "main.unit_progress", {
-      unit: "Раздел", current: 2, total: 5,
-    }),
     architecture: api.messageForLocale("ru", "architecture.action.open_code"),
     surfaces: api.messageForLocale("ru", "surfaces.action.reset_filters"),
     traceReadinessReason: api.messageForLocale("ru", "surfaces.field.trace_readiness_reason"),
@@ -322,7 +319,6 @@ process.stdout.write(JSON.stringify({
 			Workspace            string `json:"workspace"`
 			Study                string `json:"study"`
 			TaskLens             string `json:"taskLens"`
-			Progress             string `json:"progress"`
 			Architecture         string `json:"architecture"`
 			Surfaces             string `json:"surfaces"`
 			TraceReadinessReason string `json:"traceReadinessReason"`
@@ -357,8 +353,8 @@ process.stdout.write(JSON.stringify({
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode typed UI catalog acceptance result: %v\n%s", err, output)
 	}
-	if got.Version != 15 {
-		t.Errorf("catalog version = %d, want 15", got.Version)
+	if got.Version != 17 {
+		t.Errorf("catalog version = %d, want 17", got.Version)
 	}
 	if !got.Membership.Known || got.Membership.Unknown || got.Membership.NonString {
 		t.Errorf("catalog membership contract = %#v", got.Membership)
@@ -400,7 +396,6 @@ process.stdout.write(JSON.stringify({
 		Workspace            string
 		Study                string
 		TaskLens             string
-		Progress             string
 		Architecture         string
 		Surfaces             string
 		TraceReadinessReason string
@@ -412,7 +407,6 @@ process.stdout.write(JSON.stringify({
 		Workspace:            "Рабочее пространство репозитория",
 		Study:                "Неполное направление изучения",
 		TaskLens:             "Рабочая гипотеза",
-		Progress:             "Раздел 2 из 5",
 		Architecture:         "Открыть код",
 		Surfaces:             "Сбросить фильтры",
 		TraceReadinessReason: "Причина готовности трассировки",
@@ -424,7 +418,6 @@ process.stdout.write(JSON.stringify({
 		got.RussianCopy.Workspace != wantRussianCopy.Workspace ||
 		got.RussianCopy.Study != wantRussianCopy.Study ||
 		got.RussianCopy.TaskLens != wantRussianCopy.TaskLens ||
-		got.RussianCopy.Progress != wantRussianCopy.Progress ||
 		got.RussianCopy.Architecture != wantRussianCopy.Architecture ||
 		got.RussianCopy.Surfaces != wantRussianCopy.Surfaces ||
 		got.RussianCopy.TraceReadinessReason != wantRussianCopy.TraceReadinessReason ||

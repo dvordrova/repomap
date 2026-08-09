@@ -1545,13 +1545,212 @@
  border-radius: 16px;
  bottom: 24px;
  box-shadow: 0 18px 48px rgba(15, 23, 42, .22);
- max-height: min(660px, calc(100vh - 48px));
+ max-height: calc(100vh - 48px);
  max-width: calc(100vw - 48px);
  min-width: 0;
+ overflow-x: hidden;
  padding: 18px 18px 22px;
  right: 24px;
  top: auto;
  width: 360px;
+}
+
+.rm-arch__inspector-tabs {
+ background: #f1f5f9;
+ border: 1px solid #dbe3ec;
+ border-radius: 10px;
+ display: grid;
+ gap: 3px;
+ grid-template-columns: repeat(3, minmax(0, 1fr));
+ margin-top: 14px;
+ min-width: 0;
+ padding: 3px;
+}
+
+.rm-arch__inspector-tab {
+ background: transparent;
+ border: 0;
+ border-radius: 7px;
+ color: #64748b;
+ cursor: pointer;
+ font: inherit;
+ font-size: .68rem;
+ font-weight: 800;
+ line-height: 1.2;
+ min-width: 0;
+ overflow-wrap: anywhere;
+ padding: 8px 5px;
+}
+
+.rm-arch__inspector-tab[aria-selected="true"] {
+ background: #fff;
+ box-shadow: 0 1px 3px rgba(15, 23, 42, .12);
+ color: #0f172a;
+}
+
+.rm-arch__inspector-tab:focus-visible {
+ outline: 3px solid rgba(37, 99, 235, .28);
+ outline-offset: 1px;
+}
+
+.rm-arch__inspector-panel {
+ min-width: 0;
+ overflow-x: hidden;
+}
+
+.rm-arch__inspector-panel[hidden] {
+ display: none;
+}
+
+.rm-arch__inspector-panel--summary .rm-arch__inspector-section {
+ margin-top: 7px;
+ padding-top: 6px;
+}
+
+.rm-arch__inspector-panel--summary .rm-arch__inspector-section-title {
+ font-size: .64rem;
+ margin-bottom: 4px;
+}
+
+.rm-arch__inspector-panel--summary .rm-arch__key-value {
+ font-size: .69rem;
+ gap: 5px;
+ grid-template-columns: minmax(64px, .32fr) minmax(0, 1fr);
+ line-height: 1.25;
+ margin-top: 3px;
+}
+
+.rm-arch__summary-counts {
+ display: flex;
+ flex-wrap: wrap;
+ gap: 4px;
+ margin-top: 7px;
+ min-width: 0;
+}
+
+.rm-arch__summary-count {
+ background: #eff6ff;
+ border-radius: 999px;
+ color: #1e40af;
+ font-size: .62rem;
+ font-weight: 750;
+ max-width: 100%;
+ overflow-wrap: anywhere;
+ padding: 3px 6px;
+}
+
+.rm-arch__entry-group-summary,
+.rm-arch__interaction-summary {
+ align-content: start;
+ gap: 2px;
+ min-height: 0;
+ padding: 5px 6px;
+}
+
+.rm-arch__summary-grid {
+ display: grid;
+ gap: 4px;
+ grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.rm-arch__summary-grid > .rm-arch__inspector-section-title,
+.rm-arch__summary-grid > .rm-arch__inspector-empty {
+ grid-column: 1 / -1;
+}
+
+.rm-arch__summary-grid .rm-arch__compact-reference + .rm-arch__compact-reference {
+ margin-top: 0;
+}
+
+.rm-arch__summary-grid .rm-arch__compact-reference strong {
+ font-size: .65rem;
+ line-height: 1.2;
+ overflow-wrap: anywhere;
+}
+
+.rm-arch__summary-item-count {
+ color: var(--rm-arch-muted);
+ font-size: .6rem;
+ line-height: 1.2;
+}
+
+.rm-arch__summary-unknowns {
+ color: var(--rm-arch-muted);
+ display: grid;
+ font-size: .7rem;
+ gap: 2px;
+ line-height: 1.25;
+ margin: 0;
+ padding-left: 17px;
+}
+
+.rm-arch__inspector-panel--summary .rm-arch__compact-action {
+ margin-top: 0;
+ padding: 6px 8px;
+}
+
+.rm-arch__inspector-panel--summary .rm-arch__compact-action strong,
+.rm-arch__inspector-panel--summary .rm-arch__compact-action span {
+ font-size: .68rem;
+ line-height: 1.25;
+}
+
+.rm-arch__entry-group {
+ border: 1px solid var(--rm-arch-line);
+ border-radius: 9px;
+ display: grid;
+ gap: 5px;
+ min-width: 0;
+ padding: 9px 10px;
+}
+
+.rm-arch__entry-group + .rm-arch__entry-group {
+ margin-top: 7px;
+}
+
+.rm-arch__entry-group-title {
+ color: #334155;
+ font-size: .72rem;
+ overflow-wrap: anywhere;
+}
+
+.rm-arch__entry-group-item {
+ color: var(--rm-arch-muted);
+ font-size: .7rem;
+ overflow-wrap: anywhere;
+}
+
+.rm-arch__source-start {
+ display: grid;
+ min-width: 0;
+}
+
+.rm-arch__source-reason {
+ color: var(--rm-arch-muted);
+ display: block;
+ font-size: .64rem;
+ line-height: 1.35;
+ margin-top: 3px;
+ overflow-wrap: anywhere;
+}
+
+.rm-arch__evidence-limitations,
+.rm-arch__source-starts-all {
+ border: 1px solid var(--rm-arch-line);
+ border-radius: 9px;
+ margin-top: 14px;
+ min-width: 0;
+ padding: 0 10px 10px;
+}
+
+.rm-arch__evidence-limitations-summary,
+.rm-arch__source-starts-all-summary {
+ color: #475569;
+ cursor: pointer;
+ font-size: .72rem;
+ font-weight: 800;
+ overflow-wrap: anywhere;
+ padding: 10px 0 0;
 }
 
 .rm-arch.has-user-compact-inspector .rm-arch__drawer-backdrop {

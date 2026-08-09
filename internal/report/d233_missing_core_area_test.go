@@ -159,7 +159,7 @@ function journey(report, lang) {
   });
   const api = window.__REPOMAP_WORKSPACE_TEST__;
   api.renderWorkspaceTabs();
-  api.renderOverviewWorkspace();
+  api.renderMapSummaryInto("rm-overview");
   const studyTab = roots["rm-tabs"].children.find((node) => node.attributes["data-workspace-view"] === "study_overview");
   studyTab.onclick();
   const missingItems = byClass(roots["rm-study-overview"], "rm-study-diagnostics-missing-core-item").map((node) => text(node));

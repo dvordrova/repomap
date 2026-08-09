@@ -222,7 +222,7 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
 });
 const api = window.__REPOMAP_WORKSPACE_TEST__;
 api.renderWorkspaceTabs();
-api.renderOverviewWorkspace();
+api.renderMapSummaryInto("rm-overview");
 const nav = roots["rm-tabs"].children.slice();
 const navLabels = nav.map((node) => text(node));
 const navViews = nav.map((node) => node.attributes["data-workspace-view"]);

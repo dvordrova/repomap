@@ -286,7 +286,7 @@ const dirtyAction = dirtyCardNodes.find((node) => node.tagName === "BUTTON");
 if (dirtyAction && typeof dirtyAction.onclick === "function") dirtyAction.onclick();
 const dirtyToast = elements["rm-toast"].textContent;
 api.openSourceLocation(location);
-api.openReportTarget({ kind: "location", location });
+api.openSourceLocation(location);
 api.renderTaskInvestigationWorkspace();
 api.renderArchitectureWorkspace();
 
