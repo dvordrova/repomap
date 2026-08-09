@@ -156,8 +156,13 @@ Status:
     keeps the full mechanism path inside Study, and leaves only exact
     non-drawable transition rows beside the unchanged Canvas geometry. UI17
     then localizes the typed deterministic package-fallback group without
-    rewriting exact package names, model prose, or local-anchor prose. These
-    follow-ups add no report, manifest, Canvas, provider, or semantic identity.
+    rewriting exact package names, model prose, or local-anchor prose. UI18
+    keeps a backend-designated primary process entry authoritative, but when
+    none exists it selects one exact non-test process entry before falling
+    back to Study: repository/module basename match first, then bounded stable
+    source-path tie-breakers, with copy that explicitly says no primary was
+    designated. These follow-ups add no report, manifest, Canvas, provider,
+    or semantic identity.
 
     D246 supersedes D240's former three-call ordinary-path ceiling only after
     accepted Study: up to four bounded refs-only mechanism batches may run over

@@ -3299,6 +3299,8 @@
 					location: fallbackLocation,
 					entryKind: String(trigger.kind || ''),
 					entryRole: String(trigger.executable_role || ''),
+					entryExecutable: String(trigger.owning_executable ||
+						(trigger.process_entrypoint && trigger.process_entrypoint.package) || ''),
 					entryFramework: String(trigger.framework || ''),
 					locationOnly: true,
 				});
@@ -3312,6 +3314,8 @@
 				location: source.location,
 				entryKind: String(trigger.kind || ''),
 				entryRole: String(trigger.executable_role || ''),
+				entryExecutable: String(trigger.owning_executable ||
+					(trigger.process_entrypoint && trigger.process_entrypoint.package) || ''),
 				entryFramework: String(trigger.framework || ''),
 				locationOnly: false,
 			});
@@ -3960,8 +3964,10 @@
 
 	// overviewFirstAction implements the independent «Open first» selector
 	// (Decision 221 C). It never derives the action from theme array order.
-	// Priority: primary production process entry, library constructor/start/use entry, a core
-	// Study theme's first exact reading, then an explicit unavailable state.
+	// Priority: backend-designated primary production process entry, library
+	// constructor/start/use entry, one deterministic exact non-test process
+	// entry when no primary was designated, a core Study theme's first exact
+	// reading, then an explicit unavailable state.
 	function overviewFirstAction(anatomy, atlasShelf) {
 		// 1. Primary production process entry (not tests/tooling).
 		var entries = anatomy && anatomy.entries && anatomy.entries.objects || [];
@@ -3992,7 +3998,23 @@
 				return libAction;
 			}
 		}
-		// 3. A core Study theme's first exact reading (theme ordinal is
+		// 3. Exact process-entry fallback. The backend remains authoritative
+		// about whether an entry is primary; this tier does not relabel a
+		// secondary entry as primary. Prefer an executable whose basename
+		// matches the repository/module basename, then use only bounded stable
+		// source-locator tie-breakers.
+		var processFallback = overviewProcessEntryFallback(entries);
+		if (processFallback) {
+			var processFallbackAction = overviewFirstActionFromEntry(processFallback);
+			if (processFallbackAction) {
+				processFallbackAction.label = msg('main.overview.first_action.process_entry_fallback');
+				processFallbackAction.reason = msg('main.overview.first_action.reason.process_entry_fallback');
+				processFallbackAction.authority = msg('main.overview.first_action.authority.process_entry');
+				processFallbackAction.kind = 'process_entry_fallback';
+				return processFallbackAction;
+			}
+		}
+		// 4. A core Study theme's first exact reading (theme ordinal is
 		// irrelevant — the first reading with an exact source wins, with
 		// constructor/start symbols ranked ahead deterministically).
 		var cards = themeCards();
@@ -4053,8 +4075,58 @@
 			};
 			return themeAction;
 		}
-		// 4. Explicit unavailable state — never an invented path.
+		// 5. Explicit unavailable state — never an invented path.
 		return null;
+	}
+
+	function overviewProcessEntryFallback(entries) {
+		var repositoryBasenames = Object.create(null);
+		var addRepositoryBasename = function (value) {
+			var segments = String(value || '').replace(/\\/g, '/').split('/').filter(function (segment) {
+				return !!segment && segment !== '.';
+			});
+			while (segments.length && /^v[0-9]+$/i.test(segments[segments.length - 1])) segments.pop();
+			if (!segments.length) return;
+			var basename = segments[segments.length - 1].replace(/\.git$/i, '').toLowerCase();
+			if (basename) repositoryBasenames[basename] = true;
+		};
+		addRepositoryBasename(DATA.repo_name);
+		var graph = DATA.repository_graph || {};
+		(Array.isArray(graph.modules) ? graph.modules : []).forEach(function (module) {
+			if (!module) return;
+			addRepositoryBasename(module.path || module.module_path || module.name || '');
+		});
+		var pathParts = function (value) {
+			return String(value || '').replace(/\\/g, '/').split('/').filter(function (segment) {
+				return !!segment && segment !== '.';
+			});
+		};
+		var executableMatchesRepository = function (entry) {
+			var parts = pathParts(entry && entry.entryExecutable);
+			if (!parts.length) return false;
+			return !!repositoryBasenames[String(parts[parts.length - 1]).replace(/\.git$/i, '').toLowerCase()];
+		};
+		var candidates = (Array.isArray(entries) ? entries : []).filter(function (entry) {
+			return entry && entry.entryKind === 'process_entry' &&
+				entry.entryRole !== 'primary_application' && entry.entryRole !== 'test_or_helper';
+		});
+		candidates.sort(function (left, right) {
+			var leftMatch = executableMatchesRepository(left), rightMatch = executableMatchesRepository(right);
+			if (leftMatch !== rightMatch) return leftMatch ? -1 : 1;
+			var leftPath = String(left.location && left.location.path || '');
+			var rightPath = String(right.location && right.location.path || '');
+			var leftDepth = pathParts(leftPath).length, rightDepth = pathParts(rightPath).length;
+			if (leftDepth !== rightDepth) return leftDepth - rightDepth;
+			if (leftPath.length !== rightPath.length) return leftPath.length - rightPath.length;
+			if (leftPath !== rightPath) return leftPath < rightPath ? -1 : 1;
+			var leftLine = Number(left.location && left.location.line) || 0;
+			var rightLine = Number(right.location && right.location.line) || 0;
+			if (leftLine !== rightLine) return leftLine - rightLine;
+			var leftID = String(left.id || ''), rightID = String(right.id || '');
+			if (leftID === rightID) return 0;
+			return leftID < rightID ? -1 : 1;
+		});
+		return candidates[0] || null;
 	}
 
 	function overviewFirstActionFromEntry(object) {
