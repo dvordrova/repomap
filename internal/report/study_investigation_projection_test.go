@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/freshness"
@@ -342,6 +343,101 @@ func TestPrepareAuthorizedStudyInvestigationSourceCoverageExtendsExactAuthority(
 	}
 	if !reflect.DeepEqual(before, data.UserSources) {
 		t.Fatal("later ordinary coverage discarded or changed projected investigation sources")
+	}
+}
+
+func TestAtlasStudyReplayPreservesBoundarySpanAcrossD246SameLineSource(t *testing.T) {
+	data := atlasStudyReportFixture(t)
+	grounding := architectureGroundingWithEntryHandoff()
+	handoff := &grounding.EntryHandoffs[0]
+	handoff.ProcessEntrypoint = ArchitectureAnchorMember{
+		ID: "example.com/fixture/cmd/app.main", Package: "example.com/fixture/cmd/app", Name: "main",
+		Location: evidence.Location{Path: "cmd/app/main.go", Line: 7, Column: 6},
+	}
+	handoff.Callee = ArchitectureAnchorMember{
+		ID: "example.com/fixture/internal/app.Run", Package: "example.com/fixture/internal/app", Name: "Run",
+		Location: evidence.Location{Path: "internal/app/run.go", Line: 11, Column: 6},
+	}
+	handoff.RepresentativeCallsite = evidence.Location{Path: "cmd/app/main.go", Line: 8, Column: 2}
+	handoff.TargetPackage = handoff.Callee.Package
+	handoff.ID = architectureEntryHandoffID(*handoff)
+	grounding.Coverage.EntryHandoffs.CandidateSetSHA256 =
+		architectureEntryHandoffCandidateSetSHA256(grounding.EntryHandoffs)
+	data.ArchitectureGrounding = &grounding
+
+	preInput, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+	if err != nil {
+		t.Fatalf("build pre-investigation input: %v", err)
+	}
+	var targetID, boundarySupportID, boundarySpanID string
+	for _, target := range preInput.ReadingTargets {
+		if target.Location.Path == handoff.Callee.Location.Path &&
+			target.Location.Line == handoff.Callee.Location.Line && target.Symbol == handoff.Callee.ID {
+			targetID = target.ID
+			break
+		}
+	}
+	for _, support := range preInput.ReadingSupports {
+		if support.TargetID == targetID && support.Role == atlasstudy.SupportObservedCallBoundary {
+			boundarySupportID = support.ID
+			break
+		}
+	}
+	for _, span := range preInput.RouteSpans {
+		if span.Kind == atlasstudy.RouteSpanFocused &&
+			reflect.DeepEqual(span.RequiredSupportIDs, []string{boundarySupportID}) {
+			boundarySpanID = span.ID
+			break
+		}
+	}
+	if targetID == "" || boundarySupportID == "" || boundarySpanID == "" {
+		t.Fatalf("pre-investigation boundary identity missing: target=%q support=%q span=%q",
+			targetID, boundarySupportID, boundarySpanID)
+	}
+
+	runDir := t.TempDir()
+	writeThemeStudyAcceptedArtifacts(t, runDir, data)
+	// Final run hydration restores D246 declaration source actions without
+	// their private canonical symbols. The empty-symbol excerpt is the exact
+	// same physical declaration as the already saved canonical Study target.
+	data.UserSources = append(data.UserSources, atlasStudySourceFixture(
+		t, handoff.Callee.Location.Path, handoff.Callee.Location.Line, "", "func Run() {}",
+	))
+	postInput, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+	if err != nil {
+		t.Fatalf("build final hydrated input: %v", err)
+	}
+	physicalTargets := 0
+	for _, target := range postInput.ReadingTargets {
+		if target.Location.Path == handoff.Callee.Location.Path &&
+			target.Location.Line == handoff.Callee.Location.Line {
+			physicalTargets++
+			if target.ID != targetID || target.Symbol != handoff.Callee.ID {
+				t.Fatalf("D246 source action displaced canonical target: %#v", target)
+			}
+		}
+	}
+	if physicalTargets != 1 {
+		t.Fatalf("same declaration produced %d semantic targets", physicalTargets)
+	}
+	boundarySupportAvailable := false
+	for _, support := range postInput.ReadingSupports {
+		boundarySupportAvailable = boundarySupportAvailable || support.ID == boundarySupportID
+	}
+	boundarySpanAvailable := false
+	for _, span := range postInput.RouteSpans {
+		boundarySpanAvailable = boundarySpanAvailable || span.ID == boundarySpanID
+	}
+	if !boundarySupportAvailable || !boundarySpanAvailable {
+		t.Fatalf("D246 source action removed Scout boundary identity: support=%t span=%t",
+			boundarySupportAvailable, boundarySpanAvailable)
+	}
+	status, studyMap, err := readAtlasStudyReportProduct(runDir, data)
+	if err != nil {
+		t.Fatalf("replay pre-investigation Scout artifacts: %v", err)
+	}
+	if status == nil || status.State != atlasstudy.ProductStateAccepted || studyMap != nil {
+		t.Fatalf("replayed Study product = %#v / %#v", status, studyMap)
 	}
 }
 

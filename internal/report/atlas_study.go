@@ -683,13 +683,43 @@ func atlasStudyReadingShelf(
 			data, advertisedSurfaces, target.Location.Path, target.Location.Line, target.Symbol,
 		)
 	}
-	physicalCounts := make(map[string]int, len(result.targets))
+	targetIDsByPhysicalLocation := make(map[string][]string, len(result.targets))
 	for _, target := range result.targets {
-		physicalCounts[target.Location.Path+"\x00"+fmt.Sprint(target.Location.Line)]++
+		key := target.Location.Path + "\x00" + fmt.Sprint(target.Location.Line)
+		targetIDsByPhysicalLocation[key] = append(targetIDsByPhysicalLocation[key], target.ID)
 	}
 	for _, target := range result.targets {
 		key := target.Location.Path + "\x00" + fmt.Sprint(target.Location.Line)
-		if physicalCounts[key] < 2 {
+		targetIDs := targetIDsByPhysicalLocation[key]
+		if len(targetIDs) < 2 {
+			continue
+		}
+		// Final D246 hydration may add a presentation-only empty-symbol source
+		// at the same declaration already represented by its canonical saved
+		// target. A unique exact entry-handoff proof disambiguates that physical
+		// location. Keep the canonical winner's complete independent support
+		// set; the source-action-only competitor creates no semantic reading.
+		exactHandoffTarget := ""
+		exactHandoffAmbiguous := false
+		for _, targetID := range targetIDs {
+			for _, proof := range associationsByTarget[targetID].supports {
+				if !strings.HasPrefix(proof.producerID, "entry-handoff-entry:") &&
+					!strings.HasPrefix(proof.producerID, "entry-handoff-callee:") {
+					continue
+				}
+				if exactHandoffTarget != "" && exactHandoffTarget != targetID {
+					exactHandoffAmbiguous = true
+				}
+				exactHandoffTarget = targetID
+				break
+			}
+		}
+		if exactHandoffTarget != "" && !exactHandoffAmbiguous {
+			if target.ID != exactHandoffTarget {
+				association := associationsByTarget[target.ID]
+				association.supports = nil
+				associationsByTarget[target.ID] = association
+			}
 			continue
 		}
 		association := associationsByTarget[target.ID]
