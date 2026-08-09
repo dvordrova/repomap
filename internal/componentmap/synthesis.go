@@ -2620,7 +2620,7 @@ func decodeSynthesisWireNestedJSON(raw []byte) (synthesisWireProposal, error) {
 		if strings.TrimSpace(subsystem.Name) == "" {
 			return synthesisWireProposal{}, fmt.Errorf("proposal subsystem name is empty")
 		}
-		if err := validateSynthesisProposalProse("subsystem description", subsystem.Description); err != nil {
+		if err := validateSynthesisProposalDescription("subsystem description", subsystem.Description); err != nil {
 			return synthesisWireProposal{}, err
 		}
 		subsystemRef := fmt.Sprintf("g%d", index+1)
@@ -2638,7 +2638,7 @@ func decodeSynthesisWireNestedJSON(raw []byte) (synthesisWireProposal, error) {
 			if strings.TrimSpace(component.Name) == "" {
 				return synthesisWireProposal{}, fmt.Errorf("proposal component name is empty")
 			}
-			if err := validateSynthesisProposalProse("component description", component.Description); err != nil {
+			if err := validateSynthesisProposalDescription("component description", component.Description); err != nil {
 				return synthesisWireProposal{}, err
 			}
 			memberRefsFieldExists := component.MemberRefs != nil
@@ -2790,9 +2790,10 @@ func nestedAnchorRefs(raw []string, field string) ([]SynthesisAnchorRef, error) 
 	return refs, nil
 }
 
-// validateSynthesisProposalProse bounds a nested proposal prose value.
-func validateSynthesisProposalProse(label, value string) error {
-	if err := validateDisplayText(label, value, maxNameBytes, false); err != nil {
+// validateSynthesisProposalDescription applies the same description bound to
+// the active nested wire that the flat wire and final Landscape already use.
+func validateSynthesisProposalDescription(label, value string) error {
+	if err := validateDisplayText(label, value, maxDescriptionBytes, false); err != nil {
 		return err
 	}
 	return nil

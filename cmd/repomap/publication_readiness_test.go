@@ -27,15 +27,14 @@ func TestAssessPublicationDistinguishesReadyDegradedAndFailed(t *testing.T) {
 	}{
 		{name: "complete current report", want: publicationReady},
 		{
-			name: "partial Architecture remains publishable but degraded",
+			name: "accepted partial Architecture remains ready with exact remainder",
 			mutate: func(data *report.ReportData) {
 				data.ArchitectureSynthesis.ProposalPartial = true
 				data.ArchitectureSynthesis.ArchitectureSource = string(componentmap.SourcePartialModel)
 				data.ArchitectureCanvas.ArchitectureSource = componentmap.SourcePartialModel
 				data.ArchitectureCanvas.ValidationOutcome = componentmap.ValidationAcceptedPartial
 			},
-			want:    publicationDegraded,
-			reasons: []publicationReason{publicationReasonArchitecturePartial},
+			want: publicationReady,
 		},
 		{
 			name: "unavailable Study remains publishable but degraded",
@@ -66,12 +65,26 @@ func TestAssessPublicationDistinguishesReadyDegradedAndFailed(t *testing.T) {
 			},
 		},
 		{
-			name: "accepted but incomplete Study is degraded",
+			name: "accepted bounded Study coverage remains ready",
 			mutate: func(data *report.ReportData) {
 				data.AtlasStudy.FrontierComplete = false
+				data.AtlasStudy.SelectedItemsComplete = false
+				data.AtlasStudy.SupportCoverageComplete = false
+				data.AtlasStudy.PortfolioTargetMet = false
+				data.AtlasStudy.MissingCoreAreaCount = 3
+				for len(data.AtlasStudy.Themes.Cards) < 20 {
+					data.AtlasStudy.Themes.Cards = append(data.AtlasStudy.Themes.Cards, report.StudyThemeCard{FinalTitle: "Theme"})
+				}
 			},
-			want:    publicationDegraded,
-			reasons: []publicationReason{publicationReasonStudyIncomplete},
+			want: publicationReady,
+		},
+		{
+			name: "item-local partial Study with published cards remains ready",
+			mutate: func(data *report.ReportData) {
+				data.AtlasStudy.State = atlasstudy.ProductStateAcceptedPartial
+				data.AtlasStudy.FrontierComplete = false
+			},
+			want: publicationReady,
 		},
 		{
 			name: "failed Architecture and Study are bounded reasons",

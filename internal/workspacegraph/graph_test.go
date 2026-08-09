@@ -154,6 +154,92 @@ func TestNewFiltersOutsideFactsAndUnknownOrExternalEdges(t *testing.T) {
 	}
 }
 
+func TestNewKeepsCompositePackagesAndFailsClosedOnAmbiguousCanonicalPath(t *testing.T) {
+	facts := compositePackageFacts()
+	graph, err := New(Input{
+		Snapshot: testSnapshot(t, "", nil),
+		GoFacts:  facts,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if got := len(graph.Packages()); got != 4 {
+		t.Fatalf("Packages = %d, want 4", got)
+	}
+	if got := graph.Edges(); !reflect.DeepEqual(got, []Edge{{
+		FromPackage: "example.com/root/app",
+		ToPackage:   "example.com/root/core",
+	}}) {
+		t.Fatalf("Edges = %#v", got)
+	}
+
+	const sharedPath = "example.com/shared"
+	if pkg, ok := graph.Package(sharedPath); ok {
+		t.Fatalf("ambiguous canonical lookup returned %#v", pkg)
+	}
+	first, ok := graph.PackageInModule(sharedPath, "fixture-a")
+	if !ok || first.ModuleID != "fixture-a" || first.Dir != "fixtures/a" {
+		t.Fatalf("first composite lookup = %#v, %v", first, ok)
+	}
+	second, ok := graph.PackageInModule(sharedPath, "fixture-b")
+	if !ok || second.ModuleID != "fixture-b" || second.Dir != "fixtures/b" {
+		t.Fatalf("second composite lookup = %#v, %v", second, ok)
+	}
+	if _, ok := graph.PackageInModule(sharedPath, "missing-module"); ok {
+		t.Fatal("missing composite lookup succeeded")
+	}
+	first.Name = "mutated"
+	firstAgain, _ := graph.PackageInModule(sharedPath, "fixture-a")
+	if firstAgain.Name != "main" {
+		t.Fatalf("composite lookup leaked mutation: %#v", firstAgain)
+	}
+
+	permuted, err := New(Input{
+		Snapshot: testSnapshot(t, "", nil),
+		GoFacts:  permuteFacts(facts),
+	})
+	if err != nil {
+		t.Fatalf("New(permuted): %v", err)
+	}
+	if !publicGraphsEqual(graph, permuted) {
+		t.Fatalf("permuted composite graph differs: %#v", permuted.Packages())
+	}
+}
+
+func TestNewRejectsEdgesWithAmbiguousPackageIdentity(t *testing.T) {
+	const (
+		ambiguous = "example.com/shared"
+		unique    = "example.com/root/app"
+	)
+	tests := []struct {
+		name string
+		edge gofacts.Edge
+	}{
+		{name: "ambiguous source", edge: gofacts.Edge{From: ambiguous, To: unique}},
+		{name: "ambiguous target", edge: gofacts.Edge{From: unique, To: ambiguous}},
+		{name: "ambiguous with unknown peer", edge: gofacts.Edge{From: ambiguous, To: "example.net/external"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			facts := compositePackageFacts()
+			facts.InternalEdges = append(facts.InternalEdges, test.edge)
+			graph, err := New(Input{
+				Snapshot: testSnapshot(t, "", nil),
+				GoFacts:  facts,
+			})
+			if err == nil {
+				t.Fatal("New unexpectedly accepted an ambiguous edge endpoint")
+			}
+			if graph.Modules() != nil || graph.Packages() != nil || graph.Edges() != nil {
+				t.Fatalf("failed graph exposed partial state: %#v", graph)
+			}
+			if strings.Contains(err.Error(), ambiguous) {
+				t.Fatalf("error exposed ambiguous package identity: %v", err)
+			}
+		})
+	}
+}
+
 func TestNewRejectsConflictingOrInconsistentExactFacts(t *testing.T) {
 	snapshot := testSnapshot(t, "", nil)
 	baseModule := gofacts.ModuleFact{
@@ -258,7 +344,7 @@ func TestNewEnforcesRawBudgetsBeforeValidation(t *testing.T) {
 	}{
 		{name: "modules", facts: gofacts.Facts{Modules: make([]gofacts.ModuleFact, maxModules+1)}},
 		{name: "packages", facts: gofacts.Facts{Packages: make([]gofacts.PackageFact, maxPackages+1)}},
-		{name: "edges", facts: gofacts.Facts{InternalEdges: make([]gofacts.Edge, maxEdges+1)}},
+		{name: "edges", facts: gofacts.Facts{InternalEdges: make([]gofacts.Edge, MaxExactEdges+1)}},
 		{name: "files per package", facts: gofacts.Facts{Packages: []gofacts.PackageFact{{
 			Files: make([]string, maxFilesPerPackage+1),
 		}}}},
@@ -395,6 +481,9 @@ func TestGraphAccessorsAndQueriesAreDefensive(t *testing.T) {
 	if _, ok := graph.Package(oversized); ok {
 		t.Fatal("oversized package query succeeded")
 	}
+	if _, ok := graph.PackageInModule("example.com/repo/cmd/app", oversized); ok {
+		t.Fatal("oversized composite package query succeeded")
+	}
 	if _, ok := graph.Edge(oversized, "example.com/repo/internal/core"); ok {
 		t.Fatal("oversized edge query succeeded")
 	}
@@ -493,6 +582,42 @@ func representativeFacts() gofacts.Facts {
 			{From: "example.com/repo/cmd/app", To: "example.com/repo/internal/core"},
 			{From: "example.com/repo/missing", To: "example.com/repo/internal/core"},
 		},
+	}
+}
+
+func compositePackageFacts() gofacts.Facts {
+	return gofacts.Facts{
+		Modules: []gofacts.ModuleFact{
+			{ID: "root-id", ModulePath: "example.com/root", ModuleDir: "."},
+			{ID: "fixture-a", ModulePath: "example.com/shared", ModuleDir: "fixtures/a"},
+			{ID: "fixture-b", ModulePath: "example.com/shared", ModuleDir: "fixtures/b"},
+		},
+		Packages: []gofacts.PackageFact{
+			{
+				CanonicalPath: "example.com/shared", Name: "main",
+				ModuleID: "fixture-a", ModulePath: "example.com/shared",
+				PackageDir: "fixtures/a", ModuleRelativeDir: ".",
+			},
+			{
+				CanonicalPath: "example.com/shared", Name: "sum",
+				ModuleID: "fixture-b", ModulePath: "example.com/shared",
+				PackageDir: "fixtures/b", ModuleRelativeDir: ".",
+			},
+			{
+				CanonicalPath: "example.com/root/app", Name: "app",
+				ModuleID: "root-id", ModulePath: "example.com/root",
+				PackageDir: "app", ModuleRelativeDir: "app",
+			},
+			{
+				CanonicalPath: "example.com/root/core", Name: "core",
+				ModuleID: "root-id", ModulePath: "example.com/root",
+				PackageDir: "core", ModuleRelativeDir: "core",
+			},
+		},
+		InternalEdges: []gofacts.Edge{{
+			From: "example.com/root/app",
+			To:   "example.com/root/core",
+		}},
 	}
 }
 

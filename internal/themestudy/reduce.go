@@ -41,8 +41,9 @@ type Reduction struct {
 	Diagnostics map[string]int `json:"diagnostics,omitempty"`
 }
 
-// published entry keeps the exact anchor ref with its Reading and fit so the
-// balance cap can remove anchors while preserving ≥ 1 direct.
+// publishedEntry keeps the exact anchor ref with its Reading and fit through
+// deterministic publication. Exact evidence is never removed for portfolio
+// diversity; concentration is presentation-only accounting.
 type publishedEntry struct {
 	ref     string
 	reading Reading
@@ -244,20 +245,13 @@ func Reduce(input ReducerInput) (Reduction, error) {
 		return reduction, nil
 	}
 
-	// Balance cap (catalog-relative): applies only when the accepted catalog has
-	// enough distinct alternatives. Anchor-first removal keeps ≥ 1 direct +
-	// answerable, else the theme is dropped with the honest count.
-	if len(input.Anchors) >= MaxThemeAnchors {
-		all = applyBalanceCap(all, &reduction)
-	}
-
 	// Ordinal order: the model's comparative editorial ranking survives
 	// (Phase 2 prompt cleanup: Scout returns themes ordered by decreasing
 	// usefulness, and the backend preserves that order). theme_kind is
 	// presentation metadata only — it is unstable model classification,
 	// not evidence identity, and never decides default prominence. The
 	// slice is already in model order (co-projection folds into the
-	// earlier card in place; balance cap preserves order); no re-rank.
+	// earlier card in place); no re-rank.
 	// Display order only; canonical identity never changes.
 
 	for ordinal, w := range all {
@@ -441,64 +435,4 @@ func themeIdentity(entries []publishedEntry, kind ThemeKind) string {
 	payload, _ := json.Marshal(map[string]any{"readings": identities})
 	hash := sha256.Sum256(payload)
 	return "theme-" + hex.EncodeToString(hash[:])[:24]
-}
-
-// applyBalanceCap enforces the catalog-relative guard that no one anchor
-// appears in more than half the final themes. It removes an offending anchor
-// from a theme (anchor-first) while keeping ≥ 1 direct + answerable, else drops
-// the theme with the honest count. Deterministic and never a hidden re-rank.
-func applyBalanceCap(all []workTheme, reduction *Reduction) []workTheme {
-	for consensus := true; consensus; {
-		consensus = false
-		capFloor := len(all) / 2
-		counts := make(map[string]int, 8)
-		for _, w := range all {
-			for _, e := range w.entries {
-				counts[e.ref]++
-			}
-		}
-		for ref, count := range counts {
-			if count <= capFloor {
-				continue
-			}
-			var surviving []workTheme
-			for _, w := range all {
-				if !containsRef(w.entries, ref) {
-					surviving = append(surviving, w)
-					continue
-				}
-				kept := removeRef(w.entries, ref)
-				if len(kept) == 0 || directIn(kept) == 0 {
-					reduction.Omitted++
-					consensus = true
-					continue
-				}
-				w.entries = kept
-				surviving = append(surviving, w)
-				consensus = true
-			}
-			all = surviving
-		}
-	}
-	return all
-}
-
-func containsRef(entries []publishedEntry, ref string) bool {
-	for _, e := range entries {
-		if e.ref == ref {
-			return true
-		}
-	}
-	return false
-}
-
-func removeRef(entries []publishedEntry, ref string) []publishedEntry {
-	out := make([]publishedEntry, 0, len(entries))
-	for _, e := range entries {
-		if e.ref == ref {
-			continue
-		}
-		out = append(out, e)
-	}
-	return out
 }

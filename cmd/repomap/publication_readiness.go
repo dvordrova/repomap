@@ -14,10 +14,11 @@ import (
 	"github.com/dvordrova/repomap/internal/report"
 )
 
-// publicationReadiness separates a successfully written report from a report
-// whose semantic coverage is complete enough to call ready. Optional model
-// stages may fail or publish partial results without invalidating the exact
-// local report; those runs are degraded, not failed and not ready.
+// publicationReadiness reports publication health, not whether every bounded
+// semantic frontier was exhausted. Accepted partial results retain exact local
+// remainder and coverage disclosure and are ready; missing, failed,
+// unavailable, empty, or interrupted product stages are degraded. Integrity
+// failures remain failed.
 type publicationReadiness string
 
 const (
@@ -221,10 +222,12 @@ func architecturePublicationReasons(data *report.ReportData) []publicationReason
 	case report.ArchitectureSynthesisUnavailable:
 		return append(reasons, publicationReasonArchitectureUnavailable)
 	case report.ArchitectureSynthesisSucceeded, report.ArchitectureSynthesisCached:
-		if status.ProposalPartial ||
-			data.ArchitectureCanvas.ArchitectureSource == componentmap.SourcePartialModel ||
-			data.ArchitectureCanvas.ValidationOutcome == componentmap.ValidationAcceptedPartial {
-			return append(reasons, publicationReasonArchitecturePartial)
+		acceptedPartial := status.ProposalAccepted && status.ProposalPartial &&
+			!status.ProposalRejected && !status.FallbackSelected &&
+			data.ArchitectureCanvas.ArchitectureSource == componentmap.SourcePartialModel &&
+			data.ArchitectureCanvas.ValidationOutcome == componentmap.ValidationAcceptedPartial
+		if acceptedPartial {
+			return reasons
 		}
 		completeSource := data.ArchitectureCanvas.ArchitectureSource == componentmap.SourceValidatedModel ||
 			data.ArchitectureCanvas.ArchitectureSource == componentmap.SourceNormalizedModel
@@ -256,16 +259,13 @@ func studyPublicationReasons(data *report.ReportData) []publicationReason {
 		if status.Themes == nil || len(status.Themes.Cards) == 0 {
 			return []publicationReason{publicationReasonStudyPartial, publicationReasonStudyEmpty}
 		}
-		return []publicationReason{publicationReasonStudyPartial}
+		return nil
 	case atlasstudy.ProductStateAccepted:
 		if status.Themes == nil || len(status.Themes.Cards) == 0 {
 			return []publicationReason{publicationReasonStudyEmpty}
 		}
-		if !status.FrontierComplete || !status.SelectedItemsComplete ||
-			!status.SupportCoverageComplete || !status.PortfolioTargetMet ||
-			status.MissingCoreAreaCount > 0 {
-			return []publicationReason{publicationReasonStudyIncomplete}
-		}
+		// These are bounded shelf-coverage facts, not publication-health
+		// failures. They remain visible in Study diagnostics.
 		return nil
 	default:
 		return []publicationReason{publicationReasonStudyIncomplete}

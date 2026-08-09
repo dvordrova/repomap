@@ -20,6 +20,7 @@ import (
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/report"
+	"github.com/dvordrova/repomap/internal/workspacegraph"
 )
 
 type architectureSynthesisStub struct {
@@ -2195,7 +2196,7 @@ func TestPrepareAuthorizedArchitectureUsesCompleteCasdoorGraph(t *testing.T) {
 
 func TestPrepareAuthorizedArchitectureSkipsProviderWithoutExactGraph(t *testing.T) {
 	facts := architectureCasdoorGraphFacts(1)
-	facts.InternalEdges = make([]gofacts.Edge, 1001)
+	facts.InternalEdges = make([]gofacts.Edge, workspacegraph.MaxExactEdges+1)
 	for index := range facts.InternalEdges {
 		facts.InternalEdges[index] = gofacts.Edge{
 			From: facts.Packages[0].CanonicalPath,
@@ -2240,7 +2241,7 @@ func TestPrepareAuthorizedArchitectureSkipsProviderWithoutExactGraph(t *testing.
 
 func TestSynthesizeArchitecturePreflightsExactGraphBeforeProviderConfiguration(t *testing.T) {
 	facts := architectureCasdoorGraphFacts(1)
-	facts.InternalEdges = make([]gofacts.Edge, 1001)
+	facts.InternalEdges = make([]gofacts.Edge, workspacegraph.MaxExactEdges+1)
 	for index := range facts.InternalEdges {
 		facts.InternalEdges[index] = gofacts.Edge{
 			From: facts.Packages[0].CanonicalPath,

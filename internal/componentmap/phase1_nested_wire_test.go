@@ -71,6 +71,26 @@ func TestSynthesisNestedWireRejectsNullAnchorRefs(t *testing.T) {
 	}
 }
 
+func TestSynthesisNestedWireUsesDescriptionBoundNotNameBound(t *testing.T) {
+	t.Parallel()
+	description := strings.Repeat("я", maxNameBytes/2+1)
+	raw, err := json.Marshal(synthesisWireNested{Subsystems: []synthesisWireNestedSubsystem{{
+		Name:        "Application",
+		Description: description,
+		Components: []synthesisWireNestedComponent{{
+			Name:        "Runtime",
+			Description: description,
+			MemberRefs:  json.RawMessage(`["p1"]`),
+		}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := decodeSynthesisWireProposalJSON(raw); err != nil {
+		t.Fatalf("nested descriptions within %d bytes rejected by the %d-byte name limit: %v", maxDescriptionBytes, maxNameBytes, err)
+	}
+}
+
 func TestSynthesisNestedExplicitEmptyAnchorRefsPreservesFullCoverage(t *testing.T) {
 	t.Parallel()
 

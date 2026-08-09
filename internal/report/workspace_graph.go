@@ -32,7 +32,7 @@ const (
 	maxReportGraphFactPackages     = 4096
 	maxReportGraphFilesPerPackage  = 4096
 	maxReportGraphAggregateFiles   = 20_000
-	maxReportGraphFactEdges        = 1000
+	maxReportGraphFactEdges        = workspacegraph.MaxExactEdges
 	maxReportGraphScalarBytes      = 4096
 	maxReportGraphAggregateScalars = 4 * 1024 * 1024
 	maxReportGraphProjectedModules = 2 * maxReportGraphFactModules
@@ -310,7 +310,7 @@ func projectWorkspacePackageGraph(
 		if !reportPackageMatchesFact(legacyPackage, fact) {
 			return nil, fmt.Errorf("workspace graph: package projection %d differs", index)
 		}
-		pkg, ok := graph.Package(fact.CanonicalPath)
+		pkg, ok := graph.PackageInModule(fact.CanonicalPath, fact.ModuleID)
 		if !ok || !workspacePackageFilesMatchFact(pkg, fact) {
 			return nil, fmt.Errorf("workspace graph: package projection %d is unavailable", index)
 		}
