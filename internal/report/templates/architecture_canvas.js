@@ -4674,12 +4674,22 @@ function architecturePartialTruth(data) {
 	 });
 	}
    }
-   if (typeof this.options.openStudyDirection === "function") {
-    array(context.studies).slice(0, 3).forEach((study) => {
-     if (!study || !text(study.id) || !text(study.question)) return;
-     actions.push({ kind: "study", value: study });
+   array(context.studies).slice(0, 3).forEach((study) => {
+    if (!study || !text(study.question)) return;
+    if (text(study.route_kind) === "theme") {
+     if (Number(study.ordinal) <= 0 || typeof this.options.openStudyTheme !== "function") return;
+     actions.push({
+      kind: "study", value: study,
+      open: () => this.options.openStudyTheme(Number(study.ordinal)),
+     });
+     return;
+    }
+    if (!text(study.id) || typeof this.options.openStudyDirection !== "function") return;
+    actions.push({
+     kind: "study", value: study,
+     open: () => this.options.openStudyDirection(study.id),
     });
-   }
+   });
    return actions;
   }
 
@@ -4966,7 +4976,7 @@ function architecturePartialTruth(data) {
     button.type = "button";
     button.appendChild(element("strong", null, study.question));
     button.appendChild(element("span", null, this.msg("architecture.action.study_this_area")));
-    this.listen(button, "click", () => this.options.openStudyDirection(study.id));
+    this.listen(button, "click", primaryStudy.open);
     studySummary.appendChild(button);
    } else {
     studySummary.appendChild(element(
@@ -5372,7 +5382,7 @@ function architecturePartialTruth(data) {
     button.type = "button";
     button.appendChild(element("strong", null, this.msg("architecture.action.study_this_area")));
     button.appendChild(element("span", null, study.question));
-    this.listen(button, "click", () => this.options.openStudyDirection(study.id));
+    this.listen(button, "click", primaryStudy.open);
     readStudy.appendChild(button);
    } else {
     readStudy.appendChild(element(

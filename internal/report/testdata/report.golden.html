@@ -3403,6 +3403,35 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		return investigation;
 	}
 
+	// Report42 publishes the exact component participation of every persisted
+	// Study mechanism node. This is the sole current Study -> component join:
+	// no path, symbol, package, component-name, or legacy Study-area matching.
+	function componentStudyThemes(componentID) {
+		componentID = String(componentID || '');
+		if (!componentID) return [];
+		var matches = [];
+		themeCards().forEach(function (card) {
+			var investigation = currentStudyInvestigation(card);
+			if (!investigation || investigation.outcome !== 'mechanism') return;
+			var exactParticipant = investigation.mechanisms.some(function (mechanism) {
+				return (Array.isArray(mechanism && mechanism.nodes) ? mechanism.nodes : []).some(function (node) {
+					return (Array.isArray(node && node.component_ids) ? node.component_ids : []).some(function (candidate) {
+						return String(candidate || '') === componentID;
+					});
+				});
+			});
+			if (!exactParticipant) return;
+			matches.push({
+				route_kind: 'theme',
+				ordinal: Number(card.ordinal) || 0,
+				title: String(card.final_title || ''),
+				question: String(card.final_question || card.final_title || ''),
+				why_it_matters: String(card.why_it_matters || ''),
+			});
+		});
+		return matches;
+	}
+
 	function studyMechanismForTarget(target) {
 		if (!target || String(target.kind || '') !== 'study_mechanism') return null;
 		var card = themeCardByOrdinal(Number(target.theme_ordinal));
@@ -9537,19 +9566,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 					componentFiles[filePath] = true;
 				});
 
-			var matches = [];
-			var componentStudyDirections = COMPLETE_STUDY_DIRECTIONS.length
-				? COMPLETE_STUDY_DIRECTIONS
-				: INCOMPLETE_STUDY_DIRECTIONS;
-			componentStudyDirections.forEach(function (direction) {
-				if (!direction || !direction.id) return;
-				var exactTarget = (direction.areas || []).some(function (area) {
-					var target = area && area.map_target;
-					return target && target.kind === 'component' &&
-						String(target.component_id || '') === String(component.id);
-				});
-				if (exactTarget) matches.push({ direction: direction });
-			});
+			// Persisted Study mechanisms already carry the exact validated
+			// component IDs for their nodes. Legacy direction areas are not an
+			// authority for the current component inspector.
+			var studies = componentStudyThemes(component.id);
 
 				var sources = [];
 				var navigation = navigationByComponentID[String(component.id)] || null;
@@ -9699,13 +9719,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 				// the component so the inspector can state them truthfully.
 				authority: architectureGroupingAuthority(),
 				evidence_composition: componentEvidenceComposition(component),
-				studies: matches.map(function (match) {
-					return {
-						id: match.direction.id,
-						question: match.direction.question,
-						why_it_matters: match.direction.why_it_matters || '',
-					};
-				}),
+				studies: studies,
 			};
 		});
 		(Array.isArray(canvas.structural_edges) ? canvas.structural_edges : []).forEach(function (edge) {
@@ -10434,12 +10448,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			setMapEmptyInspectorDetailVisible(visible);
 		},
     };
-		if (!DEBUG_MODE) {
+	if (!DEBUG_MODE) {
 		options.componentContexts = architectureComponentContexts();
 		options.openStudyDirection = openStudyDirection;
+		options.openStudyTheme = openThemeCard;
 		options.openSourceLocation = openSourceLocation;
 		options.associations = DATA.architecture_associations || null;
-		}
+	}
     if (staticSourceMode()) {
       options.openLocation = function (filePath, line, column) {
         return openStaticSource({ path: filePath, line: line || 0, column: column || 0 });

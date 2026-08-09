@@ -349,8 +349,9 @@ func TestReducerCanonicalIdentityStable(t *testing.T) {
 	}
 }
 
-func TestReducerDedupeAndBalanceCap(t *testing.T) {
-	// Two themes share a root anchor; catalog has enough alternatives.
+func TestReducerPreservesValidSharedRootReadings(t *testing.T) {
+	// A shared exact root is evidence, not a portfolio-ranking instruction.
+	// Every independently valid theme must retain it.
 	candidates := map[string]*ScoutCandidate{}
 	anchors := map[string]AnchorInfo{}
 	themes := []AdjudicatedTheme{}
@@ -376,16 +377,21 @@ func TestReducerDedupeAndBalanceCap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reduce: %v", err)
 	}
-	if len(reduction.Cards) == 0 {
-		t.Fatalf("balance cap must keep ≥1 published theme, got 0")
+	if len(reduction.Cards) != len(themes) {
+		t.Fatalf("published themes = %d, want all %d valid themes", len(reduction.Cards), len(themes))
 	}
-	rootAnchor := "a0"
+	if reduction.Omitted != 0 {
+		t.Fatalf("valid shared-root themes were omitted: %d", reduction.Omitted)
+	}
 	for _, card := range reduction.Cards {
+		foundRoot := false
 		for _, r := range card.Readings {
 			if r.Path == "f0.go" {
-				t.Fatalf("root anchor a0 must not dominate >half; still present on card %d", card.Ordinal)
+				foundRoot = true
 			}
-			_ = rootAnchor
+		}
+		if !foundRoot {
+			t.Fatalf("shared exact root was removed from card %d", card.Ordinal)
 		}
 	}
 }

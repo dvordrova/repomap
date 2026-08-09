@@ -61,6 +61,11 @@ type Selection struct {
 	initialized bool
 }
 
+type packageKey struct {
+	canonicalPath string
+	moduleID      string
+}
+
 // New validates the complete raw-input budget before graph lookup, hashing,
 // map construction, or result allocation. It then authorizes every candidate
 // as one exact graph package. Any unavailable or mismatched candidate rejects
@@ -74,11 +79,18 @@ func New(input Input) (Selection, error) {
 	}
 
 	packages := make([]Package, len(input.Candidates))
-	authorized := make(map[string]Package, min(len(input.Candidates), MaxRows))
+	authorized := make(map[packageKey]Package, min(len(input.Candidates), MaxRows))
 	for index, candidate := range input.Candidates {
-		pkg, ok := authorized[candidate.CanonicalPath]
+		identity := packageKey{
+			canonicalPath: candidate.CanonicalPath,
+			moduleID:      candidate.ModuleID,
+		}
+		pkg, ok := authorized[identity]
 		if !ok {
-			graphPackage, found := input.Graph.Package(candidate.CanonicalPath)
+			graphPackage, found := input.Graph.PackageInModule(
+				candidate.CanonicalPath,
+				candidate.ModuleID,
+			)
 			if !found {
 				return Selection{}, errUnauthorized
 			}
@@ -90,7 +102,7 @@ func New(input Input) (Selection, error) {
 				PackageDir:        graphPackage.Dir,
 				ModuleRelativeDir: graphPackage.ModuleRelativeDir,
 			}
-			authorized[candidate.CanonicalPath] = pkg
+			authorized[identity] = pkg
 		}
 		if !matches(candidate, pkg) {
 			return Selection{}, errUnauthorized

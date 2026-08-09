@@ -126,6 +126,46 @@ func TestWorkspacePackageGraphProjectionMaterializesExactEdges(t *testing.T) {
 	}
 }
 
+func TestWorkspacePackageGraphProjectionKeepsCompositePackageIdentities(t *testing.T) {
+	const sharedPath = "example.com/shared"
+	facts := gofacts.Facts{
+		Modules: []gofacts.ModuleFact{
+			{ID: "fixture-a", ModulePath: sharedPath, ModuleDir: "fixtures/a"},
+			{ID: "fixture-b", ModulePath: sharedPath, ModuleDir: "fixtures/b"},
+		},
+		Packages: []gofacts.PackageFact{
+			{
+				CanonicalPath: sharedPath, Name: "main",
+				ModuleID: "fixture-a", ModulePath: sharedPath,
+				PackageDir: "fixtures/a", ModuleRelativeDir: ".",
+			},
+			{
+				CanonicalPath: sharedPath, Name: "sum",
+				ModuleID: "fixture-b", ModulePath: sharedPath,
+				PackageDir: "fixtures/b", ModuleRelativeDir: ".",
+			},
+		},
+	}
+	data := parseLegacyGraphFixture(t, facts, nil, nil, nil)
+	authority := reportGraphAuthority(
+		t,
+		"/workspacegraph-report-composite",
+		"/workspacegraph-report-composite",
+		nil,
+	)
+	attachAuthorizedWorkspacePackageGraph(data, &authority)
+	if err := requireCompleteExactWorkspaceGraph(data); err != nil {
+		t.Fatalf("requireCompleteExactWorkspaceGraph: %v", err)
+	}
+	if len(data.RepositoryGraph.Packages) != 2 ||
+		data.RepositoryGraph.Packages[0].ModuleID != "fixture-a" ||
+		data.RepositoryGraph.Packages[1].ModuleID != "fixture-b" ||
+		data.RepositoryGraph.Packages[0].CanonicalPath != sharedPath ||
+		data.RepositoryGraph.Packages[1].CanonicalPath != sharedPath {
+		t.Fatalf("composite package projection = %#v", data.RepositoryGraph.Packages)
+	}
+}
+
 func TestDecodeSnapshotExactGoFactsAcceptsBoundedSQLCScale(t *testing.T) {
 	t.Parallel()
 

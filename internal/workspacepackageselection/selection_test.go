@@ -85,6 +85,43 @@ func TestSelectionPreservesExactOrderDuplicatesAndAuthority(t *testing.T) {
 	}
 }
 
+func TestSelectionAuthorizesSameCanonicalPathInDifferentModules(t *testing.T) {
+	const sharedPath = "example.com/shared"
+	facts := gofacts.Facts{
+		Modules: []gofacts.ModuleFact{
+			{ID: "fixture-a", ModulePath: sharedPath, ModuleDir: "fixtures/a"},
+			{ID: "fixture-b", ModulePath: sharedPath, ModuleDir: "fixtures/b"},
+		},
+		Packages: []gofacts.PackageFact{
+			packageFact(sharedPath, "main", "fixture-a", sharedPath, "fixtures/a", "."),
+			packageFact(sharedPath, "sum", "fixture-b", sharedPath, "fixtures/b", "."),
+		},
+	}
+	graph := newPackageSelectionTestGraph(
+		t,
+		"/definitely-not-present/package-composite",
+		"/definitely-not-present/package-composite",
+		facts,
+	)
+	candidates := []Candidate{
+		candidateFromFact(facts.Packages[1]),
+		candidateFromFact(facts.Packages[0]),
+		candidateFromFact(facts.Packages[1]),
+	}
+	selection, err := New(Input{Graph: graph, Candidates: candidates})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	want := []Package{
+		packageFromCandidate(candidates[0]),
+		packageFromCandidate(candidates[1]),
+		packageFromCandidate(candidates[2]),
+	}
+	if got := selection.Packages(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Packages = %#v, want %#v", got, want)
+	}
+}
+
 func TestSelectionPreservesNilAndEmptyShape(t *testing.T) {
 	nilSelection, err := New(Input{})
 	if err != nil {

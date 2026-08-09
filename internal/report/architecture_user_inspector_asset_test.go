@@ -180,6 +180,61 @@ const report = {
       files: ["worker/b.go", "worker/a.go"],
     },
   ] },
+  atlas_study: { themes: { cards: [
+    {
+      ordinal: 1, final_title: "Age command path", final_question: "How does the command choose its operation?",
+      investigation: { version: 1, id: "investigation-age", outcome: "mechanism", mechanisms: [
+        { id: "age-path-1", ordinal: 1, nodes: [
+          { id: "age-node-1", component_ids: ["core"], declaration: { path: "core/a.go", line: 7 } },
+          { id: "age-node-2", component_ids: ["core"], declaration: { path: "core/b.go", line: 33 } },
+        ] },
+        { id: "age-path-2", ordinal: 2, nodes: [
+          { id: "age-node-3", component_ids: ["core"], declaration: { path: "core/a.go", line: 27 } },
+        ] },
+      ] },
+    },
+    {
+      ordinal: 2, final_title: "Exact member path", final_question: "How is the exact member used?",
+      investigation: { version: 1, id: "investigation-member", outcome: "mechanism", mechanisms: [{
+        id: "member-path", ordinal: 1, nodes: [
+          { id: "member-node", component_ids: ["exact-member-only"], declaration: { path: "other.go", line: 41 } },
+        ],
+      }] },
+    },
+    {
+      ordinal: 3, final_title: "Shared exact path", final_question: "How does the shared path cross components?",
+      investigation: { version: 1, id: "investigation-shared", outcome: "mechanism", mechanisms: [{
+        id: "shared-path", ordinal: 1, nodes: [
+          { id: "shared-node", component_ids: ["anchor-only", "relation-only"], declaration: { path: "shared.go", line: 3 } },
+        ],
+      }] },
+    },
+    {
+      ordinal: 4, final_title: "Worker path", final_question: "How does the worker run?",
+      investigation: { version: 1, id: "investigation-worker", outcome: "mechanism", mechanisms: [{
+        id: "worker-path", ordinal: 1, nodes: [
+          { id: "worker-node", component_ids: ["package-only"], declaration: { path: "worker/a.go", line: 1 } },
+        ],
+      }] },
+    },
+    {
+      ordinal: 5, final_title: "Prepared only", final_question: "Where might this begin?",
+      investigation: { version: 1, id: "investigation-prepared", outcome: "prepared_investigation", mechanisms: [{
+        id: "prepared-must-not-join", ordinal: 1, nodes: [
+          { id: "prepared-node", component_ids: ["same-name-only"], declaration: { path: "core/a.go", line: 7 } },
+        ],
+      }] },
+    },
+    {
+      ordinal: 6, final_title: "Same path, no owner", final_question: "Does a matching path imply a component?",
+      investigation: { version: 1, id: "investigation-zero", outcome: "mechanism", mechanisms: [{
+        id: "zero-path", ordinal: 1, nodes: [
+          { id: "zero-node", label: "core", component_ids: [], declaration: { path: "core/a.go", line: 7 } },
+          { id: "unknown-node", label: "same-name-only", component_ids: ["unknown-component"], declaration: { path: "core/a.go", line: 7 } },
+        ],
+      }] },
+    },
+  ] } },
   study_map: { directions: [
     {
       id: "study-one", question: "How does core work?",
@@ -209,6 +264,11 @@ const report = {
         { label: "Start here", symbol: "Worker", location: { path: "worker/b.go", line: 21 }, source: snippet("worker/b.go", "Worker", 21) },
       ],
       areas: [{ map_target: { kind: "component", component_id: "package-only" } }],
+    },
+    {
+      id: "legacy-only", question: "Legacy-only direction must not join",
+      reading_anchors: [],
+      areas: [{ map_target: { kind: "component", component_id: "same-name-only" } }],
     },
   ] },
   incomplete_study: { directions: [
@@ -274,7 +334,9 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 			} `json:"location"`
 		} `json:"surface_starts"`
 		Studies []struct {
-			ID string `json:"id"`
+			RouteKind string `json:"route_kind"`
+			Ordinal   int    `json:"ordinal"`
+			Question  string `json:"question"`
 		} `json:"studies"`
 		StructuralRelations []struct {
 			FromLabel string `json:"from_label"`
@@ -337,7 +399,9 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 		startsByID["process-main"].Actionable {
 		t.Fatalf("surface starts = %#v", core.SurfaceStarts)
 	}
-	if len(core.Studies) != 1 || core.Studies[0].ID != "study-one" {
+	if len(core.Studies) != 1 || core.Studies[0].RouteKind != "theme" ||
+		core.Studies[0].Ordinal != 1 ||
+		core.Studies[0].Question != "How does the command choose its operation?" {
 		t.Fatalf("Study joins = %#v", core.Studies)
 	}
 	if sameName, ok := contexts["same-name-only"]; !ok || len(sameName.Sources) != 0 || len(sameName.Studies) != 0 {
@@ -351,7 +415,8 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 		len(memberOnly.Sources) != 1 ||
 		memberOnly.Sources[0].Location.Path != "other.go" ||
 		memberOnly.Sources[0].Location.Line != 41 ||
-		len(memberOnly.Studies) != 1 || memberOnly.Studies[0].ID != "study-other" {
+		len(memberOnly.Studies) != 1 || memberOnly.Studies[0].RouteKind != "theme" ||
+		memberOnly.Studies[0].Ordinal != 2 {
 		t.Fatalf("exact member-only context = %#v", memberOnly)
 	}
 	packageOnly, ok := contexts["package-only"]
@@ -362,12 +427,14 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 		packageOnly.PackageTargets[0].Location.Path != "worker/a.go" ||
 		packageOnly.PackageTargets[0].Location.Line != 1 ||
 		packageOnly.PackageTargets[0].Actionable ||
-		len(packageOnly.Studies) != 1 || packageOnly.Studies[0].ID != "study-worker" {
+		len(packageOnly.Studies) != 1 || packageOnly.Studies[0].RouteKind != "theme" ||
+		packageOnly.Studies[0].Ordinal != 4 {
 		t.Fatalf("package-only context = %#v, present %v", packageOnly, ok)
 	}
 	anchorOnly, ok := contexts["anchor-only"]
 	if !ok || anchorOnly.FileCount != 2 || len(anchorOnly.Sources) != 0 ||
-		len(anchorOnly.Studies) != 1 || anchorOnly.Studies[0].ID != "study-shared" {
+		len(anchorOnly.Studies) != 1 || anchorOnly.Studies[0].RouteKind != "theme" ||
+		anchorOnly.Studies[0].Ordinal != 3 {
 		t.Fatalf("anchor-only context = %#v, present %v", anchorOnly, ok)
 	}
 	processAnchorOnly, ok := contexts["process-anchor-only"]
@@ -381,7 +448,8 @@ process.stdout.write(JSON.stringify(window.__REPOMAP_WORKSPACE_TEST__.architectu
 	relationOnly, ok := contexts["relation-only"]
 	if !ok || len(relationOnly.StructuralRelations) != 1 ||
 		relationOnly.StructuralRelations[0].FromLabel != "Request dispatcher" ||
-		relationOnly.StructuralRelations[0].ToLabel != "ValidateFunctionURL" {
+		relationOnly.StructuralRelations[0].ToLabel != "ValidateFunctionURL" ||
+		len(relationOnly.Studies) != 1 || relationOnly.Studies[0].Ordinal != 3 {
 		t.Fatalf("relation-only context lost exact named relation: %#v, present %v", relationOnly, ok)
 	}
 }
@@ -864,20 +932,20 @@ const kinds=["process_entry","cli_command","http_route","worker","async_task","h
 const surfaces=Array.from({length:18},(_,i)=>({id:"surface-"+i,name:"Surface "+i,kind:kinds[i%kinds.length],evidence:[{path:"pkg/entry"+i+".go",line:i+1}]}));
 const sources=Array.from({length:12},(_,i)=>({detail:"ExactSymbol"+i,location:{path:"pkg/source"+i+".go",line:i+10,column:2},actionable:true,source_type:"symbol"}));
 const starts=surfaces.map(s=>({id:s.id,label:s.name,location:s.evidence[0],actionable:true}));
-const studies=Array.from({length:10},(_,i)=>({id:"study-"+i,question:"Question "+i}));
+const studies=Array.from({length:10},(_,i)=>({route_kind:"theme",ordinal:i+1,question:"Question "+i}));
 const associations=Array.from({length:14},(_,i)=>({kind:i===1?"resource":"boundary",paired:i<2,imported_family:i<2?"family/paired":"family/"+i,owning_unit:i<2?"pkg/paired":"pkg/unit"+i,observation_count:1,witnesses:[{symbol:"Call"+i,path:"pkg/call"+i+".go",line:i+1,role:"production"}]}));
-const host=new Element("div"),opened=[],visibility=[];
-const app=window.RepomapArchitectureCanvas.mount(host,{components:[{id:"core",name:"Core",description:"Main responsibility",owned_surface_ids:surfaces.map(s=>s.id),members:[]}],subsystems:[],groups:[],structural_edges:[],behavior_anchors:[],relations:[],surfaces,flows:[]},{userMode:true,message:(id,params)=>id+(params&&params.count!=null?":"+params.count:""),onInspectorVisibilityChange:value=>visibility.push(value),openSourceLocation:l=>opened.push(l),openStudyDirection(){},openComponent(){},componentContexts:{core:{sources,surface_starts:starts,studies,structural_relations:[],package_targets:[],package_paths:[],member_count:120,authority:"validated",evidence_composition:"exact"}},associations:{components:[{component_id:"core",incoming:[],outgoing:[],associations}]}});
+const host=new Element("div"),opened=[],openedThemes=[],visibility=[];
+const app=window.RepomapArchitectureCanvas.mount(host,{components:[{id:"core",name:"Core",description:"Main responsibility",owned_surface_ids:surfaces.map(s=>s.id),members:[]}],subsystems:[],groups:[],structural_edges:[],behavior_anchors:[],relations:[],surfaces,flows:[]},{userMode:true,message:(id,params)=>id+(params&&params.count!=null?":"+params.count:""),onInspectorVisibilityChange:value=>visibility.push(value),openSourceLocation:l=>opened.push(l),openStudyTheme:ordinal=>openedThemes.push(ordinal),openStudyDirection(){},openComponent(){},componentContexts:{core:{sources,surface_starts:starts,studies,structural_relations:[],package_targets:[],package_paths:[],member_count:120,authority:"validated",evidence_composition:"exact"}},associations:{components:[{component_id:"core",incoming:[],outgoing:[],associations}]}});
 app.ready.then(()=>{
  const surface=walk(host).find(n=>has(n,"rm-arch__surface")),transformBefore=surface&&surface.style.transform||"",hashBefore=window.location.hash;
  app.openComponent("core"); const nodes=walk(host),tabs=nodes.filter(n=>n.getAttribute&&n.getAttribute("role")==="tab"),panels=nodes.filter(n=>n.getAttribute&&n.getAttribute("role")==="tabpanel");
  const bounded={entryGroups:nodes.filter(n=>visible(n)&&has(n,"rm-arch__entry-group-summary")).length,interactions:nodes.filter(n=>visible(n)&&has(n,"rm-arch__interaction-summary")).length,studies:nodes.filter(n=>visible(n)&&has(n,"rm-arch__primary-study")).length,primarySources:nodes.filter(n=>visible(n)&&has(n,"rm-arch__component-primary-source")).length,primaryReasons:nodes.filter(n=>visible(n)&&has(n,"rm-arch__source-reason")&&n.parentNode&&has(n.parentNode,"rm-arch__component-primary-source")).length,summaryGrids:nodes.filter(n=>visible(n)&&has(n,"rm-arch__summary-grid")).length,unknowns:nodes.filter(n=>visible(n)&&n.tagName==="LI"&&n.parentNode&&has(n.parentNode,"rm-arch__summary-unknowns")).length};
- const initialOnlySummary=panels.filter(p=>!p.hidden).length===1&&!panels[0].hidden,initialSelected=tabs[0].getAttribute("aria-selected"),interactionCountText=(nodes.find(n=>visible(n)&&has(n,"rm-arch__summary-count")&&String(n.textContent).startsWith("architecture.count.interactions"))||{}).textContent||"",primary=nodes.find(n=>visible(n)&&has(n,"rm-arch__component-primary-source"));if(primary)primary.click();
+ const initialOnlySummary=panels.filter(p=>!p.hidden).length===1&&!panels[0].hidden,initialSelected=tabs[0].getAttribute("aria-selected"),interactionCountText=(nodes.find(n=>visible(n)&&has(n,"rm-arch__summary-count")&&String(n.textContent).startsWith("architecture.count.interactions"))||{}).textContent||"",primary=nodes.find(n=>visible(n)&&has(n,"rm-arch__component-primary-source")),primaryStudy=nodes.find(n=>visible(n)&&has(n,"rm-arch__primary-study"));if(primary)primary.click();if(primaryStudy)primaryStudy.click();
  tabs[0].keydown("ArrowRight");const connectionsSelected=tabs[1].getAttribute("aria-selected")==="true"&&document.activeElement===tabs[1]&&!panels[1].hidden;
- tabs[1].keydown("ArrowRight");const readCodeSelected=tabs[2].getAttribute("aria-selected")==="true"&&document.activeElement===tabs[2]&&!panels[2].hidden;
+ tabs[1].keydown("ArrowRight");const readCodeSelected=tabs[2].getAttribute("aria-selected")==="true"&&document.activeElement===tabs[2]&&!panels[2].hidden;const readStudy=walk(panels[2]).find(n=>has(n,"rm-arch__study-this-area"));if(readStudy)readStudy.click();
  const readStarts=walk(panels[2]).filter(n=>has(n,"rm-arch__source-start")&&!has(n,"rm-arch__component-primary-source")).length;
  const close=walk(host).find(n=>has(n,"rm-arch__inspector-close"));if(close)close.click();
- process.stdout.write(JSON.stringify({tabCount:tabs.length,panelCount:panels.length,initialSelected,initialOnlySummary,interactionCountText,bounded,connectionsSelected,readCodeSelected,readStarts,opened,visibility,transformStable:transformBefore===(surface&&surface.style.transform||""),hashStable:hashBefore===window.location.hash}));
+ process.stdout.write(JSON.stringify({tabCount:tabs.length,panelCount:panels.length,initialSelected,initialOnlySummary,interactionCountText,bounded,connectionsSelected,readCodeSelected,readStarts,opened,openedThemes,visibility,transformStable:transformBefore===(surface&&surface.style.transform||""),hashStable:hashBefore===window.location.hash}));
 }).catch(e=>{process.stdout.write(JSON.stringify({mountError:String(e&&e.stack||e)}));process.exit(2);});
 `
 	runnerPath := filepath.Join(t.TempDir(), "architecture-high-cardinality-inspector.js")
@@ -897,6 +965,7 @@ app.ready.then(()=>{
 		ConnectionsSelected, ReadCodeSelected bool
 		ReadStarts                            int
 		Opened                                []struct{ Path string }
+		OpenedThemes                          []int
 		Visibility                            []bool
 		TransformStable, HashStable           bool
 		MountError                            string
@@ -905,7 +974,7 @@ app.ready.then(()=>{
 		t.Fatalf("decode high-cardinality component inspector: %v\n%s", err, output)
 	}
 	visibilityOK := len(got.Visibility) == 3 && !got.Visibility[0] && got.Visibility[1] && !got.Visibility[2]
-	if got.MountError != "" || got.TabCount != 3 || got.PanelCount != 3 || got.InitialSelected != "true" || !got.InitialOnlySummary || got.InteractionCountText != "architecture.count.interactions:13" || got.Bounded.EntryGroups != 3 || got.Bounded.Interactions != 3 || got.Bounded.Studies != 1 || got.Bounded.PrimarySources != 1 || got.Bounded.PrimaryReasons != 0 || got.Bounded.SummaryGrids != 2 || got.Bounded.Unknowns > 3 || !got.ConnectionsSelected || !got.ReadCodeSelected || got.ReadStarts < 5 || len(got.Opened) != 1 || got.Opened[0].Path != "pkg/source0.go" || !visibilityOK || !got.TransformStable || !got.HashStable {
+	if got.MountError != "" || got.TabCount != 3 || got.PanelCount != 3 || got.InitialSelected != "true" || !got.InitialOnlySummary || got.InteractionCountText != "architecture.count.interactions:13" || got.Bounded.EntryGroups != 3 || got.Bounded.Interactions != 3 || got.Bounded.Studies != 1 || got.Bounded.PrimarySources != 1 || got.Bounded.PrimaryReasons != 0 || got.Bounded.SummaryGrids != 2 || got.Bounded.Unknowns > 3 || !got.ConnectionsSelected || !got.ReadCodeSelected || got.ReadStarts < 5 || len(got.Opened) != 1 || got.Opened[0].Path != "pkg/source0.go" || len(got.OpenedThemes) != 2 || got.OpenedThemes[0] != 1 || got.OpenedThemes[1] != 1 || !visibilityOK || !got.TransformStable || !got.HashStable {
 		t.Fatalf("high-cardinality inspector contract = %#v", got)
 	}
 	css := readCanvasAsset(t, "architecture_canvas.css")

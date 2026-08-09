@@ -32,6 +32,7 @@ Active decisions (each approved by the repository owner via its supervisory goal
 28. decisions/244-exact-package-member-entry-handoff-join.md
 29. decisions/245-fresh-report-publication-truth-closure.md
 30. decisions/246-persisted-study-mechanisms.md
+31. decisions/247-publication-health-vs-bounded-coverage.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
@@ -173,6 +174,26 @@ Approved by:
     Repository owner after explicitly authorizing the expensive small-repository
     calls and accepting that call cost is secondary to proving useful connected
     paths, 2026-08-09.
+
+## Decision 247
+
+Status:
+    ACTIVE. Publication readiness describes product health, not exhaustive
+    semantic coverage. A manifest-verified non-empty report whose Architecture
+    grouping is accepted or accepted-partial and whose Study shelf is accepted
+    or accepted-partial with cards is READY. Exact local remainder, bounded
+    frontier, missing-core diagnostics and portfolio preferences remain visible
+    coverage facts but do not degrade publication health. Missing, empty,
+    prepared-only, unavailable, failed, rejected/inconsistent stages and
+    partial/failed planned Study-investigation execution remain DEGRADED;
+    artifact or integrity failure remains FAILED. This supersedes only the
+    readiness interpretation in D243/D246 and changes no report/provider wire.
+
+Approved by:
+    Repository owner through the linked report/mechanism corrective goal after
+    the exact fresh corpus labelled all 37 valid publications DEGRADED and the
+    Age report proved that the cause was expected bounded coverage plus an
+    obsolete eight-theme portfolio preference, 2026-08-09.
 
 ## Decision 241 follow-up
 

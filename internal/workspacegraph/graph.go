@@ -15,12 +15,15 @@ import (
 	"github.com/dvordrova/repomap/internal/workspacesnapshot"
 )
 
+// MaxExactEdges is the finite runaway bound for the complete local package
+// import fact set accepted by one workspace graph.
+const MaxExactEdges = 4096
+
 const (
 	maxModules              = 600
 	maxPackages             = 4096
 	maxFilesPerPackage      = 4096
 	maxAggregateFiles       = 20_000
-	maxEdges                = 1000
 	maxScalarBytes          = 4096
 	maxAggregateScalarBytes = 4 * 1024 * 1024
 )
@@ -76,6 +79,16 @@ type moduleLocationKey struct {
 	dir  string
 }
 
+type packageKey struct {
+	canonicalPath string
+	moduleID      string
+}
+
+type packagePathEntry struct {
+	index int
+	count int
+}
+
 type edgeKey struct {
 	from string
 	to   string
@@ -88,7 +101,8 @@ type Graph struct {
 	packages      []Package
 	edges         []Edge
 	moduleLookup  map[moduleKey]int
-	packageLookup map[string]int
+	packageLookup map[packageKey]int
+	packagePaths  map[string]packagePathEntry
 	edgeLookup    map[edgeKey]int
 	initialized   bool
 }
@@ -114,17 +128,30 @@ func New(input Input) (Graph, error) {
 	if err != nil {
 		return Graph{}, err
 	}
-	edges := buildEdges(input.GoFacts.InternalEdges, packages)
+	edges, err := buildEdges(input.GoFacts.InternalEdges, packages)
+	if err != nil {
+		return Graph{}, err
+	}
 
 	moduleLookup := make(map[moduleKey]int, min(len(modules), maxModules))
 	for index, module := range modules {
 		moduleLookup[moduleKey{id: module.ID, path: module.Path, dir: module.Dir}] = index
 	}
-	packageLookup := make(map[string]int, min(len(packages), maxPackages))
+	packageLookup := make(map[packageKey]int, min(len(packages), maxPackages))
+	packagePaths := make(map[string]packagePathEntry, min(len(packages), maxPackages))
 	for index, pkg := range packages {
-		packageLookup[pkg.CanonicalPath] = index
+		packageLookup[packageKey{
+			canonicalPath: pkg.CanonicalPath,
+			moduleID:      pkg.ModuleID,
+		}] = index
+		entry := packagePaths[pkg.CanonicalPath]
+		if entry.count == 0 {
+			entry.index = index
+		}
+		entry.count++
+		packagePaths[pkg.CanonicalPath] = entry
 	}
-	edgeLookup := make(map[edgeKey]int, min(len(edges), maxEdges))
+	edgeLookup := make(map[edgeKey]int, min(len(edges), MaxExactEdges))
 	for index, edge := range edges {
 		edgeLookup[edgeKey{from: edge.FromPackage, to: edge.ToPackage}] = index
 	}
@@ -134,6 +161,7 @@ func New(input Input) (Graph, error) {
 		edges:         edges,
 		moduleLookup:  moduleLookup,
 		packageLookup: packageLookup,
+		packagePaths:  packagePaths,
 		edgeLookup:    edgeLookup,
 		initialized:   true,
 	}, nil
@@ -184,14 +212,34 @@ func (graph Graph) Module(id, modulePath, dir string) (Module, bool) {
 	return graph.modules[index], true
 }
 
-// Package looks up one exact package identity and returns a deep copy.
+// Package looks up one canonical path only when it identifies exactly one
+// package in the workspace graph, and returns a deep copy.
 func (graph Graph) Package(canonicalPath string) (Package, bool) {
 	if !graph.initialized ||
 		!queryScalarsBounded(canonicalPath) ||
 		!validImportIdentity(canonicalPath) {
 		return Package{}, false
 	}
-	index, ok := graph.packageLookup[canonicalPath]
+	entry, ok := graph.packagePaths[canonicalPath]
+	if !ok || entry.count != 1 {
+		return Package{}, false
+	}
+	return clonePackage(graph.packages[entry.index]), true
+}
+
+// PackageInModule looks up one exact composite package identity and returns a
+// deep copy.
+func (graph Graph) PackageInModule(canonicalPath, moduleID string) (Package, bool) {
+	if !graph.initialized ||
+		!queryScalarsBounded(canonicalPath, moduleID) ||
+		!validImportIdentity(canonicalPath) ||
+		!validOpaqueIdentity(moduleID) {
+		return Package{}, false
+	}
+	index, ok := graph.packageLookup[packageKey{
+		canonicalPath: canonicalPath,
+		moduleID:      moduleID,
+	}]
 	if !ok {
 		return Package{}, false
 	}
@@ -221,8 +269,8 @@ func preflight(facts gofacts.Facts) error {
 	if len(facts.Packages) > maxPackages {
 		return fmt.Errorf("workspace graph: package facts exceed %d entries", maxPackages)
 	}
-	if len(facts.InternalEdges) > maxEdges {
-		return fmt.Errorf("workspace graph: edge facts exceed %d entries", maxEdges)
+	if len(facts.InternalEdges) > MaxExactEdges {
+		return fmt.Errorf("workspace graph: edge facts exceed %d entries", MaxExactEdges)
 	}
 
 	totalFiles := 0
@@ -347,7 +395,7 @@ func buildPackages(
 	}
 
 	packages := make([]Package, 0, min(len(facts), maxPackages))
-	byCanonicalPath := make(map[string]Package, min(len(facts), maxPackages))
+	byIdentity := make(map[packageKey]Package, min(len(facts), maxPackages))
 	catalog := snapshot.Catalog()
 	for index, fact := range facts {
 		if !validPackageFact(fact) {
@@ -385,13 +433,17 @@ func buildPackages(
 			ModuleRelativeDir: fact.ModuleRelativeDir,
 			Files:             files,
 		}
-		if existing, duplicate := byCanonicalPath[pkg.CanonicalPath]; duplicate {
+		identity := packageKey{
+			canonicalPath: pkg.CanonicalPath,
+			moduleID:      pkg.ModuleID,
+		}
+		if existing, duplicate := byIdentity[identity]; duplicate {
 			if !packagesEqual(existing, pkg) {
 				return nil, fmt.Errorf("workspace graph: package %d conflicts with an existing identity", index)
 			}
 			continue
 		}
-		byCanonicalPath[pkg.CanonicalPath] = clonePackage(pkg)
+		byIdentity[identity] = clonePackage(pkg)
 		packages = append(packages, pkg)
 	}
 	sort.Slice(packages, func(i, j int) bool {
@@ -413,21 +465,24 @@ func buildPackages(
 	return packages, nil
 }
 
-func buildEdges(facts []gofacts.Edge, packages []Package) []Edge {
-	known := make(map[string]struct{}, min(len(packages), maxPackages))
+func buildEdges(facts []gofacts.Edge, packages []Package) ([]Edge, error) {
+	known := make(map[string]int, min(len(packages), maxPackages))
 	for _, pkg := range packages {
-		known[pkg.CanonicalPath] = struct{}{}
+		known[pkg.CanonicalPath]++
 	}
-	edges := make([]Edge, 0, min(len(facts), maxEdges))
-	seen := make(map[edgeKey]struct{}, min(len(facts), maxEdges))
-	for _, fact := range facts {
+	edges := make([]Edge, 0, min(len(facts), MaxExactEdges))
+	seen := make(map[edgeKey]struct{}, min(len(facts), MaxExactEdges))
+	for index, fact := range facts {
 		if !validImportIdentity(fact.From) || !validImportIdentity(fact.To) {
 			continue
 		}
-		if _, ok := known[fact.From]; !ok {
+		if known[fact.From] > 1 || known[fact.To] > 1 {
+			return nil, fmt.Errorf("workspace graph: edge %d has ambiguous package identity", index)
+		}
+		if known[fact.From] == 0 {
 			continue
 		}
-		if _, ok := known[fact.To]; !ok {
+		if known[fact.To] == 0 {
 			continue
 		}
 		key := edgeKey{from: fact.From, to: fact.To}
@@ -443,7 +498,7 @@ func buildEdges(facts []gofacts.Edge, packages []Package) []Edge {
 		}
 		return edges[i].ToPackage < edges[j].ToPackage
 	})
-	return edges
+	return edges, nil
 }
 
 func validPackageFact(fact gofacts.PackageFact) bool {
