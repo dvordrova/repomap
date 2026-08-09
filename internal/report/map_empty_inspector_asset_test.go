@@ -68,6 +68,7 @@ const roots={};
  roots[id]=new Element("section");roots[id].id=id;roots[id].className="rm-tab-content";
 });
 const workspace=new Element("main");workspace.className="rm-workspace";
+const fixtureMode=process.argv[3];
 const sourcePath="cmd/main.go", revision="a".repeat(40);
 const kinds=[
  ["process_entry","primary_application"],
@@ -76,7 +77,7 @@ const kinds=[
  ["library_api","public_api"],
  ["async_task","runtime_activity"],
 ];
-const triggers=Array.from({length:500},(_,i)=>({
+let triggers=Array.from({length:500},(_,i)=>({
  id:"entry-"+i, kind:kinds[i%kinds.length][0], executable_role:kinds[i%kinds.length][1],
  surface_role:"entry_surface", application_classification:"application_surface", availability:"available",
  identity:{name:"Entry "+i}, handler_location:{path:sourcePath,line:10+i,column:1},
@@ -99,7 +100,49 @@ const report={
   {kind:"surface",paired:false,owning_unit:"unit-0",imported_family:"local.surface"},
  ]}]},
 };
-if(process.argv[3]!=="unavailable")report.github_source_links={repository_url:"https://github.com/acme/fixture",revision};
+const exactSource=(path,line,symbol)=>({
+ path,enclosing_symbol:symbol,start_line:line,end_line:line,
+ lines:[{line,text:"func "+symbol+"() {}",highlight:true}],
+});
+const processTrigger=(id,path,line,role,owningExecutable)=>({
+ id,kind:"process_entry",executable_role:role,surface_role:"entry_surface",
+ application_classification:"application_surface",availability:"available",
+ owning_executable:owningExecutable,identity:{name:"main"},
+ process_entrypoint:{name:"main",package:"filippo.io/age/"+owningExecutable,location:{path,line,column:1}},
+});
+const ageStudyCards=()=>[
+ {ordinal:1,final_title:"Output helper",final_question:"How is output opened?",why_it_matters:"Helper detail",readings:[{path:"cmd/age/age.go",line:572,symbol:"(*lazyOpener).Write"}]},
+ {ordinal:2,final_title:"Error helper",final_question:"How are errors printed?",why_it_matters:"Helper detail",readings:[{path:"cmd/age-inspect/inspect.go",line:124,symbol:"errorf"}]},
+ {ordinal:3,final_title:"Testing helper",final_question:"How does testing start?",why_it_matters:"Test detail",readings:[{path:"testing/start.go",line:12,symbol:"StartTestingHelper"}]},
+];
+if(["age","age-permuted","primary","study-only"].includes(fixtureMode)){
+ report.repo_name="filippo.io/age";
+ report.repository_archetype="monorepo_mixed";
+ report.repository_graph={modules:[{path:"filippo.io/age"}]};
+ report.architecture_canvas.repository_archetype="monorepo_mixed";
+ const ageEntries=[
+  processTrigger("age-inspect","cmd/age-inspect/inspect.go",31,"secondary_service","cmd/age-inspect"),
+  processTrigger("age-keygen","cmd/age-keygen/keygen.go",63,"secondary_service","cmd/age-keygen"),
+  processTrigger("age-batchpass","cmd/age-plugin-batchpass/plugin-batchpass.go",81,"secondary_service","cmd/age-plugin-batchpass"),
+  processTrigger("age-tag","extra/age-plugin-tag/plugin-tag.go",26,"secondary_service","extra/age-plugin-tag"),
+  processTrigger("age-pq","extra/age-plugin-pq/plugin-pq.go",37,"secondary_service","extra/age-plugin-pq"),
+  processTrigger("age-tagpq","extra/age-plugin-tagpq/plugin-tagpq.go",27,"secondary_service","extra/age-plugin-tagpq"),
+  processTrigger("age-tagtest","tag/internal/age-plugin-tagtest/plugin-tagtest.go",36,"secondary_service","tag/internal/age-plugin-tagtest"),
+  processTrigger("age-main","cmd/age/age.go",105,"secondary_service","cmd/age"),
+ ];
+ let cards=ageStudyCards();
+ if(fixtureMode==="age-permuted"){ageEntries.reverse();cards.reverse();cards.forEach(card=>card.readings.reverse());}
+ triggers=fixtureMode==="study-only"?[]:ageEntries;
+ if(fixtureMode==="primary")triggers.push(processTrigger("primary-main","main.go",7,"primary_application","filippo.io/age"));
+ report.discovered_surfaces={total_count:triggers.length,triggers};
+ report.atlas_study={version:1,state:"accepted",themes:{cards,shown:cards.length,total:cards.length}};
+ const exactLocations=triggers.map(trigger=>({path:trigger.process_entrypoint.location.path,line:trigger.process_entrypoint.location.line,symbol:"main"}));
+ cards.forEach(card=>card.readings.forEach(reading=>exactLocations.push(reading)));
+ report.user_sources=exactLocations.map(location=>exactSource(location.path,location.line,location.symbol));
+ report.openable_paths=Array.from(new Set(exactLocations.map(location=>location.path)));
+ report.github_source_links={repository_url:"https://github.com/FiloSottile/age",revision};
+}
+if(fixtureMode!=="unavailable"&&!report.github_source_links)report.github_source_links={repository_url:"https://github.com/acme/fixture",revision};
 const mobileMedia={matches:false,listeners:[],addEventListener(type,f){if(type==="change")this.listeners.push(f);},addListener(f){this.listeners.push(f);},set(value){this.matches=!!value;this.listeners.forEach(f=>f({matches:this.matches}));}};
 const document={
  createElement:t=>new Element(t),createElementNS:(_n,t)=>new Element(t),createTextNode:v=>{const n=new Element("#text");n.textContent=String(v);return n;},
@@ -147,6 +190,7 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
   routeView:api.workspaceStateSnapshot().view,hash:window.location.hash,hashStable:hashBefore===window.location.hash,
   transformStable:transformBefore===canvasTransform,railCount:rails.length,purpose:(nodes.find(n=>has(n,"rm-map-empty-inspector__purpose"))||{}).textContent||"",
   startCount:starts.length,startTag:start&&start.tagName,startHref:start&&start.getAttribute("href"),startTarget:start&&start.getAttribute("target"),startRel:start&&start.getAttribute("rel"),
+  startText:start&&start.textContent,startKind:start&&start.getAttribute("data-rm-map-start-here"),
   unavailableCount:nodes.filter(n=>has(n,"rm-map-empty-inspector__unavailable")).length,metricValues,
   primaryRows:primary?primary.children.length:0,allRows:nodes.filter(n=>has(n,"rm-map-empty-inspector__entry-row")).length,
   disclosureCount:disclosures.length,openDisclosureCount:disclosures.filter(n=>n.open).length,railNodeCount:nodes.length,
@@ -164,6 +208,7 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 	}
 	type result struct {
 		RouteView, Hash, Purpose, StartTag, StartHref, StartTarget, StartRel string
+		StartText, StartKind                                                 string
 		HashStable, TransformStable                                          bool
 		RailCount, StartCount, UnavailableCount                              int
 		MetricValues                                                         []string
@@ -220,6 +265,37 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 	unavailable := run("unavailable")
 	if unavailable.StartCount != 0 || unavailable.UnavailableCount != 1 || unavailable.RailCount != 1 {
 		t.Errorf("unavailable Start Here must be explicit, never an inert source = %#v", unavailable)
+	}
+
+	age := run("age")
+	agePermuted := run("age-permuted")
+	for _, got := range []result{age, agePermuted} {
+		if got.StartKind != "process_entry_fallback" ||
+			!strings.Contains(got.StartText, "Open a process entry") ||
+			!strings.Contains(got.StartText, "cmd/age/age.go:105") ||
+			strings.Contains(got.StartText, "lazyOpener") || strings.Contains(got.StartText, "errorf") ||
+			strings.Contains(got.StartText, "StartTestingHelper") {
+			t.Errorf("Age-like exact process fallback = %#v", got)
+		}
+	}
+	if age.StartHref != agePermuted.StartHref || age.StartText != agePermuted.StartText {
+		t.Errorf("Age-like process fallback changed under input permutation: first=%#v permuted=%#v", age, agePermuted)
+	}
+
+	primary := run("primary")
+	if primary.StartKind != "process_entry" ||
+		!strings.Contains(primary.StartText, "Open the primary process entry") ||
+		!strings.Contains(primary.StartText, "main.go:7") ||
+		strings.Contains(primary.StartText, "cmd/age/age.go:105") {
+		t.Errorf("backend-designated primary process entry did not retain precedence = %#v", primary)
+	}
+
+	studyOnly := run("study-only")
+	if studyOnly.StartKind != "study_reading" ||
+		!strings.Contains(studyOnly.StartText, "Open the core reading") ||
+		!strings.Contains(studyOnly.StartText, "testing/start.go:12") ||
+		!strings.Contains(studyOnly.StartText, "StartTestingHelper") {
+		t.Errorf("Study fallback changed when no exact process entry exists = %#v", studyOnly)
 	}
 
 	css := readCanvasAsset(t, "style.css")

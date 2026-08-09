@@ -8,8 +8,9 @@
   // Landscape overlay without introducing another map lens. Decision 236's
   // closed inspector contract advances the catalog to UI16. UI17 localizes
   // the typed deterministic package-landscape presentation without touching
-  // model-authored architecture prose.
-  var VERSION = 17;
+  // model-authored architecture prose. UI18 distinguishes an exact process
+  // entry fallback from a backend-designated primary process entry.
+  var VERSION = 18;
   var EN = {
     "main.browser_error.invalid_report_artifact": { params: [], text: "The saved report is invalid or exceeds the supported size." },
     "main.browser_error.no_saved_reports": { params: [], text: "No saved reports are available." },
@@ -257,6 +258,8 @@
     "main.overview.first_action.process_entry": { params: [], text: "Open the primary process entry" },
     "main.overview.first_action.reason.process_entry": { params: [], text: "Primary production process entry — normal use/execution begins here." },
     "main.overview.first_action.authority.process_entry": { params: [], text: "Authority: exact process-entry registration with local source." },
+    "main.overview.first_action.process_entry_fallback": { params: [], text: "Open a process entry" },
+    "main.overview.first_action.reason.process_entry_fallback": { params: [], text: "No single primary process entry was designated; this exact entry was selected by a deterministic local tie-breaker." },
     "main.overview.first_action.library": { params: [], text: "Open the library entry" },
     "main.overview.first_action.reason.library": { params: [], text: "Library constructor/start/use entry for consumption." },
     "main.overview.first_action.authority.library": { params: [], text: "Authority: exact library API registration with local source." },
@@ -1416,6 +1419,8 @@
     "main.overview.first_action.process_entry": { params: [], text: "Открыть главную точку входа процесса" },
     "main.overview.first_action.reason.process_entry": { params: [], text: "Основная производственная точка входа — обычное использование начинается здесь." },
     "main.overview.first_action.authority.process_entry": { params: [], text: "Источник: точная регистрация точки входа с локальным исходником." },
+    "main.overview.first_action.process_entry_fallback": { params: [], text: "Открыть точку входа процесса" },
+    "main.overview.first_action.reason.process_entry_fallback": { params: [], text: "Единственная главная точка входа процесса не назначена; эта точная точка выбрана детерминированным локальным правилом." },
     "main.overview.first_action.library": { params: [], text: "Открыть точку входа библиотеки" },
     "main.overview.first_action.reason.library": { params: [], text: "Точка входа конструктора/запуска/использования библиотеки." },
     "main.overview.first_action.authority.library": { params: [], text: "Источник: точная регистрация API библиотеки с локальным исходником." },
