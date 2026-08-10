@@ -73,6 +73,9 @@ func writeReportJSON(data *ReportData, path string, maxBytes int) error {
 	if err := ensureEntrypointHandoffGroups(data); err != nil {
 		return err
 	}
+	if err := validateLibraryAPIProjection(data.AnalysisTarget, data.LibraryAPI, data.OpenablePaths); err != nil {
+		return err
+	}
 	persisted := reportDataForPersistence(data)
 	// SourceIDs are issued by the local report server after manifest
 	// verification. They are session navigation IDs, not persistent evidence.

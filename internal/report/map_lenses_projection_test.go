@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -40,19 +41,41 @@ const input = {
     { id: "c1", name: "C1", participating_surface_ids: ["surf-a"] },
     { id: "c2", name: "C2" },
     { id: "c3", name: "C3" },
+    { id: "c-remainder", name: "Local remainder" },
   ],
+  localRemainderComponentID: "c-remainder",
   surfaces: [
-    { id: "surf-a", kind: "cli_command", name: "run", participating_component_ids: ["c1"] },
-    { id: "surf-b", kind: "http_route", name: "GET /api", participating_component_ids: ["c2"] },
-    { id: "surf-zero", kind: "process_entry", name: "zero.main", participating_component_ids: [],
+    { id: "surf-a", surface_role: "entry_surface", kind: "cli_command", name: "run", participating_component_ids: ["c1"] },
+    { id: "surf-b", surface_role: "entry_surface", kind: "http_route", name: "GET /api", participating_component_ids: ["c2"] },
+    { id: "surf-zero", surface_role: "entry_surface", kind: "process_entry", name: "zero.main", participating_component_ids: [],
       evidence: [{ path: "cmd/zero/main.go", line: 7, column: 6 }] },
+    { id: "surf-off-map", surface_role: "entry_surface", kind: "scheduled_job", name: "sweep", participating_component_ids: ["c-outside"] },
+    // Runtime activities remain useful elsewhere, but are not user entrypoints.
+    { id: "surf-runtime", surface_role: "runtime_activity", kind: "worker", name: "internal worker", participating_component_ids: ["c3"] },
   ],
   associations: [
-    { component_id: "c1", family: "database", imported_family: "github.com/jackc/pgx/v5", kind: "boundary", observation_count: 2, paired: true },
-    { component_id: "c2", family: "cache-lock", imported_family: "github.com/redis/go-redis/v9", kind: "boundary", observation_count: 1, paired: false },
+    { component_id: "c1", family: "database", owning_unit: "pkg/store", imported_family: "github.com/jackc/pgx/v5", kind: "boundary", observation_count: 2, paired: true,
+      witnesses: [
+        { path: "store.go", line: 20, symbol: "Query", role: "production" },
+        { path: "store.go", line: 30, symbol: "Exec", role: "production" },
+      ] },
+    { component_id: "c1", family: "database", owning_unit: "pkg/store", imported_family: "github.com/jackc/pgx/v5", kind: "resource", observation_count: 1, paired: true,
+      witnesses: [{ path: "store.go", line: 20, symbol: "Query", role: "production" }] },
+    // Same component/family, different owning unit is a separate touchpoint.
+    { component_id: "c1", family: "database", owning_unit: "pkg/archive", imported_family: "github.com/jackc/pgx/v5", kind: "boundary", observation_count: 1, paired: false,
+      witnesses: [{ path: "archive.go", line: 8, symbol: "Archive", role: "production" }] },
+    { component_id: "c2", family: "cache-lock", owning_unit: "pkg/cache", imported_family: "github.com/redis/go-redis/v9", kind: "boundary", observation_count: 1, paired: false,
+      witnesses: [{ path: "cache.go", line: 11, symbol: "Lock", role: "production" }] },
+    // Association evidence can outlive a component's inclusion in the bounded map.
+    { component_id: "c-outside", family: "broker/pub-sub", owning_unit: "pkg/events", imported_family: "example.test/broker", kind: "resource", observation_count: 1, paired: false,
+      witnesses: [{ path: "publish.go", line: 9, symbol: "Publish", role: "production" }] },
+    // The local remainder is present in Canvas storage but is not a visible
+    // principal; its exact evidence must survive as off-map.
+    { component_id: "c-remainder", family: "filesystem", owning_unit: "pkg/tmp", imported_family: "os", kind: "resource", observation_count: 1, paired: false,
+      witnesses: [{ path: "tmp.go", line: 12, symbol: "CreateTemp", role: "production" }] },
     // Local operation/surface rows must not masquerade as Integrations.
-    { component_id: "c3", family: "internal-operation", imported_family: "example.test/internal", kind: "operation", observation_count: 7, paired: false },
-    { component_id: "c3", family: "runtime-surface", imported_family: "example.test/http", kind: "surface", observation_count: 5, paired: false },
+    { component_id: "c3", family: "internal-operation", owning_unit: "pkg/internal", imported_family: "example.test/internal", kind: "operation", observation_count: 7, paired: false },
+    { component_id: "c3", family: "runtime-surface", owning_unit: "pkg/http", imported_family: "example.test/http", kind: "surface", observation_count: 5, paired: false },
   ],
   entryHandoffGroups: [
     {
@@ -78,6 +101,7 @@ const entrypoints = api.mapLensEmphasisProjection({ lens: "entrypoints", ...inpu
 const unownedOnly = api.mapLensEmphasisProjection({
   lens: "entrypoints",
   components: input.components.map((component) => ({ id: component.id, name: component.name })),
+  localRemainderComponentID: input.localRemainderComponentID,
   surfaces: [input.surfaces[2]],
   associations: [], entryHandoffGroups: [],
 });
@@ -89,31 +113,36 @@ const structuralEdges = api.mapStructuralEdges({ structural_edges: [
   { id: "unmapped", from_component_ids: ["c1"], to_component_ids: ["c3"], witness_count: 1 },
 ] });
 const full = api.projectArchitectureLens({
-  architecture_canvas: { components: input.components, surfaces: input.surfaces },
+  architecture_canvas: { components: input.components, surfaces: input.surfaces, local_remainder_component_id: input.localRemainderComponentID },
   architecture_associations: {
-    version: 1, total: 4,
+    version: 1, total: 8,
     components: [
       { component_id: "c1", name: "C1", associations: input.associations.filter((a) => a.component_id === "c1") },
       { component_id: "c2", name: "C2", associations: input.associations.filter((a) => a.component_id === "c2") },
       { component_id: "c3", name: "C3", associations: input.associations.filter((a) => a.component_id === "c3") },
+      { component_id: "c-outside", name: "Outside", associations: input.associations.filter((a) => a.component_id === "c-outside") },
+      { component_id: "c-remainder", name: "Local remainder", associations: input.associations.filter((a) => a.component_id === "c-remainder") },
     ],
   },
 }, "integrations");
 const groupOnly = api.projectArchitectureLens({
   architecture_canvas: {
     version: 15, components: input.components, surfaces: input.surfaces,
+    local_remainder_component_id: input.localRemainderComponentID,
     entry_handoff_groups: input.entryHandoffGroups,
   },
 }, "entrypoints");
 const unsupportedCanvas = api.projectArchitectureLens({
   architecture_canvas: {
     version: 13, components: input.components, surfaces: [],
+    local_remainder_component_id: input.localRemainderComponentID,
     entry_handoff_groups: input.entryHandoffGroups,
   },
 }, "entrypoints");
 const malformedGroup = api.projectArchitectureLens({
   architecture_canvas: {
     version: 15, components: input.components, surfaces: [],
+    local_remainder_component_id: input.localRemainderComponentID,
     entry_handoff_groups: [{
       version: 2, id: "malformed", component_ids: ["c1"],
       entry: transition("main.go", 10, 6, "fixture.main", null, ["c1"]),
@@ -236,17 +265,50 @@ process.stdout.write(JSON.stringify({
 	if len(got.Landscape.Emphasized) != 0 {
 		t.Fatalf("landscape emphasized = %#v, want none", got.Landscape.Emphasized)
 	}
-	if join(got.Entrypoints.Emphasized) != "c1,c3" {
-		t.Fatalf("entrypoints emphasized = %#v, want surface + exact handoff participants", got.Entrypoints.Emphasized)
+	if join(got.Entrypoints.Emphasized) != "c1,c2,c3" ||
+		join(got.Entrypoints.Participants.VisibleComponentIDs) != "c1,c2,c3" ||
+		join(got.Entrypoints.Participants.OffMapComponentIDs) != "c-outside" {
+		t.Fatalf("entrypoint participants = %#v, want visible and off-map exact joins", got.Entrypoints)
 	}
-	if len(got.Entrypoints.Objects.Entrypoints) != 3 || len(got.Entrypoints.Objects.EntryHandoffGroups) != 2 {
-		t.Fatalf("entrypoint objects = %#v, want three kinds (including unowned) and two exact contexts", got.Entrypoints.Objects)
+	if len(got.Entrypoints.Objects.Entrypoints) != 4 ||
+		entryCount(got.Entrypoints.Objects.Entrypoints) != 4 ||
+		len(got.Entrypoints.Objects.EntryHandoffGroups) != 2 ||
+		containsEntrypoint(got.Entrypoints.Objects.Entrypoints, "surf-runtime") {
+		t.Fatalf("entrypoint objects = %#v, want only four entry_surface records and two exact contexts", got.Entrypoints.Objects)
+	}
+	offMapEntry := findEntrypoint(got.Entrypoints.Objects.Entrypoints, "surf-off-map")
+	if offMapEntry == nil || len(offMapEntry.ComponentIDs) != 0 || len(offMapEntry.VisibleComponentIDs) != 0 ||
+		join(offMapEntry.OffMapComponentIDs) != "c-outside" {
+		t.Fatalf("off-map entrypoint distinction = %#v", offMapEntry)
 	}
 	if len(got.UnownedOnly.Emphasized) != 0 || len(got.UnownedOnly.Objects.Entrypoints) != 1 {
 		t.Fatalf("unowned exact entry = %#v, want visible with no component emphasis", got.UnownedOnly)
 	}
-	if join(got.Integrations.Emphasized) != "c1,c2" || len(got.Integrations.Objects.Touchpoints) != 2 {
-		t.Fatalf("integrations = %#v, want only boundary/resource participants", got.Integrations)
+	if join(got.Integrations.Emphasized) != "c1,c2" ||
+		join(got.Integrations.Participants.VisibleComponentIDs) != "c1,c2" ||
+		join(got.Integrations.Participants.OffMapComponentIDs) != "c-outside,c-remainder" ||
+		len(got.Integrations.Objects.Touchpoints) != 5 {
+		t.Fatalf("integrations = %#v, want boundary/resource participants partitioned by map visibility", got.Integrations)
+	}
+	paired := findTouchpoint(got.Integrations.Objects.Touchpoints, "c1", "database", "pkg/store")
+	if paired == nil || paired.Kind != "boundary" || join(paired.Kinds) != "boundary,resource" ||
+		!paired.Paired || paired.ObservationCount != 3 || paired.WitnessCount != 2 ||
+		len(paired.Witnesses) != 2 || join(paired.ComponentIDs) != "c1" ||
+		len(paired.OffMapComponentIDs) != 0 {
+		t.Fatalf("paired database touchpoint = %#v, want one exact coalesced object", paired)
+	}
+	if findTouchpoint(got.Integrations.Objects.Touchpoints, "c1", "database", "pkg/archive") == nil {
+		t.Fatalf("same component/family across owning units was incorrectly collapsed: %#v", got.Integrations.Objects.Touchpoints)
+	}
+	offMap := findTouchpoint(got.Integrations.Objects.Touchpoints, "c-outside", "broker/pub-sub", "pkg/events")
+	if offMap == nil || len(offMap.ComponentIDs) != 0 || len(offMap.VisibleComponentIDs) != 0 ||
+		join(offMap.OffMapComponentIDs) != "c-outside" {
+		t.Fatalf("off-map touchpoint distinction = %#v", offMap)
+	}
+	remainder := findTouchpoint(got.Integrations.Objects.Touchpoints, "c-remainder", "filesystem", "pkg/tmp")
+	if remainder == nil || len(remainder.VisibleComponentIDs) != 0 ||
+		join(remainder.OffMapComponentIDs) != "c-remainder" {
+		t.Fatalf("local remainder leaked into visible principals or lost its evidence: %#v", remainder)
 	}
 	if got.RemovedMechanisms.Lens != "landscape" || len(got.RemovedMechanisms.Emphasized) != 0 {
 		t.Fatalf("removed mechanisms lens = %#v, want landscape fallback", got.RemovedMechanisms)
@@ -254,12 +316,16 @@ process.stdout.write(JSON.stringify({
 	if len(got.StructuralEdges) != 1 || got.StructuralEdges[0].ID != "import-pair" || got.StructuralEdges[0].WitnessCount != 2 {
 		t.Fatalf("Map structural edges = %#v, want the singular cross-component aggregate", got.StructuralEdges)
 	}
-	if join(got.Full.Emphasized) != "c1,c2" || got.Full.Counts.Touchpoints != 2 || got.Full.Counts.Components != 3 {
+	if join(got.Full.Emphasized) != "c1,c2" || got.Full.Counts.Touchpoints != 5 ||
+		got.Full.Counts.Components != 3 || got.Full.Dimmed != 0 ||
+		join(got.Full.Visible) != "c1,c2,c3" ||
+		join(got.Full.Participants.OffMapComponentIDs) != "c-outside,c-remainder" {
 		t.Fatalf("full integration projection = %#v", got.Full)
 	}
-	if join(got.GroupOnly.Emphasized) != "c1,c3" || got.GroupOnly.Dimmed != 1 ||
+	if join(got.GroupOnly.Emphasized) != "c1,c2,c3" || got.GroupOnly.Dimmed != 0 ||
 		got.GroupOnly.Counts.EntryHandoffGroups != 2 || len(got.GroupOnly.EntryHandoffGroups) != 2 ||
-		got.GroupOnly.Omissions.UnjoinedSurfaces != 1 {
+		got.GroupOnly.Counts.Entries != 4 || got.GroupOnly.Omissions.UnjoinedSurfaces != 2 ||
+		join(got.GroupOnly.Participants.OffMapComponentIDs) != "c-outside" {
 		t.Fatalf("Canvas15 Entrypoints context = %#v", got.GroupOnly)
 	}
 	group := got.GroupOnly.EntryHandoffGroups[0]
@@ -320,6 +386,25 @@ process.stdout.write(JSON.stringify({
 	}
 }
 
+func TestArchitectureCanvasMapLensCSSKeepsLandscapeNeutral(t *testing.T) {
+	asset, err := os.ReadFile(filepath.Join("templates", "architecture_canvas.css"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(asset)
+	for _, forbidden := range []string{
+		`[data-lens-has-emphasis="true"][data-lens="entrypoints"]`,
+		`[data-lens-has-emphasis="true"][data-lens="integrations"]`,
+	} {
+		if strings.Contains(css, forbidden) {
+			t.Fatalf("Map lens globally dims the neutral landscape through %q", forbidden)
+		}
+	}
+	if !strings.Contains(css, `.rm-arch__is-entry-handoff-participant .rm-arch__component-card`) {
+		t.Fatal("explicit entry handoff selection lost its focused participant treatment")
+	}
+}
+
 type entryHandoffOverlayResult struct {
 	ComponentIDs []string                  `json:"component_ids"`
 	Edges        []entryHandoffOverlayEdge `json:"edges"`
@@ -346,10 +431,12 @@ type entryHandoffOverlayEdge struct {
 }
 
 type fullLens struct {
-	Lens               string   `json:"lens"`
-	Visible            []string `json:"visible"`
-	Emphasized         []string `json:"emphasized"`
-	Dimmed             int      `json:"dimmed"`
+	Lens               string                  `json:"lens"`
+	Visible            []string                `json:"visible"`
+	Emphasized         []string                `json:"emphasized"`
+	Participants       lensParticipants        `json:"participants"`
+	Dimmed             int                     `json:"dimmed"`
+	Touchpoints        []integrationTouchpoint `json:"touchpoints"`
 	EntryHandoffGroups []struct {
 		Kind         string   `json:"kind"`
 		ComponentIDs []string `json:"component_ids"`
@@ -373,13 +460,84 @@ type fullLens struct {
 }
 
 type lensResult struct {
-	Lens       string   `json:"lens"`
-	Emphasized []string `json:"emphasized"`
-	Objects    struct {
-		Entrypoints        []json.RawMessage `json:"entrypoints"`
-		Touchpoints        []json.RawMessage `json:"touchpoints"`
-		EntryHandoffGroups []json.RawMessage `json:"entry_handoff_groups"`
+	Lens         string           `json:"lens"`
+	Emphasized   []string         `json:"emphasized"`
+	Participants lensParticipants `json:"participants"`
+	Objects      struct {
+		Entrypoints        []entrypointCategory    `json:"entrypoints"`
+		Touchpoints        []integrationTouchpoint `json:"touchpoints"`
+		EntryHandoffGroups []json.RawMessage       `json:"entry_handoff_groups"`
 	} `json:"objects"`
+}
+
+type lensParticipants struct {
+	VisibleComponentIDs []string `json:"visible_component_ids"`
+	OffMapComponentIDs  []string `json:"off_map_component_ids"`
+}
+
+type entrypointCategory struct {
+	Kind    string                `json:"kind"`
+	Entries []entrypointLensEntry `json:"entries"`
+}
+
+type entrypointLensEntry struct {
+	ID                  string   `json:"id"`
+	ComponentIDs        []string `json:"component_ids"`
+	VisibleComponentIDs []string `json:"visible_component_ids"`
+	OffMapComponentIDs  []string `json:"off_map_component_ids"`
+}
+
+type integrationTouchpoint struct {
+	ComponentID      string   `json:"component_id"`
+	Family           string   `json:"family"`
+	OwningUnit       string   `json:"owning_unit"`
+	Kind             string   `json:"kind"`
+	Kinds            []string `json:"kinds"`
+	Paired           bool     `json:"paired"`
+	ObservationCount int      `json:"observation_count"`
+	WitnessCount     int      `json:"witness_count"`
+	Witnesses        []struct {
+		Path   string `json:"path"`
+		Line   int    `json:"line"`
+		Symbol string `json:"symbol"`
+		Role   string `json:"role"`
+	} `json:"witnesses"`
+	ComponentIDs        []string `json:"component_ids"`
+	VisibleComponentIDs []string `json:"visible_component_ids"`
+	OffMapComponentIDs  []string `json:"off_map_component_ids"`
+}
+
+func entryCount(categories []entrypointCategory) int {
+	total := 0
+	for _, category := range categories {
+		total += len(category.Entries)
+	}
+	return total
+}
+
+func containsEntrypoint(categories []entrypointCategory, id string) bool {
+	return findEntrypoint(categories, id) != nil
+}
+
+func findEntrypoint(categories []entrypointCategory, id string) *entrypointLensEntry {
+	for _, category := range categories {
+		for index := range category.Entries {
+			if category.Entries[index].ID == id {
+				return &category.Entries[index]
+			}
+		}
+	}
+	return nil
+}
+
+func findTouchpoint(touchpoints []integrationTouchpoint, componentID, family, owningUnit string) *integrationTouchpoint {
+	for index := range touchpoints {
+		if touchpoints[index].ComponentID == componentID && touchpoints[index].Family == family &&
+			touchpoints[index].OwningUnit == owningUnit {
+			return &touchpoints[index]
+		}
+	}
+	return nil
 }
 
 func join(values []string) string {

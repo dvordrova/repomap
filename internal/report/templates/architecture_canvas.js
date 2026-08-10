@@ -545,17 +545,172 @@
   return kind === "boundary" || kind === "resource";
  }
 
+ function uniqueTextValues(values) {
+  const seen = new Set();
+  const result = [];
+  array(values).forEach((value) => {
+   const normalized = text(value);
+   if (!normalized || seen.has(normalized)) return;
+   seen.add(normalized);
+   result.push(normalized);
+  });
+  result.sort((left, right) => left.localeCompare(right));
+  return result;
+ }
+
+ function componentParticipantPartition(values, componentByID) {
+  const visible = [];
+  const offMap = [];
+  uniqueTextValues(values).forEach((componentID) => {
+   if (componentByID.has(componentID)) visible.push(componentID);
+   else offMap.push(componentID);
+  });
+  return {
+   visible_component_ids: visible,
+   off_map_component_ids: offMap,
+  };
+ }
+
+ function integrationWitness(value) {
+  const path = text(value && value.path);
+  const line = Number(value && value.line);
+  if (!path || line <= 0) return null;
+  return {
+   path: path,
+   line: line,
+   symbol: text(value && value.symbol),
+   role: text(value && value.role),
+  };
+ }
+
+ function preferredWitnessText(left, right) {
+  left = text(left);
+  right = text(right);
+  if (!left) return right;
+  if (!right) return left;
+  return left.localeCompare(right) <= 0 ? left : right;
+ }
+
+ function integrationTouchpointProjection(associations, componentByID) {
+  const families = new Map();
+  array(associations).forEach((association) => {
+   if (!externalStateAssociation(association)) return;
+   const componentID = text(association && (association.component_id || association.from_component_id));
+   if (!componentID) return;
+   const family = text(association && association.family) ||
+    text(association && association.imported_family) || "other";
+   const owningUnit = text(association && association.owning_unit);
+   const key = componentID + "\u0000" + family + "\u0000" + owningUnit;
+   let aggregate = families.get(key);
+   if (!aggregate) {
+    aggregate = {
+     component_id: componentID,
+     family: family,
+     owning_unit: owningUnit,
+     kinds: new Set(),
+     pairing_marked: false,
+     observation_count: 0,
+     witness_by_key: new Map(),
+    };
+    families.set(key, aggregate);
+   }
+   const kind = text(association && association.kind);
+   if (kind) aggregate.kinds.add(kind);
+   if (association && association.paired === true) aggregate.pairing_marked = true;
+   aggregate.observation_count += Math.max(0, Number(association && association.observation_count) || 0);
+   array(association && association.witnesses).forEach((value) => {
+    const witness = integrationWitness(value);
+    if (!witness) return;
+    // Boundary/resource pairing is defined by this exact callsite identity
+    // in the backend. Keep one witness when both ontology rows describe it.
+    const witnessKey = witness.path + "\u0000" + witness.line;
+    const existing = aggregate.witness_by_key.get(witnessKey);
+    if (!existing) {
+     aggregate.witness_by_key.set(witnessKey, witness);
+     return;
+    }
+    existing.symbol = preferredWitnessText(existing.symbol, witness.symbol);
+    existing.role = preferredWitnessText(existing.role, witness.role);
+   });
+  });
+
+  const kindRank = { boundary: 0, resource: 1 };
+  const touchpoints = [];
+  families.forEach((aggregate) => {
+   const kinds = Array.from(aggregate.kinds);
+   kinds.sort((left, right) => (
+    (kindRank[left] === undefined ? 2 : kindRank[left]) -
+     (kindRank[right] === undefined ? 2 : kindRank[right]) ||
+    left.localeCompare(right)
+   ));
+   const witnesses = Array.from(aggregate.witness_by_key.values());
+   witnesses.sort((left, right) => (
+    left.path.localeCompare(right.path) || left.line - right.line ||
+    left.symbol.localeCompare(right.symbol) || left.role.localeCompare(right.role)
+   ));
+   const participants = componentParticipantPartition([aggregate.component_id], componentByID);
+   touchpoints.push({
+    component_id: aggregate.component_id,
+    family: aggregate.family,
+    owning_unit: aggregate.owning_unit,
+    kind: kinds[0] || "",
+    kinds: kinds,
+    paired: aggregate.pairing_marked &&
+     kinds.indexOf("boundary") >= 0 && kinds.indexOf("resource") >= 0,
+    observation_count: aggregate.observation_count,
+    witness_count: witnesses.length,
+    witnesses: witnesses,
+    component_ids: participants.visible_component_ids.slice(),
+    visible_component_ids: participants.visible_component_ids,
+    off_map_component_ids: participants.off_map_component_ids,
+   });
+  });
+  touchpoints.sort((left, right) => (
+   left.component_id.localeCompare(right.component_id) ||
+   left.family.localeCompare(right.family) ||
+   left.owning_unit.localeCompare(right.owning_unit)
+  ));
+  return touchpoints;
+ }
+
  function mapLensEmphasisProjection(input) {
   const lens = input && input.lens || "landscape";
   const components = array(input && input.components);
   const surfaces = array(input && input.surfaces);
   const associations = array(input && input.associations);
   const entryHandoffGroups = array(input && input.entryHandoffGroups);
-  const componentByID = new Map(components.map((component) => [text(component && component.id), component]));
-  const emphasized = [];
+  const localRemainderComponentID = text(input && (
+   input.localRemainderComponentID || input.local_remainder_component_id
+  ));
+  const principalComponents = components.filter((component) => (
+   text(component && component.id) !== localRemainderComponentID
+  ));
+  const componentByID = new Map(principalComponents.map((component) => [text(component && component.id), component]));
+  const visibleParticipants = new Set();
+  const offMapParticipants = new Set();
   const objects = { entrypoints: [], touchpoints: [], entry_handoff_groups: [] };
-  const add = (componentID) => {
-   if (componentByID.has(componentID) && emphasized.indexOf(componentID) < 0) emphasized.push(componentID);
+  const addParticipants = (participants) => {
+   array(participants && participants.visible_component_ids).forEach((componentID) => {
+    visibleParticipants.add(componentID);
+   });
+   array(participants && participants.off_map_component_ids).forEach((componentID) => {
+    offMapParticipants.add(componentID);
+   });
+  };
+  const result = (resultLens) => {
+   const visible = Array.from(visibleParticipants);
+   const offMap = Array.from(offMapParticipants);
+   visible.sort((left, right) => left.localeCompare(right));
+   offMap.sort((left, right) => left.localeCompare(right));
+   return {
+    lens: resultLens,
+    emphasized: visible.slice(),
+    participants: {
+     visible_component_ids: visible,
+     off_map_component_ids: offMap,
+    },
+    objects: objects,
+   };
   };
 
   if (lens === "entrypoints") {
@@ -565,83 +720,57 @@
    // emphasized set is every component those entries reach.
    const byKind = new Map();
    surfaces.forEach((surface) => {
+    if (text(surface && surface.surface_role) !== "entry_surface") return;
     const kind = text(surface && surface.kind);
+    const participants = componentParticipantPartition(
+     surface && surface.participating_component_ids,
+     componentByID
+    );
     const entry = {
      id: text(surface && surface.id),
      kind: kind,
      label: text(surface && surface.name),
-     component_ids: array(surface && surface.participating_component_ids)
-      .filter((id) => componentByID.has(text(id))),
+     component_ids: participants.visible_component_ids.slice(),
+     visible_component_ids: participants.visible_component_ids,
+     off_map_component_ids: participants.off_map_component_ids,
      locations: exactSurfaceEntryLocations(surface),
     };
-    entry.component_ids = Array.from(new Set(entry.component_ids));
+    addParticipants(participants);
     if (!byKind.has(kind)) byKind.set(kind, []);
     byKind.get(kind).push(entry);
-   });
-   components.forEach((component) => {
-    if (array(component && component.participating_surface_ids).length > 0 ||
-        array(component && component.owned_surface_ids).length > 0 ||
-        array(component && component.entry_surface_ids).length > 0) {
-     add(text(component.id));
-    }
    });
    // Canvas 15 owns the exact D210→entry join. These groups are context for
    // Entrypoints, not a fourth lens and not a client-side join over grounding.
    entryHandoffGroups.forEach((group) => {
     if (!currentEntrypointHandoffGroup(group)) return;
-    const componentIDs = [];
-    array(group.component_ids).forEach((value) => {
-     const componentID = text(value);
-     if (!componentByID.has(componentID) || componentIDs.indexOf(componentID) >= 0) return;
-     componentIDs.push(componentID);
-     add(componentID);
-    });
+    const participants = componentParticipantPartition(group.component_ids, componentByID);
+    addParticipants(participants);
     objects.entry_handoff_groups.push({
      id: text(group.id),
      kind: "entry_handoff_group",
-     component_ids: componentIDs,
+     component_ids: participants.visible_component_ids.slice(),
+     visible_component_ids: participants.visible_component_ids,
+     off_map_component_ids: participants.off_map_component_ids,
      group: group,
     });
    });
    byKind.forEach((entries, kind) => {
     objects.entrypoints.push({ kind: kind, entries: entries });
    });
-   return { lens: lens, emphasized: emphasized, objects: objects };
+   return result(lens);
   }
 
   if (lens === "integrations") {
    // Touchpoint objects are the exact association families observed for a
    // component (backend-owned `family` — the CLOSED generic classification;
    // raw imported_family stays available as evidence detail).
-   const families = new Map();
-   associations.forEach((association) => {
-    // Integrations is deliberately narrower than the canonical association
-    // artifact. Operation/surface rows describe local structure; presenting
-    // them as a Resource would turn an internal relation into an external or
-    // stateful interaction.
-    if (!externalStateAssociation(association)) return;
-    const componentID = text(association && (association.component_id || association.from_component_id));
-    const family = text(association && association.family) ||
-     text(association && association.imported_family) || "other";
-    if (!componentByID.has(componentID)) return;
-    add(componentID);
-    const key = componentID + "\u0000" + family;
-    if (!families.has(key)) {
-     families.set(key, {
-      component_id: componentID,
-      family: family,
-      kind: text(association && association.kind),
-      witness_count: Number(association && association.observation_count) || 0,
-      paired: association && association.paired === true,
-     });
-    }
-   });
-   families.forEach((touchpoint) => objects.touchpoints.push(touchpoint));
-   return { lens: lens, emphasized: emphasized, objects: objects };
+   objects.touchpoints = integrationTouchpointProjection(associations, componentByID);
+   objects.touchpoints.forEach(addParticipants);
+   return result(lens);
   }
 
   // landscape: no emphasis, no extra objects.
-  return { lens: "landscape", emphasized: [], objects: objects };
+  return result("landscape");
  }
 
  function associationsForComponent(associations, componentID) {
@@ -662,23 +791,29 @@
  function projectArchitectureLens(reportData, lens) {
   const canvas = (reportData && reportData.architecture_canvas) || {};
   const components = array(canvas.components);
+  const localRemainderComponentID = text(canvas.local_remainder_component_id);
+  const principalComponents = components.filter((component) => (
+   text(component && component.id) !== localRemainderComponentID
+  ));
   const surfaces = array(canvas.surfaces);
   const projection = mapLensEmphasisProjection({
    lens: lens,
    components: components,
+   localRemainderComponentID: localRemainderComponentID,
    surfaces: surfaces,
    associations: flatReportAssociations(reportData && reportData.architecture_associations),
    entryHandoffGroups: Number(canvas.version) === 15 ? canvas.entry_handoff_groups : [],
   });
-  const componentCount = components.length;
+  const componentCount = principalComponents.length;
   return {
    lens: projection.lens,
-   visible: components.map((component) => text(component && component.id)),
+   visible: principalComponents.map((component) => text(component && component.id)),
    emphasized: projection.emphasized,
-   // With no exact component join the lens is evidence-only. Keep the
-   // landscape neutral instead of claiming every component is irrelevant.
-   dimmed: projection.emphasized.length > 0
-    ? componentCount - projection.emphasized.length : 0,
+   participants: projection.participants,
+   // A lens adds context to the landscape. It does not globally suppress
+   // nonparticipants; a focused object selection can still add its own
+   // explicit participant treatment.
+   dimmed: 0,
    entrypoints: projection.objects.entrypoints,
    touchpoints: projection.objects.touchpoints,
    entry_handoff_groups: projection.objects.entry_handoff_groups,
@@ -693,8 +828,9 @@
     // Honest bounded scope: associations/flows not joinable to a principal
     // component are never shown in a lens.
     unjoined_surfaces: surfaces.filter((surface) =>
+     text(surface && surface.surface_role) === "entry_surface" &&
      !array(surface && surface.participating_component_ids).some((id) =>
-      components.some((component) => text(component && component.id) === text(id))
+      principalComponents.some((component) => text(component && component.id) === text(id))
      )
     ).length,
    },
@@ -3703,9 +3839,8 @@ function architecturePartialTruth(data) {
    );
    }
 
-   // Decision 236 (v11): Map lenses are emphasis projections over the
-   // SAME landscape layout — one ELK layout, switch by emphasis/dimming,
-   // never a relayout and never a view transform write.
+   // Map lenses annotate the SAME landscape layout. Switching a lens does
+   // not relayout, pan, or globally dim the surrounding architecture.
    setLens(lens) {
     const value = ["landscape", "entrypoints", "integrations"].indexOf(lens) >= 0
      ? lens : "landscape";
@@ -3714,6 +3849,7 @@ function architecturePartialTruth(data) {
    if (value !== "entrypoints") this.clearEntrypointHandoffGroup();
    if (value === "landscape") {
      if (this.root) this.root.setAttribute("data-lens-has-emphasis", "false");
+     if (this.root) this.root.setAttribute("data-lens-has-participants", "false");
      this.components.forEach((component) => {
      const node = this.componentElements.get(text(component && component.id));
      if (node) node.classList.remove("rm-arch__is-lens-emphasized");
@@ -3724,13 +3860,20 @@ function architecturePartialTruth(data) {
     const projection = mapLensEmphasisProjection({
      lens: value,
      components: this.components,
+     localRemainderComponentID: text(this.data && this.data.local_remainder_component_id),
      surfaces: this.surfaces,
      associations: this.flatAssociations(),
      entryHandoffGroups: Number(this.data && this.data.version) === 15
       ? this.data.entry_handoff_groups : [],
     });
-    const hasEmphasis = projection.emphasized.length > 0;
-    if (this.root) this.root.setAttribute("data-lens-has-emphasis", hasEmphasis ? "true" : "false");
+    const hasParticipants = projection.participants.visible_component_ids.length > 0 ||
+     projection.participants.off_map_component_ids.length > 0;
+    if (this.root) {
+     // Retained for old host CSS contracts: lens selection itself is no
+     // longer a global emphasis state. Explicit object selection owns focus.
+     this.root.setAttribute("data-lens-has-emphasis", "false");
+     this.root.setAttribute("data-lens-has-participants", hasParticipants ? "true" : "false");
+    }
     this.components.forEach((component) => {
      const componentID = text(component && component.id);
      const node = this.componentElements.get(componentID);
@@ -4842,8 +4985,11 @@ function architecturePartialTruth(data) {
     text(component && component.id).replace(/[^A-Za-z0-9_-]/g, "-");
    const definitions = [
     { id: "summary", label: this.msg("architecture.tab.summary") },
-    { id: "connections", label: this.msg("architecture.tab.connections") },
    ];
+   if (array(this.userComponentContext(component) && this.userComponentContext(component).library_api_packages).length > 0) {
+    definitions.push({ id: "api", label: this.msg("main.map.mode.api") });
+   }
+   definitions.push({ id: "connections", label: this.msg("architecture.tab.connections") });
    const tablist = element("div", "rm-arch__inspector-tabs");
    tablist.setAttribute("role", "tablist");
    tablist.setAttribute("aria-orientation", "horizontal");
@@ -5006,6 +5152,58 @@ function architecturePartialTruth(data) {
    return node;
   }
 
+  userLibraryAPIDeclarationLabel(declaration) {
+   const receiver = text(declaration && declaration.receiver);
+   const name = text(declaration && declaration.name);
+   return receiver ? receiver + "." + name : name;
+  }
+
+  userLibraryAPIKindLabel(kind) {
+   const ids = {
+    func: "main.map.api.kind.function",
+    function: "main.map.api.kind.function",
+    method: "main.map.api.kind.method",
+    type: "main.map.api.kind.type",
+    const: "main.map.api.kind.const",
+    var: "main.map.api.kind.var",
+   };
+   return ids[text(kind)] ? this.msg(ids[text(kind)]) : text(kind);
+  }
+
+  appendUserLibraryAPIDeclaration(parent, declaration) {
+   const location = {
+    path: text(declaration && declaration.path),
+    line: Number(declaration && declaration.line) || 0,
+    column: Number(declaration && declaration.column) || 0,
+   };
+   const actionable = !!locationLabel(location) && typeof this.options.openSourceLocation === "function";
+   const row = element(actionable ? "button" : "div", "rm-arch__api-declaration");
+   if (actionable) row.type = "button";
+   row.appendChild(element("span", "rm-arch__api-kind", this.userLibraryAPIKindLabel(declaration && declaration.kind)));
+   row.appendChild(element("strong", null, this.userLibraryAPIDeclarationLabel(declaration)));
+   row.appendChild(element("code", null, locationLabel(location)));
+   if (actionable) this.listen(row, "click", () => this.options.openSourceLocation(location));
+   parent.appendChild(row);
+   return row;
+  }
+
+  appendUserLibraryAPI(parent, packages, preview) {
+   let remaining = preview ? 6 : Number.MAX_SAFE_INTEGER;
+   array(packages).forEach((pkg) => {
+    if (remaining <= 0) return;
+    const declarations = array(pkg && pkg.declarations).slice(0, remaining);
+    if (declarations.length === 0) return;
+    const group = element("section", "rm-arch__api-package");
+    const title = text(pkg && pkg.display_path) === "."
+     ? text(pkg && pkg.package_path).split("/").filter(Boolean).pop()
+     : text(pkg && pkg.display_path) || text(pkg && pkg.package_path);
+    group.appendChild(element("h4", null, title));
+    declarations.forEach((declaration) => this.appendUserLibraryAPIDeclaration(group, declaration));
+    parent.appendChild(group);
+    remaining -= declarations.length;
+   });
+  }
+
   inspectUserComponent(component) {
    const context = this.userComponentContext(component);
    const actions = this.userComponentActions(component);
@@ -5017,6 +5215,7 @@ function architecturePartialTruth(data) {
    );
    const panels = this.userComponentTabs(component);
    const summary = panels.summary;
+   const api = panels.api;
    const connections = panels.connections;
    const surfaceStarts = array(context.surface_starts).filter((start) => (
     start && locationLabel(start.location)
@@ -5026,6 +5225,7 @@ function architecturePartialTruth(data) {
    const readStarts = this.userComponentReadStarts(context, sourceActions, surfaceStarts);
    const entryGroups = this.userComponentEntryGroups(component, surfaceStarts);
    const neighbors = this.associationEntryFor(component);
+	 const libraryAPIPackages = array(context.library_api_packages);
    const incoming = array(neighbors && neighbors.incoming);
    const outgoing = array(neighbors && neighbors.outgoing);
    const rawAssociationRows = array(neighbors && neighbors.associations).filter(externalStateAssociation);
@@ -5063,6 +5263,12 @@ function architecturePartialTruth(data) {
      primarySource.appendChild(moreSources);
     }
    }
+
+	 if (libraryAPIPackages.length > 0) {
+	  const apiPreview = this.inspectorSection(this.msg("main.map.api.heading"), summary);
+	  this.appendUserLibraryAPI(apiPreview, libraryAPIPackages, true);
+	  if (api) this.appendUserLibraryAPI(api, libraryAPIPackages, false);
+	 }
 
    // Connections owns the complete relationship and entry context.
    if (incoming.length > 0) {

@@ -2780,19 +2780,8 @@
 .rm-arch__shared-member { border-left-color: var(--rm-accent-soft, #eef2ff); }
 .rm-arch__shared-member .rm-arch__evidence-title { font-weight: 500; }
 
-/* Decision 236 (v11): Map lenses emphasize by dimming — one layout, no
-   relayout. Non-emphasized principal nodes dim; the lens is recorded on
-   the root so CSS can also fade non-relevant edges in later lenses. */
-.rm-arch[data-lens-has-emphasis="true"][data-lens="entrypoints"] .rm-arch__component:not(.rm-arch__is-lens-emphasized),
-.rm-arch[data-lens-has-emphasis="true"][data-lens="integrations"] .rm-arch__component:not(.rm-arch__is-lens-emphasized) {
-  opacity: 0.38;
-  filter: saturate(0.45);
-}
-.rm-arch[data-lens-has-emphasis="true"][data-lens="entrypoints"] .rm-arch__component.rm-arch__is-lens-emphasized,
-.rm-arch[data-lens-has-emphasis="true"][data-lens="integrations"] .rm-arch__component.rm-arch__is-lens-emphasized {
-  opacity: 1;
-  filter: none;
-}
+/* Lens selection keeps the complete landscape neutral. Only an explicit
+   object selection may focus its exact participants, as below. */
 .rm-arch[data-lens="entrypoints"] .rm-arch__component.rm-arch__is-entry-handoff-participant {
   filter: none;
   opacity: 1;

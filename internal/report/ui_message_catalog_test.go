@@ -345,8 +345,8 @@ process.stdout.write(JSON.stringify({
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode typed UI catalog acceptance result: %v\n%s", err, output)
 	}
-	if got.Version != 26 {
-		t.Errorf("catalog version = %d, want 26", got.Version)
+	if got.Version != 27 {
+		t.Errorf("catalog version = %d, want 27", got.Version)
 	}
 	if !got.Membership.Known || got.Membership.Unknown || got.Membership.NonString {
 		t.Errorf("catalog membership contract = %#v", got.Membership)
@@ -360,6 +360,8 @@ process.stdout.write(JSON.stringify({
 		t.Errorf("catalog rejection contract = %#v", got.Failures)
 	}
 	wantIdentical := []string{
+		// API is a product-standard technical abbreviation in both locales.
+		"main.map.mode.api",
 		// Decision 233 AREA COVERAGE: the missing-core-area item is an
 		// opaque component name — identical in both locales by design.
 		"main.study.diagnostics.missing_core_area",

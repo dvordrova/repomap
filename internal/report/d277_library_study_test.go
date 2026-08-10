@@ -56,16 +56,17 @@ func TestD277TelebotLibraryStudyUsesExactCallablePublicAPIWithoutComponents(t *t
 			t.Fatalf("callable root path %q not authorized: %v", want, data.OpenablePaths)
 		}
 	}
-	if slices.Contains(data.OpenablePaths, "assembly.go") {
-		t.Fatalf("bodyless declaration became a code-oriented Study root: %v", data.OpenablePaths)
+	if !slices.Contains(data.OpenablePaths, "assembly.go") {
+		t.Fatalf("D281 exported API source is not authorized independently of callable Study roots: %v", data.OpenablePaths)
 	}
 }
 
 func TestD277LibraryStudyRejectsDeclarationMovedWithFilesOutsideSelectedPackage(t *testing.T) {
 	data := d277LibraryReportData(t, []gofacts.PackageDeclaration{{
 		Kind: gofacts.PackageDeclarationFunc, Name: "NewClient",
-		Path: "other/client.go", Line: 3, Column: 6, ExecutableBody: true,
+		Path: "client.go", Line: 3, Column: 6, ExecutableBody: true,
 	}})
+	data.repositoryGoFacts.Packages[0].Declarations[0].Path = "other/client.go"
 	data.repositoryGoFacts.Packages[0].Files = []string{"other/client.go"}
 	if _, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish); err == nil ||
 		!strings.Contains(err.Error(), "outside its build-selected package files") {
@@ -144,7 +145,7 @@ func TestD277SavedReportCannotRepairMissingPublicRootSourceAuthority(t *testing.
 	}
 	persisted.OpenablePaths = nil
 	if _, _, err := readPersistedAtlasStudyReportProduct(runDir, &persisted); err == nil ||
-		!strings.Contains(err.Error(), "saved source authority omits public API root") {
+		!strings.Contains(err.Error(), "source \"bot.go\" is not authorized") {
 		t.Fatalf("missing saved public root authority error = %v", err)
 	}
 }
@@ -281,7 +282,14 @@ func d277LibraryReportData(t *testing.T, declarations []gofacts.PackageDeclarati
 			{ID: "unit-package", Kind: repositoryatlas.UnitPackage, ParentID: "module-root", Name: "gopkg.in/telebot.v3"},
 		},
 	}
-	return &ReportData{AnalysisTarget: &target, RepositoryAtlas: &atlas, repositoryGoFacts: &facts}
+	libraryAPI, err := ProjectLibraryAPI(facts, target)
+	if err != nil {
+		t.Fatalf("project library API fixture: %v", err)
+	}
+	return &ReportData{
+		AnalysisTarget: &target, LibraryAPI: libraryAPI,
+		RepositoryAtlas: &atlas, repositoryGoFacts: &facts,
+	}
 }
 
 func completeReportPackageLoad() *gofacts.PackageLoadCompleteness {

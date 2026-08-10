@@ -212,6 +212,9 @@ func rehydrateAtlasStudyLibraryData(
 		}
 		prepared.repositoryGoFacts = &facts
 	}
+	if err := rehydrateLibraryAPIProjection(root, &prepared, requirePersistedSourceAuthority); err != nil {
+		return nil, fmt.Errorf("atlas study report: %w", err)
+	}
 	prepared.OpenablePaths = append([]string(nil), data.OpenablePaths...)
 	input, err := BuildAtlasStudyInput(&prepared, atlasstudy.LanguageEnglish)
 	if err != nil {
@@ -252,6 +255,7 @@ func rehydrateAtlasStudyLibraryData(
 		// verifying serialized report.json. Propagate the exact, bounded
 		// snapshot-derived source authority to the returned ReportData.
 		data.repositoryGoFacts = prepared.repositoryGoFacts
+		data.LibraryAPI = prepared.LibraryAPI
 		data.OpenablePaths = append(data.OpenablePaths[:0], prepared.OpenablePaths...)
 		return data, nil
 	}
