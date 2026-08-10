@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	DirectCallIndexVersion = 2
+	DirectCallIndexVersion = 3
 
 	// The direct-call substrate is retained only in memory, but it is still
 	// bounded independently from the SSA program. Crossing either ceiling closes
@@ -164,15 +164,21 @@ type DirectCallIndexCoverage struct {
 // explicit resource ceiling. Nodes remain the complete build-selected local
 // declaration catalog in either mode.
 type DirectCallIndexScope struct {
-	TargetKind    string `json:"target_kind,omitempty"`
-	TargetPackage string `json:"target_package,omitempty"`
-	MaxDepth      int    `json:"max_depth,omitempty"`
-	EdgeLimit     int    `json:"edge_limit,omitempty"`
+	TargetRef        string   `json:"target_ref,omitempty"`
+	TargetKind       string   `json:"target_kind,omitempty"`
+	TargetModuleID   string   `json:"target_module_id,omitempty"`
+	TargetModulePath string   `json:"target_module_path,omitempty"`
+	TargetModuleDir  string   `json:"target_module_dir,omitempty"`
+	TargetPackage    string   `json:"target_package,omitempty"`
+	TargetPackages   []string `json:"target_packages,omitempty"`
+	MaxDepth         int      `json:"max_depth,omitempty"`
+	EdgeLimit        int      `json:"edge_limit,omitempty"`
 }
 
 func (scope DirectCallIndexScope) TargetScoped() bool {
-	return scope.TargetKind != "" || scope.TargetPackage != "" ||
-		scope.MaxDepth != 0 || scope.EdgeLimit != 0
+	return scope.TargetRef != "" || scope.TargetKind != "" || scope.TargetModuleID != "" ||
+		scope.TargetModulePath != "" || scope.TargetModuleDir != "" || scope.TargetPackage != "" ||
+		len(scope.TargetPackages) != 0 || scope.MaxDepth != 0 || scope.EdgeLimit != 0
 }
 
 func (scope DirectCallIndexScope) validate() error {
@@ -180,12 +186,33 @@ func (scope DirectCallIndexScope) validate() error {
 		return nil
 	}
 	if scope.TargetKind != AnalysisTargetExecutablePackage &&
-		scope.TargetKind != AnalysisTargetLibraryPackage {
+		scope.TargetKind != AnalysisTargetModuleLibrary {
 		return fmt.Errorf("direct call index: invalid target scope kind %q", scope.TargetKind)
 	}
-	if scope.TargetPackage == "" || strings.TrimSpace(scope.TargetPackage) != scope.TargetPackage ||
-		strings.ContainsAny(scope.TargetPackage, " \t\r\n") {
-		return fmt.Errorf("direct call index: invalid target scope package")
+	if !validDirectCallTargetIdentity(scope.TargetRef) || !validDirectCallTargetIdentity(scope.TargetModuleID) ||
+		!validDirectCallTargetIdentity(scope.TargetModulePath) ||
+		!validDirectCallModuleDirectory(scope.TargetModuleDir) {
+		return fmt.Errorf("direct call index: invalid target scope module identity")
+	}
+	if len(scope.TargetPackages) == 0 || len(scope.TargetPackages) > MaxDirectCallIndexNodes ||
+		!sort.StringsAreSorted(scope.TargetPackages) || !uniqueStrings(scope.TargetPackages) {
+		return fmt.Errorf("direct call index: invalid target scope packages")
+	}
+	for _, packagePath := range scope.TargetPackages {
+		if !validDirectCallTargetIdentity(packagePath) {
+			return fmt.Errorf("direct call index: invalid target scope packages")
+		}
+	}
+	switch scope.TargetKind {
+	case AnalysisTargetExecutablePackage:
+		if !validDirectCallTargetIdentity(scope.TargetPackage) ||
+			len(scope.TargetPackages) != 1 || scope.TargetPackages[0] != scope.TargetPackage {
+			return fmt.Errorf("direct call index: invalid executable target scope package")
+		}
+	case AnalysisTargetModuleLibrary:
+		if scope.TargetPackage != "" {
+			return fmt.Errorf("direct call index: module library target scope retained executable package")
+		}
 	}
 	if scope.MaxDepth < 1 {
 		return fmt.Errorf("direct call index: invalid target scope depth %d", scope.MaxDepth)
@@ -243,6 +270,7 @@ func UnavailableDirectCallIndex() DirectCallIndex {
 func (index DirectCallIndex) Snapshot() DirectCallIndex {
 	snapshot := index
 	snapshot.Scenario.Tags = cloneDirectCallSlice(index.Scenario.Tags)
+	snapshot.Scope.TargetPackages = cloneDirectCallSlice(index.Scope.TargetPackages)
 	snapshot.Modules = cloneDirectCallSlice(index.Modules)
 	snapshot.Nodes = cloneDirectCallSlice(index.Nodes)
 	for position := range snapshot.Nodes {
@@ -252,6 +280,10 @@ func (index DirectCallIndex) Snapshot() DirectCallIndex {
 	snapshot.Frontiers = cloneDirectCallSlice(index.Frontiers)
 	snapshot.initializeLookups()
 	return snapshot
+}
+
+func validDirectCallTargetIdentity(value string) bool {
+	return value != "" && strings.TrimSpace(value) == value && !strings.ContainsAny(value, " \t\r\n")
 }
 
 func cloneDirectCallSlice[T any](values []T) []T {
@@ -522,6 +554,10 @@ func (index DirectCallIndex) Validate() error {
 	}
 
 	nodes := make(map[string]DirectCallNode, len(index.Nodes))
+	targetPackages := make(map[string]struct{}, len(index.Scope.TargetPackages))
+	for _, packagePath := range index.Scope.TargetPackages {
+		targetPackages[packagePath] = struct{}{}
+	}
 	previous = ""
 	for _, node := range index.Nodes {
 		key := directCallNodeKey(node)
@@ -539,6 +575,12 @@ func (index DirectCallIndex) Validate() error {
 			!validDirectCallBody(node.Declaration, node.Body) ||
 			node.ID != stableDirectCallNodeID(node) {
 			return fmt.Errorf("direct call index: invalid node %q", node.ID)
+		}
+		if _, targetPackage := targetPackages[node.Package]; targetPackage {
+			module := modules[node.ModuleID]
+			if module.Path != index.Scope.TargetModulePath || module.Directory != index.Scope.TargetModuleDir {
+				return fmt.Errorf("direct call index: target package node has mismatched module identity")
+			}
 		}
 		nodes[node.ID] = node
 	}

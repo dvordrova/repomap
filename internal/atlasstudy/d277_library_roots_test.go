@@ -151,7 +151,7 @@ func TestD277RequestArtifactBindsSelectedPackageUnitAndCallableKind(t *testing.T
 	wrongUnit := request
 	wrongUnit.Catalog = cloneCatalog(request.Catalog)
 	wrongUnit.AnalysisTargetRoot = cloneAnalysisTargetRootScope(request.AnalysisTargetRoot)
-	wrongUnit.AnalysisTargetRoot.UnitID = "unit-package-other"
+	wrongUnit.AnalysisTargetRoot.Packages[0].UnitID = "unit-package-other"
 	for index := range wrongUnit.Catalog {
 		switch wrongUnit.Catalog[index].Kind {
 		case RefReadingTarget:
@@ -164,7 +164,7 @@ func TestD277RequestArtifactBindsSelectedPackageUnitAndCallableKind(t *testing.T
 	}
 	d277RebindRequestCatalog(t, &wrongUnit)
 	if _, err := EncodeRequestRecord(wrongUnit); err == nil ||
-		!strings.Contains(err.Error(), "exact package Unit") {
+		!strings.Contains(err.Error(), "package Unit") {
 		t.Fatalf("arbitrary selected Unit artifact error = %v", err)
 	}
 }
@@ -230,7 +230,11 @@ func d277LibraryInput(t *testing.T, count int) Input {
 		Packages: []gofacts.PackageFact{{
 			CanonicalPath: "example.com/library", Name: "library", ModuleID: "module-root",
 			ModulePath: "example.com/library", PackageDir: ".", ModuleRelativeDir: ".",
-			Locality: "local",
+			Locality: "local", DeclarationsScanned: true, LoadCompleteness: completeAtlasPackageLoad(),
+			Declarations: []gofacts.PackageDeclaration{{
+				Kind: gofacts.PackageDeclarationType, Name: "Library",
+				Path: "api.go", Line: 1, Column: 6,
+			}},
 		}},
 	}, analysistarget.Options{})
 	if err != nil || resolution.Selected == nil {
@@ -250,7 +254,10 @@ func d277LibraryInput(t *testing.T, count int) Input {
 		Language:     LanguageEnglish,
 		Limits:       DefaultLimits(),
 		AnalysisTargetRoot: &AnalysisTargetRootScope{
-			AnalysisTarget: target, UnitID: "unit-package",
+			AnalysisTarget: target,
+			Packages: []AnalysisTargetRootPackage{{
+				Package: target.LibraryPackages[0], UnitID: "unit-package",
+			}},
 		},
 	}
 	labels := []struct {
@@ -305,4 +312,11 @@ func d277LibraryInput(t *testing.T, count int) Input {
 		})
 	}
 	return input
+}
+
+func completeAtlasPackageLoad() *gofacts.PackageLoadCompleteness {
+	return &gofacts.PackageLoadCompleteness{
+		Version: gofacts.PackageLoadCompletenessVersion,
+		State:   gofacts.PackageLoadComplete,
+	}
 }

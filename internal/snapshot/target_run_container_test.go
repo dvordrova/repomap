@@ -56,8 +56,8 @@ func TestTargetRunContainerProjectsTwoTargetsFromOneDeferredSnapshot(t *testing.
 		len(app.GoFacts.Packages) != 2 || len(helper.GoFacts.Packages) != 1 {
 		t.Fatalf("projected facts = %#v / %#v", app.GoFacts, helper.GoFacts)
 	}
-	if !slices.Contains(app.FilteredFiles, "internal/core/core.go") ||
-		slices.Contains(helper.FilteredFiles, "internal/core/core.go") {
+	if !slices.Contains(app.FilteredFiles, "core/core.go") ||
+		slices.Contains(helper.FilteredFiles, "core/core.go") {
 		t.Fatalf("projected files = %#v / %#v", app.FilteredFiles, helper.FilteredFiles)
 	}
 	if deferred.TargetCatalog == nil || deferred.AnalysisTarget != nil ||
@@ -154,9 +154,13 @@ func TestTargetRunContainerRejectsInvalidSelectionAndArtifactDrift(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	withUnknown := bytes.Replace(wire, []byte(`{"version":1,`), []byte(`{"version":1,"unknown":true,`), 1)
+	withUnknown := bytes.Replace(wire, []byte(`{"version":2,`), []byte(`{"version":2,"unknown":true,`), 1)
 	if _, err := DecodeTargetRunContainer(withUnknown); err == nil {
 		t.Fatal("accepted unknown artifact field")
+	}
+	priorV1 := bytes.Replace(wire, []byte(`{"version":2,`), []byte(`{"version":1,`), 1)
+	if _, err := DecodeTargetRunContainer(priorV1); err == nil {
+		t.Fatal("accepted prior v1 target run container")
 	}
 	if _, err := DecodeTargetRunContainer(append(append([]byte(nil), wire...), []byte(` {}`)...)); err == nil {
 		t.Fatal("accepted trailing artifact value")

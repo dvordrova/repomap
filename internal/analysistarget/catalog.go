@@ -12,7 +12,16 @@ import (
 	"github.com/dvordrova/repomap/internal/gofacts"
 )
 
-const TargetCatalogVersion = 3
+const TargetCatalogVersion = 4
+
+// PackageAPI is one package-qualified, names-only public API group for a
+// module-library catalog entry. Exact locations remain in Go facts; the
+// catalog binds the complete exported declaration inventory without making a
+// package pretend to own the module-level target.
+type PackageAPI struct {
+	Package      TargetPackage                `json:"package"`
+	Declarations []gofacts.PackageDeclaration `json:"declarations"`
+}
 
 // TargetCatalogEntry keeps display separate from canonical identity.
 // Candidate.Target carries the composite module and canonical package
@@ -21,6 +30,7 @@ type TargetCatalogEntry struct {
 	Candidate           Candidate                    `json:"candidate"`
 	DisplayPath         string                       `json:"display_path"`
 	Symbols             []gofacts.PackageDeclaration `json:"symbols,omitempty"`
+	PackageAPIs         []PackageAPI                 `json:"package_apis,omitempty"`
 	DeclarationsScanned bool                         `json:"declarations_scanned,omitempty"`
 }
 
@@ -57,13 +67,25 @@ func BuildCatalog(facts gofacts.Facts) (TargetCatalog, error) {
 
 	entries := make([]TargetCatalogEntry, 0, len(candidates))
 	for _, candidate := range candidates {
-		pkg, ok := packages[packageIdentityKey(candidate.Target.ModuleID, candidate.Target.PackagePath)]
-		if !ok {
-			return TargetCatalog{}, fmt.Errorf("analysis target catalog: missing exact package facts for %q", candidate.Target.PackagePath)
-		}
 		module, ok := modules[candidate.Target.ModuleID]
 		if !ok {
 			return TargetCatalog{}, fmt.Errorf("analysis target catalog: missing exact module facts for %q", candidate.Target.ModuleID)
+		}
+		if candidate.Target.Kind == KindModuleLibrary {
+			packageAPIs, err := catalogPackageAPIs(candidate.Target, packages)
+			if err != nil {
+				return TargetCatalog{}, err
+			}
+			entries = append(entries, TargetCatalogEntry{
+				Candidate: candidate, DisplayPath: candidate.Target.ModuleDir,
+				PackageAPIs: packageAPIs, DeclarationsScanned: true,
+			})
+			continue
+		}
+
+		pkg, ok := packages[packageIdentityKey(candidate.Target.ModuleID, candidate.Target.PackagePath)]
+		if !ok {
+			return TargetCatalog{}, fmt.Errorf("analysis target catalog: missing exact package facts for %q", candidate.Target.PackagePath)
 		}
 		displayPath, err := catalogDisplayPath(module.ModuleDir, pkg.ModuleRelativeDir)
 		if err != nil {
@@ -108,58 +130,74 @@ func (catalog TargetCatalog) Validate() error {
 	seenKeys := make(map[string]struct{}, len(catalog.Entries))
 	seenRefs := make(map[string]struct{}, len(catalog.Entries))
 	seenPackages := make(map[string]struct{}, len(catalog.Entries))
+	seenModuleLibraries := make(map[string]struct{}, len(catalog.Entries))
 	for index, entry := range catalog.Entries {
 		if err := entry.Candidate.Target.Validate(); err != nil {
 			return fmt.Errorf("analysis target catalog: entry %d target: %w", index, err)
 		}
 		candidate := entry.Candidate
-		wantKey := candidateKey(candidate.Target.ModulePath, candidate.Target.ModuleDir, candidate.Target.PackagePath)
+		wantKey := targetCandidateKey(candidate.Target)
 		if candidate.Key != wantKey {
 			return fmt.Errorf("analysis target catalog: entry %d candidate key mismatch", index)
 		}
-		if candidate.Target.Kind == KindLibraryPackage && candidate.EntrypointKind != "" {
-			return fmt.Errorf("analysis target catalog: entry %d library has executable kind", index)
+		if candidate.Target.Kind != KindExecutablePackage && candidate.Target.Kind != KindModuleLibrary {
+			return fmt.Errorf("analysis target catalog: entry %d has unsupported v4 target kind %q", index, candidate.Target.Kind)
+		}
+		if candidate.Target.Kind == KindModuleLibrary && candidate.EntrypointKind != "" {
+			return fmt.Errorf("analysis target catalog: entry %d module library has executable kind", index)
 		}
 		if candidate.MainModule && candidate.Target.ModuleDir != "." {
-			return fmt.Errorf("analysis target catalog: entry %d nested package cannot be in the root analysis module", index)
+			return fmt.Errorf("analysis target catalog: entry %d nested target cannot be in the root analysis module", index)
 		}
-		if entry.DisplayPath != candidate.Target.PackageDir {
+		wantDisplay := candidate.Target.PackageDir
+		if candidate.Target.Kind == KindModuleLibrary {
+			wantDisplay = candidate.Target.ModuleDir
+		}
+		if entry.DisplayPath != wantDisplay {
 			return fmt.Errorf("analysis target catalog: entry %d display path mismatch", index)
 		}
 		if err := gofacts.ValidatePackageDeclarations(entry.Symbols); err != nil {
 			return fmt.Errorf("analysis target catalog: entry %d symbols: %w", index, err)
 		}
+		if err := validateNamesOnlyDeclarations(entry.Symbols); err != nil {
+			return fmt.Errorf("analysis target catalog: entry %d symbols: %w", index, err)
+		}
 		if !entry.DeclarationsScanned && len(entry.Symbols) > 0 {
 			return fmt.Errorf("analysis target catalog: entry %d has symbols without a complete declaration scan", index)
 		}
-		if candidate.Target.Kind == KindLibraryPackage {
-			for _, symbol := range entry.Symbols {
-				if !symbol.ExportedAPI() {
-					return fmt.Errorf("analysis target catalog: entry %d library has non-exported symbol", index)
-				}
+		if candidate.Target.Kind == KindModuleLibrary {
+			if len(entry.Symbols) != 0 || !entry.DeclarationsScanned {
+				return fmt.Errorf("analysis target catalog: entry %d module library has invalid flat symbols", index)
 			}
-		}
-		if candidate.Target.ModuleDir != "." &&
-			candidate.Target.PackageDir != candidate.Target.ModuleDir &&
-			!strings.HasPrefix(candidate.Target.PackageDir, candidate.Target.ModuleDir+"/") {
-			return fmt.Errorf("analysis target catalog: entry %d package is outside its module directory", index)
+			if err := validateCatalogPackageAPIs(candidate.Target, entry.PackageAPIs); err != nil {
+				return fmt.Errorf("analysis target catalog: entry %d package APIs: %w", index, err)
+			}
+		} else if len(entry.PackageAPIs) != 0 {
+			return fmt.Errorf("analysis target catalog: entry %d executable has module package APIs", index)
 		}
 		if index > 0 && !catalogEntryLess(catalog.Entries[index-1], entry) {
 			return fmt.Errorf("analysis target catalog: entries are not in canonical order")
 		}
-		packageIdentity := packageIdentityKey(candidate.Target.ModuleID, candidate.Target.PackagePath)
 		if _, exists := seenKeys[candidate.Key]; exists {
 			return fmt.Errorf("analysis target catalog: duplicate candidate key %q", candidate.Key)
 		}
 		if _, exists := seenRefs[candidate.Target.Ref]; exists {
 			return fmt.Errorf("analysis target catalog: duplicate target ref %q", candidate.Target.Ref)
 		}
-		if _, exists := seenPackages[packageIdentity]; exists {
-			return fmt.Errorf("analysis target catalog: duplicate module/package identity")
-		}
 		seenKeys[candidate.Key] = struct{}{}
 		seenRefs[candidate.Target.Ref] = struct{}{}
-		seenPackages[packageIdentity] = struct{}{}
+		if candidate.Target.Kind == KindModuleLibrary {
+			if _, exists := seenModuleLibraries[candidate.Target.ModuleID]; exists {
+				return fmt.Errorf("analysis target catalog: duplicate module-library identity")
+			}
+			seenModuleLibraries[candidate.Target.ModuleID] = struct{}{}
+		} else {
+			packageIdentity := packageIdentityKey(candidate.Target.ModuleID, candidate.Target.PackagePath)
+			if _, exists := seenPackages[packageIdentity]; exists {
+				return fmt.Errorf("analysis target catalog: duplicate module/package identity")
+			}
+			seenPackages[packageIdentity] = struct{}{}
+		}
 	}
 
 	wantDefault := ""
@@ -175,6 +213,38 @@ func (catalog TargetCatalog) Validate() error {
 	}
 	if catalog.Ref != wantRef {
 		return fmt.Errorf("analysis target catalog: ref binding mismatch")
+	}
+	return nil
+}
+
+func validateCatalogPackageAPIs(target Target, values []PackageAPI) error {
+	if len(values) != len(target.LibraryPackages) {
+		return fmt.Errorf("public package inventory mismatch")
+	}
+	for index, value := range values {
+		if value.Package != target.LibraryPackages[index] || len(value.Declarations) == 0 {
+			return fmt.Errorf("package %d identity mismatch", index)
+		}
+		if err := gofacts.ValidatePackageDeclarations(value.Declarations); err != nil {
+			return fmt.Errorf("package %d declarations: %w", index, err)
+		}
+		if err := validateNamesOnlyDeclarations(value.Declarations); err != nil {
+			return fmt.Errorf("package %d declarations: %w", index, err)
+		}
+		for _, declaration := range value.Declarations {
+			if !declaration.ExportedAPI() {
+				return fmt.Errorf("package %d has non-exported declaration", index)
+			}
+		}
+	}
+	return nil
+}
+
+func validateNamesOnlyDeclarations(values []gofacts.PackageDeclaration) error {
+	for _, value := range values {
+		if value.Path != "" || value.Line != 0 || value.Column != 0 || value.ExecutableBody {
+			return fmt.Errorf("declaration inventory is not names-only")
+		}
 	}
 	return nil
 }
@@ -195,8 +265,40 @@ func (catalog TargetCatalog) Snapshot() TargetCatalog {
 		result.Entries[index] = entry
 		result.Entries[index].Candidate.Target = entry.Candidate.Target.Snapshot()
 		result.Entries[index].Symbols = append([]gofacts.PackageDeclaration(nil), entry.Symbols...)
+		result.Entries[index].PackageAPIs = snapshotPackageAPIs(entry.PackageAPIs)
 	}
 	return result
+}
+
+func snapshotPackageAPIs(values []PackageAPI) []PackageAPI {
+	result := make([]PackageAPI, len(values))
+	for index, value := range values {
+		result[index] = value
+		result[index].Declarations = append([]gofacts.PackageDeclaration(nil), value.Declarations...)
+	}
+	return result
+}
+
+func catalogPackageAPIs(
+	target Target,
+	packages map[string]gofacts.PackageFact,
+) ([]PackageAPI, error) {
+	result := make([]PackageAPI, 0, len(target.LibraryPackages))
+	for _, targetPackage := range target.LibraryPackages {
+		pkg, ok := packages[packageIdentityKey(target.ModuleID, targetPackage.PackagePath)]
+		if !ok || pkg.PackageDir != targetPackage.PackageDir || !pkg.DeclarationsScanned {
+			return nil, fmt.Errorf("analysis target catalog: incomplete public API facts for %q", targetPackage.PackagePath)
+		}
+		declarations, err := catalogSymbols(pkg.Declarations, KindLibraryPackage)
+		if err != nil {
+			return nil, fmt.Errorf("analysis target catalog: package %q declarations: %w", pkg.CanonicalPath, err)
+		}
+		if len(declarations) == 0 {
+			return nil, fmt.Errorf("analysis target catalog: public API package %q has no exported declarations", pkg.CanonicalPath)
+		}
+		result = append(result, PackageAPI{Package: targetPackage, Declarations: declarations})
+	}
+	return result, nil
 }
 
 func catalogSymbols(values []gofacts.PackageDeclaration, kind Kind) ([]gofacts.PackageDeclaration, error) {

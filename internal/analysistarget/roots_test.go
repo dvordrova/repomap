@@ -50,7 +50,9 @@ func Open() {}
 				{Path: "gopkg.in/telebot.v3/layout", ModuleDir: "."},
 			},
 			AnalysisTarget: &surfacediscovery.AnalysisTargetInput{
-				Kind: surfacediscovery.AnalysisTargetLibraryPackage, PackagePath: target.PackagePath,
+				TargetRef: target.Ref, Kind: surfacediscovery.AnalysisTargetModuleLibrary,
+				ModuleID: target.ModuleID, ModulePath: target.ModulePath, ModuleDir: target.ModuleDir,
+				TargetPackages: targetRootPackagePaths(target),
 			},
 		},
 	)
@@ -68,24 +70,24 @@ func Open() {}
 	if err := ValidateExactRoots(target, result.DirectCallIndex, roots); err != nil {
 		t.Fatalf("ValidateExactRoots: %v", err)
 	}
-	wantSymbols := []string{
-		"gopkg.in/telebot.v3.NewBot",
-		"gopkg.in/telebot.v3.(*Bot).Raw",
-		"gopkg.in/telebot.v3.(*Bot).Download",
-		"gopkg.in/telebot.v3.File",
-		"gopkg.in/telebot.v3.(*hiddenType).Exported",
-		"gopkg.in/telebot.v3.(*hiddenGeneric).Convert",
+	want := []TargetRoot{
+		{Path: "layout/layout.go", Line: 2, Symbol: "gopkg.in/telebot.v3/layout.Open", Package: "gopkg.in/telebot.v3/layout"},
+		{Path: "telebot.go", Line: 4, Symbol: "gopkg.in/telebot.v3.NewBot", Package: "gopkg.in/telebot.v3"},
+		{Path: "telebot.go", Line: 5, Symbol: "gopkg.in/telebot.v3.(*Bot).Raw", Package: "gopkg.in/telebot.v3"},
+		{Path: "telebot.go", Line: 6, Symbol: "gopkg.in/telebot.v3.(*Bot).Download", Package: "gopkg.in/telebot.v3"},
+		{Path: "telebot.go", Line: 7, Symbol: "gopkg.in/telebot.v3.File", Package: "gopkg.in/telebot.v3"},
+		{Path: "telebot.go", Line: 10, Symbol: "gopkg.in/telebot.v3.(*hiddenType).Exported", Package: "gopkg.in/telebot.v3"},
+		{Path: "telebot.go", Line: 13, Symbol: "gopkg.in/telebot.v3.(*hiddenGeneric).Convert", Package: "gopkg.in/telebot.v3"},
 	}
-	if len(roots.Roots) != len(wantSymbols) || roots.OmittedRoots != 0 {
-		t.Fatalf("roots = %#v omitted=%d, want six complete API roots", roots.Roots, roots.OmittedRoots)
+	if len(roots.Roots) != len(want) || roots.OmittedRoots != 0 {
+		t.Fatalf("roots = %#v omitted=%d, want complete module API roots", roots.Roots, roots.OmittedRoots)
 	}
-	wantLines := []int{4, 5, 6, 7, 10, 13}
 	for index, root := range roots.Roots {
-		if root.Symbol != wantSymbols[index] || root.Package != target.PackagePath ||
-			root.NodeID == "" || root.Path != "telebot.go" || root.Line != wantLines[index] {
-			t.Fatalf("root[%d] = %#v, want exact %q at telebot.go:%d", index, root, wantSymbols[index], wantLines[index])
+		if root.Symbol != want[index].Symbol || root.Package != want[index].Package ||
+			root.NodeID == "" || root.Path != want[index].Path || root.Line != want[index].Line {
+			t.Fatalf("root[%d] = %#v, want exact %#v", index, root, want[index])
 		}
-		if strings.Contains(root.Symbol, ".main") || strings.Contains(root.Symbol, "/layout.") {
+		if strings.Contains(root.Symbol, ".main") {
 			t.Fatalf("off-target or synthetic main root leaked: %#v", root)
 		}
 	}
@@ -100,7 +102,7 @@ func Open() {}
 	snapshot := roots.Snapshot()
 	snapshot.Scenario.Tags = append(snapshot.Scenario.Tags, "mutated")
 	snapshot.Roots[0].Path = "mutated.go"
-	if roots.Roots[0].Path != "telebot.go" || len(roots.Scenario.Tags) != 0 {
+	if roots.Roots[0].Path != "layout/layout.go" || len(roots.Scenario.Tags) != 0 {
 		t.Fatalf("Snapshot mutation changed producer envelope: %#v", roots)
 	}
 

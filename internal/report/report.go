@@ -46,7 +46,9 @@ import (
 // Format 44 promotes accepted entry-call v2 families for that exact target.
 // Format 45 adds render-only sibling target-page navigation while preserving
 // one canonical ReportData value per page.
-const CurrentFormatVersion = 45
+// Format 46 replaces package pages with exact executable and aggregated
+// module-library target pages.
+const CurrentFormatVersion = 46
 
 // Decision 232: adjudication anchor coverage + semantic-empty browse.
 // Decision 233: alternate co-projection + concentration marker.
@@ -55,7 +57,9 @@ const CurrentFormatVersion = 45
 // Decision 236 (v11): Map projection/lenses (projection 14).
 // Decision 277: a selected Go library projects exact executable public-API
 // declaration roots without inventing a Component owner (projection 16).
-const AtlasStudyReportProjectionVersion = 16
+// Decision 280: a module-library Study binds public roots across every exact
+// API package in the selected go.mod (projection 17).
+const AtlasStudyReportProjectionVersion = 17
 
 // MaxAtlasStudyBrowseSpans bounds the report-side provider-free per-span
 // browse. Truthful Total/Shown keep larger repositories honest; the complete

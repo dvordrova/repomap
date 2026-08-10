@@ -470,7 +470,7 @@ func TestWorkspacePackageGraphPreservesArchitectureComponentAndSearchConsumers(t
 		t.Fatalf("semantic search changed:\nlegacy: %#v\nnew:    %#v", legacySearch, projectedSearch)
 	}
 
-	if CurrentFormatVersion != 45 ||
+	if CurrentFormatVersion != 46 ||
 		SemanticSearchIndexVersion != 6 ||
 		CurrentRunManifestVersion != 18 {
 		t.Fatalf(

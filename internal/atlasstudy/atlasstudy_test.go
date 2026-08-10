@@ -862,12 +862,12 @@ func TestStudyRejectsRepeatedDirectionsForOneBackendSpan(t *testing.T) {
 	}
 }
 
-func TestStudyV8RequestAndV9ResultIdentityRejectEarlierArtifacts(t *testing.T) {
-	if Version != 8 || ResultVersion != 9 || PromptVersion != "atlas-study-prompt-v14" ||
-		RequestArtifactFilename != "atlas_study_request.v8.json" ||
-		ResultArtifactFilename != "atlas_study_result.v9.json" ||
-		StatusArtifactFilename != "atlas_study_status.v9.json" {
-		t.Fatalf("Study v8 request / v9 result identity is incomplete: %d %d %q %q %q %q",
+func TestStudyV9RequestAndV10ResultIdentityRejectEarlierArtifacts(t *testing.T) {
+	if Version != 9 || ResultVersion != 10 || PromptVersion != "atlas-study-prompt-v15" ||
+		RequestArtifactFilename != "atlas_study_request.v9.json" ||
+		ResultArtifactFilename != "atlas_study_result.v10.json" ||
+		StatusArtifactFilename != "atlas_study_status.v10.json" {
+		t.Fatalf("Study v9 request / v10 result identity is incomplete: %d %d %q %q %q %q",
 			Version, ResultVersion, PromptVersion, RequestArtifactFilename,
 			ResultArtifactFilename, StatusArtifactFilename)
 	}
@@ -876,11 +876,11 @@ func TestStudyV8RequestAndV9ResultIdentityRejectEarlierArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request.Version = 7
-	request.PromptVersion = "atlas-study-prompt-v13"
-	request.CatalogRef = fmt.Sprintf("atlas-study-v7-%s", request.CatalogSHA256)
+	request.Version = 8
+	request.PromptVersion = "atlas-study-prompt-v14"
+	request.CatalogRef = fmt.Sprintf("atlas-study-v8-%s", request.CatalogSHA256)
 	if err := product.ValidateRequestRecord(request); err == nil {
-		t.Fatal("Study v7 request replayed under the v8 contract")
+		t.Fatal("Study v8 request replayed under the v9 contract")
 	}
 
 	result, _, err := product.ResolveResponseJSON(validResponse(t, product))
@@ -889,12 +889,12 @@ func TestStudyV8RequestAndV9ResultIdentityRejectEarlierArtifacts(t *testing.T) {
 	}
 	result.Version = Version
 	if err := product.ValidateResultRecord(result); err == nil {
-		t.Fatal("Study v8 result replayed under the v9 local validator contract")
+		t.Fatal("Study v9 result replayed under the v10 local validator contract")
 	}
 	status := product.PreparedStatus()
 	status.Version = Version
 	if err := product.ValidateStatus(status); err == nil {
-		t.Fatal("Study v7 status replayed under the v8 local artifact contract")
+		t.Fatal("Study v9 status replayed under the v10 local artifact contract")
 	}
 }
 

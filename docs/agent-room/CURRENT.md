@@ -64,6 +64,7 @@ Active decisions (each approved by the repository owner via its supervisory goal
 60. decisions/277-library-study-public-api-roots.md
 61. decisions/278-target-label-and-freshness-truth.md
 62. decisions/279-ordinary-target-portfolio-candidate-surface.md
+63. decisions/280-module-product-surfaces.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
@@ -756,6 +757,29 @@ Status:
 Approved by:
 	Repository owner after Telebot exposed that ordinary package coverage would
 	create redundant sibling Study pages for every public subpackage, 2026-08-10.
+
+## Decision 280
+
+Status:
+	ACTIVE. AnalysisTarget v2 and TargetCatalog v4 replace package-library pages
+	with at most one exact module-library product per `go.mod`, alongside every
+	exact executable package. A module library has no fabricated PackagePath: its
+	sealed ModulePackages are all exact owning-module non-main packages, while
+	LibraryPackages and package-qualified names-only PackageAPIs contain only
+	complete, exported, externally importable roots. Main and internal packages
+	never become public API roots; internal non-main packages remain analysis
+	context. Incomplete public declaration or module-package inventory omits only
+	the unprovable module library and retains exact executables. Zero-export
+	modules emit no library target. Exact keys disambiguate a root main from its
+	module library, ambiguous short aliases fail closed, and module scoping drops
+	all main packages before Architecture and Study budgets. The selected-target
+	container advances to v2 / `target_run_container.v2.json`; v1 rejects.
+
+Approved by:
+	Repository owner after specifying that Go product analysis should split first
+	by `go.mod`, then into exact `main` executables and one aggregate exported
+	library surface rather than one Study/Architecture run per package,
+	2026-08-10.
 
 ## Decision 241 follow-up
 

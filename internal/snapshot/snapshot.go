@@ -235,11 +235,11 @@ func BuildContext(ctx context.Context, opts Options) (Snapshot, error) {
 				s.GoFacts = &scoped
 				s.FilteredFiles = analysisTargetFiles(scoped, analysisFiles)
 			case analysistarget.ResolutionAmbiguous:
-				return Snapshot{}, fmt.Errorf("analysis target is ambiguous; choose one package with --target: %s", analysisTargetCandidateKeys(resolution.Candidates))
+				return Snapshot{}, fmt.Errorf("analysis target is ambiguous; choose one target with --target: %s", analysisTargetCandidateKeys(resolution.Candidates))
 			}
 		}
 		if strings.TrimSpace(opts.AnalysisTargetOverride) != "" && s.AnalysisTarget == nil {
-			return Snapshot{}, fmt.Errorf("resolve analysis target: explicit override %q requires available exact Go package facts", opts.AnalysisTargetOverride)
+			return Snapshot{}, fmt.Errorf("resolve analysis target: explicit override %q requires available exact Go target facts", opts.AnalysisTargetOverride)
 		}
 	}
 
@@ -331,9 +331,13 @@ func analysisTargetCandidateKeys(candidates []analysistarget.Candidate) string {
 		if len(keys) == maxKeys {
 			break
 		}
-		key := candidate.Target.PackageDir
+		key := candidate.Target.DisplayPath()
 		if key == "." {
-			key = candidate.Target.PackagePath
+			if candidate.Target.Kind == analysistarget.KindModuleLibrary {
+				key = candidate.Target.ModulePath
+			} else {
+				key = candidate.Target.PackagePath
+			}
 		}
 		keys = append(keys, key)
 	}

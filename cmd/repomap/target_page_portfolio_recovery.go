@@ -81,7 +81,7 @@ func runFinalizeTargetPagesCLI(args []string, stdout, stderr io.Writer) error {
 	}
 	for _, run := range runs {
 		if _, err := assessRunPublication(run.RunDir); err != nil {
-			return fmt.Errorf("verify recovered target page %s: %w", run.Target.PackageDir, err)
+			return fmt.Errorf("verify recovered target page %s: %w", run.Target.DisplayPath(), err)
 		}
 	}
 	linkLatest(filepath.Dir(exactDefaultRunDir), exactDefaultRunDir, stderr)
@@ -206,8 +206,9 @@ func recoverExistingTargetPageRuns(
 			return snapshot.TargetPagePortfolio{}, nil, fmt.Errorf("target page recovery: decode metadata for run %s", filepath.Base(runDir))
 		}
 		projection, selected := projectionByRef[metadata.AnalysisTargetRef]
-		if !selected || metadata.RunID != filepath.Base(runDir) ||
-			metadata.AnalysisTargetPackage != projection.Target.PackagePath {
+		if !selected || !targetPageRecoveryMetadataMatches(
+			metadata, filepath.Base(runDir), projection,
+		) {
 			return snapshot.TargetPagePortfolio{}, nil, fmt.Errorf("target page recovery: run %s does not match one selected target", filepath.Base(runDir))
 		}
 		if runDir == defaultRunDir && metadata.AnalysisTargetRef != container.DefaultTargetRef {
@@ -301,6 +302,19 @@ func recoverExistingTargetPageRuns(
 		}
 	}
 	return portfolio, runs, nil
+}
+
+func targetPageRecoveryMetadataMatches(
+	metadata debugdump.RunMeta,
+	runID string,
+	projection snapshot.TargetRunProjection,
+) bool {
+	return metadata.RunID == runID &&
+		metadata.AnalysisTargetRef == projection.Target.Ref &&
+		metadata.AnalysisTargetKind == string(projection.Target.Kind) &&
+		metadata.AnalysisTargetModule == projection.Target.ModulePath &&
+		metadata.AnalysisTargetDisplayPath == projection.Target.DisplayPath() &&
+		metadata.AnalysisTargetPackage == projection.Target.PackagePath
 }
 
 func exactExistingTargetPageRunDir(runDir string) (string, error) {

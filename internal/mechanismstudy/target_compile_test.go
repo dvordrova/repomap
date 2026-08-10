@@ -181,21 +181,35 @@ func configure() { connect() }
 func connect() {}
 func privateHelper() { connect() }
 `,
+		"layout/layout.go": `package layout
+func New() { prepare() }
+func prepare() {}
+`,
 	})
 	target := exactTargetForPackage(t, index, module, module)
-	if target.Kind != analysistarget.KindLibraryPackage {
-		t.Fatalf("target kind = %s, want library", target.Kind)
+	if target.Kind != analysistarget.KindModuleLibrary || len(target.LibraryPackages) != 2 {
+		t.Fatalf("target = %+v, want one two-package module library", target)
 	}
 	reading := requireNodeBySymbol(t, index, module+".configure")
 	compilation := compileTargetedReading(t, index, target, reading)
 	authority := compilation.authority["t1"]
 	if len(authority.targetRootRefs) != 1 {
-		t.Fatalf("library target roots = %#v, want exact exported NewBot only", authority.targetRootRefs)
+		t.Fatalf("card target roots = %#v, want only the root connected to this card's reading", authority.targetRootRefs)
 	}
+	gotRoots := make(map[string]bool, len(authority.targetRootRefs))
 	for ref := range authority.targetRootRefs {
-		if got := authority.nodeByRef[ref].Symbol.ID; got != module+".NewBot" {
-			t.Fatalf("library root = %s, want NewBot", got)
-		}
+		gotRoots[authority.nodeByRef[ref].Symbol.ID] = true
+	}
+	if !gotRoots[module+".NewBot"] {
+		t.Fatalf("card roots = %#v, want package-qualified NewBot", gotRoots)
+	}
+	var digest compilationDigest
+	if err := json.Unmarshal([]byte(compilation.catalogAuthorityJSON), &digest); err != nil {
+		t.Fatalf("decode module-library mechanism authority: %v", err)
+	}
+	if digest.AnalysisTarget == nil || len(digest.AnalysisTarget.LibraryPackages) != 2 ||
+		digest.AnalysisTarget.LibraryPackages[1].PackagePath != module+"/layout" {
+		t.Fatalf("mechanism authority lost the plural module target: %+v", digest.AnalysisTarget)
 	}
 	for _, node := range authority.nodeByRef {
 		if node.Symbol.Name == "main" {
@@ -630,6 +644,8 @@ func exactTargetForPackage(
 	t.Helper()
 	const moduleID = "test-module"
 	packageDirs := make(map[string]string)
+	mainPackages := make(map[string]bool)
+	declarations := make(map[string][]gofacts.PackageDeclaration)
 	for _, node := range index.Nodes {
 		dir := strings.TrimPrefix(node.Package, modulePath)
 		dir = strings.TrimPrefix(dir, "/")
@@ -637,6 +653,16 @@ func exactTargetForPackage(
 			dir = "."
 		}
 		packageDirs[node.Package] = dir
+		if node.Symbol.Name == "main" {
+			mainPackages[node.Package] = true
+		}
+		if node.Exported && !strings.ContainsAny(node.Symbol.Name, ".()[]") {
+			declarations[node.Package] = append(declarations[node.Package], gofacts.PackageDeclaration{
+				Kind: gofacts.PackageDeclarationFunc, Name: node.Symbol.Name,
+				Path: node.Declaration.Path, Line: node.Declaration.Line,
+				Column: node.Declaration.Column, ExecutableBody: true,
+			})
+		}
 	}
 	facts := gofacts.Facts{Modules: []gofacts.ModuleFact{{
 		ID: moduleID, ModulePath: modulePath, ModuleDir: ".", Main: true,
@@ -647,9 +673,26 @@ func exactTargetForPackage(
 	}
 	sort.Strings(paths)
 	for _, path := range paths {
+		packageName := path
+		if slash := strings.LastIndexByte(packageName, '/'); slash >= 0 {
+			packageName = packageName[slash+1:]
+		}
+		if mainPackages[path] {
+			packageName = "main"
+		}
+		canonicalDeclarations, err := gofacts.CanonicalPackageDeclarations(declarations[path])
+		if err != nil {
+			t.Fatalf("canonical declarations for %s: %v", path, err)
+		}
 		facts.Packages = append(facts.Packages, gofacts.PackageFact{
-			CanonicalPath: path, Name: filepath.Base(packageDirs[path]), ModuleID: moduleID,
-			ModulePath: modulePath, PackageDir: packageDirs[path], Locality: "local",
+			CanonicalPath: path, Name: packageName, ModuleID: moduleID,
+			ModulePath: modulePath, PackageDir: packageDirs[path],
+			ModuleRelativeDir: packageDirs[path], Locality: "local",
+			Declarations: canonicalDeclarations, DeclarationsScanned: true,
+			LoadCompleteness: &gofacts.PackageLoadCompleteness{
+				Version: gofacts.PackageLoadCompletenessVersion,
+				State:   gofacts.PackageLoadComplete,
+			},
 		})
 	}
 	for _, node := range index.Nodes {

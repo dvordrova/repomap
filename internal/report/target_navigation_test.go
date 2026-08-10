@@ -188,6 +188,7 @@ const tabs = new Element("nav");
 window.__REPOMAP_WORKSPACE_TEST__.renderAnalysisTargetMenu(tabs);
 function hasClass(node, name) { return String(node.className || "").split(/\s+/).includes(name); }
 function countClass(node, name) { return (hasClass(node,name) ? 1 : 0) + node.children.reduce((sum, child) => sum + countClass(child,name), 0); }
+function firstClass(node, name) { if (hasClass(node,name)) return node; for (const child of node.children) { const found = firstClass(child,name); if (found) return found; } return null; }
 const groups = tabs.children.map((section) => ({
   label: section.children[0].textContent,
   items: section.children[1].children.map((row) => {
@@ -196,8 +197,10 @@ const groups = tabs.children.map((section) => ({
       tag: item.tagName, ref: item.attributes["data-target-ref"] || "",
       href: item.attributes.href || "", ariaCurrent: item.attributes["aria-current"] || "",
       ariaDisabled: item.attributes["aria-disabled"] || "",
+      title: item.attributes.title || "",
       workspaceView: item.attributes["data-workspace-view"] || "",
       active: hasClass(item,"rm-active"), disabled: hasClass(item,"rm-target-link--disabled"),
+      label: (firstClass(item,"rm-target-link__label") || {}).textContent || "",
       defaultMarkers: countClass(item,"rm-target-link__default-dot"), hasClick: typeof item.onclick === "function",
     };
   }),
@@ -216,9 +219,9 @@ process.stdout.write(JSON.stringify({groups,hash:window.location.hash}));
 		Groups []struct {
 			Label string
 			Items []struct {
-				Tag, Ref, Href, AriaCurrent, AriaDisabled, WorkspaceView string
-				Active, Disabled, HasClick                               bool
-				DefaultMarkers                                           int
+				Tag, Ref, Href, AriaCurrent, AriaDisabled, WorkspaceView, Label, Title string
+				Active, Disabled, HasClick                                             bool
+				DefaultMarkers                                                         int
 			}
 		}
 		Hash string
@@ -243,7 +246,8 @@ process.stdout.write(JSON.stringify({groups,hash:window.location.hash}));
 	}
 	unavailable := got.Groups[1].Items[1]
 	if unavailable.Tag != "SPAN" || unavailable.Href != "" || unavailable.AriaDisabled != "true" ||
-		!unavailable.Disabled || unavailable.Active || unavailable.HasClick {
+		!unavailable.Disabled || unavailable.Active || unavailable.HasClick || unavailable.Label != "Library API" ||
+		unavailable.Title != "example.test/api" {
 		t.Fatalf("unavailable target = %#v", unavailable)
 	}
 	if got.Hash != "#study-theme-25" {
@@ -258,6 +262,7 @@ func TestTargetNavigationRejectsUnboundOrUnsafeProjection(t *testing.T) {
 		"unknown default":       func(value *TargetNavigationPortfolio) { value.DefaultTargetRef = "unknown" },
 		"duplicate":             func(value *TargetNavigationPortfolio) { value.Targets[1].TargetRef = value.Targets[0].TargetRef },
 		"current mismatch":      func(value *TargetNavigationPortfolio) { value.Targets[1].DisplayPath = "services/api/wrong" },
+		"library display drift": func(value *TargetNavigationPortfolio) { value.Targets[2].DisplayPath = "services/api/pkg/client" },
 		"availability mismatch": func(value *TargetNavigationPortfolio) { value.Targets[2].Href = "../missing/report.html#/map" },
 		"absolute href": func(value *TargetNavigationPortfolio) {
 			value.Targets[0].Href = "https://example.test/report.html#/map"
@@ -282,18 +287,18 @@ func targetNavigationFixture() (*ReportData, *TargetNavigationPortfolio) {
 		RepoName:      "workspace",
 		AnalysisTarget: &analysistarget.Target{
 			Version: analysistarget.Version,
-			Ref:     "target-api", Kind: analysistarget.KindLibraryPackage,
-			ModuleDir: "services/api", PackageDir: "services/api/pkg/client",
+			Ref:     "target-api", Kind: analysistarget.KindExecutablePackage,
+			ModulePath: "example.test/api", ModuleDir: "services/api", PackageDir: "services/api/pkg/client",
 			PackagePath: "example.test/api/pkg/client",
 		},
 	}
 	navigation := &TargetNavigationPortfolio{
 		Version: TargetNavigationVersion, DefaultTargetRef: "target-server", CurrentTargetRef: "target-api",
 		Targets: []TargetNavigationItem{
-			{TargetRef: "target-server", ModuleDir: ".", DisplayPath: "cmd/server", Available: true, Href: "../20260810-120000-server-a1b2c3/report.html#/map"},
-			{TargetRef: "target-api", ModuleDir: "services/api", DisplayPath: "services/api/pkg/client", Available: true, Href: "#/map"},
-			{TargetRef: "target-worker", ModuleDir: "services/api", DisplayPath: "services/api/cmd/worker"},
-			{TargetRef: "target-tool", ModuleDir: "tools", DisplayPath: "tools/cmd/check", Available: true, Href: "../20260810-120000-tool-a1b2c3/report.html#/map"},
+			{TargetRef: "target-server", Kind: analysistarget.KindExecutablePackage, ModulePath: "example.test/workspace", ModuleDir: ".", DisplayPath: "cmd/server", Available: true, Href: "../20260810-120000-server-a1b2c3/report.html#/map"},
+			{TargetRef: "target-api", Kind: analysistarget.KindExecutablePackage, ModulePath: "example.test/api", ModuleDir: "services/api", DisplayPath: "services/api/pkg/client", Available: true, Href: "#/map"},
+			{TargetRef: "target-worker", Kind: analysistarget.KindModuleLibrary, ModulePath: "example.test/api", ModuleDir: "services/api", DisplayPath: "services/api"},
+			{TargetRef: "target-tool", Kind: analysistarget.KindExecutablePackage, ModulePath: "example.test/tools", ModuleDir: "tools", DisplayPath: "tools/cmd/check", Available: true, Href: "../20260810-120000-tool-a1b2c3/report.html#/map"},
 		},
 	}
 	return data, navigation
@@ -353,12 +358,12 @@ func targetNavigationArtifactFixture(
 	selected := make([]string, 0, 2)
 	for _, entry := range deferred.TargetCatalog.Entries {
 		if entry.Candidate.Target.PackageDir == "cmd/server" ||
-			entry.Candidate.Target.PackageDir == "pkg/client" {
+			entry.Candidate.Target.Kind == analysistarget.KindModuleLibrary {
 			selected = append(selected, entry.Candidate.Target.Ref)
 		}
 	}
 	if len(selected) != 2 {
-		t.Fatalf("selected target refs = %v, want server and client", selected)
+		t.Fatalf("selected target refs = %v, want server executable and module Library API", selected)
 	}
 	container, err := snapshot.BuildTargetRunContainer(deferred, snapshot.TargetRunSelection{
 		DefaultTargetRef: selected[0],

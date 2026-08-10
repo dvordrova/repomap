@@ -2,6 +2,7 @@ package analysistarget
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/gofacts"
@@ -68,12 +69,12 @@ func TestResolveRepomapIgnoresNestedModulesDuringAutomaticSelection(t *testing.T
 	facts.Modules = append(facts.Modules, nested)
 	facts.Packages = append(facts.Packages, gofacts.PackageFact{
 		CanonicalPath: "example.com/beegoapp", Name: "main", ModuleID: nested.ID,
-		ModulePath: nested.ModulePath, PackageDir: ".", ModuleRelativeDir: ".",
+		ModulePath: nested.ModulePath, PackageDir: nested.ModuleDir, ModuleRelativeDir: ".",
 		DisplayPath: nested.ModuleDir, Locality: "local",
 	})
 	facts.EntrypointPackages = append(facts.EntrypointPackages, gofacts.Entrypoint{
 		ModulePath: nested.ModulePath, ImportPath: nested.ModulePath,
-		Dir: nested.ModuleDir, PackageDir: ".", ModuleRelativeDir: ".",
+		Dir: nested.ModuleDir, PackageDir: nested.ModuleDir, ModuleRelativeDir: ".",
 		ModuleDir: nested.ModuleDir, Kind: "unknown", GoFiles: []string{"main.go"},
 		Anchors: []gofacts.EntrypointAnchor{{
 			Version: gofacts.EntrypointAnchorVersion, Kind: gofacts.EntrypointAnchorGoMain,
@@ -133,12 +134,44 @@ func TestResolveTelebotLikeRootLibrary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	assertSelectedPackage(t, resolution, "gopkg.in/telebot.v3")
-	if resolution.Selected.Kind != KindLibraryPackage || resolution.Selected.RootBoundary != RootBoundaryExactPublicAPI {
+	assertSelectedModule(t, resolution, "gopkg.in/telebot.v3")
+	if resolution.Selected.Kind != KindModuleLibrary || resolution.Selected.RootBoundary != RootBoundaryExactModuleAPI {
 		t.Fatalf("selected library target = %#v", resolution.Selected)
 	}
-	if len(resolution.Selected.Roots) != 0 {
-		t.Fatalf("library target invented roots: %#v", resolution.Selected.Roots)
+	if len(resolution.Selected.Roots) != 0 || len(resolution.Selected.ModulePackages) != 3 ||
+		len(resolution.Selected.LibraryPackages) != 3 {
+		t.Fatalf("module library target inventory = %#v", resolution.Selected)
+	}
+}
+
+func TestResolveRootMainAndModuleLibraryOverrideCollisionIsExplicit(t *testing.T) {
+	facts := syntheticFacts("module-root", "example.com/mixed", []syntheticPackage{
+		{path: "example.com/mixed", dir: ".", executable: true, line: 5},
+		{path: "example.com/mixed/api", dir: "api"},
+	})
+
+	resolution, err := Resolve(facts, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSelectedPackage(t, resolution, "example.com/mixed")
+
+	_, collisionErr := Resolve(facts, Options{Override: "example.com/mixed"})
+	if !errors.Is(collisionErr, ErrOverrideAmbiguous) {
+		t.Fatalf("module/package alias collision = %v", collisionErr)
+	}
+	candidates, err := Candidates(facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range candidates {
+		if !strings.Contains(collisionErr.Error(), candidate.Key) {
+			t.Fatalf("collision error omitted exact key %q: %v", candidate.Key, collisionErr)
+		}
+		selected, err := Resolve(facts, Options{Override: candidate.Key})
+		if err != nil || selected.Selected == nil || selected.Selected.Ref != candidate.Target.Ref {
+			t.Fatalf("exact key %q did not restore one target: %#v / %v", candidate.Key, selected, err)
+		}
 	}
 }
 
@@ -174,13 +207,22 @@ type syntheticPackage struct {
 func syntheticFacts(moduleID, modulePath string, definitions []syntheticPackage) gofacts.Facts {
 	facts := gofacts.Facts{Modules: []gofacts.ModuleFact{{
 		ID: moduleID, ModulePath: modulePath, ModuleDir: ".", GoMod: "go.mod", Main: true,
+		PackagesCount: len(definitions), RetainedPackagesCount: len(definitions),
+		Coverage: gofacts.ModuleCoverage{
+			State: gofacts.CoverageComplete, PackagesDiscovered: len(definitions), PackagesRetained: len(definitions),
+		},
 	}}}
 	for _, definition := range definitions {
-		facts.Packages = append(facts.Packages, gofacts.PackageFact{
+		pkg := gofacts.PackageFact{
 			CanonicalPath: definition.path, Name: packageName(definition), ModuleID: moduleID,
 			ModulePath: modulePath, PackageDir: definition.dir, ModuleRelativeDir: definition.dir,
-			DisplayPath: definition.dir, Locality: "local",
-		})
+			DisplayPath: definition.dir, Locality: "local", LoadCompleteness: completePackageLoad(),
+		}
+		if !definition.executable {
+			pkg.DeclarationsScanned = true
+			pkg.Declarations = []gofacts.PackageDeclaration{{Kind: gofacts.PackageDeclarationType, Name: "Public"}}
+		}
+		facts.Packages = append(facts.Packages, pkg)
 		if !definition.executable {
 			continue
 		}
@@ -197,7 +239,16 @@ func syntheticFacts(moduleID, modulePath string, definitions []syntheticPackage)
 			}},
 		})
 	}
+	facts.PackagesCount = len(definitions)
+	facts.RetainedPackagesCount = len(definitions)
 	return facts
+}
+
+func completePackageLoad() *gofacts.PackageLoadCompleteness {
+	return &gofacts.PackageLoadCompleteness{
+		Version: gofacts.PackageLoadCompletenessVersion,
+		State:   gofacts.PackageLoadComplete,
+	}
 }
 
 func packageName(definition syntheticPackage) string {
@@ -220,5 +271,16 @@ func assertSelectedPackage(t *testing.T, resolution Resolution, packagePath stri
 	}
 	if resolution.Selected.Ref == "" {
 		t.Fatal("selected target has no bound identity")
+	}
+}
+
+func assertSelectedModule(t *testing.T, resolution Resolution, modulePath string) {
+	t.Helper()
+	if resolution.State != ResolutionSelected || resolution.Selected == nil {
+		t.Fatalf("resolution = %#v", resolution)
+	}
+	if resolution.Selected.Kind != KindModuleLibrary || resolution.Selected.ModulePath != modulePath ||
+		resolution.Selected.PackagePath != "" || resolution.Selected.PackageDir != "" {
+		t.Fatalf("selected module library = %#v, want %q", resolution.Selected, modulePath)
 	}
 }

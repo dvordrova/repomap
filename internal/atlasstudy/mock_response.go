@@ -157,7 +157,8 @@ func mockDirectionForSpan(
 	}
 
 	// Principals are the chosen readings' advertised components. A focused
-	// public-API root may instead use its one exact selected package Unit.
+	// public-API root may instead use its one exact selected package Unit from
+	// the module-library binding.
 	principalSet := make(map[CanonicalRef]struct{}, MaxDirectionReadingCount)
 	for _, target := range chosen {
 		for _, principal := range target.PrincipalRefs {

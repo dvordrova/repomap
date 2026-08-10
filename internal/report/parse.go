@@ -904,17 +904,22 @@ func collectOpenablePaths(data *ReportData) {
 	for _, item := range exactRepositoryAtlasPackageEvidence(data) {
 		add(item.Location.Path)
 	}
-	// D277: every exact exported callable in the selected library package is
-	// an eligible Study root. Authorize its build-selected source file before
-	// source coverage captures the run inputs; the eventual 32-span request
-	// frontier must not narrow local source/action authority.
+	// D277/D280: every exact exported callable in every selected public API
+	// package is an eligible Study root. Authorize its build-selected source
+	// file before source coverage captures the run inputs; the eventual 32-span
+	// request frontier must not narrow local source/action authority.
 	if data.AnalysisTarget != nil &&
-		data.AnalysisTarget.Kind == analysistarget.KindLibraryPackage &&
+		(data.AnalysisTarget.Kind == analysistarget.KindLibraryPackage ||
+			data.AnalysisTarget.Kind == analysistarget.KindModuleLibrary) &&
 		data.repositoryGoFacts != nil {
+		rootPackages := make(map[string]analysistarget.TargetPackage)
+		for _, pkg := range data.AnalysisTarget.RootPackages() {
+			rootPackages[pkg.PackagePath] = pkg
+		}
 		for _, pkg := range data.repositoryGoFacts.Packages {
-			if pkg.ModuleID != data.AnalysisTarget.ModuleID ||
-				pkg.CanonicalPath != data.AnalysisTarget.PackagePath ||
-				!pkg.DeclarationsScanned {
+			rootPackage, selected := rootPackages[pkg.CanonicalPath]
+			if !selected || pkg.ModuleID != data.AnalysisTarget.ModuleID ||
+				pkg.PackageDir != rootPackage.PackageDir || !pkg.DeclarationsScanned {
 				continue
 			}
 			files := make(map[string]struct{}, len(pkg.Files))

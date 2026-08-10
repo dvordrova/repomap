@@ -936,6 +936,9 @@ func allPrivateIdentities(input Input, includeTargetLocators bool) map[string]st
 	if input.AnalysisTargetRoot != nil {
 		add(input.AnalysisTargetRoot.AnalysisTarget.Ref)
 		add(input.AnalysisTargetRoot.UnitID)
+		for _, pkg := range input.AnalysisTargetRoot.Packages {
+			add(pkg.UnitID)
+		}
 	}
 	for _, unit := range input.Atlas.Units {
 		add(unit.ID)
@@ -1172,11 +1175,9 @@ func validateTargetAssociations(
 
 // validateAnalysisTargetRootContract is the only admission path for a Unit
 // principal. A public API root is one resolved function or method owned by one
-// exact package Unit; it has no conceptual owner or related components. The
-// support's private package bucket is the same canonical Unit identity, which
-// prevents an arbitrary repository Unit from being substituted after local
-// target selection. All pre-D277 Component/Surface principal paths are
-// unchanged.
+// exact package Unit from the selected module-library target; it has no
+// conceptual owner or related components. All pre-D277 Component/Surface
+// principal paths are unchanged.
 func validateAnalysisTargetRootContract(
 	targets map[string]ReadingTarget,
 	supports map[string]ReadingSupport,
@@ -1185,6 +1186,16 @@ func validateAnalysisTargetRootContract(
 ) error {
 	if err := validateAnalysisTargetRootScope(scope); err != nil {
 		return err
+	}
+	if scope != nil {
+		for _, pkg := range analysisTargetRootPackages(scope) {
+			unit, ok := units[pkg.UnitID]
+			if !ok || unit.Kind != repositoryatlas.UnitPackage ||
+				unit.Name != pkg.Package.PackagePath ||
+				unit.ParentID != scope.AnalysisTarget.ModuleID {
+				return fmt.Errorf("atlas study: selected public API package Unit binding mismatch")
+			}
+		}
 	}
 	rootSupports := make(map[string]int)
 	allSupports := make(map[string][]ReadingSupport)
@@ -1201,10 +1212,12 @@ func validateAnalysisTargetRootContract(
 			len(target.PrincipalRefs) != 1 || target.PrincipalRefs[0].Kind != RefUnit {
 			return fmt.Errorf("atlas study: invalid public API root support")
 		}
-		unit := units[target.PrincipalRefs[0].ID]
-		if scope == nil || unit.Kind != repositoryatlas.UnitPackage ||
-			unit.ID != scope.UnitID || unit.Name != scope.AnalysisTarget.PackagePath ||
-			unit.ParentID != scope.AnalysisTarget.ModuleID || support.PackageBucket != scope.UnitID {
+		unitID := target.PrincipalRefs[0].ID
+		unit := units[unitID]
+		rootPackage, bound := analysisTargetRootPackageByUnit(scope, unitID)
+		if scope == nil || !bound || unit.Kind != repositoryatlas.UnitPackage ||
+			unit.Name != rootPackage.PackagePath ||
+			unit.ParentID != scope.AnalysisTarget.ModuleID || support.PackageBucket != unitID {
 			return fmt.Errorf("atlas study: public API root does not match its exact package Unit")
 		}
 		rootSupports[target.ID]++
@@ -1234,12 +1247,47 @@ func validateAnalysisTargetRootScope(scope *AnalysisTargetRootScope) error {
 	if scope == nil {
 		return nil
 	}
-	if scope.AnalysisTarget.Validate() != nil ||
-		scope.AnalysisTarget.Kind != analysistarget.KindLibraryPackage ||
-		scope.AnalysisTarget.RootBoundary != analysistarget.RootBoundaryExactPublicAPI ||
-		scope.UnitID == "" || strings.TrimSpace(scope.UnitID) != scope.UnitID ||
-		len(scope.UnitID) > 4096 {
+	if scope.AnalysisTarget.Validate() != nil {
 		return fmt.Errorf("atlas study: invalid selected AnalysisTarget root scope")
+	}
+	switch scope.AnalysisTarget.Kind {
+	case analysistarget.KindLibraryPackage:
+		if scope.AnalysisTarget.RootBoundary != analysistarget.RootBoundaryExactPublicAPI ||
+			!validAnalysisTargetRootUnitID(scope.UnitID) || len(scope.Packages) != 0 {
+			return fmt.Errorf("atlas study: invalid selected AnalysisTarget root scope")
+		}
+	case analysistarget.KindModuleLibrary:
+		if scope.AnalysisTarget.RootBoundary != analysistarget.RootBoundaryExactModuleAPI ||
+			scope.UnitID != "" || len(scope.Packages) != len(scope.AnalysisTarget.LibraryPackages) {
+			return fmt.Errorf("atlas study: invalid selected AnalysisTarget root scope")
+		}
+		seenUnits := make(map[string]struct{}, len(scope.Packages))
+		for index, pkg := range scope.Packages {
+			if pkg.Package != scope.AnalysisTarget.LibraryPackages[index] ||
+				!validAnalysisTargetRootUnitID(pkg.UnitID) {
+				return fmt.Errorf("atlas study: invalid selected AnalysisTarget root scope")
+			}
+			if _, duplicate := seenUnits[pkg.UnitID]; duplicate {
+				return fmt.Errorf("atlas study: invalid selected AnalysisTarget root scope")
+			}
+			seenUnits[pkg.UnitID] = struct{}{}
+		}
+	default:
+		return fmt.Errorf("atlas study: invalid selected AnalysisTarget root scope")
+	}
+	return nil
+}
+
+// validatePersistedAnalysisTargetRootScope is the v9 artifact boundary. The
+// superseded package-library shape remains accepted by the live compiler so
+// source callers can move atomically, but no fresh v9 request/result may save
+// the old one-package authority.
+func validatePersistedAnalysisTargetRootScope(scope *AnalysisTargetRootScope) error {
+	if err := validateAnalysisTargetRootScope(scope); err != nil {
+		return err
+	}
+	if scope != nil && scope.AnalysisTarget.Kind != analysistarget.KindModuleLibrary {
+		return fmt.Errorf("atlas study: persisted selected AnalysisTarget root scope requires a module library")
 	}
 	return nil
 }
@@ -1249,7 +1297,41 @@ func cloneAnalysisTargetRootScope(scope *AnalysisTargetRootScope) *AnalysisTarge
 		return nil
 	}
 	cloned := *scope
+	cloned.AnalysisTarget = scope.AnalysisTarget.Snapshot()
+	cloned.Packages = append([]AnalysisTargetRootPackage(nil), scope.Packages...)
 	return &cloned
+}
+
+func validAnalysisTargetRootUnitID(value string) bool {
+	return value != "" && strings.TrimSpace(value) == value && len(value) <= 4096
+}
+
+func analysisTargetRootPackages(scope *AnalysisTargetRootScope) []AnalysisTargetRootPackage {
+	if scope == nil {
+		return nil
+	}
+	if scope.AnalysisTarget.Kind == analysistarget.KindLibraryPackage {
+		return []AnalysisTargetRootPackage{{
+			Package: analysistarget.TargetPackage{
+				PackagePath: scope.AnalysisTarget.PackagePath,
+				PackageDir:  scope.AnalysisTarget.PackageDir,
+			},
+			UnitID: scope.UnitID,
+		}}
+	}
+	return scope.Packages
+}
+
+func analysisTargetRootPackageByUnit(
+	scope *AnalysisTargetRootScope,
+	unitID string,
+) (analysistarget.TargetPackage, bool) {
+	for _, pkg := range analysisTargetRootPackages(scope) {
+		if pkg.UnitID == unitID {
+			return pkg.Package, true
+		}
+	}
+	return analysistarget.TargetPackage{}, false
 }
 
 func containsCanonicalRef(values []CanonicalRef, want CanonicalRef) bool {

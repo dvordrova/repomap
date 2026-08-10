@@ -522,17 +522,23 @@ func (product Product) advertisesPrincipal(principal CanonicalRef) bool {
 	return false
 }
 
-// isAnalysisTargetRootPrincipal recognizes the one closed D277 exception to
-// Component/Surface direction principals. The Unit must be a package Unit and
-// must be bound through one resolved public_api_root support to one resolved,
-// Unit-only reading target. No arbitrary Atlas Unit is eligible.
+// isAnalysisTargetRootPrincipal recognizes the closed D277/D280 exception to
+// Component/Surface direction principals. The Unit must be one exact package
+// binding of the selected module library and must be bound through one
+// resolved public_api_root support to one resolved, Unit-only reading target.
+// No arbitrary Atlas Unit is eligible.
 func (product Product) isAnalysisTargetRootPrincipal(principal CanonicalRef) bool {
-	if principal.Kind != RefUnit || product.input.AnalysisTargetRoot == nil ||
-		principal.ID != product.input.AnalysisTargetRoot.UnitID {
+	if principal.Kind != RefUnit || product.input.AnalysisTargetRoot == nil {
+		return false
+	}
+	rootPackage, bound := analysisTargetRootPackageByUnit(product.input.AnalysisTargetRoot, principal.ID)
+	if !bound {
 		return false
 	}
 	unit, ok := product.byCanonical[principal]
-	if !ok || unit.Kind != RefUnit || unit.UnitKind != repositoryatlas.UnitPackage {
+	if !ok || unit.Kind != RefUnit || unit.UnitKind != repositoryatlas.UnitPackage ||
+		unit.Label != rootPackage.PackagePath ||
+		unit.UnitParentID != product.input.AnalysisTargetRoot.AnalysisTarget.ModuleID {
 		return false
 	}
 	for _, target := range product.catalog {
@@ -555,7 +561,9 @@ func (product Product) isAnalysisTargetRootPrincipal(principal CanonicalRef) boo
 				rootCount++
 			}
 		}
-		return rootCount == 1 && allCount == 1
+		if rootCount == 1 && allCount == 1 {
+			return true
+		}
 	}
 	return false
 }

@@ -22,10 +22,9 @@ type requestIdentity struct {
 }
 
 // Compile projects the exact ordinary portfolio surface from the complete
-// private catalog. Executables and module-root libraries are advertised in
-// canonical catalog order; non-root library packages remain private catalog
-// authority for explicit --target and --all-targets inclusion. The projection
-// never ranks, truncates, or applies a path-purpose heuristic.
+// private catalog. The catalog already contains only executable and aggregate
+// module-library surfaces. The projection never ranks, truncates, or applies
+// a path-purpose heuristic.
 func Compile(repoName string, catalog analysistarget.TargetCatalog) (Compilation, error) {
 	if err := catalog.Validate(); err != nil {
 		return Compilation{}, fmt.Errorf("target portfolio: catalog: %w", err)
@@ -39,7 +38,7 @@ func Compile(repoName string, catalog analysistarget.TargetCatalog) (Compilation
 
 	advertised := ordinarySurfaceEntries(catalog.Entries)
 	if len(advertised) == 0 {
-		return Compilation{}, fmt.Errorf("target portfolio: catalog has no executable or module-root library targets")
+		return Compilation{}, fmt.Errorf("target portfolio: catalog has no executable or module-library targets")
 	}
 	targets := make([]Target, 0, len(advertised))
 	authority := make(map[string]analysistarget.TargetCatalogEntry, len(advertised))
@@ -52,14 +51,11 @@ func Compile(repoName string, catalog analysistarget.TargetCatalog) (Compilation
 		if err := validateDisplayPath(entry.DisplayPath); err != nil {
 			return Compilation{}, err
 		}
-		if !entry.DeclarationsScanned {
-			return Compilation{}, fmt.Errorf("target portfolio: declaration labels are unavailable for %q", entry.DisplayPath)
-		}
-		symbols, err := compileSymbolGroups(entry.Symbols)
+		packages, err := compilePackages(entry)
 		if err != nil {
-			return Compilation{}, fmt.Errorf("target portfolio: target %q symbols: %w", entry.DisplayPath, err)
+			return Compilation{}, fmt.Errorf("target portfolio: target %q packages: %w", entry.DisplayPath, err)
 		}
-		targets = append(targets, Target{Ref: ref, DisplayPath: entry.DisplayPath, Kind: kind, Symbols: symbols})
+		targets = append(targets, Target{Ref: ref, DisplayPath: entry.DisplayPath, Kind: kind, Packages: packages})
 		authority[ref] = snapshotEntry(entry)
 	}
 
@@ -131,12 +127,12 @@ func validateCompilation(compilation Compilation) error {
 		if err != nil {
 			return err
 		}
-		wantSymbols, symbolsErr := compileSymbolGroups(entry.Symbols)
-		if symbolsErr != nil {
-			return fmt.Errorf("target portfolio: target symbols: %w", symbolsErr)
+		wantPackages, packagesErr := compilePackages(entry)
+		if packagesErr != nil {
+			return fmt.Errorf("target portfolio: target packages: %w", packagesErr)
 		}
-		if !entry.DeclarationsScanned || target.Ref != wantRef || target.DisplayPath != entry.DisplayPath || target.Kind != wantKind ||
-			!reflect.DeepEqual(target.Symbols, wantSymbols) ||
+		if target.Ref != wantRef || target.DisplayPath != entry.DisplayPath || target.Kind != wantKind ||
+			!reflect.DeepEqual(target.Packages, wantPackages) ||
 			!reflect.DeepEqual(compilation.authority[wantRef], entry) {
 			return fmt.Errorf("target portfolio: request authority mismatch")
 		}
@@ -160,10 +156,46 @@ func providerKind(kind analysistarget.Kind) (TargetKind, error) {
 	switch kind {
 	case analysistarget.KindExecutablePackage:
 		return TargetExecutable, nil
-	case analysistarget.KindLibraryPackage:
+	case analysistarget.KindModuleLibrary:
 		return TargetLibrary, nil
 	default:
 		return "", fmt.Errorf("target portfolio: unsupported target kind")
+	}
+}
+
+func compilePackages(entry analysistarget.TargetCatalogEntry) ([]PackageSymbols, error) {
+	target := entry.Candidate.Target
+	switch target.Kind {
+	case analysistarget.KindExecutablePackage:
+		if !entry.DeclarationsScanned {
+			return nil, fmt.Errorf("declaration labels are unavailable for %q", entry.DisplayPath)
+		}
+		symbols, err := compileSymbolGroups(entry.Symbols)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateDisplayPath(target.PackageDir); err != nil {
+			return nil, err
+		}
+		return []PackageSymbols{{DisplayPath: target.PackageDir, Symbols: symbols}}, nil
+	case analysistarget.KindModuleLibrary:
+		packages := make([]PackageSymbols, 0, len(entry.PackageAPIs))
+		for _, api := range entry.PackageAPIs {
+			if err := validateDisplayPath(api.Package.PackageDir); err != nil {
+				return nil, err
+			}
+			symbols, err := compileSymbolGroups(api.Declarations)
+			if err != nil {
+				return nil, err
+			}
+			if len(symbols) == 0 {
+				return nil, fmt.Errorf("package %q has no exported declaration labels", api.Package.PackageDir)
+			}
+			packages = append(packages, PackageSymbols{DisplayPath: api.Package.PackageDir, Symbols: symbols})
+		}
+		return packages, nil
+	default:
+		return nil, fmt.Errorf("unsupported target kind")
 	}
 }
 
@@ -218,7 +250,7 @@ func deriveRequestRef(catalogRef string, identity requestIdentity) (string, erro
 }
 
 func compilationSeal(catalogRef, requestSHA string) string {
-	return sha256Hex([]byte("target-portfolio-compilation-v3\x00" + catalogRef + "\x00" + requestSHA))
+	return sha256Hex([]byte("target-portfolio-compilation-v4\x00" + catalogRef + "\x00" + requestSHA))
 }
 
 func sha256Hex(value []byte) string {
@@ -230,6 +262,11 @@ func snapshotEntry(entry analysistarget.TargetCatalogEntry) analysistarget.Targe
 	result := entry
 	result.Candidate.Target = entry.Candidate.Target.Snapshot()
 	result.Symbols = append([]gofacts.PackageDeclaration(nil), entry.Symbols...)
+	result.PackageAPIs = make([]analysistarget.PackageAPI, len(entry.PackageAPIs))
+	for index, api := range entry.PackageAPIs {
+		result.PackageAPIs[index] = api
+		result.PackageAPIs[index].Declarations = append([]gofacts.PackageDeclaration(nil), api.Declarations...)
+	}
 	return result
 }
 

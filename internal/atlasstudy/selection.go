@@ -23,7 +23,7 @@ func (err *CandidateUnavailableError) Error() string {
 	return "atlas study: typed candidate shelf unavailable: " + err.Reason
 }
 
-// SelectAnalysisTargetRootFrontier returns the exact D277 provider seed
+// SelectAnalysisTargetRootFrontier returns the exact D277/D280 provider seed
 // frontier selected by the same bounded policy as Compile. Pre-D277 inputs
 // are returned unchanged so executable/surface seed behavior is byte-stable.
 // The complete considered set remains in Compile's CandidateCoverage.
@@ -42,7 +42,7 @@ func SelectAnalysisTargetRootFrontier(input Input) (Input, error) {
 	return selected, nil
 }
 
-// OrderAnalysisTargetRootReadingTargets exposes the D277 provider order for an
+// OrderAnalysisTargetRootReadingTargets exposes the D277/D280 provider order for an
 // already selected input. It rejects any incomplete, duplicate or non-root
 // member so Theme seed and anchor refs cannot silently diverge from the exact
 // constructor/function/receiver-family frontier after canonical ID sorting.
@@ -154,8 +154,10 @@ func selectStudyCandidates(input Input) (Input, CandidateCoverage, error) {
 	// eligible only through their exact producer join (they already carry
 	// Joins); the frontier is capped at MaxAdvertisedSpans. Selection order is
 	// a request-budget mechanism, never semantic importance.
-	selectedSpans := selectSpansByRole(
-		consideredSpans, supportByID, targets, roles, input.Limits.MaxAdvertisedSpans,
+	selectedSpans := selectSpansByRoleWithBucketOrder(
+		consideredSpans, supportByID, targets, roles,
+		analysisTargetRootPackageBucketOrder(input.AnalysisTargetRoot),
+		input.Limits.MaxAdvertisedSpans,
 	)
 	if selectedSpans == nil {
 		return Input{}, CandidateCoverage{}, &CandidateUnavailableError{Reason: "advertised span budget cannot represent every observed support role"}
@@ -217,8 +219,19 @@ func selectSpansByRole(
 	roles []SupportRole,
 	limit int,
 ) []RouteSpan {
+	return selectSpansByRoleWithBucketOrder(spans, supports, targets, roles, nil, limit)
+}
+
+func selectSpansByRoleWithBucketOrder(
+	spans []RouteSpan,
+	supports map[string]ReadingSupport,
+	targets map[string]ReadingTarget,
+	roles []SupportRole,
+	preferredBuckets []string,
+	limit int,
+) []RouteSpan {
 	ordered := orderedStudySpans(spans, supports, targets)
-	result := minimumSpansByRole(ordered, supports, roles, limit)
+	result := minimumSpansByRole(ordered, supports, roles, preferredBuckets, limit)
 	if result == nil {
 		return nil
 	}
@@ -233,10 +246,19 @@ func selectSpansByRole(
 		markSpanPackageBuckets(allBucketSet, span, supports)
 	}
 	allBuckets := make([]string, 0, len(allBucketSet))
-	for bucket := range allBucketSet {
+	for _, bucket := range preferredBuckets {
+		if _, exists := allBucketSet[bucket]; !exists {
+			continue
+		}
 		allBuckets = append(allBuckets, bucket)
+		delete(allBucketSet, bucket)
 	}
-	sort.Strings(allBuckets)
+	remainingBuckets := make([]string, 0, len(allBucketSet))
+	for bucket := range allBucketSet {
+		remainingBuckets = append(remainingBuckets, bucket)
+	}
+	sort.Strings(remainingBuckets)
+	allBuckets = append(allBuckets, remainingBuckets...)
 	for _, bucket := range allBuckets {
 		if len(result) == limit {
 			break
@@ -314,9 +336,19 @@ func spanUncoveredPackageBucketCount(span RouteSpan, supports map[string]Reading
 	return count
 }
 
-func minimumSpansByRole(spans []RouteSpan, supports map[string]ReadingSupport, roles []SupportRole, limit int) []RouteSpan {
+func minimumSpansByRole(
+	spans []RouteSpan,
+	supports map[string]ReadingSupport,
+	roles []SupportRole,
+	preferredBuckets []string,
+	limit int,
+) []RouteSpan {
 	if limit <= 0 {
 		return nil
+	}
+	bucketRank := make(map[string]int, len(preferredBuckets))
+	for index, bucket := range preferredBuckets {
+		bucketRank[bucket] = index
 	}
 	ordered := cloneRouteSpans(spans)
 	selected := make(map[string]struct{})
@@ -331,8 +363,14 @@ func minimumSpansByRole(spans []RouteSpan, supports map[string]ReadingSupport, r
 			if _, exists := selected[span.ID]; exists {
 				continue
 			}
-			if spanHasRole(span, supports, role) && (chosen < 0 ||
-				len(span.AllowedTargetIDs) < len(ordered[chosen].AllowedTargetIDs)) {
+			if !spanHasRole(span, supports, role) {
+				continue
+			}
+			if chosen < 0 || spanPreferredBucketRank(span, supports, bucketRank) <
+				spanPreferredBucketRank(ordered[chosen], supports, bucketRank) ||
+				spanPreferredBucketRank(span, supports, bucketRank) ==
+					spanPreferredBucketRank(ordered[chosen], supports, bucketRank) &&
+					len(span.AllowedTargetIDs) < len(ordered[chosen].AllowedTargetIDs) {
 				chosen = index
 			}
 		}
@@ -347,6 +385,29 @@ func minimumSpansByRole(spans []RouteSpan, supports map[string]ReadingSupport, r
 		}
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	return result
+}
+
+func spanPreferredBucketRank(
+	span RouteSpan,
+	supports map[string]ReadingSupport,
+	ranks map[string]int,
+) int {
+	best := len(ranks)
+	for _, bucket := range spanPackageBuckets(span, supports) {
+		if rank, ok := ranks[bucket]; ok && rank < best {
+			best = rank
+		}
+	}
+	return best
+}
+
+func analysisTargetRootPackageBucketOrder(scope *AnalysisTargetRootScope) []string {
+	packages := analysisTargetRootPackages(scope)
+	result := make([]string, 0, len(packages))
+	for _, pkg := range packages {
+		result = append(result, string(SupportAnalysisTargetRoot)+"\x00"+pkg.UnitID)
+	}
 	return result
 }
 

@@ -20,7 +20,7 @@ func TestD210CompileBuildsTypedSupportAndBackendSpanWireDeterministically(t *tes
 	if err := json.Unmarshal(product.WireJSON(), &wire); err != nil {
 		t.Fatal(err)
 	}
-	if wire.Version != 8 || len(wire.RouteSupports) != 2 || len(wire.RouteSpans) != 1 {
+	if wire.Version != 9 || len(wire.RouteSupports) != 2 || len(wire.RouteSpans) != 1 {
 		t.Fatalf("typed wire = version:%d supports:%d spans:%d", wire.Version, len(wire.RouteSupports), len(wire.RouteSpans))
 	}
 	span := wire.RouteSpans[0]

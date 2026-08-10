@@ -345,8 +345,8 @@ process.stdout.write(JSON.stringify({
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode typed UI catalog acceptance result: %v\n%s", err, output)
 	}
-	if got.Version != 25 {
-		t.Errorf("catalog version = %d, want 25", got.Version)
+	if got.Version != 26 {
+		t.Errorf("catalog version = %d, want 26", got.Version)
 	}
 	if !got.Membership.Known || got.Membership.Unknown || got.Membership.NonString {
 		t.Errorf("catalog membership contract = %#v", got.Membership)

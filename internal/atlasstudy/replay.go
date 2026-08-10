@@ -8,7 +8,7 @@ import (
 )
 
 // ReplayResponseRecord resolves one saved provider response against the exact
-// canonical v7 request record that authorized it. It performs no I/O and has
+// canonical v9 request record that authorized it. It performs no I/O and has
 // no provider, cache, or semantic-journal dependency.
 func ReplayResponseRecord(
 	request RequestRecord,
@@ -43,7 +43,7 @@ func ReplayResponseRecord(
 }
 
 func productFromReplayRequest(request RequestRecord) (Product, error) {
-	// Round-trip through the one canonical v8 request encoder/decoder. The CLI
+	// Round-trip through the one canonical v9 request encoder/decoder. The CLI
 	// additionally pins the original bytes, while this pure seam rejects any
 	// structurally invalid in-memory record.
 	encoded, err := EncodeRequestRecord(request)

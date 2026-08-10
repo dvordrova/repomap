@@ -58,7 +58,8 @@ func TestLoadCollectsEveryModuleBeforeFairExplicitCaps(t *testing.T) {
 	if facts.Coverage.State != CoveragePartial || facts.Coverage.ModulesDiscovered != 2 ||
 		facts.Coverage.ModulesAvailable != 2 || facts.Coverage.ModulesUnavailable != 0 ||
 		facts.Coverage.PackagesDiscovered != 4 || facts.Coverage.PackagesRetained != 2 ||
-		facts.Coverage.EdgesDiscovered != 2 || facts.Coverage.EdgesRetained != 1 {
+		facts.Coverage.EdgesDiscovered != 2 || facts.Coverage.EdgesRetained != 0 ||
+		len(facts.InternalEdges) != 0 {
 		t.Fatalf("coverage = %#v", facts.Coverage)
 	}
 	for _, module := range facts.Modules {
@@ -115,9 +116,53 @@ func TestLoadWithOptionsUsesOneLinuxTargetForBuildSelectedFiles(t *testing.T) {
 		t.Fatalf("linux entrypoint files = %#v", facts.EntrypointPackages)
 	}
 	if len(facts.Packages) != 1 || !facts.Packages[0].DeclarationsScanned ||
+		!facts.Packages[0].LoadCompleteness.Complete() ||
 		!hasPackageDeclaration(facts.Packages[0].Declarations, PackageDeclarationFunc, "linuxOnly", "") ||
 		hasPackageDeclaration(facts.Packages[0].Declarations, PackageDeclarationFunc, "darwinOnly", "") {
 		t.Fatalf("linux package declarations = %#v", facts.Packages)
+	}
+}
+
+func TestLoadPersistsIncompletePackageGoListAuthority(t *testing.T) {
+	t.Parallel()
+
+	repo := t.TempDir()
+	files := map[string]string{
+		"go.mod": "module example.com/incomplete\n\ngo 1.24\n",
+		"api/api.go": `package api
+import _ "embed"
+//go:embed missing.txt
+var Missing string
+func Public() {}
+`,
+	}
+	fileList := make([]string, 0, len(files))
+	for name, content := range files {
+		path := filepath.Join(repo, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		fileList = append(fileList, name)
+	}
+
+	facts, err := Load(context.Background(), repo, fileList, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts.Packages) != 1 {
+		t.Fatalf("packages = %#v", facts.Packages)
+	}
+	pkg := facts.Packages[0]
+	if pkg.LoadCompleteness == nil || pkg.LoadCompleteness.Version != PackageLoadCompletenessVersion ||
+		pkg.LoadCompleteness.State != PackageLoadIncomplete || pkg.LoadCompleteness.Complete() {
+		t.Fatalf("package load completeness = %#v", pkg.LoadCompleteness)
+	}
+	if !pkg.DeclarationsScanned ||
+		!hasPackageDeclaration(pkg.Declarations, PackageDeclarationFunc, "Public", "") {
+		t.Fatalf("source declarations should remain independently complete: %#v", pkg)
 	}
 }
 
@@ -249,6 +294,39 @@ func TestParseGoListOutputMarksIncompleteAndDependencyErrors(t *testing.T) {
 		warnings[0] != "package example.com/app: go list facts are incomplete" ||
 		warnings[1] != "package example.com/app dependency: dependency unavailable" {
 		t.Fatalf("warnings = %q", warnings)
+	}
+}
+
+func TestPackageLoadCompletenessFailsClosedOnEveryGoListDiagnostic(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name string
+		pkg  goListPackage
+		want PackageLoadState
+	}{
+		{name: "complete", pkg: goListPackage{}, want: PackageLoadComplete},
+		{name: "incomplete", pkg: goListPackage{Incomplete: true}, want: PackageLoadIncomplete},
+		{name: "package error", pkg: goListPackage{Error: &goListError{Err: "broken"}}, want: PackageLoadIncomplete},
+		{name: "dependency error", pkg: goListPackage{DepsErrors: []goListError{{Err: "missing"}}}, want: PackageLoadIncomplete},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := packageLoadCompleteness(test.pkg)
+			if got == nil || got.Version != PackageLoadCompletenessVersion || got.State != test.want ||
+				got.Complete() != (test.want == PackageLoadComplete) {
+				t.Fatalf("package load completeness = %#v, want %q", got, test.want)
+			}
+		})
+	}
+
+	for _, untrusted := range []*PackageLoadCompleteness{
+		nil,
+		{Version: PackageLoadCompletenessVersion + 1, State: PackageLoadComplete},
+		{Version: PackageLoadCompletenessVersion, State: "invented"},
+	} {
+		if untrusted.Complete() {
+			t.Fatalf("unknown package load authority was accepted: %#v", untrusted)
+		}
 	}
 }
 

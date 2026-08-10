@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	AnalyzerVersion              = "surface-ssa-v13"
+	AnalyzerVersion              = "surface-ssa-v14"
 	TriggerCatalogVersion        = 7
 	CoverageVersion              = 7
 	CatalogVersion               = 1

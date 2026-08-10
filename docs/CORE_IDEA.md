@@ -148,17 +148,22 @@ identities and exact validation remain local. A rejected or absent Architecture
 enrichment therefore does not block Study when the validated local canvas and
 reading catalog are otherwise usable.
 
-Before target scoping, the complete exact package catalog remains local
-authority. Ordinary portfolio selection deterministically projects every exact
-executable and only exact module-root libraries, then one refs-only Go call may
-choose the useful set and default when that surface has more than one eligible
-target. Its request nests exact declaration labels under each advertised target
-so product executables can be distinguished from development tools without
-path-purpose heuristics. Public non-root libraries remain supporting packages,
-not ordinary sibling pages; explicit selection and exhaustive inclusion still
-use the complete catalog. The response can only cite request-local target refs;
-the backend restores exact advertised targets and publishes each selected scope
-as a sibling page.
+Before target scoping, complete exact package facts remain local authority, but
+product targets follow Go's module/executable boundaries rather than mirroring
+every compiler package. The sealed catalog contains every exact build-selected
+executable and at most one library surface per `go.mod`. A module library has no
+synthetic root package: it scopes every exact owning-module non-main package
+(including internal context) while its public roots are the package-qualified
+exported APIs of completely scanned, externally importable packages. Main and
+internal packages never become library API roots; an incomplete or zero-export
+module library is omitted without discarding independently exact executables.
+One refs-only Go call may choose the useful set and default when more than one
+eligible product surface exists. Its request nests exact names-only declaration
+labels under their package group, so executables and module APIs can be
+distinguished without source or path-purpose guesses. The response can only cite
+request-local target refs; the backend restores exact advertised targets and
+publishes each selected scope as a sibling page. Exact packages remain local
+evidence and drill-down material rather than automatic sibling Study pages.
 
 Named user choice now reaches the first saved local neighborhood. In a served
 report, one manifest-authorized component anchor can lazily request bounded Go

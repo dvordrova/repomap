@@ -76,8 +76,8 @@ function purpose(language, target) {
   vm.runInContext(fs.readFileSync(scriptPath, "utf8"), context);
   return window.__REPOMAP_WORKSPACE_TEST__.workspacePurposeText();
 }
-const executable = { version: 1, kind: "executable_package", package_dir: "cmd/repomap", package_path: "github.com/dvordrova/repomap/cmd/repomap" };
-const rootLibrary = { version: 1, kind: "library_package", package_dir: ".", package_path: "gopkg.in/telebot.v3" };
+const executable = { version: 2, kind: "executable_package", package_dir: "cmd/repomap", package_path: "github.com/dvordrova/repomap/cmd/repomap" };
+const rootLibrary = { version: 2, kind: "module_library", module_dir: ".", module_path: "gopkg.in/telebot.v3" };
 process.stdout.write(JSON.stringify({
   enExecutable: purpose("en", executable), ruExecutable: purpose("ru", executable),
   enLibrary: purpose("en", rootLibrary), ruLibrary: purpose("ru", rootLibrary),
@@ -99,8 +99,8 @@ process.stdout.write(JSON.stringify({
 	want := map[string]string{
 		"enExecutable": "Report scope: executable package cmd/repomap",
 		"ruExecutable": "Область отчёта: исполняемый пакет cmd/repomap",
-		"enLibrary":    "Report scope: library package gopkg.in/telebot.v3",
-		"ruLibrary":    "Область отчёта: библиотечный пакет gopkg.in/telebot.v3",
+		"enLibrary":    "Report scope: public library API of module gopkg.in/telebot.v3",
+		"ruLibrary":    "Область отчёта: публичный библиотечный API модуля gopkg.in/telebot.v3",
 		"enNonGo":      "Repository onboarding",
 		"ruNonGo":      "Знакомство с репозиторием",
 	}
@@ -123,7 +123,7 @@ func TestSingleTargetRailAndExecutableEntrypointDefault(t *testing.T) {
 	runner := `
 const fs = require("fs"), vm = require("vm");
 const target = {
-  version: 1, ref: "target-ref", kind: "executable_package", module_dir: ".",
+  version: 2, ref: "target-ref", kind: "executable_package", module_dir: ".",
   package_dir: ".", package_path: "github.com/casdoor/casdoor",
   roots: [{path:"main_linux.go",line:12},{path:"main_windows.go",line:15}],
 };
@@ -180,5 +180,60 @@ process.stdout.write(JSON.stringify({items:api.analysisTargetMenuItems(),default
 	if strings.Contains(string(script), "function renderMapLensControl") ||
 		!strings.Contains(string(script), "entryObjects.id = 'rm-map-lens-objects'") {
 		t.Fatal("executable Entrypoints must be mounted as context, not a toggle")
+	}
+}
+
+func TestSingleModuleLibraryTargetRailUsesLocalizedLibraryAPILabel(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is unavailable")
+	}
+	scriptPath, err := filepath.Abs(filepath.Join("templates", "script.js"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := `
+const fs = require("fs"), vm = require("vm");
+function items(language) {
+  const report = {
+    repo_name:"telebot", report_language:language,
+    analysis_target:{version:2,ref:"module-library",kind:"module_library",module_id:"root",module_path:"gopkg.in/telebot.v3",module_dir:"."},
+    user_sources:[],openable_paths:[],source_ids:{},
+  };
+  const document = {
+    documentElement:{lang:language},
+    getElementById(id){return id === "rm-report-data" ? {textContent:JSON.stringify(report)} : null;},
+    querySelector(){return null;},querySelectorAll(){return[];},
+  };
+  const window={document,location:{search:"",hash:"#/map",protocol:"file:",pathname:"/report.html"},__REPOMAP_WORKSPACE_TEST__:{},addEventListener(){}};
+  const context={window,document,URLSearchParams,Set,Map,AbortController,Promise};
+  vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js","ui_messages.js"),"utf8"),context);
+  vm.runInNewContext(fs.readFileSync(process.argv[2],"utf8"),context);
+  return window.__REPOMAP_WORKSPACE_TEST__.analysisTargetMenuItems();
+}
+process.stdout.write(JSON.stringify({en:items("en"),ru:items("ru")}));
+`
+	runnerPath := filepath.Join(t.TempDir(), "single-module-library-rail.js")
+	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := exec.Command(node, runnerPath, scriptPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run single module-library rail contract: %v\n%s", err, output)
+	}
+	var got map[string][]struct {
+		Ref, Label, Title, GoMod string
+		IsDefault, IsActive      bool
+	}
+	if err := json.Unmarshal(output, &got); err != nil {
+		t.Fatalf("decode single module-library rail contract: %v\n%s", err, output)
+	}
+	for language, label := range map[string]string{"en": "Library API", "ru": "Библиотечный API"} {
+		items := got[language]
+		if len(items) != 1 || items[0].Ref != "module-library" || items[0].Label != label ||
+			items[0].Title != "gopkg.in/telebot.v3" || items[0].GoMod != "go.mod" ||
+			!items[0].IsDefault || !items[0].IsActive {
+			t.Fatalf("%s single module-library rail = %#v", language, items)
+		}
 	}
 }

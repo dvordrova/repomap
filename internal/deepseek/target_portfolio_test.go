@@ -19,7 +19,7 @@ func targetPortfolioPromptFixture() targetportfolio.Prompt {
 	return targetportfolio.Prompt{
 		Version: targetportfolio.PromptVersion,
 		System:  "Select only supplied refs. Return exactly one JSON object.",
-		User:    `Response JSON schema: {"version":3,"request_ref":"tpq-fixture","default_ref":"t1","target_refs":["t1"]}. Exact catalog JSON: {"targets":[{"ref":"t1","display_path":"cmd/app","kind":"executable","symbols":[{"kind":"func","names":["main","runProduct"]}]}]}`,
+		User:    `Response JSON schema: {"version":3,"request_ref":"tpq-fixture","default_ref":"t1","target_refs":["t1"]}. Exact catalog JSON: {"targets":[{"ref":"t1","display_path":"cmd/app","kind":"executable","packages":[{"display_path":"cmd/app","symbols":[{"kind":"func","names":["main","runProduct"]}]}]}]}`,
 	}
 }
 
@@ -141,14 +141,16 @@ func TestTargetPortfolioPromptJSONAllowsNearLimitEscapedSemanticPrompt(t *testin
 		Version: targetportfolio.RequestVersion, RequestRef: "tpq-fixture", RepoName: "fixture",
 		Targets: []targetportfolio.Target{{
 			Ref: "t1", DisplayPath: "pkg/api", Kind: targetportfolio.TargetLibrary,
-			Symbols: []targetportfolio.SymbolGroup{{Kind: "func"}},
+			Packages: []targetportfolio.PackageSymbols{{
+				DisplayPath: "pkg/api", Symbols: []targetportfolio.SymbolGroup{{Kind: "func"}},
+			}},
 		}},
 	}
 	low, high := 1, len(names)
 	var payload []byte
 	for low <= high {
 		middle := low + (high-low)/2
-		request.Targets[0].Symbols[0].Names = names[:middle]
+		request.Targets[0].Packages[0].Symbols[0].Names = names[:middle]
 		candidate, err := json.Marshal(request)
 		if err != nil {
 			t.Fatal(err)

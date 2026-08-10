@@ -25,8 +25,8 @@ func TestPersistedStudyMechanismIdentityIsPinned(t *testing.T) {
 	if PromptVersion != "mechanism-study-prompt-a4099fdb0893" {
 		t.Fatalf("PromptVersion = %q, want %q", PromptVersion, "mechanism-study-prompt-a4099fdb0893")
 	}
-	if surfacediscovery.DirectCallIndexVersion != 2 {
-		t.Fatalf("DirectCallIndexVersion = %d, want 2", surfacediscovery.DirectCallIndexVersion)
+	if surfacediscovery.DirectCallIndexVersion != 3 {
+		t.Fatalf("DirectCallIndexVersion = %d, want 3", surfacediscovery.DirectCallIndexVersion)
 	}
 }
 

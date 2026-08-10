@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 )
@@ -66,24 +67,38 @@ func shapeThemeStudyCompileInput(
 	retainedEntities := make(map[string]struct{})
 	retainedEvidence := make(map[string]struct{})
 	retainedUnits := make(map[string]struct{})
+	selectedRootUnits := make(map[string]analysistarget.TargetPackage)
 	if input.AnalysisTargetRoot != nil {
 		selected := input.AnalysisTargetRoot.AnalysisTarget
-		unit, ok := units[input.AnalysisTargetRoot.UnitID]
-		if selected.Validate() != nil || !ok ||
-			unit.Kind != repositoryatlas.UnitPackage ||
-			unit.Name != selected.PackagePath || unit.ParentID != selected.ModuleID {
-			return atlasstudy.Input{}, stats, fmt.Errorf(
-				"theme study input closure: selected library package Unit does not match the exact AnalysisTarget",
-			)
+		if selected.Validate() != nil {
+			return atlasstudy.Input{}, stats, fmt.Errorf("theme study input closure: selected library target is invalid")
 		}
-		retainedUnits[unit.ID] = struct{}{}
+		if selected.Kind == analysistarget.KindLibraryPackage {
+			selectedRootUnits[input.AnalysisTargetRoot.UnitID] = analysistarget.TargetPackage{
+				PackagePath: selected.PackagePath, PackageDir: selected.PackageDir,
+			}
+		} else {
+			for _, pkg := range input.AnalysisTargetRoot.Packages {
+				selectedRootUnits[pkg.UnitID] = pkg.Package
+			}
+		}
+		for unitID, rootPackage := range selectedRootUnits {
+			unit, ok := units[unitID]
+			if !ok || unit.Kind != repositoryatlas.UnitPackage ||
+				unit.Name != rootPackage.PackagePath || unit.ParentID != selected.ModuleID {
+				return atlasstudy.Input{}, stats, fmt.Errorf(
+					"theme study input closure: selected library package Unit does not match the exact AnalysisTarget",
+				)
+			}
+			retainedUnits[unit.ID] = struct{}{}
+		}
 	}
 	for _, target := range input.ReadingTargets {
 		for _, principal := range target.PrincipalRefs {
 			if principal.Kind != atlasstudy.RefUnit {
 				continue
 			}
-			if input.AnalysisTargetRoot == nil || principal.ID != input.AnalysisTargetRoot.UnitID {
+			if _, selected := selectedRootUnits[principal.ID]; input.AnalysisTargetRoot == nil || !selected {
 				return atlasstudy.Input{}, stats, fmt.Errorf(
 					"theme study input closure: arbitrary package Unit principal is not selected",
 				)

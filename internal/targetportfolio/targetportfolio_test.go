@@ -52,17 +52,17 @@ func TestCompileProviderBoundaryAndResolve(t *testing.T) {
 		advertisedIndex++
 	}
 	if bytes.Contains(wire, []byte(`"display_path":"internal/engine"`)) {
-		t.Fatalf("non-root library leaked into ordinary candidate surface: %s", wire)
+		t.Fatalf("internal package became a sibling target: %s", wire)
 	}
 	executable := targetByDisplayPath(t, request.Targets, "cmd/repomap")
 	if !slices.Equal(symbolNames(executable, "func"), []string{"main", "runDevUICLI", "runProduct"}) {
-		t.Fatalf("executable funcs = %#v", executable.Symbols)
+		t.Fatalf("executable funcs = %#v", executable.Packages)
 	}
 	library := targetByDisplayPath(t, request.Targets, "pkg/client")
 	if !slices.Equal(symbolNames(library, "func"), []string{"NewClient"}) ||
 		!slices.Equal(symbolNames(library, "method"), []string{"Client.Do", "hiddenType.Exported"}) ||
 		!slices.Equal(symbolNames(library, "type"), []string{"Client"}) {
-		t.Fatalf("library public API symbols = %#v", library.Symbols)
+		t.Fatalf("library public API symbols = %#v", library.Packages)
 	}
 	for _, forbidden := range []string{"internalHelper", "Client.debug"} {
 		if bytes.Contains(wire, []byte(forbidden)) {
@@ -77,7 +77,7 @@ func TestCompileProviderBoundaryAndResolve(t *testing.T) {
 	}
 	if prompt.Version != PromptVersion || !strings.Contains(strings.ToLower(prompt.User), "json") ||
 		!strings.Contains(prompt.User, string(wire)) || !strings.Contains(prompt.System, "no paths") ||
-		!strings.Contains(prompt.System, "symbols:[]") ||
+		!strings.Contains(prompt.System, "packages:[]") ||
 		!strings.Contains(prompt.System, "Such a target is ineligible") ||
 		!strings.Contains(prompt.System, "separate top-level report scope in the left navigation") ||
 		!strings.Contains(prompt.System, "This is not package coverage") ||
@@ -269,51 +269,6 @@ func TestResolveResponseRejectsInvalidAtomicDecision(t *testing.T) {
 	}
 }
 
-func TestResolveResponseRejectsEmptyAPILibraryFromPrivateAuthority(t *testing.T) {
-	facts := portfolioFacts()
-	facts.Packages[3].Declarations = nil
-	compilation, err := Compile("repomap", mustCatalog(t, facts))
-	if err != nil {
-		t.Fatal(err)
-	}
-	refs := make(map[string]string, len(compilation.Request.Targets))
-	for _, target := range compilation.Request.Targets {
-		refs[target.DisplayPath] = target.Ref
-	}
-	emptyRef := refs["pkg/client"]
-	executableRef := refs["cmd/repomap"]
-	if emptyRef == "" || executableRef == "" ||
-		len(compilation.authority[emptyRef].Symbols) != 0 ||
-		compilation.authority[emptyRef].Candidate.Target.Kind != analysistarget.KindLibraryPackage {
-		t.Fatalf("empty-library control setup = %#v", compilation.authority[emptyRef])
-	}
-	encode := func(defaultRef string, targetRefs []string) []byte {
-		raw, marshalErr := json.Marshal(Response{
-			Version: ResultVersion, RequestRef: compilation.Request.RequestRef,
-			DefaultRef: defaultRef, TargetRefs: targetRefs,
-		})
-		if marshalErr != nil {
-			t.Fatal(marshalErr)
-		}
-		return raw
-	}
-	for name, raw := range map[string][]byte{
-		"empty library default": encode(emptyRef, []string{emptyRef}),
-		"empty library member":  encode(executableRef, []string{executableRef, emptyRef}),
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := ResolveResponse(compilation, raw); err == nil ||
-				!strings.Contains(err.Error(), "no advertised public API") {
-				t.Fatalf("empty API response error = %v", err)
-			}
-		})
-	}
-	selection, err := ResolveResponse(compilation, encode(executableRef, []string{executableRef}))
-	if err != nil || selection.Default.DisplayPath != "cmd/repomap" {
-		t.Fatalf("eligible current-v%d response = %#v, %v", ResultVersion, selection, err)
-	}
-}
-
 func TestByteEnvelopeHasNoSemanticTargetCountCap(t *testing.T) {
 	smallCatalog := mustCatalog(t, libraryFacts("example.com/many", 400, "pkg/p%04d"))
 	compilation, err := Compile("many", smallCatalog)
@@ -394,7 +349,7 @@ func TestProviderVisibleJSONRejectsCompilationTamper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	compilation.Request.Targets[0].Symbols[0].Names[0] = "invented"
+	compilation.Request.Targets[0].Packages[0].Symbols[0].Names[0] = "invented"
 	if _, err := ProviderVisibleJSON(compilation); err == nil {
 		t.Fatal("ProviderVisibleJSON accepted symbol/catalog drift")
 	}
@@ -458,8 +413,8 @@ func portfolioFacts() gofacts.Facts {
 	}
 	return gofacts.Facts{
 		Modules: []gofacts.ModuleFact{
-			{ID: "module-root", ModulePath: modulePath, ModuleDir: ".", Main: true},
-			{ID: "module-client", ModulePath: modulePath + "/pkg/client", ModuleDir: "pkg/client"},
+			d280Module("module-root", modulePath, ".", 3, true),
+			d280Module("module-client", modulePath+"/pkg/client", "pkg/client", 1, false),
 		},
 		Packages: packages, EntrypointPackages: entrypoints,
 	}
@@ -479,7 +434,7 @@ func libraryFacts(modulePath string, count int, format string) gofacts.Facts {
 			Kind: gofacts.PackageDeclarationFunc, Name: fmt.Sprintf("Exported%04d", index),
 		}}
 		packages = append(packages, pkg)
-		modules = append(modules, gofacts.ModuleFact{ID: moduleID, ModulePath: packageModulePath, ModuleDir: dir})
+		modules = append(modules, d280Module(moduleID, packageModulePath, dir, 1, false))
 	}
 	return gofacts.Facts{
 		Modules: modules, Packages: packages,
@@ -491,6 +446,14 @@ func packageFact(moduleID, modulePath, dir string) gofacts.PackageFact {
 		CanonicalPath: modulePath + "/" + dir, Name: strings.ReplaceAll(dir, "/", "_"),
 		ModuleID: moduleID, ModulePath: modulePath, PackageDir: dir,
 		ModuleRelativeDir: dir, DisplayPath: dir, Locality: "local", DeclarationsScanned: true,
+		LoadCompleteness: completePackageLoadForTest(),
+	}
+}
+
+func completePackageLoadForTest() *gofacts.PackageLoadCompleteness {
+	return &gofacts.PackageLoadCompleteness{
+		Version: gofacts.PackageLoadCompletenessVersion,
+		State:   gofacts.PackageLoadComplete,
 	}
 }
 
@@ -563,12 +526,15 @@ func targetByDisplayPath(t *testing.T, targets []Target, displayPath string) Tar
 }
 
 func symbolNames(target Target, kind string) []string {
-	for _, group := range target.Symbols {
-		if group.Kind == kind {
-			return group.Names
+	var result []string
+	for _, pkg := range target.Packages {
+		for _, group := range pkg.Symbols {
+			if group.Kind == kind {
+				result = append(result, group.Names...)
+			}
 		}
 	}
-	return nil
+	return result
 }
 
 func compilationAuthorityHasSymbol(compilation Compilation, name string) bool {
@@ -576,6 +542,13 @@ func compilationAuthorityHasSymbol(compilation Compilation, name string) bool {
 		for _, symbol := range entry.Symbols {
 			if symbol.Name == name {
 				return true
+			}
+		}
+		for _, api := range entry.PackageAPIs {
+			for _, symbol := range api.Declarations {
+				if symbol.Name == name {
+					return true
+				}
 			}
 		}
 	}

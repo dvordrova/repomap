@@ -369,7 +369,24 @@ func TestStudyInvestigationProviderFailureSecretKeepsExactCallJournaledAndRedact
 
 func TestStudyInvestigationRuntimeRepomapTargetExcludesOtherExecutable(t *testing.T) {
 	const modulePath = "example.com/repomap"
-	_, index := analyzeStudyInvestigationRuntimeRepository(t, modulePath, map[string]string{
+	target := resolveStudyInvestigationTarget(t, gofacts.Facts{
+		Modules: []gofacts.ModuleFact{{
+			ID: "module-root", ModulePath: modulePath, ModuleDir: ".", Main: true,
+		}},
+		Packages: []gofacts.PackageFact{
+			{CanonicalPath: modulePath + "/cmd/repomap", Name: "main", ModuleID: "module-root", ModulePath: modulePath, PackageDir: "cmd/repomap", Locality: "local"},
+			{CanonicalPath: modulePath + "/cmd/quality", Name: "main", ModuleID: "module-root", ModulePath: modulePath, PackageDir: "cmd/quality", Locality: "local"},
+		},
+		EntrypointPackages: []gofacts.Entrypoint{
+			studyInvestigationEntrypoint(modulePath, modulePath+"/cmd/repomap", "cmd/repomap", "cmd/repomap/main.go", 3),
+			studyInvestigationEntrypoint(modulePath, modulePath+"/cmd/quality", "cmd/quality", "cmd/quality/main.go", 3),
+		},
+	}, "cmd/repomap")
+	_, index := analyzeStudyInvestigationRuntimeRepository(t, modulePath, target, []string{
+		modulePath + "/cmd/repomap",
+		modulePath + "/internal/app",
+		modulePath + "/internal/report",
+	}, map[string]string{
 		"cmd/repomap/main.go": `package main
 import "example.com/repomap/internal/app"
 func main() { app.Run() }
@@ -392,19 +409,6 @@ func decode() { render() }
 func render() {}
 `,
 	})
-	target := resolveStudyInvestigationTarget(t, gofacts.Facts{
-		Modules: []gofacts.ModuleFact{{
-			ID: "module-root", ModulePath: modulePath, ModuleDir: ".", Main: true,
-		}},
-		Packages: []gofacts.PackageFact{
-			{CanonicalPath: modulePath + "/cmd/repomap", Name: "main", ModuleID: "module-root", ModulePath: modulePath, PackageDir: "cmd/repomap", Locality: "local"},
-			{CanonicalPath: modulePath + "/cmd/quality", Name: "main", ModuleID: "module-root", ModulePath: modulePath, PackageDir: "cmd/quality", Locality: "local"},
-		},
-		EntrypointPackages: []gofacts.Entrypoint{
-			studyInvestigationEntrypoint(modulePath, modulePath+"/cmd/repomap", "cmd/repomap", "cmd/repomap/main.go", 3),
-			studyInvestigationEntrypoint(modulePath, modulePath+"/cmd/quality", "cmd/quality", "cmd/quality/main.go", 3),
-		},
-	}, "cmd/repomap")
 	runDir := writeStudyInvestigationRuntimeThemes(
 		t, index, modulePath+"/internal/report.Read", 1,
 	)
@@ -444,7 +448,33 @@ func render() {}
 
 func TestStudyInvestigationRuntimeTelebotLibraryUsesExactPublicAPIRoot(t *testing.T) {
 	const modulePath = "gopkg.in/telebot.v3"
-	_, index := analyzeStudyInvestigationRuntimeRepository(t, modulePath, map[string]string{
+	target := resolveStudyInvestigationTarget(t, gofacts.Facts{
+		Modules: []gofacts.ModuleFact{{
+			ID: "module-root", ModulePath: modulePath, ModuleDir: ".", Main: true,
+			PackagesCount: 1, RetainedPackagesCount: 1,
+			Coverage: gofacts.ModuleCoverage{
+				State: gofacts.CoverageComplete, PackagesDiscovered: 1, PackagesRetained: 1,
+			},
+		}},
+		Packages: []gofacts.PackageFact{{
+			CanonicalPath: modulePath, Name: "telebot", ModuleID: "module-root",
+			ModulePath: modulePath, PackageDir: ".", ModuleRelativeDir: ".", Locality: "local",
+			DeclarationsScanned: true, LoadCompleteness: completeGoPackageLoad(),
+			Declarations: []gofacts.PackageDeclaration{
+				{Kind: gofacts.PackageDeclarationType, Name: "Bot", Path: "bot.go", Line: 2, Column: 6},
+				{Kind: gofacts.PackageDeclarationFunc, Name: "NewBot", Path: "bot.go", Line: 3, Column: 6},
+			},
+		}},
+		PackagesCount: 1, RetainedPackagesCount: 1,
+		Coverage: gofacts.Coverage{
+			State: gofacts.CoverageComplete, ModulesDiscovered: 1, ModulesAvailable: 1,
+			PackagesDiscovered: 1, PackagesRetained: 1,
+		},
+	}, modulePath)
+	if target.Kind != analysistarget.KindModuleLibrary || len(target.LibraryPackages) != 1 {
+		t.Fatalf("target=%#v, want one-package module library", target)
+	}
+	_, index := analyzeStudyInvestigationRuntimeRepository(t, modulePath, target, []string{modulePath}, map[string]string{
 		"bot.go": `package telebot
 type Bot struct{}
 func NewBot() *Bot { return configure() }
@@ -455,17 +485,24 @@ func request() {}
 func hidden() {}
 `,
 	})
-	target := resolveStudyInvestigationTarget(t, gofacts.Facts{
-		Modules: []gofacts.ModuleFact{{
-			ID: "module-root", ModulePath: modulePath, ModuleDir: ".", Main: true,
-		}},
-		Packages: []gofacts.PackageFact{{
-			CanonicalPath: modulePath, Name: "telebot", ModuleID: "module-root",
-			ModulePath: modulePath, PackageDir: ".", Locality: "local",
-		}},
-	}, ".")
-	if target.Kind != analysistarget.KindLibraryPackage {
-		t.Fatalf("target kind=%s, want library", target.Kind)
+	if index.Scope.TargetKind != surfacediscovery.AnalysisTargetModuleLibrary ||
+		index.Scope.TargetPackage != "" || len(index.Scope.TargetPackages) != 1 ||
+		index.Scope.TargetPackages[0] != modulePath {
+		t.Fatalf("Telebot DirectCallIndex lost plural module-library scope: %#v", index.Scope)
+	}
+	boundRoots, err := analysistarget.BindExactRoots(target, index)
+	if err != nil {
+		t.Fatalf("bind Telebot module-library roots: %v", err)
+	}
+	sawNewBot := false
+	for _, root := range boundRoots.Roots {
+		if root.Package != modulePath {
+			t.Fatalf("Telebot root escaped selected module API package: %#v", root)
+		}
+		sawNewBot = sawNewBot || root.Symbol == modulePath+".NewBot"
+	}
+	if boundRoots.Version != analysistarget.TargetRootsVersion || !sawNewBot {
+		t.Fatalf("Telebot plural module-library roots = %#v", boundRoots)
 	}
 	runDir := writeStudyInvestigationRuntimeThemes(t, index, modulePath+".configure", 1)
 	provider := &studyInvestigationRuntimeProvider{}
@@ -539,6 +576,8 @@ func assertStudyInvestigationTargetBinding(
 func analyzeStudyInvestigationRuntimeRepository(
 	t *testing.T,
 	modulePath string,
+	target analysistarget.Target,
+	admittedPackages []string,
 	files map[string]string,
 ) (string, *surfacediscovery.DirectCallIndex) {
 	t.Helper()
@@ -559,8 +598,30 @@ func analyzeStudyInvestigationRuntimeRepository(
 			t.Fatal(err)
 		}
 	}
-	analysis, err := surfacediscovery.AnalyzeContext(
-		context.Background(), surfacediscovery.DefaultOptions(repository),
+	packageInputs := make([]surfacediscovery.PackageInput, 0, len(admittedPackages))
+	for _, packagePath := range admittedPackages {
+		packageInputs = append(packageInputs, surfacediscovery.PackageInput{
+			Path: packagePath, ModuleDir: target.ModuleDir,
+		})
+	}
+	targetInput := &surfacediscovery.AnalysisTargetInput{
+		TargetRef: target.Ref, Kind: analysisTargetSurfaceKind(target),
+		ModuleID: target.ModuleID, ModulePath: target.ModulePath, ModuleDir: target.ModuleDir,
+		TargetPackages: analysisTargetRootPackagePaths(target),
+	}
+	if target.Kind == analysistarget.KindExecutablePackage {
+		targetInput.PackagePath = target.PackagePath
+		for _, root := range target.Roots {
+			targetInput.Roots = append(targetInput.Roots, surfacediscovery.AnalysisTargetRootInput{
+				Path: root.Path, Line: root.Line,
+			})
+		}
+	}
+	analysis, err := surfacediscovery.AnalyzeContextWithInput(
+		context.Background(), surfacediscovery.DefaultOptions(repository), surfacediscovery.Input{
+			RepositoryName: filepath.Base(modulePath), ModuleDirs: []string{target.ModuleDir},
+			Packages: packageInputs, AnalysisTarget: targetInput,
+		},
 	)
 	if err != nil {
 		t.Fatalf("AnalyzeContext: %v", err)
@@ -613,7 +674,7 @@ func writeStudyInvestigationRuntimeThemes(
 		}
 	}
 	if reading.ID == "" {
-		t.Fatalf("reading %q absent from DirectCallIndex", readingSymbol)
+		t.Fatalf("reading %q absent from DirectCallIndex: %#v", readingSymbol, index.Nodes)
 	}
 	cards := make([]themestudy.ThemeCard, 0, cardCount)
 	for ordinal := 1; ordinal <= cardCount; ordinal++ {
@@ -666,9 +727,23 @@ func detached() {}
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	analysis, err := surfacediscovery.AnalyzeContext(
-		context.Background(),
-		surfacediscovery.DefaultOptions(repository),
+	target := resolveStudyInvestigationExecutableTarget(t)
+	targetInput := &surfacediscovery.AnalysisTargetInput{
+		TargetRef: target.Ref, Kind: analysisTargetSurfaceKind(target),
+		ModuleID: target.ModuleID, ModulePath: target.ModulePath, ModuleDir: target.ModuleDir,
+		PackagePath: target.PackagePath, TargetPackages: analysisTargetRootPackagePaths(target),
+	}
+	for _, root := range target.Roots {
+		targetInput.Roots = append(targetInput.Roots, surfacediscovery.AnalysisTargetRootInput{
+			Path: root.Path, Line: root.Line,
+		})
+	}
+	analysis, err := surfacediscovery.AnalyzeContextWithInput(
+		context.Background(), surfacediscovery.DefaultOptions(repository), surfacediscovery.Input{
+			RepositoryName: "investigation", ModuleDirs: []string{"."},
+			Packages:       []surfacediscovery.PackageInput{{Path: target.PackagePath, ModuleDir: target.ModuleDir}},
+			AnalysisTarget: targetInput,
+		},
 	)
 	if err != nil {
 		t.Fatalf("AnalyzeContext: %v", err)
@@ -686,7 +761,6 @@ func detached() {}
 	if root.ID == "" {
 		t.Fatalf("entry node absent: %#v", analysis.DirectCallIndex.Nodes)
 	}
-	target := resolveStudyInvestigationExecutableTarget(t)
 	cards := make([]themestudy.ThemeCard, 0, cardCount)
 	for ordinal := 1; ordinal <= cardCount; ordinal++ {
 		cards = append(cards, themestudy.ThemeCard{

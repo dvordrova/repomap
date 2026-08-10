@@ -6,8 +6,8 @@ package targetportfolio
 import "github.com/dvordrova/repomap/internal/analysistarget"
 
 const (
-	CompilationVersion = 3
-	RequestVersion     = 3
+	CompilationVersion = 4
+	RequestVersion     = 4
 	ResultVersion      = 3
 
 	// The selector carries the complete exact ordinary candidate surface plus
@@ -33,9 +33,17 @@ const (
 // Target is one provider-visible request-local option. DisplayPath is an
 // exact flat repository-relative display label, never canonical identity.
 type Target struct {
-	Ref         string        `json:"ref"`
+	Ref         string           `json:"ref"`
+	DisplayPath string           `json:"display_path"`
+	Kind        TargetKind       `json:"kind"`
+	Packages    []PackageSymbols `json:"packages"`
+}
+
+// PackageSymbols keeps one exact package's declaration labels together. Its
+// DisplayPath is repository-relative presentation evidence, not canonical Go
+// import identity. Declaration locations and source never cross this wire.
+type PackageSymbols struct {
 	DisplayPath string        `json:"display_path"`
-	Kind        TargetKind    `json:"kind"`
 	Symbols     []SymbolGroup `json:"symbols"`
 }
 

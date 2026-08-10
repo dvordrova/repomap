@@ -158,15 +158,36 @@ func TestRunThemeStudyRejectsMissingLiveLibraryTargetBeforeDereference(t *testin
 func d277ThemeLibraryInput(t *testing.T, count int) atlasstudy.Input {
 	t.Helper()
 	resolution, err := analysistarget.Resolve(gofacts.Facts{
-		Modules: []gofacts.ModuleFact{{ID: "module-root", ModulePath: "example.com/library", ModuleDir: ".", Main: true}},
+		Modules: []gofacts.ModuleFact{{
+			ID: "module-root", ModulePath: "example.com/library", ModuleDir: ".", Main: true,
+			PackagesCount: 1, RetainedPackagesCount: 1,
+			Coverage: gofacts.ModuleCoverage{
+				State: gofacts.CoverageComplete, PackagesDiscovered: 1, PackagesRetained: 1,
+			},
+		}},
 		Packages: []gofacts.PackageFact{{
 			CanonicalPath: "example.com/library", Name: "library", ModuleID: "module-root",
 			ModulePath: "example.com/library", PackageDir: ".", ModuleRelativeDir: ".", Locality: "local",
+			DeclarationsScanned: true, LoadCompleteness: completeGoPackageLoad(),
+			Declarations: []gofacts.PackageDeclaration{{
+				Kind: gofacts.PackageDeclarationFunc, Name: "NewBot",
+				Path: "api.go", Line: 1, Column: 6,
+			}},
 		}},
-	}, analysistarget.Options{})
+		PackagesCount: 1, RetainedPackagesCount: 1,
+		Coverage: gofacts.Coverage{
+			State: gofacts.CoverageComplete, ModulesDiscovered: 1, ModulesAvailable: 1,
+			PackagesDiscovered: 1, PackagesRetained: 1,
+		},
+	}, analysistarget.Options{Override: "example.com/library"})
 	if err != nil || resolution.Selected == nil {
 		t.Fatalf("resolve library: resolution=%#v err=%v", resolution, err)
 	}
+	if resolution.Selected.Kind != analysistarget.KindModuleLibrary ||
+		len(resolution.Selected.LibraryPackages) != 1 {
+		t.Fatalf("resolve module library: resolution=%#v", resolution)
+	}
+	target := resolution.Selected.Snapshot()
 	input := atlasstudy.Input{
 		Atlas: repositoryatlas.Atlas{
 			Version: repositoryatlas.Version,
@@ -179,7 +200,10 @@ func d277ThemeLibraryInput(t *testing.T, count int) atlasstudy.Input {
 		Architecture: atlasstudy.ArchitectureInput{Source: "local_packages", Title: "Library"},
 		Language:     atlasstudy.LanguageEnglish, Limits: atlasstudy.DefaultLimits(),
 		AnalysisTargetRoot: &atlasstudy.AnalysisTargetRootScope{
-			AnalysisTarget: resolution.Selected.Snapshot(), UnitID: "unit-package-canonical",
+			AnalysisTarget: target,
+			Packages: []atlasstudy.AnalysisTargetRootPackage{{
+				Package: target.LibraryPackages[0], UnitID: "unit-package-canonical",
+			}},
 		},
 	}
 	type item struct {

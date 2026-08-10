@@ -13,17 +13,17 @@ import (
 const (
 	// Version and PromptVersion own the byte-identical provider request and
 	// private request catalog contract.
-	Version       = 8
-	PromptVersion = "atlas-study-prompt-v14"
+	Version       = 9
+	PromptVersion = "atlas-study-prompt-v15"
 
 	// ResultVersion owns local response validation plus result/status replay.
-	// It advances independently so the unchanged v6 provider request cannot
-	// reinterpret a result accepted by the earlier question validator.
-	ResultVersion = 9
+	// It advances independently from the request contract so no result accepted
+	// by an earlier principal validator can replay under the plural-root rules.
+	ResultVersion = 10
 
-	RequestArtifactFilename = "atlas_study_request.v8.json"
-	ResultArtifactFilename  = "atlas_study_result.v9.json"
-	StatusArtifactFilename  = "atlas_study_status.v9.json"
+	RequestArtifactFilename = "atlas_study_request.v9.json"
+	ResultArtifactFilename  = "atlas_study_result.v10.json"
+	StatusArtifactFilename  = "atlas_study_status.v10.json"
 
 	MaxRequestArtifactBytes = 16 << 20
 	MaxResultArtifactBytes  = 16 << 20
@@ -410,14 +410,23 @@ type DocumentClaim struct {
 	Authority repositoryatlas.Authority `json:"authority"`
 }
 
-// AnalysisTargetRootScope is private producer authority for the one D277
-// package-Unit principal exception. AnalysisTarget is the complete validated
-// selected target snapshot and UnitID is its literal package Unit. The scope
-// is request/catalog identity material but is deliberately omitted from the
-// provider wire.
+// AnalysisTargetRootPackage binds one exact public API package to its literal
+// Atlas package Unit. It is private request/catalog identity and never crosses
+// the provider wire.
+type AnalysisTargetRootPackage struct {
+	Package analysistarget.TargetPackage `json:"package"`
+	UnitID  string                       `json:"unit_id"`
+}
+
+// AnalysisTargetRootScope is private producer authority for the D277/D280
+// package-Unit principal exception. A module-library target carries every
+// exact public API package instead of pretending that one package owns the
+// module. UnitID remains only for the superseded package-library in-memory
+// reader; fresh v9 requests use Packages.
 type AnalysisTargetRootScope struct {
-	AnalysisTarget analysistarget.Target `json:"analysis_target"`
-	UnitID         string                `json:"unit_id"`
+	AnalysisTarget analysistarget.Target       `json:"analysis_target"`
+	UnitID         string                      `json:"unit_id,omitempty"`
+	Packages       []AnalysisTargetRootPackage `json:"packages,omitempty"`
 }
 
 type Input struct {

@@ -159,6 +159,58 @@ func TestAllTargetsExplicitDefaultAndOfflineDefaultNeverConfigureSelector(t *tes
 	}
 }
 
+func TestAllTargetsRootExecutableAndModuleLibraryRequireTypedDefaultKey(t *testing.T) {
+	const modulePath = "example.com/collision"
+	facts := gofacts.Facts{
+		Modules: []gofacts.ModuleFact{{
+			ID: "root", ModulePath: modulePath, ModuleDir: ".", Main: true,
+			PackagesCount: 2, RetainedPackagesCount: 2,
+			Coverage: gofacts.ModuleCoverage{PackagesDiscovered: 2, PackagesRetained: 2},
+		}},
+		Packages: []gofacts.PackageFact{
+			{
+				CanonicalPath: modulePath, Name: "main", ModuleID: "root", ModulePath: modulePath,
+				PackageDir: ".", ModuleRelativeDir: ".", DisplayPath: ".", Locality: "local",
+				DeclarationsScanned: true, LoadCompleteness: completeGoPackageLoad(),
+			},
+			{
+				CanonicalPath: modulePath + "/client", Name: "client", ModuleID: "root", ModulePath: modulePath,
+				PackageDir: "client", ModuleRelativeDir: "client", DisplayPath: "client", Locality: "local",
+				DeclarationsScanned: true, LoadCompleteness: completeGoPackageLoad(),
+				Declarations: []gofacts.PackageDeclaration{{Kind: gofacts.PackageDeclarationFunc, Name: "Open"}},
+			},
+		},
+		EntrypointPackages: []gofacts.Entrypoint{{
+			ModulePath: modulePath, ImportPath: modulePath, PackageDir: ".", ModuleRelativeDir: ".",
+			ModuleDir: ".", Kind: "primary_binary",
+			Anchors: []gofacts.EntrypointAnchor{{
+				Version: gofacts.EntrypointAnchorVersion, Kind: gofacts.EntrypointAnchorGoMain,
+				Path: "main.go", Line: 7,
+			}},
+		}},
+	}
+	catalog := targetPortfolioRuntimeCatalog(t, facts)
+	if len(catalog.Entries) != 2 || catalog.Entries[0].DisplayPath != "." || catalog.Entries[1].DisplayPath != "." {
+		t.Fatalf("collision catalog = %#v", catalog.Entries)
+	}
+	if _, _, err := selectAllTargetsForRun(
+		context.Background(), modulePath, catalog, true, ".", nil, nil,
+	); err == nil || !strings.Contains(err.Error(), "ambiguous") ||
+		!strings.Contains(err.Error(), catalog.Entries[0].Candidate.Key) ||
+		!strings.Contains(err.Error(), catalog.Entries[1].Candidate.Key) {
+		t.Fatalf("untyped root alias = %v", err)
+	}
+	for _, entry := range catalog.Entries {
+		selection, outcome, err := selectAllTargetsForRun(
+			context.Background(), modulePath, catalog, true, entry.Candidate.Key, nil, nil,
+		)
+		if err != nil || selection.DefaultTargetRef != entry.Candidate.Target.Ref ||
+			outcome.SelectedKind != entry.Candidate.Target.Kind || len(selection.TargetRefs) != 2 {
+			t.Fatalf("typed key %q = %#v / %#v / %v", entry.Candidate.Key, selection, outcome, err)
+		}
+	}
+}
+
 func TestTargetPortfolioRuntimeInvalidResponseUsesOnlyExactLocalDefault(t *testing.T) {
 	catalog := targetPortfolioRuntimeCatalog(t, targetPortfolioRuntimeFacts())
 	client := &targetPortfolioClientStub{response: []byte(`{"version":1,"request_ref":"wrong","default_ref":"t1","target_refs":["t1"]}`)}
@@ -193,18 +245,17 @@ func TestTargetPortfolioRuntimeInvalidResponseWithoutDefaultIsActionable(t *test
 
 func TestTargetPortfolioRuntimeSoleEligibleExecutableBypassesEmptyLibraryDefault(t *testing.T) {
 	catalog := targetPortfolioRuntimeCatalog(t, targetPortfolioEmptyRootLibraryFacts())
-	defaultEntry := targetPortfolioRuntimeEntry(t, catalog, ".")
-	if catalog.DefaultTargetRef != defaultEntry.Candidate.Target.Ref ||
-		defaultEntry.Candidate.Target.Kind != analysistarget.KindLibraryPackage ||
-		len(defaultEntry.Symbols) != 0 {
-		t.Fatalf("empty root default control setup = %#v / default %q", defaultEntry, catalog.DefaultTargetRef)
+	serverEntry := targetPortfolioRuntimeEntry(t, catalog, "server")
+	if len(catalog.Entries) != 1 || catalog.DefaultTargetRef != "" ||
+		serverEntry.Candidate.Target.Kind != analysistarget.KindExecutablePackage {
+		t.Fatalf("D280 empty-library omission setup = %#v / default %q", catalog.Entries, catalog.DefaultTargetRef)
 	}
 	client := &targetPortfolioClientStub{response: []byte(`{}`)}
 	selected, outcome, err := selectTargetPortfolioForRun(
 		context.Background(), "go.etcd.io/etcd/v3", catalog, nil,
 		func() (targetPortfolioClient, error) { return client, nil },
 	)
-	serverRef := targetPortfolioRuntimeEntry(t, catalog, "server").Candidate.Target.Ref
+	serverRef := serverEntry.Candidate.Target.Ref
 	if err != nil || selected != serverRef || outcome.UsedLocalDefault || client.calls != 0 ||
 		outcome.SelectedPath != "server" || outcome.SelectedTargets != 1 {
 		t.Fatalf("empty-library fallback = %q / %#v / calls=%d / err=%v", selected, outcome, client.calls, err)
@@ -221,7 +272,7 @@ func TestAllTargetsOfflineWithoutStrongDefaultRequiresExplicitTarget(t *testing.
 			return nil, errors.New("must not run")
 		},
 	)
-	if err == nil || !strings.Contains(err.Error(), "--target PACKAGE") ||
+	if err == nil || !strings.Contains(err.Error(), "--target TARGET") ||
 		!strings.Contains(err.Error(), "cmd/api") || !strings.Contains(err.Error(), "cmd/worker") ||
 		factoryCalls != 0 {
 		t.Fatalf("offline all-target error = %v, factory calls=%d", err, factoryCalls)
@@ -276,8 +327,8 @@ func TestTargetPortfolioRuntimeSoleTargetDoesNotConfigureProvider(t *testing.T) 
 		Packages: []gofacts.PackageFact{{
 			CanonicalPath: "example.com/library", Name: "library", ModuleID: "module-root",
 			ModulePath: "example.com/library", PackageDir: ".", ModuleRelativeDir: ".", Locality: "local",
-			DeclarationsScanned: true,
-			Declarations:        []gofacts.PackageDeclaration{{Kind: gofacts.PackageDeclarationFunc, Name: "New"}},
+			DeclarationsScanned: true, LoadCompleteness: completeGoPackageLoad(),
+			Declarations: []gofacts.PackageDeclaration{{Kind: gofacts.PackageDeclarationFunc, Name: "New"}},
 		}},
 	}
 	catalog := targetPortfolioRuntimeCatalog(t, facts)
@@ -295,14 +346,14 @@ func TestTargetPortfolioRuntimeSoleTargetDoesNotConfigureProvider(t *testing.T) 
 	}
 }
 
-func TestD279TelebotSoleModuleRootLibraryMakesZeroSelectorCalls(t *testing.T) {
+func TestD280TelebotFourPackagesPublishOneModuleLibraryAndMakeZeroSelectorCalls(t *testing.T) {
 	const modulePath = "gopkg.in/telebot.v3"
 	packages := []gofacts.PackageFact{
 		{
 			CanonicalPath: modulePath, Name: "telebot", ModuleID: "telebot", ModulePath: modulePath,
 			PackageDir: ".", ModuleRelativeDir: ".", DisplayPath: ".", Locality: "local",
-			DeclarationsScanned: true,
-			Declarations:        []gofacts.PackageDeclaration{{Kind: gofacts.PackageDeclarationFunc, Name: "NewBot"}},
+			DeclarationsScanned: true, LoadCompleteness: completeGoPackageLoad(),
+			Declarations: []gofacts.PackageDeclaration{{Kind: gofacts.PackageDeclarationFunc, Name: "NewBot"}},
 		},
 	}
 	for _, dir := range []string{"layout", "middleware", "react"} {
@@ -317,8 +368,9 @@ func TestD279TelebotSoleModuleRootLibraryMakesZeroSelectorCalls(t *testing.T) {
 		Modules:  []gofacts.ModuleFact{{ID: "telebot", ModulePath: modulePath, ModuleDir: ".", Main: true}},
 		Packages: packages,
 	})
-	if len(catalog.Entries) != 4 {
-		t.Fatalf("complete catalog targets = %d, want 4", len(catalog.Entries))
+	if len(catalog.Entries) != 1 || catalog.Entries[0].Candidate.Target.Kind != analysistarget.KindModuleLibrary ||
+		len(catalog.Entries[0].Candidate.Target.LibraryPackages) != 4 || len(catalog.Entries[0].PackageAPIs) != 4 {
+		t.Fatalf("Telebot module surface = %#v", catalog.Entries)
 	}
 	factoryCalls := 0
 	selected, outcome, err := selectTargetPortfolioForRun(
@@ -336,7 +388,7 @@ func TestD279TelebotSoleModuleRootLibraryMakesZeroSelectorCalls(t *testing.T) {
 	}
 }
 
-func TestD279EtcdSelectorSeesOnlyClientModuleRootAndServerMain(t *testing.T) {
+func TestD280EtcdSelectorSeesModuleLibrariesAndExactServerMain(t *testing.T) {
 	const (
 		clientModule = "go.etcd.io/etcd/client/v3"
 		serverModule = "go.etcd.io/etcd/server/v3"
@@ -367,11 +419,12 @@ func TestD279EtcdSelectorSeesOnlyClientModuleRootAndServerMain(t *testing.T) {
 	}
 	refs := map[string]string{}
 	for _, target := range compilation.Request.Targets {
-		refs[target.DisplayPath] = target.Ref
+		refs[target.DisplayPath+"\x00"+string(target.Kind)] = target.Ref
 	}
 	response, err := json.Marshal(targetportfolio.Response{
 		Version: targetportfolio.ResultVersion, RequestRef: compilation.Request.RequestRef,
-		DefaultRef: refs["server"], TargetRefs: []string{refs["server"], refs["client/v3"]},
+		DefaultRef: refs["server\x00executable"],
+		TargetRefs: []string{refs["server\x00executable"], refs["client/v3\x00library"]},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -381,9 +434,17 @@ func TestD279EtcdSelectorSeesOnlyClientModuleRootAndServerMain(t *testing.T) {
 		context.Background(), "go.etcd.io/etcd/v3", catalog, nil,
 		func() (targetPortfolioClient, error) { return client, nil },
 	)
-	serverRef := targetPortfolioRuntimeEntry(t, catalog, "server").Candidate.Target.Ref
+	serverRef := ""
+	for _, entry := range catalog.Entries {
+		if entry.DisplayPath == "server" && entry.Candidate.Target.Kind == analysistarget.KindExecutablePackage {
+			serverRef = entry.Candidate.Target.Ref
+		}
+	}
 	if err != nil || client.calls != 1 || selected != serverRef || outcome.SelectedTargets != 2 {
 		t.Fatalf("etcd ordinary selection = %q / %#v / calls=%d / err=%v", selected, outcome, client.calls, err)
+	}
+	if len(compilation.Request.Targets) != 3 {
+		t.Fatalf("etcd module surfaces = %#v", compilation.Request.Targets)
 	}
 	for _, path := range []string{"client/v3", "server"} {
 		if !strings.Contains(client.prompt.User, `"display_path":"`+path+`"`) {
@@ -391,8 +452,10 @@ func TestD279EtcdSelectorSeesOnlyClientModuleRootAndServerMain(t *testing.T) {
 		}
 	}
 	for _, path := range []string{"client/v3/concurrency", "server/storage/wal"} {
-		if strings.Contains(client.prompt.User, `"display_path":"`+path+`"`) {
-			t.Fatalf("etcd selector exposed non-root library %q: %s", path, client.prompt.User)
+		for _, target := range compilation.Request.Targets {
+			if target.DisplayPath == path {
+				t.Fatalf("etcd selector exposed package %q as a separate target: %#v", path, target)
+			}
 		}
 	}
 }
@@ -505,6 +568,7 @@ func targetPortfolioRuntimePackage(modulePath, dir string) gofacts.PackageFact {
 		CanonicalPath: modulePath + "/" + dir, Name: strings.ReplaceAll(dir, "/", "_"),
 		ModuleID: "module-root", ModulePath: modulePath, PackageDir: dir,
 		ModuleRelativeDir: dir, DisplayPath: dir, Locality: "local", DeclarationsScanned: true,
+		LoadCompleteness: completeGoPackageLoad(),
 	}
 }
 
@@ -520,8 +584,15 @@ func targetPortfolioRuntimeNestedModulePackage(
 	return gofacts.PackageFact{
 		CanonicalPath: canonicalPath, Name: name, ModuleID: moduleID, ModulePath: modulePath,
 		PackageDir: packageDir, ModuleRelativeDir: relativeDir, DisplayPath: packageDir,
-		Locality: "local", DeclarationsScanned: true,
+		Locality: "local", DeclarationsScanned: true, LoadCompleteness: completeGoPackageLoad(),
 		Declarations: []gofacts.PackageDeclaration{{Kind: gofacts.PackageDeclarationFunc, Name: declaration}},
+	}
+}
+
+func completeGoPackageLoad() *gofacts.PackageLoadCompleteness {
+	return &gofacts.PackageLoadCompleteness{
+		Version: gofacts.PackageLoadCompletenessVersion,
+		State:   gofacts.PackageLoadComplete,
 	}
 }
 

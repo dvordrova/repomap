@@ -51,6 +51,8 @@ type RunMeta struct {
 	BuildIdentity              BuildIdentity    `json:"build_identity"`
 	AnalysisTargetRef          string           `json:"analysis_target_ref,omitempty"`
 	AnalysisTargetKind         string           `json:"analysis_target_kind,omitempty"`
+	AnalysisTargetModule       string           `json:"analysis_target_module,omitempty"`
+	AnalysisTargetDisplayPath  string           `json:"analysis_target_display_path,omitempty"`
 	AnalysisTargetPackage      string           `json:"analysis_target_package,omitempty"`
 }
 

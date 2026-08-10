@@ -265,7 +265,7 @@ func d277LibraryReportData(t *testing.T, declarations []gofacts.PackageDeclarati
 			CanonicalPath: "gopkg.in/telebot.v3", Name: "telebot", ModuleID: "module-root",
 			ModulePath: "gopkg.in/telebot.v3", PackageDir: ".", ModuleRelativeDir: ".",
 			Locality: "local", Files: []string{"assembly.go", "bot.go", "client.go", "download.go"},
-			Declarations: declarations, DeclarationsScanned: true,
+			Declarations: declarations, DeclarationsScanned: true, LoadCompleteness: completeReportPackageLoad(),
 		}},
 	}
 	resolution, err := analysistarget.Resolve(facts, analysistarget.Options{})
@@ -282,4 +282,11 @@ func d277LibraryReportData(t *testing.T, declarations []gofacts.PackageDeclarati
 		},
 	}
 	return &ReportData{AnalysisTarget: &target, RepositoryAtlas: &atlas, repositoryGoFacts: &facts}
+}
+
+func completeReportPackageLoad() *gofacts.PackageLoadCompleteness {
+	return &gofacts.PackageLoadCompleteness{
+		Version: gofacts.PackageLoadCompletenessVersion,
+		State:   gofacts.PackageLoadComplete,
+	}
 }
