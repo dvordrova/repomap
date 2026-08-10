@@ -100,6 +100,7 @@ const (
 	RejectedSurfaceIncompatibleForm    RejectedSurfaceReason = "incompatible_form"
 	RejectedSurfaceMissingBinding      RejectedSurfaceReason = "missing_required_binding"
 	RejectedSurfaceDuplicateBinding    RejectedSurfaceReason = "duplicate_binding"
+	RejectedSurfaceDuplicateProposal   RejectedSurfaceReason = "duplicate_proposal"
 	RejectedSurfaceIncompatibleBinding RejectedSurfaceReason = "incompatible_binding"
 )
 
@@ -227,15 +228,12 @@ func reduceSurfaceProposals(
 			knownFacts[fact.Ref] = struct{}{}
 		}
 	}
-	seenCandidates := make(map[string]struct{}, len(proposals))
+	proposalCountByCandidate := make(map[string]int, len(proposals))
+	proposalByCandidate := make(map[string]ResponseSurfaceProposal, len(proposals))
 	for _, proposal := range proposals {
 		if _, known := compilation.surfaceAuthority[proposal.CandidateRef]; !known {
 			return nil, nil, fmt.Errorf("entry call: response cites unknown surface candidate ref")
 		}
-		if _, duplicate := seenCandidates[proposal.CandidateRef]; duplicate {
-			return nil, nil, fmt.Errorf("entry call: response repeats surface candidate ref")
-		}
-		seenCandidates[proposal.CandidateRef] = struct{}{}
 		if _, known := knownKinds[proposal.KindRef]; !known {
 			return nil, nil, fmt.Errorf("entry call: response cites unknown surface kind ref")
 		}
@@ -247,13 +245,28 @@ func reduceSurfaceProposals(
 				return nil, nil, fmt.Errorf("entry call: response cites unknown surface fact ref")
 			}
 		}
+		proposalCountByCandidate[proposal.CandidateRef]++
+		proposalByCandidate[proposal.CandidateRef] = proposal
 	}
 
-	ordered := append([]ResponseSurfaceProposal(nil), proposals...)
-	sort.Slice(ordered, func(i, j int) bool { return refLess(ordered[i].CandidateRef, ordered[j].CandidateRef) })
-	selected := make([]ResultSurfaceProposal, 0, len(ordered))
+	orderedCandidateRefs := make([]string, 0, len(proposalByCandidate))
+	for candidateRef := range proposalByCandidate {
+		orderedCandidateRefs = append(orderedCandidateRefs, candidateRef)
+	}
+	sort.Slice(orderedCandidateRefs, func(i, j int) bool {
+		return refLess(orderedCandidateRefs[i], orderedCandidateRefs[j])
+	})
+	selected := make([]ResultSurfaceProposal, 0, len(orderedCandidateRefs))
 	rejected := make([]RejectedSurfaceProposal, 0)
-	for _, proposal := range ordered {
+	for _, candidateRef := range orderedCandidateRefs {
+		if proposalCountByCandidate[candidateRef] > 1 {
+			rejected = append(rejected, RejectedSurfaceProposal{
+				CandidateRef: candidateRef,
+				Reason:       RejectedSurfaceDuplicateProposal,
+			})
+			continue
+		}
+		proposal := proposalByCandidate[candidateRef]
 		restored, reason := restoreSurfaceProposal(compilation.surfaceAuthority[proposal.CandidateRef], proposal)
 		if reason != "" {
 			rejected = append(rejected, RejectedSurfaceProposal{CandidateRef: proposal.CandidateRef, Reason: reason})

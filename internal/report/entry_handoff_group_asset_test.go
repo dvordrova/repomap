@@ -304,7 +304,7 @@ if (process.argv[4] === "legacy-cli") {
     }]),
   };
 }
-if (process.argv[4] === "model-assisted") {
+if (String(process.argv[4] || "").indexOf("model-assisted") === 0) {
   const processLocation = { path: "main.go", line: 10, column: 6 };
   const localSite = { path: "routes.go", line: 20, column: 2 };
   const localHandler = { path: "handlers.go", line: 40, column: 6 };
@@ -340,6 +340,24 @@ if (process.argv[4] === "model-assisted") {
     handler: { kind: "function", text: "fixture.local", known: true, candidates: [] },
     registration_site: localSite, handler_location: localHandler,
   };
+  const localDescriptor = {
+    id: "local-cli-descriptor", kind: "cli_command", surface_role: "descriptor", provisional_id: false,
+    resolution: "exact", identity: {
+      name: "backup [flags]",
+      path: { kind: "command_segment", text: "backup [flags]", known: true, candidates: [] },
+    },
+    handler: { kind: "function", text: "fixture.localBackup", known: true, candidates: [] },
+    descriptor_site: { path: "cmd/serve/cmd_00.go", line: 20, column: 2 },
+    handler_location: { path: "cmd/serve/cmd_00.go", line: 90, column: 6 },
+  };
+  const unmatchedDescriptor = {
+    id: "local-cli-unmatched", kind: "cli_command", surface_role: "descriptor", provisional_id: false,
+    resolution: "exact", identity: {
+      name: "hidden-local-only",
+      path: { kind: "command_segment", text: "hidden-local-only", known: true, candidates: [] },
+    },
+    descriptor_site: { path: "cmd/serve/cmd_00.go", line: 21, column: 2 },
+  };
   report.openable_paths = ["main.go", "routes.go", "handlers.go"];
   for (let index = 0; index < 8; index++) report.openable_paths.push("cmd/serve/cmd_" + String(index).padStart(2, "0") + ".go");
   report.architecture_canvas.surfaces = [
@@ -347,22 +365,29 @@ if (process.argv[4] === "model-assisted") {
     { id: "local-route", kind: "http_route", name: "wrong local label", surface_role: "entry_surface", participating_component_ids: ["c2"], evidence: [localSite, localHandler] },
   ];
   report.architecture_canvas.entry_handoff_groups = [];
-  report.discovered_surfaces = { triggers: [localTrigger] };
+  report.discovered_surfaces = { triggers: [localTrigger, localDescriptor, unmatchedDescriptor] };
   report.entry_call = {
     version: 2, families: [],
     surfaces: [
       // Equivalent exact local TriggerRecord wins this duplicate key.
       modelRoute("model-surface-000000000000000000000001", "GET", "/local", localSite, "fixture.local", localHandler),
+      modelRoute("model-surface-000000000000000000000003", "GET", "/",
+        { path: "main.go", line: 98, column: 2 }, "main.root", { path: "main.go", line: 98, column: 17 }),
       modelRoute("model-surface-000000000000000000000002", "GET", "/ws",
         { path: "main.go", line: 208, column: 2 }, "main.hello", { path: "main.go", line: 143, column: 6 }),
     ].concat(Array.from({ length: 8 }, (_, index) => modelCommand(index))),
     surface_coverage: {
-      considered_candidates: 15, advertised_candidates: 12, omitted_candidates: 3,
-      considered_facts: 51, advertised_facts: 45, omitted_facts: 6,
+      considered_candidates: 18, advertised_candidates: 15, omitted_candidates: 3,
+      considered_facts: 60, advertised_facts: 54, omitted_facts: 6,
       unsafe_facts_excluded: 2, unreachable_candidates_excluded: 1,
-      selected_proposals: 10, rejected_proposals: 2,
+      selected_proposals: 11, rejected_proposals: 2,
     },
   };
+  if (String(process.argv[4] || "").endsWith("-shuffled")) {
+    report.architecture_canvas.surfaces.reverse();
+    report.discovered_surfaces.triggers.reverse();
+    report.entry_call.surfaces.reverse();
+  }
 }
 const window = {
   location: { hash: "#canvas", host: "fixture.test", pathname: "/index.html", search: "" },
@@ -444,8 +469,11 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
     const source = card.querySelector(".rm-source-action-link");
     return source && source.getAttribute("href") || "";
   });
+  const cardAllSourceHrefs = cards.map((card) =>
+    card.querySelectorAll(".rm-source-action-link").map((source) => source.getAttribute("href") || ""));
   const cardFamilyRowCounts = cards.map((card) => card.querySelectorAll(".rm-map-entry-family-row").length);
   const cardExploreCounts = cards.map((card) => card.querySelectorAll(".rm-map-entry-card__explore").length);
+  const cardModelBadgeCounts = cards.map((card) => card.querySelectorAll(".rm-map-entry-card__origin").length);
   const entryGroups = root.querySelectorAll(".rm-map-entry-group");
   const cliGroup = entryGroups.find((group) => group.getAttribute("data-entry-surface-kind") === "cli_command");
   const cliPrimaryList = cliGroup && cliGroup.children.find((child) =>
@@ -468,7 +496,8 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
     entryCardCount: cards.length, exploreCount: explore.length,
     familyDisclosureCount: familyDetails.length,
     familyRowText: familyRows.map((node) => node.textContent),
-    cardLabels, cardCallbacks, cardSourceText, cardSourceHrefs, cardFamilyRowCounts, cardExploreCounts,
+    cardLabels, cardCallbacks, cardSourceText, cardSourceHrefs, cardAllSourceHrefs,
+    cardFamilyRowCounts, cardExploreCounts, cardModelBadgeCounts,
     groupKinds: entryGroups.map((group) => group.getAttribute("data-entry-surface-kind") || ""),
     groupText: entryGroups.map((group) => group.children[0] ? group.children[0].textContent : ""),
     cliVisibleCount: cliPrimaryList ? cliPrimaryList.children.length : 0,
@@ -637,35 +666,57 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
 		t.Fatalf("legacy CLI exact registration/handler source actions were duplicated or lost: %#v", legacyCLI)
 	}
 
+	modelAssistedEN := run("en", "model-assisted")
 	modelAssisted := run("ru", "model-assisted")
+	modelAssistedShuffledEN := run("en", "model-assisted-shuffled")
+	modelAssistedShuffledRU := run("ru", "model-assisted-shuffled")
+	for name, candidate := range map[string]entryHandoffAssetResult{
+		"ru":          modelAssisted,
+		"shuffled-en": modelAssistedShuffledEN,
+		"shuffled-ru": modelAssistedShuffledRU,
+	} {
+		if strings.Join(candidate.CardLabels, "\x00") != strings.Join(modelAssistedEN.CardLabels, "\x00") ||
+			strings.Join(candidate.CardCallbacks, "\x00") != strings.Join(modelAssistedEN.CardCallbacks, "\x00") {
+			t.Fatalf("model-assisted semantic order changed for %s: EN %#v candidate %#v", name, modelAssistedEN, candidate)
+		}
+	}
 	if strings.Join(modelAssisted.GroupKinds, ",") != "process_entry,http_route,cli_command" ||
-		modelAssisted.EntryCardCount != 11 || modelAssisted.ExploreCount != 0 ||
+		modelAssisted.EntryCardCount != 12 || modelAssisted.ExploreCount != 0 ||
 		modelAssisted.ModelBadgeCount != 9 || modelAssisted.CLIVisibleCount != 6 ||
 		modelAssisted.CLIMoreCount != 2 || modelAssisted.CLIMoreOpen ||
 		!strings.Contains(modelAssisted.CLIMoreText, "Показать ещё 2") ||
-		!strings.Contains(modelAssisted.Text, "Точки входа · 11") {
+		!strings.Contains(modelAssisted.Text, "Точки входа · 12") {
 		t.Fatalf("model-assisted Entrypoints union/count/disclosure = %#v", modelAssisted)
+	}
+	if len(modelAssisted.CardLabels) < 10 ||
+		strings.Join(modelAssisted.CardLabels[:4], "\x00") != "main\x00GET /\x00GET /local\x00GET /ws" ||
+		strings.Join(modelAssisted.CardLabels[4:10], "\x00") !=
+			"add\x00backup [flags]\x00get [key]\x00health\x00index\x00key" {
+		t.Fatalf("model-assisted root-first HTTP or semantic CLI order = %#v", modelAssisted.CardLabels)
 	}
 	if countString(modelAssisted.CardLabels, "GET /local") != 1 ||
 		countString(modelAssisted.CardLabels, "GET /ws") != 1 ||
 		containsString(modelAssisted.CardLabels, "wrong local label") ||
-		!containsString(modelAssisted.CardLabels, "backup [flags]") ||
+		countString(modelAssisted.CardLabels, "backup [flags]") != 1 ||
 		!containsString(modelAssisted.CardLabels, "txn") ||
+		strings.Contains(modelAssisted.Text, "hidden-local-only") ||
 		strings.Contains(modelAssisted.Text, "model-surface-") {
 		t.Fatalf("deterministic precedence or restored identities failed: %#v", modelAssisted)
 	}
 	if !allEntryHandoffStringsEqual(modelAssisted.ModelBadgeText, "С участием модели") ||
-		countString(modelAssisted.ModelStateText, "точный статический вызов регистрации") != 1 ||
-		countString(modelAssisted.ModelStateText, "объявленный дескриптор") != 8 ||
-		!strings.Contains(modelAssisted.ModelFrontierText, "10 восстановлено") ||
+		countString(modelAssisted.ModelStateText, "точный статический вызов регистрации") != 2 ||
+		countString(modelAssisted.ModelStateText, "объявленный дескриптор") != 7 ||
+		!strings.Contains(modelAssisted.ModelFrontierText, "11 восстановлено") ||
 		!strings.Contains(modelAssisted.ModelFrontierText, "2 предложений отклонено") ||
+		!strings.Contains(modelAssisted.ModelFrontierText, "по 2 кандидатам модель не предложила точку входа") ||
 		!strings.Contains(modelAssisted.ModelFrontierText, "3 кандидатов и 6 фактов") ||
 		!strings.Contains(modelAssisted.ModelFrontierText, "2 небезопасных фактов") ||
 		!strings.Contains(modelAssisted.ModelFrontierText, "1 недостижимых кандидатов") {
 		t.Fatalf("model-assisted truth/frontier copy = %#v", modelAssisted)
 	}
-	if !strings.Contains(modelAssisted.Text, "внешние префиксы маршрута") {
-		t.Fatalf("model-assisted route-prefix limitation is absent: %#v", modelAssisted)
+	if !strings.Contains(modelAssisted.Text, "каталог не исчерпывает все регистрации") ||
+		!strings.Contains(modelAssisted.Text, "Внешние префиксы маршрута") {
+		t.Fatalf("model-assisted non-exhaustive/prefix limitation is absent: %#v", modelAssisted)
 	}
 	echoIndex := -1
 	for index, label := range modelAssisted.CardLabels {
@@ -680,6 +731,23 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
 		!strings.Contains(modelAssisted.CardSourceHrefs[echoIndex], "/main.go#L208") ||
 		modelAssisted.CardExploreCounts[echoIndex] != 0 {
 		t.Fatalf("model-assisted exact route actions/callback = %#v", modelAssisted)
+	}
+	backupIndex := -1
+	for index, label := range modelAssisted.CardLabels {
+		if label == "backup [flags]" {
+			backupIndex = index
+			break
+		}
+	}
+	if backupIndex < 0 || modelAssisted.CardCallbacks[backupIndex] != "localBackup()" ||
+		modelAssisted.CardModelBadgeCounts[backupIndex] != 0 ||
+		!strings.Contains(modelAssisted.CardSourceText[backupIndex], "Дескриптор") ||
+		!strings.Contains(modelAssisted.CardSourceText[backupIndex], "Обработчик") ||
+		!containsString(modelAssisted.CardAllSourceHrefs[backupIndex],
+			"https://github.com/acme/fixture/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/cmd/serve/cmd_00.go#L90") ||
+		containsString(modelAssisted.CardAllSourceHrefs[backupIndex],
+			"https://github.com/acme/fixture/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/cmd/serve/cmd_00.go#L60") {
+		t.Fatalf("local exact CLI descriptor did not override same-site model proposal: %#v", modelAssisted)
 	}
 }
 
@@ -979,48 +1047,50 @@ app.ready.then(() => {
 }
 
 type entryHandoffAssetResult struct {
-	TargetCount           int      `json:"targetCount"`
-	TargetHref            string   `json:"targetHref"`
-	TargetCurrent         string   `json:"targetCurrent"`
-	InitialModeIDs        []string `json:"initialModeIDs"`
-	InitialModeStates     []string `json:"initialModeStates"`
-	InitialLensHostMode   string   `json:"initialLensHostMode"`
-	InitialContextHidden  bool     `json:"initialContextHidden"`
-	InitialEntryCardCount int      `json:"initialEntryCardCount"`
-	InitialSelectedGroups []string `json:"initialSelectedGroups"`
-	InitialSelectedLenses []string `json:"initialSelectedLenses"`
-	ModeStates            []string `json:"modeStates"`
-	LensHostPresent       bool     `json:"lensHostPresent"`
-	LensHostMode          string   `json:"lensHostMode"`
-	ContextHidden         bool     `json:"contextHidden"`
-	EntryCardCount        int      `json:"entryCardCount"`
-	ExploreCount          int      `json:"exploreCount"`
-	FamilyDisclosureCount int      `json:"familyDisclosureCount"`
-	FamilyRowText         []string `json:"familyRowText"`
-	CardLabels            []string `json:"cardLabels"`
-	CardCallbacks         []string `json:"cardCallbacks"`
-	CardSourceText        []string `json:"cardSourceText"`
-	CardSourceHrefs       []string `json:"cardSourceHrefs"`
-	CardFamilyRowCounts   []int    `json:"cardFamilyRowCounts"`
-	CardExploreCounts     []int    `json:"cardExploreCounts"`
-	GroupKinds            []string `json:"groupKinds"`
-	GroupText             []string `json:"groupText"`
-	CLIVisibleCount       int      `json:"cliVisibleCount"`
-	CLIMoreCount          int      `json:"cliMoreCount"`
-	CLIMoreText           string   `json:"cliMoreText"`
-	CLIMoreOpen           bool     `json:"cliMoreOpen"`
-	ModelBadgeCount       int      `json:"modelBadgeCount"`
-	ModelBadgeText        []string `json:"modelBadgeText"`
-	ModelStateText        []string `json:"modelStateText"`
-	ModelFrontierText     string   `json:"modelFrontierText"`
-	SourceActionCount     int      `json:"sourceActionCount"`
-	SourceHrefs           []string `json:"sourceHrefs"`
-	SelectedBeforeExplore []string `json:"selectedBeforeExplore"`
-	SelectedGroups        []string `json:"selectedGroups"`
-	SelectedLenses        []string `json:"selectedLenses"`
-	SelectedStates        []string `json:"selectedStates"`
-	Hash                  string   `json:"hash"`
-	Text                  string   `json:"text"`
+	TargetCount           int        `json:"targetCount"`
+	TargetHref            string     `json:"targetHref"`
+	TargetCurrent         string     `json:"targetCurrent"`
+	InitialModeIDs        []string   `json:"initialModeIDs"`
+	InitialModeStates     []string   `json:"initialModeStates"`
+	InitialLensHostMode   string     `json:"initialLensHostMode"`
+	InitialContextHidden  bool       `json:"initialContextHidden"`
+	InitialEntryCardCount int        `json:"initialEntryCardCount"`
+	InitialSelectedGroups []string   `json:"initialSelectedGroups"`
+	InitialSelectedLenses []string   `json:"initialSelectedLenses"`
+	ModeStates            []string   `json:"modeStates"`
+	LensHostPresent       bool       `json:"lensHostPresent"`
+	LensHostMode          string     `json:"lensHostMode"`
+	ContextHidden         bool       `json:"contextHidden"`
+	EntryCardCount        int        `json:"entryCardCount"`
+	ExploreCount          int        `json:"exploreCount"`
+	FamilyDisclosureCount int        `json:"familyDisclosureCount"`
+	FamilyRowText         []string   `json:"familyRowText"`
+	CardLabels            []string   `json:"cardLabels"`
+	CardCallbacks         []string   `json:"cardCallbacks"`
+	CardSourceText        []string   `json:"cardSourceText"`
+	CardSourceHrefs       []string   `json:"cardSourceHrefs"`
+	CardAllSourceHrefs    [][]string `json:"cardAllSourceHrefs"`
+	CardFamilyRowCounts   []int      `json:"cardFamilyRowCounts"`
+	CardExploreCounts     []int      `json:"cardExploreCounts"`
+	CardModelBadgeCounts  []int      `json:"cardModelBadgeCounts"`
+	GroupKinds            []string   `json:"groupKinds"`
+	GroupText             []string   `json:"groupText"`
+	CLIVisibleCount       int        `json:"cliVisibleCount"`
+	CLIMoreCount          int        `json:"cliMoreCount"`
+	CLIMoreText           string     `json:"cliMoreText"`
+	CLIMoreOpen           bool       `json:"cliMoreOpen"`
+	ModelBadgeCount       int        `json:"modelBadgeCount"`
+	ModelBadgeText        []string   `json:"modelBadgeText"`
+	ModelStateText        []string   `json:"modelStateText"`
+	ModelFrontierText     string     `json:"modelFrontierText"`
+	SourceActionCount     int        `json:"sourceActionCount"`
+	SourceHrefs           []string   `json:"sourceHrefs"`
+	SelectedBeforeExplore []string   `json:"selectedBeforeExplore"`
+	SelectedGroups        []string   `json:"selectedGroups"`
+	SelectedLenses        []string   `json:"selectedLenses"`
+	SelectedStates        []string   `json:"selectedStates"`
+	Hash                  string     `json:"hash"`
+	Text                  string     `json:"text"`
 }
 
 func allEntryHandoffStringsEqual(values []string, want string) bool {

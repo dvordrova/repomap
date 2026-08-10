@@ -954,8 +954,11 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
   // UI30 presents the existing exact entry-surface catalog as one grouped
   // route/command/callback list without changing Canvas or report authority.
   // UI31 adds the separately bound D283 model-assisted surface projection to
-  // that list while deterministic exact records retain precedence.
-  var VERSION = 32;
+  // that list while deterministic exact records retain precedence. UI32 lets
+  // an exact deterministic CLI descriptor override the equivalent model
+  // proposal. UI33 makes entry ordering locale-independent and reports the
+  // complete bounded candidate outcome without claiming an exhaustive catalog.
+  var VERSION = 33;
   var EN = {
     "main.browser_error.invalid_report_artifact": { params: [], text: "The saved report is invalid or exceeds the supported size." },
     "main.browser_error.no_saved_reports": { params: [], text: "No saved reports are available." },
@@ -1048,7 +1051,7 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
     "main.map.entry.state.declared_descriptor": { params: [], text: "declared descriptor" },
     "main.map.entry.explore": { params: [], text: "Explore" },
     "main.map.entry.show_more": { params: ["count"], format: function (params) { return "Show " + params.count + " more"; } },
-    "main.map.entry.static_limit": { params: [], text: "Static registration arguments only; enclosing route prefixes, runtime reachability, order and continuation are not established." },
+    "main.map.entry.static_limit": { params: [], text: "This bounded catalog is not exhaustive: registrations without an exact supported identity or handler may be absent. Enclosing route prefixes, runtime reachability, order and continuation are not established." },
     "main.map.entry.direct_families": { params: ["count"], format: function (params) { return englishCount(params.count, "direct call family", "direct call families"); } },
     "main.map.entry.map_summary": { params: ["calls", "areas", "outside"], format: function (params) { return params.calls + " direct calls · " + params.areas + " mapped areas · " + params.outside + " off-map"; } },
     "main.map.entry.calls_by": { params: ["caller", "count"], format: function (params) { return "Calls from " + params.caller + " · " + params.count; } },
@@ -1069,7 +1072,7 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
     "main.map.entry.context.not_drawn_calls": { params: ["count"], format: function (params) { return "Not drawn as map arrows: " + params.count; } },
     "main.map.entry.context.limit": { params: [], text: "Static first hop only; runtime order and continuation are not established." },
     "main.map.entry.model_frontier.summary": { params: ["count"], format: function (params) { return "Model-assisted static evidence · " + params.count; } },
-    "main.map.entry.model_frontier.result": { params: ["shown", "rejected"], format: function (params) { return params.shown + " restored surfaces · " + params.rejected + " rejected proposals"; } },
+    "main.map.entry.model_frontier.result": { params: ["shown", "rejected", "unproposed"], format: function (params) { return params.shown + " restored surfaces · " + params.rejected + " rejected proposals · " + params.unproposed + " candidates received no surface proposal"; } },
     "main.map.entry.model_frontier.bounds": { params: ["candidates", "facts", "unsafe", "unreachable"], format: function (params) { return params.candidates + " candidates and " + params.facts + " facts omitted by bounds · " + params.unsafe + " unsafe facts and " + params.unreachable + " unreachable candidates excluded locally"; } },
     "main.overview": { params: [], text: "Overview" },
     "main.study": { params: [], text: "Study" },
@@ -2199,7 +2202,7 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
     "main.map.entry.state.declared_descriptor": { params: [], text: "объявленный дескриптор" },
     "main.map.entry.explore": { params: [], text: "Исследовать" },
     "main.map.entry.show_more": { params: ["count"], format: function (params) { return "Показать ещё " + params.count; } },
-    "main.map.entry.static_limit": { params: [], text: "Показаны только статические аргументы регистрации; внешние префиксы маршрута, достижимость, порядок и продолжение во время выполнения не установлены." },
+    "main.map.entry.static_limit": { params: [], text: "Этот ограниченный каталог не исчерпывает все регистрации: записи без точно установленного идентификатора или обработчика могут отсутствовать. Внешние префиксы маршрута, достижимость, порядок и продолжение во время выполнения не установлены." },
     "main.map.entry.direct_families": { params: ["count"], format: function (params) { return russianCount(params.count, "группа прямых вызовов", "группы прямых вызовов", "групп прямых вызовов"); } },
     "main.map.entry.map_summary": { params: ["calls", "areas", "outside"], format: function (params) { return params.calls + " прямых вызовов · " + params.areas + " областей на карте · " + params.outside + " вне карты"; } },
     "main.map.entry.calls_by": { params: ["caller", "count"], format: function (params) { return "Вызовы из " + params.caller + " · " + params.count; } },
@@ -2220,7 +2223,7 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
     "main.map.entry.context.not_drawn_calls": { params: ["count"], format: function (params) { return "Не показано стрелками на карте: " + params.count; } },
     "main.map.entry.context.limit": { params: [], text: "Только статический первый переход; порядок выполнения и продолжение не установлены." },
     "main.map.entry.model_frontier.summary": { params: ["count"], format: function (params) { return "Статические свидетельства с участием модели · " + params.count; } },
-    "main.map.entry.model_frontier.result": { params: ["shown", "rejected"], format: function (params) { return params.shown + " восстановлено · " + params.rejected + " предложений отклонено"; } },
+    "main.map.entry.model_frontier.result": { params: ["shown", "rejected", "unproposed"], format: function (params) { return params.shown + " восстановлено · " + params.rejected + " предложений отклонено · по " + params.unproposed + " кандидатам модель не предложила точку входа"; } },
     "main.map.entry.model_frontier.bounds": { params: ["candidates", "facts", "unsafe", "unreachable"], format: function (params) { return params.candidates + " кандидатов и " + params.facts + " фактов пропущено по лимитам · " + params.unsafe + " небезопасных фактов и " + params.unreachable + " недостижимых кандидатов исключено локально"; } },
     "main.overview": { params: [], text: "Обзор" },
     "main.study": { params: [], text: "Изучение" },
@@ -10459,7 +10462,11 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
     var localTriggers = DATA.discovered_surfaces && Array.isArray(DATA.discovered_surfaces.triggers)
       ? DATA.discovered_surfaces.triggers : [];
     localTriggers.forEach(function (trigger) {
-      if (String(trigger && trigger.surface_role || '') !== 'entry_surface') return;
+      var localKind = String(trigger && trigger.kind || '');
+      var localRole = String(trigger && trigger.surface_role || '');
+      var exactCLIDescriptor = localKind === 'cli_command' && localRole === 'descriptor' &&
+        String(trigger && trigger.resolution || '') === 'exact';
+      if (localRole !== 'entry_surface' && !exactCLIDescriptor) return;
       var key = entrySurfaceExactIdentityKey(trigger);
       if (!key) return;
       var previous = localByKey[key];
@@ -10764,29 +10771,61 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
       if (!grouped[kind]) grouped[kind] = [];
       grouped[kind].push(item);
     });
-    function itemSortKey(item) {
+    function stableEntrySurfaceTextCompare(left, right) {
+      left = String(left || '');
+      right = String(right || '');
+      return left < right ? -1 : left > right ? 1 : 0;
+    }
+    function itemSortParts(item) {
       var trigger = item.trigger;
       var primary = entrySurfacePrimaryLocation(item.entry) || item.entry;
       var source = entrySurfaceRegistrationLocation(trigger, primary) || {};
-      var sourceKey = [String(source.path || ''), String(source.line || 0).padStart(9, '0'),
-        String(source.column || 0).padStart(9, '0')].join('\u0000');
-      var identity = entrySurfaceIdentityLabel(trigger, item.entry, item.kind);
-      var callback = entrySurfaceHasCallback(trigger, item.kind) ? entrySurfaceCallbackLabel(trigger) : '';
+      var sourceParts = [String(source.path || ''), String(source.line || 0).padStart(9, '0'),
+        String(source.column || 0).padStart(9, '0')];
+      var identity = trigger && trigger.identity || {};
+      var exactPath = identity && identity.path && identity.path.known === true
+        ? String(identity.path.text || '').trim() : '';
+      var exactIdentity = trigger && trigger.provisional_id !== true && !!exactPath;
+      var callback = String(trigger && trigger.handler && trigger.handler.text || '').trim();
+      var stableID = String(trigger && trigger.id || item.entry && item.entry.id || '');
       if (item.kind === 'process_entry' || item.kind === 'http_server') {
-        return [sourceKey, identity, callback].join('\u0000');
+        return sourceParts.concat([
+          String(identity && identity.name || item.entry && (item.entry.symbol || item.entry.label) || ''),
+          callback,
+          stableID,
+        ]);
       }
-      var exactRank = trigger && trigger.provisional_id !== true &&
-        trigger.identity && trigger.identity.path && trigger.identity.path.known ? '0' : '1';
-      return [exactRank, identity, callback, sourceKey].join('\u0000');
+      var exactRank = exactIdentity ? '0' : '1';
+      if (item.kind === 'http_route') {
+        return [
+          exactRank,
+          exactPath || String(item.entry && (item.entry.symbol || item.entry.label) || ''),
+          String(identity && identity.method || '').trim().toUpperCase(),
+          callback,
+        ].concat(sourceParts, [stableID]);
+      }
+      return [
+        exactRank,
+        exactPath || String(identity && identity.name || item.entry && (item.entry.symbol || item.entry.label) || ''),
+        callback,
+      ].concat(sourceParts, [stableID]);
+    }
+    function compareItemSortParts(left, right) {
+      var leftParts = itemSortParts(left);
+      var rightParts = itemSortParts(right);
+      var length = Math.max(leftParts.length, rightParts.length);
+      for (var index = 0; index < length; index++) {
+        var compared = stableEntrySurfaceTextCompare(leftParts[index], rightParts[index]);
+        if (compared) return compared;
+      }
+      return 0;
     }
     Object.keys(grouped).forEach(function (kind) {
-      grouped[kind].sort(function (left, right) {
-        return itemSortKey(left).localeCompare(itemSortKey(right));
-      });
+      grouped[kind].sort(compareItemSortParts);
     });
     Object.keys(grouped).sort(function (left, right) {
       var leftGroup = entrySurfaceGroup(left), rightGroup = entrySurfaceGroup(right);
-      return leftGroup.order - rightGroup.order || left.localeCompare(right);
+      return leftGroup.order - rightGroup.order || stableEntrySurfaceTextCompare(left, right);
     }).forEach(function (kind) {
       var definition = entrySurfaceGroup(kind);
       var section = el('section', 'rm-map-entry-group');
@@ -10840,9 +10879,14 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
         'main.map.entry.model_frontier.summary', { count: Number(modelCoverage.selected_proposals) || 0 }
       )));
       var frontierBody = el('div', 'rm-map-entry-model-frontier__body');
+      var noProposal = Math.max(0,
+        (Number(modelCoverage.advertised_candidates) || 0) -
+        (Number(modelCoverage.selected_proposals) || 0) -
+        (Number(modelCoverage.rejected_proposals) || 0));
       frontierBody.appendChild(txt('p', '', msg('main.map.entry.model_frontier.result', {
         shown: Number(modelCoverage.selected_proposals) || 0,
         rejected: Number(modelCoverage.rejected_proposals) || 0,
+        unproposed: noProposal,
       })));
       frontierBody.appendChild(txt('p', '', msg('main.map.entry.model_frontier.bounds', {
         candidates: Number(modelCoverage.omitted_candidates) || 0,

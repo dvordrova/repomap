@@ -7206,7 +7206,11 @@
     var localTriggers = DATA.discovered_surfaces && Array.isArray(DATA.discovered_surfaces.triggers)
       ? DATA.discovered_surfaces.triggers : [];
     localTriggers.forEach(function (trigger) {
-      if (String(trigger && trigger.surface_role || '') !== 'entry_surface') return;
+      var localKind = String(trigger && trigger.kind || '');
+      var localRole = String(trigger && trigger.surface_role || '');
+      var exactCLIDescriptor = localKind === 'cli_command' && localRole === 'descriptor' &&
+        String(trigger && trigger.resolution || '') === 'exact';
+      if (localRole !== 'entry_surface' && !exactCLIDescriptor) return;
       var key = entrySurfaceExactIdentityKey(trigger);
       if (!key) return;
       var previous = localByKey[key];
@@ -7511,29 +7515,61 @@
       if (!grouped[kind]) grouped[kind] = [];
       grouped[kind].push(item);
     });
-    function itemSortKey(item) {
+    function stableEntrySurfaceTextCompare(left, right) {
+      left = String(left || '');
+      right = String(right || '');
+      return left < right ? -1 : left > right ? 1 : 0;
+    }
+    function itemSortParts(item) {
       var trigger = item.trigger;
       var primary = entrySurfacePrimaryLocation(item.entry) || item.entry;
       var source = entrySurfaceRegistrationLocation(trigger, primary) || {};
-      var sourceKey = [String(source.path || ''), String(source.line || 0).padStart(9, '0'),
-        String(source.column || 0).padStart(9, '0')].join('\u0000');
-      var identity = entrySurfaceIdentityLabel(trigger, item.entry, item.kind);
-      var callback = entrySurfaceHasCallback(trigger, item.kind) ? entrySurfaceCallbackLabel(trigger) : '';
+      var sourceParts = [String(source.path || ''), String(source.line || 0).padStart(9, '0'),
+        String(source.column || 0).padStart(9, '0')];
+      var identity = trigger && trigger.identity || {};
+      var exactPath = identity && identity.path && identity.path.known === true
+        ? String(identity.path.text || '').trim() : '';
+      var exactIdentity = trigger && trigger.provisional_id !== true && !!exactPath;
+      var callback = String(trigger && trigger.handler && trigger.handler.text || '').trim();
+      var stableID = String(trigger && trigger.id || item.entry && item.entry.id || '');
       if (item.kind === 'process_entry' || item.kind === 'http_server') {
-        return [sourceKey, identity, callback].join('\u0000');
+        return sourceParts.concat([
+          String(identity && identity.name || item.entry && (item.entry.symbol || item.entry.label) || ''),
+          callback,
+          stableID,
+        ]);
       }
-      var exactRank = trigger && trigger.provisional_id !== true &&
-        trigger.identity && trigger.identity.path && trigger.identity.path.known ? '0' : '1';
-      return [exactRank, identity, callback, sourceKey].join('\u0000');
+      var exactRank = exactIdentity ? '0' : '1';
+      if (item.kind === 'http_route') {
+        return [
+          exactRank,
+          exactPath || String(item.entry && (item.entry.symbol || item.entry.label) || ''),
+          String(identity && identity.method || '').trim().toUpperCase(),
+          callback,
+        ].concat(sourceParts, [stableID]);
+      }
+      return [
+        exactRank,
+        exactPath || String(identity && identity.name || item.entry && (item.entry.symbol || item.entry.label) || ''),
+        callback,
+      ].concat(sourceParts, [stableID]);
+    }
+    function compareItemSortParts(left, right) {
+      var leftParts = itemSortParts(left);
+      var rightParts = itemSortParts(right);
+      var length = Math.max(leftParts.length, rightParts.length);
+      for (var index = 0; index < length; index++) {
+        var compared = stableEntrySurfaceTextCompare(leftParts[index], rightParts[index]);
+        if (compared) return compared;
+      }
+      return 0;
     }
     Object.keys(grouped).forEach(function (kind) {
-      grouped[kind].sort(function (left, right) {
-        return itemSortKey(left).localeCompare(itemSortKey(right));
-      });
+      grouped[kind].sort(compareItemSortParts);
     });
     Object.keys(grouped).sort(function (left, right) {
       var leftGroup = entrySurfaceGroup(left), rightGroup = entrySurfaceGroup(right);
-      return leftGroup.order - rightGroup.order || left.localeCompare(right);
+      return leftGroup.order - rightGroup.order || stableEntrySurfaceTextCompare(left, right);
     }).forEach(function (kind) {
       var definition = entrySurfaceGroup(kind);
       var section = el('section', 'rm-map-entry-group');
@@ -7587,9 +7623,14 @@
         'main.map.entry.model_frontier.summary', { count: Number(modelCoverage.selected_proposals) || 0 }
       )));
       var frontierBody = el('div', 'rm-map-entry-model-frontier__body');
+      var noProposal = Math.max(0,
+        (Number(modelCoverage.advertised_candidates) || 0) -
+        (Number(modelCoverage.selected_proposals) || 0) -
+        (Number(modelCoverage.rejected_proposals) || 0));
       frontierBody.appendChild(txt('p', '', msg('main.map.entry.model_frontier.result', {
         shown: Number(modelCoverage.selected_proposals) || 0,
         rejected: Number(modelCoverage.rejected_proposals) || 0,
+        unproposed: noProposal,
       })));
       frontierBody.appendChild(txt('p', '', msg('main.map.entry.model_frontier.bounds', {
         candidates: Number(modelCoverage.omitted_candidates) || 0,
