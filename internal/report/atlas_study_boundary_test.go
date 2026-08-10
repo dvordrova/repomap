@@ -1,6 +1,7 @@
 package report
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/atlasstudy"
@@ -9,11 +10,10 @@ import (
 	"github.com/dvordrova/repomap/internal/repositoryatlas/goadapter"
 )
 
-// TestAtlasStudyBoundaryCallSiteBecomesReadingTarget verifies the D214 Study
-// consumer: an observed resource-boundary call site (adapter-owned Atlas
-// boundary evidence) becomes a reading target with the observed-call-boundary
-// support role and produces a focused route span.
-func TestAtlasStudyBoundaryCallSiteBecomesReadingTarget(t *testing.T) {
+// TestAtlasStudyBoundaryCallSiteSurvivesCompetingHydratedSourceSymbol verifies
+// that a later presentation source on the same line cannot claim the exact
+// adapter-owned boundary proof or displace its canonical reading target.
+func TestAtlasStudyBoundaryCallSiteSurvivesCompetingHydratedSourceSymbol(t *testing.T) {
 	data := atlasStudyReportFixture(t)
 	openablePath := "cmd/app/main.go"
 
@@ -76,18 +76,39 @@ func TestAtlasStudyBoundaryCallSiteBecomesReadingTarget(t *testing.T) {
 	if err := data.RepositoryAtlas.Validate(); err != nil {
 		t.Fatalf("fixture Atlas with boundary evidence: %v", err)
 	}
+	before, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+	if err != nil {
+		t.Fatalf("BuildAtlasStudyInput before hydration: %v", err)
+	}
+	// Study investigation source hydration may later expose the exact call-site
+	// line without its enclosing symbol. The source parser derives os.Create,
+	// while the Atlas boundary evidence deliberately identifies the enclosing
+	// callable main. Only the exact (path, line, symbol) locator owns the proof.
+	data.UserSources = append(data.UserSources, atlasStudySourceFixture(
+		t, openablePath, 40, "", "f, err := os.Create(Path())",
+	))
 
 	input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
 	if err != nil {
-		t.Fatalf("BuildAtlasStudyInput: %v", err)
+		t.Fatalf("BuildAtlasStudyInput after hydration: %v", err)
+	}
+	if !reflect.DeepEqual(before.ReadingTargets, input.ReadingTargets) ||
+		!reflect.DeepEqual(before.ReadingSupports, input.ReadingSupports) ||
+		!reflect.DeepEqual(before.RouteSpans, input.RouteSpans) {
+		t.Fatalf("presentation hydration changed the exact Study seed substrate")
 	}
 
 	foundTarget := false
+	boundaryTargetID := ""
 	for _, target := range input.ReadingTargets {
 		if target.Location.Path != openablePath || target.Location.Line != 40 {
 			continue
 		}
+		if target.Symbol == "os.Create" {
+			t.Fatalf("hydrated source claimed boundary proof: %#v", target)
+		}
 		foundTarget = true
+		boundaryTargetID = target.ID
 		if target.Symbol != "main" || target.Kind != atlasstudy.ReadingTargetFunction {
 			t.Fatalf("boundary reading target = %#v", target)
 		}
@@ -96,16 +117,23 @@ func TestAtlasStudyBoundaryCallSiteBecomesReadingTarget(t *testing.T) {
 		t.Fatalf("boundary call site did not become a reading target; targets:\n%+v", input.ReadingTargets)
 	}
 
+	foundSupportID := ""
+	for _, support := range input.ReadingSupports {
+		if support.TargetID == boundaryTargetID && support.Role == atlasstudy.SupportObservedCallBoundary {
+			foundSupportID = support.ID
+			break
+		}
+	}
+	if foundSupportID == "" {
+		t.Fatalf("boundary call site produced no exact observed-call-boundary support: %+v", input.ReadingSupports)
+	}
 	foundSpan := false
 	for _, span := range input.RouteSpans {
 		if span.Kind != atlasstudy.RouteSpanFocused {
 			continue
 		}
 		for _, supportID := range span.RequiredSupportIDs {
-			for _, support := range input.ReadingSupports {
-				if support.ID != supportID || support.Role != atlasstudy.SupportObservedCallBoundary {
-					continue
-				}
+			if supportID == foundSupportID {
 				foundSpan = true
 			}
 		}
