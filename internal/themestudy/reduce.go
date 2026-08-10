@@ -220,6 +220,8 @@ func Reduce(input ReducerInput) (Reduction, error) {
 			// different anchor refs) is the same study card — it CO-PROJECTS
 			// as alternate provenance (title/question/readings) instead of
 			// being dropped or publishing a duplicate card.
+			// seenCanonical stores len(all) immediately before appending.
+			//nolint:nilaway
 			coProjectTheme(&all[earlier], theme, entries, input.Anchors)
 			reduction.CoProjected++
 			continue
@@ -231,6 +233,8 @@ func Reduce(input ReducerInput) (Reduction, error) {
 			// Its title/question become alternate provenance and its
 			// distinct readings append (bounded, deduplicated by exact
 			// public identity).
+			// seenNormal stores len(all) immediately before appending.
+			//nolint:nilaway
 			coProjectTheme(&all[earlier], theme, entries, input.Anchors)
 			reduction.CoProjected++
 			continue

@@ -305,6 +305,8 @@ func evidencePathSets(bundle Bundle) map[string]map[string]struct{} {
 		addEntity(call.EvidenceID, entityRef(call.Caller))
 		addEntity(call.EvidenceID, entityRef(call.Callee))
 		if call.Callsite != nil && call.Callsite.Path != "" {
+			// addEntity above initializes this evidence bucket for every call.
+			//nolint:nilaway
 			result[call.EvidenceID][call.Callsite.Path] = struct{}{}
 		}
 	}

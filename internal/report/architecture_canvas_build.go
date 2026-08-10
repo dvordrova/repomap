@@ -529,6 +529,13 @@ func compactArchitectureGroundingRelationships(grounding *ArchitectureGrounding)
 			aggregated.PackageCount = 0
 			packagesByKey[key] = make(map[string]struct{})
 		}
+		packages := packagesByKey[key]
+		if packages == nil {
+			// Keep the per-relationship package accumulator total even if this
+			// local bookkeeping is changed independently in the future.
+			packages = make(map[string]struct{})
+			packagesByKey[key] = packages
+		}
 		witnessIDs := relationship.WitnessIDs
 		if len(witnessIDs) == 0 {
 			witnessIDs = []string{relationship.ID}
@@ -547,9 +554,9 @@ func compactArchitectureGroundingRelationships(grounding *ArchitectureGrounding)
 			if len(aggregated.RepresentativeLocations) < 8 {
 				aggregated.RepresentativeLocations = append(aggregated.RepresentativeLocations, location)
 			}
-			packagesByKey[key][path.Dir(location.Path)] = struct{}{}
+			packages[path.Dir(location.Path)] = struct{}{}
 		}
-		aggregated.PackageCount = max(relationship.PackageCount, len(packagesByKey[key]))
+		aggregated.PackageCount = max(relationship.PackageCount, len(packages))
 		byKey[key] = aggregated
 	}
 	result := make([]ArchitectureBehaviorHandoff, 0, len(byKey))

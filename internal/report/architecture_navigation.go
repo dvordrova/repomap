@@ -146,6 +146,9 @@ func ValidateArchitectureComponentNavigation(
 	if err != nil {
 		return err
 	}
+	if expected == nil {
+		return fmt.Errorf("architecture component navigation: projection is unavailable for a current canvas")
+	}
 	if projection == nil {
 		if len(expected.Components) == 0 {
 			return nil

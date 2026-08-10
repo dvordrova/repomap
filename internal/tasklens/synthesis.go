@@ -173,6 +173,8 @@ func LocalProposal(bundle Bundle) (Proposal, error) {
 	}
 	for _, key := range groupOrder {
 		group := groups[key]
+		// groupOrder is appended only when the same key receives a non-nil group.
+		//nolint:nilaway
 		proposal.Areas = append(proposal.Areas, ProposedArea{
 			Label: group.label, Why: "Contains retained anchors with exact task-term overlap.",
 			TargetIDs: group.ids,

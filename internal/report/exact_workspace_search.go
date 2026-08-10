@@ -184,6 +184,9 @@ func newReportExactSearch(data *ReportData, catalog sourcecatalog.Catalog) (*rep
 		})
 		for _, memberID := range memberIDs {
 			accumulator := members[memberID]
+			if accumulator == nil {
+				return nil, fmt.Errorf("semantic search: exact member %q has no accumulator", memberID.Value)
+			}
 			entity, ok := exactMemberEntity(accumulator.member)
 			if ok {
 				symbols = append(symbols, entity)

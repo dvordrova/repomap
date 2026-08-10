@@ -22,6 +22,15 @@ type semanticDiscoveryEditorStub struct {
 	monolithic  semanticdiscovery.FanInArtifact
 }
 
+func TestNewSemanticDiscoveryStagePlanRejectsNilProvider(t *testing.T) {
+	t.Parallel()
+
+	_, err := newSemanticDiscoveryStagePlan(nil, semanticdiscovery.Prompt{}, "test_stage")
+	if err == nil {
+		t.Fatal("newSemanticDiscoveryStagePlan accepted a nil provider")
+	}
+}
+
 func (stub *semanticDiscoveryEditorStub) SemanticDiscoveryPromptJSON(
 	prompt semanticdiscovery.Prompt,
 ) ([]byte, error) {

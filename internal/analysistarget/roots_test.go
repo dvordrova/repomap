@@ -157,6 +157,17 @@ func main() { helper() }
 	}
 }
 
+func TestBindExactRootsRejectsNilDirectCallIndex(t *testing.T) {
+	target := requireResolvedExactRootsTarget(t, syntheticFacts(
+		"module-root", "example.com/library",
+		[]syntheticPackage{{path: "example.com/library", dir: "."}},
+	))
+	if _, err := BindExactRoots(target, nil); err == nil ||
+		!strings.Contains(err.Error(), "direct call index is nil") {
+		t.Fatalf("BindExactRoots nil index error = %v", err)
+	}
+}
+
 func TestBoundExactRootCandidatesAccountsOnlyResourceOverflow(t *testing.T) {
 	candidates := make([]targetRootCandidate, MaxTargetRoots+3)
 	for index := range candidates {

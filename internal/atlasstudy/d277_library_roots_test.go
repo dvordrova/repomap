@@ -69,6 +69,37 @@ func TestD277LibraryPublicAPIFrontierIsUsefulBoundedAndPermutationStable(t *test
 	}
 }
 
+func TestReplaceOrderedRootSlotsFailsClosedOnCardinalityDrift(t *testing.T) {
+	spans := []RouteSpan{
+		{ID: "span-a"},
+		{ID: "root-a"},
+		{ID: "span-b"},
+		{ID: "root-b"},
+	}
+	rootIDs := map[string]struct{}{"root-a": {}, "root-b": {}}
+	ordered := []RouteSpan{{ID: "root-b"}, {ID: "root-a"}}
+	want := []RouteSpan{
+		{ID: "span-a"},
+		{ID: "root-b"},
+		{ID: "span-b"},
+		{ID: "root-a"},
+	}
+	if got := replaceOrderedRootSlots(spans, ordered, rootIDs); !reflect.DeepEqual(got, want) {
+		t.Fatalf("reordered spans = %#v, want %#v", got, want)
+	}
+
+	for name, roots := range map[string][]RouteSpan{
+		"missing bucket": {{ID: "root-b"}},
+		"extra bucket":   {{ID: "root-b"}, {ID: "root-a"}, {ID: "root-c"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := replaceOrderedRootSlots(spans, roots, rootIDs); !reflect.DeepEqual(got, spans) {
+				t.Fatalf("cardinality drift partially reordered spans: %#v", got)
+			}
+		})
+	}
+}
+
 func TestD277LibraryPublicAPIRootRejectsArbitraryPackageUnit(t *testing.T) {
 	input := d277LibraryInput(t, 4)
 	input.Atlas.Units = append(input.Atlas.Units, repositoryatlas.Unit{

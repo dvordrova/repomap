@@ -1904,7 +1904,7 @@ func extractAnchors(
 	kind TaskKind,
 	taskText string,
 ) ([]anchorCandidate, int) {
-	var result []anchorCandidate
+	result := make([]anchorCandidate, 0)
 	var goLedger []goAnchorLedgerItem
 	astParses := 0
 	for _, file := range files {
@@ -3285,6 +3285,8 @@ func selectAnchors(candidates []anchorCandidate, terms []Term) []Anchor {
 	}
 	representedFiles := make(map[string]struct{})
 	for index := range chosenIndexes {
+		// chosenIndexes is populated only from indexes produced by ranging candidates.
+		//nolint:nilaway
 		representedFiles[candidates[index].anchor.Path] = struct{}{}
 	}
 	for index, item := range candidates {

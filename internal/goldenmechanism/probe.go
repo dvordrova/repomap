@@ -403,6 +403,9 @@ func indexFunctions(
 	sort.Strings(paths)
 	for _, path := range paths {
 		file := files[path]
+		if file == nil || file.file == nil {
+			return nil, nil, fmt.Errorf("golden mechanism: parsed file %s is unavailable", path)
+		}
 		for _, declaration := range file.file.Decls {
 			function, ok := declaration.(*ast.FuncDecl)
 			if !ok || function.Body == nil {

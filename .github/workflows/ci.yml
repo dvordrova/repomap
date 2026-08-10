@@ -14,5 +14,6 @@ jobs:
         go-version: '1.26'
     - run: go test ./...
     - run: go vet ./...
+    - run: make nilaway
     - run: go build -trimpath -o /tmp/repomap ./cmd/repomap
     - run: /tmp/repomap . --offline --no-secrets --no-open --no-serve --debug-dir /tmp/repomap-runs

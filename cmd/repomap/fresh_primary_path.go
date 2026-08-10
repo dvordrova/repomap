@@ -909,6 +909,12 @@ func (state *freshPrimaryPlannerState) resolveRoots() (
 				continue
 			}
 			file := state.files[source.Function.Path]
+			if file == nil || file.File == nil {
+				return nil, exact, fmt.Errorf(
+					"fresh primary planner: loaded root file %q is unavailable",
+					source.Function.Path,
+				)
+			}
 			companionDeclarations := []*ast.FuncDecl{}
 			for _, declaration := range file.File.Decls {
 				functionDecl, ok := declaration.(*ast.FuncDecl)
@@ -1944,6 +1950,9 @@ func (state *freshPrimaryPlannerState) indexLoadedCallTargets(
 	targets := []target{}
 	for _, path := range paths {
 		file := state.files[path]
+		if file == nil || file.File == nil {
+			continue
+		}
 		for _, declaration := range file.File.Decls {
 			functionDecl, ok := declaration.(*ast.FuncDecl)
 			if !ok || functionDecl.Body == nil {
@@ -2260,8 +2269,12 @@ func (state *freshPrimaryPlannerState) bestBoundary(
 			continue
 		}
 		score := freshPrimaryBoundaryScore(call, kind)
+		boundary := freshPrimaryBoundaryFromCall(function, call, kind)
+		if boundary == nil {
+			continue
+		}
 		matches = append(matches, rankedBoundary{
-			boundary: *freshPrimaryBoundaryFromCall(function, call, kind),
+			boundary: *boundary,
 			score:    score,
 		})
 	}
@@ -3088,8 +3101,8 @@ func replanSavedFreshRepoMechanisms(
 		if attempt.Synthesis != nil {
 			status.addMetrics(*attempt.Synthesis)
 		}
-		status.Attempts = append(status.Attempts, attempt)
 		if attemptErr != nil {
+			status.Attempts = append(status.Attempts, attempt)
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return result, ctxErr
 			}
@@ -3097,9 +3110,11 @@ func replanSavedFreshRepoMechanisms(
 		}
 		role, err := freshPublishedOnboardingRole(absRunDir, summary.ID)
 		if err != nil {
+			status.Attempts = append(status.Attempts, attempt)
 			return result, err
 		}
-		status.Attempts[len(status.Attempts)-1].OnboardingRole = role
+		attempt.OnboardingRole = role
+		status.Attempts = append(status.Attempts, attempt)
 		status.PublishedMechanisms = append(status.PublishedMechanisms, freshPublishedMechanism{
 			CandidateID: work.Candidate.ID,
 			MechanismID: mechanism.ID,

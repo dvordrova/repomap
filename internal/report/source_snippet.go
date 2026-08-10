@@ -1828,6 +1828,9 @@ func overviewArchitectureComponentLocations(
 			return nil
 		}
 	}
+	if projection == nil {
+		return nil
+	}
 	for _, navigation := range projection.Components {
 		if navigation.ComponentID != component.ID {
 			continue

@@ -751,6 +751,11 @@ func newSemanticDiscoveryStagePlan(
 	prompt semanticdiscovery.Prompt,
 	stage string,
 ) (semanticDiscoveryStagePlan, error) {
+	if provider == nil {
+		return semanticDiscoveryStagePlan{}, fmt.Errorf(
+			"semantic discovery: provider is required for %s", stage,
+		)
+	}
 	request, err := provider.SemanticDiscoveryPromptJSON(prompt)
 	if err != nil {
 		return semanticDiscoveryStagePlan{}, fmt.Errorf("semantic discovery: build %s request: %w", stage, err)
