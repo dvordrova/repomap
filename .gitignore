@@ -11,6 +11,7 @@
 # Editor
 .idea/
 .vscode/
+.hermes/
 *.swp
 *.swo
 *~
