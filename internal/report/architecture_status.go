@@ -28,7 +28,11 @@ const (
 	// request has no primary_scope candidates by construction, so its accepted
 	// membership is accounted entirely as supporting evidence instead of being
 	// rejected for evidence the request could not contain.
-	ArchitectureSynthesisStatusVersion = 16
+	// Status 17 keeps model membership exact while allowing backend-owned
+	// parent context to satisfy primary-scope coverage. A returned nested
+	// member remains the only model-authored member; its known parent may add
+	// one covered primary scope without increasing DistinctMembers.
+	ArchitectureSynthesisStatusVersion = 17
 
 	ArchitectureSynthesisSucceeded   = "succeeded"
 	ArchitectureSynthesisCached      = "cached"
@@ -713,8 +717,21 @@ func (status ArchitectureSynthesisStatus) validatePrimaryScopeCoverage() error {
 	if status.CoveredPrimaryScopeCount+status.UncoveredPrimaryScopeCount != status.RequestedPrimaryScopeCount {
 		return fmt.Errorf("architecture primary-scope coverage partition is inconsistent")
 	}
-	if status.CoveredPrimaryScopeCount+status.CoveredSupportingEvidenceCount != status.DistinctMembers {
-		return fmt.Errorf("architecture primary-scope coverage does not match resolved membership")
+	if status.Version < 17 {
+		if status.CoveredPrimaryScopeCount+status.CoveredSupportingEvidenceCount != status.DistinctMembers {
+			return fmt.Errorf("architecture primary-scope coverage does not match resolved membership")
+		}
+	} else {
+		// Model membership contains only the refs the model returned. A selected
+		// nested supporting ref can additionally cover its exact backend-owned
+		// primary parent for scope accounting, but that parent is not inserted
+		// into membership. The status has aggregate evidence only; the synthesis
+		// record validates the exact ref-to-parent mapping.
+		explicitPrimary := status.DistinctMembers - status.CoveredSupportingEvidenceCount
+		if explicitPrimary < 0 || status.CoveredPrimaryScopeCount < explicitPrimary ||
+			status.CoveredPrimaryScopeCount-explicitPrimary > status.CoveredSupportingEvidenceCount {
+			return fmt.Errorf("architecture derived primary-scope coverage does not match resolved membership")
+		}
 	}
 	if status.State == ArchitectureSynthesisFailed && !status.ProposalRejected {
 		return fmt.Errorf("failed architecture primary-scope coverage requires a rejected proposal")
@@ -732,8 +749,8 @@ func (status ArchitectureSynthesisStatus) validatePrimaryScopeCoverage() error {
 		}
 	}
 	if status.State == ArchitectureSynthesisSucceeded || status.State == ArchitectureSynthesisCached {
-		if status.CoveredPrimaryScopeCount == 0 ||
-			status.CoveredPrimaryScopeCount+status.CoveredSupportingEvidenceCount != status.CoveredConceptualCount {
+		if status.CoveredPrimaryScopeCount == 0 || (status.Version < 17 &&
+			status.CoveredPrimaryScopeCount+status.CoveredSupportingEvidenceCount != status.CoveredConceptualCount) {
 			return fmt.Errorf("accepted architecture primary-scope coverage is inconsistent")
 		}
 	}

@@ -186,7 +186,7 @@ func TestSynthesisPromptNestedGrammarRemovesForeignKeysAndCounting(t *testing.T)
 		}
 	}
 	for _, required := range []string{
-		`{"subsystems":[`, `"components":[`, `"member_refs":["p1","s2"]`,
+		`{"subsystems":[`, `"components":[`, `"member_refs":["s2"]`,
 		"Choose representative supplied members needed to distinguish each component",
 		"do not wrap refs in objects and do not add kind fields",
 		"Do not emit response-local IDs, kind tags, parent references",

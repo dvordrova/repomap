@@ -179,11 +179,11 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
  const lensControl=walk(mapRoot).find(n=>has(n,"rm-map-lens-control"));
  const lensButtons=lensControl?walk(lensControl).filter(n=>Object.prototype.hasOwnProperty.call(n.attributes||{},"data-map-lens")):[];
  const initialLensPressed=lensButtons.map(n=>n.getAttribute("aria-pressed"));
- if(lensButtons[1])lensButtons[1].click();
+ if(lensButtons[0])lensButtons[0].click();
  const entryLensPressed=lensButtons.map(n=>n.getAttribute("aria-pressed"));
  if(lensButtons[0])lensButtons[0].click();
  const clearedLensPressed=lensButtons.map(n=>n.getAttribute("aria-pressed"));
- if(lensButtons[2])lensButtons[2].click();
+ if(lensButtons[1])lensButtons[1].click();
  const integrationLensPressed=lensButtons.map(n=>n.getAttribute("aria-pressed"));
  const toolbarInteractive=toolbar?walk(toolbar).filter(n=>n.tagName==="A"||n.tagName==="BUTTON"):[];
  const layout=walk(mapRoot).find(n=>has(n,"rm-map-primary-layout"));
@@ -264,14 +264,14 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 		t.Errorf("D281 toolbar or component reachability contract = %#v", actionable)
 	}
 	if actionable.LensControlRole != "group" ||
-		strings.Join(actionable.LensLabels, ",") != "Map,Entrypoints · 0,Integrations · 0" ||
-		strings.Join(actionable.InitialLensPressed, ",") != "true,false,false" ||
-		strings.Join(actionable.EntryLensPressed, ",") != "false,true,false" ||
-		strings.Join(actionable.ClearedLensPressed, ",") != "true,false,false" ||
-		strings.Join(actionable.IntegrationLensPressed, ",") != "false,false,true" ||
+		strings.Join(actionable.LensLabels, ",") != "Entrypoints · 0,Integrations · 0" ||
+		strings.Join(actionable.InitialLensPressed, ",") != "false,false" ||
+		strings.Join(actionable.EntryLensPressed, ",") != "true,false" ||
+		strings.Join(actionable.ClearedLensPressed, ",") != "false,false" ||
+		strings.Join(actionable.IntegrationLensPressed, ",") != "false,true" ||
 		!slices.Contains(actionable.LensCalls, "entrypoints") ||
 		!slices.Contains(actionable.LensCalls, "integrations") ||
-		actionable.ToolbarInteractiveCount != 3 {
+		actionable.ToolbarInteractiveCount != 2 {
 		t.Errorf("D281 explicit context controls = %#v", actionable)
 	}
 

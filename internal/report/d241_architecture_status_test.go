@@ -5,8 +5,8 @@ import "testing"
 func TestD241ArchitectureStatusV15GatesItemLocalSalvageCodes(t *testing.T) {
 	t.Parallel()
 
-	if ArchitectureSynthesisStatusVersion != 16 {
-		t.Fatalf("Architecture status version = %d, want 16", ArchitectureSynthesisStatusVersion)
+	if ArchitectureSynthesisStatusVersion != 17 {
+		t.Fatalf("Architecture status version = %d, want 17", ArchitectureSynthesisStatusVersion)
 	}
 	for _, code := range []string{
 		"proposal.empty_component",

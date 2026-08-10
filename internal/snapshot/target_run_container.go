@@ -426,6 +426,11 @@ func cloneTargetRunSnapshot(source Snapshot) (Snapshot, error) {
 		advisory.Examples = append([]string(nil), source.GoTargetAdvisory.Examples...)
 		result.GoTargetAdvisory = &advisory
 	}
+	if source.GoTargetSelection != nil {
+		selection := *source.GoTargetSelection
+		selection.Examples = append([]string(nil), source.GoTargetSelection.Examples...)
+		result.GoTargetSelection = &selection
+	}
 	if source.TargetCatalog != nil {
 		catalog := source.TargetCatalog.Snapshot()
 		result.TargetCatalog = &catalog

@@ -129,8 +129,8 @@ func TestD254MobyLikePackagesNestExactSymbols(t *testing.T) {
 		"package ref and every nested symbol ref are independently valid member_refs",
 		"nesting proves only exact containment",
 		"never requires co-selection or placement in the same component",
-		"supporting_evidence never substitutes for a defensible p* primary_scope ref somewhere in the same production unit",
-		"that p* ref may appear in a different component",
+		"backend restores its exact enclosing package and production unit from the request-local catalog and nesting",
+		"do not echo the parent package ref merely to satisfy coverage",
 	} {
 		if !strings.Contains(prompt.System, required) {
 			t.Fatalf("nested package prompt omitted %q", required)

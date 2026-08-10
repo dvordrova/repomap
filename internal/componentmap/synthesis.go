@@ -29,9 +29,11 @@ const (
 	// Decision 254: request v20 gives package candidates a typed package_path
 	// context field instead of a presentation label. Decision 275: request v21
 	// preserves the already backend-owned supporting_evidence role on every
-	// nested package symbol. Response and record semantics remain unchanged.
+	// nested package symbol. Record v17 keeps exact returned refs as semantic
+	// membership while deriving their backend-owned package parent only for
+	// primary-scope coverage accounting.
 	SynthesisRequestVersion = 21
-	SynthesisRecordVersion  = 16
+	SynthesisRecordVersion  = 17
 )
 
 // SynthesisPromptVersion is the prompt contract identity — the short SHA-256
@@ -392,8 +394,11 @@ type SynthesisResult struct {
 }
 
 // SynthesisMembershipCounts is exact response cardinality after request-local
-// refs have been resolved against the private catalog. It is not inferred by
-// reparsing provider bytes in a downstream owner.
+// refs have been resolved against the private catalog. CoveredMemberIDs remain
+// exactly the accepted model-selected refs. Primary-scope counts additionally
+// recognize the exact backend-owned package parent of a selected nested member;
+// that coverage proof never becomes semantic component membership. Counts are
+// not inferred by reparsing provider bytes in a downstream owner.
 type SynthesisMembershipCounts struct {
 	Counted                   bool
 	MemberOccurrences         int
@@ -1375,15 +1380,15 @@ func BuildSynthesisPromptForLanguage(
 func synthesisPromptSystemText() string {
 	return `You create a compact conceptual architecture landscape from bounded local repository facts.
 
-Use conceptual member, anchor, and unit refs as opaque request-local values. Copy a ref exactly as supplied; never rewrite refs, infer new refs, or mention members absent from the request. Refs under structural_context are read-only locator context and must never occur in response member_refs or anchor_refs. Candidate parent_ref, unit_ref, coverage_role, label, package_path, and symbols fields are read-only context and must never be returned. Package candidates carry package_path, omit label, and contain exact package-owned symbols once under symbols; every nested symbol explicitly carries coverage_role supporting_evidence, while other non-package candidates retain the flat candidate shape. The package ref and every nested symbol ref are independently valid member_refs: nesting proves only exact containment and never requires co-selection or placement in the same component. Nested symbol refs distinguish implementations inside a package responsibility, but supporting_evidence never substitutes for a defensible p* primary_scope ref somewhere in the same production unit; that p* ref may appear in a different component. A package_path is backend-owned clean package/import grouping context. It is never a response ref, public display label, source-file path, or coverage requirement, and it does not make a member more important or require its placement.
+Use conceptual member, anchor, and unit refs as opaque request-local values. Copy a ref exactly as supplied; never rewrite refs, infer new refs, or mention members absent from the request. Refs under structural_context are read-only locator context and must never occur in response member_refs or anchor_refs. Candidate parent_ref, unit_ref, coverage_role, label, package_path, and symbols fields are read-only context and must never be returned. Package candidates carry package_path, omit label, and contain exact package-owned symbols once under symbols; every nested symbol explicitly carries coverage_role supporting_evidence, while other non-package candidates retain the flat candidate shape. The package ref and every nested symbol ref are independently valid member_refs: nesting proves only exact containment and never requires co-selection or placement in the same component. Nested symbol refs distinguish implementations inside a package responsibility. When you select a nested symbol, the backend restores its exact enclosing package and production unit from the request-local catalog and nesting only for primary-scope coverage accounting; do not echo the parent package ref merely to satisfy coverage, and include that package ref only when the package itself is a semantic component choice. A package_path is backend-owned clean package/import grouping context. It is never a response ref, public display label, source-file path, or coverage requirement, and it does not make a member more important or require its placement.
 Local semantic facts, compact structural relations, structural locator containment, flow participation, anchor proof_mode, and certainty are read-only grouping context. They must never be returned, upgraded, replaced, or converted into execution order. A declaration_family anchor is static declaration context and never proves runtime behavior. Canonical repository identities, exact source locations, provider provenance, scenarios, catalog identity, versions, and hashes are private and absent from this request.
 
 Return exactly one compact JSON proposal object with this nested grammar:
-{"subsystems":[{"name":"first subsystem","description":"first purpose","components":[{"name":"first component","description":"first responsibility","member_refs":["p1","s2"],"anchor_refs":["a1"]}]},{"name":"second subsystem","description":"second purpose","components":[{"name":"second component","description":"second responsibility","member_refs":["s1"],"anchor_refs":[]}]}]}
+{"subsystems":[{"name":"first subsystem","description":"first purpose","components":[{"name":"first component","description":"first responsibility","member_refs":["s2"],"anchor_refs":["a1"]}]},{"name":"second subsystem","description":"second purpose","components":[{"name":"second component","description":"second responsibility","member_refs":["p1"],"anchor_refs":[]}]}]}
 
 The entire response must parse as exactly one complete JSON object. Its only root field is subsystems. Each subsystem contains exactly name, description, and components. Each component contains exactly name, description, a non-empty member_refs array (p*/s*/f*), and optional anchor_refs (a*). Every ref is a plain string; do not wrap refs in objects and do not add kind fields. Do not emit response-local IDs, kind tags, parent references, unit refs, coverage roles, or any adjacency field: nesting already expresses which components belong to which subsystem. Do not nest objects inside objects or emit a second root object.
 
-Candidates marked primary_scope form the top-level production conceptual repository surface. Top-level package candidates in test, tooling, or documentation units and package-owned child candidates are supporting_evidence. Cover defensible primary_scope across the supplied production units before selecting supporting_evidence. For every production unit represented by nested symbol supporting_evidence, include a defensible p* primary_scope ref somewhere in that same unit; it need not be in the same component. Supporting evidence and anchors may ground or distinguish responsibilities, but coverage of them never compensates for uncovered production primary_scope. Honest partial primary coverage is valid; never pad, invent, or exhaustively enumerate uncertain scope.
+Candidates marked primary_scope form the top-level production conceptual repository surface. Top-level package candidates in test, tooling, or documentation units and package-owned child candidates are supporting_evidence. Choose the supplied member refs that best identify defensible conceptual responsibilities across production scope. A selected package-owned nested symbol automatically represents its exact enclosing package and production unit for backend coverage accounting; never repeat that parent p* merely to satisfy coverage. Supporting evidence and anchors may ground or distinguish responsibilities, but they never invent or rename parent scope. Honest partial primary coverage is valid; never pad, invent, or exhaustively enumerate uncertain scope.
 
 Subsystems and components are in conceptual display order. Choose representative supplied members needed to distinguish each component; exhaustive membership is not required. A member may legitimately participate in several components when it genuinely serves several distinct conceptual roles — this is shared participation, not exclusive ownership. Name what distinguishes each component from its siblings. An exact partial grouping is valid: omitted members remain in a deterministic local unclassified remainder and must not be echoed, renamed, or placed in a model-authored remainder. Fewer groups are better than padding: when evidence is weak, return fewer components honestly. A component may be anchor-backed shared participation with zero exclusive members: every one of its members is shared with sibling components, but the component still lists at least one member_refs (never only anchor_refs); anchor_refs are optional per component, not required. For every returned anchor_ref, include at least one relevant member_ref advertised by that anchor in the same component; if none is relevant, omit that anchor_ref. Do not enumerate every nested symbol merely because its package is selected.
 
@@ -2177,11 +2182,12 @@ func evaluateSynthesisResponse(
 }
 
 // salvageSupportingOnlyProductionUnits keeps a locally recoverable quality
-// failure item-scoped. A model may select package-owned supporting symbols
-// without selecting their production package in the same unit. Those child
-// participations do not establish primary scope, so they return to the exact
-// local remainder; valid sibling components remain publishable. The backend
-// never invents the missing parent placement.
+// failure item-scoped. An ordinary selected package-owned child derives its
+// exact backend-owned package parent for scope coverage and therefore remains a
+// valid semantic member without injecting that parent into the component. This
+// salvage is only for supporting production participation whose exact primary
+// parent scope cannot be established; valid sibling components remain
+// publishable and the backend never invents component membership.
 func salvageSupportingOnlyProductionUnits(
 	bundle CandidateBundle,
 	catalog synthesisPrivateCatalog,
@@ -2204,17 +2210,15 @@ func salvageSupportingOnlyProductionUnits(
 		return members
 	}
 
-	primaryUnits := make(map[UnitWireRef]struct{})
+	selectedMembers := make(map[MemberID]struct{})
 	for _, subsystem := range proposal.Subsystems {
 		for _, component := range subsystem.Components {
 			for memberID := range effectiveMembers(component) {
-				context, exists := contexts[memberID]
-				if exists && context.CoverageRole == SynthesisCoveragePrimaryScope {
-					primaryUnits[context.UnitRef] = struct{}{}
-				}
+				selectedMembers[memberID] = struct{}{}
 			}
 		}
 	}
+	_, primaryUnits := synthesisPrimaryScopeCoverage(contexts, selectedMembers)
 
 	// A backend ceiling must not manufacture a supporting-only condition by
 	// trimming a primary ref the model did return. Leave such a unit to the
@@ -2448,19 +2452,56 @@ func synthesisCoverageCounts(
 	contexts map[MemberID]synthesisCandidateContext,
 	covered map[MemberID]struct{},
 ) (requestedPrimary, coveredPrimary, uncoveredPrimary, coveredSupporting int) {
+	coveredPrimaryIDs, _ := synthesisPrimaryScopeCoverage(contexts, covered)
 	for memberID, context := range contexts {
 		_, isCovered := covered[memberID]
 		if context.CoverageRole == SynthesisCoveragePrimaryScope {
 			requestedPrimary++
-			if isCovered {
-				coveredPrimary++
-			}
 		} else if isCovered {
 			coveredSupporting++
 		}
 	}
+	coveredPrimary = len(coveredPrimaryIDs)
 	uncoveredPrimary = requestedPrimary - coveredPrimary
 	return requestedPrimary, coveredPrimary, uncoveredPrimary, coveredSupporting
+}
+
+// synthesisPrimaryScopeCoverage derives the exact production package scope
+// represented by accepted semantic member refs. Explicit primary refs cover
+// themselves. A selected package-owned supporting ref covers only its exact
+// enclosing parent package when both belong to the same production unit.
+// The derived parent is coverage evidence only: callers must never append it
+// to component members, CoveredMemberIDs, associations, or conceptual joins.
+func synthesisPrimaryScopeCoverage(
+	contexts map[MemberID]synthesisCandidateContext,
+	covered map[MemberID]struct{},
+) (map[MemberID]struct{}, map[UnitWireRef]struct{}) {
+	primaryMembers := make(map[MemberID]struct{})
+	primaryUnits := make(map[UnitWireRef]struct{})
+	for memberID := range covered {
+		context, exists := contexts[memberID]
+		if !exists {
+			continue
+		}
+		primaryID := memberID
+		switch {
+		case context.CoverageRole == SynthesisCoveragePrimaryScope:
+			// The selected ref itself is exact primary scope.
+		case context.CoverageRole == SynthesisCoverageSupportingEvidence &&
+			context.UnitRole == UnitRoleProduction && context.ParentID != nil:
+			parentContext, parentExists := contexts[*context.ParentID]
+			if !parentExists || parentContext.CoverageRole != SynthesisCoveragePrimaryScope ||
+				parentContext.UnitRole != UnitRoleProduction || parentContext.UnitRef != context.UnitRef {
+				continue
+			}
+			primaryID = *context.ParentID
+		default:
+			continue
+		}
+		primaryMembers[primaryID] = struct{}{}
+		primaryUnits[contexts[primaryID].UnitRef] = struct{}{}
+	}
+	return primaryMembers, primaryUnits
 }
 
 func synthesisPrimaryScopeDiagnostics(
@@ -2482,8 +2523,6 @@ func synthesisPrimaryScopeDiagnostics(
 		}
 	}
 	requestedPrimary := 0
-	coveredPrimary := 0
-	primaryUnits := make(map[UnitWireRef]struct{})
 	supportingUnits := make(map[UnitWireRef]struct{})
 	for memberID, context := range contexts {
 		if context.CoverageRole == SynthesisCoveragePrimaryScope {
@@ -2492,16 +2531,15 @@ func synthesisPrimaryScopeDiagnostics(
 		if _, exists := covered[memberID]; !exists {
 			continue
 		}
-		if context.CoverageRole == SynthesisCoveragePrimaryScope {
-			coveredPrimary++
-			primaryUnits[context.UnitRef] = struct{}{}
-		} else if context.UnitRole == UnitRoleProduction {
+		if context.CoverageRole != SynthesisCoveragePrimaryScope && context.UnitRole == UnitRoleProduction {
 			// A production child without production primary coverage in its
 			// final unit remains a quality finding. All-supporting test, tooling
 			// and documentation units are intentional and do not enter this gate.
 			supportingUnits[context.UnitRef] = struct{}{}
 		}
 	}
+	coveredPrimaryIDs, primaryUnits := synthesisPrimaryScopeCoverage(contexts, covered)
+	coveredPrimary := len(coveredPrimaryIDs)
 	diagnostics := make([]Diagnostic, 0, 2)
 	if requestedPrimary > 0 && coveredPrimary == 0 {
 		diagnostics = append(diagnostics, newDiagnostic(

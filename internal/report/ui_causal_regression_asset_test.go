@@ -38,6 +38,7 @@ class Element {
  setAttribute(k,v){this.attributes[k]=String(v);}getAttribute(k){return this.attributes[k]==null?null:this.attributes[k];}
  removeAttribute(k){delete this.attributes[k];}addEventListener(k,f){(this.listeners[k]||(this.listeners[k]=[])).push(f);}
  removeEventListener(){}focus(){document.activeElement=this;}contains(x){return x===this||this.children.some(c=>c&&c.contains&&c.contains(x));}
+ click(){(this.listeners.click||[]).forEach(fn=>fn({type:"click",target:this,currentTarget:this,preventDefault(){},stopPropagation(){}}));}
  getBoundingClientRect(){return {left:0,top:0,right:300,bottom:180,width:300,height:180};}
  querySelector(){return null;}querySelectorAll(){return [];}scrollIntoView(){}
 }
@@ -55,24 +56,37 @@ const window={document,location:{hash:"#/map"},AbortController,Set,Map,URLSearch
 const sandbox={window,document,Element,AbortController,Set,Map,URLSearchParams,Promise,requestAnimationFrame:f=>f(),clearTimeout,setTimeout,console,addEventListener(){},removeEventListener(){}};
 sandbox.global=sandbox;vm.createContext(sandbox);vm.runInContext(fs.readFileSync(process.argv[2],"utf8"),sandbox);
 const host=new Element("div");
+const resticStarts=[
+ {id:"trigger-route",label:"github.com/restic/restic/internal/data.StreamTrees$1 · регистрация",location:{path:"pkg/route.go",line:11,column:2},actionable:true},
+ {id:"anchor-main",label:"github.com/restic/restic/internal/data.(*TreeStreamer).DumpTrees$1 · регистрация",location:{path:"cmd/app/main.go",line:7,column:1},actionable:true},
+];
 const data={
  components:[{id:"core",subsystem_id:"system",name:"Core",description:"Core work",owned_surface_ids:["trigger-route"],anchor_ids:["anchor-main"],members:[]}],
  subsystems:[{id:"system",name:"System",component_ids:["core"]}],groups:[],structural_edges:[],relations:[],flows:[],
  surfaces:[{id:"trigger-route",name:"/jobs",kind:"http_route",evidence:[{path:"pkg/route.go",line:11,column:2}]}],
  behavior_anchors:[{id:"anchor-main",kind:"process_entry",label:"main",location:{path:"cmd/app/main.go",line:7,column:1}}],
 };
+const opened=[];
 const app=window.RepomapArchitectureCanvas.mount(host,data,{
  userMode:true,
  message:(id)=>labels[id]||id,
- openSourceLocation(){},openStudyTheme(){},openStudyDirection(){},openComponent(){},
+ openSourceLocation(location){opened.push(location);},openStudyTheme(){},openStudyDirection(){},openComponent(){},
  componentContexts:{core:{
-  sources:[],studies:[],structural_relations:[],package_paths:["example.test/project/pkg"],member_count:1,authority:"validated",evidence_composition:"exact",
-  surface_starts:[
-   {id:"trigger-route",label:"/jobs",location:{path:"pkg/route.go",line:11,column:2},actionable:true},
-   {id:"anchor-main",label:"main",location:{path:"cmd/app/main.go",line:7,column:1},actionable:true},
-  ],
+  sources:[],studies:[],structural_relations:[{
+   from_label:"github.com/restic/restic/internal/data.StreamTrees$1",
+   to_label:"github.com/restic/restic/internal/data.(*TreeStreamer).DumpTrees$1",
+   location:{path:"pkg/route.go",line:12,column:2},
+  }],package_paths:["example.test/project/pkg"],member_count:1,authority:"validated",evidence_composition:"exact",
+  surface_starts:resticStarts,
   package_targets:[{path:"example.test/project/pkg",location:{path:"pkg/aaa.go",line:1,column:0},actionable:true}],
  }},
+ associations:{components:[{component_id:"core",incoming:[],outgoing:[],associations:[{
+  kind:"boundary",family:"filesystem",imported_family:"os",owning_unit:"github.com/restic/restic/internal/data",
+  observation_count:1,source_roles:{production:1},witnesses:[{
+   symbol:"github.com/restic/restic/internal/data.StreamTrees$1",path:"pkg/route.go",line:12,role:"production",
+  }],
+ }]}]},
+ openLocation(){},
 });
 app.ready.then(()=>{
  app.openComponent("core");
@@ -82,11 +96,14 @@ app.ready.then(()=>{
  const connectionStarts=walk(connections).filter(node=>has(node,"rm-arch__source-start")).map(nodeText);
  const readStarts=walk(summary).filter(node=>has(node,"rm-arch__source-start")).map(nodeText);
  const primary=walk(summary).find(node=>has(node,"rm-arch__component-primary-source"));
+ const operationTitles=walk(connections).filter(node=>has(node,"rm-arch__operation-row")).map(nodeText);
+ const witnessTitles=walk(connections).filter(node=>has(node,"rm-arch__association-witnesses")).map(nodeText);
+ if(primary)primary.click();
  process.stdout.write(JSON.stringify({
   groupTitles,
   routeConnectionCount:connectionStarts.filter(value=>value.includes("pkg/route.go:11")).length,
   primary:primary?nodeText(primary):"",
-  readStarts,
+  readStarts,connectionStarts,operationTitles,witnessTitles,opened,backendLabels:resticStarts.map(start=>start.label),
  }));
 }).catch(error=>{process.stdout.write(JSON.stringify({error:String(error&&error.stack||error)}));process.exit(2);});
 `
@@ -103,7 +120,16 @@ app.ready.then(()=>{
 		RouteConnectionCount int      `json:"routeConnectionCount"`
 		Primary              string   `json:"primary"`
 		ReadStarts           []string `json:"readStarts"`
-		Error                string   `json:"error"`
+		ConnectionStarts     []string `json:"connectionStarts"`
+		OperationTitles      []string `json:"operationTitles"`
+		WitnessTitles        []string `json:"witnessTitles"`
+		BackendLabels        []string `json:"backendLabels"`
+		Opened               []struct {
+			Path   string `json:"path"`
+			Line   int    `json:"line"`
+			Column int    `json:"column"`
+		} `json:"opened"`
+		Error string `json:"error"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode Architecture component causal regression: %v\n%s", err, output)
@@ -117,10 +143,35 @@ app.ready.then(()=>{
 	if !strings.Contains(got.Primary, "pkg/route.go:11") || strings.Contains(got.Primary, "pkg/aaa.go:1") {
 		t.Fatalf("Summary primary source did not prefer the exact surface start: %q", got.Primary)
 	}
-	if len(got.ReadStarts) != 3 || !strings.Contains(got.ReadStarts[0], "pkg/route.go:11") ||
+	if len(got.ReadStarts) != 3 ||
+		!strings.Contains(got.ReadStarts[0], "StreamTrees$1 · регистрация") ||
+		!strings.Contains(got.ReadStarts[0], "pkg/route.go:11") ||
+		!strings.Contains(got.ReadStarts[1], "(*TreeStreamer).DumpTrees$1 · регистрация") ||
 		!strings.Contains(got.ReadStarts[1], "cmd/app/main.go:7") ||
 		!strings.Contains(got.ReadStarts[2], "pkg/aaa.go:1") {
 		t.Fatalf("Read code order = %#v, want exact surfaces before package fallback", got.ReadStarts)
+	}
+	for _, visible := range append(append([]string{}, got.ReadStarts...), got.ConnectionStarts...) {
+		if strings.Contains(visible, "github.com/restic/restic/") {
+			t.Fatalf("component source card leaked fully-qualified backend identity: %q", visible)
+		}
+	}
+	if len(got.OperationTitles) != 1 || strings.Contains(got.OperationTitles[0], "github.com/restic/restic/") ||
+		!strings.Contains(got.OperationTitles[0], "StreamTrees$1 → (*TreeStreamer).DumpTrees$1") {
+		t.Fatalf("source-backed operation title was not shortened consistently: %#v", got.OperationTitles)
+	}
+	if len(got.WitnessTitles) != 1 || strings.Contains(got.WitnessTitles[0], "github.com/restic/restic/") ||
+		!strings.Contains(got.WitnessTitles[0], "StreamTrees$1") ||
+		!strings.Contains(got.WitnessTitles[0], "pkg/route.go:12") {
+		t.Fatalf("source-backed witness title was not shortened consistently: %#v", got.WitnessTitles)
+	}
+	if len(got.BackendLabels) != 2 || !strings.HasPrefix(got.BackendLabels[0], "github.com/restic/restic/") ||
+		!strings.HasPrefix(got.BackendLabels[1], "github.com/restic/restic/") {
+		t.Fatalf("presentation cleanup mutated backend identity: %#v", got.BackendLabels)
+	}
+	if len(got.Opened) != 1 || got.Opened[0].Path != "pkg/route.go" ||
+		got.Opened[0].Line != 11 || got.Opened[0].Column != 2 {
+		t.Fatalf("short source title lost its exact source action: %#v", got.Opened)
 	}
 }
 

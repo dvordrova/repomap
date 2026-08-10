@@ -66,6 +66,7 @@ Active decisions (each approved by the repository owner via its supervisory goal
 62. decisions/279-ordinary-target-portfolio-candidate-surface.md
 63. decisions/280-module-product-surfaces.md
 64. decisions/281-map-context-and-library-api.md
+65. decisions/282-conservative-automatic-go-target.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
@@ -801,6 +802,32 @@ Approved by:
 	Repository owner after fresh Telebot/Restic screenshot review and the explicit
 	request for a hard redesign of entrypoints, useful library objects, corrected
 	`v3` labels, understandable context UI and visible Integrations, 2026-08-10.
+
+Owner correction (2026-08-10): Canvas is the permanent neutral Map baseline,
+so Map is not a context tab. Libraries expose API/Integrations and executables
+expose Entrypoints/Integrations; closing the active context returns to neutral
+Canvas. The API and persisted-Study launchpad plus Integrations use vertical
+one-column disclosures over backend-owned exact source identity. This is the
+D281 presentation follow-up (UI catalog 28), not a new analysis, provider or
+report-schema decision.
+
+## Decision 282
+
+Status:
+	ACTIVE. When neither `--go-target` nor an existing nonempty `GOOS`/`GOARCH`
+	environment input is present, the one tracked-file D251 preflight may select
+	its unique strong production GOOS leader before Go facts are loaded. Go facts,
+	target catalog, SSA, provider inputs, cache identity and report authority are
+	built only for that final atomic scenario; weak or tied evidence keeps the
+	host unchanged, and explicit authority always wins. Exact automatic source,
+	baseline and final target are persisted in metadata, copied through sibling
+	projections and required to agree during recovery. D282 supersedes only
+	D251's non-mutating-advisory clause; it adds no retry, mixed page scenario,
+	model call, build script, report field or UI.
+
+Approved by:
+	Repository owner after the Moby `cmd/dockerd` platform failure review and
+	selection of the bounded preflight correction, 2026-08-10.
 
 ## Decision 241 follow-up
 

@@ -243,14 +243,14 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
 	if en.TargetCount != 1 || en.TargetHref != "#canvas" || en.TargetCurrent != "page" || en.Hash != "#canvas" {
 		t.Fatalf("single executable target rail = %#v", en)
 	}
-	if strings.Join(en.InitialModeIDs, ",") != "landscape,entrypoints,integrations" ||
-		strings.Join(en.InitialModeStates, ",") != "true,false,false" ||
+	if strings.Join(en.InitialModeIDs, ",") != "entrypoints,integrations" ||
+		strings.Join(en.InitialModeStates, ",") != "false,false" ||
 		!en.LensHostPresent || en.InitialLensHostMode != "landscape" || !en.InitialContextHidden ||
 		en.InitialEntryCardCount != 0 || len(en.InitialSelectedGroups) != 0 ||
 		strings.Join(en.InitialSelectedLenses, ",") != "landscape" {
 		t.Fatalf("executable did not start on a neutral, unselected landscape: %#v", en)
 	}
-	if strings.Join(en.ModeStates, ",") != "false,true,false" || en.LensHostMode != "entrypoints" ||
+	if strings.Join(en.ModeStates, ",") != "true,false" || en.LensHostMode != "entrypoints" ||
 		en.ContextHidden || en.EntryCardCount != 3 || en.ExploreCount != 2 ||
 		en.FamilyDisclosureCount != 1 || len(en.FamilyRowText) != 1 ||
 		!strings.Contains(en.FamilyRowText[0], "Start") || en.SourceActionCount < 4 {

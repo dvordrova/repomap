@@ -1,6 +1,7 @@
 package snapshot
 
 import (
+	"fmt"
 	"go/build/constraint"
 	"path/filepath"
 	"strings"
@@ -15,11 +16,107 @@ const (
 	maxGoTargetAdvisoryExamples    = 3
 )
 
-// GoTargetAdvisory is console-only guidance and never changes the target.
+// GoTargetAdvisory is bounded deterministic evidence for one unique strong
+// alternative. By default it remains console-only guidance; an ordinary
+// caller may explicitly authorize the automatic selection contract before Go
+// facts are loaded.
 type GoTargetAdvisory struct {
 	Suggested     string
 	EvidenceFiles int
 	Examples      []string
+}
+
+const GoTargetSelectionAuto = "auto"
+
+// GoTargetSelection is live exact provenance for a pre-Go-facts automatic
+// target choice. Target and Baseline are canonical GOOS/GOARCH pairs; the
+// evidence is the same bounded D251 authority that caused the choice. It is
+// copied through live target projections and persisted separately in ordinary
+// run metadata, never sent to a provider.
+type GoTargetSelection struct {
+	Source        string
+	Target        string
+	Baseline      string
+	EvidenceFiles int
+	Examples      []string
+}
+
+func newAutomaticGoTargetSelection(
+	baseline gotarget.Target,
+	advisory GoTargetAdvisory,
+) (GoTargetSelection, error) {
+	selected, err := gotarget.Parse(advisory.Suggested)
+	if err != nil {
+		return GoTargetSelection{}, fmt.Errorf("automatic Go target selection: %w", err)
+	}
+	if selected.GOOS == baseline.GOOS || selected.GOARCH != baseline.GOARCH ||
+		advisory.EvidenceFiles < 3 {
+		return GoTargetSelection{}, fmt.Errorf("automatic Go target selection: advisory is not a strong alternative")
+	}
+	selection := GoTargetSelection{
+		Source: GoTargetSelectionAuto, Target: selected.String(), Baseline: baseline.String(),
+		EvidenceFiles: advisory.EvidenceFiles,
+		Examples:      append([]string(nil), advisory.Examples...),
+	}
+	if err := selection.Validate(); err != nil {
+		return GoTargetSelection{}, err
+	}
+	if err := selection.ValidateAgainstAdvisory(&advisory); err != nil {
+		return GoTargetSelection{}, err
+	}
+	return selection, nil
+}
+
+func (selection GoTargetSelection) Validate() error {
+	if selection.Source != GoTargetSelectionAuto {
+		return fmt.Errorf("automatic Go target selection: invalid source %q", selection.Source)
+	}
+	selected, err := gotarget.Parse(selection.Target)
+	if err != nil {
+		return fmt.Errorf("automatic Go target selection target: %w", err)
+	}
+	baseline, err := gotarget.Parse(selection.Baseline)
+	if err != nil {
+		return fmt.Errorf("automatic Go target selection baseline: %w", err)
+	}
+	if selected.GOOS == baseline.GOOS || selected.GOARCH != baseline.GOARCH || selection.EvidenceFiles < 3 {
+		return fmt.Errorf("automatic Go target selection: invalid alternative authority")
+	}
+	if len(selection.Examples) > maxGoTargetAdvisoryExamples {
+		return fmt.Errorf("automatic Go target selection: too many evidence paths")
+	}
+	for _, path := range selection.Examples {
+		if path == "" || path != strings.TrimSpace(path) || !goTargetAdvisoryEligiblePath(path) {
+			return fmt.Errorf("automatic Go target selection: invalid evidence path")
+		}
+	}
+	return nil
+}
+
+func (selection GoTargetSelection) ValidateAgainstAdvisory(advisory *GoTargetAdvisory) error {
+	if err := selection.Validate(); err != nil {
+		return err
+	}
+	if advisory == nil || advisory.Suggested != selection.Target ||
+		advisory.EvidenceFiles != selection.EvidenceFiles ||
+		len(advisory.Examples) != len(selection.Examples) {
+		return fmt.Errorf("automatic Go target selection: advisory authority mismatch")
+	}
+	for index := range advisory.Examples {
+		if advisory.Examples[index] != selection.Examples[index] {
+			return fmt.Errorf("automatic Go target selection: advisory evidence mismatch")
+		}
+	}
+	return nil
+}
+
+// Display is console copy derived only from exact typed selection fields.
+func (selection GoTargetSelection) Display() string {
+	baseline, err := gotarget.Parse(selection.Baseline)
+	if err != nil {
+		return selection.Source + ": " + selection.Target
+	}
+	return selection.Source + ": " + selection.Target + " (host " + baseline.GOOS + ")"
 }
 
 // Keep the first heuristic deliberately small and useful for onboarding.

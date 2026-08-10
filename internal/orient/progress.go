@@ -54,6 +54,7 @@ type ProgressEvent struct {
 	TotalCount            int
 	Warning               string
 	GoTarget              string
+	GoTargetProvenance    string
 	SuggestedGoTarget     string
 	GoTargetEvidenceCount int
 	GoTargetEvidencePaths []string

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestD275NestedSymbolsRetainSupportingRoleAndFreshShapeFallsBackAsZeroUseful(t *testing.T) {
+func TestNestedSymbolsRetainSupportingRoleAndDeriveExactParentScope(t *testing.T) {
 	t.Parallel()
 
 	bundle, packageIDs, symbolIDs := d275FreshRepomapShapeBundle()
@@ -77,46 +77,60 @@ func TestD275NestedSymbolsRetainSupportingRoleAndFreshShapeFallsBackAsZeroUseful
 	if err != nil {
 		t.Fatalf("RecordSynthesisResponse: %v", err)
 	}
-	if !result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationRejected {
-		t.Fatalf("all-supporting response published as model grouping: outcome=%q fallback=%v",
+	if result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationAcceptedPartial {
+		t.Fatalf("nested-symbol response did not publish model grouping: outcome=%q fallback=%v",
 			result.Landscape.ValidationOutcome, result.Landscape.Fallback)
 	}
 	for _, code := range []string{
 		"response.member_refs_per_component_ceiling",
-		"proposal.supporting_only_unit_coverage_salvaged",
-		"proposal.zero_useful_semantic_components",
+		"proposal.partial_member_coverage",
 	} {
 		if !d275HasDiagnostic(result.Landscape.Diagnostics, code) {
 			t.Fatalf("missing diagnostic %q: %#v", code, result.Landscape.Diagnostics)
 		}
 	}
-	if d275HasDiagnostic(result.Landscape.Diagnostics, "proposal.invalid_subsystem_count") {
-		t.Fatalf("all-supporting salvage was misclassified as an absent subsystem: %#v", result.Landscape.Diagnostics)
+	for _, stale := range []string{
+		"proposal.supporting_only_unit_coverage_salvaged",
+		"proposal.supporting_only_unit_coverage",
+		"proposal.empty_primary_scope_coverage",
+		"proposal.zero_useful_semantic_components",
+		"proposal.invalid_subsystem_count",
+	} {
+		if d275HasDiagnostic(result.Landscape.Diagnostics, stale) {
+			t.Fatalf("nested-symbol response retained stale diagnostic %q: %#v", stale, result.Landscape.Diagnostics)
+		}
 	}
 
 	counts := result.Membership
-	if !counts.Counted || counts.MemberOccurrences != 0 || counts.DistinctMembers != 0 ||
-		counts.RequestedPrimaryScope != 64 || counts.CoveredPrimaryScope != 0 ||
-		counts.UncoveredPrimaryScope != 64 || counts.CoveredSupportingEvidence != 0 ||
-		len(counts.RequestedMemberIDs) != 163 || len(counts.CoveredMemberIDs) != 0 ||
-		len(counts.UncoveredMemberIDs) != 163 {
-		t.Fatalf("zero accepted primary coverage = %#v", counts)
+	if !counts.Counted || counts.MemberOccurrences != 91 || counts.DistinctMembers != 91 ||
+		counts.RequestedPrimaryScope != 64 || counts.CoveredPrimaryScope != 64 ||
+		counts.UncoveredPrimaryScope != 0 || counts.CoveredSupportingEvidence != 91 ||
+		len(counts.RequestedMemberIDs) != 163 || len(counts.CoveredMemberIDs) != 91 ||
+		len(counts.UncoveredMemberIDs) != 72 {
+		t.Fatalf("derived primary-scope coverage = %#v", counts)
 	}
-	if !reflect.DeepEqual(counts.UncoveredMemberIDs, counts.RequestedMemberIDs) {
-		t.Fatalf("exact local remainder differs from the request: uncovered=%#v requested=%#v",
-			counts.UncoveredMemberIDs, counts.RequestedMemberIDs)
-	}
-	deterministicMembers := make(map[MemberID]struct{}, len(result.Landscape.ConceptualMemberships))
-	for _, membership := range result.Landscape.ConceptualMemberships {
-		deterministicMembers[membership.MemberID] = struct{}{}
-	}
-	if len(deterministicMembers) != len(counts.RequestedMemberIDs) {
-		t.Fatalf("deterministic fallback covers %d members, want %d", len(deterministicMembers), len(counts.RequestedMemberIDs))
-	}
-	for _, memberID := range counts.RequestedMemberIDs {
-		if _, exists := deterministicMembers[memberID]; !exists {
-			t.Fatalf("deterministic fallback lost local member %s", memberID.key())
+	for _, packageID := range packageIDs {
+		if d241ContainsMember(counts.CoveredMemberIDs, packageID) ||
+			!d241ContainsMember(counts.UncoveredMemberIDs, packageID) {
+			t.Fatalf("derived parent package became semantic membership: %s", packageID.key())
 		}
+	}
+	for _, symbolID := range symbolIDs[:91] {
+		if !d241ContainsMember(counts.CoveredMemberIDs, symbolID) {
+			t.Fatalf("selected symbol missing from exact semantic membership: %s", symbolID.key())
+		}
+	}
+	for _, symbolID := range symbolIDs[91:] {
+		if !d241ContainsMember(counts.UncoveredMemberIDs, symbolID) {
+			t.Fatalf("ceiling-dropped symbol missing from exact remainder: %s", symbolID.key())
+		}
+	}
+	if result.Record.Call == nil ||
+		!reflect.DeepEqual(result.Record.Call.Metadata.CoveredMemberIDs, counts.CoveredMemberIDs) ||
+		!reflect.DeepEqual(result.Record.Call.Metadata.UncoveredMemberIDs, counts.UncoveredMemberIDs) ||
+		result.Record.Call.Metadata.CoveredPrimaryScope != counts.CoveredPrimaryScope ||
+		result.Record.Call.Metadata.CoveredSupportingEvidence != counts.CoveredSupportingEvidence {
+		t.Fatalf("saved membership/derived scope differs from producer result: %#v", result.Record.Call)
 	}
 }
 

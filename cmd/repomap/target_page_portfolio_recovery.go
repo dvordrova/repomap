@@ -12,6 +12,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/gotarget"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/snapshot"
 )
@@ -186,6 +187,9 @@ func recoverExistingTargetPageRuns(
 	currentByRepository := make(map[string]freshness.RepositoryState)
 	var commonRepositorySHA256 string
 	var commonRevision string
+	var commonGoTarget string
+	var commonGoTargetSource string
+	var commonGoTargetBaseline string
 	for _, candidate := range runDirs {
 		runDir, err := exactExistingTargetPageRunDir(candidate)
 		if err != nil {
@@ -250,6 +254,22 @@ func recoverExistingTargetPageRuns(
 		if metadata.EffectiveOptions.GitLabURL != "" && metadata.EffectiveOptions.GitHubURL != "" {
 			return snapshot.TargetPagePortfolio{}, nil, fmt.Errorf("target page recovery: run %s has conflicting source hosts", metadata.RunID)
 		}
+		if !validRecoveredGoTargetProvenance(metadata.EffectiveOptions) {
+			return snapshot.TargetPagePortfolio{}, nil, fmt.Errorf(
+				"target page recovery: run %s has invalid Go target provenance", metadata.RunID,
+			)
+		}
+		if commonGoTarget == "" {
+			commonGoTarget = metadata.EffectiveOptions.GoTarget
+			commonGoTargetSource = metadata.EffectiveOptions.GoTargetSource
+			commonGoTargetBaseline = metadata.EffectiveOptions.GoTargetBaseline
+		} else if metadata.EffectiveOptions.GoTarget != commonGoTarget ||
+			metadata.EffectiveOptions.GoTargetSource != commonGoTargetSource ||
+			metadata.EffectiveOptions.GoTargetBaseline != commonGoTargetBaseline {
+			return snapshot.TargetPagePortfolio{}, nil, fmt.Errorf(
+				"target page recovery: sibling Go target provenance differs",
+			)
+		}
 		runsByRef[metadata.AnalysisTargetRef] = targetPublishedRun{
 			RunID:                 metadata.RunID,
 			RunDir:                runDir,
@@ -258,6 +278,8 @@ func recoverExistingTargetPageRuns(
 			RepositoryStateSHA256: seed.RepositoryStateSHA256,
 			SelectedRevision:      seed.SelectedRevision,
 			GoTarget:              metadata.EffectiveOptions.GoTarget,
+			GoTargetSource:        metadata.EffectiveOptions.GoTargetSource,
+			GoTargetBaseline:      metadata.EffectiveOptions.GoTargetBaseline,
 			SourceEpisodeJSON:     append([]byte(nil), sourceEpisodeJSON...),
 			GitLabURL:             metadata.EffectiveOptions.GitLabURL,
 			GitHubURL:             metadata.EffectiveOptions.GitHubURL,
@@ -302,6 +324,21 @@ func recoverExistingTargetPageRuns(
 		}
 	}
 	return portfolio, runs, nil
+}
+
+func validRecoveredGoTargetProvenance(options debugdump.EffectiveOptions) bool {
+	selected, err := gotarget.Parse(options.GoTarget)
+	if err != nil {
+		return false
+	}
+	if options.GoTargetSource == "" {
+		return options.GoTargetBaseline == ""
+	}
+	if options.GoTargetSource != snapshot.GoTargetSelectionAuto {
+		return false
+	}
+	baseline, err := gotarget.Parse(options.GoTargetBaseline)
+	return err == nil && selected.GOOS != baseline.GOOS && selected.GOARCH == baseline.GOARCH
 }
 
 func targetPageRecoveryMetadataMatches(

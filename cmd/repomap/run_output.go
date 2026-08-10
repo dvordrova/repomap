@@ -232,7 +232,15 @@ func (output *runOutput) Progress(event orient.ProgressEvent) {
 			fmt.Sprintf("tracked files: %d", event.FileCount),
 			formatRunOutputDuration(event.LatencyMillis),
 		}
-		if event.SuggestedGoTarget != "" {
+		if event.GoTargetProvenance != "" {
+			details = append(details,
+				"Go target: "+event.GoTargetProvenance,
+				fmt.Sprintf("platform evidence: %d target-specific production Go file(s)", event.GoTargetEvidenceCount),
+			)
+			if len(event.GoTargetEvidencePaths) > 0 {
+				details = append(details, "evidence: "+strings.Join(event.GoTargetEvidencePaths, ", "))
+			}
+		} else if event.SuggestedGoTarget != "" {
 			details = append(details,
 				fmt.Sprintf("platform hint: %s has %d target-specific production Go file(s)", event.SuggestedGoTarget, event.GoTargetEvidenceCount),
 				"try: --go-target "+event.SuggestedGoTarget,

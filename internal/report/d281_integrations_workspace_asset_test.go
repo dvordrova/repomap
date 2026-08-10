@@ -105,10 +105,20 @@ const report={
 if(mode==="telebot"){
  report.analysis_target={version:2,ref:"module-library",kind:"module_library",module_dir:".",module_path:"gopkg.in/telebot.v3"};
  report.openable_paths=telebotPaths;
- report.library_api={version:1,module_path:"gopkg.in/telebot.v3",module_dir:".",total_declarations:3,shown_declarations:3,packages:[
-  {package_path:"gopkg.in/telebot.v3",package_dir:".",display_path:".",total_declarations:1,shown_declarations:1,counts:{functions:1,methods:0,types:0,consts:0,vars:0},declarations:[{kind:"func",name:"NewBot",path:"bot.go",line:19,column:6}]},
+ report.library_api={version:1,module_path:"gopkg.in/telebot.v3",module_dir:".",total_declarations:5,shown_declarations:5,packages:[
+  {package_path:"gopkg.in/telebot.v3",package_dir:".",display_path:".",total_declarations:3,shown_declarations:3,counts:{functions:1,methods:1,types:0,consts:1,vars:0},declarations:[
+   {kind:"const",name:"ModeDefault",path:"bot.go",line:10,column:2},
+   {kind:"func",name:"NewBot",path:"bot.go",line:19,column:6},
+   {kind:"method",receiver:"Bot",name:"Start",path:"bot.go",line:58,column:15},
+  ]},
   {package_path:"gopkg.in/telebot.v3/react",package_dir:"react",display_path:"react",total_declarations:2,shown_declarations:2,counts:{functions:1,methods:0,types:1,consts:0,vars:0},declarations:[{kind:"func",name:"React",path:"react/react.go",line:10,column:6},{kind:"type",name:"Reaction",path:"react/react.go",line:20,column:6}]},
  ]};
+ report.atlas_study={themes:{cards:[
+  {ordinal:1,final_title:"Bot lifecycle",why_it_matters:"Construct and run a bot.",readings:[{path:"bot.go",line:19,column:6,symbol:"NewBot"}]},
+  {ordinal:2,final_title:"React bridge",why_it_matters:"Connect UI handlers.",readings:[{path:"react/react.go",line:10,column:6,symbol:"React"}]},
+  {ordinal:3,final_title:"Downloads",why_it_matters:"Follow file transfer.",readings:[{path:"download.go",line:80,column:3,symbol:"(*Bot).Download"}]},
+  {ordinal:4,final_title:"Hidden fourth card",why_it_matters:"Outside the compact shelf.",readings:[]},
+ ]}};
  report.architecture_canvas.components=[
   {id:"react",name:"React",description:"React integration",members:[]},
   {id:"local-remainder",name:"Unclassified by model",members:[{id:{kind:"package",value:"gopkg.in/telebot.v3"},name:"gopkg.in/telebot.v3"}]},
@@ -176,7 +186,7 @@ window.RepomapArchitectureCanvas=Object.assign({},realCanvas,{
  mount(host){
   mountCount++;canvasHost=host;host.style.transform="translate(17px, 11px) scale(.81)";
   return new Proxy({
-   ready:Promise.resolve(),destroy(){},setLens(value){lensCalls.push(value);},
+   ready:Promise.resolve(),destroy(){},setLens(value){lensCalls.push(value);if(value==="integrations")throw new Error("canvas lens is not ready");},
    openComponent(){openComponentCalls++;},openTrace(){},openFlowStep(){},openSurface(){},
    selectEntrypointHandoffGroup(){selectedGroupCalls++;},setStudyMechanismOverlay(){return false;},clearStudyMechanismOverlay(){},
   },{get(target,key){return key in target?target[key]:(()=>{});}});
@@ -192,8 +202,25 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
  const initialModes=initialNodes.filter(n=>Object.prototype.hasOwnProperty.call(n.attributes||{},"data-map-mode"));
  const initialPressed=initialModes.map(n=>n.getAttribute("aria-pressed"));
  const initialContextText=initialNodes.filter(n=>classes(n).includes("rm-map-mode-context")).map(n=>n.textContent).join("\n");
- const initialAPIPackageLabels=initialNodes.filter(n=>classes(n).includes("rm-library-api-package__heading")).map(n=>n.children[0]&&n.children[0].textContent||"");
- const initialAPISourceCount=initialNodes.filter(n=>classes(n).includes("rm-map-entry-context__source")&&n.parentNode&&classes(n.parentNode).includes("rm-library-api-declaration")).length;
+ const initialAPIPackages=initialNodes.filter(n=>classes(n).includes("rm-library-api-package"));
+ const initialAPIPackageLabels=initialNodes.filter(n=>classes(n).includes("rm-library-api-package__summary")).map(n=>n.children[0]&&n.children[0].textContent||"");
+ const initialAPIPackageTitles=initialAPIPackages.map(n=>n.getAttribute("title")||"");
+ const initialAPISources=initialNodes.filter(n=>classes(n).includes("rm-map-entry-context__source")&&n.parentNode&&classes(n.parentNode).includes("rm-library-api-declaration"));
+ const initialAPISourceCount=initialAPISources.length;
+ const initialAPISourceTitles=initialAPISources.map(n=>n.getAttribute("title")||"");
+ const initialAPIDeclarationTexts=initialNodes.filter(n=>classes(n).includes("rm-library-api-declaration")).map(n=>n.textContent);
+ const initialAPIStudyTitles=initialNodes.filter(n=>classes(n).includes("rm-library-api-study-pick__title")).map(n=>n.textContent);
+ const initialAPIStudyJoinStates=initialNodes.filter(n=>classes(n).includes("rm-library-api-study-pick__source")).map(n=>n.getAttribute("data-api-study-joined"));
+ const initialAPIStudySourceTitles=initialNodes.filter(n=>classes(n).includes("rm-library-api-study-pick__source")).map(n=>n.getAttribute("title")||"");
+ const initialAPICollapsed=initialNodes.filter(n=>classes(n).includes("rm-library-api-section--collapsed"));
+ const initialAPIReceivers=initialNodes.filter(n=>classes(n).includes("rm-library-api-receiver"));
+ const initialAPIReceiverStates=initialAPIReceivers.map(n=>!!n.open);
+ const initialAPIReceiverTexts=initialAPIReceivers.map(n=>n.children[0]&&n.children[0].textContent||"");
+ const apiSearch=initialNodes.find(n=>classes(n).includes("rm-library-api-search"));
+ if(apiSearch){apiSearch.value="Start";apiSearch.dispatchEvent({type:"input"});}
+ const searchedNodes=[mapRoot].concat(walk(mapRoot));
+ const searchedAPIReceivers=searchedNodes.filter(n=>classes(n).includes("rm-library-api-receiver"));
+ const searchedAPIReceiverStates=searchedAPIReceivers.map(n=>!!n.open);
  const initialLensCalls=lensCalls.slice();
  const integrationButton=initialModes.find(n=>n.getAttribute("data-map-mode")==="integrations");
  const hostBefore=canvasHost,transformBefore=canvasHost&&canvasHost.style.transform;
@@ -206,12 +233,24 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
  const rows=nodes.filter(n=>classes(n).includes("rm-map-integration-row"));
  const outside=rows.filter(n=>classes(n).includes("rm-map-integration-row--outside"));
  const sources=nodes.filter(n=>classes(n).includes("rm-map-integration-source"));
+ const activePressed=modes.map(n=>n.getAttribute("aria-pressed"));
+ const integrationContextText=modeContexts.map(n=>n.textContent).join("\n");
+ const activeContextHidden=!!(modeContexts[0]&&modeContexts[0].hidden);
+ const closeContext=nodes.find(n=>classes(n).includes("rm-map-mode-context__close"));
+ if(closeContext)closeContext.click();
+ const closedNodes=[mapRoot].concat(walk(mapRoot));
+ const closedModes=closedNodes.filter(n=>Object.prototype.hasOwnProperty.call(n.attributes||{},"data-map-mode"));
+ const closedContext=closedNodes.find(n=>classes(n).includes("rm-map-mode-context"));
  process.stdout.write(JSON.stringify({
-  modeIDs:modes.map(n=>n.getAttribute("data-map-mode")),modeLabels:modes.map(n=>n.textContent),initialPressed,initialContextText,initialAPIPackageLabels,initialAPISourceCount,
-  activePressed:modes.map(n=>n.getAttribute("aria-pressed")),shelfCount:shelves.length,shelfText:shelves.map(n=>n.textContent).join("\n"),
-  contextText:modeContexts.map(n=>n.textContent).join("\n"),
-  rowCount:rows.length,rowTexts:rows.map(n=>n.textContent),outsideCount:outside.length,
+  modeIDs:modes.map(n=>n.getAttribute("data-map-mode")),modeLabels:modes.map(n=>n.textContent),initialPressed,initialContextText,initialAPIPackageLabels,initialAPIPackageTitles,initialAPISourceCount,initialAPISourceTitles,
+  initialAPIDeclarationTexts,initialAPIStudyTitles,initialAPIStudyJoinStates,initialAPIStudySourceTitles,
+  initialAPICollapsedStates:initialAPICollapsed.map(n=>!!n.open),initialAPICollapsedTexts:initialAPICollapsed.map(n=>n.children[0]&&n.children[0].textContent||""),
+  initialAPIReceiverStates,initialAPIReceiverTexts,searchedAPIReceiverStates,
+  activePressed,activeContextHidden,shelfCount:shelves.length,shelfText:shelves.map(n=>n.textContent).join("\n"),
+  contextText:integrationContextText,
+  rowCount:rows.length,rowTexts:rows.map(n=>n.textContent),rowTags:rows.map(n=>n.tagName),rowOpen:rows.map(n=>!!n.open),outsideCount:outside.length,
   sourceCount:sources.length,sourceTags:sources.map(n=>n.tagName),sourceHrefs:sources.map(n=>n.getAttribute("href")||""),
+  closePresent:!!closeContext,closedPressed:closedModes.map(n=>n.getAttribute("aria-pressed")),closedContextHidden:!!(closedContext&&closedContext.hidden),
   initialLensCalls,lensCalls,mountCount,openComponentCalls,selectedGroupCalls,
   transformStable:hostBefore===canvasHost&&transformBefore===(canvasHost&&canvasHost.style.transform),
   projectionDimmed:projection.dimmed,projectionTouchpoints:projection.counts.touchpoints,
@@ -229,17 +268,25 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 		t.Fatal(err)
 	}
 	type result struct {
-		ModeIDs, ModeLabels, InitialPressed, ActivePressed []string
-		InitialAPIPackageLabels                            []string
-		ShelfText, ContextText, InitialContextText, Error  string
-		ShelfCount, RowCount, OutsideCount, SourceCount    int
-		RowTexts, SourceTags, SourceHrefs                  []string
-		InitialLensCalls, LensCalls                        []string
-		MountCount, OpenComponentCalls, SelectedGroupCalls int
-		TransformStable                                    bool
-		ProjectionDimmed, ProjectionTouchpoints            int
-		InitialAPISourceCount                              int
-		VisibleParticipants, OffMapParticipants            []string
+		ModeIDs, ModeLabels, InitialPressed, ActivePressed, ClosedPressed []string
+		InitialAPIPackageLabels, InitialAPIPackageTitles                  []string
+		InitialAPISourceTitles                                            []string
+		InitialAPIDeclarationTexts, InitialAPIStudyTitles                 []string
+		InitialAPIStudyJoinStates, InitialAPIStudySourceTitles            []string
+		InitialAPICollapsedTexts                                          []string
+		InitialAPIReceiverTexts                                           []string
+		InitialAPICollapsedStates, InitialAPIReceiverStates               []bool
+		SearchedAPIReceiverStates, RowOpen                                []bool
+		ShelfText, ContextText, InitialContextText, Error                 string
+		ShelfCount, RowCount, OutsideCount, SourceCount                   int
+		RowTexts, RowTags, SourceTags, SourceHrefs                        []string
+		InitialLensCalls, LensCalls                                       []string
+		MountCount, OpenComponentCalls, SelectedGroupCalls                int
+		TransformStable, ClosePresent, ActiveContextHidden                bool
+		ClosedContextHidden                                               bool
+		ProjectionDimmed, ProjectionTouchpoints                           int
+		InitialAPISourceCount                                             int
+		VisibleParticipants, OffMapParticipants                           []string
 	}
 	run := func(mode string) result {
 		t.Helper()
@@ -261,15 +308,15 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 	if len(telebot.ModeIDs) == 0 {
 		t.Fatalf("D281 production marker missing: [data-map-mode]")
 	}
-	if strings.Join(telebot.ModeIDs, ",") != "api,landscape,integrations" ||
-		strings.Join(telebot.ModeLabels, ",") != "API,Карта,Интеграции · 2" {
+	if strings.Join(telebot.ModeIDs, ",") != "api,integrations" ||
+		strings.Join(telebot.ModeLabels, ",") != "API,Интеграции · 2" {
 		t.Errorf("Telebot compact modes = %#v / %#v", telebot.ModeIDs, telebot.ModeLabels)
 	}
-	if strings.Join(telebot.InitialPressed, ",") != "true,false,false" ||
-		strings.Join(telebot.ActivePressed, ",") != "false,false,true" {
+	if strings.Join(telebot.InitialPressed, ",") != "true,false" ||
+		strings.Join(telebot.ActivePressed, ",") != "false,true" || telebot.ActiveContextHidden {
 		t.Errorf("Telebot explicit mode selection = initial %#v active %#v", telebot.InitialPressed, telebot.ActivePressed)
 	}
-	for _, exact := range []string{"Публичный API библиотеки", "telebot", "NewBot", "react", "React", "Reaction"} {
+	for _, exact := range []string{"Публичный API библиотеки", "Что посмотреть сначала", "telebot", "NewBot()", "Bot.Start()", "react", "React()", "Reaction", "1 константа"} {
 		if !strings.Contains(telebot.InitialContextText, exact) {
 			t.Errorf("Telebot API launchpad is missing %q in %q", exact, telebot.InitialContextText)
 		}
@@ -277,8 +324,46 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 	if !slices.Equal(telebot.InitialAPIPackageLabels, []string{"telebot", "react"}) {
 		t.Errorf("Telebot API package labels = %#v, want semantic package labels without import major suffix", telebot.InitialAPIPackageLabels)
 	}
-	if telebot.InitialAPISourceCount != 3 {
-		t.Errorf("Telebot API exact source actions = %d, want 3", telebot.InitialAPISourceCount)
+	if strings.Contains(telebot.InitialContextText, "gopkg.in/telebot.v3") {
+		t.Errorf("Telebot API repeats the full import path in visible package chrome: %q", telebot.InitialContextText)
+	}
+	if !slices.Equal(telebot.InitialAPIPackageTitles, []string{"", ""}) {
+		t.Errorf("Telebot package summary repeats the full import path through hover chrome: %#v", telebot.InitialAPIPackageTitles)
+	}
+	if telebot.InitialAPISourceCount != 5 {
+		t.Errorf("Telebot API exact source actions = %d, want 5", telebot.InitialAPISourceCount)
+	}
+	for _, exact := range []string{"bot.go:19:6", "bot.go:58:15", "bot.go:10:2", "react/react.go:10:6", "react/react.go:20:6"} {
+		if !slices.ContainsFunc(telebot.InitialAPISourceTitles, func(title string) bool { return strings.Contains(title, exact) }) {
+			t.Errorf("Telebot symbol-only API source actions lost hidden exact location %q in %#v", exact, telebot.InitialAPISourceTitles)
+		}
+	}
+	if strings.Join(telebot.InitialAPIDeclarationTexts, ",") != "NewBot(),Bot.Start(),ModeDefault,React(),Reaction" {
+		t.Errorf("Telebot API symbol-only declaration syntax = %#v", telebot.InitialAPIDeclarationTexts)
+	}
+	if slices.ContainsFunc(telebot.InitialAPIDeclarationTexts, func(text string) bool {
+		return strings.Contains(text, ".go") || strings.Contains(text, "Функция") || strings.Contains(text, "Метод")
+	}) {
+		t.Errorf("Telebot API declaration rows repeat file/kind chrome: %#v", telebot.InitialAPIDeclarationTexts)
+	}
+	if !slices.Equal(telebot.InitialAPIStudyTitles, []string{"Bot lifecycle", "React bridge", "Downloads"}) ||
+		strings.Join(telebot.InitialAPIStudyJoinStates, ",") != "true,true,false" {
+		t.Errorf("Telebot compact Study/API exact join = titles %#v joins %#v", telebot.InitialAPIStudyTitles, telebot.InitialAPIStudyJoinStates)
+	}
+	for index, exact := range []string{"bot.go:19:6", "react/react.go:10:6", "download.go:80:3"} {
+		if index >= len(telebot.InitialAPIStudySourceTitles) || !strings.Contains(telebot.InitialAPIStudySourceTitles[index], exact) {
+			t.Errorf("Telebot Study source %d does not preserve exact hidden location %q in %#v", index, exact, telebot.InitialAPIStudySourceTitles)
+		}
+	}
+	if strings.Join(telebot.InitialAPICollapsedTexts, ",") != "1 константа,1 тип" ||
+		!slices.Equal(telebot.InitialAPICollapsedStates, []bool{false, false}) {
+		t.Errorf("Telebot heavy API kinds are not initially collapsed: %#v / %#v", telebot.InitialAPICollapsedTexts, telebot.InitialAPICollapsedStates)
+	}
+	if !slices.Equal(telebot.InitialAPIReceiverTexts, []string{"Bot · 1 метод"}) ||
+		!slices.Equal(telebot.InitialAPIReceiverStates, []bool{false}) ||
+		!slices.Equal(telebot.SearchedAPIReceiverStates, []bool{true}) {
+		t.Errorf("Telebot receiver methods are not collapsed until active search: text %#v initial %#v searched %#v",
+			telebot.InitialAPIReceiverTexts, telebot.InitialAPIReceiverStates, telebot.SearchedAPIReceiverStates)
 	}
 	if telebot.ShelfCount == 0 {
 		t.Fatalf("D281 production marker missing after Integrations selection: .rm-map-integrations-context")
@@ -288,6 +373,7 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 	}
 	for _, copy := range []string{
 		"Наблюдаемые внешние вызовы и состояние",
+		"1 место вызова",
 		"Вне концептуальной группировки",
 		"Это не полный перечень интеграций",
 	} {
@@ -297,6 +383,9 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 	}
 	if !slices.Equal(telebot.SourceTags, []string{"A", "A"}) {
 		t.Errorf("Telebot exact source actions = %#v", telebot.SourceTags)
+	}
+	if !slices.Equal(telebot.RowTags, []string{"DETAILS", "DETAILS"}) || !slices.Equal(telebot.RowOpen, []bool{false, false}) {
+		t.Errorf("Telebot integrations are not one flat disclosure list: tags %#v open %#v", telebot.RowTags, telebot.RowOpen)
 	}
 	wantTelebotHrefs := []string{
 		"https://github.com/tucnak/telebot/blob/" + strings.Repeat("b", 40) + "/bot.go#L19",
@@ -311,12 +400,12 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 	}
 
 	restic := run("restic")
-	if strings.Join(restic.ModeIDs, ",") != "landscape,entrypoints,integrations" ||
-		strings.Join(restic.ModeLabels, ",") != "Map,Entrypoints · 1,Integrations · 2" {
+	if strings.Join(restic.ModeIDs, ",") != "entrypoints,integrations" ||
+		strings.Join(restic.ModeLabels, ",") != "Entrypoints · 1,Integrations · 2" {
 		t.Errorf("Restic compact modes = %#v / %#v", restic.ModeIDs, restic.ModeLabels)
 	}
-	if strings.Join(restic.InitialPressed, ",") != "true,false,false" ||
-		strings.Join(restic.ActivePressed, ",") != "false,false,true" {
+	if strings.Join(restic.InitialPressed, ",") != "false,false" ||
+		strings.Join(restic.ActivePressed, ",") != "false,true" || restic.ActiveContextHidden {
 		t.Errorf("Restic explicit mode selection = initial %#v active %#v", restic.InitialPressed, restic.ActivePressed)
 	}
 	if restic.ShelfCount != 1 || restic.RowCount != 2 || restic.OutsideCount != 1 || restic.SourceCount != 2 {
@@ -324,6 +413,7 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 	}
 	for _, copy := range []string{
 		"Observed external calls and state",
+		"1 callsite",
 		"Outside conceptual grouping",
 		"This is not a complete integration inventory",
 	} {
@@ -333,6 +423,9 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 	}
 	if !slices.Equal(restic.SourceTags, []string{"A", "A"}) {
 		t.Errorf("Restic exact source actions = %#v", restic.SourceTags)
+	}
+	if !slices.Equal(restic.RowTags, []string{"DETAILS", "DETAILS"}) || !slices.Equal(restic.RowOpen, []bool{false, false}) {
+		t.Errorf("Restic integrations are not one flat disclosure list: tags %#v open %#v", restic.RowTags, restic.RowOpen)
 	}
 	wantResticHrefs := []string{
 		"https://github.com/restic/restic/blob/" + strings.Repeat("b", 40) + "/backend/local.go#L20",
@@ -353,8 +446,9 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 		if slices.Contains(got.InitialLensCalls, "entrypoints") || slices.Contains(got.InitialLensCalls, "integrations") {
 			t.Errorf("%s automatically selected a focused Canvas context = %#v", name, got.InitialLensCalls)
 		}
-		if len(got.LensCalls) == 0 || got.LensCalls[len(got.LensCalls)-1] != "integrations" {
-			t.Errorf("%s Canvas context calls = %#v, want explicit integrations last", name, got.LensCalls)
+		if !slices.Contains(got.LensCalls, "integrations") || len(got.LensCalls) == 0 || got.LensCalls[len(got.LensCalls)-1] != "landscape" ||
+			!got.ClosePresent || !got.ClosedContextHidden || slices.Contains(got.ClosedPressed, "true") {
+			t.Errorf("%s context close did not return to neutral permanent map: %#v", name, got)
 		}
 	}
 }

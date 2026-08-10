@@ -83,3 +83,25 @@ func TestGoTargetAdvisoryExcludesNonProductPaths(t *testing.T) {
 		}
 	}
 }
+
+func TestAutomaticGoTargetSelectionRemainsBoundToExactAdvisory(t *testing.T) {
+	advisory := GoTargetAdvisory{
+		Suggested: "linux/amd64", EvidenceFiles: 3,
+		Examples: []string{"daemon/a_linux.go", "daemon/b_linux.go", "daemon/c_linux.go"},
+	}
+	selection, err := newAutomaticGoTargetSelection(
+		gotarget.Target{GOOS: "darwin", GOARCH: "amd64"}, advisory,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := selection.ValidateAgainstAdvisory(&advisory); err != nil {
+		t.Fatal(err)
+	}
+	tampered := advisory
+	tampered.Examples = append([]string(nil), advisory.Examples...)
+	tampered.Examples[0] = "daemon/other_linux.go"
+	if err := selection.ValidateAgainstAdvisory(&tampered); err == nil {
+		t.Fatal("automatic selection accepted different advisory evidence")
+	}
+}
