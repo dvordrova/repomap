@@ -25,8 +25,10 @@
   // Entrypoints and Integrations contexts one compact shared vocabulary and
   // states the bounded external/state evidence contract explicitly. UI28
   // keeps Map as the permanent baseline and types the compact API and
-  // Integrations disclosures layered over it.
-  var VERSION = 28;
+  // Integrations disclosures layered over it. UI29 closes two presentation-
+  // only accessibility gaps: the context-switch group has an accessible name,
+  // and an API search with no matching declarations has an explicit result.
+  var VERSION = 29;
   var EN = {
     "main.browser_error.invalid_report_artifact": { params: [], text: "The saved report is invalid or exceeds the supported size." },
     "main.browser_error.no_saved_reports": { params: [], text: "No saved reports are available." },
@@ -88,9 +90,11 @@
     "main.map.mode.api": { params: [], text: "API" },
     "main.map.mode.entrypoints": { params: ["count"], format: function (params) { return "Entrypoints · " + params.count; } },
     "main.map.mode.integrations": { params: ["count"], format: function (params) { return "Integrations · " + params.count; } },
+    "main.map.mode.group": { params: [], text: "Map contexts" },
     "main.map.context.close": { params: [], text: "Close context" },
     "main.map.api.heading": { params: [], text: "Public library API" },
     "main.map.api.search": { params: [], text: "Search API declarations" },
+    "main.map.api.no_results": { params: [], text: "No API declarations match this search." },
     "main.map.api.showing": { params: ["shown", "total"], format: function (params) { return "Showing " + params.shown + " of " + params.total + " declarations"; } },
     "main.map.api.package_count": { params: ["count"], format: function (params) { return englishCount(params.count, "package", "packages"); } },
     "main.map.api.study.heading": { params: [], text: "What to look at first" },
@@ -101,11 +105,6 @@
     "main.map.api.section.types": { params: ["count"], format: function (params) { return englishCount(params.count, "type", "types"); } },
     "main.map.api.section.constants": { params: ["count"], format: function (params) { return englishCount(params.count, "constant", "constants"); } },
     "main.map.api.section.variables": { params: ["count"], format: function (params) { return englishCount(params.count, "variable", "variables"); } },
-    "main.map.api.kind.function": { params: [], text: "Function" },
-    "main.map.api.kind.method": { params: [], text: "Method" },
-    "main.map.api.kind.type": { params: [], text: "Type" },
-    "main.map.api.kind.const": { params: [], text: "Constant" },
-    "main.map.api.kind.var": { params: [], text: "Variable" },
     "main.map.entry.heading": { params: [], text: "Entrypoints" },
     "main.map.entry.explore": { params: [], text: "Explore" },
     "main.map.entry.direct_families": { params: ["count"], format: function (params) { return englishCount(params.count, "direct call family", "direct call families"); } },
@@ -1221,9 +1220,11 @@
     "main.map.mode.api": { params: [], text: "API" },
     "main.map.mode.entrypoints": { params: ["count"], format: function (params) { return "Точки входа · " + params.count; } },
     "main.map.mode.integrations": { params: ["count"], format: function (params) { return "Интеграции · " + params.count; } },
+    "main.map.mode.group": { params: [], text: "Контексты карты" },
     "main.map.context.close": { params: [], text: "Закрыть контекст" },
     "main.map.api.heading": { params: [], text: "Публичный API библиотеки" },
     "main.map.api.search": { params: [], text: "Поиск по объявлениям API" },
+    "main.map.api.no_results": { params: [], text: "По этому запросу объявления API не найдены." },
     "main.map.api.showing": { params: ["shown", "total"], format: function (params) { return "Показано " + params.shown + " из " + params.total + " объявлений"; } },
     "main.map.api.package_count": { params: ["count"], format: function (params) { return russianCount(params.count, "пакет", "пакета", "пакетов"); } },
     "main.map.api.study.heading": { params: [], text: "Что посмотреть сначала" },
@@ -1234,11 +1235,6 @@
     "main.map.api.section.types": { params: ["count"], format: function (params) { return russianCount(params.count, "тип", "типа", "типов"); } },
     "main.map.api.section.constants": { params: ["count"], format: function (params) { return russianCount(params.count, "константа", "константы", "констант"); } },
     "main.map.api.section.variables": { params: ["count"], format: function (params) { return russianCount(params.count, "переменная", "переменные", "переменных"); } },
-    "main.map.api.kind.function": { params: [], text: "Функция" },
-    "main.map.api.kind.method": { params: [], text: "Метод" },
-    "main.map.api.kind.type": { params: [], text: "Тип" },
-    "main.map.api.kind.const": { params: [], text: "Константа" },
-    "main.map.api.kind.var": { params: [], text: "Переменная" },
     "main.map.entry.heading": { params: [], text: "Точки входа" },
     "main.map.entry.explore": { params: [], text: "Исследовать" },
     "main.map.entry.direct_families": { params: ["count"], format: function (params) { return russianCount(params.count, "группа прямых вызовов", "группы прямых вызовов", "групп прямых вызовов"); } },

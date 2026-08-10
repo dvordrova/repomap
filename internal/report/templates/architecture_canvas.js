@@ -4477,10 +4477,13 @@ function architecturePartialTruth(data) {
      if (this.destroyed || this.inspector.hidden) return;
      close.focus({ preventScroll: true });
     });
-    if (!this.userMode) {
+    if (!this.inspectorFocusTrapInstalled) {
+     this.inspectorFocusTrapInstalled = true;
      // Keyboard focus stays inside the drawer while it is open: Tab
      // cycles between the first and last focusable element. Background
-     // map nodes are never keyboard-reachable through the overlay.
+     // map nodes are never keyboard-reachable through the overlay. The
+     // production user-mode bottom sheet carries the same aria-modal
+     // contract, so it uses this trap too.
      const trapFocus = (event) => {
       if (this.inspector.hidden) return;
       if (event.key !== "Tab") return;
@@ -4490,13 +4493,23 @@ function architecturePartialTruth(data) {
       // wrap check fires at the true last VISIBLE control and Tab never
       // falls through the modal into the background.
       const rawFocusables = this.inspector.querySelectorAll(
-       'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"]), input, select, textarea'
+       'button:not([disabled]):not([tabindex="-1"]), ' +
+       'a[href]:not([tabindex="-1"]), summary:not([disabled]):not([tabindex="-1"]), ' +
+       '[tabindex]:not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"]), ' +
+       'select:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]):not([tabindex="-1"])'
       );
       const focusables = Array.from(rawFocusables).filter((candidate) => {
+       const nativeSummary = candidate.tagName === "SUMMARY";
        let node = candidate;
        while (node && node !== this.inspector) {
         if (node.hidden) return false;
         if (node.getAttribute && node.getAttribute("aria-hidden") === "true") return false;
+        // Descendants of a closed native disclosure are not visible tab
+        // stops. Its direct summary remains the one keyboard-reachable
+        // control; nested disclosures under a closed ancestor stay out.
+        if (node.tagName === "DETAILS" && !node.open && !(
+         nativeSummary && candidate.parentNode === node
+        )) return false;
         node = node.parentNode || null;
         if (node && node.parentNode === node) break;
        }
@@ -5202,16 +5215,12 @@ function architecturePartialTruth(data) {
    return receiver ? receiver + "." + name : name;
   }
 
-  userLibraryAPIKindLabel(kind) {
-   const ids = {
-    func: "main.map.api.kind.function",
-    function: "main.map.api.kind.function",
-    method: "main.map.api.kind.method",
-    type: "main.map.api.kind.type",
-    const: "main.map.api.kind.const",
-    var: "main.map.api.kind.var",
-   };
-   return ids[text(kind)] ? this.msg(ids[text(kind)]) : text(kind);
+  userLibraryAPIDeclarationSyntax(declaration) {
+   const label = this.userLibraryAPIDeclarationLabel(declaration);
+   const kind = text(declaration && declaration.kind);
+   return kind === "func" || kind === "function" || kind === "method"
+    ? label + "()"
+    : label;
   }
 
   appendUserLibraryAPIDeclaration(parent, declaration) {
@@ -5222,13 +5231,82 @@ function architecturePartialTruth(data) {
    };
    const actionable = !!locationLabel(location) && typeof this.options.openSourceLocation === "function";
    const row = element(actionable ? "button" : "div", "rm-arch__api-declaration");
+   const syntax = this.userLibraryAPIDeclarationSyntax(declaration);
+   const exactTitle = [syntax, locationLabel(location)].filter(Boolean).join(" · ");
    if (actionable) row.type = "button";
-   row.appendChild(element("span", "rm-arch__api-kind", this.userLibraryAPIKindLabel(declaration && declaration.kind)));
-   row.appendChild(element("strong", null, this.userLibraryAPIDeclarationLabel(declaration)));
-   row.appendChild(element("code", null, locationLabel(location)));
+   if (exactTitle) row.setAttribute("title", exactTitle);
+   if (actionable) row.setAttribute(
+    "aria-label", this.msg("architecture.action.open_code") + ": " + exactTitle
+   );
+   row.appendChild(element("strong", null, syntax));
    if (actionable) this.listen(row, "click", () => this.options.openSourceLocation(location));
    parent.appendChild(row);
    return row;
+  }
+
+  appendUserLibraryAPIDeclarations(parent, declarations) {
+   const rows = element("div", "rm-arch__api-declarations");
+   array(declarations).forEach((declaration) => this.appendUserLibraryAPIDeclaration(rows, declaration));
+   parent.appendChild(rows);
+  }
+
+  appendUserLibraryAPICollapsedSection(parent, messageID, declarations) {
+   if (declarations.length === 0) return;
+   const section = element("details", "rm-arch__api-section rm-arch__api-section--collapsed");
+   section.appendChild(element("summary", "rm-arch__api-section-summary", this.msg(messageID, {
+    count: declarations.length,
+   })));
+   this.appendUserLibraryAPIDeclarations(section, declarations);
+   parent.appendChild(section);
+  }
+
+  appendUserLibraryAPIPackageSections(parent, declarations) {
+   const functions = [];
+   const types = [];
+   const constants = [];
+   const variables = [];
+   const methodsByReceiver = new Map();
+   array(declarations).forEach((declaration) => {
+    const kind = text(declaration && declaration.kind);
+    if (kind === "func" || kind === "function") functions.push(declaration);
+    else if (kind === "method") {
+     const receiver = text(declaration && declaration.receiver);
+     if (!methodsByReceiver.has(receiver)) methodsByReceiver.set(receiver, []);
+     methodsByReceiver.get(receiver).push(declaration);
+    } else if (kind === "type") types.push(declaration);
+    else if (kind === "const") constants.push(declaration);
+    else if (kind === "var") variables.push(declaration);
+   });
+   if (functions.length > 0) {
+    const section = element("section", "rm-arch__api-section rm-arch__api-section--functions");
+    section.appendChild(element("h5", null, this.msg("main.map.api.section.functions", {
+     count: functions.length,
+    })));
+    this.appendUserLibraryAPIDeclarations(section, functions);
+    parent.appendChild(section);
+   }
+   if (methodsByReceiver.size > 0) {
+    const section = element("section", "rm-arch__api-section rm-arch__api-section--methods");
+    let methodCount = 0;
+    methodsByReceiver.forEach((methods) => { methodCount += methods.length; });
+    section.appendChild(element("h5", null, this.msg("main.map.api.section.methods", {
+     count: methodCount,
+    })));
+    methodsByReceiver.forEach((methods, receiver) => {
+     const receiverGroup = element("details", "rm-arch__api-receiver");
+     receiverGroup.appendChild(element(
+      "summary", "rm-arch__api-receiver-summary", this.msg("main.map.api.section.receiver", {
+       receiver: receiver, count: methods.length,
+      })
+     ));
+     this.appendUserLibraryAPIDeclarations(receiverGroup, methods);
+     section.appendChild(receiverGroup);
+    });
+    parent.appendChild(section);
+   }
+   this.appendUserLibraryAPICollapsedSection(parent, "main.map.api.section.types", types);
+   this.appendUserLibraryAPICollapsedSection(parent, "main.map.api.section.constants", constants);
+   this.appendUserLibraryAPICollapsedSection(parent, "main.map.api.section.variables", variables);
   }
 
   appendUserLibraryAPI(parent, packages, preview) {
@@ -5242,7 +5320,8 @@ function architecturePartialTruth(data) {
      ? text(pkg && pkg.package_path).split("/").filter(Boolean).pop()
      : text(pkg && pkg.display_path) || text(pkg && pkg.package_path);
     group.appendChild(element("h4", null, title));
-    declarations.forEach((declaration) => this.appendUserLibraryAPIDeclaration(group, declaration));
+    if (text(pkg && pkg.package_path)) group.setAttribute("title", text(pkg.package_path));
+    this.appendUserLibraryAPIPackageSections(group, declarations);
     parent.appendChild(group);
     remaining -= declarations.length;
    });

@@ -375,6 +375,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-library-api-search { background: #fff; border: 1px solid #cbd5e1; border-radius: 9px; color: #172554; font: inherit; font-size: .8rem; min-height: 2.45rem; padding: .45rem .7rem; width: min(30rem, 100%); }
 .rm-library-api-search:focus { border-color: #4f6ef7; box-shadow: 0 0 0 3px rgba(79,110,247,.14); outline: 0; }
 .rm-library-api-packages { display: grid; gap: .55rem; }
+.rm-library-api-empty { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 10px; color: #64748b; font-size: .76rem; margin: 0; padding: .8rem; }
 .rm-library-api-package { background: #fff; border: 1px solid #dbe4f0; border-radius: 10px; overflow: clip; }
 .rm-library-api-package__summary { align-items: center; cursor: pointer; display: flex; flex-wrap: wrap; gap: .45rem 1rem; justify-content: space-between; padding: .7rem .8rem; }
 .rm-library-api-package__summary strong { color: #172554; font-size: .86rem; }
@@ -415,12 +416,16 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-arch__api-package { display: grid; gap: .3rem; min-width: 0; }
 .rm-arch__api-package + .rm-arch__api-package { border-top: 1px solid #e2e8f0; margin-top: .55rem; padding-top: .55rem; }
 .rm-arch__api-package h4 { color: #475569; font-size: .7rem; margin: 0; overflow-wrap: anywhere; }
-.rm-arch__api-declaration { align-items: baseline; background: #fff; border: 1px solid #dbe4f0; border-radius: 8px; color: #172554; display: grid; font: inherit; gap: .25rem .45rem; grid-template-columns: 3.7rem minmax(0,1fr); min-width: 0; padding: .45rem .5rem; text-align: left; }
+.rm-arch__api-section { display: grid; gap: .25rem; min-width: 0; }
+.rm-arch__api-section h5 { color: #64748b; font-size: .62rem; margin: .2rem 0 0; }
+.rm-arch__api-receiver { border-left: 2px solid #dbeafe; display: grid; gap: .2rem; margin-top: .2rem; padding-left: .55rem; }
+.rm-arch__api-receiver-summary, .rm-arch__api-section-summary { color: #475569; cursor: pointer; font-size: .65rem; font-weight: 700; }
+.rm-arch__api-section--collapsed { border-top: 1px solid #eef2f7; margin-top: .2rem; padding-top: .45rem; }
+.rm-arch__api-declarations { display: grid; grid-template-columns: minmax(0, 1fr); }
+.rm-arch__api-declaration { background: transparent; border: 0; border-bottom: 1px solid #f1f5f9; border-radius: 0; color: #1d4ed8; display: block; font: inherit; min-width: 0; padding: .4rem .15rem; text-align: left; width: 100%; }
 button.rm-arch__api-declaration { cursor: pointer; }
-button.rm-arch__api-declaration:hover { border-color: #93c5fd; background: #eff6ff; }
-.rm-arch__api-declaration .rm-arch__api-kind { color: #64748b; font-size: .58rem; font-weight: 750; grid-row: 1 / 3; text-transform: uppercase; }
+button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-visible { background: #eff6ff; color: #1e40af; outline: 0; }
 .rm-arch__api-declaration strong { font-size: .72rem; min-width: 0; overflow-wrap: anywhere; }
-.rm-arch__api-declaration code { color: #64748b; font-size: .6rem; overflow-wrap: anywhere; }
 .rm-map-primary-layout { min-width: 0; }
 .rm-map-empty-inspector { min-width: 0; }
 .rm-map-empty-inspector[hidden] { display: none; }
@@ -920,8 +925,10 @@ button.rm-arch__api-declaration:hover { border-color: #93c5fd; background: #eff6
   // Entrypoints and Integrations contexts one compact shared vocabulary and
   // states the bounded external/state evidence contract explicitly. UI28
   // keeps Map as the permanent baseline and types the compact API and
-  // Integrations disclosures layered over it.
-  var VERSION = 28;
+  // Integrations disclosures layered over it. UI29 closes two presentation-
+  // only accessibility gaps: the context-switch group has an accessible name,
+  // and an API search with no matching declarations has an explicit result.
+  var VERSION = 29;
   var EN = {
     "main.browser_error.invalid_report_artifact": { params: [], text: "The saved report is invalid or exceeds the supported size." },
     "main.browser_error.no_saved_reports": { params: [], text: "No saved reports are available." },
@@ -983,9 +990,11 @@ button.rm-arch__api-declaration:hover { border-color: #93c5fd; background: #eff6
     "main.map.mode.api": { params: [], text: "API" },
     "main.map.mode.entrypoints": { params: ["count"], format: function (params) { return "Entrypoints · " + params.count; } },
     "main.map.mode.integrations": { params: ["count"], format: function (params) { return "Integrations · " + params.count; } },
+    "main.map.mode.group": { params: [], text: "Map contexts" },
     "main.map.context.close": { params: [], text: "Close context" },
     "main.map.api.heading": { params: [], text: "Public library API" },
     "main.map.api.search": { params: [], text: "Search API declarations" },
+    "main.map.api.no_results": { params: [], text: "No API declarations match this search." },
     "main.map.api.showing": { params: ["shown", "total"], format: function (params) { return "Showing " + params.shown + " of " + params.total + " declarations"; } },
     "main.map.api.package_count": { params: ["count"], format: function (params) { return englishCount(params.count, "package", "packages"); } },
     "main.map.api.study.heading": { params: [], text: "What to look at first" },
@@ -996,11 +1005,6 @@ button.rm-arch__api-declaration:hover { border-color: #93c5fd; background: #eff6
     "main.map.api.section.types": { params: ["count"], format: function (params) { return englishCount(params.count, "type", "types"); } },
     "main.map.api.section.constants": { params: ["count"], format: function (params) { return englishCount(params.count, "constant", "constants"); } },
     "main.map.api.section.variables": { params: ["count"], format: function (params) { return englishCount(params.count, "variable", "variables"); } },
-    "main.map.api.kind.function": { params: [], text: "Function" },
-    "main.map.api.kind.method": { params: [], text: "Method" },
-    "main.map.api.kind.type": { params: [], text: "Type" },
-    "main.map.api.kind.const": { params: [], text: "Constant" },
-    "main.map.api.kind.var": { params: [], text: "Variable" },
     "main.map.entry.heading": { params: [], text: "Entrypoints" },
     "main.map.entry.explore": { params: [], text: "Explore" },
     "main.map.entry.direct_families": { params: ["count"], format: function (params) { return englishCount(params.count, "direct call family", "direct call families"); } },
@@ -2116,9 +2120,11 @@ button.rm-arch__api-declaration:hover { border-color: #93c5fd; background: #eff6
     "main.map.mode.api": { params: [], text: "API" },
     "main.map.mode.entrypoints": { params: ["count"], format: function (params) { return "Точки входа · " + params.count; } },
     "main.map.mode.integrations": { params: ["count"], format: function (params) { return "Интеграции · " + params.count; } },
+    "main.map.mode.group": { params: [], text: "Контексты карты" },
     "main.map.context.close": { params: [], text: "Закрыть контекст" },
     "main.map.api.heading": { params: [], text: "Публичный API библиотеки" },
     "main.map.api.search": { params: [], text: "Поиск по объявлениям API" },
+    "main.map.api.no_results": { params: [], text: "По этому запросу объявления API не найдены." },
     "main.map.api.showing": { params: ["shown", "total"], format: function (params) { return "Показано " + params.shown + " из " + params.total + " объявлений"; } },
     "main.map.api.package_count": { params: ["count"], format: function (params) { return russianCount(params.count, "пакет", "пакета", "пакетов"); } },
     "main.map.api.study.heading": { params: [], text: "Что посмотреть сначала" },
@@ -2129,11 +2135,6 @@ button.rm-arch__api-declaration:hover { border-color: #93c5fd; background: #eff6
     "main.map.api.section.types": { params: ["count"], format: function (params) { return russianCount(params.count, "тип", "типа", "типов"); } },
     "main.map.api.section.constants": { params: ["count"], format: function (params) { return russianCount(params.count, "константа", "константы", "констант"); } },
     "main.map.api.section.variables": { params: ["count"], format: function (params) { return russianCount(params.count, "переменная", "переменные", "переменных"); } },
-    "main.map.api.kind.function": { params: [], text: "Функция" },
-    "main.map.api.kind.method": { params: [], text: "Метод" },
-    "main.map.api.kind.type": { params: [], text: "Тип" },
-    "main.map.api.kind.const": { params: [], text: "Константа" },
-    "main.map.api.kind.var": { params: [], text: "Переменная" },
     "main.map.entry.heading": { params: [], text: "Точки входа" },
     "main.map.entry.explore": { params: [], text: "Исследовать" },
     "main.map.entry.direct_families": { params: ["count"], format: function (params) { return russianCount(params.count, "группа прямых вызовов", "группы прямых вызовов", "групп прямых вызовов"); } },
@@ -9961,6 +9962,7 @@ button.rm-arch__api-declaration:hover { border-color: #93c5fd; background: #eff6
 	function renderMapModeControl() {
 		var control = el('div', 'rm-map-lens-control rm-map-mode-control');
 		control.setAttribute('role', 'group');
+		control.setAttribute('aria-label', msg('main.map.mode.group'));
 		allowedMapModes().forEach(function (mode) {
 			var button = txt('button', 'rm-map-lens-button rm-map-mode-button', mode.label);
 			button.type = 'button';
@@ -10206,6 +10208,7 @@ button.rm-arch__api-declaration:hover { border-color: #93c5fd; background: #eff6
     function renderPackages(query) {
       packagesHost.replaceChildren();
       query = String(query || '').trim().toLocaleLowerCase();
+      var shownDeclarations = 0;
       (Array.isArray(projection.packages) ? projection.packages : []).forEach(function (pkg, packageIndex) {
         var declarations = (Array.isArray(pkg && pkg.declarations) ? pkg.declarations : []).filter(function (declaration) {
           if (!query) return true;
@@ -10219,6 +10222,7 @@ button.rm-arch__api-declaration:hover { border-color: #93c5fd; background: #eff6
           ].join(' ').toLocaleLowerCase().indexOf(query) >= 0;
         });
         if (query && declarations.length === 0) return;
+        shownDeclarations += declarations.length;
         var group = el('details', 'rm-library-api-package');
         group.open = packageIndex === 0 || !!query;
         var heading = el('summary', 'rm-library-api-package__summary');
@@ -10229,6 +10233,12 @@ button.rm-arch__api-declaration:hover { border-color: #93c5fd; background: #eff6
         group.appendChild(body);
         packagesHost.appendChild(group);
       });
+      if (query && shownDeclarations === 0) {
+        var empty = txt('p', 'rm-library-api-empty', msg('main.map.api.no_results'));
+        empty.setAttribute('role', 'status');
+        empty.setAttribute('aria-live', 'polite');
+        packagesHost.appendChild(empty);
+      }
     }
     search.addEventListener('input', function () { renderPackages(search.value); });
     renderPackages('');
@@ -10243,6 +10253,23 @@ button.rm-arch__api-declaration:hover { border-color: #93c5fd; background: #eff6
       var root = family && family.root_declaration;
       return String(root && root.path || '') === path && Number(root && root.line) === line;
     });
+  }
+
+  function entrySurfacePrimaryLocation(entry) {
+    // ArchitectureSurface evidence is producer-ordered: registration or
+    // descriptor/server evidence precedes shared process ancestry. Keep that
+    // exact priority for the card while retaining the full sorted projection
+    // for identity matching.
+    var surface = ((DATA.architecture_canvas && DATA.architecture_canvas.surfaces) || []).filter(function (candidate) {
+      return String(candidate && candidate.id || '') === String(entry && entry.id || '');
+    })[0] || null;
+    var producerLocations = Array.isArray(surface && surface.evidence) ? surface.evidence : [];
+    var primary = producerLocations.filter(function (location) {
+      return !!String(location && location.path || '') && Number(location && location.line) > 0;
+    })[0] || null;
+    if (primary) return primary;
+    var projectedLocations = Array.isArray(entry && entry.locations) ? entry.locations : [];
+    return projectedLocations[0] || null;
   }
 
   function renderEntryCallFamilyDisclosure(families) {
@@ -10298,13 +10325,14 @@ button.rm-arch__api-declaration:hover { border-color: #93c5fd; background: #eff6
     return { calls: handoffs.length, areas: Object.keys(areaIDs).length, outside: outside };
   }
 
-  function renderEntrypointCard(entry, projected, host, projectedGroups) {
+  function renderEntrypointCard(entry, projected, host, projectedGroups, entryKind) {
     var card = el('article', 'rm-map-entry-card');
     var heading = el('div', 'rm-map-entry-card__heading');
     heading.appendChild(txt('h3', '', bareSourceSymbol(entry && (entry.symbol || entry.label)) || msg('main.map.lens.entry.process')));
     heading.appendChild(renderEntrypointLocationAction(entry, msg('main.map.entry.context.entry_source')));
     card.appendChild(heading);
-    var families = entryCallFamiliesForLocation(entry);
+    var families = String(entryKind || entry && entry.claim_kind || '') === 'process_entry'
+      ? entryCallFamiliesForLocation(entry) : [];
     if (families.length) card.appendChild(txt('p', 'rm-map-entry-card__meta', msg('main.map.entry.direct_families', {
       count: families.length,
     })));
@@ -10332,6 +10360,7 @@ button.rm-arch__api-declaration:hover { border-color: #93c5fd; background: #eff6
       projection.entry_handoff_groups || [];
     var surfaces = [];
     var seen = Object.create(null);
+    var attachedGroupIDs = Object.create(null);
     var entrypointGroups = projection.objects && projection.objects.entrypoints || projection.entrypoints || [];
     entrypointGroups.forEach(function (group) {
       (group.entries || []).forEach(function (entry) {
@@ -10342,29 +10371,32 @@ button.rm-arch__api-declaration:hover { border-color: #93c5fd; background: #eff6
     surfaces.forEach(function (entry) {
       var projected = projectedGroups.filter(function (candidate) {
         var groupEntry = candidate && candidate.group && candidate.group.entry;
+        var candidateID = String(candidate && candidate.id || '');
+        // Route/server evidence legitimately includes its process ancestry.
+        // That shared location is not the identity of the process entry.
+        if (attachedGroupIDs[candidateID] ||
+          String(entry && entry.kind || '') !== String(groupEntry && groupEntry.claim_kind || '')) return false;
         return (Array.isArray(entry && entry.locations) ? entry.locations : []).some(function (location) {
           return String(location && location.path || '') === String(groupEntry && groupEntry.path || '') &&
             Number(location && location.line) === Number(groupEntry && groupEntry.line);
         });
       })[0] || null;
+      if (projected) attachedGroupIDs[String(projected.id || '')] = true;
+      var primary = entrySurfacePrimaryLocation(entry);
       var exact = projected && projected.group && projected.group.entry || {
-        path: entry.locations && entry.locations[0] && entry.locations[0].path,
-        line: entry.locations && entry.locations[0] && entry.locations[0].line,
-        column: entry.locations && entry.locations[0] && entry.locations[0].column,
+        path: primary && primary.path,
+        line: primary && primary.line,
+        column: primary && primary.column,
         symbol: entry.label,
         label: entry.label,
       };
-      host.appendChild(renderEntrypointCard(exact, projected, host, projectedGroups));
+      host.appendChild(renderEntrypointCard(exact, projected, host, projectedGroups, entry && entry.kind));
     });
     projectedGroups.forEach(function (projected) {
       var entry = projected && projected.group && projected.group.entry;
-      var alreadyShown = surfaces.some(function (surface) {
-        return (surface.locations || []).some(function (location) {
-          return String(location.path || '') === String(entry && entry.path || '') &&
-            Number(location.line) === Number(entry && entry.line);
-        });
-      });
-      if (!alreadyShown && entry) host.appendChild(renderEntrypointCard(entry, projected, host, projectedGroups));
+      if (!attachedGroupIDs[String(projected && projected.id || '')] && entry) {
+        host.appendChild(renderEntrypointCard(entry, projected, host, projectedGroups, entry && entry.claim_kind));
+      }
     });
   }
 

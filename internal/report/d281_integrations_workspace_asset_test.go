@@ -200,6 +200,7 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
  const mapRoot=roots["rm-architecture"];
  const initialNodes=[mapRoot].concat(walk(mapRoot));
  const initialModes=initialNodes.filter(n=>Object.prototype.hasOwnProperty.call(n.attributes||{},"data-map-mode"));
+ const initialModeControl=initialNodes.find(n=>classes(n).includes("rm-map-mode-control"));
  const initialPressed=initialModes.map(n=>n.getAttribute("aria-pressed"));
  const initialContextText=initialNodes.filter(n=>classes(n).includes("rm-map-mode-context")).map(n=>n.textContent).join("\n");
  const initialAPIPackages=initialNodes.filter(n=>classes(n).includes("rm-library-api-package"));
@@ -221,6 +222,9 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
  const searchedNodes=[mapRoot].concat(walk(mapRoot));
  const searchedAPIReceivers=searchedNodes.filter(n=>classes(n).includes("rm-library-api-receiver"));
  const searchedAPIReceiverStates=searchedAPIReceivers.map(n=>!!n.open);
+ if(apiSearch){apiSearch.value="no-declaration-can-match";apiSearch.dispatchEvent({type:"input"});}
+ const zeroSearchNodes=[mapRoot].concat(walk(mapRoot));
+ const zeroAPIEmpty=zeroSearchNodes.filter(n=>classes(n).includes("rm-library-api-empty"));
  const initialLensCalls=lensCalls.slice();
  const integrationButton=initialModes.find(n=>n.getAttribute("data-map-mode")==="integrations");
  const hostBefore=canvasHost,transformBefore=canvasHost&&canvasHost.style.transform;
@@ -246,6 +250,12 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
   initialAPIDeclarationTexts,initialAPIStudyTitles,initialAPIStudyJoinStates,initialAPIStudySourceTitles,
   initialAPICollapsedStates:initialAPICollapsed.map(n=>!!n.open),initialAPICollapsedTexts:initialAPICollapsed.map(n=>n.children[0]&&n.children[0].textContent||""),
   initialAPIReceiverStates,initialAPIReceiverTexts,searchedAPIReceiverStates,
+  modeControlRole:initialModeControl&&initialModeControl.getAttribute("role")||"",modeControlLabel:initialModeControl&&initialModeControl.getAttribute("aria-label")||"",
+  zeroAPIEmptyCount:zeroAPIEmpty.length,zeroAPIEmptyText:zeroAPIEmpty.map(n=>n.textContent).join("\n"),
+  zeroAPIEmptyRole:zeroAPIEmpty[0]&&zeroAPIEmpty[0].getAttribute("role")||"",zeroAPIEmptyLive:zeroAPIEmpty[0]&&zeroAPIEmpty[0].getAttribute("aria-live")||"",
+  zeroAPIPackageCount:zeroSearchNodes.filter(n=>classes(n).includes("rm-library-api-package")).length,
+  zeroAPIStudyCount:zeroSearchNodes.filter(n=>classes(n).includes("rm-library-api-study-picks")).length,
+  zeroAPISearchCount:zeroSearchNodes.filter(n=>classes(n).includes("rm-library-api-search")).length,
   activePressed,activeContextHidden,shelfCount:shelves.length,shelfText:shelves.map(n=>n.textContent).join("\n"),
   contextText:integrationContextText,
   rowCount:rows.length,rowTexts:rows.map(n=>n.textContent),rowTags:rows.map(n=>n.tagName),rowOpen:rows.map(n=>!!n.open),outsideCount:outside.length,
@@ -278,7 +288,11 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 		InitialAPICollapsedStates, InitialAPIReceiverStates               []bool
 		SearchedAPIReceiverStates, RowOpen                                []bool
 		ShelfText, ContextText, InitialContextText, Error                 string
+		ModeControlRole, ModeControlLabel                                 string
+		ZeroAPIEmptyText, ZeroAPIEmptyRole, ZeroAPIEmptyLive               string
 		ShelfCount, RowCount, OutsideCount, SourceCount                   int
+		ZeroAPIEmptyCount, ZeroAPIPackageCount                            int
+		ZeroAPIStudyCount, ZeroAPISearchCount                             int
 		RowTexts, RowTags, SourceTags, SourceHrefs                        []string
 		InitialLensCalls, LensCalls                                       []string
 		MountCount, OpenComponentCalls, SelectedGroupCalls                int
@@ -315,6 +329,9 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 	if strings.Join(telebot.InitialPressed, ",") != "true,false" ||
 		strings.Join(telebot.ActivePressed, ",") != "false,true" || telebot.ActiveContextHidden {
 		t.Errorf("Telebot explicit mode selection = initial %#v active %#v", telebot.InitialPressed, telebot.ActivePressed)
+	}
+	if telebot.ModeControlRole != "group" || telebot.ModeControlLabel != "Контексты карты" {
+		t.Errorf("Telebot map context switch accessible name = role %q label %q", telebot.ModeControlRole, telebot.ModeControlLabel)
 	}
 	for _, exact := range []string{"Публичный API библиотеки", "Что посмотреть сначала", "telebot", "NewBot()", "Bot.Start()", "react", "React()", "Reaction", "1 константа"} {
 		if !strings.Contains(telebot.InitialContextText, exact) {
@@ -365,6 +382,11 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 		t.Errorf("Telebot receiver methods are not collapsed until active search: text %#v initial %#v searched %#v",
 			telebot.InitialAPIReceiverTexts, telebot.InitialAPIReceiverStates, telebot.SearchedAPIReceiverStates)
 	}
+	if telebot.ZeroAPIEmptyCount != 1 || telebot.ZeroAPIEmptyText != "По этому запросу объявления API не найдены." ||
+		telebot.ZeroAPIEmptyRole != "status" || telebot.ZeroAPIEmptyLive != "polite" || telebot.ZeroAPIPackageCount != 0 ||
+		telebot.ZeroAPIStudyCount != 1 || telebot.ZeroAPISearchCount != 1 {
+		t.Errorf("Telebot zero-result API search is silent or replaces persistent orientation controls: %#v", telebot)
+	}
 	if telebot.ShelfCount == 0 {
 		t.Fatalf("D281 production marker missing after Integrations selection: .rm-map-integrations-context")
 	}
@@ -408,6 +430,9 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 		strings.Join(restic.ActivePressed, ",") != "false,true" || restic.ActiveContextHidden {
 		t.Errorf("Restic explicit mode selection = initial %#v active %#v", restic.InitialPressed, restic.ActivePressed)
 	}
+	if restic.ModeControlRole != "group" || restic.ModeControlLabel != "Map contexts" {
+		t.Errorf("Restic map context switch accessible name = role %q label %q", restic.ModeControlRole, restic.ModeControlLabel)
+	}
 	if restic.ShelfCount != 1 || restic.RowCount != 2 || restic.OutsideCount != 1 || restic.SourceCount != 2 {
 		t.Errorf("Restic mapped/off-map integrations shelf = %#v", restic)
 	}
@@ -450,5 +475,8 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 			!got.ClosePresent || !got.ClosedContextHidden || slices.Contains(got.ClosedPressed, "true") {
 			t.Errorf("%s context close did not return to neutral permanent map: %#v", name, got)
 		}
+	}
+	if css := readCanvasAsset(t, "style.css"); !strings.Contains(css, ".rm-library-api-empty {") {
+		t.Error("zero-result API status has no bounded visual treatment")
 	}
 }
