@@ -433,6 +433,67 @@ func (a *analyzer) recordPackageLoadOutcomes(allPackages map[string]*packages.Pa
 	a.result.Coverage.UnavailablePackages = unavailable
 }
 
+// analysisTargetSSADiagnostic returns one exact diagnostic already admitted
+// to bounded coverage. A located diagnostic closest to the selected package
+// wins; this prefers an actionable repository source error over a propagated
+// import failure whose position belongs to another package.
+func (a *analyzer) analysisTargetSSADiagnostic(
+	allPackages map[string]*packages.Package,
+	targetPackage string,
+) *PackageDiagnostic {
+	target := allPackages[targetPackage]
+	if target == nil {
+		return nil
+	}
+	distance := map[string]int{packageIdentity(target): 0}
+	queue := []*packages.Package{target}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		currentDistance := distance[packageIdentity(current)]
+		importPaths := make([]string, 0, len(current.Imports))
+		for importPath := range current.Imports {
+			importPaths = append(importPaths, importPath)
+		}
+		sort.Strings(importPaths)
+		for _, importPath := range importPaths {
+			imported := current.Imports[importPath]
+			identity := packageIdentity(imported)
+			if identity == "" {
+				continue
+			}
+			if _, seen := distance[identity]; seen {
+				continue
+			}
+			distance[identity] = currentDistance + 1
+			queue = append(queue, imported)
+		}
+	}
+
+	best := -1
+	bestDistance := int(^uint(0) >> 1)
+	for index := range a.result.Coverage.PackageDiagnostics {
+		diagnostic := &a.result.Coverage.PackageDiagnostics[index]
+		diagnosticDistance, reachable := distance[diagnostic.Package]
+		if !reachable || diagnostic.Location == nil ||
+			diagnostic.Location.Path == "" || diagnostic.Location.Line <= 0 {
+			continue
+		}
+		if best < 0 || diagnosticDistance < bestDistance ||
+			diagnosticDistance == bestDistance && diagnostic.ID < a.result.Coverage.PackageDiagnostics[best].ID {
+			best = index
+			bestDistance = diagnosticDistance
+		}
+	}
+	if best < 0 {
+		return nil
+	}
+	result := a.result.Coverage.PackageDiagnostics[best]
+	location := *result.Location
+	result.Location = &location
+	return &result
+}
+
 func (a *analyzer) packageExecutableOwners(allPackages map[string]*packages.Package) map[string][]processEntrypoint {
 	result := make(map[string][]processEntrypoint)
 	for _, entrypoint := range a.processEntrypoints {

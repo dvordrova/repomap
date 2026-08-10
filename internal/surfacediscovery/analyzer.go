@@ -463,6 +463,7 @@ func (a *analyzer) load() error {
 	if target := a.input.AnalysisTarget; target != nil && a.packageFacts[target.PackagePath] == nil {
 		return &AnalysisTargetSSAUnavailableError{
 			Reason: AnalysisTargetPackageNotSSASafe, Package: target.PackagePath,
+			Diagnostic: a.analysisTargetSSADiagnostic(allPackages, target.PackagePath),
 		}
 	}
 	for _, pkg := range loaded {

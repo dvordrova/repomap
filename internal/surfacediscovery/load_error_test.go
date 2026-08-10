@@ -33,6 +33,54 @@ func TestAnalyzeRejectsUnsafeSelectedTargetEvenWhenSiblingPackageIsSSASafe(t *te
 	}
 }
 
+func TestAnalyzeSelectedTargetSSAFailureExplainsMissingNestedModuleEmbedBuildInput(t *testing.T) {
+	repository := filepath.Join("testdata", "nested_embed_missing")
+	_, err := AnalyzeWithInput(DefaultOptions(repository), Input{
+		RepositoryName: "nested_embed_missing",
+		ModuleDirs:     []string{"cli"},
+		Packages: []PackageInput{
+			{Path: "example.com/nested_embed_missing", ModuleDir: "cli"},
+			{Path: "example.com/nested_embed_missing/cmd", ModuleDir: "cli"},
+		},
+		Entrypoints: []EntrypointInput{{
+			Package: "example.com/nested_embed_missing", PackageDir: ".", ModuleDir: "cli",
+			Anchors: []EntrypointAnchorInput{{
+				Kind: ProcessEntryAnchorGoMain, Path: "cli/main.go", Line: 5,
+			}},
+		}},
+		AnalysisTarget: &AnalysisTargetInput{
+			Kind: AnalysisTargetExecutablePackage, PackagePath: "example.com/nested_embed_missing",
+			Roots: []AnalysisTargetRootInput{{Path: "cli/main.go", Line: 5}},
+		},
+	})
+	var targetErr *AnalysisTargetSSAUnavailableError
+	if !errors.As(err, &targetErr) || targetErr.Reason != AnalysisTargetPackageNotSSASafe ||
+		targetErr.Package != "example.com/nested_embed_missing" {
+		t.Fatalf("nested embed target error = %#v / %v", targetErr, err)
+	}
+	if targetErr.Diagnostic == nil ||
+		targetErr.Diagnostic.Package != "example.com/nested_embed_missing/cmd" ||
+		targetErr.Diagnostic.Location == nil ||
+		targetErr.Diagnostic.Location.Path != "cli/cmd/license.go" ||
+		targetErr.Diagnostic.Location.Line != 5 ||
+		!strings.Contains(targetErr.Diagnostic.Message, "embedded/LICENSE") ||
+		!strings.Contains(targetErr.Diagnostic.Message, "no matching files found") {
+		t.Fatalf("nested embed diagnostic = %#v", targetErr.Diagnostic)
+	}
+	message := err.Error()
+	for _, want := range []string{
+		"package example.com/nested_embed_missing/cmd failed",
+		"cli/cmd/license.go:5",
+		"embedded/LICENSE",
+		"no matching files found",
+		"prepare missing generated/build inputs",
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("target error %q does not contain %q", message, want)
+		}
+	}
+}
+
 func TestAnalyzeIsolatesIllTypedExecutableAndKeepsExactProcessEntries(t *testing.T) {
 	options := DefaultOptions(filepath.Join("testdata", "partial_load"))
 	result, err := AnalyzeWithInput(options, Input{
