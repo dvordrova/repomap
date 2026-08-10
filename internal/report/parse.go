@@ -434,6 +434,9 @@ func readRunDir(
 	if w := parseRunMetadata(filepath.Join(absDir, "metadata.json"), data); w != "" {
 		parseWarnings = append(parseWarnings, w)
 	}
+	if err := restoreAnalysisTargetFromRunContainer(absDir, data); err != nil {
+		return nil, err
+	}
 	if state, err := modelresearch.ReadState(absDir); err == nil {
 		data.ModelResearch = &state
 		if data.Run == nil {
