@@ -78,7 +78,7 @@ func createUser(http.ResponseWriter, *http.Request) {}
 		return ""
 	}
 	response := entrycall.Response{
-		Version: entrycall.ResultVersion, RequestRef: compilation.Request.RequestRef,
+		Version: entrycall.ResponseVersion,
 		Entries: make([]entrycall.ResponseEntry, 0, len(compilation.Request.Entries)),
 		SurfaceProposals: []entrycall.ResponseSurfaceProposal{{
 			CandidateRef: requestCandidate.Ref, KindRef: entrycall.SurfaceKindRefHTTPRoute,

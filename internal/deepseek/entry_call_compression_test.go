@@ -20,7 +20,7 @@ func entryCallCompressionPromptFixture() entrycall.Prompt {
 	return entrycall.Prompt{
 		Version: entrycall.PromptVersion,
 		System:  "Use only supplied refs. Return exactly one JSON object.",
-		User:    `Response JSON schema: {"version":3,"request_ref":"q-fixture","entries":[],"surface_proposals":[]}. Exact request JSON: {"entries":[],"surface_catalog":{"candidates":[]}}`,
+		User:    `Response JSON schema: {"version":4,"entries":[],"surface_proposals":[]}. Exact request JSON: {"request_ref":"q-fixture","entries":[],"surface_catalog":{"candidates":[]}}`,
 	}
 }
 
@@ -122,7 +122,7 @@ func TestEntryCallCompressionBodyMeasuredSendsExactImmutableBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		sent, _ = io.ReadAll(request.Body)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"choices":[{"finish_reason":"stop","message":{"content":"{\"version\":1,\"request_ref\":\"q-fixture\",\"entries\":[]}"}}],"usage":{"prompt_tokens":11,"completion_tokens":7,"prompt_cache_hit_tokens":3,"prompt_cache_miss_tokens":8}}`)
+		_, _ = io.WriteString(w, `{"choices":[{"finish_reason":"stop","message":{"content":"{\"version\":4,\"entries\":[],\"surface_proposals\":[]}"}}],"usage":{"prompt_tokens":11,"completion_tokens":7,"prompt_cache_hit_tokens":3,"prompt_cache_miss_tokens":8}}`)
 	}))
 	defer server.Close()
 
@@ -139,7 +139,7 @@ func TestEntryCallCompressionBodyMeasuredSendsExactImmutableBody(t *testing.T) {
 		t.Fatalf("sent body differs\nsent: %q\nwant: %q", sent, exactBody)
 	}
 	if result.Attempts != 1 || result.RequestBytes != len(exactBody) ||
-		string(result.Content) != `{"version":1,"request_ref":"q-fixture","entries":[]}` ||
+		string(result.Content) != `{"version":4,"entries":[],"surface_proposals":[]}` ||
 		result.FinishReason != "stop" || result.ChoiceCount != 1 ||
 		!result.UsageReported || result.InputTokens != 11 || result.OutputTokens != 7 ||
 		result.PromptCacheHitTokens != 3 || result.PromptCacheMissTokens != 8 {

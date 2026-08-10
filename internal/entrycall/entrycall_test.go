@@ -19,6 +19,38 @@ func TestPromptVersionIsPinnedToExactPrompt(t *testing.T) {
 	}
 }
 
+func TestPromptKeepsRequestRefOnlyInBackendOwnedRequest(t *testing.T) {
+	compilation, err := Compile(causalFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := BuildPrompt(compilation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const marker = "Exact bounded request JSON:\n"
+	schema, requestJSON, found := strings.Cut(prompt.User, marker)
+	if !found {
+		t.Fatalf("prompt lost exact request marker: %s", prompt.User)
+	}
+	if strings.Contains(schema, `"request_ref"`) {
+		t.Fatalf("provider response schema still asks the model to echo request_ref: %s", schema)
+	}
+	if !strings.Contains(requestJSON, `"request_ref":"`+compilation.Request.RequestRef+`"`) {
+		t.Fatalf("backend-owned request identity disappeared from exact request: %s", requestJSON)
+	}
+	if !strings.Contains(prompt.System, "Do not return request_ref; request identity is backend-owned") {
+		t.Fatalf("prompt does not close the request identity boundary: %s", prompt.System)
+	}
+	responseRaw, err := json.Marshal(emptySurfaceResponse(compilation))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(responseRaw), `"request_ref"`) {
+		t.Fatalf("provider response wire still contains request_ref: %s", responseRaw)
+	}
+}
+
 func TestPromptAllowsEveryAdvertisedFamilyAndKeepsSurfaceBoundsIndependent(t *testing.T) {
 	for _, required := range []string{
 		"Every advertised family is already within the per-root response bound",
@@ -332,7 +364,7 @@ func TestCompileKeepsEarlyMainConnectorAndGroupsHighWitnessExternalFamily(t *tes
 	}
 
 	response, _ := json.Marshal(Response{
-		Version: ResultVersion, RequestRef: compilation.Request.RequestRef,
+		Version:          ResponseVersion,
 		Entries:          []ResponseEntry{{RootRef: entry.Ref, FamilyRefs: []string{router.Ref, connector.Ref}}},
 		SurfaceProposals: []ResponseSurfaceProposal{},
 	})
@@ -354,10 +386,10 @@ func TestReduceRequiresArrayAndRootedConnectivity(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 	entry := compilation.Request.Entries[0]
-	if _, err := Reduce(compilation, []byte(`{"version":3,"request_ref":"`+compilation.Request.RequestRef+`","entries":[{"root_ref":"r1","family_refs":null}],"surface_proposals":[]}`)); err == nil {
+	if _, err := Reduce(compilation, []byte(`{"version":4,"entries":[{"root_ref":"r1","family_refs":null}],"surface_proposals":[]}`)); err == nil {
 		t.Fatal("Reduce accepted null family_refs")
 	}
-	empty := Response{Version: ResultVersion, RequestRef: compilation.Request.RequestRef, Entries: []ResponseEntry{{RootRef: "r1", FamilyRefs: []string{}}}, SurfaceProposals: []ResponseSurfaceProposal{}}
+	empty := Response{Version: ResponseVersion, Entries: []ResponseEntry{{RootRef: "r1", FamilyRefs: []string{}}}, SurfaceProposals: []ResponseSurfaceProposal{}}
 	raw, _ := json.Marshal(empty)
 	result, err := Reduce(compilation, raw)
 	if err != nil {
@@ -377,7 +409,7 @@ func TestReduceRequiresArrayAndRootedConnectivity(t *testing.T) {
 			disconnected = family.Ref
 		}
 	}
-	raw, _ = json.Marshal(Response{Version: ResultVersion, RequestRef: compilation.Request.RequestRef, Entries: []ResponseEntry{{RootRef: "r1", FamilyRefs: []string{disconnected}}}, SurfaceProposals: []ResponseSurfaceProposal{}})
+	raw, _ = json.Marshal(Response{Version: ResponseVersion, Entries: []ResponseEntry{{RootRef: "r1", FamilyRefs: []string{disconnected}}}, SurfaceProposals: []ResponseSurfaceProposal{}})
 	result, err = Reduce(compilation, raw)
 	if err != nil || result.SelectedFamilyCount() != 0 || result.RejectedFamilyCount() != 1 ||
 		result.Entries[0].RejectedFamilies[0].Ref != disconnected {
@@ -410,7 +442,7 @@ func TestReduceRetainsRootedFamiliesAndRejectsOnlyUnreachableSibling(t *testing.
 	// Select a valid rooted chain plus the deep router family without its
 	// connector in a second disconnected branch. Only that unreachable ref is
 	// rejected; the expensive response is not discarded wholesale.
-	raw, _ := json.Marshal(Response{Version: ResultVersion, RequestRef: compilation.Request.RequestRef,
+	raw, _ := json.Marshal(Response{Version: ResponseVersion,
 		Entries: []ResponseEntry{{RootRef: entry.Ref, FamilyRefs: []string{connector, router, disconnected}}}, SurfaceProposals: []ResponseSurfaceProposal{}})
 	result, err := Reduce(compilation, raw)
 	if err != nil {
@@ -421,7 +453,7 @@ func TestReduceRetainsRootedFamiliesAndRejectsOnlyUnreachableSibling(t *testing.
 	}
 	// Removing the connector makes only router unreachable; the direct family
 	// remains useful and accepted.
-	raw, _ = json.Marshal(Response{Version: ResultVersion, RequestRef: compilation.Request.RequestRef,
+	raw, _ = json.Marshal(Response{Version: ResponseVersion,
 		Entries: []ResponseEntry{{RootRef: entry.Ref, FamilyRefs: []string{router, disconnected}}}, SurfaceProposals: []ResponseSurfaceProposal{}})
 	result, err = Reduce(compilation, raw)
 	if err != nil {
@@ -438,7 +470,7 @@ func TestArtifactsAreBoundedStrictAndPreserveEmptyArrays(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, _ := json.Marshal(Response{Version: ResultVersion, RequestRef: compilation.Request.RequestRef, Entries: []ResponseEntry{{RootRef: "r1", FamilyRefs: []string{}}}, SurfaceProposals: []ResponseSurfaceProposal{}})
+	raw, _ := json.Marshal(Response{Version: ResponseVersion, Entries: []ResponseEntry{{RootRef: "r1", FamilyRefs: []string{}}}, SurfaceProposals: []ResponseSurfaceProposal{}})
 	result, err := Reduce(compilation, raw)
 	if err != nil {
 		t.Fatal(err)
@@ -478,6 +510,66 @@ func TestArtifactsAreBoundedStrictAndPreserveEmptyArrays(t *testing.T) {
 		if restored, err := DecodeStatus(statusRaw); err != nil || restored.Reason != reason {
 			t.Fatalf("DecodeStatus(%s) = %+v, %v", reason, restored, err)
 		}
+	}
+}
+
+func TestDecodeExactPreviousV3ArtifactsPreservesBackendRequestBinding(t *testing.T) {
+	compilation, err := Compile(causalFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := emptySurfaceResponse(compilation)
+	result, err := Reduce(compilation, mustJSON(t, response))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result.RepositoryStateSHA256 = strings.Repeat("a", 64)
+	result.PromptVersion = legacyV3RequestRefPromptVersion
+	legacyResultRaw := mustJSON(t, result)
+	restoredResult, err := DecodeResult(legacyResultRaw)
+	if err != nil {
+		t.Fatalf("DecodeResult(previous v3): %v", err)
+	}
+	if restoredResult.PromptVersion != legacyV3RequestRefPromptVersion ||
+		restoredResult.RequestRef != compilation.Request.RequestRef ||
+		restoredResult.RequestSHA256 != compilation.RequestSHA256() {
+		t.Fatalf("previous v3 result lost exact backend request binding: %+v", restoredResult)
+	}
+	if _, err := EncodeResult(result); err == nil {
+		t.Fatal("EncodeResult accepted a previous prompt identity for a new artifact")
+	}
+
+	status := Status{
+		Version: StatusVersion, State: StatusAccepted, PromptVersion: legacyV3RequestRefPromptVersion,
+		RequestRef: compilation.Request.RequestRef, RequestSHA256: compilation.RequestSHA256(),
+		SubstrateSHA256: compilation.SubstrateSHA256, RepositoryStateSHA256: result.RepositoryStateSHA256,
+		ResultSHA256: sha256Hex(legacyResultRaw), AdvertisedFamilies: compilation.AdvertisedFamilyCount(),
+		SurfaceCandidateCoverage: compilation.SurfaceCoverage(),
+	}
+	legacyStatusRaw := mustJSON(t, status)
+	restoredStatus, err := DecodeStatus(legacyStatusRaw)
+	if err != nil {
+		t.Fatalf("DecodeStatus(previous v3): %v", err)
+	}
+	if restoredStatus.PromptVersion != legacyV3RequestRefPromptVersion ||
+		restoredStatus.RequestRef != compilation.Request.RequestRef ||
+		restoredStatus.RequestSHA256 != compilation.RequestSHA256() ||
+		restoredStatus.ResultSHA256 != sha256Hex(legacyResultRaw) {
+		t.Fatalf("previous v3 status lost exact artifact binding: %+v", restoredStatus)
+	}
+	if _, err := EncodeStatus(status); err == nil {
+		t.Fatal("EncodeStatus accepted a previous prompt identity for a new artifact")
+	}
+
+	unknownPrompt := cloneResult(result)
+	unknownPrompt.PromptVersion = "entry-call-compression-prompt-unknown"
+	if _, err := DecodeResult(mustJSON(t, unknownPrompt)); err == nil {
+		t.Fatal("DecodeResult accepted an unrecognized v3 prompt identity")
+	}
+	invalidDigest := cloneResult(result)
+	invalidDigest.RequestSHA256 = "bad"
+	if _, err := DecodeResult(mustJSON(t, invalidDigest)); err == nil {
+		t.Fatal("DecodeResult relaxed request digest validation for previous v3")
 	}
 }
 
@@ -1103,6 +1195,53 @@ func TestGotenbergThirteenFamilySelectionIsAcceptedAndPreservesExactCommand(t *t
 	}
 }
 
+func TestReduceBindsBackendRequestRefAndKeepsTwentyNineKnownFamilies(t *testing.T) {
+	compilation, err := Compile(familyLimitFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := compilation.Request.Entries[0]
+	const selectedCount = 29
+	if len(entry.Families) < selectedCount {
+		t.Fatalf("fixture families = %d, want at least %d", len(entry.Families), selectedCount)
+	}
+	refs := make([]string, 0, selectedCount)
+	for _, family := range entry.Families[:selectedCount] {
+		refs = append(refs, family.Ref)
+	}
+	response := emptySurfaceResponse(compilation)
+	response.Entries[0].FamilyRefs = refs
+	raw := mustJSON(t, response)
+	if strings.Contains(string(raw), `"request_ref"`) {
+		t.Fatalf("provider response still carries backend-owned request_ref: %s", raw)
+	}
+	result, err := Reduce(compilation, raw)
+	if err != nil {
+		t.Fatalf("Reduce 29 exact refs without request_ref echo: %v", err)
+	}
+	if result.SelectedFamilyCount() != selectedCount || result.RejectedFamilyCount() != 0 ||
+		result.RequestRef != compilation.Request.RequestRef ||
+		result.RequestSHA256 != compilation.RequestSHA256() {
+		t.Fatalf("29-family backend binding = %+v", result)
+	}
+	previousResponse := response
+	previousResponse.Version = ResultVersion
+	if _, err := Reduce(compilation, mustJSON(t, previousResponse)); err == nil ||
+		!strings.Contains(err.Error(), "response identity mismatch") {
+		t.Fatalf("Reduce accepted previous provider response version %d: %v", ResultVersion, err)
+	}
+
+	unknown := emptySurfaceResponse(compilation)
+	unknown.Entries[0].FamilyRefs = append(append([]string{}, refs[:selectedCount-1]...), "f999")
+	rejected, err := Reduce(compilation, mustJSON(t, unknown))
+	if err == nil || !strings.Contains(err.Error(), "unknown family ref") {
+		t.Fatalf("unknown family ref did not reject atomically: %+v / %v", rejected, err)
+	}
+	if rejected.RequestRef != "" || rejected.SelectedFamilyCount() != 0 || rejected.Entries != nil {
+		t.Fatalf("unknown family ref leaked a partial result: %+v", rejected)
+	}
+}
+
 func TestFamilySelectionAcceptsFortyEightAdvertisedRefsAndRejectsFortyNine(t *testing.T) {
 	compilation, err := Compile(familyLimitFixture())
 	if err != nil {
@@ -1376,7 +1515,7 @@ func emptySurfaceResponse(compilation Compilation) Response {
 		entries = append(entries, ResponseEntry{RootRef: entry.Ref, FamilyRefs: []string{}})
 	}
 	return Response{
-		Version: ResultVersion, RequestRef: compilation.Request.RequestRef,
+		Version: ResponseVersion,
 		Entries: entries, SurfaceProposals: []ResponseSurfaceProposal{},
 	}
 }
@@ -1528,6 +1667,15 @@ func surfaceFixture() Substrate {
 		substrate.Coverage.SurfaceCandidateFactsIndexed += len(candidate.Facts)
 	}
 	return substrate
+}
+
+func mustJSON(t *testing.T, value any) []byte {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
 }
 
 func scheduledSurfaceFixture() Substrate {

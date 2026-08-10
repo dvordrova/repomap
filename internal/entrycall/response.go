@@ -12,7 +12,6 @@ import (
 
 type Response struct {
 	Version          int                       `json:"version"`
-	RequestRef       string                    `json:"request_ref"`
 	Entries          []ResponseEntry           `json:"entries"`
 	SurfaceProposals []ResponseSurfaceProposal `json:"surface_proposals"`
 }
@@ -145,8 +144,8 @@ func Reduce(compilation Compilation, raw []byte) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if response.Version != ResultVersion || response.RequestRef != compilation.Request.RequestRef ||
-		len(response.Entries) != len(compilation.Request.Entries) || response.SurfaceProposals == nil ||
+	if response.Version != ResponseVersion || len(response.Entries) != len(compilation.Request.Entries) ||
+		response.SurfaceProposals == nil ||
 		len(response.SurfaceProposals) > MaxSelectedSurfaceProposals {
 		return Result{}, fmt.Errorf("entry call: response identity mismatch")
 	}

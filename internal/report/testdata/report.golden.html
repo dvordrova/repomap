@@ -878,6 +878,7 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
   <noscript>
     <style>body > :not(noscript) { display: none !important; }</style>
     <p>This report requires JavaScript. The raw data is available in <code>report.json</code>.</p>
+
   </noscript>
   <header>
     <div class="rm-header-inner">
@@ -10359,22 +10360,25 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
     return projectedLocations[0] || null;
   }
 
-  // Entrypoints keeps Canvas15 as the sole grouping/participation authority,
-  // but the full local trigger catalog owns route, command and callback facts.
-  // Join the two only through their exact stable ID: labels, paths or source
-  // locations are not identity and must never correlate an unrelated record.
-  function discoveredEntrySurface(entry) {
+  function discoveredSurfaceRecord(entry) {
     var id = String(entry && entry.id || '');
     var kind = String(entry && entry.kind || '');
     if (!id) return null;
     var triggers = DATA.discovered_surfaces && Array.isArray(DATA.discovered_surfaces.triggers)
       ? DATA.discovered_surfaces.triggers : [];
     var matches = triggers.filter(function (trigger) {
-      return String(trigger && trigger.id || '') === id &&
-        String(trigger && trigger.surface_role || '') === 'entry_surface';
+      return String(trigger && trigger.id || '') === id && String(trigger && trigger.kind || '') === kind;
     });
-    return matches.length === 1 && String(matches[0] && matches[0].kind || '') === kind
-      ? matches[0] : null;
+    return matches.length === 1 ? matches[0] : null;
+  }
+
+  // Entrypoints keeps Canvas15 as the sole grouping/participation authority,
+  // but the full local trigger catalog owns route, command and callback facts.
+  // Join the two only through their exact stable ID: labels, paths or source
+  // locations are not identity and must never correlate an unrelated record.
+  function discoveredEntrySurface(entry) {
+    var trigger = discoveredSurfaceRecord(entry);
+    return String(trigger && trigger.surface_role || '') === 'entry_surface' ? trigger : null;
   }
 
   function entryCallSurfaceValue(value, fallbackKind) {
@@ -10474,6 +10478,81 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
       label: entrySurfaceIdentityLabel(trigger, null, String(trigger && trigger.kind || '')),
       locations: locations,
     };
+  }
+
+  function exactKnownHTTPRoutePath(trigger) {
+    var path = trigger && trigger.identity && trigger.identity.path;
+    if (String(trigger && trigger.kind || '') !== 'http_route' ||
+      String(trigger && trigger.resolution || '') !== 'exact' ||
+      !path || path.known !== true || !String(path.text || '').trim()) return '';
+    return String(path.text).trim();
+  }
+
+  function hasKnownHTTPHandler(trigger) {
+    var handler = trigger && trigger.handler;
+    var kind = String(handler && handler.kind || '');
+    return !!(handler && handler.known === true && (kind === 'function' || kind === 'method_value'));
+  }
+
+  function hasExactKnownHTTPHandler(trigger) {
+    return !!exactKnownHTTPRoutePath(trigger) && hasKnownHTTPHandler(trigger);
+  }
+
+  // A single physical registration can be emitted twice by complementary
+  // deterministic collectors: one exact route with its callback and one
+  // unresolved frontier at the same callsite. Presentation may suppress the
+  // weaker twin only when one exact path + line + route path and one resolved
+  // callback win unambiguously. Multiple resolved callbacks stay visible, and
+  // an identical route registered on another line remains a distinct card.
+  function dedupeLocalHTTPRegistrationItems(items) {
+    var byPhysicalSite = Object.create(null);
+    items.forEach(function (item, index) {
+      var trigger = item && item.catalogTrigger;
+      if (!trigger || String(item.kind || '') !== 'http_route') return;
+      var site = entrySurfaceRegistrationLocation(trigger, entrySurfacePrimaryLocation(item.entry) || item.entry);
+      if (!site) return;
+      var siteKey = [site.path, site.line].join('\u0000');
+      if (!byPhysicalSite[siteKey]) byPhysicalSite[siteKey] = [];
+      byPhysicalSite[siteKey].push({ index: index, trigger: trigger });
+    });
+    var omitted = Object.create(null);
+    Object.keys(byPhysicalSite).forEach(function (siteKey) {
+      var records = byPhysicalSite[siteKey];
+      var byRoutePath = Object.create(null);
+      records.forEach(function (record) {
+        var routePath = exactKnownHTTPRoutePath(record.trigger);
+        if (!routePath) return;
+        if (!byRoutePath[routePath]) byRoutePath[routePath] = [];
+        byRoutePath[routePath].push(record);
+      });
+      var routePaths = Object.keys(byRoutePath);
+      var soleWinner = null;
+      routePaths.forEach(function (routePath) {
+        var bucket = byRoutePath[routePath];
+        var resolved = bucket.filter(function (record) {
+          return hasExactKnownHTTPHandler(record.trigger);
+        });
+        // Equal-strength resolved records are ambiguous even when their text
+        // happens to match. Keep them all instead of guessing one authority.
+        if (resolved.length !== 1) return;
+        var winner = resolved[0];
+        bucket.forEach(function (record) {
+          if (record.index !== winner.index && !hasKnownHTTPHandler(record.trigger)) {
+            omitted[record.index] = true;
+          }
+        });
+        if (routePaths.length === 1) soleWinner = winner;
+      });
+      if (!soleWinner) return;
+      records.forEach(function (record) {
+        // A path-less frontier can only be correlated when this physical site
+        // has one exact route path. A resolved dynamic callback remains visible.
+        if (!exactKnownHTTPRoutePath(record.trigger) && !hasKnownHTTPHandler(record.trigger)) {
+          omitted[record.index] = true;
+        }
+      });
+    });
+    return items.filter(function (_, index) { return !omitted[index]; });
   }
 
   function entryCallSurfaceLaunchpadItems() {
@@ -10804,6 +10883,7 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
         projected: projected,
         kind: String(entry && entry.kind || ''),
         trigger: discoveredEntrySurface(entry),
+        catalogTrigger: discoveredSurfaceRecord(entry),
       });
     });
     projectedGroups.forEach(function (projected) {
@@ -10818,6 +10898,7 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
       }
     });
     entryCallSurfaceLaunchpadItems().forEach(function (item) { items.push(item); });
+    items = dedupeLocalHTTPRegistrationItems(items);
     var grouped = Object.create(null);
     items.forEach(function (item) {
       var kind = item.kind || 'other';

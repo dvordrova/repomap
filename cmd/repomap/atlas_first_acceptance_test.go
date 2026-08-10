@@ -860,7 +860,7 @@ func atlasFirstAcceptanceEntryCallResponse(combined string) ([]byte, error) {
 		return nil, fmt.Errorf("decode entry-call request: %w", err)
 	}
 	response := entrycall.Response{
-		Version: entrycall.ResultVersion, RequestRef: request.RequestRef,
+		Version:          entrycall.ResponseVersion,
 		Entries:          make([]entrycall.ResponseEntry, 0, len(request.Entries)),
 		SurfaceProposals: []entrycall.ResponseSurfaceProposal{},
 	}

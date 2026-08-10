@@ -12,10 +12,10 @@
   }
 
   function canonicalTargetIndex() {
-    var params = new URLSearchParams(String(window.location && window.location.search || ''));
-    var values = params.getAll('target');
-    if (values.length !== 1 || !/^(0|[1-9][0-9]*)$/.test(values[0])) return -1;
-    var value = Number(values[0]);
+    var search = String(window.location && window.location.search || '');
+    var match = /^\?target=(0|[1-9][0-9]*)$/.exec(search);
+    if (!match) return -1;
+    var value = Number(match[1]);
     return Number.isSafeInteger(value) ? value : -1;
   }
 
