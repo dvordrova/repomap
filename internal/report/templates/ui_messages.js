@@ -35,7 +35,8 @@
   // an exact deterministic CLI descriptor override the equivalent model
   // proposal. UI33 makes entry ordering locale-independent and reports the
   // complete bounded candidate outcome without claiming an exhaustive catalog.
-  var VERSION = 33;
+  // UI34 gives every Russian frontier count its correct grammatical form.
+  var VERSION = 34;
   var EN = {
     "main.browser_error.invalid_report_artifact": { params: [], text: "The saved report is invalid or exceeds the supported size." },
     "main.browser_error.no_saved_reports": { params: [], text: "No saved reports are available." },
@@ -1300,7 +1301,7 @@
     "main.map.entry.context.not_drawn_calls": { params: ["count"], format: function (params) { return "Не показано стрелками на карте: " + params.count; } },
     "main.map.entry.context.limit": { params: [], text: "Только статический первый переход; порядок выполнения и продолжение не установлены." },
     "main.map.entry.model_frontier.summary": { params: ["count"], format: function (params) { return "Статические свидетельства с участием модели · " + params.count; } },
-    "main.map.entry.model_frontier.result": { params: ["shown", "rejected", "unproposed"], format: function (params) { return params.shown + " восстановлено · " + params.rejected + " предложений отклонено · по " + params.unproposed + " кандидатам модель не предложила точку входа"; } },
+    "main.map.entry.model_frontier.result": { params: ["shown", "rejected", "unproposed"], format: function (params) { return russianCount(params.shown, "точка входа восстановлена", "точки входа восстановлены", "точек входа восстановлено") + " · " + russianCount(params.rejected, "предложение отклонено", "предложения отклонены", "предложений отклонено") + " · " + russianCount(params.unproposed, "кандидату", "кандидатам", "кандидатам") + " модель не предложила точку входа"; } },
     "main.map.entry.model_frontier.bounds": { params: ["candidates", "facts", "unsafe", "unreachable"], format: function (params) { return params.candidates + " кандидатов и " + params.facts + " фактов пропущено по лимитам · " + params.unsafe + " небезопасных фактов и " + params.unreachable + " недостижимых кандидатов исключено локально"; } },
     "main.overview": { params: [], text: "Обзор" },
     "main.study": { params: [], text: "Изучение" },
