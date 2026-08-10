@@ -6778,6 +6778,7 @@
 	function renderMapModeControl() {
 		var control = el('div', 'rm-map-lens-control rm-map-mode-control');
 		control.setAttribute('role', 'group');
+		control.setAttribute('aria-label', msg('main.map.mode.group'));
 		allowedMapModes().forEach(function (mode) {
 			var button = txt('button', 'rm-map-lens-button rm-map-mode-button', mode.label);
 			button.type = 'button';
@@ -7023,6 +7024,7 @@
     function renderPackages(query) {
       packagesHost.replaceChildren();
       query = String(query || '').trim().toLocaleLowerCase();
+      var shownDeclarations = 0;
       (Array.isArray(projection.packages) ? projection.packages : []).forEach(function (pkg, packageIndex) {
         var declarations = (Array.isArray(pkg && pkg.declarations) ? pkg.declarations : []).filter(function (declaration) {
           if (!query) return true;
@@ -7036,6 +7038,7 @@
           ].join(' ').toLocaleLowerCase().indexOf(query) >= 0;
         });
         if (query && declarations.length === 0) return;
+        shownDeclarations += declarations.length;
         var group = el('details', 'rm-library-api-package');
         group.open = packageIndex === 0 || !!query;
         var heading = el('summary', 'rm-library-api-package__summary');
@@ -7046,6 +7049,12 @@
         group.appendChild(body);
         packagesHost.appendChild(group);
       });
+      if (query && shownDeclarations === 0) {
+        var empty = txt('p', 'rm-library-api-empty', msg('main.map.api.no_results'));
+        empty.setAttribute('role', 'status');
+        empty.setAttribute('aria-live', 'polite');
+        packagesHost.appendChild(empty);
+      }
     }
     search.addEventListener('input', function () { renderPackages(search.value); });
     renderPackages('');
@@ -7060,6 +7069,23 @@
       var root = family && family.root_declaration;
       return String(root && root.path || '') === path && Number(root && root.line) === line;
     });
+  }
+
+  function entrySurfacePrimaryLocation(entry) {
+    // ArchitectureSurface evidence is producer-ordered: registration or
+    // descriptor/server evidence precedes shared process ancestry. Keep that
+    // exact priority for the card while retaining the full sorted projection
+    // for identity matching.
+    var surface = ((DATA.architecture_canvas && DATA.architecture_canvas.surfaces) || []).filter(function (candidate) {
+      return String(candidate && candidate.id || '') === String(entry && entry.id || '');
+    })[0] || null;
+    var producerLocations = Array.isArray(surface && surface.evidence) ? surface.evidence : [];
+    var primary = producerLocations.filter(function (location) {
+      return !!String(location && location.path || '') && Number(location && location.line) > 0;
+    })[0] || null;
+    if (primary) return primary;
+    var projectedLocations = Array.isArray(entry && entry.locations) ? entry.locations : [];
+    return projectedLocations[0] || null;
   }
 
   function renderEntryCallFamilyDisclosure(families) {
@@ -7115,13 +7141,14 @@
     return { calls: handoffs.length, areas: Object.keys(areaIDs).length, outside: outside };
   }
 
-  function renderEntrypointCard(entry, projected, host, projectedGroups) {
+  function renderEntrypointCard(entry, projected, host, projectedGroups, entryKind) {
     var card = el('article', 'rm-map-entry-card');
     var heading = el('div', 'rm-map-entry-card__heading');
     heading.appendChild(txt('h3', '', bareSourceSymbol(entry && (entry.symbol || entry.label)) || msg('main.map.lens.entry.process')));
     heading.appendChild(renderEntrypointLocationAction(entry, msg('main.map.entry.context.entry_source')));
     card.appendChild(heading);
-    var families = entryCallFamiliesForLocation(entry);
+    var families = String(entryKind || entry && entry.claim_kind || '') === 'process_entry'
+      ? entryCallFamiliesForLocation(entry) : [];
     if (families.length) card.appendChild(txt('p', 'rm-map-entry-card__meta', msg('main.map.entry.direct_families', {
       count: families.length,
     })));
@@ -7149,6 +7176,7 @@
       projection.entry_handoff_groups || [];
     var surfaces = [];
     var seen = Object.create(null);
+    var attachedGroupIDs = Object.create(null);
     var entrypointGroups = projection.objects && projection.objects.entrypoints || projection.entrypoints || [];
     entrypointGroups.forEach(function (group) {
       (group.entries || []).forEach(function (entry) {
@@ -7159,29 +7187,32 @@
     surfaces.forEach(function (entry) {
       var projected = projectedGroups.filter(function (candidate) {
         var groupEntry = candidate && candidate.group && candidate.group.entry;
+        var candidateID = String(candidate && candidate.id || '');
+        // Route/server evidence legitimately includes its process ancestry.
+        // That shared location is not the identity of the process entry.
+        if (attachedGroupIDs[candidateID] ||
+          String(entry && entry.kind || '') !== String(groupEntry && groupEntry.claim_kind || '')) return false;
         return (Array.isArray(entry && entry.locations) ? entry.locations : []).some(function (location) {
           return String(location && location.path || '') === String(groupEntry && groupEntry.path || '') &&
             Number(location && location.line) === Number(groupEntry && groupEntry.line);
         });
       })[0] || null;
+      if (projected) attachedGroupIDs[String(projected.id || '')] = true;
+      var primary = entrySurfacePrimaryLocation(entry);
       var exact = projected && projected.group && projected.group.entry || {
-        path: entry.locations && entry.locations[0] && entry.locations[0].path,
-        line: entry.locations && entry.locations[0] && entry.locations[0].line,
-        column: entry.locations && entry.locations[0] && entry.locations[0].column,
+        path: primary && primary.path,
+        line: primary && primary.line,
+        column: primary && primary.column,
         symbol: entry.label,
         label: entry.label,
       };
-      host.appendChild(renderEntrypointCard(exact, projected, host, projectedGroups));
+      host.appendChild(renderEntrypointCard(exact, projected, host, projectedGroups, entry && entry.kind));
     });
     projectedGroups.forEach(function (projected) {
       var entry = projected && projected.group && projected.group.entry;
-      var alreadyShown = surfaces.some(function (surface) {
-        return (surface.locations || []).some(function (location) {
-          return String(location.path || '') === String(entry && entry.path || '') &&
-            Number(location.line) === Number(entry && entry.line);
-        });
-      });
-      if (!alreadyShown && entry) host.appendChild(renderEntrypointCard(entry, projected, host, projectedGroups));
+      if (!attachedGroupIDs[String(projected && projected.id || '')] && entry) {
+        host.appendChild(renderEntrypointCard(entry, projected, host, projectedGroups, entry && entry.claim_kind));
+      }
     });
   }
 

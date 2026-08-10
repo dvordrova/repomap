@@ -133,6 +133,55 @@ const report = {
   }] },
   repository_atlas: { version: 1, units: [], entities: [], observations: [], evidence: [], relations: [] },
 };
+if (process.argv[4] === "moby") {
+  const processLocation = { path: "cmd/dockerd/main.go", line: 16, column: 6 };
+  function mobySurface(id, kind, name, path, line, column, componentIDs) {
+    return {
+      id, kind, name, surface_role: "entry_surface", participating_component_ids: componentIDs || [],
+      evidence: [{ path, line, column }, processLocation, { path: "daemon/command/docker.go", line: 32, column: 9 }],
+    };
+  }
+  const mobyGroup = group("entry-group-dockerd", "github.com/moby/moby/v2/cmd/dockerd.main",
+    "cmd/dockerd/main.go", ["c1", "c2"], transition(
+      "github.com/moby/moby/v2/daemon/command.NewDaemonRunner", "cmd/dockerd/main.go", 30, 35,
+      { label: "github.com/moby/moby/v2/daemon/command.NewDaemonRunner", path: "daemon/command/docker.go", line: 94, column: 6 },
+      ["c2"]
+    ));
+  mobyGroup.entry.line = 16;
+  mobyGroup.entry.column = 6;
+  report.repo_name = "github.com/moby/moby";
+  report.analysis_target.package_dir = "cmd/dockerd";
+  report.analysis_target.package_path = "github.com/moby/moby/v2/cmd/dockerd";
+  report.analysis_target.roots = [processLocation];
+  report.openable_paths = [
+    "cmd/dockerd/main.go", "daemon/command/daemon.go", "daemon/command/docker.go",
+    "daemon/command/metrics.go", "daemon/daemon_unix.go", "daemon/internal/metrics/plugin_unix.go",
+    "daemon/libnetwork/diagnostic/server.go", "daemon/server/server.go",
+  ];
+  report.architecture_canvas.surfaces = [
+    mobySurface("trigger-root", "http_route", "/", "daemon/libnetwork/diagnostic/server.go", 35, 14, ["c2"]),
+    mobySurface("trigger-metrics", "http_route", "/metrics", "daemon/command/metrics.go", 26, 12, []),
+    mobySurface("trigger-metrics-server", "http_server", "HTTP server", "daemon/command/metrics.go", 33, 22, []),
+    mobySurface("trigger-ready", "http_route", "/ready", "daemon/libnetwork/diagnostic/server.go", 37, 14, ["c2"]),
+    mobySurface("trigger-api", "http_route", "/v{version:[0-9.]+}/{path:.*}", "daemon/server/server.go", 146, 14, []),
+    mobySurface("trigger-diagnostic-server", "http_server", "HTTP server", "daemon/libnetwork/diagnostic/server.go", 97, 31, ["c2"]),
+    mobySurface("trigger-daemon-server", "http_server", "HTTP server", "daemon/command/daemon.go", 377, 30, ["c1", "c2"]),
+    mobySurface("trigger-plugin-server", "http_server", "HTTP server", "daemon/internal/metrics/plugin_unix.go", 125, 22, ["c2"]),
+    mobySurface("trigger-plugin-metrics", "http_route", "/metrics", "daemon/internal/metrics/plugin_unix.go", 118, 12, ["c2"]),
+    mobySurface("trigger-help", "http_route", "/help", "daemon/libnetwork/diagnostic/server.go", 36, 14, ["c2"]),
+    { id: "trigger-main", kind: "process_entry", name: "main", surface_role: "entry_surface",
+      participating_component_ids: ["c1"], evidence: [processLocation] },
+    { id: "trigger-worker", kind: "worker", name: "background sync", surface_role: "runtime_activity",
+      participating_component_ids: ["c2"], evidence: [{ path: "daemon/command/daemon.go", line: 400, column: 2 }, processLocation] },
+  ];
+  report.architecture_canvas.entry_handoff_groups = [mobyGroup];
+  report.entry_call.families = Array.from({ length: 6 }, (_, index) => ({
+    caller_label: index === 0 ? "dockerd · main" : "command · newDaemonCommand",
+    callee_label: "command · family" + String(index + 1), witness_count: 1,
+    root_declaration: processLocation,
+    callsites: [{ path: index === 0 ? "cmd/dockerd/main.go" : "daemon/command/docker.go", line: 30 + index, column: 9 }],
+  }));
+}
 const window = {
   location: { hash: "#canvas", host: "fixture.test", pathname: "/index.html", search: "" },
   history: { state: null, pushState(state, _, hash) { this.state = state; window.location.hash = hash; }, replaceState(state, _, hash) { this.state = state; window.location.hash = hash; }, back() {} },
@@ -197,6 +246,14 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
   const familyRows = lensHost ? lensHost.querySelectorAll(".rm-map-entry-family-row") : [];
   const selectedBeforeExplore = selectedGroups.slice();
   if (explore[0] && typeof explore[0].onclick === "function") explore[0].onclick();
+  const cardLabels = cards.map((card) => card.children[0] && card.children[0].children[0]
+    ? card.children[0].children[0].textContent : "");
+  const cardSourceHrefs = cards.map((card) => {
+    const source = card.querySelector(".rm-source-action-link");
+    return source && source.getAttribute("href") || "";
+  });
+  const cardFamilyRowCounts = cards.map((card) => card.querySelectorAll(".rm-map-entry-family-row").length);
+  const cardExploreCounts = cards.map((card) => card.querySelectorAll(".rm-map-entry-card__explore").length);
   process.stdout.write(JSON.stringify({
     targetCount: targetLinks.length,
     targetHref: targetLinks[0] && targetLinks[0].getAttribute("href") || "",
@@ -210,6 +267,7 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
     entryCardCount: cards.length, exploreCount: explore.length,
     familyDisclosureCount: familyDetails.length,
     familyRowText: familyRows.map((node) => node.textContent),
+    cardLabels, cardSourceHrefs, cardFamilyRowCounts, cardExploreCounts,
     sourceActionCount: sourceActions.length,
     sourceHrefs: sourceActions.map((item) => item.getAttribute("href") || ""),
     selectedBeforeExplore,
@@ -226,9 +284,9 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
 		t.Fatal(err)
 	}
 
-	run := func(language string) entryHandoffAssetResult {
+	run := func(language, fixture string) entryHandoffAssetResult {
 		t.Helper()
-		output, err := exec.Command(node, runnerPath, asset, language).CombinedOutput()
+		output, err := exec.Command(node, runnerPath, asset, language, fixture).CombinedOutput()
 		if err != nil {
 			t.Fatalf("run entry handoff workspace (%s): %v\n%s", language, err, output)
 		}
@@ -239,7 +297,7 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
 		return got
 	}
 
-	en := run("en")
+	en := run("en", "baseline")
 	if en.TargetCount != 1 || en.TargetHref != "#canvas" || en.TargetCurrent != "page" || en.Hash != "#canvas" {
 		t.Fatalf("single executable target rail = %#v", en)
 	}
@@ -280,13 +338,44 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
 		}
 	}
 
-	ru := run("ru")
+	ru := run("ru", "baseline")
 	if strings.Join(ru.InitialModeIDs, ",") != strings.Join(en.InitialModeIDs, ",") ||
 		ru.EntryCardCount != en.EntryCardCount || ru.ExploreCount != en.ExploreCount ||
 		ru.FamilyDisclosureCount != en.FamilyDisclosureCount ||
 		ru.SourceActionCount != en.SourceActionCount || ru.LensHostMode != "entrypoints" ||
 		len(ru.InitialSelectedGroups) != 0 {
 		t.Fatalf("neutral start or explicit Entrypoints behavior changed across locales: EN %#v RU %#v", en, ru)
+	}
+
+	moby := run("ru", "moby")
+	if moby.InitialEntryCardCount != 0 || !moby.InitialContextHidden || len(moby.InitialSelectedGroups) != 0 ||
+		moby.EntryCardCount != 11 || moby.ExploreCount != 1 || moby.FamilyDisclosureCount != 1 ||
+		len(moby.FamilyRowText) != 6 || len(moby.SelectedBeforeExplore) != 0 ||
+		strings.Join(moby.SelectedGroups, ",") != "entry-group-dockerd" ||
+		strings.Join(moby.SelectedStates, ",") != "true" {
+		t.Fatalf("Moby-shaped Entrypoints launchpad duplicated or auto-selected process context: %#v", moby)
+	}
+	mainCards := 0
+	uniqueCards := make(map[string]struct{}, len(moby.CardLabels))
+	for index, label := range moby.CardLabels {
+		if label == "main" {
+			mainCards++
+			if moby.CardFamilyRowCounts[index] != 6 || moby.CardExploreCounts[index] != 1 ||
+				!strings.Contains(moby.CardSourceHrefs[index], "/cmd/dockerd/main.go#L16") {
+				t.Fatalf("Moby process card did not exclusively own source, calls and Explore: %#v", moby)
+			}
+		} else {
+			if moby.CardFamilyRowCounts[index] != 0 || moby.CardExploreCounts[index] != 0 ||
+				strings.Contains(moby.CardSourceHrefs[index], "/cmd/dockerd/main.go#L16") {
+				t.Fatalf("Moby route/server card inherited process context: label=%q result=%#v", label, moby)
+			}
+		}
+		uniqueCards[label+"\x00"+moby.CardSourceHrefs[index]] = struct{}{}
+	}
+	if mainCards != 1 || len(uniqueCards) != 11 || !containsString(moby.CardLabels, "/metrics") ||
+		!containsString(moby.CardLabels, "/ready") || !containsString(moby.CardLabels, "/help") ||
+		containsString(moby.CardLabels, "background sync") {
+		t.Fatalf("Moby exact entry surfaces were collapsed, duplicated or polluted by runtime activity: %#v", moby)
 	}
 }
 
@@ -604,6 +693,10 @@ type entryHandoffAssetResult struct {
 	ExploreCount          int      `json:"exploreCount"`
 	FamilyDisclosureCount int      `json:"familyDisclosureCount"`
 	FamilyRowText         []string `json:"familyRowText"`
+	CardLabels            []string `json:"cardLabels"`
+	CardSourceHrefs       []string `json:"cardSourceHrefs"`
+	CardFamilyRowCounts   []int    `json:"cardFamilyRowCounts"`
+	CardExploreCounts     []int    `json:"cardExploreCounts"`
 	SourceActionCount     int      `json:"sourceActionCount"`
 	SourceHrefs           []string `json:"sourceHrefs"`
 	SelectedBeforeExplore []string `json:"selectedBeforeExplore"`

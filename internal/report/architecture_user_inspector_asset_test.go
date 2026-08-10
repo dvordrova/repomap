@@ -918,14 +918,26 @@ class Element {
  keydown(key){(this.listeners.keydown||[]).forEach(f=>f({key,preventDefault(){},stopPropagation(){}}));}
  focus(){document.activeElement=this;} contains(x){return x===this||this.children.some(c=>c&&c.contains&&c.contains(x));}
  getBoundingClientRect(){return {left:0,top:0,right:300,bottom:180,width:300,height:180};}
- querySelector(){return null;} querySelectorAll(){return [];} scrollIntoView(){}
+ querySelector(selector){if(selector===".rm-arch__component-card")return walk(this).find(n=>has(n,"rm-arch__component-card"))||null;return null;}
+ querySelectorAll(selector){
+  if(!String(selector).includes("button:not([disabled])"))return [];
+  return walk(this).slice(1).filter(n=>{
+   const tabindex=n.getAttribute?n.getAttribute("tabindex"):null;
+   if(tabindex==="-1"||n.disabled)return false;
+   if(n.tagName==="BUTTON"||n.tagName==="SUMMARY"||n.tagName==="INPUT"||n.tagName==="SELECT"||n.tagName==="TEXTAREA")return true;
+   if(n.tagName==="A"&&n.href)return true;
+   return tabindex!==null;
+  });
+ }
+ scrollIntoView(){}
 }
 const walk=(root)=>{const out=[];(function visit(x){if(!x)return;out.push(x);(x.children||[]).forEach(visit);})(root);return out;};
 const has=(x,c)=>String(x.className).split(/\s+/).includes(c);
 const visible=(x)=>{for(let n=x;n;n=n.parentNode)if(n.hidden)return false;return true;};
 const document={createElement:t=>new Element(t),createElementNS:(_n,t)=>new Element(t),createTextNode:v=>{const n=new Element("#text");n.textContent=String(v);return n;},getElementById:()=>null,querySelector:()=>null,querySelectorAll:()=>[],addEventListener(){},removeEventListener(){},body:new Element("body"),documentElement:new Element("html")};
 document.activeElement=document.body;
-const window={document,location:{hash:"#/map"},AbortController,Set,Map,URLSearchParams,Promise,requestAnimationFrame:f=>f(),clearTimeout,setTimeout,innerWidth:1440,innerHeight:1000,addEventListener(){},removeEventListener(){},RepomapUI:{message:id=>id}};
+const windowListeners={};
+const window={document,location:{hash:"#/map"},AbortController,Set,Map,URLSearchParams,Promise,requestAnimationFrame:f=>f(),clearTimeout,setTimeout,innerWidth:1440,innerHeight:1000,ELK:function(){},addEventListener(k,f){(windowListeners[k]||(windowListeners[k]=[])).push(f);},removeEventListener(){},RepomapUI:{message:id=>id}};
 const sandbox={window,document,Element,AbortController,Set,Map,URLSearchParams,Promise,requestAnimationFrame:f=>f(),clearTimeout,setTimeout,console,addEventListener(){},removeEventListener(){}};
 sandbox.global=sandbox;vm.createContext(sandbox);vm.runInContext(fs.readFileSync(process.argv[2],"utf8"),sandbox);
 const kinds=["process_entry","cli_command","http_route","worker","async_task","http_server"];
@@ -936,23 +948,38 @@ const studies=Array.from({length:10},(_,i)=>({route_kind:"theme",ordinal:i+1,que
 const associations=Array.from({length:14},(_,i)=>({kind:i===1?"resource":"boundary",paired:i<2,imported_family:i<2?"family/paired":"family/"+i,owning_unit:i<2?"pkg/paired":"pkg/unit"+i,observation_count:1,witnesses:[{symbol:"Call"+i,path:"pkg/call"+i+".go",line:i+1,role:"production"}]}));
 const host=new Element("div"),opened=[],openedThemes=[],visibility=[];
 const app=window.RepomapArchitectureCanvas.mount(host,{components:[
- {id:"core",name:"Core",description:"Main responsibility",owned_surface_ids:surfaces.map(s=>s.id),members:[]},
- {id:"plain",name:"Plain",description:"No linked Study theme",owned_surface_ids:[],members:[]},
-],subsystems:[],groups:[],structural_edges:[],behavior_anchors:[],relations:[],surfaces,flows:[]},{userMode:true,message:(id,params)=>id+(params&&params.count!=null?":"+params.count:""),onInspectorVisibilityChange:value=>visibility.push(value),openSourceLocation:l=>opened.push(l),openStudyTheme:ordinal=>openedThemes.push(ordinal),openStudyDirection(){},openComponent(){},componentContexts:{
+ {id:"core",subsystem_id:"application",name:"Core",description:"Main responsibility",owned_surface_ids:surfaces.map(s=>s.id),members:[]},
+ {id:"plain",subsystem_id:"application",name:"Plain",description:"No linked Study theme",owned_surface_ids:[],members:[]},
+],subsystems:[{id:"application",name:"Application",component_ids:["core","plain"]}],groups:[],structural_edges:[],behavior_anchors:[],relations:[],surfaces,flows:[]},{userMode:true,message:(id,params)=>id+(params&&params.count!=null?":"+params.count:""),onInspectorVisibilityChange:value=>visibility.push(value),openSourceLocation:l=>opened.push(l),openStudyTheme:ordinal=>openedThemes.push(ordinal),openStudyDirection(){},openComponent(){},componentContexts:{
  core:{sources,surface_starts:starts,studies,structural_relations:[],package_targets:[],package_paths:[],member_count:120,authority:"validated",evidence_composition:"exact"},
  plain:{sources:[{detail:"Plain",location:{path:"pkg/plain.go",line:1,column:1},actionable:true,source_type:"symbol"}],surface_starts:[],studies:[],structural_relations:[],package_targets:[],package_paths:[],member_count:1,authority:"validated",evidence_composition:"exact"},
 },associations:{components:[{component_id:"core",incoming:[],outgoing:[],associations},{component_id:"plain",incoming:[],outgoing:[],associations:[]}]}});
 app.ready.then(()=>{
  const surface=walk(host).find(n=>has(n,"rm-arch__surface")),transformBefore=surface&&surface.style.transform||"",hashBefore=window.location.hash;
- app.openComponent("core"); const nodes=walk(host),tabs=nodes.filter(n=>n.getAttribute&&n.getAttribute("role")==="tab"),panels=nodes.filter(n=>n.getAttribute&&n.getAttribute("role")==="tabpanel");
+ const componentCards=walk(host).filter(n=>has(n,"rm-arch__component-card"));
+ const originCard=componentCards.find(card=>walk(card).some(child=>child.textContent==="Core"));
+ app.openComponent("core");
+ const nodes=walk(host),tabs=nodes.filter(n=>n.getAttribute&&n.getAttribute("role")==="tab"),panels=nodes.filter(n=>n.getAttribute&&n.getAttribute("role")==="tabpanel");
+ const inspector=nodes.find(n=>has(n,"rm-arch__inspector")),inspectorClose=nodes.find(n=>has(n,"rm-arch__inspector-close"));
+ const visibleSummaries=walk(inspector).filter(n=>n.tagName==="SUMMARY"&&visible(n)),lastVisibleSummary=visibleSummaries[visibleSummaries.length-1];
+ const dialogContract=inspector.getAttribute("role")==="dialog"&&inspector.getAttribute("aria-modal")==="true";
+ const initialCloseFocus=document.activeElement===inspectorClose;
+ const dispatchTab=(active,shiftKey)=>{document.activeElement=active;const event={key:"Tab",shiftKey,prevented:false,preventDefault(){this.prevented=true;},stopPropagation(){}};(inspector.listeners.keydown||[]).forEach(f=>f(event));return event.prevented;};
+ const shiftTabWrapped=!!lastVisibleSummary&&dispatchTab(inspectorClose,true)&&document.activeElement===lastVisibleSummary;
+ const tabWrapped=!!lastVisibleSummary&&dispatchTab(lastVisibleSummary,false)&&document.activeElement===inspectorClose;
  const summaryNoise={keyValues:nodes.filter(n=>visible(n)&&has(n,"rm-arch__key-value")).length,countPills:nodes.filter(n=>visible(n)&&has(n,"rm-arch__summary-count")).length,grids:nodes.filter(n=>visible(n)&&has(n,"rm-arch__summary-grid")).length,emptyPlaceholders:nodes.filter(n=>has(n,"rm-arch__inspector-empty")).length};
  const initialOnlySummary=panels.filter(p=>!p.hidden).length===1&&!panels[0].hidden,initialSelected=tabs[0].getAttribute("aria-selected"),tabLabels=tabs.map(n=>String(n.textContent||"")),primarySources=nodes.filter(n=>visible(n)&&has(n,"rm-arch__component-primary-source")),primary=primarySources[0],primaryStudies=nodes.filter(n=>visible(n)&&has(n,"rm-arch__primary-study")),primaryStudy=primaryStudies[0],sourceDisclosures=nodes.filter(n=>visible(n)&&has(n,"rm-arch__source-starts-all")),remainingSources=sourceDisclosures.length===1?walk(sourceDisclosures[0]).filter(n=>has(n,"rm-arch__source-start")&&!has(n,"rm-arch__component-primary-source")).length:0;if(primary)primary.click();if(primaryStudy)primaryStudy.click();
  tabs[0].keydown("ArrowRight");const connectionsSelected=tabs[1].getAttribute("aria-selected")==="true"&&document.activeElement===tabs[1]&&!panels[1].hidden;
  const connectionEntryGroups=walk(panels[1]).filter(n=>has(n,"rm-arch__entry-group")).length;
+ tabs[1].keydown("Home");const homeSelected=tabs[0].getAttribute("aria-selected")==="true"&&document.activeElement===tabs[0]&&!panels[0].hidden;
+ tabs[0].keydown("End");const endSelected=tabs[1].getAttribute("aria-selected")==="true"&&document.activeElement===tabs[1]&&!panels[1].hidden;
  tabs[1].keydown("ArrowRight");const summaryWrapped=tabs[0].getAttribute("aria-selected")==="true"&&document.activeElement===tabs[0]&&!panels[0].hidden;
+ tabs[0].keydown("ArrowLeft");const connectionsWrappedLeft=tabs[1].getAttribute("aria-selected")==="true"&&document.activeElement===tabs[1]&&!panels[1].hidden;
+ const escapeEvent={key:"Escape",prevented:false,preventDefault(){this.prevented=true;},stopPropagation(){}};(windowListeners.keydown||[]).forEach(f=>f(escapeEvent));
+ const escapeHidden=inspector.hidden,escapeReturnedFocus=document.activeElement===originCard,componentCardCount=componentCards.length;
  app.openComponent("plain");const plainNodes=walk(host),plainStudyActions=plainNodes.filter(n=>has(n,"rm-arch__primary-study")).length;
  const close=walk(host).find(n=>has(n,"rm-arch__inspector-close"));if(close)close.click();
- process.stdout.write(JSON.stringify({tabCount:tabs.length,panelCount:panels.length,tabLabels,initialSelected,initialOnlySummary,summaryNoise,primarySourceCount:primarySources.length,primaryStudyCount:primaryStudies.length,sourceDisclosureCount:sourceDisclosures.length,remainingSources,connectionsSelected,connectionEntryGroups,summaryWrapped,plainStudyActions,opened,openedThemes,visibility,transformStable:transformBefore===(surface&&surface.style.transform||""),hashStable:hashBefore===window.location.hash}));
+ process.stdout.write(JSON.stringify({tabCount:tabs.length,panelCount:panels.length,tabLabels,initialSelected,initialOnlySummary,dialogContract,initialCloseFocus,shiftTabWrapped,tabWrapped,summaryNoise,primarySourceCount:primarySources.length,primaryStudyCount:primaryStudies.length,sourceDisclosureCount:sourceDisclosures.length,remainingSources,connectionsSelected,connectionEntryGroups,homeSelected,endSelected,summaryWrapped,connectionsWrappedLeft,escapeHidden,escapeReturnedFocus,componentCardCount,plainStudyActions,opened,openedThemes,visibility,transformStable:transformBefore===(surface&&surface.style.transform||""),hashStable:hashBefore===window.location.hash}));
 }).catch(e=>{process.stdout.write(JSON.stringify({mountError:String(e&&e.stack||e)}));process.exit(2);});
 `
 	runnerPath := filepath.Join(t.TempDir(), "architecture-high-cardinality-inspector.js")
@@ -968,6 +995,10 @@ app.ready.then(()=>{
 		TabLabels                   []string
 		InitialSelected             string
 		InitialOnlySummary          bool
+		DialogContract              bool
+		InitialCloseFocus           bool
+		ShiftTabWrapped             bool
+		TabWrapped                  bool
 		SummaryNoise                struct{ KeyValues, CountPills, Grids, EmptyPlaceholders int }
 		PrimarySourceCount          int
 		PrimaryStudyCount           int
@@ -975,7 +1006,13 @@ app.ready.then(()=>{
 		RemainingSources            int
 		ConnectionsSelected         bool
 		ConnectionEntryGroups       int
+		HomeSelected                bool
+		EndSelected                 bool
 		SummaryWrapped              bool
+		ConnectionsWrappedLeft      bool
+		EscapeHidden                bool
+		EscapeReturnedFocus         bool
+		ComponentCardCount          int
 		PlainStudyActions           int
 		Opened                      []struct{ Path string }
 		OpenedThemes                []int
@@ -989,12 +1026,15 @@ app.ready.then(()=>{
 	visibilityOK := len(got.Visibility) >= 3 && !got.Visibility[0] && got.Visibility[1] && !got.Visibility[len(got.Visibility)-1]
 	if got.MountError != "" || got.TabCount != 2 || got.PanelCount != 2 ||
 		strings.Join(got.TabLabels, "|") != "architecture.tab.summary|architecture.tab.connections" ||
-		got.InitialSelected != "true" || !got.InitialOnlySummary ||
+		got.InitialSelected != "true" || !got.InitialOnlySummary || !got.DialogContract ||
+		!got.InitialCloseFocus || !got.ShiftTabWrapped || !got.TabWrapped ||
 		got.SummaryNoise.KeyValues != 0 || got.SummaryNoise.CountPills != 0 ||
 		got.SummaryNoise.Grids != 0 || got.SummaryNoise.EmptyPlaceholders != 0 ||
 		got.PrimarySourceCount != 1 || got.PrimaryStudyCount != 1 ||
 		got.SourceDisclosureCount != 1 || got.RemainingSources != 29 ||
-		!got.ConnectionsSelected || got.ConnectionEntryGroups != 6 || !got.SummaryWrapped ||
+		!got.ConnectionsSelected || got.ConnectionEntryGroups != 6 ||
+		!got.HomeSelected || !got.EndSelected || !got.SummaryWrapped || !got.ConnectionsWrappedLeft ||
+		!got.EscapeHidden || !got.EscapeReturnedFocus || got.ComponentCardCount != 2 ||
 		got.PlainStudyActions != 0 || len(got.Opened) != 1 || got.Opened[0].Path != "pkg/source0.go" ||
 		len(got.OpenedThemes) != 1 || got.OpenedThemes[0] != 1 ||
 		!visibilityOK || !got.TransformStable || !got.HashStable {
