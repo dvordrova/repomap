@@ -872,12 +872,26 @@ func validateThemeScoutRequestAgainstInput(request themestudy.ScoutRequest, inpu
 			present[ordinal] = struct{}{}
 			previous = ordinal
 			want := ordered[ordinal-1]
-			if pack.Seed.Path != want.Location.Path || pack.Seed.Line != want.Location.Line ||
-				pack.Seed.Symbol != want.Symbol ||
-				pack.Seed.CanonicalSpanID != spanByTarget[want.ID] ||
-				pack.Seed.Kind != "focused" || pack.Seed.Role != themestudy.RolePublicAPI ||
-				pack.Seed.Provenance != "d211_span_reading_target" {
-				return fmt.Errorf("Scout seed %q does not match its selected public API root", pack.Seed.Ref)
+			if pack.Seed.Path != want.Location.Path {
+				return fmt.Errorf("Scout seed %q path does not match its selected public API root", pack.Seed.Ref)
+			}
+			if pack.Seed.Line != want.Location.Line {
+				return fmt.Errorf("Scout seed %q line does not match its selected public API root", pack.Seed.Ref)
+			}
+			if pack.Seed.Symbol != want.Symbol {
+				return fmt.Errorf("Scout seed %q symbol does not match its selected public API root", pack.Seed.Ref)
+			}
+			if pack.Seed.CanonicalSpanID != spanByTarget[want.ID] {
+				return fmt.Errorf("Scout seed %q canonical span does not match its selected public API root", pack.Seed.Ref)
+			}
+			if pack.Seed.Kind != "focused" {
+				return fmt.Errorf("Scout seed %q kind does not match its selected public API root", pack.Seed.Ref)
+			}
+			if pack.Seed.Role != themestudy.RolePublicAPI {
+				return fmt.Errorf("Scout seed %q role does not match its selected public API root", pack.Seed.Ref)
+			}
+			if pack.Seed.Provenance != "d211_span_reading_target" {
+				return fmt.Errorf("Scout seed %q provenance does not match its selected public API root", pack.Seed.Ref)
 			}
 		}
 		missing := make([]string, 0, len(ordered)-len(present))

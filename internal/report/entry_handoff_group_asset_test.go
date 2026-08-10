@@ -175,12 +175,119 @@ if (process.argv[4] === "moby") {
       participating_component_ids: ["c2"], evidence: [{ path: "daemon/command/daemon.go", line: 400, column: 2 }, processLocation] },
   ];
   report.architecture_canvas.entry_handoff_groups = [mobyGroup];
+  function triggerValue(kind, text, known) {
+    return { kind, text, known: known !== false, candidates: [] };
+  }
+  function mobyTrigger(id, kind, identity, handler, registration, handlerLocation) {
+    return {
+      id, kind, surface_role: "entry_surface", provisional_id: false,
+      identity, handler, registration_site: registration,
+      server_start_site: kind === "http_server" ? registration : null,
+      handler_location: handlerLocation || null,
+      process_entrypoint: { name: "main", location: processLocation },
+    };
+  }
+  report.discovered_surfaces = { triggers: [
+    mobyTrigger("trigger-root", "http_route", {path:triggerValue("constant", "/", true)},
+      triggerValue("function", "github.com/moby/moby/v2/daemon/libnetwork/diagnostic.notImplemented", true),
+      {path:"daemon/libnetwork/diagnostic/server.go",line:35,column:14}),
+    // Ambiguous stable IDs fail closed even when one candidate has the same
+    // kind, label and location as the Canvas entry.
+    mobyTrigger("trigger-root", "cli_command", {path:triggerValue("command_segment", "poison", true)},
+      triggerValue("function", "fixture.poison", true),
+      {path:"daemon/libnetwork/diagnostic/server.go",line:35,column:14}),
+    mobyTrigger("trigger-metrics", "http_route", {path:triggerValue("constant", "/metrics", true)},
+      {kind:"unknown",text:"result of github.com/docker/go-metrics.Handler",known:false,candidates:[]},
+      {path:"daemon/command/metrics.go",line:26,column:12}),
+    mobyTrigger("trigger-ready", "http_route", {method:"get",path:triggerValue("constant", "/ready", true)},
+      triggerValue("function", "github.com/moby/moby/v2/daemon/libnetwork/diagnostic.ready", true),
+      {path:"daemon/libnetwork/diagnostic/server.go",line:37,column:14}),
+    mobyTrigger("trigger-api", "http_route", {path:triggerValue("constant", "/v{version:[0-9.]+}/{path:.*}", true)},
+      triggerValue("function", "github.com/moby/moby/v2/daemon/server.CreateMux$1", true),
+      {path:"daemon/server/server.go",line:146,column:14}),
+    mobyTrigger("trigger-help", "http_route", {path:triggerValue("constant", "/help", true)},
+      triggerValue("function", "github.com/moby/moby/v2/daemon/libnetwork/diagnostic.help", true),
+      {path:"daemon/libnetwork/diagnostic/server.go",line:36,column:14}),
+    mobyTrigger("trigger-metrics-server", "http_server", {name:"HTTP server",path:triggerValue("allocation", "listener", true)},
+      triggerValue("allocation", "**net/http.ServeMux@daemon/command/metrics.go:25:2", true),
+      {path:"daemon/command/metrics.go",line:33,column:22}),
+    mobyTrigger("trigger-diagnostic-server", "http_server", {name:"HTTP server",path:triggerValue("allocation", "listener", true)},
+      triggerValue("allocation", "server.Handler", true),
+      {path:"daemon/libnetwork/diagnostic/server.go",line:97,column:31}),
+    mobyTrigger("trigger-daemon-server", "http_server", {name:"HTTP server",path:triggerValue("allocation", "listener", true)},
+      triggerValue("field", "server.Handler", true),
+      {path:"daemon/command/daemon.go",line:377,column:30}),
+    mobyTrigger("trigger-plugin-server", "http_server", {name:"HTTP server",path:triggerValue("allocation", "listener", true)},
+      triggerValue("allocation", "server.Handler", true),
+      {path:"daemon/internal/metrics/plugin_unix.go",line:125,column:22}),
+    mobyTrigger("trigger-main", "process_entry", {name:"main",path:triggerValue("declaration", "cmd/dockerd/main.go", true)},
+      triggerValue("declaration", "github.com/moby/moby/v2/cmd/dockerd.main", true), processLocation),
+    // Similar text without the Canvas stable ID is never rendered.
+    mobyTrigger("trigger-poison", "http_route", {path:triggerValue("constant", "/ready", true)},
+      triggerValue("function", "fixture.poison", true),
+      {path:"daemon/libnetwork/diagnostic/server.go",line:37,column:14}),
+  ] };
   report.entry_call.families = Array.from({ length: 6 }, (_, index) => ({
     caller_label: index === 0 ? "dockerd · main" : "command · newDaemonCommand",
     callee_label: "command · family" + String(index + 1), witness_count: 1,
     root_declaration: processLocation,
     callsites: [{ path: index === 0 ? "cmd/dockerd/main.go" : "daemon/command/docker.go", line: 30 + index, column: 9 }],
   }));
+}
+if (process.argv[4] === "legacy-cli") {
+  const processLocation = { path: "cmd/restic/main.go", line: 20, column: 6 };
+  const cliSurfaces = [];
+  const cliTriggers = [];
+  const cliFiles = [];
+  for (let index = 0; index < 37; index++) {
+    const ordinal = String(index).padStart(2, "0");
+    const id = "legacy-cli-" + ordinal;
+    const exactRoot = index === 36;
+    const name = exactRoot ? "restic" : index === 0 ? "ls" : "command-" + ordinal;
+    const path = "cmd/restic/cmd_" + ordinal + ".go";
+    const registration = { path: "cmd/restic/main.go", line: 76 + index, column: 16 };
+    // One same-location record proves the UI deduplicates identical exact
+    // registration/handler actions without collapsing distinct locations.
+    const handlerLocation = index === 1 ? registration : { path, line: 65, column: 9 };
+    cliFiles.push(path);
+    cliSurfaces.push({
+      id, kind: "cli_command", name: "wrong canvas label " + ordinal,
+      surface_role: "entry_surface", participating_component_ids: ["c1"],
+      evidence: [registration, handlerLocation],
+    });
+    cliTriggers.push({
+      id, kind: "cli_command", surface_role: "entry_surface", provisional_id: !exactRoot,
+      identity: {
+        path: { kind: "command_segment", text: name, known: exactRoot, candidates: exactRoot ? [] : [name] },
+        name,
+      },
+      handler: {
+        kind: "function",
+        text: "github.com/restic/restic/cmd/restic.func_literal@" + path + ":65:9",
+        known: true,
+        candidates: [],
+      },
+      registration_site: registration,
+      handler_location: handlerLocation,
+      process_entrypoint: { name: "main", location: processLocation },
+    });
+  }
+  report.repo_name = "github.com/restic/restic";
+  report.openable_paths = ["cmd/restic/main.go"].concat(cliFiles);
+  report.architecture_canvas.surfaces = [{
+    id: "legacy-main", kind: "process_entry", name: "main", surface_role: "entry_surface",
+    participating_component_ids: ["c1"], evidence: [processLocation],
+  }].concat(cliSurfaces);
+  report.architecture_canvas.entry_handoff_groups = [];
+  report.entry_call.families = [];
+  report.discovered_surfaces = {
+    triggers: cliTriggers.concat([{
+      id: "legacy-cli-poison", kind: "cli_command", surface_role: "entry_surface",
+      identity: { path: { kind: "command_segment", text: "poison", known: true, candidates: [] }, name: "poison" },
+      handler: { kind: "function", text: "fixture.poison", known: true, candidates: [] },
+      registration_site: { path: "cmd/restic/main.go", line: 999, column: 1 },
+    }]),
+  };
 }
 const window = {
   location: { hash: "#canvas", host: "fixture.test", pathname: "/index.html", search: "" },
@@ -246,14 +353,30 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
   const familyRows = lensHost ? lensHost.querySelectorAll(".rm-map-entry-family-row") : [];
   const selectedBeforeExplore = selectedGroups.slice();
   if (explore[0] && typeof explore[0].onclick === "function") explore[0].onclick();
-  const cardLabels = cards.map((card) => card.children[0] && card.children[0].children[0]
-    ? card.children[0].children[0].textContent : "");
+  const cardLabels = cards.map((card) => {
+    const identity = card.querySelector(".rm-map-entry-card__identity");
+    return identity ? identity.textContent : "";
+  });
+  const cardCallbacks = cards.map((card) => {
+    const callback = card.querySelector(".rm-map-entry-card__callback");
+    return callback ? callback.textContent : "";
+  });
+  const cardSourceText = cards.map((card) => {
+    const sources = card.querySelector(".rm-map-entry-card__sources");
+    return sources ? sources.textContent : "";
+  });
   const cardSourceHrefs = cards.map((card) => {
     const source = card.querySelector(".rm-source-action-link");
     return source && source.getAttribute("href") || "";
   });
   const cardFamilyRowCounts = cards.map((card) => card.querySelectorAll(".rm-map-entry-family-row").length);
   const cardExploreCounts = cards.map((card) => card.querySelectorAll(".rm-map-entry-card__explore").length);
+  const entryGroups = root.querySelectorAll(".rm-map-entry-group");
+  const cliGroup = entryGroups.find((group) => group.getAttribute("data-entry-surface-kind") === "cli_command");
+  const cliPrimaryList = cliGroup && cliGroup.children.find((child) =>
+    String(child.className || "").split(/\s+/).includes("rm-map-entry-group__list") &&
+    !String(child.className || "").split(/\s+/).includes("rm-map-entry-group__list--remainder"));
+  const cliMore = cliGroup && cliGroup.querySelector(".rm-map-entry-group__more");
   process.stdout.write(JSON.stringify({
     targetCount: targetLinks.length,
     targetHref: targetLinks[0] && targetLinks[0].getAttribute("href") || "",
@@ -267,7 +390,13 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
     entryCardCount: cards.length, exploreCount: explore.length,
     familyDisclosureCount: familyDetails.length,
     familyRowText: familyRows.map((node) => node.textContent),
-    cardLabels, cardSourceHrefs, cardFamilyRowCounts, cardExploreCounts,
+    cardLabels, cardCallbacks, cardSourceText, cardSourceHrefs, cardFamilyRowCounts, cardExploreCounts,
+    groupKinds: entryGroups.map((group) => group.getAttribute("data-entry-surface-kind") || ""),
+    groupText: entryGroups.map((group) => group.children[0] ? group.children[0].textContent : ""),
+    cliVisibleCount: cliPrimaryList ? cliPrimaryList.children.length : 0,
+    cliMoreCount: cliMore ? cliMore.querySelectorAll(".rm-map-entry-card").length : 0,
+    cliMoreText: cliMore ? cliMore.textContent : "",
+    cliMoreOpen: !!(cliMore && cliMore.open),
     sourceActionCount: sourceActions.length,
     sourceHrefs: sourceActions.map((item) => item.getAttribute("href") || ""),
     selectedBeforeExplore,
@@ -373,10 +502,57 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
 		uniqueCards[label+"\x00"+moby.CardSourceHrefs[index]] = struct{}{}
 	}
 	if mainCards != 1 || len(uniqueCards) != 11 || !containsString(moby.CardLabels, "/metrics") ||
-		!containsString(moby.CardLabels, "/ready") || !containsString(moby.CardLabels, "/help") ||
+		!containsString(moby.CardLabels, "GET /ready") || !containsString(moby.CardLabels, "/help") ||
 		!containsString(moby.CardLabels, "/v{version:[0-9.]+}/{path:.*}") || containsString(moby.CardLabels, "*}") ||
 		containsString(moby.CardLabels, "background sync") {
 		t.Fatalf("Moby exact entry surfaces were collapsed, duplicated or polluted by runtime activity: %#v", moby)
+	}
+	if strings.Join(moby.GroupKinds, ",") != "process_entry,http_route,http_server" ||
+		!strings.Contains(strings.Join(moby.GroupText, " "), "HTTP-маршруты6") ||
+		strings.Contains(moby.Text, "fixture.poison") || strings.Contains(moby.Text, "ServeMux") ||
+		strings.Contains(moby.Text, "result of github.com/docker/go-metrics.Handler") {
+		t.Fatalf("Moby surface groups or fail-closed callbacks = %#v", moby)
+	}
+	readyIndex := -1
+	metricsUnresolved := 0
+	for index, label := range moby.CardLabels {
+		if label == "GET /ready" {
+			readyIndex = index
+		}
+		if label == "/metrics" && moby.CardCallbacks[index] == "обработчик не разрешён" {
+			metricsUnresolved++
+		}
+	}
+	if readyIndex < 0 || moby.CardCallbacks[readyIndex] != "ready()" ||
+		!strings.Contains(moby.CardSourceText[readyIndex], "Регистрация") ||
+		strings.Contains(moby.CardSourceText[readyIndex], "Обработчик") ||
+		!strings.Contains(moby.CardSourceHrefs[readyIndex], "/daemon/libnetwork/diagnostic/server.go#L37") ||
+		metricsUnresolved != 1 {
+		t.Fatalf("fresh Moby route callback was not causally restored from its exact catalog ID: %#v", moby)
+	}
+
+	legacyCLI := run("ru", "legacy-cli")
+	if strings.Join(legacyCLI.GroupKinds, ",") != "process_entry,cli_command" ||
+		legacyCLI.EntryCardCount != 38 || legacyCLI.CLIVisibleCount != 6 || legacyCLI.CLIMoreCount != 31 ||
+		legacyCLI.CLIMoreOpen || !strings.Contains(legacyCLI.CLIMoreText, "Показать ещё 31") ||
+		!strings.Contains(strings.Join(legacyCLI.GroupText, " "), "CLI-команды37") {
+		t.Fatalf("legacy CLI catalog was not bounded behind one honest native disclosure: %#v", legacyCLI)
+	}
+	if len(legacyCLI.CardLabels) < 7 || legacyCLI.CardLabels[1] != "restic" ||
+		containsString(legacyCLI.CardLabels, "wrong canvas label 00") ||
+		strings.Contains(legacyCLI.Text, "poison") ||
+		!strings.Contains(legacyCLI.Text, "анонимный обработчик") ||
+		!strings.Contains(legacyCLI.Text, "частичный путь") {
+		t.Fatalf("legacy CLI identity/callback enrichment did not follow the exact stable ID: %#v", legacyCLI)
+	}
+	// The second CLI fixture gives registration and handler the identical
+	// exact location. It must render one action, while the first keeps both.
+	if len(legacyCLI.CardSourceText) < 4 ||
+		strings.Count(legacyCLI.CardSourceText[2], "Регистрация") != 1 ||
+		strings.Contains(legacyCLI.CardSourceText[2], "Обработчик") ||
+		!strings.Contains(legacyCLI.CardSourceText[3], "Регистрация") ||
+		!strings.Contains(legacyCLI.CardSourceText[3], "Обработчик") {
+		t.Fatalf("legacy CLI exact registration/handler source actions were duplicated or lost: %#v", legacyCLI)
 	}
 }
 
@@ -695,9 +871,17 @@ type entryHandoffAssetResult struct {
 	FamilyDisclosureCount int      `json:"familyDisclosureCount"`
 	FamilyRowText         []string `json:"familyRowText"`
 	CardLabels            []string `json:"cardLabels"`
+	CardCallbacks         []string `json:"cardCallbacks"`
+	CardSourceText        []string `json:"cardSourceText"`
 	CardSourceHrefs       []string `json:"cardSourceHrefs"`
 	CardFamilyRowCounts   []int    `json:"cardFamilyRowCounts"`
 	CardExploreCounts     []int    `json:"cardExploreCounts"`
+	GroupKinds            []string `json:"groupKinds"`
+	GroupText             []string `json:"groupText"`
+	CLIVisibleCount       int      `json:"cliVisibleCount"`
+	CLIMoreCount          int      `json:"cliMoreCount"`
+	CLIMoreText           string   `json:"cliMoreText"`
+	CLIMoreOpen           bool     `json:"cliMoreOpen"`
 	SourceActionCount     int      `json:"sourceActionCount"`
 	SourceHrefs           []string `json:"sourceHrefs"`
 	SelectedBeforeExplore []string `json:"selectedBeforeExplore"`

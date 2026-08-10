@@ -800,7 +800,11 @@ func themeReadingTargetRole(input atlasstudy.Input, target atlasstudy.ReadingTar
 		case atlasstudy.SupportProcessEntry:
 			hints.PrimaryEntry = true
 		case atlasstudy.SupportAnalysisTargetRoot:
-			hints.PublicAPI = true
+			// The selected AnalysisTarget root is exact producer authority.
+			// Unlike a generic PublicAPI hint, it must not be reclassified as
+			// tooling/example/generated merely because of its repository path:
+			// D277 admits the build-selected exported callable itself.
+			return artifactrole.RolePublicAPI
 		}
 	}
 	return artifactrole.Classify(target.Location.Path, hints)
