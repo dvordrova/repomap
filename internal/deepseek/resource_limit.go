@@ -25,6 +25,9 @@ func annotateResourceLimit(err error, stage string, maxTokens int) error {
 		return err
 	}
 	annotated := resourceErr.Clone()
+	if annotated == nil {
+		return err
+	}
 	if annotated.Stage == "" {
 		annotated.Stage = stage
 	}

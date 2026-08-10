@@ -57,6 +57,9 @@ func (roots TargetRoots) Snapshot() TargetRoots {
 // DirectCallIndex. It performs no package load, SSA build, provider request or
 // symbol-name repair.
 func BindExactRoots(target Target, index *surfacediscovery.DirectCallIndex) (TargetRoots, error) {
+	if index == nil {
+		return TargetRoots{}, fmt.Errorf("analysis target roots: direct call index is nil")
+	}
 	if err := validateExactRootsInputs(target, index); err != nil {
 		return TargetRoots{}, err
 	}

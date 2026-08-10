@@ -609,6 +609,21 @@ func TestFreshPrimaryBackendBoundaryDoesNotBypassLookupLimit(t *testing.T) {
 	}
 }
 
+func TestFreshPrimaryBestBoundarySkipsIncompleteEvidence(t *testing.T) {
+	t.Parallel()
+
+	state := freshPrimaryPlannerState{}
+	function := freshPrimaryFunction{
+		Function: sourcewindowfacts.Function{Path: "worker.go", Symbol: "Worker.Run"},
+		Calls: []freshPrimaryCall{{
+			ImportPath: "os", Terminal: "WriteFile",
+		}},
+	}
+	if boundary := state.bestBoundary(function); boundary != nil {
+		t.Fatalf("boundary = %+v, want incomplete call evidence skipped", boundary)
+	}
+}
+
 func TestFreshPrimaryEffectResolutionExplainsBoundedFailure(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

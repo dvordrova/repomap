@@ -763,7 +763,10 @@ func studyReviewCacheDirectory(runsDir string, create bool) (string, bool) {
 			}
 			info, err = os.Lstat(directory)
 		}
-		if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		if err != nil {
+			return "", false
+		}
+		if info == nil || info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 			return "", false
 		}
 	}

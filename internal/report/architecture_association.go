@@ -369,6 +369,9 @@ func aggregateAssociationRows(rows []obsRow) []ArchitectureBoundaryResourceRow {
 		}
 		for _, e := range row.evidence {
 			role := classifySourceRole(e.Location.Path)
+			// keyIndex records idx only after appending the row at that exact
+			// position, and no code removes rows during aggregation.
+			//nolint:nilaway // local key-to-slice-index invariant proven above
 			out[idx].Witnesses = append(out[idx].Witnesses, ArchitectureAssociationWitness{
 				Path: e.Location.Path, Line: e.Location.Line, Symbol: e.Symbol, Role: role,
 			})

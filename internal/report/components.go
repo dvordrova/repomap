@@ -483,6 +483,9 @@ func buildComponentRelations(data *ReportData) []ComponentRelation {
 	}
 	relations := make([]ComponentRelation, 0, len(relationOrder))
 	for _, key := range relationOrder {
+		// relationOrder receives a key only after relationByKey receives its
+		// non-nil relation, and neither collection is mutated afterward.
+		//nolint:nilaway // local ordered-key-to-map-value invariant proven above
 		relations = append(relations, *relationByKey[key])
 	}
 	return relations

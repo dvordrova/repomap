@@ -2680,6 +2680,9 @@ func (a *analyzer) evalCall(call *ssa.Call, env environment, depth int) Value {
 			targetCount = maxValueAlternatives
 		}
 		candidates := make([]string, 0, targetCount)
+		// targetCount is derived from len(targets) and only reduced; targets[:0]
+		// is valid when targets is nil.
+		//nolint:nilaway
 		for _, target := range targets[:targetCount] {
 			candidates = append(candidates, a.functionID(target))
 		}
@@ -2813,7 +2816,9 @@ func (a *analyzer) targets(call ssa.CallInstruction) []*ssa.Function {
 			byImplementation[key] = function
 		}
 	}
-	result = result[:0]
+	// Slicing a nil slice to zero is valid Go and preserves the existing
+	// allocation for this hot call-target path.
+	result = result[:0] //nolint:nilaway
 	for _, function := range byImplementation {
 		result = append(result, function)
 	}

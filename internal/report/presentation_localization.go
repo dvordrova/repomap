@@ -112,12 +112,19 @@ func (bindings *presentationLocalizationBindings) addAddress(
 	return nil
 }
 
-func (bindings *presentationLocalizationBindings) specs() []localization.FieldSpec {
+func (bindings *presentationLocalizationBindings) specs() ([]localization.FieldSpec, error) {
+	if bindings == nil {
+		return nil, fmt.Errorf("report localization: presentation bindings are unavailable")
+	}
 	specs := make([]localization.FieldSpec, 0, len(bindings.ordered))
 	for _, id := range bindings.ordered {
-		specs = append(specs, bindings.byID[id].spec)
+		binding := bindings.byID[id]
+		if binding == nil {
+			return nil, fmt.Errorf("report localization: presentation binding %q is unavailable", id)
+		}
+		specs = append(specs, binding.spec)
 	}
-	return specs
+	return specs, nil
 }
 
 // PreparePresentationLocalization extracts the complete typed inventory of
@@ -131,7 +138,11 @@ func PreparePresentationLocalization(
 	if err != nil {
 		return PreparedPresentationLocalization{}, err
 	}
-	canonical, err := localization.NewCanonical(bindings.specs())
+	specs, err := bindings.specs()
+	if err != nil {
+		return PreparedPresentationLocalization{}, err
+	}
+	canonical, err := localization.NewCanonical(specs)
 	if err != nil {
 		return PreparedPresentationLocalization{}, fmt.Errorf(
 			"report localization: build canonical presentation: %w",

@@ -546,7 +546,6 @@ func prepareStudyMapV32WithOptions(
 	directionRaw, directionMetrics, directionAttempt, directionExchange, err := executeStudyMapV32Stage(
 		ctx, provider, directionPrompt, "study_direction_candidates", bundleSHA,
 	)
-	stages = append(stages, directionMetrics)
 	if err != nil {
 		recordStudyMapStageSemanticExchange(
 			options.exchangeWriter,
@@ -557,9 +556,10 @@ func prepareStudyMapV32WithOptions(
 		)
 		if isSemanticResourceLimit(err) {
 			directionMetrics.Status = "failed_provider"
-			stages[len(stages)-1] = directionMetrics
+			stages = append(stages, directionMetrics)
 			return studymap.Record{}, studymap.ReviewReduction{}, stages, err
 		}
+		stages = append(stages, directionMetrics)
 		_ = writeGoldenJSON(filepath.Join(runDir, studyMapDirectionsAttempt), directionAttempt)
 		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
 	}
@@ -593,21 +593,21 @@ func prepareStudyMapV32WithOptions(
 		)
 		if isSemanticResourceLimit(err) {
 			directionMetrics.Status = "failed_provider"
-			stages[len(stages)-1] = directionMetrics
+			stages = append(stages, directionMetrics)
 			return studymap.Record{}, studymap.ReviewReduction{}, stages, err
 		}
 		directionMetrics.Status = "rejected"
 		directionAttempt.Metrics = directionMetrics
 		directionAttempt.ValidationState = directionMetrics.Status
 		directionAttempt.FailureReason = semanticDiscoveryReason(err.Error())
-		stages[len(stages)-1] = directionMetrics
+		stages = append(stages, directionMetrics)
 		_ = writeGoldenJSON(filepath.Join(runDir, studyMapDirectionsAttempt), directionAttempt)
 		return studymap.Record{}, studymap.ReviewReduction{}, stages, err
 	}
 	directionMetrics.Status = "accepted"
 	directionAttempt.Metrics = directionMetrics
 	directionAttempt.ValidationState = directionMetrics.Status
-	stages[len(stages)-1] = directionMetrics
+	stages = append(stages, directionMetrics)
 	recordStudyMapStageSemanticExchange(
 		options.exchangeWriter,
 		debugdump.SemanticStageStudyDirections,

@@ -211,6 +211,9 @@ func runInvestigate(args []string, deps investigateDependencies) error {
 			}
 		}
 		provider, providerConfig, err = newProvider(false)
+		if err == nil && provider == nil {
+			err = fmt.Errorf("investigate: provider factory returned no provider")
+		}
 		if err == nil {
 			promptJSON, err = provider.TaskInvestigationPromptJSON(bundle)
 		}
@@ -247,6 +250,9 @@ func runInvestigate(args []string, deps investigateDependencies) error {
 			proposal, err = tasklens.LocalProposal(bundle)
 		}
 	} else {
+		if provider == nil {
+			return fmt.Errorf("investigate: provider is unavailable for semantic synthesis")
+		}
 		fmt.Fprintln(stderr, "repomap: editing one compact task investigation")
 		callStarted := time.Now()
 		result, callErr := provider.InvestigateTaskMeasured(ctx, bundle)

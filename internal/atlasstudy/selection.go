@@ -426,14 +426,34 @@ func orderedStudySpans(
 		}
 	}
 
-	// Replace only the root slots in the existing ordering. This leaves the
-	// cross-role behavior and every executable/non-root byte unchanged.
-	next := 0
-	for index := range result {
-		if _, root := rootIDs[result[index].ID]; root {
-			result[index] = orderedRoots[next]
-			next++
+	return replaceOrderedRootSlots(result, orderedRoots, rootIDs)
+}
+
+// replaceOrderedRootSlots leaves every non-root span in place while replacing
+// root slots in their request-budget order. The classifier currently makes the
+// number of slots and ordered roots identical. Keep that invariant fail-closed:
+// if a future root kind is added without an ordering bucket, retain the stable
+// ID order instead of publishing a partial reorder or panicking.
+func replaceOrderedRootSlots(
+	spans []RouteSpan,
+	orderedRoots []RouteSpan,
+	rootIDs map[string]struct{},
+) []RouteSpan {
+	result := make([]RouteSpan, 0, len(spans))
+	remainingRoots := orderedRoots
+	for _, span := range spans {
+		if _, root := rootIDs[span.ID]; !root {
+			result = append(result, span)
+			continue
 		}
+		if len(remainingRoots) == 0 {
+			return spans
+		}
+		result = append(result, remainingRoots[0])
+		remainingRoots = remainingRoots[1:]
+	}
+	if len(remainingRoots) != 0 {
+		return spans
 	}
 	return result
 }

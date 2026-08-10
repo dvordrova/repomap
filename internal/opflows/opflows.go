@@ -66,7 +66,7 @@ func Discover(
 	candidates := make([]gofacts.OrientationCandidate, 0, len(operationalCategories))
 	for _, category := range operationalCategories {
 		categorySignals := strongestSignals(groups[category], maxSignalsPerCategory)
-		if !meetsEvidenceThreshold(categorySignals) {
+		if len(categorySignals) == 0 || !meetsEvidenceThreshold(categorySignals) {
 			continue
 		}
 		files := distinctFiles(categorySignals)

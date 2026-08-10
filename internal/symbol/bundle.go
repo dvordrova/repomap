@@ -217,6 +217,8 @@ func factFromRelation(id string, entity evidence.Entity, relation evidence.Relat
 func buildCalls(prefix string, relations []evidence.Relation, entities map[string]evidence.Entity, maxCalls, maxProvenance int) ([]CallFact, int) {
 	limit := min(len(relations), maxCalls)
 	facts := make([]CallFact, 0, limit)
+	// limit is capped by len(relations), including the nil-slice case.
+	//nolint:nilaway
 	for i, relation := range relations[:limit] {
 		caller, callerOK := entities[relation.From]
 		callee, calleeOK := entities[relation.To]

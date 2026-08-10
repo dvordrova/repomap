@@ -492,6 +492,8 @@ func completeMissingRoleAnchors(
 			break
 		}
 		result = completed
+		// Both completion selectors return -1 or an index from ranging candidates.
+		//nolint:nilaway
 		if expansions == 0 {
 			candidates[candidateIndex].stage = RetrievalStageCompletion1
 		} else {
@@ -734,6 +736,8 @@ func completeVerificationAnchor(
 	if bestIndex < 0 {
 		return anchors
 	}
+	// bestIndex is assigned only from the candidates range above.
+	//nolint:nilaway
 	candidates[bestIndex].stage = RetrievalStageVerification
 	return best
 }

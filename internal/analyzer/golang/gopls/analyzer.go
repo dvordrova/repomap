@@ -759,7 +759,7 @@ func parseDocumentSymbols(output []byte, path string) []documentSymbol {
 		if depth > len(parents) {
 			depth = len(parents)
 		}
-		if depth > 0 {
+		if depth > 0 && len(parents) > 0 {
 			name = parents[depth-1] + "." + name
 		}
 		if len(parents) <= depth {

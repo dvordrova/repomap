@@ -264,6 +264,8 @@ func sharedDirectoryPrefixDepth(left, right string) int {
 	rightParts := pathDirectoryParts(right)
 	limit := min(len(leftParts), len(rightParts))
 	shared := 0
+	// limit is the smaller slice length, so both indexes are in range.
+	//nolint:nilaway
 	for shared < limit && leftParts[shared] == rightParts[shared] {
 		shared++
 	}

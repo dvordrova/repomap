@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"slices"
@@ -11,6 +12,8 @@ import (
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/gofacts"
+	"github.com/dvordrova/repomap/internal/modelresearch"
+	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 	"github.com/dvordrova/repomap/internal/themestudy"
 )
@@ -125,6 +128,30 @@ func TestD277TypesOnlyLibraryAcceptsExactZeroRootAuthorityBeforeProvider(t *test
 	if _, err := atlasstudy.Compile(input); err == nil ||
 		!strings.Contains(err.Error(), "no observed support roles") {
 		t.Fatalf("types-only provider-free compile outcome = %v", err)
+	}
+}
+
+func TestRunThemeStudyRejectsMissingLiveLibraryTargetBeforeDereference(t *testing.T) {
+	input := d277ThemeLibraryInput(t, 1)
+	target := input.AnalysisTargetRoot.AnalysisTarget.Snapshot()
+	_, err := runThemeStudyForRun(
+		context.Background(),
+		&report.ReportData{AnalysisTarget: &target},
+		nil,
+		nil,
+		nil,
+		t.TempDir(),
+		t.TempDir(),
+		t.TempDir(),
+		modelresearch.RepositoryContext{},
+		modelresearch.DefaultPolicy(),
+		false,
+		true,
+		themestudy.LanguageEnglish,
+		nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), "selected library root authority is unavailable") {
+		t.Fatalf("runThemeStudyForRun missing live target error = %v", err)
 	}
 }
 

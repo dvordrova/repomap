@@ -290,6 +290,9 @@ func projectWorkspacePackageGraph(
 		return nil, fmt.Errorf("workspace graph: package projection is unavailable")
 	}
 	selectedPackages := packageSelection.Packages()
+	if len(selectedPackages) != len(facts.Packages) {
+		return nil, fmt.Errorf("workspace graph: package projection shape differs")
+	}
 
 	selectedEdges, err := exactWorkspacePackageEdges(facts, graph)
 	if err != nil {

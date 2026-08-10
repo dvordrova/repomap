@@ -543,6 +543,9 @@ func compactEntrypointHandoffTargets(targets []entrypointHandoffTarget) []entryp
 			entrypointHandoffTargetKey(transition.Target),
 		)
 		if existing, duplicate := seen[key]; duplicate {
+			// seen stores len(result) only immediately before appending that
+			// target, and result is never shortened during this loop.
+			//nolint:nilaway // local dedup-key-to-slice-index invariant proven below
 			if transition.WitnessCount > result[existing].transition.WitnessCount {
 				result[existing].transition.WitnessCount = transition.WitnessCount
 			}

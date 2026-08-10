@@ -106,23 +106,28 @@ func runThemeStudyForRun(
 	if preparedData == nil {
 		return themeStudyRunOutcome{}, fmt.Errorf("theme study run: authorized prepared report data is required")
 	}
+	var libraryTarget analysistarget.Target
+	var libraryRoots analysistarget.TargetRoots
+	hasLibraryRootAuthority := false
 	if preparedData.AnalysisTarget != nil &&
 		preparedData.AnalysisTarget.Kind == analysistarget.KindLibraryPackage {
 		if analysisTarget == nil || directCallIndex == nil || targetRoots == nil ||
 			analysisTarget.Ref != preparedData.AnalysisTarget.Ref {
 			return themeStudyRunOutcome{}, fmt.Errorf("theme study run: selected library root authority is unavailable")
 		}
-		if err := analysistarget.ValidateExactRoots(*analysisTarget, directCallIndex, *targetRoots); err != nil {
+		libraryTarget = analysisTarget.Snapshot()
+		libraryRoots = targetRoots.Snapshot()
+		if err := analysistarget.ValidateExactRoots(libraryTarget, directCallIndex, libraryRoots); err != nil {
 			return themeStudyRunOutcome{}, fmt.Errorf("theme study run: validate selected library roots: %w", err)
 		}
+		hasLibraryRootAuthority = true
 	}
 	input, err := report.BuildAtlasStudyInput(preparedData, languageFromReport(language))
 	if err != nil {
 		return themeStudyRunOutcome{}, fmt.Errorf("theme study run: build exact input: %w", err)
 	}
-	if preparedData.AnalysisTarget != nil &&
-		preparedData.AnalysisTarget.Kind == analysistarget.KindLibraryPackage {
-		if err := validateThemeLibraryRootLocators(input, *analysisTarget, *targetRoots); err != nil {
+	if hasLibraryRootAuthority {
+		if err := validateThemeLibraryRootLocators(input, libraryTarget, libraryRoots); err != nil {
 			return themeStudyRunOutcome{}, fmt.Errorf("theme study run: bind selected library roots: %w", err)
 		}
 	}

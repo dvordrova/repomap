@@ -218,6 +218,9 @@ func prepareAtlasStudyRebuildData(runDir, repo string, base *report.ReportData) 
 	if err != nil && !report.IsExactWorkspaceGraphUnavailable(err) {
 		return nil, fmt.Errorf("theme scout request rebuild: read authorized run: %w", err)
 	}
+	if data == nil {
+		return nil, fmt.Errorf("theme scout request rebuild: authorized run returned no data")
+	}
 	if err := report.PrepareAuthorizedSourceCoverage(ctx, data, &authority); err != nil {
 		return nil, fmt.Errorf("theme scout request rebuild: prepare exact source coverage: %w", err)
 	}

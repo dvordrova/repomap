@@ -1653,7 +1653,7 @@ func findKnownDocsUnbounded(files []string) []string {
 	}
 
 	seen := make(map[string]struct{})
-	var docs []string
+	docs := make([]string, 0)
 
 	for _, f := range files {
 		if !isDocumentationFile(f) {

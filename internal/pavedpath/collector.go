@@ -831,6 +831,8 @@ func commandsFromRange(
 		commandStart := index
 		commandEnd := index
 		parts := []string{value}
+		// parts starts with value and is only appended to in this loop.
+		//nolint:nilaway
 		for strings.HasSuffix(strings.TrimSpace(parts[len(parts)-1]), "\\") && commandEnd < end {
 			commandEnd++
 			next := lines[commandEnd]
