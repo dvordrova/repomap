@@ -355,7 +355,7 @@ if (String(process.argv[4] || "").indexOf("model-assisted") === 0) {
     };
   }
   const localTrigger = {
-    id: "local-route", kind: "http_route", surface_role: "entry_surface", provisional_id: false,
+    id: "local-route", kind: "http_route", surface_role: "entry_surface", provisional_id: true,
     resolution: "exact", identity: { method: "GET", path: { kind: "constant", text: "/local", known: true, candidates: [] } },
     handler: { kind: "function", text: "fixture.local", known: true, candidates: [] },
     registration_site: localSite, handler_location: localHandler,

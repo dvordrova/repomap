@@ -1122,9 +1122,10 @@
 			// semantic-import major version suffix such as /v3 or .v3.
 			return displayPath === '.' ? rootTargetLabel() : displayPath;
 		}
-		if (TARGET_NAVIGATION && Number(TARGET_NAVIGATION.version) === 2 &&
+		var targetNavigationVersion = Number(TARGET_NAVIGATION && TARGET_NAVIGATION.version);
+		if (TARGET_NAVIGATION && (targetNavigationVersion === 2 || targetNavigationVersion === 3) &&
 			Array.isArray(TARGET_NAVIGATION.targets)) {
-			return TARGET_NAVIGATION.targets.map(function (item) {
+			return TARGET_NAVIGATION.targets.map(function (item, index) {
 				var moduleDir = String(item.module_dir || '.');
 				var ref = String(item.target_ref || '');
 				var displayPath = String(item.display_path || '');
@@ -1135,8 +1136,12 @@
 					label: targetLabel(displayPath, kind),
 					title: kind === 'module_library' ? (modulePath || displayPath) : displayPath,
 					goMod: moduleDir === '.' ? 'go.mod' : moduleDir + '/go.mod',
-					isDefault: ref === String(TARGET_NAVIGATION.default_target_ref || ''),
-					isActive: ref === String(TARGET_NAVIGATION.current_target_ref || ''),
+					isDefault: targetNavigationVersion === 3
+						? index === Number(TARGET_NAVIGATION.default_target_index)
+						: ref === String(TARGET_NAVIGATION.default_target_ref || ''),
+					isActive: targetNavigationVersion === 3
+						? index === Number(TARGET_NAVIGATION.current_target_index)
+						: ref === String(TARGET_NAVIGATION.current_target_ref || ''),
 					available: !!item.available,
 					href: String(item.href || ''),
 				};
@@ -7180,7 +7185,7 @@
 
   function entrySurfaceHTTPRegistrationPathKey(trigger) {
     if (String(trigger && trigger.kind || '') !== 'http_route' ||
-      trigger && trigger.provisional_id === true) return '';
+      String(trigger && trigger.resolution || '') !== 'exact') return '';
     // The deterministic SSA trigger and the generic syntax candidate can own
     // different exact columns within the same registration expression (for
     // example the path argument versus the call expression). Path + line is
@@ -7228,12 +7233,9 @@
       var exactCLIDescriptor = localKind === 'cli_command' && localRole === 'descriptor' &&
         String(trigger && trigger.resolution || '') === 'exact';
       if (localRole !== 'entry_surface' && !exactCLIDescriptor) return;
-      var key = entrySurfaceExactIdentityKey(trigger);
-      if (!key) return;
-      var previous = localByKey[key];
-      if (!previous || String(trigger.id || '').localeCompare(String(previous.id || '')) < 0) {
-        localByKey[key] = trigger;
-      }
+      // Populate the exact HTTP callsite fallback independently of the stable
+      // identity key: a deterministic trigger can have an intentionally
+      // provisional ID while its path, line and route identity are exact.
       var registrationPathKey = entrySurfaceHTTPRegistrationPathKey(trigger);
       if (registrationPathKey && !ambiguousHTTPRegistrationPaths[registrationPathKey]) {
         var priorPathTrigger = localHTTPByRegistrationPath[registrationPathKey];
@@ -7243,6 +7245,12 @@
           delete localHTTPByRegistrationPath[registrationPathKey];
           ambiguousHTTPRegistrationPaths[registrationPathKey] = true;
         }
+      }
+      var key = entrySurfaceExactIdentityKey(trigger);
+      if (!key) return;
+      var previous = localByKey[key];
+      if (!previous || String(trigger.id || '').localeCompare(String(previous.id || '')) < 0) {
+        localByKey[key] = trigger;
       }
     });
     var emitted = Object.create(null);
@@ -7565,7 +7573,9 @@
       var identity = trigger && trigger.identity || {};
       var exactPath = identity && identity.path && identity.path.known === true
         ? String(identity.path.text || '').trim() : '';
-      var exactIdentity = trigger && trigger.provisional_id !== true && !!exactPath;
+      var exactIdentity = trigger && !!exactPath && (item.kind === 'http_route'
+        ? String(trigger.resolution || '') === 'exact'
+        : trigger.provisional_id !== true);
       var callback = String(trigger && trigger.handler && trigger.handler.text || '').trim();
       var stableID = String(trigger && trigger.id || item.entry && item.entry.id || '');
       if (item.kind === 'process_entry' || item.kind === 'http_server') {

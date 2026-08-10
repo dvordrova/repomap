@@ -302,9 +302,10 @@ func buildHTMLWithSourceEpisode(
 		SourceEpisode:                 episode,
 		TargetNavigation:              options.TargetNavigation,
 	}
-	dataJSON, err := marshalHTMLPayload(
+	dataJSON, err := marshalHTMLPayloadWithLocalRoots(
 		payload,
 		rendered.GitLabSourceLinks != nil || rendered.GitHubSourceLinks != nil,
+		rendered.standaloneLocalRoots,
 	)
 	if err != nil {
 		return nil, err
@@ -800,6 +801,14 @@ func marshalHTMLPayload(payload any, standalone bool) ([]byte, error) {
 	if reportData, ok := payload.(*ReportData); ok && reportData != nil {
 		localRoots = reportData.standaloneLocalRoots
 	}
+	return marshalHTMLPayloadWithLocalRoots(payload, standalone, localRoots)
+}
+
+func marshalHTMLPayloadWithLocalRoots(
+	payload any,
+	standalone bool,
+	localRoots []string,
+) ([]byte, error) {
 	data, err := json.Marshal(payload)
 	if err != nil || !standalone {
 		return data, err

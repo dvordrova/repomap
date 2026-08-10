@@ -540,7 +540,11 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	offline := fs.Bool("offline", false, "skip model calls, build local facts/bundles only")
 	goTargetFlag := fs.String("go-target", "", "Go build target as GOOS/GOARCH (default: GOOS/GOARCH environment, then host)")
 	analysisTargetFlag := fs.String("target", "", "analysis surface (unambiguous advertised path or exact target key)")
-	allTargetsFlag := fs.Bool("all-targets", false, "publish every advertised Go module surface; --target chooses the default")
+	allTargetsFlag := fs.Bool(
+		"all-targets",
+		false,
+		"publish every advertised Go module surface; --target chooses the default; one GitHub/GitLab URL makes multi-target output one uploadable HTML file",
+	)
 	directCallDepth := fs.Int(
 		"depth", surfacediscovery.DefaultDirectCallDepth,
 		"target call-graph depth",
@@ -1511,6 +1515,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		SourceEpisodeJSON:     append([]byte(nil), sourceEpisodeJSON...),
 		GitLabURL:             gitLabURL,
 		GitHubURL:             gitHubURL,
+		AllTargets:            *allTargetsFlag,
 	}
 	if automaticGoTargetSelection != nil {
 		publishedTarget.GoTargetSource = automaticGoTargetSelection.Source
@@ -2160,7 +2165,7 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "  --offline       skip model calls, local facts only\n")
 	fmt.Fprintf(os.Stderr, "  --go-target GOOS/GOARCH select one Go build target (default: GOOS/GOARCH environment, then host)\n")
 	fmt.Fprintf(os.Stderr, "  --target TARGET select one advertised executable or module Library API\n")
-	fmt.Fprintf(os.Stderr, "  --all-targets   publish every advertised module surface; --target chooses the default\n")
+	fmt.Fprintf(os.Stderr, "  --all-targets   publish every advertised module surface; --target chooses the default; one GitHub/GitLab URL writes one uploadable multi-target HTML\n")
 	fmt.Fprintf(os.Stderr, "  --depth N        target call-graph depth (default: %d)\n", surfacediscovery.DefaultDirectCallDepth)
 	fmt.Fprintf(os.Stderr, "  --edges-limit E  maximum exact target call-graph edges (default: %d)\n", surfacediscovery.DefaultDirectCallEdgeLimit)
 	fmt.Fprintf(os.Stderr, "  --no-cache      disable cross-run model response caches\n")

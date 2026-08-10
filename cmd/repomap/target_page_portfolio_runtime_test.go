@@ -110,6 +110,11 @@ func TestAllTargetsOfflinePublishesEveryExactTargetWithOneDefaultAndMetadata(t *
 			manifest.MaterialInputs.TargetPagePortfolioSHA256 == "" {
 			t.Fatalf("target manifest authority = %#v / %#v", metadata, manifest.MaterialInputs)
 		}
+		if identity, found, inspectErr := report.InspectStandaloneTargetBundleHTML(
+			filepath.Join(runDir, "report.html"),
+		); inspectErr != nil || found || identity != (report.StandaloneTargetBundleIdentity{}) {
+			t.Fatalf("no-host --all-targets report became a standalone bundle: %#v, %t, %v", identity, found, inspectErr)
+		}
 		raw, err := os.ReadFile(filepath.Join(runDir, snapshot.TargetPagePortfolioArtifactFilename))
 		if err != nil {
 			t.Fatal(err)
@@ -163,6 +168,213 @@ func TestAllTargetsOfflinePublishesEveryExactTargetWithOneDefaultAndMetadata(t *
 	}
 	if latest != defaultRunID {
 		t.Fatalf("latest = %q, want default %q", latest, defaultRunID)
+	}
+}
+
+func TestHostedAllTargetsPublishesTwoReadyTargetsAndOneUnavailableInOneRecoverableBundle(t *testing.T) {
+	repository, container := hostedTargetBundleRuntimeFixture(t)
+	if len(container.Targets) != 3 {
+		t.Fatalf("target count = %d, want 3", len(container.Targets))
+	}
+	defaultIndex := -1
+	for index, projection := range container.Targets {
+		if projection.Target.Ref == container.DefaultTargetRef {
+			defaultIndex = index
+			break
+		}
+	}
+	if defaultIndex <= 0 {
+		t.Fatalf("default target index = %d, want non-zero", defaultIndex)
+	}
+
+	debugDir := t.TempDir()
+	readyRefs := []string{container.Targets[0].Target.Ref, container.DefaultTargetRef}
+	runs := make([]targetPublishedRun, 0, len(readyRefs))
+	for index, targetRef := range readyRefs {
+		scoped, err := container.ScopedSnapshot(targetRef)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runID := "run-hosted-ready-" + string(rune('a'+index))
+		var published targetPublishedRun
+		err = runDefaultWithDeps(repository, []string{
+			"--all-targets", "--offline", "--github-url", "https://github.com/example/hosted-pages",
+			"--no-open", "--no-serve", "--debug-dir", debugDir, "--depth", "1",
+		}, defaultRunDeps{
+			ctx: context.Background(), stdout: io.Discard, stderr: io.Discard,
+			precomputedSnapshot: &scoped, runIDOverride: runID, siblingTargetRun: true,
+			publishedTargetSink: func(result targetPublishedRun) { published = result },
+		})
+		if err != nil {
+			t.Fatalf("generate ready target %d: %v", index, err)
+		}
+		if !published.AllTargets || published.GitHubURL != "https://github.com/example/hosted-pages" {
+			t.Fatalf("published hosted authority = %#v", published)
+		}
+		runs = append(runs, published)
+	}
+
+	outcomes := make([]snapshot.TargetPageOutcome, 0, len(container.Targets))
+	for _, projection := range container.Targets {
+		outcome := snapshot.TargetPageOutcome{TargetRef: projection.Target.Ref}
+		for _, run := range runs {
+			if run.Target.Ref == projection.Target.Ref {
+				outcome.State = snapshot.TargetPageReady
+				outcome.RunID = run.RunID
+				break
+			}
+		}
+		if outcome.State == "" {
+			outcome.State = snapshot.TargetPageUnavailable
+			outcome.UnavailableCode = snapshot.TargetPageUnavailableTargetRunFailed
+		}
+		outcomes = append(outcomes, outcome)
+	}
+	portfolio, err := snapshot.BuildTargetPagePortfolio(container, outcomes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := finalizeTargetPageRuns(container, portfolio, runs); err != nil {
+		t.Fatalf("finalize hosted target bundle: %v", err)
+	}
+
+	defaultRun := publishedRunForRef(t, runs, container.DefaultTargetRef)
+	htmlPath := filepath.Join(defaultRun.RunDir, "report.html")
+	identity, found, err := report.InspectStandaloneTargetBundleHTML(htmlPath)
+	if err != nil || !found {
+		t.Fatalf("inspect hosted target bundle = %#v, %t, %v", identity, found, err)
+	}
+	if identity.DefaultTargetIndex != defaultIndex || identity.TargetCount != 3 ||
+		identity.ReadyTargetCount != 2 ||
+		identity.TargetRunContainerSHA256 != container.SHA256 ||
+		identity.TargetPagePortfolioSHA256 != portfolio.SHA256 {
+		t.Fatalf("standalone bundle identity = %#v", identity)
+	}
+	if _, err := assessRunPublication(defaultRun.RunDir); err != nil {
+		t.Fatalf("assess standalone bundle publication: %v", err)
+	}
+
+	finalized, err := os.ReadFile(htmlPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := finalizeTargetPageRuns(container, portfolio, runs); err != nil {
+		t.Fatalf("idempotent hosted finalization: %v", err)
+	}
+	assertFileBytes(t, htmlPath, finalized)
+
+	navigation, err := targetNavigationForRun(container, portfolio, defaultRun.Target.Ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := defaultRun.generateWithTargetNavigation(navigation); err != nil {
+		t.Fatalf("restore interrupted ordinary HTML: %v", err)
+	}
+	if _, ordinaryFound, inspectErr := report.InspectStandaloneTargetBundleHTML(htmlPath); inspectErr != nil || ordinaryFound {
+		t.Fatalf("ordinary pre-bundle HTML inspection = %t, %v", ordinaryFound, inspectErr)
+	}
+	if err := finalizeTargetPageRuns(container, portfolio, runs); err != nil {
+		t.Fatalf("recover ordinary pre-bundle HTML: %v", err)
+	}
+	if _, recovered, inspectErr := report.InspectStandaloneTargetBundleHTML(htmlPath); inspectErr != nil || !recovered {
+		t.Fatalf("recovered bundle inspection = %t, %v", recovered, inspectErr)
+	}
+
+	validBundle, err := os.ReadFile(htmlPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered := bytes.Replace(validBundle, []byte("<html"), []byte("<htnl"), 1)
+	if bytes.Equal(tampered, validBundle) {
+		t.Fatal("bundle tamper fixture did not change HTML")
+	}
+	if err := os.WriteFile(htmlPath, tampered, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := finalizeTargetPageRuns(container, portfolio, runs); err == nil ||
+		!strings.Contains(err.Error(), "standalone target bundle") {
+		t.Fatalf("tampered bundle finalization error = %v", err)
+	}
+	assertFileBytes(t, htmlPath, tampered)
+
+	var siblingRun targetPublishedRun
+	for _, run := range runs {
+		if run.Target.Ref != container.DefaultTargetRef {
+			siblingRun = run
+			break
+		}
+	}
+	metadataPath := filepath.Join(siblingRun.RunDir, "metadata.json")
+	metadataRaw, err := os.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata debugdump.RunMeta
+	if err := json.Unmarshal(metadataRaw, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	metadata.EffectiveOptions.AllTargets = false
+	tamperedMetadata, err := json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(metadataPath, append(tamperedMetadata, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := recoverExistingTargetPageRuns(
+		context.Background(), defaultRun.RunDir, nil, nil,
+	); err == nil || !strings.Contains(err.Error(), "all-targets or source-host authority differs") {
+		t.Fatalf("recovery metadata authority drift error = %v", err)
+	}
+	if err := os.WriteFile(metadataPath, metadataRaw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestStandaloneTargetBundleEligibilityIsNarrow(t *testing.T) {
+	container := targetPageRuntimeTwoTargetContainer(t)
+	defaultProjection := targetPageProjection(t, container, container.DefaultTargetRef)
+	otherProjection := container.Targets[0]
+	if otherProjection.Target.Ref == container.DefaultTargetRef {
+		otherProjection = container.Targets[1]
+	}
+	base := []targetPublishedRun{
+		{Target: defaultProjection.Target, AllTargets: true, GitHubURL: "https://github.com/example/pages"},
+		{Target: otherProjection.Target, AllTargets: true, GitHubURL: "https://github.com/example/pages"},
+	}
+	if got, err := standaloneTargetBundleDefaultRun(container, base); err != nil || got == nil {
+		t.Fatalf("eligible hosted all-targets = %#v, %v", got, err)
+	}
+
+	noHost := append([]targetPublishedRun(nil), base...)
+	for index := range noHost {
+		noHost[index].GitHubURL = ""
+	}
+	if got, err := standaloneTargetBundleDefaultRun(container, noHost); err != nil || got != nil {
+		t.Fatalf("no-host eligibility = %#v, %v", got, err)
+	}
+	nonAll := append([]targetPublishedRun(nil), base...)
+	for index := range nonAll {
+		nonAll[index].AllTargets = false
+	}
+	if got, err := standaloneTargetBundleDefaultRun(container, nonAll); err != nil || got != nil {
+		t.Fatalf("ordinary selected multi-target eligibility = %#v, %v", got, err)
+	}
+	singleton := container
+	singleton.Targets = singleton.Targets[:1]
+	singleton.DefaultTargetRef = singleton.Targets[0].Target.Ref
+	if got, err := standaloneTargetBundleDefaultRun(singleton, base[:1]); err != nil || got != nil {
+		t.Fatalf("singleton eligibility = %#v, %v", got, err)
+	}
+	conflicting := append([]targetPublishedRun(nil), base...)
+	conflicting[0].GitLabURL = "https://gitlab.example.test/group/pages"
+	if got, err := standaloneTargetBundleDefaultRun(container, conflicting); err == nil || got != nil {
+		t.Fatalf("conflicting host eligibility = %#v, %v", got, err)
+	}
+	drift := append([]targetPublishedRun(nil), base...)
+	drift[1].GitHubURL = "https://github.com/example/other"
+	if got, err := standaloneTargetBundleDefaultRun(container, drift); err == nil || got != nil {
+		t.Fatalf("host drift eligibility = %#v, %v", got, err)
 	}
 }
 
@@ -642,6 +854,72 @@ func targetPageRuntimeContainer(t *testing.T) snapshot.TargetRunContainer {
 		t.Fatal(err)
 	}
 	return container
+}
+
+func hostedTargetBundleRuntimeFixture(t *testing.T) (string, snapshot.TargetRunContainer) {
+	t.Helper()
+	repository := t.TempDir()
+	for _, directory := range []string{"cmd/app", "cmd/helper", "core"} {
+		if err := os.MkdirAll(filepath.Join(repository, directory), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile(t, filepath.Join(repository, "go.mod"), "module example.com/hosted-pages\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(repository, "cmd/app/main.go"), "package main\nimport \"example.com/hosted-pages/core\"\nfunc main() { core.Public() }\n")
+	writeFile(t, filepath.Join(repository, "cmd/helper/main.go"), "package main\nfunc main() {}\n")
+	writeFile(t, filepath.Join(repository, "core/core.go"), "package core\nfunc Public() {}\n")
+	runGit(t, repository, "init", "--quiet")
+	runGit(t, repository, "add", "--", "go.mod", "cmd/app/main.go", "cmd/helper/main.go", "core/core.go")
+	commitTestRepository(t, repository)
+	runGit(t, repository, "remote", "add", "origin", "https://github.com/example/hosted-pages.git")
+
+	deferred, err := snapshot.Build(snapshot.Options{
+		RepoPath: repository, DeferAnalysisTargetResolution: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deferred.TargetCatalog == nil || len(deferred.TargetCatalog.Entries) != 3 {
+		t.Fatalf("hosted target catalog = %#v", deferred.TargetCatalog)
+	}
+	refs := make([]string, 0, len(deferred.TargetCatalog.Entries))
+	for _, entry := range deferred.TargetCatalog.Entries {
+		refs = append(refs, entry.Candidate.Target.Ref)
+	}
+	container, err := snapshot.BuildTargetRunContainer(deferred, snapshot.TargetRunSelection{
+		DefaultTargetRef: refs[1],
+		TargetRefs:       refs,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return repository, container
+}
+
+func publishedRunForRef(
+	t *testing.T,
+	runs []targetPublishedRun,
+	targetRef string,
+) targetPublishedRun {
+	t.Helper()
+	for _, run := range runs {
+		if run.Target.Ref == targetRef {
+			return run
+		}
+	}
+	t.Fatalf("published target %q is unavailable", targetRef)
+	return targetPublishedRun{}
+}
+
+func assertFileBytes(t *testing.T, path string, want []byte) {
+	t.Helper()
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("file %s changed", path)
+	}
 }
 
 func targetPageRuntimeTwoTargetContainer(t *testing.T) snapshot.TargetRunContainer {

@@ -190,6 +190,10 @@ func recoverExistingTargetPageRuns(
 	var commonGoTarget string
 	var commonGoTargetSource string
 	var commonGoTargetBaseline string
+	var commonRunOptionsSet bool
+	var commonAllTargets bool
+	var commonGitLabURL string
+	var commonGitHubURL string
 	for _, candidate := range runDirs {
 		runDir, err := exactExistingTargetPageRunDir(candidate)
 		if err != nil {
@@ -254,6 +258,18 @@ func recoverExistingTargetPageRuns(
 		if metadata.EffectiveOptions.GitLabURL != "" && metadata.EffectiveOptions.GitHubURL != "" {
 			return snapshot.TargetPagePortfolio{}, nil, fmt.Errorf("target page recovery: run %s has conflicting source hosts", metadata.RunID)
 		}
+		if !commonRunOptionsSet {
+			commonRunOptionsSet = true
+			commonAllTargets = metadata.EffectiveOptions.AllTargets
+			commonGitLabURL = metadata.EffectiveOptions.GitLabURL
+			commonGitHubURL = metadata.EffectiveOptions.GitHubURL
+		} else if metadata.EffectiveOptions.AllTargets != commonAllTargets ||
+			metadata.EffectiveOptions.GitLabURL != commonGitLabURL ||
+			metadata.EffectiveOptions.GitHubURL != commonGitHubURL {
+			return snapshot.TargetPagePortfolio{}, nil, fmt.Errorf(
+				"target page recovery: sibling all-targets or source-host authority differs",
+			)
+		}
 		if !validRecoveredGoTargetProvenance(metadata.EffectiveOptions) {
 			return snapshot.TargetPagePortfolio{}, nil, fmt.Errorf(
 				"target page recovery: run %s has invalid Go target provenance", metadata.RunID,
@@ -283,6 +299,7 @@ func recoverExistingTargetPageRuns(
 			SourceEpisodeJSON:     append([]byte(nil), sourceEpisodeJSON...),
 			GitLabURL:             metadata.EffectiveOptions.GitLabURL,
 			GitHubURL:             metadata.EffectiveOptions.GitHubURL,
+			AllTargets:            metadata.EffectiveOptions.AllTargets,
 		}
 	}
 

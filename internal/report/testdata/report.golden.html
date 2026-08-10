@@ -963,7 +963,9 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
   // remainder rather than implying that a valid entry surface was rejected.
   // UI36 presents exact model-assisted scheduled jobs as a separate flat
   // Entrypoints group without claiming hierarchy or runtime reachability.
-  var VERSION = 36;
+  // UI37 adds the self-contained hosted target-navigation v3 projection. It
+  // reuses the existing target labels and changes no semantic report copy.
+  var VERSION = 37;
   var EN = {
     "main.browser_error.invalid_report_artifact": { params: [], text: "The saved report is invalid or exceeds the supported size." },
     "main.browser_error.no_saved_reports": { params: [], text: "No saved reports are available." },
@@ -4529,9 +4531,10 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
 			// semantic-import major version suffix such as /v3 or .v3.
 			return displayPath === '.' ? rootTargetLabel() : displayPath;
 		}
-		if (TARGET_NAVIGATION && Number(TARGET_NAVIGATION.version) === 2 &&
+		var targetNavigationVersion = Number(TARGET_NAVIGATION && TARGET_NAVIGATION.version);
+		if (TARGET_NAVIGATION && (targetNavigationVersion === 2 || targetNavigationVersion === 3) &&
 			Array.isArray(TARGET_NAVIGATION.targets)) {
-			return TARGET_NAVIGATION.targets.map(function (item) {
+			return TARGET_NAVIGATION.targets.map(function (item, index) {
 				var moduleDir = String(item.module_dir || '.');
 				var ref = String(item.target_ref || '');
 				var displayPath = String(item.display_path || '');
@@ -4542,8 +4545,12 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
 					label: targetLabel(displayPath, kind),
 					title: kind === 'module_library' ? (modulePath || displayPath) : displayPath,
 					goMod: moduleDir === '.' ? 'go.mod' : moduleDir + '/go.mod',
-					isDefault: ref === String(TARGET_NAVIGATION.default_target_ref || ''),
-					isActive: ref === String(TARGET_NAVIGATION.current_target_ref || ''),
+					isDefault: targetNavigationVersion === 3
+						? index === Number(TARGET_NAVIGATION.default_target_index)
+						: ref === String(TARGET_NAVIGATION.default_target_ref || ''),
+					isActive: targetNavigationVersion === 3
+						? index === Number(TARGET_NAVIGATION.current_target_index)
+						: ref === String(TARGET_NAVIGATION.current_target_ref || ''),
 					available: !!item.available,
 					href: String(item.href || ''),
 				};
@@ -10443,8 +10450,14 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
 
   function entrySurfaceHTTPRegistrationPathKey(trigger) {
     if (String(trigger && trigger.kind || '') !== 'http_route' ||
-      trigger && trigger.provisional_id === true) return '';
-    var siteKey = entrySurfaceLocationKey(entrySurfaceRegistrationLocation(trigger, null));
+      String(trigger && trigger.resolution || '') !== 'exact') return '';
+    // The deterministic SSA trigger and the generic syntax candidate can own
+    // different exact columns within the same registration expression (for
+    // example the path argument versus the call expression). Path + line is
+    // the shared physical callsite authority; ambiguity on that line is
+    // tracked separately and fails closed below.
+    var site = exactEntrySurfaceLocation(entrySurfaceRegistrationLocation(trigger, null));
+    var siteKey = site ? [site.path, site.line].join('\u0000') : '';
     var path = trigger && trigger.identity && trigger.identity.path;
     if (!siteKey || !path || path.known !== true || !String(path.text || '').trim()) return '';
     return ['http_route', siteKey, String(path.text).trim()].join('\u0000');
@@ -10485,12 +10498,9 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
       var exactCLIDescriptor = localKind === 'cli_command' && localRole === 'descriptor' &&
         String(trigger && trigger.resolution || '') === 'exact';
       if (localRole !== 'entry_surface' && !exactCLIDescriptor) return;
-      var key = entrySurfaceExactIdentityKey(trigger);
-      if (!key) return;
-      var previous = localByKey[key];
-      if (!previous || String(trigger.id || '').localeCompare(String(previous.id || '')) < 0) {
-        localByKey[key] = trigger;
-      }
+      // Populate the exact HTTP callsite fallback independently of the stable
+      // identity key: a deterministic trigger can have an intentionally
+      // provisional ID while its path, line and route identity are exact.
       var registrationPathKey = entrySurfaceHTTPRegistrationPathKey(trigger);
       if (registrationPathKey && !ambiguousHTTPRegistrationPaths[registrationPathKey]) {
         var priorPathTrigger = localHTTPByRegistrationPath[registrationPathKey];
@@ -10500,6 +10510,12 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
           delete localHTTPByRegistrationPath[registrationPathKey];
           ambiguousHTTPRegistrationPaths[registrationPathKey] = true;
         }
+      }
+      var key = entrySurfaceExactIdentityKey(trigger);
+      if (!key) return;
+      var previous = localByKey[key];
+      if (!previous || String(trigger.id || '').localeCompare(String(previous.id || '')) < 0) {
+        localByKey[key] = trigger;
       }
     });
     var emitted = Object.create(null);
@@ -10822,7 +10838,9 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
       var identity = trigger && trigger.identity || {};
       var exactPath = identity && identity.path && identity.path.known === true
         ? String(identity.path.text || '').trim() : '';
-      var exactIdentity = trigger && trigger.provisional_id !== true && !!exactPath;
+      var exactIdentity = trigger && !!exactPath && (item.kind === 'http_route'
+        ? String(trigger.resolution || '') === 'exact'
+        : trigger.provisional_id !== true);
       var callback = String(trigger && trigger.handler && trigger.handler.text || '').trim();
       var stableID = String(trigger && trigger.id || item.entry && item.entry.id || '');
       if (item.kind === 'process_entry' || item.kind === 'http_server') {
