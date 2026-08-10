@@ -68,6 +68,7 @@ Active decisions (each approved by the repository owner via its supervisory goal
 64. decisions/281-map-context-and-library-api.md
 65. decisions/282-conservative-automatic-go-target.md
 66. decisions/283-generic-model-assisted-entry-surfaces.md
+67. decisions/284-bounded-architecture-response-intake.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
@@ -862,6 +863,27 @@ Approved by:
 	Repository owner after real-provider Restic, etcdctl and Echo runs proved
 	that D273 retained the generic model-selected call spine but suppressed the
 	useful command/handler product records, 2026-08-10.
+
+## Decision 284
+
+Status:
+	ACTIVE. The live nested `member_refs` Architecture decoder accepts a bounded
+	intermediate response of at most 24 subsystems and 100 components total or
+	in one subsystem, then the existing local normalizer enforces the published
+	12-subsystem, 24-component-per-subsystem and 48-component-total shape. The
+	historical flat response and nested `unit_refs` replay grammar remain strict
+	at the published shape. The prompt is unchanged and does not ask the model to
+	count backend presentation limits. A known anchor ref with no advertised
+	member in its resolved component is dropped locally with the existing
+	recoverable `proposal.empty_anchor_slice` diagnostic. SynthesisRecord advances
+	17→18; request, prompt, response schema, proposal, contract, status, privacy,
+	provider-call and UI identities remain unchanged.
+
+Approved by:
+	Repository owner after the fresh GitLab CLI Architecture response returned
+	four subsystems with component counts `[2, 1, 44, 20]` (67 total) and was
+	rejected before the existing bounded normalizer, followed by the explicit
+	instruction to use a 100-component intake limit, 2026-08-10.
 
 ## Decision 241 follow-up
 

@@ -1419,6 +1419,187 @@ func TestSynthesisWireRejectsOverBoundComponentsBeforeNormalization(t *testing.T
 	}
 }
 
+func TestSynthesisNestedWireNormalizesBoundedComponentOverage(t *testing.T) {
+	t.Parallel()
+
+	const totalComponents = 67
+	bundle := CandidateBundle{
+		Version: ContractVersion, RepositoryArchetype: ArchetypeApplication, GroundingMode: GroundingPackages,
+	}
+	for index := 0; index < totalComponents; index++ {
+		path := fmt.Sprintf("package-%02d/package.go", index)
+		bundle.Candidates = append(bundle.Candidates, Candidate{
+			ID:   MemberID{Kind: MemberPackage, Value: fmt.Sprintf("package-%02d", index)},
+			Role: CandidateRoleConceptualMember,
+			Name: fmt.Sprintf("package-%02d", index),
+			Facts: []LocalFact{
+				testLocalFact(FactDeclaration, fmt.Sprintf("example/package-%02d", index), path, 1),
+			},
+		})
+	}
+	catalog, err := buildSynthesisPrivateCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := []int{2, 1, 44, 20}
+	emptyAnchorRefs := json.RawMessage("[]")
+	nested := synthesisWireNested{Subsystems: make([]synthesisWireNestedSubsystem, len(counts))}
+	candidateIndex := 0
+	for subsystemIndex, count := range counts {
+		subsystem := synthesisWireNestedSubsystem{
+			Name:       fmt.Sprintf("Subsystem %d", subsystemIndex+1),
+			Components: make([]synthesisWireNestedComponent, 0, count),
+		}
+		for componentIndex := 0; componentIndex < count; componentIndex++ {
+			ref := catalog.membersByID[bundle.Candidates[candidateIndex].ID]
+			memberRefs, marshalErr := json.Marshal([]string{ref.Ref})
+			if marshalErr != nil {
+				t.Fatal(marshalErr)
+			}
+			subsystem.Components = append(subsystem.Components, synthesisWireNestedComponent{
+				Name:       fmt.Sprintf("Responsibility %02d", candidateIndex),
+				MemberRefs: memberRefs,
+				AnchorRefs: emptyAnchorRefs,
+			})
+			candidateIndex++
+		}
+		nested.Subsystems[subsystemIndex] = subsystem
+	}
+	response, err := json.Marshal(nested)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := RecordSynthesisResponse(
+		bundle, "nested-normalized-components", "test", "test", time.Millisecond, response,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationAcceptedNormalized ||
+		result.Landscape.Source != SourceNormalizedModel {
+		t.Fatalf("bounded nested overage was rejected: %#v", result.Landscape)
+	}
+	finalComponents := 0
+	for _, subsystem := range result.Landscape.Subsystems {
+		if len(subsystem.Components) > MaxComponentsPerSubsystem {
+			t.Fatalf("normalized subsystem components = %d, want <= %d", len(subsystem.Components), MaxComponentsPerSubsystem)
+		}
+		finalComponents += len(subsystem.Components)
+	}
+	if finalComponents > MaxTotalNestedComponents {
+		t.Fatalf("normalized total components = %d, want <= %d", finalComponents, MaxTotalNestedComponents)
+	}
+	if !hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.normalized_components_per_subsystem") ||
+		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.normalized_total_components") {
+		t.Fatalf("normalization diagnostics = %#v", result.Landscape.Diagnostics)
+	}
+	if !result.Membership.Counted || result.Membership.DistinctMembers != totalComponents {
+		t.Fatalf("normalized membership = %#v", result.Membership)
+	}
+
+	result = bindSynthesisResultForTest(t, bundle, "nested-normalized-components", result)
+	saved, err := json.Marshal(result.Record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := ReplaySynthesisResult(bundle, "nested-normalized-components", saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(replayed.Landscape, result.Landscape) || !reflect.DeepEqual(replayed.Membership, result.Membership) {
+		t.Fatal("normalized nested response did not replay deterministically")
+	}
+}
+
+func TestSynthesisNestedWireKeepsAnExplicitIntakeBound(t *testing.T) {
+	t.Parallel()
+
+	memberRefs, err := json.Marshal([]string{"p1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	makeResponse := func(subsystemCount, componentCount int) []byte {
+		t.Helper()
+		nested := synthesisWireNested{Subsystems: make([]synthesisWireNestedSubsystem, subsystemCount)}
+		for index := range nested.Subsystems {
+			nested.Subsystems[index] = synthesisWireNestedSubsystem{
+				Name: fmt.Sprintf("Subsystem %d", index+1),
+				Components: []synthesisWireNestedComponent{{
+					Name: "Responsibility", MemberRefs: memberRefs,
+				}},
+			}
+		}
+		for index := subsystemCount; index < componentCount; index++ {
+			nested.Subsystems[0].Components = append(nested.Subsystems[0].Components,
+				synthesisWireNestedComponent{Name: fmt.Sprintf("Responsibility %d", index+1), MemberRefs: memberRefs})
+		}
+		encoded, marshalErr := json.Marshal(nested)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		return encoded
+	}
+
+	if _, err := decodeSynthesisWireProposalJSON(makeResponse(
+		maxSynthesisNestedInputSubsystems, maxSynthesisNestedInputComponents,
+	)); err != nil {
+		t.Fatalf("maximum nested intake was rejected: %v", err)
+	}
+	for _, test := range []struct {
+		name       string
+		subsystems int
+		components int
+	}{
+		{name: "subsystems", subsystems: maxSynthesisNestedInputSubsystems + 1, components: maxSynthesisNestedInputSubsystems + 1},
+		{name: "components", subsystems: 1, components: maxSynthesisNestedInputComponents + 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := decodeSynthesisWireProposalJSON(makeResponse(test.subsystems, test.components)); err == nil {
+				t.Fatal("nested response above the intake bound was accepted")
+			}
+		})
+	}
+}
+
+func TestSynthesisNestedWireUnitRefsStayOnTheStrictShape(t *testing.T) {
+	t.Parallel()
+
+	memberRefs, err := json.Marshal([]string{"p1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unitRefs, err := json.Marshal([]string{"u1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberWire, err := json.Marshal(synthesisWireNested{Subsystems: []synthesisWireNestedSubsystem{{
+		Name: "Repository", Components: []synthesisWireNestedComponent{{Name: "Member", MemberRefs: memberRefs}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberProposal, err := decodeSynthesisWireProposalJSON(memberWire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !memberProposal.NormalizeNestedShape {
+		t.Fatal("active member_refs grammar did not retain bounded shape normalization")
+	}
+	unitWire, err := json.Marshal(synthesisWireNested{Subsystems: []synthesisWireNestedSubsystem{{
+		Name: "Repository", Components: []synthesisWireNestedComponent{{Name: "Unit", UnitRefs: unitRefs}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unitProposal, err := decodeSynthesisWireProposalJSON(unitWire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unitProposal.NormalizeNestedShape {
+		t.Fatal("historical unit_refs grammar entered member-only shape normalization")
+	}
+}
+
 func TestSavedCasdoorP21ManyToManyResponseDerivesNestedParentScope(t *testing.T) {
 	t.Parallel()
 
@@ -1723,6 +1904,141 @@ func savedCasdoorManyToManyBundle() CandidateBundle {
 		},
 	}
 	return bundle
+}
+
+func TestSynthesisDropsOnlyAnchorWithoutAdvertisedComponentMember(t *testing.T) {
+	t.Parallel()
+
+	bundle := groundedTwoMemberSynthesisBundle()
+	matchingAnchor := bundle.BehaviorAnchors[0]
+	matchingAnchor.ID = "anchor-matching"
+	matchingAnchor.MemberIDs = []MemberID{bundle.Candidates[0].ID}
+	unboundAnchor := bundle.BehaviorAnchors[0]
+	unboundAnchor.ID = "anchor-unbound"
+	unboundAnchor.MemberIDs = []MemberID{bundle.Candidates[1].ID}
+	bundle.BehaviorAnchors = []BehaviorAnchor{matchingAnchor, unboundAnchor}
+	catalog, err := buildSynthesisPrivateCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawRefs := func(values ...string) json.RawMessage {
+		t.Helper()
+		encoded, marshalErr := json.Marshal(append([]string{}, values...))
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		return encoded
+	}
+	firstRef := catalog.membersByID[bundle.Candidates[0].ID]
+	secondRef := catalog.membersByID[bundle.Candidates[1].ID]
+	matchingRef := catalog.anchorsByID[matchingAnchor.ID]
+	unboundRef := catalog.anchorsByID[unboundAnchor.ID]
+	response, err := json.Marshal(synthesisWireNested{Subsystems: []synthesisWireNestedSubsystem{{
+		Name: "Runtime",
+		Components: []synthesisWireNestedComponent{
+			{
+				Name: "First", MemberRefs: rawRefs(firstRef.Ref),
+				AnchorRefs: rawRefs(matchingRef.Ref, unboundRef.Ref),
+			},
+			{Name: "Second", MemberRefs: rawRefs(secondRef.Ref), AnchorRefs: rawRefs()},
+		},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := RecordSynthesisResponse(
+		bundle, "unbound-anchor-slice", "test", "test", time.Millisecond, response,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationAcceptedPartial ||
+		result.Landscape.Source != SourcePartialModel {
+		t.Fatalf("unbound anchor erased the response: %#v", result.Landscape)
+	}
+	if !hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.empty_anchor_slice") {
+		t.Fatalf("unbound anchor removal was not counted: %#v", result.Landscape.Diagnostics)
+	}
+	foundFirst, foundSecond := false, false
+	for _, subsystem := range result.Landscape.Subsystems {
+		for _, component := range subsystem.Components {
+			switch component.Name {
+			case "First":
+				foundFirst = true
+				if !reflect.DeepEqual(component.AnchorIDs, []string{matchingAnchor.ID}) {
+					t.Fatalf("first component anchors = %#v, want only matching anchor", component.AnchorIDs)
+				}
+			case "Second":
+				foundSecond = true
+				if len(component.AnchorIDs) != 0 {
+					t.Fatalf("second component gained anchors: %#v", component.AnchorIDs)
+				}
+			}
+		}
+	}
+	if !foundFirst || !foundSecond || !result.Membership.Counted || result.Membership.DistinctMembers != 2 {
+		t.Fatalf("valid component siblings or membership were lost: first=%v second=%v membership=%#v",
+			foundFirst, foundSecond, result.Membership)
+	}
+}
+
+func TestSynthesisRejectsShapeNormalizationThatWouldOverflowMergedAnchors(t *testing.T) {
+	t.Parallel()
+
+	const componentCount = 46
+	bundle := CandidateBundle{
+		Version: ContractVersion, RepositoryArchetype: ArchetypeApplication, GroundingMode: GroundingMixed,
+	}
+	anchorIDsByMember := make(map[MemberID][]string)
+	for index := 0; index < componentCount; index++ {
+		memberID := MemberID{Kind: MemberPackage, Value: fmt.Sprintf("member-%02d", index)}
+		bundle.Candidates = append(bundle.Candidates, Candidate{
+			ID: memberID, Role: CandidateRoleConceptualMember, Name: fmt.Sprintf("member-%02d", index),
+			Facts: []LocalFact{testLocalFact(
+				FactDeclaration, fmt.Sprintf("example/member-%02d", index), fmt.Sprintf("member-%02d/member.go", index), 1,
+			)},
+		})
+		// Per-subsystem normalization keeps the first 23 components and
+		// merges the remaining 23. Three disjoint, bound anchors per merged
+		// component would produce 69 anchors, above the exact component cap.
+		if index < MaxComponentsPerSubsystem-1 {
+			continue
+		}
+		for anchorIndex := 0; anchorIndex < 3; anchorIndex++ {
+			anchorID := fmt.Sprintf("anchor-%02d-%d", index, anchorIndex)
+			bundle.BehaviorAnchors = append(bundle.BehaviorAnchors,
+				unitTestAnchor(anchorID, AnchorExtensionFamily, memberID))
+			anchorIDsByMember[memberID] = append(anchorIDsByMember[memberID], anchorID)
+		}
+	}
+	catalog, err := buildSynthesisPrivateCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unitCatalog, err := CompileUnitCatalog(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire := synthesisWireProposal{
+		NormalizeNestedShape: true,
+		Records:              []synthesisWireRecord{{Kind: synthesisWireSubsystemRecord, Ref: "g1", Name: "Runtime"}},
+	}
+	for index, candidate := range bundle.Candidates {
+		anchorRefs := make([]SynthesisAnchorRef, 0, len(anchorIDsByMember[candidate.ID]))
+		for _, anchorID := range anchorIDsByMember[candidate.ID] {
+			anchorRefs = append(anchorRefs, catalog.anchorsByID[anchorID])
+		}
+		wire.Records = append(wire.Records, synthesisWireRecord{
+			Kind: synthesisWireComponentRecord, SubsystemRef: "g1",
+			Name:       fmt.Sprintf("Responsibility %02d", index),
+			MemberRefs: []SynthesisMemberRef{catalog.membersByID[candidate.ID]},
+			AnchorRefs: anchorRefs,
+		})
+	}
+	if _, _, resolveErr := resolveSynthesisWireProposal(catalog, unitCatalog, wire); resolveErr == nil ||
+		!strings.Contains(resolveErr.message, "anchor bound") {
+		t.Fatalf("unsafe merged anchor shape was not rejected before Apply: %#v", resolveErr)
+	}
 }
 
 func TestAnchorRefsRejectWithinComponentDuplicateButAllowSharedContext(t *testing.T) {

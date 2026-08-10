@@ -33,7 +33,7 @@ const (
 	// membership while deriving their backend-owned package parent only for
 	// primary-scope coverage accounting.
 	SynthesisRequestVersion = 21
-	SynthesisRecordVersion  = 17
+	SynthesisRecordVersion  = 18
 )
 
 // SynthesisPromptVersion is the prompt contract identity — the short SHA-256
@@ -53,6 +53,13 @@ const (
 	maxProfileBytes           = 128
 	maxModelBytes             = 256
 	maxSynthesisWireRecords   = MaxPrimarySubsystems + MaxTotalNestedComponents
+	// The active nested response may exceed the readable published shape.
+	// Apply already owns deterministic merging down to the product's 12/24/48
+	// shape; accepting a bounded semantic overage here lets that normalization
+	// run instead of discarding an otherwise valid proposal. Historical flat
+	// responses remain strict.
+	maxSynthesisNestedInputSubsystems = 24
+	maxSynthesisNestedInputComponents = 100
 )
 
 // SynthesisMemberRef is one short request-local typed member identity. The Ref
@@ -2740,7 +2747,8 @@ const (
 )
 
 type synthesisWireProposal struct {
-	Records []synthesisWireRecord `json:"records"`
+	Records              []synthesisWireRecord `json:"records"`
+	NormalizeNestedShape bool                  `json:"-"`
 }
 
 // synthesisWireRecord is an in-memory tagged union. MarshalJSON emits only the
@@ -2875,10 +2883,13 @@ func decodeSynthesisWireNestedJSON(raw []byte) (synthesisWireProposal, error) {
 	if err := decoder.Decode(&nested); err != nil {
 		return synthesisWireProposal{}, fmt.Errorf("proposal is not a nested subsystems object: %w", err)
 	}
-	if len(nested.Subsystems) == 0 || len(nested.Subsystems) > MaxPrimarySubsystems {
+	if len(nested.Subsystems) == 0 || len(nested.Subsystems) > maxSynthesisNestedInputSubsystems {
 		return synthesisWireProposal{}, fmt.Errorf("proposal subsystem count is outside the bounded contract")
 	}
-	proposal := synthesisWireProposal{Records: make([]synthesisWireRecord, 0, maxSynthesisWireRecords)}
+	proposal := synthesisWireProposal{
+		Records:              make([]synthesisWireRecord, 0, maxSynthesisWireRecords),
+		NormalizeNestedShape: true,
+	}
 	totalComponents := 0
 	for index, subsystem := range nested.Subsystems {
 		if strings.TrimSpace(subsystem.Name) == "" {
@@ -2895,7 +2906,7 @@ func decodeSynthesisWireNestedJSON(raw []byte) (synthesisWireProposal, error) {
 		if len(subsystem.Components) == 0 {
 			return synthesisWireProposal{}, fmt.Errorf("proposal subsystem %q has no components", subsystem.Name)
 		}
-		if len(subsystem.Components) > MaxComponentsPerSubsystem {
+		if len(subsystem.Components) > maxSynthesisNestedInputComponents {
 			return synthesisWireProposal{}, fmt.Errorf("proposal component count exceeds the bounded contract")
 		}
 		for _, component := range subsystem.Components {
@@ -2933,6 +2944,13 @@ func decodeSynthesisWireNestedJSON(raw []byte) (synthesisWireProposal, error) {
 			unitRefs, err := nestedUnitRefs(rawUnitRefs, "unit_refs")
 			if err != nil {
 				return synthesisWireProposal{}, err
+			}
+			// Shared unit scope is a historical compatibility grammar. The
+			// published component merger does not own that scope, so only the
+			// active member_refs-only nested grammar may use the wider intake
+			// envelope before normalization.
+			if len(unitRefs) > 0 {
+				proposal.NormalizeNestedShape = false
 			}
 			if len(memberRefs) > 0 && len(unitRefs) > 0 {
 				return synthesisWireProposal{}, fmt.Errorf("proposal component must group either member_refs or unit_refs, not both")
@@ -2975,9 +2993,12 @@ func decodeSynthesisWireNestedJSON(raw []byte) (synthesisWireProposal, error) {
 			}
 			proposal.Records = append(proposal.Records, record)
 			totalComponents++
+			if totalComponents > maxSynthesisNestedInputComponents {
+				return synthesisWireProposal{}, fmt.Errorf("proposal component count exceeds the bounded contract")
+			}
 		}
 	}
-	if totalComponents == 0 || totalComponents > MaxTotalNestedComponents {
+	if totalComponents == 0 {
 		return synthesisWireProposal{}, fmt.Errorf("proposal component count exceeds the bounded contract")
 	}
 	return proposal, nil
@@ -3482,12 +3503,16 @@ func resolveSynthesisWireProposal(
 			totalComponents++
 		}
 	}
-	if len(proposal.Subsystems) == 0 || len(proposal.Subsystems) > MaxPrimarySubsystems {
+	if len(proposal.Subsystems) == 0 ||
+		(!wire.NormalizeNestedShape && len(proposal.Subsystems) > MaxPrimarySubsystems) ||
+		(wire.NormalizeNestedShape && len(proposal.Subsystems) > maxSynthesisNestedInputSubsystems) {
 		return Proposal{}, wireDiagnostics, &synthesisResponseError{
 			code: "response.invalid_proposal", message: "proposal subsystem count is outside the bounded contract",
 		}
 	}
-	if totalComponents == 0 || totalComponents > MaxTotalNestedComponents {
+	if totalComponents == 0 ||
+		(!wire.NormalizeNestedShape && totalComponents > MaxTotalNestedComponents) ||
+		(wire.NormalizeNestedShape && totalComponents > maxSynthesisNestedInputComponents) {
 		return Proposal{}, wireDiagnostics, &synthesisResponseError{
 			code: "response.invalid_proposal", message: "proposal component count exceeds the bounded contract",
 		}
@@ -3499,6 +3524,7 @@ func resolveSynthesisWireProposal(
 	// instead of the full broad unit. A unit referenced exactly once keeps
 	// its full expansion.
 	unitUsage := make(map[string]int)
+	unitMembersByRef := unitCatalogUnitMembersByWireRef(unitCatalog)
 	for _, record := range wire.Records {
 		if record.Kind != synthesisWireComponentRecord {
 			continue
@@ -3511,6 +3537,7 @@ func resolveSynthesisWireProposal(
 	// field is normalized to [] — a counted mechanical normalization, never
 	// a rejection (Soft Serve class: 14 useful components, 0 anchor_refs).
 	normalizedAnchorCount := 0
+	unboundAnchorRefs := 0
 	for _, record := range wire.Records {
 		if record.Kind == synthesisWireComponentRecord && record.NormalizedMissingAnchorRefs {
 			normalizedAnchorCount++
@@ -3528,7 +3555,8 @@ func resolveSynthesisWireProposal(
 				code: "response.invalid_proposal", message: "proposal component references an unknown response-local subsystem ref",
 			}
 		}
-		if componentCount > MaxComponentsPerSubsystem {
+		if (!wire.NormalizeNestedShape && componentCount > MaxComponentsPerSubsystem) ||
+			(wire.NormalizeNestedShape && componentCount > maxSynthesisNestedInputComponents) {
 			return Proposal{}, wireDiagnostics, &synthesisResponseError{
 				code: "response.invalid_proposal", message: "proposal component count exceeds the bounded contract",
 			}
@@ -3637,7 +3665,6 @@ func resolveSynthesisWireProposal(
 			// Decision 216: a component grouping unit refs (u*) expands locally
 			// to the exact unit members. Unknown, duplicate, or wrong-kind unit
 			// refs fail closed — never repaired, never guessed.
-			unitMembersByRef := unitCatalogUnitMembersByWireRef(unitCatalog)
 			seenUnits := make(map[string]struct{}, len(record.UnitRefs))
 			for _, unitRef := range record.UnitRefs {
 				// Decision 231 (Archive 9): the model may omit the unit
@@ -3683,9 +3710,31 @@ func resolveSynthesisWireProposal(
 			// components still publish (Decision 229 D7).
 			continue
 		}
+		var droppedAnchorRefs int
+		component.AnchorIDs, droppedAnchorRefs = keepBoundSynthesisAnchors(
+			catalog,
+			unitMembersByRef,
+			len(record.UnitRefs) > 0,
+			component,
+		)
+		unboundAnchorRefs += droppedAnchorRefs
 		proposal.Subsystems[subsystemIndex].Components = append(
 			proposal.Subsystems[subsystemIndex].Components, component,
 		)
+	}
+	if unboundAnchorRefs > 0 {
+		wireDiagnostics = append(wireDiagnostics, newDiagnostic(
+			"proposal.empty_anchor_slice",
+			fmt.Sprintf(
+				"removed %d anchor ref(s) that had no exact advertised member in their component",
+				unboundAnchorRefs,
+			),
+		))
+	}
+	if wire.NormalizeNestedShape && synthesisShapeNormalizationExceedsAnchorBound(proposal) {
+		return Proposal{}, wireDiagnostics, &synthesisResponseError{
+			code: "response.invalid_proposal", message: "proposal shape normalization would exceed the component anchor bound",
+		}
 	}
 	for _, subsystem := range proposal.Subsystems {
 		if len(subsystem.Components) == 0 {
@@ -3698,6 +3747,80 @@ func resolveSynthesisWireProposal(
 		}
 	}
 	return proposal, wireDiagnostics, nil
+}
+
+// keepBoundSynthesisAnchors enforces the existing response contract: a
+// returned anchor is relevant only when one of its exact advertised members
+// participates in the same component. Historical unit responses may bind an
+// anchor-owned child through its exact unit member parent. If repeated shared
+// unit scope cannot be expanded, anchors are preserved rather than guessed.
+func keepBoundSynthesisAnchors(
+	catalog synthesisPrivateCatalog,
+	unitMembersByRef map[string][]MemberID,
+	unitScoped bool,
+	component ProposedComponent,
+) ([]string, int) {
+	if len(component.AnchorIDs) == 0 {
+		return component.AnchorIDs, 0
+	}
+	effectiveMembers := make(map[MemberID]struct{}, len(component.MemberIDs))
+	for _, memberID := range component.MemberIDs {
+		effectiveMembers[memberID] = struct{}{}
+	}
+	for _, unitRef := range component.SharedUnitRefs {
+		members, available := unitMembersByRef[unitRef]
+		if !available {
+			return component.AnchorIDs, 0
+		}
+		for _, memberID := range members {
+			effectiveMembers[memberID] = struct{}{}
+		}
+	}
+	kept := make([]string, 0, len(component.AnchorIDs))
+	dropped := 0
+	for _, anchorID := range component.AnchorIDs {
+		anchorMembers, available := catalog.anchorMemberIDs[anchorID]
+		if !available {
+			kept = append(kept, anchorID)
+			continue
+		}
+		bound := false
+		for memberID := range anchorMembers {
+			if _, exists := effectiveMembers[memberID]; exists {
+				bound = true
+				break
+			}
+			if unitScoped {
+				if parentID, exists := catalog.memberParentIDs[memberID]; exists {
+					_, bound = effectiveMembers[parentID]
+					if bound {
+						break
+					}
+				}
+			}
+		}
+		if bound {
+			kept = append(kept, anchorID)
+			continue
+		}
+		dropped++
+	}
+	return kept, dropped
+}
+
+// synthesisShapeNormalizationExceedsAnchorBound rejects an overage that the
+// readable-shape merger cannot represent without manufacturing an invalid
+// component. It does not truncate exact anchor evidence.
+func synthesisShapeNormalizationExceedsAnchorBound(proposal Proposal) bool {
+	normalized, _, _ := normalizeProposalShape(CandidateBundle{}, proposal)
+	for _, subsystem := range normalized.Subsystems {
+		for _, component := range subsystem.Components {
+			if len(component.AnchorIDs) > maxAnchorMembers {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func decodeRequiredProposalString(fields map[string]json.RawMessage, name string) (string, error) {
