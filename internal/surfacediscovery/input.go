@@ -47,7 +47,11 @@ type Input struct {
 
 const (
 	AnalysisTargetExecutablePackage = "executable_package"
-	AnalysisTargetLibraryPackage    = "library_package"
+	AnalysisTargetModuleLibrary     = "module_library"
+	// AnalysisTargetLibraryPackage is retained as a source-compatible name for
+	// callers migrating from the former one-package library target. Its value
+	// and contract are the module-library target introduced by Decision 280.
+	AnalysisTargetLibraryPackage = AnalysisTargetModuleLibrary
 )
 
 // AnalysisTargetInput carries only the exact package/root boundary needed to
@@ -55,9 +59,14 @@ const (
 // remains owned and sealed by analysistarget; this cycle-free projection
 // cannot select or reinterpret a target inside surface discovery.
 type AnalysisTargetInput struct {
-	Kind        string
-	PackagePath string
-	Roots       []AnalysisTargetRootInput
+	TargetRef      string
+	Kind           string
+	ModuleID       string
+	ModulePath     string
+	ModuleDir      string
+	PackagePath    string
+	TargetPackages []string
+	Roots          []AnalysisTargetRootInput
 }
 
 type AnalysisTargetRootInput struct {
@@ -163,24 +172,37 @@ func normalizeAnalysisTargetInput(
 		return nil, nil
 	}
 	result := &AnalysisTargetInput{
-		Kind: strings.TrimSpace(target.Kind), PackagePath: strings.TrimSpace(target.PackagePath),
-		Roots: append([]AnalysisTargetRootInput(nil), target.Roots...),
+		TargetRef: target.TargetRef, Kind: target.Kind,
+		ModuleID: target.ModuleID, ModulePath: target.ModulePath,
+		ModuleDir: cleanRepositoryPath(target.ModuleDir), PackagePath: target.PackagePath,
+		TargetPackages: append([]string(nil), target.TargetPackages...),
+		Roots:          append([]AnalysisTargetRootInput(nil), target.Roots...),
 	}
-	if result.PackagePath == "" {
-		return nil, fmt.Errorf("surface discovery: analysis target package is required")
+	if !validDirectCallTargetIdentity(result.TargetRef) || !validDirectCallTargetIdentity(result.ModuleID) ||
+		!validDirectCallTargetIdentity(result.ModulePath) || result.ModuleDir == "" ||
+		result.ModuleDir != target.ModuleDir || strings.TrimSpace(result.Kind) != result.Kind {
+		return nil, fmt.Errorf("surface discovery: analysis target module identity is required")
 	}
-	packageAvailable := false
-	for _, pkg := range packages {
-		if pkg.Path == result.PackagePath {
-			packageAvailable = true
-			break
+	for index := range result.TargetPackages {
+		if !validDirectCallTargetIdentity(result.TargetPackages[index]) {
+			return nil, fmt.Errorf("surface discovery: analysis target has an invalid target package")
 		}
 	}
-	if !packageAvailable {
-		return nil, fmt.Errorf(
-			"surface discovery: analysis target package %q is outside the admitted package scope",
-			result.PackagePath,
-		)
+	if len(result.TargetPackages) == 0 || len(result.TargetPackages) > MaxDirectCallIndexNodes ||
+		!sort.StringsAreSorted(result.TargetPackages) || !uniqueStrings(result.TargetPackages) {
+		return nil, fmt.Errorf("surface discovery: analysis target packages are not canonical sorted unique order")
+	}
+	admitted := make(map[string]struct{}, len(packages))
+	for _, pkg := range packages {
+		admitted[pkg.ModuleDir+"\x00"+pkg.Path] = struct{}{}
+	}
+	for _, packagePath := range result.TargetPackages {
+		if _, available := admitted[result.ModuleDir+"\x00"+packagePath]; !available {
+			return nil, fmt.Errorf(
+				"surface discovery: analysis target package %q is outside the admitted module package scope",
+				packagePath,
+			)
+		}
 	}
 	for index := range result.Roots {
 		rootPath := cleanRepositoryPath(result.Roots[index].Path)
@@ -202,12 +224,18 @@ func normalizeAnalysisTargetInput(
 	}
 	switch result.Kind {
 	case AnalysisTargetExecutablePackage:
+		if result.PackagePath == "" || len(result.TargetPackages) != 1 || result.TargetPackages[0] != result.PackagePath {
+			return nil, fmt.Errorf("surface discovery: executable analysis target requires one exact target package")
+		}
 		if len(result.Roots) == 0 {
 			return nil, fmt.Errorf("surface discovery: executable analysis target requires exact roots")
 		}
-	case AnalysisTargetLibraryPackage:
+	case AnalysisTargetModuleLibrary:
+		if result.PackagePath != "" {
+			return nil, fmt.Errorf("surface discovery: module library analysis target cannot declare an executable package")
+		}
 		if len(result.Roots) != 0 {
-			return nil, fmt.Errorf("surface discovery: library analysis target cannot declare process roots")
+			return nil, fmt.Errorf("surface discovery: module library analysis target cannot declare process roots")
 		}
 	default:
 		return nil, fmt.Errorf("surface discovery: invalid analysis target kind %q", result.Kind)

@@ -538,8 +538,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 
 	offline := fs.Bool("offline", false, "skip model calls, build local facts/bundles only")
 	goTargetFlag := fs.String("go-target", "", "Go build target as GOOS/GOARCH (default: GOOS/GOARCH environment, then host)")
-	analysisTargetFlag := fs.String("target", "", "analysis package (exact advertised package path or package directory)")
-	allTargetsFlag := fs.Bool("all-targets", false, "publish every advertised Go target; --target chooses the default")
+	analysisTargetFlag := fs.String("target", "", "analysis surface (unambiguous advertised path or exact target key)")
+	allTargetsFlag := fs.Bool("all-targets", false, "publish every advertised Go module surface; --target chooses the default")
 	directCallDepth := fs.Int(
 		"depth", surfacediscovery.DefaultDirectCallDepth,
 		"target call-graph depth",
@@ -786,7 +786,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 					}
 					context := targetPageConsoleContext{
 						DisplayPath: projection.DisplayPath,
-						PackagePath: projection.Target.PackagePath,
+						Scope:       analysisTargetSubject(projection.Target),
 						RunID:       runID,
 						Role:        "default",
 					}
@@ -888,22 +888,23 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		}
 	}
 	if analysisTarget != nil {
+		targetDisplay := analysisTarget.DisplayPath()
+		targetSubject := analysisTargetSubject(*analysisTarget)
 		if directCallIndex == nil {
 			return fmt.Errorf(
 				"Go call analysis is unavailable for target %s under %s; choose the correct platform with --go-target GOOS/GOARCH (diagnostics: %s)",
-				analysisTarget.PackageDir, goTarget.String(), filepath.Join(runDir, "metadata.json"),
+				targetDisplay, goTarget.String(), filepath.Join(runDir, "metadata.json"),
 			)
 		}
 		if err := directCallIndex.Validate(); err != nil {
-			return fmt.Errorf("validate Go call analysis for target %s: %w", analysisTarget.PackageDir, err)
+			return fmt.Errorf("validate Go call analysis for target %s: %w", targetDisplay, err)
 		}
-		if scope := directCallIndex.Scope; !scope.TargetScoped() ||
-			scope.TargetKind != string(analysisTarget.Kind) ||
-			scope.TargetPackage != analysisTarget.PackagePath ||
-			scope.MaxDepth != *directCallDepth || scope.EdgeLimit != *directCallEdgeLimit {
+		if !analysisTargetScopeMatches(
+			*analysisTarget, directCallIndex.Scope, *directCallDepth, *directCallEdgeLimit,
+		) {
 			return fmt.Errorf(
 				"Go call analysis scope does not match target %s and requested --depth/--edges-limit",
-				analysisTarget.PackagePath,
+				targetSubject,
 			)
 		}
 		if directCallIndex.State != surfacediscovery.DirectCallIndexReady {
@@ -911,27 +912,27 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			case surfacediscovery.DirectCallIndexClosedSSAUnavailable:
 				return fmt.Errorf(
 					"Go SSA is unavailable for target %s under %s; choose the correct platform with --go-target GOOS/GOARCH",
-					analysisTarget.PackageDir, goTarget.String(),
+					targetDisplay, goTarget.String(),
 				)
 			case surfacediscovery.DirectCallIndexClosedNodeLimit:
 				return fmt.Errorf(
-					"Go call analysis for target %s exceeds the %d-function declaration safety bound; choose a narrower package with --target (the --depth option limits edges, not the exact symbol catalog)",
-					analysisTarget.PackageDir, surfacediscovery.MaxDirectCallIndexNodes,
+					"Go call analysis for target %s exceeds the %d-function declaration safety bound; choose a narrower target with --target (the --depth option limits edges, not the exact symbol catalog)",
+					targetDisplay, surfacediscovery.MaxDirectCallIndexNodes,
 				)
 			case surfacediscovery.DirectCallIndexClosedEdgeLimit:
 				return directCallEdgeCeilingError(
-					analysisTarget.PackagePath, *directCallDepth, *directCallEdgeLimit,
+					targetSubject, *directCallDepth, *directCallEdgeLimit,
 					directCallIndex.Coverage.EdgeLimitSafeDepth,
 				)
 			default:
-				return fmt.Errorf("Go call analysis for target %s is unavailable", analysisTarget.PackageDir)
+				return fmt.Errorf("Go call analysis for target %s is unavailable", targetDisplay)
 			}
 		}
 	}
 	if analysisTarget != nil {
 		targetDetails := []string{
 			"kind: " + string(analysisTarget.Kind),
-			"package: " + analysisTarget.PackagePath,
+			"scope: " + analysisTargetSubject(*analysisTarget),
 		}
 		if targetPortfolioOutcome.SemanticState == debugdump.SemanticStateAccepted {
 			targetDetails = append(
@@ -940,7 +941,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			)
 		}
 		humanOutput.State(
-			"Analysis target", analysisTarget.PackageDir,
+			"Analysis target", analysisTarget.DisplayPath(),
 			targetDetails...,
 		)
 	}
@@ -1082,7 +1083,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	var studyErr error
 	var themeTargetRoots *analysistarget.TargetRoots
 	if !*offline && analysisTarget != nil &&
-		analysisTarget.Kind == analysistarget.KindLibraryPackage {
+		(analysisTarget.Kind == analysistarget.KindLibraryPackage ||
+			analysisTarget.Kind == analysistarget.KindModuleLibrary) {
 		roots, rootsErr := analysistarget.BindExactRoots(*analysisTarget, directCallIndex)
 		if rootsErr != nil {
 			return fmt.Errorf("bind exact library roots before Study: %w", rootsErr)
@@ -2123,8 +2125,8 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "\nFlags:\n")
 	fmt.Fprintf(os.Stderr, "  --offline       skip model calls, local facts only\n")
 	fmt.Fprintf(os.Stderr, "  --go-target GOOS/GOARCH select one Go build target (default: GOOS/GOARCH environment, then host)\n")
-	fmt.Fprintf(os.Stderr, "  --target PACKAGE select one advertised executable or library package\n")
-	fmt.Fprintf(os.Stderr, "  --all-targets   publish every advertised target; --target chooses the default\n")
+	fmt.Fprintf(os.Stderr, "  --target TARGET select one advertised executable or module Library API\n")
+	fmt.Fprintf(os.Stderr, "  --all-targets   publish every advertised module surface; --target chooses the default\n")
 	fmt.Fprintf(os.Stderr, "  --depth N        target call-graph depth (default: %d)\n", surfacediscovery.DefaultDirectCallDepth)
 	fmt.Fprintf(os.Stderr, "  --edges-limit E  maximum exact target call-graph edges (default: %d)\n", surfacediscovery.DefaultDirectCallEdgeLimit)
 	fmt.Fprintf(os.Stderr, "  --no-cache      disable cross-run model response caches\n")

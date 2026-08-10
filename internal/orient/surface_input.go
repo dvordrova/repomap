@@ -13,8 +13,25 @@ func surfaceDiscoveryInput(
 ) surfacediscovery.Input {
 	input := surfacediscovery.Input{RepositoryName: repositoryName}
 	if target != nil {
+		targetKind := string(target.Kind)
+		targetPackages := []string{target.PackagePath}
+		packagePath := target.PackagePath
+		if target.Kind == analysistarget.KindModuleLibrary || target.Kind == analysistarget.KindLibraryPackage {
+			targetKind = surfacediscovery.AnalysisTargetModuleLibrary
+			packagePath = ""
+			targetPackages = make([]string, 0, len(target.LibraryPackages))
+			if target.Kind == analysistarget.KindLibraryPackage {
+				targetPackages = append(targetPackages, target.PackagePath)
+			} else {
+				for _, pkg := range target.LibraryPackages {
+					targetPackages = append(targetPackages, pkg.PackagePath)
+				}
+			}
+		}
 		input.AnalysisTarget = &surfacediscovery.AnalysisTargetInput{
-			Kind: string(target.Kind), PackagePath: target.PackagePath,
+			TargetRef: target.Ref, Kind: targetKind,
+			ModuleID: target.ModuleID, ModulePath: target.ModulePath, ModuleDir: target.ModuleDir,
+			PackagePath: packagePath, TargetPackages: targetPackages,
 			Roots: make([]surfacediscovery.AnalysisTargetRootInput, 0, len(target.Roots)),
 		}
 		for _, root := range target.Roots {

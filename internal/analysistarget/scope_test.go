@@ -2,6 +2,7 @@ package analysistarget
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/gofacts"
@@ -85,6 +86,47 @@ func TestTargetValidateRejectsRefDrift(t *testing.T) {
 	target.PackagePath += "/drift"
 	if err := target.Validate(); err == nil {
 		t.Fatal("Validate accepted a drifted self-seal")
+	}
+}
+
+func TestScopeGoFactsModuleLibraryUsesExactNonMainModuleInventory(t *testing.T) {
+	facts := syntheticFacts("module-root", "example.com/mixed", []syntheticPackage{
+		{path: "example.com/mixed", dir: ".", executable: true, line: 4},
+		{path: "example.com/mixed/api", dir: "api"},
+		{path: "example.com/mixed/internal/store", dir: "internal/store"},
+	})
+	candidates, err := Candidates(facts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var target Target
+	for _, candidate := range candidates {
+		if candidate.Target.Kind == KindModuleLibrary {
+			target = candidate.Target
+		}
+	}
+	if target.Ref == "" {
+		t.Fatalf("no module-library candidate: %#v", candidates)
+	}
+
+	scoped, err := ScopeGoFacts(facts, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPackagePaths(t, scoped, []string{
+		"example.com/mixed/api",
+		"example.com/mixed/internal/store",
+	})
+	if len(scoped.EntrypointPackages) != 0 || len(scoped.Modules) != 1 ||
+		scoped.Modules[0].PackagesCount != 2 {
+		t.Fatalf("module-library scope = %#v", scoped)
+	}
+
+	driftedFacts := facts
+	driftedFacts.Packages = append([]gofacts.PackageFact(nil), facts.Packages[:2]...)
+	if _, err := ScopeGoFacts(driftedFacts, target); err == nil ||
+		!strings.Contains(err.Error(), "module package inventory mismatch") {
+		t.Fatalf("scope accepted drifted module inventory: %v", err)
 	}
 }
 

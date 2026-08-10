@@ -38,7 +38,14 @@ func Resolve(facts gofacts.Facts, options Options) (Resolution, error) {
 		case 1:
 			return selectedResolution(candidates, matches[0].Target, "explicit override"), nil
 		default:
-			return Resolution{}, fmt.Errorf("%w: %q matches %d candidates", ErrOverrideAmbiguous, override, len(matches))
+			keys := make([]string, 0, len(matches))
+			for _, candidate := range matches {
+				keys = append(keys, candidate.Key)
+			}
+			return Resolution{}, fmt.Errorf(
+				"%w: %q matches %d candidates; use one exact target key: %s",
+				ErrOverrideAmbiguous, override, len(matches), strings.Join(keys, ", "),
+			)
 		}
 	}
 
@@ -51,8 +58,10 @@ func Resolve(facts gofacts.Facts, options Options) (Resolution, error) {
 	return selectedResolution(candidates, target, reason), nil
 }
 
-// Candidates derives executable candidates from exact build-selected main
-// anchors and library candidates from the remaining exact local packages.
+// Candidates derives every exact build-selected executable plus at most one
+// public module-library target per complete module. A module library is not a
+// package alias: it seals the complete non-main module scope and the exact
+// externally importable package roots that expose at least one exported name.
 func Candidates(facts gofacts.Facts) ([]Candidate, error) {
 	modules := make(map[string]gofacts.ModuleFact, len(facts.Modules))
 	for _, module := range facts.Modules {
@@ -66,6 +75,7 @@ func Candidates(facts gofacts.Facts) ([]Candidate, error) {
 	}
 
 	packages := make(map[string]gofacts.PackageFact, len(facts.Packages))
+	packagesByModule := make(map[string][]gofacts.PackageFact, len(modules))
 	for _, pkg := range facts.Packages {
 		if pkg.Locality != "" && pkg.Locality != "local" {
 			continue
@@ -81,6 +91,7 @@ func Candidates(facts gofacts.Facts) ([]Candidate, error) {
 			return nil, fmt.Errorf("analysis target: duplicate package identity %q", pkg.CanonicalPath)
 		}
 		packages[key] = pkg
+		packagesByModule[pkg.ModuleID] = append(packagesByModule[pkg.ModuleID], pkg)
 	}
 
 	type executableBuild struct {
@@ -113,7 +124,7 @@ func Candidates(facts gofacts.Facts) ([]Candidate, error) {
 		executables[key] = build
 	}
 
-	candidates := make([]Candidate, 0, len(packages))
+	candidates := make([]Candidate, 0, len(executables)+len(modules))
 	for key, pkg := range packages {
 		module := modules[pkg.ModuleID]
 		if executable, ok := executables[key]; ok {
@@ -129,15 +140,20 @@ func Candidates(facts gofacts.Facts) ([]Candidate, error) {
 				Key: candidateKey(module.ModulePath, module.ModuleDir, pkg.CanonicalPath), Target: target,
 				MainModule: rootAnalysisModule(module), EntrypointKind: executable.kind,
 			})
-			continue
 		}
+	}
 
-		target, err := newTarget(module, pkg, KindLibraryPackage, RootBoundaryExactPublicAPI, []Root{})
+	for _, module := range modules {
+		target, ok, err := newModuleLibraryTarget(module, packagesByModule[module.ID])
 		if err != nil {
 			return nil, err
 		}
+		if !ok {
+			continue
+		}
 		candidates = append(candidates, Candidate{
-			Key: candidateKey(module.ModulePath, module.ModuleDir, pkg.CanonicalPath), Target: target, MainModule: rootAnalysisModule(module),
+			Key: moduleCandidateKey(module.ModulePath, module.ModuleDir), Target: target,
+			MainModule: rootAnalysisModule(module),
 		})
 	}
 
@@ -189,12 +205,12 @@ func autoSelect(candidates []Candidate) (Target, string, bool) {
 	}
 
 	rootLibraries := filterCandidates(candidates, func(candidate Candidate) bool {
-		return candidate.MainModule && candidate.Target.Kind == KindLibraryPackage && candidate.Target.PackageDir == "."
+		return candidate.MainModule && candidate.Target.Kind == KindModuleLibrary
 	})
 	if len(plausibleExecutables) == 0 && len(rootLibraries) == 1 {
-		return rootLibraries[0].Target, "sole root library package", true
+		return rootLibraries[0].Target, "sole root module library", true
 	}
-	if len(plausibleExecutables) == 1 && len(rootLibraries) == 0 {
+	if len(plausibleExecutables) == 1 {
 		return plausibleExecutables[0].Target, "sole plausible executable package", true
 	}
 	return Target{}, "", false
@@ -226,6 +242,117 @@ func newTarget(module gofacts.ModuleFact, pkg gofacts.PackageFact, kind Kind, bo
 		return Target{}, err
 	}
 	return target, nil
+}
+
+func newModuleLibraryTarget(
+	module gofacts.ModuleFact,
+	packages []gofacts.PackageFact,
+) (Target, bool, error) {
+	if !modulePackageInventoryComplete(module, packages) {
+		return Target{}, false, nil
+	}
+
+	modulePackages := make([]TargetPackage, 0, len(packages))
+	libraryPackages := make([]TargetPackage, 0, len(packages))
+	for _, pkg := range packages {
+		if pkg.Name == "main" {
+			continue
+		}
+		targetPackage, err := targetPackageFromFact(module, pkg)
+		if err != nil {
+			return Target{}, false, err
+		}
+		modulePackages = append(modulePackages, targetPackage)
+		if internalModulePackage(pkg.ModuleRelativeDir) {
+			continue
+		}
+		if !pkg.LoadCompleteness.Complete() {
+			// Aggregate public-library authority requires an exact build-selected
+			// package. Missing or incomplete package-local go-list authority fails
+			// closed, while an internal-only package remains analysis context.
+			return Target{}, false, nil
+		}
+		if !pkg.DeclarationsScanned {
+			// Without a complete scan, absence of exported declarations is not
+			// evidence. Keep exact executables but omit this aggregate target.
+			return Target{}, false, nil
+		}
+		declarations, err := gofacts.CanonicalPackageDeclarations(pkg.Declarations)
+		if err != nil {
+			return Target{}, false, fmt.Errorf("analysis target: package %q declarations: %w", pkg.CanonicalPath, err)
+		}
+		hasExport := false
+		for _, declaration := range declarations {
+			if declaration.ExportedAPI() {
+				hasExport = true
+				break
+			}
+		}
+		if hasExport {
+			libraryPackages = append(libraryPackages, targetPackage)
+		}
+	}
+	modulePackages = canonicalTargetPackages(modulePackages)
+	libraryPackages = canonicalTargetPackages(libraryPackages)
+	if len(libraryPackages) == 0 {
+		return Target{}, false, nil
+	}
+
+	moduleDir, err := canonicalPackageDir(module.ModuleDir)
+	if err != nil {
+		return Target{}, false, fmt.Errorf("analysis target: module %q: %w", module.ModulePath, err)
+	}
+	target := Target{
+		Version: Version, Kind: KindModuleLibrary, ModuleID: module.ID,
+		ModulePath: module.ModulePath, ModuleDir: moduleDir,
+		ModulePackages: modulePackages, LibraryPackages: libraryPackages,
+		RootBoundary: RootBoundaryExactModuleAPI, Roots: []Root{},
+	}
+	target.Ref, err = targetRef(target)
+	if err != nil {
+		return Target{}, false, err
+	}
+	if err := target.Validate(); err != nil {
+		return Target{}, false, err
+	}
+	return target, true, nil
+}
+
+func modulePackageInventoryComplete(module gofacts.ModuleFact, packages []gofacts.PackageFact) bool {
+	count := len(packages)
+	return count > 0 && exactOrUnspecifiedCount(module.PackagesCount, count) &&
+		exactOrUnspecifiedCount(module.RetainedPackagesCount, count) &&
+		(module.Coverage.PackagesDiscovered == 0 || module.Coverage.PackagesDiscovered == count) &&
+		(module.Coverage.PackagesRetained == 0 || module.Coverage.PackagesRetained == count)
+}
+
+func exactOrUnspecifiedCount(value, exact int) bool {
+	return value == 0 || value == exact
+}
+
+func targetPackageFromFact(module gofacts.ModuleFact, pkg gofacts.PackageFact) (TargetPackage, error) {
+	if pkg.ModuleID != module.ID || pkg.ModulePath != module.ModulePath {
+		return TargetPackage{}, fmt.Errorf("analysis target: package %q has inconsistent module identity", pkg.CanonicalPath)
+	}
+	packageDir, err := canonicalPackageDir(pkg.PackageDir)
+	if err != nil {
+		return TargetPackage{}, fmt.Errorf("analysis target: package %q: %w", pkg.CanonicalPath, err)
+	}
+	result := TargetPackage{PackagePath: pkg.CanonicalPath, PackageDir: packageDir}
+	if !packageBelongsToModule(module.ModulePath, result.PackagePath) ||
+		!directoryBelongsToModule(canonicalDirForMatch(module.ModuleDir), result.PackageDir) {
+		return TargetPackage{}, fmt.Errorf("analysis target: package %q is outside module %q", pkg.CanonicalPath, module.ModulePath)
+	}
+	return result, nil
+}
+
+func internalModulePackage(moduleRelativeDir string) bool {
+	for _, segment := range strings.Split(canonicalDirForMatch(moduleRelativeDir), "/") {
+		if segment == "internal" {
+			return true
+		}
+	}
+	return false
 }
 
 func targetRef(target Target) (string, error) {
@@ -278,11 +405,27 @@ func findEntrypointPackage(
 }
 
 func matchingCandidates(candidates []Candidate, override string) []Candidate {
+	exact := make([]Candidate, 0, 1)
+	for _, candidate := range candidates {
+		if override == candidate.Target.Ref || override == candidate.Key {
+			exact = append(exact, candidate)
+		}
+	}
+	if len(exact) > 0 {
+		return exact
+	}
+
 	matches := make([]Candidate, 0, 1)
 	cleanDir := canonicalDirForMatch(override)
 	for _, candidate := range candidates {
-		if override == candidate.Target.Ref || override == candidate.Key || override == candidate.Target.PackagePath ||
-			cleanDir == canonicalDirForMatch(candidate.Target.PackageDir) {
+		target := candidate.Target
+		if target.Kind == KindModuleLibrary &&
+			(override == target.ModulePath || cleanDir == canonicalDirForMatch(target.ModuleDir)) {
+			matches = append(matches, candidate)
+			continue
+		}
+		if target.Kind != KindModuleLibrary &&
+			(override == target.PackagePath || cleanDir == canonicalDirForMatch(target.PackageDir)) {
 			matches = append(matches, candidate)
 		}
 	}
@@ -360,6 +503,17 @@ func packageIdentityKey(moduleID, packagePath string) string {
 
 func candidateKey(modulePath, moduleDir, packagePath string) string {
 	return modulePath + "@" + canonicalDirForMatch(moduleDir) + "::" + packagePath
+}
+
+func moduleCandidateKey(modulePath, moduleDir string) string {
+	return modulePath + "@" + canonicalDirForMatch(moduleDir) + "::module_library"
+}
+
+func targetCandidateKey(target Target) string {
+	if target.Kind == KindModuleLibrary {
+		return moduleCandidateKey(target.ModulePath, target.ModuleDir)
+	}
+	return candidateKey(target.ModulePath, target.ModuleDir, target.PackagePath)
 }
 
 func packageBase(packageDir string) string {

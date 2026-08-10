@@ -1114,23 +1114,26 @@
 			label = label.replace(/\.v[0-9]+$/, '').replace(/\.git$/, '');
 			return label || identity || '.';
 		}
-		function targetLabel(displayPath) {
+		function targetLabel(displayPath, kind) {
+			if (kind === 'module_library') return msg('main.analysis_target.module_library_label');
 			// The canonical repository-relative path remains the target identity,
 			// but a literal dot is implementation notation rather than a useful
 			// product label. Derive only the terminal module name, ignoring an exact
 			// semantic-import major version suffix such as /v3 or .v3.
 			return displayPath === '.' ? rootTargetLabel() : displayPath;
 		}
-		if (TARGET_NAVIGATION && Number(TARGET_NAVIGATION.version) === 1 &&
+		if (TARGET_NAVIGATION && Number(TARGET_NAVIGATION.version) === 2 &&
 			Array.isArray(TARGET_NAVIGATION.targets)) {
 			return TARGET_NAVIGATION.targets.map(function (item) {
 				var moduleDir = String(item.module_dir || '.');
 				var ref = String(item.target_ref || '');
 				var displayPath = String(item.display_path || '');
+				var kind = String(item.kind || '');
+				var modulePath = String(item.module_path || '');
 				return {
 					ref: ref,
-					label: targetLabel(displayPath),
-					title: displayPath,
+					label: targetLabel(displayPath, kind),
+					title: kind === 'module_library' ? (modulePath || displayPath) : displayPath,
 					goMod: moduleDir === '.' ? 'go.mod' : moduleDir + '/go.mod',
 					isDefault: ref === String(TARGET_NAVIGATION.default_target_ref || ''),
 					isActive: ref === String(TARGET_NAVIGATION.current_target_ref || ''),
@@ -1140,13 +1143,16 @@
 			});
 		}
 		var target = ANALYSIS_TARGET || {};
-		var packagePath = String(target.package_path || target.package_dir || DATA.repo_name || msg('main.repository'));
+		var kind = String(target.kind || '');
+		var packagePath = String(target.package_path || target.module_path || target.package_dir || DATA.repo_name || msg('main.repository'));
 		var packageDir = String(target.package_dir || '');
-		var displayPath = packageDir || packagePath;
+		var displayPath = kind === 'module_library'
+			? String(target.module_dir || '.')
+			: (packageDir || packagePath);
 		var moduleDir = String(target.module_dir || '.');
 		return [{
 			ref: String(target.ref || ''),
-			label: targetLabel(displayPath),
+			label: targetLabel(displayPath, kind),
 			title: packagePath,
 			goMod: moduleDir === '.' ? 'go.mod' : moduleDir + '/go.mod',
 			isDefault: true,
@@ -7660,7 +7666,7 @@
 	}
 
 	function analysisTargetWorkspacePurpose() {
-		if (!ANALYSIS_TARGET || Number(ANALYSIS_TARGET.version) !== 1) return '';
+		if (!ANALYSIS_TARGET || Number(ANALYSIS_TARGET.version) !== 2) return '';
 		var kind = String(ANALYSIS_TARGET.kind || '');
 		var packageDir = String(ANALYSIS_TARGET.package_dir || '');
 		var packagePath = String(ANALYSIS_TARGET.package_path || '');
@@ -7670,6 +7676,10 @@
 		if (kind === 'library_package') {
 			var libraryScope = packageDir && packageDir !== '.' ? packageDir : packagePath;
 			if (libraryScope) return msg('main.analysis_target.library_scope', { scope: libraryScope });
+		}
+		if (kind === 'module_library') {
+			var moduleScope = String(ANALYSIS_TARGET.module_path || ANALYSIS_TARGET.module_dir || '');
+			if (moduleScope) return msg('main.analysis_target.module_library_scope', { scope: moduleScope });
 		}
 		return '';
 	}

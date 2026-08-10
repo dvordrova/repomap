@@ -464,9 +464,11 @@ type atlasStudyReadingShelfResult struct {
 }
 
 // atlasStudySelectedLibraryShelf replaces the generic component/surface shelf
-// only for an exact selected library target. Its authority is the build-
-// selected PackageFact declarations and the literal matching Atlas package
-// Unit; Architecture components (including LocalRemainder) are irrelevant.
+// for an exact selected library target. D280 module libraries bind every
+// externally importable public-API package to its literal Atlas package Unit;
+// no representative package is allowed to stand in for the module. Its
+// authority is the build-selected PackageFact declaration inventory.
+// Architecture components (including LocalRemainder) are irrelevant.
 // Executable and untargeted runs return the pre-D277 shelf byte-for-byte.
 func atlasStudySelectedLibraryShelf(
 	data *ReportData,
@@ -474,7 +476,8 @@ func atlasStudySelectedLibraryShelf(
 	fallback atlasStudyReadingShelfResult,
 ) (atlasStudyReadingShelfResult, error) {
 	if data == nil || data.AnalysisTarget == nil ||
-		data.AnalysisTarget.Kind != analysistarget.KindLibraryPackage {
+		(data.AnalysisTarget.Kind != analysistarget.KindLibraryPackage &&
+			data.AnalysisTarget.Kind != analysistarget.KindModuleLibrary) {
 		return fallback, nil
 	}
 	target := data.AnalysisTarget.Snapshot()
@@ -484,104 +487,125 @@ func atlasStudySelectedLibraryShelf(
 	if data.repositoryGoFacts == nil {
 		return atlasStudyReadingShelfResult{}, fmt.Errorf("atlas study report: selected library package facts are unavailable")
 	}
-	var selected *gofacts.PackageFact
-	for index := range data.repositoryGoFacts.Packages {
-		pkg := &data.repositoryGoFacts.Packages[index]
-		if pkg.ModuleID != target.ModuleID || pkg.CanonicalPath != target.PackagePath {
-			continue
+	type selectedPackage struct {
+		identity analysistarget.TargetPackage
+		fact     gofacts.PackageFact
+		unit     repositoryatlas.Unit
+		files    map[string]struct{}
+	}
+	wanted := target.RootPackages()
+	selected := make([]selectedPackage, 0, len(wanted))
+	for _, identity := range wanted {
+		var packageFacts []gofacts.PackageFact
+		for _, pkg := range data.repositoryGoFacts.Packages {
+			if pkg.ModuleID == target.ModuleID && pkg.CanonicalPath == identity.PackagePath {
+				packageFacts = append(packageFacts, pkg)
+			}
 		}
-		if selected != nil {
-			return atlasStudyReadingShelfResult{}, fmt.Errorf("atlas study report: selected library package facts are ambiguous")
+		if len(packageFacts) != 1 || packageFacts[0].ModulePath != target.ModulePath ||
+			packageFacts[0].PackageDir != identity.PackageDir || !packageFacts[0].DeclarationsScanned {
+			return atlasStudyReadingShelfResult{}, fmt.Errorf(
+				"atlas study report: selected library declarations for %q are unavailable",
+				identity.PackagePath,
+			)
 		}
-		selected = pkg
-	}
-	if selected == nil || selected.ModulePath != target.ModulePath ||
-		selected.PackageDir != target.PackageDir || !selected.DeclarationsScanned {
-		return atlasStudyReadingShelfResult{}, fmt.Errorf("atlas study report: selected library declarations are unavailable")
-	}
-	if err := gofacts.ValidatePackageDeclarations(selected.Declarations); err != nil {
-		return atlasStudyReadingShelfResult{}, fmt.Errorf("atlas study report: selected library declarations: %w", err)
-	}
-	selectedFiles := make(map[string]struct{}, len(selected.Files))
-	for _, sourcePath := range selected.Files {
-		selectedFiles[sourcePath] = struct{}{}
+		if err := gofacts.ValidatePackageDeclarations(packageFacts[0].Declarations); err != nil {
+			return atlasStudyReadingShelfResult{}, fmt.Errorf(
+				"atlas study report: selected library declarations for %q: %w",
+				identity.PackagePath, err,
+			)
+		}
+		var packageUnits []repositoryatlas.Unit
+		for _, unit := range atlas.Units {
+			if unit.Kind == repositoryatlas.UnitPackage && unit.ParentID == target.ModuleID &&
+				unit.Name == identity.PackagePath {
+				packageUnits = append(packageUnits, unit)
+			}
+		}
+		if len(packageUnits) != 1 {
+			return atlasStudyReadingShelfResult{}, fmt.Errorf(
+				"atlas study report: selected library package Unit for %q is unavailable or ambiguous",
+				identity.PackagePath,
+			)
+		}
+		files := make(map[string]struct{}, len(packageFacts[0].Files))
+		for _, sourcePath := range packageFacts[0].Files {
+			files[sourcePath] = struct{}{}
+		}
+		selected = append(selected, selectedPackage{
+			identity: identity, fact: packageFacts[0], unit: packageUnits[0], files: files,
+		})
 	}
 
-	var packageUnit *repositoryatlas.Unit
-	for index := range atlas.Units {
-		unit := &atlas.Units[index]
-		if unit.Kind != repositoryatlas.UnitPackage || unit.ParentID != target.ModuleID ||
-			unit.Name != target.PackagePath {
-			continue
+	result := atlasStudyReadingShelfResult{analysisTargetRoot: &atlasstudy.AnalysisTargetRootScope{
+		AnalysisTarget: target,
+	}}
+	if target.Kind == analysistarget.KindLibraryPackage {
+		result.analysisTargetRoot.UnitID = selected[0].unit.ID
+	} else {
+		result.analysisTargetRoot.Packages = make([]atlasstudy.AnalysisTargetRootPackage, 0, len(selected))
+		for _, pkg := range selected {
+			result.analysisTargetRoot.Packages = append(
+				result.analysisTargetRoot.Packages,
+				atlasstudy.AnalysisTargetRootPackage{Package: pkg.identity, UnitID: pkg.unit.ID},
+			)
 		}
-		if packageUnit != nil {
-			return atlasStudyReadingShelfResult{}, fmt.Errorf("atlas study report: selected library package Unit is ambiguous")
-		}
-		packageUnit = unit
 	}
-	if packageUnit == nil {
-		return atlasStudyReadingShelfResult{}, fmt.Errorf("atlas study report: selected library package Unit is unavailable")
-	}
-
-	result := atlasStudyReadingShelfResult{
-		analysisTargetRoot: &atlasstudy.AnalysisTargetRootScope{
-			AnalysisTarget: target,
-			UnitID:         packageUnit.ID,
-		},
-	}
-	for _, declaration := range selected.Declarations {
-		if !declaration.ExportedAPI() || !declaration.ExecutableBody ||
-			(declaration.Kind != gofacts.PackageDeclarationFunc &&
-				declaration.Kind != gofacts.PackageDeclarationMethod) {
-			continue
+	for _, selectedPackage := range selected {
+		for _, declaration := range selectedPackage.fact.Declarations {
+			if !declaration.ExportedAPI() || !declaration.ExecutableBody ||
+				(declaration.Kind != gofacts.PackageDeclarationFunc &&
+					declaration.Kind != gofacts.PackageDeclarationMethod) {
+				continue
+			}
+			if declaration.Path == "" || declaration.Line <= 0 || declaration.Column <= 0 {
+				return atlasStudyReadingShelfResult{}, fmt.Errorf("atlas study report: selected library declaration lacks an exact locator")
+			}
+			if _, exactFile := selectedPackage.files[declaration.Path]; !exactFile ||
+				path.Dir(declaration.Path) != selectedPackage.identity.PackageDir {
+				return atlasStudyReadingShelfResult{}, fmt.Errorf("atlas study report: selected library declaration is outside its build-selected package files")
+			}
+			kind := atlasstudy.ReadingTargetFunction
+			if declaration.Kind == gofacts.PackageDeclarationMethod {
+				kind = atlasstudy.ReadingTargetMethod
+			}
+			label := declaration.Label()
+			locatorIdentity := strings.Join([]string{
+				target.Ref, selectedPackage.unit.ID, string(kind), declaration.Path,
+				fmt.Sprint(declaration.Line), fmt.Sprint(declaration.Column), label,
+			}, "\x00")
+			digest := atlasStudyDigest(locatorIdentity)
+			targetID := "analysis-target-public-api-" + digest
+			supportID := "analysis-target-public-api-support-" + digest
+			result.targets = append(result.targets, atlasstudy.ReadingTarget{
+				ID: targetID,
+				PrincipalRefs: []atlasstudy.CanonicalRef{{
+					Kind: atlasstudy.RefUnit, ID: selectedPackage.unit.ID,
+				}},
+				Kind: kind, Label: label,
+				Fact:      "Exact exported callable declaration in the selected module library API.",
+				Authority: repositoryatlas.AuthorityResolved,
+				Location: evidence.Location{
+					Path: declaration.Path, Line: declaration.Line, Column: declaration.Column,
+				},
+				Symbol: label,
+			})
+			result.supports = append(result.supports, atlasstudy.ReadingSupport{
+				ID: supportID, Role: atlasstudy.SupportAnalysisTargetRoot,
+				TargetID:      targetID,
+				PackageBucket: selectedPackage.unit.ID, Authority: repositoryatlas.AuthorityResolved,
+			})
+			result.spans = append(result.spans, atlasstudy.RouteSpan{
+				ID:                 "analysis-target-public-api-span-" + digest,
+				Kind:               atlasstudy.RouteSpanFocused,
+				QuestionEnglish:    "How does this callable participate in the selected module's library API?",
+				QuestionRussian:    "Как этот вызываемый объект участвует в библиотечном API выбранного модуля?",
+				TargetJob:          atlasstudy.JobIntegrate,
+				LearningStage:      atlasstudy.StageIntegration,
+				RequiredSupportIDs: []string{supportID},
+				AllowedTargetIDs:   []string{targetID},
+			})
 		}
-		if declaration.Path == "" || declaration.Line <= 0 || declaration.Column <= 0 {
-			return atlasStudyReadingShelfResult{}, fmt.Errorf("atlas study report: selected library declaration lacks an exact locator")
-		}
-		if _, exactFile := selectedFiles[declaration.Path]; !exactFile ||
-			path.Dir(declaration.Path) != target.PackageDir {
-			return atlasStudyReadingShelfResult{}, fmt.Errorf("atlas study report: selected library declaration is outside its build-selected package files")
-		}
-		kind := atlasstudy.ReadingTargetFunction
-		if declaration.Kind == gofacts.PackageDeclarationMethod {
-			kind = atlasstudy.ReadingTargetMethod
-		}
-		label := declaration.Label()
-		locatorIdentity := strings.Join([]string{
-			target.Ref, packageUnit.ID, string(kind), declaration.Path,
-			fmt.Sprint(declaration.Line), fmt.Sprint(declaration.Column), label,
-		}, "\x00")
-		digest := atlasStudyDigest(locatorIdentity)
-		targetID := "analysis-target-public-api-" + digest
-		supportID := "analysis-target-public-api-support-" + digest
-		result.targets = append(result.targets, atlasstudy.ReadingTarget{
-			ID: targetID,
-			PrincipalRefs: []atlasstudy.CanonicalRef{{
-				Kind: atlasstudy.RefUnit, ID: packageUnit.ID,
-			}},
-			Kind: kind, Label: label,
-			Fact:      "Exact exported callable declaration in the selected library package.",
-			Authority: repositoryatlas.AuthorityResolved,
-			Location: evidence.Location{
-				Path: declaration.Path, Line: declaration.Line, Column: declaration.Column,
-			},
-			Symbol: label,
-		})
-		result.supports = append(result.supports, atlasstudy.ReadingSupport{
-			ID: supportID, Role: atlasstudy.SupportAnalysisTargetRoot,
-			TargetID:      targetID,
-			PackageBucket: packageUnit.ID, Authority: repositoryatlas.AuthorityResolved,
-		})
-		result.spans = append(result.spans, atlasstudy.RouteSpan{
-			ID:                 "analysis-target-public-api-span-" + digest,
-			Kind:               atlasstudy.RouteSpanFocused,
-			QuestionEnglish:    "How does this callable participate in the selected library's public API?",
-			QuestionRussian:    "Как этот вызываемый объект участвует в публичном API выбранной библиотеки?",
-			TargetJob:          atlasstudy.JobIntegrate,
-			LearningStage:      atlasstudy.StageIntegration,
-			RequiredSupportIDs: []string{supportID},
-			AllowedTargetIDs:   []string{targetID},
-		})
 	}
 	return result, nil
 }

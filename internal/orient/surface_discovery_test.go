@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 	"github.com/dvordrova/repomap/internal/repositoryatlas/goadapter"
@@ -142,6 +143,68 @@ func TestSurfaceDiscoveryInputPreservesExactEntrypointAnchors(t *testing.T) {
 		input.Entrypoints[0].Anchors[0].Path != "service/cmd/fixture/main.go" ||
 		input.Entrypoints[0].Anchors[0].Line != 23 {
 		t.Fatalf("surface discovery input = %#v", input)
+	}
+}
+
+func TestSurfaceDiscoveryInputProjectsModuleLibraryRootsAndFullOwningModuleScope(t *testing.T) {
+	const modulePath = "example.com/library"
+	facts := gofacts.Facts{
+		Modules: []gofacts.ModuleFact{{
+			ID: "root", ModulePath: modulePath, ModuleDir: ".", Main: true,
+			PackagesCount: 3, RetainedPackagesCount: 3,
+			Coverage: gofacts.ModuleCoverage{PackagesDiscovered: 3, PackagesRetained: 3},
+		}},
+		Packages: []gofacts.PackageFact{
+			{
+				CanonicalPath: modulePath, Name: "library", ModuleID: "root", ModulePath: modulePath,
+				PackageDir: ".", ModuleRelativeDir: ".", Locality: "local", DeclarationsScanned: true,
+				LoadCompleteness: completeSurfacePackageLoad(),
+				Declarations:     []gofacts.PackageDeclaration{{Kind: gofacts.PackageDeclarationFunc, Name: "Open"}},
+			},
+			{
+				CanonicalPath: modulePath + "/client", Name: "client", ModuleID: "root", ModulePath: modulePath,
+				PackageDir: "client", ModuleRelativeDir: "client", Locality: "local", DeclarationsScanned: true,
+				LoadCompleteness: completeSurfacePackageLoad(),
+				Declarations:     []gofacts.PackageDeclaration{{Kind: gofacts.PackageDeclarationType, Name: "Client"}},
+			},
+			{
+				CanonicalPath: modulePath + "/internal/state", Name: "state", ModuleID: "root", ModulePath: modulePath,
+				PackageDir: "internal/state", ModuleRelativeDir: "internal/state", Locality: "local", DeclarationsScanned: true,
+				LoadCompleteness: completeSurfacePackageLoad(),
+			},
+		},
+	}
+	catalog, err := analysistarget.BuildCatalog(facts)
+	if err != nil || len(catalog.Entries) != 1 {
+		t.Fatalf("module-library catalog = %#v / %v", catalog, err)
+	}
+	target := catalog.Entries[0].Candidate.Target
+	scoped, err := analysistarget.ScopeGoFacts(facts, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := surfaceDiscoveryInput("library", &scoped, &target)
+	if input.AnalysisTarget == nil || input.AnalysisTarget.TargetRef != target.Ref ||
+		input.AnalysisTarget.Kind != "module_library" || input.AnalysisTarget.ModuleID != "root" ||
+		input.AnalysisTarget.ModulePath != modulePath || input.AnalysisTarget.ModuleDir != "." ||
+		input.AnalysisTarget.PackagePath != "" ||
+		!reflect.DeepEqual(input.AnalysisTarget.TargetPackages, []string{modulePath, modulePath + "/client"}) ||
+		len(input.AnalysisTarget.Roots) != 0 {
+		t.Fatalf("module-library target adapter = %#v", input.AnalysisTarget)
+	}
+	gotPackages := make([]string, 0, len(input.Packages))
+	for _, pkg := range input.Packages {
+		gotPackages = append(gotPackages, pkg.Path)
+	}
+	if !reflect.DeepEqual(gotPackages, []string{modulePath, modulePath + "/client", modulePath + "/internal/state"}) {
+		t.Fatalf("module-library admitted package scope = %#v", input.Packages)
+	}
+}
+
+func completeSurfacePackageLoad() *gofacts.PackageLoadCompleteness {
+	return &gofacts.PackageLoadCompleteness{
+		Version: gofacts.PackageLoadCompletenessVersion,
+		State:   gofacts.PackageLoadComplete,
 	}
 }
 

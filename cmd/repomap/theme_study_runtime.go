@@ -110,7 +110,8 @@ func runThemeStudyForRun(
 	var libraryRoots analysistarget.TargetRoots
 	hasLibraryRootAuthority := false
 	if preparedData.AnalysisTarget != nil &&
-		preparedData.AnalysisTarget.Kind == analysistarget.KindLibraryPackage {
+		(preparedData.AnalysisTarget.Kind == analysistarget.KindLibraryPackage ||
+			preparedData.AnalysisTarget.Kind == analysistarget.KindModuleLibrary) {
 		if analysisTarget == nil || directCallIndex == nil || targetRoots == nil ||
 			analysisTarget.Ref != preparedData.AnalysisTarget.Ref {
 			return themeStudyRunOutcome{}, fmt.Errorf("theme study run: selected library root authority is unavailable")
@@ -190,8 +191,12 @@ func validateThemeLibraryRootLocators(
 		return fmt.Errorf("public API reading roots are incomplete")
 	}
 	live := make(map[string]struct{}, len(roots.Roots))
+	rootPackages := make(map[string]struct{})
+	for _, pkg := range target.RootPackages() {
+		rootPackages[pkg.PackagePath] = struct{}{}
+	}
 	for _, root := range roots.Roots {
-		if root.Package != target.PackagePath {
+		if _, selected := rootPackages[root.Package]; !selected {
 			return fmt.Errorf("live root package does not match selected target")
 		}
 		key := fmt.Sprintf("%s\x00%d", root.Path, root.Line)

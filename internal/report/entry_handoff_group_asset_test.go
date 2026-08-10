@@ -102,7 +102,7 @@ groupB.entry.component_ids = [];
 const report = {
   repo_name: "fixture", report_language: process.argv[3] || "en",
   analysis_target: {
-    version: 1, ref: "fixture-target", kind: "executable_package", module_dir: ".",
+    version: 2, ref: "fixture-target", kind: "executable_package", module_dir: ".",
     package_dir: ".", package_path: "fixture", roots: [{ path: "main.go", line: 10 }],
   },
   github_source_links: { repository_url: "https://github.com/acme/fixture", revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },

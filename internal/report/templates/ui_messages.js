@@ -20,7 +20,9 @@
   // copy; exact readings remain the sole prepared-investigation presentation.
   // UI25 distinguishes snapshot freshness from Git working-tree cleanliness
   // and replaces the module-root dot with the repository presentation name.
-  var VERSION = 25;
+  // UI26 presents D280 module-level targets: exact executables plus one
+  // aggregated Library API row per go.mod.
+  var VERSION = 26;
   var EN = {
     "main.browser_error.invalid_report_artifact": { params: [], text: "The saved report is invalid or exceeds the supported size." },
     "main.browser_error.no_saved_reports": { params: [], text: "No saved reports are available." },
@@ -60,6 +62,8 @@
     "main.repository.onboarding": { params: [], text: "Repository onboarding" },
     "main.analysis_target.executable_scope": { params: ["scope"], format: function (params) { return "Report scope: executable package " + params.scope; } },
     "main.analysis_target.library_scope": { params: ["scope"], format: function (params) { return "Report scope: library package " + params.scope; } },
+    "main.analysis_target.module_library_scope": { params: ["scope"], format: function (params) { return "Report scope: public library API of module " + params.scope; } },
+    "main.analysis_target.module_library_label": { params: [], text: "Library API" },
     "main.saved.report": { params: [], text: "Saved report" },
     "main.file.paths.open.in.vs.code": { params: [], text: "File paths open in VS Code ↗" },
     "main.about.this.report": { params: [], text: "About this report" },
@@ -1160,6 +1164,8 @@
     "main.repository.onboarding": { params: [], text: "Знакомство с репозиторием" },
     "main.analysis_target.executable_scope": { params: ["scope"], format: function (params) { return "Область отчёта: исполняемый пакет " + params.scope; } },
     "main.analysis_target.library_scope": { params: ["scope"], format: function (params) { return "Область отчёта: библиотечный пакет " + params.scope; } },
+    "main.analysis_target.module_library_scope": { params: ["scope"], format: function (params) { return "Область отчёта: публичный библиотечный API модуля " + params.scope; } },
+    "main.analysis_target.module_library_label": { params: [], text: "Библиотечный API" },
     "main.saved.report": { params: [], text: "Сохранённый отчёт" },
     "main.file.paths.open.in.vs.code": { params: [], text: "Пути к файлам открываются в VS Code ↗" },
     "main.about.this.report": { params: [], text: "Об этом отчёте" },

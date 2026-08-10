@@ -30,7 +30,7 @@ func TestTargetPagePortfolioCanonicalRoundTripAndContainerBinding(t *testing.T) 
 		portfolio.TargetCatalogRef != container.CatalogRef || len(portfolio.Targets) != 3 {
 		t.Fatalf("portfolio identity = %#v", portfolio)
 	}
-	wantRefs := []string{appRef, helperRef, coreRef}
+	wantRefs := []string{coreRef, appRef, helperRef}
 	gotRefs := make([]string, 0, len(portfolio.Targets))
 	for _, page := range portfolio.Targets {
 		gotRefs = append(gotRefs, page.TargetRef)
@@ -38,9 +38,9 @@ func TestTargetPagePortfolioCanonicalRoundTripAndContainerBinding(t *testing.T) 
 	if !slices.Equal(gotRefs, wantRefs) {
 		t.Fatalf("canonical target refs = %#v, want %#v", gotRefs, wantRefs)
 	}
-	if !portfolio.Targets[0].Default || portfolio.Targets[1].Default || portfolio.Targets[2].Default ||
-		portfolio.Targets[1].State != TargetPageUnavailable || portfolio.Targets[1].RunID != "" ||
-		portfolio.Targets[1].UnavailableCode != TargetPageUnavailableTargetRunFailed {
+	if portfolio.Targets[0].Default || !portfolio.Targets[1].Default || portfolio.Targets[2].Default ||
+		portfolio.Targets[2].State != TargetPageUnavailable || portfolio.Targets[2].RunID != "" ||
+		portfolio.Targets[2].UnavailableCode != TargetPageUnavailableTargetRunFailed {
 		t.Fatalf("derived default/closed states = %#v", portfolio.Targets)
 	}
 
@@ -96,7 +96,7 @@ func TestTargetPagePortfolioCanonicalRoundTripAndContainerBinding(t *testing.T) 
 	if _, found := encoded.Targets[0]["unavailable_code"]; found {
 		t.Fatal("ready target encoded unavailable_code")
 	}
-	if _, found := encoded.Targets[1]["run_id"]; found {
+	if _, found := encoded.Targets[2]["run_id"]; found {
 		t.Fatal("unavailable target encoded run_id")
 	}
 }
@@ -175,8 +175,8 @@ func TestTargetPagePortfolioRejectsUnsafeRunIDsAndInvalidTerminalStates(t *testi
 	if err != nil {
 		t.Fatalf("default unavailable with ready sibling: %v", err)
 	}
-	if !portfolio.Targets[0].Default || portfolio.Targets[0].State != TargetPageUnavailable {
-		t.Fatalf("default marker drifted after failure: %#v", portfolio.Targets[0])
+	if !portfolio.Targets[1].Default || portfolio.Targets[1].State != TargetPageUnavailable {
+		t.Fatalf("default marker drifted after failure: %#v", portfolio.Targets[1])
 	}
 }
 
@@ -216,8 +216,8 @@ func TestTargetPagePortfolioDecodeRejectsTamperAndNonCanonicalBytes(t *testing.T
 			value.Targets[0], value.Targets[1] = value.Targets[1], value.Targets[0]
 		},
 		"default": func(value *TargetPagePortfolio) {
-			value.Targets[0].Default = false
-			value.Targets[1].Default = true
+			value.Targets[1].Default = false
+			value.Targets[0].Default = true
 		},
 		"container": func(value *TargetPagePortfolio) {
 			value.TargetRunContainerSHA256 = strings.Repeat("0", sha256.Size*2)
@@ -326,7 +326,7 @@ func targetPagePortfolioFixture(t *testing.T) (TargetRunContainer, string, strin
 	}
 	appRef := deferredTargetRef(t, deferred, "cmd/app")
 	helperRef := deferredTargetRef(t, deferred, "cmd/helper")
-	coreRef := deferredTargetRef(t, deferred, "internal/core")
+	coreRef := deferredModuleTargetRef(t, deferred)
 	container, err := BuildTargetRunContainer(deferred, TargetRunSelection{
 		DefaultTargetRef: appRef,
 		TargetRefs:       []string{coreRef, helperRef, appRef},

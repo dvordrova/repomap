@@ -171,7 +171,7 @@ func projectEntryCallFamilies(
 	if err := target.Validate(); err != nil {
 		return nil, fmt.Errorf("entry call report: analysis target: %w", err)
 	}
-	if target.Kind == analysistarget.KindLibraryPackage {
+	if target.Kind == analysistarget.KindLibraryPackage || target.Kind == analysistarget.KindModuleLibrary {
 		// Library roots are intentionally unresolved in target v1. The accepted
 		// artifact remains hash-bound, but no process-root projection is invented.
 		return nil, nil
@@ -322,7 +322,9 @@ func entryCallReportMaterial(
 		return "", "", fmt.Errorf("accepted artifact binding is invalid")
 	}
 	if data.EntryCall == nil {
-		if data.AnalysisTarget == nil || data.AnalysisTarget.Kind != analysistarget.KindLibraryPackage {
+		if data.AnalysisTarget == nil ||
+			(data.AnalysisTarget.Kind != analysistarget.KindLibraryPackage &&
+				data.AnalysisTarget.Kind != analysistarget.KindModuleLibrary) {
 			return "", "", fmt.Errorf("accepted executable artifacts lack projection")
 		}
 	} else if err := validateEntryCallReportProjection(

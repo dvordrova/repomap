@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	TargetRootsVersion = 1
+	TargetRootsVersion = 2
 
 	// MaxTargetRoots inherits the already-paid DirectCallIndex resource ceiling
 	// instead of inventing a smaller product/relevance cap. Roots below it stay
@@ -132,9 +132,20 @@ func validateExactRootsInputs(target Target, index *surfacediscovery.DirectCallI
 	if index.State != surfacediscovery.DirectCallIndexReady {
 		return fmt.Errorf("analysis target roots: direct call index is unavailable")
 	}
-	if index.Scope.TargetScoped() &&
-		(index.Scope.TargetKind != string(target.Kind) || index.Scope.TargetPackage != target.PackagePath) {
-		return fmt.Errorf("analysis target roots: direct call index target scope mismatch")
+	if index.Scope.TargetScoped() {
+		wantPackages := targetRootPackagePaths(target)
+		wantKind := string(target.Kind)
+		wantPackage := target.PackagePath
+		if target.Kind == KindLibraryPackage {
+			wantKind = surfacediscovery.AnalysisTargetModuleLibrary
+			wantPackage = ""
+		}
+		if index.Scope.TargetRef != target.Ref || index.Scope.TargetKind != wantKind ||
+			index.Scope.TargetModuleID != target.ModuleID || index.Scope.TargetModulePath != target.ModulePath ||
+			index.Scope.TargetModuleDir != target.ModuleDir || index.Scope.TargetPackage != wantPackage ||
+			!sameStrings(index.Scope.TargetPackages, wantPackages) {
+			return fmt.Errorf("analysis target roots: direct call index target scope mismatch")
+		}
 	}
 	return nil
 }
@@ -153,6 +164,20 @@ func exactRootCandidates(
 		result := make([]targetRootCandidate, 0)
 		for _, node := range index.Nodes {
 			if node.Package != target.PackagePath || !node.Exported {
+				continue
+			}
+			result = append(result, targetRootCandidateFromNode(node))
+		}
+		sortTargetRootCandidates(result)
+		return result, nil
+	case KindModuleLibrary:
+		rootPackages := make(map[string]struct{}, len(target.LibraryPackages))
+		for _, pkg := range target.LibraryPackages {
+			rootPackages[pkg.PackagePath] = struct{}{}
+		}
+		result := make([]targetRootCandidate, 0)
+		for _, node := range index.Nodes {
+			if _, rootPackage := rootPackages[node.Package]; !rootPackage || !node.Exported {
 				continue
 			}
 			result = append(result, targetRootCandidateFromNode(node))
@@ -182,6 +207,28 @@ func exactRootCandidates(
 	default:
 		return nil, fmt.Errorf("analysis target roots: unsupported target kind %q", target.Kind)
 	}
+}
+
+func targetRootPackagePaths(target Target) []string {
+	packages := target.RootPackages()
+	result := make([]string, 0, len(packages))
+	for _, pkg := range packages {
+		result = append(result, pkg.PackagePath)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func sameStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func targetRootCandidateFromNode(node surfacediscovery.DirectCallNode) targetRootCandidate {

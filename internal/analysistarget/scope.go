@@ -9,31 +9,57 @@ import (
 
 // ScopeGoFacts projects exact repository facts to one selected product before
 // any downstream semantic or cardinality budget. Executables retain their
-// repository-local outgoing import closure. A root library retains its owning
-// module; an explicitly selected library subpackage retains its outgoing import
-// closure. The input is never mutated.
+// repository-local outgoing import closure. A module library retains exactly
+// its sealed owning-module non-main package inventory, including supporting
+// internal packages; main packages are separate executable products. A
+// transitional package library retains its former package scope. The input is
+// never mutated.
 func ScopeGoFacts(facts gofacts.Facts, target Target) (gofacts.Facts, error) {
 	if err := target.Validate(); err != nil {
 		return gofacts.Facts{}, fmt.Errorf("analysis target scope: %w", err)
 	}
 	packages := make(map[string]gofacts.PackageFact, len(facts.Packages))
+	packagesByIdentity := make(map[string]gofacts.PackageFact, len(facts.Packages))
 	for _, pkg := range facts.Packages {
 		packages[pkg.CanonicalPath] = pkg
-	}
-	selected, ok := packages[target.PackagePath]
-	if !ok || selected.ModuleID != target.ModuleID {
-		return gofacts.Facts{}, fmt.Errorf("analysis target scope: selected package %q is unavailable", target.PackagePath)
+		packagesByIdentity[packageIdentityKey(pkg.ModuleID, pkg.CanonicalPath)] = pkg
 	}
 
-	retained := map[string]struct{}{target.PackagePath: {}}
-	if target.Kind == KindLibraryPackage && target.PackageDir == "." {
+	retained := make(map[string]struct{})
+	if target.Kind == KindModuleLibrary {
+		current := make([]TargetPackage, 0, len(target.ModulePackages))
 		for _, pkg := range facts.Packages {
-			if pkg.ModuleID == target.ModuleID {
-				retained[pkg.CanonicalPath] = struct{}{}
+			if pkg.ModuleID != target.ModuleID || pkg.Name == "main" {
+				continue
 			}
+			current = append(current, TargetPackage{PackagePath: pkg.CanonicalPath, PackageDir: pkg.PackageDir})
+		}
+		current = canonicalTargetPackages(current)
+		if !sameTargetPackages(current, target.ModulePackages) {
+			return gofacts.Facts{}, fmt.Errorf("analysis target scope: module package inventory mismatch")
+		}
+		for _, targetPackage := range target.ModulePackages {
+			pkg, ok := packagesByIdentity[packageIdentityKey(target.ModuleID, targetPackage.PackagePath)]
+			if !ok || pkg.Name == "main" || pkg.PackageDir != targetPackage.PackageDir {
+				return gofacts.Facts{}, fmt.Errorf("analysis target scope: module package %q is unavailable", targetPackage.PackagePath)
+			}
+			retained[targetPackage.PackagePath] = struct{}{}
 		}
 	} else {
-		growOutgoingClosure(retained, packages, facts.InternalEdges)
+		_, ok := packagesByIdentity[packageIdentityKey(target.ModuleID, target.PackagePath)]
+		if !ok {
+			return gofacts.Facts{}, fmt.Errorf("analysis target scope: selected package %q is unavailable", target.PackagePath)
+		}
+		retained[target.PackagePath] = struct{}{}
+		if target.Kind == KindLibraryPackage && target.PackageDir == "." {
+			for _, pkg := range facts.Packages {
+				if pkg.ModuleID == target.ModuleID {
+					retained[pkg.CanonicalPath] = struct{}{}
+				}
+			}
+		} else {
+			growOutgoingClosure(retained, packages, facts.InternalEdges)
+		}
 	}
 
 	scoped := gofacts.Facts{
@@ -138,6 +164,18 @@ func ScopeGoFacts(facts gofacts.Facts, target Target) (gofacts.Facts, error) {
 		"analysis target %s retained %d package(s)", target.Ref, len(scoped.Packages),
 	))
 	return scoped, nil
+}
+
+func sameTargetPackages(left, right []TargetPackage) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func growOutgoingClosure(retained map[string]struct{}, packages map[string]gofacts.PackageFact, edges []gofacts.Edge) {

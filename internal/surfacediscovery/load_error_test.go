@@ -21,8 +21,11 @@ func TestAnalyzeRejectsUnsafeSelectedTargetEvenWhenSiblingPackageIsSSASafe(t *te
 			{Path: "example.com/partial_load/cmd/partial_load", ModuleDir: "."},
 		},
 		AnalysisTarget: &AnalysisTargetInput{
-			Kind: AnalysisTargetExecutablePackage, PackagePath: "example.com/partial_load/cmd/broken",
-			Roots: []AnalysisTargetRootInput{{Path: "cmd/broken/main.go", Line: 3}},
+			TargetRef: "target-broken", Kind: AnalysisTargetExecutablePackage,
+			ModuleID: "module-partial-load", ModulePath: "example.com/partial_load", ModuleDir: ".",
+			PackagePath:    "example.com/partial_load/cmd/broken",
+			TargetPackages: []string{"example.com/partial_load/cmd/broken"},
+			Roots:          []AnalysisTargetRootInput{{Path: "cmd/broken/main.go", Line: 3}},
 		},
 	})
 	var targetErr *AnalysisTargetSSAUnavailableError
@@ -49,8 +52,11 @@ func TestAnalyzeSelectedTargetSSAFailureExplainsMissingNestedModuleEmbedBuildInp
 			}},
 		}},
 		AnalysisTarget: &AnalysisTargetInput{
-			Kind: AnalysisTargetExecutablePackage, PackagePath: "example.com/nested_embed_missing",
-			Roots: []AnalysisTargetRootInput{{Path: "cli/main.go", Line: 5}},
+			TargetRef: "target-nested-embed", Kind: AnalysisTargetExecutablePackage,
+			ModuleID: "module-nested-embed", ModulePath: "example.com/nested_embed_missing", ModuleDir: "cli",
+			PackagePath:    "example.com/nested_embed_missing",
+			TargetPackages: []string{"example.com/nested_embed_missing"},
+			Roots:          []AnalysisTargetRootInput{{Path: "cli/main.go", Line: 5}},
 		},
 	})
 	var targetErr *AnalysisTargetSSAUnavailableError

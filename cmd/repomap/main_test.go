@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
@@ -56,6 +58,46 @@ func TestRemovedOrdinaryProductFlagsAreRejected(t *testing.T) {
 				t.Fatalf("removed flag %q error = %v", args[0], err)
 			}
 		})
+	}
+}
+
+func TestTargetFlagHelpAndCollisionExposeExactSurfaceKeys(t *testing.T) {
+	var help bytes.Buffer
+	err := runDefaultWithDeps(t.TempDir(), []string{"--help"}, defaultRunDeps{
+		stdout: io.Discard,
+		stderr: &help,
+	})
+	if !errors.Is(err, flag.ErrHelp) ||
+		!strings.Contains(help.String(), "analysis surface (unambiguous advertised path or exact target key)") {
+		t.Fatalf("--target help = %v\n%s", err, help.String())
+	}
+
+	clearLLMEnv(t)
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, "api"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/mixed\n\ngo 1.24\n")
+	writeFile(t, filepath.Join(repo, "main.go"), "package main\nfunc main() {}\n")
+	writeFile(t, filepath.Join(repo, "api", "api.go"), "package api\nfunc Open() {}\n")
+	runGit(t, repo, "init", "--quiet")
+	runGit(t, repo, "add", "--", "go.mod", "main.go", "api/api.go")
+	commitTestRepository(t, repo)
+
+	err = runDefaultWithDeps(repo, []string{
+		"--target", "example.com/mixed", "--offline", "--no-open", "--no-serve",
+		"--debug-dir", t.TempDir(),
+	}, defaultRunDeps{stdout: io.Discard, stderr: io.Discard})
+	if !errors.Is(err, analysistarget.ErrOverrideAmbiguous) {
+		t.Fatalf("root surface collision = %v", err)
+	}
+	for _, key := range []string{
+		"example.com/mixed@.::example.com/mixed",
+		"example.com/mixed@.::module_library",
+	} {
+		if !strings.Contains(err.Error(), key) {
+			t.Fatalf("root surface collision omitted exact key %q: %v", key, err)
+		}
 	}
 }
 

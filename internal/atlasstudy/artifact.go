@@ -955,8 +955,8 @@ func validateArtifactAnalysisTargetRootContract(
 	values []CatalogObject,
 	scope *AnalysisTargetRootScope,
 ) error {
-	if err := validateAnalysisTargetRootScope(scope); err != nil {
-		return fmt.Errorf("atlas study artifact: invalid selected AnalysisTarget root scope")
+	if err := validatePersistedAnalysisTargetRootScope(scope); err != nil {
+		return fmt.Errorf("atlas study artifact: invalid selected AnalysisTarget root scope: %w", err)
 	}
 	targets := make(map[CanonicalRef]CatalogObject)
 	units := make(map[CanonicalRef]CatalogObject)
@@ -979,6 +979,16 @@ func validateArtifactAnalysisTargetRootContract(
 			}
 		}
 	}
+	if scope != nil {
+		for _, pkg := range analysisTargetRootPackages(scope) {
+			unit, ok := units[CanonicalRef{Kind: RefUnit, ID: pkg.UnitID}]
+			if !ok || unit.UnitKind != repositoryatlas.UnitPackage ||
+				unit.Label != pkg.Package.PackagePath ||
+				unit.UnitParentID != scope.AnalysisTarget.ModuleID {
+				return fmt.Errorf("atlas study artifact: selected public API package Unit binding mismatch")
+			}
+		}
+	}
 	for _, object := range values {
 		if object.Kind != RefRouteSupport || object.SupportRole != SupportAnalysisTargetRoot ||
 			object.SupportTarget == nil {
@@ -992,12 +1002,13 @@ func validateArtifactAnalysisTargetRootContract(
 			target.PrincipalRefs[0].Kind != RefUnit {
 			return fmt.Errorf("atlas study artifact: invalid public API root support")
 		}
+		unitID := target.PrincipalRefs[0].ID
 		unit, ok := units[target.PrincipalRefs[0]]
-		if scope == nil || !ok || unit.UnitKind != repositoryatlas.UnitPackage ||
-			unit.CanonicalID != scope.UnitID ||
-			unit.Label != scope.AnalysisTarget.PackagePath ||
+		rootPackage, bound := analysisTargetRootPackageByUnit(scope, unitID)
+		if scope == nil || !bound || !ok || unit.UnitKind != repositoryatlas.UnitPackage ||
+			unit.Label != rootPackage.PackagePath ||
 			unit.UnitParentID != scope.AnalysisTarget.ModuleID ||
-			object.PackageBucket != scope.UnitID {
+			object.PackageBucket != unitID {
 			return fmt.Errorf("atlas study artifact: public API root does not match its exact package Unit")
 		}
 	}
@@ -1086,6 +1097,9 @@ func productFromArtifact(
 	if analysisTargetRoot != nil {
 		addAlwaysPrivate(analysisTargetRoot.AnalysisTarget.Ref)
 		addAlwaysPrivate(analysisTargetRoot.UnitID)
+		for _, pkg := range analysisTargetRoot.Packages {
+			addAlwaysPrivate(pkg.UnitID)
+		}
 	}
 	for _, object := range catalog {
 		byRef[object.Ref] = object

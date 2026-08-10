@@ -90,7 +90,7 @@ func collectTargetPageRuns(
 		}
 		consoleTarget := targetPageConsoleContext{
 			DisplayPath: projection.DisplayPath,
-			PackagePath: projection.Target.PackagePath,
+			Scope:       analysisTargetSubject(projection.Target),
 			RunID:       runID,
 			Role:        "sibling",
 		}
@@ -196,7 +196,7 @@ func publishTargetPagePortfolio(
 		assessment, assessErr := assessRunPublication(published.RunDir)
 		if assessErr != nil {
 			return failedPublication(), fmt.Errorf(
-				"verify final target page %s: %w", published.Target.PackageDir, assessErr,
+				"verify final target page %s: %w", published.Target.DisplayPath(), assessErr,
 			)
 		}
 		if published.Target.Ref == container.DefaultTargetRef {

@@ -78,21 +78,14 @@ func selectAllTargetsForRun(
 	override = strings.TrimSpace(override)
 	switch {
 	case override != "":
-		for _, entry := range catalog.Entries {
-			if entry.DisplayPath == override || entry.Candidate.Target.PackagePath == override {
-				defaultRef = entry.Candidate.Target.Ref
-				outcome.SelectedRef = defaultRef
-				outcome.SelectedPath = entry.DisplayPath
-				outcome.SelectedKind = entry.Candidate.Target.Kind
-				break
-			}
+		entry, resolveErr := resolveAllTargetsDefaultOverride(catalog, override)
+		if resolveErr != nil {
+			return snapshot.TargetRunSelection{}, targetPortfolioRunOutcome{}, resolveErr
 		}
-		if defaultRef == "" {
-			return snapshot.TargetRunSelection{}, targetPortfolioRunOutcome{}, fmt.Errorf(
-				"--all-targets: --target %q is not an advertised package; choose one of: %s",
-				override, targetPortfolioChoices(catalog),
-			)
-		}
+		defaultRef = entry.Candidate.Target.Ref
+		outcome.SelectedRef = defaultRef
+		outcome.SelectedPath = entry.DisplayPath
+		outcome.SelectedKind = entry.Candidate.Target.Kind
 	case offline:
 		defaultRef = catalog.DefaultTargetRef
 		defaultEligible := false
@@ -104,7 +97,7 @@ func selectAllTargetsForRun(
 		}
 		if defaultRef == "" || !defaultEligible {
 			return snapshot.TargetRunSelection{}, targetPortfolioRunOutcome{}, fmt.Errorf(
-				"--all-targets: no eligible exact local default; rerun with --target PACKAGE; choices: %s",
+				"--all-targets: no eligible exact local default; rerun with --target TARGET; choices: %s",
 				targetPortfolioChoices(catalog),
 			)
 		}
@@ -157,7 +150,7 @@ func selectTargetPortfolioForRun(
 	}
 	if len(eligible) == 0 {
 		return "", targetPortfolioRunOutcome{}, fmt.Errorf(
-			"target portfolio has no executable or module-root library target eligible for an ordinary report; choose one with --target: %s",
+			"target portfolio has no executable or module Library API target eligible for an ordinary report; choose one with --target: %s",
 			targetPortfolioChoices(catalog),
 		)
 	}
@@ -380,12 +373,72 @@ func targetPortfolioChoices(catalog analysistarget.TargetCatalog) string {
 		if len(choices) == limit {
 			break
 		}
-		choices = append(choices, entry.DisplayPath)
+		choices = append(choices, fmt.Sprintf(
+			"%s (%s; %s)", entry.DisplayPath, entry.Candidate.Target.Kind, entry.Candidate.Key,
+		))
 	}
 	if len(catalog.Entries) > len(choices) {
 		choices = append(choices, fmt.Sprintf("... and %d more", len(catalog.Entries)-len(choices)))
 	}
 	return strings.Join(choices, ", ")
+}
+
+// resolveAllTargetsDefaultOverride applies the same fail-closed selector
+// semantics as ordinary target resolution while preserving --all-targets as
+// an inclusion control. Exact refs and typed candidate keys win first. Human
+// path aliases are accepted only when they identify one surface: a module-root
+// executable and that module's Library API deliberately share a display path,
+// so an untyped alias such as "." or "server" must not silently pick one.
+func resolveAllTargetsDefaultOverride(
+	catalog analysistarget.TargetCatalog,
+	override string,
+) (analysistarget.TargetCatalogEntry, error) {
+	exact := make([]analysistarget.TargetCatalogEntry, 0, 1)
+	for _, entry := range catalog.Entries {
+		if override == entry.Candidate.Target.Ref || override == entry.Candidate.Key {
+			exact = append(exact, entry)
+		}
+	}
+	if len(exact) == 1 {
+		return exact[0], nil
+	}
+	if len(exact) > 1 {
+		return analysistarget.TargetCatalogEntry{}, fmt.Errorf(
+			"--all-targets: --target %q matches more than one exact target", override,
+		)
+	}
+
+	aliases := make([]analysistarget.TargetCatalogEntry, 0, 1)
+	for _, entry := range catalog.Entries {
+		target := entry.Candidate.Target
+		match := override == entry.DisplayPath
+		if target.Kind == analysistarget.KindModuleLibrary {
+			match = match || override == target.ModulePath
+		} else {
+			match = match || override == target.PackagePath
+		}
+		if match {
+			aliases = append(aliases, entry)
+		}
+	}
+	switch len(aliases) {
+	case 1:
+		return aliases[0], nil
+	case 0:
+		return analysistarget.TargetCatalogEntry{}, fmt.Errorf(
+			"--all-targets: --target %q is not an advertised module surface; choose one of: %s",
+			override, targetPortfolioChoices(catalog),
+		)
+	default:
+		keys := make([]string, 0, len(aliases))
+		for _, entry := range aliases {
+			keys = append(keys, entry.Candidate.Key)
+		}
+		return analysistarget.TargetCatalogEntry{}, fmt.Errorf(
+			"--all-targets: --target %q is ambiguous; use one exact target key: %s",
+			override, strings.Join(keys, ", "),
+		)
+	}
 }
 
 func recordTargetPortfolioOutcome(

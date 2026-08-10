@@ -39,7 +39,10 @@ func TestAnalysisTargetHandoffOwnsSnapshotAndBindsMetadata(t *testing.T) {
 	}
 	meta := debugdump.RunMeta{}
 	bindRunMetaAnalysisTarget(&meta, &target)
-	if meta.AnalysisTargetRef != target.Ref || meta.AnalysisTargetPackage != target.PackagePath {
+	if meta.AnalysisTargetRef != target.Ref || meta.AnalysisTargetKind != string(target.Kind) ||
+		meta.AnalysisTargetModule != target.ModulePath ||
+		meta.AnalysisTargetDisplayPath != target.DisplayPath() ||
+		meta.AnalysisTargetPackage != target.PackagePath {
 		t.Fatalf("metadata target = %#v", meta)
 	}
 	effective := effectiveOptions(Options{
@@ -48,6 +51,43 @@ func TestAnalysisTargetHandoffOwnsSnapshotAndBindsMetadata(t *testing.T) {
 	})
 	if effective.AnalysisTargetOverride != "cmd/app" || !effective.Offline {
 		t.Fatalf("effective options = %#v", effective)
+	}
+}
+
+func TestModuleLibraryMetadataKeepsModuleAndDisplayWithoutInventingPackage(t *testing.T) {
+	const modulePath = "example.com/library"
+	catalog, err := analysistarget.BuildCatalog(gofacts.Facts{
+		Modules: []gofacts.ModuleFact{{
+			ID: "module-root", ModulePath: modulePath, ModuleDir: ".", Main: true,
+			PackagesCount: 1, RetainedPackagesCount: 1,
+			Coverage: gofacts.ModuleCoverage{PackagesDiscovered: 1, PackagesRetained: 1},
+		}},
+		Packages: []gofacts.PackageFact{{
+			CanonicalPath: modulePath, Name: "library", ModuleID: "module-root", ModulePath: modulePath,
+			PackageDir: ".", ModuleRelativeDir: ".", Locality: "local", DeclarationsScanned: true,
+			LoadCompleteness: completeSurfacePackageLoad(),
+			Declarations:     []gofacts.PackageDeclaration{{Kind: gofacts.PackageDeclarationFunc, Name: "Open"}},
+		}},
+	})
+	if err != nil || len(catalog.Entries) != 1 {
+		t.Fatalf("module-library catalog = %#v / %v", catalog, err)
+	}
+	target := catalog.Entries[0].Candidate.Target
+	var meta debugdump.RunMeta
+	bindRunMetaAnalysisTarget(&meta, &target)
+	wire, err := json.Marshal(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored debugdump.RunMeta
+	if err := json.Unmarshal(wire, &restored); err != nil {
+		t.Fatal(err)
+	}
+	if restored.AnalysisTargetRef != target.Ref ||
+		restored.AnalysisTargetKind != string(analysistarget.KindModuleLibrary) ||
+		restored.AnalysisTargetModule != modulePath || restored.AnalysisTargetDisplayPath != "." ||
+		restored.AnalysisTargetPackage != "" {
+		t.Fatalf("module-library metadata = %#v", restored)
 	}
 }
 

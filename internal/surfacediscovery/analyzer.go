@@ -224,8 +224,11 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 	)
 	if input.AnalysisTarget != nil {
 		a.directCallIndex.setTargetScope(DirectCallIndexScope{
-			TargetKind: input.AnalysisTarget.Kind, TargetPackage: input.AnalysisTarget.PackagePath,
-			MaxDepth: opts.DirectCallDepth, EdgeLimit: opts.DirectCallEdgeLimit,
+			TargetRef: input.AnalysisTarget.TargetRef, TargetKind: input.AnalysisTarget.Kind,
+			TargetModuleID: input.AnalysisTarget.ModuleID, TargetModulePath: input.AnalysisTarget.ModulePath,
+			TargetModuleDir: input.AnalysisTarget.ModuleDir, TargetPackage: input.AnalysisTarget.PackagePath,
+			TargetPackages: append([]string(nil), input.AnalysisTarget.TargetPackages...),
+			MaxDepth:       opts.DirectCallDepth, EdgeLimit: opts.DirectCallEdgeLimit,
 		})
 	}
 	if opts.CaptureEntryCallSubstrate {
@@ -460,11 +463,8 @@ func (a *analyzer) load() error {
 		return true
 	}, nil)
 	a.recordPackageLoadOutcomes(allPackages)
-	if target := a.input.AnalysisTarget; target != nil && a.packageFacts[target.PackagePath] == nil {
-		return &AnalysisTargetSSAUnavailableError{
-			Reason: AnalysisTargetPackageNotSSASafe, Package: target.PackagePath,
-			Diagnostic: a.analysisTargetSSADiagnostic(allPackages, target.PackagePath),
-		}
+	if err := a.validateAnalysisTargetPackages(allPackages); err != nil {
+		return err
 	}
 	for _, pkg := range loaded {
 		if pkg.Module != nil && pkg.Module.Main {
@@ -514,7 +514,7 @@ func (a *analyzer) load() error {
 		return fmt.Errorf("surface discovery: %w", err)
 	}
 	finishGraph := a.startPhase("call_graph", "indexing all SSA functions and constructing one CHA call graph")
-	materializedTargetMethods := a.materializeSelectedLibraryMethods()
+	materializedTargetMethods := a.materializeSelectedLibraryCallables()
 	a.allFunctions = ssautil.AllFunctions(a.program)
 	for _, function := range materializedTargetMethods {
 		if function != nil {
@@ -532,53 +532,117 @@ func (a *analyzer) load() error {
 	return nil
 }
 
-// materializeSelectedLibraryMethods makes exact declared exported methods on
-// the selected library package visible to the DirectCallIndex even when their
+func (a *analyzer) validateAnalysisTargetPackages(allPackages map[string]*packages.Package) error {
+	if a == nil || a.input.AnalysisTarget == nil {
+		return nil
+	}
+	target := a.input.AnalysisTarget
+	for _, packagePath := range target.TargetPackages {
+		pkg := allPackages[packagePath]
+		if !packageSafeForSSA(pkg) {
+			return &AnalysisTargetSSAUnavailableError{
+				Reason: AnalysisTargetPackageNotSSASafe, Package: packagePath,
+				Diagnostic: a.analysisTargetSSADiagnostic(allPackages, packagePath),
+			}
+		}
+		if pkg.Module == nil || pkg.Module.Path != target.ModulePath || pkg.Module.Dir == "" {
+			return fmt.Errorf(
+				"surface discovery: analysis target package %q does not belong to sealed module %q",
+				packagePath, target.ModulePath,
+			)
+		}
+		moduleDir, ok := containedModuleDirectory(a.root, pkg.Module.Dir)
+		if !ok || moduleDir != target.ModuleDir {
+			return fmt.Errorf(
+				"surface discovery: analysis target package %q module directory does not match sealed target",
+				packagePath,
+			)
+		}
+		if target.Kind == AnalysisTargetModuleLibrary && pkg.Name == "main" {
+			return fmt.Errorf(
+				"surface discovery: module library target package %q is executable",
+				packagePath,
+			)
+		}
+	}
+	return nil
+}
+
+// materializeSelectedLibraryCallables makes exact declared exported functions
+// and methods on every selected module-library package visible to the
+// DirectCallIndex even when their
 // receiver is unexported and no repository call happens to mention them. Go
 // permits callers to invoke such a method on an opaque value returned by the
 // package, so omitting it would disagree with the build-selected public API
 // declaration inventory. Executable and repository-wide analysis keep the
 // pre-D277 function universe unchanged.
-func (a *analyzer) materializeSelectedLibraryMethods() []*ssa.Function {
+func (a *analyzer) materializeSelectedLibraryCallables() []*ssa.Function {
 	if a == nil || a.program == nil || a.input.AnalysisTarget == nil ||
-		a.input.AnalysisTarget.Kind != AnalysisTargetLibraryPackage {
+		a.input.AnalysisTarget.Kind != AnalysisTargetModuleLibrary {
 		return nil
 	}
-	packagePath := a.input.AnalysisTarget.PackagePath
 	var functions []*ssa.Function
 	seen := make(map[*ssa.Function]struct{})
+	packagesByPath := make(map[string]*ssa.Package, len(a.packages))
 	for _, pkg := range a.packages {
-		if pkg == nil || pkg.Pkg == nil || pkg.Pkg.Path() != packagePath {
+		if pkg != nil && pkg.Pkg != nil {
+			packagesByPath[pkg.Pkg.Path()] = pkg
+		}
+	}
+	appendFunction := func(function *ssa.Function) {
+		if function == nil {
+			return
+		}
+		if origin := function.Origin(); origin != nil {
+			function = origin
+		}
+		if function.Blocks == nil {
+			return
+		}
+		if _, duplicate := seen[function]; duplicate {
+			return
+		}
+		seen[function] = struct{}{}
+		functions = append(functions, function)
+	}
+	for _, packagePath := range a.input.AnalysisTarget.TargetPackages {
+		pkg := packagesByPath[packagePath]
+		if pkg == nil || pkg.Pkg == nil || pkg.Pkg.Name() == "main" {
 			continue
 		}
 		scope := pkg.Pkg.Scope()
 		for _, name := range scope.Names() {
-			typeName, ok := scope.Lookup(name).(*types.TypeName)
-			if !ok {
-				continue
-			}
-			named, ok := typeName.Type().(*types.Named)
-			if !ok {
-				continue
-			}
-			for index := 0; index < named.NumMethods(); index++ {
-				method := named.Method(index)
-				if method == nil || !method.Exported() || method.Pkg() == nil ||
-					method.Pkg().Path() != packagePath {
+			switch object := scope.Lookup(name).(type) {
+			case *types.Func:
+				if object.Exported() && object.Pkg() != nil && object.Pkg().Path() == packagePath {
+					appendFunction(a.program.FuncValue(object))
+				}
+			case *types.TypeName:
+				named, ok := object.Type().(*types.Named)
+				if !ok {
 					continue
 				}
-				function := a.program.FuncValue(method)
-				if function == nil {
-					continue
+				for index := 0; index < named.NumMethods(); index++ {
+					method := named.Method(index)
+					if method == nil || !method.Exported() || method.Pkg() == nil ||
+						method.Pkg().Path() != packagePath {
+						continue
+					}
+					appendFunction(a.program.FuncValue(method))
 				}
-				if _, duplicate := seen[function]; duplicate {
-					continue
-				}
-				seen[function] = struct{}{}
-				functions = append(functions, function)
 			}
 		}
 	}
+	sort.Slice(functions, func(i, j int) bool {
+		left, right := a.location(functions[i].Pos()), a.location(functions[j].Pos())
+		if directCallLocationLess(left, right) {
+			return true
+		}
+		if directCallLocationLess(right, left) {
+			return false
+		}
+		return a.functionID(functions[i]) < a.functionID(functions[j])
+	})
 	return functions
 }
 

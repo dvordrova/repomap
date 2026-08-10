@@ -18,6 +18,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/snapshot"
@@ -345,12 +346,12 @@ func serverTargetNavigationContainer(t *testing.T) (string, snapshot.TargetRunCo
 	selected := make([]string, 0, 2)
 	for _, entry := range deferred.TargetCatalog.Entries {
 		if entry.Candidate.Target.PackageDir == "cmd/server" ||
-			entry.Candidate.Target.PackageDir == "pkg/client" {
+			entry.Candidate.Target.Kind == analysistarget.KindModuleLibrary {
 			selected = append(selected, entry.Candidate.Target.Ref)
 		}
 	}
 	if len(selected) != 2 {
-		t.Fatalf("selected target refs = %v, want server and client", selected)
+		t.Fatalf("selected target refs = %v, want server executable and module Library API", selected)
 	}
 	container, err := snapshot.BuildTargetRunContainer(deferred, snapshot.TargetRunSelection{
 		DefaultTargetRef: selected[0],

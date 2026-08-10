@@ -9,10 +9,11 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/snapshot"
 )
 
-const TargetNavigationVersion = 1
+const TargetNavigationVersion = 2
 
 // RenderOptions contains presentation-only inputs that are authorized by the
 // caller but are not part of one target's canonical ReportData. Keeping target
@@ -37,11 +38,13 @@ type TargetNavigationPortfolio struct {
 // relative sibling-report route. An unavailable item deliberately has no href
 // and renders as disabled rather than linking to a missing report.
 type TargetNavigationItem struct {
-	TargetRef   string `json:"target_ref"`
-	ModuleDir   string `json:"module_dir"`
-	DisplayPath string `json:"display_path"`
-	Available   bool   `json:"available"`
-	Href        string `json:"href,omitempty"`
+	TargetRef   string              `json:"target_ref"`
+	Kind        analysistarget.Kind `json:"kind"`
+	ModulePath  string              `json:"module_path"`
+	ModuleDir   string              `json:"module_dir"`
+	DisplayPath string              `json:"display_path"`
+	Available   bool                `json:"available"`
+	Href        string              `json:"href,omitempty"`
 }
 
 // BuildTargetNavigation projects one manifest-bound sibling-page portfolio
@@ -68,6 +71,8 @@ func BuildTargetNavigation(
 		page := portfolio.Targets[index]
 		item := TargetNavigationItem{
 			TargetRef:   projection.Target.Ref,
+			Kind:        projection.Target.Kind,
+			ModulePath:  projection.Target.ModulePath,
 			ModuleDir:   projection.Target.ModuleDir,
 			DisplayPath: projection.DisplayPath,
 			Available:   page.State == snapshot.TargetPageReady,
@@ -157,7 +162,8 @@ func validateTargetNavigation(data *ReportData, navigation *TargetNavigationPort
 	defaultFound := false
 	currentFound := false
 	for index, item := range navigation.Targets {
-		if !validTargetNavigationRef(item.TargetRef) {
+		if !validTargetNavigationRef(item.TargetRef) || !validTargetNavigationRef(item.ModulePath) ||
+			(item.Kind != analysistarget.KindExecutablePackage && item.Kind != analysistarget.KindModuleLibrary) {
 			return fmt.Errorf("report: target navigation item %d has invalid identity", index)
 		}
 		if _, duplicate := seen[item.TargetRef]; duplicate {
@@ -166,7 +172,8 @@ func validateTargetNavigation(data *ReportData, navigation *TargetNavigationPort
 		seen[item.TargetRef] = struct{}{}
 		if !validTargetNavigationPath(item.ModuleDir) ||
 			!validTargetNavigationPath(item.DisplayPath) ||
-			!targetNavigationPathInsideModule(item.DisplayPath, item.ModuleDir) {
+			!targetNavigationPathInsideModule(item.DisplayPath, item.ModuleDir) ||
+			(item.Kind == analysistarget.KindModuleLibrary && item.DisplayPath != item.ModuleDir) {
 			return fmt.Errorf("report: target navigation item %d has invalid display scope", index)
 		}
 		if item.Available != (item.Href != "") {
@@ -182,8 +189,10 @@ func validateTargetNavigation(data *ReportData, navigation *TargetNavigationPort
 		if item.TargetRef == navigation.CurrentTargetRef {
 			currentFound = true
 			if !item.Available || item.TargetRef != data.AnalysisTarget.Ref ||
+				item.Kind != data.AnalysisTarget.Kind ||
+				item.ModulePath != data.AnalysisTarget.ModulePath ||
 				item.ModuleDir != data.AnalysisTarget.ModuleDir ||
-				item.DisplayPath != data.AnalysisTarget.PackageDir {
+				item.DisplayPath != data.AnalysisTarget.DisplayPath() {
 				return fmt.Errorf("report: target navigation current page does not match analysis target")
 			}
 		}

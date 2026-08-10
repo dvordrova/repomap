@@ -32,10 +32,10 @@ function evaluate(language, dirty, repoName) {
       repo_name:repoName, report_language:language, captured_revision:"a".repeat(40),
       freshness:{version:1,state:"fresh"},
       github_source_links:{repository_url:"https://github.com/dvordrova/telebot",revision:"a".repeat(40),working_tree_dirty:dirty},
-      analysis_target:{version:1,ref:"at-root",kind:"library_package",module_dir:".",module_path:repoName,package_dir:".",package_path:repoName},
-      target_navigation:{version:1,default_target_ref:"at-root",current_target_ref:"at-root",targets:[
-        {target_ref:"at-root",module_dir:".",display_path:".",available:true,href:"#/map"},
-        {target_ref:"at-layout",module_dir:".",display_path:"layout",available:true,href:"../layout/report.html#/map"},
+      analysis_target:{version:2,ref:"at-root",kind:"executable_package",module_dir:".",module_path:repoName,package_dir:".",package_path:repoName},
+      target_navigation:{version:2,default_target_ref:"at-root",current_target_ref:"at-root",targets:[
+        {target_ref:"at-root",kind:"executable_package",module_path:repoName,module_dir:".",display_path:".",available:true,href:"#/map"},
+        {target_ref:"at-layout",kind:"executable_package",module_path:repoName,module_dir:".",display_path:"layout",available:true,href:"../layout/report.html#/map"},
       ]},
       user_sources:[],openable_paths:[],source_ids:{},
     })},

@@ -90,18 +90,41 @@ type ModuleSource struct {
 	Local bool   `json:"local"`
 }
 
+const PackageLoadCompletenessVersion = 1
+
+type PackageLoadState string
+
+const (
+	PackageLoadComplete   PackageLoadState = "complete"
+	PackageLoadIncomplete PackageLoadState = "incomplete"
+)
+
+// PackageLoadCompleteness is the typed, package-local authority produced by
+// the exact go list invocation. Its version is persisted because absence of
+// this authority must not be reinterpreted as a complete build-selected
+// package when deriving aggregate module products.
+type PackageLoadCompleteness struct {
+	Version int              `json:"version"`
+	State   PackageLoadState `json:"state"`
+}
+
+func (value *PackageLoadCompleteness) Complete() bool {
+	return value != nil && value.Version == PackageLoadCompletenessVersion && value.State == PackageLoadComplete
+}
+
 type PackageFact struct {
-	CanonicalPath       string               `json:"canonical_package_path"`
-	Name                string               `json:"name"`
-	ModuleID            string               `json:"owning_module_id"`
-	ModulePath          string               `json:"module_path"`
-	PackageDir          string               `json:"package_directory"`
-	ModuleRelativeDir   string               `json:"module_relative_path"`
-	DisplayPath         string               `json:"display_path"`
-	Locality            string               `json:"locality"`
-	Files               []string             `json:"files,omitempty"`
-	Declarations        []PackageDeclaration `json:"declarations,omitempty"`
-	DeclarationsScanned bool                 `json:"declarations_scanned,omitempty"`
+	CanonicalPath       string                   `json:"canonical_package_path"`
+	Name                string                   `json:"name"`
+	ModuleID            string                   `json:"owning_module_id"`
+	ModulePath          string                   `json:"module_path"`
+	PackageDir          string                   `json:"package_directory"`
+	ModuleRelativeDir   string                   `json:"module_relative_path"`
+	DisplayPath         string                   `json:"display_path"`
+	Locality            string                   `json:"locality"`
+	Files               []string                 `json:"files,omitempty"`
+	Declarations        []PackageDeclaration     `json:"declarations,omitempty"`
+	DeclarationsScanned bool                     `json:"declarations_scanned,omitempty"`
+	LoadCompleteness    *PackageLoadCompleteness `json:"load_completeness,omitempty"`
 }
 
 type ModuleSummary struct {
@@ -377,6 +400,7 @@ func LoadWithOptions(
 				PackageDir: filepath.ToSlash(packageDir), ModuleRelativeDir: filepath.ToSlash(moduleRelativeDir),
 				DisplayPath: displayPath, Locality: "local", Files: packageInputFiles(packageDir, pkg),
 				Declarations: declarations, DeclarationsScanned: len(declarationWarnings) == 0,
+				LoadCompleteness: packageLoadCompleteness(pkg),
 			})
 		}
 
@@ -417,12 +441,8 @@ func LoadWithOptions(
 
 	known := buildKnownSet(allPkgs)
 
-	edges := buildInternalEdges(allPkgs, known)
-	discoveredEdges := len(edges)
-	if maxEdges > 0 && len(edges) > maxEdges {
-		topWarnings = append(topWarnings, fmt.Sprintf("truncated internal edges: kept %d of %d (max %d)", maxEdges, len(edges), maxEdges))
-		edges = edges[:maxEdges]
-	}
+	allEdges := buildInternalEdges(allPkgs, known)
+	discoveredEdges := len(allEdges)
 
 	extImports := buildExternalImports(allPkgs, known)
 	discoveredPackageFacts := len(packageFacts)
@@ -432,6 +452,11 @@ func LoadWithOptions(
 			"retained %d of %d discovered packages under explicit max %d",
 			len(packageFacts), len(allPkgs), maxPkgs,
 		))
+	}
+	edges := retainPackageFactEdges(allEdges, packageFacts)
+	if maxEdges > 0 && len(edges) > maxEdges {
+		topWarnings = append(topWarnings, fmt.Sprintf("truncated retained internal edges: kept %d of %d (max %d)", maxEdges, len(edges), maxEdges))
+		edges = edges[:maxEdges]
 	}
 	retainedByModule := make(map[string]int, len(modules))
 	for _, pkg := range packageFacts {
@@ -669,6 +694,14 @@ func parseGoListOutput(r io.Reader) ([]goListPackage, []string, error) {
 	}
 
 	return pkgs, warnings, nil
+}
+
+func packageLoadCompleteness(pkg goListPackage) *PackageLoadCompleteness {
+	state := PackageLoadComplete
+	if pkg.Incomplete || pkg.Error != nil || len(pkg.DepsErrors) > 0 {
+		state = PackageLoadIncomplete
+	}
+	return &PackageLoadCompleteness{Version: PackageLoadCompletenessVersion, State: state}
 }
 
 func extractModulePath(pkgs []goListPackage) string {
@@ -915,6 +948,28 @@ func buildInternalEdges(pkgs []goListPackage, known map[string]struct{}) []Edge 
 		return edges[i].From < edges[j].From
 	})
 	return edges
+}
+
+// retainPackageFactEdges keeps the persisted facts graph endpoint-closed.
+// Package selection is allowed to be partial under an explicit cap, but an
+// edge whose caller or callee was omitted would cite an identity unavailable
+// to every downstream consumer and must not masquerade as retained evidence.
+func retainPackageFactEdges(edges []Edge, packages []PackageFact) []Edge {
+	retained := make(map[string]struct{}, len(packages))
+	for _, pkg := range packages {
+		retained[pkg.CanonicalPath] = struct{}{}
+	}
+	result := make([]Edge, 0, len(edges))
+	for _, edge := range edges {
+		if _, ok := retained[edge.From]; !ok {
+			continue
+		}
+		if _, ok := retained[edge.To]; !ok {
+			continue
+		}
+		result = append(result, edge)
+	}
+	return result
 }
 
 func buildExternalImports(pkgs []goListPackage, known map[string]struct{}) []ExtImport {

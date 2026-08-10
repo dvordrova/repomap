@@ -78,23 +78,20 @@ func ResolveResponse(compilation Compilation, raw []byte) (Selection, error) {
 	return result, nil
 }
 
-// AdvertisedForSelection is the exact ordinary portfolio candidate-surface
-// rule. Every executable is visible. A library is visible only when its exact
-// package directory equals its exact module directory. The complete catalog is
-// deliberately broader for explicit --target and --all-targets inclusion.
+// AdvertisedForSelection accepts the exact surface kinds already compiled by
+// the target catalog: every executable and one aggregate library per module.
 func AdvertisedForSelection(entry analysistarget.TargetCatalogEntry) bool {
 	target := entry.Candidate.Target
 	return target.Kind == analysistarget.KindExecutablePackage ||
-		(target.Kind == analysistarget.KindLibraryPackage && target.PackageDir == target.ModuleDir)
+		target.Kind == analysistarget.KindModuleLibrary
 }
 
 // EligibleForSelection applies the private ordinary-selection rule used by
-// both model-result restoration and the local fallback. Empty-API libraries
-// and non-root library packages stay in the complete catalog but cannot become
-// ordinary product report scopes.
+// both model-result restoration and the local fallback. A defensive empty-API
+// module library cannot become an ordinary product report scope.
 func EligibleForSelection(entry analysistarget.TargetCatalogEntry) bool {
 	return AdvertisedForSelection(entry) &&
-		(entry.Candidate.Target.Kind != analysistarget.KindLibraryPackage || len(entry.Symbols) > 0)
+		(entry.Candidate.Target.Kind != analysistarget.KindModuleLibrary || len(entry.PackageAPIs) > 0)
 }
 
 func ensureJSONEOF(decoder *json.Decoder) error {

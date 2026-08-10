@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	TargetRunContainerVersion          = 1
-	TargetRunContainerArtifactFilename = "target_run_container.v1.json"
+	TargetRunContainerVersion          = 2
+	TargetRunContainerArtifactFilename = "target_run_container.v2.json"
 	MaxTargetRunContainerBytes         = 4 << 20
 )
 
@@ -156,7 +156,7 @@ func (container TargetRunContainer) Validate() error {
 		if err := projection.Target.Validate(); err != nil {
 			return fmt.Errorf("target run container: target %d: %w", index, err)
 		}
-		if projection.DisplayPath != projection.Target.PackageDir {
+		if projection.DisplayPath != projection.Target.DisplayPath() {
 			return fmt.Errorf("target run container: target %d display path mismatch", index)
 		}
 		if _, duplicate := seenRefs[projection.Target.Ref]; duplicate {

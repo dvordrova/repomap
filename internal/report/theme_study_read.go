@@ -196,7 +196,8 @@ func rehydrateAtlasStudyLibraryData(
 	requirePersistedSourceAuthority bool,
 ) (*ReportData, error) {
 	if data == nil || data.AnalysisTarget == nil ||
-		data.AnalysisTarget.Kind != analysistarget.KindLibraryPackage {
+		(data.AnalysisTarget.Kind != analysistarget.KindLibraryPackage &&
+			data.AnalysisTarget.Kind != analysistarget.KindModuleLibrary) {
 		return data, nil
 	}
 	prepared := *data

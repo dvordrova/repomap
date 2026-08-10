@@ -54,7 +54,7 @@ type runOutputProgress struct {
 // publishes several ordinary target pages.
 type targetPageConsoleContext struct {
 	DisplayPath string
-	PackagePath string
+	Scope       string
 	RunID       string
 	Role        string
 }
@@ -127,7 +127,7 @@ func (output *runOutput) TargetPage(state string, target targetPageConsoleContex
 	output.writeDetailsLocked(
 		"state: "+singleRunOutputLine(state),
 		"target: "+target.DisplayPath,
-		"package: "+target.PackagePath,
+		"scope: "+target.Scope,
 		"run: "+target.RunID,
 		"role: "+target.Role,
 	)

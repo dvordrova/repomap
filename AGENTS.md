@@ -46,7 +46,10 @@ Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline 
 
 ## Development rules
 
-- Build the exact candidate with `go build -trimpath -o PATH ./cmd/repomap`.
+- Build the working binary with `make build`; this is the canonical owner-facing
+  build entrypoint and writes the exact trimpath binary to `.bin/repomap`.
+  Use a direct `go build -trimpath -o PATH ./cmd/repomap` only when an explicitly
+  separate temporary candidate path is required.
 - Exercise the built binary directly on a real repository. For a provider-free
   gate use `PATH REPO --offline --no-open --no-serve --debug-dir DIR`.
 - Verify the process exit status and the generated manifest, Atlas, report JSON

@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/analysistarget"
 )
 
 func TestBuildUsesSemanticRepositoryIdentity(t *testing.T) {
@@ -146,18 +148,39 @@ func TestBuildResolvesAndScopesAnalysisTarget(t *testing.T) {
 	t.Run("telebot shaped root library", func(t *testing.T) {
 		repo := t.TempDir()
 		writeSnapshotFile(t, repo, "go.mod", "module example.com/telebot\n\ngo 1.24\n")
-		writeSnapshotFile(t, repo, "bot.go", "package telebot\n")
-		writeSnapshotFile(t, repo, "layout/layout.go", "package layout\n")
+		writeSnapshotFile(t, repo, "bot.go", "package telebot\n\nfunc NewBot() {}\n")
+		writeSnapshotFile(t, repo, "layout/layout.go", "package layout\n\nfunc Open() {}\n")
 		trackSnapshotFiles(t, repo, "go.mod", "bot.go", "layout/layout.go")
 
 		got, err := Build(Options{RepoPath: repo})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got.AnalysisTarget == nil || got.AnalysisTarget.Kind != "library_package" || len(got.GoFacts.Packages) != 2 {
+		if got.AnalysisTarget == nil || got.AnalysisTarget.Kind != analysistarget.KindModuleLibrary ||
+			got.AnalysisTarget.PackagePath != "" || len(got.GoFacts.Packages) != 2 {
 			t.Fatalf("library target/facts = %#v / %#v", got.AnalysisTarget, got.GoFacts.Packages)
 		}
 	})
+}
+
+func TestAnalysisTargetCandidateKeysDescribeModuleLibrariesWithoutEmptyPackageAliases(t *testing.T) {
+	candidates := []analysistarget.Candidate{
+		{Target: analysistarget.Target{
+			Kind: analysistarget.KindModuleLibrary, ModulePath: "example.com/root", ModuleDir: ".",
+		}},
+		{Target: analysistarget.Target{
+			Kind: analysistarget.KindModuleLibrary, ModulePath: "example.com/nested", ModuleDir: "nested",
+		}},
+	}
+	if got := analysisTargetCandidateKeys(candidates); got != "example.com/root, nested" {
+		t.Fatalf("module-library candidate keys = %q", got)
+	}
+	executable := analysistarget.Candidate{MainModule: true, Target: analysistarget.Target{
+		Kind: analysistarget.KindExecutablePackage, PackagePath: "example.com/root/cmd/app", PackageDir: "cmd/app",
+	}}
+	if got := analysisTargetCandidateKeys(append(candidates, executable)); got != "cmd/app" {
+		t.Fatalf("executable candidate key = %q", got)
+	}
 }
 
 func TestBuildDefersAnalysisTargetResolutionWithFullCatalog(t *testing.T) {
@@ -179,10 +202,13 @@ func TestBuildDefersAnalysisTargetResolutionWithFullCatalog(t *testing.T) {
 	if got.GoFacts == nil || len(got.GoFacts.Packages) != 3 || len(got.TargetCatalog.Entries) != 3 {
 		t.Fatalf("full facts/catalog = %#v / %#v", got.GoFacts, got.TargetCatalog)
 	}
-	for _, packageDir := range []string{"cmd/app", "cmd/helper", "internal/core"} {
+	for _, packageDir := range []string{"cmd/app", "cmd/helper"} {
 		if deferredTargetRef(t, got, packageDir) == "" {
 			t.Fatalf("catalog omitted %q", packageDir)
 		}
+	}
+	if deferredModuleTargetRef(t, got) == "" {
+		t.Fatal("catalog omitted module-library target")
 	}
 
 	wire, err := got.JSON()
@@ -226,7 +252,7 @@ func TestScopeAnalysisTargetUsesExactCatalogRefAndExcludesHelper(t *testing.T) {
 	}
 	if slices.Contains(scoped.FilteredFiles, "cmd/helper/main.go") ||
 		!slices.Contains(scoped.FilteredFiles, "cmd/app/main.go") ||
-		!slices.Contains(scoped.FilteredFiles, "internal/core/core.go") {
+		!slices.Contains(scoped.FilteredFiles, "core/core.go") {
 		t.Fatalf("scoped files = %#v", scoped.FilteredFiles)
 	}
 	if deferred.TargetCatalog == nil || deferred.GoFacts == nil || len(deferred.GoFacts.Packages) != 3 {
@@ -267,6 +293,55 @@ func TestScopeAnalysisTargetRejectsUnknownEmptyAndDriftedRefs(t *testing.T) {
 	if _, err := ScopeAnalysisTarget(tampered, deferred.TargetCatalog.Entries[0].Candidate.Target.Ref); err == nil ||
 		!strings.Contains(err.Error(), "validate live target catalog") {
 		t.Fatalf("drifted catalog error = %v", err)
+	}
+}
+
+func TestScopeAnalysisTargetModuleLibraryExcludesMainAndRetainsModulePackages(t *testing.T) {
+	repo := t.TempDir()
+	writeSnapshotFile(t, repo, "go.mod", "module example.com/mixed\n\ngo 1.26\n")
+	writeSnapshotFile(t, repo, "main.go", "package main\n\nfunc main() {}\n")
+	writeSnapshotFile(t, repo, "api/api.go", "package api\n\nfunc Open() {}\n")
+	writeSnapshotFile(t, repo, "internal/store/store.go", "package store\n\nfunc Save() {}\n")
+	trackSnapshotFiles(t, repo, "go.mod", "main.go", "api/api.go", "internal/store/store.go")
+
+	deferred, err := Build(Options{RepoPath: repo, DeferAnalysisTargetResolution: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deferred.TargetCatalog == nil {
+		t.Fatal("deferred catalog is nil")
+	}
+	moduleRef := ""
+	for _, entry := range deferred.TargetCatalog.Entries {
+		if entry.Candidate.Target.Kind == analysistarget.KindModuleLibrary {
+			moduleRef = entry.Candidate.Target.Ref
+		}
+	}
+	if moduleRef == "" {
+		t.Fatalf("module library missing from %#v", deferred.TargetCatalog.Entries)
+	}
+
+	scoped, err := ScopeAnalysisTarget(deferred, moduleRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scoped.AnalysisTarget == nil || scoped.AnalysisTarget.Kind != analysistarget.KindModuleLibrary ||
+		scoped.AnalysisTarget.PackagePath != "" || scoped.AnalysisTarget.PackageDir != "" {
+		t.Fatalf("module target = %#v", scoped.AnalysisTarget)
+	}
+	if scoped.GoFacts == nil || len(scoped.GoFacts.Packages) != 2 {
+		t.Fatalf("module facts = %#v", scoped.GoFacts)
+	}
+	for _, pkg := range scoped.GoFacts.Packages {
+		if pkg.Name == "main" || pkg.CanonicalPath == "example.com/mixed" {
+			t.Fatalf("main package survived module-library scope: %#v", pkg)
+		}
+	}
+	if slices.Contains(scoped.FilteredFiles, "main.go") ||
+		!slices.Contains(scoped.FilteredFiles, "api/api.go") ||
+		!slices.Contains(scoped.FilteredFiles, "internal/store/store.go") ||
+		!slices.Contains(scoped.FilteredFiles, "go.mod") {
+		t.Fatalf("module-library files = %#v", scoped.FilteredFiles)
 	}
 }
 
@@ -566,10 +641,10 @@ func newDeferredAnalysisTargetFixture(t *testing.T) string {
 
 	repo := t.TempDir()
 	writeSnapshotFile(t, repo, "go.mod", "module example.com/workspace\n\ngo 1.24\n")
-	writeSnapshotFile(t, repo, "cmd/app/main.go", "package main\nimport _ \"example.com/workspace/internal/core\"\nfunc main() {}\n")
+	writeSnapshotFile(t, repo, "cmd/app/main.go", "package main\nimport _ \"example.com/workspace/core\"\nfunc main() {}\n")
 	writeSnapshotFile(t, repo, "cmd/helper/main.go", "package main\nfunc main() {}\n")
-	writeSnapshotFile(t, repo, "internal/core/core.go", "package core\n")
-	trackSnapshotFiles(t, repo, "go.mod", "cmd/app/main.go", "cmd/helper/main.go", "internal/core/core.go")
+	writeSnapshotFile(t, repo, "core/core.go", "package core\n\nfunc Open() {}\n")
+	trackSnapshotFiles(t, repo, "go.mod", "cmd/app/main.go", "cmd/helper/main.go", "core/core.go")
 	return repo
 }
 
@@ -585,6 +660,20 @@ func deferredTargetRef(t *testing.T, snapshot Snapshot, packageDir string) strin
 		}
 	}
 	t.Fatalf("target catalog omitted package directory %q", packageDir)
+	return ""
+}
+
+func deferredModuleTargetRef(t *testing.T, snapshot Snapshot) string {
+	t.Helper()
+	if snapshot.TargetCatalog == nil {
+		t.Fatal("target catalog is nil")
+	}
+	for _, entry := range snapshot.TargetCatalog.Entries {
+		if entry.Candidate.Target.Kind == analysistarget.KindModuleLibrary {
+			return entry.Candidate.Target.Ref
+		}
+	}
+	t.Fatal("target catalog omitted module-library target")
 	return ""
 }
 

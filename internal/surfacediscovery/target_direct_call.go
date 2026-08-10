@@ -112,6 +112,10 @@ func (a *analyzer) targetDirectCallRoots() []*ssa.Function {
 		return nil
 	}
 	target := a.input.AnalysisTarget
+	targetPackages := make(map[string]struct{}, len(target.TargetPackages))
+	for _, packagePath := range target.TargetPackages {
+		targetPackages[packagePath] = struct{}{}
+	}
 	rootLocations := make(map[string]struct{}, len(target.Roots))
 	for _, root := range target.Roots {
 		rootLocations[targetDirectCallRootKey(root.Path, root.Line)] = struct{}{}
@@ -125,14 +129,18 @@ func (a *analyzer) targetDirectCallRoots() []*ssa.Function {
 		if origin := function.Origin(); origin != nil {
 			function = origin
 		}
-		if function.Blocks == nil || functionPackagePath(function) != target.PackagePath {
+		if function.Blocks == nil {
 			continue
 		}
+		packagePath := functionPackagePath(function)
 		if _, duplicate := seenRoots[function]; duplicate {
 			continue
 		}
 		switch target.Kind {
 		case AnalysisTargetExecutablePackage:
+			if packagePath != target.PackagePath {
+				continue
+			}
 			location := a.location(function.Pos())
 			if function.Name() != "main" {
 				continue
@@ -140,8 +148,10 @@ func (a *analyzer) targetDirectCallRoots() []*ssa.Function {
 			if _, found := rootLocations[targetDirectCallRootKey(location.Path, location.Line)]; !found {
 				continue
 			}
-		case AnalysisTargetLibraryPackage:
-			if !directCallFunctionExported(function) {
+		case AnalysisTargetModuleLibrary:
+			if _, included := targetPackages[packagePath]; !included ||
+				!directCallFunctionExported(function) || function.Package() == nil ||
+				function.Package().Pkg == nil || function.Package().Pkg.Name() == "main" {
 				continue
 			}
 		default:

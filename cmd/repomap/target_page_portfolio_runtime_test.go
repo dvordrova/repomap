@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/snapshot"
@@ -19,17 +20,17 @@ import (
 
 func TestAllTargetsOfflinePublishesEveryExactTargetWithOneDefaultAndMetadata(t *testing.T) {
 	repository := t.TempDir()
-	for _, directory := range []string{"cmd/app", "cmd/helper", "internal/core"} {
+	for _, directory := range []string{"cmd/app", "cmd/helper", "core"} {
 		if err := os.MkdirAll(filepath.Join(repository, directory), 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
 	writeFile(t, filepath.Join(repository, "go.mod"), "module example.com/all-targets\n\ngo 1.24\n")
-	writeFile(t, filepath.Join(repository, "cmd/app/main.go"), "package main\nimport \"example.com/all-targets/internal/core\"\nfunc main() { core.Public() }\n")
+	writeFile(t, filepath.Join(repository, "cmd/app/main.go"), "package main\nimport \"example.com/all-targets/core\"\nfunc main() { core.Public() }\n")
 	writeFile(t, filepath.Join(repository, "cmd/helper/main.go"), "package main\nfunc main() {}\n")
-	writeFile(t, filepath.Join(repository, "internal/core/core.go"), "package core\nfunc Public() {}\n")
+	writeFile(t, filepath.Join(repository, "core/core.go"), "package core\nfunc Public() {}\n")
 	runGit(t, repository, "init", "--quiet")
-	runGit(t, repository, "add", "--", "go.mod", "cmd/app/main.go", "cmd/helper/main.go", "internal/core/core.go")
+	runGit(t, repository, "add", "--", "go.mod", "cmd/app/main.go", "cmd/helper/main.go", "core/core.go")
 	commitTestRepository(t, repository)
 
 	debugDir := t.TempDir()
@@ -73,6 +74,7 @@ func TestAllTargetsOfflinePublishesEveryExactTargetWithOneDefaultAndMetadata(t *
 
 	var portfolioBytes []byte
 	defaultRunID := ""
+	moduleLibraryFound := false
 	seenPackages := make(map[string]struct{})
 	for _, runDir := range runDirs {
 		metadataRaw, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
@@ -88,6 +90,14 @@ func TestAllTargetsOfflinePublishesEveryExactTargetWithOneDefaultAndMetadata(t *
 			t.Fatalf("all-target metadata = %#v", metadata.EffectiveOptions)
 		}
 		seenPackages[metadata.AnalysisTargetPackage] = struct{}{}
+		if metadata.AnalysisTargetKind == string(analysistarget.KindModuleLibrary) {
+			moduleLibraryFound = true
+			if metadata.AnalysisTargetPackage != "" ||
+				metadata.AnalysisTargetModule != "example.com/all-targets" ||
+				metadata.AnalysisTargetDisplayPath != "." {
+				t.Fatalf("module-library metadata = %#v", metadata)
+			}
+		}
 		if metadata.AnalysisTargetPackage == "example.com/all-targets/cmd/app" {
 			defaultRunID = metadata.RunID
 		}
@@ -110,7 +120,7 @@ func TestAllTargetsOfflinePublishesEveryExactTargetWithOneDefaultAndMetadata(t *
 			t.Fatal("successful target runs have different portfolio bytes")
 		}
 	}
-	if len(seenPackages) != 3 || defaultRunID == "" {
+	if len(seenPackages) != 3 || defaultRunID == "" || !moduleLibraryFound {
 		t.Fatalf("published packages/default = %#v / %q", seenPackages, defaultRunID)
 	}
 	finalizedBytes := make(map[string][]byte)
@@ -339,7 +349,7 @@ func TestTwoTargetPipelinesEncloseRepeatedArchitectureOutputWithExactTargetConte
 	output := newRunOutput(&console)
 	defaultContext := targetPageConsoleContext{
 		DisplayPath: defaultProjection.DisplayPath,
-		PackagePath: defaultProjection.Target.PackagePath,
+		Scope:       analysisTargetSubject(defaultProjection.Target),
 		RunID:       defaultRun.RunID,
 		Role:        "default",
 	}
@@ -376,13 +386,13 @@ func TestTwoTargetPipelinesEncloseRepeatedArchitectureOutputWithExactTargetConte
 	}
 	wantsInOrder := []string{
 		"Target page:\n  state: started\n  target: " + defaultProjection.DisplayPath,
-		"package: " + defaultProjection.Target.PackagePath,
+		"scope: " + analysisTargetSubject(defaultProjection.Target),
 		"run: run-default-1",
 		"role: default",
 		"Architecture:\n  state: generated",
 		"Target page:\n  state: complete\n  target: " + defaultProjection.DisplayPath,
 		"Target page:\n  state: started\n  target: " + siblingProjection.DisplayPath,
-		"package: " + siblingProjection.Target.PackagePath,
+		"scope: " + analysisTargetSubject(siblingProjection.Target),
 		"run: run-sibling-1",
 		"role: sibling",
 		"Architecture:\n  state: generated",
@@ -445,20 +455,74 @@ func TestTargetNavigationUsesBackendRelativeSiblingLinksAndDisablesUnavailable(t
 	}
 }
 
+func TestTargetPageRecoveryMetadataBindsExecutableAndModuleLibraryIdentity(t *testing.T) {
+	container := targetPageRuntimeContainer(t)
+	seenPackage := false
+	seenModuleLibrary := false
+	for _, projection := range container.Targets {
+		metadata := debugdump.RunMeta{
+			RunID:                     "run-identity",
+			AnalysisTargetRef:         projection.Target.Ref,
+			AnalysisTargetKind:        string(projection.Target.Kind),
+			AnalysisTargetModule:      projection.Target.ModulePath,
+			AnalysisTargetDisplayPath: projection.Target.DisplayPath(),
+			AnalysisTargetPackage:     projection.Target.PackagePath,
+		}
+		wire, err := json.Marshal(metadata)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var restored debugdump.RunMeta
+		if err := json.Unmarshal(wire, &restored); err != nil {
+			t.Fatal(err)
+		}
+		if !targetPageRecoveryMetadataMatches(restored, metadata.RunID, projection) {
+			t.Fatalf("round-trip target metadata = %#v / %#v", restored, projection)
+		}
+		if projection.Target.PackagePath == "" {
+			seenModuleLibrary = true
+			if restored.AnalysisTargetPackage != "" {
+				t.Fatalf("module library invented package metadata: %#v", restored)
+			}
+		} else {
+			seenPackage = true
+		}
+
+		mutations := []func(*debugdump.RunMeta){
+			func(value *debugdump.RunMeta) { value.RunID = "other-run" },
+			func(value *debugdump.RunMeta) { value.AnalysisTargetRef = "other-target" },
+			func(value *debugdump.RunMeta) { value.AnalysisTargetKind += "-drift" },
+			func(value *debugdump.RunMeta) { value.AnalysisTargetModule += "/drift" },
+			func(value *debugdump.RunMeta) { value.AnalysisTargetDisplayPath += "/drift" },
+			func(value *debugdump.RunMeta) { value.AnalysisTargetPackage += "/drift" },
+		}
+		for index, mutate := range mutations {
+			tampered := restored
+			mutate(&tampered)
+			if targetPageRecoveryMetadataMatches(tampered, metadata.RunID, projection) {
+				t.Fatalf("accepted metadata tamper %d for %#v", index, projection.Target)
+			}
+		}
+	}
+	if !seenPackage || !seenModuleLibrary {
+		t.Fatalf("metadata fixtures missed executable/module library: %#v", container.Targets)
+	}
+}
+
 func targetPageRuntimeContainer(t *testing.T) snapshot.TargetRunContainer {
 	t.Helper()
 	repository := t.TempDir()
-	for _, directory := range []string{"cmd/app", "cmd/helper", "internal/core"} {
+	for _, directory := range []string{"cmd/app", "cmd/helper", "core"} {
 		if err := os.MkdirAll(filepath.Join(repository, directory), 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
 	writeFile(t, filepath.Join(repository, "go.mod"), "module example.com/pages\n\ngo 1.24\n")
-	writeFile(t, filepath.Join(repository, "cmd/app/main.go"), "package main\nimport _ \"example.com/pages/internal/core\"\nfunc main() {}\n")
+	writeFile(t, filepath.Join(repository, "cmd/app/main.go"), "package main\nimport _ \"example.com/pages/core\"\nfunc main() {}\n")
 	writeFile(t, filepath.Join(repository, "cmd/helper/main.go"), "package main\nfunc main() {}\n")
-	writeFile(t, filepath.Join(repository, "internal/core/core.go"), "package core\nfunc Public() {}\n")
+	writeFile(t, filepath.Join(repository, "core/core.go"), "package core\nfunc Public() {}\n")
 	runGit(t, repository, "init", "--quiet")
-	runGit(t, repository, "add", "--", "go.mod", "cmd/app/main.go", "cmd/helper/main.go", "internal/core/core.go")
+	runGit(t, repository, "add", "--", "go.mod", "cmd/app/main.go", "cmd/helper/main.go", "core/core.go")
 
 	deferred, err := snapshot.Build(snapshot.Options{
 		RepoPath: repository, DeferAnalysisTargetResolution: true,
@@ -472,7 +536,7 @@ func targetPageRuntimeContainer(t *testing.T) snapshot.TargetRunContainer {
 	}
 	container, err := snapshot.BuildTargetRunContainer(deferred, snapshot.TargetRunSelection{
 		DefaultTargetRef: refs["cmd/app"],
-		TargetRefs:       []string{refs["cmd/app"], refs["cmd/helper"], refs["internal/core"]},
+		TargetRefs:       []string{refs["cmd/app"], refs["cmd/helper"], refs["."]},
 	})
 	if err != nil {
 		t.Fatal(err)

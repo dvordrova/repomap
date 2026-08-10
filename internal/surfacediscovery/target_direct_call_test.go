@@ -179,7 +179,9 @@ func leaf() {}
 		RepositoryName: "library", ModuleDirs: []string{"."},
 		Packages: []PackageInput{{Path: "example.com/library", ModuleDir: "."}},
 		AnalysisTarget: &AnalysisTargetInput{
-			Kind: AnalysisTargetLibraryPackage, PackagePath: "example.com/library",
+			TargetRef: "target-library", Kind: AnalysisTargetModuleLibrary,
+			ModuleID: "module-library", ModulePath: "example.com/library", ModuleDir: ".",
+			TargetPackages: []string{"example.com/library"},
 		},
 	}
 	options := DefaultOptions(repository)
@@ -195,8 +197,10 @@ func leaf() {}
 	if err := index.Validate(); err != nil {
 		t.Fatalf("Validate library index: %v", err)
 	}
-	if index.Scope.TargetKind != AnalysisTargetLibraryPackage ||
-		index.Scope.TargetPackage != "example.com/library" || index.Scope.MaxDepth != 1 ||
+	if index.Scope.TargetRef != "target-library" || index.Scope.TargetKind != AnalysisTargetModuleLibrary ||
+		index.Scope.TargetModuleID != "module-library" || index.Scope.TargetModulePath != "example.com/library" ||
+		index.Scope.TargetModuleDir != "." || index.Scope.TargetPackage != "" ||
+		!reflect.DeepEqual(index.Scope.TargetPackages, []string{"example.com/library"}) || index.Scope.MaxDepth != 1 ||
 		index.Scope.EdgeLimit != DefaultDirectCallEdgeLimit {
 		t.Fatalf("library scope = %#v", index.Scope)
 	}
@@ -244,7 +248,9 @@ func helper() {}
 		RepositoryName: "generic", ModuleDirs: []string{"."},
 		Packages: []PackageInput{{Path: "example.com/generic", ModuleDir: "."}},
 		AnalysisTarget: &AnalysisTargetInput{
-			Kind: AnalysisTargetLibraryPackage, PackagePath: "example.com/generic",
+			TargetRef: "target-generic", Kind: AnalysisTargetModuleLibrary,
+			ModuleID: "module-generic", ModulePath: "example.com/generic", ModuleDir: ".",
+			TargetPackages: []string{"example.com/generic"},
 		},
 	}
 	result, err := AnalyzeWithInput(DefaultOptions(repository), input)
@@ -282,7 +288,9 @@ func targetDirectCallExecutableInput(packagePath, rootPath string, rootLine int)
 		RepositoryName: "fixture", ModuleDirs: []string{"."},
 		Packages: []PackageInput{{Path: packagePath, ModuleDir: "."}},
 		AnalysisTarget: &AnalysisTargetInput{
-			Kind: AnalysisTargetExecutablePackage, PackagePath: packagePath,
+			TargetRef: "target:" + packagePath, Kind: AnalysisTargetExecutablePackage,
+			ModuleID: "module:" + packagePath, ModulePath: packagePath, ModuleDir: ".",
+			PackagePath: packagePath, TargetPackages: []string{packagePath},
 			Roots: []AnalysisTargetRootInput{{Path: rootPath, Line: rootLine}},
 		},
 		Entrypoints: []EntrypointInput{{

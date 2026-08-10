@@ -974,6 +974,8 @@ func bindRunMetaAnalysisTarget(meta *debugdump.RunMeta, target *analysistarget.T
 	}
 	meta.AnalysisTargetRef = target.Ref
 	meta.AnalysisTargetKind = string(target.Kind)
+	meta.AnalysisTargetModule = target.ModulePath
+	meta.AnalysisTargetDisplayPath = target.DisplayPath()
 	meta.AnalysisTargetPackage = target.PackagePath
 }
 
