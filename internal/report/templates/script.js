@@ -6731,7 +6731,8 @@
 		var entries = mapModeProjection('entrypoints');
 		var integrations = mapModeProjection('integrations');
 		return {
-			entries: Number(entries && entries.counts && entries.counts.entries) || 0,
+			entries: (Number(entries && entries.counts && entries.counts.entries) || 0) +
+				entryCallSurfaceLaunchpadItems().length,
 			integrations: Number(integrations && integrations.counts && integrations.counts.touchpoints) || 0,
 			api: Number(DATA.library_api && DATA.library_api.total_declarations) || 0,
 		};
@@ -7106,6 +7107,133 @@
       ? matches[0] : null;
   }
 
+  function entryCallSurfaceValue(value, fallbackKind) {
+    if (!value || !String(value.text || '').trim()) return null;
+    return {
+      kind: String(fallbackKind || value.kind || ''),
+      text: String(value.text || '').trim(),
+      known: true,
+      candidates: [],
+    };
+  }
+
+  // D283 result surfaces are deliberately not Trigger Catalog or Canvas
+  // records. Adapt their narrow report DTO only for the Entrypoints reader;
+  // no component participation, Explore action or map edge is synthesized.
+  function entryCallSurfaceTrigger(surface) {
+    if (!surface || String(surface.origin || '') !== 'model_assisted') return null;
+    var kind = String(surface.kind || '');
+    var site = exactEntrySurfaceLocation(surface.site);
+    if (!site || (kind !== 'http_route' && kind !== 'cli_command')) return null;
+    var identity = {};
+    if (kind === 'http_route') {
+      var method = entryCallSurfaceValue(surface.method, 'token');
+      var path = entryCallSurfaceValue(surface.path, 'constant');
+      var handler = entryCallSurfaceValue(surface.handler, 'function');
+      if (!method || !path || !handler) return null;
+      identity.method = method.text.toUpperCase();
+      identity.path = path;
+    } else {
+      var command = entryCallSurfaceValue(surface.identity, 'command_segment');
+      if (!command) return null;
+      identity.name = command.text;
+      identity.path = command;
+    }
+    var handlerValue = entryCallSurfaceValue(surface.handler, 'function');
+    return {
+      id: String(surface.id || ''),
+      kind: kind,
+      surface_role: String(surface.role || ''),
+      provisional_id: false,
+      resolution: 'exact',
+      identity: identity,
+      handler: handlerValue,
+      registration_site: site,
+      descriptor_site: kind === 'cli_command' ? site : null,
+      handler_location: exactEntrySurfaceLocation(surface.handler && surface.handler.location),
+      model_assisted: true,
+      evidence_state: String(surface.state || ''),
+      runtime_reachability: String(surface.runtime_reachability || ''),
+    };
+  }
+
+  function entrySurfaceExactIdentityKey(trigger) {
+    var kind = String(trigger && trigger.kind || '');
+    if (kind !== 'http_route' && kind !== 'cli_command') return '';
+    if (trigger && trigger.provisional_id === true) return '';
+    var site = entrySurfaceRegistrationLocation(trigger, null);
+    var siteKey = entrySurfaceLocationKey(site);
+    if (!siteKey) return '';
+    var identity = trigger && trigger.identity || {};
+    if (kind === 'http_route') {
+      var path = identity && identity.path;
+      var method = String(identity && identity.method || '').trim().toUpperCase();
+      var handler = trigger && trigger.handler;
+      if (!path || path.known !== true || !String(path.text || '').trim() ||
+        !method || !handler || handler.known !== true || !String(handler.text || '').trim()) return '';
+      return [kind, siteKey, method, String(path.text).trim()].join('\u0000');
+    }
+    var command = identity && identity.path && identity.path.known === true
+      ? String(identity.path.text || '').trim() : String(identity && identity.name || '').trim();
+    return command ? [kind, siteKey, command].join('\u0000') : '';
+  }
+
+  function detachedEntrySurface(trigger) {
+    var site = entrySurfaceRegistrationLocation(trigger, null);
+    var handler = exactEntrySurfaceLocation(trigger && trigger.handler_location);
+    var locations = site ? [site] : [];
+    if (handler && entrySurfaceLocationKey(handler) !== entrySurfaceLocationKey(site)) locations.push(handler);
+    return {
+      id: String(trigger && trigger.id || ''),
+      kind: String(trigger && trigger.kind || ''),
+      label: entrySurfaceIdentityLabel(trigger, null, String(trigger && trigger.kind || '')),
+      locations: locations,
+    };
+  }
+
+  function entryCallSurfaceLaunchpadItems() {
+    var projection = DATA.entry_call;
+    var surfaces = projection && Number(projection.version) === 2 && Array.isArray(projection.surfaces)
+      ? projection.surfaces : [];
+    if (!surfaces.length) return [];
+    var canvasIDs = Object.create(null);
+    ((DATA.architecture_canvas && DATA.architecture_canvas.surfaces) || []).forEach(function (surface) {
+      if (String(surface && surface.surface_role || '') === 'entry_surface') {
+        canvasIDs[String(surface && surface.id || '')] = true;
+      }
+    });
+    var localByKey = Object.create(null);
+    var localTriggers = DATA.discovered_surfaces && Array.isArray(DATA.discovered_surfaces.triggers)
+      ? DATA.discovered_surfaces.triggers : [];
+    localTriggers.forEach(function (trigger) {
+      if (String(trigger && trigger.surface_role || '') !== 'entry_surface') return;
+      var key = entrySurfaceExactIdentityKey(trigger);
+      if (!key) return;
+      var previous = localByKey[key];
+      if (!previous || String(trigger.id || '').localeCompare(String(previous.id || '')) < 0) {
+        localByKey[key] = trigger;
+      }
+    });
+    var emitted = Object.create(null);
+    var result = [];
+    surfaces.forEach(function (surface) {
+      var modelTrigger = entryCallSurfaceTrigger(surface);
+      var key = entrySurfaceExactIdentityKey(modelTrigger);
+      if (!modelTrigger || !key || emitted[key]) return;
+      emitted[key] = true;
+      var localTrigger = localByKey[key] || null;
+      if (localTrigger && canvasIDs[String(localTrigger.id || '')]) return;
+      var trigger = localTrigger || modelTrigger;
+      result.push({
+        entry: detachedEntrySurface(trigger),
+        projected: null,
+        kind: String(trigger.kind || ''),
+        trigger: trigger,
+      });
+    });
+    return result;
+  }
+
   function exactEntrySurfaceLocation(location) {
     var path = String(location && location.path || '');
     var line = Number(location && location.line) || 0;
@@ -7127,7 +7255,9 @@
     var kind = String(trigger && trigger.kind || '');
     var location = kind === 'http_server'
       ? trigger && (trigger.server_start_site || trigger.registration_site)
-      : trigger && trigger.registration_site;
+      : kind === 'cli_command'
+        ? trigger && (trigger.descriptor_site || trigger.registration_site)
+        : trigger && trigger.registration_site;
     if (kind === 'process_entry') {
       location = trigger && trigger.process_entrypoint && trigger.process_entrypoint.location || location;
     }
@@ -7261,9 +7391,17 @@
       primaryLine.appendChild(callback);
     }
     if (kind === 'cli_command' && trigger && (trigger.provisional_id === true ||
-      !(trigger.identity && trigger.identity.path && trigger.identity.path.known))) {
+      !(trigger.identity && ((trigger.identity.path && trigger.identity.path.known) ||
+        String(trigger.identity.name || '').trim())))) {
       primaryLine.appendChild(txt('span', 'rm-map-entry-card__partial',
         msg('main.map.entry.identity.partial_command')));
+    }
+    if (trigger && trigger.model_assisted === true) {
+      primaryLine.appendChild(txt('span', 'rm-map-entry-card__origin', msg('main.map.entry.model_assisted')));
+      var stateMessage = String(trigger.evidence_state || '') === 'declared_descriptor'
+        ? 'main.map.entry.state.declared_descriptor'
+        : 'main.map.entry.state.exact_registration';
+      primaryLine.appendChild(txt('span', 'rm-map-entry-card__state', msg(stateMessage)));
     }
     heading.appendChild(primaryLine);
     var exactActions = el('div', 'rm-map-entry-card__sources');
@@ -7272,7 +7410,9 @@
       registration,
       kind === 'process_entry'
         ? msg('main.map.entry.context.entry_source')
-        : msg('main.map.entry.context.registration')
+        : kind === 'cli_command' && trigger && trigger.descriptor_site
+          ? msg('main.map.entry.context.descriptor')
+          : msg('main.map.entry.context.registration')
     ));
     var handlerLocation = exactEntrySurfaceLocation(trigger && trigger.handler_location);
     if (handlerLocation && entrySurfaceLocationKey(handlerLocation) !== entrySurfaceLocationKey(registration)) {
@@ -7364,6 +7504,7 @@
         });
       }
     });
+    entryCallSurfaceLaunchpadItems().forEach(function (item) { items.push(item); });
     var grouped = Object.create(null);
     items.forEach(function (item) {
       var kind = item.kind || 'other';
@@ -7435,6 +7576,30 @@
       }
       host.appendChild(section);
     });
+    var modelCoverage = DATA.entry_call && Number(DATA.entry_call.version) === 2
+      ? DATA.entry_call.surface_coverage : null;
+    if (modelCoverage && (Number(modelCoverage.selected_proposals) > 0 ||
+      Number(modelCoverage.rejected_proposals) > 0 || Number(modelCoverage.omitted_candidates) > 0 ||
+      Number(modelCoverage.omitted_facts) > 0 || Number(modelCoverage.unsafe_facts_excluded) > 0 ||
+      Number(modelCoverage.unreachable_candidates_excluded) > 0)) {
+      var frontier = el('details', 'rm-map-entry-model-frontier');
+      frontier.appendChild(txt('summary', 'rm-map-entry-model-frontier__summary', msg(
+        'main.map.entry.model_frontier.summary', { count: Number(modelCoverage.selected_proposals) || 0 }
+      )));
+      var frontierBody = el('div', 'rm-map-entry-model-frontier__body');
+      frontierBody.appendChild(txt('p', '', msg('main.map.entry.model_frontier.result', {
+        shown: Number(modelCoverage.selected_proposals) || 0,
+        rejected: Number(modelCoverage.rejected_proposals) || 0,
+      })));
+      frontierBody.appendChild(txt('p', '', msg('main.map.entry.model_frontier.bounds', {
+        candidates: Number(modelCoverage.omitted_candidates) || 0,
+        facts: Number(modelCoverage.omitted_facts) || 0,
+        unsafe: Number(modelCoverage.unsafe_facts_excluded) || 0,
+        unreachable: Number(modelCoverage.unreachable_candidates_excluded) || 0,
+      })));
+      frontier.appendChild(frontierBody);
+      host.appendChild(frontier);
+    }
     host.appendChild(txt('p', 'rm-map-entry-context__limit', msg('main.map.entry.static_limit')));
   }
 

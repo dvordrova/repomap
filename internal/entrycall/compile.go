@@ -12,10 +12,11 @@ import (
 )
 
 type Request struct {
-	Version        int            `json:"version"`
-	RequestRef     string         `json:"request_ref"`
-	Entries        []RequestEntry `json:"entries"`
-	OmittedEntries int            `json:"omitted_entries"`
+	Version        int                   `json:"version"`
+	RequestRef     string                `json:"request_ref"`
+	Entries        []RequestEntry        `json:"entries"`
+	OmittedEntries int                   `json:"omitted_entries"`
+	SurfaceCatalog RequestSurfaceCatalog `json:"surface_catalog"`
 }
 
 type RequestEntry struct {
@@ -59,10 +60,12 @@ type Compilation struct {
 	Request         Request
 	SubstrateSHA256 string
 
-	wire            []byte
-	wireSHA         string
-	substrateSHA256 string
-	authority       map[string]rootAuthority
+	wire             []byte
+	wireSHA          string
+	substrateSHA256  string
+	authority        map[string]rootAuthority
+	surfaceAuthority map[string]surfaceCandidateAuthority
+	surfaceCoverage  SurfaceCandidateCoverage
 }
 
 type rootAuthority struct {
@@ -119,11 +122,16 @@ func Compile(substrate Substrate) (Compilation, error) {
 	request := Request{
 		Version: RequestVersion, Entries: []RequestEntry{},
 		OmittedEntries: maxInt(0, len(roots)-MaxRoots),
+		SurfaceCatalog: defaultRequestSurfaceCatalog(),
 	}
-	compilation := Compilation{authority: make(map[string]rootAuthority)}
+	compilation := Compilation{
+		authority:        make(map[string]rootAuthority),
+		surfaceAuthority: make(map[string]surfaceCandidateAuthority),
+	}
 	compilation.SubstrateSHA256 = substrateSHA256(substrate)
 	compilation.substrateSHA256 = compilation.SubstrateSHA256
 	nextNodeRef, nextFamilyRef := 1, 1
+	rootRefByNodeID := make(map[string]string, minInt(len(roots), MaxRoots))
 	for index, root := range roots {
 		if index >= MaxRoots {
 			break
@@ -134,7 +142,15 @@ func Compile(substrate Substrate) (Compilation, error) {
 		)
 		request.Entries = append(request.Entries, entry)
 		compilation.authority[entry.Ref] = authority
+		rootRefByNodeID[root.NodeID] = entry.Ref
 	}
+	surfaceCatalog, surfaceAuthority, surfaceCoverage, err := compileSurfaceCatalog(substrate, rootRefByNodeID)
+	if err != nil {
+		return Compilation{}, err
+	}
+	request.SurfaceCatalog = surfaceCatalog
+	compilation.surfaceAuthority = surfaceAuthority
+	compilation.surfaceCoverage = surfaceCoverage
 	identity, err := json.Marshal(request)
 	if err != nil {
 		return Compilation{}, fmt.Errorf("entry call: encode request identity: %w", err)
@@ -357,6 +373,67 @@ func validateSubstrate(substrate Substrate) error {
 		}
 		seenFrontiers[frontier.CallerID] = struct{}{}
 	}
+	if err := validateSurfaceSubstrate(substrate, seenRoots); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateSurfaceSubstrate(substrate Substrate, roots map[string]struct{}) error {
+	coverage := substrate.Coverage
+	counts := []int{
+		coverage.SurfaceCandidatesConsidered,
+		coverage.SurfaceCandidatesIndexed,
+		coverage.SurfaceCandidateLimitExcluded,
+		coverage.SurfaceCandidateFactsConsidered,
+		coverage.SurfaceCandidateFactsIndexed,
+		coverage.SurfaceCandidateFactLimitExcluded,
+		coverage.UnsafeSurfaceCandidateFactsExcluded,
+		coverage.UnreachableSurfaceCandidatesExcluded,
+	}
+	for _, count := range counts {
+		if count < 0 {
+			return fmt.Errorf("entry call: invalid surface coverage")
+		}
+	}
+	if len(substrate.SurfaceCandidates) > MaxRawSurfaceCandidates ||
+		coverage.SurfaceCandidatesIndexed != len(substrate.SurfaceCandidates) ||
+		coverage.SurfaceCandidatesConsidered < coverage.SurfaceCandidatesIndexed {
+		return fmt.Errorf("entry call: invalid surface candidate coverage")
+	}
+	indexedFacts := 0
+	seenCandidates := make(map[string]struct{}, len(substrate.SurfaceCandidates))
+	seenFacts := make(map[string]struct{})
+	for _, candidate := range substrate.SurfaceCandidates {
+		if strings.TrimSpace(candidate.ID) == "" || strings.TrimSpace(candidate.Sketch) == "" ||
+			!candidate.Form.Valid() || !validLocation(candidate.Site) ||
+			len(candidate.Facts) == 0 || len(candidate.Facts) > MaxRawSurfaceFactsPerCandidate {
+			return fmt.Errorf("entry call: invalid exact surface candidate")
+		}
+		if _, duplicate := seenCandidates[candidate.ID]; duplicate {
+			return fmt.Errorf("entry call: duplicate exact surface candidate")
+		}
+		seenCandidates[candidate.ID] = struct{}{}
+		if _, knownRoot := roots[candidate.RootNodeID]; !knownRoot {
+			return fmt.Errorf("entry call: surface candidate root is not an exact selected root")
+		}
+		for _, fact := range candidate.Facts {
+			indexedFacts++
+			if strings.TrimSpace(fact.ID) == "" || !fact.Kind.Valid() || fact.Position < 0 ||
+				strings.TrimSpace(fact.Label) == "" || strings.TrimSpace(fact.Value) == "" ||
+				!validLocation(fact.Location) {
+				return fmt.Errorf("entry call: invalid exact surface fact")
+			}
+			if _, duplicate := seenFacts[fact.ID]; duplicate {
+				return fmt.Errorf("entry call: duplicate exact surface fact")
+			}
+			seenFacts[fact.ID] = struct{}{}
+		}
+	}
+	if coverage.SurfaceCandidateFactsIndexed != indexedFacts ||
+		coverage.SurfaceCandidateFactsConsidered < coverage.SurfaceCandidateFactsIndexed {
+		return fmt.Errorf("entry call: invalid surface fact coverage")
+	}
 	return nil
 }
 
@@ -370,7 +447,8 @@ func validateCompilation(compilation Compilation) error {
 		len(compilation.Request.Entries) > MaxRoots || compilation.Request.OmittedEntries < 0 ||
 		!validRequestRef(compilation.Request.RequestRef) || len(compilation.SubstrateSHA256) != sha256.Size*2 ||
 		compilation.SubstrateSHA256 != compilation.substrateSHA256 ||
-		len(compilation.authority) != len(compilation.Request.Entries) {
+		len(compilation.authority) != len(compilation.Request.Entries) ||
+		!validSurfaceCoverage(compilation.surfaceCoverage) {
 		return fmt.Errorf("entry call: invalid compilation")
 	}
 	wire, err := json.Marshal(compilation.Request)
@@ -384,6 +462,9 @@ func validateCompilation(compilation Compilation) error {
 			len(entry.Nodes) == 0 || len(entry.Nodes) > MaxNodesPerRoot || len(entry.Families) > MaxFamiliesPerRoot {
 			return fmt.Errorf("entry call: request authority mismatch")
 		}
+	}
+	if err := validateCompiledSurfaceCatalog(compilation); err != nil {
+		return err
 	}
 	return nil
 }
@@ -401,6 +482,25 @@ func (compilation Compilation) AdvertisedFamilyCount() int {
 	return total
 }
 
+// AdvertisedSurfaceCandidateCount lets the runtime preserve the ordinary
+// one-call path when exact candidate facts exist even if no call family was
+// useful enough to advertise.
+func (compilation Compilation) AdvertisedSurfaceCandidateCount() int {
+	if validateCompilation(compilation) != nil {
+		return 0
+	}
+	return len(compilation.Request.SurfaceCatalog.Candidates)
+}
+
+// SurfaceCoverage returns aggregate backend-owned accounting only. Candidate
+// identity and exact values remain in private compilation authority.
+func (compilation Compilation) SurfaceCoverage() SurfaceCandidateCoverage {
+	if validateCompilation(compilation) != nil {
+		return SurfaceCandidateCoverage{}
+	}
+	return compilation.surfaceCoverage
+}
+
 func (compilation Compilation) RequestSHA256() string {
 	if validateCompilation(compilation) != nil {
 		return ""
@@ -413,10 +513,18 @@ func substrateSHA256(substrate Substrate) string {
 	nodes := append([]ExactNode(nil), substrate.Nodes...)
 	families := append([]ExactFamily(nil), substrate.Families...)
 	frontiers := append([]ExactFrontier(nil), substrate.Frontiers...)
+	surfaceCandidates := append([]ExactSurfaceCandidate(nil), substrate.SurfaceCandidates...)
 	sort.Slice(roots, func(i, j int) bool { return roots[i].NodeID < roots[j].NodeID })
 	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
 	sort.Slice(families, func(i, j int) bool { return families[i].ID < families[j].ID })
 	sort.Slice(frontiers, func(i, j int) bool { return frontiers[i].CallerID < frontiers[j].CallerID })
+	for index := range surfaceCandidates {
+		surfaceCandidates[index].Facts = append([]ExactSurfaceFact(nil), surfaceCandidates[index].Facts...)
+		sort.Slice(surfaceCandidates[index].Facts, func(i, j int) bool {
+			return surfaceCandidates[index].Facts[i].ID < surfaceCandidates[index].Facts[j].ID
+		})
+	}
+	sort.Slice(surfaceCandidates, func(i, j int) bool { return surfaceCandidates[i].ID < surfaceCandidates[j].ID })
 	for index := range families {
 		families[index].Callsites = append([]Location(nil), families[index].Callsites...)
 		sortLocations(families[index].Callsites)
@@ -439,13 +547,30 @@ func substrateSHA256(substrate Substrate) string {
 		CallerID                                                                  string
 		DynamicInvokesExcluded, NonStaticCallsExcluded, UnidentifiedCallsExcluded int
 	}
+	type digestSurfaceFact struct {
+		ID       string
+		Kind     SurfaceFactKind
+		Position int
+		Label    string
+		Value    string
+		Location Location
+	}
+	type digestSurfaceCandidate struct {
+		ID, RootNodeID string
+		Form           SurfaceCandidateForm
+		Sketch         string
+		Site           Location
+		Facts          []digestSurfaceFact
+	}
 	wire := struct {
-		Version   int
-		Roots     []digestRoot
-		Nodes     []digestNode
-		Families  []digestFamily
-		Frontiers []digestFrontier
-	}{Version: substrate.Version, Roots: make([]digestRoot, 0, len(roots)), Nodes: make([]digestNode, 0, len(nodes)), Families: make([]digestFamily, 0, len(families)), Frontiers: make([]digestFrontier, 0, len(frontiers))}
+		Version           int
+		Roots             []digestRoot
+		Nodes             []digestNode
+		Families          []digestFamily
+		Frontiers         []digestFrontier
+		SurfaceCandidates []digestSurfaceCandidate
+		Coverage          Coverage
+	}{Version: substrate.Version, Roots: make([]digestRoot, 0, len(roots)), Nodes: make([]digestNode, 0, len(nodes)), Families: make([]digestFamily, 0, len(families)), Frontiers: make([]digestFrontier, 0, len(frontiers)), SurfaceCandidates: make([]digestSurfaceCandidate, 0, len(surfaceCandidates)), Coverage: substrate.Coverage}
 	for _, root := range roots {
 		wire.Roots = append(wire.Roots, digestRoot{root.NodeID})
 	}
@@ -457,6 +582,20 @@ func substrateSHA256(substrate Substrate) string {
 	}
 	for _, frontier := range frontiers {
 		wire.Frontiers = append(wire.Frontiers, digestFrontier{frontier.CallerID, frontier.DynamicInvokesExcluded, frontier.NonStaticCallsExcluded, frontier.UnidentifiedCallsExcluded})
+	}
+	for _, candidate := range surfaceCandidates {
+		digestCandidate := digestSurfaceCandidate{
+			ID: candidate.ID, RootNodeID: candidate.RootNodeID, Form: candidate.Form,
+			Sketch: candidate.Sketch, Site: candidate.Site,
+			Facts: make([]digestSurfaceFact, 0, len(candidate.Facts)),
+		}
+		for _, fact := range candidate.Facts {
+			digestCandidate.Facts = append(digestCandidate.Facts, digestSurfaceFact{
+				ID: fact.ID, Kind: fact.Kind, Position: fact.Position,
+				Label: fact.Label, Value: fact.Value, Location: fact.Location,
+			})
+		}
+		wire.SurfaceCandidates = append(wire.SurfaceCandidates, digestCandidate)
 	}
 	encoded, _ := json.Marshal(wire)
 	return sha256Hex(encoded)
@@ -487,6 +626,13 @@ func sha256Hex(data []byte) string {
 
 func maxInt(left, right int) int {
 	if left > right {
+		return left
+	}
+	return right
+}
+
+func minInt(left, right int) int {
+	if left < right {
 		return left
 	}
 	return right

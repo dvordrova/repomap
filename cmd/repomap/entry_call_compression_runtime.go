@@ -94,13 +94,15 @@ func runEntryCallCompressionForRun(
 	baseStatus := entrycall.Status{
 		Version: entrycall.StatusVersion, PromptVersion: entrycall.PromptVersion,
 		RequestRef: compilation.Request.RequestRef, RequestSHA256: compilation.RequestSHA256(),
-		SubstrateSHA256:       compilation.SubstrateSHA256,
-		RepositoryStateSHA256: repositoryStateSHA256,
-		AdvertisedFamilies:    compilation.AdvertisedFamilyCount(),
+		SubstrateSHA256:             compilation.SubstrateSHA256,
+		RepositoryStateSHA256:       repositoryStateSHA256,
+		AdvertisedFamilies:          compilation.AdvertisedFamilyCount(),
+		AdvertisedSurfaceCandidates: compilation.AdvertisedSurfaceCandidateCount(),
+		SurfaceCandidateCoverage:    compilation.SurfaceCoverage(),
 	}
-	if baseStatus.AdvertisedFamilies == 0 {
+	if baseStatus.AdvertisedFamilies == 0 && baseStatus.AdvertisedSurfaceCandidates == 0 {
 		baseStatus.State = entrycall.StatusSkipped
-		baseStatus.Reason = entrycall.ReasonNoFamilies
+		baseStatus.Reason = entrycall.ReasonNoCandidates
 		outcome.Status = baseStatus
 		if err := persistEntryCallCompressionStatus(writer, outcome.Status); err != nil {
 			return outcome, err
@@ -182,8 +184,11 @@ func runEntryCallCompressionForRun(
 
 	output.Stage(
 		"Generic entry-call experiment",
-		fmt.Sprintf("advertised exact call families: %d", baseStatus.AdvertisedFamilies),
-		"compressing one bounded refs-only call graph",
+		fmt.Sprintf(
+			"advertised exact call families: %d; generic surface candidates: %d",
+			baseStatus.AdvertisedFamilies, baseStatus.AdvertisedSurfaceCandidates,
+		),
+		"classifying one bounded refs-only call graph and syntax catalog",
 	)
 	started := time.Now()
 	providerResult, callErr := client.EntryCallCompressionBodyMeasured(ctx, envelope)
@@ -281,7 +286,9 @@ func runEntryCallCompressionForRun(
 	baseStatus.State = entrycall.StatusAccepted
 	baseStatus.SelectedFamilies = result.SelectedFamilyCount()
 	baseStatus.RejectedFamilies = result.RejectedFamilyCount()
-	if baseStatus.RejectedFamilies > 0 {
+	baseStatus.SelectedSurfaces = result.SelectedSurfaceCount()
+	baseStatus.RejectedSurfaces = result.RejectedSurfaceCount()
+	if baseStatus.RejectedFamilies+baseStatus.RejectedSurfaces > 0 {
 		baseStatus.State = entrycall.StatusAcceptedPartial
 		baseStatus.Reason = entrycall.ReasonResponsePartial
 	}
@@ -438,6 +445,9 @@ func writeEntryCallCompressionOutcome(output *runOutput, outcome entryCallCompre
 		fmt.Sprintf("advertised families: %d", outcome.Status.AdvertisedFamilies),
 		fmt.Sprintf("selected families: %d", outcome.Status.SelectedFamilies),
 		fmt.Sprintf("rejected unreachable families: %d", outcome.Status.RejectedFamilies),
+		fmt.Sprintf("advertised surface candidates: %d", outcome.Status.AdvertisedSurfaceCandidates),
+		fmt.Sprintf("selected surfaces: %d", outcome.Status.SelectedSurfaces),
+		fmt.Sprintf("rejected surface proposals: %d", outcome.Status.RejectedSurfaces),
 	}
 	if outcome.Status.Reason != entrycall.ReasonNone {
 		details = append(details, "reason: "+string(outcome.Status.Reason))

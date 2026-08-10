@@ -11,9 +11,10 @@ import (
 )
 
 type Response struct {
-	Version    int             `json:"version"`
-	RequestRef string          `json:"request_ref"`
-	Entries    []ResponseEntry `json:"entries"`
+	Version          int                       `json:"version"`
+	RequestRef       string                    `json:"request_ref"`
+	Entries          []ResponseEntry           `json:"entries"`
+	SurfaceProposals []ResponseSurfaceProposal `json:"surface_proposals"`
 }
 
 type ResponseEntry struct {
@@ -21,14 +22,28 @@ type ResponseEntry struct {
 	FamilyRefs []string `json:"family_refs"`
 }
 
+type ResponseSurfaceProposal struct {
+	CandidateRef string                   `json:"candidate_ref"`
+	KindRef      string                   `json:"kind_ref"`
+	Bindings     []ResponseSurfaceBinding `json:"bindings"`
+}
+
+type ResponseSurfaceBinding struct {
+	SlotRef string `json:"slot_ref"`
+	FactRef string `json:"fact_ref"`
+}
+
 type Result struct {
-	Version               int           `json:"version"`
-	PromptVersion         string        `json:"prompt_version"`
-	RequestRef            string        `json:"request_ref"`
-	RequestSHA256         string        `json:"request_sha256"`
-	SubstrateSHA256       string        `json:"substrate_sha256"`
-	RepositoryStateSHA256 string        `json:"repository_state_sha256,omitempty"`
-	Entries               []ResultEntry `json:"entries"`
+	Version                  int                       `json:"version"`
+	PromptVersion            string                    `json:"prompt_version"`
+	RequestRef               string                    `json:"request_ref"`
+	RequestSHA256            string                    `json:"request_sha256"`
+	SubstrateSHA256          string                    `json:"substrate_sha256"`
+	RepositoryStateSHA256    string                    `json:"repository_state_sha256,omitempty"`
+	Entries                  []ResultEntry             `json:"entries"`
+	SurfaceProposals         []ResultSurfaceProposal   `json:"surface_proposals"`
+	RejectedSurfaceProposals []RejectedSurfaceProposal `json:"rejected_surface_proposals"`
+	SurfaceCandidateCoverage SurfaceCandidateCoverage  `json:"surface_candidate_coverage"`
 }
 
 type ResultEntry struct {
@@ -59,6 +74,40 @@ type ResultFamily struct {
 	Callsites    []Location `json:"callsites"`
 }
 
+type ResultSurfaceProposal struct {
+	ID           string               `json:"id"`
+	CandidateRef string               `json:"candidate_ref"`
+	RootRef      string               `json:"root_ref"`
+	Kind         string               `json:"kind"`
+	Role         string               `json:"role"`
+	Form         SurfaceCandidateForm `json:"form"`
+	Site         Location             `json:"site"`
+	Identity     *ResultSurfaceValue  `json:"identity,omitempty"`
+	Method       *ResultSurfaceValue  `json:"method,omitempty"`
+	Path         *ResultSurfaceValue  `json:"path,omitempty"`
+	Handler      *ResultSurfaceValue  `json:"handler,omitempty"`
+}
+
+type ResultSurfaceValue struct {
+	Kind     SurfaceFactKind `json:"kind"`
+	Text     string          `json:"text"`
+	Location *Location       `json:"location,omitempty"`
+}
+
+type RejectedSurfaceReason string
+
+const (
+	RejectedSurfaceIncompatibleForm    RejectedSurfaceReason = "incompatible_form"
+	RejectedSurfaceMissingBinding      RejectedSurfaceReason = "missing_required_binding"
+	RejectedSurfaceDuplicateBinding    RejectedSurfaceReason = "duplicate_binding"
+	RejectedSurfaceIncompatibleBinding RejectedSurfaceReason = "incompatible_binding"
+)
+
+type RejectedSurfaceProposal struct {
+	CandidateRef string                `json:"candidate_ref"`
+	Reason       RejectedSurfaceReason `json:"reason"`
+}
+
 func (result Result) SelectedFamilyCount() int {
 	total := 0
 	for _, entry := range result.Entries {
@@ -75,6 +124,14 @@ func (result Result) RejectedFamilyCount() int {
 	return total
 }
 
+func (result Result) SelectedSurfaceCount() int {
+	return len(result.SurfaceProposals)
+}
+
+func (result Result) RejectedSurfaceCount() int {
+	return len(result.RejectedSurfaceProposals)
+}
+
 // Reduce strictly validates refs and rooted connectivity, ignores response
 // order, and restores exact local callsites from private compilation authority.
 func Reduce(compilation Compilation, raw []byte) (Result, error) {
@@ -86,7 +143,8 @@ func Reduce(compilation Compilation, raw []byte) (Result, error) {
 		return Result{}, err
 	}
 	if response.Version != ResultVersion || response.RequestRef != compilation.Request.RequestRef ||
-		len(response.Entries) != len(compilation.Request.Entries) {
+		len(response.Entries) != len(compilation.Request.Entries) || response.SurfaceProposals == nil ||
+		len(response.SurfaceProposals) > MaxSelectedSurfaceProposals {
 		return Result{}, fmt.Errorf("entry call: response identity mismatch")
 	}
 	responseByRoot := make(map[string]ResponseEntry, len(response.Entries))
@@ -106,6 +164,9 @@ func Reduce(compilation Compilation, raw []byte) (Result, error) {
 		Version: ResultVersion, PromptVersion: PromptVersion,
 		RequestRef: compilation.Request.RequestRef, RequestSHA256: compilation.wireSHA,
 		SubstrateSHA256: compilation.SubstrateSHA256, Entries: []ResultEntry{},
+		SurfaceProposals:         []ResultSurfaceProposal{},
+		RejectedSurfaceProposals: []RejectedSurfaceProposal{},
+		SurfaceCandidateCoverage: compilation.surfaceCoverage,
 	}
 	for _, requestEntry := range compilation.Request.Entries {
 		responseEntry, present := responseByRoot[requestEntry.Ref]
@@ -143,7 +204,162 @@ func Reduce(compilation Compilation, raw []byte) (Result, error) {
 		}
 		result.Entries = append(result.Entries, resultEntry)
 	}
+	selectedSurfaces, rejectedSurfaces, err := reduceSurfaceProposals(compilation, response.SurfaceProposals)
+	if err != nil {
+		return Result{}, err
+	}
+	result.SurfaceProposals = selectedSurfaces
+	result.RejectedSurfaceProposals = rejectedSurfaces
 	return result, nil
+}
+
+func reduceSurfaceProposals(
+	compilation Compilation,
+	proposals []ResponseSurfaceProposal,
+) ([]ResultSurfaceProposal, []RejectedSurfaceProposal, error) {
+	knownKinds := map[string]struct{}{SurfaceKindRefCLICommand: {}, SurfaceKindRefHTTPRoute: {}}
+	knownSlots := map[string]struct{}{
+		SurfaceSlotRefIdentity: {}, SurfaceSlotRefMethod: {}, SurfaceSlotRefPath: {}, SurfaceSlotRefHandler: {},
+	}
+	knownFacts := make(map[string]struct{})
+	for _, candidate := range compilation.Request.SurfaceCatalog.Candidates {
+		for _, fact := range candidate.Facts {
+			knownFacts[fact.Ref] = struct{}{}
+		}
+	}
+	seenCandidates := make(map[string]struct{}, len(proposals))
+	for _, proposal := range proposals {
+		if _, known := compilation.surfaceAuthority[proposal.CandidateRef]; !known {
+			return nil, nil, fmt.Errorf("entry call: response cites unknown surface candidate ref")
+		}
+		if _, duplicate := seenCandidates[proposal.CandidateRef]; duplicate {
+			return nil, nil, fmt.Errorf("entry call: response repeats surface candidate ref")
+		}
+		seenCandidates[proposal.CandidateRef] = struct{}{}
+		if _, known := knownKinds[proposal.KindRef]; !known {
+			return nil, nil, fmt.Errorf("entry call: response cites unknown surface kind ref")
+		}
+		for _, binding := range proposal.Bindings {
+			if _, known := knownSlots[binding.SlotRef]; !known {
+				return nil, nil, fmt.Errorf("entry call: response cites unknown surface slot ref")
+			}
+			if _, known := knownFacts[binding.FactRef]; !known {
+				return nil, nil, fmt.Errorf("entry call: response cites unknown surface fact ref")
+			}
+		}
+	}
+
+	ordered := append([]ResponseSurfaceProposal(nil), proposals...)
+	sort.Slice(ordered, func(i, j int) bool { return refLess(ordered[i].CandidateRef, ordered[j].CandidateRef) })
+	selected := make([]ResultSurfaceProposal, 0, len(ordered))
+	rejected := make([]RejectedSurfaceProposal, 0)
+	for _, proposal := range ordered {
+		restored, reason := restoreSurfaceProposal(compilation.surfaceAuthority[proposal.CandidateRef], proposal)
+		if reason != "" {
+			rejected = append(rejected, RejectedSurfaceProposal{CandidateRef: proposal.CandidateRef, Reason: reason})
+			continue
+		}
+		selected = append(selected, restored)
+	}
+	return selected, rejected, nil
+}
+
+func restoreSurfaceProposal(
+	authority surfaceCandidateAuthority,
+	proposal ResponseSurfaceProposal,
+) (ResultSurfaceProposal, RejectedSurfaceReason) {
+	if proposal.Bindings == nil || len(proposal.Bindings) == 0 {
+		return ResultSurfaceProposal{}, RejectedSurfaceMissingBinding
+	}
+	if len(proposal.Bindings) > 4 {
+		return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
+	}
+	if proposal.KindRef == SurfaceKindRefCLICommand && authority.exact.Form != SurfaceCandidateKeyedComposite ||
+		proposal.KindRef == SurfaceKindRefHTTPRoute && authority.exact.Form != SurfaceCandidateDirectCall {
+		return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleForm
+	}
+	bySlot := make(map[string]ExactSurfaceFact, len(proposal.Bindings))
+	usedFacts := make(map[string]struct{}, len(proposal.Bindings))
+	for _, binding := range proposal.Bindings {
+		if _, duplicate := bySlot[binding.SlotRef]; duplicate {
+			return ResultSurfaceProposal{}, RejectedSurfaceDuplicateBinding
+		}
+		if _, duplicate := usedFacts[binding.FactRef]; duplicate {
+			return ResultSurfaceProposal{}, RejectedSurfaceDuplicateBinding
+		}
+		exact, owned := authority.factByRef[binding.FactRef]
+		if !owned {
+			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
+		}
+		bySlot[binding.SlotRef] = exact
+		usedFacts[binding.FactRef] = struct{}{}
+	}
+
+	restored := ResultSurfaceProposal{
+		CandidateRef: proposal.CandidateRef,
+		RootRef:      authority.request.RootRef,
+		Form:         authority.exact.Form,
+		Site:         authority.exact.Site,
+	}
+	switch proposal.KindRef {
+	case SurfaceKindRefCLICommand:
+		if len(bySlot) < 1 || len(bySlot) > 2 {
+			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
+		}
+		identity, present := bySlot[SurfaceSlotRefIdentity]
+		if !present {
+			return ResultSurfaceProposal{}, RejectedSurfaceMissingBinding
+		}
+		if identity.Kind != SurfaceFactString {
+			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
+		}
+		if handler, present := bySlot[SurfaceSlotRefHandler]; present {
+			if handler.Kind != SurfaceFactCallable {
+				return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
+			}
+			restored.Handler = resultSurfaceValue(handler)
+		}
+		if _, extra := bySlot[SurfaceSlotRefMethod]; extra {
+			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
+		}
+		if _, extra := bySlot[SurfaceSlotRefPath]; extra {
+			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
+		}
+		restored.Kind = SurfaceKindCLICommand
+		restored.Role = SurfaceRoleDescriptor
+		restored.Identity = resultSurfaceValue(identity)
+	case SurfaceKindRefHTTPRoute:
+		if len(bySlot) != 3 {
+			return ResultSurfaceProposal{}, RejectedSurfaceMissingBinding
+		}
+		method, methodPresent := bySlot[SurfaceSlotRefMethod]
+		path, pathPresent := bySlot[SurfaceSlotRefPath]
+		handler, handlerPresent := bySlot[SurfaceSlotRefHandler]
+		if !methodPresent || !pathPresent || !handlerPresent {
+			return ResultSurfaceProposal{}, RejectedSurfaceMissingBinding
+		}
+		if method.Kind != SurfaceFactString && method.Kind != SurfaceFactToken ||
+			path.Kind != SurfaceFactString || handler.Kind != SurfaceFactCallable {
+			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
+		}
+		if _, extra := bySlot[SurfaceSlotRefIdentity]; extra {
+			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
+		}
+		restored.Kind = SurfaceKindHTTPRoute
+		restored.Role = SurfaceRoleEntrySurface
+		restored.Method = resultSurfaceValue(method)
+		restored.Path = resultSurfaceValue(path)
+		restored.Handler = resultSurfaceValue(handler)
+	default:
+		panic("known surface kind was not handled")
+	}
+	restored.ID = surfaceProposalID(authority.exact.ID, restored.Kind)
+	return restored, ""
+}
+
+func resultSurfaceValue(fact ExactSurfaceFact) *ResultSurfaceValue {
+	location := fact.Location
+	return &ResultSurfaceValue{Kind: fact.Kind, Text: fact.Value, Location: &location}
 }
 
 func decodeResponse(raw []byte) (Response, error) {
@@ -263,6 +479,12 @@ func sortResult(result *Result) {
 			return refLess(result.Entries[index].RejectedFamilies[i].Ref, result.Entries[index].RejectedFamilies[j].Ref)
 		})
 	}
+	sort.Slice(result.SurfaceProposals, func(i, j int) bool {
+		return refLess(result.SurfaceProposals[i].CandidateRef, result.SurfaceProposals[j].CandidateRef)
+	})
+	sort.Slice(result.RejectedSurfaceProposals, func(i, j int) bool {
+		return refLess(result.RejectedSurfaceProposals[i].CandidateRef, result.RejectedSurfaceProposals[j].CandidateRef)
+	})
 }
 
 func refLess(left, right string) bool {

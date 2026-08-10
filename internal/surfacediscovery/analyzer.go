@@ -270,7 +270,7 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 	entrypoints := a.entrypoints()
 	a.recordEntryHandoffs(entrypoints)
 	if a.opts.CaptureEntryCallSubstrate {
-		substrate := a.directCallIndex.entryCallSubstrate(directCallIndex, entrypoints)
+		substrate := a.directCallIndex.entryCallSubstrate(a, directCallIndex, entrypoints)
 		a.result.EntryCallSubstrate = &substrate
 	}
 	finishEntrypoints := a.startPhase("entrypoint_walk", "walking build-selected executable entrypoints")
@@ -890,6 +890,7 @@ func (a *analyzer) prepare() {
 				}
 				call, ok := instruction.(ssa.CallInstruction)
 				if ok {
+					a.directCallIndex.observeEntryCall(a, call)
 					if a.input.AnalysisTarget == nil {
 						a.directCallIndex.recordCall(a, call)
 					}
@@ -929,6 +930,7 @@ func (a *analyzer) prepare() {
 			a.emitPhaseProgress(functionIndex+1, len(orderedFunctions), "SSA functions indexed")
 		}
 	}
+	a.directCallIndex.recordEntrySurfaceSyntaxCandidates(a, a.entrypoints())
 
 	changed := true
 	for changed {

@@ -43,6 +43,88 @@ func TestLoadEntryCallReportProjectionProjectsAcceptedExactTarget(t *testing.T) 
 	}
 }
 
+func TestLoadEntryCallReportProjectionRestoresSeparateSemanticSurfaces(t *testing.T) {
+	runDir := t.TempDir()
+	target := reportAnalysisTargetFixture(t)
+	repositorySHA256 := strings.Repeat("c", 64)
+	writeEntryCallReportArtifacts(
+		t, runDir, target, repositorySHA256,
+		func(result *entrycall.Result) { appendEntryCallReportSurfaceFixtures(result, target) },
+		nil,
+	)
+
+	data := &ReportData{
+		AnalysisTarget: target,
+		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{{
+			ID: "local-route-kept-separate", Kind: "http_route",
+		}}},
+	}
+	if err := loadEntryCallReportProjection(runDir, data, repositorySHA256); err != nil {
+		t.Fatalf("loadEntryCallReportProjection: %v", err)
+	}
+	collectOpenablePaths(data)
+	if err := validateEntryCallReportProjection(target, data.EntryCall, data.OpenablePaths); err != nil {
+		t.Fatalf("validateEntryCallReportProjection: %v", err)
+	}
+	if data.EntryCall == nil || data.EntryCall.Version != 2 || len(data.EntryCall.Surfaces) != 2 ||
+		data.EntryCall.SurfaceCoverage.SelectedProposals != 2 ||
+		data.EntryCall.SurfaceCoverage.AdvertisedCandidates != 2 ||
+		len(data.DiscoveredSurfaces.Triggers) != 1 {
+		t.Fatalf("separate surface projection/catalog = %#v / %#v", data.EntryCall, data.DiscoveredSurfaces)
+	}
+	httpSurface := data.EntryCall.Surfaces[1]
+	cliSurface := data.EntryCall.Surfaces[0]
+	if httpSurface.Kind != entrycall.SurfaceKindHTTPRoute || httpSurface.Method == nil ||
+		httpSurface.Method.Text != "GET" || httpSurface.Path == nil || httpSurface.Path.Text != "/account/:id" ||
+		httpSurface.Handler == nil || httpSurface.Handler.Text != "fixture.getAccount" ||
+		httpSurface.Site.Line != target.Roots[0].Line+2 ||
+		httpSurface.State != EntryCallSurfaceStateExactRegistration ||
+		httpSurface.Origin != EntryCallSurfaceOriginModelAssisted {
+		t.Fatalf("HTTP surface = %#v", httpSurface)
+	}
+	if cliSurface.Kind != entrycall.SurfaceKindCLICommand || cliSurface.Identity == nil ||
+		cliSurface.Identity.Text != "serve   [flags]" || cliSurface.Handler == nil ||
+		cliSurface.Handler.Text != "fixture.runServe" ||
+		cliSurface.State != EntryCallSurfaceStateDeclaredDescriptor ||
+		cliSurface.RuntimeReachability != EntryCallSurfaceRuntimeReachabilityUnknown {
+		t.Fatalf("CLI surface = %#v", cliSurface)
+	}
+	wire, err := json.Marshal(data.EntryCall)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(wire), `"candidate_ref"`) || strings.Contains(string(wire), `"root_ref"`) ||
+		strings.Contains(string(wire), "c1") || strings.Contains(string(wire), "r1") {
+		t.Fatalf("request-local refs leaked into report projection: %s", wire)
+	}
+}
+
+func TestLoadEntryCallReportProjectionFallsBackToExactLegacyV2Pair(t *testing.T) {
+	runDir := t.TempDir()
+	target := reportAnalysisTargetFixture(t)
+	repositorySHA256 := strings.Repeat("c", 64)
+	writeLegacyV2EntryCallReportArtifacts(t, runDir, target, repositorySHA256)
+
+	data := &ReportData{AnalysisTarget: target}
+	if err := loadEntryCallReportProjection(runDir, data, repositorySHA256); err != nil {
+		t.Fatalf("load legacy v2 projection: %v", err)
+	}
+	if data.EntryCall == nil || data.EntryCall.Version != EntryCallReportProjectionVersion ||
+		len(data.EntryCall.Families) != 1 || data.EntryCall.Surfaces == nil ||
+		len(data.EntryCall.Surfaces) != 0 || data.EntryCall.SurfaceCoverage != (EntryCallReportSurfaceCoverage{}) {
+		t.Fatalf("legacy v2 current projection = %#v", data.EntryCall)
+	}
+
+	// A current partial pair must fail closed rather than silently mixing or
+	// downgrading to the complete legacy pair.
+	currentStatus, _ := entryCallReportArtifactBytes(t, target, repositorySHA256, nil, nil)
+	writeEntryCallArtifact(t, runDir, entrycall.StatusArtifactFilename, currentStatus)
+	err := loadEntryCallReportProjection(runDir, &ReportData{AnalysisTarget: target}, repositorySHA256)
+	if err == nil || !strings.Contains(err.Error(), "accepted status requires result") {
+		t.Fatalf("current/legacy mixed-pair error = %v", err)
+	}
+}
+
 func TestLoadEntryCallReportProjectionFailsClosedOnAcceptedArtifactDrift(t *testing.T) {
 	target := reportAnalysisTargetFixture(t)
 	repositorySHA256 := strings.Repeat("c", 64)
@@ -147,7 +229,7 @@ func TestRunManifestBindsAndReplaysEntryCallProjection(t *testing.T) {
 	if err := json.Unmarshal(reportJSON, &report); err != nil {
 		t.Fatal(err)
 	}
-	report.EntryCall.Families[0].CallerLabel = "main · tampered"
+	report.EntryCall.Surfaces[1].Path.Text = "/tampered"
 	tampered, err := json.Marshal(report)
 	if err != nil {
 		t.Fatal(err)
@@ -192,7 +274,11 @@ func authorizedEntryCallReportFixture(t *testing.T) (RunManifest, []byte, string
 	runDir := t.TempDir()
 	target := reportAnalysisTargetFixture(t)
 	writeRunManifestSnapshot(t, runDir, "fixture")
-	writeEntryCallReportArtifacts(t, runDir, target, repositorySHA256, nil, nil)
+	writeEntryCallReportArtifacts(
+		t, runDir, target, repositorySHA256,
+		func(result *entrycall.Result) { appendEntryCallReportSurfaceFixtures(result, target) },
+		nil,
+	)
 	data := &ReportData{
 		FormatVersion:  CurrentFormatVersion,
 		RepoName:       "fixture",
@@ -259,6 +345,8 @@ func entryCallReportArtifactBytes(
 			RejectedFamilies: []entrycall.RejectedResultFamily{},
 			Frontier:         []entrycall.RequestFrontier{},
 		}},
+		SurfaceProposals:         []entrycall.ResultSurfaceProposal{},
+		RejectedSurfaceProposals: []entrycall.RejectedSurfaceProposal{},
 	}
 	if mutateResult != nil {
 		mutateResult(&result)
@@ -274,6 +362,10 @@ func entryCallReportArtifactBytes(
 		SubstrateSHA256: result.SubstrateSHA256, RepositoryStateSHA256: result.RepositoryStateSHA256,
 		ResultSHA256: manifestSHA256(resultRaw), AdvertisedFamilies: 1,
 		SelectedFamilies: result.SelectedFamilyCount(), RejectedFamilies: result.RejectedFamilyCount(),
+		AdvertisedSurfaceCandidates: result.SurfaceCandidateCoverage.AdvertisedCandidates,
+		SelectedSurfaces:            result.SelectedSurfaceCount(),
+		RejectedSurfaces:            result.RejectedSurfaceCount(),
+		SurfaceCandidateCoverage:    result.SurfaceCandidateCoverage,
 	}
 	if mutateStatus != nil {
 		mutateStatus(&status)
@@ -289,5 +381,101 @@ func writeEntryCallArtifact(t *testing.T, runDir, name string, data []byte) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(runDir, name), data, 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func writeLegacyV2EntryCallReportArtifacts(
+	t *testing.T,
+	runDir string,
+	target *analysistarget.Target,
+	repositorySHA256 string,
+) {
+	t.Helper()
+	_, currentResultRaw := entryCallReportArtifactBytes(t, target, repositorySHA256, nil, nil)
+	currentResult, err := entrycall.DecodeResult(currentResultRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const legacyPromptVersion = "entry-call-compression-prompt-c53df8bbacc9"
+	legacyResult := struct {
+		Version               int                     `json:"version"`
+		PromptVersion         string                  `json:"prompt_version"`
+		RequestRef            string                  `json:"request_ref"`
+		RequestSHA256         string                  `json:"request_sha256"`
+		SubstrateSHA256       string                  `json:"substrate_sha256"`
+		RepositoryStateSHA256 string                  `json:"repository_state_sha256,omitempty"`
+		Entries               []entrycall.ResultEntry `json:"entries"`
+	}{
+		Version: 2, PromptVersion: legacyPromptVersion,
+		RequestRef: currentResult.RequestRef, RequestSHA256: currentResult.RequestSHA256,
+		SubstrateSHA256:       currentResult.SubstrateSHA256,
+		RepositoryStateSHA256: currentResult.RepositoryStateSHA256,
+		Entries:               currentResult.Entries,
+	}
+	legacyResultRaw, err := json.Marshal(legacyResult)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyStatus := struct {
+		Version               int                   `json:"version"`
+		State                 entrycall.StatusState `json:"state"`
+		PromptVersion         string                `json:"prompt_version"`
+		RequestRef            string                `json:"request_ref"`
+		RequestSHA256         string                `json:"request_sha256"`
+		SubstrateSHA256       string                `json:"substrate_sha256"`
+		RepositoryStateSHA256 string                `json:"repository_state_sha256"`
+		ResultSHA256          string                `json:"result_sha256"`
+		AdvertisedFamilies    int                   `json:"advertised_families"`
+		SelectedFamilies      int                   `json:"selected_families"`
+		RejectedFamilies      int                   `json:"rejected_families"`
+	}{
+		Version: 2, State: entrycall.StatusAccepted, PromptVersion: legacyPromptVersion,
+		RequestRef: currentResult.RequestRef, RequestSHA256: currentResult.RequestSHA256,
+		SubstrateSHA256:       currentResult.SubstrateSHA256,
+		RepositoryStateSHA256: currentResult.RepositoryStateSHA256,
+		ResultSHA256:          manifestSHA256(legacyResultRaw),
+		AdvertisedFamilies:    1,
+		SelectedFamilies:      currentResult.SelectedFamilyCount(),
+		RejectedFamilies:      currentResult.RejectedFamilyCount(),
+	}
+	legacyStatusRaw, err := json.Marshal(legacyStatus)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeEntryCallArtifact(t, runDir, entrycall.LegacyV2ResultArtifactFilename, legacyResultRaw)
+	writeEntryCallArtifact(t, runDir, entrycall.LegacyV2StatusArtifactFilename, legacyStatusRaw)
+}
+
+func appendEntryCallReportSurfaceFixtures(
+	result *entrycall.Result,
+	target *analysistarget.Target,
+) {
+	root := target.Roots[0]
+	value := func(kind entrycall.SurfaceFactKind, text string, line int) *entrycall.ResultSurfaceValue {
+		location := entrycall.Location{Path: root.Path, Line: line, Column: 2}
+		return &entrycall.ResultSurfaceValue{Kind: kind, Text: text, Location: &location}
+	}
+	result.SurfaceProposals = []entrycall.ResultSurfaceProposal{
+		{
+			ID: "model-surface-111111111111111111111111", CandidateRef: "c1", RootRef: "r1",
+			Kind: entrycall.SurfaceKindHTTPRoute, Role: entrycall.SurfaceRoleEntrySurface,
+			Form:    entrycall.SurfaceCandidateDirectCall,
+			Site:    entrycall.Location{Path: root.Path, Line: root.Line + 2, Column: 2},
+			Method:  value(entrycall.SurfaceFactToken, "GET", root.Line+2),
+			Path:    value(entrycall.SurfaceFactString, "/account/:id", root.Line+2),
+			Handler: value(entrycall.SurfaceFactCallable, "fixture.getAccount", root.Line+3),
+		},
+		{
+			ID: "model-surface-222222222222222222222222", CandidateRef: "c2", RootRef: "r1",
+			Kind: entrycall.SurfaceKindCLICommand, Role: entrycall.SurfaceRoleDescriptor,
+			Form:     entrycall.SurfaceCandidateKeyedComposite,
+			Site:     entrycall.Location{Path: root.Path, Line: root.Line + 4, Column: 2},
+			Identity: value(entrycall.SurfaceFactString, "serve   [flags]", root.Line+4),
+			Handler:  value(entrycall.SurfaceFactCallable, "fixture.runServe", root.Line+5),
+		},
+	}
+	result.SurfaceCandidateCoverage = entrycall.SurfaceCandidateCoverage{
+		ConsideredCandidates: 2, AdvertisedCandidates: 2,
+		ConsideredFacts: 5, AdvertisedFacts: 5,
 	}
 }

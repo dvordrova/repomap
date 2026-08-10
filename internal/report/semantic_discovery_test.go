@@ -20,8 +20,8 @@ func TestSemanticDiscoveryReportFormatVersion(t *testing.T) {
 	// Decision 246: persisted Study investigation joins the report (42).
 	// D280 module-surface identity changes report target authority (46).
 	// D281 publishes exact module-library exported API locations (47).
-	if CurrentFormatVersion != 47 {
-		t.Fatalf("CurrentFormatVersion = %d, want 47 for exact module-library API projection", CurrentFormatVersion)
+	if CurrentFormatVersion != 48 {
+		t.Fatalf("CurrentFormatVersion = %d, want 48 for model-assisted entry-surface projection", CurrentFormatVersion)
 	}
 }
 

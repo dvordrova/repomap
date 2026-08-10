@@ -233,6 +233,21 @@ if (process.argv[4] === "moby") {
     root_declaration: processLocation,
     callsites: [{ path: index === 0 ? "cmd/dockerd/main.go" : "daemon/command/docker.go", line: 30 + index, column: 9 }],
   }));
+  report.entry_call.version = 2;
+  report.entry_call.surfaces = [{
+    id: "model-surface-000000000000000000000099", kind: "http_route", role: "entry_surface",
+    form: "direct_call", site: { path: "daemon/libnetwork/diagnostic/server.go", line: 37, column: 14 },
+    method: { kind: "token", text: "GET", location: { path: "daemon/libnetwork/diagnostic/server.go", line: 37, column: 14 } },
+    path: { kind: "string", text: "/ready", location: { path: "daemon/libnetwork/diagnostic/server.go", line: 37, column: 14 } },
+    handler: { kind: "callable", text: "github.com/moby/moby/v2/daemon/libnetwork/diagnostic.ready", location: { path: "daemon/libnetwork/diagnostic/server.go", line: 88, column: 6 } },
+    origin: "model_assisted", state: "exact_registration", runtime_reachability: "not_established",
+  }];
+  report.entry_call.surface_coverage = {
+    considered_candidates: 1, advertised_candidates: 1, omitted_candidates: 0,
+    considered_facts: 3, advertised_facts: 3, omitted_facts: 0,
+    unsafe_facts_excluded: 0, unreachable_candidates_excluded: 0,
+    selected_proposals: 1, rejected_proposals: 0,
+  };
 }
 if (process.argv[4] === "legacy-cli") {
   const processLocation = { path: "cmd/restic/main.go", line: 20, column: 6 };
@@ -287,6 +302,66 @@ if (process.argv[4] === "legacy-cli") {
       handler: { kind: "function", text: "fixture.poison", known: true, candidates: [] },
       registration_site: { path: "cmd/restic/main.go", line: 999, column: 1 },
     }]),
+  };
+}
+if (process.argv[4] === "model-assisted") {
+  const processLocation = { path: "main.go", line: 10, column: 6 };
+  const localSite = { path: "routes.go", line: 20, column: 2 };
+  const localHandler = { path: "handlers.go", line: 40, column: 6 };
+  const commandIdentities = [
+    "backup [flags]", "repair", "index", "key", "add", "get [key]", "health", "txn",
+  ];
+  function exactValue(kind, text, location) {
+    return { kind, text, location };
+  }
+  function modelRoute(id, method, routePath, site, handlerName, handlerLocation) {
+    return {
+      id, kind: "http_route", role: "entry_surface", form: "direct_call", site,
+      method: exactValue("token", method, site), path: exactValue("string", routePath, site),
+      handler: exactValue("callable", handlerName, handlerLocation),
+      origin: "model_assisted", state: "exact_registration", runtime_reachability: "not_established",
+    };
+  }
+  function modelCommand(index) {
+    const ordinal = String(index).padStart(2, "0");
+    const site = { path: "cmd/serve/cmd_" + ordinal + ".go", line: 20 + index, column: 2 };
+    const handler = { path: site.path, line: 60 + index, column: 6 };
+    return {
+      id: "model-surface-" + String(index + 10).padStart(24, "0"),
+      kind: "cli_command", role: "descriptor", form: "keyed_composite", site,
+      identity: exactValue("string", commandIdentities[index], site),
+      handler: index % 2 === 0 ? exactValue("callable", "fixture.run" + ordinal, handler) : null,
+      origin: "model_assisted", state: "declared_descriptor", runtime_reachability: "not_established",
+    };
+  }
+  const localTrigger = {
+    id: "local-route", kind: "http_route", surface_role: "entry_surface", provisional_id: false,
+    resolution: "exact", identity: { method: "GET", path: { kind: "constant", text: "/local", known: true, candidates: [] } },
+    handler: { kind: "function", text: "fixture.local", known: true, candidates: [] },
+    registration_site: localSite, handler_location: localHandler,
+  };
+  report.openable_paths = ["main.go", "routes.go", "handlers.go"];
+  for (let index = 0; index < 8; index++) report.openable_paths.push("cmd/serve/cmd_" + String(index).padStart(2, "0") + ".go");
+  report.architecture_canvas.surfaces = [
+    { id: "model-main", kind: "process_entry", name: "main", surface_role: "entry_surface", participating_component_ids: ["c1"], evidence: [processLocation] },
+    { id: "local-route", kind: "http_route", name: "wrong local label", surface_role: "entry_surface", participating_component_ids: ["c2"], evidence: [localSite, localHandler] },
+  ];
+  report.architecture_canvas.entry_handoff_groups = [];
+  report.discovered_surfaces = { triggers: [localTrigger] };
+  report.entry_call = {
+    version: 2, families: [],
+    surfaces: [
+      // Equivalent exact local TriggerRecord wins this duplicate key.
+      modelRoute("model-surface-000000000000000000000001", "GET", "/local", localSite, "fixture.local", localHandler),
+      modelRoute("model-surface-000000000000000000000002", "GET", "/ws",
+        { path: "main.go", line: 208, column: 2 }, "main.hello", { path: "main.go", line: 143, column: 6 }),
+    ].concat(Array.from({ length: 8 }, (_, index) => modelCommand(index))),
+    surface_coverage: {
+      considered_candidates: 15, advertised_candidates: 12, omitted_candidates: 3,
+      considered_facts: 51, advertised_facts: 45, omitted_facts: 6,
+      unsafe_facts_excluded: 2, unreachable_candidates_excluded: 1,
+      selected_proposals: 10, rejected_proposals: 2,
+    },
   };
 }
 const window = {
@@ -377,6 +452,9 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
     String(child.className || "").split(/\s+/).includes("rm-map-entry-group__list") &&
     !String(child.className || "").split(/\s+/).includes("rm-map-entry-group__list--remainder"));
   const cliMore = cliGroup && cliGroup.querySelector(".rm-map-entry-group__more");
+  const modelBadges = root.querySelectorAll(".rm-map-entry-card__origin");
+  const modelStates = root.querySelectorAll(".rm-map-entry-card__state");
+  const modelFrontier = root.querySelector(".rm-map-entry-model-frontier");
   process.stdout.write(JSON.stringify({
     targetCount: targetLinks.length,
     targetHref: targetLinks[0] && targetLinks[0].getAttribute("href") || "",
@@ -397,6 +475,10 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
     cliMoreCount: cliMore ? cliMore.querySelectorAll(".rm-map-entry-card").length : 0,
     cliMoreText: cliMore ? cliMore.textContent : "",
     cliMoreOpen: !!(cliMore && cliMore.open),
+    modelBadgeCount: modelBadges.length,
+    modelBadgeText: modelBadges.map((item) => item.textContent),
+    modelStateText: modelStates.map((item) => item.textContent),
+    modelFrontierText: modelFrontier ? modelFrontier.textContent : "",
     sourceActionCount: sourceActions.length,
     sourceHrefs: sourceActions.map((item) => item.getAttribute("href") || ""),
     selectedBeforeExplore,
@@ -553,6 +635,51 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
 		!strings.Contains(legacyCLI.CardSourceText[3], "Регистрация") ||
 		!strings.Contains(legacyCLI.CardSourceText[3], "Обработчик") {
 		t.Fatalf("legacy CLI exact registration/handler source actions were duplicated or lost: %#v", legacyCLI)
+	}
+
+	modelAssisted := run("ru", "model-assisted")
+	if strings.Join(modelAssisted.GroupKinds, ",") != "process_entry,http_route,cli_command" ||
+		modelAssisted.EntryCardCount != 11 || modelAssisted.ExploreCount != 0 ||
+		modelAssisted.ModelBadgeCount != 9 || modelAssisted.CLIVisibleCount != 6 ||
+		modelAssisted.CLIMoreCount != 2 || modelAssisted.CLIMoreOpen ||
+		!strings.Contains(modelAssisted.CLIMoreText, "Показать ещё 2") ||
+		!strings.Contains(modelAssisted.Text, "Точки входа · 11") {
+		t.Fatalf("model-assisted Entrypoints union/count/disclosure = %#v", modelAssisted)
+	}
+	if countString(modelAssisted.CardLabels, "GET /local") != 1 ||
+		countString(modelAssisted.CardLabels, "GET /ws") != 1 ||
+		containsString(modelAssisted.CardLabels, "wrong local label") ||
+		!containsString(modelAssisted.CardLabels, "backup [flags]") ||
+		!containsString(modelAssisted.CardLabels, "txn") ||
+		strings.Contains(modelAssisted.Text, "model-surface-") {
+		t.Fatalf("deterministic precedence or restored identities failed: %#v", modelAssisted)
+	}
+	if !allEntryHandoffStringsEqual(modelAssisted.ModelBadgeText, "С участием модели") ||
+		countString(modelAssisted.ModelStateText, "точный статический вызов регистрации") != 1 ||
+		countString(modelAssisted.ModelStateText, "объявленный дескриптор") != 8 ||
+		!strings.Contains(modelAssisted.ModelFrontierText, "10 восстановлено") ||
+		!strings.Contains(modelAssisted.ModelFrontierText, "2 предложений отклонено") ||
+		!strings.Contains(modelAssisted.ModelFrontierText, "3 кандидатов и 6 фактов") ||
+		!strings.Contains(modelAssisted.ModelFrontierText, "2 небезопасных фактов") ||
+		!strings.Contains(modelAssisted.ModelFrontierText, "1 недостижимых кандидатов") {
+		t.Fatalf("model-assisted truth/frontier copy = %#v", modelAssisted)
+	}
+	if !strings.Contains(modelAssisted.Text, "внешние префиксы маршрута") {
+		t.Fatalf("model-assisted route-prefix limitation is absent: %#v", modelAssisted)
+	}
+	echoIndex := -1
+	for index, label := range modelAssisted.CardLabels {
+		if label == "GET /ws" {
+			echoIndex = index
+			break
+		}
+	}
+	if echoIndex < 0 || modelAssisted.CardCallbacks[echoIndex] != "hello()" ||
+		!strings.Contains(modelAssisted.CardSourceText[echoIndex], "Регистрация") ||
+		!strings.Contains(modelAssisted.CardSourceText[echoIndex], "Обработчик") ||
+		!strings.Contains(modelAssisted.CardSourceHrefs[echoIndex], "/main.go#L208") ||
+		modelAssisted.CardExploreCounts[echoIndex] != 0 {
+		t.Fatalf("model-assisted exact route actions/callback = %#v", modelAssisted)
 	}
 }
 
@@ -882,6 +1009,10 @@ type entryHandoffAssetResult struct {
 	CLIMoreCount          int      `json:"cliMoreCount"`
 	CLIMoreText           string   `json:"cliMoreText"`
 	CLIMoreOpen           bool     `json:"cliMoreOpen"`
+	ModelBadgeCount       int      `json:"modelBadgeCount"`
+	ModelBadgeText        []string `json:"modelBadgeText"`
+	ModelStateText        []string `json:"modelStateText"`
+	ModelFrontierText     string   `json:"modelFrontierText"`
 	SourceActionCount     int      `json:"sourceActionCount"`
 	SourceHrefs           []string `json:"sourceHrefs"`
 	SelectedBeforeExplore []string `json:"selectedBeforeExplore"`
@@ -890,4 +1021,16 @@ type entryHandoffAssetResult struct {
 	SelectedStates        []string `json:"selectedStates"`
 	Hash                  string   `json:"hash"`
 	Text                  string   `json:"text"`
+}
+
+func allEntryHandoffStringsEqual(values []string, want string) bool {
+	if len(values) == 0 {
+		return false
+	}
+	for _, value := range values {
+		if value != want {
+			return false
+		}
+	}
+	return true
 }

@@ -903,6 +903,19 @@ func collectOpenablePaths(data *ReportData) {
 				add(callsite.Path)
 			}
 		}
+		for _, surface := range data.EntryCall.Surfaces {
+			add(surface.Site.Path)
+			for _, value := range []*EntryCallReportSurfaceValue{
+				surface.Identity,
+				surface.Method,
+				surface.Path,
+				surface.Handler,
+			} {
+				if value != nil && value.Location != nil {
+					add(value.Location.Path)
+				}
+			}
+		}
 	}
 	for _, location := range data.studyInvestigationSourceLocations {
 		add(location.Path)

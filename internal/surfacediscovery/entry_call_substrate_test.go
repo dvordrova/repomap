@@ -58,6 +58,9 @@ func handler(http.ResponseWriter, *http.Request) {}
 	if !foundMainConnector || !foundHandleFunc {
 		t.Fatalf("families = %+v nodes=%+v frontiers=%+v direct_coverage=%+v, want main connector plus grouped external HandleFunc x2", substrate.Families, substrate.Nodes, substrate.Frontiers, result.DirectCallIndex.Coverage)
 	}
+	if len(substrate.SurfaceCandidates) != 2 || substrate.Coverage.SurfaceCandidatesIndexed != 2 {
+		t.Fatalf("surface candidates = %+v coverage=%+v, want two exact HandleFunc callsites", substrate.SurfaceCandidates, substrate.Coverage)
+	}
 	compilation, err := entrycall.Compile(substrate.Snapshot())
 	if err != nil {
 		t.Fatalf("Compile captured substrate: %v", err)

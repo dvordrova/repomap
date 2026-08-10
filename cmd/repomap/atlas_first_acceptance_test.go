@@ -861,7 +861,8 @@ func atlasFirstAcceptanceEntryCallResponse(combined string) ([]byte, error) {
 	}
 	response := entrycall.Response{
 		Version: entrycall.ResultVersion, RequestRef: request.RequestRef,
-		Entries: make([]entrycall.ResponseEntry, 0, len(request.Entries)),
+		Entries:          make([]entrycall.ResponseEntry, 0, len(request.Entries)),
+		SurfaceProposals: []entrycall.ResponseSurfaceProposal{},
 	}
 	for _, entry := range request.Entries {
 		response.Entries = append(response.Entries, entrycall.ResponseEntry{

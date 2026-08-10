@@ -19,20 +19,25 @@ const (
 // observes the existing SSA instruction pass and never owns a program, package
 // load, or second call graph.
 type entryCallSidecar struct {
-	available        bool
-	externalNodes    map[string]entrycall.ExactNode
-	localLabels      map[string]string
-	families         map[string]entrycall.ExactFamily
-	capturedExternal map[string]int
+	available         bool
+	externalNodes     map[string]entrycall.ExactNode
+	localLabels       map[string]string
+	families          map[string]entrycall.ExactFamily
+	capturedExternal  map[string]int
+	repositoryCalls   map[*ssa.Function]map[*ssa.Function]struct{}
+	surfaceCandidates map[string]rawEntrySurfaceCandidate
+	surfaceCoverage   entrycall.Coverage
 }
 
 func newEntryCallSidecar() *entryCallSidecar {
 	return &entryCallSidecar{
-		available:        true,
-		externalNodes:    make(map[string]entrycall.ExactNode),
-		localLabels:      make(map[string]string),
-		families:         make(map[string]entrycall.ExactFamily),
-		capturedExternal: make(map[string]int),
+		available:         true,
+		externalNodes:     make(map[string]entrycall.ExactNode),
+		localLabels:       make(map[string]string),
+		families:          make(map[string]entrycall.ExactFamily),
+		capturedExternal:  make(map[string]int),
+		repositoryCalls:   make(map[*ssa.Function]map[*ssa.Function]struct{}),
+		surfaceCandidates: make(map[string]rawEntrySurfaceCandidate),
 	}
 }
 
@@ -51,6 +56,8 @@ func (sidecar *entryCallSidecar) close() {
 	sidecar.localLabels = nil
 	sidecar.families = nil
 	sidecar.capturedExternal = nil
+	sidecar.repositoryCalls = nil
+	sidecar.surfaceCandidates = nil
 }
 
 func (builder *directCallIndexBuilder) recordLocalEntryCall(
@@ -174,6 +181,7 @@ func appendEntryCallCallsite(locations []entrycall.Location, candidate entrycall
 }
 
 func (builder *directCallIndexBuilder) entryCallSubstrate(
+	a *analyzer,
 	index DirectCallIndex,
 	entrypoints []*ssa.Function,
 ) entrycall.Substrate {
@@ -193,7 +201,10 @@ func (builder *directCallIndexBuilder) entryCallSubstrate(
 		Version: entrycall.SubstrateVersion, State: entrycall.StateReady,
 		Roots: []entrycall.ExactRoot{}, Nodes: []entrycall.ExactNode{},
 		Families: []entrycall.ExactFamily{}, Frontiers: []entrycall.ExactFrontier{},
+		SurfaceCandidates: []entrycall.ExactSurfaceCandidate{},
 	}
+	substrate.SurfaceCandidates, substrate.Coverage =
+		builder.entryCalls.projectSurfaceCandidates(a, builder, entrypoints)
 	for _, node := range index.Nodes {
 		label := builder.entryCalls.localLabels[node.ID]
 		if label == "" {
