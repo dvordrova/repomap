@@ -345,9 +345,10 @@ func TestSurfaceProposalRoundTripsExact128ByteValueAndInteriorSpaces(t *testing.
 	response.SurfaceProposals = []ResponseSurfaceProposal{
 		{
 			CandidateRef: cli.Ref, KindRef: SurfaceKindRefCLICommand,
-			Bindings: []ResponseSurfaceBinding{{
-				SlotRef: SurfaceSlotRefIdentity, FactRef: surfaceFactRefByValue(t, cli, commandIdentity),
-			}},
+			Bindings: []ResponseSurfaceBinding{
+				{SlotRef: SurfaceSlotRefIdentity, FactRef: surfaceFactRefByValue(t, cli, commandIdentity)},
+				{SlotRef: SurfaceSlotRefHandler, FactRef: surfaceFactRefByValue(t, cli, "runServe")},
+			},
 		},
 		{
 			CandidateRef: route.Ref, KindRef: SurfaceKindRefHTTPRoute,
@@ -422,6 +423,79 @@ func TestSurfaceProposalRejectsInvalidSiblingLocallyButUnknownRefsAtomically(t *
 	raw, _ = json.Marshal(response)
 	if _, err := Reduce(compilation, raw); err == nil || !strings.Contains(err.Error(), "unknown surface fact ref") {
 		t.Fatalf("unknown fact ref did not reject atomically: %v", err)
+	}
+}
+
+func TestHandlerlessCLIRequiresCompanionDescriptorWhenCallableFactsExist(t *testing.T) {
+	substrate := surfaceFixture()
+	location := func(path string, line int) Location { return Location{Path: path, Line: line, Column: 3} }
+	additional := []ExactSurfaceCandidate{
+		{
+			ID: "canonical:surface:options", RootNodeID: "canonical:main",
+			Form: SurfaceCandidateKeyedComposite, Sketch: "options(gitlabClient,defaultHostname)",
+			Site: location("options.go", 41),
+			Facts: []ExactSurfaceFact{
+				{ID: "canonical:surface:options:client", Kind: SurfaceFactCallable, Position: 1, Label: "gitlabClient", Value: "(Factory).GitLabClient", Location: location("options.go", 42)},
+				{ID: "canonical:surface:options:hostname", Kind: SurfaceFactString, Position: 2, Label: "defaultHostname", Value: "gitlab.com", Location: location("options.go", 43)},
+			},
+		},
+		{
+			ID: "canonical:surface:parent-command", RootNodeID: "canonical:main",
+			Form: SurfaceCandidateKeyedComposite, Sketch: "Command(Use,Short,PersistentPreRunE)",
+			Site: location("hook.go", 31),
+			Facts: []ExactSurfaceFact{
+				{ID: "canonical:surface:parent-command:use", Kind: SurfaceFactString, Position: 1, Label: "Use", Value: "hook", Location: location("hook.go", 32)},
+				{ID: "canonical:surface:parent-command:short", Kind: SurfaceFactString, Position: 2, Label: "Short", Value: "Run git server hooks", Location: location("hook.go", 33)},
+				{ID: "canonical:surface:parent-command:pre-run", Kind: SurfaceFactCallable, Position: 3, Label: "PersistentPreRunE", Value: "func literal", Location: location("hook.go", 35)},
+			},
+		},
+	}
+	for _, candidate := range additional {
+		substrate.SurfaceCandidates = append(substrate.SurfaceCandidates, candidate)
+		substrate.Coverage.SurfaceCandidatesConsidered++
+		substrate.Coverage.SurfaceCandidatesIndexed++
+		substrate.Coverage.SurfaceCandidateFactsConsidered += len(candidate.Facts)
+		substrate.Coverage.SurfaceCandidateFactsIndexed += len(candidate.Facts)
+	}
+	compilation, err := Compile(substrate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := candidateByFactValue(t, compilation.Request.SurfaceCatalog, "gitlab.com")
+	parent := candidateByFactValue(t, compilation.Request.SurfaceCatalog, "hook")
+	proposals := []ResponseSurfaceProposal{
+		{
+			CandidateRef: options.Ref, KindRef: SurfaceKindRefCLICommand,
+			Bindings: []ResponseSurfaceBinding{{
+				SlotRef: SurfaceSlotRefIdentity, FactRef: surfaceFactRefByValue(t, options, "gitlab.com"),
+			}},
+		},
+		{
+			CandidateRef: parent.Ref, KindRef: SurfaceKindRefCLICommand,
+			Bindings: []ResponseSurfaceBinding{{
+				SlotRef: SurfaceSlotRefIdentity, FactRef: surfaceFactRefByValue(t, parent, "hook"),
+			}},
+		},
+	}
+
+	for index, ordered := range [][]ResponseSurfaceProposal{proposals, {proposals[1], proposals[0]}} {
+		response := emptySurfaceResponse(compilation)
+		response.SurfaceProposals = ordered
+		raw, err := json.Marshal(response)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := Reduce(compilation, raw)
+		if err != nil {
+			t.Fatalf("Reduce order %d: %v", index, err)
+		}
+		if result.SelectedSurfaceCount() != 1 || result.RejectedSurfaceCount() != 1 ||
+			result.SurfaceProposals[0].CandidateRef != parent.Ref || result.SurfaceProposals[0].Handler != nil ||
+			result.SurfaceProposals[0].Identity == nil || result.SurfaceProposals[0].Identity.Text != "hook" ||
+			result.RejectedSurfaceProposals[0].CandidateRef != options.Ref ||
+			result.RejectedSurfaceProposals[0].Reason != RejectedSurfaceIncompatibleBinding {
+			t.Fatalf("handlerless CLI evidence order %d = %+v", index, result)
+		}
 	}
 }
 
@@ -735,6 +809,19 @@ func candidateByForm(t *testing.T, catalog RequestSurfaceCatalog, form SurfaceCa
 		}
 	}
 	t.Fatalf("surface candidate form %q not found: %+v", form, catalog.Candidates)
+	return RequestSurfaceCandidate{}
+}
+
+func candidateByFactValue(t *testing.T, catalog RequestSurfaceCatalog, value string) RequestSurfaceCandidate {
+	t.Helper()
+	for _, candidate := range catalog.Candidates {
+		for _, fact := range candidate.Facts {
+			if fact.Value == value {
+				return candidate
+			}
+		}
+	}
+	t.Fatalf("surface candidate fact value %q not found: %+v", value, catalog.Candidates)
 	return RequestSurfaceCandidate{}
 }
 
