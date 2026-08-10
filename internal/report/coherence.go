@@ -337,12 +337,19 @@ func architectureSurfaceFromTrigger(
 		}
 	}
 	evidence := surfaceTriggerLocations(trigger)
-	for _, location := range evidence {
+	for _, location := range surfaceParticipationLocations(trigger) {
 		addOwners(ownersForPath(owners.pathOwners, location.Path))
 	}
-	addOwners(owners.packageOwners[trigger.ProcessEntrypoint.Package])
-	addOwners(owners.symbolOwners[trigger.ProcessEntrypoint.ID])
-	addOwners(owners.symbolOwners[trigger.ProcessEntrypoint.Name])
+	// A process entry is ancestry for every surface discovered below that
+	// executable, not evidence that the entry component participates in every
+	// route, server or worker. Only the process-entry surface itself may join
+	// through the process declaration/package. Other surfaces join through
+	// their own registration, descriptor, server, handler and evidence sites.
+	if trigger.Kind == "process_entry" {
+		addOwners(owners.packageOwners[trigger.ProcessEntrypoint.Package])
+		addOwners(owners.symbolOwners[trigger.ProcessEntrypoint.ID])
+		addOwners(owners.symbolOwners[trigger.ProcessEntrypoint.Name])
+	}
 	if trigger.Handler.Known {
 		addOwners(owners.symbolOwners[trigger.Handler.Text])
 	}
@@ -975,6 +982,40 @@ func surfaceTriggerLocations(trigger DiscoveredTrigger) []SurfaceLocation {
 	add(trigger.DescriptorSite)
 	add(trigger.ServerStartSite)
 	add(trigger.ProcessEntrypoint.Location)
+	for _, item := range trigger.Evidence {
+		add(item.Location)
+	}
+	for _, frontier := range trigger.DynamicFrontier {
+		add(frontier.Location)
+	}
+	return result
+}
+
+// surfaceParticipationLocations is narrower than surfaceTriggerLocations.
+// The latter is the complete provenance shown for a surface; this projection
+// answers which conceptual components contain the surface's own implementation
+// evidence. A shared process root is only local participation for the
+// process-entry surface, never for every descendant surface in that process.
+func surfaceParticipationLocations(trigger DiscoveredTrigger) []SurfaceLocation {
+	seen := make(map[string]struct{})
+	result := make([]SurfaceLocation, 0, 3+len(trigger.Evidence))
+	add := func(location *SurfaceLocation) {
+		if location == nil || location.Path == "" || location.Line <= 0 {
+			return
+		}
+		key := surfaceLocationKey(location.Path, location.Line)
+		if _, duplicate := seen[key]; duplicate {
+			return
+		}
+		seen[key] = struct{}{}
+		result = append(result, *location)
+	}
+	add(trigger.RegistrationSite)
+	add(trigger.DescriptorSite)
+	add(trigger.ServerStartSite)
+	if trigger.Kind == "process_entry" {
+		add(trigger.ProcessEntrypoint.Location)
+	}
 	for _, item := range trigger.Evidence {
 		add(item.Location)
 	}

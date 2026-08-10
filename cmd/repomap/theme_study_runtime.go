@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/artifactrole"
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/debugdump"
@@ -21,6 +22,7 @@ import (
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/secretscan"
+	"github.com/dvordrova/repomap/internal/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/themestudy"
 )
 
@@ -88,6 +90,9 @@ func defaultThemeStudyClientFactory(requireCredentials bool) (themeStudyClient, 
 func runThemeStudyForRun(
 	ctx context.Context,
 	preparedData *report.ReportData,
+	analysisTarget *analysistarget.Target,
+	directCallIndex *surfacediscovery.DirectCallIndex,
+	targetRoots *analysistarget.TargetRoots,
 	runDir string,
 	runsDir string,
 	analysisRoot string,
@@ -101,9 +106,25 @@ func runThemeStudyForRun(
 	if preparedData == nil {
 		return themeStudyRunOutcome{}, fmt.Errorf("theme study run: authorized prepared report data is required")
 	}
+	if preparedData.AnalysisTarget != nil &&
+		preparedData.AnalysisTarget.Kind == analysistarget.KindLibraryPackage {
+		if analysisTarget == nil || directCallIndex == nil || targetRoots == nil ||
+			analysisTarget.Ref != preparedData.AnalysisTarget.Ref {
+			return themeStudyRunOutcome{}, fmt.Errorf("theme study run: selected library root authority is unavailable")
+		}
+		if err := analysistarget.ValidateExactRoots(*analysisTarget, directCallIndex, *targetRoots); err != nil {
+			return themeStudyRunOutcome{}, fmt.Errorf("theme study run: validate selected library roots: %w", err)
+		}
+	}
 	input, err := report.BuildAtlasStudyInput(preparedData, languageFromReport(language))
 	if err != nil {
 		return themeStudyRunOutcome{}, fmt.Errorf("theme study run: build exact input: %w", err)
+	}
+	if preparedData.AnalysisTarget != nil &&
+		preparedData.AnalysisTarget.Kind == analysistarget.KindLibraryPackage {
+		if err := validateThemeLibraryRootLocators(input, *analysisTarget, *targetRoots); err != nil {
+			return themeStudyRunOutcome{}, fmt.Errorf("theme study run: bind selected library roots: %w", err)
+		}
 	}
 	compileInput, closure, err := shapeThemeStudyCompileInput(input)
 	if err != nil {
@@ -123,10 +144,66 @@ func runThemeStudyForRun(
 		}
 		return themeStudyRunOutcome{}, themeTerminalResource(err, 0)
 	}
+	providerInput, err := atlasstudy.SelectAnalysisTargetRootFrontier(compileInput)
+	if err != nil {
+		return themeStudyRunOutcome{}, themeTerminalResource(err, 0)
+	}
 	return runThemeStudyProductForRun(
 		ctx, runDir, runsDir, analysisRoot, repository, policy, noCache, providerEnabled,
-		compileInput, product, language, preparedData, output, defaultThemeStudyClientFactory,
+		providerInput, product, language, preparedData, output, defaultThemeStudyClientFactory,
 	)
+}
+
+func validateThemeLibraryRootLocators(
+	input atlasstudy.Input,
+	target analysistarget.Target,
+	roots analysistarget.TargetRoots,
+) error {
+	if input.AnalysisTargetRoot == nil ||
+		input.AnalysisTargetRoot.AnalysisTarget.Ref != target.Ref ||
+		roots.TargetRef != target.Ref || roots.OmittedRoots != 0 {
+		return fmt.Errorf("selected AnalysisTarget identity or root accounting mismatch")
+	}
+	rootTargets := make(map[string]struct{})
+	for _, support := range input.ReadingSupports {
+		if support.Role == atlasstudy.SupportAnalysisTargetRoot {
+			rootTargets[support.TargetID] = struct{}{}
+		}
+	}
+	advertised := make(map[string]struct{}, len(rootTargets))
+	for _, reading := range input.ReadingTargets {
+		if _, root := rootTargets[reading.ID]; !root {
+			continue
+		}
+		key := fmt.Sprintf("%s\x00%d", reading.Location.Path, reading.Location.Line)
+		if _, duplicate := advertised[key]; duplicate {
+			return fmt.Errorf("public API reading locator is ambiguous")
+		}
+		advertised[key] = struct{}{}
+	}
+	if len(advertised) != len(rootTargets) {
+		return fmt.Errorf("public API reading roots are incomplete")
+	}
+	live := make(map[string]struct{}, len(roots.Roots))
+	for _, root := range roots.Roots {
+		if root.Package != target.PackagePath {
+			return fmt.Errorf("live root package does not match selected target")
+		}
+		key := fmt.Sprintf("%s\x00%d", root.Path, root.Line)
+		if _, duplicate := live[key]; duplicate {
+			return fmt.Errorf("live public API root locator is ambiguous")
+		}
+		live[key] = struct{}{}
+	}
+	if len(live) != len(advertised) {
+		return fmt.Errorf("live and advertised public API root counts differ")
+	}
+	for key := range advertised {
+		if _, exact := live[key]; !exact {
+			return fmt.Errorf("advertised public API locator has no exact live root")
+		}
+	}
+	return nil
 }
 
 func languageFromReport(language themestudy.Language) atlasstudy.Language {
@@ -712,6 +789,8 @@ func themeReadingTargetRole(input atlasstudy.Input, target atlasstudy.ReadingTar
 		switch support.Role {
 		case atlasstudy.SupportProcessEntry:
 			hints.PrimaryEntry = true
+		case atlasstudy.SupportAnalysisTargetRoot:
+			hints.PublicAPI = true
 		}
 	}
 	return artifactrole.Classify(target.Location.Path, hints)
@@ -722,6 +801,13 @@ func themeReadingTargetRole(input atlasstudy.Input, target atlasstudy.ReadingTar
 // ordering without a repository-specific vocabulary.
 func themeOrderedReadingTargets(input atlasstudy.Input) []atlasstudy.ReadingTarget {
 	ordered := append([]atlasstudy.ReadingTarget(nil), input.ReadingTargets...)
+	if input.AnalysisTargetRoot != nil {
+		result, err := atlasstudy.OrderAnalysisTargetRootReadingTargets(input)
+		if err != nil {
+			return nil
+		}
+		return result
+	}
 	sort.SliceStable(ordered, func(i, j int) bool {
 		leftRole := themeReadingTargetRole(input, ordered[i])
 		rightRole := themeReadingTargetRole(input, ordered[j])

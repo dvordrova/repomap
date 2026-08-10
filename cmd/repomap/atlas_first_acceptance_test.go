@@ -20,19 +20,23 @@ import (
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/entrycall"
 	"github.com/dvordrova/repomap/internal/mechanismstudy"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/studymap"
+	"github.com/dvordrova/repomap/internal/targetportfolio"
 	"github.com/dvordrova/repomap/internal/themestudy"
 )
 
 type atlasFirstAcceptanceStage string
 
 const (
+	atlasFirstStageTargetPortfolio   atlasFirstAcceptanceStage = "target_portfolio"
 	atlasFirstStageArchitecture      atlasFirstAcceptanceStage = "architecture"
 	atlasFirstStageStudyScout        atlasFirstAcceptanceStage = "theme_scout"
 	atlasFirstStageStudyAdjudication atlasFirstAcceptanceStage = "theme_adjudication"
 	atlasFirstStageStudyMechanism    atlasFirstAcceptanceStage = "mechanism_study"
+	atlasFirstStageEntryCall         atlasFirstAcceptanceStage = "entry_call_compression"
 )
 
 type atlasFirstAcceptanceProvider struct {
@@ -61,7 +65,9 @@ func TestRunDefaultAtlasFirstPublishesArchitectureAndStudy(t *testing.T) {
 		atlasFirstStageArchitecture,
 		atlasFirstStageStudyScout,
 		atlasFirstStageStudyAdjudication,
+		atlasFirstStageEntryCall,
 	)
+	provider.assertStageCalls(t, atlasFirstStageTargetPortfolio, 0)
 	if data.RepositoryGraph == nil || len(data.RepositoryGraph.PackageEdges) != 1 {
 		t.Fatalf(
 			"top-level Atlas-first exact package edges = %#v, want one preserved edge",
@@ -71,14 +77,16 @@ func TestRunDefaultAtlasFirstPublishesArchitectureAndStudy(t *testing.T) {
 	assertAtlasFirstAcceptedArchitecture(t, data)
 	assertAtlasFirstAcceptedStudy(t, data)
 	assertAtlasFirstLocalSubstrateUnchanged(t, data)
-	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
-		debugdump.SemanticStageArchitecture:   "accepted",
-		debugdump.SemanticStageAtlasStudy:     "accepted_partial",
-		debugdump.SemanticStageMechanismStudy: "accepted",
+	assertAtlasFirstDiagnostics(t, runDir, map[string]string{
+		debugdump.SemanticStageArchitecture:         "accepted_partial",
+		debugdump.SemanticStageAtlasStudy:           "accepted_partial",
+		debugdump.SemanticStageMechanismStudy:       "accepted",
+		debugdump.SemanticStageEntryCallCompression: "accepted",
 	})
 	assertAtlasFirstSemanticStages(t, runDir,
 		debugdump.SemanticStageArchitecture,
 		debugdump.SemanticStageAtlasStudy,
+		debugdump.SemanticStageEntryCallCompression,
 	)
 	assertAtlasFirstAcceptedArtifacts(t, runDir)
 	assertAtlasFirstAcceptedManifest(t, manifest)
@@ -133,10 +141,11 @@ func TestRunDefaultAtlasFirstLibraryPublishesArchitectureAndStudy(t *testing.T) 
 	assertAtlasFirstAcceptedArchitecture(t, data)
 	assertAtlasFirstAcceptedStudy(t, data)
 	assertAtlasFirstLocalSubstrateUnchanged(t, data)
-	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
-		debugdump.SemanticStageArchitecture:   "accepted",
-		debugdump.SemanticStageAtlasStudy:     "accepted",
-		debugdump.SemanticStageMechanismStudy: "accepted",
+	assertAtlasFirstDiagnostics(t, runDir, map[string]string{
+		debugdump.SemanticStageArchitecture:         "accepted_partial",
+		debugdump.SemanticStageAtlasStudy:           "accepted",
+		debugdump.SemanticStageMechanismStudy:       "accepted",
+		debugdump.SemanticStageEntryCallCompression: "unavailable",
 	})
 	assertAtlasFirstSemanticStages(t, runDir,
 		debugdump.SemanticStageArchitecture,
@@ -169,10 +178,11 @@ func TestRunDefaultAtlasFirstRejectedArchitectureKeepsLocalCanvasAndCallsStudy(t
 		t.Fatalf("rejected enrichment erased canonical local canvas: %#v", data.ArchitectureCanvas)
 	}
 	assertAtlasFirstAcceptedStudy(t, data)
-	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
-		debugdump.SemanticStageArchitecture:   "rejected",
-		debugdump.SemanticStageAtlasStudy:     "accepted",
-		debugdump.SemanticStageMechanismStudy: "accepted",
+	assertAtlasFirstDiagnostics(t, runDir, map[string]string{
+		debugdump.SemanticStageArchitecture:         "rejected",
+		debugdump.SemanticStageAtlasStudy:           "accepted",
+		debugdump.SemanticStageMechanismStudy:       "accepted",
+		debugdump.SemanticStageEntryCallCompression: "unavailable",
 	})
 	assertAtlasFirstSemanticStages(t, runDir,
 		debugdump.SemanticStageArchitecture,
@@ -215,7 +225,9 @@ func TestRunDefaultAtlasFirstArchitectureProviderFailureKeepsLocalCanvas(t *test
 		atlasFirstStageArchitecture,
 		atlasFirstStageStudyScout,
 		atlasFirstStageStudyAdjudication,
+		atlasFirstStageEntryCall,
 	)
+	provider.assertStageCalls(t, atlasFirstStageTargetPortfolio, 0)
 	if data.ArchitectureSynthesis == nil ||
 		data.ArchitectureSynthesis.State != report.ArchitectureSynthesisFailed ||
 		data.ArchitectureSynthesis.ProposalAccepted ||
@@ -229,10 +241,11 @@ func TestRunDefaultAtlasFirstArchitectureProviderFailureKeepsLocalCanvas(t *test
 		t.Fatalf("provider failure erased canonical local canvas: %#v", data.ArchitectureCanvas)
 	}
 	assertAtlasFirstAcceptedStudy(t, data)
-	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
-		debugdump.SemanticStageArchitecture:   "failed",
-		debugdump.SemanticStageAtlasStudy:     "accepted",
-		debugdump.SemanticStageMechanismStudy: "accepted",
+	assertAtlasFirstDiagnostics(t, runDir, map[string]string{
+		debugdump.SemanticStageArchitecture:         "failed",
+		debugdump.SemanticStageAtlasStudy:           "accepted",
+		debugdump.SemanticStageMechanismStudy:       "accepted",
+		debugdump.SemanticStageEntryCallCompression: "accepted",
 	})
 }
 
@@ -253,7 +266,9 @@ func TestRunDefaultAtlasFirstRejectedAdjudicationPublishesDegradedReport(t *test
 		atlasFirstStageArchitecture,
 		atlasFirstStageStudyScout,
 		atlasFirstStageStudyAdjudication,
+		atlasFirstStageEntryCall,
 	)
+	provider.assertStageCalls(t, atlasFirstStageTargetPortfolio, 0)
 	assertAtlasFirstAcceptedArchitecture(t, data)
 	if data.AtlasStudy == nil || data.AtlasStudy.State != atlasstudy.ProductStateFailed ||
 		data.AtlasStudy.FailureCode != atlasstudy.FailureValidation || data.AtlasStudy.Themes != nil {
@@ -306,17 +321,29 @@ func TestRunDefaultAtlasFirstRejectedAdjudicationPublishesDegradedReport(t *test
 		status.Status.Issues[0].Code != themestudy.AdjIssueAnchorOutsideCandidate {
 		t.Fatalf("failed Adjudication status = %#v", status)
 	}
-	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
-		debugdump.SemanticStageArchitecture:   "accepted",
-		debugdump.SemanticStageAtlasStudy:     "response_validation_failed",
-		debugdump.SemanticStageMechanismStudy: "not_called",
+	assertAtlasFirstDiagnostics(t, runDir, map[string]string{
+		debugdump.SemanticStageArchitecture:         "accepted_partial",
+		debugdump.SemanticStageAtlasStudy:           "response_validation_failed",
+		debugdump.SemanticStageMechanismStudy:       "not_called",
+		debugdump.SemanticStageEntryCallCompression: "accepted",
 	})
 	entries := readSemanticJournalEntries(t, runDir)
-	if len(entries) != 3 ||
-		entries[2].record.Stage != debugdump.SemanticStageAtlasStudy ||
-		entries[2].record.InstanceOrdinal != 2 ||
-		entries[2].record.State != debugdump.SemanticStateRejected ||
-		entries[2].record.ValidationCode != debugdump.SemanticValidationResponse {
+	stageCounts := make(map[string]int)
+	var adjudication *debugdump.SemanticExchangeRecord
+	for index := range entries {
+		record := &entries[index].record
+		stageCounts[record.Stage]++
+		if record.Stage == debugdump.SemanticStageAtlasStudy && record.InstanceOrdinal == 2 {
+			adjudication = record
+		}
+	}
+	if !reflect.DeepEqual(stageCounts, map[string]int{
+		debugdump.SemanticStageArchitecture:         1,
+		debugdump.SemanticStageAtlasStudy:           2,
+		debugdump.SemanticStageEntryCallCompression: 1,
+	}) || adjudication == nil ||
+		adjudication.State != debugdump.SemanticStateRejected ||
+		adjudication.ValidationCode != debugdump.SemanticValidationResponse {
 		t.Fatalf("rejected Adjudication journal = %#v", entries)
 	}
 }
@@ -339,7 +366,9 @@ func TestRunDefaultAtlasFirstArchitectureOutputExhaustionPublishesLocalProduct(t
 		atlasFirstStageArchitecture,
 		atlasFirstStageStudyScout,
 		atlasFirstStageStudyAdjudication,
+		atlasFirstStageEntryCall,
 	)
+	provider.assertStageCalls(t, atlasFirstStageTargetPortfolio, 0)
 	if data.ArchitectureSynthesis == nil ||
 		data.ArchitectureSynthesis.State != report.ArchitectureSynthesisFailed ||
 		data.ArchitectureSynthesis.ErrorCode != report.ArchitectureSynthesisErrorProviderOutputLimit ||
@@ -360,10 +389,11 @@ func TestRunDefaultAtlasFirstArchitectureOutputExhaustionPublishesLocalProduct(t
 		t.Fatalf("output exhaustion erased canonical local canvas: %#v", data.ArchitectureCanvas)
 	}
 	assertAtlasFirstAcceptedStudy(t, data)
-	assertAtlasFirstDiagnostics(t, runDir, 3, map[string]string{
-		debugdump.SemanticStageArchitecture:   "resource_exhausted",
-		debugdump.SemanticStageAtlasStudy:     "accepted",
-		debugdump.SemanticStageMechanismStudy: "accepted",
+	assertAtlasFirstDiagnostics(t, runDir, map[string]string{
+		debugdump.SemanticStageArchitecture:         "resource_exhausted",
+		debugdump.SemanticStageAtlasStudy:           "accepted",
+		debugdump.SemanticStageMechanismStudy:       "accepted",
+		debugdump.SemanticStageEntryCallCompression: "accepted",
 	})
 	if _, err := os.Lstat(filepath.Join(runDir, report.ArchitectureSynthesisFile)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("output exhaustion published a synthesis record: %v", err)
@@ -403,12 +433,7 @@ func TestEtcdArchitectureOutputExhaustionReplayPublishesCompleteReport(t *testin
 	}
 	runDir, manifest, data := runAtlasFirstAcceptance(t, repo, provider)
 
-	provider.assertStages(t,
-		atlasFirstStageArchitecture,
-		atlasFirstStageStudyScout,
-		atlasFirstStageStudyAdjudication,
-		atlasFirstStageStudyMechanism,
-	)
+	assertAtlasFirstMechanismExecutionMatchesPlan(t, runDir, provider)
 	if data.ArchitectureSynthesis == nil ||
 		data.ArchitectureSynthesis.State != report.ArchitectureSynthesisFailed ||
 		data.ArchitectureSynthesis.ErrorCode != report.ArchitectureSynthesisErrorProviderOutputLimit ||
@@ -444,6 +469,60 @@ func TestEtcdArchitectureOutputExhaustionReplayPublishesCompleteReport(t *testin
 		!bytes.Contains(reportJSON, []byte(`"error_code":"provider_output_limit"`)) {
 		t.Logf("architecture_synthesis in report.json: %s", string(bytesBetween(reportJSON, []byte(`"architecture_synthesis":`))))
 		t.Fatalf("etcd report.json missing provider_output_limit binding")
+	}
+}
+
+// assertAtlasFirstMechanismExecutionMatchesPlan keeps the real-repository
+// replay bound to the persisted D260 plan instead of assuming that every
+// accepted Study shelf has a provider-eligible target-rooted trail. A zero
+// batch plan is a complete, provider-free result when every card remains an
+// honest prepared investigation with a closed local frontier.
+func assertAtlasFirstMechanismExecutionMatchesPlan(
+	t *testing.T,
+	runDir string,
+	provider *atlasFirstAcceptanceProvider,
+) {
+	t.Helper()
+	read := func(name string) []byte {
+		t.Helper()
+		raw, err := os.ReadFile(filepath.Join(runDir, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		return raw
+	}
+	factsRaw := read(mechanismstudy.FactsArtifactFilename)
+	candidatesRaw := read(mechanismstudy.CandidatesArtifactFilename)
+	resultRaw := read(mechanismstudy.ResultArtifactFilename)
+	statusRaw := read(mechanismstudy.StatusArtifactFilename)
+	facts, err := mechanismstudy.DecodeFacts(factsRaw)
+	if err != nil {
+		t.Fatalf("decode mechanism facts: %v", err)
+	}
+	status, err := mechanismstudy.DecodeStatus(factsRaw, candidatesRaw, resultRaw, statusRaw)
+	if err != nil {
+		t.Fatalf("decode mechanism status: %v", err)
+	}
+	planned := len(facts.Plan.Batches)
+	provider.assertStagesWithMechanismBatches(t, true, planned, planned)
+	if status.PlannedBatchCount != planned || status.ProviderCallCount != planned {
+		t.Fatalf(
+			"mechanism execution does not close persisted plan: planned=%d status=%#v",
+			planned,
+			status,
+		)
+	}
+	if planned != 0 {
+		return
+	}
+	if status.State != mechanismstudy.StatusComplete || status.PreparedCardCount == 0 ||
+		status.MechanismCardCount != 0 {
+		t.Fatalf("zero-call mechanism plan is not an honest complete prepared result: %#v", status)
+	}
+	for _, card := range facts.Compilation.Cards {
+		if len(card.Frontier) == 0 {
+			t.Fatalf("zero-call mechanism card %s has no closed local frontier", card.Ref)
+		}
 	}
 }
 
@@ -667,22 +746,7 @@ func (provider *atlasFirstAcceptanceProvider) ServeHTTP(
 		return
 	}
 
-	var response []byte
-	switch stage {
-	case atlasFirstStageArchitecture:
-		response, err = atlasFirstAcceptanceArchitectureResponse(combined, provider.rejectArchitecture)
-	case atlasFirstStageStudyScout:
-		response, err = atlasFirstAcceptanceScoutResponse(
-			combined,
-			provider.includeBadStudySibling,
-		)
-	case atlasFirstStageStudyAdjudication:
-		response, err = atlasFirstAcceptanceAdjudicationResponse(combined, provider.rejectAllAdjudication)
-	case atlasFirstStageStudyMechanism:
-		response, err = atlasFirstAcceptanceMechanismResponse(combined)
-	default:
-		err = fmt.Errorf("unsupported stage %q", stage)
-	}
+	response, err := provider.responseForStage(stage, combined)
 	if err != nil {
 		provider.t.Errorf("build %s response: %v", stage, err)
 		writer.WriteHeader(http.StatusInternalServerError)
@@ -690,6 +754,28 @@ func (provider *atlasFirstAcceptanceProvider) ServeHTTP(
 	}
 	writer.Header().Set("Content-Type", "application/json")
 	_, _ = writer.Write(response)
+}
+
+func (provider *atlasFirstAcceptanceProvider) responseForStage(
+	stage atlasFirstAcceptanceStage,
+	combined string,
+) ([]byte, error) {
+	switch stage {
+	case atlasFirstStageTargetPortfolio:
+		return atlasFirstAcceptanceTargetPortfolioResponse(combined)
+	case atlasFirstStageArchitecture:
+		return atlasFirstAcceptanceArchitectureResponse(combined, provider.rejectArchitecture)
+	case atlasFirstStageStudyScout:
+		return atlasFirstAcceptanceScoutResponse(combined, provider.includeBadStudySibling)
+	case atlasFirstStageStudyAdjudication:
+		return atlasFirstAcceptanceAdjudicationResponse(combined, provider.rejectAllAdjudication)
+	case atlasFirstStageStudyMechanism:
+		return atlasFirstAcceptanceMechanismResponse(combined)
+	case atlasFirstStageEntryCall:
+		return atlasFirstAcceptanceEntryCallResponse(combined)
+	default:
+		return nil, fmt.Errorf("unsupported stage %q", stage)
+	}
 }
 
 func atlasFirstAcceptanceRequestStage(
@@ -709,6 +795,9 @@ func atlasFirstAcceptanceRequestStage(
 	}
 	combined := request.Messages[0].Content + "\n" + request.Messages[1].Content
 	switch {
+	case strings.Contains(combined, "You select the useful product analysis targets") &&
+		strings.Contains(combined, "Exact bounded target catalog JSON:\n"):
+		return atlasFirstStageTargetPortfolio, combined, nil
 	case strings.Contains(combined, "Use conceptual member, anchor, and unit refs as opaque request-local values.") &&
 		strings.Contains(combined, "Bounded candidate request:\n"):
 		return atlasFirstStageArchitecture, combined, nil
@@ -721,9 +810,69 @@ func atlasFirstAcceptanceRequestStage(
 	case strings.Contains(combined, "identifying an unordered set of zero or more useful mechanisms") &&
 		strings.Contains(combined, "Exact request bundle JSON:\n"):
 		return atlasFirstStageStudyMechanism, combined, nil
+	case strings.Contains(combined, "You identify the smallest useful direct-call family set") &&
+		strings.Contains(combined, "Exact bounded request JSON:\n"):
+		return atlasFirstStageEntryCall, combined, nil
 	default:
 		return "", combined, fmt.Errorf("request is not a current Atlas-first stage")
 	}
+}
+
+func atlasFirstAcceptanceTargetPortfolioResponse(combined string) ([]byte, error) {
+	const marker = "Exact bounded target catalog JSON:\n"
+	position := strings.LastIndex(combined, marker)
+	if position < 0 {
+		return nil, fmt.Errorf("target portfolio request marker is absent")
+	}
+	var request targetportfolio.Request
+	if err := json.Unmarshal([]byte(combined[position+len(marker):]), &request); err != nil {
+		return nil, fmt.Errorf("decode target portfolio request: %w", err)
+	}
+	if len(request.Targets) == 0 {
+		return nil, fmt.Errorf("target portfolio request has no targets")
+	}
+	selected := request.Targets[0]
+	for _, target := range request.Targets {
+		if target.Kind == targetportfolio.TargetExecutable &&
+			(target.DisplayPath == "." || target.DisplayPath == "server") {
+			selected = target
+			break
+		}
+	}
+	content, err := json.Marshal(targetportfolio.Response{
+		Version: targetportfolio.ResultVersion, RequestRef: request.RequestRef,
+		DefaultRef: selected.Ref, TargetRefs: []string{selected.Ref},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return atlasFirstAcceptanceCompletion(content, 97, 13), nil
+}
+
+func atlasFirstAcceptanceEntryCallResponse(combined string) ([]byte, error) {
+	const marker = "Exact bounded request JSON:\n"
+	position := strings.LastIndex(combined, marker)
+	if position < 0 {
+		return nil, fmt.Errorf("entry-call request marker is absent")
+	}
+	var request entrycall.Request
+	if err := json.Unmarshal([]byte(combined[position+len(marker):]), &request); err != nil {
+		return nil, fmt.Errorf("decode entry-call request: %w", err)
+	}
+	response := entrycall.Response{
+		Version: entrycall.ResultVersion, RequestRef: request.RequestRef,
+		Entries: make([]entrycall.ResponseEntry, 0, len(request.Entries)),
+	}
+	for _, entry := range request.Entries {
+		response.Entries = append(response.Entries, entrycall.ResponseEntry{
+			RootRef: entry.Ref, FamilyRefs: []string{},
+		})
+	}
+	content, err := json.Marshal(response)
+	if err != nil {
+		return nil, err
+	}
+	return atlasFirstAcceptanceCompletion(content, 113, 17), nil
 }
 
 func atlasFirstAcceptanceMechanismResponse(combined string) ([]byte, error) {
@@ -825,7 +974,34 @@ func atlasFirstAcceptanceWireBundle(combined string) ([]byte, error) {
 	if index < 0 {
 		return nil, fmt.Errorf("theme request bundle marker is absent")
 	}
-	return []byte(combined[index+len(marker):]), nil
+	raw := []byte(combined[index+len(marker):])
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	var bundle json.RawMessage
+	if err := decoder.Decode(&bundle); err != nil {
+		return nil, fmt.Errorf("decode theme request bundle boundary: %w", err)
+	}
+	const adjudicationReminder = `Response contract reminder after the request bundle: emit only the allowlisted response fields shown in the schema. Do not echo input-only theme_kind, anchor_refs, expansion_file_refs, or any other candidate/source fields.
+Each reading observation must describe evidence from its own anchor_ref, not evidence belonging to another anchor or candidate.
+Do not emit an unknown when the supplied evidence or the retained readings already answer it.`
+	trailing := strings.TrimSpace(string(raw[decoder.InputOffset():]))
+	if trailing != "" && trailing != adjudicationReminder {
+		return nil, fmt.Errorf("theme request bundle has unexpected trailing prompt text")
+	}
+	return append([]byte(nil), bundle...), nil
+}
+
+func TestAtlasFirstAcceptanceWireBundleStopsBeforeAdjudicationReminder(t *testing.T) {
+	combined := "system\nRequest bundle JSON:\n{\"candidates\":[]}\n" +
+		"Response contract reminder after the request bundle: emit only the allowlisted response fields shown in the schema. Do not echo input-only theme_kind, anchor_refs, expansion_file_refs, or any other candidate/source fields.\n" +
+		"Each reading observation must describe evidence from its own anchor_ref, not evidence belonging to another anchor or candidate.\n" +
+		"Do not emit an unknown when the supplied evidence or the retained readings already answer it."
+	raw, err := atlasFirstAcceptanceWireBundle(combined)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != `{"candidates":[]}` {
+		t.Fatalf("request bundle = %s", raw)
+	}
 }
 
 // atlasFirstAcceptanceScoutResponse builds a valid Theme Scout response from
@@ -1011,6 +1187,64 @@ func (provider *atlasFirstAcceptanceProvider) assertStages(
 	}
 }
 
+func (provider *atlasFirstAcceptanceProvider) assertStageCalls(
+	t *testing.T,
+	stage atlasFirstAcceptanceStage,
+	want int,
+) {
+	t.Helper()
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	if got := len(provider.bodies[stage]); got != want {
+		t.Fatalf("provider stage %s request count = %d, want %d", stage, got, want)
+	}
+}
+
+func (provider *atlasFirstAcceptanceProvider) assertStagesWithMechanismBatches(
+	t *testing.T,
+	includeTargetPortfolio bool,
+	minimum int,
+	maximum int,
+) {
+	t.Helper()
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	prefix := []atlasFirstAcceptanceStage{
+		atlasFirstStageArchitecture,
+		atlasFirstStageStudyScout,
+		atlasFirstStageStudyAdjudication,
+	}
+	if includeTargetPortfolio {
+		prefix = append([]atlasFirstAcceptanceStage{atlasFirstStageTargetPortfolio}, prefix...)
+	} else if calls := len(provider.bodies[atlasFirstStageTargetPortfolio]); calls != 0 {
+		t.Fatalf("provider stage %s request count = %d, want zero", atlasFirstStageTargetPortfolio, calls)
+	}
+	if len(provider.stages) < len(prefix)+minimum+1 || len(provider.stages) > len(prefix)+maximum+1 ||
+		!reflect.DeepEqual(provider.stages[:min(len(provider.stages), len(prefix))], prefix) {
+		t.Fatalf("provider stage order = %v, want %v followed by %d..%d mechanism batches and entry-call",
+			provider.stages, prefix, minimum, maximum)
+	}
+	if provider.stages[len(provider.stages)-1] != atlasFirstStageEntryCall {
+		t.Fatalf("provider stage order = %v, want entry-call last", provider.stages)
+	}
+	for _, stage := range provider.stages[len(prefix) : len(provider.stages)-1] {
+		if stage != atlasFirstStageStudyMechanism {
+			t.Fatalf("provider stage order = %v, want only mechanism batches after %v", provider.stages, prefix)
+		}
+	}
+	for _, stage := range prefix {
+		if len(provider.bodies[stage]) != 1 {
+			t.Fatalf("provider stage %s request count = %d, want one", stage, len(provider.bodies[stage]))
+		}
+	}
+	if count := len(provider.bodies[atlasFirstStageStudyMechanism]); count < minimum || count > maximum {
+		t.Fatalf("mechanism request count = %d, want %d..%d", count, minimum, maximum)
+	}
+	if len(provider.bodies[atlasFirstStageEntryCall]) != 1 {
+		t.Fatalf("entry-call request count = %d, want one", len(provider.bodies[atlasFirstStageEntryCall]))
+	}
+}
+
 func atlasFirstAcceptanceRepository(t *testing.T, fixtureDir string) string {
 	t.Helper()
 	repo := t.TempDir()
@@ -1063,6 +1297,7 @@ func assertAtlasFirstAcceptedArchitecture(t *testing.T, data *report.ReportData)
 		data.ArchitectureSynthesis.FallbackSelected ||
 		data.ArchitectureCanvas == nil || data.ArchitectureCanvas.Fallback ||
 		(data.ArchitectureCanvas.ArchitectureSource != componentmap.SourceValidatedModel &&
+			data.ArchitectureCanvas.ArchitectureSource != componentmap.SourcePartialModel &&
 			data.ArchitectureCanvas.ArchitectureSource != componentmap.SourceNormalizedModel) {
 		t.Fatalf("accepted Architecture = %#v / %#v", data.ArchitectureSynthesis, data.ArchitectureCanvas)
 	}
@@ -1155,12 +1390,9 @@ func assertAtlasFirstLocalSubstrateUnchanged(t *testing.T, data *report.ReportDa
 func assertAtlasFirstDiagnostics(
 	t *testing.T,
 	runDir string,
-	wantCalls int,
 	wantStates map[string]string,
 ) {
 	t.Helper()
-	// The ordinary cold path has one Architecture call and D213's Study stage
-	// has exactly two semantic calls (Theme Scout + Theme Adjudication).
 	metadataBytes, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -1169,22 +1401,41 @@ func assertAtlasFirstDiagnostics(
 	if err := json.Unmarshal(metadataBytes, &metadata); err != nil {
 		t.Fatal(err)
 	}
-	if !metadata.ProviderAccountingComplete || metadata.ProviderRequestCount != wantCalls ||
-		len(metadata.RequestAttempts) != len(wantStates) {
+	if !metadata.ProviderAccountingComplete || len(metadata.RequestAttempts) != len(wantStates) {
 		t.Fatalf("Atlas-first diagnostic totals = %#v", metadata)
 	}
+	totalCalls := 0
+	seenStages := make(map[string]struct{}, len(metadata.RequestAttempts))
 	for _, attempt := range metadata.RequestAttempts {
+		if _, duplicate := seenStages[attempt.Stage]; duplicate {
+			t.Fatalf("Atlas-first diagnostic duplicated stage %q: %#v", attempt.Stage, metadata.RequestAttempts)
+		}
+		seenStages[attempt.Stage] = struct{}{}
 		wantState, ok := wantStates[attempt.Stage]
 		if !ok || attempt.State != wantState {
 			t.Fatalf("Atlas-first stage diagnostic = %#v, want states %#v", attempt, wantStates)
 		}
 		maxCalls := 1
 		if attempt.Stage == debugdump.SemanticStageAtlasStudy {
-			maxCalls = 2 // D213: exactly Theme Scout + Theme Adjudication
+			maxCalls = 2
+		} else if attempt.Stage == debugdump.SemanticStageMechanismStudy {
+			maxCalls = mechanismstudy.MaxProviderCalls
 		}
 		if attempt.ProviderCallCount < 0 || attempt.ProviderCallCount > maxCalls {
-			t.Fatalf("Atlas-first stage call count is not diagnostic one/two-call state: %#v", attempt)
+			t.Fatalf("Atlas-first stage call count exceeds its bounded plan: %#v", attempt)
 		}
+		if attempt.TransportAttemptCount < attempt.ProviderCallCount {
+			t.Fatalf("Atlas-first transport accounting is smaller than semantic calls: %#v", attempt)
+		}
+		totalCalls += attempt.ProviderCallCount
+	}
+	if metadata.ProviderRequestCount != totalCalls {
+		t.Fatalf(
+			"Atlas-first provider total = %d, want sum of stage calls %d: %#v",
+			metadata.ProviderRequestCount,
+			totalCalls,
+			metadata.RequestAttempts,
+		)
 	}
 }
 

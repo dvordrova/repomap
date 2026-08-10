@@ -44,6 +44,8 @@ const input = {
   surfaces: [
     { id: "surf-a", kind: "cli_command", name: "run", participating_component_ids: ["c1"] },
     { id: "surf-b", kind: "http_route", name: "GET /api", participating_component_ids: ["c2"] },
+    { id: "surf-zero", kind: "process_entry", name: "zero.main", participating_component_ids: [],
+      evidence: [{ path: "cmd/zero/main.go", line: 7, column: 6 }] },
   ],
   associations: [
     { component_id: "c1", family: "database", imported_family: "github.com/jackc/pgx/v5", kind: "boundary", observation_count: 2, paired: true },
@@ -73,6 +75,12 @@ const input = {
 };
 const landscape = api.mapLensEmphasisProjection({ lens: "landscape", ...input });
 const entrypoints = api.mapLensEmphasisProjection({ lens: "entrypoints", ...input });
+const unownedOnly = api.mapLensEmphasisProjection({
+  lens: "entrypoints",
+  components: input.components.map((component) => ({ id: component.id, name: component.name })),
+  surfaces: [input.surfaces[2]],
+  associations: [], entryHandoffGroups: [],
+});
 const integrations = api.mapLensEmphasisProjection({ lens: "integrations", ...input });
 const removedMechanisms = api.mapLensEmphasisProjection({ lens: "mechanisms", ...input });
 const structuralEdges = api.mapStructuralEdges({ structural_edges: [
@@ -164,15 +172,28 @@ const ageLikeGroup = {
 const ageLikeOverlay = api.entryHandoffOverlayProjection(
   ageLikeGroup, input.components.map((item) => item.id)
 );
+const casdoorLikeGroup = {
+  version: 2, id: "entry-group-casdoor-like", component_ids: ["c1", "c2"],
+  entry: transition("main.go", 36, 6, "fixture.main", null, ["c1"]),
+  entry_handoffs: Array.from({ length: 19 }, (_, index) => transition(
+    "main.go", 130 + index, 2, "fixture.http.Register" + index,
+    { label: "fixture.http.Register" + index, path: "http/register" + index + ".go", line: 20 + index, column: 6 },
+    ["c2"]
+  )),
+  frontier: { ordering: "not_established", limitation: "continuation unknown" },
+};
+const casdoorLikeOverlay = api.entryHandoffOverlayProjection(
+  casdoorLikeGroup, input.components.map((item) => item.id)
+);
 const fromBox = { x: 10, y: 20, width: 180, height: 100 };
 const toBox = { x: 300, y: 40, width: 180, height: 100 };
 const boxesBefore = JSON.stringify([fromBox, toBox]);
 const crossGeometry = api.entryHandoffConnectionGeometry(fromBox, toBox, 0);
 const boxesAfter = JSON.stringify([fromBox, toBox]);
 process.stdout.write(JSON.stringify({
-  landscape, entrypoints, integrations, removedMechanisms, structuralEdges,
+  landscape, entrypoints, unownedOnly, integrations, removedMechanisms, structuralEdges,
   full, groupOnly, unsupportedCanvas, malformedGroup, overlay, mixedOverlay,
-  noEntryOverlay, pluralOverlay, ageLikeOverlay,
+  noEntryOverlay, pluralOverlay, ageLikeOverlay, casdoorLikeOverlay,
   crossGeometry, boxesUnchanged: boxesBefore === boxesAfter,
 }));
 `
@@ -187,22 +208,24 @@ process.stdout.write(JSON.stringify({
 	var got struct {
 		Landscape         lensResult `json:"landscape"`
 		Entrypoints       lensResult `json:"entrypoints"`
+		UnownedOnly       lensResult `json:"unownedOnly"`
 		Integrations      lensResult `json:"integrations"`
 		RemovedMechanisms lensResult `json:"removedMechanisms"`
 		StructuralEdges   []struct {
 			ID           string `json:"id"`
 			WitnessCount int    `json:"witness_count"`
 		} `json:"structuralEdges"`
-		Full              fullLens                  `json:"full"`
-		GroupOnly         fullLens                  `json:"groupOnly"`
-		UnsupportedCanvas fullLens                  `json:"unsupportedCanvas"`
-		MalformedGroup    fullLens                  `json:"malformedGroup"`
-		Overlay           entryHandoffOverlayResult `json:"overlay"`
-		MixedOverlay      entryHandoffOverlayResult `json:"mixedOverlay"`
-		NoEntryOverlay    entryHandoffOverlayResult `json:"noEntryOverlay"`
-		PluralOverlay     entryHandoffOverlayResult `json:"pluralOverlay"`
-		AgeLikeOverlay    entryHandoffOverlayResult `json:"ageLikeOverlay"`
-		CrossGeometry     struct {
+		Full               fullLens                  `json:"full"`
+		GroupOnly          fullLens                  `json:"groupOnly"`
+		UnsupportedCanvas  fullLens                  `json:"unsupportedCanvas"`
+		MalformedGroup     fullLens                  `json:"malformedGroup"`
+		Overlay            entryHandoffOverlayResult `json:"overlay"`
+		MixedOverlay       entryHandoffOverlayResult `json:"mixedOverlay"`
+		NoEntryOverlay     entryHandoffOverlayResult `json:"noEntryOverlay"`
+		PluralOverlay      entryHandoffOverlayResult `json:"pluralOverlay"`
+		AgeLikeOverlay     entryHandoffOverlayResult `json:"ageLikeOverlay"`
+		CasdoorLikeOverlay entryHandoffOverlayResult `json:"casdoorLikeOverlay"`
+		CrossGeometry      struct {
 			Path string `json:"path"`
 		} `json:"crossGeometry"`
 		BoxesUnchanged bool `json:"boxesUnchanged"`
@@ -216,8 +239,11 @@ process.stdout.write(JSON.stringify({
 	if join(got.Entrypoints.Emphasized) != "c1,c3" {
 		t.Fatalf("entrypoints emphasized = %#v, want surface + exact handoff participants", got.Entrypoints.Emphasized)
 	}
-	if len(got.Entrypoints.Objects.Entrypoints) != 2 || len(got.Entrypoints.Objects.EntryHandoffGroups) != 2 {
-		t.Fatalf("entrypoint objects = %#v, want two kinds and two exact contexts", got.Entrypoints.Objects)
+	if len(got.Entrypoints.Objects.Entrypoints) != 3 || len(got.Entrypoints.Objects.EntryHandoffGroups) != 2 {
+		t.Fatalf("entrypoint objects = %#v, want three kinds (including unowned) and two exact contexts", got.Entrypoints.Objects)
+	}
+	if len(got.UnownedOnly.Emphasized) != 0 || len(got.UnownedOnly.Objects.Entrypoints) != 1 {
+		t.Fatalf("unowned exact entry = %#v, want visible with no component emphasis", got.UnownedOnly)
 	}
 	if join(got.Integrations.Emphasized) != "c1,c2" || len(got.Integrations.Objects.Touchpoints) != 2 {
 		t.Fatalf("integrations = %#v, want only boundary/resource participants", got.Integrations)
@@ -232,7 +258,8 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("full integration projection = %#v", got.Full)
 	}
 	if join(got.GroupOnly.Emphasized) != "c1,c3" || got.GroupOnly.Dimmed != 1 ||
-		got.GroupOnly.Counts.EntryHandoffGroups != 2 || len(got.GroupOnly.EntryHandoffGroups) != 2 {
+		got.GroupOnly.Counts.EntryHandoffGroups != 2 || len(got.GroupOnly.EntryHandoffGroups) != 2 ||
+		got.GroupOnly.Omissions.UnjoinedSurfaces != 1 {
 		t.Fatalf("Canvas15 Entrypoints context = %#v", got.GroupOnly)
 	}
 	group := got.GroupOnly.EntryHandoffGroups[0]
@@ -272,6 +299,21 @@ process.stdout.write(JSON.stringify({
 			t.Fatalf("Age-like overflow[%d] reason = %q, want same_component", index, item.Reason)
 		}
 	}
+	if len(got.CasdoorLikeOverlay.Edges) != 1 || got.CasdoorLikeOverlay.Edges[0].CallCount != 19 ||
+		len(got.CasdoorLikeOverlay.Edges[0].Handoffs) != 19 || len(got.CasdoorLikeOverlay.Overflow) != 19 {
+		t.Fatalf("Casdoor-like component-pair aggregation = %#v, want one 19-call edge and 19 exact context rows",
+			got.CasdoorLikeOverlay)
+	}
+	for index, item := range got.CasdoorLikeOverlay.Overflow {
+		if item.Reason != "parallel_component_pair" || item.Handoff.Path != "main.go" ||
+			item.Handoff.Line != 130+index {
+			t.Fatalf("Casdoor-like exact row[%d] = %#v", index, item)
+		}
+	}
+	if got.CasdoorLikeOverlay.Overflow[0].Handoff.Target.Path != "http/register0.go" ||
+		got.CasdoorLikeOverlay.Overflow[18].Handoff.Target.Path != "http/register18.go" {
+		t.Fatalf("Casdoor-like exact callee rows lost source order: %#v", got.CasdoorLikeOverlay.Overflow)
+	}
 	if !got.BoxesUnchanged || got.CrossGeometry.Path == "" {
 		t.Fatalf("overlay geometry mutated layout or lost cross route: cross=%#v unchanged=%t",
 			got.CrossGeometry, got.BoxesUnchanged)
@@ -282,13 +324,25 @@ type entryHandoffOverlayResult struct {
 	ComponentIDs []string                  `json:"component_ids"`
 	Edges        []entryHandoffOverlayEdge `json:"edges"`
 	Overflow     []struct {
-		Reason string `json:"reason"`
+		Reason  string `json:"reason"`
+		Handoff struct {
+			Line   int    `json:"line"`
+			Path   string `json:"path"`
+			Target struct {
+				Path string `json:"path"`
+			} `json:"target"`
+		} `json:"handoff"`
 	} `json:"overflow"`
 }
 
 type entryHandoffOverlayEdge struct {
 	FromComponentID string `json:"from_component_id"`
 	ToComponentID   string `json:"to_component_id"`
+	CallCount       int    `json:"call_count"`
+	Handoffs        []struct {
+		Path string `json:"path"`
+		Line int    `json:"line"`
+	} `json:"handoffs"`
 }
 
 type fullLens struct {

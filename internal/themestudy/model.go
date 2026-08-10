@@ -438,10 +438,26 @@ const (
 	AdjIssueTooManyUnknowns        AdjudicationIssueCode = "too_many_unknowns"
 	AdjIssueUnknownReadingRef      AdjudicationIssueCode = "unknown_reading_ref"
 	AdjIssueNoDirect               AdjudicationIssueCode = "no_direct"
+	// Decision 267: exact redundant echoes of these backend-owned candidate
+	// fields normalize away. A mismatch rejects item-locally under one of
+	// these closed codes; provider values are never copied into diagnostics.
+	AdjIssueThemeKindEchoMismatch         AdjudicationIssueCode = "theme_kind_echo_mismatch"
+	AdjIssueAnchorRefsEchoMismatch        AdjudicationIssueCode = "anchor_refs_echo_mismatch"
+	AdjIssueExpansionFileRefsEchoMismatch AdjudicationIssueCode = "expansion_file_refs_echo_mismatch"
 	// Archive 12 P0 (owner directive): reading_order may only list anchors
 	// assessed direct or supporting in the returned theme — a wider order
 	// would silently change meaning when the reducer publishes readings.
 	AdjIssueReadingOrderNotDirectOrSupporting AdjudicationIssueCode = "reading_order_not_direct_or_supporting"
+)
+
+// Decision 267 normalization keys count accepted themes whose exact
+// backend-owned candidate fields were redundantly echoed and removed before
+// strict response decoding. They are closed backend diagnostics, never model
+// prose or raw values.
+const (
+	AdjNormalizationRedundantThemeKind         = "redundant_theme_kind"
+	AdjNormalizationRedundantAnchorRefs        = "redundant_anchor_refs"
+	AdjNormalizationRedundantExpansionFileRefs = "redundant_expansion_file_refs"
 )
 
 // Reading is one exact ordered reading on a Study card. It carries only the
@@ -464,9 +480,9 @@ type AdjudicationStatus struct {
 	UnreviewedAnchors int `json:"unreviewed_anchors,omitempty"`
 	// Normalized records typed editorial truncation counts (Decision 224):
 	// why_it_matters / expected_learning / observation / unknown /
-	// unknowns_capped, and Decision 232:
-	// duplicate_assessment. Non-empty means bounded evidence was retained,
-	// never dropped as empty.
+	// unknowns_capped; Decision 232 duplicate_assessment; and Decision 267
+	// exact redundant theme_kind / anchor_refs / expansion_file_refs echoes.
+	// Non-empty means bounded evidence was retained, never dropped as empty.
 	Normalized map[string]int `json:"normalized,omitempty"`
 }
 

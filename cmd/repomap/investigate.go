@@ -19,6 +19,7 @@ import (
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
 	"github.com/dvordrova/repomap/internal/secretscan"
+	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/tasklens"
 )
 
@@ -314,6 +315,17 @@ func runInvestigate(args []string, deps investigateDependencies) error {
 		}
 	}
 	pack, sufficient := finalizePack(pack, attempt.State)
+	taskSnapshot, err := buildTaskInvestigationSnapshot(bundle)
+	if err != nil {
+		return fmt.Errorf("investigate: build bounded task snapshot: %w", err)
+	}
+	taskSnapshotBytes, err := taskSnapshot.JSON()
+	if err != nil {
+		return fmt.Errorf("investigate: encode bounded task snapshot: %w", err)
+	}
+	if len(taskSnapshotBytes) == 0 || len(taskSnapshotBytes) > tasklens.MaxArtifactBytes {
+		return fmt.Errorf("investigate: bounded task snapshot is outside the saved size limit")
+	}
 
 	runID := debugdump.GenerateRunID("task-lens-" + bundle.ID)
 	writer, err := debugdump.NewWriter(*debugDir, runID, true)
@@ -322,6 +334,9 @@ func runInvestigate(args []string, deps investigateDependencies) error {
 	}
 	defer writer.Close()
 	humanOutput.Artifacts(writer.RunDir())
+	if err := writer.WriteSnapshot(taskSnapshotBytes); err != nil {
+		return fmt.Errorf("investigate: write bounded task snapshot: %w", err)
+	}
 	bundleBytes, err := marshalTaskArtifact(bundle)
 	if err != nil {
 		return err
@@ -572,4 +587,40 @@ func uniqueTaskWarnings(groups ...[]string) []string {
 		}
 	}
 	return result
+}
+
+// buildTaskInvestigationSnapshot persists only the exact repository paths
+// retained by the bounded Task Lens collection. The full tracked inventory is
+// accounting, not source authority: paths omitted by the task projection stay
+// omitted from the replayable snapshot.
+func buildTaskInvestigationSnapshot(bundle tasklens.Bundle) (snapshot.Snapshot, error) {
+	if err := bundle.Validate(); err != nil {
+		return snapshot.Snapshot{}, err
+	}
+	paths := append([]string(nil), bundle.AllowedPaths...)
+	topLevelStats := make(map[string]int)
+	for _, filePath := range paths {
+		topLevel := "."
+		if prefix, _, nested := strings.Cut(filePath, "/"); nested {
+			topLevel = prefix
+		}
+		topLevelStats[topLevel]++
+	}
+
+	return snapshot.Snapshot{
+		RepoName:           bundle.Repository.Identity,
+		DisplayName:        bundle.Repository.DisplayName,
+		FileTree:           append([]string(nil), paths...),
+		TopLevelStats:      topLevelStats,
+		LanguageHints:      []snapshot.LanguageHint{},
+		InterestingFiles:   []string{},
+		FilesConsidered:    len(paths),
+		FilesSkipped:       bundle.Metrics.TrackedFiles - len(paths),
+		SkippedPathSamples: []string{},
+		FilteredFiles:      paths,
+		Go: snapshot.GoHints{
+			LikelyEntrypoints: []string{},
+			ImportantGoFiles:  []string{},
+		},
+	}, nil
 }

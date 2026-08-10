@@ -441,7 +441,9 @@ func TestGenerateAuthorizedGitLabKeepsPersistenceHostNeutralAndStripsHTMLSource(
 	}
 
 	runDir := t.TempDir()
-	writeTestFile(t, runDir, "snapshot.json", `{"repo_name":"gitlab-fixture"}`)
+	writeTestFile(t, runDir, "snapshot.json", string(snapshotJSONWithAnalysisTarget(
+		t, []byte(`{"repo_name":"gitlab-fixture"}`),
+	)))
 	writeRunManifestMetadata(t, runDir, repository)
 	modelBundle := `{
 		"allowed_paths":["batch.go"],

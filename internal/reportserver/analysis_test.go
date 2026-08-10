@@ -751,11 +751,13 @@ func caller() {
 	if err != nil {
 		t.Fatal(err)
 	}
+	snapshotSHA256 := writeServerSnapshot(t, runDir, "pebble", reportData.OpenablePaths)
 	manifest := report.RunManifest{
 		Version:               report.CurrentRunManifestVersion,
 		RepositoryState:       state,
 		AnalysisRoot:          filepath.Clean(repo),
 		RepositoryStateSHA256: digest,
+		SnapshotSHA256:        snapshotSHA256,
 		ReportSHA256:          fmt.Sprintf("%x", sha256.Sum256(reportJSON)),
 		ReportFormatVersion:   report.CurrentFormatVersion,
 		OpenablePaths:         []string{"batch.go"},

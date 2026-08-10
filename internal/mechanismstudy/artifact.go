@@ -150,6 +150,7 @@ func restoreCompilation(catalogRef, catalogSHA string, raw []byte) (*Compilation
 	}
 	compilation := &Compilation{
 		Version:               digest.Version,
+		TargetTrailVersion:    digest.TargetTrailVersion,
 		CatalogRef:            catalogRef,
 		CatalogSHA256:         catalogSHA,
 		Binding:               digest.Binding,
@@ -159,6 +160,10 @@ func restoreCompilation(catalogRef, catalogSHA string, raw []byte) (*Compilation
 		OmittedCards:          digest.OmittedCards,
 		authority:             make(map[string]cardAuthority, len(digest.Cards)),
 		catalogAuthorityJSON:  string(raw),
+	}
+	if digest.AnalysisTarget != nil {
+		compilation.AnalysisTargetRef = digest.AnalysisTarget.Ref
+		compilation.TargetRootsSHA256 = digest.TargetRootsSHA256
 	}
 	for _, saved := range digest.Cards {
 		card := copyCard(saved.Card)
@@ -171,6 +176,7 @@ func restoreCompilation(catalogRef, catalogSHA string, raw []byte) (*Compilation
 			edgeByRef:           make(map[string]surfacediscovery.DirectCallEdge, len(saved.Edges)),
 			readingRootByRef:    make(map[string]string, len(saved.Readings)),
 			readingOrdinalByRef: make(map[string]int, len(saved.Readings)),
+			targetRootRefs:      make(map[string]struct{}, len(saved.TargetRootIDs)),
 		}
 		for _, savedNode := range saved.Nodes {
 			node := copyExactNode(savedNode.Node)
@@ -180,6 +186,13 @@ func restoreCompilation(catalogRef, catalogSHA string, raw []byte) (*Compilation
 		}
 		for _, savedEdge := range saved.Edges {
 			authority.edgeByRef[savedEdge.Ref] = savedEdge.Edge
+		}
+		for _, targetRootID := range saved.TargetRootIDs {
+			rootRef := authority.nodeRefByID[targetRootID]
+			if rootRef == "" {
+				return nil, fmt.Errorf("mechanism study facts artifact: target root cannot be restored")
+			}
+			authority.targetRootRefs[rootRef] = struct{}{}
 		}
 		for _, savedReading := range saved.Readings {
 			rootRef := authority.nodeRefByID[savedReading.RootID]

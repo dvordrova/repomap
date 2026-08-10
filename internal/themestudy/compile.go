@@ -36,10 +36,14 @@ const (
 	// and question, so a narrowed question cannot publish the broader Scout
 	// promises. Older responses miss closed; no prose is synthesized from
 	// Scout output during reduction.
+	// Decision 267 advances Adjudication request 3→4, result 5→6, prompt
+	// identity, and accepted-cache v2→v3. Exact redundant backend-owned
+	// candidate echoes may now be removed item-locally; mismatches still fail
+	// closed and semantic anchor/prose binding is not inferred locally.
 	ScoutRequestVersion        = 5
 	ScoutResultVersion         = 5
-	AdjudicationRequestVersion = 3
-	AdjudicationResultVersion  = 5
+	AdjudicationRequestVersion = 4
+	AdjudicationResultVersion  = 6
 )
 
 // Theme prompt contract identities — the short SHA-256 of the exact
@@ -71,7 +75,7 @@ const StudyThemesVersion = "v5"
 // v2 rationale that still applies.)
 const (
 	ScoutCacheContract           = "theme-scout-accepted-v3"
-	AdjudicationCacheContract    = "theme-adjudication-accepted-v2"
+	AdjudicationCacheContract    = "theme-adjudication-accepted-v3"
 	ScoutStage                   = "theme_scout"
 	AdjudicationStage            = "theme_adjudication"
 	MaxScoutRequestArtifactBytes = 384 << 10
@@ -732,7 +736,10 @@ Within each returned theme, order readings in the order you recommend a develope
 The backend retains at most 240 Unicode characters for why_it_matters, expected_learning, and each observation, and 120 for each unknown, and accepts at most 4 unknowns per theme. Stay below these existing limits. Keep final_title and final_question concise and complete. why_it_matters must explain the developer relevance of final_question. expected_learning must promise only what the retained readings can teach. Use short, complete sentences for editorial prose, observations, and unknowns; do not pad prose toward a limit or leave a sentence unfinished.
 Response schema: {"themes":[{"candidate_ref":"t1","final_title":"...","final_question":"...","why_it_matters":"...","expected_learning":"...","readings":[{"anchor_ref":"a1","support":"direct","observation":"..."}],"unknowns":["..."]}]}
 Request bundle JSON:
-%s`
+%s
+Response contract reminder after the request bundle: emit only the allowlisted response fields shown in the schema. Do not echo input-only theme_kind, anchor_refs, expansion_file_refs, or any other candidate/source fields.
+Each reading observation must describe evidence from its own anchor_ref, not evidence belonging to another anchor or candidate.
+Do not emit an unknown when the supplied evidence or the retained readings already answer it.`
 
 // BuildAdjudicationPrompt builds the exact bounded Theme Adjudication prompt.
 func BuildAdjudicationPrompt(request AdjudicationRequest) AdjudicationPrompt {

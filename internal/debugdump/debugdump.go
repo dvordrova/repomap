@@ -49,6 +49,9 @@ type RunMeta struct {
 	EffectiveOptions           EffectiveOptions `json:"effective_options,omitempty"`
 	RequestAttempts            []RequestAttempt `json:"request_attempts,omitempty"`
 	BuildIdentity              BuildIdentity    `json:"build_identity"`
+	AnalysisTargetRef          string           `json:"analysis_target_ref,omitempty"`
+	AnalysisTargetKind         string           `json:"analysis_target_kind,omitempty"`
+	AnalysisTargetPackage      string           `json:"analysis_target_package,omitempty"`
 }
 
 // BuildIdentity binds a run to the exact local binary without exposing build
@@ -68,21 +71,28 @@ type BuildIdentity struct {
 }
 
 type EffectiveOptions struct {
-	Offline          bool   `json:"offline"`
-	NoCache          bool   `json:"no_cache"`
-	FlowCount        int    `json:"flows"`
-	DiscoverSurfaces bool   `json:"discover_surfaces"`
-	GuidedTour       bool   `json:"guided_tour"`
-	NoSecrets        bool   `json:"no_secrets,omitempty"`
-	ReportLanguage   string `json:"report_language,omitempty"`
-	GitLabURL        string `json:"gitlab_url,omitempty"`
-	GitHubURL        string `json:"github_url,omitempty"`
-	OutputJSON       bool   `json:"json_output"`
-	PreviewRequest   bool   `json:"preview_request"`
-	NoOpen           bool   `json:"no_open"`
-	NoServe          bool   `json:"no_serve"`
-	Port             int    `json:"port"`
-	DebugEnabled     bool   `json:"debug_enabled"`
+	Offline                bool   `json:"offline"`
+	NoCache                bool   `json:"no_cache"`
+	FlowCount              int    `json:"flows"`
+	DiscoverSurfaces       bool   `json:"discover_surfaces"`
+	GoTarget               string `json:"go_target,omitempty"`
+	AnalysisTargetOverride string `json:"analysis_target_override,omitempty"`
+	AllTargets             bool   `json:"all_targets,omitempty"`
+	DirectCallDepth        int    `json:"direct_call_depth,omitempty"`
+	DirectCallEdgeLimit    int    `json:"direct_call_edge_limit,omitempty"`
+	GuidedTour             bool   `json:"guided_tour"`
+	NoSecrets              bool   `json:"no_secrets,omitempty"`
+	ReportLanguage         string `json:"report_language,omitempty"`
+	GitLabURL              string `json:"gitlab_url,omitempty"`
+	GitHubURL              string `json:"github_url,omitempty"`
+	OutputJSON             bool   `json:"json_output"`
+	PreviewRequest         bool   `json:"preview_request"`
+	NoOpen                 bool   `json:"no_open"`
+	NoServe                bool   `json:"no_serve"`
+	Port                   int    `json:"port"`
+	DebugEnabled           bool   `json:"debug_enabled"`
+	StrictSnapshot         bool   `json:"strict_snapshot,omitempty"`
+	SourceEpisode          bool   `json:"source_episode,omitempty"`
 }
 
 type RequestAttempt struct {
@@ -99,42 +109,44 @@ const (
 	SemanticExchangesDir     = "semantic_exchanges"
 	SemanticExchangeMetaFile = "exchange.v2.json"
 
-	SemanticStageOrientation       = "orientation"
-	SemanticStageAtlasStudy        = "atlas_study"
-	SemanticStageTargetedResearch  = "targeted_research"
-	SemanticStageArchitecture      = "architecture_synthesis"
-	SemanticStageGuidedTour        = "guided_tour"
-	SemanticStageStudyBrief        = "repository_brief_shape"
-	SemanticStageStudyDirections   = "study_direction_candidates"
-	SemanticStageStudyReview       = "reading_pack_review"
-	SemanticStageMechanismStudy    = "mechanism_study"
-	SemanticStageLocalization      = "localization"
-	SemanticRequestPrepared        = "prepared_request"
-	SemanticRequestExactSent       = "exact_sent_request"
-	SemanticStateAccepted          = "accepted"
-	SemanticStateRejected          = "rejected"
-	SemanticStateCacheHit          = "cache_hit"
-	SemanticStateCanceled          = "canceled"
-	SemanticStateProviderFailed    = "provider_failed"
-	SemanticValidationAccepted     = "accepted"
-	SemanticValidationCache        = "cache_validated"
-	SemanticValidationCanceled     = "canceled"
-	SemanticValidationProvider     = "provider_failed"
-	SemanticValidationSecret       = "response_secret_scan"
-	SemanticValidationDecode       = "response_decode"
-	SemanticValidationResponse     = "response_validation"
-	SemanticValidationApply        = "projection_apply"
-	SemanticValidationQuality      = "projection_quality"
-	SemanticUnavailableNoContent   = "provider_no_content"
-	SemanticUnavailableCanceled    = "canceled"
-	SemanticUnavailableCache       = "cache_raw_unavailable"
-	SemanticUnavailableProjection  = "cache_projection_only"
-	SemanticUnavailableOmitted     = "cache_response_omitted"
-	SemanticUnavailableSize        = "size_limit"
-	SemanticExchangeWarningCode    = "artifact_write_failed"
-	semanticExchangeVersion        = 2
-	semanticPayloadMarkerVersion   = 1
-	maxSemanticExchangePayloadSize = 16 << 20
+	SemanticStageOrientation          = "orientation"
+	SemanticStageAtlasStudy           = "atlas_study"
+	SemanticStageTargetedResearch     = "targeted_research"
+	SemanticStageArchitecture         = "architecture_synthesis"
+	SemanticStageGuidedTour           = "guided_tour"
+	SemanticStageStudyBrief           = "repository_brief_shape"
+	SemanticStageStudyDirections      = "study_direction_candidates"
+	SemanticStageStudyReview          = "reading_pack_review"
+	SemanticStageMechanismStudy       = "mechanism_study"
+	SemanticStageEntryCallCompression = "entry_call_compression"
+	SemanticStageTargetPortfolio      = "target_portfolio_selection"
+	SemanticStageLocalization         = "localization"
+	SemanticRequestPrepared           = "prepared_request"
+	SemanticRequestExactSent          = "exact_sent_request"
+	SemanticStateAccepted             = "accepted"
+	SemanticStateRejected             = "rejected"
+	SemanticStateCacheHit             = "cache_hit"
+	SemanticStateCanceled             = "canceled"
+	SemanticStateProviderFailed       = "provider_failed"
+	SemanticValidationAccepted        = "accepted"
+	SemanticValidationCache           = "cache_validated"
+	SemanticValidationCanceled        = "canceled"
+	SemanticValidationProvider        = "provider_failed"
+	SemanticValidationSecret          = "response_secret_scan"
+	SemanticValidationDecode          = "response_decode"
+	SemanticValidationResponse        = "response_validation"
+	SemanticValidationApply           = "projection_apply"
+	SemanticValidationQuality         = "projection_quality"
+	SemanticUnavailableNoContent      = "provider_no_content"
+	SemanticUnavailableCanceled       = "canceled"
+	SemanticUnavailableCache          = "cache_raw_unavailable"
+	SemanticUnavailableProjection     = "cache_projection_only"
+	SemanticUnavailableOmitted        = "cache_response_omitted"
+	SemanticUnavailableSize           = "size_limit"
+	SemanticExchangeWarningCode       = "artifact_write_failed"
+	semanticExchangeVersion           = 2
+	semanticPayloadMarkerVersion      = 1
+	maxSemanticExchangePayloadSize    = 16 << 20
 )
 
 // SemanticUnavailable describes response bytes that the current stage seam
@@ -737,6 +749,8 @@ func validSemanticStage(stage string) bool {
 		SemanticStageStudyDirections,
 		SemanticStageStudyReview,
 		SemanticStageMechanismStudy,
+		SemanticStageEntryCallCompression,
+		SemanticStageTargetPortfolio,
 		SemanticStageLocalization:
 		return true
 	default:

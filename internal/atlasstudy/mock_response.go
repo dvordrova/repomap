@@ -156,14 +156,22 @@ func mockDirectionForSpan(
 		return providerDirection{}, false
 	}
 
-	// Principals are the chosen readings' advertised components (at least one
-	// component is required), and every chosen reading intersects them by
-	// construction.
+	// Principals are the chosen readings' advertised components. A focused
+	// public-API root may instead use its one exact selected package Unit.
 	principalSet := make(map[CanonicalRef]struct{}, MaxDirectionReadingCount)
 	for _, target := range chosen {
 		for _, principal := range target.PrincipalRefs {
 			if principal.Kind == RefComponent {
 				principalSet[principal] = struct{}{}
+			}
+		}
+	}
+	if len(principalSet) == 0 {
+		for _, target := range chosen {
+			for _, principal := range target.PrincipalRefs {
+				if principal.Kind == RefUnit && product.isAnalysisTargetRootPrincipal(principal) {
+					principalSet[principal] = struct{}{}
+				}
 			}
 		}
 	}
@@ -194,7 +202,7 @@ func mockDirectionForSpan(
 	}
 	return providerDirection{
 		SpanRef:         span.Ref,
-		WhyItMatters:    "This route connects the accepted component to exact reading targets.",
+		WhyItMatters:    "This route connects an exact principal to exact reading targets.",
 		LearningOutcome: "The reader can identify the exact repository boundary for this route.",
 		TargetJob:       span.TargetJob,
 		LearningStage:   span.LearningStage,

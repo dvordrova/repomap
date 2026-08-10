@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/evidence"
@@ -29,7 +30,7 @@ type orientationCall struct {
 	SaveCache  bool
 }
 
-func repositoryContext(opts Options, bundleJSON []byte) modelresearch.RepositoryContext {
+func repositoryContext(opts Options, bundleJSON []byte, target *analysistarget.Target) modelresearch.RepositoryContext {
 	context := opts.RepositoryContext
 	if context.Identity == "" {
 		context.Identity, _ = filepath.Abs(opts.RepoPath)
@@ -42,6 +43,9 @@ func repositoryContext(opts Options, bundleJSON []byte) modelresearch.Repository
 	}
 	if context.DirtySHA256 == "" {
 		context.DirtySHA256 = modelresearch.SHA256(bundleJSON)
+	}
+	if target != nil {
+		context.AnalysisTargetRef = target.Ref
 	}
 	return context
 }

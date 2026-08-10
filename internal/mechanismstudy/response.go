@@ -70,7 +70,10 @@ func ResolveResponse(compilation *Compilation, batch RequestBatch, raw []byte) (
 			cardResult.Frontier = addResponseInvalid(cardResult.Frontier, 1)
 			continue
 		}
-		validateCandidates(requestCard, responseCard.Mechanisms, cardResult)
+		validateCandidates(
+			requestCard, compilation.authority[requestCard.Ref],
+			responseCard.Mechanisms, cardResult,
+		)
 	}
 	return result, nil
 }
@@ -109,14 +112,16 @@ func validateBatchAgainstCompilation(compilation *Compilation, batch RequestBatc
 	}
 	for _, card := range batch.Request.Cards {
 		compiled, ok := compiledByRef[card.Ref]
-		if !ok || !reflect.DeepEqual(compiled, card) || !cardCanContainMechanism(card) {
+		authority := compilation.authority[card.Ref]
+		if !ok || !reflect.DeepEqual(compiled, card) ||
+			!cardCanContainMechanismWithAuthority(card, authority, compilation.TargetTrailVersion != 0) {
 			return fmt.Errorf("mechanism study: request card is not the exact compiled graph")
 		}
 	}
 	return nil
 }
 
-func validateCandidates(card Card, candidates []Candidate, result *CardResult) {
+func validateCandidates(card Card, authority cardAuthority, candidates []Candidate, result *CardResult) {
 	edgeByRef := make(map[string]Edge, len(card.Edges))
 	for _, edge := range card.Edges {
 		edgeByRef[edge.Ref] = edge
@@ -128,7 +133,7 @@ func validateCandidates(card Card, candidates []Candidate, result *CardResult) {
 	validated := make([]validatedCandidate, 0, len(candidates))
 	seenPaths := make(map[string]struct{})
 	for _, candidate := range candidates {
-		mechanism, code := validateCandidate(candidate, edgeByRef, card.Readings)
+		mechanism, code := validateCandidate(candidate, edgeByRef, card.Readings, authority.targetRootRefs)
 		if code != "" {
 			rejectCandidate(result, code)
 			continue
@@ -163,6 +168,7 @@ func validateCandidate(
 	candidate Candidate,
 	edgeByRef map[string]Edge,
 	readings []Reading,
+	targetRootRefs map[string]struct{},
 ) (Mechanism, IssueCode) {
 	if len(candidate.EdgeRefs) < 2 {
 		return Mechanism{}, IssueInvalidShape
@@ -185,6 +191,11 @@ func validateCandidate(
 	nodes, edges, ok := reconstructDirectedPath(selected)
 	if !ok || len(edges) < 2 || len(nodes) < 3 {
 		return Mechanism{}, IssueDisconnected
+	}
+	if len(targetRootRefs) > 0 {
+		if _, rooted := targetRootRefs[nodes[0]]; !rooted {
+			return Mechanism{}, IssueNotTargetRooted
+		}
 	}
 	pathNodes := make(map[string]struct{}, len(nodes))
 	for _, ref := range nodes {

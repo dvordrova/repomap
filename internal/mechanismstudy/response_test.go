@@ -110,6 +110,7 @@ func TestValidateCandidateDerivesAllReadingTiesAndRejectsNone(t *testing.T) {
 	mechanism, code := validateCandidate(
 		Candidate{EdgeRefs: []string{"e2", "e1"}}, edges,
 		[]Reading{{Ref: "r1", RootNodeRef: "n1"}, {Ref: "r2", RootNodeRef: "n3"}},
+		nil,
 	)
 	if code != "" || !reflect.DeepEqual(mechanism.ReadingRefs, []string{"r1", "r2"}) ||
 		!reflect.DeepEqual(mechanism.NodeRefs, []string{"n1", "n2", "n3"}) {
@@ -118,6 +119,7 @@ func TestValidateCandidateDerivesAllReadingTiesAndRejectsNone(t *testing.T) {
 	if _, code := validateCandidate(
 		Candidate{EdgeRefs: []string{"e1", "e2"}}, edges,
 		[]Reading{{Ref: "r3", RootNodeRef: "n9"}},
+		nil,
 	); code != IssueNoReadingTie {
 		t.Fatalf("untied path code = %s, want %s", code, IssueNoReadingTie)
 	}

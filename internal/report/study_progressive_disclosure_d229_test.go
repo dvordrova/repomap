@@ -5,14 +5,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
 
-// TestStudyProgressiveDisclosureD229Asset verifies the Decision 229 D6
-// Study shelf: all theme titles visible, cards collapsed by default, at
-// most two reading previews per collapsed card, independent evidence/scope
-// badges, one-open detail, and repeated-symbol preview grouping.
+// TestStudyProgressiveDisclosureD229Asset verifies the reader-facing Study
+// shelf: every theme and exact reading is directly visible, a compact contents
+// menu opens a theme, and internal coverage/provenance accounting stays out of
+// the product surface.
 func TestStudyProgressiveDisclosureD229Asset(t *testing.T) {
 	scriptPath := filepath.Join("templates", "script.js")
 	assetPath := filepath.Join(t.TempDir(), "study-d229-test.js")
@@ -131,7 +132,7 @@ const themeCards = [1, 2, 4, 2, 1, 4, 3, 4, 5, 4, 3].map((count, themeIndex) => 
         symbol: "AlternateTheme1",
         path: "study/theme-1-alternate.go",
         line: 41,
-        role: "direct",
+        role: "supporting",
         supported_observation: "Inspect the co-projected exact reading.",
       },
     ] : [],
@@ -200,45 +201,38 @@ vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_mess
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), { window, document, URLSearchParams, Set, Map, AbortController, Promise });
 const api = window.__REPOMAP_WORKSPACE_TEST__;
 api.renderWorkspaceTabs();
-const studyTab = walk(roots["rm-tabs"]).find((node) => node.attributes && node.attributes["data-workspace-view"] === "study_overview");
-if (studyTab) studyTab.onclick();
+api.renderIncompleteStudyOverview();
 const studyRoot = roots["rm-study-overview"];
 const cards = byClass(studyRoot, "rm-study-theme-card");
 const titles = byClass(studyRoot, "rm-study-theme-card__title").map((node) => text(node));
-// Collapsed cards show at most two preview rows; cards with more readings
-// show "+N readings".
-const previewCounts = cards.map((card) => byClass(card, "rm-study-theme-card__preview").length);
-const moreCounts = cards.map((card) => {
-  const more = byClass(card, "rm-study-theme-card__more")[0];
-  if (!more) return 0;
-  const match = String(text(more)).match(/\+\s*(\d+)/);
-  return match ? Number(match[1]) : 0;
-});
-// Evidence and scope badges are independent and both present.
-const evidenceBadges = byClass(studyRoot, "rm-study-theme-card__evidence").map((node) => text(node));
-const scopeBadges = byClass(studyRoot, "rm-study-theme-card__scope").map((node) => text(node));
-const concentrationBadges = byClass(studyRoot, "rm-study-theme-card__concentration");
-// Repeated symbol grouping: the theme with the repeated "Send" symbol shows
-// a callsite count in its preview.
+const previewCounts = cards.map((card) => byClass(card, "rm-study-reading-anchor").length);
+const previewActions = byClass(studyRoot, "rm-study-reading-anchor__open");
+const previewActionHrefs = previewActions.map((node) => node.getAttribute("href") || "");
+const previewActionLabels = previewActions.map((node) => node.getAttribute("aria-label") || "");
+const contentNav = byClass(studyRoot, "rm-study-theme-contents")[0] || null;
+const contentActions = byClass(studyRoot, "rm-study-theme-contents__action");
+const openActions = byClass(studyRoot, "rm-study-theme-card__open");
 const previewTexts = cards.map((card) => text(card));
-const sendGrouped = previewTexts.some((t) => t.includes("Send") && t.includes("callsites"));
-const firstCardText = cards.length ? text(cards[0]) : "";
-const shelfHasFirstLimitation = firstCardText.includes("Runtime branch selection remains unresolved.") &&
-  !firstCardText.includes("Retry ordering remains unresolved.");
-// Opening one card navigates to detail; siblings remain collapsed.
-const firstTitle = titles.length ? byClass(studyRoot, "rm-study-theme-card__title")[0] : null;
-firstTitle.onclick();
-const detailRoot = roots["rm-study-detail"];
+const removedProductChromeCount = [
+  "rm-study-theme-card__more", "rm-study-theme-card__evidence", "rm-study-theme-card__scope",
+  "rm-study-theme-card__concentration", "rm-study-diagnostics", "rm-study-frontier-browse",
+  "rm-study-theme-card__limitation",
+].reduce((count, className) => count + byClass(studyRoot, className).length, 0);
+const detailsCount = walk(studyRoot).filter((node) => node.tagName === "details").length;
+// The contents menu is navigation, not decoration.
+if (contentActions[0]) contentActions[0].onclick();
+const detailRoot = cards[0];
 const detailText = text(detailRoot);
 const detailHasExpectedLearning = detailText.includes("What to verify: Outcome 1.");
 const detailHasSupportedExplanation = detailText.includes("Every reading has an exact source anchor. The theme wording is a model interpretation to verify against that code.");
 const detailHasReading = detailText.includes("study/theme-1-reading-1.go");
 const detailHasRole = detailText.includes("direct");
+const directOnlyHasRole = text(cards[4]).includes("direct support") || text(cards[4]).includes("supporting");
 const detailHasObservation = detailText.includes("Inspect exact reading 1.");
 const detailHasLimitations = !!detailRoot.querySelector(".rm-study-theme-card__limitations");
 const detailHasAllLimitations = detailText.includes("Runtime branch selection remains unresolved.") &&
   detailText.includes("Retry ordering remains unresolved.");
-const detailHasNoNestedDisclosure = !walk(detailRoot).some((node) => node.tagName === "details");
+const detailHasNoNestedDisclosure = !walk(detailRoot).some((node) => node !== detailRoot && node.tagName === "details");
 const detailHasAlternateWording = detailText.includes("Lifecycle view of theme 1") &&
   detailText.includes("Where does theme 1 cross its lifecycle boundary?");
 const detailHasAlternateReading = detailText.includes("study/theme-1-alternate.go") &&
@@ -251,16 +245,20 @@ process.stdout.write(JSON.stringify({
   cardCount: cards.length,
   titles,
   previewCounts,
-  moreCounts,
-  evidenceBadges,
-  scopeBadges,
-  concentrationBadgeCount: concentrationBadges.length,
+  previewActionCount: previewActions.length,
+  previewActionHrefs,
+  previewActionLabels,
+  contentCount: contentActions.length,
+  contentLabel: contentNav && contentNav.getAttribute("aria-label"),
+  openActionCount: openActions.length,
+  removedProductChromeCount,
+  detailsCount,
   shelfLeaksRawConcentrationMarker: text(studyRoot).includes("cmd:7/11"),
-  sendGrouped,
   detailHasExpectedLearning,
   detailHasSupportedExplanation,
   detailHasReading,
   detailHasRole,
+  directOnlyHasRole,
   detailHasObservation,
   detailHasLimitations,
   detailHasAllLimitations,
@@ -269,7 +267,9 @@ process.stdout.write(JSON.stringify({
   detailHasAlternateReading,
   detailReadingRows,
   alternateSourceIsAction,
-  shelfHasFirstLimitation,
+  firstDetailOpen: !!detailRoot.open,
+  contentTags: contentActions.map((node) => node.tagName),
+  contentHrefs: contentActions.map((node) => node.getAttribute("href") || ""),
   previewTexts,
 }));`
 	if err := os.WriteFile(assetPath, []byte(asset), 0o600); err != nil {
@@ -284,16 +284,20 @@ process.stdout.write(JSON.stringify({
 		CardCount                        int      `json:"cardCount"`
 		Titles                           []string `json:"titles"`
 		PreviewCounts                    []int    `json:"previewCounts"`
-		MoreCounts                       []int    `json:"moreCounts"`
-		EvidenceBadges                   []string `json:"evidenceBadges"`
-		ScopeBadges                      []string `json:"scopeBadges"`
-		ConcentrationBadgeCount          int      `json:"concentrationBadgeCount"`
+		PreviewActionCount               int      `json:"previewActionCount"`
+		PreviewActionHrefs               []string `json:"previewActionHrefs"`
+		PreviewActionLabels              []string `json:"previewActionLabels"`
+		ContentCount                     int      `json:"contentCount"`
+		ContentLabel                     string   `json:"contentLabel"`
+		OpenActionCount                  int      `json:"openActionCount"`
+		RemovedProductChromeCount        int      `json:"removedProductChromeCount"`
+		DetailsCount                     int      `json:"detailsCount"`
 		ShelfLeaksRawConcentrationMarker bool     `json:"shelfLeaksRawConcentrationMarker"`
-		SendGrouped                      bool     `json:"sendGrouped"`
 		DetailHasExpectedLearning        bool     `json:"detailHasExpectedLearning"`
 		DetailHasSupportedExplanation    bool     `json:"detailHasSupportedExplanation"`
 		DetailHasReading                 bool     `json:"detailHasReading"`
 		DetailHasRole                    bool     `json:"detailHasRole"`
+		DirectOnlyHasRole                bool     `json:"directOnlyHasRole"`
 		DetailHasObservation             bool     `json:"detailHasObservation"`
 		DetailHasLimitations             bool     `json:"detailHasLimitations"`
 		DetailHasAllLimitations          bool     `json:"detailHasAllLimitations"`
@@ -302,7 +306,9 @@ process.stdout.write(JSON.stringify({
 		DetailHasAlternateReading        bool     `json:"detailHasAlternateReading"`
 		DetailReadingRows                int      `json:"detailReadingRows"`
 		AlternateSourceIsAction          bool     `json:"alternateSourceIsAction"`
-		ShelfHasFirstLimitation          bool     `json:"shelfHasFirstLimitation"`
+		FirstDetailOpen                  bool     `json:"firstDetailOpen"`
+		ContentTags                      []string `json:"contentTags"`
+		ContentHrefs                     []string `json:"contentHrefs"`
 		PreviewTexts                     []string `json:"previewTexts"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
@@ -311,43 +317,54 @@ process.stdout.write(JSON.stringify({
 	if got.CardCount != 11 {
 		t.Fatalf("theme cards = %d, want 11 (peer themes must not be hidden)", got.CardCount)
 	}
-	for index, count := range got.PreviewCounts {
-		if count > 2 {
-			t.Fatalf("collapsed card %d shows %d previews, want <= 2", index+1, count)
+	expectedReadings := []int{1, 2, 4, 2, 1, 4, 3, 4, 5, 4, 3}
+	readingTotal := 0
+	for index, want := range expectedReadings {
+		readingTotal += want
+		if index == 0 {
+			want++ // one distinct alternate reading is inline in the same disclosure
+		}
+		if got.PreviewCounts[index] != want {
+			t.Fatalf("card %d exact reading rows = %d, want %d; all=%v", index+1, got.PreviewCounts[index], want, got.PreviewCounts)
 		}
 	}
-	// Cards 3, 6, 8, 9, 10, 11 have >2 readings → must show "+N readings".
-	expectedMore := []int{0, 0, 2, 0, 0, 2, 1, 2, 3, 2, 1}
-	for index, want := range expectedMore {
-		if got.MoreCounts[index] != want {
-			t.Fatalf("card %d more-readings rows = %d, want %d; previews=%v more=%v\npreviewTexts=%v", index+1, got.MoreCounts[index], want, got.PreviewCounts, got.MoreCounts, got.PreviewTexts)
+	if got.PreviewActionCount != readingTotal+1 || len(got.PreviewActionHrefs) != readingTotal+1 || len(got.PreviewActionLabels) != readingTotal+1 {
+		t.Fatalf("exact Study source actions = %d hrefs=%d aria=%d, want %d", got.PreviewActionCount, len(got.PreviewActionHrefs), len(got.PreviewActionLabels), readingTotal+1)
+	}
+	for index, href := range got.PreviewActionHrefs {
+		if !strings.Contains(href, "github.com/example/fixture/blob/") || !strings.Contains(href, "#L") || got.PreviewActionLabels[index] == "" {
+			t.Fatalf("preview %d is not one pinned, labelled source action: href=%q aria=%q", index+1, href, got.PreviewActionLabels[index])
 		}
 	}
-	if len(got.EvidenceBadges) != 11 || len(got.ScopeBadges) != 11 {
-		t.Fatalf("evidence badges = %d, scope badges = %d, want 11 each (independent axes)", len(got.EvidenceBadges), len(got.ScopeBadges))
+	if got.ContentCount != 11 || got.ContentLabel != "Contents" || got.OpenActionCount != 0 || !got.FirstDetailOpen {
+		t.Fatalf("Study navigation = contents %d aria=%q open-actions=%d first-open=%v, want 11/Contents/0/true", got.ContentCount, got.ContentLabel, got.OpenActionCount, got.FirstDetailOpen)
 	}
-	if got.ConcentrationBadgeCount != 0 || got.ShelfLeaksRawConcentrationMarker {
-		t.Fatalf("Study shelf leaked raw concentration marker: badges=%d raw=%v",
-			got.ConcentrationBadgeCount, got.ShelfLeaksRawConcentrationMarker)
+	for index := range got.ContentTags {
+		if got.ContentTags[index] != "a" || got.ContentHrefs[index] != "#study-theme-"+strconv.Itoa(index+1) {
+			t.Fatalf("contents item %d = <%s href=%q>, want anchor to inline disclosure", index+1, got.ContentTags[index], got.ContentHrefs[index])
+		}
 	}
-	if !strings.Contains(strings.Join(got.EvidenceBadges, " "), "Exact source attached") ||
-		!strings.Contains(strings.Join(got.EvidenceBadges, " "), "Partial coverage") {
-		t.Fatalf("evidence badges do not distinguish exact-source attachment vs partial: %#v", got.EvidenceBadges)
+	if got.RemovedProductChromeCount != 0 || got.DetailsCount != 11 || got.ShelfLeaksRawConcentrationMarker {
+		t.Fatalf("removed Study accounting leaked: chrome=%d details=%d raw-concentration=%v\n%s", got.RemovedProductChromeCount, got.DetailsCount, got.ShelfLeaksRawConcentrationMarker, strings.Join(got.PreviewTexts, "\n"))
 	}
-	if !strings.Contains(strings.Join(got.ScopeBadges, " "), "Exact scope") ||
-		!strings.Contains(strings.Join(got.ScopeBadges, " "), "Partial scope") {
-		t.Fatalf("scope badges do not distinguish exact vs partial: %#v", got.ScopeBadges)
+	for index, title := range got.Titles {
+		want := "Theme " + string(rune('1'+index))
+		if index == 9 {
+			want = "Theme 10"
+		} else if index == 10 {
+			want = "Theme 11"
+		}
+		if title != want {
+			t.Fatalf("theme title %d = %q, want %q", index+1, title, want)
+		}
 	}
-	if !got.SendGrouped {
-		t.Fatalf("repeated public symbol (Send) was not grouped with a callsite count")
-	}
-	if !got.DetailHasExpectedLearning || !got.DetailHasSupportedExplanation || !got.DetailHasReading || !got.DetailHasRole ||
+	if got.DetailHasExpectedLearning || got.DetailHasSupportedExplanation || !got.DetailHasReading || !got.DetailHasRole ||
 		!got.DetailHasObservation || !got.DetailHasLimitations {
-		t.Fatalf("expanded detail incomplete: verification=%v source_truth=%v reading=%v role=%v observation=%v limitations=%v",
+		t.Fatalf("theme detail has internal prose or lost useful evidence: expected_learning=%v generic_truth=%v reading=%v role=%v observation=%v limitations=%v",
 			got.DetailHasExpectedLearning, got.DetailHasSupportedExplanation, got.DetailHasReading, got.DetailHasRole, got.DetailHasObservation, got.DetailHasLimitations)
 	}
-	if !got.ShelfHasFirstLimitation {
-		t.Fatal("collapsed theme card does not expose exactly the first material limitation")
+	if got.DirectOnlyHasRole {
+		t.Fatal("a direct-only Study card repeats a non-discriminating role badge")
 	}
 	if !got.DetailHasAllLimitations || !got.DetailHasNoNestedDisclosure {
 		t.Fatalf("opened theme limitations are not directly complete: all=%v no_nested_disclosure=%v",
@@ -359,5 +376,13 @@ process.stdout.write(JSON.stringify({
 	}
 	if got.DetailReadingRows != 2 {
 		t.Fatalf("opened theme reading rows = %d, want 2 (primary + distinct alternate; repeated primary deduplicated)", got.DetailReadingRows)
+	}
+	script, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(script), "investigation.mechanisms.forEach(function (mechanism, index)") ||
+		strings.Contains(string(script), "investigation.mechanisms.slice(") {
+		t.Fatal("inline Study must publish every persisted mechanism without a frontend slice")
 	}
 }

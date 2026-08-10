@@ -46,9 +46,11 @@ const (
 	// salvage changes proposal semantics (ProposalVersion 15).
 	ProposalVersion = 15
 
+	// maxCandidates bounds conceptual members that the model may select in a
+	// response. Structural locators are read-only containment context and have
+	// an independent producer-derived ceiling below.
 	maxCandidates      = 512
 	maxFlows           = 64
-	maxRelations       = 1_024
 	maxAnchorBindings  = 2_048
 	maxBehaviorAnchors = 256
 	maxAnchorMembers   = 64
@@ -76,6 +78,26 @@ const (
 	maxProvenanceBytes                = 1_024
 )
 
+const (
+	// MaxStructuralLocatorCandidates matches the largest complete persisted
+	// Architecture-grounding member collection: 256 anchors with at most 16
+	// associated members each. Locators remain read-only provider context and
+	// never become response membership authority.
+	MaxStructuralLocatorCandidates = 4_096
+
+	// MaxPackageImportRelations matches the complete exact package-edge
+	// authority accepted by workspacegraph. Raw package-import relations stay
+	// local: the Architecture provider receives only bounded per-unit outgoing
+	// counts, so a smaller mixed relation ceiling would reject valid local
+	// evidence before that existing compaction can run.
+	MaxPackageImportRelations = 4_096
+
+	// MaxBehaviorHandoffRelations matches the independently bounded persisted
+	// Architecture-grounding relationship collection. Unlike package imports,
+	// these exact handoffs remain eligible as bounded provider context.
+	MaxBehaviorHandoffRelations = 512
+)
+
 // CandidateBundleLimitKind identifies one complete local input collection
 // whose numeric ceiling was exhausted before any provider request could be
 // constructed. These are input-availability boundaries, not malformed model
@@ -83,12 +105,14 @@ const (
 type CandidateBundleLimitKind string
 
 const (
-	CandidateBundleLimitCandidates       CandidateBundleLimitKind = "candidates"
-	CandidateBundleLimitFlows            CandidateBundleLimitKind = "flows"
-	CandidateBundleLimitRelations        CandidateBundleLimitKind = "relations"
-	CandidateBundleLimitAnchorBindings   CandidateBundleLimitKind = "anchor_bindings"
-	CandidateBundleLimitBehaviorAnchors  CandidateBundleLimitKind = "behavior_anchors"
-	CandidateBundleLimitResearchFindings CandidateBundleLimitKind = "research_findings"
+	CandidateBundleLimitCandidates             CandidateBundleLimitKind = "candidates"
+	CandidateBundleLimitStructuralLocators     CandidateBundleLimitKind = "structural_locators"
+	CandidateBundleLimitFlows                  CandidateBundleLimitKind = "flows"
+	CandidateBundleLimitPackageImportRelations CandidateBundleLimitKind = "package_import_relations"
+	CandidateBundleLimitBehaviorRelations      CandidateBundleLimitKind = "behavior_handoff_relations"
+	CandidateBundleLimitAnchorBindings         CandidateBundleLimitKind = "anchor_bindings"
+	CandidateBundleLimitBehaviorAnchors        CandidateBundleLimitKind = "behavior_anchors"
+	CandidateBundleLimitResearchFindings       CandidateBundleLimitKind = "research_findings"
 )
 
 // CandidateBundleLimitError is a provider-free, typed input-exhaustion
@@ -750,9 +774,26 @@ func (bundle CandidateBundle) Validate() error {
 	if len(bundle.Candidates) == 0 {
 		return fmt.Errorf("componentmap: candidate bundle is empty")
 	}
-	if len(bundle.Candidates) > maxCandidates {
+	conceptualCandidates := 0
+	structuralLocators := 0
+	for _, candidate := range bundle.Candidates {
+		switch candidate.Role {
+		case CandidateRoleConceptualMember:
+			conceptualCandidates++
+		case CandidateRoleStructuralLocator:
+			structuralLocators++
+		}
+	}
+	if conceptualCandidates > maxCandidates {
 		return &CandidateBundleLimitError{
-			Kind: CandidateBundleLimitCandidates, Observed: len(bundle.Candidates), Limit: maxCandidates,
+			Kind: CandidateBundleLimitCandidates, Observed: conceptualCandidates, Limit: maxCandidates,
+		}
+	}
+	if structuralLocators > MaxStructuralLocatorCandidates {
+		return &CandidateBundleLimitError{
+			Kind:     CandidateBundleLimitStructuralLocators,
+			Observed: structuralLocators,
+			Limit:    MaxStructuralLocatorCandidates,
 		}
 	}
 	if len(bundle.Flows) > maxFlows {
@@ -760,9 +801,28 @@ func (bundle CandidateBundle) Validate() error {
 			Kind: CandidateBundleLimitFlows, Observed: len(bundle.Flows), Limit: maxFlows,
 		}
 	}
-	if len(bundle.Relations) > maxRelations {
+	packageImportRelations := 0
+	behaviorHandoffRelations := 0
+	for _, relation := range bundle.Relations {
+		switch relation.Kind {
+		case StructuralRelationPackageImport:
+			packageImportRelations++
+		case StructuralRelationBehaviorHandoff:
+			behaviorHandoffRelations++
+		}
+	}
+	if packageImportRelations > MaxPackageImportRelations {
 		return &CandidateBundleLimitError{
-			Kind: CandidateBundleLimitRelations, Observed: len(bundle.Relations), Limit: maxRelations,
+			Kind:     CandidateBundleLimitPackageImportRelations,
+			Observed: packageImportRelations,
+			Limit:    MaxPackageImportRelations,
+		}
+	}
+	if behaviorHandoffRelations > MaxBehaviorHandoffRelations {
+		return &CandidateBundleLimitError{
+			Kind:     CandidateBundleLimitBehaviorRelations,
+			Observed: behaviorHandoffRelations,
+			Limit:    MaxBehaviorHandoffRelations,
 		}
 	}
 	if len(bundle.AnchorBindings) > maxAnchorBindings {

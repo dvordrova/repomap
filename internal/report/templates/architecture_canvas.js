@@ -30,6 +30,7 @@
  const LANDSCAPE_MARGIN = 28;
  const SINGLETON_GROUP_HEIGHT = 132;
  const LIFECYCLE_FALLBACK_LIMIT = 6;
+ const INSPECTOR_PRIMARY_RELATION_LIMIT = 4;
 
  function array(value) {
   return Array.isArray(value) ? value : [];
@@ -256,6 +257,27 @@
    text(value.path) && Number(value.line) > 0;
  }
 
+ function exactSurfaceEntryLocations(surface) {
+  const seen = new Set();
+  const result = [];
+  array(surface && surface.evidence).forEach((location) => {
+   if (!currentEntrypointLocation(location)) return;
+   const exact = {
+    path: text(location.path),
+    line: Number(location.line),
+    column: Number(location.column) > 0 ? Number(location.column) : 0,
+   };
+   const key = exact.path + "\u0000" + exact.line + "\u0000" + exact.column;
+   if (seen.has(key)) return;
+   seen.add(key);
+   result.push(exact);
+  });
+  result.sort((left, right) => (
+   left.path.localeCompare(right.path) || left.line - right.line || left.column - right.column
+  ));
+  return result;
+ }
+
  function currentEntrypointTransition(value) {
   return currentEntrypointLocation(value) && Array.isArray(value.component_ids);
  }
@@ -301,6 +323,7 @@
   const entryIDs = exactIDs(group.entry);
   const componentIDs = [];
   const edges = [];
+  const edgesByPair = new Map();
   const overflow = [];
   const addComponent = (componentID) => {
    if (componentIDs.indexOf(componentID) < 0) componentIDs.push(componentID);
@@ -318,27 +341,57 @@
     else reason = "target_plural";
     overflow.push({
      id: text(group.id) + ":overflow:" + handoffIndex,
+     handoff_index: handoffIndex,
      reason: reason,
      handoff: handoff,
     });
     return;
    }
-   const item = {
-    id: text(group.id) + ":handoff:" + handoffIndex,
-    from_component_id: entryIDs[0],
-    to_component_id: targetIDs[0],
-    handoff: handoff,
-   };
    if (entryIDs[0] === targetIDs[0]) {
     overflow.push({
      id: text(group.id) + ":overflow:" + handoffIndex,
+     handoff_index: handoffIndex,
      reason: "same_component",
      handoff: handoff,
     });
     return;
    }
-   edges.push(item);
+   const pair = entryIDs[0] + "\u0000" + targetIDs[0];
+   let item = edgesByPair.get(pair);
+   if (!item) {
+    item = {
+     id: text(group.id) + ":handoff:" + handoffIndex,
+     from_component_id: entryIDs[0],
+     to_component_id: targetIDs[0],
+     handoff: handoff,
+     handoffs: [],
+     handoff_indexes: [],
+     call_count: 0,
+    };
+    edgesByPair.set(pair, item);
+    edges.push(item);
+   }
+   item.handoffs.push(handoff);
+   item.handoff_indexes.push(handoffIndex);
+   item.call_count = item.handoffs.length;
   });
+  // A component-pair edge is an aggregate visual relation. Exact individual
+  // calls stay in the Entrypoints context list, where both their callsite and
+  // callee locations remain actionable. A singleton keeps its exact badge.
+  edges.forEach((item) => {
+   if (item.call_count <= 1) return;
+   item.handoffs.forEach((handoff, index) => {
+    const handoffIndex = item.handoff_indexes[index];
+    overflow.push({
+     id: text(group.id) + ":overflow:" + handoffIndex,
+     handoff_index: handoffIndex,
+     reason: "parallel_component_pair",
+     aggregate_edge_id: item.id,
+     handoff: handoff,
+    });
+   });
+  });
+  overflow.sort((left, right) => Number(left.handoff_index) - Number(right.handoff_index));
   return {
    group_id: text(group.id),
    entry: group.entry,
@@ -519,9 +572,9 @@
      label: text(surface && surface.name),
      component_ids: array(surface && surface.participating_component_ids)
       .filter((id) => componentByID.has(text(id))),
+     locations: exactSurfaceEntryLocations(surface),
     };
     entry.component_ids = Array.from(new Set(entry.component_ids));
-    if (!entry.component_ids.length) return;
     if (!byKind.has(kind)) byKind.set(kind, []);
     byKind.get(kind).push(entry);
    });
@@ -1023,6 +1076,7 @@ function architecturePartialTruth(data) {
      step: "",
      edge: "",
     };
+    this.componentInspectorTab = "summary";
     this.inspectorVisible = null;
 
    this.subsystems = array(this.data.subsystems);
@@ -1160,6 +1214,7 @@ function architecturePartialTruth(data) {
     const flowNav = element("nav", "rm-arch__flows");
      this.landscapeButton = element("button", "rm-arch__flow-button is-active", this.msg("architecture.nav.architecture"));
     this.landscapeButton.type = "button";
+    this.landscapeButton.hidden = this.userMode;
     this.listen(this.landscapeButton, "click", () => {
      this.backToArchitecture();
     });
@@ -1297,56 +1352,6 @@ function architecturePartialTruth(data) {
     this.root.appendChild(toolbar);
     if (this.traceList) this.root.appendChild(this.traceList);
 
-    if (this.userMode && this.partialTruth) {
-	 // Decision 217: the unassigned-evidence wall becomes a compact
-	 // collapsed disclosure — count in the summary, every exact item
-	 // preserved behind the expand action.
-	 const partial = element("details", "rm-arch__partial-truth");
-	 const summary = element("summary", "rm-arch__partial-truth-label");
-	 summary.appendChild(element(
-	  "strong",
-	  "rm-arch__partial-truth-label-text",
-	  this.msg("architecture.value.accepted_partial")
-	 ));
-	 if (this.partialTruth.members.length > 0) {
-	  summary.appendChild(element(
-	   "span",
-	   "rm-arch__partial-count",
-	   this.msg("architecture.count.local_remainder_members", {
-	    count: this.partialTruth.members.length,
-	   })
-	  ));
-	 }
-	 partial.appendChild(summary);
-	 partial.appendChild(element(
-	  "p",
-	  "rm-arch__copy",
-	  this.msg("architecture.copy.accepted_partial")
-	 ));
-	 if (this.partialTruth.members.length > 0) {
-	  const members = element("div", "rm-arch__partial-member-list");
-	  this.partialTruth.members.forEach((member) => {
-	   const sources = array(member.sources);
-	   if (sources.length > 0 && typeof this.options.openLocation === "function") {
-	    sources.forEach((location) => {
-	     const action = element("button", "rm-arch__partial-member-action");
-	     action.type = "button";
-	     action.appendChild(element("strong", null, member.label));
-	     action.appendChild(element("span", null, locationLabel(location)));
-	     this.listen(action, "click", () => this.options.openLocation(
-	      location.path, location.line, location.column
-	     ));
-	     members.appendChild(action);
-	    });
-	    return;
-	   }
-	   members.appendChild(element("span", "rm-arch__member-id", member.label));
-	  });
-	  partial.appendChild(members);
-	 }
-     this.root.appendChild(partial);
-    }
-
    const workspace = element("div", "rm-arch__workspace");
     this.viewport = element("div", "rm-arch__viewport");
     this.loading = element("div", "rm-arch__loading", this.msg("architecture.state.laying_out"));
@@ -1358,6 +1363,7 @@ function architecturePartialTruth(data) {
      // behavior (wheel zooms, drag pans) — quiet, never occluding.
      this.viewportHint.setAttribute("role", "note");
      this.viewportHint.setAttribute("aria-label", this.msg("architecture.hint.drag_groups_fit", { count: 0 }));
+     this.viewportHint.hidden = this.userMode;
      this.viewport.append(this.loading, this.flowFocus, this.viewportHint);
    workspace.appendChild(this.viewport);
 
@@ -1770,12 +1776,11 @@ function architecturePartialTruth(data) {
    }
 
    boardGroupMetrics(group, profile) {
-    const shape = childGridShape(group.componentIDs.length, profile.columns);
-    const columns = shape.columns;
-    const span = shape.span;
-    const width = span * profile.groupWidth + Math.max(0, span - 1) * LANDSCAPE_GROUP_GAP;
-    const metrics = this.groupMetrics(group, width, columns);
-    metrics.span = span;
+    // A conceptual group is one board card. Its members stack inside that
+    // card; they must not claim multiple outer masonry columns and collapse
+    // the whole landscape into one long vertical strip.
+    const metrics = this.groupMetrics(group, profile.groupWidth, 1);
+    metrics.span = 1;
     return metrics;
    }
 
@@ -2039,17 +2044,24 @@ function architecturePartialTruth(data) {
     group.style.top = position.y + "px";
     group.style.width = position.width + "px";
     group.style.height = position.height + "px";
-     group.title = text(
-      subsystem.description || subsystem.name ||
+     const groupName = text(
+      subsystem.name ||
       (this.userMode ? this.msg("architecture.fallback.repository_area") : subsystem.id)
      );
+     const groupDescription = text(subsystem.description);
+     const groupTooltip = groupDescription && groupDescription !== groupName
+      ? groupName + " — " + groupDescription
+      : groupName;
+     group.title = groupTooltip;
      const header = element("div", "rm-arch__group-header");
      header.appendChild(element("span", "rm-arch__category-marker"));
-     header.appendChild(element(
+     const groupTitle = element(
       "h3",
       "rm-arch__group-title",
-      subsystem.name || (this.userMode ? this.msg("architecture.fallback.repository_area") : subsystem.id)
-     ));
+      groupName
+     );
+     groupTitle.title = groupTooltip;
+     header.appendChild(groupTitle);
      const categoryLabel = this.semanticCategoryLabel(category);
      if (categoryLabel) header.appendChild(element("span", "rm-arch__group-category", categoryLabel));
      header.appendChild(element(
@@ -2127,7 +2139,7 @@ function architecturePartialTruth(data) {
       button.appendChild(element("span", "rm-arch__component-description", component.description));
      }
       const associatedSurfaces = this.componentSurfaces(component);
-      if (associatedSurfaces.length > 0) {
+      if (!this.userMode && associatedSurfaces.length > 0) {
        const surfaceSummary = element("span", "rm-arch__component-surfaces");
        surfaceSummary.appendChild(element(
         "span",
@@ -2218,6 +2230,9 @@ function architecturePartialTruth(data) {
   }
 
   renderStructuralEdges() {
+   const defs = svgElement("defs");
+   defs.appendChild(this.arrowMarker("rm-arch-structural-arrow", "#526176"));
+   this.structuralSVG.appendChild(defs);
    const representedPairs = new Set();
    this.structuralEdges.forEach((edge) => {
     const pair = text(edge.from_component_id) + "\u0000" + text(edge.to_component_id);
@@ -2236,6 +2251,8 @@ function architecturePartialTruth(data) {
      }),
      () => this.setSelection({ edge: text(edge.id), step: "" }, true)
     );
+    const visible = this.visibleSVGPath(group);
+    if (visible) visible.setAttribute("marker-end", "url(#rm-arch-structural-arrow)");
      setSVGVisible(group, true);
     this.structuralSVG.appendChild(group);
     this.structuralEdgeElements.set(text(edge.id), group);
@@ -2562,6 +2579,21 @@ function architecturePartialTruth(data) {
   }
 
   entryHandoffSourceBadge(item, geometry) {
+   const callCount = Math.max(1, Number(item && item.call_count) || 1);
+   if (callCount > 1 && geometry) {
+    const countLabel = this.entryHandoffCallCountLabel(callCount);
+    const countBadge = element(
+     "span",
+     "rm-arch__entry-handoff-source is-count",
+     countLabel
+    );
+    countBadge.title = countLabel;
+    countBadge.style.left = geometry.badge_x + "px";
+    countBadge.style.top = geometry.badge_y + "px";
+    countBadge.setAttribute("data-entry-handoff-source", text(item.id));
+    countBadge.setAttribute("data-entry-handoff-call-count", String(callCount));
+    return countBadge;
+   }
    const handoff = item && item.handoff;
    const formatted = locationLabel(handoff);
    if (!formatted || !geometry) return null;
@@ -2598,6 +2630,20 @@ function architecturePartialTruth(data) {
    return control;
   }
 
+  entryHandoffCallCountLabel(callCount) {
+   const count = Math.max(0, Math.trunc(Number(callCount) || 0));
+   const relation = this.msg("architecture.relation.calls");
+   if (relation === "вызывает") {
+    const mod100 = count % 100;
+    const mod10 = count % 10;
+    const noun = mod100 >= 11 && mod100 <= 14
+     ? "вызовов"
+     : mod10 === 1 ? "вызов" : mod10 >= 2 && mod10 <= 4 ? "вызова" : "вызовов";
+    return String(count) + " " + noun;
+   }
+   return String(count) + " " + relation;
+  }
+
   renderEntrypointHandoffOverlay() {
    if (!this.entryHandoffSVG || !this.entryHandoffBadgeLayer) return;
    const defs = svgElement("defs");
@@ -2616,23 +2662,21 @@ function architecturePartialTruth(data) {
     const node = this.componentElements.get(componentID);
     if (node) node.classList.add("rm-arch__is-entry-handoff-participant");
    });
-   const lanes = new Map();
    projection.edges.forEach((item) => {
     const from = this.nodePositions.get(item.from_component_id);
     const to = this.nodePositions.get(item.to_component_id);
     if (!from || !to) return;
-    const pair = item.from_component_id + "\u0000" + item.to_component_id;
-    const lane = lanes.get(pair) || 0;
-    lanes.set(pair, lane + 1);
-    const geometry = entryHandoffConnectionGeometry(from, to, lane);
+    const geometry = entryHandoffConnectionGeometry(from, to, 0);
     if (!geometry) return;
     const edge = this.interactiveSVGPath(
      geometry.path,
      "rm-arch__edge rm-arch__edge--entry-handoff",
-     [
-      text(item.handoff && item.handoff.symbol),
-      locationLabel(item.handoff),
-     ].filter(Boolean).join(" · "),
+     Number(item.call_count) > 1
+      ? this.entryHandoffCallCountLabel(item.call_count)
+      : [
+       text(item.handoff && item.handoff.symbol),
+       locationLabel(item.handoff),
+      ].filter(Boolean).join(" · "),
      null
     );
     const visible = edge.querySelector(".rm-arch__edge-visible");
@@ -2648,6 +2692,7 @@ function architecturePartialTruth(data) {
   selectEntrypointHandoffGroup(groupID) {
    const selected = text(groupID);
    if (!this.entryHandoffGroupByID.has(selected)) return false;
+   this.setSelection({ flow: "", component: "", surface: "", step: "", edge: "" }, true);
    this.selectedEntryHandoffGroupID = selected;
    this.renderEntrypointHandoffOverlay();
    return true;
@@ -3421,6 +3466,18 @@ function architecturePartialTruth(data) {
    return marker;
   }
 
+  visibleSVGPath(group) {
+   if (!group) return null;
+   if (typeof group.querySelector === "function") {
+    const found = group.querySelector(".rm-arch__edge-visible");
+    if (found) return found;
+   }
+   return array(group.children).find((child) => (
+    child && typeof child.getAttribute === "function" &&
+    child.getAttribute("class") === "rm-arch__edge-visible"
+   )) || null;
+  }
+
   interactiveSVGPath(route, className, label, handler) {
    const group = svgElement("g", { class: className });
    // Decision 229 D1: edges are passive visual evidence — no role, no
@@ -3888,6 +3945,10 @@ function architecturePartialTruth(data) {
      const previous = this.selection;
      const next = Object.assign({}, this.selection, patch || {});
      this.selection = this.validateSelection(next);
+     if (this.selectedEntryHandoffGroupID && (this.selection.component || this.selection.edge)) {
+      this.selectedEntryHandoffGroupID = "";
+      this.renderEntrypointHandoffOverlay();
+     }
      if (!previous.flow && this.selection.flow) {
       this.landscapeView = Object.assign({}, this.view);
       this.landscapeComponentID = previous.component;
@@ -3943,11 +4004,22 @@ function architecturePartialTruth(data) {
     this.setSelection({ flow: "", component: "", surface: surfaceID, step: "", edge: "" }, true);
    }
 
-   openComponent(componentID) {
-    componentID = text(componentID);
-    if (!this.componentByID.has(componentID)) return;
-    this.setSelection({ flow: "", component: componentID, surface: "", step: "", edge: "" }, true);
-   }
+  openComponent(componentID) {
+   componentID = text(componentID);
+   if (!this.componentByID.has(componentID)) return;
+   this.componentInspectorTab = "summary";
+   this.setSelection({ flow: "", component: componentID, surface: "", step: "", edge: "" }, true);
+  }
+
+  openRelatedComponent(componentID) {
+   componentID = text(componentID);
+   if (!this.componentByID.has(componentID)) return;
+   this.componentInspectorTab = "connections";
+   this.setSelection({ flow: "", component: componentID, surface: "", step: "", edge: "" }, true);
+   requestAnimationFrame(() => {
+    if (this.selection.component === componentID) this.focusComponent(componentID, true);
+   });
+  }
 
    backToArchitecture() {
     const component = this.landscapeComponentID && this.componentByID.has(this.landscapeComponentID)
@@ -4079,6 +4151,7 @@ function architecturePartialTruth(data) {
     );
    this.root.classList.toggle("has-selected-flow", hasFlow);
      this.landscapeButton.classList.toggle("is-active", !hasFlow);
+     this.landscapeButton.hidden = this.userMode && !hasFlow;
      this.landscapeButton.textContent = hasFlow
       ? this.msg("architecture.nav.back_to_architecture")
       : this.msg("architecture.nav.architecture");
@@ -4096,7 +4169,7 @@ function architecturePartialTruth(data) {
     // neighbors stay prominent; unrelated principal nodes dim but remain
     // spatially stable. Dimming is purely visual (is-dimmed), never
     // removes or repositions a node.
-    const focusComponentID = this.selection.component && !hasFlow ? this.selection.component : "";
+   const focusComponentID = this.selection.component && !hasFlow ? this.selection.component : "";
     const focusNeighbors = focusComponentID ? this.structuralNeighborComponentIDs(focusComponentID) : new Set();
     this.componentElements.forEach((node, id) => {
      node.classList.toggle("is-selected", id === this.selection.component);
@@ -4137,7 +4210,12 @@ function architecturePartialTruth(data) {
      edge &&
      (text(edge.from_component_id) === this.selection.component || text(edge.to_component_id) === this.selection.component)
     );
-     setSVGVisible(group, !hasFlow);
+     // D272: a selected component owns one local directed ego-graph. Global
+     // structural lines stay available in the neutral Landscape, but once a
+     // component is selected only its exact incoming/outgoing lines remain.
+     // This removes unrelated crossings without deleting or re-routing any
+     // backend-owned relation.
+     setSVGVisible(group, !hasFlow && (!focusComponentID || selectedEdge || incident));
      group.classList.toggle("is-selected", selectedEdge);
      group.classList.toggle("is-highlighted", incident);
      group.classList.toggle("is-muted", Boolean(this.selection.component || this.selection.edge) && !selectedEdge && !incident);
@@ -4641,6 +4719,56 @@ function architecturePartialTruth(data) {
    return section;
   }
 
+  appendBoundedInspectorRows(parent, values, render) {
+   const items = array(values);
+   items.slice(0, INSPECTOR_PRIMARY_RELATION_LIMIT).forEach((item) => {
+    const node = render(item);
+    if (node) parent.appendChild(node);
+   });
+   if (items.length <= INSPECTOR_PRIMARY_RELATION_LIMIT) return;
+   const overflow = element("details", "rm-arch__relation-overflow");
+   overflow.appendChild(element(
+    "summary",
+    "rm-arch__relation-overflow-summary",
+    this.msg("architecture.count.more", {
+     count: items.length - INSPECTOR_PRIMARY_RELATION_LIMIT,
+    })
+   ));
+   items.slice(INSPECTOR_PRIMARY_RELATION_LIMIT).forEach((item) => {
+    const node = render(item);
+    if (node) overflow.appendChild(node);
+   });
+   parent.appendChild(overflow);
+  }
+
+  componentRelationRow(neighbor) {
+   const componentID = text(neighbor && neighbor.component_id);
+   const component = this.componentByID.get(componentID);
+   const label = text(neighbor && neighbor.name) || text(component && component.name) ||
+    this.msg("architecture.fallback.repository_component");
+   if (!component) {
+    const unavailable = element("div", "rm-arch__operation-row is-static");
+    unavailable.appendChild(element("strong", null, label));
+    return unavailable;
+   }
+   const button = element("button", "rm-arch__component-relation");
+   button.type = "button";
+   button.dataset.componentId = componentID;
+   button.setAttribute("aria-label", this.msg("architecture.action.open_related_component") + ": " + label);
+   button.appendChild(element("strong", null, label));
+   const relationCount = Number(neighbor && neighbor.relation_count) || 0;
+   if (relationCount > 0) {
+    button.appendChild(element(
+     "span",
+     "rm-arch__component-relation-count",
+     this.msg("architecture.count.evidenced_transitions", { count: relationCount })
+    ));
+   }
+   button.appendChild(element("span", "rm-arch__component-relation-arrow", "›"));
+   this.listen(button, "click", () => this.openRelatedComponent(componentID));
+   return button;
+  }
+
   userComponentContext(component) {
    if (!component || !component.id) return null;
    const context = this.componentContexts[text(component.id)];
@@ -4695,11 +4823,15 @@ function architecturePartialTruth(data) {
 
   userComponentHasInspector(component) {
    const context = this.userComponentContext(component);
+   const neighbors = this.associationEntryFor(component);
    return !!(context && (
     this.userComponentActions(component).length > 0 ||
     array(context.surface_starts).length > 0 ||
     array(context.package_paths).length > 0 ||
-    array(context.structural_relations).length > 0
+    array(context.structural_relations).length > 0 ||
+    array(neighbors && neighbors.incoming).length > 0 ||
+    array(neighbors && neighbors.outgoing).length > 0 ||
+    array(neighbors && neighbors.associations).length > 0
    ));
   }
 
@@ -4711,7 +4843,6 @@ function architecturePartialTruth(data) {
    const definitions = [
     { id: "summary", label: this.msg("architecture.tab.summary") },
     { id: "connections", label: this.msg("architecture.tab.connections") },
-    { id: "read-code", label: this.msg("architecture.tab.read_code") },
    ];
    const tablist = element("div", "rm-arch__inspector-tabs");
    tablist.setAttribute("role", "tablist");
@@ -4719,13 +4850,14 @@ function architecturePartialTruth(data) {
    tablist.setAttribute("aria-label", this.msg("architecture.aria.component_inspector_tabs"));
    const tabs = [];
    const panels = {};
-   const activate = (index, moveFocus) => {
+   const activate = (index, moveFocus, remember) => {
     tabs.forEach((tab, candidateIndex) => {
      const active = candidateIndex === index;
      tab.setAttribute("aria-selected", String(active));
      tab.setAttribute("tabindex", active ? "0" : "-1");
      panels[definitions[candidateIndex].id].hidden = !active;
     });
+    if (remember && definitions[index]) this.componentInspectorTab = definitions[index].id;
     if (moveFocus && tabs[index]) tabs[index].focus({ preventScroll: true });
    };
    definitions.forEach((definition, index) => {
@@ -4742,7 +4874,7 @@ function architecturePartialTruth(data) {
     panel.setAttribute("aria-labelledby", tabID);
     panel.setAttribute("tabindex", "0");
     panels[definition.id] = panel;
-    this.listen(tab, "click", () => activate(index, false));
+    this.listen(tab, "click", () => activate(index, false, true));
     this.listen(tab, "keydown", (event) => {
      let target = -1;
      if (event.key === "ArrowRight") target = (index + 1) % definitions.length;
@@ -4751,14 +4883,17 @@ function architecturePartialTruth(data) {
      else if (event.key === "End") target = definitions.length - 1;
      if (target < 0) return;
      event.preventDefault();
-     activate(target, true);
+     activate(target, true, true);
     });
     tabs.push(tab);
     tablist.appendChild(tab);
    });
    this.inspector.appendChild(tablist);
    definitions.forEach((definition) => this.inspector.appendChild(panels[definition.id]));
-   activate(0, false);
+   const initialIndex = Math.max(0, definitions.findIndex((definition) => (
+    definition.id === this.componentInspectorTab
+   )));
+   activate(initialIndex, false, false);
    return panels;
   }
 
@@ -4780,12 +4915,14 @@ function architecturePartialTruth(data) {
   userComponentEntryGroups(component, surfaceStarts) {
    const startsByID = new Map(array(surfaceStarts).map((start) => [text(start && start.id), start]));
    const groups = new Map();
+   const seenEntryIDs = new Set();
    const add = (id, kind, label, start) => {
     id = text(id);
     kind = text(kind) || "other";
+    if (id && seenEntryIDs.has(id)) return;
+    if (id) seenEntryIDs.add(id);
     if (!groups.has(kind)) groups.set(kind, []);
     const entries = groups.get(kind);
-    if (entries.some((entry) => entry.id === id && id)) return;
     entries.push({ id: id, kind: kind, label: text(label), start: start || null });
    };
    this.componentSurfaces(component).forEach((surface) => {
@@ -4813,6 +4950,7 @@ function architecturePartialTruth(data) {
    };
    array(sourceActions).forEach((action) => {
     const source = action && action.value;
+    if (text(source && source.source_type) === "package") return;
     append({
      label: source && (source.detail || source.label),
      location: source && source.location,
@@ -4880,7 +5018,6 @@ function architecturePartialTruth(data) {
    const panels = this.userComponentTabs(component);
    const summary = panels.summary;
    const connections = panels.connections;
-   const readCode = panels["read-code"];
    const surfaceStarts = array(context.surface_starts).filter((start) => (
     start && locationLabel(start.location)
    ));
@@ -4901,76 +5038,9 @@ function architecturePartialTruth(data) {
     )
    ));
 
-   // Summary is deliberately bounded. It is the first-contact view and must
-   // not grow with repository cardinality.
-   const atAGlance = this.inspectorSection(this.msg("architecture.section.at_a_glance"), summary);
-   const authorityValue = context.authority === "validated"
-    ? this.msg("architecture.value.authority_validated")
-    : context.authority === "partial"
-     ? this.msg("architecture.value.authority_partial")
-     : this.msg("architecture.value.authority_local");
-   const evidenceValue = context.evidence_composition === "exact"
-    ? this.msg("architecture.value.evidence_exact")
-    : context.evidence_composition === "mixed"
-     ? this.msg("architecture.value.evidence_mixed")
-     : this.msg("architecture.value.evidence_package");
-   this.appendKeyValue(atAGlance, this.msg("architecture.label.grouping_authority"), authorityValue);
-   this.appendKeyValue(atAGlance, this.msg("architecture.label.member_evidence"), evidenceValue);
-   this.appendKeyValue(atAGlance, this.msg("architecture.label.scope"), this.msg(
-    "architecture.label.member_scope", { count: Number(context.member_count) || 0 }
-   ));
-   const counts = element("div", "rm-arch__summary-counts");
-   [
-    this.msg("architecture.count.entry_groups", { count: entryGroups.length }),
-    this.msg("architecture.count.interactions", { count: associationRows.length }),
-    this.msg("architecture.count.source_starts", { count: readStarts.length }),
-   ].forEach((label) => counts.appendChild(element("span", "rm-arch__summary-count", label)));
-   atAGlance.appendChild(counts);
-
-   const summaryEntries = this.inspectorSection(this.msg("architecture.section.entry_groups"), summary);
-   summaryEntries.classList.add("rm-arch__summary-grid");
-   if (entryGroups.length === 0) {
-    summaryEntries.appendChild(element(
-     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_entry")
-    ));
-   } else {
-    entryGroups.slice(0, 3).forEach((group) => {
-     const row = element("div", "rm-arch__compact-reference rm-arch__entry-group-summary");
-     row.appendChild(element("strong", null, this.userComponentEntryKindLabel(group.kind)));
-     row.appendChild(element(
-      "span", "rm-arch__summary-item-count",
-      this.msg("architecture.count.entries", { count: group.entries.length })
-     ));
-     summaryEntries.appendChild(row);
-    });
-   }
-
-   const interactionSummaries = associationRows.map((row) => ({
-    title: text(row.imported_family) || this.msg("architecture.value.interaction_boundary_resource"),
-    detail: text(row.owning_unit),
-   }));
-   array(context.structural_relations).forEach((relation) => interactionSummaries.push({
-    title: (text(relation && relation.from_label) || memberLabel(relation && relation.from, this.message)) +
-     " → " + (text(relation && relation.to_label) || memberLabel(relation && relation.to, this.message)),
-    detail: locationLabel(relation && relation.location),
-   }));
-   const summaryInteractions = this.inspectorSection(this.msg("architecture.section.key_interactions"), summary);
-   summaryInteractions.classList.add("rm-arch__summary-grid");
-   if (interactionSummaries.length === 0) {
-    summaryInteractions.appendChild(element(
-     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_callsites")
-    ));
-   } else {
-    interactionSummaries.slice(0, 3).forEach((interaction) => {
-     const row = element("div", "rm-arch__compact-reference rm-arch__interaction-summary");
-     row.appendChild(element("strong", null, interaction.title));
-     summaryInteractions.appendChild(row);
-    });
-   }
-
    const primaryStudy = studyActions[0];
-   const studySummary = this.inspectorSection(this.msg("architecture.section.why_it_matters"), summary);
    if (primaryStudy) {
+    const studySummary = this.inspectorSection(this.msg("architecture.section.why_it_matters"), summary);
     const study = primaryStudy.value;
     const button = element("button", "rm-arch__edge-jump rm-arch__compact-action rm-arch__primary-study");
     button.type = "button";
@@ -4978,81 +5048,40 @@ function architecturePartialTruth(data) {
     button.appendChild(element("span", null, this.msg("architecture.action.study_this_area")));
     this.listen(button, "click", primaryStudy.open);
     studySummary.appendChild(button);
-   } else {
-    studySummary.appendChild(element(
-     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_studies")
-    ));
    }
 
-   const unknownMessages = [component.hypothesis
-    ? this.msg("architecture.value.unknown_hypothesis")
-    : this.msg("architecture.value.unknown_not_covered")];
-   if (entryGroups.length === 0) unknownMessages.push(this.msg("architecture.copy.no_observed_entry"));
-   if (associationRows.length === 0) unknownMessages.push(this.msg("architecture.copy.no_observed_callsites"));
-   if (readStarts.length === 0) unknownMessages.push(this.msg("architecture.copy.no_observed_sources"));
-   const unknown = this.inspectorSection(this.msg("architecture.section.what_remains_unknown"), summary);
-   const unknownList = element("ul", "rm-arch__summary-unknowns");
-   unknownMessages.slice(0, 3).forEach((message) => unknownList.appendChild(element("li", null, message)));
-   unknown.appendChild(unknownList);
-
-   // One exact source remains on the default panel, preserving the cube →
-   // exact source journey in two actions.
-   const primarySource = this.inspectorSection(this.msg("architecture.section.start_in_code"), summary);
-   if (readStarts.length > 0) this.appendUserComponentSourceStart(primarySource, readStarts[0], true);
-   else primarySource.appendChild(element(
-    "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_sources")
-   ));
+   if (readStarts.length > 0) {
+    const primarySource = this.inspectorSection(this.msg("architecture.section.start_in_code"), summary);
+    this.appendUserComponentSourceStart(primarySource, readStarts[0], true);
+    if (readStarts.length > 1) {
+     const moreSources = element("details", "rm-arch__source-starts-all");
+     moreSources.appendChild(element(
+      "summary", "rm-arch__source-starts-all-summary",
+      this.msg("architecture.action.show_all_sources", { count: readStarts.length - 1 })
+     ));
+     readStarts.slice(1).forEach((start) => this.appendUserComponentSourceStart(moreSources, start, false));
+     primarySource.appendChild(moreSources);
+    }
+   }
 
    // Connections owns the complete relationship and entry context.
-   const usedBySection = this.inspectorSection(this.msg("architecture.section.used_by"), connections);
    if (incoming.length > 0) {
-    incoming.forEach((neighbor) => {
-     const reference = element("div", "rm-arch__compact-reference");
-     reference.appendChild(element(
-      "strong", null, neighbor.name || this.msg("architecture.fallback.repository_component")
-     ));
-     if (this.options.openComponent) {
-      const button = element("button", "rm-arch__edge-jump rm-arch__compact-action");
-      button.type = "button";
-      button.appendChild(element(
-       "span", null, this.msg("architecture.action.open_related_component")
-      ));
-      this.listen(button, "click", () => this.options.openComponent(neighbor.component_id));
-      reference.appendChild(button);
-     }
-     usedBySection.appendChild(reference);
-    });
-   } else {
-    usedBySection.appendChild(element(
-     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_used_by")
-    ));
+    const usedBySection = this.inspectorSection(
+     this.msg("architecture.section.used_by") + " · " + String(incoming.length),
+     connections
+    );
+    this.appendBoundedInspectorRows(usedBySection, incoming, (neighbor) => this.componentRelationRow(neighbor));
    }
-   const usesSection = this.inspectorSection(this.msg("architecture.section.uses"), connections);
    if (outgoing.length > 0) {
-    outgoing.forEach((neighbor) => {
-     const reference = element("div", "rm-arch__compact-reference");
-     reference.appendChild(element(
-      "strong", null, neighbor.name || this.msg("architecture.fallback.repository_component")
-     ));
-     if (this.options.openComponent) {
-      const button = element("button", "rm-arch__edge-jump rm-arch__compact-action");
-      button.type = "button";
-      button.appendChild(element(
-       "span", null, this.msg("architecture.action.open_related_component")
-      ));
-      this.listen(button, "click", () => this.options.openComponent(neighbor.component_id));
-      reference.appendChild(button);
-     }
-     usesSection.appendChild(reference);
-    });
-   } else {
-    usesSection.appendChild(element(
-     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_uses")
-    ));
+    const usesSection = this.inspectorSection(
+     this.msg("architecture.section.uses") + " · " + String(outgoing.length),
+     connections
+    );
+    this.appendBoundedInspectorRows(usesSection, outgoing, (neighbor) => this.componentRelationRow(neighbor));
    }
 
-   const entersSection = this.inspectorSection(this.msg("architecture.section.how_work_enters"), connections);
    if (entryGroups.length > 0) {
+    const entersSection = this.inspectorSection(this.msg("architecture.section.how_work_enters"), connections);
     entryGroups.forEach((group) => {
      const groupCard = element("div", "rm-arch__entry-group");
      groupCard.appendChild(element("strong", "rm-arch__entry-group-title", this.userComponentEntryKindLabel(group.kind)));
@@ -5072,10 +5101,6 @@ function architecturePartialTruth(data) {
      });
      entersSection.appendChild(groupCard);
     });
-   } else {
-    entersSection.appendChild(element(
-     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_entry")
-    ));
    }
 
    if (array(component.shared_unit_refs).length > 0 || array(component.shared_members).length > 0) {
@@ -5094,25 +5119,30 @@ function architecturePartialTruth(data) {
 
    // Operations: exact code relations observed for this component.
    if (array(context.structural_relations).length > 0) {
-    const relations = this.inspectorSection(this.msg("architecture.section.operations"), connections);
-    array(context.structural_relations).forEach((relation) => {
+    const structuralRelations = array(context.structural_relations);
+    const relations = this.inspectorSection(
+     this.msg("architecture.section.operations") + " · " + String(structuralRelations.length),
+     connections
+    );
+    this.appendBoundedInspectorRows(relations, structuralRelations, (relation) => {
      const from = text(relation && relation.from_label) || memberLabel(relation && relation.from, this.message);
      const to = text(relation && relation.to_label) || memberLabel(relation && relation.to, this.message);
      const location = relation && relation.location;
      if (location && locationLabel(location) && typeof this.options.openLocation === "function") {
-      const action = element("button", "rm-arch__edge-jump rm-arch__compact-action");
+      const action = element("button", "rm-arch__edge-jump rm-arch__operation-row is-action");
       action.type = "button";
       action.appendChild(element("strong", null, from + " → " + to));
       action.appendChild(element("span", null, locationLabel(location)));
       this.listen(action, "click", () => this.options.openLocation(
        location.path, location.line || 0, location.column || 0
       ));
-      relations.appendChild(action);
-      return;
+      return action;
      }
-     const reference = element("div", "rm-arch__compact-reference");
+     // Without an exact source action this is evidence, not a control. A
+     // plain row avoids the false clickable-card affordance.
+     const reference = element("div", "rm-arch__operation-row is-static");
      reference.appendChild(element("strong", null, from + " → " + to));
-     relations.appendChild(reference);
+     return reference;
     });
    }
 
@@ -5122,18 +5152,15 @@ function architecturePartialTruth(data) {
    // at most two actions. Only "an observed boundary/resource callsite occurs
    // in an exact member scope" is stated — never runtime dependency,
    // ownership, reachability, read/write/order or target identity.
-   const associationEvidence = element("details", "rm-arch__evidence-limitations");
-   associationEvidence.appendChild(element(
-    "summary", "rm-arch__evidence-limitations-summary", this.msg("architecture.section.evidence_limitations")
-   ));
-   connections.appendChild(associationEvidence);
-   const associationSection = this.inspectorSection(
-    this.msg("architecture.section.observed_callsites"), associationEvidence
-   );
-   associationSection.appendChild(element(
-    "p", "rm-arch__copy", this.msg("architecture.copy.observed_callsites_limit")
-   ));
    if (associationRows.length > 0) {
+    const associationEvidence = element("details", "rm-arch__evidence-limitations");
+    associationEvidence.appendChild(element(
+     "summary", "rm-arch__evidence-limitations-summary", this.msg("architecture.section.observed_callsites")
+    ));
+    connections.appendChild(associationEvidence);
+    const associationSection = this.inspectorSection(
+     this.msg("architecture.section.observed_callsites"), associationEvidence
+    );
     // Decision 229 D2: Boundary and Resource rows sharing the same exact
     // witness coalesce into ONE visible "Observed external/state
     // interaction" row (canonical records stay distinct). Paired rows
@@ -5349,75 +5376,6 @@ function architecturePartialTruth(data) {
     associationSection.appendChild(element(
      "p", "rm-arch__limitation", this.msg("architecture.copy.association_limitations")
     ));
-   } else {
-    associationSection.appendChild(element(
-     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_callsites")
-    ));
-   }
-
-   // Read code is exact and deterministically ordered by the backend-owned
-   // context: exact symbol starts, entry starts, then package fallbacks.
-   const exactStarts = this.inspectorSection(this.msg("architecture.section.exact_starts"), readCode);
-   if (readStarts.length === 0) {
-    exactStarts.appendChild(element(
-     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_sources")
-    ));
-   } else {
-    readStarts.slice(0, 5).forEach((start) => this.appendUserComponentSourceStart(exactStarts, start, false));
-    if (readStarts.length > 5) {
-     const allSources = element("details", "rm-arch__source-starts-all");
-     allSources.appendChild(element(
-      "summary", "rm-arch__source-starts-all-summary",
-      this.msg("architecture.action.show_all_sources", { count: readStarts.length })
-     ));
-     readStarts.slice(5).forEach((start) => this.appendUserComponentSourceStart(allSources, start, false));
-     exactStarts.appendChild(allSources);
-    }
-   }
-
-   const readStudy = this.inspectorSection(this.msg("architecture.section.why_it_matters"), readCode);
-   if (primaryStudy) {
-    const study = primaryStudy.value;
-    const button = element("button", "rm-arch__edge-jump rm-arch__compact-action rm-arch__study-this-area");
-    button.type = "button";
-    button.appendChild(element("strong", null, this.msg("architecture.action.study_this_area")));
-    button.appendChild(element("span", null, study.question));
-    this.listen(button, "click", primaryStudy.open);
-    readStudy.appendChild(button);
-   } else {
-    readStudy.appendChild(element(
-     "p", "rm-arch__copy rm-arch__inspector-empty", this.msg("architecture.copy.no_observed_studies")
-    ));
-   }
-
-   const provenance = element("details", "rm-arch__evidence-limitations");
-   provenance.appendChild(element(
-    "summary", "rm-arch__evidence-limitations-summary", this.msg("architecture.section.evidence_limitations")
-   ));
-   readCode.appendChild(provenance);
-   const truth = this.inspectorSection(this.msg("architecture.section.evidence"), provenance);
-   this.appendKeyValue(truth, this.msg("architecture.label.grouping_authority"), authorityValue);
-   this.appendKeyValue(truth, this.msg("architecture.label.member_evidence"), evidenceValue);
-   array(context.package_paths).forEach((path) => truth.appendChild(element(
-    "code", "rm-arch__compact-package", path
-   )));
-   const alternates = array(component.alternate_names);
-   const alternateDescriptions = array(component.alternate_descriptions);
-   if (alternates.length > 0 || alternateDescriptions.length > 0) {
-    const alternatesSection = this.inspectorSection(
-     this.msg("architecture.section.equivalent_components"), provenance
-    );
-    alternates.forEach((name, index) => {
-     const row = element("div", "rm-arch__alternate");
-     row.appendChild(element("strong", "rm-arch__alternate-name", name));
-     if (alternateDescriptions[index]) row.appendChild(element(
-      "span", "rm-arch__alternate-description", alternateDescriptions[index]
-     ));
-     alternatesSection.appendChild(row);
-    });
-    alternateDescriptions.slice(alternates.length).forEach((description) => {
-     alternatesSection.appendChild(element("p", "rm-arch__alternate-description", description));
-    });
    }
   }
 

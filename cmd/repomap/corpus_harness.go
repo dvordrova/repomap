@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/dvordrova/repomap/internal/snapshot"
 )
 
 // Long-horizon program Phase 0: the 37-repo acceptance matrix as the release
@@ -27,10 +30,12 @@ type corpusRepo struct {
 	Kind       string `json:"kind"`
 	Tier       string `json:"tier"`
 	Archetype  string `json:"archetype"`
+	RunID      string `json:"run_id,omitempty"`
 }
 
 type corpusRunFacts struct {
 	Repository            string               `json:"repository"`
+	RunID                 string               `json:"run_id"`
 	PublicationStatus     publicationReadiness `json:"publication_status"`
 	PublicationReasons    []publicationReason  `json:"publication_reasons,omitempty"`
 	Seconds               float64              `json:"seconds"`
@@ -101,13 +106,36 @@ func runCorpusCLI(args []string, stdout io.Writer) error {
 	if len(repos) == 0 {
 		return fmt.Errorf("corpus: no repositories found")
 	}
+	if err := validateCorpusRepoSet(repos); err != nil {
+		return err
+	}
+	selectedRuns := make([]corpusRunSelection, len(repos))
+	seenRunDirs := make(map[string]string, len(repos))
+	for index, repo := range repos {
+		selected, resolveErr := resolveCorpusRun(absRoot, repo)
+		if errors.Is(resolveErr, errCorpusRunMissing) {
+			continue
+		}
+		if resolveErr != nil {
+			return resolveErr
+		}
+		if prior, duplicate := seenRunDirs[selected.RunDir]; duplicate {
+			return fmt.Errorf(
+				"corpus: repositories %q and %q resolve to the same run %q",
+				prior, repo.Repository, selected.RunID,
+			)
+		}
+		seenRunDirs[selected.RunDir] = repo.Repository
+		selectedRuns[index] = selected
+	}
 	var facts []corpusRunFacts
 	failed := 0
-	for _, repo := range repos {
-		runDir := latestCorpusRun(absRoot, repo.Repository)
-		if runDir == "" {
+	for index, repo := range repos {
+		selected := selectedRuns[index]
+		if selected.RunDir == "" {
 			f := corpusRunFacts{
 				Repository:         repo.Repository,
+				RunID:              repo.RunID,
 				PublicationStatus:  publicationFailed,
 				PublicationReasons: []publicationReason{publicationReasonArtifactsInvalid},
 				StageStates:        map[string]string{},
@@ -117,7 +145,8 @@ func runCorpusCLI(args []string, stdout io.Writer) error {
 			failed++
 			continue
 		}
-		f := collectCorpusRunFacts(repo, runDir)
+		f := collectCorpusRunFacts(repo, selected.RunDir)
+		f.RunID = selected.RunID
 		facts = append(facts, f)
 		printCorpusFact(stdout, f)
 		if f.PublicationStatus == publicationFailed {
@@ -138,8 +167,8 @@ func printCorpusFact(stdout io.Writer, f corpusRunFacts) {
 	for _, reason := range f.PublicationReasons {
 		reasons = append(reasons, string(reason))
 	}
-	fmt.Fprintf(stdout, "%s	%s	%s	report=%t	html=%t	arch=%s/%d	study=%s/%d	dup=%d	sec=%.0f	surf=%d	assoc=%d	entry_groups=%d	entry_handoffs=%d	reasons=%s\n",
-		f.Repository, f.PublicationStatus, f.ArchOutcome, f.ReportPublished, f.ReportHTMLPublished,
+	fmt.Fprintf(stdout, "%s	run=%s	%s	%s	report=%t	html=%t	arch=%s/%d	study=%s/%d	dup=%d	sec=%.0f	surf=%d	assoc=%d	entry_groups=%d	entry_handoffs=%d	reasons=%s\n",
+		f.Repository, f.RunID, f.PublicationStatus, f.ArchOutcome, f.ReportPublished, f.ReportHTMLPublished,
 		f.ArchSource, f.ArchComponents, f.StudyState, f.StudyCards,
 		f.DuplicateReadingPairs, f.Seconds, f.Surfaces, f.Associations,
 		f.EntryHandoffGroups, f.EntryHandoffs,
@@ -161,51 +190,219 @@ func discoverCorpusRepos(root string) ([]corpusRepo, error) {
 		if strings.HasPrefix(entry.Name(), "service__") {
 			kind = "service"
 		}
-		repos = append(repos, corpusRepo{Repository: name, Kind: kind})
+		repo := corpusRepo{Repository: name, Kind: kind}
+		selected, resolveErr := resolveCorpusRun(root, repo)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		repo.RunID = selected.RunID
+		repos = append(repos, repo)
 	}
 	sort.Slice(repos, func(i, j int) bool { return repos[i].Repository < repos[j].Repository })
 	return repos, nil
 }
 
-// latestCorpusRun resolves the newest run directory for one repository,
-// preferring a fresh timestamped run over runs/latest. The run-tree layout
-// prefixes each repository with its kind (cli__ or service__).
-func latestCorpusRun(root, repository string) string {
-	rel := strings.ReplaceAll(repository, "/", "__")
-	direct := filepath.Join(root, rel, "runs")
-	if info, err := os.Stat(direct); err == nil && info.IsDir() {
-		return newestRunIn(direct)
-	}
-	kind := "cli"
-	serviceDir := filepath.Join(root, "service__"+rel, "runs")
-	if info, err := os.Stat(serviceDir); err == nil && info.IsDir() {
-		return newestRunIn(serviceDir)
-	}
-	cliDir := filepath.Join(root, kind+"__"+rel, "runs")
-	return newestRunIn(cliDir)
+var errCorpusRunMissing = errors.New("corpus run is missing")
+
+type corpusRunSelection struct {
+	RunID  string
+	RunDir string
 }
 
-func newestRunIn(runsDir string) string {
-	entries, err := os.ReadDir(runsDir)
+// latestCorpusRun is retained for internal callers that only have a legacy
+// repository identity. "Latest" now means the exact runs/latest authority;
+// it never scans timestamped siblings.
+func latestCorpusRun(root, repository string) string {
+	selected, err := resolveCorpusRun(root, corpusRepo{Repository: repository})
 	if err != nil {
 		return ""
 	}
-	var dirs []string
-	for _, entry := range entries {
-		if entry.IsDir() && strings.HasPrefix(entry.Name(), "20") {
-			dirs = append(dirs, entry.Name())
+	return selected.RunDir
+}
+
+// resolveCorpusRun restores one exact launcher-owned run identity. New matrix
+// rows carry run_id. A legacy row may use only the exact runs/latest symlink,
+// which ordinary publication keeps on the selected default page. Timestamps
+// are never used because a newer multi-target sibling is not the default run.
+func resolveCorpusRun(root string, repo corpusRepo) (corpusRunSelection, error) {
+	runsDir, err := corpusRunsDir(root, repo)
+	if err != nil {
+		if errors.Is(err, errCorpusRunMissing) && repo.RunID != "" {
+			return corpusRunSelection{}, fmt.Errorf(
+				"corpus: repository %q has no run root for exact run %q",
+				repo.Repository, repo.RunID,
+			)
+		}
+		return corpusRunSelection{}, err
+	}
+	runID := repo.RunID
+	if runID == "" {
+		runID, err = corpusLatestRunID(runsDir)
+		if err != nil {
+			return corpusRunSelection{}, err
 		}
 	}
-	sort.Strings(dirs)
-	if len(dirs) == 0 {
-		return ""
+	if err := snapshot.ValidateTargetPageRunID(runID); err != nil {
+		return corpusRunSelection{}, fmt.Errorf(
+			"corpus: repository %q has invalid run_id: %w",
+			repo.Repository, err,
+		)
 	}
-	return filepath.Join(runsDir, dirs[len(dirs)-1])
+	runDir := filepath.Join(runsDir, runID)
+	if err := validateConfinedCorpusRunDir(runsDir, runDir, runID); err != nil {
+		return corpusRunSelection{}, fmt.Errorf(
+			"corpus: repository %q exact run %q: %w",
+			repo.Repository, runID, err,
+		)
+	}
+	if err := validateCorpusRunMetadataIdentity(runDir, runID); err != nil {
+		return corpusRunSelection{}, fmt.Errorf(
+			"corpus: repository %q exact run %q: %w",
+			repo.Repository, runID, err,
+		)
+	}
+	return corpusRunSelection{RunID: runID, RunDir: runDir}, nil
+}
+
+func corpusRunsDir(root string, repo corpusRepo) (string, error) {
+	if strings.TrimSpace(repo.Repository) == "" || repo.Repository != strings.TrimSpace(repo.Repository) {
+		return "", fmt.Errorf("corpus: repository identity is empty or padded")
+	}
+	encoded := strings.ReplaceAll(repo.Repository, "/", "__")
+	candidates := []string{filepath.Join(root, encoded, "runs")}
+	if repo.Kind != "" {
+		candidates = append(candidates, filepath.Join(root, repo.Kind+"__"+encoded, "runs"))
+	} else {
+		candidates = append(candidates,
+			filepath.Join(root, "service__"+encoded, "runs"),
+			filepath.Join(root, "cli__"+encoded, "runs"),
+		)
+	}
+	seen := make(map[string]struct{}, len(candidates))
+	found := make([]string, 0, 1)
+	for _, candidate := range candidates {
+		abs, err := filepath.Abs(candidate)
+		if err != nil {
+			return "", fmt.Errorf("corpus: resolve repository run root: %w", err)
+		}
+		if _, duplicate := seen[abs]; duplicate {
+			continue
+		}
+		seen[abs] = struct{}{}
+		if err := validateCorpusRunsRoot(root, abs); err != nil {
+			return "", fmt.Errorf("corpus: repository %q run root: %w", repo.Repository, err)
+		}
+		info, err := os.Lstat(abs)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return "", fmt.Errorf("corpus: inspect repository %q run root: %w", repo.Repository, err)
+		}
+		if !info.IsDir() {
+			return "", fmt.Errorf("corpus: repository %q run root is not a directory", repo.Repository)
+		}
+		found = append(found, abs)
+	}
+	if len(found) == 0 {
+		return "", errCorpusRunMissing
+	}
+	if len(found) != 1 {
+		return "", fmt.Errorf("corpus: repository %q has ambiguous run roots", repo.Repository)
+	}
+	return found[0], nil
+}
+
+func corpusLatestRunID(runsDir string) (string, error) {
+	latest := filepath.Join(runsDir, "latest")
+	info, err := os.Lstat(latest)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", errCorpusRunMissing
+	}
+	if err != nil {
+		return "", fmt.Errorf("corpus: inspect runs/latest: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return "", fmt.Errorf("corpus: runs/latest is not an exact run symlink")
+	}
+	runID, err := os.Readlink(latest)
+	if err != nil {
+		return "", fmt.Errorf("corpus: read runs/latest: %w", err)
+	}
+	if filepath.IsAbs(runID) || filepath.Base(runID) != runID {
+		return "", fmt.Errorf("corpus: runs/latest does not name one confined run id")
+	}
+	if err := snapshot.ValidateTargetPageRunID(runID); err != nil {
+		return "", fmt.Errorf("corpus: runs/latest has invalid run id: %w", err)
+	}
+	return runID, nil
+}
+
+func validateCorpusRunsRoot(root, runsDir string) error {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(absRoot, runsDir)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("path escapes corpus root")
+	}
+	return nil
+}
+
+func validateConfinedCorpusRunDir(runsDir, runDir, runID string) error {
+	rel, err := filepath.Rel(runsDir, runDir)
+	if err != nil || rel != runID || filepath.Base(rel) != rel {
+		return fmt.Errorf("run path escapes repository run root")
+	}
+	info, err := os.Lstat(runDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("run id is unknown")
+	}
+	if err != nil {
+		return fmt.Errorf("inspect run directory: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("run path is not a regular directory")
+	}
+	return nil
+}
+
+func validateCorpusRunMetadataIdentity(runDir, runID string) error {
+	raw, err := os.ReadFile(filepath.Join(runDir, "metadata.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read metadata identity: %w", err)
+	}
+	var metadata struct {
+		RunID string `json:"run_id"`
+	}
+	if err := json.Unmarshal(raw, &metadata); err != nil {
+		return fmt.Errorf("decode metadata identity: %w", err)
+	}
+	if metadata.RunID != "" && metadata.RunID != runID {
+		return fmt.Errorf("metadata run_id does not match directory")
+	}
+	return nil
+}
+
+func validateCorpusRepoSet(repos []corpusRepo) error {
+	seen := make(map[string]struct{}, len(repos))
+	for _, repo := range repos {
+		if _, duplicate := seen[repo.Repository]; duplicate {
+			return fmt.Errorf("corpus: duplicate repository %q", repo.Repository)
+		}
+		seen[repo.Repository] = struct{}{}
+	}
+	return nil
 }
 
 func collectCorpusRunFacts(repo corpusRepo, runDir string) corpusRunFacts {
 	f := corpusRunFacts{
 		Repository:  repo.Repository,
+		RunID:       filepath.Base(runDir),
 		StageStates: map[string]string{},
 	}
 	metadataPath := filepath.Join(runDir, "metadata.json")

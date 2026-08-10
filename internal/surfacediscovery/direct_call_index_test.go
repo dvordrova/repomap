@@ -96,6 +96,36 @@ func persist() {}
 	}
 }
 
+func TestDirectCallIndexOwnsExactExportedDeclarationFact(t *testing.T) {
+	repository := t.TempDir()
+	writeFixtureFile(t, filepath.Join(repository, "go.mod"), "module example.com/library\n\ngo 1.25\n")
+	writeFixtureFile(t, filepath.Join(repository, "library.go"), `package library
+
+type Bot struct{}
+
+func NewBot() *Bot { return &Bot{} }
+func hidden() {}
+func (*Bot) Raw() {}
+func (*Bot) hiddenMethod() {}
+`)
+
+	result, err := Analyze(DefaultOptions(repository))
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	index := requireReadyDirectCallIndex(t, result)
+	for _, symbol := range []string{"example.com/library.NewBot", "example.com/library.(*Bot).Raw"} {
+		if node := requireDirectCallNode(t, index, symbol); !node.Exported {
+			t.Fatalf("node %q Exported = false, want producer-owned true", symbol)
+		}
+	}
+	for _, symbol := range []string{"example.com/library.hidden", "example.com/library.(*Bot).hiddenMethod"} {
+		if node := requireDirectCallNode(t, index, symbol); node.Exported {
+			t.Fatalf("node %q Exported = true, want producer-owned false", symbol)
+		}
+	}
+}
+
 func TestDirectCallIndexSnapshotOwnsAllMutableStorage(t *testing.T) {
 	source := DirectCallIndex{
 		Version: DirectCallIndexVersion,

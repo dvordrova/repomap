@@ -372,7 +372,7 @@ func operationalFixtureRepo(t *testing.T) string {
 
 	repo := t.TempDir()
 	writeOperationalFixture(t, filepath.Join(repo, "go.mod"), "module example.com/operational\n\ngo 1.24\n")
-	writeOperationalFixture(t, filepath.Join(repo, "main.go"), "package main\nfunc main() {}\n")
+	writeOperationalFixture(t, filepath.Join(repo, "main.go"), "package main\nimport \"example.com/operational/internal/worker\"\nfunc main() { worker.Reap() }\n")
 	workerDir := filepath.Join(repo, "internal", "worker")
 	if err := os.MkdirAll(workerDir, 0o700); err != nil {
 		t.Fatal(err)

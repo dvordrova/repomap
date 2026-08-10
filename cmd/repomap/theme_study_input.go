@@ -66,6 +66,31 @@ func shapeThemeStudyCompileInput(
 	retainedEntities := make(map[string]struct{})
 	retainedEvidence := make(map[string]struct{})
 	retainedUnits := make(map[string]struct{})
+	if input.AnalysisTargetRoot != nil {
+		selected := input.AnalysisTargetRoot.AnalysisTarget
+		unit, ok := units[input.AnalysisTargetRoot.UnitID]
+		if selected.Validate() != nil || !ok ||
+			unit.Kind != repositoryatlas.UnitPackage ||
+			unit.Name != selected.PackagePath || unit.ParentID != selected.ModuleID {
+			return atlasstudy.Input{}, stats, fmt.Errorf(
+				"theme study input closure: selected library package Unit does not match the exact AnalysisTarget",
+			)
+		}
+		retainedUnits[unit.ID] = struct{}{}
+	}
+	for _, target := range input.ReadingTargets {
+		for _, principal := range target.PrincipalRefs {
+			if principal.Kind != atlasstudy.RefUnit {
+				continue
+			}
+			if input.AnalysisTargetRoot == nil || principal.ID != input.AnalysisTargetRoot.UnitID {
+				return atlasstudy.Input{}, stats, fmt.Errorf(
+					"theme study input closure: arbitrary package Unit principal is not selected",
+				)
+			}
+			retainedUnits[principal.ID] = struct{}{}
+		}
+	}
 	for _, surface := range input.Surfaces {
 		entity, ok := entities[surface.ID]
 		if !ok || entity.Kind != repositoryatlas.EntitySurface || entity.UnitID != surface.UnitID {

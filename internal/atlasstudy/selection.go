@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 )
@@ -18,6 +21,67 @@ func (err *CandidateUnavailableError) Error() string {
 		return "atlas study: typed candidate shelf unavailable"
 	}
 	return "atlas study: typed candidate shelf unavailable: " + err.Reason
+}
+
+// SelectAnalysisTargetRootFrontier returns the exact D277 provider seed
+// frontier selected by the same bounded policy as Compile. Pre-D277 inputs
+// are returned unchanged so executable/surface seed behavior is byte-stable.
+// The complete considered set remains in Compile's CandidateCoverage.
+func SelectAnalysisTargetRootFrontier(input Input) (Input, error) {
+	if input.AnalysisTargetRoot == nil {
+		return input, nil
+	}
+	canonical, _, _, err := canonicalInput(input)
+	if err != nil {
+		return Input{}, err
+	}
+	selected, _, err := selectStudyCandidates(canonical)
+	if err != nil {
+		return Input{}, err
+	}
+	return selected, nil
+}
+
+// OrderAnalysisTargetRootReadingTargets exposes the D277 provider order for an
+// already selected input. It rejects any incomplete, duplicate or non-root
+// member so Theme seed and anchor refs cannot silently diverge from the exact
+// constructor/function/receiver-family frontier after canonical ID sorting.
+func OrderAnalysisTargetRootReadingTargets(input Input) ([]ReadingTarget, error) {
+	if input.AnalysisTargetRoot == nil {
+		return nil, fmt.Errorf("atlas study: selected AnalysisTarget root scope is required")
+	}
+	targets := make(map[string]ReadingTarget, len(input.ReadingTargets))
+	for _, target := range input.ReadingTargets {
+		if _, duplicate := targets[target.ID]; duplicate {
+			return nil, fmt.Errorf("atlas study: duplicate selected public API reading target")
+		}
+		targets[target.ID] = target
+	}
+	supports := make(map[string]ReadingSupport, len(input.ReadingSupports))
+	for _, support := range input.ReadingSupports {
+		if _, duplicate := supports[support.ID]; duplicate {
+			return nil, fmt.Errorf("atlas study: duplicate selected public API support")
+		}
+		supports[support.ID] = support
+	}
+	ordered := orderedStudySpans(input.RouteSpans, supports, targets)
+	result := make([]ReadingTarget, 0, len(ordered))
+	seen := make(map[string]struct{}, len(ordered))
+	for _, span := range ordered {
+		target, ok := publicAPIRootSpanTarget(span, supports, targets)
+		if !ok {
+			return nil, fmt.Errorf("atlas study: selected AnalysisTarget frontier contains a non-root span")
+		}
+		if _, duplicate := seen[target.ID]; duplicate {
+			return nil, fmt.Errorf("atlas study: selected public API reading target appears more than once")
+		}
+		seen[target.ID] = struct{}{}
+		result = append(result, target)
+	}
+	if len(result) != len(input.ReadingTargets) {
+		return nil, fmt.Errorf("atlas study: selected public API reading frontier is incomplete")
+	}
+	return result, nil
 }
 
 func selectStudyCandidates(input Input) (Input, CandidateCoverage, error) {
@@ -90,7 +154,9 @@ func selectStudyCandidates(input Input) (Input, CandidateCoverage, error) {
 	// eligible only through their exact producer join (they already carry
 	// Joins); the frontier is capped at MaxAdvertisedSpans. Selection order is
 	// a request-budget mechanism, never semantic importance.
-	selectedSpans := selectSpansByRole(consideredSpans, supportByID, roles, input.Limits.MaxAdvertisedSpans)
+	selectedSpans := selectSpansByRole(
+		consideredSpans, supportByID, targets, roles, input.Limits.MaxAdvertisedSpans,
+	)
 	if selectedSpans == nil {
 		return Input{}, CandidateCoverage{}, &CandidateUnavailableError{Reason: "advertised span budget cannot represent every observed support role"}
 	}
@@ -144,13 +210,18 @@ func validSupportAuthority(role SupportRole, authority repositoryatlas.Authority
 // package family cannot monopolize the frontier, then remaining spans fill by
 // ID order up to the limit. Selection order is a request-budget mechanism,
 // never semantic importance.
-func selectSpansByRole(spans []RouteSpan, supports map[string]ReadingSupport, roles []SupportRole, limit int) []RouteSpan {
-	result := minimumSpansByRole(spans, supports, roles, limit)
+func selectSpansByRole(
+	spans []RouteSpan,
+	supports map[string]ReadingSupport,
+	targets map[string]ReadingTarget,
+	roles []SupportRole,
+	limit int,
+) []RouteSpan {
+	ordered := orderedStudySpans(spans, supports, targets)
+	result := minimumSpansByRole(ordered, supports, roles, limit)
 	if result == nil {
 		return nil
 	}
-	ordered := cloneRouteSpans(spans)
-	sort.Slice(ordered, func(i, j int) bool { return ordered[i].ID < ordered[j].ID })
 	selected := make(map[string]struct{}, len(result))
 	coveredBuckets := make(map[string]struct{})
 	for _, span := range result {
@@ -248,7 +319,6 @@ func minimumSpansByRole(spans []RouteSpan, supports map[string]ReadingSupport, r
 		return nil
 	}
 	ordered := cloneRouteSpans(spans)
-	sort.Slice(ordered, func(i, j int) bool { return ordered[i].ID < ordered[j].ID })
 	selected := make(map[string]struct{})
 	covered := make(map[SupportRole]struct{})
 	result := make([]RouteSpan, 0, min(limit, len(spans)))
@@ -262,8 +332,7 @@ func minimumSpansByRole(spans []RouteSpan, supports map[string]ReadingSupport, r
 				continue
 			}
 			if spanHasRole(span, supports, role) && (chosen < 0 ||
-				len(span.AllowedTargetIDs) < len(ordered[chosen].AllowedTargetIDs) ||
-				(len(span.AllowedTargetIDs) == len(ordered[chosen].AllowedTargetIDs) && span.ID < ordered[chosen].ID)) {
+				len(span.AllowedTargetIDs) < len(ordered[chosen].AllowedTargetIDs)) {
 				chosen = index
 			}
 		}
@@ -279,6 +348,138 @@ func minimumSpansByRole(spans []RouteSpan, supports map[string]ReadingSupport, r
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result
+}
+
+// orderedStudySpans preserves the existing ID order for every pre-D277 span.
+// Focused public-API roots use a Go-only request-budget order: constructors,
+// other top-level functions, then receiver-family round-robin methods. Source
+// position, not opaque/hash identity, owns ordering inside each group.
+func orderedStudySpans(
+	spans []RouteSpan,
+	supports map[string]ReadingSupport,
+	targets map[string]ReadingTarget,
+) []RouteSpan {
+	result := cloneRouteSpans(spans)
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+
+	var constructors, functions []RouteSpan
+	methodFamilies := make(map[string][]RouteSpan)
+	rootIDs := make(map[string]struct{})
+	for _, span := range result {
+		target, ok := publicAPIRootSpanTarget(span, supports, targets)
+		if !ok {
+			continue
+		}
+		rootIDs[span.ID] = struct{}{}
+		switch target.Kind {
+		case ReadingTargetFunction:
+			if goConstructorName(target.Label) {
+				constructors = append(constructors, span)
+			} else {
+				functions = append(functions, span)
+			}
+		case ReadingTargetMethod:
+			receiver, _, ok := strings.Cut(target.Label, ".")
+			if !ok || receiver == "" {
+				receiver = target.Label
+			}
+			methodFamilies[receiver] = append(methodFamilies[receiver], span)
+		}
+	}
+	spanSourceLess := func(left, right RouteSpan) bool {
+		leftTarget, _ := publicAPIRootSpanTarget(left, supports, targets)
+		rightTarget, _ := publicAPIRootSpanTarget(right, supports, targets)
+		return readingTargetSourceLess(leftTarget, rightTarget)
+	}
+	sort.SliceStable(constructors, func(i, j int) bool { return spanSourceLess(constructors[i], constructors[j]) })
+	sort.SliceStable(functions, func(i, j int) bool { return spanSourceLess(functions[i], functions[j]) })
+	type methodFamily struct {
+		name  string
+		spans []RouteSpan
+	}
+	families := make([]methodFamily, 0, len(methodFamilies))
+	for name, values := range methodFamilies {
+		sort.SliceStable(values, func(i, j int) bool { return spanSourceLess(values[i], values[j]) })
+		families = append(families, methodFamily{name: name, spans: values})
+	}
+	sort.Slice(families, func(i, j int) bool {
+		left, _ := publicAPIRootSpanTarget(families[i].spans[0], supports, targets)
+		right, _ := publicAPIRootSpanTarget(families[j].spans[0], supports, targets)
+		if readingTargetSourceLess(left, right) {
+			return true
+		}
+		if readingTargetSourceLess(right, left) {
+			return false
+		}
+		return families[i].name < families[j].name
+	})
+	orderedRoots := append(constructors, functions...)
+	for remaining := true; remaining; {
+		remaining = false
+		for index := range families {
+			if len(families[index].spans) == 0 {
+				continue
+			}
+			remaining = true
+			orderedRoots = append(orderedRoots, families[index].spans[0])
+			families[index].spans = families[index].spans[1:]
+		}
+	}
+
+	// Replace only the root slots in the existing ordering. This leaves the
+	// cross-role behavior and every executable/non-root byte unchanged.
+	next := 0
+	for index := range result {
+		if _, root := rootIDs[result[index].ID]; root {
+			result[index] = orderedRoots[next]
+			next++
+		}
+	}
+	return result
+}
+
+func goConstructorName(name string) bool {
+	if name == "New" {
+		return true
+	}
+	if !strings.HasPrefix(name, "New") || len(name) == len("New") {
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(name[len("New"):])
+	return unicode.IsUpper(r) || unicode.IsDigit(r)
+}
+
+func publicAPIRootSpanTarget(
+	span RouteSpan,
+	supports map[string]ReadingSupport,
+	targets map[string]ReadingTarget,
+) (ReadingTarget, bool) {
+	if span.Kind != RouteSpanFocused || len(span.RequiredSupportIDs) != 1 ||
+		len(span.AllowedTargetIDs) != 1 {
+		return ReadingTarget{}, false
+	}
+	support, ok := supports[span.RequiredSupportIDs[0]]
+	if !ok || support.Role != SupportAnalysisTargetRoot || support.TargetID != span.AllowedTargetIDs[0] {
+		return ReadingTarget{}, false
+	}
+	target, ok := targets[support.TargetID]
+	return target, ok && (target.Kind == ReadingTargetFunction || target.Kind == ReadingTargetMethod)
+}
+
+func readingTargetSourceLess(left, right ReadingTarget) bool {
+	if left.Location.Path != right.Location.Path {
+		return left.Location.Path < right.Location.Path
+	}
+	if left.Location.Line != right.Location.Line {
+		return left.Location.Line < right.Location.Line
+	}
+	if left.Location.Column != right.Location.Column {
+		return left.Location.Column < right.Location.Column
+	}
+	if left.Label != right.Label {
+		return left.Label < right.Label
+	}
+	return left.Symbol < right.Symbol
 }
 
 func spanHasRole(span RouteSpan, supports map[string]ReadingSupport, role SupportRole) bool {

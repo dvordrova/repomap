@@ -148,7 +148,10 @@ func validateAggregateCards(compilation *Compilation, cards []CardResult) error 
 		}
 		previousPath := ""
 		for _, mechanism := range result.Mechanisms {
-			resolved, code := validateCandidate(Candidate{EdgeRefs: mechanism.EdgeRefs}, edges, card.Readings)
+			resolved, code := validateCandidate(
+				Candidate{EdgeRefs: mechanism.EdgeRefs}, edges, card.Readings,
+				compilation.authority[card.Ref].targetRootRefs,
+			)
 			if code != "" || !reflect.DeepEqual(resolved, mechanism) {
 				return fmt.Errorf("mechanism study: aggregate mechanism is not exact")
 			}
@@ -183,7 +186,8 @@ func validateAggregateCards(compilation *Compilation, cards []CardResult) error 
 func (code IssueCode) valid() bool {
 	switch code {
 	case IssueInvalidShape, IssueUnknownRef, IssueDisconnected, IssueDuplicateRef,
-		IssueDuplicatePath, IssueOverBound, IssueNoReadingTie, IssueMissingCard, IssueDuplicateCard:
+		IssueDuplicatePath, IssueOverBound, IssueNoReadingTie, IssueNotTargetRooted,
+		IssueMissingCard, IssueDuplicateCard:
 		return true
 	default:
 		return false

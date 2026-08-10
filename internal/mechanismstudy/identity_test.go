@@ -13,17 +13,20 @@ func TestPersistedStudyMechanismIdentityIsPinned(t *testing.T) {
 	if CompilationVersion != 2 {
 		t.Fatalf("CompilationVersion = %d, want 2", CompilationVersion)
 	}
-	if RequestVersion != 2 {
-		t.Fatalf("RequestVersion = %d, want 2", RequestVersion)
+	if RequestVersion != 3 {
+		t.Fatalf("RequestVersion = %d, want 3", RequestVersion)
 	}
 	if ResultVersion != 2 {
 		t.Fatalf("ResultVersion = %d, want 2", ResultVersion)
 	}
-	if PromptVersion != "mechanism-study-prompt-218f4d98678d" {
-		t.Fatalf("PromptVersion = %q, want %q", PromptVersion, "mechanism-study-prompt-218f4d98678d")
+	if StudyRootBindingsVersion != 1 {
+		t.Fatalf("StudyRootBindingsVersion = %d, want 1", StudyRootBindingsVersion)
 	}
-	if surfacediscovery.DirectCallIndexVersion != 1 {
-		t.Fatalf("DirectCallIndexVersion = %d, want 1", surfacediscovery.DirectCallIndexVersion)
+	if PromptVersion != "mechanism-study-prompt-a4099fdb0893" {
+		t.Fatalf("PromptVersion = %q, want %q", PromptVersion, "mechanism-study-prompt-a4099fdb0893")
+	}
+	if surfacediscovery.DirectCallIndexVersion != 2 {
+		t.Fatalf("DirectCallIndexVersion = %d, want 2", surfacediscovery.DirectCallIndexVersion)
 	}
 }
 

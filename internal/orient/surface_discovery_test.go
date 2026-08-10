@@ -133,7 +133,7 @@ func TestSurfaceDiscoveryInputPreservesExactEntrypointAnchors(t *testing.T) {
 				Path: "service/cmd/fixture/main.go", Line: 23,
 			}},
 		}},
-	})
+	}, nil)
 	if input.RepositoryName != "fixture" || len(input.Entrypoints) != 1 ||
 		!reflect.DeepEqual(input.ModuleDirs, []string{"service"}) ||
 		len(input.Entrypoints[0].Anchors) != 1 ||

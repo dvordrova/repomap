@@ -26,6 +26,8 @@ func TestCurrentWorkspaceHasOneAuthorityPerConcept(t *testing.T) {
 		`id="rm-overview"`,
 		`id="rm-mechanisms"`,
 		`id="rm-mechanism-detail"`,
+		`id="rm-study-overview"`,
+		`id="rm-study-detail"`,
 	} {
 		if strings.Contains(templateHTML, forbidden) {
 			t.Errorf("current report template still publishes legacy DOM %q", forbidden)
@@ -33,8 +35,6 @@ func TestCurrentWorkspaceHasOneAuthorityPerConcept(t *testing.T) {
 	}
 	for _, token := range []string{
 		`id="rm-architecture"`,
-		`id="rm-study-overview"`,
-		`id="rm-study-detail"`,
 		`id="rm-task-investigation"`,
 		`id="rm-source-drawer"`,
 	} {

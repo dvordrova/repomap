@@ -1,5 +1,10 @@
 # Config-driven Go runtime-surface discovery
 
+> Historical design record. Decision 273 replaced the ordinary framework and
+> Cobra producers described below with one positive framework-free core Go
+> analysis path. The old persisted schemas/readers remain for saved-run
+> compatibility; fresh runs do not execute those producers.
+
 Status: bounded analyzer experiment with a production presentation projection
 for persisted Go runs. The catalog remains separate from recommendation and
 FlowProof completion claims.

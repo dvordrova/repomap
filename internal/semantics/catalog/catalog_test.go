@@ -39,6 +39,32 @@ func TestBuiltin(t *testing.T) {
 	}
 }
 
+func TestCoreIsPositiveAndFrameworkIndependent(t *testing.T) {
+	t.Parallel()
+
+	core, err := Core()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(core.Seeds) != 11 {
+		t.Fatalf("core seed count = %d, want 11", len(core.Seeds))
+	}
+	for _, seed := range core.Seeds {
+		if seed.Effect.Framework != "net/http" && seed.Effect.Framework != "errgroup" {
+			t.Fatalf("non-core seed reached ordinary catalog: %#v", seed)
+		}
+	}
+	for _, want := range []string{"net-http-listen-and-serve", "x-sync-errgroup-go"} {
+		found := false
+		for _, seed := range core.Seeds {
+			found = found || seed.ID == want
+		}
+		if !found {
+			t.Errorf("core catalog is missing %q", want)
+		}
+	}
+}
+
 func TestDecodeRejectsInvalidCatalog(t *testing.T) {
 	t.Parallel()
 

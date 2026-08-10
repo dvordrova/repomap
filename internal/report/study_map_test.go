@@ -262,7 +262,7 @@ func TestReplaySavedIncompleteStudyRetainsExactStartsFromRejectedAttempt(t *test
 	runDir := t.TempDir()
 	writeTestFile(t, runDir, studymap.BundleFile, string(bundleRaw))
 	writeTestFile(t, runDir, studymap.DirectionsAttemptFile, string(attemptRaw))
-	writeTestFile(t, runDir, "snapshot.json", string(snapshotRaw))
+	writeTestFile(t, runDir, "snapshot.json", string(snapshotJSONWithAnalysisTarget(t, snapshotRaw)))
 	data := &ReportData{RepoName: "fixture", CapturedRevision: "deadbeef"}
 	if warning := replaySavedIncompleteStudy(
 		data,
@@ -541,7 +541,7 @@ func TestGenerateAuthorizedAttachesStudyDocumentSourceFallbackWithoutChangingRec
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeTestFile(t, runDir, "snapshot.json", string(snapshotRaw))
+	writeTestFile(t, runDir, "snapshot.json", string(snapshotJSONWithAnalysisTarget(t, snapshotRaw)))
 	recordRaw, err := json.Marshal(record)
 	if err != nil {
 		t.Fatal(err)

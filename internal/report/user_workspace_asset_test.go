@@ -133,6 +133,7 @@ class Element {
     this.children = [];
     this.attributes = {};
     this.hidden = false;
+    this.open = false;
     this.classList = { add() {}, remove() {}, toggle() {} };
   }
   get childNodes() { return this.children; }
@@ -244,8 +245,7 @@ const report = {
 };
 const roots = {
   "rm-overview": new Element("section"),
-  "rm-study-overview": new Element("section"),
-  "rm-study-detail": new Element("section"),
+  "rm-study": new Element("section"),
 };
 const window = {
   location: { search: "", hash: "#/map", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
@@ -269,33 +269,20 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
 });
 const api = window.__REPOMAP_WORKSPACE_TEST__;
 function text(node) { return String(node.textContent || "") + (node.children || []).map(text).join(""); }
-const route = api.parseWorkspaceHash("#/study/study-routing", [mechanism], null);
-const incompleteOverviewRoute = api.parseWorkspaceHash("#/study", [mechanism], null);
-const incompleteRoute = api.parseWorkspaceHash("#/study/study-incomplete", [mechanism], null);
-const attachedRoute = api.parseWorkspaceHash("#/study/study-dispatch", [mechanism], null);
-const invalidRoute = api.parseWorkspaceHash("#/study/missing", [mechanism], null);
-let state = api.reduceWorkspaceState({
-  view: "overview", artifactID: "", directionID: "", stepIndex: 0,
-  sourceLocation: null, mapReturn: null, mapTarget: null,
-}, { type: "open_study", directionID: "study-routing" }, [mechanism]);
-state = api.reduceWorkspaceState(state, {
-  type: "open_source", selection: { path: "router.go", line: 11, snippet: reading.reading_anchors[0].source },
-}, [mechanism]);
-const sourceState = state;
-state = api.reduceWorkspaceState(state, { type: "close_source" }, [mechanism]);
-const closedState = state;
-const returned = api.reduceWorkspaceState({
-  view: "architecture", artifactID: "", directionID: "study-routing", stepIndex: 0,
-  sourceLocation: null, mapReturn: { directionID: "study-routing" }, mapTarget: { kind: "component", component_id: "router" },
-}, { type: "return_from_map" }, [mechanism]);
+function walk(root) {
+  const result = [];
+  (function visit(node) { if (!node) return; result.push(node); (node.children || []).forEach(visit); })(root);
+  return result;
+}
+const legacyReadingRoute = api.parseWorkspaceHash("#/study/study-routing", null);
+const studyRoute = api.parseWorkspaceHash("#/study", null);
+const legacyIncompleteRoute = api.parseWorkspaceHash("#/study/study-incomplete", null);
+const legacyAttachedRoute = api.parseWorkspaceHash("#/study/study-dispatch", null);
+const invalidRoute = api.parseWorkspaceHash("#/study/missing", null);
 api.renderMapSummaryInto("rm-overview");
 const shelfOverviewText = text(roots["rm-overview"]);
 api.renderIncompleteStudyOverview();
-const incompleteOverviewText = text(roots["rm-study-overview"]);
-api.openStudyDirection("study-routing");
-const completeDetailText = text(roots["rm-study-detail"]);
-api.openStudyDirection("study-incomplete");
-const incompleteDetailText = text(roots["rm-study-detail"]);
+const inlineStudyText = text(roots["rm-study"]);
 const canonicalStudyMap = report.study_map;
 delete report.incomplete_study;
 delete report.study_map;
@@ -345,14 +332,20 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
 });
 const emptyAPI = emptyWindow.__REPOMAP_WORKSPACE_TEST__;
 emptyAPI.renderMapSummaryInto("rm-overview");
-const completeOverviewRoute = emptyAPI.parseWorkspaceHash("#/study", [], null);
 const card = api.renderStudyDirectionCard(reading, 0);
+const cardNodes = walk(card);
+const cardSummary = card.children[0];
+const cardTitle = cardNodes.find((node) => String(node.className).split(/\s+/).includes("rm-study-direction-card__title"));
 process.stdout.write(JSON.stringify({
-  route, incompleteOverviewRoute, completeOverviewRoute, incompleteRoute, attachedRoute, invalidRoute,
-  sourceState, closedState, returned,
+  legacyReadingRoute, studyRoute, legacyIncompleteRoute, legacyAttachedRoute, invalidRoute,
   shelfOverviewText, topicOverviewText: text(topicRoots["rm-overview"]),
   emptyShelfOverviewText: text(emptyRoots["rm-overview"]), cardText: text(card),
-  incompleteOverviewText, completeDetailText, incompleteDetailText,
+  inlineStudyText,
+  cardTag: card.tagName,
+  cardSummaryTag: cardSummary && cardSummary.tagName,
+  cardTitleTag: cardTitle && cardTitle.tagName,
+  cardTitleHasClick: !!(cardTitle && typeof cardTitle.onclick === "function"),
+  cardBodyText: card.children[1] && text(card.children[1]),
 }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "study-map-workspace-test.js")
@@ -364,109 +357,73 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("run Study Map workspace smoke: %v\n%s", err, output)
 	}
 	var got struct {
-		Route struct {
+		LegacyReadingRoute struct {
 			Valid         bool   `json:"valid"`
 			CanonicalHash string `json:"canonicalHash"`
 			State         struct {
 				View        string `json:"view"`
 				DirectionID string `json:"directionID"`
 			} `json:"state"`
-		} `json:"route"`
-		AttachedRoute struct {
+		} `json:"legacyReadingRoute"`
+		LegacyAttachedRoute struct {
+			Valid         bool   `json:"valid"`
 			CanonicalHash string `json:"canonicalHash"`
 			State         struct {
 				View        string `json:"view"`
 				DirectionID string `json:"directionID"`
 			} `json:"state"`
-		} `json:"attachedRoute"`
-		IncompleteOverviewRoute struct {
+		} `json:"legacyAttachedRoute"`
+		StudyRoute struct {
 			Valid         bool   `json:"valid"`
 			CanonicalHash string `json:"canonicalHash"`
 			State         struct {
 				View string `json:"view"`
 			} `json:"state"`
-		} `json:"incompleteOverviewRoute"`
-		CompleteOverviewRoute struct {
-			Valid         bool   `json:"valid"`
-			CanonicalHash string `json:"canonicalHash"`
-			State         struct {
-				View string `json:"view"`
-			} `json:"state"`
-		} `json:"completeOverviewRoute"`
-		IncompleteRoute struct {
+		} `json:"studyRoute"`
+		LegacyIncompleteRoute struct {
 			Valid         bool   `json:"valid"`
 			CanonicalHash string `json:"canonicalHash"`
 			State         struct {
 				View        string `json:"view"`
 				DirectionID string `json:"directionID"`
 			} `json:"state"`
-		} `json:"incompleteRoute"`
+		} `json:"legacyIncompleteRoute"`
 		InvalidRoute struct {
 			Valid         bool   `json:"valid"`
 			CanonicalHash string `json:"canonicalHash"`
 		} `json:"invalidRoute"`
-		SourceState struct {
-			View           string `json:"view"`
-			DirectionID    string `json:"directionID"`
-			SourceLocation any    `json:"sourceLocation"`
-		} `json:"sourceState"`
-		ClosedState struct {
-			View           string `json:"view"`
-			DirectionID    string `json:"directionID"`
-			SourceLocation any    `json:"sourceLocation"`
-		} `json:"closedState"`
-		Returned struct {
-			View        string `json:"view"`
-			DirectionID string `json:"directionID"`
-		} `json:"returned"`
 		ShelfOverviewText      string `json:"shelfOverviewText"`
 		TopicOverviewText      string `json:"topicOverviewText"`
 		EmptyShelfOverviewText string `json:"emptyShelfOverviewText"`
 		CardText               string `json:"cardText"`
-		IncompleteOverviewText string `json:"incompleteOverviewText"`
-		CompleteDetailText     string `json:"completeDetailText"`
-		IncompleteDetailText   string `json:"incompleteDetailText"`
+		InlineStudyText        string `json:"inlineStudyText"`
+		CardTag                string `json:"cardTag"`
+		CardSummaryTag         string `json:"cardSummaryTag"`
+		CardTitleTag           string `json:"cardTitleTag"`
+		CardTitleHasClick      bool   `json:"cardTitleHasClick"`
+		CardBodyText           string `json:"cardBodyText"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode Study Map workspace smoke: %v\n%s", err, output)
 	}
-	if !got.Route.Valid || got.Route.CanonicalHash != "#/study/study-routing" ||
-		got.Route.State.View != "study" || got.Route.State.DirectionID != "study-routing" {
-		t.Fatalf("reading route = %#v", got.Route)
+	if !got.LegacyReadingRoute.Valid || got.LegacyReadingRoute.CanonicalHash != "#study" ||
+		got.LegacyReadingRoute.State.View != "map" || got.LegacyReadingRoute.State.DirectionID != "" {
+		t.Fatalf("legacy reading route = %#v", got.LegacyReadingRoute)
 	}
-	if got.AttachedRoute.CanonicalHash != "#/study/study-dispatch" ||
-		got.AttachedRoute.State.View != "study" || got.AttachedRoute.State.DirectionID != "study-dispatch" {
-		t.Fatalf("attached route = %#v", got.AttachedRoute)
+	if !got.LegacyAttachedRoute.Valid || got.LegacyAttachedRoute.CanonicalHash != "#study" ||
+		got.LegacyAttachedRoute.State.View != "map" || got.LegacyAttachedRoute.State.DirectionID != "" {
+		t.Fatalf("legacy attached route = %#v", got.LegacyAttachedRoute)
 	}
-	if !got.IncompleteOverviewRoute.Valid ||
-		got.IncompleteOverviewRoute.CanonicalHash != "#/study" ||
-		got.IncompleteOverviewRoute.State.View != "study_overview" {
-		t.Fatalf("Study overview route = %#v", got.IncompleteOverviewRoute)
+	if !got.StudyRoute.Valid || got.StudyRoute.CanonicalHash != "#study" ||
+		got.StudyRoute.State.View != "map" {
+		t.Fatalf("inline Study route = %#v", got.StudyRoute)
 	}
-	if !got.CompleteOverviewRoute.Valid ||
-		got.CompleteOverviewRoute.CanonicalHash != "#/study" ||
-		got.CompleteOverviewRoute.State.View != "study_overview" {
-		t.Fatalf("complete-only Study overview route = %#v", got.CompleteOverviewRoute)
+	if !got.LegacyIncompleteRoute.Valid || got.LegacyIncompleteRoute.CanonicalHash != "#study" ||
+		got.LegacyIncompleteRoute.State.View != "map" || got.LegacyIncompleteRoute.State.DirectionID != "" {
+		t.Fatalf("legacy incomplete Study route = %#v", got.LegacyIncompleteRoute)
 	}
-	if !got.IncompleteRoute.Valid ||
-		got.IncompleteRoute.CanonicalHash != "#/study/study-incomplete" ||
-		got.IncompleteRoute.State.View != "study" ||
-		got.IncompleteRoute.State.DirectionID != "study-incomplete" {
-		t.Fatalf("incomplete Study detail route = %#v", got.IncompleteRoute)
-	}
-	if got.InvalidRoute.Valid || got.InvalidRoute.CanonicalHash != "#/map" {
+	if got.InvalidRoute.Valid || got.InvalidRoute.CanonicalHash != "#canvas" {
 		t.Fatalf("invalid route = %#v", got.InvalidRoute)
-	}
-	if got.SourceState.View != "study" || got.SourceState.DirectionID != "study-routing" || got.SourceState.SourceLocation == nil ||
-		got.ClosedState.View != "study" || got.ClosedState.DirectionID != "study-routing" || got.ClosedState.SourceLocation != nil {
-		t.Fatalf("source drawer changed reading context: source=%#v closed=%#v", got.SourceState, got.ClosedState)
-	}
-	if got.Returned.View != "study" || got.Returned.DirectionID != "study-routing" {
-		t.Fatalf("map return = %#v", got.Returned)
-	}
-	if !strings.Contains(got.CompleteDetailText, "← All Study directions") ||
-		strings.Contains(got.CompleteDetailText, "← Repository overview") {
-		t.Fatalf("complete Study detail has inconsistent return action: %q", got.CompleteDetailText)
 	}
 	for _, token := range []string{
 		"Repository brief",
@@ -530,13 +487,17 @@ process.stdout.write(JSON.stringify({
 		"How does etcd persist and recover durable state?",
 		"How do etcdctl and clientv3 send requests to an etcd server?",
 	} {
-		if !strings.Contains(got.IncompleteOverviewText, token) {
-			t.Errorf("canonical Study overview is missing %q: %q", token, got.IncompleteOverviewText)
+		if !strings.Contains(got.InlineStudyText, token) {
+			t.Errorf("inline Study shelf is missing %q: %q", token, got.InlineStudyText)
 		}
 	}
-	for _, rendered := range []string{got.IncompleteOverviewText, got.EmptyShelfOverviewText, got.ShelfOverviewText} {
+	if got.CardTag != "details" || got.CardSummaryTag != "summary" || got.CardTitleTag != "span" ||
+		got.CardTitleHasClick || !strings.Contains(got.CardBodyText, "router.go:11") {
+		t.Fatalf("Study disclosure is not native inline details/summary with its exact reading body: %#v", got)
+	}
+	for _, rendered := range []string{got.InlineStudyText, got.EmptyShelfOverviewText, got.ShelfOverviewText} {
 		if strings.Contains(rendered, "Explore this direction") || strings.Contains(rendered, "Open ready deep dive") {
-			t.Fatalf("canonical Study retained a generic route CTA: %q", rendered)
+			t.Fatalf("inline Study retained a generic route CTA: %q", rendered)
 		}
 	}
 	for _, forbidden := range []string{
@@ -546,23 +507,12 @@ process.stdout.write(JSON.stringify({
 		"Asset upload and storage",
 		"Server initialization and bootstrap",
 	} {
-		if strings.Contains(got.IncompleteOverviewText+got.EmptyShelfOverviewText, forbidden) {
-			t.Fatalf("canonical Study publication exposed rejected or ineligible %q: %q / %q", forbidden, got.IncompleteOverviewText, got.EmptyShelfOverviewText)
+		if strings.Contains(got.InlineStudyText+got.EmptyShelfOverviewText, forbidden) {
+			t.Fatalf("canonical Study publication exposed rejected or ineligible %q: %q / %q", forbidden, got.InlineStudyText, got.EmptyShelfOverviewText)
 		}
 	}
-	for _, token := range []string{
-		"Incomplete Study direction",
-		"Where should I begin examining request admission?",
-		"You can locate the exact saved admission declaration.",
-		"Route",
-		"router.go:11",
-	} {
-		if !strings.Contains(got.IncompleteDetailText, token) {
-			t.Errorf("incomplete Study detail is missing %q: %q", token, got.IncompleteDetailText)
-		}
-	}
-	if strings.Contains(got.IncompleteOverviewText+got.IncompleteDetailText, "Search") {
-		t.Fatalf("incomplete Study reintroduced Search: %q / %q", got.IncompleteOverviewText, got.IncompleteDetailText)
+	if strings.Contains(got.InlineStudyText, "Search") {
+		t.Fatalf("inline Study reintroduced Search: %q", got.InlineStudyText)
 	}
 }
 
@@ -732,8 +682,6 @@ const report = {
 };
 const roots = {
   "rm-overview": new Element("section"),
-  "rm-study-detail": new Element("section"),
-  "rm-study-overview": new Element("section"),
   "rm-architecture": new Element("section"),
   "rm-source-drawer": new Element("aside"),
   "rm-source-drawer-content": new Element("div"),
@@ -743,7 +691,7 @@ const workspace = new Element("main");
 let openedURLs = 0;
 let openedFirstURL = "";
 const window = {
-  location: { search: "", hash: "#/map", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  location: { search: "", hash: "#canvas", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   history: {
     state: null,
     pushState(state, _, hash) { this.state = state; window.location.hash = hash; },
@@ -792,9 +740,16 @@ const drawerHash = window.location.hash;
 const drawerHistory = window.history.state && window.history.state.sourceDrawer;
 const drawerHidden = roots["rm-source-drawer"].hidden;
 const studyCard = walk(roots["rm-overview"]).find((node) => String(node.className).split(/\s+/).includes("rm-study-direction-card"));
-walk(studyCard).find((node) => String(node.className).split(/\s+/).includes("rm-study-direction-card__title")).onclick();
-const studyState = api.workspaceStateSnapshot();
-const studyHash = window.location.hash;
+const studySummary = walk(studyCard).find((node) => String(node.className).split(/\s+/).includes("rm-study-direction-card__summary"));
+const studyTitle = walk(studyCard).find((node) => String(node.className).split(/\s+/).includes("rm-study-direction-card__title"));
+const studyDisclosure = {
+  tag: studyCard && studyCard.tagName,
+  summaryTag: studySummary && studySummary.tagName,
+  titleTag: studyTitle && studyTitle.tagName,
+  titleHasClick: !!(studyTitle && typeof studyTitle.onclick === "function"),
+  bodyText: text(studyCard),
+};
+studyCard.open = true;
 const firstComponentPrimary = componentCards[0] && walk(componentCards[0]).find((node) => String(node.className).split(/\s+/).includes("rm-overview-object-primary"));
 firstComponentPrimary.onclick();
 const architectureState = api.workspaceStateSnapshot();
@@ -804,7 +759,7 @@ const exactEnd = api.exactOverviewSourceForLocation({ path: "surface-a.go", line
 function renderIsolatedOverview(isolatedReport, isolatedLocation) {
   const isolatedRoot = new Element("section");
   const isolatedWindow = {
-    location: isolatedLocation || { search: "", hash: "#/map", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+    location: isolatedLocation || { search: "", hash: "#canvas", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
     __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
   };
   const isolatedDocument = {
@@ -876,7 +831,7 @@ const fallbackReport = JSON.parse(JSON.stringify(report));
 fallbackReport.user_sources = [componentA];
 const fallbackRoot = new Element("section");
 const fallbackWindow = {
-  location: { search: "", hash: "#/map", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  location: { search: "", hash: "#canvas", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
 };
 const fallbackDocument = {
@@ -908,7 +863,7 @@ noStudyReport.study_publication = {
 };
 const noStudyRoot = new Element("section");
 const noStudyWindow = {
-  location: { search: "", hash: "#/map", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  location: { search: "", hash: "#canvas", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {},
 };
 const noStudyDocument = {
@@ -946,7 +901,7 @@ process.stdout.write(JSON.stringify({
   componentIDs: componentCards.map((card) => card.attributes["data-rm-object-id"]),
   cardText: surfaceCards.concat(componentCards).map(text), renderedText,
   drawerState, drawerHash, drawerHistory, drawerHidden, openedURLs, openedFirstURL,
-  studyState, studyHash, architectureState, architectureHash,
+  studyDisclosure, architectureState, architectureHash,
   exactStart: exactStart && exactStart.snippet.presentation_sha256,
   exactEnd: exactEnd && exactEnd.snippet.presentation_sha256,
   ambiguous: api.exactOverviewSourceForLocation({ path: "ambiguous.go", line: 50 }),
@@ -999,11 +954,16 @@ process.stdout.write(JSON.stringify({
 			Line        int    `json:"line"`
 			DrawerFirst bool   `json:"drawer_first"`
 		} `json:"drawerHistory"`
-		DrawerHidden      bool                               `json:"drawerHidden"`
-		OpenedURLs        int                                `json:"openedURLs"`
-		OpenedFirstURL    string                             `json:"openedFirstURL"`
-		StudyState        struct{ View, DirectionID string } `json:"studyState"`
-		StudyHash         string                             `json:"studyHash"`
+		DrawerHidden    bool   `json:"drawerHidden"`
+		OpenedURLs      int    `json:"openedURLs"`
+		OpenedFirstURL  string `json:"openedFirstURL"`
+		StudyDisclosure struct {
+			Tag           string `json:"tag"`
+			SummaryTag    string `json:"summaryTag"`
+			TitleTag      string `json:"titleTag"`
+			TitleHasClick bool   `json:"titleHasClick"`
+			BodyText      string `json:"bodyText"`
+		} `json:"studyDisclosure"`
 		ArchitectureState struct {
 			View      string `json:"view"`
 			MapTarget struct {
@@ -1196,19 +1156,20 @@ process.stdout.write(JSON.stringify({
 		}
 	}
 	if got.DrawerState.View != "map" || got.DrawerState.SourceLocation != nil ||
-		got.DrawerHash != "#/map" ||
+		got.DrawerHash != "#canvas" ||
 		got.OpenedURLs != 1 ||
 		!strings.Contains(got.OpenedFirstURL, "github.com/example/fixture/blob") {
 		t.Fatalf("primary click did not jump to GitHub source: state %#v hash %q history %#v hidden=%t opened=%d first=%q",
 			got.DrawerState, got.DrawerHash, got.DrawerHistory, got.DrawerHidden, got.OpenedURLs, got.OpenedFirstURL)
 	}
-	if got.StudyState.View != "study" || got.StudyState.DirectionID != "study-exact" ||
-		got.StudyHash != "#/study/study-exact" {
-		t.Fatalf("Study route = state %#v hash %q", got.StudyState, got.StudyHash)
+	if got.StudyDisclosure.Tag != "details" || got.StudyDisclosure.SummaryTag != "summary" ||
+		got.StudyDisclosure.TitleTag != "span" || got.StudyDisclosure.TitleHasClick ||
+		!strings.Contains(got.StudyDisclosure.BodyText, "study.go:80") {
+		t.Fatalf("inline Study disclosure = %#v", got.StudyDisclosure)
 	}
 	if got.ArchitectureState.View != "map" || got.ArchitectureState.MapTarget.Kind != "component" ||
 		got.ArchitectureState.MapTarget.ComponentID != "component-a" ||
-		got.ArchitectureHash != "#/map?focus=component%3Acomponent-a" {
+		got.ArchitectureHash != "#canvas?focus=component%3Acomponent-a" {
 		t.Fatalf("same-ID Architecture focus = state %#v hash %q", got.ArchitectureState, got.ArchitectureHash)
 	}
 	if got.ExactStart != strings.Repeat("a", 64) || got.ExactEnd != strings.Repeat("a", 64) ||
@@ -1507,6 +1468,9 @@ const report = {
   study_map: { brief: {}, shape: [], directions: [
     { id: "study-a", question: "Study A", reading_anchors: [] },
   ] },
+  atlas_study: { themes: { cards: [
+    { ordinal: 1, final_title: "Theme A", final_question: "How does Theme A work?", readings: [] },
+  ] } },
 };
 const window = {
   location: { hash: "", search: "", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
@@ -1531,16 +1495,21 @@ const parsed = {};
 [
   "#/overview",
   "#/map",
+  "#canvas",
+  "#study",
+  "#study-theme-1",
   "#/mechanisms",
   "#/search",
   "#/mechanism/mechanism%2Fone",
   "#/architecture?focus=component%3Arouter%252Fcore",
   "#/study/study-a",
+  "#/study/theme/1",
 ].forEach((hash) => { parsed[hash] = api.parseWorkspaceHash(hash, null); });
 const flowStep = { kind: "flow_step", flow_id: "flow/one", step_id: "step:two" };
 process.stdout.write(JSON.stringify({
   parsed,
-  studyHash: api.workspaceHashForState({ view: "study", directionID: "study-a" }),
+  canvasHash: api.workspaceHashForState({ view: "map" }),
+  themeHash: api.workspaceHashForState({ view: "map", themeCardOrdinal: 1 }),
   flowFocus: api.architectureFocusValue(flowStep),
   flowRoundTrip: api.architectureTargetFromFocus(api.architectureFocusValue(flowStep)),
 }));
@@ -1558,15 +1527,17 @@ process.stdout.write(JSON.stringify({
 			Valid         bool   `json:"valid"`
 			CanonicalHash string `json:"canonicalHash"`
 			State         struct {
-				View      string `json:"view"`
-				Direction string `json:"directionID"`
-				MapTarget *struct {
+				View         string `json:"view"`
+				Direction    string `json:"directionID"`
+				ThemeOrdinal int    `json:"themeCardOrdinal"`
+				MapTarget    *struct {
 					Kind        string `json:"kind"`
 					ComponentID string `json:"component_id"`
 				} `json:"mapTarget"`
 			} `json:"state"`
 		} `json:"parsed"`
-		StudyHash     string `json:"studyHash"`
+		CanvasHash    string `json:"canvasHash"`
+		ThemeHash     string `json:"themeHash"`
 		FlowFocus     string `json:"flowFocus"`
 		FlowRoundTrip struct {
 			Kind   string `json:"kind"`
@@ -1579,22 +1550,37 @@ process.stdout.write(JSON.stringify({
 	}
 	for _, hash := range []string{"#/mechanisms", "#/search", "#/mechanism/mechanism%2Fone"} {
 		route := got.Parsed[hash]
-		if route.Valid || route.State.View != "map" || route.CanonicalHash != "#/map" {
+		if route.Valid || route.State.View != "map" || route.CanonicalHash != "#canvas" {
 			t.Fatalf("legacy route %q did not fail closed: %#v", hash, route)
 		}
 	}
-	if overview := got.Parsed["#/overview"]; !overview.Valid || overview.State.View != "map" || overview.CanonicalHash != "#/map" {
+	if overview := got.Parsed["#/overview"]; !overview.Valid || overview.State.View != "map" || overview.CanonicalHash != "#canvas" {
 		t.Fatalf("overview alias = %#v", overview)
 	}
-	if study := got.Parsed["#/study/study-a"]; !study.Valid || study.State.View != "study" || study.State.Direction != "study-a" {
-		t.Fatalf("Study route = %#v", study)
+	for _, hash := range []string{"#/map", "#canvas"} {
+		if route := got.Parsed[hash]; !route.Valid || route.State.View != "map" || route.CanonicalHash != "#canvas" {
+			t.Fatalf("Canvas route %q = %#v", hash, route)
+		}
+	}
+	if study := got.Parsed["#study"]; !study.Valid || study.State.View != "map" || study.CanonicalHash != "#study" {
+		t.Fatalf("inline Study anchor = %#v", study)
+	}
+	if legacyStudy := got.Parsed["#/study/study-a"]; !legacyStudy.Valid || legacyStudy.State.View != "map" ||
+		legacyStudy.State.Direction != "" || legacyStudy.CanonicalHash != "#study" {
+		t.Fatalf("legacy Study route = %#v", legacyStudy)
+	}
+	for _, hash := range []string{"#study-theme-1", "#/study/theme/1"} {
+		theme := got.Parsed[hash]
+		if !theme.Valid || theme.State.View != "map" || theme.State.ThemeOrdinal != 1 || theme.CanonicalHash != "#study-theme-1" {
+			t.Fatalf("Study theme route %q = %#v", hash, theme)
+		}
 	}
 	focus := got.Parsed["#/architecture?focus=component%3Arouter%252Fcore"]
 	if !focus.Valid || focus.State.View != "map" || focus.State.MapTarget == nil || focus.State.MapTarget.ComponentID != "router/core" {
 		t.Fatalf("architecture focus route = %#v", focus)
 	}
-	if got.StudyHash != "#/study/study-a" {
-		t.Fatalf("Study hash = %q", got.StudyHash)
+	if got.CanvasHash != "#canvas" || got.ThemeHash != "#study-theme-1" {
+		t.Fatalf("canonical target hashes = canvas %q theme %q", got.CanvasHash, got.ThemeHash)
 	}
 	if got.FlowRoundTrip.Kind != "flow_step" || got.FlowRoundTrip.FlowID != "flow/one" || got.FlowRoundTrip.StepID != "step:two" {
 		t.Fatalf("flow focus round trip = %q %#v", got.FlowFocus, got.FlowRoundTrip)
@@ -1615,6 +1601,43 @@ func TestUserWorkspaceRouteAwareScroll(t *testing.T) {
 	runner := `
 const fs = require("fs");
 const vm = require("vm");
+const disclosureScrolls = [];
+class Element {
+  constructor(tag) {
+    this.tagName = tag;
+    this.className = "";
+    this.textContent = "";
+    this.children = [];
+    this.attributes = {};
+    this.hidden = false;
+    this.open = false;
+    this.id = "";
+    this.classList = { add() {}, remove() {}, toggle() {} };
+  }
+  get childNodes() { return this.children; }
+  setAttribute(name, value) { this.attributes[name] = String(value); }
+  getAttribute(name) { return this.attributes[name] || ""; }
+  removeAttribute(name) { delete this.attributes[name]; }
+  appendChild(child) { this.children.push(child); return child; }
+  append(...children) { this.children.push(...children); }
+  replaceChildren(...children) { this.children = children; }
+  querySelector(selector) {
+    return walk(this).find((node) => selector === "h2" ? node.tagName === "h2" : selector === "summary" ? node.tagName === "summary" : false) || null;
+  }
+  querySelectorAll(selector) {
+    if (selector === ".rm-study-theme-card") {
+      return walk(this).filter((node) => String(node.className).split(/\s+/).includes("rm-study-theme-card"));
+    }
+    return [];
+  }
+  scrollIntoView() { disclosureScrolls.push(this.id || this.tagName); }
+  focus() { this.focused = true; }
+}
+function walk(root) {
+  const result = [];
+  (function visit(node) { if (!node) return; result.push(node); (node.children || []).forEach(visit); })(root);
+  return result;
+}
 const snippet = {
   path: "router.go", start_line: 40, end_line: 42,
   lines: [
@@ -1625,19 +1648,23 @@ const snippet = {
 };
 const report = {
   user_sources: [], openable_paths: ["router.go"], source_ids: {},
-  study_map: { brief: {}, shape: [], directions: [
-    { id: "study-a", question: "Study A", reading_anchors: [] },
-    { id: "study-b", question: "Study B", reading_anchors: [] },
-  ] },
+  atlas_study: { themes: { cards: [
+    { ordinal: 1, final_title: "Theme A", final_question: "How does Theme A work?", readings: [] },
+    { ordinal: 2, final_title: "Theme B", final_question: "How does Theme B work?", readings: [] },
+  ] } },
   operations: { version: 1, paths: [
     { id: "operate-a", title: "Operate A", actions: [] },
   ], landmarks: [] },
 };
-const entries = [{ hash: "#/map", state: null }];
+const roots = {
+  "rm-study": new Element("section"),
+  "rm-operate-detail": new Element("section"),
+};
+const entries = [{ hash: "#canvas", state: null }];
 let historyIndex = 0;
 const scrollCalls = [];
 const window = {
-  location: { hash: "#/map", search: "", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  location: { hash: "#canvas", search: "", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   scrollY: 0,
   __REPOMAP_WORKSPACE_TEST__: {},
   addEventListener() {},
@@ -1657,8 +1684,15 @@ window.history = {
   },
 };
 const document = {
+  createElement(tag) { return new Element(tag); },
+  createTextNode(value) { const node = new Element("#text"); node.textContent = String(value); return node; },
   getElementById(id) {
     if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
+    if (roots[id]) return roots[id];
+    for (const root of Object.values(roots)) {
+      const found = walk(root).find((node) => node.id === id);
+      if (found) return found;
+    }
     return null;
   },
   querySelector() { return null; },
@@ -1671,6 +1705,10 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
   window, document, URLSearchParams, Set, Map, AbortController, Promise,
 });
 const api = window.__REPOMAP_WORKSPACE_TEST__;
+api.renderIncompleteStudyOverview();
+const tocLinks = walk(roots["rm-study"]).filter((node) =>
+  node.tagName === "a" && /^#study-theme-\d+$/.test(String(node.attributes.href || ""))
+);
 function snapshot() {
   const state = api.workspaceStateSnapshot();
   return {
@@ -1678,24 +1716,31 @@ function snapshot() {
     scrollY: window.scrollY,
     scrollCalls: scrollCalls.length,
     view: state.view,
+    themeOrdinal: state.themeCardOrdinal,
+    disclosureScrolls: disclosureScrolls.slice(),
   };
 }
 window.scrollY = 840;
-api.openStudyDirection("study-a");
+tocLinks[0].onclick({ preventDefault() {} });
 const studyA = snapshot();
 window.scrollY = 510;
-api.openStudyDirection("study-b");
+tocLinks[1].onclick({ preventDefault() {} });
 const studyB = snapshot();
 window.scrollY = 320;
 api.openSourceSnippet(snippet, { path: "router.go", line: 41 });
 const drawer = snapshot();
-api.closeSourceDrawer();
+window.location.hash = "#canvas";
 api.restoreWorkspaceFromRoute();
-const closedDrawer = snapshot();
 window.scrollY = 430;
 api.openPavedPath("operate-a");
 const operate = snapshot();
-process.stdout.write(JSON.stringify({ studyA, studyB, drawer, closedDrawer, operate }));
+const disclosures = walk(roots["rm-study"]).filter((node) => String(node.className).split(/\s+/).includes("rm-study-theme-card"));
+process.stdout.write(JSON.stringify({
+  studyA, studyB, drawer, operate,
+  disclosureTags: disclosures.map((node) => node.tagName),
+  summaryTags: disclosures.map((node) => node.children[0] && node.children[0].tagName),
+  openStates: disclosures.map((node) => !!node.open),
+}));
 `
 	runnerPath := filepath.Join(t.TempDir(), "user-workspace-scroll-test.js")
 	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
@@ -1706,33 +1751,44 @@ process.stdout.write(JSON.stringify({ studyA, studyB, drawer, closedDrawer, oper
 		t.Fatalf("run workspace scroll test: %v\n%s", err, output)
 	}
 	type snapshot struct {
-		Hash        string `json:"hash"`
-		ScrollY     int    `json:"scrollY"`
-		ScrollCalls int    `json:"scrollCalls"`
-		View        string `json:"view"`
+		Hash              string   `json:"hash"`
+		ScrollY           int      `json:"scrollY"`
+		ScrollCalls       int      `json:"scrollCalls"`
+		View              string   `json:"view"`
+		ThemeOrdinal      int      `json:"themeOrdinal"`
+		DisclosureScrolls []string `json:"disclosureScrolls"`
 	}
 	var got struct {
-		StudyA       snapshot `json:"studyA"`
-		StudyB       snapshot `json:"studyB"`
-		Drawer       snapshot `json:"drawer"`
-		ClosedDrawer snapshot `json:"closedDrawer"`
-		Operate      snapshot `json:"operate"`
+		StudyA         snapshot `json:"studyA"`
+		StudyB         snapshot `json:"studyB"`
+		Drawer         snapshot `json:"drawer"`
+		Operate        snapshot `json:"operate"`
+		DisclosureTags []string `json:"disclosureTags"`
+		SummaryTags    []string `json:"summaryTags"`
+		OpenStates     []bool   `json:"openStates"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode workspace scroll result: %v\n%s", err, output)
 	}
-	assertSnapshot := func(name string, got snapshot, hash, view string, scrollY, calls int) {
+	assertSnapshot := func(name string, got snapshot, hash, view string, themeOrdinal, scrollY, calls int) {
 		t.Helper()
-		if got.Hash != hash || got.View != view || got.ScrollY != scrollY || got.ScrollCalls != calls {
-			t.Errorf("%s = %#v, want hash %q view %q scrollY %d scroll calls %d",
-				name, got, hash, view, scrollY, calls)
+		if got.Hash != hash || got.View != view || got.ThemeOrdinal != themeOrdinal ||
+			got.ScrollY != scrollY || got.ScrollCalls != calls {
+			t.Errorf("%s = %#v, want hash %q view %q theme %d scrollY %d window scroll calls %d",
+				name, got, hash, view, themeOrdinal, scrollY, calls)
 		}
 	}
-	assertSnapshot("Map to Study A", got.StudyA, "#/study/study-a", "study", 0, 1)
-	assertSnapshot("Study A to Study B", got.StudyB, "#/study/study-b", "study", 0, 2)
-	assertSnapshot("open source drawer", got.Drawer, "#/study/study-b", "study", 320, 2)
-	assertSnapshot("close source drawer", got.ClosedDrawer, "#/study/study-b", "study", 320, 2)
-	assertSnapshot("Study to Operate", got.Operate, "#/operate/operate-a", "operate", 0, 3)
+	assertSnapshot("Canvas to Study theme A", got.StudyA, "#study-theme-1", "map", 1, 840, 0)
+	assertSnapshot("Study theme A to theme B", got.StudyB, "#study-theme-2", "map", 2, 510, 0)
+	assertSnapshot("open source drawer", got.Drawer, "#study-theme-2", "map", 2, 320, 0)
+	assertSnapshot("Study to Operate", got.Operate, "#/operate/operate-a", "operate", 0, 0, 1)
+	if !slices.Equal(got.DisclosureTags, []string{"details", "details"}) ||
+		!slices.Equal(got.SummaryTags, []string{"summary", "summary"}) ||
+		!slices.Equal(got.OpenStates, []bool{true, true}) ||
+		!slices.Equal(got.StudyB.DisclosureScrolls, []string{"study-theme-1", "study-theme-2"}) {
+		t.Fatalf("native Study disclosure navigation = tags %#v summaries %#v open %#v scrolls %#v",
+			got.DisclosureTags, got.SummaryTags, got.OpenStates, got.StudyB.DisclosureScrolls)
+	}
 }
 
 func TestUserWorkspaceNavigationWritesAndRestoresHistory(t *testing.T) {
@@ -1761,20 +1817,19 @@ function navButton(view) {
   };
 }
 const mapTab = navButton("map");
-const studyTab = navButton("study_overview");
 const report = {
   user_sources: [], openable_paths: [], source_ids: {},
-  study_map: { brief: {}, shape: [], directions: [
-    { id: "study-a", question: "Study A", reading_anchors: [] },
-  ] },
+  atlas_study: { themes: { cards: [
+    { ordinal: 1, final_title: "Theme A", final_question: "How does Theme A work?", readings: [] },
+  ] } },
   operations: { version: 1, paths: [
     { id: "operate-a", title: "Operate A", actions: [] },
   ], landmarks: [] },
 };
-const entries = [{ hash: "#/study/study-a", state: null }];
+const entries = [{ hash: "#study-theme-1", state: null }];
 let historyIndex = 0;
 const window = {
-  location: { hash: "#/study/study-a", search: "", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  location: { hash: "#study-theme-1", search: "", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   __REPOMAP_WORKSPACE_TEST__: {}, addEventListener() {}, scrollTo() {},
 };
 window.history = {
@@ -1801,7 +1856,7 @@ const document = {
   },
   querySelector() { return null; },
   querySelectorAll(selector) {
-    if (selector === "[data-workspace-view]") return [mapTab, studyTab];
+    if (selector === "[data-workspace-view]") return [mapTab];
     return [];
   },
 };
@@ -1813,7 +1868,12 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
 });
 const api = window.__REPOMAP_WORKSPACE_TEST__;
 api.restoreWorkspaceFromRoute();
-const study = api.workspaceStateSnapshot();
+const theme = api.workspaceStateSnapshot();
+const themeTargetActive = mapTab.classList.contains("rm-active") && mapTab.attributes["aria-current"] === "page";
+// The target page remains one document. Re-enter Canvas before opening the
+// separate Operate route; the prior theme entry remains available to Back.
+window.location.hash = "#canvas";
+api.restoreWorkspaceFromRoute();
 api.openPavedPath("operate-a");
 const operate = api.workspaceStateSnapshot();
 const operateHash = window.location.hash;
@@ -1822,12 +1882,13 @@ window.history.back();
 api.restoreWorkspaceFromRoute();
 const backed = api.workspaceStateSnapshot();
 const backedHash = window.location.hash;
-const backStudyActive = studyTab.classList.contains("rm-active") && studyTab.attributes["aria-current"] === "page";
-api.navigateWorkspace("overview");
+const backTargetActive = mapTab.classList.contains("rm-active") && mapTab.attributes["aria-current"] === "page";
+window.location.hash = "#/overview";
+api.restoreWorkspaceFromRoute();
 const overviewAlias = api.workspaceStateSnapshot();
 process.stdout.write(JSON.stringify({
-  study, operate, operateHash, operateMapActive,
-  backed, backedHash, backStudyActive,
+  theme, themeTargetActive, operate, operateHash, operateMapActive,
+  backed, backedHash, backTargetActive,
   overviewAlias, overviewHash: window.location.hash,
 }));
 `
@@ -1840,38 +1901,40 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("run workspace navigation test: %v\n%s", err, output)
 	}
 	type state struct {
-		View        string `json:"view"`
-		DirectionID string `json:"directionID"`
-		OperationID string `json:"operationID"`
+		View             string `json:"view"`
+		DirectionID      string `json:"directionID"`
+		ThemeCardOrdinal int    `json:"themeCardOrdinal"`
+		OperationID      string `json:"operationID"`
 	}
 	var got struct {
-		Study            state  `json:"study"`
-		Operate          state  `json:"operate"`
-		OperateHash      string `json:"operateHash"`
-		OperateMapActive bool   `json:"operateMapActive"`
-		Backed           state  `json:"backed"`
-		BackedHash       string `json:"backedHash"`
-		BackStudyActive  bool   `json:"backStudyActive"`
-		OverviewAlias    state  `json:"overviewAlias"`
-		OverviewHash     string `json:"overviewHash"`
+		Theme             state  `json:"theme"`
+		ThemeTargetActive bool   `json:"themeTargetActive"`
+		Operate           state  `json:"operate"`
+		OperateHash       string `json:"operateHash"`
+		OperateMapActive  bool   `json:"operateMapActive"`
+		Backed            state  `json:"backed"`
+		BackedHash        string `json:"backedHash"`
+		BackTargetActive  bool   `json:"backTargetActive"`
+		OverviewAlias     state  `json:"overviewAlias"`
+		OverviewHash      string `json:"overviewHash"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode workspace navigation result: %v\n%s", err, output)
 	}
-	if got.Study.View != "study" || got.Study.DirectionID != "study-a" {
-		t.Fatalf("initial Study state = %#v", got.Study)
+	if got.Theme.View != "map" || got.Theme.ThemeCardOrdinal != 1 || !got.ThemeTargetActive {
+		t.Fatalf("initial inline Study theme state = %#v target active %t", got.Theme, got.ThemeTargetActive)
 	}
 	if got.OperateHash != "#/operate/operate-a" || got.Operate.View != "operate" ||
 		got.Operate.OperationID != "operate-a" || !got.OperateMapActive {
 		t.Fatalf("Study to Operate = hash %q state %#v map active %t",
 			got.OperateHash, got.Operate, got.OperateMapActive)
 	}
-	if got.BackedHash != "#/study/study-a" || got.Backed.View != "study" ||
-		got.Backed.DirectionID != "study-a" || !got.BackStudyActive {
-		t.Fatalf("Operate browser Back = hash %q state %#v Study active %t",
-			got.BackedHash, got.Backed, got.BackStudyActive)
+	if got.BackedHash != "#study-theme-1" || got.Backed.View != "map" ||
+		got.Backed.ThemeCardOrdinal != 1 || !got.BackTargetActive {
+		t.Fatalf("Operate browser Back = hash %q state %#v target active %t",
+			got.BackedHash, got.Backed, got.BackTargetActive)
 	}
-	if got.OverviewHash != "#/map" || got.OverviewAlias.View != "map" {
+	if got.OverviewHash != "#canvas" || got.OverviewAlias.View != "map" || got.OverviewAlias.ThemeCardOrdinal != 0 {
 		t.Fatalf("legacy Overview navigation = hash %q state %#v", got.OverviewHash, got.OverviewAlias)
 	}
 }

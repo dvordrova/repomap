@@ -108,7 +108,14 @@ func (err *ReportResourceLimitError) Error() string {
 }
 
 func WriteReportHTML(data *ReportData, path string) error {
-	html, err := RenderHTML(data)
+	return WriteReportHTMLWithOptions(data, path, RenderOptions{})
+}
+
+// WriteReportHTMLWithOptions writes one canonical target page with optional
+// render-only sibling navigation. The options are never persisted to
+// report.json.
+func WriteReportHTMLWithOptions(data *ReportData, path string, options RenderOptions) error {
+	html, err := RenderHTMLWithOptions(data, options)
 	if err != nil {
 		return err
 	}
@@ -118,8 +125,17 @@ func WriteReportHTML(data *ReportData, path string) error {
 // RenderHTML renders report data with repomap's embedded trusted template and
 // assets. Servers should use this instead of executing a saved HTML artifact.
 func RenderHTML(data *ReportData) ([]byte, error) {
+	return RenderHTMLWithOptions(data, RenderOptions{})
+}
+
+// RenderHTMLWithOptions renders one ReportData target page plus optional
+// caller-authorized presentation navigation to sibling target pages.
+func RenderHTMLWithOptions(data *ReportData, options RenderOptions) ([]byte, error) {
 	if data == nil {
 		return nil, fmt.Errorf("report: data is required")
+	}
+	if err := validateTargetNavigation(data, options.TargetNavigation); err != nil {
+		return nil, err
 	}
 	if err := ensureArchitectureComponentNavigation(data); err != nil {
 		return nil, err
@@ -130,15 +146,28 @@ func RenderHTML(data *ReportData) ([]byte, error) {
 	if err := ensureEntrypointHandoffGroups(data); err != nil {
 		return nil, err
 	}
-	return buildHTML(data)
+	return buildHTMLWithOptions(data, options)
 }
 
 // RenderHTMLWithSourceEpisode adds one approved, SHA-pinned source episode to
 // the rendered Study surface. The projection exists only in this HTML
 // response: it is not added to ReportData or persisted in report.json.
 func RenderHTMLWithSourceEpisode(data *ReportData, episodeJSON []byte) ([]byte, error) {
+	return RenderHTMLWithSourceEpisodeAndOptions(data, episodeJSON, RenderOptions{})
+}
+
+// RenderHTMLWithSourceEpisodeAndOptions is the source-episode equivalent of
+// RenderHTMLWithOptions. Both inputs remain transient HTML presentation state.
+func RenderHTMLWithSourceEpisodeAndOptions(
+	data *ReportData,
+	episodeJSON []byte,
+	options RenderOptions,
+) ([]byte, error) {
 	if data == nil {
 		return nil, fmt.Errorf("report: data is required")
+	}
+	if err := validateTargetNavigation(data, options.TargetNavigation); err != nil {
+		return nil, err
 	}
 	if err := ensureArchitectureComponentNavigation(data); err != nil {
 		return nil, err
@@ -165,7 +194,7 @@ func RenderHTMLWithSourceEpisode(data *ReportData, episodeJSON []byte) ([]byte, 
 		}
 		episode = data.presentationSourceEpisode
 	}
-	return buildHTMLWithSourceEpisode(data, episode)
+	return buildHTMLWithSourceEpisode(data, episode, options)
 }
 
 func sameSourceEpisodePresentationShape(
@@ -231,10 +260,18 @@ func ValidateSourceEpisodeForRevision(episodeJSON []byte, revision string) error
 }
 
 func buildHTML(data *ReportData) ([]byte, error) {
-	return buildHTMLWithSourceEpisode(data, nil)
+	return buildHTMLWithOptions(data, RenderOptions{})
 }
 
-func buildHTMLWithSourceEpisode(data *ReportData, episode *sourceEpisodeProjection) ([]byte, error) {
+func buildHTMLWithOptions(data *ReportData, options RenderOptions) ([]byte, error) {
+	return buildHTMLWithSourceEpisode(data, nil, options)
+}
+
+func buildHTMLWithSourceEpisode(
+	data *ReportData,
+	episode *sourceEpisodeProjection,
+	options RenderOptions,
+) ([]byte, error) {
 	if err := data.GitLabSourceLinks.validate(); err != nil {
 		return nil, err
 	}
@@ -253,12 +290,14 @@ func buildHTMLWithSourceEpisode(data *ReportData, episode *sourceEpisodeProjecti
 	}
 	payload := struct {
 		*ReportData
-		ArchitectureDebugPresentation map[string]string        `json:"architecture_debug_presentation,omitempty"`
-		SourceEpisode                 *sourceEpisodeProjection `json:"source_episode,omitempty"`
+		ArchitectureDebugPresentation map[string]string          `json:"architecture_debug_presentation,omitempty"`
+		SourceEpisode                 *sourceEpisodeProjection   `json:"source_episode,omitempty"`
+		TargetNavigation              *TargetNavigationPortfolio `json:"target_navigation,omitempty"`
 	}{
 		ReportData:                    rendered,
 		ArchitectureDebugPresentation: rendered.architectureDebugPresentation,
 		SourceEpisode:                 episode,
+		TargetNavigation:              options.TargetNavigation,
 	}
 	dataJSON, err := marshalHTMLPayload(
 		payload,
@@ -369,13 +408,29 @@ func reportDataForPersistence(data *ReportData) *ReportData {
 }
 
 func Generate(runDir string) error {
-	return generate(runDir, nil, nil, nil)
+	return GenerateWithOptions(runDir, RenderOptions{})
+}
+
+// GenerateWithOptions is the unauthenticated generation seam for transient
+// presentation options. Existing callers retain the exact zero-options path.
+func GenerateWithOptions(runDir string, options RenderOptions) error {
+	return generate(runDir, nil, nil, nil, options)
 }
 
 // GenerateAuthorized renders a report and binds its exact generated JSON to
 // repository authority confirmed stable across orientation.
 func GenerateAuthorized(runDir string, authority RunAuthority) error {
-	return generate(runDir, &authority, nil, nil)
+	return GenerateAuthorizedWithOptions(runDir, authority, RenderOptions{})
+}
+
+// GenerateAuthorizedWithOptions preserves ordinary source and manifest
+// authority while adding only transient target-page navigation to report.html.
+func GenerateAuthorizedWithOptions(
+	runDir string,
+	authority RunAuthority,
+	options RenderOptions,
+) error {
+	return generate(runDir, &authority, nil, nil, options)
 }
 
 type standaloneSourceConfig struct {
@@ -391,6 +446,17 @@ func GenerateAuthorizedGitLab(
 	authority RunAuthority,
 	repositoryURL string,
 ) error {
+	return GenerateAuthorizedGitLabWithOptions(
+		runDir, authority, repositoryURL, RenderOptions{},
+	)
+}
+
+func GenerateAuthorizedGitLabWithOptions(
+	runDir string,
+	authority RunAuthority,
+	repositoryURL string,
+	options RenderOptions,
+) error {
 	normalizedURL, err := NormalizeGitLabRepositoryURL(repositoryURL)
 	if err != nil {
 		return err
@@ -404,7 +470,7 @@ func GenerateAuthorizedGitLab(
 	return generate(runDir, &authority, nil, &standaloneSourceConfig{
 		hostName:      "GitLab",
 		repositoryURL: normalizedURL,
-	})
+	}, options)
 }
 
 // GenerateAuthorizedGitHub emits the ordinary persisted report and manifest
@@ -414,6 +480,17 @@ func GenerateAuthorizedGitHub(
 	runDir string,
 	authority RunAuthority,
 	repositoryURL string,
+) error {
+	return GenerateAuthorizedGitHubWithOptions(
+		runDir, authority, repositoryURL, RenderOptions{},
+	)
+}
+
+func GenerateAuthorizedGitHubWithOptions(
+	runDir string,
+	authority RunAuthority,
+	repositoryURL string,
+	options RenderOptions,
 ) error {
 	normalizedURL, err := NormalizeGitHubRepositoryURL(repositoryURL)
 	if err != nil {
@@ -428,7 +505,7 @@ func GenerateAuthorizedGitHub(
 	return generate(runDir, &authority, nil, &standaloneSourceConfig{
 		hostName:      "GitHub",
 		repositoryURL: normalizedURL,
-	})
+	}, options)
 }
 
 // GenerateAuthorizedWithSourceEpisode generates the same persisted report and
@@ -438,6 +515,17 @@ func GenerateAuthorizedWithSourceEpisode(
 	runDir string,
 	authority RunAuthority,
 	episodeJSON []byte,
+) error {
+	return GenerateAuthorizedWithSourceEpisodeAndOptions(
+		runDir, authority, episodeJSON, RenderOptions{},
+	)
+}
+
+func GenerateAuthorizedWithSourceEpisodeAndOptions(
+	runDir string,
+	authority RunAuthority,
+	episodeJSON []byte,
+	options RenderOptions,
 ) error {
 	if err := authority.validate(); err != nil {
 		return err
@@ -449,7 +537,7 @@ func GenerateAuthorizedWithSourceEpisode(
 	if err := ValidateSourceEpisodeForRevision(episodeJSON, authority.repository.Head); err != nil {
 		return err
 	}
-	return generate(runDir, &authority, episodeJSON, nil)
+	return generate(runDir, &authority, episodeJSON, nil, options)
 }
 
 func generate(
@@ -457,6 +545,7 @@ func generate(
 	authority *RunAuthority,
 	sourceEpisodeJSON []byte,
 	standaloneSource *standaloneSourceConfig,
+	renderOptions RenderOptions,
 ) error {
 	if standaloneSource != nil && sourceEpisodeJSON != nil {
 		return fmt.Errorf("report: standalone external-source reports cannot embed a source episode")
@@ -637,11 +726,15 @@ func generate(
 	renderData.GitLabSourceLinks = gitLabSourceLinks
 	renderData.GitHubSourceLinks = gitHubSourceLinks
 	if sourceEpisodeJSON == nil {
-		if err := WriteReportHTML(renderData, htmlPath); err != nil {
+		if err := WriteReportHTMLWithOptions(renderData, htmlPath, renderOptions); err != nil {
 			return err
 		}
 	} else {
-		html, err := RenderHTMLWithSourceEpisode(renderData, sourceEpisodeJSON)
+		html, err := RenderHTMLWithSourceEpisodeAndOptions(
+			renderData,
+			sourceEpisodeJSON,
+			renderOptions,
+		)
 		if err != nil {
 			return err
 		}

@@ -12,6 +12,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 )
@@ -174,14 +175,15 @@ type wireRouteSpan struct {
 }
 
 type catalogMaterial struct {
-	Version            int               `json:"version"`
-	AtlasSHA256        string            `json:"atlas_sha256"`
-	ArchitectureSHA256 string            `json:"architecture_sha256"`
-	Language           Language          `json:"language"`
-	Limits             Limits            `json:"limits"`
-	ProjectionSHA256   string            `json:"projection_sha256"`
-	Coverage           CandidateCoverage `json:"coverage"`
-	Objects            []CatalogObject   `json:"objects"`
+	Version            int                      `json:"version"`
+	AtlasSHA256        string                   `json:"atlas_sha256"`
+	ArchitectureSHA256 string                   `json:"architecture_sha256"`
+	Language           Language                 `json:"language"`
+	Limits             Limits                   `json:"limits"`
+	ProjectionSHA256   string                   `json:"projection_sha256"`
+	Coverage           CandidateCoverage        `json:"coverage"`
+	AnalysisTargetRoot *AnalysisTargetRootScope `json:"analysis_target_root,omitempty"`
+	Objects            []CatalogObject          `json:"objects"`
 }
 
 func Compile(input Input) (Product, error) {
@@ -230,7 +232,9 @@ func Compile(input Input) (Product, error) {
 	material := catalogMaterial{
 		Version: Version, AtlasSHA256: atlasSHA, ArchitectureSHA256: architectureSHA,
 		Language: canonical.Language, Limits: canonical.Limits,
-		ProjectionSHA256: digest(projectionJSON), Coverage: coverage, Objects: objects,
+		ProjectionSHA256: digest(projectionJSON), Coverage: coverage,
+		AnalysisTargetRoot: cloneAnalysisTargetRootScope(canonical.AnalysisTargetRoot),
+		Objects:            objects,
 	}
 	materialJSON, err := json.Marshal(material)
 	if err != nil {
@@ -291,6 +295,7 @@ func canonicalInput(input Input) (Input, string, string, error) {
 	}
 	input.Evidence = cloneEvidenceFacts(input.Evidence)
 	input.Documents = append([]DocumentClaim(nil), input.Documents...)
+	input.AnalysisTargetRoot = cloneAnalysisTargetRootScope(input.AnalysisTargetRoot)
 	sort.Slice(input.Architecture.Subsystems, func(i, j int) bool {
 		return input.Architecture.Subsystems[i].ID < input.Architecture.Subsystems[j].ID
 	})
@@ -442,6 +447,8 @@ func compileCatalog(input Input) (
 		if err := add(RefUnit, unit.ID, unit.Name, "", repositoryatlas.AuthorityObserved, nil, nil, nil, nil, ""); err != nil {
 			return nil, nil, nil, err
 		}
+		objects[len(objects)-1].UnitKind = unit.Kind
+		objects[len(objects)-1].UnitParentID = unit.ParentID
 	}
 	subsystems := make(map[string]Subsystem, len(input.Architecture.Subsystems))
 	for _, subsystem := range input.Architecture.Subsystems {
@@ -524,6 +531,11 @@ func compileCatalog(input Input) (
 		principalSet := make(map[CanonicalRef]struct{}, len(target.PrincipalRefs))
 		for _, principal := range target.PrincipalRefs {
 			switch principal.Kind {
+			case RefUnit:
+				unit, ok := units[principal.ID]
+				if !ok || unit.Kind != repositoryatlas.UnitPackage {
+					return nil, nil, nil, fmt.Errorf("atlas study: reading target has unknown package Unit principal")
+				}
 			case RefComponent:
 				if _, ok := components[principal.ID]; !ok {
 					return nil, nil, nil, fmt.Errorf("atlas study: reading target has unknown component principal")
@@ -578,6 +590,7 @@ func compileCatalog(input Input) (
 			&target.Location, target.Symbol); err != nil {
 			return nil, nil, nil, err
 		}
+		objects[len(objects)-1].ReadingTargetKind = target.Kind
 	}
 	if err := validateTargetAssociations(input.Architecture.Components, input.Surfaces, targets); err != nil {
 		return nil, nil, nil, err
@@ -604,6 +617,9 @@ func compileCatalog(input Input) (
 		objects[len(objects)-1].SupportRole = support.Role
 		objects[len(objects)-1].SupportTarget = &targetRef
 		objects[len(objects)-1].PackageBucket = support.PackageBucket
+	}
+	if err := validateAnalysisTargetRootContract(targets, supports, units, input.AnalysisTargetRoot); err != nil {
+		return nil, nil, nil, err
 	}
 	relations := make(map[string]RouteProducerRelation, len(input.ProducerRelations))
 	producerRelationIDs := make(map[string]struct{}, len(input.ProducerRelations))
@@ -665,6 +681,9 @@ func compileCatalog(input Input) (
 			}
 			coveredTargets[support.TargetID] = struct{}{}
 			required = append(required, CanonicalRef{Kind: RefRouteSupport, ID: supportID})
+			if support.Role == SupportAnalysisTargetRoot && span.Kind != RouteSpanFocused {
+				return nil, nil, nil, fmt.Errorf("atlas study: public API root support requires a focused span")
+			}
 		}
 		if span.Kind == RouteSpanSystemPath && len(coveredTargets) < 2 {
 			return nil, nil, nil, fmt.Errorf("atlas study: system-path span requires two distinct exact locators")
@@ -722,7 +741,16 @@ func compileCatalog(input Input) (
 			object.Kind != RefRouteRelation && object.Kind != RefRouteSpan
 		factRequired := object.Kind == RefSurface || object.Kind == RefReadingTarget ||
 			object.Kind == RefEvidence || object.Kind == RefDocument
-		if err := validateVisibleText(object.Label, input.Limits.MaxTextBytes, labelRequired, identities); err != nil {
+		labelIdentities := identities
+		if object.Kind == RefReadingTarget && modelVisibleTargetSymbol(object.Symbol) != "" {
+			labelIdentities = make(map[string]struct{}, len(identities))
+			for identity := range identities {
+				if identity != object.Symbol {
+					labelIdentities[identity] = struct{}{}
+				}
+			}
+		}
+		if err := validateVisibleText(object.Label, input.Limits.MaxTextBytes, labelRequired, labelIdentities); err != nil {
 			return nil, nil, nil, fmt.Errorf("atlas study: %s label: %w", object.Kind, err)
 		}
 		if err := validateVisibleText(object.Fact, input.Limits.MaxTextBytes, factRequired, identities); err != nil {
@@ -904,6 +932,10 @@ func allPrivateIdentities(input Input, includeTargetLocators bool) map[string]st
 		if value != "" {
 			result[value] = struct{}{}
 		}
+	}
+	if input.AnalysisTargetRoot != nil {
+		add(input.AnalysisTargetRoot.AnalysisTarget.Ref)
+		add(input.AnalysisTargetRoot.UnitID)
 	}
 	for _, unit := range input.Atlas.Units {
 		add(unit.ID)
@@ -1117,16 +1149,107 @@ func validateTargetAssociations(
 		}
 	}
 	for id, target := range targets {
-		if len(claimed[id]) != len(target.PrincipalRefs) {
+		expected := 0
+		for _, principal := range target.PrincipalRefs {
+			if principal.Kind != RefUnit {
+				expected++
+			}
+		}
+		if len(claimed[id]) != expected {
 			return fmt.Errorf("atlas study: every reading target principal requires one exact association")
 		}
 		for _, principal := range target.PrincipalRefs {
+			if principal.Kind == RefUnit {
+				continue
+			}
 			if _, ok := claimed[id][principal]; !ok {
 				return fmt.Errorf("atlas study: reading target principal association is incomplete")
 			}
 		}
 	}
 	return nil
+}
+
+// validateAnalysisTargetRootContract is the only admission path for a Unit
+// principal. A public API root is one resolved function or method owned by one
+// exact package Unit; it has no conceptual owner or related components. The
+// support's private package bucket is the same canonical Unit identity, which
+// prevents an arbitrary repository Unit from being substituted after local
+// target selection. All pre-D277 Component/Surface principal paths are
+// unchanged.
+func validateAnalysisTargetRootContract(
+	targets map[string]ReadingTarget,
+	supports map[string]ReadingSupport,
+	units map[string]repositoryatlas.Unit,
+	scope *AnalysisTargetRootScope,
+) error {
+	if err := validateAnalysisTargetRootScope(scope); err != nil {
+		return err
+	}
+	rootSupports := make(map[string]int)
+	allSupports := make(map[string][]ReadingSupport)
+	for _, support := range supports {
+		allSupports[support.TargetID] = append(allSupports[support.TargetID], support)
+		if support.Role != SupportAnalysisTargetRoot {
+			continue
+		}
+		target, ok := targets[support.TargetID]
+		if !ok || support.Authority != repositoryatlas.AuthorityResolved ||
+			target.Authority != repositoryatlas.AuthorityResolved ||
+			(target.Kind != ReadingTargetFunction && target.Kind != ReadingTargetMethod) ||
+			target.Owner != (CanonicalRef{}) || len(target.RelatedComponentIDs) != 0 ||
+			len(target.PrincipalRefs) != 1 || target.PrincipalRefs[0].Kind != RefUnit {
+			return fmt.Errorf("atlas study: invalid public API root support")
+		}
+		unit := units[target.PrincipalRefs[0].ID]
+		if scope == nil || unit.Kind != repositoryatlas.UnitPackage ||
+			unit.ID != scope.UnitID || unit.Name != scope.AnalysisTarget.PackagePath ||
+			unit.ParentID != scope.AnalysisTarget.ModuleID || support.PackageBucket != scope.UnitID {
+			return fmt.Errorf("atlas study: public API root does not match its exact package Unit")
+		}
+		rootSupports[target.ID]++
+	}
+	for _, target := range targets {
+		hasUnit := false
+		for _, principal := range target.PrincipalRefs {
+			hasUnit = hasUnit || principal.Kind == RefUnit
+		}
+		if !hasUnit {
+			if rootSupports[target.ID] != 0 {
+				return fmt.Errorf("atlas study: public API root support lacks a package Unit principal")
+			}
+			continue
+		}
+		if rootSupports[target.ID] != 1 || len(allSupports[target.ID]) != 1 {
+			return fmt.Errorf("atlas study: package Unit principal is not one exact public API root")
+		}
+	}
+	if scope != nil && len(rootSupports) == 0 {
+		return fmt.Errorf("atlas study: selected AnalysisTarget root scope has no public API roots")
+	}
+	return nil
+}
+
+func validateAnalysisTargetRootScope(scope *AnalysisTargetRootScope) error {
+	if scope == nil {
+		return nil
+	}
+	if scope.AnalysisTarget.Validate() != nil ||
+		scope.AnalysisTarget.Kind != analysistarget.KindLibraryPackage ||
+		scope.AnalysisTarget.RootBoundary != analysistarget.RootBoundaryExactPublicAPI ||
+		scope.UnitID == "" || strings.TrimSpace(scope.UnitID) != scope.UnitID ||
+		len(scope.UnitID) > 4096 {
+		return fmt.Errorf("atlas study: invalid selected AnalysisTarget root scope")
+	}
+	return nil
+}
+
+func cloneAnalysisTargetRootScope(scope *AnalysisTargetRootScope) *AnalysisTargetRootScope {
+	if scope == nil {
+		return nil
+	}
+	cloned := *scope
+	return &cloned
 }
 
 func containsCanonicalRef(values []CanonicalRef, want CanonicalRef) bool {

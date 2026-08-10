@@ -17,6 +17,7 @@ import (
 func d210ThemeManifestFixture(t *testing.T, state atlasstudy.ProductState) (RunManifest, []byte, string) {
 	t.Helper()
 	data := atlasStudyReportFixture(t)
+	data.AnalysisTarget = reportAnalysisTargetFixture(t)
 	data.CapturedRevision = strings.Repeat("a", 40)
 	runDir := t.TempDir()
 	writeThemeStudyAcceptedArtifacts(t, runDir, data)
@@ -103,6 +104,7 @@ func d210ThemeManifestFixture(t *testing.T, state atlasstudy.ProductState) (RunM
 		StudyThemesSHA256:              manifestSHA256(mustReadAtlasStudyFile(t, runDir, themestudy.StudyThemesArtifactFilename)),
 	}
 	manifest := validRunManifestFixture(t)
+	bindRunManifestAnalysisTarget(t, &manifest, data)
 	manifest.RepositoryState.Head = data.CapturedRevision
 	repositoryDigest, err := manifest.RepositoryState.Digest()
 	if err != nil {

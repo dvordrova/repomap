@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/freshness"
@@ -45,13 +46,15 @@ func defaultStudyInvestigationClientFactory() (studyInvestigationClient, error) 
 
 // runStudyInvestigationForRun turns the final, already-persisted Study cards
 // into a bounded direct-call investigation family. It consumes only the one
-// live DirectCallIndex handoff from the existing surface SSA pass. Provider
-// failures close one planned prefix item and retain all earlier exact results;
-// integrity, credential, and persistence failures remain terminal.
+// selected AnalysisTarget and live DirectCallIndex handoff from the existing
+// surface SSA pass. Provider failures close one planned prefix item and retain
+// all earlier exact results; integrity, credential, and persistence failures
+// remain terminal.
 func runStudyInvestigationForRun(
 	ctx context.Context,
 	runDir string,
 	index *surfacediscovery.DirectCallIndex,
+	target analysistarget.Target,
 	repositoryRevision string,
 	repositoryFreshnessSHA256 string,
 	output *runOutput,
@@ -81,15 +84,30 @@ func runStudyInvestigationForRun(
 	if themes.Revision != repositoryRevision {
 		return studyInvestigationRunOutcome{}, fmt.Errorf("study investigation: Study revision does not match repository")
 	}
-	if index == nil {
-		closed := surfacediscovery.UnavailableDirectCallIndex()
-		index = &closed
+	readingRoots, err := mechanismstudy.BindStudyReadingRoots(themes, index)
+	if err != nil {
+		return studyInvestigationRunOutcome{}, fmt.Errorf(
+			"study investigation: bind exact Study reading roots: %w", err,
+		)
 	}
-	compilation, err := mechanismstudy.Compile(themes, index, mechanismstudy.Binding{
-		StudyThemesSHA256:         modelresearch.SHA256(themesRaw),
-		AtlasStudyCatalogSHA256:   themes.ScoutSHA256,
-		RepositoryRevision:        repositoryRevision,
-		RepositoryFreshnessSHA256: repositoryFreshnessSHA256,
+	targetRoots, err := analysistarget.BindExactRoots(target, index)
+	if err != nil {
+		return studyInvestigationRunOutcome{}, fmt.Errorf(
+			"study investigation: bind exact analysis target roots: %w", err,
+		)
+	}
+	compilation, err := mechanismstudy.CompileTargeted(mechanismstudy.TargetCompileInput{
+		Study: themes,
+		Index: index,
+		Binding: mechanismstudy.Binding{
+			StudyThemesSHA256:         modelresearch.SHA256(themesRaw),
+			AtlasStudyCatalogSHA256:   themes.ScoutSHA256,
+			RepositoryRevision:        repositoryRevision,
+			RepositoryFreshnessSHA256: repositoryFreshnessSHA256,
+		},
+		ReadingRoots:   readingRoots,
+		AnalysisTarget: target,
+		TargetRoots:    targetRoots,
 	})
 	if err != nil {
 		return studyInvestigationRunOutcome{}, fmt.Errorf("study investigation: compile exact Study context: %w", err)

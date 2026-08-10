@@ -234,8 +234,8 @@ process.stdout.write(JSON.stringify({
   }),
   russianCopy: {
     chrome: api.messageForLocale("ru", "main.chrome.what.to.notice"),
-    workspace: api.messageForLocale("ru", "main.repository.workspace"),
-    study: api.messageForLocale("ru", "main.study.incomplete_direction"),
+    workspace: api.messageForLocale("ru", "main.analysis_targets.title"),
+    study: api.messageForLocale("ru", "main.analysis_target.default"),
     taskLens: api.messageForLocale("ru", "main.task_lens.working_hypothesis"),
     architecture: api.messageForLocale("ru", "architecture.action.open_code"),
     surfaces: api.messageForLocale("ru", "surfaces.action.reset_filters"),
@@ -246,15 +246,11 @@ process.stdout.write(JSON.stringify({
   },
   studyThemeTruth: {
     enTitle: api.messageForLocale("en", "main.study.themes.title"),
-    enCopy: api.messageForLocale("en", "main.study.themes.copy"),
-    enBadge: api.messageForLocale("en", "main.study.theme.supported"),
-    enExpected: api.messageForLocale("en", "main.study.theme.expected_learning", { learning: "Outcome." }),
-    enExplanation: api.messageForLocale("en", "main.study.theme.supported_explanation"),
+    enContents: api.messageForLocale("en", "main.study.contents"),
+    enOpen: api.messageForLocale("en", "main.analysis_target.default"),
     ruTitle: api.messageForLocale("ru", "main.study.themes.title"),
-    ruCopy: api.messageForLocale("ru", "main.study.themes.copy"),
-    ruBadge: api.messageForLocale("ru", "main.study.theme.supported"),
-    ruExpected: api.messageForLocale("ru", "main.study.theme.expected_learning", { learning: "Результат." }),
-    ruExplanation: api.messageForLocale("ru", "main.study.theme.supported_explanation"),
+    ruContents: api.messageForLocale("ru", "main.study.contents"),
+    ruOpen: api.messageForLocale("ru", "main.analysis_target.default"),
   },
   opaqueTechnical: {
     route: api.messageForLocale("ru", "surfaces.identity.http_route", {
@@ -327,16 +323,12 @@ process.stdout.write(JSON.stringify({
 			LocalizationFallback string `json:"localizationFallback"`
 		} `json:"russianCopy"`
 		StudyThemeTruth struct {
-			ENTitle       string `json:"enTitle"`
-			ENCopy        string `json:"enCopy"`
-			ENBadge       string `json:"enBadge"`
-			ENExpected    string `json:"enExpected"`
-			ENExplanation string `json:"enExplanation"`
-			RUTitle       string `json:"ruTitle"`
-			RUCopy        string `json:"ruCopy"`
-			RUBadge       string `json:"ruBadge"`
-			RUExpected    string `json:"ruExpected"`
-			RUExplanation string `json:"ruExplanation"`
+			ENTitle    string `json:"enTitle"`
+			ENContents string `json:"enContents"`
+			ENOpen     string `json:"enOpen"`
+			RUTitle    string `json:"ruTitle"`
+			RUContents string `json:"ruContents"`
+			RUOpen     string `json:"ruOpen"`
 		} `json:"studyThemeTruth"`
 		OpaqueTechnical struct {
 			Route    string `json:"route"`
@@ -353,8 +345,8 @@ process.stdout.write(JSON.stringify({
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode typed UI catalog acceptance result: %v\n%s", err, output)
 	}
-	if got.Version != 18 {
-		t.Errorf("catalog version = %d, want 18", got.Version)
+	if got.Version != 25 {
+		t.Errorf("catalog version = %d, want 25", got.Version)
 	}
 	if !got.Membership.Known || got.Membership.Unknown || got.Membership.NonString {
 		t.Errorf("catalog membership contract = %#v", got.Membership)
@@ -404,8 +396,8 @@ process.stdout.write(JSON.stringify({
 		LocalizationFallback string
 	}{
 		Chrome:               "На что обратить внимание",
-		Workspace:            "Рабочее пространство репозитория",
-		Study:                "Неполное направление изучения",
+		Workspace:            "Цели",
+		Study:                "Цель по умолчанию",
 		TaskLens:             "Рабочая гипотеза",
 		Architecture:         "Открыть код",
 		Surfaces:             "Сбросить фильтры",
@@ -427,38 +419,26 @@ process.stdout.write(JSON.stringify({
 		t.Errorf("representative RU product copy = %#v, want %#v", got.RussianCopy, wantRussianCopy)
 	}
 	wantStudyThemeTruth := struct {
-		ENTitle       string
-		ENCopy        string
-		ENBadge       string
-		ENExpected    string
-		ENExplanation string
-		RUTitle       string
-		RUCopy        string
-		RUBadge       string
-		RUExpected    string
-		RUExplanation string
+		ENTitle    string
+		ENContents string
+		ENOpen     string
+		RUTitle    string
+		RUContents string
+		RUOpen     string
 	}{
-		ENTitle:       "Study themes with exact source links",
-		ENCopy:        "The model proposes themes over exact source readings. Local checks verify the source links and structure, not the interpretation; verify each conclusion against the cited code.",
-		ENBadge:       "Exact source attached",
-		ENExpected:    "What to verify: Outcome.",
-		ENExplanation: "Every reading has an exact source anchor. The theme wording is a model interpretation to verify against that code.",
-		RUTitle:       "Темы изучения с точными ссылками на код",
-		RUCopy:        "Модель предлагает темы над точными чтениями исходников. Локальные проверки подтверждают ссылки и структуру, но не интерпретацию; каждый вывод нужно сверять с указанным кодом.",
-		RUBadge:       "Привязан точный код",
-		RUExpected:    "Что проверить: Результат.",
-		RUExplanation: "К каждому чтению привязана точная строка кода. Формулировка темы — интерпретация модели, которую нужно проверить по этому коду.",
+		ENTitle:    "Topics",
+		ENContents: "Contents",
+		ENOpen:     "Default target",
+		RUTitle:    "Темы",
+		RUContents: "Содержание",
+		RUOpen:     "Цель по умолчанию",
 	}
 	if got.StudyThemeTruth.ENTitle != wantStudyThemeTruth.ENTitle ||
-		got.StudyThemeTruth.ENCopy != wantStudyThemeTruth.ENCopy ||
-		got.StudyThemeTruth.ENBadge != wantStudyThemeTruth.ENBadge ||
-		got.StudyThemeTruth.ENExpected != wantStudyThemeTruth.ENExpected ||
-		got.StudyThemeTruth.ENExplanation != wantStudyThemeTruth.ENExplanation ||
+		got.StudyThemeTruth.ENContents != wantStudyThemeTruth.ENContents ||
+		got.StudyThemeTruth.ENOpen != wantStudyThemeTruth.ENOpen ||
 		got.StudyThemeTruth.RUTitle != wantStudyThemeTruth.RUTitle ||
-		got.StudyThemeTruth.RUCopy != wantStudyThemeTruth.RUCopy ||
-		got.StudyThemeTruth.RUBadge != wantStudyThemeTruth.RUBadge ||
-		got.StudyThemeTruth.RUExpected != wantStudyThemeTruth.RUExpected ||
-		got.StudyThemeTruth.RUExplanation != wantStudyThemeTruth.RUExplanation {
+		got.StudyThemeTruth.RUContents != wantStudyThemeTruth.RUContents ||
+		got.StudyThemeTruth.RUOpen != wantStudyThemeTruth.RUOpen {
 		t.Errorf("Study theme truth copy = %#v, want %#v", got.StudyThemeTruth, wantStudyThemeTruth)
 	}
 	wantOpaqueTechnical := struct {

@@ -76,6 +76,11 @@ const reading = {
   location: { path: "serve.go", line: 2 },
   source: codeSource,
 };
+const casdoorRootReading = {
+  symbol: "github.com/casdoor/casdoor.main",
+  role: "direct",
+  location: { path: "main.go", line: 36 },
+};
 const documentReference = {
   label: "README",
   location: { path: "README.mdx" },
@@ -119,6 +124,9 @@ function text(node) {
 }
 const anchorCard = api.renderStudyReadingAnchor(reading, 0);
 const anchorNodes = walk(anchorCard);
+const anchorOpen = anchorNodes.find((node) => String(node.className).includes("rm-study-reading-anchor__open"));
+const casdoorRootCard = api.renderStudyReadingAnchor(casdoorRootReading, 0);
+const casdoorRootOpen = walk(casdoorRootCard).find((node) => String(node.className).includes("rm-study-reading-anchor__open"));
 const readable = api.renderReadableDocument(documentSource);
 const readableNodes = walk(readable);
 const link = readableNodes.find((node) => String(node.className).includes("rm-readable-document__link"));
@@ -137,6 +145,11 @@ const rawSourceAfter = walk(documentCard).some((node) => node.attributes["data-s
 process.stdout.write(JSON.stringify({
   anchorText: text(anchorCard),
   anchorHasSourceDOM: anchorNodes.some((node) => node.attributes["data-source-content"] === "true"),
+  anchorOpenChildren: (anchorOpen && anchorOpen.children || [])
+    .filter((node) => node.tagName === "strong" || node.tagName === "code")
+    .map((node) => text(node)),
+  casdoorRootClass: casdoorRootOpen && casdoorRootOpen.className,
+  casdoorRootChildren: (casdoorRootOpen && casdoorRootOpen.children || []).map((node) => text(node)),
   readableText: text(readable),
   readableTags: readableNodes.map((node) => node.tagName),
   linkTarget: link && link.attributes.title,
@@ -157,17 +170,20 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("run progressive Study asset: %v\n%s", err, output)
 	}
 	var got struct {
-		AnchorText         string   `json:"anchorText"`
-		AnchorHasSourceDOM bool     `json:"anchorHasSourceDOM"`
-		ReadableText       string   `json:"readableText"`
-		ReadableTags       []string `json:"readableTags"`
-		LinkTarget         string   `json:"linkTarget"`
-		LinkHref           string   `json:"linkHref"`
-		UnsafeLinkHref     string   `json:"unsafeLinkHref"`
-		RawLabelBefore     string   `json:"rawLabelBefore"`
-		RawLabelAfter      string   `json:"rawLabelAfter"`
-		RawSourceBefore    bool     `json:"rawSourceBefore"`
-		RawSourceAfter     bool     `json:"rawSourceAfter"`
+		AnchorText          string   `json:"anchorText"`
+		AnchorHasSourceDOM  bool     `json:"anchorHasSourceDOM"`
+		AnchorOpenChildren  []string `json:"anchorOpenChildren"`
+		CasdoorRootClass    string   `json:"casdoorRootClass"`
+		CasdoorRootChildren []string `json:"casdoorRootChildren"`
+		ReadableText        string   `json:"readableText"`
+		ReadableTags        []string `json:"readableTags"`
+		LinkTarget          string   `json:"linkTarget"`
+		LinkHref            string   `json:"linkHref"`
+		UnsafeLinkHref      string   `json:"unsafeLinkHref"`
+		RawLabelBefore      string   `json:"rawLabelBefore"`
+		RawLabelAfter       string   `json:"rawLabelAfter"`
+		RawSourceBefore     bool     `json:"rawSourceBefore"`
+		RawSourceAfter      bool     `json:"rawSourceAfter"`
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode progressive Study asset: %v\n%s", err, output)
@@ -188,6 +204,14 @@ process.stdout.write(JSON.stringify({
 	}
 	if got.AnchorHasSourceDOM || strings.Contains(got.AnchorText, "ListenAndServe") {
 		t.Fatalf("compact anchor rendered source before a click: %q", got.AnchorText)
+	}
+	if strings.Join(got.AnchorOpenChildren, "|") != "Run|serve.go:2" {
+		t.Fatalf("exact source action does not retain visibly separable symbol/location nodes: %#v", got.AnchorOpenChildren)
+	}
+	if !strings.Contains(got.CasdoorRootClass, "rm-study-reading-anchor__open--plain") ||
+		strings.Join(got.CasdoorRootChildren, "|") != "main|main.go:36" {
+		t.Fatalf("Casdoor fallback does not retain visibly separable main/location nodes: class=%q children=%#v",
+			got.CasdoorRootClass, got.CasdoorRootChildren)
 	}
 	for _, token := range []string{
 		"Quick start",

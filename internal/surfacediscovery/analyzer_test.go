@@ -32,6 +32,39 @@ func TestAnalyzeContextHonorsCanceledContext(t *testing.T) {
 	}
 }
 
+func TestAnalyzeRecordsExplicitLinuxTargetAndBuildSelectedEntrypoint(t *testing.T) {
+	root := t.TempDir()
+	writeFixtureFile(t, filepath.Join(root, "go.mod"), "module example.com/target\n\ngo 1.24\n")
+	writeFixtureFile(t, filepath.Join(root, "main_linux.go"), "//go:build linux\n\npackage main\n\nfunc main() { linuxOnly() }\nfunc linuxOnly() {}\n")
+	writeFixtureFile(t, filepath.Join(root, "main_darwin.go"), "//go:build darwin\n\npackage main\n\nfunc main() { darwinOnly() }\nfunc darwinOnly() {}\n")
+
+	options := DefaultOptions(root)
+	options.GoTarget = "linux/amd64"
+	result, err := Analyze(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Catalog.Scenario.ID != "go:linux/amd64:tags=" ||
+		result.Catalog.Scenario.GOOS != "linux" || result.Catalog.Scenario.GOARCH != "amd64" {
+		t.Fatalf("surface scenario = %#v", result.Catalog.Scenario)
+	}
+	foundLinuxMain := false
+	if result.DirectCallIndex == nil {
+		t.Fatal("direct-call index is absent")
+	}
+	for _, node := range result.DirectCallIndex.Nodes {
+		if node.Declaration.Path == "main_linux.go" {
+			foundLinuxMain = true
+		}
+		if node.Declaration.Path == "main_darwin.go" {
+			t.Fatalf("darwin function leaked into linux scenario: %#v", node)
+		}
+	}
+	if !foundLinuxMain {
+		t.Fatalf("linux functions not found: %#v", result.DirectCallIndex.Nodes)
+	}
+}
+
 func TestValueEvaluationHasIndependentOperationalBudgets(t *testing.T) {
 	value := ssa.NewConst(constant.MakeString("bounded"), types.Typ[types.String])
 	analyzer := &analyzer{
@@ -147,7 +180,7 @@ func TestAnalyzeRecordsNamedDiscoveryPhases(t *testing.T) {
 	}
 	want := []string{
 		"package_load", "ssa_build", "call_graph", "candidate_index",
-		"cobra_inventory", "architecture_anchors", "entrypoint_walk", "detached_walk",
+		"architecture_anchors", "entrypoint_walk", "detached_walk",
 		"catalog_finalize", "grounding_finalize",
 	}
 	if !reflect.DeepEqual(names, want) {
@@ -902,50 +935,21 @@ func TestAnalyzeRecursiveWrapperStops(t *testing.T) {
 	}
 }
 
-func TestAnalyzeGinConvenienceAndRepositoryWrapper(t *testing.T) {
+func TestAnalyzeDoesNotProduceGinConvenienceRoutes(t *testing.T) {
 	result := analyzeFixture(t, "gin")
-	if len(result.Catalog.Triggers) != 1 {
-		t.Fatalf("trigger count = %d, want 1", len(result.Catalog.Triggers))
-	}
-	trigger := result.Catalog.Triggers[0]
-	if trigger.Framework != "gin" || trigger.Identity.Method != "GET" || trigger.Identity.Path.Text != "/runs" {
-		t.Fatalf("trigger = %#v", trigger)
-	}
-	joined := wrapperIDs(trigger.WrapperChain)
-	if !strings.Contains(joined, "registerJSON") || !strings.Contains(joined, "RouterGroup).GET") {
-		t.Fatalf("wrapper chain = %q", joined)
+	if len(result.Catalog.Triggers) != 0 {
+		t.Fatalf("Gin-specific triggers reached ordinary core analysis: %#v", result.Catalog.Triggers)
 	}
 }
 
-func TestAnalyzeEchoDirectConvenienceAndGroupedRoutes(t *testing.T) {
+func TestAnalyzeDoesNotProduceEchoConvenienceOrGroupedRoutes(t *testing.T) {
 	result := analyzeFixture(t, "echo")
-	if len(result.Catalog.Triggers) != 4 {
-		t.Fatalf("trigger count = %d, want 4: %#v", len(result.Catalog.Triggers), result.Catalog.Triggers)
-	}
-	want := map[string]string{
-		"DELETE /direct":   "echo-v4-echo-add",
-		"GET /health":      "echo-v4-echo-add",
-		"POST /api/runs":   "echo-v4-group-add",
-		"POST /admin/runs": "echo-v4-group-add",
-	}
-	for _, trigger := range result.Catalog.Triggers {
-		key := trigger.Identity.Method + " " + trigger.Identity.Path.Text
-		seed, ok := want[key]
-		if !ok {
-			t.Errorf("unexpected Echo trigger %q: %#v", key, trigger)
-			continue
-		}
-		if trigger.Framework != "echo" || trigger.FinalSeed != seed || !trigger.Handler.Known {
-			t.Errorf("Echo trigger %q = %#v", key, trigger)
-		}
-		delete(want, key)
-	}
-	if len(want) != 0 {
-		t.Fatalf("missing Echo triggers: %v", want)
+	if len(result.Catalog.Triggers) != 0 {
+		t.Fatalf("Echo-specific triggers reached ordinary core analysis: %#v", result.Catalog.Triggers)
 	}
 }
 
-func TestAnalyzeExternalFrameworkConvenienceRoutesKeepRepositoryEvidence(t *testing.T) {
+func TestAnalyzeExternalFrameworkConvenienceRoutesStayOutsideCoreCatalog(t *testing.T) {
 	tests := []struct {
 		name          string
 		modulePath    string
@@ -992,14 +996,12 @@ func (g *RouterGroup) GET(path string, handlers ...HandlerFunc) { g.Handle(http.
 		t.Run(test.name, func(t *testing.T) {
 			first := analyzeSiblingFrameworkFixture(t, test.modulePath, test.version, test.application, test.frameworkCode)
 			second := analyzeSiblingFrameworkFixture(t, test.modulePath, test.version, test.application, test.frameworkCode)
-			firstRoute := onlyTriggerOfKind(t, first, "http_route")
-			secondRoute := onlyTriggerOfKind(t, second, "http_route")
-			if firstRoute.Identity.Path.Text != "/health" || firstRoute.Identity.Method != "GET" ||
-				!strings.HasPrefix(firstRoute.RegistrationSite.Path, "<external>/") || firstRoute.ID != secondRoute.ID {
-				t.Fatalf("external %s routes = %#v / %#v", test.name, firstRoute, secondRoute)
+			if len(first.Catalog.Triggers) != 0 || len(second.Catalog.Triggers) != 0 {
+				t.Fatalf("external %s framework widened core analysis: %#v / %#v", test.name, first.Catalog.Triggers, second.Catalog.Triggers)
 			}
-			if len(firstRoute.WrapperChain) == 0 || firstRoute.WrapperChain[0].Callsite.Path != "main.go" {
-				t.Fatalf("external %s repository evidence = %#v", test.name, firstRoute.WrapperChain)
+			if first.DirectCallIndex == nil || first.DirectCallIndex.State != DirectCallIndexReady ||
+				second.DirectCallIndex == nil || second.DirectCallIndex.State != DirectCallIndexReady {
+				t.Fatalf("framework-free source lost generic DirectCallIndex: %#v / %#v", first.DirectCallIndex, second.DirectCallIndex)
 			}
 		})
 	}
@@ -1064,29 +1066,25 @@ func TestAnalyzeCustomRouterTypedRegistrationAndServerRoot(t *testing.T) {
 	}
 }
 
-func TestAnalyzeBeegoNamespaceAssemblyFrontier(t *testing.T) {
-	// Decision 220 A: Beego namespaces are recorded as route-assembly
-	// frontiers (controller-bound paths are not statically enumerable), so
-	// the surface is never silently invisible.
-	result := analyzeFixture(t, "beego")
-	var assemblies, routes int
+func TestTypedRegistrationRequiresExactHTTPPlainFunction(t *testing.T) {
+	result := analyzeFixture(t, "typed_registration_signature")
+	routes := triggersOfKind(result, "http_route")
+	if len(routes) != 1 || routes[0].Producer != "typed_registration_detector" ||
+		routes[0].Identity.Path.Text != "/exact" || !routes[0].Identity.Path.Known {
+		t.Fatalf("typed routes = %#v, want only exact HTTP handler registration", routes)
+	}
 	for _, trigger := range result.Catalog.Triggers {
-		switch trigger.Kind {
-		case "http_route_frontier":
-			assemblies++
-			if trigger.Framework != "beego" || trigger.Resolution != "dynamic" ||
-				!hasFrontier(trigger.DynamicFrontier, "configuration_assembled_route_inventory") {
-				t.Fatalf("beego assembly = %#v", trigger)
-			}
-		case "http_route":
-			routes++
+		if trigger.Identity.Path.Text == "/not-a-route" ||
+			strings.Contains(trigger.Handler.Text, "RunInNetNS") {
+			t.Fatalf("non-HTTP func() error became a route: %#v", trigger)
 		}
 	}
-	if assemblies == 0 {
-		t.Fatalf("beego namespace assembly was not recorded: %#v", result.Catalog.Triggers)
-	}
-	if routes != 0 {
-		t.Fatalf("beego exact routes must not be invented: %#v", result.Catalog.Triggers)
+}
+
+func TestAnalyzeDoesNotProduceBeegoNamespaceAssembly(t *testing.T) {
+	result := analyzeFixture(t, "beego")
+	if len(result.Catalog.Triggers) != 0 {
+		t.Fatalf("Beego-specific triggers reached ordinary core analysis: %#v", result.Catalog.Triggers)
 	}
 }
 
@@ -1155,59 +1153,10 @@ func TestAnalyzeImportReachableDetachedHTTPComposition(t *testing.T) {
 	}
 }
 
-func TestAnalyzeCaddyAdminRouteProviders(t *testing.T) {
+func TestAnalyzeDoesNotProduceCaddyAdminRouteProviders(t *testing.T) {
 	result := analyzeFixture(t, "caddy_admin")
-	want := map[string]bool{
-		"/load":                    true,
-		"/adapt":                   true,
-		"/reverse_proxy/upstreams": true,
-		"/wrapped":                 false,
-		"/variable":                false,
-	}
-	providerCount := 0
-	frontierCount := 0
-	for _, trigger := range result.Catalog.Triggers {
-		if trigger.Kind == "http_route_frontier" {
-			frontierCount++
-			if trigger.SurfaceRole != SurfaceRoleDynamicFrontier || trigger.TraceReadiness != TraceReadinessUnsupported {
-				t.Errorf("route frontier semantics = %#v", trigger)
-			}
-			if !hasFrontier(trigger.DynamicFrontier, "configuration_assembled_route_inventory") {
-				t.Errorf("Caddy route assembly frontier = %#v", trigger)
-			}
-			continue
-		}
-		providerCount++
-		path := trigger.Identity.Path.Text
-		handlerKnown, expected := want[path]
-		if trigger.Kind != "http_route_descriptor" || trigger.Status != "confirmed_route_descriptor" || !expected ||
-			trigger.Framework != "caddy-admin" || !trigger.Identity.Path.Known ||
-			trigger.Handler.Known != handlerKnown || !hasFrontier(trigger.DynamicFrontier, "route_provider_dispatch_candidate") {
-			t.Errorf("Caddy provider trigger = %#v", trigger)
-		}
-		if trigger.SurfaceRole != SurfaceRoleDescriptor || trigger.TraceReadiness != TraceReadinessPartial ||
-			!strings.Contains(trigger.TraceReadinessReason, "consumer registration") {
-			t.Errorf("descriptor trace readiness = %#v", trigger)
-		}
-		if handlerKnown && (trigger.Resolution != "exact" || trigger.ProvisionalID) {
-			t.Errorf("exact provider descriptor was degraded by provider-selection uncertainty: %#v", trigger)
-		}
-		if !handlerKnown && (trigger.Resolution != "partial" || !trigger.ProvisionalID) {
-			t.Errorf("partially resolved provider descriptor = %#v", trigger)
-		}
-		if !handlerKnown && !hasFrontier(trigger.DynamicFrontier, "dynamic_handler_identity") {
-			t.Errorf("dynamic provider handler lacks frontier: %#v", trigger)
-		}
-		if len(trigger.Evidence) < 2 {
-			t.Errorf("Caddy provider evidence = %#v", trigger.Evidence)
-		}
-		delete(want, path)
-	}
-	if providerCount != 5 || frontierCount != 2 {
-		t.Fatalf("provider/frontier counts = %d/%d; triggers=%#v", providerCount, frontierCount, result.Catalog.Triggers)
-	}
-	if len(want) != 0 {
-		t.Fatalf("missing Caddy provider paths: %v", want)
+	if len(result.Catalog.Triggers) != 0 {
+		t.Fatalf("Caddy-specific triggers reached ordinary core analysis: %#v", result.Catalog.Triggers)
 	}
 }
 

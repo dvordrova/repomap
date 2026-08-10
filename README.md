@@ -75,14 +75,15 @@ storage durability. They stay in the same flow list as request-driven work and
 are labeled **Request** or **Operational**. Operational candidates are static
 hints, work in offline mode, and do not claim observed execution.
 
-Persisted Go runs normalize build-selected Cobra command registrations and a
-bounded generic scan for configured HTTP registrations, async starts, and
-worker-loop registrations into one **All surfaces** catalog. They are static
-registration/start evidence, not observed execution or completed flows. Counts
-are repository-wide and keep primary application, tooling, tests/helpers, and
-unknown executables distinct from selected FlowProof coverage. Worker and
-non-worker async-task totals are exclusive classifications. Use
-the default `repomap <repo>` command; advanced analyzer controls remain
+Persisted Go runs use one framework-free core analyzer for build-selected
+process entries, standard-library HTTP registrations and server starts,
+`errgroup` task starts, and repository-local registrations whose handler has
+the exact `net/http` shape. These are static registration/start facts, not
+observed execution or completed flows. Ordinary analysis does not run a Cobra
+inventory or widen handler types for third-party web frameworks. Counts remain
+repository-wide and keep primary application, tooling, tests/helpers, and
+unknown executables distinct from selected FlowProof coverage. Use the default
+`repomap <repo>` command; target and bounded call-graph controls remain
 available in `repomap --help`.
 
 For a company or other compatible model, use a full OpenAI-compatible

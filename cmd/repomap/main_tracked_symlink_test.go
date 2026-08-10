@@ -5,14 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/report"
 )
@@ -24,10 +23,11 @@ func TestTrackedSymlinkDefaultPublishesRegularSourceSubset(t *testing.T) {
 
 func TestEarlyCatalogRegularSubsetReachesArchitecture(t *testing.T) {
 	result := runTrackedSymlinkPublication(t)
-	if result.providerRequests != 1 {
+	if result.providerRequests != 1 || len(result.providerStages) != 1 ||
+		result.providerStages[0] != atlasFirstStageArchitecture {
 		t.Fatalf(
-			"provider requests = %d, want one Architecture parity-bridge request",
-			result.providerRequests,
+			"provider stages = %v, want Architecture only and zero target-selection calls",
+			result.providerStages,
 		)
 	}
 	if !bytes.Contains(result.requestBody, []byte("compact conceptual architecture landscape")) {
@@ -161,6 +161,7 @@ type trackedSymlinkPublication struct {
 	stderr           string
 	providerRequests int
 	requestBody      []byte
+	providerStages   []atlasFirstAcceptanceStage
 }
 
 func runTrackedSymlinkPublication(t *testing.T) trackedSymlinkPublication {
@@ -200,73 +201,8 @@ func runTrackedSymlinkPublication(t *testing.T) trackedSymlinkPublication {
 		t.Fatalf("tracked symlink mode = %q, want 120000", stage)
 	}
 
-	orientationJSON, err := json.Marshal(map[string]any{
-		"project_guess": "tracked-link fixture",
-		"confidence":    0.9,
-		"high_level_map": []any{map[string]any{
-			"name":           "command",
-			"evidence":       []string{"main.go"},
-			"why_it_matters": "owns process startup",
-		}},
-		"first_files_to_open": []any{map[string]any{
-			"path":   "main.go",
-			"reason": "process entrypoint",
-		}},
-		"candidate_flows": []any{map[string]any{
-			"name":              "Process startup",
-			"trigger":           "the executable starts",
-			"likely_entrypoint": "main.go",
-			"likely_files":      []string{"main.go"},
-			"why_interesting":   "shows startup",
-			"evidence":          []string{"main.go"},
-			"confidence":        0.9,
-		}},
-		"important_domain_words": []any{},
-		"questions_for_human":    []any{},
-		"unverified_paths":       []any{},
-		"warnings":               []any{},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	orientationFixture := orientationResponseFixture{
-		ProjectGuess: "tracked-link fixture", Confidence: 0.9,
-		Map:        []orientationMapFixture{{Name: "command", Role: "entry", EvidencePath: "main.go", WhyItMatters: "owns process startup"}},
-		FirstFiles: []orientationFileFixture{{Path: "main.go", Reason: "process entrypoint"}},
-		Flows: []orientationFlowFixture{{
-			Name: "Process startup", Trigger: "the executable starts", EntrypointPath: "main.go",
-			LikelyPaths: []string{"main.go"}, EvidencePaths: []string{"main.go"},
-			WhyInteresting: "shows startup", Confidence: 0.9,
-		}},
-		Warnings: []string{},
-	}
-
-	var providerRequests atomic.Int32
-	var requestBody []byte
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		call := providerRequests.Add(1)
-		body, readErr := io.ReadAll(request.Body)
-		if readErr != nil {
-			t.Errorf("read provider request: %v", readErr)
-			return
-		}
-		if call == 1 {
-			requestBody = append([]byte(nil), body...)
-		}
-		responseContent := orientationJSON
-		if bytes.Contains(body, []byte("Orientation facts bundle JSON:")) {
-			t.Errorf("ordinary Atlas-first run scheduled removed raw Orientation: %s", body)
-			responseContent = orientationResponseForRequest(t, body, orientationFixture)
-		}
-		writer.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(writer).Encode(map[string]any{
-			"choices": []any{map[string]any{"message": map[string]any{
-				"role": "assistant", "content": string(responseContent),
-			}}},
-		}); err != nil {
-			t.Errorf("write provider response: %v", err)
-		}
-	}))
+	provider := &atlasFirstAcceptanceProvider{t: t, repositoryType: atlasstudy.RepositoryService}
+	server := httptest.NewServer(provider)
 	defer server.Close()
 
 	t.Setenv("REPOMAP_LLM_ENDPOINT", server.URL)
@@ -277,7 +213,6 @@ func runTrackedSymlinkPublication(t *testing.T) trackedSymlinkPublication {
 	debugDir := t.TempDir()
 	args := []string{
 		"--debug-dir", debugDir,
-		"--discover-surfaces=false",
 		"--no-open",
 		"--no-serve",
 	}
@@ -294,11 +229,20 @@ func runTrackedSymlinkPublication(t *testing.T) trackedSymlinkPublication {
 	if err != nil {
 		t.Fatal(err)
 	}
+	provider.mu.Lock()
+	stages := append([]atlasFirstAcceptanceStage(nil), provider.stages...)
+	architectureBodies := provider.bodies[atlasFirstStageArchitecture]
+	var requestBody []byte
+	if len(architectureBodies) == 1 {
+		requestBody = bytes.Clone(architectureBodies[0])
+	}
+	provider.mu.Unlock()
 	return trackedSymlinkPublication{
 		runDir:           runDir,
 		stderr:           stderr.String(),
-		providerRequests: int(providerRequests.Load()),
+		providerRequests: len(stages),
 		requestBody:      requestBody,
+		providerStages:   stages,
 	}
 }
 
@@ -309,8 +253,9 @@ func assertTrackedSymlinkRegularSubset(
 	t.Helper()
 	const linkPath = "client/v3/example_lease_test.go"
 
-	if result.providerRequests != 1 {
-		t.Fatalf("provider requests = %d, want one Architecture parity-bridge request", result.providerRequests)
+	if result.providerRequests != 1 || len(result.providerStages) != 1 ||
+		result.providerStages[0] != atlasFirstStageArchitecture {
+		t.Fatalf("provider stages = %v, want Architecture only and zero target-selection calls", result.providerStages)
 	}
 	if !bytes.Contains(result.requestBody, []byte("compact conceptual architecture landscape")) {
 		t.Fatalf("provider request is not Architecture: %s", result.requestBody)

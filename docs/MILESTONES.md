@@ -388,12 +388,13 @@ through a presentation-neutral, SHA-bound `researchtrail` adapter. Local
 locators remain separate from claims, so the browser can project the same trail
 without importing planner/probe/teacher schemas directly.
 
-A restic calibration exposed a more fundamental onboarding failure: a compact
-bundle could contain `cmd/restic/main.go` only as a filename, omit the backup
-command body behind package truncation, and still present provider-authored high
-confidence. The first correction is now local and replayable. A package-local
-command-framework seam has a Cobra reader that reconstructs the exact bounded
-prefix `main -> root constructor -> AddCommand constructor -> Run/RunE handler`
+A restic calibration historically exposed a more fundamental onboarding
+failure: a compact bundle could contain `cmd/restic/main.go` only as a filename,
+omit the backup command body behind package truncation, and still present
+provider-authored high confidence. The first correction was local and
+replayable. A package-local command-framework seam then had a Cobra reader that
+reconstructed the exact bounded prefix
+`main -> root constructor -> AddCommand constructor -> Run/RunE handler`
 and typed handler call sites. The restic bundle now contains
 `main:161 -> newRootCommand:36 -> newBackupCommand:35 -> runBackup:498`, plus
 exact call sites for repository open/index loading, scanner creation,
@@ -401,6 +402,11 @@ exact call sites for repository open/index loading, scanner creation,
 unresolved. A deterministic post-model gate caps confidence and records
 verified/missing evidence; the browser no longer has to imply that provider
 confidence is evidence confidence.
+
+Decision 273 later retired that fresh command-framework producer from ordinary
+analysis in favor of one positive framework-free core path. The persisted
+command-trace schema and readers remain only so these historical runs can still
+be opened and replayed.
 
 The bounded restic proof increment is now complete. `FlowProof` stores the CLI
 slot contract, exact anchors/transitions, budgets, statistics, pending work, and

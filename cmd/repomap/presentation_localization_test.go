@@ -2125,11 +2125,25 @@ func writePresentationLocalizationServeRun(
 	if err != nil {
 		t.Fatal(err)
 	}
+	snapshotJSON, err := json.Marshal(struct {
+		RepoName      string   `json:"repo_name"`
+		FilteredFiles []string `json:"filtered_files"`
+	}{
+		RepoName:      data.RepoName,
+		FilteredFiles: []string{"batch.go"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "snapshot.json"), snapshotJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	manifest := report.RunManifest{
 		Version:               report.CurrentRunManifestVersion,
 		RepositoryState:       state,
 		AnalysisRoot:          state.Identity,
 		RepositoryStateSHA256: stateSHA,
+		SnapshotSHA256:        fmt.Sprintf("%x", sha256.Sum256(snapshotJSON)),
 		ReportSHA256:          fmt.Sprintf("%x", sha256.Sum256(reportJSON)),
 		ReportFormatVersion:   report.CurrentFormatVersion,
 		OpenablePaths:         []string{"batch.go"},

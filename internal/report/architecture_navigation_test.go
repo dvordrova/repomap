@@ -73,6 +73,7 @@ func TestRunManifestRejectsArchitectureComponentNavigationIdentityDrift(t *testi
 
 	base := architectureComponentNavigationFixture()
 	base.FormatVersion = CurrentFormatVersion
+	base.AnalysisTarget = reportAnalysisTargetFixture(t)
 	projection, err := ProjectArchitectureComponentNavigation(
 		base.ArchitectureCanvas,
 		base.OpenablePaths,
@@ -89,6 +90,7 @@ func TestRunManifestRejectsArchitectureComponentNavigationIdentityDrift(t *testi
 			t.Fatal(err)
 		}
 		manifest := validRunManifestFixture(t)
+		bindRunManifestAnalysisTarget(t, &manifest, data)
 		manifest.Components = nil
 		manifest.ReportSHA256 = manifestSHA256(reportJSON)
 		return manifest.VerifyReportJSON(reportJSON)

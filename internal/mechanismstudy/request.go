@@ -48,6 +48,9 @@ func (compilation *Compilation) Validate() error {
 		digest.OmittedCards != compilation.OmittedCards || len(digest.Cards) != len(compilation.Cards) {
 		return fmt.Errorf("mechanism study: catalog authority does not restore compilation")
 	}
+	if err := validateTargetCompilationIdentity(compilation, digest); err != nil {
+		return err
+	}
 	if compilation.Binding.ContextKind == ContextStudy {
 		if digest.StudyThemesVersion != themestudy.StudyThemesVersion || digest.ExactContextVersion != 0 {
 			return fmt.Errorf("mechanism study: invalid Study catalog contract")
@@ -76,7 +79,9 @@ func (compilation *Compilation) Validate() error {
 		}
 		seenCanonical[authority.sourceCanonical] = struct{}{}
 		previousOrdinal = authority.sourceOrdinal
-		if err := validateCard(card, authority, seenRefs); err != nil {
+		if err := validateCard(
+			card, authority, seenRefs, compilation.TargetTrailVersion != 0,
+		); err != nil {
 			return fmt.Errorf("mechanism study: card %s: %w", card.Ref, err)
 		}
 		if err := validateDigestCard(digest.Cards[position], card, authority); err != nil {
@@ -93,6 +98,9 @@ func validateDigestCard(digest digestCard, card Card, authority cardAuthority) e
 		len(digest.Nodes) != len(card.Nodes) || len(digest.Edges) != len(card.Edges) ||
 		len(digest.Readings) != len(card.Readings) {
 		return fmt.Errorf("public card mismatch")
+	}
+	if err := validateDigestTargetRoots(digest.TargetRootIDs, authority); err != nil {
+		return err
 	}
 	for position, node := range digest.Nodes {
 		if node.Ref != card.Nodes[position].Ref || node.Node.ID == "" ||
@@ -134,7 +142,12 @@ func validateDigestCard(digest digestCard, card Card, authority cardAuthority) e
 	return nil
 }
 
-func validateCard(card Card, authority cardAuthority, globalRefs map[string]struct{}) error {
+func validateCard(
+	card Card,
+	authority cardAuthority,
+	globalRefs map[string]struct{},
+	targeted bool,
+) error {
 	if !publicLabelValid(card.Label, maxCardLabelRunes) || !publicLabelValid(card.Question, maxCardQuestionRunes) ||
 		len(card.Readings) > MaxDirectReadingsPerCard ||
 		len(card.Nodes) > MaxNodesPerCard || len(card.Edges) > MaxEdgesPerCard ||
@@ -143,7 +156,8 @@ func validateCard(card Card, authority cardAuthority, globalRefs map[string]stru
 	}
 	if len(authority.nodeIDByRef) != len(card.Nodes) || len(authority.nodeRefByID) != len(card.Nodes) ||
 		len(authority.nodeByRef) != len(card.Nodes) || len(authority.edgeByRef) != len(card.Edges) ||
-		len(authority.readingOrdinalByRef) != len(card.Readings) {
+		len(authority.readingOrdinalByRef) != len(card.Readings) ||
+		len(authority.targetRootRefs) > len(card.Nodes) {
 		return fmt.Errorf("invalid restoration authority bounds")
 	}
 	nodes := make(map[string]struct{}, len(card.Nodes))
@@ -163,6 +177,13 @@ func validateCard(card Card, authority cardAuthority, globalRefs map[string]stru
 		if !ok || exact.ID != authority.nodeIDByRef[node.Ref] {
 			return fmt.Errorf("node restoration authority mismatch")
 		}
+	}
+	if targeted {
+		if err := validateTargetRootProjection(card, authority); err != nil {
+			return err
+		}
+	} else if card.TargetRootRefs != nil || len(authority.targetRootRefs) != 0 {
+		return fmt.Errorf("untargeted card carries target roots")
 	}
 	for _, reading := range card.Readings {
 		if !typedRef(reading.Ref, 'r') || !publicLabelValid(reading.Label, maxReadingLabelRunes) {
@@ -216,6 +237,11 @@ func validateCard(card Card, authority cardAuthority, globalRefs map[string]stru
 		}
 		previous = string(frontier.Reason)
 	}
+	if targeted {
+		if err := validateTargetCardShape(card, authority); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -252,7 +278,9 @@ func planRequestBatchesWithCallLimit(compilation *Compilation, callLimit int) (R
 	}
 	eligible := make([]Card, 0, len(compilation.Cards))
 	for _, card := range compilation.Cards {
-		if cardCanContainMechanism(card) {
+		if cardCanContainMechanismWithAuthority(
+			card, compilation.authority[card.Ref], compilation.TargetTrailVersion != 0,
+		) {
 			eligible = append(eligible, copyCard(card))
 		}
 	}
@@ -404,6 +432,9 @@ func validatePublicCard(card Card, globalRefs map[string]struct{}) error {
 		globalRefs[node.Ref] = struct{}{}
 		nodes[node.Ref] = struct{}{}
 	}
+	if err := validatePublicTargetRootRefs(card, nodes); err != nil {
+		return err
+	}
 	rooted := false
 	for _, reading := range card.Readings {
 		if !typedRef(reading.Ref, 'r') || !publicLabelValid(reading.Label, maxReadingLabelRunes) {
@@ -449,11 +480,57 @@ func validatePublicCard(card Card, globalRefs map[string]struct{}) error {
 	return nil
 }
 
+func validatePublicTargetRootRefs(card Card, nodes map[string]struct{}) error {
+	if len(card.TargetRootRefs) == 0 {
+		if card.TargetRootRefs != nil {
+			return fmt.Errorf("mechanism study: explicit empty target roots are not canonical")
+		}
+		return nil
+	}
+	if len(card.TargetRootRefs) > len(card.Nodes) {
+		return fmt.Errorf("mechanism study: invalid public target root bounds")
+	}
+	selected := make(map[string]struct{}, len(card.TargetRootRefs))
+	for _, ref := range card.TargetRootRefs {
+		if !typedRef(ref, 'n') {
+			return fmt.Errorf("mechanism study: invalid public target root")
+		}
+		if _, exists := nodes[ref]; !exists {
+			return fmt.Errorf("mechanism study: unknown public target root")
+		}
+		if _, duplicate := selected[ref]; duplicate {
+			return fmt.Errorf("mechanism study: duplicate public target root")
+		}
+		selected[ref] = struct{}{}
+	}
+	wantPosition := 0
+	for _, node := range card.Nodes {
+		if _, isTargetRoot := selected[node.Ref]; !isTargetRoot {
+			continue
+		}
+		if card.TargetRootRefs[wantPosition] != node.Ref {
+			return fmt.Errorf("mechanism study: public target roots are not in node order")
+		}
+		wantPosition++
+	}
+	if wantPosition != len(card.TargetRootRefs) {
+		return fmt.Errorf("mechanism study: incomplete public target roots")
+	}
+	return nil
+}
+
 func publicLabelValid(value string, limit int) bool {
 	return value != "" && safeLabel(value, limit, "") == value
 }
 
 func cardCanContainMechanism(card Card) bool {
+	if len(card.TargetRootRefs) > 0 {
+		targetRoots := make(map[string]struct{}, len(card.TargetRootRefs))
+		for _, ref := range card.TargetRootRefs {
+			targetRoots[ref] = struct{}{}
+		}
+		return targetedCardCanContainMechanism(card, targetRoots)
+	}
 	if len(card.Edges) < 2 {
 		return false
 	}
@@ -487,9 +564,88 @@ func cardCanContainMechanism(card Card) bool {
 	return false
 }
 
+func cardCanContainMechanismWithAuthority(card Card, authority cardAuthority, targeted bool) bool {
+	if !targeted {
+		return cardCanContainMechanism(card)
+	}
+	if len(authority.targetRootRefs) == 0 || len(card.TargetRootRefs) != len(authority.targetRootRefs) {
+		return false
+	}
+	for _, ref := range card.TargetRootRefs {
+		if _, exact := authority.targetRootRefs[ref]; !exact {
+			return false
+		}
+	}
+	return targetedCardCanContainMechanism(card, authority.targetRootRefs)
+}
+
+func targetedCardCanContainMechanism(card Card, targetRootRefs map[string]struct{}) bool {
+	if len(targetRootRefs) == 0 || len(card.Edges) < 2 {
+		return false
+	}
+	readingRoots := make(map[string]struct{})
+	for _, reading := range card.Readings {
+		if reading.RootNodeRef != "" {
+			readingRoots[reading.RootNodeRef] = struct{}{}
+		}
+	}
+	if len(readingRoots) == 0 {
+		return false
+	}
+	adjacency := make(map[string][]string)
+	for _, edge := range card.Edges {
+		if edge.CallerRef != edge.CalleeRef {
+			adjacency[edge.CallerRef] = append(adjacency[edge.CallerRef], edge.CalleeRef)
+		}
+	}
+	type trail struct {
+		node         string
+		depth        int
+		crossedStudy bool
+		visited      map[string]struct{}
+	}
+	for targetRoot := range targetRootRefs {
+		_, rootIsReading := readingRoots[targetRoot]
+		queue := []trail{{
+			node: targetRoot, crossedStudy: rootIsReading,
+			visited: map[string]struct{}{targetRoot: {}},
+		}}
+		for len(queue) > 0 {
+			current := queue[0]
+			queue = queue[1:]
+			if current.depth >= MaxEdgesPerMechanism {
+				continue
+			}
+			for _, next := range adjacency[current.node] {
+				if _, seen := current.visited[next]; seen {
+					continue
+				}
+				crossed := current.crossedStudy
+				if _, reading := readingRoots[next]; reading {
+					crossed = true
+				}
+				depth := current.depth + 1
+				if depth >= 2 && crossed {
+					return true
+				}
+				visited := make(map[string]struct{}, len(current.visited)+1)
+				for ref := range current.visited {
+					visited[ref] = struct{}{}
+				}
+				visited[next] = struct{}{}
+				queue = append(queue, trail{node: next, depth: depth, crossedStudy: crossed, visited: visited})
+			}
+		}
+	}
+	return false
+}
+
 func copyCard(card Card) Card {
 	if card.Readings != nil {
 		card.Readings = append([]Reading{}, card.Readings...)
+	}
+	if card.TargetRootRefs != nil {
+		card.TargetRootRefs = append([]string{}, card.TargetRootRefs...)
 	}
 	if card.Nodes != nil {
 		card.Nodes = append([]Node{}, card.Nodes...)

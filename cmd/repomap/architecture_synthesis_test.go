@@ -520,7 +520,8 @@ func TestArchitectureAllDroppedSupportingOnlySalvageKeepsStatusExchangeAndMetada
 	if !errors.Is(synthesisErr, errArchitectureSynthesisRejected) || outcome.Failure == nil ||
 		outcome.Failure.Code != "architecture.proposal_rejected" ||
 		!slices.Contains(outcome.ValidationCodes, "proposal.supporting_only_unit_coverage_salvaged") ||
-		!slices.Contains(outcome.ValidationCodes, "proposal.invalid_subsystem_count") ||
+		!slices.Contains(outcome.ValidationCodes, "proposal.zero_useful_semantic_components") ||
+		slices.Contains(outcome.ValidationCodes, "proposal.invalid_subsystem_count") ||
 		slices.Contains(outcome.ValidationCodes, "proposal.empty_primary_scope_coverage") ||
 		slices.Contains(outcome.ValidationCodes, "proposal.supporting_only_unit_coverage") {
 		t.Fatalf("all-dropped supporting-only salvage outcome/error = %#v / %v", outcome, synthesisErr)
@@ -629,7 +630,7 @@ func TestEnsureArchitectureSynthesisPersistsResolvedManyToManyMembershipEvidence
 	second.ID = componentmap.MemberID{Kind: componentmap.MemberPackage, Value: "opaque-storage"}
 	second.Name = "local storage"
 	second.Facts = append([]componentmap.LocalFact(nil), second.Facts...)
-	second.Facts[0].Value = "storage package"
+	second.Facts[0].Value = "example.com/test/storage"
 	bundle.Candidates = append(bundle.Candidates, second)
 
 	request, _, err := componentmap.BuildSynthesisRequest(bundle)
@@ -704,7 +705,7 @@ func TestEnsureArchitectureSynthesisPersistsAndReplaysExactPartialCoverage(t *te
 	omitted.ID = componentmap.MemberID{Kind: componentmap.MemberPackage, Value: "opaque-storage"}
 	omitted.Name = "local storage"
 	omitted.Facts = append([]componentmap.LocalFact(nil), omitted.Facts...)
-	omitted.Facts[0].Value = "storage package"
+	omitted.Facts[0].Value = "example.com/test/storage"
 	bundle.Candidates = append(bundle.Candidates, omitted)
 	request, _, err := componentmap.BuildSynthesisRequest(bundle)
 	if err != nil {
@@ -1779,6 +1780,86 @@ func TestArchitectureSynthesisStatusSeparatesLocalCandidatesFromRequestedConcept
 	}
 }
 
+func TestEnsureArchitectureSynthesisAcceptsAllSupportingNonProductionScope(t *testing.T) {
+	t.Parallel()
+
+	bundle := architectureAllSupportingTestBundle()
+	request, _, err := componentmap.BuildSynthesisRequest(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(request.Candidates) != 2 {
+		t.Fatalf("all-supporting request candidates = %#v", request.Candidates)
+	}
+	for _, candidate := range request.Candidates {
+		if candidate.CoverageRole != componentmap.SynthesisCoverageSupportingEvidence {
+			t.Fatalf("candidate %s coverage role = %q, want supporting_evidence", candidate.Ref.Ref, candidate.CoverageRole)
+		}
+	}
+	response := mustArchitectureJSON(t, map[string]any{
+		"subsystems": []any{map[string]any{
+			"name": "Developer tools", "description": "Repository-local diagnostics",
+			"components": []any{map[string]any{
+				"name": "Diagnostics", "description": "Diagnostic command",
+				"member_refs": []string{request.Candidates[0].Ref.Ref},
+				"anchor_refs": []string{},
+			}},
+		}},
+	})
+	provider := &architectureSynthesisStub{response: response}
+	runDir := t.TempDir()
+	writer, err := debugdump.OpenWriter(runDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, synthesisErr := ensureArchitectureSynthesisWithOptions(
+		t.Context(), bundle, runDir, "revision-all-supporting",
+		"openai-compatible/bearer", "test-model", provider,
+		architectureSynthesisOptions{
+			disableCache: true, exchangeWriter: writer,
+			providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256(),
+		},
+	)
+	if closeErr := writer.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if synthesisErr != nil {
+		t.Fatalf("all-supporting synthesis: %v; outcome=%#v", synthesisErr, outcome)
+	}
+	if outcome.ValidationOutcome != componentmap.ValidationAcceptedPartial ||
+		outcome.RequestedConceptualCount != 2 || outcome.CoveredConceptualCount != 1 ||
+		outcome.UncoveredConceptualCount != 1 || outcome.RequestedPrimaryScopeCount != 0 ||
+		outcome.CoveredPrimaryScopeCount != 0 || outcome.UncoveredPrimaryScopeCount != 0 ||
+		outcome.CoveredSupportingEvidenceCount != 1 ||
+		slices.Contains(outcome.ValidationCodes, "status.invalid_evidence") {
+		t.Fatalf("all-supporting synthesis outcome = %#v", outcome)
+	}
+	if err := persistArchitectureSynthesisStatus(runDir, outcome, nil); err != nil {
+		t.Fatalf("persist all-supporting status: %v", err)
+	}
+	statusData, err := os.ReadFile(filepath.Join(runDir, report.ArchitectureSynthesisStatusFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var status report.ArchitectureSynthesisStatus
+	if err := json.Unmarshal(statusData, &status); err != nil {
+		t.Fatal(err)
+	}
+	if err := status.Validate(); err != nil {
+		t.Fatalf("persisted all-supporting status: %v; status=%#v", err, status)
+	}
+	if !status.ProposalAccepted || !status.ProposalPartial || status.ProposalRejected ||
+		status.RequestedPrimaryScopeCount != 0 || status.CoveredSupportingEvidenceCount != 1 {
+		t.Fatalf("persisted all-supporting status = %#v", status)
+	}
+	records := readArchitectureSemanticExchangeRecords(t, runDir)
+	if len(records) != 1 || records[0].State != debugdump.SemanticStateAccepted ||
+		records[0].ValidationCode != debugdump.SemanticValidationAccepted ||
+		records[0].Outcome.Code != "accepted_partial" {
+		t.Fatalf("all-supporting semantic exchange = %#v", records)
+	}
+}
+
 func TestArchitectureSynthesisStatusSeparatesProposalLifecycle(t *testing.T) {
 	t.Parallel()
 
@@ -2194,6 +2275,90 @@ func TestPrepareAuthorizedArchitectureUsesCompleteCasdoorGraph(t *testing.T) {
 	}
 }
 
+func TestPrepareArchitectureInputCompactsMobySizedExactGraphOnlyAtProviderBoundary(t *testing.T) {
+	const (
+		packageCount = 351
+		edgeCount    = 1056
+	)
+	runDir, authority := architectureAuthorizedGraphRun(
+		t,
+		architectureDenseGraphFacts(packageCount, edgeCount),
+	)
+	bundle, _, err := prepareArchitectureSynthesisInput(
+		runDir,
+		"revision-moby-sized-graph",
+		&authority,
+	)
+	if err != nil {
+		t.Fatalf("prepare Architecture input: %v", err)
+	}
+	if got := len(bundle.Candidates); got != packageCount {
+		t.Fatalf("local candidates = %d, want %d", got, packageCount)
+	}
+	if got := len(bundle.Relations); got != edgeCount {
+		t.Fatalf("local exact relations = %d, want %d", got, edgeCount)
+	}
+	for _, relation := range bundle.Relations {
+		if relation.Kind != componentmap.StructuralRelationPackageImport {
+			t.Fatalf("unexpected local relation kind %q", relation.Kind)
+		}
+	}
+
+	unitCatalog, err := componentmap.CompileUnitCatalog(bundle)
+	if err != nil {
+		t.Fatalf("compile local unit catalog: %v", err)
+	}
+	wantOutgoing := 0
+	for _, relation := range bundle.Relations {
+		fromUnit, fromOK := unitCatalog.MemberToWireUnit[relation.From]
+		toUnit, toOK := unitCatalog.MemberToWireUnit[relation.To]
+		if fromOK && toOK && fromUnit != toUnit {
+			wantOutgoing++
+		}
+	}
+	request, encoded, err := componentmap.BuildSynthesisRequest(bundle)
+	if err != nil {
+		t.Fatalf("build compact Architecture request: %v", err)
+	}
+	if len(request.Relations) != 0 {
+		t.Fatalf("provider-visible raw package relations = %d, want 0", len(request.Relations))
+	}
+	gotOutgoing := 0
+	for _, unit := range request.Units {
+		gotOutgoing += unit.RelationOutCount
+	}
+	if wantOutgoing == 0 || gotOutgoing != wantOutgoing {
+		t.Fatalf(
+			"provider-visible relation aggregate = %d, want exact cross-unit count %d",
+			gotOutgoing,
+			wantOutgoing,
+		)
+	}
+
+	permuted := bundle
+	permuted.Candidates = slices.Clone(bundle.Candidates)
+	permuted.Relations = slices.Clone(bundle.Relations)
+	slices.Reverse(permuted.Candidates)
+	slices.Reverse(permuted.Relations)
+	_, permutedEncoded, err := componentmap.BuildSynthesisRequest(permuted)
+	if err != nil {
+		t.Fatalf("build permuted compact Architecture request: %v", err)
+	}
+	if !bytes.Equal(permutedEncoded, encoded) {
+		t.Fatal("Moby-sized provider request changed after exact fact permutation")
+	}
+}
+
+func TestArchitecturePackageRelationAuthorityMatchesExactWorkspaceGraph(t *testing.T) {
+	if componentmap.MaxPackageImportRelations != workspacegraph.MaxExactEdges {
+		t.Fatalf(
+			"Architecture package relation authority = %d, workspace graph authority = %d",
+			componentmap.MaxPackageImportRelations,
+			workspacegraph.MaxExactEdges,
+		)
+	}
+}
+
 func TestPrepareAuthorizedArchitectureSkipsProviderWithoutExactGraph(t *testing.T) {
 	facts := architectureCasdoorGraphFacts(1)
 	facts.InternalEdges = make([]gofacts.Edge, workspacegraph.MaxExactEdges+1)
@@ -2316,6 +2481,55 @@ func TestPrepareAuthorizedArchitectureReportsCandidateExhaustionAsTypedResource(
 	}
 	if provider.calls != 0 || outcome.Attempted {
 		t.Fatalf("candidate exhaustion reached provider: calls=%d outcome=%#v", provider.calls, outcome)
+	}
+}
+
+func TestArchitectureRelationCategoryExhaustionStopsBeforeProvider(t *testing.T) {
+	tests := []struct {
+		name  string
+		kind  componentmap.StructuralRelationKind
+		count int
+		want  componentmap.CandidateBundleLimitKind
+	}{
+		{
+			name:  "package imports",
+			kind:  componentmap.StructuralRelationPackageImport,
+			count: componentmap.MaxPackageImportRelations + 1,
+			want:  componentmap.CandidateBundleLimitPackageImportRelations,
+		},
+		{
+			name:  "behavior handoffs",
+			kind:  componentmap.StructuralRelationBehaviorHandoff,
+			count: componentmap.MaxBehaviorHandoffRelations + 1,
+			want:  componentmap.CandidateBundleLimitBehaviorRelations,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			provider := &architectureSynthesisStub{err: errors.New("provider must not be called")}
+			_, synthesisErr := ensureArchitectureSynthesis(
+				context.Background(),
+				architectureRelationLimitBundle(test.kind, test.count),
+				t.TempDir(),
+				"revision-relation-limit",
+				"openai-compatible/bearer",
+				"test-model",
+				provider,
+			)
+			var limitErr *componentmap.CandidateBundleLimitError
+			if !errors.As(synthesisErr, &limitErr) || limitErr.Kind != test.want ||
+				limitErr.Observed != test.count {
+				t.Fatalf("relation exhaustion = %#v / %v", limitErr, synthesisErr)
+			}
+			if provider.calls != 0 || len(provider.prompts) != 0 || len(provider.bodies) != 0 {
+				t.Fatalf(
+					"relation exhaustion reached provider: calls=%d prompts=%d bodies=%d",
+					provider.calls,
+					len(provider.prompts),
+					len(provider.bodies),
+				)
+			}
+		})
 	}
 }
 
@@ -2525,6 +2739,44 @@ func architectureCasdoorGraphFacts(edgeCount int) gofacts.Facts {
 	return facts
 }
 
+func architectureDenseGraphFacts(packageCount, edgeCount int) gofacts.Facts {
+	const modulePath = "github.com/example/large"
+	facts := gofacts.Facts{
+		Modules: []gofacts.ModuleFact{{
+			ID: "root-id", ModulePath: modulePath, ModuleDir: ".", Main: true,
+		}},
+		Packages:      make([]gofacts.PackageFact, packageCount),
+		InternalEdges: make([]gofacts.Edge, 0, edgeCount),
+	}
+	for index := range facts.Packages {
+		directory := fmt.Sprintf("area%02d/pkg%03d", index%24, index)
+		canonicalPath := modulePath + "/" + directory
+		facts.Packages[index] = gofacts.PackageFact{
+			CanonicalPath:     canonicalPath,
+			Name:              fmt.Sprintf("pkg%03d", index),
+			ModuleID:          "root-id",
+			ModulePath:        modulePath,
+			PackageDir:        directory,
+			ModuleRelativeDir: directory,
+		}
+	}
+	for from := range facts.Packages {
+		for to := range facts.Packages {
+			if from == to {
+				continue
+			}
+			facts.InternalEdges = append(facts.InternalEdges, gofacts.Edge{
+				From: facts.Packages[from].CanonicalPath,
+				To:   facts.Packages[to].CanonicalPath,
+			})
+			if len(facts.InternalEdges) == edgeCount {
+				return facts
+			}
+		}
+	}
+	return facts
+}
+
 func mustArchitectureJSON(t *testing.T, value any) []byte {
 	t.Helper()
 	encoded, err := json.Marshal(value)
@@ -2575,7 +2827,7 @@ func architectureSynthesisTestBundle() componentmap.CandidateBundle {
 		Candidates: []componentmap.Candidate{{
 			ID: memberID, Role: componentmap.CandidateRoleConceptualMember, Name: "local runtime",
 			Facts: []componentmap.LocalFact{{
-				Kind: componentmap.FactDeclaration, Value: "runtime package",
+				Kind: componentmap.FactDeclaration, Value: "example.com/test/runtime",
 				Certainty: evidence.CertaintyStatic,
 				Provenance: []evidence.Provenance{{
 					Provider: "test", Version: "v1", Operation: "fixture",
@@ -2583,6 +2835,87 @@ func architectureSynthesisTestBundle() componentmap.CandidateBundle {
 			}},
 		}},
 	}
+}
+
+func architectureAllSupportingTestBundle() componentmap.CandidateBundle {
+	toolPackage := func(id, name string) componentmap.Candidate {
+		return componentmap.Candidate{
+			ID:   componentmap.MemberID{Kind: componentmap.MemberPackage, Value: id},
+			Role: componentmap.CandidateRoleConceptualMember,
+			Name: name,
+			Facts: []componentmap.LocalFact{{
+				Kind: componentmap.FactDeclaration, Value: "example.com/test/" + name,
+				Certainty: evidence.CertaintyStatic,
+				Provenance: []evidence.Provenance{{
+					Provider: "test", Version: "v1", Operation: "fixture",
+				}},
+			}},
+		}
+	}
+	return componentmap.CandidateBundle{
+		Version:             componentmap.ContractVersion,
+		RepositoryArchetype: componentmap.ArchetypeCLITool,
+		GroundingMode:       componentmap.GroundingPackages,
+		Candidates: []componentmap.Candidate{
+			toolPackage("opaque-diagnostic-tool", "tools/diagnose"),
+			toolPackage("opaque-helper-tool", "tools/helper"),
+		},
+	}
+}
+
+func architectureRelationLimitBundle(
+	kind componentmap.StructuralRelationKind,
+	count int,
+) componentmap.CandidateBundle {
+	const candidateCount = 65
+	bundle := componentmap.CandidateBundle{
+		Version:             componentmap.ContractVersion,
+		RepositoryArchetype: componentmap.ArchetypeApplication,
+		GroundingMode:       componentmap.GroundingPackages,
+		Candidates:          make([]componentmap.Candidate, 0, candidateCount),
+		Relations:           make([]componentmap.LocalRelation, 0, count),
+	}
+	for index := 0; index < candidateCount; index++ {
+		id := componentmap.MemberID{
+			Kind:  componentmap.MemberPackage,
+			Value: fmt.Sprintf("package-%03d", index),
+		}
+		bundle.Candidates = append(bundle.Candidates, componentmap.Candidate{
+			ID: id, Role: componentmap.CandidateRoleConceptualMember,
+			Name: fmt.Sprintf("area/package-%03d", index),
+			Facts: []componentmap.LocalFact{{
+				Kind: componentmap.FactDeclaration, Value: fmt.Sprintf("area/package-%03d", index),
+				Certainty: evidence.CertaintyStatic,
+				Provenance: []evidence.Provenance{{
+					Provider: "test", Version: "v1", Operation: "fixture",
+				}},
+			}},
+		})
+	}
+	for from := range bundle.Candidates {
+		for to := range bundle.Candidates {
+			if from == to {
+				continue
+			}
+			bundle.Relations = append(bundle.Relations, componentmap.LocalRelation{
+				ID:        fmt.Sprintf("relation-%04d", len(bundle.Relations)),
+				From:      bundle.Candidates[from].ID,
+				To:        bundle.Candidates[to].ID,
+				Kind:      kind,
+				Certainty: evidence.CertaintyStatic,
+				Provenance: []evidence.Provenance{{
+					Provider: "test", Version: "v1", Operation: "fixture_relation",
+				}},
+				Scenarios: []componentmap.ScenarioContext{{
+					ID: "go-default", Name: "Default Go build",
+				}},
+			})
+			if len(bundle.Relations) == count {
+				return bundle
+			}
+		}
+	}
+	return bundle
 }
 
 func architectureSynthesisTestResponse(t *testing.T, bundle componentmap.CandidateBundle) []byte {

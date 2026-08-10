@@ -57,6 +57,111 @@ func decodeAdjudicationTheme(raw json.RawMessage) (AdjudicatedTheme, error) {
 	return theme, nil
 }
 
+// normalizeAdjudicationCandidateEcho removes only three backend-owned fields
+// that the provider sometimes redundantly copies from a known candidate. An
+// echo is removable only when its typed value is exactly the value advertised
+// for that candidate (including ref order). A mismatched echo is not repaired:
+// it receives a closed item-local issue code without persisting either value.
+// Every other unknown field is intentionally left for the strict wire decoder.
+func normalizeAdjudicationCandidateEcho(
+	raw json.RawMessage,
+	candidateByRef map[string]*ScoutCandidate,
+) (json.RawMessage, map[string]int, AdjudicationIssueCode) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+		return raw, nil, ""
+	}
+	var candidateRef string
+	encodedRef, ok := object["candidate_ref"]
+	if !ok || json.Unmarshal(encodedRef, &candidateRef) != nil {
+		return raw, nil, ""
+	}
+	candidate, ok := candidateByRef[candidateRef]
+	if !ok || candidate == nil {
+		return raw, nil, ""
+	}
+
+	type echoCheck struct {
+		field             string
+		normalizationKind string
+		mismatch          AdjudicationIssueCode
+		equal             func(json.RawMessage) bool
+	}
+	checks := []echoCheck{
+		{
+			field:             "theme_kind",
+			normalizationKind: AdjNormalizationRedundantThemeKind,
+			mismatch:          AdjIssueThemeKindEchoMismatch,
+			equal: func(encoded json.RawMessage) bool {
+				var got ThemeKind
+				return json.Unmarshal(encoded, &got) == nil && got == candidate.ThemeKind
+			},
+		},
+		{
+			field:             "anchor_refs",
+			normalizationKind: AdjNormalizationRedundantAnchorRefs,
+			mismatch:          AdjIssueAnchorRefsEchoMismatch,
+			equal: func(encoded json.RawMessage) bool {
+				var got []string
+				return json.Unmarshal(encoded, &got) == nil && exactStringSlice(got, candidate.AnchorRefs)
+			},
+		},
+		{
+			field:             "expansion_file_refs",
+			normalizationKind: AdjNormalizationRedundantExpansionFileRefs,
+			mismatch:          AdjIssueExpansionFileRefsEchoMismatch,
+			equal: func(encoded json.RawMessage) bool {
+				// omitempty means an empty value was not advertised and therefore
+				// cannot be an exact redundant echo.
+				if len(candidate.ExpansionFileRefs) == 0 {
+					return false
+				}
+				var got []string
+				return json.Unmarshal(encoded, &got) == nil && exactStringSlice(got, candidate.ExpansionFileRefs)
+			},
+		},
+	}
+
+	// Validate every present echo before removing any of them. A mismatch
+	// therefore never produces partial normalization accounting.
+	for _, check := range checks {
+		encoded, present := object[check.field]
+		if present && !check.equal(encoded) {
+			return raw, nil, check.mismatch
+		}
+	}
+	counts := make(map[string]int, len(checks))
+	for _, check := range checks {
+		if _, present := object[check.field]; !present {
+			continue
+		}
+		delete(object, check.field)
+		counts[check.normalizationKind]++
+	}
+	if len(counts) == 0 {
+		return raw, nil, ""
+	}
+	normalized, err := json.Marshal(object)
+	if err != nil {
+		// A RawMessage map decoded from valid JSON is always marshalable. Keep
+		// this fail-closed if the invariant ever changes.
+		return raw, nil, AdjIssueDecodeCandidate
+	}
+	return normalized, counts, ""
+}
+
+func exactStringSlice(got, want []string) bool {
+	if (got == nil) != (want == nil) || len(got) != len(want) {
+		return false
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			return false
+		}
+	}
+	return true
+}
+
 // ValidateAdjudication validates a Theme Adjudication response (contract E)
 // item-locally against the Scout-accepted candidates (keyed by t* ref). Every
 // theme's assessments must stay within its own candidate's anchor set; weak and
@@ -83,7 +188,12 @@ func ValidateAdjudication(data []byte, candidateByRef map[string]*ScoutCandidate
 	accepted := make([]AdjudicatedTheme, 0, len(rawThemes))
 	seen := make(map[string]struct{}, len(rawThemes))
 	for position, rawTheme := range rawThemes {
-		theme, err := decodeAdjudicationTheme(rawTheme)
+		normalizedRaw, echoCounts, echoIssue := normalizeAdjudicationCandidateEcho(rawTheme, candidateByRef)
+		if echoIssue != "" {
+			rejectAdj(&status, position, echoIssue)
+			continue
+		}
+		theme, err := decodeAdjudicationTheme(normalizedRaw)
 		if err != nil {
 			rejectAdj(&status, position, AdjIssueDecodeCandidate)
 			continue
@@ -106,6 +216,9 @@ func ValidateAdjudication(data []byte, candidateByRef map[string]*ScoutCandidate
 			continue
 		}
 		for kind, count := range counts {
+			status.Normalized[kind] += count
+		}
+		for kind, count := range echoCounts {
 			status.Normalized[kind] += count
 		}
 		// Decision 232 (Archive 9): anchor coverage accounting — the

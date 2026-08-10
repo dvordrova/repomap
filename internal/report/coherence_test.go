@@ -164,6 +164,54 @@ func TestTraceAssociationUsesOnlyPersistedSeedAndEvidenceSurfaces(t *testing.T) 
 	}
 }
 
+func TestSurfaceParticipationDoesNotTurnProcessAncestryIntoComponentMembership(t *testing.T) {
+	t.Parallel()
+
+	const (
+		entryComponent = componentmap.ComponentID("entry")
+		routeComponent = componentmap.ComponentID("routes")
+	)
+	data := &ReportData{
+		ArchitectureCanvas: &ArchitectureCanvas{Components: []ArchitectureComponent{
+			architecturePathComponent(entryComponent, "cmd/app/main.go"),
+			architecturePathComponent(routeComponent, "internal/routes.go"),
+		}},
+		DiscoveredSurfaces: &DiscoveredSurfaces{Triggers: []DiscoveredTrigger{
+			{
+				ID: "process", Kind: "process_entry", Availability: SurfaceAvailabilityAvailable,
+				ProcessEntrypoint: SurfaceSymbol{Location: &SurfaceLocation{Path: "cmd/app/main.go", Line: 10}},
+			},
+			{
+				ID: "route", Kind: "http_route", Availability: SurfaceAvailabilityAvailable,
+				ProcessEntrypoint: SurfaceSymbol{Location: &SurfaceLocation{Path: "cmd/app/main.go", Line: 10}},
+				RegistrationSite:  &SurfaceLocation{Path: "internal/routes.go", Line: 20},
+			},
+		}},
+	}
+
+	linkArchitectureProductObjects(data)
+
+	surfaces := make(map[string]ArchitectureSurface, len(data.ArchitectureCanvas.Surfaces))
+	for _, surface := range data.ArchitectureCanvas.Surfaces {
+		surfaces[surface.ID] = surface
+	}
+	if got := surfaces["process"].ParticipatingComponentIDs; !reflect.DeepEqual(got, []componentmap.ComponentID{entryComponent}) {
+		t.Fatalf("process participants = %v", got)
+	}
+	if got := surfaces["route"].ParticipatingComponentIDs; !reflect.DeepEqual(got, []componentmap.ComponentID{routeComponent}) {
+		t.Fatalf("route participants = %v", got)
+	}
+	if got := data.ArchitectureCanvas.Components[0].ParticipatingSurfaceIDs; !reflect.DeepEqual(got, []string{"process"}) {
+		t.Fatalf("entry component surfaces = %v", got)
+	}
+	if got := data.ArchitectureCanvas.Components[1].ParticipatingSurfaceIDs; !reflect.DeepEqual(got, []string{"route"}) {
+		t.Fatalf("route component surfaces = %v", got)
+	}
+	if got := surfaces["route"].Evidence; len(got) != 2 || got[0].Path != "internal/routes.go" || got[1].Path != "cmd/app/main.go" {
+		t.Fatalf("route provenance = %#v", got)
+	}
+}
+
 func TestTraceAssociationRejectsEvidenceSurfaceWithoutAnchorOrTransition(t *testing.T) {
 	t.Parallel()
 

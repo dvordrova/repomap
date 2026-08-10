@@ -296,6 +296,7 @@ func workspaceTestManifest(t *testing.T, version int, root string) report.RunMan
 		RepositoryState:       repository,
 		AnalysisRoot:          root,
 		RepositoryStateSHA256: repositoryDigest,
+		SnapshotSHA256:        strings.Repeat("e", 64),
 		ReportSHA256:          strings.Repeat("b", 64),
 		ReportFormatVersion:   report.CurrentFormatVersion,
 		OpenablePaths:         []string{"main.go"},

@@ -10,8 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/mechanismstudy"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/report"
@@ -114,38 +116,64 @@ func (provider *studyInvestigationRuntimeProvider) MechanismStudyBodyMeasured(
 }
 
 func studyInvestigationRuntimeCandidates(card mechanismstudy.Card) []mechanismstudy.Candidate {
-	roots := make(map[string]struct{})
+	readingRoots := make(map[string]struct{})
 	for _, reading := range card.Readings {
 		if reading.RootNodeRef != "" {
-			roots[reading.RootNodeRef] = struct{}{}
+			readingRoots[reading.RootNodeRef] = struct{}{}
 		}
 	}
-	for _, first := range card.Edges {
-		for _, second := range card.Edges {
-			if first.Ref == second.Ref || first.CalleeRef != second.CallerRef ||
-				first.CallerRef == second.CalleeRef {
+	adjacency := make(map[string][]mechanismstudy.Edge)
+	incoming := make(map[string]bool)
+	for _, edge := range card.Edges {
+		adjacency[edge.CallerRef] = append(adjacency[edge.CallerRef], edge)
+		incoming[edge.CalleeRef] = true
+	}
+	var search func(string, []string, map[string]bool, bool) []string
+	search = func(node string, edges []string, seen map[string]bool, tied bool) []string {
+		if _, currentTied := readingRoots[node]; currentTied {
+			tied = true
+		}
+		if len(edges) >= 2 && tied {
+			return edges
+		}
+		if len(edges) == mechanismstudy.MaxEdgesPerMechanism {
+			return nil
+		}
+		for _, edge := range adjacency[node] {
+			if seen[edge.CalleeRef] {
 				continue
 			}
-			if _, tied := roots[first.CallerRef]; !tied {
-				if _, tied = roots[first.CalleeRef]; !tied {
-					if _, tied = roots[second.CalleeRef]; !tied {
-						continue
-					}
-				}
+			nextSeen := make(map[string]bool, len(seen)+1)
+			for ref, present := range seen {
+				nextSeen[ref] = present
 			}
-			return []mechanismstudy.Candidate{{EdgeRefs: []string{second.Ref, first.Ref}}}
+			nextSeen[edge.CalleeRef] = true
+			if path := search(edge.CalleeRef, append(append([]string{}, edges...), edge.Ref), nextSeen, tied); len(path) > 0 {
+				return path
+			}
+		}
+		return nil
+	}
+	for _, node := range card.Nodes {
+		if incoming[node.Ref] {
+			continue
+		}
+		if path := search(node.Ref, nil, map[string]bool{node.Ref: true}, false); len(path) > 0 {
+			return []mechanismstudy.Candidate{{EdgeRefs: path}}
 		}
 	}
 	return []mechanismstudy.Candidate{}
 }
 
 func TestStudyInvestigationZeroGraphWritesCompletePreparedFamilyWithoutProvider(t *testing.T) {
-	runDir, _, _ := studyInvestigationRuntimeFixture(t, 2)
+	runDir, index, _, target := studyInvestigationRuntimeFixture(t, 2)
+	rewriteStudyInvestigationReadings(t, runDir, index, "detached")
 	factoryCalls := 0
 	outcome, err := runStudyInvestigationForRun(
 		context.Background(),
 		runDir,
-		nil,
+		index,
+		target,
 		studyInvestigationTestRevision,
 		studyInvestigationTestFreshness,
 		newRunOutput(io.Discard),
@@ -171,13 +199,14 @@ func TestStudyInvestigationZeroGraphWritesCompletePreparedFamilyWithoutProvider(
 }
 
 func TestStudyInvestigationRetainsAcceptedPrefixWhenSecondBatchFails(t *testing.T) {
-	runDir, index, _ := studyInvestigationRuntimeFixture(t, 5)
+	runDir, index, _, target := studyInvestigationRuntimeFixture(t, 5)
 	provider := &studyInvestigationRuntimeProvider{failCall: 2, attempts: 1}
 	factoryCalls := 0
 	outcome, err := runStudyInvestigationForRun(
 		context.Background(),
 		runDir,
 		index,
+		target,
 		studyInvestigationTestRevision,
 		studyInvestigationTestFreshness,
 		newRunOutput(io.Discard),
@@ -253,10 +282,10 @@ func TestStudyInvestigationConfigurationAndCancellationPersistFailedPreparedFami
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			runDir, index, _ := studyInvestigationRuntimeFixture(t, 1)
+			runDir, index, _, target := studyInvestigationRuntimeFixture(t, 1)
 			factoryCalls := 0
 			outcome, err := runStudyInvestigationForRun(
-				test.context(), runDir, index,
+				test.context(), runDir, index, target,
 				studyInvestigationTestRevision, studyInvestigationTestFreshness,
 				newRunOutput(io.Discard),
 				func() (studyInvestigationClient, error) {
@@ -310,14 +339,14 @@ func TestStudyInvestigationCancellationGetsOnlyBoundedPublicationContext(t *test
 }
 
 func TestStudyInvestigationProviderFailureSecretKeepsExactCallJournaledAndRedacted(t *testing.T) {
-	runDir, index, _ := studyInvestigationRuntimeFixture(t, 1)
+	runDir, index, _, target := studyInvestigationRuntimeFixture(t, 1)
 	const secret = "Bearer company-secret-token-value"
 	provider := &studyInvestigationRuntimeProvider{
 		failCall: 1, attempts: 1, failErr: errors.New("fixture provider failed"),
 		failContent: []byte(`{"error":"` + secret + `"}`),
 	}
 	outcome, err := runStudyInvestigationForRun(
-		context.Background(), runDir, index,
+		context.Background(), runDir, index, target,
 		studyInvestigationTestRevision, studyInvestigationTestFreshness,
 		newRunOutput(io.Discard),
 		func() (studyInvestigationClient, error) { return provider, nil },
@@ -338,10 +367,290 @@ func TestStudyInvestigationProviderFailureSecretKeepsExactCallJournaledAndRedact
 	}
 }
 
+func TestStudyInvestigationRuntimeRepomapTargetExcludesOtherExecutable(t *testing.T) {
+	const modulePath = "example.com/repomap"
+	_, index := analyzeStudyInvestigationRuntimeRepository(t, modulePath, map[string]string{
+		"cmd/repomap/main.go": `package main
+import "example.com/repomap/internal/app"
+func main() { app.Run() }
+`,
+		"cmd/quality/main.go": `package main
+import "example.com/repomap/internal/quality"
+func main() { quality.Run() }
+`,
+		"internal/app/app.go": `package app
+import "example.com/repomap/internal/report"
+func Run() { report.Read() }
+`,
+		"internal/quality/quality.go": `package quality
+import "example.com/repomap/internal/report"
+func Run() { report.Read() }
+`,
+		"internal/report/report.go": `package report
+func Read() { decode() }
+func decode() { render() }
+func render() {}
+`,
+	})
+	target := resolveStudyInvestigationTarget(t, gofacts.Facts{
+		Modules: []gofacts.ModuleFact{{
+			ID: "module-root", ModulePath: modulePath, ModuleDir: ".", Main: true,
+		}},
+		Packages: []gofacts.PackageFact{
+			{CanonicalPath: modulePath + "/cmd/repomap", Name: "main", ModuleID: "module-root", ModulePath: modulePath, PackageDir: "cmd/repomap", Locality: "local"},
+			{CanonicalPath: modulePath + "/cmd/quality", Name: "main", ModuleID: "module-root", ModulePath: modulePath, PackageDir: "cmd/quality", Locality: "local"},
+		},
+		EntrypointPackages: []gofacts.Entrypoint{
+			studyInvestigationEntrypoint(modulePath, modulePath+"/cmd/repomap", "cmd/repomap", "cmd/repomap/main.go", 3),
+			studyInvestigationEntrypoint(modulePath, modulePath+"/cmd/quality", "cmd/quality", "cmd/quality/main.go", 3),
+		},
+	}, "cmd/repomap")
+	runDir := writeStudyInvestigationRuntimeThemes(
+		t, index, modulePath+"/internal/report.Read", 1,
+	)
+	provider := &studyInvestigationRuntimeProvider{}
+	outcome, err := runStudyInvestigationForRun(
+		context.Background(), runDir, index, target,
+		studyInvestigationTestRevision, studyInvestigationTestFreshness,
+		newRunOutput(io.Discard),
+		func() (studyInvestigationClient, error) { return provider, nil },
+	)
+	if err != nil {
+		t.Fatalf("run target-rooted repomap Study: %v", err)
+	}
+	if provider.calls != 1 || outcome.Status.MechanismCount != 1 {
+		t.Fatalf("repomap target outcome=%#v provider=%#v", outcome.Status, provider)
+	}
+	assertStudyInvestigationTargetBinding(t, runDir, target)
+	for _, request := range provider.requests {
+		for _, card := range request.Cards {
+			for _, node := range card.Nodes {
+				if strings.Contains(node.Label, "quality") {
+					t.Fatalf("off-target quality executable reached provider: %#v", card.Nodes)
+				}
+			}
+		}
+	}
+	path := outcome.ReportInput.Cards[0].Mechanisms[0]
+	if len(path.Nodes) < 3 || path.Nodes[0].Symbol != modulePath+"/cmd/repomap.main" {
+		t.Fatalf("repomap path does not start at selected exact main: %#v", path.Nodes)
+	}
+	for _, node := range path.Nodes {
+		if strings.Contains(node.Symbol, "/cmd/quality.") || strings.Contains(node.Symbol, "/internal/quality.") {
+			t.Fatalf("off-target executable entered restored path: %#v", path.Nodes)
+		}
+	}
+}
+
+func TestStudyInvestigationRuntimeTelebotLibraryUsesExactPublicAPIRoot(t *testing.T) {
+	const modulePath = "gopkg.in/telebot.v3"
+	_, index := analyzeStudyInvestigationRuntimeRepository(t, modulePath, map[string]string{
+		"bot.go": `package telebot
+type Bot struct{}
+func NewBot() *Bot { return configure() }
+func configure() *Bot { connect(); return &Bot{} }
+func connect() {}
+func (*Bot) Raw() { request() }
+func request() {}
+func hidden() {}
+`,
+	})
+	target := resolveStudyInvestigationTarget(t, gofacts.Facts{
+		Modules: []gofacts.ModuleFact{{
+			ID: "module-root", ModulePath: modulePath, ModuleDir: ".", Main: true,
+		}},
+		Packages: []gofacts.PackageFact{{
+			CanonicalPath: modulePath, Name: "telebot", ModuleID: "module-root",
+			ModulePath: modulePath, PackageDir: ".", Locality: "local",
+		}},
+	}, ".")
+	if target.Kind != analysistarget.KindLibraryPackage {
+		t.Fatalf("target kind=%s, want library", target.Kind)
+	}
+	runDir := writeStudyInvestigationRuntimeThemes(t, index, modulePath+".configure", 1)
+	provider := &studyInvestigationRuntimeProvider{}
+	outcome, err := runStudyInvestigationForRun(
+		context.Background(), runDir, index, target,
+		studyInvestigationTestRevision, studyInvestigationTestFreshness,
+		newRunOutput(io.Discard),
+		func() (studyInvestigationClient, error) { return provider, nil },
+	)
+	if err != nil {
+		t.Fatalf("run target-rooted Telebot Study: %v", err)
+	}
+	if provider.calls != 1 || outcome.Status.MechanismCount != 1 {
+		t.Fatalf("Telebot target outcome=%#v provider=%#v", outcome.Status, provider)
+	}
+	assertStudyInvestigationTargetBinding(t, runDir, target)
+	path := outcome.ReportInput.Cards[0].Mechanisms[0]
+	if len(path.Nodes) < 3 || path.Nodes[0].Symbol != modulePath+".NewBot" {
+		t.Fatalf("Telebot path does not start at exact exported API: %#v", path.Nodes)
+	}
+	for _, node := range path.Nodes {
+		if node.Symbol == modulePath+".main" || strings.HasSuffix(node.Symbol, ".hidden") {
+			t.Fatalf("library path invented main/private API root: %#v", path.Nodes)
+		}
+	}
+}
+
+func TestStudyInvestigationRuntimeRejectsUnavailableDirectCallAuthority(t *testing.T) {
+	runDir, _, _, target := studyInvestigationRuntimeFixture(t, 1)
+	factoryCalls := 0
+	_, err := runStudyInvestigationForRun(
+		context.Background(), runDir, nil, target,
+		studyInvestigationTestRevision, studyInvestigationTestFreshness,
+		newRunOutput(io.Discard),
+		func() (studyInvestigationClient, error) {
+			factoryCalls++
+			return &studyInvestigationRuntimeProvider{}, nil
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "direct call index is nil") || factoryCalls != 0 {
+		t.Fatalf("unavailable index: err=%v factoryCalls=%d", err, factoryCalls)
+	}
+	for _, name := range mechanismstudy.ArtifactFilenames {
+		if _, statErr := os.Stat(filepath.Join(runDir, name)); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("unavailable target runtime retained %s: %v", name, statErr)
+		}
+	}
+}
+
+func assertStudyInvestigationTargetBinding(
+	t *testing.T,
+	runDir string,
+	target analysistarget.Target,
+) {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(runDir, mechanismstudy.FactsArtifactFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts, err := mechanismstudy.DecodeFacts(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if facts.Compilation.TargetTrailVersion != mechanismstudy.TargetTrailVersion ||
+		facts.Compilation.AnalysisTargetRef != target.Ref ||
+		facts.Compilation.TargetRootsSHA256 == "" {
+		t.Fatalf("persisted runtime lost target authority: %#v", facts.Compilation)
+	}
+}
+
+func analyzeStudyInvestigationRuntimeRepository(
+	t *testing.T,
+	modulePath string,
+	files map[string]string,
+) (string, *surfacediscovery.DirectCallIndex) {
+	t.Helper()
+	repository := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(repository, "go.mod"),
+		[]byte("module "+modulePath+"\n\ngo 1.25\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	for relative, content := range files {
+		path := filepath.Join(repository, filepath.FromSlash(relative))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	analysis, err := surfacediscovery.AnalyzeContext(
+		context.Background(), surfacediscovery.DefaultOptions(repository),
+	)
+	if err != nil {
+		t.Fatalf("AnalyzeContext: %v", err)
+	}
+	if analysis.DirectCallIndex == nil {
+		t.Fatal("AnalyzeContext returned no DirectCallIndex")
+	}
+	return repository, analysis.DirectCallIndex
+}
+
+func studyInvestigationEntrypoint(
+	modulePath, importPath, packageDir, sourcePath string,
+	line int,
+) gofacts.Entrypoint {
+	return gofacts.Entrypoint{
+		ModulePath: modulePath, ImportPath: importPath, PackageDir: packageDir, ModuleDir: ".",
+		Kind: "primary_binary",
+		Anchors: []gofacts.EntrypointAnchor{{
+			Version: gofacts.EntrypointAnchorVersion, Kind: gofacts.EntrypointAnchorGoMain,
+			Path: sourcePath, Line: line,
+		}},
+	}
+}
+
+func resolveStudyInvestigationTarget(
+	t *testing.T,
+	facts gofacts.Facts,
+	override string,
+) analysistarget.Target {
+	t.Helper()
+	resolution, err := analysistarget.Resolve(facts, analysistarget.Options{Override: override})
+	if err != nil || resolution.Selected == nil {
+		t.Fatalf("resolve exact target %q: resolution=%#v err=%v", override, resolution, err)
+	}
+	return resolution.Selected.Snapshot()
+}
+
+func writeStudyInvestigationRuntimeThemes(
+	t *testing.T,
+	index *surfacediscovery.DirectCallIndex,
+	readingSymbol string,
+	cardCount int,
+) string {
+	t.Helper()
+	var reading surfacediscovery.DirectCallNode
+	for _, node := range index.Nodes {
+		if node.Symbol.ID == readingSymbol {
+			reading = node
+			break
+		}
+	}
+	if reading.ID == "" {
+		t.Fatalf("reading %q absent from DirectCallIndex", readingSymbol)
+	}
+	cards := make([]themestudy.ThemeCard, 0, cardCount)
+	for ordinal := 1; ordinal <= cardCount; ordinal++ {
+		cards = append(cards, themestudy.ThemeCard{
+			Ordinal: ordinal, CanonicalID: "runtime-theme-" + string(rune('a'+ordinal-1)),
+			FinalTitle: "Runtime path", FinalQuestion: "How does the selected product reach this code?",
+			Readings: []themestudy.Reading{{
+				Label: reading.Symbol.Name, Symbol: reading.Symbol.ID,
+				Path: reading.Declaration.Path, Line: reading.Declaration.Line,
+				Fit: themestudy.FitDirect, CanonicalSpanID: "runtime-span-" + string(rune('a'+ordinal-1)),
+			}},
+		})
+	}
+	raw, err := themestudy.EncodeStudyThemes(themestudy.StudyThemes{
+		Version: themestudy.StudyThemesVersion, Revision: studyInvestigationTestRevision,
+		ScoutSHA256: strings.Repeat("a", 64), AdjSHA256: strings.Repeat("b", 64),
+		Cards: cards,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer, err := debugdump.NewWriter(t.TempDir(), "run", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDir := writer.RunDir()
+	writer.Close()
+	if err := os.WriteFile(filepath.Join(runDir, themestudy.StudyThemesArtifactFilename), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return runDir
+}
+
 func studyInvestigationRuntimeFixture(
 	t *testing.T,
 	cardCount int,
-) (string, *surfacediscovery.DirectCallIndex, surfacediscovery.DirectCallNode) {
+) (string, *surfacediscovery.DirectCallIndex, surfacediscovery.DirectCallNode, analysistarget.Target) {
 	t.Helper()
 	repository := t.TempDir()
 	if err := os.WriteFile(filepath.Join(repository, "go.mod"), []byte("module example.com/investigation\n\ngo 1.25\n"), 0o600); err != nil {
@@ -353,6 +662,7 @@ func main() { entry() }
 func entry() { service() }
 func service() { persist() }
 func persist() {}
+func detached() {}
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -376,6 +686,7 @@ func persist() {}
 	if root.ID == "" {
 		t.Fatalf("entry node absent: %#v", analysis.DirectCallIndex.Nodes)
 	}
+	target := resolveStudyInvestigationExecutableTarget(t)
 	cards := make([]themestudy.ThemeCard, 0, cardCount)
 	for ordinal := 1; ordinal <= cardCount; ordinal++ {
 		cards = append(cards, themestudy.ThemeCard{
@@ -409,7 +720,77 @@ func persist() {}
 	); err != nil {
 		t.Fatal(err)
 	}
-	return runDir, analysis.DirectCallIndex, root
+	return runDir, analysis.DirectCallIndex, root, target
+}
+
+func rewriteStudyInvestigationReadings(
+	t *testing.T,
+	runDir string,
+	index *surfacediscovery.DirectCallIndex,
+	symbol string,
+) {
+	t.Helper()
+	var selected surfacediscovery.DirectCallNode
+	for _, node := range index.Nodes {
+		if node.Symbol.Name == symbol {
+			selected = node
+			break
+		}
+	}
+	if selected.ID == "" {
+		t.Fatalf("reading symbol %q absent from DirectCallIndex", symbol)
+	}
+	path := filepath.Join(runDir, themestudy.StudyThemesArtifactFilename)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	themes, err := themestudy.DecodeStudyThemes(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for position := range themes.Cards {
+		themes.Cards[position].Readings = []themestudy.Reading{{
+			Label: selected.Symbol.Name, Symbol: selected.Symbol.ID,
+			Path: selected.Declaration.Path, Line: selected.Declaration.Line,
+			Fit: themestudy.FitDirect,
+		}}
+	}
+	raw, err = themestudy.EncodeStudyThemes(themes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func resolveStudyInvestigationExecutableTarget(t *testing.T) analysistarget.Target {
+	t.Helper()
+	const modulePath = "example.com/investigation"
+	const moduleID = "module-root"
+	resolution, err := analysistarget.Resolve(gofacts.Facts{
+		Modules: []gofacts.ModuleFact{{
+			ID: moduleID, ModulePath: modulePath, ModuleDir: ".", Main: true,
+		}},
+		Packages: []gofacts.PackageFact{{
+			CanonicalPath: modulePath, Name: "main", ModuleID: moduleID,
+			ModulePath: modulePath, PackageDir: ".", Locality: "local",
+		}},
+		EntrypointPackages: []gofacts.Entrypoint{{
+			ModulePath: modulePath, ImportPath: modulePath, PackageDir: ".", ModuleDir: ".",
+			Kind: "primary_binary",
+			Anchors: []gofacts.EntrypointAnchor{{
+				Version: gofacts.EntrypointAnchorVersion,
+				Kind:    gofacts.EntrypointAnchorGoMain,
+				Path:    "main.go", Line: 3,
+			}},
+		}},
+	}, analysistarget.Options{})
+	if err != nil || resolution.Selected == nil {
+		t.Fatalf("resolve exact executable target: resolution=%#v err=%v", resolution, err)
+	}
+	return resolution.Selected.Snapshot()
 }
 
 func assertStudyInvestigationArtifacts(t *testing.T, runDir string) {

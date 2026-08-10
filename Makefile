@@ -7,6 +7,7 @@ BIN_DIR  ?= .bin
 TMP_DIR  ?= tmp
 ETCD_REPO ?= ../etcd
 RUN_ARGS ?=
+SERVE_PORT ?= 55948
 
 .PHONY: help test vet check quality-check localization-check localization-replay localization-stage localization-record build doctor doctor-check generic-deepseek-doctor guided-tour-run guided-tour-fanout guided-tour-experiment semantic-discovery semantic-discovery-experiment mechanism-study-experiment fresh-repo-onboarding fresh-repo-onboarding-replan fresh-repo-onboarding-replay golden-mechanism golden-mechanism-v01 golden-mechanism-v02 golden-mechanism-v02-prepare golden-mechanism-v02-replay golden-mechanism-v03 golden-mechanism-v03-prepare golden-mechanism-v03-replay golden-mechanism-v1 golden-mechanism-v1-prepare golden-mechanism-v1-replay mechanism-v1 mechanism-v1-replay chi-request-dispatch chi-request-dispatch-prepare chi-request-dispatch-response-replay chi-request-dispatch-replay review-cockpit review-serve serve run run-offline dev-ui
 
@@ -60,7 +61,7 @@ surface-check: ## Run config-driven Go surface discovery fixtures
 
 build: ## Build binary into .bin/
 	@mkdir -p $(BIN_DIR)
-	go build -o $(BIN_DIR)/repomap ./cmd/repomap
+	go build -trimpath -o $(BIN_DIR)/repomap ./cmd/repomap
 
 CANVAS_FIXTURE ?= internal/report/testdata/canvas/restic-backup-v2.json
 CANVAS_PORT ?= 0
@@ -218,7 +219,7 @@ review-serve: ## Serve the generated Morning Review over localhost
 	python3 -m http.server "$(REVIEW_PORT)" --bind 127.0.0.1 --directory "$(abspath $(REVIEW_OUT))"
 
 serve: build ## Serve the latest saved report without a model call
-	$(BIN_DIR)/repomap serve
+	$(BIN_DIR)/repomap serve --port "$(SERVE_PORT)"
 
 doctor: ## Validate configured OpenAI-compatible LLM (no network request)
 	go run ./cmd/repomap doctor llm

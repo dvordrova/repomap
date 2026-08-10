@@ -43,7 +43,7 @@ func ReplayResponseRecord(
 }
 
 func productFromReplayRequest(request RequestRecord) (Product, error) {
-	// Round-trip through the one canonical v7 request encoder/decoder. The CLI
+	// Round-trip through the one canonical v8 request encoder/decoder. The CLI
 	// additionally pins the original bytes, while this pure seam rejects any
 	// structurally invalid in-memory record.
 	encoded, err := EncodeRequestRecord(request)
@@ -83,6 +83,7 @@ func productFromReplayRequest(request RequestRecord) (Product, error) {
 		Limits:             DefaultLimits(),
 		ProjectionSHA256:   digest(wireJSON),
 		Coverage:           cloneCandidateCoverage(request.CandidateCoverage),
+		AnalysisTargetRoot: cloneAnalysisTargetRootScope(request.AnalysisTargetRoot),
 		Objects:            request.Catalog,
 	}
 	materialJSON, err := json.Marshal(material)
@@ -101,6 +102,7 @@ func productFromReplayRequest(request RequestRecord) (Product, error) {
 		request.CatalogRef,
 		request.Language,
 		request.CandidateCoverage,
+		request.AnalysisTargetRoot,
 		request.Catalog,
 	)
 	product.wire = append([]byte(nil), wireJSON...)

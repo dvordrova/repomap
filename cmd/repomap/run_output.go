@@ -49,6 +49,16 @@ type runOutputProgress struct {
 	completed int
 }
 
+// targetPageConsoleContext is live console-only context. It keeps repeated
+// Architecture and Study stage blocks attributable when one invocation
+// publishes several ordinary target pages.
+type targetPageConsoleContext struct {
+	DisplayPath string
+	PackagePath string
+	RunID       string
+	Role        string
+}
+
 func newRunOutput(writer io.Writer) *runOutput {
 	if writer == nil {
 		writer = io.Discard
@@ -97,6 +107,30 @@ func (output *runOutput) Warn(summary string, details ...string) {
 
 func (output *runOutput) Error(summary string, details ...string) {
 	output.level("ERROR", summary, details...)
+}
+
+// TargetPage marks the beginning or end of one ordinary target pipeline. The
+// stages between matching markers retain their existing wording and accounting
+// while gaining an exact target and run context.
+func (output *runOutput) TargetPage(state string, target targetPageConsoleContext) {
+	if output == nil {
+		return
+	}
+	output.mu.Lock()
+	defer output.mu.Unlock()
+
+	// A completed default immediately followed by a started sibling must still
+	// produce two visible boundaries; ordinary adjacent-stage coalescing would
+	// otherwise merge their details under one header.
+	output.currentStage = ""
+	output.stageLocked("Target page")
+	output.writeDetailsLocked(
+		"state: "+singleRunOutputLine(state),
+		"target: "+target.DisplayPath,
+		"package: "+target.PackagePath,
+		"run: "+target.RunID,
+		"role: "+target.Role,
+	)
 }
 
 // MapConnectivity explains the local fact-to-edge projection in the console,
@@ -186,14 +220,28 @@ func (output *runOutput) Progress(event orient.ProgressEvent) {
 	switch event.Stage {
 	case orient.ProgressSnapshotStarted:
 		output.stageLocked("Repository snapshot")
-		output.writeDetailsLocked("collecting tracked repository facts", "repository: "+event.RepoPath)
+		details := []string{"collecting tracked repository facts", "repository: " + event.RepoPath}
+		if event.GoTarget != "" {
+			details = append(details, "Go target: "+event.GoTarget, "choose another: --go-target GOOS/GOARCH")
+		}
+		output.writeDetailsLocked(details...)
 	case orient.ProgressSnapshotReady:
 		output.stageLocked("Repository snapshot")
-		output.writeDetailsLocked(
+		details := []string{
 			"state: complete",
 			fmt.Sprintf("tracked files: %d", event.FileCount),
 			formatRunOutputDuration(event.LatencyMillis),
-		)
+		}
+		if event.SuggestedGoTarget != "" {
+			details = append(details,
+				fmt.Sprintf("platform hint: %s has %d target-specific production Go file(s)", event.SuggestedGoTarget, event.GoTargetEvidenceCount),
+				"try: --go-target "+event.SuggestedGoTarget,
+			)
+			if len(event.GoTargetEvidencePaths) > 0 {
+				details = append(details, "evidence: "+strings.Join(event.GoTargetEvidencePaths, ", "))
+			}
+		}
+		output.writeDetailsLocked(details...)
 	case orient.ProgressBundleReady:
 		output.stageLocked("Model context")
 		output.writeDetailsLocked(

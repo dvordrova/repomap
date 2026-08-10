@@ -11,25 +11,33 @@ import (
 	"github.com/dvordrova/repomap/internal/report"
 )
 
-// MAP_READY gate (Decision 235): provider-free replay of the 9 fixtures —
-// every applicable row must PASS. Verifies the Architecture response is
-// accepted under the current contract (not a whole fallback) and the Study
-// input compiles from the accepted canvas (no stale local names, no blank
-// span questions).
+// MAP_READY gate (Decision 235): provider-free replay of the archive fixtures.
+// Responses whose request-local anchor catalog is still reproducible must be
+// accepted under the current contract; a response bound to an older opaque
+// anchor catalog must fail closed rather than acquire new authority. Every row
+// must still compile a Study input with no blank placeholder context.
 func TestV11MapReadyFixtures(t *testing.T) {
 	fixtures := []struct {
-		name   string
-		runDir string
+		name                    string
+		runDir                  string
+		expectClosedAnchorDrift bool
 	}{
-		{"casdoor", "/Users/dvordrova/git/repomap/tmp/hermes-archive9-semantic-product-20260806-182649/archive9/20260806-163314-casdoor-f1e101f458c5"},
-		{"telebot", "/Users/dvordrova/git/repomap/tmp/hermes-archive9-semantic-product-20260806-182649/archive9/20260806-163318-telebot-265c26ae8755"},
-		{"chatto", "/Users/dvordrova/git/repomap/tmp/hermes-archive9-semantic-product-20260806-182649/archive9/20260806-163320-chatto-0f4e9ee7d764"},
-		{"restic", "/Users/dvordrova/git/repomap/tmp/hermes-archive9-semantic-product-20260806-182649/archive9/20260806-163323-restic-accaa84c6dd7"},
-		{"miniflux", "/Users/dvordrova/git/go-corpus-repomap/service__github__miniflux__v2/runs/20260806-231044-v2-04fcac53e8ea"},
-		{"gotify", "/Users/dvordrova/git/go-corpus-repomap/service__github__gotify__server/runs/20260806-231044-server-2f0a6dbd338b"},
-		{"task", "/Users/dvordrova/git/go-corpus-repomap/cli__github__go-task__task/runs/20260806-231233-task-9de2dd11eeb7"},
-		{"lazygit", "/Users/dvordrova/git/go-corpus-repomap/cli__github__jesseduffield__lazygit/runs/20260806-231358-lazygit-20210fca818a"},
-		{"gosec", "/Users/dvordrova/git/go-corpus-repomap/cli__github__securego__gosec/runs/20260806-231347-gosec-17d980f31d06"},
+		{
+			name:   "casdoor",
+			runDir: "/Users/dvordrova/git/repomap/tmp/hermes-archive9-semantic-product-20260806-182649/archive9/20260806-163314-casdoor-f1e101f458c5",
+			// The raw response is bound to the historical request-local
+			// anchor catalog. Recompiling current candidates cannot restore
+			// those opaque refs, so the current contract must fail closed.
+			expectClosedAnchorDrift: true,
+		},
+		{name: "telebot", runDir: "/Users/dvordrova/git/repomap/tmp/hermes-archive9-semantic-product-20260806-182649/archive9/20260806-163318-telebot-265c26ae8755"},
+		{name: "chatto", runDir: "/Users/dvordrova/git/repomap/tmp/hermes-archive9-semantic-product-20260806-182649/archive9/20260806-163320-chatto-0f4e9ee7d764"},
+		{name: "restic", runDir: "/Users/dvordrova/git/repomap/tmp/hermes-archive9-semantic-product-20260806-182649/archive9/20260806-163323-restic-accaa84c6dd7"},
+		{name: "miniflux", runDir: "/Users/dvordrova/git/go-corpus-repomap/service__github__miniflux__v2/runs/20260806-231044-v2-04fcac53e8ea"},
+		{name: "gotify", runDir: "/Users/dvordrova/git/go-corpus-repomap/service__github__gotify__server/runs/20260806-231044-server-2f0a6dbd338b"},
+		{name: "task", runDir: "/Users/dvordrova/git/go-corpus-repomap/cli__github__go-task__task/runs/20260806-231233-task-9de2dd11eeb7"},
+		{name: "lazygit", runDir: "/Users/dvordrova/git/go-corpus-repomap/cli__github__jesseduffield__lazygit/runs/20260806-231358-lazygit-20210fca818a"},
+		{name: "gosec", runDir: "/Users/dvordrova/git/go-corpus-repomap/cli__github__securego__gosec/runs/20260806-231347-gosec-17d980f31d06"},
 	}
 	for _, fixture := range fixtures {
 		fixture := fixture
@@ -75,10 +83,14 @@ func TestV11MapReadyFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("record: %v", err)
 			}
-			if result.Landscape.Fallback {
-				t.Fatalf("whole fallback (rows: one grammar, item-local normalization)")
-			}
-			if result.Landscape.ValidationOutcome != componentmap.ValidationAccepted &&
+			if fixture.expectClosedAnchorDrift {
+				assertHistoricalAnchorDriftFailsClosed(t, result.Landscape)
+			} else if result.Landscape.Fallback {
+				t.Fatalf(
+					"whole fallback (rows: one grammar, item-local normalization): diagnostics=%#v",
+					result.Landscape.Diagnostics,
+				)
+			} else if result.Landscape.ValidationOutcome != componentmap.ValidationAccepted &&
 				result.Landscape.ValidationOutcome != componentmap.ValidationAcceptedPartial &&
 				result.Landscape.ValidationOutcome != componentmap.ValidationAcceptedNormalized {
 				t.Fatalf("outcome %s (row: accepted)", result.Landscape.ValidationOutcome)
@@ -101,6 +113,28 @@ func TestV11MapReadyFixtures(t *testing.T) {
 				t.Fatalf("no candidates (row: explicit unclassified remainder)")
 			}
 		})
+	}
+}
+
+func assertHistoricalAnchorDriftFailsClosed(t *testing.T, landscape componentmap.Landscape) {
+	t.Helper()
+	if !landscape.Fallback || landscape.ValidationOutcome != componentmap.ValidationRejected {
+		t.Fatalf("historical request-local anchor drift did not fail closed: %#v", landscape)
+	}
+	unknownAnchors := 0
+	zeroUseful := false
+	for _, diagnostic := range landscape.Diagnostics {
+		switch diagnostic.Code {
+		case "proposal.unknown_anchor_id":
+			unknownAnchors++
+		case "proposal.zero_useful_semantic_components":
+			zeroUseful = true
+		default:
+			t.Fatalf("historical anchor drift produced unrelated diagnostic: %#v", diagnostic)
+		}
+	}
+	if unknownAnchors == 0 || !zeroUseful {
+		t.Fatalf("historical anchor drift diagnostics = %#v", landscape.Diagnostics)
 	}
 }
 

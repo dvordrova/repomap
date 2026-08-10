@@ -34,6 +34,7 @@ func TestRunSnapshotUsesZeroAsCompleteAndPositiveAsExplicitCap(t *testing.T) {
 	repo := t.TempDir()
 	files := map[string]string{
 		"go.mod":         "module example.com/all\n\ngo 1.24\n",
+		"all.go":         "package all\n",
 		"alpha/alpha.go": "package alpha\n",
 		"beta/beta.go":   "package beta\n\nimport _ \"example.com/all/alpha\"\n",
 		"gamma/gamma.go": "package gamma\n\nimport _ \"example.com/all/alpha\"\n",
@@ -75,11 +76,11 @@ func TestRunSnapshotUsesZeroAsCompleteAndPositiveAsExplicitCap(t *testing.T) {
 	}
 
 	complete := run(Options{RepoPath: repo, SnapshotOnly: true})
-	if len(complete.GoFacts.Packages) != 3 || len(complete.GoFacts.InternalEdges) != 2 || complete.GoFacts.Coverage.State != "complete" {
+	if len(complete.GoFacts.Packages) != 4 || len(complete.GoFacts.InternalEdges) != 2 || complete.GoFacts.Coverage.State != "complete" {
 		t.Fatalf("zero-cap Go facts = packages %d edges %d coverage %q", len(complete.GoFacts.Packages), len(complete.GoFacts.InternalEdges), complete.GoFacts.Coverage.State)
 	}
 	capped := run(Options{RepoPath: repo, SnapshotOnly: true, MaxGoPkgs: 1, MaxGoEdges: 1})
-	if len(capped.GoFacts.Packages) != 1 || len(capped.GoFacts.InternalEdges) != 1 || capped.GoFacts.Coverage.State != "partial" {
+	if len(capped.GoFacts.Packages) != 1 || len(capped.GoFacts.InternalEdges) != 0 || capped.GoFacts.Coverage.State != "partial" {
 		t.Fatalf("explicitly capped Go facts = packages %d edges %d coverage %q", len(capped.GoFacts.Packages), len(capped.GoFacts.InternalEdges), capped.GoFacts.Coverage.State)
 	}
 }
@@ -382,7 +383,7 @@ func TestRunWritesLocalEvidenceForEveryDirectionWithoutExtraModelCalls(t *testin
 	if err := os.MkdirAll(filepath.Join(repo, "cmd", "trial"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repo, "cmd", "trial", "main.go"), []byte("package main\nfunc main() {}\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, "cmd", "trial", "main.go"), []byte("package main\nimport \"example.com/onboarding/internal/worker\"\nfunc main() { worker.Run() }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(repo, "internal", "worker"), 0o700); err != nil {

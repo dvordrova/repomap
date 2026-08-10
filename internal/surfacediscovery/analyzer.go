@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/gotarget"
 	"github.com/dvordrova/repomap/internal/semantics/catalog"
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/callgraph"
@@ -97,12 +98,13 @@ type analyzer struct {
 }
 
 const (
-	defaultMaxDepth          = 16
-	defaultMaxTasks          = 1500
-	defaultMaxTargets        = 8
-	maxValueEvalSteps        = 20_000
-	maxValueAlternatives     = 32
-	maxValueDescriptionBytes = 4 * 1024
+	defaultMaxDepth              = 16
+	defaultMaxTasks              = 1500
+	defaultMaxTargets            = 8
+	maxValueEvalSteps            = 20_000
+	maxValueAlternatives         = 32
+	maxValueDescriptionBytes     = 4 * 1024
+	genericSurfaceScopeStatement = "exact build-selected process entries, runtime registrations and starts found through safe typed package closures, bounded wrapper propagation, and the generic typed registration detector (path string + handler) under the recorded build scenario, subject to listed diagnostics and frontiers"
 )
 
 type environment map[ssa.Value]Value
@@ -142,13 +144,31 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 	if strings.TrimSpace(opts.RepoPath) == "" {
 		return Result{}, fmt.Errorf("surface discovery: repository path is required")
 	}
+	target := gotarget.Host()
+	if opts.GoTarget != "" {
+		var err error
+		target, err = gotarget.Parse(opts.GoTarget)
+		if err != nil {
+			return Result{}, fmt.Errorf("surface discovery: %w", err)
+		}
+	}
+	opts.GoTarget = target.String()
 	opts = normalizeOptions(opts)
+	if opts.DirectCallEdgeLimit > MaxDirectCallIndexEdges {
+		return Result{}, fmt.Errorf(
+			"surface discovery: direct call edge limit %d exceeds maximum %d",
+			opts.DirectCallEdgeLimit, MaxDirectCallIndexEdges,
+		)
+	}
 	root, err := filepath.Abs(opts.RepoPath)
 	if err != nil {
 		return Result{}, fmt.Errorf("surface discovery: resolve repository: %w", err)
 	}
-	input, processEntrypoints := normalizeInput(root, input)
-	builtin, err := catalog.Builtin()
+	input, processEntrypoints, err := normalizeInput(root, input)
+	if err != nil {
+		return Result{}, err
+	}
+	builtin, err := catalog.Core()
 	if err != nil {
 		return Result{}, err
 	}
@@ -190,12 +210,27 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 		valueEvalActive:           map[ssa.Value]bool{},
 		valueReturnActive:         map[*ssa.Function]bool{},
 		scenario: Scenario{
-			ID:   scenarioID(runtime.GOOS, runtime.GOARCH, opts.BuildTags),
-			GOOS: runtime.GOOS, GOARCH: runtime.GOARCH,
+			ID:   scenarioID(target.GOOS, target.GOARCH, opts.BuildTags),
+			GOOS: target.GOOS, GOARCH: target.GOARCH,
 			Tags: append([]string{}, opts.BuildTags...),
 		},
 	}
-	a.directCallIndex = newDirectCallIndexBuilder(a.scenario)
+	directCallEdgeLimit := MaxDirectCallIndexEdges
+	if input.AnalysisTarget != nil {
+		directCallEdgeLimit = opts.DirectCallEdgeLimit
+	}
+	a.directCallIndex = newDirectCallIndexBuilderWithLimits(
+		a.scenario, MaxDirectCallIndexNodes, directCallEdgeLimit,
+	)
+	if input.AnalysisTarget != nil {
+		a.directCallIndex.setTargetScope(DirectCallIndexScope{
+			TargetKind: input.AnalysisTarget.Kind, TargetPackage: input.AnalysisTarget.PackagePath,
+			MaxDepth: opts.DirectCallDepth, EdgeLimit: opts.DirectCallEdgeLimit,
+		})
+	}
+	if opts.CaptureEntryCallSubstrate {
+		a.directCallIndex.enableEntryCallSidecar()
+	}
 	if err := a.load(); err != nil {
 		return Result{}, err
 	}
@@ -207,13 +242,12 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 	if a.program != nil {
 		finishPhase := a.startPhase("candidate_index", "indexing call targets and bounded wrapper candidates")
 		a.prepare()
+		if a.input.AnalysisTarget != nil {
+			if err := a.recordTargetDirectCallEdges(); err != nil {
+				return Result{}, err
+			}
+		}
 		finishPhase(len(a.allFunctions), len(a.allFunctions))
-		limits := defaultCobraLimits()
-		finishCobra := a.startPhase("cobra_inventory", "inventorying build-selected typed Cobra descriptors and direct relationships")
-		before := len(a.result.Catalog.Triggers)
-		a.discoverCobraCommandInventory(limits)
-		discovered := len(a.result.Catalog.Triggers) - before
-		finishCobra(discovered, a.result.Coverage.CobraDescriptorCount)
 	} else {
 		a.directCallIndex.close(DirectCallIndexClosedSSAUnavailable)
 	}
@@ -232,6 +266,10 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 	}
 	entrypoints := a.entrypoints()
 	a.recordEntryHandoffs(entrypoints)
+	if a.opts.CaptureEntryCallSubstrate {
+		substrate := a.directCallIndex.entryCallSubstrate(directCallIndex, entrypoints)
+		a.result.EntryCallSubstrate = &substrate
+	}
 	finishEntrypoints := a.startPhase("entrypoint_walk", "walking build-selected executable entrypoints")
 	for _, entrypoint := range entrypoints {
 		if err := ctx.Err(); err != nil {
@@ -277,6 +315,9 @@ func AnalyzeContextWithInput(ctx context.Context, opts Options, input Input) (Re
 }
 
 func normalizeOptions(opts Options) Options {
+	if opts.GoTarget == "" {
+		opts.GoTarget = gotarget.Host().String()
+	}
 	if opts.MaxDepth <= 0 {
 		opts.MaxDepth = defaultMaxDepth
 	}
@@ -285,6 +326,12 @@ func normalizeOptions(opts Options) Options {
 	}
 	if opts.MaxTargets <= 0 {
 		opts.MaxTargets = defaultMaxTargets
+	}
+	if opts.DirectCallDepth <= 0 {
+		opts.DirectCallDepth = DefaultDirectCallDepth
+	}
+	if opts.DirectCallEdgeLimit <= 0 {
+		opts.DirectCallEdgeLimit = DefaultDirectCallEdgeLimit
 	}
 	return opts
 }
@@ -348,7 +395,7 @@ func (a *analyzer) load() error {
 	// online/default analysis also defers toolchain selection to the Go
 	// loader (automatic acquisition); only offline analysis is gated on
 	// the runtime version.
-	loadEnv := os.Environ()
+	loadEnv := gotarget.Target{GOOS: a.scenario.GOOS, GOARCH: a.scenario.GOARCH}.ApplyEnv(os.Environ())
 	if auto, ok := repomapGotoolchainEnv(); ok {
 		loadEnv = append(loadEnv, "GOTOOLCHAIN="+auto)
 	} else if !a.opts.Offline {
@@ -367,7 +414,11 @@ func (a *analyzer) load() error {
 			BuildFlags: buildFlags,
 			Tests:      false,
 		}
-		modulePackages, err := packages.Load(config, localSourcePatterns(moduleRoot, moduleRoots)...)
+		patterns := a.sourcePatterns(moduleRoot, moduleRoots)
+		if len(patterns) == 0 {
+			continue
+		}
+		modulePackages, err := packages.Load(config, patterns...)
 		if ctxErr := a.ctx.Err(); ctxErr != nil {
 			finishLoad(len(loaded), len(loaded))
 			return fmt.Errorf("surface discovery: %w", ctxErr)
@@ -409,6 +460,11 @@ func (a *analyzer) load() error {
 		return true
 	}, nil)
 	a.recordPackageLoadOutcomes(allPackages)
+	if target := a.input.AnalysisTarget; target != nil && a.packageFacts[target.PackagePath] == nil {
+		return &AnalysisTargetSSAUnavailableError{
+			Reason: AnalysisTargetPackageNotSSASafe, Package: target.PackagePath,
+		}
+	}
 	for _, pkg := range loaded {
 		if pkg.Module != nil && pkg.Module.Main {
 			a.modulePaths[pkg.Module.Path] = true
@@ -457,7 +513,13 @@ func (a *analyzer) load() error {
 		return fmt.Errorf("surface discovery: %w", err)
 	}
 	finishGraph := a.startPhase("call_graph", "indexing all SSA functions and constructing one CHA call graph")
+	materializedTargetMethods := a.materializeSelectedLibraryMethods()
 	a.allFunctions = ssautil.AllFunctions(a.program)
+	for _, function := range materializedTargetMethods {
+		if function != nil {
+			a.allFunctions[function] = true
+		}
+	}
 	if err := a.ctx.Err(); err != nil {
 		return fmt.Errorf("surface discovery: %w", err)
 	}
@@ -467,6 +529,70 @@ func (a *analyzer) load() error {
 		return fmt.Errorf("surface discovery: %w", err)
 	}
 	return nil
+}
+
+// materializeSelectedLibraryMethods makes exact declared exported methods on
+// the selected library package visible to the DirectCallIndex even when their
+// receiver is unexported and no repository call happens to mention them. Go
+// permits callers to invoke such a method on an opaque value returned by the
+// package, so omitting it would disagree with the build-selected public API
+// declaration inventory. Executable and repository-wide analysis keep the
+// pre-D277 function universe unchanged.
+func (a *analyzer) materializeSelectedLibraryMethods() []*ssa.Function {
+	if a == nil || a.program == nil || a.input.AnalysisTarget == nil ||
+		a.input.AnalysisTarget.Kind != AnalysisTargetLibraryPackage {
+		return nil
+	}
+	packagePath := a.input.AnalysisTarget.PackagePath
+	var functions []*ssa.Function
+	seen := make(map[*ssa.Function]struct{})
+	for _, pkg := range a.packages {
+		if pkg == nil || pkg.Pkg == nil || pkg.Pkg.Path() != packagePath {
+			continue
+		}
+		scope := pkg.Pkg.Scope()
+		for _, name := range scope.Names() {
+			typeName, ok := scope.Lookup(name).(*types.TypeName)
+			if !ok {
+				continue
+			}
+			named, ok := typeName.Type().(*types.Named)
+			if !ok {
+				continue
+			}
+			for index := 0; index < named.NumMethods(); index++ {
+				method := named.Method(index)
+				if method == nil || !method.Exported() || method.Pkg() == nil ||
+					method.Pkg().Path() != packagePath {
+					continue
+				}
+				function := a.program.FuncValue(method)
+				if function == nil {
+					continue
+				}
+				if _, duplicate := seen[function]; duplicate {
+					continue
+				}
+				seen[function] = struct{}{}
+				functions = append(functions, function)
+			}
+		}
+	}
+	return functions
+}
+
+func (a *analyzer) sourcePatterns(moduleRoot string, moduleRoots []string) []string {
+	if len(a.input.Packages) == 0 {
+		return localSourcePatterns(moduleRoot, moduleRoots)
+	}
+	moduleDir := repositoryRelativeModuleDir(a.root, moduleRoot)
+	patterns := make([]string, 0, len(a.input.Packages))
+	for _, pkg := range a.input.Packages {
+		if pkg.ModuleDir == moduleDir {
+			patterns = append(patterns, pkg.Path)
+		}
+	}
+	return patterns
 }
 
 func localSourcePatterns(moduleRoot string, moduleRoots []string) []string {
@@ -699,7 +825,9 @@ func (a *analyzer) prepare() {
 				}
 				call, ok := instruction.(ssa.CallInstruction)
 				if ok {
-					a.directCallIndex.recordCall(a, call)
+					if a.input.AnalysisTarget == nil {
+						a.directCallIndex.recordCall(a, call)
+					}
 					for _, argument := range call.Common().Args {
 						a.recordFunctionReference(argument)
 					}
@@ -2829,8 +2957,8 @@ func (a *analyzer) callSeed(function *ssa.Function) (catalog.Seed, bool) {
 // typedRegistrationShape reports whether a repository-local method has the
 // closed typed registration shape (Decision 220 B): a first string parameter
 // (route path) and a second handler parameter of a supported handler kind
-// (func, func(http.ResponseWriter,*http.Request), http.Handler, or a
-// context-handler interface). The detector is deliberately conservative: it
+// (func(http.ResponseWriter,*http.Request), http.Handler, or a context-handler
+// interface). The detector is deliberately conservative: it
 // never infers a verb from the name and never claims a shape when the
 // signature does not establish it exactly.
 func (a *analyzer) typedRegistrationShape(function *ssa.Function) bool {
@@ -2883,10 +3011,9 @@ func typedHandlerKind(handlerType types.Type) string {
 	if handlerType == nil {
 		return ""
 	}
+	handlerType = types.Unalias(handlerType)
 	if signature, ok := handlerType.(*types.Signature); ok {
-		if signature.Recv() == nil {
-			// func(...) — accept any plain function (its parameter shape is
-			// validated by the analyzer walk, not guessed here).
+		if exactNetHTTPHandlerSignature(signature) {
 			return "func"
 		}
 		return ""
@@ -2903,19 +3030,28 @@ func typedHandlerKind(handlerType types.Type) string {
 	if path == "net/http" && name == "HandlerFunc" {
 		return "http_handler_func"
 	}
-	// context handler interfaces from supported server frameworks are
-	// recognized only when the framework is already cataloged; the generic
-	// detector stays conservative and does not guess unknown interfaces.
-	if path == "github.com/gin-gonic/gin" && name == "HandlerFunc" {
-		return "context_handler"
-	}
-	if path == "github.com/labstack/echo/v4" && name == "HandlerFunc" {
-		return "context_handler"
-	}
-	if path == "github.com/go-chi/chi/v5" && name == "HandlerFunc" {
-		return "context_handler"
-	}
 	return ""
+}
+
+func exactNetHTTPHandlerSignature(signature *types.Signature) bool {
+	if signature == nil || signature.Recv() != nil || signature.Variadic() ||
+		signature.Params().Len() != 2 || signature.Results().Len() != 0 {
+		return false
+	}
+	if !exactNamedType(signature.Params().At(0).Type(), "net/http", "ResponseWriter") {
+		return false
+	}
+	request, ok := types.Unalias(signature.Params().At(1).Type()).(*types.Pointer)
+	return ok && exactNamedType(request.Elem(), "net/http", "Request")
+}
+
+func exactNamedType(value types.Type, packagePath, name string) bool {
+	if value == nil {
+		return false
+	}
+	named, ok := types.Unalias(value).(*types.Named)
+	return ok && named.Obj() != nil && named.Obj().Pkg() != nil &&
+		named.Obj().Pkg().Path() == packagePath && named.Obj().Name() == name
 }
 
 func (a *analyzer) fieldSeed(store *ssa.Store) (catalog.Seed, bool) {
@@ -3840,7 +3976,7 @@ const (
 	maxCollectedArchitectureAnchors       = 1024
 	maxCollectedArchitectureRelationships = 4096
 	maxPersistedArchitectureAnchors       = 256
-	maxPersistedArchitectureRelationships = 512
+	maxPersistedArchitectureRelationships = componentmap.MaxBehaviorHandoffRelations
 	maxArchitectureAnchorsPerKind         = 16
 	maxProcessEntryArchitectureAnchors    = 64
 	maxArchitectureRelationshipWitnesses  = 64
@@ -4012,7 +4148,7 @@ func (a *analyzer) finish(latency time.Duration) {
 	a.result.Coverage.DispatchRootsFound = len(a.starts)
 	a.result.Coverage.ColdLatencyMillis = latency.Milliseconds()
 	a.result.Coverage.BuildConstraints = append([]string{}, a.opts.BuildTags...)
-	a.result.Coverage.ScopeStatement = "exact build-selected process entries, typed Cobra commands, runtime registrations and starts found through safe typed package closures, bounded wrapper propagation, and the generic typed registration detector (path string + handler) under the recorded build scenario, subject to listed diagnostics and frontiers"
+	a.result.Coverage.ScopeStatement = genericSurfaceScopeStatement
 	for _, trigger := range a.result.Catalog.Triggers {
 		if len(trigger.WrapperChain) == 0 {
 			a.result.Coverage.DirectTriggers++

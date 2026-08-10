@@ -9,11 +9,10 @@ import (
 	"testing"
 )
 
-// Decision 233 (Archive 9, PHASE 4 AREA COVERAGE): the Study diagnostics
-// panel renders an EXACT missing-core-area diagnostic — accepted principal
-// Architecture components whose member paths have no published theme reading
-// — with the exact count and bounded names. Never filler.
-func TestAtlasStudyMissingCoreAreaDiagnosticRenders(t *testing.T) {
+// The primary Study shelf is user content, not pipeline diagnostics. Exact
+// missing-core accounting remains report data, but it must not displace or
+// visually compete with the published themes in the ordinary view.
+func TestAtlasStudyPrimaryShelfOmitsMissingCoreDiagnostics(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is unavailable")
@@ -110,7 +109,7 @@ const report = {
 function journey(report, lang) {
   report = Object.assign({}, report, { report_language: lang });
   const roots = {};
-  ["rm-overview", "rm-study-overview", "rm-architecture"].forEach((id) => {
+  ["rm-overview", "rm-architecture"].forEach((id) => {
     roots[id] = new Element("section");
     roots[id].className = "rm-tab-content" + (id === "rm-overview" ? " rm-active" : "");
   });
@@ -133,7 +132,8 @@ function journey(report, lang) {
     createTextNode(value) { const node = new Element("#text"); node.textContent = String(value); return node; },
     getElementById(id) {
       if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
-      return roots[id] || null;
+      if (roots[id]) return roots[id];
+      return Object.values(roots).flatMap((root) => walk(root)).find((node) => node.id === id) || null;
     },
     querySelector(selector) {
       if (selector === ".rm-workspace") return workspace;
@@ -159,12 +159,11 @@ function journey(report, lang) {
   });
   const api = window.__REPOMAP_WORKSPACE_TEST__;
   api.renderWorkspaceTabs();
-  api.renderMapSummaryInto("rm-overview");
-  const studyTab = roots["rm-tabs"].children.find((node) => node.attributes["data-workspace-view"] === "study_overview");
-  studyTab.onclick();
-  const missingItems = byClass(roots["rm-study-overview"], "rm-study-diagnostics-missing-core-item").map((node) => text(node));
-  const missingHeading = byClass(roots["rm-study-overview"], "rm-study-diagnostics-subheading").map((node) => text(node)).filter((t) => t.includes("Core areas") || t.includes("Ключевые области"));
-  const overviewText = text(roots["rm-study-overview"]);
+  api.renderArchitectureWorkspace();
+  const studyRoot = roots["rm-architecture"].querySelector(".rm-target-study");
+  const missingItems = byClass(studyRoot, "rm-study-diagnostics-missing-core-item").map((node) => text(node));
+  const missingHeading = byClass(studyRoot, "rm-study-diagnostics-subheading").map((node) => text(node)).filter((t) => t.includes("Core areas") || t.includes("Ключевые области"));
+  const overviewText = text(studyRoot);
   return { missingItems, missingHeading, overviewText };
 }
 const en = journey(report, "en");
@@ -194,15 +193,16 @@ process.stdout.write(JSON.stringify({ en, ru }));
 	if err := json.Unmarshal(output, &out); err != nil {
 		t.Fatalf("decode missing-core workspace: %v\n%s", err, output)
 	}
-	if len(out.En.MissingItems) != 2 ||
-		!strings.Contains(out.En.OverviewText, "Storage engine") ||
-		!strings.Contains(out.En.OverviewText, "Replication") ||
-		!strings.Contains(out.En.OverviewText, "Core areas without a published theme (2)") {
+	if len(out.En.MissingItems) != 0 || len(out.En.MissingHeading) != 0 ||
+		strings.Contains(out.En.OverviewText, "Storage engine") ||
+		strings.Contains(out.En.OverviewText, "Replication") ||
+		!strings.Contains(out.En.OverviewText, "Startup path") {
 		t.Fatalf("EN missing-core diagnostic = %#v\n%s", out.En.MissingItems, out.En.OverviewText)
 	}
-	if len(out.Ru.MissingItems) != 2 ||
-		!strings.Contains(out.Ru.OverviewText, "Storage engine") ||
-		!strings.Contains(out.Ru.OverviewText, "Ключевые области без опубликованной темы (2)") {
+	if len(out.Ru.MissingItems) != 0 || len(out.Ru.MissingHeading) != 0 ||
+		strings.Contains(out.Ru.OverviewText, "Storage engine") ||
+		strings.Contains(out.Ru.OverviewText, "Ключевые области без опубликованной темы") ||
+		!strings.Contains(out.Ru.OverviewText, "Startup path") {
 		t.Fatalf("RU missing-core diagnostic = %#v\n%s", out.Ru.MissingItems, out.Ru.OverviewText)
 	}
 }

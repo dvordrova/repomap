@@ -33,6 +33,37 @@ Active decisions (each approved by the repository owner via its supervisory goal
 29. decisions/245-fresh-report-publication-truth-closure.md
 30. decisions/246-persisted-study-mechanisms.md
 31. decisions/247-publication-health-vs-bounded-coverage.md
+32. decisions/248-framework-free-entry-call-compression-experiment.md
+33. decisions/249-architecture-relation-bounds-follow-producer-authority.md
+34. decisions/250-explicit-go-target-scenario.md
+35. decisions/251-go-target-advisory.md
+36. decisions/252-architecture-candidate-bounds-follow-roles.md
+37. decisions/253-exact-plain-http-handler-shape.md
+38. decisions/254-bounded-package-scope-context.md
+39. decisions/255-moby-package-context-product-acceptance.md
+40. decisions/256-study-source-trace-presentation.md
+41. decisions/257-analysis-target.md
+42. decisions/258-study-reading-root-binding.md
+43. decisions/259-entry-call-item-local-connectivity.md
+44. decisions/260-target-rooted-study-trails.md
+45. decisions/261-target-call-graph-resource-controls.md
+46. decisions/262-complete-go-target-catalog.md
+47. decisions/263-refs-only-go-target-portfolio-selection.md
+48. decisions/264-provider-visible-target-roots-for-study-trails.md
+49. decisions/265-one-mechanism-candidate-is-one-branch.md
+50. decisions/266-qualifying-study-continuation-spine.md
+51. decisions/267-theme-adjudication-exact-echo-salvage.md
+52. decisions/268-study-trace-and-focus-interaction-corrective.md
+53. decisions/269-sibling-page-multi-target-publication.md
+54. decisions/271-study-reading-and-target-rail-corrective.md
+55. decisions/272-component-ego-graph-and-relation-actions.md
+56. decisions/273-single-framework-free-go-analysis-path.md
+57. decisions/274-target-portfolio-semantic-symbols.md
+58. decisions/275-architecture-nested-symbol-primary-scope.md
+59. decisions/276-target-portfolio-eligibility-and-zero-primary-status.md
+60. decisions/277-library-study-public-api-roots.md
+61. decisions/278-target-label-and-freshness-truth.md
+62. decisions/279-ordinary-target-portfolio-candidate-surface.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
@@ -195,6 +226,537 @@ Approved by:
     Age report proved that the cause was expected bounded coverage plus an
     obsolete eight-theme portfolio preference, 2026-08-09.
 
+## Decision 248
+
+Status:
+    SUPERSEDED BY D273. This section records the temporary
+    `--no-frameworks` experiment. Ordinary Go analysis now has one positive
+    framework-free core path with no mode flag or negative option plumbing.
+    D248's single-pass private entry-call substrate and refs-only privacy
+    boundary remain current under D273.
+
+Approved by:
+    Repository owner in the 2026-08-09 Casdoor review: try the universal local
+    chain plus LLM compression behind temporary `--no-frameworks`, defer the
+    real run, and keep framework adapters as a possible plugin boundary later.
+
+## Decision 249
+
+Status:
+    ACTIVE. Architecture candidate validation must not apply one mixed
+    relation-count ceiling to exact package imports and behavior handoffs.
+    Package imports remain complete up to the existing exact workspace-graph
+    authority and are aggregated into bounded unit relation counts before the
+    provider request; behavior handoffs remain independently bounded by the
+    persisted Architecture-grounding authority. Neither collection may be
+    prefix-clipped, and raw package-import relations remain absent from the
+    provider wire. Existing request/schema identities do not change when
+    already-valid inputs produce byte-identical requests.
+
+Approved by:
+    Repository owner during the 2026-08-09 Moby product run, after the old
+    undifferentiated 1,024-relation guard rejected 1,056 unique exact package
+    imports even though the current unit projection sends none of those raw
+    imports to the provider.
+
+## Decision 250
+
+Status:
+    ACTIVE. One resolved `GOOS/GOARCH` pair now owns the complete ordinary Go
+    analysis scenario. `--go-target GOOS/GOARCH` overrides it atomically;
+    otherwise process GOOS/GOARCH values fall back dimension-by-dimension to
+    the binary host. Snapshot Go facts, Surface packages/SSA, saved scenario,
+    semantic cache context and debug metadata must agree. Existing report and
+    Manifest14 bytes already bind the saved scenario. This adds no build tag,
+    platform heuristic, provider stage, report/server field or UI.
+
+Approved by:
+    Repository owner during the 2026-08-09 Moby review, after a provider-free
+    Linux target restored `cmd/dockerd` but the saved artifacts falsely called
+    the resulting 378-package/49,247-function program `darwin/amd64`.
+
+## Decision 251
+
+Status:
+    ACTIVE. The ordinary console names the resolved current Go target and its
+    override syntax. One bounded scan over the existing safe tracked-file
+    inventory may suggest one alternative GOOS only from real filename or
+    parsed leading build-constraint evidence. Tests and non-product path roles
+    do not vote; ambiguous, weak, custom-tagged or over-budget
+    evidence stays silent. The unique alternative needs at least three files
+    and twice the current-GOOS evidence. It never switches the target and adds
+    no artifact, report, provider, cache, server, gopls or UI contract.
+
+Approved by:
+    Repository owner in the D250 follow-up, 2026-08-09: add a simple target
+    usage hint first, then a conservative deterministic heuristic over early
+    Go-file constraints, without automatic platform selection.
+
+## Decision 252
+
+Status:
+    ACTIVE. Architecture candidate validation counts conceptual members and
+    read-only structural locators independently. The model-selectable
+    conceptual lane retains its 512-item ceiling; structural locators retain
+    complete package → file → symbol containment up to the existing persisted
+    grounding producer envelope of 4,096. Neither lane is prefix-clipped. The
+    existing request-byte boundary remains final provider-size protection, and
+    this capacity correction changes no prompt, wire, cache, report or model
+    authority.
+
+Approved by:
+    Repository owner during the 2026-08-09 Linux-target Moby review, after 471
+    legal conceptual members plus 72 read-only file locators were incorrectly
+    rejected as one 543-item collection before request construction.
+
+## Decision 253
+
+Status:
+    ACTIVE UNDER D273. The generic typed-registration detector accepts an
+    unnamed plain function only when its unaliased signature is exactly
+    non-variadic `func(net/http.ResponseWriter, *net/http.Request)` with no
+    result. Named `net/http` handler types retain their prior behavior. D273
+    supersedes the former third-party cataloged context-handler widening. No
+    names/path blacklist or budget change is added.
+
+Approved by:
+    Repository owner during the 2026-08-09 Linux-target Moby audit, after
+    `rootless.RunInNetNS(string, func() error)` was falsely published as an
+    HTTP route, reverse-marked a large daemon cone and exhausted the 1,500-task
+    walk before useful Serve/metrics surfaces were recovered.
+
+## Decision 254
+
+Status:
+	ACTIVE. The provider Architecture request keeps the complete flat checklist
+	locally but projects each Go package as `{ref, package_path, unit_ref,
+	coverage_role, symbols:[...]}`. Package `label` is omitted; package_path is
+	derived only from the exact static declaration/import identity, with an
+	exact common qualified prefix removed when possible. Exact package-owned
+	symbols occur once nested under their package, without redundant parent_ref;
+	other non-package candidates retain the existing flat wire shape. Package
+	and symbol refs remain independently returnable and nesting proves only
+	containment, never co-membership. Redundant static package-declaration facts
+	are omitted while nonredundant facts/flow context remain. Request identity
+	advances to v20 and prompt identity follows its exact bytes; response,
+	record, Landscape, status, report and manifest contracts do not change. No
+	assignment ledger, generic file/Bash schema or exhaustive prompt is added.
+
+Approved by:
+	Repository owner during the 2026-08-09 Moby Architecture audit, after 131
+	of 378 package occurrences shared basename labels and the proposed ledger
+	was shown unable to prevent the D241 catch-all failure with the same weak
+	input. All 93 exact Moby symbols have package ancestors and can be nested
+	without guessed ownership; the owner explicitly limited this to the focused
+	Go/Moby experiment.
+
+## Decision 255
+
+Status:
+	ACTIVE. The accepted D254 Moby calibration keeps representative membership,
+	uses exact nested symbols as optional semantic evidence, and requires every
+	returned anchor to carry at least one relevant advertised member in the same
+	component. A separate deterministic corrective stops the common process
+	entry from making its component participate in every descendant route,
+	server or worker: full surface provenance is retained, while conceptual
+	participation uses each surface's own registration/descriptor/server/handler
+	evidence. UI19 also reports packages and symbols separately in the partial
+	remainder instead of calling every exact member a package. No persisted
+	schema, provider stage, retry, limit or runtime claim is added.
+
+Approved by:
+	Repository owner during direct inspection of the three paid Linux-target
+	Moby D254 variants and the current served Run C component inspector,
+	2026-08-09.
+
+## Decision 256
+
+Status:
+	ACTIVE. Study investigation v1 is presented as a compact source trace rather
+	than a horizontal node/transition card train. Sibling mechanisms with the
+	same exact root declaration share one file/declaration header and are ordered
+	by first exact callsite solely as source order. Each row exposes its exact
+	callsite line, callee declaration, inner-callsite arrow and next callee as
+	independent source actions; additional depth continues on following rows.
+	Synchronous/witness/Path-number/branch chrome is removed, while materially
+	distinct goroutine/deferred edges and one subtle per-mechanism Map action
+	remain. The caption explicitly denies runtime order. UI catalog advances to
+	UI21; no backend, schema, depth, report, manifest, provider or overlay
+	identity changes.
+
+Approved by:
+	Repository owner after direct inspection of the current repomap Study
+	mechanism and ten presentation alternatives, 2026-08-09.
+
+## Decision 257
+
+Status:
+	ACTIVE. One exact executable or library package is selected before Go
+	analysis and semantic budgets. `--target` is the explicit override;
+	executable roots are exact selected-package mains and library roots are the
+	exact exported public API. Target package scope, caches, report and manifest
+	bind the same self-sealed identity; no downstream stage chooses another main.
+
+Approved by:
+	Repository owner after fresh Telebot and repomap reports showed auxiliary
+	executables consuming product budgets, 2026-08-09.
+
+## Decision 258
+
+Status:
+	ACTIVE. Final Study readings bind their exact canonical span locators to
+	DirectCall nodes by unique declaration or containing body, without fuzzy
+	symbol repair or a second package load. The private binding is sealed to the
+	Study revision, exact index digest and complete Go scenario.
+
+Approved by:
+	Repository owner after Telebot exact readings were lost solely because their
+	display symbols were shorter than producer canonical identities, 2026-08-09.
+
+## Decision 259
+
+Status:
+	ACTIVE UNDER D273. Entry-call compression connectivity validation is
+	item-local. One unreachable selected family cannot discard other valid
+	rooted selections; the backend never inserts an omitted connector or
+	promotes the private result into runtime-surface authority. D273 removes only
+	the temporary mode; this validation/result contract remains current.
+
+Approved by:
+	Repository owner after the Moby experiment showed one missing connector
+	discarding fifteen otherwise valid selected families, 2026-08-09.
+
+## Decision 260
+
+Status:
+	ACTIVE. Study mechanisms start at the selected executable mains or exact
+	library public API and pass through an exact D258 reading. Shortest connectors
+	and bounded continuations are source-ordered, target-scoped and sealed; the
+	legacy reading-local compiler is not an ordinary fallback.
+
+Approved by:
+	Repository owner after reviewing repomap, Telebot and Moby and requesting a
+	deeper useful source trail for one selected product, 2026-08-09.
+
+## Decision 261
+
+Status:
+	ACTIVE. `--depth` (default 10) and `--edges-limit` (default 10000) control
+	only the exact target-rooted DirectCallIndex edge neighborhood. Declarations
+	remain complete; target/depth/limit and global plus per-caller depth frontiers
+	are SHA-bound. Unsafe selected packages and unresolved exact executable roots
+	fail the run instead of borrowing readiness from a safe sibling. A closed
+	edge-limit outcome offers a producer-proven safe lower depth when one exists,
+	a larger explicit ceiling, and truthful local/cache/provider retry behavior.
+
+Approved by:
+	Repository owner after explicitly requesting actionable alternatives for a
+	target call-graph safety-ceiling failure, 2026-08-09.
+
+## Decision 262
+
+Status:
+	ACTIVE FOUNDATION. One sealed provider-free catalog retains every exact Go
+	package target with composite module/package identity and one flat
+	repository-relative display path. It assigns no product/fixture/auxiliary
+	role, quota or rank. Its default is exactly the existing Decision 257 local
+	selection, so building the catalog does not change the ordinary one-target
+	result. Semantic portfolio selection and multi-target publication remain
+	separate follow-up contracts.
+
+Approved by:
+	Repository owner after approving a shared executable/library target switcher
+	and rejecting local purpose guesses in favor of a later small refs-only LLM
+	selection, 2026-08-09.
+
+## Decision 263
+
+Status:
+	ACTIVE IMPLEMENTATION. One compact semantic call sees only request-local
+	refs, flat target paths and executable/library kind, then returns one default
+	ref plus an unordered useful target set. Exact local catalog authority owns
+	restoration; no purpose role, score, prose, retry, judge or balance cap is
+	accepted. Explicit `--target` and offline local resolution bypass the call.
+	The first runtime uses only the selected default in the unchanged one-target
+	pipeline; multi-target publication is a later contract.
+
+Approved by:
+	Repository owner after requesting a small LLM choice instead of local target
+	purpose heuristics, 2026-08-09.
+
+## Decision 264
+
+Status:
+	ACTIVE. Target-rooted Study cards expose the exact selected-product starts
+	to the mechanism model only as ordered request-local `n*` refs. The prompt
+	requires the complete connector from one such caller through an exact Study
+	reading; a reading-local suffix remains invalid. Legacy cards omit the field
+	and retain reading-local semantics. Request identity advances to v3 and the
+	prompt identity to `mechanism-study-prompt-3d2ec6b365d6`; response, report,
+	manifest and UI contracts do not change.
+
+Approved by:
+	Repository owner after exact targeted runs produced zero mechanisms because
+	the provider could not see the target roots already required by the local
+	reducer, 2026-08-10.
+
+## Decision 265
+
+Status:
+	ACTIVE. One mechanism candidate is exactly one simple branch. The prompt
+	forbids unioning sibling continuations and requires independent useful
+	branches to be returned separately within the existing three-path limit.
+	The reducer and every graph/resource/report contract remain unchanged. The
+	content-derived prompt identity is `mechanism-study-prompt-a4099fdb0893`.
+
+Approved by:
+	Repository owner after the first target-root-visible call returned four
+	fork unions and one correctly invalid one-edge candidate, 2026-08-10.
+
+## Decision 266
+
+Status:
+	ACTIVE. When an exact target-to-reading connector is shorter than the
+	two-edge mechanism minimum, targeted compilation first reserves one complete
+	shortest source-ordered simple continuation spine of exactly the missing
+	length. Ordinary breadth then consumes only the remainder of the existing
+	eight-continuation budget. A missing complete spine reserves nothing and
+	keeps the card out of the provider plan; no graph, request, response, prompt,
+	reducer, report or resource ceiling changes.
+
+Approved by:
+	Repository owner after the fresh repomap run showed that a reading equal to
+	the selected main could spend all eight continuation slots on its wide first
+	call layer while an exact two-edge trail existed just beyond that prefix,
+	2026-08-10.
+
+## Decision 267
+
+Status:
+	ACTIVE. Theme Adjudication may remove only exact redundant echoes of
+	backend-owned `theme_kind`, `anchor_refs`, and `expansion_file_refs` from a
+	known candidate before strict item decoding, with accepted-theme
+	normalization counts. Field mismatches receive closed value-free codes; all
+	other unknown fields and unknown candidates remain strict rejections. A
+	post-bundle prompt companion forbids echoes, asks each observation to explain
+	its own anchor, and forbids already-answered unknowns. Request identity is
+	v4, prompt identity is `theme-adjudication-prompt-f60d8a346d32`,
+	result/status is v6, and accepted-cache is v3. This does not claim local
+	detection of the separately observed t5 semantic anchor misbinding.
+
+Approved by:
+	Repository owner after the fresh repomap decode audit identified four valid
+	themes lost only to exact redundant candidate-field echoes, 2026-08-10.
+
+## Decision 268
+
+Status:
+	ACTIVE. The browser renders one visible exact callsite row per persisted
+	Study mechanism edge instead of consuming edges in pairs and hiding every
+	second callsite behind a bare arrow. Selected-component focus suppresses
+	hover elevation on dimmed unrelated cards while retaining selected hover and
+	keyboard focus-visible feedback. At 640 px and below, the existing Study
+	table of contents becomes one width-bounded column without changing DOM or
+	tab order. UI23 and every report, Canvas, manifest, source, route, backend and
+	provider identity remain unchanged.
+
+Approved by:
+	Repository owner during white-box review of the fresh Casdoor report,
+	2026-08-10.
+
+## Decision 269
+
+Status:
+	ACTIVE. The one refs-only target selector now publishes its whole selected
+	set as sibling ordinary target runs. Every additional ref starts from the
+	one retained container's exact scoped snapshot but owns its own SSA,
+	semantic calls, artifacts, report, freshness and manifest. One byte-identical
+	sealed portfolio plus container is manifest-bound into every successful page;
+	a provider-free final render adds the left module/target directory through
+	normal relative `report.html#/map` links. Default failure and final integrity
+	failure are terminal; an additional target failure becomes only the closed
+	disabled `target_run_failed` item. `latest`, serve and initial open remain the
+	default. Report identity is 45, manifest 17, navigation and portfolio v1.
+	`--all-targets` retains every canonical catalog target while leaving default
+	ownership with one ordinary online selector call, an explicit `--target`, or
+	the exact offline catalog default; no heuristic filtering is added. Each
+	target pipeline is enclosed in exact target/package/run console context.
+	Finalization reopens rather than recreates existing run directories, is a
+	verified idempotent no-op, and the provider-free `dev finalize-target-pages`
+	recovery accepts explicit completed sibling directories without cache
+	guessing or repeated provider calls.
+
+Approved by:
+	Repository owner after requesting the selected targets as a left-side menu
+	and preferring separate ordinary provider runs over copying or a plural
+	shared-run schema, 2026-08-10.
+
+## Decision 271
+
+Status:
+	ACTIVE. Exact Study source actions and their non-link fallback keep symbol and
+	`path:line` as separate nodes with a visible wrapping gap. The target rail
+	overrides generic tab no-wrap; a legacy singleton displays its exact
+	module-relative package directory while its title retains the full package
+	path. Reading-role pills appear only when direct and supporting roles coexist
+	in one card. A prepared investigation without an accepted mechanism renders
+	no empty trace heading or fallback section; its exact readings remain visible.
+	No route, source authority, backend/provider or persisted schema changes. The
+	now-unreachable generic prepared-trace copy is removed and UI24 was current
+	through this decision;
+	every report, manifest, Canvas and provider identity remains unchanged.
+
+Approved by:
+	Repository owner during white-box review of the fresh Casdoor report,
+	2026-08-10.
+
+## Decision 272
+
+Status:
+	ACTIVE. Neutral Landscape retains the complete exact structural graph; a
+	selected component shows only its exact incoming and outgoing structural
+	edges, with visible direction markers. Exact `Used by` and `Uses` neighbors
+	are real component-navigation actions that recompute the local graph and keep
+	the Connections tab active. High-cardinality relation and operation sections
+	show the first four backend-ordered rows plus every remaining exact row in a
+	truthfully counted native disclosure. Operations with exact locations remain
+	source actions; operations without one are plain non-card evidence. No route,
+	data projection, backend/provider, report, manifest, Canvas or UI catalog
+	identity changes.
+
+Approved by:
+	Repository owner during direct white-box review of the fresh multi-target
+	etcd server report, 2026-08-10.
+
+## Decision 273
+
+Status:
+	ACTIVE. Ordinary Go analysis has one positive framework-free core path. The
+	removed user flag has no latent `NoFrameworks` plumbing or fresh metadata;
+	Surface uses only the eleven explicit `net/http`/`errgroup` seeds, exact
+	`net/http` handler shapes and generic SSA evidence. Fresh Cobra inventories,
+	command traces and third-party handler widening are retired. Legacy
+	persisted DTO fields and readers remain for old runs. `DirectCallIndex`,
+	target/depth/edge controls and all existing entry-call/report/manifest
+	contracts remain unchanged; entry-call retention is enabled only by its live
+	consumer sink.
+
+Approved by:
+	Repository owner after removing the temporary flag and choosing the
+	framework-free experiment as the single ordinary Go analysis path,
+	2026-08-10.
+
+## Decision 274
+
+Status:
+	ACTIVE. The complete Go target-portfolio request nests exact build-selected
+	non-test declaration labels under each package target. Executables expose
+	all top-level declarations and receiver-qualified methods; libraries expose
+	only exported API. The local catalog, request and prompt bind the complete
+	canonical symbol inventory with no path-purpose role, prefix drop or second
+	call. The semantic request has a dedicated 256 KiB cap; its escaped provider
+	envelope is capped at 576 KiB; the refs-only response and global output-token
+	ceiling stay unchanged.
+
+Approved by:
+	Repository owner after the path-only selector chose repomap development
+	commands and the exact complete-symbol request measured 156,281 bytes,
+	2026-08-10.
+
+## Decision 275
+
+Status:
+	ACTIVE. Every nested Architecture symbol now exposes its existing
+	`supporting_evidence` role; prompt wording requires a defensible package
+	`primary_scope` ref in the production unit instead of presenting a symbol as
+	a substitute. If supporting-only salvage removes every component, validated
+	subsystem shells survive only long enough to produce the honest existing
+	`proposal.zero_useful_semantic_components` diagnostic and complete local
+	remainder. No parent ref is inserted or promoted. Architecture request
+	identity is v21; response, record, Landscape and UI contracts are unchanged.
+
+Approved by:
+	Repository owner after the fresh repomap Architecture response returned only
+	nested symbols and the old wire hid their supporting role, 2026-08-10.
+
+## Decision 276
+
+Status:
+	ACTIVE. A complete but empty exported declaration inventory makes a library
+	ineligible for the ordinary semantic portfolio default or sibling set, while
+	the complete exact local catalog, explicit `--target`, and `--all-targets`
+	remain unchanged. The prompt no longer teaches literal `t1`; standard final
+	Go `/vN` module suffixes are removed only from the provider-visible repository
+	label; response semantic identity advances to v3; and local fallback obeys
+	the same exact eligibility. Separately, successful zero-primary Architecture
+	status is valid when every accepted distinct member is exact supporting
+	evidence and the existing requested/covered/uncovered partitions agree. No
+	member is inserted or promoted. Architecture status advances v15→v16; no
+	provider stage, retry, heuristic role, report, manifest, or UI contract is
+	added.
+
+Approved by:
+	Repository owner through the persistent requirement that an ordinary etcd
+	run work without manual target selection or recovery rituals, after the fresh
+	D274/D275 run selected a BOM-only empty root and then falsely rejected its
+	structurally valid supporting-only Architecture status, 2026-08-10.
+
+## Decision 277
+
+Status:
+	ACTIVE. A selected Go library now builds Study from its exact build-selected
+	executable public callable declarations under a new `public_api_root` role,
+	with the selected package Unit as literal principal and no invented Component
+	or LocalRemainder owner. Exported methods on unexported receivers remain
+	public; bodyless declarations stay selector-only. Complete coverage is
+	preserved while the provider frontier orders at most 32 constructors, other
+	top-level functions and receiver-family round-robin methods. Live roots,
+	Scout seed order, exact focused-span bindings, omission accounting, saved
+	snapshot replay and persisted source authority fail closed on drift; ordinary
+	artifact reconstruction derives root openables only from the bound snapshot.
+	Types/bodyless-only
+	libraries publish `insufficient_catalog` with zero calls. Atlas Study advances
+	to v8/prompt14/result9, target catalog v3, report projection16 and manifest18
+	with an exact saved-snapshot digest; report45 and the names-only
+	target-portfolio wire remain unchanged.
+
+Approved by:
+	Repository owner after fresh Telebot and etcd library pages exposed useful
+	exact public APIs while Study incorrectly required executable-oriented
+	surface/component support, 2026-08-10.
+
+## Decision 278
+
+Status:
+	ACTIVE. The exact module-root target path `.` remains backend identity but is
+	presented with the bounded repository name in the target rail. Repository
+	freshness now says `current` / `актуален`, not `clean` / `чистый`; an already
+	authorized dirty source projection separately says that local changes were
+	captured. Target navigation v1, report45 and manifest18 remain unchanged;
+	the typed UI catalog advances to UI25.
+
+Approved by:
+	Repository owner through the final product-completion authority and the
+	explicit post-reload request to verify nothing remained unfinished,
+	2026-08-10.
+
+## Decision 279
+
+Status:
+	ACTIVE. The complete exact local target catalog remains authority for
+	explicit `--target` and exhaustive `--all-targets`, while the ordinary
+	portfolio wire now contains only exact executable packages and exact
+	module-root libraries (`PackageDir == ModuleDir`). Request refs are dense
+	over that surface and hidden subpackages have no restoration authority.
+	Fallback uses the same structural surface plus D276 library-API eligibility;
+	a sole eligible surface target is selected locally with zero selector calls.
+	Compilation/request advance to v3 and the prompt hash advances; result v3 is
+	bound by the new request ref. Report, manifest and navigation stay unchanged.
+
+Approved by:
+	Repository owner after Telebot exposed that ordinary package coverage would
+	create redundant sibling Study pages for every public subpackage, 2026-08-10.
+
 ## Decision 241 follow-up
 
 Status:
@@ -202,7 +764,7 @@ Status:
     `scripts` scope as tooling, while a generic observed call no longer
     masquerades as an effect boundary. Current identities are Scout request
     v5, vocabulary v3, cache contract v3, Scout result v5, Adjudication
-    request v3, result/status v5, accepted-cache v2, and StudyThemes v5 (v4 was
+    request v4, result/status v6, accepted-cache v3, and StudyThemes v5 (v4 was
     the pre-D246 identity).
     Adjudication owns the final question, `why_it_matters`, and
     `expected_learning`; narrowed questions cannot retain broader Scout

@@ -220,6 +220,14 @@ func projectEntrypointHandoffGroupForEntry(
 	if len(entryMembers) == 0 {
 		return nil, nil
 	}
+	entryIdentities, groundingBound, err := exactProcessEntryIdentities(
+		canvas,
+		grounding,
+		entryAnchor,
+	)
+	if err != nil {
+		return nil, err
+	}
 
 	handoffs := []EntrypointTransition{}
 	frontier := EntrypointFrontier{
@@ -232,8 +240,17 @@ func projectEntrypointHandoffGroupForEntry(
 	if grounding != nil {
 		for _, handoff := range grounding.EntryHandoffs {
 			if handoff.Scenario.ID != entryAnchor.Scenario.ID ||
-				!architectureDeclarationLocationsCompatible(handoff.ProcessEntrypoint.Location, entryAnchor.Location) ||
-				!entrypointHandoffMatchesAnchor(canvas, entryAnchor, handoff) {
+				!architectureDeclarationLocationsCompatible(handoff.ProcessEntrypoint.Location, entryAnchor.Location) {
+				continue
+			}
+			if !containsExactEntrypointIdentity(entryIdentities, handoff.ProcessEntrypoint.ID) {
+				if groundingBound {
+					return nil, fmt.Errorf(
+						"entry handoff group: D210 process entry %q does not match exact grounding anchor %q",
+						handoff.ProcessEntrypoint.ID,
+						entryAnchor.ID,
+					)
+				}
 				continue
 			}
 			componentIDs := componentIDsForEntryHandoffCallee(canvas, repositoryGraph, handoff)
@@ -311,8 +328,8 @@ func projectEntrypointHandoffGroupForEntry(
 	// declaration only when the exact anchor has one member; plural membership is
 	// represented without selecting a hidden representative.
 	entrySymbol := ""
-	if len(entryMembers) == 1 {
-		entrySymbol = exactEntrypointSymbol(canvas, entryMembers[0], entryAnchor.Location)
+	if len(entryMembers) == 1 && len(entryIdentities) == 1 {
+		entrySymbol = entryIdentities[0]
 	}
 	entryLabel := "process entry"
 	if entrySymbol != "" {
@@ -348,39 +365,81 @@ func projectEntrypointHandoffGroupForEntry(
 	}, nil
 }
 
-func entrypointHandoffMatchesAnchor(
+// exactProcessEntryIdentities restores process-entry identity independently
+// from conceptual component ownership. The preferred join is the validated
+// ArchitectureGrounding behavior anchor and its exact associated member
+// locations. Minimal/local fixtures without that mirrored anchor use the same
+// exact declaration facts, including facts retained only by LocalRemainder.
+// LocalRemainder is deliberately visible here as identity evidence; ownership
+// helpers continue to exclude it from every component_ids projection.
+func exactProcessEntryIdentities(
 	canvas *ArchitectureCanvas,
+	grounding *ArchitectureGrounding,
 	entryAnchor *componentmap.BehaviorAnchor,
-	handoff ArchitectureEntryHandoff,
-) bool {
-	if entryAnchor == nil || handoff.ProcessEntrypoint.ID == "" {
-		return false
+) ([]string, bool, error) {
+	if entryAnchor == nil {
+		return nil, false, nil
 	}
-	for _, memberID := range processEntryMemberIDs(entryAnchor) {
-		if exactEntrypointSymbol(canvas, memberID, entryAnchor.Location) ==
-			handoff.ProcessEntrypoint.ID {
-			return true
+	if grounding != nil {
+		for _, anchor := range grounding.BehaviorAnchors {
+			if anchor.ID != entryAnchor.ID {
+				continue
+			}
+			if anchor.Kind != componentmap.AnchorProcessEntry ||
+				anchor.ProofMode != componentmap.AnchorProofProcessEntry ||
+				anchor.Scenario.ID != entryAnchor.Scenario.ID ||
+				!architectureDeclarationLocationsCompatible(anchor.Location, entryAnchor.Location) {
+				return nil, true, fmt.Errorf(
+					"entry handoff group: grounding anchor %q does not match the exact Canvas process entry",
+					entryAnchor.ID,
+				)
+			}
+			identities := make([]string, 0, len(anchor.AssociatedMembers))
+			for _, member := range anchor.AssociatedMembers {
+				if member.ID == "" ||
+					!architectureDeclarationLocationsCompatible(member.Location, entryAnchor.Location) {
+					return nil, true, fmt.Errorf(
+						"entry handoff group: grounding anchor %q has no exact associated process-entry member at its location",
+						entryAnchor.ID,
+					)
+				}
+				identities = append(identities, member.ID)
+			}
+			identities = sortedExactEntrypointIdentities(identities)
+			if len(identities) == 0 {
+				return nil, true, fmt.Errorf(
+					"entry handoff group: grounding anchor %q has no exact associated process-entry identity",
+					entryAnchor.ID,
+				)
+			}
+			return identities, true, nil
 		}
 	}
-	return false
+
+	var identities []string
+	for _, memberID := range processEntryMemberIDs(entryAnchor) {
+		identities = append(
+			identities,
+			exactEntrypointSymbolsForMember(canvas, memberID, entryAnchor.Location)...,
+		)
+	}
+	return sortedExactEntrypointIdentities(identities), false, nil
 }
 
-// exactEntrypointSymbol restores readable entry identity only from one
-// exact declaration fact at the process-entry location. Member IDs are opaque
-// local join keys and must never become product copy.
-func exactEntrypointSymbol(
+// exactEntrypointSymbolsForMember restores readable identity only from exact
+// declaration facts at the process-entry location. It intentionally scans all
+// components, including LocalRemainder: the candidate is exact local evidence,
+// while component ownership is a separate projection.
+func exactEntrypointSymbolsForMember(
 	canvas *ArchitectureCanvas,
 	memberID componentmap.MemberID,
 	entryLocation evidence.Location,
-) string {
+) []string {
 	if canvas == nil || memberID.Kind != componentmap.MemberSymbol || memberID.Value == "" {
-		return ""
+		return nil
 	}
-	result := ""
+	var result []string
 	for _, component := range canvas.Components {
-		if canvas.LocalRemainderComponentID != "" && component.ID == canvas.LocalRemainderComponentID {
-			continue
-		}
 		for _, members := range [][]componentmap.Candidate{component.Members, component.SharedMembers} {
 			for _, member := range members {
 				if !memberIDEquals(member.ID, memberID) {
@@ -392,18 +451,35 @@ func exactEntrypointSymbol(
 						!architectureDeclarationLocationsCompatible(*fact.Location, entryLocation) {
 						continue
 					}
-					if result == "" {
-						result = fact.Value
-						continue
-					}
-					if fact.Value != result {
-						return ""
-					}
+					result = append(result, fact.Value)
 				}
 			}
 		}
 	}
+	return sortedExactEntrypointIdentities(result)
+}
+
+func sortedExactEntrypointIdentities(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if value != "" {
+			seen[value] = struct{}{}
+		}
+	}
+	result := make([]string, 0, len(seen))
+	for value := range seen {
+		result = append(result, value)
+	}
+	sort.Strings(result)
 	return result
+}
+
+func containsExactEntrypointIdentity(values []string, target string) bool {
+	if target == "" {
+		return false
+	}
+	index := sort.SearchStrings(values, target)
+	return index < len(values) && values[index] == target
 }
 
 func transitionFromEntryHandoff(

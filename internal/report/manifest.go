@@ -17,6 +17,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
@@ -24,6 +25,7 @@ import (
 	"github.com/dvordrova/repomap/internal/llmbundle"
 	"github.com/dvordrova/repomap/internal/mechanismstudy"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
+	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/sourcecatalog"
 	"github.com/dvordrova/repomap/internal/tasklens"
 	"github.com/dvordrova/repomap/internal/themestudy"
@@ -31,11 +33,12 @@ import (
 )
 
 const (
-	CurrentRunManifestVersion = 14
+	CurrentRunManifestVersion = 18
 	RunManifestFilename       = "run_manifest.json"
 
 	maxRunManifestBytes             = 4 * 1024 * 1024
 	maxManifestReportBytes          = 32 * 1024 * 1024
+	maxManifestSnapshotBytes        = 64 * 1024 * 1024
 	maxManifestOpenablePaths        = 4096
 	maxManifestComponents           = 512
 	maxManifestAnchors              = 4096
@@ -55,6 +58,7 @@ type RunManifest struct {
 	RepositoryState       freshness.RepositoryState `json:"repository_state"`
 	AnalysisRoot          string                    `json:"analysis_root"`
 	RepositoryStateSHA256 string                    `json:"repository_state_sha256"`
+	SnapshotSHA256        string                    `json:"snapshot_sha256"`
 	ReportSHA256          string                    `json:"report_sha256"`
 	ReportFormatVersion   int                       `json:"report_format_version"`
 	OpenablePaths         []string                  `json:"openable_paths"`
@@ -67,6 +71,12 @@ type RunManifest struct {
 
 type MaterialInputs struct {
 	SelectedRevision                  string `json:"selected_revision"`
+	AnalysisTargetRef                 string `json:"analysis_target_ref,omitempty"`
+	AnalysisTargetSHA256              string `json:"analysis_target_sha256,omitempty"`
+	TargetRunContainerSHA256          string `json:"target_run_container_sha256,omitempty"`
+	TargetPagePortfolioSHA256         string `json:"target_page_portfolio_sha256,omitempty"`
+	EntryCallStatusSHA256             string `json:"entry_call_status_sha256,omitempty"`
+	EntryCallResultSHA256             string `json:"entry_call_result_sha256,omitempty"`
 	ModelBundleSHA256                 string `json:"model_bundle_sha256,omitempty"`
 	OrientationContextSelectionSHA256 string `json:"orientation_context_selection_sha256,omitempty"`
 	RepositoryAtlasSHA256             string `json:"repository_atlas_sha256,omitempty"`
@@ -156,6 +166,9 @@ func (m RunManifest) Validate() error {
 	if !validManifestSHA256(m.RepositoryStateSHA256) || m.RepositoryStateSHA256 != repositoryDigest {
 		return fmt.Errorf("report manifest: repository state sha256 mismatch")
 	}
+	if !validManifestSHA256(m.SnapshotSHA256) {
+		return fmt.Errorf("report manifest: snapshot sha256 is invalid")
+	}
 	if !validManifestSHA256(m.ReportSHA256) {
 		return fmt.Errorf("report manifest: report sha256 is invalid")
 	}
@@ -179,6 +192,38 @@ func (m RunManifest) Validate() error {
 		!validManifestLabel(m.MaterialInputs.InputPolicyVersion) ||
 		m.MaterialInputs.ArchitectureContract <= 0 || m.MaterialInputs.ReportContract != m.ReportFormatVersion {
 		return fmt.Errorf("report manifest: material inputs are invalid")
+	}
+	hasAnalysisTargetRef := m.MaterialInputs.AnalysisTargetRef != ""
+	hasAnalysisTargetSHA256 := m.MaterialInputs.AnalysisTargetSHA256 != ""
+	if hasAnalysisTargetRef != hasAnalysisTargetSHA256 {
+		return fmt.Errorf("report manifest: analysis target ref and sha256 must both be present or absent")
+	}
+	if hasAnalysisTargetRef && !validManifestLabel(m.MaterialInputs.AnalysisTargetRef) {
+		return fmt.Errorf("report manifest: analysis target ref is invalid")
+	}
+	if hasAnalysisTargetSHA256 && !validManifestSHA256(m.MaterialInputs.AnalysisTargetSHA256) {
+		return fmt.Errorf("report manifest: analysis target sha256 is invalid")
+	}
+	hasTargetRunContainer := m.MaterialInputs.TargetRunContainerSHA256 != ""
+	hasTargetPagePortfolio := m.MaterialInputs.TargetPagePortfolioSHA256 != ""
+	if hasTargetRunContainer && !hasAnalysisTargetRef {
+		return fmt.Errorf("report manifest: target run container requires one analysis target")
+	}
+	if hasTargetRunContainer && !validManifestSHA256(m.MaterialInputs.TargetRunContainerSHA256) {
+		return fmt.Errorf("report manifest: target run container sha256 is invalid")
+	}
+	if hasTargetPagePortfolio && (!hasTargetRunContainer ||
+		!validManifestSHA256(m.MaterialInputs.TargetPagePortfolioSHA256)) {
+		return fmt.Errorf("report manifest: target page portfolio binding is invalid")
+	}
+	hasEntryCallStatus := m.MaterialInputs.EntryCallStatusSHA256 != ""
+	hasEntryCallResult := m.MaterialInputs.EntryCallResultSHA256 != ""
+	if hasEntryCallStatus != hasEntryCallResult {
+		return fmt.Errorf("report manifest: entry call status and result sha256 must both be present or absent")
+	}
+	if hasEntryCallStatus && (!validManifestSHA256(m.MaterialInputs.EntryCallStatusSHA256) ||
+		!validManifestSHA256(m.MaterialInputs.EntryCallResultSHA256)) {
+		return fmt.Errorf("report manifest: entry call artifact sha256 is invalid")
 	}
 	hasModelBundle := m.MaterialInputs.ModelBundleSHA256 != ""
 	hasOrientationSelection := m.MaterialInputs.OrientationContextSelectionSHA256 != ""
@@ -644,6 +689,8 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 	}
 	var report struct {
 		FormatVersion                   int                                        `json:"format_version"`
+		AnalysisTarget                  *analysistarget.Target                     `json:"analysis_target"`
+		EntryCall                       *EntryCallReportProjection                 `json:"entry_call"`
 		OpenablePaths                   []string                                   `json:"openable_paths"`
 		Components                      []Component                                `json:"components"`
 		RepositoryGraph                 *RepositoryGraph                           `json:"repository_graph"`
@@ -775,6 +822,31 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 		return fmt.Errorf("report manifest: authority does not match report")
 	}
 	material := m.MaterialInputs
+	targetRef, targetSHA256, err := reportAnalysisTargetMaterial(report.AnalysisTarget, report.RepositoryGraph)
+	if err != nil {
+		return fmt.Errorf("report manifest: report analysis target: %w", err)
+	}
+	if targetRef != material.AnalysisTargetRef || targetSHA256 != material.AnalysisTargetSHA256 {
+		return fmt.Errorf("report manifest: analysis target identity does not match report")
+	}
+	hasEntryCall := material.EntryCallStatusSHA256 != "" && material.EntryCallResultSHA256 != ""
+	if report.EntryCall != nil && !hasEntryCall {
+		return fmt.Errorf("report manifest: entry call projection lacks artifact authority")
+	}
+	if hasEntryCall && report.AnalysisTarget == nil {
+		return fmt.Errorf("report manifest: entry call artifacts lack analysis target authority")
+	}
+	if hasEntryCall && report.AnalysisTarget != nil &&
+		report.AnalysisTarget.Kind == analysistarget.KindExecutablePackage && report.EntryCall == nil {
+		return fmt.Errorf("report manifest: entry call artifact identity does not match report")
+	}
+	if err := validateEntryCallReportProjection(
+		report.AnalysisTarget,
+		report.EntryCall,
+		report.OpenablePaths,
+	); err != nil {
+		return fmt.Errorf("report manifest: %w", err)
+	}
 	if report.TaskInvestigation == nil {
 		if material.TaskBundleSHA256 != "" || material.TaskAttemptSHA256 != "" ||
 			material.TaskPackSHA256 != "" || material.TaskStatusSHA256 != "" ||
@@ -794,6 +866,23 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 		!validManifestSHA256(report.TaskInvestigation.RetrievalTraceSHA256) ||
 		!validManifestSHA256(report.TaskInvestigation.RetrievalTraceMarkdownSHA256) {
 		return fmt.Errorf("report manifest: Task Lens artifact identity does not match report")
+	}
+	return nil
+}
+
+// VerifySnapshotArtifact binds the exact saved snapshot bytes used to derive
+// the report and its private replay inputs. It must run before any verifier
+// that rehydrates semantic authority from snapshot.json.
+func (m RunManifest) VerifySnapshotArtifact(runDir string) error {
+	if err := m.Validate(); err != nil {
+		return err
+	}
+	snapshotJSON, err := readRunSnapshot(runDir)
+	if err != nil {
+		return err
+	}
+	if manifestSHA256(snapshotJSON) != m.SnapshotSHA256 {
+		return fmt.Errorf("report manifest: snapshot sha256 mismatch")
 	}
 	return nil
 }
@@ -1234,7 +1323,7 @@ func (m RunManifest) VerifyThemesArtifacts(runDir string, reportJSON []byte) err
 		m.MaterialInputs.StudyThemesSHA256 == "" {
 		return nil
 	}
-	status, studyMap, err := readAtlasStudyReportProduct(runDir, &persisted)
+	status, studyMap, err := readPersistedAtlasStudyReportProduct(runDir, &persisted)
 	if err != nil {
 		return fmt.Errorf("report manifest: theme Study artifacts: %w", err)
 	}
@@ -1326,7 +1415,7 @@ func (m RunManifest) VerifyStudyInvestigationArtifacts(runDir string, reportJSON
 	); err != nil {
 		return fmt.Errorf("report manifest: Study investigation artifacts: %w", err)
 	}
-	status, studyMap, err := readAtlasStudyReportProduct(runDir, &persisted)
+	status, studyMap, err := readPersistedAtlasStudyReportProduct(runDir, &persisted)
 	if err != nil {
 		return fmt.Errorf("report manifest: Study investigation projection: %w", err)
 	}
@@ -1403,9 +1492,10 @@ func DecodeRunManifest(data []byte) (RunManifest, error) {
 // provider-free report render. It is not a verified interactive manifest:
 // callers must capture the repository again and publish a new manifest.
 type RunManifestAuthoritySeed struct {
-	RepositoryIdentity string
-	AnalysisRoot       string
-	SelectedRevision   string
+	RepositoryIdentity    string
+	RepositoryStateSHA256 string
+	AnalysisRoot          string
+	SelectedRevision      string
 	// CapturedInputPaths are analysis-root-relative, matching the input
 	// contract of ConfirmRunAuthorityScoped. The manifest itself stores these
 	// paths relative to RepositoryIdentity.
@@ -1418,16 +1508,7 @@ type RunManifestAuthoritySeed struct {
 // set needed by ConfirmRunAuthorityScoped; the resulting render still replays
 // every saved product and writes a fresh current manifest fail-closed.
 func ReadRunManifestAuthoritySeed(runDir string) (RunManifestAuthoritySeed, error) {
-	root, err := os.OpenRoot(runDir)
-	if err != nil {
-		return RunManifestAuthoritySeed{}, fmt.Errorf("report manifest seed: open run directory: %w", err)
-	}
-	defer root.Close()
-	raw, err := readManifestFile(root, RunManifestFilename, maxRunManifestBytes)
-	if err != nil {
-		return RunManifestAuthoritySeed{}, fmt.Errorf("report manifest seed: %w", err)
-	}
-	manifest, err := DecodeRunManifest(raw)
+	manifest, err := readRunManifestForAuthoritySeed(runDir)
 	if err != nil {
 		return RunManifestAuthoritySeed{}, err
 	}
@@ -1436,11 +1517,57 @@ func ReadRunManifestAuthoritySeed(runDir string) (RunManifestAuthoritySeed, erro
 		return RunManifestAuthoritySeed{}, err
 	}
 	return RunManifestAuthoritySeed{
-		RepositoryIdentity: manifest.RepositoryState.Identity,
-		AnalysisRoot:       manifest.AnalysisRoot,
-		SelectedRevision:   manifest.MaterialInputs.SelectedRevision,
-		CapturedInputPaths: paths,
+		RepositoryIdentity:    manifest.RepositoryState.Identity,
+		RepositoryStateSHA256: manifest.RepositoryStateSHA256,
+		AnalysisRoot:          manifest.AnalysisRoot,
+		SelectedRevision:      manifest.MaterialInputs.SelectedRevision,
+		CapturedInputPaths:    paths,
 	}, nil
+}
+
+// ReconfirmRunManifestAuthority is the provider-free existing-run authority
+// seam used by bounded report recovery. It reads the saved repository state
+// without trusting the old report digest, then captures and assesses the exact
+// saved input paths before a fresh authorized render writes a new manifest.
+func ReconfirmRunManifestAuthority(
+	ctx context.Context,
+	runDir string,
+	current freshness.RepositoryState,
+	strict bool,
+) (RunAuthority, error) {
+	manifest, err := readRunManifestForAuthoritySeed(runDir)
+	if err != nil {
+		return RunAuthority{}, err
+	}
+	paths, err := analysisRelativeManifestInputPaths(manifest)
+	if err != nil {
+		return RunAuthority{}, err
+	}
+	return ConfirmRunAuthorityScoped(
+		ctx,
+		manifest.AnalysisRoot,
+		manifest.RepositoryState,
+		current,
+		paths,
+		strict,
+	)
+}
+
+func readRunManifestForAuthoritySeed(runDir string) (RunManifest, error) {
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return RunManifest{}, fmt.Errorf("report manifest seed: open run directory: %w", err)
+	}
+	defer root.Close()
+	raw, err := readManifestFile(root, RunManifestFilename, maxRunManifestBytes)
+	if err != nil {
+		return RunManifest{}, fmt.Errorf("report manifest seed: %w", err)
+	}
+	manifest, err := DecodeRunManifest(raw)
+	if err != nil {
+		return RunManifest{}, err
+	}
+	return manifest, nil
 }
 
 func analysisRelativeManifestInputPaths(manifest RunManifest) ([]string, error) {
@@ -1484,6 +1611,9 @@ func ReadRunManifest(runDir string) (RunManifest, error) {
 	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
 		return RunManifest{}, err
 	}
+	if err := manifest.VerifySnapshotArtifact(runDir); err != nil {
+		return RunManifest{}, err
+	}
 	if err := manifest.VerifyTaskInvestigationArtifacts(runDir); err != nil {
 		return RunManifest{}, err
 	}
@@ -1499,7 +1629,87 @@ func ReadRunManifest(runDir string) (RunManifest, error) {
 	if err := manifest.VerifyThemesArtifacts(runDir, reportJSON); err != nil {
 		return RunManifest{}, err
 	}
+	if err := manifest.VerifyEntryCallArtifacts(runDir, reportJSON); err != nil {
+		return RunManifest{}, err
+	}
+	if err := manifest.VerifyTargetPagePortfolioArtifacts(runDir); err != nil {
+		return RunManifest{}, err
+	}
 	return manifest, nil
+}
+
+// VerifyTargetPagePortfolioArtifacts binds the exact selected-target
+// container and, when publication has completed, the shared sibling-page
+// portfolio. A container-only manifest is valid for the initial/default or
+// single-target publication; a portfolio can never exist without it.
+func (m RunManifest) VerifyTargetPagePortfolioArtifacts(runDir string) error {
+	if m.Version != CurrentRunManifestVersion {
+		return fmt.Errorf("report manifest: unsupported version %d", m.Version)
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return fmt.Errorf("report manifest: open target page run: %w", err)
+	}
+	defer root.Close()
+
+	readBound := func(name, want string, limit int) ([]byte, error) {
+		if want == "" {
+			if _, statErr := root.Lstat(name); statErr == nil {
+				return nil, fmt.Errorf("report manifest: unbound target page artifact %s is present", name)
+			} else if !errors.Is(statErr, fs.ErrNotExist) {
+				return nil, fmt.Errorf("report manifest: inspect target page artifact %s: %w", name, statErr)
+			}
+			return nil, nil
+		}
+		raw, readErr := readManifestFile(root, name, limit)
+		if readErr != nil || manifestSHA256(raw) != want {
+			return nil, fmt.Errorf("report manifest: target page artifact %s sha256 mismatch", name)
+		}
+		return raw, nil
+	}
+
+	containerRaw, err := readBound(
+		snapshot.TargetRunContainerArtifactFilename,
+		m.MaterialInputs.TargetRunContainerSHA256,
+		snapshot.MaxTargetRunContainerBytes,
+	)
+	if err != nil {
+		return err
+	}
+	portfolioRaw, err := readBound(
+		snapshot.TargetPagePortfolioArtifactFilename,
+		m.MaterialInputs.TargetPagePortfolioSHA256,
+		snapshot.MaxTargetPagePortfolioBytes,
+	)
+	if err != nil {
+		return err
+	}
+	if len(containerRaw) == 0 {
+		if len(portfolioRaw) != 0 {
+			return fmt.Errorf("report manifest: target page portfolio lacks container authority")
+		}
+		return nil
+	}
+	container, err := snapshot.DecodeTargetRunContainer(containerRaw)
+	if err != nil {
+		return fmt.Errorf("report manifest: target run container: %w", err)
+	}
+	if len(portfolioRaw) == 0 {
+		return nil
+	}
+	portfolio, err := snapshot.DecodeTargetPagePortfolio(portfolioRaw)
+	if err != nil {
+		return fmt.Errorf("report manifest: target page portfolio: %w", err)
+	}
+	if err := portfolio.ValidateAgainstContainer(container); err != nil {
+		return fmt.Errorf("report manifest: target page portfolio: %w", err)
+	}
+	for _, page := range portfolio.Targets {
+		if page.TargetRef == m.MaterialInputs.AnalysisTargetRef && page.State == snapshot.TargetPageReady {
+			return nil
+		}
+	}
+	return fmt.Errorf("report manifest: analysis target has no ready target page")
 }
 
 // RemoveRunManifest invalidates any previous interactive authority for a run.
@@ -1535,6 +1745,18 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 	repositoryDigest, err := authority.repository.Digest()
 	if err != nil {
 		return fmt.Errorf("report manifest: digest repository state: %w", err)
+	}
+	snapshotJSON, err := readRunSnapshot(runDir)
+	if err != nil {
+		return err
+	}
+	analysisTargetRef, analysisTargetDigest, err := reportAnalysisTargetMaterial(data.AnalysisTarget, data.RepositoryGraph)
+	if err != nil {
+		return fmt.Errorf("report manifest: analysis target: %w", err)
+	}
+	entryCallStatusDigest, entryCallResultDigest, err := entryCallReportMaterial(data, repositoryDigest)
+	if err != nil {
+		return fmt.Errorf("report manifest: entry call: %w", err)
 	}
 	components, err := componentAuthority(data.Components)
 	if err != nil {
@@ -1584,6 +1806,7 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 		RepositoryState:       authority.repository,
 		AnalysisRoot:          authority.analysisRoot,
 		RepositoryStateSHA256: repositoryDigest,
+		SnapshotSHA256:        manifestSHA256(snapshotJSON),
 		ReportSHA256:          manifestSHA256(reportJSON),
 		ReportFormatVersion:   data.FormatVersion,
 		OpenablePaths:         append([]string(nil), data.OpenablePaths...),
@@ -1593,6 +1816,12 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 		Freshness:             authority.freshness,
 		MaterialInputs: MaterialInputs{
 			SelectedRevision:                   authority.repository.Head,
+			AnalysisTargetRef:                  analysisTargetRef,
+			AnalysisTargetSHA256:               analysisTargetDigest,
+			TargetRunContainerSHA256:           savedArtifactSHA256(runDir, snapshot.TargetRunContainerArtifactFilename),
+			TargetPagePortfolioSHA256:          savedArtifactSHA256(runDir, snapshot.TargetPagePortfolioArtifactFilename),
+			EntryCallStatusSHA256:              entryCallStatusDigest,
+			EntryCallResultSHA256:              entryCallResultDigest,
 			ModelBundleSHA256:                  modelBundleDigest,
 			OrientationContextSelectionSHA256:  orientationSelectionDigest,
 			RepositoryAtlasSHA256:              repositoryAtlasDigest,
@@ -1624,6 +1853,9 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
 		return err
 	}
+	if err := manifest.VerifySnapshotArtifact(runDir); err != nil {
+		return err
+	}
 	if err := manifest.VerifyOrientationContextSelectionArtifact(runDir); err != nil {
 		return err
 	}
@@ -1636,7 +1868,37 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 	if err := manifest.VerifyThemesArtifacts(runDir, reportJSON); err != nil {
 		return err
 	}
+	if err := manifest.VerifyEntryCallArtifacts(runDir, reportJSON); err != nil {
+		return err
+	}
+	if err := manifest.VerifyTargetPagePortfolioArtifacts(runDir); err != nil {
+		return err
+	}
 	return writeRunManifestAtomic(runDir, manifest)
+}
+
+func reportAnalysisTargetBinding(target *analysistarget.Target) (string, string, error) {
+	if target == nil {
+		return "", "", fmt.Errorf("analysis target is missing")
+	}
+	canonical, err := target.CanonicalJSON()
+	if err != nil {
+		return "", "", err
+	}
+	return target.Ref, manifestSHA256(canonical), nil
+}
+
+func reportAnalysisTargetMaterial(
+	target *analysistarget.Target,
+	graph *RepositoryGraph,
+) (string, string, error) {
+	if target != nil {
+		return reportAnalysisTargetBinding(target)
+	}
+	if graph != nil && len(graph.Packages) > 0 {
+		return "", "", fmt.Errorf("analysis target is missing for an exact Go package graph")
+	}
+	return "", "", nil
 }
 
 func annotateCapturedInputOwnership(inputs []freshness.CapturedInput, data *ReportData, repositoryRoot, analysisRoot string) {
@@ -1906,6 +2168,15 @@ func readManifestFile(root *os.Root, name string, limit int) ([]byte, error) {
 		return nil, fmt.Errorf("report manifest: %s exceeds %d bytes", name, limit)
 	}
 	return data, nil
+}
+
+func readRunSnapshot(runDir string) ([]byte, error) {
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return nil, fmt.Errorf("report manifest: open snapshot run: %w", err)
+	}
+	defer root.Close()
+	return readManifestFile(root, "snapshot.json", maxManifestSnapshotBytes)
 }
 
 func validateManifestPath(value string) error {
