@@ -17,7 +17,7 @@ type d239ProductionScopeFixture struct {
 
 func TestD239SynthesisRequestUsesProductionAwareCoverageRoles(t *testing.T) {
 	t.Parallel()
-	if SynthesisRequestVersion != 21 || SynthesisRecordVersion != 17 || ContractVersion != 15 || ProposalVersion != 15 {
+	if SynthesisRequestVersion != 21 || SynthesisRecordVersion != 18 || ContractVersion != 15 || ProposalVersion != 15 {
 		t.Fatalf(
 			"production-aware identities request/record/contract/proposal = %d/%d/%d/%d",
 			SynthesisRequestVersion,
