@@ -351,8 +351,8 @@ process.stdout.write(JSON.stringify({
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode typed UI catalog acceptance result: %v\n%s", err, output)
 	}
-	if got.Version != 34 {
-		t.Errorf("catalog version = %d, want 34", got.Version)
+	if got.Version != 35 {
+		t.Errorf("catalog version = %d, want 35", got.Version)
 	}
 	if !got.Membership.Known || got.Membership.Unknown || got.Membership.NonString {
 		t.Errorf("catalog membership contract = %#v", got.Membership)
@@ -383,9 +383,9 @@ process.stdout.write(JSON.stringify({
 		t.Errorf("RU component plurals = %#v, want %#v", got.Plurals, wantPlurals)
 	}
 	wantFrontierPlurals := []string{
-		"1 точка входа восстановлена · 1 предложение отклонено · 1 кандидату модель не предложила точку входа",
-		"2 точки входа восстановлены · 2 предложения отклонены · 2 кандидатам модель не предложила точку входа",
-		"5 точек входа восстановлено · 5 предложений отклонено · 5 кандидатам модель не предложила точку входа",
+		"1 точка входа восстановлена · 1 предложение отклонено · 1 структурный кандидат оставлен без классификации",
+		"2 точки входа восстановлены · 2 предложения отклонены · 2 структурных кандидата оставлены без классификации",
+		"5 точек входа восстановлено · 5 предложений отклонено · 5 структурных кандидатов оставлено без классификации",
 	}
 	if !slices.Equal(got.FrontierPlurals, wantFrontierPlurals) {
 		t.Errorf("RU model frontier plurals = %#v, want %#v", got.FrontierPlurals, wantFrontierPlurals)
