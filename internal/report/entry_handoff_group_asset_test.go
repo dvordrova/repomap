@@ -374,6 +374,7 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
 	}
 	if mainCards != 1 || len(uniqueCards) != 11 || !containsString(moby.CardLabels, "/metrics") ||
 		!containsString(moby.CardLabels, "/ready") || !containsString(moby.CardLabels, "/help") ||
+		!containsString(moby.CardLabels, "/v{version:[0-9.]+}/{path:.*}") || containsString(moby.CardLabels, "*}") ||
 		containsString(moby.CardLabels, "background sync") {
 		t.Fatalf("Moby exact entry surfaces were collapsed, duplicated or polluted by runtime activity: %#v", moby)
 	}
