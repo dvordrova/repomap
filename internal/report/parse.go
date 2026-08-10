@@ -59,6 +59,7 @@ type llmBundleJSON struct {
 }
 
 type runMetadataJSON struct {
+	RepoName                   string   `json:"repo_name"`
 	CreatedAt                  string   `json:"created_at"`
 	Model                      string   `json:"model"`
 	PromptVersion              string   `json:"prompt_version"`
@@ -1011,6 +1012,9 @@ func parseRunMetadata(path string, data *ReportData) string {
 		SurfaceDiscoveryRan:        metadata.SurfaceDiscoveryRan,
 		SurfaceDiscoveryCount:      metadata.SurfaceDiscoveryCount,
 		SurfaceDiscoveryMillis:     metadata.SurfaceDiscoveryMillis,
+	}
+	if data.RepoName == "" {
+		data.RepoName = strings.TrimSpace(metadata.RepoName)
 	}
 	if normalizedReportLanguage(metadata.EffectiveOptions.ReportLanguage) == "ru" {
 		data.requestedPresentationLocale = "ru"

@@ -295,6 +295,7 @@ func TestGenerateAuthorizedPublishesAcceptedEntryCallAfterSnapshotCredentialReda
 		fixture.singleContainerRaw,
 	)
 	metadata, err := json.Marshal(map[string]any{
+		"repo_name":                    "gitlab.com/formatic/syn",
 		"analysis_target_ref":          target.Ref,
 		"analysis_target_kind":         target.Kind,
 		"analysis_target_module":       target.ModulePath,
@@ -318,9 +319,13 @@ func TestGenerateAuthorizedPublishesAcceptedEntryCallAfterSnapshotCredentialReda
 	if err := json.Unmarshal(reportJSON, &persisted); err != nil {
 		t.Fatal(err)
 	}
-	if persisted.AnalysisTarget == nil || persisted.AnalysisTarget.Ref != target.Ref ||
+	if persisted.RepoName != "gitlab.com/formatic/syn" ||
+		persisted.AnalysisTarget == nil || persisted.AnalysisTarget.Ref != target.Ref ||
 		persisted.EntryCall == nil || len(persisted.EntryCall.Families) != 1 {
-		t.Fatalf("restored target/entry-call = %#v / %#v", persisted.AnalysisTarget, persisted.EntryCall)
+		t.Fatalf(
+			"restored repo/target/entry-call = %q / %#v / %#v",
+			persisted.RepoName, persisted.AnalysisTarget, persisted.EntryCall,
+		)
 	}
 	manifest, err := ReadRunManifest(runDir)
 	if err != nil {
