@@ -855,6 +855,7 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
 		strings.Join(manifold.GroupKinds, ",") != "process_entry,http_route,http_server" ||
 		!strings.Contains(strings.Join(manifold.GroupText, " "), "HTTP-маршруты2") ||
 		!strings.Contains(manifold.Text, "Точки входа · 4") ||
+		strings.Contains(manifold.Text, "Точки входа · 6") ||
 		countString(manifold.CardLabels, "/") != 1 ||
 		countString(manifold.CardLabels, "/healthz") != 1 ||
 		strings.Contains(manifold.Text, "unresolved value") ||

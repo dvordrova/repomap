@@ -6736,8 +6736,7 @@
 		var entries = mapModeProjection('entrypoints');
 		var integrations = mapModeProjection('integrations');
 		return {
-			entries: (Number(entries && entries.counts && entries.counts.entries) || 0) +
-				entryCallSurfaceLaunchpadItems().length,
+			entries: entries ? entrypointLaunchpadItems(entries).items.length : 0,
 			integrations: Number(integrations && integrations.counts && integrations.counts.touchpoints) || 0,
 			api: Number(DATA.library_api && DATA.library_api.total_declarations) || 0,
 		};
@@ -7571,9 +7570,7 @@
     return card;
   }
 
-  function renderEntrypointsLaunchpad(host, projection) {
-    var title = document.getElementById('rm-map-mode-context-title');
-    if (title) title.textContent = msg('main.map.entry.heading');
+  function entrypointLaunchpadItems(projection) {
     var projectedGroups = projection.objects && projection.objects.entry_handoff_groups ||
       projection.entry_handoff_groups || [];
     var surfaces = [];
@@ -7633,6 +7630,15 @@
     });
     entryCallSurfaceLaunchpadItems().forEach(function (item) { items.push(item); });
     items = dedupeLocalHTTPRegistrationItems(items);
+    return { items: items, projectedGroups: projectedGroups };
+  }
+
+  function renderEntrypointsLaunchpad(host, projection) {
+    var title = document.getElementById('rm-map-mode-context-title');
+    if (title) title.textContent = msg('main.map.entry.heading');
+    var launchpad = entrypointLaunchpadItems(projection);
+    var projectedGroups = launchpad.projectedGroups;
+    var items = launchpad.items;
     var grouped = Object.create(null);
     items.forEach(function (item) {
       var kind = item.kind || 'other';
