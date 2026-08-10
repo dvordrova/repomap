@@ -1980,6 +1980,82 @@ func TestArchitectureSynthesisStatusSeparatesProposalLifecycle(t *testing.T) {
 	}
 }
 
+func TestArchitectureTrailingDelimiterResponseShapeMatchesAcceptedStatus(t *testing.T) {
+	t.Parallel()
+
+	bundle := architectureSynthesisTestBundle()
+	response := architectureSynthesisTestResponse(t, bundle)
+	raw := append(append([]byte(nil), response...), []byte("]}")...)
+	provider := &architectureSynthesisStub{response: raw}
+	runDir := filepath.Join(t.TempDir(), "run")
+	if err := os.Mkdir(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	exchangeWriter, err := debugdump.OpenWriter(runDir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	outcome, err := ensureArchitectureSynthesisWithOptions(
+		context.Background(), bundle, runDir, "revision-trailing-delimiter-shape",
+		"openai-compatible/bearer", "test-model", provider,
+		architectureSynthesisOptions{
+			exchangeWriter:         exchangeWriter,
+			providerEndpointSHA256: provider.ArchitectureProviderEndpointSHA256(),
+		},
+	)
+	if closeErr := exchangeWriter.Close(); closeErr != nil {
+		t.Fatal(closeErr)
+	}
+	if err != nil {
+		t.Fatalf("ensureArchitectureSynthesis() error = %v", err)
+	}
+	if provider.calls != 1 || !outcome.ResponseParsed || outcome.ResponseShape == nil ||
+		!outcome.ResponseShape.JSONValid || outcome.ResponseShape.Grammar != "flat" ||
+		outcome.ResponseShape.SubsystemCount != 1 || outcome.ResponseShape.ComponentCount != 1 ||
+		outcome.ResponseShape.MemberRefCount != 1 || outcome.ResponseShape.EmptyAnchorRefsCount != 1 {
+		t.Fatalf("accepted trailing-delimiter outcome = %#v; calls=%d", outcome, provider.calls)
+	}
+	if !slices.Contains(outcome.ValidationCodes, "response.trailing_closing_delimiters_normalized") {
+		t.Fatalf("normalization diagnostics = count:%d codes:%v", outcome.NormalizationCount, outcome.ValidationCodes)
+	}
+
+	status := architectureSynthesisStatus(outcome, nil)
+	if err := status.Validate(); err != nil {
+		t.Fatalf("status.Validate() error = %v; status=%#v", err, status)
+	}
+	if !status.ResponseParsed || !status.ProposalAccepted || status.ResponseShape == nil ||
+		*status.ResponseShape != *outcome.ResponseShape {
+		t.Fatalf("status does not match accepted response shape: %#v", status)
+	}
+	if !slices.Contains(status.ValidationCodes, "response.trailing_closing_delimiters_normalized") {
+		t.Fatalf("status lost normalization diagnostic: %#v", status)
+	}
+	console := strings.Join(architectureSuccessConsoleLines(runDir, outcome), "\n")
+	if !strings.Contains(console, "response shape: grammar=flat subsystems=1 components=1 member_refs=1") ||
+		!strings.Contains(console, "validation diagnostics: response.trailing_closing_delimiters_normalized") {
+		t.Fatalf("console does not report accepted response shape:\n%s", console)
+	}
+
+	saved, err := os.ReadFile(filepath.Join(runDir, report.ArchitectureSynthesisFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record componentmap.SynthesisRecord
+	if err := json.Unmarshal(saved, &record); err != nil {
+		t.Fatal(err)
+	}
+	if record.Call == nil || !bytes.Equal(record.Call.Response, raw) ||
+		record.Call.ResponseBytes != len(raw) {
+		t.Fatalf("saved record did not preserve raw response: %#v", record.Call)
+	}
+	exchanges := readArchitectureSemanticExchangeRecords(t, runDir)
+	if len(exchanges) != 1 || exchanges[0].Response.OriginalBytes != len(raw) ||
+		exchanges[0].Response.OriginalSHA256 != modelresearch.SHA256(raw) {
+		t.Fatalf("semantic exchange did not preserve raw response identity: %#v", exchanges)
+	}
+}
+
 func TestEnsureArchitectureSynthesisRefetchesCorruptSavedRecord(t *testing.T) {
 	t.Parallel()
 

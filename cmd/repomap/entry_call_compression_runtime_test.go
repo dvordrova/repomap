@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http/httptest"
 	"os"
@@ -160,6 +161,31 @@ func TestEntryCallCompressionRuntimePersistsOneAcceptedRefsOnlyCall(t *testing.T
 		entries[0].record.State != debugdump.SemanticStateAccepted ||
 		entries[0].record.SemanticCalls != 1 || entries[0].record.TransportAttempts != 1 {
 		t.Fatalf("semantic entries = %+v", entries)
+	}
+}
+
+func TestEntryCallCompressionRuntimeAcceptsThirteenAdvertisedFamilies(t *testing.T) {
+	runDir := newEntryCallCompressionRunDir(t, true)
+	provider := &entryCallCompressionRuntimeProvider{}
+	outcome, err := runEntryCallCompressionForRun(
+		t.Context(), runDir, entryCallCompressionThirteenFamilySubstrate(), entryCallCompressionTestState(),
+		newRunOutput(nil), func() (entryCallCompressionClient, error) { return provider, nil },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 1 || outcome.Status.State != entrycall.StatusAccepted ||
+		outcome.Status.AdvertisedFamilies != 13 || outcome.Status.SelectedFamilies != 13 ||
+		outcome.Status.RejectedFamilies != 0 {
+		t.Fatalf("thirteen-family provider/outcome = %d/%+v", provider.calls, outcome)
+	}
+	resultRaw, err := os.ReadFile(filepath.Join(runDir, entrycall.ResultArtifactFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result, err := entrycall.DecodeResult(resultRaw); err != nil ||
+		result.SelectedFamilyCount() != 13 || result.RejectedFamilyCount() != 0 {
+		t.Fatalf("thirteen-family result = %+v, %v", result, err)
 	}
 }
 
@@ -440,4 +466,23 @@ func entryCallCompressionTestSubstrate() *entrycall.Substrate {
 		},
 		Frontiers: []entrycall.ExactFrontier{},
 	}
+}
+
+func entryCallCompressionThirteenFamilySubstrate() *entrycall.Substrate {
+	substrate := entryCallCompressionTestSubstrate()
+	location := func(line int) entrycall.Location {
+		return entrycall.Location{Path: "main.go", Line: line, Column: 1}
+	}
+	for index := 0; index < 11; index++ {
+		id := fmt.Sprintf("helper-%02d", index)
+		substrate.Nodes = append(substrate.Nodes, entrycall.ExactNode{
+			ID: id, Label: fmt.Sprintf("main · helper%02d", index), Declaration: location(100 + index),
+		})
+		substrate.Families = append(substrate.Families, entrycall.ExactFamily{
+			ID: "main-" + id, CallerID: "main", CalleeID: id,
+			Invocation: entrycall.InvocationSynchronous, WitnessCount: 1,
+			Callsites: []entrycall.Location{location(120 + index)},
+		})
+	}
+	return substrate
 }

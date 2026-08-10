@@ -102,6 +102,22 @@ func TestChattoTrailingClosingDelimiterRecordsAccepted(t *testing.T) {
 	if len(result.Landscape.Subsystems) != 4 {
 		t.Fatalf("subsystems = %d, want 4 (all records accepted)", len(result.Landscape.Subsystems))
 	}
+	rawShape := InspectSynthesisResponseShape(raw)
+	if rawShape.JSONValid {
+		t.Fatalf("raw response shape unexpectedly accepted invalid JSON: %#v", rawShape)
+	}
+	shape := InspectEvaluatedSynthesisResponseShape(raw)
+	if !shape.JSONValid || shape.Grammar != "flat" ||
+		shape.SubsystemCount != 4 || shape.ComponentCount != 4 ||
+		shape.MemberRefCount != 5 || shape.UnitRefCount != 0 ||
+		shape.AnchorRefCount != 2 || shape.EmptyAnchorRefsCount != 2 ||
+		shape.MissingAnchorRefsCount != 0 || shape.NullAnchorRefsCount != 0 {
+		t.Fatalf("evaluated response shape = %#v", shape)
+	}
+	if result.Record.Call == nil || string(result.Record.Call.Response) != string(raw) ||
+		result.Record.Call.ResponseBytes != len(raw) {
+		t.Fatalf("raw response was not preserved: call=%#v", result.Record.Call)
+	}
 }
 
 func revisionSuffix() string {

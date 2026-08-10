@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"go/types"
 	"math"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -198,10 +199,10 @@ func (visitor *entrySurfaceSyntaxVisitor) recordDirectCall(call *ast.CallExpr) {
 		position := index + 1
 		label := "argument " + strconv.Itoa(position)
 		if value, ok := typedStringValue(argument, visitor.info); ok {
-			if fact, safe := visitor.sidecar.safeSurfaceStringFact(
+			if stringFacts, safe := visitor.sidecar.safeDirectCallStringFacts(
 				position, label, value, entryCallLocation(visitor.a.location(argument.Pos())),
 			); safe {
-				facts = append(facts, fact)
+				facts = append(facts, stringFacts...)
 				stringsFound++
 			}
 		}
@@ -427,6 +428,60 @@ func (sidecar *entryCallSidecar) safeSurfaceStringFact(
 		return entrycall.ExactSurfaceFact{}, false
 	}
 	return exactEntrySurfaceFact(entrycall.SurfaceFactString, position, label, value, location), true
+}
+
+// safeDirectCallStringFacts keeps ordinary safe string literals unchanged.
+// Go 1.22 ServeMux patterns may instead carry an exact method and path in one
+// literal. Split only that closed standard-method shape so the refs-only model
+// can bind independent backend-owned facts to the independent HTTP slots.
+func (sidecar *entryCallSidecar) safeDirectCallStringFacts(
+	position int,
+	label string,
+	value string,
+	location entrycall.Location,
+) ([]entrycall.ExactSurfaceFact, bool) {
+	original, safe := sidecar.safeSurfaceStringFact(position, label, value, location)
+	if !safe {
+		return nil, false
+	}
+	method, path, combined := splitEntrySurfaceHTTPPattern(value)
+	if !combined {
+		return []entrycall.ExactSurfaceFact{original}, true
+	}
+	methodLabel := label + " method"
+	pathLabel := label + " path"
+	if !entrySurfaceSafeValue(methodLabel, method) || !entrySurfaceSafeValue(pathLabel, path) {
+		sidecar.surfaceCoverage.UnsafeSurfaceCandidateFactsExcluded++
+		return nil, false
+	}
+	return []entrycall.ExactSurfaceFact{
+		exactEntrySurfaceFact(entrycall.SurfaceFactToken, position, methodLabel, method, location),
+		exactEntrySurfaceFact(entrycall.SurfaceFactString, position, pathLabel, path, location),
+	}, true
+}
+
+func splitEntrySurfaceHTTPPattern(value string) (string, string, bool) {
+	separator := strings.IndexByte(value, ' ')
+	if separator <= 0 || separator == len(value)-1 ||
+		strings.IndexByte(value[separator+1:], ' ') >= 0 {
+		return "", "", false
+	}
+	method, path := value[:separator], value[separator+1:]
+	if !entrySurfaceStandardHTTPMethod(method) || !strings.HasPrefix(path, "/") ||
+		strings.IndexFunc(path, unicode.IsSpace) >= 0 {
+		return "", "", false
+	}
+	return method, path, true
+}
+
+func entrySurfaceStandardHTTPMethod(value string) bool {
+	switch strings.ToUpper(value) {
+	case http.MethodConnect, http.MethodDelete, http.MethodGet, http.MethodHead,
+		http.MethodOptions, http.MethodPatch, http.MethodPost, http.MethodPut, http.MethodTrace:
+		return true
+	default:
+		return false
+	}
 }
 
 func (sidecar *entryCallSidecar) surfaceFact(

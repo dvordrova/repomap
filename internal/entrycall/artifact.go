@@ -284,19 +284,11 @@ func validateResult(result Result) error {
 				}
 			}
 		}
-		overLimitSelection := len(entry.RejectedFamilies) > MaxSelectedFamiliesPerRoot
-		if overLimitSelection && len(entry.Families) != 0 {
-			return fmt.Errorf("entry call: invalid over-limit result entry")
-		}
-		if !overLimitSelection && len(entry.Families)+len(entry.RejectedFamilies) > MaxSelectedFamiliesPerRoot {
+		if len(entry.Families)+len(entry.RejectedFamilies) > MaxSelectedFamiliesPerRoot {
 			return fmt.Errorf("entry call: invalid bounded result entry")
 		}
 		for _, rejected := range entry.RejectedFamilies {
-			expectedReason := RejectedFamilyUnreachable
-			if overLimitSelection {
-				expectedReason = RejectedFamilySelectionLimit
-			}
-			if !validRef(rejected.Ref, "f") || rejected.Reason != expectedReason {
+			if !validRef(rejected.Ref, "f") || rejected.Reason != RejectedFamilyUnreachable {
 				return fmt.Errorf("entry call: invalid rejected result family")
 			}
 			if _, duplicate := seenFamilies[rejected.Ref]; duplicate {

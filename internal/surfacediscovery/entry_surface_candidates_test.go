@@ -1,6 +1,7 @@
 package surfacediscovery
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -10,6 +11,143 @@ import (
 	"github.com/dvordrova/repomap/internal/entrycall"
 	"golang.org/x/tools/go/ssa"
 )
+
+func TestEntrySurfaceCandidatesSplitServeMuxMethodPatternIntoIndependentFacts(t *testing.T) {
+	repository := t.TempDir()
+	writeFixtureFile(t, filepath.Join(repository, "go.mod"), "module example.com/miniflux-shaped\n\ngo 1.25\n")
+	writeFixtureFile(t, filepath.Join(repository, "main.go"), `package main
+
+import "net/http"
+
+func main() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /v1/users", createUser)
+}
+
+func createUser(http.ResponseWriter, *http.Request) {}
+`)
+	options := DefaultOptions(repository)
+	options.CaptureEntryCallSubstrate = true
+	result, err := Analyze(options)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	substrate := result.EntryCallSubstrate
+	if substrate == nil {
+		t.Fatal("entry-call substrate was not captured")
+	}
+	if len(substrate.SurfaceCandidates) != 1 {
+		t.Fatalf("surface candidates = %#v coverage=%#v, want one exact ServeMux registration", substrate.SurfaceCandidates, substrate.Coverage)
+	}
+	candidate := substrate.SurfaceCandidates[0]
+	method := requireEntrySurfaceFact(t, candidate, entrycall.SurfaceFactToken, "POST", "main.go")
+	path := requireEntrySurfaceFact(t, candidate, entrycall.SurfaceFactString, "/v1/users", "main.go")
+	handler := requireEntrySurfaceFact(t, candidate, entrycall.SurfaceFactCallable, "createUser", "main.go")
+	if method.ID == path.ID || method.Location != path.Location || method.Position != path.Position ||
+		method.Label != "argument 1 method" || path.Label != "argument 1 path" {
+		t.Fatalf("derived method/path authority = method %#v path %#v", method, path)
+	}
+	for _, fact := range candidate.Facts {
+		if fact.Value == "POST /v1/users" {
+			t.Fatalf("ambiguous combined fact remained provider-visible: %#v", candidate)
+		}
+	}
+	if substrate.Coverage.SurfaceCandidatesConsidered != 1 ||
+		substrate.Coverage.SurfaceCandidatesIndexed != 1 ||
+		substrate.Coverage.SurfaceCandidateFactsConsidered != 4 ||
+		substrate.Coverage.SurfaceCandidateFactsIndexed != 4 {
+		t.Fatalf("derived fact accounting = %#v, want one candidate and four exact facts", substrate.Coverage)
+	}
+
+	compilation, err := entrycall.Compile(substrate.Snapshot())
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if len(compilation.Request.SurfaceCatalog.Candidates) != 1 {
+		t.Fatalf("compiled surface catalog = %#v", compilation.Request.SurfaceCatalog)
+	}
+	requestCandidate := compilation.Request.SurfaceCatalog.Candidates[0]
+	factRef := func(kind entrycall.SurfaceFactKind, value string) string {
+		t.Helper()
+		for _, fact := range requestCandidate.Facts {
+			if fact.Kind == kind && fact.Value == value {
+				return fact.Ref
+			}
+		}
+		t.Fatalf("request fact kind=%s value=%q not found in %#v", kind, value, requestCandidate)
+		return ""
+	}
+	response := entrycall.Response{
+		Version: entrycall.ResultVersion, RequestRef: compilation.Request.RequestRef,
+		Entries: make([]entrycall.ResponseEntry, 0, len(compilation.Request.Entries)),
+		SurfaceProposals: []entrycall.ResponseSurfaceProposal{{
+			CandidateRef: requestCandidate.Ref, KindRef: entrycall.SurfaceKindRefHTTPRoute,
+			Bindings: []entrycall.ResponseSurfaceBinding{
+				{SlotRef: entrycall.SurfaceSlotRefMethod, FactRef: factRef(entrycall.SurfaceFactToken, "POST")},
+				{SlotRef: entrycall.SurfaceSlotRefPath, FactRef: factRef(entrycall.SurfaceFactString, "/v1/users")},
+				{SlotRef: entrycall.SurfaceSlotRefHandler, FactRef: factRef(entrycall.SurfaceFactCallable, "createUser")},
+			},
+		}},
+	}
+	for _, entry := range compilation.Request.Entries {
+		response.Entries = append(response.Entries, entrycall.ResponseEntry{
+			RootRef: entry.Ref, FamilyRefs: []string{},
+		})
+	}
+	raw, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("Marshal response: %v", err)
+	}
+	reduced, err := entrycall.Reduce(compilation, raw)
+	if err != nil {
+		t.Fatalf("Reduce independent method/path bindings: %v", err)
+	}
+	if reduced.SelectedSurfaceCount() != 1 || reduced.RejectedSurfaceCount() != 0 ||
+		reduced.SurfaceProposals[0].Method.Text != "POST" ||
+		reduced.SurfaceProposals[0].Path.Text != "/v1/users" ||
+		reduced.SurfaceProposals[0].Handler.Text != "createUser" ||
+		*reduced.SurfaceProposals[0].Method.Location != method.Location ||
+		*reduced.SurfaceProposals[0].Path.Location != path.Location ||
+		*reduced.SurfaceProposals[0].Handler.Location != handler.Location {
+		t.Fatalf("restored ServeMux route = %#v", reduced)
+	}
+}
+
+func TestEntrySurfaceCombinedHTTPPatternIsStrictAndKeepsSafetyGate(t *testing.T) {
+	tests := []struct {
+		value      string
+		wantMethod string
+		wantPath   string
+		wantSplit  bool
+	}{
+		{value: "get /healthz", wantMethod: "get", wantPath: "/healthz", wantSplit: true},
+		{value: "PROPFIND /dav"},
+		{value: "GET healthz"},
+		{value: "GET  /healthz"},
+		{value: "GET /health z"},
+		{value: "GET\t/healthz"},
+		{value: " GET /healthz"},
+		{value: "GET /\u00a0healthz"},
+	}
+	for _, test := range tests {
+		method, path, split := splitEntrySurfaceHTTPPattern(test.value)
+		if method != test.wantMethod || path != test.wantPath || split != test.wantSplit {
+			t.Errorf("splitEntrySurfaceHTTPPattern(%q) = %q, %q, %v; want %q, %q, %v", test.value, method, path, split, test.wantMethod, test.wantPath, test.wantSplit)
+		}
+	}
+
+	sidecar := newEntryCallSidecar()
+	location := entrycall.Location{Path: "routes.go", Line: 7, Column: 2}
+	if facts, safe := sidecar.safeDirectCallStringFacts(
+		1, "argument 1", "GET /A1b2C3d4E5f6G7h8I9j0KLMNOPQRSTUV", location,
+	); safe || len(facts) != 0 || sidecar.surfaceCoverage.UnsafeSurfaceCandidateFactsExcluded != 1 {
+		t.Fatalf("derived path bypassed safety gate: facts=%#v safe=%v coverage=%#v", facts, safe, sidecar.surfaceCoverage)
+	}
+	facts, safe := sidecar.safeDirectCallStringFacts(1, "argument 1", "GET healthz", location)
+	if !safe || len(facts) != 1 || facts[0].Kind != entrycall.SurfaceFactString || facts[0].Value != "GET healthz" {
+		t.Fatalf("non-pattern ordinary string was rewritten: facts=%#v safe=%v", facts, safe)
+	}
+}
 
 func TestEntrySurfaceCandidatesCaptureEchoShapedDirectCallWithoutFrameworkSeed(t *testing.T) {
 	repository := t.TempDir()
