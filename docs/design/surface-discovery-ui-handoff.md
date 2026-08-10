@@ -41,10 +41,11 @@ Normal Go artifact runs now enable discovery by default:
 repomap /path/to/repo --offline --no-open --no-serve
 ```
 
-This is the unconditional positive core-only path. There is no
-surface/framework mode flag or opt-out. Legacy reports may omit the artifact
-pair or carry historical framework/Cobra fields; readers preserve those fields
-for compatibility, while fresh runs do not execute the retired producers.
+While latency is being measured, the explicit opt-out remains:
+
+```bash
+repomap /path/to/repo --discover-surfaces=false
+```
 
 When an artifact run is enabled, `internal/orient` writes these files beside
 `snapshot.json`, `report.json`, and `report.html`:
@@ -143,7 +144,7 @@ Relevant `TriggerRecord` fields:
 | `kind` | Currently `http_route`, `worker`, or `async_task`. |
 | `identity` | HTTP `method`/`path`, or worker/task `name`. |
 | `transport` | `http`, `https`, or `in_process`. |
-| `framework` | Fresh core values are `net/http`, `errgroup`, or `typed`; legacy saved artifacts may contain former framework-specific values such as `gin`. |
+| `framework` | Currently `net/http`, `gin`, or `errgroup`. |
 | `process_entrypoint` | Exact composition entrypoint symbol and location. |
 | `dispatcher` | Mux/router/group identity when statically available. |
 | `registration_site` | Exact terminal registration/start callsite. |
@@ -374,9 +375,8 @@ The implemented boundary is:
 5. The card exposes independent kind/evidence filters, six-row progressive
    disclosure, honest zero states, exact `file:line` editor actions, coverage
    bounds, and `#surface=<opaque-id>` selection.
-6. Ordinary persisted Go artifact runs unconditionally execute the core-only
-   discovery path. Non-Go, no-debug, and preview runs skip the artifact stage;
-   there is no user surface/framework mode or opt-out.
+6. Ordinary Go artifact runs enable discovery by default. Non-Go, no-debug, and
+   preview runs skip it; `--discover-surfaces=false` remains available.
 7. A discovery failure does not discard orientation. Its bounded warning is
    persisted through metadata and rendered with the saved report.
 
@@ -441,9 +441,7 @@ fixture:
 - the collapsed rows showed status, `Static · not observed`, and resolution
   without duplicating the callback name;
 - the worker filter reduced the view to one row locally;
-- the former pre-core-path opt-out produced neither artifacts nor a report
-  section; that result is historical evidence only, and the current CLI no
-  longer exposes an opt-out;
+- `--discover-surfaces=false` produced neither artifacts nor a report section;
 - an etcd target requiring Go 1.26 is skipped immediately by a repomap binary
   built with Go 1.24, with one saved warning instead of a package-error flood;
 - the legacy/missing-pair, malformed, unsupported-version, oversized, sorting,
