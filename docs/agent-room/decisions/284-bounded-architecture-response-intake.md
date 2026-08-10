@@ -19,8 +19,8 @@ advertised members had no intersection with the resolved component members.
 ## Approved corrective
 
 - Only the active nested `member_refs` decoder gains an intermediate intake:
-  at most 24 subsystems, at most 100 components in one subsystem, and at most
-  100 components total.
+  at most 24 subsystems, at most 1000 components in one subsystem, and at most
+  1000 components total. The outer response-byte bound remains unchanged.
 - The existing local normalization remains publication authority and reduces
   accepted input to at most 12 subsystems, 24 components per subsystem and 48
   components total. It preserves exact returned member/anchor identity while
@@ -45,10 +45,12 @@ analysis stage, report field or UI behavior.
 
 Provider-free replay of the 4-subsystem `[2, 1, 44, 20]` class must reach the
 existing normalizer and publish within 12/24/48 with every exact returned member
-accounted for. A 25th subsystem or 101st component fails closed. Flat and
+accounted for. A 25th subsystem or 1001st component fails closed. Flat and
 `unit_refs` overages remain strict. An unbound known anchor never reaches the
 published component, while valid membership and sibling anchors remain.
 
 Approved by:
     Repository owner after the fresh GitLab CLI Architecture failure and the
-    explicit instruction to set the intake limit to 100, 2026-08-10.
+    explicit instruction to use the non-greedy 1000-component intake after a
+    fresh 156-component response exceeded the initial 100-component correction,
+    2026-08-10.

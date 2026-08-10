@@ -868,7 +868,7 @@ Approved by:
 
 Status:
 	ACTIVE. The live nested `member_refs` Architecture decoder accepts a bounded
-	intermediate response of at most 24 subsystems and 100 components total or
+	intermediate response of at most 24 subsystems and 1000 components total or
 	in one subsystem, then the existing local normalizer enforces the published
 	12-subsystem, 24-component-per-subsystem and 48-component-total shape. The
 	historical flat response and nested `unit_refs` replay grammar remain strict
@@ -883,7 +883,9 @@ Approved by:
 	Repository owner after the fresh GitLab CLI Architecture response returned
 	four subsystems with component counts `[2, 1, 44, 20]` (67 total) and was
 	rejected before the existing bounded normalizer, followed by the explicit
-	instruction to use a 100-component intake limit, 2026-08-10.
+	instruction to stop rejecting large valid nested responses and use a
+	1000-component intake limit after a fresh 156-component response exceeded
+	the initial 100-component correction, 2026-08-10.
 
 ## Decision 241 follow-up
 
