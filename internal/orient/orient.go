@@ -14,6 +14,7 @@ import (
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/entrycall"
 	"github.com/dvordrova/repomap/internal/flowexplain"
+	"github.com/dvordrova/repomap/internal/gotarget"
 	"github.com/dvordrova/repomap/internal/llmbundle"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
@@ -23,8 +24,11 @@ import (
 )
 
 type Options struct {
-	RepoPath       string
-	GoTarget       string
+	RepoPath string
+	GoTarget string
+	// AutoGoTarget authorizes the snapshot's bounded platform preflight only
+	// when the caller has no explicit CLI or Go environment target authority.
+	AutoGoTarget   bool
 	SnapshotOnly   bool
 	LLMBundleOnly  bool
 	LLMRequestOnly bool
@@ -95,6 +99,11 @@ type Options struct {
 	// target run still owns its own package load, SSA, provider calls, and
 	// artifacts.
 	TargetRunContainerSink func(snapshot.TargetRunContainer)
+	// GoTargetSelectionSink receives the exact final automatic selection before
+	// target portfolio selection or any other provider call. It lets the
+	// ordinary command keep later semantic/cache/report stages on the same
+	// scenario without exposing advisory evidence to a provider.
+	GoTargetSelectionSink func(snapshot.GoTargetSelection)
 	// AnalysisTargetSelector is a handoff between the complete deterministic
 	// target catalog and the target-run container. Ordinary semantic selection
 	// is online-only and explicit targets bypass it. A caller-owned local
@@ -161,6 +170,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		s, err = snapshot.BuildContext(ctx, snapshot.Options{
 			RepoPath:                      opts.RepoPath,
 			GoTarget:                      opts.GoTarget,
+			AutoGoTarget:                  opts.AutoGoTarget,
 			MaxReadmeBytes:                opts.MaxReadmeBytes,
 			MaxTreeLines:                  opts.MaxTreeLines,
 			MaxInterestingFiles:           opts.MaxInterestingFiles,
@@ -171,6 +181,30 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		})
 		if err != nil {
 			return nil, err
+		}
+	}
+	if s.GoTargetSelection != nil {
+		selection := *s.GoTargetSelection
+		if err := selection.ValidateAgainstAdvisory(s.GoTargetAdvisory); err != nil {
+			return nil, fmt.Errorf("apply automatic Go target selection: %w", err)
+		}
+		if opts.GoTarget != selection.Baseline {
+			return nil, fmt.Errorf(
+				"apply automatic Go target selection: baseline %s does not match resolved target %s",
+				selection.Baseline, opts.GoTarget,
+			)
+		}
+		selected, err := gotarget.Parse(selection.Target)
+		if err != nil {
+			return nil, fmt.Errorf("apply automatic Go target selection: %w", err)
+		}
+		opts.GoTarget = selected.String()
+		opts.EffectiveOptions.GoTarget = selected.String()
+		opts.EffectiveOptions.GoTargetSource = selection.Source
+		opts.EffectiveOptions.GoTargetBaseline = selection.Baseline
+		opts.RepositoryContext.Scenario = selected.Scenario()
+		if opts.GoTargetSelectionSink != nil {
+			opts.GoTargetSelectionSink(selection)
 		}
 	}
 	var targetRunContainer *snapshot.TargetRunContainer
@@ -201,6 +235,9 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		FileCount:     s.FilesConsidered,
 		GoTarget:      opts.GoTarget,
 		LatencyMillis: time.Since(snapshotStarted).Milliseconds(),
+	}
+	if s.GoTargetSelection != nil {
+		snapshotReady.GoTargetProvenance = s.GoTargetSelection.Display()
 	}
 	if s.GoTargetAdvisory != nil {
 		snapshotReady.SuggestedGoTarget = s.GoTargetAdvisory.Suggested

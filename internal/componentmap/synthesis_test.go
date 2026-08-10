@@ -324,7 +324,7 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 	for _, required := range []string{
 		`{"subsystems":[{"name":"first subsystem"`,
 		`"components":[{"name":"first component"`,
-		`"member_refs":["p1","s2"]`,
+		`"member_refs":["s2"]`,
 		"exactly one complete JSON object",
 		"Its only root field is subsystems",
 		"Each subsystem contains exactly name, description, and components",
@@ -1419,7 +1419,7 @@ func TestSynthesisWireRejectsOverBoundComponentsBeforeNormalization(t *testing.T
 	}
 }
 
-func TestSavedCasdoorP21ManyToManyResponseSalvagesSupportingOnlyUnits(t *testing.T) {
+func TestSavedCasdoorP21ManyToManyResponseDerivesNestedParentScope(t *testing.T) {
 	t.Parallel()
 
 	legacyRaw, err := os.ReadFile("testdata/casdoor_architecture_many_to_many_v1.json")
@@ -1452,15 +1452,22 @@ func TestSavedCasdoorP21ManyToManyResponseSalvagesSupportingOnlyUnits(t *testing
 	}
 	if result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationAcceptedPartial ||
 		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.partial_member_coverage") ||
-		!hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.supporting_only_unit_coverage_salvaged") ||
+		hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.supporting_only_unit_coverage_salvaged") ||
 		hasLandscapeDiagnostic(result.Landscape.Diagnostics, "proposal.supporting_only_unit_coverage") {
-		t.Fatalf("saved Casdoor response did not salvage supporting-only items: %#v", result.Landscape)
+		t.Fatalf("saved Casdoor response did not retain exact nested semantic choices: %#v", result.Landscape)
 	}
-	if !result.Membership.Counted || result.Membership.MemberOccurrences != 26 ||
-		result.Membership.DistinctMembers != 25 || len(result.Membership.UncoveredMemberIDs) != 17 ||
-		result.Membership.RequestedPrimaryScope != 34 || result.Membership.CoveredPrimaryScope != 20 ||
-		result.Membership.UncoveredPrimaryScope != 14 || result.Membership.CoveredSupportingEvidence != 5 {
+	if !result.Membership.Counted || result.Membership.MemberOccurrences != 29 ||
+		result.Membership.DistinctMembers != 28 || len(result.Membership.UncoveredMemberIDs) != 14 ||
+		result.Membership.RequestedPrimaryScope != 34 || result.Membership.CoveredPrimaryScope != 23 ||
+		result.Membership.UncoveredPrimaryScope != 11 || result.Membership.CoveredSupportingEvidence != 8 {
 		t.Fatalf("saved Casdoor membership counts = %#v", result.Membership)
+	}
+	for _, parentOrdinal := range []int{2, 3, 5} {
+		parentID := MemberID{Kind: MemberPackage, Value: fmt.Sprintf("casdoor-package-%02d", parentOrdinal)}
+		if d241ContainsMember(result.Membership.CoveredMemberIDs, parentID) ||
+			!d241ContainsMember(result.Membership.UncoveredMemberIDs, parentID) {
+			t.Fatalf("derived Casdoor parent became semantic membership: %s", parentID.key())
+		}
 	}
 	if result.Record.Call == nil || !result.Record.Call.Metadata.MembershipCounted ||
 		result.Record.Call.Metadata.MemberOccurrences != result.Membership.MemberOccurrences ||

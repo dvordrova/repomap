@@ -123,7 +123,7 @@ func TestD241NestedMalformedMembershipStillRejectsWholeResponse(t *testing.T) {
 	}
 }
 
-func TestD241SupportingOnlySalvageKeepsSiblingsRemainderAndGroundingExact(t *testing.T) {
+func TestNestedSupportingMemberDerivesScopeWithoutChangingProposalOrGrounding(t *testing.T) {
 	t.Parallel()
 
 	fixture := d241SupportingOnlyFixture(t)
@@ -151,26 +151,31 @@ func TestD241SupportingOnlySalvageKeepsSiblingsRemainderAndGroundingExact(t *tes
 			original,
 		)
 	if !reflect.DeepEqual(original, wantOriginal) {
-		t.Fatal("supporting-only salvage mutated the resolved provider proposal")
+		t.Fatal("derived parent scope mutated the resolved provider proposal")
 	}
-	if membersDropped != 1 || componentsAffected != 1 || componentsDropped != 0 || anchorsDropped != 1 {
-		t.Fatalf("salvage counts = members %d affected %d components %d anchors %d",
+	if membersDropped != 0 || componentsAffected != 0 || componentsDropped != 0 || anchorsDropped != 0 {
+		t.Fatalf("derived parent scope triggered salvage = members %d affected %d components %d anchors %d",
 			membersDropped, componentsAffected, componentsDropped, anchorsDropped)
 	}
-	if len(salvaged.Subsystems) != 1 || len(salvaged.Subsystems[0].Components) != 2 {
-		t.Fatalf("valid grouping/sibling lost: %#v", salvaged.Subsystems)
+	if !reflect.DeepEqual(salvaged, original) {
+		t.Fatalf("exact model membership changed: %#v", salvaged)
 	}
 	mixed := salvaged.Subsystems[0].Components[0]
-	if !reflect.DeepEqual(mixed.MemberIDs, []MemberID{fixture.ValidPrimary}) || len(mixed.AnchorIDs) != 0 {
-		t.Fatalf("mixed component retained dropped child or its anchor: %#v", mixed)
+	if !reflect.DeepEqual(mixed.MemberIDs, []MemberID{fixture.SupportingChild, fixture.ValidPrimary}) ||
+		!reflect.DeepEqual(mixed.AnchorIDs, []string{fixture.ChildAnchorID}) {
+		t.Fatalf("nested member or its exact anchor changed: %#v", mixed)
 	}
 	if !reflect.DeepEqual(salvaged.Subsystems[0].Components[1], original.Subsystems[0].Components[1]) {
 		t.Fatalf("valid sibling changed: %#v", salvaged.Subsystems[0].Components[1])
 	}
 	counts := synthesisMembershipCounts(fixture.Bundle, fixture.Contexts, salvaged)
-	if !d241ContainsMember(counts.UncoveredMemberIDs, fixture.SupportingChild) ||
-		d241ContainsMember(counts.CoveredMemberIDs, fixture.SupportingChild) {
-		t.Fatalf("supporting child did not return to remainder: %#v", counts)
+	if d241ContainsMember(counts.UncoveredMemberIDs, fixture.SupportingChild) ||
+		!d241ContainsMember(counts.CoveredMemberIDs, fixture.SupportingChild) ||
+		d241ContainsMember(counts.CoveredMemberIDs, fixture.SupportingPrimary) ||
+		!d241ContainsMember(counts.UncoveredMemberIDs, fixture.SupportingPrimary) ||
+		counts.RequestedPrimaryScope != 3 || counts.CoveredPrimaryScope != 3 ||
+		counts.UncoveredPrimaryScope != 0 || counts.CoveredSupportingEvidence != 1 {
+		t.Fatalf("derived parent scope changed semantic member partition: %#v", counts)
 	}
 
 	response := d241NestedResponse(t, []map[string]any{
@@ -193,17 +198,20 @@ func TestD241SupportingOnlySalvageKeepsSiblingsRemainderAndGroundingExact(t *tes
 		t.Fatalf("RecordSynthesisResponse: %v", err)
 	}
 	if result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationAcceptedPartial ||
-		!d241HasDiagnostic(result.Landscape.Diagnostics, "proposal.supporting_only_unit_coverage_salvaged") {
-		t.Fatalf("supporting-only item was not salvaged: %#v", result.Landscape)
+		d241HasDiagnostic(result.Landscape.Diagnostics, "proposal.supporting_only_unit_coverage_salvaged") {
+		t.Fatalf("nested semantic choice was not published directly: %#v", result.Landscape)
 	}
 	if d241FindComponent(result.Landscape, "Valid sibling") == nil ||
-		!d241ContainsMember(result.Membership.UncoveredMemberIDs, fixture.SupportingChild) {
-		t.Fatalf("published salvage lost sibling/remainder accounting: landscape=%#v membership=%#v",
+		!d241ContainsMember(result.Membership.CoveredMemberIDs, fixture.SupportingChild) ||
+		d241ContainsMember(result.Membership.CoveredMemberIDs, fixture.SupportingPrimary) {
+		t.Fatalf("published grouping changed sibling/member accounting: landscape=%#v membership=%#v",
 			result.Landscape, result.Membership)
 	}
 	publishedMixed := d241FindComponent(result.Landscape, "Mixed component")
-	if publishedMixed == nil || len(publishedMixed.AnchorIDs) != 0 {
-		t.Fatalf("published mixed component retained stale anchor: %#v", publishedMixed)
+	if publishedMixed == nil || !reflect.DeepEqual(publishedMixed.AnchorIDs, []string{fixture.ChildAnchorID}) ||
+		!d241ContainsCandidate(publishedMixed.Members, fixture.SupportingChild) ||
+		d241ContainsCandidate(publishedMixed.Members, fixture.SupportingPrimary) {
+		t.Fatalf("published mixed component lost exact child/anchor or gained parent: %#v", publishedMixed)
 	}
 }
 
@@ -351,6 +359,15 @@ func d241FindComponent(landscape Landscape, name string) *Component {
 func d241ContainsMember(memberIDs []MemberID, want MemberID) bool {
 	for _, memberID := range memberIDs {
 		if memberID == want {
+			return true
+		}
+	}
+	return false
+}
+
+func d241ContainsCandidate(candidates []Candidate, want MemberID) bool {
+	for _, candidate := range candidates {
+		if candidate.ID == want {
 			return true
 		}
 	}

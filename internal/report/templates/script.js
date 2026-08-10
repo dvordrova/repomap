@@ -6742,12 +6742,10 @@
 		if (ANALYSIS_TARGET && String(ANALYSIS_TARGET.kind || '') === 'module_library') {
 			return [
 				{ id: 'api', label: msg('main.map.mode.api') },
-				{ id: 'landscape', label: msg('main.map.mode.map') },
 				{ id: 'integrations', label: msg('main.map.mode.integrations', { count: counts.integrations }) },
 			];
 		}
 		return [
-			{ id: 'landscape', label: msg('main.map.mode.map') },
 			{ id: 'entrypoints', label: msg('main.map.mode.entrypoints', { count: counts.entries }) },
 			{ id: 'integrations', label: msg('main.map.mode.integrations', { count: counts.integrations }) },
 		];
@@ -6755,16 +6753,25 @@
 
 	function setMapMode(mode) {
 		mode = String(mode || '');
-		if (!allowedMapModes().some(function (candidate) { return candidate.id === mode; })) return false;
+		if (mode !== 'landscape' &&
+			!allowedMapModes().some(function (candidate) { return candidate.id === mode; })) return false;
 		activeMapLens = mode;
 		if (mode !== 'entrypoints') selectedEntrypointHandoffGroupID = '';
-		if (architectureCanvasView && typeof architectureCanvasView.setLens === 'function') {
-			architectureCanvasView.setLens(canvasLensForMapMode(mode));
-		}
 		var context = document.querySelector && document.querySelector('.rm-map-mode-context');
 		if (context) context.hidden = mode === 'landscape';
 		syncMapLensControl();
 		renderMapLensObjects();
+		// The context is useful independently of the Canvas emphasis and must be
+		// committed first. During initial layout the Canvas object already exists,
+		// but setLens may not yet be ready; a synchronous renderer failure must not
+		// leave the selected context hidden with stale Landscape objects.
+		if (architectureCanvasView && typeof architectureCanvasView.setLens === 'function') {
+			try {
+				architectureCanvasView.setLens(canvasLensForMapMode(mode));
+			} catch (_canvasLensError) {
+				// renderWorkspaceState reapplies activeMapLens after Canvas readiness.
+			}
+		}
 		return true;
 	}
 
@@ -6778,7 +6785,9 @@
 			button.setAttribute('data-map-lens', mode.id);
 			button.setAttribute('aria-pressed', mode.id === activeMapLens ? 'true' : 'false');
 			button.classList.toggle('rm-active', mode.id === activeMapLens);
-			button.onclick = function () { setMapMode(mode.id); };
+			button.onclick = function () {
+				setMapMode(activeMapLens === mode.id ? 'landscape' : mode.id);
+			};
 			control.appendChild(button);
 		});
 		return control;
@@ -6791,22 +6800,56 @@
   // objects come from the SAME DOM-free projection the canvas
   // emphasis uses (projectArchitectureLens) — never guessed from dimmed
   // boxes and never from renderer state.
-  function libraryAPIKindMessageID(kind) {
-    var ids = {
-      func: 'main.map.api.kind.function',
-      function: 'main.map.api.kind.function',
-      method: 'main.map.api.kind.method',
-      type: 'main.map.api.kind.type',
-      const: 'main.map.api.kind.const',
-      var: 'main.map.api.kind.var',
-    };
-    return ids[String(kind || '')] || '';
-  }
-
   function libraryAPIDeclarationLabel(declaration) {
     var receiver = String(declaration && declaration.receiver || '').trim();
     var name = String(declaration && declaration.name || '').trim();
     return receiver ? receiver + '.' + name : name;
+  }
+
+  function libraryAPIDeclarationSyntax(declaration) {
+    var label = libraryAPIDeclarationLabel(declaration);
+    var kind = String(declaration && declaration.kind || '');
+    return kind === 'func' || kind === 'function' || kind === 'method'
+      ? label + '()' : label;
+  }
+
+  function libraryAPIExactLocationKey(value) {
+    var path = String(value && value.path || '');
+    var line = Number(value && value.line);
+    return path && Number.isInteger(line) && line > 0 ? path + '\u0000' + String(line) : '';
+  }
+
+  function renderCompactExactLocationAction(location, label, extraClass) {
+    var exact = {
+      path: String(location && location.path || ''),
+      line: Number(location && location.line) || 0,
+      column: Number(location && location.column) || 0,
+    };
+    var classes = 'rm-map-entry-context__source rm-library-api-symbol ' + String(extraClass || '');
+    var resolution = exactReportSourceActionResolutionForLocation(exact);
+    var snippet = resolution && resolution.source && resolution.source.snippet;
+    var action = null;
+    if (snippet) {
+      action = txt('button', classes + ' rm-source-action-link', label);
+      action.type = 'button';
+      action.onclick = function () {
+        openSourceSnippet(snippet, resolution.source.location, false, { drawerFirst: true });
+      };
+    } else if (resolution && resolution.source && resolution.source.location) {
+      action = sourceActionElement(
+        label,
+        classes + ' rm-source-action-link',
+        resolution.source.location,
+        0,
+        function () { openSourceLocation(resolution.source.location); }
+      );
+    }
+    if (!action) action = txt('code', classes + ' rm-map-entry-context__source--text', label);
+    var exactTitle = String(label || '') + ' · ' + formatCodeLocation(exact);
+    var priorTitle = action.getAttribute && action.getAttribute('title');
+    action.setAttribute('title', exactTitle + (priorTitle ? ' · ' + priorTitle : ''));
+    action.setAttribute('aria-label', exactTitle);
+    return action;
   }
 
   function libraryAPIPackageLabel(pkg) {
@@ -6819,11 +6862,146 @@
     return String(label || '').replace(/\.v[0-9]+$/, '') || label;
   }
 
+  function libraryAPIStudyDeclarationIndex(projection) {
+    var index = Object.create(null);
+    (Array.isArray(projection && projection.packages) ? projection.packages : []).forEach(function (pkg) {
+      (Array.isArray(pkg && pkg.declarations) ? pkg.declarations : []).forEach(function (declaration) {
+        var key = libraryAPIExactLocationKey(declaration);
+        if (!key) return;
+        if (!index[key]) index[key] = [];
+        index[key].push(declaration);
+      });
+    });
+    return index;
+  }
+
+  function libraryAPIStudyDeclaration(reading, index) {
+    var key = libraryAPIExactLocationKey(reading);
+    if (!key) return null;
+    var candidates = Array.isArray(index[key]) ? index[key] : [];
+    var symbol = String(reading && reading.symbol || '').trim();
+    if (symbol) {
+      candidates = candidates.filter(function (declaration) {
+        return symbol === String(declaration && declaration.name || '') ||
+          symbol === libraryAPIDeclarationLabel(declaration);
+      });
+    }
+    return candidates.length === 1 ? candidates[0] : null;
+  }
+
+  function renderLibraryAPIStudyPicks(host, projection) {
+    var cards = themeCards();
+    if (!cards.length) return;
+    var declarationIndex = libraryAPIStudyDeclarationIndex(projection);
+    var section = el('section', 'rm-library-api-study-picks');
+    section.appendChild(txt('h3', '', msg('main.map.api.study.heading')));
+    var list = el('div', 'rm-library-api-study-picks__list');
+    cards.slice(0, 3).forEach(function (card) {
+      var ordinal = Number(card && card.ordinal) || 0;
+      var item = el('article', 'rm-library-api-study-pick');
+      item.setAttribute('data-study-theme-ordinal', String(ordinal));
+      var open = txt('button', 'rm-library-api-study-pick__title', String(card && card.final_title || ''));
+      open.type = 'button';
+      open.setAttribute('title', msg('main.map.api.study.open'));
+      open.onclick = function () { openThemeCard(ordinal, { focus: true }); };
+      item.appendChild(open);
+      if (card && card.why_it_matters) {
+        item.appendChild(txt('p', 'rm-library-api-study-pick__why', String(card.why_it_matters)));
+      }
+      var sources = el('div', 'rm-library-api-study-pick__sources');
+      (Array.isArray(card && card.readings) ? card.readings : []).forEach(function (reading) {
+        var declaration = libraryAPIStudyDeclaration(reading, declarationIndex);
+        var label = declaration
+          ? libraryAPIDeclarationSyntax(declaration)
+          : bareSourceSymbol(String(reading && (reading.symbol || reading.label) || '')) || msg('main.map.integrations.open_source');
+        var action = renderCompactExactLocationAction(
+          reading,
+          label,
+          'rm-library-api-study-pick__source'
+        );
+        action.setAttribute('data-api-study-joined', declaration ? 'true' : 'false');
+        sources.appendChild(action);
+      });
+      if (sources.childNodes.length) item.appendChild(sources);
+      list.appendChild(item);
+    });
+    section.appendChild(list);
+    host.appendChild(section);
+  }
+
+  function appendLibraryAPIDeclarationRows(parent, declarations) {
+    var rows = el('div', 'rm-library-api-declarations');
+    declarations.forEach(function (declaration) {
+      var row = el('div', 'rm-library-api-declaration');
+      row.appendChild(renderCompactExactLocationAction(
+        declaration,
+        libraryAPIDeclarationSyntax(declaration),
+        'rm-library-api-declaration__source'
+      ));
+      rows.appendChild(row);
+    });
+    parent.appendChild(rows);
+  }
+
+  function appendLibraryAPICollapsedSection(parent, messageID, declarations, query) {
+    if (!declarations.length) return;
+    var section = el('details', 'rm-library-api-section rm-library-api-section--collapsed');
+    section.open = !!query;
+    section.appendChild(txt('summary', 'rm-library-api-section__summary', msg(messageID, {
+      count: declarations.length,
+    })));
+    appendLibraryAPIDeclarationRows(section, declarations);
+    parent.appendChild(section);
+  }
+
+  function appendLibraryAPIPackageSections(parent, declarations, query) {
+    var functions = [], types = [], consts = [], vars = [];
+    var methodsByReceiver = Object.create(null), receiverOrder = [];
+    declarations.forEach(function (declaration) {
+      var kind = String(declaration && declaration.kind || '');
+      if (kind === 'func' || kind === 'function') functions.push(declaration);
+      else if (kind === 'method') {
+        var receiver = String(declaration && declaration.receiver || '');
+        if (!methodsByReceiver[receiver]) { methodsByReceiver[receiver] = []; receiverOrder.push(receiver); }
+        methodsByReceiver[receiver].push(declaration);
+      } else if (kind === 'type') types.push(declaration);
+      else if (kind === 'const') consts.push(declaration);
+      else if (kind === 'var') vars.push(declaration);
+    });
+    if (functions.length) {
+      var functionSection = el('section', 'rm-library-api-section rm-library-api-section--functions');
+      functionSection.appendChild(txt('h3', '', msg('main.map.api.section.functions', { count: functions.length })));
+      appendLibraryAPIDeclarationRows(functionSection, functions);
+      parent.appendChild(functionSection);
+    }
+    if (receiverOrder.length) {
+      var methodSection = el('section', 'rm-library-api-section rm-library-api-section--methods');
+      var methodCount = receiverOrder.reduce(function (sum, receiver) {
+        return sum + methodsByReceiver[receiver].length;
+      }, 0);
+      methodSection.appendChild(txt('h3', '', msg('main.map.api.section.methods', { count: methodCount })));
+      receiverOrder.forEach(function (receiver) {
+        var receiverGroup = el('details', 'rm-library-api-receiver');
+        receiverGroup.open = !!query;
+        receiverGroup.appendChild(txt('summary', 'rm-library-api-receiver__summary', msg('main.map.api.section.receiver', {
+          receiver: receiver, count: methodsByReceiver[receiver].length,
+        })));
+        appendLibraryAPIDeclarationRows(receiverGroup, methodsByReceiver[receiver]);
+        methodSection.appendChild(receiverGroup);
+      });
+      parent.appendChild(methodSection);
+    }
+    appendLibraryAPICollapsedSection(parent, 'main.map.api.section.types', types, query);
+    appendLibraryAPICollapsedSection(parent, 'main.map.api.section.constants', consts, query);
+    appendLibraryAPICollapsedSection(parent, 'main.map.api.section.variables', vars, query);
+  }
+
   function renderLibraryAPILaunchpad(host) {
     var projection = DATA.library_api;
     if (!projection || Number(projection.version) !== 1) return;
     var title = document.getElementById('rm-map-mode-context-title');
     if (title) title.textContent = msg('main.map.api.heading');
+    renderLibraryAPIStudyPicks(host, projection);
     var summary = el('div', 'rm-library-api-summary');
     summary.appendChild(txt('strong', '', msg('main.map.api.showing', {
       shown: Number(projection.shown_declarations) || 0,
@@ -6861,31 +7039,11 @@
         var group = el('details', 'rm-library-api-package');
         group.open = packageIndex === 0 || !!query;
         var heading = el('summary', 'rm-library-api-package__summary');
-        var headingCopy = el('span', 'rm-library-api-package__heading');
-        headingCopy.appendChild(txt('strong', '', libraryAPIPackageLabel(pkg)));
-        headingCopy.appendChild(txt('code', '', String(pkg && pkg.package_path || '')));
-        heading.appendChild(headingCopy);
-        var counts = pkg && pkg.counts || {};
-        heading.appendChild(txt('span', 'rm-library-api-package__counts', [
-          ['function', counts.functions], ['method', counts.methods], ['type', counts.types],
-          ['const', counts.consts], ['var', counts.vars],
-        ].filter(function (item) { return Number(item[1]) > 0; }).map(function (item) {
-          return msg(libraryAPIKindMessageID(item[0])) + ' ' + String(item[1]);
-        }).join(' · ')));
+        heading.appendChild(txt('strong', '', libraryAPIPackageLabel(pkg)));
         group.appendChild(heading);
-        var rows = el('div', 'rm-library-api-declarations');
-        declarations.forEach(function (declaration) {
-          var row = el('div', 'rm-library-api-declaration');
-          var kindID = libraryAPIKindMessageID(declaration && declaration.kind);
-          row.appendChild(txt('span', 'rm-library-api-declaration__kind', kindID ? msg(kindID) : String(declaration && declaration.kind || '')));
-          row.appendChild(renderEntrypointLocationAction({
-            path: String(declaration && declaration.path || ''),
-            line: Number(declaration && declaration.line) || 0,
-            column: Number(declaration && declaration.column) || 0,
-          }, libraryAPIDeclarationLabel(declaration)));
-          rows.appendChild(row);
-        });
-        group.appendChild(rows);
+        var body = el('div', 'rm-library-api-package__body');
+        appendLibraryAPIPackageSections(body, declarations, query);
+        group.appendChild(body);
         packagesHost.appendChild(group);
       });
     }
@@ -7038,13 +7196,16 @@
           ? touchpoint.component_ids : [];
       var outside = visibleIDs.length === 0 || (Array.isArray(touchpoint && touchpoint.off_map_component_ids) &&
         touchpoint.off_map_component_ids.length > 0);
-      var row = el('article', 'rm-map-integration-row' + (outside ? ' rm-map-integration-row--outside' : ''));
-      var heading = el('div', 'rm-map-integration-row__heading');
+      var row = el('details', 'rm-map-integration-row' + (outside ? ' rm-map-integration-row--outside' : ''));
+      var witnesses = Array.isArray(touchpoint && touchpoint.witnesses) ? touchpoint.witnesses : [];
+      var heading = el('summary', 'rm-map-integration-row__heading');
       heading.appendChild(txt('strong', '', String(touchpoint && touchpoint.family || '')));
       heading.appendChild(txt('code', '', String(touchpoint && touchpoint.owning_unit || '')));
+      heading.appendChild(txt('span', 'rm-map-integration-row__count', msg('main.map.integrations.callsites', {
+        count: witnesses.length,
+      })));
+      if (outside) heading.appendChild(txt('span', 'rm-map-integration-row__outside', msg('main.map.integrations.outside_grouping')));
       row.appendChild(heading);
-      if (outside) row.appendChild(txt('span', 'rm-map-integration-row__outside', msg('main.map.integrations.outside_grouping')));
-      var witnesses = Array.isArray(touchpoint && touchpoint.witnesses) ? touchpoint.witnesses : [];
       var sources = el('div', 'rm-map-integration-row__sources');
       witnesses.forEach(function (witness) {
         var action = renderEntrypointLocationAction(witness, bareSourceSymbol(witness && witness.symbol) || msg('main.map.integrations.open_source'));
@@ -7243,9 +7404,17 @@
       canvasCard.appendChild(mapToolbar);
 		var entryContext = el('section', 'rm-map-entry-context rm-map-mode-context');
 		entryContext.hidden = activeMapLens === 'landscape';
+		var contextHeader = el('div', 'rm-map-mode-context__header');
 		var contextTitle = txt('h2', 'rm-map-entry-context__title', '');
 		contextTitle.id = 'rm-map-mode-context-title';
-		entryContext.appendChild(contextTitle);
+		contextHeader.appendChild(contextTitle);
+		var closeContext = txt('button', 'rm-map-mode-context__close', '×');
+		closeContext.type = 'button';
+		closeContext.setAttribute('aria-label', msg('main.map.context.close'));
+		closeContext.setAttribute('title', msg('main.map.context.close'));
+		closeContext.onclick = function () { setMapMode('landscape'); };
+		contextHeader.appendChild(closeContext);
+		entryContext.appendChild(contextHeader);
 		var entryObjects = el('div', 'rm-map-lens-objects');
 		entryObjects.id = 'rm-map-lens-objects';
 		entryContext.appendChild(entryObjects);

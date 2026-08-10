@@ -145,8 +145,8 @@ func TestD238SynthesisPromptPrioritizesPrimaryScopeAndKeepsMemberOnlyOutput(t *t
 	}
 	for _, required := range []string{
 		"Candidates marked primary_scope form the top-level production conceptual repository surface.",
-		"Cover defensible primary_scope across the supplied production units before selecting supporting_evidence.",
-		"coverage of them never compensates for uncovered production primary_scope.",
+		"A selected package-owned nested symbol automatically represents its exact enclosing package and production unit for backend coverage accounting",
+		"never repeat that parent p* merely to satisfy coverage",
 		"a non-empty member_refs array",
 		"Candidate parent_ref, unit_ref, coverage_role, label, package_path, and symbols fields are read-only context and must never be returned.",
 	} {
@@ -159,7 +159,7 @@ func TestD238SynthesisPromptPrioritizesPrimaryScopeAndKeepsMemberOnlyOutput(t *t
 	}
 }
 
-func TestD238GHZLikeAllSupportingResponseSalvagesToZeroAcceptedMembership(t *testing.T) {
+func TestD238GHZLikeNestedSymbolsDeriveParentScopeWithoutParentMembership(t *testing.T) {
 	t.Parallel()
 
 	bundle, packageIDs, symbolIDs := d238GHZLikeBundle()
@@ -203,36 +203,47 @@ func TestD238GHZLikeAllSupportingResponseSalvagesToZeroAcceptedMembership(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationRejected {
-		t.Fatalf("all-supporting proposal was not rejected: %#v", result.Landscape)
+	if result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationAcceptedPartial {
+		t.Fatalf("nested-symbol proposal did not publish exact semantic choices: %#v", result.Landscape)
 	}
-	if !d238HasDiagnostic(result.Landscape.Diagnostics, "proposal.supporting_only_unit_coverage_salvaged") {
-		t.Fatalf("all-supporting salvage diagnostic omitted: %#v", result.Landscape.Diagnostics)
-	}
-	for _, staleCode := range []string{"proposal.empty_primary_scope_coverage", "proposal.supporting_only_unit_coverage"} {
+	for _, staleCode := range []string{
+		"proposal.empty_primary_scope_coverage",
+		"proposal.supporting_only_unit_coverage",
+		"proposal.supporting_only_unit_coverage_salvaged",
+		"proposal.zero_useful_semantic_components",
+	} {
 		if d238HasDiagnostic(result.Landscape.Diagnostics, staleCode) {
-			t.Fatalf("all-supporting salvage retained stale whole-reject diagnostic %q: %#v", staleCode, result.Landscape.Diagnostics)
+			t.Fatalf("derived parent scope retained stale diagnostic %q: %#v", staleCode, result.Landscape.Diagnostics)
 		}
 	}
 	counts := result.Membership
-	if !counts.Counted || counts.MemberOccurrences != 0 || counts.DistinctMembers != 0 ||
-		len(counts.RequestedMemberIDs) != 28 || len(counts.CoveredMemberIDs) != 0 ||
-		len(counts.UncoveredMemberIDs) != 28 || counts.RequestedPrimaryScope != 18 ||
-		counts.CoveredPrimaryScope != 0 || counts.UncoveredPrimaryScope != 18 ||
-		counts.CoveredSupportingEvidence != 0 {
-		t.Fatalf("zero accepted membership accounting = %#v", counts)
+	if !counts.Counted || counts.MemberOccurrences != 10 || counts.DistinctMembers != 10 ||
+		len(counts.RequestedMemberIDs) != 28 || len(counts.CoveredMemberIDs) != 10 ||
+		len(counts.UncoveredMemberIDs) != 18 || counts.RequestedPrimaryScope != 18 ||
+		counts.CoveredPrimaryScope != 10 || counts.UncoveredPrimaryScope != 8 ||
+		counts.CoveredSupportingEvidence != 10 {
+		t.Fatalf("derived parent-scope accounting = %#v", counts)
+	}
+	for _, packageID := range packageIDs {
+		if d241ContainsMember(counts.CoveredMemberIDs, packageID) ||
+			!d241ContainsMember(counts.UncoveredMemberIDs, packageID) {
+			t.Fatalf("derived package parent became semantic membership: %s in %#v", packageID.key(), counts)
+		}
 	}
 	if result.Record.Call == nil {
-		t.Fatal("all-supporting response record omitted provider call")
+		t.Fatal("nested-symbol response record omitted provider call")
 	}
 	metadata := result.Record.Call.Metadata
-	if !metadata.MembershipCounted || metadata.MemberOccurrences != 0 || metadata.DistinctMembers != 0 ||
+	if !metadata.MembershipCounted || metadata.MemberOccurrences != counts.MemberOccurrences ||
+		metadata.DistinctMembers != counts.DistinctMembers ||
 		!reflect.DeepEqual(metadata.RequestedMemberIDs, counts.RequestedMemberIDs) ||
 		!reflect.DeepEqual(metadata.CoveredMemberIDs, counts.CoveredMemberIDs) ||
 		!reflect.DeepEqual(metadata.UncoveredMemberIDs, counts.UncoveredMemberIDs) ||
-		metadata.RequestedPrimaryScope != 18 || metadata.CoveredPrimaryScope != 0 ||
-		metadata.UncoveredPrimaryScope != 18 || metadata.CoveredSupportingEvidence != 0 {
-		t.Fatalf("zero accepted membership metadata = %#v", metadata)
+		metadata.RequestedPrimaryScope != counts.RequestedPrimaryScope ||
+		metadata.CoveredPrimaryScope != counts.CoveredPrimaryScope ||
+		metadata.UncoveredPrimaryScope != counts.UncoveredPrimaryScope ||
+		metadata.CoveredSupportingEvidence != counts.CoveredSupportingEvidence {
+		t.Fatalf("derived parent-scope metadata = %#v", metadata)
 	}
 	emptyProposalDigest := proposalSHA256(Proposal{})
 	if result.Landscape.OriginalProposalSHA256 == "" ||
@@ -280,7 +291,7 @@ func TestD238PackageAndSeparateSupportingEvidenceRemainAcceptedPartial(t *testin
 	}
 }
 
-func TestD238SupportingEvidenceFromUncoveredUnitIsSalvagedItemLocally(t *testing.T) {
+func TestD238SupportingEvidenceDerivesItsUnselectedParentScope(t *testing.T) {
 	t.Parallel()
 
 	fixture := d238PrimaryScopeBundle()
@@ -296,23 +307,28 @@ func TestD238SupportingEvidenceFromUncoveredUnitIsSalvagedItemLocally(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationAcceptedPartial ||
-		!d238HasDiagnostic(result.Landscape.Diagnostics, "proposal.supporting_only_unit_coverage_salvaged") {
-		t.Fatalf("supporting-only item was not salvaged: %#v", result.Landscape)
+	if result.Landscape.Fallback || result.Landscape.ValidationOutcome != ValidationAcceptedPartial {
+		t.Fatalf("nested semantic choice was not accepted: %#v", result.Landscape)
 	}
 	if d238HasDiagnostic(result.Landscape.Diagnostics, "proposal.empty_primary_scope_coverage") ||
-		d238HasDiagnostic(result.Landscape.Diagnostics, "proposal.supporting_only_unit_coverage") {
-		t.Fatalf("item-local salvage retained a whole-reject finding: %#v", result.Landscape.Diagnostics)
+		d238HasDiagnostic(result.Landscape.Diagnostics, "proposal.supporting_only_unit_coverage") ||
+		d238HasDiagnostic(result.Landscape.Diagnostics, "proposal.supporting_only_unit_coverage_salvaged") {
+		t.Fatalf("derived parent scope retained a supporting-only finding: %#v", result.Landscape.Diagnostics)
 	}
 	counts := result.Membership
-	if !counts.Counted || counts.MemberOccurrences != 1 || counts.DistinctMembers != 1 ||
-		counts.RequestedPrimaryScope != 2 || counts.CoveredPrimaryScope != 1 ||
-		counts.UncoveredPrimaryScope != 1 || counts.CoveredSupportingEvidence != 0 {
-		t.Fatalf("item-local salvage membership = %#v", counts)
+	if !counts.Counted || counts.MemberOccurrences != 2 || counts.DistinctMembers != 2 ||
+		counts.RequestedPrimaryScope != 2 || counts.CoveredPrimaryScope != 2 ||
+		counts.UncoveredPrimaryScope != 0 || counts.CoveredSupportingEvidence != 1 {
+		t.Fatalf("derived parent-scope membership = %#v", counts)
 	}
 	if !reflect.DeepEqual(result.Landscape.LocalRemainderMemberIDs, counts.UncoveredMemberIDs) {
-		t.Fatalf("item-local salvage remainder = %#v, want %#v",
+		t.Fatalf("nested-symbol remainder = %#v, want %#v",
 			result.Landscape.LocalRemainderMemberIDs, counts.UncoveredMemberIDs)
+	}
+	if d241ContainsMember(counts.CoveredMemberIDs, fixture.CorePackage) ||
+		!d241ContainsMember(counts.UncoveredMemberIDs, fixture.CorePackage) ||
+		!d241ContainsMember(counts.CoveredMemberIDs, fixture.CoreSymbol) {
+		t.Fatalf("derived core package leaked into semantic membership: %#v", counts)
 	}
 	if result.Record.Call == nil {
 		t.Fatal("item-local salvage record omitted provider call")

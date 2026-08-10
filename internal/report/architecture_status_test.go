@@ -118,11 +118,16 @@ func TestArchitectureSynthesisUnavailableIsExplicitAndProviderFree(t *testing.T)
 	}
 }
 
-func TestArchitectureSynthesisV16PreservesProductionAwareCoverage(t *testing.T) {
+func TestArchitectureSynthesisV17PreservesProductionAwareCoverage(t *testing.T) {
 	t.Parallel()
 
-	if ArchitectureSynthesisStatusVersion != 16 {
+	if ArchitectureSynthesisStatusVersion != 17 {
 		t.Fatalf("production-aware Architecture status version = %d", ArchitectureSynthesisStatusVersion)
+	}
+	v16 := architectureSynthesisV4AcceptedFixture()
+	v16.Version = 16
+	if err := v16.Validate(); err != nil {
+		t.Fatalf("historical v16 primary-scope status became unreadable: %v", err)
 	}
 	v15 := architectureSynthesisV4AcceptedFixture()
 	v15.Version = 15
@@ -133,6 +138,49 @@ func TestArchitectureSynthesisV16PreservesProductionAwareCoverage(t *testing.T) 
 	historical.Version = 14
 	if err := historical.Validate(); err != nil {
 		t.Fatalf("historical v14 primary-scope status became unreadable: %v", err)
+	}
+}
+
+func TestArchitectureSynthesisV17SeparatesDerivedPrimaryScopeFromModelMembership(t *testing.T) {
+	t.Parallel()
+
+	status := architectureSynthesisV4AcceptedFixture()
+	status.LocalCandidateCount = 3
+	status.RequestedConceptualCount = 3
+	status.StructuralLocatorCount = 0
+	status.MemberOccurrences = 2
+	status.DistinctMembers = 2
+	status.CoveredConceptualCount = 2
+	status.UncoveredConceptualCount = 1
+	status.UncoveredConceptualIDs = []componentmap.MemberID{{
+		Kind: componentmap.MemberPackage, Value: "member-package-derived-parent",
+	}}
+	status.RequestedPrimaryScopeCount = 2
+	status.CoveredPrimaryScopeCount = 2
+	status.UncoveredPrimaryScopeCount = 0
+	status.CoveredSupportingEvidenceCount = 1
+	status.ProposalPartial = true
+	status.ArchitectureSource = "partial_model"
+	if err := status.Validate(); err != nil {
+		t.Fatalf("derived parent scope changed exact model membership: %v; status=%#v", err, status)
+	}
+
+	historical := status
+	historical.Version = 16
+	if err := historical.Validate(); err == nil {
+		t.Fatal("v16 status claimed v17 derived-parent scope semantics")
+	}
+
+	invalid := status
+	invalid.DistinctMembers = 1
+	invalid.MemberOccurrences = 1
+	invalid.CoveredConceptualCount = 1
+	invalid.UncoveredConceptualCount = 2
+	invalid.UncoveredConceptualIDs = append(invalid.UncoveredConceptualIDs, componentmap.MemberID{
+		Kind: componentmap.MemberPackage, Value: "member-package-other",
+	})
+	if err := invalid.Validate(); err == nil {
+		t.Fatal("status accepted more derived primary parents than returned supporting refs can establish")
 	}
 }
 

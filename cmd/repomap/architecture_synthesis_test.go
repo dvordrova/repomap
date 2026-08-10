@@ -462,7 +462,7 @@ func TestEnsureArchitectureSynthesisSendsAndJournalsOneExactPreparedBody(t *test
 	}
 }
 
-func TestArchitectureAllDroppedSupportingOnlySalvageKeepsStatusExchangeAndMetadataInParity(t *testing.T) {
+func TestArchitectureNestedChildDerivesParentScopeWithStatusExchangeAndMetadataParity(t *testing.T) {
 	t.Parallel()
 
 	bundle := architectureSynthesisTestBundle()
@@ -517,21 +517,48 @@ func TestArchitectureAllDroppedSupportingOnlySalvageKeepsStatusExchangeAndMetada
 	if closeErr := writer.Close(); closeErr != nil {
 		t.Fatal(closeErr)
 	}
-	if !errors.Is(synthesisErr, errArchitectureSynthesisRejected) || outcome.Failure == nil ||
-		outcome.Failure.Code != "architecture.proposal_rejected" ||
-		!slices.Contains(outcome.ValidationCodes, "proposal.supporting_only_unit_coverage_salvaged") ||
-		!slices.Contains(outcome.ValidationCodes, "proposal.zero_useful_semantic_components") ||
-		slices.Contains(outcome.ValidationCodes, "proposal.invalid_subsystem_count") ||
-		slices.Contains(outcome.ValidationCodes, "proposal.empty_primary_scope_coverage") ||
-		slices.Contains(outcome.ValidationCodes, "proposal.supporting_only_unit_coverage") {
-		t.Fatalf("all-dropped supporting-only salvage outcome/error = %#v / %v", outcome, synthesisErr)
+	if synthesisErr != nil || outcome.Failure != nil ||
+		outcome.ValidationOutcome != componentmap.ValidationAcceptedPartial ||
+		outcome.ArchitectureSource != componentmap.SourcePartialModel ||
+		outcome.FallbackSelected ||
+		!slices.Equal(outcome.ValidationCodes, []string{"proposal.partial_member_coverage"}) {
+		t.Fatalf("nested-child outcome/error = %#v / %v", outcome, synthesisErr)
 	}
-	if !outcome.MembershipCounted || outcome.MemberOccurrences != 0 || outcome.DistinctMembers != 0 ||
-		outcome.CoveredConceptualCount != 0 || outcome.UncoveredConceptualCount != 2 ||
-		len(outcome.UncoveredConceptualIDs) != 2 ||
-		outcome.RequestedPrimaryScopeCount != 1 || outcome.CoveredPrimaryScopeCount != 0 ||
-		outcome.UncoveredPrimaryScopeCount != 1 || outcome.CoveredSupportingEvidenceCount != 0 {
-		t.Fatalf("all-dropped supporting-only salvage accounting = %#v", outcome)
+	if !outcome.MembershipCounted || outcome.MemberOccurrences != 1 || outcome.DistinctMembers != 1 ||
+		outcome.CoveredConceptualCount != 1 || outcome.UncoveredConceptualCount != 1 ||
+		!slices.Equal(outcome.UncoveredConceptualIDs, []componentmap.MemberID{packageID}) ||
+		outcome.RequestedPrimaryScopeCount != 1 || outcome.CoveredPrimaryScopeCount != 1 ||
+		outcome.UncoveredPrimaryScopeCount != 0 || outcome.CoveredSupportingEvidenceCount != 1 {
+		t.Fatalf("nested-child accounting = %#v", outcome)
+	}
+	savedRecord, err := os.ReadFile(filepath.Join(runDir, report.ArchitectureSynthesisFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := componentmap.ReplaySynthesisResult(bundle, "revision-primary-quality", savedRecord)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(replayed.Membership.CoveredMemberIDs, []componentmap.MemberID{symbol.ID}) ||
+		!slices.Equal(replayed.Membership.UncoveredMemberIDs, []componentmap.MemberID{packageID}) ||
+		!slices.Equal(replayed.Landscape.LocalRemainderMemberIDs, []componentmap.MemberID{packageID}) ||
+		len(replayed.Landscape.ConceptualMemberships) != 1 ||
+		replayed.Landscape.ConceptualMemberships[0].MemberID != symbol.ID {
+		t.Fatalf("derived parent changed exact semantic membership/remainder: %#v", replayed)
+	}
+	var semanticMemberIDs []componentmap.MemberID
+	for _, subsystem := range replayed.Landscape.Subsystems {
+		if subsystem.Category == "diagnostic" {
+			continue
+		}
+		for _, component := range subsystem.Components {
+			for _, member := range component.Members {
+				semanticMemberIDs = append(semanticMemberIDs, member.ID)
+			}
+		}
+	}
+	if !slices.Equal(semanticMemberIDs, []componentmap.MemberID{symbol.ID}) {
+		t.Fatalf("derived parent entered model-authored component membership: %#v", replayed.Landscape.Subsystems)
 	}
 	if err := persistArchitectureSynthesisStatus(runDir, outcome, synthesisErr); err != nil {
 		t.Fatal(err)
@@ -545,32 +572,36 @@ func TestArchitectureAllDroppedSupportingOnlySalvageKeepsStatusExchangeAndMetada
 		t.Fatal(err)
 	}
 	if err := status.Validate(); err != nil {
-		t.Fatalf("all-dropped salvage status: %v; status=%#v", err, status)
+		t.Fatalf("nested-child status: %v; status=%#v", err, status)
 	}
-	if !status.MembershipCounted || status.MemberOccurrences != 0 || status.DistinctMembers != 0 ||
-		status.CoveredConceptualCount != 0 || status.UncoveredConceptualCount != 0 ||
-		len(status.UncoveredConceptualIDs) != 0 || !status.ProposalRejected ||
-		status.RequestedPrimaryScopeCount != 1 || status.CoveredPrimaryScopeCount != 0 ||
-		status.UncoveredPrimaryScopeCount != 1 || status.CoveredSupportingEvidenceCount != 0 {
-		t.Fatalf("all-dropped salvage status = %#v", status)
+	if status.State != report.ArchitectureSynthesisSucceeded ||
+		!status.ProposalAccepted || !status.ProposalPartial || status.ProposalRejected ||
+		status.Failure != nil || status.ArchitectureSource != string(componentmap.SourcePartialModel) ||
+		!status.MembershipCounted || status.MemberOccurrences != 1 || status.DistinctMembers != 1 ||
+		status.CoveredConceptualCount != 1 || status.UncoveredConceptualCount != 1 ||
+		!slices.Equal(status.UncoveredConceptualIDs, []componentmap.MemberID{packageID}) ||
+		status.RequestedPrimaryScopeCount != 1 || status.CoveredPrimaryScopeCount != 1 ||
+		status.UncoveredPrimaryScopeCount != 0 || status.CoveredSupportingEvidenceCount != 1 {
+		t.Fatalf("nested-child status = %#v", status)
 	}
 
 	records := readArchitectureSemanticExchangeRecords(t, runDir)
-	if len(records) != 1 || records[0].Outcome.Code != "architecture.proposal_rejected" {
-		t.Fatalf("all-dropped salvage exchange = %#v", records)
+	if len(records) != 1 || records[0].State != debugdump.SemanticStateAccepted ||
+		records[0].ValidationCode != debugdump.SemanticValidationAccepted ||
+		records[0].Outcome.Code != "accepted_partial" {
+		t.Fatalf("nested-child exchange = %#v", records)
 	}
 	exchangeMetrics := make(map[string]int, len(records[0].Outcome.Metrics))
 	for _, metric := range records[0].Outcome.Metrics {
 		exchangeMetrics[metric.Name] = metric.Value
 	}
-	if _, leaked := exchangeMetrics["covered_conceptual_count"]; leaked {
-		t.Fatalf("failed exchange published accepted conceptual coverage: %#v", exchangeMetrics)
-	}
-	if exchangeMetrics["requested_primary_scope_count"] != status.RequestedPrimaryScopeCount ||
+	if exchangeMetrics["covered_conceptual_count"] != status.CoveredConceptualCount ||
+		exchangeMetrics["uncovered_conceptual_count"] != status.UncoveredConceptualCount ||
+		exchangeMetrics["requested_primary_scope_count"] != status.RequestedPrimaryScopeCount ||
 		exchangeMetrics["covered_primary_scope_count"] != status.CoveredPrimaryScopeCount ||
 		exchangeMetrics["uncovered_primary_scope_count"] != status.UncoveredPrimaryScopeCount ||
 		exchangeMetrics["covered_supporting_evidence_count"] != status.CoveredSupportingEvidenceCount {
-		t.Fatalf("all-dropped salvage status/exchange mismatch: status=%#v metrics=%#v", status, exchangeMetrics)
+		t.Fatalf("nested-child status/exchange mismatch: status=%#v metrics=%#v", status, exchangeMetrics)
 	}
 
 	diagnostic := architectureAtlasFirstDiagnostic(outcome, synthesisErr, false)
@@ -578,25 +609,28 @@ func TestArchitectureAllDroppedSupportingOnlySalvageKeepsStatusExchangeAndMetada
 		t.Fatal(err)
 	}
 	metadata := readAtlasFirstMetadataFixture(t, runDir)
+	var metadataState string
 	var metadataOutcome *debugdump.SemanticOutcome
 	for _, attempt := range metadata.RequestAttempts {
 		if attempt.Stage == debugdump.SemanticStageArchitecture {
+			metadataState = attempt.State
 			metadataOutcome = attempt.Outcome
 		}
 	}
-	if metadataOutcome == nil || metadataOutcome.Code != "architecture.proposal_rejected" {
-		t.Fatalf("all-dropped salvage metadata = %#v", metadata)
+	if metadataState != "accepted_partial" || metadataOutcome == nil || metadataOutcome.Code != "accepted_partial" {
+		t.Fatalf("nested-child metadata = %#v", metadata)
 	}
 	metadataMetrics := make(map[string]int, len(metadataOutcome.Metrics))
 	for _, metric := range metadataOutcome.Metrics {
 		metadataMetrics[metric.Name] = metric.Value
 	}
 	for _, name := range []string{
+		"covered_conceptual_count", "uncovered_conceptual_count",
 		"requested_primary_scope_count", "covered_primary_scope_count",
 		"uncovered_primary_scope_count", "covered_supporting_evidence_count",
 	} {
 		if metadataMetrics[name] != exchangeMetrics[name] {
-			t.Fatalf("all-dropped salvage exchange/metadata metric %s = %d/%d", name, exchangeMetrics[name], metadataMetrics[name])
+			t.Fatalf("nested-child exchange/metadata metric %s = %d/%d", name, exchangeMetrics[name], metadataMetrics[name])
 		}
 	}
 }

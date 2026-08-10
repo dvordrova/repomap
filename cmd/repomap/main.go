@@ -483,6 +483,7 @@ type defaultRunDeps struct {
 	newStudyInvestigationClient   studyInvestigationClientFactory
 	newEntryCallClient            entryCallCompressionClientFactory
 	newTargetPortfolioClient      targetPortfolioClientFactory
+	resolveGoTarget               func(string, func(string) string) (gotarget.Target, error)
 	precomputedSnapshot           *snapshot.Snapshot
 	runIDOverride                 string
 	siblingTargetRun              bool
@@ -597,10 +598,15 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		}
 		repo = fs.Arg(0)
 	}
-	goTarget, err := gotarget.Resolve(*goTargetFlag, os.Getenv)
+	resolveGoTarget := deps.resolveGoTarget
+	if resolveGoTarget == nil {
+		resolveGoTarget = gotarget.Resolve
+	}
+	goTarget, err := resolveGoTarget(*goTargetFlag, os.Getenv)
 	if err != nil {
 		return fmt.Errorf("--go-target: %w", err)
 	}
+	autoGoTarget := deps.precomputedSnapshot == nil && automaticGoTargetAllowed(*goTargetFlag, os.Getenv)
 	restoreSecretScan := secretscan.SetDisabled(*noSecrets)
 	defer restoreSecretScan()
 	if *noSecrets {
@@ -731,6 +737,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	var entryCallSubstrate *entrycall.Substrate
 	var analysisTarget *analysistarget.Target
 	var targetRunContainer *snapshot.TargetRunContainer
+	var automaticGoTargetSelection *snapshot.GoTargetSelection
 	var targetPortfolioOutcome targetPortfolioRunOutcome
 	analysisTargetOverride := strings.TrimSpace(*analysisTargetFlag)
 	orientAnalysisTargetOverride := analysisTargetOverride
@@ -740,6 +747,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	opts := orient.Options{
 		RepoPath:                             repo,
 		GoTarget:                             goTarget.String(),
+		AutoGoTarget:                         autoGoTarget,
 		AtlasFirst:                           true,
 		Offline:                              *offline,
 		NoCache:                              *noCache,
@@ -795,6 +803,11 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 					break
 				}
 			}
+		},
+		GoTargetSelectionSink: func(selection snapshot.GoTargetSelection) {
+			owned := selection
+			owned.Examples = append([]string(nil), selection.Examples...)
+			automaticGoTargetSelection = &owned
 		},
 		EffectiveOptions: debugdump.EffectiveOptions{
 			Offline:                *offline,
@@ -859,6 +872,13 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	opts.Progress = humanOutput.Progress
 
 	_, err = orient.Run(ctx, opts)
+	if automaticGoTargetSelection != nil {
+		selected, parseErr := gotarget.Parse(automaticGoTargetSelection.Target)
+		if parseErr != nil {
+			return fmt.Errorf("restore automatic Go target selection: %w", parseErr)
+		}
+		goTarget = selected
+	}
 	if deps.precomputedSnapshot == nil {
 		if _, metadataErr := os.Stat(filepath.Join(runDir, "metadata.json")); metadataErr == nil {
 			if diagnosticErr := recordTargetPortfolioOutcome(runDir, targetPortfolioOutcome, humanOutput); diagnosticErr != nil {
@@ -1492,6 +1512,10 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		GitLabURL:             gitLabURL,
 		GitHubURL:             gitHubURL,
 	}
+	if automaticGoTargetSelection != nil {
+		publishedTarget.GoTargetSource = automaticGoTargetSelection.Source
+		publishedTarget.GoTargetBaseline = automaticGoTargetSelection.Baseline
+	}
 	if analysisTarget != nil {
 		publishedTarget.Target = analysisTarget.Snapshot()
 	}
@@ -1568,6 +1592,16 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		}
 	}
 	return nil
+}
+
+func automaticGoTargetAllowed(explicit string, getenv func(string) string) bool {
+	if explicit != "" {
+		return false
+	}
+	if getenv == nil {
+		return true
+	}
+	return getenv("GOOS") == "" && getenv("GOARCH") == ""
 }
 
 func directCallEdgeCeilingError(target string, depth, edgeLimit, safeDepth int) error {

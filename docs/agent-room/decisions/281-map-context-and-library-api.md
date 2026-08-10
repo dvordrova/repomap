@@ -103,3 +103,27 @@ Approved by:
     the explicit request for a hard Entrypoints redesign, useful library
     functions/objects/symbols, removal of `v3`, understandable context UI and
     restored Integrations, 2026-08-10.
+
+## Owner correction — 2026-08-10
+
+The Canvas is the permanent Map baseline, not a peer context and therefore not
+a tab. Module libraries expose only `API | Integrations`; executables expose
+only `Entrypoints | Integrations`. Closing or toggling the active context
+returns to the neutral Canvas without moving, relaying out or dimming it.
+
+Library API presentation is one vertical list: short module-relative package
+labels, symbol-syntax declaration actions, functions separated from methods by
+receiver, and initially collapsed types/constants/variables. A compact
+`What to look at first` shelf reuses only persisted Study cards and their exact
+path/line readings; an exact path/line plus compatible non-empty symbol may
+join a declaration, while an unmatched reading remains a standalone exact
+Study source action. Integrations is likewise one flat family/unit/count list,
+with exact callsites behind disclosure. This follow-up changes presentation
+only: report/provider schemas and backend identity authority remain unchanged;
+the typed UI catalog advances 27→28.
+
+Approved by:
+    Repository owner after the Moby desktop review: Map remains visible under
+    every optional context, API must read top-to-bottom rather than as a card
+    grid, and Study prose may curate existing exact API evidence but may not
+    own or guess source identity, 2026-08-10.

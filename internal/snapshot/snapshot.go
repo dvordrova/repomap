@@ -18,8 +18,14 @@ import (
 )
 
 type Options struct {
-	RepoPath                      string
-	GoTarget                      string
+	RepoPath string
+	GoTarget string
+	// AutoGoTarget allows the bounded tracked-file platform preflight to
+	// replace the caller's host target with one unique strong production
+	// alternative before Go facts are loaded. Callers must leave this false
+	// whenever --go-target or either standard Go target environment dimension
+	// was supplied explicitly.
+	AutoGoTarget                  bool
 	MaxReadmeBytes                int
 	MaxTreeLines                  int
 	MaxInterestingFiles           int
@@ -49,6 +55,7 @@ type Snapshot struct {
 	SkippedPathSamples []string                      `json:"skipped_path_samples"`
 	FilteredFiles      []string                      `json:"-"`
 	GoTargetAdvisory   *GoTargetAdvisory             `json:"-"`
+	GoTargetSelection  *GoTargetSelection            `json:"-"`
 	TargetCatalog      *analysistarget.TargetCatalog `json:"-"`
 }
 
@@ -175,6 +182,16 @@ func BuildContext(ctx context.Context, opts Options) (Snapshot, error) {
 		}
 	}
 	goMetadata := goHints(opts.RepoPath, analysisFiles)
+	advisory := detectGoTargetAdvisory(opts.RepoPath, analysisFiles, currentTarget)
+	var goTargetSelection *GoTargetSelection
+	if opts.AutoGoTarget && advisory != nil {
+		selected, selectErr := newAutomaticGoTargetSelection(currentTarget, *advisory)
+		if selectErr != nil {
+			return Snapshot{}, selectErr
+		}
+		goTargetSelection = &selected
+		opts.GoTarget = selected.Target
+	}
 	s := Snapshot{
 		RepoName:           repositoryIdentity(opts.RepoPath, filtered, goMetadata),
 		DisplayName:        repositoryDisplayName(opts.RepoPath),
@@ -186,7 +203,8 @@ func BuildContext(ctx context.Context, opts Options) (Snapshot, error) {
 		FilesSkipped:       len(files) - len(filtered),
 		SkippedPathSamples: skippedSamples,
 		FilteredFiles:      analysisFiles,
-		GoTargetAdvisory:   detectGoTargetAdvisory(opts.RepoPath, analysisFiles, currentTarget),
+		GoTargetAdvisory:   advisory,
+		GoTargetSelection:  goTargetSelection,
 		Go:                 goMetadata,
 	}
 

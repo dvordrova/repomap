@@ -25,6 +25,8 @@ type targetPublishedRun struct {
 	RepositoryStateSHA256 string
 	SelectedRevision      string
 	GoTarget              string
+	GoTargetSource        string
+	GoTargetBaseline      string
 	SourceEpisodeJSON     []byte
 	GitLabURL             string
 	GitHubURL             string
@@ -105,7 +107,9 @@ func collectTargetPageRuns(
 				filepath.Dir(published.RunDir) != filepath.Dir(defaultRun.RunDir) ||
 				published.RepositoryStateSHA256 != defaultRun.RepositoryStateSHA256 ||
 				published.SelectedRevision != defaultRun.SelectedRevision ||
-				published.GoTarget != defaultRun.GoTarget) {
+				published.GoTarget != defaultRun.GoTarget ||
+				published.GoTargetSource != defaultRun.GoTargetSource ||
+				published.GoTargetBaseline != defaultRun.GoTargetBaseline) {
 				err = fmt.Errorf("target page portfolio: sibling run returned mismatched authority")
 			}
 			if err == nil {

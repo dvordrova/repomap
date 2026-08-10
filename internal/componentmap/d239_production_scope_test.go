@@ -17,7 +17,7 @@ type d239ProductionScopeFixture struct {
 
 func TestD239SynthesisRequestUsesProductionAwareCoverageRoles(t *testing.T) {
 	t.Parallel()
-	if SynthesisRequestVersion != 21 || SynthesisRecordVersion != 16 || ContractVersion != 15 || ProposalVersion != 15 {
+	if SynthesisRequestVersion != 21 || SynthesisRecordVersion != 17 || ContractVersion != 15 || ProposalVersion != 15 {
 		t.Fatalf(
 			"production-aware identities request/record/contract/proposal = %d/%d/%d/%d",
 			SynthesisRequestVersion,
@@ -129,7 +129,7 @@ func TestD239SynthesisRequestUsesProductionAwareCoverageRoles(t *testing.T) {
 	for _, required := range []string{
 		"top-level production conceptual repository surface",
 		"Top-level package candidates in test, tooling, or documentation units",
-		"never compensates for uncovered production primary_scope",
+		"automatically represents its exact enclosing package and production unit",
 	} {
 		if !strings.Contains(prompt.System, required) {
 			t.Fatalf("production-aware prompt omitted %q:\n%s", required, prompt.System)

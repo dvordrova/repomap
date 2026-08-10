@@ -163,6 +163,86 @@ func TestBuildResolvesAndScopesAnalysisTarget(t *testing.T) {
 	})
 }
 
+func TestBuildAutoGoTargetUsesUniqueProductionPlatformBeforeGoFacts(t *testing.T) {
+	repo := t.TempDir()
+	writeSnapshotFile(t, repo, "go.mod", "module example.com/moby\n\ngo 1.24\n")
+	writeSnapshotFile(t, repo, "cmd/dockerd/main.go", "package main\nimport \"example.com/moby/daemon\"\nfunc main() { daemon.Run() }\n")
+	writeSnapshotFile(t, repo, "daemon/config_linux.go", "package daemon\nfunc Run() {}\n")
+	writeSnapshotFile(t, repo, "daemon/network_linux.go", "package daemon\nconst network = true\n")
+	writeSnapshotFile(t, repo, "daemon/storage_linux.go", "package daemon\nconst storage = true\n")
+	trackSnapshotFiles(t, repo,
+		"go.mod", "cmd/dockerd/main.go", "daemon/config_linux.go",
+		"daemon/network_linux.go", "daemon/storage_linux.go",
+	)
+
+	got, err := Build(Options{
+		RepoPath: repo, GoTarget: "darwin/amd64", AutoGoTarget: true,
+		AnalysisTargetOverride: "cmd/dockerd",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GoTargetSelection == nil || got.GoTargetSelection.Source != GoTargetSelectionAuto ||
+		got.GoTargetSelection.Target != "linux/amd64" ||
+		got.GoTargetSelection.Baseline != "darwin/amd64" ||
+		got.GoTargetSelection.Display() != "auto: linux/amd64 (host darwin)" {
+		t.Fatalf("automatic selection = %#v", got.GoTargetSelection)
+	}
+	if got.AnalysisTarget == nil || got.AnalysisTarget.PackageDir != "cmd/dockerd" {
+		t.Fatalf("final analysis target = %#v", got.AnalysisTarget)
+	}
+	if got.GoFacts == nil || got.GoFacts.Coverage.State == "unavailable" {
+		t.Fatalf("final Linux Go facts = %#v", got.GoFacts)
+	}
+	if !slices.Contains(got.FilteredFiles, "daemon/config_linux.go") {
+		t.Fatalf("final target files = %#v", got.FilteredFiles)
+	}
+}
+
+func TestBuildAutoGoTargetLeavesExplicitAndAmbiguousBaselinesUnchanged(t *testing.T) {
+	t.Run("caller disables automatic selection for an explicit target", func(t *testing.T) {
+		repo := t.TempDir()
+		writeSnapshotFile(t, repo, "go.mod", "module example.com/explicit\n\ngo 1.24\n")
+		writeSnapshotFile(t, repo, "main.go", "package main\nfunc main() {}\n")
+		for _, path := range []string{"a_linux.go", "b_linux.go", "c_linux.go"} {
+			writeSnapshotFile(t, repo, path, "package main\n")
+		}
+		trackSnapshotFiles(t, repo, "go.mod", "main.go", "a_linux.go", "b_linux.go", "c_linux.go")
+
+		got, err := Build(Options{RepoPath: repo, GoTarget: "darwin/amd64", AutoGoTarget: false})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.GoTargetSelection != nil || got.GoTargetAdvisory == nil ||
+			got.GoTargetAdvisory.Suggested != "linux/amd64" {
+			t.Fatalf("explicit baseline authority = selection %#v, advisory %#v", got.GoTargetSelection, got.GoTargetAdvisory)
+		}
+	})
+
+	t.Run("tied platform evidence does not select", func(t *testing.T) {
+		repo := t.TempDir()
+		writeSnapshotFile(t, repo, "go.mod", "module example.com/tied\n\ngo 1.24\n")
+		writeSnapshotFile(t, repo, "main.go", "package main\nfunc main() {}\n")
+		paths := []string{"go.mod", "main.go"}
+		for _, goos := range []string{"linux", "windows"} {
+			for _, stem := range []string{"a", "b", "c"} {
+				path := stem + "_" + goos + ".go"
+				writeSnapshotFile(t, repo, path, "package main\n")
+				paths = append(paths, path)
+			}
+		}
+		trackSnapshotFiles(t, repo, paths...)
+
+		got, err := Build(Options{RepoPath: repo, GoTarget: "darwin/amd64", AutoGoTarget: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.GoTargetSelection != nil || got.GoTargetAdvisory != nil {
+			t.Fatalf("tied evidence selected a target: %#v / %#v", got.GoTargetSelection, got.GoTargetAdvisory)
+		}
+	})
+}
+
 func TestAnalysisTargetCandidateKeysDescribeModuleLibrariesWithoutEmptyPackageAliases(t *testing.T) {
 	candidates := []analysistarget.Candidate{
 		{Target: analysistarget.Target{

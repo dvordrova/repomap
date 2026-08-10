@@ -986,6 +986,47 @@ function architecturePartialTruth(data) {
   return label;
  }
 
+ function bareGoSourceIdentity(value) {
+  value = text(value);
+  if (!value || /\s/.test(value) || /\.(go|js|jsx|ts|tsx|py|rb|rs|java|c|cc|cpp|h|hpp)$/i.test(value)) {
+   return value;
+  }
+  // Go's qualified method spelling gives us an unambiguous receiver edge.
+  // Keep the receiver and method/closure suffix, dropping only import path.
+  const receiver = value.lastIndexOf(".(");
+  if (receiver >= 0) return value.slice(receiver + 1);
+
+  const slash = value.lastIndexOf("/");
+  const segment = slash >= 0 ? value.slice(slash + 1) : value;
+  const parts = segment.split(".").filter(Boolean);
+  if (parts.length < 2) return value;
+  const symbol = parts[parts.length - 1];
+  const possibleReceiver = parts[parts.length - 2];
+  if (!/^[A-Za-z_][A-Za-z0-9_$]*$/.test(symbol)) return value;
+  // Non-parenthesized receiver spellings occur in saved symbol evidence.
+  // Retain a type-like receiver; package/version prefixes stay hidden.
+  if (/^[A-Z_(]/.test(possibleReceiver)) {
+   return possibleReceiver + "." + symbol;
+  }
+  if (slash >= 0 || /^[a-z_][A-Za-z0-9_]*$/.test(possibleReceiver) || /^v\d+$/.test(possibleReceiver)) {
+   return symbol;
+  }
+  return value;
+ }
+
+ function userInspectorSourceTitle(value) {
+  value = text(value);
+  if (!value) return value;
+  const suffixAt = value.indexOf(" · ");
+  const identity = suffixAt >= 0 ? value.slice(0, suffixAt) : value;
+  const suffix = suffixAt >= 0 ? value.slice(suffixAt) : "";
+  const arrowAt = identity.lastIndexOf(" → ");
+  const title = arrowAt >= 0
+   ? identity.slice(0, arrowAt + 3) + bareGoSourceIdentity(identity.slice(arrowAt + 3))
+   : bareGoSourceIdentity(identity);
+  return title + suffix;
+ }
+
  function branchClass(kind) {
   if (kind === "task") return "is-task";
   if (kind === "main") return "is-main";
@@ -5140,7 +5181,10 @@ function architecturePartialTruth(data) {
     (primary ? " rm-arch__component-primary-source" : "");
    const node = start.actionable ? element("button", className) : element("div", className);
    if (start.actionable) node.type = "button";
-   node.appendChild(element("strong", null, start.label || this.msg("architecture.action.open_code")));
+   const sourceTitle = start.source_type === "package"
+    ? text(start.label)
+    : userInspectorSourceTitle(start.label);
+   node.appendChild(element("strong", null, sourceTitle || this.msg("architecture.action.open_code")));
    node.appendChild(element("span", null, locationLabel(start.location)));
    if (!primary) node.appendChild(element(
     "small", "rm-arch__source-reason", this.msg(start.actionable
@@ -5331,8 +5375,12 @@ function architecturePartialTruth(data) {
      connections
     );
     this.appendBoundedInspectorRows(relations, structuralRelations, (relation) => {
-     const from = text(relation && relation.from_label) || memberLabel(relation && relation.from, this.message);
-     const to = text(relation && relation.to_label) || memberLabel(relation && relation.to, this.message);
+     const from = userInspectorSourceTitle(
+      text(relation && relation.from_label) || memberLabel(relation && relation.from, this.message)
+     );
+     const to = userInspectorSourceTitle(
+      text(relation && relation.to_label) || memberLabel(relation && relation.to, this.message)
+     );
      const location = relation && relation.location;
      if (location && locationLabel(location) && typeof this.options.openLocation === "function") {
       const action = element("button", "rm-arch__edge-jump rm-arch__operation-row is-action");
@@ -5446,7 +5494,6 @@ function architecturePartialTruth(data) {
      const witnesses = element("div", "rm-arch__association-witnesses");
      witnesses.hidden = true;
      array(row.witnesses).forEach((witness) => {
-      const label = [witness.symbol, witness.path + ":" + witness.line].filter(Boolean).join(" · ");
       // Decision 230 (fresh review task-4 minor): in static reports the
       // witness jump is a real link (pinned revision, target=_blank,
       // rel=noopener noreferrer); served mode keeps the exact button.
@@ -5463,7 +5510,9 @@ function architecturePartialTruth(data) {
       } else {
        jump.type = "button";
       }
-      jump.appendChild(element("strong", null, witness.symbol || witness.path));
+      jump.appendChild(element("strong", null,
+       userInspectorSourceTitle(witness.symbol) || witness.path
+      ));
       jump.appendChild(element("span", null, witness.path + (witness.line ? ":" + witness.line : "")));
       if (witness.role === "test") jump.appendChild(element("span", "rm-arch__association-witness-role", this.msg("architecture.role.test")));
       else if (witness.role === "tooling") jump.appendChild(element("span", "rm-arch__association-witness-role", this.msg("architecture.role.tooling")));
@@ -5551,7 +5600,9 @@ function architecturePartialTruth(data) {
        } else {
         jump.type = "button";
        }
-       jump.appendChild(element("strong", null, witness.symbol || witness.path));
+       jump.appendChild(element("strong", null,
+        userInspectorSourceTitle(witness.symbol) || witness.path
+       ));
        jump.appendChild(element("span", null, witness.path + (witness.line ? ":" + witness.line : "")));
        if (!staticURL && typeof this.options.openLocation === "function" && witness.path) {
         this.listen(jump, "click", () => this.options.openLocation(witness.path, witness.line || 0, 0));
@@ -6563,6 +6614,7 @@ function architecturePartialTruth(data) {
    groupLifecycleRelations: groupLifecycleRelations,
    proofAreaLabel: proofAreaLabel,
    presentationValueLabel: presentationValueLabel,
+   userInspectorSourceTitle: userInspectorSourceTitle,
    architectureProvenanceProductMessageID: architectureProvenanceProductMessageID,
    architectureScenarioProductMessageID: architectureScenarioProductMessageID,
    architecturePresentationText: architecturePresentationText,

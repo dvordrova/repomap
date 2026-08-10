@@ -78,6 +78,8 @@ type EffectiveOptions struct {
 	FlowCount              int    `json:"flows"`
 	DiscoverSurfaces       bool   `json:"discover_surfaces"`
 	GoTarget               string `json:"go_target,omitempty"`
+	GoTargetSource         string `json:"go_target_source,omitempty"`
+	GoTargetBaseline       string `json:"go_target_baseline,omitempty"`
 	AnalysisTargetOverride string `json:"analysis_target_override,omitempty"`
 	AllTargets             bool   `json:"all_targets,omitempty"`
 	DirectCallDepth        int    `json:"direct_call_depth,omitempty"`

@@ -335,6 +335,51 @@ func TestCollectTargetPageRunsInvokesEveryAdditionalTargetOnceAndIsolatesFailure
 	}
 }
 
+func TestCollectTargetPageRunsRejectsAutomaticGoTargetProvenanceDrift(t *testing.T) {
+	container := targetPageRuntimeTwoTargetContainer(t)
+	defaultProjection := targetPageProjection(t, container, container.DefaultTargetRef)
+	runsDir := t.TempDir()
+	defaultRun := targetPublishedRun{
+		RunID: "run-default-auto", RunDir: filepath.Join(runsDir, "run-default-auto"),
+		Target: defaultProjection.Target, RepositoryStateSHA256: strings.Repeat("a", 64),
+		SelectedRevision: "revision", GoTarget: "linux/amd64",
+		GoTargetSource: snapshot.GoTargetSelectionAuto, GoTargetBaseline: "darwin/amd64",
+	}
+
+	result, err := collectTargetPageRuns(
+		container,
+		defaultRun,
+		func(snapshot.TargetRunProjection) string { return "run-sibling-auto" },
+		func(_ snapshot.Snapshot, projection snapshot.TargetRunProjection, runID string) (targetPublishedRun, error) {
+			return targetPublishedRun{
+				RunID: runID, RunDir: filepath.Join(runsDir, runID), Target: projection.Target,
+				RepositoryStateSHA256: defaultRun.RepositoryStateSHA256,
+				SelectedRevision:      defaultRun.SelectedRevision,
+				GoTarget:              defaultRun.GoTarget,
+				GoTargetSource:        defaultRun.GoTargetSource,
+				GoTargetBaseline:      "windows/amd64",
+			}, nil
+		},
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Ready) != 1 || len(result.Outcomes) != 2 {
+		t.Fatalf("provenance drift was not isolated: %#v", result)
+	}
+	for _, outcome := range result.Outcomes {
+		if outcome.TargetRef == container.DefaultTargetRef {
+			continue
+		}
+		if outcome.State != snapshot.TargetPageUnavailable ||
+			outcome.UnavailableCode != snapshot.TargetPageUnavailableTargetRunFailed {
+			t.Fatalf("provenance drift was not isolated: %#v", result)
+		}
+	}
+}
+
 func TestTwoTargetPipelinesEncloseRepeatedArchitectureOutputWithExactTargetContext(t *testing.T) {
 	container := targetPageRuntimeTwoTargetContainer(t)
 	defaultProjection := targetPageProjection(t, container, container.DefaultTargetRef)
@@ -506,6 +551,61 @@ func TestTargetPageRecoveryMetadataBindsExecutableAndModuleLibraryIdentity(t *te
 	}
 	if !seenPackage || !seenModuleLibrary {
 		t.Fatalf("metadata fixtures missed executable/module library: %#v", container.Targets)
+	}
+}
+
+func TestTargetPageRecoveryRequiresExactGoTargetProvenance(t *testing.T) {
+	tests := []struct {
+		name    string
+		options debugdump.EffectiveOptions
+		want    bool
+	}{
+		{
+			name:    "ordinary exact target",
+			options: debugdump.EffectiveOptions{GoTarget: "darwin/amd64"},
+			want:    true,
+		},
+		{
+			name: "automatic exact target",
+			options: debugdump.EffectiveOptions{
+				GoTarget: "linux/amd64", GoTargetSource: snapshot.GoTargetSelectionAuto,
+				GoTargetBaseline: "darwin/amd64",
+			},
+			want: true,
+		},
+		{
+			name: "source without baseline",
+			options: debugdump.EffectiveOptions{
+				GoTarget: "linux/amd64", GoTargetSource: snapshot.GoTargetSelectionAuto,
+			},
+		},
+		{
+			name: "baseline without source",
+			options: debugdump.EffectiveOptions{
+				GoTarget: "linux/amd64", GoTargetBaseline: "darwin/amd64",
+			},
+		},
+		{
+			name: "same platform",
+			options: debugdump.EffectiveOptions{
+				GoTarget: "linux/amd64", GoTargetSource: snapshot.GoTargetSelectionAuto,
+				GoTargetBaseline: "linux/amd64",
+			},
+		},
+		{
+			name: "architecture drift",
+			options: debugdump.EffectiveOptions{
+				GoTarget: "linux/arm64", GoTargetSource: snapshot.GoTargetSelectionAuto,
+				GoTargetBaseline: "darwin/amd64",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := validRecoveredGoTargetProvenance(test.options); got != test.want {
+				t.Fatalf("validRecoveredGoTargetProvenance() = %t, want %t", got, test.want)
+			}
+		})
 	}
 }
 
