@@ -547,9 +547,11 @@ silently disabling analysis would be worse than the current explicit cost.
 package-fact and surface-discovery time, then demonstrate whether a shared
 build-scenario cache or reuse boundary is worthwhile. Also decide whether a
 released repomap binary must match the target module's Go language version or
-can delegate this analyzer to the target toolchain. Keep
-`--discover-surfaces=false` during measurement and do not merge analyzer
-contracts merely to avoid a second load.
+can delegate this analyzer to the target toolchain. Measure the unconditional
+core-only path through its existing package-fact and surface phase metrics or a
+dedicated Go benchmark; do not restore a user opt-out or merge analyzer
+contracts merely to avoid a second load. Legacy framework/Cobra artifact fields
+remain reader compatibility and must not be treated as fresh producer work.
 
 ## Maintenance rules
 

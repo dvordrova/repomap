@@ -90,9 +90,12 @@ Screenshots from the final browser pass:
   runtime truth.
 - Python remains experimental and explicitly weaker where static resolution is
   uncertain.
-- Surface discovery is default-on only for persisted Go artifact runs and keeps
-  `--discover-surfaces=false`. Non-Go/no-debug/preview runs skip it, failures are
-  warnings, and its configured-terminal scope is not whole-repository truth.
+- Persisted Go artifact runs unconditionally use the positive framework-free
+  core surface path; there is no surface/framework mode flag or opt-out. Non-Go,
+  no-debug, and preview runs skip the artifact stage, failures are warnings, and
+  its configured-terminal scope is not whole-repository truth. Framework/Cobra
+  fields retained in old artifacts are legacy read compatibility, not fresh
+  producers.
 - A landscape no longer depends on FlowProof. When a run has no compatible
   proof, the canvas remains visible, shows no flow buttons, and explicitly says
   that its structural edges do not imply runtime sequence.

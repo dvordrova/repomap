@@ -201,10 +201,12 @@ Product integration stops at the intended safe bridge. A normal persisted Go
 run writes `trigger_catalog.json`,
 `surface_coverage.json`, `semantic_summaries.json`, and `surface_summary.md`
 beside the existing report artifacts without changing candidate
-recommendations. `--discover-surfaces=false` remains an explicit opt-out while
-latency is measured. The report renders a separate bounded surface shelf;
-surface facts do not enter the architecture graph. `surfacebridge.FlowSeed`
-maps only grounded trigger,
+recommendations. The ordinary persisted Go path is unconditionally core-only;
+there is no surface/framework mode flag or opt-out. Latency is measured through
+the saved phase metrics. Legacy framework/Cobra fields remain readable for old
+artifacts but fresh analysis does not populate their retired producers. The
+report renders a separate bounded surface shelf; surface facts do not enter the
+architecture graph. `surfacebridge.FlowSeed` maps only grounded trigger,
 entrypoint, registration, handler, dispatcher, files, and evidence; it has no
 way to populate core operation, I/O, concurrency, termination, or confidence.
 The existing model-created path remains available.

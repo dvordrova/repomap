@@ -42,6 +42,8 @@ func TestRemovedOrdinaryProductFlagsAreRejected(t *testing.T) {
 		{"--flows", "1"},
 		{"--guided-tour=false"},
 		{"--no-debug"},
+		{"--no-frameworks"},
+		{"--discover-surfaces=false"},
 	} {
 		t.Run(args[0], func(t *testing.T) {
 			var stderr bytes.Buffer
