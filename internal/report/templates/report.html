@@ -12,7 +12,9 @@
 <body>
   <noscript>
     <style>body > :not(noscript) { display: none !important; }</style>
-    <p>{{if eq .Language "ru"}}Для этого отчёта нужен JavaScript. Исходные данные доступны в <code>report.json</code>.{{else}}This report requires JavaScript. The raw data is available in <code>report.json</code>.{{end}}</p>
+{{if .StandaloneTargetBundle}}    <p>{{if eq .Language "ru"}}Для переключения целей в этом автономном отчёте нужен JavaScript. Все данные уже встроены в этот HTML-файл.{{else}}Switching targets in this standalone report requires JavaScript. All data is embedded in this HTML file.{{end}}</p>
+{{else}}    <p>{{if eq .Language "ru"}}Для этого отчёта нужен JavaScript. Исходные данные доступны в <code>report.json</code>.{{else}}This report requires JavaScript. The raw data is available in <code>report.json</code>.{{end}}</p>
+{{end}}
   </noscript>
   <header>
     <div class="rm-header-inner">

@@ -485,6 +485,75 @@ if (String(process.argv[4] || "").indexOf("scheduled-jobs") === 0) {
   };
   if (String(process.argv[4] || "").endsWith("-shuffled")) report.entry_call.surfaces.reverse();
 }
+if (String(process.argv[4] || "").indexOf("manifold-local-dedupe") === 0) {
+  const processSite = { path: "cmd/manifold/main.go", line: 31, column: 6 };
+  const serverSite = { path: "internal/server/server.go", line: 80, column: 21 };
+  const routeSpecs = [
+    ["route-root", "entry_surface", "exact", "/", "rootHandler", 54],
+    ["route-root-frontier", "dynamic_frontier", "dynamic", "", "", 54],
+    ["route-health", "entry_surface", "exact", "/healthz", "healthHandler", 43],
+    ["route-health-frontier", "dynamic_frontier", "dynamic", "", "", 43],
+  ];
+  report.repo_name = "gitlab.com/gitlab-com/public-sector/manifold";
+  report.analysis_target.package_dir = "cmd/manifold";
+  report.analysis_target.package_path = "gitlab.com/gitlab-com/public-sector/manifold/cmd/manifold";
+  report.analysis_target.roots = [processSite];
+  report.openable_paths = ["cmd/manifold/main.go", "internal/server/server.go"];
+  report.architecture_canvas.entry_handoff_groups = [];
+  report.architecture_canvas.surfaces = [{
+    id: "manifold-main", kind: "process_entry", name: "main", surface_role: "entry_surface",
+    participating_component_ids: ["c1"], evidence: [processSite],
+  }].concat(routeSpecs.map((spec) => ({
+    id: spec[0], kind: "http_route", name: spec[3] || "unresolved value", surface_role: spec[1],
+    participating_component_ids: ["c2"],
+    evidence: [{ path: "internal/server/server.go", line: spec[5], column: 12 }, serverSite, processSite],
+  })), [{
+    id: "manifold-server", kind: "http_server", name: "HTTP server", surface_role: "entry_surface",
+    participating_component_ids: ["c2"], evidence: [serverSite, processSite],
+  }]);
+  report.discovered_surfaces = { triggers: [{
+    id: "manifold-main", kind: "process_entry", surface_role: "entry_surface", provisional_id: false,
+    resolution: "exact", identity: { name: "main" }, registration_site: processSite,
+    process_entrypoint: { name: "main", location: processSite },
+  }].concat(routeSpecs.map((spec) => {
+    const site = { path: "internal/server/server.go", line: spec[5], column: 12 };
+    const exact = spec[2] === "exact";
+    return {
+      id: spec[0], kind: "http_route", surface_role: spec[1], provisional_id: !exact,
+      resolution: spec[2],
+      identity: { path: exact
+        ? { kind: "constant", text: spec[3], known: true, candidates: [] }
+        : { kind: "unknown", text: "unresolved value", known: false, candidates: [] } },
+      handler: exact
+        ? { kind: "function", text: "manifold." + spec[4], known: true, candidates: [] }
+        : { kind: "unknown", text: "unresolved value", known: false, candidates: [] },
+      registration_site: site,
+    };
+  }), [{
+    id: "manifold-server", kind: "http_server", surface_role: "entry_surface", provisional_id: false,
+    resolution: "exact", identity: { name: "HTTP server" }, registration_site: serverSite,
+    server_start_site: serverSite,
+  }]) };
+  report.entry_call = { version: 1, families: [] };
+  if (String(process.argv[4] || "").endsWith("-ambiguous")) {
+    report.openable_paths.push("internal/server/ambiguous.go");
+    ["alpha", "beta"].forEach((name) => {
+      const id = "ambiguous-route-" + name;
+      const site = { path: "internal/server/ambiguous.go", line: 70, column: 12 };
+      report.architecture_canvas.surfaces.push({
+        id, kind: "http_route", name: "/ambiguous", surface_role: "entry_surface",
+        participating_component_ids: ["c2"], evidence: [site, processSite],
+      });
+      report.discovered_surfaces.triggers.push({
+        id, kind: "http_route", surface_role: "entry_surface", provisional_id: false,
+        resolution: "exact",
+        identity: { path: { kind: "constant", text: "/ambiguous", known: true, candidates: [] } },
+        handler: { kind: "function", text: "manifold." + name, known: true, candidates: [] },
+        registration_site: site,
+      });
+    });
+  }
+}
 const window = {
   location: { hash: "#canvas", host: "fixture.test", pathname: "/index.html", search: "" },
   history: { state: null, pushState(state, _, hash) { this.state = state; window.location.hash = hash; }, replaceState(state, _, hash) { this.state = state; window.location.hash = hash; }, back() {} },
@@ -751,7 +820,7 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
 		}
 		uniqueCards[label+"\x00"+moby.CardSourceHrefs[index]] = struct{}{}
 	}
-	if mainCards != 1 || len(uniqueCards) != 11 || !containsString(moby.CardLabels, "/metrics") ||
+	if mainCards != 1 || len(uniqueCards) != 11 || countString(moby.CardLabels, "/metrics") != 2 ||
 		!containsString(moby.CardLabels, "GET /ready") || !containsString(moby.CardLabels, "/help") ||
 		!containsString(moby.CardLabels, "/v{version:[0-9.]+}/{path:.*}") || containsString(moby.CardLabels, "*}") ||
 		containsString(moby.CardLabels, "background sync") {
@@ -779,6 +848,40 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
 		!strings.Contains(moby.CardSourceHrefs[readyIndex], "/daemon/libnetwork/diagnostic/server.go#L37") ||
 		metricsUnresolved != 1 {
 		t.Fatalf("fresh Moby route callback was not causally restored from its exact catalog ID: %#v", moby)
+	}
+
+	manifold := run("ru", "manifold-local-dedupe")
+	if manifold.EntryCardCount != 4 ||
+		strings.Join(manifold.GroupKinds, ",") != "process_entry,http_route,http_server" ||
+		!strings.Contains(strings.Join(manifold.GroupText, " "), "HTTP-маршруты2") ||
+		!strings.Contains(manifold.Text, "Точки входа · 4") ||
+		countString(manifold.CardLabels, "/") != 1 ||
+		countString(manifold.CardLabels, "/healthz") != 1 ||
+		strings.Contains(manifold.Text, "unresolved value") ||
+		strings.Contains(manifold.Text, "обработчик не разрешён") {
+		t.Fatalf("Manifold same-callsite deterministic frontiers were not replaced by exact routes: %#v", manifold)
+	}
+	for label, want := range map[string]string{"/": "rootHandler()", "/healthz": "healthHandler()"} {
+		index := -1
+		for candidateIndex, candidateLabel := range manifold.CardLabels {
+			if candidateLabel == label {
+				index = candidateIndex
+				break
+			}
+		}
+		if index < 0 || manifold.CardCallbacks[index] != want ||
+			!strings.Contains(manifold.CardSourceHrefs[index], "/internal/server/server.go#L") {
+			t.Fatalf("Manifold exact route %q lost its resolved callback or registration source: %#v", label, manifold)
+		}
+	}
+
+	manifoldAmbiguous := run("ru", "manifold-local-dedupe-ambiguous")
+	if manifoldAmbiguous.EntryCardCount != 6 ||
+		!strings.Contains(strings.Join(manifoldAmbiguous.GroupText, " "), "HTTP-маршруты4") ||
+		countString(manifoldAmbiguous.CardLabels, "/ambiguous") != 2 ||
+		!containsString(manifoldAmbiguous.CardCallbacks, "alpha()") ||
+		!containsString(manifoldAmbiguous.CardCallbacks, "beta()") {
+		t.Fatalf("equal-strength resolved callbacks did not fail closed: %#v", manifoldAmbiguous)
 	}
 
 	legacyCLI := run("ru", "legacy-cli")

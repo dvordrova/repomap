@@ -13,6 +13,7 @@ import (
 const (
 	SubstrateVersion = 2
 	RequestVersion   = 2
+	ResponseVersion  = 4
 	ResultVersion    = 3
 	StatusVersion    = 3
 

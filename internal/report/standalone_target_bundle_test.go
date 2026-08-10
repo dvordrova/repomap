@@ -161,7 +161,7 @@ function execute(search){
     current:data.target_navigation.current_target_index,def:data.target_navigation.default_target_index,
     version:data.target_navigation.version,language:document.documentElement.lang,title:document.title,items};
 }
-process.stdout.write(JSON.stringify(["","?target=0","?target=00","?target=1","?target=999","?target=0&target=2"].map(execute)));
+process.stdout.write(JSON.stringify(["","?target=0","?target=00","?target=%31","?target=1","?target=999","?target=0&target=2"].map(execute)));
 `
 	runnerPath := filepath.Join(t.TempDir(), "standalone-target-bootstrap.js")
 	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
@@ -183,7 +183,7 @@ process.stdout.write(JSON.stringify(["","?target=0","?target=00","?target=1","?t
 		t.Fatalf("decode standalone target bootstrap: %v\n%s", err, output)
 	}
 	defaultIndex := len(container.Targets) - 1
-	if len(got) != 6 {
+	if len(got) != 7 {
 		t.Fatalf("bootstrap results = %#v", got)
 	}
 	for _, result := range got {
@@ -213,6 +213,12 @@ process.stdout.write(JSON.stringify(["","?target=0","?target=00","?target=1","?t
 				t.Errorf("bootstrap unavailable item %d = %#v", index, item)
 			}
 		}
+	}
+	if bytes.Contains(htmlBytes, []byte("report.json")) {
+		t.Fatal("standalone target bundle noscript copy references an external report.json")
+	}
+	if !bytes.Contains(htmlBytes, []byte("Все данные уже встроены в этот HTML-файл")) {
+		t.Fatal("standalone target bundle noscript copy does not disclose embedded data")
 	}
 }
 

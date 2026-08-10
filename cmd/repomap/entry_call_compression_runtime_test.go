@@ -47,7 +47,7 @@ func (provider *entryCallCompressionRuntimeProvider) EntryCallCompressionBodyMea
 ) (modelresearch.ProviderResult, error) {
 	provider.calls++
 	if provider.invalid {
-		return modelresearch.ProviderResult{Content: []byte(`{"version":3,"request_ref":"wrong","entries":[],"surface_proposals":[]}`), Attempts: 1}, nil
+		return modelresearch.ProviderResult{Content: []byte(`{"version":4,"entries":[{"root_ref":"unknown","family_refs":[]}],"surface_proposals":[]}`), Attempts: 1}, nil
 	}
 	entries := make([]entrycall.ResponseEntry, 0, len(provider.request.Entries))
 	for _, requestEntry := range provider.request.Entries {
@@ -83,7 +83,7 @@ func (provider *entryCallCompressionRuntimeProvider) EntryCallCompressionBodyMea
 		})
 	}
 	response, err := json.Marshal(entrycall.Response{
-		Version: entrycall.ResultVersion, RequestRef: provider.request.RequestRef, Entries: entries,
+		Version: entrycall.ResponseVersion, Entries: entries,
 		SurfaceProposals: proposals,
 	})
 	if err != nil {

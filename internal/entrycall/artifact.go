@@ -12,15 +12,16 @@ import (
 )
 
 const (
-	ResultArtifactFilename         = "entry_call_result.v3.json"
-	StatusArtifactFilename         = "entry_call_status.v3.json"
-	LegacyV2ResultArtifactFilename = "entry_call_result.v2.json"
-	LegacyV2StatusArtifactFilename = "entry_call_status.v2.json"
-	legacyV1ResultArtifactFilename = "entry_call_result.v1.json"
-	legacyV1StatusArtifactFilename = "entry_call_status.v1.json"
-	legacyV2PromptVersion          = "entry-call-compression-prompt-c53df8bbacc9"
-	legacyV2ResultVersion          = 2
-	legacyV2StatusVersion          = 2
+	ResultArtifactFilename          = "entry_call_result.v3.json"
+	StatusArtifactFilename          = "entry_call_status.v3.json"
+	LegacyV2ResultArtifactFilename  = "entry_call_result.v2.json"
+	LegacyV2StatusArtifactFilename  = "entry_call_status.v2.json"
+	legacyV1ResultArtifactFilename  = "entry_call_result.v1.json"
+	legacyV1StatusArtifactFilename  = "entry_call_status.v1.json"
+	legacyV2PromptVersion           = "entry-call-compression-prompt-c53df8bbacc9"
+	legacyV3RequestRefPromptVersion = "entry-call-compression-prompt-4423d54c6aab"
+	legacyV2ResultVersion           = 2
+	legacyV2StatusVersion           = 2
 )
 
 var ArtifactFilenames = []string{
@@ -94,7 +95,7 @@ func DecodeResult(data []byte) (Result, error) {
 	if err := decodeArtifact("result", data, &result); err != nil {
 		return Result{}, err
 	}
-	if err := validateResult(result); err != nil {
+	if err := validateDecodedV3Result(result); err != nil {
 		return Result{}, err
 	}
 	canonical := cloneResult(result)
@@ -126,7 +127,7 @@ func DecodeStatus(data []byte) (Status, error) {
 	if err := decodeArtifact("status", data, &status); err != nil {
 		return Status{}, err
 	}
-	if err := validateStatus(status); err != nil {
+	if err := validateDecodedV3Status(status); err != nil {
 		return Status{}, err
 	}
 	return status, nil
@@ -239,7 +240,18 @@ func artifactVersion(kind string, data []byte) (int, error) {
 }
 
 func validateResult(result Result) error {
-	if result.Version != ResultVersion || result.PromptVersion != PromptVersion ||
+	return validateResultForPrompt(result, PromptVersion)
+}
+
+func validateDecodedV3Result(result Result) error {
+	if !supportedV3PromptVersion(result.PromptVersion) {
+		return fmt.Errorf("entry call: invalid result identity")
+	}
+	return validateResultForPrompt(result, result.PromptVersion)
+}
+
+func validateResultForPrompt(result Result, promptVersion string) error {
+	if result.Version != ResultVersion || result.PromptVersion != promptVersion ||
 		!validRequestRef(result.RequestRef) || !validDigest(result.RequestSHA256, false) ||
 		!validDigest(result.SubstrateSHA256, false) || !validDigest(result.RepositoryStateSHA256, false) ||
 		result.Entries == nil || len(result.Entries) == 0 || len(result.Entries) > MaxRoots ||
@@ -417,7 +429,18 @@ func validResultSurfaceValueEither(value *ResultSurfaceValue, left, right Surfac
 }
 
 func validateStatus(status Status) error {
-	if status.Version != StatusVersion || status.PromptVersion != PromptVersion ||
+	return validateStatusForPrompt(status, PromptVersion)
+}
+
+func validateDecodedV3Status(status Status) error {
+	if !supportedV3PromptVersion(status.PromptVersion) {
+		return fmt.Errorf("entry call: invalid status")
+	}
+	return validateStatusForPrompt(status, status.PromptVersion)
+}
+
+func validateStatusForPrompt(status Status, promptVersion string) error {
+	if status.Version != StatusVersion || status.PromptVersion != promptVersion ||
 		status.AdvertisedFamilies < 0 || status.AdvertisedFamilies > MaxFamilies ||
 		status.SelectedFamilies < 0 || status.SelectedFamilies > MaxRoots*MaxSelectedFamiliesPerRoot ||
 		status.SelectedFamilies+status.RejectedFamilies > status.AdvertisedFamilies ||
@@ -469,6 +492,10 @@ func validateStatus(status Status) error {
 		return fmt.Errorf("entry call: invalid status state")
 	}
 	return nil
+}
+
+func supportedV3PromptVersion(value string) bool {
+	return value == PromptVersion || value == legacyV3RequestRefPromptVersion
 }
 
 func validRequestBinding(status Status) bool {
