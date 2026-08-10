@@ -74,6 +74,22 @@ func InspectSynthesisResponseShape(raw []byte) SynthesisResponseShape {
 	return shape
 }
 
+// InspectEvaluatedSynthesisResponseShape reports the shape of the exact JSON
+// proposal object used by synthesis evaluation. It shares the evaluator's
+// bounded trailing-closing-delimiter normalization, but performs no broader
+// response repair. The persisted provider response remains unchanged.
+func InspectEvaluatedSynthesisResponseShape(raw []byte) SynthesisResponseShape {
+	shape := InspectSynthesisResponseShape(raw)
+	if shape.JSONValid || len(raw) == 0 || len(raw) > maxSynthesisResponseBytes {
+		return shape
+	}
+	proposal, normalization, responseErr := extractProposalObject(raw)
+	if responseErr != nil || normalization == nil {
+		return shape
+	}
+	return InspectSynthesisResponseShape(proposal)
+}
+
 func SynthesisResponseStateForDiagnostics(raw []byte) ResponseState {
 	if len(raw) == 0 {
 		return ResponseEmpty

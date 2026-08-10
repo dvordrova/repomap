@@ -23,7 +23,9 @@ const (
 	MaxFamiliesPerRoot         = 48
 	MaxNodes                   = 128
 	MaxFamilies                = 192
-	MaxSelectedFamiliesPerRoot = 12
+	// Every family advertised inside one root is already bounded by
+	// MaxFamiliesPerRoot. Selection has no smaller, second resource ceiling.
+	MaxSelectedFamiliesPerRoot = MaxFamiliesPerRoot
 	MaxRepresentativeCallsites = 3
 	MaxLabelRunes              = 96
 	MaxRequestBytes            = 128 * 1024

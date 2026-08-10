@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -18,11 +19,13 @@ func TestPromptVersionIsPinnedToExactPrompt(t *testing.T) {
 	}
 }
 
-func TestPromptDoesNotApplyTheFamilyLimitToSurfaceProposals(t *testing.T) {
+func TestPromptAllowsEveryAdvertisedFamilyAndKeepsSurfaceBoundsIndependent(t *testing.T) {
 	for _, required := range []string{
-		"The twelve-ref limit applies only to each entries[].family_refs list",
+		"Every advertised family is already within the per-root response bound",
+		"include all useful rooted families; do not stop at an arbitrary count",
+		"Family selection and surface proposals have independent bounds",
 		"Examine every advertised surface candidate",
-		"Do not stop after twelve surface proposals",
+		"Do not stop after an arbitrary number of surface proposals",
 		"A token method fact must case-insensitively equal CONNECT, DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT, or TRACE",
 		"a string method fact may preserve an exact custom HTTP method",
 	} {
@@ -40,7 +43,7 @@ func TestArtifactNamesAndBoundsArePinned(t *testing.T) {
 	}
 	if MaxRoots != 4 || MaxDepth != 3 || MaxOutgoingFamiliesPerNode != 12 ||
 		MaxNodesPerRoot != 32 || MaxFamiliesPerRoot != 48 || MaxNodes != 128 || MaxFamilies != 192 ||
-		MaxSelectedFamiliesPerRoot != 12 || MaxRepresentativeCallsites != 3 ||
+		MaxSelectedFamiliesPerRoot != MaxFamiliesPerRoot || MaxRepresentativeCallsites != 3 ||
 		MaxRequestBytes != 128*1024 || MaxResponseBytes != 64*1024 ||
 		MaxSurfaceCandidates != 128 || MaxSurfaceFactsPerCandidate != 8 || MaxSurfaceFacts != 512 ||
 		MaxSurfaceCandidateSectionBytes != 32*1024 || MaxSurfaceFactValueRunes != 128 ||
@@ -638,14 +641,14 @@ func TestHandlerlessCLIRequiresCompanionDescriptorWhenCallableFactsExist(t *test
 	}
 }
 
-func TestOverLimitFamilySelectionRejectsEntryLocallyAndPreservesExactCommand(t *testing.T) {
+func TestGotenbergThirteenFamilySelectionIsAcceptedAndPreservesExactCommand(t *testing.T) {
 	compilation, err := Compile(surfaceFixture())
 	if err != nil {
 		t.Fatal(err)
 	}
 	entry := compilation.Request.Entries[0]
-	if len(entry.Families) != MaxSelectedFamiliesPerRoot+1 {
-		t.Fatalf("fixture families = %d, want %d", len(entry.Families), MaxSelectedFamiliesPerRoot+1)
+	if len(entry.Families) != 13 {
+		t.Fatalf("fixture families = %d, want causal provider response size 13", len(entry.Families))
 	}
 	command := candidateByForm(t, compilation.Request.SurfaceCatalog, SurfaceCandidateKeyedComposite)
 	proposal := ResponseSurfaceProposal{
@@ -677,15 +680,10 @@ func TestOverLimitFamilySelectionRejectsEntryLocallyAndPreservesExactCommand(t *
 		if err != nil {
 			t.Fatalf("Reduce order %d: %v", index, err)
 		}
-		if result.SelectedFamilyCount() != 0 || result.RejectedFamilyCount() != len(familyRefs) ||
+		if result.SelectedFamilyCount() != len(familyRefs) || result.RejectedFamilyCount() != 0 ||
 			result.SelectedSurfaceCount() != 1 || result.RejectedSurfaceCount() != 0 ||
 			result.SurfaceProposals[0].Identity == nil || result.SurfaceProposals[0].Identity.Text != "serve [path]" {
-			t.Fatalf("isolated over-limit selection order %d = %+v", index, result)
-		}
-		for _, rejected := range result.Entries[0].RejectedFamilies {
-			if rejected.Reason != RejectedFamilySelectionLimit {
-				t.Fatalf("rejected reason = %q, want %q", rejected.Reason, RejectedFamilySelectionLimit)
-			}
+			t.Fatalf("thirteen-family selection order %d = %+v", index, result)
 		}
 		result.RepositoryStateSHA256 = strings.Repeat("f", 64)
 		encoded, err := EncodeResult(result)
@@ -698,7 +696,7 @@ func TestOverLimitFamilySelectionRejectsEntryLocallyAndPreservesExactCommand(t *
 		if canonical == nil {
 			canonical = encoded
 		} else if string(encoded) != string(canonical) {
-			t.Fatalf("over-limit isolation depends on provider order:\n%s\n%s", canonical, encoded)
+			t.Fatalf("thirteen-family restoration depends on provider order:\n%s\n%s", canonical, encoded)
 		}
 	}
 
@@ -707,12 +705,61 @@ func TestOverLimitFamilySelectionRejectsEntryLocallyAndPreservesExactCommand(t *
 	unknown.SurfaceProposals = []ResponseSurfaceProposal{proposal}
 	raw, _ := json.Marshal(unknown)
 	if _, err := Reduce(compilation, raw); err == nil || !strings.Contains(err.Error(), "unknown family ref") {
-		t.Fatalf("unknown over-limit family ref did not reject atomically: %v", err)
+		t.Fatalf("unknown family ref did not reject atomically: %v", err)
+	}
+}
+
+func TestFamilySelectionAcceptsFortyEightAdvertisedRefsAndRejectsFortyNine(t *testing.T) {
+	compilation, err := Compile(familyLimitFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := compilation.Request.Entries[0]
+	if len(entry.Families) != MaxFamiliesPerRoot {
+		t.Fatalf("advertised families = %d, want exact boundary %d", len(entry.Families), MaxFamiliesPerRoot)
+	}
+	refs := make([]string, 0, len(entry.Families))
+	for _, family := range entry.Families {
+		refs = append(refs, family.Ref)
+	}
+	response := emptySurfaceResponse(compilation)
+	response.Entries[0].FamilyRefs = refs
+	raw, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := Reduce(compilation, raw)
+	if err != nil {
+		t.Fatalf("Reduce 48 advertised refs: %v", err)
+	}
+	if result.SelectedFamilyCount() != MaxFamiliesPerRoot || result.RejectedFamilyCount() != 0 {
+		t.Fatalf("48-family result = %+v", result)
+	}
+	result.RepositoryStateSHA256 = strings.Repeat("f", 64)
+	encoded, err := EncodeResult(result)
+	if err != nil {
+		t.Fatalf("EncodeResult 48 advertised refs: %v", err)
+	}
+	if restored, err := DecodeResult(encoded); err != nil || restored.SelectedFamilyCount() != MaxFamiliesPerRoot {
+		t.Fatalf("DecodeResult 48 advertised refs = %d, %v", restored.SelectedFamilyCount(), err)
+	}
+	status := Status{
+		Version: StatusVersion, State: StatusAccepted, PromptVersion: PromptVersion,
+		RequestRef: compilation.Request.RequestRef, RequestSHA256: compilation.RequestSHA256(),
+		SubstrateSHA256: compilation.SubstrateSHA256, RepositoryStateSHA256: strings.Repeat("f", 64),
+		ResultSHA256: sha256Hex(encoded), AdvertisedFamilies: MaxFamiliesPerRoot,
+		SelectedFamilies: MaxFamiliesPerRoot, SurfaceCandidateCoverage: compilation.SurfaceCoverage(),
+	}
+	statusRaw, err := EncodeStatus(status)
+	if err != nil {
+		t.Fatalf("EncodeStatus 48 selected families: %v", err)
+	}
+	if restored, err := DecodeStatus(statusRaw); err != nil || restored.SelectedFamilies != MaxFamiliesPerRoot {
+		t.Fatalf("DecodeStatus 48 selected families = %d, %v", restored.SelectedFamilies, err)
 	}
 
 	resourceOverflow := emptySurfaceResponse(compilation)
 	resourceOverflow.Entries[0].FamilyRefs = make([]string, MaxFamiliesPerRoot+1)
-	resourceOverflow.SurfaceProposals = []ResponseSurfaceProposal{proposal}
 	raw, _ = json.Marshal(resourceOverflow)
 	if _, err := Reduce(compilation, raw); err == nil || !strings.Contains(err.Error(), "resource bound") {
 		t.Fatalf("family resource overflow did not reject atomically: %v", err)
@@ -1019,6 +1066,39 @@ func causalFixture() Substrate {
 	return Substrate{
 		Version: SubstrateVersion, State: StateReady,
 		Roots: []ExactRoot{{NodeID: "canonical:main"}}, Nodes: nodes, Families: families,
+		Frontiers: []ExactFrontier{},
+	}
+}
+
+func familyLimitFixture() Substrate {
+	location := func(line int) Location { return Location{Path: "main.go", Line: line, Column: 2} }
+	nodes := []ExactNode{{ID: "root", Label: "main · main", Declaration: location(1)}}
+	for index := 0; index < MaxOutgoingFamiliesPerNode; index++ {
+		nodes = append(nodes, ExactNode{
+			ID: fmt.Sprintf("node-%02d", index), Label: fmt.Sprintf("main · node%02d", index),
+			Declaration: location(10 + index),
+		})
+	}
+	families := make([]ExactFamily, 0, MaxFamiliesPerRoot)
+	for index := 0; index < MaxOutgoingFamiliesPerNode; index++ {
+		families = append(families, ExactFamily{
+			ID: fmt.Sprintf("root-node-%02d", index), CallerID: "root", CalleeID: nodes[index+1].ID,
+			Invocation: InvocationSynchronous, WitnessCount: 1, Callsites: []Location{location(30 + index)},
+		})
+	}
+	for callerIndex := 0; len(families) < MaxFamiliesPerRoot; callerIndex++ {
+		for calleeIndex := 0; calleeIndex < MaxOutgoingFamiliesPerNode && len(families) < MaxFamiliesPerRoot; calleeIndex++ {
+			families = append(families, ExactFamily{
+				ID:       fmt.Sprintf("node-%02d-node-%02d", callerIndex, calleeIndex),
+				CallerID: nodes[callerIndex+1].ID, CalleeID: nodes[calleeIndex+1].ID,
+				Invocation: InvocationSynchronous, WitnessCount: 1,
+				Callsites: []Location{location(60 + len(families))},
+			})
+		}
+	}
+	return Substrate{
+		Version: SubstrateVersion, State: StateReady,
+		Roots: []ExactRoot{{NodeID: "root"}}, Nodes: nodes, Families: families,
 		Frontiers: []ExactFrontier{},
 	}
 }

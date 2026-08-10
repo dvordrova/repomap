@@ -741,8 +741,8 @@ func ensureArchitectureSynthesisWithOptions(
 	outcome.ProviderCallSucceeded = err == nil || emptyResponse
 	outcome.ResponseState = componentmap.SynthesisResponseStateForDiagnostics(raw)
 	if outcome.ResponseState == componentmap.ResponseCaptured {
-		outcome.ResponseParsed = componentmap.InspectSynthesisResponseShape(raw).JSONValid
 		outcome.ResponseShape = architectureSynthesisResponseShape(raw)
+		outcome.ResponseParsed = outcome.ResponseShape != nil && outcome.ResponseShape.JSONValid
 	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		outcome.SemanticExchangePath = recordArchitectureSemanticExchange(
@@ -1105,7 +1105,7 @@ func architectureSynthesisResponseShape(raw []byte) *report.ArchitectureSynthesi
 	if len(raw) == 0 {
 		return nil
 	}
-	shape := componentmap.InspectSynthesisResponseShape(raw)
+	shape := componentmap.InspectEvaluatedSynthesisResponseShape(raw)
 	return &report.ArchitectureSynthesisResponseShape{
 		JSONValid: shape.JSONValid, Grammar: shape.Grammar,
 		SubsystemCount: shape.SubsystemCount, ComponentCount: shape.ComponentCount,
