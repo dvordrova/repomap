@@ -59,7 +59,7 @@ const (
 	// run instead of discarding an otherwise valid proposal. Historical flat
 	// responses remain strict.
 	maxSynthesisNestedInputSubsystems = 24
-	maxSynthesisNestedInputComponents = 100
+	maxSynthesisNestedInputComponents = 1000
 )
 
 // SynthesisMemberRef is one short request-local typed member identity. The Ref
