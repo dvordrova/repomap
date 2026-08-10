@@ -239,7 +239,7 @@ func TestD277SavedScoutRequiresCompleteSelectedRootAccounting(t *testing.T) {
 		Reason: "seed_budget", Count: 2, Representatives: []string{"a3", "a4"},
 	}}
 	if err := validateThemeScoutRequestAgainstInput(request, input); err == nil ||
-		!strings.Contains(err.Error(), "does not match") {
+		!strings.Contains(err.Error(), "canonical span does not match") {
 		t.Fatalf("swapped private span bindings error = %v", err)
 	}
 	request.SeedPacks.Packs = []themestudy.SeedPack{pack(2), pack(1)}
@@ -249,6 +249,63 @@ func TestD277SavedScoutRequiresCompleteSelectedRootAccounting(t *testing.T) {
 	if err := validateThemeScoutRequestAgainstInput(request, input); err == nil ||
 		!strings.Contains(err.Error(), "public API order") {
 		t.Fatalf("reordered Scout roots error = %v", err)
+	}
+}
+
+func TestD277SavedScoutPublicAPIRootMismatchNamesExactField(t *testing.T) {
+	data := d277LibraryReportData(t, []gofacts.PackageDeclaration{{
+		Kind: gofacts.PackageDeclarationFunc, Name: "NewBot",
+		Path: "bot.go", Line: 5, Column: 6, ExecutableBody: true,
+	}})
+	input, err := BuildAtlasStudyInput(data, atlasstudy.LanguageEnglish)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err = atlasstudy.SelectAnalysisTargetRootFrontier(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ordered, err := atlasstudy.OrderAnalysisTargetRootReadingTargets(input)
+	if err != nil || len(ordered) != 1 {
+		t.Fatalf("ordered public API roots = %#v, err=%v", ordered, err)
+	}
+	spanByTarget := make(map[string]string, len(input.RouteSpans))
+	for _, span := range input.RouteSpans {
+		if len(span.AllowedTargetIDs) == 1 {
+			spanByTarget[span.AllowedTargetIDs[0]] = span.ID
+		}
+	}
+	want := ordered[0]
+	valid := themestudy.SeedSpec{
+		Ref: "a1", Path: want.Location.Path, Line: want.Location.Line, Symbol: want.Symbol,
+		CanonicalSpanID: spanByTarget[want.ID], Kind: "focused",
+		Role: themestudy.RolePublicAPI, Provenance: "d211_span_reading_target",
+	}
+	tests := []struct {
+		name   string
+		field  string
+		mutate func(*themestudy.SeedSpec)
+	}{
+		{name: "path", field: "path", mutate: func(seed *themestudy.SeedSpec) { seed.Path = "other.go" }},
+		{name: "line", field: "line", mutate: func(seed *themestudy.SeedSpec) { seed.Line++ }},
+		{name: "symbol", field: "symbol", mutate: func(seed *themestudy.SeedSpec) { seed.Symbol = "Other" }},
+		{name: "canonical span", field: "canonical span", mutate: func(seed *themestudy.SeedSpec) { seed.CanonicalSpanID = "span-other" }},
+		{name: "kind", field: "kind", mutate: func(seed *themestudy.SeedSpec) { seed.Kind = "other" }},
+		{name: "role", field: "role", mutate: func(seed *themestudy.SeedSpec) { seed.Role = themestudy.RoleExample }},
+		{name: "provenance", field: "provenance", mutate: func(seed *themestudy.SeedSpec) { seed.Provenance = "other" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			seed := valid
+			test.mutate(&seed)
+			request := themestudy.ScoutRequest{SeedPacks: themestudy.SeedPackResult{
+				Packs: []themestudy.SeedPack{{Seed: seed}},
+			}}
+			err := validateThemeScoutRequestAgainstInput(request, input)
+			if err == nil || !strings.Contains(err.Error(), " "+test.field+" does not match ") {
+				t.Fatalf("%s mismatch error = %v", test.field, err)
+			}
+		})
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"github.com/dvordrova/repomap/internal/artifactrole"
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/evidence"
+	"github.com/dvordrova/repomap/internal/themestudy"
 )
 
 func TestThemeReadingTargetRoleKeepsProducerEvidenceAndPathRoleDistinct(t *testing.T) {
@@ -37,6 +38,21 @@ func TestThemeReadingTargetRoleKeepsProducerEvidenceAndPathRoleDistinct(t *testi
 			path: "scripts/release/main.go", supports: []atlasstudy.SupportRole{atlasstudy.SupportProcessEntry},
 			want: artifactrole.RoleTooling,
 		},
+		{
+			name: "selected public API root defeats conventional main path",
+			path: "cmd/library/main.go", supports: []atlasstudy.SupportRole{atlasstudy.SupportAnalysisTargetRoot},
+			want: artifactrole.RolePublicAPI,
+		},
+		{
+			name: "selected public API root defeats example path",
+			path: "examples/client.go", supports: []atlasstudy.SupportRole{atlasstudy.SupportAnalysisTargetRoot},
+			want: artifactrole.RolePublicAPI,
+		},
+		{
+			name: "selected public API root defeats generated path",
+			path: "generated/client.pb.go", supports: []atlasstudy.SupportRole{atlasstudy.SupportAnalysisTargetRoot},
+			want: artifactrole.RolePublicAPI,
+		},
 	}
 
 	for _, test := range tests {
@@ -45,7 +61,7 @@ func TestThemeReadingTargetRoleKeepsProducerEvidenceAndPathRoleDistinct(t *testi
 				ID: "target", Kind: atlasstudy.ReadingTargetFunction,
 				Location: evidence.Location{Path: test.path, Line: 1},
 			}
-			input := atlasstudy.Input{}
+			input := atlasstudy.Input{ReadingTargets: []atlasstudy.ReadingTarget{target}}
 			for index, role := range test.supports {
 				input.ReadingSupports = append(input.ReadingSupports, atlasstudy.ReadingSupport{
 					ID: string(rune('a' + index)), TargetID: target.ID, Role: role,
@@ -53,6 +69,10 @@ func TestThemeReadingTargetRoleKeepsProducerEvidenceAndPathRoleDistinct(t *testi
 			}
 			if got := themeReadingTargetRole(input, target); got != test.want {
 				t.Fatalf("themeReadingTargetRole(%q) = %q, want %q", test.path, got, test.want)
+			}
+			seeds := themeSeedSpecsFromInput(input)
+			if len(seeds) != 1 || seeds[0].Role != themestudy.Role(test.want) {
+				t.Fatalf("theme seed role for %q = %#v, want %q", test.path, seeds, test.want)
 			}
 		})
 	}

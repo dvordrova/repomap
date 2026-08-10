@@ -7088,6 +7088,106 @@
     return projectedLocations[0] || null;
   }
 
+  // Entrypoints keeps Canvas15 as the sole grouping/participation authority,
+  // but the full local trigger catalog owns route, command and callback facts.
+  // Join the two only through their exact stable ID: labels, paths or source
+  // locations are not identity and must never correlate an unrelated record.
+  function discoveredEntrySurface(entry) {
+    var id = String(entry && entry.id || '');
+    var kind = String(entry && entry.kind || '');
+    if (!id) return null;
+    var triggers = DATA.discovered_surfaces && Array.isArray(DATA.discovered_surfaces.triggers)
+      ? DATA.discovered_surfaces.triggers : [];
+    var matches = triggers.filter(function (trigger) {
+      return String(trigger && trigger.id || '') === id &&
+        String(trigger && trigger.surface_role || '') === 'entry_surface';
+    });
+    return matches.length === 1 && String(matches[0] && matches[0].kind || '') === kind
+      ? matches[0] : null;
+  }
+
+  function exactEntrySurfaceLocation(location) {
+    var path = String(location && location.path || '');
+    var line = Number(location && location.line) || 0;
+    if (!path || !Number.isInteger(line) || line <= 0) return null;
+    return {
+      path: path,
+      line: line,
+      column: Number.isInteger(Number(location && location.column)) && Number(location && location.column) > 0
+        ? Number(location.column) : 0,
+    };
+  }
+
+  function entrySurfaceLocationKey(location) {
+    location = exactEntrySurfaceLocation(location);
+    return location ? [location.path, location.line, location.column].join('\u0000') : '';
+  }
+
+  function entrySurfaceRegistrationLocation(trigger, fallback) {
+    var kind = String(trigger && trigger.kind || '');
+    var location = kind === 'http_server'
+      ? trigger && (trigger.server_start_site || trigger.registration_site)
+      : trigger && trigger.registration_site;
+    if (kind === 'process_entry') {
+      location = trigger && trigger.process_entrypoint && trigger.process_entrypoint.location || location;
+    }
+    return exactEntrySurfaceLocation(location) || exactEntrySurfaceLocation(fallback);
+  }
+
+  function entrySurfaceIdentityLabel(trigger, entry, kind) {
+    var identity = trigger && trigger.identity || {};
+    var pathKnown = !!(identity && identity.path && identity.path.known);
+    var path = pathKnown ? String(identity.path.text || '').trim() : '';
+    var name = String(identity && identity.name || '').trim();
+    var fallback = String(entry && (entry.symbol || entry.label) || '').trim();
+    if (kind === 'http_route') {
+      var method = String(identity && identity.method || '').trim().toUpperCase();
+      return path ? [method, path].filter(Boolean).join(' ') :
+        trigger ? msg('main.map.entry.identity.dynamic_route') : fallback;
+    }
+    if (kind === 'cli_command') return path || name ||
+      (trigger ? msg('main.map.entry.identity.dynamic_command') : fallback);
+    if (kind === 'process_entry') {
+      var processName = name || trigger && trigger.process_entrypoint && trigger.process_entrypoint.name || fallback;
+      return bareSourceSymbol(processName) || msg('main.map.lens.entry.process');
+    }
+    if (kind === 'http_server') return name || fallback || msg('main.map.entry.group.http_servers');
+    return name || path || fallback || msg('main.map.lens.entry.process');
+  }
+
+  function entrySurfaceCallbackLabel(trigger) {
+    var handler = trigger && trigger.handler;
+    var value = String(handler && handler.text || '').trim();
+    if (!value) return '';
+    if (handler.known === false) return msg('main.map.entry.callback.unresolved');
+    value = value.replace(/@[^@]+:[0-9]+(?::[0-9]+)?$/, '');
+    value = bareSourceSymbol(value);
+    if (value === 'func_literal' || value === 'func literal') {
+      return msg('main.map.entry.callback.anonymous');
+    }
+    if (String(handler && handler.kind || '') === 'function' && !/[()]$/.test(value)) value += '()';
+    return value;
+  }
+
+  function entrySurfaceHasCallback(trigger, kind) {
+    if (kind !== 'http_route' && kind !== 'cli_command') return false;
+    var handler = trigger && trigger.handler;
+    if (!handler) return false;
+    if (handler.known === false) return true;
+    var handlerKind = String(handler.kind || '');
+    return handlerKind === 'function' || handlerKind === 'method_value';
+  }
+
+  function entrySurfaceGroup(kind) {
+    var groups = {
+      process_entry: { order: 0, message_id: 'main.map.entry.group.process' },
+      http_route: { order: 1, message_id: 'main.map.entry.group.http_routes' },
+      cli_command: { order: 2, message_id: 'main.map.entry.group.cli_commands' },
+      http_server: { order: 3, message_id: 'main.map.entry.group.http_servers' },
+    };
+    return groups[kind] || { order: 4, message_id: 'main.map.entry.group.other' };
+  }
+
   function renderEntryCallFamilyDisclosure(families) {
     if (!families.length) return null;
     var details = el('details', 'rm-map-entry-families');
@@ -7141,15 +7241,49 @@
     return { calls: handoffs.length, areas: Object.keys(areaIDs).length, outside: outside };
   }
 
-  function renderEntrypointCard(entry, projected, host, projectedGroups, entryKind) {
+  function renderEntrypointCard(entry, projected, host, projectedGroups, entryKind, trigger) {
     var card = el('article', 'rm-map-entry-card');
     var heading = el('div', 'rm-map-entry-card__heading');
-    var entrySymbol = String(entry && entry.symbol || '');
-    var entryLabel = entrySymbol ? bareSourceSymbol(entrySymbol) : String(entry && entry.label || '');
-    heading.appendChild(txt('h3', '', entryLabel || msg('main.map.lens.entry.process')));
-    heading.appendChild(renderEntrypointLocationAction(entry, msg('main.map.entry.context.entry_source')));
+    var kind = String(entryKind || entry && entry.claim_kind || trigger && trigger.kind || '');
+    var primary = entrySurfacePrimaryLocation(entry) || entry;
+    var identityLabel = entrySurfaceIdentityLabel(trigger, entry, kind);
+    var primaryLine = el('div', 'rm-map-entry-card__primary');
+    primaryLine.appendChild(txt('h4', 'rm-map-entry-card__identity', identityLabel));
+    var callbackLabel = entrySurfaceHasCallback(trigger, kind) ? entrySurfaceCallbackLabel(trigger) : '';
+    if (callbackLabel) {
+      var arrow = txt('span', 'rm-map-entry-card__arrow', '→');
+      arrow.setAttribute('aria-hidden', 'true');
+      primaryLine.appendChild(arrow);
+      var callback = txt('code', 'rm-map-entry-card__callback', callbackLabel);
+      if (trigger && trigger.handler && trigger.handler.known === false) {
+        callback.classList.add('rm-map-entry-card__callback--partial');
+      }
+      primaryLine.appendChild(callback);
+    }
+    if (kind === 'cli_command' && trigger && (trigger.provisional_id === true ||
+      !(trigger.identity && trigger.identity.path && trigger.identity.path.known))) {
+      primaryLine.appendChild(txt('span', 'rm-map-entry-card__partial',
+        msg('main.map.entry.identity.partial_command')));
+    }
+    heading.appendChild(primaryLine);
+    var exactActions = el('div', 'rm-map-entry-card__sources');
+    var registration = entrySurfaceRegistrationLocation(trigger, primary);
+    if (registration) exactActions.appendChild(renderEntrypointLocationAction(
+      registration,
+      kind === 'process_entry'
+        ? msg('main.map.entry.context.entry_source')
+        : msg('main.map.entry.context.registration')
+    ));
+    var handlerLocation = exactEntrySurfaceLocation(trigger && trigger.handler_location);
+    if (handlerLocation && entrySurfaceLocationKey(handlerLocation) !== entrySurfaceLocationKey(registration)) {
+      exactActions.appendChild(renderEntrypointLocationAction(
+      handlerLocation,
+      msg('main.map.entry.context.handler_source')
+      ));
+    }
+    if (exactActions.childNodes.length) heading.appendChild(exactActions);
     card.appendChild(heading);
-    var families = String(entryKind || entry && entry.claim_kind || '') === 'process_entry'
+    var families = kind === 'process_entry'
       ? entryCallFamiliesForLocation(entry) : [];
     if (families.length) card.appendChild(txt('p', 'rm-map-entry-card__meta', msg('main.map.entry.direct_families', {
       count: families.length,
@@ -7186,6 +7320,7 @@
         if (!seen[key]) { seen[key] = true; surfaces.push(entry); }
       });
     });
+    var items = [];
     surfaces.forEach(function (entry) {
       var projected = projectedGroups.filter(function (candidate) {
         var groupEntry = candidate && candidate.group && candidate.group.entry;
@@ -7211,14 +7346,96 @@
         symbol: '',
         label: entry.label,
       };
-      host.appendChild(renderEntrypointCard(exact, projected, host, projectedGroups, entry && entry.kind));
+      items.push({
+        entry: exact,
+        projected: projected,
+        kind: String(entry && entry.kind || ''),
+        trigger: discoveredEntrySurface(entry),
+      });
     });
     projectedGroups.forEach(function (projected) {
       var entry = projected && projected.group && projected.group.entry;
       if (!attachedGroupIDs[String(projected && projected.id || '')] && entry) {
-        host.appendChild(renderEntrypointCard(entry, projected, host, projectedGroups, entry && entry.claim_kind));
+        items.push({
+          entry: entry,
+          projected: projected,
+          kind: String(entry && entry.claim_kind || ''),
+          trigger: null,
+        });
       }
     });
+    var grouped = Object.create(null);
+    items.forEach(function (item) {
+      var kind = item.kind || 'other';
+      if (!grouped[kind]) grouped[kind] = [];
+      grouped[kind].push(item);
+    });
+    function itemSortKey(item) {
+      var trigger = item.trigger;
+      var primary = entrySurfacePrimaryLocation(item.entry) || item.entry;
+      var source = entrySurfaceRegistrationLocation(trigger, primary) || {};
+      var sourceKey = [String(source.path || ''), String(source.line || 0).padStart(9, '0'),
+        String(source.column || 0).padStart(9, '0')].join('\u0000');
+      var identity = entrySurfaceIdentityLabel(trigger, item.entry, item.kind);
+      var callback = entrySurfaceHasCallback(trigger, item.kind) ? entrySurfaceCallbackLabel(trigger) : '';
+      if (item.kind === 'process_entry' || item.kind === 'http_server') {
+        return [sourceKey, identity, callback].join('\u0000');
+      }
+      var exactRank = trigger && trigger.provisional_id !== true &&
+        trigger.identity && trigger.identity.path && trigger.identity.path.known ? '0' : '1';
+      return [exactRank, identity, callback, sourceKey].join('\u0000');
+    }
+    Object.keys(grouped).forEach(function (kind) {
+      grouped[kind].sort(function (left, right) {
+        return itemSortKey(left).localeCompare(itemSortKey(right));
+      });
+    });
+    Object.keys(grouped).sort(function (left, right) {
+      var leftGroup = entrySurfaceGroup(left), rightGroup = entrySurfaceGroup(right);
+      return leftGroup.order - rightGroup.order || left.localeCompare(right);
+    }).forEach(function (kind) {
+      var definition = entrySurfaceGroup(kind);
+      var section = el('section', 'rm-map-entry-group');
+      section.setAttribute('data-entry-surface-kind', kind);
+      var groupHeading = el('div', 'rm-map-entry-group__heading');
+      groupHeading.appendChild(txt('h3', '', msg(definition.message_id)));
+      groupHeading.appendChild(txt('span', 'rm-map-entry-group__count', String(grouped[kind].length)));
+      section.appendChild(groupHeading);
+      var list = el('div', 'rm-map-entry-group__list');
+      var visibleLimit = 6;
+      grouped[kind].slice(0, visibleLimit).forEach(function (item) {
+        list.appendChild(renderEntrypointCard(
+          item.entry,
+          item.projected,
+          host,
+          projectedGroups,
+          item.kind,
+          item.trigger
+        ));
+      });
+      section.appendChild(list);
+      if (grouped[kind].length > visibleLimit) {
+        var more = el('details', 'rm-map-entry-group__more');
+        more.appendChild(txt('summary', 'rm-map-entry-group__more-summary', msg('main.map.entry.show_more', {
+          count: grouped[kind].length - visibleLimit,
+        })));
+        var remainder = el('div', 'rm-map-entry-group__list rm-map-entry-group__list--remainder');
+        grouped[kind].slice(visibleLimit).forEach(function (item) {
+          remainder.appendChild(renderEntrypointCard(
+            item.entry,
+            item.projected,
+            host,
+            projectedGroups,
+            item.kind,
+            item.trigger
+          ));
+        });
+        more.appendChild(remainder);
+        section.appendChild(more);
+      }
+      host.appendChild(section);
+    });
+    host.appendChild(txt('p', 'rm-map-entry-context__limit', msg('main.map.entry.static_limit')));
   }
 
   function renderIntegrationsLaunchpad(host, projection) {
