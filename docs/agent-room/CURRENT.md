@@ -70,6 +70,7 @@ Active decisions (each approved by the repository owner via its supervisory goal
 66. decisions/283-generic-model-assisted-entry-surfaces.md
 67. decisions/284-bounded-architecture-response-intake.md
 68. decisions/285-generic-scheduled-entry-surfaces.md
+69. decisions/286-self-contained-hosted-all-targets-report.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
@@ -913,6 +914,22 @@ Status:
 Approved by:
 	Repository owner after asking to restore scheduler registrations through the
 	same generic refs-only mechanism used for CLI and HTTP, 2026-08-11.
+
+## Decision 286
+
+Status:
+	ACTIVE. Explicit hosted `--all-targets` publication keeps every canonical
+	per-target report and manifest, then atomically replaces the default target's
+	HTML with one self-contained bundle. Ready targets use same-document
+	`?target=INDEX#canvas` navigation; unavailable targets remain disabled. The
+	bundle contains each scrubbed, revision-pinned payload once and no sibling
+	run path, with bounded streaming verification and provider-free recovery.
+	Ordinary multi-target, hosted singleton and no-host runs retain D269 sibling
+	pages unchanged.
+
+Approved by:
+	Repository owner after requesting one HTML file from hosted
+	`--all-targets` that can be copied directly to S3, 2026-08-11.
 
 ## Decision 241 follow-up
 

@@ -12,6 +12,7 @@ import (
 	"github.com/dvordrova/repomap/internal/mechanismstudy"
 	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/report"
+	"github.com/dvordrova/repomap/internal/snapshot"
 )
 
 // publicationReadiness reports publication health, not whether every bounded
@@ -72,8 +73,41 @@ func assessRunPublication(runDir string) (publicationAssessment, error) {
 	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
 		return failedPublication(), err
 	}
-	if err := verifyPublishedHTML(filepath.Join(runDir, "report.html")); err != nil {
+	bundleIdentity, err := inspectPublishedHTML(filepath.Join(runDir, "report.html"))
+	if err != nil {
 		return failedPublication(), err
+	}
+	if bundleIdentity != nil {
+		containerRaw, found, readErr := readTargetPageRunFile(
+			runDir, snapshot.TargetRunContainerArtifactFilename, snapshot.MaxTargetRunContainerBytes,
+		)
+		if readErr != nil {
+			return failedPublication(), fmt.Errorf("read standalone target bundle container authority: %w", readErr)
+		}
+		if !found {
+			return failedPublication(), fmt.Errorf("standalone target bundle container authority is missing")
+		}
+		container, decodeErr := snapshot.DecodeTargetRunContainer(containerRaw)
+		if decodeErr != nil {
+			return failedPublication(), decodeErr
+		}
+		portfolioRaw, found, readErr := readTargetPageRunFile(
+			runDir, snapshot.TargetPagePortfolioArtifactFilename, snapshot.MaxTargetPagePortfolioBytes,
+		)
+		if readErr != nil {
+			return failedPublication(), fmt.Errorf("read standalone target bundle portfolio authority: %w", readErr)
+		}
+		if !found {
+			return failedPublication(), fmt.Errorf("standalone target bundle portfolio authority is missing")
+		}
+		portfolio, decodeErr := snapshot.DecodeTargetPagePortfolio(portfolioRaw)
+		if decodeErr != nil {
+			return failedPublication(), decodeErr
+		}
+		if bundleIdentity.TargetRunContainerSHA256 != container.SHA256 ||
+			bundleIdentity.TargetPagePortfolioSHA256 != portfolio.SHA256 {
+			return failedPublication(), fmt.Errorf("published standalone target bundle does not match manifest-bound authority")
+		}
 	}
 	var data report.ReportData
 	if err := json.Unmarshal(reportJSON, &data); err != nil {
@@ -167,22 +201,40 @@ func studyInvestigationStatusReasons(status mechanismstudy.Status) ([]publicatio
 }
 
 func verifyPublishedHTML(path string) error {
+	_, err := inspectPublishedHTML(path)
+	return err
+}
+
+func inspectPublishedHTML(path string) (*report.StandaloneTargetBundleIdentity, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
-		return fmt.Errorf("published report html: %w", err)
+		return nil, fmt.Errorf("published report html: %w", err)
 	}
-	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxPublicationHTMLBytes {
-		return fmt.Errorf("published report html is not a bounded regular file")
+	if !info.Mode().IsRegular() || info.Size() <= 0 {
+		return nil, fmt.Errorf("published report html is not a bounded regular file")
+	}
+	bundleIdentity, bundleFound, bundleErr := report.InspectStandaloneTargetBundleHTML(path)
+	if bundleFound {
+		if bundleErr != nil {
+			return nil, fmt.Errorf("published standalone target bundle: %w", bundleErr)
+		}
+		return &bundleIdentity, nil
+	}
+	if bundleErr != nil {
+		return nil, fmt.Errorf("inspect published report html: %w", bundleErr)
+	}
+	if info.Size() > maxPublicationHTMLBytes {
+		return nil, fmt.Errorf("published report html is not a bounded regular file")
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("read published report html: %w", err)
+		return nil, fmt.Errorf("read published report html: %w", err)
 	}
 	lower := strings.ToLower(string(raw))
 	if !strings.Contains(lower, "<html") || !strings.Contains(lower, `id="rm-report-data"`) {
-		return fmt.Errorf("published report html is missing the report application shell")
+		return nil, fmt.Errorf("published report html is missing the report application shell")
 	}
-	return nil
+	return nil, nil
 }
 
 func failedPublication() publicationAssessment {

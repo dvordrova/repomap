@@ -200,6 +200,12 @@ func TestVerifyPublishedHTMLRejectsMissingAndInvalidApplicationShells(t *testing
 	if err := verifyPublishedHTML(path); err != nil {
 		t.Fatalf("bounded report application shell rejected: %v", err)
 	}
+	if err := os.Truncate(path, int64(maxPublicationHTMLBytes)+1); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyPublishedHTML(path); err == nil {
+		t.Fatal("oversized ordinary report HTML was accepted without a sealed bundle")
+	}
 }
 
 func TestRunCorpusCLIRecordsMissingRepositoryAsFailed(t *testing.T) {

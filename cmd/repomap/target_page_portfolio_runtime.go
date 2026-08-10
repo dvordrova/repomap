@@ -30,6 +30,7 @@ type targetPublishedRun struct {
 	SourceEpisodeJSON     []byte
 	GitLabURL             string
 	GitHubURL             string
+	AllTargets            bool
 }
 
 type targetPageRunSet struct {
@@ -109,7 +110,10 @@ func collectTargetPageRuns(
 				published.SelectedRevision != defaultRun.SelectedRevision ||
 				published.GoTarget != defaultRun.GoTarget ||
 				published.GoTargetSource != defaultRun.GoTargetSource ||
-				published.GoTargetBaseline != defaultRun.GoTargetBaseline) {
+				published.GoTargetBaseline != defaultRun.GoTargetBaseline ||
+				published.AllTargets != defaultRun.AllTargets ||
+				published.GitLabURL != defaultRun.GitLabURL ||
+				published.GitHubURL != defaultRun.GitHubURL) {
 				err = fmt.Errorf("target page portfolio: sibling run returned mismatched authority")
 			}
 			if err == nil {
@@ -219,6 +223,10 @@ func finalizeTargetPageRuns(
 	portfolio snapshot.TargetPagePortfolio,
 	runs []targetPublishedRun,
 ) error {
+	bundleDefault, err := standaloneTargetBundleDefaultRun(container, runs)
+	if err != nil {
+		return err
+	}
 	containerJSON, err := container.CanonicalJSON()
 	if err != nil {
 		return err
@@ -228,7 +236,7 @@ func finalizeTargetPageRuns(
 		return err
 	}
 	alreadyFinalized, err := targetPageRunsAlreadyFinalized(
-		container, portfolio, runs, containerJSON, portfolioJSON,
+		container, portfolio, runs, containerJSON, portfolioJSON, bundleDefault,
 	)
 	if err != nil {
 		return err
@@ -278,12 +286,19 @@ func finalizeTargetPageRuns(
 	}
 
 	authorities := make([]snapshot.TargetPageSiblingAuthority, 0, len(runs))
+	prepared := make([]report.PreparedStandaloneTarget, 0, len(runs))
 	for _, run := range runs {
 		navigation, navErr := targetNavigationForRun(container, portfolio, run.Target.Ref)
 		if navErr != nil {
 			return navErr
 		}
-		if err := run.generateWithTargetNavigation(navigation); err != nil {
+		if bundleDefault != nil {
+			preparedTarget, prepareErr := run.generatePreparedWithTargetNavigation(navigation)
+			if prepareErr != nil {
+				return fmt.Errorf("target page portfolio: render hosted run %s: %w", run.RunID, prepareErr)
+			}
+			prepared = append(prepared, preparedTarget)
+		} else if err := run.generateWithTargetNavigation(navigation); err != nil {
 			return fmt.Errorf("target page portfolio: render run %s: %w", run.RunID, err)
 		}
 		manifest, err := report.ReadRunManifest(run.RunDir)
@@ -304,7 +319,65 @@ func finalizeTargetPageRuns(
 	if err := portfolio.ValidateSiblingAuthorities(container, authorities); err != nil {
 		return err
 	}
+	if bundleDefault != nil {
+		if err := report.WriteStandaloneTargetBundleAtomic(
+			bundleDefault.RunDir, container, portfolio, prepared,
+		); err != nil {
+			return fmt.Errorf("target page portfolio: publish standalone target bundle: %w", err)
+		}
+		found, inspectErr := inspectExactStandaloneTargetBundle(
+			filepath.Join(bundleDefault.RunDir, "report.html"), container, portfolio, len(runs),
+		)
+		if inspectErr != nil {
+			return fmt.Errorf("target page portfolio: verify standalone target bundle: %w", inspectErr)
+		}
+		if !found {
+			return fmt.Errorf("target page portfolio: standalone target bundle marker is absent after publication")
+		}
+	}
 	return nil
+}
+
+// standaloneTargetBundleDefaultRun resolves only the owner-approved D286
+// branch. The ordinary D269 finalizer remains authoritative for every other
+// multi-target publication.
+func standaloneTargetBundleDefaultRun(
+	container snapshot.TargetRunContainer,
+	runs []targetPublishedRun,
+) (*targetPublishedRun, error) {
+	if len(container.Targets) <= 1 {
+		return nil, nil
+	}
+	var defaultRun *targetPublishedRun
+	for index := range runs {
+		run := &runs[index]
+		if run.Target.Ref == container.DefaultTargetRef {
+			if defaultRun != nil {
+				return nil, fmt.Errorf("target page portfolio: duplicate default run")
+			}
+			defaultRun = run
+		}
+	}
+	if defaultRun == nil {
+		return nil, fmt.Errorf("target page portfolio: default run is unavailable")
+	}
+	if !defaultRun.AllTargets {
+		return nil, nil
+	}
+	if defaultRun.GitLabURL != "" && defaultRun.GitHubURL != "" {
+		return nil, fmt.Errorf("target page portfolio: default run has conflicting source hosts")
+	}
+	if defaultRun.GitLabURL == "" && defaultRun.GitHubURL == "" {
+		return nil, nil
+	}
+	for _, run := range runs {
+		if !run.AllTargets || run.GitLabURL != defaultRun.GitLabURL ||
+			run.GitHubURL != defaultRun.GitHubURL {
+			return nil, fmt.Errorf("target page portfolio: hosted sibling authority differs")
+		}
+	}
+	owned := *defaultRun
+	return &owned, nil
 }
 
 // targetPageRunsAlreadyFinalized makes recovery idempotent. A fully verified
@@ -316,6 +389,7 @@ func targetPageRunsAlreadyFinalized(
 	runs []targetPublishedRun,
 	containerJSON []byte,
 	portfolioJSON []byte,
+	bundleDefault *targetPublishedRun,
 ) (bool, error) {
 	authorities := make([]snapshot.TargetPageSiblingAuthority, 0, len(runs))
 	for _, run := range runs {
@@ -364,6 +438,47 @@ func targetPageRunsAlreadyFinalized(
 	}
 	if err := portfolio.ValidateSiblingAuthorities(container, authorities); err != nil {
 		return false, err
+	}
+	if bundleDefault == nil {
+		return true, nil
+	}
+	found, err := inspectExactStandaloneTargetBundle(
+		filepath.Join(bundleDefault.RunDir, "report.html"), container, portfolio, len(runs),
+	)
+	if err != nil {
+		return false, fmt.Errorf("target page portfolio: inspect standalone target bundle: %w", err)
+	}
+	if !found {
+		// The canonical D269 pages may have completed before D286's final atomic
+		// replacement. Re-enter the provider-free hosted render in that case.
+		return false, nil
+	}
+	return true, nil
+}
+
+func inspectExactStandaloneTargetBundle(
+	htmlPath string,
+	container snapshot.TargetRunContainer,
+	portfolio snapshot.TargetPagePortfolio,
+	readyCount int,
+) (bool, error) {
+	identity, found, err := report.InspectStandaloneTargetBundleHTML(htmlPath)
+	if err != nil || !found {
+		return found, err
+	}
+	defaultIndex := -1
+	for index, projection := range container.Targets {
+		if projection.Target.Ref == container.DefaultTargetRef {
+			defaultIndex = index
+			break
+		}
+	}
+	if identity.TargetRunContainerSHA256 != container.SHA256 ||
+		identity.TargetPagePortfolioSHA256 != portfolio.SHA256 ||
+		identity.DefaultTargetIndex != defaultIndex ||
+		identity.TargetCount != len(container.Targets) ||
+		identity.ReadyTargetCount != readyCount {
+		return true, fmt.Errorf("standalone target bundle authority mismatch")
 	}
 	return true, nil
 }
@@ -426,5 +541,25 @@ func (run targetPublishedRun) generateWithTargetNavigation(
 		)
 	default:
 		return report.GenerateAuthorizedWithOptions(run.RunDir, run.Authority, options)
+	}
+}
+
+func (run targetPublishedRun) generatePreparedWithTargetNavigation(
+	navigation *report.TargetNavigationPortfolio,
+) (report.PreparedStandaloneTarget, error) {
+	options := report.RenderOptions{TargetNavigation: navigation}
+	switch {
+	case len(run.SourceEpisodeJSON) != 0:
+		return report.PreparedStandaloneTarget{}, fmt.Errorf("hosted target bundle cannot embed a source episode")
+	case run.GitLabURL != "" && run.GitHubURL == "":
+		return report.GenerateAuthorizedGitLabPreparedWithOptions(
+			run.RunDir, run.Authority, run.GitLabURL, options,
+		)
+	case run.GitHubURL != "" && run.GitLabURL == "":
+		return report.GenerateAuthorizedGitHubPreparedWithOptions(
+			run.RunDir, run.Authority, run.GitHubURL, options,
+		)
+	default:
+		return report.PreparedStandaloneTarget{}, fmt.Errorf("hosted target bundle requires exactly one source host")
 	}
 }

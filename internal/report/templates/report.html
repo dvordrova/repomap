@@ -60,7 +60,7 @@
     </aside>
   </div>
   <div class="rm-toast" id="rm-toast" role="status" aria-live="polite" hidden></div>
-  <script type="application/json" id="rm-report-data">{{.DataJSON}}</script>
+{{if .StandaloneTargetBundle}}{{.StandaloneTargetBundle}}{{else}}  <script type="application/json" id="rm-report-data">{{.DataJSON}}</script>{{end}}
   <script id="rm-ui-messages-js">{{.UIMessagesJS}}</script>
 {{if .HasArchitectureCanvas}}  <script id="rm-elkjs">{{.ELKJS}}</script>
   <script id="rm-architecture-canvas-js">{{.ArchitectureCanvasJS}}</script>{{end}}

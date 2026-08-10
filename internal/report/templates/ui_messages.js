@@ -40,7 +40,9 @@
   // remainder rather than implying that a valid entry surface was rejected.
   // UI36 presents exact model-assisted scheduled jobs as a separate flat
   // Entrypoints group without claiming hierarchy or runtime reachability.
-  var VERSION = 36;
+  // UI37 adds the self-contained hosted target-navigation v3 projection. It
+  // reuses the existing target labels and changes no semantic report copy.
+  var VERSION = 37;
   var EN = {
     "main.browser_error.invalid_report_artifact": { params: [], text: "The saved report is invalid or exceeds the supported size." },
     "main.browser_error.no_saved_reports": { params: [], text: "No saved reports are available." },
