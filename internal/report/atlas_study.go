@@ -1106,20 +1106,23 @@ func atlasStudyReadingAssociation(
 	// (provenance provider "boundary", operation "call_site") creates it;
 	// canonical IDs never reach the wire.
 	if data.RepositoryAtlas != nil {
-		boundaryEvidenceByLocation := make(map[string]string)
+		boundaryEvidenceByLocator := make(map[string]string)
 		for _, item := range data.RepositoryAtlas.Evidence {
 			if item.Provenance.Provider != goadapter.BoundaryObservationEvidenceProvider ||
 				item.Provenance.Operation != goadapter.BoundaryObservationEvidenceOperation {
 				continue
 			}
-			key := item.Location.Path + "\x00" + fmt.Sprint(item.Location.Line)
-			if existing, ok := boundaryEvidenceByLocation[key]; ok && existing != item.ID {
-				boundaryEvidenceByLocation[key] = ""
+			key := strings.Join([]string{
+				item.Location.Path, fmt.Sprint(item.Location.Line), item.Symbol,
+			}, "\x00")
+			if existing, ok := boundaryEvidenceByLocator[key]; ok && existing != item.ID {
+				boundaryEvidenceByLocator[key] = ""
 			} else if !ok {
-				boundaryEvidenceByLocation[key] = item.ID
+				boundaryEvidenceByLocator[key] = item.ID
 			}
 		}
-		if evidenceID, ok := boundaryEvidenceByLocation[sourcePath+"\x00"+fmt.Sprint(line)]; ok && evidenceID != "" {
+		locator := strings.Join([]string{sourcePath, fmt.Sprint(line), symbol}, "\x00")
+		if evidenceID, ok := boundaryEvidenceByLocator[locator]; ok && evidenceID != "" {
 			if packageBucket := atlasStudyExactPackageBucket(data, sourcePath, symbol); packageBucket != "" {
 				result.supports = append(result.supports, atlasStudySupportProof{
 					role:          atlasstudy.SupportObservedCallBoundary,
