@@ -226,6 +226,11 @@ process.stdout.write(JSON.stringify({
   plurals: [1, 2, 5, 11, 21].map((count) =>
     api.messageForLocale("ru", "architecture.count.components", { count })
   ),
+  frontierPlurals: [1, 2, 5].map((count) =>
+    api.messageForLocale("ru", "main.map.entry.model_frontier.result", {
+      shown: count, rejected: count, unproposed: count,
+    })
+  ),
   unicode,
   rendered,
   identical: enIDs.filter((id) => {
@@ -298,8 +303,9 @@ process.stdout.write(JSON.stringify({
 			UnsupportedLocale bool `json:"unsupportedLocale"`
 			EmptyLocale       bool `json:"emptyLocale"`
 		} `json:"failures"`
-		Plurals []string `json:"plurals"`
-		Unicode struct {
+		Plurals         []string `json:"plurals"`
+		FrontierPlurals []string `json:"frontierPlurals"`
+		Unicode         struct {
 			Path    string `json:"path"`
 			Symbol  string `json:"symbol"`
 			Package string `json:"package"`
@@ -345,8 +351,8 @@ process.stdout.write(JSON.stringify({
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode typed UI catalog acceptance result: %v\n%s", err, output)
 	}
-	if got.Version != 33 {
-		t.Errorf("catalog version = %d, want 33", got.Version)
+	if got.Version != 34 {
+		t.Errorf("catalog version = %d, want 34", got.Version)
 	}
 	if !got.Membership.Known || got.Membership.Unknown || got.Membership.NonString {
 		t.Errorf("catalog membership contract = %#v", got.Membership)
@@ -375,6 +381,14 @@ process.stdout.write(JSON.stringify({
 	wantPlurals := []string{"1 компонент", "2 компонента", "5 компонентов", "11 компонентов", "21 компонент"}
 	if !slices.Equal(got.Plurals, wantPlurals) {
 		t.Errorf("RU component plurals = %#v, want %#v", got.Plurals, wantPlurals)
+	}
+	wantFrontierPlurals := []string{
+		"1 точка входа восстановлена · 1 предложение отклонено · 1 кандидату модель не предложила точку входа",
+		"2 точки входа восстановлены · 2 предложения отклонены · 2 кандидатам модель не предложила точку входа",
+		"5 точек входа восстановлено · 5 предложений отклонено · 5 кандидатам модель не предложила точку входа",
+	}
+	if !slices.Equal(got.FrontierPlurals, wantFrontierPlurals) {
+		t.Errorf("RU model frontier plurals = %#v, want %#v", got.FrontierPlurals, wantFrontierPlurals)
 	}
 	for name, pair := range map[string][2]string{
 		"path":    {got.Unicode.Path, got.Rendered.Path},

@@ -706,9 +706,9 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
 	if !allEntryHandoffStringsEqual(modelAssisted.ModelBadgeText, "С участием модели") ||
 		countString(modelAssisted.ModelStateText, "точный статический вызов регистрации") != 2 ||
 		countString(modelAssisted.ModelStateText, "объявленный дескриптор") != 7 ||
-		!strings.Contains(modelAssisted.ModelFrontierText, "11 восстановлено") ||
-		!strings.Contains(modelAssisted.ModelFrontierText, "2 предложений отклонено") ||
-		!strings.Contains(modelAssisted.ModelFrontierText, "по 2 кандидатам модель не предложила точку входа") ||
+		!strings.Contains(modelAssisted.ModelFrontierText, "11 точек входа восстановлено") ||
+		!strings.Contains(modelAssisted.ModelFrontierText, "2 предложения отклонены") ||
+		!strings.Contains(modelAssisted.ModelFrontierText, "2 кандидатам модель не предложила точку входа") ||
 		!strings.Contains(modelAssisted.ModelFrontierText, "3 кандидатов и 6 фактов") ||
 		!strings.Contains(modelAssisted.ModelFrontierText, "2 небезопасных фактов") ||
 		!strings.Contains(modelAssisted.ModelFrontierText, "1 недостижимых кандидатов") {
