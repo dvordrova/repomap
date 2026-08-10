@@ -11,6 +11,7 @@ import (
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/entrycall"
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/snapshot"
 )
 
 func TestLoadEntryCallReportProjectionProjectsAcceptedExactTarget(t *testing.T) {
@@ -249,6 +250,105 @@ func TestRunManifestBindsAndReplaysEntryCallProjection(t *testing.T) {
 	if err := manifest.VerifyEntryCallArtifacts(runDir, reportJSON); err == nil ||
 		!strings.Contains(err.Error(), "sha256 mismatch") {
 		t.Fatalf("tampered result error = %v", err)
+	}
+}
+
+func TestGenerateAuthorizedPublishesAcceptedEntryCallAfterSnapshotCredentialRedaction(t *testing.T) {
+	fixture := newTargetPageManifestFixture(t)
+	var target *analysistarget.Target
+	for _, projection := range fixture.container.Targets {
+		if projection.Target.Ref == fixture.appRef {
+			owned := projection.Target.Snapshot()
+			target = &owned
+			break
+		}
+	}
+	if target == nil {
+		t.Fatal("fixture target is absent from container")
+	}
+
+	repository := newRunManifestRepository(t)
+	if err := os.MkdirAll(filepath.Join(repository, filepath.Dir(target.Roots[0].Path)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, repository, target.Roots[0].Path, "package main\n\nfunc main() {}\n")
+	state, err := freshness.CaptureRepository(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority, err := ConfirmRunAuthority(repository, state, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repositorySHA256, err := state.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runDir := t.TempDir()
+	const redactedSnapshot = "[redacted: credential assignment detected]\n"
+	writeTestFile(t, runDir, "snapshot.json", redactedSnapshot)
+	writeTargetPageManifestArtifact(
+		t,
+		runDir,
+		snapshot.TargetRunContainerArtifactFilename,
+		fixture.singleContainerRaw,
+	)
+	metadata, err := json.Marshal(map[string]any{
+		"analysis_target_ref":          target.Ref,
+		"analysis_target_kind":         target.Kind,
+		"analysis_target_module":       target.ModulePath,
+		"analysis_target_display_path": target.DisplayPath(),
+		"analysis_target_package":      target.PackagePath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, runDir, "metadata.json", string(metadata))
+	writeEntryCallReportArtifacts(t, runDir, target, repositorySHA256, nil, nil)
+
+	if err := GenerateAuthorized(runDir, authority); err != nil {
+		t.Fatalf("GenerateAuthorized: %v", err)
+	}
+	reportJSON, err := os.ReadFile(filepath.Join(runDir, "report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persisted ReportData
+	if err := json.Unmarshal(reportJSON, &persisted); err != nil {
+		t.Fatal(err)
+	}
+	if persisted.AnalysisTarget == nil || persisted.AnalysisTarget.Ref != target.Ref ||
+		persisted.EntryCall == nil || len(persisted.EntryCall.Families) != 1 {
+		t.Fatalf("restored target/entry-call = %#v / %#v", persisted.AnalysisTarget, persisted.EntryCall)
+	}
+	manifest, err := ReadRunManifest(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manifest.VerifyEntryCallArtifacts(runDir, reportJSON); err != nil {
+		t.Fatalf("VerifyEntryCallArtifacts: %v", err)
+	}
+	snapshotRaw, err := os.ReadFile(filepath.Join(runDir, "snapshot.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(snapshotRaw) != redactedSnapshot {
+		t.Fatalf("mandatory snapshot redaction changed: %q", snapshotRaw)
+	}
+	var driftedMetadata map[string]any
+	if err := json.Unmarshal(metadata, &driftedMetadata); err != nil {
+		t.Fatal(err)
+	}
+	driftedMetadata["analysis_target_package"] = target.PackagePath + "/other"
+	driftedRaw, err := json.Marshal(driftedMetadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, runDir, "metadata.json", string(driftedRaw))
+	if _, err := ReadRunDir(runDir); err == nil ||
+		!strings.Contains(err.Error(), "metadata/container binding mismatch") {
+		t.Fatalf("metadata/container drift error = %v", err)
 	}
 }
 
