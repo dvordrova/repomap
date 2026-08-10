@@ -9,6 +9,22 @@ import (
 	"testing"
 )
 
+func TestEntrypointCardsKeepSourceActionsBelowIdentity(t *testing.T) {
+	style, err := os.ReadFile(filepath.Join("templates", "style.css"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(style)
+	if !strings.Contains(css,
+		".rm-map-entry-card__heading { align-items: start; display: grid; gap: .35rem; grid-template-columns: minmax(0, 1fr); min-width: 0; }") {
+		t.Fatal("entrypoint cards can collapse their identity beside long source actions")
+	}
+	if !strings.Contains(css,
+		".rm-map-entry-card__sources { align-items: baseline; display: flex; flex-wrap: wrap; gap: .25rem .7rem; justify-content: flex-start; min-width: 0; }") {
+		t.Fatal("entrypoint source actions are not kept in the vertical reading flow")
+	}
+}
+
 // Executable targets open on a neutral landscape. Entrypoints is an explicit
 // first-class mode; choosing it reveals source-backed cards without selecting
 // a handoff group until the reader asks to explore one entry.
