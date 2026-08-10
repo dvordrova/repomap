@@ -58,7 +58,10 @@ type ResultEntry struct {
 
 type RejectedFamilyReason string
 
-const RejectedFamilyUnreachable RejectedFamilyReason = "unreachable_from_root"
+const (
+	RejectedFamilyUnreachable    RejectedFamilyReason = "unreachable_from_root"
+	RejectedFamilySelectionLimit RejectedFamilyReason = "selection_limit_exceeded"
+)
 
 type RejectedResultFamily struct {
 	Ref    string               `json:"ref"`
@@ -392,8 +395,8 @@ func decodeResponse(raw []byte) (Response, error) {
 }
 
 func validateSelectedFamilies(request RequestEntry, response ResponseEntry) ([]string, []RejectedResultFamily, error) {
-	if len(response.FamilyRefs) > MaxSelectedFamiliesPerRoot {
-		return nil, nil, fmt.Errorf("entry call: response selection exceeds per-root bound")
+	if len(response.FamilyRefs) > MaxFamiliesPerRoot {
+		return nil, nil, fmt.Errorf("entry call: response selection exceeds per-root resource bound")
 	}
 	familyByRef := make(map[string]RequestFamily, len(request.Families))
 	for _, family := range request.Families {
@@ -409,6 +412,17 @@ func validateSelectedFamilies(request RequestEntry, response ResponseEntry) ([]s
 			return nil, nil, fmt.Errorf("entry call: response repeats family ref")
 		}
 		remaining[ref] = family
+	}
+	if len(remaining) > MaxSelectedFamiliesPerRoot {
+		rejected := make([]RejectedResultFamily, 0, len(remaining))
+		for _, family := range request.Families {
+			if _, selected := remaining[family.Ref]; selected {
+				rejected = append(rejected, RejectedResultFamily{
+					Ref: family.Ref, Reason: RejectedFamilySelectionLimit,
+				})
+			}
+		}
+		return []string{}, rejected, nil
 	}
 	reachable := map[string]bool{request.RootNodeRef: true}
 	ordered := make([]string, 0, len(remaining))

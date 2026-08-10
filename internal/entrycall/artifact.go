@@ -252,7 +252,8 @@ func validateResult(result Result) error {
 	for _, entry := range result.Entries {
 		if !validRef(entry.RootRef, "r") || sanitizeLabel(entry.Label) != entry.Label ||
 			!validLocation(entry.Declaration) || entry.Families == nil || entry.RejectedFamilies == nil || entry.Frontier == nil ||
-			len(entry.Families)+len(entry.RejectedFamilies) > MaxSelectedFamiliesPerRoot ||
+			len(entry.Families) > MaxSelectedFamiliesPerRoot ||
+			len(entry.Families)+len(entry.RejectedFamilies) > MaxFamiliesPerRoot ||
 			entry.Omitted.Nodes < 0 || entry.Omitted.Families < 0 || entry.Omitted.Witnesses < 0 {
 			return fmt.Errorf("entry call: invalid result entry")
 		}
@@ -283,8 +284,19 @@ func validateResult(result Result) error {
 				}
 			}
 		}
+		overLimitSelection := len(entry.RejectedFamilies) > MaxSelectedFamiliesPerRoot
+		if overLimitSelection && len(entry.Families) != 0 {
+			return fmt.Errorf("entry call: invalid over-limit result entry")
+		}
+		if !overLimitSelection && len(entry.Families)+len(entry.RejectedFamilies) > MaxSelectedFamiliesPerRoot {
+			return fmt.Errorf("entry call: invalid bounded result entry")
+		}
 		for _, rejected := range entry.RejectedFamilies {
-			if !validRef(rejected.Ref, "f") || rejected.Reason != RejectedFamilyUnreachable {
+			expectedReason := RejectedFamilyUnreachable
+			if overLimitSelection {
+				expectedReason = RejectedFamilySelectionLimit
+			}
+			if !validRef(rejected.Ref, "f") || rejected.Reason != expectedReason {
 				return fmt.Errorf("entry call: invalid rejected result family")
 			}
 			if _, duplicate := seenFamilies[rejected.Ref]; duplicate {
