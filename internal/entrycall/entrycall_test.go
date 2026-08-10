@@ -425,6 +425,87 @@ func TestSurfaceProposalRejectsInvalidSiblingLocallyButUnknownRefsAtomically(t *
 	}
 }
 
+func TestOverLimitFamilySelectionRejectsEntryLocallyAndPreservesExactCommand(t *testing.T) {
+	compilation, err := Compile(surfaceFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := compilation.Request.Entries[0]
+	if len(entry.Families) != MaxSelectedFamiliesPerRoot+1 {
+		t.Fatalf("fixture families = %d, want %d", len(entry.Families), MaxSelectedFamiliesPerRoot+1)
+	}
+	command := candidateByForm(t, compilation.Request.SurfaceCatalog, SurfaceCandidateKeyedComposite)
+	proposal := ResponseSurfaceProposal{
+		CandidateRef: command.Ref, KindRef: SurfaceKindRefCLICommand,
+		Bindings: []ResponseSurfaceBinding{
+			{SlotRef: SurfaceSlotRefIdentity, FactRef: surfaceFactRefByValue(t, command, "serve [path]")},
+			{SlotRef: SurfaceSlotRefHandler, FactRef: surfaceFactRefByValue(t, command, "runServe")},
+		},
+	}
+	familyRefs := make([]string, 0, len(entry.Families))
+	for _, family := range entry.Families {
+		familyRefs = append(familyRefs, family.Ref)
+	}
+	reversed := append([]string{}, familyRefs...)
+	for left, right := 0, len(reversed)-1; left < right; left, right = left+1, right-1 {
+		reversed[left], reversed[right] = reversed[right], reversed[left]
+	}
+
+	var canonical []byte
+	for index, refs := range [][]string{familyRefs, reversed} {
+		response := emptySurfaceResponse(compilation)
+		response.Entries[0].FamilyRefs = refs
+		response.SurfaceProposals = []ResponseSurfaceProposal{proposal}
+		raw, err := json.Marshal(response)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := Reduce(compilation, raw)
+		if err != nil {
+			t.Fatalf("Reduce order %d: %v", index, err)
+		}
+		if result.SelectedFamilyCount() != 0 || result.RejectedFamilyCount() != len(familyRefs) ||
+			result.SelectedSurfaceCount() != 1 || result.RejectedSurfaceCount() != 0 ||
+			result.SurfaceProposals[0].Identity == nil || result.SurfaceProposals[0].Identity.Text != "serve [path]" {
+			t.Fatalf("isolated over-limit selection order %d = %+v", index, result)
+		}
+		for _, rejected := range result.Entries[0].RejectedFamilies {
+			if rejected.Reason != RejectedFamilySelectionLimit {
+				t.Fatalf("rejected reason = %q, want %q", rejected.Reason, RejectedFamilySelectionLimit)
+			}
+		}
+		result.RepositoryStateSHA256 = strings.Repeat("f", 64)
+		encoded, err := EncodeResult(result)
+		if err != nil {
+			t.Fatalf("EncodeResult order %d: %v", index, err)
+		}
+		if _, err := DecodeResult(encoded); err != nil {
+			t.Fatalf("DecodeResult order %d: %v", index, err)
+		}
+		if canonical == nil {
+			canonical = encoded
+		} else if string(encoded) != string(canonical) {
+			t.Fatalf("over-limit isolation depends on provider order:\n%s\n%s", canonical, encoded)
+		}
+	}
+
+	unknown := emptySurfaceResponse(compilation)
+	unknown.Entries[0].FamilyRefs = append(append([]string{}, familyRefs[:len(familyRefs)-1]...), "f999")
+	unknown.SurfaceProposals = []ResponseSurfaceProposal{proposal}
+	raw, _ := json.Marshal(unknown)
+	if _, err := Reduce(compilation, raw); err == nil || !strings.Contains(err.Error(), "unknown family ref") {
+		t.Fatalf("unknown over-limit family ref did not reject atomically: %v", err)
+	}
+
+	resourceOverflow := emptySurfaceResponse(compilation)
+	resourceOverflow.Entries[0].FamilyRefs = make([]string, MaxFamiliesPerRoot+1)
+	resourceOverflow.SurfaceProposals = []ResponseSurfaceProposal{proposal}
+	raw, _ = json.Marshal(resourceOverflow)
+	if _, err := Reduce(compilation, raw); err == nil || !strings.Contains(err.Error(), "resource bound") {
+		t.Fatalf("family resource overflow did not reject atomically: %v", err)
+	}
+}
+
 func TestDuplicateSurfaceProposalsRejectCandidateLocallyAndOrderIndependently(t *testing.T) {
 	compilation, err := Compile(surfaceFixture())
 	if err != nil {
