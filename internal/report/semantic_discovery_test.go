@@ -19,8 +19,9 @@ func TestSemanticDiscoveryReportFormatVersion(t *testing.T) {
 	// Decision 242: plural per-entry mechanisms move onto Canvas 13 (39).
 	// Decision 246: persisted Study investigation joins the report (42).
 	// D280 module-surface identity changes report target authority (46).
-	if CurrentFormatVersion != 46 {
-		t.Fatalf("CurrentFormatVersion = %d, want 46 for module-level analysis targets", CurrentFormatVersion)
+	// D281 publishes exact module-library exported API locations (47).
+	if CurrentFormatVersion != 47 {
+		t.Fatalf("CurrentFormatVersion = %d, want 47 for exact module-library API projection", CurrentFormatVersion)
 	}
 }
 

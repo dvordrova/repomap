@@ -9,9 +9,10 @@ import (
 	"testing"
 )
 
-// Executable targets open directly in their exact Entrypoints context. There
-// is no lens selector; the target-rooted handoff group is selected on Canvas.
-func TestEntrypointLensUsesCanvasWithoutLegacySideList(t *testing.T) {
+// Executable targets open on a neutral landscape. Entrypoints is an explicit
+// first-class mode; choosing it reveals source-backed cards without selecting
+// a handoff group until the reader asks to explore one entry.
+func TestEntrypointModeStartsNeutralAndExploresOneExactEntry(t *testing.T) {
 	if ArchitectureCanvasVersion != 15 || EntrypointHandoffGroupVersion != 2 {
 		t.Fatalf("fixture requires Canvas15/group v2, got %d/%d", ArchitectureCanvasVersion, EntrypointHandoffGroupVersion)
 	}
@@ -118,12 +119,18 @@ const report = {
     ],
     subsystems: [], behavior_anchors: [], flows: [], structural_edges: [],
     surfaces: [
-      { id: "surface-main", kind: "process_entry", name: "main", participating_component_ids: ["c1"] },
-      { id: "surface-zero", kind: "process_entry", name: "zero.main", participating_component_ids: [],
+      { id: "surface-main", surface_role: "entry_surface", kind: "process_entry", name: "main", participating_component_ids: ["c1"],
+        evidence: [{ path: "main.go", line: 10, column: 6 }] },
+      { id: "surface-zero", surface_role: "entry_surface", kind: "process_entry", name: "zero.main", participating_component_ids: [],
         evidence: [{ path: "cmd/zero/main.go", line: 7, column: 6 }] },
     ],
     entry_handoff_groups: [groupA, groupB],
   },
+  entry_call: { version: 1, families: [{
+    caller_label: "fixture.main", callee_label: "fixture.service.Start", witness_count: 1,
+    root_declaration: { path: "main.go", line: 10, column: 6 },
+    callsites: [{ path: "main.go", line: 15, column: 9 }],
+  }] },
   repository_atlas: { version: 1, units: [], entities: [], observations: [], evidence: [], relations: [] },
 };
 const window = {
@@ -143,7 +150,9 @@ const document = {
     if (selector === ".rm-workspace") return workspace;
     return Object.values(roots).flatMap((root) => walk(root)).find((node) => matches(node, selector)) || null;
   },
-  querySelectorAll() { return []; },
+  querySelectorAll(selector) {
+    return Object.values(roots).flatMap((root) => walk(root)).filter((node) => matches(node, selector));
+  },
 };
 document.documentElement = { lang: report.report_language };
 window.document = document;
@@ -169,32 +178,44 @@ api.restoreWorkspaceFromRoute({ replace: true });
 Promise.resolve().then(() => Promise.resolve()).then(() => {
   const root = roots["rm-architecture"];
   const targetLinks = roots["rm-tabs"].querySelectorAll(".rm-target-link");
-  const lenses = walk(root).filter((node) => node.attributes["data-map-lens"]);
-  const selectors = root.querySelectorAll(".rm-map-entry-selector");
-  const sourceActions = root.querySelectorAll(".rm-source-action-link");
-  const zeroHopEntries = root.querySelectorAll(".rm-map-entry-zero-hop");
-  const zeroHopActions = zeroHopEntries.flatMap((entry) => entry.querySelectorAll(".rm-source-action-link"));
-  const overflowCalls = root.querySelectorAll(".rm-map-entry-overflow__call");
   const lensHost = document.getElementById("rm-map-lens-objects");
-  const contextDetails = lensHost ? walk(lensHost).filter((node) => node.tagName === "DETAILS") : [];
+  const modeContext = root.querySelector(".rm-map-mode-context");
+  const modes = walk(root).filter((node) => node.attributes["data-map-mode"]);
+  const initialModeIDs = modes.map((node) => node.attributes["data-map-mode"]);
+  const initialModeStates = modes.map((node) => node.getAttribute("aria-pressed"));
+  const initialLensHostMode = lensHost && lensHost.getAttribute("data-lens") || "";
+  const initialContextHidden = !!(modeContext && modeContext.hidden);
+  const initialEntryCardCount = root.querySelectorAll(".rm-map-entry-card").length;
+  const initialSelectedGroups = selectedGroups.slice();
+  const initialSelectedLenses = selectedLenses.slice();
+  const entryMode = modes.find((node) => node.attributes["data-map-mode"] === "entrypoints");
+  if (entryMode && typeof entryMode.onclick === "function") entryMode.onclick();
+  const cards = root.querySelectorAll(".rm-map-entry-card");
+  const explore = root.querySelectorAll(".rm-map-entry-card__explore");
+  const sourceActions = lensHost ? lensHost.querySelectorAll(".rm-source-action-link") : [];
+  const familyDetails = lensHost ? lensHost.querySelectorAll(".rm-map-entry-families") : [];
+  const familyRows = lensHost ? lensHost.querySelectorAll(".rm-map-entry-family-row") : [];
+  const selectedBeforeExplore = selectedGroups.slice();
+  if (explore[0] && typeof explore[0].onclick === "function") explore[0].onclick();
   process.stdout.write(JSON.stringify({
     targetCount: targetLinks.length,
     targetHref: targetLinks[0] && targetLinks[0].getAttribute("href") || "",
     targetCurrent: targetLinks[0] && targetLinks[0].getAttribute("aria-current") || "",
-    lensIDs: lenses.map((node) => node.attributes["data-map-lens"]),
+    initialModeIDs, initialModeStates, initialLensHostMode, initialContextHidden,
+    initialEntryCardCount, initialSelectedGroups, initialSelectedLenses,
+    modeStates: modes.map((node) => node.getAttribute("aria-pressed")),
     lensHostPresent: !!lensHost,
     lensHostMode: lensHost && lensHost.getAttribute("data-lens") || "",
-    selectorLabels: selectors.map((node) => node.textContent),
-    selectorCount: selectors.length, overflowCallCount: overflowCalls.length,
+    contextHidden: !!(modeContext && modeContext.hidden),
+    entryCardCount: cards.length, exploreCount: explore.length,
+    familyDisclosureCount: familyDetails.length,
+    familyRowText: familyRows.map((node) => node.textContent),
     sourceActionCount: sourceActions.length,
     sourceHrefs: sourceActions.map((item) => item.getAttribute("href") || ""),
-    zeroHopCount: zeroHopEntries.length,
-    zeroHopHrefs: zeroHopActions.map((item) => item.getAttribute("href") || ""),
-    zeroHopText: zeroHopEntries.map((item) => item.textContent),
+    selectedBeforeExplore,
     selectedGroups,
     selectedLenses,
-    selectedStates: selectors.map((item) => item.getAttribute("aria-pressed")),
-    contextDetails: contextDetails.length,
+    selectedStates: explore.map((item) => item.getAttribute("aria-pressed")),
     hash: window.location.hash,
     text: root.textContent.replace(/\s+/g, " ").trim(),
   }));
@@ -222,22 +243,31 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
 	if en.TargetCount != 1 || en.TargetHref != "#canvas" || en.TargetCurrent != "page" || en.Hash != "#canvas" {
 		t.Fatalf("single executable target rail = %#v", en)
 	}
-	if len(en.LensIDs) != 0 || !en.LensHostPresent || en.LensHostMode != "entrypoints" {
-		t.Fatalf("Entrypoints must be default context without a lens selector: %#v", en)
+	if strings.Join(en.InitialModeIDs, ",") != "landscape,entrypoints,integrations" ||
+		strings.Join(en.InitialModeStates, ",") != "true,false,false" ||
+		!en.LensHostPresent || en.InitialLensHostMode != "landscape" || !en.InitialContextHidden ||
+		en.InitialEntryCardCount != 0 || len(en.InitialSelectedGroups) != 0 ||
+		strings.Join(en.InitialSelectedLenses, ",") != "landscape" {
+		t.Fatalf("executable did not start on a neutral, unselected landscape: %#v", en)
 	}
-	if en.SelectorCount != 2 || en.OverflowCallCount == 0 || en.ContextDetails != 0 || en.SourceActionCount == 0 {
-		t.Fatalf("default Entrypoints context = selectors %d overflow calls %d details %d sources %d",
-			en.SelectorCount, en.OverflowCallCount, en.ContextDetails, en.SourceActionCount)
+	if strings.Join(en.ModeStates, ",") != "false,true,false" || en.LensHostMode != "entrypoints" ||
+		en.ContextHidden || en.EntryCardCount != 3 || en.ExploreCount != 2 ||
+		en.FamilyDisclosureCount != 1 || len(en.FamilyRowText) != 1 ||
+		!strings.Contains(en.FamilyRowText[0], "Start") || en.SourceActionCount < 4 {
+		t.Fatalf("explicit Entrypoints launchpad = %#v", en)
 	}
-	if en.ZeroHopCount != 1 || len(en.ZeroHopHrefs) != 1 ||
-		!strings.Contains(en.ZeroHopHrefs[0], "/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/cmd/zero/main.go#L7") ||
-		!strings.Contains(strings.Join(en.ZeroHopText, " "), "zero.main") {
+	if !strings.Contains(en.Text, "14 direct calls · 2 mapped areas · 0 off-map") ||
+		!strings.Contains(en.Text, "1 direct calls · 0 mapped areas · 1 off-map") {
+		t.Fatalf("Entrypoints map summary conflated missing source ownership or same-component calls with off-map targets: %s", en.Text)
+	}
+	if len(en.SelectedBeforeExplore) != 0 || strings.Join(en.SelectedGroups, ",") != "entry-group-a" ||
+		strings.Join(en.SelectedStates, ",") != "true,false" ||
+		len(en.SelectedLenses) < 2 || en.SelectedLenses[len(en.SelectedLenses)-1] != "entrypoints" {
+		t.Fatalf("entry exploration was automatic or not exclusive: %#v", en)
+	}
+	if !strings.Contains(strings.Join(en.SourceHrefs, ","),
+		"/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/cmd/zero/main.go#L7") {
 		t.Fatalf("unowned zero-hop process entry is not visible and source-backed: %#v", en)
-	}
-	if !strings.Contains(strings.Join(en.SelectedGroups, ","), "entry-group-a") ||
-		!strings.Contains(strings.Join(en.SelectedLenses, ","), "entrypoints") ||
-		strings.Join(en.SelectedStates, ",") != "true,false" {
-		t.Fatalf("exact target root was not default-selected on Canvas: %#v", en)
 	}
 	for _, href := range en.SourceHrefs {
 		if !strings.Contains(href, "github.com/acme/fixture/blob/") {
@@ -251,9 +281,12 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
 	}
 
 	ru := run("ru")
-	if len(ru.LensIDs) != 0 || ru.SelectorCount != en.SelectorCount ||
-		ru.SourceActionCount != en.SourceActionCount || ru.LensHostMode != "entrypoints" {
-		t.Fatalf("default Entrypoints context changed across locales: EN %#v RU %#v", en, ru)
+	if strings.Join(ru.InitialModeIDs, ",") != strings.Join(en.InitialModeIDs, ",") ||
+		ru.EntryCardCount != en.EntryCardCount || ru.ExploreCount != en.ExploreCount ||
+		ru.FamilyDisclosureCount != en.FamilyDisclosureCount ||
+		ru.SourceActionCount != en.SourceActionCount || ru.LensHostMode != "entrypoints" ||
+		len(ru.InitialSelectedGroups) != 0 {
+		t.Fatalf("neutral start or explicit Entrypoints behavior changed across locales: EN %#v RU %#v", en, ru)
 	}
 }
 
@@ -553,28 +586,30 @@ app.ready.then(() => {
 }
 
 type entryHandoffAssetResult struct {
-	TargetCount                int      `json:"targetCount"`
-	TargetHref                 string   `json:"targetHref"`
-	TargetCurrent              string   `json:"targetCurrent"`
-	LensIDs                    []string `json:"lensIDs"`
-	LensHostPresent            bool     `json:"lensHostPresent"`
-	LensHostMode               string   `json:"lensHostMode"`
-	SelectorLabels             []string `json:"selectorLabels"`
-	SelectorCount              int      `json:"selectorCount"`
-	OverflowCallCount          int      `json:"overflowCallCount"`
-	ImmediateSourceActionCount int      `json:"immediateSourceActionCount"`
-	DefaultSelectionCount      int      `json:"defaultSelectionCount"`
-	DefaultSelectedStates      []string `json:"defaultSelectedStates"`
-	FocusSelectionCount        int      `json:"focusSelectionCount"`
-	SourceActionCount          int      `json:"sourceActionCount"`
-	SourceHrefs                []string `json:"sourceHrefs"`
-	ZeroHopCount               int      `json:"zeroHopCount"`
-	ZeroHopHrefs               []string `json:"zeroHopHrefs"`
-	ZeroHopText                []string `json:"zeroHopText"`
-	SelectedGroups             []string `json:"selectedGroups"`
-	SelectedLenses             []string `json:"selectedLenses"`
-	SelectedStates             []string `json:"selectedStates"`
-	ContextDetails             int      `json:"contextDetails"`
-	Hash                       string   `json:"hash"`
-	Text                       string   `json:"text"`
+	TargetCount           int      `json:"targetCount"`
+	TargetHref            string   `json:"targetHref"`
+	TargetCurrent         string   `json:"targetCurrent"`
+	InitialModeIDs        []string `json:"initialModeIDs"`
+	InitialModeStates     []string `json:"initialModeStates"`
+	InitialLensHostMode   string   `json:"initialLensHostMode"`
+	InitialContextHidden  bool     `json:"initialContextHidden"`
+	InitialEntryCardCount int      `json:"initialEntryCardCount"`
+	InitialSelectedGroups []string `json:"initialSelectedGroups"`
+	InitialSelectedLenses []string `json:"initialSelectedLenses"`
+	ModeStates            []string `json:"modeStates"`
+	LensHostPresent       bool     `json:"lensHostPresent"`
+	LensHostMode          string   `json:"lensHostMode"`
+	ContextHidden         bool     `json:"contextHidden"`
+	EntryCardCount        int      `json:"entryCardCount"`
+	ExploreCount          int      `json:"exploreCount"`
+	FamilyDisclosureCount int      `json:"familyDisclosureCount"`
+	FamilyRowText         []string `json:"familyRowText"`
+	SourceActionCount     int      `json:"sourceActionCount"`
+	SourceHrefs           []string `json:"sourceHrefs"`
+	SelectedBeforeExplore []string `json:"selectedBeforeExplore"`
+	SelectedGroups        []string `json:"selectedGroups"`
+	SelectedLenses        []string `json:"selectedLenses"`
+	SelectedStates        []string `json:"selectedStates"`
+	Hash                  string   `json:"hash"`
+	Text                  string   `json:"text"`
 }

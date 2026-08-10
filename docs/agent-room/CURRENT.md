@@ -65,6 +65,7 @@ Active decisions (each approved by the repository owner via its supervisory goal
 61. decisions/278-target-label-and-freshness-truth.md
 62. decisions/279-ordinary-target-portfolio-candidate-surface.md
 63. decisions/280-module-product-surfaces.md
+64. decisions/281-map-context-and-library-api.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
@@ -780,6 +781,26 @@ Approved by:
 	by `go.mod`, then into exact `main` executables and one aggregate exported
 	library surface rather than one Study/Architecture run per package,
 	2026-08-10.
+
+## Decision 281
+
+Status:
+	ACTIVE. Module libraries open on a deterministic exact API launchpad;
+	executables open on a neutral Map. Desktop exposes one explicit context switch
+	for API/Map/Entrypoints/Integrations without automatic selection, global
+	dimming, relayout or transform changes. Entrypoints uses only top-level entry
+	surfaces plus accepted entry-call families; Integrations restores bounded
+	exact boundary/resource callsites including honestly labeled off-map evidence.
+	Report-owned Library API contains bounded exported funcs/methods/types/
+	consts/vars with exact source actions independent of model Architecture.
+	Study display strips package-disambiguation prefixes before bare-symbol
+	formatting. Report advances to 47 and UI catalog to 27; Manifest 18, Canvas 15
+	and provider identities stay unchanged.
+
+Approved by:
+	Repository owner after fresh Telebot/Restic screenshot review and the explicit
+	request for a hard redesign of entrypoints, useful library objects, corrected
+	`v3` labels, understandable context UI and visible Integrations, 2026-08-10.
 
 ## Decision 241 follow-up
 

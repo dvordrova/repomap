@@ -67,7 +67,7 @@ const language = process.argv[3] || "en";
 const paths = ["main.go", "start.go", "local.go", "offmap.go", "shared.go", "finish.go", "sibling.go", "tail.go"];
 function location(path, line, column) { return { path, line, column }; }
 const nodes = [
-  { id: "node-1", ordinal: 1, label: "fixture.main", declaration: location("main.go", 10, 2), component_ids: ["c1"] },
+  { id: "node-1", ordinal: 1, label: "telebot.v3 · NewBot", declaration: location("main.go", 10, 2), component_ids: ["c1"] },
   { id: "node-2", ordinal: 2, label: "fixture.start", declaration: location("start.go", 11, 2), component_ids: ["c2"] },
   { id: "node-3", ordinal: 3, label: "fixture.local", declaration: location("local.go", 12, 2), component_ids: ["c2"] },
   { id: "node-4", ordinal: 4, label: "fixture.offmap", declaration: location("offmap.go", 13, 2), component_ids: [] },
@@ -91,7 +91,7 @@ const fourEdgeMechanism = {
   reading_ordinals: [1], nodes: nodes.slice(0, 5), edges: edges.slice(0, 4),
 };
 const siblingNodes = [
-  { id: "sibling-root", ordinal: 1, label: "fixture.main", declaration: location("main.go", 10, 2), component_ids: ["c1"] },
+  { id: "sibling-root", ordinal: 1, label: "telebot.v3 · NewBot", declaration: location("main.go", 10, 2), component_ids: ["c1"] },
   { id: "sibling-middle", ordinal: 2, label: "fixture.sibling", declaration: location("sibling.go", 20, 2), component_ids: ["c2"] },
   { id: "sibling-tail", ordinal: 3, label: "fixture.tail", declaration: location("tail.go", 21, 2), component_ids: ["c1"] },
 ];
@@ -341,7 +341,7 @@ Promise.resolve().then(() => {}).then(() => {
 	}
 	for _, required := range []string{
 		"Source trace", "Exact direct calls in source order", "not a runtime trace",
-		"Goroutine start", "Deferred call", "main.go", "10 main()", "30", "start()", "local()",
+		"Goroutine start", "Deferred call", "main.go", "10 NewBot()", "30", "start()", "local()",
 		"Show on map",
 	} {
 		if !strings.Contains(en.DetailText, required) {
@@ -355,6 +355,9 @@ Promise.resolve().then(() => {}).then(() => {
 	}
 	if strings.Contains(en.DetailText, "gitlab.com/acme/fixture/pkg") {
 		t.Fatalf("Study detail leaked a fully-qualified Go receiver: %s", en.DetailText)
+	}
+	if strings.Contains(en.DetailText+en.MapText, "v3 ·") {
+		t.Fatalf("Study trace leaked the package disambiguation prefix: detail=%s map=%s", en.DetailText, en.MapText)
 	}
 	if !en.PreparedAbsent || en.PreparedText != "" ||
 		!strings.Contains(en.MapText, "Exact transitions without a map arrow") ||
@@ -410,7 +413,7 @@ Promise.resolve().then(() => {}).then(() => {
 	ru := run("ru", "desktop")
 	for _, required := range []string{
 		"След по коду", "Точные прямые вызовы в порядке исходников", "Это не трассировка выполнения",
-		"Запуск goroutine", "Отложенный вызов", "10 main()", "30", "start()", "local()", "Показать на карте",
+		"Запуск goroutine", "Отложенный вызов", "10 NewBot()", "30", "start()", "local()", "Показать на карте",
 		"Точные переходы без стрелки на карте",
 	} {
 		if !strings.Contains(ru.DetailText+ru.PreparedText+ru.MapText, required) {

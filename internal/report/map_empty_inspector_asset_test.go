@@ -5,11 +5,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
 
-func TestMapRouteEmptyInspectorIsBoundedActionableAndSelectionAware(t *testing.T) {
+func TestD281MapRouteStartsNeutralWithExplicitContextModes(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is unavailable")
@@ -178,11 +179,11 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
  const lensControl=walk(mapRoot).find(n=>has(n,"rm-map-lens-control"));
  const lensButtons=lensControl?walk(lensControl).filter(n=>Object.prototype.hasOwnProperty.call(n.attributes||{},"data-map-lens")):[];
  const initialLensPressed=lensButtons.map(n=>n.getAttribute("aria-pressed"));
- if(lensButtons[0])lensButtons[0].click();
+ if(lensButtons[1])lensButtons[1].click();
  const entryLensPressed=lensButtons.map(n=>n.getAttribute("aria-pressed"));
  if(lensButtons[0])lensButtons[0].click();
  const clearedLensPressed=lensButtons.map(n=>n.getAttribute("aria-pressed"));
- if(lensButtons[1])lensButtons[1].click();
+ if(lensButtons[2])lensButtons[2].click();
  const integrationLensPressed=lensButtons.map(n=>n.getAttribute("aria-pressed"));
  const toolbarInteractive=toolbar?walk(toolbar).filter(n=>n.tagName==="A"||n.tagName==="BUTTON"):[];
  const layout=walk(mapRoot).find(n=>has(n,"rm-map-primary-layout"));
@@ -193,16 +194,16 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
  mobileMedia.set(true);
  const hashBefore=window.location.hash,transformBefore=canvasTransform;
  inspectorVisibility(true);
- const hiddenOnSelection=rail.hidden&&layout.classList.contains("has-detail-inspector");
+ const hiddenOnSelection=!!(rail&&rail.hidden);
  inspectorVisibility(false);
- const restoredOnClose=!rail.hidden&&!layout.classList.contains("has-detail-inspector");
+ const restoredOnClose=!!(rail&&!rail.hidden);
  process.stdout.write(JSON.stringify({
   routeView:api.workspaceStateSnapshot().view,hash:window.location.hash,hashStable:hashBefore===window.location.hash,
   transformStable:transformBefore===canvasTransform,railCount:rails.length,
   startCount:starts.length,startTag:start&&start.tagName,startHref:start&&start.getAttribute("href"),startTarget:start&&start.getAttribute("target"),startRel:start&&start.getAttribute("rel"),
   startText:start&&start.textContent,startKind:start&&start.getAttribute("data-rm-map-start-here"),
   unavailableCount:nodes.filter(n=>has(n,"rm-map-empty-inspector__unavailable")).length,railNodeCount:nodes.length,
-  forbiddenWallCount:walk(mapRoot).filter(n=>has(n,"rm-overview-object-card")||has(n,"rm-study-direction-card")||has(n,"rm-architecture-truth-strip")||has(n,"rm-map-lens-objects")||has(n,"rm-map-empty-inspector__metric")||has(n,"rm-map-empty-inspector__entry-row")||has(n,"rm-map-empty-inspector__remainder")).length,
+  forbiddenWallCount:walk(mapRoot).filter(n=>has(n,"rm-overview-object-card")||has(n,"rm-study-direction-card")||has(n,"rm-architecture-truth-strip")||has(n,"rm-map-empty-inspector__metric")||has(n,"rm-map-empty-inspector__entry-row")||has(n,"rm-map-empty-inspector__remainder")).length,
   nestedInteractive:nestedInteractive.length,hiddenOnSelection,restoredOnClose,
   toolbarPrecedesStage:!!(toolbar&&layout&&toolbar.parentNode===layout.parentNode&&toolbar.parentNode.children.indexOf(toolbar)<toolbar.parentNode.children.indexOf(layout)),
   lensControlRole:lensControl&&lensControl.getAttribute("role"),lensControlLabel:lensControl&&lensControl.getAttribute("aria-label"),
@@ -253,70 +254,38 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 	if actionable.RouteView != "map" || actionable.Hash != "#canvas" || !actionable.HashStable || !actionable.TransformStable {
 		t.Errorf("actual Map route or stable Canvas state = %#v", actionable)
 	}
-	if actionable.RailCount != 1 || actionable.RailNodeCount > 3 {
-		t.Errorf("compact exact-start block = %#v", actionable)
-	}
-	wantHref := "https://github.com/acme/fixture/blob/" + strings.Repeat("a", 40) + "/cmd/main.go#L10"
-	if actionable.StartCount != 1 || actionable.StartTag != "A" || actionable.StartHref != wantHref ||
-		actionable.StartTarget != "_blank" || actionable.StartRel != "noopener noreferrer" || actionable.UnavailableCount != 0 {
-		t.Errorf("exact pinned Start Here = %#v", actionable)
+	if actionable.RailCount != 0 || actionable.StartCount != 0 || actionable.UnavailableCount != 0 {
+		t.Errorf("D281 retained the duplicate automatic Start Here block = %#v", actionable)
 	}
 	if actionable.ForbiddenWallCount != 0 || actionable.NestedInteractive != 0 ||
-		!actionable.HiddenOnSelection || !actionable.RestoredOnClose || !actionable.ToolbarPrecedesStage ||
+		actionable.HiddenOnSelection || actionable.RestoredOnClose || !actionable.ToolbarPrecedesStage ||
 		!actionable.ComponentListReachable || !actionable.ComponentListOpenOnMobile ||
 		actionable.ComponentDisclosureCount != "· 12" || actionable.ComponentListRows != 12 {
-		t.Errorf("toolbar/detail inspector or mobile reachability contract = %#v", actionable)
+		t.Errorf("D281 toolbar or component reachability contract = %#v", actionable)
 	}
-	if actionable.LensControlRole != "" || actionable.LensControlLabel != "" ||
-		len(actionable.LensLabels) != 0 || len(actionable.InitialLensPressed) != 0 ||
-		len(actionable.EntryLensPressed) != 0 || len(actionable.ClearedLensPressed) != 0 ||
-		len(actionable.IntegrationLensPressed) != 0 ||
-		strings.Join(actionable.LensCalls, ",") != "landscape" ||
-		actionable.ToolbarInteractiveCount != 1 {
-		t.Errorf("Canvas retained deleted lens controls or lost the exact start = %#v", actionable)
+	if actionable.LensControlRole != "group" ||
+		strings.Join(actionable.LensLabels, ",") != "Map,Entrypoints · 0,Integrations · 0" ||
+		strings.Join(actionable.InitialLensPressed, ",") != "true,false,false" ||
+		strings.Join(actionable.EntryLensPressed, ",") != "false,true,false" ||
+		strings.Join(actionable.ClearedLensPressed, ",") != "true,false,false" ||
+		strings.Join(actionable.IntegrationLensPressed, ",") != "false,false,true" ||
+		!slices.Contains(actionable.LensCalls, "entrypoints") ||
+		!slices.Contains(actionable.LensCalls, "integrations") ||
+		actionable.ToolbarInteractiveCount != 3 {
+		t.Errorf("D281 explicit context controls = %#v", actionable)
 	}
 
 	unavailable := run("unavailable")
-	if unavailable.StartCount != 0 || unavailable.UnavailableCount != 1 || unavailable.RailCount != 1 {
-		t.Errorf("unavailable Start Here must be explicit, never an inert source = %#v", unavailable)
-	}
-
-	age := run("age")
-	agePermuted := run("age-permuted")
-	for _, got := range []result{age, agePermuted} {
-		if got.StartKind != "process_entry_fallback" ||
-			!strings.Contains(got.StartText, "Open a process entry") ||
-			!strings.Contains(got.StartText, "cmd/age/age.go:105") ||
-			strings.Contains(got.StartText, "lazyOpener") || strings.Contains(got.StartText, "errorf") ||
-			strings.Contains(got.StartText, "StartTestingHelper") {
-			t.Errorf("Age-like exact process fallback = %#v", got)
-		}
-	}
-	if age.StartHref != agePermuted.StartHref || age.StartText != agePermuted.StartText {
-		t.Errorf("Age-like process fallback changed under input permutation: first=%#v permuted=%#v", age, agePermuted)
-	}
-
-	primary := run("primary")
-	if primary.StartKind != "process_entry" ||
-		!strings.Contains(primary.StartText, "Open the primary process entry") ||
-		!strings.Contains(primary.StartText, "main.go:7") ||
-		strings.Contains(primary.StartText, "cmd/age/age.go:105") {
-		t.Errorf("backend-designated primary process entry did not retain precedence = %#v", primary)
-	}
-
-	studyOnly := run("study-only")
-	if studyOnly.StartKind != "study_reading" ||
-		!strings.Contains(studyOnly.StartText, "Open the core reading") ||
-		!strings.Contains(studyOnly.StartText, "testing/start.go:12") ||
-		!strings.Contains(studyOnly.StartText, "StartTestingHelper") {
-		t.Errorf("Study fallback changed when no exact process entry exists = %#v", studyOnly)
+	if unavailable.StartCount != 0 || unavailable.UnavailableCount != 0 || unavailable.RailCount != 0 {
+		t.Errorf("unavailable sources must not recreate the removed automatic block = %#v", unavailable)
 	}
 
 	css := readCanvasAsset(t, "style.css")
 	for _, token := range []string{
 		".rm-map-toolbar { align-items: center; display: flex",
+		".rm-map-mode-control {",
+		".rm-map-mode-context {",
 		".rm-map-primary-layout { min-width: 0; }",
-		".rm-map-empty-inspector[hidden] { display: none; }",
 		"@media (min-width: 641px) and (max-height: 1080px)",
 		"--rm-map-first-viewport-height: clamp(420px, calc(100vh - 300px), 680px)",
 		".rm-map-primary-layout .rm-arch:not(.has-selected-flow) .rm-arch__viewport { height: var(--rm-map-first-viewport-height); }",

@@ -48,7 +48,9 @@ import (
 // one canonical ReportData value per page.
 // Format 46 replaces package pages with exact executable and aggregated
 // module-library target pages.
-const CurrentFormatVersion = 46
+// Format 47 adds the report-owned exact exported API projection for a selected
+// module-library target.
+const CurrentFormatVersion = 47
 
 // Decision 232: adjudication anchor coverage + semantic-empty browse.
 // Decision 233: alternate co-projection + concentration marker.
@@ -150,6 +152,11 @@ type ReportData struct {
 	// EntryCall is a flat exact-call-family projection for the selected target.
 	// It is navigation evidence, never a runtime sequence or mechanism claim.
 	EntryCall *EntryCallReportProjection `json:"entry_call,omitempty"`
+	// LibraryAPI is the exact, locally derived exported declaration inventory
+	// for a selected module-library target. It is independent of Architecture
+	// coverage and retains the root package even when that package is placed in
+	// the deterministic Architecture remainder.
+	LibraryAPI *LibraryAPIReportProjection `json:"library_api,omitempty"`
 	// ReportLanguage is transient render state selected by the requested
 	// presentation locale. It controls the typed product message catalog
 	// independently of whether optional model-authored prose was translated.

@@ -691,6 +691,7 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 		FormatVersion                   int                                        `json:"format_version"`
 		AnalysisTarget                  *analysistarget.Target                     `json:"analysis_target"`
 		EntryCall                       *EntryCallReportProjection                 `json:"entry_call"`
+		LibraryAPI                      *LibraryAPIReportProjection                `json:"library_api"`
 		OpenablePaths                   []string                                   `json:"openable_paths"`
 		Components                      []Component                                `json:"components"`
 		RepositoryGraph                 *RepositoryGraph                           `json:"repository_graph"`
@@ -829,6 +830,13 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 	if targetRef != material.AnalysisTargetRef || targetSHA256 != material.AnalysisTargetSHA256 {
 		return fmt.Errorf("report manifest: analysis target identity does not match report")
 	}
+	if err := validateLibraryAPIProjection(
+		report.AnalysisTarget,
+		report.LibraryAPI,
+		report.OpenablePaths,
+	); err != nil {
+		return fmt.Errorf("report manifest: %w", err)
+	}
 	hasEntryCall := material.EntryCallStatusSHA256 != "" && material.EntryCallResultSHA256 != ""
 	if report.EntryCall != nil && !hasEntryCall {
 		return fmt.Errorf("report manifest: entry call projection lacks artifact authority")
@@ -883,6 +891,29 @@ func (m RunManifest) VerifySnapshotArtifact(runDir string) error {
 	}
 	if manifestSHA256(snapshotJSON) != m.SnapshotSHA256 {
 		return fmt.Errorf("report manifest: snapshot sha256 mismatch")
+	}
+	return nil
+}
+
+// VerifyLibraryAPIProjection re-derives the report-owned module-library API
+// from the exact snapshot already bound by VerifySnapshotArtifact. The saved
+// report projection is accepted only when every package, declaration,
+// location, truthful count and source authorization matches that authority.
+func (m RunManifest) VerifyLibraryAPIProjection(runDir string, reportJSON []byte) error {
+	if err := m.Validate(); err != nil {
+		return err
+	}
+	var persisted ReportData
+	if err := json.Unmarshal(reportJSON, &persisted); err != nil {
+		return fmt.Errorf("report manifest: decode library API projection: %w", err)
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return fmt.Errorf("report manifest: open library API run: %w", err)
+	}
+	defer root.Close()
+	if err := rehydrateLibraryAPIProjection(root, &persisted, true); err != nil {
+		return fmt.Errorf("report manifest: %w", err)
 	}
 	return nil
 }
@@ -1614,6 +1645,9 @@ func ReadRunManifest(runDir string) (RunManifest, error) {
 	if err := manifest.VerifySnapshotArtifact(runDir); err != nil {
 		return RunManifest{}, err
 	}
+	if err := manifest.VerifyLibraryAPIProjection(runDir, reportJSON); err != nil {
+		return RunManifest{}, err
+	}
 	if err := manifest.VerifyTaskInvestigationArtifacts(runDir); err != nil {
 		return RunManifest{}, err
 	}
@@ -1854,6 +1888,9 @@ func writeAuthorizedRunManifest(runDir string, data *ReportData, reportJSON []by
 		return err
 	}
 	if err := manifest.VerifySnapshotArtifact(runDir); err != nil {
+		return err
+	}
+	if err := manifest.VerifyLibraryAPIProjection(runDir, reportJSON); err != nil {
 		return err
 	}
 	if err := manifest.VerifyOrientationContextSelectionArtifact(runDir); err != nil {

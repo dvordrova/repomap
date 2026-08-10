@@ -1843,9 +1843,9 @@
 		};
 		writeWorkspaceHistory('#canvas', workspaceState);
 		if (architectureCanvasView && typeof architectureCanvasView.setLens === 'function') {
-			architectureCanvasView.setLens(activeMapLens);
+			architectureCanvasView.setLens(canvasLensForMapMode(activeMapLens));
 		}
-		var entryContext = document.querySelector && document.querySelector('.rm-map-entry-context');
+		var entryContext = document.querySelector && document.querySelector('.rm-map-mode-context');
 		if (entryContext) entryContext.hidden = true;
 		syncMapLensControl();
 		applyStudyMechanismMapOverlay();
@@ -2543,6 +2543,13 @@
 	function bareSourceSymbol(symbol) {
 		var value = String(symbol || '').trim();
 		if (!value) return '';
+		// Mechanism nodes retain a package-disambiguation label of the form
+		// "package · Symbol". It is backend identity context, not part of the
+		// source symbol. Strip that exact presentation separator before the
+		// ordinary qualified-Go-symbol reduction so gopkg.in module suffixes do
+		// not leak into the visible name as "v3 · NewBot".
+		var disambiguation = value.lastIndexOf(' · ');
+		if (disambiguation >= 0) value = value.slice(disambiguation + 3).trim();
 		var last = value;
 		var receiver = '';
 		var open = value.indexOf('(');
@@ -6424,6 +6431,11 @@
 				var packagePath = String(pkg && pkg.canonical_package_path || '');
 				if (packagePath) packageByPath[packagePath] = pkg;
 			});
+			var libraryAPIByPackagePath = {};
+			((DATA.library_api && DATA.library_api.packages) || []).forEach(function (pkg) {
+				var packagePath = String(pkg && pkg.package_path || '');
+				if (packagePath) libraryAPIByPackagePath[packagePath] = pkg;
+			});
 			var behaviorAnchorByID = {};
 			(canvas.behavior_anchors || []).forEach(function (anchor) {
 				var anchorID = String(anchor && anchor.id || '');
@@ -6620,6 +6632,9 @@
 				},
 				package_paths: packagePaths,
 				package_targets: packageTargets,
+				library_api_packages: packagePaths.map(function (packagePath) {
+					return libraryAPIByPackagePath[packagePath] || null;
+				}).filter(Boolean),
 				file_count: Object.keys(componentFiles).length,
 				sources: sources,
 				surface_starts: surfaceStarts,
@@ -6670,50 +6685,103 @@
 		return contexts;
 	}
 
-  // The selected executable target opens on its exact Entrypoints context.
-  // Libraries keep the neutral landscape because no process entry is
-  // invented for their unresolved public-API boundary.
+  // D281: a module library opens on its exact API launchpad; every executable
+  // opens on a neutral Map. Entrypoints and Integrations are explicit reader
+  // choices and never preselect or dim the Canvas on load.
   var activeMapLens = defaultTargetMapLens();
-  var selectedEntrypointHandoffGroupID = defaultEntrypointHandoffGroupID();
+  var selectedEntrypointHandoffGroupID = '';
 
 	function defaultTargetMapLens() {
-		return ANALYSIS_TARGET && String(ANALYSIS_TARGET.kind || '') === 'executable_package'
-			? 'entrypoints' : 'landscape';
+		return ANALYSIS_TARGET && String(ANALYSIS_TARGET.kind || '') === 'module_library'
+			? 'api' : 'landscape';
+	}
+
+	function canvasLensForMapMode(mode) {
+		return mode === 'entrypoints' || mode === 'integrations' ? mode : 'landscape';
 	}
 
 	function restoreDefaultTargetCanvasContext() {
 		activeMapLens = defaultTargetMapLens();
-		selectedEntrypointHandoffGroupID = defaultEntrypointHandoffGroupID();
+		selectedEntrypointHandoffGroupID = '';
 		if (architectureCanvasView && typeof architectureCanvasView.setLens === 'function') {
-			architectureCanvasView.setLens(activeMapLens);
-		}
-		if (selectedEntrypointHandoffGroupID && architectureCanvasView &&
-			typeof architectureCanvasView.selectEntrypointHandoffGroup === 'function') {
-			architectureCanvasView.selectEntrypointHandoffGroup(selectedEntrypointHandoffGroupID);
+			architectureCanvasView.setLens(canvasLensForMapMode(activeMapLens));
 		}
 		if (architectureCanvasView && typeof architectureCanvasView.clearStudyMechanismOverlay === 'function') {
 			architectureCanvasView.clearStudyMechanismOverlay();
 		}
-		var context = document.querySelector && document.querySelector('.rm-map-entry-context');
-		if (context) context.hidden = activeMapLens !== 'entrypoints';
+		var context = document.querySelector && document.querySelector('.rm-map-mode-context');
+		if (context) context.hidden = activeMapLens === 'landscape';
+		syncMapLensControl();
 		renderMapLensObjects();
 	}
 
 	function defaultEntrypointHandoffGroupID() {
-		if (!ANALYSIS_TARGET || String(ANALYSIS_TARGET.kind || '') !== 'executable_package') return '';
-		var roots = Array.isArray(ANALYSIS_TARGET.roots) ? ANALYSIS_TARGET.roots : [];
-		var groups = DATA.architecture_canvas && Array.isArray(DATA.architecture_canvas.entry_handoff_groups)
-			? DATA.architecture_canvas.entry_handoff_groups : [];
-		for (var rootIndex = 0; rootIndex < roots.length; rootIndex++) {
-			var root = roots[rootIndex];
-			var matches = groups.filter(function (group) {
-				var entry = group && group.entry;
-				return String(root && root.path || '') === String(entry && entry.path || '') &&
-					Number(root && root.line) === Number(entry && entry.line);
-			});
-			if (matches.length === 1) return String(matches[0].id || '');
-		}
+		// Kept as a pure compatibility/test hook. D281 deliberately has no
+		// automatic entry selection for any executable.
 		return '';
+	}
+
+	function mapModeProjection(mode) {
+		var api = window.RepomapArchitectureCanvas && window.RepomapArchitectureCanvas.projectArchitectureLens;
+		if (typeof api !== 'function') return null;
+		return api(DATA, canvasLensForMapMode(mode));
+	}
+
+	function mapModeCounts() {
+		var entries = mapModeProjection('entrypoints');
+		var integrations = mapModeProjection('integrations');
+		return {
+			entries: Number(entries && entries.counts && entries.counts.entries) || 0,
+			integrations: Number(integrations && integrations.counts && integrations.counts.touchpoints) || 0,
+			api: Number(DATA.library_api && DATA.library_api.total_declarations) || 0,
+		};
+	}
+
+	function allowedMapModes() {
+		var counts = mapModeCounts();
+		if (ANALYSIS_TARGET && String(ANALYSIS_TARGET.kind || '') === 'module_library') {
+			return [
+				{ id: 'api', label: msg('main.map.mode.api') },
+				{ id: 'landscape', label: msg('main.map.mode.map') },
+				{ id: 'integrations', label: msg('main.map.mode.integrations', { count: counts.integrations }) },
+			];
+		}
+		return [
+			{ id: 'landscape', label: msg('main.map.mode.map') },
+			{ id: 'entrypoints', label: msg('main.map.mode.entrypoints', { count: counts.entries }) },
+			{ id: 'integrations', label: msg('main.map.mode.integrations', { count: counts.integrations }) },
+		];
+	}
+
+	function setMapMode(mode) {
+		mode = String(mode || '');
+		if (!allowedMapModes().some(function (candidate) { return candidate.id === mode; })) return false;
+		activeMapLens = mode;
+		if (mode !== 'entrypoints') selectedEntrypointHandoffGroupID = '';
+		if (architectureCanvasView && typeof architectureCanvasView.setLens === 'function') {
+			architectureCanvasView.setLens(canvasLensForMapMode(mode));
+		}
+		var context = document.querySelector && document.querySelector('.rm-map-mode-context');
+		if (context) context.hidden = mode === 'landscape';
+		syncMapLensControl();
+		renderMapLensObjects();
+		return true;
+	}
+
+	function renderMapModeControl() {
+		var control = el('div', 'rm-map-lens-control rm-map-mode-control');
+		control.setAttribute('role', 'group');
+		allowedMapModes().forEach(function (mode) {
+			var button = txt('button', 'rm-map-lens-button rm-map-mode-button', mode.label);
+			button.type = 'button';
+			button.setAttribute('data-map-mode', mode.id);
+			button.setAttribute('data-map-lens', mode.id);
+			button.setAttribute('aria-pressed', mode.id === activeMapLens ? 'true' : 'false');
+			button.classList.toggle('rm-active', mode.id === activeMapLens);
+			button.onclick = function () { setMapMode(mode.id); };
+			control.appendChild(button);
+		});
+		return control;
 	}
 
   // Decision 236 (v11): the lens objects panel makes the FIRST-CLASS
@@ -6723,51 +6791,289 @@
   // objects come from the SAME DOM-free projection the canvas
   // emphasis uses (projectArchitectureLens) — never guessed from dimmed
   // boxes and never from renderer state.
+  function libraryAPIKindMessageID(kind) {
+    var ids = {
+      func: 'main.map.api.kind.function',
+      function: 'main.map.api.kind.function',
+      method: 'main.map.api.kind.method',
+      type: 'main.map.api.kind.type',
+      const: 'main.map.api.kind.const',
+      var: 'main.map.api.kind.var',
+    };
+    return ids[String(kind || '')] || '';
+  }
+
+  function libraryAPIDeclarationLabel(declaration) {
+    var receiver = String(declaration && declaration.receiver || '').trim();
+    var name = String(declaration && declaration.name || '').trim();
+    return receiver ? receiver + '.' + name : name;
+  }
+
+  function libraryAPIPackageLabel(pkg) {
+    var display = String(pkg && pkg.display_path || '');
+    if (display && display !== '.') return display;
+    var packagePath = String(pkg && pkg.package_path || '');
+    var parts = packagePath.split('/').filter(Boolean);
+    while (parts.length > 1 && /^v[0-9]+$/.test(parts[parts.length - 1])) parts.pop();
+    var label = parts.length ? parts[parts.length - 1] : display || DATA.repo_name;
+    return String(label || '').replace(/\.v[0-9]+$/, '') || label;
+  }
+
+  function renderLibraryAPILaunchpad(host) {
+    var projection = DATA.library_api;
+    if (!projection || Number(projection.version) !== 1) return;
+    var title = document.getElementById('rm-map-mode-context-title');
+    if (title) title.textContent = msg('main.map.api.heading');
+    var summary = el('div', 'rm-library-api-summary');
+    summary.appendChild(txt('strong', '', msg('main.map.api.showing', {
+      shown: Number(projection.shown_declarations) || 0,
+      total: Number(projection.total_declarations) || 0,
+    })));
+    summary.appendChild(txt('span', '', msg('main.map.api.package_count', {
+      count: Array.isArray(projection.packages) ? projection.packages.length : 0,
+    })));
+    host.appendChild(summary);
+
+    var search = el('input', 'rm-library-api-search');
+    search.type = 'search';
+    search.placeholder = msg('main.map.api.search');
+    search.setAttribute('aria-label', msg('main.map.api.search'));
+    host.appendChild(search);
+    var packagesHost = el('div', 'rm-library-api-packages');
+    host.appendChild(packagesHost);
+
+    function renderPackages(query) {
+      packagesHost.replaceChildren();
+      query = String(query || '').trim().toLocaleLowerCase();
+      (Array.isArray(projection.packages) ? projection.packages : []).forEach(function (pkg, packageIndex) {
+        var declarations = (Array.isArray(pkg && pkg.declarations) ? pkg.declarations : []).filter(function (declaration) {
+          if (!query) return true;
+          return [
+            declaration && declaration.name,
+            declaration && declaration.receiver,
+            declaration && declaration.kind,
+            declaration && declaration.path,
+            pkg && pkg.package_path,
+            pkg && pkg.display_path,
+          ].join(' ').toLocaleLowerCase().indexOf(query) >= 0;
+        });
+        if (query && declarations.length === 0) return;
+        var group = el('details', 'rm-library-api-package');
+        group.open = packageIndex === 0 || !!query;
+        var heading = el('summary', 'rm-library-api-package__summary');
+        var headingCopy = el('span', 'rm-library-api-package__heading');
+        headingCopy.appendChild(txt('strong', '', libraryAPIPackageLabel(pkg)));
+        headingCopy.appendChild(txt('code', '', String(pkg && pkg.package_path || '')));
+        heading.appendChild(headingCopy);
+        var counts = pkg && pkg.counts || {};
+        heading.appendChild(txt('span', 'rm-library-api-package__counts', [
+          ['function', counts.functions], ['method', counts.methods], ['type', counts.types],
+          ['const', counts.consts], ['var', counts.vars],
+        ].filter(function (item) { return Number(item[1]) > 0; }).map(function (item) {
+          return msg(libraryAPIKindMessageID(item[0])) + ' ' + String(item[1]);
+        }).join(' · ')));
+        group.appendChild(heading);
+        var rows = el('div', 'rm-library-api-declarations');
+        declarations.forEach(function (declaration) {
+          var row = el('div', 'rm-library-api-declaration');
+          var kindID = libraryAPIKindMessageID(declaration && declaration.kind);
+          row.appendChild(txt('span', 'rm-library-api-declaration__kind', kindID ? msg(kindID) : String(declaration && declaration.kind || '')));
+          row.appendChild(renderEntrypointLocationAction({
+            path: String(declaration && declaration.path || ''),
+            line: Number(declaration && declaration.line) || 0,
+            column: Number(declaration && declaration.column) || 0,
+          }, libraryAPIDeclarationLabel(declaration)));
+          rows.appendChild(row);
+        });
+        group.appendChild(rows);
+        packagesHost.appendChild(group);
+      });
+    }
+    search.addEventListener('input', function () { renderPackages(search.value); });
+    renderPackages('');
+  }
+
+  function entryCallFamiliesForLocation(location) {
+    var families = DATA.entry_call && Array.isArray(DATA.entry_call.families)
+      ? DATA.entry_call.families : [];
+    var path = String(location && location.path || '');
+    var line = Number(location && location.line) || 0;
+    return families.filter(function (family) {
+      var root = family && family.root_declaration;
+      return String(root && root.path || '') === path && Number(root && root.line) === line;
+    });
+  }
+
+  function renderEntryCallFamilyDisclosure(families) {
+    if (!families.length) return null;
+    var details = el('details', 'rm-map-entry-families');
+    details.appendChild(txt('summary', 'rm-map-entry-families__summary', msg('main.map.entry.show_calls', {
+      count: families.length,
+    })));
+    var byCaller = Object.create(null);
+    var order = [];
+    families.forEach(function (family) {
+      var caller = String(family && family.caller_label || '');
+      if (!byCaller[caller]) { byCaller[caller] = []; order.push(caller); }
+      byCaller[caller].push(family);
+    });
+    order.forEach(function (caller) {
+      var group = el('section', 'rm-map-entry-family-group');
+      group.appendChild(txt('h4', '', msg('main.map.entry.calls_by', {
+        caller: bareSourceSymbol(caller), count: byCaller[caller].length,
+      })));
+      byCaller[caller].forEach(function (family) {
+        var row = el('div', 'rm-map-entry-family-row');
+        row.appendChild(txt('strong', '', bareSourceSymbol(family && family.callee_label)));
+        row.appendChild(txt('span', '', '×' + String(Number(family && family.witness_count) || 0)));
+        var callsites = Array.isArray(family && family.callsites) ? family.callsites : [];
+        var sources = el('div', 'rm-map-entry-family-row__sources');
+        callsites.forEach(function (location) {
+          sources.appendChild(renderEntrypointLocationAction(location, msg('main.map.entry.context.callsite')));
+        });
+        row.appendChild(sources);
+        group.appendChild(row);
+      });
+      details.appendChild(group);
+    });
+    return details;
+  }
+
+  function entryGroupMapSummary(group) {
+    var handoffs = Array.isArray(group && group.entry_handoffs) ? group.entry_handoffs : [];
+    var areaIDs = Object.create(null);
+    handoffs.forEach(function (handoff) {
+      (Array.isArray(handoff && handoff.component_ids) ? handoff.component_ids : []).forEach(function (id) {
+        if (id) areaIDs[String(id)] = true;
+      });
+    });
+    var outside = handoffs.filter(function (handoff) {
+      var targetIDs = Array.isArray(handoff && handoff.component_ids) ? handoff.component_ids : [];
+      // This summary is about where the call lands. A missing source owner or
+      // a same-component hop prevents an arrow, but does not make a mapped
+      // target "off-map".
+      return targetIDs.length !== 1;
+    }).length;
+    return { calls: handoffs.length, areas: Object.keys(areaIDs).length, outside: outside };
+  }
+
+  function renderEntrypointCard(entry, projected, host, projectedGroups) {
+    var card = el('article', 'rm-map-entry-card');
+    var heading = el('div', 'rm-map-entry-card__heading');
+    heading.appendChild(txt('h3', '', bareSourceSymbol(entry && (entry.symbol || entry.label)) || msg('main.map.lens.entry.process')));
+    heading.appendChild(renderEntrypointLocationAction(entry, msg('main.map.entry.context.entry_source')));
+    card.appendChild(heading);
+    var families = entryCallFamiliesForLocation(entry);
+    if (families.length) card.appendChild(txt('p', 'rm-map-entry-card__meta', msg('main.map.entry.direct_families', {
+      count: families.length,
+    })));
+    if (projected && projected.group) {
+      var summary = entryGroupMapSummary(projected.group);
+      card.appendChild(txt('p', 'rm-map-entry-card__meta', msg('main.map.entry.map_summary', summary)));
+      var explore = txt('button', 'rm-secondary-action rm-map-entry-card__explore', msg('main.map.entry.explore'));
+      explore.type = 'button';
+      explore.setAttribute('data-entry-handoff-group-id', String(projected.id || ''));
+      explore.setAttribute('aria-pressed', 'false');
+      explore.onclick = function () {
+        activateEntrypointHandoffGroup(String(projected.id || ''), host, projectedGroups);
+      };
+      card.appendChild(explore);
+    }
+    var details = renderEntryCallFamilyDisclosure(families);
+    if (details) card.appendChild(details);
+    return card;
+  }
+
+  function renderEntrypointsLaunchpad(host, projection) {
+    var title = document.getElementById('rm-map-mode-context-title');
+    if (title) title.textContent = msg('main.map.entry.heading');
+    var projectedGroups = projection.objects && projection.objects.entry_handoff_groups ||
+      projection.entry_handoff_groups || [];
+    var surfaces = [];
+    var seen = Object.create(null);
+    var entrypointGroups = projection.objects && projection.objects.entrypoints || projection.entrypoints || [];
+    entrypointGroups.forEach(function (group) {
+      (group.entries || []).forEach(function (entry) {
+        var key = String(entry && entry.id || '') || JSON.stringify([entry && entry.path, entry && entry.line]);
+        if (!seen[key]) { seen[key] = true; surfaces.push(entry); }
+      });
+    });
+    surfaces.forEach(function (entry) {
+      var projected = projectedGroups.filter(function (candidate) {
+        var groupEntry = candidate && candidate.group && candidate.group.entry;
+        return (Array.isArray(entry && entry.locations) ? entry.locations : []).some(function (location) {
+          return String(location && location.path || '') === String(groupEntry && groupEntry.path || '') &&
+            Number(location && location.line) === Number(groupEntry && groupEntry.line);
+        });
+      })[0] || null;
+      var exact = projected && projected.group && projected.group.entry || {
+        path: entry.locations && entry.locations[0] && entry.locations[0].path,
+        line: entry.locations && entry.locations[0] && entry.locations[0].line,
+        column: entry.locations && entry.locations[0] && entry.locations[0].column,
+        symbol: entry.label,
+        label: entry.label,
+      };
+      host.appendChild(renderEntrypointCard(exact, projected, host, projectedGroups));
+    });
+    projectedGroups.forEach(function (projected) {
+      var entry = projected && projected.group && projected.group.entry;
+      var alreadyShown = surfaces.some(function (surface) {
+        return (surface.locations || []).some(function (location) {
+          return String(location.path || '') === String(entry && entry.path || '') &&
+            Number(location.line) === Number(entry && entry.line);
+        });
+      });
+      if (!alreadyShown && entry) host.appendChild(renderEntrypointCard(entry, projected, host, projectedGroups));
+    });
+  }
+
+  function renderIntegrationsLaunchpad(host, projection) {
+    var title = document.getElementById('rm-map-mode-context-title');
+    if (title) title.textContent = msg('main.map.integrations.heading');
+    var shelf = el('div', 'rm-map-integrations-context');
+    var touchpoints = projection.objects && projection.objects.touchpoints || projection.touchpoints || [];
+    touchpoints.forEach(function (touchpoint) {
+      var visibleIDs = Array.isArray(touchpoint && touchpoint.visible_component_ids)
+        ? touchpoint.visible_component_ids : Array.isArray(touchpoint && touchpoint.component_ids)
+          ? touchpoint.component_ids : [];
+      var outside = visibleIDs.length === 0 || (Array.isArray(touchpoint && touchpoint.off_map_component_ids) &&
+        touchpoint.off_map_component_ids.length > 0);
+      var row = el('article', 'rm-map-integration-row' + (outside ? ' rm-map-integration-row--outside' : ''));
+      var heading = el('div', 'rm-map-integration-row__heading');
+      heading.appendChild(txt('strong', '', String(touchpoint && touchpoint.family || '')));
+      heading.appendChild(txt('code', '', String(touchpoint && touchpoint.owning_unit || '')));
+      row.appendChild(heading);
+      if (outside) row.appendChild(txt('span', 'rm-map-integration-row__outside', msg('main.map.integrations.outside_grouping')));
+      var witnesses = Array.isArray(touchpoint && touchpoint.witnesses) ? touchpoint.witnesses : [];
+      var sources = el('div', 'rm-map-integration-row__sources');
+      witnesses.forEach(function (witness) {
+        var action = renderEntrypointLocationAction(witness, bareSourceSymbol(witness && witness.symbol) || msg('main.map.integrations.open_source'));
+        action.classList.add('rm-map-integration-source');
+        sources.appendChild(action);
+      });
+      if (sources.childNodes.length) row.appendChild(sources);
+      shelf.appendChild(row);
+    });
+    shelf.appendChild(txt('p', 'rm-map-integrations-context__limit', msg('main.map.integrations.bounded_limit')));
+    host.appendChild(shelf);
+  }
+
   function renderMapLensObjects() {
     var host = document.getElementById('rm-map-lens-objects');
     if (!host) return;
     host.replaceChildren();
     host.setAttribute('data-lens', activeMapLens);
-    var api = window.RepomapArchitectureCanvas && window.RepomapArchitectureCanvas.projectArchitectureLens;
-    if (typeof api !== 'function') return;
-    var projection = api(DATA, activeMapLens);
-    if (!projection) return;
-    var entryHandoffGroups = projection.objects && projection.objects.entry_handoff_groups ||
-      projection.entry_handoff_groups || [];
-    if (activeMapLens === 'landscape') return;
-    if (activeMapLens === 'entrypoints') {
-			var entrypointGroups = projection.objects && projection.objects.entrypoints ||
-				projection.entrypoints || [];
-      if (selectedEntrypointHandoffGroupID && !entryHandoffGroups.some(function (projected) {
-        return projected && projected.id === selectedEntrypointHandoffGroupID;
-      })) selectedEntrypointHandoffGroupID = '';
-      entryHandoffGroups.forEach(function (projected) {
-        if (!projected || projected.kind !== 'entry_handoff_group' || !projected.group) return;
-        host.appendChild(renderEntrypointHandoffSelector(projected.group, host, entryHandoffGroups));
-      });
-			entrypointGroups.forEach(function (group) {
-				(group.entries || []).forEach(function (entry) {
-					// A zero-hop exact Surface has no handoff group to select. It
-					// remains a first-class Entrypoint even when conceptual grouping
-					// could not assign an owner. Do not dim or emphasize a component;
-					// expose only its backend-owned exact source locations.
-					if (entryHandoffGroups.length &&
-						(Array.isArray(entry.component_ids) && entry.component_ids.length > 0 ||
-						 entrypointSurfaceHasExactHandoffGroup(entry, entryHandoffGroups))) return;
-					host.appendChild(renderZeroHopEntrypointSurface(entry, group.kind));
-				});
-			});
-      var overflowHost = el('div', 'rm-map-entry-overflow-host');
-      host.appendChild(overflowHost);
-      if (selectedEntrypointHandoffGroupID) {
-        activateEntrypointHandoffGroup(
-          selectedEntrypointHandoffGroupID,
-          host,
-          entryHandoffGroups
-        );
-      }
+    if (activeMapLens === 'api') {
+      renderLibraryAPILaunchpad(host);
       return;
     }
+    var projection = mapModeProjection(activeMapLens);
+    if (!projection || activeMapLens === 'landscape') return;
+    if (activeMapLens === 'entrypoints') {
+      renderEntrypointsLaunchpad(host, projection);
+      return;
+    }
+    if (activeMapLens === 'integrations') renderIntegrationsLaunchpad(host, projection);
   }
 
 	function activeStudyMechanismMapSelection() {
@@ -6932,17 +7238,18 @@
     if (DATA.architecture_canvas && window.RepomapArchitectureCanvas) {
       canvasCard = el('section', 'rm-card rm-architecture-canvas-card');
       var mapToolbar = el('div', 'rm-map-toolbar');
-      mapEmptyInspectorHost = renderMapEmptyInspector();
-      mapToolbar.appendChild(mapEmptyInspectorHost);
+		mapEmptyInspectorHost = null;
+		mapToolbar.appendChild(renderMapModeControl());
       canvasCard.appendChild(mapToolbar);
-		if (activeMapLens === 'entrypoints') {
-			var entryContext = el('section', 'rm-map-entry-context');
-			entryContext.appendChild(txt('h2', 'rm-map-entry-context__title', msg('main.map.lens.entrypoints')));
-			var entryObjects = el('div', 'rm-map-lens-objects');
-			entryObjects.id = 'rm-map-lens-objects';
-			entryContext.appendChild(entryObjects);
-			canvasCard.appendChild(entryContext);
-		}
+		var entryContext = el('section', 'rm-map-entry-context rm-map-mode-context');
+		entryContext.hidden = activeMapLens === 'landscape';
+		var contextTitle = txt('h2', 'rm-map-entry-context__title', '');
+		contextTitle.id = 'rm-map-mode-context-title';
+		entryContext.appendChild(contextTitle);
+		var entryObjects = el('div', 'rm-map-lens-objects');
+		entryObjects.id = 'rm-map-lens-objects';
+		entryContext.appendChild(entryObjects);
+		canvasCard.appendChild(entryContext);
 		var canvasLayout = el('div', 'rm-map-primary-layout');
 		mapPrimaryLayoutHost = canvasLayout;
 		var canvasStage = el('div', 'rm-architecture-canvas-stage');
@@ -6954,6 +7261,7 @@
 		canvasLayout.appendChild(canvasStage);
 		canvasCard.appendChild(canvasLayout);
       root.appendChild(canvasCard);
+		renderMapLensObjects();
 		renderStudyMechanismMapContextIntoHost();
     } else {
       var systemMap = renderUserSystemMap(DATA.high_level_map || []);
@@ -7570,7 +7878,7 @@
       ready.then(function () {
 			applyStudyMechanismMapOverlay();
         if (architectureCanvasView && typeof architectureCanvasView.setLens === 'function') {
-          architectureCanvasView.setLens(activeMapLens);
+			architectureCanvasView.setLens(canvasLensForMapMode(activeMapLens));
         }
 			if (selectedEntrypointHandoffGroupID && architectureCanvasView &&
 				typeof architectureCanvasView.selectEntrypointHandoffGroup === 'function') {

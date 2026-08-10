@@ -428,6 +428,9 @@ func readRunDir(
 	); w != "" {
 		parseWarnings = append(parseWarnings, w)
 	}
+	if err := rehydrateLibraryAPIProjectionFromRunDir(absDir, data); err != nil {
+		return nil, err
+	}
 	if w := parseRunMetadata(filepath.Join(absDir, "metadata.json"), data); w != "" {
 		parseWarnings = append(parseWarnings, w)
 	}
@@ -509,6 +512,9 @@ func readRunDir(
 	parseWarnings = append(parseWarnings, flowWarnings...)
 	canonicalizeReportEvidence(data)
 	collectOpenablePaths(data)
+	if err := validateLibraryAPIProjection(data.AnalysisTarget, data.LibraryAPI, data.OpenablePaths); err != nil {
+		return nil, err
+	}
 	if err := validateRepositoryAtlasForReport(data); err != nil {
 		return nil, err
 	}
@@ -905,9 +911,11 @@ func collectOpenablePaths(data *ReportData) {
 		add(item.Location.Path)
 	}
 	// D277/D280: every exact exported callable in every selected public API
-	// package is an eligible Study root. Authorize its build-selected source
-	// file before source coverage captures the run inputs; the eventual 32-span
-	// request frontier must not narrow local source/action authority.
+	// package is an eligible Study root. D281 additionally publishes every
+	// exported declaration kind for a module library. Authorize their exact
+	// build-selected source files before source coverage captures the run
+	// inputs; neither Architecture coverage nor a semantic frontier may narrow
+	// local source/action authority.
 	if data.AnalysisTarget != nil &&
 		(data.AnalysisTarget.Kind == analysistarget.KindLibraryPackage ||
 			data.AnalysisTarget.Kind == analysistarget.KindModuleLibrary) &&
@@ -927,9 +935,13 @@ func collectOpenablePaths(data *ReportData) {
 				files[sourcePath] = struct{}{}
 			}
 			for _, declaration := range pkg.Declarations {
-				if !declaration.ExportedAPI() || !declaration.ExecutableBody ||
-					(declaration.Kind != gofacts.PackageDeclarationFunc &&
-						declaration.Kind != gofacts.PackageDeclarationMethod) {
+				if !declaration.ExportedAPI() {
+					continue
+				}
+				if data.AnalysisTarget.Kind != analysistarget.KindModuleLibrary &&
+					(!declaration.ExecutableBody ||
+						(declaration.Kind != gofacts.PackageDeclarationFunc &&
+							declaration.Kind != gofacts.PackageDeclarationMethod)) {
 					continue
 				}
 				if _, selected := files[declaration.Path]; selected {

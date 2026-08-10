@@ -111,7 +111,7 @@ process.stdout.write(JSON.stringify({
 	}
 }
 
-func TestSingleTargetRailAndExecutableEntrypointDefault(t *testing.T) {
+func TestSingleTargetRailAndExecutableStartsOnNeutralMap(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is unavailable")
@@ -170,16 +170,16 @@ process.stdout.write(JSON.stringify({items:api.analysisTargetMenuItems(),default
 		!got.Items[0].IsDefault || !got.Items[0].IsActive {
 		t.Fatalf("single target rail = %#v", got.Items)
 	}
-	if got.DefaultGroup != "linux" {
-		t.Fatalf("default exact-root handoff group = %q, want linux", got.DefaultGroup)
+	if got.DefaultGroup != "" {
+		t.Fatalf("executable preselected entry handoff group = %q, want none", got.DefaultGroup)
 	}
 	script, err := os.ReadFile(scriptPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(script), "function renderMapLensControl") ||
+	if !strings.Contains(string(script), "function renderMapModeControl") ||
 		!strings.Contains(string(script), "entryObjects.id = 'rm-map-lens-objects'") {
-		t.Fatal("executable Entrypoints must be mounted as context, not a toggle")
+		t.Fatal("executable Map must expose explicit mode controls and one contextual objects host")
 	}
 }
 

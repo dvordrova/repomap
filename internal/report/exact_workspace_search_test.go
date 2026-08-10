@@ -445,7 +445,7 @@ func TestCatalogExactSearchRejectsDuplicateMembershipWithinComponent(t *testing.
 func TestCatalogExactSearchKeepsVersions(t *testing.T) {
 	t.Parallel()
 
-	if SemanticSearchIndexVersion != 6 || CurrentFormatVersion != 46 || CurrentRunManifestVersion != 18 {
+	if SemanticSearchIndexVersion != 6 || CurrentFormatVersion != 47 || CurrentRunManifestVersion != 18 {
 		t.Fatalf(
 			"versions changed: search=%d report=%d manifest=%d",
 			SemanticSearchIndexVersion,
