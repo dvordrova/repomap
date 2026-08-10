@@ -708,7 +708,7 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
 		countString(modelAssisted.ModelStateText, "объявленный дескриптор") != 7 ||
 		!strings.Contains(modelAssisted.ModelFrontierText, "11 точек входа восстановлено") ||
 		!strings.Contains(modelAssisted.ModelFrontierText, "2 предложения отклонены") ||
-		!strings.Contains(modelAssisted.ModelFrontierText, "2 кандидатам модель не предложила точку входа") ||
+		!strings.Contains(modelAssisted.ModelFrontierText, "2 структурных кандидата оставлены без классификации") ||
 		!strings.Contains(modelAssisted.ModelFrontierText, "3 кандидатов и 6 фактов") ||
 		!strings.Contains(modelAssisted.ModelFrontierText, "2 небезопасных фактов") ||
 		!strings.Contains(modelAssisted.ModelFrontierText, "1 недостижимых кандидатов") {
