@@ -107,3 +107,19 @@ Approved by:
     library public APIs but Study incorrectly reported no observed roles, and
     after choosing exact Unit-rooted public callables over fabricated Component
     ownership, 2026-08-10.
+
+## Producer correction — 2026-08-10
+
+An exact `public_api_root` support owns its artifact role before generic
+path-based classification. A callable remains `public_api` when its source is
+named `main.go` or lives below `cmd/`, `examples/` or generated-source paths;
+those path hints may classify only supports that do not already carry the exact
+analysis-target-root contract. Saved Scout replay remains strict over path,
+line, symbol, canonical span, kind, role and provenance, and reports the exact
+field that drifted. This fixes a producer/validator self-mismatch without
+changing any request, result, report or manifest identity.
+
+Approved by:
+    Repository owner after identifying that the live producer reclassified an
+    exact public API root by filename while the strict replay validator required
+    the exact public-API role, 2026-08-10.

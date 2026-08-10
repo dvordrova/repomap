@@ -127,3 +127,26 @@ Approved by:
     every optional context, API must read top-to-bottom rather than as a card
     grid, and Study prose may curate existing exact API evidence but may not
     own or guess source identity, 2026-08-10.
+
+## Entrypoint catalog correction — 2026-08-10
+
+The Entrypoints context locally enriches each exact Canvas `entry_surface` only
+when exactly one persisted Trigger Catalog record has the same stable trigger
+ID and kind. It presents one vertical sequence of processes, HTTP routes, legacy
+CLI commands and HTTP server starts. Exact route or command identity may point
+to a locally resolved callback; registration and handler locations remain
+separate source actions. Unknown callbacks and provisional command segments are
+labeled as partial rather than completed or placed into an invented hierarchy.
+
+Groups initially show at most six semantically ordered rows and make every
+remaining persisted row reachable through disclosure. Duplicate route or
+command labels remain distinct exact records. A static-evidence note states
+that runtime reachability, order and continuation are not established. This is
+presentation over already persisted local authority: it does not restore the
+D273-disabled framework/Cobra producers, add a provider call, or change report
+schema. The typed UI catalog advances 29→30.
+
+Approved by:
+    Repository owner after asking to restore the useful `route → handler` and
+    saved CLI-command view inside the existing Entrypoints context without
+    giving model output ownership of deterministic facts, 2026-08-10.
