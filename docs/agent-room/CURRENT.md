@@ -862,6 +862,9 @@ Status:
 	exact `/...` fact and independent structural value may also publish a
 	path-only HTTP descriptor when no callback is resolved; it remains detached,
 	shows the exact registration source and never invents a method or handler.
+	After route classification, one sole exact local callable is restored by the
+	backend without requiring the provider to repeat that unambiguous choice;
+	zero or multiple callables remain unbound.
 
 Approved by:
 	Repository owner after real-provider Restic, etcdctl and Echo runs proved

@@ -30,6 +30,7 @@ func TestPromptAllowsEveryAdvertisedFamilyAndKeepsSurfaceBoundsIndependent(t *te
 		"a string method fact may preserve an exact custom HTTP method token",
 		"bind exactly one string fact beginning with / to path",
 		"Method and handler are optional",
+		"the backend attaches it only if the candidate has exactly one callable fact",
 		"Publish a path-only descriptor only when the candidate semantics establish an HTTP route registration",
 		"Middleware, filters, static-filesystem calls, mounts, and ordinary two-string helper calls are not routes",
 		"Never interpret or split an action string such as METHOD:Action into an HTTP method or callback",
@@ -577,10 +578,9 @@ func TestHTTPPathDescriptorAndHandlerRouteRestoreOnlyExactBoundFacts(t *testing.
 		},
 		{
 			CandidateRef: strong.Ref, KindRef: SurfaceKindRefHTTPRoute,
-			Bindings: []ResponseSurfaceBinding{
-				{SlotRef: SurfaceSlotRefPath, FactRef: surfaceFactRefByValue(t, strong, "/healthz")},
-				{SlotRef: SurfaceSlotRefHandler, FactRef: surfaceFactRefByValue(t, strong, "healthz")},
-			},
+			Bindings: []ResponseSurfaceBinding{{
+				SlotRef: SurfaceSlotRefPath, FactRef: surfaceFactRefByValue(t, strong, "/healthz"),
+			}},
 		},
 	}
 	raw, err := json.Marshal(response)
@@ -616,7 +616,7 @@ func TestHTTPPathDescriptorAndHandlerRouteRestoreOnlyExactBoundFacts(t *testing.
 	if exactRoute.Kind != SurfaceKindHTTPRoute || exactRoute.Role != SurfaceRoleEntrySurface ||
 		exactRoute.Method != nil || exactRoute.Handler == nil || exactRoute.Handler.Text != "healthz" ||
 		exactRoute.Path == nil || exactRoute.Path.Text != "/healthz" {
-		t.Fatalf("handler-bound route without method = %+v", exactRoute)
+		t.Fatalf("sole backend-owned handler was not restored without a model binding: %+v", exactRoute)
 	}
 
 	result.RepositoryStateSHA256 = strings.Repeat("8", 64)

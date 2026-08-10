@@ -376,6 +376,17 @@ func restoreSurfaceProposal(
 		if methodPresent {
 			restored.Method = resultSurfaceValue(method)
 		}
+		if !handlerPresent {
+			// Once the provider has classified this exact direct call as an HTTP
+			// route, a sole repository-local callable is backend-owned,
+			// unambiguous handler evidence. Do not require the provider to repeat
+			// a choice the local candidate has already made uniquely. Zero or
+			// multiple callables remain detached descriptors.
+			if callable, unique := soleSurfaceCallable(authority.exact); unique {
+				handler = callable
+				handlerPresent = true
+			}
+		}
 		if handlerPresent {
 			restored.Handler = resultSurfaceValue(handler)
 			restored.Role = SurfaceRoleEntrySurface
@@ -467,6 +478,22 @@ func handlerlessSurfaceHasDescriptorEvidence(candidate ExactSurfaceCandidate, id
 		}
 	}
 	return !hasCallable || hasCompanionString
+}
+
+func soleSurfaceCallable(candidate ExactSurfaceCandidate) (ExactSurfaceFact, bool) {
+	var found ExactSurfaceFact
+	seen := false
+	for _, fact := range candidate.Facts {
+		if fact.Kind != SurfaceFactCallable {
+			continue
+		}
+		if seen {
+			return ExactSurfaceFact{}, false
+		}
+		found = fact
+		seen = true
+	}
+	return found, seen
 }
 
 func resultSurfaceValue(fact ExactSurfaceFact) *ResultSurfaceValue {

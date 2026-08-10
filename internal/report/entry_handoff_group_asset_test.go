@@ -391,7 +391,8 @@ if (String(process.argv[4] || "").indexOf("model-assisted") === 0) {
     surfaces: [
       // Equivalent exact local TriggerRecord wins even when the model leaves
       // the method unbound; the exact registration site + path join is unique.
-      modelRoute("model-surface-000000000000000000000001", null, "/local", localSite, "fixture.local", localHandler),
+      modelRoute("model-surface-000000000000000000000001", null, "/local",
+        { path: localSite.path, line: localSite.line, column: 1 }, "fixture.local", localHandler),
       modelRoute("model-surface-000000000000000000000003", "GET", "/",
         { path: "main.go", line: 98, column: 2 }, "main.root", { path: "main.go", line: 98, column: 17 }),
       modelRoute("model-surface-000000000000000000000002", "GET", "/ws",
