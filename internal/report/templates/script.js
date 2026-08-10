@@ -7144,7 +7144,9 @@
   function renderEntrypointCard(entry, projected, host, projectedGroups, entryKind) {
     var card = el('article', 'rm-map-entry-card');
     var heading = el('div', 'rm-map-entry-card__heading');
-    heading.appendChild(txt('h3', '', bareSourceSymbol(entry && (entry.symbol || entry.label)) || msg('main.map.lens.entry.process')));
+    var entrySymbol = String(entry && entry.symbol || '');
+    var entryLabel = entrySymbol ? bareSourceSymbol(entrySymbol) : String(entry && entry.label || '');
+    heading.appendChild(txt('h3', '', entryLabel || msg('main.map.lens.entry.process')));
     heading.appendChild(renderEntrypointLocationAction(entry, msg('main.map.entry.context.entry_source')));
     card.appendChild(heading);
     var families = String(entryKind || entry && entry.claim_kind || '') === 'process_entry'
@@ -7203,7 +7205,10 @@
         path: primary && primary.path,
         line: primary && primary.line,
         column: primary && primary.column,
-        symbol: entry.label,
+        // Surface names are backend-owned user labels. They may contain dots
+        // as route grammar (for example `{path:.*}`), so never pass them
+        // through Go-symbol qualifier stripping.
+        symbol: '',
         label: entry.label,
       };
       host.appendChild(renderEntrypointCard(exact, projected, host, projectedGroups, entry && entry.kind));
