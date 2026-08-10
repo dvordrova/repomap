@@ -30,30 +30,34 @@ const (
 // ProgressEvent contains bounded metadata about work in progress. It never
 // contains repository contents, prompts, credentials, or provider responses.
 type ProgressEvent struct {
-	Stage          ProgressStage
-	RepoPath       string
-	RepoName       string
-	Model          string
-	Activity       string
-	BundleBytes    int
-	RequestBytes   int
-	ResponseBytes  int
-	CandidateCount int
-	FileCount      int
-	EvidenceCount  int
-	FindingCount   int
-	RejectedCount  int
-	NewFactCount   int
-	InputTokens    int
-	OutputTokens   int
-	Cached         bool
-	SurfaceCount   int
-	Phase          string
-	PhaseState     string
-	CompletedCount int
-	TotalCount     int
-	Warning        string
-	LatencyMillis  int64
+	Stage                 ProgressStage
+	RepoPath              string
+	RepoName              string
+	Model                 string
+	Activity              string
+	BundleBytes           int
+	RequestBytes          int
+	ResponseBytes         int
+	CandidateCount        int
+	FileCount             int
+	EvidenceCount         int
+	FindingCount          int
+	RejectedCount         int
+	NewFactCount          int
+	InputTokens           int
+	OutputTokens          int
+	Cached                bool
+	SurfaceCount          int
+	Phase                 string
+	PhaseState            string
+	CompletedCount        int
+	TotalCount            int
+	Warning               string
+	GoTarget              string
+	SuggestedGoTarget     string
+	GoTargetEvidenceCount int
+	GoTargetEvidencePaths []string
+	LatencyMillis         int64
 }
 
 func emitProgress(opts Options, event ProgressEvent) {

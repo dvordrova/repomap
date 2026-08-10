@@ -271,11 +271,16 @@ func TestCurrentThemeIdentityTuple(t *testing.T) {
 		ScoutCacheContract,
 		ScoutResultVersion,
 		AdjudicationRequestVersion,
+		AdjudicationPromptVersion,
 		AdjudicationCacheContract,
 		AdjudicationResultVersion,
 		StudyThemesVersion,
 	}
-	want := []any{5, "v3", "theme-scout-accepted-v3", 5, 3, "theme-adjudication-accepted-v2", 5, "v5"}
+	want := []any{
+		5, "v3", "theme-scout-accepted-v3", 5,
+		4, "theme-adjudication-prompt-f60d8a346d32", "theme-adjudication-accepted-v3", 6,
+		"v5",
+	}
 	for index := range want {
 		if got[index] != want[index] {
 			t.Fatalf("theme identity tuple[%d] = %v, want %v (full tuple: %v)", index, got[index], want[index], got)

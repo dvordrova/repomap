@@ -59,11 +59,24 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-repository-nav { border-right: 1px solid var(--rm-border); padding: 1.5rem 1rem; }
 .rm-repository-nav__eyebrow { color: var(--rm-muted); font-size: .68rem; font-weight: 700; letter-spacing: .08em; margin: 0 .65rem .75rem; text-transform: uppercase; }
 .rm-repository-nav .rm-tabs { align-items: stretch; border: 0; display: flex; flex-direction: column; gap: .25rem; margin: 0; position: sticky; top: 1.5rem; }
-.rm-repository-nav .rm-tab { border: 0; border-radius: 7px; color: var(--rm-dim); margin: 0; padding: .65rem .75rem; text-align: left; }
+.rm-repository-nav .rm-tab { border: 0; border-left: 3px solid transparent; border-radius: 7px; color: var(--rm-dim); margin: 0; padding: .65rem .75rem; text-align: left; }
 .rm-repository-nav .rm-tab:hover { background: var(--rm-card); color: var(--rm-fg); }
-.rm-repository-nav .rm-tab.rm-active { background: #eff6ff; color: var(--rm-accent); }
+.rm-repository-nav .rm-tab.rm-active { background: #eff6ff; border-left-color: var(--rm-accent); color: var(--rm-accent); font-weight: 650; }
+.rm-target-group { min-width: 0; }
+.rm-target-group + .rm-target-group { border-top: 1px solid var(--rm-border); margin-top: .8rem; padding-top: .8rem; }
+.rm-target-group__label { color: var(--rm-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .64rem; margin: 0 .75rem .3rem; overflow-wrap: anywhere; }
+.rm-target-list { display: grid; gap: .25rem; list-style: none; margin: 0; padding: 0; }
+.rm-target-list__item { min-width: 0; }
+.rm-target-link { align-items: flex-start; display: flex; gap: .5rem; text-decoration: none; white-space: normal; }
+.rm-target-link__label { min-width: 0; overflow-wrap: anywhere; }
+.rm-target-link__default-dot { background: #16a34a; border: 2px solid #dcfce7; border-radius: 999px; flex: 0 0 auto; height: .55rem; margin-top: .25rem; width: .55rem; }
+.rm-repository-nav .rm-target-link--disabled { color: var(--rm-muted); cursor: not-allowed; opacity: .68; }
+.rm-repository-nav .rm-target-link--disabled:hover { background: none; color: var(--rm-muted); }
+.rm-visually-hidden { clip: rect(0 0 0 0); clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: nowrap; width: 1px; }
 .rm-main-content { min-width: 0; padding: 2rem clamp(1.25rem, 3vw, 3rem); }
 .rm-main-content > .rm-tab-content { margin: 0 auto; max-width: 1080px; }
+.rm-main-content > #rm-architecture { max-width: none; }
+.rm-target-study { border-top: 1px solid var(--rm-border); margin-top: 2.5rem; padding-top: 2rem; }
 .rm-view-heading { margin-bottom: 1.5rem; }
 .rm-view-kicker { color: var(--rm-accent); font-size: .7rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
 .rm-view-heading h2 { font-size: clamp(1.45rem, 2.4vw, 2rem); line-height: 1.2; margin: .3rem 0 .55rem; }
@@ -146,12 +159,20 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-overview-anatomy-omitted { color: var(--rm-dim); font-size: .78rem; margin: 0; }
 .rm-overview-integrations-empty { margin: 0; }
 .rm-study-theme-shelf { display: grid; gap: 1rem; }
-.rm-study-theme-shelf__more { margin-top: 0.25rem; }
-.rm-study-theme-shelf__more-summary { cursor: pointer; color: var(--rm-accent, #2563eb); font-weight: 600; }
-.rm-study-theme-shelf__more-list { display: grid; gap: 1rem; margin-top: 1rem; }
+.rm-study-theme-contents { background: #fff; border: 1px solid var(--rm-border); border-radius: 12px; margin-bottom: 1rem; padding: .85rem 1rem; }
+.rm-study-theme-contents__title { color: var(--rm-accent); font-size: .78rem; letter-spacing: .05em; margin: 0 0 .55rem; text-transform: uppercase; }
+.rm-study-theme-contents__list { columns: 2; column-gap: 1.5rem; margin: 0; padding-left: 1.35rem; }
+.rm-study-theme-contents__item { break-inside: avoid; margin: .25rem 0; }
+.rm-study-theme-contents__action { background: transparent; border: 0; color: #334155; cursor: pointer; font: inherit; font-size: .8rem; padding: 0; text-align: left; }
+.rm-study-theme-contents__action:hover, .rm-study-theme-contents__action:focus-visible { color: var(--rm-accent); text-decoration: underline; text-underline-offset: 3px; }
 .rm-study-theme-card { background: #fff; border: 1px solid var(--rm-border); border-radius: 12px; display: flex; flex-direction: column; gap: .55rem; min-width: 0; padding: 1rem 1.1rem; }
+.rm-study-theme-card { scroll-margin-top: 1rem; }
+.rm-study-theme-card__summary { cursor: pointer; display: grid; gap: .35rem; }
+.rm-study-theme-card__summary::marker { color: var(--rm-accent); }
+.rm-study-theme-card__summary:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: 4px; }
+.rm-study-theme-card__body { border-top: 1px solid var(--rm-border); display: grid; gap: 1rem; margin-top: .8rem; padding-top: 1rem; }
 .rm-study-theme-card__title-row { align-items: baseline; display: flex; flex-wrap: wrap; gap: .5rem; justify-content: space-between; min-width: 0; }
-.rm-study-theme-card__title { cursor: default; font-size: 1.05rem; margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.rm-study-theme-card__title { cursor: pointer; font-size: 1.15rem; font-weight: 750; margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .rm-study-theme-card__coverage { border-radius: 999px; font-size: .64rem; font-weight: 700; padding: .18rem .5rem; white-space: nowrap; }
 .rm-study-theme-card__coverage--supported { background: #ecfdf5; color: #047857; }
 .rm-study-theme-card__coverage--partial { background: #fef3c7; color: #92400e; }
@@ -162,6 +183,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-study-theme-card__reading { min-width: 0; overflow-wrap: anywhere; }
 .rm-study-theme-card__reading strong, .rm-study-theme-card__reading code { overflow-wrap: anywhere; }
 .rm-study-theme-card__reading--plain, .rm-study-reading-anchor__open--plain { color: #334155; font-size: .8rem; font-weight: 600; overflow-wrap: anywhere; }
+.rm-study-reading-anchor__open--plain { align-items: baseline; display: inline-flex; flex-wrap: wrap; gap: .35rem; }
 .rm-study-theme-card__reading-row { align-items: baseline; display: flex; flex-wrap: wrap; gap: .5rem; }
 .rm-study-theme-card__reading-meta { align-items: baseline; display: flex; flex-wrap: wrap; gap: .35rem; min-width: 0; }
 .rm-study-theme-card__reading-kind { color: var(--rm-dim); font-size: .64rem; font-weight: 650; text-transform: lowercase; white-space: nowrap; }
@@ -175,7 +197,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-source-action-link strong { min-width: 0; overflow-wrap: anywhere; }
 .rm-source-action-link code { min-width: 0; overflow-wrap: anywhere; }
 .rm-study-theme-card__more { color: var(--rm-dim); font-size: .72rem; }
-.rm-study-theme-card__open { align-self: flex-start; }
 .rm-study-theme-card__coverage-explanation { color: var(--rm-dim); font-size: .82rem; margin: 0 0 .4rem; overflow-wrap: anywhere; }
 .rm-study-show-all { align-self: flex-start; margin-bottom: .4rem; }
 .rm-study-provenance { border: 1px solid var(--rm-border); border-radius: 12px; margin-top: 1.4rem; padding: .6rem 1rem; }
@@ -194,10 +215,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-architecture-unmapped__item { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .7rem; overflow-wrap: anywhere; }
 .rm-architecture-list { margin-top: .6rem; }
 .rm-architecture-list__items { display: grid; gap: .5rem; list-style: none; margin: 0; padding: 0; }
-.rm-architecture-list__item { background: #fff; border: 1px solid var(--rm-border); border-radius: 10px; padding: .6rem .8rem; }
-.rm-architecture-list__primary { align-items: center; background: transparent; border: 0; color: inherit; cursor: pointer; display: flex; flex-wrap: wrap; gap: .5rem; font: inherit; padding: 0; text-align: left; }
-.rm-architecture-list__primary:hover strong { color: var(--rm-accent); }
-.rm-architecture-list__description { color: var(--rm-dim); font-size: .78rem; margin: .3rem 0 0; overflow-wrap: anywhere; }
+.rm-architecture-list__item { background: #fff; border: 1px solid var(--rm-border); border-radius: 10px; padding: 0; }
+.rm-architecture-list__primary { background: transparent; border: 0; border-radius: inherit; color: inherit; cursor: pointer; display: grid; font: inherit; gap: .25rem; padding: .75rem .85rem; text-align: left; width: 100%; }
+.rm-architecture-list__primary:hover, .rm-architecture-list__primary:focus-visible { background: #f8fafc; outline: none; }
+.rm-architecture-list__heading { align-items: baseline; display: flex; gap: .5rem; justify-content: space-between; }
+.rm-architecture-list__heading strong { color: var(--rm-accent); font-size: .95rem; }
+.rm-architecture-list__arrow { color: var(--rm-accent); font-size: 1.1rem; }
+.rm-architecture-list__description { color: var(--rm-dim); font-size: .78rem; overflow-wrap: anywhere; }
 .rm-architecture-list__count { color: var(--rm-dim); font-size: .7rem; }
 .rm-atlas-shelf { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px; padding: 1.1rem; }
 .rm-overview-hero + .rm-atlas-shelf--overview { margin-top: .9rem; }
@@ -304,54 +328,38 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-study-investigation__title { font-size: 1rem; margin: 0; }
 .rm-study-investigation__copy, .rm-study-investigation__prepared { color: #475569; font-size: .78rem; line-height: 1.55; margin: 0; max-width: 58rem; }
 .rm-study-investigation__prepared { background: #f8fafc; border-left: 3px solid #94a3b8; border-radius: 0 8px 8px 0; padding: .7rem .8rem; }
-.rm-study-investigation__paths { display: grid; gap: .85rem; }
-.rm-study-investigation__mechanism { background: #fff; border: 1px solid #cbd5e1; border-radius: 11px; display: grid; gap: .65rem; min-width: 0; padding: .8rem; }
-.rm-study-investigation__heading { align-items: center; display: flex; flex-wrap: wrap; gap: .6rem; justify-content: space-between; }
-.rm-study-investigation__heading h4 { font-size: .84rem; margin: 0; }
-.rm-study-investigation__path { align-items: stretch; display: flex; gap: .5rem; min-width: 0; overflow-x: auto; padding: .15rem .1rem .3rem; }
-.rm-study-investigation__node { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; display: grid; flex: 0 0 min(210px, 38vw); gap: .35rem; min-width: 0; padding: .6rem; }
-.rm-study-investigation__node-label { font-size: .78rem; line-height: 1.35; overflow-wrap: anywhere; }
-.rm-study-investigation__transition { align-content: center; color: #64748b; display: grid; flex: 0 0 min(168px, 30vw); gap: .2rem; justify-items: center; min-width: 0; text-align: center; }
-.rm-study-investigation__arrow { color: #7c3aed; font-size: 1.2rem; font-weight: 800; line-height: 1; }
+.rm-study-investigation__paths { display: grid; gap: 1rem; }
+.rm-study-investigation__group { border-top: 1px solid #cbd5e1; display: grid; min-width: 0; }
+.rm-study-investigation__root { align-items: baseline; background: #f8fafc; display: flex; flex-wrap: wrap; gap: .35rem 1rem; min-width: 0; padding: .65rem .75rem; }
+.rm-study-investigation__root-file { color: #475569; }
+.rm-study-investigation__root-declaration { font-weight: 750; }
+.rm-study-investigation__mechanism { border-top: 1px solid #e2e8f0; display: grid; gap: .25rem; min-width: 0; padding: .45rem .75rem .65rem; }
+.rm-study-investigation__mechanism:first-of-type { border-top: 0; }
+.rm-study-investigation__map { background: transparent; border: 0; color: var(--rm-accent); cursor: pointer; font: inherit; font-size: .68rem; justify-self: end; padding: .15rem 0; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 2px; }
+.rm-study-investigation__map:hover, .rm-study-investigation__map:focus-visible { text-decoration-color: currentColor; }
+.rm-study-investigation__rows { display: grid; min-width: 0; }
+.rm-study-investigation__row { align-items: baseline; display: flex; flex-wrap: wrap; gap: .3rem .55rem; min-width: 0; padding: .45rem 0; }
+.rm-study-investigation__row + .rm-study-investigation__row { border-top: 1px solid #f1f5f9; }
 .rm-study-investigation__invocation { color: #5b21b6; font-size: .68rem; font-weight: 750; }
-.rm-study-investigation__witnesses { font-size: .62rem; }
-.rm-study-investigation__source { background: transparent; border: 0; color: var(--rm-accent); cursor: pointer; font: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .61rem; line-height: 1.4; max-width: 100%; overflow-wrap: anywhere; padding: 0; text-align: left; text-decoration: none; }
+.rm-study-investigation__source { background: transparent; border: 0; color: var(--rm-accent); cursor: pointer; font: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .72rem; line-height: 1.45; max-width: 100%; overflow-wrap: anywhere; padding: 0; text-align: left; text-decoration: none; }
+.rm-study-investigation__line { color: #64748b; flex: 0 0 auto; min-width: 2.8rem; text-align: right; }
+.rm-study-investigation__callee { color: #172554; font-weight: 700; }
+.rm-study-investigation__arrow { color: #7c3aed; flex: 0 0 auto; font-size: .9rem; font-weight: 800; }
 .rm-study-investigation__source:hover, .rm-study-investigation__source:focus-visible { text-decoration: underline; text-underline-offset: 2px; }
 .rm-study-investigation__source--plain { color: #64748b; cursor: default; }
 .rm-architecture-canvas-stage { min-width: 0; position: relative; }
-.rm-map-primary-layout > .rm-architecture-canvas-stage { grid-column: 1; grid-row: 1; }
-.rm-map-primary-layout { align-items: stretch; display: grid; gap: .75rem; grid-template-columns: minmax(0, 1fr) minmax(270px, 310px); min-width: 0; }
-.rm-map-primary-layout.has-detail-inspector { grid-template-columns: minmax(0, 1fr); }
-.rm-map-empty-inspector { align-content: start; background: #f8fafc; border: 1px solid var(--rm-border); border-radius: 12px; display: grid; gap: .75rem; grid-column: 2; grid-row: 1; min-width: 0; overflow: auto; padding: .85rem; }
+.rm-map-toolbar { align-items: center; display: flex; flex-wrap: wrap; gap: .55rem; justify-content: space-between; margin-bottom: .65rem; }
+.rm-map-primary-layout { min-width: 0; }
+.rm-map-empty-inspector { min-width: 0; }
 .rm-map-empty-inspector[hidden] { display: none; }
-.rm-map-empty-inspector__lead { display: grid; gap: .25rem; min-width: 0; }
-.rm-map-empty-inspector__kicker { color: var(--rm-dim); font-size: .65rem; font-weight: 750; letter-spacing: .055em; text-transform: uppercase; }
-.rm-map-empty-inspector__purpose { color: #334155; font-size: .8rem; line-height: 1.45; margin: 0; overflow-wrap: anywhere; }
-.rm-map-empty-inspector__start { border-top: 1px solid var(--rm-border); display: grid; gap: .4rem; padding-top: .65rem; }
-.rm-map-empty-inspector__section-title { font-size: .72rem; margin: 0; }
-.rm-map-empty-inspector__start-action { align-items: flex-start; background: #3157d5; border: 0; border-radius: 8px; color: #fff; cursor: pointer; display: grid; font: inherit; gap: .2rem; max-width: 100%; min-width: 0; padding: .55rem .65rem; text-align: left; text-decoration: none; }
+.rm-map-empty-inspector__start { display: block; }
+.rm-map-empty-inspector__start-action { align-items: baseline; background: #3157d5; border: 0; border-radius: 8px; color: #fff; cursor: pointer; display: flex; flex-wrap: wrap; font: inherit; gap: .25rem .55rem; max-width: 100%; min-width: 0; padding: .5rem .7rem; text-align: left; text-decoration: none; }
 .rm-map-empty-inspector__start-action:hover { background: #2747b5; }
 .rm-map-empty-inspector__start-action:focus-visible { outline: 3px solid rgba(49, 87, 213, .3); outline-offset: 2px; }
-.rm-map-empty-inspector__start-location { color: inherit; font-size: .61rem; font-weight: 500; opacity: .9; overflow-wrap: anywhere; white-space: normal; }
-.rm-map-empty-inspector__unavailable, .rm-map-empty-inspector__disclosure-copy { color: var(--rm-dim); font-size: .68rem; line-height: 1.45; margin: 0; overflow-wrap: anywhere; }
-.rm-map-empty-inspector__metrics { display: grid; gap: .35rem; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; }
-.rm-map-empty-inspector__metric { background: #fff; border: 1px solid var(--rm-border); border-radius: 8px; display: grid; gap: .15rem; min-width: 0; padding: .45rem .5rem; }
-.rm-map-empty-inspector__metric dt { color: var(--rm-dim); font-size: .59rem; overflow-wrap: anywhere; }
-.rm-map-empty-inspector__metric dd { color: #0f172a; font-size: .82rem; font-weight: 750; margin: 0; }
-.rm-map-empty-inspector__entries { border-top: 1px solid var(--rm-border); display: grid; gap: .4rem; padding-top: .65rem; }
-.rm-map-empty-inspector__entry-list { display: grid; gap: .3rem; list-style: none; margin: 0; padding: 0; }
-.rm-map-empty-inspector__entry-row { background: #fff; border: 1px solid var(--rm-border); border-radius: 8px; display: grid; gap: .15rem; min-width: 0; padding: .4rem .5rem; }
-.rm-map-empty-inspector__entry-heading { align-items: baseline; display: flex; gap: .35rem; justify-content: space-between; min-width: 0; }
-.rm-map-empty-inspector__entry-heading strong { font-size: .66rem; overflow-wrap: anywhere; }
-.rm-map-empty-inspector__entry-count { color: #3157d5; flex: 0 0 auto; font-size: .63rem; font-weight: 750; }
-.rm-map-empty-inspector__entry-representative { color: var(--rm-dim); font-size: .61rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rm-map-empty-inspector__disclosure { border-top: 1px solid var(--rm-border); min-width: 0; padding-top: .4rem; }
-.rm-map-empty-inspector__disclosure-summary { color: #475569; cursor: pointer; font-size: .65rem; font-weight: 700; overflow-wrap: anywhere; }
-.rm-map-empty-inspector__disclosure > .rm-map-empty-inspector__entry-list, .rm-map-empty-inspector__disclosure > .rm-map-empty-inspector__disclosure-copy { margin-top: .4rem; }
+.rm-map-empty-inspector__start-location { color: inherit; font-size: .64rem; font-weight: 500; opacity: .9; overflow-wrap: anywhere; }
 @media (min-width: 641px) and (max-height: 1080px) {
-  .rm-map-primary-layout { --rm-map-first-viewport-height: clamp(360px, calc(100vh - 525px), 555px); }
+  .rm-map-primary-layout { --rm-map-first-viewport-height: clamp(420px, calc(100vh - 300px), 680px); }
   .rm-map-primary-layout .rm-arch:not(.has-selected-flow) .rm-arch__viewport { height: var(--rm-map-first-viewport-height); }
-  .rm-map-empty-inspector { max-height: calc(var(--rm-map-first-viewport-height) + 3.5rem); }
 }
 .rm-study-investigation-map-context[hidden] { display: none !important; }
 .rm-study-investigation-map { backdrop-filter: blur(8px); background: rgba(250,245,255,.94); border: 1px solid #c4b5fd; border-radius: 10px; box-shadow: 0 10px 28px rgba(76,29,149,.12); display: grid; gap: .35rem; max-height: calc(100% - 1.5rem); overflow: auto; padding: .55rem; position: absolute; right: .75rem; top: .75rem; width: min(19rem, calc(100% - 1.5rem)); z-index: 8; }
@@ -398,7 +406,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-hero-readme p { color: var(--rm-dim); font-size: .9rem; margin-bottom: .2rem; overflow-wrap: anywhere; }
 .rm-overview-actions, .rm-mechanism-actions, .rm-step-actions, .rm-map-return { display: flex; flex-wrap: wrap; gap: .55rem; }
 .rm-primary-action, .rm-secondary-action, .rm-quiet-action { border: 1px solid var(--rm-accent); border-radius: 7px; cursor: pointer; font: inherit; font-size: .78rem; font-weight: 650; padding: .5rem .75rem; }
-.rm-source-action-link { align-items: center; box-sizing: border-box; display: inline-flex; justify-content: center; text-decoration: none; }
+.rm-source-action-link { align-items: center; box-sizing: border-box; display: inline-flex; gap: .35rem; justify-content: center; text-decoration: none; }
 .rm-source-target-link { box-sizing: border-box; text-decoration: none; }
 .rm-primary-action { background: var(--rm-accent); color: #fff; }
 .rm-secondary-action { background: #fff; color: var(--rm-accent); }
@@ -543,6 +551,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 /* Tabs */
 .rm-tabs { align-items: flex-end; display: flex; gap: 0; border-bottom: 2px solid var(--rm-border); margin-bottom: 1.5rem; flex-wrap: wrap; }
 .rm-tab { padding: .6rem 1rem; cursor: pointer; background: none; border: none; font-size: .85rem; color: var(--rm-dim); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: .15s; white-space: nowrap; }
+.rm-repository-nav .rm-target-link { max-width: 100%; min-width: 0; white-space: normal; }
 .rm-tab:hover { color: var(--rm-fg); }
 .rm-tab.rm-active { color: var(--rm-accent); border-bottom-color: var(--rm-accent); font-weight: 600; }
 
@@ -626,30 +635,31 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
 @media (max-width: 640px) {
   .rm-architecture-canvas-card { display: flex; flex-direction: column; }
-  .rm-map-primary-layout { display: contents; }
-  .rm-map-empty-inspector { max-height: none; order: 0; overflow: visible; }
-  .rm-map-lens-control { order: 1; }
-  .rm-map-lens-objects { order: 2; }
-  .rm-architecture-canvas-stage { order: 3; }
-  .rm-workspace, .rm-workspace.has-source-drawer { display: block; }
-  .rm-repository-nav { border-bottom: 1px solid var(--rm-border); border-right: 0; padding: .65rem 1rem; }
-  .rm-repository-nav__eyebrow { display: none; }
-  .rm-repository-nav .rm-tabs { flex-direction: row; overflow-x: auto; position: static; }
-  .rm-repository-nav .rm-tab { flex: 0 0 auto; }
-  .rm-main-content { padding: 1.25rem 1rem; }
+  .rm-map-toolbar { align-items: stretch; flex-direction: column; }
+  .rm-map-lens-control { align-self: flex-start; }
+  .rm-workspace, .rm-workspace.has-source-drawer { display: grid; grid-template-columns: clamp(104px, 30vw, 160px) minmax(0, 1fr); }
+  .rm-repository-nav { border-bottom: 0; border-right: 1px solid var(--rm-border); padding: .8rem .45rem; }
+  .rm-repository-nav__eyebrow { font-size: .6rem; margin: 0 .45rem .6rem; }
+  .rm-repository-nav .rm-tabs { flex-direction: column; overflow: visible; position: sticky; top: .8rem; }
+  .rm-repository-nav .rm-tab { flex: 0 1 auto; font-size: .72rem; padding: .55rem .45rem; }
+	.rm-main-content { padding: 1.25rem .75rem; }
+	.rm-target-group__label { font-size: .58rem; margin-left: .45rem; margin-right: .45rem; }
 	.rm-atlas-package-action, .rm-atlas-package-unavailable { min-width: 0; }
   .rm-repository-area-grid, .rm-mechanism-grid, .rm-operation-grid, .rm-operation-landmark-grid { grid-template-columns: minmax(0, 1fr); }
 	.rm-operation-literal { align-items: stretch; flex-direction: column; }
 	.rm-operation-literal .rm-secondary-action { align-self: flex-start; }
 	.rm-operation-action > .rm-source-card { margin-left: 0; }
 	.rm-study-reading-anchor { align-items: flex-start; grid-template-columns: 2rem minmax(0, 1fr); }
-	.rm-study-investigation__path { flex-direction: column; overflow: visible; padding-right: 0; }
-	.rm-study-investigation__node, .rm-study-investigation__transition { box-sizing: border-box; flex-basis: auto; width: 100%; }
-	.rm-study-investigation__transition { justify-items: start; padding: .15rem .55rem; text-align: left; }
-	.rm-study-investigation__arrow { transform: rotate(90deg); }
+	.rm-study-investigation__root, .rm-study-investigation__mechanism { padding-left: .6rem; padding-right: .6rem; }
+	.rm-study-investigation__map { justify-self: start; }
+	.rm-study-investigation__row { align-items: baseline; }
+	.rm-study-investigation__line { min-width: 2.35rem; }
 	.rm-study-investigation-map, .rm-study-investigation-map--mobile-only { display: grid; margin: .65rem 0 0; max-height: none; overflow: visible; position: static; width: auto; }
 	.rm-study-investigation-map__desktop { display: none; }
 	.rm-study-investigation-map__mobile-path { display: grid; gap: .5rem; }
+	.rm-study-theme-contents { box-sizing: border-box; max-width: 100%; min-width: 0; }
+	.rm-study-theme-contents__list { column-gap: 0; columns: 1; max-width: 100%; }
+	.rm-study-theme-contents__action { display: block; max-width: 100%; overflow-wrap: anywhere; width: 100%; }
   .rm-context-item { box-sizing: border-box; max-width: none; width: 100%; }
   .rm-system-story li { grid-template-columns: 1.45rem minmax(0, 1fr); padding: .65rem; }
   .rm-system-story li::before { height: 1.45rem; width: 1.45rem; }
@@ -687,9 +697,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
 /* Decision 229 D6 Study progressive disclosure: collapsed cards with
    independent evidence/scope badges, bounded previews, +N disclosure. */
-.rm-study-theme-card__title { background: transparent; border: 0; color: inherit; cursor: pointer; font: inherit; padding: 0; text-align: left; }
-.rm-study-theme-card__title:hover { color: var(--rm-accent); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
-.rm-study-theme-card__title:focus-visible { outline: 2px solid var(--rm-accent); outline-offset: 2px; }
+.rm-study-theme-card__title { color: var(--rm-accent); font-family: inherit; font-size: 1.15rem; font-weight: 750; line-height: 1.3; text-align: left; }
 .rm-study-theme-card__question { color: var(--rm-dim); font-size: .85rem; margin: .1rem 0 0; }
 .rm-study-theme-card__why { color: var(--rm-dim); font-size: .78rem; margin: .15rem 0 0; }
 .rm-study-theme-card__badges { align-items: center; display: flex; flex-wrap: wrap; gap: .4rem; }
@@ -729,7 +737,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-study-reading-anchor__role--direct { background: #ccfbf1; color: #0f766e; }
 .rm-study-reading-anchor__role--supporting { background: #eef2ff; color: #3157d5; }
 .rm-study-reading-anchor__observation { color: var(--rm-dim); font-size: .78rem; margin: .2rem 0 0; }
-.rm-study-back { background: transparent; border: 0; color: var(--rm-accent); cursor: pointer; font: inherit; font-size: .82rem; font-weight: 650; padding: 0 0 .75rem; }
 
 /* Decision 229 D2 repository perimeter: observed use/entry → analyzed
    scope ⋯ observed touchpoints. Calm white surface, teal touchpoints. */
@@ -797,14 +804,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     </div>
   </header>
   <div class="rm-workspace">
-    <aside class="rm-repository-nav" aria-label="Repository navigation" data-rm-aria-message="main.repository.navigation">
-      <div class="rm-repository-nav__eyebrow" data-rm-message="main.repository.workspace">Repository workspace</div>
+    <aside class="rm-repository-nav" aria-label="Analysis targets" data-rm-aria-message="main.analysis_targets.navigation">
+      <div class="rm-repository-nav__eyebrow" data-rm-message="main.analysis_targets.title">Targets</div>
       <nav class="rm-tabs" id="rm-tabs"></nav>
     </aside>
     <main class="rm-main-content" id="rm-main-content">
       <section id="rm-task-investigation" class="rm-tab-content"></section>
-      <section id="rm-study-overview" class="rm-tab-content"></section>
-      <section id="rm-study-detail" class="rm-tab-content"></section>
       <section id="rm-operate-detail" class="rm-tab-content"></section>
       <section id="rm-architecture" class="rm-tab-content rm-active"></section>
       <section id="rm-provenance" class="rm-tab-content"></section>
@@ -815,7 +820,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     </aside>
   </div>
   <div class="rm-toast" id="rm-toast" role="status" aria-live="polite" hidden></div>
-  <script type="application/json" id="rm-report-data">{"format_version":42,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
+  <script type="application/json" id="rm-report-data">{"format_version":45,"repo_name":"testrepo","project_guess":"test project","orientation_confidence":0.82,"high_level_map":[{"name":"command","role":"entry","evidence":["main.go wires the server"],"why_it_matters":"owns process startup"}],"first_files_to_open":[{"path":"main.go","reason":"process entrypoint","priority":1}],"candidate_flows":["flow-a"],"candidate_directions":[{"id":"flow-a","name":"Test Flow","trigger":"a request arrives","likely_entrypoint":"main.go","likely_files":["main.go","server/server.go"],"why_interesting":"shows the primary request path","evidence":["main.go wires the server"],"confidence":0.75,"local_verification":{"status":"partial","confidence_cap":0.75,"verified":["main.go:1 exact entrypoint"],"missing":["first domain-level call"]},"local_proof":{"version":3,"proof":{"version":3,"id":"flow-a","archetype":"cli","goal":"Test Flow","command":"serve","slots":[{"kind":"trigger","status":"verified","summary":"registered serve command"},{"kind":"entrypoint","status":"verified","summary":"exact main"},{"kind":"termination","status":"partial","missing":"shutdown path"}],"anchors":[{"id":"main","kind":"function","label":"main","location":{"path":"main.go","line":1}},{"id":"serve","kind":"function","label":"serve","location":{"path":"server/server.go","line":20}}],"transitions":[{"id":"dispatch-serve","from":"main","to":"serve","relation":"calls","resolution":"static","invocation":"synchronous","certainty":"static","evidence":{"path":"main.go","line":8},"provider":"go_syntax"}]},"budget":{"max_tasks":20,"max_depth":4,"max_symbols":30,"max_files":24,"max_llm_calls":2,"max_wall_millis":90000,"max_no_progress":2},"stats":{"tasks_completed":1,"files":["main.go","server/server.go"],"symbols":["serve"],"llm_calls":0,"wall_millis":42,"no_progress":0},"pending":null,"seen_task_keys":null,"stop":{"reason":"no_task","message":"shutdown executor is not configured"}},"disposition":""}],"important_domain_words":[{"word":"worker","guess":"background request processor","evidence":["server/server.go starts workers"]}],"questions_for_human":["Which runtime path matters most?"],"unverified_paths":[{"path":"legacy/worker.go","reason":"mentioned but not included in the bounded context"}],"flows":[{"id":"flow-a","name":"Test Flow","summary":"does something interesting","confidence":0.75,"likely_chain":[{"step":1,"name":"start","what_happens":"begins execution","evidence_files":["main.go"],"confidence":0.8}],"files_to_read_in_order":[{"path":"main.go","reason":"entrypoint","priority":1},{"path":"server/server.go","reason":"request routing","priority":2}],"tests_to_read":[{"path":"main_test.go","reason":"integration test","priority":0}],"unverified_paths":[{"path":"legacy.go","reason":"may be unused"}],"unknowns":["How does auth interact?"],"warnings":["Low confidence in step 1"],"bundle_summary":{"selected_files_count":5,"selected_tests_count":2,"selected_docs_count":1,"selected_packages_count":3,"related_edges_count":4},"confidence_label":"strong","bundle_stats_label":"5 source, 2 test, 1 doc"}],"artifacts_dir":"/tmp/test-run","warnings":["global warning 1"],"run":{"created_at":"2026-07-10T12:00:00Z","model":"deepseek-v4-flash","prompt_version":"orientation-json-v3","compact_context_bytes":12000,"external_request_bytes":18000,"provider_request_count":1,"candidate_direction_count":1,"provider_latency_ms":432},"recommended_flow":"flow-a","flow_count":1}</script>
   <script id="rm-ui-messages-js">(function (global) {
   'use strict';
 
@@ -827,8 +832,18 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   // closed inspector contract advances the catalog to UI16. UI17 localizes
   // the typed deterministic package-landscape presentation without touching
   // model-authored architecture prose. UI18 distinguishes an exact process
-  // entry fallback from a backend-designated primary process entry.
-  var VERSION = 18;
+  // entry fallback from a backend-designated primary process entry. UI19
+  // reports partial Architecture package and symbol remainder separately.
+  // UI20 removes product-facing diagnostics and makes Map/Study navigation
+  // explicit without changing report data authority. UI21 presents the same
+  // exact Study investigation v1 as a grouped source trace. UI22 names the
+  // one selected Go package at the persistent workspace boundary. UI23 turns
+  // that boundary into the permanent target rail and joins Canvas + Study on
+  // one target page. UI24 removes the now-unrendered generic prepared-trace
+  // copy; exact readings remain the sole prepared-investigation presentation.
+  // UI25 distinguishes snapshot freshness from Git working-tree cleanliness
+  // and replaces the module-root dot with the repository presentation name.
+  var VERSION = 25;
   var EN = {
     "main.browser_error.invalid_report_artifact": { params: [], text: "The saved report is invalid or exceeds the supported size." },
     "main.browser_error.no_saved_reports": { params: [], text: "No saved reports are available." },
@@ -856,7 +871,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.source.notice_line": { params: ["line"], format: function (params) { return "Line " + params.line; } },
     "main.source.notice_lines": { params: ["start", "end"], format: function (params) { return "Lines " + params.start + "–" + params.end; } },
     "main.source.show_code": { params: [], text: "Show code" },
-    "main.study.incomplete_direction": { params: [], text: "Incomplete Study direction" },
     "main.study.stage.central_operation": { params: [], text: "Central operation" },
     "main.study.stage.contribution": { params: [], text: "Contribution" },
     "main.study.stage.core_model": { params: [], text: "Core model" },
@@ -867,6 +881,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.stage_incomplete": { params: ["stage"], format: function (params) { return params.stage + " · incomplete"; } },
     "main.task.anchor_citation": { params: ["index", "title"], format: function (params) { return "Anchor " + params.index + " · " + params.title; } },
     "main.repository.onboarding": { params: [], text: "Repository onboarding" },
+    "main.analysis_target.executable_scope": { params: ["scope"], format: function (params) { return "Report scope: executable package " + params.scope; } },
+    "main.analysis_target.library_scope": { params: ["scope"], format: function (params) { return "Report scope: library package " + params.scope; } },
     "main.saved.report": { params: [], text: "Saved report" },
     "main.file.paths.open.in.vs.code": { params: [], text: "File paths open in VS Code ↗" },
     "main.about.this.report": { params: [], text: "About this report" },
@@ -874,28 +890,18 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.provenance.revision": { params: ["revision"], format: function (params) { return "revision " + params.revision; } },
     "main.provenance.freshness": { params: ["state"], format: function (params) { return "repository " + params.state; } },
     "main.provenance.language": { params: ["language"], format: function (params) { return "language: " + params.language; } },
-    "main.freshness.state.fresh": { params: [], text: "clean" },
+    "main.freshness.state.fresh": { params: [], text: "current" },
+    "main.provenance.local_changes_captured": { params: [], text: "local changes captured" },
     "main.freshness.state.dirty": { params: [], text: "locally modified" },
     "main.freshness.state.stale": { params: [], text: "stale" },
     "main.freshness.state.missing": { params: [], text: "missing" },
     "main.freshness.state.unavailable": { params: [], text: "unavailable" },
-    "main.repository.navigation": { params: [], text: "Repository navigation" },
-    "main.repository.workspace": { params: [], text: "Repository workspace" },
-    "main.map": { params: [], text: "Map" },
-    "main.map.lenses": { params: [], text: "Map lenses" },
-    "main.map.lens.landscape": { params: [], text: "Landscape" },
+    "main.analysis_targets.navigation": { params: [], text: "Analysis targets" },
+    "main.analysis_targets.title": { params: [], text: "Targets" },
+    "main.analysis_target.default": { params: [], text: "Default target" },
+    "main.analysis_target.unavailable": { params: [], text: "Report unavailable" },
     "main.map.lens.entrypoints": { params: [], text: "Entrypoints" },
-    "main.map.lens.integrations": { params: [], text: "Integrations" },
-    "main.map.lens.object.entries": { params: ["count"], format: function (params) { return englishCount(params.count, "entry", "entries"); } },
-    "main.map.lens.object.witnesses": { params: ["count"], format: function (params) { return params.count + " witnesses"; } },
-    "main.map.lens.object.paired": { params: [], text: "paired" },
-    "main.map.lens.entry.cli": { params: [], text: "CLI commands" },
-    "main.map.lens.entry.http": { params: [], text: "HTTP/API routes" },
     "main.map.lens.entry.process": { params: [], text: "Process entry" },
-    "main.map.lens.entry.worker": { params: [], text: "Workers/jobs" },
-    "main.map.lens.entry.other": { params: [], text: "Other entries" },
-    "main.map.lens.empty.entrypoints": { params: [], text: "No entry surfaces participate in a component in this run." },
-    "main.map.lens.empty.integrations": { params: [], text: "No observed external/state associations in this run." },
     "main.map.entry.context.direct_call": { params: [], text: "Direct call" },
     "main.map.entry.context.entry_source": { params: [], text: "Entry source" },
     "main.map.entry.context.callsite": { params: [], text: "Callsite" },
@@ -904,7 +910,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.map.entry.context.limit": { params: [], text: "Static first hop only; runtime order and continuation are not established." },
     "main.overview": { params: [], text: "Overview" },
     "main.study": { params: [], text: "Study" },
-    "main.architecture": { params: [], text: "Architecture" },
     "main.architecture.disclosure.count": { params: ["count"], format: function (params) { return "· " + params.count; } },
     "main.architecture.component_list.title": { params: [], text: "Components" },
     "main.architecture.authority.validated": { params: [], text: "Grouping: validated model hypothesis" },
@@ -913,14 +918,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.architecture.coverage.complete": { params: [], text: "Coverage: complete" },
     "main.architecture.coverage.partial": { params: ["covered", "requested"], format: function (params) { return "Coverage: " + params.covered + " of " + params.requested + " requested units"; } },
     "main.architecture.coverage.local": { params: [], text: "Coverage: local structure only" },
-    "main.architecture.evidence.exact": { params: [], text: "exact sources" },
-    "main.architecture.evidence.mixed": { params: [], text: "exact + package" },
-    "main.architecture.evidence.package": { params: [], text: "package/structure" },
     "main.architecture.unmapped.title": { params: ["count"], format: function (params) { return englishCount(params.count, "exact member", "exact members") + " outside the conceptual map"; } },
     "main.architecture.unmapped.copy": { params: [], text: "These locally observed members were not assigned to any component by the model. They remain exact evidence; the grouping simply did not cover them." },
     "main.architecture.list.kicker": { params: [], text: "Components" },
     "main.architecture.list.title": { params: [], text: "Component list" },
-    "main.architecture.list.copy": { params: [], text: "Structured alternative to the map: every component with its evidence tier. Select one to focus it." },
+    "main.architecture.list.copy": { params: [], text: "Select a component to focus it on the map and open its code context." },
     "main.architecture.list.member_count": { params: ["count"], format: function (params) { return englishCount(params.count, "member", "members"); } },
     "main.provenance": { params: [], text: "Provenance" },
     "main.source.locations": { params: [], text: "Source locations" },
@@ -948,7 +950,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.diagnostics.omissions": { params: [], text: "Frontier omissions" },
     "main.study.diagnostics.missing_core_heading": { params: ["count"], format: function (params) { return "Core areas without a published theme (" + params.count + ")"; } },
     "main.study.diagnostics.missing_core_area": { params: ["name"], format: function (params) { return params.name; } },
-    "main.study.themes.title": { params: [], text: "Study themes with exact source links" },
+    "main.study.themes.title": { params: [], text: "Topics" },
+    "main.study.contents": { params: [], text: "Contents" },
     "main.study.theme.supported": { params: [], text: "Exact source attached" },
     "main.study.theme.partial": { params: [], text: "Partial coverage" },
     "main.study.theme.scope_exact": { params: [], text: "Exact scope" },
@@ -960,11 +963,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.theme.kind.integration_family": { params: [], text: "Integration family" },
     "main.study.theme.kind.shared_domain": { params: [], text: "Shared domain responsibility" },
     "main.study.theme.kind.learning": { params: [], text: "Learning theme" },
-    "main.study.theme.callsite_count": { params: ["count"], format: function (params) { return "· " + params.count + " callsites"; } },
-    "main.study.theme.more_readings": { params: ["count"], format: function (params) { return "+" + params.count + " readings"; } },
-    "main.study.theme.source_unavailable": { params: [], text: "exact source unavailable in this report" },
-    "main.study.theme.expected_learning": { params: ["learning"], format: function (params) { return "What to verify: " + params.learning; } },
-    "main.study.theme.first_limitation": { params: ["limitation"], format: function (params) { return "Limitation: " + params.limitation; } },
     "main.study.theme.partial_limitation_short": { params: [], text: "Some evidence or source scope for this theme remains partial." },
     "main.study.theme.limitations": { params: [], text: "Limitations" },
     "main.study.theme.alternates.title": { params: [], text: "Related perspectives" },
@@ -977,16 +975,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.theme.partial_explanation_generic": { params: [], text: "Thematic coverage is partial: some anchors could not be pinned to exact source, or the theme spans more source than was reviewed." },
     "main.study.theme.reading.role.direct": { params: [], text: "direct support" },
     "main.study.theme.reading.role.supporting": { params: [], text: "supporting" },
-    "main.study.investigation.title": { params: [], text: "Connected code paths" },
-    "main.study.investigation.copy": { params: [], text: "These ordered paths follow exact direct calls attached to this Study theme. They describe static code structure, not an observed run." },
-    "main.study.investigation.prepared": { params: [], text: "Exact starting points are ready; this report does not yet connect them into a multi-step code path." },
-    "main.study.investigation.path": { params: ["ordinal"], format: function (params) { return "Path " + params.ordinal; } },
-    "main.study.investigation.declaration": { params: [], text: "Declaration" },
+    "main.study.investigation.title": { params: [], text: "Source trace" },
+    "main.study.investigation.copy": { params: [], text: "Exact direct calls in source order. This is not a runtime trace." },
     "main.study.investigation.callsite": { params: [], text: "Call site" },
-    "main.study.investigation.invocation.synchronous": { params: [], text: "Direct call" },
     "main.study.investigation.invocation.goroutine": { params: [], text: "Goroutine start" },
     "main.study.investigation.invocation.deferred": { params: [], text: "Deferred call" },
-    "main.study.investigation.witnesses": { params: ["count"], format: function (params) { return englishCount(params.count, "static witness", "static witnesses"); } },
     "main.study.investigation.show_on_map": { params: [], text: "Show on map" },
     "main.study.investigation.back_to_study": { params: [], text: "← Back to Study" },
     "main.study.investigation.map.side_title": { params: [], text: "Exact transitions without a map arrow" },
@@ -994,9 +987,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.investigation.map.one_area": { params: [], text: "one map area" },
     "main.study.investigation.map.zero_component": { params: [], text: "The exact transition has no single joined map area at one or both endpoints." },
     "main.study.investigation.map.plural_components": { params: [], text: "One or both endpoints belong to several exact map areas, so no single arrow is chosen." },
-    "main.study.provenance.title": { params: [], text: "Coverage and provenance" },
-    "main.study.themes.copy": { params: [], text: "The model proposes themes over exact source readings. Local checks verify the source links and structure, not the interpretation; verify each conclusion against the cited code." },
-    "main.study.themes.show_all": { params: ["count"], format: function (params) { return "Show all themes (" + params.count + " more)"; } },
     "main.study.frontier.browse_title": { params: [], text: "All study questions" },
     "main.study.frontier.open_theme": { params: ["count"], format: function (params) { return "Open theme " + params.count; } },
     "main.study.frontier.browse_copy": { params: [], text: "Every question the local analysis can answer for this repository, in a fixed local order. This is not a model ranking." },
@@ -1012,7 +1002,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.diagnostics.yes": { params: [], text: "Yes" },
     "main.study.diagnostics.no": { params: [], text: "No" },
     "main.back.to.reading.path": { params: [], text: "← Back to reading path" },
-    "main.all.study.directions": { params: [], text: "← All Study directions" },
     "main.what.remains.unresolved": { params: [], text: "What remains unresolved" },
     "main.study.incomplete.directions": { params: [], text: "Study · incomplete directions" },
     "main.what.is.worth.understanding.next": { params: [], text: "What is worth understanding next?" },
@@ -1060,7 +1049,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.overview.perimeter.kind.boundary": { params: [], text: "Boundary" },
     "main.overview.perimeter.kind.resource": { params: [], text: "Resource" },
     "main.overview.perimeter.observed_count": { params: ["count"], format: function (params) { return "· " + params.count + " observations"; } },
-    "main.overview.remainder.summary": { params: ["count"], format: function (params) { return "Unclassified exact scope · " + params.count + " packages"; } },
+    "main.overview.remainder.summary": { params: ["other", "packages", "symbols"], format: function (params) { var parts = []; if (Number(params.packages) > 0) parts.push(englishCount(params.packages, "package", "packages")); if (Number(params.symbols) > 0) parts.push(englishCount(params.symbols, "symbol", "symbols")); if (Number(params.other) > 0) parts.push(englishCount(params.other, "other exact item", "other exact items")); return "Unclassified exact scope · " + parts.join(" · "); } },
     "main.overview.remainder.copy": { params: [], text: "Exact local members not assigned to a principal area. Always reachable; this is diagnostic disclosure, not a product area." },
     "main.overview.glance.what": { params: [], text: "What is this?" },
     "main.overview.glance.what_fallback": { params: [], text: "Repository name and archetype are shown; raw README text is available as labeled source material below." },
@@ -1195,21 +1184,19 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.these.boundaries.stay.visible.because.they.change.how.the.explanation.should.be.used": { params: [], text: "These boundaries stay visible because they change how the explanation should be used." },
     "main.boundary": { params: [], text: "Boundary" },
     "main.boundaries": { params: [], text: "Boundaries" },
-    "main.explore.the.repository.map": { params: [], text: "Explore the repository map" },
-    "main.select.a.component.runtime.surface.or.code.path.to.inspect.its.implementation.context": { params: [], text: "Select a component, runtime surface, or code path to inspect its implementation context." },
     "main.code.area": { params: [], text: "Code area" },
     "main.toast.copied": { params: ["value"], format: function (params) { return "Copied " + params.value; } },
     "main.operation.after_action": { params: ["action"], format: function (params) { return "After action " + params.action; } },
     "main.count.steps": { params: ["count"], format: function (params) { return englishCount(params.count, "step", "steps"); } },
     "main.source.location_lines": { params: ["path", "start", "end"], format: function (params) { return params.path + " · lines " + params.start + "–" + params.end; } },
-    "main.toast.opened_vscode": { params: ["location"], format: function (params) { return "Opened " + params.location + " in VS Code"; } },
+    "main.toast.opened_vscode": { params: ["location"], format: function (params) { return "Sent to VS Code: " + params.location; } },
     "main.map.context": { params: ["title"], format: function (params) { return "Map context for “" + params.title + "”"; } },
     "main.source.open_in_host": { params: ["host"], format: function (params) { return "Open in " + params.host; } },
     "main.source.open_captured_revision": { params: ["host"], format: function (params) { return "Open the captured revision in " + params.host; } },
     "main.source.dirty_mismatch": { params: ["host"], format: function (params) { return "This source has local changes and does not exactly match the captured " + params.host + " commit; its external code link is unavailable."; } },
     "main.source.stable_local_changes": { params: ["host"], format: function (params) { return "This report includes stable local changes. Unchanged code links open the captured " + params.host + " revision; changed source paths stay unlinked."; } },
     "main.source.captured_revision_hint": { params: ["host"], format: function (params) { return "Code links open the captured revision in " + params.host + " ↗"; } },
-    "main.toast.opening_vscode": { params: [], text: "Opening in VS Code…" },
+    "main.toast.opening_vscode": { params: [], text: "Sending to VS Code…" },
     "main.toast.source_changed_suffix": { params: [], text: " · Source changed since this report was generated" },
     "main.toast.could_not_open_vscode": { params: [], text: "Could not open file in VS Code" },
     "main.source.changed_open_current": { params: [], text: "This source changed after the report was generated. Open current source." },
@@ -1400,9 +1387,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.value.validated_model": { params: [], text: "validated model" },
     "architecture.value.normalized_model": { params: [], text: "normalized model" },
     "architecture.value.partial_model": { params: [], text: "partial model grouping with local remainder" },
-    "architecture.value.accepted_partial": { params: [], text: "Coverage outside the component map" },
-    "architecture.copy.accepted_partial": { params: [], text: "Exact local items outside the accepted conceptual components remain available here as a separate coverage disclosure." },
-    "architecture.count.local_remainder_members": { params: ["count"], format: function (params) { return englishCount(params.count, "additional exact local item", "additional exact local items"); } },
     "architecture.value.local_anchors": { params: [], text: "local anchors" },
     "architecture.value.local_packages": { params: [], text: "local package structure" },
     "architecture.value.package_fallback": { params: [], text: "package fallback" },
@@ -1454,7 +1438,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.aria.component_inspector_tabs": { params: [], text: "Component inspector views" },
     "architecture.tab.summary": { params: [], text: "Summary" },
     "architecture.tab.connections": { params: [], text: "Connections" },
-    "architecture.tab.read_code": { params: [], text: "Read code" },
     "architecture.error.layout_failed": { params: [], text: "Architecture layout could not be generated." },
     "architecture.error.renderer_unavailable": { params: [], text: "Architecture renderer is unavailable." },
     "architecture.hint.drag_groups_fit": { params: ["count"], format: function (params) { return formatCountTemplate("Drag · {count} architecture groups · Wheel — zoom · drag — pan · Fit shows every area", params); } },
@@ -1470,10 +1453,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.count.exact_anchors": { params: ["count"], format: function (params) { return formatCountTemplate("{count} exact anchor(s)", params); } },
     "architecture.count.shared_scope": { params: ["count"], format: function (params) { return formatCountTemplate("{count} shared unit scope", params); } },
     "architecture.count.exact_members": { params: ["count"], format: function (params) { return formatCountTemplate("{count} exact member(s)", params); } },
-    "architecture.count.entry_groups": { params: ["count"], format: function (params) { return formatCountTemplate("{count} entry group(s)", params); } },
-    "architecture.count.entries": { params: ["count"], format: function (params) { return formatCountTemplate("{count} entries", params); } },
-    "architecture.count.interactions": { params: ["count"], format: function (params) { return formatCountTemplate("{count} interaction(s)", params); } },
-    "architecture.count.source_starts": { params: ["count"], format: function (params) { return formatCountTemplate("{count} exact source start(s)", params); } },
     "architecture.label.unassigned_evidence": { params: [], text: "Unassigned evidence" },
     "architecture.copy.unassigned_evidence": { params: [], text: "Exact saved facts without a unique component binding" },
     "architecture.aria.structural_relation": { params: ["relation"], format: function (params) { return formatCountTemplate("Structural relation {relation}", params); } },
@@ -1588,11 +1567,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.fallback.repository_component": { params: [], text: "Repository component" },
     "architecture.action.study_this_area": { params: [], text: "Study this area" },
     "architecture.action.show_all_sources": { params: ["count"], format: function (params) { return "Show all " + params.count + " exact source starts"; } },
-    "architecture.section.at_a_glance": { params: [], text: "At a glance" },
-    "architecture.section.entry_groups": { params: [], text: "Entry groups" },
-    "architecture.section.key_interactions": { params: [], text: "Key interactions" },
-    "architecture.section.exact_starts": { params: [], text: "Exact source starts" },
-    "architecture.section.evidence_limitations": { params: [], text: "Evidence and limitations" },
     "architecture.section.start_in_code": { params: [], text: "Start in code" },
     "architecture.section.why_it_matters": { params: [], text: "Why it matters" },
     "architecture.section.how_work_enters": { params: [], text: "How work enters" },
@@ -1601,14 +1575,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.action.open_related_component": { params: [], text: "Open on map" },
     "architecture.section.operations": { params: [], text: "Operations" },
     "architecture.section.observed_callsites": { params: [], text: "Observed external / state callsites" },
-    "architecture.copy.observed_callsites_limit": { params: [], text: "Boundary and resource callsites observed inside this component's exact member scope. This states where an external/state touch occurs — it does not prove runtime dependency, reachability, ownership, or read/write semantics." },
     "architecture.copy.association_limitations": { params: [], text: "Limitations: physical target unknown; runtime reachability not proven; read/write/order semantics not proven." },
-    "architecture.copy.no_observed_entry": { params: [], text: "No observed launch point or entry surface for this component in the recorded analysis." },
-    "architecture.copy.no_observed_sources": { params: [], text: "No exact source start recorded for this component in the recorded analysis." },
-    "architecture.copy.no_observed_used_by": { params: [], text: "No observed one-hop structural relation where this component is the target." },
-    "architecture.copy.no_observed_uses": { params: [], text: "No observed one-hop structural relation where this component is the source." },
-    "architecture.copy.no_observed_studies": { params: [], text: "No study theme maps to this component in the recorded analysis." },
-    "architecture.copy.no_observed_callsites": { params: [], text: "No boundary/resource observation rows for this component in the recorded analysis." },
     "architecture.copy.source_reason_symbol": { params: [], text: "Exact symbol declaration in this component." },
     "architecture.copy.source_reason_package": { params: [], text: "Deterministic package start for this component." },
     "architecture.copy.source_reason_process_entry": { params: [], text: "Exact process entry attached to this component." },
@@ -1629,19 +1596,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.role.test": { params: [], text: "test" },
     "architecture.role.tooling": { params: [], text: "tooling" },
     "architecture.value.category_resource": { params: [], text: "Resource" },
-    "architecture.section.what_remains_unknown": { params: [], text: "What remains unknown" },
-    "architecture.section.equivalent_components": { params: [], text: "Equivalent components (coalesced)" },
-    "architecture.label.grouping_authority": { params: [], text: "Grouping" },
-    "architecture.label.member_evidence": { params: [], text: "Evidence" },
-    "architecture.label.member_scope": { params: ["count"], format: function (params) { return formatCountTemplate("{count} member(s)", params); } },
-    "architecture.value.authority_validated": { params: [], text: "validated model hypothesis" },
-    "architecture.value.authority_partial": { params: [], text: "partial validated model hypothesis" },
-    "architecture.value.authority_local": { params: [], text: "local deterministic architecture" },
-    "architecture.value.evidence_exact": { params: [], text: "exact sources" },
-    "architecture.value.evidence_mixed": { params: [], text: "exact + package" },
-    "architecture.value.evidence_package": { params: [], text: "package/structure" },
-    "architecture.value.unknown_not_covered": { params: [], text: "Not covered by the accepted grouping; exact local members remain in the coverage disclosure." },
-    "architecture.value.unknown_hypothesis": { params: [], text: "This grouping is a model hypothesis; it is not backed by exact operational proof." },
     "architecture.action.open_code": { params: [], text: "Open code" },
     "architecture.copy.runtime_surface_entrypoint": { params: [], text: "Where the repository exposes this entry point." },
     "architecture.section.code": { params: [], text: "Code" },
@@ -2017,7 +1971,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.source.notice_line": { params: ["line"], format: function (params) { return "Строка " + params.line; } },
     "main.source.notice_lines": { params: ["start", "end"], format: function (params) { return "Строки " + params.start + "–" + params.end; } },
     "main.source.show_code": { params: [], text: "Показать код" },
-    "main.study.incomplete_direction": { params: [], text: "Неполное направление изучения" },
     "main.study.stage.central_operation": { params: [], text: "Центральная операция" },
     "main.study.stage.contribution": { params: [], text: "Вклад в проект" },
     "main.study.stage.core_model": { params: [], text: "Основная модель" },
@@ -2028,6 +1981,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.stage_incomplete": { params: ["stage"], format: function (params) { return params.stage + " · не завершено"; } },
     "main.task.anchor_citation": { params: ["index", "title"], format: function (params) { return "Опора " + params.index + " · " + params.title; } },
     "main.repository.onboarding": { params: [], text: "Знакомство с репозиторием" },
+    "main.analysis_target.executable_scope": { params: ["scope"], format: function (params) { return "Область отчёта: исполняемый пакет " + params.scope; } },
+    "main.analysis_target.library_scope": { params: ["scope"], format: function (params) { return "Область отчёта: библиотечный пакет " + params.scope; } },
     "main.saved.report": { params: [], text: "Сохранённый отчёт" },
     "main.file.paths.open.in.vs.code": { params: [], text: "Пути к файлам открываются в VS Code ↗" },
     "main.about.this.report": { params: [], text: "Об этом отчёте" },
@@ -2035,28 +1990,18 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.provenance.revision": { params: ["revision"], format: function (params) { return "ревизия " + params.revision; } },
     "main.provenance.freshness": { params: ["state"], format: function (params) { return "репозиторий " + params.state; } },
     "main.provenance.language": { params: ["language"], format: function (params) { return "язык: " + params.language; } },
-    "main.freshness.state.fresh": { params: [], text: "чистый" },
+    "main.freshness.state.fresh": { params: [], text: "актуален" },
+    "main.provenance.local_changes_captured": { params: [], text: "локальные изменения учтены" },
     "main.freshness.state.dirty": { params: [], text: "локально изменён" },
     "main.freshness.state.stale": { params: [], text: "устарел" },
     "main.freshness.state.missing": { params: [], text: "отсутствует" },
     "main.freshness.state.unavailable": { params: [], text: "недоступен" },
-    "main.repository.navigation": { params: [], text: "Навигация по репозиторию" },
-    "main.repository.workspace": { params: [], text: "Рабочее пространство репозитория" },
-    "main.map": { params: [], text: "Карта" },
-    "main.map.lenses": { params: [], text: "Линзы карты" },
-    "main.map.lens.landscape": { params: [], text: "Ландшафт" },
+    "main.analysis_targets.navigation": { params: [], text: "Цели анализа" },
+    "main.analysis_targets.title": { params: [], text: "Цели" },
+    "main.analysis_target.default": { params: [], text: "Цель по умолчанию" },
+    "main.analysis_target.unavailable": { params: [], text: "Отчёт недоступен" },
     "main.map.lens.entrypoints": { params: [], text: "Точки входа" },
-    "main.map.lens.integrations": { params: [], text: "Интеграции" },
-    "main.map.lens.object.entries": { params: ["count"], format: function (params) { return russianCount(params.count, "точка входа", "точки входа", "точек входа"); } },
-    "main.map.lens.object.witnesses": { params: ["count"], format: function (params) { return params.count + " свидетельств"; } },
-    "main.map.lens.object.paired": { params: [], text: "парное" },
-    "main.map.lens.entry.cli": { params: [], text: "CLI-команды" },
-    "main.map.lens.entry.http": { params: [], text: "HTTP/API-маршруты" },
     "main.map.lens.entry.process": { params: [], text: "Точка входа процесса" },
-    "main.map.lens.entry.worker": { params: [], text: "Воркеры/задачи" },
-    "main.map.lens.entry.other": { params: [], text: "Прочие точки входа" },
-    "main.map.lens.empty.entrypoints": { params: [], text: "В этом прогоне нет точек входа, участвующих в компонентах." },
-    "main.map.lens.empty.integrations": { params: [], text: "В этом прогоне нет наблюдаемых внешних/состояние-ассоциаций." },
     "main.map.entry.context.direct_call": { params: [], text: "Прямой вызов" },
     "main.map.entry.context.entry_source": { params: [], text: "Код точки входа" },
     "main.map.entry.context.callsite": { params: [], text: "Место вызова" },
@@ -2065,7 +2010,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.map.entry.context.limit": { params: [], text: "Только статический первый переход; порядок выполнения и продолжение не установлены." },
     "main.overview": { params: [], text: "Обзор" },
     "main.study": { params: [], text: "Изучение" },
-    "main.architecture": { params: [], text: "Архитектура" },
     "main.architecture.disclosure.count": { params: ["count"], format: function (params) { return "— " + params.count; } },
     "main.architecture.component_list.title": { params: [], text: "Компоненты" },
     "main.architecture.authority.validated": { params: [], text: "Группировка: подтверждённая модельная гипотеза" },
@@ -2074,14 +2018,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.architecture.coverage.complete": { params: [], text: "Покрытие: полное" },
     "main.architecture.coverage.partial": { params: ["covered", "requested"], format: function (params) { return "Покрытие: " + params.covered + " из " + params.requested + " запрошенных единиц"; } },
     "main.architecture.coverage.local": { params: [], text: "Покрытие: только локальная структура" },
-    "main.architecture.evidence.exact": { params: [], text: "точные источники" },
-    "main.architecture.evidence.mixed": { params: [], text: "точные + пакеты" },
-    "main.architecture.evidence.package": { params: [], text: "пакеты/структура" },
     "main.architecture.unmapped.title": { params: ["count"], format: function (params) { return russianCount(params.count, "точный элемент вне карты", "точных элемента вне карты", "точных элементов вне карты"); } },
     "main.architecture.unmapped.copy": { params: [], text: "Эти локально наблюдаемые элементы модель не отнесла ни к одному компоненту. Они остаются точными данными; группировка просто их не покрыла." },
     "main.architecture.list.kicker": { params: [], text: "Компоненты" },
     "main.architecture.list.title": { params: [], text: "Список компонентов" },
-    "main.architecture.list.copy": { params: [], text: "Структурированная альтернатива карте: каждый компонент с уровнем доказательности. Выберите, чтобы сфокусировать карту." },
+    "main.architecture.list.copy": { params: [], text: "Выберите компонент, чтобы сфокусировать его на карте и открыть связанный код." },
     "main.architecture.list.member_count": { params: ["count"], format: function (params) { return russianCount(params.count, "элемент", "элемента", "элементов"); } },
     "main.provenance": { params: [], text: "Происхождение данных" },
     "main.source.locations": { params: [], text: "Исходные позиции" },
@@ -2109,7 +2050,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.diagnostics.omissions": { params: [], text: "Опущено из фронтира" },
     "main.study.diagnostics.missing_core_heading": { params: ["count"], format: function (params) { return "Ключевые области без опубликованной темы (" + params.count + ")"; } },
     "main.study.diagnostics.missing_core_area": { params: ["name"], format: function (params) { return params.name; } },
-    "main.study.themes.title": { params: [], text: "Темы изучения с точными ссылками на код" },
+    "main.study.themes.title": { params: [], text: "Темы" },
+    "main.study.contents": { params: [], text: "Содержание" },
     "main.study.theme.supported": { params: [], text: "Привязан точный код" },
     "main.study.theme.partial": { params: [], text: "Неполное покрытие" },
     "main.study.theme.scope_exact": { params: [], text: "Точный скоуп" },
@@ -2121,11 +2063,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.theme.kind.integration_family": { params: [], text: "Семейство интеграций" },
     "main.study.theme.kind.shared_domain": { params: [], text: "Общая ответственность домена" },
     "main.study.theme.kind.learning": { params: [], text: "Обучающая тема" },
-    "main.study.theme.callsite_count": { params: ["count"], format: function (params) { return "· " + params.count + " вызовов"; } },
-    "main.study.theme.more_readings": { params: ["count"], format: function (params) { return "+" + params.count + " чтений"; } },
-    "main.study.theme.source_unavailable": { params: [], text: "точный источник недоступен в этом отчёте" },
-    "main.study.theme.expected_learning": { params: ["learning"], format: function (params) { return "Что проверить: " + params.learning; } },
-    "main.study.theme.first_limitation": { params: ["limitation"], format: function (params) { return "Ограничение: " + params.limitation; } },
     "main.study.theme.partial_limitation_short": { params: [], text: "Часть свидетельств или исходного кода в рамках этой темы остаётся неполной." },
     "main.study.theme.limitations": { params: [], text: "Ограничения" },
     "main.study.theme.alternates.title": { params: [], text: "Связанные ракурсы" },
@@ -2138,16 +2075,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.theme.partial_explanation_generic": { params: [], text: "Покрытие темы неполное: часть якорей не удалось привязать к точному исходнику, или тема охватывает больше исходников, чем было проверено." },
     "main.study.theme.reading.role.direct": { params: [], text: "прямая опора" },
     "main.study.theme.reading.role.supporting": { params: [], text: "дополняющая" },
-    "main.study.investigation.title": { params: [], text: "Связанные пути по коду" },
-    "main.study.investigation.copy": { params: [], text: "Эти упорядоченные пути следуют точным прямым вызовам, связанным с темой Study. Они показывают статическую структуру кода, а не наблюдавшийся запуск." },
-    "main.study.investigation.prepared": { params: [], text: "Точные места в коде найдены, но в этом отчёте они пока не соединены в многошаговый путь." },
-    "main.study.investigation.path": { params: ["ordinal"], format: function (params) { return "Путь " + params.ordinal; } },
-    "main.study.investigation.declaration": { params: [], text: "Объявление" },
+    "main.study.investigation.title": { params: [], text: "След по коду" },
+    "main.study.investigation.copy": { params: [], text: "Точные прямые вызовы в порядке исходников. Это не трассировка выполнения." },
     "main.study.investigation.callsite": { params: [], text: "Место вызова" },
-    "main.study.investigation.invocation.synchronous": { params: [], text: "Прямой вызов" },
     "main.study.investigation.invocation.goroutine": { params: [], text: "Запуск goroutine" },
     "main.study.investigation.invocation.deferred": { params: [], text: "Отложенный вызов" },
-    "main.study.investigation.witnesses": { params: ["count"], format: function (params) { return russianCount(params.count, "статическое свидетельство", "статических свидетельства", "статических свидетельств"); } },
     "main.study.investigation.show_on_map": { params: [], text: "Показать на карте" },
     "main.study.investigation.back_to_study": { params: [], text: "← Назад в Study" },
     "main.study.investigation.map.side_title": { params: [], text: "Точные переходы без стрелки на карте" },
@@ -2155,9 +2087,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.investigation.map.one_area": { params: [], text: "одной области карты" },
     "main.study.investigation.map.zero_component": { params: [], text: "У одной или обеих точек точного перехода нет единственной привязанной области на карте." },
     "main.study.investigation.map.plural_components": { params: [], text: "Одна или обе точки относятся к нескольким точным областям карты, поэтому единственная стрелка не выбирается." },
-    "main.study.provenance.title": { params: [], text: "Покрытие и происхождение" },
-    "main.study.themes.copy": { params: [], text: "Модель предлагает темы над точными чтениями исходников. Локальные проверки подтверждают ссылки и структуру, но не интерпретацию; каждый вывод нужно сверять с указанным кодом." },
-    "main.study.themes.show_all": { params: ["count"], format: function (params) { return "Показать все темы (ещё " + params.count + ")"; } },
     "main.study.frontier.browse_title": { params: [], text: "Все вопросы изучения" },
     "main.study.frontier.open_theme": { params: ["count"], format: function (params) { return "Открыть тему " + params.count; } },
     "main.study.frontier.browse_copy": { params: [], text: "Каждый вопрос, который локальный анализ может поставить для этого репозитория, в фиксированном локальном порядке. Это не ранжирование моделью." },
@@ -2173,7 +2102,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.study.diagnostics.yes": { params: [], text: "Да" },
     "main.study.diagnostics.no": { params: [], text: "Нет" },
     "main.back.to.reading.path": { params: [], text: "← Назад к пути изучения" },
-    "main.all.study.directions": { params: [], text: "← Все направления изучения" },
     "main.what.remains.unresolved": { params: [], text: "Что осталось неясным" },
     "main.study.incomplete.directions": { params: [], text: "Изучение · неполные направления" },
     "main.what.is.worth.understanding.next": { params: [], text: "В чём стоит разобраться дальше?" },
@@ -2221,7 +2149,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.overview.perimeter.kind.boundary": { params: [], text: "Граница" },
     "main.overview.perimeter.kind.resource": { params: [], text: "Ресурс" },
     "main.overview.perimeter.observed_count": { params: ["count"], format: function (params) { return "· " + params.count + " наблюдений"; } },
-    "main.overview.remainder.summary": { params: ["count"], format: function (params) { return "Неклассифицированный точный скоуп · " + params.count + " пакетов"; } },
+    "main.overview.remainder.summary": { params: ["other", "packages", "symbols"], format: function (params) { var parts = []; if (Number(params.packages) > 0) parts.push(russianCount(params.packages, "пакет", "пакета", "пакетов")); if (Number(params.symbols) > 0) parts.push(russianCount(params.symbols, "символ", "символа", "символов")); if (Number(params.other) > 0) parts.push(russianCount(params.other, "другой точный элемент", "других точных элемента", "других точных элементов")); return "Неклассифицированный точный скоуп · " + parts.join(" · "); } },
     "main.overview.remainder.copy": { params: [], text: "Точные локальные члены, не отнесённые к основной области. Всегда доступны; это диагностическое раскрытие, а не продуктовая область." },
     "main.overview.glance.what": { params: [], text: "Что это?" },
     "main.overview.glance.what_fallback": { params: [], text: "Показаны имя репозитория и архетип; исходный текст README доступен ниже как помеченный исходный материал." },
@@ -2356,21 +2284,19 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "main.these.boundaries.stay.visible.because.they.change.how.the.explanation.should.be.used": { params: [], text: "Эти границы показаны, потому что они влияют на то, как следует использовать объяснение." },
     "main.boundary": { params: [], text: "Граница" },
     "main.boundaries": { params: [], text: "Границы" },
-    "main.explore.the.repository.map": { params: [], text: "Исследуйте карту репозитория" },
-    "main.select.a.component.runtime.surface.or.code.path.to.inspect.its.implementation.context": { params: [], text: "Выберите компонент, точку запуска или путь в коде, чтобы изучить контекст реализации." },
     "main.code.area": { params: [], text: "Область кода" },
     "main.toast.copied": { params: ["value"], format: function (params) { return "Скопировано: " + params.value; } },
     "main.operation.after_action": { params: ["action"], format: function (params) { return "После действия " + params.action; } },
     "main.count.steps": { params: ["count"], format: function (params) { return russianCount(params.count, "шаг", "шага", "шагов"); } },
     "main.source.location_lines": { params: ["path", "start", "end"], format: function (params) { return params.path + " · строки " + params.start + "–" + params.end; } },
-    "main.toast.opened_vscode": { params: ["location"], format: function (params) { return "Открыто в VS Code: " + params.location; } },
+    "main.toast.opened_vscode": { params: ["location"], format: function (params) { return "Передано в VS Code: " + params.location; } },
     "main.map.context": { params: ["title"], format: function (params) { return "Контекст на карте: «" + params.title + "»"; } },
     "main.source.open_in_host": { params: ["host"], format: function (params) { return "Открыть в " + params.host; } },
     "main.source.open_captured_revision": { params: ["host"], format: function (params) { return "Открыть зафиксированную версию в " + params.host; } },
     "main.source.dirty_mismatch": { params: ["host"], format: function (params) { return "Этот исходник содержит локальные изменения и не совпадает с зафиксированным коммитом в " + params.host + "; внешняя ссылка на код недоступна."; } },
     "main.source.stable_local_changes": { params: ["host"], format: function (params) { return "Этот отчёт учитывает стабильные локальные изменения. Ссылки для неизменённых исходников открывают зафиксированную версию " + params.host + "; изменённые пути остаются без внешней ссылки."; } },
     "main.source.captured_revision_hint": { params: ["host"], format: function (params) { return "Ссылки на код открывают зафиксированную версию в " + params.host + " ↗"; } },
-    "main.toast.opening_vscode": { params: [], text: "Открываем в VS Code…" },
+    "main.toast.opening_vscode": { params: [], text: "Передаём в VS Code…" },
     "main.toast.source_changed_suffix": { params: [], text: " · Исходник изменился после создания отчёта" },
     "main.toast.could_not_open_vscode": { params: [], text: "Не удалось открыть файл в VS Code" },
     "main.source.changed_open_current": { params: [], text: "Исходник изменился после создания отчёта. Откройте текущую версию." },
@@ -2561,9 +2487,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.value.validated_model": { params: [], text: "проверенный результат модели" },
     "architecture.value.normalized_model": { params: [], text: "нормализованный результат модели" },
     "architecture.value.partial_model": { params: [], text: "частичная группировка модели с локальным остатком" },
-    "architecture.value.accepted_partial": { params: [], text: "Покрытие за пределами карты компонентов" },
-    "architecture.copy.accepted_partial": { params: [], text: "Точные локальные элементы вне принятых концептуальных компонентов доступны здесь как отдельное раскрытие покрытия." },
-    "architecture.count.local_remainder_members": { params: ["count"], format: function (params) { return russianCount(params.count, "дополнительный точный локальный элемент", "дополнительных точных локальных элемента", "дополнительных точных локальных элементов"); } },
     "architecture.value.local_anchors": { params: [], text: "локальные опоры" },
     "architecture.value.local_packages": { params: [], text: "локальная структура пакетов" },
     "architecture.value.package_fallback": { params: [], text: "резервный вариант по пакетам" },
@@ -2615,7 +2538,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.aria.component_inspector_tabs": { params: [], text: "Представления инспектора компонента" },
     "architecture.tab.summary": { params: [], text: "Сводка" },
     "architecture.tab.connections": { params: [], text: "Связи" },
-    "architecture.tab.read_code": { params: [], text: "Читать код" },
     "architecture.error.layout_failed": { params: [], text: "Не удалось построить компоновку архитектуры." },
     "architecture.error.renderer_unavailable": { params: [], text: "Средство отрисовки архитектуры недоступно." },
     "architecture.hint.drag_groups_fit": { params: ["count"], format: function (params) { return formatCountTemplate("Перетаскивайте · архитектурных групп: {count} · Колесо — масштаб · перетаскивание — перемещение · «Вместить» показывает все области", params); } },
@@ -2631,10 +2553,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.count.exact_anchors": { params: ["count"], format: function (params) { return russianCount(params.count, "точная опора", "точные опоры", "точных опор"); } },
     "architecture.count.shared_scope": { params: ["count"], format: function (params) { return russianCount(params.count, "общий юнит", "общих юнита", "общих юнитов"); } },
     "architecture.count.exact_members": { params: ["count"], format: function (params) { return russianCount(params.count, "точный элемент", "точных элемента", "точных элементов"); } },
-    "architecture.count.entry_groups": { params: ["count"], format: function (params) { return russianCount(params.count, "группа входов", "группы входов", "групп входов"); } },
-    "architecture.count.entries": { params: ["count"], format: function (params) { return russianCount(params.count, "вход", "входа", "входов"); } },
-    "architecture.count.interactions": { params: ["count"], format: function (params) { return russianCount(params.count, "взаимодействие", "взаимодействия", "взаимодействий"); } },
-    "architecture.count.source_starts": { params: ["count"], format: function (params) { return russianCount(params.count, "точная точка в исходниках", "точные точки в исходниках", "точных точек в исходниках"); } },
     "architecture.label.unassigned_evidence": { params: [], text: "Свидетельства без привязки" },
     "architecture.copy.unassigned_evidence": { params: [], text: "Точные сохранённые факты без однозначной привязки к компоненту" },
     "architecture.aria.structural_relation": { params: ["relation"], format: function (params) { return formatCountTemplate("Структурная связь: {relation}", params); } },
@@ -2749,11 +2667,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.fallback.repository_component": { params: [], text: "Компонент репозитория" },
     "architecture.action.study_this_area": { params: [], text: "Изучить эту область" },
     "architecture.action.show_all_sources": { params: ["count"], format: function (params) { return "Показать все точные точки в исходниках: " + params.count; } },
-    "architecture.section.at_a_glance": { params: [], text: "Кратко" },
-    "architecture.section.entry_groups": { params: [], text: "Группы входов" },
-    "architecture.section.key_interactions": { params: [], text: "Ключевые взаимодействия" },
-    "architecture.section.exact_starts": { params: [], text: "Точные точки в исходниках" },
-    "architecture.section.evidence_limitations": { params: [], text: "Свидетельства и ограничения" },
     "architecture.section.start_in_code": { params: [], text: "С чего начать в коде" },
     "architecture.section.why_it_matters": { params: [], text: "Почему это важно" },
     "architecture.section.how_work_enters": { params: [], text: "Как сюда попадает работа" },
@@ -2762,14 +2675,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.action.open_related_component": { params: [], text: "Открыть на карте" },
     "architecture.section.operations": { params: [], text: "Операции" },
     "architecture.section.observed_callsites": { params: [], text: "Наблюдаемые внешние / state-вызовы" },
-    "architecture.copy.observed_callsites_limit": { params: [], text: "Вызовы границ и ресурсов, наблюдаемые внутри точного скоупа членов этого компонента. Здесь указано, где происходит внешнее/state-касание — это не доказывает зависимость во время выполнения, достижимость, владение или семантику чтения/записи." },
     "architecture.copy.association_limitations": { params: [], text: "Ограничения: физическая цель неизвестна; достижимость во время выполнения не доказана; семантика чтения/записи/порядка не доказана." },
-    "architecture.copy.no_observed_entry": { params: [], text: "Для этого компонента в записанном анализе не найдена точка запуска или поверхность входа." },
-    "architecture.copy.no_observed_sources": { params: [], text: "Для этого компонента в записанном анализе не найдена точная исходная точка." },
-    "architecture.copy.no_observed_used_by": { params: [], text: "Не найдено однопереходное структурное отношение, где этот компонент — цель." },
-    "architecture.copy.no_observed_uses": { params: [], text: "Не найдено однопереходное структурное отношение, где этот компонент — источник." },
-    "architecture.copy.no_observed_studies": { params: [], text: "Ни одна тема изучения не связана с этим компонентом в записанном анализе." },
-    "architecture.copy.no_observed_callsites": { params: [], text: "Для этого компонента в записанном анализе не найдено наблюдений границ/ресурсов." },
     "architecture.copy.source_reason_symbol": { params: [], text: "Точное объявление символа в этом компоненте." },
     "architecture.copy.source_reason_package": { params: [], text: "Детерминированная точка входа в пакет этого компонента." },
     "architecture.copy.source_reason_process_entry": { params: [], text: "Точная точка входа процесса, привязанная к этому компоненту." },
@@ -2790,19 +2696,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     "architecture.role.test": { params: [], text: "тестовый" },
     "architecture.role.tooling": { params: [], text: "инструменты" },
     "architecture.value.category_resource": { params: [], text: "Ресурс" },
-    "architecture.section.what_remains_unknown": { params: [], text: "Что остаётся неизвестным" },
-    "architecture.section.equivalent_components": { params: [], text: "Эквивалентные компоненты (объединены)" },
-    "architecture.label.grouping_authority": { params: [], text: "Группировка" },
-    "architecture.label.member_evidence": { params: [], text: "Доказательность" },
-    "architecture.label.member_scope": { params: ["count"], format: function (params) { return russianCount(params.count, "элемент", "элемента", "элементов"); } },
-    "architecture.value.authority_validated": { params: [], text: "подтверждённая модельная гипотеза" },
-    "architecture.value.authority_partial": { params: [], text: "частично подтверждённая модельная гипотеза" },
-    "architecture.value.authority_local": { params: [], text: "локальная детерминированная архитектура" },
-    "architecture.value.evidence_exact": { params: [], text: "точные источники" },
-    "architecture.value.evidence_mixed": { params: [], text: "точные + пакеты" },
-    "architecture.value.evidence_package": { params: [], text: "пакеты/структура" },
-    "architecture.value.unknown_not_covered": { params: [], text: "Не покрыто принятой группировкой; точные локальные элементы остаются в раскрытии покрытия." },
-    "architecture.value.unknown_hypothesis": { params: [], text: "Эта группировка — модельная гипотеза; она не подкреплена точным операционным доказательством." },
     "architecture.action.open_code": { params: [], text: "Открыть код" },
     "architecture.copy.runtime_surface_entrypoint": { params: [], text: "Где репозиторий предоставляет эту точку входа." },
     "architecture.section.code": { params: [], text: "Код" },
@@ -3299,7 +3192,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   // Archive 12 P0 (review): the default Study shelf is bounded and
   // core-first (cards already arrive in portfolio-rank order); the
   // complete shelf is one "Show all" press away, never truncated.
-  var maxPrimaryShelfThemes = 8;
   var UI = window.RepomapUI;
   if (!UI || typeof UI.message !== 'function' || typeof UI.hasMessage !== 'function') {
     throw new Error('repomap UI message catalog is unavailable');
@@ -3354,6 +3246,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 	var PAVED_PATHS = OPERATIONS && Array.isArray(OPERATIONS.paths) ? OPERATIONS.paths : [];
 	var OPERATIONAL_LANDMARKS = OPERATIONS && Array.isArray(OPERATIONS.landmarks) ? OPERATIONS.landmarks : [];
 	var TASK_INVESTIGATION = DATA.task_investigation || null;
+	var ANALYSIS_TARGET = DATA.analysis_target || null;
+	var TARGET_NAVIGATION = DATA.target_navigation || null;
   var workspaceState = {
 		// Decision 236 (v11): Map is the default view for ordinary
 		// workspaces.
@@ -3476,8 +3370,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 	if (TASK_INVESTIGATION && TASK_INVESTIGATION.task_id) {
 	return '#/investigate/' + encodeRoutePart(TASK_INVESTIGATION.task_id);
 	}
-	// Decision 236 (v11): Map is the default route.
-	return '#/map';
+	return '#canvas';
 	}
 
   function encodeRoutePart(value) {
@@ -3538,22 +3431,22 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		if (state.view === 'investigate' && TASK_INVESTIGATION && TASK_INVESTIGATION.task_id) {
 			return defaultWorkspaceHash();
 		}
-    if (state.view === 'study_overview' && (STUDY_DIRECTIONS.length || themeCards().length)) return '#/study';
+	if (state.themeCardOrdinal && themeCardByOrdinal(state.themeCardOrdinal)) {
+		return '#study-theme-' + Number(state.themeCardOrdinal);
+	}
+	if (state.view === 'study_overview' && (STUDY_DIRECTIONS.length || themeCards().length)) return '#study';
     if (state.view === 'architecture') {
       var focus = architectureFocusValue(state.mapTarget);
-      return '#/architecture' + (focus ? '?focus=' + encodeURIComponent(focus) : '');
+      return '#canvas' + (focus ? '?focus=' + encodeURIComponent(focus) : '');
     }
 		// Decision 236 (v11): map is the primary route — a map view (with
 		// an optional focus target) hashes to #/map.
     if (state.view === 'map') {
       var mapFocus = architectureFocusValue(state.mapTarget);
-      return '#/map' + (mapFocus ? '?focus=' + encodeURIComponent(mapFocus) : '');
+      return '#canvas' + (mapFocus ? '?focus=' + encodeURIComponent(mapFocus) : '');
     }
 		if (state.view === 'study' && state.directionID) {
 			return '#/study/' + encodeRoutePart(state.directionID);
-		}
-		if (state.view === 'study' && state.themeCardOrdinal) {
-			return '#/study/theme/' + Number(state.themeCardOrdinal);
 		}
 		if (state.view === 'operate' && state.operationID) {
 			return '#/operate/' + encodeRoutePart(state.operationID);
@@ -3563,7 +3456,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		// lives in the empty-selection map inspector, so its hash
 		// canonicalizes to the map.
     if (state.view === 'overview') return defaultWorkspaceHash();
-    return '#/map';
+    return '#canvas';
   }
 
 	function workspaceRouteFamily(state) {
@@ -3602,7 +3495,24 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var valid = true;
 		var canonicalHash = defaultWorkspaceHash();
 
-    if (segments.length === 1 && segments[0] === 'overview') {
+    if (segments.length === 1 && /^study-theme-\d+$/.test(segments[0])) {
+			var inlineThemeOrdinal = Number(segments[0].slice('study-theme-'.length));
+			if (!themeCardByOrdinal(inlineThemeOrdinal)) {
+				valid = false;
+			} else {
+				state.view = 'map';
+				state.themeCardOrdinal = inlineThemeOrdinal;
+				canonicalHash = '#study-theme-' + inlineThemeOrdinal;
+			}
+		} else if (segments.length === 1 && segments[0] === 'canvas') {
+			state.view = 'map';
+			var canvasFocus = new URLSearchParams(query).get('focus') || '';
+			state.mapTarget = architectureTargetFromFocus(canvasFocus);
+			if (!state.mapTarget && historyState && studyMechanismForTarget(historyState.mapTarget)) {
+				state.mapTarget = historyState.mapTarget;
+			}
+			canonicalHash = workspaceHashForState(state);
+		} else if (segments.length === 1 && segments[0] === 'overview') {
 			// Decision 236 (v11): Overview is no longer a competing
 			// destination — its information lives in the empty-selection
 			// Map inspector. The legacy route canonicalizes to the map.
@@ -3644,9 +3554,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       state.mapReturn = historyState && historyState.mapReturn || null;
       canonicalHash = workspaceHashForState(state);
 		} else if (segments.length === 1 && segments[0] === 'study') {
-			state.view = (STUDY_DIRECTIONS.length || themeCards().length) ? 'study_overview' : 'overview';
-			valid = state.view === 'study_overview';
-			canonicalHash = valid ? '#/study' : '#/overview';
+			state.view = 'map';
+			valid = !!(STUDY_DIRECTIONS.length || themeCards().length);
+			canonicalHash = valid ? '#study' : defaultWorkspaceHash();
     } else if (segments.length === 1 && segments[0] === 'provenance' && DEBUG_MODE) {
       state.view = 'provenance';
       canonicalHash = '#/provenance';
@@ -3656,16 +3566,15 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			if (!routeDirection) {
 				valid = false;
 			} else {
-				state.view = 'study';
-				state.directionID = routeDirectionID;
-				canonicalHash = workspaceHashForState(state);
+				state.view = 'map';
+				canonicalHash = '#study';
 			}
 		} else if (segments.length === 3 && segments[0] === 'study' && segments[1] === 'theme') {
 			var routeOrdinal = Number(segments[2]);
 			if (!themeCardByOrdinal(routeOrdinal)) {
 				valid = false;
 			} else {
-				state.view = 'study';
+				state.view = 'map';
 				state.themeCardOrdinal = routeOrdinal;
 				state.directionID = '';
 				canonicalHash = workspaceHashForState(state);
@@ -4228,8 +4137,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
   function viewSectionID(view) {
 		if (view === 'investigate') return 'rm-task-investigation';
-		if (view === 'study_overview') return 'rm-study-overview';
-		if (view === 'study') return 'rm-study-detail';
 		if (view === 'operate') return 'rm-operate-detail';
 		// Decision 236 (v11): map is the primary product — it reuses the
 		// architecture canvas host; architecture is the Landscape lens.
@@ -4349,7 +4256,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     });
   }
 
-  function navigateWorkspace(view) {
+  function navigateWorkspace(view, options) {
+    options = options || {};
 		// Decision 236 (v11): architecture is the Landscape lens of the
 		// map — navigating to it opens the map with the given focus.
     if (view === 'architecture' || view === 'map') {
@@ -4357,11 +4265,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 				commitWorkspaceState(emptyWorkspaceState());
 				return;
 			}
-      openArchitectureTarget(null, null);
+      openArchitectureTarget(null, null, options);
       return;
     }
     var next = reduceWorkspaceState(workspaceState, { type: 'view', view: view });
-    commitWorkspaceState(next);
+    commitWorkspaceState(next, { replace: !!options.replace });
   }
 
   function addWorkspaceTab(label, view) {
@@ -4373,6 +4281,124 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     button.onclick = function () { navigateWorkspace(view); };
     tabs.appendChild(button);
   }
+
+	function analysisTargetMenuItems() {
+		function rootTargetLabel() {
+			var identity = String(
+				(ANALYSIS_TARGET && (ANALYSIS_TARGET.module_path || ANALYSIS_TARGET.package_path)) ||
+				DATA.repo_name ||
+				'',
+			);
+			var segments = identity.split('/').filter(Boolean);
+			while (segments.length > 1 && /^v[0-9]+$/.test(segments[segments.length - 1])) {
+				segments.pop();
+			}
+			var label = String(segments[segments.length - 1] || identity);
+			label = label.replace(/\.v[0-9]+$/, '').replace(/\.git$/, '');
+			return label || identity || '.';
+		}
+		function targetLabel(displayPath) {
+			// The canonical repository-relative path remains the target identity,
+			// but a literal dot is implementation notation rather than a useful
+			// product label. Derive only the terminal module name, ignoring an exact
+			// semantic-import major version suffix such as /v3 or .v3.
+			return displayPath === '.' ? rootTargetLabel() : displayPath;
+		}
+		if (TARGET_NAVIGATION && Number(TARGET_NAVIGATION.version) === 1 &&
+			Array.isArray(TARGET_NAVIGATION.targets)) {
+			return TARGET_NAVIGATION.targets.map(function (item) {
+				var moduleDir = String(item.module_dir || '.');
+				var ref = String(item.target_ref || '');
+				var displayPath = String(item.display_path || '');
+				return {
+					ref: ref,
+					label: targetLabel(displayPath),
+					title: displayPath,
+					goMod: moduleDir === '.' ? 'go.mod' : moduleDir + '/go.mod',
+					isDefault: ref === String(TARGET_NAVIGATION.default_target_ref || ''),
+					isActive: ref === String(TARGET_NAVIGATION.current_target_ref || ''),
+					available: !!item.available,
+					href: String(item.href || ''),
+				};
+			});
+		}
+		var target = ANALYSIS_TARGET || {};
+		var packagePath = String(target.package_path || target.package_dir || DATA.repo_name || msg('main.repository'));
+		var packageDir = String(target.package_dir || '');
+		var displayPath = packageDir || packagePath;
+		var moduleDir = String(target.module_dir || '.');
+		return [{
+			ref: String(target.ref || ''),
+			label: targetLabel(displayPath),
+			title: packagePath,
+			goMod: moduleDir === '.' ? 'go.mod' : moduleDir + '/go.mod',
+			isDefault: true,
+			isActive: true,
+			available: true,
+			href: '#canvas',
+			legacySingleTarget: true,
+		}];
+	}
+
+	function renderAnalysisTargetMenu(tabs) {
+		var items = analysisTargetMenuItems();
+		var groups = [];
+		items.forEach(function (item) {
+			var group = groups.find(function (candidate) { return candidate.goMod === item.goMod; });
+			if (!group) {
+				group = { goMod: item.goMod, items: [] };
+				groups.push(group);
+			}
+			group.items.push(item);
+		});
+		groups.forEach(function (group) {
+			var section = el('section', 'rm-target-group');
+			section.appendChild(txt('div', 'rm-target-group__label', group.goMod));
+			var list = el('ul', 'rm-target-list');
+			group.items.forEach(function (item) {
+				var row = el('li', 'rm-target-list__item');
+				var link = txt(
+					item.available ? 'a' : 'span',
+					'rm-tab rm-target-link' + (item.isActive ? ' rm-active' : '') +
+						(item.available ? '' : ' rm-target-link--disabled'),
+					'',
+				);
+				if (item.available) link.setAttribute('href', item.href);
+				else link.setAttribute('aria-disabled', 'true');
+				if (item.isActive) link.setAttribute('data-workspace-view', 'map');
+				link.setAttribute('data-target-ref', item.ref);
+				link.setAttribute('title', item.title || item.label);
+				if (item.isActive) link.setAttribute('aria-current', 'page');
+				if (item.isDefault) {
+					var dot = el('span', 'rm-target-link__default-dot');
+					dot.setAttribute('aria-hidden', 'true');
+					link.appendChild(dot);
+					link.appendChild(txt('span', 'rm-visually-hidden', msg('main.analysis_target.default') + ': '));
+				}
+				link.appendChild(txt('span', 'rm-target-link__label', item.label));
+				if (item.legacySingleTarget) {
+					link.onclick = function (event) {
+						if (event && typeof event.preventDefault === 'function') event.preventDefault();
+						var next = emptyWorkspaceState();
+						commitWorkspaceState(next, { hash: '#canvas' });
+						var canvas = document.getElementById('rm-architecture');
+						if (canvas && typeof canvas.scrollIntoView === 'function') canvas.scrollIntoView({ block: 'start' });
+					};
+				}
+				if (!item.available) {
+					link.appendChild(txt(
+						'span',
+						'rm-visually-hidden',
+						': ' + msg('main.analysis_target.unavailable'),
+					));
+				}
+				row.appendChild(link);
+				list.appendChild(row);
+			});
+			section.appendChild(list);
+			tabs.appendChild(section);
+		});
+	}
 
 	function userArchitectureAvailable() {
 		if (ATLAS_FIRST) return !!DATA.architecture_canvas;
@@ -4425,21 +4451,44 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
 	function openStudyDirection(directionID) {
 		var direction = studyDirectionByID(directionID);
-		if (!direction) {
-			commitWorkspaceState(emptyWorkspaceState());
-			return;
-		}
-		var next = reduceWorkspaceState(workspaceState, {
-			type: 'open_study', directionID: direction.id,
-		});
-		commitWorkspaceState(next);
+		if (!direction) return;
+		workspaceState.view = 'map';
+		workspaceState.directionID = direction.id;
+		workspaceState.themeCardOrdinal = 0;
+		var id = 'study-direction-' + encodeRoutePart(direction.id);
+		writeWorkspaceHistory('#' + id, workspaceState);
+		var detail = document.getElementById(id);
+		if (!detail) return;
+		detail.open = true;
+		if (typeof detail.scrollIntoView === 'function') detail.scrollIntoView({ block: 'start' });
 	}
 
-	function openThemeCard(ordinal) {
-		var next = reduceWorkspaceState(workspaceState, {
-			type: 'open_study_theme', ordinal: Number(ordinal) || 0,
-		});
-		commitWorkspaceState(next);
+	function openThemeCard(ordinal, options) {
+		options = options || {};
+		ordinal = Number(ordinal) || 0;
+		if (!themeCardByOrdinal(ordinal)) return;
+		workspaceState.view = 'map';
+		workspaceState.themeCardOrdinal = ordinal;
+		workspaceState.directionID = '';
+		if (options.history !== false) {
+			writeWorkspaceHistory('#study-theme-' + ordinal, workspaceState, { replace: !!options.replace });
+		}
+		var detail = document.getElementById('study-theme-' + ordinal);
+		if (!detail) {
+			var studyRoot = document.getElementById('rm-study') || document.getElementById('rm-study-overview');
+			var candidates = studyRoot && studyRoot.querySelectorAll
+				? Array.prototype.slice.call(studyRoot.querySelectorAll('.rm-study-theme-card')) : [];
+			detail = candidates.find(function (candidate) {
+				return Number(candidate.getAttribute('data-study-theme-ordinal')) === ordinal;
+			}) || null;
+		}
+		if (!detail) return;
+		detail.open = true;
+		if (typeof detail.scrollIntoView === 'function') detail.scrollIntoView({ block: 'start' });
+		if (options.focus) {
+			var summary = detail.querySelector && detail.querySelector('summary');
+			if (summary && typeof summary.focus === 'function') summary.focus();
+		}
 	}
 
 	function openPavedPath(operationID) {
@@ -4532,8 +4581,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 	}
 
 	function renderStudyDirectionCard(direction, index) {
-		var card = el('article', 'rm-study-direction-card');
-		card.appendChild(txt('span', 'rm-study-direction-card__order', String(index + 1)));
+		var card = el('details', 'rm-study-direction-card');
+		card.id = 'study-direction-' + encodeRoutePart(direction.id);
+		var summary = el('summary', 'rm-study-direction-card__summary');
+		summary.appendChild(txt('span', 'rm-study-direction-card__order', String(index + 1)));
 		var body = el('div', 'rm-study-direction-card__body');
 			if (direction.incomplete) {
 				body.appendChild(txt(
@@ -4545,15 +4596,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 				));
 		}
 		var title = txt(
-			'button',
+			'span',
 			'rm-study-direction-card__title',
 			direction.question || msg('main.chrome.explore.this.code.area')
 		);
-		title.type = 'button';
-		title.onclick = function () { openStudyDirection(direction.id); };
-		body.appendChild(title);
-		if (direction.why_it_matters) body.appendChild(txt('span', 'rm-study-direction-card__reason', direction.why_it_matters));
-		if (direction.learning_outcome) body.appendChild(txt('span', 'rm-study-direction-card__outcome', direction.learning_outcome));
+		summary.appendChild(title);
+		if (direction.why_it_matters) summary.appendChild(txt('span', 'rm-study-direction-card__reason', direction.why_it_matters));
+		if (direction.learning_outcome) summary.appendChild(txt('span', 'rm-study-direction-card__outcome', direction.learning_outcome));
+		card.appendChild(summary);
 		var anchors = el('div', 'rm-study-direction-card__anchors');
 		(direction.reading_anchors || []).forEach(function (reading) {
 			var location = studyReadingLocation(reading);
@@ -4592,7 +4642,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 	}
 
 	function renderIncompleteStudyOverview() {
-		var root = document.getElementById('rm-study-overview');
+		var root = document.getElementById('rm-study') || document.getElementById('rm-study-overview');
 		if (!root) return;
 		root.replaceChildren();
 		// D213: the source-grounded theme shelf is the primary Study surface
@@ -4618,6 +4668,17 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			directionList.appendChild(renderStudyDirectionCard(direction, index));
 		});
 		root.appendChild(directionList);
+	}
+
+	function appendInlineStudyWorkspace(root) {
+		if (!root || !(STUDY_DIRECTIONS.length || themeCards().length)) return;
+		var study = el('section', 'rm-target-study');
+		study.id = 'rm-study';
+		study.setAttribute('aria-labelledby', 'rm-study-heading');
+		root.appendChild(study);
+		renderIncompleteStudyOverview();
+		var heading = study.querySelector && study.querySelector('h2');
+		if (heading) heading.id = 'rm-study-heading';
 	}
 
 	// D213: renders the source-grounded theme shelf (cards with exact
@@ -4680,29 +4741,16 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		return msg(THEME_KIND_MESSAGE_IDS[kind] || 'main.study.theme.kind.learning');
 	}
 
-	// themeReadingPreviewRows collapses the reading previews of a collapsed
-	// card: at most two preview rows (Decision 229 D6), with repeated public
-	// symbols grouped visually ("HttpEmailProvider.Send · 2 callsites")
-	// while every exact source location stays in the expanded detail.
+	// Every bounded reading stays visible on the Study shelf. A count such as
+	// "+1 reading" is not navigation: the reader needs the exact destination.
 	function themeReadingPreviewRows(card) {
 		var readings = card && Array.isArray(card.readings) ? card.readings : [];
-		var rows = [];
-		var bySymbol = {};
-		var ordered = [];
-		readings.forEach(function (reading) {
+		return readings.filter(function (reading) {
 			if (!reading || !reading.path || !Number.isInteger(reading.line)) return;
-			var symbol = String(reading.symbol || '');
-			if (!bySymbol[symbol]) {
-				bySymbol[symbol] = { symbol: symbol, count: 0, first: reading };
-				ordered.push(bySymbol[symbol]);
-			}
-			bySymbol[symbol].count += 1;
+			return true;
+		}).map(function (reading) {
+			return { symbol: String(reading.symbol || ''), count: 1, first: reading };
 		});
-		ordered.forEach(function (group) {
-			if (rows.length >= 2) return;
-			rows.push(group);
-		});
-		return rows;
 	}
 
 	// themeCoverageExplanation renders the coverage limitation in user-facing
@@ -4769,6 +4817,20 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		return result;
 	}
 
+	// A role badge is useful only when one card actually asks the reader to
+	// distinguish primary and supporting locations. Repeating "direct" beside
+	// every source in a direct-only card adds no information.
+	function themeReadingRolesCoexist(card) {
+		var roles = new Set();
+		var readings = (card && Array.isArray(card.readings) ? card.readings : [])
+			.concat(distinctThemeAlternateReadings(card));
+		readings.forEach(function (reading) {
+			var role = String(reading && reading.role || '');
+			if (role === 'direct' || role === 'supporting') roles.add(role);
+		});
+		return roles.has('direct') && roles.has('supporting');
+	}
+
 	function renderThemeAlternates(card) {
 		var titles = card && Array.isArray(card.alternate_titles)
 			? card.alternate_titles.map(function (value) { return String(value || '').trim(); }).filter(Boolean)
@@ -4804,7 +4866,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			var readingList = el('div', 'rm-study-reading-list rm-study-theme-alternates__reading-list');
 			var primaryCount = card && Array.isArray(card.readings) ? card.readings.length : 0;
 			readings.forEach(function (reading, index) {
-				var item = renderStudyReadingAnchor(reading, primaryCount + index);
+				var item = renderStudyReadingAnchor(reading, primaryCount + index, themeReadingRolesCoexist(card));
 				if (item) readingList.appendChild(item);
 			});
 			if (readingList.childNodes.length) section.appendChild(readingList);
@@ -4826,112 +4888,68 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 	}
 
 	function renderAtlasStudyThemeShelf(root, cards) {
-		root.appendChild(renderViewHeading(
+		var heading = renderViewHeading(
 			msg('main.study'),
 			msg('main.study.themes.title'),
-			msg('main.study.themes.copy')
-		));
-		// Decision 218 (A): the dedicated Study route renders every published
-		// theme — no "show more" for peer theme existence. Progressive
-		// disclosure may collapse card detail, reading previews, and
-		// provenance, never the themes themselves.
-		// Archive 12 P0 (review): the DEFAULT shelf is bounded — the reducer
-		// preserves the model's comparative editorial order (Phase 2 prompt
-		// cleanup: portfolio rank removed, model order survives). The
-		// primary shelf shows the first maxPrimaryShelfThemes cards; the
-		// COMPLETE shelf (every accepted theme and exact reading) is one
-		// "Show all" press away and is never truncated in the expanded
-		// state. This is progressive disclosure of a bounded default, not
-		// the removal of peer themes.
+			''
+		);
+		var headingTitle = heading.querySelector && heading.querySelector('h2');
+		if (headingTitle) headingTitle.id = 'rm-study-heading';
+		root.appendChild(heading);
+		var contents = el('nav', 'rm-study-theme-contents');
+		contents.setAttribute('aria-label', msg('main.study.contents'));
+		contents.appendChild(txt('h3', 'rm-study-theme-contents__title', msg('main.study.contents')));
+		var contentList = el('ol', 'rm-study-theme-contents__list');
+		cards.forEach(function (card, index) {
+			var item = el('li', 'rm-study-theme-contents__item');
+			var ordinal = Number(card.ordinal) || (index + 1);
+			var action = txt('a', 'rm-study-theme-contents__action', String(card.final_title || ''));
+			action.setAttribute('href', '#study-theme-' + ordinal);
+			action.onclick = function (event) {
+				if (event && typeof event.preventDefault === 'function') event.preventDefault();
+				openThemeCard(ordinal, { focus: true });
+			};
+			item.appendChild(action);
+			contentList.appendChild(item);
+		});
+		contents.appendChild(contentList);
+		root.appendChild(contents);
 		var shelf = el('div', 'rm-study-theme-shelf');
-		var primaryCards = cards.slice(0, maxPrimaryShelfThemes);
-		var remainderCards = cards.slice(maxPrimaryShelfThemes);
-		primaryCards.forEach(function (card, index) {
+		cards.forEach(function (card, index) {
 			shelf.appendChild(renderThemeCard(card, index));
 		});
-		if (remainderCards.length) {
-			var more = el('details', 'rm-study-theme-shelf__more');
-			var summary = txt('summary', 'rm-study-theme-shelf__more-summary',
-				msg('main.study.themes.show_all', { count: remainderCards.length }));
-			more.appendChild(summary);
-			var moreList = el('div', 'rm-study-theme-shelf__more-list');
-			remainderCards.forEach(function (card, index) {
-				moreList.appendChild(renderThemeCard(card, primaryCards.length + index));
-			});
-			more.appendChild(moreList);
-			shelf.appendChild(more);
-		}
 		root.appendChild(shelf);
-		// Raw span/model/frontier diagnostics and the machine question
-		// inventory move into a collapsed "Coverage and provenance" section
-		// (Decision 217): available for the meticulous critic, out of the
-		// main learning path.
-		var provenance = el('details', 'rm-study-provenance');
-		provenance.appendChild(txt('summary', 'rm-study-provenance__summary', msg('main.study.provenance.title')));
-		var diagnostics = renderAtlasStudyDiagnostics();
-		if (diagnostics) provenance.appendChild(diagnostics);
-		var browse = renderAtlasStudyBrowse();
-		if (browse) provenance.appendChild(browse);
-		root.appendChild(provenance);
 	}
 
 	function renderThemeCard(card, index) {
-		var article = el('article', 'rm-study-theme-card' + (card.badge ? ' rm-study-theme-card--' + String(card.badge).toLowerCase() : ''));
-		var titleRow = el('div', 'rm-study-theme-card__title-row');
-		var title = txt('button', 'rm-study-theme-card__title', card.final_title || '');
-		title.type = 'button';
-		title.onclick = function () { openThemeCard(Number(card.ordinal) || (index + 1)); };
+		var ordinal = Number(card.ordinal) || (index + 1);
+		var article = el('details', 'rm-study-theme-card' + (card.badge ? ' rm-study-theme-card--' + String(card.badge).toLowerCase() : ''));
+		article.id = 'study-theme-' + ordinal;
+		article.setAttribute('data-study-theme-ordinal', String(ordinal));
+		if (Number(workspaceState.themeCardOrdinal) === ordinal) article.open = true;
+		var summary = el('summary', 'rm-study-theme-card__summary');
+		var titleRow = el('span', 'rm-study-theme-card__title-row');
+		var title = txt('span', 'rm-study-theme-card__title', card.final_title || '');
 		titleRow.appendChild(title);
-		// Decision 229 D6: evidence and scope are independent axes. The
-		// evidence badge shows source-backed vs partial coverage; the scope
-		// badge shows exact vs partial thematic scope. A narrow-but-exact
-		// theme is not a warning.
-		titleRow.appendChild(txt('span', 'rm-study-theme-card__badge rm-study-theme-card__evidence rm-study-theme-card__evidence--' + themeCoverageState(card), themeCoverageLabel(card)));
-		titleRow.appendChild(txt('span', 'rm-study-theme-card__badge rm-study-theme-card__scope rm-study-theme-card__scope--' + themeScopeState(card), themeScopeLabel(card)));
-		titleRow.appendChild(txt('span', 'rm-study-theme-card__kind', themeKindLabel(card)));
-		article.appendChild(titleRow);
-		if (card.final_question) article.appendChild(txt('p', 'rm-study-theme-card__question', card.final_question));
-		if (card.why_it_matters) article.appendChild(txt('span', 'rm-study-theme-card__reason', card.why_it_matters));
-		var firstLimitation = themeFirstLimitation(card);
-		if (firstLimitation) {
-			article.appendChild(txt('p', 'rm-study-theme-card__first-limitation',
-				msg('main.study.theme.first_limitation', { limitation: firstLimitation })));
-		}
-		// Decision 229 D6: collapsed by default — at most two reading
-		// previews; the complete reading plan lives in the expanded detail
-		// (renderThemeDetailWorkspace), never hidden, never truncated.
-		var previewRows = themeReadingPreviewRows(card);
-		var totalReadings = Array.isArray(card.readings) ? card.readings.length : 0;
-		if (previewRows.length) {
-			var previews = el('ul', 'rm-study-theme-card__previews');
-			previewRows.forEach(function (group) {
-				var item = txt('li', 'rm-study-theme-card__preview', '');
-				var firstLocation = studyReadingLocation(group.first);
-				// Decision 230 D1: each preview symbol+path is ONE
-				// independent source action (never a link plus inert
-				// location, never an unexplained inert value). When no
-				// source action is available the preview renders as a
-				// neutral non-link row with a visible reason.
-				var action = renderStudySourceAction(group.first, 'rm-study-theme-card__preview-action', true);
-				if (action) {
-					item.appendChild(action);
-				} else if (firstLocation) {
-					var unavailable = el('div', 'rm-study-theme-card__preview-action rm-study-theme-card__preview-action--unavailable');
-					unavailable.appendChild(txt('span', 'rm-study-theme-card__preview-symbol', bareSourceSymbol(group.symbol)));
-					unavailable.appendChild(txt('code', 'rm-study-theme-card__preview-location', formatCodeLocation(firstLocation)));
-					unavailable.appendChild(txt('span', 'rm-study-theme-card__preview-unavailable', msg('main.study.theme.source_unavailable')));
-					item.appendChild(unavailable);
-				}
-				var callsiteCount = group.count > 1 ? msg('main.study.theme.callsite_count', { count: group.count }) : '';
-				if (callsiteCount) item.appendChild(txt('span', 'rm-study-theme-card__preview-count', callsiteCount));
-				previews.appendChild(item);
-			});
-			article.appendChild(previews);
-		}
-		if (totalReadings > previewRows.length) {
-			article.appendChild(txt('p', 'rm-study-theme-card__more',
-				msg('main.study.theme.more_readings', { count: totalReadings - previewRows.length })));
-		}
+		summary.appendChild(titleRow);
+		if (card.final_question) summary.appendChild(txt('span', 'rm-study-theme-card__question', card.final_question));
+		if (card.why_it_matters) summary.appendChild(txt('span', 'rm-study-theme-card__reason', card.why_it_matters));
+		article.appendChild(summary);
+		var body = el('div', 'rm-study-theme-card__body');
+		var readings = el('div', 'rm-study-reading-list');
+		var showReadingRoles = themeReadingRolesCoexist(card);
+		(card.readings || []).forEach(function (reading, readingIndex) {
+			var item = renderStudyReadingAnchor(reading, readingIndex, showReadingRoles);
+			if (item) readings.appendChild(item);
+		});
+		if (readings.childNodes.length) body.appendChild(readings);
+		var investigation = renderStudyInvestigation(card);
+		if (investigation) body.appendChild(investigation);
+		var alternates = renderThemeAlternates(card);
+		if (alternates) body.appendChild(alternates);
+		var limitations = renderThemeLimitations(card);
+		if (limitations) body.appendChild(limitations);
+		article.appendChild(body);
 		return article;
 	}
 
@@ -4950,6 +4968,13 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		var exact = studyInvestigationLocation(location);
 		if (!exact) return null;
 		var visible = String(label || '') + ' · ' + formatCodeLocation(exact);
+		return renderStudyInvestigationExactAction(exact, visible, cls);
+	}
+
+	function renderStudyInvestigationExactAction(location, visible, cls) {
+		var exact = studyInvestigationLocation(location);
+		if (!exact) return null;
+		visible = String(visible || formatCodeLocation(exact));
 		var resolution = exactReportSourceActionResolutionForLocation(exact);
 		var snippet = resolution && resolution.source && resolution.source.snippet;
 		if (snippet) {
@@ -4974,145 +4999,207 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 
 	function studyInvestigationInvocationLabel(invocation) {
 		var ids = {
-			synchronous: 'main.study.investigation.invocation.synchronous',
 			goroutine: 'main.study.investigation.invocation.goroutine',
 			deferred: 'main.study.investigation.invocation.deferred',
 		};
-		return msg(ids[String(invocation || '')] || ids.synchronous);
+		var id = ids[String(invocation || '')];
+		return id ? msg(id) : '';
 	}
 
 	function showStudyMechanismOnMap(card, investigation, mechanism) {
 		if (!card || !investigation || !mechanism || !userArchitectureAvailable()) return;
 		activeMapLens = 'landscape';
-		showStudyMechanismTargetOnMap({
+		workspaceState.view = 'map';
+		workspaceState.themeCardOrdinal = 0;
+		workspaceState.mapReturn = null;
+		workspaceState.mapTarget = {
 			kind: 'study_mechanism',
 			theme_ordinal: Number(card.ordinal),
 			investigation_id: String(investigation.id || ''),
 			mechanism_id: String(mechanism.id || ''),
+		};
+		writeWorkspaceHistory('#canvas', workspaceState);
+		if (architectureCanvasView && typeof architectureCanvasView.setLens === 'function') {
+			architectureCanvasView.setLens(activeMapLens);
+		}
+		var entryContext = document.querySelector && document.querySelector('.rm-map-entry-context');
+		if (entryContext) entryContext.hidden = true;
+		syncMapLensControl();
+		applyStudyMechanismMapOverlay();
+		renderStudyMechanismMapContextIntoHost();
+		var canvas = document.getElementById('rm-architecture');
+		if (canvas && typeof canvas.scrollIntoView === 'function') canvas.scrollIntoView({ block: 'start' });
+	}
+
+	function compareStudyInvestigationLocations(left, right) {
+		left = studyInvestigationLocation(left);
+		right = studyInvestigationLocation(right);
+		if (!left && !right) return 0;
+		if (!left) return 1;
+		if (!right) return -1;
+		if (left.path !== right.path) return left.path < right.path ? -1 : 1;
+		if (left.line !== right.line) return left.line - right.line;
+		return left.column - right.column;
+	}
+
+	function studyInvestigationRootKey(mechanism, index) {
+		var nodes = Array.isArray(mechanism && mechanism.nodes) ? mechanism.nodes : [];
+		var location = studyInvestigationLocation(nodes[0] && nodes[0].declaration);
+		return location
+			? JSON.stringify([location.path, location.line, location.column])
+			: 'mechanism:' + String(mechanism && mechanism.id || index);
+	}
+
+	function groupedStudyInvestigationMechanisms(investigation) {
+		var groups = [];
+		var byRoot = Object.create(null);
+		investigation.mechanisms.forEach(function (mechanism, index) {
+			var key = studyInvestigationRootKey(mechanism, index);
+			var group = byRoot[key];
+			if (!group) {
+				group = { root: mechanism.nodes && mechanism.nodes[0], mechanisms: [] };
+				byRoot[key] = group;
+				groups.push(group);
+			}
+			group.mechanisms.push({ mechanism: mechanism, index: index });
 		});
+		groups.forEach(function (group) {
+			group.mechanisms.sort(function (left, right) {
+				var leftEdges = Array.isArray(left.mechanism && left.mechanism.edges) ? left.mechanism.edges : [];
+				var rightEdges = Array.isArray(right.mechanism && right.mechanism.edges) ? right.mechanism.edges : [];
+				var order = compareStudyInvestigationLocations(
+					leftEdges[0] && leftEdges[0].callsite,
+					rightEdges[0] && rightEdges[0].callsite
+				);
+				return order || left.index - right.index;
+			});
+		});
+		return groups;
+	}
+
+	function studyInvestigationCallLabel(node) {
+		var label = bareSourceSymbol(node && node.label);
+		if (!label) return '';
+		return /\(\)$/.test(label) ? label : label + '()';
+	}
+
+	function studyInvestigationNodeByID(nodes, id) {
+		id = String(id || '');
+		for (var index = 0; index < nodes.length; index++) {
+			if (String(nodes[index] && nodes[index].id || '') === id) return nodes[index];
+		}
+		return null;
+	}
+
+	function renderStudyInvestigationTraceAction(location, visible, cls) {
+		var action = renderStudyInvestigationExactAction(
+			location,
+			visible,
+			'rm-study-investigation__source ' + String(cls || '')
+		);
+		return action || txt('code', 'rm-study-investigation__source--plain ' + String(cls || ''), visible);
+	}
+
+	function renderStudyInvestigationRoot(rootNode) {
+		var header = el('header', 'rm-study-investigation__root');
+		var location = studyInvestigationLocation(rootNode && rootNode.declaration);
+		var path = location ? location.path : '';
+		var declaration = location
+			? String(location.line) + ' ' + studyInvestigationCallLabel(rootNode)
+			: studyInvestigationCallLabel(rootNode);
+		header.appendChild(renderStudyInvestigationTraceAction(
+			rootNode && rootNode.declaration,
+			path,
+			'rm-study-investigation__root-file'
+		));
+		header.appendChild(renderStudyInvestigationTraceAction(
+			rootNode && rootNode.declaration,
+			declaration,
+			'rm-study-investigation__root-declaration'
+		));
+		return header;
+	}
+
+	function studyInvestigationCallsiteLabel(rootLocation, callsite) {
+		var exact = studyInvestigationLocation(callsite);
+		if (!exact) return '';
+		return rootLocation && rootLocation.path === exact.path
+			? String(exact.line)
+			: formatCodeLocation(exact);
+	}
+
+	function renderStudyInvestigationTraceRow(nodes, edges, edgeIndex, rootLocation) {
+		var edge = edges[edgeIndex];
+		var row = el('div', 'rm-study-investigation__row');
+		row.setAttribute('data-study-source-row', String(edgeIndex + 1));
+		row.appendChild(renderStudyInvestigationTraceAction(
+			edge && edge.callsite,
+			studyInvestigationCallsiteLabel(rootLocation, edge && edge.callsite),
+			'rm-study-investigation__line'
+		));
+		var invocation = studyInvestigationInvocationLabel(edge && edge.invocation);
+		if (invocation) row.appendChild(txt('span', 'rm-study-investigation__invocation', invocation));
+		row.appendChild(txt('span', 'rm-study-investigation__arrow', '→'));
+		var callee = studyInvestigationNodeByID(nodes, edge && edge.to_node_id);
+		row.appendChild(renderStudyInvestigationTraceAction(
+			callee && callee.declaration,
+			studyInvestigationCallLabel(callee),
+			'rm-study-investigation__callee'
+		));
+		return row;
 	}
 
 	function renderStudyMechanismPath(card, investigation, mechanism, index, options) {
 		options = options || {};
 		var article = el('article', 'rm-study-investigation__mechanism');
 		article.setAttribute('data-study-mechanism-id', String(mechanism && mechanism.id || ''));
-		var heading = el('div', 'rm-study-investigation__heading');
-		heading.appendChild(txt('h4', '', msg('main.study.investigation.path', {
-			ordinal: Number(mechanism && mechanism.ordinal) || (index + 1),
-		})));
-		if (options.showMap !== false && userArchitectureAvailable()) {
-			var showMap = txt('button', 'rm-secondary-action rm-study-investigation__map', msg('main.study.investigation.show_on_map'));
-			showMap.type = 'button';
-			showMap.onclick = function () { showStudyMechanismOnMap(card, investigation, mechanism); };
-			heading.appendChild(showMap);
-		}
-		article.appendChild(heading);
-
 		var nodes = Array.isArray(mechanism && mechanism.nodes) ? mechanism.nodes : [];
 		var edges = Array.isArray(mechanism && mechanism.edges) ? mechanism.edges : [];
-		var path = el('div', 'rm-study-investigation__path');
-		nodes.forEach(function (node, nodeIndex) {
-			var nodeCard = el('div', 'rm-study-investigation__node');
-			nodeCard.appendChild(txt('strong', 'rm-study-investigation__node-label', String(node && node.label || '')));
-			var declaration = renderStudyInvestigationSourceAction(
-				node && node.declaration,
-				msg('main.study.investigation.declaration'),
-				'rm-study-investigation__source'
-			);
-			if (declaration) nodeCard.appendChild(declaration);
-			path.appendChild(nodeCard);
-
-			var edge = edges[nodeIndex];
-			if (!edge) return;
-			var transition = el('div', 'rm-study-investigation__transition');
-			var arrow = txt('span', 'rm-study-investigation__arrow', '→');
-			arrow.setAttribute('aria-hidden', 'true');
-			transition.appendChild(arrow);
-			transition.appendChild(txt('span', 'rm-study-investigation__invocation', studyInvestigationInvocationLabel(edge.invocation)));
-			transition.appendChild(txt('span', 'rm-study-investigation__witnesses', msg('main.study.investigation.witnesses', {
-				count: Number(edge.witness_count) || 1,
-			})));
-			var callsite = renderStudyInvestigationSourceAction(
-				edge.callsite,
-				msg('main.study.investigation.callsite'),
-				'rm-study-investigation__source'
-			);
-			if (callsite) transition.appendChild(callsite);
-			path.appendChild(transition);
-		});
-		article.appendChild(path);
+		if (options.showRoot !== false && nodes[0]) article.appendChild(renderStudyInvestigationRoot(nodes[0]));
+		if (options.showMap !== false && userArchitectureAvailable()) {
+			var showMap = txt('button', 'rm-study-investigation__map', msg('main.study.investigation.show_on_map'));
+			showMap.type = 'button';
+			showMap.onclick = function () { showStudyMechanismOnMap(card, investigation, mechanism); };
+			article.appendChild(showMap);
+		}
+		var rows = el('div', 'rm-study-investigation__rows');
+		var rootLocation = studyInvestigationLocation(nodes[0] && nodes[0].declaration);
+		for (var edgeIndex = 0; edgeIndex < edges.length; edgeIndex += 1) {
+			rows.appendChild(renderStudyInvestigationTraceRow(nodes, edges, edgeIndex, rootLocation));
+		}
+		article.appendChild(rows);
 		return article;
+	}
+
+	function renderStudyInvestigationGroup(card, investigation, group) {
+		var section = el('section', 'rm-study-investigation__group');
+		section.setAttribute('data-study-trace-root', studyInvestigationRootKey(group.mechanisms[0].mechanism, 0));
+		if (group.root) section.appendChild(renderStudyInvestigationRoot(group.root));
+		group.mechanisms.forEach(function (entry) {
+			section.appendChild(renderStudyMechanismPath(
+				card,
+				investigation,
+				entry.mechanism,
+				entry.index,
+				{ showRoot: false }
+			));
+		});
+		return section;
 	}
 
 	function renderStudyInvestigation(card) {
 		var investigation = currentStudyInvestigation(card);
-		if (!investigation) return null;
+		if (!investigation || investigation.outcome !== 'mechanism' || !investigation.mechanisms.length) return null;
 		var section = el('section', 'rm-study-investigation rm-study-investigation--' + String(investigation.outcome));
 		section.appendChild(txt('h3', 'rm-study-investigation__title', msg('main.study.investigation.title')));
-		if (investigation.outcome === 'prepared_investigation') {
-			section.appendChild(txt('p', 'rm-study-investigation__prepared', msg('main.study.investigation.prepared')));
-			return section;
-		}
 		section.appendChild(txt('p', 'rm-study-investigation__copy', msg('main.study.investigation.copy')));
 		var paths = el('div', 'rm-study-investigation__paths');
-		investigation.mechanisms.slice(0, 3).forEach(function (mechanism, index) {
-			paths.appendChild(renderStudyMechanismPath(card, investigation, mechanism, index));
+		groupedStudyInvestigationMechanisms(investigation).forEach(function (group) {
+			paths.appendChild(renderStudyInvestigationGroup(card, investigation, group));
 		});
 		if (paths.childNodes.length) section.appendChild(paths);
 		return section;
 	}
-
-	function renderThemeDetailWorkspace() {
-		var root = document.getElementById('rm-study-detail');
-		if (!root) return;
-		root.replaceChildren();
-		var card = themeCardByOrdinal(workspaceState.themeCardOrdinal);
-		if (!card) return;
-		var back = txt('button', 'rm-secondary-action rm-study-back', msg('main.all.study.directions'));
-		back.type = 'button';
-		back.onclick = function () { navigateWorkspace('study_overview'); };
-		root.appendChild(back);
-		root.appendChild(renderViewHeading(
-			themeCoverageLabel(card),
-			card.final_title || '',
-			card.final_question || ''
-		));
-		// Decision 229 D6: evidence and scope are independent badges in the
-		// detail header too — a source-backed theme with partial scope is
-		// not failed evidence.
-		var badgeRow = el('div', 'rm-study-theme-card__badge-row');
-		badgeRow.appendChild(txt('span', 'rm-study-theme-card__badge rm-study-theme-card__evidence rm-study-theme-card__evidence--' + themeCoverageState(card), themeCoverageLabel(card)));
-		badgeRow.appendChild(txt('span', 'rm-study-theme-card__badge rm-study-theme-card__scope rm-study-theme-card__scope--' + themeScopeState(card), themeScopeLabel(card)));
-		badgeRow.appendChild(txt('span', 'rm-study-theme-card__kind', themeKindLabel(card)));
-		root.appendChild(badgeRow);
-		root.appendChild(txt('p', 'rm-study-theme-card__coverage-explanation', themeCoverageExplanation(card)));
-		// Decision 229 D6: expected learning is its own section in the
-		// expanded card (never hidden behind hover).
-		if (card.expected_learning) {
-			root.appendChild(txt('p', 'rm-study-theme-card__expected-learning',
-				msg('main.study.theme.expected_learning', { learning: card.expected_learning })));
-		}
-		if (card.why_it_matters) {
-			var reason = el('aside', 'rm-study-outcome');
-			reason.appendChild(txt('strong', '', card.why_it_matters));
-			root.appendChild(reason);
-		}
-		var anchors = el('div', 'rm-study-reading-list');
-		(card.readings || []).forEach(function (reading, index) {
-			var item = renderStudyReadingAnchor(reading, index);
-			if (item) anchors.appendChild(item);
-		});
-		root.appendChild(anchors);
-		var investigation = renderStudyInvestigation(card);
-		if (investigation) root.appendChild(investigation);
-		var alternates = renderThemeAlternates(card);
-		if (alternates) root.appendChild(alternates);
-		// Unknowns materially qualify the retained readings. Keep every one
-		// directly visible in the open theme; the card-level coverage sentence
-		// above already presents the separate source-review limitation.
-		var limitations = renderThemeLimitations(card);
-		if (limitations) root.appendChild(limitations);
-}
 
 	function renderRepositoryBriefHero() {
 		var brief = STUDY_MAP && STUDY_MAP.brief || {};
@@ -5383,42 +5470,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			root.appendChild(studySection);
 		}
 
-		var studyDiagnostics = renderAtlasStudyDiagnostics();
-		if (studyDiagnostics) root.appendChild(studyDiagnostics);
-
-		var frontierBrowse = renderAtlasStudyBrowse();
-		if (frontierBrowse) root.appendChild(frontierBrowse);
-
 		renderOperationsOverview(root);
 
-	}
-
-	function renderStudyDetailWorkspace() {
-		var root = document.getElementById('rm-study-detail');
-		if (!root) return;
-		root.replaceChildren();
-		var direction = studyDirectionByID(workspaceState.directionID);
-		if (!direction) return;
-		var back = txt('button', 'rm-secondary-action rm-study-back', msg('main.all.study.directions'));
-		back.type = 'button';
-		back.onclick = function () { navigateWorkspace('study_overview'); };
-		root.appendChild(back);
-		root.appendChild(renderViewHeading(
-				direction.incomplete ? msg('main.study.incomplete_direction') : '',
-				direction.question,
-				direction.why_it_matters
-		));
-		if (direction.learning_outcome) {
-			var outcome = el('aside', 'rm-study-outcome');
-			outcome.appendChild(txt('strong', '', direction.learning_outcome));
-			root.appendChild(outcome);
-		}
-		var anchors = el('div', 'rm-study-reading-list');
-		(direction.reading_anchors || []).forEach(function (reading, index) {
-			var card = renderStudyReadingAnchor(reading, index);
-			if (card) anchors.appendChild(card);
-		});
-		root.appendChild(anchors);
 	}
 
 	function studyReadingLocation(reading) {
@@ -5548,7 +5601,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		return (receiver ? receiver + '.' : '') + last;
 	}
 
-	function renderStudyReadingAnchor(reading, index) {
+	function renderStudyReadingAnchor(reading, index, showRole) {
 		var location = studyReadingLocation(reading);
 		if (!location) return null;
 		var kind = sourceKindFor(reading && reading.symbol, reading && reading.path);
@@ -5582,8 +5635,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		meta.appendChild(txt('span', 'rm-study-reading-anchor__kind', sourceKindLabel(kind)));
 		// Decision 229 D6: the expanded reading shows its support role
 		// (direct/supporting) next to the typed kind.
-		if (reading.role === 'direct') meta.appendChild(txt('span', 'rm-study-theme-card__reading-role', msg('main.study.theme.reading.role.direct')));
-		else if (reading.role === 'supporting') meta.appendChild(txt('span', 'rm-study-theme-card__reading-role', msg('main.study.theme.reading.role.supporting')));
+		if (showRole && reading.role === 'direct') meta.appendChild(txt('span', 'rm-study-theme-card__reading-role', msg('main.study.theme.reading.role.direct')));
+		else if (showRole && reading.role === 'supporting') meta.appendChild(txt('span', 'rm-study-theme-card__reading-role', msg('main.study.theme.reading.role.supporting')));
 		// Decision 230 D1: path:line lives inside the single source
 		// action above; it is not duplicated as an inert code node here.
 		row.appendChild(meta);
@@ -5718,7 +5771,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		if (!pavedPath) return;
 		var back = txt('button', 'rm-secondary-action rm-study-back', msg('main.repository.overview.2'));
 		back.type = 'button';
-		back.onclick = function () { navigateWorkspace('map'); };
+		back.onclick = function () { navigateWorkspace('map', { replace: true }); };
 		root.appendChild(back);
 		root.appendChild(renderViewHeading(msg('main.how.to.run.and.verify'), pavedPath.title, pavedPath.goal));
 		root.appendChild(txt('p', 'rm-operation-order-note', operationOrderingCopy(pavedPath)));
@@ -6647,9 +6700,14 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			if (remainderComponentID && component.id === remainderComponentID) return true;
 			return !!diagnosticSubsystemIDs[component.subsystem_id];
 		});
-		var remainderPackageCount = 0;
+		var remainderCounts = { packages: 0, symbols: 0, other: 0 };
 		remainderComponents.forEach(function (component) {
-			remainderPackageCount += Array.isArray(component.members) ? component.members.length : 0;
+			(Array.isArray(component.members) ? component.members : []).forEach(function (member) {
+				var kind = String(member && member.id && member.id.kind || '');
+				if (kind === 'package') remainderCounts.packages += 1;
+				else if (kind === 'symbol' || kind === 'entrypoint') remainderCounts.symbols += 1;
+				else remainderCounts.other += 1;
+			});
 		});
 		var contexts = architectureComponentContexts();
 		var navigationByComponent = {};
@@ -6711,7 +6769,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			objects: objects,
 			total: Object.keys(counts).length,
 			omitted: Object.keys(counts).length - objects.length,
-			remainderPackageCount: remainderPackageCount,
+			remainderCounts: remainderCounts,
 			hasDiagnosticRemainder: remainderComponents.length > 0,
 		};
 	}
@@ -7332,31 +7390,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 	// Overview wall. Every collection rendered here has a closed DOM bound;
 	// full component, Study and package collections remain in their existing
 	// product surfaces.
-	function mapEmptyInspectorTouchpointFamilyCount() {
-		var total = 0;
-		var associations = DATA.architecture_associations || {};
-		(Array.isArray(associations.components) ? associations.components : []).forEach(function (component) {
-			var rows = (Array.isArray(component && component.associations) ? component.associations : []).filter(function (row) {
-				return row && (row.kind === 'boundary' || row.kind === 'resource');
-			});
-			var pairedBoundaries = Object.create(null);
-			rows.forEach(function (row) {
-				if (!row.paired || row.kind !== 'boundary') return;
-				pairedBoundaries[String(row.owning_unit || '') + '\u0000' + String(row.imported_family || '')] = true;
-			});
-			total += rows.filter(function (row) {
-				return !(
-					row.paired && row.kind === 'resource' &&
-					pairedBoundaries[String(row.owning_unit || '') + '\u0000' + String(row.imported_family || '')]
-				);
-			}).length;
-		});
-		return total;
-	}
-
 	function renderMapEmptyInspectorStart(action) {
 		var block = el('section', 'rm-map-empty-inspector__start');
-		block.appendChild(txt('h3', 'rm-map-empty-inspector__section-title', msg('architecture.nav.start_here')));
 		if (!action || !action.path || !Number.isInteger(action.line) || action.line < 1 || typeof action.action !== 'function') {
 			block.appendChild(txt(
 				'p',
@@ -7389,116 +7424,20 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		return block;
 	}
 
-	function renderMapEmptyInspectorEntryRow(group) {
-		var row = el('li', 'rm-map-empty-inspector__entry-row');
-		var heading = el('div', 'rm-map-empty-inspector__entry-heading');
-		heading.appendChild(txt('strong', '', msg(group.labelMessageID)));
-		heading.appendChild(txt('span', 'rm-map-empty-inspector__entry-count', String(group.items.length)));
-		row.appendChild(heading);
-		if (group.items.length) {
-			row.appendChild(txt(
-				'span',
-				'rm-map-empty-inspector__entry-representative',
-				String(group.items[0].title || '')
-			));
-		}
-		return row;
-	}
-
 	function renderMapEmptyInspector() {
 		var anatomy = repositoryOverviewAnatomy() || {
 			entries: { objects: [], total: 0, omitted: 0 },
-			components: { objects: [], total: 0, remainderPackageCount: 0, hasDiagnosticRemainder: false },
+			components: {
+				objects: [], total: 0,
+				remainderCounts: { packages: 0, symbols: 0, other: 0 },
+				hasDiagnosticRemainder: false,
+			},
 		};
 		var atlasShelf = repositoryAtlasWorkspaceShelf();
-		var thesis = REPOSITORY_GUIDE || DATA.repository_thesis || {};
-		var purpose = String(thesis.purpose || neutralPurposeFallback() || '').trim();
-		var root = el('aside', 'rm-map-empty-inspector');
+		var root = el('div', 'rm-map-empty-inspector');
 		root.id = 'rm-map-empty-inspector';
-		root.setAttribute('aria-label', msg('main.overview.glance.title'));
-
-		var lead = el('div', 'rm-map-empty-inspector__lead');
-		lead.appendChild(txt('span', 'rm-map-empty-inspector__kicker', msg('main.overview.glance.what')));
-		lead.appendChild(txt('p', 'rm-map-empty-inspector__purpose', normalizeMarkdownProse(purpose)));
-		root.appendChild(lead);
+		root.setAttribute('aria-label', msg('architecture.nav.start_here'));
 		root.appendChild(renderMapEmptyInspectorStart(overviewFirstAction(anatomy, atlasShelf)));
-
-		var metrics = el('dl', 'rm-map-empty-inspector__metrics');
-		[
-			[msg('main.overview.anatomy.entry_surfaces'), Number(anatomy.entries.total) || 0],
-			[msg('main.overview.anatomy.components'), Number(anatomy.components.total) || 0],
-			[msg('main.atlas.workspace.units'), atlasShelf && atlasShelf.units.length || 0],
-			[msg('main.overview.perimeter.touchpoints'), mapEmptyInspectorTouchpointFamilyCount()],
-		].forEach(function (metric) {
-			var item = el('div', 'rm-map-empty-inspector__metric');
-			item.appendChild(txt('dt', '', metric[0]));
-			item.appendChild(txt('dd', '', String(metric[1])));
-			metrics.appendChild(item);
-		});
-		root.appendChild(metrics);
-
-		var groups = overviewEntryClassifications(anatomy.entries.objects || []);
-		var entries = el('section', 'rm-map-empty-inspector__entries');
-		entries.appendChild(txt('h3', 'rm-map-empty-inspector__section-title', msg('main.overview.anatomy.entry_surfaces')));
-		var primaryGroups = groups.slice(0, 3);
-		if (primaryGroups.length) {
-			var primaryList = el('ul', 'rm-map-empty-inspector__entry-list rm-map-empty-inspector__entry-list--primary');
-			primaryGroups.forEach(function (group) {
-				primaryList.appendChild(renderMapEmptyInspectorEntryRow(group));
-			});
-			entries.appendChild(primaryList);
-		} else {
-			entries.appendChild(txt('p', 'rm-map-empty-inspector__unavailable', msg('main.overview.surfaces.zero_handlers_none')));
-		}
-		if (groups.length > 3) {
-			var remainingGroups = groups.slice(3);
-			var remainingCount = remainingGroups.reduce(function (total, group) {
-				return total + group.items.length;
-			}, 0);
-			var more = el('details', 'rm-map-empty-inspector__disclosure');
-			more.appendChild(txt(
-				'summary',
-				'rm-map-empty-inspector__disclosure-summary',
-				msg('main.overview.entry.disclosure_count', { count: remainingCount })
-			));
-			var remainingList = el('ul', 'rm-map-empty-inspector__entry-list');
-			remainingGroups.forEach(function (group) {
-				remainingList.appendChild(renderMapEmptyInspectorEntryRow(group));
-			});
-			more.appendChild(remainingList);
-			entries.appendChild(more);
-		}
-		if (Number(anatomy.entries.omitted) > 0) {
-			var unclassifiedEntries = el('details', 'rm-map-empty-inspector__disclosure');
-			unclassifiedEntries.appendChild(txt(
-				'summary',
-				'rm-map-empty-inspector__disclosure-summary',
-				msg('main.overview.entry.unclassified_count', { count: anatomy.entries.omitted })
-			));
-			unclassifiedEntries.appendChild(txt(
-				'p',
-				'rm-map-empty-inspector__disclosure-copy',
-				msg('main.overview.entry.unclassified_copy')
-			));
-			entries.appendChild(unclassifiedEntries);
-		}
-		root.appendChild(entries);
-
-		var remainderCount = Number(anatomy.components.remainderPackageCount) || 0;
-		if (anatomy.components.hasDiagnosticRemainder && remainderCount > 0) {
-			var remainder = el('details', 'rm-map-empty-inspector__disclosure rm-map-empty-inspector__remainder');
-			remainder.appendChild(txt(
-				'summary',
-				'rm-map-empty-inspector__disclosure-summary',
-				msg('main.overview.remainder.summary', { count: remainderCount })
-			));
-			remainder.appendChild(txt(
-				'p',
-				'rm-map-empty-inspector__disclosure-copy',
-				msg('main.overview.remainder.copy')
-			));
-			root.appendChild(remainder);
-		}
 		return root;
 	}
 
@@ -7739,13 +7678,16 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		// Decision 229 D3: unclassified exact scope (diagnostic remainder,
 		// e.g. "Supporting repository evidence") is a collapsed disclosure —
 		// never a principal product area. Count-reconciled, always reachable.
-		var remainderCount = anatomy.components && anatomy.components.remainderPackageCount || 0;
+		var remainderCounts = anatomy.components && anatomy.components.remainderCounts ||
+			{ packages: 0, symbols: 0, other: 0 };
+		var remainderCount = (Number(remainderCounts.packages) || 0) +
+			(Number(remainderCounts.symbols) || 0) + (Number(remainderCounts.other) || 0);
 		if (anatomy.components && anatomy.components.hasDiagnosticRemainder && remainderCount > 0) {
 			var remainderSection = el('section', 'rm-workspace-section rm-overview-remainder');
 			var remainderDetails = el('details', 'rm-overview-remainder__disclosure');
 			remainderSection.appendChild(remainderDetails);
 			remainderDetails.appendChild(txt('summary', 'rm-overview-remainder__summary',
-				msg('main.overview.remainder.summary', { count: remainderCount })));
+				msg('main.overview.remainder.summary', remainderCounts)));
 			remainderDetails.appendChild(txt('p', 'rm-overview-remainder__note',
 				msg('main.overview.remainder.copy')));
 			root.appendChild(remainderSection);
@@ -9761,44 +9703,51 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		return contexts;
 	}
 
-  // Decision 236 (v11): the active Map lens. One of landscape /
-  // entrypoints / integrations. Not part of workspaceState
-  // (a view state, not a route); it persists across selection/source
-  // open and never writes the canvas transform.
-  var activeMapLens = 'landscape';
-  var selectedEntrypointHandoffGroupID = '';
+  // The selected executable target opens on its exact Entrypoints context.
+  // Libraries keep the neutral landscape because no process entry is
+  // invented for their unresolved public-API boundary.
+  var activeMapLens = defaultTargetMapLens();
+  var selectedEntrypointHandoffGroupID = defaultEntrypointHandoffGroupID();
 
-  function renderMapLensControl() {
-    var control = el('div', 'rm-map-lens-control');
-    control.setAttribute('role', 'group');
-    control.setAttribute('aria-label', msg('main.map.lenses'));
-    [
-      { id: 'landscape', label: msg('main.map.lens.landscape') },
-      { id: 'entrypoints', label: msg('main.map.lens.entrypoints') },
-      { id: 'integrations', label: msg('main.map.lens.integrations') },
-    ].forEach(function (lens) {
-      var button = txt('button', 'rm-map-lens-button' + (activeMapLens === lens.id ? ' rm-active' : ''), lens.label);
-      button.type = 'button';
-      button.setAttribute('data-map-lens', lens.id);
-      if (activeMapLens === lens.id) button.setAttribute('aria-current', 'page');
-      button.onclick = function () {
-        activeMapLens = lens.id;
-        control.querySelectorAll('[data-map-lens]').forEach(function (node) {
-          node.classList.toggle('rm-active', node.getAttribute('data-map-lens') === activeMapLens);
-          if (node.getAttribute('data-map-lens') === activeMapLens) node.setAttribute('aria-current', 'page');
-          else node.removeAttribute('aria-current');
-        });
-        if (architectureCanvasView && typeof architectureCanvasView.setLens === 'function') {
-          architectureCanvasView.setLens(activeMapLens);
-        }
-        renderMapLensObjects();
-				applyStudyMechanismMapOverlay();
-				renderStudyMechanismMapContextIntoHost();
-      };
-      control.appendChild(button);
-    });
-    return control;
-  }
+	function defaultTargetMapLens() {
+		return ANALYSIS_TARGET && String(ANALYSIS_TARGET.kind || '') === 'executable_package'
+			? 'entrypoints' : 'landscape';
+	}
+
+	function restoreDefaultTargetCanvasContext() {
+		activeMapLens = defaultTargetMapLens();
+		selectedEntrypointHandoffGroupID = defaultEntrypointHandoffGroupID();
+		if (architectureCanvasView && typeof architectureCanvasView.setLens === 'function') {
+			architectureCanvasView.setLens(activeMapLens);
+		}
+		if (selectedEntrypointHandoffGroupID && architectureCanvasView &&
+			typeof architectureCanvasView.selectEntrypointHandoffGroup === 'function') {
+			architectureCanvasView.selectEntrypointHandoffGroup(selectedEntrypointHandoffGroupID);
+		}
+		if (architectureCanvasView && typeof architectureCanvasView.clearStudyMechanismOverlay === 'function') {
+			architectureCanvasView.clearStudyMechanismOverlay();
+		}
+		var context = document.querySelector && document.querySelector('.rm-map-entry-context');
+		if (context) context.hidden = activeMapLens !== 'entrypoints';
+		renderMapLensObjects();
+	}
+
+	function defaultEntrypointHandoffGroupID() {
+		if (!ANALYSIS_TARGET || String(ANALYSIS_TARGET.kind || '') !== 'executable_package') return '';
+		var roots = Array.isArray(ANALYSIS_TARGET.roots) ? ANALYSIS_TARGET.roots : [];
+		var groups = DATA.architecture_canvas && Array.isArray(DATA.architecture_canvas.entry_handoff_groups)
+			? DATA.architecture_canvas.entry_handoff_groups : [];
+		for (var rootIndex = 0; rootIndex < roots.length; rootIndex++) {
+			var root = roots[rootIndex];
+			var matches = groups.filter(function (group) {
+				var entry = group && group.entry;
+				return String(root && root.path || '') === String(entry && entry.path || '') &&
+					Number(root && root.line) === Number(entry && entry.line);
+			});
+			if (matches.length === 1) return String(matches[0].id || '');
+		}
+		return '';
+	}
 
   // Decision 236 (v11): the lens objects panel makes the FIRST-CLASS
   // backend objects of the active lens visibly present next to the map:
@@ -9816,25 +9765,12 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     if (typeof api !== 'function') return;
     var projection = api(DATA, activeMapLens);
     if (!projection) return;
-    var entrypoints = projection.objects && projection.objects.entrypoints || projection.entrypoints || [];
-    var touchpoints = projection.objects && projection.objects.touchpoints || projection.touchpoints || [];
     var entryHandoffGroups = projection.objects && projection.objects.entry_handoff_groups ||
       projection.entry_handoff_groups || [];
     if (activeMapLens === 'landscape') return;
     if (activeMapLens === 'entrypoints') {
-      entrypoints.forEach(function (group) {
-        var section = el('div', 'rm-map-lens-object');
-        section.appendChild(txt('strong', '', mapLensEntryKindLabel(group.kind)));
-        var entries = group.entries || [];
-        if (entries.length > 0) {
-          section.appendChild(txt('span', 'rm-map-lens-object__detail',
-            msg('main.map.lens.object.entries', { count: entries.length })));
-          entries.slice(0, 5).forEach(function (entry) {
-            section.appendChild(txt('div', 'rm-map-lens-object__item', String(entry.label || entry.id)));
-          });
-        }
-        host.appendChild(section);
-      });
+			var entrypointGroups = projection.objects && projection.objects.entrypoints ||
+				projection.entrypoints || [];
       if (selectedEntrypointHandoffGroupID && !entryHandoffGroups.some(function (projected) {
         return projected && projected.id === selectedEntrypointHandoffGroupID;
       })) selectedEntrypointHandoffGroupID = '';
@@ -9842,6 +9778,18 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
         if (!projected || projected.kind !== 'entry_handoff_group' || !projected.group) return;
         host.appendChild(renderEntrypointHandoffSelector(projected.group, host, entryHandoffGroups));
       });
+			entrypointGroups.forEach(function (group) {
+				(group.entries || []).forEach(function (entry) {
+					// A zero-hop exact Surface has no handoff group to select. It
+					// remains a first-class Entrypoint even when conceptual grouping
+					// could not assign an owner. Do not dim or emphasize a component;
+					// expose only its backend-owned exact source locations.
+					if (entryHandoffGroups.length &&
+						(Array.isArray(entry.component_ids) && entry.component_ids.length > 0 ||
+						 entrypointSurfaceHasExactHandoffGroup(entry, entryHandoffGroups))) return;
+					host.appendChild(renderZeroHopEntrypointSurface(entry, group.kind));
+				});
+			});
       var overflowHost = el('div', 'rm-map-entry-overflow-host');
       host.appendChild(overflowHost);
       if (selectedEntrypointHandoffGroupID) {
@@ -9851,37 +9799,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
           entryHandoffGroups
         );
       }
-      if (!entrypoints.length && !entryHandoffGroups.length) {
-        host.appendChild(txt('p', 'rm-map-lens-object rm-map-lens-object--empty', msg('main.map.lens.empty.entrypoints')));
-      }
       return;
-    }
-    // integrations: touchpoint families with honest scope.
-    touchpoints.forEach(function (touchpoint) {
-      var row = el('div', 'rm-map-lens-object');
-      row.appendChild(txt('strong', '', String(touchpoint.family || 'other')));
-      row.appendChild(txt('span', 'rm-map-lens-object__detail',
-        msg('main.map.lens.object.witnesses', { count: touchpoint.witness_count }) +
-        (touchpoint.paired ? ' · ' + msg('main.map.lens.object.paired') : '')));
-      var component = (DATA.architecture_canvas && DATA.architecture_canvas.components || [])
-        .filter(function (c) { return c && c.id === touchpoint.component_id; })[0];
-      if (component) {
-        row.appendChild(txt('span', 'rm-map-lens-object__item', String(component.name || component.id)));
-      }
-      host.appendChild(row);
-    });
-    if (!touchpoints.length) {
-      host.appendChild(txt('p', 'rm-map-lens-object rm-map-lens-object--empty', msg('main.map.lens.empty.integrations')));
-    }
-  }
-
-  function mapLensEntryKindLabel(kind) {
-    switch (String(kind || '')) {
-      case 'cli_command': return msg('main.map.lens.entry.cli');
-      case 'http_route': case 'http_server': return msg('main.map.lens.entry.http');
-      case 'process_entry': return msg('main.map.lens.entry.process');
-      case 'worker': case 'async_task': return msg('main.map.lens.entry.worker');
-      default: return String(kind || msg('main.map.lens.entry.other'));
     }
   }
 
@@ -10042,29 +9960,22 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     var root = document.getElementById('rm-architecture');
     if (!root) return;
     root.replaceChildren();
-    root.appendChild(renderViewHeading(
-      msg('main.architecture'),
-      msg('main.explore.the.repository.map'),
-      msg('main.select.a.component.runtime.surface.or.code.path.to.inspect.its.implementation.context')
-    ));
-    // Decision 221 authority + coverage axes: one compact truth strip above
-    // the relations area. Grouping authority and member evidence are never
-    // conflated — the strip states who owns the grouping claim and how much
-    // of the requested surface it covers.
-    var truthStrip = renderArchitectureAuthorityStrip();
-    if (truthStrip) root.appendChild(truthStrip);
     var componentList = renderArchitectureComponentList();
     var canvasCard = null;
     if (DATA.architecture_canvas && window.RepomapArchitectureCanvas) {
       canvasCard = el('section', 'rm-card rm-architecture-canvas-card');
-      // Decision 236 (v11): Map lenses — Landscape/Entrypoints/
-      // Integrations. One layout; the lens emphasizes or dims
-      // principal nodes without relayout (canvas.setLens) and the objects
-      // panel shows the first-class backend objects of the active lens.
-      canvasCard.appendChild(renderMapLensControl());
-      var lensObjects = el('div', 'rm-map-lens-objects');
-      lensObjects.id = 'rm-map-lens-objects';
-      canvasCard.appendChild(lensObjects);
+      var mapToolbar = el('div', 'rm-map-toolbar');
+      mapEmptyInspectorHost = renderMapEmptyInspector();
+      mapToolbar.appendChild(mapEmptyInspectorHost);
+      canvasCard.appendChild(mapToolbar);
+		if (activeMapLens === 'entrypoints') {
+			var entryContext = el('section', 'rm-map-entry-context');
+			entryContext.appendChild(txt('h2', 'rm-map-entry-context__title', msg('main.map.lens.entrypoints')));
+			var entryObjects = el('div', 'rm-map-lens-objects');
+			entryObjects.id = 'rm-map-lens-objects';
+			entryContext.appendChild(entryObjects);
+			canvasCard.appendChild(entryContext);
+		}
 		var canvasLayout = el('div', 'rm-map-primary-layout');
 		mapPrimaryLayoutHost = canvasLayout;
 		var canvasStage = el('div', 'rm-architecture-canvas-stage');
@@ -10073,8 +9984,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		var studyMechanismContext = el('div', 'rm-study-investigation-map-context');
 		studyMechanismContext.id = 'rm-study-investigation-map-context';
 		canvasStage.appendChild(studyMechanismContext);
-		mapEmptyInspectorHost = renderMapEmptyInspector();
-		canvasLayout.appendChild(mapEmptyInspectorHost);
 		canvasLayout.appendChild(canvasStage);
 		canvasCard.appendChild(canvasLayout);
       root.appendChild(canvasCard);
@@ -10103,7 +10012,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     // exact item behind an expand action.
     var unmapped = renderArchitectureUnmappedDisclosure();
     if (unmapped) root.appendChild(unmapped);
-    renderArchitectureReturn();
+		appendInlineStudyWorkspace(root);
   }
 
   // Resolve an already-authorized exact report location without inferring a
@@ -10161,6 +10070,35 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
    }
    return txt('code', 'rm-map-entry-context__source rm-map-entry-context__source--text', visible);
   }
+
+	function entrypointSurfaceHasExactHandoffGroup(entry, projectedGroups) {
+		var locations = Array.isArray(entry && entry.locations) ? entry.locations : [];
+		return locations.some(function (location) {
+			return projectedGroups.some(function (projected) {
+				var groupEntry = projected && projected.group && projected.group.entry;
+				if (!groupEntry || String(location.path || '') !== String(groupEntry.path || '') ||
+					Number(location.line) !== Number(groupEntry.line)) return false;
+				var leftColumn = Number(location.column) || 0;
+				var rightColumn = Number(groupEntry.column) || 0;
+				return leftColumn === 0 || rightColumn === 0 || leftColumn === rightColumn;
+			});
+		});
+	}
+
+	function renderZeroHopEntrypointSurface(entry, kind) {
+		var row = el('div', 'rm-map-lens-object rm-map-entry-zero-hop');
+		var locations = Array.isArray(entry && entry.locations) ? entry.locations : [];
+		var label = String(entry && entry.label || msg('main.map.lens.entry.process'));
+		if (locations.length) {
+			locations.forEach(function (location) {
+				row.appendChild(renderEntrypointLocationAction(location, label));
+			});
+		} else {
+			row.appendChild(txt('strong', '', label));
+		}
+		row.appendChild(txt('span', 'rm-map-lens-object__detail', String(kind || '')));
+		return row;
+	}
 
   function entryHandoffProjectionByID(projectedGroups, groupID) {
    for (var index = 0; index < projectedGroups.length; index++) {
@@ -10379,18 +10317,18 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     ));
     var list = el('ol', 'rm-architecture-list__items');
     components.forEach(function (component) {
-      var tier = componentEvidenceTier(component);
-      var composition = componentEvidenceComposition(component);
-      var item = txt('li', 'rm-architecture-list__item rm-architecture-list__item--' + tier, '');
+      var item = txt('li', 'rm-architecture-list__item', '');
       var primary = el('button', 'rm-architecture-list__primary');
       primary.type = 'button';
-      primary.appendChild(txt('strong', '', String(component.name || component.id)));
-      primary.appendChild(txt('span', 'rm-evidence-tier rm-evidence-tier--' + tier, componentEvidenceTierLabel(tier)));
-      primary.appendChild(txt('span', 'rm-evidence-composition rm-evidence-composition--' + composition, msg(
-        composition === 'exact' ? 'main.architecture.evidence.exact'
-          : composition === 'mixed' ? 'main.architecture.evidence.mixed'
-          : 'main.architecture.evidence.package'
-      )));
+      var heading = el('span', 'rm-architecture-list__heading');
+      heading.appendChild(txt('strong', '', String(component.name || component.id)));
+      heading.appendChild(txt('span', 'rm-architecture-list__arrow', '›'));
+      primary.appendChild(heading);
+      if (component.description) primary.appendChild(txt('span', 'rm-architecture-list__description', String(component.description)));
+      var memberCount = Array.isArray(component.members) ? component.members.length : 0;
+      if (memberCount > 0) {
+        primary.appendChild(txt('span', 'rm-architecture-list__count', msg('main.architecture.list.member_count', { count: memberCount })));
+      }
       primary.onclick = function () {
         if (architectureCanvasView) {
           architectureCanvasView.openComponent(String(component.id));
@@ -10399,11 +10337,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
         }
       };
       item.appendChild(primary);
-      if (component.description) item.appendChild(txt('p', 'rm-architecture-list__description', String(component.description)));
-      var memberCount = Array.isArray(component.members) ? component.members.length : 0;
-      if (memberCount > 0) {
-        item.appendChild(txt('span', 'rm-architecture-list__count', msg('main.architecture.list.member_count', { count: memberCount })));
-      }
       list.appendChild(item);
     });
     section.appendChild(list);
@@ -10527,8 +10460,7 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		document.querySelectorAll('[data-map-lens]').forEach(function (node) {
 			var active = node.getAttribute('data-map-lens') === activeMapLens;
 			node.classList.toggle('rm-active', active);
-			if (active) node.setAttribute('aria-current', 'page');
-			else node.removeAttribute('aria-current');
+			node.setAttribute('aria-pressed', active ? 'true' : 'false');
 		});
 	}
 
@@ -10538,15 +10470,16 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     commitWorkspaceState(next);
   }
 
-  function openArchitectureTarget(target, returnTarget) {
+  function openArchitectureTarget(target, returnTarget, options) {
+		options = options || {};
 		if (!userArchitectureAvailable()) {
-			commitWorkspaceState(emptyWorkspaceState());
+			commitWorkspaceState(emptyWorkspaceState(), { replace: !!options.replace });
 			return;
 		}
     var next = reduceWorkspaceState(workspaceState, { type: 'view', view: 'map' });
     next.mapReturn = returnTarget || null;
     next.mapTarget = target || null;
-    commitWorkspaceState(next);
+		commitWorkspaceState(next, { replace: !!options.replace });
   }
 
   function returnFromArchitecture() {
@@ -10634,13 +10567,18 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
     });
   }
 
+	function syncInlineStudyLocation() {
+		if (workspaceState.themeCardOrdinal) {
+			openThemeCard(workspaceState.themeCardOrdinal, { history: false });
+			return;
+		}
+		if (String(window.location && window.location.hash || '') !== '#study') return;
+		var study = document.getElementById('rm-study');
+		if (study && typeof study.scrollIntoView === 'function') study.scrollIntoView({ block: 'start' });
+	}
+
   function renderWorkspaceState() {
 		if (workspaceState.view === 'investigate') renderTaskInvestigationWorkspace();
-		if (workspaceState.view === 'study_overview') renderIncompleteStudyOverview();
-		if (workspaceState.view === 'study') {
-			if (workspaceState.themeCardOrdinal) renderThemeDetailWorkspace();
-			else renderStudyDetailWorkspace();
-		}
 		if (workspaceState.view === 'operate') renderOperateDetailWorkspace();
 		// Decision 236 (v11): map is the primary product — it renders the
 		// architecture workspace (Landscape lens); architecture remains an
@@ -10652,18 +10590,25 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       // (thesis/brief/atlas shelf) from report data that exists without a
       // canvas.
       renderMapSummaryInto('rm-architecture');
+			appendInlineStudyWorkspace(document.getElementById('rm-architecture'));
       activateWorkspaceView(workspaceState.view);
+			syncInlineStudyLocation();
     } else if (workspaceState.view === 'map' || workspaceState.view === 'architecture') {
       if (!architectureCanvasHost) renderArchitectureWorkspace();
-		else renderArchitectureReturn();
+		if (!workspaceState.mapTarget) restoreDefaultTargetCanvasContext();
 		renderStudyMechanismMapContextIntoHost();
       activateWorkspaceView(workspaceState.view);
+		syncInlineStudyLocation();
       var ready = architectureCanvasView ? (architectureReady || Promise.resolve(architectureCanvasView)) : mountArchitectureCanvas();
       ready.then(function () {
 			applyStudyMechanismMapOverlay();
         if (architectureCanvasView && typeof architectureCanvasView.setLens === 'function') {
           architectureCanvasView.setLens(activeMapLens);
         }
+			if (selectedEntrypointHandoffGroupID && architectureCanvasView &&
+				typeof architectureCanvasView.selectEntrypointHandoffGroup === 'function') {
+				architectureCanvasView.selectEntrypointHandoffGroup(selectedEntrypointHandoffGroupID);
+			}
 			syncMapLensControl();
         renderMapLensObjects();
         focusArchitectureTarget(workspaceState.mapTarget);
@@ -10690,6 +10635,9 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       if (DATA.freshness && DATA.freshness.state) {
         chips.push(msg('main.provenance.freshness', { state: provenanceFreshnessLabel(DATA.freshness.state) }));
       }
+			if (STATIC_SOURCE_LINKS && STATIC_SOURCE_LINKS.working_tree_dirty) {
+				chips.push(msg('main.provenance.local_changes_captured'));
+			}
       if (DATA.report_language) {
         chips.push(msg('main.provenance.language', { language: DATA.report_language }));
       }
@@ -10745,20 +10693,38 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		if (TASK_INVESTIGATION) {
 			addWorkspaceTab(msg('main.task'), 'investigate');
 		} else {
-			// Decision 236 (v11): Map is the primary product — the
-			// Overview is part of the empty-selection Map inspector; Study
-			// is the only separate semantic destination.
-			addWorkspaceTab(msg('main.map'), 'map');
-			if (STUDY_DIRECTIONS.length || themeCards().length) addWorkspaceTab(msg('main.study'), 'study_overview');
+			renderAnalysisTargetMenu(tabs);
 		}
 		if (DEBUG_MODE) addWorkspaceTab(msg('main.provenance'), 'provenance');
+	}
+
+	function analysisTargetWorkspacePurpose() {
+		if (!ANALYSIS_TARGET || Number(ANALYSIS_TARGET.version) !== 1) return '';
+		var kind = String(ANALYSIS_TARGET.kind || '');
+		var packageDir = String(ANALYSIS_TARGET.package_dir || '');
+		var packagePath = String(ANALYSIS_TARGET.package_path || '');
+		if (kind === 'executable_package' && packageDir) {
+			return msg('main.analysis_target.executable_scope', { scope: packageDir });
+		}
+		if (kind === 'library_package') {
+			var libraryScope = packageDir && packageDir !== '.' ? packageDir : packagePath;
+			if (libraryScope) return msg('main.analysis_target.library_scope', { scope: libraryScope });
+		}
+		return '';
+	}
+
+	function workspacePurposeText() {
+		var targetPurpose = analysisTargetWorkspacePurpose();
+		if (targetPurpose) return targetPurpose;
+		if (TASK_INVESTIGATION) return msg('main.chrome.task.investigation');
+		return msg('main.repository.onboarding');
 	}
 
   function render() {
     var repoName = document.getElementById('rm-repo-name');
     if (repoName) repoName.textContent = DATA.repo_name || msg('main.repository');
 		var workspacePurpose = document.getElementById('rm-workspace-purpose');
-		if (workspacePurpose && TASK_INVESTIGATION) workspacePurpose.textContent = msg('main.chrome.task.investigation');
+		if (workspacePurpose) workspacePurpose.textContent = workspacePurposeText();
     setupServerFeatures();
     renderRunDetails();
 
@@ -10767,8 +10733,6 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 		if (TASK_INVESTIGATION) {
 			renderTaskInvestigationWorkspace();
 		} else {
-			renderIncompleteStudyOverview();
-			renderStudyDetailWorkspace();
 			renderOperateDetailWorkspace();
 		}
     renderProvenanceWorkspace();
@@ -10778,6 +10742,11 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
   if (window.__REPOMAP_WORKSPACE_TEST__ && typeof window.__REPOMAP_WORKSPACE_TEST__ === 'object') {
     Object.assign(window.__REPOMAP_WORKSPACE_TEST__, {
       architectureFocusValue: architectureFocusValue,
+		analysisTargetWorkspacePurpose: analysisTargetWorkspacePurpose,
+		analysisTargetMenuItems: analysisTargetMenuItems,
+		renderAnalysisTargetMenu: renderAnalysisTargetMenu,
+		defaultEntrypointHandoffGroupID: defaultEntrypointHandoffGroupID,
+		workspacePurposeText: workspacePurposeText,
       architectureFocusNeedsReset: architectureFocusNeedsReset,
       architectureTargetFromFocus: architectureTargetFromFocus,
 		architectureComponentContexts: architectureComponentContexts,
@@ -10806,10 +10775,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 			repositoryAtlasWorkspaceShelf: repositoryAtlasWorkspaceShelf,
 			renderRepositoryAtlasWorkspaceShelf: renderRepositoryAtlasWorkspaceShelf,
 		renderTaskInvestigationWorkspace: renderTaskInvestigationWorkspace,
-			taskLensEnumLabel: taskLensEnumLabel,
-      renderStudyDetailWorkspace: renderStudyDetailWorkspace,
+				taskLensEnumLabel: taskLensEnumLabel,
       renderIncompleteStudyOverview: renderIncompleteStudyOverview,
-		renderThemeDetailWorkspace: renderThemeDetailWorkspace,
 		renderStudyInvestigation: renderStudyInvestigation,
 		renderStudyMechanismMapContext: renderStudyMechanismMapContext,
 		studyMechanismForTarget: studyMechanismForTarget,
@@ -10850,6 +10817,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
       runPickerLabel: runPickerLabel,
       renderArchitectureWorkspace: renderArchitectureWorkspace,
 		renderWorkspaceTabs: renderWorkspaceTabs,
+		renderRunDetails: renderRunDetails,
+		provenanceFreshnessLabel: provenanceFreshnessLabel,
       mountArchitectureCanvas: mountArchitectureCanvas,
       mountDebugSurfaceCatalog: mountDebugSurfaceCatalog,
       txt: txt,

@@ -473,8 +473,8 @@ api.renderArchitectureWorkspace();
 		t.Fatalf("source card links = %#v, want English GitLab action", got.CardLinks)
 	}
 	wantLine := "https://gitlab.example/team/sub/project/-/blob/0123456789abcdef0123456789abcdef01234567/nested%20worktree/dir/space%20%23.go#L12"
-	if got.StudyDirection.TagName != "article" ||
-		strings.Join(got.StudyDirection.TitleTags, ",") != "button" ||
+	if got.StudyDirection.TagName != "details" ||
+		strings.Join(got.StudyDirection.TitleTags, ",") != "span" ||
 		len(got.StudyDirection.Links) != 1 || got.StudyDirection.Links[0] != wantRange ||
 		!strings.Contains(got.StudyDirection.Text, "Serve") ||
 		strings.Count(got.StudyDirection.Text, "dir/space #.go:12") != 1 ||

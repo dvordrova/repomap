@@ -6,6 +6,8 @@ package report
 import (
 	"encoding/json"
 	"reflect"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -595,6 +597,98 @@ func TestEntrypointHandoffJoinsExactDeclarationIdentity(t *testing.T) {
 	if len(canvas.EntryHandoffGroups) != 1 ||
 		canvas.EntryHandoffGroups[0].Entry.Symbol != handoff.ProcessEntrypoint.ID {
 		t.Fatalf("same-location entry handoff identity join = %#v, want only exact declaration", canvas.EntryHandoffGroups)
+	}
+}
+
+func TestEntrypointHandoffIdentitySurvivesLocalRemainderWithoutInventingOwnership(t *testing.T) {
+	t.Parallel()
+
+	grounding := architectureGroundingWithEntryHandoff()
+	base := grounding.EntryHandoffs[0]
+	entryMember := componentmap.MemberID{Kind: componentmap.MemberSymbol, Value: "opaque-entry-member"}
+	grounding.BehaviorAnchors = []ArchitectureBehaviorAnchor{{
+		ID:        "entry-anchor",
+		Kind:      componentmap.AnchorProcessEntry,
+		ProofMode: componentmap.AnchorProofProcessEntry,
+		Location:  base.ProcessEntrypoint.Location,
+		Scenario:  base.Scenario,
+		AssociatedMembers: []ArchitectureAnchorMember{{
+			ID:       base.ProcessEntrypoint.ID,
+			Package:  base.ProcessEntrypoint.Package,
+			Name:     base.ProcessEntrypoint.Name,
+			Location: base.ProcessEntrypoint.Location,
+		}},
+	}}
+	grounding.EntryHandoffs = make([]ArchitectureEntryHandoff, 0, 35)
+	for index := 0; index < 35; index++ {
+		handoff := base
+		handoff.Callee = ArchitectureAnchorMember{
+			ID:       base.Callee.ID + ".Step" + strconv.Itoa(index+1),
+			Package:  base.Callee.Package,
+			Name:     "Step" + strconv.Itoa(index+1),
+			Location: evidence.Location{Path: base.Callee.Location.Path, Line: base.Callee.Location.Line + index, Column: 6},
+		}
+		handoff.RepresentativeCallsite = evidence.Location{
+			Path: base.ProcessEntrypoint.Location.Path, Line: base.RepresentativeCallsite.Line + index, Column: 2,
+		}
+		handoff.TargetPackage = handoff.Callee.Package
+		handoff.ID = architectureEntryHandoffID(handoff)
+		grounding.EntryHandoffs = append(grounding.EntryHandoffs, handoff)
+	}
+	sort.Slice(grounding.EntryHandoffs, func(i, j int) bool {
+		return grounding.EntryHandoffs[i].ID < grounding.EntryHandoffs[j].ID
+	})
+	canvas := &ArchitectureCanvas{
+		Version:                   ArchitectureCanvasVersion,
+		LocalRemainderComponentID: "local-remainder",
+		BehaviorAnchors: []componentmap.BehaviorAnchor{{
+			ID:        "entry-anchor",
+			Kind:      componentmap.AnchorProcessEntry,
+			ProofMode: componentmap.AnchorProofProcessEntry,
+			Location:  base.ProcessEntrypoint.Location,
+			Scenario:  componentmap.ScenarioContext{ID: base.Scenario.ID},
+			MemberIDs: []componentmap.MemberID{entryMember},
+		}},
+		Components: []ArchitectureComponent{{
+			ID: "local-remainder",
+			Members: []componentmap.Candidate{{
+				ID: entryMember,
+				Facts: []componentmap.LocalFact{{
+					Kind: componentmap.FactDeclaration, Value: base.ProcessEntrypoint.ID,
+					Location: &base.ProcessEntrypoint.Location,
+				}},
+			}},
+		}},
+	}
+
+	groups, err := ProjectEntrypointHandoffGroups(canvas, &grounding, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 1 || len(groups[0].EntryHandoffs) != 35 {
+		t.Fatalf("LocalRemainder-only entry projection = %#v, want one group with 35 exact rows", groups)
+	}
+	group := groups[0]
+	if group.Entry.Symbol != base.ProcessEntrypoint.ID || len(group.ComponentIDs) != 0 ||
+		len(group.Entry.ComponentIDs) != 0 {
+		t.Fatalf("identity/ownership separation = %#v", group)
+	}
+	for index, handoff := range group.EntryHandoffs {
+		if len(handoff.ComponentIDs) != 0 || handoff.Target == nil || handoff.Target.Symbol != "" {
+			t.Fatalf("handoff %d invented conceptual ownership: %#v", index, handoff)
+		}
+	}
+
+	mismatched := grounding
+	mismatched.BehaviorAnchors = append([]ArchitectureBehaviorAnchor(nil), grounding.BehaviorAnchors...)
+	mismatched.BehaviorAnchors[0].AssociatedMembers = append(
+		[]ArchitectureAnchorMember(nil),
+		grounding.BehaviorAnchors[0].AssociatedMembers...,
+	)
+	mismatched.BehaviorAnchors[0].AssociatedMembers[0].ID = "example.com/app.otherMain"
+	if _, err := ProjectEntrypointHandoffGroups(canvas, &mismatched, nil); err == nil ||
+		!strings.Contains(err.Error(), "does not match exact grounding anchor") {
+		t.Fatalf("mismatched exact process-entry identity error = %v", err)
 	}
 }
 

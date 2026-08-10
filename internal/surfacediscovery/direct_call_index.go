@@ -15,12 +15,12 @@ import (
 )
 
 const (
-	DirectCallIndexVersion = 1
+	DirectCallIndexVersion = 2
 
 	// The direct-call substrate is retained only in memory, but it is still
 	// bounded independently from the SSA program. Crossing either ceiling closes
-	// the complete index: a retained prefix must never masquerade as a complete
-	// neighborhood for a later Study investigation.
+	// the index: a retained prefix must never masquerade as the complete declared
+	// or configured target-rooted neighborhood for a later Study investigation.
 	MaxDirectCallIndexNodes = 65_536
 	MaxDirectCallIndexEdges = 262_144
 )
@@ -90,9 +90,13 @@ type DirectCallBodyRange struct {
 }
 
 type DirectCallNode struct {
-	ID          string              `json:"id"`
-	Symbol      Symbol              `json:"symbol"`
+	ID     string `json:"id"`
+	Symbol Symbol `json:"symbol"`
+	// Package and Exported are producer-owned declaration facts. Later
+	// consumers may scope an exact public API without guessing from symbol
+	// spelling or loading the package a second time.
 	Package     string              `json:"package"`
+	Exported    bool                `json:"exported"`
 	ModuleID    string              `json:"module_id"`
 	ScenarioID  string              `json:"scenario_id"`
 	Declaration Location            `json:"declaration"`
@@ -117,10 +121,11 @@ type DirectCallEdge struct {
 // It deliberately retains neither a guessed target nor another source
 // location: CallerID is already bound to one exact DirectCallNode.
 type DirectCallNodeFrontier struct {
-	CallerID                string `json:"caller_id"`
-	DynamicInvokesExcluded  int    `json:"dynamic_invokes_excluded"`
-	NonStaticCallsExcluded  int    `json:"non_static_calls_excluded"`
-	ExternalCalleesExcluded int    `json:"external_callees_excluded"`
+	CallerID                          string `json:"caller_id"`
+	DynamicInvokesExcluded            int    `json:"dynamic_invokes_excluded"`
+	NonStaticCallsExcluded            int    `json:"non_static_calls_excluded"`
+	ExternalCalleesExcluded           int    `json:"external_callees_excluded"`
+	DepthBoundRepositoryCallsExcluded int    `json:"depth_bound_repository_calls_excluded,omitempty"`
 }
 
 // DirectCallIndexCoverage accounts for deliberately excluded non-exact call
@@ -142,6 +147,53 @@ type DirectCallIndexCoverage struct {
 	NonRepositoryCallsExcluded   int `json:"non_repository_calls_excluded"`
 	InvalidEndpointCallsExcluded int `json:"invalid_endpoint_calls_excluded"`
 	InvalidCallsitesExcluded     int `json:"invalid_callsites_excluded"`
+	// DepthBoundRepositoryCallsExcluded counts exact repository-local call
+	// instructions whose caller was reached exactly at Scope.MaxDepth. Their
+	// edges are intentionally absent, so a later consumer cannot interpret a
+	// missing connector as proof of true target-unreachability.
+	DepthBoundRepositoryCallsExcluded int `json:"depth_bound_repository_calls_excluded"`
+	// EdgeLimitSafeDepth is populated only when a target-rooted edge ceiling
+	// closes the index. It is the greatest positive CLI depth known to exclude
+	// the overflowing BFS layer, so the suggested retry is causal rather than a
+	// blind depth-1 guess. Zero means no positive depth is known to fit.
+	EdgeLimitSafeDepth int `json:"edge_limit_safe_depth,omitempty"`
+}
+
+// DirectCallIndexScope states whether Edges are the legacy repository-wide
+// exact relation set or a target-rooted neighborhood bounded by depth and an
+// explicit resource ceiling. Nodes remain the complete build-selected local
+// declaration catalog in either mode.
+type DirectCallIndexScope struct {
+	TargetKind    string `json:"target_kind,omitempty"`
+	TargetPackage string `json:"target_package,omitempty"`
+	MaxDepth      int    `json:"max_depth,omitempty"`
+	EdgeLimit     int    `json:"edge_limit,omitempty"`
+}
+
+func (scope DirectCallIndexScope) TargetScoped() bool {
+	return scope.TargetKind != "" || scope.TargetPackage != "" ||
+		scope.MaxDepth != 0 || scope.EdgeLimit != 0
+}
+
+func (scope DirectCallIndexScope) validate() error {
+	if !scope.TargetScoped() {
+		return nil
+	}
+	if scope.TargetKind != AnalysisTargetExecutablePackage &&
+		scope.TargetKind != AnalysisTargetLibraryPackage {
+		return fmt.Errorf("direct call index: invalid target scope kind %q", scope.TargetKind)
+	}
+	if scope.TargetPackage == "" || strings.TrimSpace(scope.TargetPackage) != scope.TargetPackage ||
+		strings.ContainsAny(scope.TargetPackage, " \t\r\n") {
+		return fmt.Errorf("direct call index: invalid target scope package")
+	}
+	if scope.MaxDepth < 1 {
+		return fmt.Errorf("direct call index: invalid target scope depth %d", scope.MaxDepth)
+	}
+	if scope.EdgeLimit < 1 || scope.EdgeLimit > MaxDirectCallIndexEdges {
+		return fmt.Errorf("direct call index: invalid target scope edge limit %d", scope.EdgeLimit)
+	}
+	return nil
 }
 
 // DirectCallIndex is a deterministic, bounded, non-persisted local substrate.
@@ -153,6 +205,7 @@ type DirectCallIndex struct {
 	State        DirectCallIndexState        `json:"state"`
 	ClosedReason DirectCallIndexClosedReason `json:"closed_reason,omitempty"`
 	Scenario     Scenario                    `json:"scenario"`
+	Scope        DirectCallIndexScope        `json:"scope,omitempty"`
 	Modules      []DirectCallModule          `json:"modules"`
 	Nodes        []DirectCallNode            `json:"nodes"`
 	Edges        []DirectCallEdge            `json:"edges"`
@@ -408,6 +461,27 @@ func (index DirectCallIndex) Validate() error {
 		!sort.StringsAreSorted(index.Scenario.Tags) || !uniqueStrings(index.Scenario.Tags) {
 		return fmt.Errorf("direct call index: invalid canonical scenario")
 	}
+	if err := index.Scope.validate(); err != nil {
+		return err
+	}
+	if index.Coverage.DepthBoundRepositoryCallsExcluded < 0 {
+		return fmt.Errorf("direct call index: invalid depth-bound coverage")
+	}
+	if index.Coverage.EdgeLimitSafeDepth < 0 {
+		return fmt.Errorf("direct call index: invalid edge-limit recovery depth")
+	}
+	if !index.Scope.TargetScoped() && index.Coverage.DepthBoundRepositoryCallsExcluded != 0 {
+		return fmt.Errorf("direct call index: repository-wide index has target depth frontier")
+	}
+	if index.Coverage.EdgeLimitSafeDepth > 0 &&
+		(!index.Scope.TargetScoped() || index.State != DirectCallIndexUnavailable ||
+			index.ClosedReason != DirectCallIndexClosedEdgeLimit ||
+			index.Coverage.EdgeLimitSafeDepth >= index.Scope.MaxDepth) {
+		return fmt.Errorf("direct call index: inconsistent edge-limit recovery depth")
+	}
+	if index.State == DirectCallIndexReady && index.Coverage.EdgeLimitSafeDepth != 0 {
+		return fmt.Errorf("direct call index: ready index retained edge-limit recovery depth")
+	}
 	if index.State == DirectCallIndexUnavailable {
 		if !index.ClosedReason.Valid() {
 			return fmt.Errorf("direct call index: unavailable index has invalid closed reason %q", index.ClosedReason)
@@ -422,6 +496,9 @@ func (index DirectCallIndex) Validate() error {
 	}
 	if len(index.Nodes) > MaxDirectCallIndexNodes || len(index.Edges) > MaxDirectCallIndexEdges {
 		return fmt.Errorf("direct call index: graph exceeds production bounds")
+	}
+	if index.Scope.TargetScoped() && len(index.Edges) > index.Scope.EdgeLimit {
+		return fmt.Errorf("direct call index: target graph exceeds configured edge limit")
 	}
 	if index.Coverage.ModulesIndexed != len(index.Modules) ||
 		index.Coverage.NodesIndexed != len(index.Nodes) ||
@@ -495,6 +572,7 @@ func (index DirectCallIndex) Validate() error {
 	dynamicInvokes := 0
 	nonStaticCalls := 0
 	externalCallees := 0
+	depthBoundRepositoryCalls := 0
 	for _, frontier := range index.Frontiers {
 		if previous != "" && frontier.CallerID <= previous {
 			return fmt.Errorf("direct call index: frontiers are not unique canonical order")
@@ -504,18 +582,23 @@ func (index DirectCallIndex) Validate() error {
 			return fmt.Errorf("direct call index: frontier has unknown caller %q", frontier.CallerID)
 		}
 		if frontier.DynamicInvokesExcluded < 0 || frontier.NonStaticCallsExcluded < 0 ||
-			frontier.ExternalCalleesExcluded < 0 ||
-			frontier.DynamicInvokesExcluded+frontier.NonStaticCallsExcluded+frontier.ExternalCalleesExcluded == 0 {
+			frontier.ExternalCalleesExcluded < 0 || frontier.DepthBoundRepositoryCallsExcluded < 0 ||
+			frontier.DynamicInvokesExcluded+frontier.NonStaticCallsExcluded+
+				frontier.ExternalCalleesExcluded+frontier.DepthBoundRepositoryCallsExcluded == 0 {
 			return fmt.Errorf("direct call index: invalid frontier for caller %q", frontier.CallerID)
 		}
 		dynamicInvokes += frontier.DynamicInvokesExcluded
 		nonStaticCalls += frontier.NonStaticCallsExcluded
 		externalCallees += frontier.ExternalCalleesExcluded
+		depthBoundRepositoryCalls += frontier.DepthBoundRepositoryCallsExcluded
 	}
 	if dynamicInvokes > index.Coverage.DynamicInvokesExcluded ||
 		nonStaticCalls > index.Coverage.NonStaticCallsExcluded ||
 		externalCallees > index.Coverage.NonRepositoryCallsExcluded {
 		return fmt.Errorf("direct call index: frontier exceeds global exclusion coverage")
+	}
+	if depthBoundRepositoryCalls != index.Coverage.DepthBoundRepositoryCallsExcluded {
+		return fmt.Errorf("direct call index: per-caller depth frontier does not match global coverage")
 	}
 
 	digest, err := directCallIndexSHA256(index)
@@ -533,6 +616,7 @@ func (index DirectCallIndex) Validate() error {
 
 type directCallIndexBuilder struct {
 	scenario      Scenario
+	scope         DirectCallIndexScope
 	maxNodes      int
 	maxEdges      int
 	state         DirectCallIndexState
@@ -544,6 +628,7 @@ type directCallIndexBuilder struct {
 	functionNode  map[*ssa.Function]string
 	functionsSeen map[*ssa.Function]struct{}
 	coverage      DirectCallIndexCoverage
+	entryCalls    *entryCallSidecar
 }
 
 func newDirectCallIndexBuilder(scenario Scenario) *directCallIndexBuilder {
@@ -562,6 +647,13 @@ func newDirectCallIndexBuilderWithLimits(scenario Scenario, maxNodes, maxEdges i
 		frontiers:     make(map[string]DirectCallNodeFrontier),
 		functionsSeen: make(map[*ssa.Function]struct{}),
 	}
+}
+
+func (builder *directCallIndexBuilder) setTargetScope(scope DirectCallIndexScope) {
+	if builder == nil {
+		return
+	}
+	builder.scope = scope
 }
 
 func (builder *directCallIndexBuilder) close(reason DirectCallIndexClosedReason) {
@@ -648,6 +740,7 @@ func (builder *directCallIndexBuilder) recordCall(a *analyzer, call ssa.CallInst
 		return
 	}
 	if !a.repositoryDirectStaticCall(call, callee) {
+		builder.recordExternalEntryCall(a, call, callee)
 		builder.coverage.NonRepositoryCallsExcluded++
 		builder.recordCallerFrontier(a, call.Parent(), directCallFrontierExternalCallee)
 		return
@@ -672,6 +765,7 @@ func (builder *directCallIndexBuilder) recordCall(a *analyzer, call ssa.CallInst
 		WitnessCount: 1,
 	}
 	edge.ID = stableDirectCallEdgeID(edge)
+	builder.recordLocalEntryCall(a, call, callee, edge)
 	if existing, found := builder.edges[edge.ID]; found {
 		existing.WitnessCount++
 		if directCallLocationLess(callsite, existing.RepresentativeCallsite) {
@@ -732,7 +826,7 @@ func (builder *directCallIndexBuilder) finish() DirectCallIndex {
 	}
 	index := DirectCallIndex{
 		Version: DirectCallIndexVersion, State: builder.state, ClosedReason: builder.closedReason,
-		Scenario: builder.scenario, Coverage: builder.coverage,
+		Scenario: builder.scenario, Scope: builder.scope, Coverage: builder.coverage,
 		Modules: []DirectCallModule{}, Nodes: []DirectCallNode{}, Edges: []DirectCallEdge{},
 		Frontiers: []DirectCallNodeFrontier{},
 	}
@@ -804,11 +898,20 @@ func (a *analyzer) directCallNode(function *ssa.Function, scenario Scenario) (Di
 		return DirectCallNode{}, DirectCallModule{}, false
 	}
 	node := DirectCallNode{
-		Symbol: symbol, Package: packagePath, ModuleID: module.ID, ScenarioID: scenario.ID,
+		Symbol: symbol, Package: packagePath, Exported: directCallFunctionExported(function),
+		ModuleID: module.ID, ScenarioID: scenario.ID,
 		Declaration: declaration, Body: body,
 	}
 	node.ID = stableDirectCallNodeID(node)
 	return node, module, true
+}
+
+func directCallFunctionExported(function *ssa.Function) bool {
+	if function == nil {
+		return false
+	}
+	object := function.Object()
+	return object != nil && object.Pkg() != nil && object.Exported()
 }
 
 func containedModuleDirectory(root, moduleRoot string) (string, bool) {

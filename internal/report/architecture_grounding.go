@@ -180,7 +180,8 @@ func validateArchitectureGrounding(grounding ArchitectureGrounding) error {
 	if !validArchitectureGroundingMode(grounding.GroundingMode) {
 		return fmt.Errorf("unsupported grounding mode")
 	}
-	if len(grounding.BehaviorAnchors) > 256 || len(grounding.Relationships) > 512 {
+	if len(grounding.BehaviorAnchors) > 256 ||
+		len(grounding.Relationships) > componentmap.MaxBehaviorHandoffRelations {
 		return fmt.Errorf("artifact exceeds grounding limits")
 	}
 	anchorIDs := make(map[string]struct{}, len(grounding.BehaviorAnchors))

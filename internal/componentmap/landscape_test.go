@@ -642,12 +642,26 @@ func TestCandidateBundleNumericLimitBoundaries(t *testing.T) {
 		makeBundle func(int) CandidateBundle
 	}{
 		{
-			name: "candidates", kind: CandidateBundleLimitCandidates,
+			name: "conceptual candidates", kind: CandidateBundleLimitCandidates,
 			limit: maxCandidates, makeBundle: candidateBundleWithPackages,
 		},
 		{
-			name: "relations", kind: CandidateBundleLimitRelations,
-			limit: maxRelations, makeBundle: candidateBundleWithRelations,
+			name: "structural locators", kind: CandidateBundleLimitStructuralLocators,
+			limit: MaxStructuralLocatorCandidates, makeBundle: candidateBundleWithStructuralLocators,
+		},
+		{
+			name: "package import relations", kind: CandidateBundleLimitPackageImportRelations,
+			limit: MaxPackageImportRelations,
+			makeBundle: func(count int) CandidateBundle {
+				return candidateBundleWithRelations(count, StructuralRelationPackageImport)
+			},
+		},
+		{
+			name: "behavior handoff relations", kind: CandidateBundleLimitBehaviorRelations,
+			limit: MaxBehaviorHandoffRelations,
+			makeBundle: func(count int) CandidateBundle {
+				return candidateBundleWithRelations(count, StructuralRelationBehaviorHandoff)
+			},
 		},
 		{
 			name: "behavior anchors", kind: CandidateBundleLimitBehaviorAnchors,
@@ -718,6 +732,31 @@ func TestCandidateBundleRemainingNumericLimitsAreTyped(t *testing.T) {
 				t.Fatalf("limit error = %#v", limitErr)
 			}
 		})
+	}
+}
+
+func TestCandidateBundleRelationCategoriesDoNotConsumeEachOthersAuthority(t *testing.T) {
+	t.Parallel()
+
+	bundle := candidateBundleWithRelations(
+		MaxPackageImportRelations,
+		StructuralRelationPackageImport,
+	)
+	behavior := candidateBundleWithRelations(
+		MaxBehaviorHandoffRelations,
+		StructuralRelationBehaviorHandoff,
+	)
+	for index, relation := range behavior.Relations {
+		relation.ID = fmt.Sprintf("behavior-relation-%04d", index)
+		bundle.Relations = append(bundle.Relations, relation)
+	}
+	if err := bundle.Validate(); err != nil {
+		t.Fatalf(
+			"Validate(%d package imports + %d behavior handoffs) error = %v",
+			MaxPackageImportRelations,
+			MaxBehaviorHandoffRelations,
+			err,
+		)
 	}
 }
 
@@ -1443,11 +1482,33 @@ func candidateBundleWithPackages(count int) CandidateBundle {
 	return bundle
 }
 
-func candidateBundleWithRelations(count int) CandidateBundle {
-	// Thirty-three exact package members provide 1,056 distinct directed
-	// witnesses, enough to exercise the 1,024-relation boundary without
-	// manufacturing duplicate relation identities.
-	bundle := candidateBundleWithPackages(33)
+func candidateBundleWithStructuralLocators(count int) CandidateBundle {
+	bundle := candidateBundleWithPackages(1)
+	packageID := bundle.Candidates[0].ID
+	bundle.Candidates = append(make([]Candidate, 0, count+1), bundle.Candidates[0])
+	for index := 0; index < count; index++ {
+		filePath := fmt.Sprintf("internal/package-%04d/file.go", index)
+		bundle.Candidates = append(bundle.Candidates, Candidate{
+			ID:   MemberID{Kind: MemberFile, Value: fmt.Sprintf("file-%04d", index)},
+			Role: CandidateRoleStructuralLocator,
+			Name: filePath, ParentID: &packageID,
+			Facts: []LocalFact{{
+				Kind: FactRepositoryPath, Value: filePath, Certainty: evidence.CertaintyStatic,
+				Provenance: []evidence.Provenance{{
+					Provider: "fixture", Version: "v1", Operation: "structural_locator",
+				}},
+			}},
+		})
+	}
+	return bundle
+}
+
+func candidateBundleWithRelations(count int, kind StructuralRelationKind) CandidateBundle {
+	// Sixty-five exact members provide 4,160 distinct directed witnesses,
+	// enough to exercise the complete package-import authority without
+	// manufacturing duplicate relation identities. Smaller behavior-handoff
+	// fixtures use the same deterministic generator.
+	bundle := candidateBundleWithPackages(65)
 	bundle.Relations = make([]LocalRelation, 0, count)
 	for from := 0; from < len(bundle.Candidates) && len(bundle.Relations) < count; from++ {
 		for to := 0; to < len(bundle.Candidates) && len(bundle.Relations) < count; to++ {
@@ -1458,7 +1519,7 @@ func candidateBundleWithRelations(count int) CandidateBundle {
 				ID:        fmt.Sprintf("relation-%04d", len(bundle.Relations)),
 				From:      bundle.Candidates[from].ID,
 				To:        bundle.Candidates[to].ID,
-				Kind:      StructuralRelationPackageImport,
+				Kind:      kind,
 				Certainty: evidence.CertaintyStatic,
 				Provenance: []evidence.Provenance{{
 					Provider: "fixture", Version: "v1", Operation: "package_import",

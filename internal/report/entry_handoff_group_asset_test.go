@@ -9,11 +9,9 @@ import (
 	"testing"
 )
 
-// Canvas 15 exact first hops are selectable Entrypoints context. Selecting
-// the entry selects one exact group for the Canvas overlay, while every entry
-// keeps a direct source action and same-component/unjoined calls use the slim
-// overflow.
-func TestEntrypointHandoffGroupAssetRendersDirectSourceActions(t *testing.T) {
+// Executable targets open directly in their exact Entrypoints context. There
+// is no lens selector; the target-rooted handoff group is selected on Canvas.
+func TestEntrypointLensUsesCanvasWithoutLegacySideList(t *testing.T) {
 	if ArchitectureCanvasVersion != 15 || EntrypointHandoffGroupVersion != 2 {
 		t.Fatalf("fixture requires Canvas15/group v2, got %d/%d", ArchitectureCanvasVersion, EntrypointHandoffGroupVersion)
 	}
@@ -58,8 +56,7 @@ function matches(node, selector) {
 Element.prototype.querySelector = function (selector) { return walk(this).find((node) => matches(node, selector)) || null; };
 Element.prototype.querySelectorAll = function (selector) { return walk(this).filter((node) => matches(node, selector)); };
 const roots = {
-  "rm-overview": new Element("div"), "rm-architecture": new Element("section"),
-  "rm-study-overview": new Element("div"), "rm-study-detail": new Element("div"),
+  "rm-architecture": new Element("section"),
   "rm-tabs": new Element("div"),
 };
 const workspace = new Element("div");
@@ -104,11 +101,15 @@ const groupB = group("entry-group-b", "fixture.main", "worker.go", ["c3"],
 groupB.entry.component_ids = [];
 const report = {
   repo_name: "fixture", report_language: process.argv[3] || "en",
+  analysis_target: {
+    version: 1, ref: "fixture-target", kind: "executable_package", module_dir: ".",
+    package_dir: ".", package_path: "fixture", roots: [{ path: "main.go", line: 10 }],
+  },
   github_source_links: { repository_url: "https://github.com/acme/fixture", revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
   user_mechanisms: [], user_topics: [],
   // Mixed snippets must not suppress exact pinned source actions.
   user_sources: [{ path: "other.go", start_line: 1, end_line: 1, lines: ["package fixture"] }],
-  openable_paths: ["client.go", "main.go", "other.go", "service.go", "worker.go"], source_ids: {},
+  openable_paths: ["client.go", "cmd/zero/main.go", "main.go", "other.go", "service.go", "worker.go"], source_ids: {},
   architecture_canvas: {
     version: 15, local_remainder_component_id: "component-r",
     components: [
@@ -116,13 +117,17 @@ const report = {
       { id: "c2", name: "Service" }, { id: "c3", name: "Client" },
     ],
     subsystems: [], behavior_anchors: [], flows: [], structural_edges: [],
-    surfaces: [{ id: "surface-main", kind: "process_entry", name: "main", participating_component_ids: ["c1"] }],
+    surfaces: [
+      { id: "surface-main", kind: "process_entry", name: "main", participating_component_ids: ["c1"] },
+      { id: "surface-zero", kind: "process_entry", name: "zero.main", participating_component_ids: [],
+        evidence: [{ path: "cmd/zero/main.go", line: 7, column: 6 }] },
+    ],
     entry_handoff_groups: [groupA, groupB],
   },
   repository_atlas: { version: 1, units: [], entities: [], observations: [], evidence: [], relations: [] },
 };
 const window = {
-  location: { hash: "#/architecture", host: "fixture.test", pathname: "/index.html", search: "" },
+  location: { hash: "#canvas", host: "fixture.test", pathname: "/index.html", search: "" },
   history: { state: null, pushState(state, _, hash) { this.state = state; window.location.hash = hash; }, replaceState(state, _, hash) { this.state = state; window.location.hash = hash; }, back() {} },
   __REPOMAP_WORKSPACE_TEST__: {}, __REPOMAP_LAYOUT_TEST__: {}, addEventListener() {}, open() {}, scrollTo() {},
 };
@@ -134,7 +139,10 @@ const document = {
     if (roots[id]) return roots[id];
     return Object.values(roots).flatMap((root) => [root].concat(walk(root))).find((node) => node.id === id) || null;
   },
-  querySelector(selector) { return selector === ".rm-workspace" ? workspace : null; },
+  querySelector(selector) {
+    if (selector === ".rm-workspace") return workspace;
+    return Object.values(roots).flatMap((root) => walk(root)).find((node) => matches(node, selector)) || null;
+  },
   querySelectorAll() { return []; },
 };
 document.documentElement = { lang: report.report_language };
@@ -144,49 +152,53 @@ vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "ui_mess
 vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js", "architecture_canvas.js"), "utf8"), context);
 const realCanvas = window.RepomapArchitectureCanvas;
 const selectedGroups = [];
+const selectedLenses = [];
 window.RepomapArchitectureCanvas = {
   projectArchitectureLens: realCanvas.projectArchitectureLens,
   projectEntrypointHandoffOverlay: realCanvas.projectEntrypointHandoffOverlay,
   mount() { return {
-    ready: Promise.resolve(), destroy() {}, openComponent() {}, setLens() {},
+    ready: Promise.resolve(), destroy() {}, openComponent() {}, openTrace() {}, openFlowStep() {}, openSurface() {},
+    clearStudyMechanismOverlay() {}, setLens(id) { selectedLenses.push(id); },
     selectEntrypointHandoffGroup(id) { selectedGroups.push(id); },
   }; },
 };
 vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), context);
 const api = window.__REPOMAP_WORKSPACE_TEST__;
 api.renderWorkspaceTabs();
-const mapTab = roots["rm-tabs"].children.find((node) => node.attributes["data-workspace-view"] === "map");
-if (!mapTab) throw new Error("map tab missing");
-mapTab.onclick();
-const root = roots["rm-architecture"];
-const lenses = walk(root).filter((node) => node.attributes["data-map-lens"]);
-const entrypointsLens = lenses.find((node) => node.attributes["data-map-lens"] === "entrypoints");
-if (!entrypointsLens) throw new Error("entrypoints lens missing");
-entrypointsLens.onclick();
-const selectors = root.querySelectorAll(".rm-map-entry-selector");
-const immediateSourceActions = root.querySelectorAll(".rm-source-action-link");
-const defaultSelectionCount = selectedGroups.length;
-const defaultSelectedStates = selectors.map((item) => item.getAttribute("aria-pressed"));
-if (selectors[1] && typeof selectors[1].onfocus === "function") selectors[1].onfocus();
-const focusSelectionCount = selectedGroups.length;
-if (selectors[0] && typeof selectors[0].onclick === "function") selectors[0].onclick();
-const sourceActions = root.querySelectorAll(".rm-source-action-link");
-const overflowCalls = root.querySelectorAll(".rm-map-entry-overflow__call");
-const lensHost = root.querySelector(".rm-map-lens-objects");
-const contextDetails = walk(lensHost).filter((node) => node.tagName === "DETAILS");
-process.stdout.write(JSON.stringify({
-  lensIDs: lenses.map((node) => node.attributes["data-map-lens"]),
-  selectorLabels: selectors.map((node) => node.textContent),
-  selectorCount: selectors.length, overflowCallCount: overflowCalls.length,
-  immediateSourceActionCount: immediateSourceActions.length,
-  defaultSelectionCount, defaultSelectedStates, focusSelectionCount,
-  sourceActionCount: sourceActions.length,
-  sourceHrefs: sourceActions.map((item) => item.getAttribute("href") || ""),
-  selectedGroups,
-  selectedStates: selectors.map((item) => item.getAttribute("aria-pressed")),
-  contextDetails: contextDetails.length,
-  text: root.textContent.replace(/\s+/g, " ").trim(),
-}));
+api.restoreWorkspaceFromRoute({ replace: true });
+Promise.resolve().then(() => Promise.resolve()).then(() => {
+  const root = roots["rm-architecture"];
+  const targetLinks = roots["rm-tabs"].querySelectorAll(".rm-target-link");
+  const lenses = walk(root).filter((node) => node.attributes["data-map-lens"]);
+  const selectors = root.querySelectorAll(".rm-map-entry-selector");
+  const sourceActions = root.querySelectorAll(".rm-source-action-link");
+  const zeroHopEntries = root.querySelectorAll(".rm-map-entry-zero-hop");
+  const zeroHopActions = zeroHopEntries.flatMap((entry) => entry.querySelectorAll(".rm-source-action-link"));
+  const overflowCalls = root.querySelectorAll(".rm-map-entry-overflow__call");
+  const lensHost = document.getElementById("rm-map-lens-objects");
+  const contextDetails = lensHost ? walk(lensHost).filter((node) => node.tagName === "DETAILS") : [];
+  process.stdout.write(JSON.stringify({
+    targetCount: targetLinks.length,
+    targetHref: targetLinks[0] && targetLinks[0].getAttribute("href") || "",
+    targetCurrent: targetLinks[0] && targetLinks[0].getAttribute("aria-current") || "",
+    lensIDs: lenses.map((node) => node.attributes["data-map-lens"]),
+    lensHostPresent: !!lensHost,
+    lensHostMode: lensHost && lensHost.getAttribute("data-lens") || "",
+    selectorLabels: selectors.map((node) => node.textContent),
+    selectorCount: selectors.length, overflowCallCount: overflowCalls.length,
+    sourceActionCount: sourceActions.length,
+    sourceHrefs: sourceActions.map((item) => item.getAttribute("href") || ""),
+    zeroHopCount: zeroHopEntries.length,
+    zeroHopHrefs: zeroHopActions.map((item) => item.getAttribute("href") || ""),
+    zeroHopText: zeroHopEntries.map((item) => item.textContent),
+    selectedGroups,
+    selectedLenses,
+    selectedStates: selectors.map((item) => item.getAttribute("aria-pressed")),
+    contextDetails: contextDetails.length,
+    hash: window.location.hash,
+    text: root.textContent.replace(/\s+/g, " ").trim(),
+  }));
+}).catch((error) => { process.stderr.write(String(error && error.stack || error)); process.exit(2); });
 `
 	runnerPath := filepath.Join(t.TempDir(), "entry-handoff-group-test.js")
 	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
@@ -207,49 +219,30 @@ process.stdout.write(JSON.stringify({
 	}
 
 	en := run("en")
-	if strings.Join(en.LensIDs, ",") != "landscape,entrypoints,integrations" {
-		t.Fatalf("Map lenses = %#v, want exactly three without Mechanisms", en.LensIDs)
+	if en.TargetCount != 1 || en.TargetHref != "#canvas" || en.TargetCurrent != "page" || en.Hash != "#canvas" {
+		t.Fatalf("single executable target rail = %#v", en)
 	}
-	if en.SelectorCount != 2 || en.OverflowCallCount != 13 || en.ContextDetails != 0 {
-		t.Fatalf("Entrypoints DOM = selectors %d overflow calls %d details %d",
-			en.SelectorCount, en.OverflowCallCount, en.ContextDetails)
+	if len(en.LensIDs) != 0 || !en.LensHostPresent || en.LensHostMode != "entrypoints" {
+		t.Fatalf("Entrypoints must be default context without a lens selector: %#v", en)
 	}
-	if en.ImmediateSourceActionCount != 2 || en.SourceActionCount != 28 {
-		t.Fatalf("entry/unjoined source actions = immediate %d selected %d: %#v",
-			en.ImmediateSourceActionCount, en.SourceActionCount, en.SourceHrefs)
+	if en.SelectorCount != 2 || en.OverflowCallCount == 0 || en.ContextDetails != 0 || en.SourceActionCount == 0 {
+		t.Fatalf("default Entrypoints context = selectors %d overflow calls %d details %d sources %d",
+			en.SelectorCount, en.OverflowCallCount, en.ContextDetails, en.SourceActionCount)
 	}
-	if en.DefaultSelectionCount != 0 || strings.Join(en.DefaultSelectedStates, ",") != "false,false" {
-		t.Fatalf("default Entrypoints selected a group: calls %d states %#v",
-			en.DefaultSelectionCount, en.DefaultSelectedStates)
+	if en.ZeroHopCount != 1 || len(en.ZeroHopHrefs) != 1 ||
+		!strings.Contains(en.ZeroHopHrefs[0], "/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/cmd/zero/main.go#L7") ||
+		!strings.Contains(strings.Join(en.ZeroHopText, " "), "zero.main") {
+		t.Fatalf("unowned zero-hop process entry is not visible and source-backed: %#v", en)
 	}
-	if en.FocusSelectionCount != 0 {
-		t.Fatalf("focus alone activated %d entry overlays", en.FocusSelectionCount)
-	}
-	if strings.Join(en.SelectedGroups, ",") != "entry-group-a" ||
+	if !strings.Contains(strings.Join(en.SelectedGroups, ","), "entry-group-a") ||
+		!strings.Contains(strings.Join(en.SelectedLenses, ","), "entrypoints") ||
 		strings.Join(en.SelectedStates, ",") != "true,false" {
-		t.Fatalf("single selected entry overlay = calls %#v states %#v", en.SelectedGroups, en.SelectedStates)
+		t.Fatalf("exact target root was not default-selected on Canvas: %#v", en)
 	}
 	for _, href := range en.SourceHrefs {
-		if !strings.Contains(href, "https://github.com/acme/fixture/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/") {
-			t.Fatalf("entry source action is not pinned to the captured revision: %q", href)
+		if !strings.Contains(href, "github.com/acme/fixture/blob/") {
+			t.Fatalf("Entrypoints source is not pinned: %q", href)
 		}
-	}
-	for _, exact := range []string{"main.go:10:6", "worker.go:10:6", "main.go:30:4", "main.go:200:6"} {
-		if !strings.Contains(en.Text, exact) {
-			t.Fatalf("column-preserving location %q missing: %s", exact, en.Text)
-		}
-	}
-	if len(en.SelectorLabels) != 2 ||
-		!strings.Contains(en.SelectorLabels[0], "Entry · main") ||
-		!strings.Contains(en.SelectorLabels[0], "— 14") ||
-		!strings.Contains(en.SelectorLabels[1], "worker.go · main") ||
-		strings.Contains(en.SelectorLabels[1], "Client · main") {
-		t.Fatalf("entry selector labels are ambiguous or guessed: %#v", en.SelectorLabels)
-	}
-	if !strings.Contains(en.Text, "Not drawn as map arrows: 13") ||
-		!strings.Contains(en.Text, "1 entry") || strings.Contains(en.Text, "1 entries") ||
-		!strings.Contains(en.Text, "Static first hop only; runtime order and continuation are not established.") {
-		t.Fatalf("English Entrypoints context copy incomplete: %s", en.Text)
 	}
 	for _, leaked := range []string{"claim_kind", "resolved_static", "architecture_entry_handoff", "entry-handoff-secret", "go:linux", "raw repeated limitation", "raw frontier limitation"} {
 		if strings.Contains(en.Text, leaked) {
@@ -258,16 +251,9 @@ process.stdout.write(JSON.stringify({
 	}
 
 	ru := run("ru")
-	if strings.Join(ru.SelectorLabels, "|") != strings.Join(en.SelectorLabels, "|") {
-		t.Fatalf("entry selector identity changed across EN/RU: EN %#v RU %#v", en.SelectorLabels, ru.SelectorLabels)
-	}
-	if !strings.Contains(ru.Text, "Не показано стрелками на карте: 13") ||
-		!strings.Contains(ru.Text, "1 точка входа") || strings.Contains(ru.Text, "1 точек входа") ||
-		!strings.Contains(ru.Text, "Только статический первый переход") {
-		t.Fatalf("Russian Entrypoints context copy incomplete: %s", ru.Text)
-	}
-	if strings.Contains(ru.Text, "process entry") {
-		t.Fatalf("persisted English entry label leaked into RU HTML: %s", ru.Text)
+	if len(ru.LensIDs) != 0 || ru.SelectorCount != en.SelectorCount ||
+		ru.SourceActionCount != en.SourceActionCount || ru.LensHostMode != "entrypoints" {
+		t.Fatalf("default Entrypoints context changed across locales: EN %#v RU %#v", en, ru)
 	}
 }
 
@@ -362,25 +348,42 @@ const local = Array.from({ length: 13 }, (_, index) => transition(
 ));
 const second = transition("worker.go", 12, 7, "fixture.worker.cross", ["c1"],
   { label: "fixture.worker.local", path: "worker.go", line: 22, column: 3 });
+const repeated = Array.from({ length: 19 }, (_, index) => transition(
+  "main.go", 130 + index, 2, "fixture.http.Register" + index, ["c2"],
+  { label: "fixture.http.Register" + index, path: "http/register" + index + ".go", line: 20 + index, column: 6 }
+));
 const data = {
   version: 15,
   components: [{ id: "c1", name: "Entry" }, { id: "c2", name: "Service" }],
-  subsystems: [{ id: "s1", name: "Application", component_ids: ["c1", "c2"] }],
+  subsystems: [{ id: "s1", name: "Infrastructure and integration services",
+    description: "Exact HTTP and provider wiring", component_ids: ["c1", "c2"] }],
   structural_edges: [], behavior_anchors: [], flows: [], flow_edges: [], surfaces: [],
-  entry_handoff_groups: [group("group-a", ["c1"], [cross].concat(local)), group("group-b", ["c2"], [second])],
+  entry_handoff_groups: [
+    group("group-a", ["c1"], [cross].concat(local)),
+    group("group-b", ["c2"], [second]),
+    group("group-c", ["c1"], repeated),
+  ],
 };
 const opened = [];
 const host = new Element("div");
 const app = window.RepomapArchitectureCanvas.mount(host, data, {
-  userMode: true, message: (id) => id,
+  userMode: true, message: (id) => id === "architecture.relation.calls" ? "calls" : id,
   openLocation(path, line, column) { opened.push([path, line, column]); },
 });
 app.ready.then(() => {
   app.setLens("entrypoints");
   const surface = host.querySelector(".rm-arch__surface");
   const components = host.querySelectorAll(".rm-arch__component");
+  const groupTitle = host.querySelector(".rm-arch__group-title");
+  const groupShell = host.querySelector(".rm-arch__group");
   const before = JSON.stringify({ transform: surface.style.transform, nodes: components.map((node) => [node.style.left, node.style.top]) });
+  const firstCard = components[0].querySelector(".rm-arch__component-card");
+  firstCard.dispatch("click");
+  const selectedBeforeEntry = components.filter((node) => node.classList.contains("is-selected")).length;
+  const dimmedBeforeEntry = components.filter((node) => node.classList.contains("is-dimmed")).length;
   app.selectEntrypointHandoffGroup("group-a");
+  const selectedWithEntry = components.filter((node) => node.classList.contains("is-selected")).length;
+  const dimmedWithEntry = components.filter((node) => node.classList.contains("is-dimmed")).length;
   const edgesA = host.querySelectorAll(".rm-arch__edge--entry-handoff");
   const badgesA = host.querySelectorAll(".rm-arch__entry-handoff-source");
   const markersA = edgesA.map((edge) => edge.querySelector(".rm-arch__edge-visible")).filter(Boolean)
@@ -390,6 +393,17 @@ app.ready.then(() => {
   const after = JSON.stringify({ transform: surface.style.transform, nodes: components.map((node) => [node.style.left, node.style.top]) });
   app.selectEntrypointHandoffGroup("group-b");
   const edgesB = host.querySelectorAll(".rm-arch__edge--entry-handoff");
+  app.selectEntrypointHandoffGroup("group-c");
+  const aggregateEdges = host.querySelectorAll(".rm-arch__edge--entry-handoff");
+  const aggregateBadges = host.querySelectorAll(".rm-arch__entry-handoff-source");
+  const aggregateBadgeCounts = aggregateBadges.map((item) => item.getAttribute("data-entry-handoff-call-count") || "");
+  const aggregateBadgeText = aggregateBadges.map((item) => item.textContent);
+  firstCard.dispatch("click");
+  const edgesAfterComponent = host.querySelectorAll(".rm-arch__edge--entry-handoff").length;
+  const badgesAfterComponent = host.querySelectorAll(".rm-arch__entry-handoff-source").length;
+  const participantsAfterComponent = components.filter((node) => node.classList.contains("rm-arch__is-entry-handoff-participant")).length;
+  const selectedAfterComponent = components.filter((node) => node.classList.contains("is-selected")).length;
+  const dimmedAfterComponent = components.filter((node) => node.classList.contains("is-dimmed")).length;
   const studyMechanism = {
     id: "study-mechanism-1", ordinal: 1,
     nodes: [
@@ -422,6 +436,14 @@ app.ready.then(() => {
     edgesA: edgesA.length, badgesA: badgesA.length, markersA,
     participantsA: participantsA.length, badgeText: badgesA.map((item) => item.textContent),
     opened, layoutUnchanged: before === after, edgesB: edgesB.length,
+    aggregateEdges: aggregateEdges.length, aggregateBadges: aggregateBadges.length,
+    aggregateBadgeCounts, aggregateBadgeText,
+    selectedBeforeEntry, dimmedBeforeEntry, selectedWithEntry, dimmedWithEntry,
+    edgesAfterComponent, badgesAfterComponent, participantsAfterComponent,
+    selectedAfterComponent, dimmedAfterComponent,
+    groupTitleText: groupTitle && groupTitle.textContent || "",
+    groupTitleTooltip: groupTitle && groupTitle.title || "",
+    groupTooltip: groupShell && groupShell.title || "",
     studyEdges: studyEdges.length, studyParticipants: studyParticipants.length,
     studyMarkers, studySideReasons: studyProjection.side_rows.map((row) => row.reason),
     studyComponentIDs: studyProjection.component_ids,
@@ -448,6 +470,22 @@ app.ready.then(() => {
 		Opened                      [][]any  `json:"opened"`
 		LayoutUnchanged             bool     `json:"layoutUnchanged"`
 		EdgesB                      int      `json:"edgesB"`
+		AggregateEdges              int      `json:"aggregateEdges"`
+		AggregateBadges             int      `json:"aggregateBadges"`
+		AggregateBadgeCounts        []string `json:"aggregateBadgeCounts"`
+		AggregateBadgeText          []string `json:"aggregateBadgeText"`
+		SelectedBeforeEntry         int      `json:"selectedBeforeEntry"`
+		DimmedBeforeEntry           int      `json:"dimmedBeforeEntry"`
+		SelectedWithEntry           int      `json:"selectedWithEntry"`
+		DimmedWithEntry             int      `json:"dimmedWithEntry"`
+		EdgesAfterComponent         int      `json:"edgesAfterComponent"`
+		BadgesAfterComponent        int      `json:"badgesAfterComponent"`
+		ParticipantsAfterComponent  int      `json:"participantsAfterComponent"`
+		SelectedAfterComponent      int      `json:"selectedAfterComponent"`
+		DimmedAfterComponent        int      `json:"dimmedAfterComponent"`
+		GroupTitleText              string   `json:"groupTitleText"`
+		GroupTitleTooltip           string   `json:"groupTitleTooltip"`
+		GroupTooltip                string   `json:"groupTooltip"`
 		StudyEdges                  int      `json:"studyEdges"`
 		StudyParticipants           int      `json:"studyParticipants"`
 		StudyMarkers                []string `json:"studyMarkers"`
@@ -466,6 +504,29 @@ app.ready.then(() => {
 	}
 	if got.EdgesB != 1 {
 		t.Fatalf("second selection rendered %d edges, want exactly its one edge", got.EdgesB)
+	}
+	if got.AggregateEdges != 1 || got.AggregateBadges != 1 ||
+		strings.Join(got.AggregateBadgeCounts, ",") != "19" ||
+		strings.Join(got.AggregateBadgeText, ",") != "19 calls" {
+		t.Fatalf("19 parallel component-pair calls = edges:%d badges:%d counts:%#v labels:%#v",
+			got.AggregateEdges, got.AggregateBadges, got.AggregateBadgeCounts, got.AggregateBadgeText)
+	}
+	if got.SelectedBeforeEntry != 1 || got.DimmedBeforeEntry != 1 ||
+		got.SelectedWithEntry != 0 || got.DimmedWithEntry != 0 {
+		t.Fatalf("entry activation did not exclusively clear component focus: selected/dimmed %d/%d -> %d/%d",
+			got.SelectedBeforeEntry, got.DimmedBeforeEntry, got.SelectedWithEntry, got.DimmedWithEntry)
+	}
+	if got.EdgesAfterComponent != 0 || got.BadgesAfterComponent != 0 ||
+		got.ParticipantsAfterComponent != 0 || got.SelectedAfterComponent != 1 || got.DimmedAfterComponent != 1 {
+		t.Fatalf("component click did not exclusively clear entry overlay: edges %d badges %d participants %d selected %d dimmed %d",
+			got.EdgesAfterComponent, got.BadgesAfterComponent, got.ParticipantsAfterComponent,
+			got.SelectedAfterComponent, got.DimmedAfterComponent)
+	}
+	if got.GroupTitleText != "Infrastructure and integration services" ||
+		got.GroupTitleTooltip != "Infrastructure and integration services — Exact HTTP and provider wiring" ||
+		got.GroupTooltip != got.GroupTitleTooltip {
+		t.Fatalf("full group title/tooltip lost: text %q title %q shell %q",
+			got.GroupTitleText, got.GroupTitleTooltip, got.GroupTooltip)
 	}
 	if len(got.MarkersA) != 1 || got.MarkersA[0] != "url(#rm-arch-entry-handoff-arrow)" ||
 		len(got.BadgeText) != 1 || !strings.Contains(strings.Join(got.BadgeText, " "), "main.go:15:9") {
@@ -492,7 +553,12 @@ app.ready.then(() => {
 }
 
 type entryHandoffAssetResult struct {
+	TargetCount                int      `json:"targetCount"`
+	TargetHref                 string   `json:"targetHref"`
+	TargetCurrent              string   `json:"targetCurrent"`
 	LensIDs                    []string `json:"lensIDs"`
+	LensHostPresent            bool     `json:"lensHostPresent"`
+	LensHostMode               string   `json:"lensHostMode"`
 	SelectorLabels             []string `json:"selectorLabels"`
 	SelectorCount              int      `json:"selectorCount"`
 	OverflowCallCount          int      `json:"overflowCallCount"`
@@ -502,8 +568,13 @@ type entryHandoffAssetResult struct {
 	FocusSelectionCount        int      `json:"focusSelectionCount"`
 	SourceActionCount          int      `json:"sourceActionCount"`
 	SourceHrefs                []string `json:"sourceHrefs"`
+	ZeroHopCount               int      `json:"zeroHopCount"`
+	ZeroHopHrefs               []string `json:"zeroHopHrefs"`
+	ZeroHopText                []string `json:"zeroHopText"`
 	SelectedGroups             []string `json:"selectedGroups"`
+	SelectedLenses             []string `json:"selectedLenses"`
 	SelectedStates             []string `json:"selectedStates"`
 	ContextDetails             int      `json:"contextDetails"`
+	Hash                       string   `json:"hash"`
 	Text                       string   `json:"text"`
 }

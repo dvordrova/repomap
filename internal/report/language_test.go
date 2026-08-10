@@ -99,7 +99,7 @@ process.stdout.write(JSON.stringify([
 		"Что изучать",
 		"Назначение",
 		"cli/cmd/run.go · строки 85–144",
-		"Открыто в VS Code: pglogrepl.go:74",
+		"Передано в VS Code: pglogrepl.go:74",
 		"Контекст на карте: «Как работает репликация?»",
 	}
 	if len(got) != len(want) {

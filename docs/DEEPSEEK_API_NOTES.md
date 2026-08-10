@@ -194,6 +194,16 @@ DeepSeek-mode default: `deepseek-v4-flash`.
   A Casdoor control run showed four of eight otherwise independent reviews
   returning reasoning-only completions, including one `finish_reason=stop`, so
   increasing the output cap would not recover the missing JSON verdicts.
+- Go target-portfolio selection is one refs-only editorial classification over
+  the complete exact package catalog. Request v2 nests build-selected non-test
+  declaration identifiers under each target; it sends no source, comments,
+  bodies, canonical package IDs or graph. The complete semantic bundle has a
+  dedicated 256 KiB cap and is never prefix-truncated. Its final escaped
+  OpenAI-compatible transport body is independently capped at 576 KiB; the
+  refs-only semantic response stays capped at 64 KiB. This does not change the
+  exact configured global output-token ceiling. Official DeepSeek disables
+  thinking for this classification; compatible endpoints receive no
+  proprietary extension.
 - Complete Russian presentation projection is assembled from deterministic
   bounded requests rather than one monolithic completion. Fields are sorted by
   their stable presentation ID and partitioned by a predicted output budget;
@@ -290,9 +300,10 @@ The request uses Orientation prompt `orientation-json-v13`. Its compact wire
 projection has one request-local `file_index`; each concrete model-visible path
 appears there once. Candidate-file rows replace long canonical IDs and paths
 with a `file_ref`, raw `allowed_paths` is not repeated, and signals, entrypoint
-anchors/open files, command traces, orientation candidates, and import edges
-carry inline file/evidence refs without restating their facts. This projection
-does not reselect, shrink, or reorder the already bounded bundle.
+anchors/open files, orientation candidates, import edges, and legacy command
+traces when replaying an older snapshot carry inline file/evidence refs without
+restating their facts. Fresh ordinary runs do not produce command traces. This
+projection does not reselect, shrink, or reorder the already bounded bundle.
 
 Operational flows must cite bounded `source_signals` evidence through its exact
 inline evidence ref. When the static

@@ -124,6 +124,36 @@ func Builtin() (Catalog, error) {
 	return combined, nil
 }
 
+// Core returns the complete positive catalog used by ordinary Go analysis.
+// It deliberately names its inputs instead of loading every embedded catalog
+// and subtracting known frameworks: adding a framework fixture must never
+// widen the default product path by accident.
+func Core() (Catalog, error) {
+	return loadFiles([]string{"errgroup.json", "net_http.json"})
+}
+
+func loadFiles(names []string) (Catalog, error) {
+	combined := Catalog{Version: CurrentVersion, Seeds: []Seed{}}
+	for _, name := range names {
+		data, err := files.ReadFile(name)
+		if err != nil {
+			return Catalog{}, fmt.Errorf("semantic catalog: read %s: %w", name, err)
+		}
+		part, err := Decode(strings.NewReader(string(data)))
+		if err != nil {
+			return Catalog{}, fmt.Errorf("semantic catalog: %s: %w", name, err)
+		}
+		combined.Seeds = append(combined.Seeds, part.Seeds...)
+	}
+	sort.Slice(combined.Seeds, func(i, j int) bool {
+		return combined.Seeds[i].ID < combined.Seeds[j].ID
+	})
+	if err := combined.Validate(); err != nil {
+		return Catalog{}, err
+	}
+	return combined, nil
+}
+
 func Decode(input io.Reader) (Catalog, error) {
 	decoder := json.NewDecoder(input)
 	decoder.DisallowUnknownFields()

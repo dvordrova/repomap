@@ -18,8 +18,9 @@ type savedGraphJSONSpan struct {
 }
 
 type savedGraphJSONBudget struct {
-	scalarBytes int
-	files       int
+	scalarBytes  int
+	files        int
+	declarations int
 }
 
 // preflightSnapshotExactGoFacts locates the existing go_facts value without
@@ -184,7 +185,7 @@ func preflightSavedGraphPackage(
 	start int,
 	budget *savedGraphJSONBudget,
 ) (int, error) {
-	var seen uint8
+	var seen uint16
 	return walkSavedGraphJSONObject(
 		data,
 		start,
@@ -201,6 +202,81 @@ func preflightSavedGraphPackage(
 				"package_directory",
 				"module_relative_path",
 				"files",
+				"declarations",
+				"declarations_scanned",
+			)
+			if err != nil {
+				return 0, err
+			}
+			if fieldIndex == 0 {
+				return skipSavedGraphJSONValue(data, valueStart)
+			}
+			field := uint16(1 << (fieldIndex - 1))
+			if seen&field != 0 {
+				return 0, errReportGraphJSONUnavailable
+			}
+			seen |= field
+			if field <= 32 {
+				return preflightSavedGraphJSONString(data, valueStart, budget)
+			}
+			switch field {
+			case 64:
+				return walkSavedGraphJSONArray(
+					data,
+					valueStart,
+					maxReportGraphFilesPerPackage,
+					func(itemStart int) (int, error) {
+						if budget.files >= maxReportGraphAggregateFiles {
+							return 0, errReportGraphJSONBounds
+						}
+						budget.files++
+						return preflightSavedGraphJSONString(data, itemStart, budget)
+					},
+				)
+			case 128:
+				return walkSavedGraphJSONArray(
+					data,
+					valueStart,
+					maxReportGraphDeclarations,
+					func(itemStart int) (int, error) {
+						if budget.declarations >= maxReportGraphDeclarations {
+							return 0, errReportGraphJSONBounds
+						}
+						budget.declarations++
+						return preflightSavedGraphDeclaration(data, itemStart, budget)
+					},
+				)
+			case 256:
+				return preflightSavedGraphJSONBool(data, valueStart)
+			default:
+				return 0, errReportGraphJSONUnavailable
+			}
+		},
+	)
+}
+
+func preflightSavedGraphDeclaration(
+	data []byte,
+	start int,
+	budget *savedGraphJSONBudget,
+) (int, error) {
+	var seen uint8
+	return walkSavedGraphJSONObject(
+		data,
+		start,
+		func(keyStart, keyEnd, valueStart int) (int, error) {
+			fieldIndex, err := matchSavedGraphJSONKey(
+				data,
+				keyStart,
+				keyEnd,
+				true,
+				"kind",
+				"name",
+				"receiver",
+				"path",
+				"line",
+				"column",
+				"executable_body",
 			)
 			if err != nil {
 				return 0, err
@@ -213,21 +289,13 @@ func preflightSavedGraphPackage(
 				return 0, errReportGraphJSONUnavailable
 			}
 			seen |= field
-			if field != 64 {
+			if field <= 8 {
 				return preflightSavedGraphJSONString(data, valueStart, budget)
 			}
-			return walkSavedGraphJSONArray(
-				data,
-				valueStart,
-				maxReportGraphFilesPerPackage,
-				func(itemStart int) (int, error) {
-					if budget.files >= maxReportGraphAggregateFiles {
-						return 0, errReportGraphJSONBounds
-					}
-					budget.files++
-					return preflightSavedGraphJSONString(data, itemStart, budget)
-				},
-			)
+			if field <= 32 {
+				return preflightSavedGraphJSONNonnegativeInt(data, valueStart)
+			}
+			return preflightSavedGraphJSONBool(data, valueStart)
 		},
 	)
 }
@@ -289,6 +357,23 @@ func preflightSavedGraphJSONBool(data []byte, start int) (int, error) {
 		}
 	}
 	return 0, errReportGraphJSONUnavailable
+}
+
+func preflightSavedGraphJSONNonnegativeInt(data []byte, start int) (int, error) {
+	if start >= len(data) || data[start] < '0' || data[start] > '9' {
+		return 0, errReportGraphJSONUnavailable
+	}
+	index := start
+	for index < len(data) && data[index] >= '0' && data[index] <= '9' {
+		if index-start >= 10 {
+			return 0, errReportGraphJSONBounds
+		}
+		index++
+	}
+	if index-start > 1 && data[start] == '0' {
+		return 0, errReportGraphJSONUnavailable
+	}
+	return index, nil
 }
 
 func walkSavedGraphJSONObject(

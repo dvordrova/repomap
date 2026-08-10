@@ -753,7 +753,7 @@ process.stdout.write(JSON.stringify({
 					got.TabSearchDestinations,
 				)
 			}
-			if got.DirectSearchValid || got.DirectSearchCanonicalHash != "#/map" {
+			if got.DirectSearchValid || got.DirectSearchCanonicalHash != "#canvas" {
 				t.Fatalf(
 					"source episode direct Search route = valid %t canonical %q",
 					got.DirectSearchValid,
@@ -859,7 +859,7 @@ func sourceEpisodeGenerationFixture(
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeTestFile(t, runDir, "snapshot.json", string(snapshot))
+	writeTestFile(t, runDir, "snapshot.json", string(snapshotJSONWithAnalysisTarget(t, snapshot)))
 	writeTestFile(t, runDir, "orientation_report.json", `{
 		"project_guess":"source episode generation fixture",
 		"candidate_flows":[],

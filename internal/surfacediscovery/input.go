@@ -38,7 +38,36 @@ const (
 type Input struct {
 	RepositoryName string
 	ModuleDirs     []string
+	// Packages is the exact repository package allowlist admitted by the
+	// analysis target. Empty preserves the legacy repository-wide loader.
+	Packages       []PackageInput
 	Entrypoints    []EntrypointInput
+	AnalysisTarget *AnalysisTargetInput
+}
+
+const (
+	AnalysisTargetExecutablePackage = "executable_package"
+	AnalysisTargetLibraryPackage    = "library_package"
+)
+
+// AnalysisTargetInput carries only the exact package/root boundary needed to
+// root the local DirectCallIndex edge neighborhood. The authoritative target
+// remains owned and sealed by analysistarget; this cycle-free projection
+// cannot select or reinterpret a target inside surface discovery.
+type AnalysisTargetInput struct {
+	Kind        string
+	PackagePath string
+	Roots       []AnalysisTargetRootInput
+}
+
+type AnalysisTargetRootInput struct {
+	Path string
+	Line int
+}
+
+type PackageInput struct {
+	Path      string
+	ModuleDir string
 }
 
 type EntrypointInput struct {
@@ -67,7 +96,7 @@ type processEntrypoint struct {
 	unavailableReason string
 }
 
-func normalizeInput(root string, input Input) (Input, []processEntrypoint) {
+func normalizeInput(root string, input Input) (Input, []processEntrypoint, error) {
 	input.RepositoryName = strings.TrimSpace(input.RepositoryName)
 	if input.RepositoryName == "" {
 		input.RepositoryName = filepath.Base(root)
@@ -76,6 +105,12 @@ func normalizeInput(root string, input Input) (Input, []processEntrypoint) {
 		input.ModuleDirs = append(input.ModuleDirs, entrypoint.ModuleDir)
 	}
 	input.ModuleDirs = normalizeModuleDirs(input.ModuleDirs)
+	input.Packages = normalizePackageInputs(input.Packages)
+	target, err := normalizeAnalysisTargetInput(input.AnalysisTarget, input.Packages)
+	if err != nil {
+		return Input{}, nil, err
+	}
+	input.AnalysisTarget = target
 
 	var result []processEntrypoint
 	for _, entrypoint := range input.Entrypoints {
@@ -117,7 +152,90 @@ func normalizeInput(root string, input Input) (Input, []processEntrypoint) {
 	for index := range result {
 		result[index].role = classifyExecutableRole(input.RepositoryName, result[index])
 	}
-	return input, result
+	return input, result, nil
+}
+
+func normalizeAnalysisTargetInput(
+	target *AnalysisTargetInput,
+	packages []PackageInput,
+) (*AnalysisTargetInput, error) {
+	if target == nil {
+		return nil, nil
+	}
+	result := &AnalysisTargetInput{
+		Kind: strings.TrimSpace(target.Kind), PackagePath: strings.TrimSpace(target.PackagePath),
+		Roots: append([]AnalysisTargetRootInput(nil), target.Roots...),
+	}
+	if result.PackagePath == "" {
+		return nil, fmt.Errorf("surface discovery: analysis target package is required")
+	}
+	packageAvailable := false
+	for _, pkg := range packages {
+		if pkg.Path == result.PackagePath {
+			packageAvailable = true
+			break
+		}
+	}
+	if !packageAvailable {
+		return nil, fmt.Errorf(
+			"surface discovery: analysis target package %q is outside the admitted package scope",
+			result.PackagePath,
+		)
+	}
+	for index := range result.Roots {
+		rootPath := cleanRepositoryPath(result.Roots[index].Path)
+		if rootPath == "" || path.Ext(rootPath) != ".go" || result.Roots[index].Line <= 0 {
+			return nil, fmt.Errorf("surface discovery: analysis target has an invalid exact root")
+		}
+		result.Roots[index].Path = rootPath
+	}
+	sort.Slice(result.Roots, func(i, j int) bool {
+		if result.Roots[i].Path != result.Roots[j].Path {
+			return result.Roots[i].Path < result.Roots[j].Path
+		}
+		return result.Roots[i].Line < result.Roots[j].Line
+	})
+	for index := 1; index < len(result.Roots); index++ {
+		if result.Roots[index] == result.Roots[index-1] {
+			return nil, fmt.Errorf("surface discovery: analysis target has duplicate exact roots")
+		}
+	}
+	switch result.Kind {
+	case AnalysisTargetExecutablePackage:
+		if len(result.Roots) == 0 {
+			return nil, fmt.Errorf("surface discovery: executable analysis target requires exact roots")
+		}
+	case AnalysisTargetLibraryPackage:
+		if len(result.Roots) != 0 {
+			return nil, fmt.Errorf("surface discovery: library analysis target cannot declare process roots")
+		}
+	default:
+		return nil, fmt.Errorf("surface discovery: invalid analysis target kind %q", result.Kind)
+	}
+	return result, nil
+}
+
+func normalizePackageInputs(values []PackageInput) []PackageInput {
+	unique := make(map[string]PackageInput, len(values))
+	for _, value := range values {
+		value.Path = strings.TrimSpace(value.Path)
+		value.ModuleDir = cleanRepositoryPath(value.ModuleDir)
+		if value.Path == "" || value.ModuleDir == "" {
+			continue
+		}
+		unique[value.ModuleDir+"\x00"+value.Path] = value
+	}
+	result := make([]PackageInput, 0, len(unique))
+	for _, value := range unique {
+		result = append(result, value)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].ModuleDir != result[j].ModuleDir {
+			return result[i].ModuleDir < result[j].ModuleDir
+		}
+		return result[i].Path < result[j].Path
+	})
+	return result
 }
 
 func normalizeModuleDirs(values []string) []string {

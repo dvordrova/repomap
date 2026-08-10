@@ -368,7 +368,7 @@ func TestBuildSynthesisRequestIsBoundedAndPresentationNeutral(t *testing.T) {
 		t.Fatalf("cache keys = %q, %q, changed %q", firstKey, secondKey, changedKey)
 	}
 	changedBundle := landscapeTestBundle()
-	changedBundle.Candidates[0].Facts[0].Value += " changed"
+	changedBundle.Candidates[0].Facts[0].Value += "/changed"
 	changedRequestKey, err := SynthesisCacheKey("revision-a", changedBundle)
 	if err != nil {
 		t.Fatalf("SynthesisCacheKey(changed request) error = %v", err)
@@ -718,15 +718,15 @@ func TestBuildSynthesisRequestHidesArbitraryCanonicalIDsWithoutRewritingOrdinary
 		}
 	}
 
-	ordinaryLabelFound := false
-	embeddedCandidateLabelFound := false
+	ordinaryPackagePathFound := false
+	primaryPackagePathFound := false
 	embeddedFactLabelFound := false
 	for _, candidate := range request.Candidates {
-		if candidate.Label == "member-facing helper" {
-			ordinaryLabelFound = true
+		if candidate.PackagePath == "ordinary-helper" {
+			ordinaryPackagePathFound = true
 		}
-		if candidate.Label == "runtime" {
-			embeddedCandidateLabelFound = true
+		if candidate.PackagePath == "runtime" {
+			primaryPackagePathFound = true
 		}
 		for _, fact := range candidate.Facts {
 			if fact.Label == "handles safely" {
@@ -739,10 +739,10 @@ func TestBuildSynthesisRequestHidesArbitraryCanonicalIDsWithoutRewritingOrdinary
 			}
 		}
 	}
-	if !ordinaryLabelFound {
-		t.Fatalf("identity-aware projection rewrote ordinary member-prefixed prose: %#v", request.Candidates)
+	if !ordinaryPackagePathFound {
+		t.Fatalf("identity-aware projection rewrote ordinary exact package identity: %#v", request.Candidates)
 	}
-	if !embeddedCandidateLabelFound || !embeddedFactLabelFound {
+	if !primaryPackagePathFound || !embeddedFactLabelFound {
 		t.Fatalf("embedded canonical tokens were not removed exactly: %#v", request.Candidates)
 	}
 	if len(request.Flows) != 1 || request.Flows[0].Label != "startup" {
@@ -841,6 +841,79 @@ func TestBuildSynthesisRequestSupportsIsolatedAndChainedStructuralLocators(t *te
 	if bytes.Contains(encoded, []byte("README")) {
 		t.Fatalf("root-level structural locator path crossed provider wire: %s", encoded)
 	}
+}
+
+func TestBuildSynthesisRequestAdmitsMobySizedRoleSeparatedCandidates(t *testing.T) {
+	t.Parallel()
+
+	bundle := mobySizedRoleSeparatedCandidateBundle()
+	request, encoded, err := BuildSynthesisRequest(bundle)
+	if err != nil {
+		t.Fatalf("BuildSynthesisRequest() error = %v", err)
+	}
+	if len(request.Candidates) != 471 || len(request.RequiredMemberRefs) != 471 {
+		t.Fatalf(
+			"conceptual provider candidates/checklist = %d/%d, want 471/471",
+			len(request.Candidates), len(request.RequiredMemberRefs),
+		)
+	}
+	if len(request.StructuralContext) != 72 {
+		t.Fatalf("structural provider context = %d, want 72", len(request.StructuralContext))
+	}
+	if len(request.Units) == 0 || len(request.Units) > targetMaxUnits {
+		t.Fatalf("compiled units = %d, want 1..%d", len(request.Units), targetMaxUnits)
+	}
+	if len(encoded) > maxSynthesisRequestBytes {
+		t.Fatalf("request bytes = %d, limit %d", len(encoded), maxSynthesisRequestBytes)
+	}
+	t.Logf("Moby-shaped Architecture request bytes=%d units=%d", len(encoded), len(request.Units))
+}
+
+func mobySizedRoleSeparatedCandidateBundle() CandidateBundle {
+	const (
+		packageCount = 378
+		fileCount    = 72
+		symbolCount  = 93
+	)
+	bundle := CandidateBundle{
+		Version: ContractVersion, RepositoryArchetype: ArchetypeApplication,
+		GroundingMode: GroundingPackages,
+		Candidates:    make([]Candidate, 0, packageCount+fileCount+symbolCount),
+	}
+	packageIDs := make([]MemberID, packageCount)
+	for index := range packageCount {
+		packagePath := fmt.Sprintf(
+			"github.com/moby/moby/v2/module-%02d/package-%03d",
+			index%24,
+			index,
+		)
+		packageIDs[index] = MemberID{Kind: MemberPackage, Value: fmt.Sprintf("package-%03d", index)}
+		bundle.Candidates = append(bundle.Candidates, Candidate{
+			ID: packageIDs[index], Role: CandidateRoleConceptualMember, Name: packagePath,
+			Facts: []LocalFact{testLocalFact(FactDeclaration, packagePath, fmt.Sprintf("daemon/package-%03d/package.go", index), 1)},
+		})
+	}
+	fileIDs := make([]MemberID, fileCount)
+	for index := range fileCount {
+		filePath := fmt.Sprintf("daemon/package-%03d/runtime.go", index)
+		fileIDs[index] = MemberID{Kind: MemberFile, Value: fmt.Sprintf("file-%03d", index)}
+		parentID := packageIDs[index]
+		bundle.Candidates = append(bundle.Candidates, Candidate{
+			ID: fileIDs[index], Role: CandidateRoleStructuralLocator, Name: filePath, ParentID: &parentID,
+			Facts: []LocalFact{testLocalFact(FactRepositoryPath, filePath, filePath, 1)},
+		})
+	}
+	for index := range symbolCount {
+		fileIndex := index % fileCount
+		parentID := fileIDs[fileIndex]
+		filePath := fmt.Sprintf("daemon/package-%03d/runtime.go", fileIndex)
+		bundle.Candidates = append(bundle.Candidates, Candidate{
+			ID:   MemberID{Kind: MemberSymbol, Value: fmt.Sprintf("symbol-%03d", index)},
+			Role: CandidateRoleConceptualMember, Name: fmt.Sprintf("RuntimeSymbol%03d", index), ParentID: &parentID,
+			Facts: []LocalFact{testLocalFact(FactDeclaration, fmt.Sprintf("RuntimeSymbol%03d", index), filePath, index+2)},
+		})
+	}
+	return bundle
 }
 
 func TestBuildSynthesisRequestKeepsRootLevelConceptualFilePathPrivate(t *testing.T) {
@@ -1009,14 +1082,14 @@ func adversarialPrivateIdentitySynthesisBundle() CandidateBundle {
 				ID: primaryID, Role: CandidateRoleConceptualMember, Name: "runtime " + primaryID.Value,
 				Participations: []FlowParticipation{testFlowParticipation(flowID, "main.go", 12)},
 				Facts: []LocalFact{
-					testLocalFact(FactDeclaration, "handles "+anchorID+" safely", "main.go", 12),
+					testLocalFact(FactDeclaration, "example.invalid/project/runtime", "main.go", 12),
+					testLocalFact(FactContainment, "handles "+anchorID+" safely", "main.go", 12),
 					testLocalFact(FactExecutableRole, ordinaryID.Value, "main.go", 12),
-					testLocalFact(FactContainment, string(flowID), "main.go", 12),
 				},
 			},
 			{
 				ID: ordinaryID, Role: CandidateRoleConceptualMember, Name: "member-facing helper",
-				Facts: []LocalFact{testLocalFact(FactDeclaration, "ordinary helper declaration", "helper.go", 4)},
+				Facts: []LocalFact{testLocalFact(FactDeclaration, "example.invalid/project/ordinary-helper", "helper.go", 4)},
 			},
 		},
 		Flows: []Flow{{
@@ -2509,14 +2582,20 @@ func caddyArchitectureReplayFixture(t *testing.T) (CandidateBundle, []byte) {
 	}
 	candidates := make(map[MemberID]Candidate)
 	anchorMembers := make(map[string]map[MemberID]struct{})
+	candidateOrdinal := 0
 	for _, subsystem := range proposal.Subsystems {
 		for _, component := range subsystem.Components {
 			for index, memberID := range component.MemberIDs {
 				if _, exists := candidates[memberID]; !exists {
+					candidateOrdinal++
 					path := fmt.Sprintf("fixture/%s/%02d.go", subsystem.Name, index+1)
+					declaration := memberID.Value
+					if memberID.Kind == MemberPackage {
+						declaration = fmt.Sprintf("example.invalid/caddy/package-%03d", candidateOrdinal)
+					}
 					candidates[memberID] = Candidate{
 						ID: memberID, Role: CandidateRoleConceptualMember, Name: memberID.Value,
-						Facts: []LocalFact{testLocalFact(FactDeclaration, memberID.Value, path, 1)},
+						Facts: []LocalFact{testLocalFact(FactDeclaration, declaration, path, 1)},
 					}
 				}
 				for _, anchorID := range component.AnchorIDs {

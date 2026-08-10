@@ -32,6 +32,7 @@ const (
 	maxReportGraphFactPackages     = 4096
 	maxReportGraphFilesPerPackage  = 4096
 	maxReportGraphAggregateFiles   = 20_000
+	maxReportGraphDeclarations     = 65_536
 	maxReportGraphFactEdges        = workspacegraph.MaxExactEdges
 	maxReportGraphScalarBytes      = 4096
 	maxReportGraphAggregateScalars = 4 * 1024 * 1024
@@ -55,13 +56,15 @@ type snapshotExactModuleFact struct {
 }
 
 type snapshotExactPackageFact struct {
-	CanonicalPath     string   `json:"canonical_package_path"`
-	Name              string   `json:"name"`
-	ModuleID          string   `json:"owning_module_id"`
-	ModulePath        string   `json:"module_path"`
-	PackageDir        string   `json:"package_directory"`
-	ModuleRelativeDir string   `json:"module_relative_path"`
-	Files             []string `json:"files,omitempty"`
+	CanonicalPath       string                       `json:"canonical_package_path"`
+	Name                string                       `json:"name"`
+	ModuleID            string                       `json:"owning_module_id"`
+	ModulePath          string                       `json:"module_path"`
+	PackageDir          string                       `json:"package_directory"`
+	ModuleRelativeDir   string                       `json:"module_relative_path"`
+	Files               []string                     `json:"files,omitempty"`
+	Declarations        []gofacts.PackageDeclaration `json:"declarations,omitempty"`
+	DeclarationsScanned bool                         `json:"declarations_scanned,omitempty"`
 }
 
 // attachAuthorizedWorkspacePackageGraph replaces only the existing
@@ -175,13 +178,20 @@ func decodeSnapshotExactGoFacts(snapshotJSON []byte) (gofacts.Facts, error) {
 		len(saved.InternalEdges) > maxReportGraphFactEdges {
 		return gofacts.Facts{}, fmt.Errorf("workspace graph: saved Go facts exceed bounds")
 	}
-	totalFiles := 0
+	totalFiles, totalDeclarations := 0, 0
 	for _, pkg := range saved.Packages {
 		if len(pkg.Files) > maxReportGraphFilesPerPackage ||
 			len(pkg.Files) > maxReportGraphAggregateFiles-totalFiles {
 			return gofacts.Facts{}, fmt.Errorf("workspace graph: saved Go facts exceed bounds")
 		}
+		if len(pkg.Declarations) > maxReportGraphDeclarations-totalDeclarations {
+			return gofacts.Facts{}, fmt.Errorf("workspace graph: saved Go facts exceed bounds")
+		}
+		if err := gofacts.ValidatePackageDeclarations(pkg.Declarations); err != nil {
+			return gofacts.Facts{}, fmt.Errorf("workspace graph: saved Go facts are unavailable")
+		}
 		totalFiles += len(pkg.Files)
+		totalDeclarations += len(pkg.Declarations)
 	}
 
 	facts := gofacts.Facts{
@@ -200,7 +210,8 @@ func decodeSnapshotExactGoFacts(snapshotJSON []byte) (gofacts.Facts, error) {
 			CanonicalPath: pkg.CanonicalPath, Name: pkg.Name,
 			ModuleID: pkg.ModuleID, ModulePath: pkg.ModulePath,
 			PackageDir: pkg.PackageDir, ModuleRelativeDir: pkg.ModuleRelativeDir,
-			Files: pkg.Files,
+			Files: pkg.Files, Declarations: pkg.Declarations,
+			DeclarationsScanned: pkg.DeclarationsScanned,
 		}
 	}
 	return facts, nil

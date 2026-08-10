@@ -5,11 +5,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io/fs"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
 	"github.com/dvordrova/repomap/internal/themestudy"
 )
@@ -35,12 +38,13 @@ type selectedGraph struct {
 }
 
 type digestCard struct {
-	Card      Card            `json:"card"`
-	Ordinal   int             `json:"ordinal"`
-	Canonical string          `json:"canonical"`
-	Nodes     []digestNode    `json:"nodes"`
-	Edges     []digestEdge    `json:"edges"`
-	Readings  []digestReading `json:"readings"`
+	Card          Card            `json:"card"`
+	Ordinal       int             `json:"ordinal"`
+	Canonical     string          `json:"canonical"`
+	TargetRootIDs []string        `json:"target_root_ids,omitempty"`
+	Nodes         []digestNode    `json:"nodes"`
+	Edges         []digestEdge    `json:"edges"`
+	Readings      []digestReading `json:"readings"`
 }
 
 type digestNode struct {
@@ -71,16 +75,22 @@ type compilationDigest struct {
 	Binding               Binding                   `json:"binding"`
 	DirectCallIndexSHA256 string                    `json:"direct_call_index_sha256"`
 	Scenario              surfacediscovery.Scenario `json:"scenario"`
+	TargetTrailVersion    int                       `json:"target_trail_version,omitempty"`
+	AnalysisTarget        *analysistarget.Target    `json:"analysis_target,omitempty"`
+	TargetRootsSHA256     string                    `json:"target_roots_sha256,omitempty"`
+	TargetRootsOmitted    int                       `json:"target_roots_omitted,omitempty"`
+	StudyReadingRoots     *StudyReadingRootBindings `json:"study_reading_roots,omitempty"`
 	Cards                 []digestCard              `json:"cards"`
 	OmittedCards          int                       `json:"omitted_cards"`
 }
 
 type sourceReading struct {
-	Ordinal int
-	Label   string
-	Path    string
-	Line    int
-	Symbol  string
+	Ordinal         int
+	Label           string
+	Path            string
+	Line            int
+	Symbol          string
+	CanonicalSpanID string
 }
 
 type sourceCard struct {
@@ -92,10 +102,83 @@ type sourceCard struct {
 	UnsupportedReading int
 }
 
+type studyRootLocator struct {
+	path string
+	line int
+}
+
 // Compile binds final primary/direct Study readings to exact DirectCallIndex
 // functions and collects the complete advertised depth-two graph. It performs
 // no provider call and never loads packages or builds SSA.
 func Compile(study themestudy.StudyThemes, index *surfacediscovery.DirectCallIndex, binding Binding) (*Compilation, error) {
+	roots, err := BindStudyReadingRoots(study, index)
+	if err != nil {
+		return nil, err
+	}
+	return CompileWithStudyReadingRoots(study, index, binding, roots)
+}
+
+// BindStudyReadingRoots restores final direct Study readings with a
+// backend-owned CanonicalSpanID to unique exact DirectCallIndex nodes. Symbol
+// spelling is deliberately absent from this lookup: exact declaration
+// location wins, otherwise exactly one containing body may bind. Zero or
+// multiple locator matches remain unbound.
+func BindStudyReadingRoots(
+	study themestudy.StudyThemes,
+	index *surfacediscovery.DirectCallIndex,
+) (StudyReadingRootBindings, error) {
+	if study.Version != themestudy.StudyThemesVersion {
+		return StudyReadingRootBindings{}, fmt.Errorf("mechanism study: unsupported StudyThemes version %q", study.Version)
+	}
+	if strings.TrimSpace(study.Revision) == "" {
+		return StudyReadingRootBindings{}, fmt.Errorf("mechanism study: missing Study revision")
+	}
+	if index == nil {
+		return StudyReadingRootBindings{}, fmt.Errorf("mechanism study: direct call index is nil")
+	}
+	if err := index.Validate(); err != nil {
+		return StudyReadingRootBindings{}, fmt.Errorf("mechanism study: validate direct call index: %w", err)
+	}
+
+	sources, _ := studySourceCards(study)
+	locators, conflicted := studyReadingRootLocators(sources)
+
+	result := StudyReadingRootBindings{
+		Version: StudyRootBindingsVersion, RepositoryRevision: study.Revision,
+		DirectCallIndexSHA256: index.SHA256, Scenario: copyScenario(index.Scenario),
+		Readings: []StudyReadingRootBinding{},
+	}
+	spanIDs := make([]string, 0, len(locators))
+	for spanID := range locators {
+		spanIDs = append(spanIDs, spanID)
+	}
+	sort.Strings(spanIDs)
+	for _, spanID := range spanIDs {
+		if _, conflict := conflicted[spanID]; conflict {
+			continue
+		}
+		location := locators[spanID]
+		nodeID, resolved := uniqueDirectCallNodeAt(index, location.path, location.line)
+		if !resolved {
+			continue
+		}
+		result.Readings = append(result.Readings, StudyReadingRootBinding{
+			CanonicalSpanID: spanID, NodeID: nodeID,
+		})
+	}
+	return result, nil
+}
+
+// CompileWithStudyReadingRoots is the explicit producer/root-wiring seam. It
+// accepts only a binding envelope produced for the same Study revision,
+// DirectCallIndex digest and complete build scenario, and revalidates every
+// supplied span-to-node locator before compiling the existing bounded graph.
+func CompileWithStudyReadingRoots(
+	study themestudy.StudyThemes,
+	index *surfacediscovery.DirectCallIndex,
+	binding Binding,
+	roots StudyReadingRootBindings,
+) (*Compilation, error) {
 	if study.Version != themestudy.StudyThemesVersion {
 		return nil, fmt.Errorf("mechanism study: unsupported StudyThemes version %q", study.Version)
 	}
@@ -114,6 +197,15 @@ func Compile(study themestudy.StudyThemes, index *surfacediscovery.DirectCallInd
 		return nil, fmt.Errorf("mechanism study: validate direct call index: %w", err)
 	}
 
+	sources, omittedCards := studySourceCards(study)
+	rootIDsBySpan, err := validateStudyReadingRootBindings(study, sources, index, roots)
+	if err != nil {
+		return nil, err
+	}
+	return compileSources(sources, omittedCards, index, binding, rootIDsBySpan)
+}
+
+func studySourceCards(study themestudy.StudyThemes) ([]sourceCard, int) {
 	cards := append([]themestudy.ThemeCard(nil), study.Cards...)
 	sort.SliceStable(cards, func(i, j int) bool {
 		if cards[i].Ordinal != cards[j].Ordinal {
@@ -142,11 +234,12 @@ func Compile(study themestudy.StudyThemes, index *surfacediscovery.DirectCallInd
 			source.Readings = append(source.Readings, sourceReading{
 				Ordinal: position + 1,
 				Label:   reading.Label, Path: reading.Path, Line: reading.Line, Symbol: reading.Symbol,
+				CanonicalSpanID: reading.CanonicalSpanID,
 			})
 		}
 		sources = append(sources, source)
 	}
-	return compileSources(sources, omittedCards, index, binding)
+	return sources, omittedCards
 }
 
 // CompileContexts is the context-neutral experiment seam. The caller supplies
@@ -186,10 +279,27 @@ func CompileContexts(contexts []ExactContext, index *surfacediscovery.DirectCall
 		}
 		sources = append(sources, source)
 	}
-	return compileSources(sources, omittedCards, index, binding)
+	return compileSources(sources, omittedCards, index, binding, nil)
 }
 
-func compileSources(sources []sourceCard, omittedCards int, index *surfacediscovery.DirectCallIndex, binding Binding) (*Compilation, error) {
+func compileSources(
+	sources []sourceCard,
+	omittedCards int,
+	index *surfacediscovery.DirectCallIndex,
+	binding Binding,
+	rootIDsBySpan map[string]string,
+) (*Compilation, error) {
+	return compileSourcesInternal(sources, omittedCards, index, binding, rootIDsBySpan, nil)
+}
+
+func compileSourcesInternal(
+	sources []sourceCard,
+	omittedCards int,
+	index *surfacediscovery.DirectCallIndex,
+	binding Binding,
+	rootIDsBySpan map[string]string,
+	targetContext *targetCompileContext,
+) (*Compilation, error) {
 	if err := validateBinding(binding); err != nil {
 		return nil, err
 	}
@@ -213,6 +323,18 @@ func compileSources(sources []sourceCard, omittedCards int, index *surfacediscov
 		Binding:       binding, DirectCallIndexSHA256: index.SHA256,
 		Scenario: copyScenario(index.Scenario), OmittedCards: omittedCards,
 	}
+	if targetContext != nil {
+		target := targetContext.target.Snapshot()
+		roots := copyStudyReadingRootBindings(targetContext.studyRoots)
+		compilation.TargetTrailVersion = TargetTrailVersion
+		compilation.AnalysisTargetRef = target.Ref
+		compilation.TargetRootsSHA256 = targetContext.targetRootsSHA256
+		digest.TargetTrailVersion = TargetTrailVersion
+		digest.AnalysisTarget = &target
+		digest.TargetRootsSHA256 = targetContext.targetRootsSHA256
+		digest.TargetRootsOmitted = targetContext.targetRootsOmitted
+		digest.StudyReadingRoots = &roots
+	}
 	if binding.ContextKind == ContextStudy {
 		digest.StudyThemesVersion = themestudy.StudyThemesVersion
 	} else {
@@ -222,7 +344,8 @@ func compileSources(sources []sourceCard, omittedCards int, index *surfacediscov
 	for cardPosition, sourceCard := range sources {
 		cardRef := fmt.Sprintf("t%d", cardPosition+1)
 		card, authority, digestEntry, nextRead, nextNode, nextEdge, err := compileCard(
-			cardRef, sourceCard, index, nextReadingRef, nextNodeRef, nextEdgeRef,
+			cardRef, sourceCard, index, rootIDsBySpan, targetContext,
+			nextReadingRef, nextNodeRef, nextEdgeRef,
 		)
 		if err != nil {
 			return nil, err
@@ -250,6 +373,8 @@ func compileCard(
 	cardRef string,
 	source sourceCard,
 	index *surfacediscovery.DirectCallIndex,
+	rootIDsBySpan map[string]string,
+	targetContext *targetCompileContext,
 	nextReadingRef, nextNodeRef, nextEdgeRef int,
 ) (Card, cardAuthority, digestCard, int, int, int, error) {
 	if source.Ordinal <= 0 || strings.TrimSpace(source.Canonical) == "" {
@@ -282,7 +407,19 @@ func compileCard(
 		if index.State != surfacediscovery.DirectCallIndexReady {
 			frontierCounts[FrontierIndexUnavailable]++
 		} else {
-			resolution := index.ResolveRoot(reading.Path, reading.Line, reading.Symbol)
+			resolution := surfacediscovery.DirectCallRootResolution{State: surfacediscovery.DirectCallRootUnresolved}
+			if reading.CanonicalSpanID != "" {
+				if nodeID := rootIDsBySpan[reading.CanonicalSpanID]; nodeID != "" {
+					if node, ok := index.Node(nodeID); ok {
+						resolution = index.ResolveRoot(reading.Path, reading.Line, node.Symbol.ID)
+						if resolution.State == surfacediscovery.DirectCallRootResolved && resolution.Node.ID != nodeID {
+							resolution = surfacediscovery.DirectCallRootResolution{State: surfacediscovery.DirectCallRootUnresolved}
+						}
+					}
+				}
+			} else {
+				resolution = index.ResolveRoot(reading.Path, reading.Line, reading.Symbol)
+			}
 			if resolution.State != surfacediscovery.DirectCallRootResolved {
 				frontierCounts[FrontierNoExactFunction]++
 			} else {
@@ -296,7 +433,26 @@ func compileCard(
 		bindings = append(bindings, binding)
 	}
 
-	graph := collectGraph(index, rootIDs)
+	graph := selectedGraph{}
+	targetRootIDs := []string{}
+	if targetContext == nil {
+		graph = collectGraph(index, rootIDs)
+	} else {
+		selection := collectTargetRootedGraph(
+			index, targetContext.targetRootIDs, targetContext.targetRootsOmitted, rootIDs,
+		)
+		graph = selection.graph
+		targetRootIDs = append(targetRootIDs, selection.targetRootIDs...)
+		for reason, count := range selection.frontier {
+			frontierCounts[reason] += count
+		}
+		for position := range bindings {
+			if bindings[position].rootID == "" || selection.admittedReadings[bindings[position].rootID] {
+				continue
+			}
+			bindings[position].rootID = ""
+		}
+	}
 	for _, reason := range graph.omitted {
 		frontierCounts[reason]++
 	}
@@ -308,13 +464,10 @@ func compileCard(
 		frontierCounts[FrontierDynamicInvoke] +=
 			frontier.DynamicInvokesExcluded + frontier.NonStaticCallsExcluded
 		frontierCounts[FrontierExternalCallee] += frontier.ExternalCalleesExcluded
+		frontierCounts[FrontierDepthBound] += frontier.DepthBoundRepositoryCallsExcluded
 	}
 
-	nodeIDs := make([]string, 0, len(graph.nodes))
-	for id := range graph.nodes {
-		nodeIDs = append(nodeIDs, id)
-	}
-	sort.Strings(nodeIDs)
+	nodeIDs := orderedSelectedNodeIDs(index, graph.nodes, targetContext != nil)
 	nodeRefByID := make(map[string]string, len(nodeIDs))
 	nodeIDByRef := make(map[string]string, len(nodeIDs))
 	card := Card{
@@ -325,7 +478,10 @@ func compileCard(
 		Nodes:    make([]Node, 0, len(nodeIDs)),
 		Edges:    []Edge{},
 	}
-	digestEntry := digestCard{Card: card, Ordinal: source.Ordinal, Canonical: source.Canonical}
+	digestEntry := digestCard{
+		Card: card, Ordinal: source.Ordinal, Canonical: source.Canonical,
+		TargetRootIDs: append([]string(nil), targetRootIDs...),
+	}
 	nodeByRef := make(map[string]surfacediscovery.DirectCallNode, len(nodeIDs))
 	for _, id := range nodeIDs {
 		node := graph.nodes[id]
@@ -337,6 +493,17 @@ func compileCard(
 		})
 		nodeByRef[ref] = node
 		digestEntry.Nodes = append(digestEntry.Nodes, digestNode{Ref: ref, Node: node})
+	}
+	if targetContext != nil && len(targetRootIDs) > 0 {
+		card.TargetRootRefs = make([]string, 0, len(targetRootIDs))
+		for _, nodeID := range targetRootIDs {
+			ref := nodeRefByID[nodeID]
+			if ref == "" {
+				return Card{}, cardAuthority{}, digestCard{}, 0, 0, 0,
+					fmt.Errorf("mechanism study: selected target root is absent from the card")
+			}
+			card.TargetRootRefs = append(card.TargetRootRefs, ref)
+		}
 	}
 	readingRootByRef := make(map[string]string, len(bindings))
 	readingOrdinalByRef := make(map[string]int, len(bindings))
@@ -357,11 +524,7 @@ func compileCard(
 		})
 	}
 
-	edgeIDs := make([]string, 0, len(graph.edges))
-	for id := range graph.edges {
-		edgeIDs = append(edgeIDs, id)
-	}
-	sort.Strings(edgeIDs)
+	edgeIDs := orderedSelectedEdgeIDs(index, graph.edges, targetContext != nil)
 	edgeByRef := make(map[string]surfacediscovery.DirectCallEdge, len(edgeIDs))
 	for _, id := range edgeIDs {
 		edge := graph.edges[id]
@@ -387,6 +550,10 @@ func compileCard(
 		nodeIDByRef: nodeIDByRef, nodeRefByID: nodeRefByID, nodeByRef: nodeByRef,
 		edgeByRef: edgeByRef, readingRootByRef: readingRootByRef,
 		readingOrdinalByRef: readingOrdinalByRef,
+		targetRootRefs:      make(map[string]struct{}, len(targetRootIDs)),
+	}
+	for _, ref := range card.TargetRootRefs {
+		authority.targetRootRefs[ref] = struct{}{}
 	}
 	return card, authority, digestEntry, nextReadingRef, nextNodeRef, nextEdgeRef, nil
 }
@@ -576,6 +743,101 @@ func validateBinding(binding Binding) error {
 		return fmt.Errorf("mechanism study: invalid context kind %q", binding.ContextKind)
 	}
 	return nil
+}
+
+func validateStudyReadingRootBindings(
+	study themestudy.StudyThemes,
+	sources []sourceCard,
+	index *surfacediscovery.DirectCallIndex,
+	roots StudyReadingRootBindings,
+) (map[string]string, error) {
+	if roots.Version != StudyRootBindingsVersion || roots.RepositoryRevision != study.Revision ||
+		roots.DirectCallIndexSHA256 != index.SHA256 || !sameScenario(roots.Scenario, index.Scenario) {
+		return nil, fmt.Errorf("mechanism study: Study reading root binding identity mismatch")
+	}
+	allowed, conflicted := studyReadingRootLocators(sources)
+	result := make(map[string]string, len(roots.Readings))
+	previous := ""
+	for _, root := range roots.Readings {
+		if strings.TrimSpace(root.CanonicalSpanID) == "" || strings.TrimSpace(root.NodeID) == "" ||
+			(previous != "" && root.CanonicalSpanID <= previous) {
+			return nil, fmt.Errorf("mechanism study: invalid Study reading root binding order")
+		}
+		previous = root.CanonicalSpanID
+		location, advertised := allowed[root.CanonicalSpanID]
+		_, conflict := conflicted[root.CanonicalSpanID]
+		if !advertised || conflict {
+			return nil, fmt.Errorf("mechanism study: Study reading root binding is not an exact advertised locator")
+		}
+		nodeID, resolved := uniqueDirectCallNodeAt(index, location.path, location.line)
+		if !resolved || nodeID != root.NodeID {
+			return nil, fmt.Errorf("mechanism study: Study reading root binding does not match the unique exact locator")
+		}
+		result[root.CanonicalSpanID] = root.NodeID
+	}
+	return result, nil
+}
+
+func studyReadingRootLocators(sources []sourceCard) (map[string]studyRootLocator, map[string]struct{}) {
+	locators := make(map[string]studyRootLocator)
+	conflicted := make(map[string]struct{})
+	for _, card := range sources {
+		for position, reading := range card.Readings {
+			if position >= MaxDirectReadingsPerCard {
+				break
+			}
+			spanID := strings.TrimSpace(reading.CanonicalSpanID)
+			if spanID == "" || spanID != reading.CanonicalSpanID ||
+				!validStudyRootLocator(reading.Path, reading.Line) {
+				continue
+			}
+			current := studyRootLocator{path: reading.Path, line: reading.Line}
+			if previous, exists := locators[spanID]; exists && previous != current {
+				conflicted[spanID] = struct{}{}
+				continue
+			}
+			locators[spanID] = current
+		}
+	}
+	return locators, conflicted
+}
+
+func uniqueDirectCallNodeAt(index *surfacediscovery.DirectCallIndex, path string, line int) (string, bool) {
+	if index == nil || index.State != surfacediscovery.DirectCallIndexReady || !validStudyRootLocator(path, line) {
+		return "", false
+	}
+	declarations := make([]string, 0, 1)
+	for _, node := range index.Nodes {
+		if node.Declaration.Path == path && node.Declaration.Line == line {
+			declarations = append(declarations, node.ID)
+		}
+	}
+	if len(declarations) == 1 {
+		return declarations[0], true
+	}
+	if len(declarations) > 1 {
+		return "", false
+	}
+	containing := make([]string, 0, 1)
+	for _, node := range index.Nodes {
+		if node.Body.Start.Path == path && node.Body.End.Path == path &&
+			line >= node.Body.Start.Line && line <= node.Body.End.Line {
+			containing = append(containing, node.ID)
+		}
+	}
+	if len(containing) == 1 {
+		return containing[0], true
+	}
+	return "", false
+}
+
+func validStudyRootLocator(path string, line int) bool {
+	return line > 0 && fs.ValidPath(path)
+}
+
+func sameScenario(left, right surfacediscovery.Scenario) bool {
+	return left.ID == right.ID && left.GOOS == right.GOOS && left.GOARCH == right.GOARCH &&
+		left.GoFlags == right.GoFlags && slices.Equal(left.Tags, right.Tags)
 }
 
 func validSHA256(value string) bool {

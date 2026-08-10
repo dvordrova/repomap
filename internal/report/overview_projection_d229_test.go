@@ -227,7 +227,7 @@ process.stdout.write(JSON.stringify(result));
 	if !got.HasRemainderDisclosure {
 		t.Fatalf("diagnostic remainder disclosure missing; overview text:\n%s", got.OverviewText)
 	}
-	if !strings.Contains(got.RemainderText, "Unclassified exact scope") || !strings.Contains(got.RemainderText, "3 packages") {
+	if !strings.Contains(got.RemainderText, "Unclassified exact scope") || !strings.Contains(got.RemainderText, "3 symbols") {
 		t.Fatalf("remainder disclosure copy wrong: %s", got.RemainderText)
 	}
 	if got.SupportingInSpine {

@@ -20,7 +20,7 @@ func TestD210CompileBuildsTypedSupportAndBackendSpanWireDeterministically(t *tes
 	if err := json.Unmarshal(product.WireJSON(), &wire); err != nil {
 		t.Fatal(err)
 	}
-	if wire.Version != 7 || len(wire.RouteSupports) != 2 || len(wire.RouteSpans) != 1 {
+	if wire.Version != 8 || len(wire.RouteSupports) != 2 || len(wire.RouteSpans) != 1 {
 		t.Fatalf("typed wire = version:%d supports:%d spans:%d", wire.Version, len(wire.RouteSupports), len(wire.RouteSpans))
 	}
 	span := wire.RouteSpans[0]
@@ -377,11 +377,11 @@ func TestD210SpanBreadthRotatesExactSupportPackagesWithinLimitedSlots(t *testing
 		{ID: "span-d", RequiredSupportIDs: []string{"support-d"}, AllowedTargetIDs: []string{"target-d"}},
 	}
 	want := []string{"span-a-1", "span-bc", "span-d"}
-	if got := selectedSpanIDs(selectSpansByRole(spans, supports, []SupportRole{SupportEntryHandoff}, 3)); !reflect.DeepEqual(got, want) {
+	if got := selectedSpanIDs(selectSpansByRole(spans, supports, nil, []SupportRole{SupportEntryHandoff}, 3)); !reflect.DeepEqual(got, want) {
 		t.Fatalf("package-diverse spans = %v, want %v", got, want)
 	}
 	slices.Reverse(spans)
-	if got := selectedSpanIDs(selectSpansByRole(spans, supports, []SupportRole{SupportEntryHandoff}, 3)); !reflect.DeepEqual(got, want) {
+	if got := selectedSpanIDs(selectSpansByRole(spans, supports, nil, []SupportRole{SupportEntryHandoff}, 3)); !reflect.DeepEqual(got, want) {
 		t.Fatalf("permuted package-diverse spans = %v, want %v", got, want)
 	}
 }

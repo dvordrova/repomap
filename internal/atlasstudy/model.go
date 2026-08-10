@@ -5,6 +5,7 @@
 package atlasstudy
 
 import (
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/repositoryatlas"
 )
@@ -12,17 +13,17 @@ import (
 const (
 	// Version and PromptVersion own the byte-identical provider request and
 	// private request catalog contract.
-	Version       = 7
-	PromptVersion = "atlas-study-prompt-v13"
+	Version       = 8
+	PromptVersion = "atlas-study-prompt-v14"
 
 	// ResultVersion owns local response validation plus result/status replay.
 	// It advances independently so the unchanged v6 provider request cannot
 	// reinterpret a result accepted by the earlier question validator.
-	ResultVersion = 8
+	ResultVersion = 9
 
-	RequestArtifactFilename = "atlas_study_request.v7.json"
-	ResultArtifactFilename  = "atlas_study_result.v8.json"
-	StatusArtifactFilename  = "atlas_study_status.v8.json"
+	RequestArtifactFilename = "atlas_study_request.v8.json"
+	ResultArtifactFilename  = "atlas_study_result.v9.json"
+	StatusArtifactFilename  = "atlas_study_status.v9.json"
 
 	MaxRequestArtifactBytes = 16 << 20
 	MaxResultArtifactBytes  = 16 << 20
@@ -137,6 +138,9 @@ type CatalogObject struct {
 	Label                string                    `json:"label,omitempty"`
 	Fact                 string                    `json:"fact,omitempty"`
 	Authority            repositoryatlas.Authority `json:"authority"`
+	UnitKind             repositoryatlas.UnitKind  `json:"unit_kind,omitempty"`
+	UnitParentID         string                    `json:"unit_parent_id,omitempty"`
+	ReadingTargetKind    ReadingTargetKind         `json:"reading_target_kind,omitempty"`
 	Owner                *CanonicalRef             `json:"owner,omitempty"`
 	RelatedComponentRefs []CanonicalRef            `json:"related_component_refs,omitempty"`
 	PrincipalRefs        []CanonicalRef            `json:"principal_refs,omitempty"`
@@ -249,12 +253,14 @@ const (
 	SupportSurfaceCandidate     SupportRole = "surface_candidate"
 	SupportObservedCallBoundary SupportRole = "observed_call_boundary"
 	SupportSavedFlow            SupportRole = "saved_flow"
+	SupportAnalysisTargetRoot   SupportRole = "public_api_root"
 )
 
 func (role SupportRole) Valid() bool {
 	switch role {
 	case SupportProcessEntry, SupportEntryHandoff, SupportSurface,
-		SupportSurfaceCandidate, SupportObservedCallBoundary, SupportSavedFlow:
+		SupportSurfaceCandidate, SupportObservedCallBoundary, SupportSavedFlow,
+		SupportAnalysisTargetRoot:
 		return true
 	default:
 		return false
@@ -404,18 +410,29 @@ type DocumentClaim struct {
 	Authority repositoryatlas.Authority `json:"authority"`
 }
 
+// AnalysisTargetRootScope is private producer authority for the one D277
+// package-Unit principal exception. AnalysisTarget is the complete validated
+// selected target snapshot and UnitID is its literal package Unit. The scope
+// is request/catalog identity material but is deliberately omitted from the
+// provider wire.
+type AnalysisTargetRootScope struct {
+	AnalysisTarget analysistarget.Target `json:"analysis_target"`
+	UnitID         string                `json:"unit_id"`
+}
+
 type Input struct {
-	Atlas             repositoryatlas.Atlas   `json:"atlas"`
-	Architecture      ArchitectureInput       `json:"architecture"`
-	Language          Language                `json:"language"`
-	Surfaces          []Surface               `json:"surfaces"`
-	ReadingTargets    []ReadingTarget         `json:"reading_targets"`
-	ReadingSupports   []ReadingSupport        `json:"reading_supports"`
-	ProducerRelations []RouteProducerRelation `json:"producer_relations"`
-	RouteSpans        []RouteSpan             `json:"route_spans"`
-	Evidence          []EvidenceFact          `json:"evidence"`
-	Documents         []DocumentClaim         `json:"documents"`
-	Limits            Limits                  `json:"limits"`
+	Atlas              repositoryatlas.Atlas    `json:"atlas"`
+	Architecture       ArchitectureInput        `json:"architecture"`
+	Language           Language                 `json:"language"`
+	Surfaces           []Surface                `json:"surfaces"`
+	ReadingTargets     []ReadingTarget          `json:"reading_targets"`
+	ReadingSupports    []ReadingSupport         `json:"reading_supports"`
+	ProducerRelations  []RouteProducerRelation  `json:"producer_relations"`
+	RouteSpans         []RouteSpan              `json:"route_spans"`
+	Evidence           []EvidenceFact           `json:"evidence"`
+	Documents          []DocumentClaim          `json:"documents"`
+	AnalysisTargetRoot *AnalysisTargetRootScope `json:"analysis_target_root,omitempty"`
+	Limits             Limits                   `json:"limits"`
 }
 
 type Prompt struct {

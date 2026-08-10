@@ -48,10 +48,11 @@ const (
 )
 
 type RepositoryContext struct {
-	Identity    string `json:"identity"`
-	Revision    string `json:"revision"`
-	DirtySHA256 string `json:"dirty_sha256,omitempty"`
-	Scenario    string `json:"scenario"`
+	Identity          string `json:"identity"`
+	Revision          string `json:"revision"`
+	DirtySHA256       string `json:"dirty_sha256,omitempty"`
+	Scenario          string `json:"scenario"`
+	AnalysisTargetRef string `json:"analysis_target_ref,omitempty"`
 }
 
 type ProposedQuestion struct {

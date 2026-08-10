@@ -4,12 +4,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
+	"strconv"
+	"strings"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/themestudy"
 )
+
+const maxAtlasStudySnapshotReplayBytes = 64 << 20
 
 // readAtlasStudyReportProduct derives the Decision 213 Study report section
 // from the eight theme artifacts bound by the run manifest. The retired
@@ -27,6 +33,25 @@ import (
 func readAtlasStudyReportProduct(
 	runDir string,
 	data *ReportData,
+) (*AtlasStudyReportStatus, *RepositoryStudyMap, error) {
+	return readAtlasStudyReportProductWithSourceAuthority(runDir, data, false)
+}
+
+// readPersistedAtlasStudyReportProduct is the manifest/report replay lane.
+// Unlike ordinary run reconstruction, it must never repair the source-action
+// authority already serialized in report.json: every D277 public API root
+// must have been captured as openable by the live producer.
+func readPersistedAtlasStudyReportProduct(
+	runDir string,
+	data *ReportData,
+) (*AtlasStudyReportStatus, *RepositoryStudyMap, error) {
+	return readAtlasStudyReportProductWithSourceAuthority(runDir, data, true)
+}
+
+func readAtlasStudyReportProductWithSourceAuthority(
+	runDir string,
+	data *ReportData,
+	requirePersistedSourceAuthority bool,
 ) (*AtlasStudyReportStatus, *RepositoryStudyMap, error) {
 	root, err := os.OpenRoot(runDir)
 	if err != nil {
@@ -84,6 +109,10 @@ func readAtlasStudyReportProduct(
 	}
 	hasAnyArtifact := hasScoutRequest || hasScoutResult || hasScoutStatus ||
 		hasExpansion || hasAdjRequest || hasAdjResult || hasAdjStatus || hasThemes
+	data, err = rehydrateAtlasStudyLibraryData(root, data, requirePersistedSourceAuthority)
+	if err != nil {
+		return nil, nil, err
+	}
 	if !hasAnyArtifact {
 		return uncalledAtlasStudyReportStatus(data), nil, nil
 	}
@@ -155,6 +184,77 @@ func readAtlasStudyReportProduct(
 	default:
 		return nil, nil, fmt.Errorf("atlas study report: unsupported Scout state %q", scoutStatus.State)
 	}
+}
+
+// rehydrateAtlasStudyLibraryData restores only the private bounded snapshot
+// authority needed to replay D277. report.json deliberately omits Go facts;
+// both no-callable unavailable runs and accepted library runs must still
+// rebuild the same shelf and openable source authority.
+func rehydrateAtlasStudyLibraryData(
+	root *os.Root,
+	data *ReportData,
+	requirePersistedSourceAuthority bool,
+) (*ReportData, error) {
+	if data == nil || data.AnalysisTarget == nil ||
+		data.AnalysisTarget.Kind != analysistarget.KindLibraryPackage {
+		return data, nil
+	}
+	prepared := *data
+	if prepared.repositoryGoFacts == nil {
+		snapshotRaw, err := readManifestFile(root, "snapshot.json", maxAtlasStudySnapshotReplayBytes)
+		if err != nil {
+			return nil, fmt.Errorf("atlas study report: read library declaration authority: %w", err)
+		}
+		facts, err := decodeSnapshotExactGoFacts(snapshotRaw)
+		if err != nil {
+			return nil, fmt.Errorf("atlas study report: decode library declaration authority: %w", err)
+		}
+		prepared.repositoryGoFacts = &facts
+	}
+	prepared.OpenablePaths = append([]string(nil), data.OpenablePaths...)
+	input, err := BuildAtlasStudyInput(&prepared, atlasstudy.LanguageEnglish)
+	if err != nil {
+		return nil, fmt.Errorf("atlas study report: rebuild library public API authority: %w", err)
+	}
+	rootTargets := make(map[string]struct{})
+	for _, support := range input.ReadingSupports {
+		if support.Role == atlasstudy.SupportAnalysisTargetRoot {
+			rootTargets[support.TargetID] = struct{}{}
+		}
+	}
+	openable := make(map[string]struct{}, len(data.OpenablePaths))
+	for _, sourcePath := range data.OpenablePaths {
+		openable[sourcePath] = struct{}{}
+	}
+	for _, reading := range input.ReadingTargets {
+		if _, root := rootTargets[reading.ID]; !root {
+			continue
+		}
+		if _, authorized := openable[reading.Location.Path]; authorized {
+			continue
+		}
+		if requirePersistedSourceAuthority {
+			return nil, fmt.Errorf(
+				"atlas study report: saved source authority omits public API root %s",
+				reading.Location.Path,
+			)
+		}
+		openable[reading.Location.Path] = struct{}{}
+	}
+	if !requirePersistedSourceAuthority {
+		prepared.OpenablePaths = prepared.OpenablePaths[:0]
+		for sourcePath := range openable {
+			prepared.OpenablePaths = append(prepared.OpenablePaths, sourcePath)
+		}
+		sort.Strings(prepared.OpenablePaths)
+		// Ordinary ReadRunDir reconstructs the report projection rather than
+		// verifying serialized report.json. Propagate the exact, bounded
+		// snapshot-derived source authority to the returned ReportData.
+		data.repositoryGoFacts = prepared.repositoryGoFacts
+		data.OpenablePaths = append(data.OpenablePaths[:0], prepared.OpenablePaths...)
+		return data, nil
+	}
+	return &prepared, nil
 }
 
 // readThemeStudyAccepted derives the accepted/accepted_partial Study report
@@ -731,6 +831,76 @@ func deriveAtlasStudyFailedBrowse(input atlasstudy.Input, data *ReportData) (*Fr
 // substrate: seed paths/lines/symbols match a reading target and seed span
 // bindings resolve to considered spans.
 func validateThemeScoutRequestAgainstInput(request themestudy.ScoutRequest, input atlasstudy.Input) error {
+	selectedInput, err := atlasstudy.SelectAnalysisTargetRootFrontier(input)
+	if err != nil {
+		return fmt.Errorf("select exact public API frontier: %w", err)
+	}
+	input = selectedInput
+	if input.AnalysisTargetRoot != nil {
+		ordered, orderErr := atlasstudy.OrderAnalysisTargetRootReadingTargets(input)
+		if orderErr != nil {
+			return fmt.Errorf("order exact public API frontier: %w", orderErr)
+		}
+		spanByTarget := make(map[string]string, len(input.RouteSpans))
+		for _, span := range input.RouteSpans {
+			if span.Kind != atlasstudy.RouteSpanFocused || len(span.AllowedTargetIDs) != 1 {
+				return fmt.Errorf("selected public API frontier contains a non-focused span")
+			}
+			targetID := span.AllowedTargetIDs[0]
+			if _, duplicate := spanByTarget[targetID]; duplicate {
+				return fmt.Errorf("selected public API root has more than one canonical span")
+			}
+			spanByTarget[targetID] = span.ID
+		}
+		present := make(map[int]struct{}, len(request.SeedPacks.Packs))
+		previous := 0
+		for _, pack := range request.SeedPacks.Packs {
+			digits, ok := strings.CutPrefix(pack.Seed.Ref, "a")
+			ordinal, parseErr := strconv.Atoi(digits)
+			if !ok || parseErr != nil || digits != strconv.Itoa(ordinal) ||
+				ordinal <= 0 || ordinal > len(ordered) {
+				return fmt.Errorf("Scout seed %q is outside the selected public API frontier", pack.Seed.Ref)
+			}
+			if ordinal <= previous {
+				return fmt.Errorf("Scout seed %q is duplicated or outside selected public API order", pack.Seed.Ref)
+			}
+			present[ordinal] = struct{}{}
+			previous = ordinal
+			want := ordered[ordinal-1]
+			if pack.Seed.Path != want.Location.Path || pack.Seed.Line != want.Location.Line ||
+				pack.Seed.Symbol != want.Symbol ||
+				pack.Seed.CanonicalSpanID != spanByTarget[want.ID] ||
+				pack.Seed.Kind != "focused" || pack.Seed.Role != themestudy.RolePublicAPI ||
+				pack.Seed.Provenance != "d211_span_reading_target" {
+				return fmt.Errorf("Scout seed %q does not match its selected public API root", pack.Seed.Ref)
+			}
+		}
+		missing := make([]string, 0, len(ordered)-len(present))
+		for ordinal := 1; ordinal <= len(ordered); ordinal++ {
+			if _, ok := present[ordinal]; !ok {
+				missing = append(missing, fmt.Sprintf("a%d", ordinal))
+			}
+		}
+		if len(missing) == 0 {
+			if len(request.SeedPacks.Omissions) != 0 {
+				return fmt.Errorf("Scout seed omissions do not match the complete selected public API frontier")
+			}
+			return nil
+		}
+		representatives := missing
+		if len(representatives) > themestudy.MaxOmissionRepresentatives {
+			representatives = representatives[:themestudy.MaxOmissionRepresentatives]
+		}
+		if len(request.SeedPacks.Omissions) != 1 {
+			return fmt.Errorf("Scout seed omissions do not account for %d selected public API roots", len(missing))
+		}
+		omission := request.SeedPacks.Omissions[0]
+		if omission.Reason != "seed_budget" || omission.Count != len(missing) ||
+			!slices.Equal(omission.Representatives, representatives) {
+			return fmt.Errorf("Scout seed_budget omission does not match the selected public API frontier")
+		}
+		return nil
+	}
 	targets := make(map[string]atlasstudy.ReadingTarget, len(input.ReadingTargets))
 	for _, target := range input.ReadingTargets {
 		key := fmt.Sprintf("%s\x00%d\x00%s", target.Location.Path, target.Location.Line, target.Symbol)

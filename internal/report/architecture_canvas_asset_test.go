@@ -46,16 +46,14 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 			},
 		},
 		{
-			name:  "ordinary UI shows exact partial Architecture truth without generic diagnostics",
+			name:  "ordinary UI retains exact partial Architecture data without diagnostic chrome",
 			asset: js,
 			tokens: []string{
 				"architecturePartialTruth(data)",
 				`validation_outcome) !== "accepted_partial"`,
 				"data.local_remainder_component_id",
-				"this.userMode && this.partialTruth",
-				`"architecture.value.accepted_partial"`,
-				`"architecture.copy.accepted_partial"`,
-				`"architecture.count.local_remainder_members"`,
+				"this.partialTruth = architecturePartialTruth(this.data)",
+				"remainderComponentID: remainderComponentID",
 				"rm-arch__member-id",
 			},
 		},
@@ -548,6 +546,44 @@ func TestArchitectureCanvasAssetContract(t *testing.T) {
 		if strings.Contains(js, unsupportedClaim) {
 			t.Errorf("architecture canvas must not imply observed or ordered execution: found %q", unsupportedClaim)
 		}
+	}
+}
+
+func TestArchitectureCanvasGroupTitleClampsWithoutGrowingGeometry(t *testing.T) {
+	t.Parallel()
+
+	js := readCanvasAsset(t, "architecture_canvas.js")
+	css := readCanvasAsset(t, "architecture_canvas.css")
+	for _, token := range []string{
+		"const groupTooltip = groupDescription && groupDescription !== groupName",
+		"group.title = groupTooltip",
+		"groupTitle.title = groupTooltip",
+	} {
+		if !strings.Contains(js, token) {
+			t.Errorf("full subsystem title tooltip is missing %q", token)
+		}
+	}
+	start := strings.Index(css, ".rm-arch__group-title {")
+	if start < 0 {
+		t.Fatal("group title CSS rule is missing")
+	}
+	end := strings.Index(css[start:], "}\n")
+	if end < 0 {
+		t.Fatal("group title CSS rule is unterminated")
+	}
+	rule := css[start : start+end]
+	for _, token := range []string{
+		"display: -webkit-box",
+		"-webkit-line-clamp: 2",
+		"-webkit-box-orient: vertical",
+		"white-space: normal",
+	} {
+		if !strings.Contains(rule, token) {
+			t.Errorf("two-line group title clamp is missing %q: %s", token, rule)
+		}
+	}
+	if strings.Contains(rule, "white-space: nowrap") {
+		t.Fatalf("group title remains forced onto one line: %s", rule)
 	}
 }
 

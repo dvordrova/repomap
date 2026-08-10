@@ -18,11 +18,14 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	goplsanalyzer "github.com/dvordrova/repomap/internal/analyzer/golang/gopls"
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
+	"github.com/dvordrova/repomap/internal/entrycall"
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/gotarget"
 	"github.com/dvordrova/repomap/internal/guidedtour"
 	"github.com/dvordrova/repomap/internal/localization"
 	"github.com/dvordrova/repomap/internal/modelresearch"
@@ -100,7 +103,7 @@ func main() {
 		}
 	case "dev":
 		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "Usage: repomap dev render-report <run-dir> [--repo <repo>] | theme-study-response-replay --run-dir <copied-run> --request-sha256 <sha> --response <file> --response-sha256 <sha> [--stage scout|adjudication] | theme-study-scout-request-rebuild --run-dir <copied-run> [--repo <repo>] | theme-study-response-mock --run-dir <copied-run> [--stage scout|adjudication] [--out <file>] | localization-check <run-dir> | localization-replay <run-dir> <projection.json> | localization-stage <run-dir> [<projection.json>] | localization-record <run-dir> [<projection.json>] | v32-refresh --run-dir <copied-run-dir> --repo <repo> [--reuse-study | --operate-only | --replay-saved] | fresh-repo-onboarding --run-dir <run-dir> [--repo <repo> [--replan-saved] | --replay-saved] | guided-tour <run-dir> | guided-tour-fanout <run-dir> | guided-tour-experiment <run-dir> | semantic-discovery <run-dir> | semantic-discovery-experiment <run-dir> | golden-mechanism <run-dir> [--probe-only] | golden-mechanism-v01 <run-dir> [--replay-old] | golden-mechanism-v02 <run-dir> [--prepare | --replay] | golden-mechanism-v03 <run-dir> [--replay] | golden-mechanism-v1 <run-dir> [--prepare | --replay] | chi-request-dispatch <run-dir> [--prepare | --replay-response | --replay] | mechanism-v1 <run-dir> [--replay] | mechanism-study-experiment --repo <repo> --root-path <path> --root-line <line> --root-symbol <exact-symbol> --label <label> --question <question> --out <directory> [--request-only] | review-cockpit --caddy-run <run-dir> --chi-run <run-dir> --out <output-dir> | prompt-versions | corpus <root> [--matrix <json>]")
+			fmt.Fprintln(os.Stderr, "Usage: repomap dev render-report <run-dir> [--repo <repo>] | finalize-target-pages --run-dir DEFAULT --sibling-run RUN [--sibling-run RUN ...] | theme-study-response-replay --run-dir <copied-run> --request-sha256 <sha> --response <file> --response-sha256 <sha> [--stage scout|adjudication] | theme-study-scout-request-rebuild --run-dir <copied-run> [--repo <repo>] | theme-study-response-mock --run-dir <copied-run> [--stage scout|adjudication] [--out <file>] | localization-check <run-dir> | localization-replay <run-dir> <projection.json> | localization-stage <run-dir> [<projection.json>] | localization-record <run-dir> [<projection.json>] | v32-refresh --run-dir <copied-run-dir> --repo <repo> [--reuse-study | --operate-only | --replay-saved] | fresh-repo-onboarding --run-dir <run-dir> [--repo <repo> [--replan-saved] | --replay-saved] | guided-tour <run-dir> | guided-tour-fanout <run-dir> | guided-tour-experiment <run-dir> | semantic-discovery <run-dir> | semantic-discovery-experiment <run-dir> | golden-mechanism <run-dir> [--probe-only] | golden-mechanism-v01 <run-dir> [--replay-old] | golden-mechanism-v02 <run-dir> [--prepare | --replay] | golden-mechanism-v03 <run-dir> [--replay] | golden-mechanism-v1 <run-dir> [--prepare | --replay] | chi-request-dispatch <run-dir> [--prepare | --replay-response | --replay] | mechanism-v1 <run-dir> [--replay] | mechanism-study-experiment --repo <repo> --root-path <path> --root-line <line> --root-symbol <exact-symbol> --label <label> --question <question> --out <directory> [--request-only] | review-cockpit --caddy-run <run-dir> --chi-run <run-dir> --out <output-dir> | prompt-versions | corpus <root> [--matrix <json>]")
 			os.Exit(2)
 		}
 		switch os.Args[2] {
@@ -126,6 +129,11 @@ func main() {
 			}
 		case "render-report":
 			if err := runRenderReportCLI(os.Args[3:], os.Stdout); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		case "finalize-target-pages":
+			if err := runFinalizeTargetPagesCLI(os.Args[3:], os.Stdout, os.Stderr); err != nil {
 				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
@@ -460,17 +468,27 @@ func runDefault(repo string, extraArgs []string) error {
 		serveReport:                 reportserver.Serve,
 		captureRepo:                 freshness.CaptureRepository,
 		newStudyInvestigationClient: defaultStudyInvestigationClientFactory,
+		newEntryCallClient:          defaultEntryCallCompressionClientFactory,
+		newTargetPortfolioClient:    defaultTargetPortfolioClientFactory,
 	})
 }
 
 type defaultRunDeps struct {
-	ctx                         context.Context
-	stdout                      io.Writer
-	stderr                      io.Writer
-	openReport                  func(string) error
-	serveReport                 func(context.Context, reportserver.Options) error
-	captureRepo                 func(context.Context, string) (freshness.RepositoryState, error)
-	newStudyInvestigationClient studyInvestigationClientFactory
+	ctx                           context.Context
+	stdout                        io.Writer
+	stderr                        io.Writer
+	openReport                    func(string) error
+	serveReport                   func(context.Context, reportserver.Options) error
+	captureRepo                   func(context.Context, string) (freshness.RepositoryState, error)
+	newStudyInvestigationClient   studyInvestigationClientFactory
+	newEntryCallClient            entryCallCompressionClientFactory
+	newTargetPortfolioClient      targetPortfolioClientFactory
+	precomputedSnapshot           *snapshot.Snapshot
+	runIDOverride                 string
+	siblingTargetRun              bool
+	publishedTargetSink           func(targetPublishedRun)
+	expectedRepositoryStateSHA256 string
+	finalizeTargetPages           func(snapshot.TargetRunContainer, snapshot.TargetPagePortfolio, []targetPublishedRun) error
 }
 
 func readSourceEpisodeFile(filePath string) ([]byte, error) {
@@ -519,7 +537,17 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	fs.SetOutput(deps.stderr)
 
 	offline := fs.Bool("offline", false, "skip model calls, build local facts/bundles only")
-	discoverSurfaces := fs.Bool("discover-surfaces", true, "discover bounded Go runtime surfaces for the report")
+	goTargetFlag := fs.String("go-target", "", "Go build target as GOOS/GOARCH (default: GOOS/GOARCH environment, then host)")
+	analysisTargetFlag := fs.String("target", "", "analysis package (exact advertised package path or package directory)")
+	allTargetsFlag := fs.Bool("all-targets", false, "publish every advertised Go target; --target chooses the default")
+	directCallDepth := fs.Int(
+		"depth", surfacediscovery.DefaultDirectCallDepth,
+		"target call-graph depth",
+	)
+	directCallEdgeLimit := fs.Int(
+		"edges-limit", surfacediscovery.DefaultDirectCallEdgeLimit,
+		"maximum exact target call-graph edges",
+	)
 	noCache := fs.Bool("no-cache", false, "disable cross-run model response caches")
 	noSecrets := fs.Bool("no-secrets", false, "disable credential detection for this run (unsafe)")
 	language := fs.String("lang", "en", "report language: en or ru")
@@ -536,13 +564,27 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		return err
 	}
 	humanOutput := newRunOutput(deps.stderr)
+	var defaultTargetConsole *targetPageConsoleContext
+	defaultTargetConsoleClosed := false
 	newStudyInvestigationClient := deps.newStudyInvestigationClient
 	if newStudyInvestigationClient == nil {
 		newStudyInvestigationClient = defaultStudyInvestigationClientFactory
 	}
+	newEntryCallClient := deps.newEntryCallClient
+	if newEntryCallClient == nil {
+		newEntryCallClient = defaultEntryCallCompressionClientFactory
+	}
+	newTargetPortfolioClient := deps.newTargetPortfolioClient
+	if newTargetPortfolioClient == nil {
+		newTargetPortfolioClient = defaultTargetPortfolioClientFactory
+	}
 	publicationStateEmitted := false
 	defer func() {
 		if runErr != nil && !publicationStateEmitted {
+			if defaultTargetConsole != nil && !defaultTargetConsoleClosed {
+				humanOutput.TargetPage("failed", *defaultTargetConsole)
+				defaultTargetConsoleClosed = true
+			}
 			humanOutput.State(
 				"Run", "failed",
 				"report publication did not complete",
@@ -555,6 +597,10 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		}
 		repo = fs.Arg(0)
 	}
+	goTarget, err := gotarget.Resolve(*goTargetFlag, os.Getenv)
+	if err != nil {
+		return fmt.Errorf("--go-target: %w", err)
+	}
 	restoreSecretScan := secretscan.SetDisabled(*noSecrets)
 	defer restoreSecretScan()
 	if *noSecrets {
@@ -566,6 +612,15 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	}
 	if *port < 0 || *port > 65535 {
 		return fmt.Errorf("--port must be between 0 and 65535")
+	}
+	if *directCallDepth < 1 {
+		return fmt.Errorf("--depth must be at least 1")
+	}
+	if *directCallEdgeLimit < 1 || *directCallEdgeLimit > surfacediscovery.MaxDirectCallIndexEdges {
+		return fmt.Errorf(
+			"--edges-limit must be between 1 and %d",
+			surfacediscovery.MaxDirectCallIndexEdges,
+		)
 	}
 	reportLanguage, err := normalizeReportLanguage(*language)
 	if err != nil {
@@ -621,7 +676,10 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		return fmt.Errorf("Atlas-first product runs require a nonempty --debug-dir for report authority")
 	}
 
-	runID := debugdump.GenerateRunID(repoRunLabel(repo))
+	runID := strings.TrimSpace(deps.runIDOverride)
+	if runID == "" {
+		runID = debugdump.GenerateRunID(repoRunLabel(repo))
+	}
 	var sourceEpisodeJSON []byte
 	if *sourceEpisodePath != "" {
 		sourceEpisodeJSON, err = readSourceEpisodeFile(*sourceEpisodePath)
@@ -651,6 +709,14 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if err != nil {
 		return fmt.Errorf("capture repository state before orientation: %w", err)
 	}
+	initialRepositoryStateSHA256, err := initialState.Digest()
+	if err != nil {
+		return fmt.Errorf("hash repository state before orientation: %w", err)
+	}
+	if deps.expectedRepositoryStateSHA256 != "" &&
+		initialRepositoryStateSHA256 != deps.expectedRepositoryStateSHA256 {
+		return fmt.Errorf("selected target repository state changed before sibling analysis")
+	}
 	if staticSourceHost != "" && repositoryStateHasAnalyzedSubmodule(initialState) {
 		return fmt.Errorf("standalone %s reports do not support analyzed submodule source because one repository URL cannot address it", staticSourceHost)
 	}
@@ -662,54 +728,221 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 
 	researchPolicy := modelresearch.DefaultPolicy()
 	var directCallIndex *surfacediscovery.DirectCallIndex
+	var entryCallSubstrate *entrycall.Substrate
+	var analysisTarget *analysistarget.Target
+	var targetRunContainer *snapshot.TargetRunContainer
+	var targetPortfolioOutcome targetPortfolioRunOutcome
+	analysisTargetOverride := strings.TrimSpace(*analysisTargetFlag)
+	orientAnalysisTargetOverride := analysisTargetOverride
+	if deps.precomputedSnapshot != nil || *allTargetsFlag {
+		orientAnalysisTargetOverride = ""
+	}
 	opts := orient.Options{
-		RepoPath:                  repo,
-		AtlasFirst:                true,
-		Offline:                   *offline,
-		NoCache:                   *noCache,
-		RunID:                     runID,
-		DebugDir:                  dDir,
-		DumpRedacted:              true,
-		RequireArtifacts:          true,
-		DiscoverSurfaces:          *discoverSurfaces,
-		MaxLLMFiles:               0,
-		MaxOrientationBundleBytes: researchPolicy.Orientation.MaxRequestBytes - (16 << 10),
-		MaxLocalDirectionFiles:    20,
-		MaxLLMEdges:               60,
-		MaxLLMModules:             20,
-		MaxLLMEntrypoints:         20,
-		MaxLLMSignals:             30,
-		MaxLLMSignalsPerFile:      3,
-		MaxReadmeBytes:            40000,
-		MaxReadmeLLMBytes:         6000,
-		MaxTreeLines:              800,
-		MaxInterestingFiles:       400,
-		MaxGoPkgs:                 0,
-		MaxGoEdges:                0,
-		ResearchPolicy:            researchPolicy,
-		RepositoryContext:         researchRepositoryContext(initialState, repo),
+		RepoPath:                             repo,
+		GoTarget:                             goTarget.String(),
+		AtlasFirst:                           true,
+		Offline:                              *offline,
+		NoCache:                              *noCache,
+		RunID:                                runID,
+		DebugDir:                             dDir,
+		DumpRedacted:                         true,
+		RequireArtifacts:                     true,
+		DiscoverSurfaces:                     true,
+		DirectCallDepth:                      *directCallDepth,
+		DirectCallEdgeLimit:                  *directCallEdgeLimit,
+		AnalysisTargetOverride:               orientAnalysisTargetOverride,
+		AnalysisTargetSelectorOwnsResolution: deps.precomputedSnapshot == nil && *allTargetsFlag,
+		PrecomputedSnapshot:                  deps.precomputedSnapshot,
+		MaxLLMFiles:                          0,
+		MaxOrientationBundleBytes:            researchPolicy.Orientation.MaxRequestBytes - (16 << 10),
+		MaxLocalDirectionFiles:               20,
+		MaxLLMEdges:                          60,
+		MaxLLMModules:                        20,
+		MaxLLMEntrypoints:                    20,
+		MaxLLMSignals:                        30,
+		MaxLLMSignalsPerFile:                 3,
+		MaxReadmeBytes:                       40000,
+		MaxReadmeLLMBytes:                    6000,
+		MaxTreeLines:                         800,
+		MaxInterestingFiles:                  400,
+		MaxGoPkgs:                            0,
+		MaxGoEdges:                           0,
+		ResearchPolicy:                       researchPolicy,
+		RepositoryContext:                    researchRepositoryContext(initialState, repo, goTarget.Scenario()),
 		DirectCallIndexSink: func(index surfacediscovery.DirectCallIndex) {
 			directCallIndex = &index
 		},
-		EffectiveOptions: debugdump.EffectiveOptions{
-			Offline:          *offline,
-			NoCache:          *noCache,
-			DiscoverSurfaces: *discoverSurfaces,
-			NoSecrets:        *noSecrets,
-			ReportLanguage:   storedReportLanguage(reportLanguage),
-			GitLabURL:        gitLabURL,
-			GitHubURL:        gitHubURL,
-			NoOpen:           *noOpen,
-			NoServe:          *noServe,
-			Port:             *port,
-			DebugEnabled:     dDir != "",
+		AnalysisTargetSink: func(target analysistarget.Target) {
+			copyTarget := target.Snapshot()
+			analysisTarget = &copyTarget
 		},
+		TargetRunContainerSink: func(container snapshot.TargetRunContainer) {
+			copyContainer := container.Snapshot()
+			targetRunContainer = &copyContainer
+			if len(container.Targets) > 1 {
+				for _, projection := range container.Targets {
+					if projection.Target.Ref != container.DefaultTargetRef {
+						continue
+					}
+					context := targetPageConsoleContext{
+						DisplayPath: projection.DisplayPath,
+						PackagePath: projection.Target.PackagePath,
+						RunID:       runID,
+						Role:        "default",
+					}
+					defaultTargetConsole = &context
+					humanOutput.TargetPage("started", context)
+					break
+				}
+			}
+		},
+		EffectiveOptions: debugdump.EffectiveOptions{
+			Offline:                *offline,
+			NoCache:                *noCache,
+			DiscoverSurfaces:       true,
+			GoTarget:               goTarget.String(),
+			AnalysisTargetOverride: analysisTargetOverride,
+			AllTargets:             *allTargetsFlag,
+			DirectCallDepth:        *directCallDepth,
+			DirectCallEdgeLimit:    *directCallEdgeLimit,
+			NoSecrets:              *noSecrets,
+			ReportLanguage:         storedReportLanguage(reportLanguage),
+			GitLabURL:              gitLabURL,
+			GitHubURL:              gitHubURL,
+			NoOpen:                 *noOpen,
+			NoServe:                *noServe,
+			Port:                   *port,
+			DebugEnabled:           dDir != "",
+			StrictSnapshot:         *strictSnapshot,
+			SourceEpisode:          len(sourceEpisodeJSON) != 0,
+		},
+	}
+	if deps.precomputedSnapshot == nil && *allTargetsFlag {
+		opts.AnalysisTargetSelector = func(
+			selectorContext context.Context,
+			repoName string,
+			catalog analysistarget.TargetCatalog,
+		) (snapshot.TargetRunSelection, error) {
+			selection, outcome, selectionErr := selectAllTargetsForRun(
+				selectorContext,
+				repoName,
+				catalog,
+				*offline,
+				analysisTargetOverride,
+				humanOutput,
+				newTargetPortfolioClient,
+			)
+			targetPortfolioOutcome = outcome
+			return selection, selectionErr
+		}
+	} else if deps.precomputedSnapshot == nil && !*offline && analysisTargetOverride == "" {
+		opts.AnalysisTargetSelector = func(
+			selectorContext context.Context,
+			repoName string,
+			catalog analysistarget.TargetCatalog,
+		) (snapshot.TargetRunSelection, error) {
+			selectedRef, outcome, selectionErr := selectTargetPortfolioForRun(
+				selectorContext, repoName, catalog, humanOutput, newTargetPortfolioClient,
+			)
+			targetPortfolioOutcome = outcome
+			return snapshot.TargetRunSelection{
+				DefaultTargetRef: selectedRef,
+				TargetRefs:       append([]string(nil), outcome.SelectedTargetRefs...),
+			}, selectionErr
+		}
+	}
+	if !*offline {
+		opts.EntryCallSubstrateSink = func(substrate entrycall.Substrate) {
+			entryCallSubstrate = &substrate
+		}
 	}
 	opts.Progress = humanOutput.Progress
 
 	_, err = orient.Run(ctx, opts)
+	if deps.precomputedSnapshot == nil {
+		if _, metadataErr := os.Stat(filepath.Join(runDir, "metadata.json")); metadataErr == nil {
+			if diagnosticErr := recordTargetPortfolioOutcome(runDir, targetPortfolioOutcome, humanOutput); diagnosticErr != nil {
+				if err != nil {
+					return errors.Join(err, diagnosticErr)
+				}
+				return diagnosticErr
+			}
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("%w\nrequest diagnostics: %s", err, filepath.Join(runDir, "metadata.json"))
+	}
+	if deps.precomputedSnapshot == nil && *allTargetsFlag && targetRunContainer == nil {
+		return fmt.Errorf("--all-targets: no advertised Go targets; choose a Go repository or use an ordinary single-scope run")
+	}
+	if targetPortfolioOutcome.SelectedTargets > 0 {
+		if targetRunContainer == nil {
+			return fmt.Errorf("selected target portfolio was not bound into the run container")
+		}
+		if err := targetRunContainer.Validate(); err != nil {
+			return fmt.Errorf("validate selected target run container: %w", err)
+		}
+		if targetRunContainer.DefaultTargetRef != targetPortfolioOutcome.SelectedRef ||
+			len(targetRunContainer.Targets) != targetPortfolioOutcome.SelectedTargets {
+			return fmt.Errorf("selected target portfolio does not match the run container")
+		}
+	}
+	if analysisTarget != nil {
+		if directCallIndex == nil {
+			return fmt.Errorf(
+				"Go call analysis is unavailable for target %s under %s; choose the correct platform with --go-target GOOS/GOARCH (diagnostics: %s)",
+				analysisTarget.PackageDir, goTarget.String(), filepath.Join(runDir, "metadata.json"),
+			)
+		}
+		if err := directCallIndex.Validate(); err != nil {
+			return fmt.Errorf("validate Go call analysis for target %s: %w", analysisTarget.PackageDir, err)
+		}
+		if scope := directCallIndex.Scope; !scope.TargetScoped() ||
+			scope.TargetKind != string(analysisTarget.Kind) ||
+			scope.TargetPackage != analysisTarget.PackagePath ||
+			scope.MaxDepth != *directCallDepth || scope.EdgeLimit != *directCallEdgeLimit {
+			return fmt.Errorf(
+				"Go call analysis scope does not match target %s and requested --depth/--edges-limit",
+				analysisTarget.PackagePath,
+			)
+		}
+		if directCallIndex.State != surfacediscovery.DirectCallIndexReady {
+			switch directCallIndex.ClosedReason {
+			case surfacediscovery.DirectCallIndexClosedSSAUnavailable:
+				return fmt.Errorf(
+					"Go SSA is unavailable for target %s under %s; choose the correct platform with --go-target GOOS/GOARCH",
+					analysisTarget.PackageDir, goTarget.String(),
+				)
+			case surfacediscovery.DirectCallIndexClosedNodeLimit:
+				return fmt.Errorf(
+					"Go call analysis for target %s exceeds the %d-function declaration safety bound; choose a narrower package with --target (the --depth option limits edges, not the exact symbol catalog)",
+					analysisTarget.PackageDir, surfacediscovery.MaxDirectCallIndexNodes,
+				)
+			case surfacediscovery.DirectCallIndexClosedEdgeLimit:
+				return directCallEdgeCeilingError(
+					analysisTarget.PackagePath, *directCallDepth, *directCallEdgeLimit,
+					directCallIndex.Coverage.EdgeLimitSafeDepth,
+				)
+			default:
+				return fmt.Errorf("Go call analysis for target %s is unavailable", analysisTarget.PackageDir)
+			}
+		}
+	}
+	if analysisTarget != nil {
+		targetDetails := []string{
+			"kind: " + string(analysisTarget.Kind),
+			"package: " + analysisTarget.PackagePath,
+		}
+		if targetPortfolioOutcome.SemanticState == debugdump.SemanticStateAccepted {
+			targetDetails = append(
+				targetDetails,
+				fmt.Sprintf("useful targets selected: %d", targetPortfolioOutcome.SelectedTargets),
+			)
+		}
+		humanOutput.State(
+			"Analysis target", analysisTarget.PackageDir,
+			targetDetails...,
+		)
 	}
 	var reportPath string
 	var architectureAuthority report.RunAuthority
@@ -847,6 +1080,15 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 
 	var studyOutcome themeStudyRunOutcome
 	var studyErr error
+	var themeTargetRoots *analysistarget.TargetRoots
+	if !*offline && analysisTarget != nil &&
+		analysisTarget.Kind == analysistarget.KindLibraryPackage {
+		roots, rootsErr := analysistarget.BindExactRoots(*analysisTarget, directCallIndex)
+		if rootsErr != nil {
+			return fmt.Errorf("bind exact library roots before Study: %w", rootsErr)
+		}
+		themeTargetRoots = &roots
+	}
 	studyCalled := true
 	switch {
 	case *offline:
@@ -860,8 +1102,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		}
 	default:
 		studyOutcome, studyErr = runThemeStudyForRun(
-			ctx, reportData, runDir, dDir, analysisRoot,
-			researchRepositoryContext(initialState, repo), researchPolicy,
+			ctx, reportData, analysisTarget, directCallIndex, themeTargetRoots,
+			runDir, dDir, analysisRoot,
+			researchRepositoryContext(initialState, repo, goTarget.Scenario()), researchPolicy,
 			*noCache, true, themestudy.Language(reportLanguage), humanOutput,
 		)
 	}
@@ -888,6 +1131,10 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	var investigationErr error
 	investigationCalled := studyOutcome.PublishedCards > 0
 	if investigationCalled {
+		if analysisTarget == nil || directCallIndex == nil ||
+			directCallIndex.State != surfacediscovery.DirectCallIndexReady {
+			return fmt.Errorf("Study investigation requires a ready exact Go analysis target and direct-call index")
+		}
 		repositoryFreshnessSHA256, digestErr := initialState.Digest()
 		if digestErr != nil {
 			investigationErr = fmt.Errorf("bind Study investigation repository state: %w", digestErr)
@@ -896,6 +1143,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 				ctx,
 				runDir,
 				directCallIndex,
+				*analysisTarget,
 				initialState.Head,
 				repositoryFreshnessSHA256,
 				humanOutput,
@@ -916,16 +1164,64 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		return investigationErr
 	}
 
+	var entryCallOutcome entryCallCompressionRunOutcome
+	entryCallRan := !*offline
+	if entryCallRan {
+		var entryCallErr error
+		entryCallOutcome, entryCallErr = runEntryCallCompressionForRun(
+			ctx,
+			runDir,
+			entryCallSubstrate,
+			initialState,
+			humanOutput,
+			newEntryCallClient,
+		)
+		if entryCallErr != nil {
+			humanOutput.Warn(
+				"Generic entry-call experiment unavailable",
+				"the report will continue without entry-call enrichment",
+				"reason: "+entryCallErr.Error(),
+			)
+			if cleanupErr := resetEntryCallCompressionArtifacts(runDir); cleanupErr != nil {
+				return errors.Join(entryCallErr, cleanupErr)
+			}
+		}
+		if diagnosticErr := recordEntryCallCompressionDiagnostic(runDir, entryCallOutcome); diagnosticErr != nil {
+			humanOutput.Warn(
+				"Generic entry-call accounting unavailable",
+				"the report will continue without this stage accounting",
+				"reason: "+diagnosticErr.Error(),
+			)
+		}
+	}
+
 	reconciliationContext, releaseReconciliation := studyInvestigationPublicationContext(
 		ctx,
 		investigationOutcome.Status,
 	)
 	defer releaseReconciliation()
-	if studyOutcome.SemanticCalls > 0 || investigationOutcome.SemanticCalls > 0 || investigationCalled {
-		studyReconciliationStarted := time.Now()
+	reconciliationContext, releaseEntryCallPublication := entryCallCompressionPublicationContext(
+		reconciliationContext,
+		entryCallOutcome,
+	)
+	defer releaseEntryCallPublication()
+	if studyOutcome.SemanticCalls > 0 || investigationOutcome.SemanticCalls > 0 ||
+		investigationCalled || entryCallRan {
+		semanticReconciliationStarted := time.Now()
+		if entryCallRan {
+			refreshedReportData, readErr := report.ReadRunDirForAuthorizedArchitecture(
+				runDir,
+				authority,
+			)
+			if readErr != nil && !(report.IsExactWorkspaceGraphUnavailable(readErr) &&
+				refreshedReportData != nil && report.IsExactWorkspaceGraphUnavailable(architectureErr)) {
+				return fmt.Errorf("read report inputs after entry-call analysis: %w", readErr)
+			}
+			reportData = refreshedReportData
+		}
 		postStudyState, captureErr := captureRepo(reconciliationContext, repo)
 		if captureErr != nil {
-			return fmt.Errorf("capture repository state after Atlas Study: %w", captureErr)
+			return fmt.Errorf("capture repository state after semantic analysis: %w", captureErr)
 		}
 		if investigationCalled {
 			if err := validateStudyInvestigationRepositoryFreshness(initialState, postStudyState); err != nil {
@@ -943,10 +1239,10 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			report.CapturedInputPaths(reportData), *strictSnapshot,
 		)
 		if err != nil {
-			return fmt.Errorf("confirm browser report authority after Atlas Study: %w", err)
+			return fmt.Errorf("confirm browser report authority after semantic analysis: %w", err)
 		}
 		if err := report.PrepareAuthorizedSourceCoverage(reconciliationContext, reportData, &authority); err != nil {
-			return fmt.Errorf("reprepare exact source coverage after Atlas Study: %w", err)
+			return fmt.Errorf("reprepare exact source coverage after semantic analysis: %w", err)
 		}
 		if investigationOutcome.Status.MechanismCount > 0 {
 			if err := report.PrepareAuthorizedStudyInvestigationSourceCoverage(
@@ -959,9 +1255,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			}
 		}
 		humanOutput.State(
-			"Repository authority", "reconfirmed after Study",
+			"Repository authority", "reconfirmed after semantic analysis",
 			fmt.Sprintf("captured inputs: %d", len(report.CapturedInputPaths(reportData))),
-			formatRunOutputDuration(time.Since(studyReconciliationStarted).Milliseconds()),
+			formatRunOutputDuration(time.Since(semanticReconciliationStarted).Milliseconds()),
 		)
 	}
 	if err := finalizeAtlasFirstStageDiagnostics(runDir); err != nil {
@@ -1183,12 +1479,54 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if err != nil {
 		return fmt.Errorf("verify generated report publication: %w", err)
 	}
-	linkLatest(dDir, runDir, runOutputWarningSink{
-		output: humanOutput, summary: "could not update latest report link",
-	})
+	publishedTarget := targetPublishedRun{
+		RunID:                 runID,
+		RunDir:                runDir,
+		Authority:             authority,
+		RepositoryStateSHA256: initialRepositoryStateSHA256,
+		SelectedRevision:      initialState.Head,
+		GoTarget:              goTarget.String(),
+		SourceEpisodeJSON:     append([]byte(nil), sourceEpisodeJSON...),
+		GitLabURL:             gitLabURL,
+		GitHubURL:             gitHubURL,
+	}
+	if analysisTarget != nil {
+		publishedTarget.Target = analysisTarget.Snapshot()
+	}
+	if deps.publishedTargetSink != nil {
+		deps.publishedTargetSink(publishedTarget)
+	}
+	if defaultTargetConsole != nil && !defaultTargetConsoleClosed {
+		humanOutput.TargetPage("complete", *defaultTargetConsole)
+		defaultTargetConsoleClosed = true
+	}
+	if !deps.siblingTargetRun && targetRunContainer != nil && len(targetRunContainer.Targets) > 1 {
+		publication, err = publishTargetPagePortfolio(
+			repo,
+			extraArgs,
+			deps,
+			*targetRunContainer,
+			publishedTarget,
+			humanOutput,
+		)
+		if err != nil {
+			return fmt.Errorf("publish selected target pages: %w", err)
+		}
+	}
+	if !deps.siblingTargetRun {
+		linkLatest(dDir, runDir, runOutputWarningSink{
+			output: humanOutput, summary: "could not update latest report link",
+		})
+	}
 	publicationDetails := append([]string{"report: " + reportPath}, publication.consoleDetails()...)
 	humanOutput.State("Run", publication.consoleState(), publicationDetails...)
 	publicationStateEmitted = true
+	if deps.siblingTargetRun {
+		return nil
+	}
+	if entryCallOutcome.Canceled && ctx.Err() != nil {
+		return nil
+	}
 	if studyInvestigationCanceled(investigationOutcome.Status) && ctx.Err() != nil {
 		// The optional stage consumed the cancellation into a durable failed/
 		// partial status. The report is now safely published; do not start an
@@ -1228,6 +1566,33 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		}
 	}
 	return nil
+}
+
+func directCallEdgeCeilingError(target string, depth, edgeLimit, safeDepth int) error {
+	lines := []string{fmt.Sprintf(
+		"Go call analysis for target %s exceeded --edges-limit=%d at --depth=%d",
+		target, edgeLimit, depth,
+	)}
+	if safeDepth >= 1 && safeDepth < depth {
+		lines = append(lines, fmt.Sprintf(
+			"you can decrease depth via --depth %d (default %d; this depth is known to fit the current edge ceiling)",
+			safeDepth, surfacediscovery.DefaultDirectCallDepth,
+		))
+	}
+	if edgeLimit < surfacediscovery.MaxDirectCallIndexEdges {
+		next := edgeLimit * 2
+		if next <= edgeLimit || next > surfacediscovery.MaxDirectCallIndexEdges {
+			next = surfacediscovery.MaxDirectCallIndexEdges
+		}
+		lines = append(lines, fmt.Sprintf(
+			"to preserve depth, try --edges-limit %d (default %d; maximum %d; the full edge count is not computed after the safety stop)",
+			next, surfacediscovery.DefaultDirectCallEdgeLimit, surfacediscovery.MaxDirectCallIndexEdges,
+		))
+	}
+	lines = append(lines,
+		"the retry rebuilds local SSA and the call index; the standard Go build cache remains reusable, and no provider call was made",
+	)
+	return errors.New(strings.Join(lines, "\n"))
 }
 
 func writeStudyMapCompletion(
@@ -1552,7 +1917,7 @@ func sourceCatalogGitEnvironment(environment []string) []string {
 	)
 }
 
-func researchRepositoryContext(state freshness.RepositoryState, repo string) modelresearch.RepositoryContext {
+func researchRepositoryContext(state freshness.RepositoryState, repo, scenario string) modelresearch.RepositoryContext {
 	identity := state.Identity
 	if identity == "" {
 		identity, _ = filepath.Abs(repo)
@@ -1562,7 +1927,7 @@ func researchRepositoryContext(state freshness.RepositoryState, repo string) mod
 		revision = "unknown"
 	}
 	return modelresearch.RepositoryContext{
-		Identity: identity, Revision: revision, Scenario: "go-default",
+		Identity: identity, Revision: revision, Scenario: scenario,
 	}
 }
 
@@ -1757,7 +2122,11 @@ func printUsage() {
 	fmt.Fprintf(os.Stderr, "       repomap cache clear [--debug-dir DIR]\n")
 	fmt.Fprintf(os.Stderr, "\nFlags:\n")
 	fmt.Fprintf(os.Stderr, "  --offline       skip model calls, local facts only\n")
-	fmt.Fprintf(os.Stderr, "  --discover-surfaces discover bounded Go runtime surfaces (default true)\n")
+	fmt.Fprintf(os.Stderr, "  --go-target GOOS/GOARCH select one Go build target (default: GOOS/GOARCH environment, then host)\n")
+	fmt.Fprintf(os.Stderr, "  --target PACKAGE select one advertised executable or library package\n")
+	fmt.Fprintf(os.Stderr, "  --all-targets   publish every advertised target; --target chooses the default\n")
+	fmt.Fprintf(os.Stderr, "  --depth N        target call-graph depth (default: %d)\n", surfacediscovery.DefaultDirectCallDepth)
+	fmt.Fprintf(os.Stderr, "  --edges-limit E  maximum exact target call-graph edges (default: %d)\n", surfacediscovery.DefaultDirectCallEdgeLimit)
 	fmt.Fprintf(os.Stderr, "  --no-cache      disable cross-run model response caches\n")
 	fmt.Fprintf(os.Stderr, "  --no-secrets    disable credential detection for this run (unsafe)\n")
 	fmt.Fprintf(os.Stderr, "  --lang LANG     report language: en or ru (default: en)\n")

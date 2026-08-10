@@ -247,6 +247,7 @@ func TestRunManifestRevalidatesEntrypointHandoffPackageInventory(t *testing.T) {
 		"service.go",
 	)
 	data.FormatVersion = CurrentFormatVersion
+	data.AnalysisTarget = reportAnalysisTargetFixture(t)
 	data.OpenablePaths = []string{"main.go", "service.go"}
 	if err := ensureEntrypointHandoffGroups(data); err != nil {
 		t.Fatal(err)
@@ -262,6 +263,7 @@ func TestRunManifestRevalidatesEntrypointHandoffPackageInventory(t *testing.T) {
 			t.Fatal(err)
 		}
 		manifest := validRunManifestFixture(t)
+		bindRunManifestAnalysisTarget(t, &manifest, data)
 		manifest.OpenablePaths = append([]string(nil), data.OpenablePaths...)
 		manifest.Components = nil
 		manifest.ReportSHA256 = manifestSHA256(reportJSON)

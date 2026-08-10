@@ -198,7 +198,7 @@ func TestGenerateWritesVerifiedRunManifestAndRejectsReportTampering(t *testing.T
 		t.Fatal(err)
 	}
 	runDir := t.TempDir()
-	writeTestFile(t, runDir, "snapshot.json", `{"repo_name":"manifest-fixture"}`)
+	writeRunManifestSnapshot(t, runDir, "manifest-fixture")
 	writeRunManifestMetadata(t, runDir, repository)
 	const llmBundleArtifact = `{
 		"allowed_paths":["batch.go"],
@@ -251,6 +251,13 @@ func TestGenerateWritesVerifiedRunManifestAndRejectsReportTampering(t *testing.T
 	if manifest.Version != CurrentRunManifestVersion || manifest.ReportFormatVersion != CurrentFormatVersion {
 		t.Fatalf("manifest versions = %d/%d", manifest.Version, manifest.ReportFormatVersion)
 	}
+	snapshotJSON, err := os.ReadFile(filepath.Join(runDir, "snapshot.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.SnapshotSHA256 != manifestSHA256(snapshotJSON) {
+		t.Fatalf("snapshot digest = %q, want exact saved bytes", manifest.SnapshotSHA256)
+	}
 	if manifest.RepositoryState.Identity != repository {
 		t.Fatalf("repository identity = %q, want %q", manifest.RepositoryState.Identity, repository)
 	}
@@ -296,6 +303,17 @@ func TestGenerateWritesVerifiedRunManifestAndRejectsReportTampering(t *testing.T
 		t.Fatalf("VerifyRepositoryState after source change error = %v", err)
 	}
 
+	snapshotPath := filepath.Join(runDir, "snapshot.json")
+	if err := os.WriteFile(snapshotPath, append(append([]byte(nil), snapshotJSON...), '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadRunManifest(runDir); err == nil || !strings.Contains(err.Error(), "snapshot sha256 mismatch") {
+		t.Fatalf("ReadRunManifest after snapshot tamper error = %v", err)
+	}
+	if err := os.WriteFile(snapshotPath, snapshotJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
 	reportPath := filepath.Join(runDir, "report.json")
 	reportJSON, err := os.ReadFile(reportPath)
 	if err != nil {
@@ -330,7 +348,7 @@ func TestGenerateAuthorizedRequiresSelectionForSavedModelBundle(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			runDir := t.TempDir()
-			writeTestFile(t, runDir, "snapshot.json", `{"repo_name":"manifest-fixture"}`)
+			writeRunManifestSnapshot(t, runDir, "manifest-fixture")
 			writeRunManifestMetadata(t, runDir, repository)
 			writeTestFile(t, runDir, "llm_bundle.json", `{"repo_name":"manifest-fixture"}`)
 			if test.selectionContent != "" {
@@ -351,6 +369,56 @@ func TestGenerateAuthorizedRequiresSelectionForSavedModelBundle(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRunManifestVerifiesExactSnapshotArtifact(t *testing.T) {
+	const snapshot = `{"repo_name":"snapshot-fixture"}`
+
+	t.Run("exact bytes", func(t *testing.T) {
+		runDir := t.TempDir()
+		writeTestFile(t, runDir, "snapshot.json", snapshot)
+		manifest := validRunManifestFixture(t)
+		manifest.SnapshotSHA256 = manifestSHA256([]byte(snapshot))
+		if err := manifest.VerifySnapshotArtifact(runDir); err != nil {
+			t.Fatalf("VerifySnapshotArtifact: %v", err)
+		}
+	})
+
+	t.Run("byte tamper", func(t *testing.T) {
+		runDir := t.TempDir()
+		writeTestFile(t, runDir, "snapshot.json", snapshot+"\n")
+		manifest := validRunManifestFixture(t)
+		manifest.SnapshotSHA256 = manifestSHA256([]byte(snapshot))
+		if err := manifest.VerifySnapshotArtifact(runDir); err == nil ||
+			!strings.Contains(err.Error(), "snapshot sha256 mismatch") {
+			t.Fatalf("VerifySnapshotArtifact error = %v", err)
+		}
+	})
+
+	t.Run("missing", func(t *testing.T) {
+		manifest := validRunManifestFixture(t)
+		if err := manifest.VerifySnapshotArtifact(t.TempDir()); err == nil ||
+			!strings.Contains(err.Error(), "inspect snapshot.json") {
+			t.Fatalf("VerifySnapshotArtifact error = %v", err)
+		}
+	})
+
+	t.Run("symlink", func(t *testing.T) {
+		runDir := t.TempDir()
+		outside := filepath.Join(t.TempDir(), "snapshot.json")
+		if err := os.WriteFile(outside, []byte(snapshot), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(outside, filepath.Join(runDir, "snapshot.json")); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+		manifest := validRunManifestFixture(t)
+		manifest.SnapshotSHA256 = manifestSHA256([]byte(snapshot))
+		if err := manifest.VerifySnapshotArtifact(runDir); err == nil ||
+			!strings.Contains(err.Error(), "not a regular file") {
+			t.Fatalf("VerifySnapshotArtifact error = %v", err)
+		}
+	})
 }
 
 func TestRunManifestVerifiesOrientationContextSelectionArtifact(t *testing.T) {
@@ -587,6 +655,27 @@ func TestRunManifestValidateRejectsUnsafeOrAmbiguousAuthority(t *testing.T) {
 				manifest.RepositoryStateSHA256 = strings.Repeat("0", 64)
 			},
 			want: "repository state sha256 mismatch",
+		},
+		{
+			name: "invalid snapshot digest",
+			mutate: func(manifest *RunManifest) {
+				manifest.SnapshotSHA256 = "invalid"
+			},
+			want: "snapshot sha256 is invalid",
+		},
+		{
+			name: "analysis target digest without ref",
+			mutate: func(manifest *RunManifest) {
+				manifest.MaterialInputs.AnalysisTargetSHA256 = strings.Repeat("e", 64)
+			},
+			want: "must both be present or absent",
+		},
+		{
+			name: "analysis target ref without digest",
+			mutate: func(manifest *RunManifest) {
+				manifest.MaterialInputs.AnalysisTargetRef = "at-example"
+			},
+			want: "must both be present or absent",
 		},
 		{
 			name: "model bundle without selection",
@@ -958,6 +1047,7 @@ func validRunManifestFixture(t *testing.T) RunManifest {
 		RepositoryState:       repository,
 		AnalysisRoot:          "/repo",
 		RepositoryStateSHA256: digest,
+		SnapshotSHA256:        strings.Repeat("e", 64),
 		ReportSHA256:          strings.Repeat("b", 64),
 		ReportFormatVersion:   CurrentFormatVersion,
 		OpenablePaths:         []string{"batch.go"},
@@ -965,7 +1055,8 @@ func validRunManifestFixture(t *testing.T) RunManifest {
 		CapturedInputsSHA256:  inputsDigest,
 		Freshness:             freshness.NewFreshnessResult(freshness.FreshnessFresh),
 		MaterialInputs: MaterialInputs{
-			SelectedRevision: repository.Head, InputPolicyVersion: "captured-inputs-v1",
+			SelectedRevision:     repository.Head,
+			InputPolicyVersion:   "captured-inputs-v1",
 			ArchitectureContract: 1, ReportContract: CurrentFormatVersion,
 		},
 		Components: []ComponentAuthority{{

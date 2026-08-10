@@ -10,18 +10,23 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/gitfiles"
 	"github.com/dvordrova/repomap/internal/gofacts"
+	"github.com/dvordrova/repomap/internal/gotarget"
 	"github.com/dvordrova/repomap/internal/reporead"
 )
 
 type Options struct {
-	RepoPath            string
-	MaxReadmeBytes      int
-	MaxTreeLines        int
-	MaxInterestingFiles int
-	MaxGoPkgs           int
-	MaxGoEdges          int
+	RepoPath                      string
+	GoTarget                      string
+	MaxReadmeBytes                int
+	MaxTreeLines                  int
+	MaxInterestingFiles           int
+	MaxGoPkgs                     int
+	MaxGoEdges                    int
+	AnalysisTargetOverride        string
+	DeferAnalysisTargetResolution bool
 }
 
 type Snapshot struct {
@@ -30,18 +35,21 @@ type Snapshot struct {
 	RepoName string `json:"repo_name"`
 	// DisplayName is local presentation copy only. Provider bundles deliberately
 	// omit it because temporary checkout names can contain task labels.
-	DisplayName        string         `json:"display_name,omitempty"`
-	Readme             string         `json:"readme"`
-	FileTree           []string       `json:"file_tree"`
-	TopLevelStats      map[string]int `json:"top_level_directory_stats"`
-	LanguageHints      []LanguageHint `json:"detected_language_hints"`
-	InterestingFiles   []string       `json:"interesting_files"`
-	Go                 GoHints        `json:"go_hints"`
-	GoFacts            *gofacts.Facts `json:"go_facts,omitempty"`
-	FilesConsidered    int            `json:"files_considered"`
-	FilesSkipped       int            `json:"files_skipped"`
-	SkippedPathSamples []string       `json:"skipped_path_samples"`
-	FilteredFiles      []string       `json:"-"`
+	DisplayName        string                        `json:"display_name,omitempty"`
+	Readme             string                        `json:"readme"`
+	FileTree           []string                      `json:"file_tree"`
+	TopLevelStats      map[string]int                `json:"top_level_directory_stats"`
+	LanguageHints      []LanguageHint                `json:"detected_language_hints"`
+	InterestingFiles   []string                      `json:"interesting_files"`
+	Go                 GoHints                       `json:"go_hints"`
+	GoFacts            *gofacts.Facts                `json:"go_facts,omitempty"`
+	AnalysisTarget     *analysistarget.Target        `json:"analysis_target,omitempty"`
+	FilesConsidered    int                           `json:"files_considered"`
+	FilesSkipped       int                           `json:"files_skipped"`
+	SkippedPathSamples []string                      `json:"skipped_path_samples"`
+	FilteredFiles      []string                      `json:"-"`
+	GoTargetAdvisory   *GoTargetAdvisory             `json:"-"`
+	TargetCatalog      *analysistarget.TargetCatalog `json:"-"`
 }
 
 type LanguageHint struct {
@@ -120,6 +128,9 @@ func BuildContext(ctx context.Context, opts Options) (Snapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return Snapshot{}, err
 	}
+	if opts.DeferAnalysisTargetResolution && strings.TrimSpace(opts.AnalysisTargetOverride) != "" {
+		return Snapshot{}, fmt.Errorf("analysis target resolution cannot be deferred with explicit override %q", opts.AnalysisTargetOverride)
+	}
 	if opts.MaxReadmeBytes <= 0 {
 		opts.MaxReadmeBytes = 20000
 	}
@@ -157,6 +168,12 @@ func BuildContext(ctx context.Context, opts Options) (Snapshot, error) {
 
 	sort.Strings(filtered)
 	sort.Strings(analysisFiles)
+	currentTarget := gotarget.Host()
+	if opts.GoTarget != "" {
+		if parsed, parseErr := gotarget.Parse(opts.GoTarget); parseErr == nil {
+			currentTarget = parsed
+		}
+	}
 	goMetadata := goHints(opts.RepoPath, analysisFiles)
 	s := Snapshot{
 		RepoName:           repositoryIdentity(opts.RepoPath, filtered, goMetadata),
@@ -169,13 +186,21 @@ func BuildContext(ctx context.Context, opts Options) (Snapshot, error) {
 		FilesSkipped:       len(files) - len(filtered),
 		SkippedPathSamples: skippedSamples,
 		FilteredFiles:      analysisFiles,
+		GoTargetAdvisory:   detectGoTargetAdvisory(opts.RepoPath, analysisFiles, currentTarget),
 		Go:                 goMetadata,
 	}
 
 	s.Readme = readReadme(opts.RepoPath, analysisFiles, opts.MaxReadmeBytes)
 
 	if s.Go.GoModExists || hasGoFiles(analysisFiles) {
-		facts, err := gofacts.Load(ctx, opts.RepoPath, analysisFiles, opts.MaxGoPkgs, opts.MaxGoEdges)
+		facts, err := gofacts.LoadWithOptions(
+			ctx,
+			opts.RepoPath,
+			analysisFiles,
+			opts.MaxGoPkgs,
+			opts.MaxGoEdges,
+			gofacts.LoadOptions{GoTarget: opts.GoTarget},
+		)
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return Snapshot{}, ctxErr
@@ -187,9 +212,135 @@ func BuildContext(ctx context.Context, opts Options) (Snapshot, error) {
 		} else {
 			s.GoFacts = facts
 		}
+		if s.GoFacts != nil && len(s.GoFacts.Packages) > 0 && opts.DeferAnalysisTargetResolution {
+			catalog, catalogErr := analysistarget.BuildCatalog(*s.GoFacts)
+			if catalogErr != nil {
+				return Snapshot{}, fmt.Errorf("build analysis target catalog: %w", catalogErr)
+			}
+			ownedCatalog := catalog.Snapshot()
+			s.TargetCatalog = &ownedCatalog
+		} else if s.GoFacts != nil && len(s.GoFacts.Packages) > 0 {
+			resolution, resolveErr := analysistarget.Resolve(*s.GoFacts, analysistarget.Options{Override: opts.AnalysisTargetOverride})
+			if resolveErr != nil {
+				return Snapshot{}, fmt.Errorf("resolve analysis target: %w", resolveErr)
+			}
+			switch resolution.State {
+			case analysistarget.ResolutionSelected:
+				scoped, scopeErr := analysistarget.ScopeGoFacts(*s.GoFacts, *resolution.Selected)
+				if scopeErr != nil {
+					return Snapshot{}, scopeErr
+				}
+				target := resolution.Selected.Snapshot()
+				s.AnalysisTarget = &target
+				s.GoFacts = &scoped
+				s.FilteredFiles = analysisTargetFiles(scoped, analysisFiles)
+			case analysistarget.ResolutionAmbiguous:
+				return Snapshot{}, fmt.Errorf("analysis target is ambiguous; choose one package with --target: %s", analysisTargetCandidateKeys(resolution.Candidates))
+			}
+		}
+		if strings.TrimSpace(opts.AnalysisTargetOverride) != "" && s.AnalysisTarget == nil {
+			return Snapshot{}, fmt.Errorf("resolve analysis target: explicit override %q requires available exact Go package facts", opts.AnalysisTargetOverride)
+		}
 	}
 
 	return s, nil
+}
+
+// ScopeAnalysisTarget applies one exact target from a live deferred catalog.
+// Callers provide only the self-sealed target ref; arbitrary Target values are
+// never accepted as authority. A successful application consumes the catalog
+// seam and restores the ordinary single-target snapshot contract.
+func ScopeAnalysisTarget(s Snapshot, targetRef string) (Snapshot, error) {
+	if targetRef == "" || targetRef != strings.TrimSpace(targetRef) {
+		return Snapshot{}, fmt.Errorf("scope analysis target: target ref must be exact and non-empty")
+	}
+	if s.TargetCatalog == nil {
+		return Snapshot{}, fmt.Errorf("scope analysis target: live target catalog is unavailable")
+	}
+	if err := s.TargetCatalog.Validate(); err != nil {
+		return Snapshot{}, fmt.Errorf("scope analysis target: validate live target catalog: %w", err)
+	}
+	if s.GoFacts == nil {
+		return Snapshot{}, fmt.Errorf("scope analysis target: complete Go facts are unavailable")
+	}
+
+	var selected *analysistarget.Target
+	for _, entry := range s.TargetCatalog.Entries {
+		if entry.Candidate.Target.Ref != targetRef {
+			continue
+		}
+		target := entry.Candidate.Target.Snapshot()
+		selected = &target
+		break
+	}
+	if selected == nil {
+		return Snapshot{}, fmt.Errorf("scope analysis target: unknown target ref %q", targetRef)
+	}
+
+	scoped, err := analysistarget.ScopeGoFacts(*s.GoFacts, *selected)
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("scope analysis target: %w", err)
+	}
+	files := analysisTargetFiles(scoped, s.FilteredFiles)
+	s.AnalysisTarget = selected
+	s.GoFacts = &scoped
+	s.FilteredFiles = files
+	s.TargetCatalog = nil
+	return s, nil
+}
+
+func analysisTargetFiles(facts gofacts.Facts, repositoryFiles []string) []string {
+	allowed := make(map[string]struct{})
+	for _, pkg := range facts.Packages {
+		for _, file := range pkg.Files {
+			allowed[filepath.ToSlash(filepath.Clean(file))] = struct{}{}
+		}
+	}
+	for _, module := range facts.Modules {
+		if module.GoMod != "" {
+			allowed[filepath.ToSlash(filepath.Clean(module.GoMod))] = struct{}{}
+		}
+	}
+	// Root documentation is shared product context, not executable source.
+	for _, name := range []string{"README.md", "README", "readme.md", "Readme.md"} {
+		allowed[name] = struct{}{}
+	}
+	result := make([]string, 0, len(allowed))
+	for _, file := range repositoryFiles {
+		if _, keep := allowed[file]; keep {
+			result = append(result, file)
+		}
+	}
+	return result
+}
+
+func analysisTargetCandidateKeys(candidates []analysistarget.Candidate) string {
+	const maxKeys = 12
+	displayed := candidates
+	executables := make([]analysistarget.Candidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.MainModule && candidate.Target.Kind == analysistarget.KindExecutablePackage {
+			executables = append(executables, candidate)
+		}
+	}
+	if len(executables) > 0 {
+		displayed = executables
+	}
+	keys := make([]string, 0, min(len(displayed), maxKeys))
+	for _, candidate := range displayed {
+		if len(keys) == maxKeys {
+			break
+		}
+		key := candidate.Target.PackageDir
+		if key == "." {
+			key = candidate.Target.PackagePath
+		}
+		keys = append(keys, key)
+	}
+	if len(displayed) > len(keys) {
+		keys = append(keys, fmt.Sprintf("... and %d more", len(displayed)-len(keys)))
+	}
+	return strings.Join(keys, ", ")
 }
 
 func (s Snapshot) JSON() ([]byte, error) {

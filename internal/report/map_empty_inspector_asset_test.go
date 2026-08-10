@@ -84,7 +84,9 @@ let triggers=Array.from({length:500},(_,i)=>({
  handler:{text:"Entry"+i,known:true},
 }));
 const components=Array.from({length:12},(_,i)=>({id:"component-"+i,name:"Component "+i,description:"Responsibility "+i,members:[]}));
-components.push({id:"local-remainder",name:"Local remainder",members:Array.from({length:17},(_,i)=>({name:"pkg/"+i}))});
+components.push({id:"local-remainder",name:"Local remainder",members:Array.from({length:17},(_,i)=>({
+ name:"remainder/"+i,id:{kind:i<10?"package":i<16?"symbol":"file",value:"remainder-"+i},
+}))});
 const report={
  repo_name:"fixture",report_language:"en",repository_archetype:"application",
  repository_guide:{purpose:"Orient readers around the repository's runtime shape."},
@@ -152,12 +154,12 @@ const document={
  body:new Element("body"),documentElement:{lang:"en"},activeElement:null,
 };
 const history={state:null,pushState(state,_title,hash){this.state=state;window.location.hash=hash;},replaceState(state,_title,hash){this.state=state;window.location.hash=hash;},back(){}};
-let inspectorVisibility=null,canvasTransform="translate(41px, 29px) scale(.77)";
+let inspectorVisibility=null,canvasTransform="translate(41px, 29px) scale(.77)",lensCalls=[];
 const window={document,location:{hash:"#/map",search:"",hostname:"fixture.test",protocol:"file:",pathname:"/report.html"},history,__REPOMAP_WORKSPACE_TEST__:{},addEventListener(){},removeEventListener(){},scrollTo(){},open(){},matchMedia(){return mobileMedia;},setTimeout,clearTimeout};
 window.Element=Element;document.activeElement=document.body;
 window.RepomapArchitectureCanvas={
  projectArchitectureLens(){return{objects:{entrypoints:[],touchpoints:[],entry_handoff_groups:[]}};},
- mount(_host,_data,options){inspectorVisibility=options.onInspectorVisibilityChange;inspectorVisibility(false);return{ready:Promise.resolve(),destroy(){},openComponent(){},openTrace(){},openFlowStep(){},openSurface(){},setLens(){},setStudyMechanismOverlay(){return false;},clearStudyMechanismOverlay(){}};},
+ mount(_host,_data,options){inspectorVisibility=options.onInspectorVisibilityChange;inspectorVisibility(false);return{ready:Promise.resolve(),destroy(){},openComponent(){},openTrace(){},openFlowStep(){},openSurface(){},setLens(value){lensCalls.push(value);},setStudyMechanismOverlay(){return false;},clearStudyMechanismOverlay(){}};},
 };
 const context={window,document,Element,URLSearchParams,Set,Map,AbortController,Promise,setTimeout,clearTimeout};
 vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js","ui_messages.js"),"utf8"),context);
@@ -170,11 +172,19 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
  const nodes=rail?walk(rail):[];
  const starts=nodes.filter(n=>Object.prototype.hasOwnProperty.call(n.attributes||{},"data-rm-map-start-here"));
  const start=starts[0]||null;
- const metricValues=nodes.filter(n=>has(n,"rm-map-empty-inspector__metric")).map(n=>{const dd=walk(n).find(x=>x.tagName==="DD");return dd?dd.textContent:"";});
- const primary=nodes.find(n=>has(n,"rm-map-empty-inspector__entry-list--primary"));
- const disclosures=nodes.filter(n=>n.tagName==="DETAILS");
  const interactive=nodes.filter(n=>n.tagName==="A"||n.tagName==="BUTTON");
  const nestedInteractive=interactive.filter(n=>{for(let p=n.parentNode;p&&p!==rail;p=p.parentNode)if(p.tagName==="A"||p.tagName==="BUTTON")return true;return false;});
+ const toolbar=walk(mapRoot).find(n=>has(n,"rm-map-toolbar"));
+ const lensControl=walk(mapRoot).find(n=>has(n,"rm-map-lens-control"));
+ const lensButtons=lensControl?walk(lensControl).filter(n=>Object.prototype.hasOwnProperty.call(n.attributes||{},"data-map-lens")):[];
+ const initialLensPressed=lensButtons.map(n=>n.getAttribute("aria-pressed"));
+ if(lensButtons[0])lensButtons[0].click();
+ const entryLensPressed=lensButtons.map(n=>n.getAttribute("aria-pressed"));
+ if(lensButtons[0])lensButtons[0].click();
+ const clearedLensPressed=lensButtons.map(n=>n.getAttribute("aria-pressed"));
+ if(lensButtons[1])lensButtons[1].click();
+ const integrationLensPressed=lensButtons.map(n=>n.getAttribute("aria-pressed"));
+ const toolbarInteractive=toolbar?walk(toolbar).filter(n=>n.tagName==="A"||n.tagName==="BUTTON"):[];
  const layout=walk(mapRoot).find(n=>has(n,"rm-map-primary-layout"));
  const stage=walk(mapRoot).find(n=>has(n,"rm-architecture-canvas-stage"));
  const componentDisclosure=walk(mapRoot).find(n=>has(n,"rm-architecture-list-disclosure"));
@@ -188,15 +198,16 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
  const restoredOnClose=!rail.hidden&&!layout.classList.contains("has-detail-inspector");
  process.stdout.write(JSON.stringify({
   routeView:api.workspaceStateSnapshot().view,hash:window.location.hash,hashStable:hashBefore===window.location.hash,
-  transformStable:transformBefore===canvasTransform,railCount:rails.length,purpose:(nodes.find(n=>has(n,"rm-map-empty-inspector__purpose"))||{}).textContent||"",
+  transformStable:transformBefore===canvasTransform,railCount:rails.length,
   startCount:starts.length,startTag:start&&start.tagName,startHref:start&&start.getAttribute("href"),startTarget:start&&start.getAttribute("target"),startRel:start&&start.getAttribute("rel"),
   startText:start&&start.textContent,startKind:start&&start.getAttribute("data-rm-map-start-here"),
-  unavailableCount:nodes.filter(n=>has(n,"rm-map-empty-inspector__unavailable")).length,metricValues,
-  primaryRows:primary?primary.children.length:0,allRows:nodes.filter(n=>has(n,"rm-map-empty-inspector__entry-row")).length,
-  disclosureCount:disclosures.length,openDisclosureCount:disclosures.filter(n=>n.open).length,railNodeCount:nodes.length,
-  forbiddenWallCount:nodes.filter(n=>has(n,"rm-overview-object-card")||has(n,"rm-study-direction-card")||has(n,"rm-architecture-list__item")||has(n,"rm-architecture-truth-strip")).length,
+  unavailableCount:nodes.filter(n=>has(n,"rm-map-empty-inspector__unavailable")).length,railNodeCount:nodes.length,
+  forbiddenWallCount:walk(mapRoot).filter(n=>has(n,"rm-overview-object-card")||has(n,"rm-study-direction-card")||has(n,"rm-architecture-truth-strip")||has(n,"rm-map-lens-objects")||has(n,"rm-map-empty-inspector__metric")||has(n,"rm-map-empty-inspector__entry-row")||has(n,"rm-map-empty-inspector__remainder")).length,
   nestedInteractive:nestedInteractive.length,hiddenOnSelection,restoredOnClose,
-  railPrecedesStage:!!(layout&&rail&&stage&&layout.children.indexOf(rail)<layout.children.indexOf(stage)),
+  toolbarPrecedesStage:!!(toolbar&&layout&&toolbar.parentNode===layout.parentNode&&toolbar.parentNode.children.indexOf(toolbar)<toolbar.parentNode.children.indexOf(layout)),
+  lensControlRole:lensControl&&lensControl.getAttribute("role"),lensControlLabel:lensControl&&lensControl.getAttribute("aria-label"),
+  lensLabels:lensButtons.map(n=>n.textContent),initialLensPressed,entryLensPressed,clearedLensPressed,integrationLensPressed,lensCalls,
+  toolbarInteractiveCount:toolbarInteractive.length,
   componentListReachable:!!componentDisclosure,componentListOpenOnMobile:!!(componentDisclosure&&componentDisclosure.open),
   componentDisclosureCount:componentDisclosureCount?componentDisclosureCount.textContent:"",componentListRows,
  }));
@@ -207,18 +218,20 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 		t.Fatal(err)
 	}
 	type result struct {
-		RouteView, Hash, Purpose, StartTag, StartHref, StartTarget, StartRel string
-		StartText, StartKind                                                 string
-		HashStable, TransformStable                                          bool
-		RailCount, StartCount, UnavailableCount                              int
-		MetricValues                                                         []string
-		PrimaryRows, AllRows, DisclosureCount, OpenDisclosureCount           int
-		RailNodeCount, ForbiddenWallCount, NestedInteractive                 int
-		HiddenOnSelection, RestoredOnClose, RailPrecedesStage                bool
-		ComponentListReachable, ComponentListOpenOnMobile                    bool
-		ComponentDisclosureCount                                             string
-		ComponentListRows                                                    int
-		Error                                                                string
+		RouteView, Hash, StartTag, StartHref, StartTarget, StartRel string
+		StartText, StartKind                                        string
+		HashStable, TransformStable                                 bool
+		RailCount, StartCount, UnavailableCount                     int
+		RailNodeCount, ForbiddenWallCount, NestedInteractive        int
+		HiddenOnSelection, RestoredOnClose, ToolbarPrecedesStage    bool
+		LensControlRole, LensControlLabel                           string
+		LensLabels, InitialLensPressed, EntryLensPressed            []string
+		ClearedLensPressed, IntegrationLensPressed, LensCalls       []string
+		ToolbarInteractiveCount                                     int
+		ComponentListReachable, ComponentListOpenOnMobile           bool
+		ComponentDisclosureCount                                    string
+		ComponentListRows                                           int
+		Error                                                       string
 	}
 	run := func(mode string) result {
 		t.Helper()
@@ -237,29 +250,30 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 	}
 
 	actionable := run("actionable")
-	if actionable.RouteView != "map" || actionable.Hash != "#/map" || !actionable.HashStable || !actionable.TransformStable {
+	if actionable.RouteView != "map" || actionable.Hash != "#canvas" || !actionable.HashStable || !actionable.TransformStable {
 		t.Errorf("actual Map route or stable Canvas state = %#v", actionable)
 	}
-	if actionable.RailCount != 1 || actionable.Purpose != "Orient readers around the repository's runtime shape." {
-		t.Errorf("repository empty inspector lead = %#v", actionable)
+	if actionable.RailCount != 1 || actionable.RailNodeCount > 3 {
+		t.Errorf("compact exact-start block = %#v", actionable)
 	}
 	wantHref := "https://github.com/acme/fixture/blob/" + strings.Repeat("a", 40) + "/cmd/main.go#L10"
 	if actionable.StartCount != 1 || actionable.StartTag != "A" || actionable.StartHref != wantHref ||
 		actionable.StartTarget != "_blank" || actionable.StartRel != "noopener noreferrer" || actionable.UnavailableCount != 0 {
 		t.Errorf("exact pinned Start Here = %#v", actionable)
 	}
-	if strings.Join(actionable.MetricValues, ",") != "500,12,5,1" {
-		t.Errorf("compact counts or paired interaction count = %#v", actionable.MetricValues)
-	}
-	if actionable.PrimaryRows != 3 || actionable.AllRows != 5 || actionable.DisclosureCount < 2 ||
-		actionable.OpenDisclosureCount != 0 || actionable.RailNodeCount > 70 {
-		t.Errorf("bounded/collapsed entry summary = %#v", actionable)
-	}
 	if actionable.ForbiddenWallCount != 0 || actionable.NestedInteractive != 0 ||
-		!actionable.HiddenOnSelection || !actionable.RestoredOnClose || !actionable.RailPrecedesStage ||
+		!actionable.HiddenOnSelection || !actionable.RestoredOnClose || !actionable.ToolbarPrecedesStage ||
 		!actionable.ComponentListReachable || !actionable.ComponentListOpenOnMobile ||
 		actionable.ComponentDisclosureCount != "· 12" || actionable.ComponentListRows != 12 {
-		t.Errorf("empty/detail inspector or mobile reachability contract = %#v", actionable)
+		t.Errorf("toolbar/detail inspector or mobile reachability contract = %#v", actionable)
+	}
+	if actionable.LensControlRole != "" || actionable.LensControlLabel != "" ||
+		len(actionable.LensLabels) != 0 || len(actionable.InitialLensPressed) != 0 ||
+		len(actionable.EntryLensPressed) != 0 || len(actionable.ClearedLensPressed) != 0 ||
+		len(actionable.IntegrationLensPressed) != 0 ||
+		strings.Join(actionable.LensCalls, ",") != "landscape" ||
+		actionable.ToolbarInteractiveCount != 1 {
+		t.Errorf("Canvas retained deleted lens controls or lost the exact start = %#v", actionable)
 	}
 
 	unavailable := run("unavailable")
@@ -300,22 +314,25 @@ const api=window.__REPOMAP_WORKSPACE_TEST__;
 
 	css := readCanvasAsset(t, "style.css")
 	for _, token := range []string{
-		".rm-map-primary-layout { align-items: stretch; display: grid",
-		"grid-template-columns: minmax(0, 1fr) minmax(270px, 310px)",
-		".rm-map-primary-layout > .rm-architecture-canvas-stage { grid-column: 1; grid-row: 1; }",
-		"grid-column: 2; grid-row: 1",
+		".rm-map-toolbar { align-items: center; display: flex",
+		".rm-map-primary-layout { min-width: 0; }",
 		".rm-map-empty-inspector[hidden] { display: none; }",
 		"@media (min-width: 641px) and (max-height: 1080px)",
-		"--rm-map-first-viewport-height: clamp(360px, calc(100vh - 525px), 555px)",
+		"--rm-map-first-viewport-height: clamp(420px, calc(100vh - 300px), 680px)",
 		".rm-map-primary-layout .rm-arch:not(.has-selected-flow) .rm-arch__viewport { height: var(--rm-map-first-viewport-height); }",
 		".rm-architecture-canvas-card { display: flex; flex-direction: column; }",
-		".rm-map-primary-layout { display: contents; }",
-		".rm-map-empty-inspector { max-height: none; order: 0; overflow: visible; }",
-		".rm-map-lens-control { order: 1; }",
-		".rm-architecture-canvas-stage { order: 3; }",
 	} {
 		if !strings.Contains(css, token) {
 			t.Errorf("Map empty-inspector desktop/mobile containment missing %q", token)
+		}
+	}
+	for _, token := range []string{
+		"grid-template-columns: minmax(0, 1fr) minmax(270px, 310px)",
+		".rm-map-empty-inspector__metric",
+		".rm-map-empty-inspector__entry-row",
+	} {
+		if strings.Contains(css, token) {
+			t.Errorf("removed Map rail/wall CSS survived %q", token)
 		}
 	}
 }

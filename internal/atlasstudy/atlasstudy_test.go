@@ -64,7 +64,7 @@ func TestCompileBuildsPrivateTypedCatalogAndSafeDeterministicWire(t *testing.T) 
 		"Identity fields return only short refs",
 		"never copy a short ref into prose",
 		"component c* or surface sf* ref",
-		"Never use unit u*, subsystem ss*, reading-target a*, evidence e*, document d*, route-support rs*, or route-span sp* refs as direction principals",
+		"Never use any other unit u*, or subsystem ss*, reading-target a*, evidence e*, document d*, route-support rs*, or route-span sp* refs as direction principals",
 		"Every reading target_ref must be an a* reading_target ref",
 	} {
 		if !strings.Contains(product.BuildPrompt().System, exactRule) {
@@ -862,12 +862,12 @@ func TestStudyRejectsRepeatedDirectionsForOneBackendSpan(t *testing.T) {
 	}
 }
 
-func TestStudyV7RequestAndV8ResultIdentityRejectEarlierArtifacts(t *testing.T) {
-	if Version != 7 || ResultVersion != 8 || PromptVersion != "atlas-study-prompt-v13" ||
-		RequestArtifactFilename != "atlas_study_request.v7.json" ||
-		ResultArtifactFilename != "atlas_study_result.v8.json" ||
-		StatusArtifactFilename != "atlas_study_status.v8.json" {
-		t.Fatalf("Study v7 request / v8 result identity is incomplete: %d %d %q %q %q %q",
+func TestStudyV8RequestAndV9ResultIdentityRejectEarlierArtifacts(t *testing.T) {
+	if Version != 8 || ResultVersion != 9 || PromptVersion != "atlas-study-prompt-v14" ||
+		RequestArtifactFilename != "atlas_study_request.v8.json" ||
+		ResultArtifactFilename != "atlas_study_result.v9.json" ||
+		StatusArtifactFilename != "atlas_study_status.v9.json" {
+		t.Fatalf("Study v8 request / v9 result identity is incomplete: %d %d %q %q %q %q",
 			Version, ResultVersion, PromptVersion, RequestArtifactFilename,
 			ResultArtifactFilename, StatusArtifactFilename)
 	}
@@ -876,11 +876,11 @@ func TestStudyV7RequestAndV8ResultIdentityRejectEarlierArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request.Version = 6
-	request.PromptVersion = "atlas-study-prompt-v12"
-	request.CatalogRef = fmt.Sprintf("atlas-study-v6-%s", request.CatalogSHA256)
+	request.Version = 7
+	request.PromptVersion = "atlas-study-prompt-v13"
+	request.CatalogRef = fmt.Sprintf("atlas-study-v7-%s", request.CatalogSHA256)
 	if err := product.ValidateRequestRecord(request); err == nil {
-		t.Fatal("Study v6 request replayed under the v7 contract")
+		t.Fatal("Study v7 request replayed under the v8 contract")
 	}
 
 	result, _, err := product.ResolveResponseJSON(validResponse(t, product))
@@ -889,7 +889,7 @@ func TestStudyV7RequestAndV8ResultIdentityRejectEarlierArtifacts(t *testing.T) {
 	}
 	result.Version = Version
 	if err := product.ValidateResultRecord(result); err == nil {
-		t.Fatal("Study v7 result replayed under the v8 local validator contract")
+		t.Fatal("Study v8 result replayed under the v9 local validator contract")
 	}
 	status := product.PreparedStatus()
 	status.Version = Version

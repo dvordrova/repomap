@@ -24,6 +24,7 @@ import (
 
 	analysis "github.com/dvordrova/repomap/internal/analyzer"
 	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/orient"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/sourcecatalog"
 	"github.com/dvordrova/repomap/internal/testevidence"
@@ -82,6 +83,7 @@ type runRecord struct {
 	SourceContexts     map[string]sourceContextTarget
 	ArtifactsSignature string
 	RequestedLocale    string
+	TargetNavigation   *report.TargetNavigationPortfolio
 }
 
 func (run runRecord) verifyRepositoryState(current freshness.RepositoryState) error {
@@ -293,7 +295,11 @@ func NewHandler(opts Options) (http.Handler, error) {
 			if initialRun.Manifest == nil || initialRun.Report == nil {
 				return nil, fmt.Errorf("report server: source episode requires a verified initial run")
 			}
-			if _, renderErr := report.RenderHTMLWithSourceEpisode(initialRun.Report, sourceEpisodeJSON); renderErr != nil {
+			if _, renderErr := report.RenderHTMLWithSourceEpisodeAndOptions(
+				initialRun.Report,
+				sourceEpisodeJSON,
+				report.RenderOptions{TargetNavigation: initialRun.TargetNavigation},
+			); renderErr != nil {
 				return nil, fmt.Errorf("report server: validate source episode for initial run: %w", renderErr)
 			}
 			h.sourceEpisodeRunID = opts.InitialRunID
@@ -387,13 +393,26 @@ func (h *handler) serveRoot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) serveRuns(w http.ResponseWriter, _ *http.Request) {
-	_ = h.reloadRuns()
+	if !h.runIndexLoaded() {
+		_ = h.reloadRuns()
+	}
 	runs := h.runsSnapshot()
 	summaries := make([]RunSummary, 0, len(runs))
 	for _, run := range runs {
 		summaries = append(summaries, run.RunSummary)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"runs": summaries})
+}
+
+// runIndexLoaded keeps the optional browser run picker read-only with respect
+// to the verified server index. NewHandler loads that index once; root and
+// exact report routes retain the existing refresh paths for new or changed
+// runs. Every served page asks for /api/runs once, so refreshing here would
+// replay every saved workspace after every page navigation.
+func (h *handler) runIndexLoaded() bool {
+	h.runsMu.RLock()
+	defer h.runsMu.RUnlock()
+	return h.runIndex != nil
 }
 
 func (h *handler) serveReport(w http.ResponseWriter, r *http.Request) {
@@ -413,20 +432,21 @@ func (h *handler) serveReport(w http.ResponseWriter, r *http.Request) {
 	if cached, err := h.findRunCached(runID); err == nil {
 		requestedLocale = cached.RequestedLocale
 	}
-	if err := h.reloadRuns(); err != nil {
-		h.writeBrowserError(
-			w,
-			http.StatusInternalServerError,
-			requestedLocale,
-			report.BrowserErrorReportUnavailable,
-			"report %s could not refresh saved reports: %v",
-			runID,
-			err,
-		)
-		return
-	}
-	run, err := h.findRunCached(runID)
+	run, err := h.findRun(runID)
 	if err != nil {
+		var refreshErr *runRefreshError
+		if errors.As(err, &refreshErr) {
+			h.writeBrowserError(
+				w,
+				http.StatusInternalServerError,
+				requestedLocale,
+				report.BrowserErrorReportUnavailable,
+				"report %s could not refresh saved reports: %v",
+				runID,
+				refreshErr,
+			)
+			return
+		}
 		h.writeBrowserError(
 			w,
 			http.StatusNotFound,
@@ -484,10 +504,15 @@ func (h *handler) serveReport(w http.ResponseWriter, r *http.Request) {
 	}
 	renderStarted := time.Now()
 	var rendered []byte
+	renderOptions := report.RenderOptions{TargetNavigation: run.TargetNavigation}
 	if runID == h.sourceEpisodeRunID && len(h.sourceEpisodeJSON) > 0 {
-		rendered, err = report.RenderHTMLWithSourceEpisode(run.Report, h.sourceEpisodeJSON)
+		rendered, err = report.RenderHTMLWithSourceEpisodeAndOptions(
+			run.Report,
+			h.sourceEpisodeJSON,
+			renderOptions,
+		)
 	} else {
-		rendered, err = report.RenderHTML(run.Report)
+		rendered, err = report.RenderHTMLWithOptions(run.Report, renderOptions)
 	}
 	if err != nil {
 		h.writeBrowserError(
@@ -652,9 +677,31 @@ func (h *handler) findRun(runID string) (runRecord, error) {
 		return run, nil
 	}
 	if reloadErr := h.reloadRuns(); reloadErr != nil {
-		return runRecord{}, reloadErr
+		return runRecord{}, &runRefreshError{err: reloadErr}
 	}
 	return h.findRunCached(runID)
+}
+
+// runRefreshError preserves the distinction between a missing requested run
+// and a failed global authority refresh after its cached artifact signature
+// changed. Browser report serving keeps the existing 404/500 contract while
+// sharing the cached findRun path with interactive source actions.
+type runRefreshError struct {
+	err error
+}
+
+func (err *runRefreshError) Error() string {
+	if err == nil || err.err == nil {
+		return "refresh saved reports"
+	}
+	return err.err.Error()
+}
+
+func (err *runRefreshError) Unwrap() error {
+	if err == nil {
+		return nil
+	}
+	return err.err
 }
 
 func manifestSourceID(runID, reportSHA256, relativePath string) string {
@@ -764,28 +811,38 @@ func (h *handler) runArtifactsChanged(run runRecord) bool {
 }
 
 func runArtifactSignature(runDir string) (string, error) {
-	parts := make([]string, 0, 8)
-	for index, name := range []string{
-		"report.json", report.RunManifestFilename,
-		"task_investigation_bundle.json", "task_investigation_attempt.json",
-		"task_investigation_pack.json", "task_investigation_status.json",
-		report.PresentationLocalizationStatusFile,
-	} {
-		optionalPresentationArtifact := index >= 6
+	artifacts := []struct {
+		name        string
+		required    bool
+		softInvalid bool
+	}{
+		{name: "report.json", required: true},
+		{name: report.RunManifestFilename},
+		{name: "metadata.json", softInvalid: true},
+		{name: "task_investigation_bundle.json"},
+		{name: "task_investigation_attempt.json"},
+		{name: "task_investigation_pack.json"},
+		{name: "task_investigation_status.json"},
+		{name: orient.ConfidenceWarningDiagnosticsFile, softInvalid: true},
+		{name: report.PresentationLocalizationStatusFile, softInvalid: true},
+	}
+	parts := make([]string, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		name := artifact.name
 		info, err := os.Lstat(filepath.Join(runDir, name))
-		if os.IsNotExist(err) && index > 0 {
+		if os.IsNotExist(err) && !artifact.required {
 			parts = append(parts, name+":missing")
 			continue
 		}
 		if err != nil {
-			if optionalPresentationArtifact {
+			if artifact.softInvalid {
 				parts = append(parts, name+":unavailable")
 				continue
 			}
 			return "", fmt.Errorf("run artifact is unavailable")
 		}
 		if !info.Mode().IsRegular() {
-			if optionalPresentationArtifact {
+			if artifact.softInvalid {
 				parts = append(parts, fmt.Sprintf(
 					"%s:invalid:%s:%d:%d",
 					name,
@@ -917,9 +974,15 @@ func (h *handler) loadRuns() ([]runRecord, error) {
 			// this second digest check binds it to the report bytes already read
 			// through the parent directory root above.
 			if manifest.VerifyReportJSON(reportJSON) == nil {
-				analysisRoot, rootErr := manifest.ResolveAnalysisRoot()
-				if rootErr == nil {
+				targetNavigation, navigationErr := report.LoadManifestTargetNavigation(
+					runDir,
+					manifest,
+				)
+				if navigationErr != nil {
+					h.log("report %s target navigation unavailable: %v", run.ID, navigationErr)
+				} else if analysisRoot, rootErr := manifest.ResolveAnalysisRoot(); rootErr == nil {
 					run.Manifest = &manifest
+					run.TargetNavigation = targetNavigation
 					run.RepoPath = analysisRoot
 					run.ReportSHA256 = manifest.ReportSHA256
 					snapshot, catalog, snapshotErr := workspaceSnapshotForManifest(manifest, analysisRoot)

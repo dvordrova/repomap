@@ -8,10 +8,12 @@ package mechanismstudy
 import "github.com/dvordrova/repomap/internal/surfacediscovery"
 
 const (
-	CompilationVersion  = 2
-	ExactContextVersion = 1
-	RequestVersion      = 2
-	ResultVersion       = 2
+	CompilationVersion       = 2
+	ExactContextVersion      = 1
+	RequestVersion           = 3
+	ResultVersion            = 2
+	StudyRootBindingsVersion = 1
+	TargetTrailVersion       = 1
 
 	MaxCards                             = 8
 	MaxDirectReadingsPerCard             = 5
@@ -28,6 +30,7 @@ const (
 	MaxProviderCalls                     = 4
 	MaxMechanismsPerCard                 = 3
 	MaxEdgesPerMechanism                 = 8
+	MaxContinuationEdgesPerReading       = 8
 	MaxFrontierRecordsPerCard            = 16
 	maxCardLabelRunes                    = 80
 	maxCardQuestionRunes                 = 200
@@ -53,6 +56,8 @@ const (
 	FrontierDepthBound         FrontierReason = "depth_bound"
 	FrontierIndexUnavailable   FrontierReason = "index_unavailable"
 	FrontierResponseInvalid    FrontierReason = "response_invalid"
+	FrontierTargetUnreachable  FrontierReason = "target_unreachable"
+	FrontierAmbiguousConnector FrontierReason = "ambiguous_shortest_connector"
 )
 
 func (reason FrontierReason) valid() bool {
@@ -64,7 +69,9 @@ func (reason FrontierReason) valid() bool {
 		FrontierShallowBound,
 		FrontierDepthBound,
 		FrontierIndexUnavailable,
-		FrontierResponseInvalid:
+		FrontierResponseInvalid,
+		FrontierTargetUnreachable,
+		FrontierAmbiguousConnector:
 		return true
 	default:
 		return false
@@ -87,6 +94,25 @@ type Binding struct {
 	AtlasStudyCatalogSHA256   string      `json:"atlas_study_catalog_sha256"`
 	RepositoryRevision        string      `json:"repository_revision"`
 	RepositoryFreshnessSHA256 string      `json:"repository_freshness_sha256"`
+}
+
+// StudyReadingRootBinding restores one backend-owned canonical Study span to
+// one exact DirectCallIndex node. It is private producer authority and never
+// enters the provider wire or report projection.
+type StudyReadingRootBinding struct {
+	CanonicalSpanID string `json:"canonical_span_id"`
+	NodeID          string `json:"node_id"`
+}
+
+// StudyReadingRootBindings is the bounded in-memory identity envelope for
+// source-locator root restoration. The index digest and complete scenario
+// prevent a binding produced under one build from being reused under another.
+type StudyReadingRootBindings struct {
+	Version               int                       `json:"version"`
+	RepositoryRevision    string                    `json:"repository_revision"`
+	DirectCallIndexSHA256 string                    `json:"direct_call_index_sha256"`
+	Scenario              surfacediscovery.Scenario `json:"scenario"`
+	Readings              []StudyReadingRootBinding `json:"readings"`
 }
 
 // RepositoryBinding is enough for an explicit-root experiment. The compiler
@@ -148,22 +174,28 @@ type Edge struct {
 }
 
 // Card is the complete bounded graph the model may cite for one final Study
-// card or one explicitly supplied exact-root context. There is no chosen root,
-// next action, or expansion request.
+// card or one explicitly supplied exact-root context. TargetRootRefs is present
+// only for a target-rooted Study card and contains request-local node refs; a
+// legacy reading-local card omits it. There is no model-chosen root, next
+// action, or expansion request.
 type Card struct {
-	Ref      string     `json:"ref"`
-	Label    string     `json:"label"`
-	Question string     `json:"question"`
-	Readings []Reading  `json:"readings"`
-	Nodes    []Node     `json:"nodes"`
-	Edges    []Edge     `json:"edges"`
-	Frontier []Frontier `json:"frontier,omitempty"`
+	Ref            string     `json:"ref"`
+	Label          string     `json:"label"`
+	Question       string     `json:"question"`
+	Readings       []Reading  `json:"readings"`
+	TargetRootRefs []string   `json:"target_root_refs,omitempty"`
+	Nodes          []Node     `json:"nodes"`
+	Edges          []Edge     `json:"edges"`
+	Frontier       []Frontier `json:"frontier,omitempty"`
 }
 
 // Compilation is the provider-free product of exact reading binding and
 // bounded graph collection. Authority maps are unexported and never marshal.
 type Compilation struct {
 	Version               int                       `json:"version"`
+	TargetTrailVersion    int                       `json:"target_trail_version,omitempty"`
+	AnalysisTargetRef     string                    `json:"analysis_target_ref,omitempty"`
+	TargetRootsSHA256     string                    `json:"target_roots_sha256,omitempty"`
 	CatalogRef            string                    `json:"catalog_ref"`
 	CatalogSHA256         string                    `json:"catalog_sha256"`
 	Binding               Binding                   `json:"binding"`
@@ -184,6 +216,7 @@ type cardAuthority struct {
 	edgeByRef           map[string]surfacediscovery.DirectCallEdge
 	readingRootByRef    map[string]string
 	readingOrdinalByRef map[string]int
+	targetRootRefs      map[string]struct{}
 }
 
 // Request is the only graph value embedded in the provider prompt.
@@ -234,15 +267,16 @@ type Response struct {
 type IssueCode string
 
 const (
-	IssueInvalidShape  IssueCode = "invalid_shape"
-	IssueUnknownRef    IssueCode = "unknown_ref"
-	IssueDisconnected  IssueCode = "disconnected"
-	IssueDuplicateRef  IssueCode = "duplicate_ref"
-	IssueDuplicatePath IssueCode = "duplicate_path"
-	IssueOverBound     IssueCode = "over_bound"
-	IssueNoReadingTie  IssueCode = "no_reading_tie"
-	IssueMissingCard   IssueCode = "missing_card"
-	IssueDuplicateCard IssueCode = "duplicate_card"
+	IssueInvalidShape    IssueCode = "invalid_shape"
+	IssueUnknownRef      IssueCode = "unknown_ref"
+	IssueDisconnected    IssueCode = "disconnected"
+	IssueDuplicateRef    IssueCode = "duplicate_ref"
+	IssueDuplicatePath   IssueCode = "duplicate_path"
+	IssueOverBound       IssueCode = "over_bound"
+	IssueNoReadingTie    IssueCode = "no_reading_tie"
+	IssueNotTargetRooted IssueCode = "not_target_rooted"
+	IssueMissingCard     IssueCode = "missing_card"
+	IssueDuplicateCard   IssueCode = "duplicate_card"
 )
 
 type Issue struct {

@@ -25,9 +25,12 @@ const (
 	// coverage. The prompt identity is derived automatically from its exact
 	// text below. Request v19 also binds collision-safe private unit grouping:
 	// command namespaces no longer merge with same-named top-level packages.
-	// Decision 241: record v16 binds item-local empty/supporting-only salvage;
-	// the provider request remains the exact-anchor v19 contract.
-	SynthesisRequestVersion = 19
+	// Decision 241: record v16 binds item-local empty/supporting-only salvage.
+	// Decision 254: request v20 gives package candidates a typed package_path
+	// context field instead of a presentation label. Decision 275: request v21
+	// preserves the already backend-owned supporting_evidence role on every
+	// nested package symbol. Response and record semantics remain unchanged.
+	SynthesisRequestVersion = 21
 	SynthesisRecordVersion  = 16
 )
 
@@ -102,15 +105,41 @@ func (role SynthesisCoverageRole) valid() bool {
 	return role == SynthesisCoveragePrimaryScope || role == SynthesisCoverageSupportingEvidence
 }
 
-// SynthesisCandidate is the provider-visible candidate shape. It exposes one
-// short typed ref plus bounded semantic labels, never canonical IDs, exact
-// paths, locations, providers or scenarios.
+// SynthesisCandidate is the flat local request checklist. MarshalJSON derives
+// the typed provider shape, including the owner-approved package_path context,
+// without publishing canonical IDs, locations, providers or scenarios.
 type SynthesisCandidate struct {
 	Ref            SynthesisMemberRef           `json:"ref"`
 	ParentRef      *SynthesisMemberRef          `json:"parent_ref,omitempty"`
 	UnitRef        UnitWireRef                  `json:"unit_ref"`
 	CoverageRole   SynthesisCoverageRole        `json:"coverage_role"`
+	Label          string                       `json:"label,omitempty"`
+	PackagePath    string                       `json:"package_path,omitempty"`
+	Participations []SynthesisFlowParticipation `json:"flow_participations,omitempty"`
+	Facts          []SynthesisFact              `json:"facts"`
+}
+
+// synthesisCandidateWire is the focused Go/package provider projection. The
+// local request keeps one flat candidate checklist for exact coverage and
+// replay accounting. On the wire, a package-owned symbol is adjacent to its
+// exact package and is not duplicated flat; every other non-package candidate
+// retains the prior flat shape.
+type synthesisCandidateWire struct {
+	Ref            SynthesisMemberRef           `json:"ref"`
+	ParentRef      *SynthesisMemberRef          `json:"parent_ref,omitempty"`
+	UnitRef        UnitWireRef                  `json:"unit_ref"`
+	CoverageRole   SynthesisCoverageRole        `json:"coverage_role"`
+	Label          string                       `json:"label,omitempty"`
+	PackagePath    string                       `json:"package_path,omitempty"`
+	Symbols        *[]synthesisNestedSymbolWire `json:"symbols,omitempty"`
+	Participations []SynthesisFlowParticipation `json:"flow_participations,omitempty"`
+	Facts          []SynthesisFact              `json:"facts"`
+}
+
+type synthesisNestedSymbolWire struct {
+	Ref            SynthesisMemberRef           `json:"ref"`
 	Label          string                       `json:"label"`
+	CoverageRole   SynthesisCoverageRole        `json:"coverage_role"`
 	Participations []SynthesisFlowParticipation `json:"flow_participations,omitempty"`
 	Facts          []SynthesisFact              `json:"facts"`
 }
@@ -163,10 +192,9 @@ type SynthesisAnchorBinding struct {
 type SynthesisRequest struct {
 	RepositoryArchetype RepositoryArchetype `json:"repository_archetype"`
 	GroundingMode       GroundingMode       `json:"grounding_mode"`
-	// Phase 1 prompt cleanup: required_member_refs is the exact same
-	// candidate checklist as candidates[].ref (validateSynthesisRequestCoverage
-	// proves the identity), so it is removed from the provider-visible wire.
-	// It stays local for coverage accounting via the candidates array.
+	// Phase 1 prompt cleanup: required_member_refs is the exact flat local
+	// candidate checklist. It stays off the provider wire and remains local for
+	// coverage accounting while package-owned symbols are nested on the wire.
 	RequiredMemberRefs []SynthesisMemberRef      `json:"-"`
 	BehaviorAnchors    []SynthesisBehaviorAnchor `json:"behavior_anchors,omitempty"`
 	Flows              []SynthesisFlow           `json:"flows,omitempty"`
@@ -178,6 +206,97 @@ type SynthesisRequest struct {
 	StructuralContext []SynthesisStructuralLocator `json:"structural_context,omitempty"`
 	Relations         []SynthesisRelation          `json:"supporting_relations,omitempty"`
 	AnchorBindings    []SynthesisAnchorBinding     `json:"flow_anchor_bindings,omitempty"`
+}
+
+type synthesisRequestWire struct {
+	RepositoryArchetype RepositoryArchetype          `json:"repository_archetype"`
+	GroundingMode       GroundingMode                `json:"grounding_mode"`
+	BehaviorAnchors     []SynthesisBehaviorAnchor    `json:"behavior_anchors,omitempty"`
+	Flows               []SynthesisFlow              `json:"flows,omitempty"`
+	Candidates          []synthesisCandidateWire     `json:"candidates"`
+	Units               []SynthesisUnit              `json:"units,omitempty"`
+	StructuralContext   []SynthesisStructuralLocator `json:"structural_context,omitempty"`
+	Relations           []SynthesisRelation          `json:"supporting_relations,omitempty"`
+	AnchorBindings      []SynthesisAnchorBinding     `json:"flow_anchor_bindings,omitempty"`
+}
+
+func (request SynthesisRequest) MarshalJSON() ([]byte, error) {
+	wire, err := synthesisProviderRequestWire(request)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(wire)
+}
+
+func synthesisProviderRequestWire(request SynthesisRequest) (synthesisRequestWire, error) {
+	wire := synthesisRequestWire{
+		RepositoryArchetype: request.RepositoryArchetype,
+		GroundingMode:       request.GroundingMode,
+		BehaviorAnchors:     request.BehaviorAnchors,
+		Flows:               request.Flows,
+		Candidates:          make([]synthesisCandidateWire, 0, len(request.Candidates)),
+		Units:               request.Units,
+		StructuralContext:   request.StructuralContext,
+		Relations:           request.Relations,
+		AnchorBindings:      request.AnchorBindings,
+	}
+	packageIndexes := make(map[string]int)
+	for _, candidate := range request.Candidates {
+		if candidate.Ref.Kind != MemberPackage {
+			continue
+		}
+		packageIndexes[candidate.Ref.key()] = len(wire.Candidates)
+		symbols := make([]synthesisNestedSymbolWire, 0)
+		wire.Candidates = append(wire.Candidates, synthesisCandidateWire{
+			Ref: candidate.Ref, PackagePath: candidate.PackagePath,
+			UnitRef: candidate.UnitRef, CoverageRole: candidate.CoverageRole,
+			Symbols:        &symbols,
+			Participations: candidate.Participations, Facts: candidate.Facts,
+		})
+	}
+	seen := make(map[string]int, len(request.Candidates))
+	for _, candidate := range request.Candidates {
+		if candidate.Ref.Kind == MemberPackage {
+			seen[candidate.Ref.key()]++
+			continue
+		}
+		if candidate.Ref.Kind == MemberSymbol && candidate.ParentRef != nil {
+			index, exists := packageIndexes[candidate.ParentRef.key()]
+			if !exists {
+				return synthesisRequestWire{}, fmt.Errorf("componentmap: nested symbol parent is not a provider package candidate")
+			}
+			if candidate.CoverageRole != SynthesisCoverageSupportingEvidence {
+				return synthesisRequestWire{}, fmt.Errorf("componentmap: nested symbol is not supporting evidence")
+			}
+			symbols := append(*wire.Candidates[index].Symbols, synthesisNestedSymbolWire{
+				Ref: candidate.Ref, Label: candidate.Label, CoverageRole: SynthesisCoverageSupportingEvidence,
+				Participations: candidate.Participations, Facts: candidate.Facts,
+			})
+			wire.Candidates[index].Symbols = &symbols
+			seen[candidate.Ref.key()]++
+			continue
+		}
+		wire.Candidates = append(wire.Candidates, synthesisCandidateWire{
+			Ref: candidate.Ref, ParentRef: candidate.ParentRef,
+			UnitRef: candidate.UnitRef, CoverageRole: candidate.CoverageRole,
+			Label: candidate.Label, PackagePath: candidate.PackagePath,
+			Participations: candidate.Participations, Facts: candidate.Facts,
+		})
+		seen[candidate.Ref.key()]++
+	}
+	for index, required := range request.RequiredMemberRefs {
+		if seen[required.key()] != 1 {
+			return synthesisRequestWire{}, fmt.Errorf(
+				"componentmap: required_member_refs[%d] appears %d times in provider candidate projection",
+				index,
+				seen[required.key()],
+			)
+		}
+	}
+	if len(seen) != len(request.RequiredMemberRefs) {
+		return synthesisRequestWire{}, fmt.Errorf("componentmap: provider candidate projection contains a non-required ref")
+	}
+	return wire, nil
 }
 
 // SynthesisPrompt is the provider-neutral instruction plus the exact bounded
@@ -667,6 +786,13 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 	}
 	candidates := append([]Candidate(nil), bundle.Candidates...)
 	sortCandidates(candidates)
+	packageCandidates := make([]Candidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.Role == CandidateRoleConceptualMember && candidate.ID.Kind == MemberPackage {
+			packageCandidates = append(packageCandidates, candidate)
+		}
+	}
+	packagePrefix := commonPackageDeclarationPrefix(packageCandidates)
 	candidatesByID := make(map[MemberID]Candidate, len(candidates))
 	childrenByParent := make(map[MemberID][]Candidate)
 	for _, candidate := range candidates {
@@ -679,8 +805,18 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 		if candidate.Role != CandidateRoleConceptualMember {
 			continue
 		}
+		label := synthesisCandidateLabel(catalog, candidate)
+		packagePath := ""
+		if candidate.ID.Kind == MemberPackage {
+			var err error
+			packagePath, err = synthesisCandidatePackagePath(catalog, candidate, packagePrefix)
+			if err != nil {
+				return SynthesisRequest{}, nil, err
+			}
+			label = ""
+		}
 		projected := SynthesisCandidate{
-			Ref: catalog.membersByID[candidate.ID], Label: synthesisCandidateLabel(catalog, candidate),
+			Ref: catalog.membersByID[candidate.ID], Label: label, PackagePath: packagePath,
 			Participations: make([]SynthesisFlowParticipation, 0, len(candidate.Participations)),
 			Facts:          make([]SynthesisFact, 0, len(candidate.Facts)),
 		}
@@ -691,7 +827,11 @@ func BuildSynthesisRequest(bundle CandidateBundle) (SynthesisRequest, []byte, er
 			})
 		}
 		for _, fact := range candidate.Facts {
-			projected.Facts = append(projected.Facts, projectSynthesisFact(catalog, fact))
+			projectedFact := projectSynthesisFact(catalog, fact)
+			if redundantSynthesisPackageDeclaration(projected.PackagePath, fact, projectedFact) {
+				continue
+			}
+			projected.Facts = append(projected.Facts, projectedFact)
 		}
 		request.Candidates = append(request.Candidates, projected)
 		request.RequiredMemberRefs = append(request.RequiredMemberRefs, projected.Ref)
@@ -857,6 +997,9 @@ func validateSynthesisRequestCoverage(request SynthesisRequest) error {
 		candidate := request.Candidates[index]
 		if !candidate.CoverageRole.valid() {
 			return fmt.Errorf("componentmap: candidates[%d].coverage_role is invalid", index)
+		}
+		if err := validateSynthesisCandidateContext(candidate); err != nil {
+			return fmt.Errorf("componentmap: candidates[%d]: %w", index, err)
 		}
 		unitRole, known := knownUnits[candidate.UnitRef]
 		if !known {
@@ -1100,6 +1243,72 @@ func synthesisCandidateLabel(catalog synthesisPrivateCatalog, candidate Candidat
 	return catalog.synthesisLabelOrFallback(label, strings.ReplaceAll(string(candidate.ID.Kind), "_", " "))
 }
 
+// synthesisCandidatePackagePath projects only the exact static package
+// declaration/import identity as read-only grouping context. The common
+// qualified module prefix is removed when that leaves a non-empty exact
+// suffix. Otherwise the complete clean declaration is retained; presentation
+// Candidate.Name is never used and the identity never collapses to basename.
+func synthesisCandidatePackagePath(
+	catalog synthesisPrivateCatalog,
+	candidate Candidate,
+	packagePrefix string,
+) (string, error) {
+	if candidate.ID.Kind != MemberPackage {
+		return "", fmt.Errorf("componentmap: package_path requested for non-package candidate")
+	}
+	declaration := packageDeclarationPath(candidate)
+	if declaration == "" {
+		return "", fmt.Errorf("componentmap: package candidate has no clean exact declaration identity")
+	}
+	packagePath := declaration
+	if qualifiedPackagePath(declaration) && packagePrefix != "" &&
+		strings.HasPrefix(declaration, packagePrefix+"/") {
+		packagePath = strings.TrimPrefix(declaration, packagePrefix+"/")
+	}
+	cleaned := cleanPackageDisplayPath(packagePath)
+	if cleaned == "" || cleaned != packagePath {
+		return "", fmt.Errorf("componentmap: package candidate produced an invalid package_path")
+	}
+	// package_path is an explicitly authorized exact package/import identity.
+	// Some historical local fixtures use that same value as their canonical
+	// MemberID; only request-local refs remain private in this typed field.
+	_ = catalog
+	return cleaned, nil
+}
+
+func validateSynthesisCandidateContext(candidate SynthesisCandidate) error {
+	if candidate.Ref.Kind == MemberPackage {
+		if candidate.Label != "" {
+			return fmt.Errorf("package candidate must omit label")
+		}
+		if candidate.PackagePath == "" {
+			return fmt.Errorf("package candidate has empty package_path")
+		}
+		if cleaned := cleanPackageDisplayPath(candidate.PackagePath); cleaned == "" || cleaned != candidate.PackagePath {
+			return fmt.Errorf("package candidate has invalid package_path")
+		}
+		return nil
+	}
+	if candidate.PackagePath != "" {
+		return fmt.Errorf("non-package candidate must omit package_path")
+	}
+	if err := validateDisplayText("candidate label", candidate.Label, maxNameBytes, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func redundantSynthesisPackageDeclaration(
+	packagePath string,
+	fact LocalFact,
+	projected SynthesisFact,
+) bool {
+	if packagePath == "" || fact.Kind != FactDeclaration || fact.Certainty != evidence.CertaintyStatic {
+		return false
+	}
+	return projected.Label == packagePath || projected.Label == path.Base(packagePath)
+}
+
 func synthesisSemanticLabel(catalog synthesisPrivateCatalog, kind MemberKind, value string) string {
 	value = catalog.sanitizeCanonicalOpaqueTokens(value)
 	if value == "" {
@@ -1166,7 +1375,7 @@ func BuildSynthesisPromptForLanguage(
 func synthesisPromptSystemText() string {
 	return `You create a compact conceptual architecture landscape from bounded local repository facts.
 
-Use conceptual member, anchor, and unit refs as opaque request-local values. Copy a ref exactly as supplied; never rewrite refs, infer new refs, or mention members absent from the request. Refs under structural_context are read-only locator context and must never occur in response member_refs or anchor_refs. Candidate parent_ref, unit_ref, and coverage_role fields are read-only context and must never be returned.
+Use conceptual member, anchor, and unit refs as opaque request-local values. Copy a ref exactly as supplied; never rewrite refs, infer new refs, or mention members absent from the request. Refs under structural_context are read-only locator context and must never occur in response member_refs or anchor_refs. Candidate parent_ref, unit_ref, coverage_role, label, package_path, and symbols fields are read-only context and must never be returned. Package candidates carry package_path, omit label, and contain exact package-owned symbols once under symbols; every nested symbol explicitly carries coverage_role supporting_evidence, while other non-package candidates retain the flat candidate shape. The package ref and every nested symbol ref are independently valid member_refs: nesting proves only exact containment and never requires co-selection or placement in the same component. Nested symbol refs distinguish implementations inside a package responsibility, but supporting_evidence never substitutes for a defensible p* primary_scope ref somewhere in the same production unit; that p* ref may appear in a different component. A package_path is backend-owned clean package/import grouping context. It is never a response ref, public display label, source-file path, or coverage requirement, and it does not make a member more important or require its placement.
 Local semantic facts, compact structural relations, structural locator containment, flow participation, anchor proof_mode, and certainty are read-only grouping context. They must never be returned, upgraded, replaced, or converted into execution order. A declaration_family anchor is static declaration context and never proves runtime behavior. Canonical repository identities, exact source locations, provider provenance, scenarios, catalog identity, versions, and hashes are private and absent from this request.
 
 Return exactly one compact JSON proposal object with this nested grammar:
@@ -1174,9 +1383,9 @@ Return exactly one compact JSON proposal object with this nested grammar:
 
 The entire response must parse as exactly one complete JSON object. Its only root field is subsystems. Each subsystem contains exactly name, description, and components. Each component contains exactly name, description, a non-empty member_refs array (p*/s*/f*), and optional anchor_refs (a*). Every ref is a plain string; do not wrap refs in objects and do not add kind fields. Do not emit response-local IDs, kind tags, parent references, unit refs, coverage roles, or any adjacency field: nesting already expresses which components belong to which subsystem. Do not nest objects inside objects or emit a second root object.
 
-Candidates marked primary_scope form the top-level production conceptual repository surface. Top-level package candidates in test, tooling, or documentation units and package-owned child candidates are supporting_evidence. Cover defensible primary_scope across the supplied production units before selecting supporting_evidence. Supporting evidence and anchors may ground or distinguish responsibilities, but coverage of them never compensates for uncovered production primary_scope. Honest partial primary coverage is valid; never pad, invent, or exhaustively enumerate uncertain scope.
+Candidates marked primary_scope form the top-level production conceptual repository surface. Top-level package candidates in test, tooling, or documentation units and package-owned child candidates are supporting_evidence. Cover defensible primary_scope across the supplied production units before selecting supporting_evidence. For every production unit represented by nested symbol supporting_evidence, include a defensible p* primary_scope ref somewhere in that same unit; it need not be in the same component. Supporting evidence and anchors may ground or distinguish responsibilities, but coverage of them never compensates for uncovered production primary_scope. Honest partial primary coverage is valid; never pad, invent, or exhaustively enumerate uncertain scope.
 
-Subsystems and components are in conceptual display order. Choose representative supplied members needed to distinguish each component; exhaustive membership is not required. A member may legitimately participate in several components when it genuinely serves several distinct conceptual roles — this is shared participation, not exclusive ownership. Name what distinguishes each component from its siblings. An exact partial grouping is valid: omitted members remain in a deterministic local unclassified remainder and must not be echoed, renamed, or placed in a model-authored remainder. Fewer groups are better than padding: when evidence is weak, return fewer components honestly. A component may be anchor-backed shared participation with zero exclusive members: every one of its members is shared with sibling components, but the component still lists at least one member_refs (never only anchor_refs); anchor_refs are optional per component, not required.
+Subsystems and components are in conceptual display order. Choose representative supplied members needed to distinguish each component; exhaustive membership is not required. A member may legitimately participate in several components when it genuinely serves several distinct conceptual roles — this is shared participation, not exclusive ownership. Name what distinguishes each component from its siblings. An exact partial grouping is valid: omitted members remain in a deterministic local unclassified remainder and must not be echoed, renamed, or placed in a model-authored remainder. Fewer groups are better than padding: when evidence is weak, return fewer components honestly. A component may be anchor-backed shared participation with zero exclusive members: every one of its members is shared with sibling components, but the component still lists at least one member_refs (never only anchor_refs); anchor_refs are optional per component, not required. For every returned anchor_ref, include at least one relevant member_ref advertised by that anchor in the same component; if none is relevant, omit that anchor_ref. Do not enumerate every nested symbol merely because its package is selected.
 
 Repository archetype and grounding mode are local facts. A primary pillar is one subsystem; components are nested responsibilities and are not additional primary pillars. When grounding_mode is behavior_grounded or mixed, prefer a bounded handful of distinct subsystems when the supplied evidence supports that many. Tiny, library, and package-landscape requests may honestly use fewer. hypothesis is not part of the response; the backend derives product hypothesis status exclusively from exact process_entry/call_target proof scoped to every component member. declaration_family never proves operational grounding. Separate extension families from support and tooling. Preserve unresolved frontiers. When grounding_mode is package_landscape, describe an honest static package landscape and do not imply behavioral verification.
 
@@ -2112,6 +2321,23 @@ func salvageSupportingOnlyProductionUnits(
 		}
 		if len(keptSubsystem.Components) > 0 {
 			result.Subsystems = append(result.Subsystems, keptSubsystem)
+		}
+	}
+	if len(result.Subsystems) == 0 && droppedMembers > 0 {
+		// Decision 275: retain the valid response's hierarchy shells only long
+		// enough for proposalMembershipDiagnostics to classify the result as
+		// zero useful semantic membership. Dropping the shells made Apply see a
+		// structurally absent proposal and emit the misleading fatal
+		// proposal.invalid_subsystem_count. No member or parent is restored or
+		// promoted here: every supporting ref still returns to the exact local
+		// remainder, and the existing zero-useful fallback remains authoritative.
+		result.Subsystems = make([]ProposedSubsystem, 0, len(sourceSubsystems))
+		for _, subsystem := range sourceSubsystems {
+			result.Subsystems = append(result.Subsystems, ProposedSubsystem{
+				Name:        subsystem.Name,
+				Description: subsystem.Description,
+				sourceIDs:   append([]SubsystemID(nil), subsystem.sourceIDs...),
+			})
 		}
 	}
 	return result, droppedMembers, affectedComponents, droppedComponents, droppedAnchors

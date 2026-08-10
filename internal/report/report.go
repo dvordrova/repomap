@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
@@ -41,14 +42,20 @@ import (
 // Format 41 adds the exact RepositoryGraph package-member fallback for D210
 // targets that the accepted Canvas did not retain as symbol members.
 // Format 42 adds persisted, locally re-derived Study mechanism paths.
-const CurrentFormatVersion = 42
+// Format 43 binds one exact analysis target package into the report.
+// Format 44 promotes accepted entry-call v2 families for that exact target.
+// Format 45 adds render-only sibling target-page navigation while preserving
+// one canonical ReportData value per page.
+const CurrentFormatVersion = 45
 
 // Decision 232: adjudication anchor coverage + semantic-empty browse.
 // Decision 233: alternate co-projection + concentration marker.
 // Decision 233 AREA COVERAGE: missing-core-area diagnostic.
 // Decision 235 (v11): rebased Scout context + equivalence accounting.
 // Decision 236 (v11): Map projection/lenses (projection 14).
-const AtlasStudyReportProjectionVersion = 15
+// Decision 277: a selected Go library projects exact executable public-API
+// declaration roots without inventing a Component owner (projection 16).
+const AtlasStudyReportProjectionVersion = 16
 
 // MaxAtlasStudyBrowseSpans bounds the report-side provider-free per-span
 // browse. Truthful Total/Shown keep larger repositories honest; the complete
@@ -132,6 +139,13 @@ func ExactDiscoveryAnchors(
 
 type ReportData struct {
 	FormatVersion int `json:"format_version"`
+	// AnalysisTarget is the exact package selected before any semantic budget.
+	// It is copied from snapshot.json and remains self-sealed by its Ref; the
+	// run manifest additionally binds its canonical bytes.
+	AnalysisTarget *analysistarget.Target `json:"analysis_target,omitempty"`
+	// EntryCall is a flat exact-call-family projection for the selected target.
+	// It is navigation evidence, never a runtime sequence or mechanism claim.
+	EntryCall *EntryCallReportProjection `json:"entry_call,omitempty"`
 	// ReportLanguage is transient render state selected by the requested
 	// presentation locale. It controls the typed product message catalog
 	// independently of whether optional model-authored prose was translated.
@@ -300,7 +314,8 @@ type ReportData struct {
 	// presentationMetadataErr quarantines an invalid optional presentation
 	// sidecar without turning it into canonical report prose or failing EN
 	// replay. Shared hydration surfaces it to RU localization and serving.
-	presentationMetadataErr error
+	presentationMetadataErr  error
+	entryCallArtifactBinding *entryCallReportArtifactBinding
 
 	RecommendedFlow string `json:"recommended_flow,omitempty"`
 	FlowCount       int    `json:"flow_count"`

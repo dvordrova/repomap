@@ -88,6 +88,119 @@ func TestLoadCollectsEveryModuleBeforeFairExplicitCaps(t *testing.T) {
 	}
 }
 
+func TestLoadWithOptionsUsesOneLinuxTargetForBuildSelectedFiles(t *testing.T) {
+	repo := t.TempDir()
+	files := map[string]string{
+		"go.mod":         "module example.com/target\n\ngo 1.24\n",
+		"main_linux.go":  "//go:build linux\n\npackage main\n\nfunc main() {}\nfunc linuxOnly() {}\n",
+		"main_darwin.go": "//go:build darwin\n\npackage main\n\nfunc main() {}\nfunc darwinOnly() {}\n",
+	}
+	fileList := make([]string, 0, len(files))
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(repo, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		fileList = append(fileList, name)
+	}
+	facts, err := LoadWithOptions(
+		context.Background(), repo, fileList, 0, 0,
+		LoadOptions{GoTarget: "linux/amd64"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts.EntrypointPackages) != 1 ||
+		!containsString(facts.EntrypointPackages[0].GoFiles, "main_linux.go") ||
+		containsString(facts.EntrypointPackages[0].GoFiles, "main_darwin.go") {
+		t.Fatalf("linux entrypoint files = %#v", facts.EntrypointPackages)
+	}
+	if len(facts.Packages) != 1 || !facts.Packages[0].DeclarationsScanned ||
+		!hasPackageDeclaration(facts.Packages[0].Declarations, PackageDeclarationFunc, "linuxOnly", "") ||
+		hasPackageDeclaration(facts.Packages[0].Declarations, PackageDeclarationFunc, "darwinOnly", "") {
+		t.Fatalf("linux package declarations = %#v", facts.Packages)
+	}
+}
+
+func TestLoadDoesNotProduceLegacyCobraCommandTraces(t *testing.T) {
+	repo := t.TempDir()
+	frameworkDir := filepath.Join(repo, "cobra")
+	if err := os.MkdirAll(frameworkDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"go.mod": "module example.com/tool\n\ngo 1.24\n\nrequire github.com/spf13/cobra v1.0.0\nreplace github.com/spf13/cobra => ./cobra\n",
+		"main.go": `package main
+import "github.com/spf13/cobra"
+func root() *cobra.Command { return &cobra.Command{Use: "tool", Run: func(*cobra.Command, []string) {}} }
+func main() { _ = root().Execute() }
+`,
+		"cobra/go.mod": "module github.com/spf13/cobra\n\ngo 1.24\n",
+		"cobra/cobra.go": `package cobra
+type Command struct { Use string; Run func(*Command, []string) }
+func (*Command) Execute() error { return nil }
+`,
+	}
+	for name, content := range files {
+		path := filepath.Join(repo, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	facts, err := Load(context.Background(), repo, []string{"go.mod", "main.go"}, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(facts.EntrypointPackages) != 1 {
+		t.Fatalf("entrypoints = %#v, want one exact main package", facts.EntrypointPackages)
+	}
+	if len(facts.CommandTraces) != 0 {
+		t.Fatalf("fresh Go facts produced retired command traces: %#v", facts.CommandTraces)
+	}
+}
+
+func TestFactsLegacyCommandTracesRemainDecodable(t *testing.T) {
+	var facts Facts
+	if err := json.Unmarshal([]byte(`{
+		"command_traces": [{
+			"version": 2,
+			"framework": "cobra",
+			"entrypoint_package": "example.com/legacy",
+			"command": "serve",
+			"steps": [],
+			"concurrency": "unknown",
+			"complete": true
+		}]
+	}`), &facts); err != nil {
+		t.Fatal(err)
+	}
+	if len(facts.CommandTraces) != 1 || facts.CommandTraces[0].Framework != "cobra" ||
+		facts.CommandTraces[0].Command != "serve" {
+		t.Fatalf("legacy command traces were not preserved: %#v", facts.CommandTraces)
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func hasPackageDeclaration(values []PackageDeclaration, kind PackageDeclarationKind, name, receiver string) bool {
+	for _, value := range values {
+		if value.Kind == kind && value.Name == name && value.Receiver == receiver {
+			return true
+		}
+	}
+	return false
+}
+
 func TestLoadZeroCapsRetainAllFacts(t *testing.T) {
 	t.Parallel()
 

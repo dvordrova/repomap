@@ -8,11 +8,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/report"
+	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/tasklens"
 )
 
@@ -111,7 +113,7 @@ func TestCopyConfig(t *testing.T) {
 	for _, name := range []string{
 		tasklens.BundleFile, tasklens.AttemptFile, tasklens.PackFile,
 		tasklens.StatusFile, tasklens.TraceJSONFile, tasklens.TraceMarkdownFile,
-		"report.json", "report.html", report.RunManifestFilename,
+		"snapshot.json", "report.json", "report.html", report.RunManifestFilename,
 	} {
 		if info, err := os.Stat(filepath.Join(runDir, name)); err != nil || !info.Mode().IsRegular() {
 			t.Fatalf("artifact %s: %v", name, err)
@@ -150,6 +152,12 @@ func TestCopyConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if report.CurrentRunManifestVersion != 18 {
+		t.Fatalf("current manifest version = %d, want 18", report.CurrentRunManifestVersion)
+	}
+	if manifest.Version != report.CurrentRunManifestVersion {
+		t.Fatalf("manifest version = %d", manifest.Version)
+	}
 	artifactHashes := map[string]string{
 		tasklens.BundleFile:        manifest.MaterialInputs.TaskBundleSHA256,
 		tasklens.AttemptFile:       manifest.MaterialInputs.TaskAttemptSHA256,
@@ -166,6 +174,27 @@ func TestCopyConfig(t *testing.T) {
 	var bundle tasklens.Bundle
 	if err := json.Unmarshal(investigateReadFile(t, filepath.Join(runDir, tasklens.BundleFile)), &bundle); err != nil {
 		t.Fatal(err)
+	}
+	snapshotRaw := investigateReadFile(t, filepath.Join(runDir, "snapshot.json"))
+	var savedSnapshot snapshot.Snapshot
+	if err := json.Unmarshal(snapshotRaw, &savedSnapshot); err != nil {
+		t.Fatalf("decode bounded task snapshot: %v", err)
+	}
+	wantSnapshotPaths := []string{"config.go", "config_test.go", "go.mod"}
+	if !slices.Equal(savedSnapshot.FileTree, wantSnapshotPaths) ||
+		!slices.Equal(savedSnapshot.FileTree, bundle.AllowedPaths) {
+		t.Fatalf("bounded task snapshot paths = %v, bundle paths = %v", savedSnapshot.FileTree, bundle.AllowedPaths)
+	}
+	if slices.Contains(savedSnapshot.FileTree, filepath.Base(taskFile)) {
+		t.Fatalf("bounded task snapshot included external task file: %v", savedSnapshot.FileTree)
+	}
+	if savedSnapshot.RepoName != bundle.Repository.Identity ||
+		savedSnapshot.FilesConsidered != len(wantSnapshotPaths) ||
+		savedSnapshot.FilesSkipped != bundle.Metrics.TrackedFiles-len(wantSnapshotPaths) {
+		t.Fatalf("bounded task snapshot accounting = %#v", savedSnapshot)
+	}
+	if manifest.SnapshotSHA256 != tasklens.SHA256(snapshotRaw) {
+		t.Fatalf("manifest snapshot sha256 = %q, want exact saved bytes", manifest.SnapshotSHA256)
 	}
 	captured := make(map[string]struct{}, len(manifest.CapturedInputs))
 	for _, input := range manifest.CapturedInputs {

@@ -74,6 +74,39 @@ func TestCompileStudyUsesOnlyExactPrimaryDirectReadings(t *testing.T) {
 	}
 }
 
+func TestCompileCardProjectsDepthBoundaryForSelectedFunction(t *testing.T) {
+	index := buildClosedFrontierIndex(t)
+	entry := requireNodeBySymbol(t, index, "example.com/frontier.entry")
+	found := false
+	for position := range index.Frontiers {
+		if index.Frontiers[position].CallerID != entry.ID {
+			continue
+		}
+		index.Frontiers[position].DepthBoundRepositoryCallsExcluded = 2
+		found = true
+		break
+	}
+	if !found {
+		t.Fatal("fixture entry frontier is absent")
+	}
+	index.Coverage.DepthBoundRepositoryCallsExcluded = 2
+
+	card, _, _, _, _, _, err := compileCard("t1", sourceCard{
+		Ordinal: 1, Canonical: "depth-bound-card", Label: "Depth boundary",
+		Question: "What continues after this function?",
+		Readings: []sourceReading{{
+			Ordinal: 1, Label: "entry", Path: entry.Declaration.Path,
+			Line: entry.Declaration.Line, Symbol: entry.Symbol.ID,
+		}},
+	}, index, nil, nil, 1, 1, 1)
+	if err != nil {
+		t.Fatalf("compileCard: %v", err)
+	}
+	if got := frontierCount(card, FrontierDepthBound); got != 2 {
+		t.Fatalf("depth-bound frontier = %d, want 2", got)
+	}
+}
+
 func TestCompileContextsNeedsNoStudyAndDoesNotSelectARoot(t *testing.T) {
 	index := buildChainIndex(t)
 	root := requireNodeBySymbol(t, index, "example.com/mechanism.entry")
@@ -442,6 +475,9 @@ func TestProviderVisibleRequestSampleIsExactAndContainsNoActionProtocol(t *testi
 	expected := fmt.Sprintf(`{"version":%d,"prompt_version":%q,"catalog_ref":"mc-aaaaaaaaaaaaaaaa","catalog_sha256":"%s","request_ref":"q1","cards":[{"ref":"t1","label":"Startup","question":"What work follows?","readings":[{"ref":"r1","label":"Entry","root_node_ref":"n1"}],"nodes":[{"ref":"n1","label":"entry"},{"ref":"n2","label":"service"},{"ref":"n3","label":"persist"}],"edges":[{"ref":"e1","caller_ref":"n1","callee_ref":"n2","invocation":"synchronous","witness_count":1},{"ref":"e2","caller_ref":"n2","callee_ref":"n3","invocation":"synchronous","witness_count":1}]}]}`, RequestVersion, PromptVersion, strings.Repeat("a", 64))
 	if batch.WireJSON != expected {
 		t.Fatalf("provider request changed:\n got %s\nwant %s", batch.WireJSON, expected)
+	}
+	if request.Cards[0].TargetRootRefs != nil || strings.Contains(batch.WireJSON, `"target_root_refs"`) {
+		t.Fatalf("legacy reading-local request gained target roots: card=%+v wire=%s", request.Cards[0], batch.WireJSON)
 	}
 	t.Logf("provider-visible request sample: %s", batch.WireJSON)
 	for _, forbidden := range []string{"selector", "next_action", "deepen", "root_choice", "canonical_id", "path", "symbol", "source"} {

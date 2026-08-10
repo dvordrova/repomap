@@ -24,7 +24,11 @@ const (
 	// (status 14).
 	// Decision 241: item-local empty/supporting-only response salvage and its
 	// closed diagnostics change accepted/partial status semantics (status 15).
-	ArchitectureSynthesisStatusVersion = 15
+	// Status 16 admits an exact all-supporting non-production scope. Such a
+	// request has no primary_scope candidates by construction, so its accepted
+	// membership is accounted entirely as supporting evidence instead of being
+	// rejected for evidence the request could not contain.
+	ArchitectureSynthesisStatusVersion = 16
 
 	ArchitectureSynthesisSucceeded   = "succeeded"
 	ArchitectureSynthesisCached      = "cached"
@@ -662,16 +666,38 @@ func (status ArchitectureSynthesisStatus) validatePrimaryScopeCoverage() error {
 		return nil
 	}
 	if status.RequestedPrimaryScopeCount == 0 {
-		if status.CoveredPrimaryScopeCount != 0 || status.UncoveredPrimaryScopeCount != 0 ||
-			status.CoveredSupportingEvidenceCount != 0 {
+		if status.CoveredPrimaryScopeCount != 0 || status.UncoveredPrimaryScopeCount != 0 {
 			return fmt.Errorf("architecture primary-scope coverage lacks a requested scope")
 		}
 		if status.hasValidationCode("proposal.empty_primary_scope_coverage") ||
 			status.hasValidationCode("proposal.supporting_only_unit_coverage") {
 			return fmt.Errorf("architecture primary-scope diagnostic lacks a requested scope")
 		}
-		if status.State == ArchitectureSynthesisSucceeded || status.State == ArchitectureSynthesisCached {
-			return fmt.Errorf("accepted architecture synthesis requires primary-scope evidence")
+		// Versions 13-15 required every accepted result to carry primary scope.
+		// Preserve that historical contract while status 16 records the producer's
+		// already-valid all-supporting test/tooling/documentation landscape.
+		if status.Version < 16 {
+			if status.CoveredSupportingEvidenceCount != 0 {
+				return fmt.Errorf("architecture primary-scope coverage lacks a requested scope")
+			}
+			if status.State == ArchitectureSynthesisSucceeded || status.State == ArchitectureSynthesisCached {
+				return fmt.Errorf("accepted architecture synthesis requires primary-scope evidence")
+			}
+			return nil
+		}
+		if status.CoveredSupportingEvidenceCount > status.RequestedConceptualCount {
+			return fmt.Errorf("architecture supporting coverage exceeds the requested conceptual scope")
+		}
+		if status.CoveredSupportingEvidenceCount > 0 &&
+			(!status.ProviderCallSucceeded || !status.ResponseParsed || !status.MembershipCounted) {
+			return fmt.Errorf("architecture supporting coverage lacks parsed membership evidence")
+		}
+		if status.MembershipCounted {
+			if status.CoveredSupportingEvidenceCount != status.DistinctMembers {
+				return fmt.Errorf("architecture supporting coverage does not match resolved membership")
+			}
+		} else if status.CoveredSupportingEvidenceCount != 0 {
+			return fmt.Errorf("uncounted architecture response cannot contain supporting coverage")
 		}
 		return nil
 	}

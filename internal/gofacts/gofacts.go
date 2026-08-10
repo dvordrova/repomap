@@ -13,11 +13,16 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/gotarget"
 	"github.com/dvordrova/repomap/internal/reporead"
 	"golang.org/x/mod/modfile"
 )
 
 const maxGoModBytes = 1024 * 1024
+
+type LoadOptions struct {
+	GoTarget string
+}
 
 type Facts struct {
 	Modules               []ModuleFact           `json:"modules"`
@@ -86,15 +91,17 @@ type ModuleSource struct {
 }
 
 type PackageFact struct {
-	CanonicalPath     string   `json:"canonical_package_path"`
-	Name              string   `json:"name"`
-	ModuleID          string   `json:"owning_module_id"`
-	ModulePath        string   `json:"module_path"`
-	PackageDir        string   `json:"package_directory"`
-	ModuleRelativeDir string   `json:"module_relative_path"`
-	DisplayPath       string   `json:"display_path"`
-	Locality          string   `json:"locality"`
-	Files             []string `json:"files,omitempty"`
+	CanonicalPath       string               `json:"canonical_package_path"`
+	Name                string               `json:"name"`
+	ModuleID            string               `json:"owning_module_id"`
+	ModulePath          string               `json:"module_path"`
+	PackageDir          string               `json:"package_directory"`
+	ModuleRelativeDir   string               `json:"module_relative_path"`
+	DisplayPath         string               `json:"display_path"`
+	Locality            string               `json:"locality"`
+	Files               []string             `json:"files,omitempty"`
+	Declarations        []PackageDeclaration `json:"declarations,omitempty"`
+	DeclarationsScanned bool                 `json:"declarations_scanned,omitempty"`
 }
 
 type ModuleSummary struct {
@@ -234,11 +241,29 @@ func DiscoverGoModules(fileList []string, repoPath string) []string {
 }
 
 func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxEdges int) (*Facts, error) {
+	return LoadWithOptions(ctx, repoPath, fileList, maxPkgs, maxEdges, LoadOptions{})
+}
+
+func LoadWithOptions(
+	ctx context.Context,
+	repoPath string,
+	fileList []string,
+	maxPkgs, maxEdges int,
+	opts LoadOptions,
+) (*Facts, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	target := gotarget.Host()
+	if opts.GoTarget != "" {
+		var err error
+		target, err = gotarget.Parse(opts.GoTarget)
+		if err != nil {
+			return nil, fmt.Errorf("load Go facts: %w", err)
+		}
 	}
 
 	absRepoPath, err := filepath.Abs(repoPath)
@@ -263,7 +288,6 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 	var allPkgs []goListPackage
 	var packageFacts []PackageFact
 	var allEntrypoints []Entrypoint
-	var allCommandTraces []CommandTrace
 	var topWarnings []string
 	modules := make([]ModuleFact, 0, len(moduleDirs))
 	availableModules := 0
@@ -293,7 +317,7 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 			absDir = filepath.Join(resolvedRepoPath, modRelDir)
 		}
 
-		moduleInfo, err := runGoModule(ctx, absDir)
+		moduleInfo, err := runGoModule(ctx, absDir, target)
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
@@ -309,7 +333,7 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 		}
 		modulePath := moduleInfo.Path
 		moduleID := moduleFactID(modulePath, modRelDir)
-		pkgs, modWarnings, err := runGoList(ctx, absDir)
+		pkgs, modWarnings, err := runGoList(ctx, absDir, target)
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
@@ -341,10 +365,18 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 			if displayPath == "." || displayPath == "" {
 				displayPath = pkg.Name
 			}
+			declarations, declarationWarnings := extractPackageDeclarations(repoReader, packageDir, pkg)
+			if len(declarationWarnings) > 0 {
+				modWarnings = append(modWarnings, declarationWarnings...)
+				for _, warning := range declarationWarnings {
+					topWarnings = append(topWarnings, fmt.Sprintf("module %s: %s", modRelDir, warning))
+				}
+			}
 			packageFacts = append(packageFacts, PackageFact{
 				CanonicalPath: pkg.ImportPath, Name: pkg.Name, ModuleID: moduleID, ModulePath: modulePath,
 				PackageDir: filepath.ToSlash(packageDir), ModuleRelativeDir: filepath.ToSlash(moduleRelativeDir),
 				DisplayPath: displayPath, Locality: "local", Files: packageInputFiles(packageDir, pkg),
+				Declarations: declarations, DeclarationsScanned: len(declarationWarnings) == 0,
 			})
 		}
 
@@ -357,15 +389,6 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 			}
 		}
 		allEntrypoints = append(allEntrypoints, modEntrypoints...)
-		commandTraces, commandTraceWarnings := buildCommandTraces(repoReader, modEntrypoints)
-		allCommandTraces = append(allCommandTraces, commandTraces...)
-		if len(commandTraceWarnings) > 0 {
-			modWarnings = append(modWarnings, commandTraceWarnings...)
-			for _, warning := range commandTraceWarnings {
-				topWarnings = append(topWarnings, fmt.Sprintf("module %s: %s", modRelDir, warning))
-			}
-		}
-
 		modules = append(modules, ModuleFact{
 			ID:                 moduleID,
 			ModulePath:         modulePath,
@@ -450,7 +473,6 @@ func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxE
 		PackagesCount:         len(allPkgs),
 		RetainedPackagesCount: len(packageFacts),
 		EntrypointPackages:    allEntrypoints,
-		CommandTraces:         allCommandTraces,
 		ModuleSummaries:       moduleSummaries,
 		OrientationCandidates: orientationCandidates,
 		InternalEdges:         edges,
@@ -536,10 +558,10 @@ func readModuleReplacements(reader *reporead.Reader, repoRoot, moduleDir string)
 	return result
 }
 
-func runGoModule(ctx context.Context, repoDir string) (goListModule, error) {
+func runGoModule(ctx context.Context, repoDir string, target gotarget.Target) (goListModule, error) {
 	cmd := exec.CommandContext(ctx, "go", "list", "-m", "-json")
 	cmd.Dir = repoDir
-	cmd.Env = append(os.Environ(), "GOWORK=off")
+	cmd.Env = append(target.ApplyEnv(os.Environ()), "GOWORK=off")
 	output, err := cmd.Output()
 	if err != nil {
 		return goListModule{}, fmt.Errorf("go list -m: %w", err)
@@ -602,10 +624,10 @@ func verifyModuleGoMod(reader *reporead.Reader, moduleDir string) error {
 	return nil
 }
 
-func runGoList(ctx context.Context, repoDir string) ([]goListPackage, []string, error) {
+func runGoList(ctx context.Context, repoDir string, target gotarget.Target) ([]goListPackage, []string, error) {
 	cmd := exec.CommandContext(ctx, "go", "list", "-e", "-json", "./...")
 	cmd.Dir = repoDir
-	cmd.Env = append(os.Environ(), "GOWORK=off")
+	cmd.Env = append(target.ApplyEnv(os.Environ()), "GOWORK=off")
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

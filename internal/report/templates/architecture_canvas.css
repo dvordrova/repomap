@@ -986,14 +986,17 @@
 
 .rm-arch__group-title {
  color: #334155;
+ display: -webkit-box;
  font-size: 0.9rem;
  font-weight: 800;
+ -webkit-box-orient: vertical;
+ -webkit-line-clamp: 2;
+ line-clamp: 2;
  letter-spacing: 0.015em;
  line-height: 1.2;
  margin: 0;
  overflow: hidden;
- text-overflow: ellipsis;
- white-space: nowrap;
+ white-space: normal;
 }
 
 .rm-arch__group-count,
@@ -1244,9 +1247,14 @@
  color: var(--rm-arch-muted);
 }
 
-.rm-arch__component-card:hover {
+.rm-arch__component:not(.is-dimmed):not(.is-selected) .rm-arch__component-card:hover {
  border-color: #8fa7c5;
  box-shadow: 0 7px 19px rgba(15, 23, 42, 0.1);
+}
+
+.rm-arch__component.is-selected .rm-arch__component-card:hover {
+ border-color: var(--rm-arch-blue);
+ box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16), 0 8px 22px rgba(37, 99, 235, 0.12);
 }
 
 .rm-arch.has-selected-flow .rm-arch__component.is-unrelated {
@@ -1265,10 +1273,17 @@
 .rm-arch.has-selected-flow .rm-arch__component.is-flow-related .rm-arch__component-card {
  border-color: #9ab8ee;}
 
-/* Decision 229 D1: selected-node focus dims unrelated principal nodes but
-   keeps them spatially stable (dimming is visual only). */
-.rm-arch__component.is-dimmed .rm-arch__component-card,
-.rm-arch__component.is-dimmed .rm-arch__component-card * {
+/* Decision 229 D1 + D272: selected-node focus keeps unrelated principal
+   nodes spatially stable. The card plane stays opaque so the selected
+   component's local edge cannot appear to run through another card; only
+   the card content is subdued. */
+.rm-arch__component.is-dimmed .rm-arch__component-card {
+ background: var(--rm-arch-panel);
+ filter: none;
+ opacity: 1;
+}
+
+.rm-arch__component.is-dimmed .rm-arch__component-card > * {
  opacity: 0.38;
  filter: saturate(0.65);
  transition: opacity 160ms ease, filter 160ms ease;
@@ -1519,6 +1534,14 @@
  outline-offset: 2px;
 }
 
+.rm-arch__entry-handoff-source.is-count {
+ cursor: default;
+ font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+ font-weight: 800;
+ pointer-events: none;
+ white-space: nowrap;
+}
+
 .rm-arch__inspector {
  background: #ffffff;
  border: 0;
@@ -1561,7 +1584,7 @@
  border-radius: 10px;
  display: grid;
  gap: 3px;
- grid-template-columns: repeat(3, minmax(0, 1fr));
+ grid-template-columns: repeat(2, minmax(0, 1fr));
  margin-top: 14px;
  min-width: 0;
  padding: 3px;
@@ -1940,6 +1963,112 @@
  color: var(--rm-arch-muted);
  font-size: .72rem;
  overflow-wrap: anywhere;
+}
+
+.rm-arch__component-relation {
+ align-items: center;
+ background: #fff;
+ border: 1px solid var(--rm-arch-line);
+ border-radius: 9px;
+ color: var(--rm-arch-ink);
+ cursor: pointer;
+ display: grid;
+ font: inherit;
+ gap: 3px 8px;
+ grid-template-columns: minmax(0, 1fr) auto;
+ margin: 0;
+ min-width: 0;
+ padding: 9px 10px;
+ text-align: left;
+ width: 100%;
+}
+
+.rm-arch__component-relation + .rm-arch__component-relation,
+.rm-arch__relation-overflow .rm-arch__component-relation + .rm-arch__component-relation {
+ margin-top: 7px;
+}
+
+.rm-arch__component-relation strong {
+ font-size: .78rem;
+ line-height: 1.3;
+ min-width: 0;
+ overflow-wrap: anywhere;
+}
+
+.rm-arch__component-relation-count {
+ color: var(--rm-arch-muted);
+ font-size: .66rem;
+ grid-column: 1;
+ line-height: 1.3;
+ overflow-wrap: anywhere;
+}
+
+.rm-arch__component-relation-arrow {
+ align-self: center;
+ color: var(--rm-arch-blue);
+ font-size: 1.12rem;
+ font-weight: 850;
+ grid-column: 2;
+ grid-row: 1 / span 2;
+}
+
+.rm-arch__component-relation:hover,
+.rm-arch__component-relation:focus-visible {
+ background: #eff6ff;
+ border-color: var(--rm-arch-blue);
+ outline: none;
+}
+
+.rm-arch__component-relation:focus-visible {
+ box-shadow: 0 0 0 3px rgba(37, 99, 235, .18);
+}
+
+.rm-arch__relation-overflow {
+ margin-top: 7px;
+ min-width: 0;
+}
+
+.rm-arch__relation-overflow-summary {
+ border-radius: 7px;
+ color: var(--rm-arch-blue);
+ cursor: pointer;
+ font-size: .69rem;
+ font-weight: 800;
+ padding: 7px 9px;
+}
+
+.rm-arch__relation-overflow-summary:hover,
+.rm-arch__relation-overflow-summary:focus-visible {
+ background: #eff6ff;
+ outline: none;
+}
+
+.rm-arch__relation-overflow > :not(summary):first-of-type {
+ margin-top: 7px;
+}
+
+.rm-arch__operation-row.is-static {
+ border-left: 2px solid #cbd5e1;
+ color: #334155;
+ display: block;
+ font-size: .74rem;
+ line-height: 1.35;
+ overflow-wrap: anywhere;
+ padding: 6px 0 6px 9px;
+}
+
+.rm-arch__operation-row.is-static + .rm-arch__operation-row.is-static {
+ margin-top: 3px;
+}
+
+.rm-arch__operation-row.is-action {
+ margin-top: 0;
+}
+
+.rm-arch__operation-row.is-action + .rm-arch__operation-row.is-action,
+.rm-arch__operation-row.is-static + .rm-arch__operation-row.is-action,
+.rm-arch__operation-row.is-action + .rm-arch__operation-row.is-static {
+ margin-top: 7px;
 }
 
 .rm-arch__compact-action {
@@ -2719,6 +2848,15 @@
   max-height: min(52vh, 640px);
   overflow: auto;
   overscroll-behavior: contain;
+}
+.rm-map-entry-context {
+  border-top: 1px solid var(--rm-border, #d8dee6);
+  padding: 10px 14px 4px;
+}
+.rm-map-entry-context__title {
+  color: var(--rm-text, #1f2937);
+  font-size: 14px;
+  margin: 0 0 4px;
 }
 .rm-map-lens-object {
   display: flex;

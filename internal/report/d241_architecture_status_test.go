@@ -5,8 +5,8 @@ import "testing"
 func TestD241ArchitectureStatusV15GatesItemLocalSalvageCodes(t *testing.T) {
 	t.Parallel()
 
-	if ArchitectureSynthesisStatusVersion != 15 {
-		t.Fatalf("Architecture status version = %d, want 15", ArchitectureSynthesisStatusVersion)
+	if ArchitectureSynthesisStatusVersion != 16 {
+		t.Fatalf("Architecture status version = %d, want 16", ArchitectureSynthesisStatusVersion)
 	}
 	for _, code := range []string{
 		"proposal.empty_component",
@@ -16,7 +16,13 @@ func TestD241ArchitectureStatusV15GatesItemLocalSalvageCodes(t *testing.T) {
 			current := architectureSynthesisV4AcceptedFixture()
 			current.ValidationCodes = []string{code}
 			if err := current.Validate(); err != nil {
-				t.Fatalf("v15 rejected %q: %v", code, err)
+				t.Fatalf("current status rejected D241 code %q: %v", code, err)
+			}
+
+			d241 := current
+			d241.Version = 15
+			if err := d241.Validate(); err != nil {
+				t.Fatalf("v15 rejected its own D241 code %q: %v", code, err)
 			}
 
 			historical := current

@@ -1,6 +1,7 @@
 package surfacediscovery
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -10,6 +11,27 @@ import (
 
 	"golang.org/x/tools/go/packages"
 )
+
+func TestAnalyzeRejectsUnsafeSelectedTargetEvenWhenSiblingPackageIsSSASafe(t *testing.T) {
+	options := DefaultOptions(filepath.Join("testdata", "partial_load"))
+	_, err := AnalyzeWithInput(options, Input{
+		RepositoryName: "partial_load", ModuleDirs: []string{"."},
+		Packages: []PackageInput{
+			{Path: "example.com/partial_load/cmd/broken", ModuleDir: "."},
+			{Path: "example.com/partial_load/cmd/partial_load", ModuleDir: "."},
+		},
+		AnalysisTarget: &AnalysisTargetInput{
+			Kind: AnalysisTargetExecutablePackage, PackagePath: "example.com/partial_load/cmd/broken",
+			Roots: []AnalysisTargetRootInput{{Path: "cmd/broken/main.go", Line: 3}},
+		},
+	})
+	var targetErr *AnalysisTargetSSAUnavailableError
+	if !errors.As(err, &targetErr) || targetErr.Reason != AnalysisTargetPackageNotSSASafe ||
+		targetErr.Package != "example.com/partial_load/cmd/broken" ||
+		!IsAnalysisTargetSSAUnavailable(err) {
+		t.Fatalf("unsafe selected target error = %#v / %v", targetErr, err)
+	}
+}
 
 func TestAnalyzeIsolatesIllTypedExecutableAndKeepsExactProcessEntries(t *testing.T) {
 	options := DefaultOptions(filepath.Join("testdata", "partial_load"))

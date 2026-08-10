@@ -8,9 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/boundary"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
+	"github.com/dvordrova/repomap/internal/entrycall"
 	"github.com/dvordrova/repomap/internal/flowexplain"
 	"github.com/dvordrova/repomap/internal/llmbundle"
 	"github.com/dvordrova/repomap/internal/modelresearch"
@@ -22,6 +24,7 @@ import (
 
 type Options struct {
 	RepoPath       string
+	GoTarget       string
 	SnapshotOnly   bool
 	LLMBundleOnly  bool
 	LLMRequestOnly bool
@@ -54,14 +57,51 @@ type Options struct {
 	DumpRedacted              bool
 	RequireArtifacts          bool
 	DiscoverSurfaces          bool
-	ExplainFlows              int
+	DirectCallDepth           int
+	DirectCallEdgeLimit       int
+	AnalysisTargetOverride    string
+	// AnalysisTargetSelectorOwnsResolution allows an explicitly configured
+	// local selector handoff to receive the complete catalog in offline mode or
+	// while a CLI override is present. The caller then owns restoring that
+	// explicit/default choice. Ordinary semantic selection leaves this false.
+	AnalysisTargetSelectorOwnsResolution bool
+	// PrecomputedSnapshot is an independently validated, ordinary one-target
+	// snapshot projected from a TargetRunContainer. When present, Run reuses
+	// these exact deterministic facts instead of rescanning the repository or
+	// invoking AnalysisTargetSelector. The remaining target pipeline is
+	// unchanged, including its own SSA, semantic calls, and run artifacts.
+	PrecomputedSnapshot *snapshot.Snapshot
+	ExplainFlows        int
 	// DirectCallIndexSink receives one independently owned snapshot of the
-	// complete bounded in-memory direct-call index produced by the successful
-	// existing surface SSA pass. It is a live-run handoff only: the index remains
+	// complete declaration catalog plus bounded target-rooted direct-call edges
+	// produced by the successful existing surface SSA pass. It is a live-run
+	// handoff only: the index remains
 	// excluded from snapshot, debug, Atlas, and report artifacts, and no second
 	// package load or SSA build is performed. Disabled and non-Go runs do not
 	// invoke the sink.
 	DirectCallIndexSink func(surfacediscovery.DirectCallIndex)
+	// EntryCallSubstrateSink receives the independently owned exact substrate
+	// produced by ordinary generic Go call discovery. It is a live-run handoff
+	// and is never part of snapshot/report serialization.
+	EntryCallSubstrateSink func(entrycall.Substrate)
+	// AnalysisTargetSink receives an independently owned, validated target as
+	// soon as deterministic snapshot facts resolve it and before any semantic
+	// stage or its cardinality budget runs.
+	AnalysisTargetSink func(analysistarget.Target)
+	// TargetRunContainerSink receives the complete selected-target run
+	// authority while the one complete deferred snapshot and catalog are still
+	// live. Each selected target can be projected from this handoff without a
+	// second repository snapshot, go list, or selector call. A later ordinary
+	// target run still owns its own package load, SSA, provider calls, and
+	// artifacts.
+	TargetRunContainerSink func(snapshot.TargetRunContainer)
+	// AnalysisTargetSelector is a handoff between the complete deterministic
+	// target catalog and the target-run container. Ordinary semantic selection
+	// is online-only and explicit targets bypass it. A caller-owned local
+	// resolution may opt into offline/explicit handling through
+	// AnalysisTargetSelectorOwnsResolution. Returned refs are restored only
+	// through snapshot's exact catalog authority.
+	AnalysisTargetSelector func(context.Context, string, analysistarget.TargetCatalog) (snapshot.TargetRunSelection, error)
 	// Progress callbacks may run from heartbeat goroutines. They must be
 	// concurrency-safe and return promptly.
 	Progress          func(ProgressEvent)
@@ -93,25 +133,81 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 	emitProgress(opts, ProgressEvent{
 		Stage:    ProgressSnapshotStarted,
 		RepoPath: opts.RepoPath,
+		GoTarget: opts.GoTarget,
 	})
 
-	s, err := snapshot.BuildContext(ctx, snapshot.Options{
-		RepoPath:            opts.RepoPath,
-		MaxReadmeBytes:      opts.MaxReadmeBytes,
-		MaxTreeLines:        opts.MaxTreeLines,
-		MaxInterestingFiles: opts.MaxInterestingFiles,
-		MaxGoPkgs:           opts.MaxGoPkgs,
-		MaxGoEdges:          opts.MaxGoEdges,
-	})
-	if err != nil {
-		return nil, err
+	useAnalysisTargetSelector := opts.PrecomputedSnapshot == nil &&
+		opts.AnalysisTargetSelector != nil &&
+		(opts.AnalysisTargetSelectorOwnsResolution ||
+			(!opts.Offline && strings.TrimSpace(opts.AnalysisTargetOverride) == ""))
+	var s snapshot.Snapshot
+	var err error
+	if opts.PrecomputedSnapshot != nil {
+		if strings.TrimSpace(opts.AnalysisTargetOverride) != "" || opts.AnalysisTargetSelector != nil {
+			return nil, fmt.Errorf("precomputed target snapshot cannot be combined with target selection")
+		}
+		s, err = snapshot.OwnSnapshot(*opts.PrecomputedSnapshot)
+		if err != nil {
+			return nil, fmt.Errorf("own precomputed target snapshot: %w", err)
+		}
+		if s.AnalysisTarget == nil || s.TargetCatalog != nil {
+			return nil, fmt.Errorf("precomputed target snapshot must be an ordinary scoped target projection")
+		}
+	} else {
+		analysisTargetOverride := opts.AnalysisTargetOverride
+		if opts.AnalysisTargetSelectorOwnsResolution {
+			analysisTargetOverride = ""
+		}
+		s, err = snapshot.BuildContext(ctx, snapshot.Options{
+			RepoPath:                      opts.RepoPath,
+			GoTarget:                      opts.GoTarget,
+			MaxReadmeBytes:                opts.MaxReadmeBytes,
+			MaxTreeLines:                  opts.MaxTreeLines,
+			MaxInterestingFiles:           opts.MaxInterestingFiles,
+			MaxGoPkgs:                     opts.MaxGoPkgs,
+			MaxGoEdges:                    opts.MaxGoEdges,
+			AnalysisTargetOverride:        analysisTargetOverride,
+			DeferAnalysisTargetResolution: useAnalysisTargetSelector,
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
-	emitProgress(opts, ProgressEvent{
+	var targetRunContainer *snapshot.TargetRunContainer
+	if useAnalysisTargetSelector && s.TargetCatalog != nil {
+		selection, selectionErr := opts.AnalysisTargetSelector(
+			ctx,
+			s.RepoName,
+			s.TargetCatalog.Snapshot(),
+		)
+		if selectionErr != nil {
+			return nil, selectionErr
+		}
+		container, containerErr := snapshot.BuildTargetRunContainer(s, selection)
+		if containerErr != nil {
+			return nil, fmt.Errorf("build selected target run container: %w", containerErr)
+		}
+		deliverTargetRunContainer(opts, container)
+		targetRunContainer = &container
+		s, selectionErr = container.ScopedSnapshot(selection.DefaultTargetRef)
+		if selectionErr != nil {
+			return nil, fmt.Errorf("apply selected analysis target: %w", selectionErr)
+		}
+	}
+	deliverAnalysisTarget(opts, s.AnalysisTarget)
+	snapshotReady := ProgressEvent{
 		Stage:         ProgressSnapshotReady,
 		RepoName:      s.RepoName,
 		FileCount:     s.FilesConsidered,
+		GoTarget:      opts.GoTarget,
 		LatencyMillis: time.Since(snapshotStarted).Milliseconds(),
-	})
+	}
+	if s.GoTargetAdvisory != nil {
+		snapshotReady.SuggestedGoTarget = s.GoTargetAdvisory.Suggested
+		snapshotReady.GoTargetEvidenceCount = s.GoTargetAdvisory.EvidenceFiles
+		snapshotReady.GoTargetEvidencePaths = append([]string(nil), s.GoTargetAdvisory.Examples...)
+	}
+	emitProgress(opts, snapshotReady)
 
 	snapshotJSON, _ := s.JSON()
 
@@ -122,7 +218,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		return snapshotJSON, nil
 	}
 	if opts.AtlasFirst {
-		return runAtlasFirstLocalArtifacts(ctx, opts, s, snapshotJSON, requireArtifacts)
+		return runAtlasFirstLocalArtifacts(ctx, opts, s, snapshotJSON, targetRunContainer, requireArtifacts)
 	}
 	orientationSignals, orientationSignalTrace := collectOrientationSignals(s, opts)
 	operationalWarnings := discoverOperationalCandidates(&s, orientationSignals)
@@ -203,8 +299,9 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		Command:             "orient",
 		CompactContextBytes: len(orientationWireJSON),
 		LLMBundleOnly:       opts.LLMBundleOnly,
-		EffectiveOptions:    opts.EffectiveOptions,
+		EffectiveOptions:    effectiveOptions(opts),
 	}
+	bindRunMetaAnalysisTarget(&runMeta, s.AnalysisTarget)
 	if opts.DebugDir != "" {
 		dw, err = debugdump.NewWriter(opts.DebugDir, runID, opts.DumpRedacted)
 		if err != nil {
@@ -255,7 +352,11 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 			RepoName: s.RepoName,
 		})
 		surfaceOptions := surfacediscovery.DefaultOptions(opts.RepoPath)
+		surfaceOptions.GoTarget = opts.GoTarget
 		surfaceOptions.Offline = opts.Offline
+		surfaceOptions.DirectCallDepth = opts.DirectCallDepth
+		surfaceOptions.DirectCallEdgeLimit = opts.DirectCallEdgeLimit
+		surfaceOptions.CaptureEntryCallSubstrate = opts.EntryCallSubstrateSink != nil
 		surfaceOptions.Progress = func(progress surfacediscovery.PhaseProgress) {
 			emitProgress(opts, ProgressEvent{
 				Stage: ProgressSurfacePhase, RepoName: s.RepoName,
@@ -267,7 +368,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		surfaceResult, surfaceErr := surfacediscovery.AnalyzeContextWithInput(
 			ctx,
 			surfaceOptions,
-			surfaceDiscoveryInput(s.RepoName, s.GoFacts),
+			surfaceDiscoveryInput(s.RepoName, s.GoFacts, s.AnalysisTarget),
 		)
 		if errors.Is(surfaceErr, context.Canceled) || errors.Is(surfaceErr, context.DeadlineExceeded) {
 			return nil, surfaceErr
@@ -298,6 +399,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		} else {
 			successfulSurfaceResult = &surfaceResult
 			deliverDirectCallIndex(opts, surfaceResult.DirectCallIndex)
+			deliverEntryCallSubstrate(opts, surfaceResult.EntryCallSubstrate)
 			emitProgress(opts, ProgressEvent{
 				Stage:         ProgressSurfaceReady,
 				RepoName:      s.RepoName,
@@ -307,6 +409,9 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		}
 		if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
 			return nil, fmt.Errorf("write surface discovery metadata: %w", metadataErr)
+		}
+		if surfacediscovery.IsAnalysisTargetSSAUnavailable(surfaceErr) {
+			return nil, surfaceErr
 		}
 	}
 	if dw != nil && s.GoFacts != nil {
@@ -389,7 +494,7 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 				Activity: progress.Stage, LatencyMillis: progress.Elapsed.Milliseconds(),
 			})
 		}
-		repository := repositoryContext(opts, modelBundleJSON)
+		repository := repositoryContext(opts, modelBundleJSON, s.AnalysisTarget)
 		researchState := modelresearch.NewState(policy, repository)
 		researchState.Coverage.LocalAuthorizedFiles = len(s.FilteredFiles)
 		researchState.Coverage.InitialModelSummaries = len(bundle.CandidateFileIndex)
@@ -675,6 +780,7 @@ func runAtlasFirstLocalArtifacts(
 	opts Options,
 	s snapshot.Snapshot,
 	snapshotJSON []byte,
+	targetRunContainer *snapshot.TargetRunContainer,
 	requireArtifacts bool,
 ) ([]byte, error) {
 	runID := opts.RunID
@@ -684,8 +790,9 @@ func runAtlasFirstLocalArtifacts(
 	runMeta := debugdump.RunMeta{
 		RunID: runID, CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		RepoName: s.RepoName, RepoPath: opts.RepoPath, Command: "atlas-first",
-		EffectiveOptions: opts.EffectiveOptions,
+		EffectiveOptions: effectiveOptions(opts),
 	}
+	bindRunMetaAnalysisTarget(&runMeta, s.AnalysisTarget)
 	report := combinedReport{
 		RepoName: s.RepoName, ExplainedFlows: []explainedFlow{}, Warnings: []string{},
 	}
@@ -705,6 +812,19 @@ func runAtlasFirstLocalArtifacts(
 			if err := dw.WriteSnapshot(snapshotJSON); err != nil && requireArtifacts {
 				return nil, fmt.Errorf("write required debug snapshot: %w", err)
 			}
+			if targetRunContainer != nil {
+				encoded, encodeErr := targetRunContainer.CanonicalJSON()
+				if encodeErr != nil {
+					return nil, fmt.Errorf("encode target run container: %w", encodeErr)
+				}
+				if writeErr := dw.WriteValidatedFile(
+					snapshot.TargetRunContainerArtifactFilename,
+					encoded,
+					targetRunContainer.ValidateArtifact,
+				); writeErr != nil {
+					return nil, fmt.Errorf("write target run container: %w", writeErr)
+				}
+			}
 		}
 	}
 
@@ -713,7 +833,11 @@ func runAtlasFirstLocalArtifacts(
 		surfaceStarted := time.Now()
 		emitProgress(opts, ProgressEvent{Stage: ProgressSurfaceStarted, RepoName: s.RepoName})
 		surfaceOptions := surfacediscovery.DefaultOptions(opts.RepoPath)
+		surfaceOptions.GoTarget = opts.GoTarget
 		surfaceOptions.Offline = opts.Offline
+		surfaceOptions.DirectCallDepth = opts.DirectCallDepth
+		surfaceOptions.DirectCallEdgeLimit = opts.DirectCallEdgeLimit
+		surfaceOptions.CaptureEntryCallSubstrate = opts.EntryCallSubstrateSink != nil
 		surfaceOptions.Progress = func(progress surfacediscovery.PhaseProgress) {
 			emitProgress(opts, ProgressEvent{
 				Stage: ProgressSurfacePhase, RepoName: s.RepoName,
@@ -723,7 +847,7 @@ func runAtlasFirstLocalArtifacts(
 			})
 		}
 		surfaceResult, surfaceErr := surfacediscovery.AnalyzeContextWithInput(
-			ctx, surfaceOptions, surfaceDiscoveryInput(s.RepoName, s.GoFacts),
+			ctx, surfaceOptions, surfaceDiscoveryInput(s.RepoName, s.GoFacts, s.AnalysisTarget),
 		)
 		if errors.Is(surfaceErr, context.Canceled) || errors.Is(surfaceErr, context.DeadlineExceeded) {
 			return nil, surfaceErr
@@ -752,6 +876,7 @@ func runAtlasFirstLocalArtifacts(
 		} else {
 			successfulSurfaceResult = &surfaceResult
 			deliverDirectCallIndex(opts, surfaceResult.DirectCallIndex)
+			deliverEntryCallSubstrate(opts, surfaceResult.EntryCallSubstrate)
 			emitProgress(opts, ProgressEvent{
 				Stage: ProgressSurfaceReady, RepoName: s.RepoName,
 				SurfaceCount: len(surfaceResult.Catalog.Triggers), LatencyMillis: surfaceLatency,
@@ -759,6 +884,9 @@ func runAtlasFirstLocalArtifacts(
 		}
 		if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
 			return nil, fmt.Errorf("write surface discovery metadata: %w", metadataErr)
+		}
+		if surfacediscovery.IsAnalysisTargetSSAUnavailable(surfaceErr) {
+			return nil, surfaceErr
 		}
 	}
 	if dw != nil {
@@ -816,6 +944,44 @@ func deliverDirectCallIndex(opts Options, index *surfacediscovery.DirectCallInde
 		return
 	}
 	opts.DirectCallIndexSink(index.Snapshot())
+}
+
+func deliverAnalysisTarget(opts Options, target *analysistarget.Target) {
+	if opts.AnalysisTargetSink == nil || target == nil {
+		return
+	}
+	opts.AnalysisTargetSink(target.Snapshot())
+}
+
+func deliverTargetRunContainer(opts Options, container snapshot.TargetRunContainer) {
+	if opts.TargetRunContainerSink == nil {
+		return
+	}
+	opts.TargetRunContainerSink(container.Snapshot())
+}
+
+func effectiveOptions(opts Options) debugdump.EffectiveOptions {
+	effective := opts.EffectiveOptions
+	if opts.AnalysisTargetOverride != "" || effective.AnalysisTargetOverride == "" {
+		effective.AnalysisTargetOverride = opts.AnalysisTargetOverride
+	}
+	return effective
+}
+
+func bindRunMetaAnalysisTarget(meta *debugdump.RunMeta, target *analysistarget.Target) {
+	if meta == nil || target == nil {
+		return
+	}
+	meta.AnalysisTargetRef = target.Ref
+	meta.AnalysisTargetKind = string(target.Kind)
+	meta.AnalysisTargetPackage = target.PackagePath
+}
+
+func deliverEntryCallSubstrate(opts Options, substrate *entrycall.Substrate) {
+	if opts.EntryCallSubstrateSink == nil || substrate == nil {
+		return
+	}
+	opts.EntryCallSubstrateSink(substrate.Snapshot())
 }
 
 func orientationFileLimit(explicitLimit, inputCount int) int {

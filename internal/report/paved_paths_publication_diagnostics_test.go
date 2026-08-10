@@ -416,7 +416,11 @@ func writePavedPathPublicationDiagnosticsBaseRun(
 		"file_tree": ["README.md", "OPERATE.md"],
 		"files_considered": 2
 	}`
-	if err := os.WriteFile(filepath.Join(runDir, "snapshot.json"), []byte(snapshot), 0o600); err != nil {
+	if err := os.WriteFile(
+		filepath.Join(runDir, "snapshot.json"),
+		snapshotJSONWithAnalysisTarget(t, []byte(snapshot)),
+		0o600,
+	); err != nil {
 		t.Fatal(err)
 	}
 	orientation := `{

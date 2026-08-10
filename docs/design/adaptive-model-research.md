@@ -27,7 +27,7 @@ at `internal/llmbundle/llmbundle.go:81-103`.
 
 | Stage | Call site | Purpose and visible facts | Request/response accounting | Cache and necessity | Local effect |
 | --- | --- | --- | --- | --- | --- |
-| Broad orientation | `internal/orient/orient.go:273-385`, transport at `internal/deepseek/client.go:433-460` | Interpret one `llmbundle.Bundle`: compact README, directory/language summaries, bounded modules, entrypoints, at most eight command traces, orientation candidates, edges, source signals, candidate file summaries, and closed `allowed_paths`. No raw repository tree or broad source dump. Prompt is built at `internal/deepseek/client.go:248-337`. | Exact request bytes, aggregate latency, and one logical call are saved in `metadata.json` (`internal/orient/orient.go:284-321`). Response bytes and transport retry count are not currently typed metrics. Current saved runs measured 45,697 request bytes for Caddy and 61,322 for Restic. | No cross-run cache. Mandatory online; failure aborts orientation. Offline and request-preview modes skip the call. | Supplies conceptual orientation and candidate flow seeds. Local path validation, confidence gates, and direction acceptance still apply. |
+| Broad orientation | `internal/orient/orient.go`, transport at `internal/deepseek/client.go` | Interpret one `llmbundle.Bundle`: compact README, directory/language summaries, bounded modules, entrypoints, orientation candidates, edges, source signals, candidate file summaries, and closed `allowed_paths`. A replayed legacy snapshot may also contribute at most eight persisted command traces; fresh ordinary runs produce none. No raw repository tree or broad source dump. | Exact request bytes, aggregate latency, and one logical call are saved in `metadata.json`. Response bytes and transport retry count are not currently typed metrics. | No cross-run cache. Mandatory online; failure aborts orientation. Offline and request-preview modes skip the call. | Supplies conceptual orientation and candidate flow seeds. Local path validation, confidence gates, and direction acceptance still apply. |
 | Focused flow explanation | `internal/orient/orient.go:417-448` and `internal/orient/flow.go:310-376`, transport at `internal/deepseek/client.go:365-367` | Explain one deterministic `flowexplain.FlowBundle` containing selected tracked files/tests/docs/packages/edges/signals for a model-suggested flow. | Exact request bytes increase aggregate metadata. No per-call response bytes, latency, retry count, prompt version, or cache fingerprint. | Optional; zero calls when the default `--flows 0` is used. One logical call per selected flow otherwise. | Adds validated prose/read order only. It does not add local edges or proof facts. |
 | Architecture synthesis | `cmd/repomap/architecture_synthesis.go:79-210`, adapter at `internal/deepseek/component_synthesis.go:29-46` | Group and name opaque exact members using repository archetype, behavior anchors, saved flows, local candidate facts, local supporting relations, and anchor bindings. The request contract is `internal/componentmap/synthesis.go:51-75`; the model cannot return paths, evidence, edges, certainty, or layout. | Input bytes and latency are saved in the singular call record; response byte count and validation outcome are also saved (`internal/componentmap/synthesis.go:87-121`). | Best-effort and persistently cached. The pre-change key includes a constant captured revision, component contract, prompt version, and exact request hash (`internal/componentmap/synthesis.go:258-277`), but not provider/model or a research-policy version. No retry. | May replace conceptual naming and membership only after local validation. Deterministic local fallback survives invalid output. |
 
@@ -61,11 +61,11 @@ pipeline; it does not silently count standalone commands against another run.
 
 ## Observed context construction and coupling
 
-The complete local command catalog is collected in `gofacts.Facts.CommandTraces`
-with its own 40-trace/16-call-per-command analyzer ceilings
-(`internal/gofacts/commandtrace.go:16-20,98-112`). It remains in `snapshot.json`.
+`gofacts.Facts.CommandTraces` remains a legacy persisted field with bounded
+readers so old `snapshot.json` artifacts still load. Decision 273 stopped the
+ordinary Go-facts loader from producing new command traces.
 
-The orientation builder then:
+When replaying a legacy snapshot, the orientation builder still:
 
 1. ranks at most eight command traces for provider visibility
    (`internal/llmbundle/llmbundle.go:195-203,848-883`);
@@ -75,7 +75,7 @@ The orientation builder then:
    (`internal/llmbundle/llmbundle.go:218-222,416-535`);
 4. assigns every selected index path to `AllowedPaths`
    (`internal/llmbundle/llmbundle.go:223-225,779-786`);
-5. filters entrypoints, signals, candidates, and provider-visible command traces
+5. filters entrypoints, signals, candidates, and legacy provider-visible command traces
    against that closed set (`internal/llmbundle/llmbundle.go:225-233,906-942`).
 
 `AllowedPaths` is therefore correctly a provider request allowlist, but its
@@ -96,8 +96,7 @@ of `snapshot.GoFacts.CommandTraces`. This is not required by the proof engine.
 Its Go executor starts from an exact proof transition, confines paths to the
 canonical repository root, and may resolve a declaration in another tracked
 local file (`internal/analyzer/golang/gotypes/resolver.go:50-63,90-165,268-297`).
-The report parser already reloads full command traces from `snapshot.json` at
-`internal/report/parse.go:636-648`.
+The report parser still reloads full legacy command traces from `snapshot.json`.
 
 Focused direction retrieval also authorizes against the full tracked-file list,
 not the orientation allowlist (`internal/orient/flow.go:156-166` and

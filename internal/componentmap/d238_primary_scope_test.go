@@ -65,7 +65,7 @@ func TestD238BuildSynthesisRequestCarriesClosedPackageContext(t *testing.T) {
 			t.Fatalf("bounded request leaked %q: %s", forbidden, encoded)
 		}
 	}
-	for _, required := range []string{`"parent_ref":`, `"unit_ref":`, `"coverage_role":"primary_scope"`, `"coverage_role":"supporting_evidence"`} {
+	for _, required := range []string{`"package_path":`, `"symbols":`, `"unit_ref":`, `"coverage_role":"primary_scope"`} {
 		if !bytes.Contains(encoded, []byte(required)) {
 			t.Fatalf("bounded request omitted %q: %s", required, encoded)
 		}
@@ -148,7 +148,7 @@ func TestD238SynthesisPromptPrioritizesPrimaryScopeAndKeepsMemberOnlyOutput(t *t
 		"Cover defensible primary_scope across the supplied production units before selecting supporting_evidence.",
 		"coverage of them never compensates for uncovered production primary_scope.",
 		"a non-empty member_refs array",
-		"Candidate parent_ref, unit_ref, and coverage_role fields are read-only context and must never be returned.",
+		"Candidate parent_ref, unit_ref, coverage_role, label, package_path, and symbols fields are read-only context and must never be returned.",
 	} {
 		if !strings.Contains(prompt.System, required) {
 			t.Fatalf("prompt omitted %q:\n%s", required, prompt.System)

@@ -1661,11 +1661,11 @@ func TestPresentationLocalizationAuthorizedCanonicalRoundTrip(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	writeTestFile(t, runDir, "snapshot.json", `{
+	writeTestFile(t, runDir, "snapshot.json", string(snapshotJSONWithAnalysisTarget(t, []byte(`{
 		"repo_name":"localized-authority",
 		"file_tree":["main.go"],
 		"files_considered":1
-	}`)
+	}`))))
 	modelBundle := `{"allowed_paths":["main.go"]}`
 	writeTestFile(t, runDir, "llm_bundle.json", modelBundle)
 	if err := os.WriteFile(

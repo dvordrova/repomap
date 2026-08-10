@@ -118,11 +118,16 @@ func TestArchitectureSynthesisUnavailableIsExplicitAndProviderFree(t *testing.T)
 	}
 }
 
-func TestArchitectureSynthesisV15PreservesProductionAwareCoverage(t *testing.T) {
+func TestArchitectureSynthesisV16PreservesProductionAwareCoverage(t *testing.T) {
 	t.Parallel()
 
-	if ArchitectureSynthesisStatusVersion != 15 {
+	if ArchitectureSynthesisStatusVersion != 16 {
 		t.Fatalf("production-aware Architecture status version = %d", ArchitectureSynthesisStatusVersion)
+	}
+	v15 := architectureSynthesisV4AcceptedFixture()
+	v15.Version = 15
+	if err := v15.Validate(); err != nil {
+		t.Fatalf("historical v15 primary-scope status became unreadable: %v", err)
 	}
 	historical := architectureSynthesisV4AcceptedFixture()
 	historical.Version = 14
@@ -288,6 +293,76 @@ func TestArchitectureSynthesisV13RequiresTruthfulPrimaryScopeCoverage(t *testing
 			mutate(&status)
 			if err := status.Validate(); err == nil {
 				t.Fatalf("accepted inconsistent v13 coverage: %#v", status)
+			}
+		})
+	}
+}
+
+func TestArchitectureSynthesisCurrentAcceptsExactAllSupportingScope(t *testing.T) {
+	t.Parallel()
+
+	status := architectureSynthesisV4AcceptedFixture()
+	status.LocalCandidateCount = 39
+	status.RequestedConceptualCount = 26
+	status.StructuralLocatorCount = 13
+	status.MemberOccurrences = 24
+	status.DistinctMembers = 24
+	status.CoveredConceptualCount = 24
+	status.UncoveredConceptualCount = 2
+	status.UncoveredConceptualIDs = []componentmap.MemberID{
+		{Kind: componentmap.MemberPackage, Value: "member-package-root-test"},
+		{Kind: componentmap.MemberPackage, Value: "member-package-tool-helper"},
+	}
+	status.RequestedPrimaryScopeCount = 0
+	status.CoveredPrimaryScopeCount = 0
+	status.UncoveredPrimaryScopeCount = 0
+	status.CoveredSupportingEvidenceCount = 24
+	status.ProposalPartial = true
+	status.ArchitectureSource = "partial_model"
+	if err := status.Validate(); err != nil {
+		t.Fatalf("valid all-supporting Architecture status: %v; status=%#v", err, status)
+	}
+
+	cached := status
+	cached.State = ArchitectureSynthesisCached
+	cached.ProviderRequestCount = 0
+	cached.TransportAttempts = 0
+	if err := cached.Validate(); err != nil {
+		t.Fatalf("valid cached all-supporting Architecture status: %v; status=%#v", err, cached)
+	}
+
+	historical := status
+	historical.Version = 15
+	if err := historical.Validate(); err == nil {
+		t.Fatal("historical status claimed the current all-supporting acceptance contract")
+	}
+
+	for name, mutate := range map[string]func(*ArchitectureSynthesisStatus){
+		"supporting membership mismatch": func(value *ArchitectureSynthesisStatus) {
+			value.CoveredSupportingEvidenceCount--
+		},
+		"covered primary without request": func(value *ArchitectureSynthesisStatus) {
+			value.CoveredPrimaryScopeCount = 1
+		},
+		"uncovered primary without request": func(value *ArchitectureSynthesisStatus) {
+			value.UncoveredPrimaryScopeCount = 1
+		},
+		"unparsed supporting membership": func(value *ArchitectureSynthesisStatus) {
+			value.ResponseParsed = false
+		},
+		"primary quality diagnostic without request": func(value *ArchitectureSynthesisStatus) {
+			value.ValidationCodes = []string{"proposal.empty_primary_scope_coverage"}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := status
+			candidate.UncoveredConceptualIDs = append(
+				[]componentmap.MemberID(nil),
+				status.UncoveredConceptualIDs...,
+			)
+			mutate(&candidate)
+			if err := candidate.Validate(); err == nil {
+				t.Fatalf("all-supporting status accepted %s: %#v", name, candidate)
 			}
 		})
 	}
@@ -574,6 +649,13 @@ func TestArchitectureSynthesisV6AcceptsExactClosedProducerDiagnosticRegistry(t *
 	base.ProposalAccepted = false
 	base.CoveredConceptualCount = 0
 	clearArchitecturePrimaryScopeCoverage(&base)
+	// This registry fixture exercises the closed diagnostic vocabulary, not a
+	// resolved membership partition. Keep it explicitly uncounted so current
+	// zero-primary status validation cannot mistake the inherited accepted
+	// fixture's two distinct members for supporting coverage.
+	base.MembershipCounted = false
+	base.MemberOccurrences = 0
+	base.DistinctMembers = 0
 	base.ProposalRejected = true
 	base.Failure = &ArchitectureSynthesisFailure{
 		Stage: "response_validation", Code: "architecture.proposal_rejected",

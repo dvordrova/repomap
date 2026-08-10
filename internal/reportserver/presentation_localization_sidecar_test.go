@@ -370,6 +370,7 @@ func TestServeRussianProjectionHydratesStudyAndTaskWarningMetadata(t *testing.T)
 		t.Fatal(err)
 	}
 	manifest.ReportSHA256 = fmt.Sprintf("%x", sha256.Sum256(reportJSON))
+	manifest.SnapshotSHA256 = taskWarningFixtureSHA256(t, runDir, "snapshot.json")
 	manifest.OpenablePaths = append([]string(nil), canonical.OpenablePaths...)
 	manifest.MaterialInputs.ModelBundleSHA256 = taskWarningFixtureSHA256(
 		t,

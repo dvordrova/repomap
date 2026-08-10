@@ -73,11 +73,12 @@ func testLateCatalogIncompatibilityPublishesViewOnly(
 
 	runDir := t.TempDir()
 	writeRunManifestMetadata(t, runDir, initialState.Identity)
-	writeTestFile(t, runDir, "snapshot.json", fmt.Sprintf(`{
+	snapshot := fmt.Sprintf(`{
 		"repo_name":"catalog-fallback",
 		"file_tree":["batch.go",%q],
 		"files_considered":2
-	}`, linkName))
+	}`, linkName)
+	writeTestFile(t, runDir, "snapshot.json", string(snapshotJSONWithAnalysisTarget(t, []byte(snapshot))))
 	modelBundle := fmt.Sprintf(`{
 		"allowed_paths":["batch.go",%q]
 	}`, linkName)

@@ -39,12 +39,16 @@ engineer's normal Go environment and may use a configured company proxy:
 - interesting files (entrypoint-ish, storage-ish, messaging-ish, config-ish, background-ish)
 - `go.mod` files per discovered module
 - `go list -json ./...` per module
+- build-selected non-test top-level declaration identities per local package;
+  these stay local until the exact target-portfolio projection groups them
+  under their owning package without source or comments
 - Go package import edges (internal, external top-50)
 - entrypoint detection (`go list` build-selected package files plus an exact
   syntax-only top-level `func main()` anchor)
-- bounded command-framework readers over build-selected `package main` files;
-  the first reader records Cobra root construction, command registration,
-  Run/RunE callbacks, and ranked handler call sites as typed syntax evidence
+- one framework-free core Go analyzer over build-selected package closures;
+  it records exact process entries, standard-library HTTP registrations and
+  server starts, `errgroup` task starts, and repository-local registrations
+  with the exact `net/http` handler shape
 - module summaries (role guess, top internal imports, top external imports)
 - orientation candidates (ranked entrypoints plus bounded operational
   candidates derived from source signals, all with repo-relative `open_files`)
@@ -144,6 +148,18 @@ identities and exact validation remain local. A rejected or absent Architecture
 enrichment therefore does not block Study when the validated local canvas and
 reading catalog are otherwise usable.
 
+Before target scoping, the complete exact package catalog remains local
+authority. Ordinary portfolio selection deterministically projects every exact
+executable and only exact module-root libraries, then one refs-only Go call may
+choose the useful set and default when that surface has more than one eligible
+target. Its request nests exact declaration labels under each advertised target
+so product executables can be distinguished from development tools without
+path-purpose heuristics. Public non-root libraries remain supporting packages,
+not ordinary sibling pages; explicit selection and exhaustive inclusion still
+use the complete catalog. The response can only cite request-local target refs;
+the backend restores exact advertised targets and publishes each selected scope
+as a sibling page.
+
 Named user choice now reaches the first saved local neighborhood. In a served
 report, one manifest-authorized component anchor can lazily request bounded Go
 function/method candidates, confirm the selected declaration at its exact
@@ -165,14 +181,17 @@ references are navigation evidence, not proof of coverage or assertions.
 
 ### 4.5. Local runtime surfaces (implemented for persisted Go runs)
 
-One typed report catalog normalizes build-selected deterministic Cobra command
-registrations and bounded generic SSA discoveries such as configured HTTP
-registrations, errgroup task starts, and loop-backed worker registrations under
-one recorded build scenario. Producer-specific registration, constructor,
-callback, wrapper, frontier, and provenance evidence remains attached to each
-record. `All surfaces`, architecture ownership, and headline counts are
-projections of that same catalog; a saved trace only associates with a record
-and never creates or duplicates one.
+One typed report catalog normalizes the framework-free core SSA discoveries
+under one recorded build scenario: exact process entries, standard-library
+`net/http` registrations and server starts, `errgroup` task starts, and
+repository-local registrations whose handler is exactly
+`func(net/http.ResponseWriter, *net/http.Request)`, `net/http.Handler`, or
+`net/http.HandlerFunc`. Wrapper, frontier, and provenance evidence remains
+attached to each record. Ordinary analysis has no framework mode, fresh Cobra
+inventory, or third-party context-handler widening. `All surfaces`,
+architecture ownership, and headline counts are projections of that same
+catalog; a saved trace only associates with a record and never creates or
+duplicates one.
 
 This shelf is deliberately outside the architecture graph and FlowProof:
 static registration does not prove callback execution, runtime order,
@@ -184,6 +203,10 @@ Generic-scan latency/counts remain stage metrics rather than product totals.
 Worker and non-worker async-task totals are exclusive final classifications; a
 selected flow may therefore contain a task that this independently bounded
 catalog did not reach.
+
+Persisted schemas retain the former Cobra/framework coverage and command-trace
+fields so reports and snapshots from older runs remain readable. Fresh runs do
+not populate those retired producers.
 
 ### 5. Durable focused investigation (implemented)
 

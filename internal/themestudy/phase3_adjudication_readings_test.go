@@ -98,10 +98,19 @@ func TestAdjudicationPromptReadingsGrammar(t *testing.T) {
 		"expected_learning must promise only what the retained readings can teach",
 		`"why_it_matters":"...","expected_learning":"..."`,
 		`"readings":[{"anchor_ref":"a1","support":"direct","observation":"..."}]`,
+		"emit only the allowlisted response fields shown in the schema",
+		"Do not echo input-only theme_kind, anchor_refs, expansion_file_refs",
+		"observation must describe evidence from its own anchor_ref",
+		"Do not emit an unknown when the supplied evidence or the retained readings already answer it",
 	} {
 		if !strings.Contains(user, required) {
 			t.Errorf("adjudication prompt misses readings instruction %q", required)
 		}
+	}
+	requestBundleAt := strings.Index(user, "Request bundle JSON:")
+	companionAt := strings.Index(user, "Response contract reminder after the request bundle:")
+	if requestBundleAt < 0 || companionAt <= requestBundleAt {
+		t.Fatalf("post-bundle response companion is not after request JSON: bundle=%d companion=%d", requestBundleAt, companionAt)
 	}
 	for _, forbidden := range []string{
 		"expanded_sources", "anchor_assessments", "reading_order", "supported_observation",

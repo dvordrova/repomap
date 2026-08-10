@@ -178,10 +178,18 @@ func BuildSeedPacks(seeds []SeedSpec, maxAnchors, maxBytes, maxObjectLines, maxO
 			pack.Objects = []SourceObject{decl}
 		}
 		pack.TotalBytes = 0
+		oversizedObject := false
 		for _, object := range pack.Objects {
-			pack.TotalBytes += linesBytes(object.Lines)
+			objectBytes := linesBytes(object.Lines)
+			pack.TotalBytes += objectBytes
+			if len(object.Lines) > maxObjectLines || objectBytes > maxObjectBytes {
+				oversizedObject = true
+			}
 		}
-		if len(result.Packs) > 0 && acc+pack.TotalBytes > maxBytes {
+		// A source object is atomic evidence: never truncate its code bytes to
+		// force it through the request. An oversized first seed is omitted just
+		// like any later seed, allowing a bounded useful sibling to survive.
+		if oversizedObject || pack.TotalBytes > maxBytes || acc+pack.TotalBytes > maxBytes {
 			budgetOmitted = append(budgetOmitted, seed.Ref)
 			continue
 		}

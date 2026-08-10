@@ -8,6 +8,8 @@ import (
 	"io"
 	"sort"
 	"strings"
+
+	"github.com/dvordrova/repomap/internal/repositoryatlas"
 )
 
 type ReferenceError struct {
@@ -368,7 +370,7 @@ func (product Product) resolveDirection(position int, provider providerDirection
 	principals := make([]CanonicalRef, 0, len(provider.PrincipalRefs))
 	principalSet := make(map[CanonicalRef]struct{}, len(provider.PrincipalRefs))
 	seenRefs := make(map[string]struct{}, len(provider.PrincipalRefs))
-	hasComponent := false
+	hasComponent, hasAnalysisTargetRoot := false, false
 	for index, ref := range provider.PrincipalRefs {
 		if _, duplicate := seenRefs[ref]; duplicate {
 			return Direction{}, "duplicate_principal_ref"
@@ -382,6 +384,12 @@ func (product Product) resolveDirection(position int, provider providerDirection
 		}
 		switch object.Kind {
 		case RefComponent, RefSurface:
+		case RefUnit:
+			canonical := CanonicalRef{Kind: object.Kind, ID: object.CanonicalID}
+			if !product.isAnalysisTargetRootPrincipal(canonical) {
+				return Direction{}, "wrong_kind_principal_ref"
+			}
+			hasAnalysisTargetRoot = true
 		default:
 			return Direction{}, "wrong_kind_principal_ref"
 		}
@@ -393,7 +401,7 @@ func (product Product) resolveDirection(position int, provider providerDirection
 		principalSet[canonical] = struct{}{}
 		hasComponent = hasComponent || object.Kind == RefComponent
 	}
-	if !hasComponent {
+	if !hasComponent && !hasAnalysisTargetRoot {
 		return Direction{}, "component_principal_missing"
 	}
 	sort.Slice(principals, func(i, j int) bool { return canonicalRefLess(principals[i], principals[j]) })
@@ -510,6 +518,44 @@ func (product Product) advertisesPrincipal(principal CanonicalRef) bool {
 				return true
 			}
 		}
+	}
+	return false
+}
+
+// isAnalysisTargetRootPrincipal recognizes the one closed D277 exception to
+// Component/Surface direction principals. The Unit must be a package Unit and
+// must be bound through one resolved public_api_root support to one resolved,
+// Unit-only reading target. No arbitrary Atlas Unit is eligible.
+func (product Product) isAnalysisTargetRootPrincipal(principal CanonicalRef) bool {
+	if principal.Kind != RefUnit || product.input.AnalysisTargetRoot == nil ||
+		principal.ID != product.input.AnalysisTargetRoot.UnitID {
+		return false
+	}
+	unit, ok := product.byCanonical[principal]
+	if !ok || unit.Kind != RefUnit || unit.UnitKind != repositoryatlas.UnitPackage {
+		return false
+	}
+	for _, target := range product.catalog {
+		if target.Kind != RefReadingTarget || target.Authority != repositoryatlas.AuthorityResolved ||
+			target.Owner != nil || len(target.RelatedComponentRefs) != 0 ||
+			len(target.PrincipalRefs) != 1 || target.PrincipalRefs[0] != principal {
+			continue
+		}
+		targetRef := CanonicalRef{Kind: RefReadingTarget, ID: target.CanonicalID}
+		rootCount, allCount := 0, 0
+		for _, support := range product.catalog {
+			if support.Kind != RefRouteSupport || support.SupportTarget == nil ||
+				*support.SupportTarget != targetRef {
+				continue
+			}
+			allCount++
+			if support.SupportRole == SupportAnalysisTargetRoot &&
+				support.Authority == repositoryatlas.AuthorityResolved &&
+				support.PackageBucket == principal.ID {
+				rootCount++
+			}
+		}
+		return rootCount == 1 && allCount == 1
 	}
 	return false
 }

@@ -13,16 +13,17 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/dvordrova/repomap/internal/atlasstudy"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/guidedtour"
 	"github.com/dvordrova/repomap/internal/localization"
+	"github.com/dvordrova/repomap/internal/mechanismstudy"
 	"github.com/dvordrova/repomap/internal/orient"
 	"github.com/dvordrova/repomap/internal/pavedpath"
 	"github.com/dvordrova/repomap/internal/report"
@@ -53,6 +54,46 @@ func TestRemovedOrdinaryProductFlagsAreRejected(t *testing.T) {
 				t.Fatalf("removed flag %q error = %v", args[0], err)
 			}
 		})
+	}
+}
+
+func TestDirectCallGraphFlagsRejectInvalidBoundsBeforeAnalysis(t *testing.T) {
+	for _, test := range []struct {
+		args []string
+		want string
+	}{
+		{args: []string{"--depth", "0"}, want: "--depth must be at least 1"},
+		{args: []string{"--edges-limit", "0"}, want: "--edges-limit must be between 1 and"},
+	} {
+		var stderr bytes.Buffer
+		err := runDefaultWithDeps(t.TempDir(), test.args, defaultRunDeps{
+			stdout: io.Discard, stderr: &stderr,
+		})
+		if err == nil || !strings.Contains(err.Error(), test.want) {
+			t.Fatalf("args %v error = %v, want %q", test.args, err, test.want)
+		}
+	}
+}
+
+func TestDirectCallEdgeCeilingOffersTwoRealRerunOptions(t *testing.T) {
+	err := directCallEdgeCeilingError("cmd/app", 10, 10_000, 4)
+	for _, want := range []string{
+		"exceeded --edges-limit=10000 at --depth=10",
+		"decrease depth via --depth 4 (default 10;",
+		"this depth is known to fit",
+		"to preserve depth, try --edges-limit 20000 (default 10000",
+		"full edge count is not computed",
+		"rebuilds local SSA",
+		"Go build cache remains reusable",
+		"no provider call was made",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("ceiling error omitted %q:\n%s", want, err)
+		}
+	}
+	rootOverflow := directCallEdgeCeilingError("cmd/app", 10, 1, 0)
+	if strings.Contains(rootOverflow.Error(), "decrease depth") {
+		t.Fatalf("root-layer overflow offered a false depth recovery:\n%s", rootOverflow)
 	}
 }
 
@@ -209,7 +250,7 @@ func TestRunDefaultStopsWhenOrientationIsCanceled(t *testing.T) {
 	var stderr bytes.Buffer
 	err := runDefaultWithDeps(
 		repo,
-		[]string{"--debug-dir", t.TempDir(), "--discover-surfaces=false", "--no-open", "--no-serve"},
+		[]string{"--debug-dir", t.TempDir(), "--no-open", "--no-serve"},
 		defaultRunDeps{ctx: ctx, stdout: io.Discard, stderr: &stderr},
 	)
 	if !errors.Is(err, context.Canceled) {
@@ -357,7 +398,6 @@ func TestRunDefaultGitLabURLCreatesStandalonePinnedReport(t *testing.T) {
 	var stderr bytes.Buffer
 	if err := runDefaultWithDeps(analysisRoot, []string{
 		"--offline",
-		"--discover-surfaces=false",
 		"--debug-dir", debugDir,
 		"--gitlab-url", "https://gitlab.example.test/group/project.git",
 	}, defaultRunDeps{
@@ -448,7 +488,6 @@ func TestRunDefaultGitHubURLCreatesStandalonePinnedReport(t *testing.T) {
 	var stderr bytes.Buffer
 	if err := runDefaultWithDeps(repository, []string{
 		"--offline",
-		"--discover-surfaces=false",
 		"--no-open",
 		"--debug-dir", debugDir,
 		"--github-url", "https://github.com/example/static-github.git",
@@ -573,7 +612,6 @@ func TestRunDefaultGitLabURLCreatesStandaloneReportFromStableDirtyRepository(t *
 	err = runDefaultWithDeps(repository, []string{
 		"--offline",
 		"--no-open",
-		"--discover-surfaces=false",
 		"--debug-dir", debugDir,
 		"--gitlab-url", "https://gitlab.example.test/group/project",
 	}, defaultRunDeps{
@@ -725,7 +763,6 @@ func TestRunDefaultGitLabURLRejectsWorkingTreeChangesDuringAnalysis(t *testing.T
 			err := runDefaultWithDeps(repository, []string{
 				"--offline",
 				"--no-open",
-				"--discover-surfaces=false",
 				"--debug-dir", debugDir,
 				"--gitlab-url", "https://gitlab.example.test/group/project",
 			}, defaultRunDeps{
@@ -783,7 +820,6 @@ func TestRunDefaultGitLabHostOnlyURLUsesRepositoryOrigin(t *testing.T) {
 	if err := runDefaultWithDeps(repository, []string{
 		"--offline",
 		"--no-open",
-		"--discover-surfaces=false",
 		"--debug-dir", debugDir,
 		"--gitlab-url", "https://gitlab.example.test",
 	}, defaultRunDeps{
@@ -838,7 +874,7 @@ func TestRunDefaultGitLabHostOnlyURLDoesNotGuessWithoutOrigin(t *testing.T) {
 	}
 }
 
-func TestRunDefaultSurfaceDiscoveryIsOnWithOptOut(t *testing.T) {
+func TestRunDefaultSurfaceDiscoveryUsesSingleCorePath(t *testing.T) {
 	clearLLMEnv(t)
 	repo := t.TempDir()
 	writeFile(t, filepath.Join(repo, "go.mod"), "module example.com/surface-opt-in\n\ngo 1.24\n")
@@ -848,21 +884,21 @@ func TestRunDefaultSurfaceDiscoveryIsOnWithOptOut(t *testing.T) {
 	commitTestRepository(t, repo)
 
 	for _, test := range []struct {
-		name string
-		args []string
-		want bool
+		name         string
+		args         []string
+		wantSurfaces bool
 	}{
-		{name: "default enabled", want: true},
-		{name: "explicit opt-out", args: []string{"--discover-surfaces=false"}, want: false},
+		{name: "default enabled", wantSurfaces: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			debugDir := t.TempDir()
+			var stderr bytes.Buffer
 			args := append([]string{
 				"--offline", "--no-open", "--no-serve", "--debug-dir", debugDir,
 			}, test.args...)
 			if err := runDefaultWithDeps(repo, args, defaultRunDeps{
 				stdout: io.Discard,
-				stderr: io.Discard,
+				stderr: &stderr,
 			}); err != nil {
 				t.Fatalf("runDefaultWithDeps() error = %v", err)
 			}
@@ -883,8 +919,14 @@ func TestRunDefaultSurfaceDiscoveryIsOnWithOptOut(t *testing.T) {
 			if err := json.Unmarshal(metadataJSON, &metadata); err != nil {
 				t.Fatal(err)
 			}
-			if got := metadata.EffectiveOptions.DiscoverSurfaces; got != test.want {
-				t.Fatalf("discover_surfaces = %t, want %t; metadata: %s", got, test.want, metadataJSON)
+			if got := metadata.EffectiveOptions.DiscoverSurfaces; got != test.wantSurfaces {
+				t.Fatalf("discover_surfaces = %t, want %t; metadata: %s", got, test.wantSurfaces, metadataJSON)
+			}
+			if bytes.Contains(metadataJSON, []byte(`"no_frameworks"`)) {
+				t.Fatalf("removed framework mode leaked into metadata: %s", metadataJSON)
+			}
+			if strings.Contains(stderr.String(), "Framework semantics:") {
+				t.Fatalf("ordinary generic-only discovery leaked experiment chrome: %s", stderr.String())
 			}
 		})
 	}
@@ -1375,8 +1417,9 @@ func TestRunDefaultOmitsSearchFromSavedReport(t *testing.T) {
 	debugDir := t.TempDir()
 	if err := runDefaultWithDeps(".", []string{
 		"--offline",
-		"--discover-surfaces=false",
 		"--no-cache",
+		"--depth", "7",
+		"--edges-limit", "12345",
 		"--no-open",
 		"--no-serve",
 		"--debug-dir", debugDir,
@@ -1399,7 +1442,9 @@ func TestRunDefaultOmitsSearchFromSavedReport(t *testing.T) {
 	}
 	var metadata struct {
 		EffectiveOptions struct {
-			NoCache bool `json:"no_cache"`
+			NoCache             bool `json:"no_cache"`
+			DirectCallDepth     int  `json:"direct_call_depth"`
+			DirectCallEdgeLimit int  `json:"direct_call_edge_limit"`
 		} `json:"effective_options"`
 	}
 	if err := json.Unmarshal(metadataJSON, &metadata); err != nil {
@@ -1410,6 +1455,9 @@ func TestRunDefaultOmitsSearchFromSavedReport(t *testing.T) {
 	}
 	if !metadata.EffectiveOptions.NoCache {
 		t.Fatalf("metadata effective options did not retain --no-cache: %s", metadataJSON)
+	}
+	if metadata.EffectiveOptions.DirectCallDepth != 7 || metadata.EffectiveOptions.DirectCallEdgeLimit != 12345 {
+		t.Fatalf("metadata lost direct-call bounds: %#v", metadata.EffectiveOptions)
 	}
 
 	reportJSON, err := os.ReadFile(filepath.Join(runDir, "report.json"))
@@ -1451,7 +1499,6 @@ func TestRunDefaultNoSecretsIsScopedAndRecorded(t *testing.T) {
 	var stderr bytes.Buffer
 	if err := runDefaultWithDeps(repo, []string{
 		"--offline",
-		"--discover-surfaces=false",
 		"--no-secrets",
 		"--no-open",
 		"--no-serve",
@@ -1538,7 +1585,6 @@ func TestRunDefaultOfflineRussianRequestKeepsUILocaleWithoutModelLocalization(t 
 	debugDir := t.TempDir()
 	if err := runDefaultWithDeps(repo, []string{
 		"--offline",
-		"--discover-surfaces=false",
 		"--lang", "ru",
 		"--no-open",
 		"--no-serve",
@@ -1608,7 +1654,6 @@ func TestRunDefaultOfflineRussianRequestDoesNotRecaptureAfterLocalization(t *tes
 	var stderr bytes.Buffer
 	err = runDefaultWithDeps(repo, []string{
 		"--offline",
-		"--discover-surfaces=false",
 		"--lang", "ru",
 		"--no-open",
 		"--no-serve",
@@ -1657,113 +1702,42 @@ func TestRunDefaultAtlasFirstCallPlanExcludesLegacyStages(t *testing.T) {
 	runGit(t, repo, "add", "--", "go.mod", "main.go", "internal/a/a.go", "internal/b/b.go")
 	commitTestRepository(t, repo)
 
-	orientationJSON, err := json.Marshal(map[string]any{
-		"project_guess": "three-stage Go command",
-		"confidence":    0.9,
-		"high_level_map": []any{
-			map[string]any{"name": "command", "evidence": []string{"main.go"}, "why_it_matters": "starts the command"},
-			map[string]any{"name": "service", "evidence": []string{"internal/a/a.go"}, "why_it_matters": "coordinates work"},
-			map[string]any{"name": "worker", "evidence": []string{"internal/b/b.go"}, "why_it_matters": "finishes work"},
-		},
-		"first_files_to_open": []any{
-			map[string]any{"path": "main.go", "reason": "entrypoint"},
-			map[string]any{"path": "internal/a/a.go", "reason": "coordination"},
-			map[string]any{"path": "internal/b/b.go", "reason": "terminal work"},
-		},
-		"candidate_flows": []any{map[string]any{
-			"name":              "Command startup",
-			"trigger":           "the executable starts",
-			"likely_entrypoint": "main.go",
-			"likely_files":      []string{"main.go", "internal/a/a.go", "internal/b/b.go"},
-			"why_interesting":   "connects startup to the terminal worker",
-			"evidence":          []string{"main.go", "internal/a/a.go", "internal/b/b.go"},
-			"confidence":        0.9,
-		}},
-		"important_domain_words": []any{},
-		"questions_for_human":    []any{},
-		"unverified_paths":       []any{},
-		"warnings":               []any{},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	modelPlanOrientationFixture := orientationResponseFixture{
-		ProjectGuess: "three-stage Go command", Confidence: 0.9,
-		Map: []orientationMapFixture{
-			{Name: "command", Role: "entry", EvidencePath: "main.go", WhyItMatters: "starts the command"},
-			{Name: "service", Role: "coordination", EvidencePath: "internal/a/a.go", WhyItMatters: "coordinates work"},
-			{Name: "worker", Role: "domain", EvidencePath: "internal/b/b.go", WhyItMatters: "finishes work"},
-		},
-		FirstFiles: []orientationFileFixture{
-			{Path: "main.go", Reason: "entrypoint"}, {Path: "internal/a/a.go", Reason: "coordination"},
-			{Path: "internal/b/b.go", Reason: "terminal work"},
-		},
-		Flows: []orientationFlowFixture{{
-			Name: "Command startup", Trigger: "the executable starts", EntrypointPath: "main.go",
-			LikelyPaths:    []string{"main.go", "internal/a/a.go", "internal/b/b.go"},
-			EvidencePaths:  []string{"main.go", "internal/a/a.go", "internal/b/b.go"},
-			WhyInteresting: "connects startup to the terminal worker", Confidence: 0.9,
-		}},
-		Warnings: []string{},
+	provider := &atlasFirstAcceptanceProvider{t: t, repositoryType: atlasstudy.RepositoryService}
+	server := httptest.NewServer(provider)
+	defer server.Close()
+	t.Setenv("REPOMAP_LLM_ENDPOINT", server.URL)
+	t.Setenv("REPOMAP_LLM_MODEL", "deepseek-v4-flash")
+	t.Setenv("REPOMAP_LLM_AUTH", "none")
+	t.Setenv("REPOMAP_LLM_TIMEOUT", "5s")
+
+	if err := runDefaultWithDeps(repo, []string{
+		"--no-open",
+		"--no-serve",
+		"--debug-dir", t.TempDir(),
+	}, defaultRunDeps{
+		ctx: context.Background(), stdout: io.Discard, stderr: io.Discard,
+	}); err != nil {
+		t.Fatalf("runDefaultWithDeps() error = %v", err)
 	}
 
-	run := func() [][]byte {
-		t.Helper()
-		var mu sync.Mutex
-		var requests [][]byte
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-			body, readErr := io.ReadAll(request.Body)
-			if readErr != nil {
-				t.Errorf("read request: %v", readErr)
-				return
-			}
-			mu.Lock()
-			requests = append(requests, bytes.Clone(body))
-			mu.Unlock()
-			responseContent := orientationJSON
-			if bytes.Contains(body, []byte("Orientation facts bundle JSON:")) {
-				responseContent = orientationResponseForRequest(t, body, modelPlanOrientationFixture)
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"choices": []any{map[string]any{"message": map[string]any{
-					"role": "assistant", "content": string(responseContent),
-				}}},
-			})
-		}))
-		defer server.Close()
-		t.Setenv("REPOMAP_LLM_ENDPOINT", server.URL)
-		t.Setenv("REPOMAP_LLM_MODEL", "deepseek-v4-flash")
-		t.Setenv("REPOMAP_LLM_AUTH", "none")
-		t.Setenv("REPOMAP_LLM_TIMEOUT", "5s")
-
-		args := []string{
-			"--discover-surfaces=false",
-			"--no-open",
-			"--no-serve",
-			"--debug-dir", t.TempDir(),
-		}
-		if err := runDefaultWithDeps(repo, args, defaultRunDeps{
-			ctx: context.Background(), stdout: io.Discard, stderr: io.Discard,
-		}); err != nil {
-			t.Fatalf("runDefaultWithDeps() error = %v", err)
-		}
-
-		mu.Lock()
-		defer mu.Unlock()
-		return append([][]byte(nil), requests...)
+	provider.assertStagesWithMechanismBatches(t, false, 0, mechanismstudy.MaxProviderCalls)
+	provider.mu.Lock()
+	requests := make([][]byte, 0, len(provider.stages))
+	for _, stage := range provider.stages {
+		stageBodies := provider.bodies[stage]
+		requests = append(requests, bytes.Clone(stageBodies[len(stageBodies)-1]))
 	}
-
-	requests := run()
-	if len(requests) != 1 {
-		t.Fatalf("model request count = %d, want one Architecture request", len(requests))
-	}
-	wantStageMarkers := []string{
-		"compact conceptual architecture landscape",
-	}
-	for index, marker := range wantStageMarkers {
-		if !bytes.Contains(requests[index], []byte(marker)) {
-			t.Fatalf("model request %d does not contain stage marker %q: %s", index, marker, requests[index])
-		}
+	architectureRequests := len(provider.bodies[atlasFirstStageArchitecture])
+	targetPortfolioRequests := len(provider.bodies[atlasFirstStageTargetPortfolio])
+	entryCallRequests := len(provider.bodies[atlasFirstStageEntryCall])
+	provider.mu.Unlock()
+	if architectureRequests != 1 || targetPortfolioRequests != 0 || entryCallRequests != 1 {
+		t.Fatalf(
+			"current stage counts: target portfolio=%d Architecture=%d entry-call=%d",
+			targetPortfolioRequests,
+			architectureRequests,
+			entryCallRequests,
+		)
 	}
 	forbiddenStageMarkers := []string{
 		"senior software engineer helping orient",

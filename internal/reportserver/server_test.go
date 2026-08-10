@@ -438,6 +438,84 @@ func TestRunSummariesExposeBoundedPickerMetadata(t *testing.T) {
 	}
 }
 
+func TestRunListReusesCachedIndexUntilSavedRunsChange(t *testing.T) {
+	t.Parallel()
+
+	repository := t.TempDir()
+	runsDir := t.TempDir()
+	const firstRunID = "20260731-140506-fixture-abcdef012345"
+	writeRun(t, runsDir, firstRunID, repository, "first report")
+
+	var logs []string
+	handler, err := NewHandler(Options{
+		RunsDir:    runsDir,
+		Capability: testCapability,
+		Logf: func(format string, args ...any) {
+			logs = append(logs, fmt.Sprintf(format, args...))
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	baseURL := server.URL + capabilityURLPrefix(testCapability)
+
+	getRuns := func() []RunSummary {
+		t.Helper()
+		response, err := server.Client().Get(baseURL + "/api/runs")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		var payload struct {
+			Runs []RunSummary `json:"runs"`
+		}
+		if response.StatusCode != http.StatusOK ||
+			json.NewDecoder(response.Body).Decode(&payload) != nil {
+			t.Fatalf("run list status=%d", response.StatusCode)
+		}
+		return payload.Runs
+	}
+	loadedLogs := func() int {
+		count := 0
+		for _, log := range logs {
+			if strings.HasPrefix(log, "loaded ") {
+				count++
+			}
+		}
+		return count
+	}
+
+	if runs := getRuns(); len(runs) != 1 || runs[0].ID != firstRunID {
+		t.Fatalf("first run list = %#v", runs)
+	}
+	if runs := getRuns(); len(runs) != 1 || loadedLogs() != 1 {
+		t.Fatalf("unchanged run list reloaded index: runs=%#v logs=%v", runs, logs)
+	}
+
+	const secondRunID = "20260731-150506-fixture-fedcba543210"
+	writeRun(t, runsDir, secondRunID, repository, "second report")
+	if runs := getRuns(); len(runs) != 1 || loadedLogs() != 1 {
+		t.Fatalf("run list endpoint refreshed the server index: runs=%#v logs=%v", runs, logs)
+	}
+	client := server.Client()
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	rootResponse, err := client.Get(baseURL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootResponse.Body.Close()
+	if rootResponse.StatusCode != http.StatusFound || loadedLogs() != 2 {
+		t.Fatalf("root did not refresh the server index: status=%d logs=%v", rootResponse.StatusCode, logs)
+	}
+	if runs := getRuns(); len(runs) != 2 || runs[0].ID != secondRunID || loadedLogs() != 2 {
+		t.Fatalf("run list did not reuse refreshed index: runs=%#v logs=%v", runs, logs)
+	}
+}
+
 func TestRunPickerMetadataNormalization(t *testing.T) {
 	t.Parallel()
 
@@ -1610,11 +1688,18 @@ func writeScopedRun(t *testing.T, runsDir, runID, repositoryPath, analysisRoot, 
 	if err != nil {
 		t.Fatal(err)
 	}
+	snapshotSHA256 := writeServerSnapshot(
+		t,
+		runDir,
+		filepath.Base(canonicalAnalysisRoot),
+		reportData.OpenablePaths,
+	)
 	manifest := reportpkg.RunManifest{
 		Version:               reportpkg.CurrentRunManifestVersion,
 		RepositoryState:       state,
 		AnalysisRoot:          canonicalAnalysisRoot,
 		RepositoryStateSHA256: stateDigest,
+		SnapshotSHA256:        snapshotSHA256,
 		ReportSHA256:          fmt.Sprintf("%x", sha256.Sum256(reportJSON)),
 		ReportFormatVersion:   reportpkg.CurrentFormatVersion,
 		OpenablePaths:         append([]string(nil), reportData.OpenablePaths...),
@@ -1633,4 +1718,27 @@ func writeScopedRun(t *testing.T, runsDir, runID, repositoryPath, analysisRoot, 
 	if err := os.WriteFile(filepath.Join(runDir, reportpkg.RunManifestFilename), manifestJSON, 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writeServerSnapshot(
+	t *testing.T,
+	runDir string,
+	repoName string,
+	filteredFiles []string,
+) string {
+	t.Helper()
+	snapshotJSON, err := json.Marshal(struct {
+		RepoName      string   `json:"repo_name"`
+		FilteredFiles []string `json:"filtered_files,omitempty"`
+	}{
+		RepoName:      repoName,
+		FilteredFiles: append([]string(nil), filteredFiles...),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "snapshot.json"), snapshotJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(snapshotJSON))
 }

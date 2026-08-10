@@ -165,11 +165,10 @@ const report = {
 };
 const roots = {};
 [
-  "rm-overview", "rm-task-investigation", "rm-mechanisms", "rm-mechanism-detail",
-  "rm-study-overview", "rm-study-detail", "rm-operate-detail", "rm-architecture", "rm-provenance",
+  "rm-task-investigation", "rm-operate-detail", "rm-architecture", "rm-provenance",
 ].forEach((id) => {
   roots[id] = new Element("section");
-  roots[id].className = "rm-tab-content" + (id === "rm-overview" ? " rm-active" : "");
+  roots[id].className = "rm-tab-content" + (id === "rm-architecture" ? " rm-active" : "");
 });
 roots["rm-tabs"] = new Element("nav");
 roots["rm-source-drawer"] = new Element("aside");
@@ -178,7 +177,7 @@ roots["rm-source-drawer-content"] = new Element("div");
 roots["rm-source-drawer-close"] = new Element("button");
 const workspace = new Element("main");
 const window = {
-  location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  location: { search: "", hash: "#canvas", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   history: {
     state: null,
     pushState(state, _, hash) { this.state = state; window.location.hash = hash; },
@@ -203,7 +202,8 @@ const document = {
   createTextNode(value) { const node = new Element("#text"); node.textContent = String(value); return node; },
   getElementById(id) {
     if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
-    return roots[id] || null;
+    if (roots[id]) return roots[id];
+    return Object.values(roots).flatMap((root) => walk(root)).find((node) => node.id === id) || null;
   },
   querySelector(selector) { return selector === ".rm-workspace" ? workspace : null; },
   querySelectorAll(selector) {
@@ -222,15 +222,17 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
 });
 const api = window.__REPOMAP_WORKSPACE_TEST__;
 api.renderWorkspaceTabs();
-api.renderMapSummaryInto("rm-overview");
-const nav = roots["rm-tabs"].children.slice();
+api.renderArchitectureWorkspace();
+api.mountArchitectureCanvas();
+const nav = byClass(roots["rm-tabs"], "rm-target-link");
 const navLabels = nav.map((node) => text(node));
 const navViews = nav.map((node) => node.attributes["data-workspace-view"]);
-const overviewText = text(roots["rm-overview"]);
-const studyTab = nav.find((node) => node.attributes["data-workspace-view"] === "study_overview");
-studyTab.onclick();
-const studyOverviewText = text(roots["rm-study-overview"]);
-const directionCards = byClass(roots["rm-study-overview"], "rm-study-direction-card");
+const navHrefs = nav.map((node) => node.attributes.href || "");
+const navCurrents = nav.map((node) => node.attributes["aria-current"] || "");
+const overviewText = "";
+const studyRoot = byClass(roots["rm-architecture"], "rm-target-study")[0];
+const studyOverviewText = text(studyRoot);
+const directionCards = byClass(studyRoot, "rm-study-direction-card");
 const routeResults = [];
 directionCards.forEach((directionCard, directionIndex) => {
   const directionTitle = byClass(directionCard, "rm-study-direction-card__title")[0];
@@ -244,8 +246,7 @@ directionCards.forEach((directionCard, directionIndex) => {
       expectedLine: directions[directionIndex].reading_anchors[readingIndex].location.line,
     };
   });
-  directionTitle.onclick();
-  const detail = roots["rm-study-detail"];
+  const detail = directionCard;
   const readingCards = byClass(detail, "rm-study-reading-anchor");
   const readingActions = byClass(detail, "rm-study-reading-anchor__open");
   const exactClicks = [];
@@ -262,20 +263,19 @@ directionCards.forEach((directionCard, directionIndex) => {
     detailText: text(detail),
     readingCards: readingCards.length,
     readingActions: readingActions.length,
+    directionCardTag: String(directionCard && directionCard.tagName || "").toLowerCase(),
+    summaryCount: walk(directionCard).filter((node) => String(node.tagName || "").toLowerCase() === "summary").length,
     directionTitleTag: String(directionTitle && directionTitle.tagName || "").toLowerCase(),
     directionSources: directionSources.length,
     directionExactClicks,
     exactClicks,
   });
 });
-// Decision 236 (v11): the map tab replaces the architecture tab.
-const architectureTab = nav.find((node) => node.attributes["data-workspace-view"] === "map");
-architectureTab.onclick();
 process.stdout.write(JSON.stringify({
-  navLabels, navViews, overviewText, studyOverviewText,
+  navLabels, navViews, navHrefs, navCurrents, overviewText, studyOverviewText,
   directionCards: directionCards.length, routeResults,
   architectureText: text(roots["rm-architecture"]),
-  architectureCurrent: architectureTab.attributes["aria-current"] || "",
+  architectureCurrent: nav[0] && nav[0].attributes["aria-current"] || "",
   architectureHash: window.location.hash,
   mounts,
 }));
@@ -291,6 +291,8 @@ process.stdout.write(JSON.stringify({
 	var got struct {
 		NavLabels         []string `json:"navLabels"`
 		NavViews          []string `json:"navViews"`
+		NavHrefs          []string `json:"navHrefs"`
+		NavCurrents       []string `json:"navCurrents"`
 		OverviewText      string   `json:"overviewText"`
 		StudyOverviewText string   `json:"studyOverviewText"`
 		DirectionCards    int      `json:"directionCards"`
@@ -299,6 +301,8 @@ process.stdout.write(JSON.stringify({
 			DetailText           string `json:"detailText"`
 			ReadingCards         int    `json:"readingCards"`
 			ReadingActions       int    `json:"readingActions"`
+			DirectionCardTag     string `json:"directionCardTag"`
+			SummaryCount         int    `json:"summaryCount"`
 			DirectionTitleTag    string `json:"directionTitleTag"`
 			DirectionSources     int    `json:"directionSources"`
 			DirectionExactClicks []struct {
@@ -329,8 +333,9 @@ process.stdout.write(JSON.stringify({
 	if err := json.Unmarshal(output, &got); err != nil {
 		t.Fatalf("decode Atlas-first product workspace: %v\n%s", err, output)
 	}
-	if strings.Join(got.NavLabels, ",") != "Map,Study" ||
-		strings.Join(got.NavViews, ",") != "map,study_overview" {
+	if len(got.NavLabels) != 1 || !strings.Contains(got.NavLabels[0], "fixture") ||
+		strings.Join(got.NavViews, ",") != "map" || strings.Join(got.NavHrefs, ",") != "#canvas" ||
+		strings.Join(got.NavCurrents, ",") != "page" {
 		t.Fatalf("Atlas-first product navigation = labels %#v views %#v", got.NavLabels, got.NavViews)
 	}
 	if got.DirectionCards != 6 || len(got.RouteResults) != 6 ||
@@ -340,21 +345,13 @@ process.stdout.write(JSON.stringify({
 		t.Fatalf("Atlas-first Study overview = directions %d routes %d text %q",
 			got.DirectionCards, len(got.RouteResults), got.StudyOverviewText)
 	}
-	for _, field := range []string{
-		"A saved repository brief.", "It solves a bounded problem.", "Input",
-		"Responsibility", "Result", "Fixture term", "Fixture meaning",
-	} {
-		if strings.Count(got.OverviewText, field) != 1 || strings.Contains(got.StudyOverviewText, field) {
-			t.Fatalf("canonical Brief field %q was duplicated, lost, or left on Study: overview=%q study=%q",
-				field, got.OverviewText, got.StudyOverviewText)
-		}
-	}
 	wantReadings := []int{1, 4, 1, 2, 1, 1}
 	for index, route := range got.RouteResults {
-		if route.ReadingCards != wantReadings[index] || route.ReadingActions != wantReadings[index] ||
-			route.DirectionTitleTag != "button" || route.DirectionSources != wantReadings[index] ||
+		if route.ReadingCards != 0 || route.ReadingActions != 0 ||
+			route.DirectionCardTag != "details" || route.SummaryCount != 1 ||
+			route.DirectionTitleTag != "span" || route.DirectionSources != wantReadings[index] ||
 			len(route.DirectionExactClicks) != wantReadings[index] ||
-			len(route.ExactClicks) != wantReadings[index] ||
+			len(route.ExactClicks) != 0 ||
 			!strings.Contains(route.DetailText, "Study question "+string(rune('1'+index))+"?") {
 			t.Fatalf("Study route %d = %#v", index+1, route)
 		}
@@ -373,8 +370,8 @@ process.stdout.write(JSON.stringify({
 		}
 	}
 	if len(got.Mounts) != 1 || got.ArchitectureCurrent != "page" ||
-		got.ArchitectureHash != "#/map" ||
-		!strings.Contains(got.ArchitectureText, "Explore the repository map") {
+		got.ArchitectureHash != "#canvas" ||
+		!strings.Contains(got.ArchitectureText, "Components") {
 		t.Fatalf("Atlas-first Architecture route = mounts %d current %q hash %q text %q",
 			len(got.Mounts), got.ArchitectureCurrent, got.ArchitectureHash, got.ArchitectureText)
 	}

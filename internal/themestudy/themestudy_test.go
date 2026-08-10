@@ -194,6 +194,29 @@ func TestSeedPackPartialAndOmittedRanges(t *testing.T) {
 	}
 }
 
+func TestD277SeedPacksOmitOversizedFirstRootAndRetainBoundedSibling(t *testing.T) {
+	files := map[string][]string{
+		"huge.go":  {strings.Repeat("x", 101)},
+		"small.go": {"func Open() {}"},
+	}
+	reader, total := fakeSource(files)
+	seeds := []SeedSpec{
+		{Ref: "a1", Path: "huge.go", Line: 1, Symbol: "NewBot", Kind: "focused", Role: RolePublicAPI},
+		{Ref: "a2", Path: "small.go", Line: 1, Symbol: "Open", Kind: "focused", Role: RolePublicAPI},
+	}
+	result, err := BuildSeedPacks(seeds, 0, 50, 1, 50, reader, total)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Packs) != 1 || result.Packs[0].Seed.Ref != "a2" ||
+		result.TotalBytes > 50 || len(result.Omissions) != 1 ||
+		result.Omissions[0].Reason != "seed_budget" || result.Omissions[0].Count != 1 ||
+		len(result.Omissions[0].Representatives) != 1 ||
+		result.Omissions[0].Representatives[0] != "a1" {
+		t.Fatalf("oversized first-root accounting = %#v", result)
+	}
+}
+
 func TestScoutItemLocalRejection(t *testing.T) {
 	anchorRefs := map[string]struct{}{"a1": {}, "a2": {}, "a3": {}}
 	fileRefs := map[string]struct{}{"f1": {}}

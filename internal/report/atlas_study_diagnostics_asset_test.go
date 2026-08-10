@@ -10,11 +10,10 @@ import (
 )
 
 // TestAtlasStudyDiagnosticsAndSynthesisFailureRendering executes the real
-// templates/script.js + templates/ui_messages.js in Node and verifies the D211
-// HOLD-repair UI contract: the four-stage diagnostics panel renders the stage
-// counts, the four independent flags (including false values), and the bounded
-// omission aggregates; and the Overview/Architecture surfaces show an honest
-// synthesis-failed notice instead of the unconditional acceptance copy.
+// templates/script.js + templates/ui_messages.js in Node. The fixture carries
+// rich internal diagnostics on purpose; the product contract is that Study
+// renders only navigable themes and exact readings, while provider failure and
+// pipeline accounting stay out of the generated report.
 func TestAtlasStudyDiagnosticsAndSynthesisFailureRendering(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -194,10 +193,9 @@ const report = {
 function journey(report, lang) {
   report = Object.assign({}, report, { report_language: lang });
   const roots = {};
-["rm-overview", "rm-task-investigation", "rm-mechanisms", "rm-mechanism-detail",
- "rm-study-overview", "rm-study-detail", "rm-operate-detail", "rm-architecture", "rm-provenance"].forEach((id) => {
+["rm-task-investigation", "rm-operate-detail", "rm-architecture", "rm-provenance"].forEach((id) => {
   roots[id] = new Element("section");
-  roots[id].className = "rm-tab-content" + (id === "rm-overview" ? " rm-active" : "");
+  roots[id].className = "rm-tab-content" + (id === "rm-architecture" ? " rm-active" : "");
 });
 roots["rm-tabs"] = new Element("nav");
 roots["rm-source-drawer"] = new Element("aside");
@@ -206,7 +204,7 @@ roots["rm-source-drawer-content"] = new Element("div");
 roots["rm-source-drawer-close"] = new Element("button");
 const workspace = new Element("main");
 const window = {
-  location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  location: { search: "", hash: "#canvas", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   history: {
     state: null,
     pushState(state, _, hash) { this.state = state; window.location.hash = hash; },
@@ -224,7 +222,8 @@ const document = {
   createTextNode(value) { const node = new Element("#text"); node.textContent = String(value); return node; },
   getElementById(id) {
     if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
-    return roots[id] || null;
+    if (roots[id]) return roots[id];
+    return Object.values(roots).flatMap((root) => walk(root)).find((node) => node.id === id) || null;
   },
   querySelector(selector) {
     if (selector === ".rm-workspace") return workspace;
@@ -253,67 +252,52 @@ vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), {
 });
 const api = window.__REPOMAP_WORKSPACE_TEST__;
 api.renderWorkspaceTabs();
-api.renderMapSummaryInto("rm-overview");
-const overviewText = text(roots["rm-overview"]);
-const nav = roots["rm-tabs"].children.slice();
-const studyTab = nav.find((node) => node.attributes["data-workspace-view"] === "study_overview");
-studyTab.onclick();
-const studyOverviewText = text(roots["rm-study-overview"]);
-const diagnosticsPanel = byClass(roots["rm-study-overview"], "rm-study-diagnostics")[0];
-const stageCounts = byClass(diagnosticsPanel || roots["rm-study-overview"], "rm-study-diagnostics-stage").map((node) => text(node));
-const flagItems = byClass(diagnosticsPanel || roots["rm-study-overview"], "rm-study-diagnostics-flag").map((node) => text(node));
-const omissionItems = byClass(diagnosticsPanel || roots["rm-study-overview"], "rm-study-diagnostics-omission").map((node) => text(node));
-// Decision 236 (v11): the map tab replaces the architecture tab.
-const architectureTab = nav.find((node) => node.attributes["data-workspace-view"] === "map");
-architectureTab.onclick();
+api.renderArchitectureWorkspace();
+const overviewText = "";
+const studyRoot = byClass(roots["rm-architecture"], "rm-target-study")[0];
+const studyOverviewText = text(studyRoot);
+const themeShelf = byClass(studyRoot, "rm-study-theme-shelf")[0] || null;
+const themeCards = byClass(studyRoot, "rm-study-theme-card");
+const contents = byClass(studyRoot, "rm-study-theme-contents")[0] || null;
+const contentActions = byClass(studyRoot, "rm-study-theme-contents__action");
+const openActions = byClass(studyRoot, "rm-study-theme-card__open");
+const previewActions = byClass(studyRoot, "rm-study-reading-anchor__open").map((node) => ({
+  tag: String(node.tagName || "").toLowerCase(),
+  href: (node.attributes && node.attributes.href) || "",
+  target: (node.attributes && node.attributes.target) || "",
+  rel: (node.attributes && node.attributes.rel) || "",
+  ariaLabel: (node.attributes && node.attributes["aria-label"]) || "",
+}));
+const removedChromeCount = [
+  "rm-study-diagnostics", "rm-study-frontier-browse", "rm-study-browse-show-all",
+  "rm-study-diagnostics-show-all", "rm-study-theme-card__evidence",
+  "rm-study-theme-card__scope", "rm-study-theme-card__concentration",
+  "rm-study-theme-card__more",
+].reduce((count, className) => count + byClass(studyRoot, className).length, 0);
+const detailsCount = walk(studyRoot).filter((node) => String(node.tagName || "").toLowerCase() === "details").length;
+if (contentActions.length) contentActions[0].onclick();
+const detailRoot = themeCards[0];
+const detailText = text(detailRoot);
+const detailReadings = byClass(detailRoot, "rm-study-reading-anchor__open");
+const readingJump = detailReadings.length ? {
+  tag: String(detailReadings[0].tagName || "").toLowerCase(),
+  href: (detailReadings[0].attributes && detailReadings[0].attributes.href) || "",
+  target: (detailReadings[0].attributes && detailReadings[0].attributes.target) || "",
+  rel: (detailReadings[0].attributes && detailReadings[0].attributes.rel) || "",
+  ariaLabel: (detailReadings[0].attributes && detailReadings[0].attributes["aria-label"]) || "",
+} : null;
+const readingRoleBadgeCount = byClass(detailRoot, "rm-study-theme-card__reading-role").length;
+const readingExplainCount = byClass(detailRoot, "rm-study-theme-card__reading-explain").length;
 const architectureText = text(roots["rm-architecture"]);
-const browsePanel = byClass(roots["rm-study-overview"], "rm-study-frontier-browse")[0] || null;
-const browseRoot = browsePanel || roots["rm-study-overview"];
-const browseRows = byClass(browseRoot, "rm-study-browse-row");
-const browseStageTexts = byClass(browseRoot, "rm-study-browse-row__stage").map((node) => text(node));
-const unavailableRows = byClass(browseRoot, "rm-study-browse-row__unavailable").map((node) => text(node));
-const modelPickBadges = byClass(browseRoot, "rm-study-browse-row__stage-published");
-const localGroup = browsePanel ? browsePanel.querySelector(".rm-study-browse-group--local") : null;
-const beyondBefore = localGroup ? byClass(localGroup, "rm-study-browse-row--beyond").length : 0;
-const localCollapsedBefore = localGroup ? String(localGroup.className).split(/\s+/).includes("rm-study-browse-group--collapsed") : false;
-const showAllButtons = byClass(browseRoot, "rm-study-browse-show-all");
-let directionCardAfterPick = "";
-if (modelPickBadges.length) {
-  modelPickBadges[0].onclick();
-  directionCardAfterPick = text(roots["rm-study-detail"]);
-}
-if (showAllButtons.length) showAllButtons[0].onclick();
-const localCollapsedAfter = localGroup ? String(localGroup.className).split(/\s+/).includes("rm-study-browse-group--collapsed") : false;
-  const questionLinks = byClass(browseRoot, "rm-study-browse-row__question").map((node) => ({ tag: node.tagName, href: (node.attributes && node.attributes.href) || "" }));
-  const themeShelf = byClass(roots["rm-study-overview"], "rm-study-theme-shelf")[0] || null;
-  // Decision 224 (D219 C/G): per-reading role badges and bounded
-  // observations render on the expanded theme detail.
-  // Decision 229 D6: cards are collapsed by default with at most two
-  // previews — the complete reading plan (role badges, observations,
-  // exact source jumps) lives in the expanded detail workspace.
-  const themeTitles = byClass(roots["rm-study-overview"], "rm-study-theme-card__title");
-  let readingRoleBadges = [];
-  let readingExplains = [];
-  let readingJump = null;
-  // Decision 229 D6: cards are collapsed by default — open every theme and
-  // aggregate role badges/observations/jumps from the expanded details.
-  themeTitles.forEach((title) => {
-    title.onclick();
-    const detailRoot = roots["rm-study-detail"];
-    readingRoleBadges = readingRoleBadges.concat(byClass(detailRoot, "rm-study-theme-card__reading-role"));
-    readingExplains = readingExplains.concat(byClass(detailRoot, "rm-study-theme-card__reading-explain"));
-    const detailReadings = byClass(detailRoot, "rm-study-reading-anchor__open");
-    if (!readingJump && detailReadings.length) {
-      readingJump = { tag: String(detailReadings[0].tagName || "").toLowerCase(), href: (detailReadings[0].attributes && detailReadings[0].attributes.href) || "" };
-    }
-  });
-  const drawerEl = roots["rm-source-drawer"];
-  const drawerDialog = {
-    role: drawerEl.getAttribute("role"),
-    ariaModal: drawerEl.getAttribute("aria-modal"),
-    ariaLabel: drawerEl.getAttribute("aria-label"),
+  return {
+    overviewText, studyOverviewText, architectureText, detailText,
+    themeShelfPresent: !!themeShelf, themeCardCount: themeCards.length,
+    contentCount: contentActions.length,
+    contentLabel: contents && contents.getAttribute("aria-label"),
+    openActionCount: openActions.length, previewActions,
+    removedChromeCount, detailsCount, readingJump,
+    readingRoleBadgeCount, readingExplainCount,
   };
-  return { overviewText, studyOverviewText, stageCounts, flagItems, omissionItems, architectureText, browseRowCount: browseRows.length, browseStageTexts, unavailableRows, modelPickCount: modelPickBadges.length, directionCardAfterPick, beyondBefore, localCollapsedBefore, localCollapsedAfter, showAllCount: showAllButtons.length, browsePanelPresent: !!browsePanel, questionLinks, themeShelfPresent: !!themeShelf, drawerDialog, readingJump, readingRoleBadgeCount: readingRoleBadges.length, readingExplainCount: readingExplains.length };
 }
 const strippedReport = JSON.parse(JSON.stringify(report));
 strippedReport.user_sources = [];
@@ -325,40 +309,29 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	type questionLink struct {
-		Tag  string `json:"tag"`
-		Href string `json:"href"`
+	type sourceAction struct {
+		Tag       string `json:"tag"`
+		Href      string `json:"href"`
+		Target    string `json:"target"`
+		Rel       string `json:"rel"`
+		AriaLabel string `json:"ariaLabel"`
 	}
 	type journey struct {
-		OverviewText         string         `json:"overviewText"`
-		StudyOverviewText    string         `json:"studyOverviewText"`
-		StageCounts          []string       `json:"stageCounts"`
-		FlagItems            []string       `json:"flagItems"`
-		OmissionItems        []string       `json:"omissionItems"`
-		ArchitectureText     string         `json:"architectureText"`
-		BrowseRowCount       int            `json:"browseRowCount"`
-		BrowseStageTexts     []string       `json:"browseStageTexts"`
-		UnavailableRows      []string       `json:"unavailableRows"`
-		ModelPickCount       int            `json:"modelPickCount"`
-		DirectionCardAfter   string         `json:"directionCardAfterPick"`
-		BeyondBefore         int            `json:"beyondBefore"`
-		LocalCollapsedBefore bool           `json:"localCollapsedBefore"`
-		LocalCollapsedAfter  bool           `json:"localCollapsedAfter"`
-		ShowAllCount         int            `json:"showAllCount"`
-		BrowsePanelPresent   bool           `json:"browsePanelPresent"`
-		QuestionLinks        []questionLink `json:"questionLinks"`
-		ThemeShelfPresent    bool           `json:"themeShelfPresent"`
-		DrawerDialog         struct {
-			Role      string `json:"role"`
-			AriaModal string `json:"ariaModal"`
-			AriaLabel string `json:"ariaLabel"`
-		} `json:"drawerDialog"`
-		ReadingJump *struct {
-			Tag  string `json:"tag"`
-			Href string `json:"href"`
-		} `json:"readingJump"`
-		ReadingRoleBadgeCount int `json:"readingRoleBadgeCount"`
-		ReadingExplainCount   int `json:"readingExplainCount"`
+		OverviewText          string         `json:"overviewText"`
+		StudyOverviewText     string         `json:"studyOverviewText"`
+		ArchitectureText      string         `json:"architectureText"`
+		DetailText            string         `json:"detailText"`
+		ThemeShelfPresent     bool           `json:"themeShelfPresent"`
+		ThemeCardCount        int            `json:"themeCardCount"`
+		ContentCount          int            `json:"contentCount"`
+		ContentLabel          string         `json:"contentLabel"`
+		OpenActionCount       int            `json:"openActionCount"`
+		PreviewActions        []sourceAction `json:"previewActions"`
+		RemovedChromeCount    int            `json:"removedChromeCount"`
+		DetailsCount          int            `json:"detailsCount"`
+		ReadingJump           *sourceAction  `json:"readingJump"`
+		ReadingRoleBadgeCount int            `json:"readingRoleBadgeCount"`
+		ReadingExplainCount   int            `json:"readingExplainCount"`
 	}
 	type journeySet struct {
 		En       journey `json:"en"`
@@ -375,172 +348,76 @@ process.stdout.write(JSON.stringify({ en: journey(report, "en"), ru: journey(rep
 	}
 	en, ru, stripped := out.En, out.Ru, out.Stripped
 
-	// Four-stage diagnostics: stage counts present with exact values.
-	for _, want := range []string{
-		"Study diagnostics", "Considered spans", "68",
-		"Advertised spans", "32",
-		"Model-selected spans", "10",
-		"Locally accepted spans", "10",
-	} {
-		if !strings.Contains(en.StudyOverviewText, want) {
-			t.Fatalf("Study diagnostics missing %q:\n%s", want, en.StudyOverviewText)
+	for name, j := range map[string]journey{"en": en, "ru": ru, "stripped": stripped} {
+		if !j.ThemeShelfPresent || j.ThemeCardCount != 2 || j.ContentCount != 2 || j.OpenActionCount != 0 {
+			t.Fatalf("%s Study navigation = shelf=%v cards=%d contents=%d open=%d, want true/2/2/0\n%s",
+				name, j.ThemeShelfPresent, j.ThemeCardCount, j.ContentCount, j.OpenActionCount, j.StudyOverviewText)
 		}
-	}
-	// The four independent flags render with exact true/false presentation.
-	wantFlagText := strings.Join([]string{
-		"Frontier completeNo", "Selected items completeYes",
-		"Support coverage completeYes", "Portfolio target metYes",
-	}, "|")
-	if strings.Join(en.FlagItems, "|") != wantFlagText {
-		t.Fatalf("flag presentation = %#v, want %q", en.FlagItems, wantFlagText)
-	}
-	// The raw seed_budget chip is replaced by the human omission
-	// sentence and a "Show all N" disclosure button.
-	if len(en.OmissionItems) != 1 ||
-		!strings.Contains(en.OmissionItems[0], "Left out of the model's review to keep the request bounded — these are full local questions.") ||
-		!strings.Contains(en.OmissionItems[0], "Show all 36") ||
-		strings.Contains(en.OmissionItems[0], "seed_budget") {
-		t.Fatalf("omission aggregates = %#v", en.OmissionItems)
-	}
-	// D213 source-grounded theme shelf renders first with exact readings.
-	if !en.ThemeShelfPresent {
-		t.Fatalf("theme shelf missing from the Study overview:\n%s", en.StudyOverviewText)
-	}
-	if !strings.Contains(en.StudyOverviewText, "Study themes with exact source links") ||
-		!strings.Contains(en.StudyOverviewText, "Theme 1") ||
-		!strings.Contains(en.StudyOverviewText, "Theme 2") ||
-		!strings.Contains(en.StudyOverviewText, "Study question 1?") {
-		t.Fatalf("theme shelf copy missing:\n%s", en.StudyOverviewText)
-	}
-	// D212 frontier browse renders below the diagnostics panel.
-	if !en.BrowsePanelPresent {
-		t.Fatalf("frontier browse panel missing from the Study overview:\n%s", en.StudyOverviewText)
-	}
-	if !strings.Contains(en.StudyOverviewText, "All study questions") ||
-		!strings.Contains(en.StudyOverviewText, "Every question the local analysis can answer for this repository, in a fixed local order. This is not a model ranking.") {
-		t.Fatalf("frontier browse title/caption missing:\n%s", en.StudyOverviewText)
-	}
-	if en.BrowseRowCount != 68 {
-		t.Fatalf("browse rows = %d, want 68", en.BrowseRowCount)
-	}
-	// Four distinct stage states with exact counts 10/0/22/36 (a/b/c/d).
-	stageCount := func(label string) int {
-		count := 0
-		for _, item := range en.BrowseStageTexts {
-			if item == label {
-				count++
+		wantContents := "Contents"
+		if name == "ru" {
+			wantContents = "Содержание"
+		}
+		if j.ContentLabel != wantContents {
+			t.Fatalf("%s contents aria-label = %q, want %q", name, j.ContentLabel, wantContents)
+		}
+		if j.RemovedChromeCount != 0 || j.DetailsCount != 2 {
+			t.Fatalf("%s internal Study chrome leaked: removed=%d details=%d\n%s",
+				name, j.RemovedChromeCount, j.DetailsCount, j.StudyOverviewText)
+		}
+		if len(j.PreviewActions) != 2 {
+			t.Fatalf("%s exact reading actions = %d, want 2", name, len(j.PreviewActions))
+		}
+		for index, action := range j.PreviewActions {
+			if action.Tag != "a" || !strings.Contains(action.Href, "github.com/example/repository/blob/") ||
+				!strings.Contains(action.Href, "#L") || action.Target != "_blank" ||
+				action.Rel != "noopener noreferrer" || action.AriaLabel == "" {
+				t.Fatalf("%s preview action %d is not one pinned, labelled source jump: %#v", name, index+1, action)
 			}
 		}
-		return count
+		if j.ReadingJump == nil || j.ReadingJump.Tag != "a" ||
+			!strings.Contains(j.ReadingJump.Href, "github.com/example/repository/blob/") ||
+			j.ReadingJump.Target != "_blank" || j.ReadingJump.Rel != "noopener noreferrer" ||
+			j.ReadingJump.AriaLabel == "" {
+			t.Fatalf("%s opened-theme reading jump = %#v", name, j.ReadingJump)
+		}
+		if j.ReadingRoleBadgeCount != 0 || j.ReadingExplainCount != 1 ||
+			!strings.Contains(j.DetailText, "Study question 1?") ||
+			!strings.Contains(j.DetailText, "study/route-1.go:10") {
+			t.Fatalf("%s contents action did not open the useful direct-only theme detail without a redundant role pill: role=%d explanation=%d\n%s",
+				name, j.ReadingRoleBadgeCount, j.ReadingExplainCount, j.DetailText)
+		}
+		for _, forbidden := range []string{
+			"Study diagnostics", "All study questions", "Considered spans", "Model-selected spans",
+			"Show all 36", "seed_budget", "Every question the local analysis can answer",
+		} {
+			if strings.Contains(j.StudyOverviewText, forbidden) {
+				t.Fatalf("%s Study leaked internal accounting %q:\n%s", name, forbidden, j.StudyOverviewText)
+			}
+		}
 	}
-	if en.ModelPickCount != 10 || stageCount("Published in a theme") != 10 {
-		t.Fatalf("Model pick badges = %d/%d, want 10", en.ModelPickCount, stageCount("Published in a theme"))
+
+	if !strings.Contains(en.StudyOverviewText, "Topics") ||
+		!strings.Contains(en.StudyOverviewText, "Theme 1") ||
+		!strings.Contains(en.StudyOverviewText, "Theme 2") ||
+		!strings.Contains(en.StudyOverviewText, "Study question 1?") ||
+		!strings.Contains(en.StudyOverviewText, "study/route-1.go:10") ||
+		!strings.Contains(en.StudyOverviewText, "study/route-2.go:10") {
+		t.Fatalf("English Study lost its themes or exact readings:\n%s", en.StudyOverviewText)
 	}
-	if stageCount("Shown to the model, not picked") != 22 {
-		t.Fatalf("advertised rows = %d, want 22", stageCount("Shown to the model, not picked"))
+	if !strings.Contains(ru.StudyOverviewText, "Темы") ||
+		!strings.Contains(ru.StudyOverviewText, "Содержание") ||
+		!strings.Contains(ru.StudyOverviewText, "Theme 1") ||
+		!strings.Contains(ru.StudyOverviewText, "study/route-1.go:10") {
+		t.Fatalf("Russian Study lost its themes, contents, or exact readings:\n%s", ru.StudyOverviewText)
 	}
-	if stageCount("Local question — not shown to the model") != 36 {
-		t.Fatalf("considered rows = %d, want 36", stageCount("Local question — not shown to the model"))
-	}
-	// A published badge opens exactly one numbered theme card.
-	if !strings.Contains(en.DirectionCardAfter, "Study question 1?") {
-		t.Fatalf("published badge did not open the matching theme card:\n%s", en.DirectionCardAfter)
-	}
-	// Show all N reveals the Local group (12 representatives visible first).
-	if en.ShowAllCount < 1 || en.BeyondBefore != 24 || !en.LocalCollapsedBefore || en.LocalCollapsedAfter {
-		t.Fatalf("Show all N = %d, beyond rows = %d, collapsed before/after = %v/%v, want 1, 24, true, false",
-			en.ShowAllCount, en.BeyondBefore, en.LocalCollapsedBefore, en.LocalCollapsedAfter)
-	}
-	// Rows without an openable source render the neutral unavailable state.
-	if len(en.UnavailableRows) != 2 || !strings.Contains(en.UnavailableRows[0], "Source unavailable") {
-		t.Fatalf("unavailable rows = %#v, want 2 neutral states", en.UnavailableRows)
-	}
+
 	// Provider failure belongs to the ordinary console. The generated HTML is
 	// calm user documentation and keeps only the useful local product surface.
-	if strings.Contains(en.OverviewText, "Architecture synthesis failed") ||
+	if strings.Contains(en.ArchitectureText, "Architecture synthesis failed") ||
 		strings.Contains(en.ArchitectureText, "model exceeded its response budget") {
 		t.Fatalf("provider failure leaked into generated HTML:\noverview: %s\narchitecture: %s", en.OverviewText, en.ArchitectureText)
 	}
-	if !strings.Contains(en.OverviewText, "Accepted conceptual components open on the map") {
-		t.Fatalf("Overview lost the calm component copy:\n%s", en.OverviewText)
-	}
-	// RU journey: same browse with the Russian catalog.
-	if !strings.Contains(ru.StudyOverviewText, "Все вопросы изучения") ||
-		!strings.Contains(ru.StudyOverviewText, "Каждый вопрос, который локальный анализ может поставить для этого репозитория, в фиксированном локальном порядке. Это не ранжирование моделью.") {
-		t.Fatalf("RU frontier browse title/caption missing:\n%s", ru.StudyOverviewText)
-	}
-	if !ru.ThemeShelfPresent || !strings.Contains(ru.StudyOverviewText, "Темы изучения с точными ссылками на код") {
-		t.Fatalf("RU theme shelf missing:\n%s", ru.StudyOverviewText)
-	}
-	ruStageCount := func(label string) int {
-		count := 0
-		for _, item := range ru.BrowseStageTexts {
-			if item == label {
-				count++
-			}
-		}
-		return count
-	}
-	if ru.BrowseRowCount != 68 || ruStageCount("Опубликовано в теме") != 10 ||
-		ruStageCount("Показано модели, не выбрано") != 22 ||
-		ruStageCount("Локальный вопрос — модели не показывался") != 36 ||
-		len(ru.UnavailableRows) != 2 || !strings.Contains(ru.UnavailableRows[0], "Источник недоступен") {
-		t.Fatalf("RU browse journey failed: rows=%d badges=%d/%d/%d unavailable=%#v",
-			ru.BrowseRowCount, ruStageCount("Опубликовано в теме"), ruStageCount("Показано модели, не выбрано"),
-			ruStageCount("Локальный вопрос — модели не показывался"), ru.UnavailableRows)
-	}
 	if strings.Contains(ru.ArchitectureText, "модель исчерпала лимит ответа") {
 		t.Fatalf("provider failure leaked into RU generated HTML:\n%s", ru.ArchitectureText)
-	}
-	// Stripped static report: no embedded source bodies; the browse still
-	// renders 68 rows with the same stage counts, and every openable row
-	// resolves to one exact pinned GitHub source action instead of a dead
-	// button, while non-openable rows keep the neutral unavailable state.
-	if !stripped.BrowsePanelPresent || stripped.BrowseRowCount != 68 {
-		t.Fatalf("stripped browse panel/rows = %v/%d, want true/68", stripped.BrowsePanelPresent, stripped.BrowseRowCount)
-	}
-	strippedStageCount := func(label string) int {
-		count := 0
-		for _, item := range stripped.BrowseStageTexts {
-			if item == label {
-				count++
-			}
-		}
-		return count
-	}
-	if strippedStageCount("Published in a theme") != 10 ||
-		strippedStageCount("Shown to the model, not picked") != 22 ||
-		strippedStageCount("Local question — not shown to the model") != 36 ||
-		len(stripped.UnavailableRows) != 2 || !strings.Contains(stripped.UnavailableRows[0], "Source unavailable") {
-		t.Fatalf("stripped browse counts failed: badges=%d/%d/%d unavailable=%#v",
-			strippedStageCount("Published in a theme"), strippedStageCount("Shown to the model, not picked"),
-			strippedStageCount("Local question — not shown to the model"), stripped.UnavailableRows)
-	}
-	if len(stripped.QuestionLinks) < 66 {
-		t.Fatalf("stripped question source actions = %d, want >= 66", len(stripped.QuestionLinks))
-	}
-	if stripped.QuestionLinks[0].Tag != "a" ||
-		!strings.Contains(stripped.QuestionLinks[0].Href, "/blob/") ||
-		!strings.Contains(stripped.QuestionLinks[0].Href, "#L") {
-		t.Fatalf("stripped question source action is not a pinned link: %#v", stripped.QuestionLinks[0])
-	}
-	if !strings.Contains(stripped.DirectionCardAfter, "Study question 1?") {
-		t.Fatalf("stripped Model pick badge did not open the matching direction card:\n%s", stripped.DirectionCardAfter)
-	}
-	// Decision 222: a theme reading is a GitHub/GitLab jump in a new tab —
-	// never an inline code drawer.
-	for name, j := range map[string]journey{"en": en, "ru": ru} {
-		if j.ReadingJump == nil || j.ReadingJump.Tag != "a" ||
-			!strings.Contains(j.ReadingJump.Href, "github.com/example/repository/blob") {
-			t.Fatalf("%s reading jump = %#v, want GitHub blob link", name, j.ReadingJump)
-		}
-		// Decision 224 (D219 G): every reading renders a role badge and the
-		// bounded supported observation on the theme card.
-		if j.ReadingRoleBadgeCount < 2 {
-			t.Fatalf("%s reading role badges = %d, want >= 2", name, j.ReadingRoleBadgeCount)
-		}
-		if j.ReadingExplainCount < 2 {
-			t.Fatalf("%s reading explanations = %d, want >= 2", name, j.ReadingExplainCount)
-		}
 	}
 }

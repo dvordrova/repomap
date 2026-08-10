@@ -13,6 +13,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/componentmap"
 	"github.com/dvordrova/repomap/internal/evidence"
 	"github.com/dvordrova/repomap/internal/evidenceref"
@@ -26,9 +27,10 @@ import (
 )
 
 type snapshotJSON struct {
-	RepoName string `json:"repo_name"`
-	Readme   string `json:"readme"`
-	GoFacts  *struct {
+	RepoName       string                 `json:"repo_name"`
+	Readme         string                 `json:"readme"`
+	AnalysisTarget *analysistarget.Target `json:"analysis_target,omitempty"`
+	GoFacts        *struct {
 		Modules []struct {
 			ID          string `json:"id"`
 			ModulePath  string `json:"module_path"`
@@ -484,6 +486,13 @@ func readRunDir(
 			return nil, fmt.Errorf("read Study investigation repository binding: %w", err)
 		}
 	}
+	if err := loadEntryCallReportProjection(
+		absDir,
+		data,
+		expectedInvestigationFreshness,
+	); err != nil {
+		return nil, err
+	}
 	if err := loadStudyInvestigationArtifacts(
 		absDir,
 		data,
@@ -882,11 +891,47 @@ func collectOpenablePaths(data *ReportData) {
 			add(anchor.Path)
 		}
 	}
+	if data.EntryCall != nil {
+		for _, family := range data.EntryCall.Families {
+			for _, callsite := range family.Callsites {
+				add(callsite.Path)
+			}
+		}
+	}
 	for _, location := range data.studyInvestigationSourceLocations {
 		add(location.Path)
 	}
 	for _, item := range exactRepositoryAtlasPackageEvidence(data) {
 		add(item.Location.Path)
+	}
+	// D277: every exact exported callable in the selected library package is
+	// an eligible Study root. Authorize its build-selected source file before
+	// source coverage captures the run inputs; the eventual 32-span request
+	// frontier must not narrow local source/action authority.
+	if data.AnalysisTarget != nil &&
+		data.AnalysisTarget.Kind == analysistarget.KindLibraryPackage &&
+		data.repositoryGoFacts != nil {
+		for _, pkg := range data.repositoryGoFacts.Packages {
+			if pkg.ModuleID != data.AnalysisTarget.ModuleID ||
+				pkg.CanonicalPath != data.AnalysisTarget.PackagePath ||
+				!pkg.DeclarationsScanned {
+				continue
+			}
+			files := make(map[string]struct{}, len(pkg.Files))
+			for _, sourcePath := range pkg.Files {
+				files[sourcePath] = struct{}{}
+			}
+			for _, declaration := range pkg.Declarations {
+				if !declaration.ExportedAPI() || !declaration.ExecutableBody ||
+					(declaration.Kind != gofacts.PackageDeclarationFunc &&
+						declaration.Kind != gofacts.PackageDeclarationMethod) {
+					continue
+				}
+				if _, selected := files[declaration.Path]; selected {
+					add(declaration.Path)
+				}
+			}
+		}
 	}
 	// D214: every observed resource-boundary call site must be openable —
 	// the Atlas boundary evidence is exact source the report must open.
@@ -971,6 +1016,14 @@ func parseSnapshotWithExactFacts(path string, data *ReportData, captureExact boo
 	var snap snapshotJSON
 	if err := json.Unmarshal(b, &snap); err != nil {
 		return fmt.Sprintf("snapshot unmarshal: %v", err)
+	}
+	data.AnalysisTarget = nil
+	if snap.AnalysisTarget != nil {
+		if err := snap.AnalysisTarget.Validate(); err != nil {
+			return fmt.Sprintf("snapshot analysis target: %v", err)
+		}
+		target := snap.AnalysisTarget.Snapshot()
+		data.AnalysisTarget = &target
 	}
 	if captureExact {
 		data.repositoryGoFacts = nil

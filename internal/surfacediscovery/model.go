@@ -1,4 +1,5 @@
-// Package surfacediscovery contains the isolated Go runtime-surface experiment.
+// Package surfacediscovery extracts the framework-free core Go surface and
+// exact call evidence used by ordinary repository analysis.
 package surfacediscovery
 
 import (
@@ -11,10 +12,12 @@ import (
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/componentmap"
+	"github.com/dvordrova/repomap/internal/entrycall"
+	"github.com/dvordrova/repomap/internal/gotarget"
 )
 
 const (
-	AnalyzerVersion              = "surface-ssa-v12"
+	AnalyzerVersion              = "surface-ssa-v13"
 	TriggerCatalogVersion        = 7
 	CoverageVersion              = 7
 	CatalogVersion               = 1
@@ -23,15 +26,34 @@ const (
 	// for one persisted behavior anchor. Larger declaration families are split
 	// deterministically; they are never silently prefix-truncated.
 	MaxArchitectureAnchorMembers = 16
+
+	// DefaultDirectCallDepth bounds exact repository-local call edges outward
+	// from the selected analysis target. The complete declaration catalog is
+	// retained independently so library API roots and source actions remain
+	// exact even when the edge neighborhood is smaller.
+	DefaultDirectCallDepth = 10
+	// DefaultDirectCallEdgeLimit is the ordinary target-scoped graph ceiling.
+	// A user can raise it explicitly up to MaxDirectCallIndexEdges when a large
+	// but intentional target needs more exact edges.
+	DefaultDirectCallEdgeLimit = 10_000
 )
 
 type Options struct {
 	RepoPath   string
+	GoTarget   string
 	BuildTags  []string
 	MaxDepth   int
 	MaxTasks   int
 	MaxTargets int
-	Progress   func(PhaseProgress)
+	// DirectCallDepth and DirectCallEdgeLimit apply only to the exact
+	// target-rooted DirectCallIndex edge neighborhood. They do not alter the
+	// separate runtime-surface/value walk bounds above.
+	DirectCallDepth     int
+	DirectCallEdgeLimit int
+	// CaptureEntryCallSubstrate opts into the live-run sidecar. Offline and
+	// no-consumer runs retain no extra call-family graph.
+	CaptureEntryCallSubstrate bool
+	Progress                  func(PhaseProgress)
 	// Offline (long-horizon program Phase 1A): offline analysis cannot
 	// acquire a Go toolchain, so the target-module go directive is an
 	// honest admission gate that degrades visibly. Online/default analysis
@@ -59,10 +81,13 @@ type PhaseMetric struct {
 
 func DefaultOptions(repoPath string) Options {
 	return Options{
-		RepoPath:   repoPath,
-		MaxDepth:   defaultMaxDepth,
-		MaxTasks:   defaultMaxTasks,
-		MaxTargets: defaultMaxTargets,
+		RepoPath:            repoPath,
+		GoTarget:            gotarget.Host().String(),
+		MaxDepth:            defaultMaxDepth,
+		MaxTasks:            defaultMaxTasks,
+		MaxTargets:          defaultMaxTargets,
+		DirectCallDepth:     DefaultDirectCallDepth,
+		DirectCallEdgeLimit: DefaultDirectCallEdgeLimit,
 	}
 }
 
@@ -243,9 +268,9 @@ type SurfaceCoverage struct {
 	LoopSignals                 []LoopSignal          `json:"loop_signals"`
 	DynamicFrontiers            []Frontier            `json:"dynamic_frontiers"`
 	UnsupportedDispatch         []Frontier            `json:"unsupported_dispatch_mechanisms"`
-	// Decision 220 D: exact adapter accounting — how many records each
-	// framework produced and how many came from the generic typed
-	// registration detector (never a source of authority, always counted).
+	// Retired framework/Cobra fields remain in the persisted DTO so reports
+	// from older analyzer versions stay readable. Fresh core analysis leaves
+	// framework-specific counts empty and records only typed detector matches.
 	TypedRegistrationDetectorMatches int            `json:"typed_registration_detector_matches,omitempty"`
 	FrameworkMatched                 map[string]int `json:"framework_matched,omitempty"`
 	BuildConstraints                 []string       `json:"build_constraints"`
@@ -296,11 +321,17 @@ type Result struct {
 	Summaries []SemanticSummary     `json:"semantic_summaries"`
 	Grounding ArchitectureGrounding `json:"architecture_grounding"`
 
-	// DirectCallIndex is the bounded in-memory substrate for a later
-	// Study-scoped investigation. It is deliberately absent from the persisted
-	// surface artifacts: consumers may retain it during the live run, but raw
-	// repository call graphs never enter report/debug JSON.
+	// DirectCallIndex retains complete build-selected declarations plus bounded
+	// target-rooted edges for a later Study-scoped investigation. It is
+	// deliberately absent from persisted surface artifacts: consumers may retain
+	// it during the live run, but raw repository call graphs never enter
+	// report/debug JSON.
 	DirectCallIndex *DirectCallIndex `json:"-"`
+
+	// EntryCallSubstrate shares the existing SSA pass and is populated only for
+	// an explicit live consumer. It never enters surface, Atlas, debug, or
+	// report serialization by accident.
+	EntryCallSubstrate *entrycall.Substrate `json:"-"`
 }
 
 type ArchitectureGrounding struct {

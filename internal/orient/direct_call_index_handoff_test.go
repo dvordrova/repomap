@@ -89,7 +89,7 @@ func work() {}
 	_, err := Run(context.Background(), Options{
 		RepoPath: repository, AtlasFirst: true, Offline: true, OutputJSON: true,
 		DebugDir: debugDirectory, RunID: "direct-handoff", RequireArtifacts: true,
-		DiscoverSurfaces: true,
+		DiscoverSurfaces: true, DirectCallDepth: 2, DirectCallEdgeLimit: 17,
 		Progress: func(event ProgressEvent) {
 			if event.Stage != ProgressSurfacePhase || event.PhaseState != "started" {
 				return
@@ -120,6 +120,11 @@ func work() {}
 	}
 	if received.State != surfacediscovery.DirectCallIndexReady || len(received.Edges) < 2 {
 		t.Fatalf("received DirectCallIndex = %#v, want connected ready index", received)
+	}
+	if received.Scope.TargetKind != surfacediscovery.AnalysisTargetExecutablePackage ||
+		received.Scope.TargetPackage != "example.com/direct-handoff" ||
+		received.Scope.MaxDepth != 2 || received.Scope.EdgeLimit != 17 {
+		t.Fatalf("received DirectCallIndex scope = %#v, want exact target and requested bounds", received.Scope)
 	}
 
 	runDirectory := filepath.Join(debugDirectory, "direct-handoff")

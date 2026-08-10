@@ -22,6 +22,7 @@ func TestRunManifestRejectsEntrypointHandoffGroupDrift(t *testing.T) {
 
 	data := entrypointHandoffGroupFixture()
 	data.FormatVersion = CurrentFormatVersion
+	data.AnalysisTarget = reportAnalysisTargetFixture(t)
 	data.OpenablePaths = []string{"ldap/server.go", "main.go", "service.go"}
 	if err := ensureEntrypointHandoffGroups(data); err != nil {
 		t.Fatalf("ensure entry handoff groups: %v", err)
@@ -37,6 +38,7 @@ func TestRunManifestRejectsEntrypointHandoffGroupDrift(t *testing.T) {
 			t.Fatal(err)
 		}
 		manifest := validRunManifestFixture(t)
+		bindRunManifestAnalysisTarget(t, &manifest, data)
 		manifest.OpenablePaths = append([]string(nil), data.OpenablePaths...)
 		manifest.Components = nil
 		manifest.ReportSHA256 = manifestSHA256(reportJSON)
@@ -48,6 +50,7 @@ func TestRunManifestRejectsEntrypointHandoffGroupDrift(t *testing.T) {
 
 	drifted := entrypointHandoffGroupFixture()
 	drifted.FormatVersion = CurrentFormatVersion
+	drifted.AnalysisTarget = reportAnalysisTargetFixture(t)
 	drifted.OpenablePaths = append([]string(nil), data.OpenablePaths...)
 	if err := ensureEntrypointHandoffGroups(drifted); err != nil {
 		t.Fatal(err)

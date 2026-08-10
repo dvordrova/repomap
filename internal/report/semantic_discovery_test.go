@@ -18,8 +18,9 @@ func TestSemanticDiscoveryReportFormatVersion(t *testing.T) {
 	// Decision 235 (v11): final-Architecture rebase into Study (36).
 	// Decision 242: plural per-entry mechanisms move onto Canvas 13 (39).
 	// Decision 246: persisted Study investigation joins the report (42).
-	if CurrentFormatVersion != 42 {
-		t.Fatalf("CurrentFormatVersion = %d, want 42 for persisted Study investigations", CurrentFormatVersion)
+	// Render-only sibling target-page navigation joins the target rail (45).
+	if CurrentFormatVersion != 45 {
+		t.Fatalf("CurrentFormatVersion = %d, want 45 for target-page navigation", CurrentFormatVersion)
 	}
 }
 

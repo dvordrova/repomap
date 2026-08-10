@@ -43,36 +43,38 @@ const (
 )
 
 type RequestRecord struct {
-	Version            int               `json:"version"`
-	PromptVersion      string            `json:"prompt_version"`
-	AtlasSHA256        string            `json:"atlas_sha256"`
-	ArchitectureSHA256 string            `json:"architecture_sha256"`
-	WireSHA256         string            `json:"wire_sha256"`
-	CatalogSHA256      string            `json:"catalog_sha256"`
-	CatalogRef         string            `json:"catalog_ref"`
-	Language           Language          `json:"language"`
-	CandidateCoverage  CandidateCoverage `json:"candidate_coverage"`
-	Catalog            []CatalogObject   `json:"catalog"`
-	WireJSON           string            `json:"wire_json"`
+	Version            int                      `json:"version"`
+	PromptVersion      string                   `json:"prompt_version"`
+	AtlasSHA256        string                   `json:"atlas_sha256"`
+	ArchitectureSHA256 string                   `json:"architecture_sha256"`
+	WireSHA256         string                   `json:"wire_sha256"`
+	CatalogSHA256      string                   `json:"catalog_sha256"`
+	CatalogRef         string                   `json:"catalog_ref"`
+	Language           Language                 `json:"language"`
+	CandidateCoverage  CandidateCoverage        `json:"candidate_coverage"`
+	AnalysisTargetRoot *AnalysisTargetRootScope `json:"analysis_target_root,omitempty"`
+	Catalog            []CatalogObject          `json:"catalog"`
+	WireJSON           string                   `json:"wire_json"`
 }
 
 type ResultRecord struct {
-	Version            int               `json:"version"`
-	State              ProductState      `json:"state"`
-	PromptVersion      string            `json:"prompt_version"`
-	AtlasSHA256        string            `json:"atlas_sha256"`
-	ArchitectureSHA256 string            `json:"architecture_sha256"`
-	WireSHA256         string            `json:"wire_sha256"`
-	CatalogSHA256      string            `json:"catalog_sha256"`
-	CatalogRef         string            `json:"catalog_ref"`
-	Language           Language          `json:"language"`
-	CandidateCoverage  CandidateCoverage `json:"candidate_coverage"`
-	Catalog            []CatalogObject   `json:"catalog"`
-	RepositoryType     RepositoryType    `json:"repository_type"`
-	Brief              Brief             `json:"brief"`
-	Directions         []Direction       `json:"directions"`
-	ShapeComponentRefs []CanonicalRef    `json:"shape_component_refs"`
-	SpanCoverage       SpanCoverage      `json:"span_coverage"`
+	Version            int                      `json:"version"`
+	State              ProductState             `json:"state"`
+	PromptVersion      string                   `json:"prompt_version"`
+	AtlasSHA256        string                   `json:"atlas_sha256"`
+	ArchitectureSHA256 string                   `json:"architecture_sha256"`
+	WireSHA256         string                   `json:"wire_sha256"`
+	CatalogSHA256      string                   `json:"catalog_sha256"`
+	CatalogRef         string                   `json:"catalog_ref"`
+	Language           Language                 `json:"language"`
+	CandidateCoverage  CandidateCoverage        `json:"candidate_coverage"`
+	AnalysisTargetRoot *AnalysisTargetRootScope `json:"analysis_target_root,omitempty"`
+	Catalog            []CatalogObject          `json:"catalog"`
+	RepositoryType     RepositoryType           `json:"repository_type"`
+	Brief              Brief                    `json:"brief"`
+	Directions         []Direction              `json:"directions"`
+	ShapeComponentRefs []CanonicalRef           `json:"shape_component_refs"`
+	SpanCoverage       SpanCoverage             `json:"span_coverage"`
 	// ModelSelectedSpanRefs are the distinct spans referenced by the returned
 	// directions, including locally rejected siblings, in canonical order.
 	// They are the model-selected stage of the four-stage span pipeline and
@@ -119,8 +121,9 @@ func (product Product) RequestRecord() (RequestRecord, error) {
 		AtlasSHA256: product.atlasSHA256, ArchitectureSHA256: product.architectureSHA256,
 		WireSHA256: product.wireSHA256, CatalogSHA256: product.catalogSHA256,
 		CatalogRef: product.catalogRef, Language: product.input.Language,
-		CandidateCoverage: product.Coverage(),
-		Catalog:           product.Catalog(), WireJSON: string(product.wire),
+		CandidateCoverage:  product.Coverage(),
+		AnalysisTargetRoot: cloneAnalysisTargetRootScope(product.input.AnalysisTargetRoot),
+		Catalog:            product.Catalog(), WireJSON: string(product.wire),
 	}
 	return record, product.ValidateRequestRecord(record)
 }
@@ -148,8 +151,9 @@ func (product Product) result(
 		AtlasSHA256: product.atlasSHA256, ArchitectureSHA256: product.architectureSHA256,
 		WireSHA256: product.wireSHA256, CatalogSHA256: product.catalogSHA256,
 		CatalogRef: product.catalogRef, Language: product.input.Language,
-		CandidateCoverage: product.Coverage(),
-		Catalog:           product.Catalog(), RepositoryType: repositoryType,
+		CandidateCoverage:  product.Coverage(),
+		AnalysisTargetRoot: cloneAnalysisTargetRootScope(product.input.AnalysisTargetRoot),
+		Catalog:            product.Catalog(), RepositoryType: repositoryType,
 		Brief: cloneBrief(brief), Directions: cloneDirections(directions),
 		ShapeComponentRefs:    append([]CanonicalRef(nil), shape...),
 		SpanCoverage:          spanCoverage,
@@ -167,6 +171,7 @@ func (product Product) ValidateRequestRecord(record RequestRecord) error {
 		record.WireSHA256 != product.wireSHA256 ||
 		record.CatalogSHA256 != product.catalogSHA256 ||
 		record.CatalogRef != product.catalogRef || record.Language != product.input.Language ||
+		!reflect.DeepEqual(record.AnalysisTargetRoot, product.input.AnalysisTargetRoot) ||
 		!reflect.DeepEqual(record.CandidateCoverage, product.coverage) ||
 		record.WireJSON != string(product.wire) || !reflect.DeepEqual(record.Catalog, product.catalog) {
 		return fmt.Errorf("atlas study request artifact: does not match the exact compiled product")
@@ -183,6 +188,7 @@ func (product Product) ValidateResultRecord(record ResultRecord) error {
 		record.WireSHA256 != product.wireSHA256 ||
 		record.CatalogSHA256 != product.catalogSHA256 ||
 		record.CatalogRef != product.catalogRef || record.Language != product.input.Language ||
+		!reflect.DeepEqual(record.AnalysisTargetRoot, product.input.AnalysisTargetRoot) ||
 		!reflect.DeepEqual(record.CandidateCoverage, product.coverage) ||
 		!reflect.DeepEqual(record.Catalog, product.catalog) {
 		return fmt.Errorf("atlas study result artifact: does not match the exact compiled product")
@@ -436,12 +442,13 @@ func validateRequestRecord(record RequestRecord) error {
 	if err := validateCandidateCoverage(record.CandidateCoverage); err != nil {
 		return err
 	}
-	if err := validateCatalog(record.Catalog); err != nil {
+	if err := validateCatalog(record.Catalog, record.AnalysisTargetRoot); err != nil {
 		return err
 	}
 	return validateCatalogDigest(
 		record.AtlasSHA256, record.ArchitectureSHA256, record.WireSHA256,
-		record.CatalogSHA256, record.Language, record.CandidateCoverage, record.Catalog,
+		record.CatalogSHA256, record.Language, record.CandidateCoverage,
+		record.AnalysisTargetRoot, record.Catalog,
 	)
 }
 
@@ -458,12 +465,13 @@ func validateResultIdentity(record ResultRecord) error {
 	if err := validateCandidateCoverage(record.CandidateCoverage); err != nil {
 		return err
 	}
-	if err := validateCatalog(record.Catalog); err != nil {
+	if err := validateCatalog(record.Catalog, record.AnalysisTargetRoot); err != nil {
 		return err
 	}
 	return validateCatalogDigest(
 		record.AtlasSHA256, record.ArchitectureSHA256, record.WireSHA256,
-		record.CatalogSHA256, record.Language, record.CandidateCoverage, record.Catalog,
+		record.CatalogSHA256, record.Language, record.CandidateCoverage,
+		record.AnalysisTargetRoot, record.Catalog,
 	)
 }
 
@@ -614,12 +622,15 @@ func validateCatalogDigest(
 	atlasSHA, architectureSHA, wireSHA, catalogSHA string,
 	language Language,
 	coverage CandidateCoverage,
+	analysisTargetRoot *AnalysisTargetRootScope,
 	catalog []CatalogObject,
 ) error {
 	material := catalogMaterial{
 		Version: Version, AtlasSHA256: atlasSHA, ArchitectureSHA256: architectureSHA,
 		Language: language, Limits: DefaultLimits(), ProjectionSHA256: wireSHA,
-		Coverage: cloneCandidateCoverage(coverage), Objects: cloneCatalog(catalog),
+		Coverage:           cloneCandidateCoverage(coverage),
+		AnalysisTargetRoot: cloneAnalysisTargetRootScope(analysisTargetRoot),
+		Objects:            cloneCatalog(catalog),
 	}
 	encoded, err := json.Marshal(material)
 	if err != nil {
@@ -631,7 +642,7 @@ func validateCatalogDigest(
 	return nil
 }
 
-func validateCatalog(values []CatalogObject) error {
+func validateCatalog(values []CatalogObject, analysisTargetRoot *AnalysisTargetRootScope) error {
 	previousRank := -1
 	previousID := ""
 	seenRefs := make(map[string]struct{}, len(values))
@@ -694,14 +705,22 @@ func validateCatalog(values []CatalogObject) error {
 		ordinals[object.Kind] = ordinal
 		seenRefs[object.Ref] = struct{}{}
 		previousRank, previousID = rank, object.CanonicalID
+		if object.Kind == RefUnit {
+			if !object.UnitKind.Valid() {
+				return fmt.Errorf("atlas study artifact: invalid private Unit kind")
+			}
+		} else if object.UnitKind != "" || object.UnitParentID != "" {
+			return fmt.Errorf("atlas study artifact: non-Unit object carries Unit kind")
+		}
 		if object.Kind == RefReadingTarget {
 			if object.Location == nil || !repositoryLocation(*object.Location) ||
+				!object.ReadingTargetKind.Valid() ||
 				len(object.PrincipalRefs) == 0 || !uniqueCanonicalRefs(object.PrincipalRefs) ||
 				!uniqueCanonicalRefs(object.RelatedComponentRefs) {
 				return fmt.Errorf("atlas study artifact: reading target lacks exact private locator")
 			}
 		} else if object.Owner != nil || len(object.RelatedComponentRefs) != 0 ||
-			len(object.PrincipalRefs) != 0 {
+			len(object.PrincipalRefs) != 0 || object.ReadingTargetKind != "" {
 			return fmt.Errorf("atlas study artifact: non-target object has private target associations")
 		}
 		if object.Location != nil && object.Kind != RefReadingTarget && object.Kind != RefEvidence {
@@ -785,7 +804,15 @@ func validateCatalog(values []CatalogObject) error {
 			object.Kind != RefRouteRelation && object.Kind != RefRouteSpan
 		factRequired := object.Kind == RefSurface || object.Kind == RefReadingTarget ||
 			object.Kind == RefEvidence || object.Kind == RefDocument
-		if err := validateVisibleText(object.Label, DefaultLimits().MaxTextBytes, labelRequired, identities); err != nil {
+		labelIdentities := identities
+		if object.Kind == RefReadingTarget {
+			labelIdentities = make(map[string]struct{}, len(identities))
+			for identity := range identities {
+				labelIdentities[identity] = struct{}{}
+			}
+			delete(labelIdentities, modelVisibleTargetSymbol(object.Symbol))
+		}
+		if err := validateVisibleText(object.Label, DefaultLimits().MaxTextBytes, labelRequired, labelIdentities); err != nil {
 			return fmt.Errorf("atlas study artifact: invalid private label")
 		}
 		if err := validateVisibleText(object.Fact, DefaultLimits().MaxTextBytes, factRequired, identities); err != nil {
@@ -845,6 +872,9 @@ func validateCatalog(values []CatalogObject) error {
 				if !ok || support.SupportTarget == nil {
 					return fmt.Errorf("atlas study artifact: route span support is outside private catalog")
 				}
+				if support.SupportRole == SupportAnalysisTargetRoot && object.SpanKind != RouteSpanFocused {
+					return fmt.Errorf("atlas study artifact: public API root support requires a focused span")
+				}
 				if _, allowed := allowedTargets[*support.SupportTarget]; !allowed {
 					return fmt.Errorf("atlas study artifact: route span support target is not allowed")
 				}
@@ -885,10 +915,11 @@ func validateCatalog(values []CatalogObject) error {
 		}
 		principalSet := make(map[CanonicalRef]struct{}, len(object.PrincipalRefs))
 		for _, principal := range object.PrincipalRefs {
-			if principal.Kind != RefComponent && principal.Kind != RefSurface {
+			if principal.Kind != RefComponent && principal.Kind != RefSurface && principal.Kind != RefUnit {
 				return fmt.Errorf("atlas study artifact: target has wrong-kind principal")
 			}
-			if _, ok := seenCanonical[principal]; !ok {
+			principalObject, ok := catalogObjectByCanonical(values, principal)
+			if !ok || principal.Kind == RefUnit && principalObject.UnitKind != repositoryatlas.UnitPackage {
 				return fmt.Errorf("atlas study artifact: target principal is outside private catalog")
 			}
 			principalSet[principal] = struct{}{}
@@ -913,6 +944,78 @@ func validateCatalog(values []CatalogObject) error {
 		if !containsCanonicalRef(object.RelatedComponentRefs, *object.Owner) {
 			return fmt.Errorf("atlas study artifact: target owner is not a related component")
 		}
+	}
+	if err := validateArtifactAnalysisTargetRootContract(values, analysisTargetRoot); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateArtifactAnalysisTargetRootContract(
+	values []CatalogObject,
+	scope *AnalysisTargetRootScope,
+) error {
+	if err := validateAnalysisTargetRootScope(scope); err != nil {
+		return fmt.Errorf("atlas study artifact: invalid selected AnalysisTarget root scope")
+	}
+	targets := make(map[CanonicalRef]CatalogObject)
+	units := make(map[CanonicalRef]CatalogObject)
+	allSupports := make(map[CanonicalRef][]CatalogObject)
+	rootCounts := make(map[CanonicalRef]int)
+	for _, object := range values {
+		ref := CanonicalRef{Kind: object.Kind, ID: object.CanonicalID}
+		switch object.Kind {
+		case RefReadingTarget:
+			targets[ref] = object
+		case RefUnit:
+			units[ref] = object
+		case RefRouteSupport:
+			if object.SupportTarget == nil {
+				continue
+			}
+			allSupports[*object.SupportTarget] = append(allSupports[*object.SupportTarget], object)
+			if object.SupportRole == SupportAnalysisTargetRoot {
+				rootCounts[*object.SupportTarget]++
+			}
+		}
+	}
+	for _, object := range values {
+		if object.Kind != RefRouteSupport || object.SupportRole != SupportAnalysisTargetRoot ||
+			object.SupportTarget == nil {
+			continue
+		}
+		target, ok := targets[*object.SupportTarget]
+		if !ok || object.Authority != repositoryatlas.AuthorityResolved ||
+			target.Authority != repositoryatlas.AuthorityResolved || target.Owner != nil ||
+			(target.ReadingTargetKind != ReadingTargetFunction && target.ReadingTargetKind != ReadingTargetMethod) ||
+			len(target.RelatedComponentRefs) != 0 || len(target.PrincipalRefs) != 1 ||
+			target.PrincipalRefs[0].Kind != RefUnit {
+			return fmt.Errorf("atlas study artifact: invalid public API root support")
+		}
+		unit, ok := units[target.PrincipalRefs[0]]
+		if scope == nil || !ok || unit.UnitKind != repositoryatlas.UnitPackage ||
+			unit.CanonicalID != scope.UnitID ||
+			unit.Label != scope.AnalysisTarget.PackagePath ||
+			unit.UnitParentID != scope.AnalysisTarget.ModuleID ||
+			object.PackageBucket != scope.UnitID {
+			return fmt.Errorf("atlas study artifact: public API root does not match its exact package Unit")
+		}
+	}
+	for ref, target := range targets {
+		hasUnit := false
+		for _, principal := range target.PrincipalRefs {
+			hasUnit = hasUnit || principal.Kind == RefUnit
+		}
+		if hasUnit {
+			if rootCounts[ref] != 1 || len(allSupports[ref]) != 1 {
+				return fmt.Errorf("atlas study artifact: package Unit principal is not one exact public API root")
+			}
+		} else if rootCounts[ref] != 0 {
+			return fmt.Errorf("atlas study artifact: public API root support lacks a package Unit principal")
+		}
+	}
+	if scope != nil && len(rootCounts) == 0 {
+		return fmt.Errorf("atlas study artifact: selected AnalysisTarget root scope has no public API roots")
 	}
 	return nil
 }
@@ -940,7 +1043,7 @@ func validateStandaloneResult(record ResultRecord) error {
 	product := productFromArtifact(
 		record.AtlasSHA256, record.ArchitectureSHA256, record.WireSHA256,
 		record.CatalogSHA256, record.CatalogRef, record.Language,
-		record.CandidateCoverage, record.Catalog,
+		record.CandidateCoverage, record.AnalysisTargetRoot, record.Catalog,
 	)
 	return product.ValidateResultRecord(record)
 }
@@ -953,6 +1056,7 @@ func productFromArtifact(
 	catalogRef string,
 	language Language,
 	coverage CandidateCoverage,
+	analysisTargetRoot *AnalysisTargetRootScope,
 	catalog []CatalogObject,
 ) Product {
 	byRef := make(map[string]CatalogObject, len(catalog))
@@ -978,6 +1082,10 @@ func productFromArtifact(
 		}
 		identities[value] = struct{}{}
 		alwaysPrivate[value] = struct{}{}
+	}
+	if analysisTargetRoot != nil {
+		addAlwaysPrivate(analysisTargetRoot.AnalysisTarget.Ref)
+		addAlwaysPrivate(analysisTargetRoot.UnitID)
 	}
 	for _, object := range catalog {
 		byRef[object.Ref] = object
@@ -1009,7 +1117,8 @@ func productFromArtifact(
 		}
 	}
 	return Product{
-		input:      Input{Language: language, Limits: DefaultLimits()},
+		input: Input{Language: language, Limits: DefaultLimits(),
+			AnalysisTargetRoot: cloneAnalysisTargetRootScope(analysisTargetRoot)},
 		wireSHA256: wireSHA, catalogSHA256: catalogSHA, catalogRef: catalogRef,
 		atlasSHA256: atlasSHA, architectureSHA256: architectureSHA,
 		catalog: cloneCatalog(catalog), byRef: byRef, byCanonical: byCanonical,
@@ -1100,7 +1209,7 @@ func (product Product) validateResolvedDirection(direction Direction) error {
 	}
 	coveredSupports := make(map[CanonicalRef]struct{}, len(requiredSupports))
 	principalSet := make(map[CanonicalRef]struct{}, len(direction.PrincipalRefs))
-	hasComponent := false
+	hasComponent, hasAnalysisTargetRoot := false, false
 	if !uniqueCanonicalRefs(direction.PrincipalRefs) {
 		return fmt.Errorf("principals are not canonical")
 	}
@@ -1110,15 +1219,17 @@ func (product Product) validateResolvedDirection(direction Direction) error {
 		}
 		principalSet[ref] = struct{}{}
 		object, ok := product.byCanonical[ref]
-		if !ok || (object.Kind != RefComponent && object.Kind != RefSurface) {
+		if !ok || (object.Kind != RefComponent && object.Kind != RefSurface &&
+			(object.Kind != RefUnit || !product.isAnalysisTargetRootPrincipal(ref))) {
 			return fmt.Errorf("unknown or wrong-kind principal")
 		}
 		if !product.advertisesPrincipal(ref) {
 			return fmt.Errorf("principal is not advertised by a reading target")
 		}
 		hasComponent = hasComponent || object.Kind == RefComponent
+		hasAnalysisTargetRoot = hasAnalysisTargetRoot || object.Kind == RefUnit
 	}
-	if !hasComponent {
+	if !hasComponent && !hasAnalysisTargetRoot {
 		return fmt.Errorf("component principal missing")
 	}
 	seenReading := make(map[CanonicalRef]struct{}, len(direction.Reading))

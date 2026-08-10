@@ -117,18 +117,24 @@ const report = {
 
 const roots = {
   "rm-overview": new Element("section"),
-  "rm-study-detail": new Element("section"),
   "rm-operate-detail": new Element("section"),
   "rm-toast": new Element("div"),
 };
-const entries = [{ hash: "#/overview", state: null }];
+function findByID(id) {
+  for (const root of Object.values(roots)) {
+    const found = descendants(root).find((node) => node && node.id === id);
+    if (found) return found;
+  }
+  return null;
+}
+const entries = [{ hash: "#canvas", state: null }];
 let historyIndex = 0;
 let copied = "";
 const navigator = {
   clipboard: { writeText(value) { copied = value; return Promise.resolve(); } },
 };
 const window = {
-  location: { search: "", hash: "#/overview", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
+  location: { search: "", hash: "#canvas", hostname: "example.test", protocol: "file:", pathname: "/report.html" },
   __REPOMAP_WORKSPACE_TEST__: {},
   addEventListener() {}, setTimeout(fn) { fn(); return 1; }, clearTimeout() {},
   open() { return null; },
@@ -155,7 +161,7 @@ const document = {
   createTextNode(text) { return { nodeType: 3, textContent: String(text), children: [], attributes: {}, appendChild() {} }; },
   getElementById(id) {
     if (id === "rm-report-data") return { textContent: JSON.stringify(report) };
-    return roots[id] || null;
+    return roots[id] || findByID(id);
   },
   querySelector() { return null; },
   querySelectorAll() { return []; },
@@ -201,13 +207,19 @@ const relatedButton = descendants(roots["rm-operate-detail"]).find((node) =>
 );
 if (relatedButton) relatedButton.onclick();
 const relatedHash = window.location.hash;
+const relatedState = api.workspaceStateSnapshot();
+const relatedDisclosure = findByID("study-direction-study-run");
 api.openPavedPath("operate/server");
 
 process.stdout.write(JSON.stringify({
   validRoute, invalidRoute, overviewText, openedHash, openedState, detailText,
   buttonTexts, copyButtonCount: copyButtons.length, copied,
   redactedButtons, sourceCardCount, sourceHash, sourceState, closedState, closedHash,
-  relatedHash, searchHash: window.location.hash,
+  relatedHash, relatedState,
+  relatedDisclosureTag: relatedDisclosure && relatedDisclosure.tagName,
+  relatedSummaryTag: relatedDisclosure && relatedDisclosure.children[0] && relatedDisclosure.children[0].tagName,
+  relatedDisclosureOpen: !!(relatedDisclosure && relatedDisclosure.open),
+  reopenedHash: window.location.hash,
 }));
 `
 	runnerPath := filepath.Join(t.TempDir(), "operate-workspace-test.js")
@@ -242,8 +254,15 @@ process.stdout.write(JSON.stringify({
 		SourceHash      string   `json:"sourceHash"`
 		ClosedHash      string   `json:"closedHash"`
 		RelatedHash     string   `json:"relatedHash"`
-		SearchHash      string   `json:"searchHash"`
-		OpenedState     struct {
+		RelatedState    struct {
+			View        string `json:"view"`
+			DirectionID string `json:"directionID"`
+		} `json:"relatedState"`
+		RelatedDisclosureTag  string `json:"relatedDisclosureTag"`
+		RelatedSummaryTag     string `json:"relatedSummaryTag"`
+		RelatedDisclosureOpen bool   `json:"relatedDisclosureOpen"`
+		ReopenedHash          string `json:"reopenedHash"`
+		OpenedState           struct {
 			View        string `json:"view"`
 			OperationID string `json:"operationID"`
 		} `json:"openedState"`
@@ -265,7 +284,7 @@ process.stdout.write(JSON.stringify({
 		got.ValidRoute.State.View != "operate" || got.ValidRoute.State.OperationID != "operate/server" {
 		t.Fatalf("valid operation route = %#v", got.ValidRoute)
 	}
-	if got.InvalidRoute.Valid || got.InvalidRoute.CanonicalHash != "#/map" {
+	if got.InvalidRoute.Valid || got.InvalidRoute.CanonicalHash != "#canvas" {
 		t.Fatalf("invalid operation route = %#v", got.InvalidRoute)
 	}
 	if strings.Index(got.OverviewText, "What to study") < 0 ||
@@ -323,10 +342,13 @@ process.stdout.write(JSON.stringify({
 		got.ClosedState.OperationID != "operate/server" || got.ClosedState.SourceLocation != nil {
 		t.Fatalf("closing operation source did not restore route/context: hash %q state %#v", got.ClosedHash, got.ClosedState)
 	}
-	if got.RelatedHash != "#/study/study-run" {
-		t.Fatalf("related Study route = %q", got.RelatedHash)
+	if got.RelatedHash != "#study-direction-study-run" || got.RelatedState.View != "map" ||
+		got.RelatedState.DirectionID != "study-run" || got.RelatedDisclosureTag != "details" ||
+		got.RelatedSummaryTag != "summary" || !got.RelatedDisclosureOpen {
+		t.Fatalf("related inline Study disclosure = hash %q state %#v tag %q summary %q open=%t",
+			got.RelatedHash, got.RelatedState, got.RelatedDisclosureTag, got.RelatedSummaryTag, got.RelatedDisclosureOpen)
 	}
-	if got.SearchHash != "#/operate/operate%2Fserver" {
-		t.Fatalf("paved path Search route = %q", got.SearchHash)
+	if got.ReopenedHash != "#/operate/operate%2Fserver" {
+		t.Fatalf("reopened paved path route = %q", got.ReopenedHash)
 	}
 }
