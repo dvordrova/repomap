@@ -20,6 +20,11 @@ type AnalysisTargetSSAUnavailableError struct {
 	Package       string
 	ExpectedRoots int
 	ResolvedRoots int
+	// Diagnostic is one already-bounded, repository-relative package
+	// diagnostic from the selected target's local dependency closure. It
+	// explains a concrete build-input failure without weakening the fatal
+	// target contract or attempting repository setup.
+	Diagnostic *PackageDiagnostic
 }
 
 func (e *AnalysisTargetSSAUnavailableError) Error() string {
@@ -28,6 +33,12 @@ func (e *AnalysisTargetSSAUnavailableError) Error() string {
 	}
 	switch e.Reason {
 	case AnalysisTargetPackageNotSSASafe:
+		if diagnostic := analysisTargetDiagnosticText(e.Diagnostic); diagnostic != "" {
+			return fmt.Sprintf(
+				"selected Go analysis target package %s is unavailable for SSA because package %s failed at %s; prepare missing generated/build inputs, or choose another --target/--go-target",
+				e.Package, e.Diagnostic.Package, diagnostic,
+			)
+		}
 		return fmt.Sprintf(
 			"selected Go analysis target package %s is unavailable for SSA; choose another --target or correct --go-target",
 			e.Package,
@@ -40,6 +51,19 @@ func (e *AnalysisTargetSSAUnavailableError) Error() string {
 	default:
 		return fmt.Sprintf("selected Go analysis target package %s is unavailable for SSA", e.Package)
 	}
+}
+
+func analysisTargetDiagnosticText(diagnostic *PackageDiagnostic) string {
+	if diagnostic == nil || diagnostic.Location == nil ||
+		diagnostic.Location.Path == "" || diagnostic.Location.Line <= 0 ||
+		diagnostic.Message == "" {
+		return ""
+	}
+	location := fmt.Sprintf("%s:%d", diagnostic.Location.Path, diagnostic.Location.Line)
+	if diagnostic.Location.Column > 0 {
+		location += fmt.Sprintf(":%d", diagnostic.Location.Column)
+	}
+	return location + ": " + diagnostic.Message
 }
 
 func IsAnalysisTargetSSAUnavailable(err error) bool {
