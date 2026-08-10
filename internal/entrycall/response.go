@@ -360,6 +360,9 @@ func restoreSurfaceProposal(
 			path.Kind != SurfaceFactString || handler.Kind != SurfaceFactCallable {
 			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
 		}
+		if method.Kind == SurfaceFactToken && !standardHTTPTokenMethod(method.Value) {
+			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
+		}
 		if _, extra := bySlot[SurfaceSlotRefIdentity]; extra {
 			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
 		}
@@ -373,6 +376,15 @@ func restoreSurfaceProposal(
 	}
 	restored.ID = surfaceProposalID(authority.exact.ID, restored.Kind)
 	return restored, ""
+}
+
+func standardHTTPTokenMethod(value string) bool {
+	switch strings.ToUpper(value) {
+	case "CONNECT", "DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT", "TRACE":
+		return true
+	default:
+		return false
+	}
 }
 
 func handlerlessCLIHasDescriptorEvidence(candidate ExactSurfaceCandidate, identity ExactSurfaceFact) bool {

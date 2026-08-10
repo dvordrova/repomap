@@ -23,6 +23,8 @@ func TestPromptDoesNotApplyTheFamilyLimitToSurfaceProposals(t *testing.T) {
 		"The twelve-ref limit applies only to each entries[].family_refs list",
 		"Examine every advertised surface candidate",
 		"Do not stop after twelve surface proposals",
+		"A token method fact must case-insensitively equal CONNECT, DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT, or TRACE",
+		"a string method fact may preserve an exact custom HTTP method",
 	} {
 		if !strings.Contains(promptSystem, required) {
 			t.Fatalf("entry-call prompt lost complete surface classification rule %q", required)
@@ -435,6 +437,131 @@ func TestSurfaceProposalRejectsInvalidSiblingLocallyButUnknownRefsAtomically(t *
 	raw, _ = json.Marshal(response)
 	if _, err := Reduce(compilation, raw); err == nil || !strings.Contains(err.Error(), "unknown surface fact ref") {
 		t.Fatalf("unknown fact ref did not reject atomically: %v", err)
+	}
+}
+
+func TestHTTPTokenMethodValidationRejectsHandleFuncLocally(t *testing.T) {
+	substrate := causalFixture()
+	location := func(path string, line int) Location { return Location{Path: path, Line: line, Column: 3} }
+	substrate.SurfaceCandidates = []ExactSurfaceCandidate{
+		{
+			ID: "canonical:surface:healthz", RootNodeID: "canonical:main",
+			Form: SurfaceCandidateDirectCall, Sketch: "HandleFunc /healthz",
+			Site: location("internal/server/server.go", 43),
+			Facts: []ExactSurfaceFact{
+				{ID: "canonical:surface:healthz:method", Kind: SurfaceFactToken, Position: 0, Label: "method", Value: "HandleFunc", Location: location("internal/server/server.go", 43)},
+				{ID: "canonical:surface:healthz:path", Kind: SurfaceFactString, Position: 1, Label: "path", Value: "/healthz", Location: location("internal/server/server.go", 43)},
+				{ID: "canonical:surface:healthz:handler", Kind: SurfaceFactCallable, Position: 2, Label: "handler", Value: "func literal", Location: location("internal/server/server.go", 43)},
+			},
+		},
+		{
+			ID: "canonical:surface:readyz", RootNodeID: "canonical:main",
+			Form: SurfaceCandidateDirectCall, Sketch: "get /readyz",
+			Site: location("internal/server/server.go", 44),
+			Facts: []ExactSurfaceFact{
+				{ID: "canonical:surface:readyz:method", Kind: SurfaceFactToken, Position: 0, Label: "method", Value: "get", Location: location("internal/server/server.go", 44)},
+				{ID: "canonical:surface:readyz:path", Kind: SurfaceFactString, Position: 1, Label: "path", Value: "/readyz", Location: location("internal/server/server.go", 44)},
+				{ID: "canonical:surface:readyz:handler", Kind: SurfaceFactCallable, Position: 2, Label: "handler", Value: "ready", Location: location("internal/server/server.go", 44)},
+			},
+		},
+		{
+			ID: "canonical:surface:webdav", RootNodeID: "canonical:main",
+			Form: SurfaceCandidateDirectCall, Sketch: "Add PROPFIND",
+			Site: location("internal/server/webdav.go", 21),
+			Facts: []ExactSurfaceFact{
+				{ID: "canonical:surface:webdav:method", Kind: SurfaceFactString, Position: 0, Label: "method", Value: "PROPFIND", Location: location("internal/server/webdav.go", 21)},
+				{ID: "canonical:surface:webdav:path", Kind: SurfaceFactString, Position: 1, Label: "path", Value: "/dav", Location: location("internal/server/webdav.go", 21)},
+				{ID: "canonical:surface:webdav:handler", Kind: SurfaceFactCallable, Position: 2, Label: "handler", Value: "webDAV", Location: location("internal/server/webdav.go", 21)},
+			},
+		},
+	}
+	substrate.Coverage.SurfaceCandidatesConsidered = len(substrate.SurfaceCandidates)
+	substrate.Coverage.SurfaceCandidatesIndexed = len(substrate.SurfaceCandidates)
+	for _, candidate := range substrate.SurfaceCandidates {
+		substrate.Coverage.SurfaceCandidateFactsConsidered += len(candidate.Facts)
+		substrate.Coverage.SurfaceCandidateFactsIndexed += len(candidate.Facts)
+	}
+
+	compilation, err := Compile(substrate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	healthz := candidateByFactValue(t, compilation.Request.SurfaceCatalog, "/healthz")
+	readyz := candidateByFactValue(t, compilation.Request.SurfaceCatalog, "/readyz")
+	webdav := candidateByFactValue(t, compilation.Request.SurfaceCatalog, "PROPFIND")
+	response := emptySurfaceResponse(compilation)
+	entry := compilation.Request.Entries[0]
+	for _, family := range entry.Families {
+		if family.CallerRef == entry.RootNodeRef {
+			response.Entries[0].FamilyRefs = []string{family.Ref}
+			break
+		}
+	}
+	if len(response.Entries[0].FamilyRefs) != 1 {
+		t.Fatal("causal fixture exposed no rooted family")
+	}
+	proposal := func(candidate RequestSurfaceCandidate, method, path, handler string) ResponseSurfaceProposal {
+		return ResponseSurfaceProposal{
+			CandidateRef: candidate.Ref, KindRef: SurfaceKindRefHTTPRoute,
+			Bindings: []ResponseSurfaceBinding{
+				{SlotRef: SurfaceSlotRefMethod, FactRef: surfaceFactRefByValue(t, candidate, method)},
+				{SlotRef: SurfaceSlotRefPath, FactRef: surfaceFactRefByValue(t, candidate, path)},
+				{SlotRef: SurfaceSlotRefHandler, FactRef: surfaceFactRefByValue(t, candidate, handler)},
+			},
+		}
+	}
+	response.SurfaceProposals = []ResponseSurfaceProposal{
+		proposal(healthz, "HandleFunc", "/healthz", "func literal"),
+		proposal(readyz, "get", "/readyz", "ready"),
+		proposal(webdav, "PROPFIND", "/dav", "webDAV"),
+	}
+	raw, _ := json.Marshal(response)
+	result, err := Reduce(compilation, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.SelectedFamilyCount() != 1 || result.SelectedSurfaceCount() != 2 || result.RejectedSurfaceCount() != 1 ||
+		result.RejectedSurfaceProposals[0].CandidateRef != healthz.Ref ||
+		result.RejectedSurfaceProposals[0].Reason != RejectedSurfaceIncompatibleBinding {
+		t.Fatalf("item-local HTTP token validation = %+v", result)
+	}
+	methods := make(map[string]SurfaceFactKind, len(result.SurfaceProposals))
+	for _, restored := range result.SurfaceProposals {
+		methods[restored.Method.Text] = restored.Method.Kind
+	}
+	if methods["get"] != SurfaceFactToken || methods["PROPFIND"] != SurfaceFactString {
+		t.Fatalf("restored exact valid methods = %+v, want token get and string PROPFIND", methods)
+	}
+	result.RepositoryStateSHA256 = strings.Repeat("e", 64)
+	encoded, err := EncodeResult(result)
+	if err != nil {
+		t.Fatalf("EncodeResult valid exact methods: %v", err)
+	}
+	if _, err := DecodeResult(encoded); err != nil {
+		t.Fatalf("DecodeResult valid exact methods: %v", err)
+	}
+	for index := range result.SurfaceProposals {
+		if result.SurfaceProposals[index].Method.Kind == SurfaceFactToken {
+			result.SurfaceProposals[index].Method.Text = "HandleFunc"
+			break
+		}
+	}
+	invalid, _ := json.Marshal(result)
+	if _, err := DecodeResult(invalid); err == nil {
+		t.Fatal("DecodeResult accepted nonstandard token method HandleFunc")
+	}
+}
+
+func TestStandardHTTPTokenMethodSet(t *testing.T) {
+	for _, method := range []string{"CONNECT", "DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT", "TRACE", "get"} {
+		if !standardHTTPTokenMethod(method) {
+			t.Errorf("standardHTTPTokenMethod(%q) = false", method)
+		}
+	}
+	for _, method := range []string{"HandleFunc", "FETCH", "GET "} {
+		if standardHTTPTokenMethod(method) {
+			t.Errorf("standardHTTPTokenMethod(%q) = true", method)
+		}
 	}
 }
 

@@ -365,7 +365,7 @@ func validateResultSurfaceProposal(proposal ResultSurfaceProposal) error {
 		}
 	case SurfaceKindHTTPRoute:
 		if proposal.Role != SurfaceRoleEntrySurface || proposal.Form != SurfaceCandidateDirectCall ||
-			proposal.Identity != nil || !validResultSurfaceValueEither(proposal.Method, SurfaceFactString, SurfaceFactToken) ||
+			proposal.Identity != nil || !validResultHTTPMethod(proposal.Method) ||
 			!validResultSurfaceValue(proposal.Path, SurfaceFactString) ||
 			!validResultSurfaceValue(proposal.Handler, SurfaceFactCallable) {
 			return fmt.Errorf("entry call: invalid HTTP surface proposal")
@@ -374,6 +374,11 @@ func validateResultSurfaceProposal(proposal ResultSurfaceProposal) error {
 		return fmt.Errorf("entry call: invalid result surface kind")
 	}
 	return nil
+}
+
+func validResultHTTPMethod(value *ResultSurfaceValue) bool {
+	return validResultSurfaceValueEither(value, SurfaceFactString, SurfaceFactToken) &&
+		(value.Kind != SurfaceFactToken || standardHTTPTokenMethod(value.Text))
 }
 
 func validResultSurfaceValue(value *ResultSurfaceValue, kind SurfaceFactKind) bool {
