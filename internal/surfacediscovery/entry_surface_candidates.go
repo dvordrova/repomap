@@ -179,15 +179,10 @@ func (visitor *entrySurfaceSyntaxVisitor) recordDirectCall(call *ast.CallExpr) {
 		return
 	}
 	callableByArgument := make([][]entrycall.ExactSurfaceFact, len(call.Args))
-	callablesFound := 0
 	for index, argument := range call.Args {
 		position := index + 1
 		label := "argument " + strconv.Itoa(position)
 		callableByArgument[index] = visitor.callableFacts(argument, position, label, 0)
-		callablesFound += len(callableByArgument[index])
-	}
-	if callablesFound == 0 {
-		return
 	}
 	facts := []entrycall.ExactSurfaceFact{}
 	terminalLocation := entryCallLocation(visitor.a.location(call.Fun.Pos()))
@@ -522,7 +517,7 @@ func (sidecar *entryCallSidecar) recordSurfaceCandidate(candidate rawEntrySurfac
 	if originalFactCount > len(candidate.facts) {
 		sidecar.surfaceCoverage.SurfaceCandidateFactLimitExcluded += originalFactCount - len(candidate.facts)
 	}
-	if !entrySurfaceFactsHaveKinds(candidate.facts, entrycall.SurfaceFactString, entrycall.SurfaceFactCallable) {
+	if !entrySurfaceCandidateAdmissible(candidate.form, candidate.facts) {
 		return
 	}
 	candidate.id = stableEntrySurfaceCandidateID(candidate)
@@ -559,6 +554,12 @@ func boundEntrySurfaceFacts(facts []entrycall.ExactSurfaceFact) []entrycall.Exac
 		return facts
 	}
 	selected := make(map[string]entrycall.ExactSurfaceFact)
+	for _, fact := range facts {
+		if entrySurfacePathLikeFact(fact) {
+			selected[fact.ID] = fact
+			break
+		}
+	}
 	for _, required := range []entrycall.SurfaceFactKind{
 		entrycall.SurfaceFactToken, entrycall.SurfaceFactString, entrycall.SurfaceFactCallable,
 	} {
@@ -627,6 +628,44 @@ func entrySurfaceFactsHaveKinds(facts []entrycall.ExactSurfaceFact, kinds ...ent
 	return true
 }
 
+func entrySurfaceCandidateAdmissible(
+	form entrycall.SurfaceCandidateForm,
+	facts []entrycall.ExactSurfaceFact,
+) bool {
+	if entrySurfaceFactsHaveKinds(facts, entrycall.SurfaceFactString, entrycall.SurfaceFactCallable) {
+		return true
+	}
+	if form != entrycall.SurfaceCandidateDirectCall {
+		return false
+	}
+	for _, pathFact := range facts {
+		if !entrySurfacePathLikeFact(pathFact) {
+			continue
+		}
+		for _, companion := range facts {
+			if companion.ID != pathFact.ID &&
+				(companion.Kind == entrycall.SurfaceFactString || companion.Kind == entrycall.SurfaceFactToken) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func entrySurfacePathLikeFact(fact entrycall.ExactSurfaceFact) bool {
+	return fact.Kind == entrycall.SurfaceFactString && strings.HasPrefix(fact.Value, "/")
+}
+
+func entrySurfaceCandidateRank(form entrycall.SurfaceCandidateForm, facts []entrycall.ExactSurfaceFact) int {
+	if entrySurfaceFactsHaveKinds(facts, entrycall.SurfaceFactString, entrycall.SurfaceFactCallable) {
+		return 0
+	}
+	if entrySurfaceCandidateAdmissible(form, facts) {
+		return 1
+	}
+	return 2
+}
+
 func stableEntrySurfaceCandidateID(candidate rawEntrySurfaceCandidate) string {
 	fields := []string{
 		string(candidate.form), candidate.sketch, entryCallLocationKey(candidate.site),
@@ -638,6 +677,11 @@ func stableEntrySurfaceCandidateID(candidate rawEntrySurfaceCandidate) string {
 }
 
 func entrySurfaceRawCandidateLess(left, right rawEntrySurfaceCandidate) bool {
+	leftRank := entrySurfaceCandidateRank(left.form, left.facts)
+	rightRank := entrySurfaceCandidateRank(right.form, right.facts)
+	if leftRank != rightRank {
+		return leftRank < rightRank
+	}
 	if left.site.Path != right.site.Path {
 		return left.site.Path < right.site.Path
 	}
@@ -800,6 +844,11 @@ func (sidecar *entryCallSidecar) projectSurfaceCandidates(
 		}
 	}
 	sort.Slice(expanded, func(i, j int) bool {
+		leftRank := entrySurfaceCandidateRank(expanded[i].Form, expanded[i].Facts)
+		rightRank := entrySurfaceCandidateRank(expanded[j].Form, expanded[j].Facts)
+		if leftRank != rightRank {
+			return leftRank < rightRank
+		}
 		if expanded[i].RootNodeID != expanded[j].RootNodeID {
 			return expanded[i].RootNodeID < expanded[j].RootNodeID
 		}

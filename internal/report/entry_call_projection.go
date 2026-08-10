@@ -329,7 +329,17 @@ func projectEntryCallSurface(
 	}
 	switch proposal.Kind {
 	case entrycall.SurfaceKindHTTPRoute:
-		surface.State = EntryCallSurfaceStateExactRegistration
+		if proposal.Handler == nil {
+			surface.State = EntryCallSurfaceStateDeclaredDescriptor
+		} else {
+			surface.State = EntryCallSurfaceStateExactRegistration
+		}
+	case entrycall.SurfaceKindScheduledJob:
+		if proposal.Handler == nil {
+			surface.State = EntryCallSurfaceStateDeclaredDescriptor
+		} else {
+			surface.State = EntryCallSurfaceStateExactRegistration
+		}
 	case entrycall.SurfaceKindCLICommand:
 		surface.State = EntryCallSurfaceStateDeclaredDescriptor
 	default:
@@ -486,13 +496,20 @@ func validateEntryCallReportSurface(
 	}
 	switch surface.Kind {
 	case entrycall.SurfaceKindHTTPRoute:
-		if surface.Role != entrycall.SurfaceRoleEntrySurface ||
-			surface.Form != entrycall.SurfaceCandidateDirectCall ||
-			surface.State != EntryCallSurfaceStateExactRegistration ||
-			surface.Identity != nil || surface.Method == nil || surface.Path == nil ||
-			surface.Handler == nil || surface.Method.Kind == entrycall.SurfaceFactCallable ||
-			surface.Path.Kind == entrycall.SurfaceFactCallable ||
-			surface.Handler.Kind != entrycall.SurfaceFactCallable || surface.Handler.Location == nil {
+		if surface.Form != entrycall.SurfaceCandidateDirectCall || surface.Identity != nil ||
+			surface.Path == nil || surface.Path.Kind != entrycall.SurfaceFactString ||
+			!strings.HasPrefix(surface.Path.Text, "/") ||
+			(surface.Method != nil && surface.Method.Kind != entrycall.SurfaceFactString &&
+				surface.Method.Kind != entrycall.SurfaceFactToken) {
+			return fmt.Errorf("HTTP route contract is invalid")
+		}
+		withHandler := surface.Role == entrycall.SurfaceRoleEntrySurface &&
+			surface.State == EntryCallSurfaceStateExactRegistration &&
+			surface.Handler != nil && surface.Handler.Kind == entrycall.SurfaceFactCallable &&
+			surface.Handler.Location != nil
+		descriptor := surface.Role == entrycall.SurfaceRoleDescriptor &&
+			surface.State == EntryCallSurfaceStateDeclaredDescriptor && surface.Handler == nil
+		if !withHandler && !descriptor {
 			return fmt.Errorf("HTTP route contract is invalid")
 		}
 	case entrycall.SurfaceKindCLICommand:
@@ -504,6 +521,26 @@ func validateEntryCallReportSurface(
 			(surface.Handler != nil &&
 				(surface.Handler.Kind != entrycall.SurfaceFactCallable || surface.Handler.Location == nil)) {
 			return fmt.Errorf("CLI descriptor contract is invalid")
+		}
+	case entrycall.SurfaceKindScheduledJob:
+		// Identity is the exact stable job name restored by the backend, or its
+		// exact schedule when the registration has no separate name. It is not a
+		// route path, so the existing generic identity field keeps projection v2
+		// sufficient and leaves method/path unset.
+		if surface.Form != entrycall.SurfaceCandidateDirectCall ||
+			surface.Identity == nil || surface.Identity.Kind != entrycall.SurfaceFactString ||
+			surface.Identity.Location == nil ||
+			surface.Method != nil || surface.Path != nil {
+			return fmt.Errorf("scheduled job contract is invalid")
+		}
+		withHandler := surface.Role == entrycall.SurfaceRoleEntrySurface &&
+			surface.State == EntryCallSurfaceStateExactRegistration &&
+			surface.Handler != nil && surface.Handler.Kind == entrycall.SurfaceFactCallable &&
+			surface.Handler.Location != nil
+		descriptor := surface.Role == entrycall.SurfaceRoleDescriptor &&
+			surface.State == EntryCallSurfaceStateDeclaredDescriptor && surface.Handler == nil
+		if !withHandler && !descriptor {
+			return fmt.Errorf("scheduled job contract is invalid")
 		}
 	default:
 		return fmt.Errorf("kind is invalid")

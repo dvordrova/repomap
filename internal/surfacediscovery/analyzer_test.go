@@ -67,6 +67,7 @@ func TestAnalyzeRecordsExplicitLinuxTargetAndBuildSelectedEntrypoint(t *testing.
 
 func TestValueEvaluationHasIndependentOperationalBudgets(t *testing.T) {
 	value := ssa.NewConst(constant.MakeString("bounded"), types.Typ[types.String])
+	recursive := &ssa.Phi{Edges: []ssa.Value{value}}
 	analyzer := &analyzer{
 		ctx:               context.Background(),
 		opts:              normalizeOptions(Options{}),
@@ -75,10 +76,10 @@ func TestValueEvaluationHasIndependentOperationalBudgets(t *testing.T) {
 	}
 	analyzer.valueEvalSteps = maxValueEvalSteps - 1
 
-	if got := analyzer.eval(value, environment{}, 0); got.Text != "bounded" {
+	if got := analyzer.eval(recursive, environment{}, 0); got.Text != "bounded" {
 		t.Fatalf("last admitted value = %#v", got)
 	}
-	if got := analyzer.eval(value, environment{}, 0); got.Text != "unresolved value" {
+	if got := analyzer.eval(recursive, environment{}, 0); got.Text != "unresolved value" {
 		t.Fatalf("value beyond step budget = %#v", got)
 	}
 	if analyzer.valueEvalSteps != maxValueEvalSteps ||
@@ -89,8 +90,23 @@ func TestValueEvaluationHasIndependentOperationalBudgets(t *testing.T) {
 			analyzer.result.Coverage.BudgetsReached,
 		)
 	}
+	if got := analyzer.eval(value, environment{}, analyzer.opts.MaxDepth+1); got.Text != "bounded" {
+		t.Fatalf("terminal constant inherited recursive budget exhaustion = %#v", got)
+	}
+	program := ssa.NewProgram(token.NewFileSet(), ssa.SanityCheckFunctions)
+	function := program.NewFunction(
+		"handler",
+		types.NewSignatureType(nil, nil, nil, types.NewTuple(), types.NewTuple(), false),
+		"test",
+	)
+	if got := analyzer.eval(function, environment{}, analyzer.opts.MaxDepth+1); !got.Known || got.Kind != "function" {
+		t.Fatalf("terminal function inherited recursive budget exhaustion = %#v", got)
+	}
+	if analyzer.valueEvalSteps != maxValueEvalSteps {
+		t.Fatalf("terminal values consumed recursive budget: steps=%d", analyzer.valueEvalSteps)
+	}
 	analyzer.resetValueEvaluation()
-	if got := analyzer.eval(value, environment{}, 0); got.Text != "bounded" {
+	if got := analyzer.eval(recursive, environment{}, 0); got.Text != "bounded" {
 		t.Fatalf("next root did not receive an independent value budget: %#v", got)
 	}
 
@@ -102,6 +118,72 @@ func TestValueEvaluationHasIndependentOperationalBudgets(t *testing.T) {
 	if len(merged.Candidates) != maxValueAlternatives ||
 		!slices.Contains(analyzer.result.Coverage.BudgetsReached, "value_alternatives") {
 		t.Fatalf("alternative budget was not applied: %#v / %v", merged, analyzer.result.Coverage.BudgetsReached)
+	}
+}
+
+func TestAnalyzeKeepsLiteralRoutesAfterRecursiveValueBudget(t *testing.T) {
+	repository := t.TempDir()
+	writeFixtureFile(t, filepath.Join(repository, "go.mod"), "module example.com/value-budget\n\ngo 1.25\n")
+	var source strings.Builder
+	source.WriteString(`package main
+
+import (
+	"net/http"
+	"os"
+)
+
+var discarded any
+
+func main() {
+`)
+	// Each interface construction is a non-terminal SSA value and therefore
+	// spends recursive evaluation budget. Keep this above the production limit
+	// so the final registrations causally exercise terminal resolution after an
+	// unrelated complex frontier has exhausted that budget.
+	for range maxValueEvalSteps + 1 {
+		source.WriteString("\tdiscarded = any(\"noise\")\n")
+	}
+	source.WriteString(`
+	http.HandleFunc(os.Getenv("DYNAMIC_ROUTE"), dynamicHandler)
+	http.HandleFunc("/", handleRequest)
+	http.HandleFunc("/caswaf-handler", handleAuthCallback)
+}
+
+func dynamicHandler(http.ResponseWriter, *http.Request) {}
+func handleRequest(http.ResponseWriter, *http.Request) {}
+func handleAuthCallback(http.ResponseWriter, *http.Request) {}
+`)
+	writeFixtureFile(t, filepath.Join(repository, "main.go"), source.String())
+
+	result, err := Analyze(DefaultOptions(repository))
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	if !slices.Contains(result.Coverage.BudgetsReached, "value_evaluation") {
+		t.Fatalf("recursive evaluation frontier lost its budget diagnostic: %v", result.Coverage.BudgetsReached)
+	}
+	routes := map[string]TriggerRecord{}
+	var dynamicRoute *TriggerRecord
+	for _, route := range triggersOfKind(result, "http_route") {
+		if route.Identity.Path.Known {
+			routes[route.Identity.Path.Text] = route
+			continue
+		}
+		candidate := route
+		dynamicRoute = &candidate
+	}
+	for path, handler := range map[string]string{
+		"/":               "example.com/value-budget.handleRequest",
+		"/caswaf-handler": "example.com/value-budget.handleAuthCallback",
+	} {
+		route, ok := routes[path]
+		if !ok || route.Handler.Text != handler || !route.Handler.Known ||
+			route.Resolution != "exact" || route.SurfaceRole != SurfaceRoleEntrySurface {
+			t.Fatalf("literal route %q after budget exhaustion = %#v", path, route)
+		}
+	}
+	if dynamicRoute == nil || !hasFrontier(dynamicRoute.DynamicFrontier, "dynamic_route_identity") {
+		t.Fatalf("genuinely recursive route lost its bounded frontier: %#v", dynamicRoute)
 	}
 }
 

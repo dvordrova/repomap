@@ -35,6 +35,8 @@ stage and make product coverage depend on a growing framework allowlist.
   bounded candidate reservoir from the selected executable and its exact
   repository-owned process/init closure:
   - direct calls with a safe short literal/token fact and a callable fact;
+  - lower-priority direct calls with an exact `/...` string and an independent
+    string/token fact, even when no callable can be resolved;
   - keyed composite literals with a safe short string fact and a callable
     fact.
 - Candidate admission is structural. It contains no Echo, Cobra, Gin, chi or
@@ -55,9 +57,12 @@ stage and make product coverage depend on a growing framework allowlist.
 
 ## Product projection
 
-- An HTTP proposal publishes only when exact locally restored method, path,
-  handler and registration evidence satisfy the closed response contract.
-  Otherwise it remains an accounted frontier.
+- An HTTP proposal with an exact locally restored path and registration site
+  may publish as a detached declared descriptor. Method and callback remain
+  absent unless the provider selects their independently advertised exact
+  facts. A callback-bound proposal is an exact static entry surface; a
+  path-only proposal is only a navigation lead and never claims a reachable
+  endpoint. Action strings such as `METHOD:Action` are not split or promoted.
 - A CLI proposal with an exact locally restored command identity publishes as
   a declared model-assisted descriptor; a missing parent or activation never
   becomes an invented command hierarchy. A locally restored callback remains
@@ -106,3 +111,8 @@ duplicate deterministic surfaces.
 No full command tree, alias/instance interpreter, route-group prefix invention,
 runtime tracing, framework plugin registry, provider-authored paths/symbols,
 new model stage, new user option, mobile redesign or model-driven Canvas edge.
+
+Owner correction:
+    Retain useful path-only HTTP registration descriptors when the generic
+    candidate has exact local path and site authority but cannot resolve a
+    callback, after the Casdoor/Beego coverage review, 2026-08-11.

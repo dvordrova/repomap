@@ -232,6 +232,71 @@ func getAccount() {}
 	}
 }
 
+func TestEntrySurfaceCandidatesCaptureGenericPathDescriptorWithoutCallable(t *testing.T) {
+	repository := t.TempDir()
+	writeFixtureFile(t, filepath.Join(repository, "go.mod"), "module example.com/path-descriptor\n\ngo 1.25\n")
+	writeFixtureFile(t, filepath.Join(repository, "main.go"), `package main
+
+type Controller struct{}
+
+func Router(string, *Controller, string) {}
+func Label(string, string) {}
+func GET(string, func()) {}
+
+func main() {
+	register()
+}
+
+func register() {
+	Router("/api/signup", &Controller{}, "POST:Signup")
+	Label("/not-a-route", "documentation")
+	GET("/healthz", healthz)
+}
+
+func healthz() {}
+`)
+	options := DefaultOptions(repository)
+	options.CaptureEntryCallSubstrate = true
+	result, err := Analyze(options)
+	if err != nil {
+		t.Fatalf("Analyze: %v", err)
+	}
+	substrate := result.EntryCallSubstrate
+	if substrate == nil {
+		t.Fatal("entry-call substrate was not captured")
+	}
+	if len(substrate.SurfaceCandidates) != 3 {
+		t.Fatalf("surface candidates = %#v coverage=%#v, want strong route and two weak descriptors", substrate.SurfaceCandidates, substrate.Coverage)
+	}
+	descriptor := requireEntrySurfaceCandidateWithFact(t, substrate, "/api/signup")
+	if descriptor.Form != entrycall.SurfaceCandidateDirectCall || descriptor.Sketch != "Router" ||
+		descriptor.Site.Path != "main.go" {
+		t.Fatalf("path descriptor candidate = %#v", descriptor)
+	}
+	requireEntrySurfaceFact(t, descriptor, entrycall.SurfaceFactString, "POST:Signup", "main.go")
+	for _, fact := range descriptor.Facts {
+		if fact.Kind == entrycall.SurfaceFactCallable {
+			t.Fatalf("controller object became a fabricated callable: %#v", descriptor)
+		}
+	}
+
+	compilation, err := entrycall.Compile(substrate.Snapshot())
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if got := len(compilation.Request.SurfaceCatalog.Candidates); got != 3 {
+		t.Fatalf("advertised surface candidates = %d, want 3", got)
+	}
+	first := compilation.Request.SurfaceCatalog.Candidates[0]
+	strongFirst := false
+	for _, fact := range first.Facts {
+		strongFirst = strongFirst || fact.Value == "/healthz"
+	}
+	if !strongFirst {
+		t.Fatalf("weaker path descriptors ranked ahead of callable-complete route: %#v", compilation.Request.SurfaceCatalog.Candidates)
+	}
+}
+
 func TestEntrySurfaceCandidatesCaptureCobraShapedInitCompositeWithoutFieldAllowlist(t *testing.T) {
 	repository := t.TempDir()
 	writeFixtureFile(t, filepath.Join(repository, "go.mod"), "module example.com/command-shaped\n\ngo 1.25\n")
@@ -343,6 +408,42 @@ func TestEntrySurfaceCandidateRawReservoirHasDeterministicHardFrontier(t *testin
 		if retained.site.Line > entrycall.MaxRawSurfaceCandidates {
 			t.Fatalf("deterministic source prefix did not win bound: %#v", retained)
 		}
+	}
+}
+
+func TestEntrySurfaceCandidateRawReservoirNeverLetsWeakDescriptorEvictStrongCandidate(t *testing.T) {
+	sidecar := newEntryCallSidecar()
+	owner := &ssa.Function{}
+	for index := 0; index < entrycall.MaxRawSurfaceCandidates; index++ {
+		site := entrycall.Location{Path: "weak.go", Line: index + 1, Column: 1}
+		sidecar.recordSurfaceCandidate(rawEntrySurfaceCandidate{
+			owner: owner, form: entrycall.SurfaceCandidateDirectCall, sketch: "Router", site: site,
+			facts: []entrycall.ExactSurfaceFact{
+				exactEntrySurfaceFact(entrycall.SurfaceFactToken, 0, "terminal selector", "Router", site),
+				exactEntrySurfaceFact(entrycall.SurfaceFactString, 1, "argument 1", "/route/"+strconv.Itoa(index), site),
+				exactEntrySurfaceFact(entrycall.SurfaceFactString, 2, "argument 2", "GET:Action", site),
+			},
+		}, true)
+	}
+	strongSite := entrycall.Location{Path: "zz-strong.go", Line: 1, Column: 1}
+	strongHandler := entrycall.Location{Path: "zz-handler.go", Line: 1, Column: 1}
+	sidecar.recordSurfaceCandidate(rawEntrySurfaceCandidate{
+		owner: owner, form: entrycall.SurfaceCandidateDirectCall, sketch: "GET", site: strongSite,
+		facts: []entrycall.ExactSurfaceFact{
+			exactEntrySurfaceFact(entrycall.SurfaceFactToken, 0, "terminal selector", "GET", strongSite),
+			exactEntrySurfaceFact(entrycall.SurfaceFactString, 1, "argument 1", "/strong", strongSite),
+			exactEntrySurfaceFact(entrycall.SurfaceFactCallable, 2, "argument 2", "handler", strongHandler),
+		},
+	}, true)
+	if len(sidecar.surfaceCandidates) != entrycall.MaxRawSurfaceCandidates {
+		t.Fatalf("reservoir = %d, want %d", len(sidecar.surfaceCandidates), entrycall.MaxRawSurfaceCandidates)
+	}
+	retainedStrong := false
+	for _, candidate := range sidecar.surfaceCandidates {
+		retainedStrong = retainedStrong || candidate.site == strongSite
+	}
+	if !retainedStrong || sidecar.surfaceCoverage.SurfaceCandidateLimitExcluded != 1 {
+		t.Fatalf("strong candidate was evicted by weak descriptors: retained=%v coverage=%#v", retainedStrong, sidecar.surfaceCoverage)
 	}
 }
 

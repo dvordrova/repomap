@@ -67,14 +67,15 @@ func TestLoadEntryCallReportProjectionRestoresSeparateSemanticSurfaces(t *testin
 	if err := validateEntryCallReportProjection(target, data.EntryCall, data.OpenablePaths); err != nil {
 		t.Fatalf("validateEntryCallReportProjection: %v", err)
 	}
-	if data.EntryCall == nil || data.EntryCall.Version != 2 || len(data.EntryCall.Surfaces) != 2 ||
-		data.EntryCall.SurfaceCoverage.SelectedProposals != 2 ||
-		data.EntryCall.SurfaceCoverage.AdvertisedCandidates != 2 ||
+	if data.EntryCall == nil || data.EntryCall.Version != 2 || len(data.EntryCall.Surfaces) != 3 ||
+		data.EntryCall.SurfaceCoverage.SelectedProposals != 3 ||
+		data.EntryCall.SurfaceCoverage.AdvertisedCandidates != 3 ||
 		len(data.DiscoveredSurfaces.Triggers) != 1 {
 		t.Fatalf("separate surface projection/catalog = %#v / %#v", data.EntryCall, data.DiscoveredSurfaces)
 	}
 	httpSurface := data.EntryCall.Surfaces[1]
 	cliSurface := data.EntryCall.Surfaces[0]
+	scheduledSurface := data.EntryCall.Surfaces[2]
 	if httpSurface.Kind != entrycall.SurfaceKindHTTPRoute || httpSurface.Method == nil ||
 		httpSurface.Method.Text != "GET" || httpSurface.Path == nil || httpSurface.Path.Text != "/account/:id" ||
 		httpSurface.Handler == nil || httpSurface.Handler.Text != "fixture.getAccount" ||
@@ -90,13 +91,157 @@ func TestLoadEntryCallReportProjectionRestoresSeparateSemanticSurfaces(t *testin
 		cliSurface.RuntimeReachability != EntryCallSurfaceRuntimeReachabilityUnknown {
 		t.Fatalf("CLI surface = %#v", cliSurface)
 	}
+	if scheduledSurface.Kind != entrycall.SurfaceKindScheduledJob ||
+		scheduledSurface.Role != entrycall.SurfaceRoleEntrySurface ||
+		scheduledSurface.Identity == nil || scheduledSurface.Identity.Text != "__pbDBOptimize__" ||
+		scheduledSurface.Method != nil || scheduledSurface.Path != nil ||
+		scheduledSurface.Handler == nil || scheduledSurface.Handler.Text != "fixture.optimizeDB" ||
+		scheduledSurface.Site.Line != target.Roots[0].Line+6 ||
+		scheduledSurface.Handler.Location == nil ||
+		scheduledSurface.Handler.Location.Line != target.Roots[0].Line+7 ||
+		scheduledSurface.State != EntryCallSurfaceStateExactRegistration ||
+		scheduledSurface.RuntimeReachability != EntryCallSurfaceRuntimeReachabilityUnknown {
+		t.Fatalf("scheduled surface = %#v", scheduledSurface)
+	}
+	if data.ArchitectureCanvas != nil || len(data.DiscoveredSurfaces.Triggers) != 1 {
+		t.Fatalf("model-assisted scheduled job gained Canvas/catalog authority: %#v / %#v", data.ArchitectureCanvas, data.DiscoveredSurfaces)
+	}
 	wire, err := json.Marshal(data.EntryCall)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(wire), `"candidate_ref"`) || strings.Contains(string(wire), `"root_ref"`) ||
+		strings.Contains(string(wire), `"explore"`) || strings.Contains(string(wire), `"component_id"`) ||
 		strings.Contains(string(wire), "c1") || strings.Contains(string(wire), "r1") {
 		t.Fatalf("request-local refs leaked into report projection: %s", wire)
+	}
+}
+
+func TestValidateEntryCallReportProjectionRejectsInvalidScheduledJob(t *testing.T) {
+	target := reportAnalysisTargetFixture(t)
+	root := target.Roots[0]
+	location := func(line int) *entrycall.Location {
+		value := entrycall.Location{Path: root.Path, Line: line, Column: 2}
+		return &value
+	}
+	valid := EntryCallReportSurface{
+		ID:              "model-surface-333333333333333333333333",
+		RootDeclaration: entrycall.Location{Path: root.Path, Line: root.Line, Column: 1},
+		Kind:            entrycall.SurfaceKindScheduledJob,
+		Role:            entrycall.SurfaceRoleEntrySurface,
+		Form:            entrycall.SurfaceCandidateDirectCall,
+		Site:            *location(root.Line + 6),
+		Identity: &EntryCallReportSurfaceValue{
+			Kind: entrycall.SurfaceFactString, Text: "__pbDBOptimize__", Location: location(root.Line + 6),
+		},
+		Handler: &EntryCallReportSurfaceValue{
+			Kind: entrycall.SurfaceFactCallable, Text: "fixture.optimizeDB", Location: location(root.Line + 7),
+		},
+		Origin:              EntryCallSurfaceOriginModelAssisted,
+		State:               EntryCallSurfaceStateExactRegistration,
+		RuntimeReachability: EntryCallSurfaceRuntimeReachabilityUnknown,
+	}
+	openable := map[string]struct{}{root.Path: {}}
+	if err := validateEntryCallReportSurface(valid, openable); err != nil {
+		t.Fatalf("valid scheduled job: %v", err)
+	}
+	descriptor := valid
+	descriptor.Role = entrycall.SurfaceRoleDescriptor
+	descriptor.State = EntryCallSurfaceStateDeclaredDescriptor
+	descriptor.Handler = nil
+	if err := validateEntryCallReportSurface(descriptor, openable); err != nil {
+		t.Fatalf("valid handlerless scheduled descriptor: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*EntryCallReportSurface)
+	}{
+		{name: "missing identity", mutate: func(surface *EntryCallReportSurface) { surface.Identity = nil }},
+		{name: "identity is callable", mutate: func(surface *EntryCallReportSurface) {
+			surface.Identity = &EntryCallReportSurfaceValue{Kind: entrycall.SurfaceFactCallable, Text: "fixture.name", Location: location(root.Line + 6)}
+		}},
+		{name: "identity source is missing", mutate: func(surface *EntryCallReportSurface) {
+			identity := *surface.Identity
+			identity.Location = nil
+			surface.Identity = &identity
+		}},
+		{name: "missing callback", mutate: func(surface *EntryCallReportSurface) { surface.Handler = nil }},
+		{name: "unexpected path", mutate: func(surface *EntryCallReportSurface) {
+			surface.Path = &EntryCallReportSurfaceValue{Kind: entrycall.SurfaceFactString, Text: "0 0 * * *", Location: location(root.Line + 6)}
+		}},
+		{name: "descriptor role", mutate: func(surface *EntryCallReportSurface) { surface.Role = entrycall.SurfaceRoleDescriptor }},
+		{name: "descriptor state", mutate: func(surface *EntryCallReportSurface) { surface.State = EntryCallSurfaceStateDeclaredDescriptor }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := valid
+			test.mutate(&candidate)
+			if err := validateEntryCallReportSurface(candidate, openable); err == nil ||
+				!strings.Contains(err.Error(), "scheduled job contract is invalid") {
+				t.Fatalf("validation error = %v", err)
+			}
+		})
+	}
+}
+
+func TestProjectEntryCallHTTPRouteAcceptsPathDescriptorAndMethodlessHandler(t *testing.T) {
+	target := reportAnalysisTargetFixture(t)
+	root := target.Roots[0]
+	site := entrycall.Location{Path: root.Path, Line: root.Line + 8, Column: 2}
+	pathLocation := site
+	pathValue := &entrycall.ResultSurfaceValue{
+		Kind: entrycall.SurfaceFactString, Text: "/api/signup", Location: &pathLocation,
+	}
+
+	descriptor, err := projectEntryCallSurface(
+		entrycall.Location{Path: root.Path, Line: root.Line, Column: 1},
+		entrycall.ResultSurfaceProposal{
+			ID: "model-surface-444444444444444444444444", Kind: entrycall.SurfaceKindHTTPRoute,
+			Role: entrycall.SurfaceRoleDescriptor, Form: entrycall.SurfaceCandidateDirectCall,
+			Site: site, Path: pathValue,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	openable := map[string]struct{}{root.Path: {}}
+	if descriptor.State != EntryCallSurfaceStateDeclaredDescriptor || descriptor.Handler != nil ||
+		descriptor.Method != nil || descriptor.Path == nil || descriptor.Path.Text != "/api/signup" {
+		t.Fatalf("HTTP path descriptor projection = %#v", descriptor)
+	}
+	if err := validateEntryCallReportSurface(descriptor, openable); err != nil {
+		t.Fatalf("valid HTTP path descriptor: %v", err)
+	}
+
+	handlerLocation := entrycall.Location{Path: root.Path, Line: root.Line + 9, Column: 6}
+	exact, err := projectEntryCallSurface(
+		entrycall.Location{Path: root.Path, Line: root.Line, Column: 1},
+		entrycall.ResultSurfaceProposal{
+			ID: "model-surface-555555555555555555555555", Kind: entrycall.SurfaceKindHTTPRoute,
+			Role: entrycall.SurfaceRoleEntrySurface, Form: entrycall.SurfaceCandidateDirectCall,
+			Site: site, Path: pathValue, Handler: &entrycall.ResultSurfaceValue{
+				Kind: entrycall.SurfaceFactCallable, Text: "fixture.signup", Location: &handlerLocation,
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exact.State != EntryCallSurfaceStateExactRegistration || exact.Method != nil || exact.Handler == nil {
+		t.Fatalf("methodless handler-bound route projection = %#v", exact)
+	}
+	if err := validateEntryCallReportSurface(exact, openable); err != nil {
+		t.Fatalf("valid methodless handler-bound route: %v", err)
+	}
+
+	invalid := descriptor
+	invalid.Path = &EntryCallReportSurfaceValue{
+		Kind: entrycall.SurfaceFactString, Text: "api/signup", Location: &pathLocation,
+	}
+	if err := validateEntryCallReportSurface(invalid, openable); err == nil ||
+		!strings.Contains(err.Error(), "HTTP route contract is invalid") {
+		t.Fatalf("path without leading slash validation = %v", err)
 	}
 }
 
@@ -578,9 +723,17 @@ func appendEntryCallReportSurfaceFixtures(
 			Identity: value(entrycall.SurfaceFactString, "serve   [flags]", root.Line+4),
 			Handler:  value(entrycall.SurfaceFactCallable, "fixture.runServe", root.Line+5),
 		},
+		{
+			ID: "model-surface-333333333333333333333333", CandidateRef: "c3", RootRef: "r1",
+			Kind: entrycall.SurfaceKindScheduledJob, Role: entrycall.SurfaceRoleEntrySurface,
+			Form:     entrycall.SurfaceCandidateDirectCall,
+			Site:     entrycall.Location{Path: root.Path, Line: root.Line + 6, Column: 2},
+			Identity: value(entrycall.SurfaceFactString, "__pbDBOptimize__", root.Line+6),
+			Handler:  value(entrycall.SurfaceFactCallable, "fixture.optimizeDB", root.Line+7),
+		},
 	}
 	result.SurfaceCandidateCoverage = entrycall.SurfaceCandidateCoverage{
-		ConsideredCandidates: 2, AdvertisedCandidates: 2,
-		ConsideredFacts: 5, AdvertisedFacts: 5,
+		ConsideredCandidates: 3, AdvertisedCandidates: 3,
+		ConsideredFacts: 7, AdvertisedFacts: 7,
 	}
 }

@@ -199,12 +199,16 @@ catalog; a saved trace only associates with a record and never creates or
 duplicates one.
 
 The existing bounded entry-call provider request may also classify two generic
-local syntax shapes: a direct call carrying exact short method/path and
-callable facts, or a keyed composite carrying an exact short identity and
-callable fact. The provider returns only advertised candidate/kind/slot/fact
-refs. The backend restores all values, symbols, locations and stable identity
-from private authority and exposes accepted HTTP routes and flat CLI command
-descriptors only in Entrypoints. These model-assisted records do not mutate the
+local syntax shapes: a direct call carrying exact short values and, when
+available, a callable fact; or a keyed composite carrying an exact short
+identity and callable fact. A lower-priority direct-call candidate with an
+exact `/...` value and a second structural value may become only a path
+descriptor when no callback can be resolved. The provider returns only
+advertised candidate/kind/slot/fact refs. The backend restores all values,
+symbols, locations and stable identity from private authority and exposes only
+in Entrypoints: accepted HTTP routes and path descriptors, flat CLI command
+descriptors, and selected scheduled registrations with an optional exact
+callback. These model-assisted records do not mutate the
 typed surface catalog, Atlas or Canvas; an equivalent deterministic record
 always wins. Missing route prefixes, command parents, activation or runtime
 reachability remain explicit unknowns rather than inferred hierarchy.

@@ -38,7 +38,9 @@
   // UI34 gives every Russian frontier count its correct grammatical form.
   // UI35 names unselected structural candidates as neutral classification
   // remainder rather than implying that a valid entry surface was rejected.
-  var VERSION = 35;
+  // UI36 presents exact model-assisted scheduled jobs as a separate flat
+  // Entrypoints group without claiming hierarchy or runtime reachability.
+  var VERSION = 36;
   var EN = {
     "main.browser_error.invalid_report_artifact": { params: [], text: "The saved report is invalid or exceeds the supported size." },
     "main.browser_error.no_saved_reports": { params: [], text: "No saved reports are available." },
@@ -120,6 +122,7 @@
     "main.map.entry.group.http_routes": { params: [], text: "HTTP routes" },
     "main.map.entry.group.http_servers": { params: [], text: "HTTP servers" },
     "main.map.entry.group.cli_commands": { params: [], text: "CLI commands" },
+    "main.map.entry.group.workers": { params: [], text: "Workers" },
     "main.map.entry.group.other": { params: [], text: "Other entrypoints" },
     "main.map.entry.callback.anonymous": { params: [], text: "anonymous callback" },
     "main.map.entry.callback.unresolved": { params: [], text: "unresolved callback" },
@@ -1271,6 +1274,7 @@
     "main.map.entry.group.http_routes": { params: [], text: "HTTP-маршруты" },
     "main.map.entry.group.http_servers": { params: [], text: "HTTP-серверы" },
     "main.map.entry.group.cli_commands": { params: [], text: "CLI-команды" },
+    "main.map.entry.group.workers": { params: [], text: "Воркеры" },
     "main.map.entry.group.other": { params: [], text: "Другие точки входа" },
     "main.map.entry.callback.anonymous": { params: [], text: "анонимный обработчик" },
     "main.map.entry.callback.unresolved": { params: [], text: "обработчик не разрешён" },

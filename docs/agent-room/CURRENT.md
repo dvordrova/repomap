@@ -69,6 +69,7 @@ Active decisions (each approved by the repository owner via its supervisory goal
 65. decisions/282-conservative-automatic-go-target.md
 66. decisions/283-generic-model-assisted-entry-surfaces.md
 67. decisions/284-bounded-architecture-response-intake.md
+68. decisions/285-generic-scheduled-entry-surfaces.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
@@ -857,12 +858,17 @@ Status:
 	restored locally. Fresh commands/routes therefore no longer require a Cobra
 	reader or one catalog adapter per framework. The projection remains separate
 	from Trigger Catalog, Atlas and Canvas authority and preserves exact local
-	source actions plus explicit partial/frontier truth.
+	source actions plus explicit partial/frontier truth. A direct call with an
+	exact `/...` fact and independent structural value may also publish a
+	path-only HTTP descriptor when no callback is resolved; it remains detached,
+	shows the exact registration source and never invents a method or handler.
 
 Approved by:
 	Repository owner after real-provider Restic, etcdctl and Echo runs proved
 	that D273 retained the generic model-selected call spine but suppressed the
-	useful command/handler product records, 2026-08-10.
+	useful command/handler product records, 2026-08-10; corrected by the owner to
+	retain useful path-only registration descriptors after the Casdoor/Beego
+	coverage review, 2026-08-11.
 
 ## Decision 284
 
@@ -886,6 +892,24 @@ Approved by:
 	instruction to stop rejecting large valid nested responses and use a
 	1000-component intake limit after a fresh 156-component response exceeded
 	the initial 100-component correction, 2026-08-10.
+
+## Decision 285
+
+Status:
+	ACTIVE. The existing single generic EntryCall request adds one
+	`scheduled_job` kind over its already-advertised direct-call candidates. The
+	model binds only an advertised exact identity string and may bind one
+	repository-local callable ref; a handlerless descriptor requires a second
+	exact string fact establishing the schedule shape. The backend restores
+	values, locations and stable identity.
+	Entrypoints renders a detached bounded Workers group with exact source
+	actions and no Canvas/Atlas/Explore authority. Workers and generic async tasks
+	remain runtime activities rather than being promoted. There is no new
+	collector, provider call, retry, framework allowlist, hierarchy or option.
+
+Approved by:
+	Repository owner after asking to restore scheduler registrations through the
+	same generic refs-only mechanism used for CLI and HTTP, 2026-08-11.
 
 ## Decision 241 follow-up
 
