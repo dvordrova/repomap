@@ -334,6 +334,8 @@ func restoreSurfaceProposal(
 				return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
 			}
 			restored.Handler = resultSurfaceValue(handler)
+		} else if !handlerlessCLIHasDescriptorEvidence(authority.exact, identity) {
+			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
 		}
 		if _, extra := bySlot[SurfaceSlotRefMethod]; extra {
 			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
@@ -371,6 +373,22 @@ func restoreSurfaceProposal(
 	}
 	restored.ID = surfaceProposalID(authority.exact.ID, restored.Kind)
 	return restored, ""
+}
+
+func handlerlessCLIHasDescriptorEvidence(candidate ExactSurfaceCandidate, identity ExactSurfaceFact) bool {
+	hasCallable := false
+	hasCompanionString := false
+	for _, fact := range candidate.Facts {
+		switch fact.Kind {
+		case SurfaceFactCallable:
+			hasCallable = true
+		case SurfaceFactString:
+			if fact.ID != identity.ID {
+				hasCompanionString = true
+			}
+		}
+	}
+	return !hasCallable || hasCompanionString
 }
 
 func resultSurfaceValue(fact ExactSurfaceFact) *ResultSurfaceValue {
