@@ -18,6 +18,18 @@ func TestPromptVersionIsPinnedToExactPrompt(t *testing.T) {
 	}
 }
 
+func TestPromptDoesNotApplyTheFamilyLimitToSurfaceProposals(t *testing.T) {
+	for _, required := range []string{
+		"The twelve-ref limit applies only to each entries[].family_refs list",
+		"Examine every advertised surface candidate",
+		"Do not stop after twelve surface proposals",
+	} {
+		if !strings.Contains(promptSystem, required) {
+			t.Fatalf("entry-call prompt lost complete surface classification rule %q", required)
+		}
+	}
+}
+
 func TestArtifactNamesAndBoundsArePinned(t *testing.T) {
 	if ResultArtifactFilename != "entry_call_result.v3.json" ||
 		StatusArtifactFilename != "entry_call_status.v3.json" || len(ArtifactFilenames) != 6 ||
