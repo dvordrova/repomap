@@ -7181,7 +7181,13 @@
   function entrySurfaceHTTPRegistrationPathKey(trigger) {
     if (String(trigger && trigger.kind || '') !== 'http_route' ||
       trigger && trigger.provisional_id === true) return '';
-    var siteKey = entrySurfaceLocationKey(entrySurfaceRegistrationLocation(trigger, null));
+    // The deterministic SSA trigger and the generic syntax candidate can own
+    // different exact columns within the same registration expression (for
+    // example the path argument versus the call expression). Path + line is
+    // the shared physical callsite authority; ambiguity on that line is
+    // tracked separately and fails closed below.
+    var site = exactEntrySurfaceLocation(entrySurfaceRegistrationLocation(trigger, null));
+    var siteKey = site ? [site.path, site.line].join('\u0000') : '';
     var path = trigger && trigger.identity && trigger.identity.path;
     if (!siteKey || !path || path.known !== true || !String(path.text || '').trim()) return '';
     return ['http_route', siteKey, String(path.text).trim()].join('\u0000');

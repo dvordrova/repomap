@@ -60,7 +60,10 @@ stage and make product coverage depend on a growing framework allowlist.
 - An HTTP proposal with an exact locally restored path and registration site
   may publish as a detached declared descriptor. Method and callback remain
   absent unless the provider selects their independently advertised exact
-  facts. A callback-bound proposal is an exact static entry surface; a
+  facts. After route classification, the backend may attach the candidate's
+  sole exact repository-local callable without asking the provider to repeat
+  that unambiguous local choice; zero or multiple callables remain unbound. A
+  callback-bound proposal is an exact static entry surface; a
   path-only proposal is only a navigation lead and never claims a reachable
   endpoint. Action strings such as `METHOD:Action` are not split or promoted.
 - A CLI proposal with an exact locally restored command identity publishes as
