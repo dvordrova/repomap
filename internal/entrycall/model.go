@@ -11,10 +11,10 @@ import (
 )
 
 const (
-	SubstrateVersion = 1
-	RequestVersion   = 1
-	ResultVersion    = 2
-	StatusVersion    = 2
+	SubstrateVersion = 2
+	RequestVersion   = 2
+	ResultVersion    = 3
+	StatusVersion    = 3
 
 	MaxRoots                   = 4
 	MaxDepth                   = 3
@@ -26,9 +26,16 @@ const (
 	MaxSelectedFamiliesPerRoot = 12
 	MaxRepresentativeCallsites = 3
 	MaxLabelRunes              = 96
-	MaxRequestBytes            = 64 * 1024
+	MaxRequestBytes            = 128 * 1024
 	MaxResponseBytes           = 64 * 1024
-	MaxArtifactBytes           = 128 * 1024
+	MaxArtifactBytes           = 256 * 1024
+
+	// MaxRawSurfaceCandidates is the independent local reservoir bound. The
+	// provider-visible compiler applies a deliberately smaller projection
+	// bound; retaining the larger exact reservoir here prevents call-family
+	// ranking from silently deciding which syntax candidates can be classified.
+	MaxRawSurfaceCandidates        = 2_048
+	MaxRawSurfaceFactsPerCandidate = 16
 )
 
 type State string
@@ -101,22 +108,89 @@ type ExactFrontier struct {
 	UnidentifiedCallsExcluded int    `json:"-"`
 }
 
+type SurfaceCandidateForm string
+
+const (
+	SurfaceCandidateDirectCall     SurfaceCandidateForm = "direct_call"
+	SurfaceCandidateKeyedComposite SurfaceCandidateForm = "keyed_composite"
+)
+
+func (form SurfaceCandidateForm) Valid() bool {
+	switch form {
+	case SurfaceCandidateDirectCall, SurfaceCandidateKeyedComposite:
+		return true
+	default:
+		return false
+	}
+}
+
+type SurfaceFactKind string
+
+const (
+	SurfaceFactString   SurfaceFactKind = "string"
+	SurfaceFactToken    SurfaceFactKind = "token"
+	SurfaceFactCallable SurfaceFactKind = "callable"
+)
+
+func (kind SurfaceFactKind) Valid() bool {
+	switch kind {
+	case SurfaceFactString, SurfaceFactToken, SurfaceFactCallable:
+		return true
+	default:
+		return false
+	}
+}
+
+// ExactSurfaceFact is private local authority retained from already-loaded Go
+// syntax, types, and SSA. Every field is JSON-opaque so canonical values and
+// locations cannot cross the provider boundary by accidental marshaling.
+type ExactSurfaceFact struct {
+	ID       string          `json:"-"`
+	Kind     SurfaceFactKind `json:"-"`
+	Position int             `json:"-"`
+	Label    string          `json:"-"`
+	Value    string          `json:"-"`
+	Location Location        `json:"-"`
+}
+
+// ExactSurfaceCandidate is one exact callsite or keyed composite associated
+// with one process root by the local static reachability closure. The semantic
+// compiler may advertise bounded refs for these fields, but the model never
+// owns their values, locations, IDs, or order.
+type ExactSurfaceCandidate struct {
+	ID         string               `json:"-"`
+	RootNodeID string               `json:"-"`
+	Form       SurfaceCandidateForm `json:"-"`
+	Sketch     string               `json:"-"`
+	Site       Location             `json:"-"`
+	Facts      []ExactSurfaceFact   `json:"-"`
+}
+
 type Coverage struct {
-	RootsConsidered    int `json:"-"`
-	NodesConsidered    int `json:"-"`
-	FamiliesConsidered int `json:"-"`
-	WitnessesIndexed   int `json:"-"`
+	RootsConsidered                      int `json:"-"`
+	NodesConsidered                      int `json:"-"`
+	FamiliesConsidered                   int `json:"-"`
+	WitnessesIndexed                     int `json:"-"`
+	SurfaceCandidatesConsidered          int `json:"-"`
+	SurfaceCandidatesIndexed             int `json:"-"`
+	SurfaceCandidateLimitExcluded        int `json:"-"`
+	SurfaceCandidateFactsConsidered      int `json:"-"`
+	SurfaceCandidateFactsIndexed         int `json:"-"`
+	SurfaceCandidateFactLimitExcluded    int `json:"-"`
+	UnsafeSurfaceCandidateFactsExcluded  int `json:"-"`
+	UnreachableSurfaceCandidatesExcluded int `json:"-"`
 }
 
 type Substrate struct {
-	Version      int             `json:"-"`
-	State        State           `json:"-"`
-	ClosedReason ClosedReason    `json:"-"`
-	Roots        []ExactRoot     `json:"-"`
-	Nodes        []ExactNode     `json:"-"`
-	Families     []ExactFamily   `json:"-"`
-	Frontiers    []ExactFrontier `json:"-"`
-	Coverage     Coverage        `json:"-"`
+	Version           int                     `json:"-"`
+	State             State                   `json:"-"`
+	ClosedReason      ClosedReason            `json:"-"`
+	Roots             []ExactRoot             `json:"-"`
+	Nodes             []ExactNode             `json:"-"`
+	Families          []ExactFamily           `json:"-"`
+	Frontiers         []ExactFrontier         `json:"-"`
+	SurfaceCandidates []ExactSurfaceCandidate `json:"-"`
+	Coverage          Coverage                `json:"-"`
 }
 
 func Unavailable(reason ClosedReason) Substrate {
@@ -134,6 +208,12 @@ func (substrate Substrate) Snapshot() Substrate {
 		result.Families[index].Callsites = append([]Location(nil), substrate.Families[index].Callsites...)
 	}
 	result.Frontiers = append([]ExactFrontier(nil), substrate.Frontiers...)
+	result.SurfaceCandidates = append([]ExactSurfaceCandidate(nil), substrate.SurfaceCandidates...)
+	for index := range result.SurfaceCandidates {
+		result.SurfaceCandidates[index].Facts = append(
+			[]ExactSurfaceFact(nil), substrate.SurfaceCandidates[index].Facts...,
+		)
+	}
 	return result
 }
 

@@ -20,7 +20,7 @@ func entryCallCompressionPromptFixture() entrycall.Prompt {
 	return entrycall.Prompt{
 		Version: entrycall.PromptVersion,
 		System:  "Use only supplied refs. Return exactly one JSON object.",
-		User:    `Response JSON schema: {"version":1,"request_ref":"q-fixture","entries":[]}. Exact request JSON: {"entries":[]}`,
+		User:    `Response JSON schema: {"version":3,"request_ref":"q-fixture","entries":[],"surface_proposals":[]}. Exact request JSON: {"entries":[],"surface_catalog":{"candidates":[]}}`,
 	}
 }
 
@@ -104,13 +104,13 @@ func TestEntryCallCompressionPromptJSONCapsExactProviderEnvelope(t *testing.T) {
 	t.Parallel()
 	client := &Client{Model: "fixture-model", MaxTokens: 64_000}
 	prompt := entryCallCompressionPromptFixture()
-	prompt.User = strings.Repeat("x", entrycall.MaxRequestBytes)
+	prompt.User = strings.Repeat("x", entrycall.MaxProviderRequestBytes)
 
 	_, err := client.EntryCallCompressionPromptJSON(prompt)
 	var limitErr *modelresearch.ResourceLimitError
 	if !errors.As(err, &limitErr) || limitErr.Stage != entryCallCompressionStage ||
 		limitErr.Kind != modelresearch.ResourceLimitRequestBytes ||
-		limitErr.Limit != entrycall.MaxRequestBytes || limitErr.Observed <= limitErr.Limit ||
+		limitErr.Limit != entrycall.MaxProviderRequestBytes || limitErr.Observed <= limitErr.Limit ||
 		!limitErr.ObservedKnown || limitErr.ConfiguredMaxTokens != client.MaxTokens {
 		t.Fatalf("request limit error = %#v / %v", limitErr, err)
 	}
@@ -211,13 +211,13 @@ func TestEntryCallCompressionBodyMeasuredRejectsOversizeBodyBeforeNetwork(t *tes
 		HTTPClient: server.Client(), Endpoint: server.URL, Auth: authNone,
 		MaxTokens: 64_000,
 	}
-	body := bytes.Repeat([]byte("x"), entrycall.MaxRequestBytes+1)
+	body := bytes.Repeat([]byte("x"), entrycall.MaxProviderRequestBytes+1)
 
 	result, err := client.EntryCallCompressionBodyMeasured(t.Context(), body)
 	var limitErr *modelresearch.ResourceLimitError
 	if !errors.As(err, &limitErr) || calls != 0 || result.Attempts != 0 ||
 		limitErr.Stage != entryCallCompressionStage || limitErr.Kind != modelresearch.ResourceLimitRequestBytes ||
-		limitErr.Limit != entrycall.MaxRequestBytes || limitErr.Observed != len(body) ||
+		limitErr.Limit != entrycall.MaxProviderRequestBytes || limitErr.Observed != len(body) ||
 		!limitErr.ObservedKnown || limitErr.ConfiguredMaxTokens != client.MaxTokens {
 		t.Fatalf("pre-call result/error = calls %d / %#v / %#v / %v", calls, result, limitErr, err)
 	}

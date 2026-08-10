@@ -19,10 +19,11 @@ import (
 )
 
 type entryCallCompressionRuntimeProvider struct {
-	request entrycall.Request
-	calls   int
-	invalid bool
-	partial bool
+	request          entrycall.Request
+	calls            int
+	invalid          bool
+	partial          bool
+	selectFirstRoute bool
 }
 
 func (provider *entryCallCompressionRuntimeProvider) EntryCallCompressionPromptJSON(
@@ -45,7 +46,7 @@ func (provider *entryCallCompressionRuntimeProvider) EntryCallCompressionBodyMea
 ) (modelresearch.ProviderResult, error) {
 	provider.calls++
 	if provider.invalid {
-		return modelresearch.ProviderResult{Content: []byte(`{"version":1,"request_ref":"wrong","entries":[]}`), Attempts: 1}, nil
+		return modelresearch.ProviderResult{Content: []byte(`{"version":3,"request_ref":"wrong","entries":[],"surface_proposals":[]}`), Attempts: 1}, nil
 	}
 	entries := make([]entrycall.ResponseEntry, 0, len(provider.request.Entries))
 	for _, requestEntry := range provider.request.Entries {
@@ -58,8 +59,31 @@ func (provider *entryCallCompressionRuntimeProvider) EntryCallCompressionBodyMea
 		}
 		entries = append(entries, entrycall.ResponseEntry{RootRef: requestEntry.Ref, FamilyRefs: refs})
 	}
+	proposals := []entrycall.ResponseSurfaceProposal{}
+	if provider.selectFirstRoute && len(provider.request.SurfaceCatalog.Candidates) > 0 {
+		candidate := provider.request.SurfaceCatalog.Candidates[0]
+		bindings := []entrycall.ResponseSurfaceBinding{}
+		for _, fact := range candidate.Facts {
+			slot := ""
+			switch fact.Kind {
+			case entrycall.SurfaceFactToken:
+				slot = entrycall.SurfaceSlotRefMethod
+			case entrycall.SurfaceFactString:
+				slot = entrycall.SurfaceSlotRefPath
+			case entrycall.SurfaceFactCallable:
+				slot = entrycall.SurfaceSlotRefHandler
+			}
+			if slot != "" {
+				bindings = append(bindings, entrycall.ResponseSurfaceBinding{SlotRef: slot, FactRef: fact.Ref})
+			}
+		}
+		proposals = append(proposals, entrycall.ResponseSurfaceProposal{
+			CandidateRef: candidate.Ref, KindRef: entrycall.SurfaceKindRefHTTPRoute, Bindings: bindings,
+		})
+	}
 	response, err := json.Marshal(entrycall.Response{
 		Version: entrycall.ResultVersion, RequestRef: provider.request.RequestRef, Entries: entries,
+		SurfaceProposals: proposals,
 	})
 	if err != nil {
 		return modelresearch.ProviderResult{}, err
@@ -155,7 +179,7 @@ func TestEntryCallCompressionRuntimeSkipsEmptyBundleWithoutProvider(t *testing.T
 		t.Fatal(err)
 	}
 	if providerCalls != 0 || outcome.Status.State != entrycall.StatusSkipped ||
-		outcome.Status.Reason != entrycall.ReasonNoFamilies || outcome.SemanticCalls != 0 {
+		outcome.Status.Reason != entrycall.ReasonNoCandidates || outcome.SemanticCalls != 0 {
 		t.Fatalf("provider/outcome = %d/%+v", providerCalls, outcome)
 	}
 	if _, err := os.Stat(filepath.Join(runDir, entrycall.ResultArtifactFilename)); !errors.Is(err, os.ErrNotExist) {
@@ -167,6 +191,47 @@ func TestEntryCallCompressionRuntimeSkipsEmptyBundleWithoutProvider(t *testing.T
 	}
 	if status, err := entrycall.DecodeStatus(statusRaw); err != nil || status.State != entrycall.StatusSkipped {
 		t.Fatalf("status = %+v, %v", status, err)
+	}
+}
+
+func TestEntryCallCompressionRuntimeCallsSameProviderForSurfaceOnlyBundle(t *testing.T) {
+	runDir := newEntryCallCompressionRunDir(t, true)
+	substrate := entryCallCompressionTestSubstrate()
+	substrate.Families = []entrycall.ExactFamily{}
+	substrate.SurfaceCandidates = []entrycall.ExactSurfaceCandidate{{
+		ID: "route-candidate", RootNodeID: "main", Form: entrycall.SurfaceCandidateDirectCall,
+		Sketch: "GET", Site: entrycall.Location{Path: "routes.go", Line: 8, Column: 2},
+		Facts: []entrycall.ExactSurfaceFact{
+			{ID: "route-method", Kind: entrycall.SurfaceFactToken, Position: 0, Label: "selector", Value: "GET", Location: entrycall.Location{Path: "routes.go", Line: 8, Column: 2}},
+			{ID: "route-path", Kind: entrycall.SurfaceFactString, Position: 1, Label: "argument 1", Value: "/account/:id", Location: entrycall.Location{Path: "routes.go", Line: 8, Column: 6}},
+			{ID: "route-handler", Kind: entrycall.SurfaceFactCallable, Position: 2, Label: "argument 2", Value: "getAccount", Location: entrycall.Location{Path: "handlers.go", Line: 20, Column: 1}},
+		},
+	}}
+	substrate.Coverage.SurfaceCandidatesConsidered = 1
+	substrate.Coverage.SurfaceCandidatesIndexed = 1
+	substrate.Coverage.SurfaceCandidateFactsConsidered = 3
+	substrate.Coverage.SurfaceCandidateFactsIndexed = 3
+	provider := &entryCallCompressionRuntimeProvider{selectFirstRoute: true}
+	outcome, err := runEntryCallCompressionForRun(
+		t.Context(), runDir, substrate, entryCallCompressionTestState(), newRunOutput(nil),
+		func() (entryCallCompressionClient, error) { return provider, nil },
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 1 || outcome.SemanticCalls != 1 || outcome.Status.State != entrycall.StatusAccepted ||
+		outcome.Status.AdvertisedFamilies != 0 || outcome.Status.AdvertisedSurfaceCandidates != 1 ||
+		outcome.Status.SelectedSurfaces != 1 || outcome.Status.RejectedSurfaces != 0 {
+		t.Fatalf("surface-only provider/outcome = %d/%+v", provider.calls, outcome)
+	}
+	resultRaw, err := os.ReadFile(filepath.Join(runDir, entrycall.ResultArtifactFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := entrycall.DecodeResult(resultRaw)
+	if err != nil || result.SelectedSurfaceCount() != 1 || result.SurfaceProposals[0].Path == nil ||
+		result.SurfaceProposals[0].Path.Text != "/account/:id" {
+		t.Fatalf("surface-only result = %+v, %v", result, err)
 	}
 }
 

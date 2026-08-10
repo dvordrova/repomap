@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -16,15 +17,25 @@ import (
 )
 
 // EntryCallReportProjectionVersion is the report-owned wire version for the
-// flat exact-call-family projection. It deliberately does not claim a runtime
-// sequence, endpoint, mechanism, or Canvas edge.
-const EntryCallReportProjectionVersion = 1
+// flat exact-call-family projection and D283's separately bound model-assisted
+// entry surfaces. Neither projection claims a runtime sequence, mechanism, or
+// Canvas edge.
+const EntryCallReportProjectionVersion = 2
 
-// EntryCallReportProjection promotes only accepted entry-call v2 families
-// whose exact root declaration belongs to the selected executable target.
+const (
+	EntryCallSurfaceOriginModelAssisted        = "model_assisted"
+	EntryCallSurfaceStateExactRegistration     = "exact_registration"
+	EntryCallSurfaceStateDeclaredDescriptor    = "declared_descriptor"
+	EntryCallSurfaceRuntimeReachabilityUnknown = "not_established"
+)
+
+// EntryCallReportProjection promotes only accepted entry-call artifacts whose
+// exact root declaration belongs to the selected executable target.
 type EntryCallReportProjection struct {
-	Version  int                     `json:"version"`
-	Families []EntryCallReportFamily `json:"families"`
+	Version         int                            `json:"version"`
+	Families        []EntryCallReportFamily        `json:"families"`
+	Surfaces        []EntryCallReportSurface       `json:"surfaces"`
+	SurfaceCoverage EntryCallReportSurfaceCoverage `json:"surface_coverage"`
 }
 
 // EntryCallReportFamily is one exact direct-call family restored from local
@@ -36,6 +47,47 @@ type EntryCallReportFamily struct {
 	Invocation      entrycall.Invocation `json:"invocation"`
 	WitnessCount    int                  `json:"witness_count"`
 	Callsites       []entrycall.Location `json:"callsites"`
+}
+
+// EntryCallReportSurface is local restoration of one accepted refs-only
+// semantic proposal. Request-local candidate/root refs and provider order are
+// deliberately absent. These records remain separate from Trigger Catalog,
+// Atlas, Architecture and Canvas authority.
+type EntryCallReportSurface struct {
+	ID                  string                         `json:"id"`
+	RootDeclaration     entrycall.Location             `json:"root_declaration"`
+	Kind                string                         `json:"kind"`
+	Role                string                         `json:"role"`
+	Form                entrycall.SurfaceCandidateForm `json:"form"`
+	Site                entrycall.Location             `json:"site"`
+	Identity            *EntryCallReportSurfaceValue   `json:"identity,omitempty"`
+	Method              *EntryCallReportSurfaceValue   `json:"method,omitempty"`
+	Path                *EntryCallReportSurfaceValue   `json:"path,omitempty"`
+	Handler             *EntryCallReportSurfaceValue   `json:"handler,omitempty"`
+	Origin              string                         `json:"origin"`
+	State               string                         `json:"state"`
+	RuntimeReachability string                         `json:"runtime_reachability"`
+}
+
+type EntryCallReportSurfaceValue struct {
+	Kind     entrycall.SurfaceFactKind `json:"kind"`
+	Text     string                    `json:"text"`
+	Location *entrycall.Location       `json:"location,omitempty"`
+}
+
+// EntryCallReportSurfaceCoverage is aggregate local accounting only. It
+// exposes no candidate identity and is safe bounded copy for Entrypoints.
+type EntryCallReportSurfaceCoverage struct {
+	ConsideredCandidates          int `json:"considered_candidates"`
+	AdvertisedCandidates          int `json:"advertised_candidates"`
+	OmittedCandidates             int `json:"omitted_candidates"`
+	ConsideredFacts               int `json:"considered_facts"`
+	AdvertisedFacts               int `json:"advertised_facts"`
+	OmittedFacts                  int `json:"omitted_facts"`
+	UnsafeFactsExcluded           int `json:"unsafe_facts_excluded"`
+	UnreachableCandidatesExcluded int `json:"unreachable_candidates_excluded"`
+	SelectedProposals             int `json:"selected_proposals"`
+	RejectedProposals             int `json:"rejected_proposals"`
 }
 
 type entryCallReportArtifactBinding struct {
@@ -65,16 +117,12 @@ func loadEntryCallReportProjection(
 	}
 	defer root.Close()
 
-	statusRaw, hasStatus, err := readOptionalEntryCallArtifact(
-		root, entrycall.StatusArtifactFilename,
-	)
+	statusRaw, hasStatus, resultRaw, hasResult, err := readOptionalEntryCallArtifactPair(root)
 	if err != nil {
 		return err
 	}
 	if !hasStatus {
-		if _, hasResult, readErr := readOptionalEntryCallArtifact(root, entrycall.ResultArtifactFilename); readErr != nil {
-			return readErr
-		} else if hasResult {
+		if hasResult {
 			return fmt.Errorf("entry call report: result is present without status")
 		}
 		return nil
@@ -85,20 +133,12 @@ func loadEntryCallReportProjection(
 		return fmt.Errorf("entry call report: status: %w", err)
 	}
 	if status.State != entrycall.StatusAccepted && status.State != entrycall.StatusAcceptedPartial {
-		if _, hasResult, readErr := readOptionalEntryCallArtifact(root, entrycall.ResultArtifactFilename); readErr != nil {
-			return readErr
-		} else if hasResult {
+		if hasResult {
 			return fmt.Errorf("entry call report: closed status has an unexpected result")
 		}
 		return nil
 	}
 
-	resultRaw, hasResult, err := readOptionalEntryCallArtifact(
-		root, entrycall.ResultArtifactFilename,
-	)
-	if err != nil {
-		return err
-	}
 	if !hasResult {
 		return fmt.Errorf("entry call report: accepted status requires result")
 	}
@@ -145,6 +185,11 @@ func acceptedEntryCallReportProjection(
 		status.RejectedFamilies != result.RejectedFamilyCount() {
 		return nil, nil, fmt.Errorf("entry call report: status/result family counts mismatch")
 	}
+	if status.SelectedSurfaces != result.SelectedSurfaceCount() ||
+		status.RejectedSurfaces != result.RejectedSurfaceCount() ||
+		!reflect.DeepEqual(status.SurfaceCandidateCoverage, result.SurfaceCandidateCoverage) {
+		return nil, nil, fmt.Errorf("entry call report: status/result surface accounting mismatch")
+	}
 	if expectedRepositoryStateSHA256 != "" &&
 		result.RepositoryStateSHA256 != expectedRepositoryStateSHA256 {
 		return nil, nil, fmt.Errorf("entry call report: repository state binding mismatch")
@@ -186,9 +231,12 @@ func projectEntryCallFamilies(
 	}
 	seenRoots := make(map[string]struct{}, len(result.Entries))
 	projection := &EntryCallReportProjection{
-		Version:  EntryCallReportProjectionVersion,
-		Families: make([]EntryCallReportFamily, 0, result.SelectedFamilyCount()),
+		Version:         EntryCallReportProjectionVersion,
+		Families:        make([]EntryCallReportFamily, 0, result.SelectedFamilyCount()),
+		Surfaces:        make([]EntryCallReportSurface, 0, result.SelectedSurfaceCount()),
+		SurfaceCoverage: projectEntryCallSurfaceCoverage(result),
 	}
+	rootDeclarations := make(map[string]entrycall.Location, len(result.Entries))
 	for _, entry := range result.Entries {
 		rootKey := entryCallRootKey(entry.Declaration.Path, entry.Declaration.Line)
 		if _, exact := targetRoots[rootKey]; !exact {
@@ -198,6 +246,7 @@ func projectEntryCallFamilies(
 			return nil, fmt.Errorf("entry call report: duplicate exact result root")
 		}
 		seenRoots[rootKey] = struct{}{}
+		rootDeclarations[entry.RootRef] = entry.Declaration
 		for _, family := range entry.Families {
 			projection.Families = append(projection.Families, EntryCallReportFamily{
 				RootDeclaration: entry.Declaration,
@@ -209,7 +258,96 @@ func projectEntryCallFamilies(
 			})
 		}
 	}
+	seenSurfaceIDs := make(map[string]struct{}, len(result.SurfaceProposals))
+	for index, proposal := range result.SurfaceProposals {
+		rootDeclaration, knownRoot := rootDeclarations[proposal.RootRef]
+		if !knownRoot {
+			return nil, fmt.Errorf("entry call report: surface proposal %d has unknown root", index)
+		}
+		if _, duplicate := seenSurfaceIDs[proposal.ID]; duplicate {
+			return nil, fmt.Errorf("entry call report: duplicate surface proposal identity")
+		}
+		seenSurfaceIDs[proposal.ID] = struct{}{}
+		surface, err := projectEntryCallSurface(rootDeclaration, proposal)
+		if err != nil {
+			return nil, fmt.Errorf("entry call report: surface proposal %d: %w", index, err)
+		}
+		projection.Surfaces = append(projection.Surfaces, surface)
+	}
+	sort.Slice(projection.Surfaces, func(i, j int) bool {
+		left, right := projection.Surfaces[i], projection.Surfaces[j]
+		if left.Kind != right.Kind {
+			return left.Kind < right.Kind
+		}
+		if left.Site.Path != right.Site.Path {
+			return left.Site.Path < right.Site.Path
+		}
+		if left.Site.Line != right.Site.Line {
+			return left.Site.Line < right.Site.Line
+		}
+		if left.Site.Column != right.Site.Column {
+			return left.Site.Column < right.Site.Column
+		}
+		return left.ID < right.ID
+	})
 	return projection, nil
+}
+
+func projectEntryCallSurfaceCoverage(result entrycall.Result) EntryCallReportSurfaceCoverage {
+	coverage := result.SurfaceCandidateCoverage
+	return EntryCallReportSurfaceCoverage{
+		ConsideredCandidates:          coverage.ConsideredCandidates,
+		AdvertisedCandidates:          coverage.AdvertisedCandidates,
+		OmittedCandidates:             coverage.OmittedCandidates,
+		ConsideredFacts:               coverage.ConsideredFacts,
+		AdvertisedFacts:               coverage.AdvertisedFacts,
+		OmittedFacts:                  coverage.OmittedFacts,
+		UnsafeFactsExcluded:           coverage.UnsafeFactsExcluded,
+		UnreachableCandidatesExcluded: coverage.UnreachableCandidatesExcluded,
+		SelectedProposals:             result.SelectedSurfaceCount(),
+		RejectedProposals:             result.RejectedSurfaceCount(),
+	}
+}
+
+func projectEntryCallSurface(
+	rootDeclaration entrycall.Location,
+	proposal entrycall.ResultSurfaceProposal,
+) (EntryCallReportSurface, error) {
+	surface := EntryCallReportSurface{
+		ID:                  proposal.ID,
+		RootDeclaration:     rootDeclaration,
+		Kind:                proposal.Kind,
+		Role:                proposal.Role,
+		Form:                proposal.Form,
+		Site:                proposal.Site,
+		Identity:            projectEntryCallSurfaceValue(proposal.Identity),
+		Method:              projectEntryCallSurfaceValue(proposal.Method),
+		Path:                projectEntryCallSurfaceValue(proposal.Path),
+		Handler:             projectEntryCallSurfaceValue(proposal.Handler),
+		Origin:              EntryCallSurfaceOriginModelAssisted,
+		RuntimeReachability: EntryCallSurfaceRuntimeReachabilityUnknown,
+	}
+	switch proposal.Kind {
+	case entrycall.SurfaceKindHTTPRoute:
+		surface.State = EntryCallSurfaceStateExactRegistration
+	case entrycall.SurfaceKindCLICommand:
+		surface.State = EntryCallSurfaceStateDeclaredDescriptor
+	default:
+		return EntryCallReportSurface{}, fmt.Errorf("unsupported kind %q", proposal.Kind)
+	}
+	return surface, nil
+}
+
+func projectEntryCallSurfaceValue(value *entrycall.ResultSurfaceValue) *EntryCallReportSurfaceValue {
+	if value == nil {
+		return nil
+	}
+	projected := &EntryCallReportSurfaceValue{Kind: value.Kind, Text: value.Text}
+	if value.Location != nil {
+		location := *value.Location
+		projected.Location = &location
+	}
+	return projected
 }
 
 func validateEntryCallReportProjection(
@@ -227,7 +365,10 @@ func validateEntryCallReportProjection(
 		return fmt.Errorf("entry call projection analysis target: %w", err)
 	}
 	if projection.Version != EntryCallReportProjectionVersion || projection.Families == nil ||
-		len(projection.Families) > entrycall.MaxRoots*entrycall.MaxSelectedFamiliesPerRoot {
+		projection.Surfaces == nil ||
+		len(projection.Families) > entrycall.MaxRoots*entrycall.MaxSelectedFamiliesPerRoot ||
+		len(projection.Surfaces) > entrycall.MaxSelectedSurfaceProposals ||
+		!validEntryCallReportSurfaceCoverage(projection.SurfaceCoverage, len(projection.Surfaces)) {
 		return fmt.Errorf("entry call projection identity is invalid")
 	}
 	targetRoots := make(map[string]struct{}, len(target.Roots))
@@ -260,7 +401,154 @@ func validateEntryCallReportProjection(
 			}
 		}
 	}
+	seenSurfaceIDs := make(map[string]struct{}, len(projection.Surfaces))
+	for index, surface := range projection.Surfaces {
+		if !validEntryCallReportSurfaceID(surface.ID) {
+			return fmt.Errorf("entry call surface %d identity is invalid", index)
+		}
+		if _, duplicate := seenSurfaceIDs[surface.ID]; duplicate {
+			return fmt.Errorf("entry call surface %d identity is duplicated", index)
+		}
+		seenSurfaceIDs[surface.ID] = struct{}{}
+		if !validEntryCallReportLocation(surface.RootDeclaration) {
+			return fmt.Errorf("entry call surface %d root declaration is invalid", index)
+		}
+		if _, exact := targetRoots[entryCallRootKey(
+			surface.RootDeclaration.Path,
+			surface.RootDeclaration.Line,
+		)]; !exact {
+			return fmt.Errorf("entry call surface %d root is outside analysis target", index)
+		}
+		if err := validateEntryCallReportSurface(surface, openable); err != nil {
+			return fmt.Errorf("entry call surface %d: %w", index, err)
+		}
+	}
 	return nil
+}
+
+func validEntryCallReportSurfaceCoverage(
+	coverage EntryCallReportSurfaceCoverage,
+	selected int,
+) bool {
+	values := []int{
+		coverage.ConsideredCandidates,
+		coverage.AdvertisedCandidates,
+		coverage.OmittedCandidates,
+		coverage.ConsideredFacts,
+		coverage.AdvertisedFacts,
+		coverage.OmittedFacts,
+		coverage.UnsafeFactsExcluded,
+		coverage.UnreachableCandidatesExcluded,
+		coverage.SelectedProposals,
+		coverage.RejectedProposals,
+	}
+	for _, value := range values {
+		if value < 0 {
+			return false
+		}
+	}
+	return coverage.AdvertisedCandidates <= entrycall.MaxSurfaceCandidates &&
+		coverage.AdvertisedCandidates <= coverage.ConsideredCandidates &&
+		coverage.AdvertisedCandidates+coverage.OmittedCandidates == coverage.ConsideredCandidates &&
+		coverage.AdvertisedFacts <= entrycall.MaxSurfaceFacts &&
+		coverage.AdvertisedFacts <= coverage.ConsideredFacts &&
+		coverage.AdvertisedFacts+coverage.OmittedFacts == coverage.ConsideredFacts &&
+		coverage.SelectedProposals == selected &&
+		coverage.SelectedProposals <= entrycall.MaxSelectedSurfaceProposals &&
+		coverage.RejectedProposals <= entrycall.MaxSurfaceCandidates &&
+		coverage.SelectedProposals+coverage.RejectedProposals <= coverage.AdvertisedCandidates
+}
+
+func validateEntryCallReportSurface(
+	surface EntryCallReportSurface,
+	openable map[string]struct{},
+) error {
+	if !surface.Form.Valid() || !validEntryCallReportLocation(surface.Site) {
+		return fmt.Errorf("form or site is invalid")
+	}
+	if _, authorized := openable[surface.Site.Path]; !authorized {
+		return fmt.Errorf("site is not openable")
+	}
+	if surface.Origin != EntryCallSurfaceOriginModelAssisted ||
+		surface.RuntimeReachability != EntryCallSurfaceRuntimeReachabilityUnknown {
+		return fmt.Errorf("truth state is invalid")
+	}
+	values := []*EntryCallReportSurfaceValue{
+		surface.Identity,
+		surface.Method,
+		surface.Path,
+		surface.Handler,
+	}
+	for _, value := range values {
+		if err := validateEntryCallReportSurfaceValue(value, openable); err != nil {
+			return err
+		}
+	}
+	switch surface.Kind {
+	case entrycall.SurfaceKindHTTPRoute:
+		if surface.Role != entrycall.SurfaceRoleEntrySurface ||
+			surface.Form != entrycall.SurfaceCandidateDirectCall ||
+			surface.State != EntryCallSurfaceStateExactRegistration ||
+			surface.Identity != nil || surface.Method == nil || surface.Path == nil ||
+			surface.Handler == nil || surface.Method.Kind == entrycall.SurfaceFactCallable ||
+			surface.Path.Kind == entrycall.SurfaceFactCallable ||
+			surface.Handler.Kind != entrycall.SurfaceFactCallable || surface.Handler.Location == nil {
+			return fmt.Errorf("HTTP route contract is invalid")
+		}
+	case entrycall.SurfaceKindCLICommand:
+		if surface.Role != entrycall.SurfaceRoleDescriptor ||
+			surface.Form != entrycall.SurfaceCandidateKeyedComposite ||
+			surface.State != EntryCallSurfaceStateDeclaredDescriptor ||
+			surface.Identity == nil || surface.Identity.Kind == entrycall.SurfaceFactCallable ||
+			surface.Method != nil || surface.Path != nil ||
+			(surface.Handler != nil &&
+				(surface.Handler.Kind != entrycall.SurfaceFactCallable || surface.Handler.Location == nil)) {
+			return fmt.Errorf("CLI descriptor contract is invalid")
+		}
+	default:
+		return fmt.Errorf("kind is invalid")
+	}
+	return nil
+}
+
+func validateEntryCallReportSurfaceValue(
+	value *EntryCallReportSurfaceValue,
+	openable map[string]struct{},
+) error {
+	if value == nil {
+		return nil
+	}
+	if !value.Kind.Valid() || value.Text == "" || strings.TrimSpace(value.Text) != value.Text ||
+		utf8.RuneCountInString(value.Text) > entrycall.MaxSurfaceFactValueRunes {
+		return fmt.Errorf("surface value is invalid")
+	}
+	for _, character := range value.Text {
+		if unicode.IsControl(character) {
+			return fmt.Errorf("surface value contains control characters")
+		}
+	}
+	if value.Location != nil {
+		if !validEntryCallReportLocation(*value.Location) {
+			return fmt.Errorf("surface value location is invalid")
+		}
+		if _, authorized := openable[value.Location.Path]; !authorized {
+			return fmt.Errorf("surface value location is not openable")
+		}
+	}
+	return nil
+}
+
+func validEntryCallReportSurfaceID(value string) bool {
+	const prefix = "model-surface-"
+	if !strings.HasPrefix(value, prefix) || len(value) != len(prefix)+24 {
+		return false
+	}
+	for _, character := range value[len(prefix):] {
+		if !strings.ContainsRune("0123456789abcdef", character) {
+			return false
+		}
+	}
+	return true
 }
 
 func validEntryCallReportLocation(location entrycall.Location) bool {
@@ -302,6 +590,34 @@ func readOptionalEntryCallArtifact(
 	return data, true, nil
 }
 
+// readOptionalEntryCallArtifactPair selects one exact versioned pair. A
+// current partial pair is never completed from legacy bytes; legacy v2 is
+// consulted only when both current artifacts are absent.
+func readOptionalEntryCallArtifactPair(
+	root *os.Root,
+) (statusRaw []byte, hasStatus bool, resultRaw []byte, hasResult bool, err error) {
+	statusRaw, hasStatus, err = readOptionalEntryCallArtifact(root, entrycall.StatusArtifactFilename)
+	if err != nil {
+		return nil, false, nil, false, err
+	}
+	resultRaw, hasResult, err = readOptionalEntryCallArtifact(root, entrycall.ResultArtifactFilename)
+	if err != nil {
+		return nil, false, nil, false, err
+	}
+	if hasStatus || hasResult {
+		return statusRaw, hasStatus, resultRaw, hasResult, nil
+	}
+	statusRaw, hasStatus, err = readOptionalEntryCallArtifact(root, entrycall.LegacyV2StatusArtifactFilename)
+	if err != nil {
+		return nil, false, nil, false, err
+	}
+	resultRaw, hasResult, err = readOptionalEntryCallArtifact(root, entrycall.LegacyV2ResultArtifactFilename)
+	if err != nil {
+		return nil, false, nil, false, err
+	}
+	return statusRaw, hasStatus, resultRaw, hasResult, nil
+}
+
 func entryCallReportMaterial(
 	data *ReportData,
 	repositoryStateSHA256 string,
@@ -337,7 +653,7 @@ func entryCallReportMaterial(
 	return binding.statusSHA256, binding.resultSHA256, nil
 }
 
-// VerifyEntryCallArtifacts binds accepted entry-call v2 bytes to the exact
+// VerifyEntryCallArtifacts binds accepted entry-call artifact bytes to the exact
 // repository state and re-derives the public flat projection. A closed status
 // may remain as optional debug state, but it must not carry a result or report
 // projection.
@@ -359,11 +675,7 @@ func (m RunManifest) VerifyEntryCallArtifacts(runDir string, reportJSON []byte) 
 		return fmt.Errorf("report manifest: open entry call run: %w", err)
 	}
 	defer root.Close()
-	statusRaw, hasStatus, err := readOptionalEntryCallArtifact(root, entrycall.StatusArtifactFilename)
-	if err != nil {
-		return fmt.Errorf("report manifest: %w", err)
-	}
-	resultRaw, hasResult, err := readOptionalEntryCallArtifact(root, entrycall.ResultArtifactFilename)
+	statusRaw, hasStatus, resultRaw, hasResult, err := readOptionalEntryCallArtifactPair(root)
 	if err != nil {
 		return fmt.Errorf("report manifest: %w", err)
 	}

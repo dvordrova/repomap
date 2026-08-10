@@ -29,10 +29,10 @@ func (c *Client) EntryCallCompressionPromptJSON(prompt entrycall.Prompt) ([]byte
 	if err != nil {
 		return nil, fmt.Errorf("llm: marshal entry call compression request: %w", err)
 	}
-	if len(body) > entrycall.MaxRequestBytes {
+	if len(body) > entrycall.MaxProviderRequestBytes {
 		return nil, modelresearch.NewResourceLimitError(modelresearch.ResourceLimitError{
 			Stage: entryCallCompressionStage, Kind: modelresearch.ResourceLimitRequestBytes,
-			Limit: entrycall.MaxRequestBytes, Observed: len(body), ObservedKnown: true,
+			Limit: entrycall.MaxProviderRequestBytes, Observed: len(body), ObservedKnown: true,
 			ConfiguredMaxTokens: c.MaxTokens,
 		}, nil)
 	}
@@ -53,10 +53,10 @@ func (c *Client) EntryCallCompressionBodyMeasured(
 	if len(exactBody) == 0 {
 		return modelresearch.ProviderResult{}, fmt.Errorf("llm: entry call compression request body is required")
 	}
-	if len(exactBody) > entrycall.MaxRequestBytes {
+	if len(exactBody) > entrycall.MaxProviderRequestBytes {
 		return modelresearch.ProviderResult{}, modelresearch.NewResourceLimitError(modelresearch.ResourceLimitError{
 			Stage: entryCallCompressionStage, Kind: modelresearch.ResourceLimitRequestBytes,
-			Limit: entrycall.MaxRequestBytes, Observed: len(exactBody), ObservedKnown: true,
+			Limit: entrycall.MaxProviderRequestBytes, Observed: len(exactBody), ObservedKnown: true,
 			ConfiguredMaxTokens: c.MaxTokens,
 		}, nil)
 	}

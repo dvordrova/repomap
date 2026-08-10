@@ -50,7 +50,10 @@ import (
 // module-library target pages.
 // Format 47 adds the report-owned exact exported API projection for a selected
 // module-library target.
-const CurrentFormatVersion = 47
+// Format 48 adds D283's separately bound model-assisted HTTP registrations
+// and CLI descriptors to EntryCall projection v2 without changing Canvas or
+// the deterministic Trigger Catalog.
+const CurrentFormatVersion = 48
 
 // Decision 232: adjudication anchor coverage + semantic-empty browse.
 // Decision 233: alternate co-projection + concentration marker.
@@ -149,8 +152,10 @@ type ReportData struct {
 	// It is copied from snapshot.json and remains self-sealed by its Ref; the
 	// run manifest additionally binds its canonical bytes.
 	AnalysisTarget *analysistarget.Target `json:"analysis_target,omitempty"`
-	// EntryCall is a flat exact-call-family projection for the selected target.
-	// It is navigation evidence, never a runtime sequence or mechanism claim.
+	// EntryCall contains flat exact-call families plus D283's separately bound
+	// model-assisted entry-surface projection for the selected target. It is
+	// navigation/static declaration evidence, never a runtime sequence,
+	// Trigger Catalog mutation, mechanism or Canvas claim.
 	EntryCall *EntryCallReportProjection `json:"entry_call,omitempty"`
 	// LibraryAPI is the exact, locally derived exported declaration inventory
 	// for a selected module-library target. It is independent of Architecture

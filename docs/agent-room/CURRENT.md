@@ -67,6 +67,7 @@ Active decisions (each approved by the repository owner via its supervisory goal
 63. decisions/280-module-product-surfaces.md
 64. decisions/281-map-context-and-library-api.md
 65. decisions/282-conservative-automatic-go-target.md
+66. decisions/283-generic-model-assisted-entry-surfaces.md
    (decisions/219-study-content-integrity-deferred.md is DEFERRED — superseded
    in priority by 218 per the owner's revised risk review; the pending change
    set is preserved at /tmp/d218-01-study-content-integrity-pending.patch)
@@ -844,6 +845,23 @@ Status:
 Approved by:
 	Repository owner after the Moby `cmd/dockerd` platform failure review and
 	selection of the bounded preflight correction, 2026-08-10.
+
+## Decision 283
+
+Status:
+	ACTIVE. The existing single generic entry-call provider call gains a bounded
+	framework-neutral syntax-candidate projection. The model may classify only
+	advertised candidate/fact refs as CLI commands or HTTP routes; backend-owned
+	values, callbacks, locations, IDs, ordering and deterministic precedence are
+	restored locally. Fresh commands/routes therefore no longer require a Cobra
+	reader or one catalog adapter per framework. The projection remains separate
+	from Trigger Catalog, Atlas and Canvas authority and preserves exact local
+	source actions plus explicit partial/frontier truth.
+
+Approved by:
+	Repository owner after real-provider Restic, etcdctl and Echo runs proved
+	that D273 retained the generic model-selected call spine but suppressed the
+	useful command/handler product records, 2026-08-10.
 
 ## Decision 241 follow-up
 

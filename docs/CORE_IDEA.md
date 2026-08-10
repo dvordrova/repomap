@@ -193,10 +193,21 @@ repository-local registrations whose handler is exactly
 `func(net/http.ResponseWriter, *net/http.Request)`, `net/http.Handler`, or
 `net/http.HandlerFunc`. Wrapper, frontier, and provenance evidence remains
 attached to each record. Ordinary analysis has no framework mode, fresh Cobra
-inventory, or third-party context-handler widening. `All surfaces`,
+adapter inventory, or third-party context-handler widening. `All surfaces`,
 architecture ownership, and headline counts are projections of that same
 catalog; a saved trace only associates with a record and never creates or
 duplicates one.
+
+The existing bounded entry-call provider request may also classify two generic
+local syntax shapes: a direct call carrying exact short method/path and
+callable facts, or a keyed composite carrying an exact short identity and
+callable fact. The provider returns only advertised candidate/kind/slot/fact
+refs. The backend restores all values, symbols, locations and stable identity
+from private authority and exposes accepted HTTP routes and flat CLI command
+descriptors only in Entrypoints. These model-assisted records do not mutate the
+typed surface catalog, Atlas or Canvas; an equivalent deterministic record
+always wins. Missing route prefixes, command parents, activation or runtime
+reachability remain explicit unknowns rather than inferred hierarchy.
 
 This shelf is deliberately outside the architecture graph and FlowProof:
 static registration does not prove callback execution, runtime order,
@@ -211,7 +222,8 @@ catalog did not reach.
 
 Persisted schemas retain the former Cobra/framework coverage and command-trace
 fields so reports and snapshots from older runs remain readable. Fresh runs do
-not populate those retired producers.
+not populate those retired producers; generic model-assisted descriptors are a
+separate bounded EntryCall projection.
 
 ### 5. Durable focused investigation (implemented)
 

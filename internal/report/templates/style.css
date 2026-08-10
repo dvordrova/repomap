@@ -396,6 +396,8 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-map-entry-card__callback { background: transparent; color: #3157d5; font-size: .75rem; font-weight: 700; overflow-wrap: anywhere; padding: 0; }
 .rm-map-entry-card__callback--partial { color: #64748b; font-weight: 600; }
 .rm-map-entry-card__partial { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 999px; color: #9a3412; font-size: .58rem; font-weight: 700; padding: .08rem .36rem; }
+.rm-map-entry-card__origin { background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 999px; color: #4338ca; font-size: .58rem; font-weight: 750; padding: .08rem .36rem; }
+.rm-map-entry-card__state { color: #64748b; font-size: .61rem; font-weight: 650; }
 .rm-map-entry-card__sources { align-items: baseline; display: flex; flex-wrap: wrap; gap: .25rem .7rem; justify-content: flex-end; min-width: 0; }
 .rm-map-entry-card__sources .rm-map-entry-context__source { font-size: .65rem; }
 .rm-map-entry-card__meta { color: #64748b; font-size: .7rem; margin: 0; }
@@ -404,6 +406,10 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-map-entry-group__more-summary { color: #3157d5; cursor: pointer; font-size: .7rem; font-weight: 750; padding: .6rem .75rem; }
 .rm-map-entry-group__more[open] > .rm-map-entry-group__more-summary { background: #f8fafc; border-bottom: 1px solid #eef2f7; }
 .rm-map-entry-context__limit { color: #64748b; font-size: .68rem; line-height: 1.45; margin: 0 .15rem; }
+.rm-map-entry-model-frontier { background: #f8fafc; border: 1px solid #dbe4f0; border-radius: 10px; color: #64748b; font-size: .66rem; line-height: 1.45; padding: .55rem .7rem; }
+.rm-map-entry-model-frontier__summary { color: #475569; cursor: pointer; font-weight: 750; }
+.rm-map-entry-model-frontier__body { display: grid; gap: .25rem; padding-top: .45rem; }
+.rm-map-entry-model-frontier__body p { margin: 0; }
 .rm-map-entry-families { border-top: 1px solid #e2e8f0; padding-top: .45rem; }
 .rm-map-entry-families__summary { color: #1d4ed8; cursor: pointer; font-size: .7rem; font-weight: 700; }
 .rm-map-entry-family-group { display: grid; gap: .25rem; padding: .55rem 0 .15rem; }
