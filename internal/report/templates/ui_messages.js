@@ -31,8 +31,11 @@
   // UI30 presents the existing exact entry-surface catalog as one grouped
   // route/command/callback list without changing Canvas or report authority.
   // UI31 adds the separately bound D283 model-assisted surface projection to
-  // that list while deterministic exact records retain precedence.
-  var VERSION = 32;
+  // that list while deterministic exact records retain precedence. UI32 lets
+  // an exact deterministic CLI descriptor override the equivalent model
+  // proposal. UI33 makes entry ordering locale-independent and reports the
+  // complete bounded candidate outcome without claiming an exhaustive catalog.
+  var VERSION = 33;
   var EN = {
     "main.browser_error.invalid_report_artifact": { params: [], text: "The saved report is invalid or exceeds the supported size." },
     "main.browser_error.no_saved_reports": { params: [], text: "No saved reports are available." },
@@ -125,7 +128,7 @@
     "main.map.entry.state.declared_descriptor": { params: [], text: "declared descriptor" },
     "main.map.entry.explore": { params: [], text: "Explore" },
     "main.map.entry.show_more": { params: ["count"], format: function (params) { return "Show " + params.count + " more"; } },
-    "main.map.entry.static_limit": { params: [], text: "Static registration arguments only; enclosing route prefixes, runtime reachability, order and continuation are not established." },
+    "main.map.entry.static_limit": { params: [], text: "This bounded catalog is not exhaustive: registrations without an exact supported identity or handler may be absent. Enclosing route prefixes, runtime reachability, order and continuation are not established." },
     "main.map.entry.direct_families": { params: ["count"], format: function (params) { return englishCount(params.count, "direct call family", "direct call families"); } },
     "main.map.entry.map_summary": { params: ["calls", "areas", "outside"], format: function (params) { return params.calls + " direct calls · " + params.areas + " mapped areas · " + params.outside + " off-map"; } },
     "main.map.entry.calls_by": { params: ["caller", "count"], format: function (params) { return "Calls from " + params.caller + " · " + params.count; } },
@@ -146,7 +149,7 @@
     "main.map.entry.context.not_drawn_calls": { params: ["count"], format: function (params) { return "Not drawn as map arrows: " + params.count; } },
     "main.map.entry.context.limit": { params: [], text: "Static first hop only; runtime order and continuation are not established." },
     "main.map.entry.model_frontier.summary": { params: ["count"], format: function (params) { return "Model-assisted static evidence · " + params.count; } },
-    "main.map.entry.model_frontier.result": { params: ["shown", "rejected"], format: function (params) { return params.shown + " restored surfaces · " + params.rejected + " rejected proposals"; } },
+    "main.map.entry.model_frontier.result": { params: ["shown", "rejected", "unproposed"], format: function (params) { return params.shown + " restored surfaces · " + params.rejected + " rejected proposals · " + params.unproposed + " candidates received no surface proposal"; } },
     "main.map.entry.model_frontier.bounds": { params: ["candidates", "facts", "unsafe", "unreachable"], format: function (params) { return params.candidates + " candidates and " + params.facts + " facts omitted by bounds · " + params.unsafe + " unsafe facts and " + params.unreachable + " unreachable candidates excluded locally"; } },
     "main.overview": { params: [], text: "Overview" },
     "main.study": { params: [], text: "Study" },
@@ -1276,7 +1279,7 @@
     "main.map.entry.state.declared_descriptor": { params: [], text: "объявленный дескриптор" },
     "main.map.entry.explore": { params: [], text: "Исследовать" },
     "main.map.entry.show_more": { params: ["count"], format: function (params) { return "Показать ещё " + params.count; } },
-    "main.map.entry.static_limit": { params: [], text: "Показаны только статические аргументы регистрации; внешние префиксы маршрута, достижимость, порядок и продолжение во время выполнения не установлены." },
+    "main.map.entry.static_limit": { params: [], text: "Этот ограниченный каталог не исчерпывает все регистрации: записи без точно установленного идентификатора или обработчика могут отсутствовать. Внешние префиксы маршрута, достижимость, порядок и продолжение во время выполнения не установлены." },
     "main.map.entry.direct_families": { params: ["count"], format: function (params) { return russianCount(params.count, "группа прямых вызовов", "группы прямых вызовов", "групп прямых вызовов"); } },
     "main.map.entry.map_summary": { params: ["calls", "areas", "outside"], format: function (params) { return params.calls + " прямых вызовов · " + params.areas + " областей на карте · " + params.outside + " вне карты"; } },
     "main.map.entry.calls_by": { params: ["caller", "count"], format: function (params) { return "Вызовы из " + params.caller + " · " + params.count; } },
@@ -1297,7 +1300,7 @@
     "main.map.entry.context.not_drawn_calls": { params: ["count"], format: function (params) { return "Не показано стрелками на карте: " + params.count; } },
     "main.map.entry.context.limit": { params: [], text: "Только статический первый переход; порядок выполнения и продолжение не установлены." },
     "main.map.entry.model_frontier.summary": { params: ["count"], format: function (params) { return "Статические свидетельства с участием модели · " + params.count; } },
-    "main.map.entry.model_frontier.result": { params: ["shown", "rejected"], format: function (params) { return params.shown + " восстановлено · " + params.rejected + " предложений отклонено"; } },
+    "main.map.entry.model_frontier.result": { params: ["shown", "rejected", "unproposed"], format: function (params) { return params.shown + " восстановлено · " + params.rejected + " предложений отклонено · по " + params.unproposed + " кандидатам модель не предложила точку входа"; } },
     "main.map.entry.model_frontier.bounds": { params: ["candidates", "facts", "unsafe", "unreachable"], format: function (params) { return params.candidates + " кандидатов и " + params.facts + " фактов пропущено по лимитам · " + params.unsafe + " небезопасных фактов и " + params.unreachable + " недостижимых кандидатов исключено локально"; } },
     "main.overview": { params: [], text: "Обзор" },
     "main.study": { params: [], text: "Изучение" },

@@ -334,7 +334,8 @@ func validateResult(result Result) error {
 func (reason RejectedSurfaceReason) Valid() bool {
 	switch reason {
 	case RejectedSurfaceIncompatibleForm, RejectedSurfaceMissingBinding,
-		RejectedSurfaceDuplicateBinding, RejectedSurfaceIncompatibleBinding:
+		RejectedSurfaceDuplicateBinding, RejectedSurfaceDuplicateProposal,
+		RejectedSurfaceIncompatibleBinding:
 		return true
 	default:
 		return false

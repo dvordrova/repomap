@@ -423,11 +423,83 @@ func TestSurfaceProposalRejectsInvalidSiblingLocallyButUnknownRefsAtomically(t *
 	if _, err := Reduce(compilation, raw); err == nil || !strings.Contains(err.Error(), "unknown surface fact ref") {
 		t.Fatalf("unknown fact ref did not reject atomically: %v", err)
 	}
-	response.SurfaceProposals = append(response.SurfaceProposals, response.SurfaceProposals[1])
-	response.SurfaceProposals[0] = response.SurfaceProposals[1]
-	raw, _ = json.Marshal(response)
-	if _, err := Reduce(compilation, raw); err == nil || !strings.Contains(err.Error(), "repeats surface candidate ref") {
-		t.Fatalf("duplicate proposal did not reject atomically: %v", err)
+}
+
+func TestDuplicateSurfaceProposalsRejectCandidateLocallyAndOrderIndependently(t *testing.T) {
+	compilation, err := Compile(surfaceFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cli := candidateByForm(t, compilation.Request.SurfaceCatalog, SurfaceCandidateKeyedComposite)
+	route := candidateByForm(t, compilation.Request.SurfaceCatalog, SurfaceCandidateDirectCall)
+	entry := compilation.Request.Entries[0]
+	rootedFamilyRef := ""
+	for _, family := range entry.Families {
+		if family.CallerRef == entry.RootNodeRef {
+			rootedFamilyRef = family.Ref
+			break
+		}
+	}
+	if rootedFamilyRef == "" {
+		t.Fatal("fixture has no family rooted at the exact entry")
+	}
+	validCLI := ResponseSurfaceProposal{
+		CandidateRef: cli.Ref, KindRef: SurfaceKindRefCLICommand,
+		Bindings: []ResponseSurfaceBinding{{
+			SlotRef: SurfaceSlotRefIdentity, FactRef: surfaceFactRefByValue(t, cli, "serve [path]"),
+		}},
+	}
+	conflictingCLI := ResponseSurfaceProposal{
+		CandidateRef: cli.Ref, KindRef: SurfaceKindRefCLICommand,
+		Bindings: []ResponseSurfaceBinding{{
+			SlotRef: SurfaceSlotRefIdentity, FactRef: surfaceFactRefByValue(t, route, "/account/:id"),
+		}},
+	}
+	validRoute := ResponseSurfaceProposal{
+		CandidateRef: route.Ref, KindRef: SurfaceKindRefHTTPRoute,
+		Bindings: []ResponseSurfaceBinding{
+			{SlotRef: SurfaceSlotRefMethod, FactRef: surfaceFactRefByValue(t, route, "GET")},
+			{SlotRef: SurfaceSlotRefPath, FactRef: surfaceFactRefByValue(t, route, "/account/:id")},
+			{SlotRef: SurfaceSlotRefHandler, FactRef: surfaceFactRefByValue(t, route, "GetAccount")},
+		},
+	}
+	orders := [][]ResponseSurfaceProposal{
+		{validCLI, validRoute, conflictingCLI},
+		{conflictingCLI, validCLI, validRoute},
+		{validRoute, conflictingCLI, validCLI},
+	}
+	var canonical []byte
+	for index, proposals := range orders {
+		response := emptySurfaceResponse(compilation)
+		response.Entries[0].FamilyRefs = []string{rootedFamilyRef}
+		response.SurfaceProposals = proposals
+		raw, err := json.Marshal(response)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := Reduce(compilation, raw)
+		if err != nil {
+			t.Fatalf("Reduce order %d: %v", index, err)
+		}
+		if result.SelectedFamilyCount() != 1 || result.SelectedSurfaceCount() != 1 ||
+			result.SurfaceProposals[0].CandidateRef != route.Ref || result.RejectedSurfaceCount() != 1 ||
+			result.RejectedSurfaceProposals[0].CandidateRef != cli.Ref ||
+			result.RejectedSurfaceProposals[0].Reason != RejectedSurfaceDuplicateProposal {
+			t.Fatalf("item-local duplicate salvage order %d = %+v", index, result)
+		}
+		result.RepositoryStateSHA256 = strings.Repeat("e", 64)
+		encoded, err := EncodeResult(result)
+		if err != nil {
+			t.Fatalf("EncodeResult order %d: %v", index, err)
+		}
+		if _, err := DecodeResult(encoded); err != nil {
+			t.Fatalf("DecodeResult order %d: %v", index, err)
+		}
+		if canonical == nil {
+			canonical = encoded
+		} else if string(encoded) != string(canonical) {
+			t.Fatalf("duplicate salvage depends on response order:\n%s\n%s", canonical, encoded)
+		}
 	}
 }
 
