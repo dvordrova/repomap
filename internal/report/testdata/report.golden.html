@@ -389,11 +389,28 @@ header p { margin: 0; opacity: .8; font-size: .9rem; }
 .rm-library-api-declarations { display: grid; grid-template-columns: minmax(0, 1fr); }
 .rm-library-api-declaration { border-bottom: 1px solid #f1f5f9; min-width: 0; padding: .38rem 0; }
 .rm-library-api-declaration .rm-map-entry-context__source { color: #1d4ed8; font-size: .71rem; }
-.rm-map-entry-card { background: #fff; border: 1px solid #cbd5e1; border-radius: 11px; display: grid; gap: .55rem; min-width: 0; padding: .8rem; }
-.rm-map-entry-card__heading { align-items: baseline; display: flex; flex-wrap: wrap; gap: .4rem 1rem; justify-content: space-between; min-width: 0; }
-.rm-map-entry-card__heading h3 { color: #172554; font-size: .92rem; margin: 0; }
+.rm-map-entry-group { background: #fff; border: 1px solid #dbe4f0; border-radius: 11px; min-width: 0; overflow: clip; }
+.rm-map-entry-group__heading { align-items: center; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; gap: .55rem; justify-content: space-between; padding: .55rem .75rem; }
+.rm-map-entry-group__heading h3 { color: #475569; font-size: .7rem; letter-spacing: .025em; margin: 0; text-transform: uppercase; }
+.rm-map-entry-group__count { align-items: center; background: #e8eefc; border-radius: 999px; color: #3157d5; display: inline-flex; font-size: .64rem; font-weight: 750; height: 1.35rem; justify-content: center; min-width: 1.35rem; padding: 0 .35rem; }
+.rm-map-entry-group__list { display: grid; grid-template-columns: minmax(0, 1fr); }
+.rm-map-entry-card { background: #fff; display: grid; gap: .45rem; min-width: 0; padding: .68rem .75rem .72rem; }
+.rm-map-entry-card + .rm-map-entry-card { border-top: 1px solid #eef2f7; }
+.rm-map-entry-card__heading { align-items: start; display: grid; gap: .35rem 1rem; grid-template-columns: minmax(0, 1fr) auto; min-width: 0; }
+.rm-map-entry-card__primary { align-items: baseline; display: flex; flex-wrap: wrap; gap: .25rem .55rem; min-width: 0; }
+.rm-map-entry-card__identity { color: #172554; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; font-weight: 750; line-height: 1.45; margin: 0; overflow-wrap: anywhere; }
+.rm-map-entry-card__arrow { color: #7c3aed; flex: 0 0 auto; font-size: .9rem; font-weight: 800; }
+.rm-map-entry-card__callback { background: transparent; color: #3157d5; font-size: .75rem; font-weight: 700; overflow-wrap: anywhere; padding: 0; }
+.rm-map-entry-card__callback--partial { color: #64748b; font-weight: 600; }
+.rm-map-entry-card__partial { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 999px; color: #9a3412; font-size: .58rem; font-weight: 700; padding: .08rem .36rem; }
+.rm-map-entry-card__sources { align-items: baseline; display: flex; flex-wrap: wrap; gap: .25rem .7rem; justify-content: flex-end; min-width: 0; }
+.rm-map-entry-card__sources .rm-map-entry-context__source { font-size: .65rem; }
 .rm-map-entry-card__meta { color: #64748b; font-size: .7rem; margin: 0; }
 .rm-map-entry-card__explore { justify-self: start; }
+.rm-map-entry-group__more { border-top: 1px solid #e2e8f0; }
+.rm-map-entry-group__more-summary { color: #3157d5; cursor: pointer; font-size: .7rem; font-weight: 750; padding: .6rem .75rem; }
+.rm-map-entry-group__more[open] > .rm-map-entry-group__more-summary { background: #f8fafc; border-bottom: 1px solid #eef2f7; }
+.rm-map-entry-context__limit { color: #64748b; font-size: .68rem; line-height: 1.45; margin: 0 .15rem; }
 .rm-map-entry-families { border-top: 1px solid #e2e8f0; padding-top: .45rem; }
 .rm-map-entry-families__summary { color: #1d4ed8; cursor: pointer; font-size: .7rem; font-weight: 700; }
 .rm-map-entry-family-group { display: grid; gap: .25rem; padding: .55rem 0 .15rem; }
@@ -928,7 +945,9 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
   // Integrations disclosures layered over it. UI29 closes two presentation-
   // only accessibility gaps: the context-switch group has an accessible name,
   // and an API search with no matching declarations has an explicit result.
-  var VERSION = 29;
+  // UI30 presents the existing exact entry-surface catalog as one grouped
+  // route/command/callback list without changing Canvas or report authority.
+  var VERSION = 30;
   var EN = {
     "main.browser_error.invalid_report_artifact": { params: [], text: "The saved report is invalid or exceeds the supported size." },
     "main.browser_error.no_saved_reports": { params: [], text: "No saved reports are available." },
@@ -1006,7 +1025,19 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
     "main.map.api.section.constants": { params: ["count"], format: function (params) { return englishCount(params.count, "constant", "constants"); } },
     "main.map.api.section.variables": { params: ["count"], format: function (params) { return englishCount(params.count, "variable", "variables"); } },
     "main.map.entry.heading": { params: [], text: "Entrypoints" },
+    "main.map.entry.group.process": { params: [], text: "Processes" },
+    "main.map.entry.group.http_routes": { params: [], text: "HTTP routes" },
+    "main.map.entry.group.http_servers": { params: [], text: "HTTP servers" },
+    "main.map.entry.group.cli_commands": { params: [], text: "CLI commands" },
+    "main.map.entry.group.other": { params: [], text: "Other entrypoints" },
+    "main.map.entry.callback.anonymous": { params: [], text: "anonymous callback" },
+    "main.map.entry.callback.unresolved": { params: [], text: "unresolved callback" },
+    "main.map.entry.identity.dynamic_route": { params: [], text: "dynamic route" },
+    "main.map.entry.identity.dynamic_command": { params: [], text: "dynamic command" },
+    "main.map.entry.identity.partial_command": { params: [], text: "partial path" },
     "main.map.entry.explore": { params: [], text: "Explore" },
+    "main.map.entry.show_more": { params: ["count"], format: function (params) { return "Show " + params.count + " more"; } },
+    "main.map.entry.static_limit": { params: [], text: "Static registrations only; runtime reachability, order and continuation are not established." },
     "main.map.entry.direct_families": { params: ["count"], format: function (params) { return englishCount(params.count, "direct call family", "direct call families"); } },
     "main.map.entry.map_summary": { params: ["calls", "areas", "outside"], format: function (params) { return params.calls + " direct calls · " + params.areas + " mapped areas · " + params.outside + " off-map"; } },
     "main.map.entry.calls_by": { params: ["caller", "count"], format: function (params) { return "Calls from " + params.caller + " · " + params.count; } },
@@ -1019,6 +1050,8 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
     "main.map.lens.entry.process": { params: [], text: "Process entry" },
     "main.map.entry.context.direct_call": { params: [], text: "Direct call" },
     "main.map.entry.context.entry_source": { params: [], text: "Entry source" },
+    "main.map.entry.context.registration": { params: [], text: "Registration" },
+    "main.map.entry.context.handler_source": { params: [], text: "Handler" },
     "main.map.entry.context.callsite": { params: [], text: "Callsite" },
     "main.map.entry.context.target_source": { params: [], text: "Target source" },
     "main.map.entry.context.not_drawn_calls": { params: ["count"], format: function (params) { return "Not drawn as map arrows: " + params.count; } },
@@ -2136,7 +2169,19 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
     "main.map.api.section.constants": { params: ["count"], format: function (params) { return russianCount(params.count, "константа", "константы", "констант"); } },
     "main.map.api.section.variables": { params: ["count"], format: function (params) { return russianCount(params.count, "переменная", "переменные", "переменных"); } },
     "main.map.entry.heading": { params: [], text: "Точки входа" },
+    "main.map.entry.group.process": { params: [], text: "Процессы" },
+    "main.map.entry.group.http_routes": { params: [], text: "HTTP-маршруты" },
+    "main.map.entry.group.http_servers": { params: [], text: "HTTP-серверы" },
+    "main.map.entry.group.cli_commands": { params: [], text: "CLI-команды" },
+    "main.map.entry.group.other": { params: [], text: "Другие точки входа" },
+    "main.map.entry.callback.anonymous": { params: [], text: "анонимный обработчик" },
+    "main.map.entry.callback.unresolved": { params: [], text: "обработчик не разрешён" },
+    "main.map.entry.identity.dynamic_route": { params: [], text: "динамический маршрут" },
+    "main.map.entry.identity.dynamic_command": { params: [], text: "динамическая команда" },
+    "main.map.entry.identity.partial_command": { params: [], text: "частичный путь" },
     "main.map.entry.explore": { params: [], text: "Исследовать" },
+    "main.map.entry.show_more": { params: ["count"], format: function (params) { return "Показать ещё " + params.count; } },
+    "main.map.entry.static_limit": { params: [], text: "Показаны только статические регистрации; достижимость, порядок и продолжение во время выполнения не установлены." },
     "main.map.entry.direct_families": { params: ["count"], format: function (params) { return russianCount(params.count, "группа прямых вызовов", "группы прямых вызовов", "групп прямых вызовов"); } },
     "main.map.entry.map_summary": { params: ["calls", "areas", "outside"], format: function (params) { return params.calls + " прямых вызовов · " + params.areas + " областей на карте · " + params.outside + " вне карты"; } },
     "main.map.entry.calls_by": { params: ["caller", "count"], format: function (params) { return "Вызовы из " + params.caller + " · " + params.count; } },
@@ -2149,6 +2194,8 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
     "main.map.lens.entry.process": { params: [], text: "Точка входа процесса" },
     "main.map.entry.context.direct_call": { params: [], text: "Прямой вызов" },
     "main.map.entry.context.entry_source": { params: [], text: "Код точки входа" },
+    "main.map.entry.context.registration": { params: [], text: "Регистрация" },
+    "main.map.entry.context.handler_source": { params: [], text: "Обработчик" },
     "main.map.entry.context.callsite": { params: [], text: "Место вызова" },
     "main.map.entry.context.target_source": { params: [], text: "Код цели" },
     "main.map.entry.context.not_drawn_calls": { params: ["count"], format: function (params) { return "Не показано стрелками на карте: " + params.count; } },
@@ -10272,6 +10319,106 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
     return projectedLocations[0] || null;
   }
 
+  // Entrypoints keeps Canvas15 as the sole grouping/participation authority,
+  // but the full local trigger catalog owns route, command and callback facts.
+  // Join the two only through their exact stable ID: labels, paths or source
+  // locations are not identity and must never correlate an unrelated record.
+  function discoveredEntrySurface(entry) {
+    var id = String(entry && entry.id || '');
+    var kind = String(entry && entry.kind || '');
+    if (!id) return null;
+    var triggers = DATA.discovered_surfaces && Array.isArray(DATA.discovered_surfaces.triggers)
+      ? DATA.discovered_surfaces.triggers : [];
+    var matches = triggers.filter(function (trigger) {
+      return String(trigger && trigger.id || '') === id &&
+        String(trigger && trigger.surface_role || '') === 'entry_surface';
+    });
+    return matches.length === 1 && String(matches[0] && matches[0].kind || '') === kind
+      ? matches[0] : null;
+  }
+
+  function exactEntrySurfaceLocation(location) {
+    var path = String(location && location.path || '');
+    var line = Number(location && location.line) || 0;
+    if (!path || !Number.isInteger(line) || line <= 0) return null;
+    return {
+      path: path,
+      line: line,
+      column: Number.isInteger(Number(location && location.column)) && Number(location && location.column) > 0
+        ? Number(location.column) : 0,
+    };
+  }
+
+  function entrySurfaceLocationKey(location) {
+    location = exactEntrySurfaceLocation(location);
+    return location ? [location.path, location.line, location.column].join('\u0000') : '';
+  }
+
+  function entrySurfaceRegistrationLocation(trigger, fallback) {
+    var kind = String(trigger && trigger.kind || '');
+    var location = kind === 'http_server'
+      ? trigger && (trigger.server_start_site || trigger.registration_site)
+      : trigger && trigger.registration_site;
+    if (kind === 'process_entry') {
+      location = trigger && trigger.process_entrypoint && trigger.process_entrypoint.location || location;
+    }
+    return exactEntrySurfaceLocation(location) || exactEntrySurfaceLocation(fallback);
+  }
+
+  function entrySurfaceIdentityLabel(trigger, entry, kind) {
+    var identity = trigger && trigger.identity || {};
+    var pathKnown = !!(identity && identity.path && identity.path.known);
+    var path = pathKnown ? String(identity.path.text || '').trim() : '';
+    var name = String(identity && identity.name || '').trim();
+    var fallback = String(entry && (entry.symbol || entry.label) || '').trim();
+    if (kind === 'http_route') {
+      var method = String(identity && identity.method || '').trim().toUpperCase();
+      return path ? [method, path].filter(Boolean).join(' ') :
+        trigger ? msg('main.map.entry.identity.dynamic_route') : fallback;
+    }
+    if (kind === 'cli_command') return path || name ||
+      (trigger ? msg('main.map.entry.identity.dynamic_command') : fallback);
+    if (kind === 'process_entry') {
+      var processName = name || trigger && trigger.process_entrypoint && trigger.process_entrypoint.name || fallback;
+      return bareSourceSymbol(processName) || msg('main.map.lens.entry.process');
+    }
+    if (kind === 'http_server') return name || fallback || msg('main.map.entry.group.http_servers');
+    return name || path || fallback || msg('main.map.lens.entry.process');
+  }
+
+  function entrySurfaceCallbackLabel(trigger) {
+    var handler = trigger && trigger.handler;
+    var value = String(handler && handler.text || '').trim();
+    if (!value) return '';
+    if (handler.known === false) return msg('main.map.entry.callback.unresolved');
+    value = value.replace(/@[^@]+:[0-9]+(?::[0-9]+)?$/, '');
+    value = bareSourceSymbol(value);
+    if (value === 'func_literal' || value === 'func literal') {
+      return msg('main.map.entry.callback.anonymous');
+    }
+    if (String(handler && handler.kind || '') === 'function' && !/[()]$/.test(value)) value += '()';
+    return value;
+  }
+
+  function entrySurfaceHasCallback(trigger, kind) {
+    if (kind !== 'http_route' && kind !== 'cli_command') return false;
+    var handler = trigger && trigger.handler;
+    if (!handler) return false;
+    if (handler.known === false) return true;
+    var handlerKind = String(handler.kind || '');
+    return handlerKind === 'function' || handlerKind === 'method_value';
+  }
+
+  function entrySurfaceGroup(kind) {
+    var groups = {
+      process_entry: { order: 0, message_id: 'main.map.entry.group.process' },
+      http_route: { order: 1, message_id: 'main.map.entry.group.http_routes' },
+      cli_command: { order: 2, message_id: 'main.map.entry.group.cli_commands' },
+      http_server: { order: 3, message_id: 'main.map.entry.group.http_servers' },
+    };
+    return groups[kind] || { order: 4, message_id: 'main.map.entry.group.other' };
+  }
+
   function renderEntryCallFamilyDisclosure(families) {
     if (!families.length) return null;
     var details = el('details', 'rm-map-entry-families');
@@ -10325,15 +10472,49 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
     return { calls: handoffs.length, areas: Object.keys(areaIDs).length, outside: outside };
   }
 
-  function renderEntrypointCard(entry, projected, host, projectedGroups, entryKind) {
+  function renderEntrypointCard(entry, projected, host, projectedGroups, entryKind, trigger) {
     var card = el('article', 'rm-map-entry-card');
     var heading = el('div', 'rm-map-entry-card__heading');
-    var entrySymbol = String(entry && entry.symbol || '');
-    var entryLabel = entrySymbol ? bareSourceSymbol(entrySymbol) : String(entry && entry.label || '');
-    heading.appendChild(txt('h3', '', entryLabel || msg('main.map.lens.entry.process')));
-    heading.appendChild(renderEntrypointLocationAction(entry, msg('main.map.entry.context.entry_source')));
+    var kind = String(entryKind || entry && entry.claim_kind || trigger && trigger.kind || '');
+    var primary = entrySurfacePrimaryLocation(entry) || entry;
+    var identityLabel = entrySurfaceIdentityLabel(trigger, entry, kind);
+    var primaryLine = el('div', 'rm-map-entry-card__primary');
+    primaryLine.appendChild(txt('h4', 'rm-map-entry-card__identity', identityLabel));
+    var callbackLabel = entrySurfaceHasCallback(trigger, kind) ? entrySurfaceCallbackLabel(trigger) : '';
+    if (callbackLabel) {
+      var arrow = txt('span', 'rm-map-entry-card__arrow', '→');
+      arrow.setAttribute('aria-hidden', 'true');
+      primaryLine.appendChild(arrow);
+      var callback = txt('code', 'rm-map-entry-card__callback', callbackLabel);
+      if (trigger && trigger.handler && trigger.handler.known === false) {
+        callback.classList.add('rm-map-entry-card__callback--partial');
+      }
+      primaryLine.appendChild(callback);
+    }
+    if (kind === 'cli_command' && trigger && (trigger.provisional_id === true ||
+      !(trigger.identity && trigger.identity.path && trigger.identity.path.known))) {
+      primaryLine.appendChild(txt('span', 'rm-map-entry-card__partial',
+        msg('main.map.entry.identity.partial_command')));
+    }
+    heading.appendChild(primaryLine);
+    var exactActions = el('div', 'rm-map-entry-card__sources');
+    var registration = entrySurfaceRegistrationLocation(trigger, primary);
+    if (registration) exactActions.appendChild(renderEntrypointLocationAction(
+      registration,
+      kind === 'process_entry'
+        ? msg('main.map.entry.context.entry_source')
+        : msg('main.map.entry.context.registration')
+    ));
+    var handlerLocation = exactEntrySurfaceLocation(trigger && trigger.handler_location);
+    if (handlerLocation && entrySurfaceLocationKey(handlerLocation) !== entrySurfaceLocationKey(registration)) {
+      exactActions.appendChild(renderEntrypointLocationAction(
+      handlerLocation,
+      msg('main.map.entry.context.handler_source')
+      ));
+    }
+    if (exactActions.childNodes.length) heading.appendChild(exactActions);
     card.appendChild(heading);
-    var families = String(entryKind || entry && entry.claim_kind || '') === 'process_entry'
+    var families = kind === 'process_entry'
       ? entryCallFamiliesForLocation(entry) : [];
     if (families.length) card.appendChild(txt('p', 'rm-map-entry-card__meta', msg('main.map.entry.direct_families', {
       count: families.length,
@@ -10370,6 +10551,7 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
         if (!seen[key]) { seen[key] = true; surfaces.push(entry); }
       });
     });
+    var items = [];
     surfaces.forEach(function (entry) {
       var projected = projectedGroups.filter(function (candidate) {
         var groupEntry = candidate && candidate.group && candidate.group.entry;
@@ -10395,14 +10577,96 @@ button.rm-arch__api-declaration:hover, button.rm-arch__api-declaration:focus-vis
         symbol: '',
         label: entry.label,
       };
-      host.appendChild(renderEntrypointCard(exact, projected, host, projectedGroups, entry && entry.kind));
+      items.push({
+        entry: exact,
+        projected: projected,
+        kind: String(entry && entry.kind || ''),
+        trigger: discoveredEntrySurface(entry),
+      });
     });
     projectedGroups.forEach(function (projected) {
       var entry = projected && projected.group && projected.group.entry;
       if (!attachedGroupIDs[String(projected && projected.id || '')] && entry) {
-        host.appendChild(renderEntrypointCard(entry, projected, host, projectedGroups, entry && entry.claim_kind));
+        items.push({
+          entry: entry,
+          projected: projected,
+          kind: String(entry && entry.claim_kind || ''),
+          trigger: null,
+        });
       }
     });
+    var grouped = Object.create(null);
+    items.forEach(function (item) {
+      var kind = item.kind || 'other';
+      if (!grouped[kind]) grouped[kind] = [];
+      grouped[kind].push(item);
+    });
+    function itemSortKey(item) {
+      var trigger = item.trigger;
+      var primary = entrySurfacePrimaryLocation(item.entry) || item.entry;
+      var source = entrySurfaceRegistrationLocation(trigger, primary) || {};
+      var sourceKey = [String(source.path || ''), String(source.line || 0).padStart(9, '0'),
+        String(source.column || 0).padStart(9, '0')].join('\u0000');
+      var identity = entrySurfaceIdentityLabel(trigger, item.entry, item.kind);
+      var callback = entrySurfaceHasCallback(trigger, item.kind) ? entrySurfaceCallbackLabel(trigger) : '';
+      if (item.kind === 'process_entry' || item.kind === 'http_server') {
+        return [sourceKey, identity, callback].join('\u0000');
+      }
+      var exactRank = trigger && trigger.provisional_id !== true &&
+        trigger.identity && trigger.identity.path && trigger.identity.path.known ? '0' : '1';
+      return [exactRank, identity, callback, sourceKey].join('\u0000');
+    }
+    Object.keys(grouped).forEach(function (kind) {
+      grouped[kind].sort(function (left, right) {
+        return itemSortKey(left).localeCompare(itemSortKey(right));
+      });
+    });
+    Object.keys(grouped).sort(function (left, right) {
+      var leftGroup = entrySurfaceGroup(left), rightGroup = entrySurfaceGroup(right);
+      return leftGroup.order - rightGroup.order || left.localeCompare(right);
+    }).forEach(function (kind) {
+      var definition = entrySurfaceGroup(kind);
+      var section = el('section', 'rm-map-entry-group');
+      section.setAttribute('data-entry-surface-kind', kind);
+      var groupHeading = el('div', 'rm-map-entry-group__heading');
+      groupHeading.appendChild(txt('h3', '', msg(definition.message_id)));
+      groupHeading.appendChild(txt('span', 'rm-map-entry-group__count', String(grouped[kind].length)));
+      section.appendChild(groupHeading);
+      var list = el('div', 'rm-map-entry-group__list');
+      var visibleLimit = 6;
+      grouped[kind].slice(0, visibleLimit).forEach(function (item) {
+        list.appendChild(renderEntrypointCard(
+          item.entry,
+          item.projected,
+          host,
+          projectedGroups,
+          item.kind,
+          item.trigger
+        ));
+      });
+      section.appendChild(list);
+      if (grouped[kind].length > visibleLimit) {
+        var more = el('details', 'rm-map-entry-group__more');
+        more.appendChild(txt('summary', 'rm-map-entry-group__more-summary', msg('main.map.entry.show_more', {
+          count: grouped[kind].length - visibleLimit,
+        })));
+        var remainder = el('div', 'rm-map-entry-group__list rm-map-entry-group__list--remainder');
+        grouped[kind].slice(visibleLimit).forEach(function (item) {
+          remainder.appendChild(renderEntrypointCard(
+            item.entry,
+            item.projected,
+            host,
+            projectedGroups,
+            item.kind,
+            item.trigger
+          ));
+        });
+        more.appendChild(remainder);
+        section.appendChild(more);
+      }
+      host.appendChild(section);
+    });
+    host.appendChild(txt('p', 'rm-map-entry-context__limit', msg('main.map.entry.static_limit')));
   }
 
   function renderIntegrationsLaunchpad(host, projection) {

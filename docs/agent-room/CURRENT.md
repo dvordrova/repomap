@@ -811,6 +811,22 @@ one-column disclosures over backend-owned exact source identity. This is the
 D281 presentation follow-up (UI catalog 28), not a new analysis, provider or
 report-schema decision.
 
+Owner correction (2026-08-10): Entrypoints now joins its exact Canvas
+`entry_surface` to one persisted Trigger Catalog record only by equal stable ID
+and kind, then presents semantically ordered process, HTTP-route, legacy CLI and
+HTTP-server groups. Exact route/command callbacks and separate registration or
+handler source actions remain local authority; provisional paths and unresolved
+callbacks stay visibly partial. Six initial rows plus disclosure keep every
+persisted item reachable without claiming runtime execution or completeness.
+This presentation-only correction restores no D273-disabled producer and adds
+no provider/schema change; the typed UI catalog advances 29→30.
+
+Decision 277 producer correction (2026-08-10): an exact analysis-target root
+owns `public_api` before generic file-path role classification, including
+`main.go`, `cmd/`, `examples/` and generated paths. Replay remains strict and
+now identifies the exact drifting field. This is a producer/validator bug fix
+with no identity change.
+
 ## Decision 282
 
 Status:
