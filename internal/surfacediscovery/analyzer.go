@@ -2625,6 +2625,23 @@ func (a *analyzer) eval(value ssa.Value, env environment, depth int) Value {
 	if a.ctx != nil && a.ctx.Err() != nil {
 		return dynamicValue("value evaluation canceled")
 	}
+	// Constants and declared functions are terminal SSA values. Resolving them
+	// is O(1), cannot recurse or cycle, and must not depend on budget left by
+	// earlier graph-shaped values in the same entrypoint walk. In particular,
+	// a large unrelated value frontier must not erase a later literal route and
+	// its exact named handler.
+	switch current := value.(type) {
+	case *ssa.Const:
+		if current.Value == nil || current.IsNil() {
+			return dynamicValue("nil")
+		}
+		if current.Value.Kind() == constant.String {
+			return knownValue("constant", constant.StringVal(current.Value))
+		}
+		return knownValue("constant", current.Value.ExactString())
+	case *ssa.Function:
+		return knownValue("function", a.functionID(current))
+	}
 	if depth > a.opts.MaxDepth {
 		a.addBudget("value_depth")
 		return dynamicValue("unresolved value")
@@ -2647,16 +2664,6 @@ func (a *analyzer) eval(value ssa.Value, env environment, depth int) Value {
 	a.valueEvalActive[value] = true
 	defer delete(a.valueEvalActive, value)
 	switch current := value.(type) {
-	case *ssa.Const:
-		if current.Value == nil || current.IsNil() {
-			return dynamicValue("nil")
-		}
-		if current.Value.Kind() == constant.String {
-			return knownValue("constant", constant.StringVal(current.Value))
-		}
-		return knownValue("constant", current.Value.ExactString())
-	case *ssa.Function:
-		return knownValue("function", a.functionID(current))
 	case *ssa.Parameter:
 		return dynamicValue("parameter " + current.Name())
 	case *ssa.Global:

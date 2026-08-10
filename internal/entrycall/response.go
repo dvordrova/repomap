@@ -220,7 +220,9 @@ func reduceSurfaceProposals(
 	compilation Compilation,
 	proposals []ResponseSurfaceProposal,
 ) ([]ResultSurfaceProposal, []RejectedSurfaceProposal, error) {
-	knownKinds := map[string]struct{}{SurfaceKindRefCLICommand: {}, SurfaceKindRefHTTPRoute: {}}
+	knownKinds := map[string]struct{}{
+		SurfaceKindRefCLICommand: {}, SurfaceKindRefHTTPRoute: {}, SurfaceKindRefScheduledJob: {},
+	}
 	knownSlots := map[string]struct{}{
 		SurfaceSlotRefIdentity: {}, SurfaceSlotRefMethod: {}, SurfaceSlotRefPath: {}, SurfaceSlotRefHandler: {},
 	}
@@ -290,7 +292,8 @@ func restoreSurfaceProposal(
 		return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
 	}
 	if proposal.KindRef == SurfaceKindRefCLICommand && authority.exact.Form != SurfaceCandidateKeyedComposite ||
-		proposal.KindRef == SurfaceKindRefHTTPRoute && authority.exact.Form != SurfaceCandidateDirectCall {
+		proposal.KindRef == SurfaceKindRefHTTPRoute && authority.exact.Form != SurfaceCandidateDirectCall ||
+		proposal.KindRef == SurfaceKindRefScheduledJob && authority.exact.Form != SurfaceCandidateDirectCall {
 		return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleForm
 	}
 	bySlot := make(map[string]ExactSurfaceFact, len(proposal.Bindings))
@@ -333,7 +336,7 @@ func restoreSurfaceProposal(
 				return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
 			}
 			restored.Handler = resultSurfaceValue(handler)
-		} else if !handlerlessCLIHasDescriptorEvidence(authority.exact, identity) {
+		} else if !handlerlessSurfaceHasDescriptorEvidence(authority.exact, identity) {
 			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
 		}
 		if _, extra := bySlot[SurfaceSlotRefMethod]; extra {
@@ -346,30 +349,69 @@ func restoreSurfaceProposal(
 		restored.Role = SurfaceRoleDescriptor
 		restored.Identity = resultSurfaceValue(identity)
 	case SurfaceKindRefHTTPRoute:
-		if len(bySlot) != 3 {
-			return ResultSurfaceProposal{}, RejectedSurfaceMissingBinding
+		if len(bySlot) < 1 || len(bySlot) > 3 {
+			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
 		}
 		method, methodPresent := bySlot[SurfaceSlotRefMethod]
 		path, pathPresent := bySlot[SurfaceSlotRefPath]
 		handler, handlerPresent := bySlot[SurfaceSlotRefHandler]
-		if !methodPresent || !pathPresent || !handlerPresent {
+		if !pathPresent {
 			return ResultSurfaceProposal{}, RejectedSurfaceMissingBinding
 		}
-		if method.Kind != SurfaceFactString && method.Kind != SurfaceFactToken ||
-			path.Kind != SurfaceFactString || handler.Kind != SurfaceFactCallable {
+		if path.Kind != SurfaceFactString || !strings.HasPrefix(path.Value, "/") {
 			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
 		}
-		if method.Kind == SurfaceFactToken && !standardHTTPTokenMethod(method.Value) {
+		if methodPresent && !validHTTPMethodFact(method) {
+			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
+		}
+		if handlerPresent && handler.Kind != SurfaceFactCallable {
 			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
 		}
 		if _, extra := bySlot[SurfaceSlotRefIdentity]; extra {
 			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
 		}
 		restored.Kind = SurfaceKindHTTPRoute
-		restored.Role = SurfaceRoleEntrySurface
-		restored.Method = resultSurfaceValue(method)
 		restored.Path = resultSurfaceValue(path)
-		restored.Handler = resultSurfaceValue(handler)
+		restored.Role = SurfaceRoleDescriptor
+		if methodPresent {
+			restored.Method = resultSurfaceValue(method)
+		}
+		if handlerPresent {
+			restored.Handler = resultSurfaceValue(handler)
+			restored.Role = SurfaceRoleEntrySurface
+		}
+	case SurfaceKindRefScheduledJob:
+		if len(bySlot) > 2 {
+			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
+		}
+		identity, identityPresent := bySlot[SurfaceSlotRefIdentity]
+		handler, handlerPresent := bySlot[SurfaceSlotRefHandler]
+		if !identityPresent {
+			return ResultSurfaceProposal{}, RejectedSurfaceMissingBinding
+		}
+		if identity.Kind != SurfaceFactString {
+			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
+		}
+		if handlerPresent {
+			if handler.Kind != SurfaceFactCallable {
+				return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
+			}
+			restored.Handler = resultSurfaceValue(handler)
+			restored.Role = SurfaceRoleEntrySurface
+		} else {
+			if !handlerlessSurfaceHasDescriptorEvidence(authority.exact, identity) {
+				return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
+			}
+			restored.Role = SurfaceRoleDescriptor
+		}
+		if _, extra := bySlot[SurfaceSlotRefMethod]; extra {
+			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
+		}
+		if _, extra := bySlot[SurfaceSlotRefPath]; extra {
+			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
+		}
+		restored.Kind = SurfaceKindScheduledJob
+		restored.Identity = resultSurfaceValue(identity)
 	default:
 		panic("known surface kind was not handled")
 	}
@@ -386,7 +428,32 @@ func standardHTTPTokenMethod(value string) bool {
 	}
 }
 
-func handlerlessCLIHasDescriptorEvidence(candidate ExactSurfaceCandidate, identity ExactSurfaceFact) bool {
+func validHTTPMethodFact(fact ExactSurfaceFact) bool {
+	switch fact.Kind {
+	case SurfaceFactToken:
+		return standardHTTPTokenMethod(fact.Value)
+	case SurfaceFactString:
+		return validHTTPMethodText(fact.Value)
+	default:
+		return false
+	}
+}
+
+func validHTTPMethodText(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, character := range value {
+		if character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' ||
+			character >= '0' && character <= '9' || strings.ContainsRune("!#$%&'*+-.^_`|~", character) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func handlerlessSurfaceHasDescriptorEvidence(candidate ExactSurfaceCandidate, identity ExactSurfaceFact) bool {
 	hasCallable := false
 	hasCompanionString := false
 	for _, fact := range candidate.Facts {

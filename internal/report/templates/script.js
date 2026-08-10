@@ -7124,22 +7124,24 @@
     if (!surface || String(surface.origin || '') !== 'model_assisted') return null;
     var kind = String(surface.kind || '');
     var site = exactEntrySurfaceLocation(surface.site);
-    if (!site || (kind !== 'http_route' && kind !== 'cli_command')) return null;
+    if (!site || (kind !== 'http_route' && kind !== 'cli_command' && kind !== 'scheduled_job')) return null;
     var identity = {};
+    var handlerValue = entryCallSurfaceValue(surface.handler, 'function');
     if (kind === 'http_route') {
       var method = entryCallSurfaceValue(surface.method, 'token');
       var path = entryCallSurfaceValue(surface.path, 'constant');
-      var handler = entryCallSurfaceValue(surface.handler, 'function');
-      if (!method || !path || !handler) return null;
-      identity.method = method.text.toUpperCase();
+      if (!path) return null;
+      if (method) identity.method = method.text.toUpperCase();
       identity.path = path;
     } else {
-      var command = entryCallSurfaceValue(surface.identity, 'command_segment');
-      if (!command) return null;
-      identity.name = command.text;
-      identity.path = command;
+      var exactIdentity = entryCallSurfaceValue(
+        surface.identity,
+        kind === 'scheduled_job' ? 'schedule_identity' : 'command_segment'
+      );
+      if (!exactIdentity) return null;
+      identity.name = exactIdentity.text;
+      identity.path = exactIdentity;
     }
-    var handlerValue = entryCallSurfaceValue(surface.handler, 'function');
     return {
       id: String(surface.id || ''),
       kind: kind,
@@ -7159,7 +7161,7 @@
 
   function entrySurfaceExactIdentityKey(trigger) {
     var kind = String(trigger && trigger.kind || '');
-    if (kind !== 'http_route' && kind !== 'cli_command') return '';
+    if (kind !== 'http_route' && kind !== 'cli_command' && kind !== 'scheduled_job') return '';
     if (trigger && trigger.provisional_id === true) return '';
     var site = entrySurfaceRegistrationLocation(trigger, null);
     var siteKey = entrySurfaceLocationKey(site);
@@ -7168,14 +7170,21 @@
     if (kind === 'http_route') {
       var path = identity && identity.path;
       var method = String(identity && identity.method || '').trim().toUpperCase();
-      var handler = trigger && trigger.handler;
-      if (!path || path.known !== true || !String(path.text || '').trim() ||
-        !method || !handler || handler.known !== true || !String(handler.text || '').trim()) return '';
+      if (!path || path.known !== true || !String(path.text || '').trim()) return '';
       return [kind, siteKey, method, String(path.text).trim()].join('\u0000');
     }
     var command = identity && identity.path && identity.path.known === true
       ? String(identity.path.text || '').trim() : String(identity && identity.name || '').trim();
     return command ? [kind, siteKey, command].join('\u0000') : '';
+  }
+
+  function entrySurfaceHTTPRegistrationPathKey(trigger) {
+    if (String(trigger && trigger.kind || '') !== 'http_route' ||
+      trigger && trigger.provisional_id === true) return '';
+    var siteKey = entrySurfaceLocationKey(entrySurfaceRegistrationLocation(trigger, null));
+    var path = trigger && trigger.identity && trigger.identity.path;
+    if (!siteKey || !path || path.known !== true || !String(path.text || '').trim()) return '';
+    return ['http_route', siteKey, String(path.text).trim()].join('\u0000');
   }
 
   function detachedEntrySurface(trigger) {
@@ -7203,6 +7212,8 @@
       }
     });
     var localByKey = Object.create(null);
+    var localHTTPByRegistrationPath = Object.create(null);
+    var ambiguousHTTPRegistrationPaths = Object.create(null);
     var localTriggers = DATA.discovered_surfaces && Array.isArray(DATA.discovered_surfaces.triggers)
       ? DATA.discovered_surfaces.triggers : [];
     localTriggers.forEach(function (trigger) {
@@ -7217,6 +7228,16 @@
       if (!previous || String(trigger.id || '').localeCompare(String(previous.id || '')) < 0) {
         localByKey[key] = trigger;
       }
+      var registrationPathKey = entrySurfaceHTTPRegistrationPathKey(trigger);
+      if (registrationPathKey && !ambiguousHTTPRegistrationPaths[registrationPathKey]) {
+        var priorPathTrigger = localHTTPByRegistrationPath[registrationPathKey];
+        if (!priorPathTrigger || String(priorPathTrigger.id || '') === String(trigger.id || '')) {
+          localHTTPByRegistrationPath[registrationPathKey] = trigger;
+        } else {
+          delete localHTTPByRegistrationPath[registrationPathKey];
+          ambiguousHTTPRegistrationPaths[registrationPathKey] = true;
+        }
+      }
     });
     var emitted = Object.create(null);
     var result = [];
@@ -7224,8 +7245,15 @@
       var modelTrigger = entryCallSurfaceTrigger(surface);
       var key = entrySurfaceExactIdentityKey(modelTrigger);
       if (!modelTrigger || !key || emitted[key]) return;
-      emitted[key] = true;
       var localTrigger = localByKey[key] || null;
+      var modelMethod = String(modelTrigger && modelTrigger.identity && modelTrigger.identity.method || '').trim();
+      if (!localTrigger && String(modelTrigger.kind || '') === 'http_route' && !modelMethod) {
+        localTrigger = localHTTPByRegistrationPath[entrySurfaceHTTPRegistrationPathKey(modelTrigger)] || null;
+      }
+      var chosenKey = entrySurfaceExactIdentityKey(localTrigger || modelTrigger) || key;
+      if (emitted[chosenKey]) return;
+      emitted[key] = true;
+      emitted[chosenKey] = true;
       if (localTrigger && canvasIDs[String(localTrigger.id || '')]) return;
       var trigger = localTrigger || modelTrigger;
       result.push({
@@ -7281,6 +7309,7 @@
     }
     if (kind === 'cli_command') return path || name ||
       (trigger ? msg('main.map.entry.identity.dynamic_command') : fallback);
+    if (kind === 'scheduled_job') return path || name || fallback;
     if (kind === 'process_entry') {
       var processName = name || trigger && trigger.process_entrypoint && trigger.process_entrypoint.name || fallback;
       return bareSourceSymbol(processName) || msg('main.map.lens.entry.process');
@@ -7304,7 +7333,7 @@
   }
 
   function entrySurfaceHasCallback(trigger, kind) {
-    if (kind !== 'http_route' && kind !== 'cli_command') return false;
+    if (kind !== 'http_route' && kind !== 'cli_command' && kind !== 'scheduled_job') return false;
     var handler = trigger && trigger.handler;
     if (!handler) return false;
     if (handler.known === false) return true;
@@ -7317,9 +7346,10 @@
       process_entry: { order: 0, message_id: 'main.map.entry.group.process' },
       http_route: { order: 1, message_id: 'main.map.entry.group.http_routes' },
       cli_command: { order: 2, message_id: 'main.map.entry.group.cli_commands' },
-      http_server: { order: 3, message_id: 'main.map.entry.group.http_servers' },
+      scheduled_job: { order: 3, message_id: 'main.map.entry.group.workers' },
+      http_server: { order: 4, message_id: 'main.map.entry.group.http_servers' },
     };
-    return groups[kind] || { order: 4, message_id: 'main.map.entry.group.other' };
+    return groups[kind] || { order: 5, message_id: 'main.map.entry.group.other' };
   }
 
   function renderEntryCallFamilyDisclosure(families) {

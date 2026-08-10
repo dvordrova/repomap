@@ -23,6 +23,10 @@ func TestEntrypointCardsKeepSourceActionsBelowIdentity(t *testing.T) {
 		".rm-map-entry-card__sources { align-items: baseline; display: flex; flex-wrap: wrap; gap: .25rem .7rem; justify-content: flex-start; min-width: 0; }") {
 		t.Fatal("entrypoint source actions are not kept in the vertical reading flow")
 	}
+	if !strings.Contains(css,
+		".rm-map-entry-group__list { display: grid; grid-template-columns: minmax(0, 1fr); }") {
+		t.Fatal("entrypoint groups are not one-column reading lists")
+	}
 }
 
 // Executable targets open on a neutral landscape. Entrypoints is an explicit
@@ -385,8 +389,9 @@ if (String(process.argv[4] || "").indexOf("model-assisted") === 0) {
   report.entry_call = {
     version: 2, families: [],
     surfaces: [
-      // Equivalent exact local TriggerRecord wins this duplicate key.
-      modelRoute("model-surface-000000000000000000000001", "GET", "/local", localSite, "fixture.local", localHandler),
+      // Equivalent exact local TriggerRecord wins even when the model leaves
+      // the method unbound; the exact registration site + path join is unique.
+      modelRoute("model-surface-000000000000000000000001", null, "/local", localSite, "fixture.local", localHandler),
       modelRoute("model-surface-000000000000000000000003", "GET", "/",
         { path: "main.go", line: 98, column: 2 }, "main.root", { path: "main.go", line: 98, column: 17 }),
       modelRoute("model-surface-000000000000000000000002", "GET", "/ws",
@@ -404,6 +409,80 @@ if (String(process.argv[4] || "").indexOf("model-assisted") === 0) {
     report.discovered_surfaces.triggers.reverse();
     report.entry_call.surfaces.reverse();
   }
+}
+if (String(process.argv[4] || "").indexOf("scheduled-jobs") === 0) {
+  const serverSite = { path: "server.go", line: 12, column: 2 };
+  report.openable_paths.push("server.go", "routes.go", "commands.go");
+  report.architecture_canvas.surfaces.push({
+    id: "scheduled-fixture-server", kind: "http_server", name: "HTTP server",
+    surface_role: "entry_surface", participating_component_ids: [], evidence: [serverSite],
+  });
+  report.discovered_surfaces = { triggers: [{
+    id: "scheduled-fixture-server", kind: "http_server", surface_role: "entry_surface",
+    provisional_id: false, resolution: "exact", identity: { name: "HTTP server" },
+    registration_site: serverSite, server_start_site: serverSite,
+  }] };
+
+  const specs = [
+    ["nightly", "fixture.runNightly", "jobs/nightly.go", 70, "jobs/handlers.go", 107],
+    ["cleanup", "fixture.zCleanup", "jobs/z.go", 30, "jobs/handlers.go", 103],
+    ["hourly", "fixture.runHourly", "jobs/hourly.go", 50, "jobs/handlers.go", 105],
+    ["cleanup", "fixture.alphaCleanup", "jobs/b.go", 20, "jobs/handlers.go", 102],
+    ["daily", "fixture.runDaily", "jobs/daily.go", 40, "jobs/handlers.go", 104],
+    ["cleanup", "fixture.alphaCleanup", "jobs/a.go", 10, "jobs/handlers.go", 101],
+    ["weekly", "fixture.runWeekly", "jobs/weekly.go", 80, "jobs/handlers.go", 108],
+  ];
+  specs.forEach((spec) => report.openable_paths.push(spec[2], spec[4]));
+  const exactValue = (kind, text, location) => ({ kind, text, location });
+  const modelBase = (id, kind, site, handler, handlerLocation) => ({
+    id, kind, role: "entry_surface", form: "direct_call", site,
+    handler: exactValue("callable", handler, handlerLocation),
+    origin: "model_assisted", state: "exact_registration",
+    runtime_reachability: "not_established",
+  });
+  const routeSite = { path: "routes.go", line: 22, column: 2 };
+  const route = modelBase("scheduled-fixture-route", "http_route", routeSite,
+    "fixture.health", { path: "routes.go", line: 40, column: 6 });
+  route.method = exactValue("token", "GET", routeSite);
+  route.path = exactValue("string", "/health", routeSite);
+  const descriptorSite = { path: "routes.go", line: 24, column: 2 };
+  const pathDescriptor = {
+    id: "scheduled-fixture-path-descriptor", kind: "http_route", role: "descriptor",
+    form: "direct_call", site: descriptorSite,
+    path: exactValue("string", "/api/signup", descriptorSite),
+    origin: "model_assisted", state: "declared_descriptor",
+    runtime_reachability: "not_established",
+  };
+  const commandSite = { path: "commands.go", line: 15, column: 2 };
+  const command = modelBase("scheduled-fixture-command", "cli_command", commandSite,
+    "fixture.runServe", { path: "commands.go", line: 31, column: 6 });
+  command.identity = exactValue("string", "serve", commandSite);
+  const scheduled = specs.map((spec, index) => {
+    const site = { path: spec[2], line: spec[3], column: 2 };
+    const item = modelBase("scheduled-fixture-" + index, "scheduled_job", site,
+      spec[1], { path: spec[4], line: spec[5], column: 6 });
+    item.identity = exactValue("string", spec[0], site);
+    if (index === specs.length - 1) {
+      item.role = "descriptor";
+      item.handler = null;
+      item.state = "declared_descriptor";
+    }
+    // These fields are deliberately not presentation authority. Their values
+    // must never create a hierarchy or turn static registration into runtime.
+    item.parent_ref = "fake-parent-" + index;
+    item.runtime_reachability = "fake-runtime-established";
+    return item;
+  });
+  report.entry_call = {
+    version: 2, families: [], surfaces: [command].concat(scheduled, [route, pathDescriptor]),
+    surface_coverage: {
+      considered_candidates: 10, advertised_candidates: 10, omitted_candidates: 0,
+      considered_facts: 28, advertised_facts: 28, omitted_facts: 0,
+      unsafe_facts_excluded: 0, unreachable_candidates_excluded: 0,
+      selected_proposals: 10, rejected_proposals: 0,
+    },
+  };
+  if (String(process.argv[4] || "").endsWith("-shuffled")) report.entry_call.surfaces.reverse();
 }
 const window = {
   location: { hash: "#canvas", host: "fixture.test", pathname: "/index.html", search: "" },
@@ -496,6 +575,27 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
     String(child.className || "").split(/\s+/).includes("rm-map-entry-group__list") &&
     !String(child.className || "").split(/\s+/).includes("rm-map-entry-group__list--remainder"));
   const cliMore = cliGroup && cliGroup.querySelector(".rm-map-entry-group__more");
+  const scheduledGroup = entryGroups.find((group) => group.getAttribute("data-entry-surface-kind") === "scheduled_job");
+  const scheduledPrimaryList = scheduledGroup && scheduledGroup.children.find((child) =>
+    String(child.className || "").split(/\s+/).includes("rm-map-entry-group__list") &&
+    !String(child.className || "").split(/\s+/).includes("rm-map-entry-group__list--remainder"));
+  const scheduledMore = scheduledGroup && scheduledGroup.querySelector(".rm-map-entry-group__more");
+  const scheduledCards = scheduledGroup ? scheduledGroup.querySelectorAll(".rm-map-entry-card") : [];
+  const scheduledCardLabels = scheduledCards.map((card) => {
+    const identity = card.querySelector(".rm-map-entry-card__identity");
+    return identity ? identity.textContent : "";
+  });
+  const scheduledCardCallbacks = scheduledCards.map((card) => {
+    const callback = card.querySelector(".rm-map-entry-card__callback");
+    return callback ? callback.textContent : "";
+  });
+  const scheduledCardAllSourceHrefs = scheduledCards.map((card) =>
+    card.querySelectorAll(".rm-source-action-link").map((source) => source.getAttribute("href") || ""));
+  const routeGroup = entryGroups.find((group) => group.getAttribute("data-entry-surface-kind") === "http_route");
+  const pathDescriptorCard = routeGroup && routeGroup.querySelectorAll(".rm-map-entry-card").find((card) => {
+    const identity = card.querySelector(".rm-map-entry-card__identity");
+    return identity && identity.textContent === "/api/signup";
+  });
   const modelBadges = root.querySelectorAll(".rm-map-entry-card__origin");
   const modelStates = root.querySelectorAll(".rm-map-entry-card__state");
   const modelFrontier = root.querySelector(".rm-map-entry-model-frontier");
@@ -520,6 +620,28 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
     cliMoreCount: cliMore ? cliMore.querySelectorAll(".rm-map-entry-card").length : 0,
     cliMoreText: cliMore ? cliMore.textContent : "",
     cliMoreOpen: !!(cliMore && cliMore.open),
+    scheduledVisibleCount: scheduledPrimaryList ? scheduledPrimaryList.children.length : 0,
+    scheduledMoreCount: scheduledMore ? scheduledMore.querySelectorAll(".rm-map-entry-card").length : 0,
+    scheduledMoreText: scheduledMore ? scheduledMore.textContent : "",
+    scheduledMoreOpen: !!(scheduledMore && scheduledMore.open),
+    scheduledCardLabels,
+    scheduledCardCallbacks,
+    scheduledCardAllSourceHrefs,
+    scheduledExploreCount: scheduledGroup ? scheduledGroup.querySelectorAll(".rm-map-entry-card__explore").length : 0,
+    scheduledModelBadgeText: scheduledGroup ? scheduledGroup.querySelectorAll(".rm-map-entry-card__origin").map((item) => item.textContent) : [],
+    scheduledStateText: scheduledGroup ? scheduledGroup.querySelectorAll(".rm-map-entry-card__state").map((item) => item.textContent) : [],
+    scheduledNestedCardCount: scheduledCards.reduce((count, card) => count + card.querySelectorAll(".rm-map-entry-card").length, 0),
+    scheduledText: scheduledGroup ? scheduledGroup.textContent : "",
+    pathDescriptorLabel: pathDescriptorCard && pathDescriptorCard.querySelector(".rm-map-entry-card__identity")
+      ? pathDescriptorCard.querySelector(".rm-map-entry-card__identity").textContent : "",
+    pathDescriptorCallback: pathDescriptorCard && pathDescriptorCard.querySelector(".rm-map-entry-card__callback")
+      ? pathDescriptorCard.querySelector(".rm-map-entry-card__callback").textContent : "",
+    pathDescriptorState: pathDescriptorCard && pathDescriptorCard.querySelector(".rm-map-entry-card__state")
+      ? pathDescriptorCard.querySelector(".rm-map-entry-card__state").textContent : "",
+    pathDescriptorSourceHrefs: pathDescriptorCard
+      ? pathDescriptorCard.querySelectorAll(".rm-source-action-link").map((source) => source.getAttribute("href") || "") : [],
+    pathDescriptorExploreCount: pathDescriptorCard
+      ? pathDescriptorCard.querySelectorAll(".rm-map-entry-card__explore").length : 0,
     modelBadgeCount: modelBadges.length,
     modelBadgeText: modelBadges.map((item) => item.textContent),
     modelStateText: modelStates.map((item) => item.textContent),
@@ -764,6 +886,85 @@ Promise.resolve().then(() => Promise.resolve()).then(() => {
 		containsString(modelAssisted.CardAllSourceHrefs[backupIndex],
 			"https://github.com/acme/fixture/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/cmd/serve/cmd_00.go#L60") {
 		t.Fatalf("local exact CLI descriptor did not override same-site model proposal: %#v", modelAssisted)
+	}
+
+	scheduledEN := run("en", "scheduled-jobs")
+	scheduledRU := run("ru", "scheduled-jobs")
+	scheduledShuffledEN := run("en", "scheduled-jobs-shuffled")
+	scheduledShuffledRU := run("ru", "scheduled-jobs-shuffled")
+	for name, candidate := range map[string]entryHandoffAssetResult{
+		"ru":          scheduledRU,
+		"shuffled-en": scheduledShuffledEN,
+		"shuffled-ru": scheduledShuffledRU,
+	} {
+		if strings.Join(candidate.ScheduledCardLabels, "\x00") != strings.Join(scheduledEN.ScheduledCardLabels, "\x00") ||
+			strings.Join(candidate.ScheduledCardCallbacks, "\x00") != strings.Join(scheduledEN.ScheduledCardCallbacks, "\x00") ||
+			flattenEntryHandoffSourceHrefs(candidate.ScheduledCardAllSourceHrefs) !=
+				flattenEntryHandoffSourceHrefs(scheduledEN.ScheduledCardAllSourceHrefs) {
+			t.Fatalf("scheduled-job semantic order changed for %s: EN %#v candidate %#v", name, scheduledEN, candidate)
+		}
+	}
+	if strings.Join(scheduledEN.GroupKinds, ",") !=
+		"process_entry,http_route,cli_command,scheduled_job,http_server" ||
+		!strings.Contains(strings.Join(scheduledEN.GroupText, " "), "Workers7") ||
+		!strings.Contains(strings.Join(scheduledRU.GroupText, " "), "Воркеры7") {
+		t.Fatalf("scheduled-job group placement or localization = EN %#v RU %#v", scheduledEN, scheduledRU)
+	}
+	if scheduledEN.ScheduledVisibleCount != 6 || scheduledEN.ScheduledMoreCount != 1 ||
+		scheduledEN.ScheduledMoreOpen || !strings.Contains(scheduledEN.ScheduledMoreText, "Show 1 more") ||
+		scheduledRU.ScheduledVisibleCount != 6 || scheduledRU.ScheduledMoreCount != 1 ||
+		scheduledRU.ScheduledMoreOpen || !strings.Contains(scheduledRU.ScheduledMoreText, "Показать ещё 1") {
+		t.Fatalf("scheduled-job one-column disclosure = EN %#v RU %#v", scheduledEN, scheduledRU)
+	}
+	wantScheduledLabels := "cleanup\x00cleanup\x00cleanup\x00daily\x00hourly\x00nightly\x00weekly"
+	wantScheduledCallbacks := "alphaCleanup()\x00alphaCleanup()\x00zCleanup()\x00runDaily()\x00runHourly()\x00runNightly()\x00"
+	if strings.Join(scheduledEN.ScheduledCardLabels, "\x00") != wantScheduledLabels ||
+		strings.Join(scheduledEN.ScheduledCardCallbacks, "\x00") != wantScheduledCallbacks {
+		t.Fatalf("scheduled-job identity/callback/source sorting = %#v", scheduledEN)
+	}
+	if len(scheduledEN.ScheduledCardAllSourceHrefs) != 7 ||
+		!containsString(scheduledEN.ScheduledCardAllSourceHrefs[0],
+			"https://github.com/acme/fixture/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/jobs/a.go#L10") ||
+		!containsString(scheduledEN.ScheduledCardAllSourceHrefs[0],
+			"https://github.com/acme/fixture/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/jobs/handlers.go#L101") ||
+		!containsString(scheduledEN.ScheduledCardAllSourceHrefs[1],
+			"https://github.com/acme/fixture/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/jobs/b.go#L20") {
+		t.Fatalf("scheduled-job exact registration/handler actions = %#v", scheduledEN)
+	}
+	for index, hrefs := range scheduledEN.ScheduledCardAllSourceHrefs {
+		want := 2
+		if index == len(scheduledEN.ScheduledCardAllSourceHrefs)-1 {
+			want = 1
+		}
+		if len(hrefs) != want {
+			t.Fatalf("scheduled-job %d source actions = %#v, want %d", index, hrefs, want)
+		}
+	}
+	if scheduledEN.ScheduledExploreCount != 0 || scheduledEN.ScheduledNestedCardCount != 0 ||
+		len(scheduledEN.ScheduledModelBadgeText) != 7 || len(scheduledEN.ScheduledStateText) != 7 ||
+		len(scheduledRU.ScheduledModelBadgeText) != 7 || len(scheduledRU.ScheduledStateText) != 7 ||
+		!allEntryHandoffStringsEqual(scheduledEN.ScheduledModelBadgeText, "Model-assisted") ||
+		!allEntryHandoffStringsEqual(scheduledEN.ScheduledStateText[:6], "exact static registration call") ||
+		scheduledEN.ScheduledStateText[6] != "declared descriptor" ||
+		!allEntryHandoffStringsEqual(scheduledRU.ScheduledModelBadgeText, "С участием модели") ||
+		!allEntryHandoffStringsEqual(scheduledRU.ScheduledStateText[:6], "точный статический вызов регистрации") ||
+		scheduledRU.ScheduledStateText[6] != "объявленный дескриптор" {
+		t.Fatalf("scheduled-job authority badges or flat presentation = EN %#v RU %#v", scheduledEN, scheduledRU)
+	}
+	for _, leaked := range []string{"fake-parent", "fake-runtime-established", "parent_ref", "runtime_reachability"} {
+		if strings.Contains(scheduledEN.ScheduledText, leaked) || strings.Contains(scheduledRU.ScheduledText, leaked) {
+			t.Fatalf("scheduled-job group fabricated hierarchy/runtime copy %q: EN %q RU %q",
+				leaked, scheduledEN.ScheduledText, scheduledRU.ScheduledText)
+		}
+	}
+	if scheduledEN.PathDescriptorLabel != "/api/signup" || scheduledEN.PathDescriptorCallback != "" ||
+		scheduledEN.PathDescriptorState != "declared descriptor" || scheduledEN.PathDescriptorExploreCount != 0 ||
+		len(scheduledEN.PathDescriptorSourceHrefs) != 1 ||
+		scheduledEN.PathDescriptorSourceHrefs[0] !=
+			"https://github.com/acme/fixture/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/routes.go#L24" ||
+		scheduledRU.PathDescriptorLabel != "/api/signup" || scheduledRU.PathDescriptorCallback != "" ||
+		scheduledRU.PathDescriptorState != "объявленный дескриптор" || scheduledRU.PathDescriptorExploreCount != 0 {
+		t.Fatalf("path-only HTTP descriptor presentation = EN %#v RU %#v", scheduledEN, scheduledRU)
 	}
 }
 
@@ -1063,50 +1264,76 @@ app.ready.then(() => {
 }
 
 type entryHandoffAssetResult struct {
-	TargetCount           int        `json:"targetCount"`
-	TargetHref            string     `json:"targetHref"`
-	TargetCurrent         string     `json:"targetCurrent"`
-	InitialModeIDs        []string   `json:"initialModeIDs"`
-	InitialModeStates     []string   `json:"initialModeStates"`
-	InitialLensHostMode   string     `json:"initialLensHostMode"`
-	InitialContextHidden  bool       `json:"initialContextHidden"`
-	InitialEntryCardCount int        `json:"initialEntryCardCount"`
-	InitialSelectedGroups []string   `json:"initialSelectedGroups"`
-	InitialSelectedLenses []string   `json:"initialSelectedLenses"`
-	ModeStates            []string   `json:"modeStates"`
-	LensHostPresent       bool       `json:"lensHostPresent"`
-	LensHostMode          string     `json:"lensHostMode"`
-	ContextHidden         bool       `json:"contextHidden"`
-	EntryCardCount        int        `json:"entryCardCount"`
-	ExploreCount          int        `json:"exploreCount"`
-	FamilyDisclosureCount int        `json:"familyDisclosureCount"`
-	FamilyRowText         []string   `json:"familyRowText"`
-	CardLabels            []string   `json:"cardLabels"`
-	CardCallbacks         []string   `json:"cardCallbacks"`
-	CardSourceText        []string   `json:"cardSourceText"`
-	CardSourceHrefs       []string   `json:"cardSourceHrefs"`
-	CardAllSourceHrefs    [][]string `json:"cardAllSourceHrefs"`
-	CardFamilyRowCounts   []int      `json:"cardFamilyRowCounts"`
-	CardExploreCounts     []int      `json:"cardExploreCounts"`
-	CardModelBadgeCounts  []int      `json:"cardModelBadgeCounts"`
-	GroupKinds            []string   `json:"groupKinds"`
-	GroupText             []string   `json:"groupText"`
-	CLIVisibleCount       int        `json:"cliVisibleCount"`
-	CLIMoreCount          int        `json:"cliMoreCount"`
-	CLIMoreText           string     `json:"cliMoreText"`
-	CLIMoreOpen           bool       `json:"cliMoreOpen"`
-	ModelBadgeCount       int        `json:"modelBadgeCount"`
-	ModelBadgeText        []string   `json:"modelBadgeText"`
-	ModelStateText        []string   `json:"modelStateText"`
-	ModelFrontierText     string     `json:"modelFrontierText"`
-	SourceActionCount     int        `json:"sourceActionCount"`
-	SourceHrefs           []string   `json:"sourceHrefs"`
-	SelectedBeforeExplore []string   `json:"selectedBeforeExplore"`
-	SelectedGroups        []string   `json:"selectedGroups"`
-	SelectedLenses        []string   `json:"selectedLenses"`
-	SelectedStates        []string   `json:"selectedStates"`
-	Hash                  string     `json:"hash"`
-	Text                  string     `json:"text"`
+	TargetCount                 int        `json:"targetCount"`
+	TargetHref                  string     `json:"targetHref"`
+	TargetCurrent               string     `json:"targetCurrent"`
+	InitialModeIDs              []string   `json:"initialModeIDs"`
+	InitialModeStates           []string   `json:"initialModeStates"`
+	InitialLensHostMode         string     `json:"initialLensHostMode"`
+	InitialContextHidden        bool       `json:"initialContextHidden"`
+	InitialEntryCardCount       int        `json:"initialEntryCardCount"`
+	InitialSelectedGroups       []string   `json:"initialSelectedGroups"`
+	InitialSelectedLenses       []string   `json:"initialSelectedLenses"`
+	ModeStates                  []string   `json:"modeStates"`
+	LensHostPresent             bool       `json:"lensHostPresent"`
+	LensHostMode                string     `json:"lensHostMode"`
+	ContextHidden               bool       `json:"contextHidden"`
+	EntryCardCount              int        `json:"entryCardCount"`
+	ExploreCount                int        `json:"exploreCount"`
+	FamilyDisclosureCount       int        `json:"familyDisclosureCount"`
+	FamilyRowText               []string   `json:"familyRowText"`
+	CardLabels                  []string   `json:"cardLabels"`
+	CardCallbacks               []string   `json:"cardCallbacks"`
+	CardSourceText              []string   `json:"cardSourceText"`
+	CardSourceHrefs             []string   `json:"cardSourceHrefs"`
+	CardAllSourceHrefs          [][]string `json:"cardAllSourceHrefs"`
+	CardFamilyRowCounts         []int      `json:"cardFamilyRowCounts"`
+	CardExploreCounts           []int      `json:"cardExploreCounts"`
+	CardModelBadgeCounts        []int      `json:"cardModelBadgeCounts"`
+	GroupKinds                  []string   `json:"groupKinds"`
+	GroupText                   []string   `json:"groupText"`
+	CLIVisibleCount             int        `json:"cliVisibleCount"`
+	CLIMoreCount                int        `json:"cliMoreCount"`
+	CLIMoreText                 string     `json:"cliMoreText"`
+	CLIMoreOpen                 bool       `json:"cliMoreOpen"`
+	ScheduledVisibleCount       int        `json:"scheduledVisibleCount"`
+	ScheduledMoreCount          int        `json:"scheduledMoreCount"`
+	ScheduledMoreText           string     `json:"scheduledMoreText"`
+	ScheduledMoreOpen           bool       `json:"scheduledMoreOpen"`
+	ScheduledCardLabels         []string   `json:"scheduledCardLabels"`
+	ScheduledCardCallbacks      []string   `json:"scheduledCardCallbacks"`
+	ScheduledCardAllSourceHrefs [][]string `json:"scheduledCardAllSourceHrefs"`
+	ScheduledExploreCount       int        `json:"scheduledExploreCount"`
+	ScheduledModelBadgeText     []string   `json:"scheduledModelBadgeText"`
+	ScheduledStateText          []string   `json:"scheduledStateText"`
+	ScheduledNestedCardCount    int        `json:"scheduledNestedCardCount"`
+	ScheduledText               string     `json:"scheduledText"`
+	PathDescriptorLabel         string     `json:"pathDescriptorLabel"`
+	PathDescriptorCallback      string     `json:"pathDescriptorCallback"`
+	PathDescriptorState         string     `json:"pathDescriptorState"`
+	PathDescriptorSourceHrefs   []string   `json:"pathDescriptorSourceHrefs"`
+	PathDescriptorExploreCount  int        `json:"pathDescriptorExploreCount"`
+	ModelBadgeCount             int        `json:"modelBadgeCount"`
+	ModelBadgeText              []string   `json:"modelBadgeText"`
+	ModelStateText              []string   `json:"modelStateText"`
+	ModelFrontierText           string     `json:"modelFrontierText"`
+	SourceActionCount           int        `json:"sourceActionCount"`
+	SourceHrefs                 []string   `json:"sourceHrefs"`
+	SelectedBeforeExplore       []string   `json:"selectedBeforeExplore"`
+	SelectedGroups              []string   `json:"selectedGroups"`
+	SelectedLenses              []string   `json:"selectedLenses"`
+	SelectedStates              []string   `json:"selectedStates"`
+	Hash                        string     `json:"hash"`
+	Text                        string     `json:"text"`
+}
+
+func flattenEntryHandoffSourceHrefs(values [][]string) string {
+	var flat []string
+	for _, group := range values {
+		flat = append(flat, group...)
+		flat = append(flat, "\x01")
+	}
+	return strings.Join(flat, "\x00")
 }
 
 func allEntryHandoffStringsEqual(values []string, want string) bool {

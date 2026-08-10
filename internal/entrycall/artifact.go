@@ -356,11 +356,40 @@ func validateResultSurfaceProposal(proposal ResultSurfaceProposal) error {
 			return fmt.Errorf("entry call: invalid CLI surface proposal")
 		}
 	case SurfaceKindHTTPRoute:
-		if proposal.Role != SurfaceRoleEntrySurface || proposal.Form != SurfaceCandidateDirectCall ||
-			proposal.Identity != nil || !validResultHTTPMethod(proposal.Method) ||
-			!validResultSurfaceValue(proposal.Path, SurfaceFactString) ||
-			!validResultSurfaceValue(proposal.Handler, SurfaceFactCallable) {
+		if proposal.Form != SurfaceCandidateDirectCall || proposal.Identity != nil ||
+			(proposal.Method != nil && !validResultHTTPMethod(proposal.Method)) ||
+			!validResultHTTPPath(proposal.Path) {
 			return fmt.Errorf("entry call: invalid HTTP surface proposal")
+		}
+		switch proposal.Role {
+		case SurfaceRoleEntrySurface:
+			if !validResultSurfaceValue(proposal.Handler, SurfaceFactCallable) {
+				return fmt.Errorf("entry call: invalid HTTP surface proposal")
+			}
+		case SurfaceRoleDescriptor:
+			if proposal.Handler != nil {
+				return fmt.Errorf("entry call: invalid HTTP surface proposal")
+			}
+		default:
+			return fmt.Errorf("entry call: invalid HTTP surface proposal")
+		}
+	case SurfaceKindScheduledJob:
+		if proposal.Form != SurfaceCandidateDirectCall ||
+			!validResultSurfaceValue(proposal.Identity, SurfaceFactString) ||
+			proposal.Method != nil || proposal.Path != nil {
+			return fmt.Errorf("entry call: invalid scheduled-job surface proposal")
+		}
+		switch proposal.Role {
+		case SurfaceRoleEntrySurface:
+			if !validResultSurfaceValue(proposal.Handler, SurfaceFactCallable) {
+				return fmt.Errorf("entry call: invalid scheduled-job surface proposal")
+			}
+		case SurfaceRoleDescriptor:
+			if proposal.Handler != nil {
+				return fmt.Errorf("entry call: invalid scheduled-job surface proposal")
+			}
+		default:
+			return fmt.Errorf("entry call: invalid scheduled-job surface proposal")
 		}
 	default:
 		return fmt.Errorf("entry call: invalid result surface kind")
@@ -370,7 +399,12 @@ func validateResultSurfaceProposal(proposal ResultSurfaceProposal) error {
 
 func validResultHTTPMethod(value *ResultSurfaceValue) bool {
 	return validResultSurfaceValueEither(value, SurfaceFactString, SurfaceFactToken) &&
-		(value.Kind != SurfaceFactToken || standardHTTPTokenMethod(value.Text))
+		(value.Kind != SurfaceFactToken && validHTTPMethodText(value.Text) ||
+			value.Kind == SurfaceFactToken && standardHTTPTokenMethod(value.Text))
+}
+
+func validResultHTTPPath(value *ResultSurfaceValue) bool {
+	return validResultSurfaceValue(value, SurfaceFactString) && strings.HasPrefix(value.Text, "/")
 }
 
 func validResultSurfaceValue(value *ResultSurfaceValue, kind SurfaceFactKind) bool {

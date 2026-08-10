@@ -27,12 +27,14 @@ const (
 	MaxSurfaceFactValueRunes        = 128
 	SurfaceKindRefCLICommand        = "k1"
 	SurfaceKindRefHTTPRoute         = "k2"
+	SurfaceKindRefScheduledJob      = "k3"
 	SurfaceSlotRefIdentity          = "s1"
 	SurfaceSlotRefMethod            = "s2"
 	SurfaceSlotRefPath              = "s3"
 	SurfaceSlotRefHandler           = "s4"
 	SurfaceKindCLICommand           = "cli_command"
 	SurfaceKindHTTPRoute            = "http_route"
+	SurfaceKindScheduledJob         = "scheduled_job"
 	SurfaceRoleDescriptor           = "descriptor"
 	SurfaceRoleEntrySurface         = "entry_surface"
 )
@@ -95,9 +97,10 @@ func defaultRequestSurfaceCatalog() RequestSurfaceCatalog {
 		Kinds: []RequestSurfaceChoice{
 			{Ref: SurfaceKindRefCLICommand, Label: "CLI command"},
 			{Ref: SurfaceKindRefHTTPRoute, Label: "HTTP route"},
+			{Ref: SurfaceKindRefScheduledJob, Label: "Scheduled job"},
 		},
 		Slots: []RequestSurfaceChoice{
-			{Ref: SurfaceSlotRefIdentity, Label: "command identity"},
+			{Ref: SurfaceSlotRefIdentity, Label: "command or scheduled-job identity"},
 			{Ref: SurfaceSlotRefMethod, Label: "HTTP method"},
 			{Ref: SurfaceSlotRefPath, Label: "route path"},
 			{Ref: SurfaceSlotRefHandler, Label: "handler callback"},
@@ -145,6 +148,10 @@ func compileSurfaceCatalog(
 	}
 	sort.Slice(candidates, func(i, j int) bool {
 		left, right := candidates[i], candidates[j]
+		leftRank, rightRank := exactSurfaceCandidateRank(left), exactSurfaceCandidateRank(right)
+		if leftRank != rightRank {
+			return leftRank < rightRank
+		}
 		if left.RootNodeID != right.RootNodeID {
 			return left.RootNodeID < right.RootNodeID
 		}
@@ -192,7 +199,7 @@ func compileSurfaceCatalog(
 			factByRef[fact.Ref] = exactFact
 			coverage.AdvertisedFacts++
 		}
-		if !candidateHasStringAndCallable(requestCandidate) {
+		if !requestSurfaceCandidateAdmissible(requestCandidate) {
 			coverage.AdvertisedFacts -= len(requestCandidate.Facts)
 			continue
 		}
@@ -233,8 +240,15 @@ func selectSurfaceFacts(facts []ExactSurfaceFact, limit int) []ExactSurfaceFact 
 	}
 	selected := make(map[string]ExactSurfaceFact, minInt(limit, len(facts)))
 	// A bounded suffix must not silently erase the structural pair needed for
-	// classification. Preserve exact string+callable facts first, then a token
-	// method hint, and fill the remaining budget in canonical source order.
+	// classification. Preserve a route-like path first when present, then the
+	// existing string+callable pair and a token method hint, and fill the
+	// remaining budget in canonical source order.
+	for _, fact := range facts {
+		if exactSurfacePathLikeFact(fact) {
+			selected[fact.ID] = fact
+			break
+		}
+	}
 	for _, required := range []SurfaceFactKind{SurfaceFactString, SurfaceFactCallable, SurfaceFactToken} {
 		if len(selected) >= limit {
 			break
@@ -286,17 +300,71 @@ func compileSurfaceFact(exact ExactSurfaceFact, number int) (RequestSurfaceFact,
 	}, true
 }
 
-func candidateHasStringAndCallable(candidate RequestSurfaceCandidate) bool {
-	var value, callable bool
+func requestSurfaceCandidateAdmissible(candidate RequestSurfaceCandidate) bool {
+	var stringFact, callable bool
 	for _, fact := range candidate.Facts {
 		switch fact.Kind {
-		case SurfaceFactString, SurfaceFactToken:
-			value = true
+		case SurfaceFactString:
+			stringFact = true
 		case SurfaceFactCallable:
 			callable = true
 		}
 	}
-	return value && callable
+	if stringFact && callable {
+		return true
+	}
+	if candidate.Form != SurfaceCandidateDirectCall {
+		return false
+	}
+	for _, pathFact := range candidate.Facts {
+		if !requestSurfacePathLikeFact(pathFact) {
+			continue
+		}
+		for _, companion := range candidate.Facts {
+			if companion.Ref != pathFact.Ref &&
+				(companion.Kind == SurfaceFactString || companion.Kind == SurfaceFactToken) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func exactSurfaceCandidateRank(candidate ExactSurfaceCandidate) int {
+	var stringFact, callable bool
+	for _, fact := range candidate.Facts {
+		switch fact.Kind {
+		case SurfaceFactString:
+			stringFact = true
+		case SurfaceFactCallable:
+			callable = true
+		}
+	}
+	if stringFact && callable {
+		return 0
+	}
+	if candidate.Form == SurfaceCandidateDirectCall {
+		for _, pathFact := range candidate.Facts {
+			if !exactSurfacePathLikeFact(pathFact) {
+				continue
+			}
+			for _, companion := range candidate.Facts {
+				if companion.ID != pathFact.ID &&
+					(companion.Kind == SurfaceFactString || companion.Kind == SurfaceFactToken) {
+					return 1
+				}
+			}
+		}
+	}
+	return 2
+}
+
+func exactSurfacePathLikeFact(fact ExactSurfaceFact) bool {
+	return fact.Kind == SurfaceFactString && strings.HasPrefix(fact.Value, "/")
+}
+
+func requestSurfacePathLikeFact(fact RequestSurfaceFact) bool {
+	return fact.Kind == SurfaceFactString && strings.HasPrefix(fact.Value, "/")
 }
 
 func buildSurfaceSketch(base string, candidate RequestSurfaceCandidate) string {

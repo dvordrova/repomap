@@ -27,11 +27,230 @@ func TestPromptAllowsEveryAdvertisedFamilyAndKeepsSurfaceBoundsIndependent(t *te
 		"Examine every advertised surface candidate",
 		"Do not stop after an arbitrary number of surface proposals",
 		"A token method fact must case-insensitively equal CONNECT, DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT, or TRACE",
-		"a string method fact may preserve an exact custom HTTP method",
+		"a string method fact may preserve an exact custom HTTP method token",
+		"bind exactly one string fact beginning with / to path",
+		"Method and handler are optional",
+		"Publish a path-only descriptor only when the candidate semantics establish an HTTP route registration",
+		"Middleware, filters, static-filesystem calls, mounts, and ordinary two-string helper calls are not routes",
+		"Never interpret or split an action string such as METHOD:Action into an HTTP method or callback",
+		"For a direct_call scheduled job",
+		"bind exactly one string fact to identity, optionally bind one callable fact to handler",
+		"only when no stable job name is advertised may the exact schedule string be the identity",
+		"one schedule string paired with an unbound callback is not enough",
+		"Generic callbacks, event handlers, worker starts, and lifecycle hooks are not scheduled jobs",
 	} {
 		if !strings.Contains(promptSystem, required) {
 			t.Fatalf("entry-call prompt lost complete surface classification rule %q", required)
 		}
+	}
+}
+
+func TestScheduledJobSurfaceRestoresPocketBaseAddAndAddFunc(t *testing.T) {
+	compilation, err := Compile(scheduledSurfaceFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if compilation.AdvertisedSurfaceCandidateCount() != 4 {
+		t.Fatalf("advertised surface candidates = %d, want 4", compilation.AdvertisedSurfaceCandidateCount())
+	}
+	add := candidateByFactValue(t, compilation.Request.SurfaceCatalog, "__pbDBOptimize__")
+	addFunc := candidateByFactValue(t, compilation.Request.SurfaceCatalog, "@every 5m")
+	response := emptySurfaceResponse(compilation)
+	response.SurfaceProposals = []ResponseSurfaceProposal{
+		{
+			CandidateRef: addFunc.Ref, KindRef: SurfaceKindRefScheduledJob,
+			Bindings: []ResponseSurfaceBinding{
+				{SlotRef: SurfaceSlotRefHandler, FactRef: surfaceFactRefByValue(t, addFunc, "cleanupExpired")},
+				{SlotRef: SurfaceSlotRefIdentity, FactRef: surfaceFactRefByValue(t, addFunc, "@every 5m")},
+			},
+		},
+		{
+			CandidateRef: add.Ref, KindRef: SurfaceKindRefScheduledJob,
+			Bindings: []ResponseSurfaceBinding{
+				{SlotRef: SurfaceSlotRefIdentity, FactRef: surfaceFactRefByValue(t, add, "__pbDBOptimize__")},
+				{SlotRef: SurfaceSlotRefHandler, FactRef: surfaceFactRefByValue(t, add, "optimizeDB")},
+			},
+		},
+	}
+	raw, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, backendOwned := range []string{
+		"__pbDBOptimize__", "@every 5m", "optimizeDB", "cleanupExpired",
+		"core/base.go", "core/cleanup.go", "canonical:surface:scheduler",
+	} {
+		if strings.Contains(string(raw), backendOwned) {
+			t.Fatalf("refs-only scheduled-job response leaked backend-owned value %q: %s", backendOwned, raw)
+		}
+	}
+	result, err := Reduce(compilation, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.SelectedSurfaceCount() != 2 || result.RejectedSurfaceCount() != 0 {
+		t.Fatalf("scheduled-job result counts = %d/%d, want 2/0: %+v", result.SelectedSurfaceCount(), result.RejectedSurfaceCount(), result)
+	}
+	want := map[string]struct {
+		handler string
+		site    string
+	}{
+		"__pbDBOptimize__": {handler: "optimizeDB", site: "core/base.go"},
+		"@every 5m":        {handler: "cleanupExpired", site: "core/cleanup.go"},
+	}
+	for _, proposal := range result.SurfaceProposals {
+		if proposal.Kind != SurfaceKindScheduledJob || proposal.Role != SurfaceRoleEntrySurface ||
+			proposal.Form != SurfaceCandidateDirectCall || proposal.Identity == nil || proposal.Handler == nil ||
+			proposal.Method != nil || proposal.Path != nil {
+			t.Fatalf("restored scheduled job has wrong closed shape: %+v", proposal)
+		}
+		expected, known := want[proposal.Identity.Text]
+		if !known || proposal.Handler.Text != expected.handler || proposal.Site.Path != expected.site ||
+			proposal.Identity.Location == nil || proposal.Handler.Location == nil {
+			t.Fatalf("restored scheduled job lost exact local authority: %+v", proposal)
+		}
+		delete(want, proposal.Identity.Text)
+	}
+	if len(want) != 0 {
+		t.Fatalf("scheduled jobs were not restored: %+v", want)
+	}
+
+	result.RepositoryStateSHA256 = strings.Repeat("c", 64)
+	encoded, err := EncodeResult(result)
+	if err != nil {
+		t.Fatalf("EncodeResult scheduled jobs: %v", err)
+	}
+	restored, err := DecodeResult(encoded)
+	if err != nil || restored.SelectedSurfaceCount() != 2 {
+		t.Fatalf("DecodeResult scheduled jobs = %+v, %v", restored, err)
+	}
+}
+
+func TestScheduledJobHandlerlessNamedAddBecomesDescriptorButAddFuncIsRejected(t *testing.T) {
+	compilation, err := Compile(scheduledSurfaceFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	add := candidateByFactValue(t, compilation.Request.SurfaceCatalog, "__pbDBOptimize__")
+	addFunc := candidateByFactValue(t, compilation.Request.SurfaceCatalog, "@every 5m")
+	response := emptySurfaceResponse(compilation)
+	response.SurfaceProposals = []ResponseSurfaceProposal{
+		{
+			CandidateRef: add.Ref, KindRef: SurfaceKindRefScheduledJob,
+			Bindings: []ResponseSurfaceBinding{{
+				SlotRef: SurfaceSlotRefIdentity, FactRef: surfaceFactRefByValue(t, add, "__pbDBOptimize__"),
+			}},
+		},
+		{
+			CandidateRef: addFunc.Ref, KindRef: SurfaceKindRefScheduledJob,
+			Bindings: []ResponseSurfaceBinding{{
+				SlotRef: SurfaceSlotRefIdentity, FactRef: surfaceFactRefByValue(t, addFunc, "@every 5m"),
+			}},
+		},
+	}
+	raw, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := Reduce(compilation, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.SelectedSurfaceCount() != 1 || result.RejectedSurfaceCount() != 1 {
+		t.Fatalf("handlerless scheduled jobs = %+v", result)
+	}
+	descriptor := result.SurfaceProposals[0]
+	if descriptor.CandidateRef != add.Ref || descriptor.Kind != SurfaceKindScheduledJob ||
+		descriptor.Role != SurfaceRoleDescriptor || descriptor.Identity == nil ||
+		descriptor.Identity.Text != "__pbDBOptimize__" || descriptor.Handler != nil ||
+		descriptor.Method != nil || descriptor.Path != nil {
+		t.Fatalf("handlerless named Add descriptor = %+v", descriptor)
+	}
+	if rejected := result.RejectedSurfaceProposals[0]; rejected.CandidateRef != addFunc.Ref ||
+		rejected.Reason != RejectedSurfaceIncompatibleBinding {
+		t.Fatalf("handlerless AddFunc rejection = %+v", rejected)
+	}
+
+	result.RepositoryStateSHA256 = strings.Repeat("d", 64)
+	encoded, err := EncodeResult(result)
+	if err != nil {
+		t.Fatalf("EncodeResult handlerless scheduled descriptor: %v", err)
+	}
+	restored, err := DecodeResult(encoded)
+	if err != nil || restored.SurfaceProposals[0].Role != SurfaceRoleDescriptor ||
+		restored.SurfaceProposals[0].Handler != nil {
+		t.Fatalf("DecodeResult handlerless scheduled descriptor = %+v, %v", restored, err)
+	}
+
+	invalid := cloneResult(result)
+	invalid.SurfaceProposals[0].Role = SurfaceRoleEntrySurface
+	invalidRaw, err := json.Marshal(invalid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeResult(invalidRaw); err == nil {
+		t.Fatal("DecodeResult accepted entry_surface scheduled job without handler")
+	}
+}
+
+func TestScheduledJobSurfaceRejectsWrongFormMissingHandlerAndHTTPSlotsItemLocally(t *testing.T) {
+	compilation, err := Compile(scheduledSurfaceFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	add := candidateByFactValue(t, compilation.Request.SurfaceCatalog, "__pbDBOptimize__")
+	addFunc := candidateByFactValue(t, compilation.Request.SurfaceCatalog, "@every 5m")
+	keyed := candidateByFactValue(t, compilation.Request.SurfaceCatalog, "nightly-report")
+	response := emptySurfaceResponse(compilation)
+	response.SurfaceProposals = []ResponseSurfaceProposal{
+		{
+			CandidateRef: keyed.Ref, KindRef: SurfaceKindRefScheduledJob,
+			Bindings: []ResponseSurfaceBinding{
+				{SlotRef: SurfaceSlotRefIdentity, FactRef: surfaceFactRefByValue(t, keyed, "nightly-report")},
+				{SlotRef: SurfaceSlotRefHandler, FactRef: surfaceFactRefByValue(t, keyed, "sendReport")},
+			},
+		},
+		{
+			CandidateRef: addFunc.Ref, KindRef: SurfaceKindRefScheduledJob,
+			Bindings: []ResponseSurfaceBinding{{
+				SlotRef: SurfaceSlotRefIdentity, FactRef: surfaceFactRefByValue(t, addFunc, "@every 5m"),
+			}},
+		},
+		{
+			CandidateRef: add.Ref, KindRef: SurfaceKindRefScheduledJob,
+			Bindings: []ResponseSurfaceBinding{
+				{SlotRef: SurfaceSlotRefIdentity, FactRef: surfaceFactRefByValue(t, add, "__pbDBOptimize__")},
+				{SlotRef: SurfaceSlotRefHandler, FactRef: surfaceFactRefByValue(t, add, "optimizeDB")},
+				{SlotRef: SurfaceSlotRefPath, FactRef: surfaceFactRefByValue(t, add, "0 0 * * *")},
+			},
+		},
+	}
+	raw, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := Reduce(compilation, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.SelectedSurfaceCount() != 0 || result.RejectedSurfaceCount() != 3 {
+		t.Fatalf("scheduled-job item-local rejection = %+v", result)
+	}
+	reasons := make(map[string]RejectedSurfaceReason, 3)
+	for _, rejected := range result.RejectedSurfaceProposals {
+		reasons[rejected.CandidateRef] = rejected.Reason
+	}
+	if reasons[keyed.Ref] != RejectedSurfaceIncompatibleForm ||
+		reasons[addFunc.Ref] != RejectedSurfaceIncompatibleBinding ||
+		reasons[add.Ref] != RejectedSurfaceIncompatibleBinding {
+		t.Fatalf("scheduled-job rejection reasons = %+v", reasons)
+	}
+	// The generic callback candidate is intentionally absent from the response:
+	// the scheduled-job prompt excludes callbacks without time/schedule-driven
+	// registration evidence, and omission creates no backend descriptor.
+	generic := candidateByFactValue(t, compilation.Request.SurfaceCatalog, "repository.updated")
+	if _, proposed := reasons[generic.Ref]; proposed {
+		t.Fatalf("generic callback unexpectedly entered scheduled-job result: %+v", result)
 	}
 }
 
@@ -331,6 +550,181 @@ func TestSurfaceProposalsRestoreExactRouteAndCommandWithoutModelOwnedValues(t *t
 		restoredRoute.Handler == nil || restoredRoute.Handler.Text != "GetAccount" ||
 		restoredRoute.Handler.Location == nil || restoredRoute.Handler.Location.Path != "handlers/account.go" {
 		t.Fatalf("restored route = %+v", restoredRoute)
+	}
+}
+
+func TestHTTPPathDescriptorAndHandlerRouteRestoreOnlyExactBoundFacts(t *testing.T) {
+	compilation, err := Compile(pathDescriptorFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if compilation.AdvertisedSurfaceCandidateCount() != 3 {
+		t.Fatalf("advertised candidates = %d, want 3", compilation.AdvertisedSurfaceCandidateCount())
+	}
+	beego := candidateByFactValue(t, compilation.Request.SurfaceCatalog, "/api/signup")
+	strong := candidateByFactValue(t, compilation.Request.SurfaceCatalog, "/healthz")
+	falseHelper := candidateByFactValue(t, compilation.Request.SurfaceCatalog, "/not-a-route")
+	if beego.Ref == falseHelper.Ref {
+		t.Fatal("distinct weak candidates collapsed")
+	}
+	response := emptySurfaceResponse(compilation)
+	response.SurfaceProposals = []ResponseSurfaceProposal{
+		{
+			CandidateRef: beego.Ref, KindRef: SurfaceKindRefHTTPRoute,
+			Bindings: []ResponseSurfaceBinding{{
+				SlotRef: SurfaceSlotRefPath, FactRef: surfaceFactRefByValue(t, beego, "/api/signup"),
+			}},
+		},
+		{
+			CandidateRef: strong.Ref, KindRef: SurfaceKindRefHTTPRoute,
+			Bindings: []ResponseSurfaceBinding{
+				{SlotRef: SurfaceSlotRefPath, FactRef: surfaceFactRefByValue(t, strong, "/healthz")},
+				{SlotRef: SurfaceSlotRefHandler, FactRef: surfaceFactRefByValue(t, strong, "healthz")},
+			},
+		},
+	}
+	raw, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, backendOwned := range []string{"/api/signup", "POST:Signup", "routes.go", "healthz"} {
+		if strings.Contains(string(raw), backendOwned) {
+			t.Fatalf("refs-only response leaked backend-owned value %q: %s", backendOwned, raw)
+		}
+	}
+	result, err := Reduce(compilation, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.SelectedSurfaceCount() != 2 || result.RejectedSurfaceCount() != 0 {
+		t.Fatalf("path descriptor result = %+v", result)
+	}
+	var descriptor, exactRoute ResultSurfaceProposal
+	for _, proposal := range result.SurfaceProposals {
+		switch proposal.Path.Text {
+		case "/api/signup":
+			descriptor = proposal
+		case "/healthz":
+			exactRoute = proposal
+		}
+	}
+	if descriptor.Kind != SurfaceKindHTTPRoute || descriptor.Role != SurfaceRoleDescriptor ||
+		descriptor.Site.Path != "routers/router.go" || descriptor.Method != nil || descriptor.Handler != nil ||
+		descriptor.Path == nil || descriptor.Path.Text != "/api/signup" || descriptor.Path.Location == nil {
+		t.Fatalf("restored Beego-shaped descriptor = %+v", descriptor)
+	}
+	if exactRoute.Kind != SurfaceKindHTTPRoute || exactRoute.Role != SurfaceRoleEntrySurface ||
+		exactRoute.Method != nil || exactRoute.Handler == nil || exactRoute.Handler.Text != "healthz" ||
+		exactRoute.Path == nil || exactRoute.Path.Text != "/healthz" {
+		t.Fatalf("handler-bound route without method = %+v", exactRoute)
+	}
+
+	result.RepositoryStateSHA256 = strings.Repeat("8", 64)
+	encoded, err := EncodeResult(result)
+	if err != nil {
+		t.Fatalf("EncodeResult path descriptor: %v", err)
+	}
+	restored, err := DecodeResult(encoded)
+	if err != nil || restored.SelectedSurfaceCount() != 2 {
+		t.Fatalf("DecodeResult path descriptor = %+v, %v", restored, err)
+	}
+}
+
+func TestHTTPActionStringCannotBecomeMethodAndFailsItemLocally(t *testing.T) {
+	compilation, err := Compile(pathDescriptorFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	beego := candidateByFactValue(t, compilation.Request.SurfaceCatalog, "/api/signup")
+	strong := candidateByFactValue(t, compilation.Request.SurfaceCatalog, "/healthz")
+	response := emptySurfaceResponse(compilation)
+	response.SurfaceProposals = []ResponseSurfaceProposal{
+		{
+			CandidateRef: beego.Ref, KindRef: SurfaceKindRefHTTPRoute,
+			Bindings: []ResponseSurfaceBinding{
+				{SlotRef: SurfaceSlotRefPath, FactRef: surfaceFactRefByValue(t, beego, "/api/signup")},
+				{SlotRef: SurfaceSlotRefMethod, FactRef: surfaceFactRefByValue(t, beego, "POST:Signup")},
+			},
+		},
+		{
+			CandidateRef: strong.Ref, KindRef: SurfaceKindRefHTTPRoute,
+			Bindings: []ResponseSurfaceBinding{
+				{SlotRef: SurfaceSlotRefPath, FactRef: surfaceFactRefByValue(t, strong, "/healthz")},
+				{SlotRef: SurfaceSlotRefHandler, FactRef: surfaceFactRefByValue(t, strong, "healthz")},
+			},
+		},
+	}
+	raw, _ := json.Marshal(response)
+	result, err := Reduce(compilation, raw)
+	if err != nil || result.SelectedSurfaceCount() != 1 || result.RejectedSurfaceCount() != 1 {
+		t.Fatalf("item-local action-string rejection = %+v, %v", result, err)
+	}
+	if result.SurfaceProposals[0].CandidateRef != strong.Ref ||
+		result.RejectedSurfaceProposals[0].CandidateRef != beego.Ref ||
+		result.RejectedSurfaceProposals[0].Reason != RejectedSurfaceIncompatibleBinding {
+		t.Fatalf("wrong item-local survivors = %+v", result)
+	}
+}
+
+func TestHTTPProposalStillRequiresExactPathBinding(t *testing.T) {
+	compilation, err := Compile(pathDescriptorFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	strong := candidateByFactValue(t, compilation.Request.SurfaceCatalog, "/healthz")
+	response := emptySurfaceResponse(compilation)
+	response.SurfaceProposals = []ResponseSurfaceProposal{{
+		CandidateRef: strong.Ref, KindRef: SurfaceKindRefHTTPRoute,
+		Bindings: []ResponseSurfaceBinding{{
+			SlotRef: SurfaceSlotRefHandler, FactRef: surfaceFactRefByValue(t, strong, "healthz"),
+		}},
+	}}
+	raw, _ := json.Marshal(response)
+	result, err := Reduce(compilation, raw)
+	if err != nil || result.SelectedSurfaceCount() != 0 || result.RejectedSurfaceCount() != 1 ||
+		result.RejectedSurfaceProposals[0].Reason != RejectedSurfaceMissingBinding {
+		t.Fatalf("missing HTTP path did not fail item-locally: %+v, %v", result, err)
+	}
+}
+
+func TestSurfaceCompilerBoundKeepsCallableCompleteCandidateAheadOfWeakDescriptors(t *testing.T) {
+	substrate := causalFixture()
+	location := func(path string, line int) Location { return Location{Path: path, Line: line, Column: 3} }
+	for index := 0; index < MaxSurfaceCandidates; index++ {
+		site := location("a-weak.go", index+1)
+		substrate.SurfaceCandidates = append(substrate.SurfaceCandidates, ExactSurfaceCandidate{
+			ID: "canonical:weak:" + fmt.Sprint(index), RootNodeID: "canonical:main",
+			Form: SurfaceCandidateDirectCall, Sketch: "Router", Site: site,
+			Facts: []ExactSurfaceFact{
+				{ID: "canonical:weak:terminal:" + fmt.Sprint(index), Kind: SurfaceFactToken, Position: 0, Label: "terminal selector", Value: "Router", Location: site},
+				{ID: "canonical:weak:path:" + fmt.Sprint(index), Kind: SurfaceFactString, Position: 1, Label: "argument 1", Value: "/weak/" + fmt.Sprint(index), Location: site},
+				{ID: "canonical:weak:action:" + fmt.Sprint(index), Kind: SurfaceFactString, Position: 2, Label: "argument 2", Value: "GET:Action", Location: site},
+			},
+		})
+	}
+	strongSite := location("zz-strong.go", 1)
+	substrate.SurfaceCandidates = append(substrate.SurfaceCandidates, ExactSurfaceCandidate{
+		ID: "canonical:strong", RootNodeID: "canonical:main",
+		Form: SurfaceCandidateDirectCall, Sketch: "HandleFunc", Site: strongSite,
+		Facts: []ExactSurfaceFact{
+			{ID: "canonical:strong:terminal", Kind: SurfaceFactToken, Position: 0, Label: "terminal selector", Value: "HandleFunc", Location: strongSite},
+			{ID: "canonical:strong:path", Kind: SurfaceFactString, Position: 1, Label: "argument 1", Value: "/strong", Location: strongSite},
+			{ID: "canonical:strong:handler", Kind: SurfaceFactCallable, Position: 2, Label: "argument 2", Value: "strongHandler", Location: location("zz-handler.go", 1)},
+		},
+	})
+	substrate.Coverage.SurfaceCandidatesConsidered = len(substrate.SurfaceCandidates)
+	substrate.Coverage.SurfaceCandidatesIndexed = len(substrate.SurfaceCandidates)
+	for _, candidate := range substrate.SurfaceCandidates {
+		substrate.Coverage.SurfaceCandidateFactsConsidered += len(candidate.Facts)
+		substrate.Coverage.SurfaceCandidateFactsIndexed += len(candidate.Facts)
+	}
+	compilation, err := Compile(substrate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	strong := candidateByFactValue(t, compilation.Request.SurfaceCatalog, "/strong")
+	if strong.Ref != "c1" || compilation.SurfaceCoverage().OmittedCandidates == 0 {
+		t.Fatalf("strong candidate did not win provider bound: ref=%q coverage=%+v", strong.Ref, compilation.SurfaceCoverage())
 	}
 }
 
@@ -932,7 +1326,7 @@ func TestSurfaceCompilationEnforcesIndependentCandidateFactAndByteBounds(t *test
 		t.Fatalf("bounded catalog/coverage = %d candidates, %d bytes, %+v", len(catalog.Candidates), surfaceCatalogSize(catalog), coverage)
 	}
 	for _, candidate := range catalog.Candidates {
-		if len(candidate.Facts) > MaxSurfaceFactsPerCandidate || !candidateHasStringAndCallable(candidate) {
+		if len(candidate.Facts) > MaxSurfaceFactsPerCandidate || !requestSurfaceCandidateAdmissible(candidate) {
 			t.Fatalf("candidate lost per-item structure/bound: %+v", candidate)
 		}
 	}
@@ -1124,6 +1518,101 @@ func surfaceFixture() Substrate {
 			Facts: []ExactSurfaceFact{
 				{ID: "canonical:surface:command:identity", Kind: SurfaceFactString, Position: 0, Label: "Use", Value: "serve [path]", Location: location("cmd/root.go", 22)},
 				{ID: "canonical:surface:command:handler", Kind: SurfaceFactCallable, Position: 1, Label: "RunE", Value: "runServe", Location: location("cmd/serve.go", 60)},
+			},
+		},
+	}
+	substrate.Coverage.SurfaceCandidatesConsidered = len(substrate.SurfaceCandidates)
+	substrate.Coverage.SurfaceCandidatesIndexed = len(substrate.SurfaceCandidates)
+	for _, candidate := range substrate.SurfaceCandidates {
+		substrate.Coverage.SurfaceCandidateFactsConsidered += len(candidate.Facts)
+		substrate.Coverage.SurfaceCandidateFactsIndexed += len(candidate.Facts)
+	}
+	return substrate
+}
+
+func scheduledSurfaceFixture() Substrate {
+	substrate := causalFixture()
+	location := func(path string, line int) Location { return Location{Path: path, Line: line, Column: 3} }
+	substrate.SurfaceCandidates = []ExactSurfaceCandidate{
+		{
+			ID: "canonical:surface:scheduler:add", RootNodeID: "canonical:main",
+			Form: SurfaceCandidateDirectCall, Sketch: "scheduler Add",
+			Site: location("core/base.go", 1360),
+			Facts: []ExactSurfaceFact{
+				{ID: "canonical:surface:scheduler:add:name", Kind: SurfaceFactString, Position: 0, Label: "name", Value: "__pbDBOptimize__", Location: location("core/base.go", 1360)},
+				{ID: "canonical:surface:scheduler:add:cron", Kind: SurfaceFactString, Position: 1, Label: "cron", Value: "0 0 * * *", Location: location("core/base.go", 1360)},
+				{ID: "canonical:surface:scheduler:add:handler", Kind: SurfaceFactCallable, Position: 2, Label: "handler", Value: "optimizeDB", Location: location("core/base.go", 1361)},
+			},
+		},
+		{
+			ID: "canonical:surface:scheduler:add-func", RootNodeID: "canonical:main",
+			Form: SurfaceCandidateDirectCall, Sketch: "scheduler AddFunc",
+			Site: location("core/cleanup.go", 124),
+			Facts: []ExactSurfaceFact{
+				{ID: "canonical:surface:scheduler:add-func:schedule", Kind: SurfaceFactString, Position: 0, Label: "schedule", Value: "@every 5m", Location: location("core/cleanup.go", 124)},
+				{ID: "canonical:surface:scheduler:add-func:handler", Kind: SurfaceFactCallable, Position: 1, Label: "handler", Value: "cleanupExpired", Location: location("core/cleanup.go", 125)},
+			},
+		},
+		{
+			ID: "canonical:surface:callback", RootNodeID: "canonical:main",
+			Form: SurfaceCandidateDirectCall, Sketch: "events On",
+			Site: location("core/events.go", 80),
+			Facts: []ExactSurfaceFact{
+				{ID: "canonical:surface:callback:event", Kind: SurfaceFactString, Position: 0, Label: "event", Value: "repository.updated", Location: location("core/events.go", 80)},
+				{ID: "canonical:surface:callback:handler", Kind: SurfaceFactCallable, Position: 1, Label: "callback", Value: "refreshRepository", Location: location("core/events.go", 81)},
+			},
+		},
+		{
+			ID: "canonical:surface:keyed-schedule", RootNodeID: "canonical:main",
+			Form: SurfaceCandidateKeyedComposite, Sketch: "job literal",
+			Site: location("core/jobs.go", 41),
+			Facts: []ExactSurfaceFact{
+				{ID: "canonical:surface:keyed-schedule:name", Kind: SurfaceFactString, Position: 0, Label: "name", Value: "nightly-report", Location: location("core/jobs.go", 42)},
+				{ID: "canonical:surface:keyed-schedule:handler", Kind: SurfaceFactCallable, Position: 1, Label: "handler", Value: "sendReport", Location: location("core/jobs.go", 43)},
+			},
+		},
+	}
+	substrate.Coverage.SurfaceCandidatesConsidered = len(substrate.SurfaceCandidates)
+	substrate.Coverage.SurfaceCandidatesIndexed = len(substrate.SurfaceCandidates)
+	for _, candidate := range substrate.SurfaceCandidates {
+		substrate.Coverage.SurfaceCandidateFactsConsidered += len(candidate.Facts)
+		substrate.Coverage.SurfaceCandidateFactsIndexed += len(candidate.Facts)
+	}
+	return substrate
+}
+
+func pathDescriptorFixture() Substrate {
+	substrate := causalFixture()
+	location := func(path string, line int) Location { return Location{Path: path, Line: line, Column: 3} }
+	substrate.SurfaceCandidates = []ExactSurfaceCandidate{
+		{
+			ID: "canonical:surface:beego", RootNodeID: "canonical:main",
+			Form: SurfaceCandidateDirectCall, Sketch: "Router",
+			Site: location("routers/router.go", 32),
+			Facts: []ExactSurfaceFact{
+				{ID: "canonical:surface:beego:terminal", Kind: SurfaceFactToken, Position: 0, Label: "terminal selector", Value: "Router", Location: location("routers/router.go", 32)},
+				{ID: "canonical:surface:beego:path", Kind: SurfaceFactString, Position: 1, Label: "argument 1", Value: "/api/signup", Location: location("routers/router.go", 32)},
+				{ID: "canonical:surface:beego:action", Kind: SurfaceFactString, Position: 3, Label: "argument 3", Value: "POST:Signup", Location: location("routers/router.go", 32)},
+			},
+		},
+		{
+			ID: "canonical:surface:false-helper", RootNodeID: "canonical:main",
+			Form: SurfaceCandidateDirectCall, Sketch: "Label",
+			Site: location("docs/labels.go", 11),
+			Facts: []ExactSurfaceFact{
+				{ID: "canonical:surface:false-helper:terminal", Kind: SurfaceFactToken, Position: 0, Label: "terminal selector", Value: "Label", Location: location("docs/labels.go", 11)},
+				{ID: "canonical:surface:false-helper:path", Kind: SurfaceFactString, Position: 1, Label: "argument 1", Value: "/not-a-route", Location: location("docs/labels.go", 11)},
+				{ID: "canonical:surface:false-helper:value", Kind: SurfaceFactString, Position: 2, Label: "argument 2", Value: "documentation", Location: location("docs/labels.go", 11)},
+			},
+		},
+		{
+			ID: "canonical:surface:strong-route", RootNodeID: "canonical:main",
+			Form: SurfaceCandidateDirectCall, Sketch: "HandleFunc",
+			Site: location("server.go", 20),
+			Facts: []ExactSurfaceFact{
+				{ID: "canonical:surface:strong-route:terminal", Kind: SurfaceFactToken, Position: 0, Label: "terminal selector", Value: "HandleFunc", Location: location("server.go", 20)},
+				{ID: "canonical:surface:strong-route:path", Kind: SurfaceFactString, Position: 1, Label: "argument 1", Value: "/healthz", Location: location("server.go", 20)},
+				{ID: "canonical:surface:strong-route:handler", Kind: SurfaceFactCallable, Position: 2, Label: "argument 2", Value: "healthz", Location: location("server.go", 25)},
 			},
 		},
 	}
