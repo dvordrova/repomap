@@ -288,6 +288,25 @@ func TestCoreCallableNameMatchesDirectNodeAllowsOnlySSAInitOrdinals(t *testing.T
 	}
 }
 
+func TestAddUnresolvedMergesSameCallerFrontierAcrossProducerLedgers(t *testing.T) {
+	projection := goProjection{unresolvedRelations: make(map[string]int)}
+	projection.addUnresolved(
+		"caller", programindex.RelationCalls, "dynamic", "go_dynamic_invoke", 2,
+	)
+	projection.addUnresolved(
+		"caller", programindex.RelationCalls, "dynamic", "go_dynamic_invoke", 3,
+	)
+
+	if len(projection.relations) != 1 {
+		t.Fatalf("unresolved relations = %d, want 1", len(projection.relations))
+	}
+	relation := projection.relations[0]
+	if relation.TargetsObserved != 5 || relation.WitnessesObserved != 5 ||
+		len(relation.Witnesses) != 1 || relation.Witnesses[0].Detail != "5" {
+		t.Fatalf("merged unresolved frontier = %#v", relation)
+	}
+}
+
 func goAdapterLibraryTarget(t *testing.T) analysistarget.Target {
 	t.Helper()
 	completeness := &gofacts.PackageLoadCompleteness{

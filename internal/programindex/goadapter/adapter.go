@@ -52,6 +52,7 @@ func Build(
 		typeRefs:             make(map[string]string),
 		directNodeObjectRefs: make(map[string]string),
 		externalRefs:         make(map[string]string),
+		unresolvedRelations:  make(map[string]int),
 	}
 	if err := projection.projectObjects(); err != nil {
 		return programindex.Index{}, err
@@ -160,6 +161,7 @@ type goProjection struct {
 	typeRefs             map[string]string
 	directNodeObjectRefs map[string]string
 	externalRefs         map[string]string
+	unresolvedRelations  map[string]int
 }
 
 func (projection *goProjection) projectObjects() error {
@@ -640,14 +642,26 @@ func (projection *goProjection) addUnresolved(
 	if count <= 0 {
 		return
 	}
+	sourceRef := stableRef("go-frontier", fromRef, string(kind), invocation)
+	if position, exists := projection.unresolvedRelations[sourceRef]; exists {
+		relation := &projection.relations[position]
+		relation.TargetsObserved += count
+		relation.WitnessesObserved += count
+		relation.Witnesses[0].Detail = strconv.Itoa(relation.WitnessesObserved)
+		return
+	}
 	projection.relations = append(projection.relations, programindex.RelationInput{
-		SourceRef: stableRef("go-frontier", fromRef, string(kind), invocation),
+		SourceRef: sourceRef,
 		Kind:      kind, FromRef: fromRef, ToRefs: []string{},
 		Resolution: programindex.ResolutionUnresolved, Invocation: invocation,
 		TargetsObserved:   count,
 		Witnesses:         []programindex.Witness{{Kind: witnessKind, Detail: strconv.Itoa(count)}},
 		WitnessesObserved: count,
 	})
+	if projection.unresolvedRelations == nil {
+		projection.unresolvedRelations = make(map[string]int)
+	}
+	projection.unresolvedRelations[sourceRef] = len(projection.relations) - 1
 }
 
 func (projection *goProjection) packageRef(packagePath string) (string, error) {
