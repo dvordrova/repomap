@@ -6,33 +6,37 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
-	"github.com/dvordrova/repomap/internal/gitfiles"
+	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/gotarget"
-	"github.com/dvordrova/repomap/internal/reporead"
 )
 
 type Options struct {
 	RepoPath string
 	GoTarget string
+	// GoModuleDir is a pre-load routing hint derived only from an exact typed
+	// --target candidate key. ScopeAnalysisTarget still resolves that complete
+	// key against the resulting catalog before it becomes authority.
+	GoModuleDir string
+	// RepositoryCorpus is the one run-local tracked-file namespace shared by
+	// every initial discovery cube. Ordinary main constructs it once and every
+	// caller must pass that exact instance; BuildContext never inventories a
+	// second namespace behind the caller's back.
+	RepositoryCorpus *corpus.Corpus
+	// SkipGoFacts is an explicit language-routing decision for a Python-only
+	// ordinary run. It prevents incidental Go files without a Go module from
+	// activating the Go adapter. A requested Go load is otherwise mandatory and
+	// fail-closed.
+	SkipGoFacts bool
 	// AutoGoTarget allows the bounded tracked-file platform preflight to
 	// replace the caller's host target with one unique strong production
 	// alternative before Go facts are loaded. Callers must leave this false
-	// whenever --go-target or either standard Go target environment dimension
-	// was supplied explicitly.
-	AutoGoTarget                  bool
-	MaxReadmeBytes                int
-	MaxTreeLines                  int
-	MaxInterestingFiles           int
-	MaxGoPkgs                     int
-	MaxGoEdges                    int
-	AnalysisTargetOverride        string
-	DeferAnalysisTargetResolution bool
+	// whenever --force-platform or either standard Go target environment
+	// dimension was supplied explicitly.
+	AutoGoTarget bool
 }
 
 type Snapshot struct {
@@ -41,34 +45,14 @@ type Snapshot struct {
 	RepoName string `json:"repo_name"`
 	// DisplayName is local presentation copy only. Provider bundles deliberately
 	// omit it because temporary checkout names can contain task labels.
-	DisplayName        string                        `json:"display_name,omitempty"`
-	Readme             string                        `json:"readme"`
-	FileTree           []string                      `json:"file_tree"`
-	TopLevelStats      map[string]int                `json:"top_level_directory_stats"`
-	LanguageHints      []LanguageHint                `json:"detected_language_hints"`
-	InterestingFiles   []string                      `json:"interesting_files"`
-	Go                 GoHints                       `json:"go_hints"`
-	GoFacts            *gofacts.Facts                `json:"go_facts,omitempty"`
-	AnalysisTarget     *analysistarget.Target        `json:"analysis_target,omitempty"`
-	FilesConsidered    int                           `json:"files_considered"`
-	FilesSkipped       int                           `json:"files_skipped"`
-	SkippedPathSamples []string                      `json:"skipped_path_samples"`
-	FilteredFiles      []string                      `json:"-"`
-	GoTargetAdvisory   *GoTargetAdvisory             `json:"-"`
-	GoTargetSelection  *GoTargetSelection            `json:"-"`
-	TargetCatalog      *analysistarget.TargetCatalog `json:"-"`
-}
-
-type LanguageHint struct {
-	Language string `json:"language"`
-	Count    int    `json:"count"`
-}
-
-type GoHints struct {
-	GoModExists       bool     `json:"go_mod_exists"`
-	ModuleName        string   `json:"module_name,omitempty"`
-	LikelyEntrypoints []string `json:"likely_entrypoints"`
-	ImportantGoFiles  []string `json:"important_go_files"`
+	DisplayName       string                        `json:"display_name,omitempty"`
+	GoFacts           *gofacts.Facts                `json:"go_facts,omitempty"`
+	AnalysisTarget    *analysistarget.Target        `json:"analysis_target,omitempty"`
+	FilesConsidered   int                           `json:"files_considered"`
+	FilteredFiles     []string                      `json:"-"`
+	GoTargetAdvisory  *GoTargetAdvisory             `json:"-"`
+	GoTargetSelection *GoTargetSelection            `json:"-"`
+	TargetCatalog     *analysistarget.TargetCatalog `json:"-"`
 }
 
 var skipDirPrefixes = []string{
@@ -116,18 +100,6 @@ var skipFileExt = map[string]struct{}{
 	".class": {},
 }
 
-var interestingWords = []string{
-	"server", "handler", "grpc", "http", "cli", "cobra",
-	"storage", "store", "db", "database", "repository", "repo", "migration",
-	"consumer", "producer", "kafka", "queue", "pubsub", "event",
-	"config", "env", "flag", "viper",
-	"worker", "scheduler", "cron", "job",
-}
-
-func Build(opts Options) (Snapshot, error) {
-	return BuildContext(context.Background(), opts)
-}
-
 func BuildContext(ctx context.Context, opts Options) (Snapshot, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -135,36 +107,25 @@ func BuildContext(ctx context.Context, opts Options) (Snapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return Snapshot{}, err
 	}
-	if opts.DeferAnalysisTargetResolution && strings.TrimSpace(opts.AnalysisTargetOverride) != "" {
-		return Snapshot{}, fmt.Errorf("analysis target resolution cannot be deferred with explicit override %q", opts.AnalysisTargetOverride)
+	repositoryCorpus := opts.RepositoryCorpus
+	if repositoryCorpus == nil {
+		return Snapshot{}, fmt.Errorf("repository corpus is required")
 	}
-	if opts.MaxReadmeBytes <= 0 {
-		opts.MaxReadmeBytes = 20000
+	corpusSnapshot := repositoryCorpus.Snapshot()
+	if err := corpusSnapshot.Validate(); err != nil {
+		return Snapshot{}, fmt.Errorf("repository corpus: %w", err)
 	}
-	if opts.MaxTreeLines <= 0 {
-		opts.MaxTreeLines = 400
-	}
-	if opts.MaxInterestingFiles <= 0 {
-		opts.MaxInterestingFiles = 200
-	}
-	listing, err := gitfiles.ListWithModesContext(ctx, opts.RepoPath)
-	if err != nil {
-		return Snapshot{}, err
-	}
-	files := listing.Paths
-	regular := make(map[string]struct{}, len(listing.RegularPaths))
-	for _, filePath := range listing.RegularPaths {
-		regular[filePath] = struct{}{}
+	entries := repositoryCorpus.Entries()
+	files := repositoryCorpus.VisiblePaths()
+	regular := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		regular[entry.Path] = struct{}{}
 	}
 
 	filtered := make([]string, 0, len(files))
-	analysisFiles := make([]string, 0, len(listing.RegularPaths))
-	skippedSamples := make([]string, 0, 20)
+	analysisFiles := make([]string, 0, len(files))
 	for _, f := range files {
 		if shouldSkipPath(f) {
-			if len(skippedSamples) < 20 {
-				skippedSamples = append(skippedSamples, f)
-			}
 			continue
 		}
 		filtered = append(filtered, f)
@@ -175,13 +136,14 @@ func BuildContext(ctx context.Context, opts Options) (Snapshot, error) {
 
 	sort.Strings(filtered)
 	sort.Strings(analysisFiles)
-	currentTarget := gotarget.Host()
-	if opts.GoTarget != "" {
-		if parsed, parseErr := gotarget.Parse(opts.GoTarget); parseErr == nil {
-			currentTarget = parsed
-		}
+	if strings.TrimSpace(opts.GoTarget) == "" {
+		return Snapshot{}, fmt.Errorf("resolved Go target is required")
 	}
-	goMetadata := goHints(opts.RepoPath, analysisFiles)
+	currentTarget, err := gotarget.Parse(opts.GoTarget)
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("restore resolved Go target: %w", err)
+	}
+	goModExists, goModuleName := goModuleMetadata(repositoryCorpus, analysisFiles)
 	advisory := detectGoTargetAdvisory(opts.RepoPath, analysisFiles, currentTarget)
 	var goTargetSelection *GoTargetSelection
 	if opts.AutoGoTarget && advisory != nil {
@@ -193,78 +155,42 @@ func BuildContext(ctx context.Context, opts Options) (Snapshot, error) {
 		opts.GoTarget = selected.Target
 	}
 	s := Snapshot{
-		RepoName:           repositoryIdentity(opts.RepoPath, filtered, goMetadata),
-		DisplayName:        repositoryDisplayName(opts.RepoPath),
-		FileTree:           takeFirst(filtered, opts.MaxTreeLines),
-		TopLevelStats:      topLevelStats(filtered),
-		LanguageHints:      detectLanguages(filtered),
-		InterestingFiles:   findInterestingFiles(filtered, opts.MaxInterestingFiles),
-		FilesConsidered:    len(filtered),
-		FilesSkipped:       len(files) - len(filtered),
-		SkippedPathSamples: skippedSamples,
-		FilteredFiles:      analysisFiles,
-		GoTargetAdvisory:   advisory,
-		GoTargetSelection:  goTargetSelection,
-		Go:                 goMetadata,
+		RepoName:          repositoryIdentity(opts.RepoPath, filtered, goModuleName),
+		DisplayName:       repositoryDisplayName(opts.RepoPath),
+		FilesConsidered:   len(filtered),
+		FilteredFiles:     analysisFiles,
+		GoTargetAdvisory:  advisory,
+		GoTargetSelection: goTargetSelection,
 	}
 
-	s.Readme = readReadme(opts.RepoPath, analysisFiles, opts.MaxReadmeBytes)
-
-	if s.Go.GoModExists || hasGoFiles(analysisFiles) {
+	if !opts.SkipGoFacts && (goModExists || hasGoFiles(analysisFiles)) {
 		facts, err := gofacts.LoadWithOptions(
 			ctx,
 			opts.RepoPath,
 			analysisFiles,
-			opts.MaxGoPkgs,
-			opts.MaxGoEdges,
-			gofacts.LoadOptions{GoTarget: opts.GoTarget},
+			gofacts.LoadOptions{GoTarget: opts.GoTarget, ModuleDir: opts.GoModuleDir},
 		)
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return Snapshot{}, ctxErr
 			}
-			s.GoFacts = &gofacts.Facts{
-				Coverage: gofacts.Coverage{State: gofacts.CoverageUnavailable},
-				Warnings: []string{fmt.Sprintf("go facts load failed: %v", err)},
-			}
-		} else {
-			s.GoFacts = facts
+			return Snapshot{}, fmt.Errorf("load exact Go facts: %w", err)
 		}
-		if s.GoFacts != nil && len(s.GoFacts.Packages) > 0 && opts.DeferAnalysisTargetResolution {
+		s.GoFacts = facts
+		if s.GoFacts != nil {
 			catalog, catalogErr := analysistarget.BuildCatalog(*s.GoFacts)
 			if catalogErr != nil {
 				return Snapshot{}, fmt.Errorf("build analysis target catalog: %w", catalogErr)
 			}
 			ownedCatalog := catalog.Snapshot()
 			s.TargetCatalog = &ownedCatalog
-		} else if s.GoFacts != nil && len(s.GoFacts.Packages) > 0 {
-			resolution, resolveErr := analysistarget.Resolve(*s.GoFacts, analysistarget.Options{Override: opts.AnalysisTargetOverride})
-			if resolveErr != nil {
-				return Snapshot{}, fmt.Errorf("resolve analysis target: %w", resolveErr)
-			}
-			switch resolution.State {
-			case analysistarget.ResolutionSelected:
-				scoped, scopeErr := analysistarget.ScopeGoFacts(*s.GoFacts, *resolution.Selected)
-				if scopeErr != nil {
-					return Snapshot{}, scopeErr
-				}
-				target := resolution.Selected.Snapshot()
-				s.AnalysisTarget = &target
-				s.GoFacts = &scoped
-				s.FilteredFiles = analysisTargetFiles(scoped, analysisFiles)
-			case analysistarget.ResolutionAmbiguous:
-				return Snapshot{}, fmt.Errorf("analysis target is ambiguous; choose one target with --target: %s", analysisTargetCandidateKeys(resolution.Candidates))
-			}
-		}
-		if strings.TrimSpace(opts.AnalysisTargetOverride) != "" && s.AnalysisTarget == nil {
-			return Snapshot{}, fmt.Errorf("resolve analysis target: explicit override %q requires available exact Go target facts", opts.AnalysisTargetOverride)
 		}
 	}
 
 	return s, nil
 }
 
-// ScopeAnalysisTarget applies one exact target from a live deferred catalog.
+// ScopeAnalysisTarget applies one exact target from a fresh unselected catalog.
 // Callers provide only the self-sealed target ref; arbitrary Target values are
 // never accepted as authority. A successful application consumes the catalog
 // seam and restores the ordinary single-target snapshot contract.
@@ -332,244 +258,25 @@ func analysisTargetFiles(facts gofacts.Facts, repositoryFiles []string) []string
 	return result
 }
 
-func analysisTargetCandidateKeys(candidates []analysistarget.Candidate) string {
-	const maxKeys = 12
-	displayed := candidates
-	executables := make([]analysistarget.Candidate, 0, len(candidates))
-	for _, candidate := range candidates {
-		if candidate.MainModule && candidate.Target.Kind == analysistarget.KindExecutablePackage {
-			executables = append(executables, candidate)
-		}
-	}
-	if len(executables) > 0 {
-		displayed = executables
-	}
-	keys := make([]string, 0, min(len(displayed), maxKeys))
-	for _, candidate := range displayed {
-		if len(keys) == maxKeys {
-			break
-		}
-		key := candidate.Target.DisplayPath()
-		if key == "." {
-			if candidate.Target.Kind == analysistarget.KindModuleLibrary {
-				key = candidate.Target.ModulePath
-			} else {
-				key = candidate.Target.PackagePath
-			}
-		}
-		keys = append(keys, key)
-	}
-	if len(displayed) > len(keys) {
-		keys = append(keys, fmt.Sprintf("... and %d more", len(displayed)-len(keys)))
-	}
-	return strings.Join(keys, ", ")
-}
-
 func (s Snapshot) JSON() ([]byte, error) {
 	return json.MarshalIndent(s, "", "  ")
 }
 
-func readReadme(repoPath string, trackedFiles []string, maxBytes int) string {
-	reader, err := reporead.New(repoPath)
-	if err != nil {
-		return ""
-	}
-	defer reader.Close()
-
-	tracked := make(map[string]struct{}, len(trackedFiles))
-	for _, path := range trackedFiles {
-		tracked[path] = struct{}{}
-	}
-
-	candidates := []string{"README.md", "README", "readme.md", "Readme.md"}
-	for _, name := range candidates {
-		if _, ok := tracked[name]; !ok {
-			continue
-		}
-		content, err := reader.ReadFile(name, int64(maxBytes))
-		if err != nil {
-			continue
-		}
-		truncated, invalidBoundary := truncateUTF8Bytes(string(content.Bytes), maxBytes)
-		if content.Truncated || invalidBoundary {
-			return truncated + "\n...[truncated]"
-		}
-		return truncated
-	}
-	return ""
-}
-
-func truncateUTF8Bytes(s string, maxBytes int) (string, bool) {
-	if maxBytes <= 0 {
-		return "", len(s) > 0
-	}
-	if len(s) <= maxBytes && utf8.ValidString(s) {
-		return s, false
-	}
-	cut := maxBytes
-	if len(s) < cut {
-		cut = len(s)
-	}
-	for cut > 0 && !utf8.ValidString(s[:cut]) {
-		cut--
-	}
-	if cut == 0 {
-		return "", true
-	}
-	return s[:cut], true
-}
-
-func topLevelStats(files []string) map[string]int {
-	stats := map[string]int{}
-	for _, f := range files {
-		p := strings.SplitN(f, "/", 2)
-		key := "."
-		if len(p) > 1 {
-			key = p[0]
-		}
-		stats[key]++
-	}
-	return stats
-}
-
-func detectLanguages(files []string) []LanguageHint {
-	extToLang := map[string]string{
-		".go":    "Go",
-		".py":    "Python",
-		".js":    "JavaScript",
-		".ts":    "TypeScript",
-		".tsx":   "TypeScript",
-		".jsx":   "JavaScript",
-		".java":  "Java",
-		".rs":    "Rust",
-		".c":     "C",
-		".h":     "C/C++ Header",
-		".cpp":   "C++",
-		".cc":    "C++",
-		".rb":    "Ruby",
-		".php":   "PHP",
-		".sh":    "Shell",
-		".yaml":  "YAML",
-		".yml":   "YAML",
-		".json":  "JSON",
-		".md":    "Markdown",
-		".proto": "Protocol Buffers",
-	}
-
-	counts := map[string]int{}
-	for _, f := range files {
-		ext := strings.ToLower(filepath.Ext(f))
-		if lang, ok := extToLang[ext]; ok {
-			counts[lang]++
-		}
-	}
-
-	hints := make([]LanguageHint, 0, len(counts))
-	for lang, count := range counts {
-		hints = append(hints, LanguageHint{Language: lang, Count: count})
-	}
-	sort.Slice(hints, func(i, j int) bool {
-		if hints[i].Count == hints[j].Count {
-			return hints[i].Language < hints[j].Language
-		}
-		return hints[i].Count > hints[j].Count
-	})
-	return hints
-}
-
-func findInterestingFiles(files []string, max int) []string {
-	seen := map[string]struct{}{}
-	add := func(dst []string, path string) []string {
-		if len(dst) >= max {
-			return dst
-		}
-		if _, ok := seen[path]; ok {
-			return dst
-		}
-		seen[path] = struct{}{}
-		return append(dst, path)
-	}
-
-	out := make([]string, 0, max)
-	priorityNames := []string{
-		"README.md", "go.mod", "pyproject.toml", "setup.py", "setup.cfg",
-		"requirements.txt", "Makefile", "Dockerfile", ".gitignore",
-	}
-
-	for _, p := range files {
-		base := filepath.Base(p)
-		for _, n := range priorityNames {
-			if base == n {
-				out = add(out, p)
-			}
-		}
-	}
-
-	for _, p := range files {
-		l := strings.ToLower(p)
-		if strings.HasPrefix(l, "cmd/") || strings.Contains(l, "/cmd/") ||
-			strings.HasPrefix(l, "internal/") || strings.HasPrefix(l, "pkg/") {
-			out = add(out, p)
-		}
-	}
-
-	for _, p := range files {
-		l := strings.ToLower(filepath.Base(p))
-		for _, w := range interestingWords {
-			if strings.Contains(l, w) {
-				out = add(out, preferProtoFile(p, files))
-				break
-			}
-		}
-	}
-	return out
-}
-
-func goHints(repoPath string, files []string) GoHints {
-	h := GoHints{}
+func goModuleMetadata(repositoryCorpus *corpus.Corpus, files []string) (bool, string) {
 	for _, f := range files {
 		if f == "go.mod" {
-			reader, err := reporead.New(repoPath)
-			if err != nil {
-				break
+			fileID, ok := repositoryCorpus.ID(f)
+			if !ok {
+				return false, ""
 			}
-			content, readErr := reader.ReadFile("go.mod", 1024*1024)
-			_ = reader.Close()
+			content, readErr := repositoryCorpus.ReadFile(fileID, 1024*1024)
 			if readErr == nil && !content.Truncated {
-				h.GoModExists = true
-				h.ModuleName = parseModuleName(content.Bytes)
+				return true, parseModuleName(content.Bytes)
 			}
-			break
+			return false, ""
 		}
 	}
-
-	entrySet := map[string]struct{}{}
-	important := make([]string, 0, 32)
-
-	for _, f := range files {
-		if !strings.HasSuffix(strings.ToLower(f), ".go") {
-			continue
-		}
-		l := strings.ToLower(f)
-		if strings.HasPrefix(l, "cmd/") && filepath.Base(l) == "main.go" {
-			entrySet[f] = struct{}{}
-		}
-		base := strings.ToLower(filepath.Base(f))
-		for _, w := range interestingWords {
-			if strings.Contains(base, w) {
-				important = append(important, f)
-				break
-			}
-		}
-	}
-
-	h.LikelyEntrypoints = sortedSet(entrySet)
-	sort.Strings(important)
-	if len(important) > 200 {
-		important = important[:200]
-	}
-	h.ImportantGoFiles = important
-	return h
+	return false, ""
 }
 
 func parseModuleName(goMod []byte) string {
@@ -604,30 +311,6 @@ func shouldSkipPath(path string) bool {
 	return false
 }
 
-func takeFirst(items []string, n int) []string {
-	if n <= 0 || len(items) == 0 {
-		return nil
-	}
-	if len(items) <= n {
-		out := make([]string, len(items))
-		copy(out, items)
-		return out
-	}
-	out := make([]string, n+1)
-	copy(out, items[:n])
-	out[n] = fmt.Sprintf("... (%s more)", strconv.Itoa(len(items)-n))
-	return out
-}
-
-func sortedSet(set map[string]struct{}) []string {
-	out := make([]string, 0, len(set))
-	for k := range set {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
 func hasGoFiles(files []string) bool {
 	for _, f := range files {
 		if strings.HasSuffix(strings.ToLower(f), ".go") {
@@ -635,17 +318,4 @@ func hasGoFiles(files []string) bool {
 		}
 	}
 	return false
-}
-
-func preferProtoFile(path string, files []string) string {
-	if !strings.HasSuffix(path, ".pb.go") {
-		return path
-	}
-	proto := path[:len(path)-6] + ".proto"
-	for _, f := range files {
-		if f == proto {
-			return proto
-		}
-	}
-	return path
 }

@@ -2,142 +2,112 @@ package orient
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
-	"github.com/dvordrova/repomap/internal/boundary"
+	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/debugdump"
-	"github.com/dvordrova/repomap/internal/deepseek"
+	"github.com/dvordrova/repomap/internal/dependencies"
 	"github.com/dvordrova/repomap/internal/entrycall"
-	"github.com/dvordrova/repomap/internal/flowexplain"
+	"github.com/dvordrova/repomap/internal/gocoreobject"
+	"github.com/dvordrova/repomap/internal/godynamichandoff"
+	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/gotarget"
-	"github.com/dvordrova/repomap/internal/llmbundle"
-	"github.com/dvordrova/repomap/internal/modelresearch"
-	"github.com/dvordrova/repomap/internal/repositoryatlas"
-	"github.com/dvordrova/repomap/internal/repositoryatlas/goadapter"
 	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
 
+// Options contains only the deterministic repository-orientation inputs used
+// by the ordinary repomap command. Exact producer snapshots are handed to the
+// language-neutral ProgramIndex path after this package returns.
 type Options struct {
 	RepoPath string
 	GoTarget string
+	// GoModuleDir is present only for an exact typed --target key and narrows
+	// deterministic fact loading before the complete key is resolved locally.
+	GoModuleDir string
+	// RepositoryCorpus is built once by ordinary main and shared by snapshot
+	// extraction and the parallel initial target-discovery cubes.
+	RepositoryCorpus *corpus.Corpus
 	// AutoGoTarget authorizes the snapshot's bounded platform preflight only
 	// when the caller has no explicit CLI or Go environment target authority.
-	AutoGoTarget   bool
-	SnapshotOnly   bool
-	LLMBundleOnly  bool
-	LLMRequestOnly bool
-	OutputJSON     bool
-	// AtlasFirst is the ordinary product local-artifact path. It stops before
-	// raw Orientation signal/bundle construction and every legacy semantic
-	// stage, while still publishing snapshot, surface, and Repository Atlas
-	// artifacts through the existing confined writer.
-	AtlasFirst                bool
-	Offline                   bool
-	NoCache                   bool
-	FlowCount                 int
-	FlowBundlesOnly           bool
-	MaxReadmeBytes            int
-	MaxReadmeLLMBytes         int
-	MaxTreeLines              int
-	MaxInterestingFiles       int
-	MaxGoPkgs                 int
-	MaxGoEdges                int
-	MaxLLMEntrypoints         int
-	MaxLLMModules             int
-	MaxLLMFiles               int
-	MaxOrientationBundleBytes int
-	MaxLocalDirectionFiles    int
-	MaxLLMEdges               int
-	MaxLLMSignals             int
-	MaxLLMSignalsPerFile      int
-	DebugDir                  string
-	RunID                     string
-	DumpRedacted              bool
-	RequireArtifacts          bool
-	DiscoverSurfaces          bool
-	DirectCallDepth           int
-	DirectCallEdgeLimit       int
-	AnalysisTargetOverride    string
-	// AnalysisTargetSelectorOwnsResolution allows an explicitly configured
-	// local selector handoff to receive the complete catalog in offline mode or
-	// while a CLI override is present. The caller then owns restoring that
-	// explicit/default choice. Ordinary semantic selection leaves this false.
-	AnalysisTargetSelectorOwnsResolution bool
-	// PrecomputedSnapshot is an independently validated, ordinary one-target
-	// snapshot projected from a TargetRunContainer. When present, Run reuses
-	// these exact deterministic facts instead of rescanning the repository or
-	// invoking AnalysisTargetSelector. The remaining target pipeline is
-	// unchanged, including its own SSA, semantic calls, and run artifacts.
+	AutoGoTarget bool
+
+	DebugDir         string
+	RunID            string
+	DumpRedacted     bool
+	RequireArtifacts bool
+
+	AnalyzeGoProgram bool
+	// SkipGoFacts is set only by the ordinary Python-only route. It prevents
+	// incidental non-module Go files from activating the Go adapter.
+	SkipGoFacts         bool
+	DirectCallDepth     int
+	DirectCallEdgeLimit int
+
+	// PrecomputedSnapshot is an independently validated target projection from
+	// a TargetRunContainer. It avoids rescanning the repository for sibling
+	// target pages while preserving the ordinary ProgramIndex pipeline.
 	PrecomputedSnapshot *snapshot.Snapshot
-	ExplainFlows        int
-	// DirectCallIndexSink receives one independently owned snapshot of the
-	// complete declaration catalog plus bounded target-rooted direct-call edges
-	// produced by the successful existing surface SSA pass. It is a live-run
-	// handoff only: the index remains
-	// excluded from snapshot, debug, Atlas, and report artifacts, and no second
-	// package load or SSA build is performed. Disabled and non-Go runs do not
-	// invoke the sink.
+	// PreparedGoWorkspace is the live packages/types/SSA authority prepared by
+	// the default target run. Sibling target pages must project from this exact
+	// object rather than repeat package loading or SSA construction.
+	PreparedGoWorkspace *surfacediscovery.PreparedWorkspace
+	// PreparedGoWorkspaceSink hands the default run's live workspace to ordinary
+	// portfolio orchestration. The value is intentionally not serializable.
+	PreparedGoWorkspaceSink func(*surfacediscovery.PreparedWorkspace)
+
+	// DirectCallIndexSink receives an independently owned snapshot produced by
+	// the successful surface SSA pass. It is a live-run handoff and is not
+	// serialized as a snapshot or report artifact.
 	DirectCallIndexSink func(surfacediscovery.DirectCallIndex)
+	// DependencyCatalogSink receives the target-scoped, language-neutral
+	// dependency authority produced by the ordinary snapshot load.
+	DependencyCatalogSink func(dependencies.Catalog)
 	// EntryCallSubstrateSink receives the independently owned exact substrate
-	// produced by ordinary generic Go call discovery. It is a live-run handoff
-	// and is never part of snapshot/report serialization.
+	// produced by ordinary generic Go call discovery.
 	EntryCallSubstrateSink func(entrycall.Substrate)
-	// AnalysisTargetSink receives an independently owned, validated target as
-	// soon as deterministic snapshot facts resolve it and before any semantic
-	// stage or its cardinality budget runs.
+	// ExternalCallIndexSink receives the independently owned, root-independent
+	// exact external-call facts produced by the ordinary Go package load. The
+	// index intentionally carries no integration or importance classification.
+	ExternalCallIndexSink func(surfacediscovery.ExternalCallIndex)
+	// CoreObjectIndexSink receives the independently owned target-scoped Go
+	// declaration index produced from the ordinary package/type/SSA lifetime.
+	CoreObjectIndexSink func(gocoreobject.Index)
+	// DynamicHandoffIndexSink receives exact SSA structural joints that the
+	// direct-call graph deliberately cannot claim as one static call.
+	DynamicHandoffIndexSink func(godynamichandoff.Index)
+	// AnalysisTargetSink receives the resolved target before Go program analysis.
 	AnalysisTargetSink func(analysistarget.Target)
-	// TargetRunContainerSink receives the complete selected-target run
-	// authority while the one complete deferred snapshot and catalog are still
-	// live. Each selected target can be projected from this handoff without a
-	// second repository snapshot, go list, or selector call. A later ordinary
-	// target run still owns its own package load, SSA, provider calls, and
-	// artifacts.
+	// TargetRunContainerSink receives the complete selected-target authority.
 	TargetRunContainerSink func(snapshot.TargetRunContainer)
-	// GoTargetSelectionSink receives the exact final automatic selection before
-	// target portfolio selection or any other provider call. It lets the
-	// ordinary command keep later semantic/cache/report stages on the same
-	// scenario without exposing advisory evidence to a provider.
+	// GoTargetSelectionSink receives the final automatic Go platform selection
+	// before target selection or any later provider call.
 	GoTargetSelectionSink func(snapshot.GoTargetSelection)
-	// AnalysisTargetSelector is a handoff between the complete deterministic
-	// target catalog and the target-run container. Ordinary semantic selection
-	// is online-only and explicit targets bypass it. A caller-owned local
-	// resolution may opt into offline/explicit handling through
-	// AnalysisTargetSelectorOwnsResolution. Returned refs are restored only
-	// through snapshot's exact catalog authority.
-	AnalysisTargetSelector func(context.Context, string, analysistarget.TargetCatalog) (snapshot.TargetRunSelection, error)
-	// Progress callbacks may run from heartbeat goroutines. They must be
-	// concurrency-safe and return promptly.
-	Progress          func(ProgressEvent)
-	EffectiveOptions  debugdump.EffectiveOptions
-	ResearchPolicy    modelresearch.Policy
-	RepositoryContext modelresearch.RepositoryContext
+	// AnalysisTargetSelector receives the complete deterministic target catalog
+	// and chooses the default target plus the complete set to publish.
+	AnalysisTargetSelector func(
+		context.Context,
+		string,
+		analysistarget.TargetCatalog,
+		gofacts.Facts,
+	) (snapshot.TargetRunSelection, error)
+
+	Progress         func(ProgressEvent)
+	EffectiveOptions debugdump.EffectiveOptions
 }
 
-type combinedReport struct {
-	RepoName       string           `json:"repo_name"`
-	Orientation    *orientationPart `json:"orientation,omitempty"`
-	ExplainedFlows []explainedFlow  `json:"explained_flows"`
-	Warnings       []string         `json:"warnings,omitempty"`
-}
+// Run extracts one deterministic repository snapshot, resolves the selected
+// target portfolio, discovers runtime surfaces, and persists the canonical
+// snapshot and target-container artifacts.
+func Run(ctx context.Context, opts Options) error {
+	if opts.RequireArtifacts && opts.DebugDir == "" {
+		return fmt.Errorf("required browser artifacts need a debug directory")
+	}
 
-func Run(ctx context.Context, opts Options) ([]byte, error) {
-	policy := opts.ResearchPolicy
-	if policy.Version == "" {
-		policy = modelresearch.DefaultPolicy()
-	}
-	if err := policy.Validate(); err != nil {
-		return nil, err
-	}
-	requireArtifacts := opts.RequireArtifacts
-	if opts.RequireArtifacts && !opts.SnapshotOnly && !opts.LLMBundleOnly && !opts.LLMRequestOnly && opts.DebugDir == "" {
-		return nil, fmt.Errorf("required browser artifacts need a debug directory")
-	}
 	snapshotStarted := time.Now()
 	emitProgress(opts, ProgressEvent{
 		Stage:    ProgressSnapshotStarted,
@@ -145,864 +115,358 @@ func Run(ctx context.Context, opts Options) ([]byte, error) {
 		GoTarget: opts.GoTarget,
 	})
 
-	useAnalysisTargetSelector := opts.PrecomputedSnapshot == nil &&
-		opts.AnalysisTargetSelector != nil &&
-		(opts.AnalysisTargetSelectorOwnsResolution ||
-			(!opts.Offline && strings.TrimSpace(opts.AnalysisTargetOverride) == ""))
-	var s snapshot.Snapshot
+	var repositorySnapshot snapshot.Snapshot
 	var err error
 	if opts.PrecomputedSnapshot != nil {
-		if strings.TrimSpace(opts.AnalysisTargetOverride) != "" || opts.AnalysisTargetSelector != nil {
-			return nil, fmt.Errorf("precomputed target snapshot cannot be combined with target selection")
+		if opts.AnalysisTargetSelector != nil {
+			return fmt.Errorf("precomputed target snapshot cannot be combined with target selection")
 		}
-		s, err = snapshot.OwnSnapshot(*opts.PrecomputedSnapshot)
+		repositorySnapshot, err = snapshot.OwnSnapshot(*opts.PrecomputedSnapshot)
 		if err != nil {
-			return nil, fmt.Errorf("own precomputed target snapshot: %w", err)
+			return fmt.Errorf("own precomputed target snapshot: %w", err)
 		}
-		if s.AnalysisTarget == nil || s.TargetCatalog != nil {
-			return nil, fmt.Errorf("precomputed target snapshot must be an ordinary scoped target projection")
+		if repositorySnapshot.AnalysisTarget == nil || repositorySnapshot.TargetCatalog != nil {
+			return fmt.Errorf("precomputed target snapshot must be an ordinary scoped target projection")
 		}
 	} else {
-		analysisTargetOverride := opts.AnalysisTargetOverride
-		if opts.AnalysisTargetSelectorOwnsResolution {
-			analysisTargetOverride = ""
-		}
-		s, err = snapshot.BuildContext(ctx, snapshot.Options{
-			RepoPath:                      opts.RepoPath,
-			GoTarget:                      opts.GoTarget,
-			AutoGoTarget:                  opts.AutoGoTarget,
-			MaxReadmeBytes:                opts.MaxReadmeBytes,
-			MaxTreeLines:                  opts.MaxTreeLines,
-			MaxInterestingFiles:           opts.MaxInterestingFiles,
-			MaxGoPkgs:                     opts.MaxGoPkgs,
-			MaxGoEdges:                    opts.MaxGoEdges,
-			AnalysisTargetOverride:        analysisTargetOverride,
-			DeferAnalysisTargetResolution: useAnalysisTargetSelector,
+		repositorySnapshot, err = snapshot.BuildContext(ctx, snapshot.Options{
+			RepoPath:         opts.RepoPath,
+			GoTarget:         opts.GoTarget,
+			GoModuleDir:      opts.GoModuleDir,
+			RepositoryCorpus: opts.RepositoryCorpus,
+			AutoGoTarget:     opts.AutoGoTarget,
+			SkipGoFacts:      opts.SkipGoFacts,
 		})
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
-	if s.GoTargetSelection != nil {
-		selection := *s.GoTargetSelection
-		if err := selection.ValidateAgainstAdvisory(s.GoTargetAdvisory); err != nil {
-			return nil, fmt.Errorf("apply automatic Go target selection: %w", err)
+
+	if repositorySnapshot.GoTargetSelection != nil {
+		selection := *repositorySnapshot.GoTargetSelection
+		if err := selection.ValidateAgainstAdvisory(repositorySnapshot.GoTargetAdvisory); err != nil {
+			return fmt.Errorf("apply automatic Go target selection: %w", err)
 		}
 		if opts.GoTarget != selection.Baseline {
-			return nil, fmt.Errorf(
+			return fmt.Errorf(
 				"apply automatic Go target selection: baseline %s does not match resolved target %s",
-				selection.Baseline, opts.GoTarget,
+				selection.Baseline,
+				opts.GoTarget,
 			)
 		}
 		selected, err := gotarget.Parse(selection.Target)
 		if err != nil {
-			return nil, fmt.Errorf("apply automatic Go target selection: %w", err)
+			return fmt.Errorf("apply automatic Go target selection: %w", err)
 		}
 		opts.GoTarget = selected.String()
 		opts.EffectiveOptions.GoTarget = selected.String()
 		opts.EffectiveOptions.GoTargetSource = selection.Source
 		opts.EffectiveOptions.GoTargetBaseline = selection.Baseline
-		opts.RepositoryContext.Scenario = selected.Scenario()
 		if opts.GoTargetSelectionSink != nil {
 			opts.GoTargetSelectionSink(selection)
 		}
 	}
+
 	var targetRunContainer *snapshot.TargetRunContainer
-	if useAnalysisTargetSelector && s.TargetCatalog != nil {
-		selection, selectionErr := opts.AnalysisTargetSelector(
-			ctx,
-			s.RepoName,
-			s.TargetCatalog.Snapshot(),
-		)
-		if selectionErr != nil {
-			return nil, selectionErr
+	if repositorySnapshot.TargetCatalog != nil {
+		if opts.AnalysisTargetSelector == nil {
+			return fmt.Errorf("exact Go target catalog requires the ordinary analysis target selector")
 		}
-		container, containerErr := snapshot.BuildTargetRunContainer(s, selection)
-		if containerErr != nil {
-			return nil, fmt.Errorf("build selected target run container: %w", containerErr)
+		selection, err := opts.AnalysisTargetSelector(
+			ctx,
+			repositorySnapshot.RepoName,
+			repositorySnapshot.TargetCatalog.Snapshot(),
+			*repositorySnapshot.GoFacts,
+		)
+		if err != nil {
+			return err
+		}
+		container, err := snapshot.BuildTargetRunContainer(repositorySnapshot, selection)
+		if err != nil {
+			return fmt.Errorf("build selected target run container: %w", err)
 		}
 		deliverTargetRunContainer(opts, container)
 		targetRunContainer = &container
-		s, selectionErr = container.ScopedSnapshot(selection.DefaultTargetRef)
-		if selectionErr != nil {
-			return nil, fmt.Errorf("apply selected analysis target: %w", selectionErr)
+		repositorySnapshot, err = container.ScopedSnapshot(selection.DefaultTargetRef)
+		if err != nil {
+			return fmt.Errorf("apply selected analysis target: %w", err)
 		}
 	}
-	deliverAnalysisTarget(opts, s.AnalysisTarget)
+
+	deliverAnalysisTarget(opts, repositorySnapshot.AnalysisTarget)
+	if err := deliverDependencyCatalog(opts, repositorySnapshot.GoFacts); err != nil {
+		return err
+	}
 	snapshotReady := ProgressEvent{
 		Stage:         ProgressSnapshotReady,
-		RepoName:      s.RepoName,
-		FileCount:     s.FilesConsidered,
+		RepoName:      repositorySnapshot.RepoName,
+		FileCount:     repositorySnapshot.FilesConsidered,
 		GoTarget:      opts.GoTarget,
 		LatencyMillis: time.Since(snapshotStarted).Milliseconds(),
 	}
-	if s.GoTargetSelection != nil {
-		snapshotReady.GoTargetProvenance = s.GoTargetSelection.Display()
+	if repositorySnapshot.GoTargetSelection != nil {
+		snapshotReady.GoTargetProvenance = repositorySnapshot.GoTargetSelection.Display()
 	}
-	if s.GoTargetAdvisory != nil {
-		snapshotReady.SuggestedGoTarget = s.GoTargetAdvisory.Suggested
-		snapshotReady.GoTargetEvidenceCount = s.GoTargetAdvisory.EvidenceFiles
-		snapshotReady.GoTargetEvidencePaths = append([]string(nil), s.GoTargetAdvisory.Examples...)
+	if repositorySnapshot.GoTargetAdvisory != nil {
+		snapshotReady.SuggestedGoTarget = repositorySnapshot.GoTargetAdvisory.Suggested
+		snapshotReady.GoTargetEvidenceCount = repositorySnapshot.GoTargetAdvisory.EvidenceFiles
+		snapshotReady.GoTargetEvidencePaths = append(
+			[]string(nil),
+			repositorySnapshot.GoTargetAdvisory.Examples...,
+		)
 	}
 	emitProgress(opts, snapshotReady)
 
-	snapshotJSON, _ := s.JSON()
-
-	if opts.SnapshotOnly {
-		if opts.OutputJSON || opts.SnapshotOnly {
-			return append(snapshotJSON, '\n'), nil
-		}
-		return snapshotJSON, nil
-	}
-	if opts.AtlasFirst {
-		return runAtlasFirstLocalArtifacts(ctx, opts, s, snapshotJSON, targetRunContainer, requireArtifacts)
-	}
-	orientationSignals, orientationSignalTrace := collectOrientationSignals(s, opts)
-	operationalWarnings := discoverOperationalCandidates(&s, orientationSignals)
-	snapshotJSON, _ = s.JSON()
-
-	bundleStarted := time.Now()
-	maxOrientationFiles := orientationFileLimit(opts.MaxLLMFiles, len(s.FilteredFiles))
-	bundle, bundleSelectionTrace := llmbundle.BuildWithTrace(s, s.FilteredFiles, llmbundle.Options{
-		MaxReadmeBytes:   opts.MaxReadmeLLMBytes,
-		MaxModules:       opts.MaxLLMModules,
-		MaxEntrypoints:   opts.MaxLLMEntrypoints,
-		MaxFiles:         maxOrientationFiles,
-		MaxEdges:         opts.MaxLLMEdges,
-		MaxSignalTotal:   opts.MaxLLMSignals,
-		MaxSignalPerFile: opts.MaxLLMSignalsPerFile,
-		RepoPath:         opts.RepoPath,
-		SourceSignals:    orientationSignals,
-		MaxBytes:         opts.MaxOrientationBundleBytes,
-		PolicyVersion:    policy.Version,
-	})
-	bundle.Warnings = append(bundle.Warnings, operationalWarnings...)
-	bundleJSON, _ := json.MarshalIndent(bundle, "", "  ")
-	modelBundleJSON, err := json.Marshal(bundle)
+	snapshotJSON, err := repositorySnapshot.JSON()
 	if err != nil {
-		return nil, fmt.Errorf("marshal compact model bundle: %w", err)
+		return fmt.Errorf("encode repository snapshot: %w", err)
 	}
-	orientationCatalog, err := buildOrientationReferenceCatalog(bundle)
-	if err != nil {
-		return nil, err
-	}
-	orientationWireJSON, err := buildOrientationWireBundle(bundle, orientationCatalog)
-	if err != nil {
-		return nil, err
-	}
-	emitProgress(opts, ProgressEvent{
-		Stage:          ProgressBundleReady,
-		RepoName:       s.RepoName,
-		BundleBytes:    len(modelBundleJSON),
-		CandidateCount: len(bundle.CandidateFileIndex),
-		LatencyMillis:  time.Since(bundleStarted).Milliseconds(),
-	})
-
-	if opts.LLMBundleOnly {
-		out := append(bundleJSON, '\n')
-		return out, nil
-	}
-	if opts.LLMRequestOnly || !opts.Offline {
-		if err := validateOrientationBundleForRemote(bundle); err != nil {
-			return nil, err
-		}
-	}
-	if opts.LLMRequestOnly {
-		client, err := deepseek.NewPromptFromEnv()
-		if err != nil {
-			return nil, err
-		}
-		requestJSON, err := client.OrientPromptJSON(orientationWireJSON)
-		if err != nil {
-			return nil, err
-		}
-		if allowed, reason := policy.Allows(policy.Orientation, modelresearch.Usage{}, len(requestJSON)); !allowed {
-			return nil, fmt.Errorf("orientation request rejected by %s: %d bytes", reason, len(requestJSON))
-		}
-		return requestJSON, nil
-	}
-
-	runID := opts.RunID
-	if runID == "" {
-		runID = debugdump.GenerateRunID(s.RepoName)
-	}
-
-	var dw *debugdump.Writer
-	runMeta := debugdump.RunMeta{
-		RunID:               runID,
-		CreatedAt:           time.Now().UTC().Format(time.RFC3339),
-		RepoName:            s.RepoName,
-		RepoPath:            opts.RepoPath,
-		Command:             "orient",
-		CompactContextBytes: len(orientationWireJSON),
-		LLMBundleOnly:       opts.LLMBundleOnly,
-		EffectiveOptions:    effectiveOptions(opts),
-	}
-	bindRunMetaAnalysisTarget(&runMeta, s.AnalysisTarget)
-	if opts.DebugDir != "" {
-		dw, err = debugdump.NewWriter(opts.DebugDir, runID, opts.DumpRedacted)
-		if err != nil {
-			if requireArtifacts {
-				return nil, fmt.Errorf("create required debug writer: %w", err)
-			}
-			dw = nil
-		}
-		if dw != nil {
-			defer dw.Close()
-			if err := dw.WriteMetadata(runMeta); err != nil && requireArtifacts {
-				return nil, fmt.Errorf("write required debug metadata: %w", err)
-			}
-			if err := dw.WriteSnapshot(snapshotJSON); err != nil && requireArtifacts {
-				return nil, fmt.Errorf("write required debug snapshot: %w", err)
-			}
-			if err := dw.WriteLLMBundleWithSidecar(
-				modelBundleJSON,
-				llmbundle.OrientationContextSelectionFilename,
-				func(savedBundle []byte) ([]byte, error) {
-					contextSelection, selectionErr := llmbundle.FinalizeOrientationContextSelection(
-						bundleSelectionTrace,
-						bundle,
-						modelBundleJSON,
-						savedBundle,
-						orientationWireJSON,
-						orientationSignalTrace,
-					)
-					if selectionErr != nil {
-						return nil, selectionErr
-					}
-					return llmbundle.EncodeOrientationContextSelection(contextSelection)
-				},
-			); err != nil && requireArtifacts {
-				return nil, fmt.Errorf("write required model bundle and orientation context selection: %w", err)
-			}
-		}
-	}
-	report := combinedReport{
-		RepoName: s.RepoName,
-		Warnings: append([]string(nil), operationalWarnings...),
-	}
-	var successfulSurfaceResult *surfacediscovery.Result
-	if opts.DiscoverSurfaces && dw != nil && s.GoFacts != nil {
-		surfaceStarted := time.Now()
-		emitProgress(opts, ProgressEvent{
-			Stage:    ProgressSurfaceStarted,
-			RepoName: s.RepoName,
-		})
-		surfaceOptions := surfacediscovery.DefaultOptions(opts.RepoPath)
-		surfaceOptions.GoTarget = opts.GoTarget
-		surfaceOptions.Offline = opts.Offline
-		surfaceOptions.DirectCallDepth = opts.DirectCallDepth
-		surfaceOptions.DirectCallEdgeLimit = opts.DirectCallEdgeLimit
-		surfaceOptions.CaptureEntryCallSubstrate = opts.EntryCallSubstrateSink != nil
-		surfaceOptions.Progress = func(progress surfacediscovery.PhaseProgress) {
-			emitProgress(opts, ProgressEvent{
-				Stage: ProgressSurfacePhase, RepoName: s.RepoName,
-				Phase: progress.Phase, PhaseState: progress.State, Activity: progress.Detail,
-				CompletedCount: progress.Completed, TotalCount: progress.Total,
-				LatencyMillis: progress.ElapsedMillis,
-			})
-		}
-		surfaceResult, surfaceErr := surfacediscovery.AnalyzeContextWithInput(
-			ctx,
-			surfaceOptions,
-			surfaceDiscoveryInput(s.RepoName, s.GoFacts, s.AnalysisTarget),
-		)
-		if errors.Is(surfaceErr, context.Canceled) || errors.Is(surfaceErr, context.DeadlineExceeded) {
-			return nil, surfaceErr
-		}
-		if surfaceErr == nil {
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-			surfaceErr = surfacediscovery.WriteArtifacts(dw.RunDir(), surfaceResult)
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-		}
-		surfaceLatency := time.Since(surfaceStarted).Milliseconds()
-		runMeta.SurfaceDiscoveryRan = true
-		runMeta.SurfaceDiscoveryMillis = &surfaceLatency
-		runMeta.SurfaceDiscoveryCount = len(surfaceResult.Catalog.Triggers)
-		if surfaceErr != nil {
-			warning := formatSurfaceDiscoveryWarning(surfaceErr)
-			report.Warnings = append(report.Warnings, warning)
-			runMeta.Warnings = append(runMeta.Warnings, warning)
-			emitProgress(opts, ProgressEvent{
-				Stage:         ProgressSurfaceFailed,
-				RepoName:      s.RepoName,
-				Warning:       warning,
-				LatencyMillis: surfaceLatency,
-			})
-		} else {
-			successfulSurfaceResult = &surfaceResult
-			deliverDirectCallIndex(opts, surfaceResult.DirectCallIndex)
-			deliverEntryCallSubstrate(opts, surfaceResult.EntryCallSubstrate)
-			emitProgress(opts, ProgressEvent{
-				Stage:         ProgressSurfaceReady,
-				RepoName:      s.RepoName,
-				SurfaceCount:  len(surfaceResult.Catalog.Triggers),
-				LatencyMillis: surfaceLatency,
-			})
-		}
-		if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
-			return nil, fmt.Errorf("write surface discovery metadata: %w", metadataErr)
-		}
-		if surfacediscovery.IsAnalysisTargetSSAUnavailable(surfaceErr) {
-			return nil, surfaceErr
-		}
-	}
-	if dw != nil && s.GoFacts != nil {
-		catalog := surfacediscovery.TriggerCatalog{}
-		if successfulSurfaceResult != nil {
-			catalog = successfulSurfaceResult.Catalog
-		}
-		packageDeclarations, err := exactPackageDeclarationLocations(
-			ctx, opts.RepoPath, s.FilteredFiles, *s.GoFacts,
-		)
-		if err != nil {
-			return nil, err
-		}
-		boundaryResult, err := boundary.Observe(ctx, opts.RepoPath, s.FilteredFiles, *s.GoFacts)
-		if err != nil {
-			return nil, err
-		}
-		atlas, err := goadapter.Project(goadapter.Input{
-			RepositoryName:       s.RepoName,
-			Facts:                *s.GoFacts,
-			Catalog:              catalog,
-			PackageDeclarations:  packageDeclarations,
-			BoundaryObservations: boundaryResult.Observations,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("project repository Atlas: %w", err)
-		}
-		encoded, err := repositoryatlas.CanonicalJSON(atlas)
-		if err != nil {
-			return nil, fmt.Errorf("encode repository Atlas: %w", err)
-		}
-		if err := dw.WriteValidatedFile(
-			repositoryatlas.ArtifactFilename,
-			encoded,
-			func(saved []byte) error {
-				_, validateErr := repositoryatlas.DecodeCanonicalJSON(saved)
-				return validateErr
-			},
-		); err != nil {
-			return nil, fmt.Errorf("write repository Atlas: %w", err)
-		}
-	}
-
-	flowCount := opts.FlowCount
-	if opts.ExplainFlows > 0 {
-		flowCount = opts.ExplainFlows
-	}
-	if flowCount < 0 {
-		flowCount = 0
-	}
-
-	if opts.Offline {
-		report.Warnings = append(report.Warnings, "offline mode: skipping all LLM calls")
-		flows, err := buildFlowBundlesFromSnapshot(s, flowCount, dw, opts)
-		if err != nil {
-			return nil, err
-		}
-		report.ExplainedFlows = flows
-		report.Warnings = append(report.Warnings, fmt.Sprintf("run %s to get LLM orientation", "repomap "+opts.RepoPath))
-	} else {
-		client, err := deepseek.NewFromEnv()
-		if err != nil {
-			if dw != nil {
-				runMeta.RequestAttempts = append(runMeta.RequestAttempts, debugdump.RequestAttempt{
-					Stage: "configuration", State: "failed",
-				})
-				_ = dw.WriteMetadata(runMeta)
-				dw.WriteError(err)
-			}
-			return nil, fmt.Errorf(
-				"configure REPOMAP_LLM_* for an OpenAI-compatible provider: %w\nOr run local facts only:\n  repomap %s --offline",
-				err,
-				opts.RepoPath,
-			)
-		}
-		config := client.EffectiveConfig()
-		client.OnWait = func(progress deepseek.WaitProgress) {
-			emitProgress(opts, ProgressEvent{
-				Stage: ProgressProviderWaiting, RepoName: s.RepoName, Model: client.Model,
-				Activity: progress.Stage, LatencyMillis: progress.Elapsed.Milliseconds(),
-			})
-		}
-		repository := repositoryContext(opts, modelBundleJSON, s.AnalysisTarget)
-		researchState := modelresearch.NewState(policy, repository)
-		researchState.Coverage.LocalAuthorizedFiles = len(s.FilteredFiles)
-		researchState.Coverage.InitialModelSummaries = len(bundle.CandidateFileIndex)
-		if dw != nil {
-			runMeta.Model = config.Model
-			runMeta.Endpoint = config.Endpoint
-			runMeta.AuthMode = config.AuthMode
-			runMeta.TimeoutMillis = config.Timeout.Milliseconds()
-			runMeta.MaxTokens = config.MaxTokens
-			runMeta.PromptVersion = deepseek.OrientationPromptVersionJSON
-			if err := dw.WriteMetadata(runMeta); err != nil && requireArtifacts {
-				return nil, fmt.Errorf("write required provider metadata: %w", err)
-			}
-		}
-
-		requestJSON, err := client.OrientPromptJSON(orientationWireJSON)
-		if err != nil {
-			if dw != nil {
-				runMeta.RequestAttempts = append(runMeta.RequestAttempts, debugdump.RequestAttempt{
-					Stage: "orientation", State: "request_build_failed",
-				})
-				_ = dw.WriteMetadata(runMeta)
-				dw.WriteError(err)
-			}
-			return nil, err
-		}
-		if allowed, reason := policy.Allows(policy.Orientation, modelresearch.Usage{}, len(requestJSON)); !allowed {
-			return nil, fmt.Errorf("orientation request rejected by %s: %d bytes", reason, len(requestJSON))
-		}
-		runMeta.ExternalRequestBytes = 0
-		runMeta.ProviderRequestCount = 0
-		runMeta.RequestAttempts = append(runMeta.RequestAttempts, debugdump.RequestAttempt{
-			Stage: "orientation", State: "prepared", RequestBytes: len(requestJSON),
-		})
-		if dw != nil {
-			if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
-				return nil, fmt.Errorf("write request attempt metadata: %w", metadataErr)
-			}
-		}
-		emitProgress(opts, ProgressEvent{
-			Stage:        ProgressModelRequest,
-			RepoName:     s.RepoName,
-			Model:        client.Model,
-			BundleBytes:  len(orientationWireJSON),
-			RequestBytes: len(requestJSON),
-		})
-
-		prepareOrientation := func(raw []byte) (orientationPart, string, error) {
-			if err := validateProviderOutputForStorage("orientation", raw); err != nil {
-				return orientationPart{}, "response_rejected", err
-			}
-			or, err := parseAndResolveOrientationResponse(raw, orientationCatalog)
-			if err != nil {
-				return orientationPart{}, "response_parse_failed", err
-			}
-			mergeOperationalCandidateFlows(&or, bundle.Go.OrientationCandidates, bundle.SourceSignals)
-
-			localProofInput := localFlowProofInput(s, successfulSurfaceResult)
-			attachLocalFlowProofs(ctx, opts.RepoPath, &or, localProofInput)
-			reconcileResolvedUnknownPaths(&or)
-			applyOrientationConfidenceGate(&or, bundle)
-			for index := range or.CandidateFlows {
-				flowexplain.ClassifyCandidateFlow(&or.CandidateFlows[index])
-			}
-			if err := validateResolvedOrientation(or); err != nil {
-				return orientationPart{}, "response_validation_failed", err
-			}
-			return or, "", nil
-		}
-
-		call, err := obtainOrientation(
-			ctx, client, dw, policy, repository, "openai-compatible/"+client.Auth,
-			orientationWireJSON, orientationCatalog.digest, requestJSON, !opts.NoCache,
-			func(raw []byte) (orientationPart, error) {
-				prepared, _, err := prepareOrientation(raw)
-				return prepared, err
-			},
-		)
-		raw := call.Raw
-		providerLatency := call.Metrics.LatencyMillis
-		researchState.Orientation = call.Metrics
-		researchState.Usage.SemanticCalls += call.Metrics.SemanticCalls
-		if call.Metrics.SemanticCalls > 0 {
-			researchState.Usage.RequestBytes += call.Metrics.RequestBytes
-		}
-		runMeta.ExternalRequestBytes = researchState.Usage.RequestBytes
-		runMeta.ProviderRequestCount = researchState.Usage.SemanticCalls
-		runMeta.ProviderLatencyMillis = &providerLatency
-		attempt := &runMeta.RequestAttempts[len(runMeta.RequestAttempts)-1]
-		attempt.LatencyMillis = &providerLatency
-		attempt.RequestBytes = call.Metrics.RequestBytes
-		attempt.ProviderCallCount = call.Metrics.SemanticCalls
-		if call.Metrics.SemanticCalls > 0 {
-			attempt.TransportAttemptCount = call.Metrics.RetryCount + 1
-		}
-		contextErr := ctx.Err()
-		if contextErr != nil {
-			attempt.State = "canceled"
-		} else if err != nil {
-			attempt.State = "failed"
-		} else if call.Metrics.CacheHit {
-			attempt.State = "cached"
-		} else {
-			attempt.State = "response_received"
-		}
-		if dw != nil {
-			if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
-				return nil, fmt.Errorf("write provider latency metadata: %w", metadataErr)
-			}
-		}
-		if contextErr != nil {
-			recordOrientationSemanticExchange(
-				dw, requestJSON, raw, call.Metrics,
-				debugdump.SemanticStateCanceled,
-				debugdump.SemanticValidationCanceled,
-				debugdump.SemanticUnavailableCanceled,
-			)
-			return nil, contextErr
-		}
-		if err != nil {
-			recordOrientationSemanticExchange(
-				dw, requestJSON, providerFailureContentForExchange(err, raw), call.Metrics,
-				debugdump.SemanticStateProviderFailed,
-				debugdump.SemanticValidationProvider,
-				debugdump.SemanticUnavailableNoContent,
-			)
-			if dw != nil {
-				writeOrientationFailureArtifacts(dw, "provider_request_failed", err)
-			}
-			return nil, err
-		}
-
-		or, responseFailureState, responseErr := resolvePreparedOrientation(call, prepareOrientation)
-		if responseErr != nil {
-			attempt.State = responseFailureState
-			validationCode := debugdump.SemanticValidationResponse
-			if responseFailureState == "response_rejected" {
-				validationCode = debugdump.SemanticValidationSecret
-			} else if responseFailureState == "response_parse_failed" {
-				validationCode = debugdump.SemanticValidationDecode
-			}
-			recordOrientationSemanticExchange(
-				dw, requestJSON, raw, call.Metrics,
-				debugdump.SemanticStateRejected,
-				validationCode,
-				debugdump.SemanticUnavailableNoContent,
-			)
-			if dw != nil {
-				_ = dw.WriteMetadata(runMeta)
-				writeOrientationFailureArtifacts(
-					dw,
-					responseFailureState,
-					responseErr,
-				)
-			}
-			if responseFailureState == "response_parse_failed" {
-				return nil, fmt.Errorf("llm provider returned invalid JSON for orientation")
-			}
-			return nil, responseErr
-		}
-		if call.Metrics.CacheHit {
-			attempt.State = "cached"
-			researchState.Orientation.Status = "cached"
-			recordOrientationSemanticExchange(
-				dw, requestJSON, raw, call.Metrics,
-				debugdump.SemanticStateCacheHit,
-				debugdump.SemanticValidationCache,
-				debugdump.SemanticUnavailableCache,
-			)
-		} else {
-			attempt.State = "succeeded"
-			researchState.Orientation.Status = "completed"
-			recordOrientationSemanticExchange(
-				dw, requestJSON, raw, call.Metrics,
-				debugdump.SemanticStateAccepted,
-				debugdump.SemanticValidationAccepted,
-				debugdump.SemanticUnavailableNoContent,
-			)
-			if err := saveOrientationResponse(call); err != nil {
-				return nil, fmt.Errorf("persist validated orientation cache: %w", err)
-			}
-		}
-		if dw != nil {
-			if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
-				return nil, fmt.Errorf("write successful request metadata: %w", metadataErr)
-			}
-		}
-		report.Orientation = &or
-		runMeta.CandidateDirectionCount = len(or.CandidateFlows)
-		acceptedFlows := acceptedCandidateFlows(or.CandidateFlows)
-		runMeta.AcceptedDirectionCount = len(acceptedFlows)
-		runMeta.RejectedDirectionCount = len(or.CandidateFlows) - len(acceptedFlows)
-		if dw != nil {
-			if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
-				return nil, fmt.Errorf("write orientation metadata: %w", metadataErr)
-			}
-		}
-		emitProgress(opts, ProgressEvent{
-			Stage:          ProgressOrientationDone,
-			RepoName:       s.RepoName,
-			Model:          client.Model,
-			CandidateCount: len(acceptedFlows),
-			RejectedCount:  len(or.CandidateFlows) - len(acceptedFlows),
-			LatencyMillis:  providerLatency,
-			ResponseBytes:  call.Metrics.ResponseBytes,
-			InputTokens:    call.Metrics.InputTokens,
-			OutputTokens:   call.Metrics.OutputTokens,
-			Cached:         call.Metrics.CacheHit,
-		})
-		researchWarnings, researchErr := runTargetedResearch(
-			ctx, opts, client, dw, bundle, s, &or, &researchState, &runMeta, successfulSurfaceResult,
-		)
-		if researchErr != nil {
-			return nil, researchErr
-		}
-		report.Warnings = append(report.Warnings, researchWarnings...)
-		if dw != nil && len(or.ResearchQuestions) == 0 {
-			if err := modelresearch.WriteState(dw.RunDir(), researchState); err != nil {
-				return nil, fmt.Errorf("persist model research state: %w", err)
-			}
-		}
-		if dw != nil {
-			if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
-				return nil, fmt.Errorf("write targeted research metadata: %w", metadataErr)
-			}
-		}
-		out, _ := json.MarshalIndent(or, "", "  ")
-		if dw != nil {
-			writeErr := dw.WriteOrientationReportWithSidecar(
-				out,
-				ConfidenceWarningDiagnosticsFile,
-				func(savedOrientation []byte) ([]byte, error) {
-					return EncodeConfidenceWarningDiagnostics(
-						savedOrientation,
-						or.confidenceWarningDiagnostics,
-					)
-				},
-			)
-			if writeErr != nil && requireArtifacts {
-				return nil, fmt.Errorf("write required orientation report: %w", writeErr)
-			}
-		}
-
-		cfs := selectTopFlows(acceptedFlows, flowCount)
-		expandedIDs := make(map[string]struct{}, len(cfs))
-		for _, candidate := range cfs {
-			expandedIDs[flowexplain.GenerateFlowID(candidate.Name)] = struct{}{}
-		}
-		if err := writeLocalFlowBundles(
-			acceptedFlows,
-			expandedIDs,
-			s.FilteredFiles,
-			s.GoFacts,
-			dw,
-			opts,
-		); err != nil {
-			return nil, err
-		}
-		for _, cf := range cfs {
-			ef := explainOneFlow(cf, s.FilteredFiles, s.GoFacts, opts.MaxLLMFiles, dw, opts)
-			if ef.ArtifactError != "" {
-				return nil, fmt.Errorf("persist flow %q: %s", cf.Name, ef.ArtifactError)
-			}
-			report.ExplainedFlows = append(report.ExplainedFlows, ef)
-		}
-	}
-
-	if opts.OutputJSON {
-		out, err := json.MarshalIndent(report, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, '\n')
-		return out, nil
-	}
-
-	text := formatHumanReadable(report, opts.DebugDir, runID)
-	return []byte(text), nil
+	return persistArtifacts(ctx, opts, repositorySnapshot, snapshotJSON, targetRunContainer)
 }
 
-func runAtlasFirstLocalArtifacts(
+func persistArtifacts(
 	ctx context.Context,
 	opts Options,
-	s snapshot.Snapshot,
+	repositorySnapshot snapshot.Snapshot,
 	snapshotJSON []byte,
 	targetRunContainer *snapshot.TargetRunContainer,
-	requireArtifacts bool,
-) ([]byte, error) {
+) error {
 	runID := opts.RunID
 	if runID == "" {
-		runID = debugdump.GenerateRunID(s.RepoName)
+		runID = debugdump.GenerateRunID(repositorySnapshot.RepoName)
 	}
 	runMeta := debugdump.RunMeta{
-		RunID: runID, CreatedAt: time.Now().UTC().Format(time.RFC3339),
-		RepoName: s.RepoName, RepoPath: opts.RepoPath, Command: "atlas-first",
-		EffectiveOptions: effectiveOptions(opts),
+		RunID:            runID,
+		CreatedAt:        time.Now().UTC().Format(time.RFC3339),
+		RepoName:         repositorySnapshot.RepoName,
+		RepoPath:         opts.RepoPath,
+		Command:          "repomap",
+		EffectiveOptions: opts.EffectiveOptions,
 	}
-	bindRunMetaAnalysisTarget(&runMeta, s.AnalysisTarget)
-	report := combinedReport{
-		RepoName: s.RepoName, ExplainedFlows: []explainedFlow{}, Warnings: []string{},
-	}
-	var dw *debugdump.Writer
-	var err error
+	bindRunMetaAnalysisTarget(&runMeta, repositorySnapshot.AnalysisTarget)
+
+	var writer *debugdump.Writer
 	if opts.DebugDir != "" {
-		dw, err = debugdump.NewWriter(opts.DebugDir, runID, opts.DumpRedacted)
+		var err error
+		writer, err = debugdump.NewWriter(opts.DebugDir, runID, opts.DumpRedacted)
 		if err != nil {
-			if requireArtifacts {
-				return nil, fmt.Errorf("create required debug writer: %w", err)
+			if opts.RequireArtifacts {
+				return fmt.Errorf("create required debug writer: %w", err)
 			}
-		} else {
-			defer dw.Close()
-			if err := dw.WriteMetadata(runMeta); err != nil && requireArtifacts {
-				return nil, fmt.Errorf("write required debug metadata: %w", err)
+			return nil
+		}
+		defer writer.Close()
+		if err := writer.WriteMetadata(runMeta); err != nil && opts.RequireArtifacts {
+			return fmt.Errorf("write required debug metadata: %w", err)
+		}
+		if err := writer.WriteSnapshot(snapshotJSON); err != nil && opts.RequireArtifacts {
+			return fmt.Errorf("write required debug snapshot: %w", err)
+		}
+		if targetRunContainer != nil {
+			encoded, err := targetRunContainer.CanonicalJSON()
+			if err != nil {
+				return fmt.Errorf("encode target run container: %w", err)
 			}
-			if err := dw.WriteSnapshot(snapshotJSON); err != nil && requireArtifacts {
-				return nil, fmt.Errorf("write required debug snapshot: %w", err)
-			}
-			if targetRunContainer != nil {
-				encoded, encodeErr := targetRunContainer.CanonicalJSON()
-				if encodeErr != nil {
-					return nil, fmt.Errorf("encode target run container: %w", encodeErr)
-				}
-				if writeErr := dw.WriteValidatedFile(
-					snapshot.TargetRunContainerArtifactFilename,
-					encoded,
-					targetRunContainer.ValidateArtifact,
-				); writeErr != nil {
-					return nil, fmt.Errorf("write target run container: %w", writeErr)
-				}
+			if err := writer.WriteValidatedFile(
+				snapshot.TargetRunContainerArtifactFilename,
+				encoded,
+				targetRunContainer.ValidateArtifact,
+			); err != nil {
+				return fmt.Errorf("write target run container: %w", err)
 			}
 		}
 	}
 
-	var successfulSurfaceResult *surfacediscovery.Result
-	if opts.DiscoverSurfaces && dw != nil && s.GoFacts != nil {
-		surfaceStarted := time.Now()
-		emitProgress(opts, ProgressEvent{Stage: ProgressSurfaceStarted, RepoName: s.RepoName})
-		surfaceOptions := surfacediscovery.DefaultOptions(opts.RepoPath)
-		surfaceOptions.GoTarget = opts.GoTarget
-		surfaceOptions.Offline = opts.Offline
-		surfaceOptions.DirectCallDepth = opts.DirectCallDepth
-		surfaceOptions.DirectCallEdgeLimit = opts.DirectCallEdgeLimit
+	if opts.AnalyzeGoProgram && writer == nil {
+		return fmt.Errorf("Go program analysis requires an artifact directory")
+	}
+	// A caller may request Go analysis for a repository that contains no Go
+	// program at all. That is a legitimate empty language adapter outcome: the
+	// ordinary coordinator will either run another language adapter or report
+	// that no target exists. Once exact Go facts do exist, missing target/SSA
+	// authority remains terminal below.
+	if opts.AnalyzeGoProgram && repositorySnapshot.GoFacts != nil {
+		if repositorySnapshot.GoFacts == nil {
+			return fmt.Errorf("Go program analysis requires exact Go facts")
+		}
+		if repositorySnapshot.AnalysisTarget == nil {
+			return fmt.Errorf("Go program analysis requires one exact analysis target")
+		}
+		started := time.Now()
+		emitProgress(opts, ProgressEvent{
+			Stage:    ProgressProgramStarted,
+			RepoName: repositorySnapshot.RepoName,
+		})
+		surfaceOptions := surfacediscovery.DefaultOptions(opts.RepoPath, opts.GoTarget)
+		if opts.DirectCallDepth > 0 {
+			surfaceOptions.DirectCallDepth = opts.DirectCallDepth
+		}
+		if opts.DirectCallEdgeLimit > 0 {
+			surfaceOptions.DirectCallEdgeLimit = opts.DirectCallEdgeLimit
+		}
 		surfaceOptions.CaptureEntryCallSubstrate = opts.EntryCallSubstrateSink != nil
+		surfaceOptions.CaptureExternalCallIndex = opts.ExternalCallIndexSink != nil
+		surfaceOptions.CaptureCoreObjectIndex = opts.CoreObjectIndexSink != nil
+		surfaceOptions.CaptureDynamicHandoffIndex = opts.DynamicHandoffIndexSink != nil
 		surfaceOptions.Progress = func(progress surfacediscovery.PhaseProgress) {
 			emitProgress(opts, ProgressEvent{
-				Stage: ProgressSurfacePhase, RepoName: s.RepoName,
-				Phase: progress.Phase, PhaseState: progress.State, Activity: progress.Detail,
-				CompletedCount: progress.Completed, TotalCount: progress.Total,
-				LatencyMillis: progress.ElapsedMillis,
+				Stage:          ProgressProgramPhase,
+				RepoName:       repositorySnapshot.RepoName,
+				Phase:          progress.Phase,
+				PhaseState:     progress.State,
+				Activity:       progress.Detail,
+				CompletedCount: progress.Completed,
+				TotalCount:     progress.Total,
+				LatencyMillis:  progress.ElapsedMillis,
 			})
 		}
-		surfaceResult, surfaceErr := surfacediscovery.AnalyzeContextWithInput(
-			ctx, surfaceOptions, surfaceDiscoveryInput(s.RepoName, s.GoFacts, s.AnalysisTarget),
+		programInput := surfaceDiscoveryInput(
+			repositorySnapshot.RepoName,
+			repositorySnapshot.GoFacts,
+			repositorySnapshot.AnalysisTarget,
 		)
-		if errors.Is(surfaceErr, context.Canceled) || errors.Is(surfaceErr, context.DeadlineExceeded) {
-			return nil, surfaceErr
-		}
-		if surfaceErr == nil {
-			if err := ctx.Err(); err != nil {
-				return nil, err
+		workspace := opts.PreparedGoWorkspace
+		var programErr error
+		if workspace == nil {
+			if opts.PrecomputedSnapshot != nil {
+				return fmt.Errorf("precomputed Go target analysis requires the default run's prepared workspace")
 			}
-			surfaceErr = surfacediscovery.WriteArtifacts(dw.RunDir(), surfaceResult)
-			if err := ctx.Err(); err != nil {
-				return nil, err
+			workspaceInputs := []surfacediscovery.Input{programInput}
+			if targetRunContainer != nil {
+				workspaceInputs = make([]surfacediscovery.Input, 0, len(targetRunContainer.Targets))
+				for _, projection := range targetRunContainer.Targets {
+					scoped, scopeErr := targetRunContainer.ScopedSnapshot(projection.Target.Ref)
+					if scopeErr != nil {
+						return fmt.Errorf("prepare selected Go target workspace: %w", scopeErr)
+					}
+					workspaceInputs = append(workspaceInputs, surfaceDiscoveryInput(
+						scoped.RepoName, scoped.GoFacts, scoped.AnalysisTarget,
+					))
+				}
+			}
+			workspace, programErr = surfacediscovery.PrepareWorkspace(ctx, surfaceOptions, workspaceInputs)
+			if programErr == nil && opts.PreparedGoWorkspaceSink != nil {
+				opts.PreparedGoWorkspaceSink(workspace)
 			}
 		}
-		surfaceLatency := time.Since(surfaceStarted).Milliseconds()
-		runMeta.SurfaceDiscoveryRan = true
-		runMeta.SurfaceDiscoveryMillis = &surfaceLatency
-		runMeta.SurfaceDiscoveryCount = len(surfaceResult.Catalog.Triggers)
-		if surfaceErr != nil {
-			warning := formatSurfaceDiscoveryWarning(surfaceErr)
-			report.Warnings = append(report.Warnings, warning)
+		var result surfacediscovery.Result
+		if programErr == nil {
+			result, programErr = workspace.Analyze(ctx, surfaceOptions, programInput)
+		}
+		if errors.Is(programErr, context.Canceled) || errors.Is(programErr, context.DeadlineExceeded) {
+			return programErr
+		}
+		if programErr == nil {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+		}
+		latency := time.Since(started).Milliseconds()
+		runMeta.GoProgramAnalysisRan = true
+		runMeta.GoProgramAnalysisMillis = &latency
+		if result.DirectCallIndex != nil {
+			runMeta.GoProgramGraphNodes = len(result.DirectCallIndex.Nodes)
+			runMeta.GoProgramGraphEdges = len(result.DirectCallIndex.Edges)
+		}
+		if programErr != nil {
+			warning := formatGoProgramAnalysisError(programErr)
 			runMeta.Warnings = append(runMeta.Warnings, warning)
 			emitProgress(opts, ProgressEvent{
-				Stage: ProgressSurfaceFailed, RepoName: s.RepoName,
-				Warning: warning, LatencyMillis: surfaceLatency,
+				Stage: ProgressProgramFailed, RepoName: repositorySnapshot.RepoName,
+				Warning: warning, LatencyMillis: latency,
 			})
-		} else {
-			successfulSurfaceResult = &surfaceResult
-			deliverDirectCallIndex(opts, surfaceResult.DirectCallIndex)
-			deliverEntryCallSubstrate(opts, surfaceResult.EntryCallSubstrate)
-			emitProgress(opts, ProgressEvent{
-				Stage: ProgressSurfaceReady, RepoName: s.RepoName,
-				SurfaceCount: len(surfaceResult.Catalog.Triggers), LatencyMillis: surfaceLatency,
-			})
+			if err := writer.WriteMetadata(runMeta); err != nil && opts.RequireArtifacts {
+				return errors.Join(programErr, fmt.Errorf("write failed Go program-analysis metadata: %w", err))
+			}
+			return programErr
 		}
-		if metadataErr := dw.WriteMetadata(runMeta); metadataErr != nil && requireArtifacts {
-			return nil, fmt.Errorf("write surface discovery metadata: %w", metadataErr)
+		deliverDirectCallIndex(opts, result.DirectCallIndex)
+		deliverEntryCallSubstrate(opts, result.EntryCallSubstrate)
+		deliverExternalCallIndex(opts, result.ExternalCallIndex)
+		deliverCoreObjectIndex(opts, result.CoreObjectIndex)
+		deliverDynamicHandoffIndex(opts, result.DynamicHandoffIndex)
+		ready := ProgressEvent{
+			Stage: ProgressProgramReady, RepoName: repositorySnapshot.RepoName,
+			LatencyMillis: latency,
 		}
-		if surfacediscovery.IsAnalysisTargetSSAUnavailable(surfaceErr) {
-			return nil, surfaceErr
+		if result.DirectCallIndex != nil {
+			ready.GraphNodeCount = len(result.DirectCallIndex.Nodes)
+			ready.GraphEdgeCount = len(result.DirectCallIndex.Edges)
 		}
-	}
-	if dw != nil {
-		catalog := surfacediscovery.TriggerCatalog{}
-		if successfulSurfaceResult != nil {
-			catalog = successfulSurfaceResult.Catalog
+		if result.ExternalCallIndex != nil {
+			ready.ExternalCallFamilies = len(result.ExternalCallIndex.Families)
 		}
-		atlasInput := goadapter.Input{RepositoryName: s.RepoName, Catalog: catalog}
-		if s.GoFacts != nil {
-			atlasInput.Facts = *s.GoFacts
+		if result.EntryCallSubstrate != nil {
+			ready.ActivityCandidates = len(result.EntryCallSubstrate.SurfaceCandidates)
 		}
-		packageDeclarations, err := exactPackageDeclarationLocations(
-			ctx, opts.RepoPath, s.FilteredFiles, atlasInput.Facts,
-		)
-		if err != nil {
-			return nil, err
+		if result.CoreObjectIndex != nil {
+			ready.CoreDeclarations = len(result.CoreObjectIndex.Types) + len(result.CoreObjectIndex.Callables)
 		}
-		atlasInput.PackageDeclarations = packageDeclarations
-		boundaryResult, err := boundary.Observe(ctx, opts.RepoPath, s.FilteredFiles, atlasInput.Facts)
-		if err != nil {
-			return nil, err
-		}
-		atlasInput.BoundaryObservations = boundaryResult.Observations
-		atlas, err := goadapter.Project(atlasInput)
-		if err != nil {
-			return nil, fmt.Errorf("project repository Atlas: %w", err)
-		}
-		encoded, err := repositoryatlas.CanonicalJSON(atlas)
-		if err != nil {
-			return nil, fmt.Errorf("encode repository Atlas: %w", err)
-		}
-		if err := dw.WriteValidatedFile(
-			repositoryatlas.ArtifactFilename,
-			encoded,
-			func(saved []byte) error {
-				_, validateErr := repositoryatlas.DecodeCanonicalJSON(saved)
-				return validateErr
-			},
-		); err != nil {
-			return nil, fmt.Errorf("write repository Atlas: %w", err)
+		emitProgress(opts, ready)
+		if err := writer.WriteMetadata(runMeta); err != nil && opts.RequireArtifacts {
+			return fmt.Errorf("write Go program-analysis metadata: %w", err)
 		}
 	}
-	if opts.OutputJSON {
-		out, err := json.MarshalIndent(report, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return append(out, '\n'), nil
-	}
-	return nil, nil
+
+	return nil
 }
 
 func deliverDirectCallIndex(opts Options, index *surfacediscovery.DirectCallIndex) {
-	if opts.DirectCallIndexSink == nil || index == nil {
-		return
+	if opts.DirectCallIndexSink != nil && index != nil {
+		opts.DirectCallIndexSink(index.Snapshot())
 	}
-	opts.DirectCallIndexSink(index.Snapshot())
+}
+
+func deliverDependencyCatalog(opts Options, facts *gofacts.Facts) error {
+	if opts.DependencyCatalogSink == nil || facts == nil || facts.Dependencies == nil {
+		return nil
+	}
+	refs := make(map[string]struct{}, len(facts.Dependencies.Importers))
+	for _, importer := range facts.Dependencies.Importers {
+		refs[importer.Ref] = struct{}{}
+	}
+	catalog, err := facts.Dependencies.Subset(refs)
+	if err != nil {
+		return fmt.Errorf("deliver dependency catalog: %w", err)
+	}
+	opts.DependencyCatalogSink(catalog)
+	return nil
 }
 
 func deliverAnalysisTarget(opts Options, target *analysistarget.Target) {
-	if opts.AnalysisTargetSink == nil || target == nil {
-		return
+	if opts.AnalysisTargetSink != nil && target != nil {
+		opts.AnalysisTargetSink(target.Snapshot())
 	}
-	opts.AnalysisTargetSink(target.Snapshot())
 }
 
 func deliverTargetRunContainer(opts Options, container snapshot.TargetRunContainer) {
-	if opts.TargetRunContainerSink == nil {
-		return
+	if opts.TargetRunContainerSink != nil {
+		opts.TargetRunContainerSink(container.Snapshot())
 	}
-	opts.TargetRunContainerSink(container.Snapshot())
 }
 
-func effectiveOptions(opts Options) debugdump.EffectiveOptions {
-	effective := opts.EffectiveOptions
-	if opts.AnalysisTargetOverride != "" || effective.AnalysisTargetOverride == "" {
-		effective.AnalysisTargetOverride = opts.AnalysisTargetOverride
+func deliverEntryCallSubstrate(opts Options, substrate *entrycall.Substrate) {
+	if opts.EntryCallSubstrateSink != nil && substrate != nil {
+		opts.EntryCallSubstrateSink(substrate.Snapshot())
 	}
-	return effective
+}
+
+func deliverExternalCallIndex(opts Options, index *surfacediscovery.ExternalCallIndex) {
+	if opts.ExternalCallIndexSink != nil && index != nil {
+		opts.ExternalCallIndexSink(index.Snapshot())
+	}
+}
+
+func deliverCoreObjectIndex(opts Options, index *gocoreobject.Index) {
+	if opts.CoreObjectIndexSink != nil && index != nil {
+		opts.CoreObjectIndexSink(index.Snapshot())
+	}
+}
+
+func deliverDynamicHandoffIndex(opts Options, index *godynamichandoff.Index) {
+	if opts.DynamicHandoffIndexSink != nil && index != nil {
+		opts.DynamicHandoffIndexSink(index.Snapshot())
+	}
 }
 
 func bindRunMetaAnalysisTarget(meta *debugdump.RunMeta, target *analysistarget.Target) {
@@ -1016,105 +480,7 @@ func bindRunMetaAnalysisTarget(meta *debugdump.RunMeta, target *analysistarget.T
 	meta.AnalysisTargetPackage = target.PackagePath
 }
 
-func deliverEntryCallSubstrate(opts Options, substrate *entrycall.Substrate) {
-	if opts.EntryCallSubstrateSink == nil || substrate == nil {
-		return
-	}
-	opts.EntryCallSubstrateSink(substrate.Snapshot())
-}
-
-func orientationFileLimit(explicitLimit, inputCount int) int {
-	if explicitLimit > 0 {
-		return explicitLimit
-	}
-	// The ordinary Orientation path is byte-bounded, not count-bounded. Every
-	// eligible candidate comes from FilteredFiles, so this input count is an
-	// exact upper bound without rerunning candidate selection here.
-	return max(1, inputCount)
-}
-
-func resolvePreparedOrientation(
-	call orientationCall,
-	prepare func([]byte) (orientationPart, string, error),
-) (orientationPart, string, error) {
-	if call.Prepared != nil {
-		return *call.Prepared, "", nil
-	}
-	return prepare(call.Raw)
-}
-
-func recordOrientationSemanticExchange(
-	dw *debugdump.Writer,
-	request,
-	response []byte,
-	metrics modelresearch.StageMetrics,
-	state,
-	validationCode,
-	unavailableCode string,
-) {
-	if dw == nil {
-		return
-	}
-	if metrics.SemanticCalls == 0 && state != debugdump.SemanticStateCacheHit {
-		return
-	}
-	transportAttempts := 0
-	if metrics.SemanticCalls > 0 {
-		transportAttempts = metrics.RetryCount + 1
-	}
-	exchange := debugdump.SemanticExchange{
-		Stage:           debugdump.SemanticStageOrientation,
-		InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
-		RequestProvenance: debugdump.SemanticRequestPrepared,
-		State:             state, ValidationCode: validationCode,
-		SemanticCalls: metrics.SemanticCalls, TransportAttempts: transportAttempts,
-		Request: request, Response: response,
-	}
-	if len(response) == 0 {
-		exchange.ResponseUnavailable = &debugdump.SemanticUnavailable{
-			Code: unavailableCode, OriginalBytes: metrics.ResponseBytes,
-		}
-	}
-	dw.RecordSemanticExchange(exchange)
-}
-
-// providerFailureContentForExchange is only for the existing redacting
-// semantic-exchange recorder.
-func providerFailureContentForExchange(err error, fallback []byte) []byte {
-	var limitErr *deepseek.ResourceLimitError
-	if errors.As(err, &limitErr) {
-		return limitErr.ProviderContent()
-	}
-	return fallback
-}
-
-func writeOrientationFailureArtifacts(
-	dw *debugdump.Writer,
-	stage string,
-	err error,
-) {
-	validation, marshalErr := json.MarshalIndent(map[string]string{
-		"status": "failed",
-		"stage":  stage,
-		"error":  err.Error(),
-	}, "", "  ")
-	if marshalErr == nil {
-		_ = dw.WriteOrientationValidation(append(validation, '\n'))
-	}
-	dw.WriteError(err)
-}
-
-func acceptedCandidateFlows(flows []flowexplain.CandidateFlow) []flowexplain.CandidateFlow {
-	accepted := make([]flowexplain.CandidateFlow, 0, len(flows))
-	for _, flow := range flows {
-		if flow.Disposition == flowexplain.DirectionAccepted {
-			accepted = append(accepted, flow)
-		}
-	}
-	return accepted
-}
-
-func formatSurfaceDiscoveryWarning(err error) string {
+func formatGoProgramAnalysisError(err error) string {
 	const maxRunes = 500
 	message := strings.Join(strings.Fields(err.Error()), " ")
 	message = strings.TrimPrefix(message, "surface discovery: ")
@@ -1122,5 +488,5 @@ func formatSurfaceDiscoveryWarning(err error) string {
 	if len(runes) > maxRunes {
 		message = string(runes[:maxRunes]) + "…"
 	}
-	return "surface discovery unavailable: " + message
+	return "Go program analysis failed: " + message
 }

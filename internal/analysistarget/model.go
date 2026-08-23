@@ -1,10 +1,9 @@
-// Package analysistarget resolves one exact package target for an analysis.
-// It is a local deterministic contract and performs no provider call.
+// Package analysistarget enumerates and scopes exact Go analysis targets.
+// Semantic selection remains outside this local deterministic package.
 package analysistarget
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -16,7 +15,6 @@ type Kind string
 
 const (
 	KindExecutablePackage Kind = "executable_package"
-	KindLibraryPackage    Kind = "library_package"
 	KindModuleLibrary     Kind = "module_library"
 )
 
@@ -24,7 +22,6 @@ type RootBoundary string
 
 const (
 	RootBoundaryExactPackageMains RootBoundary = "exact_selected_package_mains"
-	RootBoundaryExactPublicAPI    RootBoundary = "exact_public_api"
 	RootBoundaryExactModuleAPI    RootBoundary = "exact_module_public_api"
 )
 
@@ -81,17 +78,6 @@ func (target Target) Validate() error {
 			len(target.ModulePackages) != 0 || len(target.LibraryPackages) != 0 {
 			return fmt.Errorf("analysis target: executable target requires exact package mains")
 		}
-	case KindLibraryPackage:
-		// Package-library production was superseded by module_library in target
-		// catalog v4. The kind remains valid for in-memory consumers while they
-		// move atomically to Target v2; no v4 catalog producer emits it.
-		if err := validatePackageTargetIdentity(target); err != nil {
-			return err
-		}
-		if target.RootBoundary != RootBoundaryExactPublicAPI || len(target.Roots) != 0 ||
-			len(target.ModulePackages) != 0 || len(target.LibraryPackages) != 0 {
-			return fmt.Errorf("analysis target: library target requires an unresolved exact public API boundary")
-		}
 	case KindModuleLibrary:
 		if target.PackagePath != "" || target.PackageDir != "" || len(target.Roots) != 0 ||
 			target.RootBoundary != RootBoundaryExactModuleAPI {
@@ -123,8 +109,8 @@ func (target Target) Validate() error {
 	return nil
 }
 
-// CanonicalJSON returns the stable target bytes used by later artifact
-// bindings. It rejects an invalid or drifted self-seal.
+// CanonicalJSON returns the stable target bytes used by report-manifest
+// bindings. It rejects an invalid or drifted self-seal before hashing.
 func (target Target) CanonicalJSON() ([]byte, error) {
 	if err := target.Validate(); err != nil {
 		return nil, err
@@ -280,27 +266,3 @@ type Candidate struct {
 	MainModule     bool   `json:"main_module"`
 	EntrypointKind string `json:"entrypoint_kind,omitempty"`
 }
-
-type ResolutionState string
-
-const (
-	ResolutionSelected    ResolutionState = "selected"
-	ResolutionAmbiguous   ResolutionState = "ambiguous"
-	ResolutionUnavailable ResolutionState = "unavailable"
-)
-
-type Resolution struct {
-	State      ResolutionState `json:"state"`
-	Reason     string          `json:"reason"`
-	Selected   *Target         `json:"selected,omitempty"`
-	Candidates []Candidate     `json:"candidates"`
-}
-
-type Options struct {
-	Override string
-}
-
-var (
-	ErrOverrideNotFound  = errors.New("analysis target override not found")
-	ErrOverrideAmbiguous = errors.New("analysis target override is ambiguous")
-)

@@ -2,16 +2,22 @@ package report
 
 import (
 	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
+	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/snapshot"
 )
 
@@ -21,7 +27,7 @@ func TestWriteStandaloneTargetBundleAtomicPublishesCanonicalSelfContainedTargets
 	container, portfolio := standaloneTargetBundleAuthorityFixture(t)
 	runDir := t.TempDir()
 	localRoot := filepath.Join(t.TempDir(), "private-workstation")
-	ready := preparedStandaloneTargetFixtures(t, container, portfolio, localRoot)
+	ready := preparedStandaloneTargetFixtures(t, container, localRoot)
 
 	if err := WriteStandaloneTargetBundleAtomic(runDir, container, portfolio, ready); err != nil {
 		t.Fatalf("WriteStandaloneTargetBundleAtomic: %v", err)
@@ -38,7 +44,6 @@ func TestWriteStandaloneTargetBundleAtomicPublishesCanonicalSelfContainedTargets
 	if identity.Version != StandaloneTargetBundleVersion ||
 		identity.DefaultTargetIndex != len(container.Targets)-1 ||
 		identity.TargetCount != len(container.Targets) ||
-		identity.ReadyTargetCount != len(ready) ||
 		identity.TargetRunContainerSHA256 != container.SHA256 ||
 		identity.TargetPagePortfolioSHA256 != portfolio.SHA256 {
 		t.Fatalf("standalone bundle identity = %#v", identity)
@@ -51,53 +56,138 @@ func TestWriteStandaloneTargetBundleAtomicPublishesCanonicalSelfContainedTargets
 		t.Fatalf("standalone bundle wire = %#v", wire)
 	}
 	for index, target := range wire.Targets {
-		page := portfolio.Targets[index]
-		if target.TargetRef != container.Targets[index].Target.Ref ||
-			target.Available != (page.State == snapshot.TargetPageReady) {
+		wantPage := ready[index].prepared.programPage
+		if target.TargetID != wantPage.ProgramTarget.ID ||
+			target.Language != wantPage.ProgramTarget.Language ||
+			target.Kind != wantPage.ProgramTarget.Kind ||
+			target.DisplayName != wantPage.ProgramTarget.Name {
 			t.Fatalf("standalone target %d = %#v", index, target)
 		}
-		if !target.Available {
-			if target.Href != "" || len(target.Payload) != 0 {
-				t.Fatalf("unavailable standalone target %d retained route/payload: %#v", index, target)
-			}
-			continue
-		}
-		if target.Href != fmt.Sprintf("?target=%d#canvas", index) || len(target.Payload) == 0 {
-			t.Fatalf("ready standalone target %d = %#v", index, target)
+		if target.Href != fmt.Sprintf("?target=%d#/program", index) || len(target.Payload) == 0 {
+			t.Fatalf("published standalone target %d = %#v", index, target)
 		}
 		var payload struct {
 			AnalysisTarget   analysistarget.Target `json:"analysis_target"`
 			TargetNavigation json.RawMessage       `json:"target_navigation"`
-			Sentinel         string                `json:"bundle_test_sentinel"`
+			Warnings         []string              `json:"warnings"`
 		}
 		if err := json.Unmarshal(target.Payload, &payload); err != nil {
 			t.Fatal(err)
 		}
-		if payload.AnalysisTarget.Ref != target.TargetRef || len(payload.TargetNavigation) != 0 ||
-			payload.Sentinel != fmt.Sprintf("PAYLOAD_%d", index) {
+		if payload.AnalysisTarget.Ref != container.Targets[index].Target.Ref || len(payload.TargetNavigation) != 0 ||
+			len(payload.Warnings) != 1 || payload.Warnings[0] != fmt.Sprintf("PAYLOAD_%d", index) {
 			t.Fatalf("ready standalone payload %d = %#v", index, payload)
 		}
-		if bytes.Count(htmlBytes, []byte(payload.Sentinel)) != 1 {
-			t.Fatalf("payload %q appears %d times", payload.Sentinel, bytes.Count(htmlBytes, []byte(payload.Sentinel)))
+		if bytes.Count(htmlBytes, []byte(payload.Warnings[0])) != 1 {
+			t.Fatalf("payload %q appears %d times", payload.Warnings[0], bytes.Count(htmlBytes, []byte(payload.Warnings[0])))
 		}
+	}
+	if bytes.Contains(htmlBytes, []byte(`"artifact_filename"`)) {
+		t.Fatal("standalone browser bundle exposes backend-only ProgramIndex artifact filenames")
 	}
 
 	for _, unique := range []string{
 		`id="rm-standalone-target-bundle"`,
 		`id="rm-report-data"`,
 		`id="rm-standalone-target-bootstrap"`,
-		`id="rm-ui-messages-js"`,
-		`id="rm-elkjs"`,
-		`id="rm-architecture-canvas-js"`,
-		`id="rm-surface-catalog-js"`,
+		`id="rm-report-app-css"`,
+		`id="rm-report-app-js"`,
 	} {
 		if count := bytes.Count(htmlBytes, []byte(unique)); count != 1 {
 			t.Errorf("asset marker %q count = %d, want 1", unique, count)
 		}
 	}
-	for _, forbidden := range append([]string{localRoot, runDir}, standaloneReadyRunIDs(portfolio)...) {
+	for _, forbiddenAsset := range []string{
+		`id="rm-ui-messages-js"`, `id="rm-elkjs"`,
+		`id="rm-architecture-canvas-js"`, `id="rm-surface-catalog-js"`,
+	} {
+		if bytes.Contains(htmlBytes, []byte(forbiddenAsset)) {
+			t.Errorf("standalone ProgramPortfolio shell retained legacy asset %q", forbiddenAsset)
+		}
+	}
+	for _, forbidden := range append([]string{localRoot, runDir}, standaloneRunIDs(portfolio)...) {
 		if bytes.Contains(htmlBytes, []byte(forbidden)) {
 			t.Errorf("standalone bundle retained forbidden local authority %q", forbidden)
+		}
+	}
+}
+
+func TestExactStandaloneTargetBundleProjectionRejectsRewrittenResealedPayload(t *testing.T) {
+	container, portfolio := standaloneTargetBundleAuthorityFixture(t)
+	runDir := t.TempDir()
+	ready := preparedStandaloneTargetFixtures(t, container, filepath.Join(t.TempDir(), "private"))
+	validated, err := validateStandaloneTargetBundle(container, portfolio, ready)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteStandaloneTargetBundleAtomic(runDir, container, portfolio, ready); err != nil {
+		t.Fatal(err)
+	}
+	htmlPath := filepath.Join(runDir, "report.html")
+	itemAt := func(index int) (standaloneTargetBundleItem, error) {
+		return validated.targets[index], nil
+	}
+	if err := verifyExactStandaloneTargetBundleProjection(
+		htmlPath, validated.identity, validated.defaultTarget.repoName, itemAt,
+	); err != nil {
+		t.Fatalf("verify exact canonical projection: %v", err)
+	}
+
+	raw, err := os.ReadFile(htmlPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered := bytes.Replace(raw, []byte("PAYLOAD_0"), []byte("PAYLOAD_X"), 1)
+	if bytes.Equal(tampered, raw) {
+		t.Fatal("bundle payload sentinel was not present")
+	}
+	sealStart := bytes.LastIndex(tampered, []byte(standaloneTargetBundleSealPrefix))
+	if sealStart < 0 {
+		t.Fatal("bundle seal was not present")
+	}
+	digest := sha256.Sum256(tampered[:sealStart])
+	tampered = append(
+		append([]byte(nil), tampered[:sealStart]...),
+		[]byte(standaloneTargetBundleSealPrefix+hex.EncodeToString(digest[:])+standaloneTargetBundleSealSuffix)...,
+	)
+	if err := os.WriteFile(htmlPath, tampered, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := InspectStandaloneTargetBundleHTML(htmlPath); err != nil || !found {
+		t.Fatalf("self-sealed tampered bundle was not structurally valid: found=%t err=%v", found, err)
+	}
+	if err := verifyExactStandaloneTargetBundleProjection(
+		htmlPath, validated.identity, validated.defaultTarget.repoName, itemAt,
+	); err == nil || !strings.Contains(err.Error(), "manifest-derived projection") {
+		t.Fatalf("resealed payload authority error = %v", err)
+	}
+}
+
+func TestStandaloneProgramPortfolioUsesProgramRoutesAndEmbedsItsAssets(t *testing.T) {
+	container, portfolio := standaloneTargetBundleAuthorityFixture(t)
+	ready := preparedStandaloneTargetFixtures(t, container, filepath.Join(t.TempDir(), "private"))
+	runDir := t.TempDir()
+	if err := WriteStandaloneTargetBundleAtomic(runDir, container, portfolio, ready); err != nil {
+		t.Fatal(err)
+	}
+	htmlBytes, err := os.ReadFile(filepath.Join(runDir, "report.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire := embeddedStandaloneTargetBundle(t, htmlBytes)
+	for index, item := range wire.Targets {
+		if want := fmt.Sprintf("?target=%d#/program", index); item.Href != want {
+			t.Errorf("program target %d href = %q, want %q", index, item.Href, want)
+		}
+	}
+	for _, marker := range []string{
+		`id="rm-app"`,
+		`id="rm-report-app-css"`,
+		`id="rm-report-app-js"`,
+		`buildPresentationModel(data)`,
+	} {
+		if !bytes.Contains(htmlBytes, []byte(marker)) {
+			t.Errorf("standalone ProgramView bundle is missing %q", marker)
 		}
 	}
 }
@@ -109,7 +199,7 @@ func TestStandaloneTargetBootstrapSelectsBeforeMainApplication(t *testing.T) {
 	}
 	container, portfolio := standaloneTargetBundleAuthorityFixture(t)
 	runDir := t.TempDir()
-	ready := preparedStandaloneTargetFixtures(t, container, portfolio, filepath.Join(t.TempDir(), "private"))
+	ready := preparedStandaloneTargetFixtures(t, container, filepath.Join(t.TempDir(), "private"))
 	if err := WriteStandaloneTargetBundleAtomic(runDir, container, portfolio, ready); err != nil {
 		t.Fatal(err)
 	}
@@ -126,38 +216,21 @@ func TestStandaloneTargetBootstrapSelectsBeforeMainApplication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mainPath, err := filepath.Abs(filepath.Join("templates", "script.js"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	runner := `
 const fs=require("fs"),vm=require("vm");
 const bundle=fs.readFileSync(process.argv[4],"utf8");
-class Element {
-  constructor(tag){this.tagName=String(tag).toUpperCase();this.className="";this.attributes={};this.children=[];this.textContent="";}
-  setAttribute(k,v){this.attributes[k]=String(v)} getAttribute(k){return this.attributes[k]||null}
-  appendChild(v){this.children.push(v);return v}
-}
-function hasClass(node,name){return String(node.className||"").split(/\s+/).includes(name)}
 function execute(search){
   const bundleNode={textContent:bundle},reportNode={textContent:""};
-  const document={documentElement:{lang:"en"},title:"",createElement:t=>new Element(t),
+  const document={documentElement:{lang:"en"},title:"",
     getElementById(id){if(id==="rm-standalone-target-bundle")return bundleNode;if(id==="rm-report-data")return reportNode;return null},
     querySelector(){return null},querySelectorAll(){return []}};
-  const window={document,location:{search,hash:"#canvas",protocol:"file:",pathname:"/bucket/report.html"},
-    __REPOMAP_WORKSPACE_TEST__:{},addEventListener(){},removeEventListener(){}};
-  const context={window,document,URLSearchParams,Set,Map,AbortController,Promise};
+  const window={document,location:{search,hash:"#/program",protocol:"file:",pathname:"/bucket/report.html"}};
+  const context={window,document,URLSearchParams};
   vm.runInNewContext(fs.readFileSync(process.argv[2],"utf8"),context);
-  vm.runInNewContext(fs.readFileSync(process.argv[3].replace("script.js","ui_messages.js"),"utf8"),context);
-  vm.runInNewContext(fs.readFileSync(process.argv[3],"utf8"),context);
-  const data=JSON.parse(reportNode.textContent),tabs=new Element("nav");
-  window.__REPOMAP_WORKSPACE_TEST__.renderAnalysisTargetMenu(tabs);
-  const items=[];
-  tabs.children.forEach(group=>group.children[1].children.forEach(row=>{
-    const item=row.children[0];items.push({tag:item.tagName,href:item.attributes.href||"",
-      active:hasClass(item,"rm-active"),disabled:hasClass(item,"rm-target-link--disabled")});
-  }));
-  return {search,ref:data.analysis_target.ref,sentinel:data.bundle_test_sentinel,
+  const data=JSON.parse(reportNode.textContent);
+  if(data.standalone_target_error)return {search,error:data.standalone_target_error};
+  const items=data.target_navigation.targets.map(item=>({href:item.href}));
+  return {search,ref:data.analysis_target.ref,targetID:data.target_navigation.targets[data.target_navigation.current_target_index].target_id,sentinel:data.warnings[0],
     current:data.target_navigation.current_target_index,def:data.target_navigation.default_target_index,
     version:data.target_navigation.version,language:document.documentElement.lang,title:document.title,items};
 }
@@ -167,16 +240,15 @@ process.stdout.write(JSON.stringify(["","?target=0","?target=00","?target=%31","
 	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	output, err := exec.Command(node, runnerPath, bootstrapPath, mainPath, bundlePath).CombinedOutput()
+	output, err := exec.Command(node, runnerPath, bootstrapPath, "unused", bundlePath).CombinedOutput()
 	if err != nil {
 		t.Fatalf("run standalone target bootstrap: %v\n%s", err, output)
 	}
 	var got []struct {
-		Search, Ref, Sentinel, Language, Title string
-		Current, Def, Version                  int
-		Items                                  []struct {
-			Tag, Href        string
-			Active, Disabled bool
+		Search, Ref, TargetID, Sentinel, Language, Title, Error string
+		Current, Def, Version                                   int
+		Items                                                   []struct {
+			Href string
 		}
 	}
 	if err := json.Unmarshal(output, &got); err != nil {
@@ -187,54 +259,57 @@ process.stdout.write(JSON.stringify(["","?target=0","?target=00","?target=%31","
 		t.Fatalf("bootstrap results = %#v", got)
 	}
 	for _, result := range got {
+		valid := result.Search == "" || result.Search == "?target=0" || result.Search == "?target=1"
+		if !valid {
+			if result.Error == "" || result.Ref != "" || len(result.Items) != 0 {
+				t.Errorf("bootstrap invalid query %q did not fail closed: %#v", result.Search, result)
+			}
+			continue
+		}
 		want := defaultIndex
 		if result.Search == "?target=0" {
 			want = 0
+		} else if result.Search == "?target=1" {
+			want = 1
 		}
 		if result.Current != want || result.Def != defaultIndex ||
 			result.Version != StandaloneTargetNavigationVersion ||
 			result.Ref != container.Targets[want].Target.Ref ||
+			result.TargetID != ready[want].prepared.programPage.ProgramTarget.ID ||
 			result.Sentinel != fmt.Sprintf("PAYLOAD_%d", want) ||
-			result.Language != "ru" || !strings.Contains(result.Title, "bundle-fixture") {
+			result.Language != "en" || !strings.Contains(result.Title, "bundle-fixture") {
 			t.Errorf("bootstrap %q = %#v, selected index %d", result.Search, result, want)
 		}
 		if len(result.Items) != len(container.Targets) {
 			t.Fatalf("bootstrap menu %q = %#v", result.Search, result.Items)
 		}
 		for index, item := range result.Items {
-			available := portfolio.Targets[index].State == snapshot.TargetPageReady
-			if item.Active != (index == want) || item.Disabled == available {
-				t.Errorf("bootstrap menu %q item %d = %#v", result.Search, index, item)
-			}
-			if available && item.Href != fmt.Sprintf("?target=%d#canvas", index) {
+			if item.Href != fmt.Sprintf("?target=%d#/program", index) {
 				t.Errorf("bootstrap menu href %q item %d = %q", result.Search, index, item.Href)
-			}
-			if !available && (item.Tag != "SPAN" || item.Href != "") {
-				t.Errorf("bootstrap unavailable item %d = %#v", index, item)
 			}
 		}
 	}
 	if bytes.Contains(htmlBytes, []byte("report.json")) {
 		t.Fatal("standalone target bundle noscript copy references an external report.json")
 	}
-	if !bytes.Contains(htmlBytes, []byte("Все данные уже встроены в этот HTML-файл")) {
+	if !bytes.Contains(htmlBytes, []byte("Its repository evidence is embedded in this HTML file")) {
 		t.Fatal("standalone target bundle noscript copy does not disclose embedded data")
 	}
 }
 
 func TestStandaloneTargetHrefResolvesForFileAndHostedObjectStorage(t *testing.T) {
-	reference, err := url.Parse("?target=2#canvas")
+	reference, err := url.Parse("?target=2#/program")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, test := range []struct{ base, want string }{
 		{
 			base: "file:///Users/test/export/report.html?target=0#study-theme-2",
-			want: "file:///Users/test/export/report.html?target=2#canvas",
+			want: "file:///Users/test/export/report.html?target=2#/program",
 		},
 		{
 			base: "https://bucket.example.test/maps/report.html?target=0#study-theme-2",
-			want: "https://bucket.example.test/maps/report.html?target=2#canvas",
+			want: "https://bucket.example.test/maps/report.html?target=2#/program",
 		},
 	} {
 		base, parseErr := url.Parse(test.base)
@@ -252,21 +327,20 @@ func TestPrepareStandaloneTargetPinsSourceAndScrubsLocalAuthority(t *testing.T) 
 	localRoot := filepath.Join(t.TempDir(), "secret-run")
 	target := container.Targets[0].Target
 	payload, err := json.Marshal(map[string]any{
-		"format_version":  CurrentFormatVersion,
-		"analysis_target": target,
-		"report_language": "ru",
-		"repo_name":       "bundle-fixture",
+		"format_version":       CurrentFormatVersion,
+		"analysis_target":      target,
+		"program_portfolio":    standaloneProgramPortfolioFixture(t),
+		"repo_name":            "bundle-fixture",
+		"captured_revision":    standaloneBundleRevision,
+		"captured_input_count": 0,
+		"openable_paths":       []string{},
 		"github_source_links": map[string]any{
 			"repository_url": "https://github.com/example/bundle",
 			"revision":       standaloneBundleRevision,
 		},
 		"warnings": []string{"open " + localRoot + "/orientation.json"},
-		"source_signal": map[string]any{
-			"path": "cmd/server/main.go", "line": 3,
-			"snippet": "LOCAL_SOURCE_BYTES", "content": "LOCAL_SOURCE_BYTES",
-		},
 		"target_navigation": map[string]any{
-			"version": 2, "targets": []any{map[string]any{"href": "../private-run/report.html#/map"}},
+			"version": TargetNavigationVersion, "targets": []any{map[string]any{"href": "../private-run/report.html#/program"}},
 		},
 	})
 	if err != nil {
@@ -277,7 +351,7 @@ func TestPrepareStandaloneTargetPinsSourceAndScrubsLocalAuthority(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{localRoot, "LOCAL_SOURCE_BYTES", "target_navigation", "private-run"} {
+	for _, forbidden := range []string{localRoot, "target_navigation", "private-run"} {
 		if bytes.Contains(prepared.payload, []byte(forbidden)) {
 			t.Errorf("prepared payload retained %q: %s", forbidden, prepared.payload)
 		}
@@ -285,7 +359,6 @@ func TestPrepareStandaloneTargetPinsSourceAndScrubsLocalAuthority(t *testing.T) 
 	for _, required := range []string{
 		`"repository_url":"https://github.com/example/bundle"`,
 		`"revision":"` + standaloneBundleRevision + `"`,
-		`"path":"cmd/server/main.go"`,
 		`open [local path]/orientation.json`,
 	} {
 		if !bytes.Contains(prepared.payload, []byte(required)) {
@@ -294,9 +367,35 @@ func TestPrepareStandaloneTargetPinsSourceAndScrubsLocalAuthority(t *testing.T) 
 	}
 }
 
+func TestPrepareStandaloneTargetRequiresProgramPortfolioAndRejectsLegacyAliases(t *testing.T) {
+	container, _ := standaloneTargetBundleAuthorityFixture(t)
+	ready := preparedStandaloneTargetFixtures(t, container, filepath.Join(t.TempDir(), "private"))
+	input := ready[0].prepared
+	htmlBytes := []byte("<html><body>" + reportDataScriptOpen + string(input.payload) + reportDataScriptClose + "</body></html>")
+
+	if _, err := prepareStandaloneTargetFromHTML(htmlBytes, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	var incomplete map[string]any
+	if err := json.Unmarshal(input.payload, &incomplete); err != nil {
+		t.Fatal(err)
+	}
+	incomplete["program_target"] = map[string]any{"id": "legacy-alias"}
+	payload, err := json.Marshal(incomplete)
+	if err != nil {
+		t.Fatal(err)
+	}
+	htmlBytes = []byte("<html><body>" + reportDataScriptOpen + string(payload) + reportDataScriptClose + "</body></html>")
+	if _, err := prepareStandaloneTargetFromHTML(htmlBytes, nil); err == nil ||
+		!strings.Contains(err.Error(), `unknown field "program_target"`) {
+		t.Fatalf("legacy program alias error = %v", err)
+	}
+}
+
 func TestStandaloneTargetBundleRejectsAuthorityDriftAndPreservesExistingHTML(t *testing.T) {
 	container, portfolio := standaloneTargetBundleAuthorityFixture(t)
-	ready := preparedStandaloneTargetFixtures(t, container, portfolio, filepath.Join(t.TempDir(), "private"))
+	ready := preparedStandaloneTargetFixtures(t, container, filepath.Join(t.TempDir(), "private"))
 	runDir := t.TempDir()
 	htmlPath := filepath.Join(runDir, "report.html")
 	const original = "ORIGINAL_REPORT"
@@ -305,17 +404,12 @@ func TestStandaloneTargetBundleRejectsAuthorityDriftAndPreservesExistingHTML(t *
 	}
 
 	tests := map[string]func([]PreparedStandaloneTarget) []PreparedStandaloneTarget{
-		"missing ready target": func(values []PreparedStandaloneTarget) []PreparedStandaloneTarget {
+		"missing selected target": func(values []PreparedStandaloneTarget) []PreparedStandaloneTarget {
 			return values[:len(values)-1]
 		},
 		"revision drift": func(values []PreparedStandaloneTarget) []PreparedStandaloneTarget {
 			values = clonePreparedStandaloneTargets(values)
 			values[len(values)-1].prepared.revision = strings.Repeat("f", 40)
-			return values
-		},
-		"language drift": func(values []PreparedStandaloneTarget) []PreparedStandaloneTarget {
-			values = clonePreparedStandaloneTargets(values)
-			values[len(values)-1].prepared.language = "en"
 			return values
 		},
 		"host drift": func(values []PreparedStandaloneTarget) []PreparedStandaloneTarget {
@@ -342,7 +436,8 @@ func TestStandaloneTargetBundleRejectsAuthorityDriftAndPreservesExistingHTML(t *
 
 func TestInspectStandaloneTargetBundleHTMLDistinguishesOrdinaryAndTamperedReports(t *testing.T) {
 	ordinaryPath := filepath.Join(t.TempDir(), "report.html")
-	ordinary, err := RenderHTML(&ReportData{FormatVersion: CurrentFormatVersion, RepoName: "ordinary"})
+	ordinaryData, _ := targetNavigationFixture(t)
+	ordinary, err := RenderHTMLWithOptions(ordinaryData, RenderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -355,7 +450,7 @@ func TestInspectStandaloneTargetBundleHTMLDistinguishesOrdinaryAndTamperedReport
 
 	container, portfolio := standaloneTargetBundleAuthorityFixture(t)
 	runDir := t.TempDir()
-	ready := preparedStandaloneTargetFixtures(t, container, portfolio, filepath.Join(t.TempDir(), "private"))
+	ready := preparedStandaloneTargetFixtures(t, container, filepath.Join(t.TempDir(), "private"))
 	if err := WriteStandaloneTargetBundleAtomic(runDir, container, portfolio, ready); err != nil {
 		t.Fatal(err)
 	}
@@ -434,7 +529,15 @@ func standaloneTargetBundleAuthorityFixture(
 			t.Fatalf("git %v: %v\n%s", args, err, output)
 		}
 	}
-	deferred, err := snapshot.Build(snapshot.Options{RepoPath: repository, DeferAnalysisTargetResolution: true})
+	repositoryCorpus, err := corpus.Open(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repositoryCorpus.Close()
+	deferred, err := snapshot.BuildContext(context.Background(), snapshot.Options{
+		RepoPath: repository, RepositoryCorpus: repositoryCorpus,
+		GoTarget: runtime.GOOS + "/" + runtime.GOARCH,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -455,13 +558,7 @@ func standaloneTargetBundleAuthorityFixture(
 	for index, projection := range container.Targets {
 		outcome := snapshot.TargetPageOutcome{
 			TargetRef: projection.Target.Ref,
-			State:     snapshot.TargetPageReady,
 			RunID:     fmt.Sprintf("20260811-01010%d-target-%d", index, index),
-		}
-		if index == 1 {
-			outcome.State = snapshot.TargetPageUnavailable
-			outcome.RunID = ""
-			outcome.UnavailableCode = snapshot.TargetPageUnavailableTargetRunFailed
 		}
 		outcomes = append(outcomes, outcome)
 	}
@@ -475,22 +572,25 @@ func standaloneTargetBundleAuthorityFixture(
 func preparedStandaloneTargetFixtures(
 	t *testing.T,
 	container snapshot.TargetRunContainer,
-	portfolio snapshot.TargetPagePortfolio,
 	localRoot string,
 ) []PreparedStandaloneTarget {
 	t.Helper()
 	result := make([]PreparedStandaloneTarget, 0, len(container.Targets))
 	for index, projection := range container.Targets {
-		if portfolio.Targets[index].State != snapshot.TargetPageReady {
-			continue
+		programPortfolio := standaloneProgramPortfolioFixture(t, index)
+		defaultEntry, err := programPortfolio.defaultEntry()
+		if err != nil {
+			t.Fatal(err)
 		}
 		payload, err := json.Marshal(map[string]any{
 			"format_version":       CurrentFormatVersion,
 			"analysis_target":      projection.Target,
-			"report_language":      "ru",
+			"program_portfolio":    programPortfolio,
 			"repo_name":            "bundle-fixture",
-			"project_guess":        fmt.Sprintf("target %d", index),
-			"bundle_test_sentinel": fmt.Sprintf("PAYLOAD_%d", index),
+			"captured_revision":    standaloneBundleRevision,
+			"captured_input_count": 0,
+			"openable_paths":       []string{},
+			"warnings":             []string{fmt.Sprintf("PAYLOAD_%d", index)},
 			"github_source_links": map[string]any{
 				"repository_url": "https://github.com/example/bundle",
 				"revision":       standaloneBundleRevision,
@@ -499,17 +599,36 @@ func preparedStandaloneTargetFixtures(
 		if err != nil {
 			t.Fatal(err)
 		}
+		analysisTarget := projection.Target.Snapshot()
 		result = append(result, PreparedStandaloneTarget{prepared: &preparedStandaloneTarget{
-			target: projection.Target.Snapshot(), payload: payload,
-			host: "GitHub", repositoryURL: "https://github.com/example/bundle",
-			revision: standaloneBundleRevision, language: "ru",
-			localizationState: PresentationLocalizationSucceeded,
-			repoName:          "bundle-fixture", projectGuess: fmt.Sprintf("target %d", index),
-			hasCanvas: index == 0, hasSurfaces: index == len(container.Targets)-1,
+			analysisTarget: &analysisTarget,
+			programPage: TargetNavigationPage{
+				RunID:            fmt.Sprintf("20260811-01010%d-target-%d", index, index),
+				ProgramTarget:    defaultEntry.Target.Snapshot(),
+				ArtifactFilename: fmt.Sprintf("program-index-%d.json", index),
+			},
+			payload: payload,
+			host:    "GitHub", repositoryURL: "https://github.com/example/bundle",
+			revision:   standaloneBundleRevision,
+			repoName:   "bundle-fixture",
 			localRoots: []string{localRoot},
 		}})
 	}
 	return result
+}
+
+func standaloneProgramPortfolioFixture(t *testing.T, ordinal ...int) *ProgramPortfolio {
+	t.Helper()
+	value := 0
+	if len(ordinal) != 0 {
+		value = ordinal[0]
+	}
+	index := reportProgramIndexFixture(t, "go", fmt.Sprintf("executable-%d", value))
+	portfolio, err := NewProgramPortfolio(index.Target.ID, []programindex.Index{index})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return portfolio
 }
 
 func clonePreparedStandaloneTargets(values []PreparedStandaloneTarget) []PreparedStandaloneTarget {
@@ -523,7 +642,7 @@ func clonePreparedStandaloneTargets(values []PreparedStandaloneTarget) []Prepare
 	return cloned
 }
 
-func standaloneReadyRunIDs(portfolio snapshot.TargetPagePortfolio) []string {
+func standaloneRunIDs(portfolio snapshot.TargetPagePortfolio) []string {
 	result := make([]string, 0, len(portfolio.Targets))
 	for _, page := range portfolio.Targets {
 		if page.RunID != "" {

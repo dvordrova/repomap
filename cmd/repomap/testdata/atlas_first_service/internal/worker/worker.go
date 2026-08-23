@@ -1,3 +1,0 @@
-package worker
-
-func Run() {}

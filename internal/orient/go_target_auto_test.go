@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
+	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/snapshot"
 )
 
@@ -31,10 +32,8 @@ func TestAutoGoTargetSelectsFinalCatalogBeforeProviderSeam(t *testing.T) {
 	containerDelivered := false
 	var selected snapshot.GoTargetSelection
 	var ready ProgressEvent
-	_, err := Run(context.Background(), Options{
+	err := Run(context.Background(), prepareOrientRunOptions(t, repository, Options{
 		RepoPath: repository, GoTarget: "darwin/amd64", AutoGoTarget: true,
-		SnapshotOnly: true, Offline: true,
-		AnalysisTargetSelectorOwnsResolution: true,
 		GoTargetSelectionSink: func(got snapshot.GoTargetSelection) {
 			selectionDelivered = true
 			selected = got
@@ -43,6 +42,7 @@ func TestAutoGoTargetSelectsFinalCatalogBeforeProviderSeam(t *testing.T) {
 			_ context.Context,
 			_ string,
 			catalog analysistarget.TargetCatalog,
+			_ gofacts.Facts,
 		) (snapshot.TargetRunSelection, error) {
 			selectorCalls++
 			if !selectionDelivered {
@@ -78,7 +78,7 @@ func TestAutoGoTargetSelectsFinalCatalogBeforeProviderSeam(t *testing.T) {
 				ready = event
 			}
 		},
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}

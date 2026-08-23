@@ -1,81 +1,58 @@
-// Package targetportfolio builds and reduces one compact refs-only model
-// choice over an exact AnalysisTarget catalog. It does not call a provider,
-// choose an explicit --target override, or implement --all-targets policy.
+// Package targetportfolio compiles and reduces one file-addressed portfolio
+// decision over the universally merged output of the initial target scouts.
 package targetportfolio
 
-import "github.com/dvordrova/repomap/internal/analysistarget"
+import (
+	"github.com/dvordrova/repomap/internal/analysistarget"
+	"github.com/dvordrova/repomap/internal/corpus"
+)
 
 const (
-	CompilationVersion = 4
-	RequestVersion     = 4
-	ResultVersion      = 3
+	PreparationVersion    = 1
+	ResponseSchemaVersion = 3
 
-	// The selector carries the complete exact ordinary candidate surface plus
-	// declaration labels, so its request has a dedicated 256 KiB envelope. The
-	// complete private catalog may be broader. The refs-only response remains
-	// bounded to 64 KiB. There is no target-count or symbol-count cap and no
-	// prefix truncation within the advertised surface.
-	MaxRequestBytes = 256 << 10
-	// The semantic JSON is embedded as a JSON message string in the final
-	// OpenAI-compatible body. Reserve the exact two-times escaping bound plus
-	// 64 KiB for the fixed prompt and provider envelope.
+	// The provider receives the complete candidate set or no request at
+	// all. There is deliberately no candidate-count or hypothesis-count
+	// truncation hidden behind these byte envelopes.
+	MaxRequestBytes         = 256 << 10
 	MaxProviderRequestBytes = 2*MaxRequestBytes + 64<<10
 	MaxResponseBytes        = 64 << 10
+	MaxOutputTokens         = 64_000
 )
 
-type TargetKind string
+const executionContract = "positive-file-target-portfolio-selection-v3"
 
-const (
-	TargetExecutable TargetKind = "executable"
-	TargetLibrary    TargetKind = "library"
-)
+// Candidate is the common output of the initial scouts after their dumb
+// FileRef merge. Keep the alias so the portfolio does not invent a second
+// wire shape for the same value.
+type Candidate = analysistarget.FileCandidate
 
-// Target is one provider-visible request-local option. DisplayPath is an
-// exact flat repository-relative display label, never canonical identity.
-type Target struct {
-	Ref         string           `json:"ref"`
-	DisplayPath string           `json:"display_path"`
-	Kind        TargetKind       `json:"kind"`
-	Packages    []PackageSymbols `json:"packages"`
+// VisibleCandidate adds the exact repository-relative path resolved locally
+// from the corpus. It is both the provider-visible option and the value
+// restored into Selection.
+type VisibleCandidate struct {
+	FileRef    corpus.FileID `json:"file_ref"`
+	Path       string        `json:"path"`
+	Hypotheses []string      `json:"hypotheses"`
 }
 
-// PackageSymbols keeps one exact package's declaration labels together. Its
-// DisplayPath is repository-relative presentation evidence, not canonical Go
-// import identity. Declaration locations and source never cross this wire.
-type PackageSymbols struct {
-	DisplayPath string        `json:"display_path"`
-	Symbols     []SymbolGroup `json:"symbols"`
-}
-
-// SymbolGroup keeps exact declaration labels readable and compact. Methods
-// use receiver-qualified names such as Server.Start.
-type SymbolGroup struct {
-	Kind  string   `json:"kind"`
-	Names []string `json:"names"`
-}
-
-// Request is the complete provider-visible facts bundle. RequestRef binds the
-// exact bundle and private catalog so a response cannot be replayed against a
-// different t* mapping.
+// Request is the complete provider-visible bundle. Corpus identity and cache
+// identity remain private.
 type Request struct {
-	Version    int      `json:"version"`
-	RequestRef string   `json:"request_ref"`
-	RepoName   string   `json:"repo_name"`
-	Targets    []Target `json:"targets"`
+	Candidates []VisibleCandidate `json:"candidates"`
 }
 
-// Compilation owns the exact private restoration table. Only Request is
-// permitted to cross the provider boundary.
+// Compilation owns the exact candidate and cache authority. Only Request may
+// cross the provider boundary.
 type Compilation struct {
-	Version       int     `json:"version"`
-	CatalogRef    string  `json:"catalog_ref"`
-	Request       Request `json:"request"`
-	RequestSHA256 string  `json:"request_sha256"`
+	Request       Request
+	RequestSHA256 string
 
-	wire      string
-	catalog   analysistarget.TargetCatalog
-	authority map[string]analysistarget.TargetCatalogEntry
-	sealed    string
+	wire       []byte
+	state      []byte
+	corpus     corpus.Snapshot
+	candidates []Candidate
+	sealed     string
 }
 
 type Prompt struct {
@@ -84,22 +61,20 @@ type Prompt struct {
 	User    string
 }
 
-// Response is deliberately refs-only. TargetRefs is an unordered selected
-// set; DefaultRef carries the one intentional preference.
+// Response is deliberately file-refs-only. The schema has exactly these two
+// fields; unlike private execution state, it exposes no version or request
+// identity to the model.
 type Response struct {
-	Version    int      `json:"version"`
-	RequestRef string   `json:"request_ref"`
-	DefaultRef string   `json:"default_ref"`
-	TargetRefs []string `json:"target_refs"`
+	DefaultFileRef *corpus.FileID  `json:"default_file_ref"`
+	TargetFileRefs []corpus.FileID `json:"target_file_refs"`
 }
 
-// Selection restores exact backend-owned catalog entries. Targets are in the
-// canonical request order, never provider response order.
+// Selection is a disjoint canonical-order partition. Targets contains only
+// positive model selections. Omitted input candidates are restored locally as
+// Unclassified and dropped from target execution. Default is non-nil exactly
+// when Targets is non-empty, and then always points to a Target.
 type Selection struct {
-	Version       int
-	CatalogRef    string
-	RequestRef    string
-	RequestSHA256 string
-	Default       analysistarget.TargetCatalogEntry
-	Targets       []analysistarget.TargetCatalogEntry
+	Default      *VisibleCandidate
+	Targets      []VisibleCandidate
+	Unclassified []VisibleCandidate
 }

@@ -291,7 +291,7 @@ func compileSurfaceFact(exact ExactSurfaceFact, number int) (RequestSurfaceFact,
 	if label == "" || value == "" || value != exact.Value {
 		return RequestSurfaceFact{}, false
 	}
-	if _, found := secretscan.DetectAlways(label + "\n" + value); found {
+	if _, found := secretscan.Detect(label + "\n" + value); found {
 		return RequestSurfaceFact{}, false
 	}
 	return RequestSurfaceFact{
@@ -428,18 +428,6 @@ func surfaceProposalID(candidateID, kind string) string {
 	return "model-surface-" + hex.EncodeToString(digest[:12])
 }
 
-func validSurfaceProposalID(value string) bool {
-	if !strings.HasPrefix(value, "model-surface-") || len(value) != len("model-surface-")+24 {
-		return false
-	}
-	for _, character := range value[len("model-surface-"):] {
-		if !strings.ContainsRune("0123456789abcdef", character) {
-			return false
-		}
-	}
-	return true
-}
-
 func validSurfaceCoverage(coverage SurfaceCandidateCoverage) bool {
 	values := []int{
 		coverage.ConsideredCandidates, coverage.AdvertisedCandidates, coverage.OmittedCandidates,
@@ -472,10 +460,6 @@ func validateCompiledSurfaceCatalog(compilation Compilation) error {
 		surfaceCatalogSize(catalog) > MaxSurfaceCandidateSectionBytes {
 		return fmt.Errorf("entry call: invalid compiled surface catalog")
 	}
-	rootRefs := make(map[string]struct{}, len(compilation.Request.Entries))
-	for _, entry := range compilation.Request.Entries {
-		rootRefs[entry.Ref] = struct{}{}
-	}
 	seenCandidateRefs := make(map[string]struct{}, len(catalog.Candidates))
 	seenFactRefs := make(map[string]struct{})
 	totalFacts := 0
@@ -489,12 +473,13 @@ func validateCompiledSurfaceCatalog(compilation Compilation) error {
 			return fmt.Errorf("entry call: duplicate compiled surface candidate")
 		}
 		seenCandidateRefs[candidate.Ref] = struct{}{}
-		if _, known := rootRefs[candidate.RootRef]; !known {
+		rootNodeID, knownRoot := compilation.rootNodeByRef[candidate.RootRef]
+		if !knownRoot {
 			return fmt.Errorf("entry call: compiled surface candidate cites unknown root")
 		}
 		authority, known := compilation.surfaceAuthority[candidate.Ref]
 		if !known || !requestSurfaceCandidatesEqual(candidate, authority.request) ||
-			authority.exact.RootNodeID == "" || len(authority.factByRef) != len(candidate.Facts) {
+			authority.exact.RootNodeID != rootNodeID || len(authority.factByRef) != len(candidate.Facts) {
 			return fmt.Errorf("entry call: compiled surface authority mismatch")
 		}
 		for _, fact := range candidate.Facts {
@@ -512,7 +497,7 @@ func validateCompiledSurfaceCatalog(compilation Compilation) error {
 			if !known || exact.Kind != fact.Kind || exact.Position != fact.Position {
 				return fmt.Errorf("entry call: compiled surface fact authority mismatch")
 			}
-			if _, found := secretscan.DetectAlways(fact.Label + "\n" + fact.Value); found {
+			if _, found := secretscan.Detect(fact.Label + "\n" + fact.Value); found {
 				return fmt.Errorf("entry call: compiled surface fact contains credential-shaped content")
 			}
 		}
@@ -521,6 +506,22 @@ func validateCompiledSurfaceCatalog(compilation Compilation) error {
 		return fmt.Errorf("entry call: invalid compiled surface fact accounting")
 	}
 	return nil
+}
+
+func validRef(value, prefix string) bool {
+	if !strings.HasPrefix(value, prefix) || len(value) <= len(prefix) {
+		return false
+	}
+	nonzero := false
+	for _, character := range value[len(prefix):] {
+		if character < '0' || character > '9' {
+			return false
+		}
+		if character != '0' {
+			nonzero = true
+		}
+	}
+	return nonzero
 }
 
 func surfaceChoicesEqual(left, right []RequestSurfaceChoice) bool {

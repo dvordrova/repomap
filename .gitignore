@@ -6,12 +6,12 @@
 *.exe
 *.test
 .bin/
-/internal.zip
+__pycache__/
+*.py[cod]
 
 # Editor
 .idea/
 .vscode/
-.hermes/
 *.swp
 *.swo
 *~
@@ -23,4 +23,5 @@
 tmp/
 .repomap-runs/
 .repomap/
+.codex-tmp/
 /etcd

@@ -1,237 +1,147 @@
 # repomap
 
-`repomap` is a local-first repository investigation CLI. It builds bounded,
-inspectable facts locally, asks an OpenAI-compatible model for useful directions,
-and keeps model hypotheses separate from source, test, and runtime evidence.
-Go has the deepest deterministic analysis; Python repositories can already use
-the same one-command orientation journey with a language-neutral tracked-file
-bundle.
+`repomap` is an online, model-assisted repository orientation tool. It
+extracts exact repository facts locally, sends bounded request-local catalogs
+to an OpenAI-compatible model, and publishes a manifest, report JSON, and
+report HTML. Go currently has the complete semantic cube-map path. Python has
+target discovery, an AST-backed language-neutral program index, an exact
+dependency catalog, potential-integration and concrete-operation classifiers,
+the shared core-responsibility map, and model-selected activity entrypoints
+restored to exact program objects. For every selected integration operation,
+Python also publishes a deterministic route from a selected activity to the
+exact caller when the retained program graph supports one, preserving
+`exact`, `possible`, `frontier`, and `unconnected` as distinct claims.
 
-The current product path orients you in an unfamiliar repository and can expand
-selected runtime/event directions. Source-grounded symbol investigation,
-content-addressed resumable memory, and offline quality replay exist as
-connected slices. The active product goal is a handoff-ready onboarding pass
-for an engineer evaluating a Go project they already know; free branch/deepen/
-backtrack repository exploration follows it, then natural-language feature work.
+The supported product surface is deliberately small:
+
+```text
+repomap [repository] [flags]
+repomap cache clear [--debug-dir DIR]
+```
+
+There are no offline, replay, investigate, doctor, dev, experiment, or separate
+serve commands.
 
 ## Build
 
+Go 1.26 or newer is required.
+
+Python repositories additionally require Python 3.10 or newer on `PATH`. The
+adapter requires the runtime's exact standard-library module catalog and does
+not guess when that authority is unavailable.
+
 ```bash
-go build -o ./repomap ./cmd/repomap
-./repomap --help
+make build
+.bin/repomap --help
 ```
 
-repomap requires Go 1.24 or newer. Go facts use the installed toolchain, the
-target repository's build files, and the user's normal Go environment (including
-an internal `GOPROXY`). `go list -e` keeps partial facts when some packages are
-unavailable. Python orientation does not require Pyright; the optional focused
-Pyright playground is documented in [PYTHON.md](PYTHON.md).
+`make build` writes the owner-facing binary to `.bin/repomap`.
 
-## Configure a model
+## Configure the model provider
 
-For the current DeepSeek reference path, only the key is required. The default
-model is `deepseek-v4-flash`:
+For the default DeepSeek endpoint:
 
 ```bash
 export DEEPSEEK_API_KEY=...
-./repomap doctor llm --check
-./repomap /path/to/repo
+.bin/repomap /path/to/repository
 ```
 
-The normal human run shows local-context and outbound-request byte counts,
-writes a report under the OS user cache, starts a loopback-only HTTP server on a
-random port, and opens that report in the browser. Run `./repomap` with no
-repository argument to analyse the current directory. The server stays up so
-file references can open in VS Code; press Ctrl-C when finished. Use `--no-open`
-to keep the browser closed, `--port` to choose a port, or `--no-serve` for a
-standalone static report.
-
-To share a standalone report through S3 or another static host, point repomap
-at the matching GitLab project:
+For another OpenAI-compatible `chat/completions` endpoint:
 
 ```bash
-./repomap /path/to/repo --gitlab-url https://gitlab.example/group/project
-```
-
-When the repository `origin` remote already points at that GitLab host, the shorter
-host-only form infers the namespace/project:
-
-```bash
-./repomap /path/to/repo --gitlab-url https://gitlab.example
-```
-
-This mode does not start the local server. It creates a self-contained
-`report.html` whose source links open the exact captured commit and line in
-GitLab, and it omits saved source bodies from that HTML. Stable local changes
-are allowed: changed source paths are marked local-only because they cannot
-truthfully link to the captured commit until committed and pushed. The checkout
-must not change during the run, the captured commit must already be available
-in GitLab, and private-project authentication remains the reader's browser
-responsibility.
-
-Go orientation also groups bounded source signals into operational-flow
-candidates for background loops, maintenance, thresholds, consensus state, and
-storage durability. They stay in the same flow list as request-driven work and
-are labeled **Request** or **Operational**. Operational candidates are static
-hints, work in offline mode, and do not claim observed execution.
-
-Persisted Go runs use one framework-free core analyzer for build-selected
-process entries, standard-library HTTP registrations and server starts,
-`errgroup` task starts, and repository-local registrations whose handler has
-the exact `net/http` shape. These are static registration/start facts, not
-observed execution or completed flows. Ordinary analysis does not run a Cobra
-inventory or widen handler types for third-party web frameworks. Counts remain
-repository-wide and keep primary application, tooling, tests/helpers, and
-unknown executables distinct from selected FlowProof coverage. Use the default
-`repomap <repo>` command; target and bounded call-graph controls remain
-available in `repomap --help`.
-
-For a company or other compatible model, use a full OpenAI-compatible
-`chat/completions` URL:
-
-```bash
-export REPOMAP_LLM_ENDPOINT=https://llm.company.example/v1/chat/completions
+export REPOMAP_LLM_ENDPOINT=https://llm.example/v1/chat/completions
 export REPOMAP_LLM_MODEL=company-code-model
 export REPOMAP_LLM_API_KEY=...
 export REPOMAP_LLM_AUTH=bearer
-export REPOMAP_LLM_TIMEOUT=90s
-# Optional sole output-ceiling override; the default is 64000.
-export REPOMAP_LLM_MAX_TOKENS=64000
 ```
 
-For an explicitly unauthenticated local endpoint, set
-`REPOMAP_LLM_AUTH=none`. No-auth always requires an explicit endpoint; it can
-never fall back to the public DeepSeek URL. Existing `DEEPSEEK_*` endpoint,
-model, key, timeout, and auth variables remain compatibility aliases.
-`DEEPSEEK_MAX_TOKENS` is ignored; `REPOMAP_LLM_MAX_TOKENS` is the sole
-output-ceiling override.
+Optional settings are `REPOMAP_LLM_TIMEOUT` (default `10m`) and
+`REPOMAP_LLM_MAX_TOKENS` (default `64000`). An explicitly unauthenticated
+endpoint uses `REPOMAP_LLM_AUTH=none` and still requires
+`REPOMAP_LLM_ENDPOINT`.
 
-The two namespaces are never mixed. Once any `REPOMAP_LLM_*` variable is used,
-`REPOMAP_LLM_ENDPOINT` is required and stale `DEEPSEEK_*` credentials cannot be
-inherited accidentally.
+If any `REPOMAP_LLM_*` variable is present, that namespace is authoritative and
+no `DEEPSEEK_*` value is inherited. The complete transport contract is in
+[docs/DEEPSEEK_API_NOTES.md](docs/DEEPSEEK_API_NOTES.md).
 
-Every semantic request uses the exact same configured `max_tokens` value. The
-default is 64,000; stages never raise, lower, or double it. A provider
-`finish_reason=length` is a terminal resource-limit result, not a signal to
-resend the semantic request.
-
-The current compatibility contract is intentionally small: OpenAI-style
-`chat/completions` plus `response_format: {"type":"json_object"}`. Run the
-doctor against a company endpoint before sending repository facts.
-
-repomap does not load `.env` from the repository being analysed.
-
-Verify configuration without repository content. `--check` adds one tiny
-synthetic JSON request:
+## Run
 
 ```bash
-./repomap doctor llm
-./repomap doctor llm --check
+.bin/repomap
+.bin/repomap ../etcd
 ```
 
-## Explore a repository
+Target discovery is high-recall. By default the model positively selects the
+supported targets to analyze and chooses their default. Go target pages receive
+the complete Go semantic path. A Python-only root receives complete Python
+semantics for its default view; additional selected Python views are published
+as explicitly structural. A mixed Go/Python positive selection currently ends
+with corrective `--target` or project-root guidance because the report cannot
+yet publish complete cross-language target pages. `--target` bypasses the
+portfolio choice and analyzes exactly one supported explicit target, while the
+parallel README classifier still runs for downstream context. For every
+discovered candidate set — even one eligible file — a fully validated live or
+cached model selection is required. Unavailable providers, transport failures,
+invalid responses, or incomplete target, activity, dependency, or snapshot
+evidence end the run instead of publishing a locally guessed or partial map.
+The current flags are:
 
-The default builds a complete local Repository Atlas and a Map of exact entry
-surfaces, conceptual components, observed integrations, and bounded mechanism
-evidence. The configured model may assist Architecture grouping and the two
-Theme Study stages; it never selects one repository startup:
+```text
+--target TARGET
+--force-platform GOOS/GOARCH
+--depth N
+--edges-limit N
+--github-url URL
+--gitlab-url URL
+--no-open
+--no-serve
+--port PORT
+--debug-dir DIR
+--no-cache
+--scan-secrets
+```
+
+Without `--no-serve`, repomap starts a loopback server. Report code links use
+that server to open manifest-authorized local files in VS Code. `--no-open`
+keeps the browser closed, and `--port` selects a fixed port.
+
+With `--no-serve`, repomap writes standalone HTML whose code links point to the
+captured revision on GitHub or GitLab. The repository `origin` must identify a
+supported host, or the matching `--github-url`/`--gitlab-url` must be supplied.
+Invalid static-link configuration fails in preflight before analysis or model
+requests.
+
+Report runs and model-response caches default to the OS user-cache directory.
+Use `--debug-dir` to choose another root. `--no-cache` forces live provider
+calls for that run; it does not disable run diagnostics. Clear persistent model
+caches with:
 
 ```bash
-./repomap
-./repomap ../etcd
-
-cd /path/to/python-repository
-repomap
+.bin/repomap cache clear
+.bin/repomap cache clear --debug-dir /path/to/repomap/runs
 ```
 
-The browser starts with Map. Entrypoints are a deterministic local projection;
-canonical repository identities and source evidence remain backend-owned. A
-provider sees only bounded request-local Architecture/Study projections and
-opaque refs.
-
-When served by repomap, grounded file paths are visibly clickable and open the
-corresponding repository file (including a cited line when present) through the
-`code` CLI. The header can switch between previously saved reports. To revisit
-the latest saved run without analysing the repository again:
-
-```bash
-repomap serve
-repomap serve --run 20260711-200000-pebble --port 8080
-```
-
-The editor action is local-only: the server binds to `127.0.0.1`, accepts only
-validated repository-relative regular files, and invokes `code --goto` without
-a shell. The static `report.html` remains readable when no server is running;
-editor links and saved-run selection are then hidden.
-
-Each run includes `onboarding-feedback.md` beside the report. It is never
-overwritten when the report is regenerated and gives the evaluating engineer a
-small place to record what was correct, missing, or misleading.
-
-Run local extraction without model calls:
-
-```bash
-./repomap ../etcd --offline
-```
-
-`--offline` is a model/privacy boundary, not an air-gap switch: when analysing a
-Go repository, the Go tool may use the module proxy or toolchain source already
-configured by the engineer.
-
-Debug artifacts default to the OS user-cache directory, not the analysed
-repository. Ordinary runs persist their authoritative `report.json`; use
-`--debug-dir` to choose its trusted location.
-
-## What can be trusted
-
-- the tracked-file survey is local; Go package facts and explicitly requested
-  bounded source/static-analysis cards are local too;
-- structured model path fields and detectable path-like evidence mentions are
-  checked against the exact context allowlist before presentation; remaining
-  free-form prose is still model interpretation;
-- source-supported claims cite exact source evidence;
-- test references are navigation hints, not proof of coverage or assertions;
-- runtime behavior remains unknown until separately observed;
-- saved quality tasks report grounding, omissions, contracts, bytes, and latency
-  separately.
-- saved investigations keep local facts, model claims, and session state in
-  separate hash-verified documents; unchanged sessions resume without another
-  model call, while repository/tool/prompt changes invalidate the applicable
-  layer before an action can execute.
-
-## Company engineer trial
-
-[docs/ENGINEER_TRIAL.md](docs/ENGINEER_TRIAL.md) defines the external evaluation:
-
-1. onboarding calibration on a project the engineer already knows;
-2. exploration of an unfamiliar project;
-3. a held-out feature counterfactual on the commit before a real change.
-
-The three goals will be policies over one investigation engine, not independent
-prompt pipelines. The active acceptance target is the first item: one command,
-one browser report, named direction selection, and one evidence-backed
-drill-down that a knowledgeable friend can critique. The trial document
-distinguishes that target from what already works and from later feature work.
+Repository input is trusted by default. `--scan-secrets` enables heuristic
+credential scanning. Provider API keys and Authorization headers are never
+written to report, cache, or debug artifacts.
 
 ## Development
 
+The built binary on the ordinary online path is the acceptance authority:
+
 ```bash
-go test ./...
-go vet ./...
-go build -trimpath -o .bin/repomap ./cmd/repomap
-.bin/repomap ../etcd --offline --no-open --no-serve
-# Calibrate the atomic generic namespace against the DeepSeek reference:
-make generic-deepseek-doctor
+make test
+make vet
+make build
+.bin/repomap /path/to/a/real/repository --no-open
 ```
 
-Product acceptance uses the built binary and its generated artifacts. Shell
-wrappers are intentionally not part of the repository workflow.
+For a successful product check, verify the process exit status and the emitted
+manifest, sealed ProgramIndex set, semantic cube artifact, `report.json`, and
+`report.html`. Cache changes also require a second real run and `repomap cache
+clear`.
 
-Contributor architecture and current execution order:
-
-- [docs/CORE_IDEA.md](docs/CORE_IDEA.md)
-- [docs/MILESTONES.md](docs/MILESTONES.md)
-- [docs/SYSTEM_MAP.md](docs/SYSTEM_MAP.md)
-- [docs/INVESTIGATION_ENGINE.md](docs/INVESTIGATION_ENGINE.md)
-- [docs/TECHNICAL_DEBT.md](docs/TECHNICAL_DEBT.md)
-- [AGENTS.md](AGENTS.md)
+The current architecture and product decisions live in
+[docs/agent-room/CURRENT.md](docs/agent-room/CURRENT.md). Static prompt prose
+lives in Markdown beside each model-assisted domain cube and is embedded in the
+binary; dynamic bounded catalogs and semantic validation remain in Go.

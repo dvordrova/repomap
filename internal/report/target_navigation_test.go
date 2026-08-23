@@ -3,78 +3,84 @@ package report
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/url"
-	"os"
-	"os/exec"
-	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
-	"github.com/dvordrova/repomap/internal/analysistarget"
-	"github.com/dvordrova/repomap/internal/snapshot"
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-func TestManifestBoundTargetNavigationUsesTheStaticPageProjection(t *testing.T) {
-	container, portfolio, currentRef := targetNavigationArtifactFixture(t)
-	runDir := t.TempDir()
-	containerRaw, err := container.CanonicalJSON()
+func embeddedReportDataJSON(t *testing.T, html []byte) []byte {
+	t.Helper()
+	const opening = `<script type="application/json" id="rm-report-data">`
+	start := bytes.Index(html, []byte(opening))
+	if start < 0 {
+		t.Fatal("rendered HTML is missing report data")
+	}
+	start += len(opening)
+	end := bytes.Index(html[start:], []byte(`</script>`))
+	if end < 0 {
+		t.Fatal("rendered report data is unterminated")
+	}
+	return html[start : start+end]
+}
+
+func reportDataJSONFields(t *testing.T, raw []byte) map[string]json.RawMessage {
+	t.Helper()
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(fmt.Errorf("decode rendered report data: %w", err))
+	}
+	return fields
+}
+
+func TestBuildTargetNavigationProjectsExactLanguageNeutralPages(t *testing.T) {
+	pages, defaultTargetID, currentTargetID := targetNavigationPages(t, cubeMapProgramTargetFixture(t))
+
+	got, err := BuildTargetNavigation(pages, defaultTargetID, currentTargetID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	portfolioRaw, err := portfolio.CanonicalJSON()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(
-		filepath.Join(runDir, snapshot.TargetRunContainerArtifactFilename),
-		containerRaw,
-		0o600,
-	); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(
-		filepath.Join(runDir, snapshot.TargetPagePortfolioArtifactFilename),
-		portfolioRaw,
-		0o600,
-	); err != nil {
-		t.Fatal(err)
-	}
-	manifest := RunManifest{
-		Version: CurrentRunManifestVersion,
-		MaterialInputs: MaterialInputs{
-			AnalysisTargetRef:         currentRef,
-			TargetRunContainerSHA256:  manifestSHA256(containerRaw),
-			TargetPagePortfolioSHA256: manifestSHA256(portfolioRaw),
+	want := &TargetNavigationPortfolio{
+		Version:         TargetNavigationVersion,
+		DefaultTargetID: defaultTargetID,
+		CurrentTargetID: currentTargetID,
+		Targets: []TargetNavigationItem{
+			{
+				TargetID: pages[0].ProgramTarget.ID, Language: "go", Kind: "executable",
+				DisplayName: "server",
+				Href:        "../20260810-120000-server-a1b2c3/report.html#/program",
+			},
+			{
+				TargetID: pages[1].ProgramTarget.ID, Language: pages[1].ProgramTarget.Language,
+				Kind: pages[1].ProgramTarget.Kind, DisplayName: pages[1].ProgramTarget.Name,
+				Href: "#/program",
+			},
+			{
+				TargetID: pages[2].ProgramTarget.ID, Language: "python", Kind: "worker",
+				DisplayName: "event worker",
+				Href:        "../20260810-120000-worker-a1b2c3/report.html#/program",
+			},
+			{
+				TargetID: pages[3].ProgramTarget.ID, Language: "bash", Kind: "tool",
+				DisplayName: "release scripts",
+				Href:        "../20260810-120000-tool-a1b2c3/report.html#/program",
+			},
 		},
 	}
-
-	want, err := BuildTargetNavigation(container, portfolio, currentRef)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := LoadManifestTargetNavigation(runDir, manifest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantJSON, err := json.Marshal(want)
-	if err != nil {
-		t.Fatal(err)
-	}
-	gotJSON, err := json.Marshal(got)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(gotJSON, wantJSON) {
-		t.Fatalf("manifest navigation = %s, want static projection %s", gotJSON, wantJSON)
-	}
-	if len(got.Targets) < 2 {
-		t.Fatalf("target navigation has %d targets, want at least 2", len(got.Targets))
+	if !reflect.DeepEqual(got, want) {
+		gotJSON, _ := json.Marshal(got)
+		wantJSON, _ := json.Marshal(want)
+		t.Fatalf("target navigation = %s, want %s", gotJSON, wantJSON)
 	}
 }
 
 func TestTargetNavigationRenderOptionsStayTransient(t *testing.T) {
-	data, navigation := targetNavigationFixture()
+	data, navigation := targetNavigationFixture(t)
 
-	ordinary, err := RenderHTML(data)
+	ordinary, err := RenderHTMLWithOptions(data, RenderOptions{})
 	if err != nil {
 		t.Fatalf("RenderHTML: %v", err)
 	}
@@ -98,10 +104,11 @@ func TestTargetNavigationRenderOptionsStayTransient(t *testing.T) {
 	if err := json.Unmarshal(fields["target_navigation"], &projected); err != nil {
 		t.Fatalf("decode target navigation: %v", err)
 	}
-	if projected.Version != TargetNavigationVersion ||
-		projected.CurrentTargetRef != navigation.CurrentTargetRef ||
-		len(projected.Targets) != len(navigation.Targets) {
-		t.Fatalf("target navigation projection = %#v", projected)
+	if !reflect.DeepEqual(&projected, navigation) {
+		t.Fatalf("rendered target navigation = %#v, want %#v", projected, *navigation)
+	}
+	if bytes.Contains(fields["target_navigation"], []byte(`"artifact_filename"`)) {
+		t.Fatal("browser target navigation exposes backend-only ProgramIndex artifact filenames")
 	}
 
 	canonical, err := json.Marshal(data)
@@ -114,7 +121,7 @@ func TestTargetNavigationRenderOptionsStayTransient(t *testing.T) {
 }
 
 func TestTargetNavigationSiblingHrefResolvesForFileAndHostedReports(t *testing.T) {
-	const href = "../20260810-120000-worker-a1b2c3/report.html#/map"
+	const href = "../20260810-120000-worker-a1b2c3/report.html#/program"
 	reference, err := url.Parse(href)
 	if err != nil {
 		t.Fatal(err)
@@ -125,11 +132,11 @@ func TestTargetNavigationSiblingHrefResolvesForFileAndHostedReports(t *testing.T
 	}{
 		{
 			base: "file:///Users/test/runs/20260810-120000-api-a1b2c3/report.html#study-theme-25",
-			want: "file:///Users/test/runs/20260810-120000-worker-a1b2c3/report.html#/map",
+			want: "file:///Users/test/runs/20260810-120000-worker-a1b2c3/report.html#/program",
 		},
 		{
 			base: "http://127.0.0.1:55948/_repomap/token/runs/20260810-120000-api-a1b2c3/report.html#study-theme-25",
-			want: "http://127.0.0.1:55948/_repomap/token/runs/20260810-120000-worker-a1b2c3/report.html#/map",
+			want: "http://127.0.0.1:55948/_repomap/token/runs/20260810-120000-worker-a1b2c3/report.html#/program",
 		},
 	}
 	for _, test := range tests {
@@ -143,132 +150,72 @@ func TestTargetNavigationSiblingHrefResolvesForFileAndHostedReports(t *testing.T
 	}
 }
 
-func TestTargetNavigationRailGroupsAndUsesNativeSiblingLinks(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node is unavailable")
+func TestBuildTargetNavigationRejectsIncompleteOrTamperedPages(t *testing.T) {
+	pages, defaultTargetID, currentTargetID := targetNavigationPages(t, cubeMapProgramTargetFixture(t))
+	tests := map[string]func([]TargetNavigationPage) ([]TargetNavigationPage, string, string){
+		"unknown current": func(value []TargetNavigationPage) ([]TargetNavigationPage, string, string) {
+			return value, defaultTargetID, "unknown"
+		},
+		"unknown default": func(value []TargetNavigationPage) ([]TargetNavigationPage, string, string) {
+			return value, "unknown", currentTargetID
+		},
+		"duplicate target": func(value []TargetNavigationPage) ([]TargetNavigationPage, string, string) {
+			value[2].ProgramTarget = value[0].ProgramTarget
+			return value, defaultTargetID, currentTargetID
+		},
+		"duplicate run": func(value []TargetNavigationPage) ([]TargetNavigationPage, string, string) {
+			value[2].RunID = value[0].RunID
+			return value, defaultTargetID, currentTargetID
+		},
+		"invalid target": func(value []TargetNavigationPage) ([]TargetNavigationPage, string, string) {
+			value[2].ProgramTarget.Selector = "tampered"
+			return value, defaultTargetID, currentTargetID
+		},
+		"missing artifact filename": func(value []TargetNavigationPage) ([]TargetNavigationPage, string, string) {
+			value[2].ArtifactFilename = ""
+			return value, defaultTargetID, currentTargetID
+		},
+		"artifact path": func(value []TargetNavigationPage) ([]TargetNavigationPage, string, string) {
+			value[2].ArtifactFilename = "nested/program-index.json"
+			return value, defaultTargetID, currentTargetID
+		},
 	}
-	data, navigation := targetNavigationFixture()
-	html, err := RenderHTMLWithOptions(data, RenderOptions{TargetNavigation: navigation})
-	if err != nil {
-		t.Fatal(err)
-	}
-	payloadPath := filepath.Join(t.TempDir(), "report-payload.json")
-	if err := os.WriteFile(payloadPath, embeddedReportDataJSON(t, html), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	scriptPath, err := filepath.Abs(filepath.Join("templates", "script.js"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	runner := `
-const fs = require("fs"), vm = require("vm");
-const payload = fs.readFileSync(process.argv[3], "utf8");
-class Element {
-  constructor(tag) { this.tagName = String(tag).toUpperCase(); this.className = ""; this.attributes = {}; this.children = []; this.textContent = ""; }
-  setAttribute(name, value) { this.attributes[name] = String(value); }
-  getAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attributes, name) ? this.attributes[name] : null; }
-  appendChild(child) { this.children.push(child); return child; }
-}
-const document = {
-  documentElement: {lang:"en"},
-  createElement(tag) { return new Element(tag); },
-  getElementById(id) { return id === "rm-report-data" ? {textContent:payload} : null; },
-  querySelector() { return null; }, querySelectorAll() { return []; },
-};
-const window = {
-  document,
-  location:{search:"",hash:"#study-theme-25",protocol:"file:",pathname:"/runs/current/report.html"},
-  __REPOMAP_WORKSPACE_TEST__:{}, addEventListener(){}, removeEventListener(){},
-};
-const context = {window,document,URLSearchParams,Set,Map,AbortController,Promise};
-vm.runInNewContext(fs.readFileSync(process.argv[2].replace("script.js","ui_messages.js"),"utf8"),context);
-vm.runInNewContext(fs.readFileSync(process.argv[2],"utf8"),context);
-const tabs = new Element("nav");
-window.__REPOMAP_WORKSPACE_TEST__.renderAnalysisTargetMenu(tabs);
-function hasClass(node, name) { return String(node.className || "").split(/\s+/).includes(name); }
-function countClass(node, name) { return (hasClass(node,name) ? 1 : 0) + node.children.reduce((sum, child) => sum + countClass(child,name), 0); }
-function firstClass(node, name) { if (hasClass(node,name)) return node; for (const child of node.children) { const found = firstClass(child,name); if (found) return found; } return null; }
-const groups = tabs.children.map((section) => ({
-  label: section.children[0].textContent,
-  items: section.children[1].children.map((row) => {
-    const item = row.children[0];
-    return {
-      tag: item.tagName, ref: item.attributes["data-target-ref"] || "",
-      href: item.attributes.href || "", ariaCurrent: item.attributes["aria-current"] || "",
-      ariaDisabled: item.attributes["aria-disabled"] || "",
-      title: item.attributes.title || "",
-      workspaceView: item.attributes["data-workspace-view"] || "",
-      active: hasClass(item,"rm-active"), disabled: hasClass(item,"rm-target-link--disabled"),
-      label: (firstClass(item,"rm-target-link__label") || {}).textContent || "",
-      defaultMarkers: countClass(item,"rm-target-link__default-dot"), hasClick: typeof item.onclick === "function",
-    };
-  }),
-}));
-process.stdout.write(JSON.stringify({groups,hash:window.location.hash}));
-`
-	runnerPath := filepath.Join(t.TempDir(), "target-navigation.js")
-	if err := os.WriteFile(runnerPath, []byte(runner), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	output, err := exec.Command(node, runnerPath, scriptPath, payloadPath).CombinedOutput()
-	if err != nil {
-		t.Fatalf("run target navigation asset: %v\n%s", err, output)
-	}
-	var got struct {
-		Groups []struct {
-			Label string
-			Items []struct {
-				Tag, Ref, Href, AriaCurrent, AriaDisabled, WorkspaceView, Label, Title string
-				Active, Disabled, HasClick                                             bool
-				DefaultMarkers                                                         int
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			candidate := cloneTargetNavigationPages(pages)
+			candidate, candidateDefault, candidateCurrent := mutate(candidate)
+			if _, err := BuildTargetNavigation(candidate, candidateDefault, candidateCurrent); err == nil {
+				t.Fatal("tampered target navigation page was accepted")
 			}
-		}
-		Hash string
-	}
-	if err := json.Unmarshal(output, &got); err != nil {
-		t.Fatalf("decode target navigation asset: %v\n%s", err, output)
-	}
-	if len(got.Groups) != 3 || got.Groups[0].Label != "go.mod" ||
-		got.Groups[1].Label != "services/api/go.mod" || got.Groups[2].Label != "tools/go.mod" {
-		t.Fatalf("target groups = %#v", got.Groups)
-	}
-	defaultTarget := got.Groups[0].Items[0]
-	if defaultTarget.Tag != "A" || defaultTarget.Href != "../20260810-120000-server-a1b2c3/report.html#/map" ||
-		defaultTarget.DefaultMarkers != 1 || defaultTarget.Active || defaultTarget.AriaCurrent != "" ||
-		defaultTarget.WorkspaceView != "" || defaultTarget.HasClick {
-		t.Fatalf("default sibling target = %#v", defaultTarget)
-	}
-	current := got.Groups[1].Items[0]
-	if current.Tag != "A" || current.Href != "#/map" || !current.Active ||
-		current.AriaCurrent != "page" || current.WorkspaceView != "map" || current.HasClick {
-		t.Fatalf("current target = %#v", current)
-	}
-	unavailable := got.Groups[1].Items[1]
-	if unavailable.Tag != "SPAN" || unavailable.Href != "" || unavailable.AriaDisabled != "true" ||
-		!unavailable.Disabled || unavailable.Active || unavailable.HasClick || unavailable.Label != "Library API" ||
-		unavailable.Title != "example.test/api" {
-		t.Fatalf("unavailable target = %#v", unavailable)
-	}
-	if got.Hash != "#study-theme-25" {
-		t.Fatalf("rendering target rail changed deep link %q", got.Hash)
+		})
 	}
 }
 
 func TestTargetNavigationRejectsUnboundOrUnsafeProjection(t *testing.T) {
-	data, navigation := targetNavigationFixture()
+	data, navigation := targetNavigationFixture(t)
 	tests := map[string]func(*TargetNavigationPortfolio){
-		"unknown current":       func(value *TargetNavigationPortfolio) { value.CurrentTargetRef = "unknown" },
-		"unknown default":       func(value *TargetNavigationPortfolio) { value.DefaultTargetRef = "unknown" },
-		"duplicate":             func(value *TargetNavigationPortfolio) { value.Targets[1].TargetRef = value.Targets[0].TargetRef },
-		"current mismatch":      func(value *TargetNavigationPortfolio) { value.Targets[1].DisplayPath = "services/api/wrong" },
-		"library display drift": func(value *TargetNavigationPortfolio) { value.Targets[2].DisplayPath = "services/api/pkg/client" },
-		"availability mismatch": func(value *TargetNavigationPortfolio) { value.Targets[2].Href = "../missing/report.html#/map" },
-		"absolute href": func(value *TargetNavigationPortfolio) {
-			value.Targets[0].Href = "https://example.test/report.html#/map"
+		"unknown current": func(value *TargetNavigationPortfolio) { value.CurrentTargetID = "unknown" },
+		"unknown default": func(value *TargetNavigationPortfolio) { value.DefaultTargetID = "unknown" },
+		"duplicate":       func(value *TargetNavigationPortfolio) { value.Targets[1].TargetID = value.Targets[0].TargetID },
+		"current language drift": func(value *TargetNavigationPortfolio) {
+			value.Targets[1].Language = "python"
 		},
-		"escaping href":    func(value *TargetNavigationPortfolio) { value.Targets[0].Href = "../../report.html#/map" },
-		"foreign fragment": func(value *TargetNavigationPortfolio) { value.Targets[0].Href = "../safe/report.html#study-theme-25" },
+		"current kind drift": func(value *TargetNavigationPortfolio) {
+			value.Targets[1].Kind = "library"
+		},
+		"current name drift": func(value *TargetNavigationPortfolio) {
+			value.Targets[1].DisplayName = "wrong"
+		},
+		"missing href": func(value *TargetNavigationPortfolio) { value.Targets[2].Href = "" },
+		"absolute href": func(value *TargetNavigationPortfolio) {
+			value.Targets[0].Href = "https://example.test/report.html#/program"
+		},
+		"escaping href": func(value *TargetNavigationPortfolio) {
+			value.Targets[0].Href = "../../report.html#/program"
+		},
+		"foreign fragment": func(value *TargetNavigationPortfolio) {
+			value.Targets[0].Href = "../safe/report.html#study-theme-25"
+		},
 	}
 	for name, mutate := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -281,27 +228,79 @@ func TestTargetNavigationRejectsUnboundOrUnsafeProjection(t *testing.T) {
 	}
 }
 
-func targetNavigationFixture() (*ReportData, *TargetNavigationPortfolio) {
-	data := &ReportData{
-		FormatVersion: CurrentFormatVersion,
-		RepoName:      "workspace",
-		AnalysisTarget: &analysistarget.Target{
-			Version: analysistarget.Version,
-			Ref:     "target-api", Kind: analysistarget.KindExecutablePackage,
-			ModulePath: "example.test/api", ModuleDir: "services/api", PackageDir: "services/api/pkg/client",
-			PackagePath: "example.test/api/pkg/client",
-		},
+func targetNavigationFixture(t *testing.T) (*ReportData, *TargetNavigationPortfolio) {
+	t.Helper()
+	// Navigation rendering is independent of semantic cubes. Use a structural
+	// language target so this fixture does not preserve the retired Go CubeMap
+	// presentation merely to test transient navigation options.
+	index := reportProgramIndexFixture(t, "bash", "tool")
+	portfolio, err := NewProgramPortfolio(index.Target.ID, []programindex.Index{index})
+	if err != nil {
+		t.Fatal(err)
 	}
-	navigation := &TargetNavigationPortfolio{
-		Version: TargetNavigationVersion, DefaultTargetRef: "target-server", CurrentTargetRef: "target-api",
-		Targets: []TargetNavigationItem{
-			{TargetRef: "target-server", Kind: analysistarget.KindExecutablePackage, ModulePath: "example.test/workspace", ModuleDir: ".", DisplayPath: "cmd/server", Available: true, Href: "../20260810-120000-server-a1b2c3/report.html#/map"},
-			{TargetRef: "target-api", Kind: analysistarget.KindExecutablePackage, ModulePath: "example.test/api", ModuleDir: "services/api", DisplayPath: "services/api/pkg/client", Available: true, Href: "#/map"},
-			{TargetRef: "target-worker", Kind: analysistarget.KindModuleLibrary, ModulePath: "example.test/api", ModuleDir: "services/api", DisplayPath: "services/api"},
-			{TargetRef: "target-tool", Kind: analysistarget.KindExecutablePackage, ModulePath: "example.test/tools", ModuleDir: "tools", DisplayPath: "tools/cmd/check", Available: true, Href: "../20260810-120000-tool-a1b2c3/report.html#/map"},
-		},
+	data := &ReportData{
+		FormatVersion:      CurrentFormatVersion,
+		RepoName:           "workspace",
+		CapturedRevision:   strings.Repeat("a", 40),
+		CapturedInputCount: 0,
+		ProgramPortfolio:   portfolio,
+	}
+	if err := collectOpenablePaths(data); err != nil {
+		t.Fatal(err)
+	}
+	pages, defaultTargetID, currentTargetID := targetNavigationPages(t, index.Target)
+	navigation, err := BuildTargetNavigation(pages, defaultTargetID, currentTargetID)
+	if err != nil {
+		t.Fatal(err)
 	}
 	return data, navigation
+}
+
+func targetNavigationPages(
+	t *testing.T,
+	current programindex.Target,
+) ([]TargetNavigationPage, string, string) {
+	t.Helper()
+	server := targetNavigationProgramTarget(t, "go", "executable", "server", "cmd/server/main.go", "1")
+	worker := targetNavigationProgramTarget(t, "python", "worker", "event worker", "worker/app.py", "2")
+	tool := targetNavigationProgramTarget(t, "bash", "tool", "release scripts", "scripts/release.sh", "3")
+	pages := []TargetNavigationPage{
+		{RunID: "20260810-120000-server-a1b2c3", ProgramTarget: server, ArtifactFilename: "program-index-server.json"},
+		{RunID: "20260810-120000-api-a1b2c3", ProgramTarget: current.Snapshot(), ArtifactFilename: "program-index-api.json"},
+		{RunID: "20260810-120000-worker-a1b2c3", ProgramTarget: worker, ArtifactFilename: "program-index-worker.json"},
+		{RunID: "20260810-120000-tool-a1b2c3", ProgramTarget: tool, ArtifactFilename: "program-index-tool.json"},
+	}
+	return pages, server.ID, current.ID
+}
+
+func targetNavigationProgramTarget(
+	t *testing.T,
+	language, kind, name, sourcePath, digestCharacter string,
+) programindex.Target {
+	t.Helper()
+	index, err := programindex.New(programindex.Input{
+		ScenarioSHA256: strings.Repeat(digestCharacter, 64),
+		SourceSHA256:   strings.Repeat(digestCharacter, 64),
+		Target: programindex.TargetInput{
+			Language: language, Kind: kind, Name: name, Selector: name,
+			Sources:       []programindex.TargetSource{{FileRef: "f1", Path: sourcePath}},
+			AnchorFileRef: "f1",
+		},
+		Coverage: programindex.CoverageInput{Measured: true},
+	})
+	if err != nil {
+		t.Fatalf("build target navigation program target: %v", err)
+	}
+	return index.Target
+}
+
+func cloneTargetNavigationPages(source []TargetNavigationPage) []TargetNavigationPage {
+	result := make([]TargetNavigationPage, len(source))
+	for index := range source {
+		result[index] = source[index]
+		result[index].ProgramTarget = source[index].ProgramTarget.Snapshot()
+	}
+	return result
 }
 
 func cloneTargetNavigation(t *testing.T, source *TargetNavigationPortfolio) *TargetNavigationPortfolio {
@@ -315,74 +314,4 @@ func cloneTargetNavigation(t *testing.T, source *TargetNavigationPortfolio) *Tar
 		t.Fatal(err)
 	}
 	return &result
-}
-
-func targetNavigationArtifactFixture(
-	t *testing.T,
-) (snapshot.TargetRunContainer, snapshot.TargetPagePortfolio, string) {
-	t.Helper()
-	repository := t.TempDir()
-	files := map[string]string{
-		"go.mod":             "module example.test/navigation\n\ngo 1.24\n",
-		"cmd/server/main.go": "package main\nfunc main() {}\n",
-		"pkg/client/client.go": "package client\n" +
-			"func Open() {}\n",
-	}
-	for name, contents := range files {
-		absolute := filepath.Join(repository, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(absolute), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(absolute, []byte(contents), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, args := range [][]string{
-		{"init", "--quiet"},
-		{"add", "--", "go.mod", "cmd/server/main.go", "pkg/client/client.go"},
-	} {
-		command := exec.Command("git", append([]string{"-C", repository}, args...)...)
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, output)
-		}
-	}
-	deferred, err := snapshot.Build(snapshot.Options{
-		RepoPath: repository, DeferAnalysisTargetResolution: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if deferred.TargetCatalog == nil || len(deferred.TargetCatalog.Entries) < 2 {
-		t.Fatalf("target catalog = %#v, want at least 2 targets", deferred.TargetCatalog)
-	}
-	selected := make([]string, 0, 2)
-	for _, entry := range deferred.TargetCatalog.Entries {
-		if entry.Candidate.Target.PackageDir == "cmd/server" ||
-			entry.Candidate.Target.Kind == analysistarget.KindModuleLibrary {
-			selected = append(selected, entry.Candidate.Target.Ref)
-		}
-	}
-	if len(selected) != 2 {
-		t.Fatalf("selected target refs = %v, want server executable and module Library API", selected)
-	}
-	container, err := snapshot.BuildTargetRunContainer(deferred, snapshot.TargetRunSelection{
-		DefaultTargetRef: selected[0],
-		TargetRefs:       selected,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	outcomes := make([]snapshot.TargetPageOutcome, 0, len(container.Targets))
-	for index, projection := range container.Targets {
-		outcomes = append(outcomes, snapshot.TargetPageOutcome{
-			TargetRef: projection.Target.Ref,
-			State:     snapshot.TargetPageReady,
-			RunID:     []string{"20260810-120000-server-a1b2c3", "20260810-120001-client-a1b2c3"}[index],
-		})
-	}
-	portfolio, err := snapshot.BuildTargetPagePortfolio(container, outcomes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return container, portfolio, container.Targets[1].Target.Ref
 }

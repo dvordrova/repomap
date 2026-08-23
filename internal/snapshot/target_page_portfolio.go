@@ -11,48 +11,27 @@ import (
 )
 
 const (
-	TargetPagePortfolioVersion          = 1
-	TargetPagePortfolioArtifactFilename = "target_page_portfolio.v1.json"
+	TargetPagePortfolioVersion          = 2
+	TargetPagePortfolioArtifactFilename = "target_page_portfolio.v2.json"
 	MaxTargetPagePortfolioBytes         = 4 << 20
 
 	maxTargetPageRunIDBytes = 255
 )
 
-// TargetPageState is the closed publication state of one selected target.
-type TargetPageState string
-
-const (
-	TargetPageReady       TargetPageState = "ready"
-	TargetPageUnavailable TargetPageState = "unavailable"
-)
-
-// TargetPageUnavailableCode deliberately records no runtime error prose.
-// Detailed failures remain local console diagnostics.
-type TargetPageUnavailableCode string
-
-const (
-	TargetPageUnavailableTargetRunFailed TargetPageUnavailableCode = "target_run_failed"
-)
-
-// TargetPageOutcome is the backend-only input used after every selected
-// target run has reached a terminal state. Default ownership and target order
-// are always restored from TargetRunContainer rather than accepted here.
+// TargetPageOutcome is the backend-only input used after every selected target
+// has published successfully. Default ownership and target order are always
+// restored from TargetRunContainer rather than accepted here.
 type TargetPageOutcome struct {
-	TargetRef       string
-	State           TargetPageState
-	RunID           string
-	UnavailableCode TargetPageUnavailableCode
+	TargetRef string
+	RunID     string
 }
 
-// TargetPage is one selected target's sibling-page handoff. A ready page owns
-// only a safe sibling run identifier. An unavailable page owns only its closed
-// failure code, so no partial run can become navigable authority.
+// TargetPage is one selected target's published sibling-page handoff. Partial
+// portfolios do not exist: every selected target owns one safe sibling run ID.
 type TargetPage struct {
-	TargetRef       string                    `json:"target_ref"`
-	Default         bool                      `json:"default"`
-	State           TargetPageState           `json:"state"`
-	RunID           string                    `json:"run_id,omitempty"`
-	UnavailableCode TargetPageUnavailableCode `json:"unavailable_code,omitempty"`
+	TargetRef string `json:"target_ref"`
+	Default   bool   `json:"default"`
+	RunID     string `json:"run_id"`
 }
 
 // TargetPagePortfolio is the sealed cross-page index for one selected target
@@ -78,8 +57,8 @@ type TargetPageSiblingAuthority struct {
 }
 
 // BuildTargetPagePortfolio restores canonical container order, derives the
-// sole default marker, and seals one terminal outcome for every selected
-// target. It performs no filesystem access.
+// sole default marker, and seals one published run for every selected target.
+// It performs no filesystem access.
 func BuildTargetPagePortfolio(
 	container TargetRunContainer,
 	outcomes []TargetPageOutcome,
@@ -114,11 +93,9 @@ func BuildTargetPagePortfolio(
 			return TargetPagePortfolio{}, fmt.Errorf("target page portfolio: selected target outcome is missing")
 		}
 		portfolio.Targets = append(portfolio.Targets, TargetPage{
-			TargetRef:       projection.Target.Ref,
-			Default:         projection.Target.Ref == container.DefaultTargetRef,
-			State:           outcome.State,
-			RunID:           outcome.RunID,
-			UnavailableCode: outcome.UnavailableCode,
+			TargetRef: projection.Target.Ref,
+			Default:   projection.Target.Ref == container.DefaultTargetRef,
+			RunID:     outcome.RunID,
 		})
 	}
 
@@ -150,7 +127,6 @@ func (portfolio TargetPagePortfolio) Validate() error {
 	seenTargetRefs := make(map[string]struct{}, len(portfolio.Targets))
 	seenRunIDs := make(map[string]struct{}, len(portfolio.Targets))
 	defaultCount := 0
-	readyCount := 0
 	for index, page := range portfolio.Targets {
 		if !validTargetPageTargetRef(page.TargetRef) {
 			return fmt.Errorf("target page portfolio: target %d has invalid ref", index)
@@ -163,32 +139,16 @@ func (portfolio TargetPagePortfolio) Validate() error {
 			defaultCount++
 		}
 
-		switch page.State {
-		case TargetPageReady:
-			readyCount++
-			if err := ValidateTargetPageRunID(page.RunID); err != nil {
-				return fmt.Errorf("target page portfolio: target %d: %w", index, err)
-			}
-			if page.UnavailableCode != "" {
-				return fmt.Errorf("target page portfolio: ready target has unavailable code")
-			}
-			if _, duplicate := seenRunIDs[page.RunID]; duplicate {
-				return fmt.Errorf("target page portfolio: duplicate ready run id")
-			}
-			seenRunIDs[page.RunID] = struct{}{}
-		case TargetPageUnavailable:
-			if page.RunID != "" || page.UnavailableCode != TargetPageUnavailableTargetRunFailed {
-				return fmt.Errorf("target page portfolio: unavailable target has invalid closed state")
-			}
-		default:
-			return fmt.Errorf("target page portfolio: target has invalid state")
+		if err := ValidateTargetPageRunID(page.RunID); err != nil {
+			return fmt.Errorf("target page portfolio: target %d: %w", index, err)
 		}
+		if _, duplicate := seenRunIDs[page.RunID]; duplicate {
+			return fmt.Errorf("target page portfolio: duplicate run id")
+		}
+		seenRunIDs[page.RunID] = struct{}{}
 	}
 	if defaultCount != 1 {
 		return fmt.Errorf("target page portfolio: requires exactly one default target")
-	}
-	if readyCount == 0 {
-		return fmt.Errorf("target page portfolio: requires at least one ready sibling")
 	}
 	if !validTargetPageDigest(portfolio.SHA256) {
 		return fmt.Errorf("target page portfolio: invalid seal")
@@ -227,9 +187,9 @@ func (portfolio TargetPagePortfolio) ValidateAgainstContainer(container TargetRu
 	return nil
 }
 
-// ValidateSiblingAuthorities proves that every ready page has exactly one
+// ValidateSiblingAuthorities proves that every selected page has exactly one
 // successful sibling manifest bound to the same target, container artifact,
-// and byte-identical portfolio artifact. Unavailable targets must have none.
+// and byte-identical portfolio artifact.
 func (portfolio TargetPagePortfolio) ValidateSiblingAuthorities(
 	container TargetRunContainer,
 	authorities []TargetPageSiblingAuthority,
@@ -246,14 +206,12 @@ func (portfolio TargetPagePortfolio) ValidateSiblingAuthorities(
 		return err
 	}
 
-	readyByTargetRef := make(map[string]TargetPage)
+	pageByTargetRef := make(map[string]TargetPage, len(portfolio.Targets))
 	for _, page := range portfolio.Targets {
-		if page.State == TargetPageReady {
-			readyByTargetRef[page.TargetRef] = page
-		}
+		pageByTargetRef[page.TargetRef] = page
 	}
-	if len(authorities) != len(readyByTargetRef) {
-		return fmt.Errorf("target page portfolio: sibling authority set does not cover ready targets")
+	if len(authorities) != len(pageByTargetRef) {
+		return fmt.Errorf("target page portfolio: sibling authority set does not cover selected targets")
 	}
 
 	seenTargetRefs := make(map[string]struct{}, len(authorities))
@@ -278,7 +236,7 @@ func (portfolio TargetPagePortfolio) ValidateSiblingAuthorities(
 		}
 		seenRunIDs[authority.RunID] = struct{}{}
 
-		page, found := readyByTargetRef[authority.AnalysisTargetRef]
+		page, found := pageByTargetRef[authority.AnalysisTargetRef]
 		if !found || page.RunID != authority.RunID ||
 			authority.TargetRunContainerArtifactSHA256 != containerArtifactSHA256 ||
 			authority.TargetPagePortfolioArtifactSHA256 != portfolioArtifactSHA256 {
@@ -310,7 +268,7 @@ func ValidateTargetPageRunID(runID string) error {
 }
 
 // CanonicalJSON returns the exact compact artifact bytes copied unchanged to
-// every ready sibling directory.
+// every selected sibling directory.
 func (portfolio TargetPagePortfolio) CanonicalJSON() ([]byte, error) {
 	if err := portfolio.Validate(); err != nil {
 		return nil, err
@@ -371,7 +329,7 @@ func targetPagePortfolioDigest(portfolio TargetPagePortfolio) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("target page portfolio: encode identity: %w", err)
 	}
-	digest := sha256.Sum256(append([]byte("target-page-portfolio-v1\x00"), wire...))
+	digest := sha256.Sum256(append([]byte("target-page-portfolio-v2\x00"), wire...))
 	return hex.EncodeToString(digest[:]), nil
 }
 

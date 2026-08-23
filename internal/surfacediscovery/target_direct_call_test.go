@@ -1,10 +1,37 @@
 package surfacediscovery
 
 import (
+	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
+
+func TestAnalyzeContextWithInputRequiresResolvedGoTarget(t *testing.T) {
+	options := defaultHostOptions(t.TempDir())
+	options.GoTarget = ""
+	_, err := AnalyzeContextWithInput(context.Background(), options, Input{})
+	if err == nil || !strings.Contains(err.Error(), "resolved Go target is required") {
+		t.Fatalf("missing target error = %v", err)
+	}
+}
+
+func TestAnalyzeContextWithInputRejectsMissingGraphLimits(t *testing.T) {
+	for name, mutate := range map[string]func(*Options){
+		"depth": func(options *Options) { options.DirectCallDepth = 0 },
+		"edges": func(options *Options) { options.DirectCallEdgeLimit = 0 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			options := defaultHostOptions(t.TempDir())
+			mutate(&options)
+			if _, err := AnalyzeContextWithInput(context.Background(), options, Input{}); err == nil ||
+				!strings.Contains(err.Error(), "must be at least 1") {
+				t.Fatalf("missing graph limit error = %v", err)
+			}
+		})
+	}
+}
 
 func TestTargetDirectCallRejectsMissingExactExecutableRoot(t *testing.T) {
 	repository := t.TempDir()
@@ -15,7 +42,7 @@ func helper() {}
 func main() { helper() }
 `)
 	input := targetDirectCallExecutableInput("example.com/root", "main.go", 3)
-	_, err := AnalyzeWithInput(DefaultOptions(repository), input)
+	_, err := analyzeForTest(defaultHostOptions(repository), input)
 	var targetErr *AnalysisTargetSSAUnavailableError
 	if !errors.As(err, &targetErr) || targetErr.Reason != AnalysisTargetExactRootsUnavailable ||
 		targetErr.ExpectedRoots != 1 || targetErr.ResolvedRoots != 0 {
@@ -37,9 +64,9 @@ func leaf() {}
 `)
 	input := targetDirectCallExecutableInput("example.com/graph", "main.go", 3)
 
-	options := DefaultOptions(repository)
+	options := defaultHostOptions(repository)
 	options.DirectCallDepth = 2
-	result, err := AnalyzeWithInput(options, input)
+	result, err := analyzeForTest(options, input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +82,15 @@ func leaf() {}
 		t.Fatalf("depth-2 authority = scope %#v coverage %#v", index.Scope, index.Coverage)
 	}
 	second := targetDirectCallNodeBySymbol(t, index, "second")
-	frontier, ok := index.Frontier(second.ID)
+	var frontier DirectCallNodeFrontier
+	ok := false
+	for _, candidate := range index.Frontiers {
+		if candidate.CallerID == second.ID {
+			frontier = candidate
+			ok = true
+			break
+		}
+	}
 	if !ok || frontier.DepthBoundRepositoryCallsExcluded != 1 {
 		t.Fatalf("second depth frontier = %+v/%v, want one exact omitted call", frontier, ok)
 	}
@@ -70,7 +105,7 @@ func leaf() {}
 	}
 
 	options.DirectCallDepth = 3
-	deeper, err := AnalyzeWithInput(options, input)
+	deeper, err := analyzeForTest(options, input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +121,7 @@ func leaf() {}
 	}
 
 	options.DirectCallDepth = 4
-	exhausted, err := AnalyzeWithInput(options, input)
+	exhausted, err := analyzeForTest(options, input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,11 +143,11 @@ func first() { second() }
 func second() {}
 `)
 	input := targetDirectCallExecutableInput("example.com/limit", "main.go", 3)
-	options := DefaultOptions(repository)
+	options := defaultHostOptions(repository)
 	options.DirectCallDepth = 2
 	options.DirectCallEdgeLimit = 1
 
-	limited, err := AnalyzeWithInput(options, input)
+	limited, err := analyzeForTest(options, input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +167,7 @@ func second() {}
 	// The first remedy printed to the user is causal: reducing depth removes
 	// the second edge instead of merely changing error prose.
 	options.DirectCallDepth = 1
-	recovered, err := AnalyzeWithInput(options, input)
+	recovered, err := analyzeForTest(options, input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +182,7 @@ func second() {}
 
 	options.DirectCallDepth = 2
 	options.DirectCallEdgeLimit = 2
-	admitted, err := AnalyzeWithInput(options, input)
+	admitted, err := analyzeForTest(options, input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,17 +211,17 @@ func hidden() { leaf() }
 func leaf() {}
 `)
 	input := Input{
-		RepositoryName: "library", ModuleDirs: []string{"."},
-		Packages: []PackageInput{{Path: "example.com/library", ModuleDir: "."}},
+		ModuleDirs: []string{"."},
+		Packages:   []PackageInput{{Path: "example.com/library", ModuleDir: "."}},
 		AnalysisTarget: &AnalysisTargetInput{
 			TargetRef: "target-library", Kind: AnalysisTargetModuleLibrary,
 			ModuleID: "module-library", ModulePath: "example.com/library", ModuleDir: ".",
 			TargetPackages: []string{"example.com/library"},
 		},
 	}
-	options := DefaultOptions(repository)
+	options := defaultHostOptions(repository)
 	options.DirectCallDepth = 1
-	result, err := AnalyzeWithInput(options, input)
+	result, err := analyzeForTest(options, input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,15 +280,15 @@ func use() { var value hiddenGeneric[int]; value.Convert() }
 func helper() {}
 `)
 	input := Input{
-		RepositoryName: "generic", ModuleDirs: []string{"."},
-		Packages: []PackageInput{{Path: "example.com/generic", ModuleDir: "."}},
+		ModuleDirs: []string{"."},
+		Packages:   []PackageInput{{Path: "example.com/generic", ModuleDir: "."}},
 		AnalysisTarget: &AnalysisTargetInput{
 			TargetRef: "target-generic", Kind: AnalysisTargetModuleLibrary,
 			ModuleID: "module-generic", ModulePath: "example.com/generic", ModuleDir: ".",
 			TargetPackages: []string{"example.com/generic"},
 		},
 	}
-	result, err := AnalyzeWithInput(DefaultOptions(repository), input)
+	result, err := analyzeForTest(defaultHostOptions(repository), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +308,7 @@ func helper() {}
 }
 
 func TestTargetDirectCallDefaultsAreExplicitProductLimits(t *testing.T) {
-	options := DefaultOptions(".")
+	options := defaultHostOptions(".")
 	if DefaultDirectCallDepth != 10 || DefaultDirectCallEdgeLimit != 10_000 {
 		t.Fatalf("exported defaults = depth %d edges %d", DefaultDirectCallDepth, DefaultDirectCallEdgeLimit)
 	}
@@ -283,20 +318,27 @@ func TestTargetDirectCallDefaultsAreExplicitProductLimits(t *testing.T) {
 	}
 }
 
+func TestRepositoryLocationValidationHasOneNonRecursiveBase(t *testing.T) {
+	repositoryLocation := Location{Path: "internal/router/router.go", Line: 17, Column: 0}
+	if !validEntryHandoffLocation(repositoryLocation) || !validRepositoryDirectCallLocation(repositoryLocation) {
+		t.Fatalf("repository location was rejected: %#v", repositoryLocation)
+	}
+	externalLocation := Location{Path: "<external>/net/http", Line: 1, Column: 0}
+	if !validEntryHandoffLocation(externalLocation) || validRepositoryDirectCallLocation(externalLocation) {
+		t.Fatalf("external location boundary was not preserved: %#v", externalLocation)
+	}
+}
+
 func targetDirectCallExecutableInput(packagePath, rootPath string, rootLine int) Input {
 	return Input{
-		RepositoryName: "fixture", ModuleDirs: []string{"."},
-		Packages: []PackageInput{{Path: packagePath, ModuleDir: "."}},
+		ModuleDirs: []string{"."},
+		Packages:   []PackageInput{{Path: packagePath, ModuleDir: "."}},
 		AnalysisTarget: &AnalysisTargetInput{
 			TargetRef: "target:" + packagePath, Kind: AnalysisTargetExecutablePackage,
 			ModuleID: "module:" + packagePath, ModulePath: packagePath, ModuleDir: ".",
 			PackagePath: packagePath, TargetPackages: []string{packagePath},
 			Roots: []AnalysisTargetRootInput{{Path: rootPath, Line: rootLine}},
 		},
-		Entrypoints: []EntrypointInput{{
-			Package: packagePath, PackageDir: ".", ModuleDir: ".",
-			Anchors: []EntrypointAnchorInput{{Kind: ProcessEntryAnchorGoMain, Path: rootPath, Line: rootLine}},
-		}},
 	}
 }
 

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <link rel="icon" href="data:,">
+  <title>repomap — {{.Title}}</title>
+  <style id="rm-report-app-css">{{.ReportAppCSS}}</style>
+</head>
+<body>
+  <a class="rm-skip-link" href="#rm-app">Skip to repository orientation</a>
+  <noscript>
+    <style>body > :not(noscript) { display: none !important; }</style>
+    <p>This report requires JavaScript. Its repository evidence is embedded in this HTML file.</p>
+  </noscript>
+  <header class="rm-site-header">
+    <a class="rm-brand" href="#/program" aria-label="Repomap repository overview">
+      <span class="rm-brand__mark" aria-hidden="true">r</span>
+      <span>repomap</span>
+    </a>
+    <div class="rm-site-header__scope" id="rm-target-scope"></div>
+    <nav class="rm-site-header__targets" id="rm-target-navigation" aria-label="Repository targets" hidden></nav>
+  </header>
+  <main id="rm-app" aria-live="polite">
+    <p class="rm-loading">Building the repository orientation…</p>
+  </main>
+  <section class="rm-fatal" id="rm-fatal" role="alert" hidden>
+    <p class="rm-eyebrow">Report unavailable</p>
+    <h1>The repository orientation could not be opened</h1>
+    <p id="rm-fatal-message"></p>
+  </section>
+  <div class="rm-toast" id="rm-toast" role="status" aria-live="polite" hidden></div>
+{{if .StandaloneTargetBundle}}{{.StandaloneTargetBundle}}{{else}}  <script type="application/json" id="rm-report-data">{{.DataJSON}}</script>{{end}}
+  <script id="rm-report-app-js">{{.ReportAppJS}}</script>
+</body>
+</html>

@@ -7,12 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/dvordrova/repomap/internal/llm"
 )
 
 var persistentCacheDirectories = []string{
-	".model-research",
-	architectureSynthesisCacheDirectory,
-	presentationLocalizationCacheDir,
+	llm.CacheDirectoryName,
 }
 
 func runCache(args []string, stdout io.Writer) error {

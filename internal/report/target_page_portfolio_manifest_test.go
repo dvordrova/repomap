@@ -25,7 +25,7 @@ func TestRunManifestVerifiesTargetPagePortfolioArtifacts(t *testing.T) {
 		}
 	})
 
-	t.Run("portfolio binds ready current target", func(t *testing.T) {
+	t.Run("portfolio binds exact current target page", func(t *testing.T) {
 		runDir, manifest := fixture.run(t, true)
 		if err := manifest.Validate(); err != nil {
 			t.Fatalf("portfolio-bound manifest: %v", err)
@@ -106,19 +106,19 @@ func TestRunManifestVerifiesTargetPagePortfolioArtifacts(t *testing.T) {
 		}
 	})
 
-	t.Run("current manifest target must be ready", func(t *testing.T) {
+	t.Run("current manifest target must own this exact run", func(t *testing.T) {
 		runDir, manifest := fixture.run(t, true)
 		manifest.MaterialInputs.AnalysisTargetRef = fixture.helperRef
 		manifest.MaterialInputs.AnalysisTargetSHA256 = fixture.targetSHA256(t, fixture.helperRef)
 		if err := manifest.VerifyTargetPagePortfolioArtifacts(runDir); err == nil ||
-			!strings.Contains(err.Error(), "no ready target page") {
-			t.Fatalf("unavailable current target error = %v", err)
+			!strings.Contains(err.Error(), "no exact published target page") {
+			t.Fatalf("other sibling run error = %v", err)
 		}
 
 		manifest.MaterialInputs.AnalysisTargetRef = "at-000000000000000000000000"
 		manifest.MaterialInputs.AnalysisTargetSHA256 = strings.Repeat("0", 64)
 		if err := manifest.VerifyTargetPagePortfolioArtifacts(runDir); err == nil ||
-			!strings.Contains(err.Error(), "no ready target page") {
+			!strings.Contains(err.Error(), "no exact published target page") {
 			t.Fatalf("unselected current target error = %v", err)
 		}
 	})
@@ -211,11 +211,8 @@ func newTargetPageManifestFixture(t *testing.T) targetPageManifestFixture {
 		t.Fatal(err)
 	}
 	portfolio, err := snapshot.BuildTargetPagePortfolio(container, []snapshot.TargetPageOutcome{
-		{TargetRef: appRef, State: snapshot.TargetPageReady, RunID: "run-app-1"},
-		{
-			TargetRef: helperRef, State: snapshot.TargetPageUnavailable,
-			UnavailableCode: snapshot.TargetPageUnavailableTargetRunFailed,
-		},
+		{TargetRef: appRef, RunID: "run-app-1"},
+		{TargetRef: helperRef, RunID: "run-helper-1"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -232,7 +229,10 @@ func newTargetPageManifestFixture(t *testing.T) targetPageManifestFixture {
 
 func (fixture targetPageManifestFixture) run(t *testing.T, withPortfolio bool) (string, RunManifest) {
 	t.Helper()
-	runDir := t.TempDir()
+	runDir := filepath.Join(t.TempDir(), "run-app-1")
+	if err := os.Mkdir(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	writeTargetPageManifestArtifact(
 		t, runDir, snapshot.TargetRunContainerArtifactFilename, fixture.containerRaw,
 	)

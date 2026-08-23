@@ -10,10 +10,10 @@ import (
 func TestModuleLibraryTargetRootsEveryExactPublicPackageOnly(t *testing.T) {
 	repository := writeModuleLibraryFixture(t)
 	input := moduleLibraryFixtureInput(false)
-	options := DefaultOptions(repository)
+	options := defaultHostOptions(repository)
 	options.DirectCallDepth = 1
 
-	result, err := AnalyzeWithInput(options, input)
+	result, err := analyzeForTest(options, input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,14 +74,14 @@ func TestModuleLibraryTargetRootsEveryExactPublicPackageOnly(t *testing.T) {
 
 func TestModuleLibraryTargetInputAndIndexAreCanonicalAndTamperClosed(t *testing.T) {
 	repository := writeModuleLibraryFixture(t)
-	options := DefaultOptions(repository)
+	options := defaultHostOptions(repository)
 	options.DirectCallDepth = 1
 
-	first, err := AnalyzeWithInput(options, moduleLibraryFixtureInput(false))
+	first, err := analyzeForTest(options, moduleLibraryFixtureInput(false))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := AnalyzeWithInput(options, moduleLibraryFixtureInput(true))
+	second, err := analyzeForTest(options, moduleLibraryFixtureInput(true))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestModuleLibraryTargetInputAndIndexAreCanonicalAndTamperClosed(t *testing.
 	permuted.AnalysisTarget.TargetPackages = []string{
 		"example.com/plural/client", "example.com/plural",
 	}
-	if _, err := AnalyzeWithInput(options, permuted); err == nil ||
+	if _, err := analyzeForTest(options, permuted); err == nil ||
 		!strings.Contains(err.Error(), "canonical sorted unique") {
 		t.Fatalf("permuted target package authority error = %v", err)
 	}
@@ -104,21 +104,21 @@ func TestModuleLibraryTargetInputAndIndexAreCanonicalAndTamperClosed(t *testing.
 		append([]string(nil), outside.AnalysisTarget.TargetPackages...),
 		"example.com/plural/missing",
 	)
-	if _, err := AnalyzeWithInput(options, outside); err == nil ||
+	if _, err := analyzeForTest(options, outside); err == nil ||
 		!strings.Contains(err.Error(), "outside the admitted module package scope") {
 		t.Fatalf("out-of-scope target package error = %v", err)
 	}
 
 	wrongModule := moduleLibraryFixtureInput(false)
 	wrongModule.AnalysisTarget.ModulePath = "example.com/tampered"
-	if _, err := AnalyzeWithInput(options, wrongModule); err == nil ||
+	if _, err := analyzeForTest(options, wrongModule); err == nil ||
 		!strings.Contains(err.Error(), "does not belong to sealed module") {
 		t.Fatalf("tampered module identity error = %v", err)
 	}
 
 	whitespaceRef := moduleLibraryFixtureInput(false)
 	whitespaceRef.AnalysisTarget.TargetRef += " "
-	if _, err := AnalyzeWithInput(options, whitespaceRef); err == nil ||
+	if _, err := analyzeForTest(options, whitespaceRef); err == nil ||
 		!strings.Contains(err.Error(), "module identity is required") {
 		t.Fatalf("non-canonical target ref error = %v", err)
 	}
@@ -158,15 +158,15 @@ func main() {}
 		mainTarget.AnalysisTarget.TargetPackages,
 		"example.com/plural/cmd/tool",
 	)
-	if _, err := AnalyzeWithInput(DefaultOptions(repository), mainTarget); err == nil ||
+	if _, err := analyzeForTest(defaultHostOptions(repository), mainTarget); err == nil ||
 		!strings.Contains(err.Error(), "is executable") {
 		t.Fatalf("main package module-library error = %v", err)
 	}
 
-	limitedOptions := DefaultOptions(repository)
+	limitedOptions := defaultHostOptions(repository)
 	limitedOptions.DirectCallDepth = 1
 	limitedOptions.DirectCallEdgeLimit = 1
-	limited, err := AnalyzeWithInput(limitedOptions, moduleLibraryFixtureInput(false))
+	limited, err := analyzeForTest(limitedOptions, moduleLibraryFixtureInput(false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func moduleLibraryFixtureInput(reverse bool) Input {
 		slices.Reverse(packages)
 	}
 	return Input{
-		RepositoryName: "plural", ModuleDirs: []string{"."}, Packages: packages,
+		ModuleDirs: []string{"."}, Packages: packages,
 		AnalysisTarget: &AnalysisTargetInput{
 			TargetRef: "target-plural", Kind: AnalysisTargetModuleLibrary,
 			ModuleID: "module-plural", ModulePath: "example.com/plural", ModuleDir: ".",

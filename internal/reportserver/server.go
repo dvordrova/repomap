@@ -13,133 +13,55 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
-	"path"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
-	analysis "github.com/dvordrova/repomap/internal/analyzer"
-	"github.com/dvordrova/repomap/internal/freshness"
-	"github.com/dvordrova/repomap/internal/orient"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/sourcecatalog"
-	"github.com/dvordrova/repomap/internal/testevidence"
 	"github.com/dvordrova/repomap/internal/workspaceopen"
 	"github.com/dvordrova/repomap/internal/workspacesnapshot"
 )
 
 const (
-	maxArtifactBytes   = 32 * 1024 * 1024
-	maxSourceHashBytes = workspaceopen.MaxHashBytes
+	maxReportJSONBytes = report.MaxReportJSONBytes
+	maxReportHTMLBytes = report.MaxOrdinaryReportHTMLBytes
 	capabilityBytes    = 32
 )
 
 type OpenFileFunc func(ctx context.Context, absolutePath string, line, column int) error
 
+// Options contains the ordinary-run report server configuration.
 type Options struct {
-	RunsDir             string
-	InitialRunID        string
-	Port                int
-	Capability          string
-	ExpectedHost        string
-	OpenFile            OpenFileFunc
-	LocationResolver    analysis.LocationResolver
-	ExactSymbolAnalyzer analysis.ExactSymbolAnalyzer
-	ReferenceFinder     testevidence.ReferenceFinder
-	CaptureRepository   CaptureRepositoryFunc
-	CaptureFactContext  CaptureFactContextFunc
-	AnalysisTimeout     time.Duration
-	// SourceEpisodeJSON is one optional, approved source-episode artifact for
-	// InitialRunID. It is copied into memory, never persisted, and cannot affect
-	// any other saved run served by this handler.
-	SourceEpisodeJSON []byte
-	Logf              func(string, ...any)
-	OnReady           func(url string) error
-}
-
-type RunSummary struct {
-	ID                string `json:"id"`
-	RepoName          string `json:"repo_name,omitempty"`
-	CreatedAt         string `json:"created_at,omitempty"`
-	ReportLanguage    string `json:"report_language"`
-	CacheMode         string `json:"cache_mode"`
-	ShortID           string `json:"short_id"`
-	AnalysisAvailable bool   `json:"analysis_available"`
+	RunsDir      string
+	InitialRunID string
+	Port         int
+	Capability   string
+	ExpectedHost string
+	OpenFile     OpenFileFunc
+	Logf         func(string, ...any)
+	OnReady      func(url string) error
 }
 
 type runRecord struct {
-	RunSummary
-	RepoPath           string
-	Manifest           *report.RunManifest
-	WorkspaceSnapshot  *workspacesnapshot.Snapshot
-	Report             *report.ReportData
-	ReportSHA256       string // Adapter-only binding for opaque browser IDs.
-	SourceCatalog      *sourcecatalog.Catalog
-	Sources            map[string]sourceTarget
-	SourceContexts     map[string]sourceContextTarget
-	ArtifactsSignature string
-	RequestedLocale    string
-	TargetNavigation   *report.TargetNavigationPortfolio
-}
-
-func (run runRecord) verifyRepositoryState(current freshness.RepositoryState) error {
-	if run.WorkspaceSnapshot != nil {
-		return run.WorkspaceSnapshot.Verify(current)
-	}
-	return fmt.Errorf("workspace authority unavailable")
-}
-
-func (run runRecord) workspaceAnalysisRoot() string {
-	if run.WorkspaceSnapshot != nil {
-		return run.WorkspaceSnapshot.AnalysisRoot()
-	}
-	return run.RepoPath
-}
-
-func (run runRecord) workspaceRepositoryDigest() string {
-	if run.WorkspaceSnapshot != nil {
-		return run.WorkspaceSnapshot.RepositoryDigest()
-	}
-	if run.Manifest != nil {
-		return run.Manifest.RepositoryStateSHA256
-	}
-	return ""
-}
-
-type runIndex struct {
-	runs []runRecord
-	byID map[string]runRecord
+	id                string
+	manifest          report.RunManifest
+	targetNavigation  *report.TargetNavigationPortfolio
+	workspaceSnapshot workspacesnapshot.Snapshot
+	sources           map[string]sourceTarget
+	rendered          []byte
 }
 
 type handler struct {
-	runsDir            string
-	initialRunID       string
-	urlPrefix          string
-	openFile           OpenFileFunc
-	openSlot           chan struct{}
-	sourceSlot         chan struct{}
-	analysis           *symbolAnalysis
-	captureRepo        CaptureRepositoryFunc
-	sourceEpisodeRunID string
-	sourceEpisodeJSON  []byte
-	logf               func(string, ...any)
-	runsMu             sync.RWMutex
-	reloadMu           sync.Mutex
-	runIndex           *runIndex
-}
-
-type metadata struct {
-	RepoName         string `json:"repo_name"`
-	RepoPath         string `json:"repo_path"`
-	CreatedAt        string `json:"created_at"`
-	EffectiveOptions struct {
-		ReportLanguage string `json:"report_language"`
-		NoCache        bool   `json:"no_cache"`
-	} `json:"effective_options"`
+	urlPrefix  string
+	initialRun string
+	runs       map[string]runRecord
+	openFile   OpenFileFunc
+	openSlot   chan struct{}
+	logf       func(string, ...any)
 }
 
 type openRequest struct {
@@ -150,8 +72,7 @@ type openRequest struct {
 }
 
 type sourceTarget struct {
-	relativePath   string
-	capturedSHA256 string
+	relativePath string
 }
 
 func Serve(ctx context.Context, opts Options) error {
@@ -162,6 +83,7 @@ func Serve(ctx context.Context, opts Options) error {
 	if opts.Port < 0 || opts.Port > 65535 {
 		return fmt.Errorf("report server: port must be between 0 and 65535")
 	}
+
 	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", opts.Port))
 	if err != nil {
 		return fmt.Errorf("report server: listen: %w", err)
@@ -177,40 +99,44 @@ func Serve(ctx context.Context, opts Options) error {
 		}
 	}
 	opts.ExpectedHost = net.JoinHostPort("127.0.0.1", strconv.Itoa(address.Port))
-	h, err := NewHandler(opts)
+	serverHandler, err := NewHandler(opts)
 	if err != nil {
 		_ = listener.Close()
 		return err
 	}
-	if opts.Logf != nil {
-		opts.Logf("report server ready in %d ms", time.Since(started).Milliseconds())
-	}
 
-	urlPrefix := capabilityURLPrefix(opts.Capability)
-	url := fmt.Sprintf("http://127.0.0.1:%d%s/", address.Port, urlPrefix)
-	if opts.InitialRunID != "" {
-		url += "runs/" + opts.InitialRunID + "/report.html"
-	}
+	url := fmt.Sprintf(
+		"http://127.0.0.1:%d%s/runs/%s/report.html#/program",
+		address.Port,
+		capabilityURLPrefix(opts.Capability),
+		opts.InitialRunID,
+	)
 	if opts.OnReady != nil {
 		if err := opts.OnReady(url); err != nil {
 			_ = listener.Close()
 			return fmt.Errorf("report server: ready callback: %w", err)
 		}
 	}
-
-	server := &http.Server{
-		Handler:           h,
-		ReadHeaderTimeout: 5 * time.Second,
-		IdleTimeout:       30 * time.Second,
+	if opts.Logf != nil {
+		opts.Logf("report server ready in %d ms", time.Since(started).Milliseconds())
 	}
+
 	serveCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	server := &http.Server{
+		Handler:           serverHandler,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       30 * time.Second,
+		BaseContext: func(net.Listener) context.Context {
+			return serveCtx
+		},
+	}
 	shutdownDone := make(chan struct{})
 	go func() {
 		defer close(shutdownDone)
 		<-serveCtx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer shutdownCancel()
 		_ = server.Shutdown(shutdownCtx)
 	}()
 
@@ -226,15 +152,8 @@ func NewHandler(opts Options) (http.Handler, error) {
 	if strings.TrimSpace(opts.RunsDir) == "" {
 		return nil, fmt.Errorf("report server: runs directory is required")
 	}
-	var sourceEpisodeJSON []byte
-	if len(opts.SourceEpisodeJSON) > 0 {
-		if strings.TrimSpace(opts.InitialRunID) == "" {
-			return nil, fmt.Errorf("report server: source episode requires an initial run")
-		}
-		if len(opts.SourceEpisodeJSON) > report.MaxSourceEpisodeBytes {
-			return nil, fmt.Errorf("report server: source episode exceeds %d bytes", report.MaxSourceEpisodeBytes)
-		}
-		sourceEpisodeJSON = append([]byte(nil), opts.SourceEpisodeJSON...)
+	if !validRunID(opts.InitialRunID) {
+		return nil, fmt.Errorf("report server: valid initial run id is required")
 	}
 	runsDir, err := filepath.Abs(opts.RunsDir)
 	if err != nil {
@@ -244,13 +163,7 @@ func NewHandler(opts Options) (http.Handler, error) {
 	if err != nil || !runsInfo.IsDir() {
 		return nil, fmt.Errorf("report server: runs directory is unavailable: %s", runsDir)
 	}
-	openFile := opts.OpenFile
-	if openFile == nil {
-		openFile, err = NewVSCodeLauncher(opts.Logf)
-		if err != nil {
-			openFile = unavailableEditorLauncher(err)
-		}
-	}
+
 	capability := strings.TrimSpace(opts.Capability)
 	if capability == "" {
 		capability, err = generateCapability()
@@ -264,330 +177,213 @@ func NewHandler(opts Options) (http.Handler, error) {
 	if opts.ExpectedHost != "" && !validExpectedHost(opts.ExpectedHost) {
 		return nil, fmt.Errorf("report server: invalid expected host")
 	}
-	urlPrefix := capabilityURLPrefix(capability)
-	captureRepo := opts.CaptureRepository
-	if captureRepo == nil {
-		captureRepo = freshness.CaptureRepository
-	}
-	h := &handler{
-		runsDir:      runsDir,
-		initialRunID: opts.InitialRunID,
-		urlPrefix:    urlPrefix,
-		openFile:     openFile,
-		openSlot:     make(chan struct{}, 1),
-		sourceSlot:   make(chan struct{}, 1),
-		analysis:     newSymbolAnalysis(opts),
-		captureRepo:  captureRepo,
-		logf:         opts.Logf,
-	}
-	if err := h.reloadRuns(); err != nil {
-		return nil, fmt.Errorf("report server: list runs: %w", err)
-	}
-	if opts.InitialRunID != "" {
-		if !validRunID(opts.InitialRunID) {
-			return nil, fmt.Errorf("report server: invalid initial run id")
+
+	openFile := opts.OpenFile
+	if openFile == nil {
+		openFile, err = NewVSCodeLauncher(opts.Logf)
+		if err != nil {
+			return nil, fmt.Errorf("report server: VS Code launcher: %w", err)
 		}
-		initialRun, findErr := h.findRunCached(opts.InitialRunID)
-		if findErr != nil {
-			return nil, fmt.Errorf("report server: initial run not found: %s", opts.InitialRunID)
-		}
-		if len(sourceEpisodeJSON) > 0 {
-			if initialRun.Manifest == nil || initialRun.Report == nil {
-				return nil, fmt.Errorf("report server: source episode requires a verified initial run")
-			}
-			if _, renderErr := report.RenderHTMLWithSourceEpisodeAndOptions(
-				initialRun.Report,
-				sourceEpisodeJSON,
-				report.RenderOptions{TargetNavigation: initialRun.TargetNavigation},
-			); renderErr != nil {
-				return nil, fmt.Errorf("report server: validate source episode for initial run: %w", renderErr)
-			}
-			h.sourceEpisodeRunID = opts.InitialRunID
-			h.sourceEpisodeJSON = sourceEpisodeJSON
-		}
+	}
+	run, err := loadRun(runsDir, opts.InitialRunID)
+	if err != nil {
+		return nil, fmt.Errorf("report server: load initial run %s: %w", opts.InitialRunID, err)
+	}
+	runs, err := loadAuthorizedRuns(runsDir, run)
+	if err != nil {
+		return nil, fmt.Errorf("report server: load authorized target pages: %w", err)
 	}
 
+	urlPrefix := capabilityURLPrefix(capability)
+	h := &handler{
+		urlPrefix:  urlPrefix,
+		initialRun: opts.InitialRunID,
+		runs:       runs,
+		openFile:   openFile,
+		openSlot:   make(chan struct{}, 1),
+		logf:       opts.Logf,
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+urlPrefix+"/{$}", h.serveRoot)
-	mux.HandleFunc("GET "+urlPrefix+"/api/runs", h.serveRuns)
-	mux.HandleFunc("POST "+urlPrefix+"/api/open", h.serveOpen)
-	mux.HandleFunc("POST "+urlPrefix+"/api/source-context", h.serveSourceContext)
-	mux.HandleFunc("POST "+urlPrefix+"/api/symbols", h.serveSymbols)
-	mux.HandleFunc("POST "+urlPrefix+"/api/symbol", h.serveInspectSymbol)
-	mux.HandleFunc("POST "+urlPrefix+"/api/investigation/latest", h.serveLatestInvestigation)
-	mux.HandleFunc("POST "+urlPrefix+"/api/investigation/target-tests", h.serveTargetTestReferences)
 	mux.HandleFunc("GET "+urlPrefix+"/runs/{runID}/report.html", h.serveReport)
-	routes := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet && !knownBrowserGETPath(urlPrefix, r.URL.Path) {
-			h.serveUnknownBrowserRoute(w, r)
-			return
-		}
-		mux.ServeHTTP(w, r)
-	})
-	return securityHeaders(routes, opts.ExpectedHost), nil
+	mux.HandleFunc("POST "+urlPrefix+"/api/open", h.serveOpen)
+	return securityHeaders(mux, opts.ExpectedHost), nil
 }
 
-func (h *handler) serveUnknownBrowserRoute(w http.ResponseWriter, r *http.Request) {
-	h.writeBrowserError(
-		w,
-		http.StatusNotFound,
-		"en",
-		report.BrowserErrorReportNotFound,
-		"unknown browser route %q",
-		r.URL.Path,
+func loadRun(runsDir, runID string) (runRecord, error) {
+	runDir := filepath.Join(runsDir, runID)
+	runInfo, err := os.Lstat(runDir)
+	if err != nil || runInfo.Mode()&os.ModeSymlink != 0 || !runInfo.IsDir() {
+		return runRecord{}, fmt.Errorf("run directory is unavailable")
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return runRecord{}, fmt.Errorf("open run directory: %w", err)
+	}
+	defer root.Close()
+	if info, err := root.Lstat("report.html"); err != nil || !info.Mode().IsRegular() ||
+		info.Size() < 0 || info.Size() > maxReportHTMLBytes {
+		return runRecord{}, fmt.Errorf("report.html is unavailable")
+	}
+	reportJSON, err := readRootFile(root, "report.json", maxReportJSONBytes)
+	if err != nil {
+		return runRecord{}, fmt.Errorf("read report.json: %w", err)
+	}
+	var reportData report.ReportData
+	if err := json.Unmarshal(reportJSON, &reportData); err != nil ||
+		reportData.FormatVersion != report.CurrentFormatVersion {
+		return runRecord{}, fmt.Errorf("report.json is invalid")
+	}
+
+	manifest, err := report.ReadRunManifest(runDir)
+	if err != nil {
+		return runRecord{}, fmt.Errorf("read manifest: %w", err)
+	}
+	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
+		return runRecord{}, fmt.Errorf("verify report.json: %w", err)
+	}
+	analysisRoot, err := manifest.ResolveAnalysisRoot()
+	if err != nil {
+		return runRecord{}, fmt.Errorf("resolve analysis root: %w", err)
+	}
+	workspaceSnapshot, catalog, err := workspaceSnapshotForManifest(manifest, analysisRoot)
+	if err != nil {
+		return runRecord{}, err
+	}
+	targetNavigation, err := report.LoadManifestTargetNavigation(runDir, manifest)
+	if err != nil {
+		return runRecord{}, fmt.Errorf("load target navigation: %w", err)
+	}
+	sources, sourceIDs := catalogSourceTargets(runID, manifest.ReportSHA256, catalog)
+	reportData.SourceIDs = sourceIDs
+	rendered, err := report.RenderHTMLWithOptions(
+		&reportData,
+		report.RenderOptions{
+			TargetNavigation: targetNavigation,
+			LocalRoots: []string{
+				runDir,
+				analysisRoot,
+				manifest.RepositoryState.Identity,
+			},
+		},
 	)
+	if err != nil {
+		return runRecord{}, fmt.Errorf("render report: %w", err)
+	}
+	if len(rendered) > maxReportHTMLBytes {
+		return runRecord{}, fmt.Errorf("rendered report exceeds %d bytes", maxReportHTMLBytes)
+	}
+	return runRecord{
+		id:                runID,
+		manifest:          manifest,
+		targetNavigation:  targetNavigation,
+		workspaceSnapshot: workspaceSnapshot,
+		sources:           sources,
+		rendered:          rendered,
+	}, nil
 }
 
-func knownBrowserGETPath(urlPrefix, requestPath string) bool {
-	switch requestPath {
-	case urlPrefix, urlPrefix + "/", urlPrefix + "/api/runs":
-		return true
+func loadAuthorizedRuns(runsDir string, initial runRecord) (map[string]runRecord, error) {
+	runs := map[string]runRecord{initial.id: initial}
+	navigation := initial.targetNavigation
+	if navigation == nil {
+		return runs, nil
 	}
-	const reportSuffix = "/report.html"
-	runPrefix := urlPrefix + "/runs/"
-	if !strings.HasPrefix(requestPath, runPrefix) ||
-		!strings.HasSuffix(requestPath, reportSuffix) {
-		return false
+	if initial.manifest.MaterialInputs.ProgramTargetID != navigation.CurrentTargetID {
+		return nil, fmt.Errorf("initial target identity mismatch")
 	}
-	runID := strings.TrimSuffix(strings.TrimPrefix(requestPath, runPrefix), reportSuffix)
-	return runID != "" && !strings.Contains(runID, "/")
+	for _, item := range navigation.Targets {
+		runID, err := navigationRunID(initial.id, navigation.CurrentTargetID, item)
+		if err != nil {
+			return nil, err
+		}
+		if runID == initial.id {
+			continue
+		}
+		if _, duplicate := runs[runID]; duplicate {
+			return nil, fmt.Errorf("duplicate authorized target run")
+		}
+		sibling, err := loadRun(runsDir, runID)
+		if err != nil {
+			return nil, fmt.Errorf("load sibling run %s: %w", runID, err)
+		}
+		if err := authorizeSiblingRun(initial, sibling, item.TargetID); err != nil {
+			return nil, fmt.Errorf("authorize sibling run %s: %w", runID, err)
+		}
+		runs[runID] = sibling
+	}
+	return runs, nil
+}
+
+func navigationRunID(
+	initialRunID, currentTargetID string,
+	item report.TargetNavigationItem,
+) (string, error) {
+	if item.TargetID == currentTargetID {
+		if item.Href != "#/program" {
+			return "", fmt.Errorf("current target route is invalid")
+		}
+		return initialRunID, nil
+	}
+	parsed, err := url.Parse(item.Href)
+	if err != nil || parsed.RawQuery != "" || parsed.Fragment != "/program" {
+		return "", fmt.Errorf("sibling target route is invalid")
+	}
+	const prefix = "../"
+	const suffix = "/report.html"
+	if !strings.HasPrefix(parsed.Path, prefix) || !strings.HasSuffix(parsed.Path, suffix) {
+		return "", fmt.Errorf("sibling target route is invalid")
+	}
+	runID := strings.TrimSuffix(strings.TrimPrefix(parsed.Path, prefix), suffix)
+	if !validRunID(runID) || runID == initialRunID {
+		return "", fmt.Errorf("sibling target run id is invalid")
+	}
+	return runID, nil
+}
+
+func authorizeSiblingRun(initial, sibling runRecord, targetID string) error {
+	initialMaterial := initial.manifest.MaterialInputs
+	siblingMaterial := sibling.manifest.MaterialInputs
+	if siblingMaterial.ProgramTargetID != targetID ||
+		siblingMaterial.TargetRunContainerSHA256 == "" ||
+		siblingMaterial.TargetRunContainerSHA256 != initialMaterial.TargetRunContainerSHA256 ||
+		siblingMaterial.TargetPagePortfolioSHA256 == "" ||
+		siblingMaterial.TargetPagePortfolioSHA256 != initialMaterial.TargetPagePortfolioSHA256 ||
+		sibling.manifest.RepositoryState.Identity != initial.manifest.RepositoryState.Identity ||
+		sibling.targetNavigation == nil ||
+		sibling.targetNavigation.CurrentTargetID != targetID ||
+		sibling.targetNavigation.DefaultTargetID != initial.targetNavigation.DefaultTargetID {
+		return fmt.Errorf("manifest binding mismatch")
+	}
+	// AnalysisTargetRef is backend-specific outer-page authority. When both
+	// Go page manifests carry it, a sibling must not reuse the initial page's
+	// outer identity; its exact ProgramTargetID remains the navigation join.
+	if initialMaterial.AnalysisTargetRef != "" &&
+		siblingMaterial.AnalysisTargetRef != "" &&
+		initialMaterial.AnalysisTargetRef == siblingMaterial.AnalysisTargetRef {
+		return fmt.Errorf("manifest binding mismatch")
+	}
+	return nil
 }
 
 func (h *handler) serveRoot(w http.ResponseWriter, r *http.Request) {
-	requestedLocale := "en"
-	cachedRuns := h.runsSnapshot()
-	cachedRunID := h.initialRunID
-	if !containsRun(cachedRuns, cachedRunID) && len(cachedRuns) > 0 {
-		cachedRunID = cachedRuns[0].ID
-	}
-	if cached, err := h.findRunCached(cachedRunID); err == nil {
-		requestedLocale = cached.RequestedLocale
-	}
-	if err := h.reloadRuns(); err != nil {
-		h.writeBrowserError(
-			w,
-			http.StatusInternalServerError,
-			requestedLocale,
-			report.BrowserErrorReportUnavailable,
-			"report root could not refresh saved reports: %v",
-			err,
-		)
-		return
-	}
-	runs := h.runsSnapshot()
-	runID := h.initialRunID
-	if !containsRun(runs, runID) {
-		if len(runs) == 0 {
-			h.writeBrowserError(
-				w,
-				http.StatusNotFound,
-				"en",
-				report.BrowserErrorNoSavedReports,
-				"report root has no saved reports",
-			)
-			return
-		}
-		runID = runs[0].ID
-	}
-	http.Redirect(w, r, h.urlPrefix+"/runs/"+runID+"/report.html", http.StatusFound)
-}
-
-func (h *handler) serveRuns(w http.ResponseWriter, _ *http.Request) {
-	if !h.runIndexLoaded() {
-		_ = h.reloadRuns()
-	}
-	runs := h.runsSnapshot()
-	summaries := make([]RunSummary, 0, len(runs))
-	for _, run := range runs {
-		summaries = append(summaries, run.RunSummary)
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"runs": summaries})
-}
-
-// runIndexLoaded keeps the optional browser run picker read-only with respect
-// to the verified server index. NewHandler loads that index once; root and
-// exact report routes retain the existing refresh paths for new or changed
-// runs. Every served page asks for /api/runs once, so refreshing here would
-// replay every saved workspace after every page navigation.
-func (h *handler) runIndexLoaded() bool {
-	h.runsMu.RLock()
-	defer h.runsMu.RUnlock()
-	return h.runIndex != nil
+	http.Redirect(
+		w,
+		r,
+		h.urlPrefix+"/runs/"+h.initialRun+"/report.html#/program",
+		http.StatusFound,
+	)
 }
 
 func (h *handler) serveReport(w http.ResponseWriter, r *http.Request) {
-	started := time.Now()
-	runID := r.PathValue("runID")
-	if !validRunID(runID) {
-		h.writeBrowserError(
-			w,
-			http.StatusNotFound,
-			"en",
-			report.BrowserErrorReportNotFound,
-			"report request has an invalid run id",
-		)
-		return
-	}
-	requestedLocale := "en"
-	if cached, err := h.findRunCached(runID); err == nil {
-		requestedLocale = cached.RequestedLocale
-	}
-	run, err := h.findRun(runID)
-	if err != nil {
-		var refreshErr *runRefreshError
-		if errors.As(err, &refreshErr) {
-			h.writeBrowserError(
-				w,
-				http.StatusInternalServerError,
-				requestedLocale,
-				report.BrowserErrorReportUnavailable,
-				"report %s could not refresh saved reports: %v",
-				runID,
-				refreshErr,
-			)
-			return
-		}
-		h.writeBrowserError(
-			w,
-			http.StatusNotFound,
-			requestedLocale,
-			report.BrowserErrorReportNotFound,
-			"report %s was not found after refreshing saved reports",
-			runID,
-		)
-		return
-	}
-	requestedLocale = run.RequestedLocale
-	if run.Manifest == nil || run.Report == nil {
-		h.writeBrowserError(
-			w,
-			http.StatusConflict,
-			requestedLocale,
-			report.BrowserErrorAuthorityUnavailable,
-			"report %s cannot be served without verified local authority",
-			runID,
-		)
-		return
-	}
-	reportData := *run.Report
-	run.Report = &reportData
-	h.refreshRunFreshness(r.Context(), &run)
-	if runID == h.sourceEpisodeRunID && len(h.sourceEpisodeJSON) > 0 {
-		if err := report.AttachSourceEpisodePresentation(
-			run.Report,
-			h.sourceEpisodeJSON,
-		); err != nil {
-			h.writeBrowserError(
-				w,
-				http.StatusInternalServerError,
-				requestedLocale,
-				report.BrowserErrorReportUnavailable,
-				"report %s could not bind approved source episode: %v",
-				runID,
-				err,
-			)
-			return
-		}
-	}
-	localizedReport, localizationStatus := report.LoadPresentationLocalization(
-		filepath.Join(h.runsDir, run.ID),
-		run.Report,
-		run.RequestedLocale,
-	)
-	run.Report = localizedReport
-	if localizationStatus.State == report.PresentationLocalizationFailed {
-		h.log(
-			"report %s localization failed reason=%s; serving Russian product UI with canonical English model prose",
-			run.ID,
-			localizationStatus.ReasonCode,
-		)
-	}
-	renderStarted := time.Now()
-	var rendered []byte
-	renderOptions := report.RenderOptions{TargetNavigation: run.TargetNavigation}
-	if runID == h.sourceEpisodeRunID && len(h.sourceEpisodeJSON) > 0 {
-		rendered, err = report.RenderHTMLWithSourceEpisodeAndOptions(
-			run.Report,
-			h.sourceEpisodeJSON,
-			renderOptions,
-		)
-	} else {
-		rendered, err = report.RenderHTMLWithOptions(run.Report, renderOptions)
-	}
-	if err != nil {
-		h.writeBrowserError(
-			w,
-			http.StatusInternalServerError,
-			requestedLocale,
-			report.BrowserErrorReportUnavailable,
-			"report %s could not render: %v",
-			runID,
-			err,
-		)
-		return
-	}
-	if len(rendered) > maxArtifactBytes {
-		h.writeBrowserError(
-			w,
-			http.StatusUnprocessableEntity,
-			requestedLocale,
-			report.BrowserErrorInvalidArtifact,
-			"report %s rendered artifact exceeds the byte limit: bytes=%d limit=%d",
-			runID,
-			len(rendered),
-			maxArtifactBytes,
-		)
+	run, ok := h.runs[r.PathValue("runID")]
+	if !ok {
+		http.NotFound(w, r)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	http.ServeContent(w, r, "report.html", time.Time{}, bytes.NewReader(rendered))
-	h.log("served report %s: load+freshness=%d ms render=%d ms total=%d ms bytes=%d",
-		runID,
-		renderStarted.Sub(started).Milliseconds(),
-		time.Since(renderStarted).Milliseconds(),
-		time.Since(started).Milliseconds(),
-		len(rendered),
-	)
-}
-
-func (h *handler) writeBrowserError(
-	w http.ResponseWriter,
-	status int,
-	locale string,
-	kind report.BrowserErrorKind,
-	diagnostic string,
-	args ...any,
-) {
-	if diagnostic != "" {
-		h.log(diagnostic, args...)
-	}
-	writeBrowserErrorResponse(w, status, locale, kind, h.log)
-}
-
-func writeBrowserErrorResponse(
-	w http.ResponseWriter,
-	status int,
-	locale string,
-	kind report.BrowserErrorKind,
-	logf func(string, ...any),
-) {
-	rendered, err := report.RenderBrowserErrorHTML(locale, kind)
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
-	if err != nil {
-		if logf != nil {
-			logf("browser error page render failed kind=%s status=%d: %v", kind, status, err)
-		}
-		w.WriteHeader(status)
-		return
-	}
-	w.WriteHeader(status)
-	if _, err := w.Write(rendered); err != nil {
-		if logf != nil {
-			logf("browser error page write failed kind=%s status=%d: %v", kind, status, err)
-		}
-	}
+	http.ServeContent(w, r, "report.html", time.Time{}, bytes.NewReader(run.rendered))
 }
 
 func (h *handler) serveOpen(w http.ResponseWriter, r *http.Request) {
@@ -602,261 +398,67 @@ func (h *handler) serveOpen(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid open-file request"})
 		return
 	}
-	if request.Line < 0 || request.Line > 10_000_000 || request.Column < 0 || request.Column > 10_000_000 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid source location"})
-		return
-	}
-	resolveRunStarted := time.Now()
-	run, err := h.findRun(request.RunID)
-	resolveRunMS := time.Since(resolveRunStarted).Milliseconds()
-	if err != nil {
-		h.logSourceOpen(request.RunID, request.SourceID, "run_not_found", resolveRunMS, 0, 0, 0, started)
+	run, ok := h.runs[request.RunID]
+	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "report run not found"})
 		return
 	}
-	authorizeStarted := time.Now()
-	if run.Manifest == nil || !filepath.IsAbs(run.RepoPath) ||
-		run.WorkspaceSnapshot == nil || run.SourceCatalog == nil {
-		h.logSourceOpen(run.ID, request.SourceID, "view_only", resolveRunMS, time.Since(authorizeStarted).Milliseconds(), 0, 0, started)
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "this report is view-only; regenerate it to enable editor actions"})
+	if request.Line < 0 || request.Line > 10_000_000 ||
+		request.Column < 0 || request.Column > 10_000_000 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid source location"})
 		return
 	}
-	target, ok := run.Sources[strings.TrimSpace(request.SourceID)]
-	authorizeMS := time.Since(authorizeStarted).Milliseconds()
-	if !ok || request.SourceID == "" {
-		h.logSourceOpen(run.ID, request.SourceID, "source_unauthorized", resolveRunMS, authorizeMS, 0, 0, started)
+	sourceID := strings.TrimSpace(request.SourceID)
+	if sourceID == "" || sourceID != request.SourceID || !validCapability(sourceID) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "source is not authorized by this report"})
 		return
 	}
-	resolveTargetStarted := time.Now()
-	// Target resolution and hashing historically ignored request cancellation;
-	// the launcher below still receives the original request context.
-	absolutePath, sourceChanged, resolveErr := resolveOpenTarget(
-		context.WithoutCancel(r.Context()),
-		run,
-		target,
-	)
-	if resolveErr != nil {
-		resolveTargetMS := time.Since(resolveTargetStarted).Milliseconds()
-		h.logSourceOpen(run.ID, request.SourceID, "source_unavailable", resolveRunMS, authorizeMS, resolveTargetMS, 0, started)
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "authorized source is unavailable", "code": "source_unavailable"})
+	target, ok := run.sources[sourceID]
+	if !ok {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "source is not authorized by this report"})
 		return
 	}
-	resolveTargetMS := time.Since(resolveTargetStarted).Milliseconds()
+
+	absolutePath, err := resolveOpenTarget(r.Context(), run, target)
+	if err != nil {
+		h.log("source open run=%s source=%s outcome=source_unavailable response_ms=%d",
+			run.id, sourceID, time.Since(started).Milliseconds())
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"error": "authorized source is unavailable",
+		})
+		return
+	}
 	select {
 	case h.openSlot <- struct{}{}:
 		defer func() { <-h.openSlot }()
 	default:
-		h.logSourceOpen(run.ID, request.SourceID, "editor_busy", resolveRunMS, authorizeMS, resolveTargetMS, 0, started)
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "another editor action is still running", "code": "editor_busy"})
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{
+			"error": "another editor action is still running",
+		})
 		return
 	}
-	spawnStarted := time.Now()
 	if err := h.openFile(r.Context(), absolutePath, request.Line, request.Column); err != nil {
 		status := http.StatusBadGateway
-		code := "editor_launch_failed"
 		if errors.Is(err, ErrEditorUnavailable) {
 			status = http.StatusServiceUnavailable
-			code = "editor_unavailable"
 		}
-		h.logSourceOpen(run.ID, request.SourceID, code, resolveRunMS, authorizeMS, resolveTargetMS, time.Since(spawnStarted).Milliseconds(), started)
-		writeJSON(w, status, map[string]string{"error": "could not open file in VS Code", "code": code})
+		writeJSON(w, status, map[string]string{
+			"error": "could not open file in VS Code",
+		})
 		return
 	}
-	spawnMS := time.Since(spawnStarted).Milliseconds()
-	writeJSON(w, http.StatusOK, map[string]any{"status": "opened", "source_changed": sourceChanged})
-	h.logSourceOpen(run.ID, request.SourceID, "opened", resolveRunMS, authorizeMS, resolveTargetMS, spawnMS, started)
-}
-
-func (h *handler) findRun(runID string) (runRecord, error) {
-	if !validRunID(runID) {
-		return runRecord{}, fmt.Errorf("invalid run id")
-	}
-	run, err := h.findRunCached(runID)
-	if err == nil && !h.runArtifactsChanged(run) {
-		return run, nil
-	}
-	if reloadErr := h.reloadRuns(); reloadErr != nil {
-		return runRecord{}, &runRefreshError{err: reloadErr}
-	}
-	return h.findRunCached(runID)
-}
-
-// runRefreshError preserves the distinction between a missing requested run
-// and a failed global authority refresh after its cached artifact signature
-// changed. Browser report serving keeps the existing 404/500 contract while
-// sharing the cached findRun path with interactive source actions.
-type runRefreshError struct {
-	err error
-}
-
-func (err *runRefreshError) Error() string {
-	if err == nil || err.err == nil {
-		return "refresh saved reports"
-	}
-	return err.err.Error()
-}
-
-func (err *runRefreshError) Unwrap() error {
-	if err == nil {
-		return nil
-	}
-	return err.err
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "opened",
+	})
+	h.log("source open run=%s source=%s outcome=opened response_ms=%d",
+		run.id, sourceID, time.Since(started).Milliseconds())
 }
 
 func manifestSourceID(runID, reportSHA256, relativePath string) string {
-	digest := sha256.Sum256([]byte("repomap-source-v1\x00" + runID + "\x00" + reportSHA256 + "\x00" + relativePath))
+	digest := sha256.Sum256([]byte(
+		"repomap-source-v1\x00" + runID + "\x00" + reportSHA256 + "\x00" + relativePath,
+	))
 	return base64.RawURLEncoding.EncodeToString(digest[:])
-}
-
-func (h *handler) reloadRuns() error {
-	h.reloadMu.Lock()
-	defer h.reloadMu.Unlock()
-
-	runs, err := h.loadRuns()
-	if err != nil {
-		return err
-	}
-	byID := make(map[string]runRecord, len(runs))
-	for index := range runs {
-		run := &runs[index]
-		if run.WorkspaceSnapshot != nil {
-			catalog := run.WorkspaceSnapshot.Catalog()
-			run.SourceCatalog = &catalog
-		}
-		preparedReport, preparationErr := report.PrepareRunPresentation(
-			filepath.Join(h.runsDir, run.ID),
-			run.Report,
-			nil,
-		)
-		if preparedReport != nil {
-			run.Report = preparedReport
-		}
-		if preparationErr != nil {
-			h.log("report %s presentation preparation unavailable: %v", run.ID, preparationErr)
-		}
-		if run.SourceCatalog != nil {
-			if searchErr := report.AttachExactWorkspaceSearch(run.Report, *run.SourceCatalog); searchErr != nil {
-				h.log("report %s exact workspace search unavailable: %v", run.ID, searchErr)
-			}
-		}
-		if run.Manifest != nil && run.Report != nil {
-			switch {
-			case run.SourceCatalog != nil:
-				run.Sources, run.Report.SourceIDs = catalogSourceTargets(
-					run.ID,
-					run.ReportSHA256,
-					*run.SourceCatalog,
-				)
-			default:
-				run.Sources = make(map[string]sourceTarget)
-				run.Report.SourceIDs = make(map[string]string)
-			}
-			run.SourceContexts = make(map[string]sourceContextTarget)
-			run.Report.SourceContextIDs = make(map[string]string)
-			if run.SourceCatalog != nil {
-				for _, snippet := range reportSourceSnippets(run.Report) {
-					if err := snippet.Validate(); err != nil {
-						continue
-					}
-					source, ok := run.SourceCatalog.Lookup(snippet.Path)
-					if !ok || source.Kind != freshness.FileRegular || source.ContentSHA256 == "" {
-						continue
-					}
-					contextID := manifestSourceContextID(run.ID, run.ReportSHA256, snippet.PresentationSHA256)
-					focusLine := snippet.StartLine
-					if len(snippet.HighlightRanges) > 0 {
-						focusLine = snippet.HighlightRanges[0].StartLine
-					}
-					run.SourceContexts[contextID] = sourceContextTarget{
-						relativePath: snippet.Path, capturedSHA256: source.ContentSHA256,
-						startLine: snippet.StartLine, endLine: snippet.EndLine, focusLine: focusLine,
-					}
-					run.Report.SourceContextIDs[snippet.PresentationSHA256] = contextID
-				}
-			}
-		}
-		byID[run.ID] = *run
-	}
-	next := &runIndex{runs: runs, byID: byID}
-	h.runsMu.Lock()
-	h.runIndex = next
-	h.runsMu.Unlock()
-	return nil
-}
-
-func (h *handler) runsSnapshot() []runRecord {
-	h.runsMu.RLock()
-	defer h.runsMu.RUnlock()
-	if h.runIndex == nil {
-		return nil
-	}
-	return h.runIndex.runs
-}
-
-func (h *handler) findRunCached(runID string) (runRecord, error) {
-	h.runsMu.RLock()
-	defer h.runsMu.RUnlock()
-	if h.runIndex != nil {
-		if run, ok := h.runIndex.byID[runID]; ok {
-			return run, nil
-		}
-	}
-	return runRecord{}, fmt.Errorf("run not found")
-}
-
-func (h *handler) runArtifactsChanged(run runRecord) bool {
-	signature, err := runArtifactSignature(filepath.Join(h.runsDir, run.ID))
-	return err != nil || signature != run.ArtifactsSignature
-}
-
-func runArtifactSignature(runDir string) (string, error) {
-	artifacts := []struct {
-		name        string
-		required    bool
-		softInvalid bool
-	}{
-		{name: "report.json", required: true},
-		{name: report.RunManifestFilename},
-		{name: "metadata.json", softInvalid: true},
-		{name: "task_investigation_bundle.json"},
-		{name: "task_investigation_attempt.json"},
-		{name: "task_investigation_pack.json"},
-		{name: "task_investigation_status.json"},
-		{name: orient.ConfidenceWarningDiagnosticsFile, softInvalid: true},
-		{name: report.PresentationLocalizationStatusFile, softInvalid: true},
-	}
-	parts := make([]string, 0, len(artifacts))
-	for _, artifact := range artifacts {
-		name := artifact.name
-		info, err := os.Lstat(filepath.Join(runDir, name))
-		if os.IsNotExist(err) && !artifact.required {
-			parts = append(parts, name+":missing")
-			continue
-		}
-		if err != nil {
-			if artifact.softInvalid {
-				parts = append(parts, name+":unavailable")
-				continue
-			}
-			return "", fmt.Errorf("run artifact is unavailable")
-		}
-		if !info.Mode().IsRegular() {
-			if artifact.softInvalid {
-				parts = append(parts, fmt.Sprintf(
-					"%s:invalid:%s:%d:%d",
-					name,
-					info.Mode().String(),
-					info.Size(),
-					info.ModTime().UnixNano(),
-				))
-				continue
-			}
-			return "", fmt.Errorf("run artifact is unavailable")
-		}
-		parts = append(parts, fmt.Sprintf("%s:%d:%d", name, info.Size(), info.ModTime().UnixNano()))
-	}
-	return strings.Join(parts, "|"), nil
 }
 
 func catalogSourceTargets(
@@ -871,12 +473,9 @@ func catalogSourceTargets(
 		if !ok {
 			continue
 		}
-		sourceID := manifestSourceID(runID, reportSHA256, relativePath)
-		targets[sourceID] = sourceTarget{
-			relativePath:   source.Path,
-			capturedSHA256: source.ContentSHA256,
-		}
-		sourceIDs[relativePath] = sourceID
+		sourceID := manifestSourceID(runID, reportSHA256, source.Path)
+		targets[sourceID] = sourceTarget{relativePath: source.Path}
+		sourceIDs[source.Path] = sourceID
 	}
 	return targets, sourceIDs
 }
@@ -885,214 +484,39 @@ func resolveOpenTarget(
 	ctx context.Context,
 	run runRecord,
 	target sourceTarget,
-) (string, bool, error) {
-	if run.WorkspaceSnapshot != nil {
-		service, err := workspaceopen.New(*run.WorkspaceSnapshot)
-		if err != nil {
-			return "", false, err
-		}
-		resolved, err := service.Resolve(ctx, workspaceopen.Request{
-			Path:         target.relativePath,
-			MaxHashBytes: maxSourceHashBytes,
-		})
-		if err != nil {
-			return "", false, err
-		}
-		return resolved.AbsolutePath, resolved.SourceChanged, nil
-	}
-	return "", false, fmt.Errorf("workspace snapshot unavailable")
-}
-
-func (h *handler) logSourceOpen(
-	runID, sourceID, outcome string,
-	resolveRunMS, authorizeMS, resolveTargetMS, spawnMS int64,
-	started time.Time,
-) {
-	h.log("source open run=%s source=%s outcome=%s source_open.resolve_run_ms=%d source_open.authorize_ms=%d source_open.resolve_target_ms=%d source_open.spawn_ms=%d source_open.response_ms=%d",
-		runID, sourceID, outcome, resolveRunMS, authorizeMS, resolveTargetMS, spawnMS, time.Since(started).Milliseconds())
-}
-
-func (h *handler) loadRuns() ([]runRecord, error) {
-	started := time.Now()
-	entries, err := os.ReadDir(h.runsDir)
+) (string, error) {
+	service, err := workspaceopen.New(run.workspaceSnapshot)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	root, err := os.OpenRoot(h.runsDir)
+	resolved, err := service.Resolve(ctx, workspaceopen.Request{
+		Path: target.relativePath,
+	})
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	defer root.Close()
-
-	var runs []runRecord
-	for _, entry := range entries {
-		if !entry.IsDir() || !validRunID(entry.Name()) {
-			continue
-		}
-		artifactSignature, signatureErr := runArtifactSignature(filepath.Join(h.runsDir, entry.Name()))
-		if signatureErr != nil {
-			continue
-		}
-		info, err := root.Lstat(path.Join(entry.Name(), "report.html"))
-		if err != nil || !info.Mode().IsRegular() || info.Size() < 0 || info.Size() > maxArtifactBytes {
-			continue
-		}
-		reportJSON, err := readRootFile(root, path.Join(entry.Name(), "report.json"), maxArtifactBytes)
-		if err != nil {
-			continue
-		}
-		var reportData report.ReportData
-		if json.Unmarshal(reportJSON, &reportData) != nil || reportData.FormatVersion != report.CurrentFormatVersion {
-			continue
-		}
-
-		var meta metadata
-		if data, err := readRootFile(root, path.Join(entry.Name(), "metadata.json"), 1024*1024); err == nil {
-			_ = json.Unmarshal(data, &meta)
-		}
-		repoName := strings.TrimSpace(meta.RepoName)
-		if repoName == "" {
-			repoName = reportData.RepoName
-		}
-		run := runRecord{
-			RunSummary: RunSummary{
-				ID:             entry.Name(),
-				RepoName:       repoName,
-				CreatedAt:      meta.CreatedAt,
-				ReportLanguage: runReportLanguage(meta.EffectiveOptions.ReportLanguage),
-				CacheMode:      runCacheMode(meta.EffectiveOptions.NoCache),
-				ShortID:        shortRunID(entry.Name()),
-			},
-			Report:             &reportData,
-			ArtifactsSignature: artifactSignature,
-			RequestedLocale:    meta.EffectiveOptions.ReportLanguage,
-		}
-		runDir := filepath.Join(h.runsDir, entry.Name())
-		manifest, manifestErr := report.ReadRunManifest(runDir)
-		if manifestErr == nil {
-			// ReadRunManifest verifies the complete persisted authority, while
-			// this second digest check binds it to the report bytes already read
-			// through the parent directory root above.
-			if manifest.VerifyReportJSON(reportJSON) == nil {
-				targetNavigation, navigationErr := report.LoadManifestTargetNavigation(
-					runDir,
-					manifest,
-				)
-				if navigationErr != nil {
-					h.log("report %s target navigation unavailable: %v", run.ID, navigationErr)
-				} else if analysisRoot, rootErr := manifest.ResolveAnalysisRoot(); rootErr == nil {
-					run.Manifest = &manifest
-					run.TargetNavigation = targetNavigation
-					run.RepoPath = analysisRoot
-					run.ReportSHA256 = manifest.ReportSHA256
-					snapshot, catalog, snapshotErr := workspaceSnapshotForManifest(manifest, analysisRoot)
-					if snapshotErr == nil {
-						run.WorkspaceSnapshot = snapshot
-						run.SourceCatalog = catalog
-						run.RepoPath = snapshot.AnalysisRoot()
-					} else {
-						h.log("report %s source catalog unavailable; local analysis disabled", run.ID)
-					}
-					run.AnalysisAvailable = run.WorkspaceSnapshot != nil &&
-						run.SourceCatalog != nil &&
-						h.analysisAvailable(manifest)
-				}
-			}
-		}
-		// Task Lens is an evidence-backed workspace, not a legacy view-only
-		// report. Never expose it when its exact report/manifest/artifact chain
-		// cannot be verified.
-		if reportData.TaskInvestigation != nil && run.Manifest == nil {
-			continue
-		}
-		runs = append(runs, run)
-	}
-	sort.Slice(runs, func(i, j int) bool { return runs[i].ID > runs[j].ID })
-	h.log("loaded %d saved report(s) in %d ms", len(runs), time.Since(started).Milliseconds())
-	return runs, nil
-}
-
-func runReportLanguage(value string) string {
-	if strings.EqualFold(strings.TrimSpace(value), "ru") {
-		return "ru"
-	}
-	return "en"
-}
-
-func runCacheMode(noCache bool) string {
-	if noCache {
-		return "no-cache"
-	}
-	return "cache"
-}
-
-func shortRunID(runID string) string {
-	value := runID
-	if separator := strings.LastIndexByte(runID, '-'); separator >= 0 &&
-		separator+1 < len(runID) {
-		value = runID[separator+1:]
-	}
-	const maxShortRunIDBytes = 12
-	if len(value) > maxShortRunIDBytes {
-		value = value[len(value)-maxShortRunIDBytes:]
-	}
-	return value
-}
-
-func (h *handler) refreshRunFreshness(ctx context.Context, run *runRecord) {
-	if run == nil || run.Manifest == nil || run.Report == nil || run.Manifest.Version != report.CurrentRunManifestVersion ||
-		h.captureRepo == nil {
-		return
-	}
-	started := time.Now()
-	repositoryRoot := run.Manifest.RepositoryState.Identity
-	if run.WorkspaceSnapshot != nil {
-		repositoryRoot = run.WorkspaceSnapshot.RepositoryRoot()
-	}
-	current, err := h.captureRepo(ctx, repositoryRoot)
-	if err != nil {
-		result := freshness.NewFreshnessResult(freshness.FreshnessUnavailable)
-		result.Diagnostics = []string{"current analyzed-input freshness could not be checked"}
-		run.Report.Freshness = &result
-		h.log("report %s freshness unavailable after %d ms", run.ID, time.Since(started).Milliseconds())
-		return
-	}
-	result := run.Manifest.CurrentFreshness(current)
-	if run.WorkspaceSnapshot != nil {
-		result = run.WorkspaceSnapshot.Assess(current)
-	}
-	run.Report.Freshness = &result
-	h.log("report %s freshness=%s in %d ms affected_inputs=%d affected_submodules=%d",
-		run.ID,
-		result.State,
-		time.Since(started).Milliseconds(),
-		len(result.AffectedInputIDs),
-		len(result.AffectedSubmodules),
-	)
+	return resolved.AbsolutePath, nil
 }
 
 func workspaceSnapshotForManifest(
 	manifest report.RunManifest,
 	resolvedRoot string,
-) (*workspacesnapshot.Snapshot, *sourcecatalog.Catalog, error) {
+) (workspacesnapshot.Snapshot, sourcecatalog.Catalog, error) {
 	if manifest.Version != report.CurrentRunManifestVersion {
-		return nil, nil, fmt.Errorf("workspace snapshot unavailable")
+		return workspacesnapshot.Snapshot{}, sourcecatalog.Catalog{},
+			fmt.Errorf("workspace snapshot unavailable")
 	}
 	snapshot, err := manifest.WorkspaceSnapshot()
 	if err != nil {
-		return nil, nil, fmt.Errorf("workspace snapshot unavailable")
+		return workspacesnapshot.Snapshot{}, sourcecatalog.Catalog{},
+			fmt.Errorf("workspace snapshot unavailable")
 	}
 	catalog := snapshot.Catalog()
 	if snapshot.AnalysisRoot() != resolvedRoot || catalog.AnalysisRoot() != resolvedRoot {
-		return nil, nil, fmt.Errorf("workspace snapshot root mismatch")
+		return workspacesnapshot.Snapshot{}, sourcecatalog.Catalog{},
+			fmt.Errorf("workspace snapshot root mismatch")
 	}
-	return &snapshot, &catalog, nil
-}
-
-func (h *handler) log(format string, args ...any) {
-	if h.logf != nil {
-		h.logf(format, args...)
-	}
+	return snapshot, catalog, nil
 }
 
 func readRootFile(root *os.Root, name string, maxBytes int64) ([]byte, error) {
@@ -1118,47 +542,6 @@ func readRootFile(root *os.Root, name string, maxBytes int64) ([]byte, error) {
 	return data, nil
 }
 
-func resolveRepoFile(repoPath, relativePath string) (string, error) {
-	relativePath = filepath.FromSlash(strings.TrimSpace(relativePath))
-	if !filepath.IsLocal(relativePath) || relativePath == "." {
-		return "", fmt.Errorf("file path must stay inside the repository")
-	}
-	repoRoot, err := filepath.EvalSymlinks(repoPath)
-	if err != nil {
-		return "", fmt.Errorf("repository is unavailable")
-	}
-	unresolvedCandidate := filepath.Join(repoRoot, relativePath)
-	entryInfo, err := os.Lstat(unresolvedCandidate)
-	if err != nil {
-		return "", fmt.Errorf("file does not exist")
-	}
-	if entryInfo.Mode()&os.ModeSymlink != 0 {
-		return "", fmt.Errorf("symbolic-link files cannot be opened from a report")
-	}
-	candidate, err := filepath.EvalSymlinks(unresolvedCandidate)
-	if err != nil {
-		return "", fmt.Errorf("file does not exist")
-	}
-	rel, err := filepath.Rel(repoRoot, candidate)
-	if err != nil || !filepath.IsLocal(rel) {
-		return "", fmt.Errorf("file path escapes the repository")
-	}
-	info, err := os.Stat(candidate)
-	if err != nil || !info.Mode().IsRegular() {
-		return "", fmt.Errorf("path is not a regular file")
-	}
-	return candidate, nil
-}
-
-func containsRun(runs []runRecord, id string) bool {
-	for _, run := range runs {
-		if run.ID == id {
-			return true
-		}
-	}
-	return false
-}
-
 func validRunID(id string) bool {
 	if id == "" || id == "." || !filepath.IsLocal(id) || filepath.Base(id) != id {
 		return false
@@ -1176,20 +559,13 @@ func validRunID(id string) bool {
 func securityHeaders(next http.Handler, expectedHost string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !allowedHost(r.Host, expectedHost) {
-			if r.Method == http.MethodGet || r.Method == http.MethodHead {
-				writeBrowserErrorResponse(
-					w,
-					http.StatusForbidden,
-					"en",
-					report.BrowserErrorReportUnavailable,
-					nil,
-				)
-				return
-			}
 			http.Error(w, "invalid host", http.StatusForbidden)
 			return
 		}
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data:; object-src 'none'; frame-ancestors 'none'")
+		w.Header().Set(
+			"Content-Security-Policy",
+			"default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data:; object-src 'none'; frame-ancestors 'none'",
+		)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		if r.Method == http.MethodOptions {
@@ -1229,20 +605,6 @@ func hasJSONContentType(value string) bool {
 
 func sameOrigin(origin, host string) bool {
 	return origin == "http://"+host
-}
-
-func (h *handler) analysisAvailable(manifest report.RunManifest) bool {
-	if h.analysis == nil || h.analysis.exact == nil {
-		return false
-	}
-	for _, component := range manifest.Components {
-		for _, anchor := range component.Anchors {
-			if anchor.CanListSymbols {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func decodeJSONBody(w http.ResponseWriter, r *http.Request, target any, maxBytes int64) error {
@@ -1305,4 +667,10 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+func (h *handler) log(format string, args ...any) {
+	if h.logf != nil {
+		h.logf(format, args...)
+	}
 }

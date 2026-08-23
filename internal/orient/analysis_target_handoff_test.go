@@ -10,7 +10,6 @@ import (
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/gofacts"
-	"github.com/dvordrova/repomap/internal/modelresearch"
 	"github.com/dvordrova/repomap/internal/snapshot"
 )
 
@@ -22,13 +21,13 @@ func TestAnalysisTargetHandoffOwnsSnapshotAndBindsMetadata(t *testing.T) {
 		RootBoundary: analysistarget.RootBoundaryExactPackageMains,
 		Roots:        []analysistarget.Root{{Path: "cmd/app/main.go", Line: 10}},
 	}
-	// Resolve supplies the canonical self-seal; the handoff must preserve it.
-	// This test intentionally focuses the live seam, not resolver internals.
-	resolution, err := analysistarget.Resolve(syntheticOrientTargetFacts(), analysistarget.Options{})
-	if err != nil {
-		t.Fatal(err)
+	// Candidate extraction supplies the canonical self-seal; the handoff must
+	// preserve it without selecting a target on the caller's behalf.
+	candidates, err := analysistarget.Candidates(syntheticOrientTargetFacts())
+	if err != nil || len(candidates) != 1 {
+		t.Fatalf("target candidates = %#v, %v", candidates, err)
 	}
-	target = resolution.Selected.Snapshot()
+	target = candidates[0].Target.Snapshot()
 	var received analysistarget.Target
 	deliverAnalysisTarget(Options{AnalysisTargetSink: func(got analysistarget.Target) {
 		received = got
@@ -44,13 +43,6 @@ func TestAnalysisTargetHandoffOwnsSnapshotAndBindsMetadata(t *testing.T) {
 		meta.AnalysisTargetDisplayPath != target.DisplayPath() ||
 		meta.AnalysisTargetPackage != target.PackagePath {
 		t.Fatalf("metadata target = %#v", meta)
-	}
-	effective := effectiveOptions(Options{
-		AnalysisTargetOverride: "cmd/app",
-		EffectiveOptions:       debugdump.EffectiveOptions{Offline: true},
-	})
-	if effective.AnalysisTargetOverride != "cmd/app" || !effective.Offline {
-		t.Fatalf("effective options = %#v", effective)
 	}
 }
 
@@ -91,28 +83,7 @@ func TestModuleLibraryMetadataKeepsModuleAndDisplayWithoutInventingPackage(t *te
 	}
 }
 
-func TestAnalysisTargetRefSeparatesResearchCacheIdentity(t *testing.T) {
-	const digest = "0000000000000000000000000000000000000000000000000000000000000000"
-	base := modelresearch.FingerprintInput{
-		Repository: modelresearch.RepositoryContext{Identity: "repo", Revision: "rev", Scenario: "go-default", AnalysisTargetRef: "at-one"},
-		Stage:      "orientation", PromptVersion: "v1", Model: "model",
-		ProviderEndpointSHA256: digest, RequestSHA256: digest, EvidenceBundleHash: digest,
-	}
-	first, err := modelresearch.CacheKey(base)
-	if err != nil {
-		t.Fatal(err)
-	}
-	base.Repository.AnalysisTargetRef = "at-two"
-	second, err := modelresearch.CacheKey(base)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first == second {
-		t.Fatalf("cross-target cache key reused: %q", first)
-	}
-}
-
-func TestTargetRunContainerHandoffPersistsAndProjectsTwoTargetsProviderFree(t *testing.T) {
+func TestTargetRunContainerHandoffPersistsAndProjectsTwoTargets(t *testing.T) {
 	repository := t.TempDir()
 	for _, directory := range []string{"cmd/app", "cmd/helper", "internal/core"} {
 		if err := os.MkdirAll(filepath.Join(repository, filepath.FromSlash(directory)), 0o700); err != nil {
@@ -129,14 +100,14 @@ func TestTargetRunContainerHandoffPersistsAndProjectsTwoTargetsProviderFree(t *t
 	debugDirectory := t.TempDir()
 	var received snapshot.TargetRunContainer
 	selectorCalls := 0
-	_, err := Run(context.Background(), Options{
-		RepoPath: repository, AtlasFirst: true, OutputJSON: true,
+	err := Run(context.Background(), prepareOrientRunOptions(t, repository, Options{
+		RepoPath: repository,
 		DebugDir: debugDirectory, RunID: "multi-target", RequireArtifacts: true, DumpRedacted: true,
-		MaxReadmeBytes: 1024, MaxTreeLines: 50, MaxInterestingFiles: 50,
 		AnalysisTargetSelector: func(
 			_ context.Context,
 			_ string,
 			catalog analysistarget.TargetCatalog,
+			_ gofacts.Facts,
 		) (snapshot.TargetRunSelection, error) {
 			selectorCalls++
 			refs := map[string]string{}
@@ -151,7 +122,7 @@ func TestTargetRunContainerHandoffPersistsAndProjectsTwoTargetsProviderFree(t *t
 		TargetRunContainerSink: func(container snapshot.TargetRunContainer) {
 			received = container
 		},
-	})
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}

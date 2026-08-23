@@ -7,25 +7,21 @@ import (
 )
 
 func surfaceDiscoveryInput(
-	repositoryName string,
+	_ string,
 	facts *gofacts.Facts,
 	target *analysistarget.Target,
 ) surfacediscovery.Input {
-	input := surfacediscovery.Input{RepositoryName: repositoryName}
+	input := surfacediscovery.Input{}
 	if target != nil {
 		targetKind := string(target.Kind)
 		targetPackages := []string{target.PackagePath}
 		packagePath := target.PackagePath
-		if target.Kind == analysistarget.KindModuleLibrary || target.Kind == analysistarget.KindLibraryPackage {
+		if target.Kind == analysistarget.KindModuleLibrary {
 			targetKind = surfacediscovery.AnalysisTargetModuleLibrary
 			packagePath = ""
 			targetPackages = make([]string, 0, len(target.LibraryPackages))
-			if target.Kind == analysistarget.KindLibraryPackage {
-				targetPackages = append(targetPackages, target.PackagePath)
-			} else {
-				for _, pkg := range target.LibraryPackages {
-					targetPackages = append(targetPackages, pkg.PackagePath)
-				}
+			for _, pkg := range target.LibraryPackages {
+				targetPackages = append(targetPackages, pkg.PackagePath)
 			}
 		}
 		input.AnalysisTarget = &surfacediscovery.AnalysisTargetInput{
@@ -56,20 +52,6 @@ func surfaceDiscoveryInput(
 		input.Packages = append(input.Packages, surfacediscovery.PackageInput{
 			Path: pkg.CanonicalPath, ModuleDir: moduleDirs[pkg.ModuleID],
 		})
-	}
-	input.Entrypoints = make([]surfacediscovery.EntrypointInput, 0, len(facts.EntrypointPackages))
-	for _, entrypoint := range facts.EntrypointPackages {
-		converted := surfacediscovery.EntrypointInput{
-			Package: entrypoint.ImportPath, PackageDir: entrypoint.PackageDir,
-			ModuleDir: entrypoint.ModuleDir, Kind: entrypoint.Kind,
-			Anchors: make([]surfacediscovery.EntrypointAnchorInput, 0, len(entrypoint.Anchors)),
-		}
-		for _, anchor := range entrypoint.Anchors {
-			converted.Anchors = append(converted.Anchors, surfacediscovery.EntrypointAnchorInput{
-				Kind: string(anchor.Kind), Path: anchor.Path, Line: anchor.Line,
-			})
-		}
-		input.Entrypoints = append(input.Entrypoints, converted)
 	}
 	return input
 }

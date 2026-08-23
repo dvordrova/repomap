@@ -3,7 +3,6 @@
 package workspacesnapshot
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/dvordrova/repomap/internal/freshness"
@@ -17,8 +16,6 @@ const (
 	maxStagesPerInput       = 64
 	maxPathBytes            = 4096
 	maxAuthorityScalarBytes = 4 * 1024 * 1024
-	unavailableDiagnostic   = "current repository state is outside authorized bounds"
-	uninitializedDiagnostic = "workspace snapshot is unavailable"
 )
 
 // Input is the complete presentation-neutral authority required to construct
@@ -30,16 +27,12 @@ type Input struct {
 	AllowedPaths   []string
 }
 
-// Snapshot is one immutable, run-scoped repository authority. Its catalog and
-// digests use the existing sourcecatalog and freshness formulas.
+// Snapshot is one immutable, run-scoped source authority. New validates the
+// repository and captured-input identities before sealing its source catalog.
 type Snapshot struct {
-	repository           freshness.RepositoryState
-	analysisRoot         string
-	capturedInputs       []freshness.CapturedInput
-	repositoryDigest     string
-	capturedInputsDigest string
-	catalog              sourcecatalog.Catalog
-	initialized          bool
+	repository   freshness.RepositoryState
+	analysisRoot string
+	catalog      sourcecatalog.Catalog
 }
 
 // New validates and copies one bounded authority without reading the
@@ -51,12 +44,10 @@ func New(input Input) (Snapshot, error) {
 	if err := input.Repository.Validate(); err != nil {
 		return Snapshot{}, fmt.Errorf("workspace snapshot: repository state is invalid")
 	}
-	repositoryDigest, err := input.Repository.Digest()
-	if err != nil {
+	if _, err := input.Repository.Digest(); err != nil {
 		return Snapshot{}, fmt.Errorf("workspace snapshot: repository digest is unavailable")
 	}
-	capturedInputsDigest, err := freshness.CapturedInputsDigest(input.CapturedInputs)
-	if err != nil {
+	if _, err := freshness.CapturedInputsDigest(input.CapturedInputs); err != nil {
 		return Snapshot{}, fmt.Errorf("workspace snapshot: captured input authority is invalid")
 	}
 
@@ -73,13 +64,9 @@ func New(input Input) (Snapshot, error) {
 		return Snapshot{}, fmt.Errorf("workspace snapshot: source authority is invalid")
 	}
 	return Snapshot{
-		repository:           repository,
-		analysisRoot:         catalog.AnalysisRoot(),
-		capturedInputs:       capturedInputs,
-		repositoryDigest:     repositoryDigest,
-		capturedInputsDigest: capturedInputsDigest,
-		catalog:              catalog,
-		initialized:          true,
+		repository:   repository,
+		analysisRoot: catalog.AnalysisRoot(),
+		catalog:      catalog,
 	}, nil
 }
 
@@ -93,47 +80,9 @@ func (snapshot Snapshot) AnalysisRoot() string {
 	return snapshot.analysisRoot
 }
 
-// Revision returns the selected repository revision.
-func (snapshot Snapshot) Revision() string {
-	return snapshot.repository.Head
-}
-
-// RepositoryDigest returns the existing canonical repository-state digest.
-func (snapshot Snapshot) RepositoryDigest() string {
-	return snapshot.repositoryDigest
-}
-
-// CapturedInputsDigest returns the existing canonical captured-input digest.
-func (snapshot Snapshot) CapturedInputsDigest() string {
-	return snapshot.capturedInputsDigest
-}
-
 // Catalog returns the immutable authorized source catalog.
 func (snapshot Snapshot) Catalog() sourcecatalog.Catalog {
 	return snapshot.catalog
-}
-
-// Assess applies the existing captured-input freshness policy and returns a
-// defensive result copy.
-func (snapshot Snapshot) Assess(current freshness.RepositoryState) freshness.FreshnessResult {
-	if !snapshot.initialized {
-		return unavailableResult(uninitializedDiagnostic)
-	}
-	if err := repositoryBounded(current); err != nil {
-		return unavailableResult(unavailableDiagnostic)
-	}
-	result := freshness.AssessInputs(
-		context.Background(),
-		snapshot.repository,
-		current,
-		snapshot.capturedInputs,
-	)
-	return cloneFreshnessResult(result)
-}
-
-// Verify accepts only fresh or unrelated current repository changes.
-func (snapshot Snapshot) Verify(current freshness.RepositoryState) error {
-	return verifyFreshnessResult(snapshot.Assess(current))
 }
 
 func inputBounded(input Input) error {
@@ -176,17 +125,6 @@ func inputBounded(input Input) error {
 		if !budget.consume(allowedPath) {
 			return fmt.Errorf("workspace snapshot: scalar authority exceeds bounds")
 		}
-	}
-	return nil
-}
-
-func repositoryBounded(repository freshness.RepositoryState) error {
-	if err := repositoryShapeBounded(repository); err != nil {
-		return err
-	}
-	budget := scalarByteBudget{remaining: maxAuthorityScalarBytes}
-	if !consumeRepositoryScalars(&budget, repository) {
-		return fmt.Errorf("workspace snapshot: repository scalar state exceeds bounds")
 	}
 	return nil
 }
@@ -283,21 +221,6 @@ func consumeCapturedInputScalars(
 	return true
 }
 
-func verifyFreshnessResult(result freshness.FreshnessResult) error {
-	switch result.State {
-	case freshness.FreshnessFresh, freshness.FreshnessUnrelatedChanges:
-		return nil
-	default:
-		return fmt.Errorf("workspace snapshot: analyzed inputs are %s", result.State)
-	}
-}
-
-func unavailableResult(diagnostic string) freshness.FreshnessResult {
-	result := freshness.NewFreshnessResult(freshness.FreshnessUnavailable)
-	result.Diagnostics = []string{diagnostic}
-	return result
-}
-
 func cloneRepositoryState(repository freshness.RepositoryState) freshness.RepositoryState {
 	cloned := repository
 	cloned.Dirty = cloneSlice(repository.Dirty)
@@ -314,15 +237,6 @@ func cloneCapturedInputs(inputs []freshness.CapturedInput) []freshness.CapturedI
 		cloned[index] = inputs[index]
 		cloned[index].Stages = cloneSlice(inputs[index].Stages)
 	}
-	return cloned
-}
-
-func cloneFreshnessResult(result freshness.FreshnessResult) freshness.FreshnessResult {
-	cloned := result
-	cloned.AffectedInputIDs = cloneSlice(result.AffectedInputIDs)
-	cloned.AffectedPaths = cloneSlice(result.AffectedPaths)
-	cloned.AffectedSubmodules = cloneSlice(result.AffectedSubmodules)
-	cloned.Diagnostics = cloneSlice(result.Diagnostics)
 	return cloned
 }
 

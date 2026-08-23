@@ -12,14 +12,26 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/dvordrova/repomap/internal/corpus"
 )
 
-const maxIgnoredBuildInputs = 10_000
-
-// CaptureRepository records the exact checked-out commit plus the content of
-// every non-ignored dirty path visible to the working tree. It never stores
-// file contents and never follows a symlink outside the repository.
-func CaptureRepository(ctx context.Context, path string) (RepositoryState, error) {
+// CaptureRepository records the checked-out commit plus exact content
+// identities for tracked working-tree changes. It consumes submodule index
+// authority from the already-built corpus and never inventories tracked paths
+// again. Untracked and ignored paths are outside the shared repository corpus
+// and therefore outside this authority.
+func CaptureRepository(
+	ctx context.Context,
+	path string,
+	repositoryCorpus *corpus.Corpus,
+) (RepositoryState, error) {
+	if repositoryCorpus == nil {
+		return RepositoryState{}, fmt.Errorf("freshness: repository corpus is required")
+	}
+	if err := repositoryCorpus.Snapshot().Validate(); err != nil {
+		return RepositoryState{}, fmt.Errorf("freshness: repository corpus: %w", err)
+	}
 	rootOutput, err := gitOutput(ctx, path, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return RepositoryState{}, err
@@ -28,36 +40,19 @@ func CaptureRepository(ctx context.Context, path string) (RepositoryState, error
 	if err != nil {
 		return RepositoryState{}, err
 	}
-	var previous RepositoryState
-	for attempt := 0; attempt < 3; attempt++ {
-		current, err := captureRepositoryOnce(ctx, root)
-		if err != nil {
-			return RepositoryState{}, err
-		}
-		if attempt > 0 {
-			previousDigest, err := previous.Digest()
-			if err != nil {
-				return RepositoryState{}, err
-			}
-			currentDigest, err := current.Digest()
-			if err != nil {
-				return RepositoryState{}, err
-			}
-			if previousDigest == currentDigest {
-				return current, nil
-			}
-		}
-		previous = current
-	}
-	return RepositoryState{}, &MixedSnapshotError{Attempts: 3}
+	return captureRepositoryOnce(ctx, root, repositoryCorpus.Gitlinks())
 }
 
-func captureRepositoryOnce(ctx context.Context, root string) (RepositoryState, error) {
+func captureRepositoryOnce(
+	ctx context.Context,
+	root string,
+	indexGitlinks []corpus.Gitlink,
+) (RepositoryState, error) {
 	headOutput, err := gitOutput(ctx, root, "rev-parse", "--verify", "HEAD")
 	if err != nil {
 		return RepositoryState{}, err
 	}
-	statusOutput, err := gitOutput(ctx, root, "status", "--porcelain=v2", "-z", "--untracked-files=all", "--ignored=no", "--ignore-submodules=none")
+	statusOutput, err := gitOutput(ctx, root, "status", "--porcelain=v2", "-z", "--untracked-files=no", "--ignored=no", "--ignore-submodules=none")
 	if err != nil {
 		return RepositoryState{}, err
 	}
@@ -65,16 +60,7 @@ func captureRepositoryOnce(ctx context.Context, root string) (RepositoryState, e
 	if err != nil {
 		return RepositoryState{}, fmt.Errorf("freshness: parse git status: %w", err)
 	}
-	ignoredOutput, err := gitOutput(ctx, root, "ls-files", "--others", "--ignored", "--exclude-standard", "-z")
-	if err != nil {
-		return RepositoryState{}, err
-	}
-	ignored, err := parseIgnoredBuildInputs(ignoredOutput)
-	if err != nil {
-		return RepositoryState{}, fmt.Errorf("freshness: parse ignored build inputs: %w", err)
-	}
-	entries = append(entries, ignored...)
-	gitlinks, err := captureSubmodules(ctx, root, entries)
+	gitlinks, err := captureSubmodules(ctx, root, entries, indexGitlinks)
 	if err != nil {
 		return RepositoryState{}, err
 	}
@@ -87,13 +73,6 @@ func captureRepositoryOnce(ctx context.Context, root string) (RepositoryState, e
 	dirty := make([]DirtyFile, 0, len(entries))
 	for _, entry := range entries {
 		if entry.submodule != "" {
-			continue
-		}
-		excluded, err := excludedUntrackedRepository(ctx, rootHandle, root, entry)
-		if err != nil {
-			return RepositoryState{}, err
-		}
-		if excluded {
 			continue
 		}
 		file, err := fingerprintDirtyFile(rootHandle, entry)
@@ -138,11 +117,6 @@ func parseStatus(data []byte) ([]statusEntry, error) {
 		}
 		var entry statusEntry
 		switch record[0] {
-		case '?':
-			if record[1] != ' ' {
-				return nil, fmt.Errorf("invalid untracked status record")
-			}
-			entry = statusEntry{xy: "??", path: string(record[2:])}
 		case '1':
 			fields := strings.SplitN(string(record), " ", 9)
 			if len(fields) != 9 {
@@ -193,30 +167,16 @@ func parseStatus(data []byte) ([]statusEntry, error) {
 	return entries, nil
 }
 
-func captureSubmodules(ctx context.Context, root string, entries []statusEntry) ([]SubmoduleState, error) {
-	stageOutput, err := gitOutput(ctx, root, "ls-files", "--stage", "-z")
-	if err != nil {
-		return nil, err
-	}
+func captureSubmodules(
+	ctx context.Context,
+	root string,
+	entries []statusEntry,
+	indexGitlinks []corpus.Gitlink,
+) ([]SubmoduleState, error) {
 	states := make(map[string]SubmoduleState)
-	for len(stageOutput) > 0 {
-		end := bytes.IndexByte(stageOutput, 0)
-		if end < 0 {
-			return nil, fmt.Errorf("freshness: unterminated git index record")
-		}
-		record := string(stageOutput[:end])
-		stageOutput = stageOutput[end+1:]
-		metadata, path, found := strings.Cut(record, "\t")
-		fields := strings.Fields(metadata)
-		if !found || len(fields) < 2 || fields[0] != "160000" {
-			continue
-		}
-		normalized, err := normalizeGitPath(path)
-		if err != nil {
-			return nil, err
-		}
-		states[normalized] = SubmoduleState{
-			Path: normalized, RecordedGitlink: fields[1], Availability: SubmoduleUnavailable,
+	for _, gitlink := range indexGitlinks {
+		states[gitlink.Path] = SubmoduleState{
+			Path: gitlink.Path, RecordedGitlink: gitlink.RecordedObjectID, Availability: SubmoduleUnavailable,
 		}
 	}
 	for _, entry := range entries {
@@ -246,67 +206,6 @@ func captureSubmodules(ctx context.Context, root string, entries []statusEntry) 
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Path < result[j].Path })
 	return result, nil
-}
-
-// Git reports an untracked nested checkout as one directory even with
-// --untracked-files=all. It is outside the superproject's tracked snapshot, so
-// do not recurse into it or let its private/ignored contents block a report.
-func excludedUntrackedRepository(
-	ctx context.Context,
-	rootHandle *os.Root,
-	root string,
-	entry statusEntry,
-) (bool, error) {
-	if entry.xy != "??" {
-		return false, nil
-	}
-	info, err := rootHandle.Lstat(filepath.FromSlash(entry.path))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("freshness: inspect dirty path %q: %w", entry.path, err)
-	}
-	if !info.IsDir() {
-		return false, nil
-	}
-	nestedPath := filepath.Join(root, filepath.FromSlash(entry.path))
-	topLevel, err := gitOutput(ctx, nestedPath, "rev-parse", "--show-toplevel")
-	if err != nil {
-		return false, nil
-	}
-	nestedRoot, err := canonicalRoot(strings.TrimSpace(string(topLevel)))
-	if err != nil {
-		return false, nil
-	}
-	return nestedRoot == nestedPath, nil
-}
-
-func parseIgnoredBuildInputs(data []byte) ([]statusEntry, error) {
-	var entries []statusEntry
-	for len(data) > 0 {
-		end := bytes.IndexByte(data, 0)
-		if end < 0 {
-			return nil, fmt.Errorf("unterminated ignored-path record")
-		}
-		raw := data[:end]
-		data = data[end+1:]
-		if !utf8.Valid(raw) {
-			return nil, fmt.Errorf("invalid UTF-8 ignored path")
-		}
-		path, err := normalizeGitPath(string(raw))
-		if err != nil {
-			return nil, err
-		}
-		if !isGoBuildInput(path) {
-			continue
-		}
-		entries = append(entries, statusEntry{xy: "!!", path: path})
-		if len(entries) > maxIgnoredBuildInputs {
-			return nil, fmt.Errorf("more than %d ignored Go build inputs", maxIgnoredBuildInputs)
-		}
-	}
-	return entries, nil
 }
 
 func fingerprintDirtyFile(root *os.Root, entry statusEntry) (DirtyFile, error) {
@@ -350,8 +249,7 @@ func fingerprintDirtyFile(root *os.Root, entry statusEntry) (DirtyFile, error) {
 		}
 		file.ContentSHA256 = sha256Hex([]byte(target))
 	case info.IsDir():
-		file.Kind = FileDirectory
-		return DirtyFile{}, fmt.Errorf("freshness: dirty path %q is a directory; submodule freshness is not supported yet", entry.path)
+		return DirtyFile{}, fmt.Errorf("freshness: tracked path %q unexpectedly resolves to a directory", entry.path)
 	default:
 		return DirtyFile{}, fmt.Errorf("freshness: dirty path %q has unsupported file type %s", entry.path, info.Mode())
 	}
@@ -378,17 +276,7 @@ func normalizeGitPath(path string) (string, error) {
 	return path, nil
 }
 
-func renameOrCopy(xy string) bool {
-	return len(xy) == 2 && (xy[0] == 'R' || xy[1] == 'R' || xy[0] == 'C' || xy[1] == 'C')
-}
-
 func semanticStatus(xy string) string {
-	if xy == "!!" {
-		return "ignored"
-	}
-	if xy == "??" {
-		return "untracked"
-	}
 	if strings.ContainsRune(xy, 'U') || xy == "AA" || xy == "DD" {
 		return "conflicted"
 	}

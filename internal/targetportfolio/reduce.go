@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/dvordrova/repomap/internal/analysistarget"
+	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
-// ResolveResponse validates the complete refs-only decision atomically and
-// restores exact catalog entries from private authority. There is no repair,
-// retry, fuzzy ref matching, or response-order ranking.
+// ResolveResponse validates the exact positive target selection and restores
+// every omitted input as unclassified. There is no complement acceptance,
+// fuzzy matching, or repair.
 func ResolveResponse(compilation Compilation, raw []byte) (Selection, error) {
 	if err := validateCompilation(compilation); err != nil {
 		return Selection{}, err
@@ -20,9 +20,10 @@ func ResolveResponse(compilation Compilation, raw []byte) (Selection, error) {
 	if len(raw) == 0 || len(raw) > MaxResponseBytes {
 		return Selection{}, fmt.Errorf("target portfolio: response exceeds bounded envelope")
 	}
-	if _, found := secretscan.DetectAlways(string(raw)); found {
+	if _, found := secretscan.Detect(string(raw)); found {
 		return Selection{}, fmt.Errorf("target portfolio: response contains credential-shaped content")
 	}
+
 	var response Response
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -32,66 +33,71 @@ func ResolveResponse(compilation Compilation, raw []byte) (Selection, error) {
 	if err := ensureJSONEOF(decoder); err != nil {
 		return Selection{}, err
 	}
-	if response.Version != ResultVersion || response.RequestRef != compilation.Request.RequestRef {
-		return Selection{}, fmt.Errorf("target portfolio: response identity mismatch")
+	if response.TargetFileRefs == nil {
+		return Selection{}, fmt.Errorf("target portfolio: response must contain target_file_refs as an array")
 	}
-	if len(response.TargetRefs) == 0 {
-		return Selection{}, fmt.Errorf("target portfolio: response selected no targets")
+	var exactFields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &exactFields); err != nil || len(exactFields) != 2 ||
+		exactFields["default_file_ref"] == nil || exactFields["target_file_refs"] == nil {
+		return Selection{}, fmt.Errorf("target portfolio: response must contain exactly default_file_ref and target_file_refs")
 	}
-	defaultTarget, known := compilation.authority[response.DefaultRef]
+
+	authority := make(map[corpus.FileID]VisibleCandidate, len(compilation.Request.Candidates))
+	for _, candidate := range compilation.Request.Candidates {
+		authority[candidate.FileRef] = candidate
+	}
+	if len(response.TargetFileRefs) == 0 {
+		if response.DefaultFileRef != nil {
+			return Selection{}, fmt.Errorf("target portfolio: empty target_file_refs requires null default_file_ref")
+		}
+		unclassified := make([]VisibleCandidate, 0, len(compilation.Request.Candidates))
+		for _, candidate := range compilation.Request.Candidates {
+			unclassified = append(unclassified, cloneVisibleCandidate(candidate))
+		}
+		return Selection{
+			Default: nil, Targets: []VisibleCandidate{}, Unclassified: unclassified,
+		}, nil
+	}
+	if response.DefaultFileRef == nil {
+		return Selection{}, fmt.Errorf("target portfolio: non-empty target_file_refs requires default_file_ref")
+	}
+	defaultCandidate, known := authority[*response.DefaultFileRef]
 	if !known {
-		return Selection{}, fmt.Errorf("target portfolio: response cites unknown default ref")
-	}
-	if !EligibleForSelection(defaultTarget) {
-		return Selection{}, fmt.Errorf("target portfolio: response selects a library target with no advertised public API")
+		return Selection{}, fmt.Errorf("target portfolio: response cites unknown default_file_ref")
 	}
 
-	selected := make(map[string]struct{}, len(response.TargetRefs))
-	for _, ref := range response.TargetRefs {
-		entry, known := compilation.authority[ref]
-		if !known {
-			return Selection{}, fmt.Errorf("target portfolio: response cites unknown target ref")
+	targetSet := make(map[corpus.FileID]struct{}, len(response.TargetFileRefs))
+	for _, fileRef := range response.TargetFileRefs {
+		if _, known := authority[fileRef]; !known {
+			return Selection{}, fmt.Errorf("target portfolio: response cites unknown target_file_ref")
 		}
-		if !EligibleForSelection(entry) {
-			return Selection{}, fmt.Errorf("target portfolio: response selects a library target with no advertised public API")
+		if _, duplicate := targetSet[fileRef]; duplicate {
+			return Selection{}, fmt.Errorf("target portfolio: response contains duplicate target_file_ref")
 		}
-		if _, duplicate := selected[ref]; duplicate {
-			return Selection{}, fmt.Errorf("target portfolio: response contains duplicate target ref")
-		}
-		selected[ref] = struct{}{}
+		targetSet[fileRef] = struct{}{}
 	}
-	if _, included := selected[response.DefaultRef]; !included {
-		return Selection{}, fmt.Errorf("target portfolio: default ref is absent from target refs")
+	if _, selected := targetSet[*response.DefaultFileRef]; !selected {
+		return Selection{}, fmt.Errorf("target portfolio: default_file_ref is absent from target_file_refs")
 	}
 
+	defaultCopy := cloneVisibleCandidate(defaultCandidate)
 	result := Selection{
-		Version: ResultVersion, CatalogRef: compilation.CatalogRef,
-		RequestRef: compilation.Request.RequestRef, RequestSHA256: compilation.RequestSHA256,
-		Default: snapshotEntry(compilation.authority[response.DefaultRef]),
-		Targets: make([]analysistarget.TargetCatalogEntry, 0, len(selected)),
+		Default:      &defaultCopy,
+		Targets:      make([]VisibleCandidate, 0, len(targetSet)),
+		Unclassified: make([]VisibleCandidate, 0, len(compilation.Request.Candidates)-len(targetSet)),
 	}
-	for _, target := range compilation.Request.Targets {
-		if _, keep := selected[target.Ref]; keep {
-			result.Targets = append(result.Targets, snapshotEntry(compilation.authority[target.Ref]))
+	for _, candidate := range compilation.Request.Candidates {
+		if _, selected := targetSet[candidate.FileRef]; selected {
+			result.Targets = append(result.Targets, cloneVisibleCandidate(candidate))
+			continue
 		}
+		result.Unclassified = append(result.Unclassified, cloneVisibleCandidate(candidate))
+	}
+	if result.Default == nil || len(result.Targets) == 0 ||
+		len(result.Targets)+len(result.Unclassified) != len(compilation.Request.Candidates) {
+		return Selection{}, fmt.Errorf("target portfolio: response does not restore a complete candidate partition")
 	}
 	return result, nil
-}
-
-// AdvertisedForSelection accepts the exact surface kinds already compiled by
-// the target catalog: every executable and one aggregate library per module.
-func AdvertisedForSelection(entry analysistarget.TargetCatalogEntry) bool {
-	target := entry.Candidate.Target
-	return target.Kind == analysistarget.KindExecutablePackage ||
-		target.Kind == analysistarget.KindModuleLibrary
-}
-
-// EligibleForSelection applies the private ordinary-selection rule used by
-// both model-result restoration and the local fallback. A defensive empty-API
-// module library cannot become an ordinary product report scope.
-func EligibleForSelection(entry analysistarget.TargetCatalogEntry) bool {
-	return AdvertisedForSelection(entry) &&
-		(entry.Candidate.Target.Kind != analysistarget.KindModuleLibrary || len(entry.PackageAPIs) > 0)
 }
 
 func ensureJSONEOF(decoder *json.Decoder) error {

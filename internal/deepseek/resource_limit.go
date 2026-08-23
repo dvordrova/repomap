@@ -3,21 +3,20 @@ package deepseek
 import (
 	"errors"
 
-	"github.com/dvordrova/repomap/internal/modelresearch"
+	"github.com/dvordrova/repomap/internal/llm"
 )
-
-type ResourceLimitKind = modelresearch.ResourceLimitKind
 
 const (
-	ResourceLimitRequestBytes  = modelresearch.ResourceLimitRequestBytes
-	ResourceLimitResponseBytes = modelresearch.ResourceLimitResponseBytes
-	ResourceLimitRecordBytes   = modelresearch.ResourceLimitRecordBytes
-	ResourceLimitCatalogItems  = modelresearch.ResourceLimitCatalogItems
-	ResourceLimitOutputTokens  = modelresearch.ResourceLimitOutputTokens
-	ResourceLimitSemanticCalls = modelresearch.ResourceLimitSemanticCalls
+	ResourceLimitRequestBytes  = llm.ResourceLimitRequestBytes
+	ResourceLimitResponseBytes = llm.ResourceLimitResponseBytes
+	ResourceLimitOutputTokens  = llm.ResourceLimitOutputTokens
 )
 
-type ResourceLimitError = modelresearch.ResourceLimitError
+type ResourceLimitError = llm.ResourceLimitError
+
+func newResourceLimitError(details ResourceLimitError) *ResourceLimitError {
+	return llm.NewResourceLimitError(details)
+}
 
 func annotateResourceLimit(err error, stage string, maxTokens int) error {
 	var resourceErr *ResourceLimitError

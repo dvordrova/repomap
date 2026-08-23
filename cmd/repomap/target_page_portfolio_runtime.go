@@ -27,15 +27,15 @@ type targetPublishedRun struct {
 	GoTarget              string
 	GoTargetSource        string
 	GoTargetBaseline      string
-	SourceEpisodeJSON     []byte
 	GitLabURL             string
 	GitHubURL             string
-	AllTargets            bool
 }
 
 type targetPageRunSet struct {
-	Outcomes []snapshot.TargetPageOutcome
-	Ready    []targetPublishedRun
+	Outcomes         []snapshot.TargetPageOutcome
+	Ready            []targetPublishedRun
+	AttemptedRunDirs []string
+	CompletedTargets []targetPageConsoleContext
 }
 
 type siblingTargetRunner func(
@@ -46,16 +46,15 @@ type siblingTargetRunner func(
 
 // collectTargetPageRuns restores container order, reuses the already
 // successful default run, and invokes runner exactly once for every additional
-// selected target. An additional target failure is represented only by the
-// closed unavailable code in persisted state; its detailed error remains the
-// caller's local diagnostic.
+// selected target. Every selected Go target is part of the ordinary default
+// portfolio, so one failed page fails the complete publication.
 func collectTargetPageRuns(
 	container snapshot.TargetRunContainer,
 	defaultRun targetPublishedRun,
 	runIDFor func(snapshot.TargetRunProjection) string,
 	runner siblingTargetRunner,
 	output *runOutput,
-	onUnavailable func(snapshot.TargetRunProjection, error),
+	onFailure func(snapshot.TargetRunProjection, error),
 ) (targetPageRunSet, error) {
 	if err := container.Validate(); err != nil {
 		return targetPageRunSet{}, err
@@ -73,14 +72,15 @@ func collectTargetPageRuns(
 	}
 
 	result := targetPageRunSet{
-		Outcomes: make([]snapshot.TargetPageOutcome, 0, len(container.Targets)),
-		Ready:    make([]targetPublishedRun, 0, len(container.Targets)),
+		Outcomes:         make([]snapshot.TargetPageOutcome, 0, len(container.Targets)),
+		Ready:            make([]targetPublishedRun, 0, len(container.Targets)),
+		AttemptedRunDirs: []string{defaultRun.RunDir},
+		CompletedTargets: make([]targetPageConsoleContext, 0, len(container.Targets)-1),
 	}
 	for _, projection := range container.Targets {
 		if projection.Target.Ref == container.DefaultTargetRef {
 			result.Outcomes = append(result.Outcomes, snapshot.TargetPageOutcome{
 				TargetRef: projection.Target.Ref,
-				State:     snapshot.TargetPageReady,
 				RunID:     defaultRun.RunID,
 			})
 			result.Ready = append(result.Ready, defaultRun)
@@ -91,6 +91,7 @@ func collectTargetPageRuns(
 		if err := snapshot.ValidateTargetPageRunID(runID); err != nil {
 			return targetPageRunSet{}, err
 		}
+		result.AttemptedRunDirs = append(result.AttemptedRunDirs, filepath.Join(filepath.Dir(defaultRun.RunDir), runID))
 		consoleTarget := targetPageConsoleContext{
 			DisplayPath: projection.DisplayPath,
 			Scope:       analysisTargetSubject(projection.Target),
@@ -106,36 +107,30 @@ func collectTargetPageRuns(
 				published.Target.Ref != projection.Target.Ref || published.RunDir == "" ||
 				filepath.Base(published.RunDir) != runID ||
 				filepath.Dir(published.RunDir) != filepath.Dir(defaultRun.RunDir) ||
-				published.RepositoryStateSHA256 != defaultRun.RepositoryStateSHA256 ||
-				published.SelectedRevision != defaultRun.SelectedRevision ||
 				published.GoTarget != defaultRun.GoTarget ||
 				published.GoTargetSource != defaultRun.GoTargetSource ||
 				published.GoTargetBaseline != defaultRun.GoTargetBaseline ||
-				published.AllTargets != defaultRun.AllTargets ||
 				published.GitLabURL != defaultRun.GitLabURL ||
 				published.GitHubURL != defaultRun.GitHubURL) {
 				err = fmt.Errorf("target page portfolio: sibling run returned mismatched authority")
 			}
 			if err == nil {
-				output.TargetPage("complete", consoleTarget)
+				result.CompletedTargets = append(result.CompletedTargets, consoleTarget)
 				result.Outcomes = append(result.Outcomes, snapshot.TargetPageOutcome{
 					TargetRef: projection.Target.Ref,
-					State:     snapshot.TargetPageReady,
 					RunID:     runID,
 				})
 				result.Ready = append(result.Ready, published)
 				continue
 			}
 		}
-		output.TargetPage("unavailable", consoleTarget)
-		if onUnavailable != nil {
-			onUnavailable(projection, err)
+		output.TargetPage("failed", consoleTarget)
+		if onFailure != nil {
+			onFailure(projection, err)
 		}
-		result.Outcomes = append(result.Outcomes, snapshot.TargetPageOutcome{
-			TargetRef:       projection.Target.Ref,
-			State:           snapshot.TargetPageUnavailable,
-			UnavailableCode: snapshot.TargetPageUnavailableTargetRunFailed,
-		})
+		return result, fmt.Errorf(
+			"target page %s failed: %w", projection.DisplayPath, err,
+		)
 	}
 	return result, nil
 }
@@ -147,7 +142,7 @@ func publishTargetPagePortfolio(
 	container snapshot.TargetRunContainer,
 	defaultRun targetPublishedRun,
 	output *runOutput,
-) (publicationAssessment, error) {
+) (report.PublicationAssessment, error) {
 	runSet, err := collectTargetPageRuns(
 		container,
 		defaultRun,
@@ -163,7 +158,6 @@ func publishTargetPagePortfolio(
 			childDeps.precomputedSnapshot = &scoped
 			childDeps.runIDOverride = runID
 			childDeps.siblingTargetRun = true
-			childDeps.expectedRepositoryStateSHA256 = defaultRun.RepositoryStateSHA256
 			var published targetPublishedRun
 			childDeps.publishedTargetSink = func(result targetPublishedRun) {
 				published = result
@@ -177,7 +171,7 @@ func publishTargetPagePortfolio(
 		func(projection snapshot.TargetRunProjection, runErr error) {
 			if output != nil {
 				output.Warn(
-					"Target page unavailable",
+					"Target page failed",
 					"target: "+projection.DisplayPath,
 					"reason: "+runErr.Error(),
 				)
@@ -185,27 +179,33 @@ func publishTargetPagePortfolio(
 		},
 	)
 	if err != nil {
-		return failedPublication(), err
+		markTargetPagesFailed(output, runSet.CompletedTargets)
+		runDirs := append([]string{defaultRun.RunDir}, runSet.AttemptedRunDirs...)
+		return report.FailedPublicationAssessment(), errors.Join(err, quarantineTargetPagePublication(runDirs))
+	}
+	quarantineOnFailure := func(runErr error) (report.PublicationAssessment, error) {
+		markTargetPagesFailed(output, runSet.CompletedTargets)
+		return report.FailedPublicationAssessment(), errors.Join(runErr, quarantineTargetPagePublication(runSet.AttemptedRunDirs))
 	}
 	portfolio, err := snapshot.BuildTargetPagePortfolio(container, runSet.Outcomes)
 	if err != nil {
-		return failedPublication(), err
+		return quarantineOnFailure(err)
 	}
 	finalize := deps.finalizeTargetPages
 	if finalize == nil {
 		finalize = finalizeTargetPageRuns
 	}
 	if err := finalize(container, portfolio, runSet.Ready); err != nil {
-		return failedPublication(), err
+		return quarantineOnFailure(err)
 	}
-	var defaultAssessment publicationAssessment
+	var defaultAssessment report.PublicationAssessment
 	defaultVerified := false
 	for _, published := range runSet.Ready {
-		assessment, assessErr := assessRunPublication(published.RunDir)
+		assessment, assessErr := report.AssessRunPublication(published.RunDir)
 		if assessErr != nil {
-			return failedPublication(), fmt.Errorf(
+			return quarantineOnFailure(fmt.Errorf(
 				"verify final target page %s: %w", published.Target.DisplayPath(), assessErr,
-			)
+			))
 		}
 		if published.Target.Ref == container.DefaultTargetRef {
 			defaultAssessment = assessment
@@ -213,9 +213,51 @@ func publishTargetPagePortfolio(
 		}
 	}
 	if !defaultVerified {
-		return failedPublication(), fmt.Errorf("target page portfolio: finalized default page is unavailable")
+		return quarantineOnFailure(fmt.Errorf("target page portfolio: finalized default page is missing"))
+	}
+	for _, consoleTarget := range runSet.CompletedTargets {
+		output.TargetPage("complete", consoleTarget)
 	}
 	return defaultAssessment, nil
+}
+
+func markTargetPagesFailed(output *runOutput, targets []targetPageConsoleContext) {
+	if output == nil {
+		return
+	}
+	for _, target := range targets {
+		output.TargetPage("failed", target)
+	}
+}
+
+// quarantineTargetPagePublication removes browser authority and gives any
+// already-rendered files an explicit failed suffix. Raw analysis artifacts
+// remain available for diagnostics, but no partial multi-target publication
+// keeps a product-looking report.html/report.json pair.
+func quarantineTargetPagePublication(runDirs []string) error {
+	seen := make(map[string]struct{}, len(runDirs))
+	var result error
+	for _, runDir := range runDirs {
+		if runDir == "" {
+			continue
+		}
+		clean := filepath.Clean(runDir)
+		if _, exists := seen[clean]; exists {
+			continue
+		}
+		seen[clean] = struct{}{}
+		if err := report.RemoveRunManifest(clean); err != nil {
+			result = errors.Join(result, err)
+		}
+		for _, name := range []string{"report.html", "report.json"} {
+			from := filepath.Join(clean, name)
+			to := filepath.Join(clean, name+".failed")
+			if err := os.Rename(from, to); err != nil && !os.IsNotExist(err) {
+				result = errors.Join(result, fmt.Errorf("quarantine %s: %w", from, err))
+			}
+		}
+	}
+	return result
 }
 
 func finalizeTargetPageRuns(
@@ -285,10 +327,20 @@ func finalizeTargetPageRuns(
 		}
 	}
 
+	navigationPages, programTargetByOuterRef, defaultProgramTargetID, err :=
+		targetNavigationPagesForRuns(container, portfolio, runs)
+	if err != nil {
+		return err
+	}
 	authorities := make([]snapshot.TargetPageSiblingAuthority, 0, len(runs))
 	prepared := make([]report.PreparedStandaloneTarget, 0, len(runs))
 	for _, run := range runs {
-		navigation, navErr := targetNavigationForRun(container, portfolio, run.Target.Ref)
+		currentProgramTargetID := programTargetByOuterRef[run.Target.Ref]
+		navigation, navErr := targetNavigationForRun(
+			navigationPages,
+			defaultProgramTargetID,
+			currentProgramTargetID,
+		)
 		if navErr != nil {
 			return navErr
 		}
@@ -326,7 +378,7 @@ func finalizeTargetPageRuns(
 			return fmt.Errorf("target page portfolio: publish standalone target bundle: %w", err)
 		}
 		found, inspectErr := inspectExactStandaloneTargetBundle(
-			filepath.Join(bundleDefault.RunDir, "report.html"), container, portfolio, len(runs),
+			filepath.Join(bundleDefault.RunDir, "report.html"), container, portfolio,
 		)
 		if inspectErr != nil {
 			return fmt.Errorf("target page portfolio: verify standalone target bundle: %w", inspectErr)
@@ -338,9 +390,7 @@ func finalizeTargetPageRuns(
 	return nil
 }
 
-// standaloneTargetBundleDefaultRun resolves only the owner-approved D286
-// branch. The ordinary D269 finalizer remains authoritative for every other
-// multi-target publication.
+// standaloneTargetBundleDefaultRun resolves a multi-target static report.
 func standaloneTargetBundleDefaultRun(
 	container snapshot.TargetRunContainer,
 	runs []targetPublishedRun,
@@ -359,10 +409,7 @@ func standaloneTargetBundleDefaultRun(
 		}
 	}
 	if defaultRun == nil {
-		return nil, fmt.Errorf("target page portfolio: default run is unavailable")
-	}
-	if !defaultRun.AllTargets {
-		return nil, nil
+		return nil, fmt.Errorf("target page portfolio: default run is missing")
 	}
 	if defaultRun.GitLabURL != "" && defaultRun.GitHubURL != "" {
 		return nil, fmt.Errorf("target page portfolio: default run has conflicting source hosts")
@@ -371,7 +418,7 @@ func standaloneTargetBundleDefaultRun(
 		return nil, nil
 	}
 	for _, run := range runs {
-		if !run.AllTargets || run.GitLabURL != defaultRun.GitLabURL ||
+		if run.GitLabURL != defaultRun.GitLabURL ||
 			run.GitHubURL != defaultRun.GitHubURL {
 			return nil, fmt.Errorf("target page portfolio: hosted sibling authority differs")
 		}
@@ -443,7 +490,7 @@ func targetPageRunsAlreadyFinalized(
 		return true, nil
 	}
 	found, err := inspectExactStandaloneTargetBundle(
-		filepath.Join(bundleDefault.RunDir, "report.html"), container, portfolio, len(runs),
+		filepath.Join(bundleDefault.RunDir, "report.html"), container, portfolio,
 	)
 	if err != nil {
 		return false, fmt.Errorf("target page portfolio: inspect standalone target bundle: %w", err)
@@ -460,7 +507,6 @@ func inspectExactStandaloneTargetBundle(
 	htmlPath string,
 	container snapshot.TargetRunContainer,
 	portfolio snapshot.TargetPagePortfolio,
-	readyCount int,
 ) (bool, error) {
 	identity, found, err := report.InspectStandaloneTargetBundleHTML(htmlPath)
 	if err != nil || !found {
@@ -476,8 +522,7 @@ func inspectExactStandaloneTargetBundle(
 	if identity.TargetRunContainerSHA256 != container.SHA256 ||
 		identity.TargetPagePortfolioSHA256 != portfolio.SHA256 ||
 		identity.DefaultTargetIndex != defaultIndex ||
-		identity.TargetCount != len(container.Targets) ||
-		identity.ReadyTargetCount != readyCount {
+		identity.TargetCount != len(container.Targets) {
 		return true, fmt.Errorf("standalone target bundle authority mismatch")
 	}
 	return true, nil
@@ -514,12 +559,55 @@ func readTargetPageRunFile(runDir, name string, maxBytes int) ([]byte, bool, err
 	return raw, true, nil
 }
 
-func targetNavigationForRun(
+func targetNavigationPagesForRuns(
 	container snapshot.TargetRunContainer,
 	portfolio snapshot.TargetPagePortfolio,
-	currentTargetRef string,
+	runs []targetPublishedRun,
+) ([]report.TargetNavigationPage, map[string]string, string, error) {
+	if err := portfolio.ValidateAgainstContainer(container); err != nil {
+		return nil, nil, "", err
+	}
+	runsByOuterRef := make(map[string]targetPublishedRun, len(runs))
+	for _, run := range runs {
+		if _, duplicate := runsByOuterRef[run.Target.Ref]; duplicate {
+			return nil, nil, "", fmt.Errorf("target page portfolio: duplicate published target ref")
+		}
+		runsByOuterRef[run.Target.Ref] = run
+	}
+	if len(runsByOuterRef) != len(container.Targets) {
+		return nil, nil, "", fmt.Errorf("target page portfolio: published runs do not cover selected targets")
+	}
+	pages := make([]report.TargetNavigationPage, 0, len(container.Targets))
+	programTargetByOuterRef := make(map[string]string, len(container.Targets))
+	defaultProgramTargetID := ""
+	for index, projection := range container.Targets {
+		outerPage := portfolio.Targets[index]
+		run, found := runsByOuterRef[projection.Target.Ref]
+		if !found || run.RunID != outerPage.RunID {
+			return nil, nil, "", fmt.Errorf("target page portfolio: published run binding mismatch")
+		}
+		page, err := report.LoadTargetNavigationPage(run.RunDir, run.RunID)
+		if err != nil {
+			return nil, nil, "", fmt.Errorf("target page portfolio: program page %s: %w", run.RunID, err)
+		}
+		pages = append(pages, page)
+		programTargetByOuterRef[projection.Target.Ref] = page.ProgramTarget.ID
+		if outerPage.Default {
+			defaultProgramTargetID = page.ProgramTarget.ID
+		}
+	}
+	if defaultProgramTargetID == "" {
+		return nil, nil, "", fmt.Errorf("target page portfolio: default program target is missing")
+	}
+	return pages, programTargetByOuterRef, defaultProgramTargetID, nil
+}
+
+func targetNavigationForRun(
+	pages []report.TargetNavigationPage,
+	defaultTargetID string,
+	currentTargetID string,
 ) (*report.TargetNavigationPortfolio, error) {
-	return report.BuildTargetNavigation(container, portfolio, currentTargetRef)
+	return report.BuildTargetNavigation(pages, defaultTargetID, currentTargetID)
 }
 
 func (run targetPublishedRun) generateWithTargetNavigation(
@@ -527,10 +615,6 @@ func (run targetPublishedRun) generateWithTargetNavigation(
 ) error {
 	options := report.RenderOptions{TargetNavigation: navigation}
 	switch {
-	case len(run.SourceEpisodeJSON) != 0:
-		return report.GenerateAuthorizedWithSourceEpisodeAndOptions(
-			run.RunDir, run.Authority, run.SourceEpisodeJSON, options,
-		)
 	case run.GitLabURL != "":
 		return report.GenerateAuthorizedGitLabWithOptions(
 			run.RunDir, run.Authority, run.GitLabURL, options,
@@ -549,8 +633,6 @@ func (run targetPublishedRun) generatePreparedWithTargetNavigation(
 ) (report.PreparedStandaloneTarget, error) {
 	options := report.RenderOptions{TargetNavigation: navigation}
 	switch {
-	case len(run.SourceEpisodeJSON) != 0:
-		return report.PreparedStandaloneTarget{}, fmt.Errorf("hosted target bundle cannot embed a source episode")
 	case run.GitLabURL != "" && run.GitHubURL == "":
 		return report.GenerateAuthorizedGitLabPreparedWithOptions(
 			run.RunDir, run.Authority, run.GitLabURL, options,

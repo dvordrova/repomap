@@ -32,7 +32,7 @@ func TestLoadRecordsOnlyBuildSelectedMainFunctionAnchors(t *testing.T) {
 		fileList = append(fileList, name)
 	}
 
-	facts, err := Load(context.Background(), repo, fileList, 20, 20)
+	facts, err := loadForHost(context.Background(), repo, fileList)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,9 +48,6 @@ func TestLoadRecordsOnlyBuildSelectedMainFunctionAnchors(t *testing.T) {
 	}
 	if len(entrypoint.Anchors) != 1 || entrypoint.Anchors[0].Path != "cmd/app/start.go" || entrypoint.Anchors[0].Line != 3 {
 		t.Fatalf("entrypoint anchors = %#v, want cmd/app/start.go:3", entrypoint.Anchors)
-	}
-	if len(facts.ModuleSummaries) != 1 || facts.ModuleSummaries[0].EntrypointsCount != 1 {
-		t.Fatalf("module summaries = %#v, want one verified entrypoint", facts.ModuleSummaries)
 	}
 }
 
@@ -176,31 +173,5 @@ func TestIsMainFunctionRequiresProcessSignature(t *testing.T) {
 				t.Fatalf("isMainFunction() = %t, want %t", got, test.want)
 			}
 		})
-	}
-}
-
-func TestBuildOrientationCandidatesOpensMainAnchorFirst(t *testing.T) {
-	candidates := buildOrientationCandidates([]Entrypoint{{
-		ImportPath: "example.com/project/cmd/app",
-		PackageDir: "cmd/app",
-		GoFiles:    []string{"config.go", "start.go"},
-		Anchors: []EntrypointAnchor{{
-			Version: EntrypointAnchorVersion,
-			Kind:    EntrypointAnchorGoMain,
-			Path:    "cmd/app/start.go",
-			Line:    20,
-		}},
-	}})
-	if len(candidates) != 1 {
-		t.Fatalf("candidates = %#v, want one", candidates)
-	}
-	want := []string{"cmd/app/start.go", "cmd/app/config.go"}
-	if len(candidates[0].OpenFiles) != len(want) {
-		t.Fatalf("open files = %v, want %v", candidates[0].OpenFiles, want)
-	}
-	for index := range want {
-		if candidates[0].OpenFiles[index] != want[index] {
-			t.Fatalf("open files = %v, want %v", candidates[0].OpenFiles, want)
-		}
 	}
 }

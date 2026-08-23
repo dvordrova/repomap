@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -35,8 +34,8 @@ var repositoryManifestReaders = []manifestNameReader{
 	{path: "setup.cfg", parse: parseSetupConfigName},
 }
 
-func repositoryIdentity(repoPath string, trackedFiles []string, goHints GoHints) string {
-	if identity := cleanRepositoryIdentity(goHints.ModuleName); identity != "" {
+func repositoryIdentity(repoPath string, trackedFiles []string, goModuleName string) string {
+	if identity := cleanRepositoryIdentity(goModuleName); identity != "" {
 		return identity
 	}
 	if identity := repositoryRemoteIdentity(repoPath); identity != "" {
@@ -65,39 +64,7 @@ func RepositoryOriginIdentity(repoPath string) string {
 
 func repositoryRemoteIdentity(repoPath string) string {
 	origin, _ := localGitConfigValue(repoPath, "remote.origin.url")
-	if identity := normalizeRemoteIdentity(origin); identity != "" {
-		return identity
-	}
-
-	output, err := runLocalGitConfig(repoPath, "--get-regexp", `^remote\..*\.url$`)
-	if err != nil {
-		return ""
-	}
-	type candidate struct {
-		key      string
-		identity string
-	}
-	var candidates []candidate
-	for _, line := range strings.Split(output, "\n") {
-		key, value, ok := strings.Cut(strings.TrimSpace(line), " ")
-		if !ok {
-			continue
-		}
-		identity := normalizeRemoteIdentity(strings.TrimSpace(value))
-		if identity != "" {
-			candidates = append(candidates, candidate{key: key, identity: identity})
-		}
-	}
-	sort.Slice(candidates, func(i, j int) bool {
-		if candidates[i].key == candidates[j].key {
-			return candidates[i].identity < candidates[j].identity
-		}
-		return candidates[i].key < candidates[j].key
-	})
-	if len(candidates) == 0 {
-		return ""
-	}
-	return candidates[0].identity
+	return normalizeRemoteIdentity(origin)
 }
 
 func localGitConfigValue(repoPath, key string) (string, error) {

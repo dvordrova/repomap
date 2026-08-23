@@ -1,1538 +1,877 @@
 package report
 
 import (
-	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
+	"github.com/dvordrova/repomap/internal/activityentrypoint"
+	"github.com/dvordrova/repomap/internal/activitypath"
 	"github.com/dvordrova/repomap/internal/analysistarget"
-	"github.com/dvordrova/repomap/internal/componentmap"
-	"github.com/dvordrova/repomap/internal/evidence"
-	"github.com/dvordrova/repomap/internal/evidenceref"
-	"github.com/dvordrova/repomap/internal/flowexplain"
-	"github.com/dvordrova/repomap/internal/flowproof"
-	"github.com/dvordrova/repomap/internal/gofacts"
-	"github.com/dvordrova/repomap/internal/modelresearch"
-	"github.com/dvordrova/repomap/internal/repositoryatlas/goadapter"
-	"github.com/dvordrova/repomap/internal/sourcesignals"
-	"github.com/dvordrova/repomap/internal/studymap"
+	"github.com/dvordrova/repomap/internal/coremap"
+	"github.com/dvordrova/repomap/internal/cubemap"
+	"github.com/dvordrova/repomap/internal/dependencies"
+	"github.com/dvordrova/repomap/internal/dependencydeclaration"
+	"github.com/dvordrova/repomap/internal/integrationdependency"
+	"github.com/dvordrova/repomap/internal/integrationusage"
+	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/pythondeclareddependencies"
+	"github.com/dvordrova/repomap/internal/pythontarget"
+	"github.com/dvordrova/repomap/internal/readmetargetscout"
 )
 
+const maxReportTargetMetadataBytes = 4 << 20
+
+// snapshotJSON is the complete snapshot shape still consumed by report
+// publication. GoFacts contributes material source paths only; the report no
+// longer recreates a second repository graph or presentation product from it.
 type snapshotJSON struct {
 	RepoName       string                 `json:"repo_name"`
-	Readme         string                 `json:"readme"`
 	AnalysisTarget *analysistarget.Target `json:"analysis_target,omitempty"`
-	GoFacts        *struct {
-		Modules []struct {
-			ID          string `json:"id"`
-			ModulePath  string `json:"module_path"`
-			ModuleDir   string `json:"module_dir"`
-			DisplayName string `json:"display_name"`
-		} `json:"modules"`
-		Packages           []PackageInfo          `json:"packages"`
-		CommandTraces      []gofacts.CommandTrace `json:"command_traces"`
-		ExternalImportsTop []struct {
-			ImportPath  string `json:"import_path"`
-			UsedByCount int    `json:"used_by_count"`
-		} `json:"external_imports_top"`
-	} `json:"go_facts"`
+	GoFacts        *snapshotGoFactsJSON   `json:"go_facts"`
 }
 
-type llmBundleJSON struct {
-	ProviderAllowedPaths []string               `json:"allowed_paths"`
-	SourceSignals        []sourcesignals.Signal `json:"source_signals"`
-	Go                   struct {
-		ModuleSummaries []struct {
-			ModulePath string `json:"module_path"`
-			ModuleDir  string `json:"module_dir"`
-		} `json:"module_summaries"`
-		ImportantEdges []EdgeInfo `json:"important_edges"`
-	} `json:"go"`
+type snapshotGoFactsJSON struct {
+	Modules  []snapshotModuleJSON  `json:"modules"`
+	Packages []snapshotPackageJSON `json:"packages"`
+}
+
+type snapshotModuleJSON struct {
+	ModuleDir string `json:"module_dir"`
+}
+
+type snapshotPackageJSON struct {
+	Files []string `json:"files"`
 }
 
 type runMetadataJSON struct {
-	RepoName                   string   `json:"repo_name"`
-	CreatedAt                  string   `json:"created_at"`
-	Model                      string   `json:"model"`
-	PromptVersion              string   `json:"prompt_version"`
-	CompactContextBytes        int      `json:"compact_context_bytes"`
-	ExternalRequestBytes       int      `json:"external_request_bytes"`
-	ProviderRequestCount       int      `json:"provider_request_count"`
-	ProviderAccountingComplete bool     `json:"provider_accounting_complete"`
-	CandidateDirectionCount    int      `json:"candidate_direction_count"`
-	AcceptedDirectionCount     int      `json:"accepted_direction_count"`
-	RejectedDirectionCount     int      `json:"rejected_direction_count"`
-	ProviderLatencyMillis      *int64   `json:"provider_latency_ms"`
-	SurfaceDiscoveryRan        bool     `json:"surface_discovery_ran"`
-	SurfaceDiscoveryCount      int      `json:"surface_discovery_count"`
-	SurfaceDiscoveryMillis     *int64   `json:"surface_discovery_ms"`
-	Warnings                   []string `json:"warnings"`
-	EffectiveOptions           struct {
-		ReportLanguage string `json:"report_language"`
-	} `json:"effective_options"`
-}
-
-type orientationReportJSON struct {
-	ProjectGuess         string                      `json:"project_guess"`
-	Confidence           float64                     `json:"confidence"`
-	HighLevelMap         []orientationMapItemJSON    `json:"high_level_map"`
-	FirstFilesToOpen     flexFileItems               `json:"first_files_to_open"`
-	CandidateFlows       []orientationCandidateJSON  `json:"candidate_flows"`
-	ImportantDomainWords []orientationDomainWordJSON `json:"important_domain_words"`
-	QuestionsForHuman    []string                    `json:"questions_for_human"`
-	UnverifiedPaths      flexPathItems               `json:"unverified_paths"`
-	Warnings             []string                    `json:"warnings"`
-}
-
-type orientationMapItemJSON struct {
-	Name         string            `json:"name"`
-	Role         componentmap.Role `json:"role"`
-	Evidence     []string          `json:"evidence"`
-	WhyItMatters string            `json:"why_it_matters"`
-}
-
-type orientationDomainWordJSON struct {
-	Word     string   `json:"word"`
-	Guess    string   `json:"guess"`
-	Evidence []string `json:"evidence"`
-}
-
-type orientationCandidateJSON struct {
-	Name              string                        `json:"name"`
-	FlowType          string                        `json:"flow_type"`
-	Trigger           string                        `json:"trigger"`
-	LikelyEntrypoint  string                        `json:"likely_entrypoint"`
-	LikelyFiles       []string                      `json:"likely_files"`
-	WhyInteresting    string                        `json:"why_interesting"`
-	Evidence          []string                      `json:"evidence"`
-	Confidence        float64                       `json:"confidence"`
-	LocalVerification *flowexplain.FlowVerification `json:"local_verification"`
-	LocalProof        *flowproof.Session            `json:"local_proof"`
-	Disposition       string                        `json:"disposition"`
-	DispositionReason string                        `json:"disposition_reason"`
-	CandidateBasis    string                        `json:"candidate_basis"`
-}
-
-type flowReportJSON struct {
-	Summary            string               `json:"summary"`
-	Confidence         float64              `json:"confidence"`
-	FlowName           string               `json:"flow_name"`
-	LikelyChain        flexChainSteps       `json:"likely_chain"`
-	FilesToReadInOrder flexFileItems        `json:"files_to_read_in_order"`
-	TestsToRead        flexFileItems        `json:"tests_to_read"`
-	UnverifiedPaths    flexPathItems        `json:"unverified_paths"`
-	Unknowns           flexStringsOrObjects `json:"unknowns"`
-	Warnings           flexStringsOrObjects `json:"warnings"`
-}
-
-type flowStatusJSON struct {
-	Version int    `json:"version"`
-	Mode    string `json:"mode"`
-}
-
-type chainStepJSON struct {
-	Step          flexInt     `json:"step"`
-	Name          string      `json:"name"`
-	WhatHappens   string      `json:"what_happens"`
-	Description   string      `json:"description"`
-	Reason        string      `json:"reason"`
-	Role          string      `json:"role"`
-	File          string      `json:"file"`
-	Function      string      `json:"function"`
-	EvidenceFiles flexStrings `json:"evidence_files"`
-	Confidence    float64     `json:"confidence"`
-}
-
-// flexInt accepts int, "1", "Step 1", or missing values.
-type flexInt int
-
-func (f *flexInt) UnmarshalJSON(b []byte) error {
-	var i int
-	if err := json.Unmarshal(b, &i); err == nil {
-		*f = flexInt(i)
-		return nil
-	}
-	var s string
-	if err := json.Unmarshal(b, &s); err != nil {
-		return fmt.Errorf("step: must be int or string: %s", string(b))
-	}
-	s = strings.TrimSpace(s)
-	s = strings.TrimPrefix(s, "Step ")
-	s = strings.TrimPrefix(s, "step ")
-	s = strings.TrimSpace(s)
-	parsed, err := strconv.Atoi(s)
-	if err != nil {
-		*f = 0
-		return nil
-	}
-	*f = flexInt(parsed)
-	return nil
-}
-
-type fileItemJSON struct {
-	Path     string `json:"path"`
-	Reason   string `json:"reason"`
-	Priority int    `json:"priority"`
-}
-
-type pathItemJSON struct {
-	Path   string `json:"path"`
-	Reason string `json:"reason"`
-}
-
-// flexFileItems accepts both []object and []string for files_to_read_in_order / tests_to_read.
-type flexFileItems []fileItemJSON
-
-func (f *flexFileItems) UnmarshalJSON(b []byte) error {
-	var objs []fileItemJSON
-	if err := json.Unmarshal(b, &objs); err == nil {
-		*f = objs
-		return nil
-	}
-	var strs []string
-	if err := json.Unmarshal(b, &strs); err != nil {
-		return fmt.Errorf("must be array of objects or strings: %s", string(b))
-	}
-	result := make([]fileItemJSON, len(strs))
-	for i, s := range strs {
-		result[i] = fileItemJSON{Path: s, Reason: "", Priority: i + 1}
-	}
-	*f = result
-	return nil
-}
-
-// flexPathItems accepts both []object and []string for unverified_paths.
-type flexPathItems []pathItemJSON
-
-func (f *flexPathItems) UnmarshalJSON(b []byte) error {
-	var objs []pathItemJSON
-	if err := json.Unmarshal(b, &objs); err == nil {
-		*f = objs
-		return nil
-	}
-	var strs []string
-	if err := json.Unmarshal(b, &strs); err != nil {
-		return fmt.Errorf("must be array of objects or strings: %s", string(b))
-	}
-	result := make([]pathItemJSON, len(strs))
-	for i, s := range strs {
-		result[i] = pathItemJSON{Path: s, Reason: ""}
-	}
-	*f = result
-	return nil
-}
-
-// flexChainSteps accepts []chainStepJSON directly, or an object with a "steps" array.
-type flexChainSteps []chainStepJSON
-
-func (f *flexChainSteps) UnmarshalJSON(b []byte) error {
-	b = bytes.TrimSpace(b)
-	if len(b) == 0 || string(b) == "null" {
-		*f = nil
-		return nil
-	}
-
-	// Try direct array first
-	var steps []chainStepJSON
-	if err := json.Unmarshal(b, &steps); err == nil {
-		*f = steps
-		return nil
-	}
-
-	// Try object with "steps" field
-	var obj struct {
-		Steps []chainStepJSON `json:"steps"`
-	}
-	if err := json.Unmarshal(b, &obj); err == nil && len(obj.Steps) > 0 {
-		*f = obj.Steps
-		return nil
-	}
-
-	return fmt.Errorf("flexChainSteps: must be array of chain steps or object with steps field: %s", string(b))
-}
-
-// flexStringsOrObjects accepts []string, []object (with text/description/reason/question/uncertainty/warning/message fields),
-// or object/map (grouped unknowns), or a bare string. Normalizes to a flat []string.
-type flexStringsOrObjects []string
-
-func (f *flexStringsOrObjects) UnmarshalJSON(b []byte) error {
-	b = bytes.TrimSpace(b)
-	if len(b) == 0 || string(b) == "null" {
-		*f = nil
-		return nil
-	}
-
-	// Try bare string first
-	var singleStr string
-	if err := json.Unmarshal(b, &singleStr); err == nil && strings.TrimSpace(singleStr) != "" {
-		*f = []string{strings.TrimSpace(singleStr)}
-		return nil
-	}
-
-	// Try []string first
-	var strs []string
-	if err := json.Unmarshal(b, &strs); err == nil {
-		*f = strs
-		return nil
-	}
-
-	// Try []object — extract first meaningful text-like field
-	var objs []map[string]json.RawMessage
-	if err := json.Unmarshal(b, &objs); err == nil {
-		result := make([]string, 0, len(objs))
-		for _, obj := range objs {
-			result = append(result, extractFlexString(obj))
-		}
-		*f = result
-		return nil
-	}
-
-	// Try object/map (grouped form)
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(b, &m); err == nil {
-		var result []string
-		for k, v := range m {
-			var subObjs []map[string]json.RawMessage
-			if json.Unmarshal(v, &subObjs) == nil {
-				for _, obj := range subObjs {
-					s := extractFlexString(obj)
-					if s != "" {
-						result = append(result, k+": "+s)
-					}
-				}
-				continue
-			}
-			var subStrs []string
-			if json.Unmarshal(v, &subStrs) == nil {
-				for _, s := range subStrs {
-					result = append(result, k+": "+s)
-				}
-				continue
-			}
-			var singleStr string
-			if json.Unmarshal(v, &singleStr) == nil && singleStr != "" {
-				result = append(result, k+": "+singleStr)
-			}
-		}
-		sort.Strings(result)
-		*f = result
-		return nil
-	}
-
-	return fmt.Errorf("flexStringsOrObjects: must be array of strings, array of objects, or object/map: %s", string(b))
-}
-
-var flexStringFields = []string{"text", "uncertainty", "warning", "question", "message", "description", "reason", "path"}
-
-func extractFlexString(obj map[string]json.RawMessage) string {
-	// First look for single-word descriptive fields
-	pairs := make([]string, 0, 2)
-	for _, field := range flexStringFields {
-		if raw, ok := obj[field]; ok {
-			var s string
-			if json.Unmarshal(raw, &s) == nil && strings.TrimSpace(s) != "" {
-				pairs = append(pairs, strings.TrimSpace(s))
-			}
-		}
-	}
-	if len(pairs) == 0 {
-		// Fallback: use the first field
-		for _, raw := range obj {
-			var s string
-			if json.Unmarshal(raw, &s) == nil && strings.TrimSpace(s) != "" {
-				return strings.TrimSpace(s)
-			}
-		}
-		return ""
-	}
-	return strings.Join(pairs, " — ")
-}
-
-// flexStrings accepts both []string and []object (with "path" field) for evidence_files.
-type flexStrings []string
-
-func (f *flexStrings) UnmarshalJSON(b []byte) error {
-	var strs []string
-	if err := json.Unmarshal(b, &strs); err == nil {
-		*f = strs
-		return nil
-	}
-	var objs []struct {
-		Path string `json:"path"`
-	}
-	if err := json.Unmarshal(b, &objs); err != nil {
-		return fmt.Errorf("must be array of strings or objects with path field: %s", string(b))
-	}
-	result := make([]string, len(objs))
-	for i, o := range objs {
-		result[i] = o.Path
-	}
-	*f = result
-	return nil
+	RepoName string   `json:"repo_name"`
+	Warnings []string `json:"warnings"`
 }
 
 func ReadRunDir(runDir string) (*ReportData, error) {
-	return readRunDir(runDir, "", nil, nil)
+	return readRunDir(runDir)
 }
 
-// ReadRunDirForAuthorizedArchitecture replays a saved run against confirmed
-// scoped repository authority and requires its producer-owned Go package graph
-// to be complete before it can become an Architecture provider input. A
-// non-Go run does not require a package graph.
-func ReadRunDirForAuthorizedArchitecture(
-	runDir string,
-	authority RunAuthority,
-) (*ReportData, error) {
-	if err := authority.validate(); err != nil {
-		return nil, fmt.Errorf("read authorized Architecture run: %w", err)
-	}
-	data, err := readRunDir(runDir, "", &authority, nil)
-	if err != nil {
-		return nil, err
-	}
-	if err := requireCompleteExactWorkspaceGraph(data); err != nil {
-		return data, err
-	}
-	return data, nil
-}
-
-type savedArchitectureArtifacts struct {
-	status    ArchitectureSynthesisStatus
-	synthesis []byte
-}
-
-func readRunDir(
-	runDir,
-	studyDocumentSourceRoot string,
-	authority *RunAuthority,
-	architectureArtifacts *savedArchitectureArtifacts,
-) (*ReportData, error) {
+// readRunDir restores only the ordinary Program report path.
+func readRunDir(runDir string) (*ReportData, error) {
 	absDir, err := filepath.Abs(runDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve run dir: %w", err)
 	}
-	data := &ReportData{ArtifactsDir: absDir, studyDocumentSourceRoot: studyDocumentSourceRoot}
-	var parseWarnings []string
-
-	if w := parseSnapshotWithExactFacts(
-		filepath.Join(absDir, "snapshot.json"),
-		data,
-		authority != nil,
-	); w != "" {
-		parseWarnings = append(parseWarnings, w)
+	data := &ReportData{
+		FormatVersion: CurrentFormatVersion,
+		ArtifactsDir:  absDir,
 	}
-	if err := rehydrateLibraryAPIProjectionFromRunDir(absDir, data); err != nil {
+	if err := parseSnapshot(filepath.Join(absDir, "snapshot.json"), data); err != nil {
 		return nil, err
 	}
-	if w := parseRunMetadata(filepath.Join(absDir, "metadata.json"), data); w != "" {
-		parseWarnings = append(parseWarnings, w)
-	}
-	if err := restoreAnalysisTargetFromRunContainer(absDir, data); err != nil {
+	if err := parseRunMetadata(filepath.Join(absDir, "metadata.json"), data); err != nil {
 		return nil, err
 	}
-	if state, err := modelresearch.ReadState(absDir); err == nil {
-		data.ModelResearch = &state
-		if data.Run == nil {
-			data.Run = &RunInfo{}
-		}
-	} else if !os.IsNotExist(err) {
-		parseWarnings = append(parseWarnings, fmt.Sprintf("model research: %v", err))
-	}
-	var architectureStatus *ArchitectureSynthesisStatus
-	var warning string
-	if architectureArtifacts == nil {
-		architectureStatus, warning = readArchitectureSynthesisStatus(
-			filepath.Join(absDir, ArchitectureSynthesisStatusFile),
-		)
-	} else {
-		status := architectureArtifacts.status
-		architectureStatus = &status
-	}
-	data.ArchitectureSynthesis = architectureStatus
-	reconcileLegacyProviderAccounting(data)
-	data.RepositoryAtlas, err = readRepositoryAtlasArtifact(absDir)
-	if err != nil {
+	if err := restoreProgramPortfolio(absDir, data); err != nil {
 		return nil, err
 	}
-	if w := parseOrientationReport(filepath.Join(absDir, "orientation_report.json"), data); w != "" {
-		parseWarnings = append(parseWarnings, w)
+	if err := restoreDeclaredDependencyAuthority(absDir, data); err != nil {
+		return nil, err
 	}
-	if w := parseLLMBundle(filepath.Join(absDir, "llm_bundle.json"), data); w != "" {
-		parseWarnings = append(parseWarnings, w)
+	if err := restoreActivityEntrypointView(absDir, data); err != nil {
+		return nil, err
 	}
-	data.TaskInvestigation, warning = readTaskInvestigation(absDir, studyDocumentSourceRoot)
-	if warning != "" {
-		parseWarnings = append(parseWarnings, warning)
+	if err := restoreCubeMapView(absDir, data); err != nil {
+		return nil, err
 	}
-	if data.TaskInvestigation != nil && data.RepoName == "" {
-		data.RepoName = data.TaskInvestigation.RepoName()
+	if err := restoreCoreMapView(absDir, data); err != nil {
+		return nil, err
 	}
-	var surfaceWarnings []string
-	data.DiscoveredSurfaces, surfaceWarnings = parseDiscoveredSurfaces(absDir)
-	parseWarnings = append(parseWarnings, surfaceWarnings...)
-	mergeCommandSurfaceCatalog(data)
-	data.ArchitectureGrounding, warning = parseArchitectureGrounding(absDir)
-	if warning != "" {
-		parseWarnings = append(parseWarnings, warning)
+	if err := restoreIntegrationUsageView(absDir, data); err != nil {
+		return nil, err
 	}
-	ensureArchitectureGrounding(data)
-	expectedInvestigationRevision := data.CapturedRevision
-	expectedInvestigationFreshness := ""
-	if authority != nil {
-		expectedInvestigationRevision = authority.repository.Head
-		expectedInvestigationFreshness, err = authority.repository.Digest()
-		if err != nil {
-			return nil, fmt.Errorf("read Study investigation repository binding: %w", err)
-		}
+	if err := restoreActivityPathView(absDir, data); err != nil {
+		return nil, err
 	}
-	if err := loadEntryCallReportProjection(
-		absDir,
-		data,
-		expectedInvestigationFreshness,
+	if err := validateProgramSemanticPresentation(
+		data.ProgramPortfolio, data.AnalysisTarget, data.CubeMapView, data.CoreMapView,
+		data.ActivityEntrypointView, data.IntegrationUsageView, data.ActivityPathView,
 	); err != nil {
 		return nil, err
 	}
-	if err := loadStudyInvestigationArtifacts(
-		absDir,
-		data,
-		expectedInvestigationRevision,
-		expectedInvestigationFreshness,
-	); err != nil {
+	if err := collectOpenablePaths(data); err != nil {
 		return nil, err
 	}
-
-	flowWarnings, err := parseFlows(filepath.Join(absDir, "flows"), data)
-	if err != nil {
-		return nil, fmt.Errorf("read flows from %s: %w", absDir, err)
-	}
-	parseWarnings = append(parseWarnings, flowWarnings...)
-	canonicalizeReportEvidence(data)
-	collectOpenablePaths(data)
-	if err := validateLibraryAPIProjection(data.AnalysisTarget, data.LibraryAPI, data.OpenablePaths); err != nil {
-		return nil, err
-	}
-	if err := validateRepositoryAtlasForReport(data); err != nil {
-		return nil, err
-	}
-	attachAuthorizedWorkspacePackageGraph(data, authority)
-	attachAuthorizedWorkspaceEntrypointIndex(data, authority)
-	buildComponents(data)
-	if architectureWarning := projectCanonicalArchitectureCanvas(data); architectureWarning != "" {
-		parseWarnings = append(parseWarnings, architectureWarning)
-	}
-	if err := replayAcceptedArchitectureForReport(
-		data, absDir, architectureArtifacts,
-	); err != nil {
-		return nil, err
-	}
-	linkArchitectureProductObjects(data)
-	if w := replaySavedGuidedTour(data, filepath.Join(absDir, GuidedStoryFile)); w != "" {
-		parseWarnings = append(parseWarnings, w)
-	}
-
-	enrich(data)
-
-	sort.Slice(data.Flows, func(i, j int) bool {
-		if data.Flows[i].ID == data.RecommendedFlow {
-			return true
-		}
-		if data.Flows[j].ID == data.RecommendedFlow {
-			return false
-		}
-		return data.Flows[i].ID < data.Flows[j].ID
-	})
-
-	data.UserSources = projectOverviewSourceSnippets(data)
-	data.Warnings = append(data.Warnings, parseWarnings...)
-	if data.RepositoryAtlas != nil {
-		if authority == nil {
-			data.AtlasStudy, data.StudyMap, err = readAtlasStudyReportProduct(absDir, data)
-			if err != nil {
-				return nil, err
-			}
-			applyCanonicalStudyPublication(data)
-		}
-	} else {
-		if warning := replaySavedStudyMap(data, filepath.Join(absDir, studymap.RecordFile)); warning != "" {
-			data.Warnings = append(data.Warnings, warning)
-		}
-		data.StudyPublication, warning = readStudyPublicationStatus(
-			filepath.Join(absDir, studymap.StatusFile),
-		)
-		if warning != "" {
-			data.Warnings = append(data.Warnings, warning)
-		}
-		if warning = studyPublicationUserWarning(data.StudyPublication); warning != "" {
-			data.Warnings = append(data.Warnings, warning)
-		}
-		if warning := replaySavedIncompleteStudy(
-			data,
-			filepath.Join(absDir, studymap.BundleFile),
-			filepath.Join(absDir, studymap.DirectionsAttemptFile),
-		); warning != "" {
-			data.Warnings = append(data.Warnings, warning)
-		}
-		applyCanonicalStudyPublication(data)
-	}
-	prepareReplayedPresentationMetadata(data)
 	return data, nil
 }
 
-func replayAcceptedArchitectureForReport(
-	data *ReportData,
-	runDir string,
-	artifacts *savedArchitectureArtifacts,
-) error {
-	status := data.ArchitectureSynthesis
-	accepted := status != nil &&
-		(status.State == ArchitectureSynthesisSucceeded || status.State == ArchitectureSynthesisCached) &&
-		status.ProposalAccepted && !status.ProposalRejected && !status.FallbackSelected
-	var (
-		saved   []byte
-		present bool
-		err     error
-	)
-	if artifacts != nil {
-		saved = artifacts.synthesis
-		present = len(saved) > 0
-	} else {
-		artifactPath := filepath.Join(runDir, ArchitectureSynthesisFile)
-		var info os.FileInfo
-		info, err = os.Lstat(artifactPath)
-		switch {
-		case err == nil:
-			present = true
-			if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxArchitectureLocalizationSynthesisBytes {
-				return fmt.Errorf("architecture synthesis: saved record is not a bounded regular file")
-			}
-			saved, err = os.ReadFile(artifactPath)
-		case os.IsNotExist(err):
-			err = nil
-		default:
-			return fmt.Errorf("architecture synthesis: inspect saved record: %w", err)
-		}
-		if err != nil {
-			return fmt.Errorf("architecture synthesis: read saved record: %w", err)
-		}
+// restoreDeclaredDependencyAuthority binds the local package-manager view to
+// the exact persisted Python target catalog and default ProgramIndex. It does
+// not infer imports from distribution names. The artifact is mandatory for a
+// Python default target and absent from the Go capability.
+func restoreDeclaredDependencyAuthority(runDir string, data *ReportData) error {
+	if data.defaultProgramIndex == nil {
+		return fmt.Errorf("report: declared dependencies default ProgramIndex is unavailable")
 	}
-	if !accepted {
-		if present {
-			return fmt.Errorf("architecture synthesis: unaccepted status cannot authorize a saved synthesis")
+	declarationRaw, declarationPresent, err := readBoundedProgramArtifact(
+		filepath.Join(runDir, dependencydeclaration.ArtifactFilename),
+		dependencydeclaration.MaxArtifactBytes,
+		"declared dependencies",
+		true,
+	)
+	if err != nil {
+		return err
+	}
+	isPython := data.defaultProgramIndex.Target.Language == "python"
+	if !declarationPresent {
+		if isPython {
+			return fmt.Errorf("report: Python declared dependency authority is missing")
 		}
 		return nil
 	}
-	if !present {
-		return fmt.Errorf("architecture synthesis: accepted status requires a saved synthesis")
+	if !isPython {
+		return fmt.Errorf("report: declared dependency authority does not bind a Python default target")
 	}
-	if warning := projectSavedArchitectureCanvasBytes(data, saved); warning != "" {
-		return fmt.Errorf("architecture synthesis: %s", warning)
-	}
-	if err := validateAcceptedAtlasStudyArchitecture(data); err != nil {
+	targetRaw, targetPresent, err := readBoundedProgramArtifact(
+		filepath.Join(runDir, pythontarget.ArtifactFilename),
+		pythontarget.MaxArtifactBytes,
+		"Python target catalog",
+		true,
+	)
+	if err != nil {
 		return err
+	}
+	if !targetPresent {
+		return fmt.Errorf("report: declared dependency target authority is missing")
+	}
+	targets, err := pythontarget.DecodeCatalog(targetRaw)
+	if err != nil {
+		return fmt.Errorf("report: decode Python target catalog: %w", err)
+	}
+	declarations, err := pythondeclareddependencies.DecodeTargetAuthority(
+		declarationRaw, targets, *data.defaultProgramIndex,
+	)
+	if err != nil {
+		return fmt.Errorf("report: decode declared dependencies: %w", err)
+	}
+	ownedTargets := targets.Snapshot()
+	ownedDeclarations := declarations.Snapshot()
+	data.pythonTargetCatalog = &ownedTargets
+	data.declaredDependencies = &ownedDeclarations
+	for _, source := range declarations.Sources {
+		data.materialInputPaths = append(data.materialInputPaths, source.Path)
 	}
 	return nil
 }
 
-func projectCanonicalArchitectureCanvas(data *ReportData) string {
-	input, err := BuildArchitectureCanvasInput(data)
-	if err != nil {
-		if errors.Is(err, errNoCanonicalArchitectureCandidates) {
-			return ""
-		}
-		return fmt.Sprintf("architecture canvas: %v", err)
+// restoreActivityEntrypointView revalidates the complete selected-callable
+// artifact against the exact default ProgramIndex. Absence remains explicit
+// here so the closed semantic-capability validator can reject a missing Python
+// cube while allowing the current Go CubeMap path to own its entrypoints.
+func restoreActivityEntrypointView(runDir string, data *ReportData) error {
+	encoded, present, err := readBoundedProgramArtifact(
+		filepath.Join(runDir, activityentrypoint.ArtifactFilename),
+		activityentrypoint.MaxArtifactBytes,
+		"activity entrypoints",
+		true,
+	)
+	if err != nil || !present {
+		return err
 	}
-	canvas, err := ProjectArchitectureCanvas(input)
-	if err != nil {
-		return fmt.Sprintf("architecture canvas projection: %v", err)
+	if data.defaultProgramIndex == nil {
+		return fmt.Errorf("report: activity entrypoints default ProgramIndex is unavailable")
 	}
-	data.ArchitectureCanvas = &canvas
-	navigation, err := ProjectArchitectureComponentNavigation(&canvas, data.OpenablePaths)
+	result, err := activityentrypoint.Decode(encoded, *data.defaultProgramIndex)
 	if err != nil {
-		return fmt.Sprintf("architecture component navigation projection: %v", err)
+		return fmt.Errorf("report: decode activity entrypoints: %w", err)
 	}
-	data.ArchitectureComponentNavigation = navigation
-	return ""
+	view, err := NewActivityEntrypointView(result, *data.defaultProgramIndex)
+	if err != nil {
+		return fmt.Errorf("report: project activity entrypoint view: %w", err)
+	}
+	data.ActivityEntrypointView = view
+	return nil
 }
 
-// applyCanonicalStudyPublication makes the locally reduced Study record the
-// sole publication projection when it exists. Raw candidate attempts and
-// pre-eligibility semantic topics remain useful debug artifacts, but must not
-// compete with accepted reducer output in the ordinary report.
-func applyCanonicalStudyPublication(data *ReportData) {
-	if data == nil || data.StudyMap == nil || len(data.StudyMap.Directions) == 0 {
-		return
+// restoreIntegrationUsageView revalidates the complete dependency ->
+// integration-dependency -> selected-use artifact chain against the exact
+// default ProgramIndex. The three artifacts are one material authority: a
+// partial chain is terminal. Declaration authority is required only when the
+// language adapter actually persisted that distinct artifact.
+func restoreIntegrationUsageView(runDir string, data *ReportData) error {
+	catalogRaw, catalogPresent, err := readBoundedProgramArtifact(
+		filepath.Join(runDir, dependencies.ArtifactFilename),
+		dependencies.MaxArtifactBytes,
+		"dependency catalog",
+		true,
+	)
+	if err != nil {
+		return err
 	}
-	data.IncompleteStudy = nil
-	data.UserTopics = nil
+	selectedRaw, selectedPresent, err := readBoundedProgramArtifact(
+		filepath.Join(runDir, integrationdependency.ArtifactFilename),
+		integrationdependency.MaxArtifactBytes,
+		"integration dependencies",
+		true,
+	)
+	if err != nil {
+		return err
+	}
+	usageRaw, usagePresent, err := readBoundedProgramArtifact(
+		filepath.Join(runDir, integrationusage.ArtifactFilename),
+		integrationusage.MaxArtifactBytes,
+		"integration usage",
+		true,
+	)
+	if err != nil {
+		return err
+	}
+	present := 0
+	for _, value := range []bool{catalogPresent, selectedPresent, usagePresent} {
+		if value {
+			present++
+		}
+	}
+	if present == 0 {
+		return nil
+	}
+	if present != 3 {
+		return fmt.Errorf("report: integration usage material authority is incomplete")
+	}
+	if data.defaultProgramIndex == nil {
+		return fmt.Errorf("report: integration usage default ProgramIndex is unavailable")
+	}
+	catalog, err := dependencies.Decode(catalogRaw)
+	if err != nil {
+		return fmt.Errorf("report: decode dependency catalog: %w", err)
+	}
+	selected, err := integrationdependency.Decode(selectedRaw)
+	if err != nil {
+		return fmt.Errorf("report: decode integration dependencies: %w", err)
+	}
+	if err := validateSelectedDependenciesForProgram(
+		selected, catalog, data.declaredDependencies, *data.defaultProgramIndex,
+	); err != nil {
+		return fmt.Errorf("report: integration dependencies do not match dependency catalog: %w", err)
+	}
+	usage, err := integrationusage.Decode(usageRaw)
+	if err != nil {
+		return fmt.Errorf("report: decode integration usage: %w", err)
+	}
+	view, err := NewIntegrationUsageView(usage, *data.defaultProgramIndex, selected)
+	if err != nil {
+		return fmt.Errorf("report: project integration usage view: %w", err)
+	}
+	data.IntegrationUsageView = view
+	return nil
 }
 
-func parseLLMBundle(path string, data *ReportData) string {
-	b, err := os.ReadFile(path)
+// restoreActivityPathView binds the complete deterministic activity-path
+// artifact to the same ProgramIndex, ActivityEntrypoint and IntegrationUsage
+// authority already used by the surrounding report projections. It does not
+// synthesize a route when the artifact is absent or incomplete.
+func restoreActivityPathView(runDir string, data *ReportData) error {
+	pathRaw, pathPresent, err := readBoundedProgramArtifact(
+		filepath.Join(runDir, activitypath.ArtifactFilename),
+		activitypath.MaxArtifactBytes,
+		"activity paths",
+		true,
+	)
+	if err != nil || !pathPresent {
+		return err
+	}
+	if data.defaultProgramIndex == nil || data.ActivityEntrypointView == nil ||
+		data.IntegrationUsageView == nil {
+		return fmt.Errorf("report: activity path material authority is incomplete")
+	}
+	activityRaw, activityPresent, err := readBoundedProgramArtifact(
+		filepath.Join(runDir, activityentrypoint.ArtifactFilename),
+		activityentrypoint.MaxArtifactBytes,
+		"activity entrypoints",
+		true,
+	)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return ""
-		}
-		return fmt.Sprintf("llm bundle: %v", err)
+		return err
 	}
-	var bundle llmBundleJSON
-	if err := json.Unmarshal(b, &bundle); err != nil {
-		return fmt.Sprintf("llm bundle unmarshal: %v", err)
+	catalogRaw, catalogPresent, err := readBoundedProgramArtifact(
+		filepath.Join(runDir, dependencies.ArtifactFilename),
+		dependencies.MaxArtifactBytes,
+		"dependency catalog",
+		true,
+	)
+	if err != nil {
+		return err
 	}
-	data.OpenablePaths = append(data.OpenablePaths, bundle.ProviderAllowedPaths...)
-	for _, signal := range bundle.SourceSignals {
-		location := evidence.Location{Path: signal.Path, Line: signal.Line}
-		data.evidenceLocations = append(data.evidenceLocations, location)
-		data.sourceSignals = append(data.sourceSignals, SourceSignal{
-			Path:     signal.Path,
-			Line:     signal.Line,
-			Category: signal.Category,
-			Snippet:  signal.Snippet,
-			Reason:   signal.Reason,
-		})
+	selectedRaw, selectedPresent, err := readBoundedProgramArtifact(
+		filepath.Join(runDir, integrationdependency.ArtifactFilename),
+		integrationdependency.MaxArtifactBytes,
+		"integration dependencies",
+		true,
+	)
+	if err != nil {
+		return err
 	}
-	if len(bundle.Go.ModuleSummaries) > 0 || len(bundle.Go.ImportantEdges) > 0 {
-		graph := data.RepositoryGraph
-		if graph == nil {
-			graph = &RepositoryGraph{}
-		}
-		graph.PackageEdges = bundle.Go.ImportantEdges
-		for _, module := range bundle.Go.ModuleSummaries {
-			if module.ModulePath == "" {
-				continue
-			}
-			dir := filepath.ToSlash(filepath.Clean(module.ModuleDir))
-			if dir == "." {
-				dir = ""
-			}
-			if !repositoryGraphHasModule(graph.Modules, module.ModulePath, dir) {
-				graph.Modules = append(graph.Modules, ModuleInfo{Path: module.ModulePath, Dir: dir})
-			}
-		}
-		data.RepositoryGraph = graph
+	usageRaw, usagePresent, err := readBoundedProgramArtifact(
+		filepath.Join(runDir, integrationusage.ArtifactFilename),
+		integrationusage.MaxArtifactBytes,
+		"integration usage",
+		true,
+	)
+	if err != nil {
+		return err
 	}
-	return ""
+	if !activityPresent || !catalogPresent || !selectedPresent || !usagePresent {
+		return fmt.Errorf("report: activity path input authority is incomplete")
+	}
+	index := *data.defaultProgramIndex
+	activities, err := activityentrypoint.Decode(activityRaw, index)
+	if err != nil {
+		return fmt.Errorf("report: decode activity path activity entrypoints: %w", err)
+	}
+	catalog, err := dependencies.Decode(catalogRaw)
+	if err != nil {
+		return fmt.Errorf("report: decode activity path dependency catalog: %w", err)
+	}
+	selected, err := integrationdependency.Decode(selectedRaw)
+	if err != nil {
+		return fmt.Errorf("report: decode activity path integration dependencies: %w", err)
+	}
+	if err := validateSelectedDependenciesForProgram(selected, catalog, data.declaredDependencies, index); err != nil {
+		return fmt.Errorf("report: activity path integration dependencies: %w", err)
+	}
+	usage, err := integrationusage.Decode(usageRaw)
+	if err != nil {
+		return fmt.Errorf("report: decode activity path integration usage: %w", err)
+	}
+	result, err := activitypath.Decode(pathRaw, index, activities, selected, usage)
+	if err != nil {
+		return fmt.Errorf("report: decode activity paths: %w", err)
+	}
+	view, err := NewActivityPathView(result, index, activities, selected, usage)
+	if err != nil {
+		return fmt.Errorf("report: project activity path view: %w", err)
+	}
+	if err := view.ValidateReportJoins(data.ActivityEntrypointView, data.IntegrationUsageView); err != nil {
+		return fmt.Errorf("report: join activity path view: %w", err)
+	}
+	data.ActivityPathView = view
+	return nil
 }
 
-func projectSavedArchitectureCanvas(data *ReportData, synthesisPath string) string {
-	info, readErr := os.Lstat(synthesisPath)
-	if readErr != nil {
-		return fmt.Sprintf("read saved synthesis: %v", readErr)
-	}
-	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxArchitectureLocalizationSynthesisBytes {
-		return "saved synthesis is not a bounded regular file"
-	}
-	saved, readErr := os.ReadFile(synthesisPath)
-	if readErr != nil {
-		return fmt.Sprintf("read saved synthesis: %v", readErr)
-	}
-	return projectSavedArchitectureCanvasBytes(data, saved)
-}
-
-func projectSavedArchitectureCanvasBytes(data *ReportData, saved []byte) string {
-	input, err := BuildArchitectureCanvasInput(data)
-	if err != nil {
-		return fmt.Sprintf("architecture canvas: %v", err)
-	}
-	replayed, replayErr := ReplayArchitectureSynthesis(input, saved)
-	if replayErr != nil {
-		return fmt.Sprintf("replay saved synthesis: %v", replayErr)
-	}
-	canvas, err := ProjectArchitectureCanvas(replayed)
-	if err != nil {
-		return fmt.Sprintf("architecture canvas projection: %v", err)
-	}
-	data.ArchitectureCanvas = &canvas
-	navigation, err := ProjectArchitectureComponentNavigation(&canvas, data.OpenablePaths)
-	if err != nil {
-		return fmt.Sprintf("architecture component navigation projection: %v", err)
-	}
-	data.ArchitectureComponentNavigation = navigation
-	return ""
-}
-
-func canonicalizeReportEvidence(data *ReportData) {
-	normalize := func(field string, statements []string) []string {
-		for index, statement := range statements {
-			canonical, grounded := evidenceref.Canonicalize(statement, data.OpenablePaths, data.evidenceLocations)
-			statements[index] = canonical
-			if !grounded {
-				data.Warnings = append(data.Warnings, fmt.Sprintf("removed ungrounded line claim from %s[%d]", field, index))
-			}
+func validateSelectedDependenciesForProgram(
+	selected integrationdependency.Result,
+	catalog dependencies.Catalog,
+	declarations *dependencydeclaration.Result,
+	index programindex.Index,
+) error {
+	if declarations == nil {
+		if selected.Declarations != nil {
+			return fmt.Errorf("selected declaration candidates have no declaration authority")
 		}
-		return statements
+		return selected.ValidateAgainst(catalog)
 	}
-	for index := range data.HighLevelMap {
-		data.HighLevelMap[index].Evidence = normalize(
-			fmt.Sprintf("high_level_map[%d].evidence", index),
-			data.HighLevelMap[index].Evidence,
+	return selected.ValidateAgainstDeclarations(catalog, *declarations, index.Target)
+}
+
+// restoreCoreMapView projects the complete ProgramIndex-backed CoreMap. The
+// artifact is required by the default Python capability and is never treated
+// as a substitute for the richer Go CubeMap.
+func restoreCoreMapView(runDir string, data *ReportData) error {
+	encoded, present, err := readBoundedProgramArtifact(
+		filepath.Join(runDir, coremap.ArtifactFilename),
+		coremap.MaxArtifactBytes,
+		"core map",
+		true,
+	)
+	if err != nil || !present {
+		return err
+	}
+	value, err := coremap.Decode(encoded)
+	if err != nil {
+		return fmt.Errorf("report: decode core map: %w", err)
+	}
+	if data.ProgramPortfolio == nil {
+		return fmt.Errorf("report: core map requires an exact default program target")
+	}
+	if data.defaultProgramIndex == nil {
+		return fmt.Errorf("report: core map default ProgramIndex is unavailable")
+	}
+	readmeFiles := map[string]string{}
+	readmeRaw, readmePresent, err := readBoundedProgramArtifact(
+		filepath.Join(runDir, readmetargetscout.ArtifactFilename),
+		maxReadmeFileRoleArtifactBytes,
+		"README file-role artifact",
+		true,
+	)
+	if err != nil {
+		return err
+	}
+	if readmePresent {
+		readmeFiles, err = decodeReadmeFileRoleAuthority(readmeRaw)
+		if err != nil {
+			return err
+		}
+	}
+	view, err := NewCoreMapView(value, *data.defaultProgramIndex, readmeFiles)
+	if err != nil {
+		return fmt.Errorf("report: project core map view: %w", err)
+	}
+	data.CoreMapView = view
+	return nil
+}
+
+// restoreProgramPortfolio installs every language-neutral target selected by
+// the sealed ProgramIndex artifact set. Its default entry is the only default
+// target/view authority used by later report stages.
+func restoreProgramPortfolio(runDir string, data *ReportData) error {
+	setBytes, _, err := readBoundedProgramArtifact(
+		filepath.Join(runDir, programindex.ArtifactSetFilename),
+		programindex.MaxArtifactSetBytes,
+		"program index set",
+		false,
+	)
+	if err != nil {
+		return err
+	}
+	set, err := programindex.DecodeArtifactSet(setBytes)
+	if err != nil {
+		return fmt.Errorf("report: decode program index set: %w", err)
+	}
+	indexes := make([]programindex.Index, 0, len(set.Entries))
+	for _, entry := range set.Entries {
+		indexBytes, _, readErr := readBoundedProgramArtifact(
+			filepath.Join(runDir, entry.Filename),
+			programindex.MaxIndexBytes,
+			"program index "+entry.TargetID,
+			false,
 		)
+		if readErr != nil {
+			return readErr
+		}
+		index, decodeErr := programindex.Decode(indexBytes)
+		if decodeErr != nil {
+			return fmt.Errorf("report: decode program index %q: %w", entry.TargetID, decodeErr)
+		}
+		if index.Target.ID != entry.TargetID || index.SHA256 != entry.IndexSHA256 {
+			return fmt.Errorf("report: program index %q does not match its artifact-set binding", entry.TargetID)
+		}
+		indexes = append(indexes, index)
 	}
-	for index := range data.CandidateDirections {
-		data.CandidateDirections[index].Evidence = normalize(
-			fmt.Sprintf("candidate_directions[%d].evidence", index),
-			data.CandidateDirections[index].Evidence,
-		)
+	portfolio, err := NewProgramPortfolio(set.DefaultTargetID, indexes)
+	if err != nil {
+		return fmt.Errorf("report: project program portfolio: %w", err)
 	}
-	for index := range data.ImportantDomainWords {
-		data.ImportantDomainWords[index].Evidence = normalize(
-			fmt.Sprintf("important_domain_words[%d].evidence", index),
-			data.ImportantDomainWords[index].Evidence,
-		)
+	data.ProgramPortfolio = portfolio
+	for position := range indexes {
+		if indexes[position].Target.ID == set.DefaultTargetID {
+			value := indexes[position]
+			data.defaultProgramIndex = &value
+			break
+		}
 	}
+	if data.defaultProgramIndex == nil {
+		return fmt.Errorf("report: default ProgramIndex is missing after portfolio projection")
+	}
+	return nil
 }
 
-func collectOpenablePaths(data *ReportData) {
-	paths := make(map[string]struct{}, len(data.OpenablePaths))
-	add := func(value string) {
-		value = strings.TrimSpace(value)
-		// Long-horizon program Phase 1B: external/GOROOT/module-cache
-		// pseudo-paths (<external>/...) can never become mandatory
-		// repository source reads. They stay typed external frontier
-		// evidence in their own artifacts and never enter the authorized
-		// openable catalog.
-		if value == "" || strings.HasPrefix(value, "<external>/") || filepath.IsAbs(value) {
-			return
+// restoreCubeMapView projects the complete saved semantic cube result into a
+// bounded browser handoff. The artifact is optional for language adapters
+// that do not produce this cube yet; a present artifact is never ignored.
+func restoreCubeMapView(runDir string, data *ReportData) error {
+	encoded, present, err := readBoundedProgramArtifact(
+		filepath.Join(runDir, cubemap.ArtifactFilename),
+		maxManifestReportBytes,
+		"cube map",
+		true,
+	)
+	if err != nil || !present {
+		return err
+	}
+	value, err := cubemap.Decode(encoded)
+	if err != nil {
+		return fmt.Errorf("report: decode cube map: %w", err)
+	}
+	if data.ProgramPortfolio == nil {
+		return fmt.Errorf("report: cube map requires an exact default program target")
+	}
+	defaultEntry, err := data.ProgramPortfolio.defaultEntry()
+	if err != nil {
+		return fmt.Errorf("report: cube map default program target: %w", err)
+	}
+	view, err := NewCubeMapView(value, defaultEntry.Target, defaultEntry.View.IndexSHA256)
+	if err != nil {
+		return fmt.Errorf("report: project cube map view: %w", err)
+	}
+	data.CubeMapView = view
+	return nil
+}
+
+func readBoundedProgramArtifact(
+	artifactPath string,
+	maxBytes int,
+	label string,
+	optional bool,
+) ([]byte, bool, error) {
+	info, err := os.Lstat(artifactPath)
+	if err != nil {
+		if optional && os.IsNotExist(err) {
+			return nil, false, nil
 		}
-		paths[value] = struct{}{}
+		return nil, false, fmt.Errorf("report: inspect %s: %w", label, err)
 	}
-	for _, path := range data.OpenablePaths {
-		add(path)
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > int64(maxBytes) {
+		return nil, false, fmt.Errorf("report: %s is not a bounded regular file", label)
 	}
-	for _, file := range data.FirstFilesToOpen {
-		add(file.Path)
+	encoded, err := os.ReadFile(artifactPath)
+	if err != nil {
+		return nil, false, fmt.Errorf("report: read %s: %w", label, err)
 	}
-	for _, direction := range data.CandidateDirections {
-		add(direction.LikelyEntrypoint)
-		for _, path := range direction.LikelyFiles {
-			add(path)
+	if len(encoded) == 0 || len(encoded) > maxBytes {
+		return nil, false, fmt.Errorf("report: %s is not bounded", label)
+	}
+	return encoded, true, nil
+}
+
+func collectOpenablePaths(data *ReportData) error {
+	if data == nil {
+		return fmt.Errorf("report: collect openable paths: report data is missing")
+	}
+	paths := make(map[string]struct{})
+	add := func(sourcePath string) error {
+		if err := validateManifestPath(sourcePath); err != nil {
+			return fmt.Errorf("report: invalid openable path %q: %w", sourcePath, err)
 		}
-		if direction.LocalProof != nil {
-			for _, anchor := range direction.LocalProof.Proof.Anchors {
-				if anchor.Location != nil {
-					add(anchor.Location.Path)
+		paths[sourcePath] = struct{}{}
+		return nil
+	}
+	if data.AnalysisTarget != nil {
+		for _, root := range data.AnalysisTarget.Roots {
+			if err := add(root.Path); err != nil {
+				return err
+			}
+		}
+	}
+	addProgram := func(target programindex.Target, view ProgramView) error {
+		for _, source := range target.Sources {
+			if err := add(source.Path); err != nil {
+				return err
+			}
+		}
+		for _, seed := range target.Seeds {
+			if seed.Location != nil {
+				if err := add(seed.Location.Path); err != nil {
+					return err
 				}
 			}
-			for _, transition := range direction.LocalProof.Proof.Transitions {
-				add(transition.Evidence.Path)
-			}
 		}
-	}
-	for _, flow := range data.Flows {
-		for _, file := range flow.FilesToRead {
-			add(file.Path)
-		}
-		for _, file := range flow.TestsToRead {
-			add(file.Path)
-		}
-		for _, file := range flow.BundleFiles {
-			add(file.Path)
-		}
-		for _, file := range flow.BundleTests {
-			add(file.Path)
-		}
-		for _, file := range flow.BundleDocs {
-			add(file.Path)
-		}
-		for _, step := range flow.LikelyChain {
-			for _, path := range step.EvidenceFiles {
-				add(path)
-			}
-		}
-	}
-	collectDiscoveredSurfacePaths(data.DiscoveredSurfaces, add)
-	if data.ArchitectureGrounding != nil {
-		for _, anchor := range data.ArchitectureGrounding.BehaviorAnchors {
-			add(anchor.Location.Path)
-			for _, member := range anchor.AssociatedMembers {
-				add(member.Location.Path)
-			}
-		}
-		for _, relationship := range data.ArchitectureGrounding.Relationships {
-			add(relationship.Location.Path)
-			for _, location := range relationship.RepresentativeLocations {
-				add(location.Path)
-			}
-		}
-		for _, handoff := range data.ArchitectureGrounding.EntryHandoffs {
-			add(handoff.ProcessEntrypoint.Location.Path)
-			add(handoff.Callee.Location.Path)
-			add(handoff.RepresentativeCallsite.Path)
-		}
-	}
-	if data.ArchitectureCanvas != nil {
-		for _, edge := range data.ArchitectureCanvas.StructuralEdges {
-			if edge.Witness.Kind != componentmap.StructuralRelationBehaviorHandoff {
-				continue
-			}
-			for index := range data.ArchitectureCanvas.BehaviorAnchors {
-				anchor := &data.ArchitectureCanvas.BehaviorAnchors[index]
-				if anchor.Kind == componentmap.AnchorProcessEntry &&
-					anchor.ProofMode == componentmap.AnchorProofProcessEntry &&
-					containsMemberID(processEntryMemberIDs(anchor), edge.Witness.From) &&
-					localRelationHasScenario(edge.Witness, anchor.Scenario.ID) {
-					add(anchor.Location.Path)
+		for _, seed := range view.Seeds {
+			if seed.LaunchLocation != nil {
+				if err := add(seed.LaunchLocation.Path); err != nil {
+					return err
 				}
 			}
-			if edge.Witness.Location != nil {
-				add(edge.Witness.Location.Path)
+			if seed.DeclarationLocation != nil {
+				if err := add(seed.DeclarationLocation.Path); err != nil {
+					return err
+				}
 			}
-			if target := exactCanvasDeclarationTargetForMemberID(data.ArchitectureCanvas, edge.Witness.To); target != nil {
-				add(target.Path)
+		}
+		for _, object := range view.Objects {
+			if object.Location != nil {
+				if err := add(object.Location.Path); err != nil {
+					return err
+				}
+			}
+		}
+		for _, relation := range view.Relations {
+			if relation.Location != nil {
+				if err := add(relation.Location.Path); err != nil {
+					return err
+				}
+			}
+			for _, witness := range relation.Witnesses {
+				if witness.Location != nil {
+					if err := add(witness.Location.Path); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		return nil
+	}
+	if data.ProgramPortfolio != nil {
+		for _, entry := range data.ProgramPortfolio.Entries {
+			if err := addProgram(entry.Target, entry.View); err != nil {
+				return err
 			}
 		}
 	}
-	if data.ModelResearch != nil {
-		for _, fact := range data.ModelResearch.Theory.GroundedFacts {
-			if fact.Location != nil {
-				add(fact.Location.Path)
+	if data.CubeMapView != nil {
+		var addCoreBlocks func([]CubeMapViewCoreBlock)
+		var cubePathErr error
+		addCoreBlocks = func(blocks []CubeMapViewCoreBlock) {
+			if cubePathErr != nil {
+				return
+			}
+			for _, block := range blocks {
+				for _, file := range block.Files {
+					if cubePathErr = add(file.Path); cubePathErr != nil {
+						return
+					}
+				}
+				for _, symbol := range block.Symbols {
+					if cubePathErr = add(symbol.Symbol.Location.Path); cubePathErr != nil {
+						return
+					}
+				}
+				addCoreBlocks(block.Children)
+				if cubePathErr != nil {
+					return
+				}
 			}
 		}
-	}
-	if data.TaskInvestigation != nil {
-		for _, anchor := range data.TaskInvestigation.Anchors {
-			add(anchor.Path)
+		addCoreBlocks(data.CubeMapView.BaselineCore)
+		addCoreBlocks(data.CubeMapView.RefinedCore)
+		if cubePathErr != nil {
+			return cubePathErr
 		}
-	}
-	if data.EntryCall != nil {
-		for _, family := range data.EntryCall.Families {
-			for _, callsite := range family.Callsites {
-				add(callsite.Path)
+		for _, object := range data.CubeMapView.CoreObjects {
+			if err := add(object.Location.Path); err != nil {
+				return err
 			}
 		}
-		for _, surface := range data.EntryCall.Surfaces {
-			add(surface.Site.Path)
-			for _, value := range []*EntryCallReportSurfaceValue{
-				surface.Identity,
-				surface.Method,
-				surface.Path,
-				surface.Handler,
+		for _, surface := range data.CubeMapView.ActivitySurfaces {
+			if err := add(surface.Registration.Path); err != nil {
+				return err
+			}
+			for _, value := range []*CubeMapViewSurfaceValue{
+				surface.Identity, surface.Method, surface.Path, surface.Handler,
 			} {
-				if value != nil && value.Location != nil {
-					add(value.Location.Path)
+				if value != nil {
+					if err := add(value.Location.Path); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		for _, entrypoint := range data.CubeMapView.Entrypoints {
+			if err := add(entrypoint.Location.Path); err != nil {
+				return err
+			}
+		}
+		// Dependency importer repository paths identify package directories, not
+		// captured regular source files. Exact integration symbols and callsites
+		// below provide the file-level source actions for those packages.
+		for _, integration := range data.CubeMapView.IntegrationSymbols {
+			if err := add(integration.Symbol.Location.Path); err != nil {
+				return err
+			}
+			for _, operation := range integration.Operations {
+				for _, callsite := range operation.Callsites {
+					if err := add(callsite.Path); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		for _, reversePath := range data.CubeMapView.ReversePaths {
+			for _, node := range reversePath.Nodes {
+				if err := add(node.Location.Path); err != nil {
+					return err
 				}
 			}
 		}
 	}
-	for _, location := range data.studyInvestigationSourceLocations {
-		add(location.Path)
-	}
-	for _, item := range exactRepositoryAtlasPackageEvidence(data) {
-		add(item.Location.Path)
-	}
-	// D277/D280: every exact exported callable in every selected public API
-	// package is an eligible Study root. D281 additionally publishes every
-	// exported declaration kind for a module library. Authorize their exact
-	// build-selected source files before source coverage captures the run
-	// inputs; neither Architecture coverage nor a semantic frontier may narrow
-	// local source/action authority.
-	if data.AnalysisTarget != nil &&
-		(data.AnalysisTarget.Kind == analysistarget.KindLibraryPackage ||
-			data.AnalysisTarget.Kind == analysistarget.KindModuleLibrary) &&
-		data.repositoryGoFacts != nil {
-		rootPackages := make(map[string]analysistarget.TargetPackage)
-		for _, pkg := range data.AnalysisTarget.RootPackages() {
-			rootPackages[pkg.PackagePath] = pkg
-		}
-		for _, pkg := range data.repositoryGoFacts.Packages {
-			rootPackage, selected := rootPackages[pkg.CanonicalPath]
-			if !selected || pkg.ModuleID != data.AnalysisTarget.ModuleID ||
-				pkg.PackageDir != rootPackage.PackageDir || !pkg.DeclarationsScanned {
-				continue
+	if data.CoreMapView != nil {
+		var addCoreMapBlocks func([]CoreMapViewBlock)
+		var corePathErr error
+		addCoreMapBlocks = func(blocks []CoreMapViewBlock) {
+			if corePathErr != nil {
+				return
 			}
-			files := make(map[string]struct{}, len(pkg.Files))
-			for _, sourcePath := range pkg.Files {
-				files[sourcePath] = struct{}{}
-			}
-			for _, declaration := range pkg.Declarations {
-				if !declaration.ExportedAPI() {
-					continue
+			for _, block := range blocks {
+				for _, file := range block.Files {
+					if corePathErr = add(file.Path); corePathErr != nil {
+						return
+					}
 				}
-				if data.AnalysisTarget.Kind != analysistarget.KindModuleLibrary &&
-					(!declaration.ExecutableBody ||
-						(declaration.Kind != gofacts.PackageDeclarationFunc &&
-							declaration.Kind != gofacts.PackageDeclarationMethod)) {
-					continue
+				for _, symbol := range block.RepresentativeSymbols {
+					if corePathErr = add(symbol.Symbol.Location.Path); corePathErr != nil {
+						return
+					}
 				}
-				if _, selected := files[declaration.Path]; selected {
-					add(declaration.Path)
+				addCoreMapBlocks(block.Children)
+				if corePathErr != nil {
+					return
 				}
 			}
 		}
+		addCoreMapBlocks(data.CoreMapView.BaselineCore)
+		addCoreMapBlocks(data.CoreMapView.RefinedCore)
+		if corePathErr != nil {
+			return corePathErr
+		}
 	}
-	// D214: every observed resource-boundary call site must be openable —
-	// the Atlas boundary evidence is exact source the report must open.
-	if data.RepositoryAtlas != nil {
-		for _, item := range data.RepositoryAtlas.Evidence {
-			if item.Provenance.Provider != goadapter.BoundaryObservationEvidenceProvider ||
-				item.Provenance.Operation != goadapter.BoundaryObservationEvidenceOperation {
-				continue
+	if data.IntegrationUsageView != nil {
+		for _, candidate := range data.IntegrationUsageView.DeclaredCandidates {
+			for _, sourcePath := range candidate.SourcePaths {
+				if err := add(sourcePath); err != nil {
+					return err
+				}
 			}
-			add(item.Location.Path)
+		}
+		for _, dependency := range data.IntegrationUsageView.Dependencies {
+			for _, use := range dependency.Uses {
+				if err := add(use.CallerLocation.Path); err != nil {
+					return err
+				}
+				if err := add(use.Callsite.Path); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if data.ActivityEntrypointView != nil {
+		for _, entrypoint := range data.ActivityEntrypointView.Entrypoints {
+			if err := add(entrypoint.Location.Path); err != nil {
+				return err
+			}
+		}
+	}
+	if data.ActivityPathView != nil {
+		for _, object := range data.ActivityPathView.Objects {
+			if object.Location != nil {
+				if err := add(object.Location.Path); err != nil {
+					return err
+				}
+			}
+		}
+		for _, route := range data.ActivityPathView.Routes {
+			for _, step := range route.Steps {
+				if step.Location != nil {
+					if err := add(step.Location.Path); err != nil {
+						return err
+					}
+				}
+			}
 		}
 	}
 	data.OpenablePaths = data.OpenablePaths[:0]
-	for path := range paths {
-		data.OpenablePaths = append(data.OpenablePaths, path)
+	for sourcePath := range paths {
+		data.OpenablePaths = append(data.OpenablePaths, sourcePath)
 	}
 	sort.Strings(data.OpenablePaths)
+	return nil
 }
 
-func parseRunMetadata(path string, data *ReportData) string {
-	b, err := os.ReadFile(path)
+func parseRunMetadata(metadataPath string, data *ReportData) error {
+	if data == nil {
+		return fmt.Errorf("report: metadata requires report data")
+	}
+	encoded, _, err := readBoundedProgramArtifact(
+		metadataPath,
+		maxReportTargetMetadataBytes,
+		"metadata",
+		false,
+	)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return ""
-		}
-		return fmt.Sprintf("metadata: %v", err)
+		return err
 	}
 	var metadata runMetadataJSON
-	if err := json.Unmarshal(b, &metadata); err != nil {
-		return fmt.Sprintf("metadata unmarshal: %v", err)
+	if err := json.Unmarshal(encoded, &metadata); err != nil {
+		return fmt.Errorf("report: metadata unmarshal: %w", err)
 	}
-	data.Run = &RunInfo{
-		CreatedAt:                  metadata.CreatedAt,
-		Model:                      metadata.Model,
-		PromptVersion:              metadata.PromptVersion,
-		CompactContextBytes:        metadata.CompactContextBytes,
-		ExternalRequestBytes:       metadata.ExternalRequestBytes,
-		ProviderRequestCount:       metadata.ProviderRequestCount,
-		ProviderAccountingComplete: metadata.ProviderAccountingComplete,
-		CandidateDirectionCount:    metadata.CandidateDirectionCount,
-		AcceptedDirectionCount:     metadata.AcceptedDirectionCount,
-		RejectedDirectionCount:     metadata.RejectedDirectionCount,
-		ProviderLatencyMillis:      metadata.ProviderLatencyMillis,
-		SurfaceDiscoveryRan:        metadata.SurfaceDiscoveryRan,
-		SurfaceDiscoveryCount:      metadata.SurfaceDiscoveryCount,
-		SurfaceDiscoveryMillis:     metadata.SurfaceDiscoveryMillis,
+	if metadata.RepoName == "" || strings.TrimSpace(metadata.RepoName) != metadata.RepoName {
+		return fmt.Errorf("report: metadata repository name must be exact and non-empty")
 	}
 	if data.RepoName == "" {
-		data.RepoName = strings.TrimSpace(metadata.RepoName)
+		return fmt.Errorf("report: metadata cannot replace a missing snapshot repository name")
 	}
-	if normalizedReportLanguage(metadata.EffectiveOptions.ReportLanguage) == "ru" {
-		data.requestedPresentationLocale = "ru"
+	if metadata.RepoName != data.RepoName {
+		return fmt.Errorf("report: metadata repository name does not match snapshot")
 	}
 	data.Warnings = append(data.Warnings, metadata.Warnings...)
-	return ""
+	return nil
 }
 
-// reconcileLegacyProviderAccounting preserves the historical report reader's
-// reconstruction only for metadata written before the Atlas-first runtime
-// began persisting complete cross-stage provider totals. Completed metadata is
-// authoritative even when an older model-research state remains beside it.
-func reconcileLegacyProviderAccounting(data *ReportData) {
-	if data == nil || data.Run == nil || data.Run.ProviderAccountingComplete {
-		return
+func parseSnapshot(snapshotPath string, data *ReportData) error {
+	if data == nil {
+		return fmt.Errorf("report: snapshot requires report data")
 	}
-	if data.ModelResearch != nil {
-		data.Run.ProviderRequestCount = data.ModelResearch.Usage.SemanticCalls
-		data.Run.ExternalRequestBytes = data.ModelResearch.Usage.RequestBytes
-		return
-	}
-	if data.ArchitectureSynthesis != nil {
-		data.Run.ProviderRequestCount += data.ArchitectureSynthesis.ProviderRequestCount
-	}
-}
-
-func parseSnapshot(path string, data *ReportData) string {
-	return parseSnapshotWithExactFacts(path, data, false)
-}
-
-func parseSnapshotWithExactFacts(path string, data *ReportData, captureExact bool) string {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Sprintf("snapshot: %v", err)
-	}
-	var snap snapshotJSON
-	if err := json.Unmarshal(b, &snap); err != nil {
-		return fmt.Sprintf("snapshot unmarshal: %v", err)
-	}
-	data.AnalysisTarget = nil
-	if snap.AnalysisTarget != nil {
-		if err := snap.AnalysisTarget.Validate(); err != nil {
-			return fmt.Sprintf("snapshot analysis target: %v", err)
-		}
-		target := snap.AnalysisTarget.Snapshot()
-		data.AnalysisTarget = &target
-	}
-	if captureExact {
-		data.repositoryGoFacts = nil
-		if facts, err := decodeSnapshotExactGoFacts(b); err == nil {
-			data.repositoryGoFacts = &facts
-		}
-		data.repositoryEntrypointFacts = nil
-		if facts, err := decodeSnapshotExactEntrypoints(b); err == nil {
-			data.repositoryEntrypointFacts = &facts
-		}
-	}
-	data.RepoName = snap.RepoName
-	data.DocumentedPurpose = boundedDocumentedPurpose(snap.Readme)
-	if snap.GoFacts != nil {
-		data.CommandTraces = append([]gofacts.CommandTrace(nil), snap.GoFacts.CommandTraces...)
-		for _, item := range snap.GoFacts.ExternalImportsTop {
-			if strings.TrimSpace(item.ImportPath) == "" || item.UsedByCount <= 0 {
-				continue
-			}
-			data.externalImports = append(data.externalImports, externalImportUsage{
-				ImportPath: item.ImportPath, UsedByCount: item.UsedByCount,
-			})
-		}
-	}
-	if snap.GoFacts != nil && (len(snap.GoFacts.Modules) > 0 || len(snap.GoFacts.Packages) > 0) {
-		graph := &RepositoryGraph{Version: 2, Packages: append([]PackageInfo(nil), snap.GoFacts.Packages...)}
-		for _, module := range snap.GoFacts.Modules {
-			dir := filepath.ToSlash(filepath.Clean(module.ModuleDir))
-			if dir == "." {
-				dir = ""
-			}
-			graph.Modules = append(graph.Modules, ModuleInfo{
-				ID: module.ID, Path: module.ModulePath, Dir: dir, DisplayName: module.DisplayName,
-			})
-		}
-		data.RepositoryGraph = graph
-	}
-	return ""
-}
-
-func boundedDocumentedPurpose(readme string) string {
-	const maxBytes = 1 << 10
-	lines := strings.Split(strings.ReplaceAll(readme, "\r\n", "\n"), "\n")
-	paragraphs := make([][]string, 0, 4)
-	paragraph := make([]string, 0, 8)
-	flush := func() {
-		if len(paragraph) == 0 {
-			return
-		}
-		paragraphs = append(paragraphs, append([]string(nil), paragraph...))
-		paragraph = paragraph[:0]
-	}
-	for _, raw := range lines {
-		line := strings.TrimSpace(raw)
-		if line == "" {
-			flush()
-			continue
-		}
-		if !documentedPurposeDecoration(line) {
-			paragraph = append(paragraph, line)
-		}
-	}
-	flush()
-	var text string
-	for _, candidate := range paragraphs {
-		value := strings.Join(strings.Fields(strings.Join(candidate, " ")), " ")
-		if len(strings.Fields(value)) < 6 {
-			continue
-		}
-		text = atlasStudyDocumentedPurpose(value)
-		break
-	}
-	text = strings.Join(strings.Fields(text), " ")
-	if len(text) <= maxBytes {
-		return text
-	}
-	text = text[:maxBytes]
-	for !utf8.ValidString(text) {
-		text = text[:len(text)-1]
-	}
-	if boundary := strings.LastIndexByte(text, ' '); boundary > maxBytes/2 {
-		text = text[:boundary]
-	}
-	return strings.TrimSpace(text)
-}
-
-func documentedPurposeDecoration(line string) bool {
-	trimmed := strings.TrimSpace(line)
-	if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "![") ||
-		strings.HasPrefix(trimmed, "<") || strings.HasPrefix(trimmed, "[") {
-		return true
-	}
-	for _, value := range trimmed {
-		if value != '=' && value != '-' && value != '_' && !unicode.IsSpace(value) {
-			return false
-		}
-	}
-	return trimmed != ""
-}
-
-func repositoryGraphHasModule(modules []ModuleInfo, modulePath, moduleDir string) bool {
-	for _, module := range modules {
-		if module.Path == modulePath && module.Dir == moduleDir {
-			return true
-		}
-	}
-	return false
-}
-
-func parseOrientationReport(path string, data *ReportData) string {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		// orientation_report.json belonged to the retired Orientation product
-		// path. Current Atlas-first runs do not produce it, so its absence is
-		// neither degradation nor useful operator diagnostics. Existing but
-		// unreadable artifacts still fail visibly below.
-		if os.IsNotExist(err) {
-			return ""
-		}
-		return fmt.Sprintf("orientation: %v", err)
-	}
-	var or orientationReportJSON
-	if err := json.Unmarshal(b, &or); err != nil {
-		return fmt.Sprintf("orientation unmarshal: %v", err)
-	}
-	data.ProjectGuess = or.ProjectGuess
-	data.OrientationConfidence = or.Confidence
-	for _, item := range or.HighLevelMap {
-		role, _ := componentmap.Normalize(string(item.Role))
-		data.HighLevelMap = append(data.HighLevelMap, Subsystem{
-			Name:         item.Name,
-			Role:         role,
-			Evidence:     append([]string{}, item.Evidence...),
-			WhyItMatters: item.WhyItMatters,
-		})
-	}
-	for _, file := range or.FirstFilesToOpen {
-		data.FirstFilesToOpen = append(data.FirstFilesToOpen, FileItem{
-			Path:     file.Path,
-			Reason:   file.Reason,
-			Priority: file.Priority,
-		})
-	}
-	for _, cf := range or.CandidateFlows {
-		classified := flowexplain.CandidateFlow{
-			Confidence: cf.Confidence, LocalVerification: cf.LocalVerification, LocalProof: cf.LocalProof,
-			Disposition: cf.Disposition, DispositionReason: cf.DispositionReason,
-		}
-		if classified.Disposition == "" {
-			flowexplain.ClassifyCandidateFlow(&classified)
-		}
-		data.CandidateFlows = append(data.CandidateFlows, cf.Name)
-		data.CandidateDirections = append(data.CandidateDirections, CandidateDirection{
-			ID:                flowexplain.GenerateFlowID(cf.Name),
-			Name:              cf.Name,
-			FlowType:          cf.FlowType,
-			Trigger:           cf.Trigger,
-			LikelyEntrypoint:  cf.LikelyEntrypoint,
-			LikelyFiles:       append([]string{}, cf.LikelyFiles...),
-			WhyInteresting:    cf.WhyInteresting,
-			Evidence:          append([]string{}, cf.Evidence...),
-			Confidence:        cf.Confidence,
-			LocalVerification: cf.LocalVerification,
-			LocalProof:        cf.LocalProof,
-			Disposition:       classified.Disposition,
-			DispositionReason: classified.DispositionReason,
-			CandidateBasis:    cf.CandidateBasis,
-		})
-	}
-	for _, word := range or.ImportantDomainWords {
-		data.ImportantDomainWords = append(data.ImportantDomainWords, DomainWord{
-			Word:     word.Word,
-			Guess:    word.Guess,
-			Evidence: append([]string{}, word.Evidence...),
-		})
-	}
-	data.QuestionsForHuman = append(data.QuestionsForHuman, or.QuestionsForHuman...)
-	for _, item := range or.UnverifiedPaths {
-		data.OrientationUnverifiedPaths = append(data.OrientationUnverifiedPaths, PathItem{
-			Path:   item.Path,
-			Reason: item.Reason,
-		})
-	}
-	warningOffset := len(data.Warnings)
-	data.Warnings = append(data.Warnings, or.Warnings...)
-	diagnostics, diagnosticsErr := readOrientationWarningDiagnostics(
-		filepath.Dir(path),
-		b,
-		warningOffset,
-		or,
+	encoded, _, err := readBoundedProgramArtifact(
+		snapshotPath,
+		maxManifestSnapshotBytes,
+		"snapshot",
+		false,
 	)
-	if diagnosticsErr != nil {
-		data.presentationMetadataErr = errors.Join(
-			data.presentationMetadataErr,
-			diagnosticsErr,
-		)
-	} else {
-		data.runWarningDiagnostics = append(
-			data.runWarningDiagnostics,
-			diagnostics...,
-		)
-	}
-	return ""
-}
-
-func parseFlows(flowsDir string, data *ReportData) ([]string, error) {
-	entries, err := os.ReadDir(flowsDir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
+		return err
 	}
-
-	var warnings []string
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		fd := FlowData{ID: e.Name()}
-		flowDir := filepath.Join(flowsDir, e.Name())
-
-		if w := parseFlowBundle(filepath.Join(flowDir, "flow_bundle.json"), &fd); w != "" {
-			warnings = append(warnings, fmt.Sprintf("flow %s: %s", fd.ID, w))
-		}
-		if w := parseFlowStatus(filepath.Join(flowDir, "flow_status.json"), &fd); w != "" {
-			warnings = append(warnings, fmt.Sprintf("flow %s: %s", fd.ID, w))
-		}
-		if w := parseFlowReport(filepath.Join(flowDir, "flow_report.json"), &fd); w != "" {
-			warnings = append(warnings, fmt.Sprintf("flow %s: %s", fd.ID, w))
-		}
-
-		data.Flows = append(data.Flows, fd)
+	var snapshot snapshotJSON
+	if err := json.Unmarshal(encoded, &snapshot); err != nil {
+		return fmt.Errorf("report: snapshot unmarshal: %w", err)
 	}
-	return warnings, nil
-}
-
-func parseFlowStatus(path string, fd *FlowData) string {
-	b, err := os.ReadFile(path)
+	if snapshot.RepoName == "" || strings.TrimSpace(snapshot.RepoName) != snapshot.RepoName {
+		return fmt.Errorf("report: snapshot repository name must be exact and non-empty")
+	}
+	var analysisTarget *analysistarget.Target
+	if snapshot.AnalysisTarget != nil {
+		if err := snapshot.AnalysisTarget.Validate(); err != nil {
+			return fmt.Errorf("report: snapshot analysis target: %w", err)
+		}
+		target := snapshot.AnalysisTarget.Snapshot()
+		analysisTarget = &target
+	}
+	materialPaths, err := snapshotMaterialInputPaths(snapshot.GoFacts)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return ""
-		}
-		return fmt.Sprintf("status: %v", err)
+		return fmt.Errorf("report: snapshot material inputs: %w", err)
 	}
-	var status flowStatusJSON
-	if err := json.Unmarshal(b, &status); err != nil {
-		return fmt.Sprintf("status unmarshal: %v", err)
-	}
-	if status.Version != 1 {
-		return fmt.Sprintf("unsupported flow status version %d", status.Version)
-	}
-	switch status.Mode {
-	case "local_only", "expansion_requested", "succeeded", "failed":
-		fd.FlowStatus = status.Mode
-		return ""
-	default:
-		return fmt.Sprintf("unsupported flow status mode %q", status.Mode)
-	}
+	data.AnalysisTarget = analysisTarget
+	data.RepoName = snapshot.RepoName
+	data.materialInputPaths = materialPaths
+	return nil
 }
 
-func parseFlowBundle(path string, fd *FlowData) string {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Sprintf("bundle: %v", err)
+func snapshotMaterialInputPaths(facts *snapshotGoFactsJSON) ([]string, error) {
+	if facts == nil {
+		return nil, nil
 	}
-	var fb flowexplain.FlowBundle
-	if err := json.Unmarshal(b, &fb); err != nil {
-		return fmt.Sprintf("bundle unmarshal: %v", err)
-	}
-	fd.BundleSummary.SelectedFilesCount = len(fb.SelectedFiles)
-	fd.BundleSummary.SelectedTestsCount = len(fb.SelectedTests)
-	fd.BundleSummary.SelectedDocsCount = len(fb.SelectedDocs)
-	fd.BundleSummary.SelectedPkgsCount = len(fb.SelectedPackages)
-	fd.BundleSummary.RelatedEdgesCount = len(fb.RelatedEdges)
-	if fb.FlowSeed.Name != "" {
-		fd.Name = fb.FlowSeed.Name
-	}
-	fd.FlowType = fb.FlowSeed.FlowType
-	fd.CandidateBasis = fb.FlowSeed.CandidateBasis
-	fd.BundleFiles = make([]FileItem, 0, len(fb.SelectedFiles))
-	for _, sf := range fb.SelectedFiles {
-		fd.BundleFiles = append(fd.BundleFiles, FileItem{Path: sf.Path, Reason: strings.Join(sf.Reasons, ", ")})
-	}
-	fd.BundleTests = make([]FileItem, 0, len(fb.SelectedTests))
-	for _, st := range fb.SelectedTests {
-		fd.BundleTests = append(fd.BundleTests, FileItem{Path: st.Path, Reason: strings.Join(st.Reasons, ", ")})
-	}
-	fd.BundleDocs = make([]FileItem, 0, len(fb.SelectedDocs))
-	for _, sd := range fb.SelectedDocs {
-		fd.BundleDocs = append(fd.BundleDocs, FileItem{Path: sd.Path, Reason: strings.Join(sd.Reasons, ", ")})
-	}
-	fd.BundlePackages = fb.SelectedPackages
-	fd.BundleEdges = make([]EdgeInfo, 0, len(fb.RelatedEdges))
-	for _, e := range fb.RelatedEdges {
-		fd.BundleEdges = append(fd.BundleEdges, EdgeInfo{From: e.From, To: e.To})
-	}
-	for _, signal := range fb.SourceSignals {
-		fd.bundleSignals = append(fd.bundleSignals, SourceSignal{
-			Path: signal.Path, Line: signal.Line, Category: signal.Category,
-			Snippet: signal.Snippet, Reason: signal.Reason,
-		})
-	}
-	return ""
-}
-
-func parseFlowReport(path string, fd *FlowData) string {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) && fd.Name != "" {
-			switch fd.FlowStatus {
-			case "local_only":
-				fd.EvidenceOnly = true
-				return ""
-			case "expansion_requested":
-				fd.Error = "flow expansion was requested but no completed report was saved"
-				return fd.Error
-			case "succeeded":
-				fd.Error = "flow status is succeeded but the report is missing"
-				return fd.Error
-			case "failed":
-				fd.Error = "flow explanation failed; see error.txt in the run artifacts"
-				return fd.Error
-			}
-			if _, modelErr := os.Stat(filepath.Join(filepath.Dir(path), "error.txt")); modelErr == nil {
-				fd.Error = "flow explanation failed; see error.txt in the run artifacts"
-				return fd.Error
-			}
-			fd.Error = "flow report is missing and no explicit flow status was saved"
-			return fd.Error
+	paths := make(map[string]struct{})
+	add := func(value string) error {
+		if err := validateManifestPath(value); err != nil {
+			return err
 		}
-		fd.Error = fmt.Sprintf("cannot read flow report: %v", err)
-		return fd.Error
+		paths[value] = struct{}{}
+		return nil
 	}
-	if len(b) == 0 {
-		fd.Error = "flow report is empty"
-		return fd.Error
-	}
-	if fd.FlowStatus == "local_only" || fd.FlowStatus == "failed" || fd.FlowStatus == "expansion_requested" {
-		fd.Error = fmt.Sprintf("flow status %q conflicts with a saved report", fd.FlowStatus)
-		return fd.Error
-	}
-	var fr flowReportJSON
-	if err := json.Unmarshal(b, &fr); err != nil {
-		fd.Error = fmt.Sprintf("invalid flow report JSON: %v", err)
-		return fd.Error
-	}
-
-	bundlePaths := buildBundlePathSet(fd)
-
-	for _, fi := range fr.FilesToReadInOrder {
-		fd.FilesToRead = append(fd.FilesToRead, FileItem{
-			Path:     fi.Path,
-			Reason:   fi.Reason,
-			Priority: fi.Priority,
-		})
-		if fi.Path != "" && !bundlePaths[fi.Path] {
-			fd.Warnings = append(fd.Warnings, fmt.Sprintf("unverified path in files_to_read_in_order: %s", fi.Path))
-		}
-	}
-	for _, ti := range fr.TestsToRead {
-		fd.TestsToRead = append(fd.TestsToRead, FileItem{
-			Path:   ti.Path,
-			Reason: ti.Reason,
-		})
-		if ti.Path != "" && !bundlePaths[ti.Path] {
-			fd.Warnings = append(fd.Warnings, fmt.Sprintf("unverified path in tests_to_read: %s", ti.Path))
-		}
-	}
-	for i, cs := range fr.LikelyChain {
-		stepNum := int(cs.Step)
-		if stepNum <= 0 {
-			stepNum = i + 1
-		}
-
-		whatHappens := cs.WhatHappens
-		if whatHappens == "" {
-			whatHappens = cs.Description
-		}
-		if whatHappens == "" {
-			whatHappens = cs.Reason
-		}
-		if whatHappens == "" && cs.Role != "" {
-			if cs.Function != "" {
-				whatHappens = cs.Role + ": " + cs.Function
-			} else {
-				whatHappens = cs.Role
-			}
-		}
-
-		name := cs.Name
-		if name == "" && cs.Role != "" {
-			name = cs.Role
-		}
-		if name == "" && cs.Function != "" {
-			name = cs.Function
-		}
-		if name == "" && cs.Description != "" {
-			name = firstSentence(cs.Description)
-		}
-
-		// Fold File into evidence_files if not already present
-		evidenceFiles := cs.EvidenceFiles
-		if len(evidenceFiles) == 0 && cs.File != "" {
-			evidenceFiles = []string{cs.File}
-		}
-
-		fd.LikelyChain = append(fd.LikelyChain, ChainStep{
-			Step:          stepNum,
-			Name:          name,
-			WhatHappens:   whatHappens,
-			EvidenceFiles: evidenceFiles,
-			Confidence:    cs.Confidence,
-		})
-		for _, ef := range evidenceFiles {
-			if ef != "" && !bundlePaths[ef] {
-				fd.Warnings = append(fd.Warnings, fmt.Sprintf("unverified path in likely_chain evidence: %s", ef))
+	for _, pkg := range facts.Packages {
+		for _, sourcePath := range pkg.Files {
+			if err := add(sourcePath); err != nil {
+				return nil, fmt.Errorf("package file %q: %w", sourcePath, err)
 			}
 		}
 	}
-	for _, up := range fr.UnverifiedPaths {
-		fd.UnverifiedPaths = append(fd.UnverifiedPaths, PathItem{
-			Path:   up.Path,
-			Reason: up.Reason,
-		})
-	}
-	if fr.FlowName != "" {
-		fd.Name = fr.FlowName
-	}
-	fd.Summary = fr.Summary
-	fd.Confidence = fr.Confidence
-	fd.Unknowns = fr.Unknowns
-	for _, w := range fr.Warnings {
-		fd.Warnings = append(fd.Warnings, w)
-	}
-	return ""
-}
-
-func buildBundlePathSet(fd *FlowData) map[string]bool {
-	paths := make(map[string]bool)
-	for _, fi := range fd.BundleFiles {
-		if fi.Path != "" {
-			paths[fi.Path] = true
+	for _, module := range facts.Modules {
+		moduleDir := module.ModuleDir
+		if moduleDir == "" || moduleDir == "." {
+			moduleDir = ""
+		} else if err := validateManifestPath(moduleDir); err != nil {
+			return nil, fmt.Errorf("module directory %q: %w", module.ModuleDir, err)
 		}
-	}
-	for _, fi := range fd.BundleTests {
-		if fi.Path != "" {
-			paths[fi.Path] = true
-		}
-	}
-	for _, fi := range fd.BundleDocs {
-		if fi.Path != "" {
-			paths[fi.Path] = true
-		}
-	}
-	return paths
-}
-
-func firstSentence(s string) string {
-	s = strings.TrimSpace(s)
-	// Split on ". " that is followed by a capital letter or number
-	for i := 0; i < len(s); i++ {
-		if s[i] == '.' {
-			if i+1 < len(s) && s[i+1] == ' ' {
-				if i+2 < len(s) && (s[i+2] >= 'A' && s[i+2] <= 'Z' || s[i+2] >= '1' && s[i+2] <= '9') {
-					return s[:i+1]
-				}
+		for _, filename := range []string{"go.mod", "go.sum"} {
+			moduleFile := filename
+			if moduleDir != "" {
+				moduleFile = path.Join(moduleDir, filename)
 			}
+			paths[moduleFile] = struct{}{}
 		}
 	}
-	if len(s) > 80 {
-		s = s[:80]
+	result := make([]string, 0, len(paths))
+	for sourcePath := range paths {
+		result = append(result, sourcePath)
 	}
-	return s
+	sort.Strings(result)
+	return result, nil
 }

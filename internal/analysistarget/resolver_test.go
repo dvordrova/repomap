@@ -1,198 +1,58 @@
 package analysistarget
 
 import (
-	"errors"
-	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/gofacts"
 )
 
-func TestResolveRepomapLikeMultipleCommands(t *testing.T) {
-	facts := syntheticFacts(
-		"module-root", "github.com/dvordrova/repomap",
-		[]syntheticPackage{
-			{path: "github.com/dvordrova/repomap/cmd/quality-evaluate", dir: "cmd/quality-evaluate", executable: true, line: 16},
-			{path: "github.com/dvordrova/repomap/cmd/repomap", dir: "cmd/repomap", executable: true, line: 43},
-			{path: "github.com/dvordrova/repomap/cmd/symbol-playground", dir: "cmd/symbol-playground", executable: true, line: 23},
-			{path: "github.com/dvordrova/repomap/internal/report", dir: "internal/report"},
+func TestExactCandidateKeyModuleDirIsOnlyAClosedCanonicalRoutingHint(t *testing.T) {
+	tests := map[string]struct {
+		value string
+		want  string
+		ok    bool
+	}{
+		"root executable": {
+			value: "k8s.io/kubernetes@.::k8s.io/kubernetes/cmd/kube-apiserver",
+			want:  ".",
+			ok:    true,
 		},
-	)
-
-	resolution, err := Resolve(facts, Options{})
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	assertSelectedPackage(t, resolution, "github.com/dvordrova/repomap/cmd/repomap")
-	if resolution.Reason != "unique executable matching the main module name" {
-		t.Fatalf("reason = %q", resolution.Reason)
-	}
-	if roots := resolution.Selected.Roots; len(roots) != 1 || roots[0].Path != "cmd/repomap/main.go" || roots[0].Line != 43 {
-		t.Fatalf("selected roots = %#v", roots)
-	}
-	reversed := syntheticFacts(
-		"module-root", "github.com/dvordrova/repomap",
-		[]syntheticPackage{
-			{path: "github.com/dvordrova/repomap/internal/report", dir: "internal/report"},
-			{path: "github.com/dvordrova/repomap/cmd/symbol-playground", dir: "cmd/symbol-playground", executable: true, line: 23},
-			{path: "github.com/dvordrova/repomap/cmd/repomap", dir: "cmd/repomap", executable: true, line: 43},
-			{path: "github.com/dvordrova/repomap/cmd/quality-evaluate", dir: "cmd/quality-evaluate", executable: true, line: 16},
+		"nested module library": {
+			value: "k8s.io/client-go@staging/src/k8s.io/client-go::module_library",
+			want:  "staging/src/k8s.io/client-go",
+			ok:    true,
 		},
-	)
-	reversedResolution, err := Resolve(reversed, Options{})
-	if err != nil {
-		t.Fatalf("Resolve reversed: %v", err)
+		"display path is not authority": {value: "cmd/kube-apiserver"},
+		"missing module":                {value: "@.::example.com/cmd/app"},
+		"missing surface":               {value: "example.com/app@.::"},
+		"noncanonical dir":              {value: "example.com/app@tools/../tools::module_library"},
+		"escaping dir":                  {value: "example.com/app@../tools::module_library"},
+		"duplicate separator":           {value: "example.com/app@.::module_library::extra"},
 	}
-	if reversedResolution.Selected == nil || reversedResolution.Selected.Ref != resolution.Selected.Ref {
-		t.Fatalf("target identity changed with fact order: %#v != %#v", reversedResolution.Selected, resolution.Selected)
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, ok := ExactCandidateKeyModuleDir(test.value)
+			if got != test.want || ok != test.ok {
+				t.Fatalf("ExactCandidateKeyModuleDir(%q) = %q, %t; want %q, %t", test.value, got, ok, test.want, test.ok)
+			}
+		})
 	}
-
-	override, err := Resolve(facts, Options{Override: "cmd/quality-evaluate"})
-	if err != nil {
-		t.Fatalf("Resolve override: %v", err)
-	}
-	assertSelectedPackage(t, override, "github.com/dvordrova/repomap/cmd/quality-evaluate")
 }
 
-func TestResolveRepomapIgnoresNestedModulesDuringAutomaticSelection(t *testing.T) {
-	facts := syntheticFacts(
-		"module-root", "github.com/dvordrova/repomap",
-		[]syntheticPackage{
-			{path: "github.com/dvordrova/repomap/cmd/repomap", dir: "cmd/repomap", executable: true, line: 43},
-			{path: "github.com/dvordrova/repomap/cmd/quality-evaluate", dir: "cmd/quality-evaluate", executable: true, line: 16},
-		},
-	)
-	nested := gofacts.ModuleFact{
-		ID: "module-fixture", ModulePath: "example.com/beegoapp",
-		ModuleDir: "internal/surfacediscovery/testdata/beego", GoMod: "go.mod", Main: true,
-	}
-	facts.Modules = append(facts.Modules, nested)
-	facts.Packages = append(facts.Packages, gofacts.PackageFact{
-		CanonicalPath: "example.com/beegoapp", Name: "main", ModuleID: nested.ID,
-		ModulePath: nested.ModulePath, PackageDir: nested.ModuleDir, ModuleRelativeDir: ".",
-		DisplayPath: nested.ModuleDir, Locality: "local",
+func TestCandidatesReturnsEveryExactTargetWithoutSelectingOne(t *testing.T) {
+	facts := syntheticFacts("module-root", "example.com/workspace", []syntheticPackage{
+		{path: "example.com/workspace/cmd/api", dir: "cmd/api", executable: true, line: 10},
+		{path: "example.com/workspace/cmd/worker", dir: "cmd/worker", executable: true, line: 20},
 	})
-	facts.EntrypointPackages = append(facts.EntrypointPackages, gofacts.Entrypoint{
-		ModulePath: nested.ModulePath, ImportPath: nested.ModulePath,
-		Dir: nested.ModuleDir, PackageDir: nested.ModuleDir, ModuleRelativeDir: ".",
-		ModuleDir: nested.ModuleDir, Kind: "unknown", GoFiles: []string{"main.go"},
-		Anchors: []gofacts.EntrypointAnchor{{
-			Version: gofacts.EntrypointAnchorVersion, Kind: gofacts.EntrypointAnchorGoMain,
-			Path: nested.ModuleDir + "/main.go", Line: 7,
-		}},
-	})
-
-	resolution, err := Resolve(facts, Options{})
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	assertSelectedPackage(t, resolution, "github.com/dvordrova/repomap/cmd/repomap")
-
-	explicit, err := Resolve(facts, Options{Override: nested.ModulePath})
-	if err != nil {
-		t.Fatalf("Resolve nested override: %v", err)
-	}
-	assertSelectedPackage(t, explicit, nested.ModulePath)
-}
-
-func TestResolveMobyLikeDockerdRequiresExplicitTarget(t *testing.T) {
-	facts := syntheticFacts(
-		"module-root", "github.com/moby/moby/v2",
-		[]syntheticPackage{
-			{path: "github.com/moby/moby/v2/cmd/docker-proxy", dir: "cmd/docker-proxy", executable: true, line: 20},
-			{path: "github.com/moby/moby/v2/cmd/dockerd", dir: "cmd/dockerd", executable: true, line: 16},
-			{path: "github.com/moby/moby/v2/daemon", dir: "daemon"},
-		},
-	)
-
-	resolution, err := Resolve(facts, Options{})
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	if resolution.State != ResolutionAmbiguous || resolution.Selected != nil {
-		t.Fatalf("Moby-like resolution guessed a primary target: %#v", resolution)
-	}
-
-	override, err := Resolve(facts, Options{Override: "cmd/dockerd"})
-	if err != nil {
-		t.Fatalf("Resolve dockerd override: %v", err)
-	}
-	assertSelectedPackage(t, override, "github.com/moby/moby/v2/cmd/dockerd")
-}
-
-func TestResolveTelebotLikeRootLibrary(t *testing.T) {
-	facts := syntheticFacts(
-		"module-root", "gopkg.in/telebot.v3",
-		[]syntheticPackage{
-			{path: "gopkg.in/telebot.v3", dir: "."},
-			{path: "gopkg.in/telebot.v3/layout", dir: "layout"},
-			{path: "gopkg.in/telebot.v3/middleware", dir: "middleware"},
-		},
-	)
-
-	resolution, err := Resolve(facts, Options{})
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	assertSelectedModule(t, resolution, "gopkg.in/telebot.v3")
-	if resolution.Selected.Kind != KindModuleLibrary || resolution.Selected.RootBoundary != RootBoundaryExactModuleAPI {
-		t.Fatalf("selected library target = %#v", resolution.Selected)
-	}
-	if len(resolution.Selected.Roots) != 0 || len(resolution.Selected.ModulePackages) != 3 ||
-		len(resolution.Selected.LibraryPackages) != 3 {
-		t.Fatalf("module library target inventory = %#v", resolution.Selected)
-	}
-}
-
-func TestResolveRootMainAndModuleLibraryOverrideCollisionIsExplicit(t *testing.T) {
-	facts := syntheticFacts("module-root", "example.com/mixed", []syntheticPackage{
-		{path: "example.com/mixed", dir: ".", executable: true, line: 5},
-		{path: "example.com/mixed/api", dir: "api"},
-	})
-
-	resolution, err := Resolve(facts, Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertSelectedPackage(t, resolution, "example.com/mixed")
-
-	_, collisionErr := Resolve(facts, Options{Override: "example.com/mixed"})
-	if !errors.Is(collisionErr, ErrOverrideAmbiguous) {
-		t.Fatalf("module/package alias collision = %v", collisionErr)
-	}
 	candidates, err := Candidates(facts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, candidate := range candidates {
-		if !strings.Contains(collisionErr.Error(), candidate.Key) {
-			t.Fatalf("collision error omitted exact key %q: %v", candidate.Key, collisionErr)
-		}
-		selected, err := Resolve(facts, Options{Override: candidate.Key})
-		if err != nil || selected.Selected == nil || selected.Selected.Ref != candidate.Target.Ref {
-			t.Fatalf("exact key %q did not restore one target: %#v / %v", candidate.Key, selected, err)
-		}
+	if len(candidates) != 2 {
+		t.Fatalf("candidates = %#v", candidates)
 	}
-}
-
-func TestResolveFailsClosedOnAmbiguousExecutables(t *testing.T) {
-	facts := syntheticFacts(
-		"module-root", "example.com/workspace",
-		[]syntheticPackage{
-			{path: "example.com/workspace/cmd/api", dir: "cmd/api", executable: true, line: 10},
-			{path: "example.com/workspace/cmd/worker", dir: "cmd/worker", executable: true, line: 20},
-		},
-	)
-
-	resolution, err := Resolve(facts, Options{})
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	if resolution.State != ResolutionAmbiguous || resolution.Selected != nil {
-		t.Fatalf("ambiguous resolution = %#v", resolution)
-	}
-	if _, err := Resolve(facts, Options{Override: "cmd/missing"}); !errors.Is(err, ErrOverrideNotFound) {
-		t.Fatalf("missing override error = %v", err)
+	if candidates[0].Target.PackageDir != "cmd/api" || candidates[1].Target.PackageDir != "cmd/worker" {
+		t.Fatalf("candidate inventory was ranked or collapsed: %#v", candidates)
 	}
 }
 
@@ -261,26 +121,17 @@ func packageName(definition syntheticPackage) string {
 	return definition.dir
 }
 
-func assertSelectedPackage(t *testing.T, resolution Resolution, packagePath string) {
+func requireCandidateTarget(t *testing.T, facts gofacts.Facts, kind Kind, packageDir string) Target {
 	t.Helper()
-	if resolution.State != ResolutionSelected || resolution.Selected == nil {
-		t.Fatalf("resolution = %#v", resolution)
+	candidates, err := Candidates(facts)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if resolution.Selected.PackagePath != packagePath {
-		t.Fatalf("selected package = %q, want %q", resolution.Selected.PackagePath, packagePath)
+	for _, candidate := range candidates {
+		if candidate.Target.Kind == kind && candidate.Target.PackageDir == packageDir {
+			return candidate.Target.Snapshot()
+		}
 	}
-	if resolution.Selected.Ref == "" {
-		t.Fatal("selected target has no bound identity")
-	}
-}
-
-func assertSelectedModule(t *testing.T, resolution Resolution, modulePath string) {
-	t.Helper()
-	if resolution.State != ResolutionSelected || resolution.Selected == nil {
-		t.Fatalf("resolution = %#v", resolution)
-	}
-	if resolution.Selected.Kind != KindModuleLibrary || resolution.Selected.ModulePath != modulePath ||
-		resolution.Selected.PackagePath != "" || resolution.Selected.PackageDir != "" {
-		t.Fatalf("selected module library = %#v, want %q", resolution.Selected, modulePath)
-	}
+	t.Fatalf("target %q/%q missing from %#v", kind, packageDir, candidates)
+	return Target{}
 }

@@ -26,26 +26,15 @@ type RunMeta struct {
 	RepoName                   string           `json:"repo_name"`
 	RepoPath                   string           `json:"repo_path"`
 	Command                    string           `json:"command"`
-	Model                      string           `json:"model"`
-	Endpoint                   string           `json:"endpoint"`
-	PromptVersion              string           `json:"prompt_version,omitempty"`
-	CompactContextBytes        int              `json:"compact_context_bytes,omitempty"`
 	ExternalRequestBytes       int              `json:"external_request_bytes,omitempty"`
 	ProviderRequestCount       int              `json:"provider_request_count,omitempty"`
 	ProviderAccountingComplete bool             `json:"provider_accounting_complete,omitempty"`
-	CandidateDirectionCount    int              `json:"candidate_direction_count,omitempty"`
-	AcceptedDirectionCount     int              `json:"accepted_direction_count,omitempty"`
-	RejectedDirectionCount     int              `json:"rejected_direction_count,omitempty"`
 	ProviderLatencyMillis      *int64           `json:"provider_latency_ms,omitempty"`
-	SurfaceDiscoveryRan        bool             `json:"surface_discovery_ran,omitempty"`
-	SurfaceDiscoveryCount      int              `json:"surface_discovery_count,omitempty"`
-	SurfaceDiscoveryMillis     *int64           `json:"surface_discovery_ms,omitempty"`
+	GoProgramAnalysisRan       bool             `json:"go_program_analysis_ran,omitempty"`
+	GoProgramGraphNodes        int              `json:"go_program_graph_nodes,omitempty"`
+	GoProgramGraphEdges        int              `json:"go_program_graph_edges,omitempty"`
+	GoProgramAnalysisMillis    *int64           `json:"go_program_analysis_ms,omitempty"`
 	Warnings                   []string         `json:"warnings,omitempty"`
-	SnapshotOnly               bool             `json:"snapshot_only"`
-	LLMBundleOnly              bool             `json:"llm_bundle_only"`
-	AuthMode                   string           `json:"auth_mode,omitempty"`
-	TimeoutMillis              int64            `json:"timeout_ms,omitempty"`
-	MaxTokens                  int              `json:"max_tokens,omitempty"`
 	EffectiveOptions           EffectiveOptions `json:"effective_options,omitempty"`
 	RequestAttempts            []RequestAttempt `json:"request_attempts,omitempty"`
 	BuildIdentity              BuildIdentity    `json:"build_identity"`
@@ -73,30 +62,20 @@ type BuildIdentity struct {
 }
 
 type EffectiveOptions struct {
-	Offline                bool   `json:"offline"`
 	NoCache                bool   `json:"no_cache"`
-	FlowCount              int    `json:"flows"`
-	DiscoverSurfaces       bool   `json:"discover_surfaces"`
 	GoTarget               string `json:"go_target,omitempty"`
 	GoTargetSource         string `json:"go_target_source,omitempty"`
 	GoTargetBaseline       string `json:"go_target_baseline,omitempty"`
 	AnalysisTargetOverride string `json:"analysis_target_override,omitempty"`
-	AllTargets             bool   `json:"all_targets,omitempty"`
 	DirectCallDepth        int    `json:"direct_call_depth,omitempty"`
 	DirectCallEdgeLimit    int    `json:"direct_call_edge_limit,omitempty"`
-	GuidedTour             bool   `json:"guided_tour"`
-	NoSecrets              bool   `json:"no_secrets,omitempty"`
-	ReportLanguage         string `json:"report_language,omitempty"`
+	ScanSecrets            bool   `json:"scan_secrets,omitempty"`
 	GitLabURL              string `json:"gitlab_url,omitempty"`
 	GitHubURL              string `json:"github_url,omitempty"`
-	OutputJSON             bool   `json:"json_output"`
-	PreviewRequest         bool   `json:"preview_request"`
 	NoOpen                 bool   `json:"no_open"`
 	NoServe                bool   `json:"no_serve"`
 	Port                   int    `json:"port"`
 	DebugEnabled           bool   `json:"debug_enabled"`
-	StrictSnapshot         bool   `json:"strict_snapshot,omitempty"`
-	SourceEpisode          bool   `json:"source_episode,omitempty"`
 }
 
 type RequestAttempt struct {
@@ -113,44 +92,43 @@ const (
 	SemanticExchangesDir     = "semantic_exchanges"
 	SemanticExchangeMetaFile = "exchange.v2.json"
 
-	SemanticStageOrientation          = "orientation"
-	SemanticStageAtlasStudy           = "atlas_study"
-	SemanticStageTargetedResearch     = "targeted_research"
-	SemanticStageArchitecture         = "architecture_synthesis"
-	SemanticStageGuidedTour           = "guided_tour"
-	SemanticStageStudyBrief           = "repository_brief_shape"
-	SemanticStageStudyDirections      = "study_direction_candidates"
-	SemanticStageStudyReview          = "reading_pack_review"
-	SemanticStageMechanismStudy       = "mechanism_study"
-	SemanticStageEntryCallCompression = "entry_call_compression"
-	SemanticStageTargetPortfolio      = "target_portfolio_selection"
-	SemanticStageLocalization         = "localization"
-	SemanticRequestPrepared           = "prepared_request"
-	SemanticRequestExactSent          = "exact_sent_request"
-	SemanticStateAccepted             = "accepted"
-	SemanticStateRejected             = "rejected"
-	SemanticStateCacheHit             = "cache_hit"
-	SemanticStateCanceled             = "canceled"
-	SemanticStateProviderFailed       = "provider_failed"
-	SemanticValidationAccepted        = "accepted"
-	SemanticValidationCache           = "cache_validated"
-	SemanticValidationCanceled        = "canceled"
-	SemanticValidationProvider        = "provider_failed"
-	SemanticValidationSecret          = "response_secret_scan"
-	SemanticValidationDecode          = "response_decode"
-	SemanticValidationResponse        = "response_validation"
-	SemanticValidationApply           = "projection_apply"
-	SemanticValidationQuality         = "projection_quality"
-	SemanticUnavailableNoContent      = "provider_no_content"
-	SemanticUnavailableCanceled       = "canceled"
-	SemanticUnavailableCache          = "cache_raw_unavailable"
-	SemanticUnavailableProjection     = "cache_projection_only"
-	SemanticUnavailableOmitted        = "cache_response_omitted"
-	SemanticUnavailableSize           = "size_limit"
-	SemanticExchangeWarningCode       = "artifact_write_failed"
-	semanticExchangeVersion           = 2
-	semanticPayloadMarkerVersion      = 1
-	maxSemanticExchangePayloadSize    = 16 << 20
+	SemanticStageReadmeFileClassifier    = "readme_file_classifier"
+	SemanticStageTargetPortfolio         = "target_portfolio_selection"
+	SemanticStageTargetViewChoice        = "target_view_choice"
+	SemanticStageCoreMapBaseline         = "coremap_baseline"
+	SemanticStageCoreMapRefined          = "coremap_refined"
+	SemanticStageActivityEntrypoints     = "activity_entrypoints"
+	SemanticStageIntegrationDependencies = "integration_dependencies"
+	SemanticStageIntegrationUsage        = "integration_usage"
+	SemanticStageCubemapActivities       = "cubemap_activity_surfaces"
+	SemanticStageCubemapEntrypoints      = "cubemap_entrypoints"
+	SemanticStageCubemapDependencies     = "cubemap_integration_dependencies"
+	SemanticStageCubemapSymbols          = "cubemap_integration_symbols"
+	SemanticStageCubemapBindings         = "cubemap_surface_core_effects"
+	SemanticRequestPrepared              = "prepared_request"
+	SemanticRequestExactSent             = "exact_sent_request"
+	SemanticStateAccepted                = "accepted"
+	SemanticStateRejected                = "rejected"
+	SemanticStateCacheHit                = "cache_hit"
+	SemanticStateCanceled                = "canceled"
+	SemanticStateProviderFailed          = "provider_failed"
+	SemanticValidationAccepted           = "accepted"
+	SemanticValidationCache              = "cache_validated"
+	SemanticValidationCanceled           = "canceled"
+	SemanticValidationProvider           = "provider_failed"
+	SemanticValidationSecret             = "response_secret_scan"
+	SemanticValidationDecode             = "response_decode"
+	SemanticValidationResponse           = "response_validation"
+	SemanticUnavailableNoContent         = "provider_no_content"
+	SemanticUnavailableCanceled          = "canceled"
+	SemanticUnavailableCache             = "cache_raw_unavailable"
+	SemanticUnavailableOmitted           = "cache_response_omitted"
+	SemanticUnavailableSize              = "size_limit"
+	SemanticExchangeWarningCode          = "artifact_write_failed"
+	semanticExchangeVersion              = 2
+	semanticPayloadMarkerVersion         = 1
+	maxSemanticExchangePayloadSize       = 16 << 20
+	MaxSemanticAttemptOrdinal            = 256
 )
 
 // SemanticUnavailable describes response bytes that the current stage seam
@@ -184,15 +162,8 @@ type SemanticExchange struct {
 // Raw provider/error text never belongs here: payload bytes already live in
 // separately redacted and secret-scanned files.
 type SemanticOutcome struct {
-	Phase   string           `json:"phase"`
-	Code    string           `json:"code"`
-	Detail  string           `json:"detail,omitempty"`
-	Metrics []SemanticMetric `json:"metrics,omitempty"`
-}
-
-type SemanticMetric struct {
-	Name  string `json:"name"`
-	Value int    `json:"value"`
+	Phase string `json:"phase"`
+	Code  string `json:"code"`
 }
 
 type SemanticPayloadRecord struct {
@@ -567,7 +538,7 @@ func validateSemanticExchange(exchange SemanticExchange) error {
 		return fmt.Errorf("semantic exchange: invalid stage")
 	}
 	if exchange.InstanceOrdinal < 1 || exchange.InstanceOrdinal > 4096 ||
-		exchange.SemanticAttemptOrdinal < 1 || exchange.SemanticAttemptOrdinal > 16 {
+		exchange.SemanticAttemptOrdinal < 1 || exchange.SemanticAttemptOrdinal > MaxSemanticAttemptOrdinal {
 		return fmt.Errorf("semantic exchange: invalid ordinal")
 	}
 	if exchange.RequestProvenance != SemanticRequestPrepared &&
@@ -595,75 +566,21 @@ func validateSemanticExchange(exchange SemanticExchange) error {
 			return fmt.Errorf("semantic exchange: invalid unavailable response identity")
 		}
 	}
-	if err := validateSemanticOutcomeForStage(exchange.Stage, normalizedSemanticOutcome(exchange)); err != nil {
+	if err := validateSemanticOutcome(normalizedSemanticOutcome(exchange)); err != nil {
 		return err
 	}
 	return nil
 }
 
-var semanticDiagnosticNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,127}$`)
-
 var semanticOutcomeRegistry = map[string]map[string]struct{}{
-	"complete": {"accepted": {}, "accepted_partial": {}},
+	"complete": {"accepted": {}},
 	"cache":    {"cache_hit": {}},
-	"input_preparation": {
-		"input_preparation_failed": {}, "architecture.preparation_failed": {},
-	},
-	"provider_configuration": {
-		"provider_configuration_failed": {}, "architecture.provider_configuration_failed": {},
-	},
 	"provider_call": {
-		"canceled": {}, "provider_failed": {}, "response_received": {},
-		"architecture.provider_call_failed":  {},
-		"architecture.provider_output_limit": {},
+		"canceled": {}, "provider_failed": {},
 	},
 	"response_secret_scan": {"response_secret_scan": {}},
-	"response_decode": {
-		"response_decode": {}, "architecture.empty_response": {},
-	},
-	"response_validation": {
-		"response_validation":                     {},
-		"architecture.proposal_rejected":          {},
-		"componentmap.response_evaluation_failed": {},
-	},
-	"landscape_validation": {
-		"componentmap.partial_model_inconsistent": {},
-	},
-	"projection_apply":   {"projection_apply": {}},
-	"projection_quality": {"projection_quality": {}},
-	"availability":       {"unavailable": {}, "not_called": {}},
-	"request_build":      {"prepared": {}, "request_build_failed": {}},
-	"resource_exhausted": {"resource_exhausted": {}},
-	"stage_state":        {"unclassified": {}},
-}
-
-var semanticOutcomeDetails = map[string]string{
-	"componentmap.partial_model_inconsistent": "full or normalized coverage was classified as partial without a local remainder or item-local salvage",
-}
-
-var semanticOutcomeMetricRegistry = map[string]map[string]struct{}{
-	"accepted":                                architectureSemanticMetricNames(),
-	"accepted_partial":                        architectureSemanticMetricNames(),
-	"architecture.provider_call_failed":       architectureSemanticMetricNames(),
-	"architecture.provider_output_limit":      architectureSemanticMetricNames(),
-	"architecture.proposal_rejected":          architectureSemanticMetricNames(),
-	"componentmap.response_evaluation_failed": architectureSemanticMetricNames(),
-	"componentmap.partial_model_inconsistent": architectureSemanticMetricNames(),
-	"cache_hit": architectureSemanticMetricNames(),
-}
-
-func architectureSemanticMetricNames() map[string]struct{} {
-	return map[string]struct{}{
-		"anchor_ref_count": {}, "component_count": {},
-		"covered_conceptual_count": {}, "covered_primary_scope_count": {},
-		"covered_supporting_evidence_count": {},
-		"explicit_empty_anchor_refs_count":  {}, "json_valid": {},
-		"member_ref_count": {}, "missing_anchor_refs_count": {},
-		"null_anchor_refs_count": {}, "requested_conceptual_count": {},
-		"requested_primary_scope_count": {},
-		"subsystem_count":               {}, "uncovered_conceptual_count": {},
-		"uncovered_primary_scope_count": {}, "unit_ref_count": {},
-	}
+	"response_decode":      {"response_decode": {}},
+	"response_validation":  {"response_validation": {}},
 }
 
 func normalizedSemanticOutcome(exchange SemanticExchange) SemanticOutcome {
@@ -689,21 +606,12 @@ func normalizedSemanticOutcome(exchange SemanticExchange) SemanticOutcome {
 		return SemanticOutcome{Phase: "response_decode", Code: "response_decode"}
 	case SemanticValidationResponse:
 		return SemanticOutcome{Phase: "response_validation", Code: "response_validation"}
-	case SemanticValidationApply:
-		return SemanticOutcome{Phase: "projection_apply", Code: "projection_apply"}
-	case SemanticValidationQuality:
-		return SemanticOutcome{Phase: "projection_quality", Code: "projection_quality"}
 	}
-	return SemanticOutcome{Phase: "stage_state", Code: "unclassified"}
+	return SemanticOutcome{}
 }
 
 func validateSemanticOutcome(outcome SemanticOutcome) error {
-	return validateSemanticOutcomeForStage("", outcome)
-}
-
-func validateSemanticOutcomeForStage(stage string, outcome SemanticOutcome) error {
-	if !semanticDiagnosticNamePattern.MatchString(outcome.Phase) ||
-		!semanticDiagnosticNamePattern.MatchString(outcome.Code) {
+	if outcome.Phase == "" || outcome.Code == "" {
 		return fmt.Errorf("semantic exchange: invalid outcome diagnostic")
 	}
 	if codes, exists := semanticOutcomeRegistry[outcome.Phase]; !exists {
@@ -711,51 +619,24 @@ func validateSemanticOutcomeForStage(stage string, outcome SemanticOutcome) erro
 	} else if _, exists := codes[outcome.Code]; !exists {
 		return fmt.Errorf("semantic exchange: unknown outcome code")
 	}
-	if len(outcome.Detail) > 512 || strings.TrimSpace(outcome.Detail) != outcome.Detail ||
-		strings.ContainsAny(outcome.Detail, "\r\n\t") || !utf8.ValidString(outcome.Detail) {
-		return fmt.Errorf("semantic exchange: invalid outcome detail")
-	}
-	if outcome.Detail != "" {
-		if semanticOutcomeDetails[outcome.Code] != outcome.Detail {
-			return fmt.Errorf("semantic exchange: unregistered outcome detail")
-		}
-		if _, found := secretscan.DetectAlways(outcome.Detail); found {
-			return fmt.Errorf("semantic exchange: unsafe outcome detail")
-		}
-	}
-	if len(outcome.Metrics) > 32 {
-		return fmt.Errorf("semantic exchange: too many outcome metrics")
-	}
-	if len(outcome.Metrics) > 0 && stage != "" && stage != SemanticStageArchitecture {
-		return fmt.Errorf("semantic exchange: outcome metrics are not registered for stage")
-	}
-	allowedMetrics := semanticOutcomeMetricRegistry[outcome.Code]
-	for index, metric := range outcome.Metrics {
-		if !semanticDiagnosticNamePattern.MatchString(metric.Name) || metric.Value < 0 ||
-			index > 0 && outcome.Metrics[index-1].Name >= metric.Name {
-			return fmt.Errorf("semantic exchange: invalid outcome metrics")
-		}
-		if _, allowed := allowedMetrics[metric.Name]; !allowed {
-			return fmt.Errorf("semantic exchange: outcome metric is not registered for code")
-		}
-	}
 	return nil
 }
 
 func validSemanticStage(stage string) bool {
 	switch stage {
-	case SemanticStageOrientation,
-		SemanticStageAtlasStudy,
-		SemanticStageTargetedResearch,
-		SemanticStageArchitecture,
-		SemanticStageGuidedTour,
-		SemanticStageStudyBrief,
-		SemanticStageStudyDirections,
-		SemanticStageStudyReview,
-		SemanticStageMechanismStudy,
-		SemanticStageEntryCallCompression,
+	case SemanticStageReadmeFileClassifier,
 		SemanticStageTargetPortfolio,
-		SemanticStageLocalization:
+		SemanticStageTargetViewChoice,
+		SemanticStageCoreMapBaseline,
+		SemanticStageCoreMapRefined,
+		SemanticStageActivityEntrypoints,
+		SemanticStageIntegrationDependencies,
+		SemanticStageIntegrationUsage,
+		SemanticStageCubemapActivities,
+		SemanticStageCubemapEntrypoints,
+		SemanticStageCubemapDependencies,
+		SemanticStageCubemapSymbols,
+		SemanticStageCubemapBindings:
 		return true
 	default:
 		return false
@@ -783,9 +664,7 @@ func validSemanticValidationCode(code string) bool {
 		SemanticValidationProvider,
 		SemanticValidationSecret,
 		SemanticValidationDecode,
-		SemanticValidationResponse,
-		SemanticValidationApply,
-		SemanticValidationQuality:
+		SemanticValidationResponse:
 		return true
 	default:
 		return false
@@ -797,7 +676,6 @@ func validSemanticUnavailableCode(code string) bool {
 	case SemanticUnavailableNoContent,
 		SemanticUnavailableCanceled,
 		SemanticUnavailableCache,
-		SemanticUnavailableProjection,
 		SemanticUnavailableOmitted,
 		SemanticUnavailableSize:
 		return true
@@ -824,11 +702,11 @@ func prepareSemanticPayload(
 	}
 	originalSHA := sha256Hex(raw)
 	redacted := sensitiveKeyPattern.ReplaceAll(raw, []byte(`"$1": "[redacted]"`))
-	if kind, found := secretscan.DetectAlways(string(redacted)); found {
+	if kind, found := secretscan.DetectPersistenceSensitive(string(redacted)); found {
 		return prepareSemanticMarker(label, semanticPayloadMarker{
 			Version: semanticPayloadMarkerVersion, Storage: "unsafe_marker",
 			OriginalSHA256: originalSHA, OriginalBytes: len(raw),
-			UnsafeKind: secretscan.ClosedKind(kind),
+			UnsafeKind: kind,
 		})
 	}
 	if len(redacted) > maxSemanticExchangePayloadSize {
@@ -918,7 +796,7 @@ func (w *Writer) WriteMetadata(meta RunMeta) error {
 			outcome := requestAttemptOutcome(*attempt)
 			attempt.Outcome = &outcome
 		}
-		if err := validateSemanticOutcomeForStage(attempt.Stage, *attempt.Outcome); err != nil {
+		if err := validateSemanticOutcome(*attempt.Outcome); err != nil {
 			return fmt.Errorf("debug metadata: request attempt outcome: %w", err)
 		}
 	}
@@ -969,7 +847,7 @@ func validateBuildIdentity(identity BuildIdentity) error {
 		identity.GoVersion, identity.ModulePath, identity.ModuleVersion,
 		identity.VCSRevision, identity.VCSTime,
 	}, "\n")
-	if _, found := secretscan.DetectAlways(joined); found {
+	if _, found := secretscan.DetectPersistenceSensitive(joined); found {
 		return fmt.Errorf("build identity contains unsafe material")
 	}
 	return nil
@@ -996,42 +874,19 @@ func validLowerHex(value string, lengths ...int) bool {
 }
 
 func requestAttemptOutcome(attempt RequestAttempt) SemanticOutcome {
-	if attempt.Stage == "configuration" && attempt.State == "failed" {
-		return SemanticOutcome{
-			Phase: "provider_configuration", Code: "provider_configuration_failed",
-		}
-	}
 	switch attempt.State {
-	case "accepted", "completed", "empty", "no_new_evidence", "succeeded":
+	case SemanticStateAccepted:
 		return SemanticOutcome{Phase: "complete", Code: "accepted"}
-	case "accepted_partial", "accepted_with_rejections":
-		return SemanticOutcome{Phase: "complete", Code: "accepted_partial"}
-	case "cache_hit", "cached":
+	case SemanticStateCacheHit:
 		return SemanticOutcome{Phase: "cache", Code: "cache_hit"}
-	case "canceled":
+	case SemanticStateCanceled:
 		return SemanticOutcome{Phase: "provider_call", Code: "canceled"}
-	case "response_received":
-		return SemanticOutcome{Phase: "provider_call", Code: "response_received"}
-	case "failed", "provider_failed":
+	case SemanticStateProviderFailed:
 		return SemanticOutcome{Phase: "provider_call", Code: "provider_failed"}
-	case "response_rejected":
-		return SemanticOutcome{Phase: "response_secret_scan", Code: "response_secret_scan"}
-	case "response_parse_failed":
-		return SemanticOutcome{Phase: "response_decode", Code: "response_decode"}
-	case "rejected", "response_validation_failed":
+	case SemanticStateRejected:
 		return SemanticOutcome{Phase: "response_validation", Code: "response_validation"}
-	case "budget_exhausted", "resource_exhausted":
-		return SemanticOutcome{Phase: "resource_exhausted", Code: "resource_exhausted"}
-	case "unavailable":
-		return SemanticOutcome{Phase: "availability", Code: "unavailable"}
-	case "not_called", "skipped", "skipped_insufficient_evidence", "skipped_local_complete", "skipped_offline":
-		return SemanticOutcome{Phase: "availability", Code: "not_called"}
-	case "prepared":
-		return SemanticOutcome{Phase: "request_build", Code: "prepared"}
-	case "request_build_failed":
-		return SemanticOutcome{Phase: "request_build", Code: "request_build_failed"}
 	default:
-		return SemanticOutcome{Phase: "stage_state", Code: "unclassified"}
+		return SemanticOutcome{}
 	}
 }
 
@@ -1064,99 +919,6 @@ func (w *Writer) WriteSnapshot(snapshotJSON []byte) error {
 	return w.WriteFile("snapshot.json", snapshotJSON)
 }
 
-// WriteLLMBundleWithSidecar writes the exact persisted bundle bytes and a
-// producer-built sidecar derived from those same post-redaction bytes.
-func (w *Writer) WriteLLMBundleWithSidecar(
-	bundleJSON []byte,
-	sidecarName string,
-	buildSidecar func([]byte) ([]byte, error),
-) error {
-	return w.writeRootFileWithSidecar(
-		"llm_bundle.json",
-		bundleJSON,
-		sidecarName,
-		buildSidecar,
-	)
-}
-
-func (w *Writer) WriteOrientationReport(reportJSON []byte) error {
-	return w.WriteFile("orientation_report.json", reportJSON)
-}
-
-// WriteOrientationReportWithSidecar writes the exact report bytes and then a
-// producer-built sidecar derived from those same bytes. The callback observes
-// the post-redaction payload that is actually persisted, so a sidecar hash can
-// never accidentally bind the pre-redaction input.
-func (w *Writer) WriteOrientationReportWithSidecar(
-	reportJSON []byte,
-	sidecarName string,
-	buildSidecar func([]byte) ([]byte, error),
-) error {
-	return w.writeRootFileWithSidecar(
-		"orientation_report.json",
-		reportJSON,
-		sidecarName,
-		buildSidecar,
-	)
-}
-
-func (w *Writer) writeRootFileWithSidecar(
-	primaryName string,
-	primaryJSON []byte,
-	sidecarName string,
-	buildSidecar func([]byte) ([]byte, error),
-) error {
-	if w == nil || w.root == nil {
-		return fmt.Errorf("debug writer is closed")
-	}
-	if buildSidecar == nil {
-		return fmt.Errorf("debug sidecar builder is required")
-	}
-	preparedPrimary := primaryJSON
-	if w.Redacted {
-		preparedPrimary = redactJSON(preparedPrimary)
-	}
-	// The callback may retain or mutate its argument. Give it an exact copy so
-	// the prepared primary remains the immutable write authority.
-	sidecar, err := buildSidecar(append([]byte(nil), preparedPrimary...))
-	if err != nil {
-		return fmt.Errorf("build %s: %w", sidecarName, err)
-	}
-	if w.Redacted {
-		sidecar = redactJSON(sidecar)
-	}
-	if err := w.writePreparedRootFile(primaryName, preparedPrimary); err != nil {
-		return err
-	}
-	return w.writePreparedRootFile(sidecarName, sidecar)
-}
-
-func (w *Writer) WriteOrientationValidation(validationJSON []byte) error {
-	return w.WriteFile("orientation_validation.json", validationJSON)
-}
-
-func (w *Writer) WriteDirFile(subdir, name string, data []byte) error {
-	localSubdir := filepath.FromSlash(subdir)
-	if w == nil || w.root == nil || subdir == "" || !filepath.IsLocal(localSubdir) ||
-		filepath.Clean(localSubdir) != localSubdir || localSubdir == "." ||
-		name == "" || filepath.Base(name) != name {
-		return fmt.Errorf("invalid debug artifact subpath")
-	}
-	if err := w.root.MkdirAll(localSubdir, 0o700); err != nil {
-		return err
-	}
-	return w.writeRootFile(filepath.Join(localSubdir, name), data)
-}
-
-func (w *Writer) WriteDirError(subdir string, err error) {
-	data := []byte(fmt.Sprintf("error: %v\n", err))
-	_ = w.WriteDirFile(subdir, "error.txt", data)
-}
-
-func (w *Writer) RunDir() string {
-	return w.runDir
-}
-
 // Close releases the directory handle that confines artifact writes.
 func (w *Writer) Close() error {
 	if w == nil {
@@ -1170,11 +932,6 @@ func (w *Writer) Close() error {
 	err := w.root.Close()
 	w.root = nil
 	return err
-}
-
-func (w *Writer) WriteError(err error) {
-	data := []byte(fmt.Sprintf("error: %v\n", err))
-	_ = w.WriteFile("error.txt", data)
 }
 
 var sensitiveKeyPattern = regexp.MustCompile(
@@ -1199,7 +956,7 @@ var sensitiveKeyPattern = regexp.MustCompile(
 
 func redactJSON(data []byte) []byte {
 	redacted := sensitiveKeyPattern.ReplaceAll(data, []byte(`"$1": "[redacted]"`))
-	if kind, found := secretscan.DetectAlways(string(redacted)); found {
+	if kind, found := secretscan.DetectPersistenceSensitive(string(redacted)); found {
 		return []byte(fmt.Sprintf("[redacted: %s detected]\n", kind))
 	}
 	return redacted

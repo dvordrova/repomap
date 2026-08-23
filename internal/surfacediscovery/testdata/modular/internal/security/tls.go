@@ -1,3 +1,0 @@
-package security
-
-func ConfigureTLS() {}

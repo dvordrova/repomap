@@ -4,9 +4,13 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
+	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/snapshot"
 )
 
@@ -20,8 +24,14 @@ func TestRunPrecomputedTargetKeepsExactScopedTarget(t *testing.T) {
 	runOrientGit(t, repository, "init", "--quiet")
 	runOrientGit(t, repository, "add", "--", "go.mod", "cmd/app/main.go")
 
-	deferred, err := snapshot.Build(snapshot.Options{
-		RepoPath: repository, DeferAnalysisTargetResolution: true,
+	repositoryCorpus, err := corpus.Open(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repositoryCorpus.Close()
+	deferred, err := snapshot.BuildContext(context.Background(), snapshot.Options{
+		RepoPath: repository, RepositoryCorpus: repositoryCorpus,
+		GoTarget: runtime.GOOS + "/" + runtime.GOARCH,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -43,9 +53,8 @@ func TestRunPrecomputedTargetKeepsExactScopedTarget(t *testing.T) {
 
 	debugDir := t.TempDir()
 	var deliveredRef string
-	_, err = Run(context.Background(), Options{
+	err = Run(context.Background(), Options{
 		RepoPath:            repository,
-		AtlasFirst:          true,
 		DebugDir:            debugDir,
 		RunID:               "precomputed-target",
 		RequireArtifacts:    true,
@@ -63,5 +72,21 @@ func TestRunPrecomputedTargetKeepsExactScopedTarget(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(debugDir, "precomputed-target", "snapshot.json")); err != nil {
 		t.Fatal(err)
+	}
+
+	err = Run(context.Background(), Options{
+		RepoPath:            repository,
+		PrecomputedSnapshot: &scoped,
+		AnalysisTargetSelector: func(
+			context.Context,
+			string,
+			analysistarget.TargetCatalog,
+			gofacts.Facts,
+		) (snapshot.TargetRunSelection, error) {
+			return snapshot.TargetRunSelection{}, nil
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot be combined with target selection") {
+		t.Fatalf("Run precomputed+selector error = %v", err)
 	}
 }

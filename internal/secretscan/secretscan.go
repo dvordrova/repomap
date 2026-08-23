@@ -23,11 +23,32 @@ var patterns = []struct {
 	{kind: "credential assignment", pattern: regexp.MustCompile(`(?i)["']?(?:api[_-]?key|client[_-]?secret|token|password|passwd|secret|private[_-]?key|access[_-]?key|refresh[_-]?token)["']?\s*:\s*["']?[A-Za-z0-9][A-Za-z0-9._~+/=-]{7,}`)},
 }
 
+// persistencePatterns are an always-on, deliberately narrow guard for bytes
+// that may be written to a cache, journal, or diagnostic. Unlike patterns,
+// these do not try to classify repository source: they cover only concrete
+// provider-token shapes, private-key headers, explicit Authorization headers,
+// and literal api_key assignments.
+var persistencePatterns = []struct {
+	kind       string
+	pattern    *regexp.Regexp
+	bearer     bool
+	assignment bool
+}{
+	{kind: ClosedKindPrivateKey, pattern: regexp.MustCompile(`(?i)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----`)},
+	{kind: ClosedKindBearerCredential, pattern: regexp.MustCompile(`(?i)\bBearer[ \t]+[A-Za-z0-9._~+/=-]{8,}`), bearer: true},
+	{kind: ClosedKindBearerCredential, pattern: regexp.MustCompile(`(?im)\bAuthorization[ \t]*:[ \t]*[^\r\n]{4,}`)},
+	{kind: ClosedKindSecretKey, pattern: regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{8,}\b`)},
+	{kind: ClosedKindGitHubToken, pattern: regexp.MustCompile(`\b(?:ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b`)},
+	{kind: ClosedKindAWSAccessKey, pattern: regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`)},
+	{kind: ClosedKindCredentialAssignment, pattern: regexp.MustCompile(`(?i)["']?api[_-]?key["']?[ \t]*(?::=|=|:)[ \t]*(?:\\?["'])[^"'\r\n]{8,}(?:\\?["'])`), assignment: true},
+	{kind: ClosedKindCredentialAssignment, pattern: regexp.MustCompile(`(?i)["']?api[_-]?key["']?[ \t]*(?::=|=|:)[ \t]*[A-Za-z0-9][A-Za-z0-9._~+/=-]{15,}`), assignment: true},
+}
+
 var dynamicCredentialReference = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$`)
 var formatSpecifier = regexp.MustCompile(`%[sdvqxTtbf]`)
 var bareIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 var bearerCredentialContext = regexp.MustCompile(`(?i)(?:authorization|auth|access[_-]?token|token|header)\b["']?\s*(?::=|=|:)\s*["']?$`)
-var disabled atomic.Bool
+var enabled atomic.Bool
 
 const (
 	ClosedKindPrivateKey           = "private_key"
@@ -36,74 +57,37 @@ const (
 	ClosedKindGitHubToken          = "github_token"
 	ClosedKindAWSAccessKey         = "aws_access_key"
 	ClosedKindCredentialAssignment = "credential_assignment"
-	ClosedKindUnknown              = "unknown"
 )
 
-// ClosedKind converts detector-owned descriptions into the bounded codes
-// permitted in persistent diagnostics. Unknown descriptions fail closed and
-// never become artifact prose.
-func ClosedKind(kind string) string {
-	switch kind {
-	case "private key":
-		return ClosedKindPrivateKey
-	case "bearer credential":
-		return ClosedKindBearerCredential
-	case "secret key":
-		return ClosedKindSecretKey
-	case "github token":
-		return ClosedKindGitHubToken
-	case "aws access key":
-		return ClosedKindAWSAccessKey
-	case "credential assignment":
-		return ClosedKindCredentialAssignment
-	default:
-		return ClosedKindUnknown
-	}
-}
-
-// SetDisabled changes credential detection for the current process and returns
-// a restore function. It exists for the explicitly unsafe CLI override; normal
-// callers must leave detection enabled.
-func SetDisabled(value bool) func() {
-	previous := disabled.Swap(value)
+// SetEnabled changes heuristic credential detection for the current process
+// and returns a restore function. The ordinary CLI enables it only when the
+// caller passes --scan-secrets.
+func SetEnabled(value bool) func() {
+	previous := enabled.Swap(value)
 	return func() {
-		disabled.Store(previous)
+		enabled.Store(previous)
 	}
 }
 
 // Detect returns the credential kind without returning the matched value.
 func Detect(text string) (string, bool) {
-	if disabled.Load() {
+	if !enabled.Load() {
 		return "", false
 	}
 	return detect(text)
 }
 
-// DetectAlways performs mandatory credential detection even when the
-// explicitly unsafe process-wide override is active. Persistent artifacts and
-// provider request evidence must use this boundary.
-func DetectAlways(text string) (string, bool) {
-	return detect(text)
-}
-
-// DetectSourceMaterial performs mandatory credential detection on locally
-// expanded repository source before it is sent to a model provider. Real
-// credential material (private keys, bearer credentials, secret keys,
-// provider tokens, access keys) always fails closed. The credential
-// assignment heuristic is deliberately ignored here: production source
-// legitimately contains credential-shaped assignments (password/token/secret
-// fields of an identity provider), and per the repository owner doctrine a
-// repo that mentions credentials is the problem of whoever left them there,
-// not a reason to make Study unavailable.
-func DetectSourceMaterial(text string) (string, bool) {
-	for _, candidate := range patterns {
-		if candidate.kind == "credential assignment" {
-			continue
-		}
+// DetectPersistenceSensitive reports a closed credential kind independently
+// of --scan-secrets. It is only for persistence/observation boundaries and
+// must not be used as a broad gate over trusted repository source.
+func DetectPersistenceSensitive(text string) (string, bool) {
+	for _, candidate := range persistencePatterns {
 		for _, location := range candidate.pattern.FindAllStringIndex(text, -1) {
 			match := text[location[0]:location[1]]
-			if candidate.kind == "bearer credential" &&
-				!looksLikeBearerCredential(text, location, match) {
+			if candidate.bearer && !looksLikeBearerCredential(text, location, match) {
+				continue
+			}
+			if candidate.assignment && (looksLikePlaceholder(match) || !looksLikeCredentialAssignment(match)) {
 				continue
 			}
 			return candidate.kind, true

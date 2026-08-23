@@ -2,97 +2,54 @@ package report
 
 import (
 	"bytes"
-	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
 	"os"
-	"path"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 
 	_ "embed"
-	"github.com/dvordrova/repomap/internal/freshness"
+	"github.com/dvordrova/repomap/internal/analysistarget"
 )
 
-//go:embed templates/report.html
-var templateHTML string
+//go:embed templates/report_app.css
+var reportAppCSS string
 
-//go:embed templates/style.css
-var styleCSS string
+//go:embed templates/report_app.js
+var reportAppJS string
 
-//go:embed templates/architecture_canvas.css
-var architectureCanvasCSS string
+//go:embed templates/program_report.html
+var programTemplateHTML string
 
-//go:embed templates/architecture_canvas.js
-var architectureCanvasJS string
-
-//go:embed templates/surface_catalog.css
-var surfaceCatalogCSS string
-
-//go:embed templates/surface_catalog.js
-var surfaceCatalogJS string
-
-//go:embed templates/script.js
-var scriptJS string
-
-//go:embed templates/ui_messages.js
-var uiMessagesJS string
-
-var reportTmpl *template.Template
-
-// MaxSourceEpisodeBytes is the maximum approved source-episode artifact that
-// the transient report renderer will inspect.
-const MaxSourceEpisodeBytes = maxSourceEpisodeBytes
-
-func init() {
-	reportTmpl = template.Must(template.New("report").Parse(templateHTML))
-}
-
-func WriteReportJSON(data *ReportData, path string) error {
-	return writeReportJSON(data, path, maxManifestReportBytes)
-}
-
-func writeReportJSON(data *ReportData, path string, maxBytes int) error {
+func encodeReportJSON(data *ReportData, maxBytes int) ([]byte, error) {
 	if data == nil {
-		return fmt.Errorf("report: data is required")
+		return nil, fmt.Errorf("report: data is required")
 	}
 	if maxBytes <= 0 {
-		return fmt.Errorf("report: positive artifact byte limit is required")
+		return nil, fmt.Errorf("report: positive artifact byte limit is required")
 	}
-	if err := ensureArchitectureComponentNavigation(data); err != nil {
-		return err
-	}
-	if err := ensureArchitectureAssociations(data); err != nil {
-		return err
-	}
-	if err := ensureEntrypointHandoffGroups(data); err != nil {
-		return err
-	}
-	if err := validateLibraryAPIProjection(data.AnalysisTarget, data.LibraryAPI, data.OpenablePaths); err != nil {
-		return err
+	if err := validateProgramPresentation(data); err != nil {
+		return nil, err
 	}
 	persisted := reportDataForPersistence(data)
 	// SourceIDs are issued by the local report server after manifest
 	// verification. They are session navigation IDs, not persistent evidence.
 	persisted.SourceIDs = nil
-	persisted.SourceContextIDs = nil
 	b, err := json.MarshalIndent(persisted, "", "  ")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	b = append(b, '\n')
 	if len(b) > maxBytes {
-		return &ReportResourceLimitError{
+		return nil, &ReportResourceLimitError{
 			LimitBytes:  maxBytes,
 			ActualBytes: len(b),
 		}
 	}
-	return os.WriteFile(path, b, 0o644)
+	return b, nil
 }
 
 // ReportResourceLimitError is a terminal report-publication resource outcome.
@@ -110,171 +67,34 @@ func (err *ReportResourceLimitError) Error() string {
 		err.ActualBytes, err.LimitBytes)
 }
 
-func WriteReportHTML(data *ReportData, path string) error {
-	return WriteReportHTMLWithOptions(data, path, RenderOptions{})
-}
-
-// WriteReportHTMLWithOptions writes one canonical target page with optional
-// render-only sibling navigation. The options are never persisted to
-// report.json.
-func WriteReportHTMLWithOptions(data *ReportData, path string, options RenderOptions) error {
-	html, err := RenderHTMLWithOptions(data, options)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, html, 0o644)
-}
-
-// RenderHTML renders report data with repomap's embedded trusted template and
-// assets. Servers should use this instead of executing a saved HTML artifact.
-func RenderHTML(data *ReportData) ([]byte, error) {
-	return RenderHTMLWithOptions(data, RenderOptions{})
-}
-
 // RenderHTMLWithOptions renders one ReportData target page plus optional
 // caller-authorized presentation navigation to sibling target pages.
 func RenderHTMLWithOptions(data *ReportData, options RenderOptions) ([]byte, error) {
 	if data == nil {
 		return nil, fmt.Errorf("report: data is required")
 	}
-	if err := validateTargetNavigation(data, options.TargetNavigation); err != nil {
+	if err := validateProgramPresentation(data); err != nil {
 		return nil, err
-	}
-	if err := ensureArchitectureComponentNavigation(data); err != nil {
-		return nil, err
-	}
-	if err := ensureArchitectureAssociations(data); err != nil {
-		return nil, err
-	}
-	if err := ensureEntrypointHandoffGroups(data); err != nil {
-		return nil, err
-	}
-	return buildHTMLWithOptions(data, options)
-}
-
-// RenderHTMLWithSourceEpisode adds one approved, SHA-pinned source episode to
-// the rendered Study surface. The projection exists only in this HTML
-// response: it is not added to ReportData or persisted in report.json.
-func RenderHTMLWithSourceEpisode(data *ReportData, episodeJSON []byte) ([]byte, error) {
-	return RenderHTMLWithSourceEpisodeAndOptions(data, episodeJSON, RenderOptions{})
-}
-
-// RenderHTMLWithSourceEpisodeAndOptions is the source-episode equivalent of
-// RenderHTMLWithOptions. Both inputs remain transient HTML presentation state.
-func RenderHTMLWithSourceEpisodeAndOptions(
-	data *ReportData,
-	episodeJSON []byte,
-	options RenderOptions,
-) ([]byte, error) {
-	if data == nil {
-		return nil, fmt.Errorf("report: data is required")
 	}
 	if err := validateTargetNavigation(data, options.TargetNavigation); err != nil {
 		return nil, err
 	}
-	if err := ensureArchitectureComponentNavigation(data); err != nil {
-		return nil, err
+	if data.ProgramPortfolio == nil {
+		return nil, fmt.Errorf("report: HTML publication requires a complete program portfolio")
 	}
-	if err := ensureArchitectureAssociations(data); err != nil {
-		return nil, err
-	}
-	if err := ensureEntrypointHandoffGroups(data); err != nil {
-		return nil, err
-	}
-	canonicalEpisode, err := projectApprovedSourceEpisode(data, episodeJSON)
+	rendered, err := buildHTMLWithOptions(data, options)
 	if err != nil {
 		return nil, err
 	}
-	episode := canonicalEpisode
-	if data.presentationSourceEpisode != nil {
-		if !sameSourceEpisodePresentationShape(
-			canonicalEpisode,
-			data.presentationSourceEpisode,
-		) {
-			return nil, fmt.Errorf(
-				"report: localized source episode does not match approved input",
-			)
-		}
-		episode = data.presentationSourceEpisode
-	}
-	return buildHTMLWithSourceEpisode(data, episode, options)
-}
-
-func sameSourceEpisodePresentationShape(
-	left,
-	right *sourceEpisodeProjection,
-) bool {
-	if left == nil || right == nil ||
-		left.EpisodeID != right.EpisodeID ||
-		left.Repository != right.Repository ||
-		left.Revision != right.Revision ||
-		len(left.Claims) != len(right.Claims) ||
-		len(left.Uncertainties) != len(right.Uncertainties) {
-		return false
-	}
-	for index := range left.Claims {
-		if left.Claims[index].ID != right.Claims[index].ID ||
-			left.Claims[index].State != right.Claims[index].State ||
-			left.Claims[index].Strength != right.Claims[index].Strength ||
-			!sourceEpisodeSourcesEqual(
-				left.Claims[index].Sources,
-				right.Claims[index].Sources,
-			) {
-			return false
+	if len(rendered) > MaxOrdinaryReportHTMLBytes {
+		return nil, &ReportResourceLimitError{
+			LimitBytes: MaxOrdinaryReportHTMLBytes, ActualBytes: len(rendered),
 		}
 	}
-	for index := range left.Uncertainties {
-		if left.Uncertainties[index].ID != right.Uncertainties[index].ID ||
-			left.Uncertainties[index].State != right.Uncertainties[index].State ||
-			!sourceEpisodeSourcesEqual(
-				left.Uncertainties[index].Sources,
-				right.Uncertainties[index].Sources,
-			) {
-			return false
-		}
-	}
-	return true
-}
-
-func sourceEpisodeSourcesEqual(
-	left,
-	right []sourceEpisodeSource,
-) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for index := range left {
-		if left[index] != right[index] {
-			return false
-		}
-	}
-	return true
-}
-
-// ValidateSourceEpisodeForRevision rejects an unapproved artifact or revision
-// mismatch before a caller spends time on repository orientation. It performs
-// the same bounded validation as rendering without persisting the input.
-func ValidateSourceEpisodeForRevision(episodeJSON []byte, revision string) error {
-	_, err := projectApprovedSourceEpisode(
-		&ReportData{CapturedRevision: revision},
-		episodeJSON,
-	)
-	return err
-}
-
-func buildHTML(data *ReportData) ([]byte, error) {
-	return buildHTMLWithOptions(data, RenderOptions{})
+	return rendered, nil
 }
 
 func buildHTMLWithOptions(data *ReportData, options RenderOptions) ([]byte, error) {
-	return buildHTMLWithSourceEpisode(data, nil, options)
-}
-
-func buildHTMLWithSourceEpisode(
-	data *ReportData,
-	episode *sourceEpisodeProjection,
-	options RenderOptions,
-) ([]byte, error) {
 	if err := data.GitLabSourceLinks.validate(); err != nil {
 		return nil, err
 	}
@@ -284,141 +104,241 @@ func buildHTMLWithSourceEpisode(
 	if data.GitLabSourceLinks != nil && data.GitHubSourceLinks != nil {
 		return nil, fmt.Errorf("report: multiple external source hosts are not allowed")
 	}
-	rendered := reportDataForRendering(data)
-	css := styleCSS
-	js := scriptJS
-	if episode == nil {
-		css = withoutSourceEpisodeAssetBlocks(css)
-		js = withoutSourceEpisodeAssetBlocks(js)
+	if (data.GitLabSourceLinks != nil && data.GitLabSourceLinks.Revision != data.CapturedRevision) ||
+		(data.GitHubSourceLinks != nil && data.GitHubSourceLinks.Revision != data.CapturedRevision) {
+		return nil, fmt.Errorf("report: external source revision does not match captured report authority")
 	}
-	payload := struct {
-		*ReportData
-		ArchitectureDebugPresentation map[string]string          `json:"architecture_debug_presentation,omitempty"`
-		SourceEpisode                 *sourceEpisodeProjection   `json:"source_episode,omitempty"`
-		TargetNavigation              *TargetNavigationPortfolio `json:"target_navigation,omitempty"`
-	}{
-		ReportData:                    rendered,
-		ArchitectureDebugPresentation: rendered.architectureDebugPresentation,
-		SourceEpisode:                 episode,
-		TargetNavigation:              options.TargetNavigation,
+	if err := validateBrowserSourceIDs(data); err != nil {
+		return nil, err
 	}
+	if data.ProgramPortfolio == nil {
+		return nil, fmt.Errorf("report: HTML publication requires a complete program portfolio")
+	}
+	return buildProgramHTMLWithOptions(data, options)
+}
+
+// programShellPayload is the complete browser contract for ProgramPortfolio
+// pages. It is a projection of the same strict Program-only report schema.
+type programShellPayload struct {
+	FormatVersion          int                        `json:"format_version"`
+	RepoName               string                     `json:"repo_name"`
+	AnalysisTarget         *analysistarget.Target     `json:"analysis_target,omitempty"`
+	ProgramPortfolio       *ProgramPortfolio          `json:"program_portfolio"`
+	CubeMapView            *CubeMapView               `json:"cube_map_view,omitempty"`
+	CoreMapView            *CoreMapView               `json:"core_map_view,omitempty"`
+	ActivityEntrypointView *ActivityEntrypointView    `json:"activity_entrypoint_view,omitempty"`
+	IntegrationUsageView   *IntegrationUsageView      `json:"integration_usage_view,omitempty"`
+	ActivityPathView       *ActivityPathView          `json:"activity_path_view,omitempty"`
+	OpenablePaths          []string                   `json:"openable_paths"`
+	SourceIDs              map[string]string          `json:"source_ids,omitempty"`
+	GitHubSourceLinks      *GitHubSourceLinks         `json:"github_source_links,omitempty"`
+	GitLabSourceLinks      *GitLabSourceLinks         `json:"gitlab_source_links,omitempty"`
+	CapturedRevision       string                     `json:"captured_revision"`
+	CapturedInputCount     int                        `json:"captured_input_count"`
+	Warnings               []string                   `json:"warnings,omitempty"`
+	TargetNavigation       *TargetNavigationPortfolio `json:"target_navigation,omitempty"`
+}
+
+func buildProgramHTMLWithOptions(data *ReportData, options RenderOptions) ([]byte, error) {
+	if data.ProgramPortfolio == nil {
+		return nil, fmt.Errorf("report: program shell requires a complete program portfolio")
+	}
+	payload := programShellPayloadForReport(data, options.TargetNavigation)
 	dataJSON, err := marshalHTMLPayloadWithLocalRoots(
 		payload,
-		rendered.GitLabSourceLinks != nil || rendered.GitHubSourceLinks != nil,
-		rendered.standaloneLocalRoots,
+		renderPayloadLocalRoots(data, options.LocalRoots),
 	)
 	if err != nil {
 		return nil, err
 	}
+	return executeProgramReport(programReportTemplateData{
+		Title:    data.RepoName,
+		DataJSON: template.JS(dataJSON),
+	})
+}
 
-	title := data.RepoName
-	if data.ProjectGuess != "" {
-		title = title + " — " + data.ProjectGuess
+type programReportTemplateData struct {
+	Title                  string
+	DataJSON               template.JS
+	StandaloneTargetBundle template.HTML
+}
+
+func executeProgramReport(data programReportTemplateData) ([]byte, error) {
+	programReportTmpl, err := template.New("program-report").Parse(programTemplateHTML)
+	if err != nil {
+		return nil, fmt.Errorf("report: parse embedded program template: %w", err)
 	}
-
-	var buf bytes.Buffer
-	err = reportTmpl.Execute(&buf, map[string]any{
-		"Title":                 title,
-		"Language":              normalizedReportLanguage(data.ReportLanguage),
-		"CSS":                   template.CSS(css),
-		"HasArchitectureCanvas": data.ArchitectureCanvas != nil,
-		"ArchitectureCanvasCSS": template.CSS(architectureCanvasCSS),
-		"ELKJS":                 template.JS(elkJSBundledJS),
-		"ArchitectureCanvasJS":  template.JS(architectureCanvasJS),
-		"HasDiscoveredSurfaces": data.DiscoveredSurfaces != nil,
-		"SurfaceCatalogCSS":     template.CSS(surfaceCatalogCSS),
-		"SurfaceCatalogJS":      template.JS(surfaceCatalogJS),
-		"LocalizationState":     data.presentationLocalizationState,
-		"DataJSON":              template.JS(dataJSON),
-		"UIMessagesJS":          template.JS(uiMessagesJS),
-		"JS":                    template.JS(js),
+	var buffer bytes.Buffer
+	err = programReportTmpl.Execute(&buffer, map[string]any{
+		"Title":                  data.Title,
+		"ReportAppCSS":           template.CSS(reportAppCSS),
+		"ReportAppJS":            template.JS(reportAppJS),
+		"DataJSON":               data.DataJSON,
+		"StandaloneTargetBundle": data.StandaloneTargetBundle,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("report: render program shell: %w", err)
 	}
-
-	return buf.Bytes(), nil
-}
-
-func withoutSourceEpisodeAssetBlocks(asset string) string {
-	const (
-		startMarker = "repomap-source-episode:start"
-		endMarker   = "repomap-source-episode:end"
-	)
-	for {
-		start := strings.Index(asset, startMarker)
-		if start < 0 {
-			return asset
-		}
-		lineStart := strings.LastIndex(asset[:start], "\n")
-		if lineStart < 0 {
-			lineStart = 0
-		}
-		endOffset := strings.Index(asset[start:], endMarker)
-		if endOffset < 0 {
-			return asset
-		}
-		lineEnd := strings.Index(asset[start+endOffset:], "\n")
-		if lineEnd < 0 {
-			asset = asset[:lineStart]
-			continue
-		}
-		lineEnd += start + endOffset
-		left := asset[:lineStart]
-		right := asset[lineEnd+1:]
-		separator := "\n"
-		if strings.HasSuffix(left, "\n") || strings.HasPrefix(right, "\n") {
-			separator = ""
-		}
-		asset = left + separator + right
-	}
-}
-
-func reportDataForRendering(data *ReportData) *ReportData {
-	rendered := *data
-	rendered.SemanticSearch = nil
-	rendered.SemanticSearchDisabled = false
-	rendered.PresentationWarningMessages = runPresentationWarnings(data)
-	if data.TaskInvestigation != nil {
-		workspace := *data.TaskInvestigation
-		workspace.PresentationWarnings = taskInvestigationPresentationWarnings(
-			workspace.warningDiagnostics,
-		)
-		rendered.TaskInvestigation = &workspace
-	}
-	return &rendered
+	return buffer.Bytes(), nil
 }
 
 func reportDataForPersistence(data *ReportData) *ReportData {
 	rendered := *data
-	// Canonical report JSON is always English. Requested locale and any
-	// translated presentation live in separately validated render sidecars.
-	rendered.ReportLanguage = ""
-	rendered.SemanticSearch = nil
-	rendered.SemanticSearchDisabled = false
-	rendered.PresentationWarnings = nil
-	rendered.PresentationWarningKinds = nil
-	rendered.PresentationWarningMessages = nil
 	// Static source routing belongs only to the generated standalone HTML.
-	// Canonical report.json and its manifest binding remain host-neutral.
+	// Canonical report.json remains host-neutral; the run manifest separately
+	// binds the exact external host and repository URL used by that HTML.
 	rendered.GitLabSourceLinks = nil
 	rendered.GitHubSourceLinks = nil
-	if data.TaskInvestigation != nil {
-		workspace := *data.TaskInvestigation
-		workspace.PresentationWarnings = nil
-		rendered.TaskInvestigation = &workspace
-	}
 	return &rendered
 }
 
-func Generate(runDir string) error {
-	return GenerateWithOptions(runDir, RenderOptions{})
+func validateProgramPresentation(data *ReportData) error {
+	if data == nil {
+		return fmt.Errorf("report: data is required")
+	}
+	if data.ProgramPortfolio == nil {
+		return fmt.Errorf("report: publication requires a complete program portfolio")
+	}
+	if data.FormatVersion != CurrentFormatVersion {
+		return fmt.Errorf("report: unsupported format version %d", data.FormatVersion)
+	}
+	if data.RepoName == "" || strings.TrimSpace(data.RepoName) != data.RepoName {
+		return fmt.Errorf("report: repository name must be exact and non-empty")
+	}
+	if !validGitRevision(data.CapturedRevision) || data.CapturedRevision != strings.ToLower(data.CapturedRevision) {
+		return fmt.Errorf("report: captured revision must be a canonical lowercase 40- or 64-character hex revision")
+	}
+	if data.CapturedInputCount < 0 {
+		return fmt.Errorf("report: captured input count cannot be negative")
+	}
+	previousPath := ""
+	for index, sourcePath := range data.OpenablePaths {
+		if err := validateManifestPath(sourcePath); err != nil {
+			return fmt.Errorf("report: openable path %d: %w", index, err)
+		}
+		if previousPath != "" && previousPath >= sourcePath {
+			return fmt.Errorf("report: openable paths must be uniquely sorted")
+		}
+		previousPath = sourcePath
+	}
+	for index, warning := range data.Warnings {
+		if strings.TrimSpace(warning) == "" {
+			return fmt.Errorf("report: warning %d must be non-empty", index)
+		}
+	}
+	defaultEntry, err := data.ProgramPortfolio.defaultEntry()
+	if err != nil {
+		return fmt.Errorf("report: %w", err)
+	}
+	if err := validateProgramSemanticPresentation(
+		data.ProgramPortfolio, data.AnalysisTarget, data.CubeMapView, data.CoreMapView,
+		data.ActivityEntrypointView, data.IntegrationUsageView, data.ActivityPathView,
+	); err != nil {
+		return err
+	}
+	if data.CubeMapView != nil {
+		if data.AnalysisTarget == nil {
+			return fmt.Errorf("report: cube map view requires an exact analysis target")
+		}
+		if err := data.AnalysisTarget.Validate(); err != nil {
+			return fmt.Errorf("report: cube map analysis target: %w", err)
+		}
+		if err := data.CubeMapView.Validate(); err != nil {
+			return fmt.Errorf("report: cube map view: %w", err)
+		}
+		if data.CubeMapView.Target.Ref != data.AnalysisTarget.Ref {
+			return fmt.Errorf("report: cube map view target does not match analysis target")
+		}
+		if data.CubeMapView.ProgramTargetID != defaultEntry.Target.ID {
+			return fmt.Errorf("report: cube map view does not bind the default program target")
+		}
+		if err := validateCubeMapProgramTarget(*data.AnalysisTarget, defaultEntry.Target); err != nil {
+			return fmt.Errorf("report: %w", err)
+		}
+	}
+	if data.CoreMapView != nil {
+		if err := data.CoreMapView.Validate(); err != nil {
+			return fmt.Errorf("report: core map view: %w", err)
+		}
+		if data.CoreMapView.ProgramTargetID != defaultEntry.Target.ID ||
+			data.CoreMapView.ProgramIndexSHA256 != defaultEntry.View.IndexSHA256 {
+			return fmt.Errorf("report: core map view does not bind the default program target and index")
+		}
+	}
+	if data.ActivityEntrypointView != nil {
+		if err := data.ActivityEntrypointView.Validate(); err != nil {
+			return fmt.Errorf("report: activity entrypoint view: %w", err)
+		}
+		if data.ActivityEntrypointView.ProgramTargetID != defaultEntry.Target.ID ||
+			data.ActivityEntrypointView.ProgramIndexSHA256 != defaultEntry.View.IndexSHA256 {
+			return fmt.Errorf("report: activity entrypoint view does not bind the default program target and index")
+		}
+	}
+	if data.IntegrationUsageView != nil {
+		if err := data.IntegrationUsageView.Validate(); err != nil {
+			return fmt.Errorf("report: integration usage view: %w", err)
+		}
+		if data.IntegrationUsageView.ProgramTargetID != defaultEntry.Target.ID ||
+			data.IntegrationUsageView.ProgramIndexSHA256 != defaultEntry.View.IndexSHA256 {
+			return fmt.Errorf("report: integration usage view does not bind the default program target and index")
+		}
+	}
+	if data.ActivityPathView != nil {
+		if err := data.ActivityPathView.Validate(); err != nil {
+			return fmt.Errorf("report: activity path view: %w", err)
+		}
+		if data.ActivityPathView.ProgramTargetID != defaultEntry.Target.ID ||
+			data.ActivityPathView.ProgramIndexSHA256 != defaultEntry.View.IndexSHA256 {
+			return fmt.Errorf("report: activity path view does not bind the default program target and index")
+		}
+		if err := data.ActivityPathView.ValidateReportJoins(
+			data.ActivityEntrypointView, data.IntegrationUsageView,
+		); err != nil {
+			return fmt.Errorf("report: activity path report joins: %w", err)
+		}
+	}
+	return nil
 }
 
-// GenerateWithOptions is the unauthenticated generation seam for transient
-// presentation options. Existing callers retain the exact zero-options path.
-func GenerateWithOptions(runDir string, options RenderOptions) error {
-	return generate(runDir, nil, nil, nil, options)
+func validateBrowserSourceIDs(data *ReportData) error {
+	if data == nil || len(data.SourceIDs) == 0 {
+		return nil
+	}
+	if data.GitHubSourceLinks != nil || data.GitLabSourceLinks != nil {
+		return fmt.Errorf("report: static and served source authorities cannot be mixed")
+	}
+	if len(data.SourceIDs) != len(data.OpenablePaths) {
+		return fmt.Errorf("report: served source authority does not cover every openable path")
+	}
+	openable := make(map[string]struct{}, len(data.OpenablePaths))
+	for _, sourcePath := range data.OpenablePaths {
+		openable[sourcePath] = struct{}{}
+	}
+	seenIDs := make(map[string]struct{}, len(data.SourceIDs))
+	for sourcePath, sourceID := range data.SourceIDs {
+		if _, allowed := openable[sourcePath]; !allowed || !validBrowserSourceID(sourceID) {
+			return fmt.Errorf("report: served source authority is invalid")
+		}
+		if _, duplicate := seenIDs[sourceID]; duplicate {
+			return fmt.Errorf("report: served source authority contains a duplicate source ID")
+		}
+		seenIDs[sourceID] = struct{}{}
+	}
+	return nil
+}
+
+func validBrowserSourceID(value string) bool {
+	if len(value) != 43 {
+		return false
+	}
+	for _, character := range value {
+		if character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' ||
+			character >= '0' && character <= '9' || character == '_' || character == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // GenerateAuthorized renders a report and binds its exact generated JSON to
@@ -434,7 +354,7 @@ func GenerateAuthorizedWithOptions(
 	authority RunAuthority,
 	options RenderOptions,
 ) error {
-	return generate(runDir, &authority, nil, nil, options)
+	return generate(runDir, authority, nil, options)
 }
 
 type standaloneSourceConfig struct {
@@ -471,7 +391,7 @@ func GenerateAuthorizedGitLabWithOptions(
 	if err := validateGitLabAuthority(authority); err != nil {
 		return err
 	}
-	return generate(runDir, &authority, nil, &standaloneSourceConfig{
+	return generate(runDir, authority, &standaloneSourceConfig{
 		hostName:      "GitLab",
 		repositoryURL: normalizedURL,
 	}, options)
@@ -506,250 +426,199 @@ func GenerateAuthorizedGitHubWithOptions(
 	if err := validateStandaloneSourceAuthority(authority, "GitHub"); err != nil {
 		return err
 	}
-	return generate(runDir, &authority, nil, &standaloneSourceConfig{
+	return generate(runDir, authority, &standaloneSourceConfig{
 		hostName:      "GitHub",
 		repositoryURL: normalizedURL,
 	}, options)
 }
 
-// GenerateAuthorizedWithSourceEpisode generates the same persisted report and
-// manifest as GenerateAuthorized, while placing one approved, SHA-pinned
-// source episode only in the static report.html review surface.
-func GenerateAuthorizedWithSourceEpisode(
-	runDir string,
-	authority RunAuthority,
-	episodeJSON []byte,
-) error {
-	return GenerateAuthorizedWithSourceEpisodeAndOptions(
-		runDir, authority, episodeJSON, RenderOptions{},
-	)
-}
-
-func GenerateAuthorizedWithSourceEpisodeAndOptions(
-	runDir string,
-	authority RunAuthority,
-	episodeJSON []byte,
-	options RenderOptions,
-) error {
-	if err := authority.validate(); err != nil {
-		return err
-	}
-	if len(episodeJSON) == 0 || len(episodeJSON) > MaxSourceEpisodeBytes {
-		return fmt.Errorf("report: source episode input is outside the byte budget")
-	}
-	episodeJSON = append([]byte(nil), episodeJSON...)
-	if err := ValidateSourceEpisodeForRevision(episodeJSON, authority.repository.Head); err != nil {
-		return err
-	}
-	return generate(runDir, &authority, episodeJSON, nil, options)
-}
-
 func generate(
 	runDir string,
-	authority *RunAuthority,
-	sourceEpisodeJSON []byte,
+	authority RunAuthority,
 	standaloneSource *standaloneSourceConfig,
 	renderOptions RenderOptions,
 ) error {
-	if standaloneSource != nil && sourceEpisodeJSON != nil {
-		return fmt.Errorf("report: standalone external-source reports cannot embed a source episode")
-	}
 	if standaloneSource != nil {
-		if authority == nil {
-			return fmt.Errorf("report: standalone external-source report requires confirmed repository authority")
-		}
-		if err := validateStandaloneSourceAuthority(*authority, standaloneSource.hostName); err != nil {
+		if err := validateStandaloneSourceAuthority(authority, standaloneSource.hostName); err != nil {
 			return err
 		}
 	}
-	if err := RemoveRunManifest(runDir); err != nil {
+	if err := authority.validate(); err != nil {
 		return err
 	}
-	deferredSourceAuthority := authority != nil && authority.inputs == nil
-	if authority != nil {
-		if err := authority.validate(); err != nil {
-			return err
-		}
-		if sourceAuthorityNeedsLiteralGitMode(authority.inputs) {
-			// Clean captured-input mode lookup is pathspec-sensitive. Mark the
-			// ambiguous path unavailable before any exact workspace adapters run
-			// so both the report and manifest remain view-only.
-			viewOnlyAuthority := *authority
-			viewOnlyAuthority.inputs = append([]freshness.CapturedInput(nil), authority.inputs...)
-			for index := range viewOnlyAuthority.inputs {
-				if sourcePathNeedsLiteralGitMode(viewOnlyAuthority.inputs[index].Path) {
-					viewOnlyAuthority.inputs[index].Kind = freshness.FileMissing
-					viewOnlyAuthority.inputs[index].Mode = ""
-					viewOnlyAuthority.inputs[index].ContentSHA256 = ""
-				}
-			}
-			authority = &viewOnlyAuthority
-		}
+	// report.json and report.html are not publication authority without the
+	// manifest, but they still look like a finished product when opened
+	// directly. Invalidate all final names before any regeneration and install
+	// the manifest last only after the complete replacement has validated.
+	if err := removePublishedReportArtifacts(runDir); err != nil {
+		return err
 	}
-	studyDocumentSourceRoot := ""
-	if authority != nil {
-		studyDocumentSourceRoot = authority.analysisRoot
-	}
-	data, err := readRunDir(runDir, studyDocumentSourceRoot, authority, nil)
+	data, err := readRunDir(runDir)
 	if err != nil {
 		return err
 	}
-	if sourceEpisodeJSON != nil && authority != nil {
-		if err := retainSourceEpisodeRegularOpenablePaths(data, *authority); err != nil {
-			return err
-		}
-	}
-	if err := writePavedPathPublicationDiagnostics(runDir); err != nil {
-		return err
-	}
-	if deferredSourceAuthority {
-		repositoryPaths, pathErr := repositoryRelativeInputPaths(
-			authority.repository.Identity,
-			authority.analysisRoot,
-			data.OpenablePaths,
-		)
-		if pathErr != nil {
-			return pathErr
-		}
-		if sourcePathsNeedLiteralGitMode(repositoryPaths) {
-			viewOnlyAuthority := *authority
-			viewOnlyAuthority.inputs = missingSourceAuthority(repositoryPaths)
-			authority = &viewOnlyAuthority
-		}
-	}
-	feedbackPath := runDir + "/onboarding-feedback.md"
-	if err := ensureFeedbackTemplate(data, feedbackPath); err != nil {
-		return err
-	}
-	data.FeedbackPath = feedbackPath
 	var gitLabSourceLinks *GitLabSourceLinks
 	var gitHubSourceLinks *GitHubSourceLinks
-	if authority != nil {
-		freshnessResult := authority.freshness
-		data.Freshness = &freshnessResult
-		data.CapturedRevision = authority.repository.Head
-		if standaloneSource != nil {
-			pathPrefix, err := standaloneSourcePathPrefix(authority.repository.Identity, authority.analysisRoot)
+	data.CapturedRevision = authority.repository.Head
+	if standaloneSource != nil {
+		pathPrefix, err := standaloneSourcePathPrefix(authority.repository.Identity, authority.analysisRoot)
+		if err != nil {
+			return err
+		}
+		switch standaloneSource.hostName {
+		case "GitLab":
+			gitLabSourceLinks, err = newGitLabSourceLinks(
+				standaloneSource.repositoryURL,
+				data.CapturedRevision,
+				pathPrefix,
+			)
 			if err != nil {
 				return err
 			}
-			switch standaloneSource.hostName {
-			case "GitLab":
-				gitLabSourceLinks, err = newGitLabSourceLinks(
-					standaloneSource.repositoryURL,
-					data.CapturedRevision,
-					pathPrefix,
-				)
-				if err != nil {
-					return err
-				}
-				gitLabSourceLinks.WorkingTreeDirty = len(authority.repository.Dirty) != 0
-				gitLabSourceLinks.WorkingTreePaths = gitLabWorkingTreePaths(
-					pathPrefix,
-					authority.repository.Dirty,
-					data.OpenablePaths,
-				)
-			case "GitHub":
-				gitHubSourceLinks, err = newGitHubSourceLinks(
-					standaloneSource.repositoryURL,
-					data.CapturedRevision,
-					pathPrefix,
-				)
-				if err != nil {
-					return err
-				}
-				gitHubSourceLinks.WorkingTreeDirty = len(authority.repository.Dirty) != 0
-				gitHubSourceLinks.WorkingTreePaths = gitLabWorkingTreePaths(
-					pathPrefix,
-					authority.repository.Dirty,
-					data.OpenablePaths,
-				)
-			default:
-				return fmt.Errorf("report: unsupported external source host %q", standaloneSource.hostName)
-			}
-			data.standaloneLocalRoots = []string{
-				data.ArtifactsDir,
-				authority.analysisRoot,
-				authority.repository.Identity,
-			}
-		}
-		bindOperationalRevision(data.Operations, data.CapturedRevision)
-		if err := bindTaskInvestigationAuthority(data.TaskInvestigation, authority.repository); err != nil {
-			return err
-		}
-		data.CapturedInputCount = len(authority.inputs)
-		data.RepositorySubmodules = append([]freshness.SubmoduleState(nil), authority.repository.Submodules...)
-	}
-	if sourceEpisodeJSON != nil {
-		if err := AttachSourceEpisodePresentation(data, sourceEpisodeJSON); err != nil {
-			return err
-		}
-	}
-	if authority != nil {
-		if err := PrepareAuthorizedSourceCoverage(context.Background(), data, authority); err != nil {
-			return err
-		}
-		data.CapturedInputCount = len(authority.inputs)
-		if data.RepositoryAtlas != nil {
-			data.AtlasStudy, data.StudyMap, err = readAtlasStudyReportProduct(runDir, data)
+		case "GitHub":
+			gitHubSourceLinks, err = newGitHubSourceLinks(
+				standaloneSource.repositoryURL,
+				data.CapturedRevision,
+				pathPrefix,
+			)
 			if err != nil {
 				return err
 			}
-			applyCanonicalStudyPublication(data)
-			prepareReplayedPresentationMetadata(data)
+		default:
+			return fmt.Errorf("report: unsupported external source host %q", standaloneSource.hostName)
+		}
+		data.standaloneLocalRoots = []string{
+			data.ArtifactsDir,
+			authority.analysisRoot,
+			authority.repository.Identity,
 		}
 	}
+	data.CapturedInputCount = len(authority.inputs)
 
-	jsonPath := runDir + "/report.json"
-	if err := WriteReportJSON(data, jsonPath); err != nil {
+	reportJSON, err := encodeReportJSON(data, maxManifestReportBytes)
+	if err != nil {
 		return err
 	}
-	canonicalData := data
-	var reportJSON []byte
-	if authority != nil {
-		reportJSON, err = os.ReadFile(jsonPath)
-		if err != nil {
-			return fmt.Errorf("read generated report json: %w", err)
-		}
-	}
-
-	htmlPath := runDir + "/report.html"
-	preparedRenderData, _ := PrepareRunPresentation(
-		runDir,
-		canonicalData,
-		sourceEpisodeJSON,
-	)
-	if preparedRenderData == nil {
-		preparedRenderData = canonicalData
-	}
-	renderData, _ := LoadPresentationLocalization(
-		runDir,
-		preparedRenderData,
-		canonicalData.requestedPresentationLocale,
-	)
+	renderData := *data
 	renderData.GitLabSourceLinks = gitLabSourceLinks
 	renderData.GitHubSourceLinks = gitHubSourceLinks
-	if sourceEpisodeJSON == nil {
-		if err := WriteReportHTMLWithOptions(renderData, htmlPath, renderOptions); err != nil {
-			return err
+	reportHTML, err := RenderHTMLWithOptions(&renderData, renderOptions)
+	if err != nil {
+		return err
+	}
+	manifest, err := prepareAuthorizedRunManifest(
+		runDir, data, reportJSON, authority, standaloneSource,
+	)
+	if err != nil {
+		return err
+	}
+	if err := VerifyOrdinaryReportHTMLPayload(
+		reportHTML,
+		reportJSON,
+		OrdinaryReportHTMLAuthority{
+			TargetNavigation: renderOptions.TargetNavigation,
+			StandaloneSource: manifest.StandaloneSource,
+			ArtifactsDir:     data.ArtifactsDir,
+			AnalysisRoot:     manifest.AnalysisRoot,
+			RepositoryRoot:   manifest.RepositoryState.Identity,
+		},
+	); err != nil {
+		return fmt.Errorf("report: verify generated html before publication: %w", err)
+	}
+	return installAuthorizedReport(runDir, reportJSON, reportHTML, manifest)
+}
+
+// installAuthorizedReport stages both browser artifacts in the run directory,
+// installs them, and writes the already-validated manifest last as the sole
+// readiness boundary. Any returned error removes every final product name.
+func installAuthorizedReport(
+	runDir string,
+	reportJSON []byte,
+	reportHTML []byte,
+	manifest RunManifest,
+) (resultErr error) {
+	jsonStage, err := stageReportArtifact(runDir, ".report-json-*.tmp", reportJSON)
+	if err != nil {
+		return err
+	}
+	htmlStage := ""
+	installed := false
+	defer func() {
+		cleanupErr := errors.Join(removeIfPresent(jsonStage), removeIfPresent(htmlStage))
+		if !installed {
+			cleanupErr = errors.Join(cleanupErr, removePublishedReportArtifacts(runDir))
 		}
-	} else {
-		html, err := RenderHTMLWithSourceEpisodeAndOptions(
-			renderData,
-			sourceEpisodeJSON,
-			renderOptions,
-		)
-		if err != nil {
-			return err
+		resultErr = errors.Join(resultErr, cleanupErr)
+	}()
+
+	htmlStage, err = stageReportArtifact(runDir, ".report-html-*.tmp", reportHTML)
+	if err != nil {
+		return err
+	}
+	jsonPath := filepath.Join(runDir, "report.json")
+	htmlPath := filepath.Join(runDir, "report.html")
+	if err := os.Rename(jsonStage, jsonPath); err != nil {
+		return fmt.Errorf("report: install report.json: %w", err)
+	}
+	jsonStage = ""
+	if err := os.Rename(htmlStage, htmlPath); err != nil {
+		return fmt.Errorf("report: install report.html: %w", err)
+	}
+	htmlStage = ""
+	if err := writeRunManifestAtomic(runDir, manifest); err != nil {
+		return err
+	}
+	installed = true
+	return nil
+}
+
+func stageReportArtifact(runDir string, pattern string, data []byte) (string, error) {
+	file, err := os.CreateTemp(runDir, pattern)
+	if err != nil {
+		return "", fmt.Errorf("report: create staged artifact: %w", err)
+	}
+	name := file.Name()
+	remove := true
+	defer func() {
+		if remove {
+			_ = os.Remove(name)
 		}
-		if err := os.WriteFile(htmlPath, html, 0o644); err != nil {
-			return err
+	}()
+	if err := file.Chmod(0o644); err != nil {
+		_ = file.Close()
+		return "", fmt.Errorf("report: set staged artifact permissions: %w", err)
+	}
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
+		return "", fmt.Errorf("report: write staged artifact: %w", err)
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return "", fmt.Errorf("report: sync staged artifact: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return "", fmt.Errorf("report: close staged artifact: %w", err)
+	}
+	remove = false
+	return name, nil
+}
+
+func removePublishedReportArtifacts(runDir string) error {
+	var result error
+	for _, name := range []string{RunManifestFilename, "report.json", "report.html"} {
+		if err := removeIfPresent(filepath.Join(runDir, name)); err != nil {
+			result = errors.Join(result, fmt.Errorf("report: remove incomplete %s: %w", name, err))
 		}
 	}
-	if authority != nil {
-		if err := writeAuthorizedRunManifest(runDir, canonicalData, reportJSON, *authority); err != nil {
-			return err
-		}
+	return result
+}
+
+func removeIfPresent(path string) error {
+	if path == "" {
+		return nil
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
 	}
 	return nil
 }
@@ -770,101 +639,39 @@ func standaloneSourcePathPrefix(repositoryRoot, analysisRoot string) (string, er
 	return prefix, nil
 }
 
-func gitLabWorkingTreePaths(
-	pathPrefix string,
-	dirty []freshness.DirtyFile,
-	openablePaths []string,
-) []string {
-	dirtyPaths := make(map[string]struct{}, len(dirty)*2)
-	for _, file := range dirty {
-		dirtyPaths[file.Path] = struct{}{}
-		if file.FromPath != "" {
-			dirtyPaths[file.FromPath] = struct{}{}
-		}
-	}
-	result := make([]string, 0, min(len(openablePaths), len(dirtyPaths)))
-	for _, openablePath := range openablePaths {
-		repositoryPath := openablePath
-		if pathPrefix != "" {
-			repositoryPath = path.Join(pathPrefix, openablePath)
-		}
-		if _, exists := dirtyPaths[repositoryPath]; exists {
-			result = append(result, openablePath)
-		}
-	}
-	sort.Strings(result)
-	return slices.Compact(result)
-}
-
-func marshalHTMLPayload(payload any, standalone bool) ([]byte, error) {
-	var localRoots []string
-	if reportData, ok := payload.(*ReportData); ok && reportData != nil {
-		localRoots = reportData.standaloneLocalRoots
-	}
-	return marshalHTMLPayloadWithLocalRoots(payload, standalone, localRoots)
-}
-
 func marshalHTMLPayloadWithLocalRoots(
 	payload any,
-	standalone bool,
 	localRoots []string,
 ) ([]byte, error) {
 	data, err := json.Marshal(payload)
-	if err != nil || !standalone {
-		return data, err
+	if err != nil {
+		return nil, err
 	}
 	var decoded any
 	if err := json.Unmarshal(data, &decoded); err != nil {
-		return nil, fmt.Errorf("report: decode standalone HTML projection: %w", err)
+		return nil, fmt.Errorf("report: decode browser projection: %w", err)
 	}
-	stripStandaloneSourceContent(decoded)
-	stripStandaloneLocalPaths(decoded, localRoots)
+	scrubRenderLocalPaths(decoded, localRoots)
 	data, err = json.Marshal(decoded)
 	if err != nil {
-		return nil, fmt.Errorf("report: encode standalone HTML projection: %w", err)
+		return nil, fmt.Errorf("report: encode browser projection: %w", err)
 	}
 	return data, nil
 }
 
-func stripStandaloneSourceContent(value any) {
-	switch typed := value.(type) {
-	case []any:
-		for _, item := range typed {
-			stripStandaloneSourceContent(item)
-		}
-	case map[string]any:
-		// These fields are useful only to the local debug/server experience and
-		// would either leak a workstation path or retain exact source bytes.
-		delete(typed, "model_research")
-		delete(typed, "artifacts_dir")
-		delete(typed, "feedback_path")
-		delete(typed, "source_ids")
-		delete(typed, "source_context_ids")
-		if _, hasPath := typed["path"]; hasPath {
-			// SourceSignal snippets are exact scanner excerpts. They are useful
-			// in the localhost report, but the standalone artifact keeps only
-			// their repository location and explanation.
-			delete(typed, "snippet")
-			if _, isSnippet := typed["content"]; isSnippet {
-				delete(typed, "content")
-				delete(typed, "lines")
-				delete(typed, "full_function_lines")
-				delete(typed, "full_function_start_line")
-				delete(typed, "full_function_end_line")
-				delete(typed, "content_sha256")
-				delete(typed, "presentation_sha256")
-			}
-		}
-		if _, codeBearing := typed["code_bearing"]; codeBearing {
-			delete(typed, "lines")
-		}
-		for _, child := range typed {
-			stripStandaloneSourceContent(child)
-		}
+func renderPayloadLocalRoots(data *ReportData, extra []string) []string {
+	roots := append([]string(nil), extra...)
+	if data == nil {
+		return roots
 	}
+	roots = append(roots, data.standaloneLocalRoots...)
+	if data.ArtifactsDir != "" {
+		roots = append(roots, data.ArtifactsDir)
+	}
+	return roots
 }
 
-func stripStandaloneLocalPaths(value any, roots []string) {
+func scrubRenderLocalPaths(value any, roots []string) {
 	normalized := make([]string, 0, len(roots))
 	seen := make(map[string]struct{}, len(roots))
 	for _, root := range roots {
@@ -913,115 +720,4 @@ func stripStandaloneLocalPaths(value any, roots []string) {
 		}
 	}
 	scrub(value)
-}
-
-func retainSourceEpisodeRegularOpenablePaths(data *ReportData, authority RunAuthority) error {
-	if data == nil || authority.inputs == nil {
-		return nil
-	}
-	analysisRelative, err := filepath.Rel(authority.repository.Identity, authority.analysisRoot)
-	if err != nil || analysisRelative == ".." ||
-		strings.HasPrefix(analysisRelative, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("report: source episode analysis root is outside repository")
-	}
-	analysisPrefix := ""
-	if analysisRelative != "." {
-		analysisPrefix = filepath.ToSlash(analysisRelative)
-	}
-	capturedByPath := make(map[string]freshness.CapturedInput, len(authority.inputs))
-	for _, input := range authority.inputs {
-		if _, duplicate := capturedByPath[input.Path]; duplicate {
-			return fmt.Errorf("report: source episode captured authority has duplicate paths")
-		}
-		capturedByPath[input.Path] = input
-	}
-	retained := make([]string, 0, min(len(data.OpenablePaths), maxManifestOpenablePaths))
-	for _, sourcePath := range data.OpenablePaths {
-		if err := validateManifestPath(sourcePath); err != nil {
-			return err
-		}
-		repositoryPath := sourcePath
-		if analysisPrefix != "" {
-			repositoryPath = path.Join(analysisPrefix, sourcePath)
-		}
-		input, ok := capturedByPath[repositoryPath]
-		if ok && input.Kind == freshness.FileSymlink {
-			continue
-		}
-		retained = append(retained, sourcePath)
-	}
-	data.OpenablePaths = retained
-	return nil
-}
-
-func sourcePathNeedsLiteralGitMode(sourcePath string) bool {
-	return strings.HasPrefix(sourcePath, ":") || strings.ContainsAny(sourcePath, "*?[")
-}
-
-func sourcePathsNeedLiteralGitMode(paths []string) bool {
-	for _, sourcePath := range paths {
-		if sourcePathNeedsLiteralGitMode(sourcePath) {
-			return true
-		}
-	}
-	return false
-}
-
-func sourceAuthorityNeedsLiteralGitMode(inputs []freshness.CapturedInput) bool {
-	for _, input := range inputs {
-		if sourcePathNeedsLiteralGitMode(input.Path) {
-			return true
-		}
-	}
-	return false
-}
-
-func missingSourceAuthority(paths []string) []freshness.CapturedInput {
-	inputs := make([]freshness.CapturedInput, 0, len(paths))
-	for _, sourcePath := range paths {
-		id := sha256.Sum256([]byte("captured-input-v1\x00" + sourcePath))
-		inputs = append(inputs, freshness.CapturedInput{
-			Version: freshness.CapturedInputVersion,
-			ID:      fmt.Sprintf("%x", id),
-			Path:    sourcePath,
-			Kind:    freshness.FileMissing,
-			Stages:  []string{"report_evidence"},
-		})
-	}
-	return inputs
-}
-
-func ensureFeedbackTemplate(data *ReportData, path string) error {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if errors.Is(err, os.ErrExist) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("create onboarding feedback template: %w", err)
-	}
-	defer file.Close()
-
-	content := fmt.Sprintf(`# repomap onboarding feedback
-
-Repository: %s
-Direction followed:
-First useful file:
-Time to useful orientation:
-
-## Correct
-
--
-
-## Missing
-
--
-
-## Misleading
-
--
-`, data.RepoName)
-	if _, err := file.WriteString(content); err != nil {
-		return fmt.Errorf("write onboarding feedback template: %w", err)
-	}
-	return nil
 }

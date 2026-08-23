@@ -4,10 +4,6 @@ package workspaceopen
 
 import (
 	"context"
-	"crypto/sha256"
-	"errors"
-	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -20,27 +16,22 @@ import (
 	"github.com/dvordrova/repomap/internal/workspacesnapshot"
 )
 
-const (
-	// MaxHashBytes is the largest current file prefix that may be hashed.
-	MaxHashBytes int64 = 8 << 20
+const maxPathBytes = 4096
 
-	maxPathBytes   = 4096
-	hashBufferSize = 32 << 10
-)
-
-// ErrorKind is the closed failure contract for authorized target resolution.
-type ErrorKind string
+// errorKind is the private closed failure taxonomy for target resolution.
+// The report server deliberately exposes one source_unavailable response.
+type errorKind string
 
 const (
-	ErrorInvalidRequest    ErrorKind = "invalid_request"
-	ErrorUnauthorized      ErrorKind = "unauthorized"
-	ErrorRootUnavailable   ErrorKind = "root_unavailable"
-	ErrorTargetUnavailable ErrorKind = "target_unavailable"
-	ErrorCanceled          ErrorKind = "canceled"
+	errorInvalidRequest    errorKind = "invalid_request"
+	errorUnauthorized      errorKind = "unauthorized"
+	errorRootUnavailable   errorKind = "root_unavailable"
+	errorTargetUnavailable errorKind = "target_unavailable"
+	errorCanceled          errorKind = "canceled"
 )
 
 type openError struct {
-	kind ErrorKind
+	kind errorKind
 }
 
 func (err *openError) Error() string {
@@ -50,32 +41,19 @@ func (err *openError) Error() string {
 	return "workspace open: " + string(err.kind)
 }
 
-func workspaceOpenError(kind ErrorKind) error {
+func workspaceOpenError(kind errorKind) error {
 	return &openError{kind: kind}
 }
 
-// ErrorKindOf returns the closed kind for an error produced by this package.
-func ErrorKindOf(err error) ErrorKind {
-	var target *openError
-	if errors.As(err, &target) {
-		return target.kind
-	}
-	return ""
-}
-
-// Request selects one exact catalog-authorized analysis-relative path. A zero
-// MaxHashBytes selects MaxHashBytes; a positive value may only narrow it.
+// Request selects one exact catalog-authorized analysis-relative path.
 type Request struct {
-	Path         string
-	MaxHashBytes int64
+	Path string
 }
 
 // Target contains no source bytes. AbsolutePath is intended only for a local
 // adapter that has separately authorized its presentation-level action.
 type Target struct {
-	Path          string
-	AbsolutePath  string
-	SourceChanged bool
+	AbsolutePath string
 }
 
 // Service is bound to one immutable workspace snapshot and catalog.
@@ -91,37 +69,37 @@ func New(snapshot workspacesnapshot.Snapshot) (*Service, error) {
 	if analysisRoot == "" || snapshot.RepositoryRoot() == "" ||
 		!filepath.IsAbs(analysisRoot) || filepath.Clean(analysisRoot) != analysisRoot ||
 		catalog.AnalysisRoot() != analysisRoot {
-		return nil, workspaceOpenError(ErrorInvalidRequest)
+		return nil, workspaceOpenError(errorInvalidRequest)
 	}
 	return &Service{analysisRoot: analysisRoot, catalog: catalog}, nil
 }
 
-// Resolve verifies one authorized current local file and reports whether its
-// bounded current hash is known to differ from the captured catalog hash.
+// Resolve verifies one authorized current local file. Repository changes do
+// not alter this action: the editor opens the current regular file at the
+// exact manifest-authorized path.
 func (service *Service) Resolve(ctx context.Context, request Request) (Target, error) {
 	// Path is caller-controlled. Bound it before trimming, Unicode scanning,
 	// canonicalization, filesystem calls, or path-derived allocations.
 	if len(request.Path) > maxPathBytes {
-		return Target{}, workspaceOpenError(ErrorInvalidRequest)
+		return Target{}, workspaceOpenError(errorInvalidRequest)
 	}
 	if service == nil || service.analysisRoot == "" || ctx == nil {
-		return Target{}, workspaceOpenError(ErrorInvalidRequest)
+		return Target{}, workspaceOpenError(errorInvalidRequest)
 	}
-	hashLimit, ok := normalizeHashLimit(request.MaxHashBytes)
-	if !ok || !validPath(request.Path) {
-		return Target{}, workspaceOpenError(ErrorInvalidRequest)
+	if !validPath(request.Path) {
+		return Target{}, workspaceOpenError(errorInvalidRequest)
 	}
 	if err := contextError(ctx); err != nil {
 		return Target{}, err
 	}
 	source, ok := service.catalog.Lookup(request.Path)
 	if !ok || source.Path != request.Path {
-		return Target{}, workspaceOpenError(ErrorUnauthorized)
+		return Target{}, workspaceOpenError(errorUnauthorized)
 	}
 
 	liveRoot, err := filepath.EvalSymlinks(service.analysisRoot)
 	if err != nil || liveRoot != service.analysisRoot {
-		return Target{}, workspaceOpenError(ErrorRootUnavailable)
+		return Target{}, workspaceOpenError(errorRootUnavailable)
 	}
 	if err := contextError(ctx); err != nil {
 		return Target{}, err
@@ -130,45 +108,30 @@ func (service *Service) Resolve(ctx context.Context, request Request) (Target, e
 	// Resolve the exact path authorized by the catalog.
 	localPath := filepath.FromSlash(request.Path)
 	if !filepath.IsLocal(localPath) || localPath == "." {
-		return Target{}, workspaceOpenError(ErrorTargetUnavailable)
+		return Target{}, workspaceOpenError(errorTargetUnavailable)
 	}
 	unresolved := filepath.Join(liveRoot, localPath)
 	entryInfo, err := os.Lstat(unresolved)
 	if err != nil || entryInfo.Mode()&os.ModeSymlink != 0 {
-		return Target{}, workspaceOpenError(ErrorTargetUnavailable)
+		return Target{}, workspaceOpenError(errorTargetUnavailable)
 	}
 	absolutePath, err := filepath.EvalSymlinks(unresolved)
 	if err != nil {
-		return Target{}, workspaceOpenError(ErrorTargetUnavailable)
+		return Target{}, workspaceOpenError(errorTargetUnavailable)
 	}
 	relative, err := filepath.Rel(liveRoot, absolutePath)
 	if err != nil || !filepath.IsLocal(relative) {
-		return Target{}, workspaceOpenError(ErrorTargetUnavailable)
+		return Target{}, workspaceOpenError(errorTargetUnavailable)
 	}
 	info, err := os.Stat(absolutePath)
 	if err != nil || !info.Mode().IsRegular() {
-		return Target{}, workspaceOpenError(ErrorTargetUnavailable)
+		return Target{}, workspaceOpenError(errorTargetUnavailable)
 	}
 	if err := contextError(ctx); err != nil {
 		return Target{}, err
 	}
 
-	changed, err := sourceChanged(ctx, absolutePath, source.ContentSHA256, hashLimit)
-	if err != nil {
-		return Target{}, err
-	}
-	return Target{
-		Path:          source.Path,
-		AbsolutePath:  absolutePath,
-		SourceChanged: changed,
-	}, nil
-}
-
-func normalizeHashLimit(value int64) (int64, bool) {
-	if value == 0 {
-		return MaxHashBytes, true
-	}
-	return value, value > 0 && value <= MaxHashBytes
+	return Target{AbsolutePath: absolutePath}, nil
 }
 
 func validPath(value string) bool {
@@ -187,73 +150,10 @@ func validPath(value string) bool {
 
 func contextError(ctx context.Context) error {
 	if ctx == nil {
-		return workspaceOpenError(ErrorInvalidRequest)
+		return workspaceOpenError(errorInvalidRequest)
 	}
 	if ctx.Err() != nil {
-		return workspaceOpenError(ErrorCanceled)
+		return workspaceOpenError(errorCanceled)
 	}
 	return nil
-}
-
-func sourceChanged(
-	ctx context.Context,
-	absolutePath, capturedSHA256 string,
-	maxBytes int64,
-) (bool, error) {
-	if capturedSHA256 == "" {
-		return false, nil
-	}
-	if err := contextError(ctx); err != nil {
-		return false, err
-	}
-	file, err := os.Open(absolutePath)
-	if err != nil {
-		return false, nil
-	}
-	defer file.Close()
-	return hashChanged(ctx, file, capturedSHA256, maxBytes)
-}
-
-func hashChanged(
-	ctx context.Context,
-	reader io.Reader,
-	capturedSHA256 string,
-	maxBytes int64,
-) (bool, error) {
-	if capturedSHA256 == "" {
-		return false, nil
-	}
-	hash := sha256.New()
-	buffer := make([]byte, hashBufferSize)
-	var total int64
-	for total <= maxBytes {
-		if err := contextError(ctx); err != nil {
-			return false, err
-		}
-		readSize := int64(len(buffer))
-		if remaining := maxBytes + 1 - total; remaining < readSize {
-			readSize = remaining
-		}
-		read, readErr := reader.Read(buffer[:int(readSize)])
-		if read > 0 {
-			total += int64(read)
-			if total > maxBytes {
-				return false, nil
-			}
-			_, _ = hash.Write(buffer[:read])
-		}
-		if readErr != nil {
-			if errors.Is(readErr, io.EOF) {
-				break
-			}
-			return false, nil
-		}
-		if read == 0 {
-			return false, nil
-		}
-	}
-	if err := contextError(ctx); err != nil {
-		return false, err
-	}
-	return fmt.Sprintf("%x", hash.Sum(nil)) != capturedSHA256, nil
 }

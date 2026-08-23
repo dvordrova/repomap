@@ -12,7 +12,7 @@ import (
 	"github.com/dvordrova/repomap/internal/gofacts"
 )
 
-const TargetCatalogVersion = 4
+const TargetCatalogVersion = 5
 
 // PackageAPI is one package-qualified, names-only public API group for a
 // module-library catalog entry. Exact locations remain in Go facts; the
@@ -38,10 +38,9 @@ type TargetCatalogEntry struct {
 // snapshot. Later semantic selection consumes this inventory without changing
 // its local authority.
 type TargetCatalog struct {
-	Version          int                  `json:"version"`
-	Ref              string               `json:"ref"`
-	DefaultTargetRef string               `json:"default_target_ref,omitempty"`
-	Entries          []TargetCatalogEntry `json:"entries"`
+	Version int                  `json:"version"`
+	Ref     string               `json:"ref"`
+	Entries []TargetCatalogEntry `json:"entries"`
 }
 
 // BuildCatalog derives one sealed catalog from the existing exact package and
@@ -109,9 +108,6 @@ func BuildCatalog(facts gofacts.Facts) (TargetCatalog, error) {
 	sortCatalogEntries(entries)
 
 	catalog := TargetCatalog{Version: TargetCatalogVersion, Entries: entries}
-	if defaultTarget, ok := catalogDefault(entries); ok {
-		catalog.DefaultTargetRef = defaultTarget.Ref
-	}
 	catalog.Ref, err = targetCatalogRef(catalog)
 	if err != nil {
 		return TargetCatalog{}, err
@@ -122,7 +118,9 @@ func BuildCatalog(facts gofacts.Facts) (TargetCatalog, error) {
 	return catalog, nil
 }
 
-// Validate rejects identity, display, order, default, and seal drift.
+// Validate rejects identity, display, order, and seal drift. The catalog never
+// carries a preferred target; that semantic decision belongs to the ordinary
+// target portfolio cube.
 func (catalog TargetCatalog) Validate() error {
 	if catalog.Version != TargetCatalogVersion || strings.TrimSpace(catalog.Ref) == "" {
 		return fmt.Errorf("analysis target catalog: invalid identity")
@@ -141,7 +139,7 @@ func (catalog TargetCatalog) Validate() error {
 			return fmt.Errorf("analysis target catalog: entry %d candidate key mismatch", index)
 		}
 		if candidate.Target.Kind != KindExecutablePackage && candidate.Target.Kind != KindModuleLibrary {
-			return fmt.Errorf("analysis target catalog: entry %d has unsupported v4 target kind %q", index, candidate.Target.Kind)
+			return fmt.Errorf("analysis target catalog: entry %d has unsupported v5 target kind %q", index, candidate.Target.Kind)
 		}
 		if candidate.Target.Kind == KindModuleLibrary && candidate.EntrypointKind != "" {
 			return fmt.Errorf("analysis target catalog: entry %d module library has executable kind", index)
@@ -200,13 +198,6 @@ func (catalog TargetCatalog) Validate() error {
 		}
 	}
 
-	wantDefault := ""
-	if target, ok := catalogDefault(catalog.Entries); ok {
-		wantDefault = target.Ref
-	}
-	if catalog.DefaultTargetRef != wantDefault {
-		return fmt.Errorf("analysis target catalog: default target mismatch")
-	}
 	wantRef, err := targetCatalogRef(catalog)
 	if err != nil {
 		return err
@@ -249,14 +240,6 @@ func validateNamesOnlyDeclarations(values []gofacts.PackageDeclaration) error {
 	return nil
 }
 
-// CanonicalJSON returns the stable catalog bytes after validating its seal.
-func (catalog TargetCatalog) CanonicalJSON() ([]byte, error) {
-	if err := catalog.Validate(); err != nil {
-		return nil, err
-	}
-	return json.Marshal(catalog)
-}
-
 // Snapshot returns an independently owned catalog value for live handoffs.
 func (catalog TargetCatalog) Snapshot() TargetCatalog {
 	result := catalog
@@ -289,7 +272,7 @@ func catalogPackageAPIs(
 		if !ok || pkg.PackageDir != targetPackage.PackageDir || !pkg.DeclarationsScanned {
 			return nil, fmt.Errorf("analysis target catalog: incomplete public API facts for %q", targetPackage.PackagePath)
 		}
-		declarations, err := catalogSymbols(pkg.Declarations, KindLibraryPackage)
+		declarations, err := catalogSymbols(pkg.Declarations, KindModuleLibrary)
 		if err != nil {
 			return nil, fmt.Errorf("analysis target catalog: package %q declarations: %w", pkg.CanonicalPath, err)
 		}
@@ -308,7 +291,7 @@ func catalogSymbols(values []gofacts.PackageDeclaration, kind Kind) ([]gofacts.P
 	}
 	result := make([]gofacts.PackageDeclaration, 0, len(canonical))
 	for _, value := range canonical {
-		if kind == KindLibraryPackage && !value.ExportedAPI() {
+		if kind == KindModuleLibrary && !value.ExportedAPI() {
 			continue
 		}
 		// Decision 274's provider authority is intentionally names-only. Exact
@@ -347,15 +330,6 @@ func catalogDisplayPath(moduleDir, moduleRelativeDir string) (string, error) {
 	default:
 		return path.Join(moduleDir, moduleRelativeDir), nil
 	}
-}
-
-func catalogDefault(entries []TargetCatalogEntry) (Target, bool) {
-	candidates := make([]Candidate, 0, len(entries))
-	for _, entry := range entries {
-		candidates = append(candidates, entry.Candidate)
-	}
-	target, _, ok := autoSelect(candidates)
-	return target, ok
 }
 
 func sortCatalogEntries(entries []TargetCatalogEntry) {

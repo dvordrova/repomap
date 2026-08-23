@@ -19,7 +19,10 @@ import (
 	"golang.org/x/tools/go/ssa"
 )
 
-const maxEntrySurfaceValueBytes = 128
+const (
+	maxEntrySurfaceTokenBytes = 128
+	maxEntrySurfaceValueBytes = 128
+)
 
 type rawEntrySurfaceCandidate struct {
 	id     string
@@ -34,7 +37,7 @@ type rawEntrySurfaceCandidate struct {
 // to bind syntax candidates to an exact process/init closure. It observes the
 // existing instruction pass and never changes DirectCallIndex authority.
 func (builder *directCallIndexBuilder) observeEntryCall(a *analyzer, call ssa.CallInstruction) {
-	if builder == nil || builder.entryCalls == nil || !builder.entryCalls.available || a == nil ||
+	if builder == nil || builder.entryCalls == nil || a == nil ||
 		call == nil || call.Parent() == nil || !a.isRepositoryFunction(call.Parent()) {
 		return
 	}
@@ -78,7 +81,7 @@ func (builder *directCallIndexBuilder) recordEntrySurfaceSyntaxCandidates(
 	a *analyzer,
 	entrypoints []*ssa.Function,
 ) {
-	if builder == nil || builder.entryCalls == nil || !builder.entryCalls.available || a == nil ||
+	if builder == nil || builder.entryCalls == nil || a == nil ||
 		a.program == nil || builder.state != DirectCallIndexReady {
 		return
 	}
@@ -507,7 +510,7 @@ func exactEntrySurfaceFact(
 }
 
 func (sidecar *entryCallSidecar) recordSurfaceCandidate(candidate rawEntrySurfaceCandidate, reachable bool) {
-	if sidecar == nil || !sidecar.available || candidate.owner == nil || !candidate.form.Valid() ||
+	if sidecar == nil || candidate.owner == nil || !candidate.form.Valid() ||
 		candidate.sketch == "" || len(candidate.facts) == 0 {
 		return
 	}
@@ -715,7 +718,7 @@ func entryCallLocationKey(location entrycall.Location) string {
 }
 
 func entrySurfaceSafeToken(value string) bool {
-	if value == "" || len(value) > entrycall.MaxLabelRunes || !utf8.ValidString(value) {
+	if value == "" || len(value) > maxEntrySurfaceTokenBytes || !utf8.ValidString(value) {
 		return false
 	}
 	for index, character := range value {
@@ -737,10 +740,10 @@ func entrySurfaceSafeValue(label, value string) bool {
 			return false
 		}
 	}
-	if _, found := secretscan.DetectAlways(value); found {
+	if _, found := secretscan.Detect(value); found {
 		return false
 	}
-	if _, found := secretscan.DetectAlways(label + `: "` + value + `"`); found {
+	if _, found := secretscan.Detect(label + `: "` + value + `"`); found {
 		return false
 	}
 	return !entrySurfaceHighEntropy(value)
@@ -768,15 +771,7 @@ func entrySurfaceHighEntropy(value string) bool {
 }
 
 func entrySurfaceRepositoryPackage(a *analyzer, packagePath string) bool {
-	if a == nil || packagePath == "" {
-		return false
-	}
-	for modulePath := range a.modulePaths {
-		if packagePath == modulePath || strings.HasPrefix(packagePath, modulePath+"/") {
-			return true
-		}
-	}
-	return false
+	return a != nil && packagePath != "" && a.admittedPackages[packagePath]
 }
 
 func (sidecar *entryCallSidecar) projectSurfaceCandidates(

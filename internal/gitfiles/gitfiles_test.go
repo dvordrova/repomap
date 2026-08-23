@@ -75,6 +75,14 @@ func TestParseIndexListingSeparatesRegularStageZeroPaths(t *testing.T) {
 	if !reflect.DeepEqual(listing.RegularPaths, []string{"main.go", "script.sh"}) {
 		t.Fatalf("regular paths = %#v", listing.RegularPaths)
 	}
+	if !reflect.DeepEqual(listing.ExecutablePaths, []string{"script.sh"}) {
+		t.Fatalf("executable paths = %#v", listing.ExecutablePaths)
+	}
+	if !reflect.DeepEqual(listing.Gitlinks, []Gitlink{{
+		Path: "vendor/submodule", ObjectID: "dddddddddddddddddddddddddddddddddddddddd",
+	}}) {
+		t.Fatalf("gitlinks = %#v", listing.Gitlinks)
+	}
 }
 
 func TestIsolatedEnvironmentDropsGitConfigInjectionAndNeutralizesGlobalConfig(t *testing.T) {

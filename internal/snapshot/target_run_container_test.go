@@ -10,7 +10,7 @@ import (
 
 func TestTargetRunContainerProjectsTwoTargetsFromOneDeferredSnapshot(t *testing.T) {
 	repo := newDeferredAnalysisTargetFixture(t)
-	deferred, err := Build(Options{RepoPath: repo, DeferAnalysisTargetResolution: true})
+	deferred, err := buildSnapshotForTest(Options{RepoPath: repo})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,8 +116,8 @@ func TestTargetRunContainerProjectsTwoTargetsFromOneDeferredSnapshot(t *testing.
 }
 
 func TestTargetRunContainerRejectsInvalidSelectionAndArtifactDrift(t *testing.T) {
-	deferred, err := Build(Options{
-		RepoPath: newDeferredAnalysisTargetFixture(t), DeferAnalysisTargetResolution: true,
+	deferred, err := buildSnapshotForTest(Options{
+		RepoPath: newDeferredAnalysisTargetFixture(t),
 	})
 	if err != nil {
 		t.Fatal(err)
