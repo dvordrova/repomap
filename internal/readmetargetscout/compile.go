@@ -12,14 +12,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/corpus"
-	"github.com/dvordrova/repomap/internal/lexicalhints"
 )
 
-const preparationContract = "one atomic request; complete canonical corpus FileID-to-path authority encoded as a lossless path-component tree with FileID string leaves; complete current bytes of every tracked regular README and AGENTS.md guidance document; sparse capped lexical substring counts from lexicalhints v1; source bytes and local scan omissions excluded; no semantic filtering, truncation, chunking, or partial result-v4"
+const preparationContract = "one atomic request; complete canonical corpus FileID-to-path authority encoded as a lossless path-component tree with FileID string leaves; complete current bytes of every tracked regular README and AGENTS.md guidance document; all other source bytes excluded; no semantic filtering, truncation, chunking, or partial result-v5"
 
-// HasGuidanceFiles is the cheap metadata-only applicability check used before
-// the local lexical scan. Compile repeats the authoritative check while
-// building its exact request.
+// HasGuidanceFiles is the cheap metadata-only applicability check. Compile
+// repeats the authoritative check while building its exact request.
 func HasGuidanceFiles(repository *corpus.Corpus) bool {
 	if repository == nil {
 		return false
@@ -38,19 +36,12 @@ func HasGuidanceFiles(repository *corpus.Corpus) bool {
 func Compile(
 	repoName string,
 	repository *corpus.Corpus,
-	lexical lexicalhints.Result,
 ) (Compilation, error) {
 	if err := validateRepoName(repoName); err != nil {
 		return Compilation{}, err
 	}
 	if repository == nil {
 		return Compilation{}, fmt.Errorf("readme target scout: repository corpus is required")
-	}
-	if lexical.CorpusRef == "" || lexical.CorpusRef != repository.Ref() {
-		return Compilation{}, fmt.Errorf("readme target scout: lexical hints do not belong to this repository corpus")
-	}
-	if _, err := lexical.Model.CanonicalJSON(); err != nil {
-		return Compilation{}, fmt.Errorf("readme target scout: lexical hints: %w", err)
 	}
 	snapshot := repository.Snapshot()
 	if err := snapshot.Validate(); err != nil {
@@ -93,14 +84,9 @@ func Compile(
 	if err != nil {
 		return Compilation{}, fmt.Errorf("readme target scout: build complete file tree: %w", err)
 	}
-	for fileRef := range lexical.Model.ByFile {
-		if _, known := authority[fileRef]; !known {
-			return Compilation{}, fmt.Errorf("readme target scout: lexical hints cite a file outside the corpus")
-		}
-	}
 	request := Request{
 		RepoName: repoName, FileCount: len(snapshot.Entries), FileTree: cloneFileTree(fileTree),
-		GrepStats: cloneGrepStats(lexical.Model.ByFile), GuidanceDocuments: documents,
+		GuidanceDocuments: documents,
 	}
 	wire, err := json.Marshal(request)
 	if err != nil {
@@ -108,7 +94,7 @@ func Compile(
 	}
 	if len(wire) > MaxRequestBytes {
 		return Compilation{}, fmt.Errorf(
-			"readme target scout: complete guidance + lossless file-tree + grep-stats request is %d bytes, reliable atomic limit is %d; no provider request was made and an explicitly approved semantic partition or chunked repository-index contract is required",
+			"readme target scout: complete guidance + lossless file-tree request is %d bytes, reliable atomic limit is %d; no provider request was made and an explicitly approved semantic partition or chunked repository-index contract is required",
 			len(wire), MaxRequestBytes,
 		)
 	}
@@ -127,8 +113,7 @@ func Compile(
 func validateReadyCompilation(compilation Compilation) error {
 	if compilation.Version != CompilationVersion || compilation.State != StateReady || compilation.Reason != "" ||
 		compilation.RequestSHA256 == "" || compilation.corpusRef == "" || len(compilation.Request.GuidanceDocuments) == 0 ||
-		compilation.Request.FileCount != len(compilation.authority) || compilation.Request.FileTree == nil ||
-		compilation.Request.GrepStats == nil {
+		compilation.Request.FileCount != len(compilation.authority) || compilation.Request.FileTree == nil {
 		return fmt.Errorf("readme target scout: invalid ready compilation identity")
 	}
 	if err := validateRepoName(compilation.Request.RepoName); err != nil {
@@ -147,17 +132,6 @@ func validateReadyCompilation(compilation Compilation) error {
 	for id, filePath := range treeAuthority {
 		if id == "" || validateRepoPath(filePath) != nil || compilation.authority[id] != filePath {
 			return fmt.Errorf("readme target scout: complete file tree authority mismatch")
-		}
-	}
-	if _, err := (lexicalhints.Model{
-		Version: lexicalhints.Version,
-		ByFile:  compilation.Request.GrepStats,
-	}).CanonicalJSON(); err != nil {
-		return fmt.Errorf("readme target scout: invalid lexical hints: %w", err)
-	}
-	for fileRef := range compilation.Request.GrepStats {
-		if _, known := compilation.authority[fileRef]; !known {
-			return fmt.Errorf("readme target scout: lexical hints authority mismatch")
 		}
 	}
 	seenDocuments := make(map[corpus.FileID]struct{}, len(compilation.Request.GuidanceDocuments))
@@ -193,21 +167,9 @@ func cloneDictionary(source map[corpus.FileID]string) map[corpus.FileID]string {
 	return result
 }
 
-func cloneGrepStats(source map[corpus.FileID]map[string]uint8) map[corpus.FileID]map[string]uint8 {
-	result := make(map[corpus.FileID]map[string]uint8, len(source))
-	for fileRef, sourceCounts := range source {
-		counts := make(map[string]uint8, len(sourceCounts))
-		for term, count := range sourceCounts {
-			counts[term] = count
-		}
-		result[fileRef] = counts
-	}
-	return result
-}
-
 func compilationSeal(compilation Compilation) string {
 	return sha256Hex([]byte(strings.Join([]string{
-		"readme-target-scout-compilation-v4", compilation.corpusRef,
+		"readme-target-scout-compilation-v5", compilation.corpusRef,
 		string(compilation.State), string(compilation.Reason), compilation.RequestSHA256,
 	}, "\x00")))
 }

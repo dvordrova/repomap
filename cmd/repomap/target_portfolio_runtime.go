@@ -17,7 +17,6 @@ import (
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/gofacts"
-	"github.com/dvordrova/repomap/internal/lexicalhints"
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
 	"github.com/dvordrova/repomap/internal/snapshot"
@@ -104,25 +103,8 @@ func selectTargetsForRun(
 			readmeResult <- readmeScoutResult{roles: readmetargetscout.Result{}}
 			return
 		}
-		started := time.Now()
-		lexical, err := lexicalhints.Scan(parallelContext, repository)
-		if err != nil {
-			readmeResult <- readmeScoutResult{err: fmt.Errorf("local lexical hints: %w", err)}
-			return
-		}
-		if output != nil {
-			output.State(
-				"Local lexical hints", "ready",
-				fmt.Sprintf(
-					"scanned tracked files: %d/%d",
-					lexical.Coverage.ScannedFiles, lexical.Coverage.TrackedFiles,
-				),
-				fmt.Sprintf("files with positive counts: %d", len(lexical.Model.ByFile)),
-				formatRunOutputWallDuration(time.Since(started)),
-			)
-		}
 		roles, err := discoverReadmeFileRoles(
-			parallelContext, repoName, repository, lexical, output, providers, executor,
+			parallelContext, repoName, repository, output, providers, executor,
 		)
 		readmeResult <- readmeScoutResult{roles: roles, err: err}
 	}()
@@ -433,15 +415,12 @@ func discoverReadmeFileRoles(
 	ctx context.Context,
 	repoName string,
 	repository *corpus.Corpus,
-	lexical lexicalhints.Result,
 	output *runOutput,
 	providers targetPortfolioProviderFactory,
 	executor llm.Executor,
 ) (readmetargetscout.Result, error) {
 	started := time.Now()
-	compilation, err := readmetargetscout.Compile(
-		targetPortfolioRepoName(repoName), repository, lexical,
-	)
+	compilation, err := readmetargetscout.Compile(targetPortfolioRepoName(repoName), repository)
 	if err != nil {
 		return nil, fmt.Errorf("repository guidance classifier: %w", err)
 	}

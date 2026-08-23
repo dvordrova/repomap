@@ -12,7 +12,6 @@ import (
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/debugdump"
-	"github.com/dvordrova/repomap/internal/lexicalhints"
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
@@ -117,28 +116,8 @@ func selectPythonTargetsForRun(
 			}{roles: readmetargetscout.Result{}}
 			return
 		}
-		started := time.Now()
-		lexical, err := lexicalhints.Scan(parallelContext, repository)
-		if err == nil && output != nil {
-			output.State(
-				"Local lexical hints", "ready",
-				fmt.Sprintf(
-					"scanned tracked files: %d/%d",
-					lexical.Coverage.ScannedFiles, lexical.Coverage.TrackedFiles,
-				),
-				fmt.Sprintf("files with positive counts: %d", len(lexical.Model.ByFile)),
-				formatRunOutputWallDuration(time.Since(started)),
-			)
-		}
-		if err != nil {
-			readmeResult <- struct {
-				roles readmetargetscout.Result
-				err   error
-			}{err: fmt.Errorf("local lexical hints: %w", err)}
-			return
-		}
 		roles, err := discoverReadmeFileRoles(
-			parallelContext, repoName, repository, lexical, output, providers, executor,
+			parallelContext, repoName, repository, output, providers, executor,
 		)
 		readmeResult <- struct {
 			roles readmetargetscout.Result

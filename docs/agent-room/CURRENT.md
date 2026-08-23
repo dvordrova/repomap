@@ -30,8 +30,8 @@ preflight with an actionable usage error before repository capture or model
 requests. A successful report must not contain deliberately inert code links.
 
 The ordinary console reports measured wall duration at each completed
-observable pipeline boundary: language target discovery/projection, lexical
-and README classification, the exact FileRef merge, TargetPortfolio and
+observable pipeline boundary: language target discovery/projection,
+repository-guidance classification, the exact FileRef merge, TargetPortfolio and
 multi-view choice when invoked, ProgramIndex and dependency construction,
 semantic cubes, repository authority, and report publication. Parallel
 first-layer branch durations overlap and are not additive. A cube bypassed by
@@ -141,23 +141,12 @@ diagnostic-journal availability never changes the cube's semantic contract.
    The ordinary path accepts only a complete language-scout catalog. Syntax,
    dynamic-setup, ambiguity, or resolver omissions are diagnostic facts and
    stop publication instead of silently shrinking the candidate set.
-3. In the repository-guidance branch, run the local `lexicalhints` cube against the same
-   corpus while the language scout proceeds independently. It performs one
-   bounded scan with at most four workers and produces sparse, capped,
-   case-insensitive substring counts for the closed terms `config`, `dao`,
-   `sql`, `request`, `response`, `client`, `route`, `worker`, and `kafka`.
-   Counts are weak context, never classifications or confidence. They include
-   incidental text and are not normalized by file size; missing, omitted, low,
-   high, or saturated counts cannot prove or disprove a role. Source bytes and
-   local omission diagnostics do not enter the provider request. The result is
-   bound to the exact `RepositoryCorpus` before the guidance classifier may use
-   it. Repositories with no tracked textual README or AGENTS.md skip this scan
-   and model call.
-4. The language-neutral repository-guidance file classifier receives the
+3. In parallel with the language scout, the language-neutral
+   repository-guidance file classifier receives the
    complete current contents of every tracked textual README and AGENTS.md,
    the complete names-only corpus
    dictionary encoded as a lossless prefix-compressed path-component tree,
-   and the sparse lexical counts in one atomic bounded request. Tree keys are
+   in one atomic bounded request. Tree keys are
    exact path components, nested objects are directories, and a string leaf is
    the exact `fN` for the file named by that key; joining keys from root to leaf
    restores every repository-relative path. It preselects neither headings nor
@@ -763,17 +752,16 @@ auditable as the exact difference between the journaled candidate request and
 positive response, and are reported locally as `Unclassified`.
 
 The repository-guidance request is atomic: the compiler either includes every
-textual README and AGENTS.md, every corpus file mapping, and every supplied
-sparse lexical row, or makes no provider call. It enforces a 1.5 MiB reliable atomic byte preflight
+textual README and AGENTS.md plus every corpus file mapping, or makes no
+provider call. It enforces a 1.5 MiB reliable atomic byte preflight
 and never silently truncates, samples, or drops the tree. The bound is
 empirical. On the tracked Airflow inventory, the old flat request was
 1,964,003 bytes: 13,760 file mappings alone occupied 949,490 bytes alongside
-174 complete READMEs and 6,429 sparse lexical rows. The lossless object tree
-reduced the dictionary to 431,710 bytes and the same complete request to
-1,446,236 bytes, 126,628 bytes below the atomic limit. The measured tree has
+174 complete READMEs and 6,429 now-removed lexical rows. The lossless object
+tree reduced the dictionary to 431,710 bytes. The measured tree has
 4,016 directories and maximum depth 17; all 13,760 FileRef/path mappings
-round-trip exactly. A repository whose complete tree, guidance bodies, and
-lexical rows still exceed the bound fails before transport with an explicit
+round-trip exactly. A repository whose complete tree and guidance bodies
+still exceed the bound fails before transport with an explicit
 resource error. Supporting that larger frontier requires a separately
 approved semantic partition or chunked repository-index contract that
 preserves the same exact FileRef authority; raising the byte limit is not the
@@ -1076,12 +1064,12 @@ identities; this refactor does not redesign the existing HTML renderer for it.
 
 The provider never receives the whole repository source, raw internal edges,
 canonical local IDs, credentials, or paths outside the advertised request.
-Repository-wide path visibility is limited to the README file classifier: it
+Repository-wide path visibility is limited to the repository-guidance file classifier: it
 sends a lossless prefix-compressed tree of the complete names-only tracked-file
 dictionary addressed by run-local `f*` refs plus the complete tracked textual
-README bodies, never the corresponding non-README source bodies. It
-additionally receives sparse capped lexical counts. The first `CoreMap` pass receives only accepted sparse README
-role rows. The refined pass receives exact target symbol rows plus available
+README and AGENTS.md bodies, never the corresponding other source bodies. The
+first `CoreMap` pass receives only accepted sparse repository-guidance role
+rows. The refined pass receives exact target symbol rows plus available
 receiver/signature facts and the accepted baseline. The binder receives only
 selected object rows and aggregate reachability categories. Source bodies and
 raw graph edges remain local throughout.

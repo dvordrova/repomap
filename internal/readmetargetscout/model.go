@@ -9,13 +9,12 @@ import (
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/corpus"
-	"github.com/dvordrova/repomap/internal/lexicalhints"
 )
 
 const (
-	CompilationVersion = 4
+	CompilationVersion = 5
 
-	PreparationVersion = "complete-readmes-and-agents-prefix-compressed-corpus-file-tree-and-sparse-grep-stats-v4"
+	PreparationVersion = "complete-readmes-and-agents-prefix-compressed-corpus-file-tree-v5"
 	SchemaVersion      = "readme-file-role-classifications-v2"
 	ReducerVersion     = "readme-file-role-classifications-strict-with-prose-rejection-v4"
 
@@ -35,7 +34,7 @@ const (
 	MaxOutputTokens                = 32_000
 )
 
-const executionContract = "repository-guidance-file-classifier-v6"
+const executionContract = "repository-guidance-file-classifier-v7"
 
 const ArtifactFilename = "readme-file-roles.json"
 
@@ -52,14 +51,12 @@ const NoGuidanceFiles NotApplicableReason = "no_guidance_files"
 
 // Request is the complete provider-visible first-layer evidence. FileTree is a
 // lossless prefix-compressed encoding of every tracked regular corpus file,
-// not a locally selected subset. GrepStats contains weak sparse counts only;
-// it never contains source bytes.
+// not a locally selected subset. Non-guidance source contents are absent.
 type Request struct {
-	RepoName          string                             `json:"repo_name"`
-	FileCount         int                                `json:"file_count"`
-	FileTree          FileTree                           `json:"file_tree"`
-	GrepStats         map[corpus.FileID]map[string]uint8 `json:"grep_stats"`
-	GuidanceDocuments []RequestGuidanceDocument          `json:"guidance_documents"`
+	RepoName          string                    `json:"repo_name"`
+	FileCount         int                       `json:"file_count"`
+	FileTree          FileTree                  `json:"file_tree"`
+	GuidanceDocuments []RequestGuidanceDocument `json:"guidance_documents"`
 }
 
 type GuidanceKind string
@@ -155,10 +152,6 @@ func (result Result) TargetCandidates() []analysistarget.FileCandidate {
 
 func executionStateValue() any {
 	promptHash := sha256Hex([]byte(promptSystem + "\x00" + promptUserShape))
-	lexicalState, err := json.Marshal(lexicalhints.State())
-	if err != nil {
-		panic("readme target scout: encode lexical-hints state")
-	}
 	return struct {
 		Contract           string `json:"contract"`
 		CompilationVersion int    `json:"compilation_version"`
@@ -170,7 +163,6 @@ func executionStateValue() any {
 		SchemaSHA256       string `json:"schema_sha256"`
 		ReducerVersion     string `json:"reducer_version"`
 		ReducerSHA256      string `json:"reducer_sha256"`
-		LexicalStateSHA256 string `json:"lexical_state_sha256"`
 		MaxRequestBytes    int    `json:"max_request_bytes"`
 		MaxResponseBytes   int    `json:"max_response_bytes"`
 		MaxHypothesisBytes int    `json:"max_hypothesis_bytes"`
@@ -185,8 +177,7 @@ func executionStateValue() any {
 		PreparationSHA256:  sha256Hex([]byte(preparationContract)),
 		SchemaVersion:      SchemaVersion, SchemaSHA256: sha256Hex([]byte(schemaContract)),
 		ReducerVersion: ReducerVersion, ReducerSHA256: sha256Hex([]byte(reducerContract)),
-		LexicalStateSHA256: sha256Hex(lexicalState),
-		MaxRequestBytes:    MaxRequestBytes, MaxResponseBytes: MaxResponseBytes,
+		MaxRequestBytes: MaxRequestBytes, MaxResponseBytes: MaxResponseBytes,
 		MaxHypothesisBytes: MaxHypothesisBytes, MaxClassifiedFiles: MaxClassifiedFiles,
 		MaxClassifications: MaxClassificationsPerFile,
 		MaxHypotheses:      MaxHypothesesPerClassification,
