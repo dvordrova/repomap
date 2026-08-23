@@ -447,15 +447,25 @@
       integration.uses.forEach(function (use) {
         (state.model.blocksBySymbol[use.callerID] || []).forEach(function (blockID) {
           var key = 'core:' + blockID + '->integration:' + integration.id;
-          if (edgeKeys[key]) return;
-          edgeKeys[key] = true;
-          edges.push({
+          var existing = edgeKeys[key];
+          var resolution = use.authority === 'exact_external_symbol' ? 'exact' : 'runtime';
+          if (existing) {
+            if (resolution === 'runtime') {
+              existing.resolution = 'runtime';
+              existing.description = state.model.blocksByID[blockID].name +
+                ' has selected callsites to ' + integration.name + '; includes runtime-unresolved evidence';
+            }
+            return;
+          }
+          var edge = {
             from: 'core:' + blockID,
             to: 'integration:' + integration.id,
-            resolution: use.authority === 'exact_external_symbol' ? 'exact' : 'runtime',
+            resolution: resolution,
             description: state.model.blocksByID[blockID].name + ' has a selected callsite to ' +
               integration.name + '; ' + humanIntegrationAuthority(use.authority)
-          });
+          };
+          edgeKeys[key] = edge;
+          edges.push(edge);
         });
       });
     });
@@ -478,6 +488,18 @@
     appendText(row, 'span', '', label);
     appendText(row, 'strong', '', value);
     parent.appendChild(row);
+  }
+
+  function compactCanvasValues(values, limit) {
+    var seen = Object.create(null);
+    var distinct = [];
+    values.forEach(function (value) {
+      if (!value || seen[value]) return;
+      seen[value] = true;
+      distinct.push(value);
+    });
+    var visible = distinct.slice(0, limit);
+    return visible.join(', ') + (distinct.length > limit ? ' +' + String(distinct.length - limit) : '');
   }
 
   function canvasNode(kind, id, name, meta, selected, activate) {
@@ -506,6 +528,12 @@
     appendText(popover, 'p', 'rm-canvas-popover__eyebrow', 'Selected entrypoint');
     appendText(popover, 'h4', '', start.name);
     appendCanvasFact(popover, 'Kind', start.kind);
+    var responsibilityNames = (state.model.blocksBySymbol[start.id] || []).map(function (blockID) {
+      return state.model.blocksByID[blockID].name;
+    });
+    if (responsibilityNames.length) {
+      appendCanvasFact(popover, 'Responsibilities', compactCanvasValues(responsibilityNames, 3));
+    }
     if (start.signature) appendText(popover, 'code', 'rm-canvas-popover__code', start.signature);
     popover.appendChild(sourceAction('Open declaration', start.location));
     rendered.wrapper.appendChild(popover);
@@ -543,8 +571,21 @@
     if (integration.uses.length) {
       var use = integration.uses[0];
       appendText(popover, 'p', 'rm-canvas-popover__copy', use.label + ' — ' + use.callee);
-      appendCanvasFact(popover, 'Authority', humanIntegrationAuthority(use.authority));
-      popover.appendChild(sourceAction('Open selected callsite', use.callsite));
+      appendCanvasFact(popover, 'Used from', compactCanvasValues(integration.uses.map(function (item) {
+        return item.callerName;
+      }), 4));
+      appendCanvasFact(popover, 'Operations', compactCanvasValues(integration.uses.map(function (item) {
+        return item.label;
+      }), 3));
+      appendCanvasFact(popover, 'Mechanism', compactCanvasValues(integration.uses.map(function (item) {
+        return item.mechanism;
+      }), 3));
+      appendCanvasFact(popover, 'Authority', compactCanvasValues(integration.uses.map(function (item) {
+        return humanIntegrationAuthority(item.authority);
+      }), 3));
+      popover.appendChild(sourceAction(
+        integration.uses.length === 1 ? 'Open selected callsite' : 'Open first selected callsite', use.callsite
+      ));
     }
     rendered.wrapper.appendChild(popover);
     return rendered.wrapper;
