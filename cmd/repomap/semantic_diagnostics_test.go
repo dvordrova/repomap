@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -9,6 +10,36 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/pipeline"
 )
+
+func TestFailedFirstLayerSemanticJournalCreatesOnlyTheFailedRunDirectory(t *testing.T) {
+	root := t.TempDir()
+	runDir := filepath.Join(root, "failed-first-layer")
+	observer := debugdump.NewSemanticObserver(nil)
+	request := []byte(`{"model":"test"}`)
+	response := []byte(`[]`)
+	if err := observer.ObserveStage(debugdump.SemanticStageReadmeFileClassifier, llm.Event{
+		Kind: llm.EventFailure, Source: llm.SourceLive, Failure: llm.FailureValidation,
+		Request: request, RequestBytes: len(request), Response: response, ResponseBytes: len(response),
+		FinishReason: llm.FinishStop, ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	flushFailedFirstLayerSemanticJournal(runDir, observer, nil)
+	if info, err := os.Lstat(runDir); err != nil || !info.IsDir() {
+		t.Fatalf("failed run directory = %#v, %v", info, err)
+	}
+	entries, err := os.ReadDir(filepath.Join(runDir, debugdump.SemanticExchangesDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("semantic exchange entries = %d, want 1", len(entries))
+	}
+	if _, err := os.Stat(filepath.Join(runDir, "metadata.json")); !os.IsNotExist(err) {
+		t.Fatalf("failed first layer unexpectedly published metadata: %v", err)
+	}
+}
 
 func TestRecordSemanticPipelineAccountingUpdatesMetadataExactlyOnce(t *testing.T) {
 	writer, err := debugdump.NewWriter(t.TempDir(), "pipeline-accounting", false)
