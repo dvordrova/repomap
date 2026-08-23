@@ -364,7 +364,7 @@ func validateActivityPathViewCoverage(
 		coverage.UniqueCallers, coverage.Routes, coverage.Outcomes, coverage.RelationsExamined,
 		coverage.TraversableRelations, coverage.ProjectedTraversalEdges, coverage.ExactEdges,
 		coverage.PossibleEdges, coverage.UnresolvedTraversalRelations, coverage.TraversalTargetsOmitted,
-		coverage.DecoratorRelations, coverage.CallablesWithoutLocation,
+		coverage.DecoratorRelations, coverage.CallablesWithoutLocation, coverage.CallablesIneligible,
 		coverage.SeededModulesWithoutLocation, coverage.ProgramObjectsOmitted,
 		coverage.ProgramRelationsOmitted, coverage.ExactOutcomes, coverage.PossibleOutcomes,
 		coverage.FrontierOutcomes, coverage.UnconnectedOutcomes, coverage.TotalPathSteps,

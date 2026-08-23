@@ -171,12 +171,14 @@ func validateCoverage(coverage Coverage) error {
 		coverage.ProgramTargetsOmitted < 0 || coverage.ProgramWitnessesOmitted < 0 ||
 		coverage.CallablesIndexed < 0 || coverage.CallablesIndexed > coverage.ObjectsIndexed ||
 		coverage.CallablesWithoutLocation < 0 || coverage.CallablesWithoutLocation > coverage.CallablesIndexed ||
+		coverage.CallablesIneligible < 0 ||
+		coverage.CallablesIneligible > coverage.CallablesIndexed-coverage.CallablesWithoutLocation ||
 		coverage.SeededModulesIndexed < 0 ||
 		coverage.SeededModulesIndexed > coverage.ObjectsIndexed-coverage.CallablesIndexed ||
 		coverage.SeededModulesWithoutLocation < 0 ||
 		coverage.SeededModulesWithoutLocation > coverage.SeededModulesIndexed ||
 		coverage.CandidatesObserved < 0 ||
-		coverage.CandidatesObserved+coverage.CallablesWithoutLocation+
+		coverage.CandidatesObserved+coverage.CallablesWithoutLocation+coverage.CallablesIneligible+
 			coverage.SeededModulesWithoutLocation != coverage.CallablesIndexed+coverage.SeededModulesIndexed ||
 		coverage.CandidatesAdvertised < 0 || coverage.CandidatesOmitted < 0 ||
 		coverage.CandidatesAdvertised+coverage.CandidatesOmitted != coverage.CandidatesObserved ||

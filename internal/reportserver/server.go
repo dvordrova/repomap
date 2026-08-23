@@ -250,9 +250,9 @@ func loadRun(runsDir, runID string) (runRecord, error) {
 	if err != nil {
 		return runRecord{}, err
 	}
-	targetNavigation, err := report.LoadManifestTargetNavigation(runDir, manifest)
+	targetNavigation, err := loadTargetNavigation(runDir, manifest)
 	if err != nil {
-		return runRecord{}, fmt.Errorf("load target navigation: %w", err)
+		return runRecord{}, err
 	}
 	sources, sourceIDs := catalogSourceTargets(runID, manifest.ReportSHA256, catalog)
 	reportData.SourceIDs = sourceIDs
@@ -281,6 +281,20 @@ func loadRun(runsDir, runID string) (runRecord, error) {
 		sources:           sources,
 		rendered:          rendered,
 	}, nil
+}
+
+func loadTargetNavigation(
+	runDir string,
+	manifest report.RunManifest,
+) (*report.TargetNavigationPortfolio, error) {
+	if manifest.MaterialInputs.TargetPagePortfolioSHA256 == "" {
+		return nil, nil
+	}
+	navigation, err := report.LoadManifestTargetNavigation(runDir, manifest)
+	if err != nil {
+		return nil, fmt.Errorf("load target navigation: %w", err)
+	}
+	return navigation, nil
 }
 
 func loadAuthorizedRuns(runsDir string, initial runRecord) (map[string]runRecord, error) {
