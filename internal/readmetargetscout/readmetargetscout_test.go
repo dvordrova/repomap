@@ -15,7 +15,6 @@ import (
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/gitfiles"
-	"github.com/dvordrova/repomap/internal/lexicalhints"
 )
 
 func TestCompileSendsCompleteFileTreeAndCompleteReadmes(t *testing.T) {
@@ -55,7 +54,7 @@ func TestCompileSendsCompleteFileTreeAndCompleteReadmes(t *testing.T) {
 		t.Fatal(err)
 	}
 	if request.RepoName != "sample" || request.FileCount != len(repository.Entries()) ||
-		request.GrepStats == nil || len(request.GuidanceDocuments) != 4 {
+		len(request.GuidanceDocuments) != 4 {
 		t.Fatalf("request shape = %#v", request)
 	}
 	dictionary, err := fileTreeDictionary(request.FileTree, request.FileCount)
@@ -85,11 +84,6 @@ func TestCompileSendsCompleteFileTreeAndCompleteReadmes(t *testing.T) {
 		bytes.Contains(wire, []byte(`"file_dictionary"`)) {
 		t.Fatalf("complete file tree omitted an unrelated corpus path or retained the flat schema: %s", wire)
 	}
-	workerRef, _ := repository.ID("scripts/worker.py")
-	if request.GrepStats[workerRef]["worker"] != 1 {
-		t.Fatalf("grep_stats[%s] = %#v", workerRef, request.GrepStats[workerRef])
-	}
-
 	prompt, err := BuildPrompt(compilation)
 	if err != nil {
 		t.Fatal(err)
@@ -123,9 +117,6 @@ func TestCompileSendsCompleteFileTreeAndCompleteReadmes(t *testing.T) {
 		"If evidence remains weak or several mappings remain indistinguishable, omit",
 		"For one file, return every independently supported, non-duplicate class",
 		"For several files with the same possible role",
-		"More occurrences do not make a class more likely",
-		"A very high count often means that the file implements a concept internally",
-		"A zero, low, missing, or omitted count never disproves a role",
 		"Guidance statements are repository-authored claims, not verified code behavior",
 		"A nested README is presumed to describe only its own directory subtree",
 		"no path establishes a class by itself",
@@ -145,7 +136,6 @@ func TestCompileSendsCompleteFileTreeAndCompleteReadmes(t *testing.T) {
 	}
 	for _, key := range []string{
 		"prompt_sha256", "preparation_sha256", "schema_sha256", "reducer_sha256",
-		"lexical_state_sha256",
 	} {
 		if state[key] == "" || state[key] == nil {
 			t.Fatalf("execution state missing %q: %s", key, ExecutionState())
@@ -356,32 +346,13 @@ func TestCompileIsExplicitlyNotApplicableWithoutGuidance(t *testing.T) {
 	}
 }
 
-func TestCompileRejectsLexicalHintsFromAnotherCorpus(t *testing.T) {
-	first, _ := testCorpus(t, map[string]string{
-		"README.md": "Run main.go.\n",
-		"main.go":   "package main\n",
-	})
-	second, _ := testCorpus(t, map[string]string{
-		"README.md": "Run app.go.\n",
-		"app.go":    "package main\n",
-	})
-	foreign, err := lexicalhints.Scan(t.Context(), second)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Compile("sample", first, foreign); err == nil ||
-		!strings.Contains(err.Error(), "do not belong to this repository corpus") {
-		t.Fatalf("foreign lexical hints error = %v", err)
-	}
-}
-
 func TestCompileFailsBeforeProviderWhenCompleteRequestDoesNotFit(t *testing.T) {
 	repository, _ := testCorpus(t, map[string]string{
 		"README.md": strings.Repeat("x", MaxRequestBytes),
 		"main.go":   "package main\n",
 	})
 	_, err := compileWithTestHints(t, "sample", repository)
-	if err == nil || !strings.Contains(err.Error(), "complete guidance + lossless file-tree + grep-stats request") ||
+	if err == nil || !strings.Contains(err.Error(), "complete guidance + lossless file-tree request") ||
 		!strings.Contains(err.Error(), "reliable atomic limit") ||
 		!strings.Contains(err.Error(), "no provider request was made") {
 		t.Fatalf("Compile oversized error = %v", err)
@@ -517,9 +488,5 @@ func compileWithTestHints(
 	repository *corpus.Corpus,
 ) (Compilation, error) {
 	t.Helper()
-	hints, err := lexicalhints.Scan(t.Context(), repository)
-	if err != nil {
-		t.Fatalf("scan lexical hints: %v", err)
-	}
-	return Compile(repoName, repository, hints)
+	return Compile(repoName, repository)
 }

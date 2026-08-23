@@ -9,7 +9,6 @@ import (
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/gofacts"
-	"github.com/dvordrova/repomap/internal/lexicalhints"
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
@@ -61,25 +60,8 @@ func selectMixedTargetsForRun(
 			readmeResult <- readmeScoutResult{roles: readmetargetscout.Result{}}
 			return
 		}
-		started := time.Now()
-		lexical, err := lexicalhints.Scan(parallelContext, repository)
-		if err != nil {
-			readmeResult <- readmeScoutResult{err: fmt.Errorf("local lexical hints: %w", err)}
-			return
-		}
-		if output != nil {
-			output.State(
-				"Local lexical hints", "ready",
-				fmt.Sprintf(
-					"scanned tracked files: %d/%d",
-					lexical.Coverage.ScannedFiles, lexical.Coverage.TrackedFiles,
-				),
-				fmt.Sprintf("files with positive counts: %d", len(lexical.Model.ByFile)),
-				formatRunOutputWallDuration(time.Since(started)),
-			)
-		}
 		roles, err := discoverReadmeFileRoles(
-			parallelContext, repoName, repository, lexical, output, providers, executor,
+			parallelContext, repoName, repository, output, providers, executor,
 		)
 		readmeResult <- readmeScoutResult{roles: roles, err: err}
 	}()
