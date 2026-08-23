@@ -504,15 +504,9 @@
 
   function canvasNode(kind, id, name, meta, selected, activate) {
     var wrapper = element('div', 'rm-canvas-node-wrap rm-canvas-node-wrap--' + kind);
-    var control;
-    if (activate) {
-      control = element('button', 'rm-canvas-node rm-canvas-node--' + kind);
-      control.type = 'button';
-      control.addEventListener('click', activate);
-    } else {
-      control = element('div', 'rm-canvas-node rm-canvas-node--' + kind);
-      control.tabIndex = 0;
-    }
+    var control = element('button', 'rm-canvas-node rm-canvas-node--' + kind);
+    control.type = 'button';
+    if (activate) control.addEventListener('click', activate);
     control.setAttribute('data-canvas-node', kind + ':' + id);
     if (selected) control.setAttribute('aria-current', 'true');
     appendText(control, 'span', 'rm-canvas-node__name', name);
