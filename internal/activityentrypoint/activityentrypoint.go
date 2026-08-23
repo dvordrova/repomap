@@ -1,7 +1,6 @@
 // Package activityentrypoint selects useful activity starts from one sealed,
-// language-neutral ProgramIndex. Local structure advertises every exact
-// callable plus exact module/package launch anchors; only the model can grant
-// activity-entrypoint semantics.
+// language-neutral ProgramIndex. Generic graph structure bounds the candidate
+// catalog; only the model can grant activity-entrypoint semantics.
 package activityentrypoint
 
 import (
@@ -17,8 +16,8 @@ import (
 )
 
 const (
-	Version                    = 2
-	PreparationVersion         = 3
+	Version                    = 3
+	PreparationVersion         = 4
 	ResponseSchemaVersion      = 1
 	ArtifactFilename           = "activity-entrypoints.json"
 	MaxCandidatesPerBatch      = 1_024
@@ -34,7 +33,7 @@ const (
 	MaxOutputTokens            = 8_192
 )
 
-const executionContract = "program-index-activity-entrypoint-selection-v2"
+const executionContract = "program-index-activity-entrypoint-selection-v3"
 
 // Coverage proves that every structurally eligible callable and exact seeded
 // module/package launch anchor in the sealed ProgramIndex was advertised
@@ -47,6 +46,7 @@ type Coverage struct {
 	ProgramWitnessesOmitted      int  `json:"program_witnesses_omitted"`
 	CallablesIndexed             int  `json:"callables_indexed"`
 	CallablesWithoutLocation     int  `json:"callables_without_location"`
+	CallablesIneligible          int  `json:"callables_ineligible"`
 	SeededModulesIndexed         int  `json:"seeded_modules_indexed"`
 	SeededModulesWithoutLocation int  `json:"seeded_modules_without_location"`
 	CandidatesObserved           int  `json:"candidates_observed"`
@@ -184,6 +184,7 @@ type frontierRequest struct {
 	TargetsOmitted               int `json:"targets_omitted"`
 	WitnessesOmitted             int `json:"witnesses_omitted"`
 	CallablesWithoutLocation     int `json:"callables_without_location"`
+	CallablesIneligible          int `json:"callables_ineligible"`
 	SeededModulesWithoutLocation int `json:"seeded_modules_without_location"`
 }
 
@@ -305,6 +306,7 @@ func compile(index programindex.Index) (compilation, error) {
 			ProgramWitnessesOmitted:      owned.Coverage.WitnessesOmitted,
 			CallablesIndexed:             candidateCoverage.callablesIndexed,
 			CallablesWithoutLocation:     candidateCoverage.callablesWithoutLocation,
+			CallablesIneligible:          candidateCoverage.callablesIneligible,
 			SeededModulesIndexed:         candidateCoverage.seededModulesIndexed,
 			SeededModulesWithoutLocation: candidateCoverage.seededModulesWithoutLocation,
 			CandidatesObserved:           len(candidates), CandidatesAdvertised: len(candidates), CandidatesOmitted: 0,
@@ -340,6 +342,7 @@ func compileTarget(target programindex.Target) (targetRequest, error) {
 type candidateCoverage struct {
 	callablesIndexed             int
 	callablesWithoutLocation     int
+	callablesIneligible          int
 	seededModulesIndexed         int
 	seededModulesWithoutLocation int
 }
@@ -384,6 +387,7 @@ func compileCandidates(index programindex.Index) ([]candidate, map[string]string
 	for _, seed := range index.Target.Seeds {
 		seedKinds[seed.ObjectID] = append(seedKinds[seed.ObjectID], seed.Kind)
 	}
+	eligibleCallables := compileEligibleCallables(index, objects, seedKinds)
 
 	values := make([]candidate, 0)
 	var coverage candidateCoverage
@@ -405,6 +409,12 @@ func compileCandidates(index programindex.Index) ([]candidate, map[string]string
 				coverage.seededModulesWithoutLocation++
 			}
 			continue
+		}
+		if callableObject {
+			if _, eligible := eligibleCallables[object.ID]; !eligible {
+				coverage.callablesIneligible++
+				continue
+			}
 		}
 		row := candidateRequest{
 			Path: object.Location.Path, Line: object.Location.Line, Column: object.Location.Column,
@@ -443,6 +453,72 @@ func compileCandidates(index programindex.Index) ([]candidate, map[string]string
 		refs[values[position].object.ID] = values[position].ref
 	}
 	return values, refs, coverage, nil
+}
+
+// compileEligibleCallables is a language- and framework-neutral advertisement
+// boundary. It retains exact launch seeds, structural roots, direct seed
+// handoffs, and every callback/decorator/implementation joint. Library targets
+// additionally retain all public callables. These facts only make an object
+// eligible for model classification; they do not establish activity semantics.
+func compileEligibleCallables(
+	index programindex.Index,
+	objects map[string]programindex.Object,
+	seedKinds map[string][]programindex.SeedKind,
+) map[string]struct{} {
+	eligible := make(map[string]struct{})
+	exactIncoming := make(map[string]struct{})
+	seedObjects := make(map[string]struct{}, len(seedKinds))
+	for objectID := range seedKinds {
+		seedObjects[objectID] = struct{}{}
+		if object, ok := objects[objectID]; ok && callable(object.Kind) {
+			eligible[objectID] = struct{}{}
+		}
+	}
+
+	for _, relation := range index.Relations {
+		callRelation := relation.Kind == programindex.RelationCalls || relation.Kind == programindex.RelationExecutes
+		if callRelation && relation.Resolution == programindex.ResolutionExact && relation.TargetsOmitted == 0 {
+			for _, targetID := range relation.ToIDs {
+				if targetID != relation.FromID {
+					exactIncoming[targetID] = struct{}{}
+				}
+			}
+		}
+		if callRelation {
+			if _, seeded := seedObjects[relation.FromID]; seeded {
+				for _, targetID := range relation.ToIDs {
+					if object, ok := objects[targetID]; ok && callable(object.Kind) {
+						eligible[targetID] = struct{}{}
+					}
+				}
+			}
+		}
+		if relation.Kind == programindex.RelationPassesCallback ||
+			relation.Kind == programindex.RelationDecorates ||
+			relation.Kind == programindex.RelationImplements {
+			if object, ok := objects[relation.FromID]; ok && callable(object.Kind) {
+				eligible[relation.FromID] = struct{}{}
+			}
+			for _, targetID := range relation.ToIDs {
+				if object, ok := objects[targetID]; ok && callable(object.Kind) {
+					eligible[targetID] = struct{}{}
+				}
+			}
+		}
+	}
+
+	for _, object := range index.Objects {
+		if !callable(object.Kind) {
+			continue
+		}
+		if _, hasExactIncoming := exactIncoming[object.ID]; !hasExactIncoming {
+			eligible[object.ID] = struct{}{}
+		}
+		if index.Target.Kind == "library" && object.Visibility == programindex.VisibilityPublic {
+			eligible[object.ID] = struct{}{}
+		}
+	}
+	return eligible
 }
 
 func compileRelationEvidence(
@@ -800,6 +876,7 @@ func frontierForRequest(coverage Coverage) frontierRequest {
 		TargetsOmitted:               coverage.ProgramTargetsOmitted,
 		WitnessesOmitted:             coverage.ProgramWitnessesOmitted,
 		CallablesWithoutLocation:     coverage.CallablesWithoutLocation,
+		CallablesIneligible:          coverage.CallablesIneligible,
 		SeededModulesWithoutLocation: coverage.SeededModulesWithoutLocation,
 	}
 }

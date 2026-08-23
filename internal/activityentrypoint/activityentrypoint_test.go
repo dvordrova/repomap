@@ -107,7 +107,7 @@ func TestCompilationAdvertisesSeededModuleLaunchAnchor(t *testing.T) {
 	}
 }
 
-func TestCompilationAdvertisesTopologyWithoutSemanticFiltering(t *testing.T) {
+func TestCompilationAdvertisesEligibleTopologyWithoutSemanticPromotion(t *testing.T) {
 	compiled, err := compile(activityTestIndex(t))
 	if err != nil {
 		t.Fatalf("compile: %v", err)
@@ -124,6 +124,113 @@ func TestCompilationAdvertisesTopologyWithoutSemanticFiltering(t *testing.T) {
 	if err := validateResponse(response{ActivityRefs: []string{"missing"}}, map[string]struct{}{"a1": {}}); err == nil {
 		t.Fatal("unknown ref was accepted")
 	}
+}
+
+func TestCompilationEligibilityPreservesDynamicJointsAndSeedHandoffs(t *testing.T) {
+	compiled, err := compile(activityEligibilityTestIndex(t, "executable"))
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	got := make(map[string]bool, len(compiled.candidates))
+	for _, value := range compiled.candidates {
+		got[value.object.Name] = true
+	}
+	for _, want := range []string{
+		"seed", "seedTarget", "rootCaller", "alternativeCaller", "alternativeTarget",
+		"callbackTarget", "decoratorSource", "decoratedTarget", "implementationSource", "implementationTarget",
+	} {
+		if !got[want] {
+			t.Errorf("eligible catalog omitted %q: %#v", want, got)
+		}
+	}
+	if got["ordinaryExactCallee"] {
+		t.Fatalf("ordinary internal exact callee was advertised: %#v", got)
+	}
+	if compiled.coverage.CallablesIndexed != 11 || compiled.coverage.CallablesIneligible != 1 ||
+		compiled.coverage.CandidatesAdvertised != 10 || compiled.coverage.CandidatesOmitted != 0 {
+		t.Fatalf("eligibility coverage = %#v", compiled.coverage)
+	}
+}
+
+func TestCompilationEligibilityRetainsPublicLibraryOperation(t *testing.T) {
+	compiled, err := compile(activityEligibilityTestIndex(t, "library"))
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	for _, value := range compiled.candidates {
+		if value.object.Name == "ordinaryExactCallee" {
+			if value.object.Visibility != programindex.VisibilityPublic {
+				t.Fatalf("library operation visibility = %q", value.object.Visibility)
+			}
+			return
+		}
+	}
+	t.Fatal("public library operation with an exact incoming call was omitted")
+}
+
+func activityEligibilityTestIndex(t *testing.T, targetKind string) programindex.Index {
+	t.Helper()
+	location := func(line int) *programindex.Location {
+		return &programindex.Location{Path: "app/program.go", Line: line, Column: 1}
+	}
+	object := func(ref, name string, line int) programindex.ObjectInput {
+		visibility := programindex.VisibilityInternal
+		if name == "ordinaryExactCallee" {
+			visibility = programindex.VisibilityPublic
+		}
+		return programindex.ObjectInput{
+			SourceRef: ref, Kind: programindex.ObjectFunction, Name: name,
+			Visibility: visibility, Location: location(line),
+		}
+	}
+	relation := func(ref string, kind programindex.RelationKind, from, to string, resolution programindex.Resolution, line int) programindex.RelationInput {
+		return programindex.RelationInput{
+			SourceRef: ref, Kind: kind, FromRef: from, ToRefs: []string{to},
+			Resolution: resolution, Location: location(line), TargetsObserved: 1,
+			Witnesses:         []programindex.Witness{{Kind: "eligibility_test", Location: location(line)}},
+			WitnessesObserved: 1,
+		}
+	}
+	index, err := programindex.New(programindex.Input{
+		ScenarioSHA256: strings.Repeat("e", 64), SourceSHA256: strings.Repeat("f", 64),
+		Target: programindex.TargetInput{
+			Language: "generic", Kind: targetKind, Name: "app", Selector: "app",
+			Sources:       []programindex.TargetSource{{FileRef: "f1", Path: "app/program.go"}},
+			AnchorFileRef: "f1",
+			Seeds: []programindex.TargetSeedInput{{
+				ObjectRef: "seed", Kind: programindex.SeedCallable, Location: location(1),
+			}},
+		},
+		Objects: []programindex.ObjectInput{
+			object("seed", "seed", 1),
+			object("seed-target", "seedTarget", 2),
+			object("root-caller", "rootCaller", 3),
+			object("ordinary", "ordinaryExactCallee", 4),
+			object("alternative-caller", "alternativeCaller", 5),
+			object("alternative-target", "alternativeTarget", 6),
+			object("callback-target", "callbackTarget", 7),
+			object("decorator-source", "decoratorSource", 8),
+			object("decorated-target", "decoratedTarget", 9),
+			object("implementation-source", "implementationSource", 10),
+			object("implementation-target", "implementationTarget", 11),
+		},
+		Relations: []programindex.RelationInput{
+			relation("seed-call", programindex.RelationCalls, "seed", "seed-target", programindex.ResolutionExact, 20),
+			relation("ordinary-call", programindex.RelationCalls, "root-caller", "ordinary", programindex.ResolutionExact, 21),
+			relation("callback-call", programindex.RelationCalls, "root-caller", "callback-target", programindex.ResolutionExact, 22),
+			relation("decorated-call", programindex.RelationCalls, "root-caller", "decorated-target", programindex.ResolutionExact, 23),
+			relation("implementation-call", programindex.RelationCalls, "root-caller", "implementation-target", programindex.ResolutionExact, 24),
+			relation("alternative-call", programindex.RelationCalls, "alternative-caller", "alternative-target", programindex.ResolutionAlternatives, 25),
+			relation("callback-joint", programindex.RelationPassesCallback, "seed", "callback-target", programindex.ResolutionExact, 26),
+			relation("decorator-joint", programindex.RelationDecorates, "decorator-source", "decorated-target", programindex.ResolutionExact, 27),
+			relation("implementation-joint", programindex.RelationImplements, "implementation-source", "implementation-target", programindex.ResolutionExact, 28),
+		},
+		Coverage: programindex.CoverageInput{Measured: true, ObjectsObserved: 11, RelationsObserved: 9},
+	})
+	if err != nil {
+		t.Fatalf("programindex.New: %v", err)
+	}
+	return index
 }
 
 func activityTestIndex(t *testing.T) programindex.Index {

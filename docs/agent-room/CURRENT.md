@@ -369,11 +369,19 @@ diagnostic-journal availability never changes the cube's semantic contract.
    no local rule may promote one of them to an activity surface or important
    entrypoint by itself.
    The Python-default path additionally runs the language-neutral
-   `ActivityEntrypoint` cube over the same sealed ProgramIndex. It advertises
-   every indexed function, method, and lambda with an exact declaration, plus
-   every exact module/package object named by a module, main-guard, or script
-   launch seed, as a complete disjoint catalog of at most 32,768 request-local
-   `aN` refs. Unseeded modules/packages are not candidates. Each row carries
+   `ActivityEntrypoint` cube over the same sealed ProgramIndex. Its generic
+   eligibility boundary advertises exact callable launch seeds, callables with
+   no fully exact incoming `calls`/`executes` relation, observed direct
+   `calls`/`executes` targets of a launch seed, and every local callable at a
+   callback, decorator, or implementation joint. Library targets additionally
+   advertise every public callable. Self-recursion does not disqualify a graph
+   root; alternative or unresolved incoming relations never masquerade as an
+   exact caller. The boundary uses no language, framework, path, dependency,
+   or symbol-name allowlist and grants no activity semantics locally. It also
+   advertises every exact module/package object named by a module, main-guard,
+   or script launch seed, as a complete disjoint catalog of at most 32,768
+   request-local `aN` refs. Unseeded modules/packages are not candidates. Each
+   row carries
    only exact declaration context, target launch-seed kinds, and
    aggregate exact/uncertain topology counts; paths, names, visibility, seeds,
    and counts are evidence rather than local selection rules. Requests contain
@@ -384,8 +392,10 @@ diagnostic-journal availability never changes the cube's semantic contract.
    empty set, but no host-side candidate is promoted as a replacement. The
    persisted result restores every selected ref to its byte-for-byte exact
    ProgramIndex object, binds the ProgramIndex SHA-256, and retains upstream
-   ProgramIndex omissions and locationless candidate counts so an empty result
-   is not misread as proof that runtime activity is absent. A selected seeded
+   ProgramIndex omissions, locationless candidate counts, and the exact count
+   excluded by generic eligibility so an empty result is not misread as proof
+   that runtime activity is absent. `candidates_omitted == 0` proves complete
+   advertisement only for that declared eligible set. A selected seeded
    module/package is an exact top-level launch anchor for scripts and main
    guards; it is not silently converted into a callable.
    The current Go CubeMap advertises every exact DirectCallIndex node to its
@@ -689,6 +699,9 @@ accepted as evidence that VS Code exists. Each browser action waits for the
 launcher result and returns success only after a zero exit status. Losing run,
 source, or launcher authority returns a non-success response and a visible
 browser error; it never becomes a clickable no-op or a copy-path fallback.
+A single-page manifest with no target-page portfolio is served without
+inventing sibling navigation; a bound portfolio remains mandatory and
+fail-closed whenever its manifest digest is present.
 Canonical `report.json` remains source-host-neutral in both modes. Static
 GitHub/GitLab routing is bound by `standalone_source` in the manifest and is
 embedded only into the verified HTML payload; served source IDs are issued

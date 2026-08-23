@@ -95,6 +95,20 @@ func TestHandlerServesInitialReportAndOpensItsOpaqueSource(t *testing.T) {
 	}
 }
 
+func TestLoadTargetNavigationAllowsSinglePageManifest(t *testing.T) {
+	navigation, err := loadTargetNavigation("unneeded", reportpkg.RunManifest{})
+	if err != nil || navigation != nil {
+		t.Fatalf("single-page navigation = %#v, err = %v", navigation, err)
+	}
+	manifest := reportpkg.RunManifest{
+		MaterialInputs: reportpkg.MaterialInputs{TargetPagePortfolioSHA256: strings.Repeat("a", 64)},
+	}
+	if _, err := loadTargetNavigation(t.TempDir(), manifest); err == nil ||
+		!strings.Contains(err.Error(), "load target navigation") {
+		t.Fatalf("bound portfolio was not required: %v", err)
+	}
+}
+
 func TestSiblingPagesRequirePortfolioRouteAndManifestBinding(t *testing.T) {
 	const (
 		initialRunID = "20260822-120000-api"

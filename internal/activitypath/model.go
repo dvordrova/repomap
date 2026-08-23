@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	Version          = 2
+	Version          = 3
 	ArtifactFilename = "activity-paths.json"
 
 	MaxRoutes                  = integrationusage.MaxSelectedUses
@@ -150,6 +150,7 @@ type Coverage struct {
 	TraversalTargetsOmitted      int  `json:"traversal_targets_omitted"`
 	DecoratorRelations           int  `json:"decorator_relations"`
 	CallablesWithoutLocation     int  `json:"callables_without_location"`
+	CallablesIneligible          int  `json:"callables_ineligible"`
 	SeededModulesWithoutLocation int  `json:"seeded_modules_without_location"`
 	ProgramObjectsOmitted        int  `json:"program_objects_omitted"`
 	ProgramRelationsOmitted      int  `json:"program_relations_omitted"`
@@ -283,6 +284,7 @@ func build(prepared inputs) (Result, error) {
 			DependenciesSelected:         len(prepared.integrations.Dependencies),
 			UsesObserved:                 len(prepared.uses.Uses),
 			CallablesWithoutLocation:     prepared.activities.Coverage.CallablesWithoutLocation,
+			CallablesIneligible:          prepared.activities.Coverage.CallablesIneligible,
 			SeededModulesWithoutLocation: prepared.activities.Coverage.SeededModulesWithoutLocation,
 			ProgramObjectsOmitted:        prepared.index.Coverage.ObjectsOmitted,
 			ProgramRelationsOmitted:      prepared.index.Coverage.RelationsOmitted,
