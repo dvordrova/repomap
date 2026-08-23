@@ -39,14 +39,65 @@ func TestBuildProjectsExactWorkspaceStdlibAndExternalImports(t *testing.T) {
 	}
 }
 
-func TestBuildKeepsUnresolvedImportAsPartialCoverage(t *testing.T) {
+func TestBuildKeepsDynamicImportAsProgramFrontierNotMissingDependency(t *testing.T) {
 	catalog, err := Build(dependencyProgramIndex(t, true))
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if catalog.Coverage.State != dependencies.CoverageComplete || len(catalog.Coverage.Omissions) != 0 {
+		t.Fatalf("coverage = %#v", catalog.Coverage)
+	}
+}
+
+func TestBuildKeepsUnnamedDirectImportAsPartialCoverage(t *testing.T) {
+	index := dependencyProgramIndex(t, false)
+	input := programindex.Input{
+		ScenarioSHA256: index.ScenarioSHA256,
+		SourceSHA256:   index.SourceSHA256,
+		Target: programindex.TargetInput{
+			Language: index.Target.Language, Kind: index.Target.Kind,
+			Name: index.Target.Name, Selector: index.Target.Selector,
+			Sources:       []programindex.TargetSource{{FileRef: "f-main", Path: "pkg/main.py"}},
+			AnchorFileRef: "f-main",
+		},
+		Coverage: programindex.CoverageInput{Measured: true},
+	}
+	moduleRef := ""
+	for _, object := range index.Objects {
+		input.Objects = append(input.Objects, programindex.ObjectInput{
+			SourceRef: object.ID, Kind: object.Kind, Name: object.Name,
+			Visibility: object.Visibility, Signature: object.Signature,
+			OwnerRef: object.OwnerID, ContainerRef: object.ContainerID,
+			Location: object.Location,
+		})
+		if object.Kind == programindex.ObjectModule && object.Name == "pkg.main" {
+			moduleRef = object.ID
+		}
+	}
+	if moduleRef == "" {
+		t.Fatal("fixture has no pkg.main module")
+	}
+	input.Relations = []programindex.RelationInput{{
+		SourceRef: "unknown-import", Kind: programindex.RelationImports,
+		FromRef: moduleRef, Resolution: programindex.ResolutionUnresolved,
+		Location:          &programindex.Location{Path: "pkg/main.py", Line: 8, Column: 1},
+		TargetsObserved:   1,
+		Witnesses:         []programindex.Witness{{Kind: "import", Detail: "unknown_package"}},
+		WitnessesObserved: 1,
+	}}
+	input.Coverage.ObjectsObserved = len(input.Objects)
+	input.Coverage.RelationsObserved = len(input.Relations)
+	index, err := programindex.New(input)
+	if err != nil {
+		t.Fatalf("programindex.New: %v", err)
+	}
+	catalog, err := Build(index)
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
 	if catalog.Coverage.State != dependencies.CoveragePartial || len(catalog.Coverage.Omissions) != 1 ||
 		catalog.Coverage.Omissions[0].Reason != dependencies.OmissionDependencyIdentityMissing ||
-		!strings.Contains(catalog.Coverage.Omissions[0].PackagePath, "import_module") {
+		!strings.Contains(catalog.Coverage.Omissions[0].PackagePath, "unknown_package") {
 		t.Fatalf("coverage = %#v", catalog.Coverage)
 	}
 }

@@ -411,10 +411,27 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 					return selectionErr
 				}
 				if pythonTarget != nil {
-					return fmt.Errorf(
-						"--target %q selects the exact Python target %q, but a mixed Go/Python repository still has Go-scoped report authority; analyze the Python project root directly instead of silently publishing a Go target",
-						analysisTargetOverride, pythonTarget.Selector,
+					selectionExecutor := llm.Executor{RootDir: dDir, Enabled: !*noCache}
+					firstLayerSemanticObserver = debugdump.NewSemanticObserver(nil)
+					selectionExecutor.Observer = firstLayerSemanticObserver
+					selection, selectionErr := selectPythonTargetsForRun(
+						ctx,
+						repoRunLabel(repo),
+						repositoryCorpus,
+						analysisTargetOverride,
+						humanOutput,
+						newTargetPortfolioProvider,
+						selectionExecutor,
 					)
+					if selectionErr != nil {
+						return selectionErr
+					}
+					selectedCatalog := selection.Catalog.Snapshot()
+					pythonTargetCatalog = &selectedCatalog
+					pythonTargetSelection = &selection
+					pythonProgramDefault = true
+					targetPortfolioOutcome = selection.Outcome
+					coreReadmeRoleRows = cloneReadmeRoleLog(selection.Outcome.ReadmeRoles)
 				}
 			}
 		}
