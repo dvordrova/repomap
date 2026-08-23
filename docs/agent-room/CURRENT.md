@@ -220,11 +220,15 @@ diagnostic-journal availability never changes the cube's semantic contract.
    any positive Python selection in a mixed run is terminal immediately after
    exact restoration, before any Python ProgramIndex or report artifact is
    written; it is never retained as a selected `structural_only` sibling. The
-   error gives exact Go `--target` choices and directs Python analysis to a
-   Python-only project root. A Go-only positive subset proceeds normally. A
-   Python default likewise fails instead of being replaced locally, and exact
-   mixed-root Python `--target` remains unsupported until report authority is
-   language-neutral. The exact Go `TargetCatalog` itself contains
+   error gives exact target guidance. A Go-only positive subset proceeds
+   normally. A Python default likewise fails instead of being replaced
+   locally. A closed exact Python `--target` selector in a mixed repository,
+   however, routes the ordinary run directly into the Python adapter before Go
+   fact loading. Go aliases, Python aliases, and paths that either adapter
+   could claim do not route early; they fail with exact selector guidance.
+   Automatic mixed publication remains terminal until one sealed
+   cross-language target-page container owns every selected target. The exact
+   Go `TargetCatalog` itself contains
    no preferred/default target and performs no module-name, sole-executable,
    or sole-library auto-selection. Every fresh Go snapshot exposes that full
    unselected catalog to the ordinary selector; omitting the selector is a
@@ -938,6 +942,15 @@ dependency has a deterministic local ID, the closed kind `workspace`,
 repository-relative path metadata for workspace packages, and stable refs to
 its exact importing repository packages. IDs and importer refs remain local;
 later model cubes must advertise request-local short refs instead.
+
+An unresolved variable-driven `importlib.import_module(...)` relation is a
+ProgramIndex dynamic-handoff frontier, not a direct dependency with the fake
+package name `importlib.import_module`. The Python dependency adapter excludes
+only that exactly witnessed unresolved mechanism from package-coverage
+omissions; the ProgramIndex relation remains available to activity, core, and
+future mechanism cubes. Exact literal dynamic imports still resolve to their
+local module when possible, and every other unresolved or ambiguous direct
+import remains an explicit partial-coverage omission.
 
 The potential-integration dependency cube receives every `stdlib` and
 `external` row, including ordinary-looking packages; it does not use a local

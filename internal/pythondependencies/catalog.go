@@ -51,6 +51,15 @@ func Build(index programindex.Index) (dependencies.Catalog, error) {
 		if relation.Kind != programindex.RelationImports {
 			continue
 		}
+		// A variable-driven importlib.import_module call is an exact dynamic
+		// handoff fact, but it does not name a direct dependency. The
+		// ProgramIndex keeps that unresolved relation for mechanism and path
+		// analysis; projecting its callable name as a missing package would
+		// incorrectly make every plugin registry look like incomplete package
+		// authority.
+		if dynamicImportFrontier(relation) {
+			continue
+		}
 		importerObject, importerErr := resolver.moduleFor(relation.FromID)
 		if importerErr != nil {
 			omissions = append(omissions, dependencies.Omission{
@@ -136,6 +145,16 @@ func Build(index programindex.Index) (dependencies.Catalog, error) {
 		return dependencies.Catalog{}, fmt.Errorf("Python dependencies: seal catalog: %w", err)
 	}
 	return catalog, nil
+}
+
+func dynamicImportFrontier(relation programindex.Relation) bool {
+	if relation.Resolution != programindex.ResolutionUnresolved ||
+		len(relation.ToIDs) != 0 ||
+		len(relation.Witnesses) != 1 || relation.WitnessesObserved != 1 {
+		return false
+	}
+	witness := relation.Witnesses[0]
+	return witness.Kind == "dynamic_import" && witness.Detail == "importlib.import_module"
 }
 
 type dependencyUse struct {
