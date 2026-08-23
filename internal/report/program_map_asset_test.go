@@ -54,6 +54,7 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 		[]byte(`function canvasTopology()`),
 		[]byte(`data-canvas-node`),
 		[]byte(`rm-canvas-popover`),
+		[]byte(`var control = element('button', 'rm-canvas-node rm-canvas-node--' + kind);`),
 		[]byte(`Responsibilities`),
 		[]byte(`Used from`),
 		[]byte(`Operations`),
