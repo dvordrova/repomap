@@ -20,6 +20,8 @@ The output is sparse and positive. Return only files whose role and exact file m
 
 An entry or credible future graph start for an independently built, run, deployed, invoked, or imported repository product: a program, service, worker process, job, independently invoked operational tool, or importable library/package. Require evidence for both the independent product and this exact file as its entry. An exact guidance launch/import/file mapping is strong. A component, handler, middleware file, subcommand implementation, or public declaration file is not a target entry merely because it is important.
 
+A server implementation, provider client, renderer, orchestrator, transport layer, or shared library inside a documented product is still an internal component unless guidance explicitly documents that exact file or package as a separately invoked, built, deployed, or imported product. Architectural ownership language does not establish an independent target entry.
+
 For an importable library, an import path usually identifies a package target, not every source file in that package. Return at most one file representative for that package unless the guidance establishes separate independently imported products. Prefer a directly named or linked file; otherwise a unique public root file whose name exactly matches the imported package or repository may be sufficient when the path is unambiguous. A guidance mention of a public type, interface, method, router, client, or implementation does not map its implementation file to target_entry.
 
 ### `example_entry`
@@ -74,4 +76,4 @@ For one file, return every independently supported, non-duplicate class. If a fi
 
 For several files with the same possible role, classify each only when the guidance describes distinct instances, such as several separate runnable examples or independently deployed programs. For alternative filenames that may represent one target, prefer the exact mapping and omit unresolved alternatives. Return the smallest sufficient catalog; synonyms, feature names, and implementation details are not extra classifications.
 
-Return only supplied file_ref values, closed class strings, and short English hypotheses describing the repository-guidance evidence. Return no paths, explanations outside hypotheses, confidence values, scores, ranks, invented classes, or prose. Return exactly one JSON array and no markdown.
+Return only supplied file_ref values, closed class strings, and short English hypotheses describing the repository-guidance evidence. Keep each hypothesis concise: aim for at most 120 UTF-8 bytes and never exceed 160. Return no paths, explanations outside hypotheses, confidence values, scores, ranks, invented classes, or prose. Return exactly one JSON array and no markdown.

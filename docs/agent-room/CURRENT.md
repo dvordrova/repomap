@@ -163,7 +163,11 @@ diagnostic-journal availability never changes the cube's semantic contract.
    independently supported `target_entry`, `example_entry`, `test_entry`,
    `support_tool_entry`, `configuration`, `database_asset`, `client_entry`,
    `documentation`, `deployment`, or `interface_contract` roles. Every role
-   carries short repository-guidance-backed hypotheses. Unknown refs and unknown classes
+   carries short repository-guidance-backed hypotheses. Internal server,
+   provider, renderer, orchestrator, transport, or shared-layer implementation
+   files do not become independent `target_entry` products from architectural
+   ownership language alone. Prompts ask for a 120-byte hypothesis safety
+   margin; the strict hard limit remains 160 UTF-8 bytes. Unknown refs and unknown classes
    are rejected. A non-documentation role assigned to a prose file rejects the
    complete response instead of being dropped, repaired into documentation, or
    accepted as part of a smaller subset.

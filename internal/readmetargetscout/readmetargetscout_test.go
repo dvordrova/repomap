@@ -122,6 +122,8 @@ func TestCompileSendsCompleteFileTreeAndCompleteReadmes(t *testing.T) {
 		"no path establishes a class by itself",
 		"Never copy literal credentials, Authorization headers, tokens",
 		"A prose API guide, route table, command list, or schema explanation is still documentation",
+		"aim for at most 120 UTF-8 bytes",
+		"provider client, renderer, orchestrator, transport layer, or shared library",
 	} {
 		if !strings.Contains(prompt.System, rule) {
 			t.Fatalf("prompt is missing evidence/ambiguity rule %q", rule)
