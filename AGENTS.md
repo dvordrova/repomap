@@ -1,81 +1,96 @@
 # AGENTS.md
 
-## What repomap is
+## Product
 
-`repomap` is a local-first, evidence-backed repository orientation tool. It produces an
-architecture landscape, discovered runtime surfaces, model-assisted conceptual grouping,
-and bounded saved flow traces. DeepSeek is the reference provider and compatibility default.
+`repomap` is an online, model-assisted repository orientation tool. Its
+supported user-facing surface is deliberately small:
 
-Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) for the project vision and pipeline design.
+- `repomap [repository] [flags]` runs the ordinary analysis and publishes the
+  report artifacts.
+- `repomap cache clear [--debug-dir DIR]` clears persistent model-response
+  caches.
 
-## Core pipeline
+There is no supported offline, investigate, doctor, dev, replay, experiment, or
+`serve` subcommand. Report serving remains part of the ordinary run and is
+controlled by `--no-serve` and `--port`. Do not add script entrypoints or
+sidecar tools.
 
-1. **Local deterministic snapshot** — tracked files, documentation and language hints
-2. **Repository facts and Atlas** — language adapters produce canonical local entities and relations
-3. **Bounded semantic projections** — Architecture and Study interpret compact request-local facts
-4. **Browser/debug artifacts** — the authoritative Atlas, semantic state and report under `--debug-dir`
+## Authority
 
-## Design rules
+- Code on the ordinary `repomap` main path is the source of truth. Verify what
+  the built binary actually does before documenting or extending it.
+- [docs/agent-room/CURRENT.md](docs/agent-room/CURRENT.md) is the single living
+  ADR. Change the relevant section in place when the product changes.
+- Historical decisions and deleted planning documents remain available in Git
+  at the pre-cleanup commit `4e54ab3`; they are not current requirements.
+- [docs/DEEPSEEK_API_NOTES.md](docs/DEEPSEEK_API_NOTES.md) owns only the live
+  online transport contract. Prompt and response schemas live with their code.
+- The owner has approved the domain-cube pipeline recorded in CURRENT.md and a
+  shared LLM-provider executor. Do not add another analysis or presentation
+  layer outside that pipeline without fresh approval.
 
-- A model provider must **never** receive full repo contents, raw `file_tree`, or raw `internal_edges`.
-- Do not add a new analysis or presentation layer unless it is explicitly requested by the
-  repository owner or included in the currently approved decision.
-- A model must only interpret a compact bounded facts bundle produced by local deterministic extraction.
+## Product contract
 
-## Guiding documents
+- Extract deterministic repository facts locally, then send bounded,
+  request-local evidence to the configured model provider. The initial README
+  file-role classifier may send the complete names-only tracked-file
+  dictionary as a lossless prefix-compressed path tree with compact `f*`
+  leaves, complete textual README documents, and sparse local lexical counts;
+  it sends no other source-file contents.
+- Domain cubes own `State`, bounded input preparation, and semantic
+  validation. The shared LLM layer owns exact provider requests, transport,
+  retries, provider-envelope/JSON decoding, batch execution, cache, accounting,
+  and semantic-journal events.
+- A cube returns a fully validated result, a contractually legitimate empty
+  result, or an error. Backend orchestration, report projection, and browser
+  code must never supply semantic fallback, repair, promotion, or partial
+  success for failed or incomplete cube output.
+- Keep static prompt prose in readable Markdown beside its domain cube and
+  compile it with `go:embed`. Go owns dynamic bounded catalogs, not long prompt
+  string literals; the provider layer does not own domain prompts or schemas.
+- Models select only closed request-local short refs. Catalog rows may show
+  exact repository-relative paths, file names, symbol names/signatures, and
+  dependency names because that context has semantic value. The model is
+  never required to copy those values: UUIDs, canonical identities, ref
+  resolution, and graph restoration remain local. Unknown refs are rejected
+  rather than guessed or repaired; absolute host paths are never sent.
+- Provider requests must never contain full repository source contents, raw
+  internal edges, canonical internal IDs, credentials, or unadvertised paths.
+  A complete names-only tracked-file dictionary is explicitly allowed for the
+  README file-role classifier.
+- The selected repository is trusted by default. Heuristic credential scanning
+  is opt-in through `--scan-secrets`; API keys and Authorization headers must
+  still never be persisted.
+- Analyze every eligible target by default. `--target` selects an explicit
+  target; `--force-platform GOOS/GOARCH` overrides the normal Go platform
+  selection.
+- Interesting activity entrypoints are selected from an exact symbol graph.
+  Framework, protocol, TLS, dependency, and naming heuristics may advertise
+  candidates but cannot establish entrypoint authority by themselves.
+- Semantic output and the current HTML report are canonical English. There is
+  no `--lang` flag until a separately approved final presentation-localization
+  cube actually exists.
+- Repository changes during a run do not fail publication. Do not reintroduce a
+  freshness gate or strict-snapshot mode.
+- `--no-serve` requires resolvable GitHub or GitLab source links and fails in
+  preflight with corrective flag guidance otherwise. Served reports may only
+  add manifest-authorized local VS Code opening; do not add browser APIs for
+  workspace reads, investigation, symbols, source context, or run selection.
+- Persistent caches remain part of the ordinary path. Cache hits must be
+  identity-bound and fully validated before use; `--no-cache` is the explicit
+  live-provider bypass.
 
-- Read [docs/CORE_IDEA.md](docs/CORE_IDEA.md) before changing architecture.
-- Read [docs/agent-room/CURRENT.md](docs/agent-room/CURRENT.md) and its referenced
-  decision before implementing feature-specific scope.
-- Read [docs/DEEPSEEK_API_NOTES.md](docs/DEEPSEEK_API_NOTES.md) before changing DeepSeek client.
-- Do not invent ad-hoc DeepSeek request shapes; follow docs/DEEPSEEK_API_NOTES.md.
-- Do not add shell-script entrypoints. Keep `Makefile` as a small router to Go
-  commands, Go tests and the built `repomap` binary. Put substantive reusable
-  logic in Go; keep one-off experiments outside the production workflow.
+## Development and acceptance
 
-## Decision workflow
-
-- Durable repository rules live in `AGENTS.md`.
-- Feature-specific approved scope lives in numbered decision documents under
-  `docs/agent-room/`.
-- `docs/agent-room/CURRENT.md` points to the active implementation decision.
-- Historical decisions are preserved and are not silently rewritten or invalidated.
-- Explicit repository-owner approval is required to change the active decision.
-- Implementation agents must not silently expand scope or select the numerically latest
-  decision.
-
-## Development rules
-
-- Build the working binary with `make build`; this is the canonical owner-facing
-  build entrypoint and writes the exact trimpath binary to `.bin/repomap`.
-  Use a direct `go build -trimpath -o PATH ./cmd/repomap` only when an explicitly
-  separate temporary candidate path is required.
-- Exercise the built binary directly on a real repository. For a provider-free
-  gate use `PATH REPO --offline --no-open --no-serve --debug-dir DIR`.
-- Verify the process exit status and the generated manifest, Atlas, report JSON
-  and report HTML. A wrapper reporting success is not product acceptance.
-- Run focused Go tests for changed contracts and `go vet` for changed packages.
-- If a command fails, **fix the failure** or clearly explain why it cannot be fixed.
-- Never leave known broken tests.
-- If a debugging operation is useful twice, implement it as a Go test, Go
-  command or a short Make target that invokes one of those entrypoints.
-- Debug artifacts must **never** include API keys or Authorization headers.
-- Debug artifacts must **never** be committed.
-
-## Test invariants
-
-- Offline runs must not require provider credentials or make provider calls.
-- Provider requests must not include the full file tree, raw internal edges,
-  canonical Atlas IDs or unadvertised repository paths.
-- Debug dumps must redact sensitive keys (api_key, token, authorization, password)
-- Debug dumps must never contain Authorization headers
-- Invalid DeepSeek JSON must return a clear error
-- Non-2xx DeepSeek responses must include status and response body in the error
-- Committed quality tasks must replay without an API key or network call
-- Quality artifacts must be manifest-relative, bounded, and verified by SHA-256
-- Quality manifests and artifacts must reject obvious credentials without echoing them
-- Saved investigation facts, claims, and session state must remain separate and hash-verified
-- Current repository/fact/claim context must be reconciled before a saved action is executable
-- Repository freshness must hash dirty contents without reading unrelated ignored secrets
-- Interactive report actions require a versioned run manifest bound to the exact report and repository state
-- Browser clients may request local analysis only through manifest-authorized opaque IDs, never raw paths or symbols
+- Build the owner-facing binary with `make build`; it must write
+  `.bin/repomap`.
+- Product acceptance means running that binary on a real repository through
+  the normal online provider path. Offline runs, fixtures, replay commands, and
+  helper tools are not acceptance evidence.
+- Verify the process exit status and the generated manifest, sealed
+  ProgramIndex set, report JSON, and report HTML. For cache changes, also verify
+  a real second run and `repomap cache clear`.
+- Run focused Go tests for changed contracts and `go vet` for changed
+  packages. Never leave known broken tests.
+- Debug artifacts must never include API keys or Authorization headers and must
+  never be committed.

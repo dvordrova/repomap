@@ -17,7 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/dvordrova/repomap/internal/modelresearch"
+	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
@@ -43,25 +43,6 @@ const (
 	legacyEnvTimeout  = "DEEPSEEK_TIMEOUT"
 	legacyEnvAuth     = "DEEPSEEK_AUTH"
 )
-
-// OrientationPromptVersionJSON identifies the semantic orientation prompt and
-// request contract used by Orient and OrientPromptJSON.
-const OrientationPromptVersionJSON = "orientation-json-v13"
-
-// SemanticOutputLanguageContractVersion identifies the default shared
-// language contract. A stage whose versioned prompt owns a closed output
-// language bypasses this wrapper; localization likewise owns its separate
-// source/target-locale contract.
-const SemanticOutputLanguageContractVersion = "canonical-english-output-v1"
-
-const canonicalEnglishSystemContract = `CANONICAL OUTPUT LANGUAGE CONTRACT (canonical-english-output-v1):
-- Write every human-readable prose value in English.
-- Keep JSON keys, enum values, exact schema literals, opaque IDs, repository paths, code identifiers, package/module names, API/protocol/product/library names, exact format tags, and quoted source text unchanged.
-- Copy values from closed lists of allowed literals exactly, even when their words look human-readable.
-- Return exactly the requested response shape.`
-
-const canonicalEnglishUserContract = `OUTPUT LANGUAGE:
-The response is the canonical semantic result. Before returning it, verify that every human-readable title, description, explanation, question, reason, warning, summary, and other prose value is English while protected technical values remain unchanged.`
 
 type Client struct {
 	HTTPClient *http.Client
@@ -109,16 +90,6 @@ func (c *Client) EffectiveConfig() EffectiveConfig {
 }
 
 func NewFromEnv() (*Client, error) {
-	return newFromEnv(true)
-}
-
-// NewPromptFromEnv builds request configuration without requiring an API key.
-// It is intended for offline prompt inspection only.
-func NewPromptFromEnv() (*Client, error) {
-	return newFromEnv(false)
-}
-
-func newFromEnv(requireAPIKey bool) (*Client, error) {
 	useGenericConfig := anyEnvSet(
 		envEndpoint,
 		envModel,
@@ -186,10 +157,10 @@ func newFromEnv(requireAPIKey bool) (*Client, error) {
 	}
 
 	key := value(envAPIKey, legacyEnvAPIKey)
-	if requireAPIKey && auth == authBearer && key == "" {
+	if auth == authBearer && key == "" {
 		return nil, fmt.Errorf("%s is required when %s=%s", envAPIKey, envAuth, authBearer)
 	}
-	if !requireAPIKey || auth == authNone {
+	if auth == authNone {
 		key = ""
 	}
 
@@ -278,10 +249,9 @@ const maxRetries = 3
 
 const maxProviderErrorBytes = 8 * 1024
 
-const maxProviderResponseBytes = modelresearch.ProviderResponseByteLimit
+const maxProviderResponseBytes = llm.ProviderResponseByteLimit
 
 var (
-	errJSONCompletionInvalid     = errors.New("llm response content is not valid JSON")
 	errResponseEnvelopeMalformed = errors.New("llm response envelope is malformed")
 	// ErrResponseContentEmpty distinguishes an HTTP-successful, parsed
 	// provider envelope with no usable assistant content from transport or
@@ -319,126 +289,8 @@ func (err *IncompleteCompletionError) Error() string {
 	)
 }
 
-func (c *Client) buildRequest(bundleJSON []byte) chatRequest {
-	request := c.canonicalSemanticRequest(
-		`Do not explain the whole repo. Help the developer choose what runtime/event flow to inspect next.
-
-The request-local reference fields embedded in the facts bundle are closed. Return only exact file refs (f0001...) in file-ref fields and exact evidence refs (e0001...) in evidence-ref fields. Never return a repository path, candidate_file_index id, package path, import path, path:line statement, or reference handle in a prose field. Never shorten, extend, prefix, substitute, or repair a ref. Never use a file ref where an evidence ref is required or an evidence ref where a file ref is required. Do not duplicate a ref within one field. Omit a value or flow that cannot use exact refs from this request. There is no unverified_paths response field and no filename inference or fallback from an entrypoint to the first likely file.
-
-Produce a json orientation report with this exact shape:
-{
-  "project_guess": "short guess what this repo is",
-  "confidence": 0.0,
-  "high_level_map": [
-    {
-      "name": "component or subsystem name",
-      "role": "entry | boundary | coordination | domain | state | support | unknown",
-      "evidence_refs": ["exact e-ref embedded in this request"],
-      "why_it_matters": "why this component matters for understanding the repo"
-    }
-  ],
-  "first_files_to_open": [
-    {
-      "file_ref": "exact f-ref embedded in this request",
-      "reason": "why this file is worth opening first"
-    }
-  ],
-  "candidate_flows": [
-    {
-      "name": "runtime or event flow name",
-      "flow_type": "request | operational",
-      "trigger": "what starts this flow",
-      "likely_entrypoint_ref": "exact f-ref embedded in this request, preferably one of likely_file_refs",
-      "likely_file_refs": ["exact f-refs embedded in this request"],
-      "why_interesting": "why this flow matters",
-      "evidence_refs": ["exact e-refs embedded in this request that support this flow"],
-      "confidence": 0.0
-    }
-  ],
-  "important_domain_words": [
-    {
-      "word": "term found in paths or readme",
-      "guess": "what it probably means in this repo",
-      "evidence_refs": ["exact e-refs embedded in this request"]
-    }
-  ],
-  "questions_for_human": [
-    "question that helps guide the next analysis step"
-  ],
-  "research_questions": [
-    {
-      "id": "short question id",
-      "purpose": "why resolving this question would improve architecture or a saved trace",
-      "question": "one concrete high-value repository question",
-      "candidate_file_refs": ["exact f-refs from candidate_file_index in this request"],
-      "evidence_categories": ["declaration, callsite, transition, source_window, test, or frontier"]
-    }
-  ],
-  "warnings": [
-    "any uncertainty or missing context"
-  ]
-}
-
-Important rules:
-- Candidate flows must be runtime/event-oriented (e.g. "CLI command dispatch", "HTTP request handling", "server startup", "plugin loading", "background job execution"), not folder-oriented (do not say "server module" or "pkg folder").
-- Set flow_type to "request" for user/request-driven work and "operational" for background, maintenance, threshold, consensus, or durability work. Prefer the strongest grounded evidence regardless of flow type.
-- An operational candidate must cite an evidence_ref attached to a source_signals record. If that evidence is weak or only suggests a possible flow, cap confidence at 0.3 and state the uncertainty.
-- Give every high_level_map item one coarse navigation role. Use entry for process or command entrypoints, boundary for external protocols and adapters, coordination for lifecycle and orchestration, domain for core behavior, state for persistence or state ownership, support for configuration/operations/observability/testing, and unknown when the bundle does not support a useful choice. A role is an orientation hypothesis, not static or runtime proof.
-- Every candidate flow must include evidence_refs from the facts bundle.
-- Propose two to four research_questions only when bounded local evidence could answer them. Select candidates only through exact candidate_file_refs and supplied evidence categories; do not invent or request paths. Treat omitted files as unknown rather than absent. Questions should target user-facing behavior, architecture gaps, or trace frontiers, not prettier names.
-- go.command_traces are locally extracted bounded syntax evidence. Preserve their typed relations: calls, registers_command, callback, constructs, registers, and starts_goroutine are not interchangeable. A handler_call with resolved=false is an exact call site but not a resolved concrete target. Prefer a complete command_trace over a filename-only CLI guess.
-- Evidence is selected only by exact evidence_refs embedded in this request; do not rewrite referenced evidence as prose.
-- Distinguish facts from guesses. If confidence is low, say so in warnings.
-- Use only the provided facts bundle and its request-local reference fields. Do not imagine files you cannot see.
-
-Orientation facts bundle JSON:
-`+string(bundleJSON),
-		"You are a senior software engineer helping orient inside a large unfamiliar repository. Infer the language from language_hints and use only the provided facts. Do not pretend to have read files that were not provided. Return valid json only.",
-		true,
-	)
-	if isOfficialDeepSeekEndpoint(c.Endpoint) {
-		// Orientation is a bounded classification over an already compact local
-		// facts bundle. DeepSeek V4 otherwise enables thinking by default and can
-		// consume the entire JSON completion envelope without returning content.
-		request.Thinking = &thinkingConfig{Type: "disabled"}
-	}
-	return request
-}
-
-func (c *Client) OrientPromptJSON(bundleJSON []byte) ([]byte, error) {
-	reqPayload := c.buildRequest(bundleJSON)
-	return json.Marshal(reqPayload)
-}
-
-func (c *Client) FlowExplainPromptJSON(userContent, systemContent string) ([]byte, error) {
-	reqPayload := c.flowExplainRequest(userContent, systemContent, true)
-	return json.Marshal(reqPayload)
-}
-
-func (c *Client) flowExplainPromptText(userContent, systemContent string) ([]byte, error) {
-	reqPayload := c.flowExplainRequest(userContent, systemContent, false)
-	return json.Marshal(reqPayload)
-}
-
-func (c *Client) flowExplainRequest(userContent, systemContent string, jsonMode bool) chatRequest {
-	return c.canonicalSemanticRequest(userContent, systemContent, jsonMode)
-}
-
-func (c *Client) canonicalSemanticRequest(
-	userContent,
-	systemContent string,
-	jsonMode bool,
-) chatRequest {
-	return c.semanticRequest(
-		withCanonicalEnglishUserContract(userContent),
-		withCanonicalEnglishSystemContract(systemContent),
-		jsonMode,
-	)
-}
-
-// semanticRequest builds one provider request without imposing a shared
-// output-language contract. It is reserved for stages whose versioned prompt
-// owns an explicit closed output language itself.
+// semanticRequest builds one provider request from cube-owned prompt text. It
+// adds no semantic or output-language instructions.
 func (c *Client) semanticRequest(
 	userContent,
 	systemContent string,
@@ -459,206 +311,13 @@ func (c *Client) semanticRequest(
 	return request
 }
 
-func withCanonicalEnglishSystemContract(systemContent string) string {
-	return systemContent + "\n\n" + canonicalEnglishSystemContract
-}
-
-func withCanonicalEnglishUserContract(userContent string) string {
-	return canonicalEnglishUserContract + "\n\n" + userContent
-}
-
 func float64Pointer(value float64) *float64 {
 	return &value
 }
 
-func (c *Client) FlowExplain(ctx context.Context, userContent, systemContent string) ([]byte, error) {
-	return c.flowExplain(ctx, userContent, systemContent, true, true)
-}
-
-// BuildResearchRequest returns the exact OpenAI-compatible request body for
-// one bounded targeted research prompt.
-func (c *Client) BuildResearchRequest(prompt modelresearch.Prompt) ([]byte, error) {
-	if prompt.Version != modelresearch.PromptVersion {
-		return nil, fmt.Errorf("unsupported model research prompt version %q", prompt.Version)
-	}
-	return c.FlowExplainPromptJSON(prompt.User, prompt.System)
-}
-
-// Research performs one semantic targeted stage. Transport retries remain
-// inside the stage and are returned as Attempts rather than extra rounds.
-func (c *Client) Research(ctx context.Context, prompt modelresearch.Prompt) (modelresearch.ProviderResult, error) {
-	stopWaiting := c.startWaitProgress(ctx, "targeted research")
-	defer stopWaiting()
-	body, err := c.BuildResearchRequest(prompt)
-	if err != nil {
-		return modelresearch.ProviderResult{}, err
-	}
-	completion, attempts, callErr := executeChatWithTransportRetries(
-		ctx,
-		c.HTTPClient,
-		c.Endpoint,
-		c.APIKey,
-		c.Auth,
-		body,
-		true,
-	)
-	if callErr != nil {
-		return providerResultFromCompletion(completion, attempts, len(body)*attempts),
-			annotateResourceLimit(callErr, "targeted_research", c.MaxTokens)
-	}
-	return providerResultFromCompletion(completion, attempts, len(body)*attempts), nil
-}
-
-// CheckJSONCompatibility makes exactly one small synthetic request. It is used
-// by the CLI doctor and deliberately does not inherit normal retry behavior.
-func (c *Client) CheckJSONCompatibility(ctx context.Context) error {
-	reqPayload := c.flowExplainRequest(
-		`Return exactly one JSON object: {"status":"ok"}`,
-		"This is a provider compatibility check. Return valid JSON only.",
-		true,
-	)
-	body, err := json.Marshal(reqPayload)
-	if err != nil {
-		return fmt.Errorf("marshal llm compatibility request: %w", err)
-	}
-	raw, _, err := doChat(ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, true)
-	if err != nil {
-		return err
-	}
-	var response struct {
-		Status string `json:"status"`
-	}
-	if err := json.Unmarshal(raw, &response); err != nil || response.Status != "ok" {
-		return fmt.Errorf("llm provider returned JSON but not the expected status")
-	}
-	return nil
-}
-
-func (c *Client) flowExplain(ctx context.Context, userContent, systemContent string, jsonMode, validateJSON bool) ([]byte, error) {
-	var (
-		body []byte
-		err  error
-	)
-	if jsonMode {
-		body, err = c.FlowExplainPromptJSON(userContent, systemContent)
-	} else {
-		body, err = c.flowExplainPromptText(userContent, systemContent)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("marshal flow explain request: %w", err)
-	}
-
-	var lastErr error
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			backoff := backoffDuration(attempt)
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(backoff):
-			}
-		}
-
-		result, shouldRetry, err := doChat(ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body, validateJSON)
-		if err == nil {
-			return result, nil
-		}
-		lastErr = err
-		if !shouldRetry {
-			return nil, annotateResourceLimit(err, "flow_explain", c.MaxTokens)
-		}
-	}
-
-	return nil, fmt.Errorf("retries exhausted (%d attempts): %w", maxRetries+1, lastErr)
-}
-
-func (c *Client) Orient(ctx context.Context, bundleJSON []byte) ([]byte, error) {
-	result, err := c.OrientMeasured(ctx, bundleJSON)
-	return result.Content, err
-}
-
-// OrientMeasured performs one semantic orientation stage and reports bounded
-// transport attempts separately from semantic call accounting.
-func (c *Client) OrientMeasured(ctx context.Context, bundleJSON []byte) (modelresearch.ProviderResult, error) {
-	stopWaiting := c.startWaitProgress(ctx, "orientation")
-	defer stopWaiting()
-	request := c.buildRequest(bundleJSON)
-	body, err := json.Marshal(request)
-	if err != nil {
-		return modelresearch.ProviderResult{}, fmt.Errorf("marshal llm request: %w", err)
-	}
-	var (
-		measured         modelresearch.ProviderResult
-		lastErr          error
-		transportRetries int
-	)
-	for {
-		if measured.Attempts > 0 {
-			backoff := backoffDuration(measured.Attempts)
-			select {
-			case <-ctx.Done():
-				return measured, ctx.Err()
-			case <-time.After(backoff):
-			}
-		}
-
-		result, shouldRetry, err := doChatMeasured(
-			ctx,
-			c.HTTPClient,
-			c.Endpoint,
-			c.APIKey,
-			c.Auth,
-			body,
-			true,
-		)
-		measured.Attempts++
-		measured.RequestBytes += len(body)
-		measured.ResponseBytes += result.ResponseBytes
-		measured.UsageReported = measured.UsageReported || result.UsageReported
-		measured.InputTokens += result.InputTokens
-		measured.OutputTokens += result.OutputTokens
-		measured.ReasoningTokens += result.ReasoningTokens
-		measured.PromptCacheHitTokens += result.PromptCacheHitTokens
-		measured.PromptCacheMissTokens += result.PromptCacheMissTokens
-		measured.Content = append([]byte(nil), result.Content...)
-		measured.FinishReason = result.FinishReason
-		measured.ChoiceCount = result.ChoiceCount
-		if err == nil {
-			return measured, nil
-		}
-		lastErr = err
-		if shouldRetry && transportRetries < maxRetries {
-			transportRetries++
-			continue
-		}
-		if shouldRetry {
-			return measured, fmt.Errorf(
-				"retries exhausted (%d attempts): %w",
-				measured.Attempts,
-				lastErr,
-			)
-		}
-		return measured, annotateResourceLimit(err, "orientation", request.MaxTokens)
-	}
-}
-
-func providerResultFromCompletion(
-	completion chatCompletion,
-	attempts int,
-	requestBytes int,
-) modelresearch.ProviderResult {
-	return modelresearch.ProviderResult{
-		Content:  append([]byte(nil), completion.Content...),
-		Attempts: attempts, RequestBytes: requestBytes,
-		ResponseBytes: completion.ResponseBytes,
-		UsageReported: completion.UsageReported,
-		InputTokens:   completion.InputTokens, OutputTokens: completion.OutputTokens,
-		ReasoningTokens:       completion.ReasoningTokens,
-		FinishReason:          completion.FinishReason,
-		ChoiceCount:           completion.ChoiceCount,
-		PromptCacheHitTokens:  completion.PromptCacheHitTokens,
-		PromptCacheMissTokens: completion.PromptCacheMissTokens,
-	}
+func isOfficialDeepSeekEndpoint(endpoint string) bool {
+	parsed, err := url.Parse(endpoint)
+	return err == nil && strings.EqualFold(parsed.Hostname(), "api.deepseek.com")
 }
 
 func (c *Client) startWaitProgress(ctx context.Context, stage string) func() {
@@ -695,15 +354,6 @@ func (c *Client) startWaitProgress(ctx context.Context, stage string) func() {
 	}
 }
 
-func doOrient(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth string, body []byte) ([]byte, bool, error) {
-	return doChat(ctx, httpClient, endpoint, apiKey, auth, body, true)
-}
-
-func doChat(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth string, body []byte, validateJSON bool) ([]byte, bool, error) {
-	result, retry, err := doChatMeasured(ctx, httpClient, endpoint, apiKey, auth, body, validateJSON)
-	return result.Content, retry, err
-}
-
 type chatCompletion struct {
 	Content               []byte
 	ResponseBytes         int
@@ -718,7 +368,7 @@ type chatCompletion struct {
 	finishReasonClass     string
 }
 
-func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth string, body []byte, validateJSON bool) (chatCompletion, bool, error) {
+func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiKey, auth string, body []byte) (chatCompletion, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return chatCompletion{}, false, fmt.Errorf("build llm request: %w", err)
@@ -802,7 +452,7 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 	content := strings.TrimSpace(choice.Message.Content)
 	completion.Content = []byte(content)
 	if choice.FinishReason == "length" {
-		return completion, false, modelresearch.NewResourceLimitError(ResourceLimitError{
+		return completion, false, newResourceLimitError(ResourceLimitError{
 			Kind:            ResourceLimitOutputTokens,
 			Observed:        usage.CompletionTokens,
 			ObservedKnown:   usageReported,
@@ -810,7 +460,7 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 			OutputTokens:    usage.CompletionTokens,
 			ReasoningTokens: usage.CompletionTokenDetails.ReasoningTokens,
 			FinishReason:    "length",
-		}, completion.Content)
+		})
 	}
 	if content == "" {
 		details := make([]string, 0, 4)
@@ -832,13 +482,6 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 			return completion, false, fmt.Errorf("%w (%s)", ErrResponseContentEmpty, strings.Join(details, ", "))
 		}
 		return completion, false, ErrResponseContentEmpty
-	}
-
-	if validateJSON {
-		var validate json.RawMessage
-		if err := json.Unmarshal([]byte(content), &validate); err != nil {
-			return completion, false, fmt.Errorf("%w: %v", errJSONCompletionInvalid, err)
-		}
 	}
 
 	return completion, false, nil
@@ -886,6 +529,9 @@ func knownFinishReason(reason string) string {
 
 func safeProviderErrorText(body []byte) string {
 	text := strings.TrimSpace(string(body))
+	if kind, found := secretscan.DetectPersistenceSensitive(text); found {
+		return fmt.Sprintf("[redacted: %s detected in provider response]", kind)
+	}
 	if kind, found := secretscan.Detect(text); found {
 		return fmt.Sprintf("[redacted: %s detected in provider response]", kind)
 	}

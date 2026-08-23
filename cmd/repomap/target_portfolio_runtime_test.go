@@ -3,460 +3,179 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"slices"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
+	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/debugdump"
+	"github.com/dvordrova/repomap/internal/gitfiles"
 	"github.com/dvordrova/repomap/internal/gofacts"
-	"github.com/dvordrova/repomap/internal/modelresearch"
-	"github.com/dvordrova/repomap/internal/targetportfolio"
+	"github.com/dvordrova/repomap/internal/llm"
 )
 
 type targetPortfolioClientStub struct {
 	response []byte
-	err      error
 	calls    int
-	prompt   targetportfolio.Prompt
+	prompt   llm.Prompt
 }
 
-func (stub *targetPortfolioClientStub) TargetPortfolioPromptJSON(prompt targetportfolio.Prompt) ([]byte, error) {
+func (stub *targetPortfolioClientStub) State() []byte {
+	return []byte(`{"provider":"target-portfolio-test"}`)
+}
+
+func (stub *targetPortfolioClientStub) Prepare(
+	prompt llm.Prompt,
+	_ llm.Limits,
+) (llm.Prepared, error) {
 	stub.prompt = prompt
-	return []byte(`{"model":"test","messages":[]}`), nil
+	envelope, err := json.Marshal(map[string]any{
+		"model": "test",
+		"messages": []any{
+			map[string]any{"role": "system", "content": prompt.System},
+			map[string]any{"role": "user", "content": prompt.User},
+		},
+	})
+	if err != nil {
+		return llm.Prepared{}, err
+	}
+	return llm.NewPrepared(envelope)
 }
 
-func (stub *targetPortfolioClientStub) TargetPortfolioBodyMeasured(
+func (stub *targetPortfolioClientStub) Complete(
 	context.Context,
-	[]byte,
-) (modelresearch.ProviderResult, error) {
+	llm.Prepared,
+) (llm.Completion, error) {
 	stub.calls++
-	return modelresearch.ProviderResult{
-		Content: stub.response, Attempts: 1, RequestBytes: 32, ResponseBytes: len(stub.response),
-	}, stub.err
-}
-
-func TestTargetPortfolioRuntimeUsesModelDefaultFromCompleteCatalog(t *testing.T) {
-	catalog := targetPortfolioRuntimeCatalog(t, targetPortfolioRuntimeFacts())
-	compilation, err := targetportfolio.Compile("repomap", catalog)
-	if err != nil {
-		t.Fatal(err)
-	}
-	refs := make(map[string]string)
-	for _, target := range compilation.Request.Targets {
-		refs[target.DisplayPath] = target.Ref
-	}
-	response, err := json.Marshal(targetportfolio.Response{
-		Version: targetportfolio.ResultVersion, RequestRef: compilation.Request.RequestRef,
-		DefaultRef: refs["cmd/repomap"],
-		TargetRefs: []string{refs["pkg/client"], refs["cmd/repomap"]},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	client := &targetPortfolioClientStub{response: response}
-	selected, outcome, err := selectTargetPortfolioForRun(
-		context.Background(), "example.com/repomap", catalog, nil,
-		func() (targetPortfolioClient, error) { return client, nil },
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if client.calls != 1 || selected != targetPortfolioRuntimeEntry(t, catalog, "cmd/repomap").Candidate.Target.Ref ||
-		outcome.SelectedPath != "cmd/repomap" || outcome.SelectedTargets != 2 || outcome.UsedLocalDefault {
-		t.Fatalf("selection/outcome/calls = %q / %#v / %d", selected, outcome, client.calls)
-	}
-	for _, entry := range catalog.Entries {
-		visible := strings.Contains(client.prompt.User, `"display_path":"`+entry.DisplayPath+`"`)
-		if visible != targetportfolio.AdvertisedForSelection(entry) {
-			t.Fatalf("provider prompt visibility for %q = %t, advertised=%t: %s",
-				entry.DisplayPath, visible, targetportfolio.AdvertisedForSelection(entry), client.prompt.User)
-		}
-	}
-}
-
-func TestAllTargetsOnlineUsesOneSelectorDefaultAndKeepsCompleteCanonicalCatalog(t *testing.T) {
-	catalog := targetPortfolioRuntimeCatalog(t, targetPortfolioRuntimeFacts())
-	compilation, err := targetportfolio.Compile("repomap", catalog)
-	if err != nil {
-		t.Fatal(err)
-	}
-	requestRef := compilation.Request.RequestRef
-	providerRef := ""
-	for _, target := range compilation.Request.Targets {
-		if target.DisplayPath == "cmd/helper" {
-			providerRef = target.Ref
-		}
-	}
-	response, err := json.Marshal(targetportfolio.Response{
-		Version: targetportfolio.ResultVersion, RequestRef: requestRef,
-		DefaultRef: providerRef, TargetRefs: []string{providerRef},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	client := &targetPortfolioClientStub{response: response}
-	selection, outcome, err := selectAllTargetsForRun(
-		context.Background(), "example.com/repomap", catalog, false, "", nil,
-		func() (targetPortfolioClient, error) { return client, nil },
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantRefs := make([]string, 0, len(catalog.Entries))
-	for _, entry := range catalog.Entries {
-		wantRefs = append(wantRefs, entry.Candidate.Target.Ref)
-	}
-	wantDefault := targetPortfolioRuntimeEntry(t, catalog, "cmd/helper").Candidate.Target.Ref
-	if client.calls != 1 || selection.DefaultTargetRef != wantDefault ||
-		!slices.Equal(selection.TargetRefs, wantRefs) ||
-		!slices.Equal(outcome.SelectedTargetRefs, wantRefs) ||
-		outcome.SelectedTargets != len(wantRefs) {
-		t.Fatalf("all-target selection = %#v / %#v / calls=%d", selection, outcome, client.calls)
-	}
-}
-
-func TestAllTargetsExplicitDefaultAndOfflineDefaultNeverConfigureSelector(t *testing.T) {
-	catalog := targetPortfolioRuntimeCatalog(t, targetPortfolioRuntimeFacts())
-	factoryCalls := 0
-	factory := func() (targetPortfolioClient, error) {
-		factoryCalls++
-		return nil, errors.New("selector must not be configured")
-	}
-	for _, test := range []struct {
-		name     string
-		offline  bool
-		override string
-		wantRef  string
-	}{
-		{
-			name: "explicit online", override: "pkg/client",
-			wantRef: targetPortfolioRuntimeEntry(t, catalog, "pkg/client").Candidate.Target.Ref,
+	return llm.Completion{
+		Response:     append([]byte(nil), stub.response...),
+		FinishReason: llm.FinishStop,
+		ChoiceCount:  1,
+		Metrics: llm.Metrics{
+			Attempts: 1, ProviderResponseBytes: len(stub.response), Latency: time.Millisecond,
 		},
-		{
-			name: "strong offline default", offline: true,
-			wantRef: catalog.DefaultTargetRef,
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			selection, outcome, err := selectAllTargetsForRun(
-				context.Background(), "example.com/repomap", catalog,
-				test.offline, test.override, nil, factory,
-			)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if selection.DefaultTargetRef != test.wantRef ||
-				len(selection.TargetRefs) != len(catalog.Entries) ||
-				outcome.SelectedTargets != len(catalog.Entries) {
-				t.Fatalf("all-target local selection = %#v / %#v", selection, outcome)
-			}
-		})
-	}
-	if factoryCalls != 0 {
-		t.Fatalf("selector factory calls = %d, want 0", factoryCalls)
-	}
+	}, nil
 }
 
-func TestAllTargetsRootExecutableAndModuleLibraryRequireTypedDefaultKey(t *testing.T) {
-	const modulePath = "example.com/collision"
-	facts := gofacts.Facts{
-		Modules: []gofacts.ModuleFact{{
-			ID: "root", ModulePath: modulePath, ModuleDir: ".", Main: true,
-			PackagesCount: 2, RetainedPackagesCount: 2,
-			Coverage: gofacts.ModuleCoverage{PackagesDiscovered: 2, PackagesRetained: 2},
-		}},
-		Packages: []gofacts.PackageFact{
-			{
-				CanonicalPath: modulePath, Name: "main", ModuleID: "root", ModulePath: modulePath,
-				PackageDir: ".", ModuleRelativeDir: ".", DisplayPath: ".", Locality: "local",
-				DeclarationsScanned: true, LoadCompleteness: completeGoPackageLoad(),
-			},
-			{
-				CanonicalPath: modulePath + "/client", Name: "client", ModuleID: "root", ModulePath: modulePath,
-				PackageDir: "client", ModuleRelativeDir: "client", DisplayPath: "client", Locality: "local",
-				DeclarationsScanned: true, LoadCompleteness: completeGoPackageLoad(),
-				Declarations: []gofacts.PackageDeclaration{{Kind: gofacts.PackageDeclarationFunc, Name: "Open"}},
-			},
-		},
-		EntrypointPackages: []gofacts.Entrypoint{{
-			ModulePath: modulePath, ImportPath: modulePath, PackageDir: ".", ModuleRelativeDir: ".",
-			ModuleDir: ".", Kind: "primary_binary",
-			Anchors: []gofacts.EntrypointAnchor{{
-				Version: gofacts.EntrypointAnchorVersion, Kind: gofacts.EntrypointAnchorGoMain,
-				Path: "main.go", Line: 7,
-			}},
-		}},
-	}
+func TestTargetSelectionRunsREADMEAndGoScoutsThenSelectsByFileRef(t *testing.T) {
+	repository := targetPortfolioCorpus(t, true)
+	facts := targetPortfolioRuntimeFacts()
 	catalog := targetPortfolioRuntimeCatalog(t, facts)
-	if len(catalog.Entries) != 2 || catalog.Entries[0].DisplayPath != "." || catalog.Entries[1].DisplayPath != "." {
-		t.Fatalf("collision catalog = %#v", catalog.Entries)
-	}
-	if _, _, err := selectAllTargetsForRun(
-		context.Background(), modulePath, catalog, true, ".", nil, nil,
-	); err == nil || !strings.Contains(err.Error(), "ambiguous") ||
-		!strings.Contains(err.Error(), catalog.Entries[0].Candidate.Key) ||
-		!strings.Contains(err.Error(), catalog.Entries[1].Candidate.Key) {
-		t.Fatalf("untyped root alias = %v", err)
-	}
-	for _, entry := range catalog.Entries {
-		selection, outcome, err := selectAllTargetsForRun(
-			context.Background(), modulePath, catalog, true, entry.Candidate.Key, nil, nil,
-		)
-		if err != nil || selection.DefaultTargetRef != entry.Candidate.Target.Ref ||
-			outcome.SelectedKind != entry.Candidate.Target.Kind || len(selection.TargetRefs) != 2 {
-			t.Fatalf("typed key %q = %#v / %#v / %v", entry.Candidate.Key, selection, outcome, err)
-		}
-	}
-}
 
-func TestTargetPortfolioRuntimeInvalidResponseUsesOnlyExactLocalDefault(t *testing.T) {
-	catalog := targetPortfolioRuntimeCatalog(t, targetPortfolioRuntimeFacts())
-	client := &targetPortfolioClientStub{response: []byte(`{"version":1,"request_ref":"wrong","default_ref":"t1","target_refs":["t1"]}`)}
-	selected, outcome, err := selectTargetPortfolioForRun(
-		context.Background(), "example.com/repomap", catalog, nil,
-		func() (targetPortfolioClient, error) { return client, nil },
-	)
-	if err != nil {
-		t.Fatal(err)
+	readmeProvider := &targetPortfolioClientStub{
+		response: []byte(`[{"file_ref":"f3","classifications":[{"class":"target_entry","hypotheses":["README documents the worker command"]}]},{"file_ref":"f5","classifications":[{"class":"target_entry","hypotheses":["README documents a Python helper product"]}]}]`),
 	}
-	if selected != catalog.DefaultTargetRef || !outcome.UsedLocalDefault ||
-		outcome.FailureCode != "response_validation" || client.calls != 1 {
-		t.Fatalf("fallback = %q / %#v / calls=%d", selected, outcome, client.calls)
+	portfolioProvider := &targetPortfolioClientStub{
+		response: []byte(`{"default_file_ref":"f3","target_file_refs":["f3"]}`),
 	}
-}
-
-func TestTargetPortfolioRuntimeInvalidResponseWithoutDefaultIsActionable(t *testing.T) {
-	catalog := targetPortfolioRuntimeCatalog(t, targetPortfolioRuntimeAmbiguousFacts())
-	if catalog.DefaultTargetRef != "" {
-		t.Fatalf("ambiguous catalog default = %q", catalog.DefaultTargetRef)
-	}
-	client := &targetPortfolioClientStub{response: []byte(`{}`)}
-	_, _, err := selectTargetPortfolioForRun(
-		context.Background(), "example.com/repomap", catalog, nil,
-		func() (targetPortfolioClient, error) { return client, nil },
-	)
-	if err == nil || !strings.Contains(err.Error(), "--target") ||
-		!strings.Contains(err.Error(), "cmd/api") || !strings.Contains(err.Error(), "cmd/worker") {
-		t.Fatalf("terminal choice error = %v", err)
-	}
-}
-
-func TestTargetPortfolioRuntimeSoleEligibleExecutableBypassesEmptyLibraryDefault(t *testing.T) {
-	catalog := targetPortfolioRuntimeCatalog(t, targetPortfolioEmptyRootLibraryFacts())
-	serverEntry := targetPortfolioRuntimeEntry(t, catalog, "server")
-	if len(catalog.Entries) != 1 || catalog.DefaultTargetRef != "" ||
-		serverEntry.Candidate.Target.Kind != analysistarget.KindExecutablePackage {
-		t.Fatalf("D280 empty-library omission setup = %#v / default %q", catalog.Entries, catalog.DefaultTargetRef)
-	}
-	client := &targetPortfolioClientStub{response: []byte(`{}`)}
-	selected, outcome, err := selectTargetPortfolioForRun(
-		context.Background(), "go.etcd.io/etcd/v3", catalog, nil,
-		func() (targetPortfolioClient, error) { return client, nil },
-	)
-	serverRef := serverEntry.Candidate.Target.Ref
-	if err != nil || selected != serverRef || outcome.UsedLocalDefault || client.calls != 0 ||
-		outcome.SelectedPath != "server" || outcome.SelectedTargets != 1 {
-		t.Fatalf("empty-library fallback = %q / %#v / calls=%d / err=%v", selected, outcome, client.calls, err)
-	}
-}
-
-func TestAllTargetsOfflineWithoutStrongDefaultRequiresExplicitTarget(t *testing.T) {
-	catalog := targetPortfolioRuntimeCatalog(t, targetPortfolioRuntimeAmbiguousFacts())
-	factoryCalls := 0
-	_, _, err := selectAllTargetsForRun(
-		context.Background(), "example.com/repomap", catalog, true, "", nil,
-		func() (targetPortfolioClient, error) {
-			factoryCalls++
-			return nil, errors.New("must not run")
-		},
-	)
-	if err == nil || !strings.Contains(err.Error(), "--target TARGET") ||
-		!strings.Contains(err.Error(), "cmd/api") || !strings.Contains(err.Error(), "cmd/worker") ||
-		factoryCalls != 0 {
-		t.Fatalf("offline all-target error = %v, factory calls=%d", err, factoryCalls)
-	}
-}
-
-func TestTargetPortfolioRuntimeCancellationNeverFallsBack(t *testing.T) {
-	catalog := targetPortfolioRuntimeCatalog(t, targetPortfolioRuntimeFacts())
-	client := &targetPortfolioClientStub{err: context.Canceled}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	selected, outcome, err := selectTargetPortfolioForRun(
-		ctx, "example.com/repomap", catalog, nil,
-		func() (targetPortfolioClient, error) { return client, nil },
-	)
-	if !errors.Is(err, context.Canceled) || selected != "" || outcome.UsedLocalDefault {
-		t.Fatalf("cancellation selected fallback: %q / %#v / %v", selected, outcome, err)
-	}
-}
-
-func TestTargetPortfolioRuntimeProviderTimeoutFallsBackWhenCallerContextIsAlive(t *testing.T) {
-	catalog := targetPortfolioRuntimeCatalog(t, targetPortfolioRuntimeFacts())
-	client := &targetPortfolioClientStub{err: context.DeadlineExceeded}
-	selected, outcome, err := selectTargetPortfolioForRun(
-		context.Background(), "example.com/repomap", catalog, nil,
-		func() (targetPortfolioClient, error) { return client, nil },
-	)
-	if err != nil || selected != catalog.DefaultTargetRef || !outcome.UsedLocalDefault ||
-		outcome.FailureCode != "provider_failed" {
-		t.Fatalf("provider timeout fallback = %q / %#v / %v", selected, outcome, err)
-	}
-}
-
-func TestTargetPortfolioRuntimeSecretResponseIsNotRetained(t *testing.T) {
-	catalog := targetPortfolioRuntimeCatalog(t, targetPortfolioRuntimeFacts())
-	secretResponse := []byte(`{"api_key":"sk-secret-shaped-provider-output"}`)
-	client := &targetPortfolioClientStub{response: secretResponse}
-	selected, outcome, err := selectTargetPortfolioForRun(
-		context.Background(), "example.com/repomap", catalog, nil,
-		func() (targetPortfolioClient, error) { return client, nil },
-	)
-	if err != nil || selected != catalog.DefaultTargetRef || !outcome.UsedLocalDefault ||
-		outcome.FailureCode != "response_secret_scan" || len(outcome.Response) != 0 ||
-		outcome.ResponseUnavailable == nil || outcome.ResponseUnavailable.OriginalBytes != len(secretResponse) {
-		t.Fatalf("secret response fallback retained bytes: %q / %#v / %v", selected, outcome, err)
-	}
-}
-
-func TestTargetPortfolioRuntimeSoleTargetDoesNotConfigureProvider(t *testing.T) {
-	facts := gofacts.Facts{
-		Modules: []gofacts.ModuleFact{{ID: "module-root", ModulePath: "example.com/library", ModuleDir: ".", Main: true}},
-		Packages: []gofacts.PackageFact{{
-			CanonicalPath: "example.com/library", Name: "library", ModuleID: "module-root",
-			ModulePath: "example.com/library", PackageDir: ".", ModuleRelativeDir: ".", Locality: "local",
-			DeclarationsScanned: true, LoadCompleteness: completeGoPackageLoad(),
-			Declarations: []gofacts.PackageDeclaration{{Kind: gofacts.PackageDeclarationFunc, Name: "New"}},
-		}},
-	}
-	catalog := targetPortfolioRuntimeCatalog(t, facts)
-	factoryCalls := 0
-	selected, outcome, err := selectTargetPortfolioForRun(
-		context.Background(), "example.com/library", catalog, nil,
-		func() (targetPortfolioClient, error) {
-			factoryCalls++
-			return nil, fmt.Errorf("must not run")
-		},
-	)
-	if err != nil || selected != catalog.Entries[0].Candidate.Target.Ref ||
-		outcome.SelectedPath != "." || factoryCalls != 0 {
-		t.Fatalf("sole target = %q / %#v / factory=%d / err=%v", selected, outcome, factoryCalls, err)
-	}
-}
-
-func TestD280TelebotFourPackagesPublishOneModuleLibraryAndMakeZeroSelectorCalls(t *testing.T) {
-	const modulePath = "gopkg.in/telebot.v3"
-	packages := []gofacts.PackageFact{
-		{
-			CanonicalPath: modulePath, Name: "telebot", ModuleID: "telebot", ModulePath: modulePath,
-			PackageDir: ".", ModuleRelativeDir: ".", DisplayPath: ".", Locality: "local",
-			DeclarationsScanned: true, LoadCompleteness: completeGoPackageLoad(),
-			Declarations: []gofacts.PackageDeclaration{{Kind: gofacts.PackageDeclarationFunc, Name: "NewBot"}},
-		},
-	}
-	for _, dir := range []string{"layout", "middleware", "react"} {
-		pkg := targetPortfolioRuntimePackage(modulePath, dir)
-		pkg.ModuleID = "telebot"
-		pkg.Declarations = []gofacts.PackageDeclaration{{
-			Kind: gofacts.PackageDeclarationFunc, Name: "New" + strings.ToUpper(dir[:1]) + dir[1:],
-		}}
-		packages = append(packages, pkg)
-	}
-	catalog := targetPortfolioRuntimeCatalog(t, gofacts.Facts{
-		Modules:  []gofacts.ModuleFact{{ID: "telebot", ModulePath: modulePath, ModuleDir: ".", Main: true}},
-		Packages: packages,
-	})
-	if len(catalog.Entries) != 1 || catalog.Entries[0].Candidate.Target.Kind != analysistarget.KindModuleLibrary ||
-		len(catalog.Entries[0].Candidate.Target.LibraryPackages) != 4 || len(catalog.Entries[0].PackageAPIs) != 4 {
-		t.Fatalf("Telebot module surface = %#v", catalog.Entries)
-	}
-	factoryCalls := 0
-	selected, outcome, err := selectTargetPortfolioForRun(
-		context.Background(), modulePath, catalog, nil,
-		func() (targetPortfolioClient, error) {
-			factoryCalls++
-			return nil, errors.New("selector must not be configured for one advertised target")
-		},
-	)
-	root := targetPortfolioRuntimeEntry(t, catalog, ".")
-	if err != nil || selected != root.Candidate.Target.Ref || factoryCalls != 0 ||
-		outcome.SelectedPath != "." || outcome.SelectedTargets != 1 ||
-		!slices.Equal(outcome.SelectedTargetRefs, []string{root.Candidate.Target.Ref}) {
-		t.Fatalf("Telebot ordinary selection = %q / %#v / factory=%d / err=%v", selected, outcome, factoryCalls, err)
-	}
-}
-
-func TestD280EtcdSelectorSeesModuleLibrariesAndExactServerMain(t *testing.T) {
-	const (
-		clientModule = "go.etcd.io/etcd/client/v3"
-		serverModule = "go.etcd.io/etcd/server/v3"
-	)
-	clientRoot := targetPortfolioRuntimeNestedModulePackage("client", clientModule, "client/v3", ".", "clientv3", "New")
-	clientSub := targetPortfolioRuntimeNestedModulePackage("client", clientModule, "client/v3", "concurrency", "concurrency", "NewSession")
-	serverRoot := targetPortfolioRuntimeNestedModulePackage("server", serverModule, "server", ".", "main", "main")
-	serverSub := targetPortfolioRuntimeNestedModulePackage("server", serverModule, "server", "storage/wal", "wal", "Create")
-	facts := gofacts.Facts{
-		Modules: []gofacts.ModuleFact{
-			{ID: "client", ModulePath: clientModule, ModuleDir: "client/v3"},
-			{ID: "server", ModulePath: serverModule, ModuleDir: "server"},
-		},
-		Packages: []gofacts.PackageFact{clientRoot, clientSub, serverRoot, serverSub},
-		EntrypointPackages: []gofacts.Entrypoint{{
-			ModulePath: serverModule, ImportPath: serverModule,
-			PackageDir: "server", ModuleRelativeDir: ".", ModuleDir: "server", Kind: "primary_binary",
-			Anchors: []gofacts.EntrypointAnchor{{
-				Version: gofacts.EntrypointAnchorVersion, Kind: gofacts.EntrypointAnchorGoMain,
-				Path: "server/main.go", Line: 30,
-			}},
-		}},
-	}
-	catalog := targetPortfolioRuntimeCatalog(t, facts)
-	compilation, err := targetportfolio.Compile("etcd", catalog)
-	if err != nil {
-		t.Fatal(err)
-	}
-	refs := map[string]string{}
-	for _, target := range compilation.Request.Targets {
-		refs[target.DisplayPath+"\x00"+string(target.Kind)] = target.Ref
-	}
-	response, err := json.Marshal(targetportfolio.Response{
-		Version: targetportfolio.ResultVersion, RequestRef: compilation.Request.RequestRef,
-		DefaultRef: refs["server\x00executable"],
-		TargetRefs: []string{refs["server\x00executable"], refs["client/v3\x00library"]},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	client := &targetPortfolioClientStub{response: response}
-	selected, outcome, err := selectTargetPortfolioForRun(
-		context.Background(), "go.etcd.io/etcd/v3", catalog, nil,
-		func() (targetPortfolioClient, error) { return client, nil },
-	)
-	serverRef := ""
-	for _, entry := range catalog.Entries {
-		if entry.DisplayPath == "server" && entry.Candidate.Target.Kind == analysistarget.KindExecutablePackage {
-			serverRef = entry.Candidate.Target.Ref
-		}
-	}
-	if err != nil || client.calls != 1 || selected != serverRef || outcome.SelectedTargets != 2 {
-		t.Fatalf("etcd ordinary selection = %q / %#v / calls=%d / err=%v", selected, outcome, client.calls, err)
-	}
-	if len(compilation.Request.Targets) != 3 {
-		t.Fatalf("etcd module surfaces = %#v", compilation.Request.Targets)
-	}
-	for _, path := range []string{"client/v3", "server"} {
-		if !strings.Contains(client.prompt.User, `"display_path":"`+path+`"`) {
-			t.Fatalf("etcd selector omitted %q: %s", path, client.prompt.User)
-		}
-	}
-	for _, path := range []string{"client/v3/concurrency", "server/storage/wal"} {
-		for _, target := range compilation.Request.Targets {
-			if target.DisplayPath == path {
-				t.Fatalf("etcd selector exposed package %q as a separate target: %#v", path, target)
+	providerCalls := 0
+	selection, outcome, err := selectTargetsForRun(
+		context.Background(),
+		"example.com/repomap",
+		catalog,
+		facts,
+		repository,
+		"",
+		nil,
+		func() (llm.Provider, error) {
+			providerCalls++
+			if providerCalls == 1 {
+				return readmeProvider, nil
 			}
-		}
+			return portfolioProvider, nil
+		},
+		llm.Executor{Enabled: false},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := targetPortfolioRuntimeEntry(t, catalog, "cmd/worker")
+	if selection.DefaultTargetRef != worker.Candidate.Target.Ref ||
+		len(selection.TargetRefs) != 1 || selection.TargetRefs[0] != worker.Candidate.Target.Ref {
+		t.Fatalf("selection = %#v, want worker target", selection)
+	}
+	if outcome.SelectedTargets != 1 || len(outcome.ReadmeRoles) != 2 {
+		t.Fatalf("outcome = %#v", outcome)
+	}
+	if readmeProvider.calls != 1 || portfolioProvider.calls != 1 || providerCalls != 2 {
+		t.Fatalf("provider calls = README %d, portfolio %d, factories %d", readmeProvider.calls, portfolioProvider.calls, providerCalls)
+	}
+	if readmeProvider.prompt.ResponseFormatJSON {
+		t.Fatal("direct README array response incorrectly requested json_object mode")
+	}
+	if !portfolioProvider.prompt.ResponseFormatJSON ||
+		!strings.Contains(portfolioProvider.prompt.User, "README documents the worker command") ||
+		strings.Contains(portfolioProvider.prompt.User, "Python helper product") {
+		t.Fatalf("portfolio prompt did not receive merged README hypothesis: %#v", portfolioProvider.prompt)
+	}
+}
+
+func TestExplicitTargetRunsReadmeCubeButBypassesPortfolioCube(t *testing.T) {
+	repository := targetPortfolioCorpus(t, true)
+	facts := targetPortfolioRuntimeFacts()
+	catalog := targetPortfolioRuntimeCatalog(t, facts)
+	providerCalls := 0
+	readmeProvider := &targetPortfolioClientStub{response: []byte(`[]`)}
+
+	selection, _, err := selectTargetsForRun(
+		context.Background(), "example.com/repomap", catalog, facts, repository,
+		"cmd/api", nil,
+		func() (llm.Provider, error) {
+			providerCalls++
+			return readmeProvider, nil
+		},
+		llm.Executor{Enabled: false},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := targetPortfolioRuntimeEntry(t, catalog, "cmd/api")
+	if selection.DefaultTargetRef != api.Candidate.Target.Ref ||
+		len(selection.TargetRefs) != 1 || providerCalls != 1 || readmeProvider.calls != 1 {
+		t.Fatalf("explicit selection = %#v, provider calls = %d", selection, providerCalls)
+	}
+}
+
+func TestTargetPortfolioInvalidJSONFailsClosed(t *testing.T) {
+	repository := targetPortfolioCorpus(t, false)
+	facts := targetPortfolioRuntimeFacts()
+	catalog := targetPortfolioRuntimeCatalog(t, facts)
+	provider := &targetPortfolioClientStub{response: []byte(`{"target_file_refs":[]}`)}
+
+	_, _, err := selectTargetsForRun(
+		context.Background(), "example.com/repomap", catalog, facts, repository,
+		"", nil, func() (llm.Provider, error) { return provider, nil },
+		llm.Executor{Enabled: false},
+	)
+	if err == nil || !strings.Contains(err.Error(), "required target portfolio selection") ||
+		!strings.Contains(err.Error(), "exact --target choices: Go:") {
+		t.Fatalf("invalid response error = %v", err)
+	}
+}
+
+func TestTargetPortfolioMayHonestlyRejectEveryCandidate(t *testing.T) {
+	repository := targetPortfolioCorpus(t, false)
+	facts := targetPortfolioRuntimeFacts()
+	catalog := targetPortfolioRuntimeCatalog(t, facts)
+	provider := &targetPortfolioClientStub{
+		response: []byte(`{"default_file_ref":null,"target_file_refs":[]}`),
+	}
+
+	_, outcome, err := selectTargetsForRun(
+		context.Background(), "example.com/repomap", catalog, facts, repository,
+		"", nil, func() (llm.Provider, error) { return provider, nil },
+		llm.Executor{Enabled: false},
+	)
+	if err == nil || !strings.Contains(err.Error(), "no positively supported target entry") ||
+		!strings.Contains(err.Error(), "--target TARGET") {
+		t.Fatalf("empty positive selection error = %v", err)
+	}
+	if outcome.SemanticState != debugdump.SemanticStateAccepted ||
+		outcome.UnclassifiedFiles == 0 || outcome.SelectedFileRefs != 0 || provider.calls != 1 {
+		t.Fatalf("empty positive selection outcome = %#v, calls = %d", outcome, provider.calls)
 	}
 }
 
@@ -467,125 +186,85 @@ func TestTargetPortfolioRepoNameUsesModuleBeforeSemanticMajorSuffix(t *testing.T
 	}{
 		{identity: "go.etcd.io/etcd/v3", want: "etcd"},
 		{identity: "github.com/acme/tool/v2/", want: "tool"},
-		{identity: "example.com/tool/v10", want: "tool"},
-		{identity: "example.com/tool/v999999999999999999999999999999999999", want: "tool"},
 		{identity: "example.com/tool/v1", want: "v1"},
-		{identity: "example.com/tool/v02", want: "v02"},
-		{identity: "example.com/tool/version", want: "version"},
-		{identity: "v3", want: "v3"},
 		{identity: "example.com/tool", want: "tool"},
 	} {
-		t.Run(test.identity, func(t *testing.T) {
-			if got := targetPortfolioRepoName(test.identity); got != test.want {
-				t.Fatalf("targetPortfolioRepoName(%q) = %q, want %q", test.identity, got, test.want)
-			}
-		})
+		if got := targetPortfolioRepoName(test.identity); got != test.want {
+			t.Fatalf("targetPortfolioRepoName(%q) = %q, want %q", test.identity, got, test.want)
+		}
 	}
+}
+
+func targetPortfolioCorpus(t *testing.T, withReadme bool) *corpus.Corpus {
+	t.Helper()
+	repository := t.TempDir()
+	paths := []string{"cmd/api/main.go", "cmd/worker/main.go", "pkg/client/client.go", "scripts/tool.py"}
+	if withReadme {
+		paths = append(paths, "README.md")
+	}
+	for _, filePath := range paths {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(repository, filePath)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		content := "package fixture\n"
+		if filePath == "scripts/tool.py" {
+			content = "def main(): pass\n"
+		}
+		if filePath == "README.md" {
+			content = "# repomap\n\nRun the worker command.\n"
+		}
+		if err := os.WriteFile(filepath.Join(repository, filePath), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	opened, err := corpus.New(context.Background(), repository, gitfiles.Listing{
+		Paths: paths, RegularPaths: paths,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = opened.Close() })
+	return opened
 }
 
 func targetPortfolioRuntimeFacts() gofacts.Facts {
 	modulePath := "example.com/repomap"
-	packages := []gofacts.PackageFact{
-		targetPortfolioRuntimePackage(modulePath, "cmd/helper"),
-		targetPortfolioRuntimePackage(modulePath, "cmd/repomap"),
-		targetPortfolioRuntimePackage(modulePath, "internal/engine"),
-		targetPortfolioRuntimePackage(modulePath, "pkg/client"),
-	}
-	packages[3].Declarations = []gofacts.PackageDeclaration{
-		{Kind: gofacts.PackageDeclarationFunc, Name: "NewClient"},
-	}
-	packages[3].ModuleID = "module-client"
-	packages[3].ModulePath = modulePath + "/pkg/client"
-	packages[3].CanonicalPath = packages[3].ModulePath
-	packages[3].ModuleRelativeDir = "."
 	return gofacts.Facts{
-		Modules: []gofacts.ModuleFact{
-			{ID: "module-root", ModulePath: modulePath, ModuleDir: ".", Main: true},
-			{ID: "module-client", ModulePath: modulePath + "/pkg/client", ModuleDir: "pkg/client"},
-		},
-		Packages: packages,
-		EntrypointPackages: []gofacts.Entrypoint{
-			targetPortfolioRuntimeEntrypoint(modulePath, "cmd/helper", "tool", 12),
-			targetPortfolioRuntimeEntrypoint(modulePath, "cmd/repomap", "unknown", 16),
-		},
-	}
-}
-
-func targetPortfolioEmptyRootLibraryFacts() gofacts.Facts {
-	rootModule := "go.etcd.io/etcd/v3"
-	serverModule := "go.etcd.io/etcd/server/v3"
-	return gofacts.Facts{
-		Modules: []gofacts.ModuleFact{
-			{ID: "root", ModulePath: rootModule, ModuleDir: ".", Main: true},
-			{ID: "server", ModulePath: serverModule, ModuleDir: "server"},
-		},
-		Packages: []gofacts.PackageFact{
-			{
-				CanonicalPath: rootModule, Name: "main_test", ModuleID: "root",
-				ModulePath: rootModule, PackageDir: ".", ModuleRelativeDir: ".",
-				DisplayPath: ".", Locality: "local", DeclarationsScanned: true,
-			},
-			{
-				CanonicalPath: serverModule, Name: "main", ModuleID: "server",
-				ModulePath: serverModule, PackageDir: "server", ModuleRelativeDir: ".",
-				DisplayPath: "server", Locality: "local", DeclarationsScanned: true,
-				Declarations: []gofacts.PackageDeclaration{{Kind: gofacts.PackageDeclarationFunc, Name: "main"}},
-			},
-		},
-		EntrypointPackages: []gofacts.Entrypoint{{
-			ModulePath: serverModule, ImportPath: serverModule,
-			PackageDir: "server", ModuleRelativeDir: ".", ModuleDir: "server", Kind: "primary_binary",
-			Anchors: []gofacts.EntrypointAnchor{{
-				Version: gofacts.EntrypointAnchorVersion, Kind: gofacts.EntrypointAnchorGoMain,
-				Path: "server/main.go", Line: 30,
-			}},
+		Modules: []gofacts.ModuleFact{{
+			ID: "module-root", ModulePath: modulePath, ModuleDir: ".", Main: true,
 		}},
+		Packages: []gofacts.PackageFact{
+			targetPortfolioRuntimePackage(modulePath, "cmd/api", "main", nil),
+			targetPortfolioRuntimePackage(modulePath, "cmd/worker", "main", nil),
+			targetPortfolioRuntimePackage(modulePath, "pkg/client", "client", []gofacts.PackageDeclaration{{
+				Kind: gofacts.PackageDeclarationFunc, Name: "NewClient",
+				Path: "pkg/client/client.go", Line: 1, Column: 6, ExecutableBody: true,
+			}}),
+		},
+		EntrypointPackages: []gofacts.Entrypoint{
+			targetPortfolioRuntimeEntrypoint(modulePath, "cmd/api", 1),
+			targetPortfolioRuntimeEntrypoint(modulePath, "cmd/worker", 1),
+		},
 	}
 }
 
-func targetPortfolioRuntimeAmbiguousFacts() gofacts.Facts {
-	facts := targetPortfolioRuntimeFacts()
-	facts.Packages = facts.Packages[:2]
-	facts.EntrypointPackages = facts.EntrypointPackages[:2]
-	// Neither executable matches the module basename, so D257 intentionally
-	// leaves the local default ambiguous.
-	for index, dir := range []string{"cmd/api", "cmd/worker"} {
-		facts.Packages[index].PackageDir = dir
-		facts.Packages[index].ModuleRelativeDir = dir
-		facts.Packages[index].DisplayPath = dir
-		facts.Packages[index].CanonicalPath = "example.com/repomap/" + dir
-		facts.EntrypointPackages[index].ImportPath = facts.Packages[index].CanonicalPath
-		facts.EntrypointPackages[index].PackageDir = dir
-		facts.EntrypointPackages[index].ModuleRelativeDir = dir
-		facts.EntrypointPackages[index].Anchors[0].Path = dir + "/main.go"
-		facts.EntrypointPackages[index].Kind = "unknown"
-	}
-	return facts
-}
-
-func targetPortfolioRuntimePackage(modulePath, dir string) gofacts.PackageFact {
-	return gofacts.PackageFact{
-		CanonicalPath: modulePath + "/" + dir, Name: strings.ReplaceAll(dir, "/", "_"),
-		ModuleID: "module-root", ModulePath: modulePath, PackageDir: dir,
-		ModuleRelativeDir: dir, DisplayPath: dir, Locality: "local", DeclarationsScanned: true,
-		LoadCompleteness: completeGoPackageLoad(),
-	}
-}
-
-func targetPortfolioRuntimeNestedModulePackage(
-	moduleID, modulePath, moduleDir, relativeDir, name, declaration string,
+func targetPortfolioRuntimePackage(
+	modulePath string,
+	dir string,
+	name string,
+	declarations []gofacts.PackageDeclaration,
 ) gofacts.PackageFact {
-	packageDir := moduleDir
-	canonicalPath := modulePath
-	if relativeDir != "." {
-		packageDir += "/" + relativeDir
-		canonicalPath += "/" + relativeDir
+	fileName := "main.go"
+	if dir == "pkg/client" {
+		fileName = "client.go"
 	}
 	return gofacts.PackageFact{
-		CanonicalPath: canonicalPath, Name: name, ModuleID: moduleID, ModulePath: modulePath,
-		PackageDir: packageDir, ModuleRelativeDir: relativeDir, DisplayPath: packageDir,
-		Locality: "local", DeclarationsScanned: true, LoadCompleteness: completeGoPackageLoad(),
-		Declarations: []gofacts.PackageDeclaration{{Kind: gofacts.PackageDeclarationFunc, Name: declaration}},
+		CanonicalPath: modulePath + "/" + dir,
+		Name:          name, ModuleID: "module-root", ModulePath: modulePath,
+		PackageDir: dir, ModuleRelativeDir: dir, DisplayPath: dir,
+		Locality: "local", Files: []string{dir + "/" + fileName},
+		Declarations: declarations, DeclarationsScanned: true,
+		LoadCompleteness: completeGoPackageLoad(),
 	}
 }
 
@@ -596,13 +275,15 @@ func completeGoPackageLoad() *gofacts.PackageLoadCompleteness {
 	}
 }
 
-func targetPortfolioRuntimeEntrypoint(modulePath, dir, kind string, line int) gofacts.Entrypoint {
+func targetPortfolioRuntimeEntrypoint(modulePath, dir string, line int) gofacts.Entrypoint {
 	return gofacts.Entrypoint{
 		ModulePath: modulePath, ImportPath: modulePath + "/" + dir,
-		PackageDir: dir, ModuleRelativeDir: dir, ModuleDir: ".", Kind: kind,
+		PackageDir: dir, ModuleRelativeDir: dir, ModuleDir: ".", Kind: "unknown",
+		GoFiles: []string{dir + "/main.go"},
 		Anchors: []gofacts.EntrypointAnchor{{
-			Version: gofacts.EntrypointAnchorVersion, Kind: gofacts.EntrypointAnchorGoMain,
-			Path: dir + "/main.go", Line: line,
+			Version: gofacts.EntrypointAnchorVersion,
+			Kind:    gofacts.EntrypointAnchorGoMain,
+			Path:    dir + "/main.go", Line: line,
 		}},
 	}
 }

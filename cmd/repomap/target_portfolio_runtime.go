@@ -1,37 +1,45 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
+	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/deepseek"
-	"github.com/dvordrova/repomap/internal/modelresearch"
-	"github.com/dvordrova/repomap/internal/secretscan"
+	"github.com/dvordrova/repomap/internal/gofacts"
+	"github.com/dvordrova/repomap/internal/lexicalhints"
+	"github.com/dvordrova/repomap/internal/llm"
+	"github.com/dvordrova/repomap/internal/readmetargetscout"
 	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/targetportfolio"
 )
 
-type targetPortfolioClient interface {
-	TargetPortfolioPromptJSON(targetportfolio.Prompt) ([]byte, error)
-	TargetPortfolioBodyMeasured(context.Context, []byte) (modelresearch.ProviderResult, error)
-}
+type targetPortfolioProviderFactory func() (llm.Provider, error)
 
-type targetPortfolioClientFactory func() (targetPortfolioClient, error)
+type readmeRoleLogRow struct {
+	FileRef         corpus.FileID                      `json:"file_ref"`
+	Path            string                             `json:"path"`
+	Classifications []readmetargetscout.Classification `json:"classifications"`
+}
 
 type targetPortfolioRunOutcome struct {
 	SelectedRef         string
-	SelectedPath        string
-	SelectedKind        analysistarget.Kind
 	SelectedTargets     int
 	SelectedTargetRefs  []string
-	UsedLocalDefault    bool
-	FailureCode         string
+	SelectedFileRefs    int
+	UnclassifiedFiles   int
+	ReadmeRoles         []readmeRoleLogRow
+	Cached              bool
 	Request             []byte
 	Response            []byte
 	ResponseUnavailable *debugdump.SemanticUnavailable
@@ -45,224 +53,643 @@ type targetPortfolioRunOutcome struct {
 	LatencyMillis       int64
 }
 
-func defaultTargetPortfolioClientFactory() (targetPortfolioClient, error) {
+func defaultTargetPortfolioProviderFactory() (llm.Provider, error) {
 	return deepseek.NewFromEnv()
 }
 
-// selectAllTargetsForRun makes --all-targets an inclusion control only. The
-// complete catalog order is retained while default ownership follows the
-// explicit override, the ordinary online portfolio selector, or the exact
-// offline catalog default in that order.
-func selectAllTargetsForRun(
+// selectTargetsForRun runs the parallel first-layer scouts, dumb FileRef
+// merge, and file-only portfolio. Existing Go target refs are restored only
+// after the model decision so they never enter either provider request.
+func selectTargetsForRun(
 	ctx context.Context,
 	repoName string,
 	catalog analysistarget.TargetCatalog,
-	offline bool,
+	facts gofacts.Facts,
+	repository *corpus.Corpus,
 	override string,
 	output *runOutput,
-	clients targetPortfolioClientFactory,
+	providers targetPortfolioProviderFactory,
+	executor llm.Executor,
 ) (snapshot.TargetRunSelection, targetPortfolioRunOutcome, error) {
 	if err := catalog.Validate(); err != nil {
 		return snapshot.TargetRunSelection{}, targetPortfolioRunOutcome{}, err
 	}
-	refs := make([]string, 0, len(catalog.Entries))
-	for _, entry := range catalog.Entries {
-		refs = append(refs, entry.Candidate.Target.Ref)
+	if repository == nil {
+		return snapshot.TargetRunSelection{}, targetPortfolioRunOutcome{}, fmt.Errorf("repository corpus is unavailable")
 	}
-	if len(refs) == 0 {
-		return snapshot.TargetRunSelection{}, targetPortfolioRunOutcome{}, fmt.Errorf("--all-targets: no advertised Go targets")
+	if len(catalog.Entries) == 0 {
+		return snapshot.TargetRunSelection{}, targetPortfolioRunOutcome{}, fmt.Errorf("no eligible Go analysis targets")
 	}
 
 	var outcome targetPortfolioRunOutcome
-	defaultRef := ""
 	override = strings.TrimSpace(override)
-	switch {
-	case override != "":
-		entry, resolveErr := resolveAllTargetsDefaultOverride(catalog, override)
+	var explicitEntry *analysistarget.TargetCatalogEntry
+	if override != "" {
+		entry, resolveErr := resolveTargetOverride(catalog, override)
 		if resolveErr != nil {
 			return snapshot.TargetRunSelection{}, targetPortfolioRunOutcome{}, resolveErr
 		}
-		defaultRef = entry.Candidate.Target.Ref
-		outcome.SelectedRef = defaultRef
-		outcome.SelectedPath = entry.DisplayPath
-		outcome.SelectedKind = entry.Candidate.Target.Kind
-	case offline:
-		defaultRef = catalog.DefaultTargetRef
-		defaultEligible := false
-		for _, entry := range catalog.Entries {
-			if entry.Candidate.Target.Ref == defaultRef && targetportfolio.EligibleForSelection(entry) {
-				defaultEligible = true
-				break
-			}
+		explicitEntry = &entry
+	}
+
+	parallelContext, cancelParallel := context.WithCancel(ctx)
+	defer cancelParallel()
+	type readmeScoutResult struct {
+		roles readmetargetscout.Result
+		err   error
+	}
+	readmeResult := make(chan readmeScoutResult, 1)
+	go func() {
+		if !readmetargetscout.HasReadmeFiles(repository) {
+			readmeResult <- readmeScoutResult{roles: readmetargetscout.Result{}}
+			return
 		}
-		if defaultRef == "" || !defaultEligible {
-			return snapshot.TargetRunSelection{}, targetPortfolioRunOutcome{}, fmt.Errorf(
-				"--all-targets: no eligible exact local default; rerun with --target TARGET; choices: %s",
-				targetPortfolioChoices(catalog),
+		started := time.Now()
+		lexical, err := lexicalhints.Scan(parallelContext, repository)
+		if err != nil {
+			readmeResult <- readmeScoutResult{err: fmt.Errorf("local lexical hints: %w", err)}
+			return
+		}
+		if output != nil {
+			output.State(
+				"Local lexical hints", "ready",
+				fmt.Sprintf(
+					"scanned tracked files: %d/%d",
+					lexical.Coverage.ScannedFiles, lexical.Coverage.TrackedFiles,
+				),
+				fmt.Sprintf("files with positive counts: %d", len(lexical.Model.ByFile)),
+				formatRunOutputWallDuration(time.Since(started)),
 			)
 		}
-		for _, entry := range catalog.Entries {
-			if entry.Candidate.Target.Ref == defaultRef {
-				outcome.SelectedRef = defaultRef
-				outcome.SelectedPath = entry.DisplayPath
-				outcome.SelectedKind = entry.Candidate.Target.Kind
-				break
-			}
-		}
-	default:
-		var err error
-		defaultRef, outcome, err = selectTargetPortfolioForRun(
-			ctx, repoName, catalog, output, clients,
+		roles, err := discoverReadmeFileRoles(
+			parallelContext, repoName, repository, lexical, output, providers, executor,
 		)
-		if err != nil {
-			return snapshot.TargetRunSelection{}, outcome, err
+		readmeResult <- readmeScoutResult{roles: roles, err: err}
+	}()
+	var (
+		goCandidates []analysistarget.FileCandidate
+		resolver     analysistarget.GoFileTargetResolver
+	)
+	if explicitEntry == nil {
+		discoveryStarted := time.Now()
+		var discoveryErr error
+		goCandidates, resolver, discoveryErr = analysistarget.DiscoverGoTargetFilesWithResolver(
+			repository, facts, catalog,
+		)
+		if discoveryErr != nil {
+			cancelParallel()
+			<-readmeResult
+			return snapshot.TargetRunSelection{}, outcome, discoveryErr
+		}
+		if output != nil {
+			output.State(
+				"Go target discovery", "ready",
+				fmt.Sprintf("exact targets: %d", len(catalog.Entries)),
+				fmt.Sprintf("native file hypotheses: %d", len(goCandidates)),
+				formatRunOutputWallDuration(time.Since(discoveryStarted)),
+			)
 		}
 	}
+
+	readme := <-readmeResult
+	if readme.err != nil {
+		return snapshot.TargetRunSelection{}, outcome, readme.err
+	}
+	if explicitEntry != nil {
+		defaultRef := explicitEntry.Candidate.Target.Ref
+		refs := []string{defaultRef}
+		outcome.SelectedRef = defaultRef
+		outcome.SelectedTargets = 1
+		outcome.SelectedTargetRefs = refs
+		outcome.ReadmeRoles = compileReadmeRoleLog(repository, readme.roles)
+		if output != nil {
+			output.State(
+				"Go target discovery", "not needed",
+				"reason: explicit --target bypasses file-hypothesis discovery",
+			)
+			output.State(
+				"Target hypothesis merge", "not needed",
+				"reason: explicit --target bypasses candidate merging",
+			)
+			output.State(
+				"Analysis target", "selected",
+				"source: explicit --target",
+				"selected: "+explicitEntry.DisplayPath,
+			)
+		}
+		return snapshot.TargetRunSelection{
+			DefaultTargetRef: defaultRef,
+			TargetRefs:       refs,
+		}, outcome, nil
+	}
+
+	readmeCandidates, unsupportedReadmeTargets := goResolvableReadmeTargetCandidates(
+		readme.roles.TargetCandidates(), resolver,
+	)
+	if output != nil && unsupportedReadmeTargets > 0 {
+		output.Stage(
+			"README file classifier",
+			fmt.Sprintf(
+				"kept %d target hypotheses for the Go adapter; retained %d unsupported target roles only in diagnostics",
+				len(readmeCandidates), unsupportedReadmeTargets,
+			),
+		)
+	}
+	mergeStarted := time.Now()
+	merged, err := analysistarget.MergeFileCandidates(
+		repository.Snapshot(), goCandidates, readmeCandidates,
+	)
+	if err != nil {
+		return snapshot.TargetRunSelection{}, outcome, fmt.Errorf("merge target hypotheses: %w", err)
+	}
+	if output != nil {
+		output.State(
+			"Target hypothesis merge", "complete",
+			fmt.Sprintf("native hypotheses: %d", len(goCandidates)),
+			fmt.Sprintf("README hypotheses: %d", len(readmeCandidates)),
+			fmt.Sprintf("merged hypotheses: %d", len(merged)),
+			formatRunOutputWallDuration(time.Since(mergeStarted)),
+		)
+	}
+	if len(merged) == 0 {
+		return snapshot.TargetRunSelection{}, outcome, fmt.Errorf("target discovery returned no file hypotheses")
+	}
+
+	selection, portfolioOutcome, err := selectTargetPortfolioForRun(
+		ctx, repository.Snapshot(), merged, output, providers, executor,
+	)
+	outcome = portfolioOutcome
+	outcome.ReadmeRoles = compileReadmeRoleLog(repository, readme.roles)
+	if err != nil {
+		return snapshot.TargetRunSelection{}, outcome, withTargetPortfolioChoices(
+			err,
+			targetPortfolioChoiceGroup{Language: "Go", Choices: targetPortfolioChoices(catalog)},
+		)
+	}
+	selectedFileRefs := make([]corpus.FileID, 0, len(selection.Targets))
+	for _, candidate := range selection.Targets {
+		selectedFileRefs = append(selectedFileRefs, candidate.FileRef)
+	}
+	refs, err := resolver.Resolve(selectedFileRefs)
+	if err != nil {
+		return snapshot.TargetRunSelection{}, outcome, fmt.Errorf(
+			"restore selected Go targets from file portfolio: %w; choose one exact Go target with --target TARGET",
+			err,
+		)
+	}
+	defaultRef, err := resolver.ResolveOne(selection.Default.FileRef)
+	if err != nil {
+		return snapshot.TargetRunSelection{}, outcome, fmt.Errorf(
+			"restore default Go target from file portfolio: %w; choose one exact Go target with --target TARGET",
+			err,
+		)
+	}
+	_, ok := targetCatalogEntryByRef(catalog, defaultRef)
+	if !ok {
+		return snapshot.TargetRunSelection{}, outcome, fmt.Errorf("restored default Go target is outside the target catalog")
+	}
+	outcome.SelectedRef = defaultRef
 	outcome.SelectedTargets = len(refs)
 	outcome.SelectedTargetRefs = append([]string(nil), refs...)
+	outcome.SelectedFileRefs = len(selection.Targets)
+	outcome.UnclassifiedFiles = len(selection.Unclassified)
 	return snapshot.TargetRunSelection{
 		DefaultTargetRef: defaultRef,
 		TargetRefs:       refs,
 	}, outcome, nil
 }
 
+func goResolvableReadmeTargetCandidates(
+	candidates []analysistarget.FileCandidate,
+	resolver analysistarget.GoFileTargetResolver,
+) ([]analysistarget.FileCandidate, int) {
+	result := make([]analysistarget.FileCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if !resolver.ResolvesOne(candidate.FileRef) {
+			continue
+		}
+		result = append(result, candidate)
+	}
+	if result == nil {
+		result = []analysistarget.FileCandidate{}
+	}
+	return result, len(candidates) - len(result)
+}
+
 func selectTargetPortfolioForRun(
 	ctx context.Context,
-	repoName string,
-	catalog analysistarget.TargetCatalog,
+	corpusSnapshot corpus.Snapshot,
+	candidates []analysistarget.FileCandidate,
 	output *runOutput,
-	clients targetPortfolioClientFactory,
-) (string, targetPortfolioRunOutcome, error) {
+	providers targetPortfolioProviderFactory,
+	executor llm.Executor,
+) (targetportfolio.Selection, targetPortfolioRunOutcome, error) {
 	if output == nil {
 		output = newRunOutput(io.Discard)
 	}
-	if err := catalog.Validate(); err != nil {
-		return "", targetPortfolioRunOutcome{}, fmt.Errorf("target portfolio: validate catalog: %w", err)
-	}
 	if err := ctx.Err(); err != nil {
-		return "", targetPortfolioRunOutcome{}, err
-	}
-	eligible := make([]analysistarget.TargetCatalogEntry, 0, len(catalog.Entries))
-	for _, entry := range catalog.Entries {
-		if targetportfolio.EligibleForSelection(entry) {
-			eligible = append(eligible, entry)
-		}
-	}
-	if len(eligible) == 0 {
-		return "", targetPortfolioRunOutcome{}, fmt.Errorf(
-			"target portfolio has no executable or module Library API target eligible for an ordinary report; choose one with --target: %s",
-			targetPortfolioChoices(catalog),
-		)
-	}
-	if len(eligible) == 1 {
-		entry := eligible[0]
-		return entry.Candidate.Target.Ref, targetPortfolioRunOutcome{
-			SelectedRef: entry.Candidate.Target.Ref, SelectedPath: entry.DisplayPath,
-			SelectedKind: entry.Candidate.Target.Kind, SelectedTargets: 1,
-			SelectedTargetRefs: []string{entry.Candidate.Target.Ref},
-		}, nil
+		return targetportfolio.Selection{}, targetPortfolioRunOutcome{}, err
 	}
 
+	started := time.Now()
 	outcome := targetPortfolioRunOutcome{}
-	compilation, err := targetportfolio.Compile(targetPortfolioRepoName(repoName), catalog)
+	compilation, err := targetportfolio.Compile(corpusSnapshot, candidates)
 	if err != nil {
-		return targetPortfolioFallback(catalog, output, outcome, "request_build_failed")
+		failed, failErr := failTargetPortfolioSelection(
+			outcome, "request_build_failed",
+			"could not compile its exact candidate request", err,
+		)
+		return targetportfolio.Selection{}, failed, failErr
 	}
 	prompt, err := targetportfolio.BuildPrompt(compilation)
 	if err != nil {
-		return targetPortfolioFallback(catalog, output, outcome, "request_build_failed")
+		failed, failErr := failTargetPortfolioSelection(
+			outcome, "request_build_failed",
+			"could not build its model prompt", err,
+		)
+		return targetportfolio.Selection{}, failed, failErr
 	}
 	providerBundle, err := targetportfolio.ProviderVisibleJSON(compilation)
 	if err != nil {
-		return targetPortfolioFallback(catalog, output, outcome, "request_build_failed")
+		failed, failErr := failTargetPortfolioSelection(
+			outcome, "request_build_failed",
+			"could not seal its provider-visible request", err,
+		)
+		return targetportfolio.Selection{}, failed, failErr
 	}
 	outcome.Request = providerBundle
 	outcome.RequestBytes = len(providerBundle)
 	outcome.RequestProvenance = debugdump.SemanticRequestPrepared
 
-	if clients == nil {
-		return targetPortfolioFallback(catalog, output, outcome, "provider_configuration_failed")
+	if providers == nil {
+		failed, failErr := failTargetPortfolioSelection(
+			outcome, "provider_configuration_failed",
+			"has no configured model provider", errors.New("provider factory is unavailable"),
+		)
+		return targetportfolio.Selection{}, failed, failErr
 	}
-	client, err := clients()
-	if err != nil || client == nil {
-		return targetPortfolioFallback(catalog, output, outcome, "provider_configuration_failed")
-	}
-	envelope, err := client.TargetPortfolioPromptJSON(prompt)
+	provider, err := providers()
 	if err != nil {
-		return targetPortfolioFallback(catalog, output, outcome, "request_build_failed")
+		failed, failErr := failTargetPortfolioSelection(
+			outcome, "provider_configuration_failed",
+			"could not configure its model provider", err,
+		)
+		return targetportfolio.Selection{}, failed, failErr
 	}
-	outcome.Request = append([]byte(nil), envelope...)
-	outcome.RequestBytes = len(envelope)
-	if _, found := secretscan.DetectAlways(string(envelope)); found {
-		return targetPortfolioFallback(catalog, output, outcome, "request_secret_scan")
+	if provider == nil {
+		failed, failErr := failTargetPortfolioSelection(
+			outcome, "provider_configuration_failed",
+			"could not configure its model provider", errors.New("provider is unavailable"),
+		)
+		return targetportfolio.Selection{}, failed, failErr
 	}
 	if err := ctx.Err(); err != nil {
-		return "", targetPortfolioCanceled(outcome), err
+		return targetportfolio.Selection{}, targetPortfolioCanceled(outcome), err
 	}
 
 	output.Stage(
 		"Analysis target",
-		fmt.Sprintf("asking the model to choose from %d exact Go product candidates", len(compilation.Request.Targets)),
+		fmt.Sprintf("asking the model to choose the default and filter %d merged file hypotheses", len(compilation.Request.Candidates)),
 	)
-	started := time.Now()
-	providerResult, callErr := client.TargetPortfolioBodyMeasured(ctx, envelope)
-	outcome.LatencyMillis = time.Since(started).Milliseconds()
-	outcome.TransportAttempts = providerResult.Attempts
-	outcome.ResponseBytes = providerResultResponseBytes(providerResult)
-	if providerResult.Attempts > 0 {
-		outcome.SemanticCalls = 1
-		outcome.RequestProvenance = debugdump.SemanticRequestExactSent
+	executionState, err := targetportfolio.ExecutionState(compilation)
+	if err != nil {
+		failed, failErr := failTargetPortfolioSelection(
+			outcome, "request_build_failed", "could not bind its execution state", err,
+		)
+		return targetportfolio.Selection{}, failed, failErr
 	}
+	modelOutcome, callErr := llm.ExecuteJSON(
+		ctx,
+		executor,
+		provider,
+		llm.Call[targetportfolio.Selection]{
+			State: executionState,
+			Prompt: llm.Prompt{
+				System: prompt.System, User: prompt.User, ResponseFormatJSON: true,
+			},
+			Limits: llm.Limits{
+				MaxRequestBytes:  targetportfolio.MaxProviderRequestBytes,
+				MaxResponseBytes: targetportfolio.MaxResponseBytes,
+				MaxOutputTokens:  targetportfolio.MaxOutputTokens,
+			},
+			DecodeValidate: func(raw []byte) (targetportfolio.Selection, error) {
+				return targetportfolio.ResolveResponse(compilation, raw)
+			},
+		},
+	)
+	applyTargetPortfolioLLMOutcome(&outcome, modelOutcome)
 	if callErr != nil {
 		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			outcome.Response = providerFailureContentForExchange(callErr, providerResult.Content)
 			outcome = targetPortfolioCanceled(outcome)
 			if ctxErr := ctx.Err(); ctxErr != nil {
-				return "", outcome, ctxErr
+				return targetportfolio.Selection{}, outcome, ctxErr
 			}
-			return "", outcome, callErr
+			return targetportfolio.Selection{}, outcome, callErr
 		}
-		outcome.Response = providerFailureContentForExchange(callErr, providerResult.Content)
-		if len(outcome.Response) == 0 {
-			outcome.ResponseUnavailable = &debugdump.SemanticUnavailable{
-				Code: debugdump.SemanticUnavailableNoContent, OriginalBytes: outcome.ResponseBytes,
-			}
+		failureCode := targetPortfolioLLMFailureCode(callErr)
+		if modelOutcome.ResponseRedacted {
+			failureCode = "response_secret_scan"
 		}
-		if _, found := secretscan.DetectAlways(string(outcome.Response)); found {
-			originalBytes := len(outcome.Response)
-			outcome.Response = nil
-			outcome.ResponseUnavailable = &debugdump.SemanticUnavailable{
-				Code: debugdump.SemanticUnavailableOmitted, OriginalBytes: originalBytes,
-			}
-			return targetPortfolioFallback(catalog, output, outcome, "response_secret_scan")
-		}
-		return targetPortfolioFallback(catalog, output, outcome, "provider_failed")
+		failed, failErr := failTargetPortfolioSelection(
+			outcome, failureCode,
+			"did not complete", callErr,
+		)
+		return targetportfolio.Selection{}, failed, failErr
 	}
 
-	outcome.Response = append([]byte(nil), providerResult.Content...)
-	if _, found := secretscan.DetectAlways(string(outcome.Response)); found {
-		originalBytes := len(outcome.Response)
-		outcome.Response = nil
-		outcome.ResponseUnavailable = &debugdump.SemanticUnavailable{
-			Code: debugdump.SemanticUnavailableOmitted, OriginalBytes: originalBytes,
-		}
-		return targetPortfolioFallback(catalog, output, outcome, "response_secret_scan")
+	selection := modelOutcome.Value
+	outcome.SelectedFileRefs = len(selection.Targets)
+	outcome.UnclassifiedFiles = len(selection.Unclassified)
+	if outcome.Cached {
+		outcome.SemanticState = debugdump.SemanticStateCacheHit
+		outcome.ValidationCode = debugdump.SemanticValidationCache
+	} else {
+		outcome.SemanticState = debugdump.SemanticStateAccepted
+		outcome.ValidationCode = debugdump.SemanticValidationAccepted
 	}
-	selection, err := targetportfolio.ResolveResponse(compilation, outcome.Response)
+	if len(selection.Targets) == 0 {
+		return selection, outcome, errors.New(
+			"target portfolio found no positively supported target entry; choose one exact target with --target TARGET",
+		)
+	}
+	if selection.Default == nil {
+		return targetportfolio.Selection{}, outcome, fmt.Errorf("target portfolio accepted targets without a default")
+	}
+	source := "live provider"
+	if outcome.Cached {
+		source = "validated cache"
+	}
+	output.State(
+		"Analysis target", "selected",
+		"source: "+source,
+		fmt.Sprintf("selected file hypotheses: %d", len(selection.Targets)),
+		fmt.Sprintf("unclassified file hypotheses: %d", len(selection.Unclassified)),
+		formatRunOutputWallDuration(time.Since(started)),
+	)
+	return selection, outcome, nil
+}
+
+func discoverReadmeFileRoles(
+	ctx context.Context,
+	repoName string,
+	repository *corpus.Corpus,
+	lexical lexicalhints.Result,
+	output *runOutput,
+	providers targetPortfolioProviderFactory,
+	executor llm.Executor,
+) (readmetargetscout.Result, error) {
+	started := time.Now()
+	compilation, err := readmetargetscout.Compile(
+		targetPortfolioRepoName(repoName), repository, lexical,
+	)
 	if err != nil {
-		return targetPortfolioFallback(catalog, output, outcome, "response_validation")
+		return nil, fmt.Errorf("README file classifier: %w", err)
 	}
-	outcome.SelectedRef = selection.Default.Candidate.Target.Ref
-	outcome.SelectedPath = selection.Default.DisplayPath
-	outcome.SelectedKind = selection.Default.Candidate.Target.Kind
-	outcome.SelectedTargets = len(selection.Targets)
-	outcome.SelectedTargetRefs = make([]string, 0, len(selection.Targets))
-	for _, target := range selection.Targets {
-		outcome.SelectedTargetRefs = append(outcome.SelectedTargetRefs, target.Candidate.Target.Ref)
+	if compilation.State == readmetargetscout.StateNotApplicable {
+		return readmetargetscout.Result{}, nil
 	}
-	outcome.SemanticState = debugdump.SemanticStateAccepted
-	outcome.ValidationCode = debugdump.SemanticValidationAccepted
-	return outcome.SelectedRef, outcome, nil
+	prompt, err := readmetargetscout.BuildPrompt(compilation)
+	if err != nil {
+		return nil, fmt.Errorf("README file classifier: build prompt: %w", err)
+	}
+	if providers == nil {
+		return nil, fmt.Errorf("README file classifier: model provider is unavailable; configure the provider and retry")
+	}
+	provider, err := providers()
+	if err != nil {
+		return nil, fmt.Errorf("README file classifier: configure model provider: %w", err)
+	}
+	if provider == nil {
+		return nil, fmt.Errorf("README file classifier: configured model provider is unavailable")
+	}
+	if output != nil {
+		output.Stage("README file classifier", fmt.Sprintf(
+			"asking the model to classify sparse repository file roles across %d tracked files",
+			compilation.Request.FileCount,
+		))
+	}
+	modelOutcome, err := llm.ExecuteJSON(
+		ctx,
+		debugdump.BindStage(executor, debugdump.SemanticStageReadmeFileClassifier),
+		provider,
+		llm.Call[readmetargetscout.Result]{
+			State: readmetargetscout.ExecutionState(),
+			Prompt: llm.Prompt{
+				System: prompt.System, User: prompt.User, ResponseFormatJSON: false,
+			},
+			Limits: llm.Limits{
+				MaxRequestBytes:  readmetargetscout.MaxProviderRequestBytes,
+				MaxResponseBytes: readmetargetscout.MaxResponseBytes,
+				MaxOutputTokens:  readmetargetscout.MaxOutputTokens,
+			},
+			DecodeValidate: func(raw []byte) (readmetargetscout.Result, error) {
+				return readmetargetscout.ResolveResponse(compilation, raw)
+			},
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"README file classifier did not complete: %w; fix provider access and retry",
+			err,
+		)
+	}
+	result := modelOutcome.Value
+	if output != nil {
+		counts := readmeRoleCounts(result)
+		source := "live"
+		latency := modelOutcome.Metrics.Latency.Milliseconds()
+		if modelOutcome.Cached {
+			source = "cache"
+			latency = 0
+		}
+		output.Stage(
+			"README file classifier",
+			fmt.Sprintf("classified files: %d", len(result)),
+			formatRunOutputWallDuration(time.Since(started)),
+			fmt.Sprintf(
+				"%s result: request %d bytes, response %d bytes, %d ms",
+				source, modelOutcome.RequestBytes, modelOutcome.ResponseBytes, latency,
+			),
+			fmt.Sprintf(
+				"roles: target %d, example %d, test %d, support tool %d, config %d, database %d, client %d, docs %d, deployment %d, contract %d",
+				counts[readmetargetscout.ClassTargetEntry], counts[readmetargetscout.ClassExampleEntry],
+				counts[readmetargetscout.ClassTestEntry], counts[readmetargetscout.ClassSupportToolEntry],
+				counts[readmetargetscout.ClassConfiguration], counts[readmetargetscout.ClassDatabaseAsset],
+				counts[readmetargetscout.ClassClientEntry], counts[readmetargetscout.ClassDocumentation],
+				counts[readmetargetscout.ClassDeployment], counts[readmetargetscout.ClassInterfaceContract],
+			),
+		)
+	}
+	return result, nil
+}
+
+func readmeRoleCounts(result readmetargetscout.Result) map[readmetargetscout.FileClass]int {
+	counts := make(map[readmetargetscout.FileClass]int)
+	for _, file := range result {
+		for _, classification := range file.Classifications {
+			counts[classification.Class]++
+		}
+	}
+	return counts
+}
+
+func compileReadmeRoleLog(
+	repository *corpus.Corpus,
+	result readmetargetscout.Result,
+) []readmeRoleLogRow {
+	rows := make([]readmeRoleLogRow, 0, len(result))
+	for _, file := range result {
+		info, known := repository.Info(file.FileRef)
+		if !known {
+			continue
+		}
+		row := readmeRoleLogRow{
+			FileRef:         file.FileRef,
+			Path:            info.Entry.Path,
+			Classifications: make([]readmetargetscout.Classification, len(file.Classifications)),
+		}
+		for classIndex, classification := range file.Classifications {
+			row.Classifications[classIndex] = readmetargetscout.Classification{
+				Class:      classification.Class,
+				Hypotheses: append([]string(nil), classification.Hypotheses...),
+			}
+		}
+		rows = append(rows, row)
+	}
+	if rows == nil {
+		return []readmeRoleLogRow{}
+	}
+	return rows
+}
+
+func cloneReadmeRoleLog(rows []readmeRoleLogRow) []readmeRoleLogRow {
+	cloned := make([]readmeRoleLogRow, len(rows))
+	for rowIndex, row := range rows {
+		cloned[rowIndex] = readmeRoleLogRow{
+			FileRef: row.FileRef,
+			Path:    row.Path,
+			Classifications: make(
+				[]readmetargetscout.Classification, len(row.Classifications),
+			),
+		}
+		for classIndex, classification := range row.Classifications {
+			cloned[rowIndex].Classifications[classIndex] = readmetargetscout.Classification{
+				Class: classification.Class,
+				Hypotheses: append(
+					[]string(nil), classification.Hypotheses...,
+				),
+			}
+		}
+	}
+	if cloned == nil {
+		return []readmeRoleLogRow{}
+	}
+	return cloned
+}
+
+// restoreReadmeRoleResult rebinds accepted path-backed role facts to the
+// current run-local corpus namespace. Repository changes are allowed during a
+// multi-target run: removed files simply cease to be evidence, while surviving
+// paths receive their current f* ref.
+func restoreReadmeRoleResult(
+	repository *corpus.Corpus,
+	rows []readmeRoleLogRow,
+) (readmetargetscout.Result, error) {
+	if repository == nil {
+		return nil, fmt.Errorf("repository corpus is unavailable")
+	}
+	result := make(readmetargetscout.Result, 0, len(rows))
+	for _, row := range rows {
+		fileRef, known := repository.ID(row.Path)
+		if !known {
+			continue
+		}
+		classifications := make([]readmetargetscout.Classification, len(row.Classifications))
+		for classIndex, classification := range row.Classifications {
+			classifications[classIndex] = readmetargetscout.Classification{
+				Class:      classification.Class,
+				Hypotheses: append([]string(nil), classification.Hypotheses...),
+			}
+		}
+		result = append(result, readmetargetscout.ClassifiedFile{
+			FileRef:         fileRef,
+			Classifications: classifications,
+		})
+	}
+	return result.SnapshotAgainstCorpus(repository)
+}
+
+func targetCatalogEntryByRef(
+	catalog analysistarget.TargetCatalog,
+	targetRef string,
+) (analysistarget.TargetCatalogEntry, bool) {
+	for _, entry := range catalog.Entries {
+		if entry.Candidate.Target.Ref == targetRef {
+			return entry, true
+		}
+	}
+	return analysistarget.TargetCatalogEntry{}, false
+}
+
+func applyTargetPortfolioLLMOutcome(
+	outcome *targetPortfolioRunOutcome,
+	modelOutcome llm.Outcome[targetportfolio.Selection],
+) {
+	if outcome == nil {
+		return
+	}
+	if modelOutcome.RequestBytes > 0 {
+		outcome.Request = append([]byte(nil), modelOutcome.Request...)
+		outcome.RequestBytes = modelOutcome.RequestBytes
+	}
+	outcome.Response = append([]byte(nil), modelOutcome.Response...)
+	outcome.ResponseBytes = max(
+		modelOutcome.ResponseBytes,
+		modelOutcome.Metrics.ProviderResponseBytes,
+	)
+	outcome.Cached = modelOutcome.Cached
+	if modelOutcome.ResponseRedacted {
+		outcome.ResponseUnavailable = &debugdump.SemanticUnavailable{
+			Code: debugdump.SemanticUnavailableOmitted, OriginalBytes: modelOutcome.ResponseBytes,
+		}
+	} else if len(modelOutcome.Response) == 0 && outcome.ResponseBytes > 0 {
+		outcome.ResponseUnavailable = &debugdump.SemanticUnavailable{
+			Code: debugdump.SemanticUnavailableNoContent, OriginalBytes: outcome.ResponseBytes,
+		}
+	}
+	if modelOutcome.RequestRedacted {
+		outcome.Request = nil
+	}
+	if modelOutcome.Cached {
+		outcome.RequestProvenance = debugdump.SemanticRequestPrepared
+		outcome.SemanticCalls = 0
+		outcome.TransportAttempts = 0
+		outcome.LatencyMillis = 0
+		return
+	}
+	if modelOutcome.Metrics.Attempts > 0 {
+		outcome.RequestProvenance = debugdump.SemanticRequestExactSent
+		outcome.SemanticCalls = 1
+		outcome.TransportAttempts = modelOutcome.Metrics.Attempts
+		outcome.LatencyMillis = modelOutcome.Metrics.Latency.Milliseconds()
+	}
+}
+
+func targetPortfolioLLMFailureCode(err error) string {
+	switch {
+	case errors.Is(err, llm.ErrSensitivePreparedRequest):
+		return "request_secret_scan"
+	case errors.Is(err, llm.ErrSensitiveResponse):
+		return "response_secret_scan"
+	}
+	var providerErr *llm.ProviderError
+	if errors.As(err, &providerErr) {
+		if providerErr.Operation == "prepare" {
+			return "request_build_failed"
+		}
+		return "provider_failed"
+	}
+	return "response_validation"
 }
 
 func targetPortfolioRepoName(repositoryIdentity string) string {
@@ -294,40 +721,48 @@ func isGoMajorVersionPathSegment(value string) bool {
 	return len(value) > 2 || value[1] >= '2'
 }
 
-func targetPortfolioFallback(
-	catalog analysistarget.TargetCatalog,
-	output *runOutput,
+func failTargetPortfolioSelection(
 	outcome targetPortfolioRunOutcome,
 	code string,
-) (string, targetPortfolioRunOutcome, error) {
-	outcome.FailureCode = code
+	operation string,
+	cause error,
+) (targetPortfolioRunOutcome, error) {
 	outcome.SemanticState, outcome.ValidationCode = targetPortfolioFailureSemantics(code)
-	for _, entry := range catalog.Entries {
-		if entry.Candidate.Target.Ref != catalog.DefaultTargetRef ||
-			!targetportfolio.EligibleForSelection(entry) {
-			continue
-		}
-		outcome.SelectedRef = entry.Candidate.Target.Ref
-		outcome.SelectedPath = entry.DisplayPath
-		outcome.SelectedKind = entry.Candidate.Target.Kind
-		outcome.SelectedTargets = 1
-		outcome.SelectedTargetRefs = []string{entry.Candidate.Target.Ref}
-		outcome.UsedLocalDefault = true
-		output.Warn(
-			"Target portfolio selection unavailable",
-			"reason: "+targetPortfolioFailureCopy(code),
-			"using exact local default: "+entry.DisplayPath,
-		)
-		return outcome.SelectedRef, outcome, nil
-	}
-	return "", outcome, fmt.Errorf(
-		"target portfolio selection unavailable (%s) and there is no exact local default; choose one with --target: %s",
-		targetPortfolioFailureCopy(code), targetPortfolioChoices(catalog),
+	guidance := "fix the reported model-selection failure and retry, or bypass this required cube by analyzing exactly one target with --target TARGET"
+	return outcome, fmt.Errorf(
+		"required target portfolio selection %s: %w; %s",
+		operation, cause, guidance,
 	)
 }
 
+// targetPortfolioChoiceGroup belongs to a language adapter, not to the shared
+// portfolio cube. The cube selects only closed FileRefs; exact --target keys
+// become relevant solely when the CLI explains how to correct a failed run.
+type targetPortfolioChoiceGroup struct {
+	Language string
+	Choices  string
+}
+
+func withTargetPortfolioChoices(err error, groups ...targetPortfolioChoiceGroup) error {
+	if err == nil {
+		return nil
+	}
+	summaries := make([]string, 0, len(groups))
+	for _, group := range groups {
+		language := strings.TrimSpace(group.Language)
+		choices := strings.TrimSpace(group.Choices)
+		if language == "" || choices == "" {
+			return fmt.Errorf("%w; exact --target choice guidance is incomplete", err)
+		}
+		summaries = append(summaries, language+": "+choices)
+	}
+	if len(summaries) == 0 {
+		return fmt.Errorf("%w; no exact --target choices were advertised", err)
+	}
+	return fmt.Errorf("%w; exact --target choices: %s", err, strings.Join(summaries, "; "))
+}
+
 func targetPortfolioCanceled(outcome targetPortfolioRunOutcome) targetPortfolioRunOutcome {
-	outcome.FailureCode = "canceled"
 	outcome.SemanticState = debugdump.SemanticStateCanceled
 	outcome.ValidationCode = debugdump.SemanticValidationCanceled
 	if len(outcome.Response) == 0 {
@@ -349,47 +784,31 @@ func targetPortfolioFailureSemantics(code string) (string, string) {
 	}
 }
 
-func targetPortfolioFailureCopy(code string) string {
-	switch code {
-	case "provider_configuration_failed":
-		return "provider configuration failed"
-	case "provider_failed":
-		return "provider call failed"
-	case "request_build_failed":
-		return "bounded request could not be prepared"
-	case "request_secret_scan", "response_secret_scan":
-		return "mandatory credential scan rejected the exchange"
-	case "response_validation":
-		return "model response was invalid"
-	default:
-		return "selection failed"
-	}
-}
-
 func targetPortfolioChoices(catalog analysistarget.TargetCatalog) string {
 	const limit = 12
 	choices := make([]string, 0, min(len(catalog.Entries), limit)+1)
+	available := 0
 	for _, entry := range catalog.Entries {
+		available++
 		if len(choices) == limit {
-			break
+			continue
 		}
 		choices = append(choices, fmt.Sprintf(
 			"%s (%s; %s)", entry.DisplayPath, entry.Candidate.Target.Kind, entry.Candidate.Key,
 		))
 	}
-	if len(catalog.Entries) > len(choices) {
-		choices = append(choices, fmt.Sprintf("... and %d more", len(catalog.Entries)-len(choices)))
+	if available > len(choices) {
+		choices = append(choices, fmt.Sprintf("... and %d more", available-len(choices)))
 	}
 	return strings.Join(choices, ", ")
 }
 
-// resolveAllTargetsDefaultOverride applies the same fail-closed selector
-// semantics as ordinary target resolution while preserving --all-targets as
-// an inclusion control. Exact refs and typed candidate keys win first. Human
+// resolveTargetOverride applies fail-closed target resolution. Exact refs and
+// typed candidate keys win first. Human
 // path aliases are accepted only when they identify one surface: a module-root
 // executable and that module's Library API deliberately share a display path,
 // so an untyped alias such as "." or "server" must not silently pick one.
-func resolveAllTargetsDefaultOverride(
+func resolveTargetOverride(
 	catalog analysistarget.TargetCatalog,
 	override string,
 ) (analysistarget.TargetCatalogEntry, error) {
@@ -404,7 +823,7 @@ func resolveAllTargetsDefaultOverride(
 	}
 	if len(exact) > 1 {
 		return analysistarget.TargetCatalogEntry{}, fmt.Errorf(
-			"--all-targets: --target %q matches more than one exact target", override,
+			"--target %q matches more than one exact target", override,
 		)
 	}
 
@@ -426,7 +845,7 @@ func resolveAllTargetsDefaultOverride(
 		return aliases[0], nil
 	case 0:
 		return analysistarget.TargetCatalogEntry{}, fmt.Errorf(
-			"--all-targets: --target %q is not an advertised module surface; choose one of: %s",
+			"--target %q is not an eligible module surface; choose one of: %s",
 			override, targetPortfolioChoices(catalog),
 		)
 	default:
@@ -435,7 +854,7 @@ func resolveAllTargetsDefaultOverride(
 			keys = append(keys, entry.Candidate.Key)
 		}
 		return analysistarget.TargetCatalogEntry{}, fmt.Errorf(
-			"--all-targets: --target %q is ambiguous; use one exact target key: %s",
+			"--target %q is ambiguous; use one exact target key: %s",
 			override, strings.Join(keys, ", "),
 		)
 	}
@@ -446,12 +865,19 @@ func recordTargetPortfolioOutcome(
 	outcome targetPortfolioRunOutcome,
 	output *runOutput,
 ) error {
-	if outcome.RequestBytes == 0 || len(outcome.Request) == 0 || outcome.SemanticState == "" {
+	if outcome.SemanticState == "" {
 		return nil
+	}
+	diagnosticErr := recordSemanticStageDiagnostic(runDir, targetPortfolioDiagnostic(outcome))
+	if outcome.RequestBytes == 0 || len(outcome.Request) == 0 {
+		return diagnosticErr
 	}
 	writer, err := debugdump.OpenWriter(runDir, true)
 	if err != nil {
-		return fmt.Errorf("target portfolio: open semantic exchange writer: %w", err)
+		return errors.Join(
+			diagnosticErr,
+			fmt.Errorf("target portfolio: open semantic exchange writer: %w", err),
+		)
 	}
 	defer writer.Close()
 	writer.SetWarningWriter(runOutputWarningSink{
@@ -472,19 +898,108 @@ func recordTargetPortfolioOutcome(
 		Request: outcome.Request, Response: outcome.Response,
 		ResponseUnavailable: responseUnavailable,
 	})
-	return recordAtlasFirstStageDiagnostic(runDir, targetPortfolioDiagnostic(outcome))
+	return diagnosticErr
 }
 
-func targetPortfolioDiagnostic(outcome targetPortfolioRunOutcome) atlasFirstStageDiagnostic {
-	state := "accepted"
-	if outcome.UsedLocalDefault {
-		state = "rejected"
-		if outcome.SemanticState == debugdump.SemanticStateProviderFailed {
-			state = "provider_failed"
+// persistReadmeRoleAuthority writes the exact accepted first-layer role
+// catalog that later cubes consume. Empty input has exact absent authority;
+// any failure for non-empty input is terminal rather than a logging warning.
+func persistReadmeRoleAuthority(
+	runDir string,
+	rows []readmeRoleLogRow,
+) error {
+	if len(rows) == 0 {
+		if err := os.Remove(filepath.Join(runDir, readmetargetscout.ArtifactFilename)); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("README file-role authority: remove stale empty artifact: %w", err)
+		}
+		return nil
+	}
+	payload, err := json.MarshalIndent(struct {
+		Version int                `json:"version"`
+		Files   []readmeRoleLogRow `json:"files"`
+	}{Version: 1, Files: rows}, "", "  ")
+	if err != nil {
+		return fmt.Errorf("README file-role authority: encode: %w", err)
+	}
+	writer, err := debugdump.OpenWriter(runDir, true)
+	if err != nil {
+		return fmt.Errorf("README file-role authority: open writer: %w", err)
+	}
+	writeErr := writer.WriteValidatedFile(
+		readmetargetscout.ArtifactFilename,
+		payload,
+		func(saved []byte) error {
+			if !bytes.Equal(saved, payload) {
+				return fmt.Errorf("README file-role authority differs from the accepted catalog")
+			}
+			return validateReadmeRoleLog(saved)
+		},
+	)
+	closeErr := writer.Close()
+	if err := errors.Join(writeErr, closeErr); err != nil {
+		return fmt.Errorf("README file-role authority: persist: %w", err)
+	}
+	return nil
+}
+
+func validateReadmeRoleLog(raw []byte) error {
+	var payload struct {
+		Version int                `json:"version"`
+		Files   []readmeRoleLogRow `json:"files"`
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&payload); err != nil || payload.Version != 1 || payload.Files == nil {
+		return fmt.Errorf("invalid README file-role log")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return fmt.Errorf("invalid trailing README file-role log data")
+	}
+	seenFiles := make(map[corpus.FileID]struct{}, len(payload.Files))
+	for _, row := range payload.Files {
+		if row.FileRef == "" || row.Path == "" || len(row.Classifications) == 0 {
+			return fmt.Errorf("invalid README file-role log row")
+		}
+		if _, duplicate := seenFiles[row.FileRef]; duplicate {
+			return fmt.Errorf("duplicate README file-role log row")
+		}
+		seenFiles[row.FileRef] = struct{}{}
+		seenClasses := make(map[readmetargetscout.FileClass]struct{}, len(row.Classifications))
+		for _, classification := range row.Classifications {
+			if !validReadmeRoleClass(classification.Class) || len(classification.Hypotheses) == 0 {
+				return fmt.Errorf("invalid README file-role log classification")
+			}
+			if _, duplicate := seenClasses[classification.Class]; duplicate {
+				return fmt.Errorf("duplicate README file-role log classification")
+			}
+			seenClasses[classification.Class] = struct{}{}
 		}
 	}
-	return atlasFirstStageDiagnostic{
-		Stage: debugdump.SemanticStageTargetPortfolio, State: state,
+	return nil
+}
+
+func validReadmeRoleClass(value readmetargetscout.FileClass) bool {
+	switch value {
+	case readmetargetscout.ClassTargetEntry,
+		readmetargetscout.ClassExampleEntry,
+		readmetargetscout.ClassTestEntry,
+		readmetargetscout.ClassSupportToolEntry,
+		readmetargetscout.ClassConfiguration,
+		readmetargetscout.ClassDatabaseAsset,
+		readmetargetscout.ClassClientEntry,
+		readmetargetscout.ClassDocumentation,
+		readmetargetscout.ClassDeployment,
+		readmetargetscout.ClassInterfaceContract:
+		return true
+	default:
+		return false
+	}
+}
+
+func targetPortfolioDiagnostic(outcome targetPortfolioRunOutcome) semanticStageDiagnostic {
+	return semanticStageDiagnostic{
+		Stage: debugdump.SemanticStageTargetPortfolio, State: outcome.SemanticState,
 		RequestBytes: outcome.RequestBytes, SemanticCalls: outcome.SemanticCalls,
 		TransportAttempts: outcome.TransportAttempts, LatencyMillis: outcome.LatencyMillis,
 	}

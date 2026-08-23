@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/dependencies"
 	"github.com/dvordrova/repomap/internal/gofacts"
 )
 
@@ -17,11 +18,8 @@ func TestScopeGoFactsRepomapExecutableDropsOtherCommands(t *testing.T) {
 	facts.InternalEdges = []gofacts.Edge{
 		{From: "github.com/dvordrova/repomap/cmd/repomap", To: "github.com/dvordrova/repomap/internal/report"},
 	}
-	resolution, err := Resolve(facts, Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	scoped, err := ScopeGoFacts(facts, *resolution.Selected)
+	target := requireCandidateTarget(t, facts, KindExecutablePackage, "cmd/repomap")
+	scoped, err := ScopeGoFacts(facts, target)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,11 +27,62 @@ func TestScopeGoFactsRepomapExecutableDropsOtherCommands(t *testing.T) {
 		"github.com/dvordrova/repomap/cmd/repomap",
 		"github.com/dvordrova/repomap/internal/report",
 	})
-	if len(scoped.EntrypointPackages) != 1 || scoped.EntrypointPackages[0].ImportPath != resolution.Selected.PackagePath {
+	if len(scoped.EntrypointPackages) != 1 || scoped.EntrypointPackages[0].ImportPath != target.PackagePath {
 		t.Fatalf("entrypoints = %#v", scoped.EntrypointPackages)
 	}
 	if len(facts.Packages) != 3 {
 		t.Fatal("ScopeGoFacts mutated its input")
+	}
+}
+
+func TestScopeGoFactsFiltersDependencyImportersWithTheExactPackageScope(t *testing.T) {
+	t.Parallel()
+
+	const modulePath = "example.com/tool"
+	facts := syntheticFacts("module-root", modulePath, []syntheticPackage{
+		{path: modulePath + "/cmd/other", dir: "cmd/other", executable: true, line: 5},
+		{path: modulePath + "/cmd/tool", dir: "cmd/tool", executable: true, line: 7},
+		{path: modulePath + "/internal/report", dir: "internal/report"},
+	})
+	facts.InternalEdges = []gofacts.Edge{{From: modulePath + "/cmd/tool", To: modulePath + "/internal/report"}}
+	importers := []dependencies.Importer{
+		{Language: "go", Name: "other", ModulePath: modulePath, PackagePath: modulePath + "/cmd/other", RepositoryPath: "cmd/other"},
+		{Language: "go", Name: "tool", ModulePath: modulePath, PackagePath: modulePath + "/cmd/tool", RepositoryPath: "cmd/tool"},
+		{Language: "go", Name: "report", ModulePath: modulePath, PackagePath: modulePath + "/internal/report", RepositoryPath: "internal/report"},
+	}
+	sealedImporters, err := dependencies.BuildWithOmissions(importers, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refs := make(map[string]string, len(sealedImporters.Importers))
+	for _, importer := range sealedImporters.Importers {
+		refs[importer.PackagePath] = importer.Ref
+	}
+	catalog, err := dependencies.BuildWithOmissions(sealedImporters.Importers, []dependencies.Dependency{
+		{Language: "go", Kind: dependencies.KindStdlib, Name: "fmt", PackagePath: "fmt", ImporterRefs: []string{refs[modulePath+"/cmd/tool"]}},
+		{Language: "go", Kind: dependencies.KindStdlib, Name: "html", PackagePath: "html", ImporterRefs: []string{refs[modulePath+"/internal/report"]}},
+		{Language: "go", Kind: dependencies.KindStdlib, Name: "os", PackagePath: "os", ImporterRefs: []string{refs[modulePath+"/cmd/other"]}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	facts.Dependencies = &catalog
+
+	target := requireCandidateTarget(t, facts, KindExecutablePackage, "cmd/tool")
+	scoped, err := ScopeGoFacts(facts, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scoped.Dependencies == nil || len(scoped.Dependencies.Importers) != 2 || len(scoped.Dependencies.Dependencies) != 2 {
+		t.Fatalf("scoped dependencies = %#v", scoped.Dependencies)
+	}
+	for _, value := range scoped.Dependencies.Dependencies {
+		if value.PackagePath == "os" {
+			t.Fatalf("dependency from excluded package survived: %#v", scoped.Dependencies.Dependencies)
+		}
+	}
+	if len(facts.Dependencies.Importers) != 3 || len(facts.Dependencies.Dependencies) != 3 {
+		t.Fatal("ScopeGoFacts mutated the source dependency catalog")
 	}
 }
 
@@ -44,11 +93,8 @@ func TestScopeGoFactsMobyOverrideAndTelebotRootLibrary(t *testing.T) {
 		{path: "github.com/moby/moby/v2/daemon", dir: "daemon"},
 	})
 	moby.InternalEdges = []gofacts.Edge{{From: "github.com/moby/moby/v2/cmd/dockerd", To: "github.com/moby/moby/v2/daemon"}}
-	selected, err := Resolve(moby, Options{Override: "cmd/dockerd"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	scoped, err := ScopeGoFacts(moby, *selected.Selected)
+	selected := requireCandidateTarget(t, moby, KindExecutablePackage, "cmd/dockerd")
+	scoped, err := ScopeGoFacts(moby, selected)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,11 +105,8 @@ func TestScopeGoFactsMobyOverrideAndTelebotRootLibrary(t *testing.T) {
 		{path: "gopkg.in/telebot.v3/layout", dir: "layout"},
 		{path: "gopkg.in/telebot.v3/middleware", dir: "middleware"},
 	})
-	library, err := Resolve(telebot, Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	telebotScoped, err := ScopeGoFacts(telebot, *library.Selected)
+	library := requireCandidateTarget(t, telebot, KindModuleLibrary, "")
+	telebotScoped, err := ScopeGoFacts(telebot, library)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,11 +118,7 @@ func TestScopeGoFactsMobyOverrideAndTelebotRootLibrary(t *testing.T) {
 
 func TestTargetValidateRejectsRefDrift(t *testing.T) {
 	facts := syntheticFacts("module-root", "gopkg.in/telebot.v3", []syntheticPackage{{path: "gopkg.in/telebot.v3", dir: "."}})
-	resolution, err := Resolve(facts, Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	target := resolution.Selected.Snapshot()
+	target := requireCandidateTarget(t, facts, KindModuleLibrary, "")
 	if _, err := target.CanonicalJSON(); err != nil {
 		t.Fatalf("CanonicalJSON: %v", err)
 	}

@@ -1,16 +1,54 @@
 package snapshot
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
+	"github.com/dvordrova/repomap/internal/corpus"
 )
+
+func buildSnapshotForTest(opts Options) (Snapshot, error) {
+	if strings.TrimSpace(opts.GoTarget) == "" {
+		opts.GoTarget = runtime.GOOS + "/" + runtime.GOARCH
+	}
+	repository, err := corpus.Open(context.Background(), opts.RepoPath)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	defer repository.Close()
+	opts.RepositoryCorpus = repository
+	return BuildContext(context.Background(), opts)
+}
+
+func TestBuildContextRequiresSharedCorpusAndExactGoTarget(t *testing.T) {
+	_, err := BuildContext(context.Background(), Options{
+		RepoPath: t.TempDir(), GoTarget: runtime.GOOS + "/" + runtime.GOARCH,
+	})
+	if err == nil || !strings.Contains(err.Error(), "repository corpus is required") {
+		t.Fatalf("missing corpus error = %v", err)
+	}
+
+	repositoryPath := newDeferredAnalysisTargetFixture(t)
+	repository, err := corpus.Open(context.Background(), repositoryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	_, err = BuildContext(context.Background(), Options{
+		RepoPath: repositoryPath, RepositoryCorpus: repository, GoTarget: "invalid",
+	})
+	if err == nil || !strings.Contains(err.Error(), "restore resolved Go target") {
+		t.Fatalf("invalid target error = %v", err)
+	}
+}
 
 func TestBuildUsesSemanticRepositoryIdentity(t *testing.T) {
 	t.Parallel()
@@ -25,7 +63,7 @@ func TestBuildUsesSemanticRepositoryIdentity(t *testing.T) {
 		trackSnapshotFiles(t, repo, "go.mod", "main.go", "package.json")
 		runSnapshotGit(t, "-C", repo, "remote", "add", "origin", "git@github.com:owner/remote-name.git")
 
-		got, err := Build(Options{RepoPath: repo})
+		got, err := buildSnapshotForTest(Options{RepoPath: repo})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -46,7 +84,7 @@ func TestBuildUsesSemanticRepositoryIdentity(t *testing.T) {
 		trackSnapshotFiles(t, repo, "README.md", "package.json")
 		runSnapshotGit(t, "-C", repo, "remote", "add", "origin", "https://token@GitHub.com/owner/remote-name.git")
 
-		got, err := Build(Options{RepoPath: repo})
+		got, err := buildSnapshotForTest(Options{RepoPath: repo})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -62,7 +100,7 @@ func TestBuildUsesSemanticRepositoryIdentity(t *testing.T) {
 		writeSnapshotFile(t, repo, "package.json", `{"name":"@example/manifest-project"}`)
 		trackSnapshotFiles(t, repo, "package.json")
 
-		got, err := Build(Options{RepoPath: repo})
+		got, err := buildSnapshotForTest(Options{RepoPath: repo})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -79,7 +117,7 @@ func TestBuildUsesSemanticRepositoryIdentity(t *testing.T) {
 		writeSnapshotFile(t, repo, "package.json", `{"name":"leaked-task-name"}`)
 		trackSnapshotFiles(t, repo, "README.md")
 
-		got, err := Build(Options{RepoPath: repo})
+		got, err := buildSnapshotForTest(Options{RepoPath: repo})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -96,73 +134,6 @@ func TestBuildUsesSemanticRepositoryIdentity(t *testing.T) {
 	})
 }
 
-func TestBuildResolvesAndScopesAnalysisTarget(t *testing.T) {
-	t.Run("repomap shaped executable", func(t *testing.T) {
-		repo := t.TempDir()
-		writeSnapshotFile(t, repo, "go.mod", "module example.com/repomap\n\ngo 1.24\n")
-		writeSnapshotFile(t, repo, "cmd/repomap/main.go", "package main\nimport _ \"example.com/repomap/internal/report\"\nfunc main() {}\n")
-		writeSnapshotFile(t, repo, "cmd/quality/main.go", "package main\nfunc main() {}\n")
-		writeSnapshotFile(t, repo, "internal/report/report.go", "package report\n")
-		trackSnapshotFiles(t, repo, "go.mod", "cmd/repomap/main.go", "cmd/quality/main.go", "internal/report/report.go")
-
-		got, err := Build(Options{RepoPath: repo})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got.AnalysisTarget == nil || got.AnalysisTarget.PackagePath != "example.com/repomap/cmd/repomap" {
-			t.Fatalf("target = %#v", got.AnalysisTarget)
-		}
-		if len(got.GoFacts.Packages) != 2 || len(got.GoFacts.EntrypointPackages) != 1 {
-			t.Fatalf("scoped facts = %d packages, %d entrypoints", len(got.GoFacts.Packages), len(got.GoFacts.EntrypointPackages))
-		}
-		if slices.Contains(got.FilteredFiles, "cmd/quality/main.go") || !slices.Contains(got.FilteredFiles, "cmd/repomap/main.go") {
-			t.Fatalf("target source files = %#v", got.FilteredFiles)
-		}
-	})
-
-	t.Run("moby shaped ambiguity and override", func(t *testing.T) {
-		repo := t.TempDir()
-		writeSnapshotFile(t, repo, "go.mod", "module example.com/moby\n\ngo 1.24\n")
-		writeSnapshotFile(t, repo, "cmd/dockerd/main.go", "package main\nimport _ \"example.com/moby/daemon\"\nfunc main() {}\n")
-		writeSnapshotFile(t, repo, "cmd/docker-proxy/main.go", "package main\nfunc main() {}\n")
-		writeSnapshotFile(t, repo, "daemon/daemon.go", "package daemon\n")
-		trackSnapshotFiles(t, repo, "go.mod", "cmd/dockerd/main.go", "cmd/docker-proxy/main.go", "daemon/daemon.go")
-
-		if _, err := Build(Options{RepoPath: repo}); err == nil ||
-			!strings.Contains(err.Error(), "analysis target is ambiguous") ||
-			!strings.Contains(err.Error(), "cmd/dockerd") ||
-			!strings.Contains(err.Error(), "cmd/docker-proxy") ||
-			strings.Contains(err.Error(), "example.com/moby@") ||
-			strings.Contains(err.Error(), "daemon") {
-			t.Fatalf("ambiguity error = %v", err)
-		}
-		got, err := Build(Options{RepoPath: repo, AnalysisTargetOverride: "cmd/dockerd"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got.AnalysisTarget == nil || got.AnalysisTarget.PackageDir != "cmd/dockerd" || len(got.GoFacts.Packages) != 2 {
-			t.Fatalf("selected target/facts = %#v / %#v", got.AnalysisTarget, got.GoFacts.Packages)
-		}
-	})
-
-	t.Run("telebot shaped root library", func(t *testing.T) {
-		repo := t.TempDir()
-		writeSnapshotFile(t, repo, "go.mod", "module example.com/telebot\n\ngo 1.24\n")
-		writeSnapshotFile(t, repo, "bot.go", "package telebot\n\nfunc NewBot() {}\n")
-		writeSnapshotFile(t, repo, "layout/layout.go", "package layout\n\nfunc Open() {}\n")
-		trackSnapshotFiles(t, repo, "go.mod", "bot.go", "layout/layout.go")
-
-		got, err := Build(Options{RepoPath: repo})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got.AnalysisTarget == nil || got.AnalysisTarget.Kind != analysistarget.KindModuleLibrary ||
-			got.AnalysisTarget.PackagePath != "" || len(got.GoFacts.Packages) != 2 {
-			t.Fatalf("library target/facts = %#v / %#v", got.AnalysisTarget, got.GoFacts.Packages)
-		}
-	})
-}
-
 func TestBuildAutoGoTargetUsesUniqueProductionPlatformBeforeGoFacts(t *testing.T) {
 	repo := t.TempDir()
 	writeSnapshotFile(t, repo, "go.mod", "module example.com/moby\n\ngo 1.24\n")
@@ -175,9 +146,8 @@ func TestBuildAutoGoTargetUsesUniqueProductionPlatformBeforeGoFacts(t *testing.T
 		"daemon/network_linux.go", "daemon/storage_linux.go",
 	)
 
-	got, err := Build(Options{
+	got, err := buildSnapshotForTest(Options{
 		RepoPath: repo, GoTarget: "darwin/amd64", AutoGoTarget: true,
-		AnalysisTargetOverride: "cmd/dockerd",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -188,8 +158,8 @@ func TestBuildAutoGoTargetUsesUniqueProductionPlatformBeforeGoFacts(t *testing.T
 		got.GoTargetSelection.Display() != "auto: linux/amd64 (host darwin)" {
 		t.Fatalf("automatic selection = %#v", got.GoTargetSelection)
 	}
-	if got.AnalysisTarget == nil || got.AnalysisTarget.PackageDir != "cmd/dockerd" {
-		t.Fatalf("final analysis target = %#v", got.AnalysisTarget)
+	if got.AnalysisTarget != nil || got.TargetCatalog == nil || len(got.TargetCatalog.Entries) != 2 {
+		t.Fatalf("fresh snapshot must expose an unselected exact catalog: target=%#v catalog=%#v", got.AnalysisTarget, got.TargetCatalog)
 	}
 	if got.GoFacts == nil || got.GoFacts.Coverage.State == "unavailable" {
 		t.Fatalf("final Linux Go facts = %#v", got.GoFacts)
@@ -209,7 +179,7 @@ func TestBuildAutoGoTargetLeavesExplicitAndAmbiguousBaselinesUnchanged(t *testin
 		}
 		trackSnapshotFiles(t, repo, "go.mod", "main.go", "a_linux.go", "b_linux.go", "c_linux.go")
 
-		got, err := Build(Options{RepoPath: repo, GoTarget: "darwin/amd64", AutoGoTarget: false})
+		got, err := buildSnapshotForTest(Options{RepoPath: repo, GoTarget: "darwin/amd64", AutoGoTarget: false})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -233,7 +203,7 @@ func TestBuildAutoGoTargetLeavesExplicitAndAmbiguousBaselinesUnchanged(t *testin
 		}
 		trackSnapshotFiles(t, repo, paths...)
 
-		got, err := Build(Options{RepoPath: repo, GoTarget: "darwin/amd64", AutoGoTarget: true})
+		got, err := buildSnapshotForTest(Options{RepoPath: repo, GoTarget: "darwin/amd64", AutoGoTarget: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -243,30 +213,10 @@ func TestBuildAutoGoTargetLeavesExplicitAndAmbiguousBaselinesUnchanged(t *testin
 	})
 }
 
-func TestAnalysisTargetCandidateKeysDescribeModuleLibrariesWithoutEmptyPackageAliases(t *testing.T) {
-	candidates := []analysistarget.Candidate{
-		{Target: analysistarget.Target{
-			Kind: analysistarget.KindModuleLibrary, ModulePath: "example.com/root", ModuleDir: ".",
-		}},
-		{Target: analysistarget.Target{
-			Kind: analysistarget.KindModuleLibrary, ModulePath: "example.com/nested", ModuleDir: "nested",
-		}},
-	}
-	if got := analysisTargetCandidateKeys(candidates); got != "example.com/root, nested" {
-		t.Fatalf("module-library candidate keys = %q", got)
-	}
-	executable := analysistarget.Candidate{MainModule: true, Target: analysistarget.Target{
-		Kind: analysistarget.KindExecutablePackage, PackagePath: "example.com/root/cmd/app", PackageDir: "cmd/app",
-	}}
-	if got := analysisTargetCandidateKeys(append(candidates, executable)); got != "cmd/app" {
-		t.Fatalf("executable candidate key = %q", got)
-	}
-}
-
-func TestBuildDefersAnalysisTargetResolutionWithFullCatalog(t *testing.T) {
+func TestBuildProducesFullUnselectedAnalysisTargetCatalog(t *testing.T) {
 	repo := newDeferredAnalysisTargetFixture(t)
 
-	got, err := Build(Options{RepoPath: repo, DeferAnalysisTargetResolution: true})
+	got, err := buildSnapshotForTest(Options{RepoPath: repo})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +256,7 @@ func TestBuildDefersAnalysisTargetResolutionWithFullCatalog(t *testing.T) {
 
 func TestScopeAnalysisTargetUsesExactCatalogRefAndExcludesHelper(t *testing.T) {
 	repo := newDeferredAnalysisTargetFixture(t)
-	deferred, err := Build(Options{RepoPath: repo, DeferAnalysisTargetResolution: true})
+	deferred, err := buildSnapshotForTest(Options{RepoPath: repo})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,7 +304,7 @@ func TestScopeAnalysisTargetUsesExactCatalogRefAndExcludesHelper(t *testing.T) {
 
 func TestScopeAnalysisTargetRejectsUnknownEmptyAndDriftedRefs(t *testing.T) {
 	repo := newDeferredAnalysisTargetFixture(t)
-	deferred, err := Build(Options{RepoPath: repo, DeferAnalysisTargetResolution: true})
+	deferred, err := buildSnapshotForTest(Options{RepoPath: repo})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +334,7 @@ func TestScopeAnalysisTargetModuleLibraryExcludesMainAndRetainsModulePackages(t 
 	writeSnapshotFile(t, repo, "internal/store/store.go", "package store\n\nfunc Save() {}\n")
 	trackSnapshotFiles(t, repo, "go.mod", "main.go", "api/api.go", "internal/store/store.go")
 
-	deferred, err := Build(Options{RepoPath: repo, DeferAnalysisTargetResolution: true})
+	deferred, err := buildSnapshotForTest(Options{RepoPath: repo})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -422,17 +372,6 @@ func TestScopeAnalysisTargetModuleLibraryExcludesMainAndRetainsModulePackages(t 
 		!slices.Contains(scoped.FilteredFiles, "internal/store/store.go") ||
 		!slices.Contains(scoped.FilteredFiles, "go.mod") {
 		t.Fatalf("module-library files = %#v", scoped.FilteredFiles)
-	}
-}
-
-func TestBuildRejectsDeferredResolutionWithExplicitOverride(t *testing.T) {
-	repo := newDeferredAnalysisTargetFixture(t)
-
-	_, err := Build(Options{
-		RepoPath: repo, AnalysisTargetOverride: "cmd/app", DeferAnalysisTargetResolution: true,
-	})
-	if err == nil || !strings.Contains(err.Error(), "cannot be deferred with explicit override") {
-		t.Fatalf("defer plus override error = %v", err)
 	}
 }
 
@@ -504,7 +443,7 @@ func TestBuildIdentityIgnoresAmbientGitConfigOverrides(t *testing.T) {
 	t.Setenv("GIT_CONFIG_SYSTEM", ambientConfig)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 
-	got, err := Build(Options{RepoPath: repo})
+	got, err := buildSnapshotForTest(Options{RepoPath: repo})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -564,46 +503,6 @@ func TestParseRepositoryManifestName(t *testing.T) {
 	}
 }
 
-func TestBuildReadsBoundedTrackedReadme(t *testing.T) {
-	t.Parallel()
-
-	repo := t.TempDir()
-	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("abcdef"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	trackSnapshotFiles(t, repo, "README.md")
-
-	got, err := Build(Options{RepoPath: repo, MaxReadmeBytes: 3})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Readme != "abc\n...[truncated]" {
-		t.Fatalf("readme = %q", got.Readme)
-	}
-}
-
-func TestBuildDoesNotReadTrackedReadmeSymlinkEscape(t *testing.T) {
-	t.Parallel()
-
-	repo := t.TempDir()
-	outside := filepath.Join(t.TempDir(), "outside.md")
-	if err := os.WriteFile(outside, []byte("do not disclose"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(outside, filepath.Join(repo, "README.md")); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
-	}
-	trackSnapshotFiles(t, repo, "README.md")
-
-	got, err := Build(Options{RepoPath: repo, MaxReadmeBytes: 100})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Readme != "" {
-		t.Fatalf("readme = %q, want empty", got.Readme)
-	}
-}
-
 func TestBuildKeepsTrackedSymlinkVisibleButNotAnalyzable(t *testing.T) {
 	t.Parallel()
 
@@ -616,34 +515,12 @@ func TestBuildKeepsTrackedSymlinkVisibleButNotAnalyzable(t *testing.T) {
 	}
 	trackSnapshotFiles(t, repo, "regular.go", "linked.go")
 
-	got, err := Build(Options{RepoPath: repo, MaxTreeLines: 10})
+	got, err := buildSnapshotForTest(Options{RepoPath: repo})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if !slices.Contains(got.FileTree, "linked.go") ||
-		!slices.Contains(got.FileTree, "regular.go") {
-		t.Fatalf("file tree = %#v, want visible regular and symlink paths", got.FileTree)
 	}
 	if !slices.Equal(got.FilteredFiles, []string{"regular.go"}) {
 		t.Fatalf("analysis files = %#v, want only regular.go", got.FilteredFiles)
-	}
-}
-
-func TestBuildDoesNotReadUntrackedReadme(t *testing.T) {
-	t.Parallel()
-
-	repo := t.TempDir()
-	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("local private notes"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	trackSnapshotFiles(t, repo)
-
-	got, err := Build(Options{RepoPath: repo, MaxReadmeBytes: 100})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Readme != "" {
-		t.Fatalf("readme = %q, want empty for untracked file", got.Readme)
 	}
 }
 
@@ -688,31 +565,43 @@ func TestBuildDoesNotReadTrackedGoModSymlinkEscape(t *testing.T) {
 	}
 	trackSnapshotFiles(t, repo, "go.mod")
 
-	got, err := Build(Options{RepoPath: repo})
+	got, err := buildSnapshotForTest(Options{RepoPath: repo})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Go.GoModExists || got.Go.ModuleName != "" {
-		t.Fatalf("Go hints = %#v, want escaping go.mod ignored", got.Go)
+	if got.RepoName == "private.example/outside" {
+		t.Fatalf("repository identity escaped through tracked go.mod symlink: %q", got.RepoName)
 	}
 }
 
-func TestTruncateUTF8Bytes(t *testing.T) {
-	in := "ábc"
-	got, truncated := truncateUTF8Bytes(in, 1)
-	if !truncated {
-		t.Fatal("expected truncation")
-	}
-	if got != "" {
-		t.Fatalf("got %q, want empty valid UTF-8 string", got)
-	}
+func TestBuildFailsWhenRequestedGoFactsCannotLoad(t *testing.T) {
+	t.Parallel()
 
-	got, truncated = truncateUTF8Bytes(in, 2)
-	if !truncated {
-		t.Fatal("expected truncation at 2")
+	repo := t.TempDir()
+	writeSnapshotFile(t, repo, "go.mod", "this is not a Go module\n")
+	writeSnapshotFile(t, repo, "main.go", "package main\nfunc main() {}\n")
+	trackSnapshotFiles(t, repo, "go.mod", "main.go")
+
+	_, err := buildSnapshotForTest(Options{RepoPath: repo})
+	if err == nil || !strings.Contains(err.Error(), "load exact Go facts") {
+		t.Fatalf("error = %v, want fail-closed Go facts error", err)
 	}
-	if got != "á" {
-		t.Fatalf("got %q, want %q", got, "á")
+}
+
+func TestBuildCanExplicitlySkipIncidentalGoFilesForAnotherLanguage(t *testing.T) {
+	t.Parallel()
+
+	repo := t.TempDir()
+	writeSnapshotFile(t, repo, "app.py", "print('ready')\n")
+	writeSnapshotFile(t, repo, "example.go", "not valid Go source\n")
+	trackSnapshotFiles(t, repo, "app.py", "example.go")
+
+	got, err := buildSnapshotForTest(Options{RepoPath: repo, SkipGoFacts: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GoFacts != nil || got.AnalysisTarget != nil || got.TargetCatalog != nil {
+		t.Fatalf("explicit non-Go snapshot activated Go authority: %#v", got)
 	}
 }
 

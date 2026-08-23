@@ -45,14 +45,6 @@ type TargetRoots struct {
 	SHA256                string                    `json:"-"`
 }
 
-// Snapshot returns an independently owned copy for an in-memory handoff.
-func (roots TargetRoots) Snapshot() TargetRoots {
-	result := roots
-	result.Scenario.Tags = append([]string(nil), roots.Scenario.Tags...)
-	result.Roots = append([]TargetRoot(nil), roots.Roots...)
-	return result
-}
-
 // BindExactRoots derives roots exclusively from an already-built exact
 // DirectCallIndex. It performs no package load, SSA build, provider request or
 // symbol-name repair.
@@ -80,45 +72,6 @@ func BindExactRoots(target Target, index *surfacediscovery.DirectCallIndex) (Tar
 	return result, nil
 }
 
-// ValidateExactRoots rejects reuse under a different target, index or build
-// scenario and re-derives every declaration from current producer authority.
-func ValidateExactRoots(
-	target Target,
-	index *surfacediscovery.DirectCallIndex,
-	roots TargetRoots,
-) error {
-	if err := validateExactRootsInputs(target, index); err != nil {
-		return err
-	}
-	if roots.Version != TargetRootsVersion || roots.TargetRef != target.Ref ||
-		roots.DirectCallIndexSHA256 != index.SHA256 ||
-		!sameTargetRootScenario(roots.Scenario, index.Scenario) {
-		return fmt.Errorf("analysis target roots: identity binding mismatch")
-	}
-	if roots.OmittedRoots < 0 || len(roots.Roots) > MaxTargetRoots {
-		return fmt.Errorf("analysis target roots: invalid resource accounting")
-	}
-
-	expected, err := BindExactRoots(target, index)
-	if err != nil {
-		return err
-	}
-	if roots.OmittedRoots != expected.OmittedRoots || !sameTargetRoots(roots.Roots, expected.Roots) {
-		return fmt.Errorf("analysis target roots: exact declaration binding mismatch")
-	}
-	wantSHA, err := targetRootsSHA256(roots)
-	if err != nil {
-		return err
-	}
-	if roots.SHA256 != expected.SHA256 || roots.SHA256 != wantSHA || len(roots.SHA256) != sha256.Size*2 {
-		return fmt.Errorf("analysis target roots: sha256 mismatch")
-	}
-	if _, err := hex.DecodeString(roots.SHA256); err != nil {
-		return fmt.Errorf("analysis target roots: invalid sha256: %w", err)
-	}
-	return nil
-}
-
 func validateExactRootsInputs(target Target, index *surfacediscovery.DirectCallIndex) error {
 	if err := target.Validate(); err != nil {
 		return fmt.Errorf("analysis target roots: validate target: %w", err)
@@ -132,20 +85,8 @@ func validateExactRootsInputs(target Target, index *surfacediscovery.DirectCallI
 	if index.State != surfacediscovery.DirectCallIndexReady {
 		return fmt.Errorf("analysis target roots: direct call index is unavailable")
 	}
-	if index.Scope.TargetScoped() {
-		wantPackages := targetRootPackagePaths(target)
-		wantKind := string(target.Kind)
-		wantPackage := target.PackagePath
-		if target.Kind == KindLibraryPackage {
-			wantKind = surfacediscovery.AnalysisTargetModuleLibrary
-			wantPackage = ""
-		}
-		if index.Scope.TargetRef != target.Ref || index.Scope.TargetKind != wantKind ||
-			index.Scope.TargetModuleID != target.ModuleID || index.Scope.TargetModulePath != target.ModulePath ||
-			index.Scope.TargetModuleDir != target.ModuleDir || index.Scope.TargetPackage != wantPackage ||
-			!sameStrings(index.Scope.TargetPackages, wantPackages) {
-			return fmt.Errorf("analysis target roots: direct call index target scope mismatch")
-		}
+	if !target.matchesDirectCallIndexTargetScope(index.Scope) {
+		return fmt.Errorf("analysis target roots: direct call index target scope mismatch")
 	}
 	return nil
 }
@@ -160,16 +101,6 @@ func exactRootCandidates(
 	index *surfacediscovery.DirectCallIndex,
 ) ([]targetRootCandidate, error) {
 	switch target.Kind {
-	case KindLibraryPackage:
-		result := make([]targetRootCandidate, 0)
-		for _, node := range index.Nodes {
-			if node.Package != target.PackagePath || !node.Exported {
-				continue
-			}
-			result = append(result, targetRootCandidateFromNode(node))
-		}
-		sortTargetRootCandidates(result)
-		return result, nil
 	case KindModuleLibrary:
 		rootPackages := make(map[string]struct{}, len(target.LibraryPackages))
 		for _, pkg := range target.LibraryPackages {
@@ -207,28 +138,6 @@ func exactRootCandidates(
 	default:
 		return nil, fmt.Errorf("analysis target roots: unsupported target kind %q", target.Kind)
 	}
-}
-
-func targetRootPackagePaths(target Target) []string {
-	packages := target.RootPackages()
-	result := make([]string, 0, len(packages))
-	for _, pkg := range packages {
-		result = append(result, pkg.PackagePath)
-	}
-	sort.Strings(result)
-	return result
-}
-
-func sameStrings(left, right []string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for index := range left {
-		if left[index] != right[index] {
-			return false
-		}
-	}
-	return true
 }
 
 func targetRootCandidateFromNode(node surfacediscovery.DirectCallNode) targetRootCandidate {
@@ -276,31 +185,6 @@ func copyTargetRootScenario(scenario surfacediscovery.Scenario) surfacediscovery
 	result := scenario
 	result.Tags = append([]string(nil), scenario.Tags...)
 	return result
-}
-
-func sameTargetRootScenario(left, right surfacediscovery.Scenario) bool {
-	if left.ID != right.ID || left.GOOS != right.GOOS || left.GOARCH != right.GOARCH ||
-		left.GoFlags != right.GoFlags || len(left.Tags) != len(right.Tags) {
-		return false
-	}
-	for index := range left.Tags {
-		if left.Tags[index] != right.Tags[index] {
-			return false
-		}
-	}
-	return true
-}
-
-func sameTargetRoots(left, right []TargetRoot) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for index := range left {
-		if left[index] != right[index] {
-			return false
-		}
-	}
-	return true
 }
 
 type targetRootsDigestMaterial struct {

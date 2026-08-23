@@ -1,7 +1,7 @@
 package analysistarget
 
 import (
-	"bytes"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -27,7 +27,7 @@ func TestBuildCatalogUsesExecutablesAndOneModuleLibrarySurface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if catalog.Version != 4 || len(catalog.Entries) != 2 {
+	if catalog.Version != TargetCatalogVersion || len(catalog.Entries) != 2 {
 		t.Fatalf("catalog = %#v", catalog)
 	}
 	executable := requireCatalogPackage(t, catalog, "example.com/mixed")
@@ -51,9 +51,6 @@ func TestBuildCatalogUsesExecutablesAndOneModuleLibrarySurface(t *testing.T) {
 	if got := library.PackageAPIs[0].Declarations; len(got) != 1 || got[0].Name != "Open" ||
 		got[0].Path != "" || got[0].Line != 0 || got[0].ExecutableBody {
 		t.Fatalf("names-only package API = %#v", got)
-	}
-	if catalog.DefaultTargetRef != executable.Candidate.Target.Ref {
-		t.Fatalf("default = %q, want executable %q", catalog.DefaultTargetRef, executable.Candidate.Target.Ref)
 	}
 }
 
@@ -173,7 +170,7 @@ func TestBuildCatalogOmitsUnprovableOrEmptyModuleLibrary(t *testing.T) {
 	}
 }
 
-func TestTargetCatalogV4IsPermutationStableAndRejectsTampering(t *testing.T) {
+func TestTargetCatalogV5IsPermutationStableAndRejectsTampering(t *testing.T) {
 	facts := syntheticFacts("module-root", "example.com/workspace", []syntheticPackage{
 		{path: "example.com/workspace/cmd/app", dir: "cmd/app", executable: true, line: 7},
 		{path: "example.com/workspace/api", dir: "api"},
@@ -199,10 +196,8 @@ func TestTargetCatalogV4IsPermutationStableAndRejectsTampering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	firstJSON, _ := first.CanonicalJSON()
-	secondJSON, _ := second.CanonicalJSON()
-	if first.Ref != second.Ref || !bytes.Equal(firstJSON, secondJSON) {
-		t.Fatalf("catalog changed under permutation:\n%s\n%s", firstJSON, secondJSON)
+	if first.Ref != second.Ref || !reflect.DeepEqual(first, second) {
+		t.Fatalf("catalog changed under permutation:\n%#v\n%#v", first, second)
 	}
 
 	libraryIndex := catalogEntryIndex(first, KindModuleLibrary)

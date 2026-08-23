@@ -32,8 +32,8 @@ func TestNewBuildsDeterministicRepositoryRootCatalog(t *testing.T) {
 	if catalog.AnalysisRoot() != root {
 		t.Fatalf("AnalysisRoot() = %q, want %q", catalog.AnalysisRoot(), root)
 	}
-	if catalog.Len() != 2 {
-		t.Fatalf("Len() = %d, want 2", catalog.Len())
+	if len(catalog.Paths()) != 2 {
+		t.Fatalf("path count = %d, want 2", len(catalog.Paths()))
 	}
 	if got := catalog.Paths(); !reflect.DeepEqual(got, []string{"a.go", "z.go"}) {
 		t.Fatalf("Paths() = %#v", got)
@@ -271,10 +271,10 @@ func TestNewDoesNotRequireRootsOrSourcesToExistOnDisk(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("New read the filesystem or rejected an offline scope: %v", err)
+		t.Fatalf("New read the filesystem or rejected captured-only authority: %v", err)
 	}
 	if _, ok := catalog.Lookup("main.go"); !ok {
-		t.Fatal("offline catalog did not retain its authorized source")
+		t.Fatal("captured-only catalog did not retain its authorized source")
 	}
 }
 

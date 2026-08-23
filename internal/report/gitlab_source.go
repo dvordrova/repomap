@@ -7,19 +7,15 @@ import (
 	"path"
 	"strings"
 	"unicode"
-
-	"github.com/dvordrova/repomap/internal/freshness"
 )
 
 // GitLabSourceLinks turns repository locations in a standalone report into
 // ordinary links to the exact analyzed Git revision. RepositoryURL never
 // contains credentials, query parameters, or a fragment.
 type GitLabSourceLinks struct {
-	RepositoryURL    string   `json:"repository_url"`
-	Revision         string   `json:"revision"`
-	PathPrefix       string   `json:"path_prefix,omitempty"`
-	WorkingTreeDirty bool     `json:"working_tree_dirty,omitempty"`
-	WorkingTreePaths []string `json:"working_tree_paths,omitempty"`
+	RepositoryURL string `json:"repository_url"`
+	Revision      string `json:"revision"`
+	PathPrefix    string `json:"path_prefix,omitempty"`
 }
 
 // ResolveGitLabRepositoryURL accepts either a complete GitLab project URL or a
@@ -146,34 +142,6 @@ func (links *GitLabSourceLinks) validate() error {
 		normalized.PathPrefix != links.PathPrefix {
 		return fmt.Errorf("report: GitLab source links are not canonical")
 	}
-	return validateWorkingTreeSourceLinks(
-		links.WorkingTreeDirty,
-		links.WorkingTreePaths,
-		"GitLab",
-	)
-}
-
-func validateWorkingTreeSourceLinks(
-	workingTreeDirty bool,
-	workingTreePaths []string,
-	hostName string,
-) error {
-	if len(workingTreePaths) > 10_000 {
-		return fmt.Errorf("report: %s working-tree path list exceeds bounds", hostName)
-	}
-	if len(workingTreePaths) != 0 && !workingTreeDirty {
-		return fmt.Errorf("report: %s working-tree paths require a dirty working-tree marker", hostName)
-	}
-	previous := ""
-	for _, workingTreePath := range workingTreePaths {
-		if err := validateManifestPath(workingTreePath); err != nil {
-			return fmt.Errorf("report: %s working-tree path is invalid", hostName)
-		}
-		if previous != "" && workingTreePath <= previous {
-			return fmt.Errorf("report: %s working-tree paths must be uniquely sorted", hostName)
-		}
-		previous = workingTreePath
-	}
 	return nil
 }
 
@@ -192,12 +160,6 @@ func validateGitLabAuthority(authority RunAuthority) error {
 func validateStandaloneSourceAuthority(authority RunAuthority, hostName string) error {
 	if err := authority.validate(); err != nil {
 		return err
-	}
-	if authority.freshness.State != freshness.FreshnessFresh {
-		return fmt.Errorf(
-			"report: standalone %s report requires the captured working tree to remain unchanged",
-			hostName,
-		)
 	}
 	for _, submodule := range authority.repository.Submodules {
 		if submodule.IncludedInAnalysis {

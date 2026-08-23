@@ -2,8 +2,14 @@ package secretscan
 
 import "testing"
 
+func enableScan(t *testing.T) {
+	t.Helper()
+	restore := SetEnabled(true)
+	t.Cleanup(restore)
+}
+
 func TestDetect(t *testing.T) {
-	t.Parallel()
+	enableScan(t)
 
 	tests := []struct {
 		name string
@@ -17,7 +23,6 @@ func TestDetect(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
 			kind, found := Detect(test.text)
 			if test.kind == "" {
 				if found || kind != "" {
@@ -33,7 +38,7 @@ func TestDetect(t *testing.T) {
 }
 
 func TestDetectCommonConfigFormats(t *testing.T) {
-	t.Parallel()
+	enableScan(t)
 
 	for _, input := range []string{
 		"API_KEY=actual-secret-value",
@@ -47,7 +52,7 @@ func TestDetectCommonConfigFormats(t *testing.T) {
 }
 
 func TestDetectIgnoresDocumentedPlaceholders(t *testing.T) {
-	t.Parallel()
+	enableScan(t)
 
 	for _, input := range []string{
 		"API_KEY=your-api-key-here",
@@ -63,7 +68,7 @@ func TestDetectIgnoresDocumentedPlaceholders(t *testing.T) {
 }
 
 func TestDetectDoesNotTreatMixedNumericCredentialAsPlaceholder(t *testing.T) {
-	t.Parallel()
+	enableScan(t)
 
 	const input = "ClientSecret: 00000000000000000000000000000001"
 	if kind, found := Detect(input); !found || kind != "credential assignment" {
@@ -72,7 +77,7 @@ func TestDetectDoesNotTreatMixedNumericCredentialAsPlaceholder(t *testing.T) {
 }
 
 func TestDetectIgnoresRuntimeSelectorAssignments(t *testing.T) {
-	t.Parallel()
+	enableScan(t)
 
 	for _, input := range []string{
 		"server.Password = options.password",
@@ -87,7 +92,7 @@ func TestDetectIgnoresRuntimeSelectorAssignments(t *testing.T) {
 }
 
 func TestDetectKeepsQuotedDottedCredentialLiteralFailClosed(t *testing.T) {
-	t.Parallel()
+	enableScan(t)
 
 	const input = `password: "company.prod.secret"`
 	if kind, found := Detect(input); !found || kind != "credential assignment" {
@@ -96,7 +101,7 @@ func TestDetectKeepsQuotedDottedCredentialLiteralFailClosed(t *testing.T) {
 }
 
 func TestDetectIgnoresCredentialShapedWordsInsideMessageTemplates(t *testing.T) {
-	t.Parallel()
+	enableScan(t)
 
 	// Real source legitimately mentions credential-shaped words in log and
 	// error messages; a format template is prose, never a credential
@@ -119,39 +124,8 @@ func TestDetectIgnoresCredentialShapedWordsInsideMessageTemplates(t *testing.T) 
 	}
 }
 
-func TestDetectSourceMaterialIgnoresCredentialAssignmentsButBlocksRealSecrets(t *testing.T) {
-	t.Parallel()
-
-	// Locally expanded production source legitimately contains credential-shaped
-	// assignments (owner doctrine: a repo that mentions credentials is not our
-	// reason to make Study unavailable). DetectSourceMaterial must pass them.
-	for _, input := range []string{
-		`Password:        "some-runtime-password-value",`,
-		`ClientSecret:    "a-client-secret-value",`,
-		`token = "an-opaque-token-value"`,
-		`api_key := "a-test-api-key-value"`,
-		`accessToken: "a-long-access-token-value"`,
-	} {
-		if kind, found := DetectSourceMaterial(input); found {
-			t.Errorf("DetectSourceMaterial(%q) = %q, true; want credential assignment ignored", input, kind)
-		}
-	}
-	// Real credential material always fails closed, even in source material.
-	for _, input := range []string{
-		"-----BEGIN RSA PRIVATE KEY-----\nMIIE",
-		"Authorization: Bearer abcdefghijklmnopqrstuvwxyz0123456789",
-		"sk-ant-api03-abcdefghijklmnopqrstuvwxyz123456",
-		"ghp_abcdefghijklmnopqrstuvwxyz1234567890",
-		"AKIAIOSFODNN7EXAMPLE",
-	} {
-		if kind, found := DetectSourceMaterial(input); !found {
-			t.Errorf("DetectSourceMaterial(%q) = %q, false; want real secret blocked", input, kind)
-		}
-	}
-}
-
-func TestDetectAlwaysDistinguishesBearerProseFromOpaqueCredentials(t *testing.T) {
-	t.Parallel()
+func TestDetectDistinguishesBearerProseFromOpaqueCredentials(t *testing.T) {
+	enableScan(t)
 
 	for _, input := range []string{
 		`{"title":"Bearer authentication"}`,
@@ -165,11 +139,8 @@ func TestDetectAlwaysDistinguishesBearerProseFromOpaqueCredentials(t *testing.T)
 		`Bearer Authentication`,
 		`Bearer authentication-based`,
 	} {
-		if kind, found := DetectAlways(input); found {
-			t.Errorf("DetectAlways(%q) = %q, true; want ordinary Bearer prose", input, kind)
-		}
-		if kind, found := DetectSourceMaterial(input); found {
-			t.Errorf("DetectSourceMaterial(%q) = %q, true; want ordinary Bearer prose", input, kind)
+		if kind, found := Detect(input); found {
+			t.Errorf("Detect(%q) = %q, true; want ordinary Bearer prose", input, kind)
 		}
 	}
 	for _, input := range []string{
@@ -177,40 +148,47 @@ func TestDetectAlwaysDistinguishesBearerProseFromOpaqueCredentials(t *testing.T)
 		`{"response":"Bearer company-secret-token-value"}`,
 		`const auth = "Bearer abcdefghijklmnop"`,
 	} {
-		if kind, found := DetectAlways(input); !found || kind != "bearer credential" {
-			t.Errorf("DetectAlways(%q) = %q, %v; want bearer credential", input, kind, found)
+		if kind, found := Detect(input); !found || kind != "bearer credential" {
+			t.Errorf("Detect(%q) = %q, %v; want bearer credential", input, kind, found)
 		}
 	}
 }
 
-func TestDetectAlwaysIgnoresUnsafeOverride(t *testing.T) {
-	restore := SetDisabled(true)
-	defer restore()
-
+func TestCredentialScanningIsDisabledByDefault(t *testing.T) {
 	const input = `API_KEY="actual-secret-value"`
 	if kind, found := Detect(input); found || kind != "" {
-		t.Fatalf("Detect() = %q, %v while disabled", kind, found)
-	}
-	if kind, found := DetectAlways(input); !found || kind != "credential assignment" {
-		t.Fatalf("DetectAlways() = %q, %v, want mandatory detection", kind, found)
+		t.Fatalf("detection = %q, %v while opt-in is disabled", kind, found)
 	}
 }
 
-func TestClosedKindUsesOnlyBoundedCodes(t *testing.T) {
-	t.Parallel()
+func TestDetectPersistenceSensitiveIsNarrowAndAlwaysOn(t *testing.T) {
+	restore := SetEnabled(false)
+	t.Cleanup(restore)
 
-	tests := map[string]string{
-		"private key":           ClosedKindPrivateKey,
-		"bearer credential":     ClosedKindBearerCredential,
-		"secret key":            ClosedKindSecretKey,
-		"github token":          ClosedKindGitHubToken,
-		"aws access key":        ClosedKindAWSAccessKey,
-		"credential assignment": ClosedKindCredentialAssignment,
-		"detector prose drift":  ClosedKindUnknown,
+	detected := []string{
+		"Authorization: Bearer abcdefghijklmnop",
+		`{"api_key":"opaque-provider-value-1234"}`,
+		`{"content":"api_key = \"opaque-provider-value-1234\""}`,
+		`{"error":"sk-secret-shaped-provider-output"}`,
+		"-----BEGIN PRIVATE KEY-----",
 	}
-	for input, want := range tests {
-		if got := ClosedKind(input); got != want {
-			t.Errorf("ClosedKind(%q) = %q, want %q", input, got, want)
+	for _, input := range detected {
+		if kind, found := DetectPersistenceSensitive(input); !found || kind == "" {
+			t.Errorf("DetectPersistenceSensitive(%q) = %q, %v; want closed kind", input, kind, found)
+		}
+		if kind, found := Detect(input); found || kind != "" {
+			t.Errorf("opt-in Detect(%q) = %q, %v while disabled", input, kind, found)
+		}
+	}
+
+	for _, input := range []string{
+		`logger.Info("Bearer authentication configured")`,
+		`apiKey := config.Sendgrid.ApiKey`,
+		`api_key = os.Getenv`,
+		`{"title":"Authorization middleware and api_key settings"}`,
+	} {
+		if kind, found := DetectPersistenceSensitive(input); found {
+			t.Errorf("DetectPersistenceSensitive(%q) = %q, true; want ordinary code/prose", input, kind)
 		}
 	}
 }

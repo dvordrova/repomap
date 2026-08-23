@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dvordrova/repomap/internal/dependencies"
 	"github.com/dvordrova/repomap/internal/gotarget"
 	"github.com/dvordrova/repomap/internal/reporead"
 	"golang.org/x/mod/modfile"
@@ -22,21 +23,24 @@ const maxGoModBytes = 1024 * 1024
 
 type LoadOptions struct {
 	GoTarget string
+	// ModuleDir narrows deterministic collection only when ordinary main has an
+	// exact typed target key. Final target resolution still validates that key
+	// against the catalog built from this module; the directory is not target
+	// authority by itself.
+	ModuleDir string
 }
 
 type Facts struct {
-	Modules               []ModuleFact           `json:"modules"`
-	Packages              []PackageFact          `json:"packages"`
-	PackagesCount         int                    `json:"packages_count"`
-	RetainedPackagesCount int                    `json:"retained_packages_count"`
-	EntrypointPackages    []Entrypoint           `json:"entrypoint_packages"`
-	CommandTraces         []CommandTrace         `json:"command_traces,omitempty"`
-	ModuleSummaries       []ModuleSummary        `json:"module_summaries"`
-	OrientationCandidates []OrientationCandidate `json:"orientation_candidates"`
-	InternalEdges         []Edge                 `json:"internal_edges"`
-	ExternalImportsTop    []ExtImport            `json:"external_imports_top"`
-	Coverage              Coverage               `json:"coverage"`
-	Warnings              []string               `json:"warnings,omitempty"`
+	Modules               []ModuleFact          `json:"modules"`
+	Packages              []PackageFact         `json:"packages"`
+	PackagesCount         int                   `json:"packages_count"`
+	RetainedPackagesCount int                   `json:"retained_packages_count"`
+	EntrypointPackages    []Entrypoint          `json:"entrypoint_packages"`
+	InternalEdges         []Edge                `json:"internal_edges"`
+	ExternalImportsTop    []ExtImport           `json:"external_imports_top"`
+	Dependencies          *dependencies.Catalog `json:"dependencies,omitempty"`
+	Coverage              Coverage              `json:"coverage"`
+	Warnings              []string              `json:"warnings,omitempty"`
 }
 
 type CoverageState string
@@ -127,27 +131,6 @@ type PackageFact struct {
 	LoadCompleteness    *PackageLoadCompleteness `json:"load_completeness,omitempty"`
 }
 
-type ModuleSummary struct {
-	ModulePath              string      `json:"module_path"`
-	ModuleDir               string      `json:"module_dir"`
-	PackagesCount           int         `json:"packages_count"`
-	EntrypointsCount        int         `json:"entrypoints_count"`
-	RoleGuess               string      `json:"role_guess"`
-	TopImportedInternalPkgs []string    `json:"top_imported_internal_packages"`
-	TopExternalImports      []ExtImport `json:"top_external_imports"`
-}
-
-type OrientationCandidate struct {
-	Name              string   `json:"name"`
-	Kind              string   `json:"kind"`
-	EntrypointPackage string   `json:"entrypoint_package"`
-	OpenFiles         []string `json:"open_files"`
-	Why               string   `json:"why"`
-	Priority          int      `json:"priority"`
-}
-
-const OrientationKindSignalFlow = "signal_flow"
-
 type Entrypoint struct {
 	ModulePath        string             `json:"module_path"`
 	ImportPath        string             `json:"import_path"`
@@ -165,6 +148,7 @@ type EntrypointAnchorKind string
 const (
 	EntrypointAnchorVersion                      = 1
 	EntrypointAnchorGoMain  EntrypointAnchorKind = "go_main_function"
+	EntrypointKindGoMain                         = "go_main"
 )
 
 // EntrypointAnchor is a deterministic source declaration selected under the
@@ -191,6 +175,8 @@ type goListPackage struct {
 	ImportPath      string
 	Dir             string
 	Name            string
+	DepOnly         bool
+	Standard        bool
 	Incomplete      bool
 	GoFiles         []string
 	CompiledGoFiles []string
@@ -212,6 +198,7 @@ type goListPackage struct {
 
 type goListModule struct {
 	Path    string
+	Version string
 	Dir     string
 	GoMod   string
 	Main    bool
@@ -222,17 +209,8 @@ type goListError struct {
 	Err string
 }
 
-type modulePkgMeta struct {
-	moduleDir        string
-	modulePath       string
-	pkgs             []goListPackage
-	entrypointsCount int
-}
-
-type selectedModulePackages struct {
-	key        string
-	entrypoint []PackageFact
-	remaining  []PackageFact
+type dependencyPackageLoad struct {
+	packages []goListPackage
 }
 
 func DiscoverGoModules(fileList []string, repoPath string) []string {
@@ -263,15 +241,10 @@ func DiscoverGoModules(fileList []string, repoPath string) []string {
 	return result
 }
 
-func Load(ctx context.Context, repoPath string, fileList []string, maxPkgs, maxEdges int) (*Facts, error) {
-	return LoadWithOptions(ctx, repoPath, fileList, maxPkgs, maxEdges, LoadOptions{})
-}
-
 func LoadWithOptions(
 	ctx context.Context,
 	repoPath string,
 	fileList []string,
-	maxPkgs, maxEdges int,
 	opts LoadOptions,
 ) (*Facts, error) {
 	if ctx == nil {
@@ -280,27 +253,31 @@ func LoadWithOptions(
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	target := gotarget.Host()
-	if opts.GoTarget != "" {
-		var err error
-		target, err = gotarget.Parse(opts.GoTarget)
-		if err != nil {
-			return nil, fmt.Errorf("load Go facts: %w", err)
-		}
+	if strings.TrimSpace(opts.GoTarget) == "" {
+		return nil, fmt.Errorf("load Go facts: resolved Go target is required")
+	}
+	target, err := gotarget.Parse(opts.GoTarget)
+	if err != nil {
+		return nil, fmt.Errorf("load Go facts: %w", err)
 	}
 
 	absRepoPath, err := filepath.Abs(repoPath)
 	if err != nil {
-		absRepoPath = filepath.Clean(repoPath)
+		return nil, fmt.Errorf("load Go facts: resolve repository path: %w", err)
 	}
 	resolvedRepoPath, err := filepath.EvalSymlinks(absRepoPath)
 	if err != nil {
-		resolvedRepoPath = absRepoPath
+		return nil, fmt.Errorf("load Go facts: resolve repository symlinks: %w", err)
 	}
 
 	moduleDirs := DiscoverGoModules(fileList, resolvedRepoPath)
+	moduleDirs, err = selectModuleDirs(moduleDirs, opts.ModuleDir)
+	if err != nil {
+		return nil, fmt.Errorf("load Go facts: %w", err)
+	}
 	if len(moduleDirs) == 0 {
-		return &Facts{Coverage: Coverage{State: CoverageComplete}}, nil
+		emptyDependencies := dependencies.Empty()
+		return &Facts{Dependencies: &emptyDependencies, Coverage: Coverage{State: CoverageComplete}}, nil
 	}
 	repoReader, err := reporead.New(resolvedRepoPath)
 	if err != nil {
@@ -314,25 +291,14 @@ func LoadWithOptions(
 	var topWarnings []string
 	modules := make([]ModuleFact, 0, len(moduleDirs))
 	availableModules := 0
-
-	modMetas := make([]modulePkgMeta, 0, len(moduleDirs))
+	dependencyLoads := make([]dependencyPackageLoad, 0, len(moduleDirs))
 
 	for _, modRelDir := range moduleDirs {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		if err := verifyModuleGoMod(repoReader, modRelDir); err != nil {
-			warning := fmt.Sprintf("unsafe go.mod; skipping go list: %v", err)
-			topWarnings = append(topWarnings, fmt.Sprintf("module %s: %s", modRelDir, warning))
-			modules = append(modules, ModuleFact{
-				ID:          moduleFactID(modRelDir, modRelDir),
-				ModulePath:  modRelDir,
-				ModuleDir:   modRelDir,
-				DisplayName: moduleDisplayName(modRelDir, modRelDir),
-				Coverage:    ModuleCoverage{State: CoverageUnavailable},
-				Warnings:    []string{warning},
-			})
-			continue
+			return nil, fmt.Errorf("load Go facts for module %s: validate go.mod: %w", modRelDir, err)
 		}
 
 		absDir := resolvedRepoPath
@@ -345,44 +311,40 @@ func LoadWithOptions(
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
 			}
-			topWarnings = append(topWarnings, fmt.Sprintf("module %s: go list module failed: %v", modRelDir, err))
-			modules = append(modules, ModuleFact{
-				ID: moduleFactID(modRelDir, modRelDir), ModulePath: modRelDir, ModuleDir: modRelDir,
-				DisplayName: moduleDisplayName(modRelDir, modRelDir),
-				Coverage:    ModuleCoverage{State: CoverageUnavailable},
-				Warnings:    []string{fmt.Sprintf("go list module failed: %v", err)},
-			})
-			continue
+			return nil, fmt.Errorf("load Go facts for module %s: %w", modRelDir, err)
 		}
 		modulePath := moduleInfo.Path
 		moduleID := moduleFactID(modulePath, modRelDir)
-		pkgs, modWarnings, err := runGoList(ctx, absDir, target)
+		listedPkgs, modWarnings, err := runGoList(ctx, absDir, target)
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
 			}
-			topWarnings = append(topWarnings, fmt.Sprintf("module %s: go list failed: %v", modRelDir, err))
-			modules = append(modules, ModuleFact{
-				ID: moduleID, ModulePath: modulePath,
-				ModuleDir:   modRelDir,
-				DisplayName: moduleDisplayName(modulePath, modRelDir), Main: moduleInfo.Main,
-				Coverage: ModuleCoverage{State: CoverageUnavailable},
-				Warnings: []string{fmt.Sprintf("go list failed: %v", err)},
-			})
-			continue
+			return nil, fmt.Errorf("load Go facts for module %s: %w", modRelDir, err)
 		}
+		if len(modWarnings) > 0 {
+			return nil, fmt.Errorf(
+				"load Go facts for module %s: incomplete go list authority: %s",
+				modRelDir, summarizeCollectionFailures(modWarnings),
+			)
+		}
+		pkgs := rootGoListPackages(listedPkgs)
 		availableModules++
 		allPkgs = append(allPkgs, pkgs...)
+		dependencyLoads = append(dependencyLoads, dependencyPackageLoad{packages: listedPkgs})
 		for _, pkg := range pkgs {
 			_, moduleRelativeDir, packageDir, normalizeErr := normalizePackagePaths(resolvedRepoPath, absDir, pkg.Dir)
 			if normalizeErr != nil || pkg.ImportPath == "" {
-				warning := fmt.Sprintf("package %q has unavailable repository ownership", pkg.ImportPath)
 				if normalizeErr != nil {
-					warning = fmt.Sprintf("package %q has unavailable repository ownership: %v", pkg.ImportPath, normalizeErr)
+					return nil, fmt.Errorf(
+						"load Go facts for module %s: package %q has unavailable repository ownership: %w",
+						modRelDir, pkg.ImportPath, normalizeErr,
+					)
 				}
-				modWarnings = append(modWarnings, warning)
-				topWarnings = append(topWarnings, fmt.Sprintf("module %s: %s", modRelDir, warning))
-				continue
+				return nil, fmt.Errorf(
+					"load Go facts for module %s: package has no import path",
+					modRelDir,
+				)
 			}
 			displayPath := filepath.ToSlash(moduleRelativeDir)
 			if displayPath == "." || displayPath == "" {
@@ -390,10 +352,10 @@ func LoadWithOptions(
 			}
 			declarations, declarationWarnings := extractPackageDeclarations(repoReader, packageDir, pkg)
 			if len(declarationWarnings) > 0 {
-				modWarnings = append(modWarnings, declarationWarnings...)
-				for _, warning := range declarationWarnings {
-					topWarnings = append(topWarnings, fmt.Sprintf("module %s: %s", modRelDir, warning))
-				}
+				return nil, fmt.Errorf(
+					"load Go facts for module %s: incomplete declaration authority: %s",
+					modRelDir, summarizeCollectionFailures(declarationWarnings),
+				)
 			}
 			packageFacts = append(packageFacts, PackageFact{
 				CanonicalPath: pkg.ImportPath, Name: pkg.Name, ModuleID: moduleID, ModulePath: modulePath,
@@ -407,12 +369,19 @@ func LoadWithOptions(
 		entrypointCandidates := buildEntrypointCandidates(pkgs, resolvedRepoPath, absDir, modRelDir, modulePath)
 		modEntrypoints, entrypointWarnings := resolveMainEntrypoints(repoReader, entrypointCandidates)
 		if len(entrypointWarnings) > 0 {
-			modWarnings = append(modWarnings, entrypointWarnings...)
-			for _, warning := range entrypointWarnings {
-				topWarnings = append(topWarnings, fmt.Sprintf("module %s: %s", modRelDir, warning))
-			}
+			return nil, fmt.Errorf(
+				"load Go facts for module %s: incomplete entrypoint authority: %s",
+				modRelDir, summarizeCollectionFailures(entrypointWarnings),
+			)
 		}
 		allEntrypoints = append(allEntrypoints, modEntrypoints...)
+		replacements, replacementErr := readModuleReplacements(repoReader, resolvedRepoPath, modRelDir)
+		if replacementErr != nil {
+			return nil, fmt.Errorf(
+				"load Go facts for module %s: read replacements: %w",
+				modRelDir, replacementErr,
+			)
+		}
 		modules = append(modules, ModuleFact{
 			ID:                 moduleID,
 			ModulePath:         modulePath,
@@ -421,7 +390,7 @@ func LoadWithOptions(
 			Main:               moduleInfo.Main,
 			DisplayName:        moduleDisplayName(modulePath, modRelDir),
 			Replacement:        moduleSource(resolvedRepoPath, moduleInfo.Replace),
-			Replacements:       readModuleReplacements(repoReader, resolvedRepoPath, modRelDir),
+			Replacements:       replacements,
 			PackagesCount:      len(pkgs),
 			EntrypointPackages: modEntrypoints,
 			Coverage: ModuleCoverage{
@@ -431,33 +400,23 @@ func LoadWithOptions(
 			Warnings: modWarnings,
 		})
 
-		modMetas = append(modMetas, modulePkgMeta{
-			moduleDir:        modRelDir,
-			modulePath:       modulePath,
-			pkgs:             pkgs,
-			entrypointsCount: len(modEntrypoints),
-		})
 	}
 
 	known := buildKnownSet(allPkgs)
+	dependencyCatalog, dependencyWarnings, err := buildDependencyCatalog(resolvedRepoPath, dependencyLoads)
+	if err != nil {
+		return nil, fmt.Errorf("build Go dependency catalog: %w", err)
+	}
+	topWarnings = append(topWarnings, dependencyWarnings...)
 
 	allEdges := buildInternalEdges(allPkgs, known)
 	discoveredEdges := len(allEdges)
 
 	extImports := buildExternalImports(allPkgs, known)
-	discoveredPackageFacts := len(packageFacts)
-	packageFacts = selectPackageFacts(packageFacts, allEntrypoints, maxPkgs)
-	if maxPkgs > 0 && len(packageFacts) < discoveredPackageFacts {
-		topWarnings = append(topWarnings, fmt.Sprintf(
-			"retained %d of %d discovered packages under explicit max %d",
-			len(packageFacts), len(allPkgs), maxPkgs,
-		))
-	}
-	edges := retainPackageFactEdges(allEdges, packageFacts)
-	if maxEdges > 0 && len(edges) > maxEdges {
-		topWarnings = append(topWarnings, fmt.Sprintf("truncated retained internal edges: kept %d of %d (max %d)", maxEdges, len(edges), maxEdges))
-		edges = edges[:maxEdges]
-	}
+	sort.Slice(packageFacts, func(i, j int) bool {
+		return packageFactLess(packageFacts[i], packageFacts[j])
+	})
+	edges := allEdges
 	retainedByModule := make(map[string]int, len(modules))
 	for _, pkg := range packageFacts {
 		retainedByModule[pkg.ModuleID]++
@@ -473,8 +432,6 @@ func LoadWithOptions(
 			module.Coverage.State = CoveragePartial
 		}
 	}
-	moduleSummaries := buildModuleSummaries(modMetas, known)
-	orientationCandidates := buildOrientationCandidates(allEntrypoints)
 	coverage := Coverage{
 		State:              CoverageComplete,
 		ModulesDiscovered:  len(moduleDirs),
@@ -487,8 +444,8 @@ func LoadWithOptions(
 	}
 	if availableModules == 0 {
 		coverage.State = CoverageUnavailable
-	} else if coverage.ModulesUnavailable > 0 || coverage.PackagesRetained < coverage.PackagesDiscovered ||
-		coverage.EdgesRetained < coverage.EdgesDiscovered || hasPartialModuleCoverage(modules) {
+	} else if coverage.ModulesUnavailable > 0 || hasPartialModuleCoverage(modules) ||
+		dependencyCatalog.Coverage.State == dependencies.CoveragePartial {
 		coverage.State = CoveragePartial
 	}
 
@@ -498,13 +455,31 @@ func LoadWithOptions(
 		PackagesCount:         len(allPkgs),
 		RetainedPackagesCount: len(packageFacts),
 		EntrypointPackages:    allEntrypoints,
-		ModuleSummaries:       moduleSummaries,
-		OrientationCandidates: orientationCandidates,
 		InternalEdges:         edges,
 		ExternalImportsTop:    extImports,
+		Dependencies:          &dependencyCatalog,
 		Coverage:              coverage,
 		Warnings:              topWarnings,
 	}, nil
+}
+
+func selectModuleDirs(discovered []string, explicit string) ([]string, error) {
+	if explicit == "" {
+		return discovered, nil
+	}
+	if strings.TrimSpace(explicit) != explicit || filepath.IsAbs(explicit) {
+		return nil, fmt.Errorf("explicit target module directory must be canonical and repository-relative")
+	}
+	canonical := filepath.ToSlash(filepath.Clean(explicit))
+	if canonical != explicit || strings.HasPrefix(canonical, "../") {
+		return nil, fmt.Errorf("explicit target module directory must be canonical and repository-relative")
+	}
+	for _, moduleDir := range discovered {
+		if moduleDir == canonical {
+			return []string{canonical}, nil
+		}
+	}
+	return nil, fmt.Errorf("explicit target module directory %q is not a discovered Go module", explicit)
 }
 
 func packageInputFiles(packageDir string, pkg goListPackage) []string {
@@ -546,18 +521,35 @@ func compactStrings(values []string) []string {
 	return result
 }
 
-func readModuleReplacements(reader *reporead.Reader, repoRoot, moduleDir string) []ModuleSource {
+func summarizeCollectionFailures(values []string) string {
+	if len(values) == 0 {
+		return "unknown collection failure"
+	}
+	first := strings.TrimSpace(values[0])
+	if first == "" {
+		first = "unknown collection failure"
+	}
+	if len(values) == 1 {
+		return first
+	}
+	return fmt.Sprintf("%s (and %d more)", first, len(values)-1)
+}
+
+func readModuleReplacements(reader *reporead.Reader, repoRoot, moduleDir string) ([]ModuleSource, error) {
 	goModPath := "go.mod"
 	if moduleDir != "." {
 		goModPath = filepath.ToSlash(filepath.Join(moduleDir, goModPath))
 	}
 	content, err := reader.ReadFile(goModPath, maxGoModBytes)
-	if err != nil || content.Truncated {
-		return nil
+	if err != nil {
+		return nil, err
+	}
+	if content.Truncated {
+		return nil, fmt.Errorf("%s exceeds %d bytes", goModPath, maxGoModBytes)
 	}
 	parsed, err := modfile.Parse(goModPath, content.Bytes, nil)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	result := make([]ModuleSource, 0, len(parsed.Replace))
 	moduleRoot := repoRoot
@@ -580,7 +572,7 @@ func readModuleReplacements(reader *reporead.Reader, repoRoot, moduleDir string)
 		result = append(result, source)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Path < result[j].Path })
-	return result
+	return result, nil
 }
 
 func runGoModule(ctx context.Context, repoDir string, target gotarget.Target) (goListModule, error) {
@@ -650,7 +642,7 @@ func verifyModuleGoMod(reader *reporead.Reader, moduleDir string) error {
 }
 
 func runGoList(ctx context.Context, repoDir string, target gotarget.Target) ([]goListPackage, []string, error) {
-	cmd := exec.CommandContext(ctx, "go", "list", "-e", "-json", "./...")
+	cmd := exec.CommandContext(ctx, "go", "list", "-deps", "-e", "-json", "./...")
 	cmd.Dir = repoDir
 	cmd.Env = append(target.ApplyEnv(os.Environ()), "GOWORK=off")
 
@@ -677,6 +669,14 @@ func parseGoListOutput(r io.Reader) ([]goListPackage, []string, error) {
 		} else if err != nil {
 			return nil, nil, fmt.Errorf("decode package %d: %w", len(pkgs), err)
 		}
+		// Dependency-only objects exist to provide exact dependency metadata.
+		// Their diagnostics are already reflected by the importing root
+		// package's Incomplete/DepsErrors authority, so repeating them here
+		// would change the established workspace-package warning contract.
+		if pkg.DepOnly {
+			pkgs = append(pkgs, pkg)
+			continue
+		}
 		if pkg.Incomplete {
 			warnings = append(warnings, fmt.Sprintf("package %s: go list facts are incomplete", pkg.ImportPath))
 		}
@@ -696,24 +696,22 @@ func parseGoListOutput(r io.Reader) ([]goListPackage, []string, error) {
 	return pkgs, warnings, nil
 }
 
+func rootGoListPackages(values []goListPackage) []goListPackage {
+	result := make([]goListPackage, 0, len(values))
+	for _, value := range values {
+		if !value.DepOnly {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
 func packageLoadCompleteness(pkg goListPackage) *PackageLoadCompleteness {
 	state := PackageLoadComplete
 	if pkg.Incomplete || pkg.Error != nil || len(pkg.DepsErrors) > 0 {
 		state = PackageLoadIncomplete
 	}
 	return &PackageLoadCompleteness{Version: PackageLoadCompletenessVersion, State: state}
-}
-
-func extractModulePath(pkgs []goListPackage) string {
-	for _, p := range pkgs {
-		if p.Error != nil {
-			continue
-		}
-		if p.Module != nil && p.Module.Path != "" {
-			return p.Module.Path
-		}
-	}
-	return ""
 }
 
 func normalizePackagePaths(repoRoot, moduleRoot, pkgDir string) (moduleDir string, moduleRelativeDir string, packageDir string, err error) {
@@ -723,8 +721,15 @@ func normalizePackagePaths(repoRoot, moduleRoot, pkgDir string) (moduleDir strin
 
 	packageDir, err = filepath.Rel(repoRoot, pkgDir)
 	if err != nil {
-		repoRoot, _ = filepath.EvalSymlinks(repoRoot)
-		pkgDir, _ = filepath.EvalSymlinks(pkgDir)
+		resolvedRepoRoot, repoErr := filepath.EvalSymlinks(repoRoot)
+		if repoErr != nil {
+			return "", "", "", fmt.Errorf("resolve repository root %q after relative-path failure: %w", repoRoot, repoErr)
+		}
+		resolvedPackageDir, packageErr := filepath.EvalSymlinks(pkgDir)
+		if packageErr != nil {
+			return "", "", "", fmt.Errorf("resolve package directory %q after relative-path failure: %w", pkgDir, packageErr)
+		}
+		repoRoot, pkgDir = resolvedRepoRoot, resolvedPackageDir
 		packageDir, err = filepath.Rel(repoRoot, pkgDir)
 		if err != nil {
 			return "", "", "", fmt.Errorf("package dir %q not under repo root %q: %w", pkgDir, repoRoot, err)
@@ -739,8 +744,15 @@ func normalizePackagePaths(repoRoot, moduleRoot, pkgDir string) (moduleDir strin
 
 	moduleDir, err = filepath.Rel(repoRoot, moduleRoot)
 	if err != nil {
-		repoRoot, _ = filepath.EvalSymlinks(repoRoot)
-		moduleRoot, _ = filepath.EvalSymlinks(moduleRoot)
+		resolvedRepoRoot, repoErr := filepath.EvalSymlinks(repoRoot)
+		if repoErr != nil {
+			return "", "", "", fmt.Errorf("resolve repository root %q after relative-path failure: %w", repoRoot, repoErr)
+		}
+		resolvedModuleRoot, moduleErr := filepath.EvalSymlinks(moduleRoot)
+		if moduleErr != nil {
+			return "", "", "", fmt.Errorf("resolve module root %q after relative-path failure: %w", moduleRoot, moduleErr)
+		}
+		repoRoot, moduleRoot = resolvedRepoRoot, resolvedModuleRoot
 		moduleDir, err = filepath.Rel(repoRoot, moduleRoot)
 		if err != nil {
 			return "", "", "", fmt.Errorf("module root %q not under repo root %q: %w", moduleRoot, repoRoot, err)
@@ -752,8 +764,15 @@ func normalizePackagePaths(repoRoot, moduleRoot, pkgDir string) (moduleDir strin
 
 	moduleRelativeDir, err = filepath.Rel(moduleRoot, pkgDir)
 	if err != nil {
-		moduleRoot, _ = filepath.EvalSymlinks(moduleRoot)
-		pkgDir, _ = filepath.EvalSymlinks(pkgDir)
+		resolvedModuleRoot, moduleErr := filepath.EvalSymlinks(moduleRoot)
+		if moduleErr != nil {
+			return "", "", "", fmt.Errorf("resolve module root %q after relative-path failure: %w", moduleRoot, moduleErr)
+		}
+		resolvedPackageDir, packageErr := filepath.EvalSymlinks(pkgDir)
+		if packageErr != nil {
+			return "", "", "", fmt.Errorf("resolve package directory %q after relative-path failure: %w", pkgDir, packageErr)
+		}
+		moduleRoot, pkgDir = resolvedModuleRoot, resolvedPackageDir
 		moduleRelativeDir, err = filepath.Rel(moduleRoot, pkgDir)
 		if err != nil {
 			return "", "", "", fmt.Errorf("package dir %q not under module root %q: %w", pkgDir, moduleRoot, err)
@@ -793,77 +812,6 @@ func hasPartialModuleCoverage(modules []ModuleFact) bool {
 	return false
 }
 
-func selectPackageFacts(values []PackageFact, entrypoints []Entrypoint, max int) []PackageFact {
-	ordered := append([]PackageFact(nil), values...)
-	sort.Slice(ordered, func(i, j int) bool {
-		return packageFactLess(ordered[i], ordered[j])
-	})
-	if max <= 0 || len(ordered) <= max {
-		return ordered
-	}
-
-	entrypointPackages := make(map[string]struct{}, len(entrypoints))
-	for _, entrypoint := range entrypoints {
-		entrypointPackages[entrypoint.ModulePath+"\x00"+entrypoint.ImportPath] = struct{}{}
-	}
-	byModule := make(map[string]*selectedModulePackages)
-	for _, pkg := range ordered {
-		key := pkg.ModulePath + "\x00" + pkg.ModuleID
-		group := byModule[key]
-		if group == nil {
-			group = &selectedModulePackages{key: key}
-			byModule[key] = group
-		}
-		if _, ok := entrypointPackages[pkg.ModulePath+"\x00"+pkg.CanonicalPath]; ok {
-			group.entrypoint = append(group.entrypoint, pkg)
-		} else {
-			group.remaining = append(group.remaining, pkg)
-		}
-	}
-	groups := make([]*selectedModulePackages, 0, len(byModule))
-	for _, group := range byModule {
-		groups = append(groups, group)
-	}
-	sort.Slice(groups, func(i, j int) bool { return groups[i].key < groups[j].key })
-
-	selected := make([]PackageFact, 0, max)
-	selected = appendPackageRounds(selected, groups, max, true)
-	selected = appendPackageRounds(selected, groups, max, false)
-	sort.Slice(selected, func(i, j int) bool {
-		return packageFactLess(selected[i], selected[j])
-	})
-	return selected
-}
-
-func appendPackageRounds(
-	selected []PackageFact,
-	groups []*selectedModulePackages,
-	max int,
-	entrypoints bool,
-) []PackageFact {
-	for round := 0; len(selected) < max; round++ {
-		appended := false
-		for _, group := range groups {
-			values := group.remaining
-			if entrypoints {
-				values = group.entrypoint
-			}
-			if round >= len(values) {
-				continue
-			}
-			selected = append(selected, values[round])
-			appended = true
-			if len(selected) == max {
-				return selected
-			}
-		}
-		if !appended {
-			return selected
-		}
-	}
-	return selected
-}
-
 func packageFactLess(left, right PackageFact) bool {
 	if left.PackageDir != right.PackageDir {
 		return left.PackageDir < right.PackageDir
@@ -888,8 +836,6 @@ func buildEntrypointCandidates(pkgs []goListPackage, repoRoot string, moduleRoot
 			mrd = pd
 		}
 
-		kind := classifyEntrypoint(p.ImportPath, pd, md)
-
 		eps = append(eps, Entrypoint{
 			ModulePath:        modulePath,
 			ImportPath:        p.ImportPath,
@@ -897,36 +843,11 @@ func buildEntrypointCandidates(pkgs []goListPackage, repoRoot string, moduleRoot
 			PackageDir:        pd,
 			ModuleRelativeDir: mrd,
 			ModuleDir:         md,
-			Kind:              kind,
+			Kind:              EntrypointKindGoMain,
 			GoFiles:           p.GoFiles,
 		})
 	}
 	return eps
-}
-
-func classifyEntrypoint(importPath string, packageDir string, moduleDir string) string {
-	lower := strings.ToLower(importPath)
-	lowerPkgDir := strings.ToLower(packageDir)
-
-	if moduleDir == "server" || packageDir == "server" || strings.HasSuffix(lower, "/server/v3") {
-		return "primary_binary"
-	}
-	if moduleDir == "etcdctl" || packageDir == "etcdctl" || strings.Contains(lowerPkgDir, "ctl") {
-		return "cli"
-	}
-	if moduleDir == "etcdutl" || packageDir == "etcdutl" {
-		return "tool"
-	}
-	if strings.HasPrefix(lowerPkgDir, "tools/") || strings.HasPrefix(moduleDir, "tools/") {
-		return "tool"
-	}
-	if strings.HasPrefix(lowerPkgDir, "contrib/") || strings.Contains(lowerPkgDir, "example") {
-		return "example"
-	}
-	if strings.HasPrefix(lowerPkgDir, "tests/") || strings.Contains(lowerPkgDir, "/test-template/") {
-		return "test_binary"
-	}
-	return "unknown"
 }
 
 func buildInternalEdges(pkgs []goListPackage, known map[string]struct{}) []Edge {
@@ -948,28 +869,6 @@ func buildInternalEdges(pkgs []goListPackage, known map[string]struct{}) []Edge 
 		return edges[i].From < edges[j].From
 	})
 	return edges
-}
-
-// retainPackageFactEdges keeps the persisted facts graph endpoint-closed.
-// Package selection is allowed to be partial under an explicit cap, but an
-// edge whose caller or callee was omitted would cite an identity unavailable
-// to every downstream consumer and must not masquerade as retained evidence.
-func retainPackageFactEdges(edges []Edge, packages []PackageFact) []Edge {
-	retained := make(map[string]struct{}, len(packages))
-	for _, pkg := range packages {
-		retained[pkg.CanonicalPath] = struct{}{}
-	}
-	result := make([]Edge, 0, len(edges))
-	for _, edge := range edges {
-		if _, ok := retained[edge.From]; !ok {
-			continue
-		}
-		if _, ok := retained[edge.To]; !ok {
-			continue
-		}
-		result = append(result, edge)
-	}
-	return result
 }
 
 func buildExternalImports(pkgs []goListPackage, known map[string]struct{}) []ExtImport {
@@ -1005,202 +904,4 @@ func buildExternalImports(pkgs []goListPackage, known map[string]struct{}) []Ext
 		extImports = extImports[:50]
 	}
 	return extImports
-}
-
-func guessModuleRole(moduleDir string) string {
-	if moduleDir == "server" {
-		return "server_runtime"
-	}
-	if strings.Contains(moduleDir, "client") {
-		return "client_library"
-	}
-	if moduleDir == "api" {
-		return "api_definitions"
-	}
-	if moduleDir == "tests" {
-		return "tests"
-	}
-	if strings.HasPrefix(moduleDir, "tools") {
-		return "tools"
-	}
-	if moduleDir == "pkg" {
-		return "shared_library"
-	}
-	if moduleDir == "." {
-		return "repository_root"
-	}
-	return "unknown"
-}
-
-func buildModuleSummaries(modMetas []modulePkgMeta, known map[string]struct{}) []ModuleSummary {
-	summaries := make([]ModuleSummary, 0, len(modMetas))
-
-	for _, mm := range modMetas {
-		internalImportCount := make(map[string]int)
-		for _, p := range mm.pkgs {
-			if p.Error != nil {
-				continue
-			}
-			for _, imp := range p.Imports {
-				if _, ok := known[imp]; ok {
-					internalImportCount[imp]++
-				}
-			}
-		}
-		type importCount struct {
-			path  string
-			count int
-		}
-		var ranked []importCount
-		for path, count := range internalImportCount {
-			ranked = append(ranked, importCount{path, count})
-		}
-		sort.Slice(ranked, func(i, j int) bool {
-			if ranked[i].count == ranked[j].count {
-				return ranked[i].path < ranked[j].path
-			}
-			return ranked[i].count > ranked[j].count
-		})
-		topInternal := make([]string, 0, 10)
-		for i, ic := range ranked {
-			if i >= 10 {
-				break
-			}
-			topInternal = append(topInternal, ic.path)
-		}
-
-		extCount := make(map[string]int)
-		for _, p := range mm.pkgs {
-			if p.Error != nil {
-				continue
-			}
-			seen := make(map[string]struct{})
-			for _, imp := range p.Imports {
-				if _, isInternal := known[imp]; isInternal {
-					continue
-				}
-				if _, counted := seen[imp]; counted {
-					continue
-				}
-				seen[imp] = struct{}{}
-				extCount[imp]++
-			}
-		}
-		var modExtImports []ExtImport
-		for imp, count := range extCount {
-			modExtImports = append(modExtImports, ExtImport{ImportPath: imp, UsedByCount: count})
-		}
-		sort.Slice(modExtImports, func(i, j int) bool {
-			if modExtImports[i].UsedByCount == modExtImports[j].UsedByCount {
-				return modExtImports[i].ImportPath < modExtImports[j].ImportPath
-			}
-			return modExtImports[i].UsedByCount > modExtImports[j].UsedByCount
-		})
-		if len(modExtImports) > 10 {
-			modExtImports = modExtImports[:10]
-		}
-
-		summaries = append(summaries, ModuleSummary{
-			ModulePath:              mm.modulePath,
-			ModuleDir:               mm.moduleDir,
-			PackagesCount:           len(mm.pkgs),
-			EntrypointsCount:        mm.entrypointsCount,
-			RoleGuess:               guessModuleRole(mm.moduleDir),
-			TopImportedInternalPkgs: topInternal,
-			TopExternalImports:      modExtImports,
-		})
-	}
-
-	return summaries
-}
-
-func buildOrientationCandidates(entrypoints []Entrypoint) []OrientationCandidate {
-	candidates := make([]OrientationCandidate, 0, len(entrypoints))
-
-	for _, ep := range entrypoints {
-		kind := ep.Kind
-		priority := priorityForKind(kind)
-
-		openFiles := make([]string, 0, len(ep.Anchors)+len(ep.GoFiles))
-		seenOpenFiles := make(map[string]struct{}, cap(openFiles))
-		for _, anchor := range ep.Anchors {
-			if _, seen := seenOpenFiles[anchor.Path]; seen {
-				continue
-			}
-			seenOpenFiles[anchor.Path] = struct{}{}
-			openFiles = append(openFiles, anchor.Path)
-		}
-		for _, gf := range ep.GoFiles {
-			var openFile string
-			if ep.PackageDir == "." || ep.PackageDir == "" {
-				openFile = filepath.ToSlash(gf)
-			} else {
-				openFile = filepath.ToSlash(ep.PackageDir) + "/" + filepath.ToSlash(gf)
-			}
-			if _, seen := seenOpenFiles[openFile]; seen {
-				continue
-			}
-			seenOpenFiles[openFile] = struct{}{}
-			openFiles = append(openFiles, openFile)
-		}
-
-		why := whyForKind(kind)
-
-		candidates = append(candidates, OrientationCandidate{
-			Name:              ep.ImportPath,
-			Kind:              kind,
-			EntrypointPackage: ep.ImportPath,
-			OpenFiles:         openFiles,
-			Why:               why,
-			Priority:          priority,
-		})
-	}
-
-	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].Priority > candidates[j].Priority
-	})
-
-	if len(candidates) > 20 {
-		candidates = candidates[:20]
-	}
-
-	return candidates
-}
-
-func priorityForKind(kind string) int {
-	switch kind {
-	case "primary_binary":
-		return 5
-	case "cli":
-		return 4
-	case "tool":
-		return 3
-	case "example":
-		return 2
-	case OrientationKindSignalFlow:
-		return 2
-	case "test_binary":
-		return 1
-	default:
-		return 0
-	}
-}
-
-func whyForKind(kind string) string {
-	switch kind {
-	case "primary_binary":
-		return "main server binary; likely the primary runtime entrypoint"
-	case "cli":
-		return "command-line interface; likely the main user-facing tool"
-	case "tool":
-		return "utility tool; used for maintenance or data operations"
-	case "example":
-		return "example code; good for understanding usage patterns"
-	case "test_binary":
-		return "test binary; useful for understanding expected behaviour"
-	case OrientationKindSignalFlow:
-		return "operational flow discovered from source signals"
-	default:
-		return "entrypoint of unknown role"
-	}
 }

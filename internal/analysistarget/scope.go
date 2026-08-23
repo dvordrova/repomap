@@ -11,9 +11,8 @@ import (
 // any downstream semantic or cardinality budget. Executables retain their
 // repository-local outgoing import closure. A module library retains exactly
 // its sealed owning-module non-main package inventory, including supporting
-// internal packages; main packages are separate executable products. A
-// transitional package library retains its former package scope. The input is
-// never mutated.
+// internal packages; main packages are separate executable products. The
+// input is never mutated.
 func ScopeGoFacts(facts gofacts.Facts, target Target) (gofacts.Facts, error) {
 	if err := target.Validate(); err != nil {
 		return gofacts.Facts{}, fmt.Errorf("analysis target scope: %w", err)
@@ -51,26 +50,15 @@ func ScopeGoFacts(facts gofacts.Facts, target Target) (gofacts.Facts, error) {
 			return gofacts.Facts{}, fmt.Errorf("analysis target scope: selected package %q is unavailable", target.PackagePath)
 		}
 		retained[target.PackagePath] = struct{}{}
-		if target.Kind == KindLibraryPackage && target.PackageDir == "." {
-			for _, pkg := range facts.Packages {
-				if pkg.ModuleID == target.ModuleID {
-					retained[pkg.CanonicalPath] = struct{}{}
-				}
-			}
-		} else {
-			growOutgoingClosure(retained, packages, facts.InternalEdges)
-		}
+		growOutgoingClosure(retained, packages, facts.InternalEdges)
 	}
 
 	scoped := gofacts.Facts{
-		Packages:              []gofacts.PackageFact{},
-		EntrypointPackages:    []gofacts.Entrypoint{},
-		CommandTraces:         []gofacts.CommandTrace{},
-		ModuleSummaries:       []gofacts.ModuleSummary{},
-		OrientationCandidates: []gofacts.OrientationCandidate{},
-		InternalEdges:         []gofacts.Edge{},
-		ExternalImportsTop:    []gofacts.ExtImport{},
-		Warnings:              append([]string{}, facts.Warnings...),
+		Packages:           []gofacts.PackageFact{},
+		EntrypointPackages: []gofacts.Entrypoint{},
+		InternalEdges:      []gofacts.Edge{},
+		ExternalImportsTop: []gofacts.ExtImport{},
+		Warnings:           append([]string{}, facts.Warnings...),
 	}
 	retainedModules := make(map[string]struct{})
 	for _, pkg := range facts.Packages {
@@ -92,6 +80,19 @@ func ScopeGoFacts(facts gofacts.Facts, target Target) (gofacts.Facts, error) {
 		}
 		scoped.InternalEdges = append(scoped.InternalEdges, edge)
 	}
+	if facts.Dependencies != nil {
+		retainedImporterRefs := make(map[string]struct{})
+		for _, importer := range facts.Dependencies.Importers {
+			if _, keep := retained[importer.PackagePath]; keep {
+				retainedImporterRefs[importer.Ref] = struct{}{}
+			}
+		}
+		dependencyCatalog, dependencyErr := facts.Dependencies.Subset(retainedImporterRefs)
+		if dependencyErr != nil {
+			return gofacts.Facts{}, fmt.Errorf("analysis target scope: dependency catalog: %w", dependencyErr)
+		}
+		scoped.Dependencies = &dependencyCatalog
+	}
 
 	for _, entrypoint := range facts.EntrypointPackages {
 		if target.Kind != KindExecutablePackage || entrypoint.ImportPath != target.PackagePath {
@@ -102,19 +103,6 @@ func ScopeGoFacts(facts gofacts.Facts, target Target) (gofacts.Facts, error) {
 		copyEntrypoint.Anchors = append([]gofacts.EntrypointAnchor{}, entrypoint.Anchors...)
 		scoped.EntrypointPackages = append(scoped.EntrypointPackages, copyEntrypoint)
 	}
-	for _, trace := range facts.CommandTraces {
-		if target.Kind == KindExecutablePackage && trace.EntrypointPackage == target.PackagePath {
-			scoped.CommandTraces = append(scoped.CommandTraces, trace)
-		}
-	}
-	for _, candidate := range facts.OrientationCandidates {
-		if target.Kind == KindExecutablePackage && candidate.EntrypointPackage == target.PackagePath {
-			copyCandidate := candidate
-			copyCandidate.OpenFiles = append([]string{}, candidate.OpenFiles...)
-			scoped.OrientationCandidates = append(scoped.OrientationCandidates, copyCandidate)
-		}
-	}
-
 	entrypointsByModule := make(map[string][]gofacts.Entrypoint)
 	for _, entrypoint := range scoped.EntrypointPackages {
 		entrypointsByModule[target.ModuleID] = append(entrypointsByModule[target.ModuleID], entrypoint)
@@ -136,19 +124,6 @@ func ScopeGoFacts(facts gofacts.Facts, target Target) (gofacts.Facts, error) {
 		copyModule.Warnings = append([]string{}, module.Warnings...)
 		scoped.Modules = append(scoped.Modules, copyModule)
 	}
-	for _, summary := range facts.ModuleSummaries {
-		moduleID := moduleIDForSummary(facts.Modules, summary)
-		if _, keep := retainedModules[moduleID]; !keep {
-			continue
-		}
-		copySummary := summary
-		copySummary.PackagesCount = packagesByModule[moduleID]
-		copySummary.EntrypointsCount = len(entrypointsByModule[moduleID])
-		copySummary.TopImportedInternalPkgs = filterPackagePaths(summary.TopImportedInternalPkgs, retained)
-		copySummary.TopExternalImports = []gofacts.ExtImport{}
-		scoped.ModuleSummaries = append(scoped.ModuleSummaries, copySummary)
-	}
-
 	sortFacts(&scoped)
 	scoped.PackagesCount = len(scoped.Packages)
 	scoped.RetainedPackagesCount = len(scoped.Packages)
@@ -196,25 +171,6 @@ func growOutgoingClosure(retained map[string]struct{}, packages map[string]gofac
 			changed = true
 		}
 	}
-}
-
-func moduleIDForSummary(modules []gofacts.ModuleFact, summary gofacts.ModuleSummary) string {
-	for _, module := range modules {
-		if module.ModulePath == summary.ModulePath && canonicalDirForMatch(module.ModuleDir) == canonicalDirForMatch(summary.ModuleDir) {
-			return module.ID
-		}
-	}
-	return ""
-}
-
-func filterPackagePaths(values []string, retained map[string]struct{}) []string {
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		if _, keep := retained[value]; keep {
-			result = append(result, value)
-		}
-	}
-	return result
 }
 
 func sortFacts(facts *gofacts.Facts) {

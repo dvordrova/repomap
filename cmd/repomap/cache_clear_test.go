@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -38,7 +39,10 @@ func TestClearPersistentCachesRemovesOnlyKnownCacheDirectories(t *testing.T) {
 	if _, err := os.Stat(runPath); err != nil {
 		t.Fatalf("cache clear removed run artifact directory: %v", err)
 	}
-	if !strings.Contains(output.String(), "cleared 3 persistent cache") {
+	if !strings.Contains(
+		output.String(),
+		fmt.Sprintf("cleared %d persistent cache", len(persistentCacheDirectories)),
+	) {
 		t.Fatalf("cache clear output = %q", output.String())
 	}
 }
@@ -47,20 +51,13 @@ func TestClearPersistentCachesRejectsSymlinkWithoutPartialRemoval(t *testing.T) 
 	t.Parallel()
 
 	root := t.TempDir()
-	first := filepath.Join(root, persistentCacheDirectories[0])
-	if err := os.Mkdir(first, 0o700); err != nil {
-		t.Fatal(err)
-	}
 	target := t.TempDir()
-	unsafe := filepath.Join(root, persistentCacheDirectories[1])
+	unsafe := filepath.Join(root, persistentCacheDirectories[0])
 	if err := os.Symlink(target, unsafe); err != nil {
 		t.Fatal(err)
 	}
 	if err := clearPersistentCaches(root, io.Discard); err == nil {
 		t.Fatal("cache clear accepted a symlink target")
-	}
-	if _, err := os.Stat(first); err != nil {
-		t.Fatalf("cache clear partially removed a validated target: %v", err)
 	}
 	if _, err := os.Stat(target); err != nil {
 		t.Fatalf("cache clear followed the symlink target: %v", err)

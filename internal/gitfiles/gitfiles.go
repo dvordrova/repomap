@@ -10,36 +10,23 @@ import (
 )
 
 type Listing struct {
-	Paths        []string
-	RegularPaths []string
+	Paths           []string
+	RegularPaths    []string
+	ExecutablePaths []string
+	Gitlinks        []Gitlink
 }
 
-func List(repoPath string) ([]string, error) {
-	return ListContext(context.Background(), repoPath)
-}
-
-func ListContext(ctx context.Context, repoPath string) ([]string, error) {
-	listing, err := ListWithModesContext(ctx, repoPath)
-	if err != nil {
-		return nil, err
-	}
-	return listing.Paths, nil
-}
-
-// ListWithModes separates visible tracked paths from stage-0 regular files
-// that may be used as analysis inputs.
-func ListWithModes(repoPath string) (Listing, error) {
-	return ListWithModesContext(context.Background(), repoPath)
+// Gitlink is one stage-0 submodule entry from the same Git-index read used to
+// build the repository corpus. ObjectID is the exact recorded commit.
+type Gitlink struct {
+	Path     string
+	ObjectID string
 }
 
 func ListWithModesContext(ctx context.Context, repoPath string) (Listing, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := verifyGitRepoContext(ctx, repoPath); err != nil {
-		return Listing{}, err
-	}
-
 	cmd := safeCommandContext(ctx, repoPath, "ls-files", "--stage", "-z")
 	cmd.Env = isolatedEnvironment(os.Environ())
 	out, err := cmd.Output()
@@ -69,35 +56,20 @@ func parseIndexListing(data []byte) (Listing, error) {
 			seen[filePath] = struct{}{}
 			result.Paths = append(result.Paths, filePath)
 		}
-		if fields[2] == "0" && (fields[0] == "100644" || fields[0] == "100755") {
+		if fields[2] != "0" {
+			continue
+		}
+		switch fields[0] {
+		case "100644", "100755":
 			result.RegularPaths = append(result.RegularPaths, filePath)
+			if fields[0] == "100755" {
+				result.ExecutablePaths = append(result.ExecutablePaths, filePath)
+			}
+		case "160000":
+			result.Gitlinks = append(result.Gitlinks, Gitlink{Path: filePath, ObjectID: fields[1]})
 		}
 	}
 	return result, nil
-}
-
-func verifyGitRepo(repoPath string) error {
-	return verifyGitRepoContext(context.Background(), repoPath)
-}
-
-func verifyGitRepoContext(ctx context.Context, repoPath string) error {
-	cmd := safeCommandContext(ctx, repoPath, "rev-parse", "--is-inside-work-tree")
-	cmd.Env = isolatedEnvironment(os.Environ())
-	out, err := cmd.Output()
-	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return ctxErr
-		}
-		return fmt.Errorf("%s does not appear to be a git repository: %w", repoPath, err)
-	}
-	if strings.TrimSpace(string(out)) != "true" {
-		return fmt.Errorf("%s is not inside a git working tree", repoPath)
-	}
-	return nil
-}
-
-func safeCommand(repoPath string, args ...string) *exec.Cmd {
-	return safeCommandContext(context.Background(), repoPath, args...)
 }
 
 func safeCommandContext(ctx context.Context, repoPath string, args ...string) *exec.Cmd {

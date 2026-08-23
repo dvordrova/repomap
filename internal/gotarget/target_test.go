@@ -22,8 +22,8 @@ func TestResolveUsesExplicitAtomicTargetAndIndependentEnvironmentFallback(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if explicit.String() != "freebsd/386" || explicit.Scenario() != "go:freebsd/386:tags=" {
-		t.Fatalf("explicit target = %#v / %q", explicit, explicit.Scenario())
+	if explicit.String() != "freebsd/386" {
+		t.Fatalf("explicit target = %#v", explicit)
 	}
 }
 

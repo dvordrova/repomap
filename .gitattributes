@@ -1,2 +1,0 @@
-# Preserve the byte-for-byte verified upstream ELK.js bundle.
-internal/report/assets/elkjs/elk.bundled.js -whitespace

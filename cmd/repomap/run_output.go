@@ -7,14 +7,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/orient"
-	"github.com/dvordrova/repomap/internal/report"
 )
 
-const (
-	runOutputPhaseInterval   = 10 * time.Second
-	runOutputWaitingInterval = 30 * time.Second
-)
+const runOutputPhaseInterval = 10 * time.Second
 
 // runOutput is the deliberately small stderr presentation boundary for an
 // ordinary run. It serializes concurrent progress callbacks and keeps human
@@ -57,6 +54,13 @@ type targetPageConsoleContext struct {
 	Scope       string
 	RunID       string
 	Role        string
+}
+
+func analysisTargetSubject(target analysistarget.Target) string {
+	if target.Kind == analysistarget.KindModuleLibrary {
+		return target.ModulePath + " library API"
+	}
+	return target.PackagePath
 }
 
 func newRunOutput(writer io.Writer) *runOutput {
@@ -133,73 +137,6 @@ func (output *runOutput) TargetPage(state string, target targetPageConsoleContex
 	)
 }
 
-// MapConnectivity explains the local fact-to-edge projection in the console,
-// not in the report. A report is user-facing documentation; operational
-// suppression counts belong beside the run that produced it.
-func (output *runOutput) MapConnectivity(counts report.ArchitectureStructuralConnectivity) {
-	if counts.PackageImportFactCount == 0 {
-		return
-	}
-	details := []string{
-		fmt.Sprintf("exact package-import facts: %d", counts.PackageImportFactCount),
-		fmt.Sprintf(
-			"projected: %d witness(es) across %d component-pair edge(s)",
-			counts.ProjectedWitnessCount,
-			counts.ProjectedPairEdgeCount,
-		),
-		fmt.Sprintf("retained inside one component (no Map edge): %d", counts.SuppressedIntraComponentCount),
-		fmt.Sprintf("suppressed because an endpoint has no final component: %d", counts.SuppressedUnjoinedEndpointCount),
-		fmt.Sprintf("suppressed because final ownership is plural: %d", counts.SuppressedPluralOwnershipCount),
-	}
-	if counts.SuppressedUnjoinedEndpointCount > 0 || counts.SuppressedPluralOwnershipCount > 0 {
-		output.Warn("Map package connectivity is partial", details...)
-		return
-	}
-	output.State("Map connectivity", "complete", details...)
-}
-
-// ArchitectureScope explains deterministic model-input omissions in the
-// console. The complete saved RepositoryGraph and the user report remain free
-// of operational selector diagnostics.
-func (output *runOutput) ArchitectureScope(scope report.ArchitectureProductScope) {
-	if scope.OmittedModules == 0 {
-		return
-	}
-	output.Warn(
-		"Architecture model scope omits non-production modules",
-		fmt.Sprintf("modules retained: %d/%d", scope.RetainedModules, scope.ObservedModules),
-		fmt.Sprintf("packages retained: %d/%d", scope.RetainedPackages, scope.ObservedPackages),
-		fmt.Sprintf("exact package edges retained: %d/%d", scope.RetainedEdges, scope.ObservedEdges),
-		fmt.Sprintf("whole non-production modules omitted: %d", scope.OmittedModules),
-		"the complete local repository graph remains available",
-	)
-}
-
-// ThemeInputClosure makes deterministic pre-provider Atlas shaping visible in
-// the ordinary console. The authoritative saved Atlas and the user report stay
-// unchanged; these counts explain why a large repository can still produce a
-// bounded Theme request without repeating a forensic artifact join.
-func (output *runOutput) ThemeInputClosure(closure themeStudyAtlasClosure) {
-	if closure.ObservedUnits == closure.RetainedUnits &&
-		closure.ObservedEntities == closure.RetainedEntities &&
-		closure.ObservedEvidence == closure.RetainedEvidence &&
-		closure.ObservedObservations == closure.RetainedObservations &&
-		closure.ObservedRelations == closure.RetainedRelations {
-		return
-	}
-	output.State(
-		"Study request preparation", "bounded",
-		fmt.Sprintf(
-			"records needed to prepare this Study request: %d (%d local Atlas records remain unchanged)",
-			closure.RetainedUnits,
-			closure.ObservedUnits,
-		),
-		"repository scope and Architecture groups: unchanged",
-		"provider-visible Study surfaces and evidence: unchanged",
-		"the complete local Repository Atlas remains authoritative and unchanged",
-	)
-}
-
 func (output *runOutput) level(level, summary string, details ...string) {
 	output.mu.Lock()
 	defer output.mu.Unlock()
@@ -222,7 +159,7 @@ func (output *runOutput) Progress(event orient.ProgressEvent) {
 		output.stageLocked("Repository snapshot")
 		details := []string{"collecting tracked repository facts", "repository: " + event.RepoPath}
 		if event.GoTarget != "" {
-			details = append(details, "Go target: "+event.GoTarget, "choose another: --go-target GOOS/GOARCH")
+			details = append(details, "Go target: "+event.GoTarget, "override: --force-platform GOOS/GOARCH")
 		}
 		output.writeDetailsLocked(details...)
 	case orient.ProgressSnapshotReady:
@@ -243,124 +180,45 @@ func (output *runOutput) Progress(event orient.ProgressEvent) {
 		} else if event.SuggestedGoTarget != "" {
 			details = append(details,
 				fmt.Sprintf("platform hint: %s has %d target-specific production Go file(s)", event.SuggestedGoTarget, event.GoTargetEvidenceCount),
-				"try: --go-target "+event.SuggestedGoTarget,
+				"try: --force-platform "+event.SuggestedGoTarget,
 			)
 			if len(event.GoTargetEvidencePaths) > 0 {
 				details = append(details, "evidence: "+strings.Join(event.GoTargetEvidencePaths, ", "))
 			}
 		}
 		output.writeDetailsLocked(details...)
-	case orient.ProgressBundleReady:
-		output.stageLocked("Model context")
-		output.writeDetailsLocked(
-			"state: prepared",
-			fmt.Sprintf("request context bytes: %d", event.BundleBytes),
-			fmt.Sprintf("candidate files: %d", event.CandidateCount),
-			formatRunOutputDuration(event.LatencyMillis),
-		)
-	case orient.ProgressSurfaceStarted:
-		output.stageLocked("Runtime surfaces")
-		output.writeDetailsLocked("discovering local Go runtime surfaces")
-	case orient.ProgressSurfacePhase:
+	case orient.ProgressProgramStarted:
+		output.stageLocked("Go program facts")
+		output.writeDetailsLocked("building the exact Go graph and generic semantic candidates")
+	case orient.ProgressProgramPhase:
 		output.surfacePhaseLocked(event)
-	case orient.ProgressSurfaceWaiting, orient.ProgressPlanningWaiting:
-		key := "waiting/" + string(event.Stage) + "/" + event.Activity
-		if !output.allowProgressLocked(key, 0, runOutputWaitingInterval, false) {
-			return
-		}
-		stage := "Runtime surfaces"
-		if event.Stage == orient.ProgressPlanningWaiting {
-			stage = "Research"
-		}
-		output.stageLocked(stage)
-		output.writeDetailsLocked(
-			singleRunOutputLine(event.Activity)+" is still running",
-			formatRunOutputElapsed(event.LatencyMillis),
-			"Ctrl-C to cancel",
-		)
-	case orient.ProgressSurfaceReady:
-		output.stageLocked("Runtime surfaces")
+	case orient.ProgressProgramReady:
+		output.stageLocked("Go program facts")
 		output.writeDetailsLocked(
 			"state: complete",
-			fmt.Sprintf("surfaces: %d", event.SurfaceCount),
+			fmt.Sprintf("exact graph: %d nodes, %d edges", event.GraphNodeCount, event.GraphEdgeCount),
+			fmt.Sprintf("external call families: %d", event.ExternalCallFamilies),
+			fmt.Sprintf("activity candidates: %d", event.ActivityCandidates),
+			fmt.Sprintf("core declarations: %d", event.CoreDeclarations),
 			formatRunOutputDuration(event.LatencyMillis),
 		)
-	case orient.ProgressSurfaceFailed:
+	case orient.ProgressProgramFailed:
 		output.currentStage = ""
-		fmt.Fprintln(output.writer, "WARN")
-		output.writeDetailsLocked("runtime surface discovery failed", event.Warning)
-	case orient.ProgressModelRequest:
-		output.stageLocked("Orientation")
-		output.writeDetailsLocked(
-			"state: request prepared",
-			fmt.Sprintf("request bytes: %d", event.RequestBytes),
-			"model: "+event.Model,
-		)
-	case orient.ProgressProviderWaiting:
-		key := "waiting/provider/" + event.Activity + "/" + event.Model
-		if !output.allowProgressLocked(key, 0, runOutputWaitingInterval, false) {
-			return
-		}
-		output.stageLocked("Orientation")
-		output.writeDetailsLocked(
-			singleRunOutputLine(event.Activity)+" is still running",
-			"model: "+event.Model,
-			formatRunOutputElapsed(event.LatencyMillis),
-			"Ctrl-C to cancel",
-		)
-	case orient.ProgressOrientationDone:
-		state := "accepted"
-		if event.Cached {
-			state = "cached"
-		}
-		output.stageLocked("Orientation")
-		output.writeDetailsLocked(
-			"state: "+state,
-			fmt.Sprintf("response bytes: %d", event.ResponseBytes),
-			fmt.Sprintf("accepted directions: %d", event.CandidateCount),
-			fmt.Sprintf("rejected directions: %d", event.RejectedCount),
-			formatRunOutputTokens(event.InputTokens, event.OutputTokens),
-			formatRunOutputDuration(event.LatencyMillis),
-		)
-	case orient.ProgressResearchPrepared:
-		output.stageLocked("Research")
-		output.writeDetailsLocked(
-			"state: prepared",
-			fmt.Sprintf("evidence items: %d", event.EvidenceCount),
-			fmt.Sprintf("locally inspected files: %d", event.FileCount),
-		)
-	case orient.ProgressResearchDone:
-		state := singleRunOutputLine(event.Activity)
-		if state == "" {
-			state = "complete"
-		}
-		if event.Cached {
-			state = "cached"
-		}
-		output.stageLocked("Research")
-		output.writeDetailsLocked(
-			"state: "+state,
-			fmt.Sprintf("request bytes: %d", event.RequestBytes),
-			fmt.Sprintf("response bytes: %d", event.ResponseBytes),
-			fmt.Sprintf("validated findings: %d", event.FindingCount),
-			fmt.Sprintf("rejected findings: %d", event.RejectedCount),
-			fmt.Sprintf("new grounded facts: %d", event.NewFactCount),
-			formatRunOutputTokens(event.InputTokens, event.OutputTokens),
-			formatRunOutputDuration(event.LatencyMillis),
-		)
+		fmt.Fprintln(output.writer, "ERROR")
+		output.writeDetailsLocked("Go program analysis failed", event.Warning)
 	}
 }
 
 func (output *runOutput) surfacePhaseLocked(event orient.ProgressEvent) {
-	key := "surface/" + event.Phase
+	key := "program/" + event.Phase
 	switch event.PhaseState {
 	case "started":
 		output.lastProgress[key] = runOutputProgress{at: output.now()}
-		output.stageLocked("Runtime surfaces")
+		output.stageLocked("Go program facts")
 		output.writeDetailsLocked(singleRunOutputLine(event.Activity))
 	case "completed":
 		delete(output.lastProgress, key)
-		output.stageLocked("Runtime surfaces")
+		output.stageLocked("Go program facts")
 		output.writeDetailsLocked(
 			fmt.Sprintf("%s: complete", singleRunOutputLine(event.Phase)),
 			formatRunOutputCount(event.CompletedCount, event.TotalCount),
@@ -375,7 +233,7 @@ func (output *runOutput) surfacePhaseLocked(event orient.ProgressEvent) {
 		) {
 			return
 		}
-		output.stageLocked("Runtime surfaces")
+		output.stageLocked("Go program facts")
 		output.writeDetailsLocked(
 			singleRunOutputLine(event.Phase)+": "+formatRunOutputCount(event.CompletedCount, event.TotalCount),
 			formatRunOutputElapsed(event.LatencyMillis),
@@ -435,13 +293,15 @@ func formatRunOutputDuration(milliseconds int64) string {
 	return "duration: " + (time.Duration(milliseconds) * time.Millisecond).Round(time.Millisecond).String()
 }
 
-func formatRunOutputElapsed(milliseconds int64) string {
-	return "elapsed: " + (time.Duration(milliseconds) * time.Millisecond).Round(time.Second).String()
+// formatRunOutputWallDuration preserves the sub-millisecond truth for cheap
+// local cubes instead of presenting completed work as a fabricated zero.
+func formatRunOutputWallDuration(duration time.Duration) string {
+	if duration > 0 && duration < time.Millisecond {
+		return "duration: <1ms"
+	}
+	return "duration: " + duration.Round(time.Millisecond).String()
 }
 
-func formatRunOutputTokens(input, output int) string {
-	if input == 0 && output == 0 {
-		return "tokens: unavailable"
-	}
-	return fmt.Sprintf("input tokens: %d\noutput tokens: %d", input, output)
+func formatRunOutputElapsed(milliseconds int64) string {
+	return "elapsed: " + (time.Duration(milliseconds) * time.Millisecond).Round(time.Second).String()
 }

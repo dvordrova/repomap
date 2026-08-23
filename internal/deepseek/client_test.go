@@ -1,321 +1,88 @@
 package deepseek
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
-	"errors"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestNewFromEnvUsesRepomapConfigBeforeAliases(t *testing.T) {
+func TestNewFromEnvUsesGenericConfigurationWithoutMixingAliases(t *testing.T) {
 	clearLLMConfigEnv(t)
-
 	t.Setenv(envEndpoint, "https://internal.example.com/v1/chat/completions")
 	t.Setenv(envModel, "internal-code-model")
 	t.Setenv(envAPIKey, "repomap-key")
 	t.Setenv(envMaxTokens, "1234")
 	t.Setenv(envTimeout, "7.5s")
 	t.Setenv(envAuth, authBearer)
-
 	t.Setenv(legacyEnvEndpoint, "https://legacy.example.com/chat/completions")
 	t.Setenv(legacyEnvModel, "legacy-model")
 	t.Setenv(legacyEnvAPIKey, "legacy-key")
-	t.Setenv("DEEPSEEK_MAX_TOKENS", "9999")
 	t.Setenv(legacyEnvTimeout, "45s")
 	t.Setenv(legacyEnvAuth, authNone)
 
 	client, err := NewFromEnv()
 	if err != nil {
-		t.Fatalf("NewFromEnv() error = %v", err)
+		t.Fatal(err)
 	}
-	if client.Endpoint != "https://internal.example.com/v1/chat/completions" {
-		t.Errorf("Endpoint = %q", client.Endpoint)
-	}
-	if client.Model != "internal-code-model" {
-		t.Errorf("Model = %q", client.Model)
-	}
-	if client.APIKey != "repomap-key" {
-		t.Errorf("APIKey = %q, want primary key", client.APIKey)
-	}
-	if client.MaxTokens != 1234 {
-		t.Errorf("MaxTokens = %d", client.MaxTokens)
-	}
-	if client.HTTPClient.Timeout != 7500*time.Millisecond {
-		t.Errorf("Timeout = %s", client.HTTPClient.Timeout)
-	}
-	if client.Auth != authBearer {
-		t.Errorf("Auth = %q", client.Auth)
-	}
-}
-
-func TestNewFromEnvSupportsDeepSeekCompatibilityAliasesWithoutOutputOverride(t *testing.T) {
-	clearLLMConfigEnv(t)
-
-	t.Setenv(legacyEnvEndpoint, "http://127.0.0.1:8080/v1/chat/completions")
-	t.Setenv(legacyEnvModel, "legacy-compatible-model")
-	t.Setenv(legacyEnvAPIKey, "legacy-key")
-	t.Setenv("DEEPSEEK_MAX_TOKENS", "2048")
-	t.Setenv(legacyEnvTimeout, "12s")
-	t.Setenv(legacyEnvAuth, authBearer)
-
-	client, err := NewFromEnv()
-	if err != nil {
-		t.Fatalf("NewFromEnv() error = %v", err)
-	}
-	if client.Endpoint != "http://127.0.0.1:8080/v1/chat/completions" ||
-		client.Model != "legacy-compatible-model" ||
-		client.APIKey != "legacy-key" ||
-		client.MaxTokens != defaultMaxTokens ||
-		client.HTTPClient.Timeout != 12*time.Second ||
+	if client.Endpoint != "https://internal.example.com/v1/chat/completions" ||
+		client.Model != "internal-code-model" || client.APIKey != "repomap-key" ||
+		client.MaxTokens != 1234 || client.HTTPClient.Timeout != 7500*time.Millisecond ||
 		client.Auth != authBearer {
-		t.Fatalf("compatibility config = %#v, timeout = %s", client, client.HTTPClient.Timeout)
+		t.Fatalf("generic configuration = %#v, timeout = %s", client, client.HTTPClient.Timeout)
 	}
 }
 
-func TestNewFromEnvSupportsDeepSeekNoAuthAlias(t *testing.T) {
+func TestNewFromEnvSupportsDeepSeekAliasesAndDefaults(t *testing.T) {
 	clearLLMConfigEnv(t)
-	t.Setenv(legacyEnvEndpoint, "http://127.0.0.1:11434/v1/chat/completions")
-	t.Setenv(legacyEnvAuth, authNone)
+	t.Setenv(legacyEnvAPIKey, "legacy-key")
 
 	client, err := NewFromEnv()
 	if err != nil {
-		t.Fatalf("NewFromEnv() error = %v", err)
+		t.Fatal(err)
 	}
-	if client.Auth != authNone || client.APIKey != "" {
-		t.Fatalf("legacy no-auth config = auth %q, key %q", client.Auth, client.APIKey)
+	if client.Endpoint != defaultEndpoint || client.Model != defaultModel ||
+		client.APIKey != "legacy-key" || client.MaxTokens != defaultMaxTokens ||
+		client.HTTPClient.Timeout != defaultTimeout || client.Auth != authBearer {
+		t.Fatalf("default configuration = %#v, timeout = %s", client, client.HTTPClient.Timeout)
 	}
 }
 
-func TestNewFromEnvLegacyNoAuthRequiresExplicitEndpoint(t *testing.T) {
+func TestNewFromEnvNoAuthRequiresEndpointAndDiscardsKey(t *testing.T) {
 	clearLLMConfigEnv(t)
-	t.Setenv(legacyEnvAuth, authNone)
-
-	_, err := NewFromEnv()
-	if err == nil || !strings.Contains(err.Error(), legacyEnvEndpoint) {
-		t.Fatalf("NewFromEnv() error = %v, want explicit legacy endpoint", err)
+	t.Setenv(envAuth, authNone)
+	if _, err := NewFromEnv(); err == nil || !strings.Contains(err.Error(), envEndpoint) {
+		t.Fatalf("missing no-auth endpoint error = %v", err)
 	}
-}
 
-func TestNewFromEnvDefaultsToDeepSeekBearerConfig(t *testing.T) {
-	clearLLMConfigEnv(t)
-	t.Setenv(legacyEnvAPIKey, "test-key")
-
-	client, err := NewFromEnv()
-	if err != nil {
-		t.Fatalf("NewFromEnv() error = %v", err)
-	}
-	if client.Endpoint != defaultEndpoint || client.Model != defaultModel {
-		t.Fatalf("default endpoint/model = %q / %q", client.Endpoint, client.Model)
-	}
-	if client.MaxTokens != defaultMaxTokens || client.HTTPClient.Timeout != defaultTimeout {
-		t.Fatalf("default limits = %d / %s", client.MaxTokens, client.HTTPClient.Timeout)
-	}
-	if client.Auth != authBearer || client.APIKey != "test-key" {
-		t.Fatalf("default auth = %q, key = %q", client.Auth, client.APIKey)
-	}
-}
-
-func TestOrientationRequestPreservesExactGlobalOutputCeiling(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name         string
-		endpoint     string
-		maxTokens    int
-		wantDeepSeek bool
-	}{
-		{name: "official lowered", endpoint: defaultEndpoint, maxTokens: 4096, wantDeepSeek: true},
-		{name: "official default", endpoint: defaultEndpoint, maxTokens: defaultMaxTokens, wantDeepSeek: true},
-		{name: "official raised", endpoint: defaultEndpoint, maxTokens: 80_000, wantDeepSeek: true},
-		{name: "generic lowered", endpoint: "https://provider.example.test/v1/chat/completions", maxTokens: 4096},
-		{name: "generic default", endpoint: "https://provider.example.test/v1/chat/completions", maxTokens: defaultMaxTokens},
-		{name: "generic raised", endpoint: "https://provider.example.test/v1/chat/completions", maxTokens: 80_000},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			client := &Client{Endpoint: test.endpoint, Model: "fixture", MaxTokens: test.maxTokens}
-			body, err := client.OrientPromptJSON([]byte(`{"bounded":"facts"}`))
-			if err != nil {
-				t.Fatal(err)
-			}
-			var request chatRequest
-			if err := json.Unmarshal(body, &request); err != nil {
-				t.Fatal(err)
-			}
-			if request.MaxTokens != test.maxTokens || client.MaxTokens != test.maxTokens {
-				t.Fatalf("request/client max_tokens = %d/%d, want exact %d", request.MaxTokens, client.MaxTokens, test.maxTokens)
-			}
-			if test.wantDeepSeek {
-				if request.Thinking == nil || request.Thinking.Type != "disabled" {
-					t.Fatalf("official thinking = %#v, want disabled", request.Thinking)
-				}
-			} else if request.Thinking != nil {
-				t.Fatalf("generic thinking = %#v, want omitted", request.Thinking)
-			}
-		})
-	}
-}
-
-func TestNewFromEnvDoesNotMixGenericAndDeepSeekCredentials(t *testing.T) {
-	clearLLMConfigEnv(t)
-	t.Setenv(envEndpoint, "https://internal.example.com/v1/chat/completions")
-	t.Setenv(envModel, "internal-model")
-	t.Setenv(legacyEnvAPIKey, "deepseek-secret")
-
-	_, err := NewFromEnv()
-	if err == nil || !strings.Contains(err.Error(), envAPIKey) {
-		t.Fatalf("NewFromEnv() error = %v, want missing generic key", err)
-	}
-}
-
-func TestNewFromEnvGenericConfigRequiresExplicitEndpoint(t *testing.T) {
-	clearLLMConfigEnv(t)
-	t.Setenv(envAPIKey, "internal-secret")
-
-	_, err := NewFromEnv()
-	if err == nil || !strings.Contains(err.Error(), envEndpoint) {
-		t.Fatalf("NewFromEnv() error = %v, want explicit generic endpoint", err)
-	}
-}
-
-func TestNewFromEnvDefaultBearerRequiresKey(t *testing.T) {
-	clearLLMConfigEnv(t)
-
-	_, err := NewFromEnv()
-	if err == nil {
-		t.Fatal("NewFromEnv() error = nil, want missing key error")
-	}
-	if !strings.Contains(err.Error(), envAPIKey) || strings.Contains(strings.ToLower(err.Error()), "deepseek") {
-		t.Fatalf("error = %q, want provider-neutral %s guidance", err, envAPIKey)
-	}
-}
-
-func TestNewFromEnvExplicitBlankPrimaryDoesNotRevealAlias(t *testing.T) {
-	clearLLMConfigEnv(t)
-	t.Setenv(envEndpoint, "https://internal.example.com/v1/chat/completions")
-	t.Setenv(envAPIKey, "   ")
-	t.Setenv(legacyEnvAPIKey, "stale-legacy-key")
-
-	_, err := NewFromEnv()
-	if err == nil || !strings.Contains(err.Error(), envAPIKey) {
-		t.Fatalf("NewFromEnv() error = %v, want missing primary key", err)
-	}
-}
-
-func TestNewFromEnvAuthNoneDoesNotRetainKey(t *testing.T) {
 	clearLLMConfigEnv(t)
 	t.Setenv(envEndpoint, "http://127.0.0.1:11434/v1/chat/completions")
 	t.Setenv(envAuth, authNone)
 	t.Setenv(envAPIKey, "must-not-be-retained")
-
 	client, err := NewFromEnv()
 	if err != nil {
-		t.Fatalf("NewFromEnv() error = %v", err)
+		t.Fatal(err)
 	}
-	if client.Auth != authNone {
-		t.Fatalf("Auth = %q, want %q", client.Auth, authNone)
-	}
-	if client.APIKey != "" {
-		t.Fatal("no-auth client retained an unused API key")
+	if client.Auth != authNone || client.APIKey != "" {
+		t.Fatalf("no-auth configuration retained credentials: auth=%q key=%q", client.Auth, client.APIKey)
 	}
 }
 
-func TestNewPromptFromEnvNeverRetainsConfiguredKeys(t *testing.T) {
+func TestNewFromEnvRequiresCredentialFromSelectedConfigurationFamily(t *testing.T) {
 	clearLLMConfigEnv(t)
-	t.Setenv(envAPIKey, "primary-secret")
-	t.Setenv(legacyEnvAPIKey, "legacy-secret")
+	if _, err := NewFromEnv(); err == nil || !strings.Contains(err.Error(), envAPIKey) {
+		t.Fatalf("default bearer error = %v", err)
+	}
+
+	clearLLMConfigEnv(t)
 	t.Setenv(envEndpoint, "https://internal.example.com/v1/chat/completions")
-
-	client, err := NewPromptFromEnv()
-	if err != nil {
-		t.Fatalf("NewPromptFromEnv() error = %v", err)
-	}
-	if client.APIKey != "" {
-		t.Fatal("prompt-only client retained an API key")
-	}
-	prompt, err := client.OrientPromptJSON([]byte(`{}`))
-	if err != nil {
-		t.Fatalf("OrientPromptJSON() error = %v", err)
-	}
-	if strings.Contains(string(prompt), "primary-secret") || strings.Contains(string(prompt), "legacy-secret") {
-		t.Fatal("prompt-only request contains an API key")
+	t.Setenv(legacyEnvAPIKey, "stale-legacy-key")
+	if _, err := NewFromEnv(); err == nil || !strings.Contains(err.Error(), envAPIKey) {
+		t.Fatalf("mixed-family credential error = %v", err)
 	}
 }
 
-func TestOrientPromptJSONMatchesRequestBody(t *testing.T) {
-	var received []byte
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var err error
-		received, err = io.ReadAll(r.Body)
-		if err != nil {
-			t.Errorf("read request body: %v", err)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{}"}}]}`)
-	}))
-	defer server.Close()
-
-	client := &Client{
-		HTTPClient: server.Client(),
-		Model:      "capture-model",
-		MaxTokens:  123,
-		Endpoint:   server.URL,
-		Auth:       authNone,
-	}
-	bundle := []byte(`{"repo_name":"fixture"}`)
-	want, err := client.OrientPromptJSON(bundle)
-	if err != nil {
-		t.Fatalf("OrientPromptJSON() error = %v", err)
-	}
-	if _, err := client.Orient(context.Background(), bundle); err != nil {
-		t.Fatalf("Orient() error = %v", err)
-	}
-	if string(received) != string(want) {
-		t.Fatalf("provider body differs from preview\nprovider: %s\npreview:  %s", received, want)
-	}
-}
-
-func TestFlowExplainPromptJSONMatchesRequestBody(t *testing.T) {
-	var received []byte
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var err error
-		received, err = io.ReadAll(r.Body)
-		if err != nil {
-			t.Errorf("read request body: %v", err)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{}"}}]}`)
-	}))
-	defer server.Close()
-
-	client := &Client{
-		HTTPClient: server.Client(),
-		Model:      "capture-model",
-		MaxTokens:  123,
-		Endpoint:   server.URL,
-		Auth:       authNone,
-	}
-	want, err := client.FlowExplainPromptJSON("user", "system")
-	if err != nil {
-		t.Fatalf("FlowExplainPromptJSON() error = %v", err)
-	}
-	if _, err := client.FlowExplain(context.Background(), "user", "system"); err != nil {
-		t.Fatalf("FlowExplain() error = %v", err)
-	}
-	if string(received) != string(want) {
-		t.Fatalf("provider body differs from preview\nprovider: %s\npreview:  %s", received, want)
-	}
-}
-
-func TestNewFromEnvRejectsInvalidConfig(t *testing.T) {
+func TestNewFromEnvRejectsInvalidConfiguration(t *testing.T) {
 	tests := []struct {
 		name    string
 		environ map[string]string
@@ -324,18 +91,14 @@ func TestNewFromEnvRejectsInvalidConfig(t *testing.T) {
 		{name: "max tokens not integer", environ: map[string]string{envMaxTokens: "many"}, want: envMaxTokens},
 		{name: "max tokens zero", environ: map[string]string{envMaxTokens: "0"}, want: "positive"},
 		{name: "timeout malformed", environ: map[string]string{envTimeout: "later"}, want: envTimeout},
-		{name: "timeout zero", environ: map[string]string{envTimeout: "0s"}, want: "positive"},
 		{name: "timeout negative", environ: map[string]string{envTimeout: "-1s"}, want: "positive"},
-		{name: "auth implicit spelling rejected", environ: map[string]string{envAuth: "NONE"}, want: envAuth},
 		{name: "auth unsupported", environ: map[string]string{envAuth: "basic"}, want: envAuth},
 		{name: "endpoint relative", environ: map[string]string{envEndpoint: "/v1/chat/completions", envAuth: authNone}, want: "scheme"},
-		{name: "endpoint ftp", environ: map[string]string{envEndpoint: "ftp://models.example.com/chat", envAuth: authNone}, want: "scheme"},
 		{name: "endpoint missing host", environ: map[string]string{envEndpoint: "https:///chat/completions", envAuth: authNone}, want: "host"},
 		{name: "endpoint with userinfo", environ: map[string]string{envEndpoint: "https://user:password@models.example.com/chat", envAuth: authNone}, want: "userinfo"},
-		{name: "endpoint with query secret", environ: map[string]string{envEndpoint: "https://models.example.com/chat?api_key=sk-secret", envAuth: authNone}, want: "query"},
+		{name: "endpoint with query", environ: map[string]string{envEndpoint: "https://models.example.com/chat?api_key=secret", envAuth: authNone}, want: "query"},
 		{name: "endpoint with fragment", environ: map[string]string{envEndpoint: "https://models.example.com/chat#secret", envAuth: authNone}, want: "fragment"},
 	}
-
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			clearLLMConfigEnv(t)
@@ -343,794 +106,31 @@ func TestNewFromEnvRejectsInvalidConfig(t *testing.T) {
 				t.Setenv(name, value)
 			}
 			_, err := NewFromEnv()
-			if err == nil {
-				t.Fatal("NewFromEnv() error = nil")
-			}
-			if !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("error = %q, want substring %q", err, test.want)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want substring %q", err, test.want)
 			}
 		})
 	}
 }
 
-func TestOrientAuthNoneOmitsAuthorizationHeader(t *testing.T) {
-	authHeaders := make(chan []string, 1)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeaders <- r.Header.Values("Authorization")
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{}"}}]}`)
-	}))
-	defer srv.Close()
-
-	client := &Client{
-		HTTPClient: srv.Client(),
-		APIKey:     "must-not-be-sent",
-		Model:      "internal-model",
-		MaxTokens:  100,
-		Endpoint:   srv.URL,
-		Auth:       authNone,
+func TestSafeProviderErrorTextAlwaysRedactsExplicitCredentials(t *testing.T) {
+	secret := `{"error":"Bearer company-secret-token-value"}`
+	if got := safeProviderErrorText([]byte(secret)); strings.Contains(got, "company-secret") || !strings.Contains(got, "redacted") {
+		t.Fatalf("explicit credential error text = %q", got)
+	}
+	plain := `{"error":"capacity temporarily unavailable"}`
+	if got := safeProviderErrorText([]byte(plain)); got != plain {
+		t.Fatalf("plain bounded provider error = %q, want %q", got, plain)
 	}
-	if _, err := client.Orient(context.Background(), []byte(`{}`)); err != nil {
-		t.Fatalf("Orient() error = %v", err)
-	}
-	if headers := <-authHeaders; len(headers) != 0 {
-		t.Fatalf("Authorization headers = %q, want none", headers)
-	}
-}
-
-func TestOrientRequestHeaders(t *testing.T) {
-	var gotAuth, gotContentType string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth = r.Header.Get("Authorization")
-		gotContentType = r.Header.Get("Content-Type")
-		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"choices":[{"message":{"content":"{}"}}]}`)
-	}))
-	defer srv.Close()
-
-	c := &Client{
-		HTTPClient: srv.Client(),
-		APIKey:     "test-key",
-		Model:      "deepseek-chat",
-		MaxTokens:  4000,
-		Endpoint:   srv.URL,
-	}
-
-	_, err := c.Orient(context.Background(), []byte(`{}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if gotAuth != "Bearer test-key" {
-		t.Fatalf("Authorization = %q, want %q", gotAuth, "Bearer test-key")
-	}
-	if gotContentType != "application/json" {
-		t.Fatalf("Content-Type = %q, want %q", gotContentType, "application/json")
-	}
-}
-
-func TestOrientResponseFormat(t *testing.T) {
-	var gotBody []byte
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotBody, _ = io.ReadAll(r.Body)
-		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"choices":[{"message":{"content":"{}"}}]}`)
-	}))
-	defer srv.Close()
-
-	c := &Client{
-		HTTPClient: srv.Client(),
-		APIKey:     "test-key",
-		Model:      "deepseek-chat",
-		MaxTokens:  4000,
-		Endpoint:   srv.URL,
-	}
-
-	_, err := c.Orient(context.Background(), []byte(`{}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var parsed chatRequest
-	if err := json.Unmarshal(gotBody, &parsed); err != nil {
-		t.Fatal(err)
-	}
-	if parsed.ResponseFormat == nil {
-		t.Fatal("response_format is nil")
-	}
-	if parsed.ResponseFormat.Type != "json_object" {
-		t.Fatalf("response_format.type = %q, want %q", parsed.ResponseFormat.Type, "json_object")
-	}
-	if parsed.MaxTokens != 4000 {
-		t.Fatalf("max_tokens = %d, want %d", parsed.MaxTokens, 4000)
-	}
-	if parsed.Temperature == nil || *parsed.Temperature != 0.1 {
-		t.Fatalf("temperature = %v, want 0.1", parsed.Temperature)
-	}
-}
-
-func TestOrientValidJSON(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"choices":[{"message":{"content":"{\"key\": \"value\"}"}}]}`)
-	}))
-	defer srv.Close()
-
-	c := &Client{
-		HTTPClient: srv.Client(),
-		APIKey:     "test-key",
-		Model:      "deepseek-chat",
-		MaxTokens:  4000,
-		Endpoint:   srv.URL,
-	}
-
-	result, err := c.Orient(context.Background(), []byte(`{}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(result) != `{"key": "value"}` {
-		t.Fatalf("got %q, want %q", string(result), `{"key": "value"}`)
-	}
-}
-
-func TestOrientMeasuredReportsPromptCacheTokens(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{
-			"choices":[{"message":{"content":"{}"}}],
-			"usage":{
-				"prompt_tokens":120,
-				"completion_tokens":17,
-				"prompt_cache_hit_tokens":96,
-				"prompt_cache_miss_tokens":24
-			}
-		}`)
-	}))
-	defer server.Close()
-
-	client := &Client{
-		HTTPClient: server.Client(),
-		Model:      "deepseek-v4-flash",
-		MaxTokens:  6000,
-		Endpoint:   server.URL,
-		Auth:       authNone,
-	}
-	result, err := client.OrientMeasured(context.Background(), []byte(`{}`))
-	if err != nil {
-		t.Fatalf("OrientMeasured() error = %v", err)
-	}
-	if result.InputTokens != 120 || result.OutputTokens != 17 ||
-		result.PromptCacheHitTokens != 96 || result.PromptCacheMissTokens != 24 ||
-		!result.UsageReported {
-		t.Fatalf("OrientMeasured() token usage = %#v", result)
-	}
-}
-
-func TestOrientMeasuredDistinguishesMissingUsageFromReportedZeros(t *testing.T) {
-	t.Parallel()
-
-	for _, test := range []struct {
-		name          string
-		providerBody  string
-		usageReported bool
-	}{
-		{
-			name:         "missing usage",
-			providerBody: `{"choices":[{"message":{"content":"{}"}}]}`,
-		},
-		{
-			name:          "reported zero usage",
-			providerBody:  `{"choices":[{"message":{"content":"{}"}}],"usage":{}}`,
-			usageReported: true,
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = io.WriteString(w, test.providerBody)
-			}))
-			defer server.Close()
-
-			client := &Client{
-				HTTPClient: server.Client(), Endpoint: server.URL, Auth: authNone,
-				Model: "fixture-model", MaxTokens: 64_000,
-			}
-			result, err := client.OrientMeasured(t.Context(), []byte(`{}`))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if result.UsageReported != test.usageReported ||
-				result.InputTokens != 0 || result.OutputTokens != 0 {
-				t.Fatalf("usage presence = %#v, want reported=%t", result, test.usageReported)
-			}
-		})
-	}
-}
-
-func TestOrientInvalidJSON(t *testing.T) {
-	attempts := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts++
-		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"choices":[{"message":{"content":"not json"}}]}`)
-	}))
-	defer srv.Close()
-
-	c := &Client{
-		HTTPClient: srv.Client(),
-		APIKey:     "test-key",
-		Model:      "deepseek-chat",
-		MaxTokens:  4000,
-		Endpoint:   srv.URL,
-	}
-
-	_, err := c.Orient(context.Background(), []byte(`{}`))
-	if err == nil {
-		t.Fatal("expected error for invalid JSON")
-	}
-	if !strings.Contains(err.Error(), "not valid JSON") {
-		t.Fatalf("error should mention invalid JSON, got: %v", err)
-	}
-	if attempts != 1 {
-		t.Fatalf("attempts = %d, want 1 for non-truncated invalid JSON", attempts)
-	}
-}
-
-func TestOrientFailsClosedOnValidJSONLengthWithoutRetry(t *testing.T) {
-	t.Parallel()
-
-	attempts := 0
-	var requestBody []byte
-	var request chatRequest
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts++
-		var err error
-		requestBody, err = io.ReadAll(r.Body)
-		if err != nil {
-			t.Errorf("read request: %v", err)
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		if err := json.Unmarshal(requestBody, &request); err != nil {
-			t.Errorf("decode request: %v", err)
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{
-			"choices":[{"finish_reason":"length","message":{"content":"{}"}}],
-			"usage":{"prompt_tokens":100,"completion_tokens":6000,
-				"completion_tokens_details":{"reasoning_tokens":5900}}
-		}`)
-	}))
-	defer srv.Close()
-
-	client := &Client{
-		HTTPClient: srv.Client(),
-		Model:      "deepseek-v4-flash",
-		MaxTokens:  6000,
-		Endpoint:   srv.URL,
-		Auth:       authNone,
-	}
-	result, err := client.OrientMeasured(context.Background(), []byte(`{}`))
-	var limitErr *ResourceLimitError
-	if !errors.As(err, &limitErr) {
-		t.Fatalf("OrientMeasured() error = %v, want ResourceLimitError", err)
-	}
-	if attempts != 1 || request.MaxTokens != client.MaxTokens {
-		t.Fatalf("attempts/max_tokens = %d/%d, want 1/%d", attempts, request.MaxTokens, client.MaxTokens)
-	}
-	if limitErr.Stage != "orientation" || limitErr.Kind != ResourceLimitOutputTokens ||
-		limitErr.Limit != client.MaxTokens || limitErr.Observed != 6000 ||
-		limitErr.ConfiguredMaxTokens != client.MaxTokens ||
-		limitErr.InputTokens != 100 || limitErr.OutputTokens != 6000 ||
-		limitErr.ReasoningTokens != 5900 || limitErr.FinishReason != "length" ||
-		string(limitErr.ProviderContent()) != `{}` {
-		t.Fatalf("resource limit = %#v, content = %q", limitErr, limitErr.ProviderContent())
-	}
-	if result.Attempts != 1 || result.RequestBytes != len(requestBody) ||
-		result.InputTokens != 100 || result.OutputTokens != 6000 ||
-		result.ReasoningTokens != 5900 || result.FinishReason != "length" {
-		t.Fatalf("OrientMeasured() telemetry = %#v", result)
-	}
-	if string(result.Content) != `{}` {
-		t.Fatalf("OrientMeasured() content = %q", result.Content)
-	}
-}
-
-func TestOrientEmptyContentIncludesSafeCompletionDiagnostics(t *testing.T) {
-	t.Parallel()
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{
-			"choices":[{
-				"finish_reason":"length",
-				"message":{"content":null,"reasoning_content":"private provider reasoning"}
-			}],
-			"usage":{
-				"completion_tokens":6000,
-				"completion_tokens_details":{"reasoning_tokens":6000}
-			}
-		}`)
-	}))
-	defer srv.Close()
-
-	client := &Client{
-		HTTPClient: srv.Client(),
-		Model:      "deepseek-v4-flash",
-		MaxTokens:  6000,
-		Endpoint:   srv.URL,
-		Auth:       authNone,
-	}
-	_, err := client.Orient(context.Background(), []byte(`{}`))
-	var limitErr *ResourceLimitError
-	if !errors.As(err, &limitErr) {
-		t.Fatalf("Orient() error = %v, want ResourceLimitError", err)
-	}
-	for _, want := range []string{
-		"llm resource limit reached",
-		"finish_reason=length",
-		"output_tokens=6000",
-		"reasoning_tokens=6000",
-	} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("Orient() error = %q, want %q", err, want)
-		}
-	}
-	if strings.Contains(err.Error(), "private provider reasoning") {
-		t.Fatal("Orient() error exposed provider reasoning content")
-	}
-}
-
-func TestOrientEmptyCompletedContentReturnsTypedSentinel(t *testing.T) {
-	t.Parallel()
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{
-			"choices":[{"finish_reason":"stop","message":{"content":""}}],
-			"usage":{"prompt_tokens":11,"completion_tokens":0}
-		}`)
-	}))
-	defer srv.Close()
-
-	client := &Client{
-		HTTPClient: srv.Client(), Model: "fixture", MaxTokens: 100,
-		Endpoint: srv.URL, Auth: authNone,
-	}
-	result, err := client.OrientMeasured(context.Background(), []byte(`{}`))
-	if !errors.Is(err, ErrResponseContentEmpty) {
-		t.Fatalf("OrientMeasured() error = %v, want ErrResponseContentEmpty", err)
-	}
-	if result.Attempts != 1 || result.ResponseBytes == 0 || result.FinishReason != "stop" ||
-		!result.UsageReported || result.InputTokens != 11 || len(result.Content) != 0 {
-		t.Fatalf("empty response telemetry = %#v", result)
-	}
-}
-
-func TestOrientRetryOn500(t *testing.T) {
-	attempts := 0
-	var bodies [][]byte
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts++
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Errorf("read request: %v", err)
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		bodies = append(bodies, append([]byte(nil), body...))
-		if attempts < 2 {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"choices":[{"message":{"content":"{}"}}]}`)
-	}))
-	defer srv.Close()
-
-	c := &Client{
-		HTTPClient: srv.Client(),
-		APIKey:     "test-key",
-		Model:      "deepseek-chat",
-		MaxTokens:  4000,
-		Endpoint:   srv.URL,
-	}
-
-	_, err := c.Orient(context.Background(), []byte(`{}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if attempts != 2 {
-		t.Fatalf("attempts = %d, want 2", attempts)
-	}
-	if len(bodies) != 2 || !bytes.Equal(bodies[0], bodies[1]) {
-		t.Fatal("orientation transport retry changed the exact provider request")
-	}
-}
-
-func TestCheckJSONCompatibilityUsesOneConfiguredCeilingRequest(t *testing.T) {
-	requests := 0
-	var maxTokens int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests++
-		var request chatRequest
-		_ = json.NewDecoder(r.Body).Decode(&request)
-		maxTokens = request.MaxTokens
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-
-	client := &Client{
-		HTTPClient: srv.Client(),
-		APIKey:     "test-key",
-		Model:      "internal-model",
-		MaxTokens:  6000,
-		Endpoint:   srv.URL,
-		Auth:       authBearer,
-	}
-	if err := client.CheckJSONCompatibility(context.Background()); err == nil {
-		t.Fatal("CheckJSONCompatibility() error = nil")
-	}
-	if requests != 1 {
-		t.Fatalf("requests = %d, want exactly 1", requests)
-	}
-	if maxTokens != client.MaxTokens {
-		t.Fatalf("max_tokens = %d, want configured %d", maxTokens, client.MaxTokens)
-	}
-}
-
-func TestOrientNoRetryOn400(t *testing.T) {
-	attempts := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts++
-		w.WriteHeader(http.StatusBadRequest)
-	}))
-	defer srv.Close()
-
-	c := &Client{
-		HTTPClient: srv.Client(),
-		APIKey:     "test-key",
-		Model:      "deepseek-chat",
-		MaxTokens:  4000,
-		Endpoint:   srv.URL,
-	}
-
-	_, err := c.Orient(context.Background(), []byte(`{}`))
-	if err == nil {
-		t.Fatal("expected error for 400")
-	}
-	if attempts != 1 {
-		t.Fatalf("attempts = %d, want 1 (no retry)", attempts)
-	}
-}
-
-func TestOrientNon2xxIncludesBoundedSafeBody(t *testing.T) {
-	t.Run("ordinary body", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(w, `{"error":"unsupported response_format"}`)
-		}))
-		defer srv.Close()
-
-		client := &Client{HTTPClient: srv.Client(), APIKey: "test-key", Endpoint: srv.URL, Auth: authBearer}
-		_, err := client.Orient(context.Background(), []byte(`{}`))
-		if err == nil || !strings.Contains(err.Error(), "status 400") || !strings.Contains(err.Error(), "unsupported response_format") {
-			t.Fatalf("Orient() error = %v", err)
-		}
-	})
-
-	t.Run("credential-like body", func(t *testing.T) {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(w, `{"error":"Bearer company-secret-token-value"}`)
-		}))
-		defer srv.Close()
-
-		client := &Client{HTTPClient: srv.Client(), APIKey: "test-key", Endpoint: srv.URL, Auth: authBearer}
-		_, err := client.Orient(context.Background(), []byte(`{}`))
-		if err == nil || !strings.Contains(err.Error(), "status 400") || !strings.Contains(err.Error(), "[redacted:") {
-			t.Fatalf("Orient() error = %v", err)
-		}
-		if strings.Contains(err.Error(), "company-secret-token-value") {
-			t.Fatal("Orient() error exposed credential-like provider content")
-		}
-	})
-}
-
-func TestOrientReportsTypedResponseBodyLimitWithoutRetry(t *testing.T) {
-	calls := 0
-	oversized := strings.Repeat("x", maxProviderResponseBytes+1)
-	httpClient := &http.Client{Transport: clientRoundTripFunc(func(request *http.Request) (*http.Response, error) {
-		calls++
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(oversized)),
-			Request:    request,
-		}, nil
-	})}
-	client := &Client{
-		HTTPClient: httpClient, Model: "fixture", MaxTokens: defaultMaxTokens,
-		Endpoint: "https://provider.example.test/chat", Auth: authNone,
-	}
-
-	result, err := client.OrientMeasured(t.Context(), []byte(`{}`))
-	var limitErr *ResourceLimitError
-	if !errors.As(err, &limitErr) {
-		t.Fatalf("OrientMeasured() error = %v, want ResourceLimitError", err)
-	}
-	if calls != 1 || result.Attempts != 1 || result.ResponseBytes != maxProviderResponseBytes+1 {
-		t.Fatalf("calls/result = %d/%#v", calls, result)
-	}
-	if limitErr.Stage != "orientation" || limitErr.Kind != ResourceLimitResponseBytes ||
-		limitErr.Limit != maxProviderResponseBytes ||
-		limitErr.Observed != maxProviderResponseBytes+1 || !limitErr.ObservedKnown ||
-		!limitErr.ObservedAtLeast || limitErr.ConfiguredMaxTokens != client.MaxTokens {
-		t.Fatalf("resource limit = %#v", limitErr)
-	}
-	if len(limitErr.ProviderContent()) != 0 ||
-		!strings.Contains(err.Error(), "observed>=16777217") ||
-		strings.Contains(err.Error(), "observed=>=") ||
-		strings.Contains(err.Error(), "xxxxx") {
-		t.Fatalf("resource error exposed provider body: %v", err)
-	}
-}
-
-func TestOrientOversizedNon2xxIsTypedTerminalWithClosedMetadataOnly(t *testing.T) {
-	calls := 0
-	const providerProse = "temporarily unavailable; retry later"
-	prefix := `{"error":"` + providerProse + `"}`
-	oversized := prefix + strings.Repeat("x", maxProviderResponseBytes+1-len(prefix))
-	httpClient := &http.Client{Transport: clientRoundTripFunc(func(request *http.Request) (*http.Response, error) {
-		calls++
-		return &http.Response{
-			StatusCode: http.StatusServiceUnavailable,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(oversized)),
-			Request:    request,
-		}, nil
-	})}
-	client := &Client{
-		HTTPClient: httpClient, Model: "fixture", MaxTokens: defaultMaxTokens,
-		Endpoint: "https://provider.example.test/chat", Auth: authNone,
-	}
-
-	result, err := client.OrientMeasured(t.Context(), []byte(`{}`))
-	var limitErr *ResourceLimitError
-	if !errors.As(err, &limitErr) {
-		t.Fatalf("OrientMeasured() error = %v, want ResourceLimitError", err)
-	}
-	if calls != 1 || result.Attempts != 1 ||
-		limitErr.Kind != ResourceLimitResponseBytes ||
-		limitErr.HTTPStatus != http.StatusServiceUnavailable ||
-		limitErr.Limit != maxProviderResponseBytes ||
-		limitErr.Observed != maxProviderResponseBytes+1 ||
-		!limitErr.ObservedKnown || !limitErr.ObservedAtLeast ||
-		limitErr.ConfiguredMaxTokens != client.MaxTokens {
-		t.Fatalf("calls/result/limit = %d/%#v/%#v", calls, result, limitErr)
-	}
-	if !strings.Contains(err.Error(), "status=503") ||
-		!strings.Contains(err.Error(), "limit=response_bytes") ||
-		!strings.Contains(err.Error(), "observed>=16777217") ||
-		strings.Contains(err.Error(), "observed=>=") ||
-		strings.Contains(err.Error(), providerProse) || strings.Contains(err.Error(), "provider_response") {
-		t.Fatalf("open or incomplete resource metadata: %v", err)
-	}
-}
-
-func TestOrientRetryOn429(t *testing.T) {
-	attempts := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		attempts++
-		if attempts < 2 {
-			w.WriteHeader(http.StatusTooManyRequests)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		io.WriteString(w, `{"choices":[{"message":{"content":"{}"}}]}`)
-	}))
-	defer srv.Close()
-
-	c := &Client{
-		HTTPClient: srv.Client(),
-		APIKey:     "test-key",
-		Model:      "deepseek-chat",
-		MaxTokens:  4000,
-		Endpoint:   srv.URL,
-	}
-
-	_, err := c.Orient(context.Background(), []byte(`{}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if attempts != 2 {
-		t.Fatalf("attempts = %d, want 2", attempts)
-	}
-}
-
-func TestOrientContextCancel(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-
-	c := &Client{
-		HTTPClient: srv.Client(),
-		APIKey:     "test-key",
-		Model:      "deepseek-chat",
-		MaxTokens:  4000,
-		Endpoint:   srv.URL,
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
-	defer cancel()
-
-	_, err := c.Orient(ctx, []byte(`{}`))
-	if err == nil {
-		t.Fatal("expected error from context cancellation")
-	}
-}
-
-func TestOrientPromptContainsJSONWord(t *testing.T) {
-	c := &Client{
-		HTTPClient: &http.Client{},
-		APIKey:     "test-key",
-		Model:      "deepseek-v4-flash",
-		MaxTokens:  4000,
-		Endpoint:   "https://api.example.com",
-	}
-
-	req, err := json.Marshal(c.buildRequest([]byte(`{"test": true}`)))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	body := strings.ToLower(string(req))
-
-	// Check response_format is json_object
-	if !strings.Contains(body, `json_object`) {
-		t.Fatal("request must include response_format json_object")
-	}
-
-	// Check user prompt mentions json (after JSON escaping it'll appear as \"json\" or raw)
-	msgs := c.buildRequest([]byte(`{}`)).Messages
-	found := false
-	for _, m := range msgs {
-		if strings.Contains(strings.ToLower(m.Content), "json") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatal("prompt content must contain the word 'json'")
-	}
-}
-
-func TestOrientPromptContainsExampleShape(t *testing.T) {
-	if OrientationPromptVersionJSON != "orientation-json-v13" {
-		t.Fatalf("OrientationPromptVersionJSON = %q", OrientationPromptVersionJSON)
-	}
-	c := &Client{
-		HTTPClient: &http.Client{},
-		APIKey:     "test-key",
-		Model:      "deepseek-v4-flash",
-		MaxTokens:  4000,
-		Endpoint:   "https://api.example.com",
-	}
-
-	msgs := c.buildRequest([]byte(`{}`)).Messages
-	if strings.Contains(msgs[0].Content, "Go repository") || !strings.Contains(msgs[0].Content, "language_hints") {
-		t.Fatalf("system prompt is not language-aware: %q", msgs[0].Content)
-	}
-	body := msgs[1].Content // user message
-
-	expected := []string{
-		"file_ref",
-		"evidence_refs",
-		"project_guess",
-		"candidate_flows",
-		"flow_type",
-		`"operational"`,
-		"source_signal",
-		"cap confidence at 0.3",
-		"strongest grounded evidence regardless of flow type",
-		"first_files_to_open",
-		"high_level_map",
-		`"role"`,
-		"orientation hypothesis",
-		"important_domain_words",
-		"questions_for_human",
-		"Never shorten, extend, prefix, substitute, or repair a ref",
-		"Evidence is selected only by exact evidence_refs",
-		"embedded in the facts bundle are closed",
-		"Never use a file ref where an evidence ref is required",
-		"There is no unverified_paths response field",
-		"go.command_traces are locally extracted bounded syntax evidence",
-	}
-
-	for _, field := range expected {
-		if !strings.Contains(body, field) {
-			t.Fatalf("prompt must contain expected JSON field %s", field)
-		}
-	}
-}
-
-func TestOrientationThinkingPolicyIsEndpointSpecific(t *testing.T) {
-	t.Parallel()
-
-	for _, test := range []struct {
-		name         string
-		endpoint     string
-		wantThinking string
-	}{
-		{name: "official DeepSeek", endpoint: "https://api.deepseek.com/chat/completions", wantThinking: "disabled"},
-		{name: "compatible endpoint", endpoint: "https://llm.example.test/chat/completions"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			client := &Client{Model: "fixture", MaxTokens: 6000, Endpoint: test.endpoint}
-			request := client.buildRequest([]byte(`{}`))
-			if test.wantThinking == "" {
-				if request.Thinking != nil {
-					t.Fatalf("thinking = %#v, want omitted", request.Thinking)
-				}
-				return
-			}
-			if request.Thinking == nil || request.Thinking.Type != test.wantThinking {
-				t.Fatalf("thinking = %#v, want %q", request.Thinking, test.wantThinking)
-			}
-		})
-	}
-}
-
-func TestWaitProgressStopsCooperatively(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	updates := make(chan WaitProgress, 2)
-	client := &Client{
-		waitInterval: time.Millisecond,
-		OnWait: func(progress WaitProgress) {
-			select {
-			case updates <- progress:
-			default:
-			}
-		},
-	}
-	stop := client.startWaitProgress(ctx, "fixture stage")
-	select {
-	case update := <-updates:
-		if update.Stage != "fixture stage" || update.Elapsed <= 0 {
-			t.Fatalf("wait update = %#v", update)
-		}
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timed out waiting for progress heartbeat")
-	}
-	stop()
-	cancel()
 }
 
 func clearLLMConfigEnv(t *testing.T) {
 	t.Helper()
-
-	names := []string{
-		envEndpoint,
-		envModel,
-		envAPIKey,
-		envMaxTokens,
-		envTimeout,
-		envAuth,
-		legacyEnvEndpoint,
-		legacyEnvModel,
-		legacyEnvAPIKey,
-		"DEEPSEEK_MAX_TOKENS",
-		legacyEnvTimeout,
-		legacyEnvAuth,
-	}
-	for _, name := range names {
+	for _, name := range []string{
+		envEndpoint, envModel, envAPIKey, envMaxTokens, envTimeout, envAuth,
+		legacyEnvEndpoint, legacyEnvModel, legacyEnvAPIKey, "DEEPSEEK_MAX_TOKENS",
+		legacyEnvTimeout, legacyEnvAuth,
+	} {
 		value, present := os.LookupEnv(name)
 		if err := os.Unsetenv(name); err != nil {
 			t.Fatalf("unset %s: %v", name, err)
@@ -1143,10 +143,4 @@ func clearLLMConfigEnv(t *testing.T) {
 			_ = os.Unsetenv(name)
 		})
 	}
-}
-
-type clientRoundTripFunc func(*http.Request) (*http.Response, error)
-
-func (fn clientRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
-	return fn(request)
 }

@@ -11,11 +11,9 @@ import (
 // GitHubSourceLinks turns repository locations in a standalone report into
 // ordinary GitHub links pinned to the exact analyzed revision.
 type GitHubSourceLinks struct {
-	RepositoryURL    string   `json:"repository_url"`
-	Revision         string   `json:"revision"`
-	PathPrefix       string   `json:"path_prefix,omitempty"`
-	WorkingTreeDirty bool     `json:"working_tree_dirty,omitempty"`
-	WorkingTreePaths []string `json:"working_tree_paths,omitempty"`
+	RepositoryURL string `json:"repository_url"`
+	Revision      string `json:"revision"`
+	PathPrefix    string `json:"path_prefix,omitempty"`
 }
 
 // ResolveGitHubRepositoryURL accepts either a complete GitHub repository URL
@@ -145,9 +143,5 @@ func (links *GitHubSourceLinks) validate() error {
 		normalized.PathPrefix != links.PathPrefix {
 		return fmt.Errorf("report: GitHub source links are not canonical")
 	}
-	return validateWorkingTreeSourceLinks(
-		links.WorkingTreeDirty,
-		links.WorkingTreePaths,
-		"GitHub",
-	)
+	return nil
 }

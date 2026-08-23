@@ -1,0 +1,369 @@
+/goal Repomap D215 — isolate an exact Architecture output loop without losing the local product
+
+Work from current `main` at or after
+`36c75a7a92e70fa7607cb2a3d6d32b4327ed25f7`.
+
+Own this corrective end to end: inspect, write the next decision, implement,
+test, replay the exact failure provider-free, generate a completed report, and
+critically review it. Do not stop after planning or the first green test. Do not
+wait for `continue`.
+
+Do not push. Do not rewrite history. Preserve unrelated workspace changes.
+
+## Read first
+
+Read:
+
+- `AGENTS.md`
+- `docs/CORE_IDEA.md`
+- `docs/agent-room/CURRENT.md`
+- Decisions 177, 192, 194, 201–214
+- current Architecture request builder, provider adapter, response validator,
+  cache/replay, status, model-research accounting, CLI failure classification,
+  stage diagnostics, report projection, and EN/RU catalog.
+
+Create Decision 215 for exactly this corrective. Explicitly state which narrow
+part of D194 it supersedes.
+
+## Exact incident evidence
+
+Diagnostic archive supplied by the owner:
+
+- file: `20260805-064730-etcd-4d99f0f8a558.zip`
+- SHA-256: `9a8238a9331d8a7f8f97c2d0f617155ec147d4de97a9fcec5a13cf2f85c1beea`
+- run: `20260805-064730-etcd-4d99f0f8a558`
+- Architecture request SHA-256:
+  `00cb222adab0076fb8bdd346beb742f0be7e776f4a0118e673831ec427c905ab`
+- retained response SHA-256:
+  `be4dc6ccaf09dfa82904797301a16680e92d27a119a2348603b76cf0f6b38475`
+
+Do not commit the raw archive or raw provider response.
+
+The root cause is proven. Do not spend the iteration rediscovering speculative
+provider causes:
+
+- request used `deepseek-v4-flash`;
+- JSON-object mode was enabled;
+- `thinking: disabled` was present;
+- input tokens: 42,197;
+- output tokens: 64,000;
+- finish reason: `length`;
+- retained visible response: 201,396 bytes;
+- response emitted one subsystem and one component, then remained inside that
+  component's `member_refs`;
+- it emitted 6,390 package-ref objects but only 90 unique refs;
+- after 34 initial refs, one exact 56-ref / 1,761-byte block repeated 113 full
+  times plus a partial repetition;
+- it emitted no symbol refs, no `anchor_refs`, no `hypothesis`, no second
+  component, and no closing JSON;
+- the first duplicate already made the proposal semantically invalid even if a
+  closing suffix had existed.
+
+This is a visible generation repetition loop. It is not hidden reasoning.
+D214 boundary/resource entities were not members of this Architecture request.
+
+## Product invariant
+
+Architecture synthesis is optional conceptual enrichment over the already
+complete canonical local Architecture Canvas.
+
+A length-ended response must never be parsed, applied, cached, or presented as
+Architecture. But an attempted Architecture output resource failure must no
+longer erase the independently valid local product, Study, and report.
+
+## Binding scope
+
+D215 changes only attempted Architecture output/response resource exhaustion.
+
+It does not change resource-limit behavior for:
+
+- Navigator;
+- Theme Scout;
+- Theme Adjudication;
+- localization;
+- pre-call candidate/catalog/request limits;
+- cancellation;
+- repository-authority failures;
+- artifact corruption;
+- status/accounting write failures.
+
+It does not redesign the Architecture response contract. That is the follow-up
+D216.
+
+Do not add a per-stage token cap in D215. D194's exact global `max_tokens`
+value remains unchanged in this corrective. The old proposal to force 8,192
+tokens is superseded: the current legal many-to-many membership schema has not
+yet been compacted enough to prove that all valid answers fit.
+
+## Required implementation
+
+### A. Dedicated attempted Architecture resource-failure type
+
+Introduce an Architecture-owned typed wrapper or classification that preserves
+the underlying `modelresearch.ResourceLimitError`.
+
+It is publishable only when all of these are true:
+
+- the Architecture provider call was attempted;
+- the resource kind is output tokens or provider response bytes;
+- cancellation is not active;
+- no accepted Architecture record/cache was written;
+- failed status is durable;
+- failed model-research accounting is durable.
+
+Do not classify pre-call resource errors as this optional failure.
+
+### B. Durable Architecture failed status
+
+Advance the active Architecture status version as needed.
+
+Persist a bounded failed status with:
+
+- `state=failed`;
+- closed error code such as `provider_output_limit` for
+  `finish_reason=length`;
+- exact request bytes;
+- known response bytes/content bytes;
+- provider request count = 1;
+- exact transport attempts;
+- usage-reported flag;
+- input/output tokens when reported;
+- configured/observed output limit when represented by the active closed
+  status contract;
+- `finish_reason=length`;
+- `response_complete=false`;
+- local/requested/structural/anchor input counts.
+
+It must contain:
+
+- no accepted proposal;
+- no partial membership count;
+- no model Architecture source or level;
+- no fallback represented as model output;
+- no provider prose or raw response.
+
+A failed status write remains terminal.
+
+### C. Correct failed-call accounting
+
+Record the attempted Architecture call exactly once in model-research state:
+
+- semantic calls +1;
+- request bytes;
+- response bytes;
+- latency;
+- input/output tokens when reported;
+- failed/resource-limited status.
+
+Do not count a pre-call rejection. An accounting write failure remains
+terminal.
+
+The existing run metadata attempt is not a substitute for model-research
+accounting; both must remain truthful.
+
+### D. Preserve Decision 192 exchange behavior
+
+Keep the one exact failed semantic exchange:
+
+- exact sent request identity;
+- partial response diagnostic-only;
+- existing redaction and secret handling;
+- no second exchange for the same semantic attempt;
+- no execution read-back from the diagnostic journal.
+
+Add provider-free assertions using a generated compact loop fixture. Do not add
+the full owner run to testdata.
+
+### E. Publishable continuation
+
+Only after B and C succeed, allow `main` to continue:
+
+- repository authority reconciliation;
+- Theme Scout;
+- local source expansion;
+- Theme Adjudication;
+- report/manifest generation;
+- configured static export or serving/opening behavior.
+
+The visible Architecture is the canonical local Canvas.
+
+### F. Localized product disclosure
+
+Use the typed EN/RU catalog.
+
+English meaning:
+
+> Conceptual grouping is unavailable because the model exceeded its response
+> budget. The partial response was not used; exact local Architecture remains
+> available.
+
+Russian meaning:
+
+> Концептуальная группировка недоступна: модель исчерпала лимит ответа.
+> Частичный ответ не использован; точная локальная архитектура остаётся
+> доступна.
+
+The warning must be compact and secondary. It must not expose the raw provider
+error or dominate Overview.
+
+### G. Preserve hard safety
+
+Prove:
+
+- no `architecture_synthesis.json`;
+- no accepted cross-run cache write;
+- no parsing of the response prefix;
+- no membership recovery;
+- no semantic retry;
+- no later model Architecture claim;
+- local Canvas is unchanged.
+
+## Provider-free exact-failure replay
+
+Add the smallest dev/test seam needed to replay the saved failure outcome
+without another provider call. It may accept:
+
+- the prepared exact Architecture request;
+- a response body;
+- measured usage and finish evidence.
+
+It must exercise the real stage owner, status, accounting, continuation, report,
+and manifest paths. It must refuse unsafe/incomplete identities and must not
+treat replay as a live provider call in transport accounting.
+
+Use a generated test response with:
+
+- one subsystem;
+- one component;
+- an open `member_refs`;
+- a repeated 56-ref block;
+- `finish_reason=length`.
+
+Do not need 201 KB in repository testdata; generate it deterministically.
+
+## Tests
+
+Cover at least:
+
+1. attempted `finish_reason=length` with partial bytes;
+2. status version/validation and closed error code;
+3. model-research accounting exactly once;
+4. no synthesis record/cache;
+5. one redacted exchange only;
+6. publication classification only after status + accounting;
+7. status-write failure terminal;
+8. accounting-write failure terminal;
+9. cancellation terminal;
+10. pre-call candidate/request/catalog resource limit remains terminal and
+    provider-free;
+11. non-resource Architecture provider failure retains existing behavior;
+12. accepted, cached, accepted-partial, normalized, and semantically rejected
+    Architecture paths remain green;
+13. full CLI path continues through both D213 semantic stages and report;
+14. report/manifest truthfully bind the failed Architecture status and local
+    Canvas;
+15. EN/RU catalog parity and rendered copy;
+16. no raw provider error in primary UI.
+
+Run focused tests first, then:
+
+```bash
+gofmt on touched Go files
+go test ./...
+go vet ./...
+make build
+node --check on touched JS assets
+all existing report/manifest/provider-free acceptance gates
+```
+
+## etcd acceptance
+
+First replay the exact failure provider-free and generate a complete etcd
+report from the saved local artifacts plus deterministic semantic fixtures.
+
+After all provider-free gates are green, at most one fresh live etcd run is
+authorized if credentials are available.
+
+PASS requires either:
+
+### Complete model result
+
+- complete stopped Architecture proposal;
+- accepted local validation;
+- Study and report published.
+
+### Truthful optional fallback
+
+- Architecture reaches the resource limit;
+- partial bytes remain diagnostic-only;
+- failed status and accounting exist;
+- no synthesis record/cache exists;
+- Study executes;
+- report and manifest publish;
+- command exits successfully;
+- exact local Architecture opens;
+- warning is visible and secondary.
+
+Do not make a second live tuning call.
+
+Capture Overview, Study, and Architecture at desktop and 390 px. D215 UI review
+is limited to the warning and preservation of existing navigation/layout.
+
+## Required follow-up record, not implementation
+
+Record D216 as the next proposed root correction:
+
+```text
+raw exact package/symbol members + raw package graph
+→ deterministic bounded Architecture units
+→ aggregated unit relations and representative evidence
+→ one model call grouping unit refs
+→ local expansion to exact members
+```
+
+The etcd request proves why this is needed:
+
+- 251 conceptual candidates;
+- 635 relations;
+- 613 package-import edges consuming about 74.6 KB;
+- model looped while enumerating raw package refs.
+
+Do not implement D216 in D215.
+
+## Non-goals
+
+- no 128k output ceiling;
+- no 8,192 stage cap yet;
+- no hidden-reasoning/provider-profile work;
+- no prompt-only “do not repeat” fix;
+- no retry;
+- no prefix repair;
+- no D214 rollback;
+- no full UI redesign;
+- no streaming/provider framework;
+- no Architecture ontology rewrite;
+- no push.
+
+## Final response
+
+Return exactly this structure:
+
+```text
+VERDICT: PASS | HOLD
+ROOT CAUSE: visible 56-ref generation loop | <different only with exact evidence>
+D194 DELTA: <precise narrow supersession>
+BEHAVIOR: <what happens after Architecture output exhaustion>
+SAFETY: <record/cache/partial-response result>
+ACCOUNTING: <status + usage evidence>
+STUDY/REPORT: <continuation evidence>
+TESTS: <exact commands/results>
+ETCD: <provider-free replay and optional one live run>
+UI: <desktop/mobile warning findings>
+FILES CHANGED: <exact list>
+COMMIT/PUSH: <state>
+ONE BLOCKER: <NONE or one concrete blocker>
+ONE NEXT ACTION: <exactly one>
+```
+
+Stop only with PASS, one genuine owner tradeoff, or one concrete external
+blocker.

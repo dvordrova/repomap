@@ -11,53 +11,25 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dvordrova/repomap/internal/componentmap"
 	"golang.org/x/tools/go/packages"
 )
 
 const (
-	ProcessEntryAnchorGoMain = "go_main_function"
+	AnalysisTargetExecutablePackage = "executable_package"
+	AnalysisTargetModuleLibrary     = "module_library"
 
-	ExecutableRolePrimaryApplication = "primary_application"
-	ExecutableRoleSecondaryService   = "secondary_service"
-	ExecutableRoleTooling            = "tooling"
-	ExecutableRoleTestOrHelper       = "test_or_helper"
-	ExecutableRoleUnknown            = "unknown"
-
-	AvailabilityAvailable   = "available"
-	AvailabilityUnavailable = "unavailable"
-	AvailabilityUnknown     = "unknown"
-
-	maxPackageDiagnostics  = 128
-	maxUnavailablePackages = 128
-	maxDiagnosticBytes     = 512
+	maxPackageDiagnostics = 128
+	maxDiagnosticBytes    = 512
 )
 
-// Input carries deterministic facts produced outside typed surface discovery.
-// Entrypoint anchors remain authoritative even when their package is ill-typed.
+// Input is an exact, already-selected Go analysis boundary. The package does
+// not discover targets and no repository-wide compatibility mode exists.
 type Input struct {
-	RepositoryName string
 	ModuleDirs     []string
-	// Packages is the exact repository package allowlist admitted by the
-	// analysis target. Empty preserves the legacy repository-wide loader.
 	Packages       []PackageInput
-	Entrypoints    []EntrypointInput
 	AnalysisTarget *AnalysisTargetInput
 }
 
-const (
-	AnalysisTargetExecutablePackage = "executable_package"
-	AnalysisTargetModuleLibrary     = "module_library"
-	// AnalysisTargetLibraryPackage is retained as a source-compatible name for
-	// callers migrating from the former one-package library target. Its value
-	// and contract are the module-library target introduced by Decision 280.
-	AnalysisTargetLibraryPackage = AnalysisTargetModuleLibrary
-)
-
-// AnalysisTargetInput carries only the exact package/root boundary needed to
-// root the local DirectCallIndex edge neighborhood. The authoritative target
-// remains owned and sealed by analysistarget; this cycle-free projection
-// cannot select or reinterpret a target inside surface discovery.
 type AnalysisTargetInput struct {
 	TargetRef      string
 	Kind           string
@@ -79,89 +51,15 @@ type PackageInput struct {
 	ModuleDir string
 }
 
-type EntrypointInput struct {
-	Package    string
-	PackageDir string
-	ModuleDir  string
-	Kind       string
-	Anchors    []EntrypointAnchorInput
-}
-
-type EntrypointAnchorInput struct {
-	Kind   string
-	Path   string
-	Line   int
-	Column int
-}
-
-type processEntrypoint struct {
-	packagePath       string
-	packageDir        string
-	kind              string
-	anchor            EntrypointAnchorInput
-	owner             string
-	role              string
-	availability      string
-	unavailableReason string
-}
-
-func normalizeInput(root string, input Input) (Input, []processEntrypoint, error) {
-	input.RepositoryName = strings.TrimSpace(input.RepositoryName)
-	if input.RepositoryName == "" {
-		input.RepositoryName = filepath.Base(root)
-	}
-	for _, entrypoint := range input.Entrypoints {
-		input.ModuleDirs = append(input.ModuleDirs, entrypoint.ModuleDir)
-	}
+func normalizeInput(input Input) (Input, error) {
 	input.ModuleDirs = normalizeModuleDirs(input.ModuleDirs)
 	input.Packages = normalizePackageInputs(input.Packages)
 	target, err := normalizeAnalysisTargetInput(input.AnalysisTarget, input.Packages)
 	if err != nil {
-		return Input{}, nil, err
+		return Input{}, err
 	}
 	input.AnalysisTarget = target
-
-	var result []processEntrypoint
-	for _, entrypoint := range input.Entrypoints {
-		packagePath := strings.TrimSpace(entrypoint.Package)
-		packageDir := cleanRepositoryPath(entrypoint.PackageDir)
-		if packagePath == "" {
-			continue
-		}
-		for _, anchor := range entrypoint.Anchors {
-			anchor.Path = cleanRepositoryPath(anchor.Path)
-			if anchor.Kind != ProcessEntryAnchorGoMain || anchor.Line <= 0 ||
-				anchor.Path == "" || path.Ext(anchor.Path) != ".go" {
-				continue
-			}
-			owner := packageDir
-			if owner == "" || owner == "." {
-				owner = cleanRepositoryPath(path.Dir(anchor.Path))
-			}
-			if owner == "" || owner == "." {
-				owner = packagePath
-			}
-			result = append(result, processEntrypoint{
-				packagePath:  packagePath,
-				packageDir:   packageDir,
-				kind:         strings.TrimSpace(entrypoint.Kind),
-				anchor:       anchor,
-				owner:        owner,
-				availability: AvailabilityUnknown,
-			})
-		}
-	}
-	sort.Slice(result, func(i, j int) bool {
-		left := result[i]
-		right := result[j]
-		return left.packagePath+"\x00"+left.anchor.Path+"\x00"+strconv.Itoa(left.anchor.Line) <
-			right.packagePath+"\x00"+right.anchor.Path+"\x00"+strconv.Itoa(right.anchor.Line)
-	})
-	result = compactProcessEntrypoints(result)
-	for index := range result {
-		result[index].role = classifyExecutableRole(input.RepositoryName, result[index])
-	}
-	return input, result, nil
+	return input, nil
 }
 
 func normalizeAnalysisTargetInput(
@@ -169,7 +67,7 @@ func normalizeAnalysisTargetInput(
 	packages []PackageInput,
 ) (*AnalysisTargetInput, error) {
 	if target == nil {
-		return nil, nil
+		return nil, fmt.Errorf("surface discovery: exact analysis target is required")
 	}
 	result := &AnalysisTargetInput{
 		TargetRef: target.TargetRef, Kind: target.Kind,
@@ -183,8 +81,8 @@ func normalizeAnalysisTargetInput(
 		result.ModuleDir != target.ModuleDir || strings.TrimSpace(result.Kind) != result.Kind {
 		return nil, fmt.Errorf("surface discovery: analysis target module identity is required")
 	}
-	for index := range result.TargetPackages {
-		if !validDirectCallTargetIdentity(result.TargetPackages[index]) {
+	for _, packagePath := range result.TargetPackages {
+		if !validDirectCallTargetIdentity(packagePath) {
 			return nil, fmt.Errorf("surface discovery: analysis target has an invalid target package")
 		}
 	}
@@ -224,17 +122,12 @@ func normalizeAnalysisTargetInput(
 	}
 	switch result.Kind {
 	case AnalysisTargetExecutablePackage:
-		if result.PackagePath == "" || len(result.TargetPackages) != 1 || result.TargetPackages[0] != result.PackagePath {
-			return nil, fmt.Errorf("surface discovery: executable analysis target requires one exact target package")
-		}
-		if len(result.Roots) == 0 {
-			return nil, fmt.Errorf("surface discovery: executable analysis target requires exact roots")
+		if result.PackagePath == "" || len(result.TargetPackages) != 1 ||
+			result.TargetPackages[0] != result.PackagePath || len(result.Roots) == 0 {
+			return nil, fmt.Errorf("surface discovery: executable analysis target requires one exact package and roots")
 		}
 	case AnalysisTargetModuleLibrary:
-		if result.PackagePath != "" {
-			return nil, fmt.Errorf("surface discovery: module library analysis target cannot declare an executable package")
-		}
-		if len(result.Roots) != 0 {
+		if result.PackagePath != "" || len(result.Roots) != 0 {
 			return nil, fmt.Errorf("surface discovery: module library analysis target cannot declare process roots")
 		}
 	default:
@@ -269,14 +162,9 @@ func normalizePackageInputs(values []PackageInput) []PackageInput {
 func normalizeModuleDirs(values []string) []string {
 	unique := make(map[string]struct{}, len(values))
 	for _, value := range values {
-		value = cleanRepositoryPath(value)
-		if value == "" {
-			continue
+		if value = cleanRepositoryPath(value); value != "" {
+			unique[value] = struct{}{}
 		}
-		unique[value] = struct{}{}
-	}
-	if len(unique) == 0 {
-		return []string{"."}
 	}
 	result := make([]string, 0, len(unique))
 	for value := range unique {
@@ -284,67 +172,6 @@ func normalizeModuleDirs(values []string) []string {
 	}
 	sort.Strings(result)
 	return result
-}
-
-func compactProcessEntrypoints(input []processEntrypoint) []processEntrypoint {
-	result := input[:0]
-	previous := ""
-	for _, entrypoint := range input {
-		key := entrypoint.packagePath + "\x00" + entrypoint.anchor.Path + "\x00" + strconv.Itoa(entrypoint.anchor.Line)
-		if key == previous {
-			continue
-		}
-		previous = key
-		result = append(result, entrypoint)
-	}
-	return result
-}
-
-func classifyExecutableRole(repositoryName string, entrypoint processEntrypoint) string {
-	segments := repositoryPathSegments(entrypoint.packageDir, path.Dir(entrypoint.anchor.Path))
-	joined := strings.Join(segments, "/")
-	if hasAnySegment(segments, "dev", "tool", "tools", "hack", "script", "scripts", "build", "release", "generator", "generators") ||
-		(hasAnySegment(segments, "helper", "helpers") && (strings.Contains(joined, "build") || strings.Contains(joined, "release"))) ||
-		entrypoint.kind == "tool" {
-		return ExecutableRoleTooling
-	}
-	if hasAnySegment(segments, "test", "tests", "testing", "testutil", "testdata", "helper", "helpers", "example", "examples") ||
-		entrypoint.kind == "test_binary" || entrypoint.kind == "example" {
-		return ExecutableRoleTestOrHelper
-	}
-	if entrypoint.packageDir == "." ||
-		(entrypoint.packageDir == "" && path.Dir(entrypoint.anchor.Path) == ".") ||
-		strings.EqualFold(path.Base(entrypoint.packageDir), strings.TrimSpace(repositoryName)) ||
-		entrypoint.kind == "primary_binary" {
-		return ExecutableRolePrimaryApplication
-	}
-	if entrypoint.owner != "" {
-		return ExecutableRoleSecondaryService
-	}
-	return ExecutableRoleUnknown
-}
-
-func repositoryPathSegments(values ...string) []string {
-	var result []string
-	for _, value := range values {
-		for _, segment := range strings.Split(strings.ToLower(cleanRepositoryPath(value)), "/") {
-			if segment != "" && segment != "." {
-				result = append(result, segment)
-			}
-		}
-	}
-	return result
-}
-
-func hasAnySegment(segments []string, candidates ...string) bool {
-	for _, segment := range segments {
-		for _, candidate := range candidates {
-			if segment == candidate {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func cleanRepositoryPath(value string) string {
@@ -364,107 +191,35 @@ func packageSafeForSSA(pkg *packages.Package) bool {
 }
 
 func (a *analyzer) recordPackageLoadOutcomes(allPackages map[string]*packages.Package) {
-	for index := range a.processEntrypoints {
-		entrypoint := &a.processEntrypoints[index]
-		pkg := allPackages[entrypoint.packagePath]
-		if packageSafeForSSA(pkg) {
-			entrypoint.availability = AvailabilityAvailable
-			continue
-		}
-		entrypoint.availability = AvailabilityUnavailable
-		if pkg == nil {
-			entrypoint.unavailableReason = "typed package was not loaded under the recorded module scope"
-		} else {
-			entrypoint.unavailableReason = "package or dependency closure is ill-typed under the recorded build scenario"
-		}
-	}
-
-	owners := a.packageExecutableOwners(allPackages)
-	diagnosticsByPackage := make(map[string][]string)
-	var diagnostics []PackageDiagnostic
-	var unavailable []PackageAvailability
-	seenDiagnostics := make(map[string]struct{})
-	seenUnavailable := make(map[string]struct{})
-	diagnosticCount := 0
-	unavailableCount := 0
 	ordered := make([]*packages.Package, 0, len(allPackages))
 	for _, pkg := range allPackages {
-		if isRepositoryPackage(a.root, pkg) {
+		if pkg != nil {
 			ordered = append(ordered, pkg)
 		}
 	}
 	sort.Slice(ordered, func(i, j int) bool { return packageIdentity(ordered[i]) < packageIdentity(ordered[j]) })
+	seen := make(map[string]struct{})
 	for _, pkg := range ordered {
-		packageID := packageIdentity(pkg)
-		owner, role := uniquePackageOwner(owners[packageID])
-		packageDiagnostics := append([]packages.Error(nil), pkg.Errors...)
-		sort.Slice(packageDiagnostics, func(i, j int) bool {
-			return packageDiagnostics[i].Error() < packageDiagnostics[j].Error()
-		})
-		for _, packageError := range packageDiagnostics {
+		errors := append([]packages.Error(nil), pkg.Errors...)
+		sort.Slice(errors, func(i, j int) bool { return errors[i].Error() < errors[j].Error() })
+		for _, packageError := range errors {
 			location := a.packageErrorLocation(pkg, packageError.Pos)
 			message := boundedDiagnosticMessage(packageError.Msg, a.root)
-			id := stableDiagnosticID(packageID, packageErrorKind(packageError.Kind), message, location)
-			if _, duplicate := seenDiagnostics[id]; duplicate {
+			id := stableDiagnosticID(packageIdentity(pkg), packageErrorKind(packageError.Kind), message, location)
+			if _, duplicate := seen[id]; duplicate {
 				continue
 			}
-			seenDiagnostics[id] = struct{}{}
-			diagnosticCount++
-			if len(diagnostics) >= maxPackageDiagnostics {
-				continue
-			}
-			diagnostics = append(diagnostics, PackageDiagnostic{
-				ID: id, Kind: packageErrorKind(packageError.Kind), Message: message,
-				Package: packageID, PackageName: pkg.Name,
-				OwningExecutable: owner, ExecutableRole: role,
-				Availability: AvailabilityUnavailable, Location: location,
-			})
-			diagnosticsByPackage[packageID] = append(diagnosticsByPackage[packageID], id)
-		}
-		if !packageSafeForSSA(pkg) {
-			seenUnavailable[packageID] = struct{}{}
-			unavailableCount++
-			reason := "unsafe_dependency_closure"
-			if len(pkg.Errors) > 0 {
-				reason = "package_errors"
-			}
-			if len(unavailable) < maxUnavailablePackages {
-				unavailable = append(unavailable, PackageAvailability{
-					Package: packageID, PackageName: pkg.Name,
-					OwningExecutable: owner, ExecutableRole: role,
-					Availability: AvailabilityUnavailable, Reason: reason,
-					DiagnosticIDs: append([]string(nil), diagnosticsByPackage[packageID]...),
+			seen[id] = struct{}{}
+			if len(a.result.Coverage.PackageDiagnostics) < maxPackageDiagnostics {
+				a.result.Coverage.PackageDiagnostics = append(a.result.Coverage.PackageDiagnostics, PackageDiagnostic{
+					ID: id, Kind: packageErrorKind(packageError.Kind), Message: message,
+					Package: packageIdentity(pkg), Location: location,
 				})
 			}
 		}
 	}
-	for _, entrypoint := range a.processEntrypoints {
-		if entrypoint.availability != AvailabilityUnavailable || allPackages[entrypoint.packagePath] != nil {
-			continue
-		}
-		if _, duplicate := seenUnavailable[entrypoint.packagePath]; duplicate {
-			continue
-		}
-		seenUnavailable[entrypoint.packagePath] = struct{}{}
-		unavailableCount++
-		if len(unavailable) < maxUnavailablePackages {
-			unavailable = append(unavailable, PackageAvailability{
-				Package: entrypoint.packagePath, OwningExecutable: entrypoint.owner,
-				ExecutableRole: entrypoint.role, Availability: AvailabilityUnavailable,
-				Reason: "typed_package_not_loaded", DiagnosticIDs: []string{},
-			})
-		}
-	}
-	a.result.Coverage.PackageDiagnosticCount = diagnosticCount
-	a.result.Coverage.UnavailablePackageCount = unavailableCount
-	a.result.Coverage.PackageDiagnostics = diagnostics
-	a.result.Coverage.UnavailablePackages = unavailable
 }
 
-// analysisTargetSSADiagnostic returns one exact diagnostic already admitted
-// to bounded coverage. A located diagnostic closest to the selected package
-// wins; this prefers an actionable repository source error over a propagated
-// import failure whose position belongs to another package.
 func (a *analyzer) analysisTargetSSADiagnostic(
 	allPackages map[string]*packages.Package,
 	targetPackage string,
@@ -479,12 +234,12 @@ func (a *analyzer) analysisTargetSSADiagnostic(
 		current := queue[0]
 		queue = queue[1:]
 		currentDistance := distance[packageIdentity(current)]
-		importPaths := make([]string, 0, len(current.Imports))
+		imports := make([]string, 0, len(current.Imports))
 		for importPath := range current.Imports {
-			importPaths = append(importPaths, importPath)
+			imports = append(imports, importPath)
 		}
-		sort.Strings(importPaths)
-		for _, importPath := range importPaths {
+		sort.Strings(imports)
+		for _, importPath := range imports {
 			imported := current.Imports[importPath]
 			identity := packageIdentity(imported)
 			if identity == "" {
@@ -497,20 +252,16 @@ func (a *analyzer) analysisTargetSSADiagnostic(
 			queue = append(queue, imported)
 		}
 	}
-
-	best := -1
-	bestDistance := int(^uint(0) >> 1)
+	best, bestDistance := -1, int(^uint(0)>>1)
 	for index := range a.result.Coverage.PackageDiagnostics {
 		diagnostic := &a.result.Coverage.PackageDiagnostics[index]
 		diagnosticDistance, reachable := distance[diagnostic.Package]
-		if !reachable || diagnostic.Location == nil ||
-			diagnostic.Location.Path == "" || diagnostic.Location.Line <= 0 {
+		if !reachable || diagnostic.Location == nil || diagnostic.Location.Path == "" || diagnostic.Location.Line <= 0 {
 			continue
 		}
 		if best < 0 || diagnosticDistance < bestDistance ||
 			diagnosticDistance == bestDistance && diagnostic.ID < a.result.Coverage.PackageDiagnostics[best].ID {
-			best = index
-			bestDistance = diagnosticDistance
+			best, bestDistance = index, diagnosticDistance
 		}
 	}
 	if best < 0 {
@@ -520,66 +271,6 @@ func (a *analyzer) analysisTargetSSADiagnostic(
 	location := *result.Location
 	result.Location = &location
 	return &result
-}
-
-func (a *analyzer) packageExecutableOwners(allPackages map[string]*packages.Package) map[string][]processEntrypoint {
-	result := make(map[string][]processEntrypoint)
-	for _, entrypoint := range a.processEntrypoints {
-		pkg := allPackages[entrypoint.packagePath]
-		if pkg == nil {
-			result[entrypoint.packagePath] = append(result[entrypoint.packagePath], entrypoint)
-			continue
-		}
-		visited := make(map[string]bool)
-		var visit func(*packages.Package)
-		visit = func(current *packages.Package) {
-			if current == nil || visited[packageIdentity(current)] {
-				return
-			}
-			visited[packageIdentity(current)] = true
-			if !isRepositoryPackage(a.root, current) {
-				return
-			}
-			result[packageIdentity(current)] = append(result[packageIdentity(current)], entrypoint)
-			for _, imported := range current.Imports {
-				visit(imported)
-			}
-		}
-		visit(pkg)
-	}
-	return result
-}
-
-func uniquePackageOwner(owners []processEntrypoint) (string, string) {
-	unique := make(map[string]string)
-	for _, owner := range owners {
-		if owner.owner != "" {
-			unique[owner.owner] = owner.role
-		}
-	}
-	if len(unique) != 1 {
-		return "", ExecutableRoleUnknown
-	}
-	for owner, role := range unique {
-		return owner, role
-	}
-	return "", ExecutableRoleUnknown
-}
-
-func isRepositoryPackage(root string, pkg *packages.Package) bool {
-	if pkg == nil {
-		return false
-	}
-	if pkg.Module != nil && pkg.Module.Main {
-		return true
-	}
-	for _, filename := range append(append([]string(nil), pkg.CompiledGoFiles...), pkg.GoFiles...) {
-		if relative, err := filepath.Rel(root, filename); err == nil && relative != ".." &&
-			!strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-			return true
-		}
-	}
-	return false
 }
 
 func packageIdentity(pkg *packages.Package) string {
@@ -619,34 +310,23 @@ func loadedPackageFilename(pkg *packages.Package, filename string) string {
 		return ""
 	}
 	filename = filepath.Clean(filename)
-	files := make([]string, 0, len(pkg.GoFiles)+len(pkg.CompiledGoFiles)+len(pkg.OtherFiles))
-	files = append(files, pkg.GoFiles...)
-	files = append(files, pkg.CompiledGoFiles...)
-	files = append(files, pkg.OtherFiles...)
+	files := append(append(append([]string(nil), pkg.GoFiles...), pkg.CompiledGoFiles...), pkg.OtherFiles...)
 	sort.Strings(files)
 	for _, candidate := range files {
 		candidate = filepath.Clean(candidate)
 		if !filepath.IsAbs(candidate) && pkg.Dir != "" {
 			candidate = filepath.Join(pkg.Dir, candidate)
 		}
-		if packageFilenameMatches(pkg, candidate, filename) {
-			return candidate
+		for _, root := range []string{pkg.Dir, packageModuleDir(pkg)} {
+			if root == "" {
+				continue
+			}
+			if relative, err := filepath.Rel(root, candidate); err == nil && filepath.Clean(relative) == filename {
+				return candidate
+			}
 		}
 	}
 	return ""
-}
-
-func packageFilenameMatches(pkg *packages.Package, candidate, filename string) bool {
-	for _, root := range []string{pkg.Dir, packageModuleDir(pkg)} {
-		if root == "" {
-			continue
-		}
-		relative, err := filepath.Rel(root, candidate)
-		if err == nil && filepath.Clean(relative) == filename {
-			return true
-		}
-	}
-	return false
 }
 
 func packageModuleDir(pkg *packages.Package) string {
@@ -699,10 +379,10 @@ func boundedDiagnosticMessage(message, root string) string {
 	root = filepath.Clean(root)
 	message = strings.ReplaceAll(message, root, ".")
 	message = strings.ReplaceAll(message, filepath.ToSlash(root), ".")
-	if len(message) <= maxDiagnosticBytes {
-		return message
+	if len(message) > maxDiagnosticBytes {
+		message = message[:maxDiagnosticBytes]
 	}
-	return message[:maxDiagnosticBytes]
+	return message
 }
 
 func stableDiagnosticID(packagePath, kind, message string, location *Location) string {
@@ -712,117 +392,4 @@ func stableDiagnosticID(packagePath, kind, message string, location *Location) s
 	}
 	digest := sha256.Sum256([]byte(strings.Join([]string{packagePath, kind, message, locationKey}, "\x00")))
 	return "package-diagnostic-" + hex.EncodeToString(digest[:12])
-}
-
-func (a *analyzer) recordProcessEntrypoints() {
-	for _, entrypoint := range a.processEntrypoints {
-		location := Location{
-			Path: entrypoint.anchor.Path, Line: entrypoint.anchor.Line, Column: entrypoint.anchor.Column,
-		}
-		symbol := Symbol{
-			ID: entrypoint.packagePath + ".main", Package: entrypoint.packagePath,
-			Name: "main", Location: location,
-		}
-		record := TriggerRecord{
-			Kind:      "process_entry",
-			Identity:  Identity{Name: "main", Path: knownValue("declaration", location.Path)},
-			Transport: "process", Framework: "go",
-			ProcessEntrypoint: symbol,
-			Dispatcher:        knownValue("not_applicable", "process entry"),
-			RegistrationSite:  location,
-			Handler:           knownValue("declaration", symbol.ID),
-			Middleware:        []Value{},
-			WrapperChain:      []Wrapper{},
-			FinalSeed:         "gofacts-go-main",
-			DiscoveryBasis:    "build_selected_entrypoint_anchor",
-			Certainty:         "static",
-			Resolution:        "exact",
-			ScenarioID:        a.scenario.ID,
-			Evidence: []Evidence{{
-				ID: "process-entry:" + locationKey(location), Kind: "process_entry_declaration",
-				Location: location, Detail: "exact build-selected top-level func main declaration",
-			}},
-			Provenance: []Provenance{{
-				Provider: "gofacts", Version: "entrypoint-anchor-v1",
-				Operation: "build_selected_main_declaration",
-			}},
-			DynamicFrontier:     []Frontier{},
-			Status:              "confirmed_process_entry",
-			OwningExecutable:    entrypoint.owner,
-			ExecutableRole:      entrypoint.role,
-			Availability:        entrypoint.availability,
-			UnavailableReason:   entrypoint.unavailableReason,
-			TerminalSourceScope: "repository",
-			ApplicationClass:    ApplicationSurface,
-			PromotionBasis:      PromotionRepositoryRegistration,
-		}
-		record.ID = stableTriggerID(record)
-		a.result.Catalog.Triggers = append(a.result.Catalog.Triggers, record)
-		limitation := "Exact build-selected main declaration; process execution and downstream typed reachability are not observed."
-		if entrypoint.availability == AvailabilityUnavailable {
-			limitation = "Exact build-selected main declaration; deeper typed analysis is unavailable under the recorded build scenario."
-		}
-		a.recordArchitectureAnchorMembersWithProvenance(
-			componentmap.AnchorProofProcessEntry,
-			"process_entry",
-			"process entry "+symbol.ID,
-			location,
-			[]Symbol{symbol},
-			limitation,
-			Provenance{
-				Provider: "gofacts", Version: "entrypoint-anchor-v1",
-				Operation: "classify_exact_process_entry",
-			},
-		)
-	}
-}
-
-func (a *analyzer) annotateTriggerOwnership(trigger *TriggerRecord) {
-	if trigger == nil {
-		return
-	}
-	for _, entrypoint := range a.processEntrypoints {
-		if entrypoint.packagePath != trigger.ProcessEntrypoint.Package {
-			continue
-		}
-		trigger.OwningExecutable = entrypoint.owner
-		trigger.ExecutableRole = entrypoint.role
-		trigger.Availability = entrypoint.availability
-		trigger.UnavailableReason = entrypoint.unavailableReason
-		return
-	}
-	if trigger.Availability == "" {
-		trigger.Availability = AvailabilityAvailable
-	}
-	if trigger.ProcessEntrypoint.ID == "" &&
-		trigger.ProcessEntrypoint.Package == "" &&
-		trigger.ProcessEntrypoint.Location.Path == "" {
-		// A shallow descriptor or binding is repository-owned source evidence,
-		// not executable ownership evidence. In particular, classifying the
-		// zero process location would treat path.Dir("") as the repository
-		// root and incorrectly promote every such record to primary_application.
-		if trigger.ExecutableRole == "" {
-			trigger.ExecutableRole = ExecutableRoleUnknown
-		}
-		return
-	}
-	if trigger.OwningExecutable == "" {
-		locationDir := cleanRepositoryPath(path.Dir(trigger.ProcessEntrypoint.Location.Path))
-		if locationDir == "" || locationDir == "." {
-			trigger.OwningExecutable = trigger.ProcessEntrypoint.Package
-		} else {
-			trigger.OwningExecutable = locationDir
-		}
-	}
-	if trigger.ExecutableRole == "" {
-		trigger.ExecutableRole = classifyExecutableRole(a.input.RepositoryName, processEntrypoint{
-			packagePath: trigger.ProcessEntrypoint.Package,
-			packageDir:  cleanRepositoryPath(path.Dir(trigger.ProcessEntrypoint.Location.Path)),
-			anchor: EntrypointAnchorInput{
-				Kind: ProcessEntryAnchorGoMain, Path: trigger.ProcessEntrypoint.Location.Path,
-				Line: trigger.ProcessEntrypoint.Location.Line,
-			},
-			owner: trigger.OwningExecutable,
-		})
-	}
 }

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strings"
 
@@ -20,7 +19,7 @@ const (
 	// The direct-call substrate is retained only in memory, but it is still
 	// bounded independently from the SSA program. Crossing either ceiling closes
 	// the index: a retained prefix must never masquerade as the complete declared
-	// or configured target-rooted neighborhood for a later Study investigation.
+	// or configured target-rooted neighborhood for later domain cubes.
 	MaxDirectCallIndexNodes = 65_536
 	MaxDirectCallIndexEdges = 262_144
 )
@@ -159,10 +158,8 @@ type DirectCallIndexCoverage struct {
 	EdgeLimitSafeDepth int `json:"edge_limit_safe_depth,omitempty"`
 }
 
-// DirectCallIndexScope states whether Edges are the legacy repository-wide
-// exact relation set or a target-rooted neighborhood bounded by depth and an
-// explicit resource ceiling. Nodes remain the complete build-selected local
-// declaration catalog in either mode.
+// DirectCallIndexScope binds the exact declaration catalog and target-rooted
+// relation neighborhood to one selected analysis target and explicit bounds.
 type DirectCallIndexScope struct {
 	TargetRef        string   `json:"target_ref,omitempty"`
 	TargetKind       string   `json:"target_kind,omitempty"`
@@ -183,7 +180,7 @@ func (scope DirectCallIndexScope) TargetScoped() bool {
 
 func (scope DirectCallIndexScope) validate() error {
 	if !scope.TargetScoped() {
-		return nil
+		return fmt.Errorf("direct call index: exact target scope is required")
 	}
 	if scope.TargetKind != AnalysisTargetExecutablePackage &&
 		scope.TargetKind != AnalysisTargetModuleLibrary {
@@ -241,24 +238,8 @@ type DirectCallIndex struct {
 	SHA256       string                      `json:"sha256"`
 
 	nodeLookup     map[string]int
-	moduleLookup   map[string]int
 	incomingLookup map[string][]int
 	outgoingLookup map[string][]int
-	frontierLookup map[string]int
-}
-
-// UnavailableDirectCallIndex returns the canonical closed substrate used when
-// an ordinary run has no Go surface SSA handoff. It performs no package load
-// or analysis and retains no partial graph; later Study cards can therefore
-// publish an honest prepared investigation instead of fabricating a graph or
-// omitting the current artifact family.
-func UnavailableDirectCallIndex() DirectCallIndex {
-	builder := newDirectCallIndexBuilder(Scenario{
-		ID:   scenarioID(runtime.GOOS, runtime.GOARCH, nil),
-		GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, Tags: []string{},
-	})
-	builder.close(DirectCallIndexClosedSSAUnavailable)
-	return builder.finish()
 }
 
 // Snapshot returns an independently owned in-memory copy of the complete
@@ -295,69 +276,6 @@ func cloneDirectCallSlice[T any](values []T) []T {
 	return result
 }
 
-type DirectCallRootState string
-
-const (
-	DirectCallRootResolved   DirectCallRootState = "resolved"
-	DirectCallRootAmbiguous  DirectCallRootState = "ambiguous"
-	DirectCallRootUnresolved DirectCallRootState = "unresolved"
-)
-
-type DirectCallRootBinding string
-
-const (
-	DirectCallRootDeclaration        DirectCallRootBinding = "declaration"
-	DirectCallRootContainingFunction DirectCallRootBinding = "containing_function"
-)
-
-// DirectCallRootResolution is an exact local lookup result for a final Study
-// Reading. Resolution first requires a declaration locator match; a callsite
-// may bind only to the exact same symbol whose saved body range contains the
-// line. Multiple matches remain ambiguous rather than picking a representative.
-type DirectCallRootResolution struct {
-	State   DirectCallRootState   `json:"state"`
-	Binding DirectCallRootBinding `json:"binding,omitempty"`
-	Node    DirectCallNode        `json:"node,omitempty"`
-}
-
-func (index *DirectCallIndex) ResolveRoot(path string, line int, symbol string) DirectCallRootResolution {
-	if index == nil || index.State != DirectCallIndexReady ||
-		!validRepositoryDirectCallLocation(Location{Path: path, Line: line}) || strings.TrimSpace(symbol) == "" {
-		return DirectCallRootResolution{State: DirectCallRootUnresolved}
-	}
-	declarations := make([]DirectCallNode, 0, 1)
-	for _, node := range index.Nodes {
-		if node.Declaration.Path == path && node.Declaration.Line == line &&
-			directCallSymbolMatches(node.Symbol, symbol) {
-			declarations = append(declarations, copyDirectCallNode(node))
-		}
-	}
-	if len(declarations) == 1 {
-		return DirectCallRootResolution{
-			State: DirectCallRootResolved, Binding: DirectCallRootDeclaration, Node: declarations[0],
-		}
-	}
-	if len(declarations) > 1 {
-		return DirectCallRootResolution{State: DirectCallRootAmbiguous}
-	}
-
-	containing := make([]DirectCallNode, 0, 1)
-	for _, node := range index.Nodes {
-		if directCallSymbolMatches(node.Symbol, symbol) && directCallBodyContains(node.Body, path, line) {
-			containing = append(containing, copyDirectCallNode(node))
-		}
-	}
-	if len(containing) == 1 {
-		return DirectCallRootResolution{
-			State: DirectCallRootResolved, Binding: DirectCallRootContainingFunction, Node: containing[0],
-		}
-	}
-	if len(containing) > 1 {
-		return DirectCallRootResolution{State: DirectCallRootAmbiguous}
-	}
-	return DirectCallRootResolution{State: DirectCallRootUnresolved}
-}
-
 func (index *DirectCallIndex) Node(id string) (DirectCallNode, bool) {
 	if index == nil || index.State != DirectCallIndexReady {
 		return DirectCallNode{}, false
@@ -375,25 +293,6 @@ func (index *DirectCallIndex) Node(id string) (DirectCallNode, bool) {
 		}
 	}
 	return DirectCallNode{}, false
-}
-
-func (index *DirectCallIndex) Module(id string) (DirectCallModule, bool) {
-	if index == nil || index.State != DirectCallIndexReady {
-		return DirectCallModule{}, false
-	}
-	if index.moduleLookup != nil {
-		position, ok := index.moduleLookup[id]
-		if !ok {
-			return DirectCallModule{}, false
-		}
-		return index.Modules[position], true
-	}
-	for _, module := range index.Modules {
-		if module.ID == id {
-			return module, true
-		}
-	}
-	return DirectCallModule{}, false
 }
 
 func (index *DirectCallIndex) Incoming(nodeID string) []DirectCallEdge {
@@ -428,29 +327,6 @@ func (index *DirectCallIndex) Outgoing(nodeID string) []DirectCallEdge {
 	return result
 }
 
-// Frontier returns immutable closed exclusion counts for one exact caller.
-// False means that the node has no excluded call shape recorded (or that the
-// index/node is unavailable); callers can use Node when they need to
-// distinguish those cases.
-func (index *DirectCallIndex) Frontier(nodeID string) (DirectCallNodeFrontier, bool) {
-	if index == nil || index.State != DirectCallIndexReady {
-		return DirectCallNodeFrontier{}, false
-	}
-	if index.frontierLookup != nil {
-		position, ok := index.frontierLookup[nodeID]
-		if !ok || position < 0 || position >= len(index.Frontiers) {
-			return DirectCallNodeFrontier{}, false
-		}
-		return index.Frontiers[position], true
-	}
-	for _, frontier := range index.Frontiers {
-		if frontier.CallerID == nodeID {
-			return frontier, true
-		}
-	}
-	return DirectCallNodeFrontier{}, false
-}
-
 func (index *DirectCallIndex) edgesAt(positions []int) []DirectCallEdge {
 	result := make([]DirectCallEdge, 0, len(positions))
 	for _, position := range positions {
@@ -463,22 +339,14 @@ func (index *DirectCallIndex) edgesAt(positions []int) []DirectCallEdge {
 
 func (index *DirectCallIndex) initializeLookups() {
 	index.nodeLookup = make(map[string]int, len(index.Nodes))
-	index.moduleLookup = make(map[string]int, len(index.Modules))
 	index.incomingLookup = make(map[string][]int)
 	index.outgoingLookup = make(map[string][]int)
-	index.frontierLookup = make(map[string]int, len(index.Frontiers))
-	for position, module := range index.Modules {
-		index.moduleLookup[module.ID] = position
-	}
 	for position, node := range index.Nodes {
 		index.nodeLookup[node.ID] = position
 	}
 	for position, edge := range index.Edges {
 		index.incomingLookup[edge.CalleeID] = append(index.incomingLookup[edge.CalleeID], position)
 		index.outgoingLookup[edge.CallerID] = append(index.outgoingLookup[edge.CallerID], position)
-	}
-	for position, frontier := range index.Frontiers {
-		index.frontierLookup[frontier.CallerID] = position
 	}
 }
 
@@ -502,11 +370,8 @@ func (index DirectCallIndex) Validate() error {
 	if index.Coverage.EdgeLimitSafeDepth < 0 {
 		return fmt.Errorf("direct call index: invalid edge-limit recovery depth")
 	}
-	if !index.Scope.TargetScoped() && index.Coverage.DepthBoundRepositoryCallsExcluded != 0 {
-		return fmt.Errorf("direct call index: repository-wide index has target depth frontier")
-	}
 	if index.Coverage.EdgeLimitSafeDepth > 0 &&
-		(!index.Scope.TargetScoped() || index.State != DirectCallIndexUnavailable ||
+		(index.State != DirectCallIndexUnavailable ||
 			index.ClosedReason != DirectCallIndexClosedEdgeLimit ||
 			index.Coverage.EdgeLimitSafeDepth >= index.Scope.MaxDepth) {
 		return fmt.Errorf("direct call index: inconsistent edge-limit recovery depth")
@@ -529,7 +394,7 @@ func (index DirectCallIndex) Validate() error {
 	if len(index.Nodes) > MaxDirectCallIndexNodes || len(index.Edges) > MaxDirectCallIndexEdges {
 		return fmt.Errorf("direct call index: graph exceeds production bounds")
 	}
-	if index.Scope.TargetScoped() && len(index.Edges) > index.Scope.EdgeLimit {
+	if len(index.Edges) > index.Scope.EdgeLimit {
 		return fmt.Errorf("direct call index: target graph exceeds configured edge limit")
 	}
 	if index.Coverage.ModulesIndexed != len(index.Modules) ||
@@ -673,10 +538,6 @@ type directCallIndexBuilder struct {
 	entryCalls    *entryCallSidecar
 }
 
-func newDirectCallIndexBuilder(scenario Scenario) *directCallIndexBuilder {
-	return newDirectCallIndexBuilderWithLimits(scenario, MaxDirectCallIndexNodes, MaxDirectCallIndexEdges)
-}
-
 func newDirectCallIndexBuilderWithLimits(scenario Scenario, maxNodes, maxEdges int) *directCallIndexBuilder {
 	scenario.Tags = append([]string(nil), scenario.Tags...)
 	sort.Strings(scenario.Tags)
@@ -782,7 +643,6 @@ func (builder *directCallIndexBuilder) recordCall(a *analyzer, call ssa.CallInst
 		return
 	}
 	if !a.repositoryDirectStaticCall(call, callee) {
-		builder.recordExternalEntryCall(a, call, callee)
 		builder.coverage.NonRepositoryCallsExcluded++
 		builder.recordCallerFrontier(a, call.Parent(), directCallFrontierExternalCallee)
 		return
@@ -807,7 +667,6 @@ func (builder *directCallIndexBuilder) recordCall(a *analyzer, call ssa.CallInst
 		WitnessCount: 1,
 	}
 	edge.ID = stableDirectCallEdgeID(edge)
-	builder.recordLocalEntryCall(a, call, callee, edge)
 	if existing, found := builder.edges[edge.ID]; found {
 		existing.WitnessCount++
 		if directCallLocationLess(callsite, existing.RepresentativeCallsite) {
@@ -863,8 +722,7 @@ func (builder *directCallIndexBuilder) recordCallerFrontier(
 
 func (builder *directCallIndexBuilder) finish() DirectCallIndex {
 	if builder == nil {
-		builder = newDirectCallIndexBuilder(Scenario{})
-		builder.close(DirectCallIndexClosedSSAUnavailable)
+		return DirectCallIndex{}
 	}
 	index := DirectCallIndex{
 		Version: DirectCallIndexVersion, State: builder.state, ClosedReason: builder.closedReason,
@@ -996,19 +854,6 @@ func validDirectCallBody(declaration Location, body DirectCallBodyRange) bool {
 		return false
 	}
 	return body.Start.Line != body.End.Line || body.Start.Column <= body.End.Column
-}
-
-func directCallBodyContains(body DirectCallBodyRange, path string, line int) bool {
-	return path != "" && line > 0 && body.Start.Path == path && body.End.Path == path &&
-		line >= body.Start.Line && line <= body.End.Line
-}
-
-func directCallSymbolMatches(symbol Symbol, candidate string) bool {
-	if candidate == symbol.ID {
-		return true
-	}
-	position := sort.SearchStrings(symbol.EquivalentIDs, candidate)
-	return position < len(symbol.EquivalentIDs) && symbol.EquivalentIDs[position] == candidate
 }
 
 func validDirectCallEquivalentIDs(ids []string) bool {

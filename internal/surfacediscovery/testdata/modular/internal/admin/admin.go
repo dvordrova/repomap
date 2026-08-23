@@ -1,3 +1,0 @@
-package admin
-
-func StartAdmin() {}

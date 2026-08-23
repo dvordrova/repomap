@@ -1,12 +1,10 @@
 package workspaceopen
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +14,25 @@ import (
 	"github.com/dvordrova/repomap/internal/workspacesnapshot"
 )
 
-func TestResolveAuthorizedTargetAndChangeFlag(t *testing.T) {
+type ErrorKind = errorKind
+
+const (
+	ErrorInvalidRequest    = errorInvalidRequest
+	ErrorUnauthorized      = errorUnauthorized
+	ErrorRootUnavailable   = errorRootUnavailable
+	ErrorTargetUnavailable = errorTargetUnavailable
+	ErrorCanceled          = errorCanceled
+)
+
+func ErrorKindOf(err error) ErrorKind {
+	var target *openError
+	if errors.As(err, &target) {
+		return target.kind
+	}
+	return ""
+}
+
+func TestResolveAuthorizedCurrentTarget(t *testing.T) {
 	t.Parallel()
 
 	root := canonicalTempDir(t)
@@ -33,21 +49,19 @@ func TestResolveAuthorizedTargetAndChangeFlag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if target.Path != path || target.AbsolutePath != wantPath || target.SourceChanged {
+	if target.AbsolutePath != wantPath {
 		t.Fatalf("unchanged target = %#v", target)
 	}
 
 	writeFile(t, filepath.Join(root, filepath.FromSlash(path)), []byte("package changed\n"))
-	changed, err := service.Resolve(context.Background(), Request{
-		Path: path, MaxHashBytes: MaxHashBytes,
-	})
+	changed, err := service.Resolve(context.Background(), Request{Path: path})
 	if err != nil {
 		t.Fatalf("Resolve changed: %v", err)
 	}
-	if changed.Path != path || changed.AbsolutePath != wantPath || !changed.SourceChanged {
+	if changed.AbsolutePath != wantPath {
 		t.Fatalf("changed target = %#v", changed)
 	}
-	if target.Path != path || target.AbsolutePath != wantPath || target.SourceChanged {
+	if target.AbsolutePath != wantPath {
 		t.Fatalf("first target mutated = %#v", target)
 	}
 }
@@ -72,7 +86,7 @@ func TestResolveUsesExactAuthorizedPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if target.Path != authorizedPath || target.AbsolutePath != exact || target.SourceChanged {
+	if target.AbsolutePath != exact {
 		t.Fatalf("target = %#v, want exact authorized path %q", target, exact)
 	}
 	if target.AbsolutePath == trimmedAlias {
@@ -122,12 +136,6 @@ func TestResolveRejectsInvalidUnauthorizedAndUnavailableTargets(t *testing.T) {
 			t.Fatalf("Resolve(%q) error = %v kind=%q", requestPath, err, ErrorKindOf(err))
 		}
 		assertPrivateError(t, err, root, requestPath)
-	}
-	for _, limit := range []int64{-1, MaxHashBytes + 1} {
-		_, err := service.Resolve(context.Background(), Request{Path: "safe.go", MaxHashBytes: limit})
-		if ErrorKindOf(err) != ErrorInvalidRequest {
-			t.Fatalf("MaxHashBytes %d error = %v kind=%q", limit, err, ErrorKindOf(err))
-		}
 	}
 	_, err := service.Resolve(context.Background(), Request{Path: "other.go"})
 	if ErrorKindOf(err) != ErrorUnauthorized {
@@ -198,7 +206,7 @@ func TestResolvePreservesMappedSymlinkSemantics(t *testing.T) {
 			t.Fatalf("Resolve: %v", err)
 		}
 		want := filepath.Join(root, "real", "target.go")
-		if target.Path != "alias/target.go" || target.AbsolutePath != want || target.SourceChanged {
+		if target.AbsolutePath != want {
 			t.Fatalf("target = %#v, want absolute %q", target, want)
 		}
 	})
@@ -252,73 +260,7 @@ func TestResolveRejectsReplacedAnalysisRoot(t *testing.T) {
 	assertPrivateError(t, err, root, replacement, held)
 }
 
-func TestResolvePreservesBoundedHashFailureSemantics(t *testing.T) {
-	t.Parallel()
-
-	t.Run("oversized current file is not reported changed", func(t *testing.T) {
-		root := canonicalTempDir(t)
-		path := filepath.Join(root, "large.bin")
-		writeFile(t, path, []byte("captured"))
-		service := testService(t, root, root, "large.bin", []byte("captured"))
-		if err := os.Truncate(path, MaxHashBytes+1); err != nil {
-			t.Fatal(err)
-		}
-		target, err := service.Resolve(context.Background(), Request{Path: "large.bin"})
-		if err != nil {
-			t.Fatalf("Resolve: %v", err)
-		}
-		if target.SourceChanged {
-			t.Fatalf("oversized target = %#v", target)
-		}
-	})
-
-	t.Run("empty hash skips the reader", func(t *testing.T) {
-		reader := &countingReader{remaining: 1}
-		changed, err := hashChanged(context.Background(), reader, "", MaxHashBytes)
-		if err != nil || changed || reader.readBytes != 0 {
-			t.Fatalf("hashChanged = %t, %v reads=%d", changed, err, reader.readBytes)
-		}
-	})
-
-	t.Run("read error is not reported changed", func(t *testing.T) {
-		changed, err := hashChanged(
-			context.Background(),
-			errorReader{},
-			strings.Repeat("a", 64),
-			MaxHashBytes,
-		)
-		if err != nil || changed {
-			t.Fatalf("hashChanged = %t, %v", changed, err)
-		}
-	})
-
-	t.Run("read work stops at bound plus one", func(t *testing.T) {
-		reader := &countingReader{remaining: MaxHashBytes + 1024}
-		changed, err := hashChanged(
-			context.Background(),
-			reader,
-			strings.Repeat("a", 64),
-			MaxHashBytes,
-		)
-		if err != nil || changed || reader.readBytes != MaxHashBytes+1 {
-			t.Fatalf("hashChanged = %t, %v reads=%d", changed, err, reader.readBytes)
-		}
-	})
-
-	t.Run("missing hash source is unverifiable not changed", func(t *testing.T) {
-		changed, err := sourceChanged(
-			context.Background(),
-			filepath.Join(canonicalTempDir(t), "missing.go"),
-			strings.Repeat("a", 64),
-			MaxHashBytes,
-		)
-		if err != nil || changed {
-			t.Fatalf("sourceChanged = %t, %v", changed, err)
-		}
-	})
-}
-
-func TestResolveCancellationIsTypedAndObservedDuringHash(t *testing.T) {
+func TestResolveCancellationIsTyped(t *testing.T) {
 	t.Parallel()
 
 	root := canonicalTempDir(t)
@@ -330,16 +272,6 @@ func TestResolveCancellationIsTypedAndObservedDuringHash(t *testing.T) {
 	_, err := service.Resolve(ctx, Request{Path: "safe.go"})
 	if ErrorKindOf(err) != ErrorCanceled {
 		t.Fatalf("canceled Resolve error = %v kind=%q", err, ErrorKindOf(err))
-	}
-
-	ctx, cancel = context.WithCancel(context.Background())
-	reader := &cancelingReader{
-		reader: bytes.NewReader(bytes.Repeat([]byte("x"), hashBufferSize*2)),
-		cancel: cancel,
-	}
-	_, err = hashChanged(ctx, reader, strings.Repeat("a", 64), MaxHashBytes)
-	if ErrorKindOf(err) != ErrorCanceled || reader.reads != 1 {
-		t.Fatalf("hash cancellation error = %v kind=%q reads=%d", err, ErrorKindOf(err), reader.reads)
 	}
 }
 
@@ -354,46 +286,6 @@ func TestNewAndErrorsDoNotLeakAuthority(t *testing.T) {
 	if ErrorKindOf(foreign) != "" {
 		t.Fatalf("foreign error kind = %q", ErrorKindOf(foreign))
 	}
-}
-
-type countingReader struct {
-	remaining int64
-	readBytes int64
-}
-
-func (reader *countingReader) Read(buffer []byte) (int, error) {
-	if reader.remaining == 0 {
-		return 0, io.EOF
-	}
-	read := int64(len(buffer))
-	if read > reader.remaining {
-		read = reader.remaining
-	}
-	for index := 0; index < int(read); index++ {
-		buffer[index] = 'x'
-	}
-	reader.remaining -= read
-	reader.readBytes += read
-	return int(read), nil
-}
-
-type errorReader struct{}
-
-func (errorReader) Read([]byte) (int, error) {
-	return 0, errors.New("private read failure")
-}
-
-type cancelingReader struct {
-	reader io.Reader
-	cancel context.CancelFunc
-	reads  int
-}
-
-func (reader *cancelingReader) Read(buffer []byte) (int, error) {
-	read, err := reader.reader.Read(buffer)
-	reader.reads++
-	reader.cancel()
-	return read, err
 }
 
 func testService(

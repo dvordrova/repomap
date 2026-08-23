@@ -69,7 +69,7 @@ func TestDeliverDirectCallIndexHandsOffIndependentSnapshot(t *testing.T) {
 	}
 }
 
-func TestAtlasFirstOfflineDirectCallIndexHandoffUsesOneExistingSSABuild(t *testing.T) {
+func TestRunDirectCallIndexHandoffUsesOneExistingSSABuild(t *testing.T) {
 	repository := t.TempDir()
 	writeSurfaceTestFile(t, repository, "go.mod", "module example.com/direct-handoff\n\ngo 1.22\n")
 	writeSurfaceTestFile(t, repository, "main.go", `package main
@@ -86,12 +86,12 @@ func work() {}
 	var sinkCalls atomic.Int32
 	var received surfacediscovery.DirectCallIndex
 	debugDirectory := t.TempDir()
-	_, err := Run(context.Background(), Options{
-		RepoPath: repository, AtlasFirst: true, Offline: true, OutputJSON: true,
+	err := Run(context.Background(), prepareOrientRunOptions(t, repository, Options{
+		RepoPath: repository,
 		DebugDir: debugDirectory, RunID: "direct-handoff", RequireArtifacts: true,
-		DiscoverSurfaces: true, DirectCallDepth: 2, DirectCallEdgeLimit: 17,
+		AnalyzeGoProgram: true, DirectCallDepth: 2, DirectCallEdgeLimit: 17,
 		Progress: func(event ProgressEvent) {
-			if event.Stage != ProgressSurfacePhase || event.PhaseState != "started" {
+			if event.Stage != ProgressProgramPhase || event.PhaseState != "started" {
 				return
 			}
 			switch event.Phase {
@@ -105,7 +105,7 @@ func work() {}
 			sinkCalls.Add(1)
 			received = index
 		},
-	})
+	}))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -148,7 +148,7 @@ func work() {}
 	}
 }
 
-func TestAtlasFirstDirectCallIndexSinkSkipsDisabledAndNonGoRuns(t *testing.T) {
+func TestRunDirectCallIndexSinkSkipsDisabledAndNonGoRuns(t *testing.T) {
 	t.Run("disabled", func(t *testing.T) {
 		repository := t.TempDir()
 		writeSurfaceTestFile(t, repository, "go.mod", "module example.com/direct-disabled\n\ngo 1.22\n")
@@ -170,14 +170,14 @@ func TestAtlasFirstDirectCallIndexSinkSkipsDisabledAndNonGoRuns(t *testing.T) {
 func assertNoDirectCallIndexHandoff(t *testing.T, repository string, discoverSurfaces bool) {
 	t.Helper()
 	var sinkCalls atomic.Int32
-	_, err := Run(context.Background(), Options{
-		RepoPath: repository, AtlasFirst: true, Offline: true, OutputJSON: true,
+	err := Run(context.Background(), prepareOrientRunOptions(t, repository, Options{
+		RepoPath: repository,
 		DebugDir: t.TempDir(), RunID: "no-direct-handoff", RequireArtifacts: true,
-		DiscoverSurfaces: discoverSurfaces,
+		AnalyzeGoProgram: discoverSurfaces,
 		DirectCallIndexSink: func(surfacediscovery.DirectCallIndex) {
 			sinkCalls.Add(1)
 		},
-	})
+	}))
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}

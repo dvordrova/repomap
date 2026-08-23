@@ -14,9 +14,9 @@ import (
 func TestTargetPagePortfolioCanonicalRoundTripAndContainerBinding(t *testing.T) {
 	container, appRef, helperRef, coreRef := targetPagePortfolioFixture(t)
 	outcomes := []TargetPageOutcome{
-		{TargetRef: coreRef, State: TargetPageReady, RunID: "20260810-020000-core-a1b2c3"},
-		{TargetRef: appRef, State: TargetPageReady, RunID: "20260810-020000-app-d4e5f6"},
-		{TargetRef: helperRef, State: TargetPageUnavailable, UnavailableCode: TargetPageUnavailableTargetRunFailed},
+		{TargetRef: coreRef, RunID: "20260810-020000-core-a1b2c3"},
+		{TargetRef: appRef, RunID: "20260810-020000-app-d4e5f6"},
+		{TargetRef: helperRef, RunID: "20260810-020000-helper-g7h8i9"},
 	}
 	portfolio, err := BuildTargetPagePortfolio(container, outcomes)
 	if err != nil {
@@ -39,9 +39,8 @@ func TestTargetPagePortfolioCanonicalRoundTripAndContainerBinding(t *testing.T) 
 		t.Fatalf("canonical target refs = %#v, want %#v", gotRefs, wantRefs)
 	}
 	if portfolio.Targets[0].Default || !portfolio.Targets[1].Default || portfolio.Targets[2].Default ||
-		portfolio.Targets[2].State != TargetPageUnavailable || portfolio.Targets[2].RunID != "" ||
-		portfolio.Targets[2].UnavailableCode != TargetPageUnavailableTargetRunFailed {
-		t.Fatalf("derived default/closed states = %#v", portfolio.Targets)
+		portfolio.Targets[2].RunID != "20260810-020000-helper-g7h8i9" {
+		t.Fatalf("derived default/published pages = %#v", portfolio.Targets)
 	}
 
 	wire, err := portfolio.CanonicalJSON()
@@ -93,15 +92,20 @@ func TestTargetPagePortfolioCanonicalRoundTripAndContainerBinding(t *testing.T) 
 	if err := json.Unmarshal(wire, &encoded); err != nil {
 		t.Fatal(err)
 	}
-	if _, found := encoded.Targets[0]["unavailable_code"]; found {
-		t.Fatal("ready target encoded unavailable_code")
-	}
-	if _, found := encoded.Targets[2]["run_id"]; found {
-		t.Fatal("unavailable target encoded run_id")
+	for index, target := range encoded.Targets {
+		if _, found := target["state"]; found {
+			t.Fatalf("target %d encoded obsolete state", index)
+		}
+		if _, found := target["unavailable_code"]; found {
+			t.Fatalf("target %d encoded obsolete unavailable_code", index)
+		}
+		if _, found := target["run_id"]; !found {
+			t.Fatalf("target %d omitted required run_id", index)
+		}
 	}
 }
 
-func TestTargetPagePortfolioRejectsUnsafeRunIDsAndInvalidTerminalStates(t *testing.T) {
+func TestTargetPagePortfolioRejectsUnsafeRunIDsAndIncompletePublication(t *testing.T) {
 	container, appRef, helperRef, coreRef := targetPagePortfolioFixture(t)
 
 	for _, runID := range []string{
@@ -123,9 +127,9 @@ func TestTargetPagePortfolioRejectsUnsafeRunIDsAndInvalidTerminalStates(t *testi
 	}
 
 	base := []TargetPageOutcome{
-		{TargetRef: appRef, State: TargetPageReady, RunID: "run-app-1"},
-		{TargetRef: helperRef, State: TargetPageUnavailable, UnavailableCode: TargetPageUnavailableTargetRunFailed},
-		{TargetRef: coreRef, State: TargetPageReady, RunID: "run-core-1"},
+		{TargetRef: appRef, RunID: "run-app-1"},
+		{TargetRef: helperRef, RunID: "run-helper-1"},
+		{TargetRef: coreRef, RunID: "run-core-1"},
 	}
 	mustReject := func(name string, outcomes []TargetPageOutcome) {
 		t.Helper()
@@ -141,16 +145,8 @@ func TestTargetPagePortfolioRejectsUnsafeRunIDsAndInvalidTerminalStates(t *testi
 		return result
 	}
 
-	mustReject("ready has code", mutate(0, func(outcome *TargetPageOutcome) {
-		outcome.UnavailableCode = TargetPageUnavailableTargetRunFailed
-	}))
-	mustReject("ready unsafe run", mutate(0, func(outcome *TargetPageOutcome) { outcome.RunID = "../escape" }))
-	mustReject("unavailable has run", mutate(1, func(outcome *TargetPageOutcome) { outcome.RunID = "partial-run" }))
-	mustReject("unavailable lacks code", mutate(1, func(outcome *TargetPageOutcome) { outcome.UnavailableCode = "" }))
-	mustReject("unavailable unknown code", mutate(1, func(outcome *TargetPageOutcome) {
-		outcome.UnavailableCode = "report_failed"
-	}))
-	mustReject("unknown state", mutate(0, func(outcome *TargetPageOutcome) { outcome.State = "partial" }))
+	mustReject("missing run", mutate(1, func(outcome *TargetPageOutcome) { outcome.RunID = "" }))
+	mustReject("unsafe run", mutate(0, func(outcome *TargetPageOutcome) { outcome.RunID = "../escape" }))
 	mustReject("duplicate run", mutate(2, func(outcome *TargetPageOutcome) { outcome.RunID = "run-app-1" }))
 	mustReject("duplicate target", []TargetPageOutcome{base[0], base[0], base[2]})
 	mustReject("unknown target", mutate(1, func(outcome *TargetPageOutcome) {
@@ -158,41 +154,21 @@ func TestTargetPagePortfolioRejectsUnsafeRunIDsAndInvalidTerminalStates(t *testi
 	}))
 	mustReject("invalid target ref", mutate(1, func(outcome *TargetPageOutcome) { outcome.TargetRef = "../target" }))
 	mustReject("incomplete outcomes", base[:2])
-	mustReject("no ready sibling", []TargetPageOutcome{
-		{TargetRef: appRef, State: TargetPageUnavailable, UnavailableCode: TargetPageUnavailableTargetRunFailed},
-		{TargetRef: helperRef, State: TargetPageUnavailable, UnavailableCode: TargetPageUnavailableTargetRunFailed},
-		{TargetRef: coreRef, State: TargetPageUnavailable, UnavailableCode: TargetPageUnavailableTargetRunFailed},
-	})
-
-	// The backend-owned default remains marked even if that target failed. A
-	// different ready sibling can still carry the byte-identical portfolio.
-	defaultUnavailable := slices.Clone(base)
-	defaultUnavailable[0] = TargetPageOutcome{
-		TargetRef: appRef, State: TargetPageUnavailable,
-		UnavailableCode: TargetPageUnavailableTargetRunFailed,
-	}
-	portfolio, err := BuildTargetPagePortfolio(container, defaultUnavailable)
-	if err != nil {
-		t.Fatalf("default unavailable with ready sibling: %v", err)
-	}
-	if !portfolio.Targets[1].Default || portfolio.Targets[1].State != TargetPageUnavailable {
-		t.Fatalf("default marker drifted after failure: %#v", portfolio.Targets[1])
-	}
 }
 
 func TestTargetPagePortfolioDecodeRejectsTamperAndNonCanonicalBytes(t *testing.T) {
 	container, appRef, helperRef, coreRef := targetPagePortfolioFixture(t)
 	portfolio := mustTargetPagePortfolio(t, container, []TargetPageOutcome{
-		{TargetRef: appRef, State: TargetPageReady, RunID: "run-app-1"},
-		{TargetRef: helperRef, State: TargetPageUnavailable, UnavailableCode: TargetPageUnavailableTargetRunFailed},
-		{TargetRef: coreRef, State: TargetPageReady, RunID: "run-core-1"},
+		{TargetRef: appRef, RunID: "run-app-1"},
+		{TargetRef: helperRef, RunID: "run-helper-1"},
+		{TargetRef: coreRef, RunID: "run-core-1"},
 	})
 	wire, err := portfolio.CanonicalJSON()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	withUnknown := bytes.Replace(wire, []byte(`{"version":1,`), []byte(`{"version":1,"unknown":true,`), 1)
+	withUnknown := bytes.Replace(wire, []byte(`{"version":2,`), []byte(`{"version":2,"unknown":true,`), 1)
 	for name, raw := range map[string][]byte{
 		"empty":          nil,
 		"unknown field":  withUnknown,
@@ -249,9 +225,9 @@ func TestTargetPagePortfolioDecodeRejectsTamperAndNonCanonicalBytes(t *testing.T
 func TestTargetPagePortfolioValidatesCompleteSiblingManifestAuthorities(t *testing.T) {
 	container, appRef, helperRef, coreRef := targetPagePortfolioFixture(t)
 	portfolio := mustTargetPagePortfolio(t, container, []TargetPageOutcome{
-		{TargetRef: appRef, State: TargetPageReady, RunID: "run-app-1"},
-		{TargetRef: helperRef, State: TargetPageUnavailable, UnavailableCode: TargetPageUnavailableTargetRunFailed},
-		{TargetRef: coreRef, State: TargetPageReady, RunID: "run-core-1"},
+		{TargetRef: appRef, RunID: "run-app-1"},
+		{TargetRef: helperRef, RunID: "run-helper-1"},
+		{TargetRef: coreRef, RunID: "run-core-1"},
 	})
 	containerArtifactSHA, err := targetRunContainerArtifactSHA256(container)
 	if err != nil {
@@ -269,6 +245,11 @@ func TestTargetPagePortfolioValidatesCompleteSiblingManifestAuthorities(t *testi
 		},
 		{
 			RunID: "run-app-1", AnalysisTargetRef: appRef,
+			TargetRunContainerArtifactSHA256:  containerArtifactSHA,
+			TargetPagePortfolioArtifactSHA256: portfolioArtifactSHA,
+		},
+		{
+			RunID: "run-helper-1", AnalysisTargetRef: helperRef,
 			TargetRunContainerArtifactSHA256:  containerArtifactSHA,
 			TargetPagePortfolioArtifactSHA256: portfolioArtifactSHA,
 		},
@@ -293,7 +274,7 @@ func TestTargetPagePortfolioValidatesCompleteSiblingManifestAuthorities(t *testi
 
 	mustReject("missing sibling", authorities[:1])
 	mustReject("duplicate sibling", []TargetPageSiblingAuthority{authorities[0], authorities[0]})
-	mustReject("unavailable target authority", mutate(0, func(authority *TargetPageSiblingAuthority) {
+	mustReject("mismatched target authority", mutate(0, func(authority *TargetPageSiblingAuthority) {
 		authority.AnalysisTargetRef = helperRef
 	}))
 	mustReject("unknown target authority", mutate(0, func(authority *TargetPageSiblingAuthority) {
@@ -318,8 +299,8 @@ func TestTargetPagePortfolioValidatesCompleteSiblingManifestAuthorities(t *testi
 
 func targetPagePortfolioFixture(t *testing.T) (TargetRunContainer, string, string, string) {
 	t.Helper()
-	deferred, err := Build(Options{
-		RepoPath: newDeferredAnalysisTargetFixture(t), DeferAnalysisTargetResolution: true,
+	deferred, err := buildSnapshotForTest(Options{
+		RepoPath: newDeferredAnalysisTargetFixture(t),
 	})
 	if err != nil {
 		t.Fatal(err)

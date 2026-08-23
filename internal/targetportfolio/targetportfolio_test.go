@@ -2,19 +2,29 @@ package targetportfolio
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 
-	"github.com/dvordrova/repomap/internal/analysistarget"
-	"github.com/dvordrova/repomap/internal/gofacts"
+	"github.com/dvordrova/repomap/internal/corpus"
+	"github.com/dvordrova/repomap/internal/secretscan"
 )
 
-func TestCompileProviderBoundaryAndResolve(t *testing.T) {
-	catalog := mustCatalog(t, portfolioFacts())
-	compilation, err := Compile("repomap", catalog)
+func TestCompileAndResolveFilePortfolio(t *testing.T) {
+	snapshot := testSnapshot(t, []string{
+		"README.md", "cmd/tool/main.go", "pkg/client/client.go", "scripts/preview.py",
+	})
+	candidates := []Candidate{
+		{FileRef: "f4", Hypotheses: []string{"development preview script"}},
+		{FileRef: "f2", Hypotheses: []string{"declared CLI command", "runnable application", "declared CLI command"}},
+		{FileRef: "f3", Hypotheses: []string{"downstream-consumed library"}},
+	}
+	compilation, err := Compile(snapshot, candidates)
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
@@ -23,84 +33,63 @@ func TestCompileProviderBoundaryAndResolve(t *testing.T) {
 		t.Fatalf("ProviderVisibleJSON: %v", err)
 	}
 	if len(wire) > MaxRequestBytes || sha256Hex(wire) != compilation.RequestSHA256 {
-		t.Fatalf("wire identity = %d %s, want <=%d and %s", len(wire), sha256Hex(wire), MaxRequestBytes, compilation.RequestSHA256)
+		t.Fatalf("wire identity = %d/%s", len(wire), compilation.RequestSHA256)
 	}
-
 	var request Request
 	if err := json.Unmarshal(wire, &request); err != nil {
-		t.Fatalf("decode request: %v", err)
+		t.Fatal(err)
 	}
-	wantAdvertised := 0
-	for _, entry := range catalog.Entries {
-		if AdvertisedForSelection(entry) {
-			wantAdvertised++
-		}
+	if len(request.Candidates) != 3 || request.Candidates[0].FileRef != "f2" ||
+		request.Candidates[0].Path != "cmd/tool/main.go" ||
+		!slices.Equal(request.Candidates[0].Hypotheses, []string{"declared CLI command", "runnable application"}) {
+		t.Fatalf("canonical candidates = %#v", request.Candidates)
 	}
-	if request.Version != RequestVersion || request.RepoName != "repomap" ||
-		request.RequestRef == "" || len(request.Targets) != wantAdvertised {
-		t.Fatalf("request = %#v", request)
-	}
-	advertisedIndex := 0
-	for _, entry := range catalog.Entries {
-		if !AdvertisedForSelection(entry) {
-			continue
-		}
-		target := request.Targets[advertisedIndex]
-		if target.Ref != fmt.Sprintf("t%d", advertisedIndex+1) || target.DisplayPath != entry.DisplayPath {
-			t.Fatalf("target[%d] = %#v, catalog = %#v", advertisedIndex, target, entry)
-		}
-		advertisedIndex++
-	}
-	if bytes.Contains(wire, []byte(`"display_path":"internal/engine"`)) {
-		t.Fatalf("internal package became a sibling target: %s", wire)
-	}
-	executable := targetByDisplayPath(t, request.Targets, "cmd/repomap")
-	if !slices.Equal(symbolNames(executable, "func"), []string{"main", "runDevUICLI", "runProduct"}) {
-		t.Fatalf("executable funcs = %#v", executable.Packages)
-	}
-	library := targetByDisplayPath(t, request.Targets, "pkg/client")
-	if !slices.Equal(symbolNames(library, "func"), []string{"NewClient"}) ||
-		!slices.Equal(symbolNames(library, "method"), []string{"Client.Do", "hiddenType.Exported"}) ||
-		!slices.Equal(symbolNames(library, "type"), []string{"Client"}) {
-		t.Fatalf("library public API symbols = %#v", library.Packages)
-	}
-	for _, forbidden := range []string{"internalHelper", "Client.debug"} {
+	for _, forbidden := range []string{
+		`"version"`, `"request_ref"`, `"target_ref"`, `"claim"`, `"basis"`,
+		`"native_ref"`, `"identity_ref"`, snapshot.Ref, snapshot.SHA256,
+	} {
 		if bytes.Contains(wire, []byte(forbidden)) {
-			t.Fatalf("library-private declaration %q leaked: %s", forbidden, wire)
+			t.Fatalf("private/obsolete field %q leaked in %s", forbidden, wire)
 		}
 	}
-	assertNoPrivateTargetMaterial(t, wire, catalog)
+
+	state, err := ExecutionState(compilation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{
+		`"prompt_version"`, `"preparation_version"`, `"response_schema_version"`,
+		`"corpus_bytes_sha256"`, `"candidate_bytes_sha256"`, `"request_bytes_sha256"`,
+	} {
+		if !bytes.Contains(state, []byte(field)) {
+			t.Fatalf("execution state lacks %s: %s", field, state)
+		}
+	}
 
 	prompt, err := BuildPrompt(compilation)
 	if err != nil {
-		t.Fatalf("BuildPrompt: %v", err)
+		t.Fatal(err)
 	}
-	if prompt.Version != PromptVersion || !strings.Contains(strings.ToLower(prompt.User), "json") ||
-		!strings.Contains(prompt.User, string(wire)) || !strings.Contains(prompt.System, "no paths") ||
-		!strings.Contains(prompt.System, "packages:[]") ||
-		!strings.Contains(prompt.System, "Such a target is ineligible") ||
-		!strings.Contains(prompt.System, "separate top-level report scope in the left navigation") ||
-		!strings.Contains(prompt.System, "This is not package coverage") ||
-		!strings.Contains(prompt.System, "Returning only the default is correct") {
-		t.Fatalf("prompt does not carry exact refs-only JSON contract: %#v", prompt)
+	if prompt.Version != PromptVersion || !strings.Contains(prompt.User, string(wire)) ||
+		!strings.Contains(prompt.System, "Selection is positive") ||
+		!strings.Contains(prompt.System, "credible starting file") ||
+		!strings.Contains(prompt.System, "do not receive file contents") ||
+		!strings.Contains(prompt.System, "Omit every file that is not positively supported") ||
+		!strings.Contains(prompt.System, "producer provenance, not evidence") ||
+		!strings.Contains(prompt.User, "exactly one JSON object with these two fields") ||
+		!strings.Contains(prompt.User, `{"default_file_ref":null,"target_file_refs":[]}`) ||
+		!strings.Contains(prompt.User, "End of quoted candidate JSON") ||
+		strings.Contains(prompt.User, "request_ref") || strings.Contains(prompt.System, "Go repository") ||
+		strings.Contains(strings.ToLower(prompt.System), "surface") ||
+		strings.Contains(strings.ToLower(prompt.System), "unlikely") ||
+		strings.Contains(strings.ToLower(prompt.User), "unlikely") {
+		t.Fatalf("prompt contract = %#v", prompt)
 	}
-	promptPrefix := strings.Split(prompt.User, "Exact bounded target catalog JSON:")[0]
-	if !strings.Contains(promptPrefix, compilation.Request.RequestRef) ||
-		strings.Contains(promptPrefix, `"t1"`) {
-		t.Fatalf("prompt schema carries a literal target anchor or omits its dynamic request identity: %s", promptPrefix)
-	}
-	assertNoPrivateTargetMaterial(t, []byte(prompt.System+prompt.User), catalog)
 
-	refByPath := make(map[string]string, len(request.Targets))
-	for _, target := range request.Targets {
-		refByPath[target.DisplayPath] = target.Ref
-	}
-	response := Response{
-		Version: ResultVersion, RequestRef: request.RequestRef,
-		DefaultRef: refByPath["cmd/repomap"],
-		TargetRefs: []string{refByPath["pkg/client"], refByPath["cmd/repomap"]},
-	}
-	raw, err := json.Marshal(response)
+	defaultRef := corpus.FileID("f2")
+	raw, err := json.Marshal(Response{
+		DefaultFileRef: &defaultRef, TargetFileRefs: []corpus.FileID{"f3", "f2"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,449 +97,221 @@ func TestCompileProviderBoundaryAndResolve(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveResponse: %v", err)
 	}
-	if selection.Version != ResultVersion || selection.CatalogRef != catalog.Ref ||
-		selection.RequestRef != request.RequestRef || selection.RequestSHA256 != compilation.RequestSHA256 ||
-		selection.Default.DisplayPath != "cmd/repomap" {
-		t.Fatalf("selection identity/default = %#v", selection)
+	if selection.Default == nil || selection.Default.FileRef != "f2" ||
+		!slices.Equal(candidateRefs(selection.Targets), []corpus.FileID{"f2", "f3"}) ||
+		!slices.Equal(candidateRefs(selection.Unclassified), []corpus.FileID{"f4"}) {
+		t.Fatalf("selection = %#v", selection)
 	}
-	oldRaw, err := json.Marshal(Response{
-		Version: ResultVersion - 1, RequestRef: request.RequestRef,
-		DefaultRef: refByPath["cmd/repomap"], TargetRefs: []string{refByPath["cmd/repomap"]},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ResolveResponse(compilation, oldRaw); err == nil {
-		t.Fatalf("ResolveResponse accepted prior result contract v%d", ResultVersion-1)
-	}
-	wantPaths := canonicalSelectedPaths(request.Targets, map[string]bool{
-		refByPath["cmd/repomap"]: true, refByPath["pkg/client"]: true,
-	})
-	gotPaths := make([]string, 0, len(selection.Targets))
-	for _, target := range selection.Targets {
-		gotPaths = append(gotPaths, target.DisplayPath)
-	}
-	if !slices.Equal(gotPaths, wantPaths) {
-		t.Fatalf("restored paths = %#v, want canonical %#v", gotPaths, wantPaths)
-	}
-	selection.Targets[0].Candidate.Target.Roots = append(selection.Targets[0].Candidate.Target.Roots, analysistarget.Root{Path: "mutated.go", Line: 1})
-	if reflectSelectionMutation(compilation, selection.Targets[0].Candidate.Target.Ref) {
-		t.Fatal("selection mutation changed private compilation authority")
-	}
-	selection.Targets[0].Symbols[0].Name = "Mutated"
-	if compilationAuthorityHasSymbol(compilation, "Mutated") {
-		t.Fatal("selection symbol mutation changed private compilation authority")
+	selection.Default.Hypotheses[0] = "mutated"
+	selection.Targets[0].Hypotheses[0] = "mutated"
+	selection.Unclassified[0].Hypotheses[0] = "mutated"
+	again, err := ResolveResponse(compilation, raw)
+	if err != nil || again.Default == nil || slices.Contains(again.Default.Hypotheses, "mutated") ||
+		slices.Contains(again.Targets[0].Hypotheses, "mutated") ||
+		slices.Contains(again.Unclassified[0].Hypotheses, "mutated") {
+		t.Fatalf("selection mutated compilation authority: %#v / %v", again, err)
 	}
 }
 
-func TestCompileIsStableAcrossFactPermutation(t *testing.T) {
-	facts := portfolioFacts()
-	permuted := facts
-	permuted.Modules = slices.Clone(facts.Modules)
-	permuted.Packages = slices.Clone(facts.Packages)
-	permuted.EntrypointPackages = slices.Clone(facts.EntrypointPackages)
-	slices.Reverse(permuted.Modules)
-	slices.Reverse(permuted.Packages)
-	slices.Reverse(permuted.EntrypointPackages)
-	for index := range permuted.Packages {
-		permuted.Packages[index].Declarations = slices.Clone(permuted.Packages[index].Declarations)
-		slices.Reverse(permuted.Packages[index].Declarations)
+func TestResolveResponseRequiresExactTwoFieldSchema(t *testing.T) {
+	compilation := testCompilation(t)
+	valid := func(defaultRef string, targets []string) []byte {
+		refs := make([]corpus.FileID, len(targets))
+		for index, value := range targets {
+			refs[index] = corpus.FileID(value)
+		}
+		fileRef := corpus.FileID(defaultRef)
+		raw, err := json.Marshal(Response{DefaultFileRef: &fileRef, TargetFileRefs: refs})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
 	}
+	tests := map[string][]byte{
+		"malformed":          []byte(`{"default_file_ref":`),
+		"null object":        []byte(`null`),
+		"empty object":       []byte(`{}`),
+		"missing targets":    []byte(`{"default_file_ref":"f1"}`),
+		"null targets":       []byte(`{"default_file_ref":"f1","target_file_refs":null}`),
+		"empty targets":      []byte(`{"default_file_ref":"f1","target_file_refs":[]}`),
+		"missing default":    []byte(`{"target_file_refs":[]}`),
+		"old version":        []byte(`{"version":1,"default_file_ref":"f1","target_file_refs":["f1"]}`),
+		"old request ref":    []byte(`{"request_ref":"q1","default_file_ref":"f1","target_file_refs":["f1"]}`),
+		"old target ref":     []byte(`{"default_file_ref":"f1","target_file_refs":["f1"],"target_ref":"t1"}`),
+		"old unlikely field": []byte(`{"default_file_ref":"f1","target_file_refs":["f1"],"unlikely_file_refs":[]}`),
+		"extra field":        []byte(`{"default_file_ref":"f1","target_file_refs":["f1"],"reason":"no"}`),
+		"trailing value":     append(valid("f1", []string{"f1"}), []byte(` {}`)...),
+		"unknown default":    valid("f99", []string{"f1"}),
+		"unknown target":     valid("f1", []string{"f1", "f99"}),
+		"duplicate target":   valid("f1", []string{"f1", "f2", "f2"}),
+		"default omitted":    valid("f1", []string{"f2"}),
+	}
+	for name, raw := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ResolveResponse(compilation, raw); err == nil {
+				t.Fatalf("accepted invalid response: %s", raw)
+			}
+		})
+	}
+	selection, err := ResolveResponse(compilation, valid("f2", []string{"f3", "f2"}))
+	if err != nil {
+		t.Fatalf("valid positive response: %v", err)
+	}
+	if selection.Default == nil || selection.Default.FileRef != "f2" ||
+		!slices.Equal(candidateRefs(selection.Targets), []corpus.FileID{"f2", "f3"}) ||
+		!slices.Equal(candidateRefs(selection.Unclassified), []corpus.FileID{"f1"}) {
+		t.Fatalf("canonical positive selection = %#v", selection)
+	}
+	emptySelection, err := ResolveResponse(compilation, []byte(`{"default_file_ref":null,"target_file_refs":[]}`))
+	if err != nil || emptySelection.Default != nil || len(emptySelection.Targets) != 0 ||
+		!slices.Equal(candidateRefs(emptySelection.Unclassified), []corpus.FileID{"f1", "f2", "f3"}) {
+		t.Fatalf("valid empty positive selection = %#v / %v", emptySelection, err)
+	}
+	oversized := bytes.Repeat([]byte{'x'}, MaxResponseBytes+1)
+	if _, err := ResolveResponse(compilation, oversized); err == nil {
+		t.Fatal("accepted oversized response")
+	}
+}
 
-	leftCatalog := mustCatalog(t, facts)
-	rightCatalog := mustCatalog(t, permuted)
-	left, err := Compile("repomap", leftCatalog)
+func TestCompileRequiresAlreadyMergedExactCorpusCandidates(t *testing.T) {
+	snapshot := testSnapshot(t, []string{"a.py", "b.py"})
+	tests := map[string][]Candidate{
+		"empty":          {},
+		"unknown file":   {{FileRef: "f3", Hypotheses: []string{"candidate"}}},
+		"duplicate file": {{FileRef: "f1", Hypotheses: []string{"one"}}, {FileRef: "f1", Hypotheses: []string{"two"}}},
+		"no hypotheses":  {{FileRef: "f1", Hypotheses: nil}},
+		"blank":          {{FileRef: "f1", Hypotheses: []string{" "}}},
+		"control":        {{FileRef: "f1", Hypotheses: []string{"bad\nvalue"}}},
+		"host absolute":  {{FileRef: "f1", Hypotheses: []string{"/Users/me/project"}}},
+	}
+	for name, candidates := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Compile(snapshot, candidates); err == nil {
+				t.Fatalf("Compile accepted %#v", candidates)
+			}
+		})
+	}
+}
+
+func TestCompileIsStableAcrossCandidateAndHypothesisPermutation(t *testing.T) {
+	snapshot := testSnapshot(t, []string{"a.py", "b.py", "c.py"})
+	left, err := Compile(snapshot, []Candidate{
+		{FileRef: "f3", Hypotheses: []string{"script", "worker"}},
+		{FileRef: "f1", Hypotheses: []string{"application", "application"}},
+		{FileRef: "f2", Hypotheses: []string{"library"}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	right, err := Compile("repomap", rightCatalog)
+	right, err := Compile(snapshot, []Candidate{
+		{FileRef: "f2", Hypotheses: []string{"library"}},
+		{FileRef: "f3", Hypotheses: []string{"worker", "script", "worker"}},
+		{FileRef: "f1", Hypotheses: []string{"application"}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	leftWire, _ := ProviderVisibleJSON(left)
 	rightWire, _ := ProviderVisibleJSON(right)
-	if leftCatalog.Ref != rightCatalog.Ref || !bytes.Equal(leftWire, rightWire) ||
-		left.Request.RequestRef != right.Request.RequestRef || left.RequestSHA256 != right.RequestSHA256 {
-		t.Fatalf("permutation changed catalog/request:\nleft  %s %s %s\nright %s %s %s",
-			leftCatalog.Ref, left.Request.RequestRef, leftWire,
-			rightCatalog.Ref, right.Request.RequestRef, rightWire,
-		)
+	leftState, _ := ExecutionState(left)
+	rightState, _ := ExecutionState(right)
+	if !bytes.Equal(leftWire, rightWire) || !bytes.Equal(leftState, rightState) ||
+		left.RequestSHA256 != right.RequestSHA256 {
+		t.Fatalf("permutation changed compilation:\n%s\n%s", leftWire, rightWire)
 	}
 }
 
-func TestRequestRefBindsPrivateCatalogMapping(t *testing.T) {
-	left, err := Compile("same", mustCatalog(t, libraryFacts("example.com/left", 2, "pkg/api-%04d")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	right, err := Compile("same", mustCatalog(t, libraryFacts("example.com/right", 2, "pkg/api-%04d")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	leftIdentity := requestIdentity{
-		Version: left.Request.Version, RepoName: left.Request.RepoName, Targets: left.Request.Targets,
-	}
-	rightIdentity := requestIdentity{
-		Version: right.Request.Version, RepoName: right.Request.RepoName, Targets: right.Request.Targets,
-	}
-	leftVisible, _ := json.Marshal(leftIdentity)
-	rightVisible, _ := json.Marshal(rightIdentity)
-	if !bytes.Equal(leftVisible, rightVisible) {
-		t.Fatalf("control setup differs provider-visible except request ref:\nleft  %s\nright %s", leftVisible, rightVisible)
-	}
-	if left.CatalogRef == right.CatalogRef || left.Request.RequestRef == right.Request.RequestRef ||
-		left.RequestSHA256 == right.RequestSHA256 {
-		t.Fatalf("private mapping was not bound: left=%s %s %s right=%s %s %s",
-			left.CatalogRef, left.Request.RequestRef, left.RequestSHA256,
-			right.CatalogRef, right.Request.RequestRef, right.RequestSHA256,
-		)
-	}
-	oldResponse, err := json.Marshal(Response{
-		Version: ResultVersion, RequestRef: left.Request.RequestRef,
-		DefaultRef: "t1", TargetRefs: []string{"t1"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ResolveResponse(right, oldResponse); err == nil {
-		t.Fatal("response for same visible t1 mapping restored against another private catalog")
-	}
-}
-
-func TestResolveResponseRejectsInvalidAtomicDecision(t *testing.T) {
-	compilation, err := Compile("repomap", mustCatalog(t, portfolioFacts()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	refs := make([]string, 0, len(compilation.Request.Targets))
-	for _, target := range compilation.Request.Targets {
-		refs = append(refs, target.Ref)
-	}
-	valid := func(defaultRef string, targetRefs []string) []byte {
-		raw, marshalErr := json.Marshal(Response{
-			Version: ResultVersion, RequestRef: compilation.Request.RequestRef,
-			DefaultRef: defaultRef, TargetRefs: targetRefs,
-		})
-		if marshalErr != nil {
-			t.Fatal(marshalErr)
-		}
-		return raw
-	}
-	tests := map[string][]byte{
-		"malformed":            []byte(`{"version":`),
-		"null":                 []byte(`null`),
-		"empty":                []byte(`{}`),
-		"extra field":          []byte(fmt.Sprintf(`{"version":%d,"request_ref":%q,"default_ref":%q,"target_refs":[%q],"reason":"no"}`, ResultVersion, compilation.Request.RequestRef, refs[0], refs[0])),
-		"trailing value":       append(valid(refs[0], []string{refs[0]}), []byte(` {}`)...),
-		"wrong version":        []byte(fmt.Sprintf(`{"version":%d,"request_ref":%q,"default_ref":%q,"target_refs":[%q]}`, ResultVersion+1, compilation.Request.RequestRef, refs[0], refs[0])),
-		"previous version":     []byte(fmt.Sprintf(`{"version":%d,"request_ref":%q,"default_ref":%q,"target_refs":[%q]}`, ResultVersion-1, compilation.Request.RequestRef, refs[0], refs[0])),
-		"wrong request":        []byte(fmt.Sprintf(`{"version":%d,"request_ref":"tpq-old","default_ref":%q,"target_refs":[%q]}`, ResultVersion, refs[0], refs[0])),
-		"empty targets":        valid(refs[0], nil),
-		"unknown default":      valid("t999", []string{"t999"}),
-		"unknown target":       valid(refs[0], []string{refs[0], "t999"}),
-		"duplicate target":     valid(refs[0], []string{refs[0], refs[0]}),
-		"default not selected": valid(refs[0], []string{refs[1]}),
-	}
-	for name, raw := range tests {
-		t.Run(name, func(t *testing.T) {
-			if _, err := ResolveResponse(compilation, raw); err == nil {
-				t.Fatalf("ResolveResponse accepted %s: %s", name, raw)
-			}
-		})
-	}
-
-	secret := "sk-ABCDEFGHIJKLMNOPQRSTUVWX"
-	if _, err := ResolveResponse(compilation, valid(secret, []string{secret})); err == nil || strings.Contains(err.Error(), secret) {
-		t.Fatalf("unknown secret-shaped ref error = %v, want safe rejection", err)
-	}
-	oversized := bytes.Repeat([]byte{'x'}, MaxResponseBytes+1)
-	if _, err := ResolveResponse(compilation, oversized); err == nil {
-		t.Fatal("ResolveResponse accepted oversized response")
-	}
-}
-
-func TestByteEnvelopeHasNoSemanticTargetCountCap(t *testing.T) {
-	smallCatalog := mustCatalog(t, libraryFacts("example.com/many", 400, "pkg/p%04d"))
-	compilation, err := Compile("many", smallCatalog)
-	if err != nil {
-		t.Fatalf("Compile 400 complete targets: %v", err)
-	}
-	if len(compilation.Request.Targets) != 400 {
-		t.Fatalf("compiled targets = %d, want all 400", len(compilation.Request.Targets))
-	}
-	refs := make([]string, 0, len(compilation.Request.Targets))
-	for _, target := range compilation.Request.Targets {
-		refs = append(refs, target.Ref)
-	}
-	raw, err := json.Marshal(Response{
-		Version: ResultVersion, RequestRef: compilation.Request.RequestRef,
-		DefaultRef: refs[0], TargetRefs: refs,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	selection, err := ResolveResponse(compilation, raw)
-	if err != nil || len(selection.Targets) != 400 {
-		t.Fatalf("ResolveResponse all 400: targets=%d err=%v", len(selection.Targets), err)
-	}
-
-	largeCatalog := mustCatalog(t, libraryFacts("example.com/huge", 6000, "packages/long-target-name-%04d"))
-	if _, err := Compile("huge", largeCatalog); err == nil || !strings.Contains(err.Error(), "complete request") {
-		t.Fatalf("oversized complete catalog error = %v", err)
-	}
-
-	symbolHeavy := libraryFacts("example.com/symbols", 1, "pkg/api-%04d")
-	for index := 0; index < 20_000; index++ {
-		symbolHeavy.Packages[0].Declarations = append(symbolHeavy.Packages[0].Declarations, gofacts.PackageDeclaration{
-			Kind: gofacts.PackageDeclarationFunc, Name: fmt.Sprintf("ExportedSymbol%05d", index),
-		})
-	}
-	if _, err := Compile("symbols", mustCatalog(t, symbolHeavy)); err == nil || !strings.Contains(err.Error(), "complete request") {
-		t.Fatalf("oversized complete symbol inventory error = %v", err)
-	}
-}
-
-func TestProviderBoundaryRejectsVisibleSecretsButNotPrivateIdentity(t *testing.T) {
-	secret := "sk-ABCDEFGHIJKLMNOPQRSTUVWX"
-	if _, err := Compile(secret, mustCatalog(t, portfolioFacts())); err == nil || strings.Contains(err.Error(), secret) {
-		t.Fatalf("secret repo name error = %v, want safe closed error", err)
-	}
-
-	visibleSecretFacts := libraryFacts("example.com/safe", 1, "pkg/"+secret+"-%04d")
-	if _, err := Compile("safe", mustCatalog(t, visibleSecretFacts)); err == nil || strings.Contains(err.Error(), secret) {
-		t.Fatalf("secret display path error = %v, want safe closed error", err)
-	}
-
-	privateSecretModule := libraryFacts("github.com/"+secret+"/safe", 1, "pkg/api-%04d")
-	compilation, err := Compile("safe", mustCatalog(t, privateSecretModule))
-	if err != nil {
-		t.Fatalf("private canonical identity must stay local, Compile: %v", err)
-	}
-	wire, err := ProviderVisibleJSON(compilation)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Contains(wire, []byte(secret)) || bytes.Contains(wire, []byte("github.com")) {
-		t.Fatalf("private canonical identity leaked: %s", wire)
-	}
-}
-
-func TestProviderVisibleJSONRejectsCompilationTamper(t *testing.T) {
-	compilation, err := Compile("repomap", mustCatalog(t, portfolioFacts()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	compilation.Request.Targets[0].DisplayPath = "invented/path"
-	if _, err := ProviderVisibleJSON(compilation); err == nil {
-		t.Fatal("ProviderVisibleJSON accepted request/catalog drift")
-	}
-
-	compilation, err = Compile("repomap", mustCatalog(t, portfolioFacts()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	compilation.Request.Targets[0].Packages[0].Symbols[0].Names[0] = "invented"
-	if _, err := ProviderVisibleJSON(compilation); err == nil {
-		t.Fatal("ProviderVisibleJSON accepted symbol/catalog drift")
-	}
-
-	compilation, err = Compile("repomap", mustCatalog(t, portfolioFacts()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	compilation.Request.Version = RequestVersion - 1
-	if _, err := ProviderVisibleJSON(compilation); err == nil {
-		t.Fatalf("ProviderVisibleJSON accepted prior request contract v%d", RequestVersion-1)
-	}
-}
-
-func TestCompileRejectsUnavailableDeclarationInventory(t *testing.T) {
-	facts := portfolioFacts()
-	facts.Packages[0].Declarations = nil
-	facts.Packages[0].DeclarationsScanned = false
-	if _, err := Compile("repomap", mustCatalog(t, facts)); err == nil || !strings.Contains(err.Error(), "declaration labels are unavailable") {
-		t.Fatalf("unavailable declarations error = %v", err)
-	}
-}
-
-func portfolioFacts() gofacts.Facts {
-	modulePath := "github.com/acme/repomap"
-	packages := []gofacts.PackageFact{
-		packageFact("module-root", modulePath, "cmd/helper"),
-		packageFact("module-root", modulePath, "cmd/repomap"),
-		packageFact("module-root", modulePath, "internal/engine"),
-		packageFact("module-root", modulePath, "pkg/client"),
-	}
-	packages[0].Declarations = []gofacts.PackageDeclaration{
-		{Kind: gofacts.PackageDeclarationFunc, Name: "main"},
-		{Kind: gofacts.PackageDeclarationFunc, Name: "runDevPreview"},
-	}
-	packages[1].Declarations = []gofacts.PackageDeclaration{
-		{Kind: gofacts.PackageDeclarationFunc, Name: "main"},
-		{Kind: gofacts.PackageDeclarationFunc, Name: "runDevUICLI"},
-		{Kind: gofacts.PackageDeclarationFunc, Name: "runProduct"},
-	}
-	packages[2].Declarations = []gofacts.PackageDeclaration{
-		{Kind: gofacts.PackageDeclarationFunc, Name: "Exported"},
-		{Kind: gofacts.PackageDeclarationFunc, Name: "internalHelper"},
-	}
-	packages[3].Declarations = []gofacts.PackageDeclaration{
-		{Kind: gofacts.PackageDeclarationFunc, Name: "NewClient"},
-		{Kind: gofacts.PackageDeclarationFunc, Name: "internalHelper"},
-		{Kind: gofacts.PackageDeclarationMethod, Receiver: "Client", Name: "Do"},
-		{Kind: gofacts.PackageDeclarationMethod, Receiver: "Client", Name: "debug"},
-		{Kind: gofacts.PackageDeclarationMethod, Receiver: "hiddenType", Name: "Exported"},
-		{Kind: gofacts.PackageDeclarationType, Name: "Client"},
-		{Kind: gofacts.PackageDeclarationType, Name: "hiddenType"},
-	}
-	packages[3].ModuleID = "module-client"
-	packages[3].ModulePath = modulePath + "/pkg/client"
-	packages[3].CanonicalPath = packages[3].ModulePath
-	packages[3].ModuleRelativeDir = "."
-	entrypoints := []gofacts.Entrypoint{
-		entrypointFact(modulePath, "cmd/helper", "tool", 12),
-		entrypointFact(modulePath, "cmd/repomap", "", 16),
-	}
-	return gofacts.Facts{
-		Modules: []gofacts.ModuleFact{
-			d280Module("module-root", modulePath, ".", 3, true),
-			d280Module("module-client", modulePath+"/pkg/client", "pkg/client", 1, false),
-		},
-		Packages: packages, EntrypointPackages: entrypoints,
-	}
-}
-
-func libraryFacts(modulePath string, count int, format string) gofacts.Facts {
-	packages := make([]gofacts.PackageFact, 0, count)
-	modules := make([]gofacts.ModuleFact, 0, count)
+func TestCompleteCandidateSurfaceFailsInsteadOfTruncating(t *testing.T) {
+	const count = 3000
+	paths := make([]string, count)
+	candidates := make([]Candidate, count)
 	for index := 0; index < count; index++ {
-		dir := fmt.Sprintf(format, index)
-		moduleID := fmt.Sprintf("module-%04d", index)
-		packageModulePath := modulePath + "/" + dir
-		pkg := packageFact(moduleID, packageModulePath, dir)
-		pkg.CanonicalPath = packageModulePath
-		pkg.ModuleRelativeDir = "."
-		pkg.Declarations = []gofacts.PackageDeclaration{{
-			Kind: gofacts.PackageDeclarationFunc, Name: fmt.Sprintf("Exported%04d", index),
-		}}
-		packages = append(packages, pkg)
-		modules = append(modules, d280Module(moduleID, packageModulePath, dir, 1, false))
+		paths[index] = fmt.Sprintf("services/service-%04d/main.py", index)
 	}
-	return gofacts.Facts{
-		Modules: modules, Packages: packages,
+	snapshot := testSnapshot(t, paths)
+	for index, entry := range snapshot.Entries {
+		candidates[index] = Candidate{
+			FileRef:    entry.ID,
+			Hypotheses: []string{fmt.Sprintf("independently declared service candidate %04d with a deliberately complete label", index)},
+		}
+	}
+	if _, err := Compile(snapshot, candidates); err == nil || !strings.Contains(err.Error(), "complete candidate request") {
+		t.Fatalf("oversized complete surface error = %v", err)
 	}
 }
 
-func packageFact(moduleID, modulePath, dir string) gofacts.PackageFact {
-	return gofacts.PackageFact{
-		CanonicalPath: modulePath + "/" + dir, Name: strings.ReplaceAll(dir, "/", "_"),
-		ModuleID: moduleID, ModulePath: modulePath, PackageDir: dir,
-		ModuleRelativeDir: dir, DisplayPath: dir, Locality: "local", DeclarationsScanned: true,
-		LoadCompleteness: completePackageLoadForTest(),
+func TestProviderBoundaryRejectsVisibleSecretsAndCompilationTampering(t *testing.T) {
+	restore := secretscan.SetEnabled(true)
+	defer restore()
+	snapshot := testSnapshot(t, []string{"main.py"})
+	secret := "sk-ABCDEFGHIJKLMNOPQRSTUVWX"
+	if _, err := Compile(snapshot, []Candidate{{FileRef: "f1", Hypotheses: []string{secret}}}); err == nil || strings.Contains(err.Error(), secret) {
+		t.Fatalf("visible secret error = %v", err)
 	}
-}
 
-func completePackageLoadForTest() *gofacts.PackageLoadCompleteness {
-	return &gofacts.PackageLoadCompleteness{
-		Version: gofacts.PackageLoadCompletenessVersion,
-		State:   gofacts.PackageLoadComplete,
-	}
-}
-
-func entrypointFact(modulePath, dir, kind string, line int) gofacts.Entrypoint {
-	return gofacts.Entrypoint{
-		ModulePath: modulePath, ImportPath: modulePath + "/" + dir,
-		PackageDir: dir, ModuleRelativeDir: dir, ModuleDir: ".", Kind: kind,
-		Anchors: []gofacts.EntrypointAnchor{{
-			Version: gofacts.EntrypointAnchorVersion, Kind: gofacts.EntrypointAnchorGoMain,
-			Path: dir + "/main.go", Line: line,
-		}},
-	}
-}
-
-func mustCatalog(t *testing.T, facts gofacts.Facts) analysistarget.TargetCatalog {
-	t.Helper()
-	catalog, err := analysistarget.BuildCatalog(facts)
+	compilation, err := Compile(snapshot, []Candidate{{FileRef: "f1", Hypotheses: []string{"application"}}})
 	if err != nil {
-		t.Fatalf("BuildCatalog: %v", err)
+		t.Fatal(err)
 	}
-	return catalog
+	compilation.Request.Candidates[0].Path = "invented.py"
+	if _, err := ProviderVisibleJSON(compilation); err == nil {
+		t.Fatal("provider boundary accepted request tampering")
+	}
+	compilation, err = Compile(snapshot, []Candidate{{FileRef: "f1", Hypotheses: []string{"application"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	compilation.candidates[0].Hypotheses[0] = "invented"
+	if _, err := ExecutionState(compilation); err == nil {
+		t.Fatal("execution state accepted private candidate tampering")
+	}
 }
 
-func assertNoPrivateTargetMaterial(t *testing.T, providerBytes []byte, catalog analysistarget.TargetCatalog) {
+func testCompilation(t *testing.T) Compilation {
 	t.Helper()
-	for _, forbidden := range []string{
-		"github.com/acme/repomap", `"candidate"`, `"module_id"`, `"module_path"`,
-		`"package_path"`, `"root_boundary"`, `"roots"`, "cmd/repomap/main.go",
-		`"declarations"`, `"receiver"`, `"files"`, `"source"`, `"comments"`,
-		catalog.Ref, catalog.DefaultTargetRef,
-	} {
-		if forbidden != "" && bytes.Contains(providerBytes, []byte(forbidden)) {
-			t.Fatalf("private target material %q leaked in %s", forbidden, providerBytes)
-		}
+	snapshot := testSnapshot(t, []string{"a.py", "b.py", "c.py"})
+	compilation, err := Compile(snapshot, []Candidate{
+		{FileRef: "f1", Hypotheses: []string{"application"}},
+		{FileRef: "f2", Hypotheses: []string{"worker"}},
+		{FileRef: "f3", Hypotheses: []string{"library"}},
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
+	return compilation
 }
 
-func canonicalSelectedPaths(targets []Target, selected map[string]bool) []string {
-	result := make([]string, 0, len(selected))
-	for _, target := range targets {
-		if selected[target.Ref] {
-			result = append(result, target.DisplayPath)
-		}
+func testSnapshot(t *testing.T, paths []string) corpus.Snapshot {
+	t.Helper()
+	canonical := append([]string(nil), paths...)
+	sort.Strings(canonical)
+	entries := make([]corpus.Entry, len(canonical))
+	for index, path := range canonical {
+		entries[index] = corpus.Entry{ID: corpus.FileID(fmt.Sprintf("f%d", index+1)), Path: path}
+	}
+	identity := struct {
+		Version int            `json:"version"`
+		Entries []corpus.Entry `json:"entries"`
+	}{Version: corpus.Version, Entries: entries}
+	wire, err := json.Marshal(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(wire)
+	sha := hex.EncodeToString(digest[:])
+	snapshot := corpus.Snapshot{
+		Version: corpus.Version, Ref: "rc-" + sha[:24], SHA256: sha, Entries: entries,
+	}
+	if err := snapshot.Validate(); err != nil {
+		t.Fatalf("test snapshot: %v", err)
+	}
+	return snapshot
+}
+
+func candidateRefs(values []VisibleCandidate) []corpus.FileID {
+	result := make([]corpus.FileID, len(values))
+	for index, value := range values {
+		result[index] = value.FileRef
 	}
 	return result
-}
-
-func reflectSelectionMutation(compilation Compilation, targetRef string) bool {
-	for _, entry := range compilation.authority {
-		if entry.Candidate.Target.Ref == targetRef {
-			for _, root := range entry.Candidate.Target.Roots {
-				if root.Path == "mutated.go" {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
-func targetByDisplayPath(t *testing.T, targets []Target, displayPath string) Target {
-	t.Helper()
-	for _, target := range targets {
-		if target.DisplayPath == displayPath {
-			return target
-		}
-	}
-	t.Fatalf("target %q is absent", displayPath)
-	return Target{}
-}
-
-func symbolNames(target Target, kind string) []string {
-	var result []string
-	for _, pkg := range target.Packages {
-		for _, group := range pkg.Symbols {
-			if group.Kind == kind {
-				result = append(result, group.Names...)
-			}
-		}
-	}
-	return result
-}
-
-func compilationAuthorityHasSymbol(compilation Compilation, name string) bool {
-	for _, entry := range compilation.authority {
-		for _, symbol := range entry.Symbols {
-			if symbol.Name == name {
-				return true
-			}
-		}
-		for _, api := range entry.PackageAPIs {
-			for _, symbol := range api.Declarations {
-				if symbol.Name == name {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }

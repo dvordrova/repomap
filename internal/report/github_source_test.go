@@ -2,8 +2,6 @@ package report
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -81,15 +79,12 @@ func TestResolveGitHubRepositoryURLInfersRepositoryFromOrigin(t *testing.T) {
 }
 
 func TestGitHubPresentationIsHTMLOnly(t *testing.T) {
-	data := ReportData{
-		FormatVersion: CurrentFormatVersion,
-		RepoName:      "github-fixture",
-		GitHubSourceLinks: &GitHubSourceLinks{
-			RepositoryURL: "https://github.com/team/project",
-			Revision:      strings.Repeat("a", 40),
-		},
+	data := reportProgramShellDataFixture(t, "github-fixture")
+	data.GitHubSourceLinks = &GitHubSourceLinks{
+		RepositoryURL: "https://github.com/team/project",
+		Revision:      strings.Repeat("a", 40),
 	}
-	html, err := RenderHTML(&data)
+	html, err := RenderHTMLWithOptions(&data, RenderOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,11 +93,7 @@ func TestGitHubPresentationIsHTMLOnly(t *testing.T) {
 		t.Fatalf("standalone HTML missing GitHub routing: %s", html)
 	}
 
-	jsonPath := filepath.Join(t.TempDir(), "report.json")
-	if err := WriteReportJSON(&data, jsonPath); err != nil {
-		t.Fatal(err)
-	}
-	persisted, err := os.ReadFile(jsonPath)
+	persisted, err := encodeReportJSON(&data, maxManifestReportBytes)
 	if err != nil {
 		t.Fatal(err)
 	}

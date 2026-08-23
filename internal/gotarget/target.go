@@ -53,19 +53,8 @@ func Resolve(explicit string, getenv func(string) string) (Target, error) {
 	return FromParts(goos, goarch)
 }
 
-// Host returns the target of the running repomap binary.
-func Host() Target {
-	return Target{GOOS: runtime.GOOS, GOARCH: runtime.GOARCH}
-}
-
 func (target Target) String() string {
 	return target.GOOS + "/" + target.GOARCH
-}
-
-// Scenario is the target-specific semantic and cache identity for a run with
-// no user-selectable build-tag dimension.
-func (target Target) Scenario() string {
-	return "go:" + target.String() + ":tags="
 }
 
 // ApplyEnv replaces, rather than duplicates, the standard target variables.

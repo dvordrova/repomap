@@ -12,52 +12,6 @@ import (
 	"github.com/dvordrova/repomap/internal/gofacts"
 )
 
-// Resolve enumerates exact package candidates and either applies one explicit
-// override or performs conservative deterministic auto-selection. Ambiguity
-// is a closed state with no Selected target.
-func Resolve(facts gofacts.Facts, options Options) (Resolution, error) {
-	candidates, err := Candidates(facts)
-	if err != nil {
-		return Resolution{}, err
-	}
-	resolution := Resolution{Candidates: candidates}
-	if len(candidates) == 0 {
-		resolution.State = ResolutionUnavailable
-		resolution.Reason = "no exact Go package target candidates"
-		if strings.TrimSpace(options.Override) != "" {
-			return Resolution{}, fmt.Errorf("%w: %q", ErrOverrideNotFound, options.Override)
-		}
-		return resolution, nil
-	}
-
-	if override := strings.TrimSpace(options.Override); override != "" {
-		matches := matchingCandidates(candidates, override)
-		switch len(matches) {
-		case 0:
-			return Resolution{}, fmt.Errorf("%w: %q", ErrOverrideNotFound, override)
-		case 1:
-			return selectedResolution(candidates, matches[0].Target, "explicit override"), nil
-		default:
-			keys := make([]string, 0, len(matches))
-			for _, candidate := range matches {
-				keys = append(keys, candidate.Key)
-			}
-			return Resolution{}, fmt.Errorf(
-				"%w: %q matches %d candidates; use one exact target key: %s",
-				ErrOverrideAmbiguous, override, len(matches), strings.Join(keys, ", "),
-			)
-		}
-	}
-
-	target, reason, ok := autoSelect(candidates)
-	if !ok {
-		resolution.State = ResolutionAmbiguous
-		resolution.Reason = "multiple plausible analysis target packages require an explicit override"
-		return resolution, nil
-	}
-	return selectedResolution(candidates, target, reason), nil
-}
-
 // Candidates derives every exact build-selected executable plus at most one
 // public module-library target per complete module. A module library is not a
 // package alias: it seals the complete non-main module scope and the exact
@@ -167,53 +121,11 @@ func Candidates(facts gofacts.Facts) ([]Candidate, error) {
 }
 
 // gofacts may inspect multiple nested modules independently; each `go list`
-// invocation can consequently mark its own module as Main. For target
-// auto-selection, "main" means the module at the analysis root. Nested fixture
-// and example modules remain valid explicit targets but never compete with the
-// ordinary root product.
+// invocation can consequently mark its own module as Main. In the target
+// catalog, "main" means the module at the analysis root. Nested fixture and
+// example modules remain valid explicit candidates.
 func rootAnalysisModule(module gofacts.ModuleFact) bool {
 	return module.Main && canonicalDirForMatch(module.ModuleDir) == "."
-}
-
-func autoSelect(candidates []Candidate) (Target, string, bool) {
-	plausibleExecutables := make([]Candidate, 0)
-	for _, candidate := range candidates {
-		if candidate.MainModule && candidate.Target.Kind == KindExecutablePackage &&
-			!auxiliaryEntrypointKind(candidate.EntrypointKind) {
-			plausibleExecutables = append(plausibleExecutables, candidate)
-		}
-	}
-
-	primary := filterCandidates(plausibleExecutables, func(candidate Candidate) bool {
-		return candidate.EntrypointKind == "primary_binary" || candidate.EntrypointKind == "primary_application"
-	})
-	if len(primary) == 1 {
-		return primary[0].Target, "unique primary executable package", true
-	}
-	if len(primary) > 1 {
-		return Target{}, "", false
-	}
-
-	moduleMatches := filterCandidates(plausibleExecutables, func(candidate Candidate) bool {
-		return packageBase(candidate.Target.PackageDir) == moduleBase(candidate.Target.ModulePath)
-	})
-	if len(moduleMatches) == 1 {
-		return moduleMatches[0].Target, "unique executable matching the main module name", true
-	}
-	if len(moduleMatches) > 1 {
-		return Target{}, "", false
-	}
-
-	rootLibraries := filterCandidates(candidates, func(candidate Candidate) bool {
-		return candidate.MainModule && candidate.Target.Kind == KindModuleLibrary
-	})
-	if len(plausibleExecutables) == 0 && len(rootLibraries) == 1 {
-		return rootLibraries[0].Target, "sole root module library", true
-	}
-	if len(plausibleExecutables) == 1 {
-		return plausibleExecutables[0].Target, "sole plausible executable package", true
-	}
-	return Target{}, "", false
 }
 
 func newTarget(module gofacts.ModuleFact, pkg gofacts.PackageFact, kind Kind, boundary RootBoundary, roots []Root) (Target, error) {
@@ -404,58 +316,6 @@ func findEntrypointPackage(
 	return matches[0], nil
 }
 
-func matchingCandidates(candidates []Candidate, override string) []Candidate {
-	exact := make([]Candidate, 0, 1)
-	for _, candidate := range candidates {
-		if override == candidate.Target.Ref || override == candidate.Key {
-			exact = append(exact, candidate)
-		}
-	}
-	if len(exact) > 0 {
-		return exact
-	}
-
-	matches := make([]Candidate, 0, 1)
-	cleanDir := canonicalDirForMatch(override)
-	for _, candidate := range candidates {
-		target := candidate.Target
-		if target.Kind == KindModuleLibrary &&
-			(override == target.ModulePath || cleanDir == canonicalDirForMatch(target.ModuleDir)) {
-			matches = append(matches, candidate)
-			continue
-		}
-		if target.Kind != KindModuleLibrary &&
-			(override == target.PackagePath || cleanDir == canonicalDirForMatch(target.PackageDir)) {
-			matches = append(matches, candidate)
-		}
-	}
-	return matches
-}
-
-func selectedResolution(candidates []Candidate, target Target, reason string) Resolution {
-	selected := target
-	return Resolution{State: ResolutionSelected, Reason: reason, Selected: &selected, Candidates: candidates}
-}
-
-func filterCandidates(candidates []Candidate, keep func(Candidate) bool) []Candidate {
-	filtered := make([]Candidate, 0, len(candidates))
-	for _, candidate := range candidates {
-		if keep(candidate) {
-			filtered = append(filtered, candidate)
-		}
-	}
-	return filtered
-}
-
-func auxiliaryEntrypointKind(kind string) bool {
-	switch kind {
-	case "tool", "example", "test_binary":
-		return true
-	default:
-		return false
-	}
-}
-
 func canonicalRoot(rootPath string, line int) (Root, error) {
 	clean := canonicalDirForMatch(rootPath)
 	if clean == "." || strings.HasPrefix(clean, "../") || path.IsAbs(rootPath) || line <= 0 {
@@ -516,24 +376,27 @@ func targetCandidateKey(target Target) string {
 	return candidateKey(target.ModulePath, target.ModuleDir, target.PackagePath)
 }
 
-func packageBase(packageDir string) string {
-	if packageDir == "." {
-		return ""
+// ExactCandidateKeyModuleDir extracts only the canonical module-directory
+// routing hint from a typed candidate key. The hint may narrow deterministic
+// Go-fact loading for an explicit --target, but it is never target authority:
+// the resulting catalog must still contain and resolve the complete key.
+func ExactCandidateKeyModuleDir(value string) (string, bool) {
+	if value == "" || strings.TrimSpace(value) != value {
+		return "", false
 	}
-	return path.Base(packageDir)
-}
-
-func moduleBase(modulePath string) string {
-	clean := strings.TrimSuffix(path.Clean(modulePath), "/")
-	base := path.Base(clean)
-	if len(base) > 1 && base[0] == 'v' {
-		for index := 1; index < len(base); index++ {
-			if base[index] < '0' || base[index] > '9' {
-				return base
-			}
-		}
-		clean = path.Dir(clean)
-		base = path.Base(clean)
+	separator := strings.Index(value, "::")
+	if separator <= 0 || separator+2 >= len(value) || strings.Contains(value[separator+2:], "::") {
+		return "", false
 	}
-	return base
+	prefix := value[:separator]
+	at := strings.LastIndex(prefix, "@")
+	if at <= 0 || at+1 >= len(prefix) {
+		return "", false
+	}
+	moduleDir := prefix[at+1:]
+	canonical := canonicalDirForMatch(moduleDir)
+	if moduleDir != canonical || path.IsAbs(moduleDir) || strings.HasPrefix(canonical, "../") {
+		return "", false
+	}
+	return canonical, true
 }

@@ -1,7 +1,6 @@
 package surfacediscovery
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -35,17 +34,17 @@ func (e *AnalysisTargetSSAUnavailableError) Error() string {
 	case AnalysisTargetPackageNotSSASafe:
 		if diagnostic := analysisTargetDiagnosticText(e.Diagnostic); diagnostic != "" {
 			return fmt.Sprintf(
-				"selected Go analysis target package %s is unavailable for SSA because package %s failed at %s; prepare missing generated/build inputs, or choose another --target/--go-target",
+				"selected Go analysis target package %s is unavailable for SSA because package %s failed at %s; prepare missing generated/build inputs, choose another --target, or override the platform with --force-platform",
 				e.Package, e.Diagnostic.Package, diagnostic,
 			)
 		}
 		return fmt.Sprintf(
-			"selected Go analysis target package %s is unavailable for SSA; choose another --target or correct --go-target",
+			"selected Go analysis target package %s is unavailable for SSA; choose another --target or correct --force-platform",
 			e.Package,
 		)
 	case AnalysisTargetExactRootsUnavailable:
 		return fmt.Sprintf(
-			"selected Go analysis target package %s resolved %d of %d exact process roots in SSA; choose another --target or correct --go-target",
+			"selected Go analysis target package %s resolved %d of %d exact process roots in SSA; choose another --target or correct --force-platform",
 			e.Package, e.ResolvedRoots, e.ExpectedRoots,
 		)
 	default:
@@ -64,9 +63,4 @@ func analysisTargetDiagnosticText(diagnostic *PackageDiagnostic) string {
 		location += fmt.Sprintf(":%d", diagnostic.Location.Column)
 	}
 	return location + ": " + diagnostic.Message
-}
-
-func IsAnalysisTargetSSAUnavailable(err error) bool {
-	var target *AnalysisTargetSSAUnavailableError
-	return errors.As(err, &target)
 }
