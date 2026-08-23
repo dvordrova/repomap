@@ -54,6 +54,10 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 		[]byte(`function canvasTopology()`),
 		[]byte(`data-canvas-node`),
 		[]byte(`rm-canvas-popover`),
+		[]byte(`Responsibilities`),
+		[]byte(`Used from`),
+		[]byte(`Operations`),
+		[]byte(`Mechanism`),
 	} {
 		if !bytes.Contains(html, token) {
 			t.Errorf("rendered orientation workspace is missing %q", token)

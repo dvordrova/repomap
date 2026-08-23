@@ -498,8 +498,11 @@ diagnostic-journal availability never changes the cube's semantic contract.
     require exact representative-object membership, and integration edges
     require a selected use whose exact caller has that membership. Unbound rows
     remain counted frontiers; exact-external-symbol and runtime-unresolved use
-    authority stay visually distinct. Node details may expose only validated
-    purpose, signature, authority, and exact source actions. Project the
+    authority stay visually distinct. When several selected uses collapse to
+    one core-to-integration edge, any runtime-unresolved use makes that edge
+    runtime-unresolved regardless of row order. Node details may expose only
+    validated purpose, signature, responsibility membership, bounded selected
+    caller/operation/mechanism summaries, authority, and exact source actions. Project the
     validated default Go `CubeMap` into that same workspace with exact
     core-member evidence, model-owned responsibility
     grouping, activities, integrations, reverse paths, semantic associations,
