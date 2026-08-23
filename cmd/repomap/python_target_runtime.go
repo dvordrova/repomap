@@ -110,7 +110,7 @@ func selectPythonTargetsForRun(
 		err   error
 	}, 1)
 	go func() {
-		if !readmetargetscout.HasReadmeFiles(repository) {
+		if !readmetargetscout.HasGuidanceFiles(repository) {
 			readmeResult <- struct {
 				roles readmetargetscout.Result
 				err   error
@@ -219,13 +219,13 @@ func selectPythonTargetsForRun(
 		output.State(
 			"Python target projection", "ready",
 			fmt.Sprintf("native file hypotheses: %d", len(nativeCandidates)),
-			fmt.Sprintf("resolvable README hypotheses: %d", len(readmeCandidates)),
+			fmt.Sprintf("resolvable guidance hypotheses: %d", len(readmeCandidates)),
 			formatRunOutputWallDuration(time.Since(projectionStarted)),
 		)
 	}
 	if output != nil && unsupported > 0 {
 		output.Stage(
-			"README file classifier",
+			"Repository guidance classifier",
 			fmt.Sprintf(
 				"kept %d target hypotheses for the Python adapter; retained %d unsupported target roles only in diagnostics",
 				len(readmeCandidates), unsupported,
@@ -243,7 +243,7 @@ func selectPythonTargetsForRun(
 		output.State(
 			"Target hypothesis merge", "complete",
 			fmt.Sprintf("native hypotheses: %d", len(nativeCandidates)),
-			fmt.Sprintf("README hypotheses: %d", len(readmeCandidates)),
+			fmt.Sprintf("guidance hypotheses: %d", len(readmeCandidates)),
 			fmt.Sprintf("merged hypotheses: %d", len(merged)),
 			formatRunOutputWallDuration(time.Since(mergeStarted)),
 		)

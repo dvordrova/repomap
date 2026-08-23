@@ -100,7 +100,7 @@ func selectTargetsForRun(
 	}
 	readmeResult := make(chan readmeScoutResult, 1)
 	go func() {
-		if !readmetargetscout.HasReadmeFiles(repository) {
+		if !readmetargetscout.HasGuidanceFiles(repository) {
 			readmeResult <- readmeScoutResult{roles: readmetargetscout.Result{}}
 			return
 		}
@@ -188,7 +188,7 @@ func selectTargetsForRun(
 	)
 	if output != nil && unsupportedReadmeTargets > 0 {
 		output.Stage(
-			"README file classifier",
+			"Repository guidance classifier",
 			fmt.Sprintf(
 				"kept %d target hypotheses for the Go adapter; retained %d unsupported target roles only in diagnostics",
 				len(readmeCandidates), unsupportedReadmeTargets,
@@ -206,7 +206,7 @@ func selectTargetsForRun(
 		output.State(
 			"Target hypothesis merge", "complete",
 			fmt.Sprintf("native hypotheses: %d", len(goCandidates)),
-			fmt.Sprintf("README hypotheses: %d", len(readmeCandidates)),
+			fmt.Sprintf("guidance hypotheses: %d", len(readmeCandidates)),
 			fmt.Sprintf("merged hypotheses: %d", len(merged)),
 			formatRunOutputWallDuration(time.Since(mergeStarted)),
 		)
@@ -443,27 +443,27 @@ func discoverReadmeFileRoles(
 		targetPortfolioRepoName(repoName), repository, lexical,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("README file classifier: %w", err)
+		return nil, fmt.Errorf("repository guidance classifier: %w", err)
 	}
 	if compilation.State == readmetargetscout.StateNotApplicable {
 		return readmetargetscout.Result{}, nil
 	}
 	prompt, err := readmetargetscout.BuildPrompt(compilation)
 	if err != nil {
-		return nil, fmt.Errorf("README file classifier: build prompt: %w", err)
+		return nil, fmt.Errorf("repository guidance classifier: build prompt: %w", err)
 	}
 	if providers == nil {
-		return nil, fmt.Errorf("README file classifier: model provider is unavailable; configure the provider and retry")
+		return nil, fmt.Errorf("repository guidance classifier: model provider is unavailable; configure the provider and retry")
 	}
 	provider, err := providers()
 	if err != nil {
-		return nil, fmt.Errorf("README file classifier: configure model provider: %w", err)
+		return nil, fmt.Errorf("repository guidance classifier: configure model provider: %w", err)
 	}
 	if provider == nil {
-		return nil, fmt.Errorf("README file classifier: configured model provider is unavailable")
+		return nil, fmt.Errorf("repository guidance classifier: configured model provider is unavailable")
 	}
 	if output != nil {
-		output.Stage("README file classifier", fmt.Sprintf(
+		output.Stage("Repository guidance classifier", fmt.Sprintf(
 			"asking the model to classify sparse repository file roles across %d tracked files",
 			compilation.Request.FileCount,
 		))
@@ -489,7 +489,7 @@ func discoverReadmeFileRoles(
 	)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"README file classifier did not complete: %w; fix provider access and retry",
+			"repository guidance classifier did not complete: %w; fix provider access and retry",
 			err,
 		)
 	}
@@ -503,7 +503,7 @@ func discoverReadmeFileRoles(
 			latency = 0
 		}
 		output.Stage(
-			"README file classifier",
+			"Repository guidance classifier",
 			fmt.Sprintf("classified files: %d", len(result)),
 			formatRunOutputWallDuration(time.Since(started)),
 			fmt.Sprintf(

@@ -57,7 +57,7 @@ func selectMixedTargetsForRun(
 	}
 	readmeResult := make(chan readmeScoutResult, 1)
 	go func() {
-		if !readmetargetscout.HasReadmeFiles(repository) {
+		if !readmetargetscout.HasGuidanceFiles(repository) {
 			readmeResult <- readmeScoutResult{roles: readmetargetscout.Result{}}
 			return
 		}
@@ -122,7 +122,7 @@ func selectMixedTargetsForRun(
 	)
 	if output != nil && unsupported > 0 {
 		output.Stage(
-			"README file classifier",
+			"Repository guidance classifier",
 			fmt.Sprintf(
 				"kept %d target hypotheses resolvable by Go or Python; retained %d unsupported target roles only in diagnostics",
 				len(readmeCandidates), unsupported,
@@ -141,7 +141,7 @@ func selectMixedTargetsForRun(
 			"Target hypothesis merge", "complete",
 			fmt.Sprintf("Go hypotheses: %d", len(goCandidates)),
 			fmt.Sprintf("Python hypotheses: %d", len(pythonCandidates)),
-			fmt.Sprintf("README hypotheses: %d", len(readmeCandidates)),
+			fmt.Sprintf("guidance hypotheses: %d", len(readmeCandidates)),
 			fmt.Sprintf("merged hypotheses: %d", len(merged)),
 			formatRunOutputWallDuration(time.Since(mergeStarted)),
 		)
@@ -208,7 +208,7 @@ func selectMixedTargetsForRun(
 	if !goResolver.ResolvesOne(portfolio.Default.FileRef) {
 		if pythonResolver.Resolves(portfolio.Default.FileRef) {
 			return mixedTargetRunSelection{Outcome: outcome}, mixedPythonSelectionError(
-				portfolio.Default.Path, true, len(pythonFiles), len(pythonTargets), goCatalog,
+				portfolio.Default.Path, true, len(pythonFiles), len(pythonTargets), goCatalog, pythonCatalog,
 			)
 		}
 		return mixedTargetRunSelection{Outcome: outcome}, fmt.Errorf(
@@ -227,7 +227,7 @@ func selectMixedTargetsForRun(
 	outcome.SelectedRef = defaultGoRef
 	if len(pythonTargets) > 0 {
 		return mixedTargetRunSelection{Outcome: outcome}, mixedPythonSelectionError(
-			portfolio.Default.Path, false, len(pythonFiles), len(pythonTargets), goCatalog,
+			portfolio.Default.Path, false, len(pythonFiles), len(pythonTargets), goCatalog, pythonCatalog,
 		)
 	}
 	if len(goRefs) == 0 {
@@ -247,17 +247,19 @@ func mixedPythonSelectionError(
 	selectedPythonFiles int,
 	selectedPythonTargets int,
 	goCatalog analysistarget.TargetCatalog,
+	pythonCatalog pythontarget.Catalog,
 ) error {
 	defaultFact := "the default remains an exact Go target"
 	if pythonDefault {
 		defaultFact = fmt.Sprintf("the default file %q resolves to Python", defaultPath)
 	}
 	return fmt.Errorf(
-		"mixed Go/Python target portfolio selected %d Python file(s) restoring to %d exact Python target view(s), and %s; the current report cannot publish complete semantics for that mixed positive selection; rerun with --target using one exact Go choice (%s), or analyze a Python-only project root",
+		"mixed Go/Python target portfolio selected %d Python file(s) restoring to %d exact Python target view(s), and %s; the current report cannot publish complete semantics for that mixed positive selection; rerun with --target using one exact choice: Go (%s), or Python (%s)",
 		selectedPythonFiles,
 		selectedPythonTargets,
 		defaultFact,
 		targetPortfolioChoices(goCatalog),
+		pythonTargetChoices(pythonCatalog),
 	)
 }
 

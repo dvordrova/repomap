@@ -74,7 +74,8 @@ func TestMixedTargetSelectionStopsOnEveryPositivePythonSubset(t *testing.T) {
 			)
 			if runErr == nil || !strings.Contains(runErr.Error(), "cannot publish complete semantics") ||
 				!strings.Contains(runErr.Error(), "--target") ||
-				!strings.Contains(runErr.Error(), "Python-only project root") {
+				!strings.Contains(runErr.Error(), "exact choice: Go") ||
+				!strings.Contains(runErr.Error(), "or Python") {
 				t.Fatalf("mixed Python selection error = %v", runErr)
 			}
 			if len(selection.Go.TargetRefs) != 0 {

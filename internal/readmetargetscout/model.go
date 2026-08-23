@@ -1,6 +1,6 @@
-// Package readmetargetscout sends complete README documents and the complete
-// shared-corpus FileID/path tree through one bounded model call, then
-// reduces a sparse file-role catalog. It is language-neutral and runs in
+// Package readmetargetscout sends complete repository guidance documents and
+// the complete shared-corpus FileID/path tree through one bounded model call,
+// then reduces a sparse file-role catalog. It is language-neutral and runs in
 // parallel with language target discovery.
 package readmetargetscout
 
@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	CompilationVersion = 3
+	CompilationVersion = 4
 
-	PreparationVersion = "complete-readmes-prefix-compressed-corpus-file-tree-and-sparse-grep-stats-v3"
+	PreparationVersion = "complete-readmes-and-agents-prefix-compressed-corpus-file-tree-and-sparse-grep-stats-v4"
 	SchemaVersion      = "readme-file-role-classifications-v2"
 	ReducerVersion     = "readme-file-role-classifications-strict-with-prose-rejection-v4"
 
@@ -35,7 +35,7 @@ const (
 	MaxOutputTokens                = 32_000
 )
 
-const executionContract = "readme-file-classifier-v5"
+const executionContract = "repository-guidance-file-classifier-v6"
 
 const ArtifactFilename = "readme-file-roles.json"
 
@@ -48,24 +48,31 @@ const (
 
 type NotApplicableReason string
 
-const NoReadmeFiles NotApplicableReason = "no_readme_files"
+const NoGuidanceFiles NotApplicableReason = "no_guidance_files"
 
 // Request is the complete provider-visible first-layer evidence. FileTree is a
 // lossless prefix-compressed encoding of every tracked regular corpus file,
 // not a locally selected subset. GrepStats contains weak sparse counts only;
 // it never contains source bytes.
 type Request struct {
-	RepoName  string   `json:"repo_name"`
-	FileCount int      `json:"file_count"`
-	FileTree  FileTree `json:"file_tree"`
-
-	GrepStats map[corpus.FileID]map[string]uint8 `json:"grep_stats"`
-	Readmes   []RequestReadme                    `json:"readmes"`
+	RepoName          string                             `json:"repo_name"`
+	FileCount         int                                `json:"file_count"`
+	FileTree          FileTree                           `json:"file_tree"`
+	GrepStats         map[corpus.FileID]map[string]uint8 `json:"grep_stats"`
+	GuidanceDocuments []RequestGuidanceDocument          `json:"guidance_documents"`
 }
 
-type RequestReadme struct {
+type GuidanceKind string
+
+const (
+	GuidanceReadme GuidanceKind = "readme"
+	GuidanceAgents GuidanceKind = "agents"
+)
+
+type RequestGuidanceDocument struct {
 	FileRef corpus.FileID `json:"file_ref"`
 	Path    string        `json:"path"`
+	Kind    GuidanceKind  `json:"kind"`
 	Content string        `json:"content"`
 }
 
@@ -116,11 +123,11 @@ type ClassifiedFile struct {
 	Classifications []Classification `json:"classifications"`
 }
 
-// Result is a sparse README-backed role catalog. One file may have several
+// Result is a sparse repository-guidance-backed role catalog. One file may have several
 // orthogonal roles, but each role appears at most once for that file.
 type Result []ClassifiedFile
 
-// TargetCandidates projects only README-backed target_entry classifications
+// TargetCandidates projects only guidance-backed target_entry classifications
 // into the common target-hypothesis merger. All other roles remain available
 // in Result for logging and future cubes, but cannot become analysis targets
 // through complement semantics.
@@ -133,7 +140,7 @@ func (result Result) TargetCandidates() []analysistarget.FileCandidate {
 			}
 			hypotheses := make([]string, len(classification.Hypotheses))
 			for index, hypothesis := range classification.Hypotheses {
-				hypotheses[index] = "README target_entry: " + hypothesis
+				hypotheses[index] = "Repository guidance target_entry: " + hypothesis
 			}
 			candidates = append(candidates, analysistarget.FileCandidate{
 				FileRef: file.FileRef, Hypotheses: hypotheses,

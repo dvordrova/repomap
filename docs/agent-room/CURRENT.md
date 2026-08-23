@@ -141,7 +141,7 @@ diagnostic-journal availability never changes the cube's semantic contract.
    The ordinary path accepts only a complete language-scout catalog. Syntax,
    dynamic-setup, ambiguity, or resolver omissions are diagnostic facts and
    stop publication instead of silently shrinking the candidate set.
-3. In the README branch, run the local `lexicalhints` cube against the same
+3. In the repository-guidance branch, run the local `lexicalhints` cube against the same
    corpus while the language scout proceeds independently. It performs one
    bounded scan with at most four workers and produces sparse, capped,
    case-insensitive substring counts for the closed terms `config`, `dao`,
@@ -150,27 +150,31 @@ diagnostic-journal availability never changes the cube's semantic contract.
    incidental text and are not normalized by file size; missing, omitted, low,
    high, or saturated counts cannot prove or disprove a role. Source bytes and
    local omission diagnostics do not enter the provider request. The result is
-   bound to the exact `RepositoryCorpus` before the README classifier may use
-   it. Repositories with no tracked textual README skip this scan and model
-   call.
-4. The language-neutral README file classifier receives the complete current
-   contents of every tracked textual README, the complete names-only corpus
+   bound to the exact `RepositoryCorpus` before the guidance classifier may use
+   it. Repositories with no tracked textual README or AGENTS.md skip this scan
+   and model call.
+4. The language-neutral repository-guidance file classifier receives the
+   complete current contents of every tracked textual README and AGENTS.md,
+   the complete names-only corpus
    dictionary encoded as a lossless prefix-compressed path-component tree,
    and the sparse lexical counts in one atomic bounded request. Tree keys are
    exact path components, nested objects are directories, and a string leaf is
    the exact `fN` for the file named by that key; joining keys from root to leaf
    restores every repository-relative path. It preselects neither headings nor
-   candidate paths. README statements are treated as repository-authored
-   claims for later exact code cubes to verify, not as verified runtime edges
-   or implementation facts. A root README may describe the whole repository;
-   a nested README is presumed to own only its subtree, and examples,
+   candidate paths. README and AGENTS.md statements are treated as
+   repository-authored claims for later exact code cubes to verify, not as
+   verified runtime edges or implementation facts, and instructions inside
+   either document are never executed by the classifier. A root README may
+   describe the whole repository; a nested README is presumed to own only its
+   subtree. A root AGENTS.md applies as evidence for the repository tree and a
+   nested AGENTS.md only to its own subtree. Examples,
    fixtures, tests, generated, vendored, dependency, or copied documentation
    do not become independent products without explicit evidence. The result
    is a sparse multi-role catalog keyed by exact `file_ref`; one file may have
    independently supported `target_entry`, `example_entry`, `test_entry`,
    `support_tool_entry`, `configuration`, `database_asset`, `client_entry`,
    `documentation`, `deployment`, or `interface_contract` roles. Every role
-   carries short README-backed hypotheses. Unknown refs and unknown classes
+   carries short repository-guidance-backed hypotheses. Unknown refs and unknown classes
    are rejected. A non-documentation role assigned to a prose file rejects the
    complete response instead of being dropped, repaired into documentation, or
    accepted as part of a smaller subset.
@@ -745,10 +749,10 @@ program lifetime and joins receiver/signature evidence into `CoreMap`; Python
 and future shell support must provide equivalent language-native object and
 relation facts rather than imitate Go SSA.
 
-README classification, target-portfolio, and both `CoreMap` model exchanges
+Repository-guidance classification, target-portfolio, and both `CoreMap` model exchanges
 are part of the per-run semantic journal, with the same redaction boundary as
 other cubes.
-Every non-empty accepted rich README catalog is rebound to the current
+Every non-empty accepted rich repository-guidance catalog is rebound to the current
 run-local corpus namespace and must be written exactly as
 `readme-file-roles.json` before downstream cubes run, including every sibling
 target page. A write, validation, or redaction mismatch ends the run. Exact
@@ -758,9 +762,9 @@ disappearing. Portfolio omissions remain
 auditable as the exact difference between the journaled candidate request and
 positive response, and are reported locally as `Unclassified`.
 
-The README request is atomic: the compiler either includes every textual
-README, every corpus file mapping, and every supplied sparse lexical row, or
-makes no provider call. It enforces a 1.5 MiB reliable atomic byte preflight
+The repository-guidance request is atomic: the compiler either includes every
+textual README and AGENTS.md, every corpus file mapping, and every supplied
+sparse lexical row, or makes no provider call. It enforces a 1.5 MiB reliable atomic byte preflight
 and never silently truncates, samples, or drops the tree. The bound is
 empirical. On the tracked Airflow inventory, the old flat request was
 1,964,003 bytes: 13,760 file mappings alone occupied 949,490 bytes alongside
@@ -768,15 +772,15 @@ empirical. On the tracked Airflow inventory, the old flat request was
 reduced the dictionary to 431,710 bytes and the same complete request to
 1,446,236 bytes, 126,628 bytes below the atomic limit. The measured tree has
 4,016 directories and maximum depth 17; all 13,760 FileRef/path mappings
-round-trip exactly. A repository whose complete tree, README bodies, and
+round-trip exactly. A repository whose complete tree, guidance bodies, and
 lexical rows still exceed the bound fails before transport with an explicit
 resource error. Supporting that larger frontier requires a separately
 approved semantic partition or chunked repository-index contract that
 preserves the same exact FileRef authority; raising the byte limit is not the
 solution.
-The first `CoreMap` pass receives at most 48 accepted README role rows and does
+The first `CoreMap` pass receives at most 48 accepted repository-guidance role rows and does
 not share the complete-tree request frontier. When there are no accepted role
-rows, it makes no provider request. It never independently rereads README
+rows, it makes no provider request. It never independently rereads repository-guidance
 documents or silently substitutes a partial repository dictionary.
 
 ### Language-adapter handoff
