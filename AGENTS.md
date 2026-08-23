@@ -32,11 +32,11 @@ sidecar tools.
 ## Product contract
 
 - Extract deterministic repository facts locally, then send bounded,
-  request-local evidence to the configured model provider. The initial README
-  file-role classifier may send the complete names-only tracked-file
-  dictionary as a lossless prefix-compressed path tree with compact `f*`
-  leaves, complete textual README documents, and sparse local lexical counts;
-  it sends no other source-file contents.
+  request-local evidence to the configured model provider. The initial
+  repository-guidance file-role classifier may send the complete names-only
+  tracked-file dictionary as a lossless prefix-compressed path tree with
+  compact `f*` leaves, complete textual README and AGENTS.md documents, and
+  sparse local lexical counts; it sends no other source-file contents.
 - Domain cubes own `State`, bounded input preparation, and semantic
   validation. The shared LLM layer owns exact provider requests, transport,
   retries, provider-envelope/JSON decoding, batch execution, cache, accounting,

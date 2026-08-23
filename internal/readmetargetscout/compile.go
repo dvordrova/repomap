@@ -15,17 +15,17 @@ import (
 	"github.com/dvordrova/repomap/internal/lexicalhints"
 )
 
-const preparationContract = "one atomic request; complete canonical corpus FileID-to-path authority encoded as a lossless path-component tree with FileID string leaves; complete current bytes of every tracked regular README; sparse capped lexical substring counts from lexicalhints v1; source bytes and local scan omissions excluded; no semantic filtering, truncation, chunking, or partial result-v3"
+const preparationContract = "one atomic request; complete canonical corpus FileID-to-path authority encoded as a lossless path-component tree with FileID string leaves; complete current bytes of every tracked regular README and AGENTS.md guidance document; sparse capped lexical substring counts from lexicalhints v1; source bytes and local scan omissions excluded; no semantic filtering, truncation, chunking, or partial result-v4"
 
-// HasReadmeFiles is the cheap metadata-only applicability check used before
+// HasGuidanceFiles is the cheap metadata-only applicability check used before
 // the local lexical scan. Compile repeats the authoritative check while
 // building its exact request.
-func HasReadmeFiles(repository *corpus.Corpus) bool {
+func HasGuidanceFiles(repository *corpus.Corpus) bool {
 	if repository == nil {
 		return false
 	}
 	for _, entry := range repository.Entries() {
-		if isReadmePath(entry.Path) {
+		if _, ok := guidanceKind(entry.Path); ok {
 			return true
 		}
 	}
@@ -57,33 +57,34 @@ func Compile(
 		return Compilation{}, fmt.Errorf("readme target scout: repository corpus: %w", err)
 	}
 	authority := make(map[corpus.FileID]string, len(snapshot.Entries))
-	readmes := make([]RequestReadme, 0)
+	documents := make([]RequestGuidanceDocument, 0)
 	for _, entry := range snapshot.Entries {
 		authority[entry.ID] = entry.Path
-		if !isReadmePath(entry.Path) {
+		kind, ok := guidanceKind(entry.Path)
+		if !ok {
 			continue
 		}
 		content, err := repository.ReadFile(entry.ID, corpus.MaxReadBytes)
 		if err != nil {
-			return Compilation{}, fmt.Errorf("readme target scout: read complete README %s: %w", entry.ID, err)
+			return Compilation{}, fmt.Errorf("readme target scout: read complete repository guidance %s: %w", entry.ID, err)
 		}
 		if content.Truncated {
 			return Compilation{}, fmt.Errorf(
-				"readme target scout: README %q exceeds the %d-byte complete-read limit; no provider request was made because partial README analysis is forbidden",
+				"readme target scout: repository guidance %q exceeds the %d-byte complete-read limit; no provider request was made because partial guidance analysis is forbidden",
 				entry.Path, corpus.MaxReadBytes,
 			)
 		}
 		if !utf8.Valid(content.Bytes) {
-			return Compilation{}, fmt.Errorf("readme target scout: README %q is not valid UTF-8; no provider request was made", entry.Path)
+			return Compilation{}, fmt.Errorf("readme target scout: repository guidance %q is not valid UTF-8; no provider request was made", entry.Path)
 		}
-		readmes = append(readmes, RequestReadme{
-			FileRef: entry.ID, Path: entry.Path, Content: string(content.Bytes),
+		documents = append(documents, RequestGuidanceDocument{
+			FileRef: entry.ID, Path: entry.Path, Kind: kind, Content: string(content.Bytes),
 		})
 	}
-	if len(readmes) == 0 {
+	if len(documents) == 0 {
 		compilation := Compilation{
 			Version: CompilationVersion, State: StateNotApplicable,
-			Reason: NoReadmeFiles, corpusRef: repository.Ref(),
+			Reason: NoGuidanceFiles, corpusRef: repository.Ref(),
 		}
 		compilation.seal = compilationSeal(compilation)
 		return compilation, nil
@@ -99,7 +100,7 @@ func Compile(
 	}
 	request := Request{
 		RepoName: repoName, FileCount: len(snapshot.Entries), FileTree: cloneFileTree(fileTree),
-		GrepStats: cloneGrepStats(lexical.Model.ByFile), Readmes: readmes,
+		GrepStats: cloneGrepStats(lexical.Model.ByFile), GuidanceDocuments: documents,
 	}
 	wire, err := json.Marshal(request)
 	if err != nil {
@@ -107,7 +108,7 @@ func Compile(
 	}
 	if len(wire) > MaxRequestBytes {
 		return Compilation{}, fmt.Errorf(
-			"readme target scout: complete README + lossless file-tree + grep-stats request is %d bytes, reliable atomic limit is %d; no provider request was made and an explicitly approved semantic partition or chunked repository-index contract is required",
+			"readme target scout: complete guidance + lossless file-tree + grep-stats request is %d bytes, reliable atomic limit is %d; no provider request was made and an explicitly approved semantic partition or chunked repository-index contract is required",
 			len(wire), MaxRequestBytes,
 		)
 	}
@@ -125,7 +126,7 @@ func Compile(
 
 func validateReadyCompilation(compilation Compilation) error {
 	if compilation.Version != CompilationVersion || compilation.State != StateReady || compilation.Reason != "" ||
-		compilation.RequestSHA256 == "" || compilation.corpusRef == "" || len(compilation.Request.Readmes) == 0 ||
+		compilation.RequestSHA256 == "" || compilation.corpusRef == "" || len(compilation.Request.GuidanceDocuments) == 0 ||
 		compilation.Request.FileCount != len(compilation.authority) || compilation.Request.FileTree == nil ||
 		compilation.Request.GrepStats == nil {
 		return fmt.Errorf("readme target scout: invalid ready compilation identity")
@@ -159,16 +160,17 @@ func validateReadyCompilation(compilation Compilation) error {
 			return fmt.Errorf("readme target scout: lexical hints authority mismatch")
 		}
 	}
-	seenReadmes := make(map[corpus.FileID]struct{}, len(compilation.Request.Readmes))
-	for _, readme := range compilation.Request.Readmes {
-		if readme.FileRef == "" || compilation.authority[readme.FileRef] != readme.Path ||
-			!isReadmePath(readme.Path) || !utf8.ValidString(readme.Content) {
-			return fmt.Errorf("readme target scout: invalid complete README row")
+	seenDocuments := make(map[corpus.FileID]struct{}, len(compilation.Request.GuidanceDocuments))
+	for _, document := range compilation.Request.GuidanceDocuments {
+		kind, ok := guidanceKind(document.Path)
+		if document.FileRef == "" || compilation.authority[document.FileRef] != document.Path ||
+			!ok || kind != document.Kind || !utf8.ValidString(document.Content) {
+			return fmt.Errorf("readme target scout: invalid complete guidance row")
 		}
-		if _, duplicate := seenReadmes[readme.FileRef]; duplicate {
-			return fmt.Errorf("readme target scout: duplicate README FileID")
+		if _, duplicate := seenDocuments[document.FileRef]; duplicate {
+			return fmt.Errorf("readme target scout: duplicate guidance FileID")
 		}
-		seenReadmes[readme.FileRef] = struct{}{}
+		seenDocuments[document.FileRef] = struct{}{}
 	}
 	wire, err := json.Marshal(compilation.Request)
 	if err != nil {
@@ -205,7 +207,7 @@ func cloneGrepStats(source map[corpus.FileID]map[string]uint8) map[corpus.FileID
 
 func compilationSeal(compilation Compilation) string {
 	return sha256Hex([]byte(strings.Join([]string{
-		"readme-target-scout-compilation-v3", compilation.corpusRef,
+		"readme-target-scout-compilation-v4", compilation.corpusRef,
 		string(compilation.State), string(compilation.Reason), compilation.RequestSHA256,
 	}, "\x00")))
 }
@@ -248,6 +250,16 @@ func isReadmePath(value string) bool {
 	default:
 		return false
 	}
+}
+
+func guidanceKind(value string) (GuidanceKind, bool) {
+	if isReadmePath(value) {
+		return GuidanceReadme, true
+	}
+	if strings.EqualFold(path.Base(value), "AGENTS.md") {
+		return GuidanceAgents, true
+	}
+	return "", false
 }
 
 func containsControl(value string) bool {
