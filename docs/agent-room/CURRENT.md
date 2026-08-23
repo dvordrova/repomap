@@ -242,7 +242,10 @@ diagnostic-journal availability never changes the cube's semantic contract.
    value flow, or callback argument may add exact/alternative local targets,
    while every other joint remains explicitly unresolved. Partial value flow
    never contributes a candidate set: its known candidates are discarded and
-   counted as omitted on the unresolved relation.
+   counted as omitted on the unresolved relation. When direct-call and
+   external-call coverage ledgers contribute disjoint counts to the same
+   caller/kind/invocation frontier, the adapter merges those counts into one
+   unresolved relation instead of emitting duplicate semantic identities.
    At the language-neutral boundary, `alternatives` means one or more locally
    observed possible targets and never implies exact runtime dispatch; a
    dynamic-language adapter may therefore retain one syntactic candidate
