@@ -25,3 +25,6 @@ tmp/
 .repomap/
 .codex-tmp/
 /etcd
+
+# Desktop conversation attachments are historical input, not product source.
+.hermes/desktop-attachments/
