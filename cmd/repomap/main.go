@@ -388,6 +388,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 				selectionExecutor,
 			)
 			if selectionErr != nil {
+				flushFailedFirstLayerSemanticJournal(runDir, firstLayerSemanticObserver, humanOutput)
 				return selectionErr
 			}
 			catalog := selection.Catalog.Snapshot()
@@ -424,6 +425,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 						selectionExecutor,
 					)
 					if selectionErr != nil {
+						flushFailedFirstLayerSemanticJournal(runDir, firstLayerSemanticObserver, humanOutput)
 						return selectionErr
 					}
 					selectedCatalog := selection.Catalog.Snapshot()
@@ -556,6 +558,11 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	opts.Progress = humanOutput.Progress
 
 	err = orient.Run(ctx, opts)
+	if err != nil && deps.precomputedSnapshot == nil {
+		if _, metadataErr := os.Stat(filepath.Join(runDir, "metadata.json")); os.IsNotExist(metadataErr) {
+			flushFailedFirstLayerSemanticJournal(runDir, firstLayerSemanticObserver, humanOutput)
+		}
+	}
 	if automaticGoTargetSelection != nil {
 		selected, parseErr := gotarget.Parse(automaticGoTargetSelection.Target)
 		if parseErr != nil {

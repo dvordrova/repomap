@@ -219,3 +219,23 @@ func flushFirstLayerSemanticJournal(
 		output.Warn("First-layer semantic exchange journal unavailable", err.Error())
 	}
 }
+
+// flushFailedFirstLayerSemanticJournal materializes the already-announced run
+// directory only after an early first-layer failure. Successful runs still let
+// the ordinary artifact writer create the directory and metadata authority.
+func flushFailedFirstLayerSemanticJournal(
+	runDir string,
+	observer *debugdump.SemanticObserver,
+	output *runOutput,
+) {
+	if observer == nil {
+		return
+	}
+	if err := os.Mkdir(runDir, 0o700); err != nil && !os.IsExist(err) {
+		if output != nil {
+			output.Warn("First-layer semantic exchange journal unavailable", err.Error())
+		}
+		return
+	}
+	flushFirstLayerSemanticJournal(runDir, observer, output)
+}

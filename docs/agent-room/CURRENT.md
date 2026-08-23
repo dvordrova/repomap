@@ -743,7 +743,10 @@ relation facts rather than imitate Go SSA.
 
 Repository-guidance classification, target-portfolio, and both `CoreMap` model exchanges
 are part of the per-run semantic journal, with the same redaction boundary as
-other cubes.
+other cubes. If a first-layer exchange fails before the ordinary artifact
+writer exists, that failed run materializes only its already-buffered redacted
+semantic-exchange journal. It publishes no metadata, semantic artifact, or
+report and cannot become partial success.
 Every non-empty accepted rich repository-guidance catalog is rebound to the current
 run-local corpus namespace and must be written exactly as
 `readme-file-roles.json` before downstream cubes run, including every sibling
