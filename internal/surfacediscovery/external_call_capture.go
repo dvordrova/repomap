@@ -157,8 +157,15 @@ func (a *analyzer) externalCallCaller(
 		return DirectCallNode{}, ExternalCallPackage{}, false, false
 	}
 	owner, _, ownerOK := a.externalCallPackage(functionPackagePath(source))
+	// DirectCallIndex deliberately excludes synthetic SSA functions from its
+	// exact caller authority. Keep the external-call producer on the same
+	// boundary so a wrapper or nested synthetic body cannot cite a caller that
+	// the shared ProgramIndex will never own.
+	if source.Synthetic != "" {
+		return DirectCallNode{}, owner, false, ownerOK
+	}
 	node, _, nodeOK := a.directCallNode(source, a.scenario)
-	return node, owner, nodeOK, source.Synthetic != "" && ownerOK
+	return node, owner, nodeOK, false
 }
 
 func (a *analyzer) externalCallPackage(

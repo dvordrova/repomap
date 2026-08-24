@@ -32,16 +32,11 @@ func prepareGo(
 			"integration usage: Go adapter received language %q", index.Target.Language,
 		)
 	}
-	// Object omissions such as synthetic SSA functions do not invalidate the
-	// exact retained external-call ledger. Every operation below still requires
-	// both exact endpoints and typed witnesses. Relation omissions are terminal
-	// because they could hide an integration call from this cube.
-	if index.Coverage.RelationsOmitted != 0 {
-		return "", empty, Coverage{}, fmt.Errorf(
-			"integration usage: Go ProgramIndex relation authority is incomplete (%d relations omitted)",
-			index.Coverage.RelationsOmitted,
-		)
-	}
+	// The Go adapter builds invokes_external from its independently complete
+	// external-call ledger. Global ProgramIndex omissions belong to other call
+	// and dynamic-handoff shapes; they remain upstream frontier accounting but
+	// cannot erase an exact external relation retained below. Every advertised
+	// operation still requires exact endpoints and typed witnesses.
 	if err := selected.Validate(); err != nil {
 		return "", empty, Coverage{}, fmt.Errorf("integration usage: integration dependencies: %w", err)
 	}

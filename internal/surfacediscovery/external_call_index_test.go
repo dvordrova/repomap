@@ -23,6 +23,8 @@ func main() { reachable() }
 func reachable() { fmt.Println(seeded) }
 func unreachable() { strings.TrimSpace(" hidden ") }
 func interfaceCall(writer io.Writer) { _, _ = writer.Write([]byte("payload")) }
+func values() func(func(string) bool) { return func(yield func(string) bool) { yield("nested") } }
+func rangeOverFunc() { for value := range values() { strings.TrimSpace(value) } }
 `)
 	input := targetDirectCallExecutableInput("example.com/external-capture", "main.go", 11)
 	options := defaultHostOptions(repository)
@@ -66,8 +68,17 @@ func interfaceCall(writer io.Writer) { _, _ = writer.Write([]byte("payload")) }
 	if index.Coverage.ExternalInterfaceInvokeWitnesses != 1 {
 		t.Fatalf("interface invoke coverage = %#v", index.Coverage)
 	}
-	if index.Coverage.SyntheticCallerWitnessesExcluded != 1 || len(index.PackageFrontiers) != 1 {
+	if index.Coverage.SyntheticCallerWitnessesExcluded != 2 || len(index.PackageFrontiers) != 1 {
 		t.Fatalf("package-init frontier = %#v coverage=%#v", index.PackageFrontiers, index.Coverage)
+	}
+	directNodes := make(map[string]struct{}, len(with.DirectCallIndex.Nodes))
+	for _, node := range with.DirectCallIndex.Nodes {
+		directNodes[node.ID] = struct{}{}
+	}
+	for _, caller := range index.Callers {
+		if _, ok := directNodes[caller.ID]; !ok {
+			t.Fatalf("external caller %q is outside direct caller authority", caller.ID)
+		}
 	}
 	if without.DirectCallIndex == nil || with.DirectCallIndex == nil ||
 		without.DirectCallIndex.SHA256 != with.DirectCallIndex.SHA256 {

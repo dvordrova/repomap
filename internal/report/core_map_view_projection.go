@@ -109,9 +109,6 @@ func NewCoreMapView(
 	if value.ProgramIndexSHA256 != index.SHA256 {
 		return nil, fmt.Errorf("core map view: program index authority mismatch")
 	}
-	if index.Coverage.RelationsOmitted != 0 {
-		return nil, fmt.Errorf("core map view: incomplete ProgramIndex relation ledger cannot establish call accounting")
-	}
 	if value.Coverage.DirectCallState != "" || !reflect.ValueOf(value.Coverage.DirectCallCoverage).IsZero() {
 		return nil, fmt.Errorf("core map view: ProgramIndex-backed core map carries foreign direct-call authority")
 	}
@@ -527,7 +524,7 @@ func validateCoreMapViewCoverage(
 		coverage.BaselineFilesSelected != baselineFiles || coverage.RefinedBlocks != refinedBlocks ||
 		coverage.RefinedFilesSelected != refinedFiles ||
 		coverage.RefinedSymbolsSelected != len(symbolsByID) ||
-		coverage.ProgramObjectsOmitted < 0 || coverage.ProgramRelationsOmitted != 0 {
+		coverage.ProgramObjectsOmitted < 0 || coverage.ProgramRelationsOmitted < 0 {
 		return fmt.Errorf("core map view: coverage does not match exact projection")
 	}
 	return nil

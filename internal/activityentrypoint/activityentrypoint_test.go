@@ -1,6 +1,7 @@
 package activityentrypoint
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"strings"
@@ -10,6 +11,25 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
+
+func TestCompileStateBindsLargeBatchByDigestWithoutObjectInventory(t *testing.T) {
+	canonicalID := "object-" + strings.Repeat("a", 64)
+	wire := []byte(`{"candidates":["` + strings.Repeat(canonicalID+`","`, MaxCandidatesPerBatch) + `end"]}`)
+	state, err := compileState(strings.Repeat("b", 64), 1, 2, wire)
+	if err != nil {
+		t.Fatalf("compileState: %v", err)
+	}
+	if len(state) > 1024 || bytes.Contains(state, []byte(canonicalID)) || bytes.Contains(state, []byte("object_ids")) {
+		t.Fatalf("cube state retained the request inventory: %d bytes: %s", len(state), state)
+	}
+	changed, err := compileState(strings.Repeat("b", 64), 1, 2, append(wire, ' '))
+	if err != nil {
+		t.Fatalf("compile changed state: %v", err)
+	}
+	if bytes.Equal(state, changed) {
+		t.Fatal("request mutation did not change cube state identity")
+	}
+}
 
 type fixedProvider struct {
 	response []byte

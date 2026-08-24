@@ -121,7 +121,7 @@ func TestRunBatchesCompleteOperationsWithGlobalRefs(t *testing.T) {
 	selected := integrationUsageDependencies(t, "acme", "unused")
 	provider := &integrationUsageProvider{responses: [][]byte{
 		[]byte(`{"uses":[]}`),
-		[]byte(`{"uses":[{"operation_ref":"o1025","label":"Send final event","mechanism":"unknown"}]}`),
+		[]byte(`{"uses":[{"operation_ref":"o257","label":"Send final event","mechanism":"unknown"}]}`),
 	}}
 
 	result, err := Run(context.Background(), llm.Executor{}, provider, index, selected)
@@ -144,12 +144,12 @@ func TestRunBatchesCompleteOperationsWithGlobalRefs(t *testing.T) {
 	if err := json.Unmarshal([]byte(provider.prompts[1].User), &second); err != nil {
 		t.Fatal(err)
 	}
-	if first.BatchIndex != 1 || first.BatchCount != 2 || len(first.Operations) != 1024 ||
-		first.Operations[0].Ref != "o1" || first.Operations[1023].Ref != "o1024" ||
+	if first.BatchIndex != 1 || first.BatchCount != 2 || len(first.Operations) != 256 ||
+		first.Operations[0].Ref != "o1" || first.Operations[255].Ref != "o256" ||
 		len(first.Dependencies) != 1 || first.Dependencies[0].PackagePath != "acme" ||
 		second.BatchIndex != 2 || second.BatchCount != 2 || len(second.Operations) != 1 ||
-		second.Operations[0].Ref != "o1025" || len(second.Dependencies) != 1 ||
-		second.Observed != 1025 || second.Omitted != 0 {
+		second.Operations[0].Ref != "o257" || len(second.Dependencies) != 1 ||
+		second.Observed != 257 || second.Omitted != 0 {
 		t.Fatalf("batch requests = %#v / %#v", first, second)
 	}
 	if result.Uses[0].Label != "Send final event" || result.Uses[0].Operation.DependencyID !=
@@ -198,9 +198,9 @@ func TestRunGoRestoresOnlyExactTypedExternalOperations(t *testing.T) {
 				WitnessesObserved: 2,
 			},
 		},
-		// One unrelated adapter object was omitted. The complete exact relation
-		// ledger remains sufficient authority for integration operations.
-		Coverage: programindex.CoverageInput{Measured: true, ObjectsObserved: 5, RelationsObserved: 2},
+		// One unrelated adapter object and relation were omitted. The complete
+		// invokes_external ledger remains sufficient authority for integrations.
+		Coverage: programindex.CoverageInput{Measured: true, ObjectsObserved: 5, RelationsObserved: 3},
 	})
 	if err != nil {
 		t.Fatalf("programindex.New: %v", err)
@@ -217,7 +217,7 @@ func TestRunGoRestoresOnlyExactTypedExternalOperations(t *testing.T) {
 	if len(result.Uses) != 1 {
 		t.Fatalf("uses = %#v", result.Uses)
 	}
-	if index.Coverage.ObjectsOmitted != 1 || index.Coverage.RelationsOmitted != 0 {
+	if index.Coverage.ObjectsOmitted != 1 || index.Coverage.RelationsOmitted != 1 {
 		t.Fatalf("fixture omission frontier = %#v", index.Coverage)
 	}
 	operation := result.Uses[0].Operation

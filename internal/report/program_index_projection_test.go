@@ -227,6 +227,14 @@ func TestReadRunDirRequiresExactSnapshotAndMetadata(t *testing.T) {
 }
 
 func reportProgramIndexFixture(t *testing.T, language, kind string) programindex.Index {
+	return reportProgramIndexFixtureWithRelationOmissions(t, language, kind, 0)
+}
+
+func reportProgramIndexFixtureWithRelationOmissions(
+	t *testing.T,
+	language, kind string,
+	relationOmissions int,
+) programindex.Index {
 	t.Helper()
 	location := func(sourcePath string) *programindex.Location {
 		return &programindex.Location{Path: sourcePath, Line: 1, Column: 1}
@@ -269,7 +277,7 @@ func reportProgramIndexFixture(t *testing.T, language, kind string) programindex
 			{SourceRef: "rel-call", Kind: programindex.RelationCalls, FromRef: "fn-clean", ToRefs: []string{"fn-load"}, Resolution: programindex.ResolutionExact, TargetsObserved: 1, Witnesses: []programindex.Witness{{Kind: "python_call"}}, WitnessesObserved: 1},
 		},
 		Coverage: programindex.CoverageInput{
-			Measured: true, ObjectsObserved: 8, RelationsObserved: 2,
+			Measured: true, ObjectsObserved: 8, RelationsObserved: 2 + relationOmissions,
 		},
 	})
 	if err != nil {

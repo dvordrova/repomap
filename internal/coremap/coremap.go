@@ -49,7 +49,7 @@ const (
 	maxMapBlocks        = 8
 	maxReduceLevels     = 32
 	maxFilesPerBlock    = 16
-	maxSymbolsPerBlock  = 8
+	maxSymbolsPerBlock  = 24
 )
 
 type Stage string
