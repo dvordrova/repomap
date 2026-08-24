@@ -333,18 +333,30 @@ diagnostic-journal availability never changes the cube's semantic contract.
    existing DirectCall node only when name and declaration path/line/column
    agree, and retains the existing Go direct-call and core-object digests for
    the downstream CubeMap joins. It does not build a second Go graph. It
-   produces a smaller target-core layer grounded by representative exact
-   symbol refs. One responsibility may retain at most 24 exact symbol anchors
-   and 16 file anchors; with at most twelve refined blocks this keeps the
-   complete evidence projection bounded while allowing cross-package
-   responsibilities in a real service. Counts are context rather than importance; most symbols must
-   remain unselected. File-only infrastructure, deployment, metadata, and
+   produces a target-core layer grounded by exact symbol refs. Neither the
+   number of refs grounding one responsibility nor the number of refined
+   responsibilities is forced into a presentation quota: closed request-local
+   authority and the existing request, response, and artifact byte envelopes
+   are the bounds. Counts are context rather than importance. File-only infrastructure, deployment, metadata, and
    documentation can remain in the broad brief but cannot masquerade as the
    executable or library core. A ProgramIndex-backed CoreMap with no eligible
    exact core declaration is terminal even when README roles exist; it never
    republishes a file-only README hypothesis as refined program authority. The same exact
    file or symbol may support several genuinely different responsibilities;
    identity is local and grouping/name prose is model-owned.
+   When at least two refined responsibilities survive, one final bounded
+   CoreMap call may group them for orientation. It receives only request-local
+   block refs, exact representative context, selected effects joined through
+   representative callers, exact target seeds, and a complete pair matrix of
+   shared representatives and minimum retained exact call/execute hops. It
+   never receives raw ProgramIndex IDs or edges. A non-empty response must be
+   a complete disjoint partition into model-named groups without a preset
+   presentation quota; local
+   code restores stable block IDs and rejects unknown, repeated, or omitted
+   membership. An explicit empty group array is the only legitimate flat-map
+   result. Groups are navigation hierarchy around responsibilities, not new
+   responsibilities, containment ownership, deployment units, or execution
+   order, and the report never manufactures a catch-all after failure.
 9. Compose every target around the same semantic skeleton:
    `surface -> operation -> core`, with `operation -> effect` as a supporting
    relation. Target kind changes which surfaces and perspectives are useful,
@@ -529,7 +541,10 @@ diagnostic-journal availability never changes the cube's semantic contract.
     remain counted frontiers; exact-external-symbol and runtime-unresolved use
     authority stay visually distinct. When several selected uses collapse to
     one core-to-integration edge, any runtime-unresolved use makes that edge
-    runtime-unresolved regardless of row order. Node details may expose only
+    runtime-unresolved regardless of row order. Model-owned refined CoreMap
+    groups render as transparent outer containers around the existing core
+    cards; responsibility IDs, routes, exact edge endpoints, and source
+    evidence remain unchanged. Node details may expose only
     validated purpose, signature, responsibility membership, bounded selected
     caller/operation/mechanism summaries, authority, and exact source actions. Project the
     validated default Go `CubeMap` into that same workspace with exact
@@ -674,7 +689,7 @@ strict-decodes it, and compares the complete projection with the validated
 `report.json`. Its target navigation must equal the manifest-derived
 navigation, and static source authority must retain the manifest-derived host,
 revision, and repository-root-to-analysis-root path prefix. Manifest version
-31 and report format version 60 own the current publication contract. The
+31 and report format version 61 own the current publication contract. The
 manifest owns canonical `standalone_source {host,repository_url}` and the exact
 optional `core_map_sha256`, `dependency_catalog_sha256`,
 `python_target_catalog_sha256`, `declared_dependencies_sha256`,
@@ -804,7 +819,12 @@ resource error. Supporting that larger frontier requires a separately
 approved semantic partition or chunked repository-index contract that
 preserves the same exact FileRef authority; raising the byte limit is not the
 solution.
-The first `CoreMap` pass receives at most 48 accepted repository-guidance role rows and does
+The classifier and first `CoreMap` pass do not impose a fixed repository-size
+quota on accepted role rows or on the exact file/symbol refs grounding one
+block. Closed refs, the supplied repository dictionary, and the existing
+request, response, and artifact byte envelopes remain the technical bounds;
+an arbitrary item count must not turn otherwise valid evidence into a failed
+run. The first CoreMap pass does
 not share the complete-tree request frontier. When there are no accepted role
 rows, it makes no provider request. It never independently rereads repository-guidance
 documents or silently substitutes a partial repository dictionary.
@@ -956,7 +976,7 @@ model-selected integration operations with their exact callsites and
 explicitly non-exact runtime authority.
 The report rechecks every selected CoreMap member, activity start, integration
 operation, and activity-to-caller path against the same sealed ProgramIndex.
-Manifest version 31 and report format version 60 material-bind the exact Python
+Manifest version 31 and report format version 61 material-bind the exact Python
 target catalog, declared-dependency artifact, CoreMap, activity-entrypoint
 selection, dependency catalog, selected integration dependencies, concrete
 integration-usage artifact, and deterministic ActivityPath artifact as one

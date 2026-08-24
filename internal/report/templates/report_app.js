@@ -198,6 +198,35 @@
       });
     });
 
+    var groups = [];
+    var groupByBlock = Object.create(null);
+    if (core) {
+      var groupedBlocks = Object.create(null);
+      array(core.refined_groups, 'core_map_view.refined_groups').forEach(function (rawGroup) {
+        rawGroup = object(rawGroup, 'refined core group');
+        var groupID = text(rawGroup.id, 'refined core group.id');
+        var blockIDs = array(rawGroup.core_block_ids, 'refined core group.core_block_ids').map(function (blockID) {
+          blockID = text(blockID, 'refined core group.core_block_ids[]');
+          if (!blocksByID[blockID]) throw new Error('A refined core group cites an unknown responsibility.');
+          if (groupedBlocks[blockID]) throw new Error('A responsibility belongs to several refined core groups.');
+          groupedBlocks[blockID] = true;
+          return blockID;
+        });
+        if (!blockIDs.length) throw new Error('A refined core group has no responsibilities.');
+        var group = {
+          id: groupID,
+          name: text(rawGroup.name, 'refined core group.name'),
+          purpose: text(rawGroup.purpose, 'refined core group.purpose'),
+          blockIDs: blockIDs
+        };
+        groups.push(group);
+        blockIDs.forEach(function (blockID) { groupByBlock[blockID] = group; });
+      });
+      if (groups.length && Object.keys(groupedBlocks).length !== blocks.length) {
+        throw new Error('Refined core groups do not form a complete responsibility partition.');
+      }
+    }
+
     var openable = Object.create(null);
     array(data.openable_paths, 'openable_paths').forEach(function (path) {
       path = text(path, 'openable path');
@@ -220,6 +249,8 @@
       blocks: blocks,
       blocksByID: blocksByID,
       blocksBySymbol: blocksBySymbol,
+      groups: groups,
+      groupByBlock: groupByBlock,
       activityByID: activityByID,
       activities: activities,
       integrations: integrations,
@@ -402,7 +433,7 @@
       return (rank[left.resolution] || 0) - (rank[right.resolution] || 0) ||
         left.from.localeCompare(right.from) || left.to.localeCompare(right.to);
     });
-    return connections.slice(0, 7);
+    return connections;
   }
 
   function relatedBlocksFor(block, connections) {
@@ -419,17 +450,19 @@
         });
       });
     });
-    return Object.keys(ids).map(function (id) { return state.model.blocksByID[id]; }).filter(Boolean).slice(0, 4);
+    return Object.keys(ids).map(function (id) { return state.model.blocksByID[id]; }).filter(Boolean);
   }
 
-  function canvasTopology() {
-    var starts = state.model.activities.filter(function (start) {
+  function canvasTopology(activeBlockIDs, complete) {
+    var active = Object.create(null);
+    activeBlockIDs.forEach(function (blockID) { active[blockID] = true; });
+    var allPlacedStarts = state.model.activities.filter(function (start) {
       return (state.model.blocksBySymbol[start.id] || []).length > 0;
     });
     var edges = [];
     var edgeKeys = Object.create(null);
 
-    starts.forEach(function (start) {
+    allPlacedStarts.forEach(function (start) {
       state.model.blocksBySymbol[start.id].forEach(function (blockID) {
         var key = 'entry:' + start.id + '->core:' + blockID;
         if (edgeKeys[key]) return;
@@ -437,6 +470,7 @@
         edges.push({
           from: 'entry:' + start.id,
           to: 'core:' + blockID,
+          blockID: blockID,
           resolution: 'exact',
           description: start.name + ' participates in ' + state.model.blocksByID[blockID].name
         });
@@ -460,6 +494,7 @@
           var edge = {
             from: 'core:' + blockID,
             to: 'integration:' + integration.id,
+            blockID: blockID,
             resolution: resolution,
             description: state.model.blocksByID[blockID].name + ' has a selected callsite to ' +
               integration.name + '; ' + humanIntegrationAuthority(use.authority)
@@ -470,11 +505,27 @@
       });
     });
 
+    var connectedIntegrations = state.model.integrations.filter(function (integration) {
+      return integration.uses.some(function (use) {
+        return (state.model.blocksBySymbol[use.callerID] || []).length > 0;
+      });
+    });
+    var starts = complete ? allPlacedStarts : allPlacedStarts.filter(function (start) {
+      return (state.model.blocksBySymbol[start.id] || []).some(function (blockID) { return active[blockID]; });
+    });
+    var integrations = complete ? state.model.integrations : connectedIntegrations.filter(function (integration) {
+      return integration.uses.some(function (use) {
+        return (state.model.blocksBySymbol[use.callerID] || []).some(function (blockID) { return active[blockID]; });
+      });
+    });
     return {
       starts: starts,
-      integrations: state.model.integrations,
-      edges: edges,
-      unplacedStarts: state.model.activities.length - starts.length,
+      integrations: integrations,
+      edges: complete ? edges : edges.filter(function (edge) { return active[edge.blockID]; }),
+      hiddenPlacedStarts: allPlacedStarts.length - starts.length,
+      hiddenConnectedIntegrations: connectedIntegrations.length - integrations.length,
+      totalEdges: edges.length,
+      unplacedStarts: state.model.activities.length - allPlacedStarts.length,
       unplacedIntegrations: state.model.integrations.filter(function (integration) {
         return !integration.uses.some(function (use) {
           return (state.model.blocksBySymbol[use.callerID] || []).length > 0;
@@ -553,6 +604,36 @@
     return rendered.wrapper;
   }
 
+  function coreCanvasGroup(group, selected, expanded) {
+    var wrapper = element('section', 'rm-core-group' + (expanded ? '' : ' rm-core-group--collapsed'));
+    if (group.blockIDs.indexOf(selected.id) >= 0) wrapper.className += ' rm-core-group--active';
+    var titleID = 'rm-core-group-' + encodePathSegment(group.id);
+    wrapper.setAttribute('aria-labelledby', titleID);
+    var header = element(expanded ? 'header' : 'button', 'rm-core-group__header');
+    if (!expanded) {
+      header.type = 'button';
+      header.addEventListener('click', function () {
+        navigateToBlock(state.model.blocksByID[group.blockIDs[0]]);
+      });
+    }
+    var copy = element('div');
+    var title = appendText(copy, 'h4', '', group.name);
+    title.id = titleID;
+    appendText(copy, 'p', '', group.purpose);
+    header.appendChild(copy);
+    appendText(header, 'span', '', String(group.blockIDs.length) +
+      ' responsibilit' + (group.blockIDs.length === 1 ? 'y' : 'ies'));
+    wrapper.appendChild(header);
+    if (!expanded) return wrapper;
+    var nodes = element('div', 'rm-core-group__nodes');
+    group.blockIDs.forEach(function (blockID) {
+      var block = state.model.blocksByID[blockID];
+      nodes.appendChild(coreCanvasNode(block, block.id === selected.id));
+    });
+    wrapper.appendChild(nodes);
+    return wrapper;
+  }
+
   function integrationCanvasNode(integration) {
     var rendered = canvasNode('integration', integration.id, integration.name,
       String(integration.uses.length) + ' selected use' + (integration.uses.length === 1 ? '' : 's'), false, null);
@@ -594,8 +675,34 @@
     return lane;
   }
 
+  function renderAreaSwitcher(selected, activeGroup) {
+    var navigation = element('nav', 'rm-area-switcher');
+    navigation.setAttribute('aria-label', 'Architecture areas');
+    var heading = element('div', 'rm-area-switcher__heading');
+    appendText(heading, 'p', 'rm-eyebrow', 'Architecture areas');
+    appendText(heading, 'span', '', String(state.model.groups.length) + ' model-owned groups');
+    navigation.appendChild(heading);
+    var grid = element('div', 'rm-area-switcher__grid');
+    state.model.groups.forEach(function (group) {
+      var button = element('button', 'rm-area-switcher__item');
+      button.type = 'button';
+      button.title = group.purpose;
+      if (activeGroup && group.id === activeGroup.id) button.setAttribute('aria-current', 'true');
+      appendText(button, 'span', '', group.name);
+      appendText(button, 'small', '', String(group.blockIDs.length));
+      button.addEventListener('click', function () {
+        navigateToBlock(state.model.blocksByID[group.blockIDs[0]]);
+      });
+      grid.appendChild(button);
+    });
+    navigation.appendChild(grid);
+    return navigation;
+  }
+
   function renderFlowCanvas(selected) {
-    var topology = canvasTopology();
+    var activeGroup = state.model.groupByBlock[selected.id] || null;
+    var activeBlockIDs = activeGroup ? activeGroup.blockIDs : [selected.id];
+    var topology = canvasTopology(activeBlockIDs, state.completeCanvas);
     state.canvasEdges = topology.edges;
     var section = element('section', 'rm-flow-section');
     section.setAttribute('aria-labelledby', 'rm-flow-title');
@@ -605,13 +712,35 @@
     var title = appendText(copy, 'h2', '', 'Repository flow');
     title.id = 'rm-flow-title';
     appendText(copy, 'p', 'rm-flow-section__intro',
-      'Only exact selected facts are connected. Missing bindings remain visible instead of being inferred.');
+      state.completeCanvas ?
+        'The complete selected map is visible. Only exact selected facts are connected.' :
+        'Focused on ' + (activeGroup ? activeGroup.name : selected.name) +
+        '. Other architecture areas remain available in the switcher below.');
     header.appendChild(copy);
+    var controls = element('div', 'rm-canvas-controls');
+    var completeNodeCount = topology.starts.length + topology.hiddenPlacedStarts +
+      state.model.blocks.length + state.model.integrations.length;
+    var modeLabel = state.completeCanvas ? 'Focus current area' :
+      'Show complete map · ' + String(completeNodeCount) + ' nodes / ' + String(topology.totalEdges) + ' bindings';
+    var mode = element('button', 'rm-canvas-mode', modeLabel);
+    mode.type = 'button';
+    mode.setAttribute('aria-pressed', state.completeCanvas ? 'true' : 'false');
+    mode.addEventListener('click', function () {
+      state.completeCanvas = !state.completeCanvas;
+      renderRoute();
+      window.requestAnimationFrame(function () {
+        var nextMode = document.querySelector('.rm-canvas-mode');
+        if (nextMode) nextMode.focus();
+      });
+    });
+    controls.appendChild(mode);
     var legend = element('div', 'rm-canvas-legend');
     appendText(legend, 'span', 'rm-canvas-legend__exact', 'Exact local binding');
     appendText(legend, 'span', 'rm-canvas-legend__runtime', 'Selected callsite; runtime unresolved');
-    header.appendChild(legend);
+    controls.appendChild(legend);
+    header.appendChild(controls);
     section.appendChild(header);
+    if (state.model.groups.length) section.appendChild(renderAreaSwitcher(selected, activeGroup));
 
     var canvas = element('div', 'rm-flow-canvas');
     var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -620,27 +749,47 @@
     canvas.appendChild(svg);
     var lanes = element('div', 'rm-canvas-lanes');
 
-    var entryLane = renderCanvasLane('Entrypoints', String(topology.starts.length) + ' placed / ' +
-      String(state.model.activities.length) + ' selected', 'entry');
+    var entryCount = state.completeCanvas ? String(topology.starts.length) + ' placed / ' :
+      String(topology.starts.length) + ' in current area / ';
+    var entryLane = renderCanvasLane('Entrypoints', entryCount + String(state.model.activities.length) + ' selected', 'entry');
     var entryNodes = element('div', 'rm-canvas-node-list');
     topology.starts.forEach(function (start) { entryNodes.appendChild(activityCanvasNode(start)); });
     if (!topology.starts.length) appendText(entryNodes, 'p', 'rm-canvas-empty', 'No selected entrypoint is an exact representative member of a responsibility.');
+    if (!state.completeCanvas && topology.hiddenPlacedStarts > 0) appendText(entryNodes, 'p', 'rm-canvas-frontier',
+      String(topology.hiddenPlacedStarts) + ' placed starts connect to other architecture areas.');
     if (topology.unplacedStarts > 0) appendText(entryNodes, 'p', 'rm-canvas-frontier',
       String(topology.unplacedStarts) + ' selected starts have no exact representative-member binding.');
     entryLane.appendChild(entryNodes);
     lanes.appendChild(entryLane);
 
-    var coreLane = renderCanvasLane('Core', String(state.model.blocks.length) + ' responsibilities', 'core');
+    var visibleCoreBlocks = state.completeCanvas || !activeGroup ? state.model.blocks.length : activeGroup.blockIDs.length;
+    var coreCount = state.completeCanvas ? String(visibleCoreBlocks) + ' responsibilities / ' +
+      String(state.model.groups.length) + ' groups' : String(visibleCoreBlocks) + ' in current area / ' +
+      String(state.model.blocks.length) + ' responsibilities';
+    var coreLane = renderCanvasLane('Core', coreCount, 'core');
     var coreNodes = element('div', 'rm-canvas-node-list');
-    state.model.blocks.forEach(function (block) { coreNodes.appendChild(coreCanvasNode(block, block.id === selected.id)); });
+    if (state.model.groups.length) {
+      coreNodes.className += ' rm-core-group-list';
+      state.model.groups.filter(function (group) {
+        return state.completeCanvas || activeGroup && group.id === activeGroup.id;
+      }).forEach(function (group) {
+        coreNodes.appendChild(coreCanvasGroup(group, selected, true));
+      });
+    } else {
+      state.model.blocks.forEach(function (block) { coreNodes.appendChild(coreCanvasNode(block, block.id === selected.id)); });
+    }
     coreLane.appendChild(coreNodes);
     lanes.appendChild(coreLane);
 
-    var integrationLane = renderCanvasLane('Integrations', String(topology.integrations.length) + ' selected', 'integration');
+    var integrationCount = state.completeCanvas ? String(topology.integrations.length) + ' selected' :
+      String(topology.integrations.length) + ' in current area / ' + String(state.model.integrations.length) + ' selected';
+    var integrationLane = renderCanvasLane('Integrations', integrationCount, 'integration');
     var integrationNodes = element('div', 'rm-canvas-node-list');
     topology.integrations.forEach(function (integration) { integrationNodes.appendChild(integrationCanvasNode(integration)); });
     if (!topology.integrations.length) appendText(integrationNodes, 'p', 'rm-canvas-empty',
       'No model-selected integration operations for this target.');
+    if (!state.completeCanvas && topology.hiddenConnectedIntegrations > 0) appendText(integrationNodes, 'p', 'rm-canvas-frontier',
+      String(topology.hiddenConnectedIntegrations) + ' connected integrations belong to other architecture areas.');
     if (topology.unplacedIntegrations > 0) appendText(integrationNodes, 'p', 'rm-canvas-frontier',
       String(topology.unplacedIntegrations) + ' selected integrations have no exact representative-caller binding.');
     integrationLane.appendChild(integrationNodes);
@@ -731,8 +880,15 @@
     navigation.hidden = false;
   }
 
-  function surveySummary(blocks) {
+  function surveySummary(blocks, groups) {
     if (!blocks.length) return 'This target has exact structural evidence, but no semantic responsibility map.';
+    if (groups.length) {
+      var groupNames = groups.slice(0, 3).map(function (group) { return group.name; });
+      var finalGroup = groupNames.pop();
+      var groupList = groupNames.length ? groupNames.join(', ') + ', and ' + finalGroup : finalGroup;
+      return 'Explore ' + String(blocks.length) + ' responsibilities across ' + String(groups.length) +
+        ' architecture areas: ' + groupList + '.';
+    }
     var names = blocks.slice(0, 3).map(function (block) { return block.name; });
     var last = names.pop();
     var joined = names.length ? names.join(', ') + ', and ' + last : last;
@@ -744,7 +900,7 @@
     var copy = element('div');
     appendText(copy, 'p', 'rm-eyebrow', 'Repository orientation');
     appendText(copy, 'h1', '', state.model.repoName);
-    appendText(copy, 'p', 'rm-survey__summary', surveySummary(state.model.blocks));
+    appendText(copy, 'p', 'rm-survey__summary', surveySummary(state.model.blocks, state.model.groups));
     survey.appendChild(copy);
 
     var facts = element('dl', 'rm-survey__facts');
@@ -765,15 +921,43 @@
     appendText(aside, 'h2', '', 'Choose a direction');
     appendText(aside, 'p', 'rm-directions__hint', 'Each direction is a model-selected responsibility grounded in exact code evidence.');
     var list = element('div', 'rm-direction-list');
-    state.model.blocks.forEach(function (block, index) {
+    function appendDirection(host, block) {
+      var index = state.model.blocks.findIndex(function (candidate) { return candidate.id === block.id; });
       var button = element('button', 'rm-direction');
       button.type = 'button';
       button.setAttribute('aria-current', block.id === selected.id ? 'true' : 'false');
       appendText(button, 'span', 'rm-direction__number', String(index + 1).padStart(2, '0'));
       appendText(button, 'span', 'rm-direction__name', block.name);
       button.addEventListener('click', function () { navigateToBlock(block); });
-      list.appendChild(button);
-    });
+      host.appendChild(button);
+    }
+    if (state.model.groups.length) {
+      state.model.groups.forEach(function (group) {
+        var active = group.blockIDs.indexOf(selected.id) >= 0;
+        var wrapper = element('section', 'rm-direction-group' + (active ? ' rm-direction-group--active' : ''));
+        if (!active) {
+          var summary = element('button', 'rm-direction-group__summary');
+          summary.type = 'button';
+          appendText(summary, 'span', '', group.name);
+          appendText(summary, 'small', '', String(group.blockIDs.length) + ' responsibilities');
+          summary.addEventListener('click', function () {
+            navigateToBlock(state.model.blocksByID[group.blockIDs[0]]);
+          });
+          wrapper.appendChild(summary);
+          list.appendChild(wrapper);
+          return;
+        }
+        appendText(wrapper, 'h3', '', group.name);
+        var groupList = element('div', 'rm-direction-group__list');
+        group.blockIDs.forEach(function (blockID) {
+          appendDirection(groupList, state.model.blocksByID[blockID]);
+        });
+        wrapper.appendChild(groupList);
+        list.appendChild(wrapper);
+      });
+    } else {
+      state.model.blocks.forEach(function (block) { appendDirection(list, block); });
+    }
     aside.appendChild(list);
     return aside;
   }
@@ -786,8 +970,10 @@
     appendText(section, 'p', 'rm-focus-section__intro',
       state.model.target.kind === 'library' ? 'Selected public or internal entrypoints that participate in this responsibility.' :
         'Selected activity entrypoints that participate in this responsibility.');
+    var disclosure = element('details', 'rm-disclosure');
+    appendText(disclosure, 'summary', '', String(starts.length) + (starts.length === 1 ? ' selected entrypoint' : ' selected entrypoints'));
     var list = element('ul', 'rm-start-list');
-    starts.slice(0, 5).forEach(function (start) {
+    starts.forEach(function (start) {
       var item = element('li', 'rm-start');
       var action = sourceAction(start.name, start.location);
       action.className += ' rm-start__name';
@@ -795,7 +981,8 @@
       appendText(item, 'code', 'rm-start__signature', start.signature || start.kind);
       list.appendChild(item);
     });
-    section.appendChild(list);
+    disclosure.appendChild(list);
+    section.appendChild(disclosure);
     parent.appendChild(section);
   }
 
@@ -809,6 +996,8 @@
       parent.appendChild(section);
       return;
     }
+    var disclosure = element('details', 'rm-disclosure');
+    appendText(disclosure, 'summary', '', String(connections.length) + (connections.length === 1 ? ' grounded relation' : ' grounded relations'));
     var list = element('ul', 'rm-connection-list');
     connections.forEach(function (connection) {
       var item = element('li', 'rm-connection');
@@ -825,7 +1014,8 @@
       appendText(item, 'span', 'rm-resolution rm-resolution--' + connection.resolution, connection.resolution);
       list.appendChild(item);
     });
-    section.appendChild(list);
+    disclosure.appendChild(list);
+    section.appendChild(disclosure);
     parent.appendChild(section);
   }
 
@@ -839,14 +1029,16 @@
     renderConnections(article, block, connections);
 
     if (related.length) {
-      var relatedHost = element('div', 'rm-related');
-      appendText(relatedHost, 'span', 'rm-focus-section__intro', 'Related responsibilities');
+      var relatedHost = element('details', 'rm-related rm-disclosure');
+      appendText(relatedHost, 'summary', '', 'Related responsibilities · ' + String(related.length));
+      var relatedList = element('div', 'rm-related__list');
       related.forEach(function (candidate) {
         var button = element('button', '', candidate.name);
         button.type = 'button';
         button.addEventListener('click', function () { navigateToBlock(candidate); });
-        relatedHost.appendChild(button);
+        relatedList.appendChild(button);
       });
+      relatedHost.appendChild(relatedList);
       article.appendChild(relatedHost);
     }
 
@@ -872,23 +1064,27 @@
     appendText(sticky, 'p', 'rm-evidence__intro',
       'Representative declarations and files restored against the captured revision.');
 
-    appendText(sticky, 'h3', '', 'Declarations');
+    var symbolDisclosure = element('details', 'rm-evidence-disclosure');
+    appendText(symbolDisclosure, 'summary', '', 'Declarations · ' + String(block.symbols.length));
     var symbols = element('ul', 'rm-evidence-list');
     block.symbols.forEach(function (symbol) {
       var item = element('li');
       item.appendChild(sourceAction(symbol.name, symbol.location));
       symbols.appendChild(item);
     });
-    sticky.appendChild(symbols);
+    symbolDisclosure.appendChild(symbols);
+    sticky.appendChild(symbolDisclosure);
 
-    appendText(sticky, 'h3', '', 'Files');
+    var fileDisclosure = element('details', 'rm-evidence-disclosure');
+    appendText(fileDisclosure, 'summary', '', 'Files · ' + String(block.files.length));
     var files = element('ul', 'rm-evidence-list');
     block.files.forEach(function (file) {
       var item = element('li');
       item.appendChild(sourceAction(file.path, { path: file.path, line: 0, column: 0 }));
       files.appendChild(item);
     });
-    sticky.appendChild(files);
+    fileDisclosure.appendChild(files);
+    sticky.appendChild(fileDisclosure);
 
     var unresolved = block.symbols.reduce(function (total, symbol) { return total + symbol.unresolvedOutgoing; }, 0);
     if (unresolved > 0) {
@@ -970,7 +1166,7 @@
     try {
       var raw = readPayload();
       var model = buildPresentationModel(raw);
-      state = { model: model, source: buildSourceAuthority(raw, model), canvasEdges: [] };
+      state = { model: model, source: buildSourceAuthority(raw, model), canvasEdges: [], completeCanvas: false };
       renderHeader();
       renderRoute();
       window.addEventListener('resize', scheduleCanvasDraw);

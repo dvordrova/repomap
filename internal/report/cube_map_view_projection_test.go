@@ -29,7 +29,8 @@ func TestCubeMapViewProjectsExactJoinsAndReverseNavigation(t *testing.T) {
 	if err := view.Validate(); err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
-	if len(view.RefinedCore) != 1 || view.RefinedCore[0].Name != "Outbound delivery" ||
+	if len(view.RefinedCore) != 2 || view.RefinedCore[0].Name != "Outbound delivery" ||
+		len(view.RefinedGroups) != 2 || view.RefinedGroups[0].CoreBlockIDs[0] != view.RefinedCore[0].ID ||
 		len(view.CoreObjects) != 1 || view.CoreObjects[0].DirectCallNodeID != "node-send" ||
 		len(view.ActivitySurfaces) != 1 || view.ActivitySurfaces[0].Path == nil ||
 		view.ActivitySurfaces[0].Path.Text != "/v1/send" {
@@ -42,6 +43,7 @@ func TestCubeMapViewProjectsExactJoinsAndReverseNavigation(t *testing.T) {
 	}
 	if got := view.Coverage.Projection; got.IntegrationOperations.Omitted != 0 ||
 		got.IntegrationOperations.Eligible != 1 || got.ReversePathNodes.Shown != 2 ||
+		got.RefinedGroups.Eligible != 2 || got.RefinedGroups.Shown != 2 || got.RefinedGroups.Omitted != 0 ||
 		got.SurfaceCoreBindings.Shown != 1 || got.EffectCoreBindings.Shown != 1 {
 		t.Fatalf("projection coverage = %#v", got)
 	}
@@ -59,6 +61,21 @@ func TestCubeMapViewProjectsExactJoinsAndReverseNavigation(t *testing.T) {
 	partial.Coverage.Cube.Entrypoints.Omitted = 1
 	if err := partial.Validate(); err == nil || !strings.Contains(err.Error(), "candidate coverage") {
 		t.Fatalf("partial candidate coverage error = %v", err)
+	}
+
+	partialGroups := *view
+	partialGroups.RefinedGroups = append([]CoreMapViewGroup(nil), view.RefinedGroups...)
+	partialGroups.RefinedGroups[1].CoreBlockIDs = append(
+		[]string(nil), partialGroups.RefinedGroups[0].CoreBlockIDs...,
+	)
+	if err := partialGroups.Validate(); err == nil || !strings.Contains(err.Error(), "several groups") {
+		t.Fatalf("partial refined group partition error = %v", err)
+	}
+
+	badGroupCoverage := *view
+	badGroupCoverage.Coverage.Projection.RefinedGroups.Shown--
+	if err := badGroupCoverage.Validate(); err == nil || !strings.Contains(err.Error(), "projection coverage") {
+		t.Fatalf("refined group projection coverage error = %v", err)
 	}
 }
 
@@ -155,6 +172,25 @@ func cubeMapViewFixture(t *testing.T) cubemap.Map {
 	}
 	baseline.ID = cubeMapCoreBlockID(coremap.StageBaseline, programTarget.ID, baseline)
 	refined.ID = cubeMapCoreBlockID(coremap.StageRefined, programTarget.ID, refined)
+	coordination := coremap.Block{
+		Name: "Request coordination", Purpose: "Coordinates outbound delivery from the application entrypoint.",
+		Files:   []coremap.FileFact{{FileRef: "f-main", Path: "cmd/app/main.go"}},
+		Symbols: append([]coremap.SymbolFact(nil), refined.Symbols...),
+	}
+	coordination.ID = cubeMapCoreBlockID(coremap.StageRefined, programTarget.ID, coordination)
+	groups := []coremap.Group{
+		{
+			Name: "Delivery", Purpose: "Sends data to remote systems.",
+			BlockIDs: []string{refined.ID},
+		},
+		{
+			Name: "Coordination", Purpose: "Coordinates application work.",
+			BlockIDs: []string{coordination.ID},
+		},
+	}
+	for position := range groups {
+		groups[position].ID = cubeMapCoreGroupID(programTarget.ID, groups[position].BlockIDs)
+	}
 	operation := cubemap.IntegrationOperation{
 		ExternalCallFamilyID: "family-http-do", DependencyID: "dep-net-http", PackagePath: "net/http",
 		Receiver: "*Client", Name: "Do", Dispatch: surfacediscovery.ExternalCallStatic,
@@ -164,7 +200,7 @@ func cubeMapViewFixture(t *testing.T) cubemap.Map {
 	surfaceID := "model-surface-" + strings.Repeat("1", 24)
 	zero, one := 0, 1
 	surfaceEffectCoverage := cubemap.SurfaceCoreEffectCoverage{
-		Surfaces: 1, CoreBlocks: 1, Effects: 1, SurfaceCorePairs: 1, EffectCorePairs: 1,
+		Surfaces: 1, CoreBlocks: 2, Effects: 1, SurfaceCorePairs: 2, EffectCorePairs: 2,
 		SelectedSurfaceCore: 1, SelectedEffectCore: 1, ModelCalled: true,
 	}
 	value := cubemap.Map{
@@ -174,11 +210,13 @@ func cubeMapViewFixture(t *testing.T) cubemap.Map {
 			Version: coremap.Version, Repository: "app", CorpusRef: "corpus-1", Target: target,
 			ProgramTarget: &programTarget, ProgramIndexSHA256: programIndex.SHA256,
 			DirectCallSHA256: strings.Repeat("a", 64), CoreObjectSHA256: strings.Repeat("d", 64),
-			Baseline: []coremap.Block{baseline}, Refined: []coremap.Block{refined},
+			Baseline: []coremap.Block{baseline}, Refined: []coremap.Block{refined, coordination},
+			RefinedGroups: groups,
 			Coverage: coremap.Coverage{
 				TrackedFiles: 2, BaselineRoleFiles: 1, SymbolsAvailable: 1,
-				BaselineBlocks: 1, BaselineFilesSelected: 1, RefinedBlocks: 1,
-				RefinedFilesSelected: 1, RefinedSymbolsSelected: 1,
+				BaselineBlocks: 1, BaselineFilesSelected: 1, RefinedBlocks: 2,
+				RefinedFilesSelected: 2, RefinedSymbolsSelected: 1,
+				RefinedGroups: 2, RefinedGroupCalls: 1,
 				SemanticFacts: 2, RefinedMapCalls: 1,
 				DirectCallState: surfacediscovery.DirectCallIndexReady,
 			},
@@ -187,6 +225,9 @@ func cubeMapViewFixture(t *testing.T) cubemap.Map {
 					Calls: 1, PayloadBytes: 1, ProviderBytes: 1, MaxPayloadBytes: 1, MaxProviderBytes: 1,
 				},
 				Refined: coremap.StageRequestSize{
+					Calls: 1, PayloadBytes: 1, ProviderBytes: 1, MaxPayloadBytes: 1, MaxProviderBytes: 1,
+				},
+				Grouping: coremap.StageRequestSize{
 					Calls: 1, PayloadBytes: 1, ProviderBytes: 1, MaxPayloadBytes: 1, MaxProviderBytes: 1,
 				},
 			},
@@ -200,12 +241,13 @@ func cubeMapViewFixture(t *testing.T) cubemap.Map {
 				DirectCallNodeID: integration.NodeID,
 			}},
 			ReceiverTypes: []gocoreobject.TypeDeclaration{},
-			Bindings: []cubemap.CoreObjectBinding{{
-				CoreBlockID: refined.ID, ObjectID: "object-send", Role: cubemap.CoreObjectRepresentativeCallable,
-			}},
+			Bindings: []cubemap.CoreObjectBinding{
+				{CoreBlockID: refined.ID, ObjectID: "object-send", Role: cubemap.CoreObjectRepresentativeCallable},
+				{CoreBlockID: coordination.ID, ObjectID: "object-send", Role: cubemap.CoreObjectRepresentativeCallable},
+			},
 			Coverage: cubemap.CoreObjectProjectionCoverage{
-				CoreBlocksObserved: 1, RepresentativeSymbolClaims: 1, RepresentativeNodesObserved: 1,
-				RepresentativeCallablesMatched: 1, CallableBindings: 1,
+				CoreBlocksObserved: 2, RepresentativeSymbolClaims: 2, RepresentativeNodesObserved: 1,
+				RepresentativeCallablesMatched: 1, CallableBindings: 2,
 			},
 			SHA256: strings.Repeat("e", 64),
 		},
@@ -274,6 +316,9 @@ func cubeMapViewFixture(t *testing.T) cubemap.Map {
 			ExternalCalls: surfacediscovery.ExternalCallIndexCoverage{FamiliesIndexed: 1},
 		},
 	}
+	sort.Slice(value.CoreObjects.Bindings, func(i, j int) bool {
+		return value.CoreObjects.Bindings[i].CoreBlockID < value.CoreObjects.Bindings[j].CoreBlockID
+	})
 	coreObjectsForSeal := value.CoreObjects
 	coreObjectsForSeal.SHA256 = ""
 	coreObjectBytes, err := json.Marshal(coreObjectsForSeal)
@@ -299,6 +344,13 @@ func cubeMapCoreBlockID(stage coremap.Stage, targetID string, block coremap.Bloc
 	sort.Strings(keys)
 	digest := sha256.Sum256([]byte("coremap-block-v1\x00" + string(stage) + "\x00" + targetID + "\x00" + strings.Join(keys, "\x00")))
 	return "core-" + hex.EncodeToString(digest[:8])
+}
+
+func cubeMapCoreGroupID(targetID string, blockIDs []string) string {
+	keys := append([]string(nil), blockIDs...)
+	sort.Strings(keys)
+	digest := sha256.Sum256([]byte("coremap-group-v1\x00" + targetID + "\x00" + strings.Join(keys, "\x00")))
+	return "core-group-" + hex.EncodeToString(digest[:8])
 }
 
 func cubeMapViewTarget(t *testing.T) analysistarget.Target {

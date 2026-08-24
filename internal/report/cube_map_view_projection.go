@@ -24,11 +24,8 @@ import (
 )
 
 const (
-	CubeMapViewVersion = 2
+	CubeMapViewVersion = 3
 
-	MaxCubeMapViewCoreBlocks            = 256
-	MaxCubeMapViewCoreFiles             = 4_096
-	MaxCubeMapViewCoreSymbols           = 4_096
 	MaxCubeMapViewCoreObjects           = 4_096
 	MaxCubeMapViewCoreObjectBindings    = 8_192
 	MaxCubeMapViewActivitySurfaces      = 2_048
@@ -62,8 +59,9 @@ type CubeMapView struct {
 	CoreObjectProjectionSHA256 string `json:"core_object_projection_sha256,omitempty"`
 	ActivitySubstrateSHA256    string `json:"activity_substrate_sha256,omitempty"`
 
-	BaselineCore []CubeMapViewCoreBlock `json:"baseline_core"`
-	RefinedCore  []CubeMapViewCoreBlock `json:"refined_core"`
+	BaselineCore  []CubeMapViewCoreBlock `json:"baseline_core"`
+	RefinedCore   []CubeMapViewCoreBlock `json:"refined_core"`
+	RefinedGroups []CoreMapViewGroup     `json:"refined_groups"`
 
 	CoreObjects        []CubeMapViewCoreObject        `json:"core_objects"`
 	CoreObjectBindings []CubeMapViewCoreObjectBinding `json:"core_object_bindings"`
@@ -247,6 +245,7 @@ type CubeMapViewCoverage struct {
 type CubeMapViewProjectionCoverage struct {
 	BaselineCore          CubeMapViewCollectionCoverage `json:"baseline_core"`
 	RefinedCore           CubeMapViewCollectionCoverage `json:"refined_core"`
+	RefinedGroups         CubeMapViewCollectionCoverage `json:"refined_groups"`
 	CoreFiles             CubeMapViewCollectionCoverage `json:"core_files"`
 	CoreSymbols           CubeMapViewCollectionCoverage `json:"core_symbols"`
 	CoreObjects           CubeMapViewCollectionCoverage `json:"core_objects"`
@@ -271,10 +270,10 @@ type CubeMapViewCollectionCoverage struct {
 }
 
 type cubeMapViewCounts struct {
-	baselineCore, refinedCore, coreFiles, coreSymbols, coreObjects, coreObjectBindings int
-	activitySurfaces, entrypoints, dependencies, dependencyImporters                   int
-	integrationSymbols, integrationOperations, integrationCallsites                    int
-	reversePaths, reversePathNodes, surfaceCoreBindings, effectCoreBindings            int
+	baselineCore, refinedCore, refinedGroups, coreFiles, coreSymbols, coreObjects, coreObjectBindings int
+	activitySurfaces, entrypoints, dependencies, dependencyImporters                                  int
+	integrationSymbols, integrationOperations, integrationCallsites                                   int
+	reversePaths, reversePathNodes, surfaceCoreBindings, effectCoreBindings                           int
 }
 
 // NewCubeMapView first accepts the complete producer validation contract,
@@ -321,7 +320,8 @@ func projectValidatedCubeMap(value cubemap.Map, programTargetID string) (*CubeMa
 		CoreObjectProjectionSHA256: value.CoreObjects.SHA256,
 		ActivitySubstrateSHA256:    value.ActivitySurfaces.SubstrateSHA256,
 		BaselineCore:               []CubeMapViewCoreBlock{}, RefinedCore: []CubeMapViewCoreBlock{},
-		CoreObjects: []CubeMapViewCoreObject{}, CoreObjectBindings: []CubeMapViewCoreObjectBinding{},
+		RefinedGroups: []CoreMapViewGroup{},
+		CoreObjects:   []CubeMapViewCoreObject{}, CoreObjectBindings: []CubeMapViewCoreObjectBinding{},
 		ActivitySurfaces: []CubeMapViewActivitySurface{}, Entrypoints: []CubeMapViewSymbol{},
 		IntegrationDependencies: []CubeMapViewIntegrationDependency{},
 		IntegrationSymbols:      []CubeMapViewIntegrationSymbol{}, ReversePaths: []CubeMapViewReversePath{},
@@ -331,6 +331,12 @@ func projectValidatedCubeMap(value cubemap.Map, programTargetID string) (*CubeMa
 	}
 	for _, block := range value.Core.Refined {
 		view.RefinedCore = append(view.RefinedCore, projectCubeMapCoreBlock(block))
+	}
+	for _, group := range value.Core.RefinedGroups {
+		view.RefinedGroups = append(view.RefinedGroups, CoreMapViewGroup{
+			ID: group.ID, Name: group.Name, Purpose: group.Purpose,
+			CoreBlockIDs: append([]string(nil), group.BlockIDs...),
+		})
 	}
 	for _, callable := range value.CoreObjects.Callables {
 		view.CoreObjects = append(view.CoreObjects, projectCubeMapCallable(callable))
@@ -535,6 +541,7 @@ func cloneCubeMapViewInt(value *int) *int {
 func countCubeMapViewSource(value cubemap.Map) cubeMapViewCounts {
 	counts := cubeMapViewCounts{
 		baselineCore: len(value.Core.Baseline), refinedCore: len(value.Core.Refined),
+		refinedGroups:      len(value.Core.RefinedGroups),
 		coreObjects:        len(value.CoreObjects.Callables) + len(value.CoreObjects.ReceiverTypes),
 		coreObjectBindings: len(value.CoreObjects.Bindings), activitySurfaces: len(value.ActivitySurfaces.Surfaces),
 		entrypoints: len(value.Entrypoints), dependencies: len(value.IntegrationDependencies),
@@ -579,9 +586,6 @@ func validateCubeMapViewLimits(counts cubeMapViewCounts) error {
 		value int
 		limit int
 	}{
-		{"core blocks", counts.baselineCore + counts.refinedCore, MaxCubeMapViewCoreBlocks},
-		{"core files", counts.coreFiles, MaxCubeMapViewCoreFiles},
-		{"core symbols", counts.coreSymbols, MaxCubeMapViewCoreSymbols},
 		{"core objects", counts.coreObjects, MaxCubeMapViewCoreObjects},
 		{"core object bindings", counts.coreObjectBindings, MaxCubeMapViewCoreObjectBindings},
 		{"activity surfaces", counts.activitySurfaces, MaxCubeMapViewActivitySurfaces},
@@ -610,7 +614,8 @@ func cubeMapViewProjectionCoverage(counts cubeMapViewCounts) CubeMapViewProjecti
 	}
 	return CubeMapViewProjectionCoverage{
 		BaselineCore: complete(counts.baselineCore), RefinedCore: complete(counts.refinedCore),
-		CoreFiles: complete(counts.coreFiles), CoreSymbols: complete(counts.coreSymbols),
+		RefinedGroups: complete(counts.refinedGroups),
+		CoreFiles:     complete(counts.coreFiles), CoreSymbols: complete(counts.coreSymbols),
 		CoreObjects: complete(counts.coreObjects), CoreObjectBindings: complete(counts.coreObjectBindings),
 		ActivitySurfaces: complete(counts.activitySurfaces), Entrypoints: complete(counts.entrypoints),
 		Dependencies: complete(counts.dependencies), DependencyImporters: complete(counts.dependencyImporters),
@@ -644,7 +649,7 @@ func (view CubeMapView) Validate() error {
 			return fmt.Errorf("cube map view: invalid source identity")
 		}
 	}
-	if view.BaselineCore == nil || view.RefinedCore == nil || view.CoreObjects == nil ||
+	if view.BaselineCore == nil || view.RefinedCore == nil || view.RefinedGroups == nil || view.CoreObjects == nil ||
 		view.CoreObjectBindings == nil || view.ActivitySurfaces == nil || view.Entrypoints == nil ||
 		view.IntegrationDependencies == nil || view.IntegrationSymbols == nil || view.ReversePaths == nil {
 		return fmt.Errorf("cube map view: missing collection")
@@ -659,6 +664,9 @@ func (view CubeMapView) Validate() error {
 		return fmt.Errorf("cube map view: refined core is empty")
 	}
 	if err := validateCubeMapCoreBlocks(view.RefinedCore, false, 0, refinedIDs); err != nil {
+		return err
+	}
+	if err := validateCoreMapViewGroups(view.RefinedGroups, refinedIDs); err != nil {
 		return err
 	}
 	if err := validateCubeMapCoreFilePairs(view.BaselineCore, view.RefinedCore); err != nil {
@@ -1257,6 +1265,8 @@ func validateCubeMapViewCoverage(view CubeMapView) error {
 	core := view.Coverage.Core
 	if core.TrackedFiles < 0 || core.BaselineRoleFiles < 0 || core.SymbolsAvailable < 0 ||
 		core.BaselineBlocks != counts.baselineCore || core.RefinedBlocks != counts.refinedCore ||
+		core.RefinedGroups != counts.refinedGroups ||
+		core.RefinedGroupCalls != cubeMapViewBoolCount(counts.refinedCore >= 2) ||
 		core.BaselineFilesSelected != countCubeMapUniqueFiles(view.BaselineCore) ||
 		core.RefinedFilesSelected != countCubeMapUniqueFiles(view.RefinedCore) ||
 		core.RefinedSymbolsSelected != countCubeMapUniqueCoreSymbols(view.RefinedCore) ||
@@ -1408,7 +1418,8 @@ func validateCubeMapExternalCallCoverage(coverage cubemap.Coverage) error {
 func countCubeMapView(view CubeMapView) cubeMapViewCounts {
 	counts := cubeMapViewCounts{
 		baselineCore: countCubeMapBlocks(view.BaselineCore), refinedCore: countCubeMapBlocks(view.RefinedCore),
-		coreObjects: len(view.CoreObjects), coreObjectBindings: len(view.CoreObjectBindings),
+		refinedGroups: len(view.RefinedGroups),
+		coreObjects:   len(view.CoreObjects), coreObjectBindings: len(view.CoreObjectBindings),
 		activitySurfaces: len(view.ActivitySurfaces), entrypoints: len(view.Entrypoints),
 		dependencies: len(view.IntegrationDependencies), integrationSymbols: len(view.IntegrationSymbols),
 		reversePaths: len(view.ReversePaths),
@@ -1433,6 +1444,13 @@ func countCubeMapView(view CubeMapView) cubeMapViewCounts {
 		counts.effectCoreBindings = len(view.SurfaceCoreEffects.EffectCore)
 	}
 	return counts
+}
+
+func cubeMapViewBoolCount(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func countCubeMapBlocks(blocks []CubeMapViewCoreBlock) int {

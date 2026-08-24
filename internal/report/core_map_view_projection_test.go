@@ -92,6 +92,27 @@ func TestCoreMapViewAllowsOneBaselineChild(t *testing.T) {
 	}
 }
 
+func TestCoreMapViewGroupsRequireCompleteRefinedPartition(t *testing.T) {
+	refined := map[string]struct{}{"core-a": {}, "core-b": {}, "core-c": {}}
+	valid := []CoreMapViewGroup{
+		{ID: "group-runtime", Name: "Runtime", Purpose: "Coordinates accepted work.", CoreBlockIDs: []string{"core-a", "core-b"}},
+		{ID: "group-storage", Name: "Storage", Purpose: "Persists accepted state.", CoreBlockIDs: []string{"core-c"}},
+	}
+	if err := validateCoreMapViewGroups(valid, refined); err != nil {
+		t.Fatal(err)
+	}
+	invalid := append([]CoreMapViewGroup(nil), valid...)
+	invalid[0].CoreBlockIDs = []string{"core-a"}
+	if err := validateCoreMapViewGroups(invalid, refined); err == nil {
+		t.Fatal("partial refined group partition was accepted")
+	}
+	invalid = append([]CoreMapViewGroup(nil), valid...)
+	invalid[1].CoreBlockIDs = []string{"core-b", "core-c"}
+	if err := validateCoreMapViewGroups(invalid, refined); err == nil {
+		t.Fatal("duplicate refined group membership was accepted")
+	}
+}
+
 func TestReadRunDirDoesNotFallbackWhenPythonCoreMapIsMissing(t *testing.T) {
 	runDir := t.TempDir()
 	index := reportProgramIndexFixture(t, "python", "executable")

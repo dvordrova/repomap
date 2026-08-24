@@ -66,7 +66,6 @@ type refinedMapRequest struct {
 	Target          targetRequest         `json:"target"`
 	ProgramCoverage programindex.Coverage `json:"program_coverage"`
 	Shard           shardRequest          `json:"shard"`
-	MaxBlocks       int                   `json:"max_blocks"`
 	Facts           []semanticFactRequest `json:"facts"`
 }
 
@@ -95,7 +94,6 @@ type refinedReduceRequest struct {
 	ProgramCoverage programindex.Coverage `json:"program_coverage"`
 	Level           int                   `json:"level"`
 	Batch           shardRequest          `json:"batch"`
-	MaxBlocks       int                   `json:"max_blocks"`
 	Candidates      []candidateRequest    `json:"candidates"`
 }
 
@@ -147,7 +145,7 @@ func runRefinedPipeline(
 		}
 		response, requestSize, err := executeRefinedCall(
 			ctx, executor, provider, compilation, "map", 0, position+1, len(mapRequests),
-			refinedPrompt, wire, authority, request.MaxBlocks,
+			refinedPrompt, wire, authority,
 		)
 		if err != nil {
 			return modelResponse{}, refinedPipelineAccounting{}, fmt.Errorf(
@@ -185,7 +183,7 @@ func runRefinedPipeline(
 			}
 			response, requestSize, err := executeRefinedCall(
 				ctx, executor, provider, compilation, "reduce", level, position+1, len(batches),
-				reducePrompt, wire, authority, request.MaxBlocks,
+				reducePrompt, wire, authority,
 			)
 			if err != nil {
 				return modelResponse{}, refinedPipelineAccounting{}, fmt.Errorf(
@@ -253,7 +251,6 @@ func executeRefinedCall(
 	prompt string,
 	wire []byte,
 	authority refinedAuthority,
-	maxBlocks int,
 ) (modelResponse, StageRequestSize, error) {
 	if len(wire)+len(prompt) > maxRefinedPayloadBytes {
 		return modelResponse{}, StageRequestSize{}, fmt.Errorf(
@@ -270,7 +267,7 @@ func executeRefinedCall(
 		DecodeValidate: func(raw []byte) (modelResponse, error) {
 			response, err := decodeResponse(raw)
 			if err == nil {
-				err = validateRefinedBatchProposals(response.Blocks, authority.files, authority.symbols, maxBlocks, true)
+				err = validateRefinedBatchProposals(response.Blocks, authority.files, authority.symbols, true)
 			}
 			return response, err
 		},
@@ -398,8 +395,8 @@ func packMapRequests(compilation Compilation, facts []semanticFactRequest) ([]re
 	emptyWire, err := json.Marshal(refinedMapRequest{
 		Repository: compilation.repository, Target: compilation.baselineRequest.Target,
 		ProgramCoverage: compilation.programCoverage,
-		Shard:           shardRequest{Ordinal: 99999999, Count: 99999999}, MaxBlocks: maxMapBlocks,
-		Facts: []semanticFactRequest{},
+		Shard:           shardRequest{Ordinal: 99999999, Count: 99999999},
+		Facts:           []semanticFactRequest{},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("coremap: encode empty refined map shard: %w", err)
@@ -444,7 +441,6 @@ func packMapRequests(compilation Compilation, facts []semanticFactRequest) ([]re
 			Repository: compilation.repository, Target: compilation.baselineRequest.Target,
 			ProgramCoverage: compilation.programCoverage,
 			Shard:           shardRequest{Ordinal: position + 1, Count: len(groups)},
-			MaxBlocks:       maxMapBlocks,
 			Facts:           append([]semanticFactRequest(nil), group...),
 		}
 		wire, err := json.Marshal(requests[position])
@@ -475,7 +471,7 @@ func packReduceRequests(compilation Compilation, level int, proposals []proposal
 	emptyWire, err := marshalReduceRequest(refinedReduceRequest{
 		Repository: compilation.repository, Target: compilation.baselineRequest.Target,
 		ProgramCoverage: compilation.programCoverage,
-		Level:           level, Batch: shardRequest{Ordinal: 99999999, Count: 99999999}, MaxBlocks: maxRefinedBlocks,
+		Level:           level, Batch: shardRequest{Ordinal: 99999999, Count: 99999999},
 		Candidates: []candidateRequest{},
 	})
 	if err != nil {
@@ -522,16 +518,12 @@ func packReduceRequests(compilation Compilation, level int, proposals []proposal
 		groups = append(groups, append([]candidateRequest(nil), current...))
 	}
 	requests := make([]refinedReduceRequest, len(groups))
-	maximum := maxMapBlocks
-	if len(groups) == 1 {
-		maximum = maxRefinedBlocks
-	}
 	for position, group := range groups {
 		assignCandidateRefs(group)
 		requests[position] = refinedReduceRequest{
 			Repository: compilation.repository, Target: compilation.baselineRequest.Target,
 			ProgramCoverage: compilation.programCoverage,
-			Level:           level, Batch: shardRequest{Ordinal: position + 1, Count: len(groups)}, MaxBlocks: maximum,
+			Level:           level, Batch: shardRequest{Ordinal: position + 1, Count: len(groups)},
 			Candidates: group,
 		}
 		wire, err := marshalReduceRequest(requests[position])
@@ -580,7 +572,6 @@ func marshalReduceRequest(request refinedReduceRequest) ([]byte, error) {
 		Target     targetRequest   `json:"target"`
 		Level      int             `json:"level"`
 		Batch      shardRequest    `json:"batch"`
-		MaxBlocks  int             `json:"max_blocks"`
 		Candidates []wireCandidate `json:"candidates"`
 	}
 	candidates := make([]wireCandidate, len(request.Candidates))
@@ -589,7 +580,7 @@ func marshalReduceRequest(request refinedReduceRequest) ([]byte, error) {
 	}
 	wire, err := json.Marshal(wireRequest{
 		Repository: request.Repository, Target: request.Target, Level: request.Level,
-		Batch: request.Batch, MaxBlocks: request.MaxBlocks, Candidates: candidates,
+		Batch: request.Batch, Candidates: candidates,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("coremap: encode refined reduce request: %w", err)

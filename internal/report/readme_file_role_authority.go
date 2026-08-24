@@ -45,8 +45,7 @@ func decodeReadmeFileRoleAuthority(raw []byte) (map[string]string, error) {
 		}
 		return nil, fmt.Errorf("report: README file-role artifact has trailing data: %w", err)
 	}
-	if artifact.Version != 1 || artifact.Files == nil ||
-		len(artifact.Files) == 0 || len(artifact.Files) > readmetargetscout.MaxClassifiedFiles {
+	if artifact.Version != 1 || artifact.Files == nil || len(artifact.Files) == 0 {
 		return nil, fmt.Errorf("report: README file-role artifact has invalid identity or file count")
 	}
 	pathsByRef := make(map[string]string, len(artifact.Files))
