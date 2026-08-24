@@ -264,13 +264,14 @@ func compileProgram(
 	if err != nil {
 		return Compilation{}, err
 	}
+	groupingEdges := compileGroupingEdges(index)
 	target := index.Target.Snapshot()
 	compilation := Compilation{
 		repository: repoName, corpusRef: snapshot.Ref,
 		programTarget: &target, programIndexSHA256: index.SHA256, programCoverage: index.Coverage,
 		baselineRequest: request, baselineWire: wire, files: files,
 		baselineFiles: baselineFiles, symbols: symbols, symbolRows: rows,
-		targetSeedRows: seedRows, dynamicRelationRows: dynamicRows,
+		targetSeedRows: seedRows, dynamicRelationRows: dynamicRows, groupingEdges: groupingEdges,
 	}
 	compilation.seal = sealCompilation(compilation)
 	return compilation, nil
@@ -288,6 +289,7 @@ func compileProgramDynamicRelations(
 	symbolRefByObjectID := make(map[string]string, len(symbols))
 	for ref, symbol := range symbols {
 		symbolRefByObjectID[symbol.fact.NodeID] = ref
+		symbolRefByObjectID[symbol.programObjectID] = ref
 	}
 	rows := make([]dynamicRelationRequest, 0)
 	relationOrdinal := 0
@@ -567,7 +569,10 @@ func compileProgramSymbols(
 		ref := fmt.Sprintf("s%d", position+1)
 		values[position].row.Ref = ref
 		rows[position] = values[position].row
-		authority[ref] = symbolAuthority{request: rows[position], fact: values[position].fact}
+		authority[ref] = symbolAuthority{
+			request: rows[position], fact: values[position].fact,
+			programObjectID: values[position].fact.NodeID,
+		}
 		symbolRefByObjectID[values[position].fact.NodeID] = ref
 	}
 	seedRows := make([]targetSeedRequest, len(index.Target.Seeds))
@@ -585,6 +590,38 @@ func compileProgramSymbols(
 	return authority, rows, seedRows, nil
 }
 
+func compileGroupingEdges(index programindex.Index) []groupingEdgeAuthority {
+	seen := make(map[string]struct{})
+	result := make([]groupingEdgeAuthority, 0)
+	for _, relation := range index.Relations {
+		if relation.Resolution != programindex.ResolutionExact ||
+			(relation.Kind != programindex.RelationCalls && relation.Kind != programindex.RelationExecutes) {
+			continue
+		}
+		for _, targetID := range relation.ToIDs {
+			if relation.FromID == "" || targetID == "" || relation.FromID == targetID {
+				continue
+			}
+			key := relation.FromID + "\x00" + targetID
+			if _, duplicate := seen[key]; duplicate {
+				continue
+			}
+			seen[key] = struct{}{}
+			result = append(result, groupingEdgeAuthority{FromObjectID: relation.FromID, ToObjectID: targetID})
+		}
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].FromObjectID != result[j].FromObjectID {
+			return result[i].FromObjectID < result[j].FromObjectID
+		}
+		return result[i].ToObjectID < result[j].ToObjectID
+	})
+	if result == nil {
+		result = []groupingEdgeAuthority{}
+	}
+	return result
+}
+
 func compileIntegrationUsageRequest(
 	symbols map[string]symbolAuthority,
 	selected integrationdependency.Result,
@@ -597,6 +634,7 @@ func compileIntegrationUsageRequest(
 	symbolRefByObjectID := make(map[string]string, len(symbols))
 	for ref, symbol := range symbols {
 		symbolRefByObjectID[symbol.fact.NodeID] = ref
+		symbolRefByObjectID[symbol.programObjectID] = ref
 	}
 	rows := make([]integrationUseRequest, len(uses.Uses))
 	for position, use := range uses.Uses {

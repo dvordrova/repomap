@@ -18,10 +18,6 @@ func (result Result) SnapshotAgainstCorpus(repository *corpus.Corpus) (Result, e
 	if err := repository.Snapshot().Validate(); err != nil {
 		return nil, fmt.Errorf("README file classifier: result handoff corpus: %w", err)
 	}
-	if len(result) > MaxClassifiedFiles {
-		return nil, fmt.Errorf("README file classifier: result handoff contains too many classified files")
-	}
-
 	owned := make(Result, len(result))
 	previousPath := ""
 	for fileIndex, file := range result {

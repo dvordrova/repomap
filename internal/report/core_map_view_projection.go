@@ -10,12 +10,9 @@ import (
 )
 
 const (
-	CoreMapViewVersion = 3
+	CoreMapViewVersion = 4
 
-	MaxCoreMapViewBlocks  = 256
-	MaxCoreMapViewFiles   = 4_096
-	MaxCoreMapViewSymbols = 4_096
-	MaxCoreMapViewBytes   = 8 << 20
+	MaxCoreMapViewBytes = 8 << 20
 )
 
 // CoreMapView is the report-owned projection of the progressive CoreMap
@@ -30,7 +27,15 @@ type CoreMapView struct {
 	IntegrationUsageSHA256 string              `json:"integration_usage_sha256,omitempty"`
 	BaselineCore           []CoreMapViewBlock  `json:"baseline_core"`
 	RefinedCore            []CoreMapViewBlock  `json:"refined_core"`
+	RefinedGroups          []CoreMapViewGroup  `json:"refined_groups"`
 	Coverage               CoreMapViewCoverage `json:"coverage"`
+}
+
+type CoreMapViewGroup struct {
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Purpose      string   `json:"purpose"`
+	CoreBlockIDs []string `json:"core_block_ids"`
 }
 
 type CoreMapViewBlock struct {
@@ -81,6 +86,8 @@ type CoreMapViewCoverage struct {
 	RefinedBlocks           int `json:"refined_blocks"`
 	RefinedFilesSelected    int `json:"refined_files_selected"`
 	RefinedSymbolsSelected  int `json:"refined_symbols_selected"`
+	RefinedGroups           int `json:"refined_groups"`
+	RefinedGroupCalls       int `json:"refined_group_calls"`
 	ProgramObjectsOmitted   int `json:"program_objects_omitted"`
 	ProgramRelationsOmitted int `json:"program_relations_omitted"`
 }
@@ -124,12 +131,15 @@ func NewCoreMapView(
 		IntegrationUsageSHA256: value.IntegrationUsageSHA256,
 		BaselineCore:           make([]CoreMapViewBlock, 0, len(value.Baseline)),
 		RefinedCore:            make([]CoreMapViewBlock, 0, len(value.Refined)),
+		RefinedGroups:          make([]CoreMapViewGroup, 0, len(value.RefinedGroups)),
 		Coverage: CoreMapViewCoverage{
 			TrackedFiles: value.Coverage.TrackedFiles, BaselineRoleFiles: value.Coverage.BaselineRoleFiles,
 			SymbolsAvailable: value.Coverage.SymbolsAvailable, BaselineBlocks: value.Coverage.BaselineBlocks,
 			BaselineFilesSelected: value.Coverage.BaselineFilesSelected,
 			RefinedBlocks:         value.Coverage.RefinedBlocks, RefinedFilesSelected: value.Coverage.RefinedFilesSelected,
 			RefinedSymbolsSelected:  value.Coverage.RefinedSymbolsSelected,
+			RefinedGroups:           value.Coverage.RefinedGroups,
+			RefinedGroupCalls:       value.Coverage.RefinedGroupCalls,
 			ProgramObjectsOmitted:   index.Coverage.ObjectsOmitted,
 			ProgramRelationsOmitted: index.Coverage.RelationsOmitted,
 		},
@@ -143,6 +153,12 @@ func NewCoreMapView(
 	}
 	for _, block := range value.Refined {
 		view.RefinedCore = append(view.RefinedCore, projectCoreMapViewBlock(block, objects))
+	}
+	for _, group := range value.RefinedGroups {
+		view.RefinedGroups = append(view.RefinedGroups, CoreMapViewGroup{
+			ID: group.ID, Name: group.Name, Purpose: group.Purpose,
+			CoreBlockIDs: append([]string(nil), group.BlockIDs...),
+		})
 	}
 	if err := view.Validate(); err != nil {
 		return nil, fmt.Errorf("core map view: invalid projection: %w", err)
@@ -373,7 +389,7 @@ func (view CoreMapView) Validate() error {
 		!validCubeMapViewSHA256(view.IntegrationUsageSHA256) {
 		return fmt.Errorf("core map view: invalid identity")
 	}
-	if view.BaselineCore == nil || view.RefinedCore == nil || len(view.RefinedCore) == 0 {
+	if view.BaselineCore == nil || view.RefinedCore == nil || view.RefinedGroups == nil || len(view.RefinedCore) == 0 {
 		return fmt.Errorf("core map view: required block collection is missing")
 	}
 	counts := coreMapViewCounts{}
@@ -394,9 +410,8 @@ func (view CoreMapView) Validate() error {
 	); err != nil {
 		return err
 	}
-	if counts.blocks > MaxCoreMapViewBlocks || counts.fileRows > MaxCoreMapViewFiles ||
-		counts.symbolRows > MaxCoreMapViewSymbols {
-		return fmt.Errorf("core map view: projection bound exceeded")
+	if err := validateCoreMapViewGroups(view.RefinedGroups, refinedIDs); err != nil {
+		return err
 	}
 	if err := validateCoreMapViewCoverage(view, filesByRef, symbolsByID); err != nil {
 		return err
@@ -407,6 +422,53 @@ func (view CoreMapView) Validate() error {
 	}
 	if len(encoded) > MaxCoreMapViewBytes {
 		return fmt.Errorf("core map view: JSON size %d exceeds projection limit %d", len(encoded), MaxCoreMapViewBytes)
+	}
+	return nil
+}
+
+func validateCoreMapViewGroups(groups []CoreMapViewGroup, refinedIDs map[string]struct{}) error {
+	if groups == nil {
+		return fmt.Errorf("core map view: refined groups must retain an exact array")
+	}
+	if len(groups) == 0 {
+		return nil
+	}
+	if len(groups) < 2 || len(groups) > len(refinedIDs) {
+		return fmt.Errorf("core map view: invalid refined group count")
+	}
+	seenGroups := make(map[string]struct{}, len(groups))
+	seenNames := make(map[string]struct{}, len(groups))
+	seenBlocks := make(map[string]struct{}, len(refinedIDs))
+	for _, group := range groups {
+		if !validCubeMapViewText(group.ID, false) || !validCubeMapViewText(group.Name, false) ||
+			!validCubeMapViewText(group.Purpose, false) || group.CoreBlockIDs == nil || len(group.CoreBlockIDs) == 0 {
+			return fmt.Errorf("core map view: invalid refined group")
+		}
+		if _, duplicate := seenGroups[group.ID]; duplicate {
+			return fmt.Errorf("core map view: duplicate refined group identity")
+		}
+		seenGroups[group.ID] = struct{}{}
+		if _, duplicate := seenNames[group.Name]; duplicate {
+			return fmt.Errorf("core map view: duplicate refined group name")
+		}
+		seenNames[group.Name] = struct{}{}
+		inside := make(map[string]struct{}, len(group.CoreBlockIDs))
+		for _, blockID := range group.CoreBlockIDs {
+			if _, ok := refinedIDs[blockID]; !ok {
+				return fmt.Errorf("core map view: refined group cites unknown block")
+			}
+			if _, duplicate := inside[blockID]; duplicate {
+				return fmt.Errorf("core map view: refined group repeats a block")
+			}
+			inside[blockID] = struct{}{}
+			if _, duplicate := seenBlocks[blockID]; duplicate {
+				return fmt.Errorf("core map view: refined block belongs to several groups")
+			}
+			seenBlocks[blockID] = struct{}{}
+		}
+	}
+	if len(seenBlocks) != len(refinedIDs) {
+		return fmt.Errorf("core map view: refined groups are not a complete block partition")
 	}
 	return nil
 }
@@ -524,10 +586,19 @@ func validateCoreMapViewCoverage(
 		coverage.BaselineFilesSelected != baselineFiles || coverage.RefinedBlocks != refinedBlocks ||
 		coverage.RefinedFilesSelected != refinedFiles ||
 		coverage.RefinedSymbolsSelected != len(symbolsByID) ||
+		coverage.RefinedGroups != len(view.RefinedGroups) ||
+		coverage.RefinedGroupCalls != coreMapViewBoolCount(len(view.RefinedCore) >= 2) ||
 		coverage.ProgramObjectsOmitted < 0 || coverage.ProgramRelationsOmitted < 0 {
 		return fmt.Errorf("core map view: coverage does not match exact projection")
 	}
 	return nil
+}
+
+func coreMapViewBoolCount(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func coreMapViewStageCounts(blocks []CoreMapViewBlock) (int, int) {

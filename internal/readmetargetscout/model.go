@@ -16,7 +16,7 @@ const (
 
 	PreparationVersion = "complete-readmes-and-agents-prefix-compressed-corpus-file-tree-v5"
 	SchemaVersion      = "readme-file-role-classifications-v2"
-	ReducerVersion     = "readme-file-role-classifications-strict-with-prose-rejection-v4"
+	ReducerVersion     = "readme-file-role-classifications-strict-with-prose-rejection-v5"
 
 	// Keep one complete atomic semantic body below the empirically reliable
 	// provider envelope. The former flat dictionary made a measured Airflow
@@ -28,13 +28,12 @@ const (
 	MaxProviderRequestBytes        = 2*MaxRequestBytes + 64<<10
 	MaxResponseBytes               = 64 << 10
 	MaxHypothesisBytes             = 160
-	MaxClassifiedFiles             = 48
 	MaxClassificationsPerFile      = 3
 	MaxHypothesesPerClassification = 2
 	MaxOutputTokens                = 32_000
 )
 
-const executionContract = "repository-guidance-file-classifier-v7"
+const executionContract = "repository-guidance-file-classifier-v8"
 
 const ArtifactFilename = "readme-file-roles.json"
 
@@ -166,7 +165,6 @@ func executionStateValue() any {
 		MaxRequestBytes    int    `json:"max_request_bytes"`
 		MaxResponseBytes   int    `json:"max_response_bytes"`
 		MaxHypothesisBytes int    `json:"max_hypothesis_bytes"`
-		MaxClassifiedFiles int    `json:"max_classified_files"`
 		MaxClassifications int    `json:"max_classifications_per_file"`
 		MaxHypotheses      int    `json:"max_hypotheses_per_classification"`
 		MaxOutputTokens    int    `json:"max_output_tokens"`
@@ -178,7 +176,7 @@ func executionStateValue() any {
 		SchemaVersion:      SchemaVersion, SchemaSHA256: sha256Hex([]byte(schemaContract)),
 		ReducerVersion: ReducerVersion, ReducerSHA256: sha256Hex([]byte(reducerContract)),
 		MaxRequestBytes: MaxRequestBytes, MaxResponseBytes: MaxResponseBytes,
-		MaxHypothesisBytes: MaxHypothesisBytes, MaxClassifiedFiles: MaxClassifiedFiles,
+		MaxHypothesisBytes: MaxHypothesisBytes,
 		MaxClassifications: MaxClassificationsPerFile,
 		MaxHypotheses:      MaxHypothesesPerClassification,
 		MaxOutputTokens:    MaxOutputTokens,

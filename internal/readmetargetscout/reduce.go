@@ -13,7 +13,7 @@ import (
 
 const (
 	schemaContract  = "response is exactly one JSON array of {file_ref,classifications:[{class,hypotheses}]}; strict fields and closed classes-v2"
-	reducerContract = "known complete-corpus FileIDs only; sparse multi-role rows; non-documentation prose roles reject the complete response; canonical path/class/hypothesis order-v4"
+	reducerContract = "known complete-corpus FileIDs only; guidance-grounded multi-role rows without a repository-size quota; non-documentation prose roles reject the complete response; canonical path/class/hypothesis order-v5"
 )
 
 // ResolveResponse rejects the complete model response when it assigns a
@@ -39,10 +39,6 @@ func ResolveResponse(compilation Compilation, raw []byte) (Result, error) {
 	if err := ensureResponseEOF(decoder); err != nil {
 		return nil, err
 	}
-	if len(wireItems) > MaxClassifiedFiles {
-		return nil, fmt.Errorf("README file classifier: response contains too many classified files")
-	}
-
 	seenFiles := make(map[string]struct{}, len(wireItems))
 	result := make(Result, 0, len(wireItems))
 	for _, wireItem := range wireItems {

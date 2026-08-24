@@ -51,9 +51,14 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 		[]byte(`Verify in code`),
 		[]byte(`Evidence limits`),
 		[]byte(`sourceAction(symbol.name, symbol.location)`),
-		[]byte(`function canvasTopology()`),
+		[]byte(`function canvasTopology(activeBlockIDs, complete)`),
+		[]byte(`function renderAreaSwitcher(selected, activeGroup)`),
+		[]byte(`Show complete map · `),
 		[]byte(`data-canvas-node`),
 		[]byte(`rm-canvas-popover`),
+		[]byte(`rm-evidence-disclosure`),
+		[]byte(`rm-core-group`),
+		[]byte(`coreCanvasGroup(group, selected, expanded)`),
 		[]byte(`var control = element('button', 'rm-canvas-node rm-canvas-node--' + kind);`),
 		[]byte(`Responsibilities`),
 		[]byte(`Used from`),
@@ -78,6 +83,31 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 	} {
 		if bytes.Contains(html, retired) {
 			t.Errorf("rendered orientation workspace retained old frontend %q", retired)
+		}
+	}
+}
+
+func TestOrientationClientKeepsCompleteEvidenceBehindDisclosure(t *testing.T) {
+	for _, required := range []string{
+		"starts.forEach(function (start)",
+		"connections.forEach(function (connection)",
+		"related.forEach(function (candidate)",
+		"block.symbols.forEach(function (symbol)",
+		"block.files.forEach(function (file)",
+		"element('details', 'rm-disclosure')",
+		"element('details', 'rm-evidence-disclosure')",
+	} {
+		if !strings.Contains(reportAppJS, required) {
+			t.Errorf("orientation progressive disclosure is missing %q", required)
+		}
+	}
+	for _, truncated := range []string{
+		"connections.slice(0, 7)",
+		"filter(Boolean).slice(0, 4)",
+		"starts.slice(0, 5)",
+	} {
+		if strings.Contains(reportAppJS, truncated) {
+			t.Errorf("orientation client truncates navigable evidence with %q", truncated)
 		}
 	}
 }
@@ -208,6 +238,8 @@ func TestOrientationClientBuildsMeaningBeforeRenderingEvidence(t *testing.T) {
 		"flattenBlocks(array(core.refined_core",
 		"activityByID[id]",
 		"blocksBySymbol[symbol.id]",
+		"array(core.refined_groups",
+		"groupByBlock[blockID] = group",
 		"activityByID[id] = start",
 		"integrations.push({",
 		"state.model.blocksBySymbol[use.callerID]",

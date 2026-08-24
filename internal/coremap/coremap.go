@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	Version          = 7
+	Version          = 8
 	ArtifactFilename = "core-map.json"
 	MaxArtifactBytes = 8 << 20
 	// MaxPayloadBytes bounds prompt prose plus the domain JSON before the
@@ -45,11 +45,7 @@ const (
 	maxBaselineRoots    = 12
 	maxChildrenPerBlock = 8
 	maxBaselineBlocks   = 64
-	maxRefinedBlocks    = 12
-	maxMapBlocks        = 8
 	maxReduceLevels     = 32
-	maxFilesPerBlock    = 16
-	maxSymbolsPerBlock  = 24
 )
 
 type Stage string
@@ -93,6 +89,17 @@ type Block struct {
 	Children []Block      `json:"children,omitempty"`
 }
 
+// Group is a model-owned navigation hierarchy over already validated refined
+// responsibilities. It never replaces or reparents the responsibility blocks;
+// every non-empty group set is restored locally as a complete disjoint
+// partition of their stable IDs.
+type Group struct {
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Purpose  string   `json:"purpose"`
+	BlockIDs []string `json:"block_ids"`
+}
+
 type Coverage struct {
 	TrackedFiles           int                                      `json:"tracked_files"`
 	BaselineRoleFiles      int                                      `json:"baseline_role_files"`
@@ -106,6 +113,8 @@ type Coverage struct {
 	DynamicRelationFacts   int                                      `json:"dynamic_relation_facts"`
 	RefinedMapCalls        int                                      `json:"refined_map_calls"`
 	RefinedReduceCalls     int                                      `json:"refined_reduce_calls"`
+	RefinedGroupCalls      int                                      `json:"refined_group_calls"`
+	RefinedGroups          int                                      `json:"refined_groups"`
 	DirectCallState        surfacediscovery.DirectCallIndexState    `json:"direct_call_state"`
 	DirectCallCoverage     surfacediscovery.DirectCallIndexCoverage `json:"direct_call_coverage"`
 }
@@ -121,6 +130,7 @@ type StageRequestSize struct {
 type RequestSizes struct {
 	Baseline StageRequestSize `json:"baseline"`
 	Refined  StageRequestSize `json:"refined"`
+	Grouping StageRequestSize `json:"grouping"`
 }
 
 type Result struct {
@@ -135,6 +145,7 @@ type Result struct {
 	CoreObjectSHA256       string                `json:"core_object_sha256"`
 	Baseline               []Block               `json:"baseline"`
 	Refined                []Block               `json:"refined"`
+	RefinedGroups          []Group               `json:"refined_groups"`
 	Coverage               Coverage              `json:"coverage"`
 	RequestSizes           RequestSizes          `json:"request_sizes"`
 }
@@ -237,8 +248,17 @@ type modelResponse struct {
 }
 
 type symbolAuthority struct {
-	request symbolRequest
-	fact    SymbolFact
+	request         symbolRequest
+	fact            SymbolFact
+	programObjectID string
+}
+
+// groupingEdgeAuthority is retained only inside the sealed compilation. Raw
+// ProgramIndex identities never enter a provider request; the grouping phase
+// reduces these exact calls/executes edges to bounded block-to-block hop facts.
+type groupingEdgeAuthority struct {
+	FromObjectID string
+	ToObjectID   string
 }
 
 type Compilation struct {
@@ -262,6 +282,7 @@ type Compilation struct {
 	targetSeedRows         []targetSeedRequest
 	integrationUsage       *integrationUsageRequest
 	dynamicRelationRows    []dynamicRelationRequest
+	groupingEdges          []groupingEdgeAuthority
 	seal                   string
 }
 
@@ -309,12 +330,21 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, comp
 		return Result{}, fmt.Errorf("coremap: refined model cube: %w", err)
 	}
 	refinedBlocks := restoreBlocks(StageRefined, targetKey, refined.Blocks, refineFiles, compilation.symbols)
+	if err := validateRestoredBlocks(StageRefined, targetKey, refinedBlocks, true); err != nil {
+		return Result{}, err
+	}
+	refinedGroups, groupingRequestSize, groupingCalls, err := runRefinedGrouping(
+		ctx, executor, provider, compilation, refinedBlocks,
+	)
+	if err != nil {
+		return Result{}, fmt.Errorf("coremap: refined grouping: %w", err)
+	}
 	result := Result{
 		Version: Version, Repository: compilation.repository, CorpusRef: compilation.corpusRef,
 		IntegrationUsageSHA256: compilation.integrationUsageSHA256,
 		DirectCallSHA256:       compilation.directCallSHA256,
 		CoreObjectSHA256:       compilation.coreObjectSHA256,
-		Baseline:               baselineBlocks, Refined: refinedBlocks,
+		Baseline:               baselineBlocks, Refined: refinedBlocks, RefinedGroups: refinedGroups,
 		Coverage: Coverage{
 			TrackedFiles: len(compilation.files), BaselineRoleFiles: len(compilation.baselineFiles),
 			SymbolsAvailable: len(compilation.symbols), BaselineBlocks: countBlocks(baselineBlocks),
@@ -322,11 +352,13 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, comp
 			RefinedFilesSelected: len(collectFiles(refinedBlocks)), RefinedSymbolsSelected: len(collectSymbols(refinedBlocks)),
 			SemanticFacts: refinedAccounting.semanticFacts, DynamicRelationFacts: refinedAccounting.dynamicRelationFacts,
 			RefinedMapCalls: refinedAccounting.mapCalls, RefinedReduceCalls: refinedAccounting.reduceCalls,
+			RefinedGroupCalls: groupingCalls, RefinedGroups: len(refinedGroups),
 			DirectCallState: compilation.directCallState, DirectCallCoverage: compilation.directCoverage,
 		},
 		RequestSizes: RequestSizes{
 			Baseline: baselineRequestSize,
 			Refined:  refinedAccounting.requests,
+			Grouping: groupingRequestSize,
 		},
 	}
 	target := compilation.programTarget.Snapshot()
@@ -371,13 +403,15 @@ func (result Result) Validate() error {
 	}
 	targetKey := result.ProgramTarget.ID
 	if result.Coverage.TrackedFiles < 0 || result.Coverage.BaselineRoleFiles < 0 ||
-		result.Coverage.BaselineRoleFiles > readmetargetscout.MaxClassifiedFiles {
+		result.Coverage.BaselineRoleFiles > result.Coverage.TrackedFiles {
 		return fmt.Errorf("coremap: invalid baseline role coverage")
 	}
 	if result.Coverage.SymbolsAvailable < 1 || result.Coverage.SemanticFacts < result.Coverage.SymbolsAvailable ||
 		result.Coverage.DynamicRelationFacts < 0 ||
 		result.Coverage.DynamicRelationFacts > result.Coverage.SemanticFacts ||
-		result.Coverage.RefinedMapCalls < 1 || result.Coverage.RefinedReduceCalls < 0 {
+		result.Coverage.RefinedMapCalls < 1 || result.Coverage.RefinedReduceCalls < 0 ||
+		result.Coverage.RefinedGroupCalls < 0 || result.Coverage.RefinedGroupCalls > 1 ||
+		result.Coverage.RefinedGroups < 0 {
 		return fmt.Errorf("coremap: invalid refined pipeline coverage")
 	}
 	if result.Coverage.BaselineRoleFiles == 0 {
@@ -396,12 +430,28 @@ func (result Result) Validate() error {
 	if err := validateRestoredBlocks(StageRefined, targetKey, result.Refined, result.Coverage.SymbolsAvailable > 0); err != nil {
 		return err
 	}
+	if err := validateRefinedGroups(result.RefinedGroups, result.Refined, targetKey); err != nil {
+		return err
+	}
 	if err := validateStageRequestSize(
 		result.RequestSizes.Refined,
 		result.Coverage.RefinedMapCalls+result.Coverage.RefinedReduceCalls,
 		maxRefinedPayloadBytes,
 	); err != nil {
 		return fmt.Errorf("coremap: invalid request-size accounting")
+	}
+	if len(result.Refined) < 2 {
+		if result.Coverage.RefinedGroupCalls != 0 || len(result.RefinedGroups) != 0 ||
+			result.Coverage.RefinedGroups != 0 || result.RequestSizes.Grouping != (StageRequestSize{}) {
+			return fmt.Errorf("coremap: trivial refined map retained grouping output")
+		}
+	} else {
+		if result.Coverage.RefinedGroupCalls != 1 || result.Coverage.RefinedGroups != len(result.RefinedGroups) {
+			return fmt.Errorf("coremap: invalid refined grouping coverage")
+		}
+		if err := validateStageRequestSize(result.RequestSizes.Grouping, 1, maxRefinedPayloadBytes); err != nil {
+			return fmt.Errorf("coremap: invalid grouping request-size accounting")
+		}
 	}
 	return nil
 }
@@ -456,10 +506,18 @@ func (result Result) ValidateAgainst(compilation Compilation) error {
 		want.BaselineFilesSelected != len(collectFiles(result.Baseline)) || want.RefinedBlocks != len(result.Refined) ||
 		want.RefinedFilesSelected != len(collectFiles(result.Refined)) || want.RefinedSymbolsSelected != len(collectSymbols(result.Refined)) ||
 		want.SemanticFacts != semanticFacts || want.DynamicRelationFacts != dynamicFacts ||
+		want.RefinedGroups != len(result.RefinedGroups) || want.RefinedGroupCalls != boolCount(len(result.Refined) >= 2) ||
 		want.DirectCallState != compilation.directCallState || !reflect.DeepEqual(want.DirectCallCoverage, compilation.directCoverage) {
 		return fmt.Errorf("coremap: coverage does not match exact authority")
 	}
 	return nil
+}
+
+func boolCount(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func validateStageRequestSize(value StageRequestSize, calls int, maximumPayload int) error {
@@ -519,8 +577,7 @@ func decodeResponse(raw []byte) (modelResponse, error) {
 }
 
 func validateProposals(stage Stage, blocks []proposal, files map[corpus.FileID]FileFact, symbols map[string]symbolAuthority) error {
-	if (len(blocks) == 0 && stage != StageBaseline) || (stage == StageBaseline && len(blocks) > maxBaselineRoots) ||
-		(stage == StageRefined && len(blocks) > maxRefinedBlocks) {
+	if (len(blocks) == 0 && stage != StageBaseline) || (stage == StageBaseline && len(blocks) > maxBaselineRoots) {
 		return fmt.Errorf("coremap: %s response has invalid block count", stage)
 	}
 	total := 0
@@ -535,12 +592,6 @@ func validateProposals(stage Stage, blocks []proposal, files map[corpus.FileID]F
 		}
 		if len(block.FileRefs)+len(block.SymbolRefs)+len(block.Children) == 0 {
 			return fmt.Errorf("coremap: %s response has an ungrounded block", stage)
-		}
-		if len(block.FileRefs) > maxFilesPerBlock || len(block.SymbolRefs) > maxSymbolsPerBlock {
-			return fmt.Errorf(
-				"coremap: %s response block %q cites %d files and %d symbols; maximum is %d files and %d symbols",
-				stage, block.Name, len(block.FileRefs), len(block.SymbolRefs), maxFilesPerBlock, maxSymbolsPerBlock,
-			)
 		}
 		if stage == StageBaseline && len(block.SymbolRefs) != 0 {
 			return fmt.Errorf("coremap: baseline response cites symbols")
@@ -590,7 +641,6 @@ func validateRefinedBatchProposals(
 	blocks []proposal,
 	files map[corpus.FileID]FileFact,
 	symbols map[string]symbolAuthority,
-	maximum int,
 	allowEmpty bool,
 ) error {
 	if len(blocks) == 0 {
@@ -599,13 +649,9 @@ func validateRefinedBatchProposals(
 		}
 		return fmt.Errorf("coremap: refined response has no blocks")
 	}
-	if maximum < 1 || len(blocks) > maximum {
-		return fmt.Errorf("coremap: refined response has invalid block count")
-	}
 	for _, block := range blocks {
 		if !validText(block.Name, maxNameBytes) || !validText(block.Purpose, maxPurposeBytes) ||
-			len(block.Children) != 0 || len(block.SymbolRefs) == 0 ||
-			len(block.FileRefs) > maxFilesPerBlock || len(block.SymbolRefs) > maxSymbolsPerBlock {
+			len(block.Children) != 0 || len(block.SymbolRefs) == 0 {
 			return fmt.Errorf("coremap: refined response has an invalid grounded block")
 		}
 		seenFiles := make(map[corpus.FileID]struct{}, len(block.FileRefs))
@@ -650,7 +696,7 @@ func restoreBlocks(stage Stage, targetRef string, values []proposal, files map[c
 }
 
 func validateRestoredBlocks(stage Stage, targetRef string, blocks []Block, requireSymbols bool) error {
-	if (len(blocks) == 0 && stage != StageBaseline) || (stage == StageBaseline && len(blocks) > maxBaselineRoots) || (stage == StageRefined && len(blocks) > maxRefinedBlocks) {
+	if (len(blocks) == 0 && stage != StageBaseline) || (stage == StageBaseline && len(blocks) > maxBaselineRoots) {
 		return fmt.Errorf("coremap: invalid %s blocks", stage)
 	}
 	seenBlockIDs := make(map[string]struct{}, countBlocks(blocks))
@@ -671,9 +717,6 @@ func validateRestoredBlocks(stage Stage, targetRef string, blocks []Block, requi
 		}
 		if len(block.Files)+len(block.Symbols)+len(block.Children) == 0 {
 			return fmt.Errorf("coremap: ungrounded %s block", stage)
-		}
-		if len(block.Files) > maxFilesPerBlock || len(block.Symbols) > maxSymbolsPerBlock {
-			return fmt.Errorf("coremap: oversized %s block evidence", stage)
 		}
 		seenFiles := make(map[corpus.FileID]struct{}, len(block.Files))
 		for _, file := range block.Files {
@@ -820,7 +863,7 @@ func stageState(compilation Compilation, stage Stage, wire []byte) []byte {
 		CoreObjectSHA       string `json:"core_object_sha256,omitempty"`
 		Compilation         string `json:"compilation"`
 	}{
-		Contract: "repomap.coremap.v7", Stage: stage,
+		Contract: "repomap.coremap.v8", Stage: stage,
 		PromptSHA: sha256Hex([]byte(map[Stage]string{StageBaseline: baselinePrompt, StageRefined: refinedPrompt}[stage])),
 		InputSHA:  sha256Hex(wire), ProgramIndexSHA: compilation.programIndexSHA256,
 		IntegrationUsageSHA: compilation.integrationUsageSHA256,
@@ -853,7 +896,7 @@ func refinedCallState(
 		CoreObjectSHA       string `json:"core_object_sha256,omitempty"`
 		Compilation         string `json:"compilation"`
 	}{
-		Contract: "repomap.coremap.v7", Stage: StageRefined, Phase: phase,
+		Contract: "repomap.coremap.v8", Stage: StageRefined, Phase: phase,
 		Level: level, BatchOrdinal: ordinal, BatchCount: count,
 		PromptSHA: sha256Hex([]byte(prompt)), InputSHA: sha256Hex(wire),
 		ProgramIndexSHA:     compilation.programIndexSHA256,
@@ -893,7 +936,7 @@ func validateCompilation(compilation Compilation) error {
 	if err := compilation.programTarget.Validate(); err != nil {
 		return fmt.Errorf("coremap: compilation program target: %w", err)
 	}
-	if !validSHA256(compilation.programIndexSHA256) || compilation.dynamicRelationRows == nil ||
+	if !validSHA256(compilation.programIndexSHA256) || compilation.dynamicRelationRows == nil || compilation.groupingEdges == nil ||
 		!reflect.DeepEqual(compilation.programCoverage, compilation.baselineRequest.ProgramCoverage) ||
 		compilation.baselineRequest.Target.Language != compilation.programTarget.Language ||
 		compilation.baselineRequest.Target.Kind != compilation.programTarget.Kind ||
@@ -931,6 +974,9 @@ func validateCompilation(compilation Compilation) error {
 		return err
 	}
 	if err := validateDynamicRelationRequests(compilation); err != nil {
+		return err
+	}
+	if err := validateGroupingEdges(compilation.groupingEdges); err != nil {
 		return err
 	}
 	for _, row := range compilation.baselineRequest.RoleFiles {
@@ -977,6 +1023,7 @@ func validateSymbolRequests(compilation Compilation) error {
 		authority, ok := compilation.symbols[ref]
 		file, fileOK := compilation.files[row.FileRef]
 		if !ok || !fileOK || !reflect.DeepEqual(authority.request, row) || file.Path != row.Path ||
+			authority.programObjectID == "" ||
 			!validText(row.Path, programindex.MaxTextBytes) || row.Line < 1 ||
 			!validText(row.Package, programindex.MaxTextBytes) ||
 			!validText(row.Name, programindex.MaxTextBytes) ||
@@ -1008,8 +1055,25 @@ func sealCompilation(compilation Compilation) string {
 	seedWire, _ := json.Marshal(compilation.targetSeedRows)
 	integrationWire, _ := json.Marshal(compilation.integrationUsage)
 	dynamicWire, _ := json.Marshal(compilation.dynamicRelationRows)
+	groupingWire, _ := json.Marshal(compilation.groupingEdges)
 	coverageWire, _ := json.Marshal(compilation.programCoverage)
-	return sha256Hex([]byte("coremap-compilation-v7\x00" + compilation.repository + "\x00" + compilation.corpusRef + "\x00" + compilationTargetKey(compilation) + "\x00" + compilation.target.Ref + "\x00" + compilation.programIndexSHA256 + "\x00" + compilation.integrationUsageSHA256 + "\x00" + compilation.directCallSHA256 + "\x00" + compilation.coreObjectSHA256 + "\x00" + sha256Hex(coverageWire) + "\x00" + sha256Hex(compilation.baselineWire) + "\x00" + sha256Hex(symbolWire) + "\x00" + sha256Hex(seedWire) + "\x00" + sha256Hex(integrationWire) + "\x00" + sha256Hex(dynamicWire)))
+	return sha256Hex([]byte("coremap-compilation-v8\x00" + compilation.repository + "\x00" + compilation.corpusRef + "\x00" + compilationTargetKey(compilation) + "\x00" + compilation.target.Ref + "\x00" + compilation.programIndexSHA256 + "\x00" + compilation.integrationUsageSHA256 + "\x00" + compilation.directCallSHA256 + "\x00" + compilation.coreObjectSHA256 + "\x00" + sha256Hex(coverageWire) + "\x00" + sha256Hex(compilation.baselineWire) + "\x00" + sha256Hex(symbolWire) + "\x00" + sha256Hex(seedWire) + "\x00" + sha256Hex(integrationWire) + "\x00" + sha256Hex(dynamicWire) + "\x00" + sha256Hex(groupingWire)))
+}
+
+func validateGroupingEdges(values []groupingEdgeAuthority) error {
+	for position, edge := range values {
+		if edge.FromObjectID == "" || edge.ToObjectID == "" || edge.FromObjectID == edge.ToObjectID {
+			return fmt.Errorf("coremap: invalid grouping topology edge")
+		}
+		if position > 0 {
+			previous := values[position-1]
+			if previous.FromObjectID > edge.FromObjectID ||
+				(previous.FromObjectID == edge.FromObjectID && previous.ToObjectID >= edge.ToObjectID) {
+				return fmt.Errorf("coremap: grouping topology edges are not canonical")
+			}
+		}
+	}
+	return nil
 }
 
 func compilationTargetKey(compilation Compilation) string {

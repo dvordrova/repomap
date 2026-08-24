@@ -261,7 +261,7 @@ func TestDynamicRelationAdvertisesEndpointSymbolButNotUnsentFileRef(t *testing.T
 	if err := validateRefinedBatchProposals([]proposal{{
 		Name: "Dispatch", Purpose: "Runs supplied behavior.",
 		SymbolRefs: []string{"s1"}, FileRefs: []corpus.FileID{fileRef},
-	}}, authority.files, authority.symbols, maxMapBlocks, true); err == nil {
+	}}, authority.files, authority.symbols, true); err == nil {
 		t.Fatal("unadvertised file ref was accepted from global compilation authority")
 	}
 }
