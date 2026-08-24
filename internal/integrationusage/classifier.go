@@ -27,7 +27,7 @@ import (
 const (
 	Version = 4
 
-	MaxAdvertisedOperationsPerRequest = 1024
+	MaxAdvertisedOperationsPerRequest = MaxSelectedUsesPerRequest
 	MaxSelectedUsesPerRequest         = 256
 	MaxLabelBytes                     = 120
 	MaxMechanismBytes                 = 120

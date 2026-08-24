@@ -334,7 +334,10 @@ diagnostic-journal availability never changes the cube's semantic contract.
    agree, and retains the existing Go direct-call and core-object digests for
    the downstream CubeMap joins. It does not build a second Go graph. It
    produces a smaller target-core layer grounded by representative exact
-   symbol refs. Counts are context rather than importance; most symbols must
+   symbol refs. One responsibility may retain at most 24 exact symbol anchors
+   and 16 file anchors; with at most twelve refined blocks this keeps the
+   complete evidence projection bounded while allowing cross-package
+   responsibilities in a real service. Counts are context rather than importance; most symbols must
    remain unselected. File-only infrastructure, deployment, metadata, and
    documentation can remain in the broad brief but cannot masquerade as the
    executable or library core. A ProgramIndex-backed CoreMap with no eligible
@@ -440,13 +443,19 @@ diagnostic-journal availability never changes the cube's semantic contract.
 13. Build an exact language-specific external-call index and locate the paths
     and symbols that use the selected integration dependencies. Indexing is
     generic and may cover every observed external call before model selection;
-    it does not assign service or resource semantics locally.
+    it does not assign service or resource semantics locally. The Go adapter
+    projects this independently complete ledger into `invokes_external`
+    relations, including explicit unresolved frontiers. Global ProgramIndex
+    relation omissions from unrelated direct-call or dynamic-handoff shapes
+    remain visible coverage, but do not invalidate an exact retained Go
+    external operation.
 14. For the current Python path, classify individual exact external-call
    operations as strong integration uses rather than accepting every operation
    merely because another operation in the same caller is useful. Assign
    global `oN` refs first and send a complete disjoint partition of at most
-   1,024 operations per request, with at most 256 selected uses per response.
-   The input bound is 16 requests and 16,384 advertised operations; input
+   256 operations per request, with at most 256 selected uses per response.
+   Matching the request and selection bounds makes an overfull per-batch model
+   response structurally impossible. The input bound is 16 requests and 4,096 advertised operations; input
    overflow fails before the provider. The per-response selection bound makes
    4,096 the complete-artifact maximum; exceeding it or any other batch failure
    returns no semantic result. Group the accepted operations back into their
@@ -508,7 +517,10 @@ diagnostic-journal availability never changes the cube's semantic contract.
     CoreMap responsibilities, choose one responsibility, focus it by joining
     exact representative declarations with selected activity entrypoints and
     bounded local ProgramView relations, then verify the claim through exact
-    captured-revision source actions. Raw ProgramIndex catalogs, per-artifact
+    captured-revision source actions. CoreMap projection uses only positively
+    selected exact objects and retains global ProgramIndex object/relation
+    omissions as visible frontier counts; it never interprets an absent
+    relation as proof of absence. Raw ProgramIndex catalogs, per-artifact
     dashboards, producer coverage grids, and a generic graph canvas are not
     product navigation. A bounded system canvas may project only
     `entrypoints -> core responsibilities -> integrations`: entrypoint edges

@@ -862,8 +862,12 @@ func validateAuthority(
 		}
 	}
 	for _, caller := range external.Callers {
-		if exact, ok := directNodes[caller.ID]; !ok || !reflect.DeepEqual(exact, caller) {
-			return fmt.Errorf("Go program index adapter: external caller %q does not match direct nodes", caller.ID)
+		exact, ok := directNodes[caller.ID]
+		if !ok {
+			return fmt.Errorf("Go program index adapter: external caller %q is outside direct nodes", caller.ID)
+		}
+		if !reflect.DeepEqual(exact, caller) {
+			return fmt.Errorf("Go program index adapter: external caller %q does not match direct node", caller.ID)
 		}
 	}
 	for _, declaration := range core.Callables {

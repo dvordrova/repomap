@@ -17,7 +17,7 @@ import (
 
 const (
 	Version                    = 3
-	PreparationVersion         = 4
+	PreparationVersion         = 5
 	ResponseSchemaVersion      = 1
 	ArtifactFilename           = "activity-entrypoints.json"
 	MaxCandidatesPerBatch      = 1_024
@@ -33,7 +33,7 @@ const (
 	MaxOutputTokens            = 8_192
 )
 
-const executionContract = "program-index-activity-entrypoint-selection-v3"
+const executionContract = "program-index-activity-entrypoint-selection-v4"
 
 // Coverage proves that every structurally eligible callable and exact seeded
 // module/package launch anchor in the sealed ProgramIndex was advertised
@@ -222,12 +222,10 @@ func Run(
 			)
 		}
 		allowed := make(map[string]struct{}, len(values))
-		objectIDs := make([]string, len(values))
-		for position, value := range values {
+		for _, value := range values {
 			allowed[value.ref] = struct{}{}
-			objectIDs[position] = value.object.ID
 		}
-		state, err := compileState(compiled.index.SHA256, batchIndex+1, len(compiled.batches), objectIDs, wire)
+		state, err := compileState(compiled.index.SHA256, batchIndex+1, len(compiled.batches), wire)
 		if err != nil {
 			return Result{}, fmt.Errorf("activity entrypoint: state batch %d: %w", batchIndex+1, err)
 		}
@@ -731,22 +729,21 @@ func validateResponse(value response, allowed map[string]struct{}) error {
 	return nil
 }
 
-func compileState(indexSHA string, batchIndex, batchCount int, objectIDs []string, wire []byte) ([]byte, error) {
+func compileState(indexSHA string, batchIndex, batchCount int, wire []byte) ([]byte, error) {
 	state := struct {
-		Contract              string   `json:"contract"`
-		PreparationVersion    int      `json:"preparation_version"`
-		ResponseSchemaVersion int      `json:"response_schema_version"`
-		PromptVersion         string   `json:"prompt_version"`
-		ProgramIndexSHA256    string   `json:"program_index_sha256"`
-		BatchIndex            int      `json:"batch_index"`
-		BatchCount            int      `json:"batch_count"`
-		ObjectIDs             []string `json:"object_ids"`
-		RequestSHA256         string   `json:"request_sha256"`
+		Contract              string `json:"contract"`
+		PreparationVersion    int    `json:"preparation_version"`
+		ResponseSchemaVersion int    `json:"response_schema_version"`
+		PromptVersion         string `json:"prompt_version"`
+		ProgramIndexSHA256    string `json:"program_index_sha256"`
+		BatchIndex            int    `json:"batch_index"`
+		BatchCount            int    `json:"batch_count"`
+		RequestSHA256         string `json:"request_sha256"`
 	}{
 		Contract: executionContract, PreparationVersion: PreparationVersion,
 		ResponseSchemaVersion: ResponseSchemaVersion, PromptVersion: promptVersion,
 		ProgramIndexSHA256: indexSHA, BatchIndex: batchIndex, BatchCount: batchCount,
-		ObjectIDs: append([]string(nil), objectIDs...), RequestSHA256: sha256Hex(wire),
+		RequestSHA256: sha256Hex(wire),
 	}
 	encoded, err := json.Marshal(state)
 	if err != nil {

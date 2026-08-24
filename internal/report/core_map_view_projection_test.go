@@ -61,6 +61,17 @@ func TestCoreMapViewKeepsModelGroupingSeparateFromExactMemberEvidence(t *testing
 	}
 }
 
+func TestCoreMapViewRetainsProgramRelationFrontier(t *testing.T) {
+	index := reportProgramIndexFixtureWithRelationOmissions(t, "go", "executable_package", 1)
+	view, _ := reportCoreMapFixture(t, index)
+	if view.Coverage.ProgramRelationsOmitted != 1 {
+		t.Fatalf("relation frontier = %#v", view.Coverage)
+	}
+	if err := view.Validate(); err != nil {
+		t.Fatalf("retained relation frontier invalidated view: %v", err)
+	}
+}
+
 func TestCoreMapViewAllowsOneBaselineChild(t *testing.T) {
 	child := CoreMapViewBlock{
 		ID: "child", Name: "Child", Purpose: "Exact child evidence.",
