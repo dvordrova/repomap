@@ -40,6 +40,10 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 	for _, token := range [][]byte{
 		[]byte(`id="rm-app" aria-live="polite"`),
 		[]byte(`id="rm-report-app-css"`),
+		[]byte(`id="rm-system-canvas-graph-js"`),
+		[]byte(`id="rm-system-canvas-interaction-js"`),
+		[]byte(`id="rm-system-canvas-geometry-js"`),
+		[]byte(`id="rm-system-canvas-renderer-js"`),
 		[]byte(`id="rm-report-app-js"`),
 		[]byte(`buildPresentationModel(data)`),
 		[]byte(`Repository overview`),
@@ -59,17 +63,19 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 		[]byte(`id="rm-target-switcher"`),
 		[]byte(`id="rm-page-context"`),
 		[]byte(`function reportRouteContext(route)`),
-		[]byte(`function canvasTopology(activeBlockIDs, complete)`),
+		[]byte(`function buildCanvasGraph(presentationModel, rawOptions)`),
+		[]byte(`function deriveCanvasEmphasis(rawGraph, rawInteraction)`),
+		[]byte(`function measureCanvasNodes(host, nodeElements)`),
+		[]byte(`function mountSystemCanvas(host, graph, suppliedOptions, suppliedCallbacks)`),
 		[]byte(`function renderAreaSwitcher(selected, activeGroup)`),
 		[]byte(`navigateToBlock(state.model.blocksByID[group.blockIDs[0]], group, false)`),
 		[]byte(`Show complete map · `),
 		[]byte(`data-canvas-node`),
-		[]byte(`function highlightCanvasNode(nodeID)`),
 		[]byte(`data-canvas-edge-port`),
 		[]byte(`rm-evidence-disclosure`),
 		[]byte(`rm-core-group`),
-		[]byte(`coreCanvasGroup(group, selected, expanded)`),
-		[]byte(`var control = element('a', 'rm-canvas-node rm-canvas-node--' + kind);`),
+		[]byte(`function renderCoreGroup(nodes, graph, options, callbacks)`),
+		[]byte(`return renderer.mountSystemCanvas(canvasHost, graph`),
 		[]byte(`function buildActivityPaths(data, target, indexSHA256, activitiesByID, integrationUsesByKey)`),
 		[]byte(`function renderActivityDetail(host, activity)`),
 		[]byte(`function renderIntegrationDetail(host, integration)`),
@@ -97,6 +103,11 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 		[]byte(`Choose a direction`),
 		[]byte(`rm-canvas-popover`),
 		[]byte(`element('button', 'rm-canvas-node`),
+		[]byte(`function canvasTopology(`),
+		[]byte(`function drawCanvasEdges(`),
+		[]byte(`function scheduleCanvasDraw(`),
+		[]byte(`function highlightCanvasNode(`),
+		[]byte(`state.canvasEdges`),
 		[]byte(`sourceAction('Open file'`),
 		[]byte(`Open source location `),
 		[]byte(`rm-connection__meta`),
@@ -106,6 +117,88 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 			t.Errorf("rendered orientation workspace retained old frontend %q", retired)
 		}
 	}
+}
+
+func TestSystemCanvasAssetsKeepIsolatedOwnership(t *testing.T) {
+	scriptIDs := []string{
+		`id="rm-system-canvas-graph-js"`,
+		`id="rm-system-canvas-interaction-js"`,
+		`id="rm-system-canvas-geometry-js"`,
+		`id="rm-system-canvas-renderer-js"`,
+		`id="rm-report-app-js"`,
+	}
+	previous := -1
+	for _, scriptID := range scriptIDs {
+		position := strings.Index(programTemplateHTML, scriptID)
+		if position < 0 {
+			t.Fatalf("program report template is missing %q", scriptID)
+		}
+		if position <= previous {
+			t.Fatalf("program report script %q is not embedded after the preceding System canvas layer", scriptID)
+		}
+		previous = position
+	}
+
+	assets := map[string]string{
+		"graph":       systemCanvasGraphJS,
+		"interaction": systemCanvasInteractionJS,
+		"geometry":    systemCanvasGeometryJS,
+		"renderer":    systemCanvasRendererJS,
+		"report app":  reportAppJS,
+	}
+	for name, source := range assets {
+		if strings.Contains(strings.ToLower(source), "</script") {
+			t.Errorf("embedded %s asset contains an inline-script breakout", name)
+		}
+	}
+
+	assertOmits := func(name, source string, forbidden ...string) {
+		t.Helper()
+		for _, token := range forbidden {
+			if strings.Contains(source, token) {
+				t.Errorf("%s asset crosses its ownership boundary with %q", name, token)
+			}
+		}
+	}
+	for name, source := range map[string]string{
+		"graph":       systemCanvasGraphJS,
+		"interaction": systemCanvasInteractionJS,
+	} {
+		assertOmits(name, source,
+			"document.",
+			"window.location",
+			"location.hash",
+			"state.model",
+		)
+	}
+	assertOmits("geometry", systemCanvasGeometryJS,
+		"presentationModel",
+		"blocksBySymbol",
+		"buildCanvasGraph",
+		"state.model",
+		"document.",
+		"window.location",
+		"location.hash",
+		"rm-report-data",
+	)
+	assertOmits("renderer", systemCanvasRendererJS,
+		"presentationModel",
+		"blocksBySymbol",
+		"buildCanvasGraph",
+		"buildPresentationModel",
+		"state.model",
+		"window.location",
+		"location.hash",
+		"hashchange",
+		"routeFor",
+		"navigateTo",
+		"rm-report-data",
+	)
+	assertOmits("report app", reportAppJS,
+		"function canvasTopology(",
+		"function drawCanvasEdges(",
+		"function scheduleCanvasDraw(",
+	)
 }
 
 func TestOrientationClientKeepsCompleteEvidenceBehindDisclosure(t *testing.T) {
@@ -150,7 +243,7 @@ func TestOrientationClientKeepsCompleteEvidenceBehindDisclosure(t *testing.T) {
 		".rm-evidence-file__path", ".rm-evidence-symbols", ".rm-connection-sites",
 		".rm-connection-owner-list", ".rm-connection-owner__members", ".rm-connection-member-group__heading",
 		".rm-connection-member__targets", ".rm-connection-target__link", ".rm-connection-runtime__summary",
-		".rm-canvas-edge-group--dimmed", ".rm-canvas-edge-port--related", ".rm-canvas-node--edge-related",
+		".rm-flow-canvas[data-canvas-highlight] .rm-canvas-edge-group", ".rm-canvas-edge-port--related", ".rm-canvas-node--edge-related",
 	} {
 		if !strings.Contains(reportAppCSS, selector) {
 			t.Errorf("grouped exact-source presentation is missing %q", selector)
@@ -465,7 +558,6 @@ func TestOrientationClientBuildsMeaningBeforeRenderingEvidence(t *testing.T) {
 		"groupByBlock[blockID] = group",
 		"activityByID[id] = start",
 		"integrations.push(integration)",
-		"state.model.blocksBySymbol[use.callerID]",
 		"connectionsFor(selected)",
 		"relatedBlocksFor(selected, connections)",
 		"runtime target unresolved",
@@ -474,6 +566,10 @@ func TestOrientationClientBuildsMeaningBeforeRenderingEvidence(t *testing.T) {
 		if !strings.Contains(reportAppJS, required) {
 			t.Errorf("orientation presentation model is missing %q", required)
 		}
+	}
+	if !strings.Contains(systemCanvasGraphJS,
+		"mapList(blocksBySymbol, string(use.callerID, 'integration use.callerID')") {
+		t.Error("System canvas graph projection no longer binds integration callers through exact block membership")
 	}
 	for _, datasetUI := range []string{
 		"renderRawProgramIndex",
@@ -491,12 +587,15 @@ func TestOrientationClientBuildsMeaningBeforeRenderingEvidence(t *testing.T) {
 func TestOrientationClientSupportsOverlappingCoreGroups(t *testing.T) {
 	for _, required := range []string{
 		"groupsByBlock[blockID].push(group)",
-		"state.model.groupsByBlock[block.id]",
+		"state.model.groupsByBlock[selected.id]",
 		"local_unassigned",
 	} {
 		if !strings.Contains(reportAppJS, required) {
 			t.Errorf("group browser model is missing %q", required)
 		}
+	}
+	if !strings.Contains(systemCanvasGraphJS, "groupsByBlock[entityID]") {
+		t.Error("System canvas graph projection no longer preserves overlapping group memberships")
 	}
 	for _, forbidden := range []string{
 		"A responsibility belongs to several refined core groups.",

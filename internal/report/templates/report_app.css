@@ -988,6 +988,11 @@ button.rm-core-group__header:focus-visible { outline: 1px solid var(--rm-accent)
   box-shadow: 0 0 0 2px rgba(35, 100, 87, 0.07);
 }
 
+.rm-canvas-node--edge-opposite {
+  border-color: var(--rm-accent);
+  box-shadow: 0 0 0 3px rgba(35, 100, 87, 0.14);
+}
+
 .rm-canvas-node--core {
   border-left-color: var(--rm-ink);
   font-weight: 700;
@@ -1066,7 +1071,9 @@ button.rm-core-group__header:focus-visible { outline: 1px solid var(--rm-accent)
   transition: opacity 140ms ease;
 }
 
-.rm-canvas-edge-group--dimmed { opacity: 0.1; }
+.rm-flow-canvas[data-canvas-highlight] .rm-canvas-edge-group { opacity: 0.1; }
+.rm-flow-canvas[data-canvas-highlight] .rm-canvas-edge-group--related,
+.rm-flow-canvas[data-canvas-highlight] .rm-canvas-edge-group--active { opacity: 1; }
 
 .rm-canvas-edge {
   fill: none;
@@ -1099,6 +1106,39 @@ button.rm-core-group__header:focus-visible { outline: 1px solid var(--rm-accent)
   transition: opacity 120ms ease, transform 120ms ease, border-width 120ms ease;
 }
 
+.rm-canvas-edge-port::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+}
+
+.rm-canvas-edge-port__label {
+  position: absolute;
+  top: 50%;
+  width: max-content;
+  max-width: 240px;
+  padding: 4px 7px;
+  border: 1px solid var(--rm-line);
+  border-radius: 3px;
+  background: var(--rm-surface);
+  box-shadow: 0 5px 18px rgba(22, 32, 30, 0.12);
+  color: var(--rm-ink);
+  font-family: var(--rm-sans);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.25;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: opacity 100ms ease;
+  visibility: hidden;
+  white-space: normal;
+}
+
+.rm-canvas-edge-port--left .rm-canvas-edge-port__label { right: 18px; }
+.rm-canvas-edge-port--right .rm-canvas-edge-port__label { left: 18px; }
+
 .rm-canvas-edge-port--left { left: -7px; }
 .rm-canvas-edge-port--right { right: -7px; }
 .rm-canvas-edge-port--possible { border-color: var(--rm-muted); }
@@ -1117,6 +1157,13 @@ button.rm-core-group__header:focus-visible { outline: 1px solid var(--rm-accent)
   border-width: 4px;
   outline: 2px solid var(--rm-surface);
   outline-offset: 1px;
+}
+
+.rm-canvas-edge-port--active .rm-canvas-edge-port__label,
+.rm-canvas-edge-port:hover .rm-canvas-edge-port__label,
+.rm-canvas-edge-port:focus-visible .rm-canvas-edge-port__label {
+  opacity: 1;
+  visibility: visible;
 }
 
 .rm-canvas-edge--runtime {

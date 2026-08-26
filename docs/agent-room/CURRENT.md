@@ -823,6 +823,21 @@ Hover or keyboard focus on a canvas card visually suppresses unrelated edges;
 related endpoints expose pointer-operable ports that move focus to the opposite
 exact canvas card without changing the report route. The SVG remains a visual
 edge layer, and canonical card links remain the keyboard navigation authority.
+The standalone System Canvas browser implementation is split across four
+embedded assets loaded before the report shell in deterministic order. A pure
+graph projection owns stable node and edge IDs, exact/possible/runtime
+authority, focused/complete visibility, deduplication, and adjacency indexes;
+a pure interaction reducer owns hover, focus, pin, endpoint, and Escape policy;
+a geometry module owns measurement, stable port assignment, and SVG path
+routing; and a DOM/SVG renderer owns cards, paths, endpoint controls, delegated
+events, and bounded class/attribute updates. The report shell supplies the
+validated presentation model, route/source callbacks, current selection, and
+explicit mount/unmount lifecycle; the canvas assets neither read report-global
+mutable state nor parse hash routes. Node interaction does not rebuild the
+graph, remeasure the layout, recreate endpoint controls, or replace SVG paths.
+Geometry rebuilds are limited to initial mount, a changed visible graph/layout,
+or resize. This is a browser-implementation boundary only: it does not add a
+semantic projection, change any backend authority, or change report format 67.
 Source evidence is grouped by exact
 repository-relative file, with the path as a quiet group label and concise
 declaration labels inside it rather than repeated module/path prefixes; exact

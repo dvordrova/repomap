@@ -187,7 +187,7 @@ func validateTestInventoryContract(t *testing.T, contract testInventoryContract)
 			}
 		}
 		for _, tool := range exception.ExternalTools {
-			if !slicesContain([]string{"git", "go", "node", "npm", "python3", "test-binary"}, tool) {
+			if !slicesContain([]string{"chrome", "git", "go", "node", "npm", "python3", "test-binary"}, tool) {
 				t.Fatalf("unknown external test tool %q for %s", tool, exception.Path)
 			}
 		}

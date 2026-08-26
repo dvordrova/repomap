@@ -1200,425 +1200,31 @@
     return Object.keys(ids).map(function (id) { return state.model.blocksByID[id]; }).filter(Boolean);
   }
 
-  function canvasTopology(activeBlockIDs, complete) {
-    var active = Object.create(null);
-    activeBlockIDs.forEach(function (blockID) { active[blockID] = true; });
-    var edges = [];
-    var edgeKeys = Object.create(null);
-    var connectedStarts = Object.create(null);
-    var connectedIntegrations = Object.create(null);
-
-    function addEdge(from, to, blockIDs, resolution, description) {
-      blockIDs = blockIDs.filter(function (blockID, position) {
-        return blockIDs.indexOf(blockID) === position;
-      });
-      var key = from + '->' + to + ':' + resolution;
-      var existing = edgeKeys[key];
-      if (existing) {
-        blockIDs.forEach(function (blockID) {
-          if (existing.blockIDs.indexOf(blockID) < 0) existing.blockIDs.push(blockID);
-        });
-        return;
-      }
-      var edge = {
-        from: from, to: to, blockIDs: blockIDs, resolution: resolution, description: description
-      };
-      edgeKeys[key] = edge;
-      edges.push(edge);
-      if (from.indexOf('entry:') === 0) connectedStarts[from.slice(6)] = true;
-      if (to.indexOf('integration:') === 0) connectedIntegrations[to.slice(12)] = true;
+  function buildSystemCanvasGraph(activeBlockIDs, complete) {
+    var graphAPI = globalThis.RepomapSystemCanvasGraph;
+    if (!graphAPI || typeof graphAPI.buildCanvasGraph !== 'function') {
+      throw new Error('The System canvas graph projection is unavailable.');
     }
-
-    state.model.activities.forEach(function (start) {
-      (state.model.blocksBySymbol[start.id] || []).forEach(function (blockID) {
-        addEdge(
-          'entry:' + start.id, 'core:' + blockID, [blockID], 'exact',
-          start.name + ' participates in ' + state.model.blocksByID[blockID].name
-        );
-      });
-    });
-
-    state.model.relations.forEach(function (rawRelation) {
-      var relation = object(rawRelation, 'program relation');
-      if (['contains', 'imports', 'sources'].indexOf(relation.kind) >= 0 ||
-          ['exact', 'alternatives'].indexOf(relation.resolution) < 0) return;
-      var fromBlocks = state.model.blocksBySymbol[relation.from_id] || [];
-      var toBlocks = [];
-      array(relation.to_ids, 'program relation.to_ids').forEach(function (targetID) {
-        (state.model.blocksBySymbol[targetID] || []).forEach(function (blockID) {
-          if (toBlocks.indexOf(blockID) < 0) toBlocks.push(blockID);
-        });
-      });
-      fromBlocks.forEach(function (fromBlockID) {
-        toBlocks.forEach(function (toBlockID) {
-          if (fromBlockID === toBlockID) return;
-          var resolution = relation.resolution === 'exact' ? 'exact' : 'possible';
-          addEdge(
-            'core:' + fromBlockID, 'core:' + toBlockID, [fromBlockID, toBlockID], resolution,
-            state.model.blocksByID[fromBlockID].name + ' ' + humanRelation(relation.kind) + ' ' +
-              state.model.blocksByID[toBlockID].name + '; ' + relation.resolution
-          );
-        });
-      });
-    });
-
-    state.model.integrations.forEach(function (integration) {
-      integration.uses.forEach(function (use) {
-        (state.model.blocksBySymbol[use.callerID] || []).forEach(function (blockID) {
-          var resolution = use.authority === 'exact_external_symbol' ? 'exact' : 'runtime';
-          addEdge(
-            'core:' + blockID, 'integration:' + integration.id, [blockID], resolution,
-            state.model.blocksByID[blockID].name + ' has a selected callsite to ' +
-              integration.name + '; ' + humanIntegrationAuthority(use.authority)
-          );
-        });
-      });
-    });
-
-    if (state.model.activityPaths) {
-      state.model.activityPaths.routes.forEach(function (route) {
-        if (!route.activityID || ['exact', 'possible'].indexOf(route.status) < 0) return;
-        var blockSequence = [];
-        var objectIDs = [route.activityID];
-        route.steps.forEach(function (step) { objectIDs.push(step.toID); });
-        if (objectIDs[objectIDs.length - 1] !== route.callerID) objectIDs.push(route.callerID);
-        objectIDs.forEach(function (objectID) {
-          (state.model.blocksBySymbol[objectID] || []).forEach(function (blockID) {
-            if (blockSequence[blockSequence.length - 1] !== blockID) blockSequence.push(blockID);
-          });
-        });
-        var routeResolution = route.status === 'exact' ? 'exact' : 'possible';
-        if (blockSequence.length) {
-          addEdge(
-            'entry:' + route.activityID, 'core:' + blockSequence[0], blockSequence, routeResolution,
-            state.model.activityByID[route.activityID].name + ' reaches ' +
-              state.model.blocksByID[blockSequence[0]].name + ' through a ' + route.status + ' activity path'
-          );
-          for (var position = 1; position < blockSequence.length; position++) {
-            addEdge(
-              'core:' + blockSequence[position - 1], 'core:' + blockSequence[position], blockSequence,
-              routeResolution, 'Activity path crosses from ' + state.model.blocksByID[blockSequence[position - 1]].name +
-                ' to ' + state.model.blocksByID[blockSequence[position]].name + '; ' + route.status
-            );
-          }
-        }
-        route.outcomes.forEach(function (outcome) {
-          var target = 'integration:' + outcome.dependencyID;
-          if (blockSequence.length) {
-            var lastBlockID = blockSequence[blockSequence.length - 1];
-            var useResolution = outcome.use.authority === 'exact_external_symbol' ? routeResolution : 'runtime';
-            addEdge(
-              'core:' + lastBlockID, target, blockSequence, useResolution,
-              state.model.blocksByID[lastBlockID].name + ' reaches ' +
-                state.model.integrationsByID[outcome.dependencyID].name + ' through a ' + route.status + ' activity path'
-            );
-          } else {
-            addEdge(
-              'entry:' + route.activityID, target, [],
-              outcome.use.authority === 'exact_external_symbol' ? routeResolution : 'runtime',
-              state.model.activityByID[route.activityID].name + ' reaches ' +
-                state.model.integrationsByID[outcome.dependencyID].name + ' directly; ' + route.status
-            );
-          }
-        });
-      });
-    }
-
-    function edgeIsDirectFrontier(edge) {
-      return edge.blockIDs.length === 0 &&
-        edge.from.indexOf('entry:') === 0 && edge.to.indexOf('integration:') === 0;
-    }
-    function endpointIsVisible(endpoint) {
-      return endpoint.indexOf('core:') !== 0 || !!active[endpoint.slice(5)];
-    }
-    function edgeIsVisible(edge) {
-      return edgeIsDirectFrontier(edge) ||
-        (endpointIsVisible(edge.from) && endpointIsVisible(edge.to));
-    }
-    var visibleEdges = complete ? edges : edges.filter(edgeIsVisible);
-    var starts = complete ? state.model.activities : state.model.activities.filter(function (start) {
-      return visibleEdges.some(function (edge) { return edge.from === 'entry:' + start.id; });
-    });
-    var integrations = complete ? state.model.integrations : state.model.integrations.filter(function (integration) {
-      return visibleEdges.some(function (edge) {
-        return edge.to === 'integration:' + integration.id;
-      });
-    });
-    var connectedStartCount = Object.keys(connectedStarts).length;
-    var connectedIntegrationCount = Object.keys(connectedIntegrations).length;
-    var shownConnectedStarts = starts.filter(function (start) { return connectedStarts[start.id]; }).length;
-    var shownConnectedIntegrations = integrations.filter(function (integration) {
-      return connectedIntegrations[integration.id];
-    }).length;
-    return {
-      starts: starts,
-      integrations: integrations,
-      edges: visibleEdges,
-      connectedStartCount: connectedStartCount,
-      connectedIntegrationCount: connectedIntegrationCount,
-      hiddenPlacedStarts: Math.max(0, connectedStartCount - shownConnectedStarts),
-      hiddenConnectedIntegrations: Math.max(0, connectedIntegrationCount - shownConnectedIntegrations),
-      directFrontierEdges: edges.filter(edgeIsDirectFrontier).length,
-      totalEdges: edges.length,
-      unplacedStarts: state.model.activities.filter(function (start) { return !connectedStarts[start.id]; }).length,
-      unplacedIntegrations: state.model.integrations.filter(function (integration) {
-        return !connectedIntegrations[integration.id];
-      }).length
-    };
-  }
-
-  function setCanvasElementClass(node, className, enabled) {
-    if (!node) return;
-    var classes = String(node.getAttribute('class') || node.className || '').split(/\s+/).filter(Boolean);
-    var present = classes.indexOf(className) >= 0;
-    if (enabled && !present) classes.push(className);
-    if (!enabled && present) classes = classes.filter(function (candidate) { return candidate !== className; });
-    node.setAttribute('class', classes.join(' '));
-  }
-
-  function setCanvasPortState(port, related, active) {
-    setCanvasElementClass(port, 'rm-canvas-edge-port--related', related);
-    setCanvasElementClass(port, 'rm-canvas-edge-port--active', active);
-    port.setAttribute('tabindex', related ? '0' : '-1');
-    port.setAttribute('aria-hidden', related ? 'false' : 'true');
-  }
-
-  function canvasHighlightTargetMatches(target, nodeID, edgeIndex) {
-    while (target && target.getAttribute) {
-      if (nodeID && target.getAttribute('data-canvas-node') === nodeID) return true;
-      if (nodeID && (target.getAttribute('data-canvas-edge-from') === nodeID ||
-          target.getAttribute('data-canvas-edge-to') === nodeID)) return true;
-      if (edgeIndex && target.getAttribute('data-canvas-edge-index') === edgeIndex) return true;
-      target = target.parentNode;
-    }
-    return false;
-  }
-
-  function clearCanvasHighlight() {
-    var canvas = document.querySelector('.rm-flow-canvas');
-    if (!canvas) return;
-    canvas.removeAttribute('data-canvas-highlight');
-    Array.prototype.forEach.call(canvas.querySelectorAll('.rm-canvas-edge-group'), function (group) {
-      setCanvasElementClass(group, 'rm-canvas-edge-group--related', false);
-      setCanvasElementClass(group, 'rm-canvas-edge-group--active', false);
-      setCanvasElementClass(group, 'rm-canvas-edge-group--dimmed', false);
-    });
-    Array.prototype.forEach.call(canvas.querySelectorAll('[data-canvas-node]'), function (node) {
-      setCanvasElementClass(node, 'rm-canvas-node--edge-active', false);
-      setCanvasElementClass(node, 'rm-canvas-node--edge-related', false);
-    });
-    Array.prototype.forEach.call(canvas.querySelectorAll('[data-canvas-edge-port]'), function (port) {
-      setCanvasPortState(port, false, false);
+    return graphAPI.buildCanvasGraph(state.model, {
+      activeBlockIDs: activeBlockIDs,
+      complete: complete
     });
   }
 
-  function highlightCanvasNode(nodeID) {
-    var canvas = document.querySelector('.rm-flow-canvas');
-    if (!canvas) return;
-    var relatedNodes = Object.create(null);
-    relatedNodes[nodeID] = true;
-    canvas.setAttribute('data-canvas-highlight', 'node');
-    Array.prototype.forEach.call(canvas.querySelectorAll('.rm-canvas-edge-group'), function (group) {
-      var from = group.getAttribute('data-canvas-edge-from');
-      var to = group.getAttribute('data-canvas-edge-to');
-      var related = from === nodeID || to === nodeID;
-      setCanvasElementClass(group, 'rm-canvas-edge-group--related', related);
-      setCanvasElementClass(group, 'rm-canvas-edge-group--active', false);
-      setCanvasElementClass(group, 'rm-canvas-edge-group--dimmed', !related);
-      if (related) {
-        relatedNodes[from] = true;
-        relatedNodes[to] = true;
-      }
-    });
-    Array.prototype.forEach.call(canvas.querySelectorAll('[data-canvas-node]'), function (node) {
-      var candidateID = node.getAttribute('data-canvas-node');
-      setCanvasElementClass(node, 'rm-canvas-node--edge-active', candidateID === nodeID);
-      setCanvasElementClass(node, 'rm-canvas-node--edge-related', candidateID !== nodeID && !!relatedNodes[candidateID]);
-    });
-    Array.prototype.forEach.call(canvas.querySelectorAll('[data-canvas-edge-port]'), function (port) {
-      var related = port.getAttribute('data-canvas-edge-from') === nodeID ||
-        port.getAttribute('data-canvas-edge-to') === nodeID;
-      setCanvasPortState(port, related, false);
-    });
+  function canvasNodeHref(node) {
+    if (node.kind === 'entrypoint') return routeForActivity(node.entityID);
+    if (node.kind === 'core') return routeForBlock(node.entityID);
+    if (node.kind === 'integration') return routeForIntegration(node.entityID);
+    throw new Error('The System canvas node kind is not supported.');
   }
 
-  function highlightCanvasEdge(edgeIndex) {
-    var canvas = document.querySelector('.rm-flow-canvas');
-    if (!canvas) return;
-    var endpoints = Object.create(null);
-    canvas.setAttribute('data-canvas-highlight', 'edge');
-    Array.prototype.forEach.call(canvas.querySelectorAll('.rm-canvas-edge-group'), function (group) {
-      var active = group.getAttribute('data-canvas-edge-index') === edgeIndex;
-      setCanvasElementClass(group, 'rm-canvas-edge-group--related', active);
-      setCanvasElementClass(group, 'rm-canvas-edge-group--active', active);
-      setCanvasElementClass(group, 'rm-canvas-edge-group--dimmed', !active);
-      if (active) {
-        endpoints[group.getAttribute('data-canvas-edge-from')] = true;
-        endpoints[group.getAttribute('data-canvas-edge-to')] = true;
-      }
-    });
-    Array.prototype.forEach.call(canvas.querySelectorAll('[data-canvas-node]'), function (node) {
-      setCanvasElementClass(node, 'rm-canvas-node--edge-active', false);
-      setCanvasElementClass(node, 'rm-canvas-node--edge-related', !!endpoints[node.getAttribute('data-canvas-node')]);
-    });
-    Array.prototype.forEach.call(canvas.querySelectorAll('[data-canvas-edge-port]'), function (port) {
-      var active = port.getAttribute('data-canvas-edge-index') === edgeIndex;
-      setCanvasPortState(port, active, active);
-    });
-  }
-
-  function restoreCanvasHighlight() {
-    if (state.canvasHighlightEdgeIndex !== '') {
-      highlightCanvasEdge(state.canvasHighlightEdgeIndex);
-      return;
-    }
-    var nodeID = state.canvasHoverNodeID || state.canvasFocusNodeID;
-    if (nodeID) highlightCanvasNode(nodeID);
-    else clearCanvasHighlight();
-  }
-
-  function focusCanvasNode(nodeID) {
-    var canvas = document.querySelector('.rm-flow-canvas');
-    if (!canvas) return;
-    var target = Array.prototype.find.call(canvas.querySelectorAll('[data-canvas-node]'), function (node) {
-      return node.getAttribute('data-canvas-node') === nodeID;
-    });
-    if (!target) return;
-    if (typeof target.scrollIntoView === 'function') {
-      var reducedMotion = typeof window.matchMedia === 'function' &&
-        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      target.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center', inline: 'nearest' });
-    }
-    if (typeof target.focus === 'function') target.focus({ preventScroll: true });
-  }
-
-  function canvasNode(kind, id, name, meta, selected, href, beforeNavigate) {
-    var wrapper = element('div', 'rm-canvas-node-wrap rm-canvas-node-wrap--' + kind);
-    var control = element('a', 'rm-canvas-node rm-canvas-node--' + kind);
-    control.href = href;
-    if (beforeNavigate) control.addEventListener('click', beforeNavigate);
-    var nodeID = kind + ':' + id;
-    control.setAttribute('data-canvas-node', nodeID);
-    control.setAttribute('data-canvas-label', name);
-    wrapper.setAttribute('data-canvas-node-wrap', nodeID);
-    wrapper.addEventListener('mouseenter', function () {
-      state.canvasHoverNodeID = nodeID;
-      restoreCanvasHighlight();
-    });
-    wrapper.addEventListener('mouseleave', function () {
-      state.canvasHoverNodeID = '';
-      state.canvasHighlightEdgeIndex = '';
-      restoreCanvasHighlight();
-    });
-    control.addEventListener('focus', function () {
-      state.canvasFocusNodeID = nodeID;
-      restoreCanvasHighlight();
-    });
-    control.addEventListener('blur', function (event) {
-      state.canvasFocusNodeID = '';
-      if (!canvasHighlightTargetMatches(event.relatedTarget, nodeID, '')) restoreCanvasHighlight();
-    });
-    if (selected) control.setAttribute('aria-current', 'true');
-    appendText(control, 'span', 'rm-canvas-node__name', name);
-    appendText(control, 'span', 'rm-canvas-node__meta', meta);
-    wrapper.appendChild(control);
-    return { wrapper: wrapper, control: control };
-  }
-
-  function coreEdgeCounts(blockID) {
-    var counts = { incoming: 0, outgoing: 0, possibleIncoming: 0, possibleOutgoing: 0 };
-    (state.canvasEdges || []).forEach(function (edge) {
-      if (edge.from.indexOf('core:') !== 0 || edge.to.indexOf('core:') !== 0) return;
-      var sourceID = edge.from.slice(5);
-      var targetID = edge.to.slice(5);
-      if (sourceID === blockID) {
-        if (edge.resolution === 'exact') counts.outgoing++;
-        else counts.possibleOutgoing++;
-      }
-      if (targetID === blockID) {
-        if (edge.resolution === 'exact') counts.incoming++;
-        else counts.possibleIncoming++;
-      }
-    });
-    return counts;
-  }
-
-  function activityCanvasNode(start) {
-    return canvasNode(
-      'entry', start.id, displayProgramObjectName(start), formatLocation(start.location), false,
-      routeForActivity(start.id), null
-    ).wrapper;
-  }
-
-  function coreCanvasNode(block, selected, group) {
-    var memberships = state.model.groupsByBlock[block.id] || [];
-    var meta = String(block.symbols.length) + ' declaration' + (block.symbols.length === 1 ? '' : 's');
-    if (memberships.length) meta += ' · ' + String(memberships.length) + ' area' + (memberships.length === 1 ? '' : 's');
-    var node = canvasNode('core', block.id, block.name, meta, selected, routeForBlock(block.id), function (event) {
-      if (event && (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) return;
-      if (event && event.preventDefault) event.preventDefault();
-      navigateToBlock(block, group, true);
-    });
-    var links = coreEdgeCounts(block.id);
-    var flow = [];
-    if (links.outgoing) flow.push('→ ' + String(links.outgoing) + ' exact downstream');
-    if (links.incoming) flow.push('← ' + String(links.incoming) + ' exact upstream');
-    if (links.possibleOutgoing) flow.push('⇢ ' + String(links.possibleOutgoing) + ' possible downstream');
-    if (links.possibleIncoming) flow.push('⇠ ' + String(links.possibleIncoming) + ' possible upstream');
-    if (flow.length) appendText(node.control, 'span', 'rm-canvas-node__flow', flow.join(' · '));
-    appendText(node.control, 'span', 'rm-canvas-node__action', 'Inspect responsibility ↓');
-    return node.wrapper;
-  }
-
-  function coreCanvasGroup(group, selected, expanded) {
-    var wrapper = element('section', 'rm-core-group' + (expanded ? '' : ' rm-core-group--collapsed'));
-	if (group.authority === 'local_unassigned') wrapper.className += ' rm-core-group--local-unassigned';
-    if (group.blockIDs.indexOf(selected.id) >= 0) wrapper.className += ' rm-core-group--active';
-    var titleID = 'rm-core-group-' + encodePathSegment(group.id);
-    wrapper.setAttribute('aria-labelledby', titleID);
-    var header = element(expanded ? 'header' : 'button', 'rm-core-group__header');
-    if (!expanded) {
-      header.type = 'button';
-      header.addEventListener('click', function () {
-        navigateToBlock(state.model.blocksByID[group.blockIDs[0]], group);
-      });
-    }
-    var copy = element('div');
-	if (group.authority === 'local_unassigned') {
-	  appendText(copy, 'p', 'rm-eyebrow', 'Local grouping coverage');
-	}
-    var title = appendText(copy, 'h4', '', group.name);
-    title.id = titleID;
-    appendText(copy, 'p', '', group.purpose);
-    header.appendChild(copy);
-    appendText(header, 'span', '', String(group.blockIDs.length) +
-      ' responsibilit' + (group.blockIDs.length === 1 ? 'y' : 'ies'));
-    wrapper.appendChild(header);
-    if (!expanded) return wrapper;
-    var nodes = element('div', 'rm-core-group__nodes');
-    group.blockIDs.forEach(function (blockID) {
-      var block = state.model.blocksByID[blockID];
-      nodes.appendChild(coreCanvasNode(block, block.id === selected.id, group));
-    });
-    wrapper.appendChild(nodes);
-    return wrapper;
-  }
-
-  function integrationCanvasNode(integration) {
-    return canvasNode(
-      'integration', integration.id, integration.name,
-      String(integration.uses.length) + ' selected use' + (integration.uses.length === 1 ? '' : 's'),
-      false, routeForIntegration(integration.id), null
-    ).wrapper;
-  }
-
-  function renderCanvasLane(label, count, className) {
-    var lane = element('section', 'rm-canvas-lane rm-canvas-lane--' + className);
-    var header = element('header', 'rm-canvas-lane__header');
-    appendText(header, 'h3', '', label);
-    appendText(header, 'span', '', count);
-    lane.appendChild(header);
-    return lane;
+  function navigateCanvasNode(node, event, activeGroup) {
+    if (!node || node.kind !== 'core') return;
+    if (event && (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)) return;
+    if (event && event.preventDefault) event.preventDefault();
+    var block = state.model.blocksByID[node.entityID];
+    if (!block) throw new Error('The System canvas responsibility is unavailable.');
+    navigateToBlock(block, activeGroup, true);
   }
 
   function renderAreaSwitcher(selected, activeGroup) {
@@ -1660,18 +1266,77 @@
     return navigation;
   }
 
+  function canvasLanePresentation(graph, activeGroup) {
+    var accounting = graph.accounting;
+    var coreEdges = graph.edges.filter(function (edge) {
+      return edge.sourceID.indexOf('core:') === 0 && edge.targetID.indexOf('core:') === 0;
+    });
+    var visibleCoreBlocks = graph.nodesByLane.core.length;
+    var completeGroupSummary = String(state.model.modelGroupCount) + ' model groups';
+    if (state.model.unassignedBlockCount) {
+      completeGroupSummary += ' · ' + String(state.model.unassignedBlockCount) + ' not placed';
+    }
+    var coreSummary = !state.model.groups.length ? String(visibleCoreBlocks) + ' responsibilities' :
+      graph.visibility.complete ? String(visibleCoreBlocks) + ' responsibilities / ' + completeGroupSummary :
+        String(visibleCoreBlocks) + ' in current grouping selection / ' +
+          String(state.model.blocks.length) + ' responsibilities';
+    coreSummary += ' · ' + String(coreEdges.length) + ' directional core link' +
+      (coreEdges.length === 1 ? '' : 's');
+
+    var notes = { entry: [], integration: [] };
+    if (!graph.visibility.complete && accounting.hiddenPlacedStarts > 0) {
+      notes.entry.push(String(accounting.hiddenPlacedStarts) +
+        ' placed starts connect to other grouping selections.');
+    }
+    if (accounting.unplacedStarts > 0) {
+      notes.entry.push(String(accounting.unplacedStarts) +
+        ' selected starts have no exact representative-member binding.');
+    }
+    if (!graph.visibility.complete && accounting.hiddenConnectedIntegrations > 0) {
+      notes.integration.push(String(accounting.hiddenConnectedIntegrations) +
+        ' connected integrations connect only through other grouping selections.');
+    }
+    if (accounting.unplacedIntegrations > 0) {
+      notes.integration.push(String(accounting.unplacedIntegrations) +
+        ' selected integrations have no exact representative-caller binding.');
+    }
+    return {
+      laneSummaries: {
+        entry: String(graph.nodesByLane.entry.length) + ' shown / ' +
+          String(accounting.connectedStartCount) + ' connected / ' +
+          String(state.model.activities.length) + ' selected',
+        core: coreSummary,
+        integration: String(graph.nodesByLane.integration.length) + ' shown / ' +
+          String(accounting.connectedIntegrationCount) + ' connected / ' +
+          String(state.model.integrations.length) + ' selected'
+      },
+      laneEmptyMessages: {
+        entry: 'No selected entrypoint is an exact representative member of a responsibility.',
+        integration: 'No model-selected integration operations for this target.'
+      },
+      laneNotes: notes,
+      coreLeadNote: coreEdges.length ? '' :
+        'No exact or possible program relations connect the representative declarations in this view.',
+      coreGroup: !graph.visibility.complete && activeGroup ? {
+        id: activeGroup.id,
+        authority: activeGroup.authority,
+        eyebrow: activeGroup.authority === 'local_unassigned' ? 'Local grouping coverage' : '',
+        name: activeGroup.name,
+        purpose: activeGroup.purpose,
+        summary: String(activeGroup.blockIDs.length) + ' responsibilit' +
+          (activeGroup.blockIDs.length === 1 ? 'y' : 'ies')
+      } : null
+    };
+  }
+
   function renderFlowCanvas(selected) {
-    state.canvasHoverNodeID = '';
-    state.canvasFocusNodeID = '';
-    state.canvasHighlightEdgeIndex = '';
     var memberships = state.model.groupsByBlock[selected.id] || [];
     var activeGroup = memberships.find(function (group) { return group.id === state.focusGroupID; }) ||
       state.model.groupByBlock[selected.id] || null;
     state.focusGroupID = activeGroup ? activeGroup.id : null;
     var activeBlockIDs = activeGroup ? activeGroup.blockIDs :
       (state.model.groups.length ? [selected.id] : state.model.blocks.map(function (block) { return block.id; }));
-    var topology = canvasTopology(activeBlockIDs, state.completeCanvas);
-    state.canvasEdges = topology.edges;
+    var graph = buildSystemCanvasGraph(activeBlockIDs, state.completeCanvas);
     var section = element('section', 'rm-flow-section');
     section.setAttribute('aria-labelledby', 'rm-flow-title');
     var header = element('header', 'rm-flow-section__header');
@@ -1687,19 +1352,20 @@
       focusIntro = 'Focused on responsibilities not placed by the grouping model. ' +
         'Model-owned architecture areas remain available in the switcher below.';
     }
-    if (topology.directFrontierEdges > 0) {
-      focusIntro += ' ' + String(topology.directFrontierEdges) + ' direct entrypoint-to-integration ' +
-        (topology.directFrontierEdges === 1 ? 'path remains' : 'paths remain') +
+    if (graph.accounting.directFrontierEdges > 0) {
+      focusIntro += ' ' + String(graph.accounting.directFrontierEdges) +
+        ' direct entrypoint-to-integration ' +
+        (graph.accounting.directFrontierEdges === 1 ? 'path remains' : 'paths remain') +
         ' visible as a direct frontier outside core grouping.';
     }
     appendText(copy, 'p', 'rm-flow-section__intro', state.completeCanvas ?
-      'The complete selected map is visible. Exact, possible, and unresolved runtime authority remain distinct.' : focusIntro);
+      'The complete selected map is visible. Exact, possible, and unresolved runtime authority remain distinct.' :
+      focusIntro);
     header.appendChild(copy);
     var controls = element('div', 'rm-canvas-controls');
-    var completeNodeCount = state.model.activities.length + state.model.blocks.length +
-      state.model.integrations.length;
     var modeLabel = state.completeCanvas ? 'Focus current grouping selection' :
-      'Show complete map · ' + String(completeNodeCount) + ' nodes / ' + String(topology.totalEdges) + ' bindings';
+      'Show complete map · ' + String(graph.accounting.totalNodes) + ' nodes / ' +
+        String(graph.accounting.totalEdges) + ' bindings';
     var mode = element('button', 'rm-canvas-mode', modeLabel);
     mode.type = 'button';
     mode.setAttribute('aria-pressed', state.completeCanvas ? 'true' : 'false');
@@ -1715,223 +1381,45 @@
     var legend = element('div', 'rm-canvas-legend');
     appendText(legend, 'span', 'rm-canvas-legend__exact', 'Exact local binding');
     appendText(legend, 'span', 'rm-canvas-legend__possible', 'Possible local path');
-    appendText(legend, 'span', 'rm-canvas-legend__runtime', 'Selected callsite; runtime unresolved');
+    appendText(legend, 'span', 'rm-canvas-legend__runtime',
+      'Selected callsite; runtime unresolved');
     controls.appendChild(legend);
     header.appendChild(controls);
     section.appendChild(header);
     if (state.model.groups.length) section.appendChild(renderAreaSwitcher(selected, activeGroup));
 
-    var canvas = element('div', 'rm-flow-canvas');
-    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('class', 'rm-canvas-edges');
-    svg.setAttribute('aria-hidden', 'true');
-    canvas.appendChild(svg);
-    var lanes = element('div', 'rm-canvas-lanes');
-
-    var entryCount = String(topology.starts.length) + ' shown / ' +
-      String(topology.connectedStartCount) + ' connected / ' +
-      String(state.model.activities.length) + ' selected';
-    var entryLane = renderCanvasLane('Entrypoints', entryCount, 'entry');
-    var entryNodes = element('div', 'rm-canvas-node-list');
-    topology.starts.forEach(function (start) { entryNodes.appendChild(activityCanvasNode(start)); });
-    if (!topology.starts.length) appendText(entryNodes, 'p', 'rm-canvas-empty', 'No selected entrypoint is an exact representative member of a responsibility.');
-    if (!state.completeCanvas && topology.hiddenPlacedStarts > 0) appendText(entryNodes, 'p', 'rm-canvas-frontier',
-      String(topology.hiddenPlacedStarts) + ' placed starts connect to other grouping selections.');
-    if (topology.unplacedStarts > 0) appendText(entryNodes, 'p', 'rm-canvas-frontier',
-      String(topology.unplacedStarts) + ' selected starts have no exact representative-member binding.');
-    entryLane.appendChild(entryNodes);
-    lanes.appendChild(entryLane);
-
-    var visibleCoreBlocks = state.completeCanvas || !activeGroup ? state.model.blocks.length : activeGroup.blockIDs.length;
-    var completeGroupSummary = String(state.model.modelGroupCount) + ' model groups';
-    if (state.model.unassignedBlockCount) {
-      completeGroupSummary += ' · ' + String(state.model.unassignedBlockCount) + ' not placed';
-    }
-    var visibleCoreLinks = topology.edges.filter(function (edge) {
-      return edge.from.indexOf('core:') === 0 && edge.to.indexOf('core:') === 0;
-    });
-    var coreCount = !state.model.groups.length ? String(visibleCoreBlocks) + ' responsibilities' :
-      state.completeCanvas ? String(visibleCoreBlocks) + ' responsibilities / ' + completeGroupSummary :
-        String(visibleCoreBlocks) + ' in current grouping selection / ' +
-          String(state.model.blocks.length) + ' responsibilities';
-    coreCount += ' · ' + String(visibleCoreLinks.length) + ' directional core link' +
-      (visibleCoreLinks.length === 1 ? '' : 's');
-    var coreLane = renderCanvasLane('Core', coreCount, 'core');
-    var coreNodes = element('div', 'rm-canvas-node-list');
-    if (!visibleCoreLinks.length) {
-      appendText(coreNodes, 'p', 'rm-canvas-core-note',
-        'No exact or possible program relations connect the representative declarations in this view.');
-    }
-    if (state.completeCanvas) {
-      state.model.blocks.forEach(function (block) {
-        coreNodes.appendChild(coreCanvasNode(block, block.id === selected.id, null));
-      });
-    } else if (state.model.groups.length) {
-      coreNodes.className += ' rm-core-group-list';
-      state.model.groups.filter(function (group) {
-        return activeGroup && group.id === activeGroup.id;
-      }).forEach(function (group) {
-        coreNodes.appendChild(coreCanvasGroup(group, selected, true));
-      });
-    } else {
-      state.model.blocks.forEach(function (block) { coreNodes.appendChild(coreCanvasNode(block, block.id === selected.id)); });
-    }
-    coreLane.appendChild(coreNodes);
-    lanes.appendChild(coreLane);
-
-    var integrationCount = String(topology.integrations.length) + ' shown / ' +
-      String(topology.connectedIntegrationCount) + ' connected / ' +
-      String(state.model.integrations.length) + ' selected';
-    var integrationLane = renderCanvasLane('Integrations', integrationCount, 'integration');
-    var integrationNodes = element('div', 'rm-canvas-node-list');
-    topology.integrations.forEach(function (integration) { integrationNodes.appendChild(integrationCanvasNode(integration)); });
-    if (!topology.integrations.length) appendText(integrationNodes, 'p', 'rm-canvas-empty',
-      'No model-selected integration operations for this target.');
-    if (!state.completeCanvas && topology.hiddenConnectedIntegrations > 0) appendText(integrationNodes, 'p', 'rm-canvas-frontier',
-      String(topology.hiddenConnectedIntegrations) + ' connected integrations connect only through other grouping selections.');
-    if (topology.unplacedIntegrations > 0) appendText(integrationNodes, 'p', 'rm-canvas-frontier',
-      String(topology.unplacedIntegrations) + ' selected integrations have no exact representative-caller binding.');
-    integrationLane.appendChild(integrationNodes);
-    lanes.appendChild(integrationLane);
-
-    canvas.appendChild(lanes);
-    section.appendChild(canvas);
-    var accessibleEdges = element('ul', 'rm-sr-only');
-    topology.edges.forEach(function (edge) { appendText(accessibleEdges, 'li', '', edge.description); });
-    section.appendChild(accessibleEdges);
-    return section;
+    var canvasHost = element('div', 'rm-system-canvas-host');
+    section.appendChild(canvasHost);
+    var presentation = canvasLanePresentation(graph, activeGroup);
+    return {
+      element: section,
+      mount: function () {
+        var renderer = globalThis.RepomapSystemCanvasRenderer;
+        if (!renderer || typeof renderer.mountSystemCanvas !== 'function') {
+          throw new Error('The System canvas renderer is unavailable.');
+        }
+        return renderer.mountSystemCanvas(canvasHost, graph, {
+          selectedNodeID: 'core:' + selected.id,
+          laneSummaries: presentation.laneSummaries,
+          laneEmptyMessages: presentation.laneEmptyMessages,
+          laneNotes: presentation.laneNotes,
+          coreLeadNote: presentation.coreLeadNote,
+          coreGroup: presentation.coreGroup
+        }, {
+          hrefForNode: canvasNodeHref,
+          navigateNode: function (node, event) {
+            navigateCanvasNode(node, event, activeGroup);
+          }
+        });
+      }
+    };
   }
 
-  function drawCanvasEdges() {
-    var canvas = document.querySelector('.rm-flow-canvas');
-    if (!canvas || !state || !Array.isArray(state.canvasEdges)) return;
-    var svg = canvas.querySelector('.rm-canvas-edges');
-    if (!svg) return;
-    svg.replaceChildren();
-    var definitions = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-    ['exact', 'possible', 'runtime'].forEach(function (resolution) {
-      var marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-      marker.setAttribute('id', 'rm-canvas-arrow-' + resolution);
-      marker.setAttribute('viewBox', '0 0 8 8');
-      marker.setAttribute('refX', '7');
-      marker.setAttribute('refY', '4');
-      marker.setAttribute('markerWidth', '6');
-      marker.setAttribute('markerHeight', '6');
-      marker.setAttribute('orient', 'auto');
-      var arrow = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      arrow.setAttribute('d', 'M 0 0 L 8 4 L 0 8 z');
-      arrow.setAttribute('class', 'rm-canvas-arrow rm-canvas-arrow--' + resolution);
-      marker.appendChild(arrow);
-      definitions.appendChild(marker);
-    });
-    svg.appendChild(definitions);
-    var bounds = canvas.getBoundingClientRect();
-    svg.setAttribute('viewBox', '0 0 ' + String(bounds.width) + ' ' + String(bounds.height));
-    svg.setAttribute('width', String(bounds.width));
-    svg.setAttribute('height', String(bounds.height));
-    var nodes = Object.create(null);
-    Array.prototype.forEach.call(canvas.querySelectorAll('[data-canvas-node]'), function (node) {
-      nodes[node.getAttribute('data-canvas-node')] = node;
-    });
-    Array.prototype.forEach.call(canvas.querySelectorAll('[data-canvas-edge-port]'), function (port) {
-      if (port.parentNode) port.parentNode.removeChild(port);
-    });
-    var slotTotals = Object.create(null);
-    var slotIndexes = Object.create(null);
-    function portSlotKey(nodeID, side) { return nodeID + '\n' + side; }
-    function countPort(nodeID, side) {
-      var key = portSlotKey(nodeID, side);
-      slotTotals[key] = (slotTotals[key] || 0) + 1;
-    }
-    state.canvasEdges.forEach(function (edge) {
-      if (!nodes[edge.from] || !nodes[edge.to]) return;
-      var sameLane = edge.from.indexOf('core:') === 0 && edge.to.indexOf('core:') === 0;
-      countPort(edge.from, 'right');
-      countPort(edge.to, sameLane ? 'right' : 'left');
-    });
-    function appendPort(control, side, endpointID, destinationID, edge, edgeIndex) {
-      var key = portSlotKey(endpointID, side);
-      var index = slotIndexes[key] || 0;
-      slotIndexes[key] = index + 1;
-      var total = slotTotals[key] || 1;
-      var spread = Math.min(38, Math.max(0, total - 1) * 10);
-      var offset = total === 1 ? 0 : (-spread / 2) + (spread * index / (total - 1));
-      var port = element('button', 'rm-canvas-edge-port rm-canvas-edge-port--' + side +
-        ' rm-canvas-edge-port--' + edge.resolution);
-      port.type = 'button';
-      port.setAttribute('style', '--rm-canvas-edge-offset: ' + String(offset) + 'px');
-      port.setAttribute('data-canvas-edge-port', 'true');
-      port.setAttribute('data-canvas-edge-index', edgeIndex);
-      port.setAttribute('data-canvas-edge-from', edge.from);
-      port.setAttribute('data-canvas-edge-to', edge.to);
-      port.setAttribute('data-canvas-edge-endpoint', endpointID);
-      port.setAttribute('tabindex', '-1');
-      port.setAttribute('aria-hidden', 'true');
-      port.setAttribute('aria-label', 'Follow this connection to ' +
-        (nodes[destinationID].getAttribute('data-canvas-label') || destinationID));
-      port.title = edge.description;
-      port.addEventListener('mouseenter', function () {
-        state.canvasHighlightEdgeIndex = edgeIndex;
-        restoreCanvasHighlight();
-      });
-      port.addEventListener('mouseleave', function () {
-        state.canvasHighlightEdgeIndex = '';
-        restoreCanvasHighlight();
-      });
-      port.addEventListener('focus', function () {
-        state.canvasHighlightEdgeIndex = edgeIndex;
-        restoreCanvasHighlight();
-      });
-      port.addEventListener('blur', function () {
-        state.canvasHighlightEdgeIndex = '';
-        restoreCanvasHighlight();
-      });
-      port.addEventListener('click', function (event) {
-        if (event && event.preventDefault) event.preventDefault();
-        if (event && event.stopPropagation) event.stopPropagation();
-        focusCanvasNode(destinationID);
-      });
-      control.parentNode.appendChild(port);
-    }
-    state.canvasEdges.forEach(function (edge, index) {
-      var source = nodes[edge.from];
-      var target = nodes[edge.to];
-      if (!source || !target) return;
-      var sourceBounds = source.getBoundingClientRect();
-      var targetBounds = target.getBoundingClientRect();
-      var sameLane = edge.from.indexOf('core:') === 0 && edge.to.indexOf('core:') === 0;
-      var x1 = sourceBounds.right - bounds.left;
-      var y1 = sourceBounds.top + sourceBounds.height / 2 - bounds.top;
-      var x2 = (sameLane ? targetBounds.right : targetBounds.left) - bounds.left;
-      var y2 = targetBounds.top + targetBounds.height / 2 - bounds.top;
-      var authorityOffset = edge.resolution === 'possible' ? 12 : edge.resolution === 'runtime' ? 24 : 0;
-      var bend = Math.max(34, sameLane ? 46 : Math.abs(x2 - x1) * 0.45) + authorityOffset;
-      var edgeIndex = String(index);
-      var group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      group.setAttribute('class', 'rm-canvas-edge-group');
-      group.setAttribute('data-canvas-edge-index', edgeIndex);
-      group.setAttribute('data-canvas-edge-from', edge.from);
-      group.setAttribute('data-canvas-edge-to', edge.to);
-      var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      path.setAttribute('d', sameLane ?
-        'M ' + x1 + ' ' + y1 + ' C ' + (x1 + bend) + ' ' + y1 + ', ' +
-          (x2 + bend) + ' ' + y2 + ', ' + x2 + ' ' + y2 :
-        'M ' + x1 + ' ' + y1 + ' C ' + (x1 + bend) + ' ' + y1 + ', ' +
-          (x2 - bend) + ' ' + y2 + ', ' + x2 + ' ' + y2);
-      path.setAttribute('class', 'rm-canvas-edge rm-canvas-edge--' + edge.resolution);
-      path.setAttribute('marker-end', 'url(#rm-canvas-arrow-' + edge.resolution + ')');
-      group.appendChild(path);
-      svg.appendChild(group);
-      appendPort(source, 'right', edge.from, edge.to, edge, edgeIndex);
-      appendPort(target, sameLane ? 'right' : 'left', edge.to, edge.from, edge, edgeIndex);
-    });
-    restoreCanvasHighlight();
+  function unmountSystemCanvas() {
+    if (!state || !state.canvasMount) return;
+    state.canvasMount.unmount();
+    state.canvasMount = null;
   }
-
-  function scheduleCanvasDraw() {
-    window.requestAnimationFrame(drawCanvasEdges);
-  }
-
   function routeForBlock(id) {
     return '#/program/responsibility/' + encodePathSegment(id);
   }
@@ -3220,12 +2708,12 @@
   }
 
   function renderRoute() {
+    unmountSystemCanvas();
     var host = document.getElementById('rm-app');
     var orientation = element('div', 'rm-orientation');
     var route = selectedReportRoute();
     updateHeaderContext(route);
     if (route.kind === 'repository') {
-      state.canvasEdges = [];
       var overviewKind = repositoryOverviewKind();
       if (overviewKind === 'runtime') renderRuntimePortfolio(orientation);
       else renderRepositoryFallback(orientation);
@@ -3235,7 +2723,6 @@
       return;
     }
     if (route.kind === 'surface') {
-      state.canvasEdges = [];
       renderSurfaceDetail(orientation, route.surface);
       renderDiagnostics(orientation);
       host.replaceChildren(orientation);
@@ -3243,7 +2730,6 @@
       return;
     }
     if (route.kind === 'path') {
-      state.canvasEdges = [];
       renderCrossSurfacePathDetail(orientation, route.path);
       renderDiagnostics(orientation);
       host.replaceChildren(orientation);
@@ -3251,7 +2737,6 @@
       return;
     }
     if (route.kind === 'entrypoint') {
-      state.canvasEdges = [];
       renderActivityDetail(orientation, route.activity);
       renderDiagnostics(orientation);
       host.replaceChildren(orientation);
@@ -3259,7 +2744,6 @@
       return;
     }
     if (route.kind === 'integration') {
-      state.canvasEdges = [];
       renderIntegrationDetail(orientation, route.integration);
       renderDiagnostics(orientation);
       host.replaceChildren(orientation);
@@ -3279,7 +2763,8 @@
     var index = state.model.blocks.findIndex(function (block) { return block.id === selected.id; });
     var connections = connectionsFor(selected);
     var related = relatedBlocksFor(selected, connections);
-    orientation.appendChild(renderFlowCanvas(selected));
+    var canvasView = renderFlowCanvas(selected);
+    orientation.appendChild(canvasView.element);
     var workspace = element('section', 'rm-workspace');
     workspace.appendChild(renderFocus(selected, index, connections, related));
     workspace.appendChild(renderEvidence(selected));
@@ -3287,7 +2772,7 @@
     renderTargetSurfaceInventory(orientation);
     renderDiagnostics(orientation);
     host.replaceChildren(orientation);
-    scheduleCanvasDraw();
+    state.canvasMount = canvasView.mount();
     if (state.pendingResponsibilityID === selected.id) {
       state.pendingResponsibilityID = '';
       scheduleResponsibilityScroll(selected.id);
@@ -3316,13 +2801,11 @@
       var raw = readPayload();
       var model = buildPresentationModel(raw);
       state = {
-        model: model, source: buildSourceAuthority(raw, model), canvasEdges: [],
-        completeCanvas: false, focusGroupID: null, pendingResponsibilityID: '', pendingAreaGroupFocusID: '',
-        canvasHoverNodeID: '', canvasFocusNodeID: '', canvasHighlightEdgeIndex: ''
+        model: model, source: buildSourceAuthority(raw, model), canvasMount: null,
+        completeCanvas: false, focusGroupID: null, pendingResponsibilityID: '', pendingAreaGroupFocusID: ''
       };
       renderHeader();
       renderRoute();
-      window.addEventListener('resize', scheduleCanvasDraw);
       window.addEventListener('hashchange', function () {
         try { renderRoute(); } catch (error) { renderFatal(error); }
       });

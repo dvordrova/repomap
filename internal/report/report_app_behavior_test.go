@@ -18,12 +18,16 @@ func TestReportAppHashRoutesCanvasTargetsWithoutInertControls(t *testing.T) {
 	if err := os.WriteFile(appPath, []byte(reportAppJS), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	graphPath := filepath.Join(tempDir, "system_canvas_graph.js")
+	if err := os.WriteFile(graphPath, []byte(systemCanvasGraphJS), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	runnerPath := filepath.Join(tempDir, "report_app_behavior.js")
 	if err := os.WriteFile(runnerPath, []byte(reportAppBehaviorRunner), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	output, err := exec.Command(node, runnerPath, appPath).CombinedOutput()
+	output, err := exec.Command(node, runnerPath, appPath, graphPath).CombinedOutput()
 	if err != nil {
 		t.Fatalf("run report application behavior contract: %v\n%s", err, output)
 	}
@@ -180,6 +184,9 @@ const context = {
 };
 context.globalThis = context;
 
+const graphSource = fs.readFileSync(process.argv[3], 'utf8');
+vm.runInNewContext(graphSource, context, { filename: process.argv[3] });
+
 const source = fs.readFileSync(process.argv[2], 'utf8');
 const bootBoundary = /\n\s*boot\(\);\s*\n\}\)\(\);\s*$/;
 if (!bootBoundary.test(source)) {
@@ -210,14 +217,12 @@ const exposure = [
   '    crossSurfaceEmptyReason: crossSurfaceEmptyReason,',
   '    renderFlowCanvas: renderFlowCanvas,',
   '    renderAreaSwitcher: renderAreaSwitcher,',
-  '    canvasTopology: canvasTopology,',
-  '    drawCanvasEdges: drawCanvasEdges,',
-  '    clearCanvasHighlight: clearCanvasHighlight,',
+  '    buildSystemCanvasGraph: buildSystemCanvasGraph,',
+  '    canvasNodeHref: canvasNodeHref,',
+  '    navigateCanvasNode: navigateCanvasNode,',
   '    scheduleResponsibilityScroll: scheduleResponsibilityScroll,',
   '    getState: function () { return state; },',
-  '    activityCanvasNode: activityCanvasNode,',
-  '    coreCanvasNode: coreCanvasNode,',
-  '    integrationCanvasNode: integrationCanvasNode',
+  '    unmountSystemCanvas: unmountSystemCanvas',
   '  };',
   '})();'
 ].join('\n');
@@ -317,9 +322,8 @@ const model = {
   groupsByBlock: { [block.id]: [], [storageBlock.id]: [] }
 };
 api.setState({
-  model, focusGroupID: null, completeCanvas: false, canvasEdges: [],
+  model, focusGroupID: null, completeCanvas: false, canvasMount: null,
   pendingResponsibilityID: '', pendingAreaGroupFocusID: '',
-  canvasHoverNodeID: '', canvasFocusNodeID: '', canvasHighlightEdgeIndex: '',
   source: {
     mode: 'static', host: 'GitHub', repositoryURL: 'https://github.com/example/fixture',
     revision: model.revision, pathPrefix: ''
@@ -631,51 +635,70 @@ check(repositoryEvidenceLinks.length === 2,
   'grouped repository-role evidence must preserve one exact action for every distinct source location');
 model.runtimePortfolio = null;
 
-const focusedTopology = api.canvasTopology([block.id], false);
-const directEdge = focusedTopology.edges.find((edge) =>
-  edge.from === 'entry:' + activity.id && edge.to === 'integration:' + integration.id
+const focusedGraph = api.buildSystemCanvasGraph([block.id], false);
+const directEdge = focusedGraph.edges.find((edge) =>
+  edge.sourceID === 'entry:' + activity.id && edge.targetID === 'integration:' + integration.id
 );
 check(!!directEdge && directEdge.blockIDs.length === 0,
-  'focused topology must retain a direct ungrouped entrypoint-to-integration frontier');
-check(focusedTopology.directFrontierEdges === 1,
-  'focused topology must account for its direct frontier separately from core grouping');
-check(focusedTopology.starts.includes(activity) && focusedTopology.integrations.includes(integration),
-  'direct frontier endpoints must remain visible in focused topology');
-check(focusedTopology.hiddenConnectedIntegrations === 0,
+  'focused graph must retain a direct ungrouped entrypoint-to-integration frontier');
+check(focusedGraph.accounting.directFrontierEdges === 1,
+  'focused graph must account for its direct frontier separately from core grouping');
+check(focusedGraph.nodesByLane.entry.some((node) => node.entityID === activity.id) &&
+  focusedGraph.nodesByLane.integration.some((node) => node.entityID === integration.id),
+  'direct frontier endpoints must remain visible in the focused graph');
+check(focusedGraph.accounting.hiddenConnectedIntegrations === 0,
   'a visible direct-frontier integration must not be reported as belonging to another group');
-check(!focusedTopology.edges.some((edge) =>
-  edge.from === 'core:' + block.id && edge.to === 'core:' + storageBlock.id
-), 'focused topology must not retain a core edge whose target card is not visible');
-check(focusedTopology.hiddenPlacedStarts >= 0 && focusedTopology.hiddenConnectedIntegrations >= 0,
+check(!focusedGraph.edges.some((edge) =>
+  edge.sourceID === 'core:' + block.id && edge.targetID === 'core:' + storageBlock.id
+), 'focused graph must not retain a core edge whose target card is not visible');
+check(focusedGraph.accounting.hiddenPlacedStarts >= 0 &&
+  focusedGraph.accounting.hiddenConnectedIntegrations >= 0,
   'focused hidden connection counts must never become negative');
 const unconnectedActivity = {
   id: 'entry:unconnected', name: 'Unconnected start', kind: 'function', signature: 'unused()',
   location: { path: 'app/main.py', line: 20, column: 1 }
 };
 model.activities.push(unconnectedActivity);
-const completeTopology = api.canvasTopology([block.id], true);
-check(completeTopology.starts.length === 2 && completeTopology.connectedStartCount === 1 &&
-  completeTopology.hiddenPlacedStarts === 0,
-  'complete topology must distinguish all shown entrypoints from the connected subset without negative hidden counts');
+const completeGraphWithUnconnected = api.buildSystemCanvasGraph([block.id], true);
+check(completeGraphWithUnconnected.nodesByLane.entry.length === 2 &&
+  completeGraphWithUnconnected.accounting.connectedStartCount === 1 &&
+  completeGraphWithUnconnected.accounting.hiddenPlacedStarts === 0,
+  'complete graph must distinguish all shown entrypoints from the connected subset without negative hidden counts');
 model.activities.pop();
 
+let mountedCanvasContract = null;
+let canvasUnmounted = false;
+context.RepomapSystemCanvasRenderer = {
+  mountSystemCanvas(host, graph, options, callbacks) {
+    mountedCanvasContract = { host, graph, options, callbacks };
+    return { unmount() { canvasUnmounted = true; } };
+  }
+};
 const focusedCanvas = api.renderFlowCanvas(block);
-check(focusedCanvas.textContent.includes('visible as a direct frontier outside core grouping'),
+check(focusedCanvas.element.textContent.includes('visible as a direct frontier outside core grouping'),
   'focused canvas must explain why an ungrouped direct route remains visible');
-check(!focusedCanvas.textContent.includes('belong to other grouping selections'),
+check(!focusedCanvas.element.textContent.includes('belong to other grouping selections'),
   'focused canvas must not assign direct-frontier integrations to another grouping');
 check(source.includes('completeCanvas: false') &&
   !source.includes('Only exact selected facts are connected.'),
   'large reports must start focused and complete-mode copy must not hide possible/runtime authority');
-check(focusedCanvas.textContent.includes('2 directional core links'),
-  'the no-group canvas must show all core cards and account for separately authoritative directed links');
-const visibleCoreEdges = api.getState().canvasEdges.filter((edge) =>
-  edge.from === 'core:' + block.id && edge.to === 'core:' + storageBlock.id
+const mountedController = focusedCanvas.mount();
+check(mountedController && mountedCanvasContract &&
+  mountedCanvasContract.options.laneSummaries.core.includes('2 directional core links'),
+  'the shell must pass complete no-group core accounting into the isolated renderer');
+const visibleCoreEdges = mountedCanvasContract.graph.edges.filter((edge) =>
+  edge.sourceID === 'core:' + block.id && edge.targetID === 'core:' + storageBlock.id
 );
-check(visibleCoreEdges.length === 2 && visibleCoreEdges.some((edge) => edge.resolution === 'exact') &&
-  visibleCoreEdges.some((edge) => edge.resolution === 'possible'),
+check(visibleCoreEdges.length === 2 && visibleCoreEdges.some((edge) => edge.authority === 'exact') &&
+  visibleCoreEdges.some((edge) => edge.authority === 'possible'),
   'exact and possible authority for one endpoint pair must remain separate');
-
+check(typeof mountedCanvasContract.callbacks.hrefForNode === 'function' &&
+  typeof mountedCanvasContract.callbacks.navigateNode === 'function',
+  'the report shell must supply explicit node-link and navigation callbacks to the isolated renderer');
+api.getState().canvasMount = mountedController;
+api.unmountSystemCanvas();
+check(canvasUnmounted && api.getState().canvasMount === null,
+  'the report shell must explicitly unmount the isolated canvas controller');
 const storageArea = {
   id: 'group:storage', name: 'Storage area', purpose: 'Owns persistence behavior.',
   authority: 'model', blockIDs: [storageBlock.id]
@@ -706,115 +729,23 @@ model.modelGroupCount = 0;
 api.getState().focusGroupID = null;
 context.window.location.hash = '#/program';
 
-const wrappers = [
-  api.activityCanvasNode(activity),
-  api.coreCanvasNode(block, false, null),
-  api.integrationCanvasNode(integration)
-];
-const controls = wrappers.flatMap((wrapper) => descendants(wrapper).filter((node) =>
-  node.getAttribute('data-canvas-node') !== null
-));
-check(controls.length === wrappers.length,
-  'every canvas node must expose exactly one interactive control');
-check(controls.every((control) => control && control.tagName === 'A'),
-  'canvas nodes must be links, not inert buttons');
-check(controls.every((control) => control && control.href.startsWith('#/program/')),
-  'every canvas node must have a program hash target');
-check(wrappers[0].textContent.includes('Start here') &&
-  wrappers[0].textContent.includes('app/main.py:7') &&
-  !wrappers[0].textContent.includes('app/main#'),
-  'entrypoint canvas cards must not repeat a canonical module path above the exact source location');
-const sameNameEntryWrappers = [
-  api.activityCanvasNode({
-    id: 'entry:router-primary', name: 'packages/router/src/Router#Router.navigate', kind: 'method',
-    location: { path: 'packages/router/src/Router.ts', line: 201, column: 3 }
-  }),
-  api.activityCanvasNode({
-    id: 'entry:router-secondary', name: 'packages/other/src/Router#Router.navigate', kind: 'method',
-    location: { path: 'packages/other/src/Router.ts', line: 40, column: 3 }
-  })
-];
-const sameNameEntryControls = sameNameEntryWrappers.map((wrapper) => descendants(wrapper).find((node) =>
-  node.getAttribute('data-canvas-node') !== null
-));
-check(sameNameEntryWrappers.every((wrapper) => wrapper.textContent.includes('Router.navigate')) &&
-  sameNameEntryWrappers[0].textContent.includes('packages/router/src/Router.ts:201') &&
-  sameNameEntryWrappers[1].textContent.includes('packages/other/src/Router.ts:40') &&
-  sameNameEntryControls[0].getAttribute('data-canvas-node') !==
-    sameNameEntryControls[1].getAttribute('data-canvas-node') &&
-  sameNameEntryControls[0].href !== sameNameEntryControls[1].href,
-  'equal compact entrypoint names must remain separate exact identities distinguished by source location');
-check(wrappers[1].textContent.includes('→ 1 exact downstream') &&
-  wrappers[1].textContent.includes('⇢ 1 possible downstream') &&
-  wrappers[1].textContent.includes('Inspect responsibility ↓'),
-  'a core card must expose separate directed authorities and explain that it opens the detail below');
-check(source.includes("marker-end', 'url(#rm-canvas-arrow-") && source.includes('sameLane ? targetBounds.right') &&
-  source.includes('authorityOffset'),
-  'canvas edges must draw arrowheads and offset parallel exact/possible/runtime authority');
-
-const savedCanvasEdges = api.getState().canvasEdges.slice();
-const interactiveCanvas = new TestElement('div');
-interactiveCanvas.setAttribute('class', 'rm-flow-canvas');
-interactiveCanvas._bounds = { left: 0, top: 0, right: 900, bottom: 500, width: 900, height: 500 };
-const edgeSVG = new TestElement('svg');
-edgeSVG.setAttribute('class', 'rm-canvas-edges');
-interactiveCanvas.appendChild(edgeSVG);
-wrappers.forEach((wrapper) => interactiveCanvas.appendChild(wrapper));
-controls[0]._bounds = { left: 30, top: 80, right: 210, bottom: 130, width: 180, height: 50 };
-controls[1]._bounds = { left: 360, top: 180, right: 540, bottom: 240, width: 180, height: 60 };
-controls[2]._bounds = { left: 690, top: 300, right: 870, bottom: 350, width: 180, height: 50 };
-api.getState().canvasEdges = [
-  { from: 'entry:' + activity.id, to: 'core:' + block.id, resolution: 'exact', description: 'Start reaches core' },
-  { from: 'core:' + block.id, to: 'integration:' + integration.id, resolution: 'possible', description: 'Core may reach HTTP' }
-];
-document.queryResult = interactiveCanvas;
-api.drawCanvasEdges();
-const edgeGroups = descendants(edgeSVG).filter((node) =>
-  String(node.className).split(/\s+/).includes('rm-canvas-edge-group')
-);
-const edgePorts = descendants(interactiveCanvas).filter((node) => node.getAttribute('data-canvas-edge-port') === 'true');
-check(edgeGroups.length === 2 && edgePorts.length === 4,
-  'every visible connection must retain one exact path and one navigable port at each endpoint');
-wrappers[0].dispatch('mouseenter');
-check(String(edgeGroups[0].className).includes('rm-canvas-edge-group--related') &&
-  String(edgeGroups[1].className).includes('rm-canvas-edge-group--dimmed') &&
-  edgePorts.filter((port) => String(port.className).includes('rm-canvas-edge-port--related') &&
-    port.getAttribute('tabindex') === '0' && port.getAttribute('aria-hidden') === 'false').length === 2 &&
-  edgePorts.filter((port) => !String(port.className).includes('rm-canvas-edge-port--related') &&
-    port.getAttribute('tabindex') === '-1').length === 2,
-  'hovering a canvas component must emphasize only touching edges and expose only their endpoint ports');
-const sourceTraversalPort = edgePorts.find((port) =>
-  port.getAttribute('data-canvas-edge-index') === '0' &&
-  port.getAttribute('data-canvas-edge-endpoint') === 'entry:' + activity.id
-);
-const hashBeforePortNavigation = context.window.location.hash;
-if (sourceTraversalPort) sourceTraversalPort.click();
-check(sourceTraversalPort && controls[1].scrollCalls.length === 1 && controls[1].focusCalls.length === 1 &&
-  context.window.location.hash === hashBeforePortNavigation,
-  'clicking an edge port must move focus to the opposite canvas card without opening a detail route');
-wrappers[0].dispatch('mouseleave');
-check(!edgeGroups.some((group) => String(group.className).includes('rm-canvas-edge-group--dimmed')) &&
-  !edgePorts.some((port) => String(port.className).includes('rm-canvas-edge-port--related')),
-  'leaving the canvas component must restore the complete un-emphasized edge view');
-document.queryResult = null;
-api.getState().canvasEdges = savedCanvasEdges;
-
-function renderedCoreSelection(selectedID) {
-  return [block, storageBlock].flatMap((candidate) => descendants(
-    api.coreCanvasNode(candidate, candidate.id === selectedID, null)
-  )).filter((node) => node.getAttribute('data-canvas-node') !== null);
-}
-let selectedControls = renderedCoreSelection(block.id);
-check(selectedControls.filter((control) => control.getAttribute('aria-current') === 'true').length === 1 &&
-  selectedControls.find((control) => control.getAttribute('aria-current') === 'true').getAttribute('data-canvas-node') ===
-    'core:' + block.id,
-  'the first core selection must expose exactly one current canvas control');
-selectedControls = renderedCoreSelection(storageBlock.id);
-check(selectedControls.filter((control) => control.getAttribute('aria-current') === 'true').length === 1 &&
-  selectedControls.find((control) => control.getAttribute('aria-current') === 'true').getAttribute('data-canvas-node') ===
-    'core:' + storageBlock.id,
-  'a sequential core selection must replace, not accumulate, the current canvas control');
-
+const completeGraph = api.buildSystemCanvasGraph([block.id], true);
+const entryNode = completeGraph.nodesByID['entry:' + activity.id];
+const coreNode = completeGraph.nodesByID['core:' + block.id];
+const integrationNode = completeGraph.nodesByID['integration:' + integration.id];
+check(entryNode && coreNode && integrationNode,
+  'the extracted graph must expose stable exact identities for every canvas lane');
+check(api.canvasNodeHref(entryNode) === '#/program/entrypoint/entry%2Fstart%20here' &&
+  api.canvasNodeHref(coreNode) === '#/program/responsibility/core%2Fexecution' &&
+  api.canvasNodeHref(integrationNode) === '#/program/integration/dependency%3Ahttp%20client',
+  'the report shell must retain exact program routes for isolated canvas nodes');
+check(entryNode.name === 'Start here' && entryNode.data.location.path === 'app/main.py' &&
+  !entryNode.name.includes('app/main#'),
+  'the graph projection must keep compact entrypoint display text beside exact location data');
+check(!source.includes('function canvasTopology(') &&
+  !source.includes('function drawCanvasEdges(') &&
+  !source.includes('function highlightCanvasNode('),
+  'the report shell must not retain the legacy graph, SVG, or interaction implementation');
 const evidenceBlock = {
   id: 'core:release-scripts', name: 'Release scripts', purpose: 'Validates and publishes releases.',
   files: [
@@ -871,8 +802,7 @@ check(evidenceLinks.length === 5 &&
   evidenceLinks.some((link) => link.href.endsWith('/scripts/tag.ts')),
   'file headings, declarations, symbol-only files, and file-only evidence must retain exact source links');
 
-const entryControl = controls[0];
-if (entryControl) entryControl.click();
+context.window.location.hash = api.canvasNodeHref(entryNode);
 check(context.window.location.hash === '#/program/entrypoint/entry%2Fstart%20here',
   'the entrypoint canvas link must preserve its exact encoded identity');
 let route = api.selectedReportRoute();
@@ -892,8 +822,11 @@ check(descendants(activityHost).some((node) => node.className === 'rm-entrypoint
   activityHost.textContent.includes('Exact selected path'),
   'entrypoint detail must use a compact header and expose existing responsibility and route facts');
 
-const coreControl = controls[1];
-const coreClick = coreControl ? coreControl.click() : null;
+const coreClick = {
+  defaultPrevented: false,
+  preventDefault() { this.defaultPrevented = true; }
+};
+api.navigateCanvasNode(coreNode, coreClick, null);
 check(context.window.location.hash === '#/program/responsibility/core%2Fexecution',
   'the core canvas link must preserve its exact encoded identity');
 check(coreClick && coreClick.defaultPrevented && api.getState().pendingResponsibilityID === block.id,
@@ -909,8 +842,7 @@ check(responsibilityDetail.scrollCalls.length === 1 && responsibilityDetail.focu
   'responsibility navigation must scroll and move focus to the exact detail article');
 document.queryResult = null;
 
-const integrationControl = controls[2];
-if (integrationControl) integrationControl.click();
+context.window.location.hash = api.canvasNodeHref(integrationNode);
 check(context.window.location.hash === '#/program/integration/dependency%3Ahttp%20client',
   'the integration canvas link must preserve its exact encoded identity');
 route = api.selectedReportRoute();
@@ -1141,7 +1073,7 @@ check(!connectionsHost.textContent.includes('Open source location') &&
   connectionsHost.textContent.includes('3 relation witness details are not shown'),
   'connection rows must omit redundant location labels and counters while retaining omission-only diagnostics');
 
-const renderedRoots = wrappers.concat([focusedCanvas, evidenceHost, activityHost, integrationHost, connectionsHost]);
+const renderedRoots = [focusedCanvas.element, evidenceHost, activityHost, integrationHost, connectionsHost];
 check(renderedRoots.flatMap(descendants).every((node) =>
   node.tagName !== 'DIALOG' && !String(node.className).includes('rm-canvas-popover')
 ), 'canvas and detail interactions must not create a blocking dialog or popover');
