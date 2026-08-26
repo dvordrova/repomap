@@ -920,6 +920,79 @@ func TestDiscoverSelectsOneNestedPreparedPackageAndKeepsRepositoryPaths(t *testi
 	}
 }
 
+func TestNestedPackageSharedRepositoryToolDoesNotBecomePackageSource(t *testing.T) {
+	repositoryRoot := preparedCompilerProject(t)
+	files := map[string]string{
+		"package.json": `{
+  "name":"workspace",
+  "private":true,
+  "devDependencies":{"typescript":"5.9.3"}
+}`,
+		"config/typescript/tsconfig.node.json": `{
+  "compilerOptions":{"module":"ESNext","moduleResolution":"bundler","strict":true}
+}`,
+		"packages/preset/package.json": `{
+  "name":"@sample/preset",
+  "scripts":{
+    "build":"tsx ../../scripts/build-package.ts --pkg-name preset",
+    "dev":"tsx ../../scripts/build-package.ts --pkg-name preset --watch",
+    "migrate":"tsx tools/migrate.ts"
+  },
+  "devDependencies":{"typescript":"5.9.3"}
+}`,
+		"packages/preset/src/index.ts":     "export const preset = true\n",
+		"packages/preset/tools/migrate.ts": "export const migrate = true\n",
+		"packages/preset/tsconfig.json": `{
+  "extends":"../../config/typescript/tsconfig.node.json",
+  "include":["src/**/*"]
+}`,
+		"scripts/build-package.ts": "export const buildPackage = true\n",
+	}
+	tracked := make([]string, 0, len(files))
+	for filePath, content := range files {
+		writeTestFile(t, repositoryRoot, filePath, content)
+		tracked = append(tracked, filePath)
+	}
+	sort.Strings(tracked)
+	repository, err := corpus.New(
+		context.Background(), repositoryRoot,
+		gitfiles.Listing{Paths: tracked, RegularPaths: tracked},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+
+	result, err := DiscoverSelected(
+		context.Background(), repository, repositoryRoot,
+		"jsts:packages/preset/package.json",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantFiles := []string{
+		"packages/preset/src/index.ts",
+		"packages/preset/tools/migrate.ts",
+	}
+	gotFiles := make([]string, len(result.Files))
+	for index, file := range result.Files {
+		gotFiles[index] = file.Path
+	}
+	if strings.Join(gotFiles, "\n") != strings.Join(wantFiles, "\n") {
+		t.Fatalf("selected package files = %#v", result.Files)
+	}
+	scriptRefs := map[string][]string{}
+	for _, script := range result.Project.Scripts {
+		scriptRefs[script.Name] = script.EntryFileRefs
+	}
+	if len(scriptRefs["build"]) != 0 || len(scriptRefs["dev"]) != 0 {
+		t.Fatalf("shared repository tool gained package entry authority: %#v", scriptRefs)
+	}
+	if len(scriptRefs["migrate"]) != 1 {
+		t.Fatalf("package-owned additional source lost script authority: %#v", scriptRefs)
+	}
+}
+
 func TestNestedProjectUsesPreparedCompilerOnlyFromAnalyzedRepository(t *testing.T) {
 	repositoryRoot := preparedTempProject(t)
 	projectRoot := filepath.Join(repositoryRoot, "front")
