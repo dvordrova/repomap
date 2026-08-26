@@ -301,7 +301,8 @@ func Seal(result Result) (Result, error) {
 
 func omitPersistenceSensitiveOptionalMetadata(result *Result) {
 	for index := range result.Declarations {
-		if _, sensitive := secretscan.DetectPersistenceSensitive(result.Declarations[index].Signature); sensitive {
+		signature := result.Declarations[index].Signature
+		if _, sensitive := secretscan.DetectPersistenceSensitive(signature); sensitive || unsafeDeclarationSignature(signature) {
 			result.Declarations[index].Signature = ""
 		}
 	}
@@ -324,6 +325,10 @@ func omitPersistenceSensitiveOptionalMetadata(result *Result) {
 			}
 		}
 	}
+}
+
+func unsafeDeclarationSignature(value string) bool {
+	return strings.Contains(value, "node_modules/") || strings.Contains(value, `import("/`)
 }
 
 func rejectPersistenceSensitiveArtifact(encoded []byte) error {
@@ -441,8 +446,14 @@ func (result Result) Validate() error {
 	}
 	declarations := map[string]struct{}{}
 	for _, declaration := range result.Declarations {
-		if declaration.Ref == "" || declaration.Name == "" || declaration.QualifiedName == "" || strings.Contains(declaration.Signature, "node_modules/") || strings.Contains(declaration.Signature, "import(\"/") || !validLocation(declaration.Location, fileRefs) {
-			return fmt.Errorf("jsts project: invalid declaration")
+		if declaration.Ref == "" || declaration.Name == "" || declaration.QualifiedName == "" {
+			return fmt.Errorf("jsts project: invalid declaration identity")
+		}
+		if unsafeDeclarationSignature(declaration.Signature) {
+			return fmt.Errorf("jsts project: invalid declaration signature for %q", declaration.Ref)
+		}
+		if !validLocation(declaration.Location, fileRefs) {
+			return fmt.Errorf("jsts project: invalid declaration location for %q", declaration.Ref)
 		}
 		if _, exists := declarations[declaration.Ref]; exists {
 			return fmt.Errorf("jsts project: duplicate declaration ref %q", declaration.Ref)

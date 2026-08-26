@@ -693,14 +693,14 @@ func TestNestedPackageKeepsSiblingProjectReferenceAsExternalBoundary(t *testing.
 	root := preparedTempProject(t)
 	files := map[string]string{
 		"packages/app/package.json": `{"name":"app"}`,
-		"packages/app/src/main.ts":  "export const app = true\n",
+		"packages/app/src/main.ts":  "import { makeShared } from \"../../shared/src/index\"\nexport const app = makeShared()\n",
 		"packages/app/tsconfig.json": `{
   "include": ["src/**/*.ts"],
   "references": [{"path": "../shared"}],
   "compilerOptions": {"module": "ESNext", "moduleResolution": "bundler", "strict": true}
 }`,
 		"packages/shared/package.json": `{"name":"shared"}`,
-		"packages/shared/src/index.ts": "export const shared = true\n",
+		"packages/shared/src/index.ts": "export class Shared { value = true }\nexport function makeShared() { return new Shared() }\n",
 		"packages/shared/tsconfig.json": `{
   "include": ["src/**/*.ts"],
   "references": [{"path": "./missing-child"}],
