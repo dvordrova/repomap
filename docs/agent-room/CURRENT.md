@@ -137,22 +137,17 @@ diagnostic-journal availability never changes the cube's semantic contract.
    scout uses exact build-selected main and public-declaration facts; the
    Python adapter independently uses Python packaging, module, launcher,
    main-guard, executable-script, and framework facts. The JS/TS adapter owns
-   exactly one selected `package.json` project with tracked project-selected
-   JavaScript/TypeScript sources. An eligible non-workspace root remains the
-   project; a source-less root manifest is tooling and cannot suppress an
-   eligible nested package. A workspace root remains the project only when an
-   exact manifest field or
-   canonical `dev`/`start` entry names source owned by that root; otherwise an
-   exact `--cwd` in canonical `dev`/`start` may delegate to exactly one eligible
-   child. Zero or multiple exact delegates fail closed with exact
-   `jsts:<manifest>` choices. Without an eligible root, one eligible nested
-   package is accepted and multiple eligible nested packages fail closed with the same
-   exact choices rather than being ranked heuristically. An explicit
-   `jsts:<manifest>` selects that owned package before TypeScript compiler
-   execution. The JSTS scout performs this manifest/workspace/source-ownership
-   selection directly from the corpus and does not invoke Node or the
-   TypeScript Compiler API; the full compiler projection belongs to a selected
-   JSTS target page. Every scout activated by exact project
+   every eligible `package.json` project with tracked project-owned
+   JavaScript/TypeScript source. Ownership goes to the deepest containing
+   manifest; each source-owning manifest contributes one mandatory native target
+   representative, while a source-less manifest remains tooling and cannot
+   suppress another package target. TargetPortfolio retains all exact package
+   targets and chooses only the repository default. An explicit
+   `jsts:<manifest>` narrows execution to that owned package before TypeScript
+   compiler execution. The JSTS scout builds this exact
+   manifest/source-ownership catalog directly from the corpus and does not
+   invoke Node or the TypeScript Compiler API; the full compiler projection
+   belongs to a selected JSTS target page. Every scout activated by exact project
    evidence runs over the same corpus and contributes to the same repository
    candidate stream. Go, Python, and JS/TS package discovery are not mutually
    exclusive: finding one supported language never suppresses another, while
@@ -216,9 +211,9 @@ diagnostic-journal availability never changes the cube's semantic contract.
    in an active language adapter. Python may resolve an otherwise unadvertised
    module file to one framework-neutral module-execution view derived from its
    sealed project scope; it never widens that file to a neighboring executable
-   or library view. The JS/TS adapter resolves only the selected `package.json`
-   candidate to its one exact package-project selector; browser, server, shared,
-   and tool surfaces remain facts inside that target rather than sibling
+   or library view. The JS/TS adapter resolves each selected `package.json`
+   candidate to its exact package-project selector; browser, server, shared,
+   and tool surfaces remain facts inside that package target rather than sibling
    runtime targets. Across all active adapters, a README candidate is admitted
    only when exactly one adapter can restore it; unsupported or cross-adapter
    ambiguous target roles remain in diagnostics and cannot poison the
@@ -325,9 +320,9 @@ diagnostic-journal availability never changes the cube's semantic contract.
    happened to survive projection. The Python adapter parses each
    identical selected module inventory once with an isolated standard-library
    AST worker and can publish several target views over that shared parse.
-   The selected-package JS/TS adapter likewise runs one prepared-project TypeScript
-   Compiler API graph per ordinary run, binds every selected source byte by
-   SHA-256, and reuses the sealed result for ProgramIndex, dependencies,
+   For each selected package target page, the JS/TS adapter likewise runs one
+   prepared-project TypeScript Compiler API graph, binds every selected source
+   byte by SHA-256, and reuses the sealed result for ProgramIndex, dependencies,
    semantic cubes, surfaces, and cross-surface paths. It never installs
    packages and never analyzes `node_modules` as repository source.
    Future language adapters may use tree-sitter, import resolution, lexical
@@ -1193,25 +1188,24 @@ operations as separate authorities, enriches each operation with the shared
 route to its caller without claiming runtime reachability, and renders selected
 declaration candidates as a visibly separate declaration-to-code frontier.
 
-The JavaScript/TypeScript adapter is an active single-package ordinary path. An
-eligible non-workspace root remains selected; a source-less root manifest is
-tooling and cannot suppress an eligible nested package. A workspace root
-remains selected only with an exact owned manifest or canonical `dev`/`start`
-source entry; otherwise
-one exact canonical `dev`/`start --cwd` delegate selects its eligible child,
-while zero or multiple delegates fail closed with exact `jsts:<manifest>`
-choices. Without an eligible root, exactly one eligible nested package is
-admitted and multiple packages fail closed. An explicit `jsts:<manifest>` binds its owned
-package before compiler execution. `package.json#name` is optional. The exact
+The JavaScript/TypeScript adapter is an active multi-package ordinary path.
+Package-source ownership goes to the deepest containing tracked `package.json`.
+Every manifest with owned JavaScript/TypeScript source contributes one required
+native target and receives its own complete page-local execution; source-less
+manifests remain tooling and do not suppress other packages. TargetPortfolio
+retains all exact package targets and chooses only the repository default. An
+explicit `jsts:<manifest>` narrows the typed plan to one owned package before
+compiler execution. `package.json#name` is optional. The exact
 top-level npm lockfile name is the secondary package name/path; without either
 declaration, the root uses `root-package` and a nested package uses its full
 repository-relative project directory, never the absolute checkout basename.
 Only raw `package.json#name` may derive the command for npm's string-form
-`package.json#bin`; a display/identity fallback grants no CLI authority. It participates in the same
-repository-wide TargetPortfolio and typed
+`package.json#bin`; a display/identity fallback grants no CLI authority. The
+adapter participates in the same repository-wide TargetPortfolio and typed
 execution plan as Go and Python. The owner prepares dependencies with the
-repository's normal package manager; Repomap requires a repository-local TypeScript compiler for the
-Compiler API but never runs an install. The versioned helper receives only the
+repository's normal package manager; Repomap requires a repository-local
+TypeScript compiler for the Compiler API but never runs an install. The
+versioned helper receives only the
 closed corpus path/ref catalog and configuration identity, runs with an empty
 environment, and emits deterministic JSON with repository-relative locations.
 Helper contract version 4 derives compiler candidates only from `typescript`
@@ -1259,9 +1253,9 @@ shared ProgramIndex and language-neutral dependency pipeline. A class method
 becomes a ProgramIndex method only when the compiler projection retains its
 exact owning type; a callable property in an object literal remains a nested
 function and never receives an invented type receiver. An exact
-browser/server surface or an exact retained package binary makes the one
-ProgramTarget an `application`; a library or tool-only selected package remains
-a `library` and is never promoted by a script. Each retained binary pair owns
+browser/server surface or an exact retained package binary makes that
+page-local ProgramTarget an `application`; a library or tool-only selected
+package remains a `library` and is never promoted by a script. Each retained binary pair owns
 one command-line product surface at the binary file with empty entry refs; it
 does not claim that a separate development source implements the bin wrapper.
 Only inside an already proven CLI package, an exact canonical `dev` or `start`

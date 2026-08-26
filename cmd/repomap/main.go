@@ -421,7 +421,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			DiscoverJSTS:   languageEvidence.JavaScriptTypeScript,
 			TargetOverride: targetOverride,
 			Output:         humanOutput, Providers: newTargetPortfolioProvider,
-			Executor: selectionExecutor, ScoutJSTSFn: jstsproject.ScoutSelected,
+			Executor: selectionExecutor, ScoutJSTSFn: jstsproject.ScoutTargets,
 		})
 		if selectionErr != nil {
 			flushFailedFirstLayerSemanticJournal(runDir, firstLayer, humanOutput)

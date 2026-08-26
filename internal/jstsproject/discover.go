@@ -91,18 +91,20 @@ type helperOutput struct {
 	Resources        []Resource    `json:"resources"`
 }
 
-// Discover analyzes one automatically selected JavaScript/TypeScript package.
-// It never installs packages: the selected manifest, or its repository-root
-// fallback, must declare a compiler already prepared in repository-local
-// node_modules.
+// Discover is the compatibility exact-one compiler path. Ordinary repository
+// discovery catalogs every package with ScoutTargets, then calls
+// DiscoverSelected with each exact selector. It never installs packages: the
+// selected manifest, or its repository-root fallback, must declare a compiler
+// already prepared in repository-local node_modules.
 func Discover(ctx context.Context, repository *corpus.Corpus, root string) (Result, error) {
 	return DiscoverSelected(ctx, repository, root, "")
 }
 
-// DiscoverSelected analyzes either the one automatically selected package or
-// the exact owned package named by a jsts:<manifest> selector. Exact selection
-// happens before compiler execution, so a workspace coordinator is never
-// compiled merely to validate a nested package override.
+// DiscoverSelected analyzes the exact owned package named by a
+// jsts:<manifest> selector. An empty selector retains the compatibility
+// exact-one behavior. Exact selection happens before compiler execution, so a
+// workspace coordinator is never compiled merely to validate a nested package
+// override.
 func DiscoverSelected(ctx context.Context, repository *corpus.Corpus, root, selector string) (Result, error) {
 	if ctx == nil {
 		ctx = context.Background()

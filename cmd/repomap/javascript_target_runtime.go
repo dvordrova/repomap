@@ -22,29 +22,29 @@ type jsTSProjectDiscoverer func(
 	string,
 ) (jstsproject.Result, error)
 
-// jsTSTargetScout establishes exact package-target authority from the shared
-// corpus without invoking the TypeScript compiler. Full project discovery is
-// execution work and runs only after this target is selected.
+// jsTSTargetScout establishes every exact package-target authority from the
+// shared corpus without invoking the TypeScript compiler. Full project
+// discovery is execution work and runs only after each target is selected.
 type jsTSTargetScout func(
 	context.Context,
 	*corpus.Corpus,
 	string,
-) (jstsproject.Target, error)
+) ([]jstsproject.Target, error)
 
-// jsTSTargetRunSelection is the command-owned bridge from the shared
-// file-addressed portfolio back to one exact selected package project. Browser,
-// server, command-line, shared-contract and tool surfaces remain within this one target;
-// they are not sibling target pages or RuntimePortfolio process roles.
+// jsTSTargetRunSelection is the page-local bridge from one exact package target
+// to its compiler-backed project. Browser, server, command-line,
+// shared-contract, and tool surfaces remain within that package target; they
+// are not sibling target pages or RuntimePortfolio process roles.
 type jsTSTargetRunSelection struct {
 	Project jstsproject.Result
 	Outcome targetPortfolioRunOutcome
 }
 
-// selectJSTSTargetForRun discovers exactly one package project, merges
-// its package.json candidate with any guidance hypothesis for that same exact
-// file, and lets the shared TargetPortfolio make the normal positive decision.
-// The model never receives the project ref or selector; both are restored from
-// the current deterministic adapter result after its closed FileRef decision.
+// selectJSTSTargetForRun is the compatibility single-page selector. The
+// ordinary multi-target path uses ScoutTargets plus repository-wide planning,
+// then materializes every retained exact selector. This helper merges one
+// package.json candidate with guidance for that same file; the model never
+// receives the project ref or selector.
 func selectJSTSTargetForRun(
 	ctx context.Context,
 	repoName string,

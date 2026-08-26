@@ -128,6 +128,216 @@ func TestRepositoryTargetPlanRestoresAllThreeAdaptersWithEachTypedDefault(t *tes
 	}
 }
 
+func TestRepositoryTargetPlanRetainsEveryJSTSPackageByDefault(t *testing.T) {
+	repository := pythonTargetCorpus(t, map[string]string{
+		"package.json":          `{"private":true}`,
+		"admin/package.json":    `{"name":"admin-app"}`,
+		"admin/src/main.ts":     "export const admin = true\n",
+		"frontend/package.json": `{"name":"frontend-app"}`,
+		"frontend/src/main.tsx": "export const frontend = true\n",
+		"tools/package.json":    `{"private":true,"scripts":{"dev":"bun run --cwd ../.. dev"}}`,
+	})
+	adminRef := repositoryTargetRuntimeFileRef(t, repository, "admin/package.json")
+	frontendRef := repositoryTargetRuntimeFileRef(t, repository, "frontend/package.json")
+	toolsRef := repositoryTargetRuntimeFileRef(t, repository, "tools/package.json")
+	for _, test := range []struct {
+		name                string
+		defaultRef          corpus.FileID
+		wantDefaultSelector string
+	}{
+		{name: "admin default", defaultRef: adminRef, wantDefaultSelector: "jsts:admin/package.json"},
+		{name: "frontend default", defaultRef: frontendRef, wantDefaultSelector: "jsts:frontend/package.json"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response, err := json.Marshal(map[string]any{
+				"default_file_ref": test.defaultRef,
+				"target_file_refs": []corpus.FileID{adminRef, frontendRef},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			provider := &targetPortfolioClientStub{response: response}
+			plan, err := selectRepositoryTargetPlanForRun(context.Background(), repositoryTargetRuntimeOptions{
+				RepoName: "multi-jsts", Repository: repository, DiscoverJSTS: true,
+				ScoutJSTSFn: jstsproject.ScoutTargets,
+				Providers: func() (llm.Provider, error) {
+					return provider, nil
+				},
+				Executor: llm.Executor{Enabled: false},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := plan.Validate(); err != nil {
+				t.Fatal(err)
+			}
+			if len(plan.Targets) != 2 || plan.Outcome.SelectedTargets != 2 ||
+				plan.Outcome.SelectedFileRefs != 2 {
+				t.Fatalf("multi-JSTS plan = %#v", plan)
+			}
+			wantSelectors := []string{"jsts:admin/package.json", "jsts:frontend/package.json"}
+			for index, target := range plan.Targets {
+				if target.Key.Adapter != repositoryTargetAdapterJSTS || target.JSTS == nil ||
+					target.Selector != wantSelectors[index] || len(target.FileRefs) != 1 {
+					t.Fatalf("multi-JSTS target %d = %#v", index, target)
+				}
+			}
+			defaultTarget, ok := plan.DefaultTarget()
+			if !ok || defaultTarget.Selector != test.wantDefaultSelector {
+				t.Fatalf("multi-JSTS default = %#v, want %q", defaultTarget, test.wantDefaultSelector)
+			}
+			if strings.Contains(provider.prompt.User, "tools/package.json") ||
+				strings.Contains(provider.prompt.User, string(toolsRef)) {
+				t.Fatalf("source-less tooling manifest leaked into target portfolio: %s", provider.prompt.User)
+			}
+		})
+	}
+
+	for _, omitted := range []corpus.FileID{adminRef, frontendRef} {
+		t.Run("cannot omit "+string(omitted), func(t *testing.T) {
+			kept := frontendRef
+			if omitted == frontendRef {
+				kept = adminRef
+			}
+			response, err := json.Marshal(map[string]any{
+				"default_file_ref": kept,
+				"target_file_refs": []corpus.FileID{kept},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			provider := &targetPortfolioClientStub{response: response}
+			_, err = selectRepositoryTargetPlanForRun(context.Background(), repositoryTargetRuntimeOptions{
+				RepoName: "multi-jsts", Repository: repository, DiscoverJSTS: true,
+				ScoutJSTSFn: jstsproject.ScoutTargets,
+				Providers: func() (llm.Provider, error) {
+					return provider, nil
+				},
+				Executor: llm.Executor{Enabled: false},
+			})
+			if err == nil || !strings.Contains(err.Error(), "omits exact required target authority") {
+				t.Fatalf("omitted JSTS package error = %v", err)
+			}
+		})
+	}
+}
+
+func TestRepositoryTargetPlanExactJSTSFromManyBypassesPortfolio(t *testing.T) {
+	repository := pythonTargetCorpus(t, map[string]string{
+		"admin/package.json":    `{"name":"admin-app"}`,
+		"admin/src/main.ts":     "export const admin = true\n",
+		"frontend/package.json": `{"name":"frontend-app"}`,
+		"frontend/src/main.tsx": "export const frontend = true\n",
+	})
+	for _, selector := range []string{"jsts:admin/package.json", "jsts:frontend/package.json"} {
+		t.Run(selector, func(t *testing.T) {
+			providerCalls := 0
+			plan, err := selectRepositoryTargetPlanForRun(context.Background(), repositoryTargetRuntimeOptions{
+				RepoName: "multi-jsts", Repository: repository, DiscoverJSTS: true,
+				TargetOverride: selector, ScoutJSTSFn: jstsproject.ScoutTargets,
+				Providers: func() (llm.Provider, error) {
+					providerCalls++
+					return nil, errors.New("TargetPortfolio must be bypassed for exact --target")
+				},
+				Executor: llm.Executor{Enabled: false},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !plan.Explicit || len(plan.Targets) != 1 || plan.Targets[0].Selector != selector ||
+				plan.Default != plan.Targets[0].Key || len(plan.Targets[0].FileRefs) != 0 {
+				t.Fatalf("exact multi-package plan = %#v", plan)
+			}
+			if providerCalls != 0 || plan.Outcome.SemanticCalls != 0 || len(plan.Outcome.Request) != 0 {
+				t.Fatalf("exact selector invoked model portfolio: calls=%d outcome=%#v", providerCalls, plan.Outcome)
+			}
+		})
+	}
+}
+
+func TestRepositoryTargetPlanKeepsPythonBesideEveryJSTSPackage(t *testing.T) {
+	repository := pythonTargetCorpus(t, map[string]string{
+		"pyproject.toml": `[project]
+name = "service"
+version = "0.1.0"
+`,
+		"service.py": `def main():
+	return 0
+
+if __name__ == "__main__":
+	main()
+`,
+		"admin/package.json": `{"name":"admin-app"}`,
+		"admin/src/main.ts":  "export const admin = true\n",
+		"front/package.json": `{"name":"front-app"}`,
+		"front/src/main.ts":  "export const front = true\n",
+	})
+	discoveryOptions := repositoryTargetRuntimeOptions{
+		RepoName: "python-with-multi-jsts", Repository: repository,
+		DiscoverPython: true, DiscoverJSTS: true, ScoutJSTSFn: jstsproject.ScoutTargets,
+	}
+	discovery, err := discoverRepositoryTargets(context.Background(), discoveryOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nativeCandidates, err := analysistarget.MergeFileCandidates(
+		repository.Snapshot(), discovery.pythonCandidates, discovery.jstsCandidates,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requiredRefs, err := repositoryRequiredTargetFileRefs(discovery, nativeCandidates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frontRef := repositoryTargetRuntimeFileRef(t, repository, "front/package.json")
+	response, err := json.Marshal(map[string]any{
+		"default_file_ref": frontRef,
+		"target_file_refs": requiredRefs,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &targetPortfolioClientStub{response: response}
+	options := discoveryOptions
+	options.Providers = func() (llm.Provider, error) { return provider, nil }
+	options.Executor = llm.Executor{Enabled: false}
+	plan, err := selectRepositoryTargetPlanForRun(context.Background(), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[repositoryTargetAdapter]int{}
+	for _, target := range plan.Targets {
+		counts[target.Key.Adapter]++
+	}
+	if counts[repositoryTargetAdapterJSTS] != 2 ||
+		counts[repositoryTargetAdapterPython] != len(discovery.pythonCatalog.Entries) ||
+		plan.Outcome.SelectedFileRefs != len(requiredRefs) {
+		t.Fatalf("Python plus multi-JSTS plan = %#v; adapter counts = %#v", plan, counts)
+	}
+	defaultTarget, ok := plan.DefaultTarget()
+	if !ok || defaultTarget.Selector != "jsts:front/package.json" {
+		t.Fatalf("Python plus multi-JSTS default = %#v", defaultTarget)
+	}
+
+	pythonSelector := discovery.pythonCatalog.Entries[0].Selector
+	providerCalls := 0
+	options.TargetOverride = pythonSelector
+	options.Providers = func() (llm.Provider, error) {
+		providerCalls++
+		return nil, errors.New("TargetPortfolio must be bypassed for exact Python --target")
+	}
+	exact, err := selectRepositoryTargetPlanForRun(context.Background(), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if providerCalls != 0 || !exact.Explicit || len(exact.Targets) != 1 ||
+		exact.Targets[0].Key.Adapter != repositoryTargetAdapterPython ||
+		exact.Targets[0].Selector != pythonSelector {
+		t.Fatalf("exact Python plan beside multi-JSTS = %#v; provider calls = %d", exact, providerCalls)
+	}
+}
+
 func TestRepositoryDefaultMixedPlanDefersJSTSCompilerUntilDispatchPreflight(t *testing.T) {
 	repository, goSource, project := repositoryTargetRuntimeInlineInputs(t)
 	response, err := json.Marshal(map[string]any{
@@ -508,16 +718,17 @@ func TestRepositoryTargetDiscoveryPassesExactJSTSSelectorBeforeProjectDiscovery(
 			_ context.Context,
 			_ *corpus.Corpus,
 			selector string,
-		) (jstsproject.Target, error) {
+		) ([]jstsproject.Target, error) {
 			discoveredSelector = selector
-			return jstsproject.TargetFromResult(project)
+			target, targetErr := jstsproject.TargetFromResult(project)
+			return []jstsproject.Target{target}, targetErr
 		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if discoveredSelector != project.Project.Selector || discovery.jstsTarget == nil ||
-		discovery.jstsTarget.Selector != project.Project.Selector {
+	if discoveredSelector != project.Project.Selector || len(discovery.jstsTargets) != 1 ||
+		discovery.jstsTargets[0].Selector != project.Project.Selector {
 		t.Fatalf("early JavaScript/TypeScript selector = %q; discovery = %#v", discoveredSelector, discovery)
 	}
 }
@@ -621,9 +832,9 @@ func repositoryTargetRuntimeTestOptions(
 				return nil, errors.New("unexpected additional model request")
 			}
 		},
-		ScoutJSTSFn: func(context.Context, *corpus.Corpus, string) (jstsproject.Target, error) {
+		ScoutJSTSFn: func(context.Context, *corpus.Corpus, string) ([]jstsproject.Target, error) {
 			*discoveryCalls++
-			return jstsTarget, nil
+			return []jstsproject.Target{jstsTarget}, nil
 		},
 	}
 }

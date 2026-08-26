@@ -37,7 +37,7 @@ func TestScoutNamelessRootPackageUsesLockfileIdentityWithoutCompiler(t *testing.
 	}
 }
 
-func TestScoutSelectedBindsExactNestedPackageBeforeCompiler(t *testing.T) {
+func TestScoutTargetsKeepEveryNestedPackageBeforeCompiler(t *testing.T) {
 	repository := newTargetScoutCorpus(t, map[string]string{
 		"admin/package.json": `{"name":"admin-app"}`,
 		"admin/src/main.ts":  "export const admin = true\n",
@@ -48,9 +48,26 @@ func TestScoutSelectedBindsExactNestedPackageBeforeCompiler(t *testing.T) {
 	defer repository.Close()
 
 	if _, err := Scout(context.Background(), repository); err == nil ||
-		!strings.Contains(err.Error(), "jsts:admin/package.json") ||
-		!strings.Contains(err.Error(), "jsts:front/package.json") {
-		t.Fatalf("ambiguous automatic scout error = %v", err)
+		!strings.Contains(err.Error(), "exact-one compatibility helper") ||
+		!strings.Contains(err.Error(), "use ScoutTargets") {
+		t.Fatalf("exact-one compatibility scout error = %v", err)
+	}
+	targets, err := ScoutTargets(context.Background(), repository, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 2 || targets[0].Selector != "jsts:admin/package.json" ||
+		targets[1].Selector != "jsts:front/package.json" {
+		t.Fatalf("repository package targets = %#v", targets)
+	}
+	for _, target := range targets {
+		exact, exactErr := ScoutTargets(context.Background(), repository, target.Selector)
+		if exactErr != nil {
+			t.Fatalf("replay %s: %v", target.Selector, exactErr)
+		}
+		if len(exact) != 1 || exact[0] != target {
+			t.Fatalf("replay %s = %#v, want %#v", target.Selector, exact, target)
+		}
 	}
 	target, err := ScoutSelected(
 		context.Background(), repository, "jsts:front/package.json",
@@ -69,6 +86,38 @@ func TestScoutSelectedBindsExactNestedPackageBeforeCompiler(t *testing.T) {
 	}
 }
 
+func TestScoutTargetsKeepSourceOwningRootAndNestedPackage(t *testing.T) {
+	repository := newTargetScoutCorpus(t, map[string]string{
+		"package.json":       `{"name":"root-app"}`,
+		"src/main.ts":        "export const root = true\n",
+		"front/package.json": `{"name":"front-app"}`,
+		"front/src/main.ts":  "export const front = true\n",
+	})
+	defer repository.Close()
+
+	targets, err := ScoutTargets(context.Background(), repository, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 2 || targets[0].Selector != "jsts:front/package.json" ||
+		targets[1].Selector != "jsts:package.json" {
+		t.Fatalf("root and nested package targets = %#v", targets)
+	}
+	if _, err := Scout(context.Background(), repository); err == nil ||
+		!strings.Contains(err.Error(), "use ScoutTargets") {
+		t.Fatalf("exact-one compatibility scout error = %v", err)
+	}
+	for _, target := range targets {
+		exact, exactErr := ScoutTargets(context.Background(), repository, target.Selector)
+		if exactErr != nil {
+			t.Fatalf("replay %s: %v", target.Selector, exactErr)
+		}
+		if len(exact) != 1 || exact[0] != target {
+			t.Fatalf("replay %s = %#v, want %#v", target.Selector, exact, target)
+		}
+	}
+}
+
 func TestScoutDoesNotLetSourceLessRootSuppressOwnedNestedPackage(t *testing.T) {
 	repository := newTargetScoutCorpus(t, map[string]string{
 		"package.json":       `{"private":true,"scripts":{"dev":"bun run --cwd ../.. dev","start":"bun run --cwd=../.. start"}}`,
@@ -77,19 +126,19 @@ func TestScoutDoesNotLetSourceLessRootSuppressOwnedNestedPackage(t *testing.T) {
 	})
 	defer repository.Close()
 
-	automatic, err := Scout(context.Background(), repository)
+	singleton, err := Scout(context.Background(), repository)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if automatic.Selector != "jsts:front/package.json" || automatic.ProjectDir != "front" {
-		t.Fatalf("automatic target = %#v, want the source-owning nested package", automatic)
+	if singleton.Selector != "jsts:front/package.json" || singleton.ProjectDir != "front" {
+		t.Fatalf("exact-one target = %#v, want the source-owning nested package", singleton)
 	}
-	exact, err := ScoutSelected(context.Background(), repository, automatic.Selector)
+	exact, err := ScoutSelected(context.Background(), repository, singleton.Selector)
 	if err != nil {
-		t.Fatalf("materialization selector rejected the automatic scout target: %v", err)
+		t.Fatalf("materialization selector rejected the exact-one scout target: %v", err)
 	}
-	if exact != automatic {
-		t.Fatalf("exact scout target = %#v, want automatic target %#v", exact, automatic)
+	if exact != singleton {
+		t.Fatalf("exact scout target = %#v, want exact-one target %#v", exact, singleton)
 	}
 }
 
