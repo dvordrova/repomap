@@ -689,6 +689,118 @@ export function render(): string { return view() }
 	}
 }
 
+func TestNestedPackageKeepsSiblingProjectReferenceAsExternalBoundary(t *testing.T) {
+	root := preparedTempProject(t)
+	files := map[string]string{
+		"packages/app/package.json": `{"name":"app"}`,
+		"packages/app/src/main.ts":  "export const app = true\n",
+		"packages/app/tsconfig.json": `{
+  "include": ["src/**/*.ts"],
+  "references": [{"path": "../shared"}],
+  "compilerOptions": {"module": "ESNext", "moduleResolution": "bundler", "strict": true}
+}`,
+		"packages/shared/package.json": `{"name":"shared"}`,
+		"packages/shared/src/index.ts": "export const shared = true\n",
+		"packages/shared/tsconfig.json": `{
+  "include": ["src/**/*.ts"],
+  "references": [{"path": "./missing-child"}],
+  "compilerOptions": {"composite": true, "module": "ESNext", "moduleResolution": "bundler", "strict": true}
+}`,
+	}
+	tracked := []string{"package.json"}
+	for filePath, content := range files {
+		writeTestFile(t, root, filePath, content)
+		tracked = append(tracked, filePath)
+	}
+	sort.Strings(tracked)
+	repository, err := corpus.New(
+		context.Background(), root,
+		gitfiles.Listing{Paths: tracked, RegularPaths: tracked},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+
+	result, err := DiscoverSelected(
+		context.Background(), repository, root, "jsts:packages/app/package.json",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Project.Selector != "jsts:packages/app/package.json" ||
+		result.Project.ConfigPath != "packages/app/tsconfig.json" || len(result.Files) != 1 ||
+		result.Files[0].Path != "packages/app/src/main.ts" {
+		t.Fatalf("package with sibling project reference = project %#v; files %#v", result.Project, result.Files)
+	}
+	for _, file := range result.Files {
+		if strings.HasPrefix(file.Path, "packages/shared/") {
+			t.Fatalf("sibling package source leaked into selected package page: %#v", file)
+		}
+	}
+
+	writeTestFile(t, filepath.Dir(root), "outside-project/tsconfig.json", `{"include":["src/**/*.ts"]}`)
+	writeTestFile(t, root, "packages/app/tsconfig.json", `{
+  "include": ["src/**/*.ts"],
+  "references": [{"path": "../../../outside-project"}],
+  "compilerOptions": {"module": "ESNext", "moduleResolution": "bundler", "strict": true}
+}`)
+	_, err = DiscoverSelected(
+		context.Background(), repository, root, "jsts:packages/app/package.json",
+	)
+	if err == nil || !strings.Contains(err.Error(), "unresolved project reference ../../../outside-project") {
+		t.Fatalf("outside-repository project reference error = %v", err)
+	}
+}
+
+func TestRootPackageKeepsNestedProjectReferenceAsExternalBoundary(t *testing.T) {
+	root := preparedTempProject(t)
+	files := map[string]string{
+		"package.json": `{"name":"root","devDependencies":{"typescript":"5.9.3"}}`,
+		"src/root.ts":  "export const root = true\n",
+		"tsconfig.json": `{
+  "include": ["src/**/*.ts"],
+  "references": [{"path": "./packages/shared"}],
+  "compilerOptions": {"module": "ESNext", "moduleResolution": "bundler", "strict": true}
+}`,
+		"packages/shared/package.json": `{"name":"shared"}`,
+		"packages/shared/src/index.ts": "export const shared = true\n",
+		"packages/shared/tsconfig.json": `{
+  "include": ["src/**/*.ts"],
+  "references": [{"path": "./missing-child"}],
+  "compilerOptions": {"composite": true, "module": "ESNext", "moduleResolution": "bundler", "strict": true}
+}`,
+	}
+	tracked := make([]string, 0, len(files))
+	for filePath, content := range files {
+		writeTestFile(t, root, filePath, content)
+		tracked = append(tracked, filePath)
+	}
+	sort.Strings(tracked)
+	repository, err := corpus.New(
+		context.Background(), root,
+		gitfiles.Listing{Paths: tracked, RegularPaths: tracked},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+
+	result, err := DiscoverSelected(context.Background(), repository, root, "jsts:package.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Project.Selector != "jsts:package.json" || result.Project.ConfigPath != "tsconfig.json" ||
+		len(result.Files) != 1 || result.Files[0].Path != "src/root.ts" {
+		t.Fatalf("root package with nested project reference = project %#v; files %#v", result.Project, result.Files)
+	}
+	for _, file := range result.Files {
+		if strings.HasPrefix(file.Path, "packages/shared/") {
+			t.Fatalf("nested package source leaked into root package page: %#v", file)
+		}
+	}
+}
+
 func TestCredentialBearingManifestValuesNeverEnterHelperOrArtifact(t *testing.T) {
 	root := preparedTempProject(t)
 	secret := "token-value-123456789"
@@ -707,12 +819,37 @@ func TestCredentialBearingManifestValuesNeverEnterHelperOrArtifact(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	requestBytes, err := jsonMarshal(helperRequest{Version: HelperVersion, Files: []helperFile{{Path: "src/main.ts", FileRef: "f2"}}})
+	request := newHelperRequest(
+		[]helperCompilerPackage{{Name: "typescript", ResolutionBase: helperCompilerResolutionProject}},
+		nil,
+	)
+	request.Files = append(request.Files, helperFile{Path: "src/main.ts", FileRef: "f2"})
+	requestBytes, err := jsonMarshal(request)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if bytes.Contains(encoded, []byte(secret)) || bytes.Contains(requestBytes, []byte(secret)) {
 		t.Fatal("credential-bearing manifest value entered helper input or artifact")
+	}
+}
+
+func TestHelperRequestEncodesEmptyPackageBoundariesAsArray(t *testing.T) {
+	request := newHelperRequest(
+		[]helperCompilerPackage{{Name: "typescript", ResolutionBase: helperCompilerResolutionProject}},
+		nil,
+	)
+	encoded, err := jsonMarshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range [][]byte{
+		[]byte(`"package_boundary_dirs":[]`),
+		[]byte(`"files":[]`),
+		[]byte(`"additional_files":[]`),
+	} {
+		if !bytes.Contains(encoded, want) {
+			t.Fatalf("helper request omitted canonical empty array %s: %s", want, encoded)
+		}
 	}
 }
 
