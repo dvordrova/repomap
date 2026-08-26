@@ -3,14 +3,11 @@
 `repomap` is an online, model-assisted repository orientation tool. It
 extracts exact repository facts locally, sends bounded request-local catalogs
 to an OpenAI-compatible model, and publishes a manifest, report JSON, and
-report HTML. Go currently has the complete semantic cube-map path. Python has
-target discovery, an AST-backed language-neutral program index, an exact
-dependency catalog, potential-integration and concrete-operation classifiers,
-the shared core-responsibility map, and model-selected activity entrypoints
-restored to exact program objects. For every selected integration operation,
-Python also publishes a deterministic route from a selected activity to the
-exact caller when the retained program graph supports one, preserving
-`exact`, `possible`, `frontier`, and `unconnected` as distinct claims.
+report HTML. Every selected Go, Python, and JavaScript/TypeScript typed target
+runs through its complete target-local ProgramIndex, dependency, semantic-cube,
+and report-page path. A multi-target run seals a language-neutral program-page
+portfolio and a repository-level runtime portfolio that bind those complete
+pages without reducing a non-default target to a structural-only substitute.
 
 The supported product surface is deliberately small:
 
@@ -29,6 +26,11 @@ Go 1.26 or newer is required.
 Python repositories additionally require Python 3.10 or newer on `PATH`. The
 adapter requires the runtime's exact standard-library module catalog and does
 not guess when that authority is unavailable.
+
+A selected JavaScript/TypeScript target additionally requires Node.js on
+`PATH` and an owner-prepared, repository-local TypeScript compiler in
+`node_modules`. Prepare dependencies with the repository's normal package
+manager before running repomap; repomap never installs packages.
 
 ```bash
 make build
@@ -56,7 +58,7 @@ export REPOMAP_LLM_AUTH=bearer
 ```
 
 Optional settings are `REPOMAP_LLM_TIMEOUT` (default `10m`) and
-`REPOMAP_LLM_MAX_TOKENS` (default `64000`). An explicitly unauthenticated
+`REPOMAP_LLM_MAX_TOKENS` (default `128000`). An explicitly unauthenticated
 endpoint uses `REPOMAP_LLM_AUTH=none` and still requires
 `REPOMAP_LLM_ENDPOINT`.
 
@@ -71,19 +73,20 @@ no `DEEPSEEK_*` value is inherited. The complete transport contract is in
 .bin/repomap ../etcd
 ```
 
-Target discovery is high-recall. By default the model positively selects the
-supported targets to analyze and chooses their default. Go target pages receive
-the complete Go semantic path. A Python-only root receives complete Python
-semantics for its default view; additional selected Python views are published
-as explicitly structural. A mixed Go/Python positive selection currently ends
-with corrective `--target` or project-root guidance because the report cannot
-yet publish complete cross-language target pages. `--target` bypasses the
+Target discovery is high-recall. By default one repository-wide portfolio must
+retain a canonical file representative for every exact native target, may also
+retain positively supported repository-guidance candidates, and chooses one
+retained target as the default. Every restored typed target receives a complete
+target-local report page; a mixed-language run publishes those pages through
+the neutral program-page and runtime portfolios. `--target` bypasses the
 portfolio choice and analyzes exactly one supported explicit target, while the
-parallel README classifier still runs for downstream context. For every
-discovered candidate set — even one eligible file — a fully validated live or
-cached model selection is required. Unavailable providers, transport failures,
-invalid responses, or incomplete target, activity, dependency, or snapshot
-evidence end the run instead of publishing a locally guessed or partial map.
+README classifier and active language scouts still run for downstream context.
+An unselected language's compiler and page-local analysis do not run. For every
+non-explicit discovered candidate set — even one eligible file — a fully
+validated live or cached model selection is required. Unavailable providers,
+transport failures, invalid responses, or incomplete target, activity,
+dependency, or snapshot evidence end the run instead of publishing a locally
+guessed or partial map.
 The current flags are:
 
 ```text

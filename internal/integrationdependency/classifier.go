@@ -26,22 +26,20 @@ import (
 )
 
 const (
-	Version = 2
+	Version = 4
 
 	MaxAdvertisedImporters = 16
 
-	MaxDependencyBatches            = 16
-	MaxAdvertisedDependencies       = 4096
-	MaxAdvertisedDeclaredPackages   = dependencydeclaration.MaxPackages
-	MaxSelectedDependencies         = 1024
-	MaxSelectedDeclaredPackages     = 1024
-	MaxSelectedCandidatesPerRequest = 64
-	MaxSelectedCandidates           = MaxDependencyBatches * MaxSelectedCandidatesPerRequest
+	MaxDependencyBatches          = 16
+	MaxAdvertisedDependencies     = 4096
+	MaxAdvertisedDeclaredPackages = dependencydeclaration.MaxPackages
 
-	// Kept as a compatibility name for consumers that reason only about the
-	// observed-dependency side of this result. Request batching itself is byte
-	// based and deliberately has no item-count partition.
-	MaxSelectedDependenciesPerRequest = MaxSelectedCandidatesPerRequest
+	// Selection is a subset of the complete advertised authority, not a
+	// separately quota-limited semantic product. These defensive artifact
+	// bounds therefore match the corresponding input-authority bounds.
+	MaxSelectedDependencies     = MaxAdvertisedDependencies
+	MaxSelectedDeclaredPackages = MaxAdvertisedDeclaredPackages
+	MaxSelectedCandidates       = MaxSelectedDependencies + MaxSelectedDeclaredPackages
 
 	maxSerializedUserBytes = 1 * 1024 * 1024
 	maxRequestBytes        = 4 * 1024 * 1024
@@ -206,6 +204,11 @@ type preparedBatch struct {
 	userBytes int
 }
 
+type responseAuthority struct {
+	observed map[string]struct{}
+	declared map[string]struct{}
+}
+
 // Run is the explicit observed-only API used by the Go dependency path. Empty
 // complete catalogs return an authoritative empty result without a model call;
 // partial catalogs and global-bound overflow fail closed.
@@ -317,6 +320,7 @@ func run(
 		return Result{}, err
 	}
 	calls := make([]llm.Call[response], 0, len(batches))
+	authorities := make([]responseAuthority, 0, len(batches))
 	for batchIndex, batch := range batches {
 		user, err := marshalRequest(batch, batchIndex+1, len(batches), observed, declarations, target)
 		if err != nil {
@@ -335,22 +339,8 @@ func run(
 		if err != nil {
 			return Result{}, fmt.Errorf("integration dependency: state batch %d: %w", batchIndex+1, err)
 		}
-		observedAllowed := make(map[string]struct{}, len(batch.observed))
-		for _, value := range batch.observed {
-			observedAllowed[value.ref] = struct{}{}
-		}
-		declaredAllowed := make(map[string]struct{}, len(batch.declared))
-		for _, value := range batch.declared {
-			// A constraint-only declaration limits another requirement's version;
-			// it does not establish that this distribution is installed. Keep it
-			// visible as exact manifest context, but never accept it as a selected
-			// integration dependency.
-			if value.projection.ConstraintStatements < value.projection.Statements {
-				declaredAllowed[value.ref] = struct{}{}
-			}
-		}
-		batchObservedAllowed := observedAllowed
-		batchDeclaredAllowed := declaredAllowed
+		authority := buildResponseAuthority(batch)
+		authorities = append(authorities, authority)
 		declarationMode := declarations != nil
 		calls = append(calls, llm.Call[response]{
 			State: state,
@@ -362,7 +352,7 @@ func run(
 				MaxOutputTokens: maxOutputTokens,
 			},
 			Validate: func(value response) error {
-				return validateResponse(value, batchObservedAllowed, batchDeclaredAllowed, declarationMode)
+				return validateResponse(value, declarationMode)
 			},
 		})
 	}
@@ -372,11 +362,12 @@ func run(
 	}
 	selectedObserved := make(map[string]struct{})
 	selectedDeclared := make(map[string]struct{})
-	for _, outcome := range outcomes {
-		for _, ref := range outcome.Value.IntegrationDependencyRefs {
+	for batchIndex, outcome := range outcomes {
+		authority := authorities[batchIndex]
+		for ref := range normalizeSelectedRefs(outcome.Value.IntegrationDependencyRefs, authority.observed) {
 			selectedObserved[ref] = struct{}{}
 		}
-		for _, ref := range outcome.Value.DeclaredPackageRefs {
+		for ref := range normalizeSelectedRefs(outcome.Value.DeclaredPackageRefs, authority.declared) {
 			selectedDeclared[ref] = struct{}{}
 		}
 	}
@@ -827,8 +818,6 @@ func marshalRequest(
 
 func validateResponse(
 	value response,
-	observedAllowed map[string]struct{},
-	declaredAllowed map[string]struct{},
 	declarationMode bool,
 ) error {
 	if value.IntegrationDependencyRefs == nil {
@@ -840,32 +829,41 @@ func validateResponse(
 	if !declarationMode && value.DeclaredPackageRefs != nil {
 		return fmt.Errorf("integration dependency: declaration refs are not valid in observed-only mode")
 	}
-	if len(value.IntegrationDependencyRefs)+len(value.DeclaredPackageRefs) > MaxSelectedCandidatesPerRequest {
-		return fmt.Errorf("integration dependency: selected ref count is outside bounds")
-	}
-	if err := validateSelectedRefs(value.IntegrationDependencyRefs, observedAllowed); err != nil {
-		return err
-	}
-	if declarationMode {
-		if err := validateSelectedRefs(value.DeclaredPackageRefs, declaredAllowed); err != nil {
-			return err
-		}
-	}
 	return nil
 }
 
-func validateSelectedRefs(refs []string, allowed map[string]struct{}) error {
-	seen := make(map[string]struct{}, len(refs))
+func buildResponseAuthority(batch preparedBatch) responseAuthority {
+	authority := responseAuthority{
+		observed: make(map[string]struct{}, len(batch.observed)),
+		declared: make(map[string]struct{}, len(batch.declared)),
+	}
+	for _, value := range batch.observed {
+		authority.observed[value.ref] = struct{}{}
+	}
+	for _, value := range batch.declared {
+		// A constraint-only declaration limits another requirement's version;
+		// it does not establish that this distribution is installed. Keep it
+		// visible as exact manifest context, but do not give it selection
+		// authority.
+		if value.projection.ConstraintStatements < value.projection.Statements {
+			authority.declared[value.ref] = struct{}{}
+		}
+	}
+	return authority
+}
+
+// normalizeSelectedRefs keeps only exact request-local refs before treating
+// the response as a set. Unknown refs carry no authority: they are ignored,
+// never guessed, repaired, or used to trigger another provider call.
+func normalizeSelectedRefs(refs []string, allowed map[string]struct{}) map[string]struct{} {
+	selected := make(map[string]struct{}, len(refs))
 	for _, ref := range refs {
 		if _, exists := allowed[ref]; !exists {
-			return fmt.Errorf("integration dependency: unknown request-local ref %q", ref)
+			continue
 		}
-		if _, duplicate := seen[ref]; duplicate {
-			return fmt.Errorf("integration dependency: duplicate request-local ref %q", ref)
-		}
-		seen[ref] = struct{}{}
+		selected[ref] = struct{}{}
 	}
-	return nil
+	return selected
 }
 
 func validateObservedSelections(values []SelectedDependency) error {
@@ -1104,7 +1102,7 @@ func classifierState(
 		TargetID                  string `json:"target_id,omitempty"`
 		AuthoritySHA256           string `json:"authority_sha256"`
 	}{
-		Contract: "repomap.integrationdependency.v2", Preparation: 3, ResponseSchema: 2,
+		Contract: "repomap.integrationdependency.v5", Preparation: 5, ResponseSchema: 5,
 		PromptSHA256:              sha256Hex([]byte(classifierPrompt(declarationMode))),
 		BatchIndex:                batchIndex,
 		BatchCount:                batchTotal,

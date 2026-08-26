@@ -46,9 +46,23 @@ func ResolveResponse(compilation Compilation, raw []byte) (Selection, error) {
 	for _, candidate := range compilation.Request.Candidates {
 		authority[candidate.FileRef] = candidate
 	}
-	if len(response.TargetFileRefs) == 0 {
+	targetSet := make(map[corpus.FileID]struct{}, len(response.TargetFileRefs))
+	for _, fileRef := range response.TargetFileRefs {
+		if _, known := authority[fileRef]; !known {
+			continue
+		}
+		targetSet[fileRef] = struct{}{}
+	}
+	if compilation.requiredAuthorityBound {
+		for _, fileRef := range compilation.requiredTargetFileRefs {
+			if _, selected := targetSet[fileRef]; !selected {
+				return Selection{}, fmt.Errorf("target portfolio: selection omits exact required target authority")
+			}
+		}
+	}
+	if len(targetSet) == 0 {
 		if response.DefaultFileRef != nil {
-			return Selection{}, fmt.Errorf("target portfolio: empty target_file_refs requires null default_file_ref")
+			return Selection{}, fmt.Errorf("target portfolio: empty known target_file_refs requires null default_file_ref")
 		}
 		unclassified := make([]VisibleCandidate, 0, len(compilation.Request.Candidates))
 		for _, candidate := range compilation.Request.Candidates {
@@ -61,21 +75,30 @@ func ResolveResponse(compilation Compilation, raw []byte) (Selection, error) {
 	if response.DefaultFileRef == nil {
 		return Selection{}, fmt.Errorf("target portfolio: non-empty target_file_refs requires default_file_ref")
 	}
+	if compilation.executableAuthorityBound && len(compilation.executableFileRefs) != 0 {
+		executableSet := make(map[corpus.FileID]struct{}, len(compilation.executableFileRefs))
+		for _, fileRef := range compilation.executableFileRefs {
+			executableSet[fileRef] = struct{}{}
+		}
+		selectedExecutable := false
+		for fileRef := range targetSet {
+			if _, executable := executableSet[fileRef]; executable {
+				selectedExecutable = true
+				break
+			}
+		}
+		if !selectedExecutable {
+			return Selection{}, fmt.Errorf("target portfolio: positive selection omits exact executable authority")
+		}
+		if _, executable := executableSet[*response.DefaultFileRef]; !executable {
+			return Selection{}, fmt.Errorf("target portfolio: positive selection requires an exact executable default")
+		}
+	}
 	defaultCandidate, known := authority[*response.DefaultFileRef]
 	if !known {
 		return Selection{}, fmt.Errorf("target portfolio: response cites unknown default_file_ref")
 	}
 
-	targetSet := make(map[corpus.FileID]struct{}, len(response.TargetFileRefs))
-	for _, fileRef := range response.TargetFileRefs {
-		if _, known := authority[fileRef]; !known {
-			return Selection{}, fmt.Errorf("target portfolio: response cites unknown target_file_ref")
-		}
-		if _, duplicate := targetSet[fileRef]; duplicate {
-			return Selection{}, fmt.Errorf("target portfolio: response contains duplicate target_file_ref")
-		}
-		targetSet[fileRef] = struct{}{}
-	}
 	if _, selected := targetSet[*response.DefaultFileRef]; !selected {
 		return Selection{}, fmt.Errorf("target portfolio: default_file_ref is absent from target_file_refs")
 	}

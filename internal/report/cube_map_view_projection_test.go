@@ -30,7 +30,8 @@ func TestCubeMapViewProjectsExactJoinsAndReverseNavigation(t *testing.T) {
 		t.Fatalf("Validate: %v", err)
 	}
 	if len(view.RefinedCore) != 2 || view.RefinedCore[0].Name != "Outbound delivery" ||
-		len(view.RefinedGroups) != 2 || view.RefinedGroups[0].CoreBlockIDs[0] != view.RefinedCore[0].ID ||
+		len(view.RefinedGroups) != 2 || view.RefinedGroups[0].Authority != coremap.GroupAuthorityModel ||
+		view.RefinedGroups[0].CoreBlockIDs[0] != view.RefinedCore[0].ID ||
 		len(view.CoreObjects) != 1 || view.CoreObjects[0].DirectCallNodeID != "node-send" ||
 		len(view.ActivitySurfaces) != 1 || view.ActivitySurfaces[0].Path == nil ||
 		view.ActivitySurfaces[0].Path.Text != "/v1/send" {
@@ -63,13 +64,19 @@ func TestCubeMapViewProjectsExactJoinsAndReverseNavigation(t *testing.T) {
 		t.Fatalf("partial candidate coverage error = %v", err)
 	}
 
-	partialGroups := *view
-	partialGroups.RefinedGroups = append([]CoreMapViewGroup(nil), view.RefinedGroups...)
-	partialGroups.RefinedGroups[1].CoreBlockIDs = append(
-		[]string(nil), partialGroups.RefinedGroups[0].CoreBlockIDs...,
+	overlappingGroups := *view
+	overlappingGroups.RefinedGroups = append([]CoreMapViewGroup(nil), view.RefinedGroups...)
+	for position := range overlappingGroups.RefinedGroups {
+		overlappingGroups.RefinedGroups[position].CoreBlockIDs = append(
+			[]string(nil), view.RefinedGroups[position].CoreBlockIDs...,
+		)
+	}
+	overlappingGroups.RefinedGroups[1].CoreBlockIDs = append(
+		overlappingGroups.RefinedGroups[1].CoreBlockIDs,
+		overlappingGroups.RefinedGroups[0].CoreBlockIDs[0],
 	)
-	if err := partialGroups.Validate(); err == nil || !strings.Contains(err.Error(), "several groups") {
-		t.Fatalf("partial refined group partition error = %v", err)
+	if err := overlappingGroups.Validate(); err != nil {
+		t.Fatalf("overlapping refined group membership: %v", err)
 	}
 
 	badGroupCoverage := *view
@@ -180,16 +187,18 @@ func cubeMapViewFixture(t *testing.T) cubemap.Map {
 	coordination.ID = cubeMapCoreBlockID(coremap.StageRefined, programTarget.ID, coordination)
 	groups := []coremap.Group{
 		{
-			Name: "Delivery", Purpose: "Sends data to remote systems.",
+			Authority: coremap.GroupAuthorityModel,
+			Name:      "Delivery", Purpose: "Sends data to remote systems.",
 			BlockIDs: []string{refined.ID},
 		},
 		{
-			Name: "Coordination", Purpose: "Coordinates application work.",
+			Authority: coremap.GroupAuthorityModel,
+			Name:      "Coordination", Purpose: "Coordinates application work.",
 			BlockIDs: []string{coordination.ID},
 		},
 	}
 	for position := range groups {
-		groups[position].ID = cubeMapCoreGroupID(programTarget.ID, groups[position].BlockIDs)
+		groups[position].ID = cubeMapCoreGroupID(programTarget.ID, groups[position])
 	}
 	operation := cubemap.IntegrationOperation{
 		ExternalCallFamilyID: "family-http-do", DependencyID: "dep-net-http", PackagePath: "net/http",
@@ -216,7 +225,7 @@ func cubeMapViewFixture(t *testing.T) cubemap.Map {
 				TrackedFiles: 2, BaselineRoleFiles: 1, SymbolsAvailable: 1,
 				BaselineBlocks: 1, BaselineFilesSelected: 1, RefinedBlocks: 2,
 				RefinedFilesSelected: 2, RefinedSymbolsSelected: 1,
-				RefinedGroups: 2, RefinedGroupCalls: 1,
+				RefinedGroups: 2, RefinedModelGroups: 2, RefinedGroupCalls: 1,
 				SemanticFacts: 2, RefinedMapCalls: 1,
 				DirectCallState: surfacediscovery.DirectCallIndexReady,
 			},
@@ -342,14 +351,35 @@ func cubeMapCoreBlockID(stage coremap.Stage, targetID string, block coremap.Bloc
 		keys = append(keys, "c:"+child.ID)
 	}
 	sort.Strings(keys)
-	digest := sha256.Sum256([]byte("coremap-block-v1\x00" + string(stage) + "\x00" + targetID + "\x00" + strings.Join(keys, "\x00")))
+	wire, _ := json.Marshal(struct {
+		Contract string        `json:"contract"`
+		Stage    coremap.Stage `json:"stage"`
+		Target   string        `json:"target"`
+		Name     string        `json:"name"`
+		Purpose  string        `json:"purpose"`
+		Evidence []string      `json:"evidence"`
+	}{
+		Contract: "coremap-block-v2", Stage: stage, Target: targetID,
+		Name: block.Name, Purpose: block.Purpose, Evidence: keys,
+	})
+	digest := sha256.Sum256(wire)
 	return "core-" + hex.EncodeToString(digest[:8])
 }
 
-func cubeMapCoreGroupID(targetID string, blockIDs []string) string {
-	keys := append([]string(nil), blockIDs...)
+func cubeMapCoreGroupID(targetID string, group coremap.Group) string {
+	keys := append([]string(nil), group.BlockIDs...)
 	sort.Strings(keys)
-	digest := sha256.Sum256([]byte("coremap-group-v1\x00" + targetID + "\x00" + strings.Join(keys, "\x00")))
+	wire, _ := json.Marshal(struct {
+		Contract    string   `json:"contract"`
+		Target      string   `json:"target"`
+		Name        string   `json:"name"`
+		Purpose     string   `json:"purpose"`
+		Memberships []string `json:"memberships"`
+	}{
+		Contract: "coremap-group-v2", Target: targetID,
+		Name: group.Name, Purpose: group.Purpose, Memberships: keys,
+	})
+	digest := sha256.Sum256(wire)
 	return "core-group-" + hex.EncodeToString(digest[:8])
 }
 

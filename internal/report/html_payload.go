@@ -178,6 +178,9 @@ func programShellPayloadForReport(
 		ActivityEntrypointView: data.ActivityEntrypointView,
 		IntegrationUsageView:   integrationUsageViewForBrowser(data.IntegrationUsageView),
 		ActivityPathView:       activityPathViewForBrowser(data.ActivityPathView),
+		JSTSSurfaceCatalogView: jsTSSurfaceCatalogViewForBrowser(data.JSTSSurfaceCatalogView),
+		CrossSurfacePathView:   crossSurfacePathViewForBrowser(data.CrossSurfacePathView),
+		RuntimePortfolio:       data.RuntimePortfolio,
 		OpenablePaths:          append([]string{}, data.OpenablePaths...),
 		SourceIDs:              data.SourceIDs,
 		GitHubSourceLinks:      data.GitHubSourceLinks,
@@ -254,5 +257,23 @@ func activityPathViewForBrowser(value *ActivityPathView) *ActivityPathView {
 	projected.IntegrationDependenciesSHA256 = ""
 	projected.IntegrationUsageSHA256 = ""
 	projected.ActivityPathsSHA256 = ""
+	return &projected
+}
+
+func jsTSSurfaceCatalogViewForBrowser(value *JSTSSurfaceCatalogView) *JSTSSurfaceCatalogView {
+	if value == nil {
+		return nil
+	}
+	projected := *value
+	projected.JSTSProjectSHA256 = ""
+	return &projected
+}
+
+func crossSurfacePathViewForBrowser(value *CrossSurfacePathView) *CrossSurfacePathView {
+	if value == nil {
+		return nil
+	}
+	projected := *value
+	projected.JSTSProjectSHA256 = ""
 	return &projected
 }

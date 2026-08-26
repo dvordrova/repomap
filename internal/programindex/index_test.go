@@ -22,6 +22,15 @@ func TestNewRejectsUnmeasuredObjectVisibility(t *testing.T) {
 	}
 }
 
+func TestNewRejectsMethodOwnedByNonType(t *testing.T) {
+	input := representativeInput()
+	input.Objects[0].OwnerRef = "object-package"
+	_, err := newMeasuredProgramIndex(input)
+	if err == nil || !strings.Contains(err.Error(), "owner is not a type") {
+		t.Fatalf("New error = %v, want exact method receiver rejection", err)
+	}
+}
+
 func TestNewRejectsUnmeasuredRelationCoverage(t *testing.T) {
 	input := shapeInput()
 	input.Relations = []RelationInput{{
@@ -226,6 +235,10 @@ func TestCodecIsStrictAndValidatesSeal(t *testing.T) {
 	if _, err := Decode(unknown); err == nil {
 		t.Fatal("Decode accepted an unknown field")
 	}
+	previousVersion := []byte(strings.Replace(string(encoded), `"version":7`, `"version":6`, 1))
+	if _, err := Decode(previousVersion); err == nil {
+		t.Fatal("Decode accepted the previous ProgramIndex contract version")
+	}
 	tampered := []byte(strings.Replace(string(encoded), "runtime.schedule", "runtime.changed", 1))
 	if _, err := Decode(tampered); err == nil {
 		t.Fatal("Decode accepted content with a stale seal")
@@ -324,6 +337,15 @@ func TestNewRejectsDuplicateRelationIdentityAndBounds(t *testing.T) {
 	}}
 	if _, err := newMeasuredProgramIndex(input); err == nil || !strings.Contains(err.Error(), "relation bound exceeded") {
 		t.Fatalf("wide relation error = %v", err)
+	}
+}
+
+func TestIndexEnvelopeBudgetIsSeparateFromSemanticTextBudget(t *testing.T) {
+	if MaxAggregateTextBytes != 64*1024*1024 {
+		t.Fatalf("aggregate semantic text budget = %d", MaxAggregateTextBytes)
+	}
+	if MaxIndexBytes != 128*1024*1024 || MaxIndexBytes <= MaxAggregateTextBytes {
+		t.Fatalf("encoded index envelope budget = %d", MaxIndexBytes)
 	}
 }
 

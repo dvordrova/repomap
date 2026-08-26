@@ -1,0 +1,195 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "path": "internal/activityentrypoint/prompts/classifier.md",
+      "status": "active",
+      "owner": "activityentrypoint",
+      "stage": "activity_entrypoint_selection",
+      "role": "system",
+      "embed_source": "internal/activityentrypoint/prompt.go",
+      "embed_pattern": "prompts/classifier.md",
+      "embed_variable": "classifierPromptFile"
+    },
+    {
+      "path": "internal/activitysurface/prompt.md",
+      "status": "dormant",
+      "owner": "activitysurface",
+      "stage": "activity_surface_classification",
+      "role": "system",
+      "embed_source": "internal/activitysurface/activitysurface.go",
+      "embed_pattern": "prompt.md",
+      "embed_variable": "promptText"
+    },
+    {
+      "path": "internal/coremap/prompts/baseline.md",
+      "status": "active",
+      "owner": "coremap",
+      "stage": "core_map_baseline",
+      "role": "system",
+      "embed_source": "internal/coremap/prompt.go",
+      "embed_pattern": "prompts/baseline.md",
+      "embed_variable": "baselinePromptFile"
+    },
+    {
+      "path": "internal/coremap/prompts/group.md",
+      "status": "active",
+      "owner": "coremap",
+      "stage": "core_map_orientation_grouping",
+      "role": "system",
+      "embed_source": "internal/coremap/prompt.go",
+      "embed_pattern": "prompts/group.md",
+      "embed_variable": "groupPromptFile"
+    },
+    {
+      "path": "internal/coremap/prompts/reduce.md",
+      "status": "active",
+      "owner": "coremap",
+      "stage": "core_map_reduction",
+      "role": "system",
+      "embed_source": "internal/coremap/prompt.go",
+      "embed_pattern": "prompts/reduce.md",
+      "embed_variable": "reducePromptFile"
+    },
+    {
+      "path": "internal/coremap/prompts/refined.md",
+      "status": "active",
+      "owner": "coremap",
+      "stage": "core_map_refinement",
+      "role": "system",
+      "embed_source": "internal/coremap/prompt.go",
+      "embed_pattern": "prompts/refined.md",
+      "embed_variable": "refinedPromptFile"
+    },
+    {
+      "path": "internal/cubemap/prompts/entrypoints.md",
+      "status": "dormant",
+      "owner": "cubemap",
+      "stage": "cube_map_entrypoint_selection",
+      "role": "system",
+      "embed_source": "internal/cubemap/pipeline.go",
+      "embed_pattern": "prompts/entrypoints.md",
+      "embed_variable": "entrypointPrompt"
+    },
+    {
+      "path": "internal/cubemap/prompts/integration-symbols.md",
+      "status": "dormant",
+      "owner": "cubemap",
+      "stage": "cube_map_integration_symbol_selection",
+      "role": "system",
+      "embed_source": "internal/cubemap/pipeline.go",
+      "embed_pattern": "prompts/integration-symbols.md",
+      "embed_variable": "integrationSymbolsPrompt"
+    },
+    {
+      "path": "internal/cubemap/prompts/surface-core-effects.md",
+      "status": "dormant",
+      "owner": "cubemap",
+      "stage": "cube_map_surface_core_effect_binding",
+      "role": "system",
+      "embed_source": "internal/cubemap/surface_core_effect_binder.go",
+      "embed_pattern": "prompts/surface-core-effects.md",
+      "embed_variable": "surfaceCoreEffectsPrompt"
+    },
+    {
+      "path": "internal/integrationdependency/prompts/classifier.md",
+      "status": "active",
+      "owner": "integrationdependency",
+      "stage": "integration_dependency_observed_classification",
+      "role": "system",
+      "embed_source": "internal/integrationdependency/classifier.go",
+      "embed_pattern": "prompts/classifier.md",
+      "embed_variable": "observedPrompt"
+    },
+    {
+      "path": "internal/integrationdependency/prompts/classifier_with_declarations.md",
+      "status": "active",
+      "owner": "integrationdependency",
+      "stage": "integration_dependency_declaration_classification",
+      "role": "system",
+      "embed_source": "internal/integrationdependency/classifier.go",
+      "embed_pattern": "prompts/classifier_with_declarations.md",
+      "embed_variable": "declarationPrompt"
+    },
+    {
+      "path": "internal/integrationusage/prompts/classifier.md",
+      "status": "active",
+      "owner": "integrationusage",
+      "stage": "integration_usage_classification",
+      "role": "system",
+      "embed_source": "internal/integrationusage/classifier.go",
+      "embed_pattern": "prompts/classifier.md",
+      "embed_variable": "prompt"
+    },
+    {
+      "path": "internal/readmetargetscout/prompts/system.md",
+      "status": "active",
+      "owner": "readmetargetscout",
+      "stage": "readme_file_role_classification",
+      "role": "system",
+      "embed_source": "internal/readmetargetscout/prompt_text.go",
+      "embed_pattern": "prompts/system.md",
+      "embed_variable": "promptSystemFile"
+    },
+    {
+      "path": "internal/readmetargetscout/prompts/user.md",
+      "status": "active",
+      "owner": "readmetargetscout",
+      "stage": "readme_file_role_classification",
+      "role": "user",
+      "embed_source": "internal/readmetargetscout/prompt_text.go",
+      "embed_pattern": "prompts/user.md",
+      "embed_variable": "promptUserShapeFile"
+    },
+    {
+      "path": "internal/runtimeportfolio/prompts/system.md",
+      "status": "active",
+      "owner": "runtimeportfolio",
+      "stage": "runtime_portfolio_composition",
+      "role": "system",
+      "embed_source": "internal/runtimeportfolio/cube.go",
+      "embed_pattern": "prompts/system.md",
+      "embed_variable": "systemPrompt"
+    },
+    {
+      "path": "internal/targetportfolio/prompts/system.md",
+      "status": "active",
+      "owner": "targetportfolio",
+      "stage": "target_portfolio_selection",
+      "role": "system",
+      "embed_source": "internal/targetportfolio/prompt_text.go",
+      "embed_pattern": "prompts/system.md",
+      "embed_variable": "promptSystemFile"
+    },
+    {
+      "path": "internal/targetportfolio/prompts/user.md",
+      "status": "active",
+      "owner": "targetportfolio",
+      "stage": "target_portfolio_selection",
+      "role": "user",
+      "embed_source": "internal/targetportfolio/prompt_text.go",
+      "embed_pattern": "prompts/user.md",
+      "embed_variable": "promptUserShapeFile"
+    },
+    {
+      "path": "internal/targetviewchoice/prompts/system.md",
+      "status": "active",
+      "owner": "targetviewchoice",
+      "stage": "target_view_choice",
+      "role": "system",
+      "embed_source": "internal/targetviewchoice/prompt_text.go",
+      "embed_pattern": "prompts/system.md",
+      "embed_variable": "promptSystemFile"
+    },
+    {
+      "path": "internal/targetviewchoice/prompts/user.md",
+      "status": "active",
+      "owner": "targetviewchoice",
+      "stage": "target_view_choice",
+      "role": "user",
+      "embed_source": "internal/targetviewchoice/prompt_text.go",
+      "embed_pattern": "prompts/user.md",
+      "embed_variable": "promptUserShapeFile"
+    }
+  ]
+}

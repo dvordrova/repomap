@@ -26,16 +26,19 @@ import (
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/integrationdependency"
 	"github.com/dvordrova/repomap/internal/integrationusage"
+	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/programpage"
 	"github.com/dvordrova/repomap/internal/pythondeclareddependencies"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
+	"github.com/dvordrova/repomap/internal/runtimeportfolio"
 	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/workspacesnapshot"
 )
 
 const (
-	CurrentRunManifestVersion = 31
+	CurrentRunManifestVersion = 34
 	RunManifestFilename       = "run_manifest.json"
 
 	maxRunManifestBytes             = 4 * 1024 * 1024
@@ -111,9 +114,12 @@ type MaterialInputs struct {
 	IntegrationDependenciesSHA256 string `json:"integration_dependencies_sha256,omitempty"`
 	IntegrationUsageSHA256        string `json:"integration_usage_sha256,omitempty"`
 	ActivityPathsSHA256           string `json:"activity_paths_sha256,omitempty"`
+	JSTSProjectSHA256             string `json:"js_ts_project_sha256,omitempty"`
 	ReadmeFileRolesSHA256         string `json:"readme_file_roles_sha256,omitempty"`
 	TargetRunContainerSHA256      string `json:"target_run_container_sha256,omitempty"`
 	TargetPagePortfolioSHA256     string `json:"target_page_portfolio_sha256,omitempty"`
+	ProgramPagePortfolioSHA256    string `json:"program_page_portfolio_sha256,omitempty"`
+	RuntimePortfolioSHA256        string `json:"runtime_portfolio_sha256,omitempty"`
 	InputPolicyVersion            string `json:"input_policy_version"`
 	ReportContract                int    `json:"report_contract"`
 }
@@ -256,12 +262,21 @@ func (m RunManifest) Validate() error {
 	if hasActivityPaths != hasCoreMap {
 		return fmt.Errorf("report manifest: semantic authority requires a bound activity path artifact")
 	}
+	if m.MaterialInputs.JSTSProjectSHA256 != "" &&
+		!validManifestSHA256(m.MaterialInputs.JSTSProjectSHA256) {
+		return fmt.Errorf("report manifest: JavaScript/TypeScript project sha256 is invalid")
+	}
+	if m.MaterialInputs.JSTSProjectSHA256 != "" && !hasCoreMap {
+		return fmt.Errorf("report manifest: JavaScript/TypeScript project requires complete semantic authority")
+	}
 	if m.MaterialInputs.ReadmeFileRolesSHA256 != "" &&
 		!validManifestSHA256(m.MaterialInputs.ReadmeFileRolesSHA256) {
 		return fmt.Errorf("report manifest: README file-role sha256 is invalid")
 	}
 	hasTargetRunContainer := m.MaterialInputs.TargetRunContainerSHA256 != ""
 	hasTargetPagePortfolio := m.MaterialInputs.TargetPagePortfolioSHA256 != ""
+	hasProgramPagePortfolio := m.MaterialInputs.ProgramPagePortfolioSHA256 != ""
+	hasRuntimePortfolio := m.MaterialInputs.RuntimePortfolioSHA256 != ""
 	if hasTargetRunContainer && !hasAnalysisTargetRef {
 		return fmt.Errorf("report manifest: target run container requires one analysis target")
 	}
@@ -271,6 +286,16 @@ func (m RunManifest) Validate() error {
 	if hasTargetPagePortfolio && (!hasTargetRunContainer ||
 		!validManifestSHA256(m.MaterialInputs.TargetPagePortfolioSHA256)) {
 		return fmt.Errorf("report manifest: target page portfolio binding is invalid")
+	}
+	if hasProgramPagePortfolio && !validManifestSHA256(m.MaterialInputs.ProgramPagePortfolioSHA256) {
+		return fmt.Errorf("report manifest: program page portfolio sha256 is invalid")
+	}
+	if hasProgramPagePortfolio && (hasTargetRunContainer || hasTargetPagePortfolio) {
+		return fmt.Errorf("report manifest: program and Go target page authority are mutually exclusive")
+	}
+	if hasRuntimePortfolio != (hasTargetPagePortfolio || hasProgramPagePortfolio) ||
+		hasRuntimePortfolio && !validManifestSHA256(m.MaterialInputs.RuntimePortfolioSHA256) {
+		return fmt.Errorf("report manifest: runtime portfolio binding is invalid")
 	}
 	previousPath := ""
 	for index, value := range m.OpenablePaths {
@@ -312,6 +337,53 @@ func ConfirmRunAuthorityScoped(
 		analysisRoot: root, repository: repository, inputs: inputs,
 		confirmed: true,
 	}, nil
+}
+
+// ExtendRunAuthority adds report-relative evidence paths to an already
+// confirmed authority using the original captured RepositoryState. Clean
+// inputs are read from the captured commit and dirty inputs retain the hashes
+// recorded at initial capture; this is not a later-state freshness gate.
+func ExtendRunAuthority(
+	ctx context.Context,
+	authority RunAuthority,
+	paths []string,
+) (RunAuthority, error) {
+	if err := authority.validate(); err != nil {
+		return RunAuthority{}, err
+	}
+	repositoryPaths, err := repositoryRelativeInputPaths(
+		authority.repository.Identity,
+		authority.analysisRoot,
+		paths,
+	)
+	if err != nil {
+		return RunAuthority{}, err
+	}
+	additional, err := freshness.CaptureInputs(ctx, authority.repository, repositoryPaths)
+	if err != nil {
+		return RunAuthority{}, fmt.Errorf("report manifest: extend captured inputs: %w", err)
+	}
+	byPath := make(map[string]freshness.CapturedInput, len(authority.inputs)+len(additional))
+	for _, input := range authority.inputs {
+		byPath[input.Path] = input
+	}
+	for _, input := range additional {
+		if existing, present := byPath[input.Path]; present && !reflect.DeepEqual(existing, input) {
+			return RunAuthority{}, fmt.Errorf("report manifest: extended captured input %q changed identity", input.Path)
+		}
+		byPath[input.Path] = input
+	}
+	inputs := make([]freshness.CapturedInput, 0, len(byPath))
+	for _, input := range byPath {
+		inputs = append(inputs, input)
+	}
+	sort.Slice(inputs, func(left, right int) bool { return inputs[left].Path < inputs[right].Path })
+	if _, err := freshness.CapturedInputsDigest(inputs); err != nil {
+		return RunAuthority{}, fmt.Errorf("report manifest: extended captured inputs: %w", err)
+	}
+	result := authority
+	result.inputs = inputs
+	return result, nil
 }
 
 func validateAuthorityRoots(analysisRoot string, initial freshness.RepositoryState) (string, string, error) {
@@ -497,6 +569,7 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 		report.ActivityEntrypointView,
 		report.IntegrationUsageView,
 		report.ActivityPathView,
+		jstsSemanticPresentation{report.JSTSSurfaceCatalogView, report.CrossSurfacePathView},
 	); err != nil {
 		return fmt.Errorf("report manifest: %w", err)
 	}
@@ -584,6 +657,35 @@ func (m RunManifest) VerifyReportJSON(reportJSON []byte) error {
 			report.ActivityEntrypointView, report.IntegrationUsageView,
 		); err != nil {
 			return fmt.Errorf("report manifest: activity path report joins: %w", err)
+		}
+	}
+	hasJSTSProject := material.JSTSProjectSHA256 != ""
+	if (report.JSTSSurfaceCatalogView != nil) != hasJSTSProject ||
+		(report.CrossSurfacePathView != nil) != hasJSTSProject {
+		return fmt.Errorf("report manifest: JavaScript/TypeScript project identity does not match report projections")
+	}
+	if report.JSTSSurfaceCatalogView != nil {
+		if err := report.JSTSSurfaceCatalogView.Validate(); err != nil {
+			return fmt.Errorf("report manifest: JavaScript/TypeScript surface catalog view: %w", err)
+		}
+		if err := report.CrossSurfacePathView.Validate(); err != nil {
+			return fmt.Errorf("report manifest: cross-surface path view: %w", err)
+		}
+		if report.JSTSSurfaceCatalogView.ProgramTargetID != defaultEntry.Target.ID ||
+			report.JSTSSurfaceCatalogView.ProgramIndexSHA256 != defaultEntry.View.IndexSHA256 ||
+			report.CrossSurfacePathView.ProgramTargetID != defaultEntry.Target.ID ||
+			report.CrossSurfacePathView.ProgramIndexSHA256 != defaultEntry.View.IndexSHA256 ||
+			report.JSTSSurfaceCatalogView.JSTSProjectSHA256 != report.CrossSurfacePathView.JSTSProjectSHA256 {
+			return fmt.Errorf("report manifest: JavaScript/TypeScript views do not bind the report program and producer authority")
+		}
+	}
+	hasRuntimePortfolio := material.RuntimePortfolioSHA256 != ""
+	if (report.RuntimePortfolio != nil) != hasRuntimePortfolio {
+		return fmt.Errorf("report manifest: runtime portfolio identity does not match report projection")
+	}
+	if report.RuntimePortfolio != nil {
+		if err := report.RuntimePortfolio.Validate(); err != nil {
+			return fmt.Errorf("report manifest: runtime portfolio view: %w", err)
 		}
 	}
 	return nil
@@ -692,6 +794,7 @@ func programIndexArtifactInventory(runDir string) ([]string, error) {
 	for _, entry := range entries {
 		name := entry.Name()
 		if name == programindex.ArtifactSetFilename || name == programindex.ArtifactFilename ||
+			name == jstsproject.ProgramIndexFilename ||
 			strings.HasPrefix(name, "program-index.") && strings.HasSuffix(name, ".json") {
 			names = append(names, name)
 		}
@@ -752,6 +855,143 @@ func (m RunManifest) VerifyProgramPortfolioProjection(runDir string, reportJSON 
 	}
 	if !reflect.DeepEqual(report.ProgramPortfolio, expected) {
 		return fmt.Errorf("report manifest: program portfolio does not match the selected indexes")
+	}
+	return nil
+}
+
+// VerifyRuntimePortfolioProjection binds the repository-level semantic
+// artifact, its target-page portfolio input, and the reduced report/browser
+// projection. Artifact absence is valid only before target-page publication.
+func (m RunManifest) VerifyRuntimePortfolioProjection(runDir string, reportJSON []byte) error {
+	if err := m.Validate(); err != nil {
+		return err
+	}
+	report, err := decodeStrictReportJSON(reportJSON)
+	if err != nil {
+		return fmt.Errorf("report manifest: runtime portfolio view: %w", err)
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return fmt.Errorf("report manifest: open runtime portfolio run: %w", err)
+	}
+	defer root.Close()
+	_, inspectErr := root.Lstat(runtimeportfolio.ArtifactFilename)
+	present := inspectErr == nil
+	if inspectErr != nil && !errors.Is(inspectErr, fs.ErrNotExist) {
+		return fmt.Errorf("report manifest: inspect runtime portfolio: %w", inspectErr)
+	}
+	wantSHA256 := m.MaterialInputs.RuntimePortfolioSHA256
+	if wantSHA256 == "" {
+		if present || report.RuntimePortfolio != nil {
+			return fmt.Errorf("report manifest: unbound runtime portfolio artifact or projection is present")
+		}
+		return nil
+	}
+	if !present || report.RuntimePortfolio == nil {
+		return fmt.Errorf("report manifest: bound runtime portfolio artifact or projection is missing")
+	}
+	raw, err := readManifestFile(root, runtimeportfolio.ArtifactFilename, runtimeportfolio.MaxArtifactBytes)
+	if err != nil {
+		return err
+	}
+	if manifestSHA256(raw) != wantSHA256 {
+		return fmt.Errorf("report manifest: runtime portfolio artifact sha256 mismatch")
+	}
+	result, err := runtimeportfolio.Decode(raw)
+	if err != nil {
+		return fmt.Errorf("report manifest: runtime portfolio artifact: %w", err)
+	}
+	if m.MaterialInputs.ProgramPagePortfolioSHA256 != "" {
+		portfolioRaw, readErr := readManifestFile(
+			root, programpage.ArtifactFilename, programpage.MaxArtifactBytes,
+		)
+		if readErr != nil {
+			return readErr
+		}
+		if manifestSHA256(portfolioRaw) != m.MaterialInputs.ProgramPagePortfolioSHA256 {
+			return fmt.Errorf("report manifest: runtime portfolio program-page binding mismatch")
+		}
+		portfolio, decodeErr := programpage.Decode(portfolioRaw)
+		if decodeErr != nil {
+			return fmt.Errorf("report manifest: runtime program page portfolio: %w", decodeErr)
+		}
+		if err := validateRuntimeProgramPageCoverage(result, portfolio); err != nil {
+			return fmt.Errorf("report manifest: %w", err)
+		}
+	} else {
+		portfolioRaw, readErr := readManifestFile(
+			root,
+			snapshot.TargetPagePortfolioArtifactFilename,
+			snapshot.MaxTargetPagePortfolioBytes,
+		)
+		if readErr != nil {
+			return readErr
+		}
+		if manifestSHA256(portfolioRaw) != m.MaterialInputs.TargetPagePortfolioSHA256 {
+			return fmt.Errorf("report manifest: runtime portfolio target-page binding mismatch")
+		}
+		portfolio, decodeErr := snapshot.DecodeTargetPagePortfolio(portfolioRaw)
+		if decodeErr != nil {
+			return fmt.Errorf("report manifest: runtime target page portfolio: %w", decodeErr)
+		}
+		if result.TargetPagePortfolioSHA256 != portfolio.SHA256 {
+			return fmt.Errorf("report manifest: runtime portfolio target-page binding mismatch")
+		}
+		if len(result.Targets) != len(portfolio.Targets) {
+			return fmt.Errorf("report manifest: runtime portfolio target coverage does not match target pages")
+		}
+	}
+	if report.ProgramPortfolio == nil {
+		return fmt.Errorf("report manifest: runtime portfolio current ProgramTarget is missing")
+	}
+	defaultEntry, err := report.ProgramPortfolio.defaultEntry()
+	if err != nil {
+		return fmt.Errorf("report manifest: runtime portfolio current ProgramTarget: %w", err)
+	}
+	if err := validateRuntimePortfolioCurrentTarget(result, defaultEntry.Target); err != nil {
+		return fmt.Errorf("report manifest: %w", err)
+	}
+	expected, err := NewRuntimePortfolioView(result)
+	if err != nil {
+		return fmt.Errorf("report manifest: project runtime portfolio: %w", err)
+	}
+	if !reflect.DeepEqual(report.RuntimePortfolio, expected) {
+		return fmt.Errorf("report manifest: runtime portfolio projection does not match artifact")
+	}
+	openable := make(map[string]struct{}, len(report.OpenablePaths))
+	for _, sourcePath := range report.OpenablePaths {
+		openable[sourcePath] = struct{}{}
+	}
+	for _, role := range expected.Roles {
+		for _, evidence := range role.Evidence {
+			if _, allowed := openable[evidence.Location.Path]; !allowed {
+				return fmt.Errorf("report manifest: runtime portfolio evidence is outside source authority")
+			}
+		}
+	}
+	return nil
+}
+
+func validateRuntimeProgramPageCoverage(
+	result runtimeportfolio.Result,
+	portfolio programpage.Portfolio,
+) error {
+	if result.TargetPagePortfolioSHA256 != portfolio.SHA256 ||
+		len(result.Targets) != len(portfolio.Pages) {
+		return fmt.Errorf("runtime portfolio program-page binding mismatch")
+	}
+	pages := make(map[string]programpage.Page, len(portfolio.Pages))
+	for _, page := range portfolio.Pages {
+		pages[page.Target.ID] = page
+	}
+	for _, target := range result.Targets {
+		page, ok := pages[target.ProgramTargetID]
+		if !ok || target.DisplayName != page.Target.Name ||
+			target.Language != page.Target.Language || target.Kind != page.Target.Kind ||
+			target.Selector != page.Target.Selector ||
+			target.Default != (page.Target.ID == portfolio.DefaultTargetID) {
+			return fmt.Errorf("runtime portfolio target coverage does not match program pages")
+		}
 	}
 	return nil
 }
@@ -981,6 +1221,83 @@ func (m RunManifest) VerifyActivityPathProjection(runDir string, reportJSON []by
 	}
 	if !reflect.DeepEqual(report.ActivityPathView, expected) {
 		return fmt.Errorf("report manifest: activity path view does not match activity path artifact")
+	}
+	return nil
+}
+
+// VerifyJSTSProjection binds the single sealed deterministic JS/TS project
+// artifact to both report projections and the exact default ProgramIndex.
+// Either both views re-derive byte-for-byte from that authority or publication
+// fails; the browser cannot fill a missing surface or path projection.
+func (m RunManifest) VerifyJSTSProjection(runDir string, reportJSON []byte) error {
+	if err := m.Validate(); err != nil {
+		return err
+	}
+	report, err := decodeStrictReportJSON(reportJSON)
+	if err != nil {
+		return fmt.Errorf("report manifest: JavaScript/TypeScript views: %w", err)
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return fmt.Errorf("report manifest: open JavaScript/TypeScript project run: %w", err)
+	}
+	defer root.Close()
+	present, err := manifestArtifactPresent(root, jstsproject.ArtifactFilename)
+	if err != nil {
+		return err
+	}
+	wantSHA256 := m.MaterialInputs.JSTSProjectSHA256
+	if wantSHA256 == "" {
+		if present {
+			return fmt.Errorf("report manifest: unbound JavaScript/TypeScript project artifact is present")
+		}
+		if report.JSTSSurfaceCatalogView != nil || report.CrossSurfacePathView != nil {
+			return fmt.Errorf("report manifest: unbound JavaScript/TypeScript report projection is present")
+		}
+		return nil
+	}
+	if !present {
+		return fmt.Errorf("report manifest: bound JavaScript/TypeScript project artifact is missing")
+	}
+	if report.JSTSSurfaceCatalogView == nil || report.CrossSurfacePathView == nil || report.ProgramPortfolio == nil {
+		return fmt.Errorf("report manifest: bound JavaScript/TypeScript report authority is incomplete")
+	}
+	defaultEntry, err := report.ProgramPortfolio.defaultEntry()
+	if err != nil {
+		return fmt.Errorf("report manifest: JavaScript/TypeScript default target: %w", err)
+	}
+	index, err := readManifestDefaultProgramIndex(root, m.MaterialInputs.ProgramIndexSetSHA256)
+	if err != nil {
+		return err
+	}
+	if index.Target.ID != defaultEntry.Target.ID || index.SHA256 != defaultEntry.View.IndexSHA256 {
+		return fmt.Errorf("report manifest: JavaScript/TypeScript default ProgramIndex differs from report portfolio")
+	}
+	raw, err := readManifestFile(root, jstsproject.ArtifactFilename, jstsproject.MaxArtifactBytes)
+	if err != nil {
+		return err
+	}
+	if manifestSHA256(raw) != wantSHA256 {
+		return fmt.Errorf("report manifest: JavaScript/TypeScript project sha256 mismatch")
+	}
+	result, err := jstsproject.Decode(raw)
+	if err != nil {
+		return fmt.Errorf("report manifest: JavaScript/TypeScript project artifact: %w", err)
+	}
+	expectedSurfaces, err := NewJSTSSurfaceCatalogView(result, index)
+	if err != nil {
+		return fmt.Errorf("report manifest: rederive JavaScript/TypeScript surface catalog: %w", err)
+	}
+	expectedPaths, err := NewCrossSurfacePathView(result, index)
+	if err != nil {
+		return fmt.Errorf("report manifest: rederive cross-surface paths: %w", err)
+	}
+	if err := expectedPaths.ValidateSurfaceJoins(expectedSurfaces); err != nil {
+		return fmt.Errorf("report manifest: rederive cross-surface joins: %w", err)
+	}
+	if !reflect.DeepEqual(report.JSTSSurfaceCatalogView, expectedSurfaces) ||
+		!reflect.DeepEqual(report.CrossSurfacePathView, expectedPaths) {
+		return fmt.Errorf("report manifest: JavaScript/TypeScript views do not match exact project artifact")
 	}
 	return nil
 }
@@ -1390,6 +1707,9 @@ func ReadRunManifest(runDir string) (RunManifest, error) {
 	if err := manifest.VerifyProgramPortfolioProjection(runDir, reportJSON); err != nil {
 		return RunManifest{}, err
 	}
+	if err := manifest.VerifyRuntimePortfolioProjection(runDir, reportJSON); err != nil {
+		return RunManifest{}, err
+	}
 	if err := manifest.VerifyCubeMapProjection(runDir, reportJSON); err != nil {
 		return RunManifest{}, err
 	}
@@ -1399,6 +1719,9 @@ func ReadRunManifest(runDir string) (RunManifest, error) {
 	if err := manifest.VerifyActivityPathProjection(runDir, reportJSON); err != nil {
 		return RunManifest{}, err
 	}
+	if err := manifest.VerifyJSTSProjection(runDir, reportJSON); err != nil {
+		return RunManifest{}, err
+	}
 	if err := manifest.VerifyCoreMapProjection(runDir, reportJSON); err != nil {
 		return RunManifest{}, err
 	}
@@ -1406,6 +1729,9 @@ func ReadRunManifest(runDir string) (RunManifest, error) {
 		return RunManifest{}, err
 	}
 	if err := manifest.VerifyTargetPagePortfolioArtifacts(runDir); err != nil {
+		return RunManifest{}, err
+	}
+	if err := manifest.VerifyProgramPagePortfolioArtifact(runDir); err != nil {
 		return RunManifest{}, err
 	}
 	return manifest, nil
@@ -1483,6 +1809,47 @@ func (m RunManifest) VerifyTargetPagePortfolioArtifacts(runDir string) error {
 		}
 	}
 	return fmt.Errorf("report manifest: analysis target has no exact published target page")
+}
+
+// VerifyProgramPagePortfolioArtifact binds the language-neutral page
+// portfolio and proves that this exact run publishes the manifest's current
+// ProgramTarget. The neutral authority is mutually exclusive with the legacy
+// Go target container/page pair in MaterialInputs.Validate.
+func (m RunManifest) VerifyProgramPagePortfolioArtifact(runDir string) error {
+	if m.Version != CurrentRunManifestVersion {
+		return fmt.Errorf("report manifest: unsupported version %d", m.Version)
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return fmt.Errorf("report manifest: open program page run: %w", err)
+	}
+	defer root.Close()
+
+	wantSHA256 := m.MaterialInputs.ProgramPagePortfolioSHA256
+	if wantSHA256 == "" {
+		if _, statErr := root.Lstat(programpage.ArtifactFilename); statErr == nil {
+			return fmt.Errorf("report manifest: unbound program page portfolio artifact is present")
+		} else if !errors.Is(statErr, fs.ErrNotExist) {
+			return fmt.Errorf("report manifest: inspect program page portfolio: %w", statErr)
+		}
+		return nil
+	}
+
+	raw, err := readManifestFile(root, programpage.ArtifactFilename, programpage.MaxArtifactBytes)
+	if err != nil || manifestSHA256(raw) != wantSHA256 {
+		return fmt.Errorf("report manifest: program page portfolio sha256 mismatch")
+	}
+	portfolio, err := programpage.Decode(raw)
+	if err != nil {
+		return fmt.Errorf("report manifest: program page portfolio: %w", err)
+	}
+	runID := filepath.Base(runDir)
+	for _, page := range portfolio.Pages {
+		if page.Target.ID == m.MaterialInputs.ProgramTargetID && page.RunID == runID {
+			return nil
+		}
+	}
+	return fmt.Errorf("report manifest: ProgramTarget has no exact published program page")
 }
 
 // RemoveRunManifest invalidates any previous interactive authority for a run.
@@ -1571,7 +1938,15 @@ func prepareAuthorizedRunManifest(
 	if err != nil {
 		return RunManifest{}, err
 	}
+	jstsProjectDigest, err := savedJSTSProjectSHA256(runDir, programIndexSetDigest)
+	if err != nil {
+		return RunManifest{}, err
+	}
 	readmeFileRolesDigest, err := savedReadmeFileRolesSHA256(runDir)
+	if err != nil {
+		return RunManifest{}, err
+	}
+	runtimePortfolioDigest, err := savedRuntimePortfolioSHA256(runDir)
 	if err != nil {
 		return RunManifest{}, err
 	}
@@ -1636,9 +2011,12 @@ func prepareAuthorizedRunManifest(
 			IntegrationDependenciesSHA256: integrationDependenciesDigest,
 			IntegrationUsageSHA256:        integrationUsageDigest,
 			ActivityPathsSHA256:           activityPathsDigest,
+			JSTSProjectSHA256:             jstsProjectDigest,
 			ReadmeFileRolesSHA256:         readmeFileRolesDigest,
 			TargetRunContainerSHA256:      savedArtifactSHA256(runDir, snapshot.TargetRunContainerArtifactFilename),
 			TargetPagePortfolioSHA256:     savedArtifactSHA256(runDir, snapshot.TargetPagePortfolioArtifactFilename),
+			ProgramPagePortfolioSHA256:    savedArtifactSHA256(runDir, programpage.ArtifactFilename),
+			RuntimePortfolioSHA256:        runtimePortfolioDigest,
 			InputPolicyVersion:            "captured-inputs-v1",
 			ReportContract:                data.FormatVersion,
 		},
@@ -1652,6 +2030,9 @@ func prepareAuthorizedRunManifest(
 	if err := manifest.VerifyProgramPortfolioProjection(runDir, reportJSON); err != nil {
 		return RunManifest{}, err
 	}
+	if err := manifest.VerifyRuntimePortfolioProjection(runDir, reportJSON); err != nil {
+		return RunManifest{}, err
+	}
 	if err := manifest.VerifyCubeMapProjection(runDir, reportJSON); err != nil {
 		return RunManifest{}, err
 	}
@@ -1661,6 +2042,9 @@ func prepareAuthorizedRunManifest(
 	if err := manifest.VerifyActivityPathProjection(runDir, reportJSON); err != nil {
 		return RunManifest{}, err
 	}
+	if err := manifest.VerifyJSTSProjection(runDir, reportJSON); err != nil {
+		return RunManifest{}, err
+	}
 	if err := manifest.VerifyCoreMapProjection(runDir, reportJSON); err != nil {
 		return RunManifest{}, err
 	}
@@ -1668,6 +2052,9 @@ func prepareAuthorizedRunManifest(
 		return RunManifest{}, err
 	}
 	if err := manifest.VerifyTargetPagePortfolioArtifacts(runDir); err != nil {
+		return RunManifest{}, err
+	}
+	if err := manifest.VerifyProgramPagePortfolioArtifact(runDir); err != nil {
 		return RunManifest{}, err
 	}
 	return manifest, nil
@@ -1715,6 +2102,79 @@ func savedArtifactSHA256(runDir, name string) string {
 		return ""
 	}
 	return manifestSHA256(data)
+}
+
+func savedRuntimePortfolioSHA256(runDir string) (string, error) {
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return "", fmt.Errorf("report manifest: open runtime portfolio run: %w", err)
+	}
+	defer root.Close()
+	_, runtimeErr := root.Lstat(runtimeportfolio.ArtifactFilename)
+	_, targetPortfolioErr := root.Lstat(snapshot.TargetPagePortfolioArtifactFilename)
+	_, programPortfolioErr := root.Lstat(programpage.ArtifactFilename)
+	runtimePresent := runtimeErr == nil
+	targetPortfolioPresent := targetPortfolioErr == nil
+	programPortfolioPresent := programPortfolioErr == nil
+	if runtimeErr != nil && !errors.Is(runtimeErr, fs.ErrNotExist) {
+		return "", fmt.Errorf("report manifest: inspect runtime portfolio: %w", runtimeErr)
+	}
+	if targetPortfolioErr != nil && !errors.Is(targetPortfolioErr, fs.ErrNotExist) {
+		return "", fmt.Errorf("report manifest: inspect target page portfolio for runtime portfolio: %w", targetPortfolioErr)
+	}
+	if programPortfolioErr != nil && !errors.Is(programPortfolioErr, fs.ErrNotExist) {
+		return "", fmt.Errorf("report manifest: inspect program page portfolio for runtime portfolio: %w", programPortfolioErr)
+	}
+	if targetPortfolioPresent && programPortfolioPresent {
+		return "", fmt.Errorf("report manifest: program and Go target page authority are mutually exclusive")
+	}
+	pagePortfolioPresent := targetPortfolioPresent || programPortfolioPresent
+	if runtimePresent != pagePortfolioPresent {
+		return "", fmt.Errorf("report manifest: page and runtime portfolio authority must be published together")
+	}
+	if !runtimePresent {
+		return "", nil
+	}
+	raw, err := readManifestFile(root, runtimeportfolio.ArtifactFilename, runtimeportfolio.MaxArtifactBytes)
+	if err != nil {
+		return "", err
+	}
+	result, err := runtimeportfolio.Decode(raw)
+	if err != nil {
+		return "", fmt.Errorf("report manifest: runtime portfolio artifact: %w", err)
+	}
+	if programPortfolioPresent {
+		portfolioRaw, readErr := readManifestFile(
+			root, programpage.ArtifactFilename, programpage.MaxArtifactBytes,
+		)
+		if readErr != nil {
+			return "", readErr
+		}
+		portfolio, decodeErr := programpage.Decode(portfolioRaw)
+		if decodeErr != nil {
+			return "", fmt.Errorf("report manifest: runtime program page portfolio: %w", decodeErr)
+		}
+		if err := validateRuntimeProgramPageCoverage(result, portfolio); err != nil {
+			return "", fmt.Errorf("report manifest: %w", err)
+		}
+	} else {
+		portfolioRaw, readErr := readManifestFile(
+			root,
+			snapshot.TargetPagePortfolioArtifactFilename,
+			snapshot.MaxTargetPagePortfolioBytes,
+		)
+		if readErr != nil {
+			return "", readErr
+		}
+		portfolio, decodeErr := snapshot.DecodeTargetPagePortfolio(portfolioRaw)
+		if decodeErr != nil {
+			return "", fmt.Errorf("report manifest: runtime target page portfolio: %w", decodeErr)
+		}
+		if result.TargetPagePortfolioSHA256 != portfolio.SHA256 {
+			return "", fmt.Errorf("report manifest: runtime portfolio target-page binding mismatch")
+		}
+	}
+	return manifestSHA256(raw), nil
 }
 
 func savedCubeMapSHA256(runDir string) (string, error) {
@@ -2022,6 +2482,37 @@ func savedActivityPathsSHA256(
 		return "", fmt.Errorf("report manifest: activity path artifact: %w", err)
 	}
 	return manifestSHA256(pathRaw), nil
+}
+
+func savedJSTSProjectSHA256(runDir, programIndexSetSHA256 string) (string, error) {
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return "", fmt.Errorf("report manifest: open JavaScript/TypeScript project run: %w", err)
+	}
+	defer root.Close()
+	present, err := manifestArtifactPresent(root, jstsproject.ArtifactFilename)
+	if err != nil {
+		return "", err
+	}
+	if !present {
+		return "", nil
+	}
+	index, err := readManifestDefaultProgramIndex(root, programIndexSetSHA256)
+	if err != nil {
+		return "", err
+	}
+	raw, err := readManifestFile(root, jstsproject.ArtifactFilename, jstsproject.MaxArtifactBytes)
+	if err != nil {
+		return "", err
+	}
+	result, err := jstsproject.Decode(raw)
+	if err != nil {
+		return "", fmt.Errorf("report manifest: JavaScript/TypeScript project artifact: %w", err)
+	}
+	if err := validateJSTSProgramIndexBinding(result, index); err != nil {
+		return "", fmt.Errorf("report manifest: JavaScript/TypeScript project binding: %w", err)
+	}
+	return manifestSHA256(raw), nil
 }
 
 func manifestArtifactPresent(root *os.Root, name string) (bool, error) {

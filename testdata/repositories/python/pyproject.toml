@@ -1,0 +1,6 @@
+[project]
+name = "repomap-cumulative-python-fixture"
+version = "0.0.0"
+
+[project.scripts]
+repomap-fixture = "fixture_app.cli:main"

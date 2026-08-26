@@ -36,7 +36,11 @@ var persistencePatterns = []struct {
 }{
 	{kind: ClosedKindPrivateKey, pattern: regexp.MustCompile(`(?i)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----`)},
 	{kind: ClosedKindBearerCredential, pattern: regexp.MustCompile(`(?i)\bBearer[ \t]+[A-Za-z0-9._~+/=-]{8,}`), bearer: true},
-	{kind: ClosedKindBearerCredential, pattern: regexp.MustCompile(`(?im)\bAuthorization[ \t]*:[ \t]*[^\r\n]{4,}`)},
+	// Require a header/object-key boundary. Program identities legitimately
+	// contain path/ref fragments such as `routes/authorization:authorize`;
+	// treating the colon in that identity as an HTTP header makes compact JSON
+	// scan across unrelated fields on the same line.
+	{kind: ClosedKindBearerCredential, pattern: regexp.MustCompile("(?im)(?:^|[[:space:]{\"'`(,;])Authorization[ \\t]*:[ \\t]*[^\\r\\n]{4,}")},
 	{kind: ClosedKindSecretKey, pattern: regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{8,}\b`)},
 	{kind: ClosedKindGitHubToken, pattern: regexp.MustCompile(`\b(?:ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b`)},
 	{kind: ClosedKindAWSAccessKey, pattern: regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`)},

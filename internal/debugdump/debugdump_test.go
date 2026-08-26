@@ -46,6 +46,7 @@ func TestSemanticExchangeAcceptsOnlyLiveStages(t *testing.T) {
 	live := []string{
 		SemanticStageReadmeFileClassifier,
 		SemanticStageTargetPortfolio,
+		SemanticStageRuntimePortfolio,
 		SemanticStageTargetViewChoice,
 		SemanticStageCoreMapBaseline,
 		SemanticStageCoreMapRefined,

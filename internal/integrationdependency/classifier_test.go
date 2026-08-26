@@ -46,7 +46,7 @@ func TestRunRestoresSelectedDependencyAndAllImporters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider := &classifierTestProvider{response: []byte(`{"integration_dependency_refs":["d2"]}`)}
+	provider := &classifierTestProvider{response: []byte(`{"integration_dependency_refs":["d2","d2"]}`)}
 	result, err := Run(t.Context(), llm.Executor{Enabled: false}, provider, catalog)
 	if err != nil {
 		t.Fatal(err)
@@ -120,6 +120,65 @@ func TestRunRejectsMissingSelectedRefArray(t *testing.T) {
 	}
 }
 
+func TestRunAcceptsEveryAdvertisedSelectionAboveFormerCompleteRunQuota(t *testing.T) {
+	const count = 1025
+	catalog := classifierCatalog(t, count)
+	refs := make([]string, count)
+	for index := range refs {
+		refs[index] = fmt.Sprintf("d%d", index+1)
+	}
+	encoded, err := json.Marshal(struct {
+		Refs []string `json:"integration_dependency_refs"`
+	}{Refs: refs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &classifierTestProvider{response: encoded}
+	result, err := Run(t.Context(), llm.Executor{Enabled: false}, provider, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 1 || len(result.Dependencies) != count {
+		t.Fatalf("provider calls / restored selections = %d / %d, want 1 / %d", provider.calls, len(result.Dependencies), count)
+	}
+}
+
+func TestRunFiltersUnknownRefsWithoutRetry(t *testing.T) {
+	tests := []struct {
+		name        string
+		catalog     dependencies.Catalog
+		response    string
+		wantCount   int
+		wantDepName string
+	}{
+		{
+			name: "mixed known and unknown", catalog: classifierCatalog(t, 2),
+			response:  `{"integration_dependency_refs":["unknown","d2","d2","d999"]}`,
+			wantCount: 1, wantDepName: "dep0001",
+		},
+		{
+			name: "all unknown", catalog: classifierCatalog(t, 1),
+			response: `{"integration_dependency_refs":["d2","unknown","d2"]}`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			provider := &classifierTestProvider{response: []byte(test.response)}
+			result, err := Run(t.Context(), llm.Executor{Enabled: false}, provider, test.catalog)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Dependencies) != test.wantCount || !result.Coverage.ModelCalled ||
+				(test.wantCount > 0 && result.Dependencies[0].Dependency.Name != test.wantDepName) {
+				t.Fatalf("filtered selection = %#v", result)
+			}
+			if provider.calls != 1 {
+				t.Fatalf("provider calls = %d, want 1 without retry", provider.calls)
+			}
+		})
+	}
+}
+
 func TestRunBatchesByExactSerializedBytesAndRestoresGlobalRefs(t *testing.T) {
 	catalog := largeClassifierCatalog(t, 3, 300_000)
 	provider := &classifierTestProvider{responses: [][]byte{
@@ -165,7 +224,7 @@ func TestRunWithDeclarationsKeepsFrontierAndAuthoritiesSeparate(t *testing.T) {
 	target := classifierProgramTarget(t)
 	declarations := classifierDeclarations(t, target, true)
 	provider := &classifierTestProvider{response: []byte(
-		`{"integration_dependency_refs":["d1"],"integration_declared_package_refs":["p1"]}`,
+		`{"integration_dependency_refs":["d1","d1"],"integration_declared_package_refs":["p1","p1"]}`,
 	)}
 	result, err := RunWithDeclarations(
 		t.Context(), llm.Executor{Enabled: false}, provider, catalog, declarations, target,

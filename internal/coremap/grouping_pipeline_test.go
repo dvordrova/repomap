@@ -3,6 +3,8 @@ package coremap
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -62,7 +64,9 @@ func TestCoreMapRunRestoresModelOwnedRefinedGroups(t *testing.T) {
 	}
 	if len(result.Refined) != 2 || len(result.RefinedGroups) != 2 || provider.completeCalls != 2 ||
 		result.Coverage.RefinedGroupCalls != 1 || result.RequestSizes.Grouping.Calls != 1 ||
-		result.RefinedGroups[0].BlockIDs[0] != result.Refined[0].ID {
+		result.RefinedGroups[0].BlockIDs[0] != result.Refined[0].ID ||
+		result.RefinedGroups[0].Authority != GroupAuthorityModel ||
+		result.RefinedGroups[1].Authority != GroupAuthorityModel {
 		t.Fatalf("grouped CoreMap = %#v / calls=%d", result, provider.completeCalls)
 	}
 	encoded, err := Encode(result)
@@ -78,19 +82,66 @@ func TestCoreMapRunRestoresModelOwnedRefinedGroups(t *testing.T) {
 	}
 }
 
-func TestGroupingResponseRequiresCompleteDisjointPartition(t *testing.T) {
+func TestCoreMapResourceEnvelope(t *testing.T) {
+	if MaxOutputTokens != 128_000 || MaxResponseBytes != 2<<20 {
+		t.Fatalf("CoreMap resource envelope = %d tokens / %d bytes", MaxOutputTokens, MaxResponseBytes)
+	}
+}
+
+func TestGroupingResponseNormalizesClosedMembershipSets(t *testing.T) {
 	allowed := map[string]Block{
 		"b1": {ID: "core-1"},
 		"b2": {ID: "core-2"},
 		"b3": {ID: "core-3"},
 	}
-	valid := []byte(`{"groups":[{"name":"Runtime","purpose":"Runs accepted work.","block_refs":["b1","b2"]},{"name":"Storage","purpose":"Persists accepted state.","block_refs":["b3"]}]}`)
+	valid := []byte(`{"groups":[{"name":"Runtime","purpose":"Runs accepted work.","block_refs":["b1","b1","b2"]},{"name":"Storage","purpose":"Persists accepted state.","block_refs":["b2","b3"]}]}`)
 	response, err := decodeGroupingResponse(valid)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(response.Groups[0].BlockRefs) != 2 {
+		t.Fatalf("same-group set membership was not canonicalized: %#v", response.Groups[0].BlockRefs)
+	}
+	if len(response.Groups[1].BlockRefs) != 2 || response.Groups[1].BlockRefs[0] != "b2" {
+		t.Fatalf("cross-group overlap was not retained: %#v", response.Groups)
+	}
 	if err := validateGroupingResponse(response, allowed); err != nil {
 		t.Fatal(err)
+	}
+	oneFull, err := decodeGroupingResponse([]byte(`{"groups":[{"name":"Everything","purpose":"Provides one supported survey area.","block_refs":["b1","b2","b3"]}]}`))
+	if err != nil || validateGroupingResponse(oneFull, allowed) != nil {
+		t.Fatalf("one complete model group = %#v / %v", oneFull, err)
+	}
+	mixed, err := decodeGroupingResponse([]byte(`{"groups":[{"name":"Runtime","purpose":"Runs accepted work.","block_refs":["b1","b999","b2"]},{"name":"Storage","purpose":"Persists accepted state.","block_refs":["b3"]},{"name":"Invented","purpose":"Has no local authority.","block_refs":["b998"]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mixed = normalizeGroupingResponseRefs(mixed, allowed)
+	if err := validateGroupingResponse(mixed, allowed); err != nil {
+		t.Fatalf("mixed known/unknown grouping = %#v / %v", mixed, err)
+	}
+	if len(mixed.Groups) != 2 || len(mixed.Groups[0].BlockRefs) != 2 {
+		t.Fatalf("unknown group memberships were not discarded: %#v", mixed)
+	}
+	exactDuplicates, err := decodeGroupingResponse([]byte(`{"groups":[{"name":"Runtime","purpose":"Runs accepted work.","block_refs":["b2","b1"]},{"name":"Runtime","purpose":"Runs accepted work.","block_refs":["b1","b2"]},{"name":"Execution lens","purpose":"Explains the same members from another supported perspective.","block_refs":["b1","b2"]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	exactDuplicates = normalizeGroupingResponseRefs(exactDuplicates, allowed)
+	if len(exactDuplicates.Groups) != 2 ||
+		exactDuplicates.Groups[0].Name != "Runtime" || exactDuplicates.Groups[1].Name != "Execution lens" {
+		t.Fatalf("group set normalization = %#v", exactDuplicates.Groups)
+	}
+	if err := validateGroupingResponse(exactDuplicates, allowed); err != nil {
+		t.Fatal(err)
+	}
+	unknownOnly, err := decodeGroupingResponse([]byte(`{"groups":[{"name":"Invented A","purpose":"Has no local authority.","block_refs":["b998"]},{"name":"Invented B","purpose":"Also has no authority.","block_refs":["b999"]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknownOnly = normalizeGroupingResponseRefs(unknownOnly, allowed)
+	if len(unknownOnly.Groups) != 0 || validateGroupingResponse(unknownOnly, allowed) != nil {
+		t.Fatalf("unknown-only grouping did not reduce to the legitimate empty set: %#v", unknownOnly)
 	}
 	empty, err := decodeGroupingResponse([]byte(`{"groups":[]}`))
 	if err != nil || validateGroupingResponse(empty, allowed) != nil {
@@ -99,10 +150,8 @@ func TestGroupingResponseRequiresCompleteDisjointPartition(t *testing.T) {
 
 	cases := []string{
 		`{"groups":null}`,
-		`{"groups":[{"name":"Runtime","purpose":"Runs accepted work.","block_refs":["b1"]},{"name":"Storage","purpose":"Persists accepted state.","block_refs":["b3"]}]}`,
-		`{"groups":[{"name":"Runtime","purpose":"Runs accepted work.","block_refs":["b1","b2"]},{"name":"Storage","purpose":"Persists accepted state.","block_refs":["b2","b3"]}]}`,
-		`{"groups":[{"name":"Runtime","purpose":"Runs accepted work.","block_refs":["b1","b2"]},{"name":"Storage","purpose":"Persists accepted state.","block_refs":["b4"]}]}`,
-		`{"groups":[{"name":"Everything","purpose":"Contains all work.","block_refs":["b1","b2","b3"]}]}`,
+		`{"groups":[{"name":"Runtime","purpose":"Runs accepted work.","block_refs":[]}]}`,
+		`{"groups":[{"name":"Runtime","purpose":"Runs accepted work.","block_refs":["b1"]},{"name":"Runtime","purpose":"Persists accepted state.","block_refs":["b3"]}]}`,
 	}
 	for _, raw := range cases {
 		value, decodeErr := decodeGroupingResponse([]byte(raw))
@@ -112,6 +161,48 @@ func TestGroupingResponseRequiresCompleteDisjointPartition(t *testing.T) {
 		if decodeErr == nil {
 			t.Fatalf("invalid grouping accepted: %s", raw)
 		}
+	}
+}
+
+func TestGroupingRestoresOverlappingMemberships(t *testing.T) {
+	blocks := []Block{{ID: "core-1"}, {ID: "core-2"}}
+	allowed := map[string]Block{"b1": blocks[0], "b2": blocks[1]}
+	response := groupingResponse{Groups: []groupProposal{
+		{Name: "Runtime", Purpose: "Coordinates accepted work.", BlockRefs: []string{"b1", "b2"}},
+		{Name: "Storage", Purpose: "Persists accepted state.", BlockRefs: []string{"b2"}},
+	}}
+	groups, err := restoreRefinedGroups(response, allowed, blocks, "target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRefinedGroups(groups, blocks, "target"); err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 2 || !reflect.DeepEqual(groups[0].BlockIDs, []string{"core-1", "core-2"}) ||
+		!reflect.DeepEqual(groups[1].BlockIDs, []string{"core-2"}) {
+		t.Fatalf("restored overlapping groups = %#v", groups)
+	}
+}
+
+func TestGroupingAllowsOneCompleteAndAccountsOnePartialGroup(t *testing.T) {
+	blocks := []Block{{ID: "core-1"}, {ID: "core-2"}, {ID: "core-3"}}
+	allowed := map[string]Block{"b1": blocks[0], "b2": blocks[1], "b3": blocks[2]}
+	complete := groupingResponse{Groups: []groupProposal{{
+		Name: "Runtime", Purpose: "Coordinates all supported work.", BlockRefs: []string{"b1", "b2", "b3"},
+	}}}
+	groups, err := restoreRefinedGroups(complete, allowed, blocks, "target")
+	if err != nil || len(groups) != 1 || groups[0].Authority != GroupAuthorityModel ||
+		validateRefinedGroups(groups, blocks, "target") != nil {
+		t.Fatalf("one complete group = %#v / %v", groups, err)
+	}
+	partial := groupingResponse{Groups: []groupProposal{{
+		Name: "Runtime", Purpose: "Coordinates supported runtime work.", BlockRefs: []string{"b1", "b3"},
+	}}}
+	groups, err = restoreRefinedGroups(partial, allowed, blocks, "target")
+	if err != nil || len(groups) != 2 || groups[1].Authority != GroupAuthorityLocalUnassigned ||
+		!reflect.DeepEqual(groups[1].BlockIDs, []string{"core-2"}) ||
+		validateRefinedGroups(groups, blocks, "target") != nil {
+		t.Fatalf("one partial group = %#v / %v", groups, err)
 	}
 }
 
@@ -168,12 +259,140 @@ func TestGroupingRequestUsesBoundedBlockTopologyWithoutProgramIDs(t *testing.T) 
 	}
 }
 
-func TestStableGroupIDDependsOnlyOnTargetAndMembership(t *testing.T) {
-	left := stableGroupID("target", []string{"core-b", "core-a"})
-	right := stableGroupID("target", []string{"core-a", "core-b"})
-	changed := stableGroupID("target", []string{"core-a", "core-c"})
-	if left != right || left == changed {
-		t.Fatalf("stable group IDs = %q / %q / %q", left, right, changed)
+func TestGroupingRequestSparseRelationsRoundTripCompleteLargeTopology(t *testing.T) {
+	const blockCount = 160
+	compilation := Compilation{
+		repository: "large-sample",
+		baselineRequest: baselineRequest{Target: targetRequest{
+			Language: "go", Kind: "executable", Name: "large-sample", Selector: "large-sample",
+		}},
+		programCoverage: programindex.Coverage{},
+		symbols:         make(map[string]symbolAuthority, blockCount),
+		groupingEdges: []groupingEdgeAuthority{
+			{FromObjectID: "program-001", ToObjectID: "program-002"},
+			{FromObjectID: "program-006", ToObjectID: "program-005"},
+		},
+		targetSeedRows: []targetSeedRequest{},
+	}
+	blocks := make([]Block, blockCount)
+	for position := 0; position < blockCount; position++ {
+		ordinal := position + 1
+		ref := fmt.Sprintf("s%d", ordinal)
+		nodeID := fmt.Sprintf("node-%03d", ordinal)
+		programID := fmt.Sprintf("program-%03d", ordinal)
+		authority := groupingTestSymbol(nodeID, programID, fmt.Sprintf("Operation%03d", ordinal), surfacediscovery.Location{
+			Path: fmt.Sprintf("pkg/%03d.go", ordinal), Line: ordinal, Column: 1,
+		})
+		compilation.symbols[ref] = authority
+		blocks[position] = groupingTestBlock(fmt.Sprintf("core-%03d", ordinal), fmt.Sprintf("Responsibility %03d", ordinal), authority.fact)
+	}
+	// One exact representative appears in two responsibilities. This is positive
+	// shared-member evidence independent of the two directional edge examples.
+	blocks[3].Symbols = append(blocks[3].Symbols, compilation.symbols["s3"].fact)
+
+	request, allowed, err := buildGroupingRequest(compilation, blocks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(allowed) != blockCount || request.RelationEncoding != groupingRelationEncoding {
+		t.Fatalf("large grouping authority = %d / %q", len(allowed), request.RelationEncoding)
+	}
+
+	dense := denseGroupingRelationsForTest(compilation, blocks)
+	if len(dense) != blockCount*(blockCount-1)/2 {
+		t.Fatalf("complete relation domain = %d", len(dense))
+	}
+	sparseByPair := make(map[string]groupingRelationRequest, len(request.Relations))
+	for _, relation := range request.Relations {
+		if !groupingRelationHasEvidence(relation) {
+			t.Fatalf("sparse request retained an empty relation: %#v", relation)
+		}
+		sparseByPair[relation.LeftRef+"\x00"+relation.RightRef] = relation
+	}
+	positive := 0
+	for _, want := range dense {
+		key := want.LeftRef + "\x00" + want.RightRef
+		got, retained := sparseByPair[key]
+		if groupingRelationHasEvidence(want) {
+			positive++
+			if !retained || !reflect.DeepEqual(got, want) {
+				t.Fatalf("positive relation %q was not retained exactly: %#v / %#v", key, got, want)
+			}
+			continue
+		}
+		if retained {
+			t.Fatalf("empty relation %q was retained: %#v", key, got)
+		}
+		// Absence expands to the exact former dense defaults.
+		if want.SharedRepresentatives != 0 || want.LeftReachesRightMinHops != nil || want.RightReachesLeftMinHops != nil {
+			t.Fatalf("absent relation %q does not have the lossless sparse default: %#v", key, want)
+		}
+	}
+	if len(request.Relations) != positive || positive != 3 {
+		t.Fatalf("positive sparse relations = %d / complete positives %d", len(request.Relations), positive)
+	}
+
+	sparseWire, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	historicDense := request
+	historicDense.Relations = dense
+	denseWire, err := json.Marshal(historicDense)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(denseWire)+len(groupPrompt) <= maxRefinedPayloadBytes {
+		t.Fatalf("regression does not cross the former dense bound: %d + prompt", len(denseWire))
+	}
+	if len(sparseWire)+len(groupPrompt) > maxRefinedPayloadBytes {
+		t.Fatalf("lossless sparse request exceeds the bound: %d + prompt", len(sparseWire))
+	}
+}
+
+func denseGroupingRelationsForTest(compilation Compilation, blocks []Block) []groupingRelationRequest {
+	symbolRefByNodeID := make(map[string]string, len(compilation.symbols))
+	for ref, authority := range compilation.symbols {
+		symbolRefByNodeID[authority.fact.NodeID] = ref
+	}
+	programObjectsByBlock := make(map[string]map[string]struct{}, len(blocks))
+	for position, block := range blocks {
+		blockRef := fmt.Sprintf("b%d", position+1)
+		programObjectsByBlock[blockRef] = make(map[string]struct{}, len(block.Symbols))
+		for _, symbol := range block.Symbols {
+			authority := compilation.symbols[symbolRefByNodeID[symbol.NodeID]]
+			programObjectsByBlock[blockRef][authority.programObjectID] = struct{}{}
+		}
+	}
+	adjacency := groupingAdjacency(compilation.groupingEdges)
+	result := make([]groupingRelationRequest, 0, len(blocks)*(len(blocks)-1)/2)
+	for left := 0; left < len(blocks); left++ {
+		for right := left + 1; right < len(blocks); right++ {
+			leftRef := fmt.Sprintf("b%d", left+1)
+			rightRef := fmt.Sprintf("b%d", right+1)
+			result = append(result, groupingRelationRequest{
+				LeftRef: leftRef, RightRef: rightRef,
+				SharedRepresentatives:   sharedGroupingObjects(programObjectsByBlock[leftRef], programObjectsByBlock[rightRef]),
+				LeftReachesRightMinHops: minGroupingHops(adjacency, programObjectsByBlock[leftRef], programObjectsByBlock[rightRef]),
+				RightReachesLeftMinHops: minGroupingHops(adjacency, programObjectsByBlock[rightRef], programObjectsByBlock[leftRef]),
+			})
+		}
+	}
+	return result
+}
+
+func TestStableModelGroupIDIncludesClaimAndMembership(t *testing.T) {
+	left := stableGroupID("target", "Runtime", "Runs accepted work.", []string{"core-b", "core-a"})
+	right := stableGroupID("target", "Runtime", "Runs accepted work.", []string{"core-a", "core-b"})
+	changedMembers := stableGroupID("target", "Runtime", "Runs accepted work.", []string{"core-a", "core-c"})
+	changedClaim := stableGroupID("target", "Execution", "Explains accepted work.", []string{"core-a", "core-b"})
+	if left != right || left == changedMembers || left == changedClaim {
+		t.Fatalf("stable group IDs = %q / %q / %q / %q", left, right, changedMembers, changedClaim)
+	}
+	localLeft := stableLocalUnassignedGroupID("target", []string{"core-b", "core-a"})
+	localRight := stableLocalUnassignedGroupID("target", []string{"core-a", "core-b"})
+	if localLeft != localRight || !strings.HasPrefix(localLeft, "core-group-local-") {
+		t.Fatalf("stable local unassigned IDs = %q / %q", localLeft, localRight)
 	}
 }
 

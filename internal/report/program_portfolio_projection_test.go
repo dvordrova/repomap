@@ -95,3 +95,31 @@ func TestProgramSemanticPresentationFailsClosedByLanguageCapability(t *testing.T
 		t.Fatalf("missing Go semantic authority error = %v", err)
 	}
 }
+
+func TestProgramSemanticPresentationRequiresExactJSTSSurfaceAuthority(t *testing.T) {
+	for _, language := range []string{"javascript", "typescript"} {
+		t.Run(language, func(t *testing.T) {
+			index := reportProgramIndexFixture(t, language, "application")
+			portfolio, err := NewProgramPortfolio(index.Target.ID, []programindex.Index{index})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if portfolio.Entries[0].SemanticState != ProgramSemanticProgramAvailable {
+				t.Fatalf("semantic state = %q", portfolio.Entries[0].SemanticState)
+			}
+			if err := validateProgramSemanticPresentation(
+				portfolio, nil, nil, &CoreMapView{}, &ActivityEntrypointView{},
+				&IntegrationUsageView{}, &ActivityPathView{},
+			); err == nil || !strings.Contains(err.Error(), "requires exact surface catalog and cross-surface path authority") {
+				t.Fatalf("missing JavaScript/TypeScript authority error = %v", err)
+			}
+			if err := validateProgramSemanticPresentation(
+				portfolio, nil, nil, &CoreMapView{}, &ActivityEntrypointView{},
+				&IntegrationUsageView{}, &ActivityPathView{},
+				jstsSemanticPresentation{&JSTSSurfaceCatalogView{}, &CrossSurfacePathView{}},
+			); err != nil {
+				t.Fatalf("complete JavaScript/TypeScript semantic topology: %v", err)
+			}
+		})
+	}
+}

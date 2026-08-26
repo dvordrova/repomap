@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -141,9 +142,146 @@ func TestCompilationAdvertisesEligibleTopologyWithoutSemanticPromotion(t *testin
 	if compiled.candidates[1].row.Name != "helper" || compiled.candidates[1].row.Topology.IncomingCalls != 1 {
 		t.Fatalf("helper row = %#v", compiled.candidates[1].row)
 	}
-	if err := validateResponse(response{ActivityRefs: []string{"missing"}}, map[string]struct{}{"a1": {}}); err == nil {
-		t.Fatal("unknown ref was accepted")
+}
+
+func TestRunFiltersUnknownAndDuplicateActivityRefs(t *testing.T) {
+	index := activityTestIndex(t)
+	refs := []string{"a1", "a1"}
+	for ordinal := 0; ordinal < 8; ordinal++ {
+		refs = append(refs, fmt.Sprintf("unknown-%04d", ordinal))
 	}
+	raw, err := json.Marshal(response{ActivityRefs: refs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mixedProvider := &fixedProvider{response: raw}
+	result, err := Run(
+		context.Background(), llm.Executor{Enabled: false},
+		mixedProvider, index,
+	)
+	if err != nil {
+		t.Fatalf("mixed known/unknown response: %v", err)
+	}
+	if len(result.Objects) != 1 || result.Objects[0].Name != "Start" || result.Coverage.Selected != 1 {
+		t.Fatalf("filtered mixed selection = %#v", result)
+	}
+	if len(mixedProvider.prompts) != 1 {
+		t.Fatalf("mixed response provider requests = %d, want 1 without retry", len(mixedProvider.prompts))
+	}
+
+	unknownProvider := &fixedProvider{
+		response: []byte(`{"activity_refs":["unknown","foreign","unknown"]}`),
+	}
+	result, err = Run(
+		context.Background(), llm.Executor{Enabled: false},
+		unknownProvider, index,
+	)
+	if err != nil {
+		t.Fatalf("all-unknown response: %v", err)
+	}
+	if len(result.Objects) != 0 || result.Coverage.Selected != 0 {
+		t.Fatalf("all-unknown selection = %#v", result)
+	}
+	if len(unknownProvider.prompts) != 1 {
+		t.Fatalf("all-unknown provider requests = %d, want 1 without retry", len(unknownProvider.prompts))
+	}
+}
+
+func TestBatchRequestsExposeSeedCandidateRefOnlyInOwningBatch(t *testing.T) {
+	compiled, err := compile(activityBatchedSeedTestIndex(t))
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	if len(compiled.candidates) != MaxCandidatesPerBatch+1 || len(compiled.batches) != 2 {
+		t.Fatalf("candidate partition = %d candidates / %d batches", len(compiled.candidates), len(compiled.batches))
+	}
+	if len(compiled.batches[0]) != MaxCandidatesPerBatch || len(compiled.batches[1]) != 1 {
+		t.Fatalf("batch sizes = %d / %d", len(compiled.batches[0]), len(compiled.batches[1]))
+	}
+
+	first := requestForBatch(compiled, 0, compiled.batches[0])
+	second := requestForBatch(compiled, 1, compiled.batches[1])
+	if len(first.Seeds) != 1 || len(second.Seeds) != 1 {
+		t.Fatalf("complete seed context was not repeated: first=%#v second=%#v", first.Seeds, second.Seeds)
+	}
+	wantRef := compiled.candidates[len(compiled.candidates)-1].ref
+	if first.Seeds[0].CandidateRef != "" || second.Seeds[0].CandidateRef != wantRef {
+		t.Fatalf("batch-local seed refs: first=%#v second=%#v", first.Seeds[0], second.Seeds[0])
+	}
+	firstSeed, secondSeed := first.Seeds[0], second.Seeds[0]
+	firstSeed.CandidateRef = secondSeed.CandidateRef
+	if firstSeed != secondSeed {
+		t.Fatalf("non-selectable seed context changed across batches: first=%#v second=%#v", first.Seeds[0], second.Seeds[0])
+	}
+	firstWire, err := json.Marshal(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondWire, err := json.Marshal(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(firstWire, []byte(`"candidate_ref"`)) ||
+		!bytes.Contains(secondWire, []byte(`"candidate_ref":"`+wantRef+`"`)) {
+		t.Fatalf("batch-local seed wire authority: first_has_ref=%t second_has_%s=%t",
+			bytes.Contains(firstWire, []byte(`"candidate_ref"`)), wantRef,
+			bytes.Contains(secondWire, []byte(`"candidate_ref":"`+wantRef+`"`)))
+	}
+
+	advertised := make(map[string]int, len(compiled.candidates))
+	for _, payload := range []request{first, second} {
+		if payload.CandidatesObserved != len(compiled.candidates) ||
+			payload.CandidatesAdvertised != len(compiled.candidates) || payload.CandidatesOmitted != 0 {
+			t.Fatalf("batch coverage drifted: %#v", payload)
+		}
+		for _, candidate := range payload.Candidates {
+			advertised[candidate.Ref]++
+		}
+	}
+	for _, candidate := range compiled.candidates {
+		if advertised[candidate.ref] != 1 {
+			t.Errorf("candidate %q advertised %d times", candidate.ref, advertised[candidate.ref])
+		}
+	}
+}
+
+func activityBatchedSeedTestIndex(t *testing.T) programindex.Index {
+	t.Helper()
+	const candidateCount = MaxCandidatesPerBatch + 1
+	location := func(line int) *programindex.Location {
+		return &programindex.Location{Path: "cmd/app/main.go", Line: line, Column: 1}
+	}
+	objects := make([]programindex.ObjectInput, candidateCount)
+	for position := range objects {
+		objects[position] = programindex.ObjectInput{
+			SourceRef:  fmt.Sprintf("callable-%04d", position+1),
+			Kind:       programindex.ObjectFunction,
+			Name:       fmt.Sprintf("callable%04d", position+1),
+			Visibility: programindex.VisibilityInternal,
+			Location:   location(position + 1),
+		}
+	}
+	index, err := programindex.New(programindex.Input{
+		ScenarioSHA256: strings.Repeat("7", 64), SourceSHA256: strings.Repeat("8", 64),
+		Target: programindex.TargetInput{
+			Language: "go", Kind: "executable", Name: "app", Selector: "./cmd/app",
+			Sources:       []programindex.TargetSource{{FileRef: "f1", Path: "cmd/app/main.go"}},
+			AnchorFileRef: "f1",
+			Seeds: []programindex.TargetSeedInput{{
+				ObjectRef: objects[candidateCount-1].SourceRef,
+				Kind:      programindex.SeedCallable,
+				Location:  location(candidateCount),
+			}},
+		},
+		Objects: objects,
+		Coverage: programindex.CoverageInput{
+			Measured: true, ObjectsObserved: candidateCount,
+		},
+	})
+	if err != nil {
+		t.Fatalf("programindex.New: %v", err)
+	}
+	return index
 }
 
 func TestCompilationEligibilityPreservesDynamicJointsAndSeedHandoffs(t *testing.T) {

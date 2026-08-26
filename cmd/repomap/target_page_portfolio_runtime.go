@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -18,8 +19,14 @@ import (
 // provider-free final portfolio render. It is live-run-only; the shared sealed
 // portfolio and each run manifest are the persisted authority.
 type targetPublishedRun struct {
-	RunID                 string
-	RunDir                string
+	RunID  string
+	RunDir string
+	// SelectedTargetKey is the outer language-neutral adapter target identity
+	// used by the repository dispatcher. AnalysisTarget remains the inner Go
+	// authority and is intentionally absent on Python and JavaScript/TypeScript
+	// pages.
+	SelectedTargetKey     string
+	SelectedTargetDisplay string
 	Target                analysistarget.Target
 	Authority             report.RunAuthority
 	RepositoryStateSHA256 string
@@ -191,11 +198,24 @@ func publishTargetPagePortfolio(
 	if err != nil {
 		return quarantineOnFailure(err)
 	}
+	if err := synthesizeRuntimePortfolio(
+		deps.ctx,
+		deps.runtimeCacheRoot,
+		deps.runtimeNoCache,
+		deps.newCubeProvider,
+		deps.runRuntimePortfolio,
+		container,
+		portfolio,
+		runSet.Ready,
+		output,
+	); err != nil {
+		return quarantineOnFailure(err)
+	}
 	finalize := deps.finalizeTargetPages
 	if finalize == nil {
 		finalize = finalizeTargetPageRuns
 	}
-	if err := finalize(container, portfolio, runSet.Ready); err != nil {
+	if err := finalize(deps.ctx, container, portfolio, runSet.Ready); err != nil {
 		return quarantineOnFailure(err)
 	}
 	var defaultAssessment report.PublicationAssessment
@@ -261,10 +281,14 @@ func quarantineTargetPagePublication(runDirs []string) error {
 }
 
 func finalizeTargetPageRuns(
+	ctx context.Context,
 	container snapshot.TargetRunContainer,
 	portfolio snapshot.TargetPagePortfolio,
 	runs []targetPublishedRun,
 ) error {
+	if err := validateRuntimePortfolioArtifactsForFinalization(container, portfolio, runs); err != nil {
+		return err
+	}
 	bundleDefault, err := standaloneTargetBundleDefaultRun(container, runs)
 	if err != nil {
 		return err
@@ -286,45 +310,24 @@ func finalizeTargetPageRuns(
 	if alreadyFinalized {
 		return nil
 	}
-	for _, run := range runs {
-		writer, writerErr := debugdump.OpenWriter(run.RunDir, true)
-		if writerErr != nil {
-			return fmt.Errorf("target page portfolio: open run %s: %w", run.RunID, writerErr)
+	// The target container, exact page portfolio, and repository runtime
+	// portfolio were persisted together before entering finalization. Missing
+	// or stale authority is rejected above rather than repaired here.
+
+	for index := range runs {
+		data, err := report.ReadRunDir(runs[index].RunDir)
+		if err != nil {
+			return fmt.Errorf("target page portfolio: restore runtime evidence for run %s: %w", runs[index].RunID, err)
 		}
-		writeErr := writer.WriteValidatedFile(
-			snapshot.TargetRunContainerArtifactFilename,
-			containerJSON,
-			func(raw []byte) error {
-				decoded, decodeErr := snapshot.DecodeTargetRunContainer(raw)
-				if decodeErr != nil {
-					return decodeErr
-				}
-				if decoded.SHA256 != container.SHA256 || decoded.CatalogRef != container.CatalogRef {
-					return fmt.Errorf("target run container: recovery binding mismatch")
-				}
-				return nil
-			},
-		)
-		if writeErr == nil {
-			writeErr = writer.WriteValidatedFile(
-				snapshot.TargetPagePortfolioArtifactFilename,
-				portfolioJSON,
-				func(raw []byte) error {
-					decoded, decodeErr := snapshot.DecodeTargetPagePortfolio(raw)
-					if decodeErr != nil {
-						return decodeErr
-					}
-					return decoded.ValidateAgainstContainer(container)
-				},
-			)
+		paths, err := report.CapturedInputPaths(data)
+		if err != nil {
+			return fmt.Errorf("target page portfolio: collect runtime evidence for run %s: %w", runs[index].RunID, err)
 		}
-		closeErr := writer.Close()
-		if writeErr != nil {
-			return fmt.Errorf("target page portfolio: bind run %s: %w", run.RunID, writeErr)
+		extended, err := report.ExtendRunAuthority(ctx, runs[index].Authority, paths)
+		if err != nil {
+			return fmt.Errorf("target page portfolio: authorize runtime evidence for run %s: %w", runs[index].RunID, err)
 		}
-		if closeErr != nil {
-			return fmt.Errorf("target page portfolio: close run %s: %w", run.RunID, closeErr)
-		}
+		runs[index].Authority = extended
 	}
 
 	navigationPages, programTargetByOuterRef, defaultProgramTargetID, err :=
@@ -385,6 +388,62 @@ func finalizeTargetPageRuns(
 		}
 		if !found {
 			return fmt.Errorf("target page portfolio: standalone target bundle marker is absent after publication")
+		}
+	}
+	return nil
+}
+
+func persistTargetPagePortfolioArtifacts(
+	container snapshot.TargetRunContainer,
+	portfolio snapshot.TargetPagePortfolio,
+	runs []targetPublishedRun,
+) error {
+	containerJSON, err := container.CanonicalJSON()
+	if err != nil {
+		return err
+	}
+	portfolioJSON, err := portfolio.CanonicalJSON()
+	if err != nil {
+		return err
+	}
+	for _, run := range runs {
+		writer, writerErr := debugdump.OpenWriter(run.RunDir, true)
+		if writerErr != nil {
+			return fmt.Errorf("target page portfolio: open run %s: %w", run.RunID, writerErr)
+		}
+		writeErr := writer.WriteValidatedFile(
+			snapshot.TargetRunContainerArtifactFilename,
+			containerJSON,
+			func(raw []byte) error {
+				decoded, decodeErr := snapshot.DecodeTargetRunContainer(raw)
+				if decodeErr != nil {
+					return decodeErr
+				}
+				if decoded.SHA256 != container.SHA256 || decoded.CatalogRef != container.CatalogRef {
+					return fmt.Errorf("target run container: recovery binding mismatch")
+				}
+				return nil
+			},
+		)
+		if writeErr == nil {
+			writeErr = writer.WriteValidatedFile(
+				snapshot.TargetPagePortfolioArtifactFilename,
+				portfolioJSON,
+				func(raw []byte) error {
+					decoded, decodeErr := snapshot.DecodeTargetPagePortfolio(raw)
+					if decodeErr != nil {
+						return decodeErr
+					}
+					return decoded.ValidateAgainstContainer(container)
+				},
+			)
+		}
+		closeErr := writer.Close()
+		if writeErr != nil {
+			return fmt.Errorf("target page portfolio: bind run %s: %w", run.RunID, writeErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("target page portfolio: close run %s: %w", run.RunID, closeErr)
 		}
 	}
 	return nil

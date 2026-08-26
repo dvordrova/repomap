@@ -24,17 +24,18 @@ const (
 	ArtifactFilename      = "python-target-catalog.json"
 	MaxArtifactBytes      = 64 << 20
 
-	maxCatalogTargets   = 2048
-	maxModuleScopes     = 2048
-	maxSourceRoots      = 64
-	maxTargetRoots      = 16
-	maxPackages         = 4096
-	maxModules          = 20000
-	maxProjectedModules = 100000
-	maxBasis            = 128
-	maxSourceRefs       = maxTargetRoots
-	maxOmissions        = 4096
-	maxLabelBytes       = 256
+	maxCatalogTargets      = 2048
+	maxModuleScopes        = 2048
+	maxSourceRoots         = 64
+	maxTargetRoots         = 16
+	maxPackages            = 4096
+	maxModules             = 20000
+	maxProjectedModules    = 100000
+	maxBasis               = 128
+	maxSourceRefs          = maxTargetRoots
+	maxOmissions           = 4096
+	maxLabelBytes          = 256
+	maxSourceIdentityBytes = 1024
 )
 
 type Kind string
@@ -1240,7 +1241,7 @@ func validModule(value string) bool {
 func validQualname(value string) bool { return validModule(value) }
 
 func validSourceIdentity(value string) bool {
-	return value != "" && len(value) <= 1024 && strings.TrimSpace(value) == value &&
+	return value != "" && len(value) <= maxSourceIdentityBytes && strings.TrimSpace(value) == value &&
 		!strings.ContainsAny(value, "\x00\r\n")
 }
 

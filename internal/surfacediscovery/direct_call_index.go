@@ -775,11 +775,11 @@ func (a *analyzer) directCallNode(function *ssa.Function, scenario Scenario) (Di
 	}
 	packagePath := functionPackagePath(function)
 	facts := a.packageFacts[packagePath]
-	if facts == nil || facts.Module == nil || facts.Module.Path == "" || facts.Module.Dir == "" ||
+	if facts == nil || facts.Module == nil || facts.Module.Path == "" ||
 		!a.modulePaths[facts.Module.Path] {
 		return DirectCallNode{}, DirectCallModule{}, false
 	}
-	moduleDirectory, ok := containedModuleDirectory(a.root, facts.Module.Dir)
+	moduleDirectory, ok := repositoryPackageModuleDirectory(a.root, facts)
 	if !ok {
 		return DirectCallNode{}, DirectCallModule{}, false
 	}

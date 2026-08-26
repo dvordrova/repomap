@@ -10,6 +10,13 @@ import (
 	"strings"
 )
 
+const (
+	MaxResponseBindings          = 4
+	MaxCLIResponseBindings       = 2
+	MaxHTTPResponseBindings      = 3
+	MaxScheduledResponseBindings = 2
+)
+
 type Response struct {
 	Version          int                       `json:"version"`
 	SurfaceProposals []ResponseSurfaceProposal `json:"surface_proposals"`
@@ -167,7 +174,7 @@ func restoreSurfaceProposal(
 	if proposal.Bindings == nil || len(proposal.Bindings) == 0 {
 		return ResultSurfaceProposal{}, RejectedSurfaceMissingBinding
 	}
-	if len(proposal.Bindings) > 4 {
+	if len(proposal.Bindings) > MaxResponseBindings {
 		return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
 	}
 	if proposal.KindRef == SurfaceKindRefCLICommand && authority.exact.Form != SurfaceCandidateKeyedComposite ||
@@ -200,7 +207,7 @@ func restoreSurfaceProposal(
 	}
 	switch proposal.KindRef {
 	case SurfaceKindRefCLICommand:
-		if len(bySlot) < 1 || len(bySlot) > 2 {
+		if len(bySlot) < 1 || len(bySlot) > MaxCLIResponseBindings {
 			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
 		}
 		identity, present := bySlot[SurfaceSlotRefIdentity]
@@ -228,7 +235,7 @@ func restoreSurfaceProposal(
 		restored.Role = SurfaceRoleDescriptor
 		restored.Identity = resultSurfaceValue(identity)
 	case SurfaceKindRefHTTPRoute:
-		if len(bySlot) < 1 || len(bySlot) > 3 {
+		if len(bySlot) < 1 || len(bySlot) > MaxHTTPResponseBindings {
 			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
 		}
 		method, methodPresent := bySlot[SurfaceSlotRefMethod]
@@ -271,7 +278,7 @@ func restoreSurfaceProposal(
 			restored.Role = SurfaceRoleEntrySurface
 		}
 	case SurfaceKindRefScheduledJob:
-		if len(bySlot) > 2 {
+		if len(bySlot) > MaxScheduledResponseBindings {
 			return ResultSurfaceProposal{}, RejectedSurfaceIncompatibleBinding
 		}
 		identity, identityPresent := bySlot[SurfaceSlotRefIdentity]

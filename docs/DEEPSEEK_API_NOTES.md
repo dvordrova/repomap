@@ -14,7 +14,7 @@ REPOMAP_LLM_ENDPOINT      full chat/completions URL
 REPOMAP_LLM_MODEL         model name (default: deepseek-v4-flash)
 REPOMAP_LLM_API_KEY       bearer credential
 REPOMAP_LLM_AUTH          bearer (default) or none
-REPOMAP_LLM_MAX_TOKENS    positive integer (default: 64000)
+REPOMAP_LLM_MAX_TOKENS    positive integer (default: 128000)
 REPOMAP_LLM_TIMEOUT       positive Go duration (default: 10m)
 ```
 

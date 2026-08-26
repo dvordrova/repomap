@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	CubeMapViewVersion = 3
+	CubeMapViewVersion = 6
 
 	MaxCubeMapViewCoreObjects           = 4_096
 	MaxCubeMapViewCoreObjectBindings    = 8_192
@@ -334,7 +334,7 @@ func projectValidatedCubeMap(value cubemap.Map, programTargetID string) (*CubeMa
 	}
 	for _, group := range value.Core.RefinedGroups {
 		view.RefinedGroups = append(view.RefinedGroups, CoreMapViewGroup{
-			ID: group.ID, Name: group.Name, Purpose: group.Purpose,
+			ID: group.ID, Authority: group.Authority, Name: group.Name, Purpose: group.Purpose,
 			CoreBlockIDs: append([]string(nil), group.BlockIDs...),
 		})
 	}
@@ -756,7 +756,7 @@ func validateCubeMapCoreBlocks(
 	depth int,
 	seen map[string]struct{},
 ) error {
-	if baseline && depth > 1 && len(blocks) != 0 {
+	if baseline && depth > coremap.MaxBlockDepth && len(blocks) != 0 {
 		return fmt.Errorf("cube map view: baseline hierarchy exceeds its producer depth")
 	}
 	for _, block := range blocks {
@@ -1263,9 +1263,12 @@ func validateCubeMapViewCoverage(view CubeMapView) error {
 		return fmt.Errorf("cube map view: projection coverage mismatch")
 	}
 	core := view.Coverage.Core
+	modelGroups, localGroups, unassignedBlocks := coreMapViewGroupingCounts(view.RefinedGroups)
 	if core.TrackedFiles < 0 || core.BaselineRoleFiles < 0 || core.SymbolsAvailable < 0 ||
 		core.BaselineBlocks != counts.baselineCore || core.RefinedBlocks != counts.refinedCore ||
 		core.RefinedGroups != counts.refinedGroups ||
+		core.RefinedModelGroups != modelGroups || core.RefinedLocalGroups != localGroups ||
+		core.RefinedUnassignedBlocks != unassignedBlocks ||
 		core.RefinedGroupCalls != cubeMapViewBoolCount(counts.refinedCore >= 2) ||
 		core.BaselineFilesSelected != countCubeMapUniqueFiles(view.BaselineCore) ||
 		core.RefinedFilesSelected != countCubeMapUniqueFiles(view.RefinedCore) ||

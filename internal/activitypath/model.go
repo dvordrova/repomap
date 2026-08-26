@@ -20,8 +20,6 @@ const (
 	Version          = 3
 	ArtifactFilename = "activity-paths.json"
 
-	MaxRoutes                  = integrationusage.MaxSelectedUses
-	MaxOutcomes                = integrationusage.MaxSelectedUses
 	MaxProjectedTraversalEdges = 1_048_576
 	MaxRouteSteps              = 256
 	MaxTotalPathSteps          = 32_768
@@ -262,9 +260,6 @@ func prepareInputs(
 	for _, selected := range ownedIntegrations.Dependencies {
 		dependencyIDs[selected.Dependency.ID] = struct{}{}
 	}
-	if len(ownedUses.Uses) > MaxOutcomes {
-		return inputs{}, fmt.Errorf("activity path: %d uses exceed outcome bound %d", len(ownedUses.Uses), MaxOutcomes)
-	}
 	return inputs{
 		index: ownedIndex, activities: ownedActivities, integrations: ownedIntegrations, uses: ownedUses,
 		activitiesSHA: activitiesSHA, integrationsSHA: integrationsSHA, usesSHA: usesSHA,
@@ -311,9 +306,6 @@ func build(prepared inputs) (Result, error) {
 	callerUseCounts := make(map[string]int)
 	for _, use := range prepared.uses.Uses {
 		callerUseCounts[use.Operation.CallerID]++
-	}
-	if len(callerUseCounts) > MaxRoutes {
-		return Result{}, fmt.Errorf("activity path: %d unique callers exceed route bound %d", len(callerUseCounts), MaxRoutes)
 	}
 	orderedCallers := make([]programindex.Object, 0, len(callerUseCounts))
 	for callerID := range callerUseCounts {

@@ -18,6 +18,42 @@ import (
 // Compile resolves every universally merged FileRef through the exact corpus.
 // It does not rank, filter, merge duplicate FileRefs, or truncate candidates.
 func Compile(snapshot corpus.Snapshot, candidates []Candidate) (Compilation, error) {
+	return compile(snapshot, candidates, false, nil, false, nil)
+}
+
+// CompileWithExecutableAuthority resolves the complete exact set of
+// executable-capable candidate refs in addition to the generic candidate
+// surface. Authority refs are canonicalized in corpus order and deduplicated;
+// every ref must name a current candidate. An explicitly empty set remains
+// bound and provider-visible as a non-null empty array.
+func CompileWithExecutableAuthority(
+	snapshot corpus.Snapshot,
+	candidates []Candidate,
+	executableFileRefs []corpus.FileID,
+) (Compilation, error) {
+	return compile(snapshot, candidates, true, executableFileRefs, false, nil)
+}
+
+// CompileWithRequiredTargetAuthority binds canonical file representatives for
+// exact targets established by deterministic language adapters. The provider
+// may choose the default and retain additional guidance candidates, but it
+// cannot suppress this set.
+func CompileWithRequiredTargetAuthority(
+	snapshot corpus.Snapshot,
+	candidates []Candidate,
+	requiredTargetFileRefs []corpus.FileID,
+) (Compilation, error) {
+	return compile(snapshot, candidates, false, nil, true, requiredTargetFileRefs)
+}
+
+func compile(
+	snapshot corpus.Snapshot,
+	candidates []Candidate,
+	executableAuthorityBound bool,
+	executableFileRefs []corpus.FileID,
+	requiredAuthorityBound bool,
+	requiredTargetFileRefs []corpus.FileID,
+) (Compilation, error) {
 	ownedCorpus, err := snapshot.Owned()
 	if err != nil {
 		return Compilation{}, fmt.Errorf("target portfolio: corpus: %w", err)
@@ -30,7 +66,31 @@ func Compile(snapshot corpus.Snapshot, candidates []Candidate) (Compilation, err
 	if err != nil {
 		return Compilation{}, err
 	}
-	request := Request{Candidates: visible}
+	canonicalExecutableFileRefs := []corpus.FileID(nil)
+	var requestExecutableFileRefs *[]corpus.FileID
+	if executableAuthorityBound {
+		canonicalExecutableFileRefs, err = canonicalExecutableRefs(canonical, executableFileRefs)
+		if err != nil {
+			return Compilation{}, err
+		}
+		requestRefs := cloneFileRefs(canonicalExecutableFileRefs)
+		requestExecutableFileRefs = &requestRefs
+	}
+	canonicalRequiredTargetFileRefs := []corpus.FileID(nil)
+	var requestRequiredTargetFileRefs *[]corpus.FileID
+	if requiredAuthorityBound {
+		canonicalRequiredTargetFileRefs, err = canonicalRequiredTargetRefs(canonical, requiredTargetFileRefs)
+		if err != nil {
+			return Compilation{}, fmt.Errorf("target portfolio: required target authority: %w", err)
+		}
+		requestRefs := cloneFileRefs(canonicalRequiredTargetFileRefs)
+		requestRequiredTargetFileRefs = &requestRefs
+	}
+	request := Request{
+		Candidates:             visible,
+		ExecutableFileRefs:     requestExecutableFileRefs,
+		RequiredTargetFileRefs: requestRequiredTargetFileRefs,
+	}
 	wire, err := json.Marshal(request)
 	if err != nil {
 		return Compilation{}, fmt.Errorf("target portfolio: encode request: %w", err)
@@ -44,7 +104,10 @@ func Compile(snapshot corpus.Snapshot, candidates []Candidate) (Compilation, err
 	if _, found := secretscan.Detect(string(wire)); found {
 		return Compilation{}, fmt.Errorf("target portfolio: provider request contains credential-shaped content")
 	}
-	state, err := compileState(ownedCorpus, canonical, wire)
+	state, err := compileState(
+		ownedCorpus, canonical, executableAuthorityBound, canonicalExecutableFileRefs,
+		requiredAuthorityBound, canonicalRequiredTargetFileRefs, wire,
+	)
 	if err != nil {
 		return Compilation{}, err
 	}
@@ -55,6 +118,11 @@ func Compile(snapshot corpus.Snapshot, candidates []Candidate) (Compilation, err
 		state:         append([]byte(nil), state...),
 		corpus:        ownedCorpus,
 		candidates:    cloneCandidates(canonical),
+
+		executableAuthorityBound: executableAuthorityBound,
+		executableFileRefs:       cloneFileRefs(canonicalExecutableFileRefs),
+		requiredAuthorityBound:   requiredAuthorityBound,
+		requiredTargetFileRefs:   cloneFileRefs(canonicalRequiredTargetFileRefs),
 	}
 	compilation.sealed = compilationSeal(compilation.state)
 	if err := validateCompilation(compilation); err != nil {
@@ -65,7 +133,8 @@ func Compile(snapshot corpus.Snapshot, candidates []Candidate) (Compilation, err
 
 // ExecutionState returns the exact cache identity owned by this compilation.
 // It binds prompt, preparation, and response-schema versions plus hashes of
-// canonical corpus, candidate, and provider-request bytes.
+// canonical corpus, candidate, executable-authority, and provider-request
+// bytes.
 func ExecutionState(compilation Compilation) ([]byte, error) {
 	if err := validateCompilation(compilation); err != nil {
 		return nil, err
@@ -91,6 +160,32 @@ func validateCompilation(compilation Compilation) error {
 	if !reflect.DeepEqual(compilation.Request.Candidates, visible) {
 		return fmt.Errorf("target portfolio: visible candidate authority mismatch")
 	}
+	if compilation.executableAuthorityBound {
+		canonicalExecutableFileRefs, err := canonicalExecutableRefs(canonical, compilation.executableFileRefs)
+		if err != nil {
+			return err
+		}
+		if !reflect.DeepEqual(canonicalExecutableFileRefs, compilation.executableFileRefs) ||
+			compilation.Request.ExecutableFileRefs == nil ||
+			!reflect.DeepEqual(*compilation.Request.ExecutableFileRefs, canonicalExecutableFileRefs) {
+			return fmt.Errorf("target portfolio: executable authority mismatch")
+		}
+	} else if compilation.Request.ExecutableFileRefs != nil || len(compilation.executableFileRefs) != 0 {
+		return fmt.Errorf("target portfolio: unexpected executable authority")
+	}
+	if compilation.requiredAuthorityBound {
+		canonicalRequiredTargetFileRefs, err := canonicalRequiredTargetRefs(canonical, compilation.requiredTargetFileRefs)
+		if err != nil {
+			return fmt.Errorf("target portfolio: required target authority: %w", err)
+		}
+		if !reflect.DeepEqual(canonicalRequiredTargetFileRefs, compilation.requiredTargetFileRefs) ||
+			compilation.Request.RequiredTargetFileRefs == nil ||
+			!reflect.DeepEqual(*compilation.Request.RequiredTargetFileRefs, canonicalRequiredTargetFileRefs) {
+			return fmt.Errorf("target portfolio: required target authority mismatch")
+		}
+	} else if compilation.Request.RequiredTargetFileRefs != nil || len(compilation.requiredTargetFileRefs) != 0 {
+		return fmt.Errorf("target portfolio: unexpected required target authority")
+	}
 	wire, err := json.Marshal(compilation.Request)
 	if err != nil {
 		return fmt.Errorf("target portfolio: encode request: %w", err)
@@ -102,7 +197,15 @@ func validateCompilation(compilation Compilation) error {
 	if _, found := secretscan.Detect(string(wire)); found {
 		return fmt.Errorf("target portfolio: provider request contains credential-shaped content")
 	}
-	wantState, err := compileState(compilation.corpus, canonical, wire)
+	wantState, err := compileState(
+		compilation.corpus,
+		canonical,
+		compilation.executableAuthorityBound,
+		compilation.executableFileRefs,
+		compilation.requiredAuthorityBound,
+		compilation.requiredTargetFileRefs,
+		wire,
+	)
 	if err != nil {
 		return err
 	}
@@ -111,6 +214,35 @@ func validateCompilation(compilation Compilation) error {
 		return fmt.Errorf("target portfolio: compilation state binding mismatch")
 	}
 	return nil
+}
+
+func canonicalExecutableRefs(candidates []Candidate, executableFileRefs []corpus.FileID) ([]corpus.FileID, error) {
+	return canonicalAuthorityRefs(candidates, executableFileRefs, "executable")
+}
+
+func canonicalRequiredTargetRefs(candidates []Candidate, requiredFileRefs []corpus.FileID) ([]corpus.FileID, error) {
+	return canonicalAuthorityRefs(candidates, requiredFileRefs, "required target")
+}
+
+func canonicalAuthorityRefs(candidates []Candidate, fileRefs []corpus.FileID, label string) ([]corpus.FileID, error) {
+	known := make(map[corpus.FileID]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		known[candidate.FileRef] = struct{}{}
+	}
+	selected := make(map[corpus.FileID]struct{}, len(fileRefs))
+	for _, fileRef := range fileRefs {
+		if _, ok := known[fileRef]; !ok {
+			return nil, fmt.Errorf("target portfolio: %s file_ref is outside the current candidate authority", label)
+		}
+		selected[fileRef] = struct{}{}
+	}
+	result := make([]corpus.FileID, 0, len(selected))
+	for _, candidate := range candidates {
+		if _, ok := selected[candidate.FileRef]; ok {
+			result = append(result, candidate.FileRef)
+		}
+	}
+	return result, nil
 }
 
 func canonicalCandidates(snapshot corpus.Snapshot, candidates []Candidate) ([]Candidate, error) {
@@ -205,7 +337,15 @@ func isAbsoluteLabel(value string) bool {
 		(value[2] == '/' || value[2] == '\\')
 }
 
-func compileState(snapshot corpus.Snapshot, candidates []Candidate, request []byte) ([]byte, error) {
+func compileState(
+	snapshot corpus.Snapshot,
+	candidates []Candidate,
+	executableAuthorityBound bool,
+	executableFileRefs []corpus.FileID,
+	requiredAuthorityBound bool,
+	requiredTargetFileRefs []corpus.FileID,
+	request []byte,
+) ([]byte, error) {
 	corpusWire, err := snapshot.CanonicalJSON()
 	if err != nil {
 		return nil, fmt.Errorf("target portfolio: encode corpus state: %w", err)
@@ -214,19 +354,35 @@ func compileState(snapshot corpus.Snapshot, candidates []Candidate, request []by
 	if err != nil {
 		return nil, fmt.Errorf("target portfolio: encode candidate state: %w", err)
 	}
+	executableWire, err := json.Marshal(executableFileRefs)
+	if err != nil {
+		return nil, fmt.Errorf("target portfolio: encode executable authority state: %w", err)
+	}
+	requiredWire, err := json.Marshal(requiredTargetFileRefs)
+	if err != nil {
+		return nil, fmt.Errorf("target portfolio: encode required target authority state: %w", err)
+	}
 	state, err := json.Marshal(struct {
-		Contract              string `json:"contract"`
-		PromptVersion         string `json:"prompt_version"`
-		PreparationVersion    int    `json:"preparation_version"`
-		ResponseSchemaVersion int    `json:"response_schema_version"`
-		CorpusBytesSHA256     string `json:"corpus_bytes_sha256"`
-		CandidateBytesSHA256  string `json:"candidate_bytes_sha256"`
-		RequestBytesSHA256    string `json:"request_bytes_sha256"`
+		Contract                 string `json:"contract"`
+		PromptVersion            string `json:"prompt_version"`
+		PreparationVersion       int    `json:"preparation_version"`
+		ResponseSchemaVersion    int    `json:"response_schema_version"`
+		CorpusBytesSHA256        string `json:"corpus_bytes_sha256"`
+		CandidateBytesSHA256     string `json:"candidate_bytes_sha256"`
+		ExecutableAuthorityBound bool   `json:"executable_authority_bound"`
+		ExecutableRefsSHA256     string `json:"executable_file_refs_sha256"`
+		RequiredAuthorityBound   bool   `json:"required_target_authority_bound"`
+		RequiredRefsSHA256       string `json:"required_target_file_refs_sha256"`
+		RequestBytesSHA256       string `json:"request_bytes_sha256"`
 	}{
 		Contract: executionContract, PromptVersion: PromptVersion,
 		PreparationVersion: PreparationVersion, ResponseSchemaVersion: ResponseSchemaVersion,
 		CorpusBytesSHA256: sha256Hex(corpusWire), CandidateBytesSHA256: sha256Hex(candidateWire),
-		RequestBytesSHA256: sha256Hex(request),
+		ExecutableAuthorityBound: executableAuthorityBound,
+		ExecutableRefsSHA256:     sha256Hex(executableWire),
+		RequiredAuthorityBound:   requiredAuthorityBound,
+		RequiredRefsSHA256:       sha256Hex(requiredWire),
+		RequestBytesSHA256:       sha256Hex(request),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("target portfolio: encode execution state: %w", err)
@@ -253,6 +409,15 @@ func cloneCandidates(values []Candidate) []Candidate {
 	for index, value := range values {
 		result[index] = cloneCandidate(value)
 	}
+	return result
+}
+
+func cloneFileRefs(values []corpus.FileID) []corpus.FileID {
+	if values == nil {
+		return nil
+	}
+	result := make([]corpus.FileID, len(values))
+	copy(result, values)
 	return result
 }
 

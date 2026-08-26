@@ -16,7 +16,10 @@ import (
 func TestCaptureRepositoryTracksOnlyTrackedChanges(t *testing.T) {
 	repository := testRepository(t)
 	writeTestFile(t, repository, "main.go", "package main\n")
-	gitTest(t, repository, "add", "main.go")
+	writeTestFile(t, repository, ".npmrc", "//registry.example.test/:_authToken=initial\n")
+	writeTestFile(t, repository, "client/.env.production", "SECRET=initial\n")
+	writeTestFile(t, repository, "node_modules/tracked.js", "initial\n")
+	gitTest(t, repository, "add", "main.go", ".npmrc", "client/.env.production", "node_modules/tracked.js")
 	gitTest(t, repository, "commit", "-m", "initial")
 
 	clean, err := captureTestRepository(t, repository)
@@ -24,6 +27,9 @@ func TestCaptureRepositoryTracksOnlyTrackedChanges(t *testing.T) {
 		t.Fatalf("capture clean repository: %v", err)
 	}
 	writeTestFile(t, repository, "main.go", "package changed\n")
+	writeTestFile(t, repository, ".npmrc", "//registry.example.test/:_authToken=changed\n")
+	writeTestFile(t, repository, "client/.env.production", "SECRET=changed\n")
+	writeTestFile(t, repository, "node_modules/tracked.js", "changed\n")
 	writeTestFile(t, repository, "scratch.txt", "untracked\n")
 	writeTestFile(t, repository, ".gitignore", "generated.go\n")
 	writeTestFile(t, repository, "generated.go", "package generated\n")

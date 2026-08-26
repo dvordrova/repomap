@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	PreparationVersion    = 1
-	ResponseSchemaVersion = 3
+	PreparationVersion    = 3
+	ResponseSchemaVersion = 6
 
 	// The provider receives the complete candidate set or no request at
 	// all. There is deliberately no candidate-count or hypothesis-count
@@ -20,7 +20,7 @@ const (
 	MaxOutputTokens         = 64_000
 )
 
-const executionContract = "positive-file-target-portfolio-selection-v3"
+const executionContract = "positive-file-target-portfolio-selection-with-native-authority-v7"
 
 // Candidate is the common output of the initial scouts after their dumb
 // FileRef merge. Keep the alias so the portfolio does not invent a second
@@ -40,6 +40,19 @@ type VisibleCandidate struct {
 // identity remain private.
 type Request struct {
 	Candidates []VisibleCandidate `json:"candidates"`
+
+	// RequiredTargetFileRefs is present when deterministic language adapters
+	// have established exact native targets. It contains one canonical
+	// representative per target, with one ref allowed to represent several
+	// targets. Every ref must survive the portfolio; the model chooses their
+	// default and may additionally retain repository-guidance candidates.
+	RequiredTargetFileRefs *[]corpus.FileID `json:"required_target_file_refs,omitempty"`
+
+	// ExecutableFileRefs is present only when exact executable authority is
+	// bound. A pointer preserves the material distinction between an unbound
+	// generic compilation (field omitted) and an exactly known library-only
+	// surface (non-null empty array).
+	ExecutableFileRefs *[]corpus.FileID `json:"executable_file_refs,omitempty"`
 }
 
 // Compilation owns the exact candidate and cache authority. Only Request may
@@ -53,6 +66,11 @@ type Compilation struct {
 	corpus     corpus.Snapshot
 	candidates []Candidate
 	sealed     string
+
+	executableAuthorityBound bool
+	executableFileRefs       []corpus.FileID
+	requiredAuthorityBound   bool
+	requiredTargetFileRefs   []corpus.FileID
 }
 
 type Prompt struct {

@@ -2,7 +2,7 @@
 
 Status: active living ADR
 
-Last updated: 2026-08-23
+Last updated: 2026-08-26
 
 Historical provenance: pre-cleanup commit `4e54ab3`
 
@@ -32,11 +32,11 @@ requests. A successful report must not contain deliberately inert code links.
 The ordinary console reports measured wall duration at each completed
 observable pipeline boundary: language target discovery/projection,
 repository-guidance classification, the exact FileRef merge, TargetPortfolio and
-multi-view choice when invoked, ProgramIndex and dependency construction,
+typed target-plan restoration when invoked, ProgramIndex and dependency construction,
 semantic cubes, repository authority, and report publication. Parallel
-first-layer branch durations overlap and are not additive. A cube bypassed by
-an explicit `--target`, or a view-choice cube unnecessary for one exact view,
-is reported as not needed without a fabricated duration.
+first-layer branch durations overlap and are not additive. The TargetPortfolio
+cube bypassed by an explicit `--target` is reported as not needed without a
+fabricated duration.
 
 The only separate command is:
 
@@ -54,13 +54,18 @@ Tests may use test-local helpers, but they do not define another product.
 repomap [repository] [flags]
 ```
 
-Initial target discovery is deliberately high-recall, but discovery alone does
-not select a file for analysis. By default the target-portfolio cube positively
-selects the supported target-entry files to analyze and chooses one of them as
-the default. Omitted file hypotheses are restored locally as `Unclassified`,
-logged, and dropped. `--target` bypasses the first-layer model choices and
+Initial target discovery retains both exact native targets and high-recall file
+alternatives. By default the target-portfolio cube must retain one canonical
+file representative for every exact native target, may positively select
+additional repository-guidance candidates, and chooses one retained file as the
+default. Alternative or guidance-only hypotheses omitted by the model are
+restored locally as `Unclassified`, logged, and dropped. `--target` bypasses the
+TargetPortfolio model decision and
 narrows the run to exactly one explicit target, but it does not bypass the
-parallel README file-role classifier needed by later cubes. There is no
+parallel README file-role classifier or language target scouts. Page-local
+compiler projection, ProgramIndex, dependency, and semantic execution starts
+only for the selected typed target set; an unselected language's page
+prerequisite cannot block an exact target owned by another adapter. There is no
 `--all-targets` mode switch. For every non-explicit merged candidate set,
 including a one-file set, a fully
 validated live or cached positive selection is required: request-building,
@@ -120,14 +125,38 @@ diagnostic-journal availability never changes the cube's semantic contract.
    files are inspected lazily when a cube reads them. Repository-state and
    snapshot construction require this exact already-built corpus authority and
    never run a second tracked-file inventory.
+   Before `FileID` assignment, corpus version 2 unconditionally removes every
+   `.npmrc`, every `.env*` component, `node_modules`, `dist`, `build`, and
+   `coverage` subtree, and every `*.tsbuildinfo` file. Those names and contents
+   therefore cannot enter repository guidance, freshness identity, language
+   analysis, provider input, debug artifacts, or publication. This boundary is
+   independent of the opt-in heuristic secret scan.
    Untracked and ignored files are outside this corpus and are
    not separately inventoried for repository-change authority.
 2. Run independent language-specific target scouts over that corpus. The Go
    scout uses exact build-selected main and public-declaration facts; the
    Python adapter independently uses Python packaging, module, launcher,
-   main-guard, executable-script, and framework facts. A language scout may
-   use arbitrary private deterministic structures while thinking, but its
-   first-layer handoff is deliberately only
+   main-guard, executable-script, and framework facts. The JS/TS adapter owns
+   exactly one selected `package.json` project with tracked project-selected
+   JavaScript/TypeScript sources. A non-workspace root remains the project. A
+   workspace root remains the project only when an exact manifest field or
+   canonical `dev`/`start` entry names source owned by that root; otherwise an
+   exact `--cwd` in canonical `dev`/`start` may delegate to exactly one eligible
+   child. Zero or multiple exact delegates fail closed with exact
+   `jsts:<manifest>` choices. Without a root, one eligible nested package is
+   accepted and multiple eligible nested packages fail closed with the same
+   exact choices rather than being ranked heuristically. An explicit
+   `jsts:<manifest>` selects that owned package before TypeScript compiler
+   execution. The JSTS scout performs this manifest/workspace/source-ownership
+   selection directly from the corpus and does not invoke Node or the
+   TypeScript Compiler API; the full compiler projection belongs to a selected
+   JSTS target page. Every scout activated by exact project
+   evidence runs over the same corpus and contributes to the same repository
+   candidate stream. Go, Python, and JS/TS package discovery are not mutually
+   exclusive: finding one supported language never suppresses another, while
+   an incidental source file without that adapter's project authority cannot
+   activate it. A language scout may use arbitrary private deterministic
+   structures while thinking, but its first-layer handoff is deliberately only
    `[{file_ref,hypotheses:[...]}]`. A candidate is a possible file from which a
    later exact graph can recover the execution or library-usage picture of a
    top-level target; it is not yet an accepted target. Hypothesis strings state
@@ -146,7 +175,8 @@ diagnostic-journal availability never changes the cube's semantic contract.
    complete current contents of every tracked textual README and AGENTS.md,
    the complete names-only corpus
    dictionary encoded as a lossless prefix-compressed path-component tree,
-   in one atomic bounded request. Tree keys are
+   and the complete closed `prose_file_refs` set derived from that same
+   dictionary, in one atomic bounded request. Tree keys are
    exact path components, nested objects are directories, and a string leaf is
    the exact `fN` for the file named by that key; joining keys from root to leaf
    restores every repository-relative path. It preselects neither headings nor
@@ -167,10 +197,15 @@ diagnostic-journal availability never changes the cube's semantic contract.
    provider, renderer, orchestrator, transport, or shared-layer implementation
    files do not become independent `target_entry` products from architectural
    ownership language alone. Prompts ask for a 120-byte hypothesis safety
-   margin; the strict hard limit remains 160 UTF-8 bytes. Unknown refs and unknown classes
-   are rejected. A non-documentation role assigned to a prose file rejects the
-   complete response instead of being dropped, repaired into documentation, or
-   accepted as part of a smaller subset.
+   margin; the strict hard limit remains 160 UTF-8 bytes. Unknown file refs are
+   discarded as ungrounded rows; unknown classes are rejected. Every
+   advertised prose ref may receive only `documentation`, irrespective
+   of what product or component its prose describes. A valid non-documentation
+   role assigned to a known prose file is an unsupported set member: the
+   reducer discards it before its hypotheses and per-file bounds gain
+   authority, retains independently valid rows, and never repairs or promotes
+   it into `documentation`. Unknown classes and malformed response structure
+   remain terminal errors.
 5. Preserve that complete rich role catalog separately. Only
    `target_entry` classifications project into the target-candidate stream as
    `file_ref + hypotheses`. An exact local resolvability gate admits only
@@ -179,53 +214,73 @@ diagnostic-journal availability never changes the cube's semantic contract.
    in an active language adapter. Python may resolve an otherwise unadvertised
    module file to one framework-neutral module-execution view derived from its
    sealed project scope; it never widens that file to a neighboring executable
-   or library view. A
-   Go-only run requires one unambiguous Go target; a mixed Go/Python run admits
-   a file resolved by either adapter. Unsupported-language target roles remain
-   in diagnostics and cannot poison the portfolio. Merge the admitted README
-   projections and every active language scout output by exact `file_ref`
-   equality, doing nothing beyond hypothesis concatenation and deduplication.
-   There are no target groups, anchors, fuzzy path joins, confidence classes,
-   or semantic merge decisions in this cube. Multi-language routing does not
-   treat an incidental `.go` file as Go-project authority: the mixed
-   Go/Python portfolio is activated by an explicit Go module boundary plus
-   exact language-adapter discovery. A Python project may therefore retain
-   generated or example Go files without losing its Python target path.
-6. Run `TargetPortfolio` as a positive classifier over the complete merged
-   candidate list. Its response is exactly
+   or library view. The JS/TS adapter resolves only the selected `package.json`
+   candidate to its one exact package-project selector; browser, server, shared,
+   and tool surfaces remain facts inside that target rather than sibling
+   runtime targets. Across all active adapters, a README candidate is admitted
+   only when exactly one adapter can restore it; unsupported or cross-adapter
+   ambiguous target roles remain in diagnostics and cannot poison the
+   portfolio. Merge the admitted README projections and every active language
+   scout output by exact `file_ref` equality, doing nothing beyond hypothesis
+   concatenation and deduplication. There are no target groups, anchors, fuzzy
+   path joins, confidence classes, language-precedence rules, or semantic merge
+   decisions in this cube. Exact adapter discovery, not incidental file
+   extensions, establishes each language's project authority.
+6. Run `TargetPortfolio` over the complete merged candidate list. The request
+   includes `required_target_file_refs` when deterministic adapters established
+   exact native targets. That field contains at most one canonical file
+   representative per exact target; a shared representative may cover several
+   targets, while alternative files for the same target remain ordinary
+   candidates. Every required ref must be retained. Its response is exactly
    `{"default_file_ref":"f1","target_file_refs":["f1"]}` or, when no
-   candidate is positively supported,
+   required target exists and no guidance candidate is positively supported,
    `{"default_file_ref":null,"target_file_refs":[]}`: refs only, with no
    target refs, request refs, model-visible versions, scores, ranks, or
-   negative list. Every returned ref must be an advertised candidate and a
-   non-null default must be selected. An accepted empty result ends the run
-   with precise `--target` guidance rather than forcing an unsupported file.
-   Candidates omitted by the model are restored locally as `Unclassified`,
-   logged, and dropped; there is no `unlikely` complement. Several selected
-   files may restore to the same exact language target and are deduplicated
+   negative list. `target_file_refs` is a set-valued field: unknown array refs
+   are discarded before deduplication and reduction, while every advertised
+   ref is retained exactly. `default_file_ref` is a mandatory scalar decision;
+   a non-null default must be advertised and remain selected after filtering,
+   so an unknown or filtered-out default is terminal. Omitting any required ref
+   is terminal. An accepted empty result ends the run with precise `--target`
+   guidance rather than forcing an unsupported file.
+   The one repository-wide request carries shared file evidence, not a
+   language-native target catalog or adapter identity. After response
+   reduction, each positive file ref is restored through exactly one active
+   adapter; an unsupported or cross-adapter ambiguous ref is terminal rather
+   than guessed. Adapter resolvers may restore several exact target views from
+   one selected file, and repeated views are deduplicated by their
+   adapter-qualified native identity. The selected default file must restore
+   to exactly one typed target, which becomes the explicit repository default.
+   All restored targets and the default are rechecked against their current
+   exact adapter authority before they enter the execution plan. The common
+   repository plan has no language-specific default policy: every exact native
+   target is already retained, and the default controls navigation and order
+   rather than coverage. The legacy Go-only selector may retain its stricter
+   executable-default contract outside this shared boundary. Candidate order,
+   path/name wording, README claims, and model hypotheses cannot add native
+   target authority.
+   Non-required candidates omitted by the model are restored locally as
+   `Unclassified`, logged, and dropped; there is no `unlikely` complement. Several selected
+   files may restore to the same exact typed target and are deduplicated
    locally after the model decision. For every non-explicit candidate set this
-   cube must complete successfully, including through a revalidated cache hit.
-   `--target` alone bypasses the model cube; a sole discovered candidate is
-   still a model classification rather than a local default. A mixed
-   Go/Python run uses this one union request and partitions only its positive
-   file refs through the exact Go and Python resolvers afterward; it does not
-   run two language portfolios or widen either result back to the high-recall
-   scout catalog. Both resolvers restore the complete positive file set before
-   the handoff records its selected-file count, exact target-view count, and
-   complete cross-language target-ref set. The current report cannot attach
-   complete Python semantic cubes and a target page beside a Go default. Thus
-   any positive Python selection in a mixed run is terminal immediately after
-   exact restoration, before any Python ProgramIndex or report artifact is
-   written; it is never retained as a selected `structural_only` sibling. The
-   error gives exact target guidance. A Go-only positive subset proceeds
-   normally. A Python default likewise fails instead of being replaced
-   locally. A closed exact Python `--target` selector in a mixed repository,
-   however, routes the ordinary run directly into the Python adapter before Go
-   fact loading. Go aliases, Python aliases, and paths that either adapter
-   could claim do not route early; they fail with exact selector guidance.
-   Automatic mixed publication remains terminal until one sealed
-   cross-language target-page container owns every selected target. The exact
-   Go `TargetCatalog` itself contains
+   cube must complete successfully, including through a revalidated cache hit;
+   a sole required native candidate is retained deterministically but still
+   needs a validated model choice of repository default. Every typed target in
+   the resulting canonical plan receives
+   its own complete target-local ProgramIndex, dependency, shared-cube, and
+   report-page execution. The repository default controls initial navigation
+   and execution order, not which selected targets receive semantic analysis.
+   The coordinator never reruns a language portfolio or widens the result back
+   to omitted high-recall alternatives.
+   An exact `--target` runs the deterministic target scouts and
+   README classification needed by downstream cubes but bypasses candidate
+   merging and the TargetPortfolio model call. It must match exactly one native
+   target across all active adapters; cross-adapter aliases or otherwise
+   ambiguous selectors fail with exact per-language choices. No compiler,
+   ProgramIndex, dependency catalog, or semantic cube runs for an unselected
+   adapter. `--force-platform` is
+   applied while preparing Go authority before this shared selection boundary.
+   The exact Go `TargetCatalog` itself contains
    no preferred/default target and performs no module-name, sole-executable,
    or sole-library auto-selection. Every fresh Go snapshot exposes that full
    unselected catalog to the ordinary selector; omitting the selector is a
@@ -234,9 +289,13 @@ diagnostic-journal availability never changes the cube's semantic contract.
    scenario and selected target scope. Reuse its symbols, objects, typed
    relations, dependency facts, and evidence coverage for every later cube;
    changing the semantic question must not reload packages or rebuild the
-   language graph. A selected Go portfolio prepares the canonical union of its
-   exact package scopes in one live-run-only `packages/types/SSA` workspace;
-   every target page receives a target-bound projection of that same object.
+   language graph. When the typed plan includes Go targets, the adapter prepares
+   their exact package scopes in one live-run-only `packages/types/SSA`
+   workspace owner. Targets with one coherent Go module-resolution context
+   share a single package/type/SSA universe; incompatible module roots retain
+   separate universes inside that owner rather than merging equal import paths
+   from independent `packages.Load` calls. Every target page receives a
+   target-bound projection from its exact universe.
    Sibling packages are excluded by the projection's admitted package set, and
    a missing or mismatched workspace is terminal rather than a hidden fresh
    load. The Go adapter projects the existing package, type, SSA,
@@ -256,28 +315,35 @@ diagnostic-journal availability never changes the cube's semantic contract.
    without falsely upgrading it to `exact`. `unresolved` retains no target.
    `programindex.Object.Visibility` is mandatory adapter evidence on every
    object; a genuinely unresolved value is the explicit closed `unknown`
-   state, never an omitted field repaired by the shared handoff. Every adapter supplies
+   state, never an omitted field repaired by the shared handoff. When a method
+   has an owner, that owner must be an exact type object; a non-type lexical
+   owner cannot become receiver authority. Every adapter supplies
    measured object/relation totals and explicit per-relation target/witness
    counts; the ProgramIndex core never derives completeness from the rows that
    happened to survive projection. The Python adapter parses each
    identical selected module inventory once with an isolated standard-library
    AST worker and can publish several target views over that shared parse.
+   The selected-package JS/TS adapter likewise runs one prepared-project TypeScript
+   Compiler API graph per ordinary run, binds every selected source byte by
+   SHA-256, and reuses the sealed result for ProgramIndex, dependencies,
+   semantic cubes, surfaces, and cross-surface paths. It never installs
+   packages and never analyzes `node_modules` as repository source.
    Future language adapters may use tree-sitter, import resolution, lexical
    search, or conservative flow recovery, but must project through the same
    sealed handoff rather than making downstream cubes language-specific.
    Every selected view is listed in canonical `program-index-set.json` with
    its distinct ProgramIndex filename and semantic SHA-256; the set also names
-   the default target. Sharing ends at expensive source parsing: because a
+   the page-local default target. Each typed repository target owns one such
+   complete page-local semantic path; cross-page siblings are not represented
+   as `structural_only` entries in the default page. Sharing ends at expensive source parsing: because a
    ProgramIndex seal includes its exact `Target.ID`, every selected view owns
    a separate sealed artifact even when its module inventory is identical to
    another view. Publication readiness requires the sealed set and every
    referenced index to decode and match both target ID and semantic SHA-256. A
-   loose `program-index.json` cannot make a run READY. `cube-map.json` is a
-   separate downstream authority rather than a substitute for ProgramIndex;
-   final Go publication requires it. A Python-default run instead requires
-   its separately persisted ProgramIndex-backed `core-map.json`; another
-   Python target view on the same page is explicitly `structural_only`
-   because no semantic cube ran for that exact target. The shared target boundary pairs
+   loose `program-index.json` cannot make a run READY. Every target page
+   requires its separately persisted ProgramIndex-backed semantic artifacts;
+   language-specific artifacts remain additional authority and never replace
+   the shared ProgramIndex or semantic-cube chain. The shared target boundary pairs
    every corpus `file_ref` with its exact repository-relative path, retains the adapter's
    exact selector and anchor ref, and binds typed launch seeds to exact indexed
    objects and locations. Executable seeds distinguish callable, declared
@@ -287,25 +353,21 @@ diagnostic-journal availability never changes the cube's semantic contract.
    the complete typed `basis` rows as their discovery evidence; they do not
    duplicate that evidence into a derived claim or confidence field with no
    independent downstream authority. A presentation label is not
-   target or object identity. When one selected Python file restores to
-   several exact target views, a separate refs-only `TargetViewChoice` cube
-   chooses the initial view. Its bounded request preserves the complete
-   canonical hypotheses that caused that shared file to be selected, alongside
-   the exact per-view roots and discovery basis, so README and native evidence
-   are not discarded between cubes. Those hypotheses are untrusted context,
-   not extra target authority. One view bypasses that call. Provider, transport,
-   or response-validation failure has no local ranking or executable-first
-   fallback and ends the run with corrective `--target` guidance. For Go, the
+   target or object identity. When one selected file restores to several exact
+   target views in its adapter, every restored view enters the typed target
+   plan. The portfolio's default file must instead resolve to exactly one view;
+   ambiguity ends the run with corrective exact `--target` guidance rather
+   than spending a second model request or applying a local ranking. For Go, the
    exact surface/direct-call/external-call/core-object analysis is likewise a
    required atomic stage: its original error ends the run immediately. It is
    never reduced to a warning followed by a later, less precise missing-index
    error. Snapshot, Go facts, and surface discovery require one already
    resolved valid `GoTarget`; an empty or invalid target is terminal and is
    never reconstructed by a host-side default.
-8. Build a progressive target-core hypothesis over those shared facts. Both
-   the ordinary Go and Python paths compile this cube from the sealed default
-   `ProgramIndex`; changing the question does not trigger another language
-   analysis. The first `CoreMap` pass receives the selected target identity and
+8. Build a progressive target-core hypothesis over those shared facts. Every
+   Go, Python, and JavaScript/TypeScript target page compiles this cube from its
+   sealed page-local default `ProgramIndex`; changing the question does not
+   trigger another language analysis. The first `CoreMap` pass receives the selected target identity and
    only the bounded file-role facts already accepted by
    `ReadmeTargetsScout`: exact file refs, paths, closed classifications, and
    short README-backed hypotheses. It neither rereads README files nor
@@ -321,18 +383,19 @@ diagnostic-journal availability never changes the cube's semantic contract.
    object index. ProgramIndex-backed runs additionally pass every exact target
    launch seed as closed kind/object/location context; seeded symbols carry
    their launch kinds directly, while non-symbol seeds remain context-only and
-   cannot be invented as selectable refs. The ordinary Python run also binds
-   the complete preceding `integration-usage.json` result into this refined
-   request. Its exact caller/callsite/dependency facts and selected
-   label/mechanism may clarify supporting effects, but remain explicitly
-   syntactic-unresolved evidence and cannot be returned as repository IDs.
+   cannot be invented as selectable refs. Every target page also binds the
+   complete preceding `integration-usage.json` result into this refined
+   request. Its caller/callsite/dependency facts and selected label/mechanism
+   may clarify supporting effects, but retain their adapter-provided authority
+   and cannot be returned as repository IDs. Python callsites remain explicitly
+   syntactic-unresolved evidence.
    ProgramIndex alternative dispatch, interface implementation, decorator,
    and callback-handoff rows are retained as bounded structural context with
    their original resolution rather than converted into exact calls. The Go
    compiler additionally restores an exact ProgramIndex callable to its
    existing DirectCall node only when name and declaration path/line/column
    agree, and retains the existing Go direct-call and core-object digests for
-   the downstream CubeMap joins. It does not build a second Go graph. It
+   adapter-specific exact joins. It does not build a second Go graph. It
    produces a target-core layer grounded by exact symbol refs. Neither the
    number of refs grounding one responsibility nor the number of refined
    responsibilities is forced into a presentation quota: closed request-local
@@ -343,20 +406,48 @@ diagnostic-journal availability never changes the cube's semantic contract.
    exact core declaration is terminal even when README roles exist; it never
    republishes a file-only README hypothesis as refined program authority. The same exact
    file or symbol may support several genuinely different responsibilities;
-   identity is local and grouping/name prose is model-owned.
+   identity is local and grouping/name prose is model-owned. Ref arrays in
+   baseline, map, and reduce responses are normalized as sets over their exact
+   request catalogs: unknown refs and repeats are discarded, while a block
+   left without the mandatory advertised evidence is still rejected as
+   ungrounded. Exact duplicate block records after that normalization are one
+   set member and are canonicalized locally. Different model-authored
+   responsibilities remain distinct even when they cite the same exact files
+   and symbols: their stable local block IDs bind both the semantic claim and
+   restored evidence, rather than treating evidence reuse as an identity
+   collision.
    When at least two refined responsibilities survive, one final bounded
    CoreMap call may group them for orientation. It receives only request-local
    block refs, exact representative context, selected effects joined through
-   representative callers, exact target seeds, and a complete pair matrix of
-   shared representatives and minimum retained exact call/execute hops. It
-   never receives raw ProgramIndex IDs or edges. A non-empty response must be
-   a complete disjoint partition into model-named groups without a preset
-   presentation quota; local
-   code restores stable block IDs and rejects unknown, repeated, or omitted
-   membership. An explicit empty group array is the only legitimate flat-map
-   result. Groups are navigation hierarchy around responsibilities, not new
-   responsibilities, containment ownership, deployment units, or execution
-   order, and the report never manufactures a catch-all after failure.
+   representative callers, exact target seeds, and the complete implicit
+   unordered-pair domain of shared representatives and minimum retained exact
+   call/execute hops. The wire contract is
+   `sparse_positive_complete_v1`: it carries only pairs with positive shared or
+   path evidence, while an absent advertised pair losslessly expands to zero
+   shared representatives and no retained exact path in either direction. It
+   never receives raw ProgramIndex IDs or edges. Because arbitrary repositories
+   do not have a universal mutually exclusive ontology, the model returns only
+   the memberships supported by its evidence, without a preset presentation
+   count and without an exhaustive-echo obligation. A responsibility may
+   legitimately appear in several orientation groups. Local code restores
+   stable block IDs, discards unknown memberships and groups left with no
+   advertised members, canonicalizes repeated membership inside the same
+   group, and preserves every known cross-group membership. Exact duplicate
+   model group records are one set member and are canonicalized locally;
+   different names or purposes remain distinct supported orientation claims
+   even when they cite the same membership set, and model-group IDs bind both
+   the claim and its restored memberships. When a non-empty
+   model grouping omits known blocks, CoreMap appends one deterministic
+   `local_unassigned` navigation record containing the exact complement in
+   refined-block order. Its fixed name, purpose, authority, counts, and report
+   treatment mark it as local omission accounting: it is not a model-owned
+   area, inferred membership, fallback, or catch-all responsibility. The total
+   non-empty artifact therefore accounts for every refined block without
+   assigning omitted blocks a meaning. An explicit empty model group array
+   remains the legitimate flat-map result and does not cause a local group to
+   be manufactured. Model groups are overlapping orientation facets around
+   responsibilities, not new responsibilities, containment ownership,
+   deployment units, or execution order.
 9. Compose every target around the same semantic skeleton:
    `surface -> operation -> core`, with `operation -> effect` as a supporting
    relation. Target kind changes which surfaces and perspectives are useful,
@@ -383,7 +474,7 @@ diagnostic-journal availability never changes the cube's semantic contract.
    spelling, and other local heuristics may contribute bounded evidence rows;
    no local rule may promote one of them to an activity surface or important
    entrypoint by itself.
-   The Python-default path additionally runs the language-neutral
+   Every typed target page also runs the language-neutral
    `ActivityEntrypoint` cube over the same sealed ProgramIndex. Its generic
    eligibility boundary advertises exact callable launch seeds, callables with
    no fully exact incoming `calls`/`executes` relation, observed direct
@@ -402,8 +493,12 @@ diagnostic-journal availability never changes the cube's semantic contract.
    and counts are evidence rather than local selection rules. Requests contain
    at most 1,024 rows across at most 32 batches, use one absolute selection
    criterion across every batch, and permit at most 1,024 selected activity starts for the complete
-   artifact. A resource overflow, provider error, invalid ref, duplicate ref,
-   or incomplete batch is terminal. The model may legitimately select an
+   artifact. A resource overflow, provider error, or incomplete batch is
+   terminal. `activity_refs` is a set-valued selection: unknown refs are
+   discarded before deduplication and the complete-run selection limit, while
+   repeated advertised refs are canonicalized locally and cannot create extra
+   semantic identity. Unknown refs never trigger retry, clarification, mapping,
+   or local promotion. The model may legitimately select an
    empty set, but no host-side candidate is promoted as a replacement. The
    persisted result restores every selected ref to its byte-for-byte exact
    ProgramIndex object, binds the ProgramIndex SHA-256, and retains upstream
@@ -413,11 +508,6 @@ diagnostic-journal availability never changes the cube's semantic contract.
    advertisement only for that declared eligible set. A selected seeded
    module/package is an exact top-level launch anchor for scripts and main
    guards; it is not silently converted into a callable.
-   The current Go CubeMap advertises every exact DirectCallIndex node to its
-   entrypoint classifier. More than 512 nodes is a terminal resource error with
-   corrective `--target` guidance before any CubeMap provider call; it does not
-   rank and prefix-slice the graph. Accepted coverage must therefore record
-   `observed == advertised` and `omitted == 0`.
    Request-local activity catalogs are atomic: if bounding would omit even one
    candidate or supporting fact, the cube fails with the omission counts
    instead of publishing a plausible but partial activity map. A complete
@@ -435,19 +525,24 @@ diagnostic-journal availability never changes the cube's semantic contract.
    `IntegrationDependency` cube receives a complete exact dependency catalog,
    assigns fresh run-local `dN` refs to every `stdlib` and `external` row, and
    sends the complete catalog as a disjoint byte-bounded partition with at
-   most 16 requests and at most 64 selected refs per response. The observed
-   input bound is 4,096 candidates and the declaration input bound is 16,384
-   retained packages; input overflow fails before any provider
-   call instead of truncating the catalog. The per-response selection bound
-   makes 1,024 the complete-run maximum; exceeding it or any other batch
-   failure returns no semantic result. Every selected dependency and all of
-   its exact importers are restored locally. On the Python path this same cube
-   also receives the exact target-bound declaration artifact, advertises its
+   most 16 requests. There is no per-response selection quota: one batch may
+   return every advertised known ref that meets the absolute criterion. The
+   observed input bound is 4,096 candidates and the declaration input bound is
+   16,384 retained packages; input overflow fails before any provider
+   call instead of truncating the catalog. Complete-run selected-result bounds
+   mirror those already-advertised authorities rather than imposing a second
+   semantic quota; any batch failure returns no semantic result. Every selected
+   dependency and all of its exact importers are restored locally. On the
+   Python path this same cube also receives the exact target-bound declaration
+   artifact, advertises its
    retained packages under disjoint `pN` refs in the same byte-bounded batch
    plan, and restores selected declarations into a separate authority. A
    constraint-only package row remains visible context but cannot be selected.
-   The two response arrays are mandatory and never repair or promote one
-   authority into the other. It is deliberately high-recall:
+   The two response arrays are mandatory. Within each set-valued array,
+   unknown refs are discarded before deduplication and reduction;
+   known refs remain bound only to their original dependency or declaration
+   catalog. The reducer never retries, clarifies, guesses a mapping, or promotes
+   one authority into the other. It is deliberately high-recall:
    selection says only that concrete operations deserve inspection, not that
    an integration exists. Python persists this result as strict canonical
    `integration-dependencies.json` before CoreMap; provider, validation, or
@@ -461,34 +556,27 @@ diagnostic-journal availability never changes the cube's semantic contract.
     relation omissions from unrelated direct-call or dynamic-handoff shapes
     remain visible coverage, but do not invalidate an exact retained Go
     external operation.
-14. For the current Python path, classify individual exact external-call
+14. For each target page, classify individual advertised external-call
    operations as strong integration uses rather than accepting every operation
    merely because another operation in the same caller is useful. Assign
    global `oN` refs first and send a complete disjoint partition of at most
    256 operations per request, with at most 256 selected uses per response.
    Matching the request and selection bounds makes an overfull per-batch model
-   response structurally impossible. The input bound is 16 requests and 4,096 advertised operations; input
-   overflow fails before the provider. The per-response selection bound makes
-   4,096 the complete-artifact maximum; exceeding it or any other batch failure
-   returns no semantic result. Group the accepted operations back into their
-   exact repository callers locally and persist the strict canonical
-   `integration-usage.json`. The ordinary Python path passes that exact
-   validated result directly into the following refined CoreMap compilation;
+   response structurally impossible. There is no aggregate operation,
+   batch-count, or selected-use ceiling: the cube exhaustively plans as many
+   complete request batches of at most 256 operations as the exact input
+   requires. Every request retains the 4 MiB request-size, 256 KiB
+   response-size, and 8,192 output-token bounds; any request-bound violation,
+   provider failure, or incomplete batch outcome set returns no semantic
+   result. Group the accepted operations back into their exact repository
+   callers locally and persist the strict canonical
+   `integration-usage.json`. Every target page passes that exact validated
+   result directly into the following refined CoreMap compilation;
    the CoreMap cache and artifact authority bind its canonical digest. It is
    not a presentation-only side artifact and an empty accepted use set remains
    an explicit complete input rather than triggering dependency-name guesses.
-   The current Go CubeMap keeps its separate exact usage-family request: after
-   the external-call join, exceeding 1,024 integration-usage caller candidates
-   is a terminal resource error with corrective `--target` guidance before the
-   integration-symbol provider call. It never prefix-slices that catalog, and
-   accepted coverage likewise requires `observed == advertised` and
-   `omitted == 0`. Its CoreMap is intentionally compiled before this Go-only
-   usage classification; selected operations feed exact paths and the final
-   surface/core/effect binder rather than silently reclassifying the already
-   named core blocks. Python has no equivalent CubeMap binder yet, so its
-   validated usage result is instead a first-class refined-CoreMap input.
 15. Build deterministic `ActivityPath` routes without reparsing source or
-   asking another model. The Python path consumes the same sealed ProgramIndex,
+   asking another model. Every target page consumes the same sealed ProgramIndex,
    exact `ActivityEntrypoint` selection, selected integration dependencies,
    and exact `IntegrationUsage` artifact. It projects retained `calls`,
    `executes`, and callback-handoff candidates once, then chooses one route per
@@ -519,7 +607,42 @@ diagnostic-journal availability never changes the cube's semantic contract.
    state mutation, and effect execution. It must not reread or rebuild the
    whole program graph.
 17. Produce one canonical English semantic result.
-18. Re-derive a bounded `ProgramView` for every manifest-bound ProgramIndex,
+18. When the typed plan contains more than one target, run every target-local
+    page to completion and seal one exact, language-neutral
+    `ProgramPagePortfolio`. It binds each complete page's full validated
+    `ProgramTarget` identity to its safe child run ID and names the default by
+    exact ProgramTarget ID; adapter-native refs never cross this publication
+    boundary. Then run one repository-level `RuntimePortfolio` cube. Its
+    complete request-local catalog contains every target plus the validated
+    responsibilities, activities, integration-use counts, entrypoint evidence,
+    and repository-guidance evidence already produced on the target-local
+    paths. The model selects only closed `t*` and `e*` refs; canonical
+    ProgramTarget IDs and exact source locations are restored locally. The
+    result preserves many-to-many role-to-target and
+    target-mode mappings, primary/supporting/unknown prominence,
+    required/optional/experimental/unknown requiredness, confidence, exact
+    evidence, and the exact unclassified-target complement. It has no fixed
+    target, role, implementation, or evidence-count limit; byte and token
+    bounds remain fail-closed. No target-local cube, orchestration layer, or
+    browser code may invent a repository runtime role or repair an incomplete
+    result. Runtime role kind remains the closed vocabulary `service`,
+    `daemon`, `worker`, `cli`, `supporting_tool`, and `unknown`: `library` is
+    not a runnable/deployable role. A genuinely library-only target catalog may
+    therefore produce the contractually legitimate empty runtime portfolio;
+    no downstream layer turns that absence into a daemon, CLI, or library
+    runtime role. RuntimePortfolio semantic cache identity is its exact captured
+    revision, canonical run-invariant target and evidence facts, prompt,
+    preparation, response-schema, execution, provider, and exact prepared
+    request identity. It deliberately excludes the publication-local
+    `ProgramPagePortfolio` seal, whose child run IDs change on every publication.
+    Both live and cached raw responses are decoded, resolved only through the
+    current request's `t*` and `e*` catalogs, semantically validated, and then
+    bound locally to the current `ProgramPagePortfolio`. Persist the same
+    canonical `runtime-portfolio.json` bytes in every child run, then re-render
+    and finalize every page against that shared current-publication authority.
+    A one-target run publishes its complete target page directly and creates
+    neither page-portfolio nor repository-runtime authority.
+    Re-derive a bounded `ProgramView` for every manifest-bound ProgramIndex,
     validate every seed/object/relation join by exact ID, retain canonical and
     projection omission accounting, bind them into one exact
     `ProgramPortfolio`, and publish it with the downstream semantic views in
@@ -546,15 +669,11 @@ diagnostic-journal availability never changes the cube's semantic contract.
     cards; responsibility IDs, routes, exact edge endpoints, and source
     evidence remain unchanged. Node details may expose only
     validated purpose, signature, responsibility membership, bounded selected
-    caller/operation/mechanism summaries, authority, and exact source actions. Project the
-    validated default Go `CubeMap` into that same workspace with exact
-    core-member evidence, model-owned responsibility
-    grouping, activities, integrations, reverse paths, semantic associations,
-    and every producer coverage ledger. For a Python default, separately
-    project the validated CoreMap without inventing a CubeMap: grouping,
+    caller/operation/mechanism summaries, authority, and exact source actions.
+    Project each page's validated CoreMap into that same workspace: grouping,
     names, and purposes remain model-owned hypotheses, while every
     representative ID, kind, name, visibility, declaration location, module
-    context, and call count is revalidated against the exact default
+    context, and call count is revalidated against the exact page-local
     ProgramIndex. Baseline file refs and paths are revalidated against the
     strict manifest-bound README file-role artifact; a refined file must be
     either one of those exact rows or have an eligible core-object location in
@@ -563,16 +682,17 @@ diagnostic-journal availability never changes the cube's semantic contract.
     baseline role files. Only language-neutral CoreMap coverage enters this browser
     contract; legacy Go direct-call coverage is rejected at the boundary.
     A separate manifest-bound `ActivityEntrypointView` publishes only the
-    model-selected Python activity starts, revalidates each exact callable and
-    its owner/container/launch-seed context against the same default
+    model-selected target-page activity starts, revalidates each exact callable and
+    its owner/container/launch-seed context against the same page-local
     ProgramIndex, and retains the complete candidate and upstream-frontier
     ledger. It never substitutes target seeds, names, or declarations omitted
     by the model. A separate, manifest-bound `IntegrationUsageView` publishes
     model-selected observed uses
-    revalidated against the exact default ProgramIndex and selected dependency
-    artifact; each row remains `syntactic_unresolved`, with an exact source
-    callsite and imported candidate but no claim about Python runtime dispatch.
-    It also carries the separately selected package-manager candidates and
+    revalidated against the exact page-local ProgramIndex and selected dependency
+    artifact while preserving the adapter's exact or unresolved authority. On
+    Python pages, each callsite row remains `syntactic_unresolved`, with an
+    imported candidate but no claim about Python runtime dispatch. The Python
+    view also carries the separately selected package-manager candidates and
     their declaration coverage as a declaration-to-code frontier: those rows
     have exact manifest sources and package facts but no import, call, or
     runtime-use claim.
@@ -609,48 +729,62 @@ framework adapter is allowed only to add independently verifiable structural
 evidence or resolve a runtime handoff; its presence cannot itself select or
 rank a product concept.
 
-The current Go prototype compiles both progressive `CoreMap` passes from its
-sealed ProgramIndex, then runs the Go activity/integration cubes, selected
-exact core-object projection, and surface/core/effect binder and publishes the
-validated result as `cube-map.json` version 5. The current Python path runs
-`core-map.json` version 6 directly from its sealed ProgramIndex and binds its
-validated IntegrationUsage evidence into the refined pass; it does not invent
-a CubeMap wrapper. Both the broad baseline and exact-symbol-refined core are
-retained so evidence improvements and regressions stay inspectable. The
-complete target object index stays local; only exact objects selected by
-refined core blocks enter the browser-safe projection and Go binder request.
+Every typed target page runs the shared ProgramIndex-backed semantic chain and
+persists `core-map.json` version 6. Both the broad baseline and
+exact-symbol-refined core are retained so evidence improvements and regressions
+stay inspectable, and the refined pass binds the page's validated
+IntegrationUsage evidence. Language-specific Go, Python, and JS/TS artifacts
+remain exact inputs or additional presentation authorities; they do not create
+alternate target-selection or cross-page semantic paths. The complete target
+object index stays local; only exact objects selected by refined core blocks
+enter the browser-safe projection.
 Activity/integration output on a library remains diagnostic until it is bound
 to core operations; an external call is not presentation authority merely
 because it exists. The retired
 Architecture, Theme/Study, and call-family EntryCall model chains are not part
 of the ordinary main path; local activity-candidate authority remains. The
-renderer consumes every selected sealed ProgramIndex
-through the report-owned `ProgramPortfolio`; it exposes exact launch points,
+renderer consumes each target page's sealed ProgramIndex through its
+report-owned `ProgramPortfolio`; a multi-target publication additionally
+consumes the one repository-level `RuntimePortfolio` bound through the
+language-neutral `ProgramPagePortfolio`. The repository route is the initial
+orientation surface only when it has at least one exact surface/path or runtime
+role/unclassified target to show; an authoritative but empty repository-level
+catalog never shadows a non-empty semantic program map. An explicit empty
+repository route retains a direct program-map handoff. A populated repository
+route shows primary, supporting, and unknown runtime roles, their exact target or
+target-mode mappings, source evidence, uncertainty, and every unclassified
+target. It exposes exact launch points,
 declarations, bounded structural relations, source evidence, and material
 uncertainty without copying the complete indexes or repeating backend semantic
 validation in JavaScript. Producer diagnostics remain secondary evidence
-limits rather than the primary information architecture. The default Go view
-additionally consumes the exact target-bound CubeMap projection. The default
-Python view consumes exact
-ProgramIndex-bound CoreMap, ActivityEntrypoint, IntegrationUsage, and
-ActivityPath projections; it cannot carry Go analysis or Go CubeMap authority.
-The Go CubeMap projection preserves
-dependency extraction coverage, and ordinary Go publication accepts only `complete`
-coverage with every observed direct import retained. A `partial` catalog and
-its closed omission reasons remain adapter diagnostics and terminate the cube;
-they cannot become a smaller, product-looking integration map. Python
-integration coverage belongs only to the separate IntegrationUsage producer;
-CoreMapView does not infer integrations from Python imports.
+limits rather than the primary information architecture. Every typed target
+page consumes its exact ProgramIndex-bound CoreMap, ActivityEntrypoint,
+IntegrationUsage, and ActivityPath projections. A Go page additionally retains
+its exact outer `AnalysisTarget`; a Python page retains its Python target and
+declaration authority; a JavaScript/TypeScript page retains its sealed project,
+surface catalog, and cross-surface path authority. No page may carry another
+adapter's language-specific authority. Dependency extraction coverage must be
+`complete`; a partial catalog and its closed omission reasons remain adapter
+diagnostics and terminate the shared cube path rather than becoming a smaller,
+product-looking integration map.
 
 Every `ProgramPortfolio` entry carries one closed semantic capability state.
-An `available` Go default is publishable only with its exact `AnalysisTarget`
-and target-bound `CubeMapView`. A `python_semantic_available` Python default is
-publishable only with separately material-bound `CoreMapView`,
+Each typed repository target is the default of its own page and is publishable
+as `program_semantic_available` only with separately material-bound `CoreMapView`,
 `ActivityEntrypointView`, `IntegrationUsageView`, and `ActivityPathView`
-projections for the exact default ProgramTarget and ProgramIndex;
-`structural_only` target views carry no semantic artifact. Missing Go CubeMap
-or any Python semantic authority is a publication error, not an empty browser
-fallback.
+projections for that exact ProgramTarget and ProgramIndex, plus any required
+adapter-specific authority described above. A selected cross-page target may
+not be downgraded to `structural_only`; missing semantic authority is a
+publication error, not an empty browser fallback.
+
+A final multi-target publication is publishable only when every child carries
+byte-identical canonical `program-page-portfolio.json` and
+`runtime-portfolio.json` artifacts, both bound by its manifest, and every
+report projection is rederived from those authorities. Missing, stale,
+noncanonical, unequal, or target-incomplete page or runtime authority is a
+publication error. A complete single-target publication legitimately omits
+both artifacts and does not invent sibling navigation or repository runtime
+authority.
 
 Legacy Architecture, Study, and Operate routes are not product fallbacks. A
 ProgramPortfolio report accepts only an empty initial hash, exact Program
@@ -669,13 +803,13 @@ candidate manifest, installs both files, and installs the manifest last as the
 only readiness boundary. Any returned render, manifest, sibling, finalization,
 or assessment error removes or quarantines all final product names and never
 updates the latest link; raw analysis artifacts remain diagnostic input.
-Multi-page Go publication still prepares and authorizes the default page before
-running every sibling. The ordinary coordinator quarantines it on every
-returned failure and does not announce completion early, but a hard process
-termination in that interval can leave a container-only manifest visible to a
-different process that scans raw run directories. Closing that crash window
-requires a future portfolio-wide staging authority rather than another
-recovery fallback.
+The language-neutral coordinator prepares and authorizes the repository
+default page before running every sibling page. It quarantines every attempted
+page on a returned failure and does not announce completion before the neutral
+page portfolio, RuntimePortfolio, and final re-renders validate. A hard process
+termination in that interval can still leave individually ready page manifests
+without the later cross-page authority. Closing that crash window requires a
+future portfolio-wide staging authority rather than another recovery fallback.
 
 Publication parsing is fail-closed and has one semantic validator:
 `ReadRunManifest` strictly restores the report, sealed ProgramIndex set, and
@@ -689,35 +823,50 @@ strict-decodes it, and compares the complete projection with the validated
 `report.json`. Its target navigation must equal the manifest-derived
 navigation, and static source authority must retain the manifest-derived host,
 revision, and repository-root-to-analysis-root path prefix. Manifest version
-31 and report format version 61 own the current publication contract. The
+34 and report format version 65 own the current publication contract. The
 manifest owns canonical `standalone_source {host,repository_url}` and the exact
 optional `core_map_sha256`, `dependency_catalog_sha256`,
 `python_target_catalog_sha256`, `declared_dependencies_sha256`,
 `integration_dependencies_sha256`, `integration_usage_sha256`,
-`activity_entrypoints_sha256`, `activity_paths_sha256`, and
-`readme_file_roles_sha256` material
+`activity_entrypoints_sha256`, `activity_paths_sha256`,
+`js_ts_project_sha256`,
+`readme_file_roles_sha256`, `program_page_portfolio_sha256`, and
+`runtime_portfolio_sha256` material
 bindings. A Python target catalog, its declared-dependency artifact, CoreMap,
 activity-entrypoint selection, exact dependency catalog, potential-integration
 result, concrete selected uses, and deterministic activity paths must be bound
 together; manifest verification strictly decodes
 the complete artifact chain, rederives the ActivityPath presentation, and
-revalidates it against the exact default ProgramIndex. Old
+revalidates it against the exact page-local ProgramIndex. Old
 manifest versions and the removed Atlas field are rejected rather than
-adapted. A
-multi-target standalone document is rederived from every child manifest,
-report, ProgramIndex, and canonical order and compared byte-for-byte; a
+adapted.
+
+A language-neutral `program_page_portfolio_sha256` is mutually exclusive with
+the legacy Go `target_run_container_sha256` and
+`target_page_portfolio_sha256` pair. A bound `runtime_portfolio_sha256`
+requires exactly one of the neutral or legacy complete page-portfolio
+authorities; it cannot float independently. The neutral artifact is
+strict-decoded and must contain the current manifest's exact ProgramTarget ID
+and current child run ID. A multi-target standalone document is rederived from
+every child manifest, report, ProgramIndex, and canonical order and compared byte-for-byte; a
 self-consistent replacement seal is not authority. Merely containing an HTML
 marker is not publication evidence.
+The ordinary language-neutral child HTML may omit the Go-specific outer
+`analysis_target`. Standalone preparation restores that authority only from
+the manifest-verified canonical `report.json`, rejects any conflicting HTML
+copy, and injects it only into the self-contained multi-target payload needed
+to bind each selected target to the neutral page projection.
 
-Target navigation is also atomic and has two deliberately separate identity
-namespaces. The outer rail contains manifest-bound analysis pages keyed only by
-`target_ref`; its backend-owned routes enter `#/program` in the current or an
-authorized sibling document. The inner rail contains ProgramIndex views keyed
-only by `program_target.id` and switches hashes inside one document. These keys
-are never compared, merged, or deduplicated across namespaces. Every outer
-page must be ready; an unavailable slot is a publication error, not a disabled
-link. Route validation is pure from builder through report server and never
-mutates an old `#/map` href into the product route.
+Target navigation is also atomic. The cross-page rail is keyed only by exact
+`program_target.id` values restored from each validated page and the sealed
+`ProgramPagePortfolio`; its backend-owned repository route enters
+`#/repository` in the current document, while target routes enter `#/program`
+in the current or an authorized sibling document. The page-local
+`ProgramPortfolio` uses the same ProgramTarget identity, and the backend
+requires its default to equal the current page binding. Every page must be
+ready; an unavailable slot is a publication error, not a disabled link. Route
+validation is pure from builder through report server and never mutates an old
+`#/map` href into the product route.
 
 A served run is viable only when its manifest-authorized source IDs and the
 VS Code `code` CLI are available. Server startup fails explicitly when that
@@ -726,9 +875,9 @@ accepted as evidence that VS Code exists. Each browser action waits for the
 launcher result and returns success only after a zero exit status. Losing run,
 source, or launcher authority returns a non-success response and a visible
 browser error; it never becomes a clickable no-op or a copy-path fallback.
-A single-page manifest with no target-page portfolio is served without
-inventing sibling navigation; a bound portfolio remains mandatory and
-fail-closed whenever its manifest digest is present.
+A single-page manifest with no page portfolio is served without inventing
+sibling navigation; either neutral or legacy page authority remains mandatory
+and fail-closed whenever its manifest digest is present.
 Canonical `report.json` remains source-host-neutral in both modes. Static
 GitHub/GitLab routing is bound by `standalone_source` in the manifest and is
 embedded only into the verified HTML payload; served source IDs are issued
@@ -794,6 +943,10 @@ other cubes. If a first-layer exchange fails before the ordinary artifact
 writer exists, that failed run materializes only its already-buffered redacted
 semantic-exchange journal. It publishes no metadata, semantic artifact, or
 report and cannot become partial success.
+Re-entering an outer failure path after a child page has already persisted the
+same first-layer exchange is an idempotent no-op only when the complete exchange
+identity and payload agree; a conflicting duplicate remains a bounded journal
+failure rather than overwriting the committed diagnostic.
 Every non-empty accepted rich repository-guidance catalog is rebound to the current
 run-local corpus namespace and must be written exactly as
 `readme-file-roles.json` before downstream cubes run, including every sibling
@@ -805,7 +958,8 @@ auditable as the exact difference between the journaled candidate request and
 positive response, and are reported locally as `Unclassified`.
 
 The repository-guidance request is atomic: the compiler either includes every
-textual README and AGENTS.md plus every corpus file mapping, or makes no
+textual README and AGENTS.md, every corpus file mapping, and the exact closed
+prose-file ref set derived from those mappings, or makes no
 provider call. It enforces a 1.5 MiB reliable atomic byte preflight
 and never silently truncates, samples, or drops the tree. The bound is
 empirical. On the tracked Airflow inventory, the old flat request was
@@ -813,7 +967,10 @@ empirical. On the tracked Airflow inventory, the old flat request was
 174 complete READMEs and 6,429 now-removed lexical rows. The lossless object
 tree reduced the dictionary to 431,710 bytes. The measured tree has
 4,016 directories and maximum depth 17; all 13,760 FileRef/path mappings
-round-trip exactly. A repository whose complete tree and guidance bodies
+round-trip exactly. Those Airflow measurements predate the closed
+`prose_file_refs` array; its bytes are covered by the same preflight, but that
+exact frontier must be remeasured before claiming Airflow still fits unchanged.
+A repository whose complete tree and guidance bodies
 still exceed the bound fails before transport with an explicit
 resource error. Supporting that larger frontier requires a separately
 approved semantic partition or chunked repository-index contract that
@@ -829,12 +986,59 @@ not share the complete-tree request frontier. When there are no accepted role
 rows, it makes no provider request. It never independently rereads repository-guidance
 documents or silently substitutes a partial repository dictionary.
 
+### Deferred CoreMap output-budget contract
+
+The Kraken benchmark exposed an unresolved CoreMap map-output budgeting
+problem. One refined-map request carried 2,007 complete facts in 781,012 bytes;
+the model emitted 122 blocks and reached the former 8,192-token ceiling after
+23,822 response bytes, leaving incomplete JSON. The partial response remained
+on-schema and repository-grounded until the physical cut: its 1,205 distinct
+closed refs were all advertised. Its semantic granularity degraded instead.
+After reasonable service and storage responsibilities, it began emitting
+individual utilities, configuration types, fixtures, testing helpers, states,
+and events despite the prompt explicitly preferring responsibilities over a
+file inventory. A conservative lexical audit identifies 55 such names among
+the 122 block starts.
+
+A later request with the identical system prompt, the same temperature, and a
+nearly identical catalog (74 fewer user-message bytes) was allowed the
+temporary 128,000-token ceiling. It stopped normally after 14 blocks and
+13,874 bytes, cited 1,534 distinct advertised refs, and was accepted. It did
+not consume the available ceiling. This single comparison does not isolate a
+cause or establish a threshold, but it shows that neither the large input nor
+the raised output allowance by itself determines an enormous response.
+
+Reducing the input byte bound does not control arbitrary model output.
+Recursively splitting every length-limited response would also turn a per-call
+token guard into a potentially large aggregate token budget, so neither
+approach is accepted as the final contract.
+
+Do not choose a new CoreMap output protocol without a separate experiment on a
+repository at Linux-kernel scale. First test whether prompt and catalog-shape
+changes preserve compact responsibility-level output as input grows. Measure
+repeated samples at each scale; one stochastic completion is not a quality
+threshold. Only if a reproducible quality-degradation frontier remains, or the
+request actually exceeds the provider context, evaluate semantic partitioning
+and reduction. Such batching must follow meaningful repository or graph
+boundaries rather than an arbitrary byte size, preserve cross-partition
+responsibilities and closed-ref authority, and account for aggregate cost,
+cache identity, and warm-repeat behavior. Bounded closed assignments and
+continuation remain hypotheses to compare, not accepted design decisions.
+
+Until then, the temporary resource envelope is deliberately generous: CoreMap
+requests allow up to 128,000 output tokens and 2 MiB of decoded response bytes,
+and the default provider ceiling is 128,000 tokens. These are resource guards,
+not semantic quotas or a claim that input size controls output size. A
+completion that still ends at the provider length boundary remains a terminal,
+explicitly journaled resource failure.
+
 ### Language-adapter handoff
 
-The semantic cube pipeline is intended to be language-neutral, but the
-current implementation has not fully reached that boundary. The ordinary
-ProgramIndex-backed chain now has one language-neutral orchestration owner:
-`internal/pipeline` receives the sealed ProgramIndex, dependency catalog,
+The ordinary path has two language-neutral orchestration boundaries. The
+repository owner discovers all active adapters once, performs one
+TargetPortfolio decision, restores one typed target plan, and dispatches every
+target to a complete page-local run. Inside each page, `internal/pipeline`
+receives the sealed ProgramIndex, dependency catalog,
 declaration artifact, accepted README roles, repository corpus, and one shared
 provider/executor/journal context; it runs and validates
 `ActivityEntrypoint -> IntegrationDependency -> IntegrationUsage ->
@@ -850,9 +1054,10 @@ These existing handoffs are already reusable across languages:
 
 - `RepositoryCorpus` file refs and first-layer `file_ref + hypotheses` target
   candidates;
-- refs-only target-portfolio selection followed by a language-local resolver
-  into the shared sealed `programindex.Target` boundary. The shared portfolio
-  cube receives no Go, Python, or synthetic language catalog: exact
+- one refs-only repository target-portfolio selection followed by exact
+  adapter-local resolvers into a canonical typed plan and the shared sealed
+  `programindex.Target` boundary. The shared portfolio cube receives no Go,
+  Python, JavaScript/TypeScript, or synthetic language catalog: exact
   `--target` choices remain adapter-owned corrective CLI guidance and are
   attached only after a portfolio error;
 - accepted README file roles;
@@ -875,12 +1080,12 @@ kinds of data:
 
 Language adapters may retain richer private indexes. New downstream domain
 cubes consume only bounded projections of this handoff and request-local refs.
-Both current language paths now feed the sealed default ProgramIndex into
-`CoreMap`. The Go compatibility compiler still also receives
+Every selected Go, Python, and JavaScript/TypeScript typed target now feeds its
+sealed page-local default ProgramIndex and dependency authority into the same
+shared semantic cube chain. The Go adapter still also retains
 `gocoreobject.Index`, `DirectCallNodeID`, SSA-flavored external-call fields,
-and Go target scope so the existing CubeMap and presentation joins retain
-their exact authority; those additional adapter facts are not the permanent
-cross-cube contract. A shell adapter
+and Go target scope for Go-specific exact projections; those additional
+adapter facts are not the permanent cross-cube contract. A shell adapter
 can model scripts and functions as objects and
 `source`, direct command execution, subprocess, environment, file, and network
 operations as typed relations. Dynamic `eval`, computed command names, and
@@ -959,8 +1164,8 @@ lambda, and class defaults, annotations, bases, and metaclass expressions are
 visited in their defining scope so their calls do not disappear. Identical
 module inventories share one parse but remain separately selected target
 views, each with its own Target-ID-bound ProgramIndex artifact. The current
-Python semantic product path is intentionally narrower than Go CubeMap rather
-than a structural-only fallback. A Python-default ordinary run derives and
+Python semantic product path preserves dynamic-language uncertainty rather
+than becoming a structural-only fallback. Each selected Python target's page derives and
 persists a strict language-neutral dependency catalog, runs the shared
 potential-integration dependency cube, classifies concrete integration
 operations from exact callsites whose possible external target ObjectID is
@@ -976,7 +1181,7 @@ model-selected integration operations with their exact callsites and
 explicitly non-exact runtime authority.
 The report rechecks every selected CoreMap member, activity start, integration
 operation, and activity-to-caller path against the same sealed ProgramIndex.
-Manifest version 31 and report format version 61 material-bind the exact Python
+Manifest version 34 and report format version 65 material-bind the exact Python
 target catalog, declared-dependency artifact, CoreMap, activity-entrypoint
 selection, dependency catalog, selected integration dependencies, concrete
 integration-usage artifact, and deterministic ActivityPath artifact as one
@@ -985,6 +1190,111 @@ Python page renders the exact selected activity starts and integration
 operations as separate authorities, enriches each operation with the shared
 route to its caller without claiming runtime reachability, and renders selected
 declaration candidates as a visibly separate declaration-to-code frontier.
+
+The JavaScript/TypeScript adapter is an active single-package ordinary path. A
+non-workspace root remains selected. A workspace root remains selected only
+with an exact owned manifest or canonical `dev`/`start` source entry; otherwise
+one exact canonical `dev`/`start --cwd` delegate selects its eligible child,
+while zero or multiple delegates fail closed with exact `jsts:<manifest>`
+choices. Without a root, exactly one eligible nested package is admitted and
+multiple packages fail closed. An explicit `jsts:<manifest>` binds its owned
+package before compiler execution. `package.json#name` is optional. The exact
+top-level npm lockfile name is the secondary package name/path; without either
+declaration, the root uses `root-package` and a nested package uses its full
+repository-relative project directory, never the absolute checkout basename.
+Only raw `package.json#name` may derive the command for npm's string-form
+`package.json#bin`; a display/identity fallback grants no CLI authority. It participates in the same
+repository-wide TargetPortfolio and typed
+execution plan as Go and Python. The owner prepares dependencies with the
+repository's normal package manager; Repomap requires a repository-local TypeScript compiler for the
+Compiler API but never runs an install. The versioned helper receives only the
+closed corpus path/ref catalog and configuration identity, runs with an empty
+environment, and emits deterministic JSON with repository-relative locations.
+Helper contract version 4 derives compiler candidates only from `typescript`
+or exact npm aliases to it declared by the selected package manifest. A nested
+selected package consults the repository-root manifest only when it declares no
+candidate itself, and each candidate resolves from the manifest scope that
+declared it. The installed candidate must report `package.json#name` as
+`typescript`; duplicate resolutions are one candidate, one compatible legacy
+Compiler API candidate is preferred over native-preview candidates, and
+multiple distinct candidates in the preferred tier fail closed with their
+declared names. This recognizes deliberate owner-prepared aliases such as
+`typescript-api` without scanning arbitrary installed or transitive packages.
+Its caller bounds helper output and reduces stderr failures to a closed
+diagnostic before an error can reach journals; environment values and absolute
+host paths are never emitted. It honors
+`tsconfig.json`/`jsconfig.json` include/exclude, bounded recursively expanded
+solution-style project references, `baseUrl`, path aliases, and module
+resolution. Each referenced config is compiled with its own parsed options;
+overlapping tracked source has one deterministic canonical owning config rather
+than incompatible options being flattened together. JavaScript facts use the same syntax and resolver path but
+checker-derived call targets are retained only as alternatives rather than
+TypeScript-exact authority. Helper contract version 4 removes project-wide
+property-name matching: only compiler/type-resolved declarations or exact
+external imports establish a call target, while an unresolved property call is
+retained as a targetless unresolved frontier. Compiler-default-library calls
+and constructions use one version- and installation-independent
+`platform:javascript` external-symbol authority; it is not a package dependency
+and never enters integration selection. Calls and `new` expressions retain the
+closed invocation `call` or `construct`; an explicit local constructor is exact,
+while a synthetic or otherwise unbound construction remains unresolved rather
+than targeting a class by name. Version 4 of the sealed project artifact owns safe
+package, lockfile, script-kind, tool-config, source-root and entry facts plus
+canonical `package.json#bin` command/path pairs bound to exact tracked,
+selected-package-owned FileRefs; raw dependency locators and script commands
+are not persisted. Before sealing, the adapter locally omits only optional
+signature and source-expression display text matched by the always-on
+persistence guard, including the matching product-path label. Call identity,
+location, resolution, target authority, and witness accounting remain exact;
+sensitive required identity or semantic fields still fail closed. Encode and
+decode reapply the same guard to the complete artifact bytes.
+
+The adapter projects modules, qualified declarations, imports, exports,
+re-exports, direct calls, unresolved joints, and external symbols into the
+shared ProgramIndex and language-neutral dependency pipeline. A class method
+becomes a ProgramIndex method only when the compiler projection retains its
+exact owning type; a callable property in an object literal remains a nested
+function and never receives an invented type receiver. An exact
+browser/server surface or an exact retained package binary makes the one
+ProgramTarget an `application`; a library or tool-only selected package remains
+a `library` and is never promoted by a script. Each retained binary pair owns
+one command-line product surface at the binary file with empty entry refs; it
+does not claim that a separate development source implements the bin wrapper.
+Only inside an already proven CLI package, an exact canonical `dev` or `start`
+script with exactly one helper-selected source ref may independently add a
+`SeedScript` launch root. Separate deterministic surface facts classify browser
+application, Node server, and command-line application as product surfaces,
+shared contracts as supporting code, and selected build/migration entry scripts
+and integration/test servers as tools.
+ProgramIndex version 7 keeps two independent byte authorities: at most 64 MiB
+of aggregate semantic strings and at most 128 MiB for the complete canonical
+JSON envelope. The larger envelope accounts only for repeated field names,
+punctuation, numeric metadata, and escaping; it does not expand semantic text
+or permit truncation.
+Framework parsing is limited to exact import/type-backed structural evidence
+for Express/Router registration, Wouter routes and links, React root, Node
+listen, TanStack/fetch/API-request sites, Zod/Drizzle contracts, environment
+declarations, cron registration, and external resource boundaries; local
+lookalikes and framework presence never select a product surface or semantic
+responsibility.
+
+A small version-1 cross-surface artifact joins every statically compatible
+client HTTP use and server route with an explicit `http_method_path_match`
+relation rather than a call edge. Its ordered steps retain the closed authority
+`exact_static`, `resolved_indirect`, `possible`, or `unresolved_frontier` and
+cite only exact producer refs and source locations. It may connect a browser
+route/component, mutation, API wrapper, server registration, middleware,
+handler factory/returned handler, shared contract, storage call, and resource
+boundary; absent relations stay visible as frontiers and are never supplied by
+the model. Server registrations must be reachable through retained program
+calls from a product Node surface, so an integration-test server with the same
+method/path cannot replace the production handler. Dependency-injected storage
+dispatch remains possible rather than exact. Report format 65 derives the
+surface catalog and cross-surface view
+from the sealed project plus the exact ProgramIndex, starts JS/TS reports at
+`#/repository` only when that view has an exact surface or path, otherwise
+starts at the semantic program map, and owns fail-closed surface/path deep links. Manifest version
+34 material-binds and rederives both views before publication.
 
 The dependency handoff is a versioned language-neutral catalog. Each direct
 dependency has a deterministic local ID, the closed kind `workspace`,
@@ -1019,7 +1329,7 @@ importer set locally.
 Declared package-manager dependencies are a separate live authority rather
 than synthetic rows in the observed-import catalog. The Python ordinary path
 always builds and persists target-scoped `declared-dependencies.json`, bound to
-the exact corpus, selected Python target catalog, and default ProgramIndex. It
+the exact corpus, selected Python target catalog, and page-local ProgramIndex. It
 parses PEP 621 and Poetry dependency tables, string-valued dependency groups,
 build-system requirements, and in-scope `requirements*.txt`/`requirements/`
 files with corpus-confined requirement and constraint includes. It preserves
@@ -1179,23 +1489,42 @@ context that gives the model useful meaning: the repository-relative path,
 file name, symbol name or signature, dependency name, and a small local fact
 projection. The response schema accepts only the short refs, and the cube
 restores full identities locally; the model is never asked to reproduce a
-path, symbol, UUID, or canonical ID exactly. Unknown refs are rejected;
-neither the executor nor the cube guesses, fuzzy-matches, or repairs them. The
+path, symbol, UUID, or canonical ID exactly. In explicitly set-valued closed-ref
+fields, unknown elements are discarded before deduplication and limits while
+advertised refs are retained; they never trigger retry or clarification. An
+assignment row keyed by an unknown ref is discarded for the same reason: it
+has no object to assign. Unknown scalar refs and missing mandatory refs remain
+errors when filtering leaves the required choice unresolved. Neither the
+executor nor a cube guesses, fuzzy-matches, or promotes a replacement. Repeated
+selection refs are canonicalized locally, so a model does not have to prove
+uniqueness by echo discipline. Exhaustive
+batching, coverage, identity, and set reduction remain local responsibilities.
+Assignment-valued conflicts are different: when one ref is assigned two
+genuinely incompatible owners or meanings, the cube retains the ambiguity as
+an error; it never silently chooses the first row. Group membership is not
+presumed incompatible: model-owned orientation groups may overlap because
+arbitrary repositories need not admit one universal partition. They are not
+required to exhaustively echo the catalog. If a non-empty grouping leaves
+known responsibilities unplaced, one provenance-marked local ledger records
+the exact complement without asserting an orientation membership; together
+the model groups and local ledger account for the complete refined set. The
 shared ref-catalog primitive may be reused by cubes, but ref meaning remains
 domain-owned rather than part of provider transport. Absolute host paths are
 not semantic repository evidence and never enter provider requests.
 The shared JSON intake may unwrap one unambiguous complete object/array from a
 Markdown fence or harmless leading prose. That is syntax normalization only:
-it never repairs malformed JSON, missing or unknown fields, refs, schemas, or
-values. Ambiguous, truncated, or semantically invalid output is a terminal cube
-error, and orchestration, report projection, and browser code have no semantic
-fallback path for it.
+it never repairs malformed JSON, missing or unknown fields, unresolved
+mandatory scalar refs, schemas, or values. A domain reducer may discard
+unknown set elements and unknown-keyed assignment rows only as described
+above. Ambiguous, truncated, or otherwise semantically invalid output
+is a terminal cube error, and orchestration, report projection, and browser code
+have no semantic fallback path for it.
 For the README file classifier, the closed catalog is the complete names-only
-corpus dictionary in lossless prefix-compressed tree form rather than a locally
-selected candidate subset. The model
+corpus dictionary in lossless prefix-compressed tree form plus its complete
+closed prose-file ref set, rather than a locally selected candidate subset. The model
 owns README-claim interpretation, role classification, and matching those
 claims to advertised FileRefs; the backend owns exact ref authority, closed
-classes, fail-closed prose-role validation, canonicalization, and the
+classes, incompatible prose-role filtering without promotion, canonicalization, and the
 projection of only `target_entry` into target discovery.
 
 Only the cube knows safe semantic batch boundaries, so it prepares a batch
@@ -1208,7 +1537,12 @@ contract versions, not mutable runtime counters. Cache keys use SHA-256.
 Ordinary runs reuse validated persistent model responses. Cache identity must
 include the effective provider/request contract and the bounded evidence that
 can change the result. A cache hit is decoded and validated exactly like a live
-response.
+response. A domain's publication-only run IDs, output paths, timestamps, and
+artifact seals must not enter semantic identity when the same raw response can
+be re-resolved and strictly rebound to the current publication. The domain must
+retain a separate local compilation seal over its full current authority so
+that excluding publication metadata from executor state never weakens artifact
+or manifest binding.
 
 `--no-cache` bypasses persistent cache reads and writes for a live-provider
 check. It does not disable the per-run semantic journal. A bad cache hit is
@@ -1225,6 +1559,40 @@ historical schema adapters, experiment fixtures, corpus/replay machinery, and
 helper commands should be deleted when they are not required by this path or by
 its focused tests.
 
+Focused discovery and ProgramIndex regressions keep exactly one cumulative
+real repository fixture for each active language under
+`testdata/repositories/<language>`. A new regression extends that repository
+with the smallest scenario file and updates its exact tracked-file inventory;
+it does not create a per-bug repository. Deterministic discovery and language
+adapter stages execute for real. Model-backed batching, closed-ref
+normalization, cache validation, and grouping stay in smaller cube or executor
+tests unless the invariant genuinely depends on repository shape. If an
+approved repository regression must cross a provider boundary, it uses an
+exact request-bound, fail-closed local preset with no network access. Fixture
+success is focused test evidence only and never replaces ordinary online
+acceptance.
+Creating or extending one of these repositories is not automatic. Before any
+such change, including a possible mixed-language fixture, ask the owner for
+approval, identify the exact repository-dependent invariant the fixture would
+prove, and establish that an ordinary unit or contract test is insufficient.
+
+Three exact, source-bound development inventories live under
+`testdata/contracts`. The prompt inventory covers every Markdown `go:embed`
+under `cmd` and `internal`, classifies it as active or dormant, and binds its
+owner, stage, role, source, pattern, and variable. The production-limit
+inventory classifies every named hard-bound symbol and rejects material
+anonymous `LimitReader`, `MaxBytesReader`, `WithTimeout`, timeout-field, and
+JavaScript prefix-slice bounds until they are named; explicit name-pattern
+false positives carry a reason. The test inventory covers every Go test file
+under the product roots `cmd` and `internal` by directory and package, plus
+every repository-owned JavaScript/TypeScript test script outside excluded
+artifact, fixture, generated, and dependency trees. It gives ordinary tests a
+no-network/no-real-provider default and records all exceptional runtime,
+process, platform, environment, network, checkout, and cumulative-fixture
+requirements. Their contract tests fail on unclassified
+additions, removals, or changed source bindings; the inventories do not create
+a second runner or analysis path.
+
 That cleanup rule does not authorize deleting a newly written adapter slice
 that belongs to the currently approved pipeline merely because its next
 consumer is still being built. Active work must have an explicit next handoff
@@ -1240,6 +1608,11 @@ A change is accepted only after:
    index, downstream cube artifacts, report JSON, and report HTML are checked
    directly;
 4. focused tests and vet for changed packages pass.
+
+Canonical `make test` and `make vet` retain the ambient system `GOCACHE` and
+`GOMODCACHE`, cap Go package fan-out at four, and apply a five-minute timeout
+to each test binary. Focused developer commands use the same or tighter
+bounds; they do not create private replacement module/build caches.
 
 Offline or replay success is never a substitute for this check.
 

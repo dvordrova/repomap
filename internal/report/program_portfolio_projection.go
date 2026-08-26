@@ -104,10 +104,19 @@ func (portfolio ProgramPortfolio) Validate() error {
 }
 
 func programSemanticState(target programindex.Target, isDefault bool) ProgramSemanticState {
-	if (target.Language == "go" || target.Language == "python") && isDefault {
+	if programSemanticLanguage(target.Language) && isDefault {
 		return ProgramSemanticProgramAvailable
 	}
 	return ProgramSemanticStructuralOnly
+}
+
+func programSemanticLanguage(language string) bool {
+	switch language {
+	case "go", "python", "javascript", "typescript":
+		return true
+	default:
+		return false
+	}
 }
 
 func (portfolio ProgramPortfolio) defaultEntry() (ProgramPortfolioEntry, error) {
@@ -135,10 +144,21 @@ func validateProgramSemanticPresentation(
 	activityEntrypointView *ActivityEntrypointView,
 	integrationUsageView *IntegrationUsageView,
 	activityPathView *ActivityPathView,
+	jsTSSemanticViews ...jstsSemanticPresentation,
 ) error {
+	if len(jsTSSemanticViews) > 1 {
+		return fmt.Errorf("report: JavaScript/TypeScript semantic presentation is ambiguous")
+	}
+	var jsTSSurfaceCatalogView *JSTSSurfaceCatalogView
+	var crossSurfacePathView *CrossSurfacePathView
+	if len(jsTSSemanticViews) == 1 {
+		jsTSSurfaceCatalogView = jsTSSemanticViews[0].surfaceCatalog
+		crossSurfacePathView = jsTSSemanticViews[0].crossSurfacePaths
+	}
 	if portfolio == nil {
 		if analysisTarget != nil || cubeMapView != nil || coreMapView != nil ||
-			activityEntrypointView != nil || integrationUsageView != nil || activityPathView != nil {
+			activityEntrypointView != nil || integrationUsageView != nil || activityPathView != nil ||
+			jsTSSurfaceCatalogView != nil || crossSurfacePathView != nil {
 			return fmt.Errorf("report: semantic view requires a complete program portfolio")
 		}
 		return nil
@@ -156,7 +176,8 @@ func validateProgramSemanticPresentation(
 	switch defaultEntry.SemanticState {
 	case ProgramSemanticAvailable:
 		if analysisTarget == nil || cubeMapView == nil || coreMapView != nil ||
-			activityEntrypointView != nil || integrationUsageView != nil || activityPathView != nil {
+			activityEntrypointView != nil || integrationUsageView != nil || activityPathView != nil ||
+			jsTSSurfaceCatalogView != nil || crossSurfacePathView != nil {
 			return fmt.Errorf("report: available Go semantic target requires exact analysis target and cube map view")
 		}
 	case ProgramSemanticProgramAvailable:
@@ -174,13 +195,27 @@ func validateProgramSemanticPresentation(
 		} else if analysisTarget != nil {
 			return fmt.Errorf("report: non-Go ProgramIndex target cannot carry a Go analysis target")
 		}
+		isJSTS := defaultEntry.Target.Language == "javascript" || defaultEntry.Target.Language == "typescript"
+		if isJSTS {
+			if jsTSSurfaceCatalogView == nil || crossSurfacePathView == nil {
+				return fmt.Errorf("report: JavaScript/TypeScript semantic target requires exact surface catalog and cross-surface path authority")
+			}
+		} else if jsTSSurfaceCatalogView != nil || crossSurfacePathView != nil {
+			return fmt.Errorf("report: non-JavaScript/TypeScript target cannot carry JavaScript/TypeScript surface authority")
+		}
 	case ProgramSemanticStructuralOnly:
 		if analysisTarget != nil || cubeMapView != nil || coreMapView != nil ||
-			activityEntrypointView != nil || integrationUsageView != nil || activityPathView != nil {
+			activityEntrypointView != nil || integrationUsageView != nil || activityPathView != nil ||
+			jsTSSurfaceCatalogView != nil || crossSurfacePathView != nil {
 			return fmt.Errorf("report: structural-only target cannot carry semantic authority")
 		}
 	default:
 		return fmt.Errorf("report: default program target has invalid semantic state")
 	}
 	return nil
+}
+
+type jstsSemanticPresentation struct {
+	surfaceCatalog    *JSTSSurfaceCatalogView
+	crossSurfacePaths *CrossSurfacePathView
 }

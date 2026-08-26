@@ -16,11 +16,13 @@ import (
 )
 
 const (
-	defaultMaxFiles      = 20000
-	defaultMaxFileBytes  = int64(2 << 20)
-	defaultMaxTotalBytes = int64(64 << 20)
-	maxHelperOutputBytes = int64(32 << 20)
-	maxShebangBytes      = int64(512)
+	defaultMaxFiles         = 20000
+	defaultMaxFileBytes     = int64(2 << 20)
+	defaultMaxTotalBytes    = int64(64 << 20)
+	maxHelperOutputBytes    = int64(32 << 20)
+	maxHelperStderrBytes    = 16 << 10
+	maxShebangBytes         = int64(512)
+	maxEntrypointAliasDepth = 8
 )
 
 // Options controls bounded local discovery. Repository identity, file modes,
@@ -268,7 +270,7 @@ func hasExactPythonShebang(content []byte) bool {
 		first = first[:index]
 	}
 	first = bytes.TrimSuffix(first, []byte{'\r'})
-	if len(first) > 512 {
+	if int64(len(first)) > maxShebangBytes {
 		return false
 	}
 	fields := strings.Fields(string(first[2:]))
@@ -333,7 +335,7 @@ func runPythonParser(ctx context.Context, executable string, files []inputFile) 
 	command := exec.CommandContext(ctx, executable, "-I", "-S", "-c", pythonParserHelper)
 	command.Stdin = bytes.NewReader(requestBytes)
 	var stderr limitedBuffer
-	stderr.limit = 16 << 10
+	stderr.limit = maxHelperStderrBytes
 	command.Stderr = &stderr
 	stdout, err := command.StdoutPipe()
 	if err != nil {
@@ -909,7 +911,7 @@ func resolveEntrypointRoot(project *projectBuild, moduleName, qualname string, s
 		seen = make(map[string]struct{})
 	}
 	key := moduleName + ":" + qualname
-	if len(seen) >= 8 {
+	if len(seen) >= maxEntrypointAliasDepth {
 		return Root{}, 0
 	}
 	if _, exists := seen[key]; exists {
@@ -1254,7 +1256,7 @@ func compactBasis(values []Basis) []Basis {
 }
 
 func safeLabel(value string) bool {
-	return value != "" && len(value) <= 256 && strings.TrimSpace(value) == value &&
+	return value != "" && len(value) <= maxLabelBytes && strings.TrimSpace(value) == value &&
 		!strings.ContainsAny(value, "\x00\r\n")
 }
 

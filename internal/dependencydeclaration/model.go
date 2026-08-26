@@ -28,10 +28,11 @@ const (
 	MaxIncludes   = 16384
 	MaxFrontiers  = 16384
 
-	MaxArtifactBytes = 64 << 20
-	MaxStringBytes   = 4096
-	MaxSourceBytes   = 8 << 20
-	MaxTotalBytes    = 64 << 20
+	MaxArtifactBytes   = 64 << 20
+	MaxStringBytes     = 4096
+	MaxSourceBytes     = 8 << 20
+	MaxTotalBytes      = 64 << 20
+	MaxStatementExtras = 128
 )
 
 type CoverageState string
@@ -594,7 +595,7 @@ func validateStatementShape(value Statement) error {
 		value.Ordinal <= 0 || !validSHA256(value.ExpressionSHA256) ||
 		(value.Group != "" && !plainValue(value.Group)) ||
 		(value.Specifier != "" && (!plainValue(value.Specifier) || !safeSpecifier(value.Specifier))) ||
-		value.Extras == nil || len(value.Extras) > 128 {
+		value.Extras == nil || len(value.Extras) > MaxStatementExtras {
 		return fmt.Errorf("dependency declarations: invalid statement")
 	}
 	for index, extra := range value.Extras {

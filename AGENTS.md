@@ -34,9 +34,13 @@ sidecar tools.
 - Extract deterministic repository facts locally, then send bounded,
   request-local evidence to the configured model provider. The initial
   repository-guidance file-role classifier may send the complete names-only
-  tracked-file dictionary as a lossless prefix-compressed path tree with
-  compact `f*` leaves plus complete textual README and AGENTS.md documents; it
-  sends no other source-file contents.
+  safe-corpus dictionary as a lossless prefix-compressed path tree with
+  compact `f*` leaves, the complete closed set of prose-file refs derived from
+  that same dictionary, plus complete textual README and AGENTS.md documents;
+  it sends no other source-file contents. Before any `f*` identity exists, exclude
+  `.npmrc`, every `.env*`, dependency/generated subtrees `node_modules`,
+  `dist`, `build`, and `coverage`, and every `*.tsbuildinfo` file from the
+  shared corpus, freshness state, model input, debug output, and publication.
 - Domain cubes own `State`, bounded input preparation, and semantic
   validation. The shared LLM layer owns exact provider requests, transport,
   retries, provider-envelope/JSON decoding, batch execution, cache, accounting,
@@ -52,8 +56,22 @@ sidecar tools.
   exact repository-relative paths, file names, symbol names/signatures, and
   dependency names because that context has semantic value. The model is
   never required to copy those values: UUIDs, canonical identities, ref
-  resolution, and graph restoration remain local. Unknown refs are rejected
-  rather than guessed or repaired; absolute host paths are never sent.
+  resolution, and graph restoration remain local. Unknown refs have no
+  authority and are discarded rather than guessed, repaired, or clarified;
+  absolute host paths are never sent.
+- Set-valued closed-ref responses are filtered to advertised refs and
+  deduplicated locally; never require a model to echo each selected ref exactly
+  once. Assignment rows keyed by an unknown ref are likewise discarded. A
+  known prose ref paired with a valid non-documentation class is an unsupported
+  set member and is discarded before its hypotheses or per-file bounds gain
+  authority; it is never repaired or promoted into `documentation`. Go
+  owns exhaustive batching, completeness, and identity. If filtering leaves a
+  mandatory scalar choice or complete assignment unresolved, reject that
+  incomplete result without inventing a replacement. Orientation groups are
+  a complete cover, not a partition: arbitrary repositories may place one
+  known responsibility in several legitimate groups, and every such
+  membership must be preserved. Only genuinely incompatible assignments for
+  one known ref remain an explicit ambiguity; do not apply first-wins repair.
 - Provider requests must never contain full repository source contents, raw
   internal edges, canonical internal IDs, credentials, or unadvertised paths.
   A complete names-only tracked-file dictionary is explicitly allowed for the
@@ -64,9 +82,91 @@ sidecar tools.
 - Analyze every eligible target by default. `--target` selects an explicit
   target; `--force-platform GOOS/GOARCH` overrides the normal Go platform
   selection.
+- Run every active Go, Python, and selected-package JavaScript/TypeScript target
+  scout over the same repository corpus. Merge their exact file candidates and
+  resolvable repository-guidance candidates into one repository-wide
+  `TargetPortfolio` request; the presence of one supported language must never
+  suppress another. Bind one canonical required file representative for every
+  exact native target, deduplicating a shared representative and never requiring
+  every alternative file for the same target. The portfolio must retain every
+  required representative, chooses one retained file as the repository default,
+  and may additionally retain positively supported guidance candidates. Restore
+  every positive file ref through exactly one language adapter into one typed
+  target plan. An exact `--target` bypasses the model portfolio but must still
+  resolve unambiguously through that same typed adapter boundary. Target scouts
+  may not execute an adapter's page-local ProgramIndex, dependency, or semantic
+  path. A compiler projection used to build that page, including the JSTS
+  TypeScript Compiler API projection, likewise belongs only to selected typed
+  targets, so an unselected language's page prerequisite cannot block an exact
+  target owned by another adapter.
+- Execute every selected typed target through its own complete page-local path:
+  sealed `ProgramIndex`, target-scoped dependency authority, the shared semantic
+  cubes, and a validated report page. A selected non-default target is not a
+  `structural_only` substitute for that path. Multi-target publication seals a
+  language-neutral `ProgramPagePortfolio` keyed by exact `ProgramTarget` IDs and
+  child run IDs, then binds the repository-level `RuntimePortfolio` to it. In
+  manifest version 34 this neutral page authority is mutually exclusive with
+  the legacy Go `TargetRunContainer`/`TargetPagePortfolio` authority.
+- The current JavaScript/TypeScript slice owns exactly one selected
+  `package.json` project. A non-workspace root remains the project. A workspace
+  root remains the project only when an exact manifest field or canonical
+  `dev`/`start` entry names source owned by that root; otherwise it may delegate
+  only through an exact `--cwd` in canonical `dev`/`start` to exactly one
+  eligible child package. Zero or multiple exact delegates fail closed with
+  exact `jsts:<manifest>` choices. Without a root, one eligible nested package
+  is selected and multiple eligible packages fail closed with the same exact
+  choices. An explicit `jsts:<manifest>` selects that owned package before
+  TypeScript compiler execution. `package.json#name` is optional: an exact
+  top-level npm lockfile name is the secondary package identity, otherwise the
+  root uses `root-package` and a nested package uses its repository-relative
+  project directory. These fallbacks never authorize an implicit string-form
+  `package.json#bin` command. Its corpus-only scout owns exact manifest/workspace
+  selection, identity, and the package candidate without invoking Node or the
+  TypeScript compiler; it participates in the same portfolio and typed execution
+  plan as Go and Python. After that target is selected, its page uses an
+  owner-prepared, repository-local TypeScript Compiler API to honor
+  `tsconfig.json` or `jsconfig.json`, bounded solution-style
+  project references, aliases, and module resolution; Repomap never installs
+  npm, yarn, pnpm, or other packages. Browser and Node server surfaces plus
+  canonical safe, package-owned, tracked `package.json#bin` command/path pairs
+  are product surfaces inside that one ProgramTarget. A CLI surface never
+  invents a bin-wrapper-to-source relation: its entry refs stay empty, while an
+  exact canonical `dev` or `start` script with one helper-selected source may
+  independently seed that source only after CLI product authority exists.
+  Compiler/type-resolved declarations and exact external imports are the only
+  call-target authority. TypeScript default-library declarations use the closed,
+  non-package `platform:javascript` authority and never enter dependency or
+  integration selection. Calls and constructions retain their distinct exact
+  invocation authority; an unresolved property name remains an unresolved
+  frontier and is never matched to repository declarations by name alone.
+  Compiler authority comes only from `typescript` or an exact npm alias to it
+  declared by the selected manifest; a nested package may inherit candidates
+  from the repository-root manifest only when it declares none itself. Each
+  candidate resolves from the package.json scope that declared it. The
+  installed package must identify itself as `typescript`. Distinct compatible
+  candidates in the selected API tier fail closed; one stable legacy Compiler
+  API candidate is preferred over a native-preview candidate when both are
+  deliberately declared.
+  Optional signatures and source-expression display text that match the
+  always-on persistence guard are omitted locally before sealing; the same
+  callsite identity, location, resolution, targets, and witness count remain.
+  Sensitive required identity or semantic fields still fail closed.
+  Shared contracts are supporting code, build/migration scripts remain tools,
+  and a runtime script, library, or tool-only root must never promote itself
+  into an application.
+- A deterministic JS/TS cross-surface path may join a client HTTP use to a
+  server route only through an explicit method/path-match relation and retained
+  program reachability from a product Node surface; integration/test servers
+  remain tools even when they repeat production paths. It must
+  retain exact-static, resolved-indirect, possible, and unresolved-frontier
+  authority separately and may never invent a missing call, handler, contract,
+  storage, or resource step through a model or report projection.
 - Interesting activity entrypoints are selected from an exact symbol graph.
   Framework, protocol, TLS, dependency, and naming heuristics may advertise
   candidates but cannot establish entrypoint authority by themselves.
+- ProgramIndex version 7 bounds aggregate semantic text at 64 MiB and its
+  complete canonical JSON envelope at 128 MiB. Structural JSON overhead never
+  consumes semantic evidence authority; neither bound authorizes truncation.
 - Semantic output and the current HTML report are canonical English. There is
   no `--lang` flag until a separately approved final presentation-localization
   cube actually exists.
@@ -82,8 +182,36 @@ sidecar tools.
 
 ## Development and acceptance
 
+- Focused discovery and ProgramIndex regressions keep exactly one cumulative
+  real repository fixture per active language under
+  `testdata/repositories/<language>`. Extend that repository with new scenario
+  files instead of creating per-bug repositories. Every tracked fixture file
+  must have an exact file-inventory expectation; deterministic language
+  adapter stages run for real, while provider-backed stages use exact
+  request-bound, fail-closed local presets with no network access. Fixture
+  success is focused test evidence only and never replaces ordinary online
+  product acceptance.
+- Do not create or extend a repository fixture automatically. First ask the
+  owner whether repository-shaped evidence is actually needed, state the
+  exact repository-dependent invariant it would prove, and check that a
+  smaller unit or contract test cannot prove the same thing. This approval
+  gate also applies to any future mixed-language fixture repository.
+- Keep the source-bound development inventories under `testdata/contracts`
+  exact. Every static prompt Markdown file is classified as active or dormant
+  and bound to its owning `go:embed`; every production hard-bound symbol is
+  classified, while material anonymous Go/JavaScript boundary forms are
+  rejected; every Go test file under the product roots `cmd`/`internal` and
+  every repository-owned JavaScript/TypeScript test script is inventoried,
+  with non-ordinary compiler, interpreter, browser, subprocess,
+  network, environment, external-checkout, or cumulative-fixture requirements
+  recorded explicitly. Update the inventory and its contract test together
+  when one of those surfaces changes.
 - Build the owner-facing binary with `make build`; it must write
   `.bin/repomap`.
+- Canonical `make test` and `make vet` use the ambient system Go build and
+  module caches, cap package-level parallelism at four, and give each test
+  binary at most five minutes. Focused commands must keep the same or tighter
+  bounds; ordinary development must not relocate `GOCACHE` or `GOMODCACHE`.
 - Product acceptance means running that binary on a real repository through
   the normal online provider path. Offline runs, fixtures, replay commands, and
   helper tools are not acceptance evidence.

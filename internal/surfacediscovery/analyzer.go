@@ -99,12 +99,19 @@ func (a *analyzer) emitProgress(progress PhaseProgress) {
 }
 
 func (a *analyzer) load() error {
-	moduleRoots := make([]string, 0, len(a.input.ModuleDirs))
-	for _, moduleDir := range a.input.ModuleDirs {
-		moduleRoots = append(moduleRoots, filepath.Join(a.root, filepath.FromSlash(moduleDir)))
-	}
-	if len(moduleRoots) == 0 {
+	if a.input.AnalysisTarget == nil || a.input.AnalysisTarget.ModuleDir == "" {
 		return fmt.Errorf("surface discovery: target module directory is required")
+	}
+	moduleRoot := filepath.Join(
+		a.root, filepath.FromSlash(a.input.AnalysisTarget.ModuleDir),
+	)
+	patterns := make([]string, 0, len(a.input.Packages))
+	for _, pkg := range a.input.Packages {
+		patterns = append(patterns, pkg.Path)
+	}
+	sort.Strings(patterns)
+	if len(patterns) == 0 {
+		return fmt.Errorf("surface discovery: no target-selected Go packages")
 	}
 	buildFlags := []string{}
 	if len(a.opts.BuildTags) > 0 {
@@ -114,51 +121,64 @@ func (a *analyzer) load() error {
 	fileSet := token.NewFileSet()
 	loadEnv := gotarget.Target{GOOS: a.scenario.GOOS, GOARCH: a.scenario.GOARCH}.ApplyEnv(os.Environ())
 	loadEnv = append(loadEnv, "GOTOOLCHAIN=auto")
-	var loaded []*packages.Package
-	for _, moduleRoot := range moduleRoots {
-		patterns := a.sourcePatterns(moduleRoot)
-		if len(patterns) == 0 {
-			continue
-		}
-		config := &packages.Config{
-			Context: a.ctx, Dir: moduleRoot, Env: loadEnv, Fset: fileSet,
-			Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
-				packages.NeedImports | packages.NeedExportFile | packages.NeedSyntax |
-				packages.NeedTypes | packages.NeedTypesInfo | packages.NeedTypesSizes |
-				packages.NeedModule,
-			BuildFlags: buildFlags, Tests: false,
-		}
-		values, err := packages.Load(config, patterns...)
-		a.packageLoadCalls++
-		if ctxErr := a.ctx.Err(); ctxErr != nil {
-			finishLoad(len(loaded), len(loaded))
-			return fmt.Errorf("surface discovery: %w", ctxErr)
-		}
-		if err != nil {
-			finishLoad(len(loaded), len(loaded))
-			return fmt.Errorf(
-				"surface discovery: load target packages from %s: %w",
-				repositoryRelativeModuleDir(a.root, moduleRoot), err,
-			)
-		}
-		loaded = append(loaded, values...)
-		a.emitPhaseProgress(len(loaded), len(loaded), "loaded package roots")
+	config := &packages.Config{
+		Context: a.ctx, Dir: moduleRoot, Env: loadEnv, Fset: fileSet,
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
+			packages.NeedImports | packages.NeedExportFile | packages.NeedSyntax |
+			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedTypesSizes |
+			packages.NeedModule,
+		BuildFlags: buildFlags, Tests: false,
 	}
-	finishLoad(len(loaded), len(loaded))
+	loaded, err := packages.Load(config, patterns...)
+	a.packageLoadCalls++
+	if ctxErr := a.ctx.Err(); ctxErr != nil {
+		finishLoad(len(loaded), len(patterns))
+		return fmt.Errorf("surface discovery: %w", ctxErr)
+	}
+	if err != nil {
+		finishLoad(len(loaded), len(patterns))
+		return fmt.Errorf(
+			"surface discovery: load target packages from %s: %w",
+			repositoryRelativeModuleDir(a.root, moduleRoot), err,
+		)
+	}
+	a.emitPhaseProgress(len(loaded), len(patterns), "loaded package roots")
+	finishLoad(len(loaded), len(patterns))
 	if len(loaded) == 0 {
 		return fmt.Errorf("surface discovery: no target-selected Go packages")
 	}
 
 	allPackages := make(map[string]*packages.Package)
+	var identityErr error
 	packages.Visit(loaded, func(pkg *packages.Package) bool {
+		if identityErr != nil {
+			return false
+		}
 		if pkg != nil && pkg.PkgPath != "" {
+			if prior, exists := allPackages[pkg.PkgPath]; exists && prior != pkg {
+				identityErr = fmt.Errorf(
+					"surface discovery: one Go load universe produced distinct package identities for path %q; internal repomap package/type invariant failed; repository changes are not required",
+					pkg.PkgPath,
+				)
+				return false
+			}
 			allPackages[pkg.PkgPath] = pkg
 			if packageSafeForSSA(pkg) {
+				if prior, exists := a.packageFacts[pkg.PkgPath]; exists && prior != pkg {
+					identityErr = fmt.Errorf(
+						"surface discovery: one Go load universe produced distinct typed facts for path %q; internal repomap package/type invariant failed; repository changes are not required",
+						pkg.PkgPath,
+					)
+					return false
+				}
 				a.packageFacts[pkg.PkgPath] = pkg
 			}
 		}
 		return true
 	}, nil)
+	if identityErr != nil {
+		return identityErr
+	}
 	a.loadedPackages = allPackages
 	if err := a.validateAnalysisTargetPackages(allPackages); err != nil {
 		return err
@@ -209,13 +229,13 @@ func (a *analyzer) validateAnalysisTargetPackages(allPackages map[string]*packag
 				Diagnostic: a.analysisTargetSSADiagnostic(allPackages, packagePath),
 			}
 		}
-		if pkg.Module == nil || pkg.Module.Path != target.ModulePath || pkg.Module.Dir == "" {
+		if pkg.Module == nil || pkg.Module.Path != target.ModulePath {
 			return fmt.Errorf(
 				"surface discovery: target package %q does not belong to sealed module %q",
 				packagePath, target.ModulePath,
 			)
 		}
-		moduleDir, ok := containedModuleDirectory(a.root, pkg.Module.Dir)
+		moduleDir, ok := repositoryPackageModuleDirectory(a.root, pkg)
 		if !ok || moduleDir != target.ModuleDir {
 			return fmt.Errorf("surface discovery: target package %q has inconsistent sealed module directory", packagePath)
 		}
@@ -224,6 +244,21 @@ func (a *analyzer) validateAnalysisTargetPackages(allPackages map[string]*packag
 		}
 	}
 	return nil
+}
+
+// repositoryPackageModuleDirectory resolves the repository-local module owner
+// exactly as the Go command did. A local replacement is authoritative over the
+// original module cache directory; neither absolute path is persisted.
+func repositoryPackageModuleDirectory(root string, pkg *packages.Package) (string, bool) {
+	if pkg == nil || pkg.Module == nil {
+		return "", false
+	}
+	if pkg.Module.Replace != nil && pkg.Module.Replace.Dir != "" {
+		if directory, ok := containedModuleDirectory(root, pkg.Module.Replace.Dir); ok {
+			return directory, true
+		}
+	}
+	return containedModuleDirectory(root, pkg.Module.Dir)
 }
 
 func (a *analyzer) materializeSelectedLibraryCallables() []*ssa.Function {
@@ -291,17 +326,6 @@ func (a *analyzer) materializeSelectedLibraryCallables() []*ssa.Function {
 		return a.functionID(functions[i]) < a.functionID(functions[j])
 	})
 	return functions
-}
-
-func (a *analyzer) sourcePatterns(moduleRoot string) []string {
-	moduleDir := repositoryRelativeModuleDir(a.root, moduleRoot)
-	patterns := make([]string, 0, len(a.input.Packages))
-	for _, pkg := range a.input.Packages {
-		if pkg.ModuleDir == moduleDir {
-			patterns = append(patterns, pkg.Path)
-		}
-	}
-	return patterns
 }
 
 func buildSurfaceSSAProgram(fileSet *token.FileSet, loaded []*packages.Package) (*ssa.Program, []*ssa.Package) {

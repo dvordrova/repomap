@@ -152,6 +152,57 @@ def dynamic(name, obj, monkeypatch):
 	}
 }
 
+func TestBuildKeepsNestedCallWitnessesAtExactCalleeTokens(t *testing.T) {
+	repository := pythonCorpus(t, map[string]string{
+		"pyproject.toml": `[project]
+name = "nested-call-demo"
+version = "1.0.0"
+`,
+		"nested_call_demo.py": `def sanitize_text(value):
+    return " ".join(str(value or "").replace("\r", " ").replace("\n", " ").split())
+`,
+	})
+	target := targetOfKind(t, repository, pythontarget.KindLibrary)
+	index, err := buildOneForTest(context.Background(), repository, target)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if index.Coverage.WitnessesOmitted != 0 {
+		t.Fatalf("nested call witnesses omitted = %d", index.Coverage.WitnessesOmitted)
+	}
+
+	sanitize := objectNamed(
+		t, index, programindex.ObjectFunction, "sanitize_text", "nested_call_demo.py",
+	)
+	columnsByCallee := make(map[string][]int)
+	for _, relation := range index.Relations {
+		if relation.Kind != programindex.RelationCalls || relation.FromID != sanitize.ID {
+			continue
+		}
+		if relation.WitnessesOmitted != 0 || relation.WitnessesObserved != len(relation.Witnesses) {
+			t.Fatalf("nested call relation lost witness authority: %#v", relation)
+		}
+		for _, witness := range relation.Witnesses {
+			if witness.Location == nil || witness.Location.Path != "nested_call_demo.py" ||
+				witness.Location.Line != 2 {
+				t.Fatalf("nested call witness has no exact source location: %#v", witness)
+			}
+			columnsByCallee[witness.Detail] = append(
+				columnsByCallee[witness.Detail], witness.Location.Column,
+			)
+		}
+	}
+	for callee := range columnsByCallee {
+		sort.Ints(columnsByCallee[callee])
+	}
+	want := map[string][]int{
+		"join": {16}, "str": {21}, "replace": {38, 57}, "split": {76},
+	}
+	if !reflect.DeepEqual(columnsByCallee, want) {
+		t.Fatalf("nested call callee columns = %#v, want %#v", columnsByCallee, want)
+	}
+}
+
 func TestBuildRetainsCallableAliasesAndClosedLocalDynamicImport(t *testing.T) {
 	repository := pythonCorpus(t, map[string]string{
 		"pyproject.toml": `[project]

@@ -92,24 +92,50 @@ func TestCoreMapViewAllowsOneBaselineChild(t *testing.T) {
 	}
 }
 
-func TestCoreMapViewGroupsRequireCompleteRefinedPartition(t *testing.T) {
+func TestCoreMapViewGroupsAllowOverlappingCompleteCoverage(t *testing.T) {
 	refined := map[string]struct{}{"core-a": {}, "core-b": {}, "core-c": {}}
 	valid := []CoreMapViewGroup{
-		{ID: "group-runtime", Name: "Runtime", Purpose: "Coordinates accepted work.", CoreBlockIDs: []string{"core-a", "core-b"}},
-		{ID: "group-storage", Name: "Storage", Purpose: "Persists accepted state.", CoreBlockIDs: []string{"core-c"}},
+		{ID: "group-runtime", Authority: coremap.GroupAuthorityModel, Name: "Runtime", Purpose: "Coordinates accepted work.", CoreBlockIDs: []string{"core-a", "core-b"}},
+		{ID: "group-storage", Authority: coremap.GroupAuthorityModel, Name: "Storage", Purpose: "Persists accepted state.", CoreBlockIDs: []string{"core-b", "core-c"}},
 	}
 	if err := validateCoreMapViewGroups(valid, refined); err != nil {
 		t.Fatal(err)
 	}
 	invalid := append([]CoreMapViewGroup(nil), valid...)
-	invalid[0].CoreBlockIDs = []string{"core-a"}
+	invalid[1].CoreBlockIDs = []string{"core-b"}
 	if err := validateCoreMapViewGroups(invalid, refined); err == nil {
-		t.Fatal("partial refined group partition was accepted")
+		t.Fatal("partial refined group coverage was accepted")
 	}
 	invalid = append([]CoreMapViewGroup(nil), valid...)
-	invalid[1].CoreBlockIDs = []string{"core-b", "core-c"}
+	invalid[1].CoreBlockIDs = []string{"core-b", "core-b", "core-c"}
 	if err := validateCoreMapViewGroups(invalid, refined); err == nil {
-		t.Fatal("duplicate refined group membership was accepted")
+		t.Fatal("same-group repeated membership was accepted")
+	}
+	invalid = append([]CoreMapViewGroup(nil), valid...)
+	invalid[1].CoreBlockIDs = []string{"core-b", "core-c", "core-unknown"}
+	if err := validateCoreMapViewGroups(invalid, refined); err == nil {
+		t.Fatal("unknown group membership was accepted")
+	}
+
+	moreGroupsThanBlocks := []CoreMapViewGroup{
+		{ID: "group-a", Authority: coremap.GroupAuthorityModel, Name: "A", Purpose: "First facet.", CoreBlockIDs: []string{"core-a", "core-b"}},
+		{ID: "group-b", Authority: coremap.GroupAuthorityModel, Name: "B", Purpose: "Second facet.", CoreBlockIDs: []string{"core-b", "core-c"}},
+		{ID: "group-c", Authority: coremap.GroupAuthorityModel, Name: "C", Purpose: "Third facet.", CoreBlockIDs: []string{"core-a", "core-c"}},
+		{ID: "group-d", Authority: coremap.GroupAuthorityModel, Name: "D", Purpose: "Fourth facet.", CoreBlockIDs: []string{"core-b"}},
+	}
+	if err := validateCoreMapViewGroups(moreGroupsThanBlocks, refined); err != nil {
+		t.Fatalf("overlapping facets may outnumber unique blocks: %v", err)
+	}
+	partialWithLocal := []CoreMapViewGroup{
+		{ID: "group-runtime", Authority: coremap.GroupAuthorityModel, Name: "Runtime", Purpose: "Coordinates accepted work.", CoreBlockIDs: []string{"core-a", "core-c"}},
+		{ID: "group-local", Authority: coremap.GroupAuthorityLocalUnassigned, Name: coremap.LocalUnassignedGroupName, Purpose: coremap.LocalUnassignedGroupPurpose, CoreBlockIDs: []string{"core-b"}},
+	}
+	if err := validateCoreMapViewGroups(partialWithLocal, refined); err != nil {
+		t.Fatalf("explicit local complement: %v", err)
+	}
+	partialWithLocal[1].CoreBlockIDs = []string{"core-a", "core-b"}
+	if err := validateCoreMapViewGroups(partialWithLocal, refined); err == nil {
+		t.Fatal("local complement overlapping a model group was accepted")
 	}
 }
 

@@ -125,6 +125,7 @@ func TestRunManifestVerifiesTargetPagePortfolioArtifacts(t *testing.T) {
 }
 
 type targetPageManifestFixture struct {
+	source             snapshot.Snapshot
 	container          snapshot.TargetRunContainer
 	containerRaw       []byte
 	singleContainerRaw []byte
@@ -222,7 +223,7 @@ func newTargetPageManifestFixture(t *testing.T) targetPageManifestFixture {
 		t.Fatal(err)
 	}
 	return targetPageManifestFixture{
-		container: container, containerRaw: containerRaw, singleContainerRaw: singleContainerRaw,
+		source: source, container: container, containerRaw: containerRaw, singleContainerRaw: singleContainerRaw,
 		portfolioRaw: portfolioRaw, appRef: appRef, helperRef: helperRef,
 	}
 }
@@ -245,6 +246,7 @@ func (fixture targetPageManifestFixture) run(t *testing.T, withPortfolio bool) (
 			t, runDir, snapshot.TargetPagePortfolioArtifactFilename, fixture.portfolioRaw,
 		)
 		manifest.MaterialInputs.TargetPagePortfolioSHA256 = manifestSHA256(fixture.portfolioRaw)
+		manifest.MaterialInputs.RuntimePortfolioSHA256 = strings.Repeat("7", 64)
 	}
 	return runDir, manifest
 }

@@ -17,10 +17,10 @@ An integration capability may connect the product to another service, protocol, 
 
 `batch_index` and `batch_count` identify this batch in a complete disjoint byte-bounded partition. `observed` and `declared_observed` are exact candidate counts across all batches. `omitted` is zero for observed dependency candidates. Judge every supplied row by the same absolute criterion. Do not fill a quota, rank against unseen batches, or lower the threshold because a batch is small.
 
-Use only refs supplied in this request. Refs are unique across the complete run, but refs from another batch are invalid here. Never return names, paths, modules, explanations, scores, package IDs, or any identifier copied from a row. Return exactly one JSON object with exactly this shape and no Markdown:
+Use only refs supplied in this request. Refs are unique across the complete run, but refs from another batch are invalid here. A returned ref without selection authority in this request is discarded locally before set normalization and limits; it is never guessed, repaired, or retried, so do not use an approximate or invented ref. Never return names, paths, modules, explanations, scores, package IDs, or any identifier copied from a row. Return exactly one JSON object with exactly this shape and no Markdown:
 
 ```json
 {"integration_dependency_refs":["d2","d7"],"integration_declared_package_refs":["p1","p8"]}
 ```
 
-Both arrays are required, even when empty. Return at most 64 refs total across both arrays. Refs within each array must be unique.
+Both arrays are required, even when empty. Return every supplied ref that independently meets the absolute criterion; there is no per-response selection quota across or within the arrays. Each array is a set-valued selection: order and repeated occurrences carry no authority, and local code restores each selected candidate once. Serialized request size, complete-run input authority, response size, and provider context remain explicit technical guards; they never authorize dropping an otherwise selected known ref.

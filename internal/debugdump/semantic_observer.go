@@ -95,7 +95,7 @@ func semanticExchangeForStageEvent(
 		exchange.RequestProvenance = SemanticRequestExactSent
 		exchange.SemanticCalls = 1
 		exchange.TransportAttempts = event.Metrics.Attempts
-		if exchange.TransportAttempts < 0 || exchange.TransportAttempts > 64 {
+		if exchange.TransportAttempts < 0 || exchange.TransportAttempts > MaxSemanticTransportAttempts {
 			return SemanticExchange{}, false
 		}
 	} else if event.Source == llm.SourceCache {

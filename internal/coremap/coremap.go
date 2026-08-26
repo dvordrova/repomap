@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	Version          = 8
+	Version          = 14
 	ArtifactFilename = "core-map.json"
 	MaxArtifactBytes = 8 << 20
 	// MaxPayloadBytes bounds prompt prose plus the domain JSON before the
@@ -38,14 +38,20 @@ const (
 	// reserves the worst-case JSON escaping expansion of that bounded payload.
 	MaxPayloadBytes     = 1 << 20
 	MaxRequestBytes     = 8 << 20
-	MaxResponseBytes    = 128 << 10
-	MaxOutputTokens     = 8_192
+	MaxResponseBytes    = 2 << 20
+	MaxOutputTokens     = 128_000
 	maxNameBytes        = 160
 	maxPurposeBytes     = 800
 	maxBaselineRoots    = 12
 	maxChildrenPerBlock = 8
 	maxBaselineBlocks   = 64
 	maxReduceLevels     = 32
+	MaxBlockDepth       = 1
+)
+
+const (
+	semanticContract         = "repomap.coremap.v10"
+	groupingSemanticContract = "repomap.coremap.grouping.v12"
 )
 
 type Stage string
@@ -89,34 +95,49 @@ type Block struct {
 	Children []Block      `json:"children,omitempty"`
 }
 
-// Group is a model-owned navigation hierarchy over already validated refined
-// responsibilities. It never replaces or reparents the responsibility blocks;
-// every non-empty group set is restored locally as a complete disjoint
-// partition of their stable IDs.
+type GroupAuthority string
+
+const (
+	GroupAuthorityModel           GroupAuthority = "model"
+	GroupAuthorityLocalUnassigned GroupAuthority = "local_unassigned"
+)
+
+// Group is a navigation hierarchy over already validated refined
+// responsibilities. Model-owned groups retain every supported overlapping
+// membership. When a non-empty model grouping leaves responsibilities
+// unplaced, one explicitly local structural group accounts for the exact
+// complement without inventing a semantic membership.
 type Group struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
-	Purpose  string   `json:"purpose"`
-	BlockIDs []string `json:"block_ids"`
+	ID        string         `json:"id"`
+	Authority GroupAuthority `json:"authority"`
+	Name      string         `json:"name"`
+	Purpose   string         `json:"purpose"`
+	BlockIDs  []string       `json:"block_ids"`
 }
 
 type Coverage struct {
-	TrackedFiles           int                                      `json:"tracked_files"`
-	BaselineRoleFiles      int                                      `json:"baseline_role_files"`
-	SymbolsAvailable       int                                      `json:"symbols_available"`
-	BaselineBlocks         int                                      `json:"baseline_blocks"`
-	BaselineFilesSelected  int                                      `json:"baseline_files_selected"`
-	RefinedBlocks          int                                      `json:"refined_blocks"`
-	RefinedFilesSelected   int                                      `json:"refined_files_selected"`
-	RefinedSymbolsSelected int                                      `json:"refined_symbols_selected"`
-	SemanticFacts          int                                      `json:"semantic_facts"`
-	DynamicRelationFacts   int                                      `json:"dynamic_relation_facts"`
-	RefinedMapCalls        int                                      `json:"refined_map_calls"`
-	RefinedReduceCalls     int                                      `json:"refined_reduce_calls"`
-	RefinedGroupCalls      int                                      `json:"refined_group_calls"`
-	RefinedGroups          int                                      `json:"refined_groups"`
-	DirectCallState        surfacediscovery.DirectCallIndexState    `json:"direct_call_state"`
-	DirectCallCoverage     surfacediscovery.DirectCallIndexCoverage `json:"direct_call_coverage"`
+	TrackedFiles           int `json:"tracked_files"`
+	BaselineRoleFiles      int `json:"baseline_role_files"`
+	SymbolsAvailable       int `json:"symbols_available"`
+	BaselineBlocks         int `json:"baseline_blocks"`
+	BaselineFilesSelected  int `json:"baseline_files_selected"`
+	RefinedBlocks          int `json:"refined_blocks"`
+	RefinedFilesSelected   int `json:"refined_files_selected"`
+	RefinedSymbolsSelected int `json:"refined_symbols_selected"`
+	SemanticFacts          int `json:"semantic_facts"`
+	DynamicRelationFacts   int `json:"dynamic_relation_facts"`
+	RefinedMapCalls        int `json:"refined_map_calls"`
+	RefinedReduceCalls     int `json:"refined_reduce_calls"`
+	RefinedGroupCalls      int `json:"refined_group_calls"`
+	// RefinedGroups counts every navigation record, including the optional
+	// explicitly local unassigned ledger. The following fields separate
+	// semantic group output from deterministic omission accounting.
+	RefinedGroups           int                                      `json:"refined_groups"`
+	RefinedModelGroups      int                                      `json:"refined_model_groups"`
+	RefinedLocalGroups      int                                      `json:"refined_local_groups"`
+	RefinedUnassignedBlocks int                                      `json:"refined_unassigned_blocks"`
+	DirectCallState         surfacediscovery.DirectCallIndexState    `json:"direct_call_state"`
+	DirectCallCoverage      surfacediscovery.DirectCallIndexCoverage `json:"direct_call_coverage"`
 }
 
 type StageRequestSize struct {
@@ -300,6 +321,7 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, comp
 			DecodeValidate: func(raw []byte) (modelResponse, error) {
 				response, err := decodeResponse(raw)
 				if err == nil {
+					response.Blocks = normalizeProposalRefs(response.Blocks, compilation.baselineFiles, nil)
 					err = validateProposals(StageBaseline, response.Blocks, compilation.baselineFiles, nil)
 				}
 				return response, err
@@ -339,6 +361,7 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, comp
 	if err != nil {
 		return Result{}, fmt.Errorf("coremap: refined grouping: %w", err)
 	}
+	modelGroupCount, localGroupCount, unassignedBlockCount := refinedGroupingCounts(refinedGroups)
 	result := Result{
 		Version: Version, Repository: compilation.repository, CorpusRef: compilation.corpusRef,
 		IntegrationUsageSHA256: compilation.integrationUsageSHA256,
@@ -353,7 +376,9 @@ func Run(ctx context.Context, executor llm.Executor, provider llm.Provider, comp
 			SemanticFacts: refinedAccounting.semanticFacts, DynamicRelationFacts: refinedAccounting.dynamicRelationFacts,
 			RefinedMapCalls: refinedAccounting.mapCalls, RefinedReduceCalls: refinedAccounting.reduceCalls,
 			RefinedGroupCalls: groupingCalls, RefinedGroups: len(refinedGroups),
-			DirectCallState: compilation.directCallState, DirectCallCoverage: compilation.directCoverage,
+			RefinedModelGroups: modelGroupCount, RefinedLocalGroups: localGroupCount,
+			RefinedUnassignedBlocks: unassignedBlockCount,
+			DirectCallState:         compilation.directCallState, DirectCallCoverage: compilation.directCoverage,
 		},
 		RequestSizes: RequestSizes{
 			Baseline: baselineRequestSize,
@@ -411,7 +436,10 @@ func (result Result) Validate() error {
 		result.Coverage.DynamicRelationFacts > result.Coverage.SemanticFacts ||
 		result.Coverage.RefinedMapCalls < 1 || result.Coverage.RefinedReduceCalls < 0 ||
 		result.Coverage.RefinedGroupCalls < 0 || result.Coverage.RefinedGroupCalls > 1 ||
-		result.Coverage.RefinedGroups < 0 {
+		result.Coverage.RefinedGroups < 0 || result.Coverage.RefinedModelGroups < 0 ||
+		result.Coverage.RefinedLocalGroups < 0 || result.Coverage.RefinedLocalGroups > 1 ||
+		result.Coverage.RefinedUnassignedBlocks < 0 ||
+		result.Coverage.RefinedUnassignedBlocks > result.Coverage.RefinedBlocks {
 		return fmt.Errorf("coremap: invalid refined pipeline coverage")
 	}
 	if result.Coverage.BaselineRoleFiles == 0 {
@@ -442,11 +470,16 @@ func (result Result) Validate() error {
 	}
 	if len(result.Refined) < 2 {
 		if result.Coverage.RefinedGroupCalls != 0 || len(result.RefinedGroups) != 0 ||
-			result.Coverage.RefinedGroups != 0 || result.RequestSizes.Grouping != (StageRequestSize{}) {
+			result.Coverage.RefinedGroups != 0 || result.Coverage.RefinedModelGroups != 0 ||
+			result.Coverage.RefinedLocalGroups != 0 || result.Coverage.RefinedUnassignedBlocks != 0 ||
+			result.RequestSizes.Grouping != (StageRequestSize{}) {
 			return fmt.Errorf("coremap: trivial refined map retained grouping output")
 		}
 	} else {
-		if result.Coverage.RefinedGroupCalls != 1 || result.Coverage.RefinedGroups != len(result.RefinedGroups) {
+		modelGroups, localGroups, unassignedBlocks := refinedGroupingCounts(result.RefinedGroups)
+		if result.Coverage.RefinedGroupCalls != 1 || result.Coverage.RefinedGroups != len(result.RefinedGroups) ||
+			result.Coverage.RefinedModelGroups != modelGroups || result.Coverage.RefinedLocalGroups != localGroups ||
+			result.Coverage.RefinedUnassignedBlocks != unassignedBlocks {
 			return fmt.Errorf("coremap: invalid refined grouping coverage")
 		}
 		if err := validateStageRequestSize(result.RequestSizes.Grouping, 1, maxRefinedPayloadBytes); err != nil {
@@ -510,7 +543,25 @@ func (result Result) ValidateAgainst(compilation Compilation) error {
 		want.DirectCallState != compilation.directCallState || !reflect.DeepEqual(want.DirectCallCoverage, compilation.directCoverage) {
 		return fmt.Errorf("coremap: coverage does not match exact authority")
 	}
+	modelGroups, localGroups, unassignedBlocks := refinedGroupingCounts(result.RefinedGroups)
+	if want.RefinedModelGroups != modelGroups || want.RefinedLocalGroups != localGroups ||
+		want.RefinedUnassignedBlocks != unassignedBlocks {
+		return fmt.Errorf("coremap: grouping coverage does not match exact authority")
+	}
 	return nil
+}
+
+func refinedGroupingCounts(groups []Group) (modelGroups, localGroups, unassignedBlocks int) {
+	for _, group := range groups {
+		switch group.Authority {
+		case GroupAuthorityModel:
+			modelGroups++
+		case GroupAuthorityLocalUnassigned:
+			localGroups++
+			unassignedBlocks += len(group.BlockIDs)
+		}
+	}
+	return modelGroups, localGroups, unassignedBlocks
 }
 
 func boolCount(value bool) int {
@@ -587,7 +638,7 @@ func validateProposals(stage Stage, blocks []proposal, files map[corpus.FileID]F
 		if !validText(block.Name, maxNameBytes) || !validText(block.Purpose, maxPurposeBytes) {
 			return fmt.Errorf("coremap: %s response has invalid block text", stage)
 		}
-		if stage == StageRefined && len(block.Children) != 0 || depth > 1 || len(block.Children) > maxChildrenPerBlock {
+		if stage == StageRefined && len(block.Children) != 0 || depth > MaxBlockDepth || len(block.Children) > maxChildrenPerBlock {
 			return fmt.Errorf("coremap: %s response has invalid hierarchy", stage)
 		}
 		if len(block.FileRefs)+len(block.SymbolRefs)+len(block.Children) == 0 {
@@ -635,6 +686,92 @@ func validateProposals(stage Stage, blocks []proposal, files map[corpus.FileID]F
 		return fmt.Errorf("coremap: baseline response exceeds block limit")
 	}
 	return nil
+}
+
+// normalizeProposalRefs treats model-returned evidence refs as sets over the
+// exact request-local catalogs. Unknown refs have no local identity or
+// semantic authority, so they are discarded rather than guessed or allowed to
+// invalidate otherwise grounded blocks. Exact duplicate block records are set
+// duplicates after ref normalization and are canonicalized locally. Blocks
+// with different model-authored semantic claims remain distinct even when the
+// same exact evidence supports both. Validation still rejects blocks that
+// become ungrounded or incomplete after normalization.
+func normalizeProposalRefs(
+	blocks []proposal,
+	files map[corpus.FileID]FileFact,
+	symbols map[string]symbolAuthority,
+) []proposal {
+	for position := range blocks {
+		seenFiles := make(map[corpus.FileID]struct{}, len(blocks[position].FileRefs))
+		fileRefs := blocks[position].FileRefs[:0]
+		for _, ref := range blocks[position].FileRefs {
+			if _, advertised := files[ref]; !advertised {
+				continue
+			}
+			if _, duplicate := seenFiles[ref]; duplicate {
+				continue
+			}
+			seenFiles[ref] = struct{}{}
+			fileRefs = append(fileRefs, ref)
+		}
+		blocks[position].FileRefs = fileRefs
+
+		seenSymbols := make(map[string]struct{}, len(blocks[position].SymbolRefs))
+		symbolRefs := blocks[position].SymbolRefs[:0]
+		for _, ref := range blocks[position].SymbolRefs {
+			if _, advertised := symbols[ref]; !advertised {
+				continue
+			}
+			if _, duplicate := seenSymbols[ref]; duplicate {
+				continue
+			}
+			seenSymbols[ref] = struct{}{}
+			symbolRefs = append(symbolRefs, ref)
+		}
+		blocks[position].SymbolRefs = symbolRefs
+		blocks[position].Children = normalizeProposalRefs(blocks[position].Children, files, symbols)
+	}
+	return deduplicateProposals(blocks)
+}
+
+func deduplicateProposals(blocks []proposal) []proposal {
+	seen := make(map[string]struct{}, len(blocks))
+	result := blocks[:0]
+	for _, block := range blocks {
+		key := proposalSetKey(block)
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, block)
+	}
+	return result
+}
+
+func proposalSetKey(block proposal) string {
+	fileRefs := make([]string, len(block.FileRefs))
+	for position, ref := range block.FileRefs {
+		fileRefs[position] = string(ref)
+	}
+	sort.Strings(fileRefs)
+	symbolRefs := append([]string(nil), block.SymbolRefs...)
+	sort.Strings(symbolRefs)
+	children := make([]string, len(block.Children))
+	for position, child := range block.Children {
+		children[position] = proposalSetKey(child)
+	}
+	sort.Strings(children)
+	wire, _ := json.Marshal(struct {
+		Name       string   `json:"name"`
+		Purpose    string   `json:"purpose"`
+		FileRefs   []string `json:"file_refs"`
+		SymbolRefs []string `json:"symbol_refs"`
+		Children   []string `json:"children"`
+	}{
+		Name: block.Name, Purpose: block.Purpose, FileRefs: fileRefs,
+		SymbolRefs: symbolRefs, Children: children,
+	})
+	return string(wire)
 }
 
 func validateRefinedBatchProposals(
@@ -709,7 +846,7 @@ func validateRestoredBlocks(stage Stage, targetRef string, blocks []Block, requi
 			return fmt.Errorf("coremap: duplicate %s block evidence", stage)
 		}
 		seenBlockIDs[block.ID] = struct{}{}
-		if stage == StageBaseline && len(block.Symbols) != 0 || stage == StageRefined && len(block.Children) != 0 || depth > 1 {
+		if stage == StageBaseline && len(block.Symbols) != 0 || stage == StageRefined && len(block.Children) != 0 || depth > MaxBlockDepth {
 			return fmt.Errorf("coremap: invalid %s hierarchy", stage)
 		}
 		if stage == StageRefined && requireSymbols && len(block.Symbols) == 0 {
@@ -848,7 +985,18 @@ func stableBlockID(stage Stage, targetRef string, block Block) string {
 		keys = append(keys, "c:"+child.ID)
 	}
 	sort.Strings(keys)
-	digest := sha256.Sum256([]byte("coremap-block-v1\x00" + string(stage) + "\x00" + targetRef + "\x00" + strings.Join(keys, "\x00")))
+	wire, _ := json.Marshal(struct {
+		Contract string   `json:"contract"`
+		Stage    Stage    `json:"stage"`
+		Target   string   `json:"target"`
+		Name     string   `json:"name"`
+		Purpose  string   `json:"purpose"`
+		Evidence []string `json:"evidence"`
+	}{
+		Contract: "coremap-block-v2", Stage: stage, Target: targetRef,
+		Name: block.Name, Purpose: block.Purpose, Evidence: keys,
+	})
+	digest := sha256.Sum256(wire)
 	return "core-" + hex.EncodeToString(digest[:8])
 }
 
@@ -863,7 +1011,7 @@ func stageState(compilation Compilation, stage Stage, wire []byte) []byte {
 		CoreObjectSHA       string `json:"core_object_sha256,omitempty"`
 		Compilation         string `json:"compilation"`
 	}{
-		Contract: "repomap.coremap.v8", Stage: stage,
+		Contract: semanticContract, Stage: stage,
 		PromptSHA: sha256Hex([]byte(map[Stage]string{StageBaseline: baselinePrompt, StageRefined: refinedPrompt}[stage])),
 		InputSHA:  sha256Hex(wire), ProgramIndexSHA: compilation.programIndexSHA256,
 		IntegrationUsageSHA: compilation.integrationUsageSHA256,
@@ -882,6 +1030,10 @@ func refinedCallState(
 	wire []byte,
 	prompt string,
 ) []byte {
+	contract := semanticContract
+	if phase == "group" {
+		contract = groupingSemanticContract
+	}
 	state, _ := json.Marshal(struct {
 		Contract            string `json:"contract"`
 		Stage               Stage  `json:"stage"`
@@ -896,7 +1048,7 @@ func refinedCallState(
 		CoreObjectSHA       string `json:"core_object_sha256,omitempty"`
 		Compilation         string `json:"compilation"`
 	}{
-		Contract: "repomap.coremap.v8", Stage: StageRefined, Phase: phase,
+		Contract: contract, Stage: StageRefined, Phase: phase,
 		Level: level, BatchOrdinal: ordinal, BatchCount: count,
 		PromptSHA: sha256Hex([]byte(prompt)), InputSHA: sha256Hex(wire),
 		ProgramIndexSHA:     compilation.programIndexSHA256,
@@ -1057,7 +1209,7 @@ func sealCompilation(compilation Compilation) string {
 	dynamicWire, _ := json.Marshal(compilation.dynamicRelationRows)
 	groupingWire, _ := json.Marshal(compilation.groupingEdges)
 	coverageWire, _ := json.Marshal(compilation.programCoverage)
-	return sha256Hex([]byte("coremap-compilation-v8\x00" + compilation.repository + "\x00" + compilation.corpusRef + "\x00" + compilationTargetKey(compilation) + "\x00" + compilation.target.Ref + "\x00" + compilation.programIndexSHA256 + "\x00" + compilation.integrationUsageSHA256 + "\x00" + compilation.directCallSHA256 + "\x00" + compilation.coreObjectSHA256 + "\x00" + sha256Hex(coverageWire) + "\x00" + sha256Hex(compilation.baselineWire) + "\x00" + sha256Hex(symbolWire) + "\x00" + sha256Hex(seedWire) + "\x00" + sha256Hex(integrationWire) + "\x00" + sha256Hex(dynamicWire) + "\x00" + sha256Hex(groupingWire)))
+	return sha256Hex([]byte("coremap-compilation-v10\x00" + compilation.repository + "\x00" + compilation.corpusRef + "\x00" + compilationTargetKey(compilation) + "\x00" + compilation.target.Ref + "\x00" + compilation.programIndexSHA256 + "\x00" + compilation.integrationUsageSHA256 + "\x00" + compilation.directCallSHA256 + "\x00" + compilation.coreObjectSHA256 + "\x00" + sha256Hex(coverageWire) + "\x00" + sha256Hex(compilation.baselineWire) + "\x00" + sha256Hex(symbolWire) + "\x00" + sha256Hex(seedWire) + "\x00" + sha256Hex(integrationWire) + "\x00" + sha256Hex(dynamicWire) + "\x00" + sha256Hex(groupingWire)))
 }
 
 func validateGroupingEdges(values []groupingEdgeAuthority) error {

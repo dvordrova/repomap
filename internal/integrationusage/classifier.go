@@ -25,16 +25,12 @@ import (
 )
 
 const (
-	Version = 4
+	Version = 6
 
 	MaxAdvertisedOperationsPerRequest = MaxSelectedUsesPerRequest
 	MaxSelectedUsesPerRequest         = 256
 	MaxLabelBytes                     = 120
 	MaxMechanismBytes                 = 120
-
-	MaxUsageBatches         = 16
-	MaxAdvertisedOperations = MaxUsageBatches * MaxAdvertisedOperationsPerRequest
-	MaxSelectedUses         = MaxUsageBatches * MaxSelectedUsesPerRequest
 
 	maxRequestBytes  = 4 * 1024 * 1024
 	maxResponseBytes = 256 * 1024
@@ -171,10 +167,9 @@ type operationCandidate struct {
 	operation     Operation
 }
 
-// Run prepares a complete disjoint request partition over every bounded
-// operation attributable to the selected Python dependencies. An input
-// omission, unsupported witness, ambiguous association, or global operation-
-// bound overflow fails closed.
+// Run prepares a complete disjoint request partition over every operation
+// attributable to the selected dependencies. An input omission, unsupported
+// witness, ambiguous association, or batch failure fails closed.
 func Run(
 	ctx context.Context,
 	executor llm.Executor,
@@ -200,6 +195,7 @@ func Run(
 
 	totalBatches := completeBatchCount(len(candidates.operations), MaxAdvertisedOperationsPerRequest)
 	calls := make([]llm.Call[response], 0, totalBatches)
+	allowedByBatch := make([]map[string]operationCandidate, 0, totalBatches)
 	for batchIndex, start := 0, 0; start < len(candidates.operations); batchIndex, start = batchIndex+1, start+MaxAdvertisedOperationsPerRequest {
 		end := min(start+MaxAdvertisedOperationsPerRequest, len(candidates.operations))
 		operations := candidates.operations[start:end]
@@ -249,6 +245,7 @@ func Run(
 			return Result{}, fmt.Errorf("integration usage: state batch %d: %w", batchIndex+1, err)
 		}
 		batchAllowed := allowed
+		allowedByBatch = append(allowedByBatch, batchAllowed)
 		calls = append(calls, llm.Call[response]{
 			State: state,
 			Prompt: llm.Prompt{
@@ -265,14 +262,17 @@ func Run(
 	if err != nil {
 		return Result{}, fmt.Errorf("integration usage: model cube: %w", err)
 	}
+	if len(outcomes) != len(allowedByBatch) {
+		return Result{}, fmt.Errorf("integration usage: model cube returned an incomplete batch outcome set")
+	}
 	selectedByRef := make(map[string]wireUse)
-	for _, outcome := range outcomes {
+	for batchIndex, outcome := range outcomes {
 		for _, value := range outcome.Value.Uses {
+			if _, known := allowedByBatch[batchIndex][value.OperationRef]; !known {
+				continue
+			}
 			selectedByRef[value.OperationRef] = value
 		}
-	}
-	if len(selectedByRef) > MaxSelectedUses {
-		return Result{}, fmt.Errorf("integration usage: total selected use bound exceeded")
 	}
 	for _, candidate := range candidates.operations {
 		semantic, ok := selectedByRef[candidate.ref]
@@ -321,6 +321,8 @@ func prepare(
 		return preparePython(index, selected)
 	case "go":
 		return prepareGo(index, selected)
+	case "javascript", "typescript":
+		return prepareJavaScriptTypeScript(index, selected)
 	default:
 		return "", preparedCandidates{}, Coverage{}, fmt.Errorf(
 			"integration usage: no operation adapter for ProgramIndex language %q", index.Target.Language,
@@ -439,7 +441,7 @@ func preparePython(
 		for witnessIndex, witness := range relation.Witnesses {
 			coverage.CallsiteCandidatesObserved++
 			if witness.Kind != pythonCallsiteCandidate || witness.Location == nil ||
-				!reflect.DeepEqual(*witness.Location, *relation.Location) ||
+				!sameSourceLine(*witness.Location, *relation.Location) ||
 				!validDottedExpression(witness.SourceExpression) {
 				return "", empty, Coverage{}, fmt.Errorf(
 					"integration usage: external relation %q has unsupported witness %d", relation.ID, witnessIndex,
@@ -460,7 +462,7 @@ func preparePython(
 				DependencyID: dependency.selected.Dependency.ID, RelationID: relation.ID,
 				WitnessIndex: witnessIndex, CallerID: caller.ID, CallerKind: caller.Kind,
 				CallerName: caller.Name, CallerLocation: *caller.Location,
-				Callsite: *relation.Location, CallExpression: witness.SourceExpression,
+				Callsite: *witness.Location, CallExpression: witness.SourceExpression,
 				CanonicalCallee: externalSymbol.Name, ExternalSymbolID: externalSymbol.ID,
 				Invocation: relation.Invocation, Authority: AuthoritySyntacticUnresolved,
 			}
@@ -473,12 +475,6 @@ func preparePython(
 	if coverage.CallsiteCandidatesObserved != len(operations)+coverage.OutOfScopeCandidates+
 		coverage.CallsiteCandidatesOmitted {
 		return "", empty, Coverage{}, fmt.Errorf("integration usage: callsite coverage is not a complete partition")
-	}
-	if len(operations) > MaxAdvertisedOperations {
-		return "", empty, Coverage{}, fmt.Errorf(
-			"integration usage: %d operations exceed the complete run bound %d",
-			len(operations), MaxAdvertisedOperations,
-		)
 	}
 	sort.Slice(operations, func(left, right int) bool {
 		return operationLess(operations[left].operation, operations[right].operation)
@@ -502,7 +498,7 @@ func (result Result) Validate() error {
 	if err := validateCoverage(result.Coverage); err != nil {
 		return err
 	}
-	if len(result.Uses) > MaxSelectedUses || len(result.Uses) != result.Coverage.Selected {
+	if len(result.Uses) != result.Coverage.Selected {
 		return fmt.Errorf("integration usage: selected use count is outside authority")
 	}
 	for position, use := range result.Uses {
@@ -553,22 +549,28 @@ func (result Result) ValidateAgainst(
 }
 
 func validateResponse(value response, allowed map[string]operationCandidate) error {
-	if value.Uses == nil || len(value.Uses) > MaxSelectedUsesPerRequest {
+	if value.Uses == nil {
 		return fmt.Errorf("integration usage: selected use count is outside bounds")
 	}
-	seen := make(map[string]struct{}, len(value.Uses))
+	seen := make(map[string]wireUse, len(value.Uses))
 	for _, use := range value.Uses {
 		if _, ok := allowed[use.OperationRef]; !ok {
-			return fmt.Errorf("integration usage: unknown request-local ref %q", use.OperationRef)
+			continue
 		}
-		if _, duplicate := seen[use.OperationRef]; duplicate {
-			return fmt.Errorf("integration usage: duplicate request-local ref %q", use.OperationRef)
-		}
-		seen[use.OperationRef] = struct{}{}
 		if !validBoundedLine(use.Label, MaxLabelBytes) ||
 			!validBoundedLine(use.Mechanism, MaxMechanismBytes) {
 			return fmt.Errorf("integration usage: invalid label or mechanism for %q", use.OperationRef)
 		}
+		if previous, duplicate := seen[use.OperationRef]; duplicate {
+			if previous != use {
+				return fmt.Errorf("integration usage: conflicting assignment for request-local ref %q", use.OperationRef)
+			}
+			continue
+		}
+		seen[use.OperationRef] = use
+	}
+	if len(seen) > MaxSelectedUsesPerRequest {
+		return fmt.Errorf("integration usage: selected use count is outside bounds")
 	}
 	return nil
 }
@@ -577,13 +579,16 @@ func validateCoverage(value Coverage) error {
 	if value.DependenciesObserved < 0 || value.DependenciesWithOperations < 0 ||
 		value.DependenciesWithOperations > value.DependenciesObserved ||
 		value.ExternalRelationsObserved < 0 || value.CallsiteCandidatesObserved < 0 ||
-		value.OperationsAdvertised < 0 || value.OperationsAdvertised > MaxAdvertisedOperations ||
+		value.OperationsAdvertised < 0 ||
 		value.CallsiteCandidatesOmitted < 0 || value.OutOfScopeCandidates < 0 ||
-		value.CallsiteCandidatesObserved != value.OperationsAdvertised+value.OutOfScopeCandidates+
-			value.CallsiteCandidatesOmitted ||
+		value.OperationsAdvertised > value.CallsiteCandidatesObserved ||
+		value.OutOfScopeCandidates > value.CallsiteCandidatesObserved-value.OperationsAdvertised ||
+		value.CallsiteCandidatesOmitted != value.CallsiteCandidatesObserved-
+			value.OperationsAdvertised-value.OutOfScopeCandidates ||
 		value.ExactExternalRelations < 0 || value.UnresolvedRuntimeRelations < 0 ||
-		value.ExactExternalRelations+value.UnresolvedRuntimeRelations != value.ExternalRelationsObserved ||
-		value.Selected < 0 || value.Selected > MaxSelectedUses ||
+		value.ExactExternalRelations > value.ExternalRelationsObserved ||
+		value.UnresolvedRuntimeRelations != value.ExternalRelationsObserved-value.ExactExternalRelations ||
+		value.Selected < 0 ||
 		value.Selected > value.OperationsAdvertised ||
 		value.ModelCalled != (value.OperationsAdvertised > 0) {
 		return fmt.Errorf("integration usage: invalid coverage")
@@ -610,6 +615,17 @@ func validateOperation(value Operation) error {
 	case "go":
 		if value.Authority != AuthorityExactExternalSymbol || value.CallExpression != "" {
 			return fmt.Errorf("invalid Go exact operation")
+		}
+	case "javascript":
+		if value.Authority != AuthoritySyntacticUnresolved ||
+			!validOptionalLine(value.CallExpression, programindex.MaxTextBytes) {
+			return fmt.Errorf("invalid JavaScript operation")
+		}
+	case "typescript":
+		if (value.Authority != AuthorityExactExternalSymbol &&
+			value.Authority != AuthoritySyntacticUnresolved) ||
+			!validOptionalLine(value.CallExpression, programindex.MaxTextBytes) {
+			return fmt.Errorf("invalid TypeScript operation")
 		}
 	default:
 		return fmt.Errorf("unsupported operation language %q", value.Language)
@@ -770,6 +786,12 @@ func validLocation(value programindex.Location) bool {
 		value.Line > 0 && value.Column > 0
 }
 
+// A Python call relation is anchored at the complete call expression, while
+// each witness is anchored at its exact callee token. Their columns may differ.
+func sameSourceLine(left, right programindex.Location) bool {
+	return left.Path == right.Path && left.Line == right.Line
+}
+
 func validBoundedText(value string, limit int) bool {
 	if value == "" || len(value) > limit || !utf8.ValidString(value) || strings.TrimSpace(value) != value {
 		return false
@@ -851,7 +873,7 @@ func classifierState(
 		OperationsObserved            int    `json:"operations_observed"`
 		AuthoritySHA256               string `json:"authority_sha256"`
 	}{
-		Contract: "repomap.integrationusage.v4", Preparation: 5, ResponseSchema: 1,
+		Contract: "repomap.integrationusage.v6", Preparation: 5, ResponseSchema: 3,
 		PromptSHA256:                  sha256Hex([]byte(strings.TrimSpace(prompt))),
 		ProgramIndexSHA256:            programIndexSHA256,
 		IntegrationDependenciesSHA256: dependenciesSHA256,
@@ -866,7 +888,7 @@ func completeBatchCount(total, perBatch int) int {
 	if total == 0 {
 		return 0
 	}
-	return (total + perBatch - 1) / perBatch
+	return 1 + (total-1)/perBatch
 }
 
 func cloneSelectedDependency(value integrationdependency.SelectedDependency) integrationdependency.SelectedDependency {

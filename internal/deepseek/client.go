@@ -22,10 +22,11 @@ import (
 )
 
 const (
-	defaultEndpoint  = "https://api.deepseek.com/chat/completions"
-	defaultModel     = "deepseek-v4-flash"
-	defaultMaxTokens = 64_000
-	defaultTimeout   = 10 * time.Minute
+	defaultEndpoint             = "https://api.deepseek.com/chat/completions"
+	defaultModel                = "deepseek-v4-flash"
+	defaultMaxTokens            = 128_000
+	defaultTimeout              = 10 * time.Minute
+	defaultWaitProgressInterval = 10 * time.Second
 
 	authBearer = "bearer"
 	authNone   = "none"
@@ -326,7 +327,7 @@ func (c *Client) startWaitProgress(ctx context.Context, stage string) func() {
 	}
 	interval := c.waitInterval
 	if interval <= 0 {
-		interval = 10 * time.Second
+		interval = defaultWaitProgressInterval
 	}
 	done := make(chan struct{})
 	var once sync.Once

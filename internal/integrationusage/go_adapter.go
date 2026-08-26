@@ -166,12 +166,6 @@ func prepareGo(
 		coverage.CallsiteCandidatesOmitted {
 		return "", empty, Coverage{}, fmt.Errorf("integration usage: Go callsite coverage is not a complete partition")
 	}
-	if len(operations) > MaxAdvertisedOperations {
-		return "", empty, Coverage{}, fmt.Errorf(
-			"integration usage: %d operations exceed the complete run bound %d",
-			len(operations), MaxAdvertisedOperations,
-		)
-	}
 	sort.Slice(operations, func(left, right int) bool {
 		return operationLess(operations[left].operation, operations[right].operation)
 	})

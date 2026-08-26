@@ -129,6 +129,9 @@ type programShellPayload struct {
 	ActivityEntrypointView *ActivityEntrypointView    `json:"activity_entrypoint_view,omitempty"`
 	IntegrationUsageView   *IntegrationUsageView      `json:"integration_usage_view,omitempty"`
 	ActivityPathView       *ActivityPathView          `json:"activity_path_view,omitempty"`
+	JSTSSurfaceCatalogView *JSTSSurfaceCatalogView    `json:"js_ts_surface_catalog_view,omitempty"`
+	CrossSurfacePathView   *CrossSurfacePathView      `json:"cross_surface_path_view,omitempty"`
+	RuntimePortfolio       *RuntimePortfolioView      `json:"runtime_portfolio,omitempty"`
 	OpenablePaths          []string                   `json:"openable_paths"`
 	SourceIDs              map[string]string          `json:"source_ids,omitempty"`
 	GitHubSourceLinks      *GitHubSourceLinks         `json:"github_source_links,omitempty"`
@@ -233,6 +236,7 @@ func validateProgramPresentation(data *ReportData) error {
 	if err := validateProgramSemanticPresentation(
 		data.ProgramPortfolio, data.AnalysisTarget, data.CubeMapView, data.CoreMapView,
 		data.ActivityEntrypointView, data.IntegrationUsageView, data.ActivityPathView,
+		jstsSemanticPresentation{data.JSTSSurfaceCatalogView, data.CrossSurfacePathView},
 	); err != nil {
 		return err
 	}
@@ -295,6 +299,36 @@ func validateProgramPresentation(data *ReportData) error {
 			data.ActivityEntrypointView, data.IntegrationUsageView,
 		); err != nil {
 			return fmt.Errorf("report: activity path report joins: %w", err)
+		}
+	}
+	if data.JSTSSurfaceCatalogView != nil {
+		if err := data.JSTSSurfaceCatalogView.Validate(); err != nil {
+			return fmt.Errorf("report: JavaScript/TypeScript surface catalog view: %w", err)
+		}
+		if data.JSTSSurfaceCatalogView.ProgramTargetID != defaultEntry.Target.ID ||
+			data.JSTSSurfaceCatalogView.ProgramIndexSHA256 != defaultEntry.View.IndexSHA256 {
+			return fmt.Errorf("report: JavaScript/TypeScript surface catalog does not bind the default program target and index")
+		}
+	}
+	if data.CrossSurfacePathView != nil {
+		if err := data.CrossSurfacePathView.Validate(); err != nil {
+			return fmt.Errorf("report: cross-surface path view: %w", err)
+		}
+		if data.CrossSurfacePathView.ProgramTargetID != defaultEntry.Target.ID ||
+			data.CrossSurfacePathView.ProgramIndexSHA256 != defaultEntry.View.IndexSHA256 {
+			return fmt.Errorf("report: cross-surface paths do not bind the default program target and index")
+		}
+		if data.JSTSSurfaceCatalogView == nil ||
+			data.CrossSurfacePathView.JSTSProjectSHA256 != data.JSTSSurfaceCatalogView.JSTSProjectSHA256 {
+			return fmt.Errorf("report: cross-surface paths do not bind the exact JavaScript/TypeScript surface authority")
+		}
+		if err := data.CrossSurfacePathView.ValidateSurfaceJoins(data.JSTSSurfaceCatalogView); err != nil {
+			return fmt.Errorf("report: cross-surface path report joins: %w", err)
+		}
+	}
+	if data.RuntimePortfolio != nil {
+		if err := data.RuntimePortfolio.Validate(); err != nil {
+			return fmt.Errorf("report: runtime portfolio view: %w", err)
 		}
 	}
 	return nil

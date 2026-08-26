@@ -94,6 +94,7 @@ const (
 
 	SemanticStageReadmeFileClassifier    = "readme_file_classifier"
 	SemanticStageTargetPortfolio         = "target_portfolio_selection"
+	SemanticStageRuntimePortfolio        = "runtime_portfolio"
 	SemanticStageTargetViewChoice        = "target_view_choice"
 	SemanticStageCoreMapBaseline         = "coremap_baseline"
 	SemanticStageCoreMapRefined          = "coremap_refined"
@@ -129,6 +130,9 @@ const (
 	semanticPayloadMarkerVersion         = 1
 	maxSemanticExchangePayloadSize       = 16 << 20
 	MaxSemanticAttemptOrdinal            = 256
+	MaxSemanticExchangeInstanceOrdinal   = 4096
+	MaxSemanticTransportAttempts         = 64
+	maxPreservedMetadataBytes            = 4 << 20
 )
 
 // SemanticUnavailable describes response bytes that the current stage seam
@@ -317,10 +321,10 @@ func readPreservedBuildIdentity(root *os.Root) (*BuildIdentity, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inspect existing debug metadata identity: %w", err)
 	}
-	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > 4<<20 {
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxPreservedMetadataBytes {
 		return nil, fmt.Errorf("existing debug metadata is not a bounded regular file")
 	}
-	data, err := io.ReadAll(io.LimitReader(file, 4<<20))
+	data, err := io.ReadAll(io.LimitReader(file, maxPreservedMetadataBytes))
 	if err != nil {
 		return nil, fmt.Errorf("read existing debug metadata identity: %w", err)
 	}
@@ -537,7 +541,7 @@ func validateSemanticExchange(exchange SemanticExchange) error {
 	if !validSemanticStage(exchange.Stage) {
 		return fmt.Errorf("semantic exchange: invalid stage")
 	}
-	if exchange.InstanceOrdinal < 1 || exchange.InstanceOrdinal > 4096 ||
+	if exchange.InstanceOrdinal < 1 || exchange.InstanceOrdinal > MaxSemanticExchangeInstanceOrdinal ||
 		exchange.SemanticAttemptOrdinal < 1 || exchange.SemanticAttemptOrdinal > MaxSemanticAttemptOrdinal {
 		return fmt.Errorf("semantic exchange: invalid ordinal")
 	}
@@ -549,7 +553,7 @@ func validateSemanticExchange(exchange SemanticExchange) error {
 		return fmt.Errorf("semantic exchange: invalid outcome")
 	}
 	if exchange.SemanticCalls < 0 || exchange.SemanticCalls > 1 ||
-		exchange.TransportAttempts < 0 || exchange.TransportAttempts > 64 ||
+		exchange.TransportAttempts < 0 || exchange.TransportAttempts > MaxSemanticTransportAttempts ||
 		exchange.SemanticCalls == 0 && exchange.TransportAttempts != 0 {
 		return fmt.Errorf("semantic exchange: invalid call counts")
 	}
@@ -626,6 +630,7 @@ func validSemanticStage(stage string) bool {
 	switch stage {
 	case SemanticStageReadmeFileClassifier,
 		SemanticStageTargetPortfolio,
+		SemanticStageRuntimePortfolio,
 		SemanticStageTargetViewChoice,
 		SemanticStageCoreMapBaseline,
 		SemanticStageCoreMapRefined,

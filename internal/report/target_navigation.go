@@ -6,11 +6,14 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/programpage"
+	"github.com/dvordrova/repomap/internal/runtimeportfolio"
 	"github.com/dvordrova/repomap/internal/snapshot"
 )
 
@@ -176,6 +179,9 @@ func LoadManifestTargetNavigation(
 	if err := manifest.VerifyTargetPagePortfolioArtifacts(runDir); err != nil {
 		return nil, err
 	}
+	if manifest.MaterialInputs.ProgramPagePortfolioSHA256 != "" {
+		return loadManifestProgramPageNavigation(runDir, manifest)
+	}
 
 	root, err := os.OpenRoot(runDir)
 	if err != nil {
@@ -219,6 +225,15 @@ func LoadManifestTargetNavigation(
 		if pageErr != nil {
 			return nil, fmt.Errorf("report: target navigation page %d: %w", index, pageErr)
 		}
+		runtimeRaw, _, runtimeErr := readBoundedProgramArtifact(
+			filepath.Join(pageRunDir, runtimeportfolio.ArtifactFilename),
+			runtimeportfolio.MaxArtifactBytes,
+			"target navigation runtime portfolio",
+			false,
+		)
+		if runtimeErr != nil || manifestSHA256(runtimeRaw) != manifest.MaterialInputs.RuntimePortfolioSHA256 {
+			return nil, fmt.Errorf("report: target navigation page %d runtime portfolio authority mismatch", index)
+		}
 		// The current outer container is Go-specific backend authority. Keep
 		// that join local while publishing only the language-neutral target ID.
 		if err := validateCubeMapProgramTarget(container.Targets[index].Target, page.ProgramTarget); err != nil {
@@ -239,8 +254,65 @@ func LoadManifestTargetNavigation(
 	return BuildTargetNavigation(pages, defaultTargetID, currentTargetID)
 }
 
+func loadManifestProgramPageNavigation(
+	runDir string,
+	manifest RunManifest,
+) (*TargetNavigationPortfolio, error) {
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return nil, fmt.Errorf("report: open program page navigation run: %w", err)
+	}
+	portfolioRaw, err := readManifestFile(
+		root, programpage.ArtifactFilename, programpage.MaxArtifactBytes,
+	)
+	_ = root.Close()
+	if err != nil || manifestSHA256(portfolioRaw) != manifest.MaterialInputs.ProgramPagePortfolioSHA256 {
+		return nil, fmt.Errorf("report: program page navigation portfolio authority mismatch")
+	}
+	portfolio, err := programpage.Decode(portfolioRaw)
+	if err != nil {
+		return nil, fmt.Errorf("report: program page navigation portfolio: %w", err)
+	}
+	pages := make([]TargetNavigationPage, 0, len(portfolio.Pages))
+	currentTargetID := ""
+	runsDir := filepath.Dir(filepath.Clean(runDir))
+	for index, binding := range portfolio.Pages {
+		pageRunDir := filepath.Join(runsDir, binding.RunID)
+		page, pageErr := LoadTargetNavigationPage(pageRunDir, binding.RunID)
+		if pageErr != nil {
+			return nil, fmt.Errorf("report: program page navigation page %d: %w", index, pageErr)
+		}
+		if !reflect.DeepEqual(page.ProgramTarget, binding.Target) {
+			return nil, fmt.Errorf("report: program page navigation page %d target authority mismatch", index)
+		}
+		runtimeRaw, _, runtimeErr := readBoundedProgramArtifact(
+			filepath.Join(pageRunDir, runtimeportfolio.ArtifactFilename),
+			runtimeportfolio.MaxArtifactBytes,
+			"program page navigation runtime portfolio",
+			false,
+		)
+		if runtimeErr != nil || manifestSHA256(runtimeRaw) != manifest.MaterialInputs.RuntimePortfolioSHA256 {
+			return nil, fmt.Errorf("report: program page navigation page %d runtime portfolio authority mismatch", index)
+		}
+		if filepath.Clean(pageRunDir) == filepath.Clean(runDir) {
+			if binding.Target.ID != manifest.MaterialInputs.ProgramTargetID {
+				return nil, fmt.Errorf("report: current program page navigation authority mismatch")
+			}
+			currentTargetID = binding.Target.ID
+		}
+		pages = append(pages, page)
+	}
+	if currentTargetID == "" {
+		return nil, fmt.Errorf("report: current program page is absent from portfolio")
+	}
+	return BuildTargetNavigation(pages, portfolio.DefaultTargetID, currentTargetID)
+}
+
 func validateTargetNavigation(data *ReportData, navigation *TargetNavigationPortfolio) error {
 	if navigation == nil {
+		if data != nil && data.RuntimePortfolio != nil {
+			return fmt.Errorf("report: runtime portfolio requires complete target navigation")
+		}
 		return nil
 	}
 	if data == nil {
@@ -302,6 +374,11 @@ func validateTargetNavigation(data *ReportData, navigation *TargetNavigationPort
 	}
 	if !defaultFound || !currentFound {
 		return fmt.Errorf("report: target navigation default or current target is absent")
+	}
+	if data.RuntimePortfolio != nil {
+		if err := data.RuntimePortfolio.validateTargetNavigation(navigation); err != nil {
+			return fmt.Errorf("report: runtime portfolio target navigation: %w", err)
+		}
 	}
 	return nil
 }

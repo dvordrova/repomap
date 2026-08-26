@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -196,9 +197,15 @@ func selectTargetsForRun(
 	if len(merged) == 0 {
 		return snapshot.TargetRunSelection{}, outcome, fmt.Errorf("target discovery returned no file hypotheses")
 	}
+	executableFileRefs, err := exactGoExecutableFileRefs(merged, resolver, catalog)
+	if err != nil {
+		return snapshot.TargetRunSelection{}, outcome, fmt.Errorf(
+			"bind exact executable target authority: %w", err,
+		)
+	}
 
 	selection, portfolioOutcome, err := selectTargetPortfolioForRun(
-		ctx, repository.Snapshot(), merged, output, providers, executor,
+		ctx, repository.Snapshot(), merged, &executableFileRefs, nil, output, providers, executor,
 	)
 	outcome = portfolioOutcome
 	outcome.ReadmeRoles = compileReadmeRoleLog(repository, readme.roles)
@@ -230,6 +237,9 @@ func selectTargetsForRun(
 	if !ok {
 		return snapshot.TargetRunSelection{}, outcome, fmt.Errorf("restored default Go target is outside the target catalog")
 	}
+	if err := validateAutomaticGoExecutableAuthority(catalog, defaultRef, refs); err != nil {
+		return snapshot.TargetRunSelection{}, outcome, err
+	}
 	outcome.SelectedRef = defaultRef
 	outcome.SelectedTargets = len(refs)
 	outcome.SelectedTargetRefs = append([]string(nil), refs...)
@@ -258,10 +268,131 @@ func goResolvableReadmeTargetCandidates(
 	return result, len(candidates) - len(result)
 }
 
+// exactGoExecutableFileRefs projects only exact current catalog/resolver
+// capability into the language-neutral selector. It does not infer runnable
+// authority from paths or hypothesis prose, and it never removes library
+// candidates from the complete request.
+func exactGoExecutableFileRefs(
+	candidates []analysistarget.FileCandidate,
+	resolver analysistarget.GoFileTargetResolver,
+	catalog analysistarget.TargetCatalog,
+) ([]corpus.FileID, error) {
+	if err := catalog.Validate(); err != nil {
+		return nil, err
+	}
+	kinds := make(map[string]analysistarget.Kind, len(catalog.Entries))
+	executables := make(map[string]struct{})
+	for _, entry := range catalog.Entries {
+		ref := entry.Candidate.Target.Ref
+		kind := entry.Candidate.Target.Kind
+		kinds[ref] = kind
+		if kind == analysistarget.KindExecutablePackage {
+			executables[ref] = struct{}{}
+		}
+	}
+
+	result := make([]corpus.FileID, 0, len(executables))
+	represented := make(map[string]struct{}, len(executables))
+	for _, candidate := range candidates {
+		refs, err := resolver.Resolve([]corpus.FileID{candidate.FileRef})
+		if err != nil {
+			return nil, fmt.Errorf("file_ref %q: %w", candidate.FileRef, err)
+		}
+		executable := false
+		for _, ref := range refs {
+			kind, known := kinds[ref]
+			if !known {
+				return nil, fmt.Errorf("file_ref %q resolves outside the exact target catalog", candidate.FileRef)
+			}
+			if kind == analysistarget.KindExecutablePackage {
+				executable = true
+				represented[ref] = struct{}{}
+			}
+		}
+		if executable {
+			result = append(result, candidate.FileRef)
+		}
+	}
+	if len(represented) != len(executables) {
+		return nil, fmt.Errorf(
+			"executable target projection is incomplete: represented %d of %d exact targets",
+			len(represented), len(executables),
+		)
+	}
+	if result == nil {
+		return []corpus.FileID{}, nil
+	}
+	return result, nil
+}
+
+// validateAutomaticGoExecutableAuthority rebinds the accepted file decision
+// to the current exact catalog. The selector must itself return an executable
+// default when one exists; this check rejects stale or incompatible authority
+// and never promotes an omitted executable. Explicit --target bypasses it.
+func validateAutomaticGoExecutableAuthority(
+	catalog analysistarget.TargetCatalog,
+	defaultRef string,
+	selectedRefs []string,
+) error {
+	if err := catalog.Validate(); err != nil {
+		return err
+	}
+	selected := make(map[string]struct{}, len(selectedRefs))
+	for _, ref := range selectedRefs {
+		if _, duplicate := selected[ref]; duplicate {
+			return fmt.Errorf("executable target authority contains duplicate selected target %q", ref)
+		}
+		selected[ref] = struct{}{}
+	}
+	if _, ok := selected[defaultRef]; !ok {
+		return fmt.Errorf("executable target authority default is outside the selected target set")
+	}
+
+	executableCatalog := 0
+	executableSelected := 0
+	defaultKind := analysistarget.Kind("")
+	knownSelected := 0
+	for _, entry := range catalog.Entries {
+		target := entry.Candidate.Target
+		if target.Kind == analysistarget.KindExecutablePackage {
+			executableCatalog++
+		}
+		if target.Ref == defaultRef {
+			defaultKind = target.Kind
+		}
+		if _, ok := selected[target.Ref]; ok {
+			knownSelected++
+			if target.Kind == analysistarget.KindExecutablePackage {
+				executableSelected++
+			}
+		}
+	}
+	if knownSelected != len(selected) || defaultKind == "" {
+		return fmt.Errorf("executable target authority is outside the current exact catalog")
+	}
+	if executableCatalog == 0 {
+		return nil
+	}
+	if executableSelected == 0 {
+		return fmt.Errorf(
+			"executable target authority was lost: exact catalog has %d executable target(s), selection has none",
+			executableCatalog,
+		)
+	}
+	if defaultKind != analysistarget.KindExecutablePackage {
+		return fmt.Errorf(
+			"executable target authority requires an executable default, got %q", defaultKind,
+		)
+	}
+	return nil
+}
+
 func selectTargetPortfolioForRun(
 	ctx context.Context,
 	corpusSnapshot corpus.Snapshot,
 	candidates []analysistarget.FileCandidate,
+	executableFileRefs *[]corpus.FileID,
+	requiredTargetFileRefs *[]corpus.FileID,
 	output *runOutput,
 	providers targetPortfolioProviderFactory,
 	executor llm.Executor,
@@ -275,7 +406,21 @@ func selectTargetPortfolioForRun(
 
 	started := time.Now()
 	outcome := targetPortfolioRunOutcome{}
-	compilation, err := targetportfolio.Compile(corpusSnapshot, candidates)
+	var compilation targetportfolio.Compilation
+	var err error
+	if executableFileRefs != nil && requiredTargetFileRefs != nil {
+		err = fmt.Errorf("target portfolio cannot bind executable and required target authority together")
+	} else if executableFileRefs != nil {
+		compilation, err = targetportfolio.CompileWithExecutableAuthority(
+			corpusSnapshot, candidates, *executableFileRefs,
+		)
+	} else if requiredTargetFileRefs != nil {
+		compilation, err = targetportfolio.CompileWithRequiredTargetAuthority(
+			corpusSnapshot, candidates, *requiredTargetFileRefs,
+		)
+	} else {
+		compilation, err = targetportfolio.Compile(corpusSnapshot, candidates)
+	}
 	if err != nil {
 		failed, failErr := failTargetPortfolioSelection(
 			outcome, "request_build_failed",
@@ -847,8 +992,40 @@ func recordTargetPortfolioOutcome(
 	if outcome.SemanticState == "" {
 		return nil
 	}
-	diagnosticErr := recordSemanticStageDiagnostic(runDir, targetPortfolioDiagnostic(outcome))
-	if outcome.RequestBytes == 0 || len(outcome.Request) == 0 {
+	var exchange *debugdump.SemanticExchange
+	alreadyRecorded := false
+	responseUnavailable := outcome.ResponseUnavailable
+	if len(outcome.Response) == 0 && responseUnavailable == nil {
+		responseUnavailable = &debugdump.SemanticUnavailable{
+			Code: debugdump.SemanticUnavailableNoContent, OriginalBytes: outcome.ResponseBytes,
+		}
+	}
+	if outcome.RequestBytes > 0 && len(outcome.Request) > 0 {
+		value := debugdump.SemanticExchange{
+			Stage:           debugdump.SemanticStageTargetPortfolio,
+			InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
+			RequestProvenance: outcome.RequestProvenance,
+			State:             outcome.SemanticState, ValidationCode: outcome.ValidationCode,
+			SemanticCalls: outcome.SemanticCalls, TransportAttempts: outcome.TransportAttempts,
+			Request: outcome.Request, Response: outcome.Response,
+			ResponseUnavailable: responseUnavailable,
+		}
+		var err error
+		alreadyRecorded, err = targetPortfolioSemanticExchangeRecorded(runDir, value)
+		if err != nil {
+			return err
+		}
+		exchange = &value
+	}
+
+	var diagnosticErr error
+	metadataPath := filepath.Join(runDir, "metadata.json")
+	if _, err := os.Lstat(metadataPath); err == nil {
+		diagnosticErr = recordSemanticStageDiagnostic(runDir, targetPortfolioDiagnostic(outcome))
+	} else if !os.IsNotExist(err) {
+		diagnosticErr = fmt.Errorf("target portfolio: inspect metadata authority: %w", err)
+	}
+	if exchange == nil || alreadyRecorded {
 		return diagnosticErr
 	}
 	writer, err := debugdump.OpenWriter(runDir, true)
@@ -862,22 +1039,89 @@ func recordTargetPortfolioOutcome(
 	writer.SetWarningWriter(runOutputWarningSink{
 		output: output, summary: "Target portfolio semantic exchange journal unavailable",
 	})
-	responseUnavailable := outcome.ResponseUnavailable
-	if len(outcome.Response) == 0 && responseUnavailable == nil {
-		responseUnavailable = &debugdump.SemanticUnavailable{
-			Code: debugdump.SemanticUnavailableNoContent, OriginalBytes: outcome.ResponseBytes,
-		}
-	}
-	writer.RecordSemanticExchange(debugdump.SemanticExchange{
-		Stage:           debugdump.SemanticStageTargetPortfolio,
-		InstanceOrdinal: 1, SemanticAttemptOrdinal: 1,
-		RequestProvenance: outcome.RequestProvenance,
-		State:             outcome.SemanticState, ValidationCode: outcome.ValidationCode,
-		SemanticCalls: outcome.SemanticCalls, TransportAttempts: outcome.TransportAttempts,
-		Request: outcome.Request, Response: outcome.Response,
-		ResponseUnavailable: responseUnavailable,
-	})
+	writer.RecordSemanticExchange(*exchange)
 	return diagnosticErr
+}
+
+func targetPortfolioSemanticExchangeRecorded(
+	runDir string,
+	exchange debugdump.SemanticExchange,
+) (bool, error) {
+	directory := filepath.Join(runDir, debugdump.SemanticExchangesDir)
+	entries, err := os.ReadDir(directory)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("target portfolio: inspect semantic exchange journal: %w", err)
+	}
+	found := false
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			return false, fmt.Errorf("target portfolio: semantic exchange journal contains a non-directory entry")
+		}
+		metadataPath := filepath.Join(directory, entry.Name(), debugdump.SemanticExchangeMetaFile)
+		info, err := os.Lstat(metadataPath)
+		if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxSemanticMetadataBytes {
+			return false, fmt.Errorf("target portfolio: semantic exchange journal contains invalid metadata")
+		}
+		encoded, err := os.ReadFile(metadataPath)
+		if err != nil {
+			return false, fmt.Errorf("target portfolio: read semantic exchange metadata: %w", err)
+		}
+		var record debugdump.SemanticExchangeRecord
+		if err := json.Unmarshal(encoded, &record); err != nil {
+			return false, fmt.Errorf("target portfolio: decode semantic exchange metadata: %w", err)
+		}
+		if record.Stage != debugdump.SemanticStageTargetPortfolio {
+			continue
+		}
+		if found || !sameTargetPortfolioSemanticExchange(record, exchange) {
+			return false, fmt.Errorf("target portfolio: conflicting semantic exchange is already recorded")
+		}
+		found = true
+	}
+	return found, nil
+}
+
+func sameTargetPortfolioSemanticExchange(
+	record debugdump.SemanticExchangeRecord,
+	exchange debugdump.SemanticExchange,
+) bool {
+	requestSHA256 := targetPortfolioPayloadSHA256(exchange.Request)
+	if record.Version <= 0 || record.Stage != exchange.Stage ||
+		record.InstanceOrdinal != exchange.InstanceOrdinal ||
+		record.SemanticAttemptOrdinal != exchange.SemanticAttemptOrdinal ||
+		record.RequestSHA256 != requestSHA256 ||
+		record.RequestProvenance != exchange.RequestProvenance ||
+		record.State != exchange.State || record.ValidationCode != exchange.ValidationCode ||
+		record.SemanticCalls != exchange.SemanticCalls ||
+		record.TransportAttempts != exchange.TransportAttempts ||
+		!sameTargetPortfolioPayloadIdentity(record.Request, exchange.Request, nil) ||
+		!sameTargetPortfolioPayloadIdentity(record.Response, exchange.Response, exchange.ResponseUnavailable) {
+		return false
+	}
+	return true
+}
+
+func sameTargetPortfolioPayloadIdentity(
+	record debugdump.SemanticPayloadRecord,
+	raw []byte,
+	unavailable *debugdump.SemanticUnavailable,
+) bool {
+	if unavailable != nil {
+		return len(raw) == 0 && record.Storage == "raw_unavailable" &&
+			record.OriginalSHA256 == unavailable.OriginalSHA256 &&
+			record.OriginalBytes == unavailable.OriginalBytes &&
+			record.UnavailableCode == unavailable.Code
+	}
+	return record.OriginalSHA256 == targetPortfolioPayloadSHA256(raw) &&
+		record.OriginalBytes == len(raw) && record.UnavailableCode == ""
+}
+
+func targetPortfolioPayloadSHA256(value []byte) string {
+	digest := sha256.Sum256(value)
+	return fmt.Sprintf("%x", digest)
 }
 
 // persistReadmeRoleAuthority writes the exact accepted first-layer role

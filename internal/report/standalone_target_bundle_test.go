@@ -2,7 +2,6 @@ package report
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -11,12 +10,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
-	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/snapshot"
 )
@@ -367,6 +365,73 @@ func TestPrepareStandaloneTargetPinsSourceAndScrubsLocalAuthority(t *testing.T) 
 	}
 }
 
+func TestPrepareStandaloneTargetRestoresManifestValidatedOuterTarget(t *testing.T) {
+	container, _ := standaloneTargetBundleAuthorityFixture(t)
+	target := container.Targets[0].Target
+	payloadData := map[string]any{
+		"format_version":       CurrentFormatVersion,
+		"program_portfolio":    standaloneProgramPortfolioFixture(t),
+		"repo_name":            "bundle-fixture",
+		"captured_revision":    standaloneBundleRevision,
+		"captured_input_count": 0,
+		"openable_paths":       []string{},
+		"github_source_links": map[string]any{
+			"repository_url": "https://github.com/example/bundle",
+			"revision":       standaloneBundleRevision,
+		},
+	}
+	payload, err := json.Marshal(payloadData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	htmlBytes := []byte("<html><body>" + reportDataScriptOpen + string(payload) + reportDataScriptClose + "</body></html>")
+	prepared, err := prepareStandaloneTargetFromHTMLWithAuthority(htmlBytes, nil, &target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.analysisTarget == nil || !reflect.DeepEqual(*prepared.analysisTarget, target) {
+		t.Fatalf("prepared analysis target = %#v, want %#v", prepared.analysisTarget, target)
+	}
+	var projected struct {
+		AnalysisTarget *analysistarget.Target `json:"analysis_target"`
+	}
+	if err := json.Unmarshal(prepared.payload, &projected); err != nil {
+		t.Fatal(err)
+	}
+	if projected.AnalysisTarget == nil || !reflect.DeepEqual(*projected.AnalysisTarget, target) {
+		t.Fatalf("standalone payload analysis target = %#v, want %#v", projected.AnalysisTarget, target)
+	}
+	var manifestData ReportData
+	if err := json.Unmarshal(payload, &manifestData); err != nil {
+		t.Fatal(err)
+	}
+	manifestTarget := target.Snapshot()
+	manifestData.AnalysisTarget = &manifestTarget
+	manifestProjection, err := marshalHTMLPayloadWithLocalRoots(
+		manifestStandaloneProgramShellPayload(&manifestData, target), nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(prepared.payload, manifestProjection) {
+		t.Fatalf("prepared no-CubeMap payload does not byte-match manifest replay:\nprepared: %s\nmanifest: %s", prepared.payload, manifestProjection)
+	}
+
+	drifted := target.Snapshot()
+	drifted.PackageDir = "foreign"
+	drifted.Ref = "at-000000000000000000000000"
+	payloadData["analysis_target"] = drifted
+	payload, err = json.Marshal(payloadData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	htmlBytes = []byte("<html><body>" + reportDataScriptOpen + string(payload) + reportDataScriptClose + "</body></html>")
+	if _, err := prepareStandaloneTargetFromHTMLWithAuthority(htmlBytes, nil, &target); err == nil ||
+		!strings.Contains(err.Error(), "analysis target authority mismatch") {
+		t.Fatalf("drifted analysis target error = %v", err)
+	}
+}
+
 func TestPrepareStandaloneTargetRequiresProgramPortfolioAndRejectsLegacyAliases(t *testing.T) {
 	container, _ := standaloneTargetBundleAuthorityFixture(t)
 	ready := preparedStandaloneTargetFixtures(t, container, filepath.Join(t.TempDir(), "private"))
@@ -507,60 +572,20 @@ func standaloneTargetBundleAuthorityFixture(
 	t *testing.T,
 ) (snapshot.TargetRunContainer, snapshot.TargetPagePortfolio) {
 	t.Helper()
-	repository := t.TempDir()
-	files := map[string]string{
-		"go.mod":             "module example.test/bundle\n\ngo 1.24\n",
-		"cmd/server/main.go": "package main\nfunc main() {}\n",
-		"cmd/worker/main.go": "package main\nfunc main() {}\n",
-		"pkg/client.go":      "package pkg\nfunc Open() {}\n",
-	}
-	for name, content := range files {
-		absolute := filepath.Join(repository, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(absolute), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(absolute, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, args := range [][]string{{"init", "--quiet"}, {"add", "--", "go.mod", "cmd/server/main.go", "cmd/worker/main.go", "pkg/client.go"}} {
-		command := exec.Command("git", append([]string{"-C", repository}, args...)...)
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, output)
-		}
-	}
-	repositoryCorpus, err := corpus.Open(context.Background(), repository)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer repositoryCorpus.Close()
-	deferred, err := snapshot.BuildContext(context.Background(), snapshot.Options{
-		RepoPath: repository, RepositoryCorpus: repositoryCorpus,
-		GoTarget: runtime.GOOS + "/" + runtime.GOARCH,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if deferred.TargetCatalog == nil || len(deferred.TargetCatalog.Entries) < 3 {
-		t.Fatalf("target catalog = %#v, want at least three targets", deferred.TargetCatalog)
-	}
-	refs := make([]string, 0, len(deferred.TargetCatalog.Entries))
-	for _, entry := range deferred.TargetCatalog.Entries {
-		refs = append(refs, entry.Candidate.Target.Ref)
-	}
-	container, err := snapshot.BuildTargetRunContainer(deferred, snapshot.TargetRunSelection{
-		DefaultTargetRef: refs[len(refs)-1], TargetRefs: refs,
+	fixture := newTargetPageManifestFixture(t)
+	container, err := snapshot.BuildTargetRunContainer(fixture.source, snapshot.TargetRunSelection{
+		DefaultTargetRef: fixture.helperRef,
+		TargetRefs:       []string{fixture.appRef, fixture.helperRef},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	outcomes := make([]snapshot.TargetPageOutcome, 0, len(container.Targets))
 	for index, projection := range container.Targets {
-		outcome := snapshot.TargetPageOutcome{
+		outcomes = append(outcomes, snapshot.TargetPageOutcome{
 			TargetRef: projection.Target.Ref,
 			RunID:     fmt.Sprintf("20260811-01010%d-target-%d", index, index),
-		}
-		outcomes = append(outcomes, outcome)
+		})
 	}
 	portfolio, err := snapshot.BuildTargetPagePortfolio(container, outcomes)
 	if err != nil {

@@ -156,6 +156,7 @@ func runRefinedPipeline(
 		accounting.requests.add(requestSize)
 		candidates = append(candidates, response.Blocks...)
 	}
+	candidates = deduplicateProposals(candidates)
 	if len(candidates) == 0 {
 		return modelResponse{}, refinedPipelineAccounting{}, fmt.Errorf(
 			"coremap: all %d refined map batches returned legitimate empty results; no target-core block was established",
@@ -194,6 +195,7 @@ func runRefinedPipeline(
 			accounting.requests.add(requestSize)
 			next = append(next, response.Blocks...)
 		}
+		next = deduplicateProposals(next)
 		if len(next) == 0 {
 			return modelResponse{}, refinedPipelineAccounting{}, fmt.Errorf(
 				"coremap: refined reduce level %d returned only legitimate empty results", level,
@@ -267,6 +269,7 @@ func executeRefinedCall(
 		DecodeValidate: func(raw []byte) (modelResponse, error) {
 			response, err := decodeResponse(raw)
 			if err == nil {
+				response.Blocks = normalizeProposalRefs(response.Blocks, authority.files, authority.symbols)
 				err = validateRefinedBatchProposals(response.Blocks, authority.files, authority.symbols, true)
 			}
 			return response, err

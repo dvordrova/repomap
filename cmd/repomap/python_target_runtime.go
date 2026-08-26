@@ -29,8 +29,9 @@ type pythonTargetRunSelection struct {
 }
 
 type repositoryLanguageEvidence struct {
-	Go     bool
-	Python bool
+	Go                   bool
+	Python               bool
+	JavaScriptTypeScript bool
 }
 
 // repositoryLanguages is a cheap routing fact over the one shared corpus. A
@@ -44,6 +45,7 @@ func repositoryLanguages(repository *corpus.Corpus) repositoryLanguageEvidence {
 		return repositoryLanguageEvidence{}
 	}
 	var evidence repositoryLanguageEvidence
+	entries := repository.Entries()
 	for _, entry := range repository.Entries() {
 		switch {
 		case entry.Path == "go.mod" || strings.HasSuffix(entry.Path, "/go.mod"):
@@ -52,7 +54,49 @@ func repositoryLanguages(repository *corpus.Corpus) repositoryLanguageEvidence {
 			evidence.Python = true
 		}
 	}
+	evidence.JavaScriptTypeScript = hasJSTSProjectEvidence(entries)
 	return evidence
+}
+
+func hasJSTSProjectEvidence(entries []corpus.Entry) bool {
+	manifestPaths := make([]string, 0)
+	for _, entry := range entries {
+		if path.Base(entry.Path) == "package.json" {
+			manifestPaths = append(manifestPaths, entry.Path)
+		}
+	}
+	if len(manifestPaths) == 0 {
+		return false
+	}
+	for _, manifestPath := range manifestPaths {
+		projectDir := path.Dir(manifestPath)
+		for _, entry := range entries {
+			if !jsTSProgramSourcePath(entry.Path) || (projectDir != "." && !strings.HasPrefix(entry.Path, projectDir+"/")) {
+				continue
+			}
+			ownedByNestedPackage := false
+			for _, otherManifest := range manifestPaths {
+				otherDir := path.Dir(otherManifest)
+				if otherDir != projectDir && strings.HasPrefix(otherDir, projectDir+"/") && strings.HasPrefix(entry.Path, otherDir+"/") {
+					ownedByNestedPackage = true
+					break
+				}
+			}
+			if !ownedByNestedPackage {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func jsTSProgramSourcePath(filePath string) bool {
+	switch path.Ext(filePath) {
+	case ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs":
+		return true
+	default:
+		return false
+	}
 }
 
 func pythonManifestPath(filePath string) bool {
@@ -232,7 +276,7 @@ func selectPythonTargetsForRun(
 	}
 
 	portfolio, outcome, err := selectTargetPortfolioForRun(
-		ctx, repository.Snapshot(), merged, output, providers, executor,
+		ctx, repository.Snapshot(), merged, nil, nil, output, providers, executor,
 	)
 	outcome.ReadmeRoles = compileReadmeRoleLog(repository, readme.roles)
 	if err != nil {
@@ -551,62 +595,6 @@ func pythonExactTargetChoices(
 	return strings.Join(parts, "; "), nil
 }
 
-// resolveMixedPythonTargetOverride accepts only an adapter-owned exact key.
-// Human aliases and paths can also name Go targets, and the legacy Go catalog
-// is not available until orient loads it. Rejecting those aliases is the
-// fail-closed union rule: one language must never claim an ambiguous --target
-// before the other language has advertised its choices.
-func resolveMixedPythonTargetOverride(
-	catalog pythontarget.Catalog,
-	repository *corpus.Corpus,
-	override string,
-) (*pythontarget.Target, error) {
-	override = strings.TrimSpace(override)
-	if override == "" {
-		return nil, nil
-	}
-	exact := make(map[string]pythontarget.Target)
-	broad := make(map[string]pythontarget.Target)
-	for _, target := range catalog.Entries {
-		if override == target.Ref || override == target.IdentityRef || override == target.Selector {
-			exact[target.Ref] = target
-		}
-		if pythonTargetMatchesOverride(target, override) {
-			broad[target.Ref] = target
-		}
-	}
-	if len(exact) == 1 {
-		for _, target := range exact {
-			owned := target
-			return &owned, nil
-		}
-	}
-	if len(exact) > 1 {
-		return nil, fmt.Errorf("--target %q matches more than one exact Python key", override)
-	}
-	resolver, err := pythontarget.NewFileTargetResolver(repository, catalog)
-	if err != nil {
-		return nil, fmt.Errorf("bind mixed Python target resolver: %w", err)
-	}
-	if derived, ok, err := resolver.ResolveSelector(override); err != nil {
-		return nil, err
-	} else if ok {
-		return &derived, nil
-	}
-	if len(broad) == 0 {
-		return nil, nil
-	}
-	selectors := make([]string, 0, len(broad))
-	for _, target := range broad {
-		selectors = append(selectors, target.Selector)
-	}
-	sort.Strings(selectors)
-	return nil, fmt.Errorf(
-		"--target %q is a non-exact Python alias in a mixed Go/Python repository; use one exact Python selector (%s) or an exact advertised Go target",
-		override, strings.Join(selectors, ", "),
-	)
-}
-
 func pythonTargetMatchesOverride(target pythontarget.Target, override string) bool {
 	return override == target.Ref || override == target.IdentityRef || override == target.Selector ||
 		override == target.DisplayName || override == target.ProjectDir ||
@@ -677,10 +665,23 @@ func pythonTargetRefs(targets []pythontarget.Target) []string {
 // default first. BuildMany itself shares one AST parse across identical module
 // inventories, so retaining all views does not repeat source analysis.
 func pythonProgramRepresentatives(selection pythonTargetRunSelection) ([]pythontarget.Target, error) {
-	ordered := make([]pythontarget.Target, 0, len(selection.Targets)+1)
-	ordered = append(ordered, selection.Default)
-	for _, target := range selection.Targets {
-		if target.Ref != selection.Default.Ref {
+	return pythonProgramRepresentativesForTargets(selection.Targets, &selection.Default)
+}
+
+// pythonProgramRepresentativesForTargets restores one canonical ProgramIndex
+// inventory. preferred is present only when Python owns the repository-wide
+// semantic default; structural Python siblings deliberately have no invented
+// language-local default and retain their existing canonical order.
+func pythonProgramRepresentativesForTargets(
+	targets []pythontarget.Target,
+	preferred *pythontarget.Target,
+) ([]pythontarget.Target, error) {
+	ordered := make([]pythontarget.Target, 0, len(targets)+1)
+	if preferred != nil {
+		ordered = append(ordered, *preferred)
+	}
+	for _, target := range targets {
+		if preferred == nil || target.Ref != preferred.Ref {
 			ordered = append(ordered, target)
 		}
 	}
