@@ -50,7 +50,7 @@ const (
 )
 
 const (
-	semanticContract         = "repomap.coremap.v10"
+	semanticContract         = "repomap.coremap.v11"
 	groupingSemanticContract = "repomap.coremap.grouping.v12"
 )
 
@@ -694,8 +694,9 @@ func validateProposals(stage Stage, blocks []proposal, files map[corpus.FileID]F
 // invalidate otherwise grounded blocks. Exact duplicate block records are set
 // duplicates after ref normalization and are canonicalized locally. Blocks
 // with different model-authored semantic claims remain distinct even when the
-// same exact evidence supports both. Validation still rejects blocks that
-// become ungrounded or incomplete after normalization.
+// same exact evidence supports both. Stage-specific normalization decides
+// whether a record left without authority is discardable; malformed semantic
+// structure is never repaired here.
 func normalizeProposalRefs(
 	blocks []proposal,
 	files map[corpus.FileID]FileFact,
@@ -732,6 +733,27 @@ func normalizeProposalRefs(
 		blocks[position].Children = normalizeProposalRefs(blocks[position].Children, files, symbols)
 	}
 	return deduplicateProposals(blocks)
+}
+
+// normalizeRefinedProposalRefs applies the closed-ref set contract to refined
+// responsibilities. A proposal with no surviving exact symbol has no local
+// object to describe, so it is discarded just like an unknown-keyed assignment
+// row. A malformed hierarchy is deliberately retained for validation rather
+// than hidden by normalization.
+func normalizeRefinedProposalRefs(
+	blocks []proposal,
+	files map[corpus.FileID]FileFact,
+	symbols map[string]symbolAuthority,
+) []proposal {
+	blocks = normalizeProposalRefs(blocks, files, symbols)
+	result := blocks[:0]
+	for _, block := range blocks {
+		if len(block.SymbolRefs) == 0 && len(block.Children) == 0 {
+			continue
+		}
+		result = append(result, block)
+	}
+	return result
 }
 
 func deduplicateProposals(blocks []proposal) []proposal {
@@ -786,10 +808,18 @@ func validateRefinedBatchProposals(
 		}
 		return fmt.Errorf("coremap: refined response has no blocks")
 	}
-	for _, block := range blocks {
-		if !validText(block.Name, maxNameBytes) || !validText(block.Purpose, maxPurposeBytes) ||
-			len(block.Children) != 0 || len(block.SymbolRefs) == 0 {
-			return fmt.Errorf("coremap: refined response has an invalid grounded block")
+	for position, block := range blocks {
+		if !validText(block.Name, maxNameBytes) {
+			return fmt.Errorf("coremap: refined response block %d has invalid name", position+1)
+		}
+		if !validText(block.Purpose, maxPurposeBytes) {
+			return fmt.Errorf("coremap: refined response block %d has invalid purpose", position+1)
+		}
+		if len(block.Children) != 0 {
+			return fmt.Errorf("coremap: refined response block %d contains forbidden children", position+1)
+		}
+		if len(block.SymbolRefs) == 0 {
+			return fmt.Errorf("coremap: refined response block %d has no exact target symbol", position+1)
 		}
 		seenFiles := make(map[corpus.FileID]struct{}, len(block.FileRefs))
 		for _, ref := range block.FileRefs {

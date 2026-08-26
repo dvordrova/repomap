@@ -16,10 +16,10 @@ Return compact, human-readable responsibilities supported by this shard. Prefer 
 
 Every returned block must cite at least one `s*` symbol ref advertised somewhere in this shard. It may additionally cite advertised `f*` refs. Return every architecture-defining responsibility supported by this shard; do not target a fixed presentation count. Refs are evidence, not a required inventory: cite the advertised refs that genuinely ground the responsibility without assuming a fixed repository-size budget. Returning `{"blocks":[]}` is valid only when this shard contains no architecture-defining responsibility worth carrying into the reducer; do not invent a block merely because facts were supplied.
 
-Give each block a concise English `name` and one-sentence English `purpose`. Return exactly one JSON object, no Markdown or extra fields:
+Give each block a concise English `name` of at most 160 UTF-8 bytes and a one-sentence English `purpose` of at most 800 UTF-8 bytes. Do not put line breaks or surrounding whitespace in either field. Return exactly one JSON object, no Markdown or extra fields:
 
 ```json
 {"blocks":[{"name":"Callback dispatch","purpose":"Invokes caller-supplied behavior through the library's central execution path.","file_refs":["f2"],"symbol_refs":["s4","s8"]}]}
 ```
 
-`blocks`, `file_refs`, and `symbol_refs` must be JSON arrays. Do not return children, `q*`, `j*`, `r*`, `t*`, `u*`, paths, names copied as identities, internal IDs, scores, confidence, caveats, or prose outside the schema. Return only advertised refs. Unknown refs have no authority and are discarded locally; they cannot ground a block. Repeated refs inside one block are treated as one set member.
+`blocks`, `file_refs`, and `symbol_refs` must be JSON arrays. Do not return children, `q*`, `j*`, `r*`, `t*`, `u*`, paths, names copied as identities, internal IDs, scores, confidence, caveats, or prose outside the schema. Return only advertised refs. Unknown refs have no authority and are discarded locally; they cannot ground a block. A block left with no advertised `s*` ref is discarded as an unsupported proposal. Repeated refs inside one block are treated as one set member.

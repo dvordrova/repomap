@@ -72,6 +72,9 @@ sidecar tools.
   known responsibility in several legitimate groups, and every such
   membership must be preserved. Only genuinely incompatible assignments for
   one known ref remain an explicit ambiguity; do not apply first-wins repair.
+  A refined CoreMap proposal left with no advertised exact symbol after this
+  filtering is an unsupported set row and is discarded; CoreMap remains
+  terminal when no validated target-core block survives across all shards.
 - Provider requests must never contain full repository source contents, raw
   internal edges, canonical internal IDs, credentials, or unadvertised paths.
   A complete names-only tracked-file dictionary is explicitly allowed for the
