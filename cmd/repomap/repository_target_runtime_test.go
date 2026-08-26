@@ -704,6 +704,174 @@ func TestRepositoryTargetPlanExplicitExactSelectorsBypassPortfolio(t *testing.T)
 	}
 }
 
+func TestRepositoryTargetPlanAcceptsExactPythonNativeAnchorPath(t *testing.T) {
+	repository := pythonTargetCorpus(t, map[string]string{
+		"pyproject.toml": `[project]
+name = "kongctl"
+version = "0.1.0"
+`,
+		"kongctl/__init__.py": "",
+		"kongctl/__main__.py": `def main():
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+`,
+	})
+	anchorRef := repositoryTargetRuntimeFileRef(t, repository, "kongctl/__main__.py")
+	catalog, err := pythontarget.Discover(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, err := pythontarget.NewFileTargetResolver(repository, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolverChoices, _, err := resolver.ModuleExecutionChoices(100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolverCandidate := false
+	for _, choice := range resolverChoices {
+		if choice.Path == "kongctl/__main__.py" {
+			resolverCandidate = true
+			break
+		}
+	}
+	if !resolverCandidate {
+		t.Fatal("fixture has no competing resolver-only module-execution candidate")
+	}
+
+	plan, err := selectRepositoryTargetPlanForRun(context.Background(), repositoryTargetRuntimeOptions{
+		RepoName: "kongctl", Repository: repository, DiscoverPython: true,
+		TargetOverride: "kongctl/__main__.py", Executor: llm.Executor{Enabled: false},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := plan.Validate(); err != nil {
+		t.Fatalf("validate native-anchor plan: %v", err)
+	}
+	if !plan.Explicit || len(plan.Targets) != 1 || plan.Targets[0].Python == nil {
+		t.Fatalf("native-anchor plan = %#v", plan)
+	}
+	selected := plan.Targets[0]
+	if selected.Selector != "python:.:module:kongctl" || selected.Python.Selector != selected.Selector ||
+		selected.Python.AnchorFileRef != anchorRef || selected.Python.ScopeRef != "" ||
+		(len(selected.Python.Roots) == 1 && selected.Python.Roots[0].Kind == pythontarget.RootModuleExecution) {
+		t.Fatalf("native anchor did not retain exact catalog target authority: %#v", selected)
+	}
+	if len(selected.FileRefs) != 0 || plan.Outcome.SelectedFileRefs != 0 || plan.Outcome.SemanticCalls != 0 {
+		t.Fatalf("native path alias acquired portfolio authority: %#v", plan)
+	}
+}
+
+func TestRepositoryTargetPlanRejectsAmbiguousPythonNativeAnchorPath(t *testing.T) {
+	repository := pythonTargetCorpus(t, map[string]string{
+		"setup.py": `from setuptools import setup
+setup(
+    name="kongctl",
+    packages=["kongctl"],
+    entry_points={"console_scripts": ["kongctl = kongctl.__main__:main"]},
+)
+`,
+		"kongctl/__init__.py": "",
+		"kongctl/__main__.py": `def main():
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+`,
+	})
+
+	_, err := selectRepositoryTargetPlanForRun(context.Background(), repositoryTargetRuntimeOptions{
+		RepoName: "kongctl", Repository: repository, DiscoverPython: true,
+		TargetOverride: "kongctl/__main__.py", Executor: llm.Executor{Enabled: false},
+	})
+	if err == nil || !strings.Contains(err.Error(), "matches more than one exact repository target") {
+		t.Fatalf("ambiguous native anchor error = %v", err)
+	}
+	matchedClause, _, _ := strings.Cut(err.Error(), "; exact --target choices:")
+	if !strings.Contains(matchedClause, "matching exact selectors: python:.:module:kongctl, python:.:script:kongctl") ||
+		strings.Contains(matchedClause, "python:module-execution:") {
+		t.Fatalf("ambiguous native anchor match clause = %q", matchedClause)
+	}
+}
+
+func TestRepositoryTargetPlanRetainsSharedPythonDefaultViews(t *testing.T) {
+	repository := pythonTargetCorpus(t, map[string]string{
+		"setup.py": `from setuptools import setup
+setup(
+    name="kongctl",
+    packages=["kongctl"],
+    entry_points={"console_scripts": ["kongctl = kongctl.__main__:main"]},
+)
+`,
+		"kongctl/__init__.py": "",
+		"kongctl/__main__.py": `def main():
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+`,
+	})
+	setupRef := repositoryTargetRuntimeFileRef(t, repository, "setup.py")
+	mainRef := repositoryTargetRuntimeFileRef(t, repository, "kongctl/__main__.py")
+	response, err := json.Marshal(map[string]any{
+		"default_file_ref": mainRef,
+		"target_file_refs": []corpus.FileID{setupRef, mainRef},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &targetPortfolioClientStub{response: response}
+	providerCalls := 0
+	plan, err := selectRepositoryTargetPlanForRun(context.Background(), repositoryTargetRuntimeOptions{
+		RepoName: "kongctl", Repository: repository, DiscoverPython: true,
+		Providers: func() (llm.Provider, error) {
+			providerCalls++
+			return provider, nil
+		},
+		Executor: llm.Executor{Enabled: false},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := plan.Validate(); err != nil {
+		t.Fatalf("validate shared-default plan: %v", err)
+	}
+	if plan.Explicit || providerCalls != 1 || provider.calls != 1 {
+		t.Fatalf(
+			"shared-default orchestration = explicit %t, provider factory %d, calls %d",
+			plan.Explicit, providerCalls, provider.calls,
+		)
+	}
+	wantShared := map[string]bool{
+		"python:.:module:kongctl": false,
+		"python:.:script:kongctl": false,
+	}
+	for _, target := range plan.Targets {
+		if _, wanted := wantShared[target.Selector]; !wanted {
+			continue
+		}
+		if target.Python == nil || len(target.FileRefs) != 1 || target.FileRefs[0] != mainRef {
+			t.Fatalf("shared representative authority = %#v", target)
+		}
+		wantShared[target.Selector] = true
+	}
+	for selector, found := range wantShared {
+		if !found {
+			t.Fatalf("shared default omitted exact target %q: %#v", selector, plan.Targets)
+		}
+	}
+	defaultTarget, ok := plan.DefaultTarget()
+	if !ok || defaultTarget.Selector != "python:.:module:kongctl" ||
+		plan.Outcome.SelectedRef != defaultTarget.Key.String() ||
+		plan.Outcome.SelectedTargets != len(plan.Targets) || plan.Outcome.SelectedFileRefs != 2 {
+		t.Fatalf("shared landing-page default = %#v; outcome = %#v", defaultTarget, plan.Outcome)
+	}
+}
+
 func TestRepositoryTargetDiscoveryPassesExactJSTSSelectorBeforeProjectDiscovery(t *testing.T) {
 	repository := pythonTargetCorpus(t, map[string]string{
 		"package.json": `{"name":"web"}`,

@@ -158,7 +158,13 @@ const exposure = [
   '    renderIntegrationDetail: renderIntegrationDetail,',
   '    renderEvidence: renderEvidence,',
   '    connectionsFor: connectionsFor,',
+  '    connectionOwnerObject: connectionOwnerObject,',
+  '    groupConnectionsByOwner: groupConnectionsByOwner,',
   '    renderConnections: renderConnections,',
+  '    renderSurvey: renderSurvey,',
+  '    renderTargetSurfaceInventory: renderTargetSurfaceInventory,',
+  '    renderSurfaceDetail: renderSurfaceDetail,',
+  '    renderCrossSurfacePathDetail: renderCrossSurfacePathDetail,',
   '    renderHeader: renderHeader,',
   '    reportRouteContext: reportRouteContext,',
   '    updateHeaderContext: updateHeaderContext,',
@@ -295,13 +301,16 @@ api.renderHeader();
 const targetLinks = descendants(targetNavigation).filter((node) =>
   node.tagName === 'A' && String(node.className).includes('rm-target-switcher__target')
 );
-check(targetRepository.textContent === 'fukict/fukict' && targetCurrent.textContent === 'Target · fukict' &&
+const currentTargetBadge = descendants(targetLinks[0]).find((node) =>
+  String(node.className).split(/\s+/).includes('rm-target-switcher__badge--current')
+);
+check(targetRepository.textContent === 'fukict/fukict' && targetCurrent.textContent === 'All targets' &&
   targetCount.textContent === '2' && targetPanelCount.textContent === '2 targets',
-  'the compact target switcher must identify the repository, current target, and complete target count');
-check(targetLinks.length === 2 && targetLinks[0].getAttribute('aria-current') === 'true' &&
-  targetLinks[0].textContent.includes('Current') && !targetLinks[0].textContent.includes('Default') &&
+  'the repository route must identify the repository and complete target count without claiming a current target');
+check(targetLinks.length === 2 && targetLinks.every((link) => link.getAttribute('aria-current') === 'false') &&
+  currentTargetBadge && currentTargetBadge.hidden === true && !targetLinks[0].textContent.includes('Default') &&
   targetLinks[1].textContent.includes('@fukict/babel-preset') && targetLinks[1].textContent.includes('Default'),
-  'the compact target switcher must distinguish current and repository-default targets');
+  'the repository route must distinguish the repository default without presenting any target as the current page');
 targetSwitcher.open = true;
 targetLinks[1].click();
 check(targetSwitcher.open === false,
@@ -310,7 +319,7 @@ targetSwitcher.open = true;
 targetSwitcher.dispatch('keydown', { key: 'Escape' });
 check(targetSwitcher.open === false && targetSummary.focusCalls.length === 1,
   'Escape must close the target switcher and restore focus to its summary');
-check(api.reportRouteContext({ kind: 'repository' }) === 'Target overview' &&
+check(api.reportRouteContext({ kind: 'repository' }) === 'Repository overview' &&
   api.reportRouteContext({ kind: 'surface' }) === 'Surface' &&
   api.reportRouteContext({ kind: 'path' }) === 'Full-stack path' &&
   api.reportRouteContext({ kind: 'entrypoint' }) === 'Entrypoint' &&
@@ -321,6 +330,38 @@ check(api.reportRouteContext({ kind: 'repository' }) === 'Target overview' &&
 api.updateHeaderContext({ kind: 'responsibility' });
 check(pageContext.textContent === 'Responsibility · TypeScript · Library · aaaaaaaaaa',
   'the header context must identify the selected page, target kind, and captured revision');
+check(targetCurrent.textContent === 'Target · fukict',
+  'a target detail route must retain the selected target context');
+check(targetLinks.every((link) => link.getAttribute('aria-current') === 'false'),
+  'a target detail route must not mark the program-map target link as the current page');
+check(currentTargetBadge.hidden === true,
+  'a target detail route must not show the program-map Current badge');
+api.updateHeaderContext({ kind: 'program' });
+check(targetLinks[0].getAttribute('aria-current') === 'page' &&
+  targetLinks[1].getAttribute('aria-current') === 'false' && currentTargetBadge.hidden === false,
+  'only the exact selected target program route may mark its target link as the current page');
+api.updateHeaderContext({ kind: 'repository' });
+check(targetCurrent.textContent === 'All targets' &&
+  targetLinks.every((link) => link.getAttribute('aria-current') === 'false') &&
+  currentTargetBadge.hidden === true,
+  'returning to the repository route must clear both current-page and current-target claims');
+
+const targetOverviewHost = new TestElement('main');
+api.renderSurvey(targetOverviewHost);
+const targetOverview = descendants(targetOverviewHost).find((node) =>
+  String(node.className).split(/\s+/).includes('rm-target-overview')
+);
+check(targetOverview && targetOverview.tagName === 'DETAILS' && targetOverview.open !== true,
+  'the selected target overview must be a compact disclosure that starts closed');
+check(targetOverviewHost.textContent.includes('fukict') &&
+  targetOverviewHost.textContent.includes('2 responsibilities') &&
+  targetOverviewHost.textContent.includes('1 entrypoint') &&
+  targetOverviewHost.textContent.includes('1 integration') &&
+  targetOverviewHost.textContent.includes('TypeScript · Library'),
+  'the closed target overview summary must retain the short target identity and useful semantic counts');
+check(!descendants(targetOverviewHost).some((node) =>
+  String(node.className).split(/\s+/).includes('rm-survey')
+), 'the selected target overview must not retain the oversized repository-survey hero');
 
 const noCrossSurfaceCoverage = { http_uses_observed: 0, routes_observed: 0 };
 check(api.crossSurfaceEmptyReason({ surfaces: [{ disposition: 'tool', kind: 'tool' }] },
@@ -370,12 +411,60 @@ model.crossSurfacePaths = { paths: [], pathsByID: Object.create(null) };
 check(api.selectedReportRoute().kind === 'program',
   'an empty JavaScript/TypeScript surface overview must default to the useful program map');
 model.surfaceCatalog.surfaces.push({ id: 'surface:browser' });
-check(api.selectedReportRoute().kind === 'repository',
-  'a non-empty JavaScript/TypeScript surface overview must remain the default');
+check(api.selectedReportRoute().kind === 'program',
+  'target-local JavaScript/TypeScript surfaces must not turn the repository route into a selected-target page');
 model.surfaceCatalog.surfaces = [];
 model.crossSurfacePaths.paths.push({ id: 'path:request' });
-check(api.selectedReportRoute().kind === 'repository',
-  'a path-only JavaScript/TypeScript overview must remain the default');
+check(api.selectedReportRoute().kind === 'program',
+  'target-local full-stack paths must remain on the selected target program page');
+const browserSurface = {
+  id: 'surface:browser/app', name: 'Browser app', kind: 'browser_application', role: 'client',
+  disposition: 'product_surface', entryRefs: [], evidenceRefs: [],
+  location: { path: 'scripts/check-changeset.ts', line: 1, column: 1 }
+};
+const toolSurface = {
+  id: 'surface:build/tool', name: 'Build tool', kind: 'tool', role: 'build',
+  disposition: 'tool', entryRefs: [], evidenceRefs: [],
+  location: { path: 'scripts/tag.ts', line: 1, column: 1 }
+};
+const crossSurfacePath = {
+  id: 'path:http/request', name: 'Load data', outcome: 'Browser reaches the server route.',
+  frontier: '', steps: []
+};
+model.surfaceCatalog = {
+  project: { name: 'fukict', moduleResolution: 'bundler' },
+  surfaces: [browserSurface, toolSurface],
+  surfacesByID: { [browserSurface.id]: browserSurface, [toolSurface.id]: toolSurface },
+  factsByRef: Object.create(null)
+};
+model.crossSurfacePaths = {
+  paths: [crossSurfacePath], pathsByID: { [crossSurfacePath.id]: crossSurfacePath },
+  factsByRef: Object.create(null), coverage: { http_uses_observed: 1, routes_observed: 1 }
+};
+const surfaceInventoryHost = new TestElement('main');
+api.renderTargetSurfaceInventory(surfaceInventoryHost);
+const surfaceInventoryLinks = descendants(surfaceInventoryHost).filter((node) => node.tagName === 'A');
+check([browserSurface, toolSurface].every((surface) => surfaceInventoryLinks.some((link) =>
+  link.href === '#/program/surface/' + encodeURIComponent(surface.id)
+)) && surfaceInventoryLinks.some((link) =>
+  link.href === '#/program/path/' + encodeURIComponent(crossSurfacePath.id)
+), 'the selected target program page must expose a reachable link for every exact surface and full-stack path');
+check(surfaceInventoryHost.textContent.includes('Product surfaces') &&
+  surfaceInventoryHost.textContent.includes('Tools and scripts') &&
+  surfaceInventoryHost.textContent.includes('Full-stack paths'),
+  'the selected target program page must keep the complete JavaScript/TypeScript surface inventory discoverable');
+const surfaceDetailHost = new TestElement('main');
+api.renderSurfaceDetail(surfaceDetailHost, browserSurface);
+const surfaceBack = descendants(surfaceDetailHost).find((node) =>
+  node.tagName === 'A' && node.textContent.includes('Back to target overview')
+);
+const pathDetailHost = new TestElement('main');
+api.renderCrossSurfacePathDetail(pathDetailHost, crossSurfacePath);
+const pathBack = descendants(pathDetailHost).find((node) =>
+  node.tagName === 'A' && node.textContent.includes('Back to target overview')
+);
+check(surfaceBack && surfaceBack.href === '#/program' && pathBack && pathBack.href === '#/program',
+  'surface and path details must return to the selected target program page');
 model.surfaceCatalog = null;
 model.crossSurfacePaths = null;
 model.runtimePortfolio = { roles: [], unclassified: [] };
@@ -580,9 +669,40 @@ check(integrationHost.textContent.includes('HTTP client') &&
   integrationHost.textContent.includes('Selected operations'),
   'the integration route must render a useful semantic detail page');
 
+const routerOwner = {
+  id: 'object:router-owner', name: 'packages/router/src/Router#Router', kind: 'type',
+  location: { path: 'app/execution.py', line: 4, column: 1 }
+};
+const routerConstructor = {
+  id: 'object:router-constructor', name: 'packages/router/src/Router#Router.constructor', kind: 'method',
+  owner_id: routerOwner.id, container_id: routerOwner.id,
+  location: { path: 'app/execution.py', line: 9, column: 1 }
+};
+const sameNameRouterOwner = {
+  id: 'object:other-router-owner', name: 'packages/other/src/Router#Router', kind: 'type',
+  location: { path: 'app/execution.py', line: 5, column: 1 }
+};
+const sameNameRouterConstructor = {
+  id: 'object:other-router-constructor', name: 'packages/other/src/Router#Router.constructor', kind: 'method',
+  owner_id: sameNameRouterOwner.id, container_id: sameNameRouterOwner.id,
+  location: { path: 'app/execution.py', line: 17, column: 1 }
+};
+const helperModule = {
+  id: 'object:helper-container', name: 'packages/router/src/history#History', kind: 'type',
+  location: { path: 'app/execution.py', line: 6, column: 1 }
+};
+const createHistory = {
+  id: 'object:create-history', name: 'packages/router/src/history#createHistory', kind: 'function',
+  container_id: helperModule.id,
+  location: { path: 'app/execution.py', line: 18, column: 1 }
+};
+[routerOwner, routerConstructor, sameNameRouterOwner, sameNameRouterConstructor,
+  helperModule, createHistory].forEach((candidate) => {
+  model.objectsByID[candidate.id] = candidate;
+});
 const connectionBlock = {
   id: block.id, name: block.name, purpose: block.purpose,
-  files: block.files, symbols: [sourceObject], depth: block.depth
+  files: block.files, symbols: [routerConstructor, sameNameRouterConstructor, createHistory], depth: block.depth
 };
 function accountedRelation(relation, counts) {
   if (!relation.witnesses) {
@@ -599,7 +719,7 @@ function accountedRelation(relation, counts) {
 }
 model.relations = [
   accountedRelation({
-    id: 'relation:exact-one', from_id: sourceObject.id, to_ids: [targetObject.id],
+    id: 'relation:exact-one', from_id: routerConstructor.id, to_ids: [targetObject.id],
     kind: 'calls', resolution: 'exact',
     location: { path: 'app/execution.py', line: 10, column: 3 },
     witnesses: [
@@ -608,32 +728,42 @@ model.relations = [
     ]
   }),
   accountedRelation({
-    id: 'relation:exact-two', from_id: sourceObject.id, to_ids: [targetObject.id],
+    id: 'relation:exact-two', from_id: routerConstructor.id, to_ids: [targetObject.id],
     kind: 'calls', resolution: 'exact',
     location: { path: 'app/execution.py', line: 11, column: 3 }
   }),
   accountedRelation({
-    id: 'relation:unresolved-send', from_id: sourceObject.id, to_ids: [],
+    id: 'relation:unresolved-send', from_id: routerConstructor.id, to_ids: [],
     kind: 'calls', resolution: 'unresolved',
     location: { path: 'app/execution.py', line: 12, column: 3 },
     witnesses: [{ source_expression: 'client.send', location: { path: 'app/execution.py', line: 12, column: 3 } }]
   }),
   accountedRelation({
-    id: 'relation:unresolved-flush', from_id: sourceObject.id, to_ids: [],
+    id: 'relation:unresolved-flush', from_id: routerConstructor.id, to_ids: [],
     kind: 'calls', resolution: 'unresolved',
     location: { path: 'app/execution.py', line: 13, column: 3 },
     witnesses: [{ source_expression: 'client.flush', location: { path: 'app/execution.py', line: 13, column: 3 } }]
   }),
   accountedRelation({
-    id: 'relation:platform-date', from_id: sourceObject.id, to_ids: [platformObject.id],
+    id: 'relation:platform-date', from_id: routerConstructor.id, to_ids: [platformObject.id],
     kind: 'invokes_external', resolution: 'exact', invocation: 'construct',
     location: { path: 'app/execution.py', line: 14, column: 3 }
   }, { observed: 3, indexed: 1 }),
   accountedRelation({
-    id: 'relation:package-effect', from_id: sourceObject.id, to_ids: [packageObject.id],
+    id: 'relation:package-effect', from_id: routerConstructor.id, to_ids: [packageObject.id],
     kind: 'invokes_external', resolution: 'exact', invocation: 'call',
     location: { path: 'app/execution.py', line: 15, column: 3 }
-  }, { observed: 2, indexed: 2 })
+  }, { observed: 2, indexed: 2 }),
+  accountedRelation({
+    id: 'relation:same-name-owner', from_id: sameNameRouterConstructor.id, to_ids: [targetObject.id],
+    kind: 'calls', resolution: 'exact',
+    location: { path: 'app/execution.py', line: 17, column: 3 }
+  }),
+  accountedRelation({
+    id: 'relation:container-owner', from_id: createHistory.id, to_ids: [targetObject.id],
+    kind: 'calls', resolution: 'exact',
+    location: { path: 'app/execution.py', line: 18, column: 3 }
+  })
 ];
 const connections = api.connectionsFor(connectionBlock);
 const exactConnections = connections.filter((connection) => connection.resolution === 'exact');
@@ -641,8 +771,8 @@ const localExactConnections = exactConnections.filter((connection) =>
   connection.targetIDs.includes(targetObject.id)
 );
 const unresolvedConnections = connections.filter((connection) => connection.resolution === 'unresolved');
-check(exactConnections.length === 3 && localExactConnections.length === 1 &&
-  localExactConnections[0].relationIDs.length === 2,
+check(exactConnections.length === 5 && localExactConnections.length === 3 &&
+  localExactConnections.some((connection) => connection.relationIDs.length === 2),
   'relations with the same resolved target must remain one compact connection group');
 check(unresolvedConnections.length === 2 && unresolvedConnections.every((connection) =>
   connection.relationIDs.length === 1
@@ -650,21 +780,34 @@ check(unresolvedConnections.length === 2 && unresolvedConnections.every((connect
 check(unresolvedConnections.some((connection) => connection.to === 'unresolved call: client.send') &&
   unresolvedConnections.some((connection) => connection.to === 'unresolved call: client.flush'),
   'every unresolved connection row must retain its exact witnessed expression');
+const ownerGroups = api.groupConnectionsByOwner(connections);
+check(ownerGroups.length === 3 &&
+  ownerGroups.some((group) => group.owner.id === routerOwner.id) &&
+  ownerGroups.some((group) => group.owner.id === sameNameRouterOwner.id) &&
+  ownerGroups.some((group) => group.owner.id === helperModule.id),
+  'connection hierarchy must group by exact owner and container identities without merging equal display names');
+const routerOwnerGroup = ownerGroups.find((group) => group.owner.id === routerOwner.id);
+check(routerOwnerGroup && routerOwnerGroup.local.length === 1 &&
+  routerOwnerGroup.platform.length === 1 && routerOwnerGroup.external.length === 1 &&
+  routerOwnerGroup.unresolved.length === 2,
+  'the exact owner hierarchy must keep local, platform, external, and unresolved relation authorities separate');
+const containerConnection = connections.find((connection) => connection.fromID === createHistory.id);
+check(containerConnection && api.connectionOwnerObject(containerConnection).id === helperModule.id,
+  'a declaration without owner_id must use its exact non-module/package container_id as hierarchy authority');
 
 const connectionsHost = new TestElement('main');
 api.renderConnections(connectionsHost, connectionBlock, connections);
 const connectionLinks = descendants(connectionsHost).filter((node) =>
   node.tagName === 'A' && node.href.includes('/blob/')
 );
-const expectedConnectionLocations = [10, 11, 12, 13, 14, 15, 16].map((line) =>
+const expectedConnectionLocations = [10, 11, 12, 13, 14, 15, 16, 17, 18].map((line) =>
   'app/execution.py:' + String(line)
 );
-check(connectionLinks.length === expectedConnectionLocations.length &&
-  expectedConnectionLocations.every((location) =>
+check(expectedConnectionLocations.every((location) =>
     connectionLinks.some((link) => link.textContent === location && link.href.endsWith('#L' + location.split(':')[1]))
   ),
-  'every grouped relation and witness location must render as one exact path:line source link');
-check(connectionsHost.textContent.includes('5 relation groups · 6 relation records') &&
+  'every grouped relation and witness location must remain available as an exact path:line source link');
+check(connectionsHost.textContent.includes('7 relation groups · 8 relation records') &&
   connectionsHost.textContent.includes('unresolved call: client.send') &&
   connectionsHost.textContent.includes('unresolved call: client.flush') &&
   !connectionsHost.textContent.includes('exact records'),
@@ -676,16 +819,34 @@ check(platformConnection && platformConnection.platformTarget && platformConnect
   packageConnection && !packageConnection.platformTarget && packageConnection.invocation === 'call' &&
   packageConnection.witnessesObserved === 2 && packageConnection.witnessesProjectionOmitted === 1,
   'connection condensation must preserve platform, invocation, and witness accounting even when its footer is hidden');
-check(connectionsHost.textContent.includes('execute — creates a JavaScript platform value → JavaScript Date') &&
-  connectionsHost.textContent.includes('execute — uses a resolved external/runtime API → react.useEffect') &&
-  !connectionsHost.textContent.includes('app/execution#'),
-  'relation titles must expose their semantic verb, omit the redundant declaration path, and retain exact source links');
+check(connectionsHost.textContent.includes('constructor — creates a JavaScript platform value → JavaScript Date') &&
+  connectionsHost.textContent.includes('constructor — uses a resolved external/runtime API → react.useEffect') &&
+  !connectionsHost.textContent.includes('packages/router/src/Router#'),
+  'owned relation titles must begin with the compact member name and retain their exact semantic verb');
 const connectionPaths = descendants(connectionsHost).filter((node) =>
   String(node.className).includes('rm-connection__path')
 );
 check(connectionPaths.some((path) => path.textContent.includes('creates a JavaScript platform value')) &&
   connectionPaths.some((path) => path.textContent.includes('uses a resolved external/runtime API')),
   'compact connection rows must keep relation semantics visible');
+const renderedOwnerGroups = descendants(connectionsHost).filter((node) =>
+  String(node.className).split(/\s+/).includes('rm-connection-owner')
+);
+const renderedOwnerTitles = descendants(connectionsHost).filter((node) =>
+  String(node.className).split(/\s+/).includes('rm-connection-owner__title')
+);
+const runtimeBuckets = descendants(connectionsHost).filter((node) =>
+  node.tagName === 'DETAILS' && String(node.className).split(/\s+/).includes('rm-connection-runtime')
+);
+check(renderedOwnerGroups.length === 3 && renderedOwnerTitles.filter((title) =>
+  title.textContent.includes('Router')
+).length === 2,
+  'the rendered hierarchy must retain two distinct exact Router owners even when their display names match');
+check(runtimeBuckets.length === 3 && runtimeBuckets.every((details) => details.open !== true) &&
+  runtimeBuckets.some((details) => String(details.className).includes('rm-connection-runtime--platform')) &&
+  runtimeBuckets.some((details) => String(details.className).includes('rm-connection-runtime--external')) &&
+  runtimeBuckets.some((details) => String(details.className).includes('rm-connection-runtime--unresolved')),
+  'platform, external, and unresolved rows must remain complete behind separate closed native disclosures');
 check(!connectionsHost.textContent.includes('Open source location') &&
   !descendants(connectionsHost).some((node) => String(node.className).includes('rm-connection__meta')) &&
   !connectionsHost.textContent.includes('relation records · 3 source locations') &&

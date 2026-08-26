@@ -268,7 +268,9 @@ func selectRepositoryTargetPlanForRun(
 
 	override := strings.TrimSpace(options.TargetOverride)
 	if override != "" {
-		plan, resolveErr := resolveExplicitRepositoryTarget(discovery, override, readmeRows)
+		plan, resolveErr := resolveExplicitRepositoryTarget(
+			options.Repository, discovery, override, readmeRows,
+		)
 		if resolveErr != nil {
 			return repositoryTargetPlan{}, resolveErr
 		}
@@ -705,6 +707,7 @@ func (discovery repositoryTargetDiscovery) adapterForFile(
 }
 
 func resolveExplicitRepositoryTarget(
+	repository *corpus.Corpus,
 	discovery repositoryTargetDiscovery,
 	override string,
 	readmeRows []readmeRoleLogRow,
@@ -721,6 +724,26 @@ func resolveExplicitRepositoryTarget(
 		}
 	}
 	if discovery.pythonCatalog != nil {
+		// A repository-relative path is accepted only as an exact alias for a
+		// native catalog anchor. The retained target still carries its sealed
+		// selector; the path never becomes target identity. Matching anchors
+		// before the resolver-only selector path also prevents an exact native
+		// package entry from being replaced by a synthesized module-execution
+		// view for the same file.
+		nativeAnchorMatched := false
+		if repository != nil {
+			if fileRef, known := repository.ID(override); known {
+				for _, entry := range discovery.pythonCatalog.Entries {
+					if entry.AnchorFileRef != fileRef {
+						continue
+					}
+					nativeAnchorMatched = true
+					target := entry
+					key := repositoryTargetKey{Adapter: repositoryTargetAdapterPython, Ref: target.Ref}
+					matches[key] = repositoryTypedTarget{Key: key, Selector: target.Selector, Python: &target}
+				}
+			}
+		}
 		for _, entry := range discovery.pythonCatalog.Entries {
 			if override != entry.Selector && override != entry.Ref && override != entry.IdentityRef {
 				continue
@@ -729,12 +752,14 @@ func resolveExplicitRepositoryTarget(
 			key := repositoryTargetKey{Adapter: repositoryTargetAdapterPython, Ref: target.Ref}
 			matches[key] = repositoryTypedTarget{Key: key, Selector: target.Selector, Python: &target}
 		}
-		if derived, ok, err := discovery.pythonResolver.ResolveSelector(override); err != nil {
-			return repositoryTargetPlan{}, fmt.Errorf("resolve exact Python selector: %w", err)
-		} else if ok {
-			target := derived
-			key := repositoryTargetKey{Adapter: repositoryTargetAdapterPython, Ref: target.Ref}
-			matches[key] = repositoryTypedTarget{Key: key, Selector: target.Selector, Python: &target}
+		if !nativeAnchorMatched {
+			if derived, ok, err := discovery.pythonResolver.ResolveSelector(override); err != nil {
+				return repositoryTargetPlan{}, fmt.Errorf("resolve exact Python selector: %w", err)
+			} else if ok {
+				target := derived
+				key := repositoryTargetKey{Adapter: repositoryTargetAdapterPython, Ref: target.Ref}
+				matches[key] = repositoryTypedTarget{Key: key, Selector: target.Selector, Python: &target}
+			}
 		}
 	}
 	for _, value := range discovery.jstsTargets {
@@ -752,7 +777,16 @@ func resolveExplicitRepositoryTarget(
 		}
 		base := fmt.Errorf("--target %q is not one unambiguous exact repository target selector", override)
 		if len(matches) > 1 {
-			base = fmt.Errorf("--target %q matches more than one exact repository target", override)
+			matchedSelectors := make([]string, 0, len(matches))
+			for _, target := range matches {
+				matchedSelectors = append(matchedSelectors, target.Selector)
+			}
+			sort.Strings(matchedSelectors)
+			base = fmt.Errorf(
+				"--target %q matches more than one exact repository target; matching exact selectors: %s",
+				override,
+				strings.Join(matchedSelectors, ", "),
+			)
 		}
 		return repositoryTargetPlan{}, withTargetPortfolioChoices(base, groups...)
 	}
@@ -915,35 +949,31 @@ func restoreRepositoryTargetPortfolio(
 		}
 	}
 
-	var defaultKey repositoryTargetKey
-	switch defaultAdapter {
-	case repositoryTargetAdapterGo:
-		ref, resolveErr := discovery.goResolver.ResolveOne(portfolio.Default.FileRef)
-		if resolveErr != nil {
-			return repositoryTargetPlan{}, fmt.Errorf("restore default Go target: %w", resolveErr)
+	// TargetPortfolio chooses a default file, not one semantic view of that
+	// file. A shared exact representative may legitimately restore several
+	// targets; all of them remain in the plan. The landing-page default is the
+	// first owner in the same canonical target order used by the plan itself,
+	// so this presentation choice needs no second model gate or adapter-specific
+	// ResolveOne restriction.
+	defaultOwners := make([]repositoryTypedTarget, 0)
+	for _, builder := range builders {
+		if builder.target.Key.Adapter != defaultAdapter {
+			continue
 		}
-		defaultKey = repositoryTargetKey{Adapter: repositoryTargetAdapterGo, Ref: ref}
-	case repositoryTargetAdapterPython:
-		target, resolveErr := discovery.pythonResolver.ResolveOne(portfolio.Default.FileRef)
-		if resolveErr != nil {
-			return repositoryTargetPlan{}, fmt.Errorf(
-				"restore one default Python target view: %w; use one exact Python selector with --target",
-				resolveErr,
-			)
+		if _, ownsDefaultFile := builder.files[portfolio.Default.FileRef]; ownsDefaultFile {
+			defaultOwners = append(defaultOwners, builder.target)
 		}
-		defaultKey = repositoryTargetKey{Adapter: repositoryTargetAdapterPython, Ref: target.Ref}
-	case repositoryTargetAdapterJSTS:
-		target, ok := discovery.jstsByManifest[portfolio.Default.FileRef]
-		if !ok {
-			return repositoryTargetPlan{}, fmt.Errorf("restore default JavaScript/TypeScript target: package manifest is outside exact scout authority")
-		}
-		defaultKey = repositoryTargetKey{Adapter: repositoryTargetAdapterJSTS, Ref: target.Ref}
-	default:
-		return repositoryTargetPlan{}, fmt.Errorf("repository target portfolio has no supported default adapter")
 	}
-	if _, ok := builders[defaultKey]; !ok {
-		return repositoryTargetPlan{}, fmt.Errorf("repository target portfolio default %q is outside restored selected targets", defaultKey)
+	if len(defaultOwners) == 0 {
+		return repositoryTargetPlan{}, fmt.Errorf(
+			"repository target portfolio default file %q is outside restored selected targets",
+			portfolio.Default.Path,
+		)
 	}
+	sort.Slice(defaultOwners, func(i, j int) bool {
+		return repositoryTypedTargetLess(defaultOwners[i], defaultOwners[j])
+	})
+	defaultKey := defaultOwners[0].Key
 
 	targets := make([]repositoryTypedTarget, 0, len(builders))
 	for _, builder := range builders {

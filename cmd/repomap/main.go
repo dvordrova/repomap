@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -59,12 +60,14 @@ func main() {
 	}
 
 	repo := "."
+	repositoryArgumentOmitted := true
 	args := os.Args[1:]
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		repo = args[0]
 		args = args[1:]
+		repositoryArgumentOmitted = false
 	}
-	if err := runDefault(repo, args); err != nil {
+	if err := runDefault(repo, args, repositoryArgumentOmitted); err != nil {
 		writeDefaultRunError(os.Stderr, err)
 		os.Exit(defaultRunExitCode(err))
 	}
@@ -94,7 +97,7 @@ func linkLatest(debugDir, runDir string, stderr io.Writer) {
 	}
 }
 
-func runDefault(repo string, extraArgs []string) error {
+func runDefault(repo string, extraArgs []string, repositoryArgumentOmitted bool) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	return runDefaultWithDeps(repo, extraArgs, defaultRunDeps{
@@ -106,6 +109,7 @@ func runDefault(repo string, extraArgs []string) error {
 		captureRepo:                freshness.CaptureRepository,
 		newTargetPortfolioProvider: defaultTargetPortfolioProviderFactory,
 		newCubeProvider:            defaultTargetPortfolioProviderFactory,
+		repositoryArgumentOmitted:  repositoryArgumentOmitted,
 	})
 }
 
@@ -149,6 +153,9 @@ type defaultRunDeps struct {
 	runtimeCacheRoot    string
 	runtimeNoCache      bool
 	finalizeTargetPages func(context.Context, snapshot.TargetRunContainer, snapshot.TargetPagePortfolio, []targetPublishedRun) error
+	// repositoryArgumentOmitted is true only when the user left [repo] out of
+	// the command. Internal child pages retain the outer invocation choice.
+	repositoryArgumentOmitted bool
 }
 
 func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (runErr error) {
@@ -171,8 +178,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	)
 	noCache := fs.Bool("no-cache", false, "disable cross-run model response caches")
 	scanSecrets := fs.Bool("scan-secrets", false, "scan repository and model material for credential-like text")
-	gitLabURLFlag := fs.String("gitlab-url", "", "create a standalone report linked to this GitLab project or host")
-	gitHubURLFlag := fs.String("github-url", "", "create a standalone report linked to this GitHub repository or host")
+	gitLabURLFlag := fs.String("gitlab-url", "", "create a standalone report with GitLab source links; does not select a repository")
+	gitHubURLFlag := fs.String("github-url", "", "create a standalone report with GitHub source links; does not select a repository")
 	noOpen := fs.Bool("no-open", false, "do not open the generated HTML report")
 	noServe := fs.Bool("no-serve", false, "generate a static report without starting the local server")
 	port := fs.Int("port", 0, "local report server port (default: random)")
@@ -215,11 +222,13 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			)
 		}
 	}()
-	if fs.NArg() > 0 {
-		if repo != "." || fs.NArg() != 1 {
-			return fmt.Errorf("unexpected positional arguments: %s", strings.Join(fs.Args(), " "))
-		}
-		repo = fs.Arg(0)
+	repo, deps.repositoryArgumentOmitted, err = bindParsedRepositoryArgument(
+		repo,
+		deps.repositoryArgumentOmitted,
+		fs.Args(),
+	)
+	if err != nil {
+		return err
 	}
 	resolveGoTarget := deps.resolveGoTarget
 	if resolveGoTarget == nil {
@@ -295,6 +304,14 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		if err != nil {
 			return err
 		}
+		if err := validateImplicitRepositorySourceLink(
+			"--gitlab-url",
+			gitLabURL,
+			originIdentity,
+			deps.repositoryArgumentOmitted,
+		); err != nil {
+			return err
+		}
 	}
 	if gitHubURL != "" {
 		gitHubURL, err = report.ResolveGitHubRepositoryURL(
@@ -302,6 +319,14 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			originIdentity,
 		)
 		if err != nil {
+			return err
+		}
+		if err := validateImplicitRepositorySourceLink(
+			"--github-url",
+			gitHubURL,
+			originIdentity,
+			deps.repositoryArgumentOmitted,
+		); err != nil {
 			return err
 		}
 	}
@@ -1220,6 +1245,48 @@ func validateReportModeFlags(noServe bool, portExplicit bool) error {
 	return nil
 }
 
+func bindParsedRepositoryArgument(
+	repo string,
+	repositoryArgumentOmitted bool,
+	positional []string,
+) (string, bool, error) {
+	if len(positional) == 0 {
+		return repo, repositoryArgumentOmitted, nil
+	}
+	if !repositoryArgumentOmitted || repo != "." || len(positional) != 1 {
+		return "", repositoryArgumentOmitted, fmt.Errorf(
+			"unexpected positional arguments: %s",
+			strings.Join(positional, " "),
+		)
+	}
+	return positional[0], false, nil
+}
+
+func validateImplicitRepositorySourceLink(
+	flagName string,
+	repositoryURL string,
+	originIdentity string,
+	repositoryArgumentOmitted bool,
+) error {
+	if !repositoryArgumentOmitted || strings.TrimSpace(originIdentity) == "" || repositoryURL == "" {
+		return nil
+	}
+	parsed, err := url.Parse(repositoryURL)
+	if err == nil {
+		originHost, originProject, found := strings.Cut(strings.TrimSpace(originIdentity), "/")
+		sourceProject := strings.TrimPrefix(parsed.Path, "/")
+		if found && originHost != "" && originProject != "" &&
+			strings.EqualFold(parsed.Hostname(), originHost) &&
+			strings.EqualFold(sourceProject, originProject) {
+			return nil
+		}
+	}
+	return fmt.Errorf(
+		"%s does not match the analyzed current-directory origin; this source-link flag does not clone or select a repository; pass [repo] explicitly to analyze another checkout, or use a URL matching the current directory's origin",
+		flagName,
+	)
+}
+
 func semanticStopAfter(value string) (pipeline.Stage, error) {
 	value = strings.TrimSpace(value)
 	switch value {
@@ -1403,8 +1470,8 @@ func printUsageTo(writer io.Writer) {
 	fmt.Fprintf(writer, "  --force-platform GOOS/GOARCH override normal Go platform selection\n")
 	fmt.Fprintf(writer, "  --depth N                   target call-graph depth (default: %d)\n", surfacediscovery.DefaultDirectCallDepth)
 	fmt.Fprintf(writer, "  --edges-limit N             maximum exact target call-graph edges (default: %d)\n", surfacediscovery.DefaultDirectCallEdgeLimit)
-	fmt.Fprintf(writer, "  --github-url URL            static report source host\n")
-	fmt.Fprintf(writer, "  --gitlab-url URL            static report source host\n")
+	fmt.Fprintf(writer, "  --github-url URL            static GitHub source links; does not select a repository\n")
+	fmt.Fprintf(writer, "  --gitlab-url URL            static GitLab source links; does not select a repository\n")
 	fmt.Fprintf(writer, "  --no-open                   do not open the report\n")
 	fmt.Fprintf(writer, "  --no-serve                  write static HTML with remote source links\n")
 	fmt.Fprintf(writer, "  --port PORT                 local report server port (default: random)\n")
