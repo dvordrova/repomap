@@ -341,7 +341,7 @@ func runtimePortfolioProminenceOrder(value runtimeportfolio.Prominence) string {
 func validRuntimePortfolioRoleKind(value runtimeportfolio.RoleKind) bool {
 	switch value {
 	case runtimeportfolio.RoleKindLibrary, runtimeportfolio.RoleKindService, runtimeportfolio.RoleKindDaemon, runtimeportfolio.RoleKindWorker,
-		runtimeportfolio.RoleKindCLI, runtimeportfolio.RoleKindSupportingTool, runtimeportfolio.RoleKindUnknown:
+		runtimeportfolio.RoleKindCLI, runtimeportfolio.RoleKindExample, runtimeportfolio.RoleKindSupportingTool, runtimeportfolio.RoleKindUnknown:
 		return true
 	default:
 		return false

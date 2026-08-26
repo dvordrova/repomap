@@ -50,12 +50,24 @@ class TestElement {
     this._textContent = '';
     this.scrollCalls = [];
     this.focusCalls = [];
+    this._bounds = { left: 0, top: 0, right: 100, bottom: 40, width: 100, height: 40 };
   }
 
   appendChild(child) {
     child.parentNode = this;
     this.children.push(child);
     return child;
+  }
+
+  removeChild(child) {
+    this.children = this.children.filter((candidate) => candidate !== child);
+    child.parentNode = null;
+    return child;
+  }
+
+  replaceChildren(...children) {
+    this.children = [];
+    children.forEach((child) => this.appendChild(child));
   }
 
   set textContent(value) {
@@ -76,20 +88,30 @@ class TestElement {
     return Object.prototype.hasOwnProperty.call(this.attributes, name) ? this.attributes[name] : null;
   }
 
+  removeAttribute(name) {
+    delete this.attributes[name];
+    if (name === 'class') this.className = '';
+  }
+
   addEventListener(type, listener) {
     if (!this.listeners[type]) this.listeners[type] = [];
     this.listeners[type].push(listener);
   }
 
   querySelector(selector) {
-    const tagName = String(selector).toUpperCase();
-    return descendants(this).find((node) => node !== this && node.tagName === tagName) || null;
+    return this.querySelectorAll(selector)[0] || null;
+  }
+
+  querySelectorAll(selector) {
+    return descendants(this).filter((node) => node !== this && matchesSelector(node, selector));
   }
 
   dispatch(type, values) {
     const event = Object.assign({
       type, target: this, currentTarget: this, defaultPrevented: false,
-      preventDefault() { this.defaultPrevented = true; }
+      propagationStopped: false,
+      preventDefault() { this.defaultPrevented = true; },
+      stopPropagation() { this.propagationStopped = true; }
     }, values || {});
     (this.listeners[type] || []).forEach((listener) => listener.call(this, event));
     return event;
@@ -97,11 +119,14 @@ class TestElement {
 
   scrollIntoView(options) { this.scrollCalls.push(options); }
   focus(options) { this.focusCalls.push(options); }
+  getBoundingClientRect() { return this._bounds; }
 
   click() {
     const event = {
       type: 'click', target: this, currentTarget: this, defaultPrevented: false,
-      preventDefault() { this.defaultPrevented = true; }
+      propagationStopped: false,
+      preventDefault() { this.defaultPrevented = true; },
+      stopPropagation() { this.propagationStopped = true; }
     };
     (this.listeners.click || []).forEach((listener) => listener.call(this, event));
     if (!event.defaultPrevented && this.tagName === 'A' && this.href.startsWith('#')) {
@@ -109,6 +134,19 @@ class TestElement {
     }
     return event;
   }
+}
+
+function matchesSelector(node, selector) {
+  selector = String(selector);
+  if (selector.startsWith('.')) {
+    return String(node.className).split(/\s+/).includes(selector.slice(1));
+  }
+  const attribute = selector.match(/^\[([^=\]]+)(?:="([^"]*)")?\]$/);
+  if (attribute) {
+    const value = node.getAttribute(attribute[1]);
+    return value !== null && (attribute[2] === undefined || value === attribute[2]);
+  }
+  return node.tagName === selector.toUpperCase();
 }
 
 function descendants(root) {
@@ -171,7 +209,10 @@ const exposure = [
   '    updateHeaderContext: updateHeaderContext,',
   '    crossSurfaceEmptyReason: crossSurfaceEmptyReason,',
   '    renderFlowCanvas: renderFlowCanvas,',
+  '    renderAreaSwitcher: renderAreaSwitcher,',
   '    canvasTopology: canvasTopology,',
+  '    drawCanvasEdges: drawCanvasEdges,',
+  '    clearCanvasHighlight: clearCanvasHighlight,',
   '    scheduleResponsibilityScroll: scheduleResponsibilityScroll,',
   '    getState: function () { return state; },',
   '    activityCanvasNode: activityCanvasNode,',
@@ -185,7 +226,7 @@ vm.runInNewContext(instrumented, context, { filename: process.argv[2] });
 
 const api = context.__reportAppBehavior;
 const activity = {
-  id: 'entry/start here', name: 'Start here', kind: 'function', signature: 'start()',
+  id: 'entry/start here', name: 'app/main#Start here', kind: 'function', signature: 'start()',
   location: { path: 'app/main.py', line: 7, column: 1 }
 };
 
@@ -277,7 +318,8 @@ const model = {
 };
 api.setState({
   model, focusGroupID: null, completeCanvas: false, canvasEdges: [],
-  pendingResponsibilityID: '',
+  pendingResponsibilityID: '', pendingAreaGroupFocusID: '',
+  canvasHoverNodeID: '', canvasFocusNodeID: '', canvasHighlightEdgeIndex: '',
   source: {
     mode: 'static', host: 'GitHub', repositoryURL: 'https://github.com/example/fixture',
     revision: model.revision, pathPrefix: ''
@@ -420,7 +462,7 @@ check(api.selectedReportRoute().kind === 'program',
   'target-local full-stack paths must remain on the selected target program page');
 const browserSurface = {
   id: 'surface:browser/app', name: 'Browser app', kind: 'browser_application', role: 'client',
-  disposition: 'product_surface', entryRefs: [], evidenceRefs: [],
+  disposition: 'product_surface', entryRefs: ['fact:browser-root'], evidenceRefs: [],
   location: { path: 'scripts/check-changeset.ts', line: 1, column: 1 }
 };
 const toolSurface = {
@@ -430,17 +472,37 @@ const toolSurface = {
 };
 const crossSurfacePath = {
   id: 'path:http/request', name: 'Load data', outcome: 'Browser reaches the server route.',
-  frontier: '', steps: []
+  frontier: '', steps: [{
+    ordinal: 1, kind: 'page_route', label: 'Browser root reaches the route',
+    sourceRef: 'fact:browser-root', targetRefs: ['fact:route-handler'],
+    authority: 'exact_static', resolution: 'exact',
+    location: { path: 'scripts/check-changeset.ts', line: 94, column: 1 }
+  }]
+};
+const browserRootFact = {
+  ref: 'fact:browser-root', category: 'declaration', kind: 'function', label: 'src/index#root',
+  location: { path: 'scripts/check-changeset.ts', line: 94, column: 1 }
+};
+const routeHandlerFact = {
+  ref: 'fact:route-handler', category: 'declaration', kind: 'function', label: 'server/routes#handleRequest',
+  location: { path: 'scripts/publish.ts', line: 20, column: 1 }
 };
 model.surfaceCatalog = {
   project: { name: 'fukict', moduleResolution: 'bundler' },
   surfaces: [browserSurface, toolSurface],
   surfacesByID: { [browserSurface.id]: browserSurface, [toolSurface.id]: toolSurface },
-  factsByRef: Object.create(null)
+  factsByRef: {
+    [browserRootFact.ref]: browserRootFact,
+    [routeHandlerFact.ref]: routeHandlerFact
+  }
 };
 model.crossSurfacePaths = {
   paths: [crossSurfacePath], pathsByID: { [crossSurfacePath.id]: crossSurfacePath },
-  factsByRef: Object.create(null), coverage: { http_uses_observed: 1, routes_observed: 1 }
+  factsByRef: {
+    [browserRootFact.ref]: browserRootFact,
+    [routeHandlerFact.ref]: routeHandlerFact
+  },
+  coverage: { http_uses_observed: 1, routes_observed: 1 }
 };
 const surfaceInventoryHost = new TestElement('main');
 api.renderTargetSurfaceInventory(surfaceInventoryHost);
@@ -466,6 +528,11 @@ const pathBack = descendants(pathDetailHost).find((node) =>
 );
 check(surfaceBack && surfaceBack.href === '#/program' && pathBack && pathBack.href === '#/program',
   'surface and path details must return to the selected target program page');
+check(surfaceDetailHost.textContent.includes('root') &&
+  !surfaceDetailHost.textContent.includes('src/index#root') &&
+  pathDetailHost.textContent.includes('handleRequest') &&
+  !pathDetailHost.textContent.includes('server/routes#handleRequest'),
+  'surface and path declaration facts must not repeat canonical module prefixes beside exact source locations');
 model.surfaceCatalog = null;
 model.crossSurfacePaths = null;
 model.runtimePortfolio = { roles: [], unclassified: [] };
@@ -487,12 +554,26 @@ model.runtimePortfolio = {
     },
     {
       id: 'role:tool', name: 'Release tooling', purpose: 'Publishes the packages.',
-      prominence: 'supporting', roleKind: 'supporting_tool', requiredness: 'optional', confidence: 'high',
+      prominence: 'supporting', roleKind: 'supporting_tool', requiredness: 'experimental', confidence: 'low',
       implementations: [{ target: model.targets[0], mode: 'cli' }], evidence: []
+    },
+    {
+      id: 'role:example', name: 'Complete example', purpose: 'Demonstrates the complete product.',
+      prominence: 'supporting', roleKind: 'example', requiredness: 'optional', confidence: 'high',
+      implementations: [{ target: model.targets[0], mode: 'dev' }], evidence: [
+        { label: 'Selected activity start: src/App#App.render', location: { path: 'scripts/check-changeset.ts', line: 94, column: 1 } },
+        { label: 'Responsibility representative: src/App#App', location: { path: 'scripts/check-changeset.ts', line: 94, column: 1 } },
+        { label: 'Repository guidance example entry', location: { path: 'scripts/publish.ts', line: 20, column: 2 } }
+      ]
     },
     {
       id: 'role:library', name: 'Router API', purpose: 'Provides reusable routing APIs.',
       prominence: 'supporting', roleKind: 'library', requiredness: 'required', confidence: 'high',
+      implementations: [{ target: model.targets[1], mode: '' }], evidence: []
+    },
+    {
+      id: 'role:unknown', name: 'Unclear package role', purpose: 'Has evidence but no established product kind.',
+      prominence: 'primary', roleKind: 'unknown', requiredness: 'optional', confidence: 'high',
       implementations: [{ target: model.targets[1], mode: '' }], evidence: []
     }
   ],
@@ -506,23 +587,48 @@ api.renderRuntimePortfolio(repositoryOverviewHost);
 const repositoryOverviewText = repositoryOverviewHost.textContent;
 const librarySectionOffset = repositoryOverviewText.indexOf('Libraries and product APIs');
 const primarySectionOffset = repositoryOverviewText.indexOf('Primary runtime roles');
-const supportingSectionOffset = repositoryOverviewText.indexOf('Supporting and optional roles');
+const exampleSectionOffset = repositoryOverviewText.indexOf('Examples');
+const toolSectionOffset = repositoryOverviewText.indexOf('Supporting tools');
+const uncertainSectionOffset = repositoryOverviewText.indexOf('Uncertain roles');
 const unclassifiedSectionOffset = repositoryOverviewText.indexOf('Unclassified targets');
 check(repositoryOverviewText.includes('Repository overview') &&
-  repositoryOverviewText.includes('3 repository roles across 2 selected targets.'),
+  repositoryOverviewText.includes('5 repository roles across 2 selected targets.'),
   'the repository hero must describe a product-neutral repository portfolio');
 check(librarySectionOffset >= 0 && librarySectionOffset < primarySectionOffset &&
-  primarySectionOffset < supportingSectionOffset && supportingSectionOffset < unclassifiedSectionOffset,
-  'library roles must render before runnable examples, supporting tools, and genuinely unmapped targets');
+  primarySectionOffset < exampleSectionOffset && exampleSectionOffset < toolSectionOffset &&
+  toolSectionOffset < uncertainSectionOffset && uncertainSectionOffset < unclassifiedSectionOffset,
+  'library, primary runtime, example, tool, uncertain, and genuinely unmapped sections must remain distinct and ordered');
 check(repositoryOverviewText.includes('Router API') && repositoryOverviewText.includes('Library'),
   'the repository overview must render a first-class library role and its kind');
 const libraryRoleCard = descendants(repositoryOverviewHost).find((node) =>
   node.tagName === 'ARTICLE' && node.textContent.includes('Router API')
 );
-check(libraryRoleCard && libraryRoleCard.textContent.includes('Supporting'),
-  'a combined library section must preserve and expose each semantic role prominence');
+check(libraryRoleCard && libraryRoleCard.textContent.includes('Required role') &&
+  libraryRoleCard.textContent.includes('Supporting'),
+  'a library card must retain exceptional requiredness and its supporting product prominence');
 check(libraryRoleCard && !libraryRoleCard.textContent.includes('No repository role maps'),
   'a semantic library role must not be rendered as an unclassified target');
+check(repositoryOverviewText.includes('Complete example') && repositoryOverviewText.includes('Release tooling') &&
+  !repositoryOverviewText.includes('Supporting and optional roles'),
+  'examples and supporting tools must not be mixed into one generic optional-role section');
+check(repositoryOverviewText.includes('Unclear package role') &&
+  repositoryOverviewText.indexOf('Unclear package role') > uncertainSectionOffset,
+  'a role with no established kind must remain visibly uncertain rather than being presented as runtime authority');
+check(!repositoryOverviewText.includes('Implemented by') && !repositoryOverviewText.includes('Optional') &&
+  !repositoryOverviewText.includes('High confidence') &&
+  repositoryOverviewText.includes('Experimental') && repositoryOverviewText.includes('Low confidence'),
+  'role cards must hide baseline model bookkeeping while retaining exceptional status warnings');
+check(repositoryOverviewText.includes('Evidence · 3 facts · 2 files') &&
+  repositoryOverviewText.split('scripts/check-changeset.ts').length === 2 &&
+  repositoryOverviewText.split('scripts/publish.ts').length === 2 &&
+  !repositoryOverviewText.includes('Selected activity start:'),
+  'repository-role evidence must retain fact accounting but group exact locations once per file without raw semantic labels');
+const repositoryEvidenceLinks = descendants(repositoryOverviewHost).filter((node) =>
+  node.tagName === 'A' && node.href.includes('/blob/') &&
+  (node.href.includes('#L94') || node.href.includes('#L20'))
+);
+check(repositoryEvidenceLinks.length === 2,
+  'grouped repository-role evidence must preserve one exact action for every distinct source location');
 model.runtimePortfolio = null;
 
 const focusedTopology = api.canvasTopology([block.id], false);
@@ -570,6 +676,36 @@ check(visibleCoreEdges.length === 2 && visibleCoreEdges.some((edge) => edge.reso
   visibleCoreEdges.some((edge) => edge.resolution === 'possible'),
   'exact and possible authority for one endpoint pair must remain separate');
 
+const storageArea = {
+  id: 'group:storage', name: 'Storage area', purpose: 'Owns persistence behavior.',
+  authority: 'model', blockIDs: [storageBlock.id]
+};
+model.groups = [storageArea];
+model.groupByBlock = { [storageBlock.id]: storageArea };
+model.groupsByBlock = { [block.id]: [], [storageBlock.id]: [storageArea] };
+model.modelGroupCount = 1;
+const areaSwitcher = api.renderAreaSwitcher(block, null);
+const areaButton = descendants(areaSwitcher).find((node) => node.getAttribute('data-area-group') === storageArea.id);
+check(!!areaButton, 'the architecture switcher must expose every exact grouping selection as a button');
+if (areaButton) areaButton.click();
+check(context.window.location.hash === '#/program/responsibility/core%2Fstorage' &&
+  api.getState().focusGroupID === storageArea.id && api.getState().pendingResponsibilityID === '',
+  'an architecture-area selection must update the focused map without scheduling a scroll to responsibility detail');
+const activeAreaSwitcher = api.renderAreaSwitcher(storageBlock, storageArea);
+const activeAreaButton = descendants(activeAreaSwitcher).find((node) =>
+  node.getAttribute('data-area-group') === storageArea.id
+);
+check(activeAreaButton && activeAreaButton.getAttribute('aria-current') === 'true' &&
+  activeAreaButton.focusCalls.length === 1 &&
+  activeAreaButton.focusCalls[0] && activeAreaButton.focusCalls[0].preventScroll === true,
+  'the replacement active area button must regain focus without moving the viewport away from the canvas');
+model.groups = [];
+model.groupByBlock = Object.create(null);
+model.groupsByBlock = { [block.id]: [], [storageBlock.id]: [] };
+model.modelGroupCount = 0;
+api.getState().focusGroupID = null;
+context.window.location.hash = '#/program';
+
 const wrappers = [
   api.activityCanvasNode(activity),
   api.coreCanvasNode(block, false, null),
@@ -584,6 +720,30 @@ check(controls.every((control) => control && control.tagName === 'A'),
   'canvas nodes must be links, not inert buttons');
 check(controls.every((control) => control && control.href.startsWith('#/program/')),
   'every canvas node must have a program hash target');
+check(wrappers[0].textContent.includes('Start here') &&
+  wrappers[0].textContent.includes('app/main.py:7') &&
+  !wrappers[0].textContent.includes('app/main#'),
+  'entrypoint canvas cards must not repeat a canonical module path above the exact source location');
+const sameNameEntryWrappers = [
+  api.activityCanvasNode({
+    id: 'entry:router-primary', name: 'packages/router/src/Router#Router.navigate', kind: 'method',
+    location: { path: 'packages/router/src/Router.ts', line: 201, column: 3 }
+  }),
+  api.activityCanvasNode({
+    id: 'entry:router-secondary', name: 'packages/other/src/Router#Router.navigate', kind: 'method',
+    location: { path: 'packages/other/src/Router.ts', line: 40, column: 3 }
+  })
+];
+const sameNameEntryControls = sameNameEntryWrappers.map((wrapper) => descendants(wrapper).find((node) =>
+  node.getAttribute('data-canvas-node') !== null
+));
+check(sameNameEntryWrappers.every((wrapper) => wrapper.textContent.includes('Router.navigate')) &&
+  sameNameEntryWrappers[0].textContent.includes('packages/router/src/Router.ts:201') &&
+  sameNameEntryWrappers[1].textContent.includes('packages/other/src/Router.ts:40') &&
+  sameNameEntryControls[0].getAttribute('data-canvas-node') !==
+    sameNameEntryControls[1].getAttribute('data-canvas-node') &&
+  sameNameEntryControls[0].href !== sameNameEntryControls[1].href,
+  'equal compact entrypoint names must remain separate exact identities distinguished by source location');
 check(wrappers[1].textContent.includes('→ 1 exact downstream') &&
   wrappers[1].textContent.includes('⇢ 1 possible downstream') &&
   wrappers[1].textContent.includes('Inspect responsibility ↓'),
@@ -591,6 +751,53 @@ check(wrappers[1].textContent.includes('→ 1 exact downstream') &&
 check(source.includes("marker-end', 'url(#rm-canvas-arrow-") && source.includes('sameLane ? targetBounds.right') &&
   source.includes('authorityOffset'),
   'canvas edges must draw arrowheads and offset parallel exact/possible/runtime authority');
+
+const savedCanvasEdges = api.getState().canvasEdges.slice();
+const interactiveCanvas = new TestElement('div');
+interactiveCanvas.setAttribute('class', 'rm-flow-canvas');
+interactiveCanvas._bounds = { left: 0, top: 0, right: 900, bottom: 500, width: 900, height: 500 };
+const edgeSVG = new TestElement('svg');
+edgeSVG.setAttribute('class', 'rm-canvas-edges');
+interactiveCanvas.appendChild(edgeSVG);
+wrappers.forEach((wrapper) => interactiveCanvas.appendChild(wrapper));
+controls[0]._bounds = { left: 30, top: 80, right: 210, bottom: 130, width: 180, height: 50 };
+controls[1]._bounds = { left: 360, top: 180, right: 540, bottom: 240, width: 180, height: 60 };
+controls[2]._bounds = { left: 690, top: 300, right: 870, bottom: 350, width: 180, height: 50 };
+api.getState().canvasEdges = [
+  { from: 'entry:' + activity.id, to: 'core:' + block.id, resolution: 'exact', description: 'Start reaches core' },
+  { from: 'core:' + block.id, to: 'integration:' + integration.id, resolution: 'possible', description: 'Core may reach HTTP' }
+];
+document.queryResult = interactiveCanvas;
+api.drawCanvasEdges();
+const edgeGroups = descendants(edgeSVG).filter((node) =>
+  String(node.className).split(/\s+/).includes('rm-canvas-edge-group')
+);
+const edgePorts = descendants(interactiveCanvas).filter((node) => node.getAttribute('data-canvas-edge-port') === 'true');
+check(edgeGroups.length === 2 && edgePorts.length === 4,
+  'every visible connection must retain one exact path and one navigable port at each endpoint');
+wrappers[0].dispatch('mouseenter');
+check(String(edgeGroups[0].className).includes('rm-canvas-edge-group--related') &&
+  String(edgeGroups[1].className).includes('rm-canvas-edge-group--dimmed') &&
+  edgePorts.filter((port) => String(port.className).includes('rm-canvas-edge-port--related') &&
+    port.getAttribute('tabindex') === '0' && port.getAttribute('aria-hidden') === 'false').length === 2 &&
+  edgePorts.filter((port) => !String(port.className).includes('rm-canvas-edge-port--related') &&
+    port.getAttribute('tabindex') === '-1').length === 2,
+  'hovering a canvas component must emphasize only touching edges and expose only their endpoint ports');
+const sourceTraversalPort = edgePorts.find((port) =>
+  port.getAttribute('data-canvas-edge-index') === '0' &&
+  port.getAttribute('data-canvas-edge-endpoint') === 'entry:' + activity.id
+);
+const hashBeforePortNavigation = context.window.location.hash;
+if (sourceTraversalPort) sourceTraversalPort.click();
+check(sourceTraversalPort && controls[1].scrollCalls.length === 1 && controls[1].focusCalls.length === 1 &&
+  context.window.location.hash === hashBeforePortNavigation,
+  'clicking an edge port must move focus to the opposite canvas card without opening a detail route');
+wrappers[0].dispatch('mouseleave');
+check(!edgeGroups.some((group) => String(group.className).includes('rm-canvas-edge-group--dimmed')) &&
+  !edgePorts.some((port) => String(port.className).includes('rm-canvas-edge-port--related')),
+  'leaving the canvas component must restore the complete un-emphasized edge view');
+document.queryResult = null;
+api.getState().canvasEdges = savedCanvasEdges;
 
 function renderedCoreSelection(selectedID) {
   return [block, storageBlock].flatMap((candidate) => descendants(
@@ -709,11 +916,20 @@ check(context.window.location.hash === '#/program/integration/dependency%3Ahttp%
 route = api.selectedReportRoute();
 check(route.kind === 'integration' && route.integration === integration,
   'the integration hash must resolve to its exact selected dependency');
+integration.uses = [{
+  callerID: sourceObject.id, callerName: 'app/execution#execute', callee: 'http-client.send',
+  label: 'Send request', mechanism: 'resolved external call', authority: 'exact_external_symbol',
+  callsite: { path: 'app/execution.py', line: 30, column: 3 }, route: null
+}];
 const integrationHost = new TestElement('main');
 api.renderIntegrationDetail(integrationHost, route.integration);
 check(integrationHost.textContent.includes('HTTP client') &&
   integrationHost.textContent.includes('Selected operations'),
   'the integration route must render a useful semantic detail page');
+check(integrationHost.textContent.includes('execute → http-client.send') &&
+  !integrationHost.textContent.includes('app/execution#execute'),
+  'integration operations must not repeat a canonical caller path beside the exact selected callsite');
+integration.uses = [];
 
 const routerOwner = {
   id: 'object:router-owner', name: 'packages/router/src/Router#Router', kind: 'type',
@@ -850,9 +1066,9 @@ const expectedConnectionLocations = [10, 11, 12, 13, 14, 15, 16, 17, 18].map((li
   'app/execution.py:' + String(line)
 );
 check(expectedConnectionLocations.every((location) =>
-    connectionLinks.some((link) => link.textContent === location && link.href.endsWith('#L' + location.split(':')[1]))
+    connectionLinks.some((link) => link.href.endsWith('#L' + location.split(':')[1]))
   ),
-  'every grouped relation and witness location must remain available as an exact path:line source link');
+  'every grouped relation and witness location must remain available through an exact source link');
 check(connectionsHost.textContent.includes('7 relation groups · 8 relation records') &&
   connectionsHost.textContent.includes('unresolved call: client.send') &&
   connectionsHost.textContent.includes('unresolved call: client.flush') &&
@@ -865,16 +1081,20 @@ check(platformConnection && platformConnection.platformTarget && platformConnect
   packageConnection && !packageConnection.platformTarget && packageConnection.invocation === 'call' &&
   packageConnection.witnessesObserved === 2 && packageConnection.witnessesProjectionOmitted === 1,
   'connection condensation must preserve platform, invocation, and witness accounting even when its footer is hidden');
-check(connectionsHost.textContent.includes('constructor — creates a JavaScript platform value → JavaScript Date') &&
-  connectionsHost.textContent.includes('constructor — uses a resolved external/runtime API → react.useEffect') &&
+check(connectionsHost.textContent.includes('constructor') &&
+  connectionsHost.textContent.includes('store()') &&
+  connectionsHost.textContent.includes('new JavaScript Date()') &&
+  connectionsHost.textContent.includes('react.useEffect()') &&
+  !connectionsHost.textContent.includes('— calls →') &&
   !connectionsHost.textContent.includes('packages/router/src/Router#'),
-  'owned relation titles must begin with the compact member name and retain their exact semantic verb');
+  'owned calls must render as a compact owner, member, and callable-target hierarchy');
 const connectionPaths = descendants(connectionsHost).filter((node) =>
   String(node.className).includes('rm-connection__path')
 );
-check(connectionPaths.some((path) => path.textContent.includes('creates a JavaScript platform value')) &&
-  connectionPaths.some((path) => path.textContent.includes('uses a resolved external/runtime API')),
-  'compact connection rows must keep relation semantics visible');
+check(connectionPaths.some((path) => path.textContent === 'store()') &&
+  connectionPaths.some((path) => path.textContent === 'new JavaScript Date()') &&
+  connectionPaths.some((path) => path.textContent === 'react.useEffect()'),
+  'compact connection targets must remain directly source-linked');
 const renderedOwnerGroups = descendants(connectionsHost).filter((node) =>
   String(node.className).split(/\s+/).includes('rm-connection-owner')
 );
@@ -884,15 +1104,37 @@ const renderedOwnerTitles = descendants(connectionsHost).filter((node) =>
 const runtimeBuckets = descendants(connectionsHost).filter((node) =>
   node.tagName === 'DETAILS' && String(node.className).split(/\s+/).includes('rm-connection-runtime')
 );
+const renderedMemberGroups = descendants(connectionsHost).filter((node) =>
+  String(node.className).split(/\s+/).includes('rm-connection-member-group')
+);
+const renderedMemberHeadings = descendants(connectionsHost).filter((node) =>
+  String(node.className).split(/\s+/).includes('rm-connection-member-group__heading')
+);
 check(renderedOwnerGroups.length === 3 && renderedOwnerTitles.filter((title) =>
   title.textContent.includes('Router')
 ).length === 2,
   'the rendered hierarchy must retain two distinct exact Router owners even when their display names match');
+check(renderedMemberGroups.length === 3 && renderedMemberHeadings.filter((heading) =>
+  heading.textContent === 'constructor'
+).length === 2 && renderedMemberHeadings.some((heading) => heading.textContent === 'createHistory'),
+  'each exact source member must be shown once beneath its exact owner');
 check(runtimeBuckets.length === 3 && runtimeBuckets.every((details) => details.open !== true) &&
   runtimeBuckets.some((details) => String(details.className).includes('rm-connection-runtime--platform')) &&
   runtimeBuckets.some((details) => String(details.className).includes('rm-connection-runtime--external')) &&
   runtimeBuckets.some((details) => String(details.className).includes('rm-connection-runtime--unresolved')),
   'platform, external, and unresolved rows must remain complete behind separate closed native disclosures');
+const connectionSites = descendants(connectionsHost).filter((node) =>
+  node.tagName === 'DETAILS' && String(node.className).split(/\s+/).includes('rm-connection-sites')
+);
+const resolutionBadges = descendants(connectionsHost).filter((node) =>
+  String(node.className).split(/\s+/).includes('rm-resolution')
+);
+check(connectionSites.length === 1 && connectionSites[0].open !== true &&
+  connectionSites[0].textContent.includes('3 callsites') &&
+  expectedConnectionLocations.slice(0, 2).every((location) => connectionSites[0].textContent.includes(location)) &&
+  resolutionBadges.every((badge) => !String(badge.className).includes('rm-resolution--exact')) &&
+  resolutionBadges.some((badge) => String(badge.className).includes('rm-resolution--unresolved')),
+  'exactness and repeated paths must stay implicit while multiple callsites and unresolved authority remain available');
 check(!connectionsHost.textContent.includes('Open source location') &&
   !descendants(connectionsHost).some((node) => String(node.className).includes('rm-connection__meta')) &&
   !connectionsHost.textContent.includes('relation records · 3 source locations') &&

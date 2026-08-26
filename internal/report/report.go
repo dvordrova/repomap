@@ -8,7 +8,7 @@ import (
 )
 
 // CurrentFormatVersion is the canonical ProgramPortfolio report contract.
-const CurrentFormatVersion = 66
+const CurrentFormatVersion = 67
 
 // MaxReportJSONBytes is the single ordinary report.json bound shared by
 // generation, manifest verification, and the local report server.

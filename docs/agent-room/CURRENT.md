@@ -646,19 +646,20 @@ diagnostic-journal availability never changes the cube's semantic contract.
     browser code may invent a repository product or runtime role, promote an
     example or tool, or repair an incomplete result. Role kind remains the
     closed vocabulary `service`, `daemon`, `worker`, `cli`, `library`,
-    `supporting_tool`, and `unknown`; `runtime-portfolio.json` version 2 owns
+    `example`, `supporting_tool`, and `unknown`; `runtime-portfolio.json` version 3 owns
     this expanded contract. A `library` role denotes an
     evidence-backed reusable product/API rather than a runnable or deployable
     process. It must bind exact target-local ProgramIndex/CoreMap evidence from
     a library target; a package name or target kind alone has no role authority.
     Libraries may be primary or supporting according to the validated semantic
-    result. Example applications and supporting tools remain supporting and
-    cannot displace the reusable product/API they demonstrate or build. A
-    genuinely library-only target catalog may therefore produce a non-empty
-    portfolio of library roles; an empty result remains legitimate only when
-    no advertised target has sufficient evidence for any supported role. No
-    downstream layer turns that absence into a daemon, CLI, library, or other
-    role. RuntimePortfolio semantic cache identity is its exact captured
+    result. An `example` is an evidenced runnable demonstration, tutorial,
+    sample, or showcase rather than an ordinary product runtime. Example
+    applications and supporting tools remain supporting; no downstream layer
+    may promote them or infer a missing reusable product/API from them. A
+    genuinely library-only target catalog may produce a non-empty portfolio of
+    library roles. A fully validated empty model result remains legitimate;
+    no downstream layer turns that absence into a daemon, CLI, library, or
+    other role. RuntimePortfolio semantic cache identity is its exact captured
     revision, canonical run-invariant target and evidence facts, prompt,
     preparation, response-schema, execution, provider, and exact prepared
     request identity. It deliberately excludes the publication-local
@@ -786,9 +787,15 @@ semantic program map. An explicit empty repository route retains a direct
 program-map handoff. A populated repository route shows primary, supporting,
 and unknown product/runtime roles, including evidence-backed reusable library
 APIs, their exact target or target-mode mappings, source evidence, uncertainty,
-and every unclassified target. Example applications and tools remain in the
-supporting presentation tier; browser code neither promotes them nor
-synthesizes a missing library role. It exposes exact launch points,
+and every unclassified target. Examples and supporting tools have distinct
+semantic kinds and distinct presentation sections; browser code never infers
+either kind from names, paths, or prose. Baseline optional/high-confidence
+bookkeeping is omitted from cards, while exceptional requiredness or
+uncertainty remains visible. Repository-role evidence is closed by default and
+grouped by exact file and unique source location; the selected-fact count
+remains visible while raw model evidence labels do not become product copy.
+Browser code neither promotes examples and tools nor synthesizes a missing
+library role. It exposes exact launch points,
 declarations, bounded structural relations, source evidence, and material
 uncertainty without copying the complete indexes or repeating backend semantic
 validation in JavaScript. Producer diagnostics remain secondary evidence
@@ -809,15 +816,27 @@ as the current page. Target-scoped routes retain the exact target as context,
 but only that target's program-map link carries the current-page state; detail
 pages do not make their program-map link current merely because it names the
 same target. The program page starts with one compact, closed target summary
-instead of a second repository-sized hero. Source evidence is grouped by exact
+instead of a second repository-sized hero. Architecture-area controls change
+the focused canvas without scheduling a responsibility-detail scroll and
+restore focus to the replacement active control without moving the viewport.
+Hover or keyboard focus on a canvas card visually suppresses unrelated edges;
+related endpoints expose pointer-operable ports that move focus to the opposite
+exact canvas card without changing the report route. The SVG remains a visual
+edge layer, and canonical card links remain the keyboard navigation authority.
+Source evidence is grouped by exact
 repository-relative file, with the path as a quiet group label and concise
 declaration labels inside it rather than repeated module/path prefixes; exact
 line and column source actions remain unchanged. Focused code relations are
-grouped only through exact ProgramView owner/container IDs, with the owning
-declaration linked first and its local member relations indented beneath it.
-JavaScript platform calls, resolved external calls, and unresolved runtime
-frontiers remain complete in separate closed disclosures; presentation never
-drops or semantically promotes those records. An empty JS/TS full-stack-path
+grouped only through exact ProgramView owner/container and source-member IDs:
+the owning declaration is linked first, each member is shown once, and its
+call targets are concise source links rather than repeated relation verbs and
+path/line labels. Exact local authority is implicit in that section; possible
+and unresolved authority remains explicit. Additional projected callsites stay
+complete behind a closed disclosure, and the omission ledger still accounts
+for producer-known witness details that were not projected. JavaScript platform
+calls, resolved external calls, and unresolved runtime frontiers remain complete
+in separate closed disclosures within their exact source member; presentation
+never drops or semantically promotes those records. An empty JS/TS full-stack-path
 view explains which deterministically required condition is absent, such as a
 product browser or Node-server surface, an eligible client HTTP use or server
 route, or the remaining explicit method/path and retained-reachability chain. It
@@ -879,7 +898,7 @@ strict-decodes it, and compares the complete projection with the validated
 `report.json`. Its target navigation must equal the manifest-derived
 navigation, and static source authority must retain the manifest-derived host,
 revision, and repository-root-to-analysis-root path prefix. Manifest version
-34 and report format version 66 own the current publication contract. The
+34 and report format version 67 own the current publication contract. The
 manifest owns canonical `standalone_source {host,repository_url}` and the exact
 optional `core_map_sha256`, `dependency_catalog_sha256`,
 `python_target_catalog_sha256`, `declared_dependencies_sha256`,
@@ -1242,7 +1261,7 @@ model-selected integration operations with their exact callsites and
 explicitly non-exact runtime authority.
 The report rechecks every selected CoreMap member, activity start, integration
 operation, and activity-to-caller path against the same sealed ProgramIndex.
-Manifest version 34 and report format version 66 material-bind the exact Python
+Manifest version 34 and report format version 67 material-bind the exact Python
 target catalog, declared-dependency artifact, CoreMap, activity-entrypoint
 selection, dependency catalog, selected integration dependencies, concrete
 integration-usage artifact, and deterministic ActivityPath artifact as one
@@ -1356,7 +1375,7 @@ boundary; absent relations stay visible as frontiers and are never supplied by
 the model. Server registrations must be reachable through retained program
 calls from a product Node surface, so an integration-test server with the same
 method/path cannot replace the production handler. Dependency-injected storage
-dispatch remains possible rather than exact. Report format 66 derives the
+dispatch remains possible rather than exact. Report format 67 derives the
 surface catalog and cross-surface view
 from the sealed project plus the exact ProgramIndex, starts JS/TS reports at
 `#/repository` only when that view has an exact surface or path, otherwise

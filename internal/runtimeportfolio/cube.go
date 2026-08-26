@@ -17,7 +17,7 @@ import (
 
 const (
 	preparationVersion    = 1
-	responseSchemaVersion = 2
+	responseSchemaVersion = 3
 )
 
 //go:embed prompts/system.md
@@ -309,6 +309,10 @@ func restoreRole(
 	}
 	if proposed.MappingStatus == MappingUnknown && len(implementations) != 0 {
 		return Role{}, fmt.Errorf("unknown mapping selected a known target")
+	}
+	if (proposed.Kind == RoleKindExample || proposed.Kind == RoleKindSupportingTool) &&
+		proposed.Prominence != ProminenceSupporting {
+		return Role{}, fmt.Errorf("example or supporting-tool role is not supporting")
 	}
 	evidenceSet := make(map[string]Evidence)
 	for _, ref := range proposed.EvidenceRefs {
