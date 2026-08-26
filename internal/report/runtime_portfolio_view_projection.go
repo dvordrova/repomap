@@ -11,7 +11,7 @@ import (
 	"github.com/dvordrova/repomap/internal/snapshot"
 )
 
-const runtimePortfolioUnclassifiedReason = "No repository runtime role maps this analyzed target."
+const runtimePortfolioUnclassifiedReason = "No repository role maps this analyzed target."
 
 // RuntimePortfolioView is the persisted, browser-facing projection of the
 // canonical repository runtime portfolio. Provider refs, semantic evidence
@@ -340,7 +340,7 @@ func runtimePortfolioProminenceOrder(value runtimeportfolio.Prominence) string {
 
 func validRuntimePortfolioRoleKind(value runtimeportfolio.RoleKind) bool {
 	switch value {
-	case runtimeportfolio.RoleKindService, runtimeportfolio.RoleKindDaemon, runtimeportfolio.RoleKindWorker,
+	case runtimeportfolio.RoleKindLibrary, runtimeportfolio.RoleKindService, runtimeportfolio.RoleKindDaemon, runtimeportfolio.RoleKindWorker,
 		runtimeportfolio.RoleKindCLI, runtimeportfolio.RoleKindSupportingTool, runtimeportfolio.RoleKindUnknown:
 		return true
 	default:

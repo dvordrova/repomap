@@ -89,6 +89,23 @@ func TestRuntimePortfolioViewPreservesMappingsEvidenceAndExactTargetCoverage(t *
 	}
 }
 
+func TestRuntimePortfolioViewPreservesFirstClassLibraryRole(t *testing.T) {
+	result := reportRuntimePortfolioFixtureWithRoleKind(
+		t,
+		strings.Repeat("a", 64),
+		reportRuntimeTargetsFixture(t),
+		runtimeportfolio.RoleKindLibrary,
+	)
+	view, err := NewRuntimePortfolioView(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Roles) != 1 || view.Roles[0].RoleKind != runtimeportfolio.RoleKindLibrary ||
+		len(view.UnclassifiedTargets) != 1 || view.UnclassifiedTargets[0].ProgramTargetID != "pt-helper" {
+		t.Fatalf("library role projection = roles %#v, unclassified %#v", view.Roles, view.UnclassifiedTargets)
+	}
+}
+
 func TestRestoreRuntimePortfolioRequiresAtomicTargetPageBinding(t *testing.T) {
 	outer := newTargetPageManifestFixture(t)
 	runDir := t.TempDir()
@@ -299,6 +316,20 @@ func reportRuntimePortfolioFixture(
 	portfolioSHA string,
 	targets []runtimeportfolio.Target,
 ) runtimeportfolio.Result {
+	return reportRuntimePortfolioFixtureWithRoleKind(
+		t,
+		portfolioSHA,
+		targets,
+		runtimeportfolio.RoleKindService,
+	)
+}
+
+func reportRuntimePortfolioFixtureWithRoleKind(
+	t *testing.T,
+	portfolioSHA string,
+	targets []runtimeportfolio.Target,
+	roleKind runtimeportfolio.RoleKind,
+) runtimeportfolio.Result {
 	t.Helper()
 	inputs := make([]runtimeportfolio.TargetInput, 0, len(targets))
 	for _, target := range targets {
@@ -320,11 +351,25 @@ func reportRuntimePortfolioFixture(
 		Location:        runtimeportfolio.Location{Path: "cmd/app/main.go", Line: 1, Column: 1},
 		ProgramTargetID: defaultTargetID,
 	}
+	repositoryEvidence := []runtimeportfolio.EvidenceInput{evidence}
+	implementationMode := "admin"
+	if roleKind == runtimeportfolio.RoleKindLibrary {
+		evidence.Kind = runtimeportfolio.EvidenceProgramFact
+		evidence.Label = "Exports a reusable library API"
+		for index := range inputs {
+			if inputs[index].ProgramTargetID == defaultTargetID {
+				inputs[index].Evidence = append(inputs[index].Evidence, evidence)
+				break
+			}
+		}
+		repositoryEvidence = []runtimeportfolio.EvidenceInput{}
+		implementationMode = ""
+	}
 	compilation, err := runtimeportfolio.Compile(runtimeportfolio.Input{
 		RepositoryName: "fixture", CapturedRevision: strings.Repeat("c", 40),
 		TargetPagePortfolioSHA256: portfolioSHA,
 		Targets:                   inputs,
-		RepositoryEvidence:        []runtimeportfolio.EvidenceInput{evidence},
+		RepositoryEvidence:        repositoryEvidence,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -357,9 +402,9 @@ func reportRuntimePortfolioFixture(
 	responseRaw, err := json.Marshal(map[string]any{
 		"roles": []any{map[string]any{
 			"name": "Administrative service", "purpose": "Serves the repository's administrative runtime.",
-			"prominence": "primary", "role_kind": "service", "requiredness": "required",
+			"prominence": "primary", "role_kind": roleKind, "requiredness": "required",
 			"confidence": "high", "mapping_status": "mapped",
-			"implementations": []any{map[string]any{"target_ref": targetRef, "mode": "admin"}},
+			"implementations": []any{map[string]any{"target_ref": targetRef, "mode": implementationMode}},
 			"evidence_refs":   []string{request.Evidence[0].Ref},
 		}},
 	})

@@ -17,7 +17,7 @@ import (
 
 const (
 	preparationVersion    = 1
-	responseSchemaVersion = 1
+	responseSchemaVersion = 2
 )
 
 //go:embed prompts/system.md
