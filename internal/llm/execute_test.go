@@ -17,6 +17,32 @@ type testValue struct {
 	Value string `json:"value"`
 }
 
+type classifiedTestProviderError struct {
+	failure ProviderFailure
+	cause   error
+}
+
+func (err *classifiedTestProviderError) Error() string {
+	if err == nil || err.cause == nil {
+		return "classified provider failure"
+	}
+	return err.cause.Error()
+}
+
+func (err *classifiedTestProviderError) Unwrap() error {
+	if err == nil {
+		return nil
+	}
+	return err.cause
+}
+
+func (err *classifiedTestProviderError) ProviderFailure() ProviderFailure {
+	if err == nil {
+		return ProviderFailure{Kind: ProviderFailureUnknown}
+	}
+	return err.failure
+}
+
 type testProvider struct {
 	state         []byte
 	secret        string
@@ -602,6 +628,60 @@ func TestPreparedBytesAreImmutableCopies(t *testing.T) {
 	first[0] = 'y'
 	if got := string(prepared.Bytes()); got != `{"request":true}` {
 		t.Fatalf("prepared bytes mutated: %q", got)
+	}
+}
+
+func TestProviderErrorRendersOnlyClosedStructuredFailure(t *testing.T) {
+	secret := "Authorization: Bearer provider-secret-value"
+	cause := errors.New(secret)
+	err := newProviderError("complete", &classifiedTestProviderError{
+		failure: ProviderFailure{
+			Kind: ProviderFailureHTTPStatus, HTTPStatus: 429,
+			Attempts: 99, RetryExhausted: true,
+		},
+		cause: cause,
+	}, 4)
+	failure := err.ProviderFailure()
+	if failure.Kind != ProviderFailureHTTPStatus || failure.HTTPStatus != 429 ||
+		failure.Attempts != 4 || !failure.RetryExhausted || !errors.Is(err, cause) {
+		t.Fatalf("provider failure = %#v / %v", failure, err)
+	}
+	rendered := err.Error()
+	for _, want := range []string{
+		"class=http_status", "status=429", "attempts=4",
+		"retries_exhausted=true", "check provider rate limits or quota, then retry",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("provider error = %q, want %q", rendered, want)
+		}
+	}
+	if strings.Contains(rendered, secret) {
+		t.Fatalf("provider error leaked cause: %q", rendered)
+	}
+
+	retriedTimeout := newProviderError("complete", &classifiedTestProviderError{
+		failure: ProviderFailure{
+			Kind: ProviderFailureTimeout, Attempts: 4, RetryExhausted: true,
+		},
+		cause: cause,
+	}, 4)
+	if failure := retriedTimeout.ProviderFailure(); failure.Kind != ProviderFailureTimeout || failure.Attempts != 4 || !failure.RetryExhausted {
+		t.Fatalf("retried timeout descriptor = %#v", failure)
+	}
+
+	invalid := newProviderError("complete", &classifiedTestProviderError{
+		failure: ProviderFailure{
+			Kind: ProviderFailureKind(secret), HTTPStatus: 999,
+			Attempts: -1, RetryExhausted: true, ResourceKind: ResourceLimitKind(secret),
+		},
+		cause: cause,
+	}, 0)
+	invalidRendered := invalid.Error()
+	if !strings.Contains(invalidRendered, "class=unknown") ||
+		strings.Contains(invalidRendered, secret) || strings.Contains(invalidRendered, "status=") ||
+		strings.Contains(invalidRendered, "attempts=") || strings.Contains(invalidRendered, "resource=") ||
+		strings.Contains(invalidRendered, "retries_exhausted") {
+		t.Fatalf("invalid provider descriptor was not closed: %q", invalidRendered)
 	}
 }
 

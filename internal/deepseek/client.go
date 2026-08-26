@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand/v2"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -270,6 +271,51 @@ type IncompleteCompletionError struct {
 	FinishReason string
 }
 
+type providerTransportError struct {
+	failure llm.ProviderFailure
+	cause   error
+}
+
+func newProviderTransportError(kind llm.ProviderFailureKind, status int, cause error) error {
+	return &providerTransportError{
+		failure: llm.ProviderFailure{Kind: kind, HTTPStatus: status},
+		cause:   cause,
+	}
+}
+
+func (err *providerTransportError) Error() string {
+	if err == nil {
+		return "llm provider transport failed"
+	}
+	if err.failure.Kind == llm.ProviderFailureHTTPStatus {
+		return fmt.Sprintf("llm provider transport failed (class=http_status status=%d)", err.failure.HTTPStatus)
+	}
+	switch err.failure.Kind {
+	case llm.ProviderFailureTimeout:
+		return "llm provider transport failed (class=timeout)"
+	case llm.ProviderFailureNetwork:
+		return "llm provider transport failed (class=network)"
+	case llm.ProviderFailureResponse:
+		return "llm provider transport failed (class=response)"
+	default:
+		return "llm provider transport failed"
+	}
+}
+
+func (err *providerTransportError) Unwrap() error {
+	if err == nil {
+		return nil
+	}
+	return err.cause
+}
+
+func (err *providerTransportError) ProviderFailure() llm.ProviderFailure {
+	if err == nil {
+		return llm.ProviderFailure{Kind: llm.ProviderFailureUnknown}
+	}
+	return err.failure
+}
+
 func (err *IncompleteCompletionError) Error() string {
 	if err == nil {
 		return "llm response completion is incomplete"
@@ -390,13 +436,17 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		retry := isRetryableNetworkError(err)
-		return chatCompletion{}, retry, fmt.Errorf("llm request failed: %w", err)
+		return chatCompletion{}, retry, newProviderTransportError(
+			providerNetworkFailureKind(err), 0, fmt.Errorf("llm request failed: %w", err),
+		)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxProviderResponseBytes+1))
 	if err != nil {
-		return chatCompletion{}, isRetryableNetworkError(err), fmt.Errorf("read llm response: %w", err)
+		return chatCompletion{}, isRetryableNetworkError(err), newProviderTransportError(
+			providerNetworkFailureKind(err), 0, fmt.Errorf("read llm response: %w", err),
+		)
 	}
 	if len(respBody) > maxProviderResponseBytes {
 		resourceErr := &ResourceLimitError{
@@ -417,7 +467,11 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 		return chatCompletion{
 			Content:       append([]byte(nil), respBody...),
 			ResponseBytes: len(respBody),
-		}, retry, fmt.Errorf("llm request failed with status %d: %s", resp.StatusCode, safeProviderErrorText(respBody))
+		}, retry, newProviderTransportError(
+			llm.ProviderFailureHTTPStatus,
+			resp.StatusCode,
+			fmt.Errorf("llm request failed with status %d: %s", resp.StatusCode, safeProviderErrorText(respBody)),
+		)
 	}
 
 	var parsed chatResponse
@@ -425,7 +479,9 @@ func doChatMeasured(ctx context.Context, httpClient *http.Client, endpoint, apiK
 		return chatCompletion{
 			Content:       append([]byte(nil), respBody...),
 			ResponseBytes: len(respBody),
-		}, false, fmt.Errorf("%w: %v", errResponseEnvelopeMalformed, err)
+		}, false, newProviderTransportError(
+			llm.ProviderFailureResponse, 0, fmt.Errorf("%w: %v", errResponseEnvelopeMalformed, err),
+		)
 	}
 	usage := chatUsage{}
 	usageReported := parsed.Usage != nil
@@ -555,6 +611,17 @@ func isRetryableNetworkError(err error) bool {
 		return false
 	}
 	return true
+}
+
+func providerNetworkFailureKind(err error) llm.ProviderFailureKind {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return llm.ProviderFailureTimeout
+	}
+	var networkErr net.Error
+	if errors.As(err, &networkErr) && networkErr.Timeout() {
+		return llm.ProviderFailureTimeout
+	}
+	return llm.ProviderFailureNetwork
 }
 
 func backoffDuration(attempt int) time.Duration {

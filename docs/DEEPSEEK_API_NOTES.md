@@ -52,8 +52,11 @@ comes from the caller's environment.
 - Responses are byte-bounded. The adapter decodes exactly one provider choice
   and its finish reason; the shared executor then accepts one unambiguous JSON
   object or array with harmless whitespace, one JSON fence, or short leading
-  prose. It never repairs fields, refs, schema, or values. Non-2xx errors report
-  the status and a bounded, sanitized response body.
+  prose. It never repairs fields, refs, schema, or values. Non-2xx outcomes
+  retain their bounded response bytes for the normal secret-guarded semantic
+  journal; a sensitive body is reduced to its guarded hash/count metadata.
+  The user-facing error reports only a closed failure class, safe HTTP status,
+  transport-attempt count, and fixed corrective guidance.
 - Provider inputs remain bounded and request-local. A domain cube may include
   a complete names-only tracked-file dictionary when its contract requires
   repository-wide matching; that is not permission to include corresponding

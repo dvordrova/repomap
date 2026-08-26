@@ -5,6 +5,7 @@ package llm
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -221,11 +222,47 @@ type Outcome[T any] struct {
 	Issues           []Issue
 }
 
-// ProviderError preserves a typed cause for errors.Is/errors.As while keeping
-// Error content closed. Provider error bodies and authentication details are
-// never interpolated into the user-facing string.
+// ProviderFailureKind is a closed, provider-neutral failure classification.
+// It deliberately excludes arbitrary provider text.
+type ProviderFailureKind string
+
+const (
+	ProviderFailureUnknown    ProviderFailureKind = "unknown"
+	ProviderFailureHTTPStatus ProviderFailureKind = "http_status"
+	ProviderFailureTimeout    ProviderFailureKind = "timeout"
+	ProviderFailureNetwork    ProviderFailureKind = "network"
+	ProviderFailureResource   ProviderFailureKind = "resource_limit"
+	ProviderFailureResponse   ProviderFailureKind = "response"
+	ProviderFailureCanceled   ProviderFailureKind = "canceled"
+
+	httpStatusCodeFirst      = 100
+	httpStatusCodeLast       = 599
+	httpServerErrorCodeFirst = 500
+)
+
+// ProviderFailure contains only closed classifications and scalar transport
+// facts that are safe to render. Provider error text and response bodies never
+// enter this value.
+type ProviderFailure struct {
+	Kind           ProviderFailureKind
+	HTTPStatus     int
+	Attempts       int
+	RetryExhausted bool
+	ResourceKind   ResourceLimitKind
+}
+
+// ProviderFailureSource lets a provider expose closed transport facts without
+// granting its arbitrary error text authority in shared diagnostics.
+type ProviderFailureSource interface {
+	ProviderFailure() ProviderFailure
+}
+
+// ProviderError preserves a typed cause for errors.Is/errors.As while rendering
+// only a normalized ProviderFailure. Provider error bodies and authentication
+// details are never interpolated into the user-facing string.
 type ProviderError struct {
 	Operation string
+	failure   ProviderFailure
 	cause     error
 }
 
@@ -233,7 +270,25 @@ func (providerErr *ProviderError) Error() string {
 	if providerErr == nil || providerErr.Operation == "" {
 		return "llm: provider operation failed"
 	}
-	return "llm: provider " + providerErr.Operation + " failed"
+	failure := normalizeProviderFailure(providerErr.failure)
+	details := "class=" + string(failure.Kind)
+	if failure.HTTPStatus != 0 {
+		details += fmt.Sprintf(" status=%d", failure.HTTPStatus)
+	}
+	if failure.Attempts > 0 {
+		details += fmt.Sprintf(" attempts=%d", failure.Attempts)
+	}
+	if failure.RetryExhausted {
+		details += " retries_exhausted=true"
+	}
+	if failure.ResourceKind != "" {
+		details += " resource=" + string(failure.ResourceKind)
+	}
+	message := "llm: provider " + providerErr.Operation + " failed (" + details + ")"
+	if guidance := providerFailureGuidance(failure); guidance != "" {
+		message += "; " + guidance
+	}
+	return message
 }
 
 func (providerErr *ProviderError) Unwrap() error {
@@ -241,6 +296,113 @@ func (providerErr *ProviderError) Unwrap() error {
 		return nil
 	}
 	return providerErr.cause
+}
+
+func (providerErr *ProviderError) ProviderFailure() ProviderFailure {
+	if providerErr == nil {
+		return ProviderFailure{Kind: ProviderFailureUnknown}
+	}
+	return normalizeProviderFailure(providerErr.failure)
+}
+
+func newProviderError(operation string, cause error, attempts int) *ProviderError {
+	failure := ProviderFailure{Kind: ProviderFailureUnknown}
+	var source ProviderFailureSource
+	if errors.As(cause, &source) {
+		failure = source.ProviderFailure()
+	}
+	if errors.Is(cause, context.DeadlineExceeded) {
+		failure.Kind = ProviderFailureTimeout
+	} else if errors.Is(cause, context.Canceled) {
+		failure.Kind = ProviderFailureCanceled
+	}
+	var resourceErr *ResourceLimitError
+	if errors.As(cause, &resourceErr) {
+		failure.Kind = ProviderFailureResource
+		failure.ResourceKind = resourceErr.Kind
+		failure.HTTPStatus = resourceErr.HTTPStatus
+	}
+	if attempts > 0 {
+		failure.Attempts = attempts
+	}
+	return &ProviderError{
+		Operation: operation,
+		failure:   normalizeProviderFailure(failure),
+		cause:     cause,
+	}
+}
+
+func normalizeProviderFailure(failure ProviderFailure) ProviderFailure {
+	switch failure.Kind {
+	case ProviderFailureHTTPStatus, ProviderFailureTimeout, ProviderFailureNetwork,
+		ProviderFailureResource, ProviderFailureResponse, ProviderFailureCanceled:
+	default:
+		failure.Kind = ProviderFailureUnknown
+	}
+	if failure.HTTPStatus < httpStatusCodeFirst || failure.HTTPStatus > httpStatusCodeLast ||
+		(failure.Kind != ProviderFailureHTTPStatus && failure.Kind != ProviderFailureResource) {
+		failure.HTTPStatus = 0
+	}
+	if failure.Attempts < 0 {
+		failure.Attempts = 0
+	}
+	if failure.Attempts < 2 ||
+		(failure.Kind != ProviderFailureHTTPStatus && failure.Kind != ProviderFailureNetwork &&
+			failure.Kind != ProviderFailureTimeout) {
+		failure.RetryExhausted = false
+	}
+	if failure.Kind != ProviderFailureResource || !validResourceLimitKind(failure.ResourceKind) {
+		failure.ResourceKind = ""
+	}
+	return failure
+}
+
+func validResourceLimitKind(kind ResourceLimitKind) bool {
+	switch kind {
+	case ResourceLimitRequestBytes, ResourceLimitResponseBytes, ResourceLimitRecordBytes,
+		ResourceLimitCatalogItems, ResourceLimitOutputTokens, ResourceLimitSemanticCalls:
+		return true
+	default:
+		return false
+	}
+}
+
+func providerFailureGuidance(failure ProviderFailure) string {
+	switch failure.Kind {
+	case ProviderFailureHTTPStatus:
+		switch failure.HTTPStatus {
+		case 401, 403:
+			return "check provider credentials and model access"
+		case 429:
+			return "check provider rate limits or quota, then retry"
+		default:
+			if failure.HTTPStatus >= httpServerErrorCodeFirst {
+				return "retry later or check provider service health"
+			}
+			return "check provider endpoint, request compatibility, and account access"
+		}
+	case ProviderFailureTimeout:
+		return "check provider latency or increase the configured timeout"
+	case ProviderFailureNetwork:
+		return "check network access and the configured provider endpoint"
+	case ProviderFailureResource:
+		switch failure.ResourceKind {
+		case ResourceLimitOutputTokens:
+			return "reduce the requested result, or raise the output-token limit where configurable"
+		case ResourceLimitResponseBytes:
+			return "reduce the requested result, or raise the response limit where configurable"
+		case ResourceLimitSemanticCalls:
+			return "reduce the requested work, or raise the model-call limit where configurable"
+		default:
+			return "reduce the model request, or raise the resource limit where configurable"
+		}
+	case ProviderFailureResponse:
+		return "check provider response compatibility and retry"
+	case ProviderFailureCanceled:
+		return "rerun after clearing the cancellation"
+	default:
+		return "check provider configuration, credentials, and connectivity"
+	}
 }
 
 // Executor configures the one persistent accepted-response cache and optional

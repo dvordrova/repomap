@@ -1494,6 +1494,16 @@ The shared LLM executor owns:
 - accepted-only persistent caching; and
 - per-run observation events used by the semantic journal.
 
+Provider-call wrappers keep their underlying cause chain available for local
+`errors.Is`/`errors.As` handling when a typed cause is supplied, but their
+user-facing diagnostic is built only from a closed provider-neutral
+classification. It may report a timeout, network failure, HTTP status,
+resource limit, unusable response, and the observed transport-attempt count,
+followed by fixed corrective guidance.
+Arbitrary provider error text, response bodies, endpoint URLs,
+authentication details, and credentials are never interpolated into that
+diagnostic.
+
 Domain identities are never delegated to model spelling. Before a cube call,
 the backend maps UUIDs, canonical symbol identities, dependency identities,
 and repository-relative paths to a closed request-local catalog of compact

@@ -417,6 +417,12 @@
       "symbols": ["MaxArtifactBytes", "maxPackageBinaryCommandBytes"]
     },
     {
+      "file": "internal/llm/api.go",
+      "category": "excluded-not-a-limit",
+      "symbols": ["ProviderFailureTimeout"],
+      "note": "Closed provider-failure diagnostic enum value, not a duration or resource ceiling."
+    },
+    {
       "file": "internal/llm/cache.go",
       "category": "byte-bound",
       "symbols": ["maxCacheRecordBytes"]
