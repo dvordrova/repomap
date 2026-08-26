@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	Version          = 2
+	Version          = 3
 	ArtifactFilename = "runtime-portfolio.json"
 
 	MaxRequestBytes         = 4 * 1024 * 1024
@@ -30,7 +30,7 @@ const (
 	MaxArtifactBytes        = 4 << 20
 )
 
-const executionContract = "repository-runtime-portfolio-v3"
+const executionContract = "repository-runtime-portfolio-v4"
 
 type Prominence string
 
@@ -48,6 +48,7 @@ const (
 	RoleKindWorker         RoleKind = "worker"
 	RoleKindCLI            RoleKind = "cli"
 	RoleKindLibrary        RoleKind = "library"
+	RoleKindExample        RoleKind = "example"
 	RoleKindSupportingTool RoleKind = "supporting_tool"
 	RoleKindUnknown        RoleKind = "unknown"
 )
@@ -283,6 +284,10 @@ func validateRole(role Role, targets map[string]Target) error {
 	if role.MappingStatus == MappingUnknown && len(role.Implementations) != 0 {
 		return fmt.Errorf("unknown mapping cites an implementation")
 	}
+	if (role.Kind == RoleKindExample || role.Kind == RoleKindSupportingTool) &&
+		role.Prominence != ProminenceSupporting {
+		return fmt.Errorf("example or supporting-tool role is not supporting")
+	}
 	previousImplementation := ""
 	for _, implementation := range role.Implementations {
 		if _, known := targets[implementation.ProgramTargetID]; !known ||
@@ -456,7 +461,7 @@ func validProminence(value Prominence) bool {
 
 func validRoleKind(value RoleKind) bool {
 	switch value {
-	case RoleKindService, RoleKindDaemon, RoleKindWorker, RoleKindCLI, RoleKindLibrary,
+	case RoleKindService, RoleKindDaemon, RoleKindWorker, RoleKindCLI, RoleKindLibrary, RoleKindExample,
 		RoleKindSupportingTool, RoleKindUnknown:
 		return true
 	default:

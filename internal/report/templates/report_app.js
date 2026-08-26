@@ -154,7 +154,7 @@
 
   function buildRuntimePortfolio(data, targetDirectory, openable) {
     var raw = object(data.runtime_portfolio, 'runtime_portfolio');
-    if (integer(raw.version, 'runtime_portfolio.version') !== 2) {
+    if (integer(raw.version, 'runtime_portfolio.version') !== 3) {
       throw new Error('The runtime portfolio version is not supported.');
     }
     var roleIDs = Object.create(null);
@@ -189,7 +189,7 @@
         purpose: text(rawRole.purpose, 'runtime role.purpose'),
         prominence: closedText(rawRole.prominence, ['primary', 'supporting', 'unknown'], 'runtime role.prominence'),
         roleKind: closedText(rawRole.role_kind,
-          ['library', 'service', 'daemon', 'worker', 'cli', 'supporting_tool', 'unknown'], 'runtime role.role_kind'),
+          ['library', 'service', 'daemon', 'worker', 'cli', 'example', 'supporting_tool', 'unknown'], 'runtime role.role_kind'),
         requiredness: closedText(rawRole.requiredness,
           ['required', 'optional', 'experimental', 'unknown'], 'runtime role.requiredness'),
         confidence: closedText(rawRole.confidence, ['high', 'medium', 'low', 'unknown'], 'runtime role.confidence'),
@@ -544,7 +544,7 @@
 
   function buildPresentationModel(data) {
     text(data.repo_name, 'repo_name');
-    if (integer(data.format_version, 'format_version') !== 66) {
+    if (integer(data.format_version, 'format_version') !== 67) {
       throw new Error('The report format version is not supported.');
     }
     var portfolio = object(data.program_portfolio, 'program_portfolio');
@@ -950,6 +950,11 @@
       return name.slice(declarationSeparator + 1);
     }
     return name;
+  }
+
+  function displaySurfaceFactLabel(fact) {
+    if (!fact.location || fact.category !== 'declaration') return fact.label;
+    return displayProgramObjectName({ name: fact.label, kind: fact.kind });
   }
 
   function humanConnectionRelation(connection) {
@@ -1362,12 +1367,157 @@
     };
   }
 
+  function setCanvasElementClass(node, className, enabled) {
+    if (!node) return;
+    var classes = String(node.getAttribute('class') || node.className || '').split(/\s+/).filter(Boolean);
+    var present = classes.indexOf(className) >= 0;
+    if (enabled && !present) classes.push(className);
+    if (!enabled && present) classes = classes.filter(function (candidate) { return candidate !== className; });
+    node.setAttribute('class', classes.join(' '));
+  }
+
+  function setCanvasPortState(port, related, active) {
+    setCanvasElementClass(port, 'rm-canvas-edge-port--related', related);
+    setCanvasElementClass(port, 'rm-canvas-edge-port--active', active);
+    port.setAttribute('tabindex', related ? '0' : '-1');
+    port.setAttribute('aria-hidden', related ? 'false' : 'true');
+  }
+
+  function canvasHighlightTargetMatches(target, nodeID, edgeIndex) {
+    while (target && target.getAttribute) {
+      if (nodeID && target.getAttribute('data-canvas-node') === nodeID) return true;
+      if (nodeID && (target.getAttribute('data-canvas-edge-from') === nodeID ||
+          target.getAttribute('data-canvas-edge-to') === nodeID)) return true;
+      if (edgeIndex && target.getAttribute('data-canvas-edge-index') === edgeIndex) return true;
+      target = target.parentNode;
+    }
+    return false;
+  }
+
+  function clearCanvasHighlight() {
+    var canvas = document.querySelector('.rm-flow-canvas');
+    if (!canvas) return;
+    canvas.removeAttribute('data-canvas-highlight');
+    Array.prototype.forEach.call(canvas.querySelectorAll('.rm-canvas-edge-group'), function (group) {
+      setCanvasElementClass(group, 'rm-canvas-edge-group--related', false);
+      setCanvasElementClass(group, 'rm-canvas-edge-group--active', false);
+      setCanvasElementClass(group, 'rm-canvas-edge-group--dimmed', false);
+    });
+    Array.prototype.forEach.call(canvas.querySelectorAll('[data-canvas-node]'), function (node) {
+      setCanvasElementClass(node, 'rm-canvas-node--edge-active', false);
+      setCanvasElementClass(node, 'rm-canvas-node--edge-related', false);
+    });
+    Array.prototype.forEach.call(canvas.querySelectorAll('[data-canvas-edge-port]'), function (port) {
+      setCanvasPortState(port, false, false);
+    });
+  }
+
+  function highlightCanvasNode(nodeID) {
+    var canvas = document.querySelector('.rm-flow-canvas');
+    if (!canvas) return;
+    var relatedNodes = Object.create(null);
+    relatedNodes[nodeID] = true;
+    canvas.setAttribute('data-canvas-highlight', 'node');
+    Array.prototype.forEach.call(canvas.querySelectorAll('.rm-canvas-edge-group'), function (group) {
+      var from = group.getAttribute('data-canvas-edge-from');
+      var to = group.getAttribute('data-canvas-edge-to');
+      var related = from === nodeID || to === nodeID;
+      setCanvasElementClass(group, 'rm-canvas-edge-group--related', related);
+      setCanvasElementClass(group, 'rm-canvas-edge-group--active', false);
+      setCanvasElementClass(group, 'rm-canvas-edge-group--dimmed', !related);
+      if (related) {
+        relatedNodes[from] = true;
+        relatedNodes[to] = true;
+      }
+    });
+    Array.prototype.forEach.call(canvas.querySelectorAll('[data-canvas-node]'), function (node) {
+      var candidateID = node.getAttribute('data-canvas-node');
+      setCanvasElementClass(node, 'rm-canvas-node--edge-active', candidateID === nodeID);
+      setCanvasElementClass(node, 'rm-canvas-node--edge-related', candidateID !== nodeID && !!relatedNodes[candidateID]);
+    });
+    Array.prototype.forEach.call(canvas.querySelectorAll('[data-canvas-edge-port]'), function (port) {
+      var related = port.getAttribute('data-canvas-edge-from') === nodeID ||
+        port.getAttribute('data-canvas-edge-to') === nodeID;
+      setCanvasPortState(port, related, false);
+    });
+  }
+
+  function highlightCanvasEdge(edgeIndex) {
+    var canvas = document.querySelector('.rm-flow-canvas');
+    if (!canvas) return;
+    var endpoints = Object.create(null);
+    canvas.setAttribute('data-canvas-highlight', 'edge');
+    Array.prototype.forEach.call(canvas.querySelectorAll('.rm-canvas-edge-group'), function (group) {
+      var active = group.getAttribute('data-canvas-edge-index') === edgeIndex;
+      setCanvasElementClass(group, 'rm-canvas-edge-group--related', active);
+      setCanvasElementClass(group, 'rm-canvas-edge-group--active', active);
+      setCanvasElementClass(group, 'rm-canvas-edge-group--dimmed', !active);
+      if (active) {
+        endpoints[group.getAttribute('data-canvas-edge-from')] = true;
+        endpoints[group.getAttribute('data-canvas-edge-to')] = true;
+      }
+    });
+    Array.prototype.forEach.call(canvas.querySelectorAll('[data-canvas-node]'), function (node) {
+      setCanvasElementClass(node, 'rm-canvas-node--edge-active', false);
+      setCanvasElementClass(node, 'rm-canvas-node--edge-related', !!endpoints[node.getAttribute('data-canvas-node')]);
+    });
+    Array.prototype.forEach.call(canvas.querySelectorAll('[data-canvas-edge-port]'), function (port) {
+      var active = port.getAttribute('data-canvas-edge-index') === edgeIndex;
+      setCanvasPortState(port, active, active);
+    });
+  }
+
+  function restoreCanvasHighlight() {
+    if (state.canvasHighlightEdgeIndex !== '') {
+      highlightCanvasEdge(state.canvasHighlightEdgeIndex);
+      return;
+    }
+    var nodeID = state.canvasHoverNodeID || state.canvasFocusNodeID;
+    if (nodeID) highlightCanvasNode(nodeID);
+    else clearCanvasHighlight();
+  }
+
+  function focusCanvasNode(nodeID) {
+    var canvas = document.querySelector('.rm-flow-canvas');
+    if (!canvas) return;
+    var target = Array.prototype.find.call(canvas.querySelectorAll('[data-canvas-node]'), function (node) {
+      return node.getAttribute('data-canvas-node') === nodeID;
+    });
+    if (!target) return;
+    if (typeof target.scrollIntoView === 'function') {
+      var reducedMotion = typeof window.matchMedia === 'function' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      target.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center', inline: 'nearest' });
+    }
+    if (typeof target.focus === 'function') target.focus({ preventScroll: true });
+  }
+
   function canvasNode(kind, id, name, meta, selected, href, beforeNavigate) {
     var wrapper = element('div', 'rm-canvas-node-wrap rm-canvas-node-wrap--' + kind);
     var control = element('a', 'rm-canvas-node rm-canvas-node--' + kind);
     control.href = href;
     if (beforeNavigate) control.addEventListener('click', beforeNavigate);
-    control.setAttribute('data-canvas-node', kind + ':' + id);
+    var nodeID = kind + ':' + id;
+    control.setAttribute('data-canvas-node', nodeID);
+    control.setAttribute('data-canvas-label', name);
+    wrapper.setAttribute('data-canvas-node-wrap', nodeID);
+    wrapper.addEventListener('mouseenter', function () {
+      state.canvasHoverNodeID = nodeID;
+      restoreCanvasHighlight();
+    });
+    wrapper.addEventListener('mouseleave', function () {
+      state.canvasHoverNodeID = '';
+      state.canvasHighlightEdgeIndex = '';
+      restoreCanvasHighlight();
+    });
+    control.addEventListener('focus', function () {
+      state.canvasFocusNodeID = nodeID;
+      restoreCanvasHighlight();
+    });
+    control.addEventListener('blur', function (event) {
+      state.canvasFocusNodeID = '';
+      if (!canvasHighlightTargetMatches(event.relatedTarget, nodeID, '')) restoreCanvasHighlight();
+    });
     if (selected) control.setAttribute('aria-current', 'true');
     appendText(control, 'span', 'rm-canvas-node__name', name);
     appendText(control, 'span', 'rm-canvas-node__meta', meta);
@@ -1395,7 +1545,8 @@
 
   function activityCanvasNode(start) {
     return canvasNode(
-      'entry', start.id, start.name, formatLocation(start.location), false, routeForActivity(start.id), null
+      'entry', start.id, displayProgramObjectName(start), formatLocation(start.location), false,
+      routeForActivity(start.id), null
     ).wrapper;
   }
 
@@ -1490,13 +1641,19 @@
       var containsSelected = group.blockIDs.indexOf(selected.id) >= 0;
       if (containsSelected) button.className += ' rm-area-switcher__item--membership';
       if (activeGroup && group.id === activeGroup.id) button.setAttribute('aria-current', 'true');
+      button.setAttribute('data-area-group', group.id);
       appendText(button, 'span', '', group.name);
       var groupMeta = String(group.blockIDs.length) + (containsSelected ? ' · member' : '');
       if (group.authority === 'local_unassigned') groupMeta += ' · local accounting';
       appendText(button, 'small', '', groupMeta);
       button.addEventListener('click', function () {
-        navigateToBlock(state.model.blocksByID[group.blockIDs[0]], group);
+        state.pendingAreaGroupFocusID = group.id;
+        navigateToBlock(state.model.blocksByID[group.blockIDs[0]], group, false);
       });
+      if (activeGroup && group.id === activeGroup.id && state.pendingAreaGroupFocusID === group.id) {
+        state.pendingAreaGroupFocusID = '';
+        window.requestAnimationFrame(function () { button.focus({ preventScroll: true }); });
+      }
       grid.appendChild(button);
     });
     navigation.appendChild(grid);
@@ -1504,6 +1661,9 @@
   }
 
   function renderFlowCanvas(selected) {
+    state.canvasHoverNodeID = '';
+    state.canvasFocusNodeID = '';
+    state.canvasHighlightEdgeIndex = '';
     var memberships = state.model.groupsByBlock[selected.id] || [];
     var activeGroup = memberships.find(function (group) { return group.id === state.focusGroupID; }) ||
       state.model.groupByBlock[selected.id] || null;
@@ -1673,7 +1833,67 @@
     Array.prototype.forEach.call(canvas.querySelectorAll('[data-canvas-node]'), function (node) {
       nodes[node.getAttribute('data-canvas-node')] = node;
     });
+    Array.prototype.forEach.call(canvas.querySelectorAll('[data-canvas-edge-port]'), function (port) {
+      if (port.parentNode) port.parentNode.removeChild(port);
+    });
+    var slotTotals = Object.create(null);
+    var slotIndexes = Object.create(null);
+    function portSlotKey(nodeID, side) { return nodeID + '\n' + side; }
+    function countPort(nodeID, side) {
+      var key = portSlotKey(nodeID, side);
+      slotTotals[key] = (slotTotals[key] || 0) + 1;
+    }
     state.canvasEdges.forEach(function (edge) {
+      if (!nodes[edge.from] || !nodes[edge.to]) return;
+      var sameLane = edge.from.indexOf('core:') === 0 && edge.to.indexOf('core:') === 0;
+      countPort(edge.from, 'right');
+      countPort(edge.to, sameLane ? 'right' : 'left');
+    });
+    function appendPort(control, side, endpointID, destinationID, edge, edgeIndex) {
+      var key = portSlotKey(endpointID, side);
+      var index = slotIndexes[key] || 0;
+      slotIndexes[key] = index + 1;
+      var total = slotTotals[key] || 1;
+      var spread = Math.min(38, Math.max(0, total - 1) * 10);
+      var offset = total === 1 ? 0 : (-spread / 2) + (spread * index / (total - 1));
+      var port = element('button', 'rm-canvas-edge-port rm-canvas-edge-port--' + side +
+        ' rm-canvas-edge-port--' + edge.resolution);
+      port.type = 'button';
+      port.setAttribute('style', '--rm-canvas-edge-offset: ' + String(offset) + 'px');
+      port.setAttribute('data-canvas-edge-port', 'true');
+      port.setAttribute('data-canvas-edge-index', edgeIndex);
+      port.setAttribute('data-canvas-edge-from', edge.from);
+      port.setAttribute('data-canvas-edge-to', edge.to);
+      port.setAttribute('data-canvas-edge-endpoint', endpointID);
+      port.setAttribute('tabindex', '-1');
+      port.setAttribute('aria-hidden', 'true');
+      port.setAttribute('aria-label', 'Follow this connection to ' +
+        (nodes[destinationID].getAttribute('data-canvas-label') || destinationID));
+      port.title = edge.description;
+      port.addEventListener('mouseenter', function () {
+        state.canvasHighlightEdgeIndex = edgeIndex;
+        restoreCanvasHighlight();
+      });
+      port.addEventListener('mouseleave', function () {
+        state.canvasHighlightEdgeIndex = '';
+        restoreCanvasHighlight();
+      });
+      port.addEventListener('focus', function () {
+        state.canvasHighlightEdgeIndex = edgeIndex;
+        restoreCanvasHighlight();
+      });
+      port.addEventListener('blur', function () {
+        state.canvasHighlightEdgeIndex = '';
+        restoreCanvasHighlight();
+      });
+      port.addEventListener('click', function (event) {
+        if (event && event.preventDefault) event.preventDefault();
+        if (event && event.stopPropagation) event.stopPropagation();
+        focusCanvasNode(destinationID);
+      });
+      control.parentNode.appendChild(port);
+    }
+    state.canvasEdges.forEach(function (edge, index) {
       var source = nodes[edge.from];
       var target = nodes[edge.to];
       if (!source || !target) return;
@@ -1686,6 +1906,12 @@
       var y2 = targetBounds.top + targetBounds.height / 2 - bounds.top;
       var authorityOffset = edge.resolution === 'possible' ? 12 : edge.resolution === 'runtime' ? 24 : 0;
       var bend = Math.max(34, sameLane ? 46 : Math.abs(x2 - x1) * 0.45) + authorityOffset;
+      var edgeIndex = String(index);
+      var group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      group.setAttribute('class', 'rm-canvas-edge-group');
+      group.setAttribute('data-canvas-edge-index', edgeIndex);
+      group.setAttribute('data-canvas-edge-from', edge.from);
+      group.setAttribute('data-canvas-edge-to', edge.to);
       var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.setAttribute('d', sameLane ?
         'M ' + x1 + ' ' + y1 + ' C ' + (x1 + bend) + ' ' + y1 + ', ' +
@@ -1694,8 +1920,12 @@
           (x2 - bend) + ' ' + y2 + ', ' + x2 + ' ' + y2);
       path.setAttribute('class', 'rm-canvas-edge rm-canvas-edge--' + edge.resolution);
       path.setAttribute('marker-end', 'url(#rm-canvas-arrow-' + edge.resolution + ')');
-      svg.appendChild(path);
+      group.appendChild(path);
+      svg.appendChild(group);
+      appendPort(source, 'right', edge.from, edge.to, edge, edgeIndex);
+      appendPort(target, sameLane ? 'right' : 'left', edge.to, edge.from, edge, edgeIndex);
     });
+    restoreCanvasHighlight();
   }
 
   function scheduleCanvasDraw() {
@@ -1888,22 +2118,82 @@
     appendText(parent, 'span', 'rm-runtime-badge rm-runtime-badge--' + kind, humanRuntimeToken(value));
   }
 
+  function runtimeEvidenceGroups(evidence) {
+    var byPath = Object.create(null);
+    var groups = [];
+    evidence.forEach(function (fact) {
+      var path = fact.location.path;
+      var group = byPath[path];
+      if (!group) {
+        group = { path: path, factCount: 0, locations: [], locationsByKey: Object.create(null) };
+        byPath[path] = group;
+        groups.push(group);
+      }
+      group.factCount++;
+      var key = String(fact.location.line) + ':' + String(fact.location.column);
+      if (!group.locationsByKey[key]) {
+        group.locationsByKey[key] = true;
+        group.locations.push(fact.location);
+      }
+    });
+    groups.sort(function (left, right) { return left.path.localeCompare(right.path); });
+    groups.forEach(function (group) {
+      group.locations.sort(function (left, right) {
+        return left.line - right.line || left.column - right.column;
+      });
+    });
+    return groups;
+  }
+
+  function renderRuntimeEvidence(role) {
+    var groups = runtimeEvidenceGroups(role.evidence);
+    var disclosure = element('details', 'rm-runtime-evidence');
+    appendText(disclosure, 'summary', '', 'Evidence · ' + String(role.evidence.length) +
+      (role.evidence.length === 1 ? ' fact' : ' facts') + ' · ' + String(groups.length) +
+      (groups.length === 1 ? ' file' : ' files'));
+    var files = element('div', 'rm-runtime-evidence__files');
+    groups.forEach(function (group) {
+      var file = element('details', 'rm-runtime-evidence-file');
+      var summary = element('summary');
+      appendText(summary, 'span', '', group.path);
+      appendText(summary, 'small', '', String(group.factCount) +
+        (group.factCount === 1 ? ' fact' : ' facts') + ' · ' + String(group.locations.length) +
+        (group.locations.length === 1 ? ' location' : ' locations'));
+      file.appendChild(summary);
+      var locations = element('div', 'rm-runtime-evidence-file__locations');
+      group.locations.forEach(function (location) {
+        var label = location.line > 0 ? 'L' + String(location.line) +
+          (location.column > 0 ? ':' + String(location.column) : '') : 'File';
+        locations.appendChild(sourceAction(label, location, { compact: true, locationLabel: '' }));
+      });
+      file.appendChild(locations);
+      files.appendChild(file);
+    });
+    disclosure.appendChild(files);
+    return disclosure;
+  }
+
   function renderRuntimeRole(role) {
     var card = element('article', 'rm-runtime-card');
     var heading = element('div', 'rm-runtime-card__heading');
     appendText(heading, 'h3', '', role.name);
     var badges = element('div', 'rm-runtime-card__badges');
     runtimeBadge(badges, role.roleKind, 'kind');
-    if (role.roleKind === 'library') {
-      runtimeBadge(badges, role.prominence, 'prominence-' + role.prominence);
+    if (role.roleKind === 'library' && role.prominence !== 'primary') {
+      runtimeBadge(badges, role.prominence === 'unknown' ? 'unknown prominence' : role.prominence,
+        'prominence-' + role.prominence);
     }
-    runtimeBadge(badges, role.requiredness, 'requiredness-' + role.requiredness);
-    runtimeBadge(badges, role.confidence + ' confidence', 'confidence-' + role.confidence);
-    heading.appendChild(badges);
+    if (role.requiredness !== 'optional') {
+      runtimeBadge(badges, role.requiredness === 'required' ? 'required role' : role.requiredness,
+        'requiredness-' + role.requiredness);
+    }
+    if (role.confidence !== 'high') {
+      runtimeBadge(badges, role.confidence + ' confidence', 'confidence-' + role.confidence);
+    }
+    if (badges.children.length) heading.appendChild(badges);
     card.appendChild(heading);
     appendText(card, 'p', 'rm-runtime-card__purpose', role.purpose);
 
-    appendText(card, 'p', 'rm-runtime-card__label', 'Implemented by');
     if (!role.implementations.length) {
       appendText(card, 'p', 'rm-runtime-card__unresolved', 'Target mapping unresolved.');
     } else {
@@ -1911,26 +2201,18 @@
       role.implementations.forEach(function (implementation) {
         var link = element('a', 'rm-runtime-target');
         link.href = implementation.target.href;
-        appendText(link, 'span', '', implementation.target.displayName);
+        appendText(link, 'span', '', implementation.target.displayName + ' →');
         appendText(link, 'small', '', implementation.mode ?
-          humanRuntimeToken(implementation.mode) + ' mode · ' + implementation.target.language + ' ' + implementation.target.kind :
-          implementation.target.language + ' ' + implementation.target.kind);
+          humanRuntimeToken(implementation.mode) + ' · ' + humanRuntimeToken(implementation.target.language) + ' ' +
+            humanRuntimeToken(implementation.target.kind) :
+          humanRuntimeToken(implementation.target.language) + ' ' + humanRuntimeToken(implementation.target.kind));
         implementations.appendChild(link);
       });
       card.appendChild(implementations);
     }
 
     if (role.evidence.length) {
-      var disclosure = element('details', 'rm-runtime-evidence');
-      appendText(disclosure, 'summary', '', 'Repository evidence · ' + String(role.evidence.length));
-      var evidenceList = element('ul', 'rm-evidence-list');
-      role.evidence.forEach(function (evidence) {
-        var item = element('li');
-        item.appendChild(sourceAction(evidence.label, evidence.location));
-        evidenceList.appendChild(item);
-      });
-      disclosure.appendChild(evidenceList);
-      card.appendChild(disclosure);
+      card.appendChild(renderRuntimeEvidence(role));
     }
     return card;
   }
@@ -1999,18 +2281,29 @@
     host.appendChild(survey);
 
     var libraryRoles = runtime.roles.filter(function (role) { return role.roleKind === 'library'; });
-    var runnableRoles = runtime.roles.filter(function (role) { return role.roleKind !== 'library'; });
+    var exampleRoles = runtime.roles.filter(function (role) { return role.roleKind === 'example'; });
+    var toolRoles = runtime.roles.filter(function (role) { return role.roleKind === 'supporting_tool'; });
+    var runnableRoles = runtime.roles.filter(function (role) {
+      return ['library', 'example', 'supporting_tool', 'unknown'].indexOf(role.roleKind) < 0;
+    });
+    var uncertainRoles = runtime.roles.filter(function (role) {
+      return role.roleKind === 'unknown' ||
+        (['library', 'example', 'supporting_tool'].indexOf(role.roleKind) < 0 && role.prominence === 'unknown');
+    });
     renderRuntimeRoleSection(host, 'library', 'Libraries and product APIs',
       'Reusable packages and public APIs that form the product this repository delivers.', libraryRoles);
     renderRuntimeRoleSection(host, 'primary', 'Primary runtime roles',
       'The central services, daemons, workers, and command surfaces that explain how this repository runs.',
       runnableRoles.filter(function (role) { return role.prominence === 'primary'; }));
-    renderRuntimeRoleSection(host, 'supporting', 'Supporting and optional roles',
-      'Runnable examples, supporting tools, and operationally secondary roles.',
+    renderRuntimeRoleSection(host, 'example', 'Examples',
+      'Runnable demonstrations and tutorials that show how the repository product is used.', exampleRoles);
+    renderRuntimeRoleSection(host, 'tool', 'Supporting tools',
+      'Build, release, migration, generator, and operational utilities.', toolRoles);
+    renderRuntimeRoleSection(host, 'supporting', 'Other supporting roles',
+      'Secondary runnable or operational roles that are neither examples nor tools.',
       runnableRoles.filter(function (role) { return role.prominence === 'supporting'; }));
     renderRuntimeRoleSection(host, 'unknown', 'Uncertain roles',
-      'Evidence supports these roles, but their repository prominence remains unknown.',
-      runnableRoles.filter(function (role) { return role.prominence === 'unknown'; }));
+      'Evidence supports these roles, but their kind or repository prominence remains uncertain.', uncertainRoles);
     renderUnclassifiedRuntimeTargets(host);
   }
 
@@ -2144,7 +2437,7 @@
       refs.forEach(function (ref) {
         var fact = factsByRef[ref];
         var item = element('li');
-        if (fact.location) item.appendChild(sourceAction(fact.label, fact.location));
+        if (fact.location) item.appendChild(sourceAction(displaySurfaceFactLabel(fact), fact.location));
         else appendText(item, 'code', '', fact.label);
         appendText(item, 'small', '', humanSurfaceToken(fact.category) + ' · ' + humanSurfaceToken(fact.kind));
         list.appendChild(item);
@@ -2235,14 +2528,17 @@
       runtimeBadge(badges, step.resolution, 'resolution-' + step.resolution);
       heading.appendChild(badges);
       item.appendChild(heading);
-      appendText(item, 'p', 'rm-path-step__fact', fact.label + ' · ' + humanSurfaceToken(fact.category));
+      appendText(item, 'p', 'rm-path-step__fact', displaySurfaceFactLabel(fact) + ' · ' +
+        humanSurfaceToken(fact.category));
       item.appendChild(sourceAction('Open exact step', step.location));
       if (step.targetRefs.length) {
         var targets = element('ul', 'rm-path-step__targets');
         step.targetRefs.forEach(function (ref) {
           var target = state.model.crossSurfacePaths.factsByRef[ref];
           var targetItem = element('li');
-          if (target.location) targetItem.appendChild(sourceAction(target.label, target.location));
+          if (target.location) {
+            targetItem.appendChild(sourceAction(displaySurfaceFactLabel(target), target.location));
+          }
           else appendText(targetItem, 'code', '', target.label);
           targets.appendChild(targetItem);
         });
@@ -2440,7 +2736,9 @@
         (use.authority === 'exact_external_symbol' ? 'exact' : 'unresolved'),
         humanIntegrationAuthority(use.authority));
       card.appendChild(heading);
-      appendText(card, 'p', '', use.callerName + ' → ' + use.callee);
+      var caller = state.model.objectsByID[use.callerID];
+      var callerLabel = caller ? displayProgramObjectName(caller) : use.callerName;
+      appendText(card, 'p', '', callerLabel + ' → ' + use.callee);
       appendText(card, 'p', 'rm-integration-use-card__meta', 'Mechanism: ' + use.mechanism);
       card.appendChild(sourceAction('Open selected callsite', use.callsite));
       if (use.route) {
@@ -2566,24 +2864,99 @@
     return sourceName.indexOf(ownedPrefix) === 0 ? sourceName.slice(ownedPrefix.length) : sourceName;
   }
 
-  function renderConnectionMember(connection, owner) {
-    var item = element('li', 'rm-connection rm-connection-member');
+  function groupOwnerConnectionsByMember(group) {
+    var members = [];
+    var membersByID = Object.create(null);
+    ['local', 'platform', 'external', 'unresolved'].forEach(function (bucketName) {
+      group[bucketName].forEach(function (connection) {
+        var source = connectionSourceObject(connection);
+        var member = membersByID[source.id];
+        if (!member) {
+          member = {
+            id: source.id,
+            source: source,
+            local: [],
+            platform: [],
+            external: [],
+            unresolved: []
+          };
+          membersByID[source.id] = member;
+          members.push(member);
+        }
+        member[bucketName].push(connection);
+      });
+    });
+    members.sort(function (left, right) {
+      var leftConnections = left.local.concat(left.platform, left.external, left.unresolved);
+      var rightConnections = right.local.concat(right.platform, right.external, right.unresolved);
+      return compareConnections(leftConnections[0], rightConnections[0]) || left.id.localeCompare(right.id);
+    });
+    return members;
+  }
+
+  function connectionTargetNames(connection, owner) {
+    if (!connection.targetIDs.length) return [connection.to];
+    var ownerName = displayProgramObjectName(owner);
+    var ownedPrefix = ownerName + '.';
+    return connection.targetIDs.map(function (targetID) {
+      var target = state.model.objectsByID[targetID];
+      if (!target) throw new Error('A displayed connection target is absent from the ProgramView.');
+      var name = displayProgramObjectName(target);
+      return name.indexOf(ownedPrefix) === 0 ? name.slice(ownedPrefix.length) : name;
+    });
+  }
+
+  function connectionTargetLabel(connection, owner) {
+    var names = connectionTargetNames(connection, owner);
+    if (connection.kind === 'calls' && connection.targetIDs.length) {
+      return names.map(function (name) { return /\)$/.test(name) ? name : name + '()'; }).join(' / ');
+    }
+    if (connection.kind === 'invokes_external' && connection.targetIDs.length) {
+      var targets = names.map(function (name) { return /\)$/.test(name) ? name : name + '()'; }).join(' / ');
+      return connection.invocation === 'construct' ? 'new ' + targets : targets;
+    }
+    if (connection.kind === 'calls') return connection.to;
+    return humanConnectionRelation(connection) + ' → ' + names.join(' / ');
+  }
+
+  function orderedConnectionLocations(connection) {
+    return connection.locations.slice().sort(function (left, right) {
+      return left.path.localeCompare(right.path) || left.line - right.line || left.column - right.column;
+    });
+  }
+
+  function renderConnectionTarget(connection, owner) {
+    var item = element('li', 'rm-connection rm-connection-target');
     var body = element('div');
-    var relationLabel = humanConnectionRelation(connection);
-    var pathLabel = connectionMemberName(connection, owner) + ' — ' + relationLabel + ' → ' + connection.to;
-    appendText(body, 'div', 'rm-connection__path rm-connection-member__heading', pathLabel);
-    if (connection.locations.length) {
-      var locations = element('div', 'rm-connection__locations');
-      connection.locations.forEach(function (location) {
-        locations.appendChild(sourceAction(formatLocation(location), location, {
+    var label = connectionTargetLabel(connection, owner);
+    var locations = orderedConnectionLocations(connection);
+    var target;
+    if (locations.length) {
+      target = sourceAction(label, locations[0], { compact: true, locationLabel: '' });
+      target.className += ' rm-connection__path rm-connection-target__link';
+    } else {
+      target = element('div', 'rm-connection-target__label', label);
+    }
+    body.appendChild(target);
+    if (locations.length > 1) {
+      var sites = element('details', 'rm-connection-sites');
+      var siteLabel = connection.kind === 'calls' ? 'callsites' : 'source sites';
+      appendText(sites, 'summary', 'rm-connection-sites__summary', String(locations.length) + ' ' + siteLabel);
+      var siteList = element('div', 'rm-connection-sites__list');
+      locations.forEach(function (location) {
+        siteList.appendChild(sourceAction(formatLocation(location), location, {
           compact: true,
           locationLabel: ''
         }));
       });
-      body.appendChild(locations);
+      sites.appendChild(siteList);
+      body.appendChild(sites);
     }
     item.appendChild(body);
-    appendText(item, 'span', 'rm-resolution rm-resolution--' + connection.resolution, connection.resolution);
+    if (connection.resolution !== 'exact') {
+      var resolutionLabel = connection.resolution === 'alternatives' ? 'possible' : connection.resolution;
+      appendText(item, 'span', 'rm-resolution rm-resolution--' + connection.resolution, resolutionLabel);
+    }
     return item;
   }
 
@@ -2596,13 +2969,48 @@
     if (records !== bucket.length) summary += ' · ' + String(records) + ' relation records';
     appendText(details, 'summary', 'rm-connection-runtime__summary', summary);
     var body = element('div', 'rm-connection-runtime__body');
-    var list = element('ul', 'rm-connection-owner__members');
+    var list = element('ul', 'rm-connection-member__targets');
     bucket.forEach(function (connection) {
-      list.appendChild(renderConnectionMember(connection, owner));
+      list.appendChild(renderConnectionTarget(connection, owner));
     });
     body.appendChild(list);
     details.appendChild(body);
     return details;
+  }
+
+  function renderConnectionMemberGroup(member, owner) {
+    var item = element('li', 'rm-connection-member-group');
+    if (member.source.id !== owner.id) {
+      var memberLabel = connectionMemberName(
+        member.local.concat(member.platform, member.external, member.unresolved)[0], owner
+      );
+      var heading;
+      if (member.source.location && state.model.openable[member.source.location.path]) {
+        heading = sourceAction(memberLabel, member.source.location, { compact: true, locationLabel: '' });
+        heading.className += ' rm-connection-member-group__heading';
+      } else {
+        heading = element('div', 'rm-connection-member-group__heading', memberLabel);
+      }
+      item.appendChild(heading);
+    } else {
+      item.className += ' rm-connection-member-group--owner';
+    }
+    if (member.local.length) {
+      var local = element('ul', 'rm-connection-member__targets');
+      member.local.forEach(function (connection) {
+        local.appendChild(renderConnectionTarget(connection, owner));
+      });
+      item.appendChild(local);
+    }
+    [
+      [member.platform, 'JavaScript platform APIs', 'platform'],
+      [member.external, 'External APIs', 'external'],
+      [member.unresolved, 'Unresolved runtime calls', 'unresolved']
+    ].forEach(function (entry) {
+      var bucket = renderConnectionBucket(owner, entry[0], entry[1], entry[2]);
+      if (bucket) item.appendChild(bucket);
+    });
+    return item;
   }
 
   function renderConnectionOwner(group) {
@@ -2611,7 +3019,7 @@
     var ownerLabel = displayProgramObjectName(group.owner);
     var title;
     if (group.owner.location && state.model.openable[group.owner.location.path]) {
-      title = sourceAction(ownerLabel, group.owner.location, { compact: true });
+      title = sourceAction(ownerLabel, group.owner.location, { compact: true, locationLabel: '' });
       title.className += ' rm-connection-owner__title';
     } else {
       title = element('div', 'rm-connection-owner__title');
@@ -2625,21 +3033,11 @@
       (records === all.length ? '' : ' · ' + String(records) + ' records'));
     item.appendChild(heading);
 
-    if (group.local.length) {
-      var local = element('ul', 'rm-connection-owner__members');
-      group.local.forEach(function (connection) {
-        local.appendChild(renderConnectionMember(connection, group.owner));
-      });
-      item.appendChild(local);
-    }
-    [
-      [group.platform, 'JavaScript platform APIs', 'platform'],
-      [group.external, 'External APIs', 'external'],
-      [group.unresolved, 'Unresolved runtime calls', 'unresolved']
-    ].forEach(function (entry) {
-      var bucket = renderConnectionBucket(group.owner, entry[0], entry[1], entry[2]);
-      if (bucket) item.appendChild(bucket);
+    var members = element('ul', 'rm-connection-owner__members');
+    groupOwnerConnectionsByMember(group).forEach(function (member) {
+      members.appendChild(renderConnectionMemberGroup(member, group.owner));
     });
+    item.appendChild(members);
     return item;
   }
 
@@ -2919,7 +3317,8 @@
       var model = buildPresentationModel(raw);
       state = {
         model: model, source: buildSourceAuthority(raw, model), canvasEdges: [],
-        completeCanvas: false, focusGroupID: null, pendingResponsibilityID: ''
+        completeCanvas: false, focusGroupID: null, pendingResponsibilityID: '', pendingAreaGroupFocusID: '',
+        canvasHoverNodeID: '', canvasFocusNodeID: '', canvasHighlightEdgeIndex: ''
       };
       renderHeader();
       renderRoute();

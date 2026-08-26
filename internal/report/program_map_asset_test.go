@@ -61,8 +61,11 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 		[]byte(`function reportRouteContext(route)`),
 		[]byte(`function canvasTopology(activeBlockIDs, complete)`),
 		[]byte(`function renderAreaSwitcher(selected, activeGroup)`),
+		[]byte(`navigateToBlock(state.model.blocksByID[group.blockIDs[0]], group, false)`),
 		[]byte(`Show complete map · `),
 		[]byte(`data-canvas-node`),
+		[]byte(`function highlightCanvasNode(nodeID)`),
+		[]byte(`data-canvas-edge-port`),
 		[]byte(`rm-evidence-disclosure`),
 		[]byte(`rm-core-group`),
 		[]byte(`coreCanvasGroup(group, selected, expanded)`),
@@ -144,9 +147,10 @@ func TestOrientationClientKeepsCompleteEvidenceBehindDisclosure(t *testing.T) {
 	}
 	for _, selector := range []string{
 		".rm-source-action--compact", ".rm-evidence-files", ".rm-evidence-file",
-		".rm-evidence-file__path", ".rm-evidence-symbols", ".rm-connection__locations",
-		".rm-connection-owner-list", ".rm-connection-owner__members", ".rm-connection-member__heading",
-		".rm-connection-runtime__summary",
+		".rm-evidence-file__path", ".rm-evidence-symbols", ".rm-connection-sites",
+		".rm-connection-owner-list", ".rm-connection-owner__members", ".rm-connection-member-group__heading",
+		".rm-connection-member__targets", ".rm-connection-target__link", ".rm-connection-runtime__summary",
+		".rm-canvas-edge-group--dimmed", ".rm-canvas-edge-port--related", ".rm-canvas-node--edge-related",
 	} {
 		if !strings.Contains(reportAppCSS, selector) {
 			t.Errorf("grouped exact-source presentation is missing %q", selector)
@@ -212,16 +216,20 @@ func TestOrientationClientUsesCompactTargetSwitcherAndRouteContext(t *testing.T)
 func TestOrientationClientRendersRuntimePortfolioBeforeProgramMap(t *testing.T) {
 	for _, required := range []string{
 		"object(data.runtime_portfolio, 'runtime_portfolio')",
-		"runtime_portfolio.version') !== 2",
+		"runtime_portfolio.version') !== 3",
 		"The runtime portfolio version is not supported",
 		"function buildTargetDirectory(data, currentTarget)",
 		"href: '#/program'",
 		"link.href = implementation.target.href",
-		"sourceAction(evidence.label, evidence.location)",
+		"function runtimeEvidenceGroups(evidence)",
+		"function renderRuntimeEvidence(role)",
+		"sourceAction(label, location, { compact: true, locationLabel: '' })",
 		"function renderRuntimePortfolio(host)",
 		"Libraries and product APIs",
 		"Primary runtime roles",
-		"Supporting and optional roles",
+		"Examples",
+		"Supporting tools",
+		"Other supporting roles",
 		"Uncertain roles",
 		"Unclassified targets",
 		"Target mapping unresolved",
@@ -236,10 +244,13 @@ func TestOrientationClientRendersRuntimePortfolioBeforeProgramMap(t *testing.T) 
 	}
 	librarySection := strings.Index(reportAppJS, "renderRuntimeRoleSection(host, 'library'")
 	primarySection := strings.Index(reportAppJS, "renderRuntimeRoleSection(host, 'primary'")
+	exampleSection := strings.Index(reportAppJS, "renderRuntimeRoleSection(host, 'example'")
+	toolSection := strings.Index(reportAppJS, "renderRuntimeRoleSection(host, 'tool'")
 	supportingSection := strings.Index(reportAppJS, "renderRuntimeRoleSection(host, 'supporting'")
-	if librarySection < 0 || primarySection < 0 || supportingSection < 0 ||
-		librarySection >= primarySection || primarySection >= supportingSection {
-		t.Error("repository overview does not render library roles before runnable and supporting roles")
+	if librarySection < 0 || primarySection < 0 || exampleSection < 0 || toolSection < 0 || supportingSection < 0 ||
+		librarySection >= primarySection || primarySection >= exampleSection || exampleSection >= toolSection ||
+		toolSection >= supportingSection {
+		t.Error("repository overview does not render library, runtime, example, tool, and other supporting roles distinctly")
 	}
 	for _, truncated := range []string{
 		"runtime.roles.slice(",
@@ -253,10 +264,17 @@ func TestOrientationClientRendersRuntimePortfolioBeforeProgramMap(t *testing.T) 
 	}
 	for _, selector := range []string{
 		".rm-runtime-section", ".rm-runtime-grid", ".rm-runtime-card",
-		".rm-runtime-section--library", ".rm-runtime-target", ".rm-runtime-unclassified__item",
+		".rm-runtime-section--library", ".rm-runtime-section--example", ".rm-runtime-section--tool",
+		".rm-runtime-target", ".rm-runtime-evidence__files", ".rm-runtime-evidence-file__locations",
+		".rm-runtime-unclassified__item",
 	} {
 		if !strings.Contains(reportAppCSS, selector) {
 			t.Errorf("runtime portfolio CSS is missing %q", selector)
+		}
+	}
+	for _, retired := range []string{"Implemented by", "Repository evidence", "Supporting and optional roles"} {
+		if strings.Contains(reportAppJS, retired) {
+			t.Errorf("runtime portfolio retained internal presentation copy %q", retired)
 		}
 	}
 	if !strings.Contains(programTemplateHTML, `href="#/repository"`) {
@@ -268,7 +286,7 @@ func TestOrientationClientRendersExactJSTSSurfacesAndCrossSurfacePaths(t *testin
 	for _, required := range []string{
 		"function buildJSTSSurfaceCatalog(data, target, indexSHA256, openable)",
 		"js_ts_surface_catalog_view.version') !== 2",
-		"data.format_version, 'format_version') !== 66",
+		"data.format_version, 'format_version') !== 67",
 		"function buildCrossSurfacePaths(data, target, indexSHA256, openable, surfaceCatalog)",
 		"['browser_application', 'node_server', 'command_line_application', 'shared_contracts', 'tool', 'unknown']",
 		"if (value === 'command_line_application') return 'Command-line application'",

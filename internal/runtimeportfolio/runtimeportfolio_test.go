@@ -61,6 +61,29 @@ func TestSimpleSingleTargetTopology(t *testing.T) {
 	}
 }
 
+func TestExampleRoleIsExplicitAndAlwaysSupporting(t *testing.T) {
+	compilation := mustCompile(t, singleTargetInput())
+	evidenceRef := evidenceRefForLabel(t, compilation, "Starts the API server")
+	role := responseRole{
+		Name: "Tutorial application", Purpose: "Demonstrates the supported API in a runnable sample.",
+		Prominence: ProminencePrimary, Kind: RoleKindExample,
+		Requiredness: RequirednessOptional, Confidence: ConfidenceHigh,
+		MappingStatus:   MappingMapped,
+		Implementations: []responseImplementation{{TargetRef: "t1"}},
+		EvidenceRefs:    []string{evidenceRef},
+	}
+	if _, err := ResolveResponse(compilation, mustMarshalResponse(t, role)); err == nil ||
+		!strings.Contains(err.Error(), "not supporting") {
+		t.Fatalf("ResolveResponse accepted a primary example role: %v", err)
+	}
+	role.Prominence = ProminenceSupporting
+	result := mustResolve(t, compilation, role)
+	if len(result.Roles) != 1 || result.Roles[0].Kind != RoleKindExample ||
+		result.Roles[0].Prominence != ProminenceSupporting {
+		t.Fatalf("example role = %#v", result.Roles)
+	}
+}
+
 func TestResolvePreservesSeveralModesOnOneTarget(t *testing.T) {
 	compilation := mustCompile(t, singleTargetInput())
 	result := mustResolve(t, compilation, responseRole{

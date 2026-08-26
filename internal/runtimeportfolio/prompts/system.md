@@ -11,7 +11,7 @@ Return exactly one JSON object with exactly this shape:
       "name": "short product or runtime role name",
       "purpose": "one concise sentence",
       "prominence": "primary | supporting | unknown",
-      "role_kind": "service | daemon | worker | cli | library | supporting_tool | unknown",
+      "role_kind": "service | daemon | worker | cli | library | example | supporting_tool | unknown",
       "requiredness": "required | optional | experimental | unknown",
       "confidence": "high | medium | low | unknown",
       "mapping_status": "mapped | unknown",
@@ -37,10 +37,11 @@ Choose `role_kind` by evidenced product or runtime behavior, not by a file, pack
 - `worker` processes queued, asynchronous, event-driven, or scheduled work;
 - `cli` is a user-facing command invoked interactively or by automation;
 - `library` is an evidenced reusable product/API that users consume through public construction, invocation, composition, data contracts, or extension points rather than by running or deploying it;
+- `example` is an intentionally runnable demonstration, tutorial, sample application, or showcase whose primary purpose is to teach or demonstrate the repository's product rather than serve as that product's ordinary runtime;
 - `supporting_tool` is an independently meaningful operational, administrative, migration, generator, build, or indexing utility that is not a primary application runtime;
 - `unknown` means the evidence supports a product or runtime role but does not distinguish these behaviors.
 
-Use `prominence=primary` only for roles central to the repository's production runtime or central to its evidenced reusable product/API surface. A library may be `primary` or `supporting`: choose from evidence of its repository-level product centrality, never from its target kind alone. Use `supporting` for secondary reusable libraries, user tools, administrative commands, optional stores/caches, and experimental components. Examples, test helpers, and build, release, migration, generator, or indexing tools are always `supporting`, even when they are runnable or have rich target-local analysis. Use `unknown` when the evidence does not establish centrality.
+Use `prominence=primary` only for roles central to the repository's production runtime or central to its evidenced reusable product/API surface. A library may be `primary` or `supporting`: choose from evidence of its repository-level product centrality, never from its target kind alone. Use `supporting` for examples, secondary reusable libraries, user tools, administrative commands, optional stores/caches, and experimental components. An `example` and every build, release, migration, generator, or indexing tool are always `supporting`, even when runnable or backed by rich target-local analysis. Test helpers are not portfolio roles. Use `unknown` when the evidence does not establish centrality.
 
 Use `requiredness=required` only when repository evidence establishes that the system needs the runnable role in the ordinary topology or that a library belongs to the ordinary supported product/API surface. Use `optional` or `experimental` only with supporting evidence. Otherwise return `unknown`; never infer requiredness from a package name, target kind, binary name, directory, or the presence of `package main`.
 
