@@ -108,14 +108,16 @@ sidecar tools.
   manifest version 34 this neutral page authority is mutually exclusive with
   the legacy Go `TargetRunContainer`/`TargetPagePortfolio` authority.
 - The current JavaScript/TypeScript slice owns exactly one selected
-  `package.json` project. A non-workspace root remains the project. A workspace
-  root remains the project only when an exact manifest field or canonical
+  `package.json` project. An eligible non-workspace root remains the project; a
+  source-less root manifest is tooling and cannot suppress an eligible nested
+  package. A workspace root remains the project only when an exact manifest
+  field or canonical
   `dev`/`start` entry names source owned by that root; otherwise it may delegate
   only through an exact `--cwd` in canonical `dev`/`start` to exactly one
   eligible child package. Zero or multiple exact delegates fail closed with
-  exact `jsts:<manifest>` choices. Without a root, one eligible nested package
-  is selected and multiple eligible packages fail closed with the same exact
-  choices. An explicit `jsts:<manifest>` selects that owned package before
+  exact `jsts:<manifest>` choices. Without an eligible root, one eligible nested
+  package is selected and multiple eligible packages fail closed with the same
+  exact choices. An explicit `jsts:<manifest>` selects that owned package before
   TypeScript compiler execution. `package.json#name` is optional: an exact
   top-level npm lockfile name is the secondary package identity, otherwise the
   root uses `root-package` and a nested package uses its repository-relative

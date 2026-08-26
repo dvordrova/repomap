@@ -69,6 +69,30 @@ func TestScoutSelectedBindsExactNestedPackageBeforeCompiler(t *testing.T) {
 	}
 }
 
+func TestScoutDoesNotLetSourceLessRootSuppressOwnedNestedPackage(t *testing.T) {
+	repository := newTargetScoutCorpus(t, map[string]string{
+		"package.json":       `{"private":true,"scripts":{"dev":"bun run --cwd ../.. dev","start":"bun run --cwd=../.. start"}}`,
+		"front/package.json": `{"name":"front-app"}`,
+		"front/src/main.ts":  "export const front = true\n",
+	})
+	defer repository.Close()
+
+	automatic, err := Scout(context.Background(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if automatic.Selector != "jsts:front/package.json" || automatic.ProjectDir != "front" {
+		t.Fatalf("automatic target = %#v, want the source-owning nested package", automatic)
+	}
+	exact, err := ScoutSelected(context.Background(), repository, automatic.Selector)
+	if err != nil {
+		t.Fatalf("materialization selector rejected the automatic scout target: %v", err)
+	}
+	if exact != automatic {
+		t.Fatalf("exact scout target = %#v, want automatic target %#v", exact, automatic)
+	}
+}
+
 func TestTargetFromResultPreservesExactScoutIdentity(t *testing.T) {
 	result := minimalResult(t, "typescript")
 	target, err := TargetFromResult(result)
