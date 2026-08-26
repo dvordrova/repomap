@@ -236,7 +236,7 @@ func DiscoverSelected(ctx context.Context, repository *corpus.Corpus, root, sele
 	}
 	for _, command := range manifest.Scripts {
 		for _, candidate := range scriptEntryPaths(command) {
-			if projectFileRef(repository, projectDir, candidate) != "" && sourceExtension(candidate) {
+			if _, owned := ownedFileRefs[candidate]; owned && sourceExtension(candidate) {
 				request.AdditionalFiles = append(request.AdditionalFiles, candidate)
 			}
 		}
