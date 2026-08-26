@@ -48,7 +48,7 @@ func ExecuteJSON[T any](
 		outcome.Issues = observe(executor.Observer, Event{
 			Kind: EventFailure, Source: SourceLive, Failure: FailurePrepare,
 		}, outcome.Issues)
-		return outcome, &ProviderError{Operation: "prepare", cause: err}
+		return outcome, newProviderError("prepare", err, 0)
 	}
 	request := prepared.Bytes()
 	requestSensitivity := setOutcomeRequest(&outcome, request)
@@ -164,7 +164,7 @@ func executeLive[T any](
 	outcome.Metrics = completion.Metrics
 	if err != nil {
 		outcome.Issues = observeFailure(executor.Observer, outcome, FailureProvider, outcome.Issues)
-		return outcome, &ProviderError{Operation: "complete", cause: err}
+		return outcome, newProviderError("complete", err, completion.Metrics.Attempts)
 	}
 	if responseSensitivity.found {
 		outcome.Issues = observeFailure(executor.Observer, outcome, FailureResponse, outcome.Issues)

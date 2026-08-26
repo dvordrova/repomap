@@ -156,7 +156,7 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 			select {
 			case <-ctx.Done():
 				completion := llmCompletion(last, attempts, responseBytes, time.Since(started))
-				return completion, closedLLMProviderError("complete", ctx.Err())
+				return completion, closedLLMProviderError("complete", ctx.Err(), attempts, false)
 			case <-time.After(backoffDuration(attempt - 1)):
 			}
 		}
@@ -170,7 +170,7 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 		if err == nil {
 			if completionErr := requireSingleStoppedCompletion(llmProviderStage, completion); completionErr != nil {
 				result := llmCompletion(completion, attempts, responseBytes, time.Since(started))
-				return result, closedLLMProviderError("complete", completionErr)
+				return result, closedLLMProviderError("complete", completionErr, attempts, false)
 			}
 			return llmCompletion(completion, attempts, responseBytes, time.Since(started)), nil
 		}
@@ -178,13 +178,13 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 		lastErr = annotateResourceLimit(lastErr, llmProviderStage, c.MaxTokens)
 		if !retryable {
 			result := llmCompletion(completion, attempts, responseBytes, time.Since(started))
-			return result, closedLLMProviderError("complete", lastErr)
+			return result, closedLLMProviderError("complete", lastErr, attempts, false)
 		}
 	}
 
 	result := llmCompletion(last, attempts, responseBytes, time.Since(started))
 	exhausted := fmt.Errorf("transport retries exhausted after %d attempts: %w", attempts, lastErr)
-	return result, closedLLMProviderError("complete", exhausted)
+	return result, closedLLMProviderError("complete", exhausted, attempts, true)
 }
 
 func validateLLMProviderConfig(c *Client) error {
@@ -260,15 +260,20 @@ func llmFinishReason(reason string) llm.FinishReason {
 }
 
 type llmProviderError struct {
-	operation string
-	cause     error
+	operation      string
+	attempts       int
+	retryExhausted bool
+	cause          error
 }
 
-func closedLLMProviderError(operation string, cause error) error {
+func closedLLMProviderError(operation string, cause error, attempts int, retryExhausted bool) error {
 	if cause == nil {
 		return nil
 	}
-	return &llmProviderError{operation: operation, cause: cause}
+	return &llmProviderError{
+		operation: operation, attempts: attempts,
+		retryExhausted: retryExhausted, cause: cause,
+	}
 }
 
 func (err *llmProviderError) Error() string {
@@ -283,4 +288,39 @@ func (err *llmProviderError) Unwrap() error {
 		return nil
 	}
 	return err.cause
+}
+
+func (err *llmProviderError) ProviderFailure() llm.ProviderFailure {
+	failure := llm.ProviderFailure{Kind: llm.ProviderFailureUnknown}
+	if err == nil {
+		return failure
+	}
+	var source llm.ProviderFailureSource
+	if errors.As(err.cause, &source) {
+		failure = source.ProviderFailure()
+	}
+	if errors.Is(err.cause, context.DeadlineExceeded) {
+		failure.Kind = llm.ProviderFailureTimeout
+	} else if errors.Is(err.cause, context.Canceled) {
+		failure.Kind = llm.ProviderFailureCanceled
+	}
+	var resourceErr *llm.ResourceLimitError
+	if errors.As(err.cause, &resourceErr) {
+		failure.Kind = llm.ProviderFailureResource
+		failure.ResourceKind = resourceErr.Kind
+		failure.HTTPStatus = resourceErr.HTTPStatus
+	}
+	var incomplete *IncompleteCompletionError
+	if errors.As(err.cause, &incomplete) ||
+		errors.Is(err.cause, ErrResponseContentEmpty) ||
+		errors.Is(err.cause, errResponseEnvelopeMalformed) {
+		failure.Kind = llm.ProviderFailureResponse
+		failure.HTTPStatus = 0
+		failure.ResourceKind = ""
+	}
+	if err.attempts > 0 {
+		failure.Attempts = err.attempts
+	}
+	failure.RetryExhausted = err.retryExhausted
+	return failure
 }

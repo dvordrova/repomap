@@ -258,12 +258,97 @@ func TestLLMProviderErrorsAreClosedButRetainTypedCause(t *testing.T) {
 		!bytes.Contains(completion.Response, []byte(secret)) || completion.Metrics.Attempts != 1 {
 		t.Fatalf("closed provider failure = %#v / %v", completion, err)
 	}
+	var source llm.ProviderFailureSource
+	if !errors.As(err, &source) {
+		t.Fatalf("provider failure has no structured source: %v", err)
+	}
+	failure := source.ProviderFailure()
+	if failure.Kind != llm.ProviderFailureHTTPStatus || failure.HTTPStatus != http.StatusBadRequest ||
+		failure.Attempts != 1 || failure.RetryExhausted {
+		t.Fatalf("HTTP provider failure = %#v", failure)
+	}
+
+	_, outerErr := llm.ExecuteJSON[map[string]any](
+		context.Background(), llm.Executor{Enabled: false}, client, llmProviderFailureCall(),
+	)
+	var providerErr *llm.ProviderError
+	if !errors.As(outerErr, &providerErr) {
+		t.Fatalf("outer provider error = %v", outerErr)
+	}
+	rendered := outerErr.Error()
+	if !strings.Contains(rendered, "class=http_status status=400 attempts=1") ||
+		!strings.Contains(rendered, "check provider endpoint, request compatibility, and account access") ||
+		strings.Contains(rendered, secret) || strings.Contains(rendered, "api_key") {
+		t.Fatalf("outer provider failure = %q", rendered)
+	}
 
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err = client.Complete(canceled, prepared)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("closed error lost cancellation cause: %v", err)
+	}
+}
+
+func TestLLMProviderHTTPRetryExhaustionIsStructured(t *testing.T) {
+	var (
+		mu    sync.Mutex
+		calls int
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		writer.WriteHeader(http.StatusTooManyRequests)
+		_, _ = writer.Write([]byte(`{"error":"rate limited"}`))
+	}))
+	defer server.Close()
+	client := llmProviderTestClient(server)
+	outcome, err := llm.ExecuteJSON[map[string]any](
+		context.Background(), llm.Executor{Enabled: false}, client, llmProviderFailureCall(),
+	)
+	var providerErr *llm.ProviderError
+	if !errors.As(err, &providerErr) {
+		t.Fatalf("retry exhaustion error = %v", err)
+	}
+	failure := providerErr.ProviderFailure()
+	mu.Lock()
+	gotCalls := calls
+	mu.Unlock()
+	if failure.Kind != llm.ProviderFailureHTTPStatus || failure.HTTPStatus != http.StatusTooManyRequests ||
+		failure.Attempts != maxRetries+1 || !failure.RetryExhausted ||
+		outcome.Metrics.Attempts != maxRetries+1 || gotCalls != maxRetries+1 {
+		t.Fatalf("retry exhaustion = %#v / metrics=%#v / calls=%d", failure, outcome.Metrics, gotCalls)
+	}
+	rendered := err.Error()
+	if !strings.Contains(rendered, "class=http_status status=429 attempts=4 retries_exhausted=true") ||
+		!strings.Contains(rendered, "check provider rate limits or quota, then retry") {
+		t.Fatalf("retry exhaustion error = %q", rendered)
+	}
+}
+
+func TestLLMProviderTimeoutIsStructuredWithoutRetry(t *testing.T) {
+	client := &Client{
+		HTTPClient: &http.Client{Transport: failingRoundTripper{err: context.DeadlineExceeded}},
+		Model:      "test-model", MaxTokens: 100,
+		Endpoint: "https://provider.example/v1/chat/completions", Auth: authNone,
+	}
+	outcome, err := llm.ExecuteJSON[map[string]any](
+		context.Background(), llm.Executor{Enabled: false}, client, llmProviderFailureCall(),
+	)
+	var providerErr *llm.ProviderError
+	if !errors.As(err, &providerErr) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("timeout error = %v", err)
+	}
+	failure := providerErr.ProviderFailure()
+	if failure.Kind != llm.ProviderFailureTimeout || failure.Attempts != 1 ||
+		failure.RetryExhausted || outcome.Metrics.Attempts != 1 {
+		t.Fatalf("timeout failure = %#v / metrics=%#v", failure, outcome.Metrics)
+	}
+	rendered := err.Error()
+	if !strings.Contains(rendered, "class=timeout attempts=1") ||
+		!strings.Contains(rendered, "check provider latency or increase the configured timeout") {
+		t.Fatalf("timeout error = %q", rendered)
 	}
 }
 
@@ -287,6 +372,23 @@ func llmProviderTestLimits(maxOutputTokens int) llm.Limits {
 		MaxRequestBytes: 1 << 20, MaxResponseBytes: 1 << 20,
 		MaxOutputTokens: maxOutputTokens,
 	}
+}
+
+func llmProviderFailureCall() llm.Call[map[string]any] {
+	return llm.Call[map[string]any]{
+		Prompt: llm.Prompt{
+			System: "Return one bounded JSON object.", User: "fixture", ResponseFormatJSON: true,
+		},
+		Limits: llmProviderTestLimits(100),
+	}
+}
+
+type failingRoundTripper struct {
+	err error
+}
+
+func (transport failingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, transport.err
 }
 
 func llmProviderTestClient(server *httptest.Server) *Client {
