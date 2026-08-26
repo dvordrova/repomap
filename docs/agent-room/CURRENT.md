@@ -775,6 +775,20 @@ adapter's language-specific authority. Dependency extraction coverage must be
 diagnostics and terminate the shared cube path rather than becoming a smaller,
 product-looking integration map.
 
+Multi-target reports use a compact target picker rather than an unbounded
+horizontal rail. Its selected state identifies the exact current target and is
+independent of the current repository, program, or detail page; a control that
+navigates to another page cannot present itself as the current page merely
+because it names the current target. Source evidence is grouped by exact
+repository-relative file, with the path as a quiet group label and concise
+declaration labels inside it rather than repeated module/path prefixes; exact
+line and column source actions remain unchanged. An empty JS/TS full-stack-path
+view explains which deterministically required condition is absent, such as a
+product browser or Node-server surface, an eligible client HTTP use or server
+route, or the remaining explicit method/path and retained-reachability chain. It
+states only a condition established by the sealed surface/path authority and
+never substitutes a generic semantic guess.
+
 Every `ProgramPortfolio` entry carries one closed semantic capability state.
 Each typed repository target is the default of its own page and is publishable
 as `program_semantic_available` only with separately material-bound `CoreMapView`,
@@ -1631,6 +1645,11 @@ A change is accepted only after:
    index, downstream cube artifacts, report JSON, and report HTML are checked
    directly;
 4. focused tests and vet for changed packages pass.
+
+Contributor-only browser QA, including opening a generated report through
+localhost, is prescribed exclusively by `AGENTS.md`. It is neither a product
+surface nor product documentation and does not authorize another report-serving
+command or sidecar tool.
 
 Canonical `make test` and `make vet` retain the ambient system `GOCACHE` and
 `GOMODCACHE`, cap Go package fan-out at four, and apply a five-minute timeout

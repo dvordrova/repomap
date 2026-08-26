@@ -105,7 +105,7 @@
         href: '#/program'
       };
       byID[only.id] = only;
-      return { targets: [only], byID: byID, currentID: only.id };
+      return { targets: [only], byID: byID, currentID: only.id, defaultID: only.id };
     }
 
     raw = object(raw, 'target_navigation');
@@ -134,12 +134,22 @@
       currentID = targets[currentIndex].id;
     }
     if (!currentID || !byID[currentID]) throw new Error('The current target navigation identity is absent.');
+    var defaultID = optionalText(raw.default_target_id, 'target_navigation.default_target_id');
+    if (Object.prototype.hasOwnProperty.call(raw, 'default_target_index')) {
+      var defaultIndex = integer(raw.default_target_index, 'target_navigation.default_target_index');
+      if (defaultIndex >= targets.length) throw new Error('The default target navigation index is absent.');
+      if (defaultID && defaultID !== targets[defaultIndex].id) {
+        throw new Error('The default target navigation authorities disagree.');
+      }
+      defaultID = targets[defaultIndex].id;
+    }
+    if (!defaultID || !byID[defaultID]) throw new Error('The default target navigation identity is absent.');
     var current = byID[currentID];
     if (current.id !== currentTarget.id || current.language !== currentTarget.language ||
         current.kind !== currentTarget.kind || current.displayName !== currentTarget.name) {
       throw new Error('Target navigation does not match the current ProgramTarget.');
     }
-    return { targets: targets, byID: byID, currentID: currentID };
+    return { targets: targets, byID: byID, currentID: currentID, defaultID: defaultID };
   }
 
   function buildRuntimePortfolio(data, targetDirectory, openable) {
@@ -764,6 +774,7 @@
       target: currentTarget,
       targets: targetDirectory.targets,
       targetsByID: targetDirectory.byID,
+      defaultTargetID: targetDirectory.defaultID,
       runtimePortfolio: runtimePortfolio,
       surfaceCatalog: surfaceCatalog,
       crossSurfacePaths: crossSurfacePaths,
@@ -853,12 +864,13 @@
     return url;
   }
 
-  function sourceAction(label, rawLocation) {
+  function sourceAction(label, rawLocation, display) {
     var location = exactLocation(rawLocation, 'source action location');
+    display = display || {};
     if (!state.model.openable[location.path]) throw new Error('Source evidence is outside publication authority.');
     var control;
     if (state.source.mode === 'static') {
-      control = element('a', 'rm-source-action');
+      control = element('a', 'rm-source-action' + (display.compact ? ' rm-source-action--compact' : ''));
       control.href = staticSourceURL(location);
       control.target = '_blank';
       control.rel = 'noopener noreferrer';
@@ -866,7 +878,7 @@
     } else {
       var sourceID = state.source.ids[location.path];
       if (typeof sourceID !== 'string' || !sourceID) throw new Error('Source evidence lacks a manifest source ID.');
-      control = element('button', 'rm-source-action');
+      control = element('button', 'rm-source-action' + (display.compact ? ' rm-source-action--compact' : ''));
       control.type = 'button';
       control.addEventListener('click', function () {
         requestOpenSource(sourceID, location).catch(function (error) {
@@ -875,7 +887,9 @@
       });
     }
     appendText(control, 'span', 'rm-source-action__name', label);
-    appendText(control, 'span', 'rm-source-action__location', formatLocation(location));
+    var locationLabel = Object.prototype.hasOwnProperty.call(display, 'locationLabel') ?
+      String(display.locationLabel || '') : formatLocation(location);
+    if (locationLabel) appendText(control, 'span', 'rm-source-action__location', locationLabel);
     return control;
   }
 
@@ -1702,23 +1716,70 @@
     window.location.hash = route;
   }
 
-  function renderHeader() {
-    var scope = document.getElementById('rm-target-scope');
-    scope.textContent = state.model.target.language + ' ' + state.model.target.kind + ' · ' +
+  function shortRepositoryName(value) {
+    var parts = String(value || '').split('/').filter(Boolean);
+    return parts.length > 1 ? parts.slice(-2).join('/') : String(value || 'repository');
+  }
+
+  function reportRouteContext(route) {
+    if (route.kind === 'repository') return 'Target overview';
+    if (route.kind === 'surface') return 'Surface';
+    if (route.kind === 'path') return 'Full-stack path';
+    if (route.kind === 'entrypoint') return 'Entrypoint';
+    if (route.kind === 'integration') return 'Integration';
+    if (route.kind === 'responsibility') return 'Responsibility';
+    return 'Program map';
+  }
+
+  function updateHeaderContext(route) {
+    var scope = document.getElementById('rm-page-context');
+    if (!scope) return;
+    scope.textContent = reportRouteContext(route) + ' · ' + humanRuntimeToken(state.model.target.language) + ' · ' +
+      humanRuntimeToken(state.model.target.kind) + ' · ' +
       state.model.revision.slice(0, MAX_REVISION_ABBREVIATION_CHARS);
+  }
+
+  function renderHeader() {
+    document.getElementById('rm-target-repository').textContent = shortRepositoryName(state.model.repoName);
+    document.getElementById('rm-target-current').textContent = 'Target · ' + state.model.target.name;
+    document.getElementById('rm-target-count').textContent = String(state.model.targets.length);
+    document.getElementById('rm-target-panel-count').textContent =
+      String(state.model.targets.length) + (state.model.targets.length === 1 ? ' target' : ' targets');
+    var switcher = document.getElementById('rm-target-switcher');
     var navigation = document.getElementById('rm-target-navigation');
-    if (state.model.targets.length < 2) return;
     state.model.targets.forEach(function (target) {
-      var link = element('a', '', target.displayName);
+      var link = element('a', 'rm-target-switcher__target');
       link.href = target.href;
-      if (target.id === state.model.target.id) link.setAttribute('aria-current', 'page');
+      var copy = element('span');
+      appendText(copy, 'strong', '', target.displayName);
+      appendText(copy, 'small', '', humanRuntimeToken(target.language) + ' · ' + humanRuntimeToken(target.kind));
+      link.appendChild(copy);
+      var badges = element('span', 'rm-target-switcher__badges');
+      if (target.id === state.model.target.id) {
+        link.setAttribute('aria-current', 'true');
+        appendText(badges, 'small', 'rm-target-switcher__badge rm-target-switcher__badge--current', 'Current');
+      }
+      if (target.id === state.model.defaultTargetID) {
+        appendText(badges, 'small', 'rm-target-switcher__badge', 'Default');
+      }
+      link.appendChild(badges);
+      link.addEventListener('click', function () { switcher.open = false; });
       navigation.appendChild(link);
     });
-    navigation.hidden = false;
+    switcher.addEventListener('keydown', function (event) {
+      if (event.key !== 'Escape' || !switcher.open) return;
+      switcher.open = false;
+      var summary = switcher.querySelector('summary');
+      if (summary) summary.focus();
+    });
   }
 
   function humanRuntimeToken(value) {
     if (value === 'cli') return 'CLI';
+    if (value === 'go') return 'Go';
+    if (value === 'javascript') return 'JavaScript';
+    if (value === 'typescript') return 'TypeScript';
+    if (value === 'python') return 'Python';
     return value.replace(/_/g, ' ').replace(/^./, function (character) { return character.toUpperCase(); });
   }
 
@@ -1898,7 +1959,9 @@
       'Deterministic routes across browser code, the explicit HTTP method/path boundary, server handling, contracts, and resources.');
     section.appendChild(heading);
     if (!paths.length) {
-      appendText(section, 'p', 'rm-runtime-empty', 'No complete cross-surface path was established for this project.');
+      appendText(section, 'p', 'rm-runtime-empty', crossSurfaceEmptyReason(
+        state.model.surfaceCatalog, state.model.crossSurfacePaths.coverage
+      ));
     } else {
       var grid = element('div', 'rm-cross-path-grid');
       paths.forEach(function (path) {
@@ -1915,20 +1978,47 @@
     host.appendChild(section);
   }
 
+  function crossSurfaceEmptyReason(catalog, coverage) {
+    var productKinds = Object.create(null);
+    catalog.surfaces.forEach(function (surface) {
+      if (surface.disposition === 'product_surface') productKinds[surface.kind] = true;
+    });
+    var browser = !!productKinds.browser_application;
+    var server = !!productKinds.node_server;
+    if (!browser && !server) {
+      return 'No eligible full-stack path: this target has neither a product browser surface nor a product Node server. Tooling and development servers do not count as product runtime surfaces.';
+    }
+    if (!browser) {
+      return 'No eligible full-stack path: this target has no product browser surface. Tooling and development clients do not count as product runtime surfaces.';
+    }
+    if (!server) {
+      return 'No eligible full-stack path: this target has no product Node server. Tooling and development servers do not count as product runtime surfaces.';
+    }
+    if (coverage.http_uses_observed === 0) {
+      return 'No eligible full-stack path: the product browser has no retained client HTTP use.';
+    }
+    if (coverage.routes_observed === 0) {
+      return 'No eligible full-stack path: the product Node server has no retained server route.';
+    }
+    return 'No complete full-stack path: the product browser and Node server have no retained explicit HTTP method/path match with program reachability on both sides.';
+  }
+
   function renderJSTSRepositoryOverview(host) {
     var catalog = state.model.surfaceCatalog;
     var survey = element('section', 'rm-survey rm-runtime-survey');
     var copy = element('div');
-    appendText(copy, 'p', 'rm-eyebrow', 'Repository surface overview');
-    appendText(copy, 'h1', '', state.model.repoName);
+    appendText(copy, 'p', 'rm-eyebrow', 'Selected target overview');
+    appendText(copy, 'h1', '', state.model.target.name);
     appendText(copy, 'p', 'rm-survey__summary',
       'Explore ' + String(catalog.surfaces.length) +
       (catalog.surfaces.length === 1 ? ' exact project surface' : ' exact project surfaces') +
       ' and ' + String(state.model.crossSurfacePaths.paths.length) +
-      (state.model.crossSurfacePaths.paths.length === 1 ? ' full-stack path.' : ' full-stack paths.'));
+      (state.model.crossSurfacePaths.paths.length === 1 ? ' full-stack path' : ' full-stack paths') +
+      ' for this target in ' + shortRepositoryName(state.model.repoName) + '.');
     survey.appendChild(copy);
     var facts = element('dl', 'rm-survey__facts');
-    [['Project', catalog.project.name], ['Module resolution', catalog.project.moduleResolution],
+    [['Repository', shortRepositoryName(state.model.repoName)], ['Package', catalog.project.name],
+      ['Module resolution', catalog.project.moduleResolution],
       ['Revision', state.model.revision]].forEach(function (row) {
       var wrapper = element('div');
       appendText(wrapper, 'dt', '', row[0]);
@@ -2350,10 +2440,10 @@
     var list = element('ul', 'rm-start-list');
     starts.forEach(function (start) {
       var item = element('li', 'rm-start');
-      var route = element('a', 'rm-start__name', start.name + ' →');
+      var route = element('a', 'rm-start__name', displayProgramObjectName(start) + ' →');
       route.href = routeForActivity(start.id);
       item.appendChild(route);
-      appendText(item, 'code', 'rm-start__signature', compactDisplayText(start.signature || start.kind, 120));
+      appendText(item, 'code', 'rm-start__signature', compactDisplayText(start.signature || start.kind, 72));
       item.appendChild(sourceAction('Open declaration', start.location));
       list.appendChild(item);
     });
@@ -2381,46 +2471,35 @@
     if (relationCount !== connections.length) summary += ' · ' + String(relationCount) + ' relation records';
     appendText(disclosure, 'summary', '', summary);
     var list = element('ul', 'rm-connection-list');
+    var omittedWitnessDetails = 0;
     connections.forEach(function (connection) {
       var item = element('li', 'rm-connection');
       var body = element('div');
-      var pathLabel = connection.from + ' → ' + connection.to;
-      if (connection.locations.length === 1) {
-        var pathAction = sourceAction(pathLabel, connection.location);
-        pathAction.className += ' rm-connection__path';
-        body.appendChild(pathAction);
-      } else {
-        appendText(body, 'div', 'rm-connection__path', pathLabel);
-        if (connection.locations.length > 1) {
-          var locations = element('div', 'rm-connection__locations');
-          connection.locations.forEach(function (location, locationIndex) {
-            locations.appendChild(sourceAction(
-              'Open source location ' + String(locationIndex + 1), location
-            ));
-          });
-          body.appendChild(locations);
-        }
+      var relationLabel = humanConnectionRelation(connection);
+      var pathLabel = connection.from + ' — ' + relationLabel + ' → ' + connection.to;
+      appendText(body, 'div', 'rm-connection__path', pathLabel);
+      omittedWitnessDetails += connection.witnessesOmitted + connection.witnessesProjectionOmitted;
+      if (connection.locations.length) {
+        var locations = element('div', 'rm-connection__locations');
+        connection.locations.forEach(function (location) {
+          locations.appendChild(sourceAction(formatLocation(location), location, {
+            compact: true,
+            locationLabel: ''
+          }));
+        });
+        body.appendChild(locations);
       }
-      var meta = humanConnectionRelation(connection);
-      if (connection.relationIDs.length > 1) {
-        meta += ' · ' + String(connection.relationIDs.length) + ' relation records';
-      }
-      if (connection.locations.length > 1) {
-        meta += ' · ' + String(connection.locations.length) + ' source locations';
-      }
-      meta += ' · ' + String(connection.witnessesObserved) +
-        (connection.witnessesObserved === 1 ? ' witness' : ' witnesses');
-      var witnessDetailsOmitted = connection.witnessesOmitted + connection.witnessesProjectionOmitted;
-      if (witnessDetailsOmitted > 0) {
-        meta += ' · ' + String(witnessDetailsOmitted) + ' witness detail' +
-          (witnessDetailsOmitted === 1 ? '' : 's') + ' omitted';
-      }
-      appendText(body, 'div', 'rm-connection__meta', meta);
       item.appendChild(body);
       appendText(item, 'span', 'rm-resolution rm-resolution--' + connection.resolution, connection.resolution);
       list.appendChild(item);
     });
     disclosure.appendChild(list);
+    if (omittedWitnessDetails > 0) {
+      appendText(disclosure, 'p', 'rm-connection-warning', 'Evidence detail limit · ' +
+        String(omittedWitnessDetails) + ' relation witness detail' +
+        (omittedWitnessDetails === 1 ? ' is' : 's are') +
+        ' not shown; displayed endpoints and source locations remain exact.');
+    }
     section.appendChild(disclosure);
     parent.appendChild(section);
   }
@@ -2472,37 +2551,56 @@
     return article;
   }
 
+  function evidenceFileGroups(block) {
+    var groups = [];
+    var byPath = Object.create(null);
+    function groupFor(path) {
+      if (byPath[path]) return byPath[path];
+      var group = { path: path, symbols: [] };
+      byPath[path] = group;
+      groups.push(group);
+      return group;
+    }
+    block.files.forEach(function (file) { groupFor(file.path); });
+    block.symbols.forEach(function (symbol) { groupFor(symbol.location.path).symbols.push(symbol); });
+    return groups;
+  }
+
   function renderEvidence(block) {
     var aside = element('aside', 'rm-evidence');
     aside.setAttribute('aria-label', 'Exact source evidence');
     var sticky = element('div', 'rm-evidence__sticky');
     appendText(sticky, 'h2', '', 'Verify in code');
-    appendText(sticky, 'p', 'rm-evidence__intro',
-      'Representative declarations and files restored against the captured revision.');
-
-    var symbolDisclosure = element('details', 'rm-evidence-disclosure');
-    symbolDisclosure.open = true;
-    appendText(symbolDisclosure, 'summary', '', 'Declarations · ' + String(block.symbols.length));
-    var symbols = element('ul', 'rm-evidence-list');
-    block.symbols.forEach(function (symbol) {
-      var item = element('li');
-      item.appendChild(sourceAction(symbol.name, symbol.location));
-      symbols.appendChild(item);
+    var groups = evidenceFileGroups(block);
+    var disclosure = element('details', 'rm-evidence-disclosure');
+    disclosure.open = true;
+    appendText(disclosure, 'summary', '', 'Code · ' + String(groups.length) +
+      (groups.length === 1 ? ' file' : ' files') + ' · ' + String(block.symbols.length) +
+      (block.symbols.length === 1 ? ' declaration' : ' declarations'));
+    var files = element('ul', 'rm-evidence-files');
+    groups.forEach(function (group) {
+      var file = element('li', 'rm-evidence-file');
+      var fileAction = sourceAction(group.path, { path: group.path, line: 0, column: 0 }, {
+        compact: true,
+        locationLabel: ''
+      });
+      fileAction.className += ' rm-evidence-file__path';
+      file.appendChild(fileAction);
+      if (group.symbols.length) {
+        var symbols = element('ul', 'rm-evidence-symbols');
+        group.symbols.forEach(function (symbol) {
+          var item = element('li');
+          item.appendChild(sourceAction(displayProgramObjectName(symbol), symbol.location, {
+            locationLabel: symbol.location.line > 0 ? 'L' + String(symbol.location.line) : ''
+          }));
+          symbols.appendChild(item);
+        });
+        file.appendChild(symbols);
+      }
+      files.appendChild(file);
     });
-    symbolDisclosure.appendChild(symbols);
-    sticky.appendChild(symbolDisclosure);
-
-    var fileDisclosure = element('details', 'rm-evidence-disclosure');
-    fileDisclosure.open = true;
-    appendText(fileDisclosure, 'summary', '', 'Files · ' + String(block.files.length));
-    var files = element('ul', 'rm-evidence-list');
-    block.files.forEach(function (file) {
-      var item = element('li');
-      item.appendChild(sourceAction('Open file', { path: file.path, line: 0, column: 0 }));
-      files.appendChild(item);
-    });
-    fileDisclosure.appendChild(files);
-    sticky.appendChild(fileDisclosure);
+    disclosure.appendChild(files);
+    sticky.appendChild(disclosure);
 
     var unresolved = block.symbols.reduce(function (total, symbol) { return total + symbol.unresolvedOutgoing; }, 0);
     if (unresolved > 0) {
@@ -2554,6 +2652,7 @@
     var host = document.getElementById('rm-app');
     var orientation = element('div', 'rm-orientation');
     var route = selectedReportRoute();
+    updateHeaderContext(route);
     if (route.kind === 'repository') {
       state.canvasEdges = [];
       var overviewKind = repositoryOverviewKind();

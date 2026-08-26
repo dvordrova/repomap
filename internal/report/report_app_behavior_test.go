@@ -81,6 +81,20 @@ class TestElement {
     this.listeners[type].push(listener);
   }
 
+  querySelector(selector) {
+    const tagName = String(selector).toUpperCase();
+    return descendants(this).find((node) => node !== this && node.tagName === tagName) || null;
+  }
+
+  dispatch(type, values) {
+    const event = Object.assign({
+      type, target: this, currentTarget: this, defaultPrevented: false,
+      preventDefault() { this.defaultPrevented = true; }
+    }, values || {});
+    (this.listeners[type] || []).forEach((listener) => listener.call(this, event));
+    return event;
+  }
+
   scrollIntoView(options) { this.scrollCalls.push(options); }
   focus(options) { this.focusCalls.push(options); }
 
@@ -110,6 +124,8 @@ function descendants(root) {
 const document = {
   createElement(tagName) { return new TestElement(tagName); },
   createElementNS(namespace, tagName) { return new TestElement(tagName); },
+  elementsByID: Object.create(null),
+  getElementById(id) { return this.elementsByID[id] || null; },
   queryResult: null,
   querySelector() { return this.queryResult; }
 };
@@ -143,6 +159,10 @@ const exposure = [
   '    renderEvidence: renderEvidence,',
   '    connectionsFor: connectionsFor,',
   '    renderConnections: renderConnections,',
+  '    renderHeader: renderHeader,',
+  '    reportRouteContext: reportRouteContext,',
+  '    updateHeaderContext: updateHeaderContext,',
+  '    crossSurfaceEmptyReason: crossSurfaceEmptyReason,',
   '    renderFlowCanvas: renderFlowCanvas,',
   '    canvasTopology: canvasTopology,',
   '    scheduleResponsibilityScroll: scheduleResponsibilityScroll,',
@@ -198,10 +218,28 @@ const directRoute = {
   }]
 };
 const model = {
-  repoName: 'fixture', revision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  repoName: 'github.com/fukict/fukict', revision: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  target: {
+    id: 'target:fukict', language: 'typescript', kind: 'library', name: 'fukict',
+    selector: 'jsts:package.json'
+  },
+  targets: [
+    {
+      id: 'target:fukict', language: 'typescript', kind: 'library', displayName: 'fukict',
+      href: '#/program'
+    },
+    {
+      id: 'target:babel', language: 'typescript', kind: 'library', displayName: '@fukict/babel-preset',
+      href: '../babel/report.html#/program'
+    }
+  ],
+  defaultTargetID: 'target:babel',
   surfaceCatalog: null,
   runtimePortfolio: null,
-  openable: { 'app/main.py': true, 'app/execution.py': true },
+  openable: {
+    'app/main.py': true, 'app/execution.py': true,
+    'scripts/check-changeset.ts': true, 'scripts/publish.ts': true, 'scripts/tag.ts': true
+  },
   activities: [activity],
   blocks: [block, storageBlock],
   integrations: [integration],
@@ -239,19 +277,75 @@ api.setState({
   }
 });
 
+function registerHeaderElement(id, tagName) {
+  const value = new TestElement(tagName);
+  document.elementsByID[id] = value;
+  return value;
+}
+const targetSwitcher = registerHeaderElement('rm-target-switcher', 'details');
+const targetSummary = new TestElement('summary');
+targetSwitcher.appendChild(targetSummary);
+const targetRepository = registerHeaderElement('rm-target-repository', 'span');
+const targetCurrent = registerHeaderElement('rm-target-current', 'span');
+const targetCount = registerHeaderElement('rm-target-count', 'span');
+const targetPanelCount = registerHeaderElement('rm-target-panel-count', 'span');
+const targetNavigation = registerHeaderElement('rm-target-navigation', 'nav');
+const pageContext = registerHeaderElement('rm-page-context', 'div');
+api.renderHeader();
+const targetLinks = descendants(targetNavigation).filter((node) =>
+  node.tagName === 'A' && String(node.className).includes('rm-target-switcher__target')
+);
+check(targetRepository.textContent === 'fukict/fukict' && targetCurrent.textContent === 'Target · fukict' &&
+  targetCount.textContent === '2' && targetPanelCount.textContent === '2 targets',
+  'the compact target switcher must identify the repository, current target, and complete target count');
+check(targetLinks.length === 2 && targetLinks[0].getAttribute('aria-current') === 'true' &&
+  targetLinks[0].textContent.includes('Current') && !targetLinks[0].textContent.includes('Default') &&
+  targetLinks[1].textContent.includes('@fukict/babel-preset') && targetLinks[1].textContent.includes('Default'),
+  'the compact target switcher must distinguish current and repository-default targets');
+targetSwitcher.open = true;
+targetLinks[1].click();
+check(targetSwitcher.open === false,
+  'choosing a target must close the compact target switcher');
+targetSwitcher.open = true;
+targetSwitcher.dispatch('keydown', { key: 'Escape' });
+check(targetSwitcher.open === false && targetSummary.focusCalls.length === 1,
+  'Escape must close the target switcher and restore focus to its summary');
+check(api.reportRouteContext({ kind: 'repository' }) === 'Target overview' &&
+  api.reportRouteContext({ kind: 'surface' }) === 'Surface' &&
+  api.reportRouteContext({ kind: 'path' }) === 'Full-stack path' &&
+  api.reportRouteContext({ kind: 'entrypoint' }) === 'Entrypoint' &&
+  api.reportRouteContext({ kind: 'integration' }) === 'Integration' &&
+  api.reportRouteContext({ kind: 'responsibility' }) === 'Responsibility' &&
+  api.reportRouteContext({ kind: 'program' }) === 'Program map',
+  'every report route must expose a concise page context');
+api.updateHeaderContext({ kind: 'responsibility' });
+check(pageContext.textContent === 'Responsibility · TypeScript · Library · aaaaaaaaaa',
+  'the header context must identify the selected page, target kind, and captured revision');
+
+const noCrossSurfaceCoverage = { http_uses_observed: 0, routes_observed: 0 };
+check(api.crossSurfaceEmptyReason({ surfaces: [{ disposition: 'tool', kind: 'tool' }] },
+  noCrossSurfaceCoverage).includes('neither a product browser surface nor a product Node server'),
+  'a tool-only target must explain why it cannot establish a full-stack path');
+check(api.crossSurfaceEmptyReason({ surfaces: [
+  { disposition: 'product_surface', kind: 'browser_application' },
+  { disposition: 'product_surface', kind: 'node_server' }
+] }, noCrossSurfaceCoverage).includes('no retained client HTTP use'),
+  'a product browser/server pair must report the next exact missing path condition');
+
 const oversizedActivity = {
-  id: 'entry:oversized-signature', name: 'Large inferred type', kind: 'function',
+  id: 'entry:oversized-signature', name: 'src/index#LargeInferredType', kind: 'function',
   signature: oversizedSignature, location: { path: 'app/main.py', line: 30, column: 1 }
 };
 model.activityByID[oversizedActivity.id] = oversizedActivity;
-model.target = { kind: 'library' };
 const startsHost = new TestElement('main');
 api.renderStarts(startsHost, { symbols: [{ id: oversizedActivity.id }] });
 const renderedSignature = descendants(startsHost).find((node) => node.className === 'rm-start__signature');
-check(!!renderedSignature && renderedSignature.textContent === api.compactDisplayText(oversizedSignature, 120),
+check(!!renderedSignature && renderedSignature.textContent === api.compactDisplayText(oversizedSignature, 72),
   'responsibility entrypoint rows must render only the bounded signature preview');
+check(startsHost.textContent.includes('LargeInferredType →') &&
+  !startsHost.textContent.includes('src/index#LargeInferredType'),
+  'responsibility entrypoint labels must omit redundant file and module prefixes');
 delete model.activityByID[oversizedActivity.id];
-delete model.target;
 
 check(api.selectedReportRoute().kind === 'repository',
   'an explicit #/repository route must render the repository fallback');
@@ -379,11 +473,61 @@ check(selectedControls.filter((control) => control.getAttribute('aria-current') 
     'core:' + storageBlock.id,
   'a sequential core selection must replace, not accumulate, the current canvas control');
 
-const evidenceHost = api.renderEvidence(block);
-check(evidenceHost.textContent.includes('Open file'),
-  'file evidence must expose an explicit Open file action');
-check((evidenceHost.textContent.match(/app\/execution\.py/g) || []).length === 1,
-  'file evidence must render its path exactly once');
+const evidenceBlock = {
+  id: 'core:release-scripts', name: 'Release scripts', purpose: 'Validates and publishes releases.',
+  files: [
+    { path: 'scripts/check-changeset.ts' },
+    { path: 'scripts/tag.ts' }
+  ],
+  symbols: [
+    {
+      id: 'object:check-precommit', name: 'scripts/check-changeset#checkPrecommit', kind: 'function',
+      location: { path: 'scripts/check-changeset.ts', line: 94, column: 1 }, unresolvedOutgoing: 0
+    },
+    {
+      id: 'object:publish', name: 'scripts/publish#publish', kind: 'function',
+      location: { path: 'scripts/publish.ts', line: 20, column: 1 }, unresolvedOutgoing: 0
+    }
+  ],
+  depth: 0
+};
+const evidenceHost = api.renderEvidence(evidenceBlock);
+const evidenceDetails = descendants(evidenceHost).filter((node) => node.tagName === 'DETAILS');
+const evidenceLinks = descendants(evidenceHost).filter((node) =>
+  node.tagName === 'A' && node.href.includes('/blob/')
+);
+const evidenceNames = descendants(evidenceHost).filter((node) =>
+  String(node.className).includes('rm-source-action__name')
+).map((node) => node.textContent);
+const evidenceFileGroups = descendants(evidenceHost).filter((node) =>
+  String(node.className).split(/\s+/).includes('rm-evidence-file')
+);
+check(evidenceDetails.length === 1 && evidenceDetails[0].open === true,
+  'Verify in code must use one disclosure that is open by default');
+check(!evidenceHost.textContent.includes('Files ·') && !evidenceHost.textContent.includes('Open file'),
+  'grouped evidence must not repeat a separate Files section or Open file labels');
+check(evidenceNames.includes('checkPrecommit') && evidenceNames.includes('publish') &&
+  !evidenceHost.textContent.includes('scripts/check-changeset#') &&
+  !evidenceHost.textContent.includes('scripts/publish#'),
+  'declaration labels must omit redundant file and module prefixes');
+check((evidenceHost.textContent.match(/scripts\/check-changeset\.ts/g) || []).length === 1 &&
+  (evidenceHost.textContent.match(/scripts\/publish\.ts/g) || []).length === 1 &&
+  (evidenceHost.textContent.match(/scripts\/tag\.ts/g) || []).length === 1,
+  'each exact evidence file must render once as its group heading');
+check(evidenceFileGroups.length === 3 &&
+  evidenceFileGroups.some((group) => group.textContent.includes('scripts/check-changeset.ts') &&
+    group.textContent.includes('checkPrecommit') && group.textContent.includes('L94')) &&
+  evidenceFileGroups.some((group) => group.textContent.includes('scripts/publish.ts') &&
+    group.textContent.includes('publish') && group.textContent.includes('L20')) &&
+  evidenceFileGroups.some((group) => group.textContent === 'scripts/tag.ts'),
+  'each declaration must render inside its exact file group');
+check(evidenceLinks.length === 5 &&
+  evidenceLinks.some((link) => link.href.endsWith('/scripts/check-changeset.ts')) &&
+  evidenceLinks.some((link) => link.href.endsWith('/scripts/check-changeset.ts#L94')) &&
+  evidenceLinks.some((link) => link.href.endsWith('/scripts/publish.ts')) &&
+  evidenceLinks.some((link) => link.href.endsWith('/scripts/publish.ts#L20')) &&
+  evidenceLinks.some((link) => link.href.endsWith('/scripts/tag.ts')),
+  'file headings, declarations, symbol-only files, and file-only evidence must retain exact source links');
 
 const entryControl = controls[0];
 if (entryControl) entryControl.click();
@@ -512,31 +656,41 @@ api.renderConnections(connectionsHost, connectionBlock, connections);
 const connectionLinks = descendants(connectionsHost).filter((node) =>
   node.tagName === 'A' && node.href.includes('/blob/')
 );
-check(connectionLinks.some((link) => link.href.endsWith('#L12')) &&
-  connectionLinks.some((link) => link.href.endsWith('#L13')) &&
-  connectionLinks.some((link) => link.href.endsWith('#L16')),
-  'every unresolved record and every grouped witness location must retain an exact source link');
-const connectionNames = descendants(connectionsHost).filter((node) =>
-  String(node.className).includes('rm-source-action__name')
-).map((node) => node.textContent);
+const expectedConnectionLocations = [10, 11, 12, 13, 14, 15, 16].map((line) =>
+  'app/execution.py:' + String(line)
+);
+check(connectionLinks.length === expectedConnectionLocations.length &&
+  expectedConnectionLocations.every((location) =>
+    connectionLinks.some((link) => link.textContent === location && link.href.endsWith('#L' + location.split(':')[1]))
+  ),
+  'every grouped relation and witness location must render as one exact path:line source link');
 check(connectionsHost.textContent.includes('5 relation groups · 6 relation records') &&
   connectionsHost.textContent.includes('unresolved call: client.send') &&
   connectionsHost.textContent.includes('unresolved call: client.flush') &&
   !connectionsHost.textContent.includes('exact records'),
-  'condensed connection counts must describe relation records honestly');
-check(connectionsHost.textContent.includes('execute → JavaScript Date') &&
-  connectionsHost.textContent.includes('creates a JavaScript platform value') &&
-  connectionsHost.textContent.includes('uses a resolved external/runtime API') &&
-  !connectionsHost.textContent.includes('crosses an external boundary'),
-  'connection labels must distinguish JavaScript platform operations without misclassifying every other runtime API as a package');
-check(connectionsHost.textContent.includes('2 relation records · 3 source locations · 3 witnesses') &&
-  connectionsHost.textContent.includes('3 witnesses · 2 witness details omitted') &&
-  connectionsHost.textContent.includes('2 witnesses · 1 witness detail omitted') &&
-  !connectionsHost.textContent.includes('callsites'),
-  'connection metadata must use exact relation, source-location, and ProgramView witness accounting');
-check(connectionNames.every((name) => !name.includes('app/execution#')) &&
-  connectionsHost.textContent.includes('app/execution.py:14'),
-  'relation titles must omit the redundant declaration path while retaining the exact source link');
+  'the disclosure summary must continue to describe condensed relation records honestly');
+const platformConnection = exactConnections.find((connection) => connection.targetIDs.includes(platformObject.id));
+const packageConnection = exactConnections.find((connection) => connection.targetIDs.includes(packageObject.id));
+check(platformConnection && platformConnection.platformTarget && platformConnection.invocation === 'construct' &&
+  platformConnection.witnessesObserved === 3 && platformConnection.witnessesOmitted === 2 &&
+  packageConnection && !packageConnection.platformTarget && packageConnection.invocation === 'call' &&
+  packageConnection.witnessesObserved === 2 && packageConnection.witnessesProjectionOmitted === 1,
+  'connection condensation must preserve platform, invocation, and witness accounting even when its footer is hidden');
+check(connectionsHost.textContent.includes('execute — creates a JavaScript platform value → JavaScript Date') &&
+  connectionsHost.textContent.includes('execute — uses a resolved external/runtime API → react.useEffect') &&
+  !connectionsHost.textContent.includes('app/execution#'),
+  'relation titles must expose their semantic verb, omit the redundant declaration path, and retain exact source links');
+const connectionPaths = descendants(connectionsHost).filter((node) =>
+  String(node.className).includes('rm-connection__path')
+);
+check(connectionPaths.some((path) => path.textContent.includes('creates a JavaScript platform value')) &&
+  connectionPaths.some((path) => path.textContent.includes('uses a resolved external/runtime API')),
+  'compact connection rows must keep relation semantics visible');
+check(!connectionsHost.textContent.includes('Open source location') &&
+  !descendants(connectionsHost).some((node) => String(node.className).includes('rm-connection__meta')) &&
+  !connectionsHost.textContent.includes('relation records · 3 source locations') &&
+  connectionsHost.textContent.includes('3 relation witness details are not shown'),
+  'connection rows must omit redundant location labels and counters while retaining omission-only diagnostics');
 
 const renderedRoots = wrappers.concat([focusedCanvas, evidenceHost, activityHost, integrationHost, connectionsHost]);
 check(renderedRoots.flatMap(descendants).every((node) =>

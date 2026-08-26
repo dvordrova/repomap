@@ -18,8 +18,21 @@
       <span class="rm-brand__mark" aria-hidden="true">r</span>
       <span>repomap</span>
     </a>
-    <div class="rm-site-header__scope" id="rm-target-scope"></div>
-    <nav class="rm-site-header__targets" id="rm-target-navigation" aria-label="Repository targets" hidden></nav>
+    <details class="rm-target-switcher" id="rm-target-switcher">
+      <summary>
+        <span class="rm-target-switcher__repository" id="rm-target-repository"></span>
+        <span class="rm-target-switcher__current" id="rm-target-current"></span>
+        <span class="rm-target-switcher__count" id="rm-target-count"></span>
+      </summary>
+      <div class="rm-target-switcher__panel">
+        <div class="rm-target-switcher__heading">
+          <strong>Repository targets</strong>
+          <span id="rm-target-panel-count"></span>
+        </div>
+        <nav class="rm-target-switcher__targets" id="rm-target-navigation" aria-label="Repository targets"></nav>
+      </div>
+    </details>
+    <div class="rm-site-header__scope" id="rm-page-context"></div>
   </header>
   <main id="rm-app" aria-live="polite">
     <p class="rm-loading">Building the repository orientation…</p>
