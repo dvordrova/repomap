@@ -628,8 +628,11 @@ diagnostic-journal availability never changes the cube's semantic contract.
     `ProgramPagePortfolio`. It binds each complete page's full validated
     `ProgramTarget` identity to its safe child run ID and names the default by
     exact ProgramTarget ID; adapter-native refs never cross this publication
-    boundary. Then run one repository-level `RuntimePortfolio` cube. Its
-    complete request-local catalog contains every target plus the validated
+    boundary. Then run one repository-level `RuntimePortfolio` cube. This is
+    also the repository product-role authority for reusable libraries; library
+    orientation extends this existing cube and does not add a second analysis
+    or presentation layer. Its complete request-local catalog contains every
+    target plus the validated
     responsibilities, activities, integration-use counts, entrypoint evidence,
     and repository-guidance evidence already produced on the target-local
     paths. The model selects only closed `t*` and `e*` refs; canonical
@@ -640,13 +643,22 @@ diagnostic-journal availability never changes the cube's semantic contract.
     evidence, and the exact unclassified-target complement. It has no fixed
     target, role, implementation, or evidence-count limit; byte and token
     bounds remain fail-closed. No target-local cube, orchestration layer, or
-    browser code may invent a repository runtime role or repair an incomplete
-    result. Runtime role kind remains the closed vocabulary `service`,
-    `daemon`, `worker`, `cli`, `supporting_tool`, and `unknown`: `library` is
-    not a runnable/deployable role. A genuinely library-only target catalog may
-    therefore produce the contractually legitimate empty runtime portfolio;
-    no downstream layer turns that absence into a daemon, CLI, or library
-    runtime role. RuntimePortfolio semantic cache identity is its exact captured
+    browser code may invent a repository product or runtime role, promote an
+    example or tool, or repair an incomplete result. Role kind remains the
+    closed vocabulary `service`, `daemon`, `worker`, `cli`, `library`,
+    `supporting_tool`, and `unknown`; `runtime-portfolio.json` version 2 owns
+    this expanded contract. A `library` role denotes an
+    evidence-backed reusable product/API rather than a runnable or deployable
+    process. It must bind exact target-local ProgramIndex/CoreMap evidence from
+    a library target; a package name or target kind alone has no role authority.
+    Libraries may be primary or supporting according to the validated semantic
+    result. Example applications and supporting tools remain supporting and
+    cannot displace the reusable product/API they demonstrate or build. A
+    genuinely library-only target catalog may therefore produce a non-empty
+    portfolio of library roles; an empty result remains legitimate only when
+    no advertised target has sufficient evidence for any supported role. No
+    downstream layer turns that absence into a daemon, CLI, library, or other
+    role. RuntimePortfolio semantic cache identity is its exact captured
     revision, canonical run-invariant target and evidence facts, prompt,
     preparation, response-schema, execution, provider, and exact prepared
     request identity. It deliberately excludes the publication-local
@@ -772,8 +784,11 @@ surfaces and cross-surface paths remain on that target's program page. An
 authoritative but empty repository-level catalog never shadows a non-empty
 semantic program map. An explicit empty repository route retains a direct
 program-map handoff. A populated repository route shows primary, supporting,
-and unknown runtime roles, their exact target or target-mode mappings, source
-evidence, uncertainty, and every unclassified target. It exposes exact launch points,
+and unknown product/runtime roles, including evidence-backed reusable library
+APIs, their exact target or target-mode mappings, source evidence, uncertainty,
+and every unclassified target. Example applications and tools remain in the
+supporting presentation tier; browser code neither promotes them nor
+synthesizes a missing library role. It exposes exact launch points,
 declarations, bounded structural relations, source evidence, and material
 uncertainty without copying the complete indexes or repeating backend semantic
 validation in JavaScript. Producer diagnostics remain secondary evidence
@@ -864,7 +879,7 @@ strict-decodes it, and compares the complete projection with the validated
 `report.json`. Its target navigation must equal the manifest-derived
 navigation, and static source authority must retain the manifest-derived host,
 revision, and repository-root-to-analysis-root path prefix. Manifest version
-34 and report format version 65 own the current publication contract. The
+34 and report format version 66 own the current publication contract. The
 manifest owns canonical `standalone_source {host,repository_url}` and the exact
 optional `core_map_sha256`, `dependency_catalog_sha256`,
 `python_target_catalog_sha256`, `declared_dependencies_sha256`,
@@ -1227,7 +1242,7 @@ model-selected integration operations with their exact callsites and
 explicitly non-exact runtime authority.
 The report rechecks every selected CoreMap member, activity start, integration
 operation, and activity-to-caller path against the same sealed ProgramIndex.
-Manifest version 34 and report format version 65 material-bind the exact Python
+Manifest version 34 and report format version 66 material-bind the exact Python
 target catalog, declared-dependency artifact, CoreMap, activity-entrypoint
 selection, dependency catalog, selected integration dependencies, concrete
 integration-usage artifact, and deterministic ActivityPath artifact as one
@@ -1341,7 +1356,7 @@ boundary; absent relations stay visible as frontiers and are never supplied by
 the model. Server registrations must be reachable through retained program
 calls from a product Node surface, so an integration-test server with the same
 method/path cannot replace the production handler. Dependency-injected storage
-dispatch remains possible rather than exact. Report format 65 derives the
+dispatch remains possible rather than exact. Report format 66 derives the
 surface catalog and cross-surface view
 from the sealed project plus the exact ProgramIndex, starts JS/TS reports at
 `#/repository` only when that view has an exact surface or path, otherwise

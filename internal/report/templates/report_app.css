@@ -518,6 +518,7 @@ a { color: inherit; }
   background: var(--rm-surface);
 }
 
+.rm-runtime-section--library .rm-runtime-card { border-top-color: var(--rm-accent); }
 .rm-runtime-section--supporting .rm-runtime-card { border-top-color: var(--rm-warm); }
 .rm-runtime-section--unknown .rm-runtime-card { border-top-color: var(--rm-muted); }
 
@@ -551,6 +552,8 @@ a { color: inherit; }
 .rm-runtime-badge--requiredness-optional,
 .rm-runtime-badge--requiredness-experimental,
 .rm-runtime-badge--requiredness-unknown,
+.rm-runtime-badge--prominence-supporting,
+.rm-runtime-badge--prominence-unknown,
 .rm-runtime-badge--confidence-low,
 .rm-runtime-badge--confidence-unknown { background: var(--rm-warning-bg); color: var(--rm-warning); }
 

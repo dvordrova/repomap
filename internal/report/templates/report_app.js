@@ -154,7 +154,7 @@
 
   function buildRuntimePortfolio(data, targetDirectory, openable) {
     var raw = object(data.runtime_portfolio, 'runtime_portfolio');
-    if (integer(raw.version, 'runtime_portfolio.version') !== 1) {
+    if (integer(raw.version, 'runtime_portfolio.version') !== 2) {
       throw new Error('The runtime portfolio version is not supported.');
     }
     var roleIDs = Object.create(null);
@@ -189,7 +189,7 @@
         purpose: text(rawRole.purpose, 'runtime role.purpose'),
         prominence: closedText(rawRole.prominence, ['primary', 'supporting', 'unknown'], 'runtime role.prominence'),
         roleKind: closedText(rawRole.role_kind,
-          ['service', 'daemon', 'worker', 'cli', 'supporting_tool', 'unknown'], 'runtime role.role_kind'),
+          ['library', 'service', 'daemon', 'worker', 'cli', 'supporting_tool', 'unknown'], 'runtime role.role_kind'),
         requiredness: closedText(rawRole.requiredness,
           ['required', 'optional', 'experimental', 'unknown'], 'runtime role.requiredness'),
         confidence: closedText(rawRole.confidence, ['high', 'medium', 'low', 'unknown'], 'runtime role.confidence'),
@@ -544,7 +544,7 @@
 
   function buildPresentationModel(data) {
     text(data.repo_name, 'repo_name');
-    if (integer(data.format_version, 'format_version') !== 65) {
+    if (integer(data.format_version, 'format_version') !== 66) {
       throw new Error('The report format version is not supported.');
     }
     var portfolio = object(data.program_portfolio, 'program_portfolio');
@@ -1894,6 +1894,9 @@
     appendText(heading, 'h3', '', role.name);
     var badges = element('div', 'rm-runtime-card__badges');
     runtimeBadge(badges, role.roleKind, 'kind');
+    if (role.roleKind === 'library') {
+      runtimeBadge(badges, role.prominence, 'prominence-' + role.prominence);
+    }
     runtimeBadge(badges, role.requiredness, 'requiredness-' + role.requiredness);
     runtimeBadge(badges, role.confidence + ' confidence', 'confidence-' + role.confidence);
     heading.appendChild(badges);
@@ -1932,23 +1935,16 @@
     return card;
   }
 
-  function renderRuntimeRoleSection(host, prominence, title, intro, required) {
-    var roles = state.model.runtimePortfolio.roles.filter(function (role) {
-      return role.prominence === prominence;
-    });
-    if (!required && !roles.length) return;
-    var section = element('section', 'rm-runtime-section rm-runtime-section--' + prominence);
+  function renderRuntimeRoleSection(host, sectionKind, title, intro, roles) {
+    if (!roles.length) return;
+    var section = element('section', 'rm-runtime-section rm-runtime-section--' + sectionKind);
     var heading = element('header', 'rm-runtime-section__header');
     appendText(heading, 'h2', '', title);
     appendText(heading, 'p', '', intro);
     section.appendChild(heading);
-    if (!roles.length) {
-      appendText(section, 'p', 'rm-runtime-empty', 'No runtime role was classified in this group.');
-    } else {
-      var grid = element('div', 'rm-runtime-grid');
-      roles.forEach(function (role) { grid.appendChild(renderRuntimeRole(role)); });
-      section.appendChild(grid);
-    }
+    var grid = element('div', 'rm-runtime-grid');
+    roles.forEach(function (role) { grid.appendChild(renderRuntimeRole(role)); });
+    section.appendChild(grid);
     host.appendChild(section);
   }
 
@@ -1959,7 +1955,7 @@
     var heading = element('header', 'rm-runtime-section__header');
     appendText(heading, 'h2', '', 'Unclassified targets');
     appendText(heading, 'p', '',
-      'These selected targets have exact target-local reports, but the runtime portfolio did not assign them a supported role.');
+      'These selected targets have exact target-local reports, but the repository portfolio did not assign them a supported role.');
     section.appendChild(heading);
     var list = element('div', 'rm-runtime-unclassified');
     targets.forEach(function (unclassified) {
@@ -1980,10 +1976,10 @@
     var runtime = state.model.runtimePortfolio;
     var survey = element('section', 'rm-survey rm-runtime-survey');
     var copy = element('div');
-    appendText(copy, 'p', 'rm-eyebrow', 'Repository runtime overview');
+    appendText(copy, 'p', 'rm-eyebrow', 'Repository overview');
     appendText(copy, 'h1', '', state.model.repoName);
     var summary = 'Understand ' + String(runtime.roles.length) +
-      (runtime.roles.length === 1 ? ' runtime role' : ' runtime roles') + ' across ' +
+      (runtime.roles.length === 1 ? ' repository role' : ' repository roles') + ' across ' +
       String(state.model.targets.length) + (state.model.targets.length === 1 ? ' selected target.' : ' selected targets.');
     if (runtime.unclassified.length) {
       summary += ' ' + String(runtime.unclassified.length) +
@@ -2002,12 +1998,19 @@
     survey.appendChild(facts);
     host.appendChild(survey);
 
+    var libraryRoles = runtime.roles.filter(function (role) { return role.roleKind === 'library'; });
+    var runnableRoles = runtime.roles.filter(function (role) { return role.roleKind !== 'library'; });
+    renderRuntimeRoleSection(host, 'library', 'Libraries and product APIs',
+      'Reusable packages and public APIs that form the product this repository delivers.', libraryRoles);
     renderRuntimeRoleSection(host, 'primary', 'Primary runtime roles',
-      'The central services, daemons, workers, and command surfaces that explain how this repository runs.', true);
+      'The central services, daemons, workers, and command surfaces that explain how this repository runs.',
+      runnableRoles.filter(function (role) { return role.prominence === 'primary'; }));
     renderRuntimeRoleSection(host, 'supporting', 'Supporting and optional roles',
-      'Supporting tools and roles whose availability is optional, experimental, or operationally secondary.', false);
-    renderRuntimeRoleSection(host, 'unknown', 'Uncertain runtime roles',
-      'Evidence supports these roles, but their runtime prominence remains unknown.', false);
+      'Runnable examples, supporting tools, and operationally secondary roles.',
+      runnableRoles.filter(function (role) { return role.prominence === 'supporting'; }));
+    renderRuntimeRoleSection(host, 'unknown', 'Uncertain roles',
+      'Evidence supports these roles, but their repository prominence remains unknown.',
+      runnableRoles.filter(function (role) { return role.prominence === 'unknown'; }));
     renderUnclassifiedRuntimeTargets(host);
   }
 

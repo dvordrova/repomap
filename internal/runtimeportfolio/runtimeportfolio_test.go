@@ -195,12 +195,31 @@ func TestResolveAllowsUnknownMappingAndEmptyRoles(t *testing.T) {
 	}
 }
 
-func TestLibraryOnlyTargetAllowsEmptyPortfolioAndRejectsLibraryRole(t *testing.T) {
+func TestLibraryOnlyTargetSupportsEvidenceBackedLibraryRoleAndAllowsEmptyPortfolio(t *testing.T) {
 	input := singleTargetInput()
 	input.Targets[0].DisplayName = "client API"
 	input.Targets[0].Kind = "module_library"
 	input.Targets[0].Selector = "example.com/authorization/client::module_library"
 	input.Targets[0].ActivityStarts = 0
+	input.Targets[0].Evidence[0] = EvidenceInput{
+		Kind: EvidenceProgramFact, Label: "Exports the supported client API",
+		Location:        Location{Path: "client/client.go", Line: 17, Column: 1},
+		ProgramTargetID: input.Targets[0].ProgramTargetID,
+	}
+	input.Targets[0].Evidence = append(input.Targets[0].Evidence, EvidenceInput{
+		Kind: EvidenceTargetEntrypoint, Label: "Selects the client package target",
+		Location:        Location{Path: "client/client.go", Line: 1, Column: 1},
+		ProgramTargetID: input.Targets[0].ProgramTargetID,
+	})
+	input.Targets[0].Responsibilities[0] = ResponsibilityInput{
+		Name: "Client API", Purpose: "Provides reusable authorization client operations.",
+		Evidence: []EvidenceInput{{
+			Kind: EvidenceResponsibility, Label: "Provides reusable authorization client operations",
+			Location:        Location{Path: "client/check.go", Line: 21, Column: 1},
+			ProgramTargetID: input.Targets[0].ProgramTargetID,
+		}},
+	}
+	input.RepositoryEvidence[0].Label = "Repository publishes a supported authorization client library"
 	compilation := mustCompile(t, input)
 
 	empty, err := ResolveResponse(compilation, []byte(`{"roles":[]}`))
@@ -213,18 +232,51 @@ func TestLibraryOnlyTargetAllowsEmptyPortfolioAndRejectsLibraryRole(t *testing.T
 		t.Fatalf("library-only empty result = %#v", empty)
 	}
 
-	evidenceRef := evidenceRefForLabel(t, compilation, "Starts the API server")
-	invalid := responseRole{
+	evidenceRef := evidenceRefForLabel(t, compilation, "Exports the supported client API")
+	repositoryEvidenceRef := evidenceRefForLabel(
+		t, compilation, "Repository publishes a supported authorization client library",
+	)
+	result := mustResolve(t, compilation, responseRole{
 		Name: "Client library", Purpose: "Provides the client API.",
-		Prominence: ProminencePrimary, Kind: RoleKind("library"),
+		Prominence: ProminencePrimary, Kind: RoleKindLibrary,
 		Requiredness: RequirednessRequired, Confidence: ConfidenceHigh,
 		MappingStatus:   MappingMapped,
 		Implementations: []responseImplementation{{TargetRef: "t1"}},
-		EvidenceRefs:    []string{evidenceRef},
+		EvidenceRefs:    []string{evidenceRef, repositoryEvidenceRef},
+	})
+	if len(result.Roles) != 1 || result.Roles[0].Kind != RoleKindLibrary ||
+		result.Coverage.TargetsMapped != 1 || len(result.UnclassifiedTargetIDs) != 0 {
+		t.Fatalf("library result = %#v", result)
 	}
-	if _, err := ResolveResponse(compilation, mustMarshalResponse(t, invalid)); err == nil {
-		t.Fatal("runtime portfolio accepted library as a runtime role")
+
+	unsupported := responseRole{
+		Name: "Client library", Purpose: "Provides the client API.",
+		Prominence: ProminencePrimary, Kind: RoleKindLibrary,
+		Requiredness: RequirednessRequired, Confidence: ConfidenceHigh,
+		MappingStatus:   MappingMapped,
+		Implementations: []responseImplementation{{TargetRef: "t1"}},
+		EvidenceRefs:    []string{repositoryEvidenceRef},
 	}
+	if _, err := ResolveResponse(compilation, mustMarshalResponse(t, unsupported)); err == nil || !strings.Contains(err.Error(), "target-bound role evidence") {
+		t.Fatalf("runtime portfolio accepted a library implementation without target-bound evidence: %v", err)
+	}
+
+	t.Run("target binding without library semantics", func(t *testing.T) {
+		unsupported.EvidenceRefs = []string{
+			evidenceRefForLabel(t, compilation, "Selects the client package target"),
+		}
+		if _, err := ResolveResponse(compilation, mustMarshalResponse(t, unsupported)); err == nil || !strings.Contains(err.Error(), "responsibility or program-fact evidence") {
+			t.Fatalf("runtime portfolio accepted a library without exact semantic evidence: %v", err)
+		}
+	})
+
+	t.Run("executable mode", func(t *testing.T) {
+		unsupported.Implementations[0].Mode = "serve"
+		unsupported.EvidenceRefs = []string{evidenceRef}
+		if _, err := ResolveResponse(compilation, mustMarshalResponse(t, unsupported)); err == nil || !strings.Contains(err.Error(), "library implementation has an executable mode") {
+			t.Fatalf("runtime portfolio accepted an executable library mode: %v", err)
+		}
+	})
 }
 
 func TestArtifactEncodeDecodeAndAuthorityTamper(t *testing.T) {

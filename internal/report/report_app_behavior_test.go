@@ -165,6 +165,7 @@ const exposure = [
   '    renderTargetSurfaceInventory: renderTargetSurfaceInventory,',
   '    renderSurfaceDetail: renderSurfaceDetail,',
   '    renderCrossSurfacePathDetail: renderCrossSurfacePathDetail,',
+  '    renderRuntimePortfolio: renderRuntimePortfolio,',
   '    renderHeader: renderHeader,',
   '    reportRouteContext: reportRouteContext,',
   '    updateHeaderContext: updateHeaderContext,',
@@ -477,6 +478,51 @@ model.runtimePortfolio.roles = [];
 model.runtimePortfolio.unclassified.push({ id: 'target:unknown' });
 check(api.selectedReportRoute().kind === 'repository',
   'an unclassified target must make the repository overview useful');
+model.runtimePortfolio = {
+  roles: [
+    {
+      id: 'role:service', name: 'Example application', purpose: 'Demonstrates the packages.',
+      prominence: 'primary', roleKind: 'service', requiredness: 'optional', confidence: 'high',
+      implementations: [{ target: model.targets[0], mode: 'dev' }], evidence: []
+    },
+    {
+      id: 'role:tool', name: 'Release tooling', purpose: 'Publishes the packages.',
+      prominence: 'supporting', roleKind: 'supporting_tool', requiredness: 'optional', confidence: 'high',
+      implementations: [{ target: model.targets[0], mode: 'cli' }], evidence: []
+    },
+    {
+      id: 'role:library', name: 'Router API', purpose: 'Provides reusable routing APIs.',
+      prominence: 'supporting', roleKind: 'library', requiredness: 'required', confidence: 'high',
+      implementations: [{ target: model.targets[1], mode: '' }], evidence: []
+    }
+  ],
+  unclassified: [{
+    target: { displayName: 'Unknown package', href: '../unknown/report.html#/program' },
+    reason: 'No repository role maps this analyzed target.'
+  }]
+};
+const repositoryOverviewHost = new TestElement('main');
+api.renderRuntimePortfolio(repositoryOverviewHost);
+const repositoryOverviewText = repositoryOverviewHost.textContent;
+const librarySectionOffset = repositoryOverviewText.indexOf('Libraries and product APIs');
+const primarySectionOffset = repositoryOverviewText.indexOf('Primary runtime roles');
+const supportingSectionOffset = repositoryOverviewText.indexOf('Supporting and optional roles');
+const unclassifiedSectionOffset = repositoryOverviewText.indexOf('Unclassified targets');
+check(repositoryOverviewText.includes('Repository overview') &&
+  repositoryOverviewText.includes('3 repository roles across 2 selected targets.'),
+  'the repository hero must describe a product-neutral repository portfolio');
+check(librarySectionOffset >= 0 && librarySectionOffset < primarySectionOffset &&
+  primarySectionOffset < supportingSectionOffset && supportingSectionOffset < unclassifiedSectionOffset,
+  'library roles must render before runnable examples, supporting tools, and genuinely unmapped targets');
+check(repositoryOverviewText.includes('Router API') && repositoryOverviewText.includes('Library'),
+  'the repository overview must render a first-class library role and its kind');
+const libraryRoleCard = descendants(repositoryOverviewHost).find((node) =>
+  node.tagName === 'ARTICLE' && node.textContent.includes('Router API')
+);
+check(libraryRoleCard && libraryRoleCard.textContent.includes('Supporting'),
+  'a combined library section must preserve and expose each semantic role prominence');
+check(libraryRoleCard && !libraryRoleCard.textContent.includes('No repository role maps'),
+  'a semantic library role must not be rendered as an unclassified target');
 model.runtimePortfolio = null;
 
 const focusedTopology = api.canvasTopology([block.id], false);

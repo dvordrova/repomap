@@ -1,7 +1,7 @@
 // Package runtimeportfolio synthesizes one repository-level inventory of
-// runtime roles from validated target-local evidence. Models select only
-// request-local refs; exact program target identities and source locations are
-// restored locally.
+// runnable roles and reusable library products from validated target-local
+// evidence. Models select only request-local refs; exact program target
+// identities and source locations are restored locally.
 package runtimeportfolio
 
 import (
@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	Version          = 1
+	Version          = 2
 	ArtifactFilename = "runtime-portfolio.json"
 
 	MaxRequestBytes         = 4 * 1024 * 1024
@@ -30,7 +30,7 @@ const (
 	MaxArtifactBytes        = 4 << 20
 )
 
-const executionContract = "repository-runtime-portfolio-v2"
+const executionContract = "repository-runtime-portfolio-v3"
 
 type Prominence string
 
@@ -47,6 +47,7 @@ const (
 	RoleKindDaemon         RoleKind = "daemon"
 	RoleKindWorker         RoleKind = "worker"
 	RoleKindCLI            RoleKind = "cli"
+	RoleKindLibrary        RoleKind = "library"
 	RoleKindSupportingTool RoleKind = "supporting_tool"
 	RoleKindUnknown        RoleKind = "unknown"
 )
@@ -109,7 +110,7 @@ type EvidenceInput struct {
 
 // TargetInput is one exact completed target page. Semantic summaries are
 // prior validated cube results; counts keep large exact inventories visible
-// without turning every operation into a new runtime-role candidate.
+// without turning every operation into a new portfolio-role candidate.
 type TargetInput struct {
 	ProgramTargetID  string
 	DisplayName      string
@@ -296,6 +297,7 @@ func validateRole(role Role, targets map[string]Target) error {
 	}
 	previousEvidence := ""
 	evidencedTargetIDs := make(map[string]struct{}, len(role.Evidence))
+	libraryEvidenceTargetIDs := make(map[string]struct{}, len(role.Evidence))
 	for _, evidence := range role.Evidence {
 		if err := validateEvidence(evidence, targets); err != nil {
 			return err
@@ -306,11 +308,22 @@ func validateRole(role Role, targets map[string]Target) error {
 		previousEvidence = evidence.ID
 		if evidence.ProgramTargetID != "" {
 			evidencedTargetIDs[evidence.ProgramTargetID] = struct{}{}
+			if evidence.Kind == EvidenceResponsibility || evidence.Kind == EvidenceProgramFact {
+				libraryEvidenceTargetIDs[evidence.ProgramTargetID] = struct{}{}
+			}
 		}
 	}
 	for _, implementation := range role.Implementations {
 		if _, supported := evidencedTargetIDs[implementation.ProgramTargetID]; !supported {
 			return fmt.Errorf("implementation has no target-bound role evidence")
+		}
+		if role.Kind == RoleKindLibrary {
+			if implementation.Mode != "" {
+				return fmt.Errorf("library implementation has an executable mode")
+			}
+			if _, supported := libraryEvidenceTargetIDs[implementation.ProgramTargetID]; !supported {
+				return fmt.Errorf("library implementation has no exact responsibility or program-fact evidence")
+			}
 		}
 	}
 	wantID, err := roleID(role)
@@ -443,7 +456,8 @@ func validProminence(value Prominence) bool {
 
 func validRoleKind(value RoleKind) bool {
 	switch value {
-	case RoleKindService, RoleKindDaemon, RoleKindWorker, RoleKindCLI, RoleKindSupportingTool, RoleKindUnknown:
+	case RoleKindService, RoleKindDaemon, RoleKindWorker, RoleKindCLI, RoleKindLibrary,
+		RoleKindSupportingTool, RoleKindUnknown:
 		return true
 	default:
 		return false

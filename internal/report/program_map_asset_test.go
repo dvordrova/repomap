@@ -212,15 +212,17 @@ func TestOrientationClientUsesCompactTargetSwitcherAndRouteContext(t *testing.T)
 func TestOrientationClientRendersRuntimePortfolioBeforeProgramMap(t *testing.T) {
 	for _, required := range []string{
 		"object(data.runtime_portfolio, 'runtime_portfolio')",
+		"runtime_portfolio.version') !== 2",
 		"The runtime portfolio version is not supported",
 		"function buildTargetDirectory(data, currentTarget)",
 		"href: '#/program'",
 		"link.href = implementation.target.href",
 		"sourceAction(evidence.label, evidence.location)",
 		"function renderRuntimePortfolio(host)",
+		"Libraries and product APIs",
 		"Primary runtime roles",
 		"Supporting and optional roles",
-		"Uncertain runtime roles",
+		"Uncertain roles",
 		"Unclassified targets",
 		"Target mapping unresolved",
 		"hash === '#/repository'",
@@ -231,6 +233,13 @@ func TestOrientationClientRendersRuntimePortfolioBeforeProgramMap(t *testing.T) 
 		if !strings.Contains(reportAppJS, required) {
 			t.Errorf("runtime portfolio client is missing %q", required)
 		}
+	}
+	librarySection := strings.Index(reportAppJS, "renderRuntimeRoleSection(host, 'library'")
+	primarySection := strings.Index(reportAppJS, "renderRuntimeRoleSection(host, 'primary'")
+	supportingSection := strings.Index(reportAppJS, "renderRuntimeRoleSection(host, 'supporting'")
+	if librarySection < 0 || primarySection < 0 || supportingSection < 0 ||
+		librarySection >= primarySection || primarySection >= supportingSection {
+		t.Error("repository overview does not render library roles before runnable and supporting roles")
 	}
 	for _, truncated := range []string{
 		"runtime.roles.slice(",
@@ -244,7 +253,7 @@ func TestOrientationClientRendersRuntimePortfolioBeforeProgramMap(t *testing.T) 
 	}
 	for _, selector := range []string{
 		".rm-runtime-section", ".rm-runtime-grid", ".rm-runtime-card",
-		".rm-runtime-target", ".rm-runtime-unclassified__item",
+		".rm-runtime-section--library", ".rm-runtime-target", ".rm-runtime-unclassified__item",
 	} {
 		if !strings.Contains(reportAppCSS, selector) {
 			t.Errorf("runtime portfolio CSS is missing %q", selector)
@@ -259,7 +268,7 @@ func TestOrientationClientRendersExactJSTSSurfacesAndCrossSurfacePaths(t *testin
 	for _, required := range []string{
 		"function buildJSTSSurfaceCatalog(data, target, indexSHA256, openable)",
 		"js_ts_surface_catalog_view.version') !== 2",
-		"data.format_version, 'format_version') !== 65",
+		"data.format_version, 'format_version') !== 66",
 		"function buildCrossSurfacePaths(data, target, indexSHA256, openable, surfaceCatalog)",
 		"['browser_application', 'node_server', 'command_line_application', 'shared_contracts', 'tool', 'unknown']",
 		"if (value === 'command_line_application') return 'Command-line application'",
