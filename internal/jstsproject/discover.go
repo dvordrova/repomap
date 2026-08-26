@@ -460,17 +460,27 @@ func selectProjectManifest(
 		if rootManifest == nil {
 			return "", "", fmt.Errorf("jsts project: root package manifest metadata is unavailable")
 		}
-		if !declaresWorkspaces(rootManifest.Workspaces) || hasExactOwnedPackageEntry(*rootManifest, *root) {
-			return root.manifestPath, root.projectDir, nil
+		if !declaresWorkspaces(rootManifest.Workspaces) {
+			// A repository-root package remains authoritative only when it owns
+			// source. Tooling-only manifests are common beside an independently
+			// packaged frontend; selecting such a root here would advertise a
+			// target that the exact-selector materialization path must reject.
+			if len(root.ownSources) > 0 {
+				return root.manifestPath, root.projectDir, nil
+			}
+		} else {
+			if len(root.ownSources) > 0 && hasExactOwnedPackageEntry(*rootManifest, *root) {
+				return root.manifestPath, root.projectDir, nil
+			}
+			delegates := exactWorkspaceDelegates(*rootManifest, eligible)
+			if len(delegates) == 1 {
+				return delegates[0].manifestPath, delegates[0].projectDir, nil
+			}
+			return "", "", fmt.Errorf(
+				"jsts project: workspace-only root package has %d exact dev/start --cwd delegates; exact choices: %s",
+				len(delegates), packageSelectorChoices(eligible),
+			)
 		}
-		delegates := exactWorkspaceDelegates(*rootManifest, eligible)
-		if len(delegates) == 1 {
-			return delegates[0].manifestPath, delegates[0].projectDir, nil
-		}
-		return "", "", fmt.Errorf(
-			"jsts project: workspace-only root package has %d exact dev/start --cwd delegates; exact choices: %s",
-			len(delegates), packageSelectorChoices(eligible),
-		)
 	}
 
 	switch len(eligible) {

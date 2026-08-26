@@ -138,13 +138,15 @@ diagnostic-journal availability never changes the cube's semantic contract.
    Python adapter independently uses Python packaging, module, launcher,
    main-guard, executable-script, and framework facts. The JS/TS adapter owns
    exactly one selected `package.json` project with tracked project-selected
-   JavaScript/TypeScript sources. A non-workspace root remains the project. A
-   workspace root remains the project only when an exact manifest field or
+   JavaScript/TypeScript sources. An eligible non-workspace root remains the
+   project; a source-less root manifest is tooling and cannot suppress an
+   eligible nested package. A workspace root remains the project only when an
+   exact manifest field or
    canonical `dev`/`start` entry names source owned by that root; otherwise an
    exact `--cwd` in canonical `dev`/`start` may delegate to exactly one eligible
    child. Zero or multiple exact delegates fail closed with exact
-   `jsts:<manifest>` choices. Without a root, one eligible nested package is
-   accepted and multiple eligible nested packages fail closed with the same
+   `jsts:<manifest>` choices. Without an eligible root, one eligible nested
+   package is accepted and multiple eligible nested packages fail closed with the same
    exact choices rather than being ranked heuristically. An explicit
    `jsts:<manifest>` selects that owned package before TypeScript compiler
    execution. The JSTS scout performs this manifest/workspace/source-ownership
@@ -1191,13 +1193,15 @@ operations as separate authorities, enriches each operation with the shared
 route to its caller without claiming runtime reachability, and renders selected
 declaration candidates as a visibly separate declaration-to-code frontier.
 
-The JavaScript/TypeScript adapter is an active single-package ordinary path. A
-non-workspace root remains selected. A workspace root remains selected only
-with an exact owned manifest or canonical `dev`/`start` source entry; otherwise
+The JavaScript/TypeScript adapter is an active single-package ordinary path. An
+eligible non-workspace root remains selected; a source-less root manifest is
+tooling and cannot suppress an eligible nested package. A workspace root
+remains selected only with an exact owned manifest or canonical `dev`/`start`
+source entry; otherwise
 one exact canonical `dev`/`start --cwd` delegate selects its eligible child,
 while zero or multiple delegates fail closed with exact `jsts:<manifest>`
-choices. Without a root, exactly one eligible nested package is admitted and
-multiple packages fail closed. An explicit `jsts:<manifest>` binds its owned
+choices. Without an eligible root, exactly one eligible nested package is
+admitted and multiple packages fail closed. An explicit `jsts:<manifest>` binds its owned
 package before compiler execution. `package.json#name` is optional. The exact
 top-level npm lockfile name is the secondary package name/path; without either
 declaration, the root uses `root-package` and a nested package uses its full
