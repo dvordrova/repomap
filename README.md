@@ -73,6 +73,12 @@ no `DEEPSEEK_*` value is inherited. The complete transport contract is in
 .bin/repomap ../etcd
 ```
 
+`[repo]` is a local checkout (the current directory when omitted). The
+`--github-url` and `--gitlab-url` flags only authorize source links in a
+standalone report; they never clone or select the repository to analyze. When
+`[repo]` is omitted, a supplied source URL must match the current checkout's
+origin or the run fails in preflight with corrective guidance.
+
 Target discovery is high-recall. By default one repository-wide portfolio must
 retain a canonical file representative for every exact native target, may also
 retain positively supported repository-guidance candidates, and chooses one
@@ -81,6 +87,9 @@ target-local report page; a mixed-language run publishes those pages through
 the neutral program-page and runtime portfolios. `--target` bypasses the
 portfolio choice and analyzes exactly one supported explicit target, while the
 README classifier and active language scouts still run for downstream context.
+An exact repository-relative Python anchor path is accepted only when it names
+one native target; if the file anchors several launch modes, the error lists
+the matching sealed selectors and requires an explicit choice.
 An unselected language's compiler and page-local analysis do not run. For every
 non-explicit discovered candidate set — even one eligible file — a fully
 validated live or cached model selection is required. Unavailable providers,
@@ -112,7 +121,8 @@ With `--no-serve`, repomap writes standalone HTML whose code links point to the
 captured revision on GitHub or GitLab. The repository `origin` must identify a
 supported host, or the matching `--github-url`/`--gitlab-url` must be supplied.
 Invalid static-link configuration fails in preflight before analysis or model
-requests.
+requests. These flags remain presentation configuration and do not download or
+switch the analyzed checkout.
 
 Report runs and model-response caches default to the OS user-cache directory.
 Use `--debug-dir` to choose another root. `--no-cache` forces live provider

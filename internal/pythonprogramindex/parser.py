@@ -784,9 +784,15 @@ class RelationVisitor(ast.NodeVisitor):
         base = relative_module(self.module["name"], self.module["package"], node.level, node.module)
         for alias in node.names:
             if alias.name == "*":
-                self.analyzer.add_relation(
-                    "imports", self.scope.ref, [], "unresolved", node, "wildcard_import",
-                    base, targets_observed=1,
+                authority, ref = self.import_target(base, allow_external=node.level == 0)
+                witness = self.import_witness(authority, base) if authority == "external" else "wildcard_import"
+                # Star expansion leaves the imported member set dynamic, but
+                # the import statement still names one exact module boundary.
+                # Retain that module as dependency authority without
+                # inventing any declaration imported from it.
+                self.emit_resolved(
+                    "imports", self.scope.ref, (authority, ref), node, witness, base,
+                    exact_authorities=("local", "external"),
                 )
                 continue
             resolved = self.import_target(base, alias.name, allow_external=node.level == 0)

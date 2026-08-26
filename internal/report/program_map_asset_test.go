@@ -42,7 +42,7 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 		[]byte(`id="rm-report-app-css"`),
 		[]byte(`id="rm-report-app-js"`),
 		[]byte(`buildPresentationModel(data)`),
-		[]byte(`Repository orientation`),
+		[]byte(`Repository overview`),
 		[]byte(`Repository flow`),
 		[]byte(`Entrypoints`),
 		[]byte(`Integrations`),
@@ -51,6 +51,10 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 		[]byte(`Evidence limits`),
 		[]byte(`function renderEvidence(block)`),
 		[]byte(`function renderConnections(parent, block, connections)`),
+		[]byte(`function connectionOwnerObject(connection)`),
+		[]byte(`function groupConnectionsByOwner(connections)`),
+		[]byte(`function targetOverviewCounts(model)`),
+		[]byte(`element('details', 'rm-target-overview')`),
 		[]byte(`displayProgramObjectName(symbol)`),
 		[]byte(`id="rm-target-switcher"`),
 		[]byte(`id="rm-page-context"`),
@@ -104,7 +108,7 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 func TestOrientationClientKeepsCompleteEvidenceBehindDisclosure(t *testing.T) {
 	for _, required := range []string{
 		"starts.forEach(function (start)",
-		"connections.forEach(function (connection)",
+		"groupConnectionsByOwner(connections)",
 		"related.forEach(function (candidate)",
 		"block.symbols.forEach(function (symbol)",
 		"block.files.forEach(function (file)",
@@ -117,6 +121,11 @@ func TestOrientationClientKeepsCompleteEvidenceBehindDisclosure(t *testing.T) {
 	}
 	for _, truncated := range []string{
 		"connections.slice(0, 7)",
+		"ownerGroups.slice(",
+		"group.local.slice(",
+		"group.platform.slice(",
+		"group.external.slice(",
+		"group.unresolved.slice(",
 		"filter(Boolean).slice(0, 4)",
 		"starts.slice(0, 5)",
 	} {
@@ -136,6 +145,8 @@ func TestOrientationClientKeepsCompleteEvidenceBehindDisclosure(t *testing.T) {
 	for _, selector := range []string{
 		".rm-source-action--compact", ".rm-evidence-files", ".rm-evidence-file",
 		".rm-evidence-file__path", ".rm-evidence-symbols", ".rm-connection__locations",
+		".rm-connection-owner-list", ".rm-connection-owner__members", ".rm-connection-member__heading",
+		".rm-connection-runtime__summary",
 	} {
 		if !strings.Contains(reportAppCSS, selector) {
 			t.Errorf("grouped exact-source presentation is missing %q", selector)
@@ -182,6 +193,7 @@ func TestOrientationClientUsesCompactTargetSwitcherAndRouteContext(t *testing.T)
 	for _, selector := range []string{
 		".rm-target-switcher", ".rm-target-switcher__panel", ".rm-target-switcher__targets",
 		".rm-target-switcher__target", ".rm-target-switcher__badges", ".rm-target-switcher__badge",
+		".rm-target-overview", ".rm-target-overview__summary", ".rm-target-overview__body",
 	} {
 		if !strings.Contains(reportAppCSS, selector) {
 			t.Errorf("compact target switcher CSS is missing %q", selector)
@@ -214,7 +226,7 @@ func TestOrientationClientRendersRuntimePortfolioBeforeProgramMap(t *testing.T) 
 		"hash === '#/repository'",
 		"if (hash === '#/program')",
 		"#/program/responsibility/",
-		"Back to runtime overview",
+		"← Repository overview",
 	} {
 		if !strings.Contains(reportAppJS, required) {
 			t.Errorf("runtime portfolio client is missing %q", required)
@@ -258,11 +270,13 @@ func TestOrientationClientRendersExactJSTSSurfacesAndCrossSurfacePaths(t *testin
 		"function routeForCrossSurfacePath(id)",
 		"#/program/surface/",
 		"#/program/path/",
-		"function renderJSTSRepositoryOverview(host)",
-		"Selected target overview",
+		"function renderTargetSurfaceInventory(host)",
+		"renderTargetSurfaceInventory(orientation)",
 		"function crossSurfaceEmptyReason(catalog, coverage)",
 		"function renderSurfaceDetail(host, surface)",
 		"function renderCrossSurfacePathDetail(host, path)",
+		"← Back to target overview",
+		"back.href = '#/program'",
 		"sourceAction('Open surface evidence', surface.location)",
 		"sourceAction('Open exact step', step.location)",
 		"Open semantic program map →",

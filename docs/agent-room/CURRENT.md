@@ -98,6 +98,12 @@ normal Go environment and host selection applies. `--depth` and
 `--port` is valid only for served reports. Combining it with `--no-serve` or
 with `--github-url`/`--gitlab-url` (which select static report mode) fails in
 preflight with guidance to remove the irrelevant side of the combination.
+`[repo]` is always a local checkout. The GitHub/GitLab URL flags authorize only
+standalone source links and never clone or select a repository. When `[repo]`
+is omitted and the current checkout has an origin, a complete source URL that
+names another host/project fails in preflight before corpus construction or a
+model request; an explicit local `[repo]` may still intentionally use a
+canonical upstream source-link URL.
 
 Removed flags are not compatibility aliases: `--offline`, `--all-targets`,
 `--go-target`, `--strict-snapshot`, `--source-episode`, and
@@ -246,16 +252,19 @@ diagnostic-journal availability never changes the cube's semantic contract.
    adapter; an unsupported or cross-adapter ambiguous ref is terminal rather
    than guessed. Adapter resolvers may restore several exact target views from
    one selected file, and repeated views are deduplicated by their
-   adapter-qualified native identity. The selected default file must restore
-   to exactly one typed target, which becomes the explicit repository default.
-   All restored targets and the default are rechecked against their current
-   exact adapter authority before they enter the execution plan. The common
-   repository plan has no language-specific default policy: every exact native
-   target is already retained, and the default controls navigation and order
-   rather than coverage. The legacy Go-only selector may retain its stricter
-   executable-default contract outside this shared boundary. Candidate order,
-   path/name wording, README claims, and model hypotheses cannot add native
-   target authority.
+   adapter-qualified native identity. A selected default file may likewise own
+   several typed targets. Every such target remains in the execution plan; the
+   first owner in the plan's canonical adapter-qualified target order becomes
+   only the landing-page and execution-order default. This local presentation
+   binding is not another semantic selection cube and cannot reduce coverage
+   or make shared-file ownership terminal. All restored targets and the default
+   are rechecked against their current exact adapter authority before they enter
+   the execution plan. The common repository plan has no language-specific
+   default policy: every exact native target is already retained, and the
+   default controls navigation and order rather than coverage. The legacy
+   Go-only selector may retain its stricter executable-default contract outside
+   this shared boundary. Path/name wording, README claims, and model hypotheses
+   cannot add native target authority.
    Non-required candidates omitted by the model are restored locally as
    `Unclassified`, logged, and dropped; there is no `unlikely` complement. Several selected
    files may restore to the same exact typed target and are deduplicated
@@ -522,9 +531,12 @@ diagnostic-journal availability never changes the cube's semantic contract.
    tree-sitter, syntax search, or language-specific library knowledge. The
    Python adapter derives them from the already-built ProgramIndex import
    relations and classifies exact direct imports as `workspace`, `stdlib`, or
-   `external`; wildcard, dynamic, or otherwise untyped imports make coverage
-   partial and stop the ordinary run. The complete result is persisted as
-   strict canonical `dependency-catalog.json`.
+   `external`. A wildcard import retains its exact named local or external
+   module boundary without inventing the dynamically imported declarations;
+   only a wildcard whose module boundary itself cannot be resolved, a dynamic
+   import, or another untyped import makes dependency coverage partial and
+   stops the ordinary run. The complete result is persisted as strict
+   canonical `dependency-catalog.json`.
 12. Classify which dependencies may be integration boundaries. The shared
    `IntegrationDependency` cube receives a complete exact dependency catalog,
    assigns fresh run-local `dN` refs to every `stdlib` and `external` row, and
@@ -754,13 +766,14 @@ renderer consumes each target page's sealed ProgramIndex through its
 report-owned `ProgramPortfolio`; a multi-target publication additionally
 consumes the one repository-level `RuntimePortfolio` bound through the
 language-neutral `ProgramPagePortfolio`. The repository route is the initial
-orientation surface only when it has at least one exact surface/path or runtime
-role/unclassified target to show; an authoritative but empty repository-level
-catalog never shadows a non-empty semantic program map. An explicit empty
-repository route retains a direct program-map handoff. A populated repository
-route shows primary, supporting, and unknown runtime roles, their exact target or
-target-mode mappings, source evidence, uncertainty, and every unclassified
-target. It exposes exact launch points,
+orientation surface only when its repository-wide runtime portfolio has at
+least one role or unclassified target; target-local JavaScript/TypeScript
+surfaces and cross-surface paths remain on that target's program page. An
+authoritative but empty repository-level catalog never shadows a non-empty
+semantic program map. An explicit empty repository route retains a direct
+program-map handoff. A populated repository route shows primary, supporting,
+and unknown runtime roles, their exact target or target-mode mappings, source
+evidence, uncertainty, and every unclassified target. It exposes exact launch points,
 declarations, bounded structural relations, source evidence, and material
 uncertainty without copying the complete indexes or repeating backend semantic
 validation in JavaScript. Producer diagnostics remain secondary evidence
@@ -776,13 +789,20 @@ diagnostics and terminate the shared cube path rather than becoming a smaller,
 product-looking integration map.
 
 Multi-target reports use a compact target picker rather than an unbounded
-horizontal rail. Its selected state identifies the exact current target and is
-independent of the current repository, program, or detail page; a control that
-navigates to another page cannot present itself as the current page merely
-because it names the current target. Source evidence is grouped by exact
+horizontal rail. The repository route says `All targets` and presents no target
+as the current page. Target-scoped routes retain the exact target as context,
+but only that target's program-map link carries the current-page state; detail
+pages do not make their program-map link current merely because it names the
+same target. The program page starts with one compact, closed target summary
+instead of a second repository-sized hero. Source evidence is grouped by exact
 repository-relative file, with the path as a quiet group label and concise
 declaration labels inside it rather than repeated module/path prefixes; exact
-line and column source actions remain unchanged. An empty JS/TS full-stack-path
+line and column source actions remain unchanged. Focused code relations are
+grouped only through exact ProgramView owner/container IDs, with the owning
+declaration linked first and its local member relations indented beneath it.
+JavaScript platform calls, resolved external calls, and unresolved runtime
+frontiers remain complete in separate closed disclosures; presentation never
+drops or semantically promotes those records. An empty JS/TS full-stack-path
 view explains which deterministically required condition is absent, such as a
 product browser or Node-server surface, an eligible client HTTP use or server
 route, or the remaining explicit method/path and retained-reachability chain. It
@@ -1152,7 +1172,12 @@ catalog-owned `module_execution` target from that scope. Its exact selector is
 constructors, annotations, dependency names, and framework allowlists are not
 target authority. Explicit native roots keep precedence, so a main guard,
 declared callable, or executable script is never replaced by the generic
-view. Catalog snapshotting and canonical encode/decode retain the scope digest
+view. At the CLI boundary only, an exact repository-relative path may route to
+one native target whose sealed `AnchorFileRef` names that file; the selected
+target retains its canonical selector and identity. A shared anchor remains an
+explicit ambiguity and reports only its actually matching native selectors
+before the complete corrective choice catalog. Catalog snapshotting and
+canonical encode/decode retain the scope digest
 and reproduce the byte-identical derived target. Typed discovery omissions do
 not erase independently sealed targets: the ordinary selector may continue
 with exact native or resolver-owned targets while persisting and reporting the

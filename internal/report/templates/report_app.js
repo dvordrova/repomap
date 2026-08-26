@@ -1064,12 +1064,16 @@
       connection = {
         id: relationID,
         relationIDs: [relationID],
+        fromID: relation.from_id,
         from: displayProgramObjectName(from),
         to: targetNames.length ? targetNames.join(' / ') :
           (expression ? 'unresolved call: ' + expression : 'runtime target unresolved'),
         kind: kind,
         invocation: invocation,
         platformTarget: targetObjects.length > 0 && targetObjects.every(isJavaScriptPlatformObject),
+        externalTarget: targetObjects.length > 0 && targetObjects.every(function (target) {
+          return target.kind === 'external_symbol';
+        }),
         resolution: resolution,
         location: locations.length ? locations[0] : null,
         locations: locations,
@@ -1088,6 +1092,90 @@
         left.from.localeCompare(right.from) || left.to.localeCompare(right.to);
     });
     return connections;
+  }
+
+  function connectionSourceObject(connection) {
+    var source = state.model.objectsByID[text(connection.fromID, 'connection.fromID')];
+    if (!source) throw new Error('A displayed connection has no exact source object.');
+    return source;
+  }
+
+  function connectionOwnerObject(connection) {
+    var source = connectionSourceObject(connection);
+    var ownerID = optionalText(source.owner_id, 'program object.owner_id');
+    if (ownerID) {
+      var owner = state.model.objectsByID[ownerID];
+      if (!owner) throw new Error('A displayed connection owner is absent from the ProgramView.');
+      return owner;
+    }
+    var containerID = optionalText(source.container_id, 'program object.container_id');
+    if (!containerID) return source;
+    var container = state.model.objectsByID[containerID];
+    if (!container) throw new Error('A displayed connection container is absent from the ProgramView.');
+    return container.kind === 'module' || container.kind === 'package' ? source : container;
+  }
+
+  function connectionBucket(connection) {
+    if (connection.resolution === 'unresolved' || !connection.targetIDs.length) return 'unresolved';
+    if (connection.platformTarget) return 'platform';
+    if (connection.externalTarget) return 'external';
+    return 'local';
+  }
+
+  function connectionPosition(connection) {
+    var source = connectionSourceObject(connection);
+    var location = connection.location || source.location || null;
+    return {
+      path: location && location.path ? location.path : '',
+      line: location && location.line ? location.line : 0,
+      column: location && location.column ? location.column : 0
+    };
+  }
+
+  function compareConnections(left, right) {
+    var leftPosition = connectionPosition(left);
+    var rightPosition = connectionPosition(right);
+    return leftPosition.path.localeCompare(rightPosition.path) ||
+      leftPosition.line - rightPosition.line || leftPosition.column - rightPosition.column ||
+      left.from.localeCompare(right.from) || left.to.localeCompare(right.to) || left.id.localeCompare(right.id);
+  }
+
+  function groupConnectionsByOwner(connections) {
+    var groups = [];
+    var groupsByID = Object.create(null);
+    connections.forEach(function (connection) {
+      var owner = connectionOwnerObject(connection);
+      var group = groupsByID[owner.id];
+      if (!group) {
+        group = {
+          id: owner.id,
+          owner: owner,
+          local: [],
+          platform: [],
+          external: [],
+          unresolved: []
+        };
+        groupsByID[owner.id] = group;
+        groups.push(group);
+      }
+      group[connectionBucket(connection)].push(connection);
+    });
+    groups.forEach(function (group) {
+      ['local', 'platform', 'external', 'unresolved'].forEach(function (bucket) {
+        group[bucket].sort(compareConnections);
+      });
+    });
+    groups.sort(function (left, right) {
+      var leftLocation = left.owner.location || null;
+      var rightLocation = right.owner.location || null;
+      var leftPath = leftLocation && leftLocation.path ? leftLocation.path : '';
+      var rightPath = rightLocation && rightLocation.path ? rightLocation.path : '';
+      return leftPath.localeCompare(rightPath) ||
+        ((leftLocation && leftLocation.line) || 0) - ((rightLocation && rightLocation.line) || 0) ||
+        displayProgramObjectName(left.owner).localeCompare(displayProgramObjectName(right.owner)) ||
+        left.id.localeCompare(right.id);
+    });
+    return groups;
   }
 
   function relatedBlocksFor(block, connections) {
@@ -1679,11 +1767,6 @@
   }
 
   function repositoryOverviewKind() {
-    if (state.model.surfaceCatalog &&
-        (state.model.surfaceCatalog.surfaces.length ||
-          (state.model.crossSurfacePaths && state.model.crossSurfacePaths.paths.length))) {
-      return 'surfaces';
-    }
     if (state.model.runtimePortfolio &&
         (state.model.runtimePortfolio.roles.length || state.model.runtimePortfolio.unclassified.length)) {
       return 'runtime';
@@ -1722,7 +1805,7 @@
   }
 
   function reportRouteContext(route) {
-    if (route.kind === 'repository') return 'Target overview';
+    if (route.kind === 'repository') return 'Repository overview';
     if (route.kind === 'surface') return 'Surface';
     if (route.kind === 'path') return 'Full-stack path';
     if (route.kind === 'entrypoint') return 'Entrypoint';
@@ -1733,20 +1816,34 @@
 
   function updateHeaderContext(route) {
     var scope = document.getElementById('rm-page-context');
-    if (!scope) return;
-    scope.textContent = reportRouteContext(route) + ' · ' + humanRuntimeToken(state.model.target.language) + ' · ' +
-      humanRuntimeToken(state.model.target.kind) + ' · ' +
-      state.model.revision.slice(0, MAX_REVISION_ABBREVIATION_CHARS);
+    var revision = state.model.revision.slice(0, MAX_REVISION_ABBREVIATION_CHARS);
+    var repositoryRoute = route.kind === 'repository';
+    if (scope) {
+      scope.textContent = repositoryRoute ?
+        reportRouteContext(route) + ' · ' + String(state.model.targets.length) +
+          (state.model.targets.length === 1 ? ' target' : ' targets') + ' · ' + revision :
+        reportRouteContext(route) + ' · ' + humanRuntimeToken(state.model.target.language) + ' · ' +
+          humanRuntimeToken(state.model.target.kind) + ' · ' + revision;
+    }
+    var current = document.getElementById('rm-target-current');
+    if (current) current.textContent = repositoryRoute ? 'All targets' : 'Target · ' + state.model.target.name;
+    (state.headerTargetLinks || []).forEach(function (entry) {
+      var currentPage = route.kind === 'program' && entry.target.id === state.model.target.id;
+      entry.link.setAttribute('aria-current', currentPage ? 'page' : 'false');
+      if (entry.currentBadge) {
+        entry.currentBadge.hidden = !currentPage;
+      }
+    });
   }
 
   function renderHeader() {
     document.getElementById('rm-target-repository').textContent = shortRepositoryName(state.model.repoName);
-    document.getElementById('rm-target-current').textContent = 'Target · ' + state.model.target.name;
     document.getElementById('rm-target-count').textContent = String(state.model.targets.length);
     document.getElementById('rm-target-panel-count').textContent =
       String(state.model.targets.length) + (state.model.targets.length === 1 ? ' target' : ' targets');
     var switcher = document.getElementById('rm-target-switcher');
     var navigation = document.getElementById('rm-target-navigation');
+    state.headerTargetLinks = [];
     state.model.targets.forEach(function (target) {
       var link = element('a', 'rm-target-switcher__target');
       link.href = target.href;
@@ -1755,9 +1852,11 @@
       appendText(copy, 'small', '', humanRuntimeToken(target.language) + ' · ' + humanRuntimeToken(target.kind));
       link.appendChild(copy);
       var badges = element('span', 'rm-target-switcher__badges');
+      var currentBadge = null;
       if (target.id === state.model.target.id) {
-        link.setAttribute('aria-current', 'true');
-        appendText(badges, 'small', 'rm-target-switcher__badge rm-target-switcher__badge--current', 'Current');
+        currentBadge = element('small', 'rm-target-switcher__badge rm-target-switcher__badge--current', 'Current');
+        currentBadge.hidden = true;
+        badges.appendChild(currentBadge);
       }
       if (target.id === state.model.defaultTargetID) {
         appendText(badges, 'small', 'rm-target-switcher__badge', 'Default');
@@ -1765,6 +1864,7 @@
       link.appendChild(badges);
       link.addEventListener('click', function () { switcher.open = false; });
       navigation.appendChild(link);
+      state.headerTargetLinks.push({ target: target, link: link, currentBadge: currentBadge });
     });
     switcher.addEventListener('keydown', function (event) {
       if (event.key !== 'Escape' || !switcher.open) return;
@@ -1772,6 +1872,7 @@
       var summary = switcher.querySelector('summary');
       if (summary) summary.focus();
     });
+    updateHeaderContext(selectedReportRoute());
   }
 
   function humanRuntimeToken(value) {
@@ -1978,6 +2079,19 @@
     host.appendChild(section);
   }
 
+  function renderTargetSurfaceInventory(host) {
+    if (!state.model.surfaceCatalog || !state.model.crossSurfacePaths) return;
+    renderJSTSSurfaceSection(host, 'product_surface', 'Product surfaces',
+      'Runnable browser, server, and command-line surfaces established by exact project evidence.');
+    renderJSTSSurfaceSection(host, 'supporting_code', 'Supporting code',
+      'Shared contracts and other exact supporting boundaries that are not independent runtime processes.');
+    renderJSTSSurfaceSection(host, 'tool', 'Tools and scripts',
+      'Project scripts and tooling surfaces kept separate from product runtime roles.');
+    renderJSTSSurfaceSection(host, 'unknown', 'Unclassified surfaces',
+      'Exact surface evidence is present, but the producer could not assign a supported disposition.');
+    renderCrossSurfacePathCards(host);
+  }
+
   function crossSurfaceEmptyReason(catalog, coverage) {
     var productKinds = Object.create(null);
     catalog.surfaces.forEach(function (surface) {
@@ -2001,41 +2115,6 @@
       return 'No eligible full-stack path: the product Node server has no retained server route.';
     }
     return 'No complete full-stack path: the product browser and Node server have no retained explicit HTTP method/path match with program reachability on both sides.';
-  }
-
-  function renderJSTSRepositoryOverview(host) {
-    var catalog = state.model.surfaceCatalog;
-    var survey = element('section', 'rm-survey rm-runtime-survey');
-    var copy = element('div');
-    appendText(copy, 'p', 'rm-eyebrow', 'Selected target overview');
-    appendText(copy, 'h1', '', state.model.target.name);
-    appendText(copy, 'p', 'rm-survey__summary',
-      'Explore ' + String(catalog.surfaces.length) +
-      (catalog.surfaces.length === 1 ? ' exact project surface' : ' exact project surfaces') +
-      ' and ' + String(state.model.crossSurfacePaths.paths.length) +
-      (state.model.crossSurfacePaths.paths.length === 1 ? ' full-stack path' : ' full-stack paths') +
-      ' for this target in ' + shortRepositoryName(state.model.repoName) + '.');
-    survey.appendChild(copy);
-    var facts = element('dl', 'rm-survey__facts');
-    [['Repository', shortRepositoryName(state.model.repoName)], ['Package', catalog.project.name],
-      ['Module resolution', catalog.project.moduleResolution],
-      ['Revision', state.model.revision]].forEach(function (row) {
-      var wrapper = element('div');
-      appendText(wrapper, 'dt', '', row[0]);
-      appendText(wrapper, 'dd', row[0] === 'Revision' ? 'rm-runtime-revision' : '', row[1]);
-      facts.appendChild(wrapper);
-    });
-    survey.appendChild(facts);
-    host.appendChild(survey);
-    renderJSTSSurfaceSection(host, 'product_surface', 'Product surfaces',
-      'Runnable browser, server, and command-line surfaces established by exact project evidence.');
-    renderJSTSSurfaceSection(host, 'supporting_code', 'Supporting code',
-      'Shared contracts and other exact supporting boundaries that are not independent runtime processes.');
-    renderJSTSSurfaceSection(host, 'tool', 'Tools and scripts',
-      'Project scripts and tooling surfaces kept separate from product runtime roles.');
-    renderJSTSSurfaceSection(host, 'unknown', 'Unclassified surfaces',
-      'Exact surface evidence is present, but the producer could not assign a supported disposition.');
-    renderCrossSurfacePathCards(host);
   }
 
   function renderRepositoryFallback(host) {
@@ -2087,8 +2166,8 @@
 
   function renderSurfaceDetail(host, surface) {
     var hero = element('section', 'rm-detail-hero');
-    var back = element('a', 'rm-survey__overview-link', '← Back to repository surfaces');
-    back.href = '#/repository';
+    var back = element('a', 'rm-survey__overview-link', '← Back to target overview');
+    back.href = '#/program';
     hero.appendChild(back);
     appendText(hero, 'p', 'rm-eyebrow', humanSurfaceToken(surface.kind));
     appendText(hero, 'h1', '', surface.name);
@@ -2129,8 +2208,8 @@
 
   function renderCrossSurfacePathDetail(host, path) {
     var hero = element('section', 'rm-detail-hero');
-    var back = element('a', 'rm-survey__overview-link', '← Back to repository surfaces');
-    back.href = '#/repository';
+    var back = element('a', 'rm-survey__overview-link', '← Back to target overview');
+    back.href = '#/program';
     hero.appendChild(back);
     appendText(hero, 'p', 'rm-eyebrow', 'Full-stack path');
     appendText(hero, 'h1', '', path.name);
@@ -2401,20 +2480,36 @@
     return 'Explore ' + String(blocks.length) + ' model-selected responsibilities, beginning with ' + joined + '.';
   }
 
+  function targetOverviewCounts(model) {
+    return [
+      String(model.blocks.length) + (model.blocks.length === 1 ? ' responsibility' : ' responsibilities'),
+      String(model.activities.length) + (model.activities.length === 1 ? ' entrypoint' : ' entrypoints'),
+      String(model.integrations.length) + (model.integrations.length === 1 ? ' integration' : ' integrations')
+    ].join(' · ');
+  }
+
   function renderSurvey(host) {
-    var survey = element('section', 'rm-survey');
-    var copy = element('div');
-    appendText(copy, 'p', 'rm-eyebrow', 'Repository orientation');
-    appendText(copy, 'h1', '', state.model.repoName);
-    appendText(copy, 'p', 'rm-survey__summary', surveySummary(state.model.blocks, state.model.groups));
+    var survey = element('details', 'rm-target-overview');
+    var summary = element('summary', 'rm-target-overview__summary');
+    var identity = element('span', 'rm-target-overview__identity');
+    appendText(identity, 'strong', '', state.model.target.name);
+    appendText(identity, 'small', '', targetOverviewCounts(state.model));
+    summary.appendChild(identity);
+    appendText(summary, 'span', 'rm-target-overview__kind',
+      humanRuntimeToken(state.model.target.language) + ' · ' + humanRuntimeToken(state.model.target.kind));
+    survey.appendChild(summary);
+
+    var body = element('div', 'rm-target-overview__body');
+    var copy = element('div', 'rm-target-overview__copy');
+    appendText(copy, 'p', '', surveySummary(state.model.blocks, state.model.groups));
     if (repositoryOverviewKind()) {
-      var overview = element('a', 'rm-survey__overview-link', '← Back to runtime overview');
+      var overview = element('a', 'rm-survey__overview-link', '← Repository overview');
       overview.href = '#/repository';
       copy.appendChild(overview);
     }
-    survey.appendChild(copy);
+    body.appendChild(copy);
 
-    var facts = element('dl', 'rm-survey__facts');
+    var facts = element('dl', 'rm-target-overview__facts');
     [['Target', state.model.target.kind], ['Language', state.model.target.language],
       ['Selector', state.model.target.selector]].forEach(function (row) {
       var wrapper = element('div');
@@ -2422,7 +2517,8 @@
       appendText(wrapper, 'dd', '', row[1]);
       facts.appendChild(wrapper);
     });
-    survey.appendChild(facts);
+    body.appendChild(facts);
+    survey.appendChild(body);
     host.appendChild(survey);
   }
 
@@ -2452,6 +2548,98 @@
     parent.appendChild(section);
   }
 
+  function connectionRecordCount(connections) {
+    return connections.reduce(function (total, connection) {
+      return total + connection.relationIDs.length;
+    }, 0);
+  }
+
+  function connectionMemberName(connection, owner) {
+    var source = connectionSourceObject(connection);
+    var sourceName = displayProgramObjectName(source);
+    if (source.id === owner.id) return sourceName;
+    var ownerName = displayProgramObjectName(owner);
+    var ownedPrefix = ownerName + '.';
+    return sourceName.indexOf(ownedPrefix) === 0 ? sourceName.slice(ownedPrefix.length) : sourceName;
+  }
+
+  function renderConnectionMember(connection, owner) {
+    var item = element('li', 'rm-connection rm-connection-member');
+    var body = element('div');
+    var relationLabel = humanConnectionRelation(connection);
+    var pathLabel = connectionMemberName(connection, owner) + ' — ' + relationLabel + ' → ' + connection.to;
+    appendText(body, 'div', 'rm-connection__path rm-connection-member__heading', pathLabel);
+    if (connection.locations.length) {
+      var locations = element('div', 'rm-connection__locations');
+      connection.locations.forEach(function (location) {
+        locations.appendChild(sourceAction(formatLocation(location), location, {
+          compact: true,
+          locationLabel: ''
+        }));
+      });
+      body.appendChild(locations);
+    }
+    item.appendChild(body);
+    appendText(item, 'span', 'rm-resolution rm-resolution--' + connection.resolution, connection.resolution);
+    return item;
+  }
+
+  function renderConnectionBucket(owner, bucket, label, modifier) {
+    if (!bucket.length) return null;
+    var details = element('details', 'rm-connection-runtime rm-connection-runtime--' + modifier);
+    var records = connectionRecordCount(bucket);
+    var summary = label + ' · ' + String(bucket.length) +
+      (bucket.length === 1 ? ' relation group' : ' relation groups');
+    if (records !== bucket.length) summary += ' · ' + String(records) + ' relation records';
+    appendText(details, 'summary', 'rm-connection-runtime__summary', summary);
+    var body = element('div', 'rm-connection-runtime__body');
+    var list = element('ul', 'rm-connection-owner__members');
+    bucket.forEach(function (connection) {
+      list.appendChild(renderConnectionMember(connection, owner));
+    });
+    body.appendChild(list);
+    details.appendChild(body);
+    return details;
+  }
+
+  function renderConnectionOwner(group) {
+    var item = element('li', 'rm-connection-owner');
+    var heading = element('div', 'rm-connection-owner__heading');
+    var ownerLabel = displayProgramObjectName(group.owner);
+    var title;
+    if (group.owner.location && state.model.openable[group.owner.location.path]) {
+      title = sourceAction(ownerLabel, group.owner.location, { compact: true });
+      title.className += ' rm-connection-owner__title';
+    } else {
+      title = element('div', 'rm-connection-owner__title');
+      appendText(title, 'strong', '', ownerLabel);
+    }
+    heading.appendChild(title);
+    var all = group.local.concat(group.platform, group.external, group.unresolved);
+    var records = connectionRecordCount(all);
+    appendText(heading, 'span', 'rm-connection-owner__count', String(all.length) +
+      (all.length === 1 ? ' group' : ' groups') +
+      (records === all.length ? '' : ' · ' + String(records) + ' records'));
+    item.appendChild(heading);
+
+    if (group.local.length) {
+      var local = element('ul', 'rm-connection-owner__members');
+      group.local.forEach(function (connection) {
+        local.appendChild(renderConnectionMember(connection, group.owner));
+      });
+      item.appendChild(local);
+    }
+    [
+      [group.platform, 'JavaScript platform APIs', 'platform'],
+      [group.external, 'External APIs', 'external'],
+      [group.unresolved, 'Unresolved runtime calls', 'unresolved']
+    ].forEach(function (entry) {
+      var bucket = renderConnectionBucket(group.owner, entry[0], entry[1], entry[2]);
+      if (bucket) item.appendChild(bucket);
+    });
+    return item;
+  }
+
   function renderConnections(parent, block, connections) {
     var section = element('section', 'rm-focus-section');
     appendText(section, 'h3', '', 'How the code connects');
@@ -2464,35 +2652,17 @@
     }
     var disclosure = element('details', 'rm-disclosure');
     disclosure.open = true;
-    var relationCount = connections.reduce(function (total, connection) {
-      return total + connection.relationIDs.length;
-    }, 0);
+    var relationCount = connectionRecordCount(connections);
     var summary = String(connections.length) + (connections.length === 1 ? ' relation group' : ' relation groups');
     if (relationCount !== connections.length) summary += ' · ' + String(relationCount) + ' relation records';
     appendText(disclosure, 'summary', '', summary);
-    var list = element('ul', 'rm-connection-list');
-    var omittedWitnessDetails = 0;
-    connections.forEach(function (connection) {
-      var item = element('li', 'rm-connection');
-      var body = element('div');
-      var relationLabel = humanConnectionRelation(connection);
-      var pathLabel = connection.from + ' — ' + relationLabel + ' → ' + connection.to;
-      appendText(body, 'div', 'rm-connection__path', pathLabel);
-      omittedWitnessDetails += connection.witnessesOmitted + connection.witnessesProjectionOmitted;
-      if (connection.locations.length) {
-        var locations = element('div', 'rm-connection__locations');
-        connection.locations.forEach(function (location) {
-          locations.appendChild(sourceAction(formatLocation(location), location, {
-            compact: true,
-            locationLabel: ''
-          }));
-        });
-        body.appendChild(locations);
-      }
-      item.appendChild(body);
-      appendText(item, 'span', 'rm-resolution rm-resolution--' + connection.resolution, connection.resolution);
-      list.appendChild(item);
+    var list = element('ul', 'rm-connection-owner-list');
+    groupConnectionsByOwner(connections).forEach(function (group) {
+      list.appendChild(renderConnectionOwner(group));
     });
+    var omittedWitnessDetails = connections.reduce(function (total, connection) {
+      return total + connection.witnessesOmitted + connection.witnessesProjectionOmitted;
+    }, 0);
     disclosure.appendChild(list);
     if (omittedWitnessDetails > 0) {
       appendText(disclosure, 'p', 'rm-connection-warning', 'Evidence detail limit · ' +
@@ -2656,8 +2826,7 @@
     if (route.kind === 'repository') {
       state.canvasEdges = [];
       var overviewKind = repositoryOverviewKind();
-      if (overviewKind === 'surfaces') renderJSTSRepositoryOverview(orientation);
-      else if (overviewKind === 'runtime') renderRuntimePortfolio(orientation);
+      if (overviewKind === 'runtime') renderRuntimePortfolio(orientation);
       else renderRepositoryFallback(orientation);
       renderDiagnostics(orientation);
       host.replaceChildren(orientation);
@@ -2696,9 +2865,11 @@
       document.title = state.model.repoName + ' — ' + route.integration.name + ' — repomap';
       return;
     }
+    orientation.className += ' rm-orientation--program';
     renderSurvey(orientation);
     if (!state.model.blocks.length) {
       renderStructuralOnly(orientation);
+      renderTargetSurfaceInventory(orientation);
       renderDiagnostics(orientation);
       host.replaceChildren(orientation);
       return;
@@ -2712,6 +2883,7 @@
     workspace.appendChild(renderFocus(selected, index, connections, related));
     workspace.appendChild(renderEvidence(selected));
     orientation.appendChild(workspace);
+    renderTargetSurfaceInventory(orientation);
     renderDiagnostics(orientation);
     host.replaceChildren(orientation);
     scheduleCanvasDraw();

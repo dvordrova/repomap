@@ -114,6 +114,56 @@ _hidden = 1
 	assertUnresolvedFrom(t, index, programindex.RelationCalls, invoke.ID)
 }
 
+func TestBuildKeepsWildcardImportModuleAsExactDependencyBoundary(t *testing.T) {
+	repository := pythonCorpus(t, map[string]string{
+		"pyproject.toml": `[project]
+name = "wildcard-demo"
+version = "1.0.0"
+`,
+		"pkg/__init__.py": "",
+		"pkg/resources.py": `class Resource:
+    pass
+`,
+		"pkg/main.py": `from .resources import *
+
+def main():
+    return Resource()
+`,
+	})
+	target := targetOfKind(t, repository, pythontarget.KindLibrary)
+
+	index, err := buildOneForTest(context.Background(), repository, target)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	mainModule := objectNamed(t, index, programindex.ObjectModule, "pkg.main", "pkg/main.py")
+	resourcesModule := objectNamed(t, index, programindex.ObjectModule, "pkg.resources", "pkg/resources.py")
+	resource := objectNamed(t, index, programindex.ObjectType, "Resource", "pkg/resources.py")
+
+	found := false
+	for _, relation := range index.Relations {
+		if relation.Kind != programindex.RelationImports || relation.FromID != mainModule.ID {
+			continue
+		}
+		if relation.Resolution != programindex.ResolutionExact ||
+			len(relation.ToIDs) != 1 || relation.ToIDs[0] != resourcesModule.ID ||
+			len(relation.Witnesses) != 1 || relation.Witnesses[0].Kind != "wildcard_import" ||
+			relation.Witnesses[0].Detail != "pkg.resources" {
+			t.Fatalf("wildcard import relation = %#v", relation)
+		}
+		found = true
+	}
+	if !found {
+		t.Fatal("wildcard import did not retain its exact module boundary")
+	}
+	for _, relation := range index.Relations {
+		if relation.Kind == programindex.RelationImports && relation.FromID == mainModule.ID &&
+			len(relation.ToIDs) == 1 && relation.ToIDs[0] == resource.ID {
+			t.Fatalf("wildcard import invented an exact imported declaration: %#v", relation)
+		}
+	}
+}
+
 func TestBuildKeepsDynamicOperationsAsFrontiers(t *testing.T) {
 	repository := pythonCorpus(t, map[string]string{
 		"pyproject.toml": `[project]
