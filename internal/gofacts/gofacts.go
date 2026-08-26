@@ -19,7 +19,10 @@ import (
 	"golang.org/x/mod/modfile"
 )
 
-const maxGoModBytes = 1024 * 1024
+const (
+	maxGoModBytes              = 1024 * 1024
+	maxExternalImportSummaries = 50
+)
 
 type LoadOptions struct {
 	GoTarget string
@@ -900,8 +903,8 @@ func buildExternalImports(pkgs []goListPackage, known map[string]struct{}) []Ext
 		}
 		return extImports[i].UsedByCount > extImports[j].UsedByCount
 	})
-	if len(extImports) > 50 {
-		extImports = extImports[:50]
+	if len(extImports) > maxExternalImportSummaries {
+		extImports = extImports[:maxExternalImportSummaries]
 	}
 	return extImports
 }

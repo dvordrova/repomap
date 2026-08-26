@@ -175,11 +175,11 @@ func (a *analyzer) externalCallPackage(
 		return ExternalCallPackage{}, DirectCallModule{}, false
 	}
 	facts := a.packageFacts[packagePath]
-	if facts == nil || facts.Module == nil || facts.Module.Path == "" || facts.Module.Dir == "" ||
+	if facts == nil || facts.Module == nil || facts.Module.Path == "" ||
 		!a.modulePaths[facts.Module.Path] {
 		return ExternalCallPackage{}, DirectCallModule{}, false
 	}
-	directory, ok := containedModuleDirectory(a.root, facts.Module.Dir)
+	directory, ok := repositoryPackageModuleDirectory(a.root, facts)
 	if !ok {
 		return ExternalCallPackage{}, DirectCallModule{}, false
 	}

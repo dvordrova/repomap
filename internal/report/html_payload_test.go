@@ -156,11 +156,15 @@ func TestProgramShellPayloadOmitsBackendOnlyProducerDigests(t *testing.T) {
 		IntegrationUsageSHA256:        digest,
 		ActivityPathsSHA256:           digest,
 	}
+	surfaces := &JSTSSurfaceCatalogView{JSTSProjectSHA256: digest}
+	crossSurfacePaths := &CrossSurfacePathView{JSTSProjectSHA256: digest}
 	payload := programShellPayloadForReport(&ReportData{
-		CubeMapView:          cube,
-		CoreMapView:          core,
-		IntegrationUsageView: usage,
-		ActivityPathView:     paths,
+		CubeMapView:            cube,
+		CoreMapView:            core,
+		IntegrationUsageView:   usage,
+		ActivityPathView:       paths,
+		JSTSSurfaceCatalogView: surfaces,
+		CrossSurfacePathView:   crossSurfacePaths,
 	}, nil)
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -172,6 +176,7 @@ func TestProgramShellPayloadOmitsBackendOnlyProducerDigests(t *testing.T) {
 		"core_object_projection_sha256", "activity_substrate_sha256",
 		"authority_sha256", "integration_dependencies_sha256",
 		"integration_usage_sha256", "activity_entrypoints_sha256", "activity_paths_sha256",
+		"js_ts_project_sha256",
 	} {
 		if bytes.Contains(raw, []byte(`"`+field+`"`)) {
 			t.Fatalf("browser payload retained backend-only producer digest %q", field)
@@ -179,7 +184,8 @@ func TestProgramShellPayloadOmitsBackendOnlyProducerDigests(t *testing.T) {
 	}
 	if cube.SourceIndexSHA256 != digest || cube.SurfaceCoreEffects.AuthoritySHA256 != digest ||
 		core.IntegrationUsageSHA256 != digest || usage.IntegrationUsageSHA256 != digest ||
-		paths.ActivityPathsSHA256 != digest {
+		paths.ActivityPathsSHA256 != digest || surfaces.JSTSProjectSHA256 != digest ||
+		crossSurfacePaths.JSTSProjectSHA256 != digest {
 		t.Fatal("browser projection mutated canonical report authority")
 	}
 }

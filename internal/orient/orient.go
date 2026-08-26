@@ -56,6 +56,12 @@ type Options struct {
 	// the default target run. Sibling target pages must project from this exact
 	// object rather than repeat package loading or SSA construction.
 	PreparedGoWorkspace *surfacediscovery.PreparedWorkspace
+	// PreparedGoSnapshots is present only when an outer language-neutral target
+	// plan starts with a precomputed scoped Go page before any Go workspace
+	// exists. The first Go page prepares one union workspace from these exact
+	// selected Go projections; later pages receive that workspace through
+	// PreparedGoWorkspace. It is live-run-only and never persisted.
+	PreparedGoSnapshots []snapshot.Snapshot
 	// PreparedGoWorkspaceSink hands the default run's live workspace to ordinary
 	// portfolio orchestration. The value is intentionally not serializable.
 	PreparedGoWorkspaceSink func(*surfacediscovery.PreparedWorkspace)
@@ -328,11 +334,38 @@ func persistArtifacts(
 		workspace := opts.PreparedGoWorkspace
 		var programErr error
 		if workspace == nil {
-			if opts.PrecomputedSnapshot != nil {
-				return fmt.Errorf("precomputed Go target analysis requires the default run's prepared workspace")
-			}
 			workspaceInputs := []surfacediscovery.Input{programInput}
-			if targetRunContainer != nil {
+			switch {
+			case opts.PrecomputedSnapshot != nil && len(opts.PreparedGoSnapshots) == 0:
+				return fmt.Errorf("precomputed Go target analysis requires the default run's prepared workspace or exact selected Go projections")
+			case len(opts.PreparedGoSnapshots) > 0:
+				workspaceInputs = make([]surfacediscovery.Input, 0, len(opts.PreparedGoSnapshots))
+				seenTargets := make(map[string]struct{}, len(opts.PreparedGoSnapshots))
+				currentIncluded := false
+				for index := range opts.PreparedGoSnapshots {
+					scoped, ownErr := snapshot.OwnSnapshot(opts.PreparedGoSnapshots[index])
+					if ownErr != nil {
+						return fmt.Errorf("prepare selected Go target workspace: own projection %d: %w", index, ownErr)
+					}
+					if scoped.AnalysisTarget == nil || scoped.TargetCatalog != nil || scoped.GoFacts == nil {
+						return fmt.Errorf("prepare selected Go target workspace: projection %d is not an exact scoped Go target", index)
+					}
+					ref := scoped.AnalysisTarget.Ref
+					if _, duplicate := seenTargets[ref]; duplicate {
+						return fmt.Errorf("prepare selected Go target workspace: duplicate target projection %q", ref)
+					}
+					seenTargets[ref] = struct{}{}
+					if repositorySnapshot.AnalysisTarget != nil && ref == repositorySnapshot.AnalysisTarget.Ref {
+						currentIncluded = true
+					}
+					workspaceInputs = append(workspaceInputs, surfaceDiscoveryInput(
+						scoped.RepoName, scoped.GoFacts, scoped.AnalysisTarget,
+					))
+				}
+				if !currentIncluded {
+					return fmt.Errorf("prepare selected Go target workspace: current target projection is absent")
+				}
+			case targetRunContainer != nil:
 				workspaceInputs = make([]surfacediscovery.Input, 0, len(targetRunContainer.Targets))
 				for _, projection := range targetRunContainer.Targets {
 					scoped, scopeErr := targetRunContainer.ScopedSnapshot(projection.Target.Ref)

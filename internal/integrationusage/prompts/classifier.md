@@ -89,9 +89,17 @@ Return exactly one JSON object:
 }
 ```
 
-- Select only `o*` refs supplied in this batch. Refs from another batch are
-  invalid. Never invent, duplicate, or repair a ref.
-- Select at most 256 operations, preserving high precision.
+- Only `o*` refs supplied in this batch can contribute. An invented ref or a
+  ref from another batch is ignored locally without retry, clarification, or
+  repair; it does not invalidate otherwise usable known assignments. The JSON
+  object schema remains strict even for a row whose ref is ignored.
+- `uses` is interpreted locally as an assignment keyed by `operation_ref`.
+  Repeating a field-identical row is harmless and is deduplicated locally;
+  correctness never depends on emitting a selected ref exactly once. Two rows
+  for the same ref with different `label` or `mechanism` are an ambiguous
+  assignment and invalidate the response.
+- Select at most 256 unique operations after local deduplication, preserving
+  high precision.
 - Apply the same absolute selection criterion to every row. Do not fill a
   quota, rank against unseen batches, or lower the threshold for a small batch.
 - `label` is a short human description of the concrete interaction.

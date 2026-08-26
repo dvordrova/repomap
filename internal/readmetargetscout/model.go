@@ -12,11 +12,11 @@ import (
 )
 
 const (
-	CompilationVersion = 5
+	CompilationVersion = 6
 
-	PreparationVersion = "complete-readmes-and-agents-prefix-compressed-corpus-file-tree-v5"
-	SchemaVersion      = "readme-file-role-classifications-v2"
-	ReducerVersion     = "readme-file-role-classifications-strict-with-prose-rejection-v5"
+	PreparationVersion = "complete-readmes-agents-file-tree-and-prose-ref-authority-v6"
+	SchemaVersion      = "readme-file-role-classifications-set-valued-ignore-unknown-refs-v4"
+	ReducerVersion     = "readme-file-role-classifications-known-set-normalization-with-incompatible-prose-filter-v8"
 
 	// Keep one complete atomic semantic body below the empirically reliable
 	// provider envelope. The former flat dictionary made a measured Airflow
@@ -33,7 +33,7 @@ const (
 	MaxOutputTokens                = 32_000
 )
 
-const executionContract = "repository-guidance-file-classifier-v8"
+const executionContract = "repository-guidance-file-classifier-v12"
 
 const ArtifactFilename = "readme-file-roles.json"
 
@@ -50,11 +50,13 @@ const NoGuidanceFiles NotApplicableReason = "no_guidance_files"
 
 // Request is the complete provider-visible first-layer evidence. FileTree is a
 // lossless prefix-compressed encoding of every tracked regular corpus file,
-// not a locally selected subset. Non-guidance source contents are absent.
+// not a locally selected subset. ProseFileRefs is the exact closed prose subset
+// of that same authority. Non-guidance source contents are absent.
 type Request struct {
 	RepoName          string                    `json:"repo_name"`
 	FileCount         int                       `json:"file_count"`
 	FileTree          FileTree                  `json:"file_tree"`
+	ProseFileRefs     []corpus.FileID           `json:"prose_file_refs"`
 	GuidanceDocuments []RequestGuidanceDocument `json:"guidance_documents"`
 }
 
@@ -119,8 +121,9 @@ type ClassifiedFile struct {
 	Classifications []Classification `json:"classifications"`
 }
 
-// Result is a sparse repository-guidance-backed role catalog. One file may have several
-// orthogonal roles, but each role appears at most once for that file.
+// Result is a sparse repository-guidance-backed role catalog. One file may have
+// several orthogonal roles. Repeated set-valued response rows are normalized
+// before this canonical result is built.
 type Result []ClassifiedFile
 
 // TargetCandidates projects only guidance-backed target_entry classifications

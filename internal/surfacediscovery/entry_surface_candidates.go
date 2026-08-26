@@ -19,6 +19,8 @@ import (
 	"golang.org/x/tools/go/ssa"
 )
 
+const maxCallableFactDepth = 3
+
 const (
 	maxEntrySurfaceTokenBytes = 128
 	maxEntrySurfaceValueBytes = 128
@@ -293,7 +295,7 @@ func (visitor *entrySurfaceSyntaxVisitor) callableFacts(
 	label string,
 	depth int,
 ) []entrycall.ExactSurfaceFact {
-	if expression == nil || visitor.info == nil || depth > 3 {
+	if expression == nil || visitor.info == nil || depth > maxCallableFactDepth {
 		return nil
 	}
 	switch current := expression.(type) {

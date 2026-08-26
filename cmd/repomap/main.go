@@ -21,8 +21,8 @@ import (
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/gocoreobject"
 	"github.com/dvordrova/repomap/internal/godynamichandoff"
-	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/gotarget"
+	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/orient"
 	"github.com/dvordrova/repomap/internal/pipeline"
@@ -118,11 +118,26 @@ type defaultRunDeps struct {
 	captureRepo                func(context.Context, string, *corpus.Corpus) (freshness.RepositoryState, error)
 	newTargetPortfolioProvider targetPortfolioProviderFactory
 	newCubeProvider            targetPortfolioProviderFactory
-	resolveGoTarget            func(string, func(string) string) (gotarget.Target, error)
-	precomputedSnapshot        *snapshot.Snapshot
+	// preselectedTarget is one exact page from the outer repository target
+	// plan. It bypasses every first-layer scout and portfolio model call.
+	preselectedTarget        *repositoryTypedTarget
+	preselectedPythonCatalog *pythontarget.Catalog
+	preselectedJSTSProject   *jstsproject.Result
+	preselectedOutcome       *targetPortfolioRunOutcome
+	firstLayerObserver       *debugdump.SemanticObserver
+	resolveGoTarget          func(string, func(string) string) (gotarget.Target, error)
+	// sharedRepositoryCorpus and capturedRepositoryState let an outer
+	// multi-language target dispatcher keep one tracked-file namespace and one
+	// repository authority across every exact target page. Child pages borrow
+	// the corpus and never close it.
+	sharedRepositoryCorpus  *corpus.Corpus
+	capturedRepositoryState *freshness.RepositoryState
+	precomputedSnapshot     *snapshot.Snapshot
 	// preparedGoWorkspace is the one live packages/types/SSA authority shared
 	// by the default Go page and every recursively published sibling page.
-	preparedGoWorkspace *surfacediscovery.PreparedWorkspace
+	preparedGoWorkspace     *surfacediscovery.PreparedWorkspace
+	preparedGoSnapshots     []snapshot.Snapshot
+	preparedGoWorkspaceSink func(*surfacediscovery.PreparedWorkspace)
 	// coreReadmeRoleRows carries the one accepted first-layer README role
 	// catalog into every selected target page. Each run rebinds paths to its
 	// current corpus, so run-local f* identities are never reused blindly.
@@ -130,7 +145,10 @@ type defaultRunDeps struct {
 	runIDOverride       string
 	siblingTargetRun    bool
 	publishedTargetSink func(targetPublishedRun)
-	finalizeTargetPages func(snapshot.TargetRunContainer, snapshot.TargetPagePortfolio, []targetPublishedRun) error
+	runRuntimePortfolio runtimePortfolioRunner
+	runtimeCacheRoot    string
+	runtimeNoCache      bool
+	finalizeTargetPages func(context.Context, snapshot.TargetRunContainer, snapshot.TargetPagePortfolio, []targetPublishedRun) error
 }
 
 func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (runErr error) {
@@ -217,8 +235,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if *scanSecrets {
 		humanOutput.State("Secret scan", "enabled", "heuristic credential detection: on")
 	}
-	if *port < 0 || *port > 65535 {
-		return fmt.Errorf("--port must be between 0 and 65535")
+	if *port < 0 || *port > reportserver.MaxTCPPort {
+		return fmt.Errorf("--port must be between 0 and %d", reportserver.MaxTCPPort)
 	}
 	if *directCallDepth < 1 {
 		return fmt.Errorf("--depth must be at least 1")
@@ -312,15 +330,22 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		repositoryName = deps.precomputedSnapshot.RepoName
 	}
 	var repositoryCorpus *corpus.Corpus
-	repositoryCorpus, err = corpus.Open(ctx, repo)
-	if err != nil {
-		return fmt.Errorf("build repository corpus: %w", err)
-	}
-	defer func() {
-		if closeErr := repositoryCorpus.Close(); closeErr != nil && runErr == nil {
-			runErr = closeErr
+	if deps.sharedRepositoryCorpus != nil {
+		repositoryCorpus = deps.sharedRepositoryCorpus
+		if err := repositoryCorpus.Snapshot().Validate(); err != nil {
+			return fmt.Errorf("bind shared repository corpus: %w", err)
 		}
-	}()
+	} else {
+		repositoryCorpus, err = corpus.Open(ctx, repo)
+		if err != nil {
+			return fmt.Errorf("build repository corpus: %w", err)
+		}
+		defer func() {
+			if closeErr := repositoryCorpus.Close(); closeErr != nil && runErr == nil {
+				runErr = closeErr
+			}
+		}()
+	}
 	captureRepo := deps.captureRepo
 	if captureRepo == nil {
 		captureRepo = freshness.CaptureRepository
@@ -334,9 +359,17 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if err != nil {
 		return err
 	}
-	initialState, err := captureRepo(ctx, repo, repositoryCorpus)
-	if err != nil {
-		return fmt.Errorf("capture repository state before orientation: %w", err)
+	var initialState freshness.RepositoryState
+	if deps.capturedRepositoryState != nil {
+		initialState = cloneRepositoryState(*deps.capturedRepositoryState)
+		if err := initialState.Validate(); err != nil {
+			return fmt.Errorf("bind captured repository state: %w", err)
+		}
+	} else {
+		initialState, err = captureRepo(ctx, repo, repositoryCorpus)
+		if err != nil {
+			return fmt.Errorf("capture repository state before orientation: %w", err)
+		}
 	}
 	if staticSourceHost != "" && repositoryCorpusHasWorkingTreeChanges(repositoryCorpus, initialState) {
 		return fmt.Errorf(
@@ -351,6 +384,76 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if staticSourceHost != "" && repositoryStateHasAnalyzedSubmodule(initialState) {
 		return fmt.Errorf("standalone %s reports do not support analyzed submodule source because one repository URL cannot address it", staticSourceHost)
 	}
+	if deps.preselectedTarget == nil &&
+		deps.precomputedSnapshot == nil && !deps.siblingTargetRun {
+		targetOverride := strings.TrimSpace(*analysisTargetFlag)
+		languageEvidence := repositoryLanguages(repositoryCorpus)
+		var goSource *snapshot.Snapshot
+		if languageEvidence.Go {
+			moduleDir := ""
+			if exactModuleDir, ok := analysistarget.ExactCandidateKeyModuleDir(targetOverride); ok {
+				moduleDir = exactModuleDir
+			}
+			prepared, prepareErr := snapshot.BuildContext(ctx, snapshot.Options{
+				RepoPath: repo, GoTarget: goTarget.String(), GoModuleDir: moduleDir,
+				RepositoryCorpus: repositoryCorpus, AutoGoTarget: autoGoTarget,
+			})
+			if prepareErr != nil {
+				return prepareErr
+			}
+			if prepared.GoFacts == nil || prepared.TargetCatalog == nil ||
+				len(prepared.TargetCatalog.Entries) == 0 {
+				return fmt.Errorf("repository target planning found Go project evidence without an exact Go target catalog")
+			}
+			goSource = &prepared
+		}
+		firstLayer := debugdump.NewSemanticObserver(nil)
+		selectionExecutor := llm.Executor{
+			RootDir: dDir, Enabled: !*noCache, Observer: firstLayer,
+		}
+		repositoryName := repoRunLabel(repo)
+		if goSource != nil && strings.TrimSpace(goSource.RepoName) != "" {
+			repositoryName = goSource.RepoName
+		}
+		plan, selectionErr := selectRepositoryTargetPlanForRun(ctx, repositoryTargetRuntimeOptions{
+			RepoName: repositoryName, Repository: repositoryCorpus,
+			GoSnapshot: goSource, DiscoverPython: languageEvidence.Python,
+			DiscoverJSTS:   languageEvidence.JavaScriptTypeScript,
+			TargetOverride: targetOverride,
+			Output:         humanOutput, Providers: newTargetPortfolioProvider,
+			Executor: selectionExecutor, ScoutJSTSFn: jstsproject.ScoutSelected,
+		})
+		if selectionErr != nil {
+			flushFailedFirstLayerSemanticJournal(runDir, firstLayer, humanOutput)
+			return errors.Join(
+				selectionErr,
+				recordTargetPortfolioOutcome(runDir, plan.Outcome, humanOutput),
+			)
+		}
+		publication, reportPath, dispatchErr := dispatchRepositoryTargetPlan(
+			ctx,
+			repositoryTargetDispatchOptions{
+				Repo: repo, ExtraArgs: append([]string(nil), extraArgs...), Deps: deps,
+				Corpus: repositoryCorpus, RepositoryState: initialState, Plan: plan,
+				RunID: runID, DebugDir: dDir, NoCache: *noCache, NoOpen: *noOpen,
+				NoServe: *noServe, Port: *port, StaticHost: staticSourceHost,
+				Output: humanOutput, FirstLayer: firstLayer,
+				DiscoverJSTSFn: jstsproject.DiscoverSelected,
+			},
+		)
+		if dispatchErr != nil {
+			flushFailedFirstLayerSemanticJournal(runDir, firstLayer, humanOutput)
+			return errors.Join(
+				dispatchErr,
+				recordTargetPortfolioOutcome(runDir, plan.Outcome, humanOutput),
+			)
+		}
+		publicationStateEmitted = true
+		return finishRepositoryTargetDispatch(
+			ctx, deps, dDir, filepath.Dir(reportPath), reportPath, publication,
+			*noServe, *noOpen, *port, staticSourceHost, humanOutput,
+		)
+	}
 
 	var directCallIndex *surfacediscovery.DirectCallIndex
 	var externalCallIndex *surfacediscovery.ExternalCallIndex
@@ -364,80 +467,74 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	var targetPortfolioOutcome targetPortfolioRunOutcome
 	var pythonTargetSelection *pythonTargetRunSelection
 	var pythonTargetCatalog *pythontarget.Catalog
-	pythonProgramDefault := false
+	var jsTSTargetSelection *jsTSTargetRunSelection
 	coreReadmeRoleRows := cloneReadmeRoleLog(deps.coreReadmeRoleRows)
-	var firstLayerSemanticObserver *debugdump.SemanticObserver
+	firstLayerSemanticObserver := deps.firstLayerObserver
+	ownsFirstLayerAuthority := deps.preselectedOutcome != nil || firstLayerSemanticObserver != nil
 	analysisTargetOverride := strings.TrimSpace(*analysisTargetFlag)
 	explicitGoModuleDir := ""
 	if moduleDir, ok := analysistarget.ExactCandidateKeyModuleDir(analysisTargetOverride); ok {
 		explicitGoModuleDir = moduleDir
 	}
-	languageEvidence := repositoryLanguages(repositoryCorpus)
-	if deps.precomputedSnapshot == nil && languageEvidence.Python {
-		if !languageEvidence.Go {
-			selectionExecutor := llm.Executor{RootDir: dDir, Enabled: !*noCache}
-			firstLayerSemanticObserver = debugdump.NewSemanticObserver(nil)
-			selectionExecutor.Observer = firstLayerSemanticObserver
-			selection, selectionErr := selectPythonTargetsForRun(
-				ctx,
-				repoRunLabel(repo),
-				repositoryCorpus,
-				analysisTargetOverride,
-				humanOutput,
-				newTargetPortfolioProvider,
-				selectionExecutor,
-			)
-			if selectionErr != nil {
-				flushFailedFirstLayerSemanticJournal(runDir, firstLayerSemanticObserver, humanOutput)
-				return selectionErr
-			}
-			catalog := selection.Catalog.Snapshot()
-			pythonTargetCatalog = &catalog
-			pythonTargetSelection = &selection
-			pythonProgramDefault = true
-			targetPortfolioOutcome = selection.Outcome
-			coreReadmeRoleRows = cloneReadmeRoleLog(selection.Outcome.ReadmeRoles)
-		} else {
-			catalog, discoveryErr := discoverPythonTargetCatalogForRun(ctx, repositoryCorpus, humanOutput)
-			if discoveryErr != nil {
-				return discoveryErr
-			}
-			ownedCatalog := catalog.Snapshot()
-			pythonTargetCatalog = &ownedCatalog
-			if analysisTargetOverride != "" {
-				pythonTarget, selectionErr := resolveMixedPythonTargetOverride(
-					catalog, repositoryCorpus, analysisTargetOverride,
-				)
-				if selectionErr != nil {
-					return selectionErr
-				}
-				if pythonTarget != nil {
-					selectionExecutor := llm.Executor{RootDir: dDir, Enabled: !*noCache}
-					firstLayerSemanticObserver = debugdump.NewSemanticObserver(nil)
-					selectionExecutor.Observer = firstLayerSemanticObserver
-					selection, selectionErr := selectPythonTargetsForRun(
-						ctx,
-						repoRunLabel(repo),
-						repositoryCorpus,
-						analysisTargetOverride,
-						humanOutput,
-						newTargetPortfolioProvider,
-						selectionExecutor,
-					)
-					if selectionErr != nil {
-						flushFailedFirstLayerSemanticJournal(runDir, firstLayerSemanticObserver, humanOutput)
-						return selectionErr
-					}
-					selectedCatalog := selection.Catalog.Snapshot()
-					pythonTargetCatalog = &selectedCatalog
-					pythonTargetSelection = &selection
-					pythonProgramDefault = true
-					targetPortfolioOutcome = selection.Outcome
-					coreReadmeRoleRows = cloneReadmeRoleLog(selection.Outcome.ReadmeRoles)
-				}
-			}
-		}
+	if deps.preselectedTarget == nil {
+		return fmt.Errorf("repository target dispatcher did not provide an exact page target")
 	}
+	selected := *deps.preselectedTarget
+	if err := selected.Validate(); err != nil {
+		return fmt.Errorf("bind preselected repository target: %w", err)
+	}
+	if deps.preselectedOutcome != nil {
+		targetPortfolioOutcome = *deps.preselectedOutcome
+		targetPortfolioOutcome.SelectedTargetRefs = append(
+			[]string(nil), deps.preselectedOutcome.SelectedTargetRefs...,
+		)
+		targetPortfolioOutcome.ReadmeRoles = cloneReadmeRoleLog(
+			deps.preselectedOutcome.ReadmeRoles,
+		)
+		coreReadmeRoleRows = cloneReadmeRoleLog(targetPortfolioOutcome.ReadmeRoles)
+	}
+	switch selected.Key.Adapter {
+	case repositoryTargetAdapterGo:
+		if deps.precomputedSnapshot == nil || deps.precomputedSnapshot.AnalysisTarget == nil ||
+			deps.precomputedSnapshot.AnalysisTarget.Ref != selected.Key.Ref {
+			return fmt.Errorf("preselected Go target lacks its exact scoped snapshot")
+		}
+	case repositoryTargetAdapterPython:
+		if selected.Python == nil || deps.preselectedPythonCatalog == nil ||
+			!deps.preselectedPythonCatalog.OwnsTarget(*selected.Python) {
+			return fmt.Errorf("preselected Python target lacks its exact catalog authority")
+		}
+		catalog := deps.preselectedPythonCatalog.Snapshot()
+		selection := pythonTargetRunSelection{
+			Catalog: catalog,
+			Default: *selected.Python,
+			Targets: []pythontarget.Target{*selected.Python},
+			Outcome: targetPortfolioOutcome,
+		}
+		pythonTargetCatalog = &catalog
+		pythonTargetSelection = &selection
+	case repositoryTargetAdapterJSTS:
+		if selected.JSTS == nil || deps.preselectedJSTSProject == nil {
+			return fmt.Errorf("preselected JavaScript/TypeScript target lacks its exact scout and materialized project authority")
+		}
+		project := deps.preselectedJSTSProject.Snapshot()
+		if materializationErr := validateJSTSTargetMaterialization(
+			repositoryCorpus, *selected.JSTS, project,
+		); materializationErr != nil {
+			return fmt.Errorf("bind preselected JavaScript/TypeScript project: %w", materializationErr)
+		}
+		localOutcome := jsTSTargetSelectionOutcome(
+			project,
+			targetPortfolioOutcome.ReadmeRoles,
+		)
+		selection := jsTSTargetRunSelection{
+			Project: project, Outcome: localOutcome,
+		}
+		jsTSTargetSelection = &selection
+	default:
+		return fmt.Errorf("preselected repository target has unsupported adapter %q", selected.Key.Adapter)
+	}
+	programIndexDefault := pythonTargetSelection != nil || jsTSTargetSelection != nil
 	opts := orient.Options{
 		RepoPath:            repo,
 		GoTarget:            goTarget.String(),
@@ -448,14 +545,18 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		DebugDir:            dDir,
 		DumpRedacted:        true,
 		RequireArtifacts:    true,
-		AnalyzeGoProgram:    !pythonProgramDefault,
-		SkipGoFacts:         pythonProgramDefault,
+		AnalyzeGoProgram:    !programIndexDefault,
+		SkipGoFacts:         programIndexDefault,
 		DirectCallDepth:     *directCallDepth,
 		DirectCallEdgeLimit: *directCallEdgeLimit,
 		PrecomputedSnapshot: deps.precomputedSnapshot,
 		PreparedGoWorkspace: preparedGoWorkspace,
+		PreparedGoSnapshots: append([]snapshot.Snapshot(nil), deps.preparedGoSnapshots...),
 		PreparedGoWorkspaceSink: func(workspace *surfacediscovery.PreparedWorkspace) {
 			preparedGoWorkspace = workspace
+			if deps.preparedGoWorkspaceSink != nil {
+				deps.preparedGoWorkspaceSink(workspace)
+			}
 		},
 		DirectCallIndexSink: func(index surfacediscovery.DirectCallIndex) {
 			directCallIndex = &index
@@ -518,47 +619,10 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			DebugEnabled:           dDir != "",
 		},
 	}
-	if deps.precomputedSnapshot == nil && !pythonProgramDefault {
-		opts.AnalysisTargetSelector = func(
-			selectorContext context.Context,
-			repoName string,
-			catalog analysistarget.TargetCatalog,
-			facts gofacts.Facts,
-		) (snapshot.TargetRunSelection, error) {
-			repositoryName = repoName
-			selectionExecutor := llm.Executor{RootDir: dDir, Enabled: !*noCache}
-			if firstLayerSemanticObserver == nil {
-				firstLayerSemanticObserver = debugdump.NewSemanticObserver(nil)
-			}
-			selectionExecutor.Observer = firstLayerSemanticObserver
-			var selection snapshot.TargetRunSelection
-			var outcome targetPortfolioRunOutcome
-			var selectionErr error
-			if analysisTargetOverride == "" && pythonTargetCatalog != nil && len(pythonTargetCatalog.Entries) > 0 {
-				mixed, mixedErr := selectMixedTargetsForRun(
-					selectorContext, repoName, catalog, facts, *pythonTargetCatalog,
-					repositoryCorpus, humanOutput, newTargetPortfolioProvider, selectionExecutor,
-				)
-				selection, outcome, selectionErr = mixed.Go, mixed.Outcome, mixedErr
-			} else {
-				selection, outcome, selectionErr = selectTargetsForRun(
-					selectorContext, repoName, catalog, facts, repositoryCorpus,
-					analysisTargetOverride, humanOutput, newTargetPortfolioProvider, selectionExecutor,
-				)
-			}
-			targetPortfolioOutcome = outcome
-			coreReadmeRoleRows = cloneReadmeRoleLog(outcome.ReadmeRoles)
-			if selectionErr != nil && analysisTargetOverride != "" &&
-				pythonTargetCatalog != nil && len(pythonTargetCatalog.Entries) > 0 {
-				return selection, fmt.Errorf("%w; Python choices: %s", selectionErr, pythonTargetChoices(*pythonTargetCatalog))
-			}
-			return selection, selectionErr
-		}
-	}
 	opts.Progress = humanOutput.Progress
 
 	err = orient.Run(ctx, opts)
-	if err != nil && deps.precomputedSnapshot == nil {
+	if err != nil && ownsFirstLayerAuthority {
 		if _, metadataErr := os.Stat(filepath.Join(runDir, "metadata.json")); os.IsNotExist(metadataErr) {
 			flushFailedFirstLayerSemanticJournal(runDir, firstLayerSemanticObserver, humanOutput)
 		}
@@ -571,7 +635,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		goTarget = selected
 	}
 	metadataPath := filepath.Join(runDir, "metadata.json")
-	if deps.precomputedSnapshot == nil {
+	if ownsFirstLayerAuthority {
 		if _, metadataErr := os.Stat(metadataPath); metadataErr == nil {
 			flushFirstLayerSemanticJournal(runDir, firstLayerSemanticObserver, humanOutput)
 			if diagnosticErr := recordTargetPortfolioOutcome(runDir, targetPortfolioOutcome, humanOutput); diagnosticErr != nil {
@@ -596,37 +660,10 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if err := persistReadmeRoleAuthority(runDir, coreReadmeRoleRows); err != nil {
 		return err
 	}
-	if deps.precomputedSnapshot == nil && targetRunContainer == nil && pythonTargetSelection == nil {
-		return fmt.Errorf("no advertised Go targets; choose a Go repository or select a supported platform with --force-platform GOOS/GOARCH")
+	if analysisTarget == nil && pythonTargetSelection == nil && jsTSTargetSelection == nil {
+		return fmt.Errorf("no advertised Go, Python, or JavaScript/TypeScript package targets; choose a supported repository or select a Go platform with --force-platform GOOS/GOARCH")
 	}
-	if pythonTargetSelection != nil && !pythonProgramDefault {
-		return fmt.Errorf("selected Python targets require Python-default semantic authority")
-	}
-	if targetPortfolioOutcome.SelectedTargets > 0 {
-		if pythonProgramDefault {
-			if pythonTargetSelection == nil {
-				return fmt.Errorf("selected Python target portfolio is unavailable")
-			}
-			if pythonTargetSelection.Default.Ref != targetPortfolioOutcome.SelectedRef ||
-				len(pythonTargetSelection.Targets) != targetPortfolioOutcome.SelectedTargets ||
-				!exactRefSet(pythonTargetRefs(pythonTargetSelection.Targets), targetPortfolioOutcome.SelectedTargetRefs) {
-				return fmt.Errorf("selected Python target portfolio does not match its exact targets")
-			}
-		} else {
-			if targetRunContainer == nil {
-				return fmt.Errorf("selected target portfolio was not bound into the run container")
-			}
-			if err := targetRunContainer.Validate(); err != nil {
-				return fmt.Errorf("validate selected target run container: %w", err)
-			}
-			if targetRunContainer.DefaultTargetRef != targetPortfolioOutcome.SelectedRef ||
-				len(targetRunContainer.Targets) != targetPortfolioOutcome.SelectedTargets ||
-				!targetRunContainerHasExactRefs(*targetRunContainer, targetPortfolioOutcome.SelectedTargetRefs) {
-				return fmt.Errorf("selected target portfolio does not match the run container")
-			}
-		}
-	}
-	if analysisTarget != nil && !pythonProgramDefault {
+	if analysisTarget != nil && !programIndexDefault {
 		targetDisplay := analysisTarget.DisplayPath()
 		targetSubject := analysisTargetSubject(*analysisTarget)
 		if directCallIndex == nil {
@@ -676,9 +713,35 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	programIndexes := make([]programindex.Index, 0)
 	programIndexFilenames := make([]string, 0)
 	programDefaultTargetID := ""
+	var jsTSProgramIndex *programindex.Index
+	if jsTSTargetSelection != nil {
+		_, index, catalog, buildErr := buildJSTSProgramForRun(
+			runDir, repositoryCorpus, *jsTSTargetSelection, humanOutput,
+		)
+		if buildErr != nil {
+			return buildErr
+		}
+		programDefaultTargetID = index.Target.ID
+		dependencyCatalog = &catalog
+		ownedIndex := index.Snapshot()
+		jsTSProgramIndex = &ownedIndex
+		programIndexes = append(programIndexes, index)
+		programIndexFilenames = append(programIndexFilenames, jstsproject.ProgramIndexFilename)
+	}
+	pythonTargetsForBuild := []pythontarget.Target{}
+	var pythonPreferredTarget *pythontarget.Target
 	if pythonTargetSelection != nil {
+		pythonTargetsForBuild = append(
+			[]pythontarget.Target(nil), pythonTargetSelection.Targets...,
+		)
+		preferred := pythonTargetSelection.Default
+		pythonPreferredTarget = &preferred
+	}
+	if len(pythonTargetsForBuild) > 0 {
 		programIndexStarted := time.Now()
-		representatives, representativeErr := pythonProgramRepresentatives(*pythonTargetSelection)
+		representatives, representativeErr := pythonProgramRepresentativesForTargets(
+			pythonTargetsForBuild, pythonPreferredTarget,
+		)
 		if representativeErr != nil {
 			return representativeErr
 		}
@@ -688,7 +751,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		}
 		indexFilenames := make([]string, len(indexes))
 		for position, index := range indexes {
-			isDefault := representatives[position].Ref == pythonTargetSelection.Default.Ref
+			isDefault := pythonPreferredTarget != nil &&
+				representatives[position].Ref == pythonPreferredTarget.Ref
 			indexFilenames[position] = programindex.ArtifactFilenameForTarget(representatives[position].Ref, isDefault)
 			if err := programindex.Persist(
 				runDir,
@@ -697,8 +761,10 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			); err != nil {
 				return err
 			}
+			if isDefault {
+				programDefaultTargetID = index.Target.ID
+			}
 		}
-		programDefaultTargetID = indexes[0].Target.ID
 		programIndexes = append(programIndexes, indexes...)
 		programIndexFilenames = append(programIndexFilenames, indexFilenames...)
 		programScopes, scopeErr := pythonProgramScopeCount(representatives)
@@ -707,13 +773,13 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		}
 		programDetails := []string{
 			fmt.Sprintf("Python program scopes: %d", programScopes),
-			fmt.Sprintf("selected target views: %d", len(pythonTargetSelection.Targets)),
+			fmt.Sprintf("selected target views: %d", len(pythonTargetsForBuild)),
 			formatRunOutputWallDuration(time.Since(programIndexStarted)),
 		}
 		programDetails = append(programDetails, "default artifact: program-index.json")
 		humanOutput.State("Program index", "ready", programDetails...)
 	}
-	if !pythonProgramDefault && analysisTarget != nil && repositoryCorpus != nil && directCallIndex != nil {
+	if !programIndexDefault && analysisTarget != nil && repositoryCorpus != nil && directCallIndex != nil {
 		programIndexStarted := time.Now()
 		if externalCallIndex == nil {
 			return fmt.Errorf("Go program index requires the exact external-call index")
@@ -772,7 +838,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if defaultIndexErr != nil {
 		return defaultIndexErr
 	}
-	if analysisTarget != nil && !pythonProgramDefault {
+	if analysisTarget != nil && !programIndexDefault {
 		targetDetails := []string{
 			"kind: " + string(analysisTarget.Kind),
 			"scope: " + analysisTargetSubject(*analysisTarget),
@@ -809,7 +875,29 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			targetDetails...,
 		)
 	}
-	if pythonProgramDefault {
+	if jsTSTargetSelection != nil {
+		if jsTSProgramIndex == nil {
+			return fmt.Errorf("selected JavaScript/TypeScript ProgramIndex is unavailable")
+		}
+		targetDetails := []string{
+			"language: " + jsTSProgramIndex.Target.Language,
+			"kind: " + jsTSProgramIndex.Target.Kind,
+			"selector: " + jsTSProgramIndex.Target.Selector,
+			"project manifest: " + jsTSTargetSelection.Project.Project.ManifestPath,
+		}
+		if targetPortfolioOutcome.SelectedFileRefs > 0 {
+			targetDetails = append(
+				targetDetails,
+				fmt.Sprintf("target entry files selected: %d", targetPortfolioOutcome.SelectedFileRefs),
+				fmt.Sprintf("unclassified file hypotheses dropped: %d", targetPortfolioOutcome.UnclassifiedFiles),
+			)
+		}
+		humanOutput.State(
+			"Analysis target", jsTSTargetSelection.Project.Project.Name,
+			targetDetails...,
+		)
+	}
+	if pythonTargetSelection != nil {
 		if pythonTargetSelection == nil {
 			return fmt.Errorf("Python semantic cubes require the exact target selection authority")
 		}
@@ -874,7 +962,44 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			return nil
 		}
 	}
-	if !pythonProgramDefault {
+	if jsTSTargetSelection != nil {
+		if jsTSTargetSelection == nil {
+			return fmt.Errorf("JavaScript/TypeScript semantic cubes require the exact package project selection authority")
+		}
+		if dependencyCatalog == nil {
+			return fmt.Errorf("JavaScript/TypeScript semantic cubes require the exact dependency catalog")
+		}
+		semanticResult, semanticErr := runSemanticPipelineForRun(
+			ctx,
+			runDir,
+			dDir,
+			*noCache,
+			stopAfter,
+			"JavaScript/TypeScript",
+			pipeline.Authorities{
+				RepositoryName: repoRunLabel(repo),
+				Repository:     repositoryCorpus,
+				ProgramIndex:   defaultProgramIndex,
+				Dependencies:   *dependencyCatalog,
+				Declarations:   nil,
+				ReadmeRoles:    boundReadmeRoles,
+			},
+			humanOutput,
+			newCubeProvider,
+		)
+		if semanticErr != nil {
+			return semanticErr
+		}
+		if semanticResult.StoppedAfter != "" {
+			humanOutput.State(
+				"Run", "stopped",
+				"requested checkpoint: STOP_AFTER=ActivityEntrypoints",
+				"last artifact: "+activityentrypoint.ArtifactFilename,
+			)
+			return nil
+		}
+	}
+	if !programIndexDefault {
 		if analysisTarget == nil {
 			return fmt.Errorf("analysis cubes require one exact Go analysis target")
 		}
@@ -957,15 +1082,15 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		return fmt.Errorf("generate authorized browser report: %w", err)
 	}
 	reportPath = filepath.Join(runDir, "report.html")
-	multiTargetPublication := !deps.siblingTargetRun && targetRunContainer != nil && len(targetRunContainer.Targets) > 1
-	if !deps.siblingTargetRun && !multiTargetPublication {
+	repositoryPortfolioPublication := !deps.siblingTargetRun && targetRunContainer != nil
+	if !deps.siblingTargetRun && !repositoryPortfolioPublication {
 		humanOutput.State(
 			"Report", "generated",
 			formatRunOutputWallDuration(time.Since(reportStarted)),
 		)
 		humanOutput.Stage("Report", "path: "+reportPath)
 	}
-	if !deps.siblingTargetRun && !multiTargetPublication && staticSourceHost != "" {
+	if !deps.siblingTargetRun && !repositoryPortfolioPublication && staticSourceHost != "" {
 		humanOutput.Stage(
 			"Report",
 			fmt.Sprintf("standalone host: %s", staticSourceHost),
@@ -990,6 +1115,10 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		GitLabURL:             gitLabURL,
 		GitHubURL:             gitHubURL,
 	}
+	if deps.preselectedTarget != nil {
+		publishedTarget.SelectedTargetKey = deps.preselectedTarget.Key.String()
+		publishedTarget.SelectedTargetDisplay = repositoryTypedTargetDisplay(*deps.preselectedTarget)
+	}
 	if automaticGoTargetSelection != nil {
 		publishedTarget.GoTargetSource = automaticGoTargetSelection.Source
 		publishedTarget.GoTargetBaseline = automaticGoTargetSelection.Baseline
@@ -1000,14 +1129,17 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if deps.publishedTargetSink != nil {
 		deps.publishedTargetSink(publishedTarget)
 	}
-	if defaultTargetConsole != nil && !defaultTargetConsoleClosed && !multiTargetPublication {
+	if defaultTargetConsole != nil && !defaultTargetConsoleClosed && !repositoryPortfolioPublication {
 		humanOutput.TargetPage("complete", *defaultTargetConsole)
 		defaultTargetConsoleClosed = true
 	}
-	if !deps.siblingTargetRun && targetRunContainer != nil && len(targetRunContainer.Targets) > 1 {
+	if repositoryPortfolioPublication {
 		portfolioDeps := deps
+		portfolioDeps.ctx = ctx
 		portfolioDeps.coreReadmeRoleRows = cloneReadmeRoleLog(coreReadmeRoleRows)
 		portfolioDeps.preparedGoWorkspace = preparedGoWorkspace
+		portfolioDeps.runtimeCacheRoot = dDir
+		portfolioDeps.runtimeNoCache = *noCache
 		publication, err = publishTargetPagePortfolio(
 			repo,
 			extraArgs,
@@ -1151,6 +1283,13 @@ func exactRefSet(actual, expected []string) bool {
 		delete(remaining, ref)
 	}
 	return len(remaining) == 0
+}
+
+func cloneRepositoryState(value freshness.RepositoryState) freshness.RepositoryState {
+	result := value
+	result.Dirty = append([]freshness.DirtyFile(nil), value.Dirty...)
+	result.Submodules = append([]freshness.SubmoduleState(nil), value.Submodules...)
+	return result
 }
 
 func automaticGoTargetAllowed(explicit string, getenv func(string) string) bool {

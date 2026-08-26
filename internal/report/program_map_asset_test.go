@@ -46,23 +46,26 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 		[]byte(`Repository flow`),
 		[]byte(`Entrypoints`),
 		[]byte(`Integrations`),
-		[]byte(`Choose a direction`),
 		[]byte(`How the code connects`),
 		[]byte(`Verify in code`),
 		[]byte(`Evidence limits`),
 		[]byte(`sourceAction(symbol.name, symbol.location)`),
+		[]byte(`sourceAction('Open file', { path: file.path, line: 0, column: 0 })`),
 		[]byte(`function canvasTopology(activeBlockIDs, complete)`),
 		[]byte(`function renderAreaSwitcher(selected, activeGroup)`),
 		[]byte(`Show complete map · `),
 		[]byte(`data-canvas-node`),
-		[]byte(`rm-canvas-popover`),
 		[]byte(`rm-evidence-disclosure`),
 		[]byte(`rm-core-group`),
 		[]byte(`coreCanvasGroup(group, selected, expanded)`),
-		[]byte(`var control = element('button', 'rm-canvas-node rm-canvas-node--' + kind);`),
+		[]byte(`var control = element('a', 'rm-canvas-node rm-canvas-node--' + kind);`),
+		[]byte(`function buildActivityPaths(data, target, indexSHA256, activitiesByID, integrationUsesByKey)`),
+		[]byte(`function renderActivityDetail(host, activity)`),
+		[]byte(`function renderIntegrationDetail(host, integration)`),
+		[]byte(`function routeForActivity(id)`),
 		[]byte(`Responsibilities`),
-		[]byte(`Used from`),
-		[]byte(`Operations`),
+		[]byte(`Selected operations`),
+		[]byte(`Paths to selected integrations`),
 		[]byte(`Mechanism`),
 	} {
 		if !bytes.Contains(html, token) {
@@ -80,6 +83,9 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 		[]byte(`Program graphs`),
 		[]byte(`Coverage and limits`),
 		[]byte(`Raw ProgramIndex`),
+		[]byte(`Choose a direction`),
+		[]byte(`rm-canvas-popover`),
+		[]byte(`element('button', 'rm-canvas-node`),
 	} {
 		if bytes.Contains(html, retired) {
 			t.Errorf("rendered orientation workspace retained old frontend %q", retired)
@@ -108,6 +114,101 @@ func TestOrientationClientKeepsCompleteEvidenceBehindDisclosure(t *testing.T) {
 	} {
 		if strings.Contains(reportAppJS, truncated) {
 			t.Errorf("orientation client truncates navigable evidence with %q", truncated)
+		}
+	}
+}
+
+func TestOrientationClientRendersRuntimePortfolioBeforeProgramMap(t *testing.T) {
+	for _, required := range []string{
+		"object(data.runtime_portfolio, 'runtime_portfolio')",
+		"The runtime portfolio version is not supported",
+		"function buildTargetDirectory(data, currentTarget)",
+		"href: '#/program'",
+		"link.href = implementation.target.href",
+		"sourceAction(evidence.label, evidence.location)",
+		"function renderRuntimePortfolio(host)",
+		"Primary runtime roles",
+		"Supporting and optional roles",
+		"Uncertain runtime roles",
+		"Unclassified targets",
+		"Target mapping unresolved",
+		"hash === '#/repository'",
+		"if (hash === '#/program')",
+		"#/program/responsibility/",
+		"Back to runtime overview",
+	} {
+		if !strings.Contains(reportAppJS, required) {
+			t.Errorf("runtime portfolio client is missing %q", required)
+		}
+	}
+	for _, truncated := range []string{
+		"runtime.roles.slice(",
+		"role.implementations.slice(",
+		"role.evidence.slice(",
+		"runtime.unclassified.slice(",
+	} {
+		if strings.Contains(reportAppJS, truncated) {
+			t.Errorf("runtime portfolio client truncates complete contract rows with %q", truncated)
+		}
+	}
+	for _, selector := range []string{
+		".rm-runtime-section", ".rm-runtime-grid", ".rm-runtime-card",
+		".rm-runtime-target", ".rm-runtime-unclassified__item",
+	} {
+		if !strings.Contains(reportAppCSS, selector) {
+			t.Errorf("runtime portfolio CSS is missing %q", selector)
+		}
+	}
+	if !strings.Contains(programTemplateHTML, `href="#/repository"`) {
+		t.Error("report brand does not return to the repository runtime overview")
+	}
+}
+
+func TestOrientationClientRendersExactJSTSSurfacesAndCrossSurfacePaths(t *testing.T) {
+	for _, required := range []string{
+		"function buildJSTSSurfaceCatalog(data, target, indexSHA256, openable)",
+		"js_ts_surface_catalog_view.version') !== 2",
+		"data.format_version, 'format_version') !== 65",
+		"function buildCrossSurfacePaths(data, target, indexSHA256, openable, surfaceCatalog)",
+		"['browser_application', 'node_server', 'command_line_application', 'shared_contracts', 'tool', 'unknown']",
+		"if (value === 'command_line_application') return 'Command-line application'",
+		"['product_surface', 'supporting_code', 'tool', 'unknown']",
+		"http_method_path_match",
+		"['exact_static', 'resolved_indirect', 'possible', 'unresolved_frontier']",
+		"function routeForSurface(id)",
+		"function routeForCrossSurfacePath(id)",
+		"#/program/surface/",
+		"#/program/path/",
+		"function renderJSTSRepositoryOverview(host)",
+		"function renderSurfaceDetail(host, surface)",
+		"function renderCrossSurfacePathDetail(host, path)",
+		"sourceAction('Open surface evidence', surface.location)",
+		"sourceAction('Open exact step', step.location)",
+		"Open semantic program map →",
+		"A cross-surface path must cite exact browser and server product surfaces",
+		"JavaScript/TypeScript surface and path authority must be published together",
+	} {
+		if !strings.Contains(reportAppJS, required) {
+			t.Errorf("JavaScript/TypeScript report client is missing %q", required)
+		}
+	}
+	for _, truncated := range []string{
+		"catalog.surfaces.slice(",
+		"crossSurfacePaths.paths.slice(",
+		"path.steps.slice(",
+		"surface.entryRefs.slice(",
+		"surface.evidenceRefs.slice(",
+	} {
+		if strings.Contains(reportAppJS, truncated) {
+			t.Errorf("JavaScript/TypeScript client truncates exact contract rows with %q", truncated)
+		}
+	}
+	for _, selector := range []string{
+		".rm-surface-grid", ".rm-surface-card", ".rm-cross-path-card",
+		".rm-path-timeline", ".rm-path-step--http-boundary",
+	} {
+		if !strings.Contains(reportAppCSS, selector) {
+			t.Errorf("JavaScript/TypeScript report CSS is missing %q", selector)
 		}
 	}
 }
@@ -241,7 +342,7 @@ func TestOrientationClientBuildsMeaningBeforeRenderingEvidence(t *testing.T) {
 		"array(core.refined_groups",
 		"groupByBlock[blockID] = group",
 		"activityByID[id] = start",
-		"integrations.push({",
+		"integrations.push(integration)",
 		"state.model.blocksBySymbol[use.callerID]",
 		"connectionsFor(selected)",
 		"relatedBlocksFor(selected, connections)",
@@ -262,6 +363,29 @@ func TestOrientationClientBuildsMeaningBeforeRenderingEvidence(t *testing.T) {
 		if strings.Contains(reportAppJS, datasetUI) {
 			t.Errorf("orientation client exposes a pipeline dataset UI %q", datasetUI)
 		}
+	}
+}
+
+func TestOrientationClientSupportsOverlappingCoreGroups(t *testing.T) {
+	for _, required := range []string{
+		"groupsByBlock[blockID].push(group)",
+		"state.model.groupsByBlock[block.id]",
+		"local_unassigned",
+	} {
+		if !strings.Contains(reportAppJS, required) {
+			t.Errorf("group browser model is missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"A responsibility belongs to several refined core groups.",
+		"complete responsibility partition",
+	} {
+		if strings.Contains(reportAppJS, forbidden) {
+			t.Errorf("overlapping group browser model retains disjoint-partition rejection %q", forbidden)
+		}
+	}
+	if !strings.Contains(reportAppCSS, ".rm-core-group--local-unassigned") {
+		t.Error("local unassigned group presentation is missing")
 	}
 }
 

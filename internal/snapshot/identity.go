@@ -19,6 +19,7 @@ const (
 	neutralRepositoryName  = "local-repository"
 	maxRepositoryNameBytes = 512
 	maxManifestBytes       = 128 * 1024
+	maxRemoteIdentityBytes = 4096
 )
 
 type manifestNameReader struct {
@@ -104,7 +105,7 @@ func repositoryGitEnvironment(environment []string) []string {
 
 func normalizeRemoteIdentity(raw string) string {
 	raw = strings.TrimSpace(raw)
-	if raw == "" || len(raw) > 4096 || !utf8.ValidString(raw) {
+	if raw == "" || len(raw) > maxRemoteIdentityBytes || !utf8.ValidString(raw) {
 		return ""
 	}
 

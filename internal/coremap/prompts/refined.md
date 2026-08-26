@@ -22,4 +22,4 @@ Give each block a concise English `name` and one-sentence English `purpose`. Ret
 {"blocks":[{"name":"Callback dispatch","purpose":"Invokes caller-supplied behavior through the library's central execution path.","file_refs":["f2"],"symbol_refs":["s4","s8"]}]}
 ```
 
-`blocks`, `file_refs`, and `symbol_refs` must be JSON arrays. Do not return children, `q*`, `j*`, `r*`, `t*`, `u*`, paths, names copied as identities, internal IDs, scores, confidence, caveats, or prose outside the schema. Unknown or unadvertised refs make the whole response invalid.
+`blocks`, `file_refs`, and `symbol_refs` must be JSON arrays. Do not return children, `q*`, `j*`, `r*`, `t*`, `u*`, paths, names copied as identities, internal IDs, scores, confidence, caveats, or prose outside the schema. Return only advertised refs. Unknown refs have no authority and are discarded locally; they cannot ground a block. Repeated refs inside one block are treated as one set member.

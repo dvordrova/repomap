@@ -8,10 +8,10 @@ An integration capability may connect the product to another service, protocol, 
 
 Importer rows show where each dependency is directly imported. `importers_omitted` is the exact number of additional direct-importer rows left out of that dependency's bounded request row. Their absence is not evidence that the dependency is unused, narrowly used, or not an integration candidate. Importer rows are context, not proof. The target kind is not supplied in this observed-only request, so do not infer whether the repository is a service, command, or library from importer path spelling.
 
-Use only `dN` refs supplied in this batch. Refs are unique across the complete run, but refs from other batches are not valid in this response. Never return a dependency name, module, package, importer, explanation, score, or identifier from a row. Return exactly one JSON object with exactly this shape and no Markdown:
+Use only `dN` refs supplied in this batch. Refs are unique across the complete run, but refs from other batches are not valid in this response. A returned ref that is absent from this batch has no authority and is discarded locally before set normalization and limits; it is never guessed, repaired, or retried, so do not use an approximate or invented ref. Never return a dependency name, module, package, importer, explanation, score, or identifier from a row. Return exactly one JSON object with exactly this shape and no Markdown:
 
 ```json
 {"integration_dependency_refs":["d2","d7"]}
 ```
 
-Return at most 64 unique refs. The array is required; an empty array is valid.
+The array is required; an empty array is valid. Return every supplied ref that meets the absolute criterion; there is no per-response selection quota. `integration_dependency_refs` is a set-valued selection: order and repeated occurrences carry no authority, and local code restores each selected dependency once. Serialized request size, complete-run input authority, response size, and provider context remain explicit technical guards; they never authorize dropping an otherwise selected known ref.

@@ -22,12 +22,39 @@ import (
 )
 
 const (
-	Version          = 1
+	Version          = 2
 	MaxFiles         = 1_000_000
 	MaxSnapshotBytes = 64 << 20
 	MaxReadBytes     = int64(64 << 20)
 	refPrefix        = "rc-"
 )
+
+// ForbiddenPath reports repository paths which are never semantic corpus
+// input. The policy is intentionally language-neutral because the initial
+// repository-guidance request sees the complete corpus namespace before a
+// language adapter is selected. Configuration carrying registry credentials,
+// environment files, installed dependency sources, and generated output must
+// therefore be removed before FileIDs exist rather than filtered by a later
+// consumer.
+func ForbiddenPath(filePath string) bool {
+	if filePath == "" || filePath != path.Clean(filePath) || strings.HasPrefix(filePath, "/") {
+		return false
+	}
+	parts := strings.Split(filePath, "/")
+	for index, part := range parts {
+		if part == ".npmrc" || strings.HasPrefix(part, ".env") ||
+			strings.HasSuffix(part, ".tsbuildinfo") {
+			return true
+		}
+		if index < len(parts)-1 {
+			switch part {
+			case "node_modules", "dist", "build", "coverage":
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // FileID is the compact run-local identity used by cubes. IDs are assigned by
 // canonical repository-relative path order and never come from model output.
@@ -120,14 +147,21 @@ func New(ctx context.Context, repoPath string, listing gitfiles.Listing) (*Corpu
 	if err != nil {
 		return nil, err
 	}
-	executable, err := canonicalPathSet("executable", listing.ExecutablePaths, len(regular))
+	regular = allowedCorpusPaths(regular)
+	executable, err := canonicalPathSet("executable", listing.ExecutablePaths, MaxFiles)
 	if err != nil {
 		return nil, err
+	}
+	for filePath := range executable {
+		if ForbiddenPath(filePath) {
+			delete(executable, filePath)
+		}
 	}
 	gitlinks, err := canonicalGitlinks(listing.Gitlinks)
 	if err != nil {
 		return nil, err
 	}
+	gitlinks = allowedCorpusGitlinks(gitlinks)
 	regularSet := make(map[string]struct{}, len(regular))
 	for _, filePath := range regular {
 		regularSet[filePath] = struct{}{}
@@ -177,7 +211,7 @@ func New(ctx context.Context, repoPath string, listing gitfiles.Listing) (*Corpu
 				)
 			}
 		}
-		visiblePaths = append([]string(nil), listing.Paths...)
+		visiblePaths = allowedCorpusPaths(listing.Paths)
 	}
 	sort.Strings(visiblePaths)
 	visiblePaths = compactStrings(visiblePaths)
@@ -217,6 +251,28 @@ func New(ctx context.Context, repoPath string, listing gitfiles.Listing) (*Corpu
 		byPath:       byPath,
 		reader:       reader,
 	}, nil
+}
+
+func allowedCorpusPaths(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if ForbiddenPath(value) {
+			continue
+		}
+		result = append(result, value)
+	}
+	return result
+}
+
+func allowedCorpusGitlinks(values []Gitlink) []Gitlink {
+	result := make([]Gitlink, 0, len(values))
+	for _, value := range values {
+		if ForbiddenPath(value.Path) {
+			continue
+		}
+		result = append(result, value)
+	}
+	return result
 }
 
 // Snapshot returns an independently owned corpus identity.

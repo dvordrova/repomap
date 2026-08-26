@@ -12,9 +12,13 @@ import (
 // captureCoreObjectIndex projects exact target-scoped declarations while the
 // ordinary packages/types/SSA objects are still alive. It performs no package
 // load, parsing pass, type check, SSA build, or source read.
-func (a *analyzer) captureCoreObjectIndex() (gocoreobject.Index, error) {
+func (a *analyzer) captureCoreObjectIndex(direct DirectCallIndex) (gocoreobject.Index, error) {
 	if a == nil || a.program == nil || a.input.AnalysisTarget == nil {
 		return gocoreobject.Index{}, fmt.Errorf("go core object index: target-scoped typed program is unavailable")
+	}
+	directNodes := make(map[string]struct{}, len(direct.Nodes))
+	for _, node := range direct.Nodes {
+		directNodes[node.ID] = struct{}{}
 	}
 	target := a.input.AnalysisTarget
 	input := gocoreobject.Input{
@@ -53,7 +57,9 @@ func (a *analyzer) captureCoreObjectIndex() (gocoreobject.Index, error) {
 			Path: owner.PackagePath, RepresentativeSource: representativeSource,
 		})
 		for _, file := range facts.Syntax {
-			if err := a.captureCoreObjectFile(&input, facts.TypesInfo, file, admitted.Path); err != nil {
+			if err := a.captureCoreObjectFile(
+				&input, facts.TypesInfo, file, admitted.Path, directNodes,
+			); err != nil {
 				return gocoreobject.Index{}, err
 			}
 		}
@@ -93,6 +99,7 @@ func (a *analyzer) captureCoreObjectFile(
 	info *types.Info,
 	file *ast.File,
 	packagePath string,
+	directNodes map[string]struct{},
 ) error {
 	if a == nil || input == nil || info == nil || file == nil {
 		return fmt.Errorf("go core object index: typed syntax is unavailable for package %q", packagePath)
@@ -155,7 +162,13 @@ func (a *analyzer) captureCoreObjectFile(
 					function = origin
 				}
 				if node, _, available := a.directCallNode(function, a.scenario); available {
-					directCallNodeID = node.ID
+					// Program.FuncValue can materialize a source declaration that
+					// ssautil.AllFunctions omitted from the direct-call inventory.
+					// Keep the core declaration, but advertise the optional join only
+					// when the finished direct index owns that exact node identity.
+					if _, indexed := directNodes[node.ID]; indexed {
+						directCallNodeID = node.ID
+					}
 				}
 			}
 			input.Callables = append(input.Callables, gocoreobject.CallableDeclaration{

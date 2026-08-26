@@ -11,19 +11,14 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/dvordrova/repomap/internal/analysistarget"
-	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/freshness"
 	"github.com/dvordrova/repomap/internal/programindex"
 	reportpkg "github.com/dvordrova/repomap/internal/report"
-	"github.com/dvordrova/repomap/internal/snapshot"
 )
 
 const testCapability = "test-capability"
@@ -89,7 +84,7 @@ func TestHandlerServesInitialReportAndOpensItsOpaqueSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer rootResponse.Body.Close()
-	wantLocation := capabilityURLPrefix(testCapability) + "/runs/" + fixture.runID + "/report.html#/program"
+	wantLocation := capabilityURLPrefix(testCapability) + "/runs/" + fixture.runID + "/report.html#/repository"
 	if rootResponse.StatusCode != http.StatusFound || rootResponse.Header.Get("Location") != wantLocation {
 		t.Fatalf("root status=%d location=%q", rootResponse.StatusCode, rootResponse.Header.Get("Location"))
 	}
@@ -189,57 +184,6 @@ func TestSiblingPagesRequirePortfolioRouteAndManifestBinding(t *testing.T) {
 	if err := authorizeSiblingRun(initial, outerAlias, "program-target-worker"); err == nil {
 		t.Fatal("sibling page reused the initial outer target authority")
 	}
-}
-
-func TestHandlerServesManifestAuthorizedSiblingPageAndOpensItsSource(t *testing.T) {
-	initial, sibling := writeTargetPortfolioFixture(t)
-	var opened string
-	handler, err := NewHandler(Options{
-		RunsDir:      initial.runsDir,
-		InitialRunID: initial.runID,
-		Capability:   testCapability,
-		OpenFile: func(_ context.Context, absolutePath string, _, _ int) error {
-			opened = absolutePath
-			return nil
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := httptest.NewServer(handler)
-	defer server.Close()
-	baseURL := server.URL + capabilityURLPrefix(testCapability)
-
-	response, err := server.Client().Get(baseURL + "/runs/" + sibling.runID + "/report.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	html := readResponse(t, response, http.StatusOK)
-	wantReport := sibling.reportData
-	wantReport.SourceIDs = map[string]string{"batch.go": sibling.sourceID}
-	wantHTML, err := reportpkg.RenderHTMLWithOptions(
-		&wantReport,
-		reportpkg.RenderOptions{TargetNavigation: sibling.targetNavigation},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(html, wantHTML) || bytes.Contains(sibling.staticHTML, []byte(sibling.sourceID)) {
-		t.Fatal("served sibling differs from its static page beyond transient source authority")
-	}
-	openResponse := postOpen(t, baseURL, openRequest{
-		RunID: sibling.runID, SourceID: sibling.sourceID,
-	})
-	var payload map[string]any
-	decodeResponse(t, openResponse, http.StatusOK, &payload)
-	if opened != sibling.sourcePath {
-		t.Fatalf("opened %q, want sibling source %q", opened, sibling.sourcePath)
-	}
-	unboundResponse, err := server.Client().Get(baseURL + "/runs/unbound-run/report.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	readResponse(t, unboundResponse, http.StatusNotFound)
 }
 
 func TestOpenRejectsRawPathsAndSymlinkReplacement(t *testing.T) {
@@ -393,7 +337,7 @@ func TestServeUsesLoopbackCapabilityURLAndStopsWithContext(t *testing.T) {
 	if parsed.Hostname() != "127.0.0.1" ||
 		!strings.HasPrefix(parsed.Path, "/_repomap/") ||
 		!strings.HasSuffix(parsed.Path, "/runs/"+fixture.runID+"/report.html") ||
-		parsed.Fragment != "/program" {
+		parsed.Fragment != "/repository" {
 		t.Fatalf("unexpected ready URL %q", serverURL)
 	}
 	response, err := http.Get(serverURL)
@@ -413,13 +357,12 @@ func TestServeUsesLoopbackCapabilityURLAndStopsWithContext(t *testing.T) {
 }
 
 type testRunFixture struct {
-	runsDir          string
-	runID            string
-	sourceID         string
-	sourcePath       string
-	reportData       reportpkg.ReportData
-	staticHTML       []byte
-	targetNavigation *reportpkg.TargetNavigationPortfolio
+	runsDir    string
+	runID      string
+	sourceID   string
+	sourcePath string
+	reportData reportpkg.ReportData
+	staticHTML []byte
 }
 
 func writeTestRun(t *testing.T) testRunFixture {
@@ -460,6 +403,34 @@ func writeTestRunAt(
 	if err := os.Mkdir(runDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	if reportData.CapturedRevision == "" {
+		reportData.CapturedRevision = strings.Repeat("0", 40)
+	}
+	reportData.CapturedInputCount = len(reportData.OpenablePaths)
+	index := reportServerStructuralProgramIndexFixture(t, reportData.RepoName)
+	portfolio, err := reportpkg.NewProgramPortfolio(index.Target.ID, []programindex.Index{index})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportData.ProgramPortfolio = portfolio
+	if err := programindex.Persist(runDir, programindex.ArtifactFilename, index); err != nil {
+		t.Fatal(err)
+	}
+	set, err := programindex.BuildArtifactSet(
+		index.Target.ID,
+		[]programindex.Index{index},
+		[]string{programindex.ArtifactFilename},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := programindex.PersistArtifactSet(runDir, set); err != nil {
+		t.Fatal(err)
+	}
+	setJSON, err := programindex.EncodeArtifactSet(set)
+	if err != nil {
+		t.Fatal(err)
+	}
 	reportJSON, err := json.Marshal(reportData)
 	if err != nil {
 		t.Fatal(err)
@@ -477,11 +448,20 @@ func writeTestRunAt(
 	snapshotJSON, err := json.Marshal(struct {
 		RepoName      string   `json:"repo_name"`
 		FilteredFiles []string `json:"filtered_files,omitempty"`
-	}{RepoName: reportData.RepoName, FilteredFiles: reportData.OpenablePaths})
+	}{
+		RepoName: reportData.RepoName, FilteredFiles: reportData.OpenablePaths,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(runDir, "snapshot.json"), snapshotJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	metadataJSON, err := json.Marshal(map[string]string{"repo_name": reportData.RepoName})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "metadata.json"), metadataJSON, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	state := freshness.RepositoryState{
@@ -513,6 +493,10 @@ func writeTestRunAt(
 	if err != nil {
 		t.Fatal(err)
 	}
+	targetJSON, err := json.Marshal(index.Target.Snapshot())
+	if err != nil {
+		t.Fatal(err)
+	}
 	manifest := reportpkg.RunManifest{
 		Version:               reportpkg.CurrentRunManifestVersion,
 		RepositoryState:       state,
@@ -526,20 +510,12 @@ func writeTestRunAt(
 		CapturedInputsSHA256:  inputsDigest,
 		MaterialInputs: reportpkg.MaterialInputs{
 			SelectedRevision:      state.Head,
-			ProgramTargetID:       "pt-server-fixture",
-			ProgramTargetSHA256:   strings.Repeat("8", 64),
-			ProgramIndexSetSHA256: strings.Repeat("9", 64),
+			ProgramTargetID:       index.Target.ID,
+			ProgramTargetSHA256:   hashBytes(targetJSON),
+			ProgramIndexSetSHA256: hashBytes(setJSON),
 			InputPolicyVersion:    "captured-inputs-v1",
 			ReportContract:        reportpkg.CurrentFormatVersion,
 		},
-	}
-	if reportData.AnalysisTarget != nil {
-		targetJSON, err := reportData.AnalysisTarget.CanonicalJSON()
-		if err != nil {
-			t.Fatal(err)
-		}
-		manifest.MaterialInputs.AnalysisTargetRef = reportData.AnalysisTarget.Ref
-		manifest.MaterialInputs.AnalysisTargetSHA256 = hashBytes(targetJSON)
 	}
 	manifestJSON, err := json.Marshal(manifest)
 	if err != nil {
@@ -564,242 +540,25 @@ func writeTestRunAt(
 	}
 }
 
-func writeTargetPortfolioFixture(t *testing.T) (testRunFixture, testRunFixture) {
+func reportServerStructuralProgramIndexFixture(t *testing.T, name string) programindex.Index {
 	t.Helper()
-	repository := t.TempDir()
-	files := map[string]string{
-		"go.mod":             "module example.test/server-fixture\n\ngo 1.24\n",
-		"batch.go":           "package fixture\n",
-		"cmd/api/main.go":    "package main\nfunc main() {}\n",
-		"cmd/worker/main.go": "package main\nfunc main() {}\n",
-	}
-	for name, content := range files {
-		absolutePath := filepath.Join(repository, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(absolutePath), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(absolutePath, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, args := range [][]string{
-		{"init", "--quiet"},
-		{"add", "--", "go.mod", "batch.go", "cmd/api/main.go", "cmd/worker/main.go"},
-	} {
-		command := exec.Command("git", append([]string{"-C", repository}, args...)...)
-		if output, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, output)
-		}
-	}
-	canonicalRepository, err := filepath.EvalSymlinks(repository)
-	if err != nil {
-		t.Fatal(err)
-	}
-	repositoryCorpus, err := corpus.Open(context.Background(), canonicalRepository)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer repositoryCorpus.Close()
-	deferred, err := snapshot.BuildContext(context.Background(), snapshot.Options{
-		RepoPath: canonicalRepository, RepositoryCorpus: repositoryCorpus,
-		GoTarget: runtime.GOOS + "/" + runtime.GOARCH,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if deferred.TargetCatalog == nil {
-		t.Fatal("target catalog is unavailable")
-	}
-	selected := make([]string, 0, 2)
-	defaultTargetRef := ""
-	for _, entry := range deferred.TargetCatalog.Entries {
-		target := entry.Candidate.Target
-		if target.Kind != analysistarget.KindExecutablePackage ||
-			(target.PackageDir != "cmd/api" && target.PackageDir != "cmd/worker") {
-			continue
-		}
-		selected = append(selected, target.Ref)
-		if target.PackageDir == "cmd/api" {
-			defaultTargetRef = target.Ref
-		}
-	}
-	if len(selected) != 2 || defaultTargetRef == "" {
-		t.Fatalf("selected executable targets=%v default=%q", selected, defaultTargetRef)
-	}
-	container, err := snapshot.BuildTargetRunContainer(deferred, snapshot.TargetRunSelection{
-		DefaultTargetRef: defaultTargetRef,
-		TargetRefs:       selected,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	outcomes := make([]snapshot.TargetPageOutcome, 0, len(container.Targets))
-	runIDs := make(map[string]string, len(container.Targets))
-	for _, projection := range container.Targets {
-		runID := "20260822-portfolio-" + filepath.Base(projection.Target.PackageDir)
-		runIDs[projection.Target.Ref] = runID
-		outcomes = append(outcomes, snapshot.TargetPageOutcome{
-			TargetRef: projection.Target.Ref,
-			RunID:     runID,
-		})
-	}
-	portfolio, err := snapshot.BuildTargetPagePortfolio(container, outcomes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	containerJSON, err := container.CanonicalJSON()
-	if err != nil {
-		t.Fatal(err)
-	}
-	portfolioJSON, err := portfolio.CanonicalJSON()
-	if err != nil {
-		t.Fatal(err)
-	}
-	runsDir := t.TempDir()
-	fixtures := make(map[string]testRunFixture, len(container.Targets))
-	navigationPages := make([]reportpkg.TargetNavigationPage, 0, len(container.Targets))
-	navigationTargetIDs := make(map[string]string, len(container.Targets))
-	defaultProgramTargetID := ""
-	for _, projection := range container.Targets {
-		index := reportServerProgramIndexFixture(t, projection.Target)
-		runID := runIDs[projection.Target.Ref]
-		navigationPages = append(navigationPages, reportpkg.TargetNavigationPage{
-			RunID:            runID,
-			ProgramTarget:    index.Target,
-			ArtifactFilename: programindex.ArtifactFilename,
-		})
-		navigationTargetIDs[projection.Target.Ref] = index.Target.ID
-		if projection.Target.Ref == container.DefaultTargetRef {
-			defaultProgramTargetID = index.Target.ID
-		}
-	}
-	for _, projection := range container.Targets {
-		target := projection.Target.Snapshot()
-		runID := runIDs[target.Ref]
-		fixture := writeTestRunAt(
-			t,
-			runsDir,
-			runID,
-			canonicalRepository,
-			reportpkg.ReportData{
-				FormatVersion:  reportpkg.CurrentFormatVersion,
-				RepoName:       filepath.Base(canonicalRepository),
-				OpenablePaths:  []string{"batch.go"},
-				AnalysisTarget: &target,
-			},
-		)
-		runDir := filepath.Join(runsDir, runID)
-		if err := os.WriteFile(
-			filepath.Join(runDir, snapshot.TargetRunContainerArtifactFilename),
-			containerJSON,
-			0o600,
-		); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(
-			filepath.Join(runDir, snapshot.TargetPagePortfolioArtifactFilename),
-			portfolioJSON,
-			0o600,
-		); err != nil {
-			t.Fatal(err)
-		}
-		manifestPath := filepath.Join(runDir, reportpkg.RunManifestFilename)
-		manifestJSON, err := os.ReadFile(manifestPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		manifest, err := reportpkg.DecodeRunManifest(manifestJSON)
-		if err != nil {
-			t.Fatal(err)
-		}
-		manifest.MaterialInputs.TargetRunContainerSHA256 = hashBytes(containerJSON)
-		manifest.MaterialInputs.TargetPagePortfolioSHA256 = hashBytes(portfolioJSON)
-		manifestJSON, err = json.Marshal(manifest)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(manifestPath, manifestJSON, 0o600); err != nil {
-			t.Fatal(err)
-		}
-		navigation, err := reportpkg.BuildTargetNavigation(
-			navigationPages,
-			defaultProgramTargetID,
-			navigationTargetIDs[target.Ref],
-		)
-		if err != nil {
-			t.Fatal(err)
-		}
-		staticHTML, err := reportpkg.RenderHTMLWithOptions(
-			&fixture.reportData,
-			reportpkg.RenderOptions{TargetNavigation: navigation},
-		)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(runDir, "report.html"), staticHTML, 0o600); err != nil {
-			t.Fatal(err)
-		}
-		fixture.staticHTML = staticHTML
-		fixture.targetNavigation = navigation
-		fixtures[target.Ref] = fixture
-	}
-	initial := fixtures[container.DefaultTargetRef]
-	for targetRef, fixture := range fixtures {
-		if targetRef != container.DefaultTargetRef {
-			return initial, fixture
-		}
-	}
-	t.Fatal("sibling target fixture is unavailable")
-	return testRunFixture{}, testRunFixture{}
-}
-
-func reportServerProgramIndexFixture(t *testing.T, target analysistarget.Target) programindex.Index {
-	t.Helper()
-	if target.Kind != analysistarget.KindExecutablePackage || len(target.Roots) == 0 {
-		t.Fatalf("unsupported report-server target fixture: %#v", target)
-	}
-	sources := make([]programindex.TargetSource, 0, len(target.Roots))
-	seeds := make([]programindex.TargetSeedInput, 0, len(target.Roots))
-	objects := make([]programindex.ObjectInput, 0, len(target.Roots))
-	for index, root := range target.Roots {
-		fileRef := fmt.Sprintf("f%d", index)
-		objectRef := fmt.Sprintf("root%d", index)
-		location := &programindex.Location{Path: root.Path, Line: root.Line, Column: 1}
-		sources = append(sources, programindex.TargetSource{FileRef: fileRef, Path: root.Path})
-		seeds = append(seeds, programindex.TargetSeedInput{
-			ObjectRef: objectRef,
-			Kind:      programindex.SeedCallable,
-			Location:  location,
-		})
-		objects = append(objects, programindex.ObjectInput{
-			SourceRef:  objectRef,
-			Kind:       programindex.ObjectFunction,
-			Name:       "main",
-			Visibility: programindex.VisibilityInternal,
-			Location:   location,
-		})
-	}
-	result, err := programindex.New(programindex.Input{
+	index, err := programindex.New(programindex.Input{
 		ScenarioSHA256: strings.Repeat("1", 64),
 		SourceSHA256:   strings.Repeat("2", 64),
 		Target: programindex.TargetInput{
-			Language:      "go",
-			Kind:          "executable",
-			Name:          target.PackagePath,
-			Selector:      target.PackagePath,
-			Sources:       sources,
-			AnchorFileRef: sources[0].FileRef,
-			Seeds:         seeds,
+			Language: "fixture", Kind: "library", Name: name, Selector: "reportserver-fixture",
+			Sources:       []programindex.TargetSource{{FileRef: "f1", Path: "batch.go"}},
+			AnchorFileRef: "f1",
+			Seeds:         []programindex.TargetSeedInput{},
 		},
-		Objects: objects,
-		Coverage: programindex.CoverageInput{
-			Measured: true, ObjectsObserved: len(objects), RelationsObserved: 0,
-		},
+		Objects:   []programindex.ObjectInput{},
+		Relations: []programindex.RelationInput{},
+		Coverage:  programindex.CoverageInput{Measured: true},
 	})
 	if err != nil {
-		t.Fatalf("build report-server program index fixture: %v", err)
+		t.Fatal(err)
 	}
-	return result
+	return index
 }
 
 func postOpen(t *testing.T, baseURL string, request openRequest) *http.Response {

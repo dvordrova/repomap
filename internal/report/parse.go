@@ -94,9 +94,16 @@ func readRunDir(runDir string) (*ReportData, error) {
 	if err := restoreActivityPathView(absDir, data); err != nil {
 		return nil, err
 	}
+	if err := restoreJSTSViews(absDir, data); err != nil {
+		return nil, err
+	}
+	if err := restoreRuntimePortfolioView(absDir, data); err != nil {
+		return nil, err
+	}
 	if err := validateProgramSemanticPresentation(
 		data.ProgramPortfolio, data.AnalysisTarget, data.CubeMapView, data.CoreMapView,
 		data.ActivityEntrypointView, data.IntegrationUsageView, data.ActivityPathView,
+		jstsSemanticPresentation{data.JSTSSurfaceCatalogView, data.CrossSurfacePathView},
 	); err != nil {
 		return nil, err
 	}
@@ -754,6 +761,45 @@ func collectOpenablePaths(data *ReportData) error {
 					if err := add(step.Location.Path); err != nil {
 						return err
 					}
+				}
+			}
+		}
+	}
+	if data.JSTSSurfaceCatalogView != nil {
+		for _, fact := range data.JSTSSurfaceCatalogView.Facts {
+			if fact.Location != nil {
+				if err := add(fact.Location.Path); err != nil {
+					return err
+				}
+			}
+		}
+		for _, surface := range data.JSTSSurfaceCatalogView.Surfaces {
+			if err := add(surface.Location.Path); err != nil {
+				return err
+			}
+		}
+	}
+	if data.CrossSurfacePathView != nil {
+		for _, fact := range data.CrossSurfacePathView.Facts {
+			if fact.Location != nil {
+				if err := add(fact.Location.Path); err != nil {
+					return err
+				}
+			}
+		}
+		for _, path := range data.CrossSurfacePathView.Paths {
+			for _, step := range path.Steps {
+				if err := add(step.Location.Path); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if data.RuntimePortfolio != nil {
+		for _, role := range data.RuntimePortfolio.Roles {
+			for _, evidence := range role.Evidence {
+				if err := add(evidence.Location.Path); err != nil {
+					return err
 				}
 			}
 		}

@@ -60,13 +60,16 @@ type groupingTargetSeedRequest struct {
 }
 
 type groupingRequest struct {
-	Repository      string                      `json:"repository"`
-	Target          targetRequest               `json:"target"`
-	ProgramCoverage programindex.Coverage       `json:"program_coverage"`
-	Blocks          []groupingBlockRequest      `json:"blocks"`
-	Relations       []groupingRelationRequest   `json:"relations"`
-	TargetSeeds     []groupingTargetSeedRequest `json:"target_seeds"`
+	Repository       string                      `json:"repository"`
+	Target           targetRequest               `json:"target"`
+	ProgramCoverage  programindex.Coverage       `json:"program_coverage"`
+	RelationEncoding string                      `json:"relation_encoding"`
+	Blocks           []groupingBlockRequest      `json:"blocks"`
+	Relations        []groupingRelationRequest   `json:"relations"`
+	TargetSeeds      []groupingTargetSeedRequest `json:"target_seeds"`
 }
+
+const groupingRelationEncoding = "sparse_positive_complete_v1"
 
 type groupProposal struct {
 	Name      string   `json:"name"`
@@ -122,6 +125,7 @@ func runRefinedGrouping(
 		DecodeValidate: func(raw []byte) (groupingResponse, error) {
 			response, decodeErr := decodeGroupingResponse(raw)
 			if decodeErr == nil {
+				response = normalizeGroupingResponseRefs(response, allowed)
 				decodeErr = validateGroupingResponse(response, allowed)
 			}
 			return response, decodeErr
@@ -130,7 +134,7 @@ func runRefinedGrouping(
 	if err != nil {
 		return nil, StageRequestSize{}, 0, fmt.Errorf("model cube: %w", err)
 	}
-	groups, err := restoreRefinedGroups(call.Value, allowed, compilationTargetKey(compilation))
+	groups, err := restoreRefinedGroups(call.Value, allowed, blocks, compilationTargetKey(compilation))
 	if err != nil {
 		return nil, StageRequestSize{}, 0, err
 	}
@@ -214,17 +218,25 @@ func buildGroupingRequest(
 	}
 
 	adjacency := groupingAdjacency(compilation.groupingEdges)
-	relations := make([]groupingRelationRequest, 0, len(blocks)*(len(blocks)-1)/2)
+	// The advertised block refs define the complete unordered-pair domain. Keep
+	// only positive rows on the wire: an absent pair losslessly expands to zero
+	// shared representatives and no retained exact path in either direction.
+	// This avoids an O(blocks^2) catalog of structurally empty JSON records while
+	// preserving every locally established count and hop measurement.
+	relations := make([]groupingRelationRequest, 0)
 	for left := 0; left < len(requestBlocks); left++ {
 		for right := left + 1; right < len(requestBlocks); right++ {
 			leftRef := requestBlocks[left].Ref
 			rightRef := requestBlocks[right].Ref
-			relations = append(relations, groupingRelationRequest{
+			relation := groupingRelationRequest{
 				LeftRef: leftRef, RightRef: rightRef,
 				SharedRepresentatives:   sharedGroupingObjects(programObjectsByBlock[leftRef], programObjectsByBlock[rightRef]),
 				LeftReachesRightMinHops: minGroupingHops(adjacency, programObjectsByBlock[leftRef], programObjectsByBlock[rightRef]),
 				RightReachesLeftMinHops: minGroupingHops(adjacency, programObjectsByBlock[rightRef], programObjectsByBlock[leftRef]),
-			})
+			}
+			if groupingRelationHasEvidence(relation) {
+				relations = append(relations, relation)
+			}
 		}
 	}
 
@@ -241,9 +253,15 @@ func buildGroupingRequest(
 
 	return groupingRequest{
 		Repository: compilation.repository, Target: compilation.baselineRequest.Target,
-		ProgramCoverage: compilation.programCoverage,
-		Blocks:          requestBlocks, Relations: relations, TargetSeeds: seeds,
+		ProgramCoverage:  compilation.programCoverage,
+		RelationEncoding: groupingRelationEncoding,
+		Blocks:           requestBlocks, Relations: relations, TargetSeeds: seeds,
 	}, allowed, nil
+}
+
+func groupingRelationHasEvidence(value groupingRelationRequest) bool {
+	return value.SharedRepresentatives > 0 ||
+		value.LeftReachesRightMinHops != nil || value.RightReachesLeftMinHops != nil
 }
 
 func groupingAdjacency(edges []groupingEdgeAuthority) map[string][]string {
@@ -319,7 +337,67 @@ func decodeGroupingResponse(raw []byte) (groupingResponse, error) {
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return groupingResponse{}, fmt.Errorf("response contains trailing JSON")
 	}
+	for position := range response.Groups {
+		seen := make(map[string]struct{}, len(response.Groups[position].BlockRefs))
+		refs := response.Groups[position].BlockRefs[:0]
+		for _, ref := range response.Groups[position].BlockRefs {
+			if _, duplicate := seen[ref]; duplicate {
+				continue
+			}
+			seen[ref] = struct{}{}
+			refs = append(refs, ref)
+		}
+		response.Groups[position].BlockRefs = refs
+	}
+	response.Groups = deduplicateGroupProposals(response.Groups)
 	return response, nil
+}
+
+func normalizeGroupingResponseRefs(
+	value groupingResponse,
+	allowed map[string]Block,
+) groupingResponse {
+	groups := value.Groups[:0]
+	for position := range value.Groups {
+		refs := value.Groups[position].BlockRefs[:0]
+		for _, ref := range value.Groups[position].BlockRefs {
+			if _, advertised := allowed[ref]; !advertised {
+				continue
+			}
+			refs = append(refs, ref)
+		}
+		value.Groups[position].BlockRefs = refs
+		if len(refs) != 0 {
+			groups = append(groups, value.Groups[position])
+		}
+	}
+	value.Groups = deduplicateGroupProposals(groups)
+	return value
+}
+
+func deduplicateGroupProposals(groups []groupProposal) []groupProposal {
+	seen := make(map[string]struct{}, len(groups))
+	result := groups[:0]
+	for _, group := range groups {
+		key := groupProposalSetKey(group)
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, group)
+	}
+	return result
+}
+
+func groupProposalSetKey(group groupProposal) string {
+	blockRefs := append([]string(nil), group.BlockRefs...)
+	sort.Strings(blockRefs)
+	wire, _ := json.Marshal(struct {
+		Name      string   `json:"name"`
+		Purpose   string   `json:"purpose"`
+		BlockRefs []string `json:"block_refs"`
+	}{Name: group.Name, Purpose: group.Purpose, BlockRefs: blockRefs})
+	return string(wire)
 }
 
 func validateGroupingResponse(value groupingResponse, allowed map[string]Block) error {
@@ -329,10 +407,6 @@ func validateGroupingResponse(value groupingResponse, allowed map[string]Block) 
 	if len(value.Groups) == 0 {
 		return nil
 	}
-	if len(value.Groups) < 2 || len(value.Groups) > len(allowed) {
-		return fmt.Errorf("response has invalid group count")
-	}
-	seenRefs := make(map[string]struct{}, len(allowed))
 	seenNames := make(map[string]struct{}, len(value.Groups))
 	for _, group := range value.Groups {
 		if !validText(group.Name, maxNameBytes) || !validText(group.Purpose, maxPurposeBytes) || len(group.BlockRefs) == 0 {
@@ -342,23 +416,11 @@ func validateGroupingResponse(value groupingResponse, allowed map[string]Block) 
 			return fmt.Errorf("response repeats group name")
 		}
 		seenNames[group.Name] = struct{}{}
-		inside := make(map[string]struct{}, len(group.BlockRefs))
 		for _, ref := range group.BlockRefs {
 			if _, ok := allowed[ref]; !ok {
 				return fmt.Errorf("response cites unknown block ref %q", ref)
 			}
-			if _, duplicate := inside[ref]; duplicate {
-				return fmt.Errorf("response repeats block ref %q inside one group", ref)
-			}
-			inside[ref] = struct{}{}
-			if _, duplicate := seenRefs[ref]; duplicate {
-				return fmt.Errorf("response assigns block ref %q to several groups", ref)
-			}
-			seenRefs[ref] = struct{}{}
 		}
-	}
-	if len(seenRefs) != len(allowed) {
-		return fmt.Errorf("response grouping is not a complete block partition")
 	}
 	return nil
 }
@@ -366,6 +428,7 @@ func validateGroupingResponse(value groupingResponse, allowed map[string]Block) 
 func restoreRefinedGroups(
 	value groupingResponse,
 	allowed map[string]Block,
+	blocks []Block,
 	targetKey string,
 ) ([]Group, error) {
 	result := make([]Group, len(value.Groups))
@@ -379,9 +442,29 @@ func restoreRefinedGroups(
 			blockIDs[memberPosition] = block.ID
 		}
 		result[position] = Group{
-			Name: proposal.Name, Purpose: proposal.Purpose, BlockIDs: blockIDs,
+			Authority: GroupAuthorityModel,
+			Name:      proposal.Name, Purpose: proposal.Purpose, BlockIDs: blockIDs,
 		}
-		result[position].ID = stableGroupID(targetKey, result[position].BlockIDs)
+		result[position].ID = stableGroupID(
+			targetKey, result[position].Name, result[position].Purpose, result[position].BlockIDs,
+		)
+	}
+	if len(result) != 0 {
+		seen := make(map[string]struct{}, len(blocks))
+		for _, group := range result {
+			for _, blockID := range group.BlockIDs {
+				seen[blockID] = struct{}{}
+			}
+		}
+		unassigned := make([]string, 0, len(blocks)-len(seen))
+		for _, block := range blocks {
+			if _, assigned := seen[block.ID]; !assigned {
+				unassigned = append(unassigned, block.ID)
+			}
+		}
+		if len(unassigned) != 0 {
+			result = append(result, localUnassignedGroup(targetKey, unassigned))
+		}
 	}
 	return result, nil
 }
@@ -393,30 +476,46 @@ func validateRefinedGroups(groups []Group, blocks []Block, targetKey string) err
 	if len(groups) == 0 {
 		return nil
 	}
-	if len(groups) < 2 || len(groups) > len(blocks) {
-		return fmt.Errorf("coremap: invalid refined group count")
-	}
 	allowed := make(map[string]struct{}, len(blocks))
 	for _, block := range blocks {
 		allowed[block.ID] = struct{}{}
 	}
-	seenBlocks := make(map[string]struct{}, len(blocks))
+	modelBlocks := make(map[string]struct{}, len(blocks))
 	seenGroups := make(map[string]struct{}, len(groups))
 	seenNames := make(map[string]struct{}, len(groups))
-	for _, group := range groups {
+	modelGroups := 0
+	localPosition := -1
+	for position, group := range groups {
 		if !validText(group.ID, 128) || !validText(group.Name, maxNameBytes) ||
-			!validText(group.Purpose, maxPurposeBytes) || len(group.BlockIDs) == 0 ||
-			group.ID != stableGroupID(targetKey, group.BlockIDs) {
+			!validText(group.Purpose, maxPurposeBytes) || len(group.BlockIDs) == 0 {
 			return fmt.Errorf("coremap: invalid refined group")
+		}
+		switch group.Authority {
+		case GroupAuthorityModel:
+			modelGroups++
+			if group.ID != stableGroupID(targetKey, group.Name, group.Purpose, group.BlockIDs) {
+				return fmt.Errorf("coremap: invalid model-owned refined group identity")
+			}
+		case GroupAuthorityLocalUnassigned:
+			if localPosition >= 0 || position != len(groups)-1 ||
+				group.Name != LocalUnassignedGroupName || group.Purpose != LocalUnassignedGroupPurpose ||
+				group.ID != stableLocalUnassignedGroupID(targetKey, group.BlockIDs) {
+				return fmt.Errorf("coremap: invalid local unassigned refined group")
+			}
+			localPosition = position
+		default:
+			return fmt.Errorf("coremap: invalid refined group authority")
 		}
 		if _, duplicate := seenGroups[group.ID]; duplicate {
 			return fmt.Errorf("coremap: duplicate refined group identity")
 		}
 		seenGroups[group.ID] = struct{}{}
-		if _, duplicate := seenNames[group.Name]; duplicate {
-			return fmt.Errorf("coremap: duplicate refined group name")
+		if group.Authority == GroupAuthorityModel {
+			if _, duplicate := seenNames[group.Name]; duplicate {
+				return fmt.Errorf("coremap: duplicate refined group name")
+			}
+			seenNames[group.Name] = struct{}{}
 		}
-		seenNames[group.Name] = struct{}{}
 		inside := make(map[string]struct{}, len(group.BlockIDs))
 		for _, blockID := range group.BlockIDs {
 			if _, ok := allowed[blockID]; !ok {
@@ -426,21 +525,79 @@ func validateRefinedGroups(groups []Group, blocks []Block, targetKey string) err
 				return fmt.Errorf("coremap: refined group repeats block %q", blockID)
 			}
 			inside[blockID] = struct{}{}
-			if _, duplicate := seenBlocks[blockID]; duplicate {
-				return fmt.Errorf("coremap: refined block belongs to several groups")
+			if group.Authority == GroupAuthorityModel {
+				modelBlocks[blockID] = struct{}{}
 			}
-			seenBlocks[blockID] = struct{}{}
 		}
 	}
-	if len(seenBlocks) != len(blocks) {
-		return fmt.Errorf("coremap: refined groups are not a complete block partition")
+	if modelGroups == 0 {
+		return fmt.Errorf("coremap: local unassigned group has no model-owned grouping")
+	}
+	expectedUnassigned := make([]string, 0, len(blocks)-len(modelBlocks))
+	for _, block := range blocks {
+		if _, assigned := modelBlocks[block.ID]; !assigned {
+			expectedUnassigned = append(expectedUnassigned, block.ID)
+		}
+	}
+	if len(expectedUnassigned) == 0 {
+		if localPosition >= 0 {
+			return fmt.Errorf("coremap: local unassigned group has no unassigned blocks")
+		}
+		return nil
+	}
+	if localPosition < 0 || !equalStrings(groups[localPosition].BlockIDs, expectedUnassigned) {
+		return fmt.Errorf("coremap: local unassigned group does not match the exact model-omitted complement")
 	}
 	return nil
 }
 
-func stableGroupID(targetKey string, blockIDs []string) string {
+const (
+	LocalUnassignedGroupName    = "Not placed by grouping model"
+	LocalUnassignedGroupPurpose = "Accounts for responsibilities the grouping model did not place in a supported orientation area."
+)
+
+func localUnassignedGroup(targetKey string, blockIDs []string) Group {
+	return Group{
+		ID:        stableLocalUnassignedGroupID(targetKey, blockIDs),
+		Authority: GroupAuthorityLocalUnassigned,
+		Name:      LocalUnassignedGroupName,
+		Purpose:   LocalUnassignedGroupPurpose,
+		BlockIDs:  append([]string(nil), blockIDs...),
+	}
+}
+
+func stableLocalUnassignedGroupID(targetKey string, blockIDs []string) string {
 	keys := append([]string(nil), blockIDs...)
 	sort.Strings(keys)
-	digest := sha256.Sum256([]byte("coremap-group-v1\x00" + targetKey + "\x00" + strings.Join(keys, "\x00")))
+	digest := sha256.Sum256([]byte("coremap-local-unassigned-v1\x00" + targetKey + "\x00" + strings.Join(keys, "\x00")))
+	return "core-group-local-" + hex.EncodeToString(digest[:8])
+}
+
+func equalStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for position := range left {
+		if left[position] != right[position] {
+			return false
+		}
+	}
+	return true
+}
+
+func stableGroupID(targetKey, name, purpose string, blockIDs []string) string {
+	keys := append([]string(nil), blockIDs...)
+	sort.Strings(keys)
+	wire, _ := json.Marshal(struct {
+		Contract    string   `json:"contract"`
+		Target      string   `json:"target"`
+		Name        string   `json:"name"`
+		Purpose     string   `json:"purpose"`
+		Memberships []string `json:"memberships"`
+	}{
+		Contract: "coremap-group-v2", Target: targetKey,
+		Name: name, Purpose: purpose, Memberships: keys,
+	})
+	digest := sha256.Sum256(wire)
 	return "core-group-" + hex.EncodeToString(digest[:8])
 }

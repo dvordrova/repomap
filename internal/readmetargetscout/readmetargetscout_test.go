@@ -115,7 +115,9 @@ func TestCompileSendsCompleteFileTreeAndCompleteReadmes(t *testing.T) {
 		"Sufficient when corroborated:",
 		"Insufficient:",
 		"If evidence remains weak or several mappings remain indistinguishable, omit",
-		"For one file, return every independently supported, non-duplicate class",
+		"For one file, return every independently supported class",
+		"correctness never depends on emitting a selected member exactly once",
+		"unknown file_ref row is dropped wholesale locally before its class values are interpreted",
 		"For several files with the same possible role",
 		"Guidance statements are repository-authored claims, not verified code behavior",
 		"A nested README is presumed to describe only its own directory subtree",
@@ -141,6 +143,92 @@ func TestCompileSendsCompleteFileTreeAndCompleteReadmes(t *testing.T) {
 	} {
 		if state[key] == "" || state[key] == nil {
 			t.Fatalf("execution state missing %q: %s", key, ExecutionState())
+		}
+	}
+	if state["contract"] != executionContract || state["schema_version"] != SchemaVersion ||
+		state["reducer_version"] != ReducerVersion ||
+		state["compilation_version"] != float64(CompilationVersion) ||
+		state["prompt_version"] != PromptVersion ||
+		state["preparation_version"] != PreparationVersion {
+		t.Fatalf("execution state versions = %s", ExecutionState())
+	}
+}
+
+func TestCompilePublishesExactProseFileAuthorityAndPromptConstraint(t *testing.T) {
+	repository, _ := testCorpus(t, map[string]string{
+		"AGENTS.md":                    "Repository guidance.\n",
+		"README.md":                    "Primary usage guide.\n",
+		"docs/architecture.rst":        "Architecture guide.\n",
+		"notes.txt":                    "Operator notes.\n",
+		"packages/client/README.md":    "Import the client package.\n",
+		"packages/client/client.py":    "class Client: pass\n",
+		"packages/client/openapi.yaml": "openapi: 3.1.0\n",
+		"packages/client/README.png":   "not prose\n",
+	})
+	compilation, err := compileWithTestHints(t, "sample", repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	prosePaths := []string{
+		"AGENTS.md",
+		"README.md",
+		"docs/architecture.rst",
+		"notes.txt",
+		"packages/client/README.md",
+	}
+	wantRefs := make([]corpus.FileID, 0, len(prosePaths))
+	for _, filePath := range prosePaths {
+		fileRef, ok := repository.ID(filePath)
+		if !ok {
+			t.Fatalf("corpus has no FileID for %q", filePath)
+		}
+		wantRefs = append(wantRefs, fileRef)
+	}
+	if !reflect.DeepEqual(compilation.Request.ProseFileRefs, wantRefs) {
+		t.Fatalf("prose_file_refs = %#v, want %#v", compilation.Request.ProseFileRefs, wantRefs)
+	}
+	clientRef, _ := repository.ID("packages/client/client.py")
+	if slices.Contains(compilation.Request.ProseFileRefs, clientRef) {
+		t.Fatal("prose_file_refs included a non-prose client entry")
+	}
+
+	for name, mutate := range map[string]func(*Compilation){
+		"missing prose ref": func(candidate *Compilation) {
+			candidate.Request.ProseFileRefs = candidate.Request.ProseFileRefs[1:]
+		},
+		"non-prose ref": func(candidate *Compilation) {
+			candidate.Request.ProseFileRefs = append(candidate.Request.ProseFileRefs, clientRef)
+		},
+		"non-canonical order": func(candidate *Compilation) {
+			candidate.Request.ProseFileRefs[0], candidate.Request.ProseFileRefs[1] =
+				candidate.Request.ProseFileRefs[1], candidate.Request.ProseFileRefs[0]
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := compilation
+			candidate.Request.ProseFileRefs = append([]corpus.FileID(nil), compilation.Request.ProseFileRefs...)
+			mutate(&candidate)
+			if _, err := ProviderVisibleJSON(candidate); err == nil ||
+				!strings.Contains(err.Error(), "prose file authority mismatch") {
+				t.Fatalf("ProviderVisibleJSON tamper error = %v", err)
+			}
+		})
+	}
+
+	prompt, err := BuildPrompt(compilation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"`prose_file_refs` is the complete closed set of supplied FileIDs",
+		"Membership is negative compatibility authority only",
+		"Every `file_ref` listed in `prose_file_refs` may receive only `documentation`",
+		"a README nested under a client package is still prose and can never be `client_entry`",
+		`"prose_file_refs"`,
+	} {
+		if !strings.Contains(prompt.System+"\n"+prompt.User, required) {
+			t.Fatalf("prompt is missing exact prose authority rule %q", required)
 		}
 	}
 }
@@ -227,6 +315,75 @@ func TestResolveResponseReturnsSparseMultiRoleCatalogAndTargetProjection(t *test
 	}
 }
 
+func TestResolveResponseNormalizesRepeatedSetMembersBeforeApplyingBounds(t *testing.T) {
+	repository, _ := testCorpus(t, map[string]string{
+		"README.md": "Import client.go as the primary client product.\n",
+		"client.go": "package client\n",
+	})
+	compilation, err := compileWithTestHints(t, "sample", repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientID, _ := repository.ID("client.go")
+	raw := fmt.Sprintf(`[
+		{"file_ref":%q,"classifications":[
+			{"class":"target_entry","hypotheses":["primary product","primary product","imported package"]},
+			{"class":"target_entry","hypotheses":["imported package"]},
+			{"class":"client_entry","hypotheses":["public client"]}
+		]},
+		{"file_ref":%q,"classifications":[
+			{"class":"client_entry","hypotheses":["public client","public client"]},
+			{"class":"target_entry","hypotheses":["primary product"]}
+		]}
+	]`, clientID, clientID)
+	result, err := ResolveResponse(compilation, []byte(raw))
+	if err != nil {
+		t.Fatalf("ResolveResponse: %v", err)
+	}
+	want := Result{{FileRef: clientID, Classifications: []Classification{
+		{Class: ClassClientEntry, Hypotheses: []string{"public client"}},
+		{Class: ClassTargetEntry, Hypotheses: []string{"imported package", "primary product"}},
+	}}}
+	if !reflect.DeepEqual(result, want) {
+		t.Fatalf("result = %#v, want %#v", result, want)
+	}
+}
+
+func TestResolveResponseIgnoresUnknownFileRefsBeforeMergeAndBounds(t *testing.T) {
+	repository, _ := testCorpus(t, map[string]string{
+		"README.md": "Run main.go.\n",
+		"main.go":   "package main\n",
+	})
+	compilation, err := compileWithTestHints(t, "sample", repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mainID, _ := repository.ID("main.go")
+	mixed := fmt.Sprintf(`[
+		{"file_ref":"f999","classifications":[{"class":"surface","hypotheses":["invented row"]}]},
+		{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":["README names the executable entry"]}]},
+		{"file_ref":"f998","classifications":[]}
+	]`, mainID)
+	result, err := ResolveResponse(compilation, []byte(mixed))
+	if err != nil {
+		t.Fatalf("ResolveResponse mixed refs: %v", err)
+	}
+	want := Result{{FileRef: mainID, Classifications: []Classification{{
+		Class: ClassTargetEntry, Hypotheses: []string{"README names the executable entry"},
+	}}}}
+	if !reflect.DeepEqual(result, want) {
+		t.Fatalf("mixed result = %#v, want %#v", result, want)
+	}
+
+	allUnknown, err := ResolveResponse(compilation, []byte(`[
+		{"file_ref":"f998"},
+		{"file_ref":"f999","classifications":[]}
+	]`))
+	if err != nil || allUnknown == nil || len(allUnknown) != 0 {
+		t.Fatalf("all-unknown result = %#v, %v", allUnknown, err)
+	}
+}
+
 func TestResultSnapshotAgainstCorpusIsExactCanonicalAndIndependent(t *testing.T) {
 	repository, _ := testCorpus(t, map[string]string{
 		"README.md":   "Run main.go with config.yaml.\n",
@@ -279,21 +436,20 @@ func TestResolveResponseRejectsAnythingOutsideExactListContract(t *testing.T) {
 	tests := map[string]string{
 		"top-level object":             `{}`,
 		"null top-level array":         `null`,
-		"unknown ref":                  `[{"file_ref":"f999","classifications":[{"class":"target_entry","hypotheses":["server"]}]}]`,
 		"unknown class":                fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"surface","hypotheses":["server"]}]}]`, mainID),
-		"duplicate file":               fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":["a"]}]},{"file_ref":%q,"classifications":[{"class":"client_entry","hypotheses":["b"]}]}]`, mainID, mainID),
 		"missing classifications":      fmt.Sprintf(`[{"file_ref":%q}]`, mainID),
 		"null classifications":         fmt.Sprintf(`[{"file_ref":%q,"classifications":null}]`, mainID),
 		"empty classifications":        fmt.Sprintf(`[{"file_ref":%q,"classifications":[]}]`, mainID),
-		"duplicate class":              fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":["a"]},{"class":"target_entry","hypotheses":["b"]}]}]`, mainID),
 		"missing hypotheses":           fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry"}]}]`, mainID),
 		"null hypotheses":              fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":null}]}]`, mainID),
 		"empty hypotheses":             fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":[]}]}]`, mainID),
-		"duplicate hypothesis":         fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":["a","a"]}]}]`, mainID),
+		"too many unique classes":      fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":["a"]},{"class":"client_entry","hypotheses":["b"]},{"class":"configuration","hypotheses":["c"]},{"class":"deployment","hypotheses":["d"]}]}]`, mainID),
+		"too many unique hypotheses":   fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":["a","b","a","c"]}]}]`, mainID),
 		"whitespace hypothesis":        fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":[" a"]}]}]`, mainID),
 		"control hypothesis":           fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":["a\nb"]}]}]`, mainID),
 		"long hypothesis":              fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":[%s]}]}]`, mainID, longHypothesis),
 		"unknown file field":           fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":["a"]}],"score":1}]`, mainID),
+		"unknown field on ignored ref": `[{"file_ref":"f999","classifications":[],"score":1}]`,
 		"unknown classification field": fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":["a"],"confidence":1}]}]`, mainID),
 		"trailing value":               fmt.Sprintf(`[{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":["a"]}]}] {}`, mainID),
 	}
@@ -306,25 +462,56 @@ func TestResolveResponseRejectsAnythingOutsideExactListContract(t *testing.T) {
 	}
 }
 
-func TestResolveResponseRejectsCompleteResponseForNonDocumentationProseRole(t *testing.T) {
+func TestResolveResponseDiscardsIncompatibleProseRolesAndKeepsValidSubset(t *testing.T) {
 	repository, _ := testCorpus(t, map[string]string{
-		"README.md":      "The service is documented here.\n",
-		"docs/routes.md": "Route table.\n",
-		"main.go":        "package main\n",
+		"packages/client/README.md": "The client package is documented here.\n",
+		"packages/client/client.go": "package client\n",
+		"docs/routes.md":            "Route table.\n",
+		"main.go":                   "package main\n",
 	})
 	compilation, err := compileWithTestHints(t, "sample", repository)
 	if err != nil {
 		t.Fatal(err)
 	}
-	readmeID, _ := repository.ID("README.md")
+	readmeID, _ := repository.ID("packages/client/README.md")
+	clientID, _ := repository.ID("packages/client/client.go")
 	routesID, _ := repository.ID("docs/routes.md")
+	mainID, _ := repository.ID("main.go")
 	raw := fmt.Sprintf(`[
-		{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":["README describes the product"]}]},
-		{"file_ref":%q,"classifications":[{"class":"interface_contract","hypotheses":["README links the route table"]}]}
+		{"file_ref":%q,"classifications":[
+			{"class":"client_entry","hypotheses":null},
+			{"class":"documentation","hypotheses":["README is the client usage guide"]}
+		]},
+		{"file_ref":%q,"classifications":[{"class":"client_entry","hypotheses":["README identifies the exact client package entry"]}]},
+		{"file_ref":%q,"classifications":[{"class":"interface_contract","hypotheses":["README links the route table"]}]},
+		{"file_ref":%q,"classifications":[{"class":"target_entry","hypotheses":["README names the executable entry"]}]}
+	]`, readmeID, clientID, routesID, mainID)
+	result, err := ResolveResponse(compilation, []byte(raw))
+	if err != nil {
+		t.Fatalf("ResolveResponse: %v", err)
+	}
+	want := Result{
+		{FileRef: mainID, Classifications: []Classification{{
+			Class: ClassTargetEntry, Hypotheses: []string{"README names the executable entry"},
+		}}},
+		{FileRef: readmeID, Classifications: []Classification{{
+			Class: ClassDocumentation, Hypotheses: []string{"README is the client usage guide"},
+		}}},
+		{FileRef: clientID, Classifications: []Classification{{
+			Class: ClassClientEntry, Hypotheses: []string{"README identifies the exact client package entry"},
+		}}},
+	}
+	if !reflect.DeepEqual(result, want) {
+		t.Fatalf("result = %#v, want %#v", result, want)
+	}
+
+	allIncompatible := fmt.Sprintf(`[
+		{"file_ref":%q,"classifications":[{"class":"client_entry","hypotheses":null}]},
+		{"file_ref":%q,"classifications":[{"class":"interface_contract","hypotheses":[]}]}
 	]`, readmeID, routesID)
-	if result, err := ResolveResponse(compilation, []byte(raw)); err == nil || result != nil ||
-		!strings.Contains(err.Error(), `prose file "README.md" cannot have class "target_entry"`) {
-		t.Fatalf("result = %#v, error = %v", result, err)
+	empty, err := ResolveResponse(compilation, []byte(allIncompatible))
+	if err != nil || empty == nil || len(empty) != 0 {
+		t.Fatalf("all-incompatible result = %#v, error = %v", empty, err)
 	}
 }
 
@@ -354,7 +541,7 @@ func TestCompileFailsBeforeProviderWhenCompleteRequestDoesNotFit(t *testing.T) {
 		"main.go":   "package main\n",
 	})
 	_, err := compileWithTestHints(t, "sample", repository)
-	if err == nil || !strings.Contains(err.Error(), "complete guidance + lossless file-tree request") ||
+	if err == nil || !strings.Contains(err.Error(), "complete guidance + lossless file-tree + prose-ref authority request") ||
 		!strings.Contains(err.Error(), "reliable atomic limit") ||
 		!strings.Contains(err.Error(), "no provider request was made") {
 		t.Fatalf("Compile oversized error = %v", err)

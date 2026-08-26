@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -115,6 +116,62 @@ func TestNewSupportsAnEmptyTrackedRegularCorpus(t *testing.T) {
 	}
 	if !bytes.Contains(wire, []byte(`"entries":[]`)) {
 		t.Fatalf("empty canonical JSON = %s", wire)
+	}
+}
+
+func TestCorpusExcludesCredentialConfigurationDependenciesAndGeneratedOutputs(t *testing.T) {
+	repo := t.TempDir()
+	allowed := []string{
+		"client/src/App.tsx", "package.json", "shared/schema.ts", "tsconfig.json",
+	}
+	for _, filePath := range append(append([]string(nil), allowed...),
+		".npmrc", ".env", ".env.local", "client/.env.production",
+		"node_modules/typescript/lib/typescript.js", "dist/index.js", "client/build/app.js",
+		"coverage/report.json", "cache.tsbuildinfo", "client/cache.tsbuildinfo",
+	) {
+		writeCorpusFile(t, repo, filePath, "content", 0o600)
+	}
+	listing := gitfiles.Listing{RegularPaths: []string{
+		".env", ".env.local", ".npmrc", "cache.tsbuildinfo", "client/.env.production",
+		"client/build/app.js", "client/cache.tsbuildinfo", "client/src/App.tsx",
+		"coverage/report.json", "dist/index.js", "node_modules/typescript/lib/typescript.js",
+		"package.json", "shared/schema.ts", "tsconfig.json",
+	}}
+	listing.Paths = append([]string(nil), listing.RegularPaths...)
+	value := newTestCorpus(t, repo, listing)
+	entries := value.Entries()
+	got := make([]string, len(entries))
+	for index, entry := range entries {
+		got[index] = entry.Path
+	}
+	if !reflect.DeepEqual(got, allowed) {
+		t.Fatalf("filtered corpus paths = %#v, want %#v", got, allowed)
+	}
+	if !reflect.DeepEqual(value.VisiblePaths(), allowed) {
+		t.Fatalf("filtered visible paths = %#v, want %#v", value.VisiblePaths(), allowed)
+	}
+	for _, forbidden := range listing.RegularPaths {
+		if slices.Contains(allowed, forbidden) {
+			continue
+		}
+		if _, ok := value.ID(forbidden); ok {
+			t.Fatalf("forbidden path %q received a FileID", forbidden)
+		}
+	}
+}
+
+func TestForbiddenPathIsComponentExact(t *testing.T) {
+	tests := map[string]bool{
+		".npmrc": true, "ui/.npmrc": true, ".env": true, ".env.test": true,
+		"src/.environment.ts": true, "node_modules/pkg/index.js": true,
+		"src/node_modules_helper.ts": false, "dist/app.js": true, "src/dist/app.js": true,
+		"build/app.js": true, "coverage/report.json": true, "app.tsbuildinfo": true,
+		"src/build.ts": false, "src/coverage.ts": false,
+	}
+	for filePath, want := range tests {
+		if got := ForbiddenPath(filePath); got != want {
+			t.Errorf("ForbiddenPath(%q) = %v, want %v", filePath, got, want)
+		}
 	}
 }
 

@@ -21,6 +21,7 @@ import (
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/programpage"
 	"github.com/dvordrova/repomap/internal/snapshot"
 )
 
@@ -69,14 +70,16 @@ type preparedStandaloneTarget struct {
 }
 
 // StandaloneTargetBundleIdentity is the small public identity returned by the
-// bounded streaming inspector. It binds the exact container and terminal page
-// portfolio without exposing sibling run IDs or filesystem locations.
+// bounded streaming inspector. It binds either the legacy Go container/page
+// pair or one language-neutral program-page portfolio, never both, without
+// exposing sibling run IDs or filesystem locations.
 type StandaloneTargetBundleIdentity struct {
-	Version                   int    `json:"version"`
-	TargetRunContainerSHA256  string `json:"target_run_container_sha256"`
-	TargetPagePortfolioSHA256 string `json:"target_page_portfolio_sha256"`
-	DefaultTargetIndex        int    `json:"default_target_index"`
-	TargetCount               int    `json:"target_count"`
+	Version                    int    `json:"version"`
+	TargetRunContainerSHA256   string `json:"target_run_container_sha256,omitempty"`
+	TargetPagePortfolioSHA256  string `json:"target_page_portfolio_sha256,omitempty"`
+	ProgramPagePortfolioSHA256 string `json:"program_page_portfolio_sha256,omitempty"`
+	DefaultTargetIndex         int    `json:"default_target_index"`
+	TargetCount                int    `json:"target_count"`
 }
 
 // StandaloneTargetBundleResourceLimitError is a terminal publication result.
@@ -151,7 +154,13 @@ func prepareGeneratedStandaloneTarget(
 		return PreparedStandaloneTarget{}, fmt.Errorf("report: resolve prepared standalone target run: %w", err)
 	}
 	localRoots := []string{absoluteRunDir, authority.analysisRoot, authority.repository.Identity}
-	prepared, err := prepareStandaloneTargetFromHTML(htmlBytes, localRoots)
+	analysisTarget, err := preparedStandaloneAnalysisTarget(runDir)
+	if err != nil {
+		return PreparedStandaloneTarget{}, err
+	}
+	prepared, err := prepareStandaloneTargetFromHTMLWithAuthority(
+		htmlBytes, localRoots, analysisTarget,
+	)
 	if err != nil {
 		return PreparedStandaloneTarget{}, err
 	}
@@ -169,9 +178,120 @@ func prepareGeneratedStandaloneTarget(
 	return PreparedStandaloneTarget{prepared: prepared}, nil
 }
 
+// PrepareStandaloneProgramPage restores one opaque standalone payload from an
+// already-generated, manifest-verified program page. Unlike the legacy Go
+// target seam, its cross-page authority is only the exact ProgramTarget+run
+// binding in programpage.Portfolio.
+func PrepareStandaloneProgramPage(runDir string) (PreparedStandaloneTarget, error) {
+	manifest, err := ReadRunManifest(runDir)
+	if err != nil {
+		return PreparedStandaloneTarget{}, fmt.Errorf("report: prepare standalone program page manifest: %w", err)
+	}
+	if manifest.StandaloneSource == nil || manifest.MaterialInputs.ProgramPagePortfolioSHA256 == "" {
+		return PreparedStandaloneTarget{}, fmt.Errorf("report: standalone program page lacks hosted portfolio authority")
+	}
+	portfolio, err := manifestStandaloneProgramPageAuthority(runDir, manifest)
+	if err != nil {
+		return PreparedStandaloneTarget{}, err
+	}
+	runID := filepath.Base(filepath.Clean(runDir))
+	var binding *programpage.Page
+	for position := range portfolio.Pages {
+		candidate := &portfolio.Pages[position]
+		if candidate.RunID != runID || candidate.Target.ID != manifest.MaterialInputs.ProgramTargetID {
+			continue
+		}
+		if binding != nil {
+			return PreparedStandaloneTarget{}, fmt.Errorf("report: standalone program page binding is ambiguous")
+		}
+		binding = candidate
+	}
+	if binding == nil {
+		return PreparedStandaloneTarget{}, fmt.Errorf("report: standalone program page is absent from portfolio")
+	}
+
+	htmlPath := filepath.Join(runDir, "report.html")
+	info, err := os.Lstat(htmlPath)
+	if err != nil {
+		return PreparedStandaloneTarget{}, fmt.Errorf("report: inspect standalone program page: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxPreparedStandaloneTargetHTMLBytes {
+		return PreparedStandaloneTarget{}, fmt.Errorf("report: standalone program page HTML is outside the byte budget")
+	}
+	htmlBytes, err := os.ReadFile(htmlPath)
+	if err != nil {
+		return PreparedStandaloneTarget{}, fmt.Errorf("report: read standalone program page: %w", err)
+	}
+	absoluteRunDir, err := filepath.Abs(runDir)
+	if err != nil {
+		return PreparedStandaloneTarget{}, fmt.Errorf("report: resolve standalone program page run: %w", err)
+	}
+	prepared, err := prepareStandaloneTargetFromHTML(htmlBytes, []string{
+		absoluteRunDir, manifest.AnalysisRoot, manifest.RepositoryState.Identity,
+	})
+	if err != nil {
+		return PreparedStandaloneTarget{}, err
+	}
+	page, err := LoadTargetNavigationPage(runDir, runID)
+	if err != nil {
+		return PreparedStandaloneTarget{}, err
+	}
+	if !reflect.DeepEqual(page.ProgramTarget, binding.Target) ||
+		!reflect.DeepEqual(prepared.programPage.ProgramTarget, binding.Target) {
+		return PreparedStandaloneTarget{}, fmt.Errorf("report: standalone program page target authority mismatch")
+	}
+	if prepared.host != manifest.StandaloneSource.Host ||
+		prepared.repositoryURL != manifest.StandaloneSource.RepositoryURL ||
+		prepared.revision != strings.ToLower(manifest.MaterialInputs.SelectedRevision) {
+		return PreparedStandaloneTarget{}, fmt.Errorf("report: standalone program page source authority mismatch")
+	}
+	prepared.programPage = page
+	return PreparedStandaloneTarget{prepared: prepared}, nil
+}
+
+// preparedStandaloneAnalysisTarget reads the outer target from the canonical,
+// manifest-verified report. Ordinary language-neutral browser payloads omit
+// this Go-only authority, while the multi-target bundle needs it to bind each
+// prepared payload to the selected TargetRunContainer projection.
+func preparedStandaloneAnalysisTarget(runDir string) (*analysistarget.Target, error) {
+	manifest, err := ReadRunManifest(runDir)
+	if err != nil {
+		return nil, fmt.Errorf("report: prepared standalone target manifest: %w", err)
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return nil, fmt.Errorf("report: open prepared standalone target run: %w", err)
+	}
+	defer root.Close()
+	reportJSON, err := readManifestFile(root, "report.json", maxManifestReportBytes)
+	if err != nil {
+		return nil, fmt.Errorf("report: read prepared standalone target report: %w", err)
+	}
+	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
+		return nil, fmt.Errorf("report: verify prepared standalone target report: %w", err)
+	}
+	envelope, err := decodeStrictReportJSON(reportJSON)
+	if err != nil {
+		return nil, fmt.Errorf("report: decode prepared standalone target report: %w", err)
+	}
+	if envelope.AnalysisTarget == nil {
+		return nil, fmt.Errorf("report: prepared standalone target report lacks target authority")
+	}
+	owned := envelope.AnalysisTarget.Snapshot()
+	return &owned, nil
+}
+
 func prepareStandaloneTargetFromHTML(
 	htmlBytes []byte,
 	localRoots []string,
+) (*preparedStandaloneTarget, error) {
+	return prepareStandaloneTargetFromHTMLWithAuthority(htmlBytes, localRoots, nil)
+}
+
+func prepareStandaloneTargetFromHTMLWithAuthority(
+	htmlBytes []byte,
+	localRoots []string,
+	authoritativeTarget *analysistarget.Target,
 ) (*preparedStandaloneTarget, error) {
 	start := bytes.Index(htmlBytes, []byte(reportDataScriptOpen))
 	if start < 0 || bytes.LastIndex(htmlBytes, []byte(reportDataScriptOpen)) != start {
@@ -205,6 +325,26 @@ func prepareStandaloneTargetFromHTML(
 	}
 	if envelope.FormatVersion != CurrentFormatVersion {
 		return nil, fmt.Errorf("report: prepared standalone target has incompatible report authority")
+	}
+	if authoritativeTarget != nil {
+		if err := authoritativeTarget.Validate(); err != nil {
+			return nil, fmt.Errorf("report: prepared standalone target canonical analysis target: %w", err)
+		}
+		if envelope.AnalysisTarget != nil && !reflect.DeepEqual(*envelope.AnalysisTarget, *authoritativeTarget) {
+			return nil, fmt.Errorf("report: prepared standalone target analysis target authority mismatch")
+		}
+		decoded["analysis_target"] = authoritativeTarget.Snapshot()
+		// Re-run the complete browser JSON round-trip after injecting typed
+		// authority. This gives the restored nested target the same canonical
+		// map-key ordering as the manifest-derived verification projection.
+		canonical, err = marshalHTMLPayloadWithLocalRoots(decoded, nil)
+		if err != nil {
+			return nil, fmt.Errorf("report: encode prepared standalone target authority: %w", err)
+		}
+		envelope, err = decodeStrictReportJSON(canonical)
+		if err != nil {
+			return nil, fmt.Errorf("report: inspect prepared standalone target authority: %w", err)
+		}
 	}
 	var analysisTarget *analysistarget.Target
 	if envelope.AnalysisTarget != nil {
@@ -343,6 +483,39 @@ func WriteStandaloneTargetBundleAtomic(
 	if err != nil {
 		return err
 	}
+	return writeValidatedStandaloneTargetBundleAtomic(runDir, validated)
+}
+
+// WriteStandaloneProgramPageBundleAtomic publishes one self-contained
+// multi-page --no-serve document from a complete language-neutral page
+// portfolio. Canonical order, default ownership, and sibling run bindings come
+// only from the sealed programpage.Portfolio.
+func WriteStandaloneProgramPageBundleAtomic(
+	runDir string,
+	portfolio programpage.Portfolio,
+	ready []PreparedStandaloneTarget,
+) error {
+	validated, err := validateStandaloneProgramPageBundle(portfolio, ready)
+	if err != nil {
+		return err
+	}
+	defaultRunID := ""
+	for _, binding := range portfolio.Pages {
+		if binding.Target.ID == portfolio.DefaultTargetID {
+			defaultRunID = binding.RunID
+			break
+		}
+	}
+	if defaultRunID == "" || filepath.Base(filepath.Clean(runDir)) != defaultRunID {
+		return fmt.Errorf("report: standalone program page bundle destination is not the default run")
+	}
+	return writeValidatedStandaloneTargetBundleAtomic(runDir, validated)
+}
+
+func writeValidatedStandaloneTargetBundleAtomic(
+	runDir string,
+	validated *validatedStandaloneTargetBundle,
+) error {
 	skeleton, err := standaloneTargetBundleSkeleton(validated)
 	if err != nil {
 		return err
@@ -400,6 +573,103 @@ func WriteStandaloneTargetBundleAtomic(
 	}
 	installed = true
 	return nil
+}
+
+func validateStandaloneProgramPageBundle(
+	portfolio programpage.Portfolio,
+	ready []PreparedStandaloneTarget,
+) (*validatedStandaloneTargetBundle, error) {
+	if err := portfolio.Validate(); err != nil {
+		return nil, fmt.Errorf("report: standalone program page bundle authority: %w", err)
+	}
+	if len(portfolio.Pages) <= 1 {
+		return nil, fmt.Errorf("report: standalone program page bundle requires multiple targets")
+	}
+	if len(ready) != len(portfolio.Pages) {
+		return nil, fmt.Errorf("report: standalone program page bundle requires one prepared page per target")
+	}
+
+	preparedByTargetID := make(map[string]*preparedStandaloneTarget, len(ready))
+	for index, opaque := range ready {
+		prepared := opaque.prepared
+		if prepared == nil || len(prepared.payload) == 0 {
+			return nil, fmt.Errorf("report: standalone program page bundle prepared page %d is invalid", index)
+		}
+		if err := validateTargetNavigationPage(prepared.programPage); err != nil {
+			return nil, fmt.Errorf("report: standalone program page bundle prepared page %d: %w", index, err)
+		}
+		targetID := prepared.programPage.ProgramTarget.ID
+		if _, duplicate := preparedByTargetID[targetID]; duplicate {
+			return nil, fmt.Errorf("report: standalone program page bundle contains duplicate prepared target")
+		}
+		preparedByTargetID[targetID] = prepared
+	}
+
+	defaultIndex := -1
+	aggregate := int64(0)
+	targets := make([]standaloneTargetBundleItem, 0, len(portfolio.Pages))
+	var first *preparedStandaloneTarget
+	var defaultPrepared *preparedStandaloneTarget
+	for index, binding := range portfolio.Pages {
+		prepared, found := preparedByTargetID[binding.Target.ID]
+		if !found {
+			return nil, fmt.Errorf("report: standalone program page bundle is missing one portfolio target")
+		}
+		if prepared.programPage.RunID != binding.RunID ||
+			!reflect.DeepEqual(prepared.programPage.ProgramTarget, binding.Target) {
+			return nil, fmt.Errorf("report: standalone program page bundle target binding mismatch")
+		}
+		if first == nil {
+			first = prepared
+		} else if prepared.host != first.host || prepared.repositoryURL != first.repositoryURL ||
+			prepared.revision != first.revision {
+			return nil, fmt.Errorf("report: standalone program page bundle source authority mismatch")
+		}
+		for _, root := range prepared.localRoots {
+			if bytes.Contains(prepared.payload, []byte(root)) {
+				return nil, fmt.Errorf("report: standalone program page bundle retained a local path")
+			}
+		}
+		for _, sibling := range portfolio.Pages {
+			if bytes.Contains(prepared.payload, []byte(sibling.RunID)) {
+				return nil, fmt.Errorf("report: standalone program page bundle retained a sibling run id")
+			}
+		}
+		nextAggregate, err := standaloneTargetAggregateBytes(aggregate, int64(len(prepared.payload)))
+		if err != nil {
+			return nil, err
+		}
+		aggregate = nextAggregate
+		targets = append(targets, standaloneTargetBundleItem{
+			TargetID:    binding.Target.ID,
+			Language:    binding.Target.Language,
+			Kind:        binding.Target.Kind,
+			DisplayName: binding.Target.Name,
+			Href:        standaloneTargetHref(index),
+			Payload:     json.RawMessage(prepared.payload),
+		})
+		delete(preparedByTargetID, binding.Target.ID)
+		if binding.Target.ID == portfolio.DefaultTargetID {
+			defaultIndex = index
+			defaultPrepared = prepared
+		}
+	}
+	if len(preparedByTargetID) != 0 {
+		return nil, fmt.Errorf("report: standalone program page bundle contains a foreign prepared target")
+	}
+	if defaultIndex < 0 || defaultPrepared == nil {
+		return nil, fmt.Errorf("report: standalone program page bundle default target is missing")
+	}
+	return &validatedStandaloneTargetBundle{
+		identity: StandaloneTargetBundleIdentity{
+			Version:                    StandaloneTargetBundleVersion,
+			ProgramPagePortfolioSHA256: portfolio.SHA256,
+			DefaultTargetIndex:         defaultIndex,
+			TargetCount:                len(portfolio.Pages),
+		},
+		defaultTarget: defaultPrepared,
+		targets:       targets,
+	}, nil
 }
 
 func validateStandaloneTargetBundle(
@@ -763,6 +1033,94 @@ func VerifyStandaloneTargetBundleHTML(
 	return identity, nil
 }
 
+// VerifyStandaloneProgramPageBundleHTML re-derives a language-neutral bundle
+// from the default manifest, the sealed programpage portfolio, and every
+// sibling's independently verified report. The HTML seal detects corruption;
+// it is never treated as publication authority by itself.
+func VerifyStandaloneProgramPageBundleHTML(
+	path string,
+	runDir string,
+	manifest RunManifest,
+) (StandaloneTargetBundleIdentity, error) {
+	if err := manifest.Validate(); err != nil {
+		return StandaloneTargetBundleIdentity{}, err
+	}
+	if manifest.StandaloneSource == nil {
+		return StandaloneTargetBundleIdentity{}, fmt.Errorf("report: standalone program page bundle lacks manifest source authority")
+	}
+	identity, found, err := InspectStandaloneTargetBundleHTML(path)
+	if err != nil {
+		return StandaloneTargetBundleIdentity{}, err
+	}
+	if !found {
+		return StandaloneTargetBundleIdentity{}, fmt.Errorf("report: standalone program page bundle marker is missing")
+	}
+
+	absoluteRunDir, err := filepath.Abs(runDir)
+	if err != nil {
+		return StandaloneTargetBundleIdentity{}, fmt.Errorf("report: resolve standalone program page bundle run: %w", err)
+	}
+	absoluteRunDir = filepath.Clean(absoluteRunDir)
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return StandaloneTargetBundleIdentity{}, fmt.Errorf("report: resolve standalone program page bundle path: %w", err)
+	}
+	if filepath.Clean(absolutePath) != filepath.Join(absoluteRunDir, "report.html") {
+		return StandaloneTargetBundleIdentity{}, fmt.Errorf("report: standalone program page bundle path is not the manifest report")
+	}
+	portfolio, err := manifestStandaloneProgramPageAuthority(absoluteRunDir, manifest)
+	if err != nil {
+		return StandaloneTargetBundleIdentity{}, err
+	}
+	if len(portfolio.Pages) <= 1 {
+		return StandaloneTargetBundleIdentity{}, fmt.Errorf("report: standalone program page bundle authority is not multi-target")
+	}
+	defaultIndex := -1
+	for index, binding := range portfolio.Pages {
+		if binding.Target.ID == portfolio.DefaultTargetID {
+			defaultIndex = index
+			break
+		}
+	}
+	if defaultIndex < 0 || portfolio.Pages[defaultIndex].RunID != filepath.Base(absoluteRunDir) ||
+		manifest.MaterialInputs.ProgramTargetID != portfolio.DefaultTargetID {
+		return StandaloneTargetBundleIdentity{}, fmt.Errorf("report: standalone program page bundle default run authority mismatch")
+	}
+	if identity.ProgramPagePortfolioSHA256 != portfolio.SHA256 ||
+		identity.DefaultTargetIndex != defaultIndex || identity.TargetCount != len(portfolio.Pages) {
+		return StandaloneTargetBundleIdentity{}, fmt.Errorf("report: standalone program page bundle identity does not match manifest authority")
+	}
+
+	runsDir := filepath.Dir(absoluteRunDir)
+	defaultItem, repoName, err := expectedStandaloneProgramPageBundleItem(
+		runsDir, portfolio.Pages[defaultIndex], defaultIndex, manifest,
+	)
+	if err != nil {
+		return StandaloneTargetBundleIdentity{}, fmt.Errorf("report: standalone program page bundle default payload: %w", err)
+	}
+	itemAt := func(index int) (standaloneTargetBundleItem, error) {
+		if index == defaultIndex {
+			return defaultItem, nil
+		}
+		item, itemRepoName, itemErr := expectedStandaloneProgramPageBundleItem(
+			runsDir, portfolio.Pages[index], index, manifest,
+		)
+		if itemErr != nil {
+			return standaloneTargetBundleItem{}, fmt.Errorf(
+				"report: standalone program page bundle payload %d: %w", index, itemErr,
+			)
+		}
+		if itemRepoName != repoName {
+			return standaloneTargetBundleItem{}, fmt.Errorf("report: standalone program page bundle repository identity mismatch")
+		}
+		return item, nil
+	}
+	if err := verifyExactStandaloneTargetBundleProjection(absolutePath, identity, repoName, itemAt); err != nil {
+		return StandaloneTargetBundleIdentity{}, err
+	}
+	return identity, nil
+}
+
 func verifyExactStandaloneTargetBundleProjection(
 	path string,
 	identity StandaloneTargetBundleIdentity,
@@ -898,6 +1256,134 @@ func manifestStandaloneTargetAuthority(
 	return container, portfolio, nil
 }
 
+func manifestStandaloneProgramPageAuthority(
+	runDir string,
+	manifest RunManifest,
+) (programpage.Portfolio, error) {
+	if err := manifest.VerifyProgramPagePortfolioArtifact(runDir); err != nil {
+		return programpage.Portfolio{}, err
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return programpage.Portfolio{}, err
+	}
+	defer root.Close()
+	raw, err := readManifestFile(root, programpage.ArtifactFilename, programpage.MaxArtifactBytes)
+	if err != nil || manifestSHA256(raw) != manifest.MaterialInputs.ProgramPagePortfolioSHA256 {
+		return programpage.Portfolio{}, fmt.Errorf("report: standalone program page bundle portfolio authority mismatch")
+	}
+	portfolio, err := programpage.Decode(raw)
+	if err != nil {
+		return programpage.Portfolio{}, err
+	}
+	return portfolio, nil
+}
+
+func expectedStandaloneProgramPageBundleItem(
+	runsDir string,
+	binding programpage.Page,
+	index int,
+	defaultManifest RunManifest,
+) (standaloneTargetBundleItem, string, error) {
+	runDir := filepath.Join(runsDir, binding.RunID)
+	info, err := os.Lstat(runDir)
+	if err != nil || !info.IsDir() {
+		return standaloneTargetBundleItem{}, "", fmt.Errorf("child run directory is unavailable")
+	}
+	manifest, err := ReadRunManifest(runDir)
+	if err != nil {
+		return standaloneTargetBundleItem{}, "", fmt.Errorf("child manifest: %w", err)
+	}
+	if manifest.MaterialInputs.ProgramTargetID != binding.Target.ID ||
+		manifest.RepositoryStateSHA256 != defaultManifest.RepositoryStateSHA256 ||
+		manifest.MaterialInputs.SelectedRevision != defaultManifest.MaterialInputs.SelectedRevision ||
+		manifest.MaterialInputs.ProgramPagePortfolioSHA256 != defaultManifest.MaterialInputs.ProgramPagePortfolioSHA256 ||
+		manifest.MaterialInputs.RuntimePortfolioSHA256 != defaultManifest.MaterialInputs.RuntimePortfolioSHA256 ||
+		!reflect.DeepEqual(manifest.StandaloneSource, defaultManifest.StandaloneSource) {
+		return standaloneTargetBundleItem{}, "", fmt.Errorf("child manifest authority mismatch")
+	}
+	root, err := os.OpenRoot(runDir)
+	if err != nil {
+		return standaloneTargetBundleItem{}, "", err
+	}
+	defer root.Close()
+	reportJSON, err := readManifestFile(root, "report.json", maxManifestReportBytes)
+	if err != nil {
+		return standaloneTargetBundleItem{}, "", err
+	}
+	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
+		return standaloneTargetBundleItem{}, "", err
+	}
+	data, err := decodeStrictReportJSON(reportJSON)
+	if err != nil {
+		return standaloneTargetBundleItem{}, "", err
+	}
+	if data.ProgramPortfolio == nil {
+		return standaloneTargetBundleItem{}, "", fmt.Errorf("child report ProgramPortfolio authority is incomplete")
+	}
+	defaultEntry, err := data.ProgramPortfolio.defaultEntry()
+	if err != nil {
+		return standaloneTargetBundleItem{}, "", err
+	}
+	if !reflect.DeepEqual(defaultEntry.Target, binding.Target) {
+		return standaloneTargetBundleItem{}, "", fmt.Errorf("child report ProgramTarget does not match portfolio")
+	}
+	setRaw, err := readManifestFile(root, programindex.ArtifactSetFilename, programindex.MaxArtifactSetBytes)
+	if err != nil {
+		return standaloneTargetBundleItem{}, "", err
+	}
+	if manifestSHA256(setRaw) != manifest.MaterialInputs.ProgramIndexSetSHA256 {
+		return standaloneTargetBundleItem{}, "", fmt.Errorf("child ProgramIndex set authority mismatch")
+	}
+	set, err := programindex.DecodeArtifactSet(setRaw)
+	if err != nil {
+		return standaloneTargetBundleItem{}, "", err
+	}
+	if set.DefaultTargetID != binding.Target.ID {
+		return standaloneTargetBundleItem{}, "", fmt.Errorf("child ProgramIndex default target mismatch")
+	}
+	artifactFilename := ""
+	for _, entry := range set.Entries {
+		if entry.TargetID == set.DefaultTargetID {
+			artifactFilename = entry.Filename
+			break
+		}
+	}
+	if artifactFilename == "" {
+		return standaloneTargetBundleItem{}, "", fmt.Errorf("child ProgramIndex artifact is missing")
+	}
+	sourceAuthority := OrdinaryReportHTMLAuthority{
+		StandaloneSource: manifest.StandaloneSource,
+		AnalysisRoot:     manifest.AnalysisRoot,
+		RepositoryRoot:   manifest.RepositoryState.Identity,
+	}
+	githubLinks, gitlabLinks, err := ordinaryHTMLSourceLinks(data.CapturedRevision, sourceAuthority)
+	if err != nil {
+		return standaloneTargetBundleItem{}, "", err
+	}
+	data.GitHubSourceLinks = githubLinks
+	data.GitLabSourceLinks = gitlabLinks
+	absoluteRunDir, err := filepath.Abs(runDir)
+	if err != nil {
+		return standaloneTargetBundleItem{}, "", err
+	}
+	payload, err := marshalHTMLPayloadWithLocalRoots(
+		programShellPayloadForReport(&data, nil),
+		[]string{absoluteRunDir, manifest.AnalysisRoot, manifest.RepositoryState.Identity},
+	)
+	if err != nil {
+		return standaloneTargetBundleItem{}, "", err
+	}
+	return standaloneTargetBundleItem{
+		TargetID:    binding.Target.ID,
+		Language:    binding.Target.Language,
+		Kind:        binding.Target.Kind,
+		DisplayName: binding.Target.Name,
+		Href:        standaloneTargetHref(index),
+		Payload:     json.RawMessage(payload),
+	}, data.RepoName, nil
+}
+
 func expectedStandaloneTargetBundleItem(
 	runsDir string,
 	projection snapshot.TargetRunProjection,
@@ -922,6 +1408,7 @@ func expectedStandaloneTargetBundleItem(
 		manifest.MaterialInputs.SelectedRevision != defaultManifest.MaterialInputs.SelectedRevision ||
 		manifest.MaterialInputs.TargetRunContainerSHA256 != defaultManifest.MaterialInputs.TargetRunContainerSHA256 ||
 		manifest.MaterialInputs.TargetPagePortfolioSHA256 != defaultManifest.MaterialInputs.TargetPagePortfolioSHA256 ||
+		manifest.MaterialInputs.RuntimePortfolioSHA256 != defaultManifest.MaterialInputs.RuntimePortfolioSHA256 ||
 		!reflect.DeepEqual(manifest.StandaloneSource, defaultManifest.StandaloneSource) {
 		return standaloneTargetBundleItem{}, "", fmt.Errorf("child manifest authority mismatch")
 	}
@@ -943,6 +1430,9 @@ func expectedStandaloneTargetBundleItem(
 	}
 	if data.ProgramPortfolio == nil || data.AnalysisTarget == nil {
 		return standaloneTargetBundleItem{}, "", fmt.Errorf("child report authority is incomplete")
+	}
+	if !reflect.DeepEqual(*data.AnalysisTarget, projection.Target) {
+		return standaloneTargetBundleItem{}, "", fmt.Errorf("child report target does not match container")
 	}
 	defaultEntry, err := data.ProgramPortfolio.defaultEntry()
 	if err != nil {
@@ -991,7 +1481,7 @@ func expectedStandaloneTargetBundleItem(
 		return standaloneTargetBundleItem{}, "", err
 	}
 	payload, err := marshalHTMLPayloadWithLocalRoots(
-		programShellPayloadForReport(&data, nil),
+		manifestStandaloneProgramShellPayload(&data, projection.Target),
 		[]string{absoluteRunDir, manifest.AnalysisRoot, manifest.RepositoryState.Identity},
 	)
 	if err != nil {
@@ -1005,6 +1495,20 @@ func expectedStandaloneTargetBundleItem(
 		Href:        standaloneTargetHref(index),
 		Payload:     json.RawMessage(payload),
 	}, data.RepoName, nil
+}
+
+// manifestStandaloneProgramShellPayload mirrors the multi-target writer's
+// restoration of outer target authority. Ordinary CoreMap browser payloads
+// omit this Go-only field, but a standalone bundle carries it so each embedded
+// page remains bound to its exact TargetRunContainer projection.
+func manifestStandaloneProgramShellPayload(
+	data *ReportData,
+	target analysistarget.Target,
+) programShellPayload {
+	payload := programShellPayloadForReport(data, nil)
+	owned := target.Snapshot()
+	payload.AnalysisTarget = &owned
+	return payload
 }
 
 type exactStandaloneBundleComparator struct {
@@ -1044,9 +1548,14 @@ func compareStandaloneBundleBytes(
 }
 
 func validStandaloneTargetBundleIdentity(identity StandaloneTargetBundleIdentity) bool {
-	return identity.Version == StandaloneTargetBundleVersion &&
-		validStandaloneTargetBundleDigest(identity.TargetRunContainerSHA256) &&
+	legacyAuthority := validStandaloneTargetBundleDigest(identity.TargetRunContainerSHA256) &&
 		validStandaloneTargetBundleDigest(identity.TargetPagePortfolioSHA256) &&
+		identity.ProgramPagePortfolioSHA256 == ""
+	programPageAuthority := identity.TargetRunContainerSHA256 == "" &&
+		identity.TargetPagePortfolioSHA256 == "" &&
+		validStandaloneTargetBundleDigest(identity.ProgramPagePortfolioSHA256)
+	return identity.Version == StandaloneTargetBundleVersion &&
+		(legacyAuthority || programPageAuthority) &&
 		identity.TargetCount > 1 &&
 		identity.DefaultTargetIndex >= 0 && identity.DefaultTargetIndex < identity.TargetCount
 }

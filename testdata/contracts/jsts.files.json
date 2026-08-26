@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "entries": [
+    {"id": "f1", "path": "package.json"},
+    {"id": "f2", "path": "src/platform.ts"},
+    {"id": "f3", "path": "tsconfig.json"}
+  ]
+}

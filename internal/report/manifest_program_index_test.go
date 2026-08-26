@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/jstsproject"
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
@@ -139,6 +140,15 @@ func TestVerifyProgramIndexArtifactsBindsSetTargetAndIndex(t *testing.T) {
 		manifest.MaterialInputs.ProgramIndexSetSHA256 = ""
 		if err := manifest.VerifyProgramIndexArtifacts(runDir); err == nil || !strings.Contains(err.Error(), "program index set sha256 is invalid") {
 			t.Fatalf("VerifyProgramIndexArtifacts error = %v, want mandatory set rejection", err)
+		}
+	})
+
+	t.Run("unbound JavaScript TypeScript index is rejected", func(t *testing.T) {
+		runDir, manifest, _, _ := programIndexManifestFixture(t, "src/app.py")
+		writeProgramIndexManifestFile(t, runDir, jstsproject.ProgramIndexFilename, []byte(`{}`))
+		if err := manifest.VerifyProgramIndexArtifacts(runDir); err == nil ||
+			!strings.Contains(err.Error(), "is not bound by the artifact set") {
+			t.Fatalf("VerifyProgramIndexArtifacts error = %v, want unbound JSTS index rejection", err)
 		}
 	})
 }

@@ -208,7 +208,6 @@ func validateCoverage(coverage Coverage, routes []Route, outcomes []Outcome) err
 	}
 	if coverage.ActivitiesSelected > activityentrypoint.MaxSelectedEntrypoints ||
 		coverage.DependenciesSelected > integrationdependency.MaxSelectedDependencies ||
-		coverage.UsesObserved > MaxOutcomes || coverage.UniqueCallers > MaxRoutes ||
 		coverage.UniqueCallers > coverage.UsesObserved ||
 		coverage.Routes != len(routes) || coverage.UniqueCallers != len(routes) ||
 		coverage.Outcomes != len(outcomes) || coverage.UsesObserved != len(outcomes) ||

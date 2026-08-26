@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	Version          = 6
+	Version          = 7
 	ArtifactFilename = "program-index.json"
 
 	MaxTargetSources        = 4_096
@@ -32,8 +32,14 @@ const (
 	MaxWitnessesPerRelation = 64
 	MaxWitnesses            = 524_288
 	MaxTextBytes            = 16 * 1024
-	MaxIndexBytes           = 64 * 1024 * 1024
-	MaxObservedCount        = 1<<31 - 1
+	// MaxAggregateTextBytes bounds semantic string payload independently of
+	// JSON field names, punctuation, and numeric metadata. MaxIndexBytes is the
+	// complete encoded envelope bound; using one value for both made a valid
+	// bounded index impossible to persist once structural JSON overhead crossed
+	// the semantic text ceiling.
+	MaxAggregateTextBytes = 64 * 1024 * 1024
+	MaxIndexBytes         = 128 * 1024 * 1024
+	MaxObservedCount      = 1<<31 - 1
 )
 
 // ObjectKind is deliberately small and language-neutral. Language adapters
@@ -628,8 +634,12 @@ func (index Index) Validate() error {
 	}
 	for _, object := range index.Objects {
 		if object.OwnerID != "" {
-			if object.OwnerID == object.ID || !hasObjectID(index.Objects, object.OwnerID) {
+			owner, ok := objectWithID(index.Objects, object.OwnerID)
+			if object.OwnerID == object.ID || !ok {
 				return fmt.Errorf("program index: object %q has invalid owner", object.ID)
+			}
+			if object.Kind == ObjectMethod && owner.Kind != ObjectType {
+				return fmt.Errorf("program index: method %q owner is not a type", object.ID)
 			}
 		}
 		if object.ContainerID != "" {
@@ -1028,7 +1038,7 @@ func validateAggregateText(index Index) error {
 			if len(value) > MaxTextBytes {
 				return fmt.Errorf("program index: scalar bound exceeded")
 			}
-			if total > MaxIndexBytes-len(value) {
+			if total > MaxAggregateTextBytes-len(value) {
 				return fmt.Errorf("program index: aggregate text bound exceeded")
 			}
 			total += len(value)

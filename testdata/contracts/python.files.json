@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "entries": [
+    {"id": "f1", "path": "pyproject.toml"},
+    {"id": "f2", "path": "src/fixture_app/__init__.py"},
+    {"id": "f3", "path": "src/fixture_app/cli.py"}
+  ]
+}

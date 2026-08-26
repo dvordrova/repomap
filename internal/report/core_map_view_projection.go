@@ -10,16 +10,18 @@ import (
 )
 
 const (
-	CoreMapViewVersion = 4
+	CoreMapViewVersion = 6
 
 	MaxCoreMapViewBytes = 8 << 20
 )
 
 // CoreMapView is the report-owned projection of the progressive CoreMap
 // result produced for one exact ProgramIndex. Block names, purposes, and
-// membership remain model-owned hypotheses. File, symbol, kind, and location
-// fields are exact producer-restored evidence; the report never derives new
-// groups from their spelling.
+// memberships in model-authority groups remain model-owned hypotheses. A
+// provenance-marked local-unassigned group is only exact omission accounting,
+// never a semantic membership. File, symbol, kind, and location fields are
+// exact producer-restored evidence; the report never derives new groups from
+// their spelling.
 type CoreMapView struct {
 	Version                int                 `json:"version"`
 	ProgramTargetID        string              `json:"program_target_id"`
@@ -32,10 +34,11 @@ type CoreMapView struct {
 }
 
 type CoreMapViewGroup struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Purpose      string   `json:"purpose"`
-	CoreBlockIDs []string `json:"core_block_ids"`
+	ID           string                 `json:"id"`
+	Authority    coremap.GroupAuthority `json:"authority"`
+	Name         string                 `json:"name"`
+	Purpose      string                 `json:"purpose"`
+	CoreBlockIDs []string               `json:"core_block_ids"`
 }
 
 type CoreMapViewBlock struct {
@@ -87,6 +90,9 @@ type CoreMapViewCoverage struct {
 	RefinedFilesSelected    int `json:"refined_files_selected"`
 	RefinedSymbolsSelected  int `json:"refined_symbols_selected"`
 	RefinedGroups           int `json:"refined_groups"`
+	RefinedModelGroups      int `json:"refined_model_groups"`
+	RefinedLocalGroups      int `json:"refined_local_groups"`
+	RefinedUnassignedBlocks int `json:"refined_unassigned_blocks"`
 	RefinedGroupCalls       int `json:"refined_group_calls"`
 	ProgramObjectsOmitted   int `json:"program_objects_omitted"`
 	ProgramRelationsOmitted int `json:"program_relations_omitted"`
@@ -107,7 +113,7 @@ func NewCoreMapView(
 		return nil, fmt.Errorf("core map view: program index: %w", err)
 	}
 	target := index.Target
-	if target.Language != "python" && target.Language != "go" {
+	if !programSemanticLanguage(target.Language) {
 		return nil, fmt.Errorf("core map view: unsupported program language %q", target.Language)
 	}
 	if value.ProgramTarget == nil || !reflect.DeepEqual(*value.ProgramTarget, target.Snapshot()) {
@@ -139,6 +145,9 @@ func NewCoreMapView(
 			RefinedBlocks:         value.Coverage.RefinedBlocks, RefinedFilesSelected: value.Coverage.RefinedFilesSelected,
 			RefinedSymbolsSelected:  value.Coverage.RefinedSymbolsSelected,
 			RefinedGroups:           value.Coverage.RefinedGroups,
+			RefinedModelGroups:      value.Coverage.RefinedModelGroups,
+			RefinedLocalGroups:      value.Coverage.RefinedLocalGroups,
+			RefinedUnassignedBlocks: value.Coverage.RefinedUnassignedBlocks,
 			RefinedGroupCalls:       value.Coverage.RefinedGroupCalls,
 			ProgramObjectsOmitted:   index.Coverage.ObjectsOmitted,
 			ProgramRelationsOmitted: index.Coverage.RelationsOmitted,
@@ -156,7 +165,7 @@ func NewCoreMapView(
 	}
 	for _, group := range value.RefinedGroups {
 		view.RefinedGroups = append(view.RefinedGroups, CoreMapViewGroup{
-			ID: group.ID, Name: group.Name, Purpose: group.Purpose,
+			ID: group.ID, Authority: group.Authority, Name: group.Name, Purpose: group.Purpose,
 			CoreBlockIDs: append([]string(nil), group.BlockIDs...),
 		})
 	}
@@ -433,25 +442,39 @@ func validateCoreMapViewGroups(groups []CoreMapViewGroup, refinedIDs map[string]
 	if len(groups) == 0 {
 		return nil
 	}
-	if len(groups) < 2 || len(groups) > len(refinedIDs) {
-		return fmt.Errorf("core map view: invalid refined group count")
-	}
 	seenGroups := make(map[string]struct{}, len(groups))
 	seenNames := make(map[string]struct{}, len(groups))
-	seenBlocks := make(map[string]struct{}, len(refinedIDs))
-	for _, group := range groups {
+	modelBlocks := make(map[string]struct{}, len(refinedIDs))
+	localBlocks := make(map[string]struct{}, len(refinedIDs))
+	modelGroups := 0
+	localGroups := 0
+	for position, group := range groups {
 		if !validCubeMapViewText(group.ID, false) || !validCubeMapViewText(group.Name, false) ||
 			!validCubeMapViewText(group.Purpose, false) || group.CoreBlockIDs == nil || len(group.CoreBlockIDs) == 0 {
 			return fmt.Errorf("core map view: invalid refined group")
+		}
+		switch group.Authority {
+		case coremap.GroupAuthorityModel:
+			modelGroups++
+		case coremap.GroupAuthorityLocalUnassigned:
+			localGroups++
+			if localGroups != 1 || position != len(groups)-1 ||
+				group.Name != coremap.LocalUnassignedGroupName || group.Purpose != coremap.LocalUnassignedGroupPurpose {
+				return fmt.Errorf("core map view: invalid local unassigned group")
+			}
+		default:
+			return fmt.Errorf("core map view: invalid refined group authority")
 		}
 		if _, duplicate := seenGroups[group.ID]; duplicate {
 			return fmt.Errorf("core map view: duplicate refined group identity")
 		}
 		seenGroups[group.ID] = struct{}{}
-		if _, duplicate := seenNames[group.Name]; duplicate {
-			return fmt.Errorf("core map view: duplicate refined group name")
+		if group.Authority == coremap.GroupAuthorityModel {
+			if _, duplicate := seenNames[group.Name]; duplicate {
+				return fmt.Errorf("core map view: duplicate refined group name")
+			}
+			seenNames[group.Name] = struct{}{}
 		}
-		seenNames[group.Name] = struct{}{}
 		inside := make(map[string]struct{}, len(group.CoreBlockIDs))
 		for _, blockID := range group.CoreBlockIDs {
 			if _, ok := refinedIDs[blockID]; !ok {
@@ -461,14 +484,29 @@ func validateCoreMapViewGroups(groups []CoreMapViewGroup, refinedIDs map[string]
 				return fmt.Errorf("core map view: refined group repeats a block")
 			}
 			inside[blockID] = struct{}{}
-			if _, duplicate := seenBlocks[blockID]; duplicate {
-				return fmt.Errorf("core map view: refined block belongs to several groups")
+			if group.Authority == coremap.GroupAuthorityModel {
+				modelBlocks[blockID] = struct{}{}
+			} else {
+				localBlocks[blockID] = struct{}{}
 			}
-			seenBlocks[blockID] = struct{}{}
 		}
 	}
-	if len(seenBlocks) != len(refinedIDs) {
-		return fmt.Errorf("core map view: refined groups are not a complete block partition")
+	if modelGroups == 0 {
+		return fmt.Errorf("core map view: local unassigned group has no model grouping")
+	}
+	for blockID := range localBlocks {
+		if _, modeled := modelBlocks[blockID]; modeled {
+			return fmt.Errorf("core map view: local unassigned group overlaps a model group")
+		}
+	}
+	if len(modelBlocks)+len(localBlocks) != len(refinedIDs) {
+		return fmt.Errorf("core map view: groups do not account for every refined block")
+	}
+	if len(localBlocks) == 0 && localGroups != 0 {
+		return fmt.Errorf("core map view: empty local unassigned accounting")
+	}
+	if len(localBlocks) != 0 && localGroups != 1 {
+		return fmt.Errorf("core map view: missing local unassigned accounting")
 	}
 	return nil
 }
@@ -487,7 +525,7 @@ func validateCoreMapViewBlocks(
 	symbolsByID map[string]CoreMapViewRepresentativeSymbol,
 	counts *coreMapViewCounts,
 ) error {
-	if baseline && depth > 1 && len(blocks) != 0 {
+	if baseline && depth > coremap.MaxBlockDepth && len(blocks) != 0 {
 		return fmt.Errorf("core map view: baseline hierarchy exceeds its producer depth")
 	}
 	for _, block := range blocks {
@@ -581,17 +619,33 @@ func validateCoreMapViewCoverage(
 	coverage := view.Coverage
 	baselineBlocks, baselineFiles := coreMapViewStageCounts(view.BaselineCore)
 	refinedBlocks, refinedFiles := coreMapViewStageCounts(view.RefinedCore)
+	modelGroups, localGroups, unassignedBlocks := coreMapViewGroupingCounts(view.RefinedGroups)
 	if coverage.TrackedFiles < len(filesByRef) || coverage.BaselineRoleFiles < baselineFiles ||
 		coverage.SymbolsAvailable < len(symbolsByID) || coverage.BaselineBlocks != baselineBlocks ||
 		coverage.BaselineFilesSelected != baselineFiles || coverage.RefinedBlocks != refinedBlocks ||
 		coverage.RefinedFilesSelected != refinedFiles ||
 		coverage.RefinedSymbolsSelected != len(symbolsByID) ||
 		coverage.RefinedGroups != len(view.RefinedGroups) ||
+		coverage.RefinedModelGroups != modelGroups || coverage.RefinedLocalGroups != localGroups ||
+		coverage.RefinedUnassignedBlocks != unassignedBlocks ||
 		coverage.RefinedGroupCalls != coreMapViewBoolCount(len(view.RefinedCore) >= 2) ||
 		coverage.ProgramObjectsOmitted < 0 || coverage.ProgramRelationsOmitted < 0 {
 		return fmt.Errorf("core map view: coverage does not match exact projection")
 	}
 	return nil
+}
+
+func coreMapViewGroupingCounts(groups []CoreMapViewGroup) (modelGroups, localGroups, unassignedBlocks int) {
+	for _, group := range groups {
+		switch group.Authority {
+		case coremap.GroupAuthorityModel:
+			modelGroups++
+		case coremap.GroupAuthorityLocalUnassigned:
+			localGroups++
+			unassignedBlocks += len(group.CoreBlockIDs)
+		}
+	}
+	return modelGroups, localGroups, unassignedBlocks
 }
 
 func coreMapViewBoolCount(value bool) int {

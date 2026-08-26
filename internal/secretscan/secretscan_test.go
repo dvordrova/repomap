@@ -167,6 +167,8 @@ func TestDetectPersistenceSensitiveIsNarrowAndAlwaysOn(t *testing.T) {
 
 	detected := []string{
 		"Authorization: Bearer abcdefghijklmnop",
+		`const headers = { Authorization: bearerToken }`,
+		"const header = `Authorization: Basic opaque-provider-value`",
 		`{"api_key":"opaque-provider-value-1234"}`,
 		`{"content":"api_key = \"opaque-provider-value-1234\""}`,
 		`{"error":"sk-secret-shaped-provider-output"}`,
@@ -186,6 +188,7 @@ func TestDetectPersistenceSensitiveIsNarrowAndAlwaysOn(t *testing.T) {
 		`apiKey := config.Sendgrid.ApiKey`,
 		`api_key = os.Getenv`,
 		`{"title":"Authorization middleware and api_key settings"}`,
+		`{"ref":"export:src/server/middleware/authorization:authorize"}`,
 	} {
 		if kind, found := DetectPersistenceSensitive(input); found {
 			t.Errorf("DetectPersistenceSensitive(%q) = %q, true; want ordinary code/prose", input, kind)

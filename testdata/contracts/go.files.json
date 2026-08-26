@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "entries": [
+    {"id": "f1", "path": "cmd/app/main.go"},
+    {"id": "f2", "path": "go.mod"},
+    {"id": "f3", "path": "internal/storefixture/fixtures.go"}
+  ]
+}

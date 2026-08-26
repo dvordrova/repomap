@@ -16,14 +16,16 @@ import (
 )
 
 const (
-	Version                    = 3
-	PreparationVersion         = 5
-	ResponseSchemaVersion      = 1
-	ArtifactFilename           = "activity-entrypoints.json"
-	MaxCandidatesPerBatch      = 1_024
-	MaxCandidateBatches        = 32
-	MaxAdvertisedCandidates    = MaxCandidatesPerBatch * MaxCandidateBatches
-	MaxSelectedEntrypoints     = 1_024
+	Version                 = 3
+	PreparationVersion      = 5
+	ResponseSchemaVersion   = 3
+	ArtifactFilename        = "activity-entrypoints.json"
+	MaxCandidatesPerBatch   = 1_024
+	MaxCandidateBatches     = 32
+	MaxAdvertisedCandidates = MaxCandidatesPerBatch * MaxCandidateBatches
+	// Selection is a subset of the complete advertised authority, not a
+	// separately quota-limited semantic product.
+	MaxSelectedEntrypoints     = MaxAdvertisedCandidates
 	MaxRelationsPerCandidate   = 16
 	MaxCounterpartsPerRelation = 8
 	MaxWitnessesPerRelation    = 4
@@ -33,7 +35,7 @@ const (
 	MaxOutputTokens            = 8_192
 )
 
-const executionContract = "program-index-activity-entrypoint-selection-v4"
+const executionContract = "program-index-activity-entrypoint-selection-v6"
 
 // Coverage proves that every structurally eligible callable and exact seeded
 // module/package launch anchor in the sealed ProgramIndex was advertised
@@ -239,8 +241,8 @@ func Run(
 				MaxRequestBytes: MaxProviderRequestBytes, MaxResponseBytes: MaxResponseBytes,
 				MaxOutputTokens: MaxOutputTokens,
 			},
-			Validate: func(value response) error {
-				return validateResponse(value, batchAllowed)
+			DecodeValidate: func(raw []byte) (response, error) {
+				return decodeResponse(raw, batchAllowed)
 			},
 		})
 	}
@@ -672,7 +674,7 @@ func requestForPartition(compiled compilation, values []candidate) request {
 		BatchIndex: MaxCandidateBatches, BatchCount: MaxCandidateBatches,
 		CandidatesObserved: len(compiled.candidates), CandidatesAdvertised: len(compiled.candidates),
 		CandidatesOmitted: 0, ProgramFrontier: frontierForRequest(compiled.coverage),
-		Target: compiled.target, Seeds: compiled.seeds,
+		Target: compiled.target, Seeds: seedsForCandidates(compiled.seeds, values),
 		Candidates: candidateRows(values),
 	}
 }
@@ -682,9 +684,23 @@ func requestForBatch(compiled compilation, batchIndex int, values []candidate) r
 		BatchIndex: batchIndex + 1, BatchCount: len(compiled.batches),
 		CandidatesObserved: len(compiled.candidates), CandidatesAdvertised: len(compiled.candidates),
 		CandidatesOmitted: 0, ProgramFrontier: frontierForRequest(compiled.coverage),
-		Target: compiled.target, Seeds: compiled.seeds,
+		Target: compiled.target, Seeds: seedsForCandidates(compiled.seeds, values),
 		Candidates: candidateRows(values),
 	}
+}
+
+func seedsForCandidates(seeds []seedRequest, values []candidate) []seedRequest {
+	batchRefs := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		batchRefs[value.ref] = struct{}{}
+	}
+	rows := append([]seedRequest(nil), seeds...)
+	for position := range rows {
+		if _, selectable := batchRefs[rows[position].CandidateRef]; !selectable {
+			rows[position].CandidateRef = ""
+		}
+	}
+	return rows
 }
 
 func candidateRows(values []candidate) []candidateRequest {
@@ -712,21 +728,27 @@ func cloneRelationEvidence(values []relationEvidenceRequest) []relationEvidenceR
 	return result
 }
 
-func validateResponse(value response, allowed map[string]struct{}) error {
-	if value.ActivityRefs == nil {
-		return fmt.Errorf("activity_refs must be an array")
+func decodeResponse(raw []byte, allowed map[string]struct{}) (response, error) {
+	value, err := llm.DecodeJSON[response](nil)(raw)
+	if err != nil {
+		return response{}, err
 	}
+	if value.ActivityRefs == nil {
+		return response{}, fmt.Errorf("activity_refs must be an array")
+	}
+	known := make([]string, 0, len(value.ActivityRefs))
 	seen := make(map[string]struct{}, len(value.ActivityRefs))
 	for _, ref := range value.ActivityRefs {
 		if _, ok := allowed[ref]; !ok {
-			return fmt.Errorf("activity_refs contains an unknown request-local ref")
+			continue
 		}
 		if _, duplicate := seen[ref]; duplicate {
-			return fmt.Errorf("activity_refs contains a duplicate ref")
+			continue
 		}
 		seen[ref] = struct{}{}
+		known = append(known, ref)
 	}
-	return nil
+	return response{ActivityRefs: known}, nil
 }
 
 func compileState(indexSHA string, batchIndex, batchCount int, wire []byte) ([]byte, error) {

@@ -116,7 +116,7 @@ func NewIntegrationUsageView(
 	if err := usage.ValidateAgainst(index, selected); err != nil {
 		return nil, fmt.Errorf("integration usage view: producer authority: %w", err)
 	}
-	if index.Target.Language != "python" && index.Target.Language != "go" {
+	if !programSemanticLanguage(index.Target.Language) {
 		return nil, fmt.Errorf(
 			"integration usage view: unsupported ProgramIndex language %q", index.Target.Language,
 		)
@@ -232,7 +232,7 @@ func (view IntegrationUsageView) Validate() error {
 	seenOperations := make(map[string]struct{})
 	for dependencyPosition, dependency := range view.Dependencies {
 		if !validCubeMapViewText(dependency.DependencyID, false) ||
-			(dependency.Language != "python" && dependency.Language != "go") ||
+			!programSemanticLanguage(dependency.Language) ||
 			(dependency.Kind != dependencies.KindExternal && dependency.Kind != dependencies.KindStdlib) ||
 			!validCubeMapViewText(dependency.Name, false) ||
 			!validCubeMapViewText(dependency.ModulePath, true) ||
@@ -427,14 +427,17 @@ func validateIntegrationUsageViewCoverage(value IntegrationUsageViewCoverage) er
 		value.DependenciesObserved > integrationdependency.MaxSelectedDependencies ||
 		value.DependenciesWithOperations > value.DependenciesObserved ||
 		value.ExternalRelationsObserved < 0 || value.CallsiteCandidatesObserved < 0 ||
-		value.OperationsAdvertised < 0 || value.OperationsAdvertised > integrationusage.MaxAdvertisedOperations ||
+		value.OperationsAdvertised < 0 ||
 		value.DependenciesWithOperations > value.OperationsAdvertised ||
 		value.CallsiteCandidatesOmitted < 0 || value.OutOfScopeCandidates < 0 ||
-		value.CallsiteCandidatesObserved != value.OperationsAdvertised+value.OutOfScopeCandidates+
-			value.CallsiteCandidatesOmitted ||
+		value.OperationsAdvertised > value.CallsiteCandidatesObserved ||
+		value.OutOfScopeCandidates > value.CallsiteCandidatesObserved-value.OperationsAdvertised ||
+		value.CallsiteCandidatesOmitted != value.CallsiteCandidatesObserved-
+			value.OperationsAdvertised-value.OutOfScopeCandidates ||
 		value.ExactExternalRelations < 0 || value.UnresolvedRuntimeRelations < 0 ||
-		value.ExactExternalRelations+value.UnresolvedRuntimeRelations != value.ExternalRelationsObserved ||
-		value.Selected < 0 || value.Selected > integrationusage.MaxSelectedUses ||
+		value.ExactExternalRelations > value.ExternalRelationsObserved ||
+		value.UnresolvedRuntimeRelations != value.ExternalRelationsObserved-value.ExactExternalRelations ||
+		value.Selected < 0 ||
 		value.Selected > value.OperationsAdvertised ||
 		value.ModelCalled != (value.OperationsAdvertised > 0) {
 		return fmt.Errorf("integration usage view: invalid producer coverage")

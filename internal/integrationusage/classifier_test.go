@@ -79,17 +79,146 @@ func TestRunRestoresAliasWitnessAndUsesLongestDependencyPrefix(t *testing.T) {
 	}
 }
 
-func TestRunRejectsUnknownAndDuplicateOperationRefs(t *testing.T) {
+func TestRunRestoresPythonWitnessAtExactCalleeColumn(t *testing.T) {
+	relationLocation := programindex.Location{Path: "app/jobs.py", Line: 8, Column: 5}
+	witnessLocation := programindex.Location{Path: "app/jobs.py", Line: 8, Column: 13}
+	index := integrationUsageIndexAt(
+		t, "uvicorn.run", "uvicorn.run", "run", relationLocation, witnessLocation,
+	)
+	selected := integrationUsageDependencies(t, "uvicorn")
+	provider := &integrationUsageProvider{response: []byte(
+		`{"uses":[{"operation_ref":"o1","label":"Start server","mechanism":"unknown"}]}`,
+	)}
+
+	result, err := Run(context.Background(), llm.Executor{}, provider, index, selected)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(result.Uses) != 1 || result.Uses[0].Operation.Callsite != witnessLocation {
+		t.Fatalf("exact witness callsite = %#v, want %#v", result.Uses, witnessLocation)
+	}
+}
+
+func TestSameSourceLineRejectsDifferentPathOrLine(t *testing.T) {
+	anchor := programindex.Location{Path: "app/jobs.py", Line: 8, Column: 5}
+	for _, witness := range []programindex.Location{
+		{Path: "other/jobs.py", Line: 8, Column: 13},
+		{Path: "app/jobs.py", Line: 9, Column: 13},
+	} {
+		if sameSourceLine(anchor, witness) {
+			t.Fatalf("sameSourceLine(%#v, %#v) = true", anchor, witness)
+		}
+	}
+}
+
+func TestRunRejectsConflictingKnownOperationAssignments(t *testing.T) {
 	index := integrationUsageIndex(t, "acme.send", "acme.send", "human callsite evidence")
 	selected := integrationUsageDependencies(t, "acme")
-	for _, response := range [][]byte{
-		[]byte(`{"uses":[{"operation_ref":"o999","label":"Send","mechanism":"unknown"}]}`),
-		[]byte(`{"uses":[{"operation_ref":"o1","label":"Send","mechanism":"unknown"},{"operation_ref":"o1","label":"Send again","mechanism":"unknown"}]}`),
-	} {
-		provider := &integrationUsageProvider{response: response}
-		if _, err := Run(context.Background(), llm.Executor{}, provider, index, selected); err == nil {
-			t.Fatalf("Run accepted response %s", response)
+	response := []byte(`{"uses":[{"operation_ref":"o1","label":"Send","mechanism":"unknown"},{"operation_ref":"o1","label":"Send again","mechanism":"unknown"}]}`)
+	provider := &integrationUsageProvider{response: response}
+	if _, err := Run(context.Background(), llm.Executor{}, provider, index, selected); err == nil ||
+		!strings.Contains(err.Error(), `conflicting assignment for request-local ref "o1"`) {
+		t.Fatalf("conflicting assignment error = %v", err)
+	}
+}
+
+func TestRunIgnoresUnknownOperationRefsBeforeValidationAndBounds(t *testing.T) {
+	index := integrationUsageIndex(t, "acme.send", "acme.send", "human callsite evidence")
+	selected := integrationUsageDependencies(t, "acme")
+	uses := make([]wireUse, 0, MaxSelectedUsesPerRequest+2)
+	for position := 0; position < MaxSelectedUsesPerRequest+1; position++ {
+		uses = append(uses, wireUse{OperationRef: fmt.Sprintf("o%d", 1000+position)})
+	}
+	uses = append(uses, wireUse{
+		OperationRef: "o1", Label: "Send audit event", Mechanism: "unknown",
+	})
+	raw, err := json.Marshal(response{Uses: uses})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := Run(
+		context.Background(), llm.Executor{}, &integrationUsageProvider{response: raw}, index, selected,
+	)
+	if err != nil {
+		t.Fatalf("Run mixed refs: %v", err)
+	}
+	if len(result.Uses) != 1 || result.Coverage.Selected != 1 ||
+		result.Uses[0].Label != "Send audit event" {
+		t.Fatalf("mixed result = %#v", result)
+	}
+
+	allUnknown, err := Run(
+		context.Background(), llm.Executor{},
+		&integrationUsageProvider{response: []byte(`{"uses":[{"operation_ref":"o999","label":"","mechanism":""}]}`)},
+		index, selected,
+	)
+	if err != nil {
+		t.Fatalf("Run all-unknown refs: %v", err)
+	}
+	if len(allUnknown.Uses) != 0 || allUnknown.Coverage.Selected != 0 {
+		t.Fatalf("all-unknown result = %#v", allUnknown)
+	}
+}
+
+func TestRunRetainsStrictSchemaForUnknownOperationRows(t *testing.T) {
+	index := integrationUsageIndex(t, "acme.send", "acme.send", "human callsite evidence")
+	selected := integrationUsageDependencies(t, "acme")
+	provider := &integrationUsageProvider{response: []byte(
+		`{"uses":[{"operation_ref":"o999","label":"","mechanism":"","confidence":1}]}`,
+	)}
+	if _, err := Run(context.Background(), llm.Executor{}, provider, index, selected); err == nil ||
+		!strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("strict schema error = %v", err)
+	}
+}
+
+func TestRunDeduplicatesIdenticalOperationAssignmentsBeforeApplyingBounds(t *testing.T) {
+	index := integrationUsageIndex(t, "acme.send", "acme.send", "human callsite evidence")
+	selected := integrationUsageDependencies(t, "acme")
+	wire := response{Uses: make([]wireUse, MaxSelectedUsesPerRequest+1)}
+	for position := range wire.Uses {
+		wire.Uses[position] = wireUse{
+			OperationRef: "o1", Label: "Send audit event", Mechanism: "unknown",
 		}
+	}
+	raw, err := json.Marshal(wire)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := Run(
+		context.Background(), llm.Executor{}, &integrationUsageProvider{response: raw}, index, selected,
+	)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(result.Uses) != 1 || result.Coverage.Selected != 1 ||
+		result.Uses[0].Label != "Send audit event" {
+		t.Fatalf("normalized result = %#v", result)
+	}
+}
+
+func TestClassifierContractRecordsAssignmentNormalization(t *testing.T) {
+	normalizedPrompt := strings.Join(strings.Fields(prompt), " ")
+	if !strings.Contains(normalizedPrompt, "ignored locally without retry") ||
+		!strings.Contains(normalizedPrompt, "Repeating a field-identical row is harmless") ||
+		!strings.Contains(normalizedPrompt, "ambiguous assignment") {
+		t.Fatalf("prompt does not describe assignment normalization: %s", prompt)
+	}
+	state, err := classifierState(
+		strings.Repeat("a", 64), strings.Repeat("b", 64), preparedCandidates{}, 1, 1, 0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contract struct {
+		Contract       string `json:"contract"`
+		ResponseSchema int    `json:"response_schema"`
+	}
+	if err := json.Unmarshal(state, &contract); err != nil {
+		t.Fatal(err)
+	}
+	if contract.Contract != "repomap.integrationusage.v6" || contract.ResponseSchema != 3 {
+		t.Fatalf("classifier state = %s", state)
 	}
 }
 
@@ -155,6 +284,91 @@ func TestRunBatchesCompleteOperationsWithGlobalRefs(t *testing.T) {
 	if result.Uses[0].Label != "Send final event" || result.Uses[0].Operation.DependencyID !=
 		selectedDependencyNamed(t, selected, "acme").Dependency.ID {
 		t.Fatalf("restored global selection = %#v", result.Uses[0])
+	}
+}
+
+func TestRunExecutesOpenFGAOperationVolumeAndValidatesArtifact(t *testing.T) {
+	const (
+		operationCount = 5_579
+		wantBatchCount = 22
+		wantFinalBatch = 203
+	)
+	batchCount := completeBatchCount(operationCount, MaxAdvertisedOperationsPerRequest)
+	responses := make([][]byte, batchCount)
+	for batchIndex := range responses {
+		start := batchIndex * MaxAdvertisedOperationsPerRequest
+		end := min(start+MaxAdvertisedOperationsPerRequest, operationCount)
+		wire := response{Uses: make([]wireUse, 0, end-start)}
+		for position := start; position < end; position++ {
+			wire.Uses = append(wire.Uses, wireUse{
+				OperationRef: fmt.Sprintf("o%d", position+1),
+				Label:        "Send event",
+				Mechanism:    "unknown",
+			})
+		}
+		raw, err := json.Marshal(wire)
+		if err != nil {
+			t.Fatal(err)
+		}
+		responses[batchIndex] = raw
+	}
+
+	index := integrationUsageGoIndexMany(t, operationCount)
+	selected := integrationUsageGoDependencies(t, "example.com/app/service", "net/http")
+	provider := &integrationUsageProvider{responses: responses}
+	result, err := Run(context.Background(), llm.Executor{}, provider, index, selected)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if batchCount != wantBatchCount || provider.calls != batchCount ||
+		len(provider.prompts) != batchCount {
+		t.Fatalf(
+			"batch count/calls/prompts = %d/%d/%d, want %d",
+			batchCount, provider.calls, len(provider.prompts), wantBatchCount,
+		)
+	}
+	for batchIndex, prompt := range provider.prompts {
+		var request request
+		if err := json.Unmarshal([]byte(prompt.User), &request); err != nil {
+			t.Fatalf("decode batch %d: %v", batchIndex+1, err)
+		}
+		start := batchIndex * MaxAdvertisedOperationsPerRequest
+		wantOperations := min(MaxAdvertisedOperationsPerRequest, operationCount-start)
+		if request.BatchIndex != batchIndex+1 || request.BatchCount != batchCount ||
+			request.Observed != operationCount || request.Omitted != 0 ||
+			len(request.Operations) != wantOperations ||
+			request.Operations[0].Ref != fmt.Sprintf("o%d", start+1) ||
+			request.Operations[len(request.Operations)-1].Ref != fmt.Sprintf("o%d", start+wantOperations) {
+			t.Fatalf("batch %d request = %#v", batchIndex+1, request)
+		}
+	}
+	var finalRequest request
+	if err := json.Unmarshal([]byte(provider.prompts[len(provider.prompts)-1].User), &finalRequest); err != nil {
+		t.Fatalf("decode final batch: %v", err)
+	}
+	if len(finalRequest.Operations) != wantFinalBatch {
+		t.Fatalf("final batch operations = %d, want %d", len(finalRequest.Operations), wantFinalBatch)
+	}
+	if result.Coverage.OperationsAdvertised != operationCount ||
+		result.Coverage.CallsiteCandidatesObserved != operationCount ||
+		result.Coverage.ExactExternalRelations != operationCount ||
+		result.Coverage.Selected != operationCount || len(result.Uses) != operationCount ||
+		!result.Coverage.ModelCalled {
+		t.Fatalf("complete result coverage = %#v, uses = %d", result.Coverage, len(result.Uses))
+	}
+	if err := result.ValidateAgainst(index, selected); err != nil {
+		t.Fatalf("ValidateAgainst: %v", err)
+	}
+	encoded, err := Encode(result)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	restored, err := Decode(encoded)
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if !reflect.DeepEqual(restored, result) {
+		t.Fatal("artifact round trip changed the complete result")
 	}
 }
 
@@ -241,16 +455,19 @@ func TestRunGoRestoresOnlyExactTypedExternalOperations(t *testing.T) {
 	}
 }
 
-func TestRunRejectsCrossBatchOperationRef(t *testing.T) {
+func TestRunIgnoresCrossBatchOperationRef(t *testing.T) {
 	index := integrationUsageIndexMany(t, MaxAdvertisedOperationsPerRequest+1, "acme.send", "acme.send")
 	selected := integrationUsageDependencies(t, "acme")
 	provider := &integrationUsageProvider{responses: [][]byte{
 		[]byte(`{"uses":[]}`),
 		[]byte(`{"uses":[{"operation_ref":"o1","label":"Send","mechanism":"unknown"}]}`),
 	}}
-	if _, err := Run(context.Background(), llm.Executor{}, provider, index, selected); err == nil ||
-		!strings.Contains(err.Error(), `unknown request-local ref "o1"`) {
-		t.Fatalf("cross-batch ref error = %v", err)
+	result, err := Run(context.Background(), llm.Executor{}, provider, index, selected)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(result.Uses) != 0 || result.Coverage.Selected != 0 {
+		t.Fatalf("cross-batch result = %#v", result)
 	}
 	if provider.calls != 2 {
 		t.Fatalf("provider calls = %d, want 2", provider.calls)
@@ -259,7 +476,16 @@ func TestRunRejectsCrossBatchOperationRef(t *testing.T) {
 
 func integrationUsageIndex(t *testing.T, sourceExpression, externalName, detail string) programindex.Index {
 	t.Helper()
-	callsite := &programindex.Location{Path: "app/jobs.py", Line: 8, Column: 11}
+	callsite := programindex.Location{Path: "app/jobs.py", Line: 8, Column: 11}
+	return integrationUsageIndexAt(t, sourceExpression, externalName, detail, callsite, callsite)
+}
+
+func integrationUsageIndexAt(
+	t *testing.T,
+	sourceExpression, externalName, detail string,
+	relationLocation, witnessLocation programindex.Location,
+) programindex.Index {
+	t.Helper()
 	index, err := programindex.New(programindex.Input{
 		ScenarioSHA256: strings.Repeat("a", 64),
 		SourceSHA256:   strings.Repeat("b", 64),
@@ -281,10 +507,10 @@ func integrationUsageIndex(t *testing.T, sourceExpression, externalName, detail 
 		Relations: []programindex.RelationInput{{
 			SourceRef: "external-call", Kind: programindex.RelationInvokesExternal,
 			FromRef: "caller", ToRefs: []string{"external"}, Resolution: programindex.ResolutionAlternatives,
-			Invocation: "awaited", Location: callsite, TargetsObserved: 1,
+			Invocation: "awaited", Location: &relationLocation, TargetsObserved: 1,
 			Witnesses: []programindex.Witness{{
 				Kind: pythonCallsiteCandidate, Detail: detail,
-				SourceExpression: sourceExpression, Location: callsite,
+				SourceExpression: sourceExpression, Location: &witnessLocation,
 			}},
 			WitnessesObserved: 1,
 		}},
@@ -336,6 +562,51 @@ func integrationUsageIndexMany(t *testing.T, count int, sourceExpression, extern
 		Relations: relations,
 		Coverage: programindex.CoverageInput{
 			Measured: true, ObjectsObserved: 3, RelationsObserved: count,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return index
+}
+
+func integrationUsageGoIndexMany(t *testing.T, count int) programindex.Index {
+	t.Helper()
+	relations := make([]programindex.RelationInput, 0, count)
+	for index := 0; index < count; index++ {
+		callsite := &programindex.Location{Path: "service/run.go", Line: 18 + index, Column: 9}
+		relations = append(relations, programindex.RelationInput{
+			SourceRef: fmt.Sprintf("external-call-%05d", index),
+			Kind:      programindex.RelationInvokesExternal,
+			FromRef:   "caller", ToRefs: []string{"external"}, Resolution: programindex.ResolutionExact,
+			Invocation: "sync", Location: callsite, TargetsObserved: 1,
+			Witnesses:         []programindex.Witness{{Kind: goStaticCallWitness, Location: callsite}},
+			WitnessesObserved: 1,
+		})
+	}
+	index, err := programindex.New(programindex.Input{
+		ScenarioSHA256: strings.Repeat("a", 64),
+		SourceSHA256:   strings.Repeat("b", 64),
+		Target: programindex.TargetInput{
+			Language: "go", Kind: "executable", Name: "service", Selector: "./cmd/service",
+			Sources:       []programindex.TargetSource{{FileRef: "f1", Path: "service/run.go"}},
+			AnchorFileRef: "f1", Seeds: []programindex.TargetSeedInput{},
+		},
+		Objects: []programindex.ObjectInput{
+			{SourceRef: "module", Kind: programindex.ObjectModule, Name: "example.com/app",
+				Visibility: programindex.VisibilityPublic},
+			{SourceRef: "package", Kind: programindex.ObjectPackage, Name: "example.com/app/service",
+				Visibility: programindex.VisibilityPublic, OwnerRef: "module", ContainerRef: "module"},
+			{SourceRef: "caller", Kind: programindex.ObjectFunction, Name: "Run",
+				Visibility: programindex.VisibilityPublic, OwnerRef: "package", ContainerRef: "package",
+				Location: &programindex.Location{Path: "service/run.go", Line: 12, Column: 1}},
+			{SourceRef: "external", Kind: programindex.ObjectExternalSymbol, Name: "net/http.Client.Do",
+				Visibility: programindex.VisibilityPublic,
+				External:   &programindex.ExternalSymbol{PackagePath: "net/http", Receiver: "Client", Name: "Do"}},
+		},
+		Relations: relations,
+		Coverage: programindex.CoverageInput{
+			Measured: true, ObjectsObserved: 4, RelationsObserved: count,
 		},
 	})
 	if err != nil {

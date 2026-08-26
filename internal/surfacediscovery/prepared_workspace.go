@@ -3,11 +3,11 @@ package surfacediscovery
 import (
 	"context"
 	"fmt"
-	"go/types"
 	"path/filepath"
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/gotarget"
@@ -15,26 +15,24 @@ import (
 	"golang.org/x/tools/go/ssa"
 )
 
-// PreparedWorkspace owns the one packages/types/SSA lifetime shared by every
-// selected Go target in an ordinary run. It is deliberately live-run-only:
-// callers cannot encode it, restore it in another run, or replace an exact
-// target binding after preparation.
+// PreparedWorkspace owns the compatible packages/types/SSA lifetimes shared
+// by selected Go targets in an ordinary run. Targets rooted in the same module
+// resolution context share one load universe. Targets rooted in different
+// module contexts retain separate universes so equal package paths can never
+// join unrelated *types.Package or *ssa.Package identities. It is deliberately
+// live-run-only: callers cannot encode it, restore it in another run, or
+// replace an exact target binding after preparation.
 //
 // Analyze projects independently allocated target artifacts from this typed
 // workspace. Sibling packages that were loaded for another selected target
 // remain outside the projection's exact admitted package set.
 type PreparedWorkspace struct {
-	root                string
-	goTarget            string
-	buildTags           []string
-	scenario            Scenario
-	bindings            map[string]Input
-	program             *ssa.Program
-	packages            []*ssa.Package
-	packageFacts        map[string]*packages.Package
-	loadedPackages      map[string]*packages.Package
-	allFunctions        map[*ssa.Function]bool
-	preparationCoverage ProgramCoverage
+	root      string
+	goTarget  string
+	buildTags []string
+	scenario  Scenario
+	bindings  map[string]preparedTargetBinding
+	universes map[string]*preparedLoadUniverse
 
 	// These counters are intentionally private instrumentation. Focused tests
 	// prove that target projections cannot accidentally repeat the expensive
@@ -43,9 +41,160 @@ type PreparedWorkspace struct {
 	ssaBuilds        int
 }
 
-// PrepareWorkspace loads the union of exact package scopes advertised by the
-// selected inputs and builds one SSA program. Every target is validated before
-// the workspace is returned, so a later Analyze never falls back to a new load.
+type preparedTargetBinding struct {
+	input       Input
+	universeKey string
+}
+
+// preparedLoadUniverse is one coherent packages.Load result and the SSA
+// program built exclusively from the *types.Package values owned by that
+// result. Maps keyed by package path are populated only after uniqueness in
+// this universe has been proved; they are never last-wins indexes.
+type preparedLoadUniverse struct {
+	program             *ssa.Program
+	ssaPackages         map[string]*ssa.Package
+	packageFacts        map[string]*packages.Package
+	loadedPackages      map[string]*packages.Package
+	allFunctions        map[*ssa.Function]bool
+	preparationCoverage ProgramCoverage
+}
+
+type preparedLoadGroup struct {
+	key    string
+	inputs []Input
+}
+
+const maxPreparedProjectionDiagnosticKeys = 8
+
+func preparedUniverseKey(target *AnalysisTargetInput) string {
+	if target == nil {
+		return ""
+	}
+	return target.ModuleDir + "\x00" + target.ModulePath
+}
+
+func preparedPackageKey(pkg PackageInput) string {
+	return pkg.ModuleDir + ":" + pkg.Path
+}
+
+// validatePreparedPackageKeys rejects a package path that claims two local
+// module owners inside one Go resolution context. A Go load can resolve only
+// one package for an import path; choosing either owner would be arbitrary.
+func validatePreparedPackageKeys(values []PackageInput) error {
+	owners := make(map[string]string, len(values))
+	for _, value := range values {
+		key := preparedPackageKey(value)
+		if prior, exists := owners[value.Path]; exists && prior != key {
+			return fmt.Errorf(
+				"surface discovery: prepared load universe has conflicting exact package keys %s; internal repomap package-scope invariant failed; repository changes are not required",
+				boundedPreparedKeys([]string{prior, key}),
+			)
+		}
+		owners[value.Path] = key
+	}
+	return nil
+}
+
+func indexPreparedSSAPackages(values []*ssa.Package) (map[string]*ssa.Package, error) {
+	result := make(map[string]*ssa.Package, len(values))
+	for _, pkg := range values {
+		if pkg == nil || pkg.Pkg == nil || pkg.Pkg.Path() == "" {
+			continue
+		}
+		packagePath := pkg.Pkg.Path()
+		if prior, exists := result[packagePath]; exists {
+			if prior == pkg {
+				continue
+			}
+			return nil, fmt.Errorf(
+				"surface discovery: prepared load universe produced distinct SSA packages for exact path %q; internal repomap package/type/SSA identity invariant failed; repository changes are not required",
+				packagePath,
+			)
+		}
+		result[packagePath] = pkg
+	}
+	return result, nil
+}
+
+func (universe *preparedLoadUniverse) projectPackages(
+	root string,
+	expected []PackageInput,
+) ([]*ssa.Package, map[string]bool, error) {
+	ssaPackages := make([]*ssa.Package, 0, len(expected))
+	modulePaths := make(map[string]bool)
+	expectedKeys := make([]string, 0, len(expected))
+	resolvedKeys := make([]string, 0, len(expected))
+	issues := make([]string, 0)
+	for _, value := range expected {
+		key := preparedPackageKey(value)
+		expectedKeys = append(expectedKeys, key)
+		facts := universe.packageFacts[value.Path]
+		ssaPackage := universe.ssaPackages[value.Path]
+		switch {
+		case !packageSafeForSSA(facts):
+			issues = append(issues, key+"=typed_facts_unavailable")
+			continue
+		case ssaPackage == nil || ssaPackage.Pkg == nil:
+			issues = append(issues, key+"=ssa_package_unavailable")
+			continue
+		case facts.Types != ssaPackage.Pkg:
+			issues = append(issues, key+"=types_ssa_identity_mismatch")
+			continue
+		}
+		moduleDir, ok := repositoryPackageModuleDirectory(root, facts)
+		if !ok || moduleDir != value.ModuleDir {
+			actual := "outside_repository"
+			if ok {
+				actual = moduleDir
+			}
+			issues = append(issues, key+"=module_directory:"+actual)
+			continue
+		}
+		resolvedKeys = append(resolvedKeys, key)
+		ssaPackages = append(ssaPackages, ssaPackage)
+		if facts.Module != nil && facts.Module.Path != "" {
+			modulePaths[facts.Module.Path] = true
+		}
+	}
+	if len(resolvedKeys) != len(expectedKeys) {
+		return nil, nil, fmt.Errorf(
+			"surface discovery: prepared workspace package projection is incomplete: expected=%d resolved=%d expected_keys=%s resolved_keys=%s issues=%s; internal repomap package/type/SSA identity invariant failed; repository changes are not required; retry with an updated repomap build and include this diagnostic when reporting the bug",
+			len(expectedKeys), len(resolvedKeys), boundedPreparedKeys(expectedKeys),
+			boundedPreparedKeys(resolvedKeys), boundedPreparedKeys(issues),
+		)
+	}
+	sort.Slice(ssaPackages, func(i, j int) bool {
+		return ssaPackagePath(ssaPackages[i]) < ssaPackagePath(ssaPackages[j])
+	})
+	return ssaPackages, modulePaths, nil
+}
+
+func boundedPreparedKeys(values []string) string {
+	ordered := append([]string(nil), values...)
+	sort.Strings(ordered)
+	omitted := 0
+	if len(ordered) > maxPreparedProjectionDiagnosticKeys {
+		omitted = len(ordered) - maxPreparedProjectionDiagnosticKeys
+		ordered = ordered[:maxPreparedProjectionDiagnosticKeys]
+	}
+	quoted := make([]string, len(ordered))
+	for index, value := range ordered {
+		quoted[index] = strconv.Quote(value)
+	}
+	result := "[" + strings.Join(quoted, ", ")
+	if omitted > 0 {
+		if len(quoted) > 0 {
+			result += ", "
+		}
+		result += fmt.Sprintf("+%d more", omitted)
+	}
+	return result + "]"
+}
+
+// PrepareWorkspace loads the union of exact package scopes advertised inside
+// each compatible module-resolution context and builds one SSA program per
+// context. Every target is validated before the workspace is returned, so a
+// later Analyze never falls back to a new load.
 func PrepareWorkspace(ctx context.Context, opts Options, inputs []Input) (*PreparedWorkspace, error) {
 	normalizedOpts, root, scenario, err := normalizeWorkspaceOptions(ctx, opts)
 	if err != nil {
@@ -55,9 +204,8 @@ func PrepareWorkspace(ctx context.Context, opts Options, inputs []Input) (*Prepa
 		return nil, fmt.Errorf("surface discovery: prepared workspace requires at least one exact target")
 	}
 
-	normalized := make([]Input, 0, len(inputs))
-	bindings := make(map[string]Input, len(inputs))
-	union := Input{}
+	bindings := make(map[string]preparedTargetBinding, len(inputs))
+	groups := make(map[string]*preparedLoadGroup)
 	for _, input := range inputs {
 		owned, normalizeErr := normalizeInput(input)
 		if normalizeErr != nil {
@@ -65,51 +213,96 @@ func PrepareWorkspace(ctx context.Context, opts Options, inputs []Input) (*Prepa
 		}
 		ref := owned.AnalysisTarget.TargetRef
 		if prior, duplicate := bindings[ref]; duplicate {
-			if !reflect.DeepEqual(prior, owned) {
+			if !reflect.DeepEqual(prior.input, owned) {
 				return nil, fmt.Errorf("surface discovery: prepared target %q has conflicting exact scopes", ref)
 			}
 			continue
 		}
-		bindings[ref] = cloneInput(owned)
-		normalized = append(normalized, owned)
-		union.ModuleDirs = append(union.ModuleDirs, owned.ModuleDirs...)
-		union.Packages = append(union.Packages, owned.Packages...)
+		key := preparedUniverseKey(owned.AnalysisTarget)
+		bindings[ref] = preparedTargetBinding{input: cloneInput(owned), universeKey: key}
+		group := groups[key]
+		if group == nil {
+			group = &preparedLoadGroup{key: key}
+			groups[key] = group
+		}
+		group.inputs = append(group.inputs, owned)
+	}
+
+	workspace := &PreparedWorkspace{
+		root: root, goTarget: normalizedOpts.GoTarget,
+		buildTags: append([]string(nil), normalizedOpts.BuildTags...), scenario: scenario,
+		bindings: bindings, universes: make(map[string]*preparedLoadUniverse, len(groups)),
+	}
+	orderedGroups := make([]*preparedLoadGroup, 0, len(groups))
+	for _, group := range groups {
+		orderedGroups = append(orderedGroups, group)
+	}
+	sort.Slice(orderedGroups, func(i, j int) bool { return orderedGroups[i].key < orderedGroups[j].key })
+	for _, group := range orderedGroups {
+		universe, loadCalls, ssaBuilds, prepareErr := prepareLoadUniverse(
+			ctx, normalizedOpts, root, scenario, group,
+		)
+		workspace.packageLoadCalls += loadCalls
+		workspace.ssaBuilds += ssaBuilds
+		if prepareErr != nil {
+			return nil, prepareErr
+		}
+		workspace.universes[group.key] = universe
+	}
+	return workspace, nil
+}
+
+func prepareLoadUniverse(
+	ctx context.Context,
+	opts Options,
+	root string,
+	scenario Scenario,
+	group *preparedLoadGroup,
+) (*preparedLoadUniverse, int, int, error) {
+	if group == nil || len(group.inputs) == 0 {
+		return nil, 0, 0, fmt.Errorf("surface discovery: prepared load universe is empty")
+	}
+	union := Input{AnalysisTarget: group.inputs[0].AnalysisTarget}
+	for _, input := range group.inputs {
+		union.ModuleDirs = append(union.ModuleDirs, input.ModuleDirs...)
+		union.Packages = append(union.Packages, input.Packages...)
 	}
 	union.ModuleDirs = normalizeModuleDirs(union.ModuleDirs)
 	union.Packages = normalizePackageInputs(union.Packages)
-	union.AnalysisTarget = normalized[0].AnalysisTarget
+	if err := validatePreparedPackageKeys(union.Packages); err != nil {
+		return nil, 0, 0, err
+	}
 
 	admitted := make(map[string]bool, len(union.Packages))
 	for _, pkg := range union.Packages {
 		admitted[pkg.Path] = true
 	}
 	loader := &analyzer{
-		ctx: ctx, opts: normalizedOpts, input: union, root: root,
+		ctx: ctx, opts: opts, input: union, root: root,
 		packageFacts:     make(map[string]*packages.Package),
 		admittedPackages: admitted,
 		modulePaths:      make(map[string]bool), functionIDs: make(map[*ssa.Function]string),
 		scenario: scenario,
 	}
 	if err := loader.load(); err != nil {
-		return nil, err
+		return nil, loader.packageLoadCalls, loader.ssaBuilds, err
 	}
-	for _, input := range normalized[1:] {
+	for _, input := range group.inputs {
 		loader.input = input
 		if err := loader.validateAnalysisTargetPackages(loader.loadedPackages); err != nil {
-			return nil, err
+			return nil, loader.packageLoadCalls, loader.ssaBuilds, err
 		}
 	}
-
-	return &PreparedWorkspace{
-		root: root, goTarget: normalizedOpts.GoTarget,
-		buildTags: append([]string(nil), normalizedOpts.BuildTags...), scenario: scenario,
-		bindings: bindings, program: loader.program,
-		packages:     append([]*ssa.Package(nil), loader.packages...),
+	ssaPackages, err := indexPreparedSSAPackages(loader.packages)
+	if err != nil {
+		return nil, loader.packageLoadCalls, loader.ssaBuilds, err
+	}
+	return &preparedLoadUniverse{
+		program: loader.program, ssaPackages: ssaPackages,
 		packageFacts: loader.packageFacts, loadedPackages: loader.loadedPackages,
 		allFunctions:        loader.allFunctions,
 		preparationCoverage: cloneProgramCoverage(loader.result.Coverage),
-		packageLoadCalls:    loader.packageLoadCalls, ssaBuilds: loader.ssaBuilds,
-	}, nil
+	}, loader.packageLoadCalls, loader.ssaBuilds, nil
 }
 
 // Analyze projects one exact target from a prepared workspace. A mismatched
@@ -137,14 +330,21 @@ func (workspace *PreparedWorkspace) Analyze(
 		return Result{}, err
 	}
 	bound, ok := workspace.bindings[input.AnalysisTarget.TargetRef]
-	if !ok || !reflect.DeepEqual(bound, input) {
+	if !ok || !reflect.DeepEqual(bound.input, input) {
 		return Result{}, fmt.Errorf(
 			"surface discovery: target %q is not bound to this prepared workspace",
 			input.AnalysisTarget.TargetRef,
 		)
 	}
+	universe := workspace.universes[bound.universeKey]
+	if universe == nil {
+		return Result{}, fmt.Errorf(
+			"surface discovery: target %q has no prepared load universe; internal repomap invariant failed; repository changes are not required",
+			input.AnalysisTarget.TargetRef,
+		)
+	}
 
-	a, err := workspace.analyzerFor(ctx, normalizedOpts, input)
+	a, err := workspace.analyzerFor(ctx, normalizedOpts, input, universe)
 	if err != nil {
 		return Result{}, err
 	}
@@ -155,66 +355,47 @@ func (workspace *PreparedWorkspace) analyzerFor(
 	ctx context.Context,
 	opts Options,
 	input Input,
+	universe *preparedLoadUniverse,
 ) (*analyzer, error) {
+	if universe == nil {
+		return nil, fmt.Errorf("surface discovery: prepared load universe is required")
+	}
 	admitted := make(map[string]bool, len(input.Packages))
 	modulePaths := make(map[string]bool)
+	ssaPackages, resolvedModulePaths, err := universe.projectPackages(workspace.root, input.Packages)
+	if err != nil {
+		return nil, err
+	}
 	for _, pkg := range input.Packages {
 		admitted[pkg.Path] = true
-		facts := workspace.packageFacts[pkg.Path]
-		if !packageSafeForSSA(facts) {
-			return nil, fmt.Errorf("surface discovery: admitted package %q is unavailable in prepared workspace", pkg.Path)
-		}
-		if facts.Module != nil && facts.Module.Main && facts.Module.Path != "" {
-			modulePaths[facts.Module.Path] = true
-		}
 	}
-
-	ssaPackages := make([]*ssa.Package, 0, len(input.Packages))
-	seenPackages := make(map[*types.Package]struct{}, len(input.Packages))
-	for _, pkg := range workspace.packages {
-		if pkg == nil || pkg.Pkg == nil || !admitted[pkg.Pkg.Path()] {
-			continue
-		}
-		facts := workspace.packageFacts[pkg.Pkg.Path()]
-		if facts == nil || facts.Types != pkg.Pkg {
-			continue
-		}
-		if _, duplicate := seenPackages[pkg.Pkg]; duplicate {
-			continue
-		}
-		seenPackages[pkg.Pkg] = struct{}{}
-		ssaPackages = append(ssaPackages, pkg)
-	}
-	sort.Slice(ssaPackages, func(i, j int) bool {
-		return ssaPackagePath(ssaPackages[i]) < ssaPackagePath(ssaPackages[j])
-	})
-	if len(ssaPackages) != len(input.Packages) {
-		return nil, fmt.Errorf("surface discovery: prepared workspace package projection is incomplete")
+	for modulePath := range resolvedModulePaths {
+		modulePaths[modulePath] = true
 	}
 
 	functions := make(map[*ssa.Function]bool)
-	for function := range workspace.allFunctions {
+	for function := range universe.allFunctions {
 		if function == nil {
 			continue
 		}
 		packagePath := functionPackagePath(function)
-		if !admitted[packagePath] || !functionBelongsToFacts(function, workspace.packageFacts[packagePath]) {
+		if !admitted[packagePath] || !functionBelongsToFacts(function, universe.packageFacts[packagePath]) {
 			continue
 		}
 		functions[function] = true
 	}
 	a := &analyzer{
 		ctx: ctx, opts: opts, input: input, root: workspace.root,
-		program: workspace.program, packages: ssaPackages,
-		packageFacts: workspace.packageFacts, loadedPackages: workspace.loadedPackages,
+		program: universe.program, packages: ssaPackages,
+		packageFacts: universe.packageFacts, loadedPackages: universe.loadedPackages,
 		admittedPackages: admitted, allFunctions: functions,
 		modulePaths: modulePaths, functionIDs: make(map[*ssa.Function]string),
 		scenario: workspace.scenario,
-		result:   Result{Coverage: cloneProgramCoverage(workspace.preparationCoverage)},
+		result:   Result{Coverage: cloneProgramCoverage(universe.preparationCoverage)},
 	}
-	a.recordPackageLoadOutcomes(workspace.packageClosure(input))
+	a.recordPackageLoadOutcomes(universe.packageClosure(input))
 	for _, function := range a.materializeSelectedLibraryCallables() {
-		if function != nil && functionBelongsToFacts(function, workspace.packageFacts[functionPackagePath(function)]) {
+		if function != nil && functionBelongsToFacts(function, universe.packageFacts[functionPackagePath(function)]) {
 			a.allFunctions[function] = true
 		}
 	}
@@ -237,13 +418,6 @@ func (workspace *PreparedWorkspace) analyzerFor(
 func analyzePreparedTarget(a *analyzer) (Result, error) {
 	if a == nil {
 		return Result{}, fmt.Errorf("surface discovery: prepared analyzer is unavailable")
-	}
-	if a.opts.CaptureCoreObjectIndex {
-		index, err := a.captureCoreObjectIndex()
-		if err != nil {
-			return Result{}, err
-		}
-		a.result.CoreObjectIndex = &index
 	}
 	if a.opts.CaptureExternalCallIndex {
 		index, err := newAnalyzerExternalCallIndexBuilder(a)
@@ -281,6 +455,13 @@ func analyzePreparedTarget(a *analyzer) (Result, error) {
 
 	direct := a.directCallIndex.finish()
 	a.result.DirectCallIndex = &direct
+	if a.opts.CaptureCoreObjectIndex {
+		index, err := a.captureCoreObjectIndex(direct)
+		if err != nil {
+			return Result{}, err
+		}
+		a.result.CoreObjectIndex = &index
+	}
 	if a.dynamicHandoffCapture != nil {
 		index, err := a.dynamicHandoffCapture.finish(direct)
 		if err != nil {
@@ -342,11 +523,11 @@ func normalizeWorkspaceOptions(
 	return opts, root, scenario, nil
 }
 
-func (workspace *PreparedWorkspace) packageClosure(input Input) map[string]*packages.Package {
+func (universe *preparedLoadUniverse) packageClosure(input Input) map[string]*packages.Package {
 	result := make(map[string]*packages.Package)
 	queue := make([]*packages.Package, 0, len(input.Packages))
 	for _, admitted := range input.Packages {
-		if pkg := workspace.loadedPackages[admitted.Path]; pkg != nil {
+		if pkg := universe.loadedPackages[admitted.Path]; pkg != nil {
 			queue = append(queue, pkg)
 		}
 	}

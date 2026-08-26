@@ -75,6 +75,15 @@ func captureRepositoryOnce(
 		if entry.submodule != "" {
 			continue
 		}
+		if corpus.ForbiddenPath(entry.path) {
+			continue
+		}
+		if corpus.ForbiddenPath(entry.fromPath) {
+			// Preserve the fact that an allowed current file is dirty without
+			// persisting the forbidden previous name.
+			entry.fromPath = ""
+			entry.xy = "M."
+		}
 		file, err := fingerprintDirtyFile(rootHandle, entry)
 		if err != nil {
 			return RepositoryState{}, err

@@ -179,6 +179,99 @@ func TestTargetPortfolioMayHonestlyRejectEveryCandidate(t *testing.T) {
 	}
 }
 
+func TestTargetPortfolioRejectsLibraryOnlyReductionWhenExactExecutableExists(t *testing.T) {
+	repository := targetPortfolioCorpus(t, false)
+	facts := targetPortfolioRuntimeFacts()
+	catalog := targetPortfolioRuntimeCatalog(t, facts)
+	provider := &targetPortfolioClientStub{
+		response: []byte(`{"default_file_ref":"f3","target_file_refs":["f3"]}`),
+	}
+
+	_, outcome, err := selectTargetsForRun(
+		context.Background(), "example.com/repomap", catalog, facts, repository,
+		"", nil, func() (llm.Provider, error) { return provider, nil },
+		llm.Executor{Enabled: false},
+	)
+	if err == nil || !strings.Contains(err.Error(), "exact executable authority") {
+		t.Fatalf("library-only reduction error = %v", err)
+	}
+	if outcome.SelectedFileRefs != 0 || provider.calls != 1 {
+		t.Fatalf("library-only reduction outcome = %#v, calls = %d", outcome, provider.calls)
+	}
+}
+
+func TestTargetPortfolioRequiresExecutableDefaultAndPreservesSupportingLibrary(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		response string
+		wantErr  bool
+	}{
+		{
+			name:     "library default with executable selected",
+			response: `{"default_file_ref":"f3","target_file_refs":["f1","f3"]}`,
+			wantErr:  true,
+		},
+		{
+			name:     "executable default with library selected in reverse response order",
+			response: `{"default_file_ref":"f1","target_file_refs":["f3","f1"]}`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repository := targetPortfolioCorpus(t, false)
+			facts := targetPortfolioRuntimeFacts()
+			catalog := targetPortfolioRuntimeCatalog(t, facts)
+			provider := &targetPortfolioClientStub{response: []byte(test.response)}
+
+			selection, outcome, err := selectTargetsForRun(
+				context.Background(), "example.com/repomap", catalog, facts, repository,
+				"", nil, func() (llm.Provider, error) { return provider, nil },
+				llm.Executor{Enabled: false},
+			)
+			if test.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "executable") {
+					t.Fatalf("authority error = %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			api := targetPortfolioRuntimeEntry(t, catalog, "cmd/api")
+			library := targetPortfolioRuntimeEntry(t, catalog, ".")
+			if selection.DefaultTargetRef != api.Candidate.Target.Ref ||
+				!exactRefSet(selection.TargetRefs, []string{
+					api.Candidate.Target.Ref, library.Candidate.Target.Ref,
+				}) || outcome.SelectedTargets != 2 || outcome.SelectedFileRefs != 2 {
+				t.Fatalf("selection = %#v, outcome = %#v", selection, outcome)
+			}
+		})
+	}
+}
+
+func TestTargetPortfolioLibraryOnlyCatalogRetainsLibraryAuthority(t *testing.T) {
+	repository := targetPortfolioCorpus(t, false)
+	facts := targetPortfolioRuntimeLibraryOnlyFacts()
+	catalog := targetPortfolioRuntimeCatalog(t, facts)
+	provider := &targetPortfolioClientStub{
+		response: []byte(`{"default_file_ref":"f3","target_file_refs":["f3"]}`),
+	}
+
+	selection, outcome, err := selectTargetsForRun(
+		context.Background(), "example.com/repomap", catalog, facts, repository,
+		"", nil, func() (llm.Provider, error) { return provider, nil },
+		llm.Executor{Enabled: false},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	library := targetPortfolioRuntimeEntry(t, catalog, ".")
+	if selection.DefaultTargetRef != library.Candidate.Target.Ref ||
+		len(selection.TargetRefs) != 1 || selection.TargetRefs[0] != library.Candidate.Target.Ref ||
+		outcome.SelectedTargets != 1 {
+		t.Fatalf("library-only selection = %#v, outcome = %#v", selection, outcome)
+	}
+}
+
 func TestTargetPortfolioRepoNameUsesModuleBeforeSemanticMajorSuffix(t *testing.T) {
 	for _, test := range []struct {
 		identity string
@@ -245,6 +338,22 @@ func targetPortfolioRuntimeFacts() gofacts.Facts {
 			targetPortfolioRuntimeEntrypoint(modulePath, "cmd/api", 1),
 			targetPortfolioRuntimeEntrypoint(modulePath, "cmd/worker", 1),
 		},
+	}
+}
+
+func targetPortfolioRuntimeLibraryOnlyFacts() gofacts.Facts {
+	modulePath := "example.com/repomap"
+	return gofacts.Facts{
+		Modules: []gofacts.ModuleFact{{
+			ID: "module-root", ModulePath: modulePath, ModuleDir: ".", Main: true,
+		}},
+		Packages: []gofacts.PackageFact{
+			targetPortfolioRuntimePackage(modulePath, "pkg/client", "client", []gofacts.PackageDeclaration{{
+				Kind: gofacts.PackageDeclarationFunc, Name: "NewClient",
+				Path: "pkg/client/client.go", Line: 1, Column: 6, ExecutableBody: true,
+			}}),
+		},
+		EntrypointPackages: []gofacts.Entrypoint{},
 	}
 }
 

@@ -68,6 +68,16 @@ func verifyPublishedStandaloneTargetAuthority(
 	manifest RunManifest,
 	identity StandaloneTargetBundleIdentity,
 ) error {
+	if identity.ProgramPagePortfolioSHA256 != "" {
+		portfolio, err := manifestStandaloneProgramPageAuthority(runDir, manifest)
+		if err != nil {
+			return err
+		}
+		if identity.ProgramPagePortfolioSHA256 != portfolio.SHA256 {
+			return fmt.Errorf("published standalone program page bundle does not match manifest-bound authority")
+		}
+		return nil
+	}
 	container, portfolio, err := manifestStandaloneTargetAuthority(runDir, manifest)
 	if err != nil {
 		return err
@@ -96,9 +106,15 @@ func inspectPublishedHTML(
 		if bundleErr != nil {
 			return nil, fmt.Errorf("published standalone target bundle: %w", bundleErr)
 		}
-		bundleIdentity, bundleErr = VerifyStandaloneTargetBundleHTML(
-			path, filepath.Dir(path), manifest,
-		)
+		if bundleIdentity.ProgramPagePortfolioSHA256 != "" {
+			bundleIdentity, bundleErr = VerifyStandaloneProgramPageBundleHTML(
+				path, filepath.Dir(path), manifest,
+			)
+		} else {
+			bundleIdentity, bundleErr = VerifyStandaloneTargetBundleHTML(
+				path, filepath.Dir(path), manifest,
+			)
+		}
 		if bundleErr != nil {
 			return nil, fmt.Errorf("published standalone target bundle authority: %w", bundleErr)
 		}
@@ -115,7 +131,8 @@ func inspectPublishedHTML(
 		return nil, fmt.Errorf("read published report html: %w", err)
 	}
 	var navigation *TargetNavigationPortfolio
-	if manifest.MaterialInputs.TargetPagePortfolioSHA256 != "" {
+	if manifest.MaterialInputs.TargetPagePortfolioSHA256 != "" ||
+		manifest.MaterialInputs.ProgramPagePortfolioSHA256 != "" {
 		navigation, err = LoadManifestTargetNavigation(filepath.Dir(path), manifest)
 		if err != nil {
 			return nil, fmt.Errorf("restore published target navigation: %w", err)

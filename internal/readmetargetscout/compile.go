@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path"
 	"reflect"
+	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -14,7 +15,7 @@ import (
 	"github.com/dvordrova/repomap/internal/corpus"
 )
 
-const preparationContract = "one atomic request; complete canonical corpus FileID-to-path authority encoded as a lossless path-component tree with FileID string leaves; complete current bytes of every tracked regular README and AGENTS.md guidance document; all other source bytes excluded; no semantic filtering, truncation, chunking, or partial result-v5"
+const preparationContract = "one atomic request; complete canonical corpus FileID-to-path authority encoded as a lossless path-component tree with FileID string leaves; complete closed prose FileID set derived from that same corpus; complete current bytes of every tracked regular README and AGENTS.md guidance document; all other source bytes excluded; no semantic filtering, truncation, chunking, or partial result-v6"
 
 // HasGuidanceFiles is the cheap metadata-only applicability check. Compile
 // repeats the authoritative check while building its exact request.
@@ -86,7 +87,7 @@ func Compile(
 	}
 	request := Request{
 		RepoName: repoName, FileCount: len(snapshot.Entries), FileTree: cloneFileTree(fileTree),
-		GuidanceDocuments: documents,
+		ProseFileRefs: canonicalProseFileRefs(authority), GuidanceDocuments: documents,
 	}
 	wire, err := json.Marshal(request)
 	if err != nil {
@@ -94,7 +95,7 @@ func Compile(
 	}
 	if len(wire) > MaxRequestBytes {
 		return Compilation{}, fmt.Errorf(
-			"readme target scout: complete guidance + lossless file-tree request is %d bytes, reliable atomic limit is %d; no provider request was made and an explicitly approved semantic partition or chunked repository-index contract is required",
+			"readme target scout: complete guidance + lossless file-tree + prose-ref authority request is %d bytes, reliable atomic limit is %d; no provider request was made and an explicitly approved semantic partition or chunked repository-index contract is required",
 			len(wire), MaxRequestBytes,
 		)
 	}
@@ -113,7 +114,8 @@ func Compile(
 func validateReadyCompilation(compilation Compilation) error {
 	if compilation.Version != CompilationVersion || compilation.State != StateReady || compilation.Reason != "" ||
 		compilation.RequestSHA256 == "" || compilation.corpusRef == "" || len(compilation.Request.GuidanceDocuments) == 0 ||
-		compilation.Request.FileCount != len(compilation.authority) || compilation.Request.FileTree == nil {
+		compilation.Request.FileCount != len(compilation.authority) || compilation.Request.FileTree == nil ||
+		compilation.Request.ProseFileRefs == nil {
 		return fmt.Errorf("readme target scout: invalid ready compilation identity")
 	}
 	if err := validateRepoName(compilation.Request.RepoName); err != nil {
@@ -133,6 +135,9 @@ func validateReadyCompilation(compilation Compilation) error {
 		if id == "" || validateRepoPath(filePath) != nil || compilation.authority[id] != filePath {
 			return fmt.Errorf("readme target scout: complete file tree authority mismatch")
 		}
+	}
+	if !reflect.DeepEqual(compilation.Request.ProseFileRefs, canonicalProseFileRefs(compilation.authority)) {
+		return fmt.Errorf("readme target scout: prose file authority mismatch")
 	}
 	seenDocuments := make(map[corpus.FileID]struct{}, len(compilation.Request.GuidanceDocuments))
 	for _, document := range compilation.Request.GuidanceDocuments {
@@ -169,9 +174,33 @@ func cloneDictionary(source map[corpus.FileID]string) map[corpus.FileID]string {
 
 func compilationSeal(compilation Compilation) string {
 	return sha256Hex([]byte(strings.Join([]string{
-		"readme-target-scout-compilation-v5", compilation.corpusRef,
+		"readme-target-scout-compilation-v6", compilation.corpusRef,
 		string(compilation.State), string(compilation.Reason), compilation.RequestSHA256,
 	}, "\x00")))
+}
+
+func canonicalProseFileRefs(authority map[corpus.FileID]string) []corpus.FileID {
+	type proseFile struct {
+		ref  corpus.FileID
+		path string
+	}
+	files := make([]proseFile, 0)
+	for fileRef, filePath := range authority {
+		if isProseEvidencePath(filePath) {
+			files = append(files, proseFile{ref: fileRef, path: filePath})
+		}
+	}
+	sort.Slice(files, func(left, right int) bool {
+		if files[left].path != files[right].path {
+			return files[left].path < files[right].path
+		}
+		return files[left].ref < files[right].ref
+	})
+	refs := make([]corpus.FileID, len(files))
+	for index, file := range files {
+		refs[index] = file.ref
+	}
+	return refs
 }
 
 func sha256Hex(value []byte) string {

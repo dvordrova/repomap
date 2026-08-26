@@ -376,7 +376,6 @@ func validateActivityPathViewCoverage(
 	}
 	if coverage.ActivitiesSelected > activityentrypoint.MaxSelectedEntrypoints ||
 		coverage.DependenciesSelected > integrationdependency.MaxSelectedDependencies ||
-		coverage.UsesObserved > activitypath.MaxOutcomes || coverage.UniqueCallers > activitypath.MaxRoutes ||
 		coverage.Routes != len(routes) || coverage.UniqueCallers != len(routes) ||
 		coverage.Outcomes != len(outcomes) || coverage.UsesObserved != len(outcomes) ||
 		coverage.ProjectedTraversalEdges > activitypath.MaxProjectedTraversalEdges ||

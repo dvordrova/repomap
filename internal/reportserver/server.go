@@ -27,9 +27,16 @@ import (
 )
 
 const (
-	maxReportJSONBytes = report.MaxReportJSONBytes
-	maxReportHTMLBytes = report.MaxOrdinaryReportHTMLBytes
-	capabilityBytes    = 32
+	maxReportJSONBytes        = report.MaxReportJSONBytes
+	maxReportHTMLBytes        = report.MaxOrdinaryReportHTMLBytes
+	capabilityBytes           = 32
+	maxCapabilityTokenBytes   = 256
+	MaxTCPPort                = 65535
+	maxConcurrentOpenRequests = 1
+	maxOpenLocationCoordinate = 10_000_000
+	reportReadHeaderTimeout   = 5 * time.Second
+	reportIdleTimeout         = 30 * time.Second
+	reportShutdownTimeout     = 3 * time.Second
 )
 
 type OpenFileFunc func(ctx context.Context, absolutePath string, line, column int) error
@@ -80,7 +87,7 @@ func Serve(ctx context.Context, opts Options) error {
 	if ctx == nil {
 		return fmt.Errorf("report server: context is required")
 	}
-	if opts.Port < 0 || opts.Port > 65535 {
+	if opts.Port < 0 || opts.Port > MaxTCPPort {
 		return fmt.Errorf("report server: port must be between 0 and 65535")
 	}
 
@@ -106,7 +113,7 @@ func Serve(ctx context.Context, opts Options) error {
 	}
 
 	url := fmt.Sprintf(
-		"http://127.0.0.1:%d%s/runs/%s/report.html#/program",
+		"http://127.0.0.1:%d%s/runs/%s/report.html#/repository",
 		address.Port,
 		capabilityURLPrefix(opts.Capability),
 		opts.InitialRunID,
@@ -125,8 +132,8 @@ func Serve(ctx context.Context, opts Options) error {
 	defer cancel()
 	server := &http.Server{
 		Handler:           serverHandler,
-		ReadHeaderTimeout: 5 * time.Second,
-		IdleTimeout:       30 * time.Second,
+		ReadHeaderTimeout: reportReadHeaderTimeout,
+		IdleTimeout:       reportIdleTimeout,
 		BaseContext: func(net.Listener) context.Context {
 			return serveCtx
 		},
@@ -135,7 +142,7 @@ func Serve(ctx context.Context, opts Options) error {
 	go func() {
 		defer close(shutdownDone)
 		<-serveCtx.Done()
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), reportShutdownTimeout)
 		defer shutdownCancel()
 		_ = server.Shutdown(shutdownCtx)
 	}()
@@ -200,7 +207,7 @@ func NewHandler(opts Options) (http.Handler, error) {
 		initialRun: opts.InitialRunID,
 		runs:       runs,
 		openFile:   openFile,
-		openSlot:   make(chan struct{}, 1),
+		openSlot:   make(chan struct{}, maxConcurrentOpenRequests),
 		logf:       opts.Logf,
 	}
 	mux := http.NewServeMux()
@@ -384,7 +391,7 @@ func (h *handler) serveRoot(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(
 		w,
 		r,
-		h.urlPrefix+"/runs/"+h.initialRun+"/report.html#/program",
+		h.urlPrefix+"/runs/"+h.initialRun+"/report.html#/repository",
 		http.StatusFound,
 	)
 }
@@ -417,8 +424,8 @@ func (h *handler) serveOpen(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "report run not found"})
 		return
 	}
-	if request.Line < 0 || request.Line > 10_000_000 ||
-		request.Column < 0 || request.Column > 10_000_000 {
+	if request.Line < 0 || request.Line > maxOpenLocationCoordinate ||
+		request.Column < 0 || request.Column > maxOpenLocationCoordinate {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid source location"})
 		return
 	}
@@ -650,7 +657,7 @@ func capabilityURLPrefix(capability string) string {
 }
 
 func validCapability(capability string) bool {
-	if capability == "" || len(capability) > 256 {
+	if capability == "" || len(capability) > maxCapabilityTokenBytes {
 		return false
 	}
 	for _, char := range capability {
@@ -669,7 +676,7 @@ func validExpectedHost(expectedHost string) bool {
 		return false
 	}
 	portNumber, err := strconv.Atoi(port)
-	if err != nil || portNumber < 1 || portNumber > 65535 {
+	if err != nil || portNumber < 1 || portNumber > MaxTCPPort {
 		return false
 	}
 	host = strings.Trim(host, "[]")

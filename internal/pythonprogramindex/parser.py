@@ -26,6 +26,16 @@ def source_location(path, node):
     return {"path": path, "line": line, "column": column}
 
 
+def callee_location(path, node):
+    if isinstance(node, ast.Attribute):
+        line = getattr(node, "end_lineno", 0)
+        end_column = getattr(node, "end_col_offset", -1)
+        column = end_column - len(node.attr.encode("utf-8")) + 1
+        if line >= 1 and column >= 1:
+            return {"path": path, "line": line, "column": column}
+    return source_location(path, node)
+
+
 def visibility(name, forced_internal=False):
     if forced_internal or name.startswith("_"):
         return "internal"
@@ -179,9 +189,11 @@ class Analyzer:
 
     def add_relation(self, kind, from_ref, to_refs, resolution, node, witness_kind,
                      detail="", invocation="", targets_observed=None, witnesses_observed=1,
-                     source_expression=""):
+                     source_expression="", witness_callee=None):
         path = self.current_path
         location = source_location(path, node)
+        witness_location = callee_location(path, witness_callee) \
+            if witness_callee is not None else location
         to_refs = sorted(set(to_refs))
         if targets_observed is None:
             targets_observed = len(to_refs) if to_refs else 1
@@ -194,8 +206,8 @@ class Analyzer:
             witness["detail"] = bounded_text(detail)
         if source_expression:
             witness["source_expression"] = bounded_text(source_expression)
-        if location is not None:
-            witness["location"] = location
+        if witness_location is not None:
+            witness["location"] = witness_location
         existing = self.relations_by_key.get(key)
         if existing is not None:
             existing["witnesses_observed"] += witnesses_observed
@@ -706,12 +718,13 @@ class RelationVisitor(ast.NodeVisitor):
             candidate.get("name") == "importlib.import_module"
 
     def emit_resolved(self, kind, from_ref, resolved, node, witness_kind, detail="", invocation="",
-                      exact_authorities=(), source_expression=""):
+                      exact_authorities=(), source_expression="", witness_callee=None):
         authority, ref = resolved
         if authority in exact_authorities and ref:
             self.analyzer.add_relation(
                 kind, from_ref, [ref], "exact", node, witness_kind, detail,
                 invocation=invocation, targets_observed=1, source_expression=source_expression,
+                witness_callee=witness_callee,
             )
             return True
         if authority in ("local", "external", "literal") and ref:
@@ -724,12 +737,13 @@ class RelationVisitor(ast.NodeVisitor):
             self.analyzer.add_relation(
                 kind, from_ref, [ref], "alternatives", node, witness_kind + "_candidate",
                 candidate_detail, invocation=invocation, targets_observed=1,
-                source_expression=source_expression,
+                source_expression=source_expression, witness_callee=witness_callee,
             )
             return True
         self.analyzer.add_relation(
             kind, from_ref, [], "unresolved", node, witness_kind, detail,
             invocation=invocation, targets_observed=1, source_expression=source_expression,
+            witness_callee=witness_callee,
         )
         return False
 
@@ -916,6 +930,7 @@ class RelationVisitor(ast.NodeVisitor):
             self.emit_resolved(
                 kind, self.scope.ref, resolved, node, "callsite", name, self.invocation,
                 exact_authorities=("literal",), source_expression=source_expression,
+                witness_callee=node.func,
             )
 
         arguments = list(node.args) + [value.value for value in node.keywords]

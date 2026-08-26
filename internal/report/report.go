@@ -8,7 +8,7 @@ import (
 )
 
 // CurrentFormatVersion is the canonical ProgramPortfolio report contract.
-const CurrentFormatVersion = 61
+const CurrentFormatVersion = 65
 
 // MaxReportJSONBytes is the single ordinary report.json bound shared by
 // generation, manifest verification, and the local report server.
@@ -39,6 +39,9 @@ type ReportData struct {
 	ActivityEntrypointView *ActivityEntrypointView `json:"activity_entrypoint_view,omitempty"`
 	IntegrationUsageView   *IntegrationUsageView   `json:"integration_usage_view,omitempty"`
 	ActivityPathView       *ActivityPathView       `json:"activity_path_view,omitempty"`
+	JSTSSurfaceCatalogView *JSTSSurfaceCatalogView `json:"js_ts_surface_catalog_view,omitempty"`
+	CrossSurfacePathView   *CrossSurfacePathView   `json:"cross_surface_path_view,omitempty"`
+	RuntimePortfolio       *RuntimePortfolioView   `json:"runtime_portfolio,omitempty"`
 
 	RepoName string   `json:"repo_name"`
 	Warnings []string `json:"warnings,omitempty"`

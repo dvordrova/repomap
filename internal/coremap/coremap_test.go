@@ -17,6 +17,7 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/readmetargetscout"
+	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
 
 func TestCompileProgramRunsCoreMapFromLanguageNeutralObjects(t *testing.T) {
@@ -258,11 +259,73 @@ func TestDynamicRelationAdvertisesEndpointSymbolButNotUnsentFileRef(t *testing.T
 	if _, ok := authority.symbols["s1"]; !ok || len(authority.files) != 0 {
 		t.Fatalf("dynamic relation authority = %#v", authority)
 	}
-	if err := validateRefinedBatchProposals([]proposal{{
+	blocks := []proposal{{
 		Name: "Dispatch", Purpose: "Runs supplied behavior.",
-		SymbolRefs: []string{"s1"}, FileRefs: []corpus.FileID{fileRef},
-	}}, authority.files, authority.symbols, true); err == nil {
-		t.Fatal("unadvertised file ref was accepted from global compilation authority")
+		SymbolRefs: []string{"s1", "s999", "s1"},
+		FileRefs:   []corpus.FileID{fileRef, "f999"},
+	}}
+	blocks = normalizeProposalRefs(blocks, authority.files, authority.symbols)
+	if err := validateRefinedBatchProposals(blocks, authority.files, authority.symbols, true); err != nil {
+		t.Fatalf("known authority was lost while discarding unknown refs: %v", err)
+	}
+	if len(blocks[0].FileRefs) != 0 || len(blocks[0].SymbolRefs) != 1 || blocks[0].SymbolRefs[0] != "s1" {
+		t.Fatalf("normalized proposal refs = %#v", blocks[0])
+	}
+
+	ungrounded := []proposal{{
+		Name: "Invented", Purpose: "Has no request-local authority.",
+		SymbolRefs: []string{"s999"}, FileRefs: []corpus.FileID{"f999"},
+	}}
+	ungrounded = normalizeProposalRefs(ungrounded, authority.files, authority.symbols)
+	if err := validateRefinedBatchProposals(ungrounded, authority.files, authority.symbols, true); err == nil {
+		t.Fatal("proposal grounded only by invented refs was accepted")
+	}
+}
+
+func TestRefinedProposalNormalizationDeduplicatesExactRecordsButPreservesDistinctClaims(t *testing.T) {
+	fileRef := corpus.FileID("f1")
+	file := FileFact{FileRef: fileRef, Path: "pkg/server.go"}
+	firstFact := SymbolFact{
+		NodeID: "node-1", Kind: programindex.ObjectFunction,
+		Declaration: surfacediscovery.Location{Path: file.Path, Line: 10},
+	}
+	secondFact := SymbolFact{
+		NodeID: "node-2", Kind: programindex.ObjectFunction,
+		Declaration: surfacediscovery.Location{Path: file.Path, Line: 20},
+	}
+	authority := map[string]symbolAuthority{
+		"s1": {fact: firstFact},
+		"s2": {fact: secondFact},
+	}
+	blocks := []proposal{
+		{
+			Name: "Trainer server construction", Purpose: "Builds the trainer gRPC server.",
+			FileRefs:   []corpus.FileID{fileRef, "f999", fileRef},
+			SymbolRefs: []string{"s1", "s999", "s2", "s1"},
+		},
+		{
+			Name: "Trainer server construction", Purpose: "Builds the trainer gRPC server.",
+			FileRefs: []corpus.FileID{fileRef}, SymbolRefs: []string{"s2", "s1"},
+		},
+		{
+			Name: "gRPC server construction", Purpose: "Builds shared gRPC servers.",
+			FileRefs: []corpus.FileID{fileRef}, SymbolRefs: []string{"s1", "s2"},
+		},
+	}
+
+	blocks = normalizeProposalRefs(blocks, map[corpus.FileID]FileFact{fileRef: file}, authority)
+	if len(blocks) != 2 {
+		t.Fatalf("normalized blocks = %#v, want one exact duplicate removed and both distinct claims", blocks)
+	}
+	if err := validateRefinedBatchProposals(blocks, map[corpus.FileID]FileFact{fileRef: file}, authority, true); err != nil {
+		t.Fatal(err)
+	}
+	restored := restoreBlocks(StageRefined, "target-1", blocks, map[corpus.FileID]FileFact{fileRef: file}, authority)
+	if restored[0].ID == restored[1].ID {
+		t.Fatalf("distinct semantic claims share stable ID %q", restored[0].ID)
+	}
+	if err := validateRestoredBlocks(StageRefined, "target-1", restored, true); err != nil {
+		t.Fatal(err)
 	}
 }
 
