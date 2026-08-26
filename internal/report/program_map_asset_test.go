@@ -49,8 +49,12 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 		[]byte(`How the code connects`),
 		[]byte(`Verify in code`),
 		[]byte(`Evidence limits`),
-		[]byte(`sourceAction(symbol.name, symbol.location)`),
-		[]byte(`sourceAction('Open file', { path: file.path, line: 0, column: 0 })`),
+		[]byte(`function renderEvidence(block)`),
+		[]byte(`function renderConnections(parent, block, connections)`),
+		[]byte(`displayProgramObjectName(symbol)`),
+		[]byte(`id="rm-target-switcher"`),
+		[]byte(`id="rm-page-context"`),
+		[]byte(`function reportRouteContext(route)`),
 		[]byte(`function canvasTopology(activeBlockIDs, complete)`),
 		[]byte(`function renderAreaSwitcher(selected, activeGroup)`),
 		[]byte(`Show complete map · `),
@@ -86,6 +90,10 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 		[]byte(`Choose a direction`),
 		[]byte(`rm-canvas-popover`),
 		[]byte(`element('button', 'rm-canvas-node`),
+		[]byte(`sourceAction('Open file'`),
+		[]byte(`Open source location `),
+		[]byte(`rm-connection__meta`),
+		[]byte(`id="rm-target-scope"`),
 	} {
 		if bytes.Contains(html, retired) {
 			t.Errorf("rendered orientation workspace retained old frontend %q", retired)
@@ -114,6 +122,77 @@ func TestOrientationClientKeepsCompleteEvidenceBehindDisclosure(t *testing.T) {
 	} {
 		if strings.Contains(reportAppJS, truncated) {
 			t.Errorf("orientation client truncates navigable evidence with %q", truncated)
+		}
+	}
+	for _, retired := range []string{
+		"sourceAction('Open file'",
+		"Open source location ",
+		"rm-connection__meta",
+	} {
+		if strings.Contains(reportAppJS, retired) {
+			t.Errorf("orientation evidence retained redundant presentation %q", retired)
+		}
+	}
+	for _, selector := range []string{
+		".rm-source-action--compact", ".rm-evidence-files", ".rm-evidence-file",
+		".rm-evidence-file__path", ".rm-evidence-symbols", ".rm-connection__locations",
+	} {
+		if !strings.Contains(reportAppCSS, selector) {
+			t.Errorf("grouped exact-source presentation is missing %q", selector)
+		}
+	}
+	for _, compactSignatureRule := range []string{
+		".rm-start__signature", "max-height: 2.9em", "-webkit-line-clamp: 2", "line-clamp: 2",
+	} {
+		if !strings.Contains(reportAppCSS, compactSignatureRule) {
+			t.Errorf("compact entrypoint signature presentation is missing %q", compactSignatureRule)
+		}
+	}
+}
+
+func TestOrientationClientUsesCompactTargetSwitcherAndRouteContext(t *testing.T) {
+	for _, required := range []string{
+		`<details class="rm-target-switcher" id="rm-target-switcher">`,
+		`<summary>`,
+		`id="rm-target-repository"`,
+		`id="rm-target-current"`,
+		`id="rm-target-count"`,
+		`id="rm-target-panel-count"`,
+		`id="rm-target-navigation"`,
+		`id="rm-page-context"`,
+	} {
+		if !strings.Contains(programTemplateHTML, required) {
+			t.Errorf("compact target switcher template is missing %q", required)
+		}
+	}
+	for _, required := range []string{
+		"function shortRepositoryName(value)",
+		"function reportRouteContext(route)",
+		"function updateHeaderContext(route)",
+		"function renderHeader()",
+		"state.model.defaultTargetID",
+		"rm-target-switcher__badge--current",
+		"if (event.key !== 'Escape' || !switcher.open) return",
+		"updateHeaderContext(route)",
+	} {
+		if !strings.Contains(reportAppJS, required) {
+			t.Errorf("compact target switcher client is missing %q", required)
+		}
+	}
+	for _, selector := range []string{
+		".rm-target-switcher", ".rm-target-switcher__panel", ".rm-target-switcher__targets",
+		".rm-target-switcher__target", ".rm-target-switcher__badges", ".rm-target-switcher__badge",
+	} {
+		if !strings.Contains(reportAppCSS, selector) {
+			t.Errorf("compact target switcher CSS is missing %q", selector)
+		}
+	}
+	for _, retired := range []string{
+		`id="rm-target-scope"`, `class="rm-site-header__targets"`,
+		`aria-label="Choose repository target"`,
+	} {
+		if strings.Contains(programTemplateHTML, retired) {
+			t.Errorf("compact target switcher retained flat target navigation %q", retired)
 		}
 	}
 }
@@ -180,6 +259,8 @@ func TestOrientationClientRendersExactJSTSSurfacesAndCrossSurfacePaths(t *testin
 		"#/program/surface/",
 		"#/program/path/",
 		"function renderJSTSRepositoryOverview(host)",
+		"Selected target overview",
+		"function crossSurfaceEmptyReason(catalog, coverage)",
 		"function renderSurfaceDetail(host, surface)",
 		"function renderCrossSurfacePathDetail(host, path)",
 		"sourceAction('Open surface evidence', surface.location)",

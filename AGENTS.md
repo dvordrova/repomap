@@ -229,6 +229,13 @@ sidecar tools.
 - Verify the process exit status and the generated manifest, sealed
   ProgramIndex set, report JSON, and report HTML. For cache changes, also verify
   a real second run and `repomap cache clear`.
+- Browser QA for a generated standalone report serves the narrow run root that
+  contains the report and any sibling target-run directories from a temporary
+  loopback-only `python3 -m http.server`, then opens the corresponding
+  `http://127.0.0.1:<port>/<run>/report.html` URL; do not rely on `file://`
+  behavior.
+  This is a development-only inspection step, not a supported repomap command,
+  product server, or checked-in sidecar entrypoint.
 - Run focused Go tests for changed contracts and `go vet` for changed
   packages. Never leave known broken tests.
 - Debug artifacts must never include API keys or Authorization headers and must
