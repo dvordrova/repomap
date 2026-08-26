@@ -155,8 +155,9 @@ sidecar tools.
   API candidate is preferred over a native-preview candidate when both are
   deliberately declared.
   Optional signatures and source-expression display text that match the
-  always-on persistence guard are omitted locally before sealing; the same
-  callsite identity, location, resolution, targets, and witness count remain.
+  always-on persistence guard are omitted locally before the first ProgramIndex
+  projection and sealing; the same callsite identity, location, resolution,
+  targets, and witness count remain.
   Sensitive required identity or semantic fields still fail closed.
   Shared contracts are supporting code, build/migration scripts remain tools,
   and a runtime script, library, or tool-only root must never promote itself

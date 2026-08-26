@@ -336,6 +336,40 @@ func TestSealOmitsAbsoluteSiblingTypeSignature(t *testing.T) {
 	}
 }
 
+func TestProgramTargetIdentityOmitsUnsafeSignatureBeforeProjection(t *testing.T) {
+	result := minimalResult(t, "typescript").Snapshot()
+	result.ProgramTargetID = ""
+	result.SHA256 = ""
+	declaration := Declaration{
+		Ref: "decl:f2:2:14:variable:app", Kind: "variable", Name: "app", QualifiedName: "src/index#app",
+		Signature: `{ shared: import("/host/repository/packages/shared/src/index").Shared; ` + strings.Repeat("field: number; ", 200),
+		Location:  result.Files[0].location(),
+	}
+	result.Declarations = append(result.Declarations, declaration)
+
+	if _, err := deriveProgramTargetID(result); err == nil || !strings.Contains(err.Error(), "invalid object input") {
+		t.Fatalf("raw unsafe signature ProgramTarget error = %v", err)
+	}
+	if err := bindProgramTargetIdentity(&result); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(result.ProgramTargetID, "program-target-") {
+		t.Fatalf("program target identity = %q", result.ProgramTargetID)
+	}
+	for _, candidate := range result.Declarations {
+		if candidate.Ref == declaration.Ref && candidate.Signature != "" {
+			t.Fatalf("unsafe signature survived identity binding: %q", candidate.Signature)
+		}
+	}
+	sealed, err := Seal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := BuildFromResult(sealed); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestResultRejectsDanglingFactReferences(t *testing.T) {
 	result := minimalResult(t, "typescript")
 	result.Surfaces = []Surface{{Ref: "surface:bad", Kind: SurfaceBrowser, Role: SurfaceProduct, Name: "bad", EntryRefs: []string{"decl:missing"}, EvidenceRefs: []string{}, Location: result.Files[0].location()}}

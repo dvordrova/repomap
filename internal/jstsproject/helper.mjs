@@ -555,7 +555,7 @@ function signatureOf(node) {
   const safeTypeText = (value) => {
     value = value.split(slash(rootPrefix)).join("")
     value = value.replace(/node_modules\/(?:@types\/)?(@[^/]+\/[^/]+|[^/]+)(?:\/[^"']*)?/g, "$1")
-    return value.slice(0, MAX_SIGNATURE_TEXT_CHARS)
+    return value.slice(0, MAX_SIGNATURE_TEXT_CHARS).trimEnd()
   }
   try {
     const checker = checkerForNode(node)
