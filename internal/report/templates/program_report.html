@@ -44,6 +44,10 @@
   </section>
   <div class="rm-toast" id="rm-toast" role="status" aria-live="polite" hidden></div>
 {{if .StandaloneTargetBundle}}{{.StandaloneTargetBundle}}{{else}}  <script type="application/json" id="rm-report-data">{{.DataJSON}}</script>{{end}}
+  <script id="rm-system-canvas-graph-js">{{.SystemCanvasGraphJS}}</script>
+  <script id="rm-system-canvas-interaction-js">{{.SystemCanvasInteractionJS}}</script>
+  <script id="rm-system-canvas-geometry-js">{{.SystemCanvasGeometryJS}}</script>
+  <script id="rm-system-canvas-renderer-js">{{.SystemCanvasRendererJS}}</script>
   <script id="rm-report-app-js">{{.ReportAppJS}}</script>
 </body>
 </html>

@@ -21,6 +21,22 @@ var reportAppCSS string
 //go:embed templates/report_app.js
 var reportAppJS string
 
+// The System canvas is split into deterministic browser modules so graph
+// projection, interaction policy, geometry, and DOM/SVG rendering can evolve
+// without turning report_app.js back into their shared mutable owner.
+//
+//go:embed templates/system_canvas_graph.js
+var systemCanvasGraphJS string
+
+//go:embed templates/system_canvas_interaction.js
+var systemCanvasInteractionJS string
+
+//go:embed templates/system_canvas_geometry.js
+var systemCanvasGeometryJS string
+
+//go:embed templates/system_canvas_renderer.js
+var systemCanvasRendererJS string
+
 //go:embed templates/program_report.html
 var programTemplateHTML string
 
@@ -173,11 +189,15 @@ func executeProgramReport(data programReportTemplateData) ([]byte, error) {
 	}
 	var buffer bytes.Buffer
 	err = programReportTmpl.Execute(&buffer, map[string]any{
-		"Title":                  data.Title,
-		"ReportAppCSS":           template.CSS(reportAppCSS),
-		"ReportAppJS":            template.JS(reportAppJS),
-		"DataJSON":               data.DataJSON,
-		"StandaloneTargetBundle": data.StandaloneTargetBundle,
+		"Title":                     data.Title,
+		"ReportAppCSS":              template.CSS(reportAppCSS),
+		"SystemCanvasGraphJS":       template.JS(systemCanvasGraphJS),
+		"SystemCanvasInteractionJS": template.JS(systemCanvasInteractionJS),
+		"SystemCanvasGeometryJS":    template.JS(systemCanvasGeometryJS),
+		"SystemCanvasRendererJS":    template.JS(systemCanvasRendererJS),
+		"ReportAppJS":               template.JS(reportAppJS),
+		"DataJSON":                  data.DataJSON,
+		"StandaloneTargetBundle":    data.StandaloneTargetBundle,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("report: render program shell: %w", err)
