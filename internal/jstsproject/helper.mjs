@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { pathToFileURL } from "node:url"
 
-const CONTRACT_VERSION = 4
+const CONTRACT_VERSION = 5
 const MAX_INPUT_BYTES = 32 * 1024 * 1024
 const MAX_CONFIG_BYTES = 1024 * 1024
 const MAX_PROJECT_CONFIGS = 32
@@ -33,7 +33,8 @@ try {
 } catch {
   fail("invalid JSON input")
 }
-if (request.version !== CONTRACT_VERSION || !Array.isArray(request.files) || !Array.isArray(request.compiler_packages)) {
+if (request.version !== CONTRACT_VERSION || !Array.isArray(request.files) ||
+    !Array.isArray(request.compiler_packages) || !Array.isArray(request.package_boundary_dirs)) {
   fail("unsupported input contract")
 }
 
@@ -46,6 +47,7 @@ const cleanRelative = (value) => {
   return normalized
 }
 const repositoryRoot = path.resolve(process.cwd())
+const repositoryRootPrefix = repositoryRoot.endsWith(path.sep) ? repositoryRoot : `${repositoryRoot}${path.sep}`
 const requestedProjectDir = request.project_dir === undefined || request.project_dir === "" ? "" : cleanRelative(request.project_dir)
 if (request.project_dir !== undefined && request.project_dir !== "" && !requestedProjectDir) {
   fail("invalid project directory")
@@ -58,6 +60,23 @@ const relative = (filename) => {
   if (resolved !== root && !resolved.startsWith(rootPrefix)) return ""
   return cleanRelative(slash(path.relative(root, resolved)))
 }
+const repositoryRelative = (filename) => {
+  const resolved = path.resolve(filename)
+  if (resolved !== repositoryRoot && !resolved.startsWith(repositoryRootPrefix)) return ""
+  return cleanRelative(slash(path.relative(repositoryRoot, resolved)))
+}
+
+const packageBoundaryDirs = []
+for (const candidate of request.package_boundary_dirs) {
+  const directory = cleanRelative(candidate)
+  if (!directory || (packageBoundaryDirs.length > 0 && compareText(packageBoundaryDirs.at(-1), directory) >= 0)) {
+    fail("invalid package boundary directories")
+  }
+  packageBoundaryDirs.push(directory)
+}
+const crossesPackageBoundary = (filePath) => packageBoundaryDirs.some(
+  (directory) => filePath === directory || filePath.startsWith(`${directory}/`),
+)
 
 const requestedCompilerPackages = []
 const validPackageName = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/
@@ -282,8 +301,15 @@ function referencedConfig(configFile, referencePath) {
   const base = path.resolve(path.dirname(absolute(configFile)), referencePath)
   const candidates = path.extname(base) ? [base] : [path.join(base, "tsconfig.json"), `${base}.json`]
   for (const candidate of candidates) {
+    if (!existsSync(candidate)) continue
     const config = relative(candidate)
-    if (config && existsSync(candidate)) return config
+    if (config) return crossesPackageBoundary(config) ? null : config
+    // A selected package owns only its deepest-manifest source subtree. A
+    // repository-resident project reference outside that subtree therefore
+    // names a sibling/ancestor package target. Validate that the exact config
+    // exists inside the analyzed repository, then treat it as an external
+    // compiler boundary instead of folding the other target into this page.
+    if (repositoryRelative(candidate)) return null
   }
   fail(`unresolved project reference ${referencePath} in ${configFile}`)
 }
@@ -303,7 +329,10 @@ function configGraph(rootConfig) {
     result.push({ path: configFile, document })
     const references = document?.references
     if (references !== undefined && !Array.isArray(references)) fail(`invalid project references in ${configFile}`)
-    const children = (references || []).map((value) => referencedConfig(configFile, value?.path)).sort(compareText)
+    const children = (references || [])
+      .map((value) => referencedConfig(configFile, value?.path))
+      .filter(Boolean)
+      .sort(compareText)
     for (const child of children) visit(child, depth + 1)
     active.delete(configFile)
   }

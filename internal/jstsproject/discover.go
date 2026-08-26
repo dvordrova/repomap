@@ -49,13 +49,14 @@ type packageManifest struct {
 }
 
 type helperRequest struct {
-	Version           int                     `json:"version"`
-	ProjectDir        string                  `json:"project_dir,omitempty"`
-	ConfigPath        string                  `json:"config_path,omitempty"`
-	CompilerPackages  []helperCompilerPackage `json:"compiler_packages"`
-	Files             []helperFile            `json:"files"`
-	PathAliasPrefixes []string                `json:"path_alias_prefixes"`
-	AdditionalFiles   []string                `json:"additional_files"`
+	Version             int                     `json:"version"`
+	ProjectDir          string                  `json:"project_dir,omitempty"`
+	ConfigPath          string                  `json:"config_path,omitempty"`
+	CompilerPackages    []helperCompilerPackage `json:"compiler_packages"`
+	PackageBoundaryDirs []string                `json:"package_boundary_dirs"`
+	Files               []helperFile            `json:"files"`
+	PathAliasPrefixes   []string                `json:"path_alias_prefixes"`
+	AdditionalFiles     []string                `json:"additional_files"`
 }
 
 type helperCompilerPackage struct {
@@ -205,10 +206,7 @@ func DiscoverSelected(ctx context.Context, repository *corpus.Corpus, root, sele
 			ErrTypeScriptCompilerUnavailable, manifestPath,
 		)
 	}
-	request := helperRequest{
-		Version: HelperVersion, CompilerPackages: compilerPackages,
-		Files: []helperFile{}, PathAliasPrefixes: []string{"@/", "@shared/"}, AdditionalFiles: []string{},
-	}
+	request := newHelperRequest(compilerPackages, nestedPackageDirs)
 	if projectDir != "." {
 		request.ProjectDir = projectDir
 	}
@@ -322,6 +320,20 @@ func DiscoverSelected(ctx context.Context, repository *corpus.Corpus, root, sele
 		return Result{}, err
 	}
 	return sealed, nil
+}
+
+func newHelperRequest(
+	compilerPackages []helperCompilerPackage,
+	packageBoundaryDirs []string,
+) helperRequest {
+	return helperRequest{
+		Version:             HelperVersion,
+		CompilerPackages:    append([]helperCompilerPackage{}, compilerPackages...),
+		PackageBoundaryDirs: append([]string{}, packageBoundaryDirs...),
+		Files:               []helperFile{},
+		PathAliasPrefixes:   []string{"@/", "@shared/"},
+		AdditionalFiles:     []string{},
+	}
 }
 
 // TargetSelector returns the exact selected-package selector advertised to --target.

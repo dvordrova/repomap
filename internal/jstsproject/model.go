@@ -23,7 +23,7 @@ import (
 
 const (
 	Version                      = 4
-	HelperVersion                = 4
+	HelperVersion                = 5
 	ArtifactFilename             = "jsts-project.json"
 	ProgramIndexFilename         = "program-index-jsts.json"
 	MaxArtifactBytes             = 64 << 20

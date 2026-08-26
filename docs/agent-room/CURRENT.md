@@ -323,8 +323,13 @@ diagnostic-journal availability never changes the cube's semantic contract.
    For each selected package target page, the JS/TS adapter likewise runs one
    prepared-project TypeScript Compiler API graph, binds every selected source
    byte by SHA-256, and reuses the sealed result for ProgramIndex, dependencies,
-   semantic cubes, surfaces, and cross-surface paths. It never installs
-   packages and never analyzes `node_modules` as repository source.
+   semantic cubes, surfaces, and cross-surface paths. Bounded project
+   references inside the owning package extend that compiler graph. An exact
+   repository-local reference outside the owning package is validated as a
+   cross-target boundary and not traversed or folded into the page; missing
+   references and references outside the analyzed repository still fail closed.
+   The adapter never installs packages and never analyzes
+   `node_modules` as repository source.
    Future language adapters may use tree-sitter, import resolution, lexical
    search, or conservative flow recovery, but must project through the same
    sealed handoff rather than making downstream cubes language-specific.
@@ -1208,7 +1213,7 @@ TypeScript compiler for the Compiler API but never runs an install. The
 versioned helper receives only the
 closed corpus path/ref catalog and configuration identity, runs with an empty
 environment, and emits deterministic JSON with repository-relative locations.
-Helper contract version 4 derives compiler candidates only from `typescript`
+Helper contract version 5 derives compiler candidates only from `typescript`
 or exact npm aliases to it declared by the selected package manifest. A nested
 selected package consults the repository-root manifest only when it declares no
 candidate itself, and each candidate resolves from the manifest scope that
@@ -1222,18 +1227,22 @@ Its caller bounds helper output and reduces stderr failures to a closed
 diagnostic before an error can reach journals; environment values and absolute
 host paths are never emitted. It honors
 `tsconfig.json`/`jsconfig.json` include/exclude, bounded recursively expanded
-solution-style project references, `baseUrl`, path aliases, and module
-resolution. Each referenced config is compiled with its own parsed options;
+in-package solution-style project references, `baseUrl`, path aliases, and
+module resolution. An existing repository-local reference outside the selected
+package is a cross-target boundary rather than an unresolved config or an
+instruction to absorb sibling sources. Each traversed in-package config is
+compiled with its own parsed options;
 overlapping tracked source has one deterministic canonical owning config rather
 than incompatible options being flattened together. JavaScript facts use the same syntax and resolver path but
 checker-derived call targets are retained only as alternatives rather than
-TypeScript-exact authority. Helper contract version 4 removes project-wide
-property-name matching: only compiler/type-resolved declarations or exact
-external imports establish a call target, while an unresolved property call is
-retained as a targetless unresolved frontier. Compiler-default-library calls
-and constructions use one version- and installation-independent
-`platform:javascript` external-symbol authority; it is not a package dependency
-and never enters integration selection. Calls and `new` expressions retain the
+TypeScript-exact authority. Helper contract version 5 retains version 4's
+removal of project-wide property-name matching: only compiler/type-resolved
+declarations or exact external imports establish a call target, while an
+unresolved property call is retained as a targetless unresolved frontier.
+Compiler-default-library calls and constructions use one version- and
+installation-independent `platform:javascript` external-symbol authority; it
+is not a package dependency and never enters integration selection. Calls and
+`new` expressions retain the
 closed invocation `call` or `construct`; an explicit local constructor is exact,
 while a synthetic or otherwise unbound construction remains unresolved rather
 than targeting a class by name. Version 4 of the sealed project artifact owns safe

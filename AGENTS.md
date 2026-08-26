@@ -127,8 +127,13 @@ sidecar tools.
   explicitly selected package target receives its own page, which uses an
   owner-prepared, repository-local TypeScript Compiler API to honor
   `tsconfig.json` or `jsconfig.json`, bounded solution-style
-  project references, aliases, and module resolution; Repomap never installs
-  npm, yarn, pnpm, or other packages. Browser and Node server surfaces plus
+  project references, aliases, and module resolution. A project reference that
+  stays inside the owning package extends that page's bounded compiler graph;
+  an exact repository-local reference outside the package is a cross-target
+  boundary and does not pull the sibling package into the page. Missing
+  references and references outside the analyzed repository still fail closed.
+  Repomap never installs npm, yarn, pnpm, or other packages. Browser and Node
+  server surfaces plus
   canonical safe, package-owned, tracked `package.json#bin` command/path pairs
   are product surfaces inside their owning page-local ProgramTarget. A CLI
   surface never invents a bin-wrapper-to-source relation: its entry refs stay
