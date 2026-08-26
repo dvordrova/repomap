@@ -61,6 +61,13 @@
     return node;
   }
 
+  function compactDisplayText(value, maxCharacters) {
+    var normalized = String(value || '').replace(/\s+/g, ' ').trim();
+    var characters = Array.from(normalized);
+    if (characters.length <= maxCharacters) return normalized;
+    return characters.slice(0, maxCharacters - 1).join('').trimEnd() + '…';
+  }
+
   function readPayload() {
     var node = document.getElementById('rm-report-data');
     if (!node) throw new Error('The embedded report payload is missing.');
@@ -2177,8 +2184,8 @@
     var copy = element('div');
     appendText(copy, 'p', 'rm-eyebrow', 'Selected entrypoint');
     appendText(copy, 'h1', '', displayProgramObjectName(activity));
-    appendText(copy, 'code', 'rm-entrypoint-header__signature',
-      activity.signature || humanSurfaceToken(activity.kind));
+    appendText(copy, 'code', 'rm-entrypoint-header__signature', compactDisplayText(
+      activity.signature || humanSurfaceToken(activity.kind), 240));
     appendText(copy, 'p', 'rm-entrypoint-header__facts', String(impacts.length) + ' core touchpoint' +
       (impacts.length === 1 ? '' : 's') + ' · ' + String(routes.length) + ' selected integration path' +
       (routes.length === 1 ? '' : 's'));
@@ -2346,7 +2353,7 @@
       var route = element('a', 'rm-start__name', start.name + ' →');
       route.href = routeForActivity(start.id);
       item.appendChild(route);
-      appendText(item, 'code', 'rm-start__signature', start.signature || start.kind);
+      appendText(item, 'code', 'rm-start__signature', compactDisplayText(start.signature || start.kind, 120));
       item.appendChild(sourceAction('Open declaration', start.location));
       list.appendChild(item);
     });

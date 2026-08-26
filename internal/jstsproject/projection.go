@@ -89,6 +89,20 @@ func deriveProgramTargetID(result Result) (string, error) {
 	return index.Target.ID, nil
 }
 
+func bindProgramTargetIdentity(result *Result) error {
+	// ProgramIndex construction validates every display field. Normalize
+	// optional persistence-sensitive metadata before the first projection, not
+	// only later in Seal, so a disposable helper signature cannot block the
+	// target's exact structural identity.
+	omitPersistenceSensitiveOptionalMetadata(result)
+	targetID, err := deriveProgramTargetID(*result)
+	if err != nil {
+		return err
+	}
+	result.ProgramTargetID = targetID
+	return nil
+}
+
 func programIndexFor(result Result, scenarioSHA string) (programindex.Index, error) {
 	objects := make([]programindex.ObjectInput, 0, len(result.Declarations)+len(result.Imports)+len(result.Calls))
 	declarationByRef := make(map[string]Declaration, len(result.Declarations))

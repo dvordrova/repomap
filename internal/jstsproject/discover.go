@@ -310,11 +310,9 @@ func DiscoverSelected(ctx context.Context, repository *corpus.Corpus, root, sele
 		result.Project.EntryFileRefs = append(result.Project.EntryFileRefs, script.EntryFileRefs...)
 	}
 	result.ProductPaths = buildProductPaths(result)
-	targetID, err := deriveProgramTargetID(result)
-	if err != nil {
+	if err := bindProgramTargetIdentity(&result); err != nil {
 		return Result{}, err
 	}
-	result.ProgramTargetID = targetID
 	sealed, err := Seal(result)
 	if err != nil {
 		return Result{}, err

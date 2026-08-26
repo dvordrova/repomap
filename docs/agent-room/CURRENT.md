@@ -672,6 +672,9 @@ diagnostic-journal availability never changes the cube's semantic contract.
     evidence remain unchanged. Node details may expose only
     validated purpose, signature, responsibility membership, bounded selected
     caller/operation/mechanism summaries, authority, and exact source actions.
+    Retained display signatures render as whitespace-normalized, explicitly
+    ellipsized previews so an inferred type cannot dominate the orientation
+    layout; the canonical artifact and exact source action remain unchanged.
     Project each page's validated CoreMap into that same workspace: grouping,
     names, and purposes remain model-owned hypotheses, while every
     representative ID, kind, name, visibility, declaration location, module
@@ -1249,12 +1252,13 @@ than targeting a class by name. Version 4 of the sealed project artifact owns sa
 package, lockfile, script-kind, tool-config, source-root and entry facts plus
 canonical `package.json#bin` command/path pairs bound to exact tracked,
 selected-package-owned FileRefs; raw dependency locators and script commands
-are not persisted. Before sealing, the adapter locally omits only optional
-signature and source-expression display text matched by the always-on
-persistence guard, including the matching product-path label. Call identity,
-location, resolution, target authority, and witness accounting remain exact;
-sensitive required identity or semantic fields still fail closed. Encode and
-decode reapply the same guard to the complete artifact bytes.
+are not persisted. Before the first ProgramIndex projection and sealing, the
+adapter locally omits only optional signature and source-expression display
+text matched by the always-on persistence guard, including the matching
+product-path label. Call identity, location, resolution, target authority, and
+witness accounting remain exact; sensitive required identity or semantic
+fields still fail closed. Encode and decode reapply the same guard to the
+complete artifact bytes.
 
 The adapter projects modules, qualified declarations, imports, exports,
 re-exports, direct calls, unresolved joints, and external symbols into the

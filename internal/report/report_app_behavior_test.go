@@ -137,6 +137,8 @@ const exposure = [
   '    selectedReportRoute: selectedReportRoute,',
   '    renderRepositoryFallback: renderRepositoryFallback,',
   '    renderActivityDetail: renderActivityDetail,',
+  '    renderStarts: renderStarts,',
+  '    compactDisplayText: compactDisplayText,',
   '    renderIntegrationDetail: renderIntegrationDetail,',
   '    renderEvidence: renderEvidence,',
   '    connectionsFor: connectionsFor,',
@@ -159,6 +161,13 @@ const activity = {
   id: 'entry/start here', name: 'Start here', kind: 'function', signature: 'start()',
   location: { path: 'app/main.py', line: 7, column: 1 }
 };
+
+const oversizedSignature = '(): {\n' + Array.from({ length: 400 }, (_, index) =>
+  'field' + index + ': number;').join(' ') + '\n}';
+const compactSignature = api.compactDisplayText(oversizedSignature, 120);
+check(Array.from(compactSignature).length <= 120 && compactSignature.endsWith('…') &&
+  !compactSignature.includes('\n'),
+  'oversized signatures must become an explicit bounded one-line preview');
 const block = {
   id: 'core/execution', name: 'Execution core', purpose: 'Runs the application.',
   files: [{ path: 'app/execution.py' }], symbols: [], depth: 0
@@ -229,6 +238,20 @@ api.setState({
     revision: model.revision, pathPrefix: ''
   }
 });
+
+const oversizedActivity = {
+  id: 'entry:oversized-signature', name: 'Large inferred type', kind: 'function',
+  signature: oversizedSignature, location: { path: 'app/main.py', line: 30, column: 1 }
+};
+model.activityByID[oversizedActivity.id] = oversizedActivity;
+model.target = { kind: 'library' };
+const startsHost = new TestElement('main');
+api.renderStarts(startsHost, { symbols: [{ id: oversizedActivity.id }] });
+const renderedSignature = descendants(startsHost).find((node) => node.className === 'rm-start__signature');
+check(!!renderedSignature && renderedSignature.textContent === api.compactDisplayText(oversizedSignature, 120),
+  'responsibility entrypoint rows must render only the bounded signature preview');
+delete model.activityByID[oversizedActivity.id];
+delete model.target;
 
 check(api.selectedReportRoute().kind === 'repository',
   'an explicit #/repository route must render the repository fallback');

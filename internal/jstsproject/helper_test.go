@@ -691,6 +691,12 @@ export function render(): string { return view() }
 
 func TestNestedPackageKeepsSiblingProjectReferenceAsExternalBoundary(t *testing.T) {
 	root := preparedTempProject(t)
+	var sharedSource strings.Builder
+	sharedSource.WriteString("export class Shared { value = true }\nexport function makeShared() { return { shared: new Shared()")
+	for index := 0; index < 400; index++ {
+		_, _ = fmt.Fprintf(&sharedSource, ", field%d: %d", index, index)
+	}
+	sharedSource.WriteString(" } }\n")
 	files := map[string]string{
 		"packages/app/package.json": `{"name":"app"}`,
 		"packages/app/src/main.ts":  "import { makeShared } from \"../../shared/src/index\"\nexport const app = makeShared()\n",
@@ -700,7 +706,7 @@ func TestNestedPackageKeepsSiblingProjectReferenceAsExternalBoundary(t *testing.
   "compilerOptions": {"module": "ESNext", "moduleResolution": "bundler", "strict": true}
 }`,
 		"packages/shared/package.json": `{"name":"shared"}`,
-		"packages/shared/src/index.ts": "export class Shared { value = true }\nexport function makeShared() { return new Shared() }\n",
+		"packages/shared/src/index.ts": sharedSource.String(),
 		"packages/shared/tsconfig.json": `{
   "include": ["src/**/*.ts"],
   "references": [{"path": "./missing-child"}],
@@ -737,6 +743,19 @@ func TestNestedPackageKeepsSiblingProjectReferenceAsExternalBoundary(t *testing.
 		if strings.HasPrefix(file.Path, "packages/shared/") {
 			t.Fatalf("sibling package source leaked into selected package page: %#v", file)
 		}
+	}
+	foundApp := false
+	for _, declaration := range result.Declarations {
+		if declaration.Name != "app" {
+			continue
+		}
+		foundApp = true
+		if declaration.Signature != "" {
+			t.Fatalf("unsafe inferred sibling signature was retained: %q", declaration.Signature)
+		}
+	}
+	if !foundApp {
+		t.Fatalf("app declaration was not retained: %#v", result.Declarations)
 	}
 
 	writeTestFile(t, filepath.Dir(root), "outside-project/tsconfig.json", `{"include":["src/**/*.ts"]}`)
