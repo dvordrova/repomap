@@ -18,7 +18,7 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-func TestRepositoryLanguagesActivatesOneProjectJSTS(t *testing.T) {
+func TestRepositoryLanguagesActivatesJSTSProjects(t *testing.T) {
 	for _, test := range []struct {
 		name  string
 		files map[string]string
@@ -45,7 +45,7 @@ func TestRepositoryLanguagesActivatesOneProjectJSTS(t *testing.T) {
 			want:  repositoryLanguageEvidence{JavaScriptTypeScript: true},
 		},
 		{
-			name:  "multiple nested packages activate fail-closed discovery",
+			name:  "multiple nested packages activate multi-target discovery",
 			files: map[string]string{"web/package.json": `{}`, "web/main.ts": "export {}\n", "admin/package.json": `{}`, "admin/main.ts": "export {}\n"},
 			want:  repositoryLanguageEvidence{JavaScriptTypeScript: true},
 		},
@@ -305,6 +305,97 @@ func TestSelectJSTSRejectsProjectWithStaleManifestFileRef(t *testing.T) {
 	}
 }
 
+func TestMaterializeSelectedJSTSProjectsRetainsEveryExactPackageBinding(t *testing.T) {
+	repository := pythonTargetCorpus(t, map[string]string{
+		"admin/package.json": `{"name":"web"}`,
+		"admin/src/main.ts":  "export const admin = true\n",
+		"front/package.json": `{"name":"web"}`,
+		"front/src/main.ts":  "export const front = true\n",
+	})
+	adminProject := jsTSTestProjectAt(
+		t, repository, "typescript", "admin/package.json", "admin/src/main.ts",
+	)
+	frontProject := jsTSTestProjectAt(
+		t, repository, "typescript", "front/package.json", "front/src/main.ts",
+	)
+	adminTarget, err := jstsproject.TargetFromResult(adminProject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frontTarget, err := jstsproject.TargetFromResult(frontProject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminKey := repositoryTargetKey{Adapter: repositoryTargetAdapterJSTS, Ref: adminTarget.Ref}
+	frontKey := repositoryTargetKey{Adapter: repositoryTargetAdapterJSTS, Ref: frontTarget.Ref}
+	plan := repositoryTargetPlan{
+		Targets: []repositoryTypedTarget{
+			{
+				Key: adminKey, Selector: adminTarget.Selector,
+				FileRefs: []corpus.FileID{corpus.FileID(adminTarget.ManifestFileRef)}, JSTS: &adminTarget,
+			},
+			{
+				Key: frontKey, Selector: frontTarget.Selector,
+				FileRefs: []corpus.FileID{corpus.FileID(frontTarget.ManifestFileRef)}, JSTS: &frontTarget,
+			},
+		},
+		Default: frontKey,
+		Outcome: targetPortfolioRunOutcome{
+			SelectedRef: frontKey.String(), SelectedTargets: 2,
+			SelectedTargetRefs: []string{adminKey.String(), frontKey.String()},
+		},
+	}
+	ordered, err := repositoryTargetExecutionOrder(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	projects := map[string]jstsproject.Result{
+		adminProject.Project.Selector: adminProject,
+		frontProject.Project.Selector: frontProject,
+	}
+	calls := []string{}
+	materialized, err := materializeSelectedJSTSProjects(
+		context.Background(),
+		repositoryTargetDispatchOptions{
+			Repo: t.TempDir(), Corpus: repository, Plan: plan,
+			DiscoverJSTSFn: func(
+				_ context.Context, _ *corpus.Corpus, _ string, selector string,
+			) (jstsproject.Result, error) {
+				calls = append(calls, selector)
+				project, ok := projects[selector]
+				if !ok {
+					return jstsproject.Result{}, fmt.Errorf("unexpected selector %q", selector)
+				}
+				return project.Snapshot(), nil
+			},
+		},
+		ordered,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 2 || calls[0] != frontTarget.Selector || calls[1] != adminTarget.Selector {
+		t.Fatalf("materialization selectors = %v, want [%s %s]", calls, frontTarget.Selector, adminTarget.Selector)
+	}
+	if len(materialized) != 2 {
+		t.Fatalf("materialized projects = %d, want 2", len(materialized))
+	}
+	for _, target := range []repositoryTypedTarget{plan.Targets[0], plan.Targets[1]} {
+		project, ok := materialized[target.Key]
+		if !ok {
+			t.Fatalf("materialized project for %s is absent", target.Key.String())
+		}
+		if project.Project.Selector != target.Selector ||
+			project.Project.ManifestFileRef != target.JSTS.ManifestFileRef {
+			t.Fatalf("materialized project for %s = %#v", target.Key.String(), project.Project)
+		}
+		if err := validateJSTSTargetMaterialization(repository, *target.JSTS, project); err != nil {
+			t.Fatalf("validate materialized project for %s: %v", target.Key.String(), err)
+		}
+	}
+}
+
 func jsTSTestProject(
 	t *testing.T,
 	repository *corpus.Corpus,
@@ -312,35 +403,52 @@ func jsTSTestProject(
 ) jstsproject.Result {
 	t.Helper()
 	manifestPath := ""
-	var manifestRef corpus.FileID
 	for _, entry := range repository.Entries() {
 		if path.Base(entry.Path) == "package.json" {
 			if manifestPath != "" {
 				t.Fatal("fixture has multiple package manifests")
 			}
-			manifestPath, manifestRef = entry.Path, entry.ID
+			manifestPath = entry.Path
 		}
 	}
 	if manifestPath == "" {
 		t.Fatal("fixture has no package.json")
 	}
-	selector := "jsts:" + manifestPath
-	projectRef := "project:root-package"
-	if path.Dir(manifestPath) != "." {
-		projectRef = "project:package:" + string(manifestRef)
-	}
 	var sourcePath string
-	var sourceRef corpus.FileID
 	for _, entry := range repository.Entries() {
 		isTypeScript := strings.HasSuffix(entry.Path, ".ts") || strings.HasSuffix(entry.Path, ".tsx")
 		isJavaScript := strings.HasSuffix(entry.Path, ".js") || strings.HasSuffix(entry.Path, ".jsx")
 		if (language == "typescript" && isTypeScript) || (language == "javascript" && isJavaScript) {
-			sourcePath, sourceRef = entry.Path, entry.ID
+			sourcePath = entry.Path
 			break
 		}
 	}
 	if sourcePath == "" {
 		t.Fatalf("fixture has no %s source", language)
+	}
+	return jsTSTestProjectAt(t, repository, language, manifestPath, sourcePath)
+}
+
+func jsTSTestProjectAt(
+	t *testing.T,
+	repository *corpus.Corpus,
+	language string,
+	manifestPath string,
+	sourcePath string,
+) jstsproject.Result {
+	t.Helper()
+	manifestRef, ok := repository.ID(manifestPath)
+	if !ok || path.Base(manifestPath) != "package.json" {
+		t.Fatalf("fixture manifest %q is unavailable", manifestPath)
+	}
+	sourceRef, ok := repository.ID(sourcePath)
+	if !ok {
+		t.Fatalf("fixture source %q is unavailable", sourcePath)
+	}
+	selector := "jsts:" + manifestPath
+	projectRef := "project:root-package"
+	if path.Dir(manifestPath) != "." {
+		projectRef = "project:package:" + string(manifestRef)
 	}
 	moduleRef := "module:" + string(sourceRef)
 	fileSHA256 := strings.Repeat("b", 64)

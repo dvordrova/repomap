@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"sort"
 	"strings"
 
 	"github.com/dvordrova/repomap/internal/corpus"
@@ -26,21 +27,97 @@ type Target struct {
 	ManifestFileRef string `json:"manifest_file_ref"`
 }
 
-// Scout selects one package target without invoking Node or the TypeScript
-// Compiler API.
+// Scout is the compatibility exact-one helper for callers that cannot consume
+// a target set. It never chooses a repository default: ordinary discovery must
+// use ScoutTargets and retain every eligible package target.
 func Scout(ctx context.Context, repository *corpus.Corpus) (Target, error) {
-	return ScoutSelected(ctx, repository, "")
+	targets, err := ScoutTargets(ctx, repository, "")
+	if err != nil {
+		return Target{}, err
+	}
+	if len(targets) != 1 {
+		return Target{}, fmt.Errorf(
+			"jsts target scout: exact-one compatibility helper requires exactly one eligible package target, found %d; use ScoutTargets for ordinary multi-target discovery",
+			len(targets),
+		)
+	}
+	return targets[0], nil
 }
 
-// ScoutSelected selects either the one automatic package target or the exact
-// package named by a jsts:<manifest> selector. Selection uses only the shared
-// corpus, package manifests, and package-owned source paths; compiler work is
-// deferred until this target is actually dispatched as a page.
+// ScoutTargets returns every exact package target owned by the repository.
+// An exact selector narrows the result before compiler execution; ordinary
+// discovery retains all eligible packages and leaves only the repository-wide
+// default choice to TargetPortfolio.
+func ScoutTargets(
+	ctx context.Context,
+	repository *corpus.Corpus,
+	selector string,
+) ([]Target, error) {
+	selector = strings.TrimSpace(selector)
+	if selector != "" {
+		target, err := ScoutSelected(ctx, repository, selector)
+		if err != nil {
+			return nil, err
+		}
+		return []Target{target}, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if repository == nil {
+		return nil, fmt.Errorf("jsts target scout: corpus is required")
+	}
+	if err := repository.Snapshot().Validate(); err != nil {
+		return nil, fmt.Errorf("jsts target scout: corpus: %w", err)
+	}
+	entries := repository.Entries()
+	for _, entry := range entries {
+		if corpus.ForbiddenPath(entry.Path) {
+			return nil, fmt.Errorf("jsts target scout: forbidden corpus path %q", entry.Path)
+		}
+	}
+
+	targets := []Target{}
+	for _, candidate := range packageProjectCandidates(entries) {
+		if len(candidate.ownSources) == 0 {
+			continue
+		}
+		manifest, err := readPackageManifest(repository, candidate.manifestPath)
+		if err != nil {
+			return nil, err
+		}
+		target, err := scoutedTarget(repository, candidate.manifestPath, candidate.projectDir, manifest)
+		if err != nil {
+			return nil, err
+		}
+		targets = append(targets, target)
+	}
+	sort.Slice(targets, func(i, j int) bool {
+		if targets[i].Selector != targets[j].Selector {
+			return targets[i].Selector < targets[j].Selector
+		}
+		return targets[i].Ref < targets[j].Ref
+	})
+	return targets, nil
+}
+
+// ScoutSelected returns the exact package named by a jsts:<manifest> selector.
+// An empty selector delegates to the compatibility exact-one Scout helper; it
+// never chooses among several eligible packages. Selection uses only the
+// shared corpus, package manifests, and package-owned source paths; compiler
+// work is deferred until this target is actually dispatched as a page.
 func ScoutSelected(
 	ctx context.Context,
 	repository *corpus.Corpus,
 	selector string,
 ) (Target, error) {
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
+		return Scout(ctx, repository)
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -61,36 +138,29 @@ func ScoutSelected(
 		}
 	}
 
-	selector = strings.TrimSpace(selector)
-	var rootManifest *packageManifest
-	if selector == "" {
-		if _, ok := repository.ID("package.json"); ok {
-			manifest, err := readPackageManifest(repository, "package.json")
-			if err != nil {
-				return Target{}, err
-			}
-			rootManifest = &manifest
-		}
-	}
-	manifestPath, projectDir, err := selectProjectManifest(entries, selector, rootManifest)
+	manifestPath, projectDir, err := selectProjectManifest(entries, selector, nil)
 	if err != nil {
 		return Target{}, err
 	}
+
+	manifest, err := readPackageManifest(repository, manifestPath)
+	if err != nil {
+		return Target{}, err
+	}
+
+	return scoutedTarget(repository, manifestPath, projectDir, manifest)
+}
+
+func scoutedTarget(
+	repository *corpus.Corpus,
+	manifestPath string,
+	projectDir string,
+	manifest packageManifest,
+) (Target, error) {
 	manifestID, ok := repository.ID(manifestPath)
 	if !ok {
 		return Target{}, fmt.Errorf("jsts target scout: selected package manifest is unavailable")
 	}
-
-	var manifest packageManifest
-	if manifestPath == "package.json" && rootManifest != nil {
-		manifest = *rootManifest
-	} else {
-		manifest, err = readPackageManifest(repository, manifestPath)
-		if err != nil {
-			return Target{}, err
-		}
-	}
-
 	ref := "project:root-package"
 	if projectDir != "." {
 		ref = "project:package:" + string(manifestID)

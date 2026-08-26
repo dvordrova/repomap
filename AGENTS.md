@@ -82,13 +82,14 @@ sidecar tools.
 - Analyze every eligible target by default. `--target` selects an explicit
   target; `--force-platform GOOS/GOARCH` overrides the normal Go platform
   selection.
-- Run every active Go, Python, and selected-package JavaScript/TypeScript target
-  scout over the same repository corpus. Merge their exact file candidates and
-  resolvable repository-guidance candidates into one repository-wide
-  `TargetPortfolio` request; the presence of one supported language must never
-  suppress another. Bind one canonical required file representative for every
-  exact native target, deduplicating a shared representative and never requiring
-  every alternative file for the same target. The portfolio must retain every
+- Run every active Go and Python target scout plus the JavaScript/TypeScript
+  package-target catalog scout over the same repository corpus. Merge their
+  exact file candidates and resolvable repository-guidance candidates into one
+  repository-wide `TargetPortfolio` request; the presence of one supported
+  language must never suppress another. Bind one canonical required file
+  representative for every exact native target, deduplicating a shared
+  representative and never requiring every alternative file for the same
+  target. The portfolio must retain every
   required representative, chooses one retained file as the repository default,
   and may additionally retain positively supported guidance candidates. Restore
   every positive file ref through exactly one language adapter into one typed
@@ -107,34 +108,33 @@ sidecar tools.
   child run IDs, then binds the repository-level `RuntimePortfolio` to it. In
   manifest version 34 this neutral page authority is mutually exclusive with
   the legacy Go `TargetRunContainer`/`TargetPagePortfolio` authority.
-- The current JavaScript/TypeScript slice owns exactly one selected
-  `package.json` project. An eligible non-workspace root remains the project; a
-  source-less root manifest is tooling and cannot suppress an eligible nested
-  package. A workspace root remains the project only when an exact manifest
-  field or canonical
-  `dev`/`start` entry names source owned by that root; otherwise it may delegate
-  only through an exact `--cwd` in canonical `dev`/`start` to exactly one
-  eligible child package. Zero or multiple exact delegates fail closed with
-  exact `jsts:<manifest>` choices. Without an eligible root, one eligible nested
-  package is selected and multiple eligible packages fail closed with the same
-  exact choices. An explicit `jsts:<manifest>` selects that owned package before
+- The current JavaScript/TypeScript slice owns every eligible `package.json`
+  project. Package-source ownership is assigned to the deepest containing
+  manifest; every manifest with at least one owned tracked JavaScript/TypeScript
+  source contributes one required target representative. A source-less
+  manifest is tooling rather than target authority and cannot suppress sibling,
+  child, or ancestor package targets. TargetPortfolio retains all exact package
+  targets and chooses only their repository default; an explicit
+  `jsts:<manifest>` narrows the typed plan to that one owned package before
   TypeScript compiler execution. `package.json#name` is optional: an exact
   top-level npm lockfile name is the secondary package identity, otherwise the
   root uses `root-package` and a nested package uses its repository-relative
   project directory. These fallbacks never authorize an implicit string-form
-  `package.json#bin` command. Its corpus-only scout owns exact manifest/workspace
-  selection, identity, and the package candidate without invoking Node or the
-  TypeScript compiler; it participates in the same portfolio and typed execution
-  plan as Go and Python. After that target is selected, its page uses an
+  `package.json#bin` command. Its corpus-only scout owns the exact
+  manifest/source-ownership catalog, target identities, and package candidates
+  without invoking Node or the TypeScript compiler; it participates in the same
+  portfolio and typed execution plan as Go and Python. Each retained or
+  explicitly selected package target receives its own page, which uses an
   owner-prepared, repository-local TypeScript Compiler API to honor
   `tsconfig.json` or `jsconfig.json`, bounded solution-style
   project references, aliases, and module resolution; Repomap never installs
   npm, yarn, pnpm, or other packages. Browser and Node server surfaces plus
   canonical safe, package-owned, tracked `package.json#bin` command/path pairs
-  are product surfaces inside that one ProgramTarget. A CLI surface never
-  invents a bin-wrapper-to-source relation: its entry refs stay empty, while an
-  exact canonical `dev` or `start` script with one helper-selected source may
-  independently seed that source only after CLI product authority exists.
+  are product surfaces inside their owning page-local ProgramTarget. A CLI
+  surface never invents a bin-wrapper-to-source relation: its entry refs stay
+  empty, while an exact canonical `dev` or `start` script with one
+  helper-selected source may independently seed that source only after CLI
+  product authority exists.
   Compiler/type-resolved declarations and exact external imports are the only
   call-target authority. TypeScript default-library declarations use the closed,
   non-package `platform:javascript` authority and never enter dependency or

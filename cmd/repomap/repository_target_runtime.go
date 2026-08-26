@@ -234,9 +234,9 @@ type repositoryTargetDiscovery struct {
 	pythonCandidates []analysistarget.FileCandidate
 	pythonResolver   pythontarget.FileTargetResolver
 
-	jstsTarget    *jstsproject.Target
-	jstsManifest  corpus.FileID
-	jstsCandidate []analysistarget.FileCandidate
+	jstsTargets    []jstsproject.Target
+	jstsByManifest map[corpus.FileID]jstsproject.Target
+	jstsCandidates []analysistarget.FileCandidate
 
 	readme readmetargetscout.Result
 }
@@ -302,7 +302,7 @@ func selectRepositoryTargetPlanForRun(
 		options.Repository.Snapshot(),
 		discovery.goCandidates,
 		discovery.pythonCandidates,
-		discovery.jstsCandidate,
+		discovery.jstsCandidates,
 	)
 	if err != nil {
 		return repositoryTargetPlan{}, fmt.Errorf("merge native repository target hypotheses: %w", err)
@@ -416,8 +416,8 @@ func repositoryRequiredTargetFileRefs(
 		}
 		add(refs)
 	}
-	if discovery.jstsTarget != nil {
-		selected[discovery.jstsManifest] = struct{}{}
+	for _, target := range discovery.jstsTargets {
+		selected[corpus.FileID(target.ManifestFileRef)] = struct{}{}
 	}
 
 	result := make([]corpus.FileID, 0, len(selected))
@@ -542,8 +542,8 @@ func discoverRepositoryTargets(
 	}()
 
 	type jstsResult struct {
-		target jstsproject.Target
-		err    error
+		targets []jstsproject.Target
+		err     error
 	}
 	jstsChannel := make(chan jstsResult, 1)
 	go func() {
@@ -553,14 +553,14 @@ func discoverRepositoryTargets(
 		}
 		scout := options.ScoutJSTSFn
 		if scout == nil {
-			scout = jstsproject.ScoutSelected
+			scout = jstsproject.ScoutTargets
 		}
-		target, err := scout(
+		targets, err := scout(
 			parallelContext,
 			options.Repository,
 			exactJSTSManifestSelector(options.TargetOverride),
 		)
-		jstsChannel <- jstsResult{target: target, err: err}
+		jstsChannel <- jstsResult{targets: targets, err: err}
 	}()
 
 	type readmeResult struct {
@@ -623,18 +623,36 @@ func discoverRepositoryTargets(
 		result.pythonResolver = resolver
 	}
 	if options.DiscoverJSTS {
-		if err := jsts.target.ValidateAgainst(options.Repository); err != nil {
-			return result, fmt.Errorf("bind JavaScript/TypeScript scout target to the current repository: %w", err)
+		if len(jsts.targets) == 0 {
+			return result, fmt.Errorf("JavaScript/TypeScript target scout returned no exact package targets")
 		}
-		target := jsts.target
-		result.jstsTarget = &target
-		result.jstsManifest = corpus.FileID(target.ManifestFileRef)
-		result.jstsCandidate = []analysistarget.FileCandidate{{
-			FileRef: result.jstsManifest,
-			Hypotheses: []string{
-				"JavaScript/TypeScript package project with an exact tracked manifest and owned source-file evidence",
-			},
-		}}
+		result.jstsTargets = append([]jstsproject.Target(nil), jsts.targets...)
+		result.jstsByManifest = make(map[corpus.FileID]jstsproject.Target, len(jsts.targets))
+		result.jstsCandidates = make([]analysistarget.FileCandidate, 0, len(jsts.targets))
+		seenRefs := make(map[string]struct{}, len(jsts.targets))
+		for index, target := range result.jstsTargets {
+			if err := target.ValidateAgainst(options.Repository); err != nil {
+				return result, fmt.Errorf("bind JavaScript/TypeScript scout target %d to the current repository: %w", index, err)
+			}
+			if index > 0 && (result.jstsTargets[index-1].Selector >= target.Selector) {
+				return result, fmt.Errorf("JavaScript/TypeScript scout targets are not canonical")
+			}
+			if _, duplicate := seenRefs[target.Ref]; duplicate {
+				return result, fmt.Errorf("JavaScript/TypeScript scout targets share ref %q", target.Ref)
+			}
+			seenRefs[target.Ref] = struct{}{}
+			manifest := corpus.FileID(target.ManifestFileRef)
+			if _, duplicate := result.jstsByManifest[manifest]; duplicate {
+				return result, fmt.Errorf("JavaScript/TypeScript scout targets share manifest file_ref %q", manifest)
+			}
+			result.jstsByManifest[manifest] = target
+			result.jstsCandidates = append(result.jstsCandidates, analysistarget.FileCandidate{
+				FileRef: manifest,
+				Hypotheses: []string{
+					"JavaScript/TypeScript package project with an exact tracked manifest and owned source-file evidence",
+				},
+			})
+		}
 	}
 	return result, nil
 }
@@ -667,7 +685,7 @@ func (discovery repositoryTargetDiscovery) adapterForFile(
 	if discovery.pythonCatalog != nil && discovery.pythonResolver.Resolves(fileRef) {
 		matches = append(matches, repositoryTargetAdapterPython)
 	}
-	if discovery.jstsTarget != nil && discovery.jstsManifest == fileRef {
+	if _, ok := discovery.jstsByManifest[fileRef]; ok {
 		matches = append(matches, repositoryTargetAdapterJSTS)
 	}
 	if len(matches) == 0 {
@@ -719,9 +737,11 @@ func resolveExplicitRepositoryTarget(
 			matches[key] = repositoryTypedTarget{Key: key, Selector: target.Selector, Python: &target}
 		}
 	}
-	if discovery.jstsTarget != nil &&
-		(override == discovery.jstsTarget.Selector || override == discovery.jstsTarget.Ref) {
-		target := *discovery.jstsTarget
+	for _, value := range discovery.jstsTargets {
+		if override != value.Selector && override != value.Ref {
+			continue
+		}
+		target := value
 		key := repositoryTargetKey{Adapter: repositoryTargetAdapterJSTS, Ref: target.Ref}
 		matches[key] = repositoryTypedTarget{Key: key, Selector: target.Selector, JSTS: &target}
 	}
@@ -879,14 +899,15 @@ func restoreRepositoryTargetPortfolio(
 	}
 
 	if len(selectedFiles[repositoryTargetAdapterJSTS]) > 0 {
-		target := *discovery.jstsTarget
-		key := repositoryTargetKey{Adapter: repositoryTargetAdapterJSTS, Ref: target.Ref}
-		if err := addTarget(repositoryTypedTarget{Key: key, Selector: target.Selector, JSTS: &target}); err != nil {
-			return repositoryTargetPlan{}, err
-		}
 		for _, fileRef := range selectedFiles[repositoryTargetAdapterJSTS] {
-			if fileRef != discovery.jstsManifest {
-				return repositoryTargetPlan{}, fmt.Errorf("restored JavaScript/TypeScript file_ref %q is not package.json", fileRef)
+			value, ok := discovery.jstsByManifest[fileRef]
+			if !ok {
+				return repositoryTargetPlan{}, fmt.Errorf("restored JavaScript/TypeScript file_ref %q is not an exact package target manifest", fileRef)
+			}
+			target := value
+			key := repositoryTargetKey{Adapter: repositoryTargetAdapterJSTS, Ref: target.Ref}
+			if err := addTarget(repositoryTypedTarget{Key: key, Selector: target.Selector, JSTS: &target}); err != nil {
+				return repositoryTargetPlan{}, err
 			}
 			if err := addFile(key, fileRef); err != nil {
 				return repositoryTargetPlan{}, err
@@ -912,7 +933,11 @@ func restoreRepositoryTargetPortfolio(
 		}
 		defaultKey = repositoryTargetKey{Adapter: repositoryTargetAdapterPython, Ref: target.Ref}
 	case repositoryTargetAdapterJSTS:
-		defaultKey = repositoryTargetKey{Adapter: repositoryTargetAdapterJSTS, Ref: discovery.jstsTarget.Ref}
+		target, ok := discovery.jstsByManifest[portfolio.Default.FileRef]
+		if !ok {
+			return repositoryTargetPlan{}, fmt.Errorf("restore default JavaScript/TypeScript target: package manifest is outside exact scout authority")
+		}
+		defaultKey = repositoryTargetKey{Adapter: repositoryTargetAdapterJSTS, Ref: target.Ref}
 	default:
 		return repositoryTargetPlan{}, fmt.Errorf("repository target portfolio has no supported default adapter")
 	}
@@ -984,10 +1009,14 @@ func repositoryTargetChoiceGroups(
 		}
 		groups = append(groups, targetPortfolioChoiceGroup{Language: "Python", Choices: choices})
 	}
-	if discovery.jstsTarget != nil {
+	if len(discovery.jstsTargets) > 0 {
+		choices := make([]string, len(discovery.jstsTargets))
+		for index, target := range discovery.jstsTargets {
+			choices[index] = target.Selector + " (" + target.ManifestPath + ")"
+		}
 		groups = append(groups, targetPortfolioChoiceGroup{
 			Language: "JavaScript/TypeScript",
-			Choices:  discovery.jstsTarget.Selector + " (" + discovery.jstsTarget.ManifestPath + ")",
+			Choices:  strings.Join(choices, ", "),
 		})
 	}
 	if len(groups) == 0 {
