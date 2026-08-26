@@ -286,6 +286,56 @@ func TestSealOmitsPersistenceSensitiveOptionalSourceMetadata(t *testing.T) {
 	}
 }
 
+func TestSealOmitsAbsoluteSiblingTypeSignature(t *testing.T) {
+	result := minimalResult(t, "typescript")
+	declaration := Declaration{
+		Ref: "decl:f2:2:14:variable:app", Kind: "variable", Name: "app", QualifiedName: "src/index#app",
+		Signature: `import("/host/repository/packages/shared/src/index").Shared`, Location: result.Files[0].location(),
+	}
+	result.Declarations = append(result.Declarations, declaration)
+
+	sealed, err := Seal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, candidate := range sealed.Declarations {
+		if candidate.Ref != declaration.Ref {
+			continue
+		}
+		found = true
+		if candidate.Signature != "" || candidate.Name != declaration.Name || candidate.QualifiedName != declaration.QualifiedName || candidate.Location != declaration.Location {
+			t.Fatalf("sibling-type declaration identity changed while omitting display signature: %#v", candidate)
+		}
+	}
+	if !found {
+		t.Fatalf("sibling-type declaration was dropped: %#v", sealed.Declarations)
+	}
+	encoded, err := Encode(sealed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Decode(encoded); err != nil {
+		t.Fatal(err)
+	}
+	index, _, err := BuildFromResult(sealed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projected := false
+	for _, object := range index.Objects {
+		if object.SourceRef == declaration.Ref {
+			projected = true
+			if object.Signature != "" || object.Name != declaration.QualifiedName {
+				t.Fatalf("sibling-type declaration projection = %#v", object)
+			}
+		}
+	}
+	if !projected {
+		t.Fatalf("sibling-type declaration was not projected: %#v", index.Objects)
+	}
+}
+
 func TestResultRejectsDanglingFactReferences(t *testing.T) {
 	result := minimalResult(t, "typescript")
 	result.Surfaces = []Surface{{Ref: "surface:bad", Kind: SurfaceBrowser, Role: SurfaceProduct, Name: "bad", EntryRefs: []string{"decl:missing"}, EvidenceRefs: []string{}, Location: result.Files[0].location()}}
