@@ -37,6 +37,8 @@ func TestCoreMapPromptContractsMatchCurrentSchemas(t *testing.T) {
 			`{"blocks":[{`,
 			`"file_refs"`,
 			`"symbol_refs"`,
+			"at most 160 UTF-8 bytes",
+			"no advertised `s*` ref is discarded",
 			"Do not return children",
 		)
 	})
@@ -52,6 +54,8 @@ func TestCoreMapPromptContractsMatchCurrentSchemas(t *testing.T) {
 			`{"blocks":[{`,
 			`"file_refs"`,
 			`"symbol_refs"`,
+			"at most 160 UTF-8 bytes",
+			"no advertised `s*` ref is discarded",
 		)
 	})
 

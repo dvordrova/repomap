@@ -410,9 +410,11 @@ diagnostic-journal availability never changes the cube's semantic contract.
    file or symbol may support several genuinely different responsibilities;
    identity is local and grouping/name prose is model-owned. Ref arrays in
    baseline, map, and reduce responses are normalized as sets over their exact
-   request catalogs: unknown refs and repeats are discarded, while a block
-   left without the mandatory advertised evidence is still rejected as
-   ungrounded. Exact duplicate block records after that normalization are one
+   request catalogs: unknown refs and repeats are discarded. A refined
+   proposal row left without an advertised exact symbol has no local object to
+   describe and is discarded as unsupported; the pipeline remains terminal if
+   no validated target-core block survives across all complete shards. Exact
+   duplicate block records after that normalization are one
    set member and are canonicalized locally. Different model-authored
    responsibilities remain distinct even when they cite the same exact files
    and symbols: their stable local block IDs bind both the semantic claim and

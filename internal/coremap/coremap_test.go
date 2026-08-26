@@ -264,7 +264,7 @@ func TestDynamicRelationAdvertisesEndpointSymbolButNotUnsentFileRef(t *testing.T
 		SymbolRefs: []string{"s1", "s999", "s1"},
 		FileRefs:   []corpus.FileID{fileRef, "f999"},
 	}}
-	blocks = normalizeProposalRefs(blocks, authority.files, authority.symbols)
+	blocks = normalizeRefinedProposalRefs(blocks, authority.files, authority.symbols)
 	if err := validateRefinedBatchProposals(blocks, authority.files, authority.symbols, true); err != nil {
 		t.Fatalf("known authority was lost while discarding unknown refs: %v", err)
 	}
@@ -276,9 +276,81 @@ func TestDynamicRelationAdvertisesEndpointSymbolButNotUnsentFileRef(t *testing.T
 		Name: "Invented", Purpose: "Has no request-local authority.",
 		SymbolRefs: []string{"s999"}, FileRefs: []corpus.FileID{"f999"},
 	}}
-	ungrounded = normalizeProposalRefs(ungrounded, authority.files, authority.symbols)
-	if err := validateRefinedBatchProposals(ungrounded, authority.files, authority.symbols, true); err == nil {
-		t.Fatal("proposal grounded only by invented refs was accepted")
+	ungrounded = normalizeRefinedProposalRefs(ungrounded, authority.files, authority.symbols)
+	if len(ungrounded) != 0 {
+		t.Fatalf("proposal grounded only by invented refs survived: %#v", ungrounded)
+	}
+	if err := validateRefinedBatchProposals(ungrounded, authority.files, authority.symbols, true); err != nil {
+		t.Fatalf("unsupported proposal did not reduce to the legitimate empty set: %v", err)
+	}
+}
+
+func TestRefinedProposalValidationNamesTheInvalidField(t *testing.T) {
+	authority := map[string]symbolAuthority{"s1": {}}
+	cases := []struct {
+		name  string
+		block proposal
+		want  string
+	}{
+		{name: "name", block: proposal{Purpose: "Runs work.", SymbolRefs: []string{"s1"}}, want: "invalid name"},
+		{name: "purpose", block: proposal{Name: "Execution", SymbolRefs: []string{"s1"}}, want: "invalid purpose"},
+		{name: "children", block: proposal{Name: "Execution", Purpose: "Runs work.", SymbolRefs: []string{"s1"}, Children: []proposal{{Name: "Nested"}}}, want: "forbidden children"},
+		{name: "symbol", block: proposal{Name: "Execution", Purpose: "Runs work."}, want: "no exact target symbol"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateRefinedBatchProposals([]proposal{test.block}, nil, authority, true)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("validation error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestRefinedMapAndReduceCallsDiscardUnsupportedProposalRows(t *testing.T) {
+	authority := refinedAuthority{symbols: map[string]symbolAuthority{"s1": {}}, files: map[corpus.FileID]FileFact{}}
+	response := []byte(`{"blocks":[{"name":"Execution","purpose":"Runs accepted work.","file_refs":[],"symbol_refs":["s1"]},{"name":"Invented","purpose":"Has no local authority.","file_refs":[],"symbol_refs":["s999"]},{"name":"File only","purpose":"Has no exact program authority.","file_refs":[],"symbol_refs":[]}]}`)
+	for _, test := range []struct {
+		phase  string
+		prompt string
+	}{
+		{phase: "map", prompt: refinedPrompt},
+		{phase: "reduce", prompt: reducePrompt},
+	} {
+		t.Run(test.phase, func(t *testing.T) {
+			provider := &coreMapTestProvider{response: response}
+			result, _, err := executeRefinedCall(
+				t.Context(), llm.Executor{Enabled: false}, provider, Compilation{},
+				test.phase, 0, 1, 1, test.prompt, []byte(`{}`), authority,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Blocks) != 1 || result.Blocks[0].Name != "Execution" ||
+				!slices.Equal(result.Blocks[0].SymbolRefs, []string{"s1"}) {
+				t.Fatalf("normalized %s response = %#v", test.phase, result.Blocks)
+			}
+		})
+	}
+}
+
+func TestRefinedPipelineRemainsTerminalWhenNoGroundedBlockSurvives(t *testing.T) {
+	fileRef := corpus.FileID("f1")
+	file := FileFact{FileRef: fileRef, Path: "pkg/main.py"}
+	row := symbolRequest{Ref: "s1", FileRef: fileRef, Path: file.Path, Line: 1, Package: "pkg", Name: "run"}
+	compilation := Compilation{
+		repository: "sample",
+		baselineRequest: baselineRequest{Target: targetRequest{
+			Language: "python", Kind: "library", Name: "sample", Selector: "sample",
+		}},
+		files:      map[corpus.FileID]FileFact{fileRef: file},
+		symbolRows: []symbolRequest{row},
+		symbols:    map[string]symbolAuthority{"s1": {request: row}},
+	}
+	provider := &coreMapTestProvider{response: []byte(`{"blocks":[{"name":"Invented","purpose":"Has no local authority.","file_refs":[],"symbol_refs":["s999"]}]}`)}
+	_, _, err := runRefinedPipeline(t.Context(), llm.Executor{Enabled: false}, provider, compilation, modelResponse{Blocks: []proposal{}})
+	if err == nil || !strings.Contains(err.Error(), "no target-core block was established") {
+		t.Fatalf("all-unsupported refined response error = %v", err)
 	}
 }
 

@@ -269,7 +269,7 @@ func executeRefinedCall(
 		DecodeValidate: func(raw []byte) (modelResponse, error) {
 			response, err := decodeResponse(raw)
 			if err == nil {
-				response.Blocks = normalizeProposalRefs(response.Blocks, authority.files, authority.symbols)
+				response.Blocks = normalizeRefinedProposalRefs(response.Blocks, authority.files, authority.symbols)
 				err = validateRefinedBatchProposals(response.Blocks, authority.files, authority.symbols, true)
 			}
 			return response, err
