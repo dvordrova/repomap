@@ -152,6 +152,81 @@
     return { targets: targets, byID: byID, currentID: currentID, defaultID: defaultID };
   }
 
+  function buildTargetOutcomePortfolio(data, targetDirectory) {
+    var raw = data.target_outcome_portfolio;
+    if (raw == null) return null;
+    raw = object(raw, 'target_outcome_portfolio');
+    if (integer(raw.version, 'target_outcome_portfolio.version') !== 1) {
+      throw new Error('The target outcome portfolio version is not supported.');
+    }
+    var bySelectedID = Object.create(null);
+    var byProgramTargetID = Object.create(null);
+    var analyzed = [];
+    var notAnalyzed = [];
+    var outcomes = array(raw.outcomes, 'target_outcome_portfolio.outcomes').map(function (rawOutcome) {
+      rawOutcome = object(rawOutcome, 'target outcome');
+      var selectedTargetID = text(rawOutcome.selected_target_id, 'target outcome.selected_target_id');
+      if (bySelectedID[selectedTargetID]) throw new Error('Selected target outcome identities are not unique.');
+      var state = closedText(rawOutcome.state, ['analyzed', 'not_analyzed'], 'target outcome.state');
+      var outcome = {
+        selectedTargetID: selectedTargetID,
+        language: text(rawOutcome.language, 'target outcome.language'),
+        kind: text(rawOutcome.scope_kind, 'target outcome.scope_kind'),
+        displayName: text(rawOutcome.display_name, 'target outcome.display_name'),
+        selector: text(rawOutcome.selector, 'target outcome.selector'),
+        state: state,
+        programTargetID: optionalText(rawOutcome.program_target_id, 'target outcome.program_target_id'),
+        failureStage: optionalText(rawOutcome.failure_stage, 'target outcome.failure_stage'),
+        failureReason: optionalText(rawOutcome.failure_reason, 'target outcome.failure_reason'),
+        target: null
+      };
+      if (state === 'analyzed') {
+        if (!outcome.programTargetID || outcome.failureStage || outcome.failureReason) {
+          throw new Error('An analyzed target outcome has an invalid binding.');
+        }
+        outcome.target = targetDirectory.byID[outcome.programTargetID];
+        if (!outcome.target) throw new Error('An analyzed target outcome cites an unknown ProgramTarget.');
+        if (byProgramTargetID[outcome.programTargetID]) {
+          throw new Error('Analyzed target outcome ProgramTarget identities are not unique.');
+        }
+        byProgramTargetID[outcome.programTargetID] = true;
+        analyzed.push(outcome);
+      } else {
+        if (outcome.programTargetID) throw new Error('A not-analyzed target outcome cites a ProgramTarget.');
+        outcome.failureStage = closedText(outcome.failureStage, [
+          'target_preparation', 'program_analysis', 'dependency_analysis', 'semantic_analysis', 'target_page'
+        ], 'target outcome.failure_stage');
+        outcome.failureReason = closedText(outcome.failureReason, [
+          'source_not_analyzable', 'required_tool_unavailable', 'resource_limit',
+          'model_result_rejected', 'analysis_failed', 'target_output_invalid'
+        ], 'target outcome.failure_reason');
+        notAnalyzed.push(outcome);
+      }
+      bySelectedID[selectedTargetID] = outcome;
+      return outcome;
+    });
+    if (!outcomes.length) throw new Error('The target outcome portfolio has no selected targets.');
+    targetDirectory.targets.forEach(function (target) {
+      if (!byProgramTargetID[target.id]) {
+        throw new Error('Target navigation contains a ProgramTarget absent from analyzed outcomes.');
+      }
+    });
+    var defaultSelectedTargetID = text(
+      raw.default_selected_target_id, 'target_outcome_portfolio.default_selected_target_id'
+    );
+    if (!bySelectedID[defaultSelectedTargetID]) {
+      throw new Error('The default selected target outcome is absent.');
+    }
+    return {
+      version: 1,
+      defaultSelectedTargetID: defaultSelectedTargetID,
+      outcomes: outcomes,
+      analyzed: analyzed,
+      notAnalyzed: notAnalyzed,
+      bySelectedID: bySelectedID
+    };
+  }
+
   function buildRuntimePortfolio(data, targetDirectory, openable) {
     var raw = object(data.runtime_portfolio, 'runtime_portfolio');
     if (integer(raw.version, 'runtime_portfolio.version') !== 3) {
@@ -544,7 +619,7 @@
 
   function buildPresentationModel(data) {
     text(data.repo_name, 'repo_name');
-    if (integer(data.format_version, 'format_version') !== 67) {
+    if (integer(data.format_version, 'format_version') !== 68) {
       throw new Error('The report format version is not supported.');
     }
     var portfolio = object(data.program_portfolio, 'program_portfolio');
@@ -752,6 +827,7 @@
       sources: array(target.sources, 'program target.sources')
     };
     var targetDirectory = buildTargetDirectory(data, currentTarget);
+    var targetOutcomePortfolio = buildTargetOutcomePortfolio(data, targetDirectory);
     var surfaceCatalog = buildJSTSSurfaceCatalog(data, currentTarget, indexSHA256, openable);
     var crossSurfacePaths = buildCrossSurfacePaths(
       data, currentTarget, indexSHA256, openable, surfaceCatalog
@@ -775,6 +851,7 @@
       targets: targetDirectory.targets,
       targetsByID: targetDirectory.byID,
       defaultTargetID: targetDirectory.defaultID,
+      targetOutcomePortfolio: targetOutcomePortfolio,
       runtimePortfolio: runtimePortfolio,
       surfaceCatalog: surfaceCatalog,
       crossSurfacePaths: crossSurfacePaths,
@@ -1039,10 +1116,8 @@
       var relationID = text(relation.id, 'program relation.id');
       var kind = text(relation.kind, 'program relation.kind');
       var resolution = text(relation.resolution, 'program relation.resolution');
+      // ProgramIndex invocation is adapter-owned advisory text, not a cross-language enum.
       var invocation = optionalText(relation.invocation, 'program relation.invocation');
-      if (invocation && ['call', 'construct'].indexOf(invocation) < 0) {
-        throw new Error('Program relation invocation is not supported.');
-      }
       var key = relation.from_id + '\\u0000' + kind + '\\u0000' + resolution + '\\u0000' +
         invocation + '\\u0000' + relation.to_ids.join('\\u0000');
       if (!relation.to_ids.length) key += '\\u0000' + relationID;
@@ -1228,6 +1303,7 @@
   }
 
   function renderAreaSwitcher(selected, activeGroup) {
+    var allSelectionID = 'all';
     var navigation = element('nav', 'rm-area-switcher');
     navigation.setAttribute('aria-label', 'Architecture areas and grouping coverage');
     var heading = element('div', 'rm-area-switcher__heading');
@@ -1240,13 +1316,37 @@
     appendText(heading, 'span', '', groupingSummary);
     navigation.appendChild(heading);
     var grid = element('div', 'rm-area-switcher__grid');
+    var allButton = element('button', 'rm-area-switcher__item');
+    allButton.type = 'button';
+    allButton.title = 'Show all responsibilities, entrypoints, and integrations.';
+    allButton.setAttribute('data-area-selection', allSelectionID);
+    if (state.completeCanvas) allButton.setAttribute('aria-current', 'true');
+    appendText(allButton, 'span', '', 'All');
+    appendText(allButton, 'small', '', String(state.model.blocks.length));
+    allButton.addEventListener('click', function () {
+      var scrollY = typeof window.scrollY === 'number' ? window.scrollY : null;
+      state.pendingAreaGroupFocusID = allSelectionID;
+      state.completeCanvas = true;
+      renderRoute();
+      if (scrollY !== null && typeof window.scrollTo === 'function') {
+        window.scrollTo(typeof window.scrollX === 'number' ? window.scrollX : 0, scrollY);
+      }
+    });
+    if (state.completeCanvas && state.pendingAreaGroupFocusID === allSelectionID) {
+      state.pendingAreaGroupFocusID = '';
+      window.setTimeout(function () { allButton.focus({ preventScroll: true }); }, 0);
+    }
+    grid.appendChild(allButton);
     state.model.groups.forEach(function (group) {
       var button = element('button', 'rm-area-switcher__item');
       button.type = 'button';
       button.title = group.purpose;
       var containsSelected = group.blockIDs.indexOf(selected.id) >= 0;
       if (containsSelected) button.className += ' rm-area-switcher__item--membership';
-      if (activeGroup && group.id === activeGroup.id) button.setAttribute('aria-current', 'true');
+      if (!state.completeCanvas && activeGroup && group.id === activeGroup.id) {
+        button.setAttribute('aria-current', 'true');
+      }
+      button.setAttribute('data-area-selection', group.id);
       button.setAttribute('data-area-group', group.id);
       appendText(button, 'span', '', group.name);
       var groupMeta = String(group.blockIDs.length) + (containsSelected ? ' · member' : '');
@@ -1258,7 +1358,7 @@
       });
       if (activeGroup && group.id === activeGroup.id && state.pendingAreaGroupFocusID === group.id) {
         state.pendingAreaGroupFocusID = '';
-        window.requestAnimationFrame(function () { button.focus({ preventScroll: true }); });
+        window.setTimeout(function () { button.focus({ preventScroll: true }); }, 0);
       }
       grid.appendChild(button);
     });
@@ -1363,21 +1463,6 @@
       focusIntro);
     header.appendChild(copy);
     var controls = element('div', 'rm-canvas-controls');
-    var modeLabel = state.completeCanvas ? 'Focus current grouping selection' :
-      'Show complete map · ' + String(graph.accounting.totalNodes) + ' nodes / ' +
-        String(graph.accounting.totalEdges) + ' bindings';
-    var mode = element('button', 'rm-canvas-mode', modeLabel);
-    mode.type = 'button';
-    mode.setAttribute('aria-pressed', state.completeCanvas ? 'true' : 'false');
-    mode.addEventListener('click', function () {
-      state.completeCanvas = !state.completeCanvas;
-      renderRoute();
-      window.requestAnimationFrame(function () {
-        var nextMode = document.querySelector('.rm-canvas-mode');
-        if (nextMode) nextMode.focus();
-      });
-    });
-    controls.appendChild(mode);
     var legend = element('div', 'rm-canvas-legend');
     appendText(legend, 'span', 'rm-canvas-legend__exact', 'Exact local binding');
     appendText(legend, 'span', 'rm-canvas-legend__possible', 'Possible local path');
@@ -1386,7 +1471,7 @@
     controls.appendChild(legend);
     header.appendChild(controls);
     section.appendChild(header);
-    if (state.model.groups.length) section.appendChild(renderAreaSwitcher(selected, activeGroup));
+    section.appendChild(renderAreaSwitcher(selected, activeGroup));
 
     var canvasHost = element('div', 'rm-system-canvas-host');
     section.appendChild(canvasHost);
@@ -1489,6 +1574,9 @@
         (state.model.runtimePortfolio.roles.length || state.model.runtimePortfolio.unclassified.length)) {
       return 'runtime';
     }
+    if (state.model.targetOutcomePortfolio && state.model.targetOutcomePortfolio.notAnalyzed.length) {
+      return 'targets';
+    }
     return '';
   }
 
@@ -1532,22 +1620,74 @@
     return 'Program map';
   }
 
+  function selectedTargetOutcomes(model) {
+    if (model.targetOutcomePortfolio) return model.targetOutcomePortfolio.outcomes;
+    return model.targets.map(function (target) {
+      return {
+        selectedTargetID: target.id,
+        language: target.language,
+        kind: target.kind,
+        displayName: target.displayName,
+        selector: '',
+        state: 'analyzed',
+        programTargetID: target.id,
+        failureStage: '',
+        failureReason: '',
+        target: target
+      };
+    });
+  }
+
+  function targetAnalysisAccounting(model) {
+    var outcomes = selectedTargetOutcomes(model);
+    return {
+      selected: outcomes.length,
+      analyzed: outcomes.filter(function (outcome) { return outcome.state === 'analyzed'; }).length,
+      notAnalyzed: outcomes.filter(function (outcome) { return outcome.state === 'not_analyzed'; })
+    };
+  }
+
+  function targetFailureStageLabel(value) {
+    switch (value) {
+    case 'target_preparation': return 'Target preparation';
+    case 'program_analysis': return 'Program analysis';
+    case 'dependency_analysis': return 'Dependency analysis';
+    case 'semantic_analysis': return 'Semantic analysis';
+    case 'target_page': return 'Target report';
+    default: throw new Error('The target failure stage is not supported.');
+    }
+  }
+
+  function targetFailureReasonLabel(value) {
+    switch (value) {
+    case 'source_not_analyzable': return 'The selected source could not be analyzed.';
+    case 'required_tool_unavailable': return 'A required language tool was unavailable.';
+    case 'resource_limit': return 'Analysis exceeded a supported resource limit.';
+    case 'model_result_rejected': return 'The model result did not satisfy the target contract.';
+    case 'analysis_failed': return 'Analysis did not complete for this target.';
+    case 'target_output_invalid': return 'The target report did not pass validation.';
+    default: throw new Error('The target failure reason is not supported.');
+    }
+  }
+
   function updateHeaderContext(route) {
     var scope = document.getElementById('rm-page-context');
     var revision = state.model.revision.slice(0, MAX_REVISION_ABBREVIATION_CHARS);
     var repositoryRoute = route.kind === 'repository';
+    var accounting = targetAnalysisAccounting(state.model);
     if (scope) {
       scope.textContent = repositoryRoute ?
-        reportRouteContext(route) + ' · ' + String(state.model.targets.length) +
-          (state.model.targets.length === 1 ? ' target' : ' targets') + ' · ' + revision :
+        reportRouteContext(route) + ' · ' + String(accounting.selected) +
+          (accounting.selected === 1 ? ' target' : ' targets') + ' · ' + revision :
         reportRouteContext(route) + ' · ' + humanRuntimeToken(state.model.target.language) + ' · ' +
           humanRuntimeToken(state.model.target.kind) + ' · ' + revision;
     }
     var current = document.getElementById('rm-target-current');
     if (current) current.textContent = repositoryRoute ? 'All targets' : 'Target · ' + state.model.target.name;
     (state.headerTargetLinks || []).forEach(function (entry) {
-      var currentPage = route.kind === 'program' && entry.target.id === state.model.target.id;
-      entry.link.setAttribute('aria-current', currentPage ? 'page' : 'false');
+      var currentPage = route.kind === 'program' && entry.outcome.state === 'analyzed' &&
+        entry.outcome.programTargetID === state.model.target.id;
+      if (entry.link) entry.link.setAttribute('aria-current', currentPage ? 'page' : 'false');
       if (entry.currentBadge) {
         entry.currentBadge.hidden = !currentPage;
       }
@@ -1555,34 +1695,50 @@
   }
 
   function renderHeader() {
+    var outcomes = selectedTargetOutcomes(state.model);
+    var defaultSelectedTargetID = state.model.targetOutcomePortfolio ?
+      state.model.targetOutcomePortfolio.defaultSelectedTargetID : state.model.defaultTargetID;
     document.getElementById('rm-target-repository').textContent = shortRepositoryName(state.model.repoName);
-    document.getElementById('rm-target-count').textContent = String(state.model.targets.length);
+    document.getElementById('rm-target-count').textContent = String(outcomes.length);
     document.getElementById('rm-target-panel-count').textContent =
-      String(state.model.targets.length) + (state.model.targets.length === 1 ? ' target' : ' targets');
+      String(outcomes.length) + (outcomes.length === 1 ? ' target' : ' targets');
     var switcher = document.getElementById('rm-target-switcher');
     var navigation = document.getElementById('rm-target-navigation');
     state.headerTargetLinks = [];
-    state.model.targets.forEach(function (target) {
-      var link = element('a', 'rm-target-switcher__target');
-      link.href = target.href;
+    outcomes.forEach(function (outcome) {
+      var analyzed = outcome.state === 'analyzed';
+      var link = analyzed ? element('a', 'rm-target-switcher__target') : null;
+      var row = link || element('div', 'rm-target-switcher__target rm-target-switcher__target--failed');
+      if (link) link.href = outcome.target.href;
+      else {
+        row.setAttribute('role', 'group');
+        row.setAttribute('aria-disabled', 'true');
+      }
       var copy = element('span');
-      appendText(copy, 'strong', '', target.displayName);
-      appendText(copy, 'small', '', humanRuntimeToken(target.language) + ' · ' + humanRuntimeToken(target.kind));
-      link.appendChild(copy);
+      appendText(copy, 'strong', '', outcome.displayName);
+      appendText(copy, 'small', '', humanRuntimeToken(outcome.language) + ' · ' + humanRuntimeToken(outcome.kind));
+      if (!analyzed) {
+        appendText(copy, 'small', 'rm-target-switcher__failure-reason',
+          targetFailureReasonLabel(outcome.failureReason));
+      }
+      row.appendChild(copy);
       var badges = element('span', 'rm-target-switcher__badges');
       var currentBadge = null;
-      if (target.id === state.model.target.id) {
+      if (analyzed && outcome.programTargetID === state.model.target.id) {
         currentBadge = element('small', 'rm-target-switcher__badge rm-target-switcher__badge--current', 'Current');
         currentBadge.hidden = true;
         badges.appendChild(currentBadge);
       }
-      if (target.id === state.model.defaultTargetID) {
+      if (!analyzed) {
+        appendText(badges, 'small', 'rm-target-switcher__badge rm-target-switcher__badge--failed', 'Not analyzed');
+      }
+      if (outcome.selectedTargetID === defaultSelectedTargetID) {
         appendText(badges, 'small', 'rm-target-switcher__badge', 'Default');
       }
-      link.appendChild(badges);
-      link.addEventListener('click', function () { switcher.open = false; });
-      navigation.appendChild(link);
-      state.headerTargetLinks.push({ target: target, link: link, currentBadge: currentBadge });
+      row.appendChild(badges);
+      if (link) link.addEventListener('click', function () { switcher.open = false; });
+      navigation.appendChild(row);
+      state.headerTargetLinks.push({ outcome: outcome, link: link, row: row, currentBadge: currentBadge });
     });
     switcher.addEventListener('keydown', function (event) {
       if (event.key !== 'Escape' || !switcher.open) return;
@@ -1597,6 +1753,7 @@
     if (value === 'cli') return 'CLI';
     if (value === 'go') return 'Go';
     if (value === 'javascript') return 'JavaScript';
+    if (value === 'javascript_typescript') return 'JavaScript / TypeScript';
     if (value === 'typescript') return 'TypeScript';
     if (value === 'python') return 'Python';
     return value.replace(/_/g, ' ').replace(/^./, function (character) { return character.toUpperCase(); });
@@ -1742,15 +1899,47 @@
     host.appendChild(section);
   }
 
+  function renderNotAnalyzedTargets(host) {
+    if (!state.model.targetOutcomePortfolio) return;
+    var targets = state.model.targetOutcomePortfolio.notAnalyzed;
+    if (!targets.length) return;
+    var section = element('section', 'rm-runtime-section rm-target-failures-section');
+    var heading = element('header', 'rm-runtime-section__header');
+    appendText(heading, 'h2', '', 'Targets not analyzed');
+    appendText(heading, 'p', '',
+      'These selected targets did not produce a validated target report. They remain visible here but are excluded from analyzed-target maps and repository roles.');
+    section.appendChild(heading);
+    var list = element('div', 'rm-target-failures');
+    targets.forEach(function (target) {
+      var item = element('article', 'rm-target-failures__item');
+      var copy = element('span');
+      appendText(copy, 'strong', '', target.displayName);
+      appendText(copy, 'small', '', targetFailureReasonLabel(target.failureReason));
+      item.appendChild(copy);
+      var meta = element('span', 'rm-target-failures__meta');
+      appendText(meta, 'small', '', humanRuntimeToken(target.language) + ' · ' + humanRuntimeToken(target.kind));
+      appendText(meta, 'small', '', targetFailureStageLabel(target.failureStage));
+      item.appendChild(meta);
+      list.appendChild(item);
+    });
+    section.appendChild(list);
+    host.appendChild(section);
+  }
+
   function renderRuntimePortfolio(host) {
     var runtime = state.model.runtimePortfolio;
+    var accounting = targetAnalysisAccounting(state.model);
     var survey = element('section', 'rm-survey rm-runtime-survey');
     var copy = element('div');
     appendText(copy, 'p', 'rm-eyebrow', 'Repository overview');
     appendText(copy, 'h1', '', state.model.repoName);
     var summary = 'Understand ' + String(runtime.roles.length) +
       (runtime.roles.length === 1 ? ' repository role' : ' repository roles') + ' across ' +
-      String(state.model.targets.length) + (state.model.targets.length === 1 ? ' selected target.' : ' selected targets.');
+      String(accounting.analyzed) + (accounting.analyzed === 1 ? ' analyzed target.' : ' analyzed targets.');
+    if (state.model.targetOutcomePortfolio) {
+      summary += ' ' + String(accounting.analyzed) + ' / ' + String(accounting.selected) +
+        ' selected targets analyzed.';
+    }
     if (runtime.unclassified.length) {
       summary += ' ' + String(runtime.unclassified.length) +
         (runtime.unclassified.length === 1 ? ' target remains unclassified.' : ' targets remain unclassified.');
@@ -1758,7 +1947,9 @@
     appendText(copy, 'p', 'rm-survey__summary', summary);
     survey.appendChild(copy);
     var facts = element('dl', 'rm-survey__facts');
-    [['Roles', runtime.roles.length], ['Targets', state.model.targets.length],
+    [['Roles', runtime.roles.length],
+      [state.model.targetOutcomePortfolio ? 'Analyzed' : 'Targets',
+        state.model.targetOutcomePortfolio ? String(accounting.analyzed) + ' / ' + String(accounting.selected) : accounting.selected],
       ['Revision', state.model.revision]].forEach(function (row) {
       var wrapper = element('div');
       appendText(wrapper, 'dt', '', row[0]);
@@ -1778,11 +1969,11 @@
       return role.roleKind === 'unknown' ||
         (['library', 'example', 'supporting_tool'].indexOf(role.roleKind) < 0 && role.prominence === 'unknown');
     });
-    renderRuntimeRoleSection(host, 'library', 'Libraries and product APIs',
-      'Reusable packages and public APIs that form the product this repository delivers.', libraryRoles);
     renderRuntimeRoleSection(host, 'primary', 'Primary runtime roles',
       'The central services, daemons, workers, and command surfaces that explain how this repository runs.',
       runnableRoles.filter(function (role) { return role.prominence === 'primary'; }));
+    renderRuntimeRoleSection(host, 'library', 'Libraries and product APIs',
+      'Reusable packages and public APIs that form the product this repository delivers.', libraryRoles);
     renderRuntimeRoleSection(host, 'example', 'Examples',
       'Runnable demonstrations and tutorials that show how the repository product is used.', exampleRoles);
     renderRuntimeRoleSection(host, 'tool', 'Supporting tools',
@@ -1793,6 +1984,7 @@
     renderRuntimeRoleSection(host, 'unknown', 'Uncertain roles',
       'Evidence supports these roles, but their kind or repository prominence remains uncertain.', uncertainRoles);
     renderUnclassifiedRuntimeTargets(host);
+    renderNotAnalyzedTargets(host);
   }
 
   function humanSurfaceToken(value) {
@@ -1902,17 +2094,32 @@
   }
 
   function renderRepositoryFallback(host) {
+    var accounting = targetAnalysisAccounting(state.model);
     var survey = element('section', 'rm-survey');
     var copy = element('div');
     appendText(copy, 'p', 'rm-eyebrow', 'Repository overview');
     appendText(copy, 'h1', '', state.model.repoName);
-    appendText(copy, 'p', 'rm-survey__summary',
+    appendText(copy, 'p', 'rm-survey__summary', state.model.targetOutcomePortfolio ?
+      String(accounting.analyzed) + ' / ' + String(accounting.selected) +
+        ' selected targets analyzed. Open an analyzed program map to inspect its exact structural and semantic evidence.' :
       'Open the selected program map to inspect its exact structural and semantic evidence.');
     var link = element('a', 'rm-survey__overview-link', 'Open program map →');
     link.href = '#/program';
     copy.appendChild(link);
     survey.appendChild(copy);
+    if (state.model.targetOutcomePortfolio) {
+      var facts = element('dl', 'rm-survey__facts');
+      [['Analyzed', String(accounting.analyzed) + ' / ' + String(accounting.selected)],
+        ['Revision', state.model.revision]].forEach(function (row) {
+        var wrapper = element('div');
+        appendText(wrapper, 'dt', '', row[0]);
+        appendText(wrapper, 'dd', row[0] === 'Revision' ? 'rm-runtime-revision' : '', row[1]);
+        facts.appendChild(wrapper);
+      });
+      survey.appendChild(facts);
+    }
     host.appendChild(survey);
+    renderNotAnalyzedTargets(host);
   }
 
   function renderSurfaceFacts(parent, title, refs, factsByRef) {

@@ -1,6 +1,10 @@
 (function (root) {
   'use strict';
 
+  var PORT_SLOT_SPACING = 32;
+  var PORT_VERTICAL_INSET = 18;
+  var ARROW_TARGET_CLEARANCE = 12;
+
   function exactText(value, label) {
     if (typeof value !== 'string' || value.trim() !== value || !value) {
       throw new Error(label + ' must be exact non-empty text');
@@ -133,6 +137,33 @@
       compareText(left.role, right.role) || compareText(left.id, right.id);
   }
 
+  function portLayoutRequirements(rawGraph) {
+    var graph = graphObject(rawGraph);
+    var countsByNodeID = Object.create(null);
+    graph.nodes.forEach(function (node) {
+      countsByNodeID[node.id] = { left: 0, right: 0 };
+    });
+    graph.edges.forEach(function (rawEdge) {
+      var edge = validateEdge(graph, rawEdge);
+      var sameLane = nodeLane(graph, edge.sourceID) === nodeLane(graph, edge.targetID);
+      countsByNodeID[edge.sourceID].right++;
+      countsByNodeID[edge.targetID][sameLane ? 'right' : 'left']++;
+    });
+    var minHeightByNodeID = Object.create(null);
+    Object.keys(countsByNodeID).sort().forEach(function (nodeID) {
+      var counts = countsByNodeID[nodeID];
+      var slots = Math.max(counts.left, counts.right);
+      minHeightByNodeID[nodeID] = slots > 1 ?
+        PORT_VERTICAL_INSET * 2 + (slots - 1) * PORT_SLOT_SPACING : 0;
+    });
+    return {
+      slotSpacing: PORT_SLOT_SPACING,
+      verticalInset: PORT_VERTICAL_INSET,
+      countsByNodeID: countsByNodeID,
+      minHeightByNodeID: minHeightByNodeID
+    };
+  }
+
   function assignStablePorts(rawGraph, measurements) {
     var graph = graphObject(rawGraph);
     if (!measurements || typeof measurements !== 'object' || Array.isArray(measurements) ||
@@ -183,9 +214,18 @@
     });
 
     Object.keys(slots).sort().forEach(function (slotKey) {
-      var members = slots[slotKey].slice().sort(endpointSort);
+      var members = slots[slotKey].slice().sort(function (left, right) {
+        var leftBounds = normalizedRect(measurements.nodesByID[left.oppositeNodeID],
+          'canvas opposite endpoint measurement');
+        var rightBounds = normalizedRect(measurements.nodesByID[right.oppositeNodeID],
+          'canvas opposite endpoint measurement');
+        return leftBounds.centerY - rightBounds.centerY || endpointSort(left, right);
+      });
       var total = members.length;
-      var spread = Math.min(38, Math.max(0, total - 1) * 10);
+      var nodeBounds = normalizedRect(measurements.nodesByID[members[0].nodeID],
+        'canvas port node measurement');
+      var availableSpread = Math.max(0, nodeBounds.height - PORT_VERTICAL_INSET * 2);
+      var spread = Math.min(availableSpread, Math.max(0, total - 1) * PORT_SLOT_SPACING);
       members.forEach(function (port, index) {
         port.index = index;
         port.total = total;
@@ -193,7 +233,9 @@
       });
     });
     Object.keys(portsByNodeID).forEach(function (nodeID) {
-      portsByNodeID[nodeID].sort(endpointSort);
+      portsByNodeID[nodeID].sort(function (left, right) {
+        return compareText(left.side, right.side) || left.index - right.index || endpointSort(left, right);
+      });
     });
     ports.sort(function (left, right) { return compareText(left.id, right.id); });
     return {
@@ -220,6 +262,31 @@
         !assignment.portsByEdgeID) {
       throw new Error('canvas port assignment must contain its edge index');
     }
+    var sameLaneTracksByEdgeID = Object.create(null);
+    var sameLaneIntervals = graph.edges.map(function (rawEdge) {
+      var edge = validateEdge(graph, rawEdge);
+      if (nodeLane(graph, edge.sourceID) !== nodeLane(graph, edge.targetID)) return null;
+      var edgePorts = assignment.portsByEdgeID[edge.id];
+      if (!edgePorts || !edgePorts.source || !edgePorts.target) {
+        throw new Error('canvas edge has incomplete stable port assignment');
+      }
+      var sourceBounds = normalizedRect(measurements.nodesByID[edge.sourceID], 'canvas source measurement');
+      var targetBounds = normalizedRect(measurements.nodesByID[edge.targetID], 'canvas target measurement');
+      var sourceY = sourceBounds.centerY + edgePorts.source.offset;
+      var targetY = targetBounds.centerY + edgePorts.target.offset;
+      return { id: edge.id, start: Math.min(sourceY, targetY), end: Math.max(sourceY, targetY) };
+    }).filter(Boolean).sort(function (left, right) {
+      return left.start - right.start || left.end - right.end || compareText(left.id, right.id);
+    });
+    var trackEnds = [];
+    sameLaneIntervals.forEach(function (interval) {
+      var track = 0;
+      while (track < trackEnds.length && interval.start <= trackEnds[track] + PORT_VERTICAL_INSET) track++;
+      if (track === trackEnds.length) trackEnds.push(interval.end);
+      else trackEnds[track] = interval.end;
+      sameLaneTracksByEdgeID[interval.id] = track;
+    });
+
     var edges = [];
     var edgesByID = Object.create(null);
     graph.edges.slice().sort(function (left, right) {
@@ -236,10 +303,16 @@
       var sameLane = nodeLane(graph, edge.sourceID) === nodeLane(graph, edge.targetID);
       var sourceX = sourceBounds.right;
       var sourceY = sourceBounds.centerY + edgePorts.source.offset;
-      var targetX = sameLane ? targetBounds.right : targetBounds.left;
+      var targetPortX = sameLane ? targetBounds.right : targetBounds.left;
       var targetY = targetBounds.centerY + edgePorts.target.offset;
-      var authorityOffset = edge.authority === 'possible' ? 12 : (edge.authority === 'runtime' ? 24 : 0);
-      var bend = Math.max(34, sameLane ? 46 : Math.abs(targetX - sourceX) * 0.45) + authorityOffset;
+      var authorityOffset = edge.authority === 'possible' ? 8 : (edge.authority === 'runtime' ? 16 : 0);
+      var horizontalGap = Math.abs(targetPortX - sourceX);
+      var crossLaneBend = Math.min(horizontalGap / 2,
+        Math.max(26, horizontalGap * 0.4 + authorityOffset));
+      var verticalSpan = Math.abs(targetY - sourceY);
+      var track = sameLane ? sameLaneTracksByEdgeID[edge.id] || 0 : 0;
+      var bend = sameLane ? 42 + track * 22 + Math.min(44, verticalSpan * 0.18) + authorityOffset : crossLaneBend;
+      var targetX = targetPortX + (sameLane ? ARROW_TARGET_CLEARANCE : -ARROW_TARGET_CLEARANCE);
       var path = sameLane ?
         'M ' + sourceX + ' ' + sourceY + ' C ' + (sourceX + bend) + ' ' + sourceY + ', ' +
           (targetX + bend) + ' ' + targetY + ', ' + targetX + ' ' + targetY :
@@ -250,9 +323,11 @@
         sourceID: edge.sourceID,
         targetID: edge.targetID,
         authority: edge.authority,
+        track: track,
         sourcePortID: edgePorts.source.id,
         targetPortID: edgePorts.target.id,
         source: { x: sourceX, y: sourceY },
+        targetPort: { x: targetPortX, y: targetY },
         target: { x: targetX, y: targetY },
         path: path
       };
@@ -268,6 +343,7 @@
   }
 
   var api = Object.freeze({
+    portLayoutRequirements: portLayoutRequirements,
     measureCanvasNodes: measureCanvasNodes,
     assignStablePorts: assignStablePorts,
     buildEdgeGeometry: buildEdgeGeometry

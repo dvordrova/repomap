@@ -702,9 +702,14 @@ func parseGoListOutput(r io.Reader) ([]goListPackage, []string, error) {
 func rootGoListPackages(values []goListPackage) []goListPackage {
 	result := make([]goListPackage, 0, len(values))
 	for _, value := range values {
-		if !value.DepOnly {
-			result = append(result, value)
+		// `go list -deps -json ./...` emits a root row for a directory that has
+		// only external *_test.go files, even though Tests=false has no ordinary
+		// package syntax for it. Keep that row in the raw dependency load, but do
+		// not promote it into repository PackageFacts or target identity.
+		if value.DepOnly || len(value.GoFiles)+len(value.CgoFiles) == 0 {
+			continue
 		}
+		result = append(result, value)
 	}
 	return result
 }

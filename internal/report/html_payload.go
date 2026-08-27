@@ -181,6 +181,7 @@ func programShellPayloadForReport(
 		JSTSSurfaceCatalogView: jsTSSurfaceCatalogViewForBrowser(data.JSTSSurfaceCatalogView),
 		CrossSurfacePathView:   crossSurfacePathViewForBrowser(data.CrossSurfacePathView),
 		RuntimePortfolio:       data.RuntimePortfolio,
+		TargetOutcomePortfolio: data.TargetOutcomePortfolio,
 		OpenablePaths:          append([]string{}, data.OpenablePaths...),
 		SourceIDs:              data.SourceIDs,
 		GitHubSourceLinks:      data.GitHubSourceLinks,

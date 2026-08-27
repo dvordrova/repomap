@@ -65,18 +65,21 @@ func TestSurfaceDiscoveryInputProjectsModuleLibraryRootsAndFullOwningModuleScope
 			{
 				CanonicalPath: modulePath, Name: "library", ModuleID: "root", ModulePath: modulePath,
 				PackageDir: ".", ModuleRelativeDir: ".", Locality: "local", DeclarationsScanned: true,
+				Files:            []string{"library.go"},
 				LoadCompleteness: completeSurfacePackageLoad(),
 				Declarations:     []gofacts.PackageDeclaration{{Kind: gofacts.PackageDeclarationFunc, Name: "Open"}},
 			},
 			{
 				CanonicalPath: modulePath + "/client", Name: "client", ModuleID: "root", ModulePath: modulePath,
 				PackageDir: "client", ModuleRelativeDir: "client", Locality: "local", DeclarationsScanned: true,
+				Files:            []string{"client/client.go"},
 				LoadCompleteness: completeSurfacePackageLoad(),
 				Declarations:     []gofacts.PackageDeclaration{{Kind: gofacts.PackageDeclarationType, Name: "Client"}},
 			},
 			{
 				CanonicalPath: modulePath + "/internal/state", Name: "state", ModuleID: "root", ModulePath: modulePath,
 				PackageDir: "internal/state", ModuleRelativeDir: "internal/state", Locality: "local", DeclarationsScanned: true,
+				Files:            []string{"internal/state/state.go"},
 				LoadCompleteness: completeSurfacePackageLoad(),
 			},
 		},

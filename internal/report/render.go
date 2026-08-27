@@ -136,26 +136,27 @@ func buildHTMLWithOptions(data *ReportData, options RenderOptions) ([]byte, erro
 // programShellPayload is the complete browser contract for ProgramPortfolio
 // pages. It is a projection of the same strict Program-only report schema.
 type programShellPayload struct {
-	FormatVersion          int                        `json:"format_version"`
-	RepoName               string                     `json:"repo_name"`
-	AnalysisTarget         *analysistarget.Target     `json:"analysis_target,omitempty"`
-	ProgramPortfolio       *ProgramPortfolio          `json:"program_portfolio"`
-	CubeMapView            *CubeMapView               `json:"cube_map_view,omitempty"`
-	CoreMapView            *CoreMapView               `json:"core_map_view,omitempty"`
-	ActivityEntrypointView *ActivityEntrypointView    `json:"activity_entrypoint_view,omitempty"`
-	IntegrationUsageView   *IntegrationUsageView      `json:"integration_usage_view,omitempty"`
-	ActivityPathView       *ActivityPathView          `json:"activity_path_view,omitempty"`
-	JSTSSurfaceCatalogView *JSTSSurfaceCatalogView    `json:"js_ts_surface_catalog_view,omitempty"`
-	CrossSurfacePathView   *CrossSurfacePathView      `json:"cross_surface_path_view,omitempty"`
-	RuntimePortfolio       *RuntimePortfolioView      `json:"runtime_portfolio,omitempty"`
-	OpenablePaths          []string                   `json:"openable_paths"`
-	SourceIDs              map[string]string          `json:"source_ids,omitempty"`
-	GitHubSourceLinks      *GitHubSourceLinks         `json:"github_source_links,omitempty"`
-	GitLabSourceLinks      *GitLabSourceLinks         `json:"gitlab_source_links,omitempty"`
-	CapturedRevision       string                     `json:"captured_revision"`
-	CapturedInputCount     int                        `json:"captured_input_count"`
-	Warnings               []string                   `json:"warnings,omitempty"`
-	TargetNavigation       *TargetNavigationPortfolio `json:"target_navigation,omitempty"`
+	FormatVersion          int                         `json:"format_version"`
+	RepoName               string                      `json:"repo_name"`
+	AnalysisTarget         *analysistarget.Target      `json:"analysis_target,omitempty"`
+	ProgramPortfolio       *ProgramPortfolio           `json:"program_portfolio"`
+	CubeMapView            *CubeMapView                `json:"cube_map_view,omitempty"`
+	CoreMapView            *CoreMapView                `json:"core_map_view,omitempty"`
+	ActivityEntrypointView *ActivityEntrypointView     `json:"activity_entrypoint_view,omitempty"`
+	IntegrationUsageView   *IntegrationUsageView       `json:"integration_usage_view,omitempty"`
+	ActivityPathView       *ActivityPathView           `json:"activity_path_view,omitempty"`
+	JSTSSurfaceCatalogView *JSTSSurfaceCatalogView     `json:"js_ts_surface_catalog_view,omitempty"`
+	CrossSurfacePathView   *CrossSurfacePathView       `json:"cross_surface_path_view,omitempty"`
+	RuntimePortfolio       *RuntimePortfolioView       `json:"runtime_portfolio,omitempty"`
+	TargetOutcomePortfolio *TargetOutcomePortfolioView `json:"target_outcome_portfolio,omitempty"`
+	OpenablePaths          []string                    `json:"openable_paths"`
+	SourceIDs              map[string]string           `json:"source_ids,omitempty"`
+	GitHubSourceLinks      *GitHubSourceLinks          `json:"github_source_links,omitempty"`
+	GitLabSourceLinks      *GitLabSourceLinks          `json:"gitlab_source_links,omitempty"`
+	CapturedRevision       string                      `json:"captured_revision"`
+	CapturedInputCount     int                         `json:"captured_input_count"`
+	Warnings               []string                    `json:"warnings,omitempty"`
+	TargetNavigation       *TargetNavigationPortfolio  `json:"target_navigation,omitempty"`
 }
 
 func buildProgramHTMLWithOptions(data *ReportData, options RenderOptions) ([]byte, error) {
@@ -351,6 +352,11 @@ func validateProgramPresentation(data *ReportData) error {
 			return fmt.Errorf("report: runtime portfolio view: %w", err)
 		}
 	}
+	if data.TargetOutcomePortfolio != nil {
+		if err := data.TargetOutcomePortfolio.Validate(); err != nil {
+			return fmt.Errorf("report: target outcome portfolio view: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -408,7 +414,14 @@ func GenerateAuthorizedWithOptions(
 	authority RunAuthority,
 	options RenderOptions,
 ) error {
-	return generate(runDir, authority, nil, options)
+	return generate(runDir, authority, nil, options, true)
+}
+
+// GenerateAuthorizedPageData finalizes one manifest-bound backing page
+// without publishing a browser HTML artifact. Multi-target publication uses
+// these exact report.json/manifest authorities to build its sole owner HTML.
+func GenerateAuthorizedPageData(runDir string, authority RunAuthority) error {
+	return generate(runDir, authority, nil, RenderOptions{}, false)
 }
 
 type standaloneSourceConfig struct {
@@ -448,7 +461,31 @@ func GenerateAuthorizedGitLabWithOptions(
 	return generate(runDir, authority, &standaloneSourceConfig{
 		hostName:      "GitLab",
 		repositoryURL: normalizedURL,
-	}, options)
+	}, options, true)
+}
+
+// GenerateAuthorizedGitLabPageData is the backing-page equivalent of
+// GenerateAuthorizedGitLab. It retains exact static source authority in the
+// manifest while deliberately publishing no target-local HTML.
+func GenerateAuthorizedGitLabPageData(
+	runDir string,
+	authority RunAuthority,
+	repositoryURL string,
+) error {
+	normalizedURL, err := NormalizeGitLabRepositoryURL(repositoryURL)
+	if err != nil {
+		return err
+	}
+	if normalizedURL == "" {
+		return fmt.Errorf("report: GitLab repository URL is required")
+	}
+	if err := validateGitLabAuthority(authority); err != nil {
+		return err
+	}
+	return generate(runDir, authority, &standaloneSourceConfig{
+		hostName:      "GitLab",
+		repositoryURL: normalizedURL,
+	}, RenderOptions{}, false)
 }
 
 // GenerateAuthorizedGitHub emits the ordinary persisted report and manifest
@@ -483,7 +520,31 @@ func GenerateAuthorizedGitHubWithOptions(
 	return generate(runDir, authority, &standaloneSourceConfig{
 		hostName:      "GitHub",
 		repositoryURL: normalizedURL,
-	}, options)
+	}, options, true)
+}
+
+// GenerateAuthorizedGitHubPageData is the backing-page equivalent of
+// GenerateAuthorizedGitHub. It retains exact static source authority in the
+// manifest while deliberately publishing no target-local HTML.
+func GenerateAuthorizedGitHubPageData(
+	runDir string,
+	authority RunAuthority,
+	repositoryURL string,
+) error {
+	normalizedURL, err := NormalizeGitHubRepositoryURL(repositoryURL)
+	if err != nil {
+		return err
+	}
+	if normalizedURL == "" {
+		return fmt.Errorf("report: GitHub repository URL is required")
+	}
+	if err := validateStandaloneSourceAuthority(authority, "GitHub"); err != nil {
+		return err
+	}
+	return generate(runDir, authority, &standaloneSourceConfig{
+		hostName:      "GitHub",
+		repositoryURL: normalizedURL,
+	}, RenderOptions{}, false)
 }
 
 func generate(
@@ -491,6 +552,7 @@ func generate(
 	authority RunAuthority,
 	standaloneSource *standaloneSourceConfig,
 	renderOptions RenderOptions,
+	publishHTML bool,
 ) error {
 	if standaloneSource != nil {
 		if err := validateStandaloneSourceAuthority(authority, standaloneSource.hostName); err != nil {
@@ -514,7 +576,7 @@ func generate(
 	var gitLabSourceLinks *GitLabSourceLinks
 	var gitHubSourceLinks *GitHubSourceLinks
 	data.CapturedRevision = authority.repository.Head
-	if standaloneSource != nil {
+	if standaloneSource != nil && publishHTML {
 		pathPrefix, err := standaloneSourcePathPrefix(authority.repository.Identity, authority.analysisRoot)
 		if err != nil {
 			return err
@@ -553,16 +615,19 @@ func generate(
 	if err != nil {
 		return err
 	}
+	manifest, err := prepareAuthorizedRunManifest(
+		runDir, data, reportJSON, authority, standaloneSource,
+	)
+	if err != nil {
+		return err
+	}
+	if !publishHTML {
+		return installAuthorizedReport(runDir, reportJSON, nil, manifest)
+	}
 	renderData := *data
 	renderData.GitLabSourceLinks = gitLabSourceLinks
 	renderData.GitHubSourceLinks = gitHubSourceLinks
 	reportHTML, err := RenderHTMLWithOptions(&renderData, renderOptions)
-	if err != nil {
-		return err
-	}
-	manifest, err := prepareAuthorizedRunManifest(
-		runDir, data, reportJSON, authority, standaloneSource,
-	)
 	if err != nil {
 		return err
 	}
@@ -582,9 +647,10 @@ func generate(
 	return installAuthorizedReport(runDir, reportJSON, reportHTML, manifest)
 }
 
-// installAuthorizedReport stages both browser artifacts in the run directory,
-// installs them, and writes the already-validated manifest last as the sole
-// readiness boundary. Any returned error removes every final product name.
+// installAuthorizedReport stages the canonical report data and, when non-nil,
+// its browser artifact. It writes the already-validated manifest last as the
+// sole readiness boundary. A nil HTML payload is a backing page, not an empty
+// report. Any returned error removes every final product name.
 func installAuthorizedReport(
 	runDir string,
 	reportJSON []byte,
@@ -605,20 +671,29 @@ func installAuthorizedReport(
 		resultErr = errors.Join(resultErr, cleanupErr)
 	}()
 
-	htmlStage, err = stageReportArtifact(runDir, ".report-html-*.tmp", reportHTML)
-	if err != nil {
-		return err
+	if reportHTML != nil {
+		htmlStage, err = stageReportArtifact(runDir, ".report-html-*.tmp", reportHTML)
+		if err != nil {
+			return err
+		}
+	}
+	if reportHTML == nil {
+		if err := removeIfPresent(filepath.Join(runDir, "report.html")); err != nil {
+			return fmt.Errorf("report: remove target-local report.html: %w", err)
+		}
 	}
 	jsonPath := filepath.Join(runDir, "report.json")
-	htmlPath := filepath.Join(runDir, "report.html")
 	if err := os.Rename(jsonStage, jsonPath); err != nil {
 		return fmt.Errorf("report: install report.json: %w", err)
 	}
 	jsonStage = ""
-	if err := os.Rename(htmlStage, htmlPath); err != nil {
-		return fmt.Errorf("report: install report.html: %w", err)
+	if reportHTML != nil {
+		htmlPath := filepath.Join(runDir, "report.html")
+		if err := os.Rename(htmlStage, htmlPath); err != nil {
+			return fmt.Errorf("report: install report.html: %w", err)
+		}
+		htmlStage = ""
 	}
-	htmlStage = ""
 	if err := writeRunManifestAtomic(runDir, manifest); err != nil {
 		return err
 	}

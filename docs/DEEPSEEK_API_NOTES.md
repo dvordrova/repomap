@@ -49,6 +49,16 @@ comes from the caller's environment.
 - The serialized request is immutable across transport retries. Retryable
   network errors and HTTP statuses receive at most three retries after the
   first attempt; schema or semantic rejection never triggers a new model call.
+- Independent batch calls start behind a run-shared bounded attempt gate. The
+  ordinary product limit is four live provider attempts. A DeepSeek HTTP 429
+  atomically collapses that gate to one before releasing the failed attempt and
+  entering the existing retry backoff. Attempts already on the wire are not
+  replayed or canceled merely because of the 429; once they finish, that retry
+  and all later attempts in the run are serialized. If retries are exhausted,
+  the terminal batch item cancels the batch child context, stops queued work,
+  and asks in-flight HTTP requests to terminate through their request context.
+  Client cancellation is a fail-fast transport mechanism, not a guarantee
+  about provider-side billing after disconnect.
 - Responses are byte-bounded. The adapter decodes exactly one provider choice
   and its finish reason; the shared executor then accepts one unambiguous JSON
   object or array with harmless whitespace, one JSON fence, or short leading

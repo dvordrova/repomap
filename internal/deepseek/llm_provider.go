@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -160,10 +161,19 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 			case <-time.After(backoffDuration(attempt - 1)):
 			}
 		}
+		releaseAttempt, acquireErr := llm.AcquireProviderAttempt(ctx)
+		if acquireErr != nil {
+			completion := llmCompletion(last, attempts, responseBytes, time.Since(started))
+			return completion, closedLLMProviderError("complete", acquireErr, attempts, false)
+		}
 
 		completion, retryable, err := doChatMeasured(
 			ctx, c.HTTPClient, c.Endpoint, c.APIKey, c.Auth, body,
 		)
+		if providerRateLimited(err) {
+			llm.CollapseProviderAttempts(ctx)
+		}
+		releaseAttempt()
 		attempts = attempt
 		responseBytes += completion.ResponseBytes
 		last = completion
@@ -185,6 +195,20 @@ func (c *Client) Complete(ctx context.Context, prepared llm.Prepared) (llm.Compl
 	result := llmCompletion(last, attempts, responseBytes, time.Since(started))
 	exhausted := fmt.Errorf("transport retries exhausted after %d attempts: %w", attempts, lastErr)
 	return result, closedLLMProviderError("complete", exhausted, attempts, true)
+}
+
+func providerRateLimited(err error) bool {
+	var resourceErr *llm.ResourceLimitError
+	if errors.As(err, &resourceErr) && resourceErr.HTTPStatus == http.StatusTooManyRequests {
+		return true
+	}
+	var source llm.ProviderFailureSource
+	if !errors.As(err, &source) {
+		return false
+	}
+	failure := source.ProviderFailure()
+	return failure.HTTPStatus == http.StatusTooManyRequests &&
+		(failure.Kind == llm.ProviderFailureHTTPStatus || failure.Kind == llm.ProviderFailureResource)
 }
 
 func validateLLMProviderConfig(c *Client) error {

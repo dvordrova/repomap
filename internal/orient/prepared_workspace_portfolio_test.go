@@ -9,10 +9,90 @@ import (
 	"testing"
 
 	"github.com/dvordrova/repomap/internal/analysistarget"
+	"github.com/dvordrova/repomap/internal/corpus"
 	"github.com/dvordrova/repomap/internal/gofacts"
 	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
+
+func TestSelectedTargetWorkspaceRetriesHealthyExactTargetAfterUnionFailure(t *testing.T) {
+	repository := t.TempDir()
+	for _, directory := range []string{"cmd/healthy", "cmd/broken"} {
+		if err := os.MkdirAll(filepath.Join(repository, filepath.FromSlash(directory)), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeSurfaceTestFile(t, repository, "go.mod", "module example.com/contained-workspace\n\ngo 1.24\n")
+	writeSurfaceTestFile(t, repository, "cmd/healthy/main.go", "package main\nfunc main() {}\n")
+	writeSurfaceTestFile(t, repository, "cmd/broken/main.go", "package main\nfunc main() { missing() }\n")
+	runOrientGit(t, repository, "init", "--quiet")
+	runOrientGit(t, repository, "add", "--", "go.mod", "cmd/healthy/main.go", "cmd/broken/main.go")
+
+	repositoryCorpus, err := corpus.Open(t.Context(), repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repositoryCorpus.Close() })
+	deferred, err := snapshot.BuildContext(t.Context(), snapshot.Options{
+		RepoPath: repository, RepositoryCorpus: repositoryCorpus,
+		GoTarget: runtime.GOOS + "/" + runtime.GOARCH,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deferred.TargetCatalog == nil {
+		t.Fatal("deferred snapshot omitted its exact target catalog")
+	}
+	refs := make(map[string]string)
+	for _, entry := range deferred.TargetCatalog.Entries {
+		refs[entry.DisplayPath] = entry.Candidate.Target.Ref
+	}
+	if refs["cmd/healthy"] == "" || refs["cmd/broken"] == "" {
+		t.Fatalf("target refs = %#v", refs)
+	}
+	healthy, err := snapshot.ScopeAnalysisTarget(deferred, refs["cmd/healthy"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	broken, err := snapshot.ScopeAnalysisTarget(deferred, refs["cmd/broken"])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	unionFailures := 0
+	sharedDeliveries := 0
+	var healthyIndex surfacediscovery.DirectCallIndex
+	err = Run(t.Context(), Options{
+		RepoPath: repository, RepositoryCorpus: repositoryCorpus,
+		GoTarget: runtime.GOOS + "/" + runtime.GOARCH,
+		DebugDir: t.TempDir(), RunID: "healthy-union-fallback",
+		RequireArtifacts: true, AnalyzeGoProgram: true,
+		PrecomputedSnapshot: &healthy,
+		PreparedGoSnapshots: []snapshot.Snapshot{healthy, broken},
+		PreparedGoWorkspaceSink: func(*surfacediscovery.PreparedWorkspace) {
+			sharedDeliveries++
+		},
+		PreparedGoWorkspaceUnionFailureSink: func(error) {
+			unionFailures++
+		},
+		DirectCallIndexSink: func(index surfacediscovery.DirectCallIndex) {
+			healthyIndex = index
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unionFailures != 1 || sharedDeliveries != 0 {
+		t.Fatalf(
+			"union failures/shared deliveries = %d/%d, want 1/0",
+			unionFailures, sharedDeliveries,
+		)
+	}
+	if healthyIndex.Scope.TargetRef != healthy.AnalysisTarget.Ref ||
+		indexContainsPackage(healthyIndex, "example.com/contained-workspace/cmd/broken") {
+		t.Fatalf("healthy exact fallback leaked sibling scope: %#v", healthyIndex.Scope)
+	}
+}
 
 func TestSelectedTargetPortfolioSharesOnePreparedGoWorkspace(t *testing.T) {
 	repository := t.TempDir()

@@ -45,6 +45,18 @@ sidecar tools.
   validation. The shared LLM layer owns exact provider requests, transport,
   retries, provider-envelope/JSON decoding, batch execution, cache, accounting,
   and semantic-journal events.
+- Execute independent cube-planned batch items through the shared bounded LLM
+  worker pool, with the ordinary product limit set to four. Preserve the
+  caller's item index as the only in-memory result slot and replay observer
+  events in that order; do not add a random batch identity to semantic or cache
+  state. Every provider transport attempt acquires the run-shared adaptive
+  gate. An HTTP 429 collapses that gate to one before the provider's existing
+  backoff/retry, so already-started attempts finish while that retry and every
+  new attempt become serial. Only a terminal item error cancels the batch child
+  context and prevents queued items from starting. The cube still rejects the
+  complete batch on any terminal item failure; accepted sibling calls may
+  retain their exact identity-bound cache entries but never become a partial
+  semantic result.
 - A cube returns a fully validated result, a contractually legitimate empty
   result, or an error. Backend orchestration, report projection, and browser
   code must never supply semantic fallback, repair, promotion, or partial
@@ -103,14 +115,49 @@ sidecar tools.
   TypeScript Compiler API projection, likewise belongs only to selected typed
   targets, so an unselected language's page prerequisite cannot block an exact
   target owned by another adapter.
+- The Go fact and target inventory excludes non-`DepOnly` `go list` root rows
+  that have no build-selected `GoFiles` or `CgoFiles`. In particular, a
+  directory containing only external `*_test.go` files is not an ordinary
+  package when the product loads with `Tests=false`; its raw row may inform
+  dependency metadata but must not enter package counts, target identity, or
+  the typed ProgramIndex scope. A source-bearing package that fails type
+  checking is not filtered and still fails its owning target closed.
 - Execute every selected typed target through its own complete page-local path:
   sealed `ProgramIndex`, target-scoped dependency authority, the shared semantic
   cubes, and a validated report page. A selected non-default target is not a
   `structural_only` substitute for that path. Multi-target publication seals a
   language-neutral `ProgramPagePortfolio` keyed by exact `ProgramTarget` IDs and
   child run IDs, then binds the repository-level `RuntimePortfolio` to it. In
-  manifest version 34 this neutral page authority is mutually exclusive with
-  the legacy Go `TargetRunContainer`/`TargetPagePortfolio` authority.
+  manifest version 35 this neutral page authority is mutually exclusive with
+  the legacy Go `TargetRunContainer`/`TargetPagePortfolio` authority. Preserve
+  every analyzed child run's manifest-bound `report.json`, ProgramIndex, and semantic
+  artifacts, but publish exactly one physical `report.html` in the deterministic
+  successful owner run.
+  Derive that owner document directly from the verified backing data rather
+  than merging child HTML. In served mode, sibling target URLs are virtual
+  projections of that backing data and never require sibling HTML files.
+- A multi-target run contains a target-local preparation, analysis, semantic,
+  or page-validation failure instead of discarding completed sibling pages.
+  Persist one exhaustive, adapter-neutral `TargetOutcomePortfolio` for every
+  selected target: a row is either bound to one complete ProgramTarget/page or
+  carries only a closed public failure stage and reason. Never persist raw
+  errors or adapter-native refs in that authority, never turn a failed target
+  into a partial page, and never mix it with RuntimePortfolio's distinct
+  analyzed-but-unclassified complement. The picker keeps failed rows visible,
+  red, disabled, and linkless; the repository overview reports analyzed versus
+  selected coverage. Materialize each selected JS/TS compiler project at its
+  own target boundary so a missing compiler does not preflight-fail unrelated
+  languages or packages. A shared selected-target Go workspace is only an
+  optimization: if its union cannot be prepared, retry the current exact target
+  locally and keep every later Go target isolated; never reuse a target-local
+  fallback workspace as sibling authority. Context cancellation and shared
+  portfolio, persistence, manifest, repository-overview, or bundle failures
+  remain publication-terminal. When at least one target succeeds, the analyzed-page
+  portfolio and its neutral bundle remain valid even if that is the only
+  successful page; the first successful page owns the one physical HTML while
+  the originally selected default remains the logical default in
+  TargetOutcomePortfolio. If every selected target
+  fails, retain diagnostics but do not invent a targetless or synthetic report.
 - The current JavaScript/TypeScript slice owns every eligible `package.json`
   project. Package-source ownership is assigned to the deepest containing
   manifest; every manifest with at least one owned tracked JavaScript/TypeScript
@@ -227,11 +274,13 @@ sidecar tools.
   the normal online provider path. Offline runs, fixtures, replay commands, and
   helper tools are not acceptance evidence.
 - Verify the process exit status and the generated manifest, sealed
-  ProgramIndex set, report JSON, and report HTML. For cache changes, also verify
-  a real second run and `repomap cache clear`.
+  ProgramIndex set, report JSON, and report HTML. For a multi-target run, verify
+  every backing manifest/report JSON and exactly one physical report HTML in the
+  successful owner run. For cache changes, also verify a real second run and `repomap
+  cache clear`.
 - Browser QA for a generated standalone report serves the narrow run root that
-  contains the report and any sibling target-run directories from a temporary
-  loopback-only `python3 -m http.server`, then opens the corresponding
+  contains the owner report and any backing sibling target-run directories from
+  a temporary loopback-only `python3 -m http.server`, then opens the corresponding
   `http://127.0.0.1:<port>/<run>/report.html` URL; do not rely on `file://`
   behavior.
   This is a development-only inspection step, not a supported repomap command,

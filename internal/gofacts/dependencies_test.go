@@ -197,7 +197,7 @@ func TestParseGoListOutputKeepsDepOnlyMetadataWithoutChangingRootWarnings(t *tes
 
 	packages, warnings, err := parseGoListOutput(strings.NewReader(`
 {"ImportPath":"corpdep/client","Name":"client","DepOnly":true,"Incomplete":true,"Error":{"Err":"dependency detail"},"Module":{"Path":"corpdep"}}
-{"ImportPath":"example.com/root","Name":"root","Incomplete":true,"DepsErrors":[{"Err":"dependency unavailable"}],"Module":{"Path":"example.com/root","Main":true}}
+{"ImportPath":"example.com/root","Name":"root","GoFiles":["root.go"],"Incomplete":true,"DepsErrors":[{"Err":"dependency unavailable"}],"Module":{"Path":"example.com/root","Main":true}}
 `))
 	if err != nil {
 		t.Fatal(err)

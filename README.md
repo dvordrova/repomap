@@ -2,12 +2,15 @@
 
 `repomap` is an online, model-assisted repository orientation tool. It
 extracts exact repository facts locally, sends bounded request-local catalogs
-to an OpenAI-compatible model, and publishes a manifest, report JSON, and
-report HTML. Every selected Go, Python, and JavaScript/TypeScript typed target
-runs through its complete target-local ProgramIndex, dependency, semantic-cube,
-and report-page path. A multi-target run seals a language-neutral program-page
-portfolio and a repository-level runtime portfolio that bind those complete
-pages without reducing a non-default target to a structural-only substitute.
+to an OpenAI-compatible model, and publishes manifest-bound report data plus
+one user-facing report HTML. Every selected Go, Python, and
+JavaScript/TypeScript typed target runs through its complete target-local
+ProgramIndex, dependency, semantic-cube, and report-page path. A multi-target
+run seals a language-neutral program-page portfolio and a repository-level
+runtime portfolio that bind those complete pages without reducing a non-default
+target to a structural-only substitute.
+Their validated page-local data remains separate, while one deterministic
+successful target run owns the publication's only physical `report.html`.
 
 The supported product surface is deliberately small:
 
@@ -84,7 +87,17 @@ retain a canonical file representative for every exact native target, may also
 retain positively supported repository-guidance candidates, and chooses one
 retained target as the default. Every restored typed target receives a complete
 target-local report page; a mixed-language run publishes those pages through
-the neutral program-page and runtime portfolios. `--target` bypasses the
+the neutral program-page and runtime portfolios in one HTML report. Its target
+picker replaces the old workflow of opening or merging one HTML file per target.
+If one selected target cannot complete its own preparation, typed analysis,
+semantic validation, or page validation, the other targets continue. The
+report keeps that target visible as a red, non-clickable `Not analyzed` row and
+accounts for it separately in the repository overview; it never presents a
+partial target page as analyzed. A target-local JavaScript/TypeScript compiler
+problem likewise affects only that package. If no selected target produces a
+validated page, there is no page from which to publish a report and the run
+still fails with diagnostics.
+`--target` bypasses the
 portfolio choice and analyzes exactly one supported explicit target, while the
 README classifier and active language scouts still run for downstream context.
 An exact repository-relative Python anchor path is accepted only when it names
@@ -93,9 +106,11 @@ the matching sealed selectors and requires an explicit choice.
 An unselected language's compiler and page-local analysis do not run. For every
 non-explicit discovered candidate set — even one eligible file — a fully
 validated live or cached model selection is required. Unavailable providers,
-transport failures, invalid responses, or incomplete target, activity,
-dependency, or snapshot evidence end the run instead of publishing a locally
-guessed or partial map.
+transport failures, invalid responses, or incomplete activity, dependency, or
+snapshot evidence never produce a locally guessed or partial map. A
+target-local failure is recorded as not analyzed when another complete page
+can host the repository report; shared selection, repository overview,
+persistence, manifest, or bundle failures still end publication.
 The current flags are:
 
 ```text
@@ -115,14 +130,18 @@ The current flags are:
 
 Without `--no-serve`, repomap starts a loopback server. Report code links use
 that server to open manifest-authorized local files in VS Code. `--no-open`
-keeps the browser closed, and `--port` selects a fixed port.
+keeps the browser closed, and `--port` selects a fixed port. In a multi-target
+run, sibling target URLs are served virtually from their validated page data;
+they do not require sibling `report.html` files on disk.
 
-With `--no-serve`, repomap writes standalone HTML whose code links point to the
-captured revision on GitHub or GitLab. The repository `origin` must identify a
-supported host, or the matching `--github-url`/`--gitlab-url` must be supplied.
+With `--no-serve`, repomap writes one standalone HTML whose code links point to
+the captured revision on GitHub or GitLab. The repository `origin` must identify
+a supported host, or the matching `--github-url`/`--gitlab-url` must be supplied.
 Invalid static-link configuration fails in preflight before analysis or model
-requests. These flags remain presentation configuration and do not download or
-switch the analyzed checkout.
+requests. For a multi-target run, the standalone document is projected directly
+from every manifest-verified `report.json` and page-local artifact; repomap does
+not merge child HTML documents. These flags remain presentation configuration
+and do not download or switch the analyzed checkout.
 
 Report runs and model-response caches default to the OS user-cache directory.
 Use `--debug-dir` to choose another root. `--no-cache` forces live provider
@@ -151,7 +170,11 @@ make build
 
 For a successful product check, verify the process exit status and the emitted
 manifest, sealed ProgramIndex set, semantic cube artifact, `report.json`, and
-`report.html`. Cache changes also require a second real run and `repomap cache
+`report.html`. For a multi-target run, verify every backing manifest and
+`report.json`, and verify that only the default run contains the physical
+`report.html`. When the selected default was not analyzed, verify that only the
+first successful owner run contains it instead. Cache changes also require a
+second real run and `repomap cache
 clear`.
 
 The current architecture and product decisions live in

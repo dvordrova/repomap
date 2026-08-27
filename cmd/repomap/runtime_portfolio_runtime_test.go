@@ -81,7 +81,81 @@ func TestRuntimePortfolioTargetInputRetainsValidatedRuntimeEvidence(t *testing.T
 	}
 }
 
-func TestPersistRuntimePortfolioWritesByteIdenticalArtifacts(t *testing.T) {
+func TestBuildProgramPagePortfolioUsesValidatedPublishedPageIdentity(t *testing.T) {
+	buildTarget := func(selector, path, fileRef string) programindex.Target {
+		t.Helper()
+		index, err := programindex.New(programindex.Input{
+			ScenarioSHA256: strings.Repeat("a", 64),
+			SourceSHA256:   strings.Repeat("b", 64),
+			Target: programindex.TargetInput{
+				Language: "go", Kind: "executable", Name: selector, Selector: selector,
+				Sources:       []programindex.TargetSource{{FileRef: fileRef, Path: path}},
+				AnchorFileRef: fileRef,
+			},
+			Objects: []programindex.ObjectInput{}, Relations: []programindex.RelationInput{},
+			Coverage: programindex.CoverageInput{Measured: true},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return index.Target
+	}
+	base := t.TempDir()
+	defaultRunID := "20260827-120000-api-a1b2c3"
+	workerRunID := "20260827-120000-worker-a1b2c3"
+	api := buildTarget("./cmd/api", "cmd/api/main.go", "f-api")
+	worker := buildTarget("./cmd/worker", "cmd/worker/main.go", "f-worker")
+	runs := []targetPublishedRun{
+		{
+			RunID: defaultRunID, RunDir: filepath.Join(base, defaultRunID),
+			ProgramPage: report.TargetNavigationPage{
+				RunID: defaultRunID, ProgramTarget: api,
+				ArtifactFilename: "program-index-api.json",
+			},
+		},
+		{
+			RunID: workerRunID, RunDir: filepath.Join(base, workerRunID),
+			ProgramPage: report.TargetNavigationPage{
+				RunID: workerRunID, ProgramTarget: worker,
+				ArtifactFilename: "program-index-worker.json",
+			},
+		},
+	}
+
+	portfolio, err := buildProgramPagePortfolio(runs, defaultRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runByTargetID := make(map[string]string, len(portfolio.Pages))
+	for _, page := range portfolio.Pages {
+		runByTargetID[page.Target.ID] = page.RunID
+	}
+	if portfolio.DefaultTargetID != api.ID || len(portfolio.Pages) != 2 ||
+		runByTargetID[api.ID] != defaultRunID || runByTargetID[worker.ID] != workerRunID {
+		t.Fatalf("program page portfolio = %#v", portfolio)
+	}
+	if _, err := os.Stat(runs[0].RunDir); !os.IsNotExist(err) {
+		t.Fatalf("test unexpectedly created backing run directory: %v", err)
+	}
+
+	runs[1].ProgramPage.RunID = defaultRunID
+	if _, err := buildProgramPagePortfolio(runs, defaultRunID); err == nil ||
+		!strings.Contains(err.Error(), "completed page identity is invalid") {
+		t.Fatalf("mismatched cached page error = %v", err)
+	}
+}
+
+func runtimePortfolioArtifactFixture(
+	t *testing.T,
+) (runtimeportfolio.Input, runtimeportfolio.Result, []byte) {
+	t.Helper()
+	headerWordLabel := runtimePortfolioEvidenceLabel(
+		"Responsibility representative", "Authentication and authorization",
+		"go.etcd.io/etcd/server/v3/auth", "Authenticate",
+	)
+	if want := "Responsibility representative: Authentication and authorization: go.etcd.io/etcd/server/v3/auth: Authenticate"; headerWordLabel != want {
+		t.Fatalf("runtime evidence label = %q, want %q", headerWordLabel, want)
+	}
 	input := runtimeportfolio.Input{
 		RepositoryName: "example", CapturedRevision: strings.Repeat("a", 40),
 		TargetPagePortfolioSHA256: strings.Repeat("b", 64),
@@ -90,7 +164,7 @@ func TestPersistRuntimePortfolioWritesByteIdenticalArtifacts(t *testing.T) {
 			Kind: "executable_package", Selector: "./cmd/server", Default: true,
 			Responsibilities: []runtimeportfolio.ResponsibilityInput{},
 			Evidence: []runtimeportfolio.EvidenceInput{{
-				Kind: runtimeportfolio.EvidenceTargetEntrypoint, Label: "Server entrypoint",
+				Kind: runtimeportfolio.EvidenceTargetEntrypoint, Label: headerWordLabel,
 				Location:        runtimeportfolio.Location{Path: "cmd/server/main.go", Line: 1},
 				ProgramTargetID: "program-target-a",
 			}},
@@ -107,6 +181,59 @@ func TestPersistRuntimePortfolioWritesByteIdenticalArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	encoded, err := runtimeportfolio.Encode(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return input, result, encoded
+}
+
+func TestRuntimePortfolioArtifactSetValidatesOnceAndChecksEveryRunBytes(t *testing.T) {
+	input, _, encoded := runtimePortfolioArtifactFixture(t)
+	for tamperedIndex := 0; tamperedIndex < 4; tamperedIndex++ {
+		t.Run(fmt.Sprintf("tamper-run-%d", tamperedIndex), func(t *testing.T) {
+			validator := runtimePortfolioArtifactSetValidator{}
+			fullValidations := 0
+			var gotErr error
+			for runIndex := 0; runIndex < 4; runIndex++ {
+				raw := append([]byte(nil), encoded...)
+				if runIndex == tamperedIndex {
+					raw[len(raw)-2] ^= 1
+				}
+				gotErr = validator.validate(raw, func(candidate []byte) error {
+					fullValidations++
+					return fullyValidateRuntimePortfolioArtifact(candidate, input)
+				})
+				if gotErr != nil {
+					break
+				}
+			}
+			if gotErr == nil {
+				t.Fatal("tampered run bytes were accepted")
+			}
+			if fullValidations != 1 {
+				t.Fatalf("full semantic validations = %d, want 1", fullValidations)
+			}
+		})
+	}
+
+	validator := runtimePortfolioArtifactSetValidator{}
+	fullValidations := 0
+	for runIndex := 0; runIndex < 4; runIndex++ {
+		if err := validator.validate(encoded, func(candidate []byte) error {
+			fullValidations++
+			return fullyValidateRuntimePortfolioArtifact(candidate, input)
+		}); err != nil {
+			t.Fatalf("validate identical run %d: %v", runIndex, err)
+		}
+	}
+	if fullValidations != 1 {
+		t.Fatalf("full semantic validations for identical runs = %d, want 1", fullValidations)
+	}
+}
+
+func TestPersistRuntimePortfolioWritesByteIdenticalArtifacts(t *testing.T) {
+	input, result, _ := runtimePortfolioArtifactFixture(t)
 	base := t.TempDir()
 	runs := []targetPublishedRun{
 		{RunID: "run-a", RunDir: filepath.Join(base, "run-a")},

@@ -37,6 +37,7 @@ import (
 	"github.com/dvordrova/repomap/internal/secretscan"
 	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
+	"github.com/dvordrova/repomap/internal/targetoutcome"
 )
 
 func main() {
@@ -109,6 +110,8 @@ func runDefault(repo string, extraArgs []string, repositoryArgumentOmitted bool)
 		captureRepo:                freshness.CaptureRepository,
 		newTargetPortfolioProvider: defaultTargetPortfolioProviderFactory,
 		newCubeProvider:            defaultTargetPortfolioProviderFactory,
+		llmBatchConcurrency:        llm.DefaultBatchConcurrency,
+		llmBatchController:         &llm.BatchController{},
 		repositoryArgumentOmitted:  repositoryArgumentOmitted,
 	})
 }
@@ -122,6 +125,12 @@ type defaultRunDeps struct {
 	captureRepo                func(context.Context, string, *corpus.Corpus) (freshness.RepositoryState, error)
 	newTargetPortfolioProvider targetPortfolioProviderFactory
 	newCubeProvider            targetPortfolioProviderFactory
+	// One controller follows the complete repository run, including selected
+	// child targets and the repository overview. DeepSeek concurrency limits are
+	// account-scoped, so a transient HTTP 429 must serialize later attempts even
+	// when a later stage creates a fresh provider adapter instance.
+	llmBatchConcurrency int
+	llmBatchController  *llm.BatchController
 	// preselectedTarget is one exact page from the outer repository target
 	// plan. It bypasses every first-layer scout and portfolio model call.
 	preselectedTarget        *repositoryTypedTarget
@@ -142,23 +151,43 @@ type defaultRunDeps struct {
 	preparedGoWorkspace     *surfacediscovery.PreparedWorkspace
 	preparedGoSnapshots     []snapshot.Snapshot
 	preparedGoWorkspaceSink func(*surfacediscovery.PreparedWorkspace)
+	// preparedGoWorkspaceUnionFailureSink is a live dispatcher signal: shared
+	// union preparation failed, so this target retries exactly and later Go
+	// targets must not receive that union again.
+	preparedGoWorkspaceUnionFailureSink func(error)
 	// coreReadmeRoleRows carries the one accepted first-layer README role
 	// catalog into every selected target page. Each run rebinds paths to its
 	// current corpus, so run-local f* identities are never reused blindly.
-	coreReadmeRoleRows  []readmeRoleLogRow
-	runIDOverride       string
-	siblingTargetRun    bool
-	publishedTargetSink func(targetPublishedRun)
-	runRuntimePortfolio runtimePortfolioRunner
-	runtimeCacheRoot    string
-	runtimeNoCache      bool
-	finalizeTargetPages func(context.Context, snapshot.TargetRunContainer, snapshot.TargetPagePortfolio, []targetPublishedRun) error
+	coreReadmeRoleRows []readmeRoleLogRow
+	runIDOverride      string
+	siblingTargetRun   bool
+	// deferredPortfolioHTML marks a target-local backing run in a multi-target
+	// ProgramPagePortfolio. It publishes report.json and manifest authority but
+	// leaves the sole browser HTML to the default portfolio owner.
+	deferredPortfolioHTML bool
+	publishedTargetSink   func(targetPublishedRun)
+	// targetOutcomeStageSink exposes only the current closed per-target
+	// boundary to the outer dispatcher. It never changes execution semantics;
+	// it lets a contained failure be reported without matching error strings.
+	targetOutcomeStageSink func(targetoutcome.Stage)
+	runRuntimePortfolio    runtimePortfolioRunner
+	runtimeCacheRoot       string
+	runtimeNoCache         bool
+	finalizeTargetPages    func(context.Context, snapshot.TargetRunContainer, snapshot.TargetPagePortfolio, []targetPublishedRun) error
 	// repositoryArgumentOmitted is true only when the user left [repo] out of
 	// the command. Internal child pages retain the outer invocation choice.
 	repositoryArgumentOmitted bool
 }
 
 func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (runErr error) {
+	if deps.llmBatchConcurrency < 1 {
+		// Keep direct test/dependency injection sequential unless it explicitly
+		// opts into the product pool. runDefault sets the ordinary product limit.
+		deps.llmBatchConcurrency = 1
+	}
+	if deps.llmBatchController == nil {
+		deps.llmBatchController = &llm.BatchController{}
+	}
 	stopAfter, err := semanticStopAfter(os.Getenv("STOP_AFTER"))
 	if err != nil {
 		return err
@@ -211,7 +240,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	}
 	publicationStateEmitted := false
 	defer func() {
-		if runErr != nil && !publicationStateEmitted {
+		if runErr != nil && !publicationStateEmitted && !deps.siblingTargetRun {
 			if defaultTargetConsole != nil && !defaultTargetConsoleClosed {
 				humanOutput.TargetPage("failed", *defaultTargetConsole)
 				defaultTargetConsoleClosed = true
@@ -435,6 +464,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		firstLayer := debugdump.NewSemanticObserver(nil)
 		selectionExecutor := llm.Executor{
 			RootDir: dDir, Enabled: !*noCache, Observer: firstLayer,
+			BatchConcurrency: deps.llmBatchConcurrency,
+			BatchController:  deps.llmBatchController,
 		}
 		repositoryName := repoRunLabel(repo)
 		if goSource != nil && strings.TrimSpace(goSource.RepoName) != "" {
@@ -559,6 +590,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	default:
 		return fmt.Errorf("preselected repository target has unsupported adapter %q", selected.Key.Adapter)
 	}
+	if deps.targetOutcomeStageSink != nil {
+		deps.targetOutcomeStageSink(targetoutcome.StageProgramAnalysis)
+	}
 	programIndexDefault := pythonTargetSelection != nil || jsTSTargetSelection != nil
 	opts := orient.Options{
 		RepoPath:            repo,
@@ -583,6 +617,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 				deps.preparedGoWorkspaceSink(workspace)
 			}
 		},
+		PreparedGoWorkspaceUnionFailureSink: deps.preparedGoWorkspaceUnionFailureSink,
 		DirectCallIndexSink: func(index surfacediscovery.DirectCallIndex) {
 			directCallIndex = &index
 		},
@@ -863,6 +898,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	if defaultIndexErr != nil {
 		return defaultIndexErr
 	}
+	if deps.targetOutcomeStageSink != nil {
+		deps.targetOutcomeStageSink(targetoutcome.StageDependencyAnalysis)
+	}
 	if analysisTarget != nil && !programIndexDefault {
 		targetDetails := []string{
 			"kind: " + string(analysisTarget.Kind),
@@ -957,6 +995,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			return pythonDependencyCoverageError(catalog)
 		}
 
+		if deps.targetOutcomeStageSink != nil {
+			deps.targetOutcomeStageSink(targetoutcome.StageSemanticAnalysis)
+		}
 		semanticResult, semanticErr := runSemanticPipelineForRun(
 			ctx,
 			runDir,
@@ -973,6 +1014,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 				ReadmeRoles:    boundReadmeRoles,
 			},
 			humanOutput,
+			deps.llmBatchConcurrency,
+			deps.llmBatchController,
 			newCubeProvider,
 		)
 		if semanticErr != nil {
@@ -994,6 +1037,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		if dependencyCatalog == nil {
 			return fmt.Errorf("JavaScript/TypeScript semantic cubes require the exact dependency catalog")
 		}
+		if deps.targetOutcomeStageSink != nil {
+			deps.targetOutcomeStageSink(targetoutcome.StageSemanticAnalysis)
+		}
 		semanticResult, semanticErr := runSemanticPipelineForRun(
 			ctx,
 			runDir,
@@ -1010,6 +1056,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 				ReadmeRoles:    boundReadmeRoles,
 			},
 			humanOutput,
+			deps.llmBatchConcurrency,
+			deps.llmBatchController,
 			newCubeProvider,
 		)
 		if semanticErr != nil {
@@ -1040,6 +1088,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		if err := dependencies.Persist(runDir, *dependencyCatalog); err != nil {
 			return err
 		}
+		if deps.targetOutcomeStageSink != nil {
+			deps.targetOutcomeStageSink(targetoutcome.StageSemanticAnalysis)
+		}
 		semanticResult, semanticErr := runSemanticPipelineForRun(
 			ctx,
 			runDir,
@@ -1056,6 +1107,8 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 				ReadmeRoles:    boundReadmeRoles,
 			},
 			humanOutput,
+			deps.llmBatchConcurrency,
+			deps.llmBatchController,
 			newCubeProvider,
 		)
 		if semanticErr != nil {
@@ -1069,6 +1122,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			)
 			return nil
 		}
+	}
+	if deps.targetOutcomeStageSink != nil {
+		deps.targetOutcomeStageSink(targetoutcome.StageTargetPage)
 	}
 	var reportPath string
 	reconciliationStarted := time.Now()
@@ -1093,6 +1149,15 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		formatRunOutputWallDuration(time.Since(reconciliationStarted)),
 	)
 	generateAuthorizedReport := func() error {
+		if deps.deferredPortfolioHTML {
+			if gitLabURL != "" {
+				return report.GenerateAuthorizedGitLabPageData(runDir, authority, gitLabURL)
+			}
+			if gitHubURL != "" {
+				return report.GenerateAuthorizedGitHubPageData(runDir, authority, gitHubURL)
+			}
+			return report.GenerateAuthorizedPageData(runDir, authority)
+		}
 		if gitLabURL != "" {
 			return report.GenerateAuthorizedGitLab(runDir, authority, gitLabURL)
 		}
@@ -1123,12 +1188,22 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 			"remote availability is not checked; ensure the captured commit is pushed before sharing",
 		)
 	}
-	publication, err := report.AssessRunPublication(runDir)
-	if err != nil {
-		return errors.Join(
-			fmt.Errorf("verify generated report publication: %w", err),
-			quarantineTargetPagePublication([]string{runDir}),
-		)
+	publication := report.PublicationAssessment{Status: report.PublicationReady}
+	if deps.deferredPortfolioHTML {
+		if _, err := report.ReadRunManifest(runDir); err != nil {
+			return errors.Join(
+				fmt.Errorf("verify generated report backing page: %w", err),
+				quarantineTargetPagePublication([]string{runDir}),
+			)
+		}
+	} else {
+		publication, err = report.AssessRunPublication(runDir)
+		if err != nil {
+			return errors.Join(
+				fmt.Errorf("verify generated report publication: %w", err),
+				quarantineTargetPagePublication([]string{runDir}),
+			)
+		}
 	}
 	publishedTarget := targetPublishedRun{
 		RunID:                 runID,

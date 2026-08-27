@@ -15,6 +15,7 @@ import (
 	"github.com/dvordrova/repomap/internal/programpage"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/runtimeportfolio"
+	"github.com/dvordrova/repomap/internal/targetoutcome"
 )
 
 func repositoryTypedTargetDisplay(target repositoryTypedTarget) string {
@@ -90,9 +91,9 @@ func buildProgramPagePortfolio(
 			return programpage.Portfolio{}, fmt.Errorf("program page portfolio: duplicate completed run")
 		}
 		seenRunIDs[run.RunID] = struct{}{}
-		page, err := report.LoadTargetNavigationPage(run.RunDir, run.RunID)
-		if err != nil {
-			return programpage.Portfolio{}, fmt.Errorf("program page portfolio: restore run %s: %w", run.RunID, err)
+		page := run.ProgramPage
+		if page.RunID != run.RunID {
+			return programpage.Portfolio{}, fmt.Errorf("program page portfolio: completed page identity is invalid")
 		}
 		pages = append(pages, programpage.Page{Target: page.ProgramTarget, RunID: run.RunID})
 		if run.RunID == defaultRunID {
@@ -150,6 +151,8 @@ func synthesizeProgramPageRuntimePortfolio(
 	ctx context.Context,
 	cacheRoot string,
 	noCache bool,
+	batchConcurrency int,
+	batchController *llm.BatchController,
 	providerFactory targetPortfolioProviderFactory,
 	runner runtimePortfolioRunner,
 	portfolio programpage.Portfolio,
@@ -179,7 +182,9 @@ func synthesizeProgramPageRuntimePortfolio(
 	}
 	executor := llm.Executor{
 		RootDir: cacheRoot, Enabled: !noCache,
-		Observer: debugdump.NewSemanticObserver(writer),
+		Observer:         debugdump.NewSemanticObserver(writer),
+		BatchConcurrency: batchConcurrency,
+		BatchController:  batchController,
 	}
 	if output != nil {
 		output.Stage("Repository overview", "synthesizing runtime roles across completed target pages")
@@ -208,12 +213,11 @@ func synthesizeProgramPageRuntimePortfolio(
 		return err
 	}
 	state := debugdump.SemanticStateAccepted
-	semanticCalls := 1
+	semanticCalls := outcome.SemanticCalls
 	transportAttempts := outcome.Metrics.Attempts
 	latencyMillis := outcome.Metrics.Latency.Milliseconds()
 	if outcome.Cached {
 		state = debugdump.SemanticStateCacheHit
-		semanticCalls = 0
 		transportAttempts = 0
 		latencyMillis = 0
 	}
@@ -269,9 +273,9 @@ func programPageRuntimePortfolioInput(
 		if !found {
 			return runtimeportfolio.Input{}, targetPublishedRun{}, fmt.Errorf("runtime portfolio: completed page is missing")
 		}
-		page, err := report.LoadTargetNavigationPage(run.RunDir, run.RunID)
-		if err != nil {
-			return runtimeportfolio.Input{}, targetPublishedRun{}, err
+		page := run.ProgramPage
+		if page.RunID != run.RunID {
+			return runtimeportfolio.Input{}, targetPublishedRun{}, fmt.Errorf("runtime portfolio: completed page identity is invalid")
 		}
 		if !reflect.DeepEqual(page.ProgramTarget, binding.Target) {
 			return runtimeportfolio.Input{}, targetPublishedRun{}, fmt.Errorf("runtime portfolio: page target does not match program page authority")
@@ -317,6 +321,7 @@ func programPageRuntimePortfolioInput(
 
 func validateProgramPageRuntimeArtifacts(
 	portfolio programpage.Portfolio,
+	targetOutcomes targetoutcome.Portfolio,
 	runs []targetPublishedRun,
 ) error {
 	input, _, err := programPageRuntimePortfolioInput(portfolio, runs)
@@ -327,7 +332,11 @@ func validateProgramPageRuntimeArtifacts(
 	if err != nil {
 		return err
 	}
-	var canonicalRuntime []byte
+	targetOutcomeBytes, err := targetOutcomes.CanonicalJSON()
+	if err != nil {
+		return err
+	}
+	runtimeValidator := runtimePortfolioArtifactSetValidator{}
 	for _, run := range runs {
 		pageBytes, found, err := readTargetPageRunFile(
 			run.RunDir, programpage.ArtifactFilename, programpage.MaxArtifactBytes,
@@ -338,6 +347,15 @@ func validateProgramPageRuntimeArtifacts(
 		if !found || !bytes.Equal(pageBytes, portfolioBytes) {
 			return fmt.Errorf("program page portfolio: run %s has stale page authority", run.RunID)
 		}
+		outcomeBytes, found, err := readTargetPageRunFile(
+			run.RunDir, targetoutcome.ArtifactFilename, targetoutcome.MaxArtifactBytes,
+		)
+		if err != nil {
+			return err
+		}
+		if !found || !bytes.Equal(outcomeBytes, targetOutcomeBytes) {
+			return fmt.Errorf("target outcome portfolio: run %s has stale selected-target authority", run.RunID)
+		}
 		raw, found, err := readTargetPageRunFile(
 			run.RunDir, runtimeportfolio.ArtifactFilename, runtimeportfolio.MaxArtifactBytes,
 		)
@@ -347,21 +365,10 @@ func validateProgramPageRuntimeArtifacts(
 		if !found {
 			return fmt.Errorf("runtime portfolio: run %s is missing the repository artifact", run.RunID)
 		}
-		decoded, err := runtimeportfolio.Decode(raw)
-		if err != nil {
+		if err := runtimeValidator.validate(raw, func(candidate []byte) error {
+			return fullyValidateRuntimePortfolioArtifact(candidate, input)
+		}); err != nil {
 			return fmt.Errorf("runtime portfolio: run %s: %w", run.RunID, err)
-		}
-		if err := decoded.ValidateAgainst(input); err != nil {
-			return fmt.Errorf("runtime portfolio: run %s has stale repository authority: %w", run.RunID, err)
-		}
-		want, err := runtimeportfolio.Encode(decoded)
-		if err != nil || !bytes.Equal(raw, want) {
-			return fmt.Errorf("runtime portfolio: run %s artifact is not canonical", run.RunID)
-		}
-		if canonicalRuntime == nil {
-			canonicalRuntime = append([]byte(nil), raw...)
-		} else if !bytes.Equal(canonicalRuntime, raw) {
-			return fmt.Errorf("runtime portfolio: target pages carry different repository artifacts")
 		}
 	}
 	return nil
@@ -370,9 +377,10 @@ func validateProgramPageRuntimeArtifacts(
 func finalizeProgramPageRuns(
 	ctx context.Context,
 	portfolio programpage.Portfolio,
+	targetOutcomes targetoutcome.Portfolio,
 	runs []targetPublishedRun,
 ) error {
-	if err := validateProgramPageRuntimeArtifacts(portfolio, runs); err != nil {
+	if err := validateProgramPageRuntimeArtifacts(portfolio, targetOutcomes, runs); err != nil {
 		return err
 	}
 	for index := range runs {
@@ -391,7 +399,6 @@ func finalizeProgramPageRuns(
 		runs[index].Authority = extended
 	}
 
-	pages := make([]report.TargetNavigationPage, 0, len(portfolio.Pages))
 	runByID := make(map[string]targetPublishedRun, len(runs))
 	for _, run := range runs {
 		runByID[run.RunID] = run
@@ -401,25 +408,15 @@ func finalizeProgramPageRuns(
 		if !found {
 			return fmt.Errorf("program page portfolio: completed run is missing")
 		}
-		page, err := report.LoadTargetNavigationPage(run.RunDir, run.RunID)
-		if err != nil {
-			return err
+		page := run.ProgramPage
+		if page.RunID != run.RunID {
+			return fmt.Errorf("program page portfolio: completed page identity is invalid")
 		}
 		if !reflect.DeepEqual(page.ProgramTarget, binding.Target) {
 			return fmt.Errorf("program page portfolio: completed page target mismatch")
 		}
-		pages = append(pages, page)
-	}
-	for _, binding := range portfolio.Pages {
-		run := runByID[binding.RunID]
-		navigation, err := report.BuildTargetNavigation(
-			pages, portfolio.DefaultTargetID, binding.Target.ID,
-		)
-		if err != nil {
-			return err
-		}
-		if err := run.generateWithTargetNavigation(navigation); err != nil {
-			return fmt.Errorf("program page portfolio: render run %s: %w", run.RunID, err)
+		if err := run.generateBackingPageData(); err != nil {
+			return fmt.Errorf("program page portfolio: finalize backing run %s: %w", run.RunID, err)
 		}
 		manifest, err := report.ReadRunManifest(run.RunDir)
 		if err != nil {
@@ -435,7 +432,7 @@ func finalizeProgramPageRuns(
 	return nil
 }
 
-func publishStandaloneProgramPageBundle(
+func publishProgramPageBundle(
 	portfolio programpage.Portfolio,
 	runs []targetPublishedRun,
 ) error {
@@ -445,39 +442,31 @@ func publishStandaloneProgramPageBundle(
 	runsByID := make(map[string]targetPublishedRun, len(runs))
 	for _, run := range runs {
 		if run.RunID == "" || run.RunDir == "" || filepath.Base(run.RunDir) != run.RunID {
-			return fmt.Errorf("standalone program page bundle: completed run identity is invalid")
+			return fmt.Errorf("program page bundle: completed run identity is invalid")
 		}
 		if _, duplicate := runsByID[run.RunID]; duplicate {
-			return fmt.Errorf("standalone program page bundle: duplicate completed run")
+			return fmt.Errorf("program page bundle: duplicate completed run")
 		}
 		runsByID[run.RunID] = run
 	}
 	if len(runsByID) != len(portfolio.Pages) {
-		return fmt.Errorf("standalone program page bundle: completed run coverage is incomplete")
+		return fmt.Errorf("program page bundle: completed run coverage is incomplete")
 	}
-	ready := make([]report.PreparedStandaloneTarget, 0, len(portfolio.Pages))
 	defaultRunDir := ""
 	for _, page := range portfolio.Pages {
 		run, found := runsByID[page.RunID]
 		if !found {
-			return fmt.Errorf("standalone program page bundle: portfolio run is missing")
+			return fmt.Errorf("program page bundle: portfolio run is missing")
 		}
-		prepared, err := report.PrepareStandaloneProgramPage(run.RunDir)
-		if err != nil {
-			return fmt.Errorf("standalone program page bundle: prepare run %s: %w", run.RunID, err)
-		}
-		ready = append(ready, prepared)
 		if page.Target.ID == portfolio.DefaultTargetID {
 			defaultRunDir = run.RunDir
 		}
 	}
 	if defaultRunDir == "" {
-		return fmt.Errorf("standalone program page bundle: default run is missing")
+		return fmt.Errorf("program page bundle: default run is missing")
 	}
-	if err := report.WriteStandaloneProgramPageBundleAtomic(
-		defaultRunDir, portfolio, ready,
-	); err != nil {
-		return fmt.Errorf("standalone program page bundle: publish: %w", err)
+	if err := report.WriteProgramPageBundleFromArtifactsAtomic(defaultRunDir, portfolio); err != nil {
+		return fmt.Errorf("program page bundle: publish: %w", err)
 	}
 	return nil
 }

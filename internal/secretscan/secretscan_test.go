@@ -189,6 +189,7 @@ func TestDetectPersistenceSensitiveIsNarrowAndAlwaysOn(t *testing.T) {
 		`api_key = os.Getenv`,
 		`{"title":"Authorization middleware and api_key settings"}`,
 		`{"ref":"export:src/server/middleware/authorization:authorize"}`,
+		`Responsibility representative: Authentication and authorization: go.etcd.io/etcd/server/v3/auth: Authenticate`,
 	} {
 		if kind, found := DetectPersistenceSensitive(input); found {
 			t.Errorf("DetectPersistenceSensitive(%q) = %q, true; want ordinary code/prose", input, kind)

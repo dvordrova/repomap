@@ -39,6 +39,34 @@ func TestInstallAuthorizedReportCommitsManifestLast(t *testing.T) {
 	assertNoReportStages(t, runDir)
 }
 
+func TestInstallAuthorizedBackingDataRemovesTargetLocalHTML(t *testing.T) {
+	runDir := t.TempDir()
+	htmlPath := filepath.Join(runDir, "report.html")
+	if err := os.WriteFile(htmlPath, []byte("stale target page\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	reportJSON := []byte("backing-report-json\n")
+	if err := installAuthorizedReport(
+		runDir, reportJSON, nil, validRunManifestFixture(t),
+	); err != nil {
+		t.Fatalf("installAuthorizedReport backing data: %v", err)
+	}
+	if _, err := os.Lstat(htmlPath); !os.IsNotExist(err) {
+		t.Fatalf("backing data retained target-local report.html: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(runDir, "report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(reportJSON) {
+		t.Fatalf("report.json = %q, want %q", got, reportJSON)
+	}
+	if _, err := os.Lstat(filepath.Join(runDir, RunManifestFilename)); err != nil {
+		t.Fatalf("backing manifest is missing: %v", err)
+	}
+	assertNoReportStages(t, runDir)
+}
+
 func TestInstallAuthorizedReportFailureRemovesEveryProductName(t *testing.T) {
 	runDir := t.TempDir()
 	manifest := validRunManifestFixture(t)

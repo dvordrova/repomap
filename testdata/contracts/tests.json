@@ -7,7 +7,7 @@
     "fixture": "inline-or-none"
   },
   "go_packages": [
-    {"directory":"cmd/repomap","package":"main","files":["cache_clear_test.go","go_target_auto_test.go","javascript_target_runtime_test.go","publication_mode_flags_test.go","python_target_runtime_test.go","readme_role_authority_test.go","repository_target_runtime_test.go","runtime_portfolio_runtime_test.go","semantic_diagnostics_test.go","target_page_publication_quarantine_test.go","target_portfolio_runtime_test.go"]},
+    {"directory":"cmd/repomap","package":"main","files":["cache_clear_test.go","go_target_auto_test.go","javascript_target_runtime_test.go","publication_mode_flags_test.go","python_target_runtime_test.go","readme_role_authority_test.go","repository_target_runtime_test.go","runtime_portfolio_runtime_test.go","semantic_diagnostics_test.go","target_outcome_runtime_test.go","target_page_publication_quarantine_test.go","target_portfolio_runtime_test.go"]},
     {"directory":"internal/activityentrypoint","package":"activityentrypoint","files":["activityentrypoint_test.go","prompt_contract_test.go"]},
     {"directory":"internal/activitypath","package":"activitypath","files":["activitypath_test.go"]},
     {"directory":"internal/activitysurface","package":"activitysurface","files":["activitysurface_test.go"]},
@@ -44,11 +44,12 @@
     {"directory":"internal/reporead","package":"reporead","files":["reporead_test.go"]},
     {"directory":"internal/report","package":"report","files":["analysis_target_manifest_test.go","core_map_view_projection_test.go","cube_map_view_projection_test.go","english_language_test.go","github_source_test.go","gitlab_source_test.go","html_payload_test.go","integration_usage_view_projection_test.go","js_ts_manifest_projection_test.go","js_ts_surface_catalog_view_projection_test.go","manifest_cube_map_test.go","manifest_fixture_test.go","manifest_program_index_test.go","manifest_report_authority_test.go","program_index_projection_test.go","program_map_asset_test.go","program_page_portfolio_manifest_test.go","program_portfolio_projection_test.go","program_view_projection_test.go","publication_assessment_test.go","render_transaction_test.go","report_app_behavior_test.go","report_test.go","runtime_portfolio_view_projection_test.go","standalone_program_page_bundle_test.go","standalone_target_bundle_test.go","system_canvas_modules_test.go","target_navigation_test.go","target_page_portfolio_manifest_test.go"]},
     {"directory":"internal/reportserver","package":"reportserver","files":["editor_test.go","server_test.go"]},
-    {"directory":"internal/runtimeportfolio","package":"runtimeportfolio","files":["prompt_contract_test.go","runtimeportfolio_test.go"]},
+    {"directory":"internal/runtimeportfolio","package":"runtimeportfolio","files":["compact_reduce_regression_test.go","prompt_contract_test.go","runtimeportfolio_test.go","sharded_state_test.go"]},
     {"directory":"internal/secretscan","package":"secretscan","files":["secretscan_test.go"]},
     {"directory":"internal/snapshot","package":"snapshot","files":["go_target_advisory_test.go","snapshot_test.go","target_page_portfolio_test.go","target_run_container_test.go"]},
     {"directory":"internal/sourcecatalog","package":"sourcecatalog","files":["catalog_test.go","dependency_test.go"]},
     {"directory":"internal/surfacediscovery","package":"surfacediscovery","files":["core_object_capture_test.go","dynamic_handoff_capture_test.go","external_call_index_test.go","module_library_target_test.go","prepared_workspace_test.go","target_direct_call_test.go","test_helpers_test.go"]},
+    {"directory":"internal/targetoutcome","package":"targetoutcome","files":["portfolio_test.go"]},
     {"directory":"internal/targetportfolio","package":"targetportfolio","files":["targetportfolio_test.go"]},
     {"directory":"internal/targetviewchoice","package":"targetviewchoice","files":["targetviewchoice_test.go"]},
     {"directory":"internal/workspaceopen","package":"workspaceopen","files":["dependency_test.go","open_test.go"]},

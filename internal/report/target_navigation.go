@@ -15,6 +15,7 @@ import (
 	"github.com/dvordrova/repomap/internal/programpage"
 	"github.com/dvordrova/repomap/internal/runtimeportfolio"
 	"github.com/dvordrova/repomap/internal/snapshot"
+	"github.com/dvordrova/repomap/internal/targetoutcome"
 )
 
 const TargetNavigationVersion = 4
@@ -294,6 +295,15 @@ func loadManifestProgramPageNavigation(
 		if runtimeErr != nil || manifestSHA256(runtimeRaw) != manifest.MaterialInputs.RuntimePortfolioSHA256 {
 			return nil, fmt.Errorf("report: program page navigation page %d runtime portfolio authority mismatch", index)
 		}
+		outcomeRaw, _, outcomeErr := readBoundedProgramArtifact(
+			filepath.Join(pageRunDir, targetoutcome.ArtifactFilename),
+			targetoutcome.MaxArtifactBytes,
+			"program page navigation target outcome portfolio",
+			false,
+		)
+		if outcomeErr != nil || manifestSHA256(outcomeRaw) != manifest.MaterialInputs.TargetOutcomePortfolioSHA256 {
+			return nil, fmt.Errorf("report: program page navigation page %d target outcome authority mismatch", index)
+		}
 		if filepath.Clean(pageRunDir) == filepath.Clean(runDir) {
 			if binding.Target.ID != manifest.MaterialInputs.ProgramTargetID {
 				return nil, fmt.Errorf("report: current program page navigation authority mismatch")
@@ -312,6 +322,9 @@ func validateTargetNavigation(data *ReportData, navigation *TargetNavigationPort
 	if navigation == nil {
 		if data != nil && data.RuntimePortfolio != nil {
 			return fmt.Errorf("report: runtime portfolio requires complete target navigation")
+		}
+		if data != nil && data.TargetOutcomePortfolio != nil {
+			return fmt.Errorf("report: target outcome portfolio requires complete target navigation")
 		}
 		return nil
 	}
@@ -378,6 +391,11 @@ func validateTargetNavigation(data *ReportData, navigation *TargetNavigationPort
 	if data.RuntimePortfolio != nil {
 		if err := data.RuntimePortfolio.validateTargetNavigation(navigation); err != nil {
 			return fmt.Errorf("report: runtime portfolio target navigation: %w", err)
+		}
+	}
+	if data.TargetOutcomePortfolio != nil {
+		if err := data.TargetOutcomePortfolio.validateTargetNavigation(navigation); err != nil {
+			return fmt.Errorf("report: target outcome portfolio target navigation: %w", err)
 		}
 	}
 	return nil

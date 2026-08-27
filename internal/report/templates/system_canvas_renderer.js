@@ -79,8 +79,7 @@
     var value = nodeData(node);
     if (node.kind === 'entrypoint') {
       var location = value.location || {};
-      if (location.path) return location.path + (location.line ? ':' + String(location.line) : '');
-      return '';
+      return location.line ? 'L' + String(location.line) : '';
     }
     if (node.kind === 'integration') {
       var uses = value.useCount;
@@ -136,6 +135,13 @@
     else control.type = 'button';
     control.setAttribute('data-canvas-node', node.id);
     control.setAttribute('data-canvas-label', name);
+    var portLayout = options.portLayout || {};
+    var minimumHeight = portLayout.minHeightByNodeID && portLayout.minHeightByNodeID[node.id];
+    if (minimumHeight) {
+      control.style.setProperty('--rm-canvas-node-port-min-height', String(minimumHeight) + 'px');
+      var counts = portLayout.countsByNodeID && portLayout.countsByNodeID[node.id];
+      if (counts) control.setAttribute('data-canvas-port-slots', String(Math.max(counts.left, counts.right)));
+    }
     if (options.selectedNodeID === node.id) control.setAttribute('aria-current', 'true');
     control.appendChild(element('span', 'rm-canvas-node__name', name));
     var meta = typeof options.nodeMeta === 'function' ? options.nodeMeta(node, graph) : defaultNodeMeta(node, graph);
@@ -204,6 +210,47 @@
     return list;
   }
 
+  function compareText(left, right) {
+    return left < right ? -1 : (left > right ? 1 : 0);
+  }
+
+  function entrypointLocation(node) {
+    var value = nodeData(node);
+    return value && value.location ? value.location : {};
+  }
+
+  function renderEntrypointGroups(nodes, graph, options, callbacks) {
+    var nodesByPath = Object.create(null);
+    nodes.forEach(function (node) {
+      var path = String(entrypointLocation(node).path || 'Unknown file');
+      if (!nodesByPath[path]) nodesByPath[path] = [];
+      nodesByPath[path].push(node);
+    });
+    var list = element('div', 'rm-canvas-node-list rm-canvas-entry-files');
+    Object.keys(nodesByPath).sort(compareText).forEach(function (path) {
+      var fileNodes = nodesByPath[path].slice().sort(function (left, right) {
+        var leftLocation = entrypointLocation(left);
+        var rightLocation = entrypointLocation(right);
+        return Number(leftLocation.line || 0) - Number(rightLocation.line || 0) ||
+          Number(leftLocation.column || 0) - Number(rightLocation.column || 0) ||
+          compareText(nodeName(left), nodeName(right)) || compareText(left.id, right.id);
+      });
+      var section = element('section', 'rm-canvas-entry-file');
+      var header = element('header', 'rm-canvas-entry-file__header');
+      header.appendChild(element('h4', '', path));
+      header.appendChild(element('span', '', String(fileNodes.length) +
+        ' entrypoint' + (fileNodes.length === 1 ? '' : 's')));
+      section.appendChild(header);
+      var fileList = element('div', 'rm-canvas-entry-file__nodes');
+      fileNodes.forEach(function (node) {
+        fileList.appendChild(renderNode(node, graph, options, callbacks));
+      });
+      section.appendChild(fileList);
+      list.appendChild(section);
+    });
+    return list;
+  }
+
   function renderCanvas(graph, options, callbacks) {
     var canvas = element('div', 'rm-flow-canvas');
     canvas.setAttribute('data-system-canvas', 'true');
@@ -220,8 +267,9 @@
         laneNode.appendChild(element('p', 'rm-canvas-core-note', options.coreLeadNote));
       }
       var nodeList = lane === 'core' ? renderCoreGroup(laneNodes, graph, options, callbacks) :
-        element('div', 'rm-canvas-node-list');
-      if (lane !== 'core') {
+        (lane === 'entry' ? renderEntrypointGroups(laneNodes, graph, options, callbacks) :
+          element('div', 'rm-canvas-node-list'));
+      if (lane === 'integration') {
         laneNodes.forEach(function (node) { nodeList.appendChild(renderNode(node, graph, options, callbacks)); });
       }
       var emptyMessages = options.laneEmptyMessages || {};
@@ -252,11 +300,12 @@
       marker.setAttribute('viewBox', '0 0 8 8');
       marker.setAttribute('refX', '7');
       marker.setAttribute('refY', '4');
-      marker.setAttribute('markerWidth', '6');
-      marker.setAttribute('markerHeight', '6');
+      marker.setAttribute('markerWidth', '8');
+      marker.setAttribute('markerHeight', '8');
+      marker.setAttribute('markerUnits', 'userSpaceOnUse');
       marker.setAttribute('orient', 'auto');
       var arrow = svgElement('path', 'rm-canvas-arrow rm-canvas-arrow--' + kind);
-      arrow.setAttribute('d', 'M 0 0 L 8 4 L 0 8 z');
+      arrow.setAttribute('d', 'M 1 1 L 7 4 L 1 7');
       marker.appendChild(arrow);
       definitions.appendChild(marker);
     });
@@ -272,7 +321,8 @@
     unmountSystemCanvas(host);
     var interaction = requireNamespace('RepomapSystemCanvasInteraction');
     var geometry = requireNamespace('RepomapSystemCanvasGeometry');
-    var options = suppliedOptions || {};
+    var options = Object.assign({}, suppliedOptions || {});
+    options.portLayout = geometry.portLayoutRequirements(graph);
     var callbacks = suppliedCallbacks || {};
     var canvas = renderCanvas(graph, options, callbacks);
     host.replaceChildren(canvas);
@@ -464,10 +514,6 @@
     }
 
     function handlePointerOver(event) {
-      var endpoint = endpointFromEvent(event);
-      if (endpoint && !movedWithin(event, endpoint)) {
-        dispatch({ type: 'ENDPOINT_POINTER_ENTER', endpointID: endpoint.getAttribute('data-canvas-edge-port') });
-      }
       var wrapper = nodeWrapFromEvent(event);
       if (wrapper && !movedWithin(event, wrapper)) {
         dispatch({ type: 'NODE_POINTER_ENTER', nodeID: wrapper.getAttribute('data-canvas-node-wrap') });
@@ -475,10 +521,6 @@
     }
 
     function handlePointerOut(event) {
-      var endpoint = endpointFromEvent(event);
-      if (endpoint && !movedWithin(event, endpoint)) {
-        dispatch({ type: 'ENDPOINT_POINTER_LEAVE', endpointID: endpoint.getAttribute('data-canvas-edge-port') });
-      }
       var wrapper = nodeWrapFromEvent(event);
       if (wrapper && !movedWithin(event, wrapper)) {
         dispatch({ type: 'NODE_POINTER_LEAVE', nodeID: wrapper.getAttribute('data-canvas-node-wrap') });

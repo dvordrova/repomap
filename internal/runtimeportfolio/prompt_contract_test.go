@@ -3,6 +3,8 @@ package runtimeportfolio
 import (
 	"strings"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/debugdump"
 )
 
 func TestRuntimePortfolioPromptMatchesCurrentContract(t *testing.T) {
@@ -52,11 +54,71 @@ func TestRuntimePortfolioPromptMatchesCurrentContract(t *testing.T) {
 	}
 }
 
+func TestRuntimePortfolioShardedPromptsMatchCurrentContract(t *testing.T) {
+	for _, fragment := range []string{
+		"high-recall candidate",
+		"not the complete detailed topology",
+		"complete compact catalog",
+		"complete repository-wide guidance catalog",
+		"only `t*` refs from detailed `targets`",
+		"does not finalize repository-global prominence or requiredness",
+		"prefer `unknown`",
+	} {
+		if !strings.Contains(mapPrompt, fragment) {
+			t.Fatalf("map prompt is missing contract fragment %q:\n%s", fragment, mapPrompt)
+		}
+	}
+	for _, fragment := range []string{
+		"complete compact target catalog",
+		`"candidate_refs"`,
+		"Repeated identical refs or rows are harmless sets",
+		"complete exact implementation and evidence sets",
+		"`detail_mode` is `exact_evidence`",
+		"`detail_mode` is `validated_summary`",
+		"reducing request size never requires a semantic merge",
+		"insufficient to prove that two roles are equivalent, keep those roles distinct",
+		"remain bound locally behind its `c*` ref",
+		"many-to-many mapping",
+		"never resolve them by first-wins",
+		"The reduce request whose `batch.count` is `1` is the sole global final reducer",
+		"Only a request with `batch.count` equal to `1` chooses the global vocabulary and final semantic attributes",
+	} {
+		if !strings.Contains(reducePrompt, fragment) {
+			t.Fatalf("reduce prompt is missing contract fragment %q:\n%s", fragment, reducePrompt)
+		}
+	}
+}
+
 func TestRuntimePortfolioContractVersions(t *testing.T) {
 	identity := currentExecutionIdentity()
 	if Version != 3 || identity.Contract != "repository-runtime-portfolio-v4" ||
-		identity.ResponseSchemaVersion != 3 {
+		identity.PreparationVersion != 1 || identity.ResponseSchemaVersion != 3 {
 		t.Fatalf("library portfolio contract identity = version %d, %#v", Version, identity)
+	}
+	if shardedExecutionContract != "repository-runtime-portfolio-sharded-v1" ||
+		mapPreparationVersion != 1 || mapResponseSchemaVersion != 4 ||
+		reducePreparationVersion != 2 || reduceResponseSchemaVersion != 2 ||
+		MapPromptVersion == PromptVersion || ReducePromptVersion == PromptVersion ||
+		MapPromptVersion == ReducePromptVersion {
+		t.Fatal("runtime portfolio phase identities are not independently versioned")
+	}
+	if maxRuntimePortfolioCalls*2 != debugdump.MaxSemanticAttemptOrdinal {
+		t.Fatalf(
+			"runtime portfolio call bound %d cannot retain worst-case cache+live journal events under %d ordinals",
+			maxRuntimePortfolioCalls, debugdump.MaxSemanticAttemptOrdinal,
+		)
+	}
+	if err := checkRuntimeCallBudget(0, maxRuntimePortfolioCalls); err != nil {
+		t.Fatalf("exact runtime portfolio call budget rejected: %v", err)
+	}
+	if err := checkRuntimeCallBudget(maxRuntimePortfolioCalls, 1); err == nil {
+		t.Fatal("runtime portfolio call budget accepted an unjournalable call")
+	}
+	if err := checkRuntimeReduceReservation(maxRuntimePortfolioCalls, 0); err != nil {
+		t.Fatalf("empty map result at the exact call budget incorrectly reserved a reducer: %v", err)
+	}
+	if err := checkRuntimeReduceReservation(maxRuntimePortfolioCalls, 1); err == nil {
+		t.Fatal("non-empty map result at the exact call budget failed to reserve a reducer")
 	}
 }
 

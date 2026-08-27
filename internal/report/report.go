@@ -8,7 +8,7 @@ import (
 )
 
 // CurrentFormatVersion is the canonical ProgramPortfolio report contract.
-const CurrentFormatVersion = 67
+const CurrentFormatVersion = 68
 
 // MaxReportJSONBytes is the single ordinary report.json bound shared by
 // generation, manifest verification, and the local report server.
@@ -33,15 +33,16 @@ type ReportData struct {
 	// neutral ProgramPortfolio publication does not require it.
 	AnalysisTarget *analysistarget.Target `json:"analysis_target,omitempty"`
 
-	ProgramPortfolio       *ProgramPortfolio       `json:"program_portfolio"`
-	CubeMapView            *CubeMapView            `json:"cube_map_view,omitempty"`
-	CoreMapView            *CoreMapView            `json:"core_map_view,omitempty"`
-	ActivityEntrypointView *ActivityEntrypointView `json:"activity_entrypoint_view,omitempty"`
-	IntegrationUsageView   *IntegrationUsageView   `json:"integration_usage_view,omitempty"`
-	ActivityPathView       *ActivityPathView       `json:"activity_path_view,omitempty"`
-	JSTSSurfaceCatalogView *JSTSSurfaceCatalogView `json:"js_ts_surface_catalog_view,omitempty"`
-	CrossSurfacePathView   *CrossSurfacePathView   `json:"cross_surface_path_view,omitempty"`
-	RuntimePortfolio       *RuntimePortfolioView   `json:"runtime_portfolio,omitempty"`
+	ProgramPortfolio       *ProgramPortfolio           `json:"program_portfolio"`
+	CubeMapView            *CubeMapView                `json:"cube_map_view,omitempty"`
+	CoreMapView            *CoreMapView                `json:"core_map_view,omitempty"`
+	ActivityEntrypointView *ActivityEntrypointView     `json:"activity_entrypoint_view,omitempty"`
+	IntegrationUsageView   *IntegrationUsageView       `json:"integration_usage_view,omitempty"`
+	ActivityPathView       *ActivityPathView           `json:"activity_path_view,omitempty"`
+	JSTSSurfaceCatalogView *JSTSSurfaceCatalogView     `json:"js_ts_surface_catalog_view,omitempty"`
+	CrossSurfacePathView   *CrossSurfacePathView       `json:"cross_surface_path_view,omitempty"`
+	RuntimePortfolio       *RuntimePortfolioView       `json:"runtime_portfolio,omitempty"`
+	TargetOutcomePortfolio *TargetOutcomePortfolioView `json:"target_outcome_portfolio,omitempty"`
 
 	RepoName string   `json:"repo_name"`
 	Warnings []string `json:"warnings,omitempty"`

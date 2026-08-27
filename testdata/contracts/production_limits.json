@@ -650,6 +650,11 @@
       "symbols": ["reportIdleTimeout", "reportReadHeaderTimeout", "reportShutdownTimeout"]
     },
     {
+      "file": "internal/runtimeportfolio/cube.go",
+      "category": "count-bound",
+      "symbols": ["maxReduceLevels", "maxRuntimePortfolioCalls"]
+    },
+    {
       "file": "internal/runtimeportfolio/model.go",
       "category": "byte-bound",
       "symbols": ["MaxArtifactBytes", "MaxProviderRequestBytes", "MaxRequestBytes", "MaxResponseBytes", "MaxTextBytes"]
@@ -734,6 +739,22 @@
       "file": "internal/surfacediscovery/prepared_workspace.go",
       "category": "count-bound",
       "symbols": ["maxPreparedProjectionDiagnosticKeys"]
+    },
+    {
+      "file": "internal/targetoutcome/portfolio.go",
+      "category": "byte-bound",
+      "symbols": ["MaxArtifactBytes"]
+    },
+    {
+      "file": "internal/targetoutcome/portfolio.go",
+      "category": "count-bound",
+      "symbols": ["MaxOutcomes"]
+    },
+    {
+      "file": "internal/targetoutcome/portfolio.go",
+      "category": "excluded-not-a-limit",
+      "symbols": ["ReasonResourceLimit"],
+      "note": "Closed target-failure reason value, not a configured resource ceiling."
     },
     {
       "file": "internal/targetportfolio/model.go",
