@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "target": {"module":"example.com/launchservice","kind":"service","name":"launch-service"},
+  "bootstrap": [
+    {"path":"cmd/service/main.go","line":12,"symbol":"app.Bootstrap"},
+    {"path":"internal/app/bootstrap.go","line":10,"symbol":"Bootstrap"}
+  ],
+  "entrypoints": [
+    {"path":"cmd/service/main.go","line":11,"symbol":"main"}
+  ],
+  "instances": [
+    {
+      "id":"clickhouse",
+      "name":"ClickHouse launch history",
+      "complete":true,
+      "family":"outbound_client",
+      "verification_kind":"integration_test",
+      "slots":[
+        {"role":"configuration","evidence":[{"path":"internal/clients/clickhouse/config.go","line":9,"symbol":"ConfigFromApplication"}]},
+        {"role":"construction","evidence":[{"path":"internal/clients/clickhouse/client.go","line":16,"symbol":"NewClient"},{"path":"internal/clients/clickhouse/client.go","line":17,"symbol":"clickhousesdk.Open"}]},
+        {"role":"local_wrapper","evidence":[{"path":"internal/clients/clickhouse/client.go","line":11,"symbol":"Client struct"}]},
+        {"role":"consumer_boundary","evidence":[{"path":"internal/launch/service.go","line":17,"symbol":"LaunchHistory interface"}]},
+        {"role":"application_wiring","evidence":[{"path":"internal/app/wiring.go","line":27,"symbol":"clickhouse.NewClient"}]},
+        {"role":"production_operation","evidence":[{"path":"internal/launch/service.go","line":48,"symbol":"history.RecentLaunches"}]},
+        {"role":"verification","evidence":[{"path":"test/integration/clickhouse_test.go","line":11,"symbol":"TestClickHouseClientContract"},{"path":"test/integration/clickhouse_test.go","line":23,"symbol":"launches[0]"}]},
+        {"role":"observability","evidence":[{"path":"internal/clients/clickhouse/client.go","line":25,"symbol":"RecordAttempt"},{"path":"internal/clients/clickhouse/client.go","line":29,"symbol":"ClientFailure"}]}
+      ],
+      "missing":[]
+    },
+    {
+      "id":"kubernetes",
+      "name":"Kubernetes namespace client",
+      "complete":true,
+      "family":"outbound_client",
+      "verification_kind":"unit_test",
+      "slots":[
+        {"role":"configuration","evidence":[{"path":"internal/clients/kubernetes/config.go","line":10,"symbol":"ConfigFromApplication"}]},
+        {"role":"construction","evidence":[{"path":"internal/clients/kubernetes/client.go","line":19,"symbol":"NewClient"},{"path":"internal/clients/kubernetes/client.go","line":20,"symbol":"newWithFactory"},{"path":"internal/clients/kubernetes/client.go","line":24,"symbol":"factory("}]},
+        {"role":"local_wrapper","evidence":[{"path":"internal/clients/kubernetes/client.go","line":11,"symbol":"Client struct"}]},
+        {"role":"consumer_boundary","evidence":[{"path":"internal/launch/service.go","line":13,"symbol":"NamespaceLister interface"}]},
+        {"role":"application_wiring","evidence":[{"path":"internal/app/wiring.go","line":21,"symbol":"kubernetes.NewClient"}]},
+        {"role":"production_operation","evidence":[{"path":"internal/launch/service.go","line":45,"symbol":"clusters.ListNamespaces"}]},
+        {"role":"verification","evidence":[{"path":"internal/clients/kubernetes/client_test.go","line":10,"symbol":"TestClientListsNamespaces"},{"path":"internal/clients/kubernetes/client_test.go","line":19,"symbol":"namespaces[1]"}]},
+        {"role":"observability","evidence":[{"path":"internal/clients/kubernetes/client.go","line":34,"symbol":"RecordAttempt"},{"path":"internal/clients/kubernetes/client.go","line":41,"symbol":"ClientFailure"}]},
+        {"role":"failure_policy","evidence":[{"path":"internal/clients/kubernetes/client.go","line":33,"symbol":"attempt <= client.retries"}]}
+      ],
+      "missing":[]
+    },
+    {
+      "id":"notifier",
+      "name":"Launch notifier",
+      "complete":false,
+      "family":"outbound_client",
+      "verification_kind":"none",
+      "slots":[
+        {"role":"configuration","evidence":[{"path":"internal/clients/notifier/config.go","line":9,"symbol":"ConfigFromApplication"}]},
+        {"role":"construction","evidence":[{"path":"internal/clients/notifier/client.go","line":13,"symbol":"NewClient"}]},
+        {"role":"local_wrapper","evidence":[{"path":"internal/clients/notifier/client.go","line":9,"symbol":"Client struct"}]},
+        {"role":"consumer_boundary","evidence":[{"path":"internal/launch/service.go","line":9,"symbol":"LaunchNotifier interface"}]},
+        {"role":"application_wiring","evidence":[{"path":"internal/app/wiring.go","line":33,"symbol":"notifier.NewClient"}]},
+        {"role":"production_operation","evidence":[{"path":"internal/launch/service.go","line":42,"symbol":"notifier.SendLaunch"}]}
+      ],
+      "missing":["failure_policy","observability","verification"]
+    },
+    {
+      "id":"vault",
+      "name":"Vault secret client",
+      "complete":true,
+      "family":"outbound_client",
+      "verification_kind":"unit_test",
+      "slots":[
+        {"role":"configuration","evidence":[{"path":"internal/clients/vault/config.go","line":16,"symbol":"ConfigFromApplication"}]},
+        {"role":"construction","evidence":[{"path":"internal/clients/vault/client.go","line":19,"symbol":"NewClient"},{"path":"internal/clients/vault/client.go","line":20,"symbol":"vaultsdk.New"}]},
+        {"role":"local_wrapper","evidence":[{"path":"internal/clients/vault/client.go","line":12,"symbol":"Client struct"}]},
+        {"role":"consumer_boundary","evidence":[{"path":"internal/launch/service.go","line":5,"symbol":"SecretReader interface"}]},
+        {"role":"application_wiring","evidence":[{"path":"internal/app/wiring.go","line":17,"symbol":"vault.NewClient"}]},
+        {"role":"production_operation","evidence":[{"path":"internal/launch/service.go","line":38,"symbol":"secrets.ReadSecret"}]},
+        {"role":"verification","evidence":[{"path":"internal/clients/vault/client_test.go","line":11,"symbol":"TestClientReadsSecret"},{"path":"internal/clients/vault/client_test.go","line":22,"symbol":"value !="}]},
+        {"role":"observability","evidence":[{"path":"internal/clients/vault/client.go","line":30,"symbol":"RecordAttempt"},{"path":"internal/clients/vault/client.go","line":39,"symbol":"ClientFailure"}]},
+        {"role":"failure_policy","evidence":[{"path":"internal/clients/vault/client.go","line":29,"symbol":"attempt <= client.retries"},{"path":"internal/clients/vault/client.go","line":31,"symbol":"context.WithTimeout"}]}
+      ],
+      "missing":[]
+    }
+  ],
+  "excluded": [
+    {"id":"generated_clients","reason":"generated","evidence":[{"path":"internal/gen/mock_vault.gen.go","line":1,"symbol":"Code generated"},{"path":"internal/gen/mock_vault.gen.go","line":17,"symbol":"GeneratedKubernetesClient"}]},
+    {"id":"legacy_client","reason":"not_production_reachable","evidence":[{"path":"internal/legacy/client.go","line":10,"symbol":"NewClient"}]},
+    {"id":"stale_readme","reason":"not_production_reachable","evidence":[{"path":"README.md","line":3,"symbol":"Historical setup notes"}]},
+    {"id":"stdlib_http_helper","reason":"not_external_boundary","evidence":[{"path":"internal/netutil/http.go","line":9,"symbol":"DoHealthRequest"}]},
+    {"id":"test_fake_kubernetes","reason":"test_only","evidence":[{"path":"internal/clients/kubernetes/fake_test.go","line":6,"symbol":"fakeNamespaceLister"}]},
+    {"id":"test_fake_vault","reason":"test_only","evidence":[{"path":"internal/clients/vault/client_test.go","line":28,"symbol":"fakeVault"}]}
+  ],
+  "expected_roles": [
+    {"role":"application_wiring","observed_complete_instances":3,"necessity":"required"},
+    {"role":"configuration","observed_complete_instances":3,"necessity":"required"},
+    {"role":"construction","observed_complete_instances":3,"necessity":"required"},
+    {"role":"consumer_boundary","observed_complete_instances":3,"necessity":"required"},
+    {"role":"failure_policy","observed_complete_instances":2,"necessity":"common"},
+    {"role":"local_wrapper","observed_complete_instances":3,"necessity":"required"},
+    {"role":"observability","observed_complete_instances":3,"necessity":"required"},
+    {"role":"production_operation","observed_complete_instances":3,"necessity":"required"},
+    {"role":"verification","observed_complete_instances":3,"necessity":"required"}
+  ],
+  "allowed_best_instance_ids":["kubernetes","vault"],
+  "mandatory_task_slots":["application_wiring","configuration","construction","consumer_boundary","local_wrapper","observability","production_operation","verification"]
+}

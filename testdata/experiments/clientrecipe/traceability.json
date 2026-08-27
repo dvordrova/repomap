@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "rows": [
+    {"user_need":"best_example","ui_element":"best_example_card","result_field":"best_example_id","required_signal":"instance_completeness","signal_source":"footprint_reducer","authority":"validated_recipe","test":"test_oracle_evaluation"},
+    {"user_need":"change_areas","ui_element":"recipe_step_list","result_field":"steps.evidence","required_signal":"source_locations","signal_source":"go_ast_types","authority":"structural_footprint","test":"test_structural_candidates"},
+    {"user_need":"configuration","ui_element":"recipe_step_detail","result_field":"instances.slots.configuration","required_signal":"config_value_flow","signal_source":"go_ast_types","authority":"structural_footprint","test":"test_structural_candidates"},
+    {"user_need":"construction","ui_element":"recipe_step_detail","result_field":"instances.slots.construction","required_signal":"constructor_callsite","signal_source":"go_ast_types","authority":"structural_footprint","test":"test_structural_candidates"},
+    {"user_need":"construction","ui_element":"recipe_step_detail","result_field":"instances.slots.local_wrapper","required_signal":"wrapper","signal_source":"go_ast_types","authority":"structural_footprint","test":"test_structural_candidates"},
+    {"user_need":"consumer_interface","ui_element":"example_slot_map","result_field":"instances.slots.consumer_boundary","required_signal":"consumer_interface","signal_source":"go_ast_types","authority":"structural_footprint","test":"test_structural_candidates"},
+    {"user_need":"consumer_interface","ui_element":"example_slot_map","result_field":"instances.slots.production_operation","required_signal":"consumer_operation","signal_source":"go_ast_types","authority":"structural_footprint","test":"test_structural_candidates"},
+    {"user_need":"initial_plan","ui_element":"recipe_overview","result_field":"steps","required_signal":"formal_role_reduction","signal_source":"footprint_reducer","authority":"validated_recipe","test":"test_oracle_evaluation"},
+    {"user_need":"observability","ui_element":"recipe_step_detail","result_field":"instances.slots.observability","required_signal":"metrics_logging","signal_source":"go_ast_types","authority":"structural_footprint","test":"test_structural_candidates"},
+    {"user_need":"tests","ui_element":"recipe_step_detail","result_field":"instances.slots.verification","required_signal":"test_assertions","signal_source":"go_test_extractor","authority":"experiment_test_facts","test":"test_structural_candidates"},
+    {"user_need":"wiring","ui_element":"recipe_step_detail","result_field":"instances.slots.application_wiring","required_signal":"production_reachability","signal_source":"go_ast_types","authority":"structural_footprint","test":"test_structural_candidates"}
+  ]
+}
