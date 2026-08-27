@@ -1,0 +1,245 @@
+{
+  "version": 1,
+  "h0_sha256": "25198acc31182428997f5eee842d56bb6ff2b9e526c0d0945b925c916d447e74",
+  "h1_sha256": "8d2614e3c34005ee4bd2abde9a6eff124176facbaf743c5a85a69c37b902d4a7",
+  "oracle_sha256": "e843da01bdfcbb2fb4292d2e6e34ba2201d10ca177f30ee2912ad1e73e6ea528",
+  "rules": [
+    "best=maximize_learned_required_and_common_role_coverage_among_complete_instances",
+    "callbacks=exact_hidden_oracle_observed_closed_frontier",
+    "exclusion=unique_maximum_exact_path_line_overlap",
+    "grounding=oracle_path_line_present_in_same_matched_role_or_exclusion",
+    "h0_instance=importer_directory_equals_oracle_local_wrapper_directory",
+    "h1_instance=exact_oracle_local_wrapper_path_line_anchor",
+    "role=closed_role_label_after_one_to_one_instance_match"
+  ],
+  "thresholds": {
+    "instance_precision_min": 1,
+    "instance_recall_min": 1,
+    "critical_fp_max": 0,
+    "role_precision_min": 1,
+    "role_coverage_min": 0.85,
+    "grounding_min": 1,
+    "best_precision_min": 1,
+    "best_recall_min": 1
+  },
+  "h0": {
+    "task_semantic_authority": false,
+    "instance_discovery": {
+      "truth": 4,
+      "predicted": 6,
+      "matched": 4,
+      "precision": 0.666667,
+      "recall": 1
+    },
+    "critical_false_positives": 2,
+    "role_coverage": {
+      "truth": 32,
+      "predicted": 0,
+      "matched": 0,
+      "precision": 1,
+      "recall": 0
+    },
+    "evidence_grounding": {
+      "correct": 0,
+      "total": 43,
+      "score": 0
+    },
+    "exclusion_grounding": {
+      "correct": 0,
+      "total": 7,
+      "score": 0
+    },
+    "completeness": {
+      "correct": 0,
+      "total": 4,
+      "score": 0
+    },
+    "verification_kind": {
+      "correct": 0,
+      "total": 4,
+      "score": 0
+    },
+    "exclusion_discovery": {
+      "truth": 6,
+      "predicted": 0,
+      "matched": 0,
+      "precision": 1,
+      "recall": 0
+    },
+    "exclusion_reason": {
+      "correct": 0,
+      "total": 6,
+      "score": 0
+    },
+    "role_reduction": {
+      "correct": 0,
+      "total": 9,
+      "score": 0
+    },
+    "best_eligibility": {
+      "truth": 2,
+      "predicted": 0,
+      "matched": 0,
+      "precision": 1,
+      "recall": 0
+    },
+    "accounting": {
+      "correct": 40,
+      "total": 40,
+      "score": 1
+    },
+    "callbacks": {
+      "observed": 0,
+      "closed": 0,
+      "frontier": 0,
+      "exact": false
+    },
+    "exact_accounting": true,
+    "verdict": "PARTIAL",
+    "reasons": [
+      "dependency facts do not establish task roles, completeness, grounding, or a best example",
+      "dependency/importer candidates retain critical generated and unreachable false positives"
+    ]
+  },
+  "h1": {
+    "task_semantic_authority": true,
+    "instance_discovery": {
+      "truth": 4,
+      "predicted": 4,
+      "matched": 4,
+      "precision": 1,
+      "recall": 1
+    },
+    "critical_false_positives": 0,
+    "role_coverage": {
+      "truth": 32,
+      "predicted": 32,
+      "matched": 32,
+      "precision": 1,
+      "recall": 1
+    },
+    "evidence_grounding": {
+      "correct": 43,
+      "total": 43,
+      "score": 1
+    },
+    "exclusion_grounding": {
+      "correct": 7,
+      "total": 7,
+      "score": 1
+    },
+    "completeness": {
+      "correct": 4,
+      "total": 4,
+      "score": 1
+    },
+    "verification_kind": {
+      "correct": 4,
+      "total": 4,
+      "score": 1
+    },
+    "exclusion_discovery": {
+      "truth": 6,
+      "predicted": 6,
+      "matched": 6,
+      "precision": 1,
+      "recall": 1
+    },
+    "exclusion_reason": {
+      "correct": 6,
+      "total": 6,
+      "score": 1
+    },
+    "role_reduction": {
+      "correct": 9,
+      "total": 9,
+      "score": 1
+    },
+    "best_eligibility": {
+      "truth": 2,
+      "predicted": 2,
+      "matched": 2,
+      "precision": 1,
+      "recall": 1
+    },
+    "accounting": {
+      "correct": 10,
+      "total": 10,
+      "score": 1
+    },
+    "callbacks": {
+      "observed": 4,
+      "closed": 2,
+      "frontier": 2,
+      "exact": true
+    },
+    "exact_accounting": true,
+    "verdict": "PASS",
+    "reasons": []
+  },
+  "instance_matches": [
+    {
+      "oracle_id": "clickhouse",
+      "prediction": "h1-instance-ac28c98a439448092c34e1d0",
+      "shared_facts": 1
+    },
+    {
+      "oracle_id": "kubernetes",
+      "prediction": "h1-instance-7eed864117280bdf80506864",
+      "shared_facts": 1
+    },
+    {
+      "oracle_id": "notifier",
+      "prediction": "h1-instance-8a61a906efdc95851badefd3",
+      "shared_facts": 1
+    },
+    {
+      "oracle_id": "vault",
+      "prediction": "h1-instance-e6c59de5d19c88e2094aa1b8",
+      "shared_facts": 1
+    }
+  ],
+  "exclusion_matches": [
+    {
+      "oracle_id": "generated_clients",
+      "prediction": "h1-excluded-49bc8b199351e8be0ef9e10a",
+      "shared_facts": 2
+    },
+    {
+      "oracle_id": "legacy_client",
+      "prediction": "h1-excluded-0a35deb026b0b5ca6802940b",
+      "shared_facts": 1
+    },
+    {
+      "oracle_id": "stale_readme",
+      "prediction": "h1-excluded-04647a80302de20cc35241b9",
+      "shared_facts": 1
+    },
+    {
+      "oracle_id": "stdlib_http_helper",
+      "prediction": "h1-excluded-9771f244f46ae33adde6f909",
+      "shared_facts": 1
+    },
+    {
+      "oracle_id": "test_fake_kubernetes",
+      "prediction": "h1-excluded-7e1cb8c7c5862e5f7538e9ab",
+      "shared_facts": 1
+    },
+    {
+      "oracle_id": "test_fake_vault",
+      "prediction": "h1-excluded-93e81cf979f5197d93acb74a",
+      "shared_facts": 1
+    }
+  ],
+  "eligible_best_instance_ids": [
+    "kubernetes",
+    "vault"
+  ],
+  "determinism": {
+    "runs": 2,
+    "unique_outputs": 1,
+    "passed": true
+  },
+  "verdict": "PASS",
+  "sha256": "be06664fb8f3be45bd8cc1c250cdef8f506fb74800799e2ce9ac1f5d1bce4a58"
+}

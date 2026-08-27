@@ -1,0 +1,401 @@
+{
+  "version": 1,
+  "authority_sha256": "a6f492ded210630277f42eac2f88161f0cdf882ad7f04baf50eb4d26ac50b510",
+  "candidates": [
+    {
+      "id": "h0-2572c70a37ad4dc60bf20b06",
+      "dependency_id": "dependency-309ef1f5c8eeb49972854e31",
+      "package_path": "example.com/clickhousesdk",
+      "importer_ref": "importer-d7b8087a8b0a299bc1bc123b",
+      "importer_package_path": "example.com/launchservice/internal/clients/clickhouse",
+      "importer_repository_path": "internal/clients/clickhouse",
+      "calls": [
+        {
+          "relation_id": "program-relation-6585b698b31b4250a76002024e0daf2cbd2d098ca34fcf39c7b3caba0d11c018",
+          "canonical_callee": "example.com/clickhousesdk.Open",
+          "callsite": {
+            "path": "internal/clients/clickhouse/client.go",
+            "line": 17,
+            "column": 14
+          }
+        },
+        {
+          "relation_id": "program-relation-3b1cbeb3b35b7fd0c280ee3cc412c3416f8c6ab110b8049fc45fac18ab561f81",
+          "canonical_callee": "example.com/clickhousesdk.*example.com/clickhousesdk.Client.RecentLaunches",
+          "callsite": {
+            "path": "internal/clients/clickhouse/client.go",
+            "line": 26,
+            "column": 19
+          }
+        }
+      ]
+    },
+    {
+      "id": "h0-3a9497c3b85c538a1f43f5a8",
+      "dependency_id": "dependency-6f7e72e58df15a0591d339e0",
+      "package_path": "example.com/legacysdk",
+      "importer_ref": "importer-25225e9e777968aed4b19dd1",
+      "importer_package_path": "example.com/launchservice/internal/legacy",
+      "importer_repository_path": "internal/legacy",
+      "calls": [
+        {
+          "relation_id": "program-relation-4ff4c5b44ab5da1d4553ebbd2b0955eb2e8984a0feabc0aec9a8fa0cf5329fd2",
+          "canonical_callee": "example.com/legacysdk.New",
+          "callsite": {
+            "path": "internal/legacy/client.go",
+            "line": 10,
+            "column": 48
+          }
+        },
+        {
+          "relation_id": "program-relation-8efd975dfd3a5b7bda80de8671c56f3e27b942eaaf4401c87230e199d5357d0c",
+          "canonical_callee": "example.com/legacysdk.*example.com/legacysdk.Client.Lookup",
+          "callsite": {
+            "path": "internal/legacy/client.go",
+            "line": 12,
+            "column": 58
+          }
+        }
+      ]
+    },
+    {
+      "id": "h0-b38ef0ce00c12105185acb90",
+      "dependency_id": "dependency-29faba0a7f9d592069df4a9e",
+      "package_path": "example.com/vaultsdk",
+      "importer_ref": "importer-3f7cc9ca910705eb63b6a3be",
+      "importer_package_path": "example.com/launchservice/internal/clients/vault",
+      "importer_repository_path": "internal/clients/vault",
+      "calls": [
+        {
+          "relation_id": "program-relation-4a422e8ef5d233aa175858585d848e7cb0c801a1bf9d2e944e0bc26e50d273c5",
+          "canonical_callee": "example.com/vaultsdk.New",
+          "callsite": {
+            "path": "internal/clients/vault/client.go",
+            "line": 20,
+            "column": 14
+          }
+        },
+        {
+          "relation_id": "program-relation-5875e97188c8fe9883de2f3bd6dca6927b99f9de8f9ef4524aa98e7bd30cfdc0",
+          "canonical_callee": "example.com/vaultsdk.*example.com/vaultsdk.Client.Read",
+          "callsite": {
+            "path": "internal/clients/vault/client.go",
+            "line": 32,
+            "column": 17
+          }
+        },
+        {
+          "relation_id": "program-relation-8dc1223ae1971a96dd064109cf634b55872db9a36d209e96da36605da0f00c18",
+          "canonical_callee": "example.com/vaultsdk.*example.com/vaultsdk.Client.Ping",
+          "callsite": {
+            "path": "internal/clients/vault/client.go",
+            "line": 47,
+            "column": 9
+          }
+        }
+      ]
+    },
+    {
+      "id": "h0-c95bb86e96f04c6c9ebe2312",
+      "dependency_id": "dependency-f31ce74651b8db6c9aadacdd",
+      "package_path": "example.com/kubernetessdk",
+      "importer_ref": "importer-223ae5592923f4b98a9b01eb",
+      "importer_package_path": "example.com/launchservice/internal/gen",
+      "importer_repository_path": "internal/gen",
+      "calls": []
+    },
+    {
+      "id": "h0-e513cd3b0d751e172208c4c0",
+      "dependency_id": "dependency-f31ce74651b8db6c9aadacdd",
+      "package_path": "example.com/kubernetessdk",
+      "importer_ref": "importer-ab462c874bae64982165a043",
+      "importer_package_path": "example.com/launchservice/internal/clients/kubernetes",
+      "importer_repository_path": "internal/clients/kubernetes",
+      "calls": [
+        {
+          "relation_id": "program-relation-5cf6c2b154d14b670540a87d39ae71001a91bbb4cfd192c2781bc23f315ddfce",
+          "canonical_callee": "example.com/kubernetessdk.*example.com/kubernetessdk.Client.Namespaces",
+          "callsite": {
+            "path": "internal/clients/kubernetes/client.go",
+            "line": 35,
+            "column": 22
+          }
+        }
+      ]
+    },
+    {
+      "id": "h0-fe0ad8f2d4d305b20db643f1",
+      "dependency_id": "dependency-6146617615442179c4d53903",
+      "package_path": "example.com/notifiersdk",
+      "importer_ref": "importer-824c15c875920e3eeae11e06",
+      "importer_package_path": "example.com/launchservice/internal/clients/notifier",
+      "importer_repository_path": "internal/clients/notifier",
+      "calls": [
+        {
+          "relation_id": "program-relation-f00ed30528a1243ef9456682c8ed513afff3a42949a27733354506b471a505c8",
+          "canonical_callee": "example.com/notifiersdk.New",
+          "callsite": {
+            "path": "internal/clients/notifier/client.go",
+            "line": 14,
+            "column": 25
+          }
+        },
+        {
+          "relation_id": "program-relation-069f106c8c0df8ff6c4544d761151924fe445313a0484b2fb375ff1dc0d82568",
+          "canonical_callee": "example.com/notifiersdk.*example.com/notifiersdk.Sender.Send",
+          "callsite": {
+            "path": "internal/clients/notifier/client.go",
+            "line": 18,
+            "column": 9
+          }
+        }
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "id": "h0-04de1175ba93c95f7c98a8db",
+      "dependency_id": "dependency-ed14ee106dab0daab5e7df45",
+      "importer_ref": "importer-ab462c874bae64982165a043",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-05808f619e54aba8bb4add3d",
+      "dependency_id": "dependency-05783d5276675de1bffc16d5",
+      "importer_ref": "importer-cca7eb85ebd0fa616c623b1e",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-0b4db2466d6f01b7766d14db",
+      "dependency_id": "dependency-2b57b5db25f5c52b238074cf",
+      "importer_ref": "importer-3f7cc9ca910705eb63b6a3be",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-19416991cd15e0b4e83fd86c",
+      "dependency_id": "dependency-d4f02b3e48b52453f3e8080e",
+      "importer_ref": "importer-0e5cd99549797cb63ff75eb6",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-209e57a30fea399e2f36cfbf",
+      "dependency_id": "dependency-0774353b49034b0516fa3a1e",
+      "importer_ref": "importer-d7b8087a8b0a299bc1bc123b",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-269f0d32576608bd5c0916e6",
+      "dependency_id": "dependency-83bf6598ba7437c40a6f7544",
+      "importer_ref": "importer-9ac3319537f7d1559808b92a",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-27d826c110f80be9318ecd82",
+      "dependency_id": "dependency-3d83b835a582fbc493daf4cb",
+      "importer_ref": "importer-cca7eb85ebd0fa616c623b1e",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-2853eb25f7997f43ca5b84da",
+      "dependency_id": "dependency-ed14ee106dab0daab5e7df45",
+      "importer_ref": "importer-d7b8087a8b0a299bc1bc123b",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-323699051bda37fd69a08bc7",
+      "dependency_id": "dependency-2b57b5db25f5c52b238074cf",
+      "importer_ref": "importer-23b149be3152eb97d4b1138b",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-33a4ad6b47fd19a6b388ec0e",
+      "dependency_id": "dependency-ed14ee106dab0daab5e7df45",
+      "importer_ref": "importer-3f7cc9ca910705eb63b6a3be",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-3b470d0005759acda75e91e6",
+      "dependency_id": "dependency-1638fffc6b36b35e673c6d41",
+      "importer_ref": "importer-5637733e403df81188ebeb08",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-4324d6d2fe72ddcd1a831c0e",
+      "dependency_id": "dependency-2b57b5db25f5c52b238074cf",
+      "importer_ref": "importer-d7b8087a8b0a299bc1bc123b",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-5423d7753507ae0a5b1f8936",
+      "dependency_id": "dependency-83bf6598ba7437c40a6f7544",
+      "importer_ref": "importer-ab462c874bae64982165a043",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-58858f4f1ce03a7227582140",
+      "dependency_id": "dependency-0774353b49034b0516fa3a1e",
+      "importer_ref": "importer-9ac3319537f7d1559808b92a",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-6258d134f8194aa117a546a5",
+      "dependency_id": "dependency-2b57b5db25f5c52b238074cf",
+      "importer_ref": "importer-0e5cd99549797cb63ff75eb6",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-65fef22f9ea4cd7b87eaf70a",
+      "dependency_id": "dependency-83bf6598ba7437c40a6f7544",
+      "importer_ref": "importer-d7b8087a8b0a299bc1bc123b",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-6887dfda4c018c6ab5bdf893",
+      "dependency_id": "dependency-3d83b835a582fbc493daf4cb",
+      "importer_ref": "importer-0e5cd99549797cb63ff75eb6",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-698b01aedc2cbbaaa29cc5f4",
+      "dependency_id": "dependency-42ca9e4a97b940a1bada0b76",
+      "importer_ref": "importer-9ac3319537f7d1559808b92a",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-69a06af974cc94f7a9de79bc",
+      "dependency_id": "dependency-3735c8da253892d53b5e8d85",
+      "importer_ref": "importer-9ac3319537f7d1559808b92a",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-6f72b94202829f4855770bdb",
+      "dependency_id": "dependency-2b57b5db25f5c52b238074cf",
+      "importer_ref": "importer-223ae5592923f4b98a9b01eb",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-718434236c366ffbb11e84cd",
+      "dependency_id": "dependency-2b57b5db25f5c52b238074cf",
+      "importer_ref": "importer-5637733e403df81188ebeb08",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-7ba78be3e5af11bbea1ec68c",
+      "dependency_id": "dependency-0774353b49034b0516fa3a1e",
+      "importer_ref": "importer-0e5cd99549797cb63ff75eb6",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-97a6d9d99a5f25778295a6fe",
+      "dependency_id": "dependency-83bf6598ba7437c40a6f7544",
+      "importer_ref": "importer-3f7cc9ca910705eb63b6a3be",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-997d7ef8146b5936f9451956",
+      "dependency_id": "dependency-fc599b549accdcd01478cfc1",
+      "importer_ref": "importer-9ac3319537f7d1559808b92a",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-9acf2f6207121efb90cfb19c",
+      "dependency_id": "dependency-0774353b49034b0516fa3a1e",
+      "importer_ref": "importer-3f7cc9ca910705eb63b6a3be",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-a1c3a8d2c4047fb0d07b0eab",
+      "dependency_id": "dependency-cf4c2f539f6dfec35fe0ec5b",
+      "importer_ref": "importer-9ac3319537f7d1559808b92a",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-bc81f65d087d976697672fb4",
+      "dependency_id": "dependency-1b6558476fd56e278b00a3cb",
+      "importer_ref": "importer-4cb61e147178656fa77f684e",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-cebd82266d3e076a052a6f14",
+      "dependency_id": "dependency-2b57b5db25f5c52b238074cf",
+      "importer_ref": "importer-824c15c875920e3eeae11e06",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-d571d6002ae83524cf6206fb",
+      "dependency_id": "dependency-0774353b49034b0516fa3a1e",
+      "importer_ref": "importer-ab462c874bae64982165a043",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-dfa1ddb6ec5656f4d6473ea4",
+      "dependency_id": "dependency-0774353b49034b0516fa3a1e",
+      "importer_ref": "importer-824c15c875920e3eeae11e06",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-e7a25e246f76022f40a1a76d",
+      "dependency_id": "dependency-2b57b5db25f5c52b238074cf",
+      "importer_ref": "importer-ab462c874bae64982165a043",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-ef708d4cf7ee3a0295cd5559",
+      "dependency_id": "dependency-1b6558476fd56e278b00a3cb",
+      "importer_ref": "importer-3f7cc9ca910705eb63b6a3be",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-f225a6d1ad14fffe62aa24a0",
+      "dependency_id": "dependency-ed14ee106dab0daab5e7df45",
+      "importer_ref": "importer-9ac3319537f7d1559808b92a",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-f29285f7c0fab13885a6e0e7",
+      "dependency_id": "dependency-4ca2563c79bdbfe636bb316a",
+      "importer_ref": "importer-9ac3319537f7d1559808b92a",
+      "kind": "workspace",
+      "reason": "workspace"
+    }
+  ],
+  "ledger": {
+    "observed": 40,
+    "admitted": 6,
+    "excluded": 34
+  },
+  "sha256": "25198acc31182428997f5eee842d56bb6ff2b9e526c0d0945b925c916d447e74"
+}

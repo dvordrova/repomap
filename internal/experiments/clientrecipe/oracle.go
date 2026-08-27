@@ -11,11 +11,18 @@ type Oracle struct {
 	Target             OracleTarget     `json:"target"`
 	Bootstrap          []SourceLocator  `json:"bootstrap"`
 	Entrypoints        []SourceLocator  `json:"entrypoints"`
+	Callbacks          OracleCallbacks  `json:"callbacks"`
 	Instances          []OracleInstance `json:"instances"`
 	Excluded           []OracleExcluded `json:"excluded"`
 	ExpectedRoles      []OracleRole     `json:"expected_roles"`
 	AllowedBest        []string         `json:"allowed_best_instance_ids"`
 	MandatoryTaskSlots []string         `json:"mandatory_task_slots"`
+}
+
+type OracleCallbacks struct {
+	Observed int `json:"observed"`
+	Closed   int `json:"closed"`
+	Frontier int `json:"frontier"`
 }
 
 type OracleTarget struct {
@@ -74,6 +81,10 @@ func (value Oracle) Validate() error {
 		len(value.Entrypoints) == 0 || len(value.Instances) == 0 || value.Excluded == nil ||
 		len(value.ExpectedRoles) == 0 || len(value.AllowedBest) == 0 || len(value.MandatoryTaskSlots) == 0 {
 		return fmt.Errorf("client recipe oracle: invalid identity or coverage")
+	}
+	if value.Callbacks.Observed <= 0 || value.Callbacks.Closed < 0 || value.Callbacks.Frontier < 0 ||
+		value.Callbacks.Closed+value.Callbacks.Frontier != value.Callbacks.Observed {
+		return fmt.Errorf("client recipe oracle: invalid callback expectation")
 	}
 	for _, locator := range append(append([]SourceLocator{}, value.Bootstrap...), value.Entrypoints...) {
 		if err := locator.Validate(); err != nil {

@@ -1,0 +1,3951 @@
+{
+  "version": 1,
+  "repository_sha256": "8a71d1089e46f385d2c0b49f3cbca4ee8cda6ed35c422ba6d6cf74deaa4b889b",
+  "program_index": {
+    "version": 7,
+    "scenario_sha256": "91da3e06e9b3df1b04e052e783f797d277a7b5b36f8c7e98858f2c5026ea8e2c",
+    "source_sha256": "8a71d1089e46f385d2c0b49f3cbca4ee8cda6ed35c422ba6d6cf74deaa4b889b",
+    "target": {
+      "id": "program-target-4de8ec8ea387ba495955b1f5288858cda3795cff85bcd18d457cf8163cbc35fa",
+      "language": "go",
+      "kind": "executable",
+      "name": "service",
+      "selector": "go:cmd/service",
+      "sources": [
+        {
+          "file_ref": "f0001",
+          "path": "cmd/service/main.go"
+        },
+        {
+          "file_ref": "f0002",
+          "path": "internal/app/bootstrap.go"
+        },
+        {
+          "file_ref": "f0003",
+          "path": "internal/app/wiring.go"
+        },
+        {
+          "file_ref": "f0004",
+          "path": "internal/clients/clickhouse/client.go"
+        },
+        {
+          "file_ref": "f0005",
+          "path": "internal/clients/clickhouse/config.go"
+        },
+        {
+          "file_ref": "f0006",
+          "path": "internal/clients/kubernetes/client.go"
+        },
+        {
+          "file_ref": "f0007",
+          "path": "internal/clients/kubernetes/config.go"
+        },
+        {
+          "file_ref": "f0008",
+          "path": "internal/clients/notifier/client.go"
+        },
+        {
+          "file_ref": "f0009",
+          "path": "internal/clients/notifier/config.go"
+        },
+        {
+          "file_ref": "f0010",
+          "path": "internal/clients/vault/client.go"
+        },
+        {
+          "file_ref": "f0011",
+          "path": "internal/clients/vault/config.go"
+        },
+        {
+          "file_ref": "f0012",
+          "path": "internal/config/config.go"
+        },
+        {
+          "file_ref": "f0013",
+          "path": "internal/gen/mock_vault.gen.go"
+        },
+        {
+          "file_ref": "f0014",
+          "path": "internal/launch/handler.go"
+        },
+        {
+          "file_ref": "f0015",
+          "path": "internal/launch/model.go"
+        },
+        {
+          "file_ref": "f0016",
+          "path": "internal/launch/service.go"
+        },
+        {
+          "file_ref": "f0017",
+          "path": "internal/legacy/client.go"
+        },
+        {
+          "file_ref": "f0018",
+          "path": "internal/netutil/http.go"
+        },
+        {
+          "file_ref": "f0019",
+          "path": "internal/observability/logging.go"
+        },
+        {
+          "file_ref": "f0020",
+          "path": "internal/observability/metrics.go"
+        }
+      ],
+      "anchor_file_ref": "f0001",
+      "seeds": [
+        {
+          "object_id": "program-object-d93d6e7554a17c128607d881ba4263c635e29db29e9c7d33f547ba49c3a77a38",
+          "kind": "callable",
+          "location": {
+            "path": "cmd/service/main.go",
+            "line": 11,
+            "column": 6
+          }
+        }
+      ]
+    },
+    "objects": [
+      {
+        "id": "program-object-022225236320919dd21adf2a70038c071453ee4410a03f586da3c07a6ce59cca",
+        "source_ref": "local:example.com/launchservice/internal/launch:internal/launch/service.go:28:NewService",
+        "kind": "function",
+        "name": "NewService",
+        "visibility": "public",
+        "signature": "func(secrets example.com/launchservice/internal/launch.SecretReader, clusters example.com/launchservice/internal/launch.NamespaceLister, history example.com/launchservice/internal/launch.LaunchHistory, notifier example.com/launchservice/internal/launch.LaunchNotifier) *example.com/launchservice/internal/launch.Service",
+        "location": {
+          "path": "internal/launch/service.go",
+          "line": 28,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-03419d1d63be70a19a1a73b1528e84d244a96151368bd18e9b8555dda65533d8",
+        "source_ref": "external:4c94123eec687469ee45e7db",
+        "kind": "external_symbol",
+        "name": "fmt.Errorf",
+        "visibility": "public",
+        "signature": "func(format string, a ...any) (err error)",
+        "external": {
+          "package_path": "fmt",
+          "name": "Errorf"
+        }
+      },
+      {
+        "id": "program-object-03440bb328a7485e001d64d82597a3cbff4ac2847f15c4430d5bfb29f9dcbacc",
+        "source_ref": "local:example.com/launchservice/internal/launch:internal/launch/service.go:17:LaunchHistory",
+        "kind": "type",
+        "name": "LaunchHistory",
+        "visibility": "public",
+        "location": {
+          "path": "internal/launch/service.go",
+          "line": 17,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-04f3d466f32b72eea9f45764dc33478e40417949db2064de57fcdae52c56326f",
+        "source_ref": "local:example.com/launchservice/internal/clients/kubernetes:internal/clients/kubernetes/config.go:5:Config",
+        "kind": "type",
+        "name": "Config",
+        "visibility": "public",
+        "location": {
+          "path": "internal/clients/kubernetes/config.go",
+          "line": 5,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-0c67d72acb70b4840a489eb283f83f2e596068e763c958245f072ca850a3653f",
+        "source_ref": "local:example.com/launchservice/internal/config:internal/config/config.go:5:Config",
+        "kind": "type",
+        "name": "Config",
+        "visibility": "public",
+        "location": {
+          "path": "internal/config/config.go",
+          "line": 5,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-0ee96c616492b40bf4b29d35f7e72c85f6de6462c05413cb3e4151456fd61d25",
+        "source_ref": "external:2e5c5f20aeb91f7671370047",
+        "kind": "external_symbol",
+        "name": "io.Close",
+        "visibility": "public",
+        "signature": "func() error",
+        "external": {
+          "package_path": "io",
+          "receiver": "io.Closer",
+          "name": "Close"
+        }
+      },
+      {
+        "id": "program-object-10b6609eddb920a850043c8f496ccdefe95305a8db1cf5ff96d898820c902c00",
+        "source_ref": "local:example.com/launchservice/internal/config:internal/config/config.go:19:NotifierConfig",
+        "kind": "type",
+        "name": "NotifierConfig",
+        "visibility": "public",
+        "location": {
+          "path": "internal/config/config.go",
+          "line": 19,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-12b9e64e2cf52989f0e59af6ac4aa6608be7eaef0c422d1b5adb7c60b3bd4641",
+        "source_ref": "local:example.com/launchservice/internal/clients/clickhouse:internal/clients/clickhouse/config.go:5:Config",
+        "kind": "type",
+        "name": "Config",
+        "visibility": "public",
+        "location": {
+          "path": "internal/clients/clickhouse/config.go",
+          "line": 5,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-137baec5deec9e49adee3888402016c5a484f29842b4121497e46105bdc1497f",
+        "source_ref": "local:example.com/launchservice/internal/clients/notifier:internal/clients/notifier/client.go:13:NewClient",
+        "kind": "function",
+        "name": "NewClient",
+        "visibility": "public",
+        "signature": "func(config example.com/launchservice/internal/clients/notifier.Config) *example.com/launchservice/internal/clients/notifier.Client",
+        "location": {
+          "path": "internal/clients/notifier/client.go",
+          "line": 13,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-1538b1ea26336163449dfc3184c837ee27f461d6b55c1f6b659702ed0febf8d9",
+        "source_ref": "local:example.com/launchservice/internal/legacy:internal/legacy/client.go:12:Lookup",
+        "kind": "method",
+        "name": "Client.Lookup",
+        "visibility": "public",
+        "signature": "func(key string) string",
+        "location": {
+          "path": "internal/legacy/client.go",
+          "line": 12,
+          "column": 23
+        }
+      },
+      {
+        "id": "program-object-17fbc15bf22fca7bc7ecfdc41b04d8056a807985d5f8e6281a8885f925acbe3d",
+        "source_ref": "local:example.com/launchservice/internal/app:internal/app/wiring.go:15:wireClients",
+        "kind": "function",
+        "name": "wireClients",
+        "visibility": "internal",
+        "signature": "func(configuration example.com/launchservice/internal/config.Config) (*example.com/launchservice/internal/launch.Service, error)",
+        "location": {
+          "path": "internal/app/wiring.go",
+          "line": 15,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-1813f76e1d77d7f1b343799ad3743febb7e9a8449261db3ef8442d581d74acdb",
+        "source_ref": "local:example.com/launchservice/internal/clients/kubernetes:internal/clients/kubernetes/client.go:17:Factory",
+        "kind": "type",
+        "name": "Factory",
+        "visibility": "public",
+        "location": {
+          "path": "internal/clients/kubernetes/client.go",
+          "line": 17,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-19ce7496c7a8dce99b0c849eceba817289fc553c439b14815988a8c29c554830",
+        "source_ref": "external:e15ab62240997fc622d88ecb",
+        "kind": "external_symbol",
+        "name": "sync.Unlock",
+        "visibility": "public",
+        "signature": "func()",
+        "external": {
+          "package_path": "sync",
+          "receiver": "*sync.Mutex",
+          "name": "Unlock"
+        }
+      },
+      {
+        "id": "program-object-1ba2225e112262f463ce93f1bedde9db01a6c9b154b1434d4a37b2275f0bc5d3",
+        "source_ref": "local:example.com/launchservice/internal/launch:internal/launch/handler.go:5:ResolveCallback",
+        "kind": "type",
+        "name": "ResolveCallback",
+        "visibility": "public",
+        "location": {
+          "path": "internal/launch/handler.go",
+          "line": 5,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-225477aa1dac6acabaee55f3235b5c06834359beb15d897b68d0dc202b902b84",
+        "source_ref": "local:example.com/launchservice/internal/clients/clickhouse:internal/clients/clickhouse/client.go:16:NewClient",
+        "kind": "function",
+        "name": "NewClient",
+        "visibility": "public",
+        "signature": "func(config example.com/launchservice/internal/clients/clickhouse.Config, metrics *example.com/launchservice/internal/observability.Metrics) (*example.com/launchservice/internal/clients/clickhouse.Client, error)",
+        "location": {
+          "path": "internal/clients/clickhouse/client.go",
+          "line": 16,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-28db23806c7273aab42f55e9a69dc495aab8d6dcff1041c2def7a3f07ac1d53e",
+        "source_ref": "local:example.com/launchservice/internal/clients/kubernetes:internal/clients/kubernetes/config.go:10:ConfigFromApplication",
+        "kind": "function",
+        "name": "ConfigFromApplication",
+        "visibility": "public",
+        "signature": "func(value example.com/launchservice/internal/config.KubernetesConfig) example.com/launchservice/internal/clients/kubernetes.Config",
+        "location": {
+          "path": "internal/clients/kubernetes/config.go",
+          "line": 10,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-2b634b07dcb291e7c4c98f4cf068c7a532ce9a29379b9e487e1ad45afacd5725",
+        "source_ref": "external:e36b055997c26b4f52beb523",
+        "kind": "external_symbol",
+        "name": "context.WithTimeout",
+        "visibility": "public",
+        "signature": "func(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc)",
+        "external": {
+          "package_path": "context",
+          "name": "WithTimeout"
+        }
+      },
+      {
+        "id": "program-object-358012dfaaa08f5c6fb430e4fb8f20219c08d9720a2f4c45dc488e6073673d22",
+        "source_ref": "external:7af9fbd4f2243b9ede33abbd",
+        "kind": "external_symbol",
+        "name": "net/http.Do",
+        "visibility": "public",
+        "signature": "func(req *net/http.Request) (*net/http.Response, error)",
+        "external": {
+          "package_path": "net/http",
+          "receiver": "*net/http.Client",
+          "name": "Do"
+        }
+      },
+      {
+        "id": "program-object-36b7b774a02f3c61af782d826c220cdcb579c7d1599d04dcde40a6e3b26f6483",
+        "source_ref": "local:example.com/launchservice/internal/gen:internal/gen/mock_vault.gen.go:17:GeneratedKubernetesClient",
+        "kind": "type",
+        "name": "GeneratedKubernetesClient",
+        "visibility": "public",
+        "location": {
+          "path": "internal/gen/mock_vault.gen.go",
+          "line": 17,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-3c912cea50ee282aa91cf698717762e593c38ee08ec38c5195f38b287d699a4d",
+        "source_ref": "local:example.com/launchservice/internal/netutil:internal/netutil/http.go:9:DoHealthRequest",
+        "kind": "function",
+        "name": "DoHealthRequest",
+        "visibility": "public",
+        "signature": "func(ctx context.Context, client *net/http.Client, endpoint string) error",
+        "location": {
+          "path": "internal/netutil/http.go",
+          "line": 9,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-3cbcd5bee86b4de6ac651f93825919cef4532e0b37890dda324dec7fbff2fbde",
+        "source_ref": "local:example.com/launchservice/internal/clients/vault:internal/clients/vault/client.go:19:NewClient",
+        "kind": "function",
+        "name": "NewClient",
+        "visibility": "public",
+        "signature": "func(config example.com/launchservice/internal/clients/vault.Config, metrics *example.com/launchservice/internal/observability.Metrics) (*example.com/launchservice/internal/clients/vault.Client, error)",
+        "location": {
+          "path": "internal/clients/vault/client.go",
+          "line": 19,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-46679f2c0f7d1aee940c8e29593b6ae2006e7e2548feb8e23db90fc90fb63bfc",
+        "source_ref": "local:example.com/launchservice/internal/clients/notifier:internal/clients/notifier/config.go:5:Config",
+        "kind": "type",
+        "name": "Config",
+        "visibility": "public",
+        "location": {
+          "path": "internal/clients/notifier/config.go",
+          "line": 5,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-4a2d214beab50c2306f38aa845478e64a8a9eaf250a744d194d099467a8249c9",
+        "source_ref": "external:981d9b525a2a4832acc58b9d",
+        "kind": "external_symbol",
+        "name": "example.com/kubernetessdk.New",
+        "visibility": "public",
+        "signature": "func(config example.com/kubernetessdk.Config) (*example.com/kubernetessdk.Client, error)",
+        "external": {
+          "package_path": "example.com/kubernetessdk",
+          "name": "New"
+        }
+      },
+      {
+        "id": "program-object-4b90b4c66803d992e057cbdca8e661ebadac1d589b4243d71d6f561c3a5f3091",
+        "source_ref": "local:example.com/launchservice/internal/clients/kubernetes:internal/clients/kubernetes/client.go:31:ListNamespaces",
+        "kind": "method",
+        "name": "Client.ListNamespaces",
+        "visibility": "public",
+        "signature": "func(ctx context.Context) ([]string, error)",
+        "location": {
+          "path": "internal/clients/kubernetes/client.go",
+          "line": 31,
+          "column": 23
+        }
+      },
+      {
+        "id": "program-object-4cc4359e4d1962f949c9c59f51bd04566d49ab0c87ca76b23cf6b0acd779b878",
+        "source_ref": "local:example.com/launchservice/internal/gen:internal/gen/mock_vault.gen.go:10:MockVault",
+        "kind": "type",
+        "name": "MockVault",
+        "visibility": "public",
+        "location": {
+          "path": "internal/gen/mock_vault.gen.go",
+          "line": 10,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-4eaa2b12b57e57a794cf01b8538ed46d4518768ea3da2b26be9b07f3290d44af",
+        "source_ref": "local:example.com/launchservice/internal/launch:internal/launch/service.go:14:ListNamespaces",
+        "kind": "method",
+        "name": "NamespaceLister.ListNamespaces",
+        "visibility": "public",
+        "signature": "func(context.Context) ([]string, error)",
+        "owner_id": "program-object-50cebe30cae1cfa0437dde8902f049972f96699256758348338bec9c81db8eda",
+        "location": {
+          "path": "internal/launch/service.go",
+          "line": 14,
+          "column": 2
+        }
+      },
+      {
+        "id": "program-object-50cebe30cae1cfa0437dde8902f049972f96699256758348338bec9c81db8eda",
+        "source_ref": "local:example.com/launchservice/internal/launch:internal/launch/service.go:13:NamespaceLister",
+        "kind": "type",
+        "name": "NamespaceLister",
+        "visibility": "public",
+        "location": {
+          "path": "internal/launch/service.go",
+          "line": 13,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-518684734798b6f860a9bc8f580e5f9db3c8a442988b4c1ce6e941fb42917ec5",
+        "source_ref": "local:example.com/launchservice/internal/observability:internal/observability/metrics.go:21:RecordFailure",
+        "kind": "method",
+        "name": "Metrics.RecordFailure",
+        "visibility": "public",
+        "signature": "func(client string)",
+        "location": {
+          "path": "internal/observability/metrics.go",
+          "line": 21,
+          "column": 25
+        }
+      },
+      {
+        "id": "program-object-588f575f6d2561f703c2a696b271dc0c0f84ecfd4577822784f9097300e76043",
+        "source_ref": "external:f347e5b2e17fafb72999b970",
+        "kind": "external_symbol",
+        "name": "example.com/notifiersdk.Send",
+        "visibility": "public",
+        "signature": "func(context.Context, string) error",
+        "external": {
+          "package_path": "example.com/notifiersdk",
+          "receiver": "*example.com/notifiersdk.Sender",
+          "name": "Send"
+        }
+      },
+      {
+        "id": "program-object-67307980345ccc14db0f524915a7096ba738a7553c1263be844d9808dd162c4f",
+        "source_ref": "external:5a4ac05ccef207480fa7d07c",
+        "kind": "external_symbol",
+        "name": "example.com/vaultsdk.Read",
+        "visibility": "public",
+        "signature": "func(_ context.Context, key string) (string, error)",
+        "external": {
+          "package_path": "example.com/vaultsdk",
+          "receiver": "*example.com/vaultsdk.Client",
+          "name": "Read"
+        }
+      },
+      {
+        "id": "program-object-69596f6e32d800faaba895e8fb58f405bf5dcef1c22a6fe9dff79d432b91cdee",
+        "source_ref": "external:fff47e752865e3c630d75060",
+        "kind": "external_symbol",
+        "name": "net/http.NewRequestWithContext",
+        "visibility": "public",
+        "signature": "func(ctx context.Context, method string, url string, body io.Reader) (*net/http.Request, error)",
+        "external": {
+          "package_path": "net/http",
+          "name": "NewRequestWithContext"
+        }
+      },
+      {
+        "id": "program-object-6fc826beba9d00b96fb2ff4f002ff6e0b906a4bb6fdf4c6adf7bdbb94af83595",
+        "source_ref": "local:example.com/launchservice/internal/config:internal/config/config.go:23:KubernetesConfig",
+        "kind": "type",
+        "name": "KubernetesConfig",
+        "visibility": "public",
+        "location": {
+          "path": "internal/config/config.go",
+          "line": 23,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-6fe36a27e024f0cccee163eddc2140795e47344b61519f97fb4f02ba6c6601a8",
+        "source_ref": "local:example.com/launchservice/internal/clients/clickhouse:internal/clients/clickhouse/client.go:11:Client",
+        "kind": "type",
+        "name": "Client",
+        "visibility": "public",
+        "location": {
+          "path": "internal/clients/clickhouse/client.go",
+          "line": 11,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-765aa4cd9404b4dbbd024ea1bbe7779191faa519c90b6332d3fecb263569f804",
+        "source_ref": "local:example.com/launchservice/internal/observability:internal/observability/metrics.go:15:RecordAttempt",
+        "kind": "method",
+        "name": "Metrics.RecordAttempt",
+        "visibility": "public",
+        "signature": "func(client string)",
+        "location": {
+          "path": "internal/observability/metrics.go",
+          "line": 15,
+          "column": 25
+        }
+      },
+      {
+        "id": "program-object-7a1c7964c4b2255a7a9efcb521cd5368cb6f201a68f6996e305805b75677689d",
+        "source_ref": "local:example.com/launchservice/internal/clients/vault:internal/clients/vault/client.go:44:HealthCheck",
+        "kind": "method",
+        "name": "Client.HealthCheck",
+        "visibility": "public",
+        "signature": "func(ctx context.Context) error",
+        "location": {
+          "path": "internal/clients/vault/client.go",
+          "line": 44,
+          "column": 23
+        }
+      },
+      {
+        "id": "program-object-7dc0eadfac7902c0c8903ee784b3714ebde17ba65b9fd3f44127b6a24e07f060",
+        "source_ref": "external:551c65ce34c51fa2e43af188",
+        "kind": "external_symbol",
+        "name": "example.com/clickhousesdk.RecentLaunches",
+        "visibility": "public",
+        "signature": "func(context.Context, int) ([]string, error)",
+        "external": {
+          "package_path": "example.com/clickhousesdk",
+          "receiver": "*example.com/clickhousesdk.Client",
+          "name": "RecentLaunches"
+        }
+      },
+      {
+        "id": "program-object-810e2be49111114cc17e08422d2d3761366d9381af5cc1a520a8b80408e49d92",
+        "source_ref": "local:example.com/launchservice/internal/clients/vault:internal/clients/vault/client.go:27:ReadSecret",
+        "kind": "method",
+        "name": "Client.ReadSecret",
+        "visibility": "public",
+        "signature": "func(ctx context.Context, key string) (string, error)",
+        "location": {
+          "path": "internal/clients/vault/client.go",
+          "line": 27,
+          "column": 23
+        }
+      },
+      {
+        "id": "program-object-81e759926dbd1c98f7ecedef3286e592d980516419c3acdcfecbc0b814e98052",
+        "source_ref": "external:06cc247c06598689fda5f298",
+        "kind": "external_symbol",
+        "name": "example.com/vaultsdk.New",
+        "visibility": "public",
+        "signature": "func(config example.com/vaultsdk.Config) (*example.com/vaultsdk.Client, error)",
+        "external": {
+          "package_path": "example.com/vaultsdk",
+          "name": "New"
+        }
+      },
+      {
+        "id": "program-object-8529344e5a04955af132d4d9e30471a9c1d404c59e4316231799ebd3e6f4b13b",
+        "source_ref": "local:example.com/launchservice/internal/launch:internal/launch/service.go:54:Run",
+        "kind": "method",
+        "name": "Service.Run",
+        "visibility": "public",
+        "signature": "func(ctx context.Context) error",
+        "location": {
+          "path": "internal/launch/service.go",
+          "line": 54,
+          "column": 25
+        }
+      },
+      {
+        "id": "program-object-85eba429c14bffb28f1622697ec10c7438f8f125c40bce60f95786730054306e",
+        "source_ref": "local:example.com/launchservice/internal/launch:internal/launch/service.go:9:LaunchNotifier",
+        "kind": "type",
+        "name": "LaunchNotifier",
+        "visibility": "public",
+        "location": {
+          "path": "internal/launch/service.go",
+          "line": 9,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-8787f43f20e9b2ce938656edd5f8c7af1f18bac4a730b4141dfc0f983ac79fc3",
+        "source_ref": "external:9735a7baea8a269f43997c85",
+        "kind": "external_symbol",
+        "name": "log.Printf",
+        "visibility": "public",
+        "signature": "func(format string, v ...any)",
+        "external": {
+          "package_path": "log",
+          "name": "Printf"
+        }
+      },
+      {
+        "id": "program-object-8a490f843237edf64e3ea85101a5b79b94c9f5c3d1dade80c142688c572d5380",
+        "source_ref": "local:example.com/launchservice/internal/observability:internal/observability/logging.go:5:ClientFailure",
+        "kind": "function",
+        "name": "ClientFailure",
+        "visibility": "public",
+        "signature": "func(client string, operation string, err error)",
+        "location": {
+          "path": "internal/observability/logging.go",
+          "line": 5,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-8bbb2e96de3e6f5b58767ec2ef568f1728ac1d67e49c74a79a9cb506ad759cc5",
+        "source_ref": "external:9d72ee0322fb457379220d64",
+        "kind": "external_symbol",
+        "name": "example.com/legacysdk.New",
+        "visibility": "public",
+        "signature": "func() *example.com/legacysdk.Client",
+        "external": {
+          "package_path": "example.com/legacysdk",
+          "name": "New"
+        }
+      },
+      {
+        "id": "program-object-8e96d6c70e4d13930cfe9556cb935c12f40bbfab757a429d42b3002312e5d8ef",
+        "source_ref": "local:example.com/launchservice/internal/clients/vault:internal/clients/vault/config.go:16:ConfigFromApplication",
+        "kind": "function",
+        "name": "ConfigFromApplication",
+        "visibility": "public",
+        "signature": "func(value example.com/launchservice/internal/config.VaultConfig) example.com/launchservice/internal/clients/vault.Config",
+        "location": {
+          "path": "internal/clients/vault/config.go",
+          "line": 16,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-913c592f82b5feb38baa26d94551ed890fe89bf514abcbb009206d5a934e875f",
+        "source_ref": "external:c1c9fc58e3e4af2f7be30ba1",
+        "kind": "external_symbol",
+        "name": "example.com/clickhousesdk.Open",
+        "visibility": "public",
+        "signature": "func(dsn string) (*example.com/clickhousesdk.Client, error)",
+        "external": {
+          "package_path": "example.com/clickhousesdk",
+          "name": "Open"
+        }
+      },
+      {
+        "id": "program-object-930f7fc370eeab4bf01305162fc9eea10400ee3ba7a866ca30bf78601555ef26",
+        "source_ref": "local:example.com/launchservice/internal/launch:internal/launch/model.go:3:Request",
+        "kind": "type",
+        "name": "Request",
+        "visibility": "public",
+        "location": {
+          "path": "internal/launch/model.go",
+          "line": 3,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-93e9d794ce5ae636586629d4ad0fd52374a77e0476e17ba696241feb7c881df0",
+        "source_ref": "local:example.com/launchservice/internal/launch:internal/launch/handler.go:11:NewHandler",
+        "kind": "function",
+        "name": "NewHandler",
+        "visibility": "public",
+        "signature": "func(resolve example.com/launchservice/internal/launch.ResolveCallback) *example.com/launchservice/internal/launch.Handler",
+        "location": {
+          "path": "internal/launch/handler.go",
+          "line": 11,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-9b32907dd8a3ca74f9871c9177b84b96932ee8004be54f3fde1e5462f6183e9a",
+        "source_ref": "local:example.com/launchservice/internal/launch:internal/launch/service.go:37:Resolve",
+        "kind": "method",
+        "name": "Service.Resolve",
+        "visibility": "public",
+        "signature": "func(ctx context.Context, request example.com/launchservice/internal/launch.Request) (string, error)",
+        "location": {
+          "path": "internal/launch/service.go",
+          "line": 37,
+          "column": 25
+        }
+      },
+      {
+        "id": "program-object-9cce318196044e9c73d1e79f6a55f8d08296a673207c08c5c4a54bc9973e9535",
+        "source_ref": "local:example.com/launchservice/internal/clients/clickhouse:internal/clients/clickhouse/config.go:9:ConfigFromApplication",
+        "kind": "function",
+        "name": "ConfigFromApplication",
+        "visibility": "public",
+        "signature": "func(value example.com/launchservice/internal/config.ClickHouseConfig) example.com/launchservice/internal/clients/clickhouse.Config",
+        "location": {
+          "path": "internal/clients/clickhouse/config.go",
+          "line": 9,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-9f5db3ed3e22f838bbf361e404cfc2dff3e68015c13aec5fb681cf4b1c096871",
+        "source_ref": "local:example.com/launchservice/internal/launch:internal/launch/service.go:5:SecretReader",
+        "kind": "type",
+        "name": "SecretReader",
+        "visibility": "public",
+        "location": {
+          "path": "internal/launch/service.go",
+          "line": 5,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-a132e923993edaaff9ad295df8549699b97abd04c910b39b2c56ae3acc2e6c50",
+        "source_ref": "local:example.com/launchservice/internal/config:internal/config/config.go:32:FromEnvironment",
+        "kind": "function",
+        "name": "FromEnvironment",
+        "visibility": "public",
+        "signature": "func() example.com/launchservice/internal/config.Config",
+        "location": {
+          "path": "internal/config/config.go",
+          "line": 32,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-a3a5bb2f018126cfdae1f78e5cbca7ab38fc43b33f2a25e9f7f33101885d53b6",
+        "source_ref": "local:example.com/launchservice/internal/config:internal/config/config.go:28:ClickHouseConfig",
+        "kind": "type",
+        "name": "ClickHouseConfig",
+        "visibility": "public",
+        "location": {
+          "path": "internal/config/config.go",
+          "line": 28,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-a47cb5993b4bd9d8965758311b0be8a2e1b46787379ab06aec0f7718db132523",
+        "source_ref": "local:example.com/launchservice/internal/launch:internal/launch/service.go:18:RecentLaunches",
+        "kind": "method",
+        "name": "LaunchHistory.RecentLaunches",
+        "visibility": "public",
+        "signature": "func(context.Context, int) ([]string, error)",
+        "owner_id": "program-object-03440bb328a7485e001d64d82597a3cbff4ac2847f15c4430d5bfb29f9dcbacc",
+        "location": {
+          "path": "internal/launch/service.go",
+          "line": 18,
+          "column": 2
+        }
+      },
+      {
+        "id": "program-object-a6ca98d67f0849798d1303c7da4f9df0316d40e83056f50aaccdd0628c68b042",
+        "source_ref": "local:example.com/launchservice/internal/observability:internal/observability/metrics.go:5:Metrics",
+        "kind": "type",
+        "name": "Metrics",
+        "visibility": "public",
+        "location": {
+          "path": "internal/observability/metrics.go",
+          "line": 5,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-ad760efa73284c00b8f7c84588ea207c003b38383deaac541fed878572330162",
+        "source_ref": "local:example.com/launchservice/internal/clients/notifier:internal/clients/notifier/client.go:17:SendLaunch",
+        "kind": "method",
+        "name": "Client.SendLaunch",
+        "visibility": "public",
+        "signature": "func(ctx context.Context, message string) error",
+        "location": {
+          "path": "internal/clients/notifier/client.go",
+          "line": 17,
+          "column": 23
+        }
+      },
+      {
+        "id": "program-object-ae4cbcea4472b4a9d5c557617492b599d4f8f1e3abcce5c2cb52e1bf12ddd236",
+        "source_ref": "local:example.com/launchservice/internal/clients/vault:internal/clients/vault/config.go:9:Config",
+        "kind": "type",
+        "name": "Config",
+        "visibility": "public",
+        "location": {
+          "path": "internal/clients/vault/config.go",
+          "line": 9,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-b2ad91e4d2a18ac82a0b3e1d1b64a087149b97fc4332a41b7fd188ec08fa5c14",
+        "source_ref": "external:ba43a1f9a5640278e0bb9bed",
+        "kind": "external_symbol",
+        "name": "example.com/vaultsdk.Ping",
+        "visibility": "public",
+        "signature": "func(context.Context) error",
+        "external": {
+          "package_path": "example.com/vaultsdk",
+          "receiver": "*example.com/vaultsdk.Client",
+          "name": "Ping"
+        }
+      },
+      {
+        "id": "program-object-b3333d791400f8a73a923347ff85410204bc53ab533b3fa1beea68fb055fb3bc",
+        "source_ref": "local:example.com/launchservice/internal/launch:internal/launch/handler.go:15:HandleStartup",
+        "kind": "method",
+        "name": "Handler.HandleStartup",
+        "visibility": "public",
+        "signature": "func(ctx context.Context) error",
+        "location": {
+          "path": "internal/launch/handler.go",
+          "line": 15,
+          "column": 25
+        }
+      },
+      {
+        "id": "program-object-bce8bd4ba43962d0892b581cdbad0b8250c079a8a8b26ada4ef24a9f86dbb5cc",
+        "source_ref": "local:example.com/launchservice/internal/legacy:internal/legacy/client.go:6:Client",
+        "kind": "type",
+        "name": "Client",
+        "visibility": "public",
+        "location": {
+          "path": "internal/legacy/client.go",
+          "line": 6,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-bff84e94dbdc5c104b570252ec4bc4c0b5626d262b56cd3789296ea1781d0fe7",
+        "source_ref": "external:2a260f087715845e7320ef6b",
+        "kind": "external_symbol",
+        "name": "log.Fatal",
+        "visibility": "public",
+        "signature": "func(v ...any)",
+        "external": {
+          "package_path": "log",
+          "name": "Fatal"
+        }
+      },
+      {
+        "id": "program-object-caf701a08b349c4f8eeef7339badb2f4a80db313331f85a37531be6695603f9f",
+        "source_ref": "local:example.com/launchservice/internal/clients/notifier:internal/clients/notifier/config.go:9:ConfigFromApplication",
+        "kind": "function",
+        "name": "ConfigFromApplication",
+        "visibility": "public",
+        "signature": "func(value example.com/launchservice/internal/config.NotifierConfig) example.com/launchservice/internal/clients/notifier.Config",
+        "location": {
+          "path": "internal/clients/notifier/config.go",
+          "line": 9,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-cb2efa7070be9d71a9a585417ad810e6fa0e8567fa8fb8df356d84c160e98be2",
+        "source_ref": "local:example.com/launchservice/internal/gen:internal/gen/mock_vault.gen.go:12:ReadSecret",
+        "kind": "method",
+        "name": "MockVault.ReadSecret",
+        "visibility": "public",
+        "signature": "func(context.Context, string) (string, error)",
+        "location": {
+          "path": "internal/gen/mock_vault.gen.go",
+          "line": 12,
+          "column": 19
+        }
+      },
+      {
+        "id": "program-object-cd88487ead8060945ae05428458aa8ee0a9ea1d9d92001daae0566018b1e54b5",
+        "source_ref": "local:example.com/launchservice/internal/clients/kubernetes:internal/clients/kubernetes/client.go:19:NewClient",
+        "kind": "function",
+        "name": "NewClient",
+        "visibility": "public",
+        "signature": "func(config example.com/launchservice/internal/clients/kubernetes.Config, metrics *example.com/launchservice/internal/observability.Metrics) (*example.com/launchservice/internal/clients/kubernetes.Client, error)",
+        "location": {
+          "path": "internal/clients/kubernetes/client.go",
+          "line": 19,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-cde4c8b627cc1275ae61e8d8f88120cf3fc06903bda7e08447157142aa45f796",
+        "source_ref": "external:4c454c19bcfac728bfa92ef6",
+        "kind": "external_symbol",
+        "name": "context.Background",
+        "visibility": "public",
+        "signature": "func() context.Context",
+        "external": {
+          "package_path": "context",
+          "name": "Background"
+        }
+      },
+      {
+        "id": "program-object-d058f75cc18daf6a094dcac4c8ed0d5c30a4663f6233b3e663ca3fcce105a99e",
+        "source_ref": "local:example.com/launchservice/internal/launch:internal/launch/service.go:6:ReadSecret",
+        "kind": "method",
+        "name": "SecretReader.ReadSecret",
+        "visibility": "public",
+        "signature": "func(context.Context, string) (string, error)",
+        "owner_id": "program-object-9f5db3ed3e22f838bbf361e404cfc2dff3e68015c13aec5fb681cf4b1c096871",
+        "location": {
+          "path": "internal/launch/service.go",
+          "line": 6,
+          "column": 2
+        }
+      },
+      {
+        "id": "program-object-d749da9b2efb1fa304ebfc2622b296d0b3bbdf49e4ecca7b92de59664b60fa96",
+        "source_ref": "local:example.com/launchservice/internal/observability:internal/observability/metrics.go:11:NewMetrics",
+        "kind": "function",
+        "name": "NewMetrics",
+        "visibility": "public",
+        "signature": "func() *example.com/launchservice/internal/observability.Metrics",
+        "location": {
+          "path": "internal/observability/metrics.go",
+          "line": 11,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-d93600f2d393c8f3a800f2cf4ceef372fc94a78b5dbe01d486a8c05ae192eda8",
+        "source_ref": "local:example.com/launchservice/internal/launch:internal/launch/handler.go:7:Handler",
+        "kind": "type",
+        "name": "Handler",
+        "visibility": "public",
+        "location": {
+          "path": "internal/launch/handler.go",
+          "line": 7,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-d936ce2c46089c98a8ce03361007015c9d22ffe188aa1aaee9ceb734d880d4a6",
+        "source_ref": "local:example.com/launchservice/internal/clients/clickhouse:internal/clients/clickhouse/client.go:24:RecentLaunches",
+        "kind": "method",
+        "name": "Client.RecentLaunches",
+        "visibility": "public",
+        "signature": "func(ctx context.Context, limit int) ([]string, error)",
+        "location": {
+          "path": "internal/clients/clickhouse/client.go",
+          "line": 24,
+          "column": 23
+        }
+      },
+      {
+        "id": "program-object-d93d6e7554a17c128607d881ba4263c635e29db29e9c7d33f547ba49c3a77a38",
+        "source_ref": "local:example.com/launchservice/cmd/service:cmd/service/main.go:11:main",
+        "kind": "function",
+        "name": "main",
+        "visibility": "internal",
+        "signature": "func()",
+        "location": {
+          "path": "cmd/service/main.go",
+          "line": 11,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-db11ffff293d8337033f371cce8b18cc5ea4442cfc50eff145151bb80be0353b",
+        "source_ref": "local:example.com/launchservice/internal/clients/notifier:internal/clients/notifier/client.go:9:Client",
+        "kind": "type",
+        "name": "Client",
+        "visibility": "public",
+        "location": {
+          "path": "internal/clients/notifier/client.go",
+          "line": 9,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-dcb0e827c16797a12e27fc580b1d5e1b14ff10c7e7b987d73ef1ad377223df78",
+        "source_ref": "external:3f7a6afc6ad681498fb06d37",
+        "kind": "external_symbol",
+        "name": "example.com/legacysdk.Lookup",
+        "visibility": "public",
+        "signature": "func(string) string",
+        "external": {
+          "package_path": "example.com/legacysdk",
+          "receiver": "*example.com/legacysdk.Client",
+          "name": "Lookup"
+        }
+      },
+      {
+        "id": "program-object-deda9219588f95e8ed9260cf5cd5a68d4691ead47717a276c18a9d45c474b1d3",
+        "source_ref": "local:example.com/launchservice/internal/app:internal/app/bootstrap.go:10:Bootstrap",
+        "kind": "function",
+        "name": "Bootstrap",
+        "visibility": "public",
+        "signature": "func(configuration example.com/launchservice/internal/config.Config) (*example.com/launchservice/internal/launch.Service, error)",
+        "location": {
+          "path": "internal/app/bootstrap.go",
+          "line": 10,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-e298289a13874485ed354403cf0867956efa255c3d4c99a397650417c25ff2d7",
+        "source_ref": "local:example.com/launchservice/internal/clients/vault:internal/clients/vault/client.go:12:Client",
+        "kind": "type",
+        "name": "Client",
+        "visibility": "public",
+        "location": {
+          "path": "internal/clients/vault/client.go",
+          "line": 12,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-e467f2a1ccf9a68b8f0371dad85543bda945d076a9988fdc5826b07e7cc16a96",
+        "source_ref": "external:f6cee49a3afc8d65ea513d55",
+        "kind": "external_symbol",
+        "name": "example.com/notifiersdk.New",
+        "visibility": "public",
+        "signature": "func(endpoint string) *example.com/notifiersdk.Sender",
+        "external": {
+          "package_path": "example.com/notifiersdk",
+          "name": "New"
+        }
+      },
+      {
+        "id": "program-object-ea43af82382730e237875e537043c83c312f207196814707859763def98390dc",
+        "source_ref": "local:example.com/launchservice/internal/launch:internal/launch/service.go:10:SendLaunch",
+        "kind": "method",
+        "name": "LaunchNotifier.SendLaunch",
+        "visibility": "public",
+        "signature": "func(context.Context, string) error",
+        "owner_id": "program-object-85eba429c14bffb28f1622697ec10c7438f8f125c40bce60f95786730054306e",
+        "location": {
+          "path": "internal/launch/service.go",
+          "line": 10,
+          "column": 2
+        }
+      },
+      {
+        "id": "program-object-eb4a90fa4664cfefedf55762d7905cd65b7cef7fa05a414afed51511ea303ba9",
+        "source_ref": "local:example.com/launchservice/internal/legacy:internal/legacy/client.go:10:NewClient",
+        "kind": "function",
+        "name": "NewClient",
+        "visibility": "public",
+        "signature": "func() *example.com/launchservice/internal/legacy.Client",
+        "location": {
+          "path": "internal/legacy/client.go",
+          "line": 10,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-eb954499e144ee3736e4f5fdbff8f8c5a8c49168b3f97f99fe50e56cc31fe375",
+        "source_ref": "local:example.com/launchservice/internal/config:internal/config/config.go:12:VaultConfig",
+        "kind": "type",
+        "name": "VaultConfig",
+        "visibility": "public",
+        "location": {
+          "path": "internal/config/config.go",
+          "line": 12,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-f70bdebbb72e9761c9d7bd1abc00fe1865c9b4ee36fb73724e1ba233e191f166",
+        "source_ref": "local:example.com/launchservice/internal/clients/kubernetes:internal/clients/kubernetes/client.go:23:newWithFactory",
+        "kind": "function",
+        "name": "newWithFactory",
+        "visibility": "internal",
+        "signature": "func(config example.com/launchservice/internal/clients/kubernetes.Config, metrics *example.com/launchservice/internal/observability.Metrics, factory example.com/launchservice/internal/clients/kubernetes.Factory) (*example.com/launchservice/internal/clients/kubernetes.Client, error)",
+        "location": {
+          "path": "internal/clients/kubernetes/client.go",
+          "line": 23,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-f77e1b0f7e0694416a24c5102a4323b1dfbb0d6628321f2a553358e72953ff5b",
+        "source_ref": "external:49c0e9a11155bbb5b67b1852",
+        "kind": "external_symbol",
+        "name": "example.com/kubernetessdk.Namespaces",
+        "visibility": "public",
+        "signature": "func(context.Context) ([]string, error)",
+        "external": {
+          "package_path": "example.com/kubernetessdk",
+          "receiver": "*example.com/kubernetessdk.Client",
+          "name": "Namespaces"
+        }
+      },
+      {
+        "id": "program-object-fb08a15dd38e4fc1c5206f6822bbfc386712c46831cf03e4b5d4342af9d804e5",
+        "source_ref": "external:c4d330c0b6d431b911bb1814",
+        "kind": "external_symbol",
+        "name": "sync.Lock",
+        "visibility": "public",
+        "signature": "func()",
+        "external": {
+          "package_path": "sync",
+          "receiver": "*sync.Mutex",
+          "name": "Lock"
+        }
+      },
+      {
+        "id": "program-object-fe077bddbfafc555a1290bd50024eb4a28c162d243668b0c0c1abe1df21ef822",
+        "source_ref": "local:example.com/launchservice/internal/clients/kubernetes:internal/clients/kubernetes/client.go:11:Client",
+        "kind": "type",
+        "name": "Client",
+        "visibility": "public",
+        "location": {
+          "path": "internal/clients/kubernetes/client.go",
+          "line": 11,
+          "column": 6
+        }
+      },
+      {
+        "id": "program-object-fe39ce997873cd98bad3107e942747e071f03ae6c4c12c55ed1915396879a3bf",
+        "source_ref": "local:example.com/launchservice/internal/launch:internal/launch/service.go:21:Service",
+        "kind": "type",
+        "name": "Service",
+        "visibility": "public",
+        "location": {
+          "path": "internal/launch/service.go",
+          "line": 21,
+          "column": 6
+        }
+      }
+    ],
+    "relations": [
+      {
+        "id": "program-relation-00d0d4cdda8785def1ba952def88d63470246c666b33479d8bcbcc720ed89ee4",
+        "source_ref": "relation:internal/app/bootstrap.go:13:15:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-deda9219588f95e8ed9260cf5cd5a68d4691ead47717a276c18a9d45c474b1d3",
+        "to_ids": [
+          "program-object-03419d1d63be70a19a1a73b1528e84d244a96151368bd18e9b8555dda65533d8"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/app/bootstrap.go",
+          "line": 13,
+          "column": 15
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "fmt.Errorf(\"bootstrap launch service: %w\", err)",
+            "location": {
+              "path": "internal/app/bootstrap.go",
+              "line": 13,
+              "column": 15
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-068731fc3f4311d867d7058aa47e5773eb512a031125507acaedf9292f035c58",
+        "source_ref": "relation:internal/app/wiring.go:21:27:calls",
+        "kind": "calls",
+        "from_id": "program-object-17fbc15bf22fca7bc7ecfdc41b04d8056a807985d5f8e6281a8885f925acbe3d",
+        "to_ids": [
+          "program-object-cd88487ead8060945ae05428458aa8ee0a9ea1d9d92001daae0566018b1e54b5"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/app/wiring.go",
+          "line": 21,
+          "column": 27
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "kubernetes.NewClient(kubernetes.ConfigFromApplication(configuration.Kubernetes), metrics, )",
+            "location": {
+              "path": "internal/app/wiring.go",
+              "line": 21,
+              "column": 27
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-069f106c8c0df8ff6c4544d761151924fe445313a0484b2fb375ff1dc0d82568",
+        "source_ref": "relation:internal/clients/notifier/client.go:18:9:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-ad760efa73284c00b8f7c84588ea207c003b38383deaac541fed878572330162",
+        "to_ids": [
+          "program-object-588f575f6d2561f703c2a696b271dc0c0f84ecfd4577822784f9097300e76043"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/notifier/client.go",
+          "line": 18,
+          "column": 9
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "client.sender.Send(ctx, message)",
+            "location": {
+              "path": "internal/clients/notifier/client.go",
+              "line": 18,
+              "column": 9
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-0807e44b6cde716536e7773e546d1305881771632cf2a2deb0b2d5d566938b76",
+        "source_ref": "relation:internal/clients/kubernetes/client.go:43:14:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-4b90b4c66803d992e057cbdca8e661ebadac1d589b4243d71d6f561c3a5f3091",
+        "to_ids": [
+          "program-object-03419d1d63be70a19a1a73b1528e84d244a96151368bd18e9b8555dda65533d8"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/kubernetes/client.go",
+          "line": 43,
+          "column": 14
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "fmt.Errorf(\"list Kubernetes namespaces: %w\", lastErr)",
+            "location": {
+              "path": "internal/clients/kubernetes/client.go",
+              "line": 43,
+              "column": 14
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-088f067956af90364b7dd48ade16d08d5a60fa35954a6d452d2d6a00f9f839a8",
+        "source_ref": "relation:internal/clients/vault/client.go:46:8:unresolved_call",
+        "kind": "calls",
+        "from_id": "program-object-7a1c7964c4b2255a7a9efcb521cd5368cb6f201a68f6996e305805b75677689d",
+        "to_ids": [],
+        "resolution": "unresolved",
+        "location": {
+          "path": "internal/clients/vault/client.go",
+          "line": 46,
+          "column": 8
+        },
+        "targets_observed": 1,
+        "targets_omitted": 1,
+        "witnesses": [
+          {
+            "kind": "function_value_call",
+            "source_expression": "cancel()",
+            "location": {
+              "path": "internal/clients/vault/client.go",
+              "line": 46,
+              "column": 8
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-09cb7c80ae90d38ca55a2fd5647a3dd8860fd4f0933f9b6517aba16d3a1be67f",
+        "source_ref": "relation:internal/app/wiring.go:33:39:calls",
+        "kind": "calls",
+        "from_id": "program-object-17fbc15bf22fca7bc7ecfdc41b04d8056a807985d5f8e6281a8885f925acbe3d",
+        "to_ids": [
+          "program-object-caf701a08b349c4f8eeef7339badb2f4a80db313331f85a37531be6695603f9f"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/app/wiring.go",
+          "line": 33,
+          "column": 39
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "notifier.ConfigFromApplication(configuration.Notifier)",
+            "location": {
+              "path": "internal/app/wiring.go",
+              "line": 33,
+              "column": 39
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-0e753d68e8936a8e2f3863d88c37aa0e55a4ba1f77e14e0dfecd5b0e3f35b5ff",
+        "source_ref": "relation:cmd/service/main.go:17:3:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-d93d6e7554a17c128607d881ba4263c635e29db29e9c7d33f547ba49c3a77a38",
+        "to_ids": [
+          "program-object-bff84e94dbdc5c104b570252ec4bc4c0b5626d262b56cd3789296ea1781d0fe7"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "cmd/service/main.go",
+          "line": 17,
+          "column": 3
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "log.Fatal(err)",
+            "location": {
+              "path": "cmd/service/main.go",
+              "line": 17,
+              "column": 3
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-115d1d51ed469d8c880d501bf36e41575c24f6579a7b006abe05606aff4824e6",
+        "source_ref": "relation:internal/launch/service.go:42:12:calls",
+        "kind": "calls",
+        "from_id": "program-object-9b32907dd8a3ca74f9871c9177b84b96932ee8004be54f3fde1e5462f6183e9a",
+        "to_ids": [
+          "program-object-ea43af82382730e237875e537043c83c312f207196814707859763def98390dc"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/launch/service.go",
+          "line": 42,
+          "column": 12
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "service.notifier.SendLaunch(ctx, request.Message)",
+            "location": {
+              "path": "internal/launch/service.go",
+              "line": 42,
+              "column": 12
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-18e0262e819542bf3fac49cf9ffd53d6810d081ea6fd5da93d291dd7ddedf942",
+        "source_ref": "relation:internal/netutil/http.go:14:19:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-3c912cea50ee282aa91cf698717762e593c38ee08ec38c5195f38b287d699a4d",
+        "to_ids": [
+          "program-object-358012dfaaa08f5c6fb430e4fb8f20219c08d9720a2f4c45dc488e6073673d22"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/netutil/http.go",
+          "line": 14,
+          "column": 19
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "client.Do(request)",
+            "location": {
+              "path": "internal/netutil/http.go",
+              "line": 14,
+              "column": 19
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-1981fece5c8888434d2b78dc50ce90ea3036df5d367ea12a44e11597b24c765c",
+        "source_ref": "relation:internal/clients/clickhouse/client.go:25:2:calls",
+        "kind": "calls",
+        "from_id": "program-object-d936ce2c46089c98a8ce03361007015c9d22ffe188aa1aaee9ceb734d880d4a6",
+        "to_ids": [
+          "program-object-765aa4cd9404b4dbbd024ea1bbe7779191faa519c90b6332d3fecb263569f804"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/clickhouse/client.go",
+          "line": 25,
+          "column": 2
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "client.metrics.RecordAttempt(\"clickhouse\")",
+            "location": {
+              "path": "internal/clients/clickhouse/client.go",
+              "line": 25,
+              "column": 2
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-2058c6b538fdbd1762a83137a44da2e6a01e4e30c1397af262c0d8d206b91fc5",
+        "source_ref": "relation:internal/app/wiring.go:16:13:calls",
+        "kind": "calls",
+        "from_id": "program-object-17fbc15bf22fca7bc7ecfdc41b04d8056a807985d5f8e6281a8885f925acbe3d",
+        "to_ids": [
+          "program-object-d749da9b2efb1fa304ebfc2622b296d0b3bbdf49e4ecca7b92de59664b60fa96"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/app/wiring.go",
+          "line": 16,
+          "column": 13
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "observability.NewMetrics()",
+            "location": {
+              "path": "internal/app/wiring.go",
+              "line": 16,
+              "column": 13
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-20782d8987258a942503537d35240a24035eedd10aa907cc2d59c5ae6a80c407",
+        "source_ref": "relation:internal/clients/clickhouse/client.go:28:3:calls",
+        "kind": "calls",
+        "from_id": "program-object-d936ce2c46089c98a8ce03361007015c9d22ffe188aa1aaee9ceb734d880d4a6",
+        "to_ids": [
+          "program-object-518684734798b6f860a9bc8f580e5f9db3c8a442988b4c1ce6e941fb42917ec5"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/clickhouse/client.go",
+          "line": 28,
+          "column": 3
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "client.metrics.RecordFailure(\"clickhouse\")",
+            "location": {
+              "path": "internal/clients/clickhouse/client.go",
+              "line": 28,
+              "column": 3
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-22bb74b949e53cadb61c767bf164cf64818fe25a1e7b35b6d0ab290aea801e1d",
+        "source_ref": "relation:internal/launch/service.go:56:9:calls",
+        "kind": "calls",
+        "from_id": "program-object-8529344e5a04955af132d4d9e30471a9c1d404c59e4316231799ebd3e6f4b13b",
+        "to_ids": [
+          "program-object-b3333d791400f8a73a923347ff85410204bc53ab533b3fa1beea68fb055fb3bc"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/launch/service.go",
+          "line": 56,
+          "column": 9
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "handler.HandleStartup(ctx)",
+            "location": {
+              "path": "internal/launch/service.go",
+              "line": 56,
+              "column": 9
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-24a99c5bbe4d356478f128ef5283b389ae2ccc1de0007ac02c2837737bbb175f",
+        "source_ref": "relation:internal/clients/clickhouse/client.go:19:15:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-225477aa1dac6acabaee55f3235b5c06834359beb15d897b68d0dc202b902b84",
+        "to_ids": [
+          "program-object-03419d1d63be70a19a1a73b1528e84d244a96151368bd18e9b8555dda65533d8"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/clickhouse/client.go",
+          "line": 19,
+          "column": 15
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "fmt.Errorf(\"open ClickHouse client: %w\", err)",
+            "location": {
+              "path": "internal/clients/clickhouse/client.go",
+              "line": 19,
+              "column": 15
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-25b813513fe3d109ed64c6bc915e1d622e23ddc05ca217e016df3d06cbeeb770",
+        "source_ref": "relation:internal/clients/vault/client.go:41:13:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-810e2be49111114cc17e08422d2d3761366d9381af5cc1a520a8b80408e49d92",
+        "to_ids": [
+          "program-object-03419d1d63be70a19a1a73b1528e84d244a96151368bd18e9b8555dda65533d8"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/vault/client.go",
+          "line": 41,
+          "column": 13
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "fmt.Errorf(\"read Vault secret: %w\", lastErr)",
+            "location": {
+              "path": "internal/clients/vault/client.go",
+              "line": 41,
+              "column": 13
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-26d4d192071a1054cda2ba85cb589ff266481af782f6911b2d6da69a1a1a2619",
+        "source_ref": "relation:internal/clients/clickhouse/client.go:29:3:calls",
+        "kind": "calls",
+        "from_id": "program-object-d936ce2c46089c98a8ce03361007015c9d22ffe188aa1aaee9ceb734d880d4a6",
+        "to_ids": [
+          "program-object-8a490f843237edf64e3ea85101a5b79b94c9f5c3d1dade80c142688c572d5380"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/clickhouse/client.go",
+          "line": 29,
+          "column": 3
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "observability.ClientFailure(\"clickhouse\", \"recent_launches\", err)",
+            "location": {
+              "path": "internal/clients/clickhouse/client.go",
+              "line": 29,
+              "column": 3
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-28cf03b209de61efdc14dd93ae99c98cbaa730a6cfe5ae14e58f9134cfbab9de",
+        "source_ref": "relation:cmd/service/main.go:14:3:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-d93d6e7554a17c128607d881ba4263c635e29db29e9c7d33f547ba49c3a77a38",
+        "to_ids": [
+          "program-object-bff84e94dbdc5c104b570252ec4bc4c0b5626d262b56cd3789296ea1781d0fe7"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "cmd/service/main.go",
+          "line": 14,
+          "column": 3
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "log.Fatal(err)",
+            "location": {
+              "path": "cmd/service/main.go",
+              "line": 14,
+              "column": 3
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-311f6416cb24abe39d991db15972fabd7c44c7a13115233f5962ef89db150679",
+        "source_ref": "relation:internal/netutil/http.go:10:18:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-3c912cea50ee282aa91cf698717762e593c38ee08ec38c5195f38b287d699a4d",
+        "to_ids": [
+          "program-object-69596f6e32d800faaba895e8fb58f405bf5dcef1c22a6fe9dff79d432b91cdee"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/netutil/http.go",
+          "line": 10,
+          "column": 18
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)",
+            "location": {
+              "path": "internal/netutil/http.go",
+              "line": 10,
+              "column": 18
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-32840a2a9527aad7500961e12b7b86819ed4e9a88d5e81b18fca33a3a7854caf",
+        "source_ref": "relation:internal/clients/vault/client.go:30:3:calls",
+        "kind": "calls",
+        "from_id": "program-object-810e2be49111114cc17e08422d2d3761366d9381af5cc1a520a8b80408e49d92",
+        "to_ids": [
+          "program-object-765aa4cd9404b4dbbd024ea1bbe7779191faa519c90b6332d3fecb263569f804"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/vault/client.go",
+          "line": 30,
+          "column": 3
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "client.metrics.RecordAttempt(\"vault\")",
+            "location": {
+              "path": "internal/clients/vault/client.go",
+              "line": 30,
+              "column": 3
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-3b1cbeb3b35b7fd0c280ee3cc412c3416f8c6ab110b8049fc45fac18ab561f81",
+        "source_ref": "relation:internal/clients/clickhouse/client.go:26:19:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-d936ce2c46089c98a8ce03361007015c9d22ffe188aa1aaee9ceb734d880d4a6",
+        "to_ids": [
+          "program-object-7dc0eadfac7902c0c8903ee784b3714ebde17ba65b9fd3f44127b6a24e07f060"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/clickhouse/client.go",
+          "line": 26,
+          "column": 19
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "client.sdk.RecentLaunches(ctx, limit)",
+            "location": {
+              "path": "internal/clients/clickhouse/client.go",
+              "line": 26,
+              "column": 19
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-3c37cabe832157ab21106285ef279aec437784af09dd79c03a3024d9f81966d1",
+        "source_ref": "relation:internal/app/wiring.go:25:15:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-17fbc15bf22fca7bc7ecfdc41b04d8056a807985d5f8e6281a8885f925acbe3d",
+        "to_ids": [
+          "program-object-03419d1d63be70a19a1a73b1528e84d244a96151368bd18e9b8555dda65533d8"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/app/wiring.go",
+          "line": 25,
+          "column": 15
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "fmt.Errorf(\"wire Kubernetes client: %w\", err)",
+            "location": {
+              "path": "internal/app/wiring.go",
+              "line": 25,
+              "column": 15
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-3f607dd0703b9f8de84b1bf09180cbb6f682427dc1db9b865a36a328f6c9757e",
+        "source_ref": "relation:internal/observability/metrics.go:23:8:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-518684734798b6f860a9bc8f580e5f9db3c8a442988b4c1ce6e941fb42917ec5",
+        "to_ids": [
+          "program-object-19ce7496c7a8dce99b0c849eceba817289fc553c439b14815988a8c29c554830"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/observability/metrics.go",
+          "line": 23,
+          "column": 8
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "metrics.mu.Unlock()",
+            "location": {
+              "path": "internal/observability/metrics.go",
+              "line": 23,
+              "column": 8
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-40b2a0d5d00b2b77f083f48a06c4875d5e354b29e80e701c7d82df7f4f40b27a",
+        "source_ref": "relation:internal/launch/service.go:48:15:calls",
+        "kind": "calls",
+        "from_id": "program-object-9b32907dd8a3ca74f9871c9177b84b96932ee8004be54f3fde1e5462f6183e9a",
+        "to_ids": [
+          "program-object-a47cb5993b4bd9d8965758311b0be8a2e1b46787379ab06aec0f7718db132523"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/launch/service.go",
+          "line": 48,
+          "column": 15
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "service.history.RecentLaunches(ctx, request.HistoryLimit)",
+            "location": {
+              "path": "internal/launch/service.go",
+              "line": 48,
+              "column": 15
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-424acecda4c3e31297ae1e124ee1e4b24d75ce3e39a0768f3dcad5f680880bbe",
+        "source_ref": "relation:internal/launch/handler.go:16:12:unresolved_call",
+        "kind": "calls",
+        "from_id": "program-object-b3333d791400f8a73a923347ff85410204bc53ab533b3fa1beea68fb055fb3bc",
+        "to_ids": [],
+        "resolution": "unresolved",
+        "location": {
+          "path": "internal/launch/handler.go",
+          "line": 16,
+          "column": 12
+        },
+        "targets_observed": 1,
+        "targets_omitted": 1,
+        "witnesses": [
+          {
+            "kind": "function_value_call",
+            "source_expression": "handler.resolve(ctx, Request{SecretKey:\"launch/bootstrap\", Message:\"service started\", HistoryLimit:2, })",
+            "location": {
+              "path": "internal/launch/handler.go",
+              "line": 16,
+              "column": 12
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-4702fe5e0696bb83f867af198b3e4c6824b68a66362bc3373866b5f4b2f8c819",
+        "source_ref": "relation:cmd/service/main.go:16:24:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-d93d6e7554a17c128607d881ba4263c635e29db29e9c7d33f547ba49c3a77a38",
+        "to_ids": [
+          "program-object-cde4c8b627cc1275ae61e8d8f88120cf3fc06903bda7e08447157142aa45f796"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "cmd/service/main.go",
+          "line": 16,
+          "column": 24
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "context.Background()",
+            "location": {
+              "path": "cmd/service/main.go",
+              "line": 16,
+              "column": 24
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-4a422e8ef5d233aa175858585d848e7cb0c801a1bf9d2e944e0bc26e50d273c5",
+        "source_ref": "relation:internal/clients/vault/client.go:20:14:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-3cbcd5bee86b4de6ac651f93825919cef4532e0b37890dda324dec7fbff2fbde",
+        "to_ids": [
+          "program-object-81e759926dbd1c98f7ecedef3286e592d980516419c3acdcfecbc0b814e98052"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/vault/client.go",
+          "line": 20,
+          "column": 14
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "vaultsdk.New(vaultsdk.Config{Address:config.Address, Token:config.Token})",
+            "location": {
+              "path": "internal/clients/vault/client.go",
+              "line": 20,
+              "column": 14
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-4a78f5872e9de7c2a2bc5c3163189c785b0d5a29799b6171d20f3eadddeb6abd",
+        "source_ref": "relation:internal/netutil/http.go:18:9:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-3c912cea50ee282aa91cf698717762e593c38ee08ec38c5195f38b287d699a4d",
+        "to_ids": [
+          "program-object-0ee96c616492b40bf4b29d35f7e72c85f6de6462c05413cb3e4151456fd61d25"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/netutil/http.go",
+          "line": 18,
+          "column": 9
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "response.Body.Close()",
+            "location": {
+              "path": "internal/netutil/http.go",
+              "line": 18,
+              "column": 9
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-4eb2f8d0204758ec0c7132bb7516a6bc9e7c9c6ba4c7ffad8e6969107442f978",
+        "source_ref": "relation:internal/clients/kubernetes/client.go:24:14:unresolved_call",
+        "kind": "calls",
+        "from_id": "program-object-f70bdebbb72e9761c9d7bd1abc00fe1865c9b4ee36fb73724e1ba233e191f166",
+        "to_ids": [],
+        "resolution": "unresolved",
+        "location": {
+          "path": "internal/clients/kubernetes/client.go",
+          "line": 24,
+          "column": 14
+        },
+        "targets_observed": 1,
+        "targets_omitted": 1,
+        "witnesses": [
+          {
+            "kind": "function_value_call",
+            "source_expression": "factory(kubernetessdk.Config{Server:config.Server})",
+            "location": {
+              "path": "internal/clients/kubernetes/client.go",
+              "line": 24,
+              "column": 14
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-4f5323a627de1cf8f356df64d69bd5780747926bd84ab9a70796b6f8d2e2428f",
+        "source_ref": "relation:internal/launch/service.go:38:17:calls",
+        "kind": "calls",
+        "from_id": "program-object-9b32907dd8a3ca74f9871c9177b84b96932ee8004be54f3fde1e5462f6183e9a",
+        "to_ids": [
+          "program-object-d058f75cc18daf6a094dcac4c8ed0d5c30a4663f6233b3e663ca3fcce105a99e"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/launch/service.go",
+          "line": 38,
+          "column": 17
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "service.secrets.ReadSecret(ctx, request.SecretKey)",
+            "location": {
+              "path": "internal/launch/service.go",
+              "line": 38,
+              "column": 17
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-4ff4c5b44ab5da1d4553ebbd2b0955eb2e8984a0feabc0aec9a8fa0cf5329fd2",
+        "source_ref": "relation:internal/legacy/client.go:10:48:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-eb4a90fa4664cfefedf55762d7905cd65b7cef7fa05a414afed51511ea303ba9",
+        "to_ids": [
+          "program-object-8bbb2e96de3e6f5b58767ec2ef568f1728ac1d67e49c74a79a9cb506ad759cc5"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/legacy/client.go",
+          "line": 10,
+          "column": 48
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "legacysdk.New()",
+            "location": {
+              "path": "internal/legacy/client.go",
+              "line": 10,
+              "column": 48
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-52b81f72c5c7bf2e5dde7229c66bb38d321f59574ebb79c5aae4964fd710138b",
+        "source_ref": "relation:internal/clients/kubernetes/client.go:26:15:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-f70bdebbb72e9761c9d7bd1abc00fe1865c9b4ee36fb73724e1ba233e191f166",
+        "to_ids": [
+          "program-object-03419d1d63be70a19a1a73b1528e84d244a96151368bd18e9b8555dda65533d8"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/kubernetes/client.go",
+          "line": 26,
+          "column": 15
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "fmt.Errorf(\"create Kubernetes SDK client: %w\", err)",
+            "location": {
+              "path": "internal/clients/kubernetes/client.go",
+              "line": 26,
+              "column": 15
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-55ff4be012675fa7a6e929b9a223f1ab1cb8d8349e54c090e8a31348a456626d",
+        "source_ref": "relation:internal/app/wiring.go:17:38:calls",
+        "kind": "calls",
+        "from_id": "program-object-17fbc15bf22fca7bc7ecfdc41b04d8056a807985d5f8e6281a8885f925acbe3d",
+        "to_ids": [
+          "program-object-8e96d6c70e4d13930cfe9556cb935c12f40bbfab757a429d42b3002312e5d8ef"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/app/wiring.go",
+          "line": 17,
+          "column": 38
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "vault.ConfigFromApplication(configuration.Vault)",
+            "location": {
+              "path": "internal/app/wiring.go",
+              "line": 17,
+              "column": 38
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-5875e97188c8fe9883de2f3bd6dca6927b99f9de8f9ef4524aa98e7bd30cfdc0",
+        "source_ref": "relation:internal/clients/vault/client.go:32:17:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-810e2be49111114cc17e08422d2d3761366d9381af5cc1a520a8b80408e49d92",
+        "to_ids": [
+          "program-object-67307980345ccc14db0f524915a7096ba738a7553c1263be844d9808dd162c4f"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/vault/client.go",
+          "line": 32,
+          "column": 17
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "client.sdk.Read(requestContext, key)",
+            "location": {
+              "path": "internal/clients/vault/client.go",
+              "line": 32,
+              "column": 17
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-5cf6c2b154d14b670540a87d39ae71001a91bbb4cfd192c2781bc23f315ddfce",
+        "source_ref": "relation:internal/clients/kubernetes/client.go:35:22:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-4b90b4c66803d992e057cbdca8e661ebadac1d589b4243d71d6f561c3a5f3091",
+        "to_ids": [
+          "program-object-f77e1b0f7e0694416a24c5102a4323b1dfbb0d6628321f2a553358e72953ff5b"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/kubernetes/client.go",
+          "line": 35,
+          "column": 22
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "client.sdk.Namespaces(ctx)",
+            "location": {
+              "path": "internal/clients/kubernetes/client.go",
+              "line": 35,
+              "column": 22
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-5dd0bd751e79cf55fabe05dadf4734c8e4e396adacb9e20186de013383124e09",
+        "source_ref": "relation:internal/clients/kubernetes/client.go:20:9:calls",
+        "kind": "calls",
+        "from_id": "program-object-cd88487ead8060945ae05428458aa8ee0a9ea1d9d92001daae0566018b1e54b5",
+        "to_ids": [
+          "program-object-f70bdebbb72e9761c9d7bd1abc00fe1865c9b4ee36fb73724e1ba233e191f166"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/kubernetes/client.go",
+          "line": 20,
+          "column": 9
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "newWithFactory(config, metrics, kubernetessdk.New)",
+            "location": {
+              "path": "internal/clients/kubernetes/client.go",
+              "line": 20,
+              "column": 9
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-5f7998cd55e31013fe92905b66922d7e41c98b88f37f1f9934af57688844c7b8",
+        "source_ref": "relation:internal/observability/metrics.go:17:8:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-765aa4cd9404b4dbbd024ea1bbe7779191faa519c90b6332d3fecb263569f804",
+        "to_ids": [
+          "program-object-19ce7496c7a8dce99b0c849eceba817289fc553c439b14815988a8c29c554830"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/observability/metrics.go",
+          "line": 17,
+          "column": 8
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "metrics.mu.Unlock()",
+            "location": {
+              "path": "internal/observability/metrics.go",
+              "line": 17,
+              "column": 8
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-608e29a926a57324ca3fa8e546d981c3165bf0121f34f03a4e9b5749220312e4",
+        "source_ref": "relation:internal/app/wiring.go:17:22:calls",
+        "kind": "calls",
+        "from_id": "program-object-17fbc15bf22fca7bc7ecfdc41b04d8056a807985d5f8e6281a8885f925acbe3d",
+        "to_ids": [
+          "program-object-3cbcd5bee86b4de6ac651f93825919cef4532e0b37890dda324dec7fbff2fbde"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/app/wiring.go",
+          "line": 17,
+          "column": 22
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "vault.NewClient(vault.ConfigFromApplication(configuration.Vault), metrics)",
+            "location": {
+              "path": "internal/app/wiring.go",
+              "line": 17,
+              "column": 22
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-6585b698b31b4250a76002024e0daf2cbd2d098ca34fcf39c7b3caba0d11c018",
+        "source_ref": "relation:internal/clients/clickhouse/client.go:17:14:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-225477aa1dac6acabaee55f3235b5c06834359beb15d897b68d0dc202b902b84",
+        "to_ids": [
+          "program-object-913c592f82b5feb38baa26d94551ed890fe89bf514abcbb009206d5a934e875f"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/clickhouse/client.go",
+          "line": 17,
+          "column": 14
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "clickhousesdk.Open(config.DSN)",
+            "location": {
+              "path": "internal/clients/clickhouse/client.go",
+              "line": 17,
+              "column": 14
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-688cdbc4ddbf2732498eff91a5843a674ad67faf26b5e26b56c1db2f667f68ee",
+        "source_ref": "relation:internal/clients/kubernetes/client.go:40:3:calls",
+        "kind": "calls",
+        "from_id": "program-object-4b90b4c66803d992e057cbdca8e661ebadac1d589b4243d71d6f561c3a5f3091",
+        "to_ids": [
+          "program-object-518684734798b6f860a9bc8f580e5f9db3c8a442988b4c1ce6e941fb42917ec5"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/kubernetes/client.go",
+          "line": 40,
+          "column": 3
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "client.metrics.RecordFailure(\"kubernetes\")",
+            "location": {
+              "path": "internal/clients/kubernetes/client.go",
+              "line": 40,
+              "column": 3
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-6af0bc9471207773a8f926fc2e4c6152979973cab5059949d796aa97f1a14872",
+        "source_ref": "relation:internal/observability/metrics.go:22:2:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-518684734798b6f860a9bc8f580e5f9db3c8a442988b4c1ce6e941fb42917ec5",
+        "to_ids": [
+          "program-object-fb08a15dd38e4fc1c5206f6822bbfc386712c46831cf03e4b5d4342af9d804e5"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/observability/metrics.go",
+          "line": 22,
+          "column": 2
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "metrics.mu.Lock()",
+            "location": {
+              "path": "internal/observability/metrics.go",
+              "line": 22,
+              "column": 2
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-6f32ace7e50f84cfbaf233814da9ca1ef15c6e5ea2ae9c8d968f7a9bd1632469",
+        "source_ref": "relation:internal/app/bootstrap.go:11:18:calls",
+        "kind": "calls",
+        "from_id": "program-object-deda9219588f95e8ed9260cf5cd5a68d4691ead47717a276c18a9d45c474b1d3",
+        "to_ids": [
+          "program-object-17fbc15bf22fca7bc7ecfdc41b04d8056a807985d5f8e6281a8885f925acbe3d"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/app/bootstrap.go",
+          "line": 11,
+          "column": 18
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "wireClients(configuration)",
+            "location": {
+              "path": "internal/app/bootstrap.go",
+              "line": 11,
+              "column": 18
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-74cad4747fa4d79f86cd1305e1181bf8d90f30db6498f2dd51423c00a775dfc7",
+        "source_ref": "relation:internal/clients/vault/client.go:33:3:unresolved_call",
+        "kind": "calls",
+        "from_id": "program-object-810e2be49111114cc17e08422d2d3761366d9381af5cc1a520a8b80408e49d92",
+        "to_ids": [],
+        "resolution": "unresolved",
+        "location": {
+          "path": "internal/clients/vault/client.go",
+          "line": 33,
+          "column": 3
+        },
+        "targets_observed": 1,
+        "targets_omitted": 1,
+        "witnesses": [
+          {
+            "kind": "function_value_call",
+            "source_expression": "cancel()",
+            "location": {
+              "path": "internal/clients/vault/client.go",
+              "line": 33,
+              "column": 3
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-795557b13626aadfba61e979bf95052f25861c6fb51364baf4ab8758f66a9f81",
+        "source_ref": "relation:internal/clients/kubernetes/client.go:34:3:calls",
+        "kind": "calls",
+        "from_id": "program-object-4b90b4c66803d992e057cbdca8e661ebadac1d589b4243d71d6f561c3a5f3091",
+        "to_ids": [
+          "program-object-765aa4cd9404b4dbbd024ea1bbe7779191faa519c90b6332d3fecb263569f804"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/kubernetes/client.go",
+          "line": 34,
+          "column": 3
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "client.metrics.RecordAttempt(\"kubernetes\")",
+            "location": {
+              "path": "internal/clients/kubernetes/client.go",
+              "line": 34,
+              "column": 3
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-7b1b35392bcdfb8361c9344591a7e0d32ca65c93ac9d3ecea9d6b1706de0ebfc",
+        "source_ref": "relation:internal/clients/vault/client.go:22:15:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-3cbcd5bee86b4de6ac651f93825919cef4532e0b37890dda324dec7fbff2fbde",
+        "to_ids": [
+          "program-object-03419d1d63be70a19a1a73b1528e84d244a96151368bd18e9b8555dda65533d8"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/vault/client.go",
+          "line": 22,
+          "column": 15
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "fmt.Errorf(\"create Vault SDK client: %w\", err)",
+            "location": {
+              "path": "internal/clients/vault/client.go",
+              "line": 22,
+              "column": 15
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-7e19cbf2b5466a76ce17775eaa481dc4664aec3f2d23f802004d42e32f6c928e",
+        "source_ref": "relation:internal/app/wiring.go:19:15:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-17fbc15bf22fca7bc7ecfdc41b04d8056a807985d5f8e6281a8885f925acbe3d",
+        "to_ids": [
+          "program-object-03419d1d63be70a19a1a73b1528e84d244a96151368bd18e9b8555dda65533d8"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/app/wiring.go",
+          "line": 19,
+          "column": 15
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "fmt.Errorf(\"wire Vault client: %w\", err)",
+            "location": {
+              "path": "internal/app/wiring.go",
+              "line": 19,
+              "column": 15
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-8af3425d8033f667da454efa5ac48410ee17d9bb78f1c9a44a2001da43cdc5b1",
+        "source_ref": "relation:internal/app/wiring.go:34:9:calls",
+        "kind": "calls",
+        "from_id": "program-object-17fbc15bf22fca7bc7ecfdc41b04d8056a807985d5f8e6281a8885f925acbe3d",
+        "to_ids": [
+          "program-object-022225236320919dd21adf2a70038c071453ee4410a03f586da3c07a6ce59cca"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/app/wiring.go",
+          "line": 34,
+          "column": 9
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "launch.NewService(vaultClient, kubernetesClient, clickHouseClient, notifierClient)",
+            "location": {
+              "path": "internal/app/wiring.go",
+              "line": 34,
+              "column": 9
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-8dc1223ae1971a96dd064109cf634b55872db9a36d209e96da36605da0f00c18",
+        "source_ref": "relation:internal/clients/vault/client.go:47:9:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-7a1c7964c4b2255a7a9efcb521cd5368cb6f201a68f6996e305805b75677689d",
+        "to_ids": [
+          "program-object-b2ad91e4d2a18ac82a0b3e1d1b64a087149b97fc4332a41b7fd188ec08fa5c14"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/vault/client.go",
+          "line": 47,
+          "column": 9
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "client.sdk.Ping(requestContext)",
+            "location": {
+              "path": "internal/clients/vault/client.go",
+              "line": 47,
+              "column": 9
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-8efd975dfd3a5b7bda80de8671c56f3e27b942eaaf4401c87230e199d5357d0c",
+        "source_ref": "relation:internal/legacy/client.go:12:58:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-1538b1ea26336163449dfc3184c837ee27f461d6b55c1f6b659702ed0febf8d9",
+        "to_ids": [
+          "program-object-dcb0e827c16797a12e27fc580b1d5e1b14ff10c7e7b987d73ef1ad377223df78"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/legacy/client.go",
+          "line": 12,
+          "column": 58
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "client.sdk.Lookup(key)",
+            "location": {
+              "path": "internal/legacy/client.go",
+              "line": 12,
+              "column": 58
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-94c56bee171e47fac94f4748507c011457538bec55117fe21379549e809e355f",
+        "source_ref": "relation:internal/app/wiring.go:33:20:calls",
+        "kind": "calls",
+        "from_id": "program-object-17fbc15bf22fca7bc7ecfdc41b04d8056a807985d5f8e6281a8885f925acbe3d",
+        "to_ids": [
+          "program-object-137baec5deec9e49adee3888402016c5a484f29842b4121497e46105bdc1497f"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/app/wiring.go",
+          "line": 33,
+          "column": 20
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "notifier.NewClient(notifier.ConfigFromApplication(configuration.Notifier))",
+            "location": {
+              "path": "internal/app/wiring.go",
+              "line": 33,
+              "column": 20
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-a13c9dfcf0f8cb1ece296f8dd4f60ebeb0af38438dd3661971efdb1cc5cff652",
+        "source_ref": "relation:cmd/service/main.go:12:18:calls",
+        "kind": "calls",
+        "from_id": "program-object-d93d6e7554a17c128607d881ba4263c635e29db29e9c7d33f547ba49c3a77a38",
+        "to_ids": [
+          "program-object-deda9219588f95e8ed9260cf5cd5a68d4691ead47717a276c18a9d45c474b1d3"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "cmd/service/main.go",
+          "line": 12,
+          "column": 18
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "app.Bootstrap(config.FromEnvironment())",
+            "location": {
+              "path": "cmd/service/main.go",
+              "line": 12,
+              "column": 18
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-a25639cae9c51c8ee8aa17576ccf00e2e83bd642cfd1fb24c905bdf43e17b559",
+        "source_ref": "relation:internal/app/wiring.go:27:27:calls",
+        "kind": "calls",
+        "from_id": "program-object-17fbc15bf22fca7bc7ecfdc41b04d8056a807985d5f8e6281a8885f925acbe3d",
+        "to_ids": [
+          "program-object-225477aa1dac6acabaee55f3235b5c06834359beb15d897b68d0dc202b902b84"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/app/wiring.go",
+          "line": 27,
+          "column": 27
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "clickhouse.NewClient(clickhouse.ConfigFromApplication(configuration.ClickHouse), metrics, )",
+            "location": {
+              "path": "internal/app/wiring.go",
+              "line": 27,
+              "column": 27
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-a31ea5a83bf35d11280d9d408148c5b954aa78c4c1cdfbb1a336d9b40b553c35",
+        "source_ref": "relation:internal/launch/service.go:55:24:passes_callback",
+        "kind": "passes_callback",
+        "from_id": "program-object-8529344e5a04955af132d4d9e30471a9c1d404c59e4316231799ebd3e6f4b13b",
+        "to_ids": [
+          "program-object-9b32907dd8a3ca74f9871c9177b84b96932ee8004be54f3fde1e5462f6183e9a"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/launch/service.go",
+          "line": 55,
+          "column": 24
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "callback_argument",
+            "source_expression": "service.Resolve",
+            "location": {
+              "path": "internal/launch/service.go",
+              "line": 55,
+              "column": 24
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-a4dd3c0e3d3bd0ae5b1554b390214de7e54826fd3810bf534b526b65c64f1f10",
+        "source_ref": "relation:internal/clients/clickhouse/client.go:30:15:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-d936ce2c46089c98a8ce03361007015c9d22ffe188aa1aaee9ceb734d880d4a6",
+        "to_ids": [
+          "program-object-03419d1d63be70a19a1a73b1528e84d244a96151368bd18e9b8555dda65533d8"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/clickhouse/client.go",
+          "line": 30,
+          "column": 15
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "fmt.Errorf(\"query recent launches: %w\", err)",
+            "location": {
+              "path": "internal/clients/clickhouse/client.go",
+              "line": 30,
+              "column": 15
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-ae8d938dc7bc0c47d596f7cfbfd22b495179edb2f7d1e084f96930945d393d10",
+        "source_ref": "relation:internal/clients/vault/client.go:39:3:calls",
+        "kind": "calls",
+        "from_id": "program-object-810e2be49111114cc17e08422d2d3761366d9381af5cc1a520a8b80408e49d92",
+        "to_ids": [
+          "program-object-8a490f843237edf64e3ea85101a5b79b94c9f5c3d1dade80c142688c572d5380"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/vault/client.go",
+          "line": 39,
+          "column": 3
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "observability.ClientFailure(\"vault\", \"read_secret\", err)",
+            "location": {
+              "path": "internal/clients/vault/client.go",
+              "line": 39,
+              "column": 3
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-b0e1c31673bb4e97e3c89865d5edd7119e4bd22fe07e75e6fb94189858a6a691",
+        "source_ref": "relation:cmd/service/main.go:12:32:calls",
+        "kind": "calls",
+        "from_id": "program-object-d93d6e7554a17c128607d881ba4263c635e29db29e9c7d33f547ba49c3a77a38",
+        "to_ids": [
+          "program-object-a132e923993edaaff9ad295df8549699b97abd04c910b39b2c56ae3acc2e6c50"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "cmd/service/main.go",
+          "line": 12,
+          "column": 32
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "config.FromEnvironment()",
+            "location": {
+              "path": "cmd/service/main.go",
+              "line": 12,
+              "column": 32
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-b6b936174e2b8442743b129fc4b165b258b091d9655886d5d0447b9bbfea9926",
+        "source_ref": "relation:internal/launch/service.go:45:15:calls",
+        "kind": "calls",
+        "from_id": "program-object-9b32907dd8a3ca74f9871c9177b84b96932ee8004be54f3fde1e5462f6183e9a",
+        "to_ids": [
+          "program-object-4eaa2b12b57e57a794cf01b8538ed46d4518768ea3da2b26be9b07f3290d44af"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/launch/service.go",
+          "line": 45,
+          "column": 15
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "service.clusters.ListNamespaces(ctx)",
+            "location": {
+              "path": "internal/launch/service.go",
+              "line": 45,
+              "column": 15
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-c140a180b700d6019658e9ef5ad64d48112870a6e2530231380558206e2ac471",
+        "source_ref": "relation:internal/app/wiring.go:22:3:calls",
+        "kind": "calls",
+        "from_id": "program-object-17fbc15bf22fca7bc7ecfdc41b04d8056a807985d5f8e6281a8885f925acbe3d",
+        "to_ids": [
+          "program-object-28db23806c7273aab42f55e9a69dc495aab8d6dcff1041c2def7a3f07ac1d53e"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/app/wiring.go",
+          "line": 22,
+          "column": 3
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "kubernetes.ConfigFromApplication(configuration.Kubernetes)",
+            "location": {
+              "path": "internal/app/wiring.go",
+              "line": 22,
+              "column": 3
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-c2e76e2daa2c005b452f527a381354e28cc282b09aa469cf074b5275a6572619",
+        "source_ref": "relation:internal/launch/service.go:55:13:calls",
+        "kind": "calls",
+        "from_id": "program-object-8529344e5a04955af132d4d9e30471a9c1d404c59e4316231799ebd3e6f4b13b",
+        "to_ids": [
+          "program-object-93e9d794ce5ae636586629d4ad0fd52374a77e0476e17ba696241feb7c881df0"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/launch/service.go",
+          "line": 55,
+          "column": 13
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "NewHandler(service.Resolve)",
+            "location": {
+              "path": "internal/launch/service.go",
+              "line": 55,
+              "column": 13
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-cddb4c79de753bd5147bb71585354c44f4cf0f3f2b4c204cf85a7e14c6bfe45e",
+        "source_ref": "relation:internal/app/wiring.go:31:15:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-17fbc15bf22fca7bc7ecfdc41b04d8056a807985d5f8e6281a8885f925acbe3d",
+        "to_ids": [
+          "program-object-03419d1d63be70a19a1a73b1528e84d244a96151368bd18e9b8555dda65533d8"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/app/wiring.go",
+          "line": 31,
+          "column": 15
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "fmt.Errorf(\"wire ClickHouse client: %w\", err)",
+            "location": {
+              "path": "internal/app/wiring.go",
+              "line": 31,
+              "column": 15
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-d2ee21cd6cdfd5c1535348c14979650270d0cd9b483f125f5ad5ba8bf9b6df94",
+        "source_ref": "relation:internal/clients/vault/client.go:38:3:calls",
+        "kind": "calls",
+        "from_id": "program-object-810e2be49111114cc17e08422d2d3761366d9381af5cc1a520a8b80408e49d92",
+        "to_ids": [
+          "program-object-518684734798b6f860a9bc8f580e5f9db3c8a442988b4c1ce6e941fb42917ec5"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/vault/client.go",
+          "line": 38,
+          "column": 3
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "client.metrics.RecordFailure(\"vault\")",
+            "location": {
+              "path": "internal/clients/vault/client.go",
+              "line": 38,
+              "column": 3
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-d36f41796d3e35a98390ec554b57061b453979e4725b0ffe5a6c7a383392258e",
+        "source_ref": "relation:internal/clients/vault/client.go:45:28:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-7a1c7964c4b2255a7a9efcb521cd5368cb6f201a68f6996e305805b75677689d",
+        "to_ids": [
+          "program-object-2b634b07dcb291e7c4c98f4cf068c7a532ce9a29379b9e487e1ad45afacd5725"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/vault/client.go",
+          "line": 45,
+          "column": 28
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "context.WithTimeout(ctx, client.timeout)",
+            "location": {
+              "path": "internal/clients/vault/client.go",
+              "line": 45,
+              "column": 28
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-dd185b9c03fd00d026e02efd629cd4621e74d66a709a08d54d2ac313548b5293",
+        "source_ref": "relation:internal/clients/kubernetes/client.go:41:3:calls",
+        "kind": "calls",
+        "from_id": "program-object-4b90b4c66803d992e057cbdca8e661ebadac1d589b4243d71d6f561c3a5f3091",
+        "to_ids": [
+          "program-object-8a490f843237edf64e3ea85101a5b79b94c9f5c3d1dade80c142688c572d5380"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/kubernetes/client.go",
+          "line": 41,
+          "column": 3
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "observability.ClientFailure(\"kubernetes\", \"list_namespaces\", err)",
+            "location": {
+              "path": "internal/clients/kubernetes/client.go",
+              "line": 41,
+              "column": 3
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-df9325a170172270d278090cb4a751dd5d9cddd29452d677ec34bfb21063b262",
+        "source_ref": "relation:internal/observability/logging.go:6:2:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-8a490f843237edf64e3ea85101a5b79b94c9f5c3d1dade80c142688c572d5380",
+        "to_ids": [
+          "program-object-8787f43f20e9b2ce938656edd5f8c7af1f18bac4a730b4141dfc0f983ac79fc3"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/observability/logging.go",
+          "line": 6,
+          "column": 2
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "log.Printf(\"external client %s operation %s failed: %v\", client, operation, err)",
+            "location": {
+              "path": "internal/observability/logging.go",
+              "line": 6,
+              "column": 2
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-e2b7f584491b07e93430da695b6a05550b83d38766740d736d4c6b8cf1f3d845",
+        "source_ref": "relation:internal/observability/metrics.go:16:2:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-765aa4cd9404b4dbbd024ea1bbe7779191faa519c90b6332d3fecb263569f804",
+        "to_ids": [
+          "program-object-fb08a15dd38e4fc1c5206f6822bbfc386712c46831cf03e4b5d4342af9d804e5"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/observability/metrics.go",
+          "line": 16,
+          "column": 2
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "metrics.mu.Lock()",
+            "location": {
+              "path": "internal/observability/metrics.go",
+              "line": 16,
+              "column": 2
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-efca19048a5d1439889a964f77a289a7da6bb4b229b6fefdbc63eacdc5352c5d",
+        "source_ref": "relation:internal/clients/vault/client.go:31:29:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-810e2be49111114cc17e08422d2d3761366d9381af5cc1a520a8b80408e49d92",
+        "to_ids": [
+          "program-object-2b634b07dcb291e7c4c98f4cf068c7a532ce9a29379b9e487e1ad45afacd5725"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/vault/client.go",
+          "line": 31,
+          "column": 29
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "context.WithTimeout(ctx, client.timeout)",
+            "location": {
+              "path": "internal/clients/vault/client.go",
+              "line": 31,
+              "column": 29
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-f00ed30528a1243ef9456682c8ed513afff3a42949a27733354506b471a505c8",
+        "source_ref": "relation:internal/clients/notifier/client.go:14:25:invokes_external",
+        "kind": "invokes_external",
+        "from_id": "program-object-137baec5deec9e49adee3888402016c5a484f29842b4121497e46105bdc1497f",
+        "to_ids": [
+          "program-object-e467f2a1ccf9a68b8f0371dad85543bda945d076a9988fdc5826b07e7cc16a96"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/notifier/client.go",
+          "line": 14,
+          "column": 25
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "notifiersdk.New(config.Endpoint)",
+            "location": {
+              "path": "internal/clients/notifier/client.go",
+              "line": 14,
+              "column": 25
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-f14a588a35aae9866acf516153b0dd427735454a7cbd81ec9044f6da17237f91",
+        "source_ref": "relation:internal/app/wiring.go:28:3:calls",
+        "kind": "calls",
+        "from_id": "program-object-17fbc15bf22fca7bc7ecfdc41b04d8056a807985d5f8e6281a8885f925acbe3d",
+        "to_ids": [
+          "program-object-9cce318196044e9c73d1e79f6a55f8d08296a673207c08c5c4a54bc9973e9535"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/app/wiring.go",
+          "line": 28,
+          "column": 3
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "clickhouse.ConfigFromApplication(configuration.ClickHouse)",
+            "location": {
+              "path": "internal/app/wiring.go",
+              "line": 28,
+              "column": 3
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-f788d11abd8f099fb07c2701caea6a7308c0ffec95791e6a9e1bb6c346db2181",
+        "source_ref": "relation:internal/clients/kubernetes/client.go:20:41:passes_callback",
+        "kind": "passes_callback",
+        "from_id": "program-object-cd88487ead8060945ae05428458aa8ee0a9ea1d9d92001daae0566018b1e54b5",
+        "to_ids": [
+          "program-object-4a2d214beab50c2306f38aa845478e64a8a9eaf250a744d194d099467a8249c9"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "internal/clients/kubernetes/client.go",
+          "line": 20,
+          "column": 41
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "callback_argument",
+            "source_expression": "kubernetessdk.New",
+            "location": {
+              "path": "internal/clients/kubernetes/client.go",
+              "line": 20,
+              "column": 41
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      },
+      {
+        "id": "program-relation-fc259fcabe6180c2b0d7359c358657ff7e1a18dd08dae2bb4072e7d6dca47c12",
+        "source_ref": "relation:cmd/service/main.go:16:12:calls",
+        "kind": "calls",
+        "from_id": "program-object-d93d6e7554a17c128607d881ba4263c635e29db29e9c7d33f547ba49c3a77a38",
+        "to_ids": [
+          "program-object-8529344e5a04955af132d4d9e30471a9c1d404c59e4316231799ebd3e6f4b13b"
+        ],
+        "resolution": "exact",
+        "location": {
+          "path": "cmd/service/main.go",
+          "line": 16,
+          "column": 12
+        },
+        "targets_observed": 1,
+        "targets_omitted": 0,
+        "witnesses": [
+          {
+            "kind": "call",
+            "source_expression": "service.Run(context.Background())",
+            "location": {
+              "path": "cmd/service/main.go",
+              "line": 16,
+              "column": 12
+            }
+          }
+        ],
+        "witnesses_observed": 1,
+        "witnesses_omitted": 0
+      }
+    ],
+    "coverage": {
+      "objects_observed": 82,
+      "objects_indexed": 82,
+      "objects_omitted": 0,
+      "relations_observed": 69,
+      "relations_indexed": 69,
+      "relations_omitted": 0,
+      "exact_relations": 65,
+      "alternative_relations": 0,
+      "unresolved_relations": 4,
+      "targets_observed": 69,
+      "targets_indexed": 65,
+      "targets_omitted": 4,
+      "witnesses_observed": 69,
+      "witnesses_indexed": 69,
+      "witnesses_omitted": 0
+    },
+    "sha256": "4c3987124bf6a7f99ebd5c484a994daa737d56f8ab8082767e81fb1f9f3ed114"
+  },
+  "dependencies": {
+    "version": 1,
+    "importers": [
+      {
+        "ref": "importer-0e5cd99549797cb63ff75eb6",
+        "language": "go",
+        "name": "main",
+        "module_path": "example.com/launchservice",
+        "package_path": "example.com/launchservice/cmd/service",
+        "repository_path": "cmd/service"
+      },
+      {
+        "ref": "importer-9ac3319537f7d1559808b92a",
+        "language": "go",
+        "name": "app",
+        "module_path": "example.com/launchservice",
+        "package_path": "example.com/launchservice/internal/app",
+        "repository_path": "internal/app"
+      },
+      {
+        "ref": "importer-d7b8087a8b0a299bc1bc123b",
+        "language": "go",
+        "name": "clickhouse",
+        "module_path": "example.com/launchservice",
+        "package_path": "example.com/launchservice/internal/clients/clickhouse",
+        "repository_path": "internal/clients/clickhouse"
+      },
+      {
+        "ref": "importer-ab462c874bae64982165a043",
+        "language": "go",
+        "name": "kubernetes",
+        "module_path": "example.com/launchservice",
+        "package_path": "example.com/launchservice/internal/clients/kubernetes",
+        "repository_path": "internal/clients/kubernetes"
+      },
+      {
+        "ref": "importer-824c15c875920e3eeae11e06",
+        "language": "go",
+        "name": "notifier",
+        "module_path": "example.com/launchservice",
+        "package_path": "example.com/launchservice/internal/clients/notifier",
+        "repository_path": "internal/clients/notifier"
+      },
+      {
+        "ref": "importer-3f7cc9ca910705eb63b6a3be",
+        "language": "go",
+        "name": "vault",
+        "module_path": "example.com/launchservice",
+        "package_path": "example.com/launchservice/internal/clients/vault",
+        "repository_path": "internal/clients/vault"
+      },
+      {
+        "ref": "importer-4cb61e147178656fa77f684e",
+        "language": "go",
+        "name": "config",
+        "module_path": "example.com/launchservice",
+        "package_path": "example.com/launchservice/internal/config",
+        "repository_path": "internal/config"
+      },
+      {
+        "ref": "importer-223ae5592923f4b98a9b01eb",
+        "language": "go",
+        "name": "gen",
+        "module_path": "example.com/launchservice",
+        "package_path": "example.com/launchservice/internal/gen",
+        "repository_path": "internal/gen"
+      },
+      {
+        "ref": "importer-23b149be3152eb97d4b1138b",
+        "language": "go",
+        "name": "launch",
+        "module_path": "example.com/launchservice",
+        "package_path": "example.com/launchservice/internal/launch",
+        "repository_path": "internal/launch"
+      },
+      {
+        "ref": "importer-25225e9e777968aed4b19dd1",
+        "language": "go",
+        "name": "legacy",
+        "module_path": "example.com/launchservice",
+        "package_path": "example.com/launchservice/internal/legacy",
+        "repository_path": "internal/legacy"
+      },
+      {
+        "ref": "importer-5637733e403df81188ebeb08",
+        "language": "go",
+        "name": "netutil",
+        "module_path": "example.com/launchservice",
+        "package_path": "example.com/launchservice/internal/netutil",
+        "repository_path": "internal/netutil"
+      },
+      {
+        "ref": "importer-cca7eb85ebd0fa616c623b1e",
+        "language": "go",
+        "name": "observability",
+        "module_path": "example.com/launchservice",
+        "package_path": "example.com/launchservice/internal/observability",
+        "repository_path": "internal/observability"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "dependency-d4f02b3e48b52453f3e8080e",
+        "language": "go",
+        "kind": "workspace",
+        "name": "app",
+        "module_path": "example.com/launchservice",
+        "package_path": "example.com/launchservice/internal/app",
+        "repository_path": "internal/app",
+        "importer_refs": [
+          "importer-0e5cd99549797cb63ff75eb6"
+        ]
+      },
+      {
+        "id": "dependency-cf4c2f539f6dfec35fe0ec5b",
+        "language": "go",
+        "kind": "workspace",
+        "name": "clickhouse",
+        "module_path": "example.com/launchservice",
+        "package_path": "example.com/launchservice/internal/clients/clickhouse",
+        "repository_path": "internal/clients/clickhouse",
+        "importer_refs": [
+          "importer-9ac3319537f7d1559808b92a"
+        ]
+      },
+      {
+        "id": "dependency-fc599b549accdcd01478cfc1",
+        "language": "go",
+        "kind": "workspace",
+        "name": "kubernetes",
+        "module_path": "example.com/launchservice",
+        "package_path": "example.com/launchservice/internal/clients/kubernetes",
+        "repository_path": "internal/clients/kubernetes",
+        "importer_refs": [
+          "importer-9ac3319537f7d1559808b92a"
+        ]
+      },
+      {
+        "id": "dependency-4ca2563c79bdbfe636bb316a",
+        "language": "go",
+        "kind": "workspace",
+        "name": "notifier",
+        "module_path": "example.com/launchservice",
+        "package_path": "example.com/launchservice/internal/clients/notifier",
+        "repository_path": "internal/clients/notifier",
+        "importer_refs": [
+          "importer-9ac3319537f7d1559808b92a"
+        ]
+      },
+      {
+        "id": "dependency-42ca9e4a97b940a1bada0b76",
+        "language": "go",
+        "kind": "workspace",
+        "name": "vault",
+        "module_path": "example.com/launchservice",
+        "package_path": "example.com/launchservice/internal/clients/vault",
+        "repository_path": "internal/clients/vault",
+        "importer_refs": [
+          "importer-9ac3319537f7d1559808b92a"
+        ]
+      },
+      {
+        "id": "dependency-0774353b49034b0516fa3a1e",
+        "language": "go",
+        "kind": "workspace",
+        "name": "config",
+        "module_path": "example.com/launchservice",
+        "package_path": "example.com/launchservice/internal/config",
+        "repository_path": "internal/config",
+        "importer_refs": [
+          "importer-0e5cd99549797cb63ff75eb6",
+          "importer-3f7cc9ca910705eb63b6a3be",
+          "importer-824c15c875920e3eeae11e06",
+          "importer-9ac3319537f7d1559808b92a",
+          "importer-ab462c874bae64982165a043",
+          "importer-d7b8087a8b0a299bc1bc123b"
+        ]
+      },
+      {
+        "id": "dependency-3735c8da253892d53b5e8d85",
+        "language": "go",
+        "kind": "workspace",
+        "name": "launch",
+        "module_path": "example.com/launchservice",
+        "package_path": "example.com/launchservice/internal/launch",
+        "repository_path": "internal/launch",
+        "importer_refs": [
+          "importer-9ac3319537f7d1559808b92a"
+        ]
+      },
+      {
+        "id": "dependency-83bf6598ba7437c40a6f7544",
+        "language": "go",
+        "kind": "workspace",
+        "name": "observability",
+        "module_path": "example.com/launchservice",
+        "package_path": "example.com/launchservice/internal/observability",
+        "repository_path": "internal/observability",
+        "importer_refs": [
+          "importer-3f7cc9ca910705eb63b6a3be",
+          "importer-9ac3319537f7d1559808b92a",
+          "importer-ab462c874bae64982165a043",
+          "importer-d7b8087a8b0a299bc1bc123b"
+        ]
+      },
+      {
+        "id": "dependency-2b57b5db25f5c52b238074cf",
+        "language": "go",
+        "kind": "stdlib",
+        "name": "context",
+        "package_path": "context",
+        "importer_refs": [
+          "importer-0e5cd99549797cb63ff75eb6",
+          "importer-223ae5592923f4b98a9b01eb",
+          "importer-23b149be3152eb97d4b1138b",
+          "importer-3f7cc9ca910705eb63b6a3be",
+          "importer-5637733e403df81188ebeb08",
+          "importer-824c15c875920e3eeae11e06",
+          "importer-ab462c874bae64982165a043",
+          "importer-d7b8087a8b0a299bc1bc123b"
+        ]
+      },
+      {
+        "id": "dependency-ed14ee106dab0daab5e7df45",
+        "language": "go",
+        "kind": "stdlib",
+        "name": "fmt",
+        "package_path": "fmt",
+        "importer_refs": [
+          "importer-3f7cc9ca910705eb63b6a3be",
+          "importer-9ac3319537f7d1559808b92a",
+          "importer-ab462c874bae64982165a043",
+          "importer-d7b8087a8b0a299bc1bc123b"
+        ]
+      },
+      {
+        "id": "dependency-3d83b835a582fbc493daf4cb",
+        "language": "go",
+        "kind": "stdlib",
+        "name": "log",
+        "package_path": "log",
+        "importer_refs": [
+          "importer-0e5cd99549797cb63ff75eb6",
+          "importer-cca7eb85ebd0fa616c623b1e"
+        ]
+      },
+      {
+        "id": "dependency-1638fffc6b36b35e673c6d41",
+        "language": "go",
+        "kind": "stdlib",
+        "name": "http",
+        "package_path": "net/http",
+        "importer_refs": [
+          "importer-5637733e403df81188ebeb08"
+        ]
+      },
+      {
+        "id": "dependency-05783d5276675de1bffc16d5",
+        "language": "go",
+        "kind": "stdlib",
+        "name": "sync",
+        "package_path": "sync",
+        "importer_refs": [
+          "importer-cca7eb85ebd0fa616c623b1e"
+        ]
+      },
+      {
+        "id": "dependency-1b6558476fd56e278b00a3cb",
+        "language": "go",
+        "kind": "stdlib",
+        "name": "time",
+        "package_path": "time",
+        "importer_refs": [
+          "importer-3f7cc9ca910705eb63b6a3be",
+          "importer-4cb61e147178656fa77f684e"
+        ]
+      },
+      {
+        "id": "dependency-309ef1f5c8eeb49972854e31",
+        "language": "go",
+        "kind": "external",
+        "name": "clickhousesdk",
+        "module_path": "example.com/clickhousesdk",
+        "module_version": "v0.0.0",
+        "package_path": "example.com/clickhousesdk",
+        "replacement": {
+          "local": true
+        },
+        "importer_refs": [
+          "importer-d7b8087a8b0a299bc1bc123b"
+        ]
+      },
+      {
+        "id": "dependency-f31ce74651b8db6c9aadacdd",
+        "language": "go",
+        "kind": "external",
+        "name": "kubernetessdk",
+        "module_path": "example.com/kubernetessdk",
+        "module_version": "v0.0.0",
+        "package_path": "example.com/kubernetessdk",
+        "replacement": {
+          "local": true
+        },
+        "importer_refs": [
+          "importer-223ae5592923f4b98a9b01eb",
+          "importer-ab462c874bae64982165a043"
+        ]
+      },
+      {
+        "id": "dependency-6f7e72e58df15a0591d339e0",
+        "language": "go",
+        "kind": "external",
+        "name": "legacysdk",
+        "module_path": "example.com/legacysdk",
+        "module_version": "v0.0.0",
+        "package_path": "example.com/legacysdk",
+        "replacement": {
+          "local": true
+        },
+        "importer_refs": [
+          "importer-25225e9e777968aed4b19dd1"
+        ]
+      },
+      {
+        "id": "dependency-6146617615442179c4d53903",
+        "language": "go",
+        "kind": "external",
+        "name": "notifiersdk",
+        "module_path": "example.com/notifiersdk",
+        "module_version": "v0.0.0",
+        "package_path": "example.com/notifiersdk",
+        "replacement": {
+          "local": true
+        },
+        "importer_refs": [
+          "importer-824c15c875920e3eeae11e06"
+        ]
+      },
+      {
+        "id": "dependency-29faba0a7f9d592069df4a9e",
+        "language": "go",
+        "kind": "external",
+        "name": "vaultsdk",
+        "module_path": "example.com/vaultsdk",
+        "module_version": "v0.0.0",
+        "package_path": "example.com/vaultsdk",
+        "replacement": {
+          "local": true
+        },
+        "importer_refs": [
+          "importer-3f7cc9ca910705eb63b6a3be"
+        ]
+      }
+    ],
+    "coverage": {
+      "state": "complete",
+      "imports_observed": 40,
+      "imports_retained": 40,
+      "omissions": null
+    }
+  },
+  "sources": [
+    {
+      "path": "README.md",
+      "class": "prose",
+      "sha256": "badf9ac79061ab886711bd69c121d6c10389794938ff8887321c0817c3f15ae5",
+      "bytes": 311,
+      "production_code": false
+    },
+    {
+      "path": "cmd/service/main.go",
+      "class": "production",
+      "sha256": "7ab353f4e2c77f7b972f6d468741e22d6d403280cf0128281b15724b12bf89ea",
+      "bytes": 321,
+      "production_code": true
+    },
+    {
+      "path": "go.mod",
+      "class": "manifest",
+      "sha256": "8369c20ab86957edda075195f33dda9838279cc546bda55be5b7dd60e3c47b94",
+      "bytes": 492,
+      "production_code": false
+    },
+    {
+      "path": "internal/app/bootstrap.go",
+      "class": "production",
+      "sha256": "380d46fcaea4ee54a1479efd0e13320dc462478af284464ab4666e65b9918f15",
+      "bytes": 343,
+      "production_code": true
+    },
+    {
+      "path": "internal/app/wiring.go",
+      "class": "production",
+      "sha256": "2980d04353cea972bbb71df95abf3c6e0888c1389b46d61f76b242d758b69eb6",
+      "bytes": 1275,
+      "production_code": true
+    },
+    {
+      "path": "internal/clients/clickhouse/client.go",
+      "class": "production",
+      "sha256": "b9d69985fdad01958bde376889bdda0e55ae25ef7ec09d780a2c539427df1c94",
+      "bytes": 881,
+      "production_code": true
+    },
+    {
+      "path": "internal/clients/clickhouse/config.go",
+      "class": "production",
+      "sha256": "d6bc4674e905b789eb835d44f941f2689afab03d17400c772ba5c3a6c0f00450",
+      "bytes": 208,
+      "production_code": true
+    },
+    {
+      "path": "internal/clients/kubernetes/client.go",
+      "class": "production",
+      "sha256": "1dc3ced160c127d53cc0f377ee03038b869a02f40da6f1e0ef98ec73f109ab4c",
+      "bytes": 1276,
+      "production_code": true
+    },
+    {
+      "path": "internal/clients/kubernetes/client_test.go",
+      "class": "test",
+      "sha256": "993606ee824ca563969c45d71561deae9e3a58bf85c0bfc76974f9baa49aa93c",
+      "bytes": 488,
+      "production_code": false
+    },
+    {
+      "path": "internal/clients/kubernetes/config.go",
+      "class": "production",
+      "sha256": "3257775c2c70504853f7e2f21af4656297440723fa9c20cf6dba65d17daf2841",
+      "bytes": 255,
+      "production_code": true
+    },
+    {
+      "path": "internal/clients/kubernetes/fake_test.go",
+      "class": "test",
+      "sha256": "35139283c3694495603d11ff9dccf514c7c5d241ab8bf51959d0341c91a6393d",
+      "bytes": 262,
+      "production_code": false
+    },
+    {
+      "path": "internal/clients/notifier/client.go",
+      "class": "production",
+      "sha256": "9afd72a3f9e6c9ac67024705b58b296585e1bf7b3546fbbdb78cc41656c8a3b0",
+      "bytes": 343,
+      "production_code": true
+    },
+    {
+      "path": "internal/clients/notifier/config.go",
+      "class": "production",
+      "sha256": "5fe10b17db2a0d5b15805e3aadecc0836305d1eb1a38b3d258ef6cbc823c06e7",
+      "bytes": 219,
+      "production_code": true
+    },
+    {
+      "path": "internal/clients/vault/client.go",
+      "class": "production",
+      "sha256": "0f3d6516bab4ef96090d1e6575c2bc8d9f44bb1586358ff102f02574f20a6691",
+      "bytes": 1345,
+      "production_code": true
+    },
+    {
+      "path": "internal/clients/vault/client_test.go",
+      "class": "test",
+      "sha256": "bb1414fa4e264428ae23cf46254b37d33d0593f3858bab9ea5a9b5e009e441c5",
+      "bytes": 718,
+      "production_code": false
+    },
+    {
+      "path": "internal/clients/vault/config.go",
+      "class": "production",
+      "sha256": "2359471734c814d138c668ac89f2a0e254e7cb8e3c40faa6fec599504dad74e0",
+      "bytes": 344,
+      "production_code": true
+    },
+    {
+      "path": "internal/config/config.go",
+      "class": "production",
+      "sha256": "d26fe2384b8387c64cfdfc8cd0c3dc4241046a66508d0d66ad50221caf3b1f7a",
+      "bytes": 869,
+      "production_code": true
+    },
+    {
+      "path": "internal/gen/mock_vault.gen.go",
+      "class": "generated",
+      "sha256": "68cf5a728018f1f219918be60b6f4330cb6d1c78bbbf0bd925b18202356a5b98",
+      "bytes": 395,
+      "production_code": true
+    },
+    {
+      "path": "internal/launch/handler.go",
+      "class": "production",
+      "sha256": "622aa1be569c4e2beffdb7bc1400e12dee97836364cab4d8d79f7fa833da3f0f",
+      "bytes": 459,
+      "production_code": true
+    },
+    {
+      "path": "internal/launch/model.go",
+      "class": "production",
+      "sha256": "811ed0bbc733d813f719349bc27efb74a67a348094b8f7dd569081a70eaa40aa",
+      "bytes": 100,
+      "production_code": true
+    },
+    {
+      "path": "internal/launch/service.go",
+      "class": "production",
+      "sha256": "56f95f98596fa97902f451f34742a938324afb9fafce2ebc621addaf58482ab6",
+      "bytes": 1359,
+      "production_code": true
+    },
+    {
+      "path": "internal/legacy/client.go",
+      "class": "production",
+      "sha256": "a71cd61a91c7b5b9fe98f597bb7277810cc20e74ca8ac28b95d033b67d325567",
+      "bytes": 324,
+      "production_code": true
+    },
+    {
+      "path": "internal/netutil/http.go",
+      "class": "production",
+      "sha256": "dbfb1da730bb54eac56e4d12e0dfd6b37ef5ab7c0689fa391045b7e7f2590819",
+      "bytes": 453,
+      "production_code": true
+    },
+    {
+      "path": "internal/observability/logging.go",
+      "class": "production",
+      "sha256": "f09cfbe56b6094be2d69f82fd3a40046394360482999f5bfde8068a8d8aaf3e2",
+      "bytes": 179,
+      "production_code": true
+    },
+    {
+      "path": "internal/observability/metrics.go",
+      "class": "production",
+      "sha256": "2d0b7efff2d82ab30206890167e0ec9e15485d840d2a839a571f15323db76bcf",
+      "bytes": 502,
+      "production_code": true
+    },
+    {
+      "path": "test/integration/clickhouse_test.go",
+      "class": "test",
+      "sha256": "a5d3778b46180e9c990a0e0ddd5f614bf68a240cd2e7ae3bf215b99997b603ad",
+      "bytes": 582,
+      "production_code": false
+    }
+  ],
+  "external_operations": [
+    {
+      "relation_id": "program-relation-6585b698b31b4250a76002024e0daf2cbd2d098ca34fcf39c7b3caba0d11c018",
+      "dependency_id": "dependency-309ef1f5c8eeb49972854e31",
+      "importer_ref": "importer-d7b8087a8b0a299bc1bc123b",
+      "external_object_id": "program-object-913c592f82b5feb38baa26d94551ed890fe89bf514abcbb009206d5a934e875f",
+      "caller_id": "program-object-225477aa1dac6acabaee55f3235b5c06834359beb15d897b68d0dc202b902b84",
+      "package_path": "example.com/clickhousesdk",
+      "canonical_callee": "example.com/clickhousesdk.Open",
+      "callsite": {
+        "path": "internal/clients/clickhouse/client.go",
+        "line": 17,
+        "column": 14
+      },
+      "source_expression": "clickhousesdk.Open(config.DSN)",
+      "generated": false
+    },
+    {
+      "relation_id": "program-relation-3b1cbeb3b35b7fd0c280ee3cc412c3416f8c6ab110b8049fc45fac18ab561f81",
+      "dependency_id": "dependency-309ef1f5c8eeb49972854e31",
+      "importer_ref": "importer-d7b8087a8b0a299bc1bc123b",
+      "external_object_id": "program-object-7dc0eadfac7902c0c8903ee784b3714ebde17ba65b9fd3f44127b6a24e07f060",
+      "caller_id": "program-object-d936ce2c46089c98a8ce03361007015c9d22ffe188aa1aaee9ceb734d880d4a6",
+      "package_path": "example.com/clickhousesdk",
+      "canonical_callee": "example.com/clickhousesdk.*example.com/clickhousesdk.Client.RecentLaunches",
+      "callsite": {
+        "path": "internal/clients/clickhouse/client.go",
+        "line": 26,
+        "column": 19
+      },
+      "source_expression": "client.sdk.RecentLaunches(ctx, limit)",
+      "generated": false
+    },
+    {
+      "relation_id": "program-relation-5cf6c2b154d14b670540a87d39ae71001a91bbb4cfd192c2781bc23f315ddfce",
+      "dependency_id": "dependency-f31ce74651b8db6c9aadacdd",
+      "importer_ref": "importer-ab462c874bae64982165a043",
+      "external_object_id": "program-object-f77e1b0f7e0694416a24c5102a4323b1dfbb0d6628321f2a553358e72953ff5b",
+      "caller_id": "program-object-4b90b4c66803d992e057cbdca8e661ebadac1d589b4243d71d6f561c3a5f3091",
+      "package_path": "example.com/kubernetessdk",
+      "canonical_callee": "example.com/kubernetessdk.*example.com/kubernetessdk.Client.Namespaces",
+      "callsite": {
+        "path": "internal/clients/kubernetes/client.go",
+        "line": 35,
+        "column": 22
+      },
+      "source_expression": "client.sdk.Namespaces(ctx)",
+      "generated": false
+    },
+    {
+      "relation_id": "program-relation-f00ed30528a1243ef9456682c8ed513afff3a42949a27733354506b471a505c8",
+      "dependency_id": "dependency-6146617615442179c4d53903",
+      "importer_ref": "importer-824c15c875920e3eeae11e06",
+      "external_object_id": "program-object-e467f2a1ccf9a68b8f0371dad85543bda945d076a9988fdc5826b07e7cc16a96",
+      "caller_id": "program-object-137baec5deec9e49adee3888402016c5a484f29842b4121497e46105bdc1497f",
+      "package_path": "example.com/notifiersdk",
+      "canonical_callee": "example.com/notifiersdk.New",
+      "callsite": {
+        "path": "internal/clients/notifier/client.go",
+        "line": 14,
+        "column": 25
+      },
+      "source_expression": "notifiersdk.New(config.Endpoint)",
+      "generated": false
+    },
+    {
+      "relation_id": "program-relation-069f106c8c0df8ff6c4544d761151924fe445313a0484b2fb375ff1dc0d82568",
+      "dependency_id": "dependency-6146617615442179c4d53903",
+      "importer_ref": "importer-824c15c875920e3eeae11e06",
+      "external_object_id": "program-object-588f575f6d2561f703c2a696b271dc0c0f84ecfd4577822784f9097300e76043",
+      "caller_id": "program-object-ad760efa73284c00b8f7c84588ea207c003b38383deaac541fed878572330162",
+      "package_path": "example.com/notifiersdk",
+      "canonical_callee": "example.com/notifiersdk.*example.com/notifiersdk.Sender.Send",
+      "callsite": {
+        "path": "internal/clients/notifier/client.go",
+        "line": 18,
+        "column": 9
+      },
+      "source_expression": "client.sender.Send(ctx, message)",
+      "generated": false
+    },
+    {
+      "relation_id": "program-relation-4a422e8ef5d233aa175858585d848e7cb0c801a1bf9d2e944e0bc26e50d273c5",
+      "dependency_id": "dependency-29faba0a7f9d592069df4a9e",
+      "importer_ref": "importer-3f7cc9ca910705eb63b6a3be",
+      "external_object_id": "program-object-81e759926dbd1c98f7ecedef3286e592d980516419c3acdcfecbc0b814e98052",
+      "caller_id": "program-object-3cbcd5bee86b4de6ac651f93825919cef4532e0b37890dda324dec7fbff2fbde",
+      "package_path": "example.com/vaultsdk",
+      "canonical_callee": "example.com/vaultsdk.New",
+      "callsite": {
+        "path": "internal/clients/vault/client.go",
+        "line": 20,
+        "column": 14
+      },
+      "source_expression": "vaultsdk.New(vaultsdk.Config{Address:config.Address, Token:config.Token})",
+      "generated": false
+    },
+    {
+      "relation_id": "program-relation-5875e97188c8fe9883de2f3bd6dca6927b99f9de8f9ef4524aa98e7bd30cfdc0",
+      "dependency_id": "dependency-29faba0a7f9d592069df4a9e",
+      "importer_ref": "importer-3f7cc9ca910705eb63b6a3be",
+      "external_object_id": "program-object-67307980345ccc14db0f524915a7096ba738a7553c1263be844d9808dd162c4f",
+      "caller_id": "program-object-810e2be49111114cc17e08422d2d3761366d9381af5cc1a520a8b80408e49d92",
+      "package_path": "example.com/vaultsdk",
+      "canonical_callee": "example.com/vaultsdk.*example.com/vaultsdk.Client.Read",
+      "callsite": {
+        "path": "internal/clients/vault/client.go",
+        "line": 32,
+        "column": 17
+      },
+      "source_expression": "client.sdk.Read(requestContext, key)",
+      "generated": false
+    },
+    {
+      "relation_id": "program-relation-8dc1223ae1971a96dd064109cf634b55872db9a36d209e96da36605da0f00c18",
+      "dependency_id": "dependency-29faba0a7f9d592069df4a9e",
+      "importer_ref": "importer-3f7cc9ca910705eb63b6a3be",
+      "external_object_id": "program-object-b2ad91e4d2a18ac82a0b3e1d1b64a087149b97fc4332a41b7fd188ec08fa5c14",
+      "caller_id": "program-object-7a1c7964c4b2255a7a9efcb521cd5368cb6f201a68f6996e305805b75677689d",
+      "package_path": "example.com/vaultsdk",
+      "canonical_callee": "example.com/vaultsdk.*example.com/vaultsdk.Client.Ping",
+      "callsite": {
+        "path": "internal/clients/vault/client.go",
+        "line": 47,
+        "column": 9
+      },
+      "source_expression": "client.sdk.Ping(requestContext)",
+      "generated": false
+    },
+    {
+      "relation_id": "program-relation-4ff4c5b44ab5da1d4553ebbd2b0955eb2e8984a0feabc0aec9a8fa0cf5329fd2",
+      "dependency_id": "dependency-6f7e72e58df15a0591d339e0",
+      "importer_ref": "importer-25225e9e777968aed4b19dd1",
+      "external_object_id": "program-object-8bbb2e96de3e6f5b58767ec2ef568f1728ac1d67e49c74a79a9cb506ad759cc5",
+      "caller_id": "program-object-eb4a90fa4664cfefedf55762d7905cd65b7cef7fa05a414afed51511ea303ba9",
+      "package_path": "example.com/legacysdk",
+      "canonical_callee": "example.com/legacysdk.New",
+      "callsite": {
+        "path": "internal/legacy/client.go",
+        "line": 10,
+        "column": 48
+      },
+      "source_expression": "legacysdk.New()",
+      "generated": false
+    },
+    {
+      "relation_id": "program-relation-8efd975dfd3a5b7bda80de8671c56f3e27b942eaaf4401c87230e199d5357d0c",
+      "dependency_id": "dependency-6f7e72e58df15a0591d339e0",
+      "importer_ref": "importer-25225e9e777968aed4b19dd1",
+      "external_object_id": "program-object-dcb0e827c16797a12e27fc580b1d5e1b14ff10c7e7b987d73ef1ad377223df78",
+      "caller_id": "program-object-1538b1ea26336163449dfc3184c837ee27f461d6b55c1f6b659702ed0febf8d9",
+      "package_path": "example.com/legacysdk",
+      "canonical_callee": "example.com/legacysdk.*example.com/legacysdk.Client.Lookup",
+      "callsite": {
+        "path": "internal/legacy/client.go",
+        "line": 12,
+        "column": 58
+      },
+      "source_expression": "client.sdk.Lookup(key)",
+      "generated": false
+    }
+  ],
+  "callbacks": {
+    "exact_pass_relations": 2,
+    "unresolved_invocations": 4,
+    "status": "frontier"
+  },
+  "coverage": {
+    "files_observed": 26,
+    "production_files": 19,
+    "test_files": 4,
+    "generated_files": 1,
+    "prose_files": 1,
+    "manifest_files": 1,
+    "other_files": 0,
+    "dependency_uses_observed": 40,
+    "external_calls_observed": 10
+  },
+  "sha256": "a6f492ded210630277f42eac2f88161f0cdf882ad7f04baf50eb4d26ac50b510"
+}
