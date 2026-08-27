@@ -176,6 +176,12 @@ const context = {
   document,
   window: {
     location: { hash: '#/repository' },
+    listeners: Object.create(null),
+    addEventListener(type, listener) {
+      if (!this.listeners[type]) this.listeners[type] = [];
+      this.listeners[type].push(listener);
+    },
+    dispatch(type) { (this.listeners[type] || []).forEach((listener) => listener()); },
     requestAnimationFrame(callback) { callback(); },
     setTimeout(callback) { callback(); }
   },
@@ -189,9 +195,9 @@ const graphSource = fs.readFileSync(process.argv[3], 'utf8');
 vm.runInNewContext(graphSource, context, { filename: process.argv[3] });
 
 const source = fs.readFileSync(process.argv[2], 'utf8');
-const bootBoundary = /\n\s*boot\(\);\s*\n\}\)\(\);\s*$/;
-if (!bootBoundary.test(source)) {
-  throw new Error('report_app.js does not have one recognizable boot boundary');
+const exposureBoundary = '\n  var api = Object.freeze({ boot: boot, fail: failApplication });';
+if (source.split(exposureBoundary).length !== 2) {
+  throw new Error('report_app.js does not have one recognizable application exposure boundary');
 }
 const exposure = [
   '  globalThis.__reportAppBehavior = {',
@@ -212,7 +218,10 @@ const exposure = [
   '    renderSurfaceDetail: renderSurfaceDetail,',
   '    renderCrossSurfacePathDetail: renderCrossSurfacePathDetail,',
   '    renderRuntimePortfolio: renderRuntimePortfolio,',
-  '    buildTargetOutcomePortfolio: buildTargetOutcomePortfolio,',
+  '    buildTargetDirectory: buildTargetDirectory,',
+  '    buildRepositoryPresentationModel: buildRepositoryPresentationModel,',
+  '    buildTargetPresentationModel: buildTargetPresentationModel,',
+  '    targetOutcomeForLocation: targetOutcomeForLocation,',
   '    renderNotAnalyzedTargets: renderNotAnalyzedTargets,',
   '    renderHeader: renderHeader,',
   '    reportRouteContext: reportRouteContext,',
@@ -224,12 +233,13 @@ const exposure = [
   '    canvasNodeHref: canvasNodeHref,',
   '    navigateCanvasNode: navigateCanvasNode,',
   '    scheduleResponsibilityScroll: scheduleResponsibilityScroll,',
+  '    transition: transition,',
   '    getState: function () { return state; },',
+  '    resetBoot: function () { state = null; navigationToken = 0; bootStarted = false; },',
   '    unmountSystemCanvas: unmountSystemCanvas',
-  '  };',
-  '})();'
+  '  };'
 ].join('\n');
-const instrumented = source.replace(bootBoundary, '\n' + exposure);
+const instrumented = source.replace(exposureBoundary, '\n' + exposure + exposureBoundary);
 vm.runInNewContext(instrumented, context, { filename: process.argv[2] });
 
 const api = context.__reportAppBehavior;
@@ -348,6 +358,7 @@ const targetPanelCount = registerHeaderElement('rm-target-panel-count', 'span');
 const targetNavigation = registerHeaderElement('rm-target-navigation', 'nav');
 const pageContext = registerHeaderElement('rm-page-context', 'div');
 api.renderHeader();
+api.updateHeaderContext({ kind: 'repository' });
 const targetLinks = descendants(targetNavigation).filter((node) =>
   node.tagName === 'A' && String(node.className).includes('rm-target-switcher__target')
 );
@@ -396,39 +407,27 @@ check(targetCurrent.textContent === 'All targets' &&
   currentTargetBadge.hidden === true,
   'returning to the repository route must clear both current-page and current-target claims');
 
-const targetDirectory = {
-  targets: model.targets,
-  byID: {
-    [model.targets[0].id]: model.targets[0],
-    [model.targets[1].id]: model.targets[1]
-  },
-  currentID: model.target.id,
-  defaultID: model.defaultTargetID
-};
 const failedSelectedTargetID = 'selected-target:failed-worker';
-const targetOutcomePortfolio = api.buildTargetOutcomePortfolio({
-  target_outcome_portfolio: {
-    version: 1,
-    default_selected_target_id: failedSelectedTargetID,
-    outcomes: [
-      {
-        selected_target_id: 'selected-target:fukict', language: 'javascript_typescript',
-        scope_kind: 'package', display_name: 'fukict', selector: 'jsts:package.json',
-        state: 'analyzed', program_target_id: model.targets[0].id
-      },
-      {
-        selected_target_id: 'selected-target:babel', language: 'javascript_typescript',
-        scope_kind: 'package', display_name: '@fukict/babel-preset', selector: 'jsts:packages/babel/package.json',
-        state: 'analyzed', program_target_id: model.targets[1].id
-      },
-      {
-        selected_target_id: failedSelectedTargetID, language: 'go', scope_kind: 'executable',
-        display_name: 'worker', selector: 'go:cmd/worker', state: 'not_analyzed',
-        failure_stage: 'program_analysis', failure_reason: 'source_not_analyzable'
-      }
-    ]
-  }
-}, targetDirectory);
+const targetOutcomePortfolio = api.buildTargetDirectory({
+  logical_default_selected_target_id: failedSelectedTargetID,
+  targets: [
+    {
+      selected_target_id: 'selected-target:fukict', language: 'javascript_typescript',
+      kind: 'package', display_name: 'fukict', href: '?target=0#/program',
+      state: 'analyzed', program_target_id: model.targets[0].id
+    },
+    {
+      selected_target_id: 'selected-target:babel', language: 'javascript_typescript',
+      kind: 'package', display_name: '@fukict/babel-preset', href: '?target=1#/program',
+      state: 'analyzed', program_target_id: model.targets[1].id
+    },
+    {
+      selected_target_id: failedSelectedTargetID, language: 'go', kind: 'executable',
+      display_name: 'worker', state: 'not_analyzed',
+      failure_stage: 'program_analysis', failure_reason: 'source_not_analyzable'
+    }
+  ]
+}).outcomes;
 check(targetOutcomePortfolio.outcomes.length === 3 && targetOutcomePortfolio.analyzed.length === 2 &&
   targetOutcomePortfolio.notAnalyzed.length === 1 &&
   targetOutcomePortfolio.defaultSelectedTargetID === failedSelectedTargetID,
@@ -526,14 +525,14 @@ check(api.selectedReportRoute().kind === 'program',
 context.window.location.hash = '';
 model.surfaceCatalog = { surfaces: [], surfacesByID: Object.create(null) };
 model.crossSurfacePaths = { paths: [], pathsByID: Object.create(null) };
-check(api.selectedReportRoute().kind === 'program',
-  'an empty JavaScript/TypeScript surface overview must default to the useful program map');
+check(api.selectedReportRoute().kind === 'repository',
+  'an empty location hash must remain on the repository overview without loading a target');
 model.surfaceCatalog.surfaces.push({ id: 'surface:browser' });
-check(api.selectedReportRoute().kind === 'program',
+check(api.selectedReportRoute().kind === 'repository',
   'target-local JavaScript/TypeScript surfaces must not turn the repository route into a selected-target page');
 model.surfaceCatalog.surfaces = [];
 model.crossSurfacePaths.paths.push({ id: 'path:request' });
-check(api.selectedReportRoute().kind === 'program',
+check(api.selectedReportRoute().kind === 'repository',
   'target-local full-stack paths must remain on the selected target program page');
 const browserSurface = {
   id: 'surface:browser/app', name: 'Browser app', kind: 'browser_application', role: 'client',
@@ -611,8 +610,8 @@ check(surfaceDetailHost.textContent.includes('root') &&
 model.surfaceCatalog = null;
 model.crossSurfacePaths = null;
 model.runtimePortfolio = { roles: [], unclassified: [] };
-check(api.selectedReportRoute().kind === 'program',
-  'an empty runtime portfolio must not shadow the useful program map');
+check(api.selectedReportRoute().kind === 'repository',
+  'an empty runtime portfolio must still leave the empty hash on the repository overview');
 model.runtimePortfolio.roles.push({ id: 'role:service' });
 check(api.selectedReportRoute().kind === 'repository',
   'a runtime role must make the repository overview useful');
@@ -1193,7 +1192,257 @@ check(renderedRoots.flatMap(descendants).every((node) =>
   node.tagName !== 'DIALOG' && !String(node.className).includes('rm-canvas-popover')
 ), 'canvas and detail interactions must not create a blocking dialog or popover');
 
-if (failures.length) {
-  throw new Error(failures.join('\n'));
-}
+(async function verifyAsyncLoaderBoundary() {
+  function analyzedTarget(selectedID, programID, name, href) {
+    return {
+      selected_target_id: selectedID, program_target_id: programID,
+      language: 'go', kind: 'library', display_name: name, state: 'analyzed', href
+    };
+  }
+  function targetPayload(programID, name) {
+    const emptyProjection = { eligible: 0, omitted: 0 };
+    return {
+      version: 1,
+      target: { id: programID, language: 'go', kind: 'library', name, selector: 'go:' + name },
+      openable_paths: [],
+      features: {
+        program: {
+          objects: [], relations: [],
+          projection: { seeds: emptyProjection, objects: emptyProjection, relations: emptyProjection }
+        }
+      }
+    };
+  }
+
+  const repositoryPayload = {
+    version: 1,
+    repository: { name: 'example/async', captured_revision: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' },
+    source: { kind: 'github', repository_url: 'https://github.com/example/async' },
+    logical_default_selected_target_id: 'selected:a',
+    targets: [
+      analyzedTarget('selected:a', 'program:a', 'alpha', '?target=0#/program'),
+      analyzedTarget('selected:b', 'program:b', 'beta', '?target=1#/program'),
+      analyzedTarget('selected:c', 'program:c', 'slow', '?target=2#/program'),
+      analyzedTarget('selected:d', 'program:d', 'broken', '?target=3#/program')
+    ],
+    openable_paths: [], warnings: []
+  };
+
+  const strictRepositoryModel = api.buildRepositoryPresentationModel(repositoryPayload);
+  const unknownRepositoryPayload = JSON.parse(JSON.stringify(repositoryPayload));
+  unknownRepositoryPayload.repository.unexpected = true;
+  let nestedRepositoryUnknownRejected = false;
+  try {
+    api.buildRepositoryPresentationModel(unknownRepositoryPayload);
+  } catch (error) {
+    nestedRepositoryUnknownRejected = /unknown field/.test(String(error && error.message));
+  }
+  const unknownTargetPayload = targetPayload('program:a', 'alpha');
+  unknownTargetPayload.features.program.unexpected = true;
+  let nestedTargetUnknownRejected = false;
+  try {
+    api.buildTargetPresentationModel(unknownTargetPayload, strictRepositoryModel);
+  } catch (error) {
+    nestedTargetUnknownRejected = /unknown field/.test(String(error && error.message));
+  }
+  check(nestedRepositoryUnknownRejected && nestedTargetUnknownRejected,
+    'feature-aware model boundaries must reject nested unknown browser payload fields');
+
+  const partialTargetPayload = targetPayload('program:a', 'alpha');
+  partialTargetPayload.features.core = {};
+  let partialTargetRejected = false;
+  try {
+    api.buildTargetPresentationModel(partialTargetPayload, strictRepositoryModel);
+  } catch (error) {
+    partialTargetRejected = /partial semantic feature family/.test(String(error && error.message));
+  }
+  check(partialTargetRejected,
+    'target model must reject a partial core/entrypoint/integration/activity-path family');
+
+  const invalidSourceUnion = JSON.parse(JSON.stringify(repositoryPayload));
+  invalidSourceUnion.source = {
+    kind: 'github', repository_url: 'https://github.com/example/async',
+    source_ids: { 'valid/path.go': 'a'.repeat(43) }
+  };
+  const invalidSourceMap = JSON.parse(JSON.stringify(repositoryPayload));
+  invalidSourceMap.source = {
+    kind: 'served',
+    source_ids: { '../outside.go': 'a'.repeat(43), 'valid/path.go': 'a'.repeat(43) }
+  };
+  const invalidSourceID = JSON.parse(JSON.stringify(repositoryPayload));
+  invalidSourceID.source = {
+    kind: 'served', source_ids: { 'valid/path.go': 'too-short' }
+  };
+  const duplicateSourceID = JSON.parse(JSON.stringify(repositoryPayload));
+  duplicateSourceID.source = {
+    kind: 'served',
+    source_ids: { 'valid/one.go': 'a'.repeat(43), 'valid/two.go': 'a'.repeat(43) }
+  };
+  let invalidSourceUnionRejected = false;
+  let invalidSourceMapRejected = false;
+  let invalidSourceIDRejected = false;
+  let duplicateSourceIDRejected = false;
+  try {
+    api.buildRepositoryPresentationModel(invalidSourceUnion);
+  } catch (error) {
+    invalidSourceUnionRejected = /static source authority is invalid/.test(String(error && error.message));
+  }
+  try {
+    api.buildRepositoryPresentationModel(invalidSourceMap);
+  } catch (error) {
+    invalidSourceMapRejected = /canonical repository-relative path|not unique/.test(
+      String(error && error.message)
+    );
+  }
+  try {
+    api.buildRepositoryPresentationModel(invalidSourceID);
+  } catch (error) {
+    invalidSourceIDRejected = /source ID is invalid/.test(String(error && error.message));
+  }
+  try {
+    api.buildRepositoryPresentationModel(duplicateSourceID);
+  } catch (error) {
+    duplicateSourceIDRejected = /source IDs are not unique/.test(String(error && error.message));
+  }
+  check(invalidSourceUnionRejected && invalidSourceMapRejected &&
+    invalidSourceIDRejected && duplicateSourceIDRejected,
+    'repository source shape must enforce its kind union and every dynamic source-ID entry');
+
+  let incompleteRuntimeRejected = false;
+  try {
+    api.buildRepositoryPresentationModel(Object.assign({}, repositoryPayload, {
+      runtime: {
+        roles: [{
+          name: 'partial runtime', purpose: 'Maps only one analyzed target.',
+          prominence: 'primary', role_kind: 'service', requiredness: 'required', confidence: 'high',
+          implementations: [{ program_target_id: 'program:a' }], evidence: []
+        }],
+        unclassified_targets: []
+      }
+    }));
+  } catch (error) {
+    incompleteRuntimeRejected = /cover every analyzed ProgramTarget/.test(String(error && error.message));
+  }
+  check(incompleteRuntimeRejected,
+    'repository model must preserve exhaustive mapped-or-unclassified runtime target coverage');
+
+  const ordinaryRepositoryPayload = Object.assign({}, repositoryPayload, {
+    targets: [
+      analyzedTarget('selected:a', 'program:a', 'alpha', '#/program'),
+      analyzedTarget('selected:b', 'program:b', 'beta', '../sibling/report.html#/program')
+    ]
+  });
+  const ordinaryRepositoryModel = api.buildRepositoryPresentationModel(ordinaryRepositoryPayload);
+  context.window.location = {
+    hash: '#/program', search: '', pathname: '/runs/owner/report.html', protocol: 'https:',
+    hostname: 'example.test'
+  };
+  check(api.targetOutcomeForLocation(ordinaryRepositoryModel).selectedTargetID === 'selected:a',
+    'ordinary current target href must match the exact current report pathname');
+  const siblingRepositoryModel = api.buildRepositoryPresentationModel(Object.assign({}, repositoryPayload, {
+    targets: [
+      analyzedTarget('selected:a', 'program:a', 'alpha', '../owner/report.html#/program'),
+      analyzedTarget('selected:b', 'program:b', 'beta', '#/program')
+    ]
+  }));
+  context.window.location.pathname = '/runs/sibling/report.html';
+  check(api.targetOutcomeForLocation(siblingRepositoryModel).selectedTargetID === 'selected:b',
+    'ordinary sibling href must match pathname plus query instead of ambiguous empty query text');
+  const payloads = {
+    'selected:a': targetPayload('program:a', 'alpha'),
+    'selected:b': targetPayload('program:b', 'beta'),
+    'selected:c': targetPayload('program:c', 'slow')
+  };
+  const targetCalls = Object.create(null);
+  let repositoryCalls = 0;
+  let resolveSlow;
+  const slowPayload = new Promise((resolve) => { resolveSlow = resolve; });
+  const reportSource = {
+    loadRepository() { repositoryCalls += 1; return Promise.resolve(repositoryPayload); },
+    loadTarget(selectedID) {
+      targetCalls[selectedID] = (targetCalls[selectedID] || 0) + 1;
+      if (selectedID === 'selected:c') return slowPayload;
+      if (selectedID === 'selected:d') return Promise.reject(new Error('x'.repeat(1000)));
+      return Promise.resolve(payloads[selectedID]);
+    }
+  };
+
+  targetNavigation.replaceChildren();
+  const appHost = registerHeaderElement('rm-app', 'main');
+  const fatalHost = registerHeaderElement('rm-fatal', 'section');
+  fatalHost.hidden = true;
+  registerHeaderElement('rm-fatal-message', 'p');
+  const toastHost = registerHeaderElement('rm-toast', 'div');
+  toastHost.hidden = true;
+  context.window.location = {
+    hash: '#/repository', search: '', pathname: '/report.html', protocol: 'https:',
+    hostname: 'example.test'
+  };
+
+  await context.RepomapReportApp.boot(reportSource);
+  check(repositoryCalls === 1 && !Object.keys(targetCalls).length,
+    'repository boot must load repository data once and perform zero target loads');
+  check(api.getState().model.target === null &&
+    !Object.prototype.hasOwnProperty.call(api.getState().model, 'raw'),
+    'repository presentation state must contain no target payload or raw model escape hatch');
+
+  context.window.location.search = '?target=0';
+  context.window.location.hash = '#/program';
+  await api.transition();
+  check(targetCalls['selected:a'] === 1 && api.getState().model.target.id === 'program:a' &&
+    !Object.prototype.hasOwnProperty.call(api.getState().model, 'raw'),
+    'program route must load exactly the target selected by its repository href');
+
+  context.window.location.search = '?target=1';
+  await api.transition();
+  check(targetCalls['selected:b'] === 1 && api.getState().model.target.id === 'program:b',
+    'a direct ?target=N handoff must load the exact matching selected target');
+
+  context.window.location.search = '?target=2';
+  const staleTransition = api.transition();
+  context.window.location.hash = '#/repository';
+  await api.transition();
+  resolveSlow(payloads['selected:c']);
+  await staleTransition;
+  check(api.getState().model.target === null && appHost.textContent.includes('Repository overview'),
+    'a slower target load must not replace a newer repository navigation');
+
+  context.window.location.search = '?target=3';
+  context.window.location.hash = '#/program';
+  await api.transition();
+  check(appHost.textContent.includes('This target could not be opened') &&
+    appHost.textContent.length < 1000 && fatalHost.hidden === true,
+    'target load failure must render a bounded local error instead of disabling the application');
+  context.window.location.hash = '#/repository';
+  await api.transition();
+  check(appHost.textContent.includes('Repository overview') && repositoryCalls === 1,
+    'repository overview must remain usable after a target load failure');
+
+  api.resetBoot();
+  let coldRepositoryCalls = 0;
+  const coldTargetCalls = Object.create(null);
+  const coldSource = {
+    loadRepository() {
+      coldRepositoryCalls += 1;
+      return Promise.resolve(repositoryPayload);
+    },
+    loadTarget(selectedID) {
+      coldTargetCalls[selectedID] = (coldTargetCalls[selectedID] || 0) + 1;
+      return Promise.resolve(payloads[selectedID]);
+    }
+  };
+  context.window.location = {
+    hash: '#/program', search: '?target=1', pathname: '/report.html', protocol: 'https:',
+    hostname: 'example.test'
+  };
+  await context.RepomapReportApp.boot(coldSource);
+  check(coldRepositoryCalls === 1 && coldTargetCalls['selected:b'] === 1 &&
+    Object.keys(coldTargetCalls).length === 1 && api.getState().model.target.id === 'program:b',
+    'cold direct target boot must restore repository authority and load exactly its one selected target');
+
+  if (failures.length) throw new Error(failures.join('\n'));
+})().catch((error) => {
+  process.stderr.write((error && error.stack ? error.stack : String(error)) + '\n');
+  process.exitCode = 1;
+});
 `
