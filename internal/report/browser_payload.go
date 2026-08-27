@@ -521,6 +521,15 @@ func projectBrowserTargetIndex(
 				if !ok {
 					return nil, "", fmt.Errorf("browser repository payload: analyzed target lacks navigation")
 				}
+				// The selected-target outcome owns repository-wide selection
+				// identity and failure accounting. The exact ProgramTarget page
+				// owns the language/kind/name rendered for an analyzed page and
+				// used to bind its target-local payload. In particular, the
+				// JavaScript/TypeScript outcome language group is intentionally
+				// broader than one concrete ProgramTarget language.
+				row.Language = navigationItem.Language
+				row.Kind = navigationItem.Kind
+				row.DisplayName = navigationItem.DisplayName
 				row.Href = navigationItem.Href
 			}
 			result = append(result, row)
@@ -1163,6 +1172,9 @@ func (runtime *BrowserRuntimeOverview) validate(
 		}
 		unclassified[target.ProgramTargetID] = struct{}{}
 	}
+	if len(mapped)+len(unclassified) != len(analyzed) {
+		return fmt.Errorf("runtime overview does not cover every analyzed target")
+	}
 	return nil
 }
 
@@ -1199,7 +1211,7 @@ func (payload BrowserTargetPayload) Validate() error {
 		return fmt.Errorf("semantic target features are incomplete")
 	}
 	if payload.Features.Core != nil {
-		if err := payload.Features.Core.validate(payload.Features.Program, openable); err != nil {
+		if err := payload.Features.Core.validate(openable); err != nil {
 			return err
 		}
 		if err := payload.Features.Entrypoints.validate(openable); err != nil {
@@ -1321,20 +1333,13 @@ func (feature BrowserProgramFeature) validate(openable map[string]struct{}) erro
 	return nil
 }
 
-func (feature *BrowserCoreFeature) validate(
-	program BrowserProgramFeature,
-	openable map[string]struct{},
-) error {
+func (feature *BrowserCoreFeature) validate(openable map[string]struct{}) error {
 	if feature.RefinedCore == nil || feature.RefinedGroups == nil ||
 		feature.Coverage.ProgramObjectsOmitted < 0 {
 		return fmt.Errorf("core feature is incomplete")
 	}
-	objects := make(map[string]struct{}, len(program.Objects))
-	for _, object := range program.Objects {
-		objects[object.ID] = struct{}{}
-	}
 	blocks := make(map[string]struct{})
-	if err := validateBrowserCoreBlocks(feature.RefinedCore, blocks, objects, openable); err != nil {
+	if err := validateBrowserCoreBlocks(feature.RefinedCore, blocks, openable); err != nil {
 		return err
 	}
 	groups := make(map[string]struct{}, len(feature.RefinedGroups))
@@ -1379,7 +1384,6 @@ func (feature *BrowserCoreFeature) validate(
 func validateBrowserCoreBlocks(
 	values []BrowserCoreBlock,
 	blocks map[string]struct{},
-	objects map[string]struct{},
 	openable map[string]struct{},
 ) error {
 	if values == nil {
@@ -1406,14 +1410,14 @@ func validateBrowserCoreBlocks(
 				representative.UnresolvedOutgoing < 0 {
 				return fmt.Errorf("core representative symbol is invalid")
 			}
-			if _, ok := objects[representative.Symbol.NodeID]; !ok {
-				return fmt.Errorf("core representative symbol is absent from program objects")
-			}
+			// Core representatives are a self-contained, canonical projection.
+			// The bounded ProgramView may legitimately omit their objects, so a
+			// browser-only membership check would reject valid large reports.
 			if err := validateBrowserLocation(representative.Symbol.Location, openable); err != nil {
 				return err
 			}
 		}
-		if err := validateBrowserCoreBlocks(block.Children, blocks, objects, openable); err != nil {
+		if err := validateBrowserCoreBlocks(block.Children, blocks, openable); err != nil {
 			return err
 		}
 	}

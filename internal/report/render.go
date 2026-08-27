@@ -8,11 +8,11 @@ import (
 	"html/template"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
 	_ "embed"
-	"github.com/dvordrova/repomap/internal/analysistarget"
 )
 
 //go:embed templates/report_app.css
@@ -20,6 +20,9 @@ var reportAppCSS string
 
 //go:embed templates/report_app.js
 var reportAppJS string
+
+//go:embed templates/report_loader.js
+var reportLoaderJS string
 
 // The System canvas is split into deterministic browser modules so graph
 // projection, interaction policy, geometry, and DOM/SVG rendering can evolve
@@ -133,53 +136,31 @@ func buildHTMLWithOptions(data *ReportData, options RenderOptions) ([]byte, erro
 	return buildProgramHTMLWithOptions(data, options)
 }
 
-// programShellPayload is the complete browser contract for ProgramPortfolio
-// pages. It is a projection of the same strict Program-only report schema.
-type programShellPayload struct {
-	FormatVersion          int                         `json:"format_version"`
-	RepoName               string                      `json:"repo_name"`
-	AnalysisTarget         *analysistarget.Target      `json:"analysis_target,omitempty"`
-	ProgramPortfolio       *ProgramPortfolio           `json:"program_portfolio"`
-	CubeMapView            *CubeMapView                `json:"cube_map_view,omitempty"`
-	CoreMapView            *CoreMapView                `json:"core_map_view,omitempty"`
-	ActivityEntrypointView *ActivityEntrypointView     `json:"activity_entrypoint_view,omitempty"`
-	IntegrationUsageView   *IntegrationUsageView       `json:"integration_usage_view,omitempty"`
-	ActivityPathView       *ActivityPathView           `json:"activity_path_view,omitempty"`
-	JSTSSurfaceCatalogView *JSTSSurfaceCatalogView     `json:"js_ts_surface_catalog_view,omitempty"`
-	CrossSurfacePathView   *CrossSurfacePathView       `json:"cross_surface_path_view,omitempty"`
-	RuntimePortfolio       *RuntimePortfolioView       `json:"runtime_portfolio,omitempty"`
-	TargetOutcomePortfolio *TargetOutcomePortfolioView `json:"target_outcome_portfolio,omitempty"`
-	OpenablePaths          []string                    `json:"openable_paths"`
-	SourceIDs              map[string]string           `json:"source_ids,omitempty"`
-	GitHubSourceLinks      *GitHubSourceLinks          `json:"github_source_links,omitempty"`
-	GitLabSourceLinks      *GitLabSourceLinks          `json:"gitlab_source_links,omitempty"`
-	CapturedRevision       string                      `json:"captured_revision"`
-	CapturedInputCount     int                         `json:"captured_input_count"`
-	Warnings               []string                    `json:"warnings,omitempty"`
-	TargetNavigation       *TargetNavigationPortfolio  `json:"target_navigation,omitempty"`
-}
-
 func buildProgramHTMLWithOptions(data *ReportData, options RenderOptions) ([]byte, error) {
 	if data.ProgramPortfolio == nil {
 		return nil, fmt.Errorf("report: program shell requires a complete program portfolio")
 	}
-	payload := programShellPayloadForReport(data, options.TargetNavigation)
-	dataJSON, err := marshalHTMLPayloadWithLocalRoots(
-		payload,
-		renderPayloadLocalRoots(data, options.LocalRoots),
+	transport, err := buildOrdinaryBrowserTransportV4(
+		data, options.TargetNavigation, renderPayloadLocalRoots(data, options.LocalRoots),
 	)
 	if err != nil {
 		return nil, err
 	}
+	section, err := standaloneBundleTransportHTMLSectionV4(transport)
+	if err != nil {
+		return nil, err
+	}
 	return executeProgramReport(programReportTemplateData{
-		Title:    data.RepoName,
-		DataJSON: template.JS(dataJSON),
+		Title:            data.RepoName,
+		BrowserTransport: template.HTML(section),
 	})
 }
 
 type programReportTemplateData struct {
-	Title                  string
-	DataJSON               template.JS
+	Title            string
+	BrowserTransport template.HTML
+	// StandaloneTargetBundle is a construction alias until the standalone
+	// writer switches its skeleton call to BrowserTransport.
 	StandaloneTargetBundle template.HTML
 }
 
@@ -188,22 +169,235 @@ func executeProgramReport(data programReportTemplateData) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("report: parse embedded program template: %w", err)
 	}
+	browserTransport := data.BrowserTransport
+	if browserTransport == "" {
+		browserTransport = data.StandaloneTargetBundle
+	}
+	if browserTransport == "" {
+		return nil, fmt.Errorf("report: browser transport section is required")
+	}
 	var buffer bytes.Buffer
 	err = programReportTmpl.Execute(&buffer, map[string]any{
 		"Title":                     data.Title,
 		"ReportAppCSS":              template.CSS(reportAppCSS),
+		"ReportLoaderJS":            template.JS(reportLoaderJS),
 		"SystemCanvasGraphJS":       template.JS(systemCanvasGraphJS),
 		"SystemCanvasInteractionJS": template.JS(systemCanvasInteractionJS),
 		"SystemCanvasGeometryJS":    template.JS(systemCanvasGeometryJS),
 		"SystemCanvasRendererJS":    template.JS(systemCanvasRendererJS),
 		"ReportAppJS":               template.JS(reportAppJS),
-		"DataJSON":                  data.DataJSON,
-		"StandaloneTargetBundle":    data.StandaloneTargetBundle,
+		"BrowserTransport":          browserTransport,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("report: render program shell: %w", err)
 	}
 	return buffer.Bytes(), nil
+}
+
+func buildOrdinaryBrowserTransportV4(
+	data *ReportData,
+	navigation *TargetNavigationPortfolio,
+	localRoots []string,
+) (standaloneBundleTransportV4, error) {
+	repository, err := ProjectBrowserRepositoryPayload(data, navigation)
+	if err != nil {
+		return standaloneBundleTransportV4{}, err
+	}
+	target, err := ProjectBrowserTargetPayload(data)
+	if err != nil {
+		return standaloneBundleTransportV4{}, err
+	}
+	repositoryRaw, err := encodeBrowserRepositoryPayloadForHTML(repository, localRoots)
+	if err != nil {
+		return standaloneBundleTransportV4{}, err
+	}
+	targetRaw, err := encodeBrowserTargetPayloadForHTML(target, localRoots)
+	if err != nil {
+		return standaloneBundleTransportV4{}, err
+	}
+	selectedTargetID := ""
+	for _, row := range repository.Targets {
+		if row.State != "analyzed" || row.ProgramTargetID != target.Target.ID {
+			continue
+		}
+		if selectedTargetID != "" {
+			return standaloneBundleTransportV4{}, fmt.Errorf("report: current browser target binding is ambiguous")
+		}
+		selectedTargetID = row.SelectedTargetID
+	}
+	if selectedTargetID == "" {
+		return standaloneBundleTransportV4{}, fmt.Errorf("report: current browser target is absent from repository index")
+	}
+	return prepareStandaloneBundleTransportV4(standaloneBundleTransportInputV4{
+		RepositoryPayload:      repositoryRaw,
+		LogicalDefaultTargetID: repository.LogicalDefaultSelectedTargetID,
+		Targets: []standaloneBundleTransportTargetInputV4{{
+			TargetID: selectedTargetID, ProgramTargetID: target.Target.ID,
+			State: standaloneBundleTransportTargetAnalyzed, Payload: targetRaw,
+		}},
+	})
+}
+
+func encodeBrowserRepositoryPayloadForHTML(
+	payload BrowserRepositoryPayload,
+	localRoots []string,
+) ([]byte, error) {
+	raw, err := EncodeBrowserRepositoryPayload(payload)
+	if err != nil {
+		return nil, fmt.Errorf("report: encode repository browser projection: %w", err)
+	}
+	restored, err := DecodeBrowserRepositoryPayload(raw)
+	if err != nil {
+		return nil, fmt.Errorf("report: round-trip repository browser projection: %w", err)
+	}
+	for index := range restored.Warnings {
+		restored.Warnings[index] = scrubBrowserLocalPaths(restored.Warnings[index], localRoots)
+	}
+	if restored.Runtime != nil {
+		for index := range restored.Runtime.Roles {
+			role := &restored.Runtime.Roles[index]
+			role.Name = scrubBrowserLocalPaths(role.Name, localRoots)
+			role.Purpose = scrubBrowserLocalPaths(role.Purpose, localRoots)
+			for implementationIndex := range role.Implementations {
+				implementation := &role.Implementations[implementationIndex]
+				implementation.Mode = scrubBrowserLocalPaths(implementation.Mode, localRoots)
+			}
+		}
+		for index := range restored.Runtime.UnclassifiedTargets {
+			target := &restored.Runtime.UnclassifiedTargets[index]
+			target.Reason = scrubBrowserLocalPaths(target.Reason, localRoots)
+		}
+	}
+	if browserValueContainsLocalPath(restored, localRoots) {
+		return nil, fmt.Errorf("report: repository browser projection retained a local path")
+	}
+	return EncodeBrowserRepositoryPayload(restored)
+}
+
+func encodeBrowserTargetPayloadForHTML(
+	payload BrowserTargetPayload,
+	localRoots []string,
+) ([]byte, error) {
+	if browserValueContainsLocalPath(payload, localRoots) {
+		return nil, fmt.Errorf("report: target browser projection retained a local path")
+	}
+	raw, err := EncodeBrowserTargetPayload(payload)
+	if err != nil {
+		return nil, fmt.Errorf("report: encode target browser projection: %w", err)
+	}
+	restored, err := DecodeBrowserTargetPayload(raw)
+	if err != nil {
+		return nil, fmt.Errorf("report: round-trip target browser projection: %w", err)
+	}
+	return EncodeBrowserTargetPayload(restored)
+}
+
+// browserValueContainsLocalPath walks the typed browser contract before JSON
+// escaping can hide host separators or HTML-sensitive path characters. It is
+// a persistence guard only; it neither rewrites fields nor supplies semantics.
+func browserValueContainsLocalPath(value any, roots []string) bool {
+	return browserReflectValueContainsLocalPath(reflect.ValueOf(value), roots)
+}
+
+func browserReflectValueContainsLocalPath(value reflect.Value, roots []string) bool {
+	if !value.IsValid() {
+		return false
+	}
+	switch value.Kind() {
+	case reflect.Interface, reflect.Pointer:
+		return !value.IsNil() && browserReflectValueContainsLocalPath(value.Elem(), roots)
+	case reflect.String:
+		return browserTextContainsLocalPath(value.String(), roots)
+	case reflect.Struct:
+		for index := 0; index < value.NumField(); index++ {
+			if browserReflectValueContainsLocalPath(value.Field(index), roots) {
+				return true
+			}
+		}
+	case reflect.Slice, reflect.Array:
+		for index := 0; index < value.Len(); index++ {
+			if browserReflectValueContainsLocalPath(value.Index(index), roots) {
+				return true
+			}
+		}
+	case reflect.Map:
+		iterator := value.MapRange()
+		for iterator.Next() {
+			if browserReflectValueContainsLocalPath(iterator.Key(), roots) ||
+				browserReflectValueContainsLocalPath(iterator.Value(), roots) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func scrubBrowserLocalPaths(text string, roots []string) string {
+	for _, root := range normalizedBrowserLocalRoots(roots) {
+		for searchFrom := 0; searchFrom <= len(text)-len(root); {
+			relative := strings.Index(text[searchFrom:], root)
+			if relative < 0 {
+				break
+			}
+			start := searchFrom + relative
+			end := start + len(root)
+			if browserLocalPathBoundary(text, start, end) {
+				text = text[:start] + "[local path]" + text[end:]
+				searchFrom = start + len("[local path]")
+				continue
+			}
+			searchFrom = end
+		}
+	}
+	return text
+}
+
+func browserTextContainsLocalPath(text string, roots []string) bool {
+	for _, root := range normalizedBrowserLocalRoots(roots) {
+		for searchFrom := 0; searchFrom <= len(text)-len(root); {
+			relative := strings.Index(text[searchFrom:], root)
+			if relative < 0 {
+				break
+			}
+			start := searchFrom + relative
+			end := start + len(root)
+			if browserLocalPathBoundary(text, start, end) {
+				return true
+			}
+			searchFrom = end
+		}
+	}
+	return false
+}
+
+func normalizedBrowserLocalRoots(roots []string) []string {
+	normalized := make([]string, 0, len(roots))
+	seen := make(map[string]struct{}, len(roots))
+	for _, root := range roots {
+		root = filepath.Clean(root)
+		if !filepath.IsAbs(root) || root == string(filepath.Separator) {
+			continue
+		}
+		if _, duplicate := seen[root]; duplicate {
+			continue
+		}
+		seen[root] = struct{}{}
+		normalized = append(normalized, root)
+	}
+	sort.Slice(normalized, func(i, j int) bool { return len(normalized[i]) > len(normalized[j]) })
+	return normalized
+}
+
+func browserLocalPathBoundary(text string, start, end int) bool {
+	if start > 0 && browserPathSegmentByte(text[start-1]) {
+		return false
+	}
+	return end == len(text) || !browserPathSegmentByte(text[end])
+}
+
+func browserPathSegmentByte(value byte) bool {
+	return value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' ||
+		value >= '0' && value <= '9' || value == '_' || value == '-' || value == '.'
 }
 
 func reportDataForPersistence(data *ReportData) *ReportData {
