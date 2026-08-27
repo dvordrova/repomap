@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,8 +29,12 @@ func TestWriteProgramPageBundleFromArtifactsPublishesOnlyOwnerHTML(t *testing.T)
 		}
 	}
 
-	if err := WriteProgramPageBundleFromArtifactsAtomic(ownerRunDir, portfolio); err != nil {
-		t.Fatalf("WriteProgramPageBundleFromArtifactsAtomic: %v", err)
+	assessment, err := PublishProgramPageBundleFromArtifactsAtomic(ownerRunDir, portfolio)
+	if err != nil {
+		t.Fatalf("PublishProgramPageBundleFromArtifactsAtomic: %v", err)
+	}
+	if assessment.Status != PublicationReady || len(assessment.Reasons) != 0 {
+		t.Fatalf("artifact-backed publication assessment = %#v", assessment)
 	}
 	for _, runDir := range runDirs {
 		wantEntries := append([]string(nil), entriesBefore[runDir]...)
@@ -145,6 +150,74 @@ func TestWriteProgramPageBundleFromArtifactsPublishesOnlyOwnerHTML(t *testing.T)
 	}
 	if !bytes.Equal(unchangedOwnerHTML, ownerHTML) {
 		t.Fatal("failed artifact-derived republish replaced the verified owner HTML")
+	}
+}
+
+func TestProgramPageBundleArtifactPublicationLoadsEachTargetExactlyTwice(t *testing.T) {
+	portfolio, ownerRunDir, _ := artifactProgramPageBundleFixture(t, 2)
+	loads := make([]int, len(portfolio.Pages))
+	err := writeProgramPageBundleFromArtifactsAtomic(
+		ownerRunDir,
+		portfolio,
+		standaloneArtifactPublicationHooks{
+			afterTargetLoad: func(index int) {
+				loads[index]++
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, count := range loads {
+		if count != 2 {
+			t.Fatalf("artifact target %d loads = %d, want two publication passes", index, count)
+		}
+	}
+}
+
+func TestProgramPageBundleArtifactPublicationRejectsClosedTemporaryTamperAtomically(t *testing.T) {
+	portfolio, ownerRunDir, _ := artifactProgramPageBundleFixture(t, 2)
+	htmlPath := filepath.Join(ownerRunDir, "report.html")
+	original := []byte("ORIGINAL_OWNER_REPORT\n")
+	if err := os.WriteFile(htmlPath, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var temporaryPath string
+	var spoolPath string
+	err := writeProgramPageBundleFromArtifactsAtomic(
+		ownerRunDir,
+		portfolio,
+		standaloneArtifactPublicationHooks{
+			afterSpoolPrepared: func(path string) {
+				spoolPath = path
+			},
+			afterTemporaryClose: func(path string) error {
+				temporaryPath = path
+				file, openErr := os.OpenFile(path, os.O_WRONLY, 0)
+				if openErr != nil {
+					return openErr
+				}
+				_, writeErr := file.WriteAt([]byte("X"), 0)
+				closeErr := file.Close()
+				return errors.Join(writeErr, closeErr)
+			},
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "verify closed standalone target bundle") {
+		t.Fatalf("closed temporary tamper error = %v", err)
+	}
+	current, readErr := os.ReadFile(htmlPath)
+	if readErr != nil || !bytes.Equal(current, original) {
+		t.Fatalf("closed temporary tamper replaced owner HTML: %q, %v", current, readErr)
+	}
+	if temporaryPath == "" || spoolPath == "" {
+		t.Fatalf("publication did not expose internal test paths: temporary=%q spool=%q", temporaryPath, spoolPath)
+	}
+	if _, statErr := os.Lstat(temporaryPath); !os.IsNotExist(statErr) {
+		t.Fatalf("closed temporary survived failed publication: %v", statErr)
+	}
+	if _, statErr := os.Lstat(spoolPath); !os.IsNotExist(statErr) {
+		t.Fatalf("spool survived failed publication: %v", statErr)
 	}
 }
 

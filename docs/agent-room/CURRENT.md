@@ -971,11 +971,15 @@ repository payload; the second reprojects one target at a time, writes its
 deterministic gzip bytes to a private temporary spool, immediately streams the
 chunk back through length, digest, strict typed-decode, and exact target-binding
 checks, and releases the target before loading the next. Final HTML publication
-streams base64 from that spool and removes it on success or failure. Failed
-target rows never enter the target loader and never receive a chunk. Every
-child report must retain the owner report's exact analysis root, so a sibling
-cannot replace shared source authority while still producing a self-consistent
-payload. Spool cleanup failure is a terminal publication or verification error;
+streams base64 from that spool. After the temporary HTML is synced and closed,
+the same transaction compares it byte-for-byte with the still-live validated
+spool, removes the spool, and only then atomically installs that exact file.
+That successful artifact-backed transaction returns READY directly; later and
+recovery assessment still rederive authority independently when no live spool
+exists. Failed target rows never enter the target loader and never receive a
+chunk. Every child report must retain the owner report's exact analysis root,
+so a sibling cannot replace shared source authority while still producing a
+self-consistent payload. Spool cleanup failure is a terminal publication or verification error;
 the retry path remains available internally and its private filesystem name is
 not exposed.
 

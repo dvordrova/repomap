@@ -903,14 +903,48 @@ func WriteStandaloneProgramPageBundleAtomic(
 }
 
 // WriteProgramPageBundleFromArtifactsAtomic publishes the sole user-facing
-// HTML for a neutral ProgramPagePortfolio. The analyzed-page portfolio can
-// contain one page when every other selected target failed before producing a
-// page. Every payload is projected directly from its manifest-verified
-// report.json and page-local artifacts; target-local HTML is neither required
-// nor merged.
+// HTML for a neutral ProgramPagePortfolio. Callers that need the publication
+// readiness result should use PublishProgramPageBundleFromArtifactsAtomic.
 func WriteProgramPageBundleFromArtifactsAtomic(
 	runDir string,
 	portfolio programpage.Portfolio,
+) error {
+	_, err := PublishProgramPageBundleFromArtifactsAtomic(runDir, portfolio)
+	return err
+}
+
+// PublishProgramPageBundleFromArtifactsAtomic publishes and assesses the sole
+// user-facing HTML for a neutral ProgramPagePortfolio. The analyzed-page
+// portfolio can contain one page when every other selected target failed
+// before producing a page. Every payload is projected directly from its
+// manifest-verified report.json and page-local artifacts; target-local HTML is
+// neither required nor merged. READY is returned only after the closed
+// temporary HTML has been compared byte-for-byte with the live, validated v4
+// spool, the spool has been removed, and that exact temporary file has been
+// atomically installed. Later and recovery verification must continue to use
+// AssessRunPublication.
+func PublishProgramPageBundleFromArtifactsAtomic(
+	runDir string,
+	portfolio programpage.Portfolio,
+) (PublicationAssessment, error) {
+	if err := writeProgramPageBundleFromArtifactsAtomic(
+		runDir, portfolio, standaloneArtifactPublicationHooks{},
+	); err != nil {
+		return FailedPublicationAssessment(), err
+	}
+	return PublicationAssessment{Status: PublicationReady}, nil
+}
+
+type standaloneArtifactPublicationHooks struct {
+	afterTargetLoad     func(index int)
+	afterSpoolPrepared  func(path string)
+	afterTemporaryClose func(path string) error
+}
+
+func writeProgramPageBundleFromArtifactsAtomic(
+	runDir string,
+	portfolio programpage.Portfolio,
+	hooks standaloneArtifactPublicationHooks,
 ) error {
 	if err := portfolio.Validate(); err != nil {
 		return fmt.Errorf("report: program page bundle authority: %w", err)
@@ -940,10 +974,18 @@ func WriteProgramPageBundleFromArtifactsAtomic(
 	}
 
 	runsDir := filepath.Dir(filepath.Clean(runDir))
+	loadTarget := func(index int) (*preparedStandaloneTarget, error) {
+		if hooks.afterTargetLoad != nil {
+			hooks.afterTargetLoad(index)
+		}
+		return expectedStandaloneProgramPageBundleTarget(
+			runsDir, portfolio.Pages[index], defaultManifest,
+		)
+	}
 	preparedTargets := make([]*preparedStandaloneTarget, 0, len(portfolio.Pages))
 	var defaultPrepared *preparedStandaloneTarget
-	for index, binding := range portfolio.Pages {
-		prepared, itemErr := expectedStandaloneProgramPageBundleTarget(runsDir, binding, defaultManifest)
+	for index := range portfolio.Pages {
+		prepared, itemErr := loadTarget(index)
 		if itemErr != nil {
 			return fmt.Errorf("report: program page bundle target %d: %w", index, itemErr)
 		}
@@ -975,14 +1017,13 @@ func WriteProgramPageBundleFromArtifactsAtomic(
 	spool, err := prepareStandaloneArtifactSpoolV4(
 		repository,
 		preparedTargets,
-		func(index int) (*preparedStandaloneTarget, error) {
-			return expectedStandaloneProgramPageBundleTarget(
-				runsDir, portfolio.Pages[index], defaultManifest,
-			)
-		},
+		loadTarget,
 	)
 	if err != nil {
 		return err
+	}
+	if hooks.afterSpoolPrepared != nil {
+		hooks.afterSpoolPrepared(spool.path)
 	}
 	validated := &validatedStandaloneTargetBundle{
 		identity: StandaloneTargetBundleIdentity{
@@ -994,8 +1035,11 @@ func WriteProgramPageBundleFromArtifactsAtomic(
 		defaultTarget: defaultPrepared,
 		spool:         spool,
 	}
-	publicationErr := writeValidatedStandaloneTargetBundleAtomicBeforeInstall(
-		runDir, validated, spool.closeAndRemove,
+	publicationErr := writeValidatedStandaloneTargetBundleAtomicWithHooks(
+		runDir, validated, standaloneTargetBundleAtomicHooks{
+			afterTemporaryClose: hooks.afterTemporaryClose,
+			beforeInstall:       spool.closeAndRemove,
+		},
 	)
 	return finishStandaloneBundleSpoolV4(spool, publicationErr)
 }
@@ -1011,6 +1055,21 @@ func writeValidatedStandaloneTargetBundleAtomicBeforeInstall(
 	runDir string,
 	validated *validatedStandaloneTargetBundle,
 	beforeInstall func() error,
+) error {
+	return writeValidatedStandaloneTargetBundleAtomicWithHooks(
+		runDir, validated, standaloneTargetBundleAtomicHooks{beforeInstall: beforeInstall},
+	)
+}
+
+type standaloneTargetBundleAtomicHooks struct {
+	afterTemporaryClose func(path string) error
+	beforeInstall       func() error
+}
+
+func writeValidatedStandaloneTargetBundleAtomicWithHooks(
+	runDir string,
+	validated *validatedStandaloneTargetBundle,
+	hooks standaloneTargetBundleAtomicHooks,
 ) error {
 	skeleton, err := standaloneTargetBundleSkeleton(validated)
 	if err != nil {
@@ -1063,8 +1122,16 @@ func writeValidatedStandaloneTargetBundleAtomicBeforeInstall(
 	if err := temporary.Close(); err != nil {
 		return fmt.Errorf("report: close standalone target bundle: %w", err)
 	}
-	if beforeInstall != nil {
-		if err := beforeInstall(); err != nil {
+	if hooks.afterTemporaryClose != nil {
+		if err := hooks.afterTemporaryClose(temporaryPath); err != nil {
+			return fmt.Errorf("report: inspect closed standalone target bundle: %w", err)
+		}
+	}
+	if err := verifyExactStandaloneTargetBundleProjection(temporaryPath, validated); err != nil {
+		return fmt.Errorf("report: verify closed standalone target bundle: %w", err)
+	}
+	if hooks.beforeInstall != nil {
+		if err := hooks.beforeInstall(); err != nil {
 			return err
 		}
 	}
