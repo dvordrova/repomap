@@ -175,6 +175,71 @@ func TestProgramPageBundleArtifactPublicationLoadsEachTargetExactlyTwice(t *test
 	}
 }
 
+func TestVerifiedProgramPageBundlePublicationLoadsEachTargetExactlyOnce(t *testing.T) {
+	portfolio, ownerRunDir, runDirs := artifactProgramPageBundleFixture(t, 2)
+	receipts := verifiedProgramPageBundleReceipts(t, portfolio, runDirs)
+	loads := make([]int, len(portfolio.Pages))
+	if err := writeProgramPageBundleFromVerifiedRunsAtomic(
+		ownerRunDir,
+		portfolio,
+		receipts,
+		standaloneVerifiedPublicationHooks{
+			afterTargetLoad: func(index int) {
+				loads[index]++
+			},
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	for index, count := range loads {
+		if count != 1 {
+			t.Fatalf("verified target %d loads = %d, want one", index, count)
+		}
+	}
+
+	assessment, err := AssessRunPublication(ownerRunDir)
+	if err != nil {
+		t.Fatalf("independent publication assessment: %v", err)
+	}
+	if assessment.Status != PublicationReady || len(assessment.Reasons) != 0 {
+		t.Fatalf("independent publication assessment = %#v", assessment)
+	}
+
+	htmlPath := filepath.Join(ownerRunDir, "report.html")
+	html, err := os.OpenFile(htmlPath, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, writeErr := html.WriteAt([]byte("X"), 0)
+	closeErr := html.Close()
+	if err := errors.Join(writeErr, closeErr); err != nil {
+		t.Fatal(err)
+	}
+	assessment, err = AssessRunPublication(ownerRunDir)
+	if err == nil || assessment.Status != PublicationFailed {
+		t.Fatalf("tampered installed HTML assessment = %#v, %v", assessment, err)
+	}
+}
+
+func TestVerifiedProgramPageBundlePublicationRejectsMismatchedReceipt(t *testing.T) {
+	portfolio, ownerRunDir, runDirs := artifactProgramPageBundleFixture(t, 2)
+	receipts := verifiedProgramPageBundleReceipts(t, portfolio, runDirs)
+	receipts[0], receipts[1] = receipts[1], receipts[0]
+
+	assessment, err := PublishProgramPageBundleFromVerifiedRunsAtomic(
+		ownerRunDir, portfolio, receipts,
+	)
+	if err == nil || !strings.Contains(err.Error(), "receipt 0 run directory mismatch") {
+		t.Fatalf("mismatched receipt error = %v", err)
+	}
+	if assessment.Status != PublicationFailed {
+		t.Fatalf("mismatched receipt assessment = %#v", assessment)
+	}
+	if _, statErr := os.Lstat(filepath.Join(ownerRunDir, "report.html")); !os.IsNotExist(statErr) {
+		t.Fatalf("mismatched receipt installed owner HTML: %v", statErr)
+	}
+}
+
 func TestProgramPageBundleArtifactPublicationRejectsClosedTemporaryTamperAtomically(t *testing.T) {
 	portfolio, ownerRunDir, _ := artifactProgramPageBundleFixture(t, 2)
 	htmlPath := filepath.Join(ownerRunDir, "report.html")
@@ -994,4 +1059,29 @@ func artifactProgramPageBundleFixture(
 		t.Fatal("fixture default run is absent")
 	}
 	return portfolio, ownerRunDir, runDirs
+}
+
+func verifiedProgramPageBundleReceipts(
+	t *testing.T,
+	portfolio programpage.Portfolio,
+	runDirs []string,
+) []VerifiedRunReceipt {
+	t.Helper()
+	byRunID := make(map[string]string, len(runDirs))
+	for _, runDir := range runDirs {
+		byRunID[filepath.Base(filepath.Clean(runDir))] = runDir
+	}
+	receipts := make([]VerifiedRunReceipt, 0, len(portfolio.Pages))
+	for _, binding := range portfolio.Pages {
+		runDir := byRunID[binding.RunID]
+		if runDir == "" {
+			t.Fatalf("fixture lacks run %q", binding.RunID)
+		}
+		receipt, err := ReadVerifiedRunManifest(runDir)
+		if err != nil {
+			t.Fatalf("read verified run %q: %v", binding.RunID, err)
+		}
+		receipts = append(receipts, receipt)
+	}
+	return receipts
 }

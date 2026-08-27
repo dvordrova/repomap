@@ -935,6 +935,325 @@ func PublishProgramPageBundleFromArtifactsAtomic(
 	return PublicationAssessment{Status: PublicationReady}, nil
 }
 
+// PublishProgramPageBundleFromVerifiedRunsAtomic publishes the sole
+// user-facing HTML from transaction-local receipts produced while the exact
+// backing runs were written. A receipt is authority only inside that current
+// publication transaction: this path never persists it and the independent
+// AssessRunPublication recovery seam remains artifact-derived.
+//
+// Every report is decoded exactly once. The owner report supplies both the
+// repository shell and its target chunk. Non-owner receipts supply the small
+// navigation descriptors needed for that shell, then their reports are loaded
+// once while the canonical v4 spool is built.
+func PublishProgramPageBundleFromVerifiedRunsAtomic(
+	runDir string,
+	portfolio programpage.Portfolio,
+	receipts []VerifiedRunReceipt,
+) (PublicationAssessment, error) {
+	if err := writeProgramPageBundleFromVerifiedRunsAtomic(
+		runDir, portfolio, receipts, standaloneVerifiedPublicationHooks{},
+	); err != nil {
+		return FailedPublicationAssessment(), err
+	}
+	return PublicationAssessment{Status: PublicationReady}, nil
+}
+
+type standaloneVerifiedPublicationHooks struct {
+	afterTargetLoad func(index int)
+}
+
+type verifiedStandaloneProgramPage struct {
+	receipt    VerifiedRunReceipt
+	manifest   RunManifest
+	descriptor *preparedStandaloneTarget
+}
+
+func writeProgramPageBundleFromVerifiedRunsAtomic(
+	runDir string,
+	portfolio programpage.Portfolio,
+	receipts []VerifiedRunReceipt,
+	hooks standaloneVerifiedPublicationHooks,
+) error {
+	pages, defaultIndex, err := bindVerifiedStandaloneProgramPages(
+		runDir, portfolio, receipts,
+	)
+	if err != nil {
+		return err
+	}
+
+	preparedTargets := make([]*preparedStandaloneTarget, len(pages))
+	for index := range pages {
+		preparedTargets[index] = pages[index].descriptor
+	}
+	defaultPrepared, err := expectedStandaloneTargetFromVerifiedRunV4(pages[defaultIndex])
+	if err != nil {
+		return fmt.Errorf("report: verified program page bundle owner: %w", err)
+	}
+	if hooks.afterTargetLoad != nil {
+		hooks.afterTargetLoad(defaultIndex)
+	}
+	if err := matchVerifiedStandaloneDescriptor(defaultPrepared, pages[defaultIndex].descriptor); err != nil {
+		return fmt.Errorf("report: verified program page bundle owner: %w", err)
+	}
+	preparedTargets[defaultIndex] = defaultPrepared
+	if err := projectStandaloneArtifactRepositoryV4(
+		defaultPrepared, preparedTargets, portfolio.DefaultTargetID,
+	); err != nil {
+		return err
+	}
+	repository := defaultPrepared.repository
+
+	// Keep the owner's already projected target bytes for the spool. The large
+	// canonical report and repository values are no longer needed after the
+	// repository shell has been projected.
+	defaultPrepared.reportData = nil
+	defaultPrepared.repository = BrowserRepositoryPayload{}
+	defaultPrepared.repositoryPayload = nil
+
+	spool, err := prepareStandaloneArtifactSpoolV4(
+		repository,
+		preparedTargets,
+		func(index int) (*preparedStandaloneTarget, error) {
+			if index == defaultIndex {
+				return defaultPrepared, nil
+			}
+			prepared, loadErr := expectedStandaloneTargetFromVerifiedRunV4(pages[index])
+			if loadErr != nil {
+				return nil, loadErr
+			}
+			if hooks.afterTargetLoad != nil {
+				hooks.afterTargetLoad(index)
+			}
+			return prepared, nil
+		},
+	)
+	if err != nil {
+		return err
+	}
+	validated := &validatedStandaloneTargetBundle{
+		identity: StandaloneTargetBundleIdentity{
+			Version:                    StandaloneTargetBundleVersion,
+			ProgramPagePortfolioSHA256: portfolio.SHA256,
+			DefaultTargetIndex:         defaultIndex,
+			TargetCount:                len(portfolio.Pages),
+		},
+		defaultTarget: defaultPrepared,
+		spool:         spool,
+	}
+	publicationErr := writeValidatedStandaloneTargetBundleAtomicWithHooks(
+		runDir,
+		validated,
+		standaloneTargetBundleAtomicHooks{beforeInstall: spool.closeAndRemove},
+	)
+	return finishStandaloneBundleSpoolV4(spool, publicationErr)
+}
+
+func bindVerifiedStandaloneProgramPages(
+	runDir string,
+	portfolio programpage.Portfolio,
+	receipts []VerifiedRunReceipt,
+) ([]verifiedStandaloneProgramPage, int, error) {
+	if err := portfolio.Validate(); err != nil {
+		return nil, -1, fmt.Errorf("report: verified program page bundle authority: %w", err)
+	}
+	if len(receipts) != len(portfolio.Pages) {
+		return nil, -1, fmt.Errorf("report: verified program page bundle receipt count mismatch")
+	}
+	portfolioRaw, err := portfolio.CanonicalJSON()
+	if err != nil {
+		return nil, -1, fmt.Errorf("report: verified program page bundle portfolio: %w", err)
+	}
+	portfolioArtifactSHA256 := manifestSHA256(portfolioRaw)
+	absoluteOwnerDir, err := filepath.Abs(runDir)
+	if err != nil {
+		return nil, -1, fmt.Errorf("report: resolve verified program page bundle owner: %w", err)
+	}
+	absoluteOwnerDir = filepath.Clean(absoluteOwnerDir)
+	runsDir := filepath.Dir(absoluteOwnerDir)
+	pages := make([]verifiedStandaloneProgramPage, len(portfolio.Pages))
+	defaultIndex := -1
+	var defaultManifest RunManifest
+	defaultRepositoryName := ""
+
+	for index, binding := range portfolio.Pages {
+		receipt := receipts[index]
+		expectedRunDir := filepath.Join(runsDir, binding.RunID)
+		if err := receipt.ValidateRunIdentity(expectedRunDir); err != nil {
+			return nil, -1, fmt.Errorf(
+				"report: verified program page bundle receipt %d run directory mismatch: %w", index, err,
+			)
+		}
+		manifest := receipt.Manifest()
+		if err := manifest.Validate(); err != nil {
+			return nil, -1, fmt.Errorf(
+				"report: verified program page bundle receipt %d manifest: %w", index, err,
+			)
+		}
+		page := receipt.ProgramPage()
+		if page.RunID != binding.RunID ||
+			!reflect.DeepEqual(page.ProgramTarget, binding.Target) ||
+			receipt.ProgramTargetID() != binding.Target.ID ||
+			manifest.MaterialInputs.ProgramTargetID != binding.Target.ID {
+			return nil, -1, fmt.Errorf(
+				"report: verified program page bundle receipt %d target binding mismatch", index,
+			)
+		}
+		if receipt.ProgramPagePortfolioSHA256() != portfolioArtifactSHA256 ||
+			manifest.MaterialInputs.ProgramPagePortfolioSHA256 != portfolioArtifactSHA256 {
+			return nil, -1, fmt.Errorf(
+				"report: verified program page bundle receipt %d portfolio binding mismatch", index,
+			)
+		}
+		if receipt.RepositoryName() == "" {
+			return nil, -1, fmt.Errorf(
+				"report: verified program page bundle receipt %d repository identity is incomplete", index,
+			)
+		}
+		host := ""
+		repositoryURL := ""
+		if manifest.StandaloneSource != nil {
+			host = manifest.StandaloneSource.Host
+			repositoryURL = manifest.StandaloneSource.RepositoryURL
+		}
+		descriptor := &preparedStandaloneTarget{
+			programPage:   page,
+			host:          host,
+			repositoryURL: repositoryURL,
+			revision:      manifest.MaterialInputs.SelectedRevision,
+			repoName:      receipt.RepositoryName(),
+			localRoots: normalizedStandaloneLocalRoots([]string{
+				receipt.RunDir(), manifest.AnalysisRoot, manifest.RepositoryState.Identity,
+			}),
+		}
+		pages[index] = verifiedStandaloneProgramPage{
+			receipt: receipt, manifest: manifest, descriptor: descriptor,
+		}
+		if binding.Target.ID == portfolio.DefaultTargetID {
+			defaultIndex = index
+			defaultManifest = manifest
+			defaultRepositoryName = receipt.RepositoryName()
+			if receipt.RunDir() != absoluteOwnerDir {
+				return nil, -1, fmt.Errorf("report: verified program page bundle destination is not the default run")
+			}
+		}
+	}
+	if defaultIndex < 0 {
+		return nil, -1, fmt.Errorf("report: verified program page bundle default target is missing")
+	}
+	for index := range pages {
+		manifest := pages[index].manifest
+		if manifest.AnalysisRoot != defaultManifest.AnalysisRoot ||
+			manifest.RepositoryStateSHA256 != defaultManifest.RepositoryStateSHA256 ||
+			manifest.MaterialInputs.SelectedRevision != defaultManifest.MaterialInputs.SelectedRevision ||
+			manifest.MaterialInputs.ProgramPagePortfolioSHA256 != defaultManifest.MaterialInputs.ProgramPagePortfolioSHA256 ||
+			manifest.MaterialInputs.RuntimePortfolioSHA256 != defaultManifest.MaterialInputs.RuntimePortfolioSHA256 ||
+			manifest.MaterialInputs.TargetOutcomePortfolioSHA256 != defaultManifest.MaterialInputs.TargetOutcomePortfolioSHA256 ||
+			!reflect.DeepEqual(manifest.StandaloneSource, defaultManifest.StandaloneSource) ||
+			pages[index].descriptor.repoName != defaultRepositoryName {
+			return nil, -1, fmt.Errorf("report: verified program page bundle repository identity mismatch")
+		}
+		if index == defaultIndex {
+			continue
+		}
+		htmlPath := filepath.Join(pages[index].receipt.RunDir(), "report.html")
+		if _, htmlErr := os.Lstat(htmlPath); htmlErr == nil {
+			return nil, -1, fmt.Errorf("report: verified backing child unexpectedly publishes report.html")
+		} else if !errors.Is(htmlErr, os.ErrNotExist) {
+			return nil, -1, fmt.Errorf("report: inspect verified backing child report.html: %w", htmlErr)
+		}
+	}
+	return pages, defaultIndex, nil
+}
+
+func expectedStandaloneTargetFromVerifiedRunV4(
+	verified verifiedStandaloneProgramPage,
+) (*preparedStandaloneTarget, error) {
+	descriptor := verified.descriptor
+	if descriptor == nil {
+		return nil, fmt.Errorf("verified target descriptor is missing")
+	}
+	root, err := os.OpenRoot(verified.receipt.RunDir())
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	reportJSON, err := readManifestFile(root, "report.json", maxManifestReportBytes)
+	if err != nil {
+		return nil, err
+	}
+	data, err := decodeStrictReportJSON(reportJSON)
+	if err != nil {
+		return nil, err
+	}
+	if data.ProgramPortfolio == nil {
+		return nil, fmt.Errorf("child report ProgramPortfolio authority is incomplete")
+	}
+	defaultEntry, err := data.ProgramPortfolio.defaultEntry()
+	if err != nil {
+		return nil, err
+	}
+	if !reflect.DeepEqual(defaultEntry.Target, descriptor.programPage.ProgramTarget) {
+		return nil, fmt.Errorf("child report ProgramTarget does not match verified receipt")
+	}
+	if data.RepoName != descriptor.repoName || data.CapturedRevision != descriptor.revision {
+		return nil, fmt.Errorf("child report repository identity does not match verified receipt")
+	}
+	sourceAuthority := OrdinaryReportHTMLAuthority{
+		StandaloneSource: verified.manifest.StandaloneSource,
+		AnalysisRoot:     verified.manifest.AnalysisRoot,
+		RepositoryRoot:   verified.manifest.RepositoryState.Identity,
+	}
+	githubLinks, gitlabLinks, err := ordinaryHTMLSourceLinks(data.CapturedRevision, sourceAuthority)
+	if err != nil {
+		return nil, err
+	}
+	data.GitHubSourceLinks = githubLinks
+	data.GitLabSourceLinks = gitlabLinks
+	target, err := ProjectBrowserTargetPayload(&data)
+	if err != nil {
+		return nil, err
+	}
+	targetRaw, err := encodeBrowserTargetPayloadForHTML(target, descriptor.localRoots)
+	if err != nil {
+		return nil, err
+	}
+	target, err = DecodeBrowserTargetPayload(targetRaw)
+	if err != nil {
+		return nil, err
+	}
+	ownedData := data
+	prepared := &preparedStandaloneTarget{
+		programPage:   descriptor.programPage,
+		target:        target,
+		targetPayload: targetRaw,
+		reportData:    &ownedData,
+		host:          descriptor.host,
+		repositoryURL: descriptor.repositoryURL,
+		revision:      descriptor.revision,
+		repoName:      descriptor.repoName,
+		localRoots:    append([]string(nil), descriptor.localRoots...),
+	}
+	if err := matchVerifiedStandaloneDescriptor(prepared, descriptor); err != nil {
+		return nil, err
+	}
+	return prepared, nil
+}
+
+func matchVerifiedStandaloneDescriptor(
+	prepared *preparedStandaloneTarget,
+	descriptor *preparedStandaloneTarget,
+) error {
+	if prepared == nil || descriptor == nil ||
+		!reflect.DeepEqual(prepared.programPage, descriptor.programPage) ||
+		prepared.host != descriptor.host || prepared.repositoryURL != descriptor.repositoryURL ||
+		prepared.revision != descriptor.revision || prepared.repoName != descriptor.repoName ||
+		prepared.target.Target.ID != descriptor.programPage.ProgramTarget.ID ||
+		len(prepared.targetPayload) == 0 {
+		return fmt.Errorf("loaded target does not match its verified receipt")
+	}
+	return nil
+}
+
 type standaloneArtifactPublicationHooks struct {
 	afterTargetLoad     func(index int)
 	afterSpoolPrepared  func(path string)
