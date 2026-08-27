@@ -8,6 +8,7 @@
   "entrypoints": [
     {"path":"cmd/service/main.go","line":11,"symbol":"main"}
   ],
+  "callbacks": {"observed":4,"closed":2,"frontier":2},
   "instances": [
     {
       "id":"clickhouse",

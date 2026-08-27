@@ -1,0 +1,883 @@
+{
+  "version": 1,
+  "authority_sha256": "a6f492ded210630277f42eac2f88161f0cdf882ad7f04baf50eb4d26ac50b510",
+  "h0_sha256": "25198acc31182428997f5eee842d56bb6ff2b9e526c0d0945b925c916d447e74",
+  "instances": [
+    {
+      "id": "h1-instance-7eed864117280bdf80506864",
+      "h0_candidate_id": "h0-e513cd3b0d751e172208c4c0",
+      "dependency_id": "dependency-f31ce74651b8db6c9aadacdd",
+      "importer_ref": "importer-ab462c874bae64982165a043",
+      "package_path": "example.com/kubernetessdk",
+      "importer_package_path": "example.com/launchservice/internal/clients/kubernetes",
+      "importer_repository_path": "internal/clients/kubernetes",
+      "wrapper_type": "Client",
+      "wrapper_object_id": "program-object-fe077bddbfafc555a1290bd50024eb4a28c162d243668b0c0c1abe1df21ef822",
+      "verification_kind": "unit_test",
+      "complete": true,
+      "roles": [
+        {
+          "role": "configuration",
+          "evidence": [
+            {
+              "path": "internal/clients/kubernetes/config.go",
+              "source_sha256": "3257775c2c70504853f7e2f21af4656297440723fa9c20cf6dba65d17daf2841",
+              "line": 10,
+              "column": 6,
+              "symbol": "ConfigFromApplication",
+              "authority_id": "program-object-28db23806c7273aab42f55e9a69dc495aab8d6dcff1041c2def7a3f07ac1d53e"
+            }
+          ]
+        },
+        {
+          "role": "construction",
+          "evidence": [
+            {
+              "path": "internal/clients/kubernetes/client.go",
+              "source_sha256": "1dc3ced160c127d53cc0f377ee03038b869a02f40da6f1e0ef98ec73f109ab4c",
+              "line": 19,
+              "column": 6,
+              "symbol": "NewClient",
+              "authority_id": "program-object-cd88487ead8060945ae05428458aa8ee0a9ea1d9d92001daae0566018b1e54b5"
+            },
+            {
+              "path": "internal/clients/kubernetes/client.go",
+              "source_sha256": "1dc3ced160c127d53cc0f377ee03038b869a02f40da6f1e0ef98ec73f109ab4c",
+              "line": 20,
+              "column": 41,
+              "symbol": "kubernetessdk.New",
+              "authority_id": "program-relation-f788d11abd8f099fb07c2701caea6a7308c0ffec95791e6a9e1bb6c346db2181"
+            },
+            {
+              "path": "internal/clients/kubernetes/client.go",
+              "source_sha256": "1dc3ced160c127d53cc0f377ee03038b869a02f40da6f1e0ef98ec73f109ab4c",
+              "line": 24,
+              "column": 14,
+              "symbol": "factory",
+              "authority_id": "program-relation-4eb2f8d0204758ec0c7132bb7516a6bc9e7c9c6ba4c7ffad8e6969107442f978"
+            }
+          ]
+        },
+        {
+          "role": "local_wrapper",
+          "evidence": [
+            {
+              "path": "internal/clients/kubernetes/client.go",
+              "source_sha256": "1dc3ced160c127d53cc0f377ee03038b869a02f40da6f1e0ef98ec73f109ab4c",
+              "line": 11,
+              "column": 6,
+              "symbol": "Client struct",
+              "authority_id": "program-object-fe077bddbfafc555a1290bd50024eb4a28c162d243668b0c0c1abe1df21ef822"
+            }
+          ]
+        },
+        {
+          "role": "consumer_boundary",
+          "evidence": [
+            {
+              "path": "internal/launch/service.go",
+              "source_sha256": "56f95f98596fa97902f451f34742a938324afb9fafce2ebc621addaf58482ab6",
+              "line": 13,
+              "column": 6,
+              "symbol": "NamespaceLister interface",
+              "authority_id": "program-object-50cebe30cae1cfa0437dde8902f049972f96699256758348338bec9c81db8eda"
+            }
+          ]
+        },
+        {
+          "role": "application_wiring",
+          "evidence": [
+            {
+              "path": "internal/app/wiring.go",
+              "source_sha256": "2980d04353cea972bbb71df95abf3c6e0888c1389b46d61f76b242d758b69eb6",
+              "line": 21,
+              "column": 27,
+              "symbol": "kubernetes.NewClient",
+              "authority_id": "program-relation-068731fc3f4311d867d7058aa47e5773eb512a031125507acaedf9292f035c58"
+            }
+          ]
+        },
+        {
+          "role": "production_operation",
+          "evidence": [
+            {
+              "path": "internal/launch/service.go",
+              "source_sha256": "56f95f98596fa97902f451f34742a938324afb9fafce2ebc621addaf58482ab6",
+              "line": 45,
+              "column": 15,
+              "symbol": "service.clusters.ListNamespaces",
+              "authority_id": "program-relation-b6b936174e2b8442743b129fc4b165b258b091d9655886d5d0447b9bbfea9926"
+            }
+          ]
+        },
+        {
+          "role": "verification",
+          "evidence": [
+            {
+              "path": "internal/clients/kubernetes/client_test.go",
+              "source_sha256": "993606ee824ca563969c45d71561deae9e3a58bf85c0bfc76974f9baa49aa93c",
+              "line": 10,
+              "column": 6,
+              "symbol": "TestClientListsNamespaces"
+            },
+            {
+              "path": "internal/clients/kubernetes/client_test.go",
+              "source_sha256": "993606ee824ca563969c45d71561deae9e3a58bf85c0bfc76974f9baa49aa93c",
+              "line": 19,
+              "column": 5,
+              "symbol": "len(namespaces) != 2 || namespaces[1] != \"launch\""
+            }
+          ]
+        },
+        {
+          "role": "observability",
+          "evidence": [
+            {
+              "path": "internal/clients/kubernetes/client.go",
+              "source_sha256": "1dc3ced160c127d53cc0f377ee03038b869a02f40da6f1e0ef98ec73f109ab4c",
+              "line": 34,
+              "column": 3,
+              "symbol": "client.metrics.RecordAttempt",
+              "authority_id": "program-relation-795557b13626aadfba61e979bf95052f25861c6fb51364baf4ab8758f66a9f81"
+            },
+            {
+              "path": "internal/clients/kubernetes/client.go",
+              "source_sha256": "1dc3ced160c127d53cc0f377ee03038b869a02f40da6f1e0ef98ec73f109ab4c",
+              "line": 40,
+              "column": 3,
+              "symbol": "client.metrics.RecordFailure",
+              "authority_id": "program-relation-688cdbc4ddbf2732498eff91a5843a674ad67faf26b5e26b56c1db2f667f68ee"
+            },
+            {
+              "path": "internal/clients/kubernetes/client.go",
+              "source_sha256": "1dc3ced160c127d53cc0f377ee03038b869a02f40da6f1e0ef98ec73f109ab4c",
+              "line": 41,
+              "column": 3,
+              "symbol": "observability.ClientFailure",
+              "authority_id": "program-relation-dd185b9c03fd00d026e02efd629cd4621e74d66a709a08d54d2ac313548b5293"
+            }
+          ]
+        },
+        {
+          "role": "failure_policy",
+          "evidence": [
+            {
+              "path": "internal/clients/kubernetes/client.go",
+              "source_sha256": "1dc3ced160c127d53cc0f377ee03038b869a02f40da6f1e0ef98ec73f109ab4c",
+              "line": 33,
+              "column": 20,
+              "symbol": "attempt \u003c= client.retries"
+            }
+          ]
+        }
+      ],
+      "missing": []
+    },
+    {
+      "id": "h1-instance-8a61a906efdc95851badefd3",
+      "h0_candidate_id": "h0-fe0ad8f2d4d305b20db643f1",
+      "dependency_id": "dependency-6146617615442179c4d53903",
+      "importer_ref": "importer-824c15c875920e3eeae11e06",
+      "package_path": "example.com/notifiersdk",
+      "importer_package_path": "example.com/launchservice/internal/clients/notifier",
+      "importer_repository_path": "internal/clients/notifier",
+      "wrapper_type": "Client",
+      "wrapper_object_id": "program-object-db11ffff293d8337033f371cce8b18cc5ea4442cfc50eff145151bb80be0353b",
+      "verification_kind": "none",
+      "complete": false,
+      "roles": [
+        {
+          "role": "configuration",
+          "evidence": [
+            {
+              "path": "internal/clients/notifier/config.go",
+              "source_sha256": "5fe10b17db2a0d5b15805e3aadecc0836305d1eb1a38b3d258ef6cbc823c06e7",
+              "line": 9,
+              "column": 6,
+              "symbol": "ConfigFromApplication",
+              "authority_id": "program-object-caf701a08b349c4f8eeef7339badb2f4a80db313331f85a37531be6695603f9f"
+            }
+          ]
+        },
+        {
+          "role": "construction",
+          "evidence": [
+            {
+              "path": "internal/clients/notifier/client.go",
+              "source_sha256": "9afd72a3f9e6c9ac67024705b58b296585e1bf7b3546fbbdb78cc41656c8a3b0",
+              "line": 13,
+              "column": 6,
+              "symbol": "NewClient",
+              "authority_id": "program-object-137baec5deec9e49adee3888402016c5a484f29842b4121497e46105bdc1497f"
+            },
+            {
+              "path": "internal/clients/notifier/client.go",
+              "source_sha256": "9afd72a3f9e6c9ac67024705b58b296585e1bf7b3546fbbdb78cc41656c8a3b0",
+              "line": 14,
+              "column": 25,
+              "symbol": "notifiersdk.New",
+              "authority_id": "program-relation-f00ed30528a1243ef9456682c8ed513afff3a42949a27733354506b471a505c8"
+            }
+          ]
+        },
+        {
+          "role": "local_wrapper",
+          "evidence": [
+            {
+              "path": "internal/clients/notifier/client.go",
+              "source_sha256": "9afd72a3f9e6c9ac67024705b58b296585e1bf7b3546fbbdb78cc41656c8a3b0",
+              "line": 9,
+              "column": 6,
+              "symbol": "Client struct",
+              "authority_id": "program-object-db11ffff293d8337033f371cce8b18cc5ea4442cfc50eff145151bb80be0353b"
+            }
+          ]
+        },
+        {
+          "role": "consumer_boundary",
+          "evidence": [
+            {
+              "path": "internal/launch/service.go",
+              "source_sha256": "56f95f98596fa97902f451f34742a938324afb9fafce2ebc621addaf58482ab6",
+              "line": 9,
+              "column": 6,
+              "symbol": "LaunchNotifier interface",
+              "authority_id": "program-object-85eba429c14bffb28f1622697ec10c7438f8f125c40bce60f95786730054306e"
+            }
+          ]
+        },
+        {
+          "role": "application_wiring",
+          "evidence": [
+            {
+              "path": "internal/app/wiring.go",
+              "source_sha256": "2980d04353cea972bbb71df95abf3c6e0888c1389b46d61f76b242d758b69eb6",
+              "line": 33,
+              "column": 20,
+              "symbol": "notifier.NewClient",
+              "authority_id": "program-relation-94c56bee171e47fac94f4748507c011457538bec55117fe21379549e809e355f"
+            }
+          ]
+        },
+        {
+          "role": "production_operation",
+          "evidence": [
+            {
+              "path": "internal/launch/service.go",
+              "source_sha256": "56f95f98596fa97902f451f34742a938324afb9fafce2ebc621addaf58482ab6",
+              "line": 42,
+              "column": 12,
+              "symbol": "service.notifier.SendLaunch",
+              "authority_id": "program-relation-115d1d51ed469d8c880d501bf36e41575c24f6579a7b006abe05606aff4824e6"
+            }
+          ]
+        }
+      ],
+      "missing": [
+        "verification",
+        "observability",
+        "failure_policy"
+      ]
+    },
+    {
+      "id": "h1-instance-ac28c98a439448092c34e1d0",
+      "h0_candidate_id": "h0-2572c70a37ad4dc60bf20b06",
+      "dependency_id": "dependency-309ef1f5c8eeb49972854e31",
+      "importer_ref": "importer-d7b8087a8b0a299bc1bc123b",
+      "package_path": "example.com/clickhousesdk",
+      "importer_package_path": "example.com/launchservice/internal/clients/clickhouse",
+      "importer_repository_path": "internal/clients/clickhouse",
+      "wrapper_type": "Client",
+      "wrapper_object_id": "program-object-6fe36a27e024f0cccee163eddc2140795e47344b61519f97fb4f02ba6c6601a8",
+      "verification_kind": "integration_test",
+      "complete": true,
+      "roles": [
+        {
+          "role": "configuration",
+          "evidence": [
+            {
+              "path": "internal/clients/clickhouse/config.go",
+              "source_sha256": "d6bc4674e905b789eb835d44f941f2689afab03d17400c772ba5c3a6c0f00450",
+              "line": 9,
+              "column": 6,
+              "symbol": "ConfigFromApplication",
+              "authority_id": "program-object-9cce318196044e9c73d1e79f6a55f8d08296a673207c08c5c4a54bc9973e9535"
+            }
+          ]
+        },
+        {
+          "role": "construction",
+          "evidence": [
+            {
+              "path": "internal/clients/clickhouse/client.go",
+              "source_sha256": "b9d69985fdad01958bde376889bdda0e55ae25ef7ec09d780a2c539427df1c94",
+              "line": 16,
+              "column": 6,
+              "symbol": "NewClient",
+              "authority_id": "program-object-225477aa1dac6acabaee55f3235b5c06834359beb15d897b68d0dc202b902b84"
+            },
+            {
+              "path": "internal/clients/clickhouse/client.go",
+              "source_sha256": "b9d69985fdad01958bde376889bdda0e55ae25ef7ec09d780a2c539427df1c94",
+              "line": 17,
+              "column": 14,
+              "symbol": "clickhousesdk.Open",
+              "authority_id": "program-relation-6585b698b31b4250a76002024e0daf2cbd2d098ca34fcf39c7b3caba0d11c018"
+            }
+          ]
+        },
+        {
+          "role": "local_wrapper",
+          "evidence": [
+            {
+              "path": "internal/clients/clickhouse/client.go",
+              "source_sha256": "b9d69985fdad01958bde376889bdda0e55ae25ef7ec09d780a2c539427df1c94",
+              "line": 11,
+              "column": 6,
+              "symbol": "Client struct",
+              "authority_id": "program-object-6fe36a27e024f0cccee163eddc2140795e47344b61519f97fb4f02ba6c6601a8"
+            }
+          ]
+        },
+        {
+          "role": "consumer_boundary",
+          "evidence": [
+            {
+              "path": "internal/launch/service.go",
+              "source_sha256": "56f95f98596fa97902f451f34742a938324afb9fafce2ebc621addaf58482ab6",
+              "line": 17,
+              "column": 6,
+              "symbol": "LaunchHistory interface",
+              "authority_id": "program-object-03440bb328a7485e001d64d82597a3cbff4ac2847f15c4430d5bfb29f9dcbacc"
+            }
+          ]
+        },
+        {
+          "role": "application_wiring",
+          "evidence": [
+            {
+              "path": "internal/app/wiring.go",
+              "source_sha256": "2980d04353cea972bbb71df95abf3c6e0888c1389b46d61f76b242d758b69eb6",
+              "line": 27,
+              "column": 27,
+              "symbol": "clickhouse.NewClient",
+              "authority_id": "program-relation-a25639cae9c51c8ee8aa17576ccf00e2e83bd642cfd1fb24c905bdf43e17b559"
+            }
+          ]
+        },
+        {
+          "role": "production_operation",
+          "evidence": [
+            {
+              "path": "internal/launch/service.go",
+              "source_sha256": "56f95f98596fa97902f451f34742a938324afb9fafce2ebc621addaf58482ab6",
+              "line": 48,
+              "column": 15,
+              "symbol": "service.history.RecentLaunches",
+              "authority_id": "program-relation-40b2a0d5d00b2b77f083f48a06c4875d5e354b29e80e701c7d82df7f4f40b27a"
+            }
+          ]
+        },
+        {
+          "role": "verification",
+          "evidence": [
+            {
+              "path": "test/integration/clickhouse_test.go",
+              "source_sha256": "a5d3778b46180e9c990a0e0ddd5f614bf68a240cd2e7ae3bf215b99997b603ad",
+              "line": 11,
+              "column": 6,
+              "symbol": "TestClickHouseClientContract"
+            },
+            {
+              "path": "test/integration/clickhouse_test.go",
+              "source_sha256": "a5d3778b46180e9c990a0e0ddd5f614bf68a240cd2e7ae3bf215b99997b603ad",
+              "line": 23,
+              "column": 5,
+              "symbol": "len(launches) != 2 || launches[0] != \"launch-001\""
+            }
+          ]
+        },
+        {
+          "role": "observability",
+          "evidence": [
+            {
+              "path": "internal/clients/clickhouse/client.go",
+              "source_sha256": "b9d69985fdad01958bde376889bdda0e55ae25ef7ec09d780a2c539427df1c94",
+              "line": 25,
+              "column": 2,
+              "symbol": "client.metrics.RecordAttempt",
+              "authority_id": "program-relation-1981fece5c8888434d2b78dc50ce90ea3036df5d367ea12a44e11597b24c765c"
+            },
+            {
+              "path": "internal/clients/clickhouse/client.go",
+              "source_sha256": "b9d69985fdad01958bde376889bdda0e55ae25ef7ec09d780a2c539427df1c94",
+              "line": 28,
+              "column": 3,
+              "symbol": "client.metrics.RecordFailure",
+              "authority_id": "program-relation-20782d8987258a942503537d35240a24035eedd10aa907cc2d59c5ae6a80c407"
+            },
+            {
+              "path": "internal/clients/clickhouse/client.go",
+              "source_sha256": "b9d69985fdad01958bde376889bdda0e55ae25ef7ec09d780a2c539427df1c94",
+              "line": 29,
+              "column": 3,
+              "symbol": "observability.ClientFailure",
+              "authority_id": "program-relation-26d4d192071a1054cda2ba85cb589ff266481af782f6911b2d6da69a1a1a2619"
+            }
+          ]
+        }
+      ],
+      "missing": []
+    },
+    {
+      "id": "h1-instance-e6c59de5d19c88e2094aa1b8",
+      "h0_candidate_id": "h0-b38ef0ce00c12105185acb90",
+      "dependency_id": "dependency-29faba0a7f9d592069df4a9e",
+      "importer_ref": "importer-3f7cc9ca910705eb63b6a3be",
+      "package_path": "example.com/vaultsdk",
+      "importer_package_path": "example.com/launchservice/internal/clients/vault",
+      "importer_repository_path": "internal/clients/vault",
+      "wrapper_type": "Client",
+      "wrapper_object_id": "program-object-e298289a13874485ed354403cf0867956efa255c3d4c99a397650417c25ff2d7",
+      "verification_kind": "unit_test",
+      "complete": true,
+      "roles": [
+        {
+          "role": "configuration",
+          "evidence": [
+            {
+              "path": "internal/clients/vault/config.go",
+              "source_sha256": "2359471734c814d138c668ac89f2a0e254e7cb8e3c40faa6fec599504dad74e0",
+              "line": 16,
+              "column": 6,
+              "symbol": "ConfigFromApplication",
+              "authority_id": "program-object-8e96d6c70e4d13930cfe9556cb935c12f40bbfab757a429d42b3002312e5d8ef"
+            }
+          ]
+        },
+        {
+          "role": "construction",
+          "evidence": [
+            {
+              "path": "internal/clients/vault/client.go",
+              "source_sha256": "0f3d6516bab4ef96090d1e6575c2bc8d9f44bb1586358ff102f02574f20a6691",
+              "line": 19,
+              "column": 6,
+              "symbol": "NewClient",
+              "authority_id": "program-object-3cbcd5bee86b4de6ac651f93825919cef4532e0b37890dda324dec7fbff2fbde"
+            },
+            {
+              "path": "internal/clients/vault/client.go",
+              "source_sha256": "0f3d6516bab4ef96090d1e6575c2bc8d9f44bb1586358ff102f02574f20a6691",
+              "line": 20,
+              "column": 14,
+              "symbol": "vaultsdk.New",
+              "authority_id": "program-relation-4a422e8ef5d233aa175858585d848e7cb0c801a1bf9d2e944e0bc26e50d273c5"
+            }
+          ]
+        },
+        {
+          "role": "local_wrapper",
+          "evidence": [
+            {
+              "path": "internal/clients/vault/client.go",
+              "source_sha256": "0f3d6516bab4ef96090d1e6575c2bc8d9f44bb1586358ff102f02574f20a6691",
+              "line": 12,
+              "column": 6,
+              "symbol": "Client struct",
+              "authority_id": "program-object-e298289a13874485ed354403cf0867956efa255c3d4c99a397650417c25ff2d7"
+            }
+          ]
+        },
+        {
+          "role": "consumer_boundary",
+          "evidence": [
+            {
+              "path": "internal/launch/service.go",
+              "source_sha256": "56f95f98596fa97902f451f34742a938324afb9fafce2ebc621addaf58482ab6",
+              "line": 5,
+              "column": 6,
+              "symbol": "SecretReader interface",
+              "authority_id": "program-object-9f5db3ed3e22f838bbf361e404cfc2dff3e68015c13aec5fb681cf4b1c096871"
+            }
+          ]
+        },
+        {
+          "role": "application_wiring",
+          "evidence": [
+            {
+              "path": "internal/app/wiring.go",
+              "source_sha256": "2980d04353cea972bbb71df95abf3c6e0888c1389b46d61f76b242d758b69eb6",
+              "line": 17,
+              "column": 22,
+              "symbol": "vault.NewClient",
+              "authority_id": "program-relation-608e29a926a57324ca3fa8e546d981c3165bf0121f34f03a4e9b5749220312e4"
+            }
+          ]
+        },
+        {
+          "role": "production_operation",
+          "evidence": [
+            {
+              "path": "internal/launch/service.go",
+              "source_sha256": "56f95f98596fa97902f451f34742a938324afb9fafce2ebc621addaf58482ab6",
+              "line": 38,
+              "column": 17,
+              "symbol": "service.secrets.ReadSecret",
+              "authority_id": "program-relation-4f5323a627de1cf8f356df64d69bd5780747926bd84ab9a70796b6f8d2e2428f"
+            }
+          ]
+        },
+        {
+          "role": "verification",
+          "evidence": [
+            {
+              "path": "internal/clients/vault/client_test.go",
+              "source_sha256": "bb1414fa4e264428ae23cf46254b37d33d0593f3858bab9ea5a9b5e009e441c5",
+              "line": 11,
+              "column": 6,
+              "symbol": "TestClientReadsSecret"
+            },
+            {
+              "path": "internal/clients/vault/client_test.go",
+              "source_sha256": "bb1414fa4e264428ae23cf46254b37d33d0593f3858bab9ea5a9b5e009e441c5",
+              "line": 22,
+              "column": 5,
+              "symbol": "value != \"value:launch/key\""
+            }
+          ]
+        },
+        {
+          "role": "observability",
+          "evidence": [
+            {
+              "path": "internal/clients/vault/client.go",
+              "source_sha256": "0f3d6516bab4ef96090d1e6575c2bc8d9f44bb1586358ff102f02574f20a6691",
+              "line": 30,
+              "column": 3,
+              "symbol": "client.metrics.RecordAttempt",
+              "authority_id": "program-relation-32840a2a9527aad7500961e12b7b86819ed4e9a88d5e81b18fca33a3a7854caf"
+            },
+            {
+              "path": "internal/clients/vault/client.go",
+              "source_sha256": "0f3d6516bab4ef96090d1e6575c2bc8d9f44bb1586358ff102f02574f20a6691",
+              "line": 38,
+              "column": 3,
+              "symbol": "client.metrics.RecordFailure",
+              "authority_id": "program-relation-d2ee21cd6cdfd5c1535348c14979650270d0cd9b483f125f5ad5ba8bf9b6df94"
+            },
+            {
+              "path": "internal/clients/vault/client.go",
+              "source_sha256": "0f3d6516bab4ef96090d1e6575c2bc8d9f44bb1586358ff102f02574f20a6691",
+              "line": 39,
+              "column": 3,
+              "symbol": "observability.ClientFailure",
+              "authority_id": "program-relation-ae8d938dc7bc0c47d596f7cfbfd22b495179edb2f7d1e084f96930945d393d10"
+            }
+          ]
+        },
+        {
+          "role": "failure_policy",
+          "evidence": [
+            {
+              "path": "internal/clients/vault/client.go",
+              "source_sha256": "0f3d6516bab4ef96090d1e6575c2bc8d9f44bb1586358ff102f02574f20a6691",
+              "line": 29,
+              "column": 20,
+              "symbol": "attempt \u003c= client.retries"
+            },
+            {
+              "path": "internal/clients/vault/client.go",
+              "source_sha256": "0f3d6516bab4ef96090d1e6575c2bc8d9f44bb1586358ff102f02574f20a6691",
+              "line": 31,
+              "column": 29,
+              "symbol": "context.WithTimeout",
+              "authority_id": "program-relation-efca19048a5d1439889a964f77a289a7da6bb4b229b6fefdbc63eacdc5352c5d"
+            }
+          ]
+        }
+      ],
+      "missing": []
+    }
+  ],
+  "excluded": [
+    {
+      "id": "h1-excluded-04647a80302de20cc35241b9",
+      "kind": "prose",
+      "origin_id": "README.md",
+      "reason": "not_production_reachable",
+      "evidence": [
+        {
+          "path": "README.md",
+          "source_sha256": "badf9ac79061ab886711bd69c121d6c10389794938ff8887321c0817c3f15ae5",
+          "line": 3,
+          "column": 1,
+          "symbol": "Historical setup notes say external connections are created in `cmd/service`."
+        }
+      ]
+    },
+    {
+      "id": "h1-excluded-0a35deb026b0b5ca6802940b",
+      "kind": "external_dependency",
+      "origin_id": "h0-3a9497c3b85c538a1f43f5a8",
+      "reason": "not_production_reachable",
+      "evidence": [
+        {
+          "path": "internal/legacy/client.go",
+          "source_sha256": "a71cd61a91c7b5b9fe98f597bb7277810cc20e74ca8ac28b95d033b67d325567",
+          "line": 6,
+          "column": 6,
+          "symbol": "Client struct",
+          "authority_id": "program-object-bce8bd4ba43962d0892b581cdbad0b8250c079a8a8b26ada4ef24a9f86dbb5cc"
+        },
+        {
+          "path": "internal/legacy/client.go",
+          "source_sha256": "a71cd61a91c7b5b9fe98f597bb7277810cc20e74ca8ac28b95d033b67d325567",
+          "line": 10,
+          "column": 6,
+          "symbol": "NewClient",
+          "authority_id": "program-object-eb4a90fa4664cfefedf55762d7905cd65b7cef7fa05a414afed51511ea303ba9"
+        }
+      ]
+    },
+    {
+      "id": "h1-excluded-49bc8b199351e8be0ef9e10a",
+      "kind": "external_dependency",
+      "origin_id": "h0-c95bb86e96f04c6c9ebe2312",
+      "reason": "generated",
+      "evidence": [
+        {
+          "path": "internal/gen/mock_vault.gen.go",
+          "source_sha256": "68cf5a728018f1f219918be60b6f4330cb6d1c78bbbf0bd925b18202356a5b98",
+          "line": 1,
+          "column": 4,
+          "symbol": "Code generated by mockgen. DO NOT EDIT."
+        },
+        {
+          "path": "internal/gen/mock_vault.gen.go",
+          "source_sha256": "68cf5a728018f1f219918be60b6f4330cb6d1c78bbbf0bd925b18202356a5b98",
+          "line": 17,
+          "column": 6,
+          "symbol": "GeneratedKubernetesClient struct",
+          "authority_id": "program-object-36b7b774a02f3c61af782d826c220cdcb579c7d1599d04dcde40a6e3b26f6483"
+        }
+      ]
+    },
+    {
+      "id": "h1-excluded-7e1cb8c7c5862e5f7538e9ab",
+      "kind": "test_type",
+      "origin_id": "internal/clients/kubernetes/fake_test.go:6:fakeNamespaceLister",
+      "reason": "test_only",
+      "evidence": [
+        {
+          "path": "internal/clients/kubernetes/fake_test.go",
+          "source_sha256": "35139283c3694495603d11ff9dccf514c7c5d241ab8bf51959d0341c91a6393d",
+          "line": 6,
+          "column": 6,
+          "symbol": "fakeNamespaceLister struct"
+        }
+      ]
+    },
+    {
+      "id": "h1-excluded-93e81cf979f5197d93acb74a",
+      "kind": "test_type",
+      "origin_id": "internal/clients/vault/client_test.go:28:fakeVault",
+      "reason": "test_only",
+      "evidence": [
+        {
+          "path": "internal/clients/vault/client_test.go",
+          "source_sha256": "bb1414fa4e264428ae23cf46254b37d33d0593f3858bab9ea5a9b5e009e441c5",
+          "line": 28,
+          "column": 6,
+          "symbol": "fakeVault struct"
+        }
+      ]
+    },
+    {
+      "id": "h1-excluded-9771f244f46ae33adde6f909",
+      "kind": "stdlib_helper",
+      "origin_id": "program-object-3c912cea50ee282aa91cf698717762e593c38ee08ec38c5195f38b287d699a4d",
+      "reason": "not_external_boundary",
+      "evidence": [
+        {
+          "path": "internal/netutil/http.go",
+          "source_sha256": "dbfb1da730bb54eac56e4d12e0dfd6b37ef5ab7c0689fa391045b7e7f2590819",
+          "line": 9,
+          "column": 6,
+          "symbol": "DoHealthRequest",
+          "authority_id": "program-object-3c912cea50ee282aa91cf698717762e593c38ee08ec38c5195f38b287d699a4d"
+        }
+      ]
+    }
+  ],
+  "roles": [
+    {
+      "role": "configuration",
+      "complete_instances": 3,
+      "necessity": "required"
+    },
+    {
+      "role": "construction",
+      "complete_instances": 3,
+      "necessity": "required"
+    },
+    {
+      "role": "local_wrapper",
+      "complete_instances": 3,
+      "necessity": "required"
+    },
+    {
+      "role": "consumer_boundary",
+      "complete_instances": 3,
+      "necessity": "required"
+    },
+    {
+      "role": "application_wiring",
+      "complete_instances": 3,
+      "necessity": "required"
+    },
+    {
+      "role": "production_operation",
+      "complete_instances": 3,
+      "necessity": "required"
+    },
+    {
+      "role": "verification",
+      "complete_instances": 3,
+      "necessity": "required"
+    },
+    {
+      "role": "observability",
+      "complete_instances": 3,
+      "necessity": "required"
+    },
+    {
+      "role": "failure_policy",
+      "complete_instances": 2,
+      "necessity": "common"
+    }
+  ],
+  "callbacks": {
+    "observed": 4,
+    "closed": 2,
+    "frontier": 2,
+    "closures": [
+      {
+        "id": "h1-callback-2c865ddffba2cd9c229d02eb",
+        "kind": "parameter_invoke",
+        "pass_relation_id": "program-relation-f788d11abd8f099fb07c2701caea6a7308c0ffec95791e6a9e1bb6c346db2181",
+        "unresolved_relation_id": "program-relation-4eb2f8d0204758ec0c7132bb7516a6bc9e7c9c6ba4c7ffad8e6969107442f978",
+        "target_object_id": "program-object-4a2d214beab50c2306f38aa845478e64a8a9eaf250a744d194d099467a8249c9",
+        "evidence": [
+          {
+            "path": "internal/clients/kubernetes/client.go",
+            "source_sha256": "1dc3ced160c127d53cc0f377ee03038b869a02f40da6f1e0ef98ec73f109ab4c",
+            "line": 20,
+            "column": 41,
+            "symbol": "kubernetessdk.New",
+            "authority_id": "program-relation-f788d11abd8f099fb07c2701caea6a7308c0ffec95791e6a9e1bb6c346db2181"
+          },
+          {
+            "path": "internal/clients/kubernetes/client.go",
+            "source_sha256": "1dc3ced160c127d53cc0f377ee03038b869a02f40da6f1e0ef98ec73f109ab4c",
+            "line": 24,
+            "column": 14,
+            "symbol": "factory",
+            "authority_id": "program-relation-4eb2f8d0204758ec0c7132bb7516a6bc9e7c9c6ba4c7ffad8e6969107442f978"
+          }
+        ]
+      },
+      {
+        "id": "h1-callback-a7c72d7e0279a47b2a78011b",
+        "kind": "stored_field_invoke",
+        "pass_relation_id": "program-relation-a31ea5a83bf35d11280d9d408148c5b954aa78c4c1cdfbb1a336d9b40b553c35",
+        "unresolved_relation_id": "program-relation-424acecda4c3e31297ae1e124ee1e4b24d75ce3e39a0768f3dcad5f680880bbe",
+        "target_object_id": "program-object-9b32907dd8a3ca74f9871c9177b84b96932ee8004be54f3fde1e5462f6183e9a",
+        "evidence": [
+          {
+            "path": "internal/launch/handler.go",
+            "source_sha256": "622aa1be569c4e2beffdb7bc1400e12dee97836364cab4d8d79f7fa833da3f0f",
+            "line": 16,
+            "column": 12,
+            "symbol": "handler.resolve",
+            "authority_id": "program-relation-424acecda4c3e31297ae1e124ee1e4b24d75ce3e39a0768f3dcad5f680880bbe"
+          },
+          {
+            "path": "internal/launch/service.go",
+            "source_sha256": "56f95f98596fa97902f451f34742a938324afb9fafce2ebc621addaf58482ab6",
+            "line": 55,
+            "column": 24,
+            "symbol": "service.Resolve",
+            "authority_id": "program-relation-a31ea5a83bf35d11280d9d408148c5b954aa78c4c1cdfbb1a336d9b40b553c35"
+          }
+        ]
+      }
+    ]
+  },
+  "reachability": {
+    "seed_object_ids": [
+      "program-object-d93d6e7554a17c128607d881ba4263c635e29db29e9c7d33f547ba49c3a77a38"
+    ],
+    "reached_object_ids": [
+      "program-object-022225236320919dd21adf2a70038c071453ee4410a03f586da3c07a6ce59cca",
+      "program-object-137baec5deec9e49adee3888402016c5a484f29842b4121497e46105bdc1497f",
+      "program-object-17fbc15bf22fca7bc7ecfdc41b04d8056a807985d5f8e6281a8885f925acbe3d",
+      "program-object-225477aa1dac6acabaee55f3235b5c06834359beb15d897b68d0dc202b902b84",
+      "program-object-28db23806c7273aab42f55e9a69dc495aab8d6dcff1041c2def7a3f07ac1d53e",
+      "program-object-3cbcd5bee86b4de6ac651f93825919cef4532e0b37890dda324dec7fbff2fbde",
+      "program-object-4eaa2b12b57e57a794cf01b8538ed46d4518768ea3da2b26be9b07f3290d44af",
+      "program-object-8529344e5a04955af132d4d9e30471a9c1d404c59e4316231799ebd3e6f4b13b",
+      "program-object-8e96d6c70e4d13930cfe9556cb935c12f40bbfab757a429d42b3002312e5d8ef",
+      "program-object-93e9d794ce5ae636586629d4ad0fd52374a77e0476e17ba696241feb7c881df0",
+      "program-object-9b32907dd8a3ca74f9871c9177b84b96932ee8004be54f3fde1e5462f6183e9a",
+      "program-object-9cce318196044e9c73d1e79f6a55f8d08296a673207c08c5c4a54bc9973e9535",
+      "program-object-a132e923993edaaff9ad295df8549699b97abd04c910b39b2c56ae3acc2e6c50",
+      "program-object-a47cb5993b4bd9d8965758311b0be8a2e1b46787379ab06aec0f7718db132523",
+      "program-object-b3333d791400f8a73a923347ff85410204bc53ab533b3fa1beea68fb055fb3bc",
+      "program-object-caf701a08b349c4f8eeef7339badb2f4a80db313331f85a37531be6695603f9f",
+      "program-object-cd88487ead8060945ae05428458aa8ee0a9ea1d9d92001daae0566018b1e54b5",
+      "program-object-d058f75cc18daf6a094dcac4c8ed0d5c30a4663f6233b3e663ca3fcce105a99e",
+      "program-object-d749da9b2efb1fa304ebfc2622b296d0b3bbdf49e4ecca7b92de59664b60fa96",
+      "program-object-d93d6e7554a17c128607d881ba4263c635e29db29e9c7d33f547ba49c3a77a38",
+      "program-object-deda9219588f95e8ed9260cf5cd5a68d4691ead47717a276c18a9d45c474b1d3",
+      "program-object-ea43af82382730e237875e537043c83c312f207196814707859763def98390dc",
+      "program-object-f70bdebbb72e9761c9d7bd1abc00fe1865c9b4ee36fb73724e1ba233e191f166"
+    ],
+    "exact_relation_ids": [
+      "program-relation-068731fc3f4311d867d7058aa47e5773eb512a031125507acaedf9292f035c58",
+      "program-relation-09cb7c80ae90d38ca55a2fd5647a3dd8860fd4f0933f9b6517aba16d3a1be67f",
+      "program-relation-115d1d51ed469d8c880d501bf36e41575c24f6579a7b006abe05606aff4824e6",
+      "program-relation-2058c6b538fdbd1762a83137a44da2e6a01e4e30c1397af262c0d8d206b91fc5",
+      "program-relation-22bb74b949e53cadb61c767bf164cf64818fe25a1e7b35b6d0ab290aea801e1d",
+      "program-relation-40b2a0d5d00b2b77f083f48a06c4875d5e354b29e80e701c7d82df7f4f40b27a",
+      "program-relation-4f5323a627de1cf8f356df64d69bd5780747926bd84ab9a70796b6f8d2e2428f",
+      "program-relation-55ff4be012675fa7a6e929b9a223f1ab1cb8d8349e54c090e8a31348a456626d",
+      "program-relation-5dd0bd751e79cf55fabe05dadf4734c8e4e396adacb9e20186de013383124e09",
+      "program-relation-608e29a926a57324ca3fa8e546d981c3165bf0121f34f03a4e9b5749220312e4",
+      "program-relation-6f32ace7e50f84cfbaf233814da9ca1ef15c6e5ea2ae9c8d968f7a9bd1632469",
+      "program-relation-8af3425d8033f667da454efa5ac48410ee17d9bb78f1c9a44a2001da43cdc5b1",
+      "program-relation-94c56bee171e47fac94f4748507c011457538bec55117fe21379549e809e355f",
+      "program-relation-a13c9dfcf0f8cb1ece296f8dd4f60ebeb0af38438dd3661971efdb1cc5cff652",
+      "program-relation-a25639cae9c51c8ee8aa17576ccf00e2e83bd642cfd1fb24c905bdf43e17b559",
+      "program-relation-b0e1c31673bb4e97e3c89865d5edd7119e4bd22fe07e75e6fb94189858a6a691",
+      "program-relation-b6b936174e2b8442743b129fc4b165b258b091d9655886d5d0447b9bbfea9926",
+      "program-relation-c140a180b700d6019658e9ef5ad64d48112870a6e2530231380558206e2ac471",
+      "program-relation-c2e76e2daa2c005b452f527a381354e28cc282b09aa469cf074b5275a6572619",
+      "program-relation-f14a588a35aae9866acf516153b0dd427735454a7cbd81ec9044f6da17237f91",
+      "program-relation-fc259fcabe6180c2b0d7359c358657ff7e1a18dd08dae2bb4072e7d6dca47c12"
+    ]
+  },
+  "observed_universe": {
+    "h0_candidates": 6,
+    "generated_h0_groups": 1,
+    "qualifying_test_fakes": 2,
+    "prose_candidates": 1,
+    "stdlib_helpers": 1
+  },
+  "ledger": {
+    "observed": 10,
+    "admitted": 4,
+    "excluded": 6
+  },
+  "sha256": "8d2614e3c34005ee4bd2abde9a6eff124176facbaf743c5a85a69c37b902d4a7"
+}

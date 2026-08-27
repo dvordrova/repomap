@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "mutants": [
+    {
+      "name": "noise_false_shapes",
+      "oracle_delta": "none; added shapes remain outside the oracle universe",
+      "verdict": "PASS",
+      "ledger": {
+        "observed": 10,
+        "admitted": 4,
+        "excluded": 6
+      },
+      "instance_discovery": {
+        "truth": 4,
+        "predicted": 4,
+        "matched": 4,
+        "precision": 1,
+        "recall": 1
+      },
+      "role_coverage": {
+        "truth": 32,
+        "predicted": 32,
+        "matched": 32,
+        "precision": 1,
+        "recall": 1
+      },
+      "evidence_grounding": {
+        "correct": 43,
+        "total": 43,
+        "score": 1
+      },
+      "exclusion_grounding": {
+        "correct": 7,
+        "total": 7,
+        "score": 1
+      },
+      "callback_observed": 4,
+      "callback_closed": 2,
+      "callback_frontier": 2,
+      "production_load_count": 1,
+      "notifier_missing_roles": [
+        "verification",
+        "observability",
+        "failure_policy"
+      ]
+    },
+    {
+      "name": "renamed_symbols_and_boundary_directory",
+      "oracle_delta": "source paths and display symbols renamed; task semantics unchanged",
+      "verdict": "PASS",
+      "ledger": {
+        "observed": 10,
+        "admitted": 4,
+        "excluded": 6
+      },
+      "instance_discovery": {
+        "truth": 4,
+        "predicted": 4,
+        "matched": 4,
+        "precision": 1,
+        "recall": 1
+      },
+      "role_coverage": {
+        "truth": 32,
+        "predicted": 32,
+        "matched": 32,
+        "precision": 1,
+        "recall": 1
+      },
+      "evidence_grounding": {
+        "correct": 43,
+        "total": 43,
+        "score": 1
+      },
+      "exclusion_grounding": {
+        "correct": 7,
+        "total": 7,
+        "score": 1
+      },
+      "callback_observed": 4,
+      "callback_closed": 2,
+      "callback_frontier": 2,
+      "production_load_count": 1,
+      "notifier_missing_roles": [
+        "verification",
+        "observability",
+        "failure_policy"
+      ]
+    },
+    {
+      "name": "verification_layout_integration_to_unit",
+      "oracle_delta": "clickhouse verification path and kind changed to unit_test",
+      "verdict": "PASS",
+      "ledger": {
+        "observed": 10,
+        "admitted": 4,
+        "excluded": 6
+      },
+      "instance_discovery": {
+        "truth": 4,
+        "predicted": 4,
+        "matched": 4,
+        "precision": 1,
+        "recall": 1
+      },
+      "role_coverage": {
+        "truth": 32,
+        "predicted": 32,
+        "matched": 32,
+        "precision": 1,
+        "recall": 1
+      },
+      "evidence_grounding": {
+        "correct": 43,
+        "total": 43,
+        "score": 1
+      },
+      "exclusion_grounding": {
+        "correct": 7,
+        "total": 7,
+        "score": 1
+      },
+      "callback_observed": 4,
+      "callback_closed": 2,
+      "callback_frontier": 2,
+      "production_load_count": 1,
+      "notifier_missing_roles": [
+        "verification",
+        "observability",
+        "failure_policy"
+      ]
+    }
+  ]
+}
