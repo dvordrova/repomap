@@ -58,10 +58,11 @@ type ReportData struct {
 
 	// ArtifactsDir and the following fields are process-local publication
 	// authority. They are never persisted or embedded in the browser payload.
-	ArtifactsDir         string `json:"-"`
-	standaloneLocalRoots []string
-	materialInputPaths   []string
-	defaultProgramIndex  *programindex.Index
-	pythonTargetCatalog  *pythontarget.Catalog
-	declaredDependencies *dependencydeclaration.Result
+	ArtifactsDir                        string `json:"-"`
+	standaloneLocalRoots                []string
+	materialInputPaths                  []string
+	defaultProgramIndex                 *programindex.Index
+	defaultProgramIndexArtifactFilename string
+	pythonTargetCatalog                 *pythontarget.Catalog
+	declaredDependencies                *dependencydeclaration.Result
 }

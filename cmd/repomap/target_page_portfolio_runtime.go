@@ -12,6 +12,7 @@ import (
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/debugdump"
 	"github.com/dvordrova/repomap/internal/report"
+	"github.com/dvordrova/repomap/internal/runtimeportfolio"
 	"github.com/dvordrova/repomap/internal/snapshot"
 )
 
@@ -26,6 +27,16 @@ type targetPublishedRun struct {
 	// their fresh backing-data checks but do not decode the same ProgramIndex
 	// authority again merely to recover this immutable identity.
 	ProgramPage report.TargetNavigationPage
+	// Receipt is populated only after final shared portfolio/runtime/outcome
+	// artifacts have been installed into this backing page. It is valid for the
+	// remainder of the current publication transaction.
+	Receipt report.VerifiedRunReceipt
+	// RepositoryName and RuntimeTargetInput are the compact repository-overview
+	// projection derived from the already restored and validated ReportData.
+	// Keeping them transaction-local avoids rebuilding every completed page
+	// from disk before the shared runtime-portfolio request.
+	RepositoryName     string
+	RuntimeTargetInput runtimeportfolio.TargetInput
 	// SelectedTargetKey is the outer language-neutral adapter target identity
 	// used by the repository dispatcher. AnalysisTarget remains the inner Go
 	// authority and is intentionally absent on Python and JavaScript/TypeScript
@@ -704,18 +715,18 @@ func (run targetPublishedRun) generateWithTargetNavigation(
 	}
 }
 
-func (run targetPublishedRun) generateBackingPageData() error {
+func (run targetPublishedRun) generateBackingPageData() (report.VerifiedRunReceipt, error) {
 	switch {
 	case run.GitLabURL != "":
-		return report.GenerateAuthorizedGitLabPageData(
+		return report.GenerateAuthorizedGitLabPageDataVerified(
 			run.RunDir, run.Authority, run.GitLabURL,
 		)
 	case run.GitHubURL != "":
-		return report.GenerateAuthorizedGitHubPageData(
+		return report.GenerateAuthorizedGitHubPageDataVerified(
 			run.RunDir, run.Authority, run.GitHubURL,
 		)
 	default:
-		return report.GenerateAuthorizedPageData(run.RunDir, run.Authority)
+		return report.GenerateAuthorizedPageDataVerified(run.RunDir, run.Authority)
 	}
 }
 

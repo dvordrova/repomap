@@ -266,10 +266,108 @@ func TestCompleteRunManifestVerificationReadsAndDecodesEachAuthorityOnce(t *test
 	if !filepath.IsAbs(receipt.RunDir()) || filepath.Clean(receipt.RunDir()) != receipt.RunDir() {
 		t.Fatalf("verified receipt run dir = %q, want clean absolute path", receipt.RunDir())
 	}
+	if err := receipt.ValidateRunIdentity(runDir); err != nil {
+		t.Fatalf("verified receipt run identity: %v", err)
+	}
+	if err := receipt.ValidateRunIdentity(t.TempDir()); err == nil {
+		t.Fatal("verified receipt accepted another run directory")
+	}
+	page := receipt.ProgramPage()
+	if page.RunID != filepath.Base(runDir) || page.ProgramTarget.ID != manifest.MaterialInputs.ProgramTargetID ||
+		page.ArtifactFilename != programindex.ArtifactFilename || receipt.RepositoryName() == "" {
+		t.Fatalf("verified receipt page identity = %#v, repository = %q", page, receipt.RepositoryName())
+	}
+	if err := (VerifiedRunReceipt{}).ValidateRunIdentity(runDir); err == nil {
+		t.Fatal("empty verified receipt was accepted")
+	}
+	var preparedData ReportData
+	if err := json.Unmarshal(reportRaw, &preparedData); err != nil {
+		t.Fatalf("decode prepared report data: %v", err)
+	}
+	preparedData.ArtifactsDir = runDir
+	preparedData.defaultProgramIndexArtifactFilename = programindex.ArtifactFilename
+	preparedReceipt, err := newVerifiedRunReceiptFromReportData(runDir, manifest, &preparedData)
+	if err != nil {
+		t.Fatalf("build prepared report receipt: %v", err)
+	}
+	preparedPage := preparedReceipt.ProgramPage()
+	if preparedPage.RunID != page.RunID || preparedPage.ProgramTarget.ID != page.ProgramTarget.ID ||
+		preparedPage.ArtifactFilename != page.ArtifactFilename ||
+		preparedReceipt.RepositoryName() != receipt.RepositoryName() {
+		t.Fatalf("prepared receipt identity = %#v / %q, want %#v / %q",
+			preparedPage, preparedReceipt.RepositoryName(), page, receipt.RepositoryName())
+	}
 	isolated := receipt.Manifest()
 	isolated.OpenablePaths[0] = "changed.py"
 	if receipt.Manifest().OpenablePaths[0] == "changed.py" {
 		t.Fatal("verified receipt exposed mutable manifest slices")
+	}
+}
+
+func TestPreparedRunManifestValidationUsesRetainedReportAuthority(t *testing.T) {
+	t.Parallel()
+	_, runDir, _ := artifactProgramPageBundleFixture(t, 1)
+	manifestRaw, err := os.ReadFile(filepath.Join(runDir, RunManifestFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := DecodeRunManifest(manifestRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportRaw, err := os.ReadFile(filepath.Join(runDir, "report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data ReportData
+	if err := json.Unmarshal(reportRaw, &data); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyPreparedRunManifest(manifest, &data, reportRaw); err != nil {
+		t.Fatalf("retained prepared authority: %v", err)
+	}
+
+	tampered := data
+	tampered.CapturedRevision = strings.Repeat("f", 40)
+	if err := verifyPreparedRunManifest(manifest, &tampered, reportRaw); err == nil {
+		t.Fatal("prepared validation accepted mismatched retained report authority")
+	}
+
+	changedBytes := append([]byte(nil), reportRaw...)
+	changedBytes[len(changedBytes)-2] ^= 1
+	if err := verifyPreparedRunManifest(manifest, &data, changedBytes); err == nil {
+		t.Fatal("prepared validation accepted bytes outside the manifest identity")
+	}
+}
+
+func TestPreparedTargetNavigationPageUsesCurrentRunProjection(t *testing.T) {
+	t.Parallel()
+	index := newProgramIndexManifestIndex(t, "app/main.py")
+	portfolio, err := NewProgramPortfolio(index.Target.ID, []programindex.Index{index})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDir := filepath.Join(t.TempDir(), "20260828-120000-python-a1b2c3")
+	if err := os.Mkdir(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	data := &ReportData{
+		ArtifactsDir: runDir, ProgramPortfolio: portfolio,
+		defaultProgramIndexArtifactFilename: programindex.ArtifactFilename,
+	}
+	page, err := PreparedTargetNavigationPage(runDir, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.RunID != filepath.Base(runDir) || page.ProgramTarget.ID != index.Target.ID ||
+		page.ArtifactFilename != programindex.ArtifactFilename {
+		t.Fatalf("prepared page = %#v", page)
+	}
+	if entries, err := os.ReadDir(runDir); err != nil || len(entries) != 0 {
+		t.Fatalf("prepared page unexpectedly read or wrote run artifacts: %v / %#v", err, entries)
+	}
+	if _, err := PreparedTargetNavigationPage(t.TempDir(), data); err == nil {
+		t.Fatal("prepared page accepted a foreign run directory")
 	}
 }
 

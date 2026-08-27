@@ -24,19 +24,20 @@ type repositoryTargetDispatchOptions struct {
 	ExtraArgs []string
 	Deps      defaultRunDeps
 
-	Corpus          *corpus.Corpus
-	RepositoryState freshness.RepositoryState
-	Plan            repositoryTargetPlan
-	RunID           string
-	DebugDir        string
-	NoCache         bool
-	NoOpen          bool
-	NoServe         bool
-	Port            int
-	StaticHost      string
-	Output          *runOutput
-	FirstLayer      *debugdump.SemanticObserver
-	DiscoverJSTSFn  jsTSProjectDiscoverer
+	Corpus           *corpus.Corpus
+	RepositoryState  freshness.RepositoryState
+	Plan             repositoryTargetPlan
+	RunID            string
+	DebugDir         string
+	NoCache          bool
+	NoOpen           bool
+	NoServe          bool
+	Port             int
+	StaticHost       string
+	Output           *runOutput
+	FirstLayer       *debugdump.SemanticObserver
+	DiscoverJSTSFn   jsTSProjectDiscoverer
+	VerifiedRunsSink func([]report.VerifiedRunReceipt)
 }
 
 // repositoryGoWorkspaceState keeps the successful fast-path workspace live
@@ -310,11 +311,10 @@ func dispatchRepositoryTargetPlan(
 			}
 			continue
 		}
-		page, err := report.LoadTargetNavigationPage(published.RunDir, published.RunID)
-		if err != nil || !repositoryTypedTargetMatchesProgramTarget(target, page.ProgramTarget) {
-			if err == nil {
-				err = fmt.Errorf("program target does not match exact adapter target")
-			}
+		page := published.ProgramPage
+		if page.RunID != published.RunID ||
+			!repositoryTypedTargetMatchesProgramTarget(target, page.ProgramTarget) {
+			err = fmt.Errorf("program target does not match exact adapter target")
 			if failureErr := recordFailure(
 				selected, consoleTarget, targetoutcome.StageTargetPage,
 				targetoutcome.ReasonTargetOutputInvalid, err,
@@ -380,7 +380,7 @@ func dispatchRepositoryTargetPlan(
 	if err != nil {
 		return failPublication(err)
 	}
-	if err := synthesizeProgramPageRuntimePortfolio(
+	runtimeAuthority, err := synthesizeProgramPageRuntimePortfolio(
 		ctx,
 		options.DebugDir,
 		options.NoCache,
@@ -391,22 +391,26 @@ func dispatchRepositoryTargetPlan(
 		portfolio,
 		runs,
 		options.Output,
-	); err != nil {
+	)
+	if err != nil {
 		return failPublication(err)
 	}
 	if err := persistTargetOutcomePortfolioForRuns(targetOutcomePortfolio, runs); err != nil {
 		return failPublication(err)
 	}
-	if err := finalizeProgramPageRuns(ctx, portfolio, targetOutcomePortfolio, runs); err != nil {
+	if err := finalizeProgramPageRuns(ctx, runtimeAuthority, portfolio, targetOutcomePortfolio, runs); err != nil {
 		return failPublication(err)
 	}
-	if err := publishProgramPageBundle(portfolio, runs); err != nil {
-		return failPublication(err)
-	}
-
-	assessment, err := report.AssessRunPublication(owner.RunDir)
+	assessment, err := publishProgramPageBundle(portfolio, runs)
 	if err != nil {
 		return failPublication(err)
+	}
+	if options.VerifiedRunsSink != nil {
+		receipts := make([]report.VerifiedRunReceipt, 0, len(runs))
+		for _, run := range runs {
+			receipts = append(receipts, run.Receipt)
+		}
+		options.VerifiedRunsSink(receipts)
 	}
 	for _, consoleTarget := range pendingTargets {
 		options.Output.TargetPage("complete", consoleTarget)
@@ -519,6 +523,7 @@ func finishRepositoryTargetDispatch(
 	noOpen bool,
 	port int,
 	staticHost string,
+	verifiedRuns []report.VerifiedRunReceipt,
 	output *runOutput,
 ) error {
 	linkLatest(debugDir, runDir, runOutputWarningSink{
@@ -537,6 +542,7 @@ func finishRepositoryTargetDispatch(
 	if !noServe && deps.serveReport != nil {
 		return deps.serveReport(ctx, reportserver.Options{
 			RunsDir: debugDir, InitialRunID: filepath.Base(runDir), Port: port,
+			VerifiedRuns: verifiedRuns,
 			Logf: func(format string, args ...any) {
 				output.Stage("Server", fmt.Sprintf(format, args...))
 			},

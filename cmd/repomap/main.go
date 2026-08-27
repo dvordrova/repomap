@@ -34,6 +34,7 @@ import (
 	"github.com/dvordrova/repomap/internal/pythontarget"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/reportserver"
+	"github.com/dvordrova/repomap/internal/runtimeportfolio"
 	"github.com/dvordrova/repomap/internal/secretscan"
 	"github.com/dvordrova/repomap/internal/snapshot"
 	"github.com/dvordrova/repomap/internal/surfacediscovery"
@@ -486,6 +487,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 				recordTargetPortfolioOutcome(runDir, plan.Outcome, humanOutput),
 			)
 		}
+		var verifiedRuns []report.VerifiedRunReceipt
 		publication, reportPath, dispatchErr := dispatchRepositoryTargetPlan(
 			ctx,
 			repositoryTargetDispatchOptions{
@@ -495,6 +497,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 				NoServe: *noServe, Port: *port, StaticHost: staticSourceHost,
 				Output: humanOutput, FirstLayer: firstLayer,
 				DiscoverJSTSFn: jstsproject.DiscoverSelected,
+				VerifiedRunsSink: func(receipts []report.VerifiedRunReceipt) {
+					verifiedRuns = append([]report.VerifiedRunReceipt(nil), receipts...)
+				},
 			},
 		)
 		if dispatchErr != nil {
@@ -507,7 +512,7 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		publicationStateEmitted = true
 		return finishRepositoryTargetDispatch(
 			ctx, deps, dDir, filepath.Dir(reportPath), reportPath, publication,
-			*noServe, *noOpen, *port, staticSourceHost, humanOutput,
+			*noServe, *noOpen, *port, staticSourceHost, verifiedRuns, humanOutput,
 		)
 	}
 
@@ -1149,15 +1154,6 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		formatRunOutputWallDuration(time.Since(reconciliationStarted)),
 	)
 	generateAuthorizedReport := func() error {
-		if deps.deferredPortfolioHTML {
-			if gitLabURL != "" {
-				return report.GenerateAuthorizedGitLabPageData(runDir, authority, gitLabURL)
-			}
-			if gitHubURL != "" {
-				return report.GenerateAuthorizedGitHubPageData(runDir, authority, gitHubURL)
-			}
-			return report.GenerateAuthorizedPageData(runDir, authority)
-		}
 		if gitLabURL != "" {
 			return report.GenerateAuthorizedGitLab(runDir, authority, gitLabURL)
 		}
@@ -1167,9 +1163,11 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		return report.GenerateAuthorized(runDir, authority)
 	}
 	reportStarted := time.Now()
-	humanOutput.Stage("Report", "generating authorized Program report")
-	if err := generateAuthorizedReport(); err != nil {
-		return fmt.Errorf("generate authorized browser report: %w", err)
+	if !deps.deferredPortfolioHTML {
+		humanOutput.Stage("Report", "generating authorized Program report")
+		if err := generateAuthorizedReport(); err != nil {
+			return fmt.Errorf("generate authorized browser report: %w", err)
+		}
 	}
 	reportPath = filepath.Join(runDir, "report.html")
 	repositoryPortfolioPublication := !deps.siblingTargetRun && targetRunContainer != nil
@@ -1189,10 +1187,20 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 		)
 	}
 	publication := report.PublicationAssessment{Status: report.PublicationReady}
+	var backingPage report.TargetNavigationPage
+	var runtimeTargetInput runtimeportfolio.TargetInput
 	if deps.deferredPortfolioHTML {
-		if _, err := report.ReadRunManifest(runDir); err != nil {
+		backingPage, err = report.PreparedTargetNavigationPage(runDir, reportData)
+		if err != nil {
 			return errors.Join(
-				fmt.Errorf("verify generated report backing page: %w", err),
+				fmt.Errorf("retain prepared report page identity: %w", err),
+				quarantineTargetPagePublication([]string{runDir}),
+			)
+		}
+		runtimeTargetInput, err = runtimePortfolioTargetInput(reportData, backingPage, false)
+		if err != nil {
+			return errors.Join(
+				fmt.Errorf("retain generated report runtime projection: %w", err),
 				quarantineTargetPagePublication([]string{runDir}),
 			)
 		}
@@ -1208,6 +1216,9 @@ func runDefaultWithDeps(repo string, extraArgs []string, deps defaultRunDeps) (r
 	publishedTarget := targetPublishedRun{
 		RunID:                 runID,
 		RunDir:                runDir,
+		ProgramPage:           backingPage,
+		RepositoryName:        reportData.RepoName,
+		RuntimeTargetInput:    runtimeTargetInput,
 		Authority:             authority,
 		RepositoryStateSHA256: initialRepositoryStateSHA256,
 		SelectedRevision:      initialState.Head,

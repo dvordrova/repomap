@@ -477,10 +477,11 @@ func restoreProgramPortfolio(runDir string, data *ReportData) error {
 		if indexes[position].Target.ID == set.DefaultTargetID {
 			value := indexes[position]
 			data.defaultProgramIndex = &value
+			data.defaultProgramIndexArtifactFilename = set.Entries[position].Filename
 			break
 		}
 	}
-	if data.defaultProgramIndex == nil {
+	if data.defaultProgramIndex == nil || data.defaultProgramIndexArtifactFilename == "" {
 		return fmt.Errorf("report: default ProgramIndex is missing after portfolio projection")
 	}
 	return nil

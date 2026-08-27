@@ -618,6 +618,16 @@ func GenerateAuthorizedPageData(runDir string, authority RunAuthority) error {
 	return generate(runDir, authority, nil, RenderOptions{}, false)
 }
 
+// GenerateAuthorizedPageDataVerified finalizes one backing page and returns
+// its compact current-transaction receipt. The receipt is created only after
+// the already verified report and manifest have been atomically installed.
+func GenerateAuthorizedPageDataVerified(
+	runDir string,
+	authority RunAuthority,
+) (VerifiedRunReceipt, error) {
+	return generateVerified(runDir, authority, nil, RenderOptions{}, false)
+}
+
 type standaloneSourceConfig struct {
 	hostName      string
 	repositoryURL string
@@ -682,6 +692,29 @@ func GenerateAuthorizedGitLabPageData(
 	}, RenderOptions{}, false)
 }
 
+// GenerateAuthorizedGitLabPageDataVerified is the transaction-receipt
+// equivalent of GenerateAuthorizedGitLabPageData.
+func GenerateAuthorizedGitLabPageDataVerified(
+	runDir string,
+	authority RunAuthority,
+	repositoryURL string,
+) (VerifiedRunReceipt, error) {
+	normalizedURL, err := NormalizeGitLabRepositoryURL(repositoryURL)
+	if err != nil {
+		return VerifiedRunReceipt{}, err
+	}
+	if normalizedURL == "" {
+		return VerifiedRunReceipt{}, fmt.Errorf("report: GitLab repository URL is required")
+	}
+	if err := validateGitLabAuthority(authority); err != nil {
+		return VerifiedRunReceipt{}, err
+	}
+	return generateVerified(runDir, authority, &standaloneSourceConfig{
+		hostName:      "GitLab",
+		repositoryURL: normalizedURL,
+	}, RenderOptions{}, false)
+}
+
 // GenerateAuthorizedGitHub emits the ordinary persisted report and manifest
 // plus one standalone HTML report whose source actions target the exact
 // captured revision on the supplied GitHub repository.
@@ -741,12 +774,62 @@ func GenerateAuthorizedGitHubPageData(
 	}, RenderOptions{}, false)
 }
 
+// GenerateAuthorizedGitHubPageDataVerified is the transaction-receipt
+// equivalent of GenerateAuthorizedGitHubPageData.
+func GenerateAuthorizedGitHubPageDataVerified(
+	runDir string,
+	authority RunAuthority,
+	repositoryURL string,
+) (VerifiedRunReceipt, error) {
+	normalizedURL, err := NormalizeGitHubRepositoryURL(repositoryURL)
+	if err != nil {
+		return VerifiedRunReceipt{}, err
+	}
+	if normalizedURL == "" {
+		return VerifiedRunReceipt{}, fmt.Errorf("report: GitHub repository URL is required")
+	}
+	if err := validateStandaloneSourceAuthority(authority, "GitHub"); err != nil {
+		return VerifiedRunReceipt{}, err
+	}
+	return generateVerified(runDir, authority, &standaloneSourceConfig{
+		hostName:      "GitHub",
+		repositoryURL: normalizedURL,
+	}, RenderOptions{}, false)
+}
+
 func generate(
 	runDir string,
 	authority RunAuthority,
 	standaloneSource *standaloneSourceConfig,
 	renderOptions RenderOptions,
 	publishHTML bool,
+) error {
+	return generateWithReceipt(
+		runDir, authority, standaloneSource, renderOptions, publishHTML, nil,
+	)
+}
+
+func generateVerified(
+	runDir string,
+	authority RunAuthority,
+	standaloneSource *standaloneSourceConfig,
+	renderOptions RenderOptions,
+	publishHTML bool,
+) (VerifiedRunReceipt, error) {
+	var receipt VerifiedRunReceipt
+	err := generateWithReceipt(
+		runDir, authority, standaloneSource, renderOptions, publishHTML, &receipt,
+	)
+	return receipt, err
+}
+
+func generateWithReceipt(
+	runDir string,
+	authority RunAuthority,
+	standaloneSource *standaloneSourceConfig,
+	renderOptions RenderOptions,
+	publishHTML bool,
+	receiptOut *VerifiedRunReceipt,
 ) error {
 	if standaloneSource != nil {
 		if err := validateStandaloneSourceAuthority(authority, standaloneSource.hostName); err != nil {
@@ -815,8 +898,19 @@ func generate(
 	if err != nil {
 		return err
 	}
+	var preparedReceipt VerifiedRunReceipt
+	if receiptOut != nil {
+		preparedReceipt, err = newVerifiedRunReceiptFromReportData(runDir, manifest, data)
+		if err != nil {
+			return err
+		}
+	}
 	if !publishHTML {
-		return installAuthorizedReport(runDir, reportJSON, nil, manifest)
+		if err := installAuthorizedReport(runDir, reportJSON, nil, manifest); err != nil {
+			return err
+		}
+		retainVerifiedRunReceipt(receiptOut, preparedReceipt)
+		return nil
 	}
 	renderData := *data
 	renderData.GitLabSourceLinks = gitLabSourceLinks
@@ -838,7 +932,21 @@ func generate(
 	); err != nil {
 		return fmt.Errorf("report: verify generated html before publication: %w", err)
 	}
-	return installAuthorizedReport(runDir, reportJSON, reportHTML, manifest)
+	if err := installAuthorizedReport(runDir, reportJSON, reportHTML, manifest); err != nil {
+		return err
+	}
+	retainVerifiedRunReceipt(receiptOut, preparedReceipt)
+	return nil
+}
+
+func retainVerifiedRunReceipt(
+	receiptOut *VerifiedRunReceipt,
+	receipt VerifiedRunReceipt,
+) {
+	if receiptOut == nil {
+		return
+	}
+	*receiptOut = receipt
 }
 
 // installAuthorizedReport stages the canonical report data and, when non-nil,

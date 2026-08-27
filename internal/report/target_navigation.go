@@ -61,6 +61,39 @@ type TargetNavigationPage struct {
 	ArtifactFilename string
 }
 
+// PreparedTargetNavigationPage projects the small page identity from an
+// already restored current-run ReportData value. It is the process-local
+// counterpart of LoadTargetNavigationPage and performs no artifact reads.
+func PreparedTargetNavigationPage(
+	runDir string,
+	data *ReportData,
+) (TargetNavigationPage, error) {
+	if data == nil || data.ProgramPortfolio == nil {
+		return TargetNavigationPage{}, fmt.Errorf("report: prepared target navigation data is incomplete")
+	}
+	absoluteRunDir, err := filepath.Abs(runDir)
+	if err != nil {
+		return TargetNavigationPage{}, fmt.Errorf("report: resolve prepared target navigation run: %w", err)
+	}
+	absoluteRunDir = filepath.Clean(absoluteRunDir)
+	if filepath.Clean(data.ArtifactsDir) != absoluteRunDir {
+		return TargetNavigationPage{}, fmt.Errorf("report: prepared target navigation data does not belong to the run")
+	}
+	entry, err := data.ProgramPortfolio.defaultEntry()
+	if err != nil {
+		return TargetNavigationPage{}, fmt.Errorf("report: prepared target navigation program portfolio: %w", err)
+	}
+	page := TargetNavigationPage{
+		RunID:            filepath.Base(absoluteRunDir),
+		ProgramTarget:    entry.Target.Snapshot(),
+		ArtifactFilename: data.defaultProgramIndexArtifactFilename,
+	}
+	if err := validateTargetNavigationPage(page); err != nil {
+		return TargetNavigationPage{}, err
+	}
+	return page, nil
+}
+
 // LoadTargetNavigationPage restores one page identity only from its validated
 // ProgramPortfolio default and the exact ProgramIndex artifact-set binding.
 func LoadTargetNavigationPage(runDir, runID string) (TargetNavigationPage, error) {
