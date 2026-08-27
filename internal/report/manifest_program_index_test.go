@@ -219,3 +219,91 @@ func writeProgramIndexManifestFile(t *testing.T, dir, name string, data []byte) 
 		t.Fatal(err)
 	}
 }
+
+func TestCompleteRunManifestVerificationReadsAndDecodesEachAuthorityOnce(t *testing.T) {
+	t.Parallel()
+	_, runDir, _ := artifactProgramPageBundleFixture(t, 2)
+	manifestRaw, err := os.ReadFile(filepath.Join(runDir, RunManifestFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := DecodeRunManifest(manifestRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	readStats, err := verifyCompleteRunManifest(runDir, manifest, nil)
+	if err != nil {
+		t.Fatalf("verify complete run from persisted report: %v", err)
+	}
+	if got := readStats.FileReads["report.json"]; got != 1 {
+		t.Fatalf("persisted report reads = %d, want 1", got)
+	}
+	assertSingleManifestVerificationCounts(t, readStats)
+
+	reportRaw, err := os.ReadFile(filepath.Join(runDir, "report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	preparedStats, err := verifyCompleteRunManifest(runDir, manifest, reportRaw)
+	if err != nil {
+		t.Fatalf("verify complete run from prepared report bytes: %v", err)
+	}
+	if got := preparedStats.FileReads["report.json"]; got != 0 {
+		t.Fatalf("prepared report file reads = %d, want 0", got)
+	}
+	assertSingleManifestVerificationCounts(t, preparedStats)
+
+	receipt, err := ReadVerifiedRunManifest(runDir)
+	if err != nil {
+		t.Fatalf("ReadVerifiedRunManifest: %v", err)
+	}
+	if receipt.ReportSHA256() != manifest.ReportSHA256 ||
+		receipt.ProgramPagePortfolioSHA256() != manifest.MaterialInputs.ProgramPagePortfolioSHA256 ||
+		receipt.ProgramTargetID() != manifest.MaterialInputs.ProgramTargetID {
+		t.Fatalf("verified receipt identity drifted: %#v", receipt)
+	}
+	if !filepath.IsAbs(receipt.RunDir()) || filepath.Clean(receipt.RunDir()) != receipt.RunDir() {
+		t.Fatalf("verified receipt run dir = %q, want clean absolute path", receipt.RunDir())
+	}
+	isolated := receipt.Manifest()
+	isolated.OpenablePaths[0] = "changed.py"
+	if receipt.Manifest().OpenablePaths[0] == "changed.py" {
+		t.Fatal("verified receipt exposed mutable manifest slices")
+	}
+}
+
+func assertSingleManifestVerificationCounts(t *testing.T, stats manifestVerificationStats) {
+	t.Helper()
+	if len(stats.FileReads) < 10 {
+		t.Fatalf("verified artifact reads = %v, want complete authority inventory", stats.FileReads)
+	}
+	for name, count := range stats.FileReads {
+		if count != 1 {
+			t.Errorf("artifact %q reads = %d, want 1", name, count)
+		}
+	}
+	for _, key := range []string{
+		"report.json",
+		"program-index-authority",
+		"program-index:" + programindex.ArtifactFilename,
+		"program-page-portfolio",
+		"runtime-portfolio",
+		"target-outcome-portfolio",
+		"core-map",
+		"activity-entrypoints",
+		"activity-paths",
+		"dependency-catalog",
+		"integration-dependencies",
+		"integration-usage",
+	} {
+		if got := stats.Decodes[key]; got != 1 {
+			t.Errorf("authority %q decodes = %d, want 1; all=%v", key, got, stats.Decodes)
+		}
+	}
+	for key, count := range stats.Decodes {
+		if count != 1 {
+			t.Errorf("authority %q decodes = %d, want 1", key, count)
+		}
+	}
+}
