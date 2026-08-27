@@ -866,13 +866,28 @@ language-neutral `ProgramPagePortfolio`. Every child run retains its own
 canonical `report.json`, manifest, ProgramIndex, and semantic artifacts, but
 only the deterministic first successful run owns a physical `report.html`. That owner document is
 derived from the verified page data and artifacts, never by parsing or merging
-target-local HTML. The repository route is the initial
-orientation surface only when its repository-wide runtime portfolio has at
-least one role or unclassified target; target-local JavaScript/TypeScript
-surfaces and cross-surface paths remain on that target's program page. An
-authoritative but empty repository-level catalog never shadows a non-empty
-semantic program map. An explicit empty repository route retains a direct
-program-map handoff. A populated repository route shows primary runtime roles
+target-local HTML. Browser publication crosses a separate typed projection
+boundary: browser repository payload version 1 owns shared repository,
+source, exhaustive target-outcome, runtime, warning, and repository-level
+openability data, while browser target payload version 1 owns exactly one
+target identity, its target-local openability, and its Program/CoreMap,
+entrypoint, integration, activity-path, and applicable JS/TS surface/path
+features. Canonical validation completes before either projection. Producer
+digests, validation-only coverage, canonical source refs, outer adapter
+authority, and other fields with no independent browser reader remain in the
+canonical artifacts and do not enter the browser contract.
+The two browser payload versions are independent even while both currently
+equal 1. Their strict Go codecs reject unknown fields; the browser application
+applies the same exact nested key boundary before building feature-aware
+models. A non-empty runtime overview remains an exhaustive mapped-or-explicitly
+unclassified cover of every analyzed target.
+
+The repository route is the initial orientation surface for every new v4
+document, including an explicit empty-runtime fallback with a direct program
+map handoff. Opening it parses only the small transport index and shared
+repository payload; it does not read, decompress, parse, or model any target
+chunk. Target-local JavaScript/TypeScript surfaces and cross-surface paths
+remain on that target's program page. A populated repository route shows primary runtime roles
 first, followed by evidence-backed reusable library/product APIs, supporting,
 and unknown roles, with their exact target or target-mode mappings, source
 evidence, uncertainty, and every unclassified target. Examples and supporting
@@ -931,6 +946,54 @@ deterministic outer tracks. Arrowheads use a fixed user-space open shape and do
 not grow when an emphasized edge becomes thicker.
 The SVG remains a visual edge layer, and canonical card links remain the
 keyboard navigation authority.
+
+Standalone bundle version 4 is transport-only and feature-blind. It embeds one
+small JSON index, one identity-encoded shared repository payload, and one
+deterministic gzip-plus-base64 opaque chunk for each analyzed target; a
+`not_analyzed` target remains an exhaustive index row without ProgramTarget or
+chunk. Index refs bind exact decompressed and compressed lengths plus the
+SHA-256 of the decompressed canonical browser payload. Generation immediately
+decodes every produced chunk, checks lengths and digest, strict-decodes the
+typed payload, and checks its exact target binding before installation. The
+logical default remains the exhaustive selected-target identity even when it
+failed; the physical owner remains the first successful page selected by
+`ProgramPagePortfolio`. A one-chunk ordinary target document may therefore
+carry a logical default outside its local chunk directory, while its shared
+repository payload retains the complete analyzed/not-analyzed directory.
+Each decompressed target browser payload is bounded by the canonical 64 MiB
+report JSON limit; its gzip representation is bounded by 65 MiB. The existing
+1 GiB aggregate standalone transport limit remains an independent bound and
+does not authorize a larger target chunk.
+
+Artifact-backed standalone publication uses two sequential passes over the
+verified child authorities. The first seals the exhaustive index and shared
+repository payload; the second reprojects one target at a time, writes its
+deterministic gzip bytes to a private temporary spool, immediately streams the
+chunk back through length, digest, strict typed-decode, and exact target-binding
+checks, and releases the target before loading the next. Final HTML publication
+streams base64 from that spool and removes it on success or failure. Failed
+target rows never enter the target loader and never receive a chunk. Every
+child report must retain the owner report's exact analysis root, so a sibling
+cannot replace shared source authority while still producing a self-consistent
+payload. Spool cleanup failure is a terminal publication or verification error;
+the retry path remains available internally and its private filesystem name is
+not exposed.
+
+The embedded loader, not `report_app.js`, owns script lookup, bundle version,
+base64, gzip, byte bounds, digest verification, and transport errors. It
+exposes only `loadRepository()` and `loadTarget(selectedTargetID)`. Repository
+and successfully decoded target promises are cached; neighboring chunks are
+never prefetched. The application builds the repository model once, builds at
+most the selected target model after exact route resolution, and receives the
+already parsed target object directly. It retains neither a raw payload nor a
+stringify/DOM/parse handoff. A target transport or model failure is bounded to
+that target route and leaves the validated repository overview available.
+The loader strictly validates transport/index identities, deterministic element
+IDs, duplicate target and ProgramTarget authority, per-payload bounds, and the
+aggregate 1 GiB raw bound before touching a chunk. Feature-specific nested
+shape belongs to the model boundary, so transport remains opaque to current and
+future target features.
+
 The standalone System Canvas browser implementation is split across four
 embedded assets loaded before the report shell in deterministic order. A pure
 graph projection owns stable node and edge IDs, exact/possible/runtime
@@ -1021,11 +1084,16 @@ payload and multi-target-bundle checks; it does not maintain a second
 ProgramIndex or semantic-artifact validator. `snapshot.json` and `metadata.json` are
 mandatory, independently strict-decoded authorities; metadata must carry the
 same exact repository identity as the snapshot and cannot fill in a missing
-one. READY extracts exactly one embedded `rm-report-data` payload from HTML,
-strict-decodes it, and compares the complete projection with the validated
-`report.json`. Its target navigation must equal the manifest-derived
-navigation, and static source authority must retain the manifest-derived host,
-revision, and repository-root-to-analysis-root path prefix. Manifest version
+one. READY for an ordinary page extracts exactly one v4 transport index, one
+shared repository payload, and one analyzed target chunk. It verifies every
+transport length and digest, strict-decodes both typed payloads, reprojects them
+from the validated `report.json`, and requires byte-identical canonical browser
+bytes. Its target navigation must equal the manifest-derived navigation, and
+static source authority must retain the manifest-derived host, revision, and
+repository-root-to-analysis-root path prefix. READY for the standalone owner
+additionally rederives the complete v4 document byte-for-byte from every child
+authority; the trailing seal detects corruption but cannot certify rewritten
+content. Manifest version
 35 and report format version 68 own the current publication contract. The
 manifest owns canonical `standalone_source {host,repository_url}` and the exact
 optional `core_map_sha256`, `dependency_catalog_sha256`,
@@ -1060,17 +1128,16 @@ directly from every child manifest, `report.json`, ProgramIndex, page-local
 artifact, and canonical order and compared byte-for-byte; child HTML is neither
 an input nor a merge source, and a self-consistent replacement seal is not
 authority. Merely containing an HTML marker is not publication evidence.
-The language-neutral child backing data may omit the Go-specific outer
-`analysis_target`. Standalone projection restores that authority only from the
-manifest-verified canonical `report.json` and injects it only into the
-self-contained multi-target payload needed to bind each selected target to the
-neutral page projection.
+The language-neutral child backing data may retain adapter-specific outer
+authority in canonical `report.json`, but the target browser projector never
+copies that validation-only authority into its language-neutral payload.
 
 Target navigation is also atomic. The cross-page rail is keyed only by exact
 `program_target.id` values restored from each validated page and the sealed
 `ProgramPagePortfolio`; its backend-owned repository route enters
 `#/repository` in the current document, while target routes enter `#/program`
-in the current document for the standalone bundle. In served mode, sibling
+with exact `?target=N` document selection in the standalone bundle. In served
+mode, sibling
 target URLs are virtual documents rendered on demand from their manifest-bound
 backing data; no sibling `report.html` exists on disk. The page-local
 `ProgramPortfolio` uses the same ProgramTarget identity, and the backend

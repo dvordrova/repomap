@@ -520,7 +520,7 @@ const systemCanvasGeneratedReportBrowserRunner = `
     while (!predicate()) {
       if (Date.now() >= deadline) {
         var fatal = document.getElementById('rm-fatal-message');
-        throw new Error(message + ': edges=' +
+        throw new Error((typeof message === 'function' ? message() : message) + ': edges=' +
           String(document.querySelectorAll('g[data-canvas-edge-id]').length) +
           ' ports=' + String(document.querySelectorAll('[data-canvas-edge-port]').length) +
           ' fatal=' + String(fatal && fatal.textContent || 'none'));
@@ -665,10 +665,19 @@ const systemCanvasGeneratedReportBrowserRunner = `
       integrations: [], relations: [], blocksBySymbol: denseMemberships,
       groupsByBlock: {'dense-core': ['dense-group']}
     }, {activeBlockIDs: ['dense-core'], complete: true});
+    // Chrome's finite virtual-time budget may stop issuing a second animation
+    // frame after the asynchronously booted report has settled. Exercise the
+    // renderer's supported timer scheduler for this additional synthetic mount.
+    var requestAnimationFrame = window.requestAnimationFrame;
+    window.requestAnimationFrame = undefined;
     var denseController = window.RepomapSystemCanvasRenderer.mountSystemCanvas(denseHost, denseGraph, {}, {});
+    window.requestAnimationFrame = requestAnimationFrame;
     await waitFor(function () {
       return denseHost.querySelectorAll('[data-canvas-edge-port]').length === 16;
-    }, 3000, 'dense System canvas did not finish geometry');
+    }, 3000, function () { return 'dense System canvas did not finish geometry; dense edges=' +
+      String(denseHost.querySelectorAll('g[data-canvas-edge-id]').length) + ' dense ports=' +
+      String(denseHost.querySelectorAll('[data-canvas-edge-port]').length) + ' builds=' +
+      String(denseController.diagnostics.geometryBuildCount); });
     var denseCore = denseHost.querySelector('[data-canvas-node="core:dense-core"]');
     denseCore.dispatchEvent(new PointerEvent('pointerover', {bubbles: true}));
     await delay(40);

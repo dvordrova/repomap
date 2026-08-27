@@ -3,14 +3,286 @@
 
   var state = null;
   var toastTimer = 0;
+  var navigationToken = 0;
+  var bootStarted = false;
   var MAX_REVISION_ABBREVIATION_CHARS = 10;
   var MAX_SURVEY_PREVIEW_ITEMS = 3;
+  var MAX_CLIENT_ERROR_CHARS = 240;
 
   function object(value, label) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       throw new Error(label + ' must be an object');
     }
     return value;
+  }
+
+  function exactShape(value, required, optional, label) {
+    value = object(value, label);
+    var allowed = Object.create(null);
+    required.concat(optional || []).forEach(function (field) { allowed[field] = true; });
+    Object.keys(value).forEach(function (field) {
+      if (!allowed[field]) throw new Error(label + ' contains an unknown field');
+    });
+    required.forEach(function (field) {
+      if (!Object.prototype.hasOwnProperty.call(value, field)) {
+        throw new Error(label + ' is missing a required field');
+      }
+    });
+    return value;
+  }
+
+  function exactLocationShape(value, label) {
+    return exactShape(value, ['path'], ['line', 'column'], label);
+  }
+
+  function exactRepositoryPathKey(value, label) {
+    value = text(value, label);
+    if (value === '.' || value.startsWith('/') || value.includes('\\') ||
+        /[\u0000-\u001f\u007f-\u009f]/.test(value) ||
+        value.split('/').some(function (part) { return !part || part === '.' || part === '..'; })) {
+      throw new Error(label + ' must be a canonical repository-relative path');
+    }
+    return value;
+  }
+
+  function exactSourceShape(value) {
+    var source = exactShape(value, ['kind'], [
+      'repository_url', 'path_prefix', 'source_ids'
+    ], 'repository payload.source');
+    var kind = closedText(source.kind, ['none', 'github', 'gitlab', 'served'], 'repository source.kind');
+    var repositoryURL = optionalText(source.repository_url, 'repository source.repository_url');
+    var pathPrefix = optionalText(source.path_prefix, 'repository source.path_prefix');
+    var sourceIDs = source.source_ids == null ? null : object(
+      source.source_ids, 'repository payload.source.source_ids'
+    );
+    var seenIDs = Object.create(null);
+    if (sourceIDs) {
+      Object.keys(sourceIDs).forEach(function (path) {
+        exactRepositoryPathKey(path, 'repository source path');
+        var sourceID = text(sourceIDs[path], 'repository source ID');
+        if (!/^[A-Za-z0-9_-]{43}$/.test(sourceID)) {
+          throw new Error('repository source ID is invalid');
+        }
+        if (seenIDs[sourceID]) throw new Error('repository source IDs are not unique');
+        seenIDs[sourceID] = true;
+      });
+    }
+    if (kind === 'none' && (repositoryURL || pathPrefix || (sourceIDs && Object.keys(sourceIDs).length))) {
+      throw new Error('empty source authority carries fields');
+    }
+    if ((kind === 'github' || kind === 'gitlab') &&
+        (!repositoryURL || (sourceIDs && Object.keys(sourceIDs).length))) {
+      throw new Error('static source authority is invalid');
+    }
+    if (kind === 'served' &&
+        (repositoryURL || pathPrefix || !sourceIDs || !Object.keys(sourceIDs).length)) {
+      throw new Error('served source authority is invalid');
+    }
+    return source;
+  }
+
+  function exactRepositoryPayloadShape(data) {
+    data = exactShape(data, [
+      'version', 'repository', 'source', 'logical_default_selected_target_id',
+      'targets', 'openable_paths'
+    ], ['runtime', 'warnings'], 'repository payload');
+    exactShape(data.repository, ['name', 'captured_revision'], [], 'repository payload.repository');
+    exactSourceShape(data.source);
+    array(data.targets, 'repository payload.targets').forEach(function (target) {
+      exactShape(target, [
+        'selected_target_id', 'language', 'kind', 'display_name', 'state'
+      ], ['program_target_id', 'href', 'failure_stage', 'failure_reason'], 'repository target');
+    });
+    if (data.runtime != null) {
+      var runtime = exactShape(data.runtime, [
+        'roles', 'unclassified_targets'
+      ], [], 'repository runtime');
+      array(runtime.roles, 'repository runtime.roles').forEach(function (role) {
+        role = exactShape(role, [
+          'name', 'purpose', 'prominence', 'role_kind', 'requiredness', 'confidence',
+          'implementations', 'evidence'
+        ], [], 'runtime role');
+        array(role.implementations, 'runtime role.implementations').forEach(function (implementation) {
+          exactShape(implementation, ['program_target_id'], ['mode'], 'runtime implementation');
+        });
+        array(role.evidence, 'runtime role.evidence').forEach(function (location) {
+          exactLocationShape(location, 'runtime role evidence');
+        });
+      });
+      array(runtime.unclassified_targets, 'repository runtime.unclassified_targets').forEach(function (target) {
+        exactShape(target, ['program_target_id', 'reason'], [], 'unclassified runtime target');
+      });
+    }
+    return data;
+  }
+
+  function exactJSTSFactShape(fact, label) {
+    fact = exactShape(fact, ['ref', 'category', 'kind', 'label'], ['location'], label);
+    if (fact.location != null) exactLocationShape(fact.location, label + '.location');
+  }
+
+  function exactTargetPayloadShape(data) {
+    data = exactShape(data, [
+      'version', 'target', 'openable_paths', 'features'
+    ], [], 'target payload');
+    exactShape(data.target, ['id', 'language', 'kind', 'name', 'selector'], [], 'target payload.target');
+    var features = exactShape(data.features, ['program'], [
+      'core', 'entrypoints', 'integrations', 'activity_paths', 'surfaces', 'cross_surface_paths'
+    ], 'target payload.features');
+    var semanticFeatureCount = [
+      features.core, features.entrypoints, features.integrations, features.activity_paths
+    ].filter(function (feature) { return feature != null; }).length;
+    if (semanticFeatureCount !== 0 && semanticFeatureCount !== 4) {
+      throw new Error('target payload has a partial semantic feature family');
+    }
+    var program = exactShape(features.program, [
+      'objects', 'relations', 'projection'
+    ], [], 'target features.program');
+    array(program.objects, 'target features.program.objects').forEach(function (item) {
+      item = exactShape(item, ['id', 'kind', 'name'], [
+        'owner_id', 'container_id', 'location', 'external'
+      ], 'program object');
+      if (item.location != null) exactLocationShape(item.location, 'program object.location');
+      if (item.external != null) {
+        exactShape(item.external, ['package_path', 'name'], ['receiver'], 'program object.external');
+      }
+    });
+    array(program.relations, 'target features.program.relations').forEach(function (relation) {
+      relation = exactShape(relation, [
+        'id', 'kind', 'resolution', 'from_id', 'to_ids', 'witnesses',
+        'witnesses_omitted', 'witnesses_projection_omitted'
+      ], ['invocation', 'location'], 'program relation');
+      if (relation.location != null) exactLocationShape(relation.location, 'program relation.location');
+      array(relation.witnesses, 'program relation.witnesses').forEach(function (witness) {
+        witness = exactShape(witness, [], ['source_expression', 'location'], 'program witness');
+        if (witness.location != null) exactLocationShape(witness.location, 'program witness.location');
+      });
+    });
+    var projection = exactShape(program.projection, [
+      'seeds', 'objects', 'relations'
+    ], [], 'target features.program.projection');
+    ['seeds', 'objects', 'relations'].forEach(function (field) {
+      exactShape(projection[field], ['eligible', 'omitted'], [], 'program projection.' + field);
+    });
+
+    if (features.core != null) {
+      var core = exactShape(features.core, [
+        'refined_core', 'refined_groups', 'coverage'
+      ], [], 'target features.core');
+      function exactCoreBlocks(values) {
+        array(values, 'core blocks').forEach(function (block) {
+          block = exactShape(block, [
+            'id', 'name', 'purpose', 'files', 'representative_symbols', 'children'
+          ], [], 'core block');
+          array(block.files, 'core block.files').forEach(function (file) {
+            exactShape(file, ['path'], [], 'core file');
+          });
+          array(block.representative_symbols, 'core block.representative_symbols').forEach(function (row) {
+            row = exactShape(row, ['symbol', 'unresolved_outgoing'], [], 'representative symbol');
+            var symbol = exactShape(row.symbol, [
+              'node_id', 'name', 'location'
+            ], [], 'representative symbol.symbol');
+            exactLocationShape(symbol.location, 'representative symbol.location');
+          });
+          exactCoreBlocks(block.children);
+        });
+      }
+      exactCoreBlocks(core.refined_core);
+      array(core.refined_groups, 'target features.core.refined_groups').forEach(function (group) {
+        exactShape(group, [
+          'id', 'authority', 'name', 'purpose', 'core_block_ids'
+        ], [], 'refined core group');
+      });
+      exactShape(core.coverage, ['program_objects_omitted'], [], 'target features.core.coverage');
+    }
+
+    if (features.entrypoints != null) {
+      var entrypoints = exactShape(features.entrypoints, ['entrypoints'], [], 'target features.entrypoints');
+      array(entrypoints.entrypoints, 'target features.entrypoints.entrypoints').forEach(function (entrypoint) {
+        entrypoint = exactShape(entrypoint, [
+          'object_id', 'kind', 'name', 'location'
+        ], ['signature'], 'activity entrypoint');
+        exactLocationShape(entrypoint.location, 'activity entrypoint.location');
+      });
+    }
+
+    if (features.integrations != null) {
+      var integrations = exactShape(features.integrations, ['dependencies'], [], 'target features.integrations');
+      array(integrations.dependencies, 'target features.integrations.dependencies').forEach(function (dependency) {
+        dependency = exactShape(dependency, [
+          'dependency_id', 'kind', 'name', 'package_path', 'uses'
+        ], [], 'integration dependency');
+        array(dependency.uses, 'integration dependency.uses').forEach(function (use) {
+          use = exactShape(use, [
+            'relation_id', 'witness_index', 'external_symbol_id', 'caller_id', 'caller_name',
+            'callsite', 'canonical_callee', 'label', 'mechanism', 'authority'
+          ], [], 'integration use');
+          exactLocationShape(use.callsite, 'integration use.callsite');
+        });
+      });
+    }
+
+    if (features.activity_paths != null) {
+      var activityPaths = exactShape(features.activity_paths, [
+        'objects', 'routes', 'outcomes'
+      ], [], 'target features.activity_paths');
+      array(activityPaths.objects, 'target features.activity_paths.objects').forEach(function (item) {
+        exactShape(item, ['object_id', 'kind', 'name'], [], 'activity path object');
+      });
+      array(activityPaths.routes, 'target features.activity_paths.routes').forEach(function (route) {
+        route = exactShape(route, [
+          'route_id', 'caller_id', 'status', 'steps', 'distance', 'frontier'
+        ], ['activity_id'], 'activity path route');
+        array(route.steps, 'activity path route.steps').forEach(function (step) {
+          step = exactShape(step, [
+            'from_id', 'to_id', 'kind', 'authority'
+          ], ['location'], 'activity path step');
+          if (step.location != null) exactLocationShape(step.location, 'activity path step.location');
+        });
+      });
+      array(activityPaths.outcomes, 'target features.activity_paths.outcomes').forEach(function (outcome) {
+        exactShape(outcome, [
+          'dependency_id', 'relation_id', 'witness_index', 'external_symbol_id', 'route_id'
+        ], [], 'activity path outcome');
+      });
+    }
+
+    if (features.surfaces != null) {
+      var surfaces = exactShape(features.surfaces, ['facts', 'surfaces'], [], 'target features.surfaces');
+      array(surfaces.facts, 'target features.surfaces.facts').forEach(function (fact) {
+        exactJSTSFactShape(fact, 'target surface fact');
+      });
+      array(surfaces.surfaces, 'target features.surfaces.surfaces').forEach(function (surface) {
+        surface = exactShape(surface, [
+          'surface_id', 'kind', 'role', 'disposition', 'name', 'entry_refs',
+          'evidence_refs', 'location'
+        ], [], 'target surface');
+        exactLocationShape(surface.location, 'target surface.location');
+      });
+    }
+
+    if (features.cross_surface_paths != null) {
+      var crossSurface = exactShape(features.cross_surface_paths, [
+        'facts', 'paths', 'coverage'
+      ], [], 'target features.cross_surface_paths');
+      array(crossSurface.facts, 'target features.cross_surface_paths.facts').forEach(function (fact) {
+        exactJSTSFactShape(fact, 'cross-surface fact');
+      });
+      array(crossSurface.paths, 'target features.cross_surface_paths.paths').forEach(function (path) {
+        path = exactShape(path, ['path_id', 'name', 'outcome', 'steps'], ['frontier'], 'cross-surface path');
+        array(path.steps, 'cross-surface path.steps').forEach(function (step) {
+          step = exactShape(step, [
+            'ordinal', 'kind', 'label', 'source_ref', 'target_refs', 'resolution',
+            'authority', 'location'
+          ], [], 'cross-surface step');
+          exactLocationShape(step.location, 'cross-surface step.location');
+        });
+      });
+      exactShape(crossSurface.coverage, [
+        'routes_observed', 'http_uses_observed'
+      ], [], 'target features.cross_surface_paths.coverage');
+    }
+    return data;
   }
 
   function array(value, label) {
@@ -37,14 +309,14 @@
 
   function projectionCoverage(value, label) {
     value = object(value, label);
+    var eligible = integer(value.eligible, label + '.eligible');
+    var omitted = integer(value.omitted, label + '.omitted');
+    if (omitted > eligible) throw new Error(label + ' omits more items than were eligible.');
     var coverage = {
-      eligible: integer(value.eligible, label + '.eligible'),
-      shown: integer(value.shown, label + '.shown'),
-      omitted: integer(value.omitted, label + '.omitted')
+      eligible: eligible,
+      shown: eligible - omitted,
+      omitted: omitted
     };
-    if (coverage.eligible !== coverage.shown + coverage.omitted) {
-      throw new Error(label + ' does not account for every eligible item.');
-    }
     return coverage;
   }
 
@@ -68,16 +340,6 @@
     return characters.slice(0, maxCharacters - 1).join('').trimEnd() + '…';
   }
 
-  function readPayload() {
-    var node = document.getElementById('rm-report-data');
-    if (!node) throw new Error('The embedded report payload is missing.');
-    var value;
-    try { value = JSON.parse(node.textContent || ''); } catch (error) {
-      throw new Error('The embedded report payload is not valid JSON.');
-    }
-    return object(value, 'report');
-  }
-
   function exactLocation(value, label) {
     value = object(value, label);
     var path = text(value.path, label + '.path');
@@ -92,107 +354,56 @@
     return value;
   }
 
-  function buildTargetDirectory(data, currentTarget) {
+  function buildTargetDirectory(data) {
+    data = object(data, 'repository payload');
     var byID = Object.create(null);
-    var targets = [];
-    var raw = data.target_navigation;
-    if (raw == null) {
-      var only = {
-        id: currentTarget.id,
-        language: currentTarget.language,
-        kind: currentTarget.kind,
-        displayName: currentTarget.name,
-        href: '#/program'
-      };
-      byID[only.id] = only;
-      return { targets: [only], byID: byID, currentID: only.id, defaultID: only.id };
-    }
-
-    raw = object(raw, 'target_navigation');
-    array(raw.targets, 'target_navigation.targets').forEach(function (rawTarget) {
-      rawTarget = object(rawTarget, 'target navigation item');
-      var target = {
-        id: text(rawTarget.target_id, 'target navigation target_id'),
-        language: text(rawTarget.language, 'target navigation language'),
-        kind: text(rawTarget.kind, 'target navigation kind'),
-        displayName: text(rawTarget.display_name, 'target navigation display_name'),
-        href: text(rawTarget.href, 'target navigation href')
-      };
-      if (byID[target.id]) throw new Error('Target navigation identities are not unique.');
-      byID[target.id] = target;
-      targets.push(target);
-    });
-    if (!targets.length) throw new Error('Target navigation has no targets.');
-
-    var currentID = optionalText(raw.current_target_id, 'target_navigation.current_target_id');
-    if (Object.prototype.hasOwnProperty.call(raw, 'current_target_index')) {
-      var currentIndex = integer(raw.current_target_index, 'target_navigation.current_target_index');
-      if (currentIndex >= targets.length) throw new Error('The current target navigation index is absent.');
-      if (currentID && currentID !== targets[currentIndex].id) {
-        throw new Error('The current target navigation authorities disagree.');
-      }
-      currentID = targets[currentIndex].id;
-    }
-    if (!currentID || !byID[currentID]) throw new Error('The current target navigation identity is absent.');
-    var defaultID = optionalText(raw.default_target_id, 'target_navigation.default_target_id');
-    if (Object.prototype.hasOwnProperty.call(raw, 'default_target_index')) {
-      var defaultIndex = integer(raw.default_target_index, 'target_navigation.default_target_index');
-      if (defaultIndex >= targets.length) throw new Error('The default target navigation index is absent.');
-      if (defaultID && defaultID !== targets[defaultIndex].id) {
-        throw new Error('The default target navigation authorities disagree.');
-      }
-      defaultID = targets[defaultIndex].id;
-    }
-    if (!defaultID || !byID[defaultID]) throw new Error('The default target navigation identity is absent.');
-    var current = byID[currentID];
-    if (current.id !== currentTarget.id || current.language !== currentTarget.language ||
-        current.kind !== currentTarget.kind || current.displayName !== currentTarget.name) {
-      throw new Error('Target navigation does not match the current ProgramTarget.');
-    }
-    return { targets: targets, byID: byID, currentID: currentID, defaultID: defaultID };
-  }
-
-  function buildTargetOutcomePortfolio(data, targetDirectory) {
-    var raw = data.target_outcome_portfolio;
-    if (raw == null) return null;
-    raw = object(raw, 'target_outcome_portfolio');
-    if (integer(raw.version, 'target_outcome_portfolio.version') !== 1) {
-      throw new Error('The target outcome portfolio version is not supported.');
-    }
     var bySelectedID = Object.create(null);
+    var targets = [];
     var byProgramTargetID = Object.create(null);
     var analyzed = [];
     var notAnalyzed = [];
-    var outcomes = array(raw.outcomes, 'target_outcome_portfolio.outcomes').map(function (rawOutcome) {
-      rawOutcome = object(rawOutcome, 'target outcome');
-      var selectedTargetID = text(rawOutcome.selected_target_id, 'target outcome.selected_target_id');
+    var outcomes = array(data.targets, 'repository payload.targets').map(function (rawOutcome) {
+      rawOutcome = object(rawOutcome, 'repository target');
+      var selectedTargetID = text(rawOutcome.selected_target_id, 'repository target.selected_target_id');
       if (bySelectedID[selectedTargetID]) throw new Error('Selected target outcome identities are not unique.');
-      var state = closedText(rawOutcome.state, ['analyzed', 'not_analyzed'], 'target outcome.state');
+      var state = closedText(rawOutcome.state, ['analyzed', 'not_analyzed'], 'repository target.state');
       var outcome = {
         selectedTargetID: selectedTargetID,
-        language: text(rawOutcome.language, 'target outcome.language'),
-        kind: text(rawOutcome.scope_kind, 'target outcome.scope_kind'),
-        displayName: text(rawOutcome.display_name, 'target outcome.display_name'),
-        selector: text(rawOutcome.selector, 'target outcome.selector'),
+        language: text(rawOutcome.language, 'repository target.language'),
+        kind: text(rawOutcome.kind, 'repository target.kind'),
+        displayName: text(rawOutcome.display_name, 'repository target.display_name'),
         state: state,
-        programTargetID: optionalText(rawOutcome.program_target_id, 'target outcome.program_target_id'),
-        failureStage: optionalText(rawOutcome.failure_stage, 'target outcome.failure_stage'),
-        failureReason: optionalText(rawOutcome.failure_reason, 'target outcome.failure_reason'),
+        programTargetID: optionalText(rawOutcome.program_target_id, 'repository target.program_target_id'),
+        failureStage: optionalText(rawOutcome.failure_stage, 'repository target.failure_stage'),
+        failureReason: optionalText(rawOutcome.failure_reason, 'repository target.failure_reason'),
         target: null
       };
       if (state === 'analyzed') {
-        if (!outcome.programTargetID || outcome.failureStage || outcome.failureReason) {
+        var href = optionalText(rawOutcome.href, 'repository target.href');
+        if (!outcome.programTargetID || !href || outcome.failureStage || outcome.failureReason) {
           throw new Error('An analyzed target outcome has an invalid binding.');
         }
-        outcome.target = targetDirectory.byID[outcome.programTargetID];
-        if (!outcome.target) throw new Error('An analyzed target outcome cites an unknown ProgramTarget.');
         if (byProgramTargetID[outcome.programTargetID]) {
           throw new Error('Analyzed target outcome ProgramTarget identities are not unique.');
         }
-        byProgramTargetID[outcome.programTargetID] = true;
+        var target = {
+          id: outcome.programTargetID,
+          selectedTargetID: selectedTargetID,
+          language: outcome.language,
+          kind: outcome.kind,
+          name: outcome.displayName,
+          displayName: outcome.displayName,
+          href: href
+        };
+        byID[target.id] = target;
+        byProgramTargetID[target.id] = true;
+        targets.push(target);
+        outcome.target = target;
         analyzed.push(outcome);
       } else {
-        if (outcome.programTargetID) throw new Error('A not-analyzed target outcome cites a ProgramTarget.');
+        if (outcome.programTargetID || optionalText(rawOutcome.href, 'repository target.href')) {
+          throw new Error('A not-analyzed target outcome cites a ProgramTarget or link.');
+        }
         outcome.failureStage = closedText(outcome.failureStage, [
           'target_preparation', 'program_analysis', 'dependency_analysis', 'semantic_analysis', 'target_page'
         ], 'target outcome.failure_stage');
@@ -206,39 +417,32 @@
       return outcome;
     });
     if (!outcomes.length) throw new Error('The target outcome portfolio has no selected targets.');
-    targetDirectory.targets.forEach(function (target) {
-      if (!byProgramTargetID[target.id]) {
-        throw new Error('Target navigation contains a ProgramTarget absent from analyzed outcomes.');
-      }
-    });
     var defaultSelectedTargetID = text(
-      raw.default_selected_target_id, 'target_outcome_portfolio.default_selected_target_id'
+      data.logical_default_selected_target_id, 'repository payload.logical_default_selected_target_id'
     );
     if (!bySelectedID[defaultSelectedTargetID]) {
       throw new Error('The default selected target outcome is absent.');
     }
     return {
-      version: 1,
-      defaultSelectedTargetID: defaultSelectedTargetID,
-      outcomes: outcomes,
-      analyzed: analyzed,
-      notAnalyzed: notAnalyzed,
-      bySelectedID: bySelectedID
+      targets: targets,
+      byID: byID,
+      bySelectedID: bySelectedID,
+      defaultID: targets.length ? targets[0].id : '',
+      outcomes: {
+        defaultSelectedTargetID: defaultSelectedTargetID,
+        outcomes: outcomes,
+        analyzed: analyzed,
+        notAnalyzed: notAnalyzed,
+        bySelectedID: bySelectedID
+      }
     };
   }
 
-  function buildRuntimePortfolio(data, targetDirectory, openable) {
-    var raw = object(data.runtime_portfolio, 'runtime_portfolio');
-    if (integer(raw.version, 'runtime_portfolio.version') !== 3) {
-      throw new Error('The runtime portfolio version is not supported.');
-    }
-    var roleIDs = Object.create(null);
+  function buildRuntimePortfolio(raw, targetDirectory, openable) {
+    raw = object(raw, 'repository runtime');
     var mappedTargets = Object.create(null);
-    var roles = array(raw.roles, 'runtime_portfolio.roles').map(function (rawRole) {
+    var roles = array(raw.roles, 'repository runtime.roles').map(function (rawRole) {
       rawRole = object(rawRole, 'runtime role');
-      var id = text(rawRole.id, 'runtime role.id');
-      if (roleIDs[id]) throw new Error('Runtime role identities are not unique.');
-      roleIDs[id] = true;
       var seenImplementations = Object.create(null);
       var implementations = array(rawRole.implementations, 'runtime role.implementations').map(function (rawImplementation) {
         rawImplementation = object(rawImplementation, 'runtime implementation');
@@ -253,13 +457,11 @@
         return { target: target, mode: mode };
       });
       var evidence = array(rawRole.evidence, 'runtime role.evidence').map(function (rawEvidence) {
-        rawEvidence = object(rawEvidence, 'runtime role evidence');
-        var location = exactLocation(rawEvidence.location, 'runtime role evidence.location');
+        var location = exactLocation(rawEvidence, 'runtime role evidence');
         if (!openable[location.path]) throw new Error('Runtime role evidence is outside publication authority.');
-        return { label: text(rawEvidence.label, 'runtime role evidence.label'), location: location };
+        return { location: location };
       });
       return {
-        id: id,
         name: text(rawRole.name, 'runtime role.name'),
         purpose: text(rawRole.purpose, 'runtime role.purpose'),
         prominence: closedText(rawRole.prominence, ['primary', 'supporting', 'unknown'], 'runtime role.prominence'),
@@ -273,7 +475,7 @@
       };
     });
     var unclassifiedIDs = Object.create(null);
-    var unclassified = array(raw.unclassified_targets, 'runtime_portfolio.unclassified_targets').map(function (rawTarget) {
+    var unclassified = array(raw.unclassified_targets, 'repository runtime.unclassified_targets').map(function (rawTarget) {
       rawTarget = object(rawTarget, 'unclassified runtime target');
       var targetID = text(rawTarget.program_target_id, 'unclassified runtime target.program_target_id');
       var target = targetDirectory.byID[targetID];
@@ -282,6 +484,11 @@
       if (unclassifiedIDs[targetID]) throw new Error('Unclassified runtime target identities are not unique.');
       unclassifiedIDs[targetID] = true;
       return { target: target, reason: text(rawTarget.reason, 'unclassified runtime target.reason') };
+    });
+    targetDirectory.targets.forEach(function (target) {
+      if (!mappedTargets[target.id] && !unclassifiedIDs[target.id]) {
+        throw new Error('Repository runtime does not cover every analyzed ProgramTarget.');
+      }
     });
     return { roles: roles, unclassified: unclassified };
   }
@@ -294,7 +501,7 @@
       seen[id] = true;
       var files = array(block.files, 'core block.files').map(function (file) {
         file = object(file, 'core file');
-        return { fileRef: text(file.file_ref, 'core file.file_ref'), path: text(file.path, 'core file.path') };
+        return { path: text(file.path, 'core file.path') };
       });
       var symbols = array(block.representative_symbols, 'core block.representative_symbols').map(function (rawSymbol) {
         rawSymbol = object(rawSymbol, 'representative symbol');
@@ -302,10 +509,7 @@
         return {
           id: text(symbol.node_id, 'representative symbol.node_id'),
           name: text(symbol.name, 'representative symbol.name'),
-          packageName: text(symbol.package, 'representative symbol.package'),
           location: exactLocation(symbol.location, 'representative symbol.location'),
-          kind: text(rawSymbol.kind, 'representative symbol.kind'),
-          visibility: text(rawSymbol.visibility, 'representative symbol.visibility'),
           unresolvedOutgoing: integer(rawSymbol.unresolved_outgoing, 'representative symbol.unresolved_outgoing')
         };
       });
@@ -346,16 +550,10 @@
     return { facts: facts, byRef: byRef };
   }
 
-  function buildJSTSSurfaceCatalog(data, target, indexSHA256, openable) {
-    if (data.js_ts_surface_catalog_view == null) return null;
-    var raw = object(data.js_ts_surface_catalog_view, 'js_ts_surface_catalog_view');
-    if (integer(raw.version, 'js_ts_surface_catalog_view.version') !== 2 ||
-        text(raw.program_target_id, 'js_ts_surface_catalog_view.program_target_id') !== target.id ||
-        text(raw.program_index_sha256, 'js_ts_surface_catalog_view.program_index_sha256') !== indexSHA256) {
-      throw new Error('The JavaScript/TypeScript surface catalog does not bind the default program.');
-    }
-    var facts = buildJSTSFactDirectory(raw.facts, 'js_ts_surface_catalog_view', openable);
-    var project = object(raw.project, 'js_ts_surface_catalog_view.project');
+  function buildJSTSSurfaceCatalog(raw, openable) {
+    if (raw == null) return null;
+    raw = object(raw, 'target features.surfaces');
+    var facts = buildJSTSFactDirectory(raw.facts, 'target features.surfaces', openable);
     var surfaceByID = Object.create(null);
     var surfaces = array(raw.surfaces, 'js_ts_surface_catalog_view.surfaces').map(function (rawSurface) {
       rawSurface = object(rawSurface, 'JavaScript/TypeScript surface');
@@ -393,12 +591,6 @@
       return surface;
     });
     return {
-      project: {
-        name: text(project.name, 'js_ts_surface_catalog_view.project.name'),
-        manifestPath: text(project.manifest_path, 'js_ts_surface_catalog_view.project.manifest_path'),
-        configPath: optionalText(project.config_path, 'js_ts_surface_catalog_view.project.config_path'),
-        moduleResolution: text(project.module_resolution, 'js_ts_surface_catalog_view.project.module_resolution')
-      },
       facts: facts.facts,
       factsByRef: facts.byRef,
       surfaces: surfaces,
@@ -406,15 +598,11 @@
     };
   }
 
-  function buildCrossSurfacePaths(data, target, indexSHA256, openable, surfaceCatalog) {
-    if (data.cross_surface_path_view == null) return null;
-    var raw = object(data.cross_surface_path_view, 'cross_surface_path_view');
-    if (integer(raw.version, 'cross_surface_path_view.version') !== 1 ||
-        text(raw.program_target_id, 'cross_surface_path_view.program_target_id') !== target.id ||
-        text(raw.program_index_sha256, 'cross_surface_path_view.program_index_sha256') !== indexSHA256 || !surfaceCatalog) {
-      throw new Error('The cross-surface path inventory does not bind the exact surface catalog and default program.');
-    }
-    var facts = buildJSTSFactDirectory(raw.facts, 'cross_surface_path_view', openable);
+  function buildCrossSurfacePaths(raw, openable, surfaceCatalog) {
+    if (raw == null) return null;
+    raw = object(raw, 'target features.cross_surface_paths');
+    if (!surfaceCatalog) throw new Error('Cross-surface paths require the exact surface catalog.');
+    var facts = buildJSTSFactDirectory(raw.facts, 'target features.cross_surface_paths', openable);
     var pathByID = Object.create(null);
     var paths = array(raw.paths, 'cross_surface_path_view.paths').map(function (rawPath) {
       rawPath = object(rawPath, 'cross-surface path');
@@ -472,12 +660,9 @@
       return path;
     });
     var coverage = object(raw.coverage, 'cross_surface_path_view.coverage');
-    ['routes_observed', 'http_uses_observed', 'paths_projected', 'steps_projected', 'exact_steps',
-      'alternative_steps', 'unresolved_steps', 'exact_static_steps', 'resolved_indirect_steps',
-      'possible_steps', 'unresolved_frontier_steps', 'frontiers'].forEach(function (field) {
+    ['routes_observed', 'http_uses_observed'].forEach(function (field) {
       integer(coverage[field], 'cross_surface_path_view.coverage.' + field);
     });
-    if (coverage.paths_projected !== paths.length) throw new Error('Cross-surface path coverage does not match the path inventory.');
     facts.facts.forEach(function (fact) {
       if (fact.category !== 'surface') return;
       var surface = surfaceCatalog.surfacesByID[fact.ref];
@@ -513,14 +698,9 @@
       String(value.witnessIndex) + '\u0000' + value.externalSymbolID;
   }
 
-  function buildActivityPaths(data, target, indexSHA256, activitiesByID, integrationUsesByKey) {
-    if (data.activity_path_view == null) return null;
-    var raw = object(data.activity_path_view, 'activity_path_view');
-    if (integer(raw.version, 'activity_path_view.version') !== 1 ||
-        text(raw.program_target_id, 'activity_path_view.program_target_id') !== target.id ||
-        text(raw.program_index_sha256, 'activity_path_view.program_index_sha256') !== indexSHA256) {
-      throw new Error('Activity paths do not bind the default program.');
-    }
+  function buildActivityPaths(raw, activitiesByID, integrationUsesByKey) {
+    if (raw == null) return null;
+    raw = object(raw, 'target features.activity_paths');
     var objectsByID = Object.create(null);
     array(raw.objects, 'activity path objects').forEach(function (rawObject) {
       rawObject = object(rawObject, 'activity path object');
@@ -529,9 +709,7 @@
       objectsByID[id] = {
         id: id,
         kind: text(rawObject.kind, 'activity path object.kind'),
-        name: text(rawObject.name, 'activity path object.name'),
-        signature: optionalText(rawObject.signature, 'activity path object.signature'),
-        location: rawObject.location == null ? null : exactLocation(rawObject.location, 'activity path object.location')
+        name: text(rawObject.name, 'activity path object.name')
       };
     });
     var routes = [];
@@ -554,13 +732,10 @@
           throw new Error('An activity path step is outside its object dictionary.');
         }
         return {
-          relationID: text(rawStep.relation_id, 'activity path step.relation_id'),
           fromID: fromID,
           toID: toID,
           kind: text(rawStep.kind, 'activity path step.kind'),
-          resolution: closedText(rawStep.resolution, ['exact', 'alternatives'], 'activity path step.resolution'),
           authority: closedText(rawStep.authority, ['exact', 'possible'], 'activity path step.authority'),
-          invocation: optionalText(rawStep.invocation, 'activity path step.invocation'),
           location: rawStep.location == null ? null : exactLocation(rawStep.location, 'activity path step.location')
         };
       });
@@ -571,8 +746,6 @@
         activityID: activityID,
         steps: steps,
         distance: integer(rawRoute.distance, 'activity path route.distance'),
-        possibleSteps: integer(rawRoute.possible_steps, 'activity path route.possible_steps'),
-        callbackHandoffs: integer(rawRoute.callback_handoffs, 'activity path route.callback_handoffs'),
         frontier: array(rawRoute.frontier, 'activity path route.frontier').map(function (reason) {
           return text(reason, 'activity path route.frontier[]');
         }),
@@ -612,41 +785,110 @@
       objectsByID: objectsByID,
       routes: routes,
       routesByID: routesByID,
-      outcomesByUseKey: outcomesByUseKey,
-      coverage: object(raw.coverage, 'activity path coverage')
+      outcomesByUseKey: outcomesByUseKey
     };
   }
 
-  function buildPresentationModel(data) {
-    text(data.repo_name, 'repo_name');
-    if (integer(data.format_version, 'format_version') !== 68) {
-      throw new Error('The report format version is not supported.');
-    }
-    var portfolio = object(data.program_portfolio, 'program_portfolio');
-    var entries = array(portfolio.entries, 'program_portfolio.entries');
-    var defaultID = text(portfolio.default_target_id, 'program_portfolio.default_target_id');
-    var defaultEntry = null;
-    entries.forEach(function (rawEntry) {
-      var entry = object(rawEntry, 'program portfolio entry');
-      var target = object(entry.target, 'program target');
-      if (target.id === defaultID) defaultEntry = entry;
+  function openableDirectory(values, label) {
+    var result = Object.create(null);
+    array(values, label).forEach(function (path) {
+      path = text(path, label + '[]');
+      result[path] = true;
     });
-    if (!defaultEntry) throw new Error('The default program target is missing.');
+    return result;
+  }
 
-    var target = object(defaultEntry.target, 'default program target');
-    var view = object(defaultEntry.view, 'default program view');
-    if (view.target_id !== target.id) throw new Error('The default program view does not match its target.');
-    var indexSHA256 = text(view.index_sha256, 'default program view.index_sha256');
+  function mergedOpenable(repositoryOpenable, values) {
+    var result = Object.create(null);
+    Object.keys(repositoryOpenable).forEach(function (path) { result[path] = true; });
+    array(values, 'target payload.openable_paths').forEach(function (path) {
+      path = text(path, 'target payload.openable_paths[]');
+      result[path] = true;
+    });
+    return result;
+  }
+
+  function buildRepositoryPresentationModel(data) {
+    data = exactRepositoryPayloadShape(data);
+    if (integer(data.version, 'repository payload.version') !== 1) {
+      throw new Error('The repository payload version is not supported.');
+    }
+    var repository = object(data.repository, 'repository payload.repository');
+    var openable = openableDirectory(data.openable_paths, 'repository payload.openable_paths');
+    var directory = buildTargetDirectory(data);
+    var runtime = data.runtime == null ? null : buildRuntimePortfolio(data.runtime, directory, openable);
+    return {
+      repoName: text(repository.name, 'repository payload.repository.name'),
+      revision: text(repository.captured_revision, 'repository payload.repository.captured_revision'),
+      sourceSpec: object(data.source, 'repository payload.source'),
+      target: null,
+      targets: directory.targets,
+      targetsByID: directory.byID,
+      targetsBySelectedID: directory.bySelectedID,
+      defaultTargetID: directory.defaultID,
+      targetOutcomePortfolio: directory.outcomes,
+      runtimePortfolio: runtime,
+      openable: openable,
+      warnings: data.warnings == null ? [] : array(data.warnings, 'repository payload.warnings').map(function (warning) {
+        return text(warning, 'repository payload.warning');
+      }),
+      blocks: [],
+      blocksByID: Object.create(null),
+      blocksBySymbol: Object.create(null),
+      groups: [],
+      groupsByBlock: Object.create(null),
+      groupByBlock: Object.create(null),
+      modelGroupCount: 0,
+      unassignedBlockCount: 0,
+      activityByID: Object.create(null),
+      activities: [],
+      integrations: [],
+      integrationsByID: Object.create(null),
+      integrationUsesByKey: Object.create(null),
+      activityPaths: null,
+      surfaceCatalog: null,
+      crossSurfacePaths: null,
+      objectsByID: Object.create(null),
+      relations: [],
+      programProjection: null,
+      coreCoverage: null
+    };
+  }
+
+  function buildTargetPresentationModel(data, repositoryModel) {
+    data = exactTargetPayloadShape(data);
+    repositoryModel = object(repositoryModel, 'repository presentation model');
+    if (integer(data.version, 'target payload.version') !== 1) {
+      throw new Error('The target payload version is not supported.');
+    }
+    var target = object(data.target, 'target payload.target');
+    var currentTarget = {
+      id: text(target.id, 'target payload.target.id'),
+      language: text(target.language, 'target payload.target.language'),
+      kind: text(target.kind, 'target payload.target.kind'),
+      name: text(target.name, 'target payload.target.name'),
+      selector: text(target.selector, 'target payload.target.selector')
+    };
+    var directoryTarget = repositoryModel.targetsByID[currentTarget.id];
+    if (!directoryTarget || directoryTarget.language !== currentTarget.language ||
+        directoryTarget.kind !== currentTarget.kind || directoryTarget.displayName !== currentTarget.name) {
+      throw new Error('The target payload does not match repository target authority.');
+    }
+    currentTarget.selectedTargetID = directoryTarget.selectedTargetID;
+    currentTarget.href = directoryTarget.href;
+    var openable = mergedOpenable(repositoryModel.openable, data.openable_paths);
+    var features = object(data.features, 'target payload.features');
+    var view = object(features.program, 'target features.program');
 
     var objectsByID = Object.create(null);
-    array(view.objects, 'program view.objects').forEach(function (rawObject) {
+    array(view.objects, 'target features.program.objects').forEach(function (rawObject) {
       rawObject = object(rawObject, 'program object');
       var id = text(rawObject.id, 'program object.id');
       if (objectsByID[id]) throw new Error('Program object identities are not unique.');
       objectsByID[id] = rawObject;
     });
-    var relations = array(view.relations, 'program view.relations');
-    var rawProjection = object(view.projection, 'program view.projection');
+    var relations = array(view.relations, 'target features.program.relations');
+    var rawProjection = object(view.projection, 'target features.program.projection');
     var programProjection = {
       seeds: projectionCoverage(rawProjection.seeds, 'program view.projection.seeds'),
       objects: projectionCoverage(rawProjection.objects, 'program view.projection.objects'),
@@ -657,18 +899,16 @@
       }, 0)
     };
 
-    var core = data.core_map_view == null ? null : object(data.core_map_view, 'core_map_view');
+    var core = features.core == null ? null : object(features.core, 'target features.core');
     var blocks = [];
     if (core) {
-      if (core.program_target_id !== target.id) throw new Error('CoreMap does not match the default target.');
-      flattenBlocks(array(core.refined_core, 'core_map_view.refined_core'), 0, blocks, Object.create(null));
+      flattenBlocks(array(core.refined_core, 'target features.core.refined_core'), 0, blocks, Object.create(null));
     }
 
     var activityByID = Object.create(null);
     var activities = [];
-    if (data.activity_entrypoint_view != null) {
-      var activity = object(data.activity_entrypoint_view, 'activity_entrypoint_view');
-      if (activity.program_target_id !== target.id) throw new Error('Activity entrypoints do not match the default target.');
+    if (features.entrypoints != null) {
+      var activity = object(features.entrypoints, 'target features.entrypoints');
       array(activity.entrypoints, 'activity entrypoints').forEach(function (rawStart) {
         rawStart = object(rawStart, 'activity entrypoint');
         var id = text(rawStart.object_id, 'activity entrypoint.object_id');
@@ -688,9 +928,8 @@
     var integrations = [];
     var integrationsByID = Object.create(null);
     var integrationUsesByKey = Object.create(null);
-    if (data.integration_usage_view != null) {
-      var usageView = object(data.integration_usage_view, 'integration_usage_view');
-      if (usageView.program_target_id !== target.id) throw new Error('Integration usage does not match the default target.');
+    if (features.integrations != null) {
+      var usageView = object(features.integrations, 'target features.integrations');
       var integrationIDs = Object.create(null);
       array(usageView.dependencies, 'integration dependencies').forEach(function (rawDependency) {
         rawDependency = object(rawDependency, 'integration dependency');
@@ -722,7 +961,6 @@
           name: text(rawDependency.name, 'integration dependency.name'),
           kind: text(rawDependency.kind, 'integration dependency.kind'),
           packagePath: text(rawDependency.package_path, 'integration dependency.package_path'),
-          modulePath: optionalText(rawDependency.module_path, 'integration dependency.module_path'),
           uses: uses
         };
         integrationsByID[integration.id] = integration;
@@ -730,9 +968,7 @@
       });
     }
 
-    var activityPaths = buildActivityPaths(
-      data, target, indexSHA256, activityByID, integrationUsesByKey
-    );
+    var activityPaths = buildActivityPaths(features.activity_paths, activityByID, integrationUsesByKey);
 
     var blocksByID = Object.create(null);
     var blocksBySymbol = Object.create(null);
@@ -811,26 +1047,9 @@
       }
     }
 
-    var openable = Object.create(null);
-    array(data.openable_paths, 'openable_paths').forEach(function (path) {
-      path = text(path, 'openable path');
-      openable[path] = true;
-    });
-
-    var currentTarget = {
-      id: text(target.id, 'program target.id'),
-      language: text(target.language, 'program target.language'),
-      kind: text(target.kind, 'program target.kind'),
-      name: text(target.name, 'program target.name'),
-      selector: text(target.selector, 'program target.selector'),
-      indexSHA256: indexSHA256,
-      sources: array(target.sources, 'program target.sources')
-    };
-    var targetDirectory = buildTargetDirectory(data, currentTarget);
-    var targetOutcomePortfolio = buildTargetOutcomePortfolio(data, targetDirectory);
-    var surfaceCatalog = buildJSTSSurfaceCatalog(data, currentTarget, indexSHA256, openable);
+    var surfaceCatalog = buildJSTSSurfaceCatalog(features.surfaces, openable);
     var crossSurfacePaths = buildCrossSurfacePaths(
-      data, currentTarget, indexSHA256, openable, surfaceCatalog
+      features.cross_surface_paths, openable, surfaceCatalog
     );
     if (!!surfaceCatalog !== !!crossSurfacePaths) {
       throw new Error('JavaScript/TypeScript surface and path authority must be published together.');
@@ -839,20 +1058,18 @@
     if (isJSTS !== !!surfaceCatalog) {
       throw new Error('JavaScript/TypeScript semantic targets require exact surface and path authority.');
     }
-    var runtimePortfolio = data.runtime_portfolio == null ? null :
-      buildRuntimePortfolio(data, targetDirectory, openable);
 
     return {
-      raw: data,
-      repoName: data.repo_name,
-      revision: text(data.captured_revision, 'captured_revision'),
-      capturedInputs: integer(data.captured_input_count, 'captured_input_count'),
+      repoName: repositoryModel.repoName,
+      revision: repositoryModel.revision,
+      sourceSpec: repositoryModel.sourceSpec,
       target: currentTarget,
-      targets: targetDirectory.targets,
-      targetsByID: targetDirectory.byID,
-      defaultTargetID: targetDirectory.defaultID,
-      targetOutcomePortfolio: targetOutcomePortfolio,
-      runtimePortfolio: runtimePortfolio,
+      targets: repositoryModel.targets,
+      targetsByID: repositoryModel.targetsByID,
+      targetsBySelectedID: repositoryModel.targetsBySelectedID,
+      defaultTargetID: repositoryModel.defaultTargetID,
+      targetOutcomePortfolio: repositoryModel.targetOutcomePortfolio,
+      runtimePortfolio: repositoryModel.runtimePortfolio,
       surfaceCatalog: surfaceCatalog,
       crossSurfacePaths: crossSurfacePaths,
       blocks: blocks,
@@ -875,8 +1092,8 @@
       relations: relations,
       programProjection: programProjection,
       openable: openable,
-      coreCoverage: core ? object(core.coverage, 'core_map_view.coverage') : null,
-      warnings: data.warnings == null ? [] : array(data.warnings, 'warnings')
+      coreCoverage: core ? object(core.coverage, 'target features.core.coverage') : null,
+      warnings: repositoryModel.warnings
     };
   }
 
@@ -899,30 +1116,35 @@
     return { base: baseMatch[1], runID: runMatch[1] };
   }
 
-  function buildSourceAuthority(data, model) {
-    var github = data.github_source_links == null ? null : object(data.github_source_links, 'github_source_links');
-    var gitlab = data.gitlab_source_links == null ? null : object(data.gitlab_source_links, 'gitlab_source_links');
-    if (github && gitlab) throw new Error('The report has multiple source authorities.');
-    var links = github || gitlab;
-    if (links) {
-      var repositoryURL = text(links.repository_url, 'repository_url').replace(/\/+$/g, '');
+  function buildSourceAuthority(sourceSpec, model) {
+    sourceSpec = object(sourceSpec, 'repository payload.source');
+    var kind = closedText(sourceSpec.kind, ['github', 'gitlab', 'served', 'none'], 'repository source.kind');
+    if (kind === 'github' || kind === 'gitlab') {
+      var repositoryURL = text(sourceSpec.repository_url, 'repository source.repository_url').replace(/\/+$/g, '');
       var parsed = new URL(repositoryURL);
       if ((parsed.protocol !== 'https:' && parsed.protocol !== 'http:') || parsed.username || parsed.password ||
           parsed.search || parsed.hash) throw new Error('The source repository URL is unsafe.');
-      var revision = text(links.revision, 'source revision');
-      if (revision !== model.revision) throw new Error('The source authority revision does not match the report.');
       return {
         mode: 'static',
-        host: github ? 'GitHub' : 'GitLab',
+        host: kind === 'github' ? 'GitHub' : 'GitLab',
         repositoryURL: repositoryURL,
-        revision: revision,
-        pathPrefix: links.path_prefix || ''
+        revision: model.revision,
+        pathPrefix: optionalText(sourceSpec.path_prefix, 'repository source.path_prefix')
       };
     }
-    var ids = data.source_ids == null ? null : object(data.source_ids, 'source_ids');
-    var server = serverCoordinates();
-    if (!ids || !server) throw new Error('No exact source-opening authority is available.');
-    return { mode: 'served', ids: ids, server: server };
+    if (kind === 'served') {
+      var ids = object(sourceSpec.source_ids, 'repository source.source_ids');
+      var server = serverCoordinates();
+      if (!server) throw new Error('The served source authority is unavailable at this URL.');
+      Object.keys(model.openable).forEach(function (path) {
+        if (!optionalText(ids[path], 'repository source source ID')) {
+          throw new Error('Source evidence lacks a manifest source ID.');
+        }
+      });
+      return { mode: 'served', ids: ids, server: server };
+    }
+    if (Object.keys(model.openable).length) throw new Error('No exact source-opening authority is available.');
+    return { mode: 'none' };
   }
 
   function staticSourceURL(location) {
@@ -1071,20 +1293,19 @@
 
   function relationWitnessAccounting(relation) {
     var witnesses = array(relation.witnesses, 'program relation.witnesses');
+    var omitted = integer(relation.witnesses_omitted, 'program relation.witnesses_omitted');
+    var projectedOmitted = integer(
+      relation.witnesses_projection_omitted,
+      'program relation.witnesses_projection_omitted'
+    );
+    var indexed = witnesses.length + projectedOmitted;
     var accounting = {
-      observed: integer(relation.witnesses_observed, 'program relation.witnesses_observed'),
-      indexed: integer(relation.witnesses_indexed, 'program relation.witnesses_indexed'),
-      omitted: integer(relation.witnesses_omitted, 'program relation.witnesses_omitted'),
-      projectedOmitted: integer(
-        relation.witnesses_projection_omitted,
-        'program relation.witnesses_projection_omitted'
-      ),
+      observed: indexed + omitted,
+      indexed: indexed,
+      omitted: omitted,
+      projectedOmitted: projectedOmitted,
       shown: witnesses.length
     };
-    if (accounting.observed !== accounting.indexed + accounting.omitted ||
-        accounting.indexed !== accounting.shown + accounting.projectedOmitted) {
-      throw new Error('Program relation witness accounting is incomplete.');
-    }
     return accounting;
   }
 
@@ -1536,9 +1757,7 @@
 
   function selectedReportRoute() {
     var hash = window.location.hash || '';
-    if (hash === '' || hash === '#/') {
-      return repositoryOverviewKind() ? { kind: 'repository' } : { kind: 'program' };
-    }
+    if (hash === '' || hash === '#/') return { kind: 'repository' };
     if (hash === '#/repository') return { kind: 'repository' };
     if (hash === '#/program') return { kind: 'program' };
     var match = hash.match(/^#\/program\/(responsibility|entrypoint|integration|surface|path)\/([^/?#]+)$/);
@@ -1685,7 +1904,7 @@
     var current = document.getElementById('rm-target-current');
     if (current) current.textContent = repositoryRoute ? 'All targets' : 'Target · ' + state.model.target.name;
     (state.headerTargetLinks || []).forEach(function (entry) {
-      var currentPage = route.kind === 'program' && entry.outcome.state === 'analyzed' &&
+      var currentPage = !!state.model.target && route.kind === 'program' && entry.outcome.state === 'analyzed' &&
         entry.outcome.programTargetID === state.model.target.id;
       if (entry.link) entry.link.setAttribute('aria-current', currentPage ? 'page' : 'false');
       if (entry.currentBadge) {
@@ -1724,7 +1943,7 @@
       row.appendChild(copy);
       var badges = element('span', 'rm-target-switcher__badges');
       var currentBadge = null;
-      if (analyzed && outcome.programTargetID === state.model.target.id) {
+      if (analyzed) {
         currentBadge = element('small', 'rm-target-switcher__badge rm-target-switcher__badge--current', 'Current');
         currentBadge.hidden = true;
         badges.appendChild(currentBadge);
@@ -1746,7 +1965,6 @@
       var summary = switcher.querySelector('summary');
       if (summary) summary.focus();
     });
-    updateHeaderContext(selectedReportRoute());
   }
 
   function humanRuntimeToken(value) {
@@ -2104,7 +2322,7 @@
         ' selected targets analyzed. Open an analyzed program map to inspect its exact structural and semantic evidence.' :
       'Open the selected program map to inspect its exact structural and semantic evidence.');
     var link = element('a', 'rm-survey__overview-link', 'Open program map →');
-    link.href = '#/program';
+    link.href = state.model.targets.length ? state.model.targets[0].href : '#/repository';
     copy.appendChild(link);
     survey.appendChild(copy);
     if (state.model.targetOutcomePortfolio) {
@@ -2880,16 +3098,18 @@
   function renderDiagnostics(host) {
     var notes = state.model.warnings.slice();
     var projection = state.model.programProjection;
-    ['seeds', 'objects', 'relations'].forEach(function (kind) {
-      var coverage = projection[kind];
-      if (coverage.omitted > 0) {
-        notes.push(String(coverage.omitted) + ' of ' + String(coverage.eligible) +
-          ' eligible ProgramIndex ' + kind + ' are outside this compact browser projection.');
+    if (projection) {
+      ['seeds', 'objects', 'relations'].forEach(function (kind) {
+        var coverage = projection[kind];
+        if (coverage.omitted > 0) {
+          notes.push(String(coverage.omitted) + ' of ' + String(coverage.eligible) +
+            ' eligible ProgramIndex ' + kind + ' are outside this compact browser projection.');
+        }
+      });
+      if (projection.witnessesOmitted > 0) {
+        notes.push(String(projection.witnessesOmitted) +
+          ' exact relation witnesses are outside this compact browser projection.');
       }
-    });
-    if (projection.witnessesOmitted > 0) {
-      notes.push(String(projection.witnessesOmitted) +
-        ' exact relation witnesses are outside this compact browser projection.');
     }
     var coverage = state.model.coreCoverage;
     if (coverage && coverage.program_objects_omitted > 0) {
@@ -2996,30 +3216,183 @@
     toastTimer = window.setTimeout(function () { toast.hidden = true; }, 5500);
   }
 
+  function boundedClientError(error) {
+    var message = error && error.message ? error.message : String(error || 'The report could not be opened.');
+    message = message.replace(/\s+/g, ' ').trim();
+    if (!message) message = 'The report could not be opened.';
+    if (message.length > MAX_CLIENT_ERROR_CHARS) {
+      message = message.slice(0, MAX_CLIENT_ERROR_CHARS - 1).trimEnd() + '…';
+    }
+    return message;
+  }
+
   function renderFatal(error) {
     document.getElementById('rm-app').hidden = true;
     var fatal = document.getElementById('rm-fatal');
     fatal.hidden = false;
-    document.getElementById('rm-fatal-message').textContent = error && error.message ? error.message : String(error);
+    document.getElementById('rm-fatal-message').textContent = boundedClientError(error);
   }
 
-  function boot() {
+  function routeNeedsTarget() {
+    var hash = String(window.location.hash || '');
+    if (hash === '' || hash === '#/' || hash === '#/repository') return false;
+    if (hash === '#/program' ||
+        /^#\/program\/(responsibility|entrypoint|integration|surface|path)\/([^/?#]+)$/.test(hash)) {
+      return true;
+    }
+    throw new Error('The requested report route is not supported.');
+  }
+
+  function currentDocumentLocation() {
+    var raw = String(window.location.pathname || '/report.html') + String(window.location.search || '');
     try {
-      var raw = readPayload();
-      var model = buildPresentationModel(raw);
+      return new URL(raw, 'https://repomap.invalid/');
+    } catch (_error) {
+      throw new Error('The current report URL is invalid.');
+    }
+  }
+
+  function targetHrefDocumentKey(href) {
+    var base = currentDocumentLocation();
+    try {
+      var resolved = new URL(text(href, 'repository target.href'), base);
+      if (resolved.origin !== base.origin) throw new Error('foreign target route');
+      return resolved.pathname + resolved.search;
+    } catch (_error) {
+      throw new Error('A repository target link is invalid.');
+    }
+  }
+
+  function targetOutcomeForLocation(repositoryModel) {
+    var search = String(window.location.search || '');
+    var current = currentDocumentLocation();
+    var currentKey = current.pathname + current.search;
+    var analyzed = repositoryModel.targetOutcomePortfolio.analyzed;
+    var matching = analyzed.filter(function (outcome) {
+      return targetHrefDocumentKey(outcome.target.href) === currentKey;
+    });
+    if (matching.length > 1) throw new Error('The current URL matches multiple analyzed targets.');
+    if (matching.length === 1) return matching[0];
+    if (search) throw new Error('The current target query is not part of this report.');
+    var logicalDefault = repositoryModel.targetOutcomePortfolio.bySelectedID[
+      repositoryModel.targetOutcomePortfolio.defaultSelectedTargetID
+    ];
+    if (logicalDefault && logicalDefault.state === 'analyzed') return logicalDefault;
+    if (analyzed.length) return analyzed[0];
+    throw new Error('This report has no analyzed target page.');
+  }
+
+  function showApplication() {
+    document.getElementById('rm-app').hidden = false;
+    document.getElementById('rm-fatal').hidden = true;
+  }
+
+  function renderTargetLoadError(error) {
+    unmountSystemCanvas();
+    state.model = state.repositoryModel;
+    state.source = buildSourceAuthority(state.repositoryModel.sourceSpec, state.repositoryModel);
+    showApplication();
+    var host = document.getElementById('rm-app');
+    var section = element('section', 'rm-focus rm-target-load-error');
+    appendText(section, 'p', 'rm-eyebrow', 'Target report unavailable');
+    appendText(section, 'h1', '', 'This target could not be opened');
+    appendText(section, 'p', 'rm-focus__purpose', boundedClientError(error));
+    var repositoryLink = element('a', 'rm-survey__overview-link', 'Back to repository overview →');
+    repositoryLink.href = '#/repository';
+    section.appendChild(repositoryLink);
+    host.replaceChildren(section);
+    var current = document.getElementById('rm-target-current');
+    if (current) current.textContent = 'Target unavailable';
+    var scope = document.getElementById('rm-page-context');
+    if (scope) scope.textContent = 'Target report unavailable · ' +
+      state.repositoryModel.revision.slice(0, MAX_REVISION_ABBREVIATION_CHARS);
+    document.title = state.repositoryModel.repoName + ' — target unavailable — repomap';
+  }
+
+  async function transition() {
+    var token = ++navigationToken;
+    var needsTarget;
+    try {
+      needsTarget = routeNeedsTarget();
+    } catch (error) {
+      if (token === navigationToken) renderTargetLoadError(error);
+      return;
+    }
+    if (!needsTarget) {
+      state.model = state.repositoryModel;
+      state.source = buildSourceAuthority(state.repositoryModel.sourceSpec, state.repositoryModel);
+      showApplication();
+      try {
+        renderRoute();
+      } catch (error) {
+        renderFatal(error);
+      }
+      return;
+    }
+
+    var outcome;
+    try {
+      outcome = targetOutcomeForLocation(state.repositoryModel);
+      var payload = await state.reportSource.loadTarget(outcome.selectedTargetID);
+      if (token !== navigationToken) return;
+      var model = buildTargetPresentationModel(payload, state.repositoryModel);
+      if (model.target.id !== outcome.programTargetID) {
+        throw new Error('The loaded target does not match the current repository link.');
+      }
+      var source = buildSourceAuthority(model.sourceSpec, model);
+      if (token !== navigationToken) return;
+      state.model = model;
+      state.source = source;
+      showApplication();
+      renderRoute();
+    } catch (error) {
+      if (token === navigationToken) renderTargetLoadError(error);
+    }
+  }
+
+  async function boot(reportSource) {
+    if (bootStarted) {
+      renderFatal(new Error('The report application was already started.'));
+      return;
+    }
+    bootStarted = true;
+    try {
+      reportSource = object(reportSource, 'report source');
+      if (typeof reportSource.loadRepository !== 'function' || typeof reportSource.loadTarget !== 'function') {
+        throw new Error('The report source is incomplete.');
+      }
+      var repositoryPayload = await reportSource.loadRepository();
+      var repositoryModel = buildRepositoryPresentationModel(repositoryPayload);
       state = {
-        model: model, source: buildSourceAuthority(raw, model), canvasMount: null,
-        completeCanvas: false, focusGroupID: null, pendingResponsibilityID: '', pendingAreaGroupFocusID: ''
+        model: repositoryModel,
+        repositoryModel: repositoryModel,
+        reportSource: reportSource,
+        source: buildSourceAuthority(repositoryModel.sourceSpec, repositoryModel),
+        canvasMount: null,
+        completeCanvas: false,
+        focusGroupID: null,
+        pendingResponsibilityID: '',
+        pendingAreaGroupFocusID: '',
+        headerTargetLinks: []
       };
       renderHeader();
-      renderRoute();
-      window.addEventListener('hashchange', function () {
-        try { renderRoute(); } catch (error) { renderFatal(error); }
-      });
+      window.addEventListener('hashchange', function () { void transition(); });
+      await transition();
     } catch (error) {
       renderFatal(error);
     }
   }
 
-  boot();
+  function failApplication(error) {
+    renderFatal(error);
+  }
+
+  var api = Object.freeze({ boot: boot, fail: failApplication });
+  if (globalThis.RepomapReportApp) throw new Error('The report application namespace is already installed.');
+  Object.defineProperty(globalThis, 'RepomapReportApp', {
+    value: api,
+    enumerable: false,
+    configurable: false,
+    writable: false
+  });
 })();

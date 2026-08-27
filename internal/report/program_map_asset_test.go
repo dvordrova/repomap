@@ -44,8 +44,10 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 		[]byte(`id="rm-system-canvas-interaction-js"`),
 		[]byte(`id="rm-system-canvas-geometry-js"`),
 		[]byte(`id="rm-system-canvas-renderer-js"`),
+		[]byte(`id="rm-report-loader-js"`),
 		[]byte(`id="rm-report-app-js"`),
-		[]byte(`buildPresentationModel(data)`),
+		[]byte(`buildRepositoryPresentationModel(repositoryPayload)`),
+		[]byte(`buildTargetPresentationModel(payload, state.repositoryModel)`),
 		[]byte(`Repository overview`),
 		[]byte(`Repository flow`),
 		[]byte(`Entrypoints`),
@@ -79,7 +81,8 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 		[]byte(`rm-core-group`),
 		[]byte(`function renderCoreGroup(nodes, graph, options, callbacks)`),
 		[]byte(`return renderer.mountSystemCanvas(canvasHost, graph`),
-		[]byte(`function buildActivityPaths(data, target, indexSHA256, activitiesByID, integrationUsesByKey)`),
+		[]byte(`function buildActivityPaths(raw, activitiesByID, integrationUsesByKey)`),
+		[]byte(`object(raw, 'target features.activity_paths')`),
 		[]byte(`function renderActivityDetail(host, activity)`),
 		[]byte(`function renderIntegrationDetail(host, integration)`),
 		[]byte(`function routeForActivity(id)`),
@@ -118,6 +121,9 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 		[]byte(`Show complete map`),
 		[]byte(`Focus current grouping selection`),
 		[]byte(`rm-canvas-mode`),
+		[]byte(`id="rm-report-data"`),
+		[]byte(`buildPresentationModel(data)`),
+		[]byte(`model.raw`),
 	} {
 		if bytes.Contains(html, retired) {
 			t.Errorf("rendered orientation workspace retained old frontend %q", retired)
@@ -127,6 +133,7 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 
 func TestSystemCanvasAssetsKeepIsolatedOwnership(t *testing.T) {
 	scriptIDs := []string{
+		`id="rm-report-loader-js"`,
 		`id="rm-system-canvas-graph-js"`,
 		`id="rm-system-canvas-interaction-js"`,
 		`id="rm-system-canvas-geometry-js"`,
@@ -146,11 +153,12 @@ func TestSystemCanvasAssetsKeepIsolatedOwnership(t *testing.T) {
 	}
 
 	assets := map[string]string{
-		"graph":       systemCanvasGraphJS,
-		"interaction": systemCanvasInteractionJS,
-		"geometry":    systemCanvasGeometryJS,
-		"renderer":    systemCanvasRendererJS,
-		"report app":  reportAppJS,
+		"report loader": reportLoaderJS,
+		"graph":         systemCanvasGraphJS,
+		"interaction":   systemCanvasInteractionJS,
+		"geometry":      systemCanvasGeometryJS,
+		"renderer":      systemCanvasRendererJS,
+		"report app":    reportAppJS,
 	}
 	for name, source := range assets {
 		if strings.Contains(strings.ToLower(source), "</script") {
@@ -204,6 +212,11 @@ func TestSystemCanvasAssetsKeepIsolatedOwnership(t *testing.T) {
 		"function canvasTopology(",
 		"function drawCanvasEdges(",
 		"function scheduleCanvasDraw(",
+		"rm-report-data",
+		"rm-bundle-index",
+		"rm-repository-payload",
+		"rm-target-chunk-",
+		"model.raw",
 	)
 }
 
@@ -317,11 +330,15 @@ func TestOrientationClientUsesCompactTargetSwitcherAndRouteContext(t *testing.T)
 
 func TestOrientationClientRendersRuntimePortfolioBeforeProgramMap(t *testing.T) {
 	for _, required := range []string{
-		"object(data.runtime_portfolio, 'runtime_portfolio')",
-		"runtime_portfolio.version') !== 3",
-		"The runtime portfolio version is not supported",
-		"function buildTargetDirectory(data, currentTarget)",
-		"href: '#/program'",
+		"function buildRepositoryPresentationModel(data)",
+		"integer(data.version, 'repository payload.version') !== 1",
+		"The repository payload version is not supported",
+		"function buildTargetDirectory(data)",
+		"data.runtime == null ? null : buildRuntimePortfolio(data.runtime, directory, openable)",
+		"object(raw, 'repository runtime')",
+		"rawOutcome.selected_target_id",
+		"rawOutcome.program_target_id",
+		"optionalText(rawOutcome.href, 'repository target.href')",
 		"link.href = implementation.target.href",
 		"function runtimeEvidenceGroups(evidence)",
 		"function renderRuntimeEvidence(role)",
@@ -374,7 +391,10 @@ func TestOrientationClientRendersRuntimePortfolioBeforeProgramMap(t *testing.T) 
 			t.Errorf("runtime portfolio CSS is missing %q", selector)
 		}
 	}
-	for _, retired := range []string{"Implemented by", "Repository evidence", "Supporting and optional roles"} {
+	for _, retired := range []string{
+		"Implemented by", "Repository evidence", "Supporting and optional roles",
+		"data.runtime_portfolio", "runtime_portfolio.version", "function buildTargetDirectory(data, currentTarget)",
+	} {
 		if strings.Contains(reportAppJS, retired) {
 			t.Errorf("runtime portfolio retained internal presentation copy %q", retired)
 		}
@@ -386,10 +406,15 @@ func TestOrientationClientRendersRuntimePortfolioBeforeProgramMap(t *testing.T) 
 
 func TestOrientationClientRendersExactJSTSSurfacesAndCrossSurfacePaths(t *testing.T) {
 	for _, required := range []string{
-		"function buildJSTSSurfaceCatalog(data, target, indexSHA256, openable)",
-		"js_ts_surface_catalog_view.version') !== 2",
-		"data.format_version, 'format_version') !== 68",
-		"function buildCrossSurfacePaths(data, target, indexSHA256, openable, surfaceCatalog)",
+		"function buildTargetPresentationModel(data, repositoryModel)",
+		"integer(data.version, 'target payload.version') !== 1",
+		"The target payload version is not supported",
+		"var features = object(data.features, 'target payload.features')",
+		"function buildJSTSSurfaceCatalog(raw, openable)",
+		"object(raw, 'target features.surfaces')",
+		"function buildCrossSurfacePaths(raw, openable, surfaceCatalog)",
+		"object(raw, 'target features.cross_surface_paths')",
+		"features.cross_surface_paths, openable, surfaceCatalog",
 		"['browser_application', 'node_server', 'command_line_application', 'shared_contracts', 'tool', 'unknown']",
 		"if (value === 'command_line_application') return 'Command-line application'",
 		"['product_surface', 'supporting_code', 'tool', 'unknown']",
@@ -529,8 +554,10 @@ func TestRenderHTMLRequiresExactPersistedAuthority(t *testing.T) {
 
 func TestOrientationClientKeepsStrictSourceActionsWithoutLegacyFallbacks(t *testing.T) {
 	for _, required := range []string{
-		"multiple source authorities",
-		"The source authority revision does not match the report",
+		"object(sourceSpec, 'repository payload.source')",
+		"closedText(sourceSpec.kind, ['github', 'gitlab', 'served', 'none']",
+		"sourceSpec.repository_url",
+		"revision: model.revision",
 		"/api/open",
 		"X-Repomap-Action",
 		"source_id: sourceID",
@@ -551,6 +578,8 @@ func TestOrientationClientKeepsStrictSourceActionsWithoutLegacyFallbacks(t *test
 		"validateProgramCoverage",
 		"makeProgramContext",
 		"RepomapProgramMap",
+		"multiple source authorities",
+		"The source authority revision does not match the report",
 	} {
 		if strings.Contains(reportAppJS, forbidden) {
 			t.Errorf("orientation client retained old fallback or full browser contract %q", forbidden)
