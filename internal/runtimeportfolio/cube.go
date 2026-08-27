@@ -16,14 +16,32 @@ import (
 )
 
 const (
-	preparationVersion    = 1
-	responseSchemaVersion = 3
+	preparationVersion       = 1
+	responseSchemaVersion    = 3
+	maxReduceLevels          = 32
+	maxRuntimePortfolioCalls = 128
+
+	shardedExecutionContract    = "repository-runtime-portfolio-sharded-v1"
+	mapPreparationVersion       = 1
+	mapResponseSchemaVersion    = 4
+	reducePreparationVersion    = 2
+	reduceResponseSchemaVersion = 2
 )
 
 //go:embed prompts/system.md
 var systemPrompt string
 
+//go:embed prompts/map.md
+var mapPrompt string
+
+//go:embed prompts/reduce.md
+var reducePrompt string
+
 var PromptVersion = "runtime-portfolio-prompt-" + shortSHA([]byte(systemPrompt))
+
+var MapPromptVersion = "runtime-portfolio-map-prompt-" + shortSHA([]byte(mapPrompt))
+
+var ReducePromptVersion = "runtime-portfolio-reduce-prompt-" + shortSHA([]byte(reducePrompt))
 
 type wireEvidence struct {
 	Ref       string       `json:"ref"`
@@ -61,6 +79,22 @@ type Request struct {
 	EvidenceCatalog []wireEvidence `json:"evidence_catalog"`
 }
 
+type shardRequest struct {
+	Ordinal int `json:"ordinal"`
+	Count   int `json:"count"`
+}
+
+type mapRequest struct {
+	Phase              string              `json:"phase"`
+	RepositoryName     string              `json:"repository_name"`
+	TargetCount        int                 `json:"target_count"`
+	Shard              shardRequest        `json:"shard"`
+	TargetCatalog      []wireTargetSummary `json:"target_catalog"`
+	RepositoryEvidence []wireEvidence      `json:"repository_evidence"`
+	Targets            []wireTarget        `json:"targets"`
+	EvidenceCatalog    []wireEvidence      `json:"evidence_catalog"`
+}
+
 type responseImplementation struct {
 	TargetRef string `json:"target_ref"`
 	Mode      string `json:"mode,omitempty"`
@@ -91,7 +125,17 @@ type Compilation struct {
 	state         []byte
 	targetsByRef  map[string]Target
 	evidenceByRef map[string]Evidence
+	mapShards     []compiledMapShard
 	seal          string
+}
+
+// RunOutcome aggregates one or more exact provider calls made by this cube.
+// Usage fields in Metrics cover every accepted subcall, including validated
+// cache hits, while Attempts and Latency cover live transport work in this run.
+// SemanticCalls is the exact number of live calls across map and reduce stages.
+type RunOutcome struct {
+	llm.Outcome[Result]
+	SemanticCalls int
 }
 
 func Compile(input Input) (Compilation, error) {
@@ -107,13 +151,21 @@ func Compile(input Input) (Compilation, error) {
 	if err != nil {
 		return Compilation{}, fmt.Errorf("runtime portfolio: encode request: %w", err)
 	}
-	if len(wire) > MaxRequestBytes {
-		return Compilation{}, fmt.Errorf(
-			"runtime portfolio: complete request is %d bytes, limit is %d", len(wire), MaxRequestBytes,
-		)
-	}
 	if _, found := secretscan.Detect(string(wire)); found {
 		return Compilation{}, fmt.Errorf("runtime portfolio: provider request contains credential-shaped content")
+	}
+	if _, found := secretscan.DetectPersistenceSensitive(string(wire)); found {
+		return Compilation{}, fmt.Errorf("runtime portfolio: provider request contains persistence-sensitive content")
+	}
+	var mapShards []compiledMapShard
+	if len(wire) > MaxRequestBytes {
+		mapShards, err = packMapRequests(request, targetsByRef, evidenceByRef, MaxRequestBytes)
+		if err != nil {
+			return Compilation{}, err
+		}
+		if err := checkRuntimeCallBudget(0, len(mapShards)+1); err != nil {
+			return Compilation{}, fmt.Errorf("runtime portfolio: map plan: %w", err)
+		}
 	}
 	state, err := executionState(canonical, wire)
 	if err != nil {
@@ -123,6 +175,7 @@ func Compile(input Input) (Compilation, error) {
 		Request: request, RequestSHA256: sha256Hex(wire), input: canonical,
 		wire: append([]byte(nil), wire...), state: state,
 		targetsByRef: targetsByRef, evidenceByRef: evidenceByRef,
+		mapShards: mapShards,
 	}
 	compilation.seal, err = compilationSeal(canonical, state, wire)
 	if err != nil {
@@ -139,101 +192,26 @@ func Run(
 	executor llm.Executor,
 	provider llm.Provider,
 	input Input,
-) (llm.Outcome[Result], error) {
+) (RunOutcome, error) {
 	compilation, err := Compile(input)
 	if err != nil {
-		return llm.Outcome[Result]{}, err
+		return RunOutcome{}, err
 	}
 	if provider == nil {
-		return llm.Outcome[Result]{}, fmt.Errorf("runtime portfolio: provider is unavailable")
+		return RunOutcome{}, fmt.Errorf("runtime portfolio: provider is unavailable")
 	}
-	outcome, err := llm.ExecuteJSON(ctx, executor, provider, llm.Call[Result]{
-		State: append([]byte(nil), compilation.state...),
-		Prompt: llm.Prompt{
-			System: strings.TrimSpace(systemPrompt), User: string(compilation.wire), ResponseFormatJSON: true,
-		},
-		Limits: llm.Limits{
-			MaxRequestBytes: MaxProviderRequestBytes, MaxResponseBytes: MaxResponseBytes,
-			MaxOutputTokens: MaxOutputTokens,
-		},
-		DecodeValidate: func(raw []byte) (Result, error) {
-			return ResolveResponse(compilation, raw)
-		},
-	})
-	if err != nil {
-		return llm.Outcome[Result]{}, fmt.Errorf("runtime portfolio: model cube: %w", err)
-	}
-	return outcome, nil
+	return runCompilation(ctx, executor, provider, compilation)
 }
 
 func ResolveResponse(compilation Compilation, raw []byte) (Result, error) {
 	if err := compilation.validate(); err != nil {
 		return Result{}, err
 	}
-	if len(raw) == 0 || len(raw) > MaxResponseBytes {
-		return Result{}, fmt.Errorf("runtime portfolio: response exceeds bounded envelope")
-	}
-	if _, found := secretscan.Detect(string(raw)); found {
-		return Result{}, fmt.Errorf("runtime portfolio: response contains credential-shaped content")
-	}
-	var decoded response
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&decoded); err != nil {
-		return Result{}, fmt.Errorf("runtime portfolio: invalid JSON response: %w", err)
-	}
-	if err := ensureEOF(decoder); err != nil {
+	roles, err := resolveMapResponse(raw, compilation.targetsByRef, compilation.evidenceByRef)
+	if err != nil {
 		return Result{}, err
 	}
-	if decoded.Roles == nil {
-		return Result{}, fmt.Errorf("runtime portfolio: roles must be an array")
-	}
-	result := Result{
-		Version: Version, TargetPagePortfolioSHA256: compilation.input.TargetPagePortfolioSHA256,
-		Targets: resultTargets(compilation.input.Targets), Roles: []Role{},
-		UnclassifiedTargetIDs: []string{},
-	}
-	roleByID := make(map[string]Role)
-	nameToID := make(map[string]string)
-	selectedEvidence := make(map[string]struct{})
-	for index, proposed := range decoded.Roles {
-		role, err := restoreRole(proposed, compilation.targetsByRef, compilation.evidenceByRef)
-		if err != nil {
-			return Result{}, fmt.Errorf("runtime portfolio: role %d: %w", index, err)
-		}
-		if previousID, duplicateName := nameToID[strings.ToLower(role.Name)]; duplicateName && previousID != role.ID {
-			return Result{}, fmt.Errorf("runtime portfolio: conflicting duplicate role name %q", role.Name)
-		}
-		nameToID[strings.ToLower(role.Name)] = role.ID
-		roleByID[role.ID] = role
-	}
-	for _, role := range roleByID {
-		result.Roles = append(result.Roles, role)
-		for _, evidence := range role.Evidence {
-			selectedEvidence[evidence.ID] = struct{}{}
-		}
-	}
-	sort.Slice(result.Roles, func(i, j int) bool { return roleSortKey(result.Roles[i]) < roleSortKey(result.Roles[j]) })
-	mapped := make(map[string]struct{})
-	for _, role := range result.Roles {
-		for _, implementation := range role.Implementations {
-			mapped[implementation.ProgramTargetID] = struct{}{}
-		}
-	}
-	for _, target := range result.Targets {
-		if _, ok := mapped[target.ProgramTargetID]; !ok {
-			result.UnclassifiedTargetIDs = append(result.UnclassifiedTargetIDs, target.ProgramTargetID)
-		}
-	}
-	result.Coverage = Coverage{
-		TargetsObserved: len(result.Targets), TargetsMapped: len(mapped),
-		TargetsUnclassified: len(result.UnclassifiedTargetIDs), Roles: len(result.Roles),
-		EvidenceAdvertised: len(compilation.evidenceByRef), EvidenceSelected: len(selectedEvidence),
-	}
-	if err := result.validateAgainstCompilation(compilation); err != nil {
-		return Result{}, err
-	}
-	return result, nil
+	return resultFromRoles(compilation, roles)
 }
 
 // ValidateAgainst proves that a standalone artifact is bound to the current
@@ -285,12 +263,8 @@ func restoreRole(
 	targetsByRef map[string]Target,
 	evidenceByRef map[string]Evidence,
 ) (Role, error) {
-	if !validText(proposed.Name) || !validText(proposed.Purpose) ||
-		!validProminence(proposed.Prominence) || !validRoleKind(proposed.Kind) ||
-		!validRequiredness(proposed.Requiredness) || !validConfidence(proposed.Confidence) ||
-		!validMappingStatus(proposed.MappingStatus) || proposed.Implementations == nil ||
-		proposed.EvidenceRefs == nil {
-		return Role{}, fmt.Errorf("invalid semantic fields")
+	if err := validateResponseRoleFields(proposed); err != nil {
+		return Role{}, err
 	}
 	implementations := make(map[string]Implementation)
 	for _, candidate := range proposed.Implementations {
@@ -310,9 +284,8 @@ func restoreRole(
 	if proposed.MappingStatus == MappingUnknown && len(implementations) != 0 {
 		return Role{}, fmt.Errorf("unknown mapping selected a known target")
 	}
-	if (proposed.Kind == RoleKindExample || proposed.Kind == RoleKindSupportingTool) &&
-		proposed.Prominence != ProminenceSupporting {
-		return Role{}, fmt.Errorf("example or supporting-tool role is not supporting")
+	if err := validateResponseRoleCompatibility(proposed); err != nil {
+		return Role{}, err
 	}
 	evidenceSet := make(map[string]Evidence)
 	for _, ref := range proposed.EvidenceRefs {
@@ -346,6 +319,25 @@ func restoreRole(
 		return Role{}, err
 	}
 	return role, nil
+}
+
+func validateResponseRoleFields(proposed responseRole) error {
+	if !validText(proposed.Name) || !validText(proposed.Purpose) ||
+		!validProminence(proposed.Prominence) || !validRoleKind(proposed.Kind) ||
+		!validRequiredness(proposed.Requiredness) || !validConfidence(proposed.Confidence) ||
+		!validMappingStatus(proposed.MappingStatus) || proposed.Implementations == nil ||
+		proposed.EvidenceRefs == nil {
+		return fmt.Errorf("invalid semantic fields")
+	}
+	return nil
+}
+
+func validateResponseRoleCompatibility(proposed responseRole) error {
+	if (proposed.Kind == RoleKindExample || proposed.Kind == RoleKindSupportingTool) &&
+		proposed.Prominence != ProminenceSupporting {
+		return fmt.Errorf("example or supporting-tool role is not supporting")
+	}
+	return nil
 }
 
 func compileRequest(input Input) (Request, map[string]Target, map[string]Evidence, error) {
@@ -588,17 +580,9 @@ func executionStateWithIdentity(input Input, request []byte, identity executionI
 	// TargetPagePortfolioSHA256 is a strict publication binding, but it changes
 	// when current target-page run IDs change. Keep every repository-semantic
 	// fact in the cache identity while excluding that one publication-local seal.
-	semanticInputRaw, err := json.Marshal(struct {
-		RepositoryName     string
-		CapturedRevision   string
-		Targets            []TargetInput
-		RepositoryEvidence []EvidenceInput
-	}{
-		RepositoryName: input.RepositoryName, CapturedRevision: input.CapturedRevision,
-		Targets: input.Targets, RepositoryEvidence: input.RepositoryEvidence,
-	})
+	inputSHA256, err := semanticInputSHA256(input)
 	if err != nil {
-		return nil, fmt.Errorf("runtime portfolio: encode semantic input state: %w", err)
+		return nil, err
 	}
 	return json.Marshal(struct {
 		Contract              string `json:"contract"`
@@ -610,8 +594,24 @@ func executionStateWithIdentity(input Input, request []byte, identity executionI
 	}{
 		Contract: identity.Contract, PromptVersion: identity.PromptVersion,
 		PreparationVersion: identity.PreparationVersion, ResponseSchemaVersion: identity.ResponseSchemaVersion,
-		InputSHA256: sha256Hex(semanticInputRaw), RequestSHA256: sha256Hex(request),
+		InputSHA256: inputSHA256, RequestSHA256: sha256Hex(request),
 	})
+}
+
+func semanticInputSHA256(input Input) (string, error) {
+	semanticInputRaw, err := json.Marshal(struct {
+		RepositoryName     string
+		CapturedRevision   string
+		Targets            []TargetInput
+		RepositoryEvidence []EvidenceInput
+	}{
+		RepositoryName: input.RepositoryName, CapturedRevision: input.CapturedRevision,
+		Targets: input.Targets, RepositoryEvidence: input.RepositoryEvidence,
+	})
+	if err != nil {
+		return "", fmt.Errorf("runtime portfolio: encode semantic input state: %w", err)
+	}
+	return sha256Hex(semanticInputRaw), nil
 }
 
 func compilationSeal(input Input, state, request []byte) (string, error) {
@@ -647,6 +647,21 @@ func (compilation Compilation) validate() error {
 	wire, err := json.Marshal(request)
 	if err != nil || !bytes.Equal(wire, compilation.wire) || compilation.RequestSHA256 != sha256Hex(wire) {
 		return fmt.Errorf("runtime portfolio: compilation request binding mismatch")
+	}
+	var mapShards []compiledMapShard
+	if len(wire) > MaxRequestBytes {
+		mapShards, err = packMapRequests(request, targets, evidence, MaxRequestBytes)
+		if err != nil {
+			return fmt.Errorf("runtime portfolio: reconstruct map plan: %w", err)
+		}
+	}
+	if !reflect.DeepEqual(mapShards, compilation.mapShards) {
+		return fmt.Errorf("runtime portfolio: compilation map plan binding mismatch")
+	}
+	if len(mapShards) > 0 {
+		if err := checkRuntimeCallBudget(0, len(mapShards)+1); err != nil {
+			return fmt.Errorf("runtime portfolio: compilation map plan call budget: %w", err)
+		}
 	}
 	state, err := executionState(canonical, wire)
 	seal, sealErr := compilationSeal(canonical, state, wire)

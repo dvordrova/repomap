@@ -15,7 +15,56 @@ import (
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/pythontarget"
 	"github.com/dvordrova/repomap/internal/snapshot"
+	"github.com/dvordrova/repomap/internal/surfacediscovery"
 )
+
+func TestRepositoryGoWorkspaceStateStopsReusingFailedUnion(t *testing.T) {
+	first := snapshot.Snapshot{RepoName: "first"}
+	second := snapshot.Snapshot{RepoName: "second"}
+	selected := []snapshot.Snapshot{first, second}
+
+	t.Run("successful union remains shared", func(t *testing.T) {
+		var state repositoryGoWorkspaceState
+		var initial defaultRunDeps
+		state.bind(&initial, first, selected)
+		if len(initial.preparedGoSnapshots) != 2 || initial.preparedGoWorkspaceSink == nil {
+			t.Fatalf("initial shared preparation = %#v", initial.preparedGoSnapshots)
+		}
+		workspace := &surfacediscovery.PreparedWorkspace{}
+		initial.preparedGoWorkspaceSink(workspace)
+
+		var sibling defaultRunDeps
+		state.bind(&sibling, second, selected)
+		if sibling.preparedGoWorkspace != workspace || len(sibling.preparedGoSnapshots) != 0 {
+			t.Fatalf(
+				"shared sibling workspace/snapshots = %p / %#v",
+				sibling.preparedGoWorkspace, sibling.preparedGoSnapshots,
+			)
+		}
+	})
+
+	t.Run("failed union permanently narrows later targets", func(t *testing.T) {
+		var state repositoryGoWorkspaceState
+		var initial defaultRunDeps
+		state.bind(&initial, first, selected)
+		if initial.preparedGoWorkspaceUnionFailureSink == nil {
+			t.Fatal("initial shared preparation omitted its failure signal")
+		}
+		initial.preparedGoWorkspaceUnionFailureSink(errors.New("broken sibling"))
+		// A target-local retry must never accidentally become sibling authority.
+		initial.preparedGoWorkspaceSink(&surfacediscovery.PreparedWorkspace{})
+
+		var sibling defaultRunDeps
+		state.bind(&sibling, second, selected)
+		if sibling.preparedGoWorkspace != nil || len(sibling.preparedGoSnapshots) != 1 ||
+			sibling.preparedGoSnapshots[0].RepoName != second.RepoName {
+			t.Fatalf(
+				"narrowed sibling workspace/snapshots = %p / %#v",
+				sibling.preparedGoWorkspace, sibling.preparedGoSnapshots,
+			)
+		}
+	})
+}
 
 func TestRepositoryTargetPlanRestoresAllThreeAdaptersWithEachTypedDefault(t *testing.T) {
 	for _, test := range []struct {
@@ -338,7 +387,7 @@ if __name__ == "__main__":
 	}
 }
 
-func TestRepositoryDefaultMixedPlanDefersJSTSCompilerUntilDispatchPreflight(t *testing.T) {
+func TestRepositoryDefaultMixedPlanDefersJSTSCompilerUntilTargetDispatch(t *testing.T) {
 	repository, goSource, project := repositoryTargetRuntimeInlineInputs(t)
 	response, err := json.Marshal(map[string]any{
 		"default_file_ref": repositoryTargetRuntimeFileRef(t, repository, "cmd/api/main.go"),

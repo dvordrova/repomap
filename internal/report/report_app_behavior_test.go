@@ -176,7 +176,8 @@ const context = {
   document,
   window: {
     location: { hash: '#/repository' },
-    requestAnimationFrame(callback) { callback(); }
+    requestAnimationFrame(callback) { callback(); },
+    setTimeout(callback) { callback(); }
   },
   URL,
   encodeURIComponent,
@@ -211,6 +212,8 @@ const exposure = [
   '    renderSurfaceDetail: renderSurfaceDetail,',
   '    renderCrossSurfacePathDetail: renderCrossSurfacePathDetail,',
   '    renderRuntimePortfolio: renderRuntimePortfolio,',
+  '    buildTargetOutcomePortfolio: buildTargetOutcomePortfolio,',
+  '    renderNotAnalyzedTargets: renderNotAnalyzedTargets,',
   '    renderHeader: renderHeader,',
   '    reportRouteContext: reportRouteContext,',
   '    updateHeaderContext: updateHeaderContext,',
@@ -392,6 +395,74 @@ check(targetCurrent.textContent === 'All targets' &&
   targetLinks.every((link) => link.getAttribute('aria-current') === 'false') &&
   currentTargetBadge.hidden === true,
   'returning to the repository route must clear both current-page and current-target claims');
+
+const targetDirectory = {
+  targets: model.targets,
+  byID: {
+    [model.targets[0].id]: model.targets[0],
+    [model.targets[1].id]: model.targets[1]
+  },
+  currentID: model.target.id,
+  defaultID: model.defaultTargetID
+};
+const failedSelectedTargetID = 'selected-target:failed-worker';
+const targetOutcomePortfolio = api.buildTargetOutcomePortfolio({
+  target_outcome_portfolio: {
+    version: 1,
+    default_selected_target_id: failedSelectedTargetID,
+    outcomes: [
+      {
+        selected_target_id: 'selected-target:fukict', language: 'javascript_typescript',
+        scope_kind: 'package', display_name: 'fukict', selector: 'jsts:package.json',
+        state: 'analyzed', program_target_id: model.targets[0].id
+      },
+      {
+        selected_target_id: 'selected-target:babel', language: 'javascript_typescript',
+        scope_kind: 'package', display_name: '@fukict/babel-preset', selector: 'jsts:packages/babel/package.json',
+        state: 'analyzed', program_target_id: model.targets[1].id
+      },
+      {
+        selected_target_id: failedSelectedTargetID, language: 'go', scope_kind: 'executable',
+        display_name: 'worker', selector: 'go:cmd/worker', state: 'not_analyzed',
+        failure_stage: 'program_analysis', failure_reason: 'source_not_analyzable'
+      }
+    ]
+  }
+}, targetDirectory);
+check(targetOutcomePortfolio.outcomes.length === 3 && targetOutcomePortfolio.analyzed.length === 2 &&
+  targetOutcomePortfolio.notAnalyzed.length === 1 &&
+  targetOutcomePortfolio.defaultSelectedTargetID === failedSelectedTargetID,
+  'the browser projection must retain every selected target while keeping analyzed and failed outcomes distinct');
+model.targetOutcomePortfolio = targetOutcomePortfolio;
+targetNavigation.replaceChildren();
+api.renderHeader();
+const exhaustiveTargetRows = descendants(targetNavigation).filter((node) =>
+  String(node.className).split(/\s+/).includes('rm-target-switcher__target')
+);
+const exhaustiveTargetLinks = exhaustiveTargetRows.filter((node) => node.tagName === 'A');
+const failedTargetRow = exhaustiveTargetRows.find((node) => node.getAttribute('aria-disabled') === 'true');
+check(targetCount.textContent === '3' && targetPanelCount.textContent === '3 targets' &&
+  exhaustiveTargetRows.length === 3 && exhaustiveTargetLinks.length === 2,
+  'the target picker must count every selected target but link only analyzed targets');
+check(failedTargetRow && failedTargetRow.tagName === 'DIV' && failedTargetRow.href === '' &&
+  failedTargetRow.textContent.includes('worker') && failedTargetRow.textContent.includes('Not analyzed') &&
+  failedTargetRow.textContent.includes('Default') &&
+  failedTargetRow.textContent.includes('The selected source could not be analyzed.'),
+  'a failed logical default must remain visible, disabled, red-state ready, and explained without a raw error');
+const hashBeforeFailedTargetClick = context.window.location.hash;
+if (failedTargetRow) failedTargetRow.click();
+check(context.window.location.hash === hashBeforeFailedTargetClick,
+  'a not-analyzed target row must not navigate to an invented target page');
+const failedTargetOverviewHost = new TestElement('main');
+api.renderRepositoryFallback(failedTargetOverviewHost);
+check(failedTargetOverviewHost.textContent.includes('2 / 3 selected targets analyzed.') &&
+  failedTargetOverviewHost.textContent.includes('Targets not analyzed') &&
+  failedTargetOverviewHost.textContent.includes('Program analysis') &&
+  failedTargetOverviewHost.textContent.includes('The selected source could not be analyzed.'),
+  'the repository overview must account for analyzed targets and explain failed targets in a separate section');
+model.targetOutcomePortfolio = null;
+targetNavigation.replaceChildren();
+api.renderHeader();
 
 const targetOverviewHost = new TestElement('main');
 api.renderSurvey(targetOverviewHost);
@@ -586,6 +657,7 @@ model.runtimePortfolio = {
     reason: 'No repository role maps this analyzed target.'
   }]
 };
+model.targetOutcomePortfolio = targetOutcomePortfolio;
 const repositoryOverviewHost = new TestElement('main');
 api.renderRuntimePortfolio(repositoryOverviewHost);
 const repositoryOverviewText = repositoryOverviewHost.textContent;
@@ -595,13 +667,16 @@ const exampleSectionOffset = repositoryOverviewText.indexOf('Examples');
 const toolSectionOffset = repositoryOverviewText.indexOf('Supporting tools');
 const uncertainSectionOffset = repositoryOverviewText.indexOf('Uncertain roles');
 const unclassifiedSectionOffset = repositoryOverviewText.indexOf('Unclassified targets');
+const notAnalyzedSectionOffset = repositoryOverviewText.indexOf('Targets not analyzed');
 check(repositoryOverviewText.includes('Repository overview') &&
-  repositoryOverviewText.includes('5 repository roles across 2 selected targets.'),
-  'the repository hero must describe a product-neutral repository portfolio');
-check(librarySectionOffset >= 0 && librarySectionOffset < primarySectionOffset &&
-  primarySectionOffset < exampleSectionOffset && exampleSectionOffset < toolSectionOffset &&
-  toolSectionOffset < uncertainSectionOffset && uncertainSectionOffset < unclassifiedSectionOffset,
-  'library, primary runtime, example, tool, uncertain, and genuinely unmapped sections must remain distinct and ordered');
+  repositoryOverviewText.includes('5 repository roles across 2 analyzed targets.') &&
+  repositoryOverviewText.includes('2 / 3 selected targets analyzed.'),
+  'the repository hero must describe the analyzed coverage of the complete selected-target portfolio');
+check(primarySectionOffset >= 0 && primarySectionOffset < librarySectionOffset &&
+  librarySectionOffset < exampleSectionOffset && exampleSectionOffset < toolSectionOffset &&
+  toolSectionOffset < uncertainSectionOffset && uncertainSectionOffset < unclassifiedSectionOffset &&
+  unclassifiedSectionOffset < notAnalyzedSectionOffset,
+  'runtime roles, analyzed-but-unclassified targets, and targets not analyzed must remain distinct and ordered');
 check(repositoryOverviewText.includes('Router API') && repositoryOverviewText.includes('Library'),
   'the repository overview must render a first-class library role and its kind');
 const libraryRoleCard = descendants(repositoryOverviewHost).find((node) =>
@@ -634,6 +709,7 @@ const repositoryEvidenceLinks = descendants(repositoryOverviewHost).filter((node
 check(repositoryEvidenceLinks.length === 2,
   'grouped repository-role evidence must preserve one exact action for every distinct source location');
 model.runtimePortfolio = null;
+model.targetOutcomePortfolio = null;
 
 const focusedGraph = api.buildSystemCanvasGraph([block.id], false);
 const directEdge = focusedGraph.edges.find((edge) =>
@@ -679,6 +755,17 @@ check(focusedCanvas.element.textContent.includes('visible as a direct frontier o
   'focused canvas must explain why an ungrouped direct route remains visible');
 check(!focusedCanvas.element.textContent.includes('belong to other grouping selections'),
   'focused canvas must not assign direct-frontier integrations to another grouping');
+const ungroupedAreaButtons = descendants(focusedCanvas.element).filter((node) =>
+  node.getAttribute('data-area-selection') !== null
+);
+check(ungroupedAreaButtons.length === 1 &&
+  ungroupedAreaButtons[0].getAttribute('data-area-selection') === 'all' &&
+  ungroupedAreaButtons[0].querySelector('span').textContent === 'All' &&
+  ungroupedAreaButtons[0].querySelector('small').textContent === '2',
+  'an empty grouping must retain one All selection with complete responsibility accounting');
+check(!descendants(focusedCanvas.element).some((node) =>
+  String(node.className).includes('rm-canvas-mode')
+), 'the canvas header must not retain a separate complete-map toggle');
 check(source.includes('completeCanvas: false') &&
   !source.includes('Only exact selected facts are connected.'),
   'large reports must start focused and complete-mode copy must not hide possible/runtime authority');
@@ -708,6 +795,13 @@ model.groupByBlock = { [storageBlock.id]: storageArea };
 model.groupsByBlock = { [block.id]: [], [storageBlock.id]: [storageArea] };
 model.modelGroupCount = 1;
 const areaSwitcher = api.renderAreaSwitcher(block, null);
+const areaSelections = descendants(areaSwitcher).filter((node) =>
+  node.getAttribute('data-area-selection') !== null
+);
+check(areaSelections.length === 2 &&
+  areaSelections[0].getAttribute('data-area-selection') === 'all' &&
+  areaSelections[1].getAttribute('data-area-selection') === storageArea.id,
+  'All must be the first architecture selection before every exact grouping');
 const areaButton = descendants(areaSwitcher).find((node) => node.getAttribute('data-area-group') === storageArea.id);
 check(!!areaButton, 'the architecture switcher must expose every exact grouping selection as a button');
 if (areaButton) areaButton.click();
@@ -722,11 +816,26 @@ check(activeAreaButton && activeAreaButton.getAttribute('aria-current') === 'tru
   activeAreaButton.focusCalls.length === 1 &&
   activeAreaButton.focusCalls[0] && activeAreaButton.focusCalls[0].preventScroll === true,
   'the replacement active area button must regain focus without moving the viewport away from the canvas');
+api.getState().completeCanvas = true;
+api.getState().pendingAreaGroupFocusID = 'all';
+const completeAreaSwitcher = api.renderAreaSwitcher(storageBlock, storageArea);
+const activeAllButton = descendants(completeAreaSwitcher).find((node) =>
+  node.getAttribute('data-area-selection') === 'all'
+);
+const inactiveAreaButton = descendants(completeAreaSwitcher).find((node) =>
+  node.getAttribute('data-area-group') === storageArea.id
+);
+check(activeAllButton && activeAllButton.getAttribute('aria-current') === 'true' &&
+  activeAllButton.focusCalls.length === 1 &&
+  activeAllButton.focusCalls[0] && activeAllButton.focusCalls[0].preventScroll === true &&
+  inactiveAreaButton && inactiveAreaButton.getAttribute('aria-current') === null,
+  'All must become the sole current selection and regain focus in complete-map mode');
 model.groups = [];
 model.groupByBlock = Object.create(null);
 model.groupsByBlock = { [block.id]: [], [storageBlock.id]: [] };
 model.modelGroupCount = 0;
 api.getState().focusGroupID = null;
+api.getState().completeCanvas = false;
 context.window.location.hash = '#/program';
 
 const completeGraph = api.buildSystemCanvasGraph([block.id], true);
@@ -950,7 +1059,7 @@ model.relations = [
   }, { observed: 2, indexed: 2 }),
   accountedRelation({
     id: 'relation:same-name-owner', from_id: sameNameRouterConstructor.id, to_ids: [targetObject.id],
-    kind: 'calls', resolution: 'exact',
+    kind: 'calls', resolution: 'exact', invocation: 'declared_interface_dispatch:synchronous',
     location: { path: 'app/execution.py', line: 17, column: 3 }
   }),
   accountedRelation({
@@ -988,6 +1097,12 @@ check(routerOwnerGroup && routerOwnerGroup.local.length === 1 &&
 const containerConnection = connections.find((connection) => connection.fromID === createHistory.id);
 check(containerConnection && api.connectionOwnerObject(containerConnection).id === helperModule.id,
   'a declaration without owner_id must use its exact non-module/package container_id as hierarchy authority');
+const adapterInvocationConnection = connections.find((connection) =>
+  connection.fromID === sameNameRouterConstructor.id
+);
+check(adapterInvocationConnection &&
+  adapterInvocationConnection.invocation === 'declared_interface_dispatch:synchronous',
+  'connection projection must preserve adapter-owned invocation text without treating it as a cross-language enum');
 
 const connectionsHost = new TestElement('main');
 api.renderConnections(connectionsHost, connectionBlock, connections);

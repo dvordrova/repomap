@@ -65,11 +65,14 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 		[]byte(`function reportRouteContext(route)`),
 		[]byte(`function buildCanvasGraph(presentationModel, rawOptions)`),
 		[]byte(`function deriveCanvasEmphasis(rawGraph, rawInteraction)`),
+		[]byte(`function portLayoutRequirements(rawGraph)`),
 		[]byte(`function measureCanvasNodes(host, nodeElements)`),
 		[]byte(`function mountSystemCanvas(host, graph, suppliedOptions, suppliedCallbacks)`),
+		[]byte(`function renderEntrypointGroups(nodes, graph, options, callbacks)`),
 		[]byte(`function renderAreaSwitcher(selected, activeGroup)`),
+		[]byte(`allButton.setAttribute('data-area-selection', allSelectionID)`),
+		[]byte(`appendText(allButton, 'span', '', 'All')`),
 		[]byte(`navigateToBlock(state.model.blocksByID[group.blockIDs[0]], group, false)`),
-		[]byte(`Show complete map · `),
 		[]byte(`data-canvas-node`),
 		[]byte(`data-canvas-edge-port`),
 		[]byte(`rm-evidence-disclosure`),
@@ -112,6 +115,9 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 		[]byte(`Open source location `),
 		[]byte(`rm-connection__meta`),
 		[]byte(`id="rm-target-scope"`),
+		[]byte(`Show complete map`),
+		[]byte(`Focus current grouping selection`),
+		[]byte(`rm-canvas-mode`),
 	} {
 		if bytes.Contains(html, retired) {
 			t.Errorf("rendered orientation workspace retained old frontend %q", retired)
@@ -244,6 +250,9 @@ func TestOrientationClientKeepsCompleteEvidenceBehindDisclosure(t *testing.T) {
 		".rm-connection-owner-list", ".rm-connection-owner__members", ".rm-connection-member-group__heading",
 		".rm-connection-member__targets", ".rm-connection-target__link", ".rm-connection-runtime__summary",
 		".rm-flow-canvas[data-canvas-highlight] .rm-canvas-edge-group", ".rm-canvas-edge-port--related", ".rm-canvas-node--edge-related",
+		".rm-canvas-node-wrap:hover > .rm-canvas-node",
+		".rm-canvas-entry-file__header", ".rm-canvas-entry-file__nodes", ".rm-canvas-node--entry",
+		".rm-canvas-edge-port--active::before", ".rm-canvas-arrow--exact",
 	} {
 		if !strings.Contains(reportAppCSS, selector) {
 			t.Errorf("grouped exact-source presentation is missing %q", selector)
@@ -335,13 +344,13 @@ func TestOrientationClientRendersRuntimePortfolioBeforeProgramMap(t *testing.T) 
 			t.Errorf("runtime portfolio client is missing %q", required)
 		}
 	}
-	librarySection := strings.Index(reportAppJS, "renderRuntimeRoleSection(host, 'library'")
 	primarySection := strings.Index(reportAppJS, "renderRuntimeRoleSection(host, 'primary'")
+	librarySection := strings.Index(reportAppJS, "renderRuntimeRoleSection(host, 'library'")
 	exampleSection := strings.Index(reportAppJS, "renderRuntimeRoleSection(host, 'example'")
 	toolSection := strings.Index(reportAppJS, "renderRuntimeRoleSection(host, 'tool'")
 	supportingSection := strings.Index(reportAppJS, "renderRuntimeRoleSection(host, 'supporting'")
 	if librarySection < 0 || primarySection < 0 || exampleSection < 0 || toolSection < 0 || supportingSection < 0 ||
-		librarySection >= primarySection || primarySection >= exampleSection || exampleSection >= toolSection ||
+		primarySection >= librarySection || librarySection >= exampleSection || exampleSection >= toolSection ||
 		toolSection >= supportingSection {
 		t.Error("repository overview does not render library, runtime, example, tool, and other supporting roles distinctly")
 	}
@@ -379,7 +388,7 @@ func TestOrientationClientRendersExactJSTSSurfacesAndCrossSurfacePaths(t *testin
 	for _, required := range []string{
 		"function buildJSTSSurfaceCatalog(data, target, indexSHA256, openable)",
 		"js_ts_surface_catalog_view.version') !== 2",
-		"data.format_version, 'format_version') !== 67",
+		"data.format_version, 'format_version') !== 68",
 		"function buildCrossSurfacePaths(data, target, indexSHA256, openable, surfaceCatalog)",
 		"['browser_application', 'node_server', 'command_line_application', 'shared_contracts', 'tool', 'unknown']",
 		"if (value === 'command_line_application') return 'Command-line application'",

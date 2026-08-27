@@ -90,6 +90,29 @@ func TestHandlerServesInitialReportAndOpensItsOpaqueSource(t *testing.T) {
 	}
 }
 
+func TestLoadRunRestoresVirtualPageWithoutPhysicalHTML(t *testing.T) {
+	fixture := writeTestRun(t)
+	htmlPath := filepath.Join(fixture.runsDir, fixture.runID, "report.html")
+	if err := os.Remove(htmlPath); err != nil {
+		t.Fatal(err)
+	}
+	run, err := loadRun(fixture.runsDir, fixture.runID)
+	if err != nil {
+		t.Fatalf("load backing page without report.html: %v", err)
+	}
+	if run.id != fixture.runID || len(run.rendered) == 0 {
+		t.Fatalf("restored virtual page = %#v", run)
+	}
+	if _, err := NewHandler(Options{
+		RunsDir:      fixture.runsDir,
+		InitialRunID: fixture.runID,
+		Capability:   testCapability,
+		OpenFile:     func(context.Context, string, int, int) error { return nil },
+	}); err == nil || !strings.Contains(err.Error(), "report.html is unavailable") {
+		t.Fatalf("owner without physical report.html error = %v", err)
+	}
+}
+
 func TestLoadTargetNavigationAllowsSinglePageManifest(t *testing.T) {
 	navigation, err := loadTargetNavigation("unneeded", reportpkg.RunManifest{})
 	if err != nil || navigation != nil {
@@ -106,10 +129,13 @@ func TestLoadTargetNavigationAllowsSinglePageManifest(t *testing.T) {
 
 func TestSiblingPagesRequirePortfolioRouteAndManifestBinding(t *testing.T) {
 	const (
-		initialRunID = "20260822-120000-api"
-		siblingRunID = "20260822-120000-worker"
-		containerSHA = "container-artifact-sha"
-		portfolioSHA = "portfolio-artifact-sha"
+		initialRunID        = "20260822-120000-api"
+		siblingRunID        = "20260822-120000-worker"
+		containerSHA        = "container-artifact-sha"
+		portfolioSHA        = "portfolio-artifact-sha"
+		programPageSHA      = "program-page-artifact-sha"
+		runtimePortfolioSHA = "runtime-portfolio-artifact-sha"
+		targetOutcomeSHA    = "target-outcome-artifact-sha"
 	)
 	item := reportpkg.TargetNavigationItem{
 		TargetID: "program-target-worker",
@@ -143,6 +169,7 @@ func TestSiblingPagesRequirePortfolioRouteAndManifestBinding(t *testing.T) {
 				ProgramTargetID:           "program-target-api",
 				TargetRunContainerSHA256:  containerSHA,
 				TargetPagePortfolioSHA256: portfolioSHA,
+				RuntimePortfolioSHA256:    runtimePortfolioSHA,
 				SelectedRevision:          "before-change",
 			},
 		},
@@ -158,6 +185,7 @@ func TestSiblingPagesRequirePortfolioRouteAndManifestBinding(t *testing.T) {
 				ProgramTargetID:           "program-target-worker",
 				TargetRunContainerSHA256:  containerSHA,
 				TargetPagePortfolioSHA256: portfolioSHA,
+				RuntimePortfolioSHA256:    runtimePortfolioSHA,
 				SelectedRevision:          "after-change",
 			},
 		},
@@ -168,6 +196,29 @@ func TestSiblingPagesRequirePortfolioRouteAndManifestBinding(t *testing.T) {
 	}
 	if err := authorizeSiblingRun(initial, sibling, "program-target-worker"); err != nil {
 		t.Fatalf("repository change during run blocked sibling page: %v", err)
+	}
+	neutralInitial := initial
+	neutralInitial.manifest.MaterialInputs.TargetRunContainerSHA256 = ""
+	neutralInitial.manifest.MaterialInputs.TargetPagePortfolioSHA256 = ""
+	neutralInitial.manifest.MaterialInputs.ProgramPagePortfolioSHA256 = programPageSHA
+	neutralInitial.manifest.MaterialInputs.TargetOutcomePortfolioSHA256 = targetOutcomeSHA
+	neutralSibling := sibling
+	neutralSibling.manifest.MaterialInputs.TargetRunContainerSHA256 = ""
+	neutralSibling.manifest.MaterialInputs.TargetPagePortfolioSHA256 = ""
+	neutralSibling.manifest.MaterialInputs.ProgramPagePortfolioSHA256 = programPageSHA
+	neutralSibling.manifest.MaterialInputs.TargetOutcomePortfolioSHA256 = targetOutcomeSHA
+	if err := authorizeSiblingRun(neutralInitial, neutralSibling, "program-target-worker"); err != nil {
+		t.Fatalf("language-neutral program page was not authorized: %v", err)
+	}
+	neutralUnbound := neutralSibling
+	neutralUnbound.manifest.MaterialInputs.ProgramPagePortfolioSHA256 = "other-program-page-portfolio"
+	if err := authorizeSiblingRun(neutralInitial, neutralUnbound, "program-target-worker"); err == nil {
+		t.Fatal("program page outside the neutral portfolio was authorized")
+	}
+	neutralOutcomeMismatch := neutralSibling
+	neutralOutcomeMismatch.manifest.MaterialInputs.TargetOutcomePortfolioSHA256 = "other-target-outcome-portfolio"
+	if err := authorizeSiblingRun(neutralInitial, neutralOutcomeMismatch, "program-target-worker"); err == nil {
+		t.Fatal("program page with different target outcomes was authorized")
 	}
 	foreign := sibling
 	foreign.manifest.RepositoryState.Identity = "/other-repo"

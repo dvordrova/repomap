@@ -173,6 +173,276 @@ func TestLLMProviderCompleteAuthNoneMetricsAndHeartbeat(t *testing.T) {
 	}
 }
 
+func TestLLMProviderSupportsConcurrentExecutorBatch(t *testing.T) {
+	const callCount = 3
+	started := make(chan struct{}, callCount)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseAll := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseAll()
+	var (
+		mu        sync.Mutex
+		active    int
+		maxActive int
+		requests  int
+	)
+	response := llmProviderResponse("stop", `{"ok":true}`, nil)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		defer request.Body.Close()
+		_, _ = io.ReadAll(request.Body)
+		mu.Lock()
+		active++
+		requests++
+		if active > maxActive {
+			maxActive = active
+		}
+		mu.Unlock()
+		defer func() {
+			mu.Lock()
+			active--
+			mu.Unlock()
+		}()
+		started <- struct{}{}
+		select {
+		case <-release:
+		case <-request.Context().Done():
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write(response)
+	}))
+	defer server.Close()
+
+	client := llmProviderTestClient(server)
+	calls := make([]llm.Call[map[string]any], 0, callCount)
+	for _, user := range []string{"one", "two", "three"} {
+		calls = append(calls, llm.Call[map[string]any]{
+			State: []byte("cube-" + user),
+			Prompt: llm.Prompt{
+				System: "Return one bounded JSON object.", User: user, ResponseFormatJSON: true,
+			},
+			Limits: llmProviderTestLimits(100),
+		})
+	}
+	type result struct {
+		outcomes []llm.Outcome[map[string]any]
+		err      error
+	}
+	done := make(chan result, 1)
+	root := t.TempDir()
+	go func() {
+		outcomes, err := llm.ExecuteJSONBatch(context.Background(), llm.Executor{
+			RootDir: root, Enabled: true, BatchConcurrency: callCount,
+		}, client, calls)
+		done <- result{outcomes: outcomes, err: err}
+	}()
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	for range callCount {
+		select {
+		case <-started:
+		case <-timer.C:
+			t.Fatal("provider calls did not execute concurrently")
+		}
+	}
+	releaseAll()
+	got := <-done
+	if got.err != nil || len(got.outcomes) != callCount {
+		t.Fatalf("concurrent batch = %#v / %v", got.outcomes, got.err)
+	}
+	for index, outcome := range got.outcomes {
+		if value, ok := outcome.Value["ok"].(bool); !ok || !value || outcome.Cached {
+			t.Fatalf("outcome %d = %#v", index, outcome)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if requests != callCount || maxActive != callCount || active != 0 {
+		t.Fatalf("requests/max-active/active = %d/%d/%d", requests, maxActive, active)
+	}
+}
+
+func TestLLMProviderRateLimitCollapsesSharedAttemptGateBeforeRetry(t *testing.T) {
+	type attemptEvent struct {
+		user    string
+		attempt int
+		active  int
+	}
+	started := make(chan attemptEvent, 16)
+	releases := map[string]chan struct{}{
+		"one": make(chan struct{}), "two": make(chan struct{}), "three": make(chan struct{}),
+		"four": make(chan struct{}), "five": make(chan struct{}),
+	}
+	var (
+		mu        sync.Mutex
+		attempts  = make(map[string]int)
+		active    int
+		maxActive int
+	)
+	success := llmProviderResponse("stop", `{"ok":true}`, nil)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		_ = request.Body.Close()
+		var wire chatRequest
+		if err := json.Unmarshal(body, &wire); err != nil || len(wire.Messages) != 2 {
+			writer.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		user := wire.Messages[1].Content
+		mu.Lock()
+		attempts[user]++
+		attempt := attempts[user]
+		active++
+		if active > maxActive {
+			maxActive = active
+		}
+		currentActive := active
+		mu.Unlock()
+		defer func() {
+			mu.Lock()
+			active--
+			mu.Unlock()
+		}()
+		started <- attemptEvent{user: user, attempt: attempt, active: currentActive}
+		if attempt == 1 {
+			if release := releases[user]; release != nil {
+				select {
+				case <-release:
+				case <-request.Context().Done():
+					return
+				}
+			}
+		}
+		if user == "two" && attempt == 1 {
+			writer.WriteHeader(http.StatusTooManyRequests)
+			_, _ = writer.Write([]byte(`{"error":"rate limited"}`))
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write(success)
+	}))
+	defer server.Close()
+	defer func() {
+		for _, release := range releases {
+			select {
+			case <-release:
+			default:
+				close(release)
+			}
+		}
+	}()
+
+	callFor := func(users ...string) []llm.Call[map[string]any] {
+		calls := make([]llm.Call[map[string]any], 0, len(users))
+		for _, user := range users {
+			calls = append(calls, llm.Call[map[string]any]{
+				Prompt: llm.Prompt{
+					System: "Return one bounded JSON object.", User: user, ResponseFormatJSON: true,
+				},
+				Limits: llmProviderTestLimits(100),
+			})
+		}
+		return calls
+	}
+	type result struct {
+		outcomes []llm.Outcome[map[string]any]
+		err      error
+	}
+	nextAttempt := func() attemptEvent {
+		t.Helper()
+		select {
+		case event := <-started:
+			return event
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for provider attempt")
+			return attemptEvent{}
+		}
+	}
+	controller := &llm.BatchController{}
+	executor := llm.Executor{
+		Enabled: false, BatchConcurrency: 3, BatchController: controller,
+	}
+	client := llmProviderTestClient(server)
+	firstDone := make(chan result, 1)
+	go func() {
+		outcomes, err := llm.ExecuteJSONBatch(
+			t.Context(), executor, client, callFor("one", "two", "three"),
+		)
+		firstDone <- result{outcomes: outcomes, err: err}
+	}()
+	initial := make(map[string]attemptEvent)
+	for len(initial) < 3 {
+		select {
+		case event := <-started:
+			initial[event.user] = event
+		case <-time.After(time.Second):
+			t.Fatalf("initial attempts = %v", initial)
+		}
+	}
+	if initial["one"].attempt != 1 || initial["two"].attempt != 1 ||
+		initial["three"].attempt != 1 {
+		t.Fatalf("initial attempts = %#v", initial)
+	}
+	close(releases["two"])
+	select {
+	case event := <-started:
+		t.Fatalf("attempt started while earlier leases remained active: %#v", event)
+	case <-time.After(600 * time.Millisecond):
+	}
+	close(releases["one"])
+	select {
+	case event := <-started:
+		t.Fatalf("attempt started with one earlier lease active: %#v", event)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(releases["three"])
+	var retry attemptEvent
+	select {
+	case retry = <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("rate-limited request did not retry")
+	}
+	if retry.user != "two" || retry.attempt != 2 || retry.active != 1 {
+		t.Fatalf("serialized retry = %#v", retry)
+	}
+	first := <-firstDone
+	if first.err != nil || len(first.outcomes) != 3 {
+		t.Fatalf("transient rate-limit batch = %#v / %v", first.outcomes, first.err)
+	}
+
+	secondDone := make(chan result, 1)
+	go func() {
+		outcomes, err := llm.ExecuteJSONBatch(
+			t.Context(), executor, client, callFor("four", "five"),
+		)
+		secondDone <- result{outcomes: outcomes, err: err}
+	}()
+	four := nextAttempt()
+	if four.user != "four" || four.attempt != 1 || four.active != 1 {
+		t.Fatalf("first later attempt = %#v", four)
+	}
+	select {
+	case event := <-started:
+		t.Fatalf("shared collapsed gate admitted concurrent later attempt: %#v", event)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(releases["four"])
+	five := nextAttempt()
+	if five.user != "five" || five.attempt != 1 || five.active != 1 {
+		t.Fatalf("second later attempt = %#v", five)
+	}
+	close(releases["five"])
+	second := <-secondDone
+	if second.err != nil || len(second.outcomes) != 2 {
+		t.Fatalf("later serialized batch = %#v / %v", second.outcomes, second.err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if maxActive != 3 || active != 0 || attempts["two"] != 2 {
+		t.Fatalf("max-active/active/attempts = %d/%d/%v", maxActive, active, attempts)
+	}
+}
+
 func TestLLMProviderCompleteRetriesExactBodyAndAccumulatesRawBytes(t *testing.T) {
 	success := llmProviderResponse("stop", `{"ok":true}`, nil)
 	failure := []byte("temporary provider failure")

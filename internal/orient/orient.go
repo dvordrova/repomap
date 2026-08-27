@@ -65,6 +65,11 @@ type Options struct {
 	// PreparedGoWorkspaceSink hands the default run's live workspace to ordinary
 	// portfolio orchestration. The value is intentionally not serializable.
 	PreparedGoWorkspaceSink func(*surfacediscovery.PreparedWorkspace)
+	// PreparedGoWorkspaceUnionFailureSink reports that preparation of a shared
+	// selected-target union failed before any workspace became reusable. The
+	// current exact target is retried locally; the outer dispatcher uses this
+	// signal only to stop offering the same poisoned union to later targets.
+	PreparedGoWorkspaceUnionFailureSink func(error)
 
 	// DirectCallIndexSink receives an independently owned snapshot produced by
 	// the successful surface SSA pass. It is a live-run handoff and is not
@@ -378,7 +383,18 @@ func persistArtifacts(
 				}
 			}
 			workspace, programErr = surfacediscovery.PrepareWorkspace(ctx, surfaceOptions, workspaceInputs)
-			if programErr == nil && opts.PreparedGoWorkspaceSink != nil {
+			shareableWorkspace := programErr == nil
+			if programErr != nil && len(workspaceInputs) > 1 &&
+				opts.PreparedGoWorkspaceUnionFailureSink != nil &&
+				!errors.Is(programErr, context.Canceled) &&
+				!errors.Is(programErr, context.DeadlineExceeded) {
+				opts.PreparedGoWorkspaceUnionFailureSink(programErr)
+				workspace, programErr = surfacediscovery.PrepareWorkspace(
+					ctx, surfaceOptions, []surfacediscovery.Input{programInput},
+				)
+				shareableWorkspace = false
+			}
+			if programErr == nil && shareableWorkspace && opts.PreparedGoWorkspaceSink != nil {
 				opts.PreparedGoWorkspaceSink(workspace)
 			}
 		}

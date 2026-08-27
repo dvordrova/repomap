@@ -142,6 +142,26 @@
       "embed_variable": "promptUserShapeFile"
     },
     {
+      "path": "internal/runtimeportfolio/prompts/map.md",
+      "status": "active",
+      "owner": "runtimeportfolio",
+      "stage": "runtime_portfolio_map",
+      "role": "system",
+      "embed_source": "internal/runtimeportfolio/cube.go",
+      "embed_pattern": "prompts/map.md",
+      "embed_variable": "mapPrompt"
+    },
+    {
+      "path": "internal/runtimeportfolio/prompts/reduce.md",
+      "status": "active",
+      "owner": "runtimeportfolio",
+      "stage": "runtime_portfolio_reduce",
+      "role": "system",
+      "embed_source": "internal/runtimeportfolio/cube.go",
+      "embed_pattern": "prompts/reduce.md",
+      "embed_variable": "reducePrompt"
+    },
+    {
       "path": "internal/runtimeportfolio/prompts/system.md",
       "status": "active",
       "owner": "runtimeportfolio",

@@ -123,6 +123,8 @@ func runSemanticPipelineForRun(
 	language string,
 	authorities pipeline.Authorities,
 	output *runOutput,
+	batchConcurrency int,
+	batchController *llm.BatchController,
 	providers targetPortfolioProviderFactory,
 ) (pipeline.Result, error) {
 	if providers == nil {
@@ -143,7 +145,9 @@ func runSemanticPipelineForRun(
 	writer.SetWarningWriter(semanticPipelineWarningSink{output: output, language: language})
 	executor := llm.Executor{
 		RootDir: cacheRoot, Enabled: !noCache,
-		Observer: debugdump.NewSemanticObserver(writer),
+		Observer:         debugdump.NewSemanticObserver(writer),
+		BatchConcurrency: batchConcurrency,
+		BatchController:  batchController,
 	}
 	accounting := []pipeline.AccountingEvent{}
 	result, runErr := pipeline.Run(

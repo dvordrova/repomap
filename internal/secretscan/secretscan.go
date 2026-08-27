@@ -40,7 +40,7 @@ var persistencePatterns = []struct {
 	// contain path/ref fragments such as `routes/authorization:authorize`;
 	// treating the colon in that identity as an HTTP header makes compact JSON
 	// scan across unrelated fields on the same line.
-	{kind: ClosedKindBearerCredential, pattern: regexp.MustCompile("(?im)(?:^|[[:space:]{\"'`(,;])Authorization[ \\t]*:[ \\t]*[^\\r\\n]{4,}")},
+	{kind: ClosedKindBearerCredential, pattern: regexp.MustCompile("(?im)(?:^[ \\t]*|[{\"'`(,;][ \\t]*)Authorization[ \\t]*:[ \\t]*[^\\r\\n]{4,}")},
 	{kind: ClosedKindSecretKey, pattern: regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{8,}\b`)},
 	{kind: ClosedKindGitHubToken, pattern: regexp.MustCompile(`\b(?:ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b`)},
 	{kind: ClosedKindAWSAccessKey, pattern: regexp.MustCompile(`\bAKIA[0-9A-Z]{16}\b`)},

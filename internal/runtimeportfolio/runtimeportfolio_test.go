@@ -5,11 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/dvordrova/repomap/internal/deepseek"
 	"github.com/dvordrova/repomap/internal/llm"
 	"github.com/dvordrova/repomap/internal/secretscan"
 )
@@ -302,6 +306,184 @@ func TestLibraryOnlyTargetSupportsEvidenceBackedLibraryRoleAndAllowsEmptyPortfol
 	})
 }
 
+func TestMapCandidateFiltersUnsupportedImplementationSetMembers(t *testing.T) {
+	compilation := mustCompile(t, twoTargetInput())
+	serverResponsibility := evidenceRefForLabel(t, compilation, "Evaluates authorization requests")
+	serverEntrypoint := evidenceRefForLabel(t, compilation, "Starts the API server")
+	workerEntrypoint := evidenceRefForLabel(t, compilation, "Starts the tuple worker")
+	repositoryEvidence := evidenceRefForLabel(t, compilation, "Repository runs one server and one worker")
+
+	partiallySupportedLibrary := responseRole{
+		Name: "Reusable server API", Purpose: "Provides a reusable server API.",
+		Prominence: ProminenceUnknown, Kind: RoleKindLibrary,
+		Requiredness: RequirednessUnknown, Confidence: ConfidenceHigh,
+		MappingStatus: MappingMapped,
+		Implementations: []responseImplementation{
+			{TargetRef: "t1"},
+			{TargetRef: "t2"},
+		},
+		EvidenceRefs: []string{serverResponsibility, workerEntrypoint},
+	}
+	fullyUnsupportedLibrary := responseRole{
+		Name: "Unproven worker library", Purpose: "Claims a reusable worker API.",
+		Prominence: ProminenceUnknown, Kind: RoleKindLibrary,
+		Requiredness: RequirednessUnknown, Confidence: ConfidenceLow,
+		MappingStatus:   MappingMapped,
+		Implementations: []responseImplementation{{TargetRef: "t2"}},
+		EvidenceRefs:    []string{workerEntrypoint},
+	}
+	partiallySupportedRuntime := responseRole{
+		Name: "Runtime modes", Purpose: "Runs the server and worker modes.",
+		Prominence: ProminenceUnknown, Kind: RoleKindService,
+		Requiredness: RequirednessUnknown, Confidence: ConfidenceHigh,
+		MappingStatus: MappingMapped,
+		Implementations: []responseImplementation{
+			{TargetRef: "t1", Mode: "serve"},
+			{TargetRef: "t2", Mode: "consume"},
+		},
+		EvidenceRefs: []string{serverEntrypoint},
+	}
+	fullyUnsupportedRuntime := responseRole{
+		Name: "Unbound administration CLI", Purpose: "Claims an administration mode.",
+		Prominence: ProminenceUnknown, Kind: RoleKindCLI,
+		Requiredness: RequirednessUnknown, Confidence: ConfidenceLow,
+		MappingStatus:   MappingMapped,
+		Implementations: []responseImplementation{{TargetRef: "t2", Mode: "administer"}},
+		EvidenceRefs:    []string{repositoryEvidence},
+	}
+	validSibling := responseRole{
+		Name: "Tuple worker", Purpose: "Processes tuple work.",
+		Prominence: ProminenceSupporting, Kind: RoleKindWorker,
+		Requiredness: RequirednessOptional, Confidence: ConfidenceHigh,
+		MappingStatus:   MappingMapped,
+		Implementations: []responseImplementation{{TargetRef: "t2"}},
+		EvidenceRefs:    []string{workerEntrypoint},
+	}
+
+	roles, err := resolveMapCandidateResponse(
+		mustMarshalResponse(
+			t, partiallySupportedLibrary, fullyUnsupportedLibrary,
+			partiallySupportedRuntime, fullyUnsupportedRuntime, validSibling,
+		),
+		compilation.targetsByRef,
+		compilation.evidenceByRef,
+		compilation.targetsByRef,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(roles) != 3 {
+		t.Fatalf("filtered map candidates = %#v, want three supported roles", roles)
+	}
+	byName := make(map[string]Role, len(roles))
+	for _, role := range roles {
+		byName[role.Name] = role
+	}
+	library, found := byName[partiallySupportedLibrary.Name]
+	if !found || !reflect.DeepEqual(library.Implementations, []Implementation{{
+		ProgramTargetID: "program-target-server",
+	}}) {
+		t.Fatalf("partially supported library = %#v", library)
+	}
+	if _, found := byName[fullyUnsupportedLibrary.Name]; found {
+		t.Fatalf("unsupported library candidate survived = %#v", byName[fullyUnsupportedLibrary.Name])
+	}
+	runtime, found := byName[partiallySupportedRuntime.Name]
+	if !found || !reflect.DeepEqual(runtime.Implementations, []Implementation{{
+		ProgramTargetID: "program-target-server", Mode: "serve",
+	}}) {
+		t.Fatalf("partially supported runtime = %#v", runtime)
+	}
+	if _, found := byName[fullyUnsupportedRuntime.Name]; found {
+		t.Fatalf("unsupported runtime candidate survived = %#v", byName[fullyUnsupportedRuntime.Name])
+	}
+	if _, found := byName[validSibling.Name]; !found {
+		t.Fatalf("independently valid sibling was discarded: %#v", roles)
+	}
+
+	t.Run("advertised target outside detailed shard is unsupported", func(t *testing.T) {
+		detailedTargets := map[string]Target{"t1": compilation.targetsByRef["t1"]}
+		detailedEvidence := make(map[string]Evidence)
+		for ref, evidence := range compilation.evidenceByRef {
+			if evidence.ProgramTargetID == "" ||
+				evidence.ProgramTargetID == detailedTargets["t1"].ProgramTargetID {
+				detailedEvidence[ref] = evidence
+			}
+		}
+		roles, err := resolveMapCandidateResponse(
+			mustMarshalResponse(t, fullyUnsupportedRuntime, partiallySupportedRuntime),
+			detailedTargets,
+			detailedEvidence,
+			compilation.targetsByRef,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(roles) != 1 || roles[0].Name != partiallySupportedRuntime.Name ||
+			!reflect.DeepEqual(roles[0].Implementations, []Implementation{{
+				ProgramTargetID: "program-target-server", Mode: "serve",
+			}}) {
+			t.Fatalf("outside-shard filtering = %#v", roles)
+		}
+	})
+
+	t.Run("does not repair incompatible executable mode", func(t *testing.T) {
+		incompatible := partiallySupportedLibrary
+		incompatible.Implementations = []responseImplementation{{TargetRef: "t1", Mode: "serve"}}
+		if _, err := resolveMapCandidateResponse(
+			mustMarshalResponse(t, incompatible),
+			compilation.targetsByRef,
+			compilation.evidenceByRef,
+			compilation.targetsByRef,
+		); err == nil || !strings.Contains(err.Error(), "library implementation has an executable mode") {
+			t.Fatalf("map candidate repaired executable library mode: %v", err)
+		}
+	})
+
+	t.Run("does not hide invalid executable mode", func(t *testing.T) {
+		invalid := fullyUnsupportedRuntime
+		invalid.Implementations[0].Mode = " invalid "
+		if _, err := resolveMapCandidateResponse(
+			mustMarshalResponse(t, invalid),
+			compilation.targetsByRef,
+			compilation.evidenceByRef,
+			compilation.targetsByRef,
+		); err == nil || !strings.Contains(err.Error(), "invalid executable mode") {
+			t.Fatalf("map candidate hid invalid executable mode: %v", err)
+		}
+	})
+
+	for _, kind := range []RoleKind{RoleKindExample, RoleKindSupportingTool} {
+		t.Run("does not hide primary "+string(kind), func(t *testing.T) {
+			invalid := fullyUnsupportedRuntime
+			invalid.Name = "Invalid " + string(kind)
+			invalid.Kind = kind
+			invalid.Prominence = ProminencePrimary
+			if _, err := resolveMapCandidateResponse(
+				mustMarshalResponse(t, invalid),
+				compilation.targetsByRef,
+				compilation.evidenceByRef,
+				compilation.targetsByRef,
+			); err == nil || !strings.Contains(err.Error(), "not supporting") {
+				t.Fatalf("map candidate hid primary %s: %v", kind, err)
+			}
+		})
+	}
+
+	t.Run("does not repair unresolved mandatory mapping", func(t *testing.T) {
+		unresolved := partiallySupportedLibrary
+		unresolved.Implementations = []responseImplementation{{TargetRef: "unknown-target"}}
+		if _, err := resolveMapCandidateResponse(
+			mustMarshalResponse(t, unresolved),
+			compilation.targetsByRef,
+			compilation.evidenceByRef,
+			compilation.targetsByRef,
+		); err == nil || !strings.Contains(err.Error(), "mapped role unresolved") {
+			t.Fatalf("map candidate repaired unresolved mandatory mapping: %v", err)
+		}
+	})
+}
+
 func TestArtifactEncodeDecodeAndAuthorityTamper(t *testing.T) {
 	input := singleTargetInput()
 	compilation := mustCompile(t, input)
@@ -413,6 +595,9 @@ func TestCompileCanonicalizesInputAndBindsCacheIdentity(t *testing.T) {
 		Location: Location{Path: "config/defaults.yaml", Line: 7},
 	})
 	canonical := mustCompile(t, input)
+	if len(canonical.wire) > MaxRequestBytes || len(canonical.mapShards) != 0 {
+		t.Fatalf("bounded legacy request unexpectedly compiled a sharded plan")
+	}
 
 	permuted := cloneInput(input)
 	slices.Reverse(permuted.Targets)
@@ -523,6 +708,13 @@ func TestRunUsesSharedExecutorCacheWithCubeIdentity(t *testing.T) {
 	if err != nil || !warm.Cached || warm.CacheKey != first.CacheKey || provider.completeCalls != 1 {
 		t.Fatalf("warm = %#v, calls = %d, err = %v", warm, provider.completeCalls, err)
 	}
+	if warm.SemanticCalls != 0 || warm.Metrics.Attempts != 0 || warm.Metrics.Latency != 0 ||
+		warm.Metrics.InputTokens != first.Metrics.InputTokens ||
+		warm.Metrics.OutputTokens != first.Metrics.OutputTokens ||
+		warm.Metrics.ProviderResponseBytes != first.Metrics.ProviderResponseBytes ||
+		warm.Metrics.UsageReported != first.Metrics.UsageReported {
+		t.Fatalf("warm cache usage/current transport accounting = %#v, first = %#v", warm.Metrics, first.Metrics)
+	}
 	if !bytes.Equal(first.Request, warm.Request) || first.RequestSHA256 != warm.RequestSHA256 ||
 		first.ResponseSHA256 != warm.ResponseSHA256 || !reflect.DeepEqual(first.Value.Roles, warm.Value.Roles) ||
 		!reflect.DeepEqual(first.Value.Targets, warm.Value.Targets) || first.Value.Coverage != warm.Value.Coverage {
@@ -548,6 +740,337 @@ func TestRunUsesSharedExecutorCacheWithCubeIdentity(t *testing.T) {
 	}
 }
 
+func TestRunShardsOversizedPortfolioAndRestoresGlobalAuthority(t *testing.T) {
+	const (
+		targetCount               = 25
+		responsibilitiesPerTarget = 150
+	)
+	input := oversizedRuntimePortfolioInput(targetCount, responsibilitiesPerTarget)
+	compilation, err := Compile(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(compilation.wire) <= MaxRequestBytes || len(compilation.mapShards) < 2 {
+		t.Fatalf(
+			"oversized compilation = %d bytes / %d map shards, want > %d bytes / multiple shards",
+			len(compilation.wire), len(compilation.mapShards), MaxRequestBytes,
+		)
+	}
+	for index, shard := range compilation.mapShards {
+		if len(shard.wire) == 0 || len(shard.wire) > MaxRequestBytes {
+			t.Fatalf("map shard %d bytes = %d", index+1, len(shard.wire))
+		}
+		if len(shard.request.TargetCatalog) != targetCount ||
+			len(shard.request.RepositoryEvidence) != len(input.RepositoryEvidence) {
+			t.Fatalf(
+				"map shard %d global context = %d targets / %d repository evidence",
+				index+1, len(shard.request.TargetCatalog), len(shard.request.RepositoryEvidence),
+			)
+		}
+	}
+	permuted := cloneInput(input)
+	slices.Reverse(permuted.Targets)
+	slices.Reverse(permuted.RepositoryEvidence)
+	recompiled := mustCompile(t, permuted)
+	if !bytes.Equal(compilation.wire, recompiled.wire) ||
+		len(compilation.mapShards) != len(recompiled.mapShards) {
+		t.Fatal("equivalent oversized input changed its canonical request or shard count")
+	}
+	for index := range compilation.mapShards {
+		if !bytes.Equal(compilation.mapShards[index].wire, recompiled.mapShards[index].wire) {
+			t.Fatalf("equivalent oversized input changed map shard %d", index+1)
+		}
+	}
+	t.Run("compilation plan is sealed", func(t *testing.T) {
+		dropped := compilation
+		dropped.mapShards = append([]compiledMapShard(nil), compilation.mapShards[:len(compilation.mapShards)-1]...)
+		if err := dropped.validate(); err == nil || !strings.Contains(err.Error(), "map plan binding") {
+			t.Fatalf("dropped map shard validation = %v", err)
+		}
+
+		wireTampered := compilation
+		wireTampered.mapShards = append([]compiledMapShard(nil), compilation.mapShards...)
+		wireTampered.mapShards[0].wire = append([]byte(nil), compilation.mapShards[0].wire...)
+		wireTampered.mapShards[0].wire[0] ^= 1
+		if err := wireTampered.validate(); err == nil || !strings.Contains(err.Error(), "map plan binding") {
+			t.Fatalf("tampered map wire validation = %v", err)
+		}
+
+		authorityTampered := compilation
+		authorityTampered.mapShards = append([]compiledMapShard(nil), compilation.mapShards...)
+		authorityTampered.mapShards[0].targetsByRef = cloneTargetAuthority(compilation.mapShards[0].targetsByRef)
+		for ref := range authorityTampered.mapShards[0].targetsByRef {
+			delete(authorityTampered.mapShards[0].targetsByRef, ref)
+			break
+		}
+		if err := authorityTampered.validate(); err == nil || !strings.Contains(err.Error(), "map plan binding") {
+			t.Fatalf("tampered map authority validation = %v", err)
+		}
+	})
+
+	provider := newRuntimeShardTestProvider()
+	outcome, err := Run(t.Context(), llm.Executor{
+		Enabled: false, BatchConcurrency: 4,
+	}, provider, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.CacheKey != "" {
+		t.Fatalf("no-cache sharded run exposed a synthetic cache key %q", outcome.CacheKey)
+	}
+	observed := provider.snapshot()
+	if observed.mapCalls != len(compilation.mapShards) || observed.reduceCalls < 1 ||
+		outcome.SemanticCalls != observed.mapCalls+observed.reduceCalls {
+		t.Fatalf(
+			"runtime calls = map %d/%d, reduce %d, semantic %d",
+			observed.mapCalls, len(compilation.mapShards), observed.reduceCalls,
+			outcome.SemanticCalls,
+		)
+	}
+	for index, size := range observed.mapPayloadBytes {
+		if size == 0 || size > MaxRequestBytes {
+			t.Fatalf("provider map payload %d bytes = %d", index+1, size)
+		}
+	}
+	for index, size := range observed.reducePayloadBytes {
+		if size == 0 || size > MaxRequestBytes {
+			t.Fatalf("provider reduce payload %d bytes = %d", index+1, size)
+		}
+	}
+	for index, count := range observed.mapTargetCatalogCounts {
+		if count != targetCount {
+			t.Fatalf("provider map target catalog %d = %d, want %d", index+1, count, targetCount)
+		}
+	}
+	for index, count := range observed.reduceTargetCatalogCounts {
+		if count != targetCount {
+			t.Fatalf("provider reduce target catalog %d = %d, want %d", index+1, count, targetCount)
+		}
+	}
+	for ref := range compilation.targetsByRef {
+		if observed.targetRefs[ref] != 1 {
+			t.Fatalf("global target ref %q advertised %d times, want exactly once", ref, observed.targetRefs[ref])
+		}
+	}
+	for ref, evidence := range compilation.evidenceByRef {
+		want := 1
+		if evidence.ProgramTargetID == "" {
+			want = len(compilation.mapShards)
+		}
+		if observed.evidenceRefs[ref] != want {
+			t.Fatalf("global evidence ref %q advertised %d times, want %d", ref, observed.evidenceRefs[ref], want)
+		}
+	}
+	if len(observed.targetRefs) != len(compilation.targetsByRef) ||
+		len(observed.evidenceRefs) != len(compilation.evidenceByRef) {
+		t.Fatalf(
+			"provider authority coverage = %d/%d targets, %d/%d evidence",
+			len(observed.targetRefs), len(compilation.targetsByRef),
+			len(observed.evidenceRefs), len(compilation.evidenceByRef),
+		)
+	}
+
+	result := outcome.Value
+	if len(result.Targets) != targetCount || len(result.Roles) != 1 ||
+		len(result.Roles[0].Implementations) != targetCount ||
+		len(result.UnclassifiedTargetIDs) != 0 ||
+		result.Coverage.TargetsObserved != targetCount ||
+		result.Coverage.TargetsMapped != targetCount ||
+		result.Coverage.EvidenceAdvertised != len(compilation.evidenceByRef) {
+		t.Fatalf("sharded runtime result = %#v", result)
+	}
+	for index, target := range result.Targets {
+		want := fmt.Sprintf("program-target-%02d", index)
+		if target.ProgramTargetID != want || result.Roles[0].Implementations[index].ProgramTargetID != want {
+			t.Fatalf(
+				"restored target/implementation %d = %q/%q, want %q",
+				index, target.ProgramTargetID,
+				result.Roles[0].Implementations[index].ProgramTargetID, want,
+			)
+		}
+	}
+	if err := result.ValidateAgainst(input); err != nil {
+		t.Fatalf("ValidateAgainst: %v", err)
+	}
+}
+
+func TestCompileShardsBeforeProviderContextRejectsMultiMegabyteRequest(t *testing.T) {
+	input := oversizedRuntimePortfolioInput(8, 100)
+	compilation := mustCompile(t, input)
+	if len(compilation.wire) <= MaxRequestBytes || len(compilation.wire) >= 4*1024*1024 ||
+		len(compilation.mapShards) < 2 {
+		t.Fatalf(
+			"provider-context regression input = %d bytes / %d shards",
+			len(compilation.wire), len(compilation.mapShards),
+		)
+	}
+	provider := &deepseek.Client{
+		HTTPClient: http.DefaultClient,
+		APIKey:     "test-placeholder",
+		Model:      "deepseek-v4-flash",
+		MaxTokens:  MaxOutputTokens,
+		Endpoint:   "https://api.deepseek.com/chat/completions",
+	}
+	for index, shard := range compilation.mapShards {
+		if len(shard.wire) == 0 || len(shard.wire) > MaxRequestBytes {
+			t.Fatalf("map shard %d raw bytes = %d", index+1, len(shard.wire))
+		}
+		prepared, err := provider.Prepare(llm.Prompt{
+			System: strings.TrimSpace(mapPrompt), User: string(shard.wire), ResponseFormatJSON: true,
+		}, runtimeCallLimits())
+		if err != nil {
+			t.Fatalf("prepare map shard %d: %v", index+1, err)
+		}
+		if prepared.Len() > MaxProviderRequestBytes {
+			t.Fatalf(
+				"map shard %d prepared bytes = %d, limit = %d",
+				index+1, prepared.Len(), MaxProviderRequestBytes,
+			)
+		}
+	}
+}
+
+func TestReduceUsesClosedCandidateSetsAndRestoresExactUnion(t *testing.T) {
+	compilation := mustCompile(t, twoTargetInput())
+	server, err := restoreRole(responseRole{
+		Name: "Server candidate", Purpose: "Serves repository requests.",
+		Prominence: ProminenceUnknown, Kind: RoleKindService,
+		Requiredness: RequirednessUnknown, Confidence: ConfidenceHigh,
+		MappingStatus:   MappingMapped,
+		Implementations: []responseImplementation{{TargetRef: "t1"}},
+		EvidenceRefs:    []string{evidenceRefForLabel(t, compilation, "Starts the API server")},
+	}, compilation.targetsByRef, compilation.evidenceByRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker, err := restoreRole(responseRole{
+		Name: "Worker candidate", Purpose: "Processes repository work.",
+		Prominence: ProminenceUnknown, Kind: RoleKindWorker,
+		Requiredness: RequirednessUnknown, Confidence: ConfidenceHigh,
+		MappingStatus:   MappingMapped,
+		Implementations: []responseImplementation{{TargetRef: "t2"}},
+		EvidenceRefs:    []string{evidenceRefForLabel(t, compilation, "Starts the tuple worker")},
+	}, compilation.targetsByRef, compilation.evidenceByRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority := map[string]Role{"c1": server, "c2": worker}
+	merged := reduceResponseRole{
+		Name: "Repository runtime", Purpose: "Serves requests and processes queued work.",
+		Prominence: ProminencePrimary, Kind: RoleKindService,
+		Requiredness: RequirednessRequired, Confidence: ConfidenceHigh,
+		MappingStatus: MappingMapped,
+		CandidateRefs: []string{"c2", "c1", "c1", "unknown"},
+	}
+	raw, err := json.Marshal(reduceResponse{Roles: []reduceResponseRole{merged, merged}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	roles, err := resolveReduceResponse(raw, authority, targetsByID(compilation.targetsByRef))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(roles) != 1 || len(roles[0].Implementations) != 2 || len(roles[0].Evidence) != 2 {
+		t.Fatalf("reduced exact union = %#v", roles)
+	}
+
+	assignedTwice, err := json.Marshal(reduceResponse{Roles: []reduceResponseRole{
+		merged,
+		{
+			Name: "Second role", Purpose: "Conflicts with the first assignment.",
+			Prominence: ProminenceSupporting, Kind: RoleKindService,
+			Requiredness: RequirednessUnknown, Confidence: ConfidenceLow,
+			MappingStatus: MappingMapped, CandidateRefs: []string{"c1"},
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveReduceResponse(assignedTwice, authority, targetsByID(compilation.targetsByRef)); err == nil || !strings.Contains(err.Error(), "selected by several roles") {
+		t.Fatalf("duplicate candidate assignment = %v", err)
+	}
+
+	conflictingName := merged
+	conflictingName.CandidateRefs = []string{"c1"}
+	otherNameConflict := merged
+	otherNameConflict.Purpose = "Uses a conflicting vocabulary assignment."
+	otherNameConflict.CandidateRefs = []string{"c2"}
+	conflictRaw, err := json.Marshal(reduceResponse{Roles: []reduceResponseRole{conflictingName, otherNameConflict}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveReduceResponse(conflictRaw, authority, targetsByID(compilation.targetsByRef)); err == nil || !strings.Contains(err.Error(), "conflicting duplicate reduce role name") {
+		t.Fatalf("same-name conflict = %v", err)
+	}
+}
+
+func TestExecutionAggregatePreservesAcceptedUsageAndCountsOnlyLiveTransport(t *testing.T) {
+	live := llm.Outcome[struct{}]{
+		CacheKey: strings.Repeat("a", 64), RequestSHA256: strings.Repeat("b", 64),
+		ResponseSHA256: strings.Repeat("c", 64), RequestBytes: 11, ResponseBytes: 13,
+		Metrics: llm.Metrics{
+			InputTokens: 2, OutputTokens: 3, ReasoningTokens: 5,
+			PromptCacheHitTokens: 7, PromptCacheMissTokens: 11,
+			ProviderResponseBytes: 17, UsageReported: true,
+			Latency: 19 * time.Millisecond, Attempts: 2,
+		},
+	}
+	cached := llm.Outcome[struct{}]{
+		CacheKey: strings.Repeat("d", 64), RequestSHA256: strings.Repeat("e", 64),
+		ResponseSHA256: strings.Repeat("f", 64), RequestBytes: 23, ResponseBytes: 29,
+		Cached: true,
+		Metrics: llm.Metrics{
+			InputTokens: 31, OutputTokens: 37, ReasoningTokens: 41,
+			PromptCacheHitTokens: 43, PromptCacheMissTokens: 47,
+			ProviderResponseBytes: 53, UsageReported: true,
+			Latency: 59 * time.Millisecond, Attempts: 3,
+		},
+	}
+
+	aggregate := executionAggregate{allCached: true}
+	addExecutionOutcome(&aggregate, live)
+	addExecutionOutcome(&aggregate, cached)
+	outcome := aggregate.finish(Result{})
+	wantMetrics := llm.Metrics{
+		InputTokens: 33, OutputTokens: 40, ReasoningTokens: 46,
+		PromptCacheHitTokens: 50, PromptCacheMissTokens: 58,
+		ProviderResponseBytes: 70, UsageReported: true,
+		Latency: 19 * time.Millisecond, Attempts: 2,
+	}
+	if outcome.Cached || outcome.SemanticCalls != 1 || outcome.CacheKey != "" ||
+		outcome.RequestBytes != 34 || outcome.ResponseBytes != 42 ||
+		!reflect.DeepEqual(outcome.Metrics, wantMetrics) {
+		t.Fatalf("mixed execution aggregate = %#v", outcome)
+	}
+
+	allCached := executionAggregate{allCached: true}
+	addExecutionOutcome(&allCached, cached)
+	addExecutionOutcome(&allCached, cached)
+	cachedOutcome := allCached.finish(Result{})
+	wantCachedMetrics := cached.Metrics
+	wantCachedMetrics.InputTokens *= 2
+	wantCachedMetrics.OutputTokens *= 2
+	wantCachedMetrics.ReasoningTokens *= 2
+	wantCachedMetrics.PromptCacheHitTokens *= 2
+	wantCachedMetrics.PromptCacheMissTokens *= 2
+	wantCachedMetrics.ProviderResponseBytes *= 2
+	wantCachedMetrics.Latency = 0
+	wantCachedMetrics.Attempts = 0
+	if !cachedOutcome.Cached || cachedOutcome.SemanticCalls != 0 || cachedOutcome.CacheKey != "" ||
+		!reflect.DeepEqual(cachedOutcome.Metrics, wantCachedMetrics) {
+		t.Fatalf("cached execution aggregate = %#v", cachedOutcome)
+	}
+}
+
+func TestCompileRejectsOneOversizedTargetWithoutTruncation(t *testing.T) {
+	input := oversizedRuntimePortfolioInput(1, 3_000)
+	_, err := Compile(input)
+	if err == nil || !strings.Contains(err.Error(), "whole target") ||
+		!strings.Contains(err.Error(), "was not truncated") {
+		t.Fatalf("oversized single-target compilation error = %v", err)
+	}
+}
+
 func TestCompileHasNoEntityCountLimit(t *testing.T) {
 	const targetCount = 5000
 	input := Input{
@@ -565,8 +1088,25 @@ func TestCompileHasNoEntityCountLimit(t *testing.T) {
 	}
 	compilation := mustCompile(t, input)
 	if compilation.Request.TargetCount != targetCount || len(compilation.Request.Targets) != targetCount ||
-		len(compilation.wire) >= MaxRequestBytes {
+		len(compilation.wire) <= MaxRequestBytes || len(compilation.mapShards) < 2 {
 		t.Fatalf("large compilation = targets %d/%d, bytes %d", compilation.Request.TargetCount, targetCount, len(compilation.wire))
+	}
+	observed := make(map[string]int, targetCount)
+	for _, shard := range compilation.mapShards {
+		if len(shard.wire) > MaxRequestBytes {
+			t.Fatalf("entity-count map shard bytes = %d", len(shard.wire))
+		}
+		for _, target := range shard.request.Targets {
+			observed[target.Ref]++
+		}
+	}
+	if len(observed) != targetCount {
+		t.Fatalf("entity-count shard target coverage = %d/%d", len(observed), targetCount)
+	}
+	for ref, count := range observed {
+		if count != 1 {
+			t.Fatalf("entity-count target %s appears in %d shards", ref, count)
+		}
 	}
 }
 
@@ -596,6 +1136,13 @@ func TestCompilationAndSecretEnvelopesFailClosed(t *testing.T) {
 	if _, err := ResolveResponse(publicationTampered, []byte(`{"roles":[]}`)); err == nil {
 		t.Fatal("ResolveResponse accepted a publication-substituted compilation with a stale local seal")
 	}
+	persistenceUnsafe := singleTargetInput()
+	persistenceUnsafe.RepositoryEvidence[0].Label = "Authorization: Bearer opaque-provider-value"
+	if _, err := Compile(persistenceUnsafe); err == nil ||
+		!strings.Contains(err.Error(), "persistence-sensitive") ||
+		strings.Contains(err.Error(), "opaque-provider-value") {
+		t.Fatalf("always-on persistence request error = %v", err)
+	}
 
 	restore := secretscan.SetEnabled(true)
 	defer restore()
@@ -623,6 +1170,166 @@ type runtimeTestProvider struct {
 	completeCalls int
 }
 
+type runtimeShardTestProvider struct {
+	mu                        sync.Mutex
+	mapCalls                  int
+	reduceCalls               int
+	mapPayloadBytes           []int
+	reducePayloadBytes        []int
+	mapTargetCatalogCounts    []int
+	reduceTargetCatalogCounts []int
+	targetRefs                map[string]int
+	evidenceRefs              map[string]int
+}
+
+type runtimeShardTestProviderSnapshot struct {
+	mapCalls                  int
+	reduceCalls               int
+	mapPayloadBytes           []int
+	reducePayloadBytes        []int
+	mapTargetCatalogCounts    []int
+	reduceTargetCatalogCounts []int
+	targetRefs                map[string]int
+	evidenceRefs              map[string]int
+}
+
+type runtimeShardPreparedEnvelope struct {
+	Request  json.RawMessage `json:"request"`
+	Response json.RawMessage `json:"response"`
+}
+
+func newRuntimeShardTestProvider() *runtimeShardTestProvider {
+	return &runtimeShardTestProvider{
+		targetRefs: make(map[string]int), evidenceRefs: make(map[string]int),
+	}
+}
+
+func (provider *runtimeShardTestProvider) State() []byte {
+	return []byte(`{"endpoint":"https://provider.test/v1/chat","model":"runtime-shard-test"}`)
+}
+
+func (provider *runtimeShardTestProvider) Prepare(
+	prompt llm.Prompt,
+	_ llm.Limits,
+) (llm.Prepared, error) {
+	user := []byte(prompt.User)
+	var phase struct {
+		Phase string `json:"phase"`
+	}
+	if err := json.Unmarshal(user, &phase); err != nil {
+		return llm.Prepared{}, err
+	}
+	var responseRaw []byte
+	switch phase.Phase {
+	case "map":
+		var request mapRequest
+		if err := json.Unmarshal(user, &request); err != nil {
+			return llm.Prepared{}, err
+		}
+		role := responseRole{
+			Name: "Repository runtime", Purpose: "Runs the repository product.",
+			Prominence: ProminencePrimary, Kind: RoleKindService,
+			Requiredness: RequirednessRequired, Confidence: ConfidenceHigh,
+			MappingStatus: MappingMapped, Implementations: []responseImplementation{},
+			EvidenceRefs: []string{},
+		}
+		for _, target := range request.Targets {
+			if len(target.EvidenceRefs) == 0 {
+				return llm.Prepared{}, fmt.Errorf("map target %q has no direct evidence", target.Ref)
+			}
+			role.Implementations = append(role.Implementations, responseImplementation{TargetRef: target.Ref})
+			role.EvidenceRefs = append(role.EvidenceRefs, target.EvidenceRefs[0])
+		}
+		encoded, err := json.Marshal(response{Roles: []responseRole{role}})
+		if err != nil {
+			return llm.Prepared{}, err
+		}
+		responseRaw = encoded
+		provider.mu.Lock()
+		provider.mapCalls++
+		provider.mapPayloadBytes = append(provider.mapPayloadBytes, len(user))
+		provider.mapTargetCatalogCounts = append(provider.mapTargetCatalogCounts, len(request.TargetCatalog))
+		for _, target := range request.Targets {
+			provider.targetRefs[target.Ref]++
+		}
+		for _, evidence := range request.EvidenceCatalog {
+			provider.evidenceRefs[evidence.Ref]++
+		}
+		for _, evidence := range request.RepositoryEvidence {
+			provider.evidenceRefs[evidence.Ref]++
+		}
+		provider.mu.Unlock()
+	case "reduce":
+		var request reduceRequest
+		if err := json.Unmarshal(user, &request); err != nil {
+			return llm.Prepared{}, err
+		}
+		refs := make([]string, 0, len(request.Candidates))
+		for _, candidate := range request.Candidates {
+			refs = append(refs, candidate.Ref)
+		}
+		encoded, err := json.Marshal(reduceResponse{Roles: []reduceResponseRole{{
+			Name: "Repository runtime", Purpose: "Runs the repository product.",
+			Prominence: ProminencePrimary, Kind: RoleKindService,
+			Requiredness: RequirednessRequired, Confidence: ConfidenceHigh,
+			MappingStatus: MappingMapped, CandidateRefs: refs,
+		}}})
+		if err != nil {
+			return llm.Prepared{}, err
+		}
+		responseRaw = encoded
+		provider.mu.Lock()
+		provider.reduceCalls++
+		provider.reducePayloadBytes = append(provider.reducePayloadBytes, len(user))
+		provider.reduceTargetCatalogCounts = append(
+			provider.reduceTargetCatalogCounts, len(request.TargetCatalog),
+		)
+		provider.mu.Unlock()
+	default:
+		return llm.Prepared{}, fmt.Errorf("unexpected runtime phase %q", phase.Phase)
+	}
+	envelope, err := json.Marshal(runtimeShardPreparedEnvelope{Request: user, Response: responseRaw})
+	if err != nil {
+		return llm.Prepared{}, err
+	}
+	return llm.NewPrepared(envelope)
+}
+
+func (provider *runtimeShardTestProvider) Complete(
+	_ context.Context,
+	prepared llm.Prepared,
+) (llm.Completion, error) {
+	var envelope runtimeShardPreparedEnvelope
+	if err := json.Unmarshal(prepared.Bytes(), &envelope); err != nil {
+		return llm.Completion{}, err
+	}
+	return llm.Completion{
+		Response: append([]byte(nil), envelope.Response...), FinishReason: llm.FinishStop,
+		ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1},
+	}, nil
+}
+
+func (provider *runtimeShardTestProvider) snapshot() runtimeShardTestProviderSnapshot {
+	provider.mu.Lock()
+	defer provider.mu.Unlock()
+	result := runtimeShardTestProviderSnapshot{
+		mapCalls: provider.mapCalls, reduceCalls: provider.reduceCalls,
+		mapPayloadBytes:           append([]int(nil), provider.mapPayloadBytes...),
+		reducePayloadBytes:        append([]int(nil), provider.reducePayloadBytes...),
+		mapTargetCatalogCounts:    append([]int(nil), provider.mapTargetCatalogCounts...),
+		reduceTargetCatalogCounts: append([]int(nil), provider.reduceTargetCatalogCounts...),
+		targetRefs:                make(map[string]int, len(provider.targetRefs)),
+		evidenceRefs:              make(map[string]int, len(provider.evidenceRefs)),
+	}
+	for ref, count := range provider.targetRefs {
+		result.targetRefs[ref] = count
+	}
+	for ref, count := range provider.evidenceRefs {
+		result.evidenceRefs[ref] = count
+	}
+	return result
+}
+
 func (provider *runtimeTestProvider) State() []byte {
 	return []byte(`{"endpoint":"https://provider.test/v1/chat","model":"runtime-test"}`)
 }
@@ -644,7 +1351,10 @@ func (provider *runtimeTestProvider) Complete(_ context.Context, _ llm.Prepared)
 	provider.completeCalls++
 	return llm.Completion{
 		Response: append([]byte(nil), provider.response...), FinishReason: llm.FinishStop,
-		ChoiceCount: 1, Metrics: llm.Metrics{Attempts: 1},
+		ChoiceCount: 1, Metrics: llm.Metrics{
+			InputTokens: 2, OutputTokens: 3, ProviderResponseBytes: 5,
+			UsageReported: true, Latency: 7 * time.Millisecond, Attempts: 1,
+		},
 	}, nil
 }
 
@@ -700,6 +1410,60 @@ func twoTargetInput() Input {
 			ProgramTargetID: targetID,
 		}},
 	})
+	return input
+}
+
+func oversizedRuntimePortfolioInput(targetCount, responsibilitiesPerTarget int) Input {
+	input := Input{
+		RepositoryName: "large-runtime-repository", CapturedRevision: strings.Repeat("a", 40),
+		TargetPagePortfolioSHA256: strings.Repeat("b", 64),
+		Targets:                   make([]TargetInput, 0, targetCount),
+		RepositoryEvidence: []EvidenceInput{{
+			Kind: EvidenceRepositoryGuidance, Label: "Repository publishes the complete runtime topology",
+			Location: Location{Path: "README.md", Line: 7},
+		}},
+	}
+	for targetIndex := range targetCount {
+		targetID := fmt.Sprintf("program-target-%02d", targetIndex)
+		target := TargetInput{
+			ProgramTargetID: targetID, DisplayName: fmt.Sprintf("runtime-%02d", targetIndex),
+			Language: "Go", Kind: "command", Selector: fmt.Sprintf("./cmd/runtime-%02d", targetIndex),
+			Default: targetIndex == 0, ProgramObjects: 100, ProgramRelations: 200,
+			ActivityStarts: 1, IntegrationUses: 1,
+			Responsibilities: make([]ResponsibilityInput, 0, responsibilitiesPerTarget),
+			Evidence: []EvidenceInput{{
+				Kind: EvidenceTargetEntrypoint, Label: fmt.Sprintf("Starts runtime %02d", targetIndex),
+				Location:        Location{Path: fmt.Sprintf("cmd/runtime-%02d/main.go", targetIndex), Line: 1},
+				ProgramTargetID: targetID,
+			}},
+		}
+		for responsibilityIndex := range responsibilitiesPerTarget {
+			evidence := EvidenceInput{
+				Kind: EvidenceResponsibility,
+				Label: fmt.Sprintf(
+					"Evidence %02d %04d %s", targetIndex, responsibilityIndex,
+					strings.Repeat("e", 440),
+				),
+				Location: Location{
+					Path: fmt.Sprintf("internal/runtime-%02d/responsibility-%04d.go", targetIndex, responsibilityIndex),
+					Line: responsibilityIndex + 1,
+				},
+				ProgramTargetID: targetID,
+			}
+			target.Responsibilities = append(target.Responsibilities, ResponsibilityInput{
+				Name: fmt.Sprintf(
+					"Responsibility %02d %04d %s", targetIndex, responsibilityIndex,
+					strings.Repeat("n", 430),
+				),
+				Purpose: fmt.Sprintf(
+					"Describes runtime behavior %02d %04d %s", targetIndex, responsibilityIndex,
+					strings.Repeat("p", 420),
+				),
+				Evidence: []EvidenceInput{evidence},
+			})
+		}
+		input.Targets = append(input.Targets, target)
+	}
 	return input
 }
 

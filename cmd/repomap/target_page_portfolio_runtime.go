@@ -21,6 +21,11 @@ import (
 type targetPublishedRun struct {
 	RunID  string
 	RunDir string
+	// ProgramPage is the language-neutral page identity restored and validated
+	// once at the repository dispatcher boundary. Later portfolio stages retain
+	// their fresh backing-data checks but do not decode the same ProgramIndex
+	// authority again merely to recover this immutable identity.
+	ProgramPage report.TargetNavigationPage
 	// SelectedTargetKey is the outer language-neutral adapter target identity
 	// used by the repository dispatcher. AnalysisTarget remains the inner Go
 	// authority and is intentionally absent on Python and JavaScript/TypeScript
@@ -186,12 +191,12 @@ func publishTargetPagePortfolio(
 		},
 	)
 	if err != nil {
-		markTargetPagesFailed(output, runSet.CompletedTargets)
+		reportAnalyzedTargetPagePublicationFailure(output, runSet.CompletedTargets)
 		runDirs := append([]string{defaultRun.RunDir}, runSet.AttemptedRunDirs...)
 		return report.FailedPublicationAssessment(), errors.Join(err, quarantineTargetPagePublication(runDirs))
 	}
 	quarantineOnFailure := func(runErr error) (report.PublicationAssessment, error) {
-		markTargetPagesFailed(output, runSet.CompletedTargets)
+		reportAnalyzedTargetPagePublicationFailure(output, runSet.CompletedTargets)
 		return report.FailedPublicationAssessment(), errors.Join(runErr, quarantineTargetPagePublication(runSet.AttemptedRunDirs))
 	}
 	portfolio, err := snapshot.BuildTargetPagePortfolio(container, runSet.Outcomes)
@@ -202,6 +207,8 @@ func publishTargetPagePortfolio(
 		deps.ctx,
 		deps.runtimeCacheRoot,
 		deps.runtimeNoCache,
+		deps.llmBatchConcurrency,
+		deps.llmBatchController,
 		deps.newCubeProvider,
 		deps.runRuntimePortfolio,
 		container,
@@ -241,13 +248,23 @@ func publishTargetPagePortfolio(
 	return defaultAssessment, nil
 }
 
-func markTargetPagesFailed(output *runOutput, targets []targetPageConsoleContext) {
+// reportAnalyzedTargetPagePublicationFailure keeps target-local analysis state
+// distinct from the shared publication boundary. These pages completed their
+// validated pipelines; a later repository overview, persistence, manifest, or
+// bundle failure prevents a report from being published but does not turn the
+// pages into target-local failures or not-analyzed outcomes.
+func reportAnalyzedTargetPagePublicationFailure(output *runOutput, targets []targetPageConsoleContext) {
 	if output == nil {
 		return
 	}
 	for _, target := range targets {
-		output.TargetPage("failed", target)
+		output.TargetPage("analyzed", target)
 	}
+	output.State(
+		"Report publication", "failed",
+		fmt.Sprintf("analyzed target pages: %d", len(targets)),
+		"final report was not published",
+	)
 }
 
 // quarantineTargetPagePublication removes browser authority and gives any
@@ -684,6 +701,21 @@ func (run targetPublishedRun) generateWithTargetNavigation(
 		)
 	default:
 		return report.GenerateAuthorizedWithOptions(run.RunDir, run.Authority, options)
+	}
+}
+
+func (run targetPublishedRun) generateBackingPageData() error {
+	switch {
+	case run.GitLabURL != "":
+		return report.GenerateAuthorizedGitLabPageData(
+			run.RunDir, run.Authority, run.GitLabURL,
+		)
+	case run.GitHubURL != "":
+		return report.GenerateAuthorizedGitHubPageData(
+			run.RunDir, run.Authority, run.GitHubURL,
+		)
+	default:
+		return report.GenerateAuthorizedPageData(run.RunDir, run.Authority)
 	}
 }
 

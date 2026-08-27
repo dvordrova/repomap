@@ -22,7 +22,14 @@ const (
 	Version          = 3
 	ArtifactFilename = "runtime-portfolio.json"
 
-	MaxRequestBytes         = 4 * 1024 * 1024
+	// MaxRequestBytes bounds the cube-owned user JSON for a legacy single call
+	// and for every exhaustive map or reduce shard. Keeping this below the
+	// provider's observed multi-megabyte context rejection point leaves room
+	// for the OpenAI-compatible envelope and JSON escaping. The complete
+	// canonical input has no independent entity-count ceiling and may span a
+	// sequence of whole-target shards within the cube's total semantic-call
+	// resource bound; no target or evidence row is truncated.
+	MaxRequestBytes         = 1 * 1024 * 1024
 	MaxProviderRequestBytes = 2*MaxRequestBytes + 64*1024
 	MaxResponseBytes        = 2 * 1024 * 1024
 	MaxOutputTokens         = 64_000

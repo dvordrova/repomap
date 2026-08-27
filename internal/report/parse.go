@@ -100,6 +100,9 @@ func readRunDir(runDir string) (*ReportData, error) {
 	if err := restoreRuntimePortfolioView(absDir, data); err != nil {
 		return nil, err
 	}
+	if err := restoreTargetOutcomePortfolioView(absDir, data); err != nil {
+		return nil, err
+	}
 	if err := validateProgramSemanticPresentation(
 		data.ProgramPortfolio, data.AnalysisTarget, data.CubeMapView, data.CoreMapView,
 		data.ActivityEntrypointView, data.IntegrationUsageView, data.ActivityPathView,

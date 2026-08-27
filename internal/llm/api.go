@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+// DefaultBatchConcurrency is the conservative product concurrency for
+// independent model calls. Executor's zero value remains sequential so tests,
+// fixtures, and callers that have not opted in retain their original behavior.
+const DefaultBatchConcurrency = 4
+
 // Prompt is provider-neutral model input. A Provider is responsible for
 // turning it into its exact transport request.
 type Prompt struct {
@@ -85,7 +90,9 @@ type Completion struct {
 
 // Provider separates stable non-secret configuration, deterministic request
 // preparation, and the live network effect. State must be a JSON object and
-// must not contain credentials.
+// must not contain credentials. When Executor.BatchConcurrency is larger than
+// one, all three methods may be called concurrently on the same Provider and
+// the implementation must be concurrency-safe.
 type Provider interface {
 	State() []byte
 	Prepare(Prompt, Limits) (Prepared, error)
@@ -408,10 +415,20 @@ func providerFailureGuidance(failure ProviderFailure) string {
 // Executor configures the one persistent accepted-response cache and optional
 // semantic event observer. RootDir contains the fixed .llm-cache directory.
 // Enabled=false bypasses all cache identity, reads, and writes.
+//
+// BatchConcurrency bounds the number of independent ExecuteJSONBatch items
+// that may execute at once. Values below two preserve the sequential default.
+// Providers used with a larger value must permit concurrent calls. Batch
+// observers are still invoked serially in caller order.
+//
+// BatchController should be shared by executors that use the same provider so
+// the first transport HTTP 429 makes later provider attempts sequential.
 type Executor struct {
-	RootDir  string
-	Enabled  bool
-	Observer Observer
+	RootDir          string
+	Enabled          bool
+	Observer         Observer
+	BatchConcurrency int
+	BatchController  *BatchController
 }
 
 func cloneBytes(value []byte) []byte {

@@ -192,6 +192,9 @@ func NewHandler(opts Options) (http.Handler, error) {
 			return nil, fmt.Errorf("report server: VS Code launcher: %w", err)
 		}
 	}
+	if err := requireOwnerHTML(filepath.Join(runsDir, opts.InitialRunID)); err != nil {
+		return nil, fmt.Errorf("report server: verify initial report: %w", err)
+	}
 	run, err := loadRun(runsDir, opts.InitialRunID)
 	if err != nil {
 		return nil, fmt.Errorf("report server: load initial run %s: %w", opts.InitialRunID, err)
@@ -217,6 +220,14 @@ func NewHandler(opts Options) (http.Handler, error) {
 	return securityHeaders(mux, opts.ExpectedHost), nil
 }
 
+func requireOwnerHTML(runDir string) error {
+	info, err := os.Lstat(filepath.Join(runDir, "report.html"))
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Size() <= 0 {
+		return fmt.Errorf("report.html is unavailable")
+	}
+	return nil
+}
+
 func loadRun(runsDir, runID string) (runRecord, error) {
 	runDir := filepath.Join(runsDir, runID)
 	runInfo, err := os.Lstat(runDir)
@@ -228,10 +239,6 @@ func loadRun(runsDir, runID string) (runRecord, error) {
 		return runRecord{}, fmt.Errorf("open run directory: %w", err)
 	}
 	defer root.Close()
-	if info, err := root.Lstat("report.html"); err != nil || !info.Mode().IsRegular() ||
-		info.Size() < 0 || info.Size() > maxReportHTMLBytes {
-		return runRecord{}, fmt.Errorf("report.html is unavailable")
-	}
 	reportJSON, err := readRootFile(root, "report.json", maxReportJSONBytes)
 	if err != nil {
 		return runRecord{}, fmt.Errorf("read report.json: %w", err)
@@ -294,7 +301,8 @@ func loadTargetNavigation(
 	runDir string,
 	manifest report.RunManifest,
 ) (*report.TargetNavigationPortfolio, error) {
-	if manifest.MaterialInputs.TargetPagePortfolioSHA256 == "" {
+	if manifest.MaterialInputs.TargetPagePortfolioSHA256 == "" &&
+		manifest.MaterialInputs.ProgramPagePortfolioSHA256 == "" {
 		return nil, nil
 	}
 	navigation, err := report.LoadManifestTargetNavigation(runDir, manifest)
@@ -365,11 +373,18 @@ func navigationRunID(
 func authorizeSiblingRun(initial, sibling runRecord, targetID string) error {
 	initialMaterial := initial.manifest.MaterialInputs
 	siblingMaterial := sibling.manifest.MaterialInputs
+	legacyAuthority := initialMaterial.TargetRunContainerSHA256 != "" &&
+		initialMaterial.TargetPagePortfolioSHA256 != "" &&
+		siblingMaterial.TargetRunContainerSHA256 == initialMaterial.TargetRunContainerSHA256 &&
+		siblingMaterial.TargetPagePortfolioSHA256 == initialMaterial.TargetPagePortfolioSHA256
+	programPageAuthority := initialMaterial.ProgramPagePortfolioSHA256 != "" &&
+		siblingMaterial.ProgramPagePortfolioSHA256 == initialMaterial.ProgramPagePortfolioSHA256 &&
+		initialMaterial.TargetOutcomePortfolioSHA256 != "" &&
+		siblingMaterial.TargetOutcomePortfolioSHA256 == initialMaterial.TargetOutcomePortfolioSHA256
 	if siblingMaterial.ProgramTargetID != targetID ||
-		siblingMaterial.TargetRunContainerSHA256 == "" ||
-		siblingMaterial.TargetRunContainerSHA256 != initialMaterial.TargetRunContainerSHA256 ||
-		siblingMaterial.TargetPagePortfolioSHA256 == "" ||
-		siblingMaterial.TargetPagePortfolioSHA256 != initialMaterial.TargetPagePortfolioSHA256 ||
+		(!legacyAuthority && !programPageAuthority) ||
+		initialMaterial.RuntimePortfolioSHA256 == "" ||
+		siblingMaterial.RuntimePortfolioSHA256 != initialMaterial.RuntimePortfolioSHA256 ||
 		sibling.manifest.RepositoryState.Identity != initial.manifest.RepositoryState.Identity ||
 		sibling.targetNavigation == nil ||
 		sibling.targetNavigation.CurrentTargetID != targetID ||

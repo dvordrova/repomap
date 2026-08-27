@@ -12,6 +12,7 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programpage"
 	"github.com/dvordrova/repomap/internal/runtimeportfolio"
+	"github.com/dvordrova/repomap/internal/targetoutcome"
 )
 
 func TestRunManifestVerifiesProgramPagePortfolioArtifact(t *testing.T) {
@@ -74,6 +75,7 @@ func TestRunManifestVerifiesProgramPagePortfolioArtifact(t *testing.T) {
 		runDir, manifest := fixture.run(t)
 		manifest.MaterialInputs.ProgramPagePortfolioSHA256 = ""
 		manifest.MaterialInputs.RuntimePortfolioSHA256 = ""
+		manifest.MaterialInputs.TargetOutcomePortfolioSHA256 = ""
 		if err := manifest.VerifyProgramPagePortfolioArtifact(runDir); err == nil ||
 			!strings.Contains(err.Error(), "unbound program page portfolio") {
 			t.Fatalf("unbound portfolio error = %v", err)
@@ -185,12 +187,110 @@ func TestRunManifestVerifiesRuntimePortfolioAgainstProgramPages(t *testing.T) {
 	}
 }
 
+func TestTargetOutcomePortfolioViewRequiresExactAnalyzedPageBijection(t *testing.T) {
+	fixture := newProgramPageManifestFixture(t)
+	failedSelected, err := targetoutcome.NewSelectedTarget(
+		targetoutcome.LanguageGroupGo, targetoutcome.ScopeLibrary,
+		"unavailable module", "go:example.test/unavailable",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed, err := targetoutcome.NewNotAnalyzed(
+		failedSelected, targetoutcome.StageProgramAnalysis, targetoutcome.ReasonSourceNotAnalyzable,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcomes := append([]targetoutcome.Outcome(nil), fixture.outcomes.Outcomes...)
+	outcomes = append(outcomes, failed)
+	portfolio, err := targetoutcome.Build(failedSelected.ID, outcomes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := NewTargetOutcomePortfolioView(portfolio, fixture.portfolio)
+	if err != nil {
+		t.Fatalf("NewTargetOutcomePortfolioView: %v", err)
+	}
+	if err := view.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	encoded, err := json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte(`"run_id"`)) || bytes.Contains(encoded, []byte(`"program_target"`)) ||
+		!bytes.Contains(encoded, []byte(`"state":"not_analyzed"`)) ||
+		!bytes.Contains(encoded, []byte(`"failure_reason":"source_not_analyzable"`)) {
+		t.Fatalf("target outcome browser projection = %s", encoded)
+	}
+
+	drifted := make([]targetoutcome.Outcome, 0, len(fixture.outcomes.Outcomes))
+	for _, outcome := range fixture.outcomes.Outcomes {
+		if outcome.Analysis != nil && outcome.Analysis.ProgramTarget.ID == fixture.current.ID {
+			outcome, err = targetoutcome.NewAnalyzed(
+				outcome.SelectedTarget, outcome.Analysis.ProgramTarget, "run-current-other",
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		drifted = append(drifted, outcome)
+	}
+	driftedPortfolio, err := targetoutcome.Build(fixture.outcomes.DefaultSelectedTargetID, drifted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewTargetOutcomePortfolioView(driftedPortfolio, fixture.portfolio); err == nil ||
+		!strings.Contains(err.Error(), "no exact program page") {
+		t.Fatalf("drifted run binding error = %v", err)
+	}
+}
+
+func TestRunManifestVerifiesTargetOutcomePortfolioProjection(t *testing.T) {
+	fixture := newProgramPageManifestFixture(t)
+	runDir, manifest := fixture.run(t)
+	view, err := NewTargetOutcomePortfolioView(fixture.outcomes, fixture.portfolio)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportRaw, err := json.Marshal(ReportData{TargetOutcomePortfolio: view})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manifest.VerifyTargetOutcomePortfolioProjection(runDir, reportRaw); err != nil {
+		t.Fatalf("VerifyTargetOutcomePortfolioProjection: %v", err)
+	}
+
+	tampered := *view
+	tampered.Outcomes = append([]TargetOutcomeView(nil), view.Outcomes...)
+	tampered.Outcomes[0].DisplayName += " changed"
+	tamperedRaw, err := json.Marshal(ReportData{TargetOutcomePortfolio: &tampered})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manifest.VerifyTargetOutcomePortfolioProjection(runDir, tamperedRaw); err == nil ||
+		!strings.Contains(err.Error(), "does not match artifacts") {
+		t.Fatalf("tampered projection error = %v", err)
+	}
+
+	if err := os.Remove(filepath.Join(runDir, targetoutcome.ArtifactFilename)); err != nil {
+		t.Fatal(err)
+	}
+	if err := manifest.VerifyTargetOutcomePortfolioProjection(runDir, reportRaw); err == nil ||
+		!strings.Contains(err.Error(), "artifact or projection is missing") {
+		t.Fatalf("missing outcome artifact error = %v", err)
+	}
+}
+
 type programPageManifestFixture struct {
 	portfolio    programpage.Portfolio
 	raw          []byte
 	current      programindex.Target
 	sibling      programindex.Target
 	currentRunID string
+	outcomes     targetoutcome.Portfolio
+	outcomeRaw   []byte
 }
 
 func newProgramPageManifestFixture(t *testing.T) programPageManifestFixture {
@@ -209,9 +309,41 @@ func newProgramPageManifestFixture(t *testing.T) programPageManifestFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	currentSelected, err := targetoutcome.NewSelectedTarget(
+		targetoutcome.LanguageGroupPython, targetoutcome.ScopeExecutable,
+		current.Name, current.Selector,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	siblingSelected, err := targetoutcome.NewSelectedTarget(
+		targetoutcome.LanguageGroupJavaScriptTypeScript, targetoutcome.ScopePackage,
+		sibling.Name, sibling.Selector,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentOutcome, err := targetoutcome.NewAnalyzed(currentSelected, current, currentRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	siblingOutcome, err := targetoutcome.NewAnalyzed(siblingSelected, sibling, "run-sibling-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcomes, err := targetoutcome.Build(currentSelected.ID, []targetoutcome.Outcome{
+		currentOutcome, siblingOutcome,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcomeRaw, err := outcomes.CanonicalJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
 	return programPageManifestFixture{
 		portfolio: portfolio, raw: raw, current: current, sibling: sibling,
-		currentRunID: currentRunID,
+		currentRunID: currentRunID, outcomes: outcomes, outcomeRaw: outcomeRaw,
 	}
 }
 
@@ -222,6 +354,7 @@ func (fixture programPageManifestFixture) run(t *testing.T) (string, RunManifest
 		t.Fatal(err)
 	}
 	writeTargetPageManifestArtifact(t, runDir, programpage.ArtifactFilename, fixture.raw)
+	writeTargetPageManifestArtifact(t, runDir, targetoutcome.ArtifactFilename, fixture.outcomeRaw)
 	manifest := validRunManifestFixture(t)
 	var err error
 	manifest.MaterialInputs.ProgramTargetID, manifest.MaterialInputs.ProgramTargetSHA256, err =
@@ -231,6 +364,7 @@ func (fixture programPageManifestFixture) run(t *testing.T) (string, RunManifest
 	}
 	manifest.MaterialInputs.ProgramPagePortfolioSHA256 = manifestSHA256(fixture.raw)
 	manifest.MaterialInputs.RuntimePortfolioSHA256 = strings.Repeat("7", 64)
+	manifest.MaterialInputs.TargetOutcomePortfolioSHA256 = manifestSHA256(fixture.outcomeRaw)
 	return runDir, manifest
 }
 

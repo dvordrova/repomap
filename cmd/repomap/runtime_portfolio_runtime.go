@@ -26,16 +26,58 @@ type runtimePortfolioRunner func(
 	llm.Executor,
 	llm.Provider,
 	runtimeportfolio.Input,
-) (llm.Outcome[runtimeportfolio.Result], error)
+) (runtimeportfolio.RunOutcome, error)
 
-// synthesizeRuntimePortfolio runs exactly one repository-level semantic cube
+// runtimePortfolioArtifactSetValidator performs the expensive semantic check
+// once for a set of artifacts that must be byte-identical. Callers still read
+// and compare every run's bytes; a later run can never substitute a different
+// (even independently valid) repository artifact.
+type runtimePortfolioArtifactSetValidator struct {
+	canonical []byte
+}
+
+func (validator *runtimePortfolioArtifactSetValidator) validate(
+	raw []byte,
+	validateFirst func([]byte) error,
+) error {
+	if validator.canonical != nil {
+		if !bytes.Equal(raw, validator.canonical) {
+			return fmt.Errorf("runtime portfolio: target pages carry different repository artifacts")
+		}
+		return nil
+	}
+	if err := validateFirst(raw); err != nil {
+		return err
+	}
+	validator.canonical = append([]byte(nil), raw...)
+	return nil
+}
+
+func fullyValidateRuntimePortfolioArtifact(raw []byte, input runtimeportfolio.Input) error {
+	decoded, err := runtimeportfolio.Decode(raw)
+	if err != nil {
+		return err
+	}
+	if err := decoded.ValidateAgainst(input); err != nil {
+		return fmt.Errorf("runtime portfolio: stale repository authority: %w", err)
+	}
+	want, err := runtimeportfolio.Encode(decoded)
+	if err != nil || !bytes.Equal(raw, want) {
+		return fmt.Errorf("runtime portfolio: artifact is not canonical")
+	}
+	return nil
+}
+
+// synthesizeRuntimePortfolio runs one exhaustive repository-level semantic cube
 // after every selected target page has completed and the exact page portfolio
-// has been sealed. The default page owns the one provider/cache observation;
+// has been sealed. The default page owns its provider/cache observations;
 // every page receives the same validated semantic artifact bytes.
 func synthesizeRuntimePortfolio(
 	ctx context.Context,
 	cacheRoot string,
 	noCache bool,
+	batchConcurrency int,
+	batchController *llm.BatchController,
 	providerFactory targetPortfolioProviderFactory,
 	runner runtimePortfolioRunner,
 	container snapshot.TargetRunContainer,
@@ -66,9 +108,11 @@ func synthesizeRuntimePortfolio(
 		return fmt.Errorf("runtime portfolio: open semantic artifact writer: %w", err)
 	}
 	executor := llm.Executor{
-		RootDir:  cacheRoot,
-		Enabled:  !noCache,
-		Observer: debugdump.NewSemanticObserver(writer),
+		RootDir:          cacheRoot,
+		Enabled:          !noCache,
+		Observer:         debugdump.NewSemanticObserver(writer),
+		BatchConcurrency: batchConcurrency,
+		BatchController:  batchController,
 	}
 	if output != nil {
 		output.Stage("Repository overview", "synthesizing runtime roles across completed target pages")
@@ -97,12 +141,11 @@ func synthesizeRuntimePortfolio(
 		return err
 	}
 	state := debugdump.SemanticStateAccepted
-	semanticCalls := 1
+	semanticCalls := outcome.SemanticCalls
 	transportAttempts := outcome.Metrics.Attempts
 	latencyMillis := outcome.Metrics.Latency.Milliseconds()
 	if outcome.Cached {
 		state = debugdump.SemanticStateCacheHit
-		semanticCalls = 0
 		transportAttempts = 0
 		latencyMillis = 0
 	}
@@ -142,6 +185,7 @@ func persistRuntimePortfolioForRuns(
 	if len(encoded) == 0 || len(encoded) > runtimeportfolio.MaxArtifactBytes {
 		return fmt.Errorf("runtime portfolio: encoded artifact exceeds its byte bound")
 	}
+	validator := runtimePortfolioArtifactSetValidator{}
 	for _, run := range runs {
 		writer, writerErr := debugdump.OpenWriter(run.RunDir, true)
 		if writerErr != nil {
@@ -154,11 +198,9 @@ func persistRuntimePortfolioForRuns(
 				if !bytes.Equal(saved, encoded) {
 					return fmt.Errorf("runtime portfolio: persisted bytes changed")
 				}
-				decoded, decodeErr := runtimeportfolio.Decode(saved)
-				if decodeErr != nil {
-					return decodeErr
-				}
-				return decoded.ValidateAgainst(input)
+				return validator.validate(saved, func(raw []byte) error {
+					return fullyValidateRuntimePortfolioArtifact(raw, input)
+				})
 			},
 		)
 		closeErr := writer.Close()
@@ -185,7 +227,7 @@ func validateRuntimePortfolioArtifactsForFinalization(
 	if err != nil {
 		return err
 	}
-	var canonical []byte
+	validator := runtimePortfolioArtifactSetValidator{}
 	for _, run := range runs {
 		raw, found, readErr := readTargetPageRunFile(
 			run.RunDir,
@@ -198,21 +240,10 @@ func validateRuntimePortfolioArtifactsForFinalization(
 		if !found {
 			return fmt.Errorf("runtime portfolio: run %s is missing the repository artifact", run.RunID)
 		}
-		decoded, decodeErr := runtimeportfolio.Decode(raw)
-		if decodeErr != nil {
-			return fmt.Errorf("runtime portfolio: run %s: %w", run.RunID, decodeErr)
-		}
-		if validateErr := decoded.ValidateAgainst(input); validateErr != nil {
-			return fmt.Errorf("runtime portfolio: run %s has stale repository authority: %w", run.RunID, validateErr)
-		}
-		want, encodeErr := runtimeportfolio.Encode(decoded)
-		if encodeErr != nil || !bytes.Equal(raw, want) {
-			return fmt.Errorf("runtime portfolio: run %s artifact is not canonical", run.RunID)
-		}
-		if canonical == nil {
-			canonical = append([]byte(nil), raw...)
-		} else if !bytes.Equal(canonical, raw) {
-			return fmt.Errorf("runtime portfolio: target pages carry different repository artifacts")
+		if err := validator.validate(raw, func(candidate []byte) error {
+			return fullyValidateRuntimePortfolioArtifact(candidate, input)
+		}); err != nil {
+			return fmt.Errorf("runtime portfolio: run %s: %w", run.RunID, err)
 		}
 	}
 	return nil

@@ -2,7 +2,7 @@
 
 Status: active living ADR
 
-Last updated: 2026-08-26
+Last updated: 2026-08-27
 
 Historical provenance: pre-cleanup commit `4e54ab3`
 
@@ -15,7 +15,9 @@ normative dependencies.
 
 `repomap` has one product path: ordinary online analysis of a repository,
 ending in a sealed ProgramIndex set, downstream cube artifacts, manifest,
-report JSON, and report HTML.
+report JSON, and one user-facing report HTML. A multi-target run retains each
+analyzed target's manifest-bound backing data but gives only its deterministic
+successful owner run a physical `report.html`.
 The report may be opened and served by that same run, or generated as static
 HTML with `--no-serve`. `--no-open` independently controls whether repomap
 opens the resulting report for the user.
@@ -301,7 +303,13 @@ diagnostic-journal availability never changes the cube's semantic contract.
    share a single package/type/SSA universe; incompatible module roots retain
    separate universes inside that owner rather than merging equal import paths
    from independent `packages.Load` calls. Every target page receives a
-   target-bound projection from its exact universe.
+   target-bound projection from its exact universe. If initial preparation of
+   the complete selected-target union fails, the current exact target is
+   retried against its own scope and the run permanently stops reusing that
+   failed union for later targets. A healthy target therefore remains
+   analyzable when one selected sibling has incomplete typed source, while a
+   source-bearing target that fails its own exact preparation still fails its
+   page closed.
    Sibling packages are excluded by the projection's admitted package set, and
    a missing or mismatched workspace is terminal rather than a hidden fresh
    load. The Go adapter projects the existing package, type, SSA,
@@ -623,16 +631,23 @@ diagnostic-journal availability never changes the cube's semantic contract.
    state mutation, and effect execution. It must not reread or rebuild the
    whole program graph.
 17. Produce one canonical English semantic result.
-18. When the typed plan contains more than one target, run every target-local
-    page to completion and seal one exact, language-neutral
-    `ProgramPagePortfolio`. It binds each complete page's full validated
-    `ProgramTarget` identity to its safe child run ID and names the default by
-    exact ProgramTarget ID; adapter-native refs never cross this publication
-    boundary. Then run one repository-level `RuntimePortfolio` cube. This is
+18. When the typed plan contains more than one target, attempt every target-local
+    page independently and seal one exhaustive, adapter-neutral
+    `TargetOutcomePortfolio`. Each selected target is either bound to its full
+    validated `ProgramTarget` and safe child run ID or marked `not_analyzed`
+    with only one closed failure stage and reason; raw errors and adapter-native
+    refs never enter the artifact. Failed targets have no partial ProgramIndex,
+    semantic view, page, or navigation link. Seal the separate
+    `ProgramPagePortfolio` over analyzed pages only; that neutral authority and
+    its one-document bundle remain valid with exactly one analyzed page when
+    all other selected targets failed. It binds each complete
+    page's full validated `ProgramTarget` identity to its safe child run ID and
+    names a physical page owner by exact ProgramTarget ID. Then run one
+    repository-level `RuntimePortfolio` cube over those analyzed pages. This is
     also the repository product-role authority for reusable libraries; library
     orientation extends this existing cube and does not add a second analysis
     or presentation layer. Its complete request-local catalog contains every
-    target plus the validated
+    analyzed target plus the validated
     responsibilities, activities, integration-use counts, entrypoint evidence,
     and repository-guidance evidence already produced on the target-local
     paths. The model selects only closed `t*` and `e*` refs; canonical
@@ -641,8 +656,65 @@ diagnostic-journal availability never changes the cube's semantic contract.
     target-mode mappings, primary/supporting/unknown prominence,
     required/optional/experimental/unknown requiredness, confidence, exact
     evidence, and the exact unclassified-target complement. It has no fixed
-    target, role, implementation, or evidence-count limit; byte and token
-    bounds remain fail-closed. No target-local cube, orchestration layer, or
+    target, role, implementation, or evidence-count limit; byte, token, and
+    total semantic-call resource bounds remain fail-closed. A complete
+    canonical request that fits the
+    provider-compatible 1 MiB user-JSON bound keeps the byte-identical
+    single-call prompt, response schema, and semantic cache identity. A
+    request above that bound is
+    greedily and deterministically packed into exhaustive whole-target map
+    shards under that same bound; the smaller bound reserves space for the
+    provider envelope and JSON escaping and stays below the observed
+    multi-megabyte provider context rejection point. No target or evidence row
+    is truncated.
+    Every map shard repeats the complete compact target catalog and complete
+    repository-guidance evidence while owning the detailed facts and
+    target-bound evidence for its whole targets. Map output is only a
+    high-recall candidate proposal and cannot finalize repository-global
+    vocabulary, prominence, or requiredness. The cube then performs one or
+    more bounded reduce levels over closed `c*` candidate refs. Each reducer
+    sees the complete compact target catalog and may combine cross-shard
+    candidates into one many-to-many role; only the last single-batch reducer
+    owns final global vocabulary, prominence, and requiredness. Go restores the
+    exact union of implementations, modes,
+    and evidence for every selected candidate; duplicate set members are
+    harmless. During preliminary map restoration only, every known
+    implementation without selected evidence bound to that exact target is an
+    unsupported implementation set member and is discarded before candidate
+    identity or reducer authority. A `library` implementation has the stricter
+    requirement that its target-bound evidence include `responsibility` or
+    `program_fact`. The complete compact target catalog is recognition
+    authority only: an implementation ref advertised there but absent from the
+    shard's detailed `targets` is a known unsupported set member, not a truly
+    unknown ref, and cannot pull another target into the shard. If exact
+    filtering leaves a mapped candidate with no supported known
+    implementation, the whole preliminary candidate is discarded; Go never
+    rewrites it to `mapping_status=unknown` or invents evidence. A mapped row
+    containing only refs absent even from the complete target catalog remains
+    unresolved and terminal, as do executable library modes, malformed scalar
+    fields, incompatible assignments, and same-name conflicts. This is
+    map-response schema version
+    4, so its acceptance rule participates in semantic cache identity. The
+    byte-identical single-call final resolver and every reduce/final result
+    remain strict rather than applying the preliminary filter. The first
+    reduce level sends every candidate's complete exact evidence refs and
+    evidence catalog. After those outputs have been restored and validated
+    locally, higher reduce levels use a `validated_summary` request containing
+    the same semantic fields and implementations plus exact evidence count and
+    kinds, but do not repeat evidence refs or their catalog. This is request
+    compaction rather than evidence truncation: the complete validated `Role`
+    remains bound locally behind each closed `c*`, and selecting that ref still
+    restores and validates its exact implementation and evidence union. A
+    summary that cannot prove two roles equivalent keeps them distinct, so one
+    bounded global summary reducer may legitimately return the same candidate
+    count. Multi-batch compact reduction proceeds recursively only while the
+    candidate count, canonical compact batch count, or total compact wire bytes
+    shrink. The canonical ordered `c*`-to-full-`Role` authority digest is part
+    of local reduce cache state but is never sent to the provider; equal
+    summaries backed by different exact evidence therefore cannot share a
+    cache entry. This is reduce preparation and response-schema version 2. The
+    total cube-call bound leaves room for every cache/live observation in the
+    semantic journal. No target-local cube, orchestration layer, or
     browser code may invent a repository product or runtime role, promote an
     example or tool, or repair an incomplete result. Role kind remains the
     closed vocabulary `service`, `daemon`, `worker`, `cli`, `library`,
@@ -667,8 +739,20 @@ diagnostic-journal availability never changes the cube's semantic contract.
     Both live and cached raw responses are decoded, resolved only through the
     current request's `t*` and `e*` catalogs, semantically validated, and then
     bound locally to the current `ProgramPagePortfolio`. Persist the same
-    canonical `runtime-portfolio.json` bytes in every child run, then re-render
-    and finalize every page against that shared current-publication authority.
+    canonical `target-outcome-portfolio.json` and `runtime-portfolio.json`
+    bytes in every analyzed child run, then finalize
+    every page's manifest-bound `report.json` and artifacts against that shared
+    current-publication authority. A multi-target publication does not render
+    one child HTML per page. The analyzed-page owner run owns the only physical
+    `report.html`, projected directly from all verified child data after the
+    complete portfolio validates. The originally selected repository default
+    remains the logical default in TargetOutcomePortfolio even when it failed;
+    in that case the first successful page in deterministic execution order
+    owns the HTML and the analyzed-page portfolio. A target-local failure does
+    not cancel later targets. Context cancellation and shared selection,
+    repository-overview, persistence, manifest, and bundle failures remain
+    publication-terminal. If every selected target fails, retain diagnostics
+    but publish no invented targetless page.
     A one-target run publishes its complete target page directly and creates
     neither page-portfolio nor repository-runtime authority.
     Re-derive a bounded `ProgramView` for every manifest-bound ProgramIndex,
@@ -778,16 +862,21 @@ of the ordinary main path; local activity-candidate authority remains. The
 renderer consumes each target page's sealed ProgramIndex through its
 report-owned `ProgramPortfolio`; a multi-target publication additionally
 consumes the one repository-level `RuntimePortfolio` bound through the
-language-neutral `ProgramPagePortfolio`. The repository route is the initial
+language-neutral `ProgramPagePortfolio`. Every child run retains its own
+canonical `report.json`, manifest, ProgramIndex, and semantic artifacts, but
+only the deterministic first successful run owns a physical `report.html`. That owner document is
+derived from the verified page data and artifacts, never by parsing or merging
+target-local HTML. The repository route is the initial
 orientation surface only when its repository-wide runtime portfolio has at
 least one role or unclassified target; target-local JavaScript/TypeScript
 surfaces and cross-surface paths remain on that target's program page. An
 authoritative but empty repository-level catalog never shadows a non-empty
 semantic program map. An explicit empty repository route retains a direct
-program-map handoff. A populated repository route shows primary, supporting,
-and unknown product/runtime roles, including evidence-backed reusable library
-APIs, their exact target or target-mode mappings, source evidence, uncertainty,
-and every unclassified target. Examples and supporting tools have distinct
+program-map handoff. A populated repository route shows primary runtime roles
+first, followed by evidence-backed reusable library/product APIs, supporting,
+and unknown roles, with their exact target or target-mode mappings, source
+evidence, uncertainty, and every unclassified target. Examples and supporting
+tools have distinct
 semantic kinds and distinct presentation sections; browser code never infers
 either kind from names, paths, or prose. Baseline optional/high-confidence
 bookkeeping is omitted from cards, while exceptional requiredness or
@@ -810,19 +899,38 @@ adapter's language-specific authority. Dependency extraction coverage must be
 diagnostics and terminate the shared cube path rather than becoming a smaller,
 product-looking integration map.
 
-Multi-target reports use a compact target picker rather than an unbounded
-horizontal rail. The repository route says `All targets` and presents no target
+Multi-target reports use a compact target picker inside that one owner document
+rather than an unbounded horizontal rail or a collection of child reports. The
+repository route says `All targets` and presents no target
 as the current page. Target-scoped routes retain the exact target as context,
 but only that target's program-map link carries the current-page state; detail
 pages do not make their program-map link current merely because it names the
-same target. The program page starts with one compact, closed target summary
+same target. The picker counts the exhaustive selected-target outcomes. An
+analyzed row links to its exact page; a `not_analyzed` row is red, disabled,
+has no href, and shows only its closed failure explanation. The repository
+overview states `analyzed / selected` coverage and lists not-analyzed targets
+separately from analyzed targets that RuntimePortfolio left unclassified. The
+program page starts with one compact, closed target summary
 instead of a second repository-sized hero. Architecture-area controls change
 the focused canvas without scheduling a responsibility-detail scroll and
 restore focus to the replacement active control without moving the viewport.
 Hover or keyboard focus on a canvas card visually suppresses unrelated edges;
 related endpoints expose pointer-operable ports that move focus to the opposite
-exact canvas card without changing the report route. The SVG remains a visual
-edge layer, and canonical card links remain the keyboard navigation authority.
+exact canvas card without changing the report route. Crossing those ports with
+the pointer keeps the parent card's node-level emphasis stable; exact-edge
+emphasis is reserved for endpoint keyboard focus. Relationship emphasis never
+repaints remote card borders or halos: the directly hovered or focused card owns
+its boundary cue, while edges and endpoint controls carry relationship state.
+Entrypoint cards are grouped by their exact repository-relative source path;
+the path is shown once as the group heading and each compact card retains only
+its line token instead of repeating the complete path.
+Every visible relation keeps its own endpoint control. High-degree cards reserve
+enough height for non-overlapping pointer targets, order those targets by the
+opposite card's vertical position, and route overlapping same-lane relations on
+deterministic outer tracks. Arrowheads use a fixed user-space open shape and do
+not grow when an emphasized edge becomes thicker.
+The SVG remains a visual edge layer, and canonical card links remain the
+keyboard navigation authority.
 The standalone System Canvas browser implementation is split across four
 embedded assets loaded before the report shell in deterministic order. A pure
 graph projection owns stable node and edge IDs, exact/possible/runtime
@@ -837,7 +945,8 @@ mutable state nor parse hash routes. Node interaction does not rebuild the
 graph, remeasure the layout, recreate endpoint controls, or replace SVG paths.
 Geometry rebuilds are limited to initial mount, a changed visible graph/layout,
 or resize. This is a browser-implementation boundary only: it does not add a
-semantic projection, change any backend authority, or change report format 67.
+semantic projection, change any backend authority, or independently change the
+current report format 68.
 Source evidence is grouped by exact
 repository-relative file, with the path as a quiet group label and concise
 declaration labels inside it rather than repeated module/path prefixes; exact
@@ -867,14 +976,16 @@ adapter-specific authority described above. A selected cross-page target may
 not be downgraded to `structural_only`; missing semantic authority is a
 publication error, not an empty browser fallback.
 
-A final multi-target publication is publishable only when every child carries
-byte-identical canonical `program-page-portfolio.json` and
-`runtime-portfolio.json` artifacts, both bound by its manifest, and every
-report projection is rederived from those authorities. Missing, stale,
-noncanonical, unequal, or target-incomplete page or runtime authority is a
-publication error. A complete single-target publication legitimately omits
-both artifacts and does not invent sibling navigation or repository runtime
-authority.
+A final multi-target publication is publishable only when every analyzed child
+carries byte-identical canonical `target-outcome-portfolio.json`,
+`program-page-portfolio.json`, and `runtime-portfolio.json` artifacts, all bound
+by its manifest, and every report projection is rederived from those
+authorities. The analyzed outcomes and program pages form an exact bijection;
+every other selected outcome is closed `not_analyzed` and has no ProgramTarget,
+run ID, or navigation page. Missing, stale, noncanonical, unequal, or
+target-incomplete analyzed-page/runtime authority is a publication error. A
+complete single-target publication legitimately omits all three artifacts and
+does not invent sibling navigation or repository runtime authority.
 
 Legacy Architecture, Study, and Operate routes are not product fallbacks. A
 ProgramPortfolio report accepts only an empty initial hash, exact Program
@@ -886,25 +997,27 @@ fall back to a package-name or path-derived story. In particular, TLS,
 registry/config naming, a `New*Client` spelling, or a known dependency prefix
 must not remain a user-visible semantic decision.
 
-Each target-page render is fail-clean. It invalidates the previous final
-manifest, HTML, and JSON names before regeneration, prepares replacement HTML
-and JSON in the same run directory, verifies their complete projection and
-candidate manifest, installs both files, and installs the manifest last as the
-only readiness boundary. Any returned render, manifest, sibling, finalization,
-or assessment error removes or quarantines all final product names and never
-updates the latest link; raw analysis artifacts remain diagnostic input.
-The language-neutral coordinator prepares and authorizes the repository
-default page before running every sibling page. It quarantines every attempted
-page on a returned failure and does not announce completion before the neutral
-page portfolio, RuntimePortfolio, and final re-renders validate. A hard process
-termination in that interval can still leave individually ready page manifests
-without the later cross-page authority. Closing that crash window requires a
-future portfolio-wide staging authority rather than another recovery fallback.
+Each target-page data finalization is fail-clean. It invalidates previous final
+product names, prepares replacement canonical JSON, verifies its complete
+projection and candidate manifest, installs `report.json`, and installs the
+manifest last as that backing page's data boundary. It deliberately installs no
+target-local HTML in a multi-target publication. After every successful backing
+page, the exhaustive target outcomes, neutral analyzed-page portfolio, and
+RuntimePortfolio validate, the coordinator derives and atomically installs the
+sole `report.html` in the first successful run. Any returned
+render, manifest, sibling, finalization, bundle, or assessment error removes or
+quarantines all final product names and never updates the latest link; raw
+analysis artifacts remain diagnostic input. A hard process termination in that
+interval can still leave individually validated backing manifests without the
+later owner HTML. Closing that crash window requires a future portfolio-wide
+staging authority rather than another recovery fallback.
 
 Publication parsing is fail-closed and has one semantic validator:
 `ReadRunManifest` strictly restores the report, sealed ProgramIndex set, and
-all downstream artifact projections. Publication readiness adds only the HTML
-payload and standalone-bundle checks; it does not maintain a second
+all downstream artifact projections. Each non-default multi-target run is a
+manifest-validated backing authority, not a separate READY HTML publication.
+Publication readiness is assessed only for the default owner and adds the HTML
+payload and multi-target-bundle checks; it does not maintain a second
 ProgramIndex or semantic-artifact validator. `snapshot.json` and `metadata.json` are
 mandatory, independently strict-decoded authorities; metadata must carry the
 same exact repository identity as the snapshot and cannot fill in a missing
@@ -913,14 +1026,15 @@ strict-decodes it, and compares the complete projection with the validated
 `report.json`. Its target navigation must equal the manifest-derived
 navigation, and static source authority must retain the manifest-derived host,
 revision, and repository-root-to-analysis-root path prefix. Manifest version
-34 and report format version 67 own the current publication contract. The
+35 and report format version 68 own the current publication contract. The
 manifest owns canonical `standalone_source {host,repository_url}` and the exact
 optional `core_map_sha256`, `dependency_catalog_sha256`,
 `python_target_catalog_sha256`, `declared_dependencies_sha256`,
 `integration_dependencies_sha256`, `integration_usage_sha256`,
 `activity_entrypoints_sha256`, `activity_paths_sha256`,
 `js_ts_project_sha256`,
-`readme_file_roles_sha256`, `program_page_portfolio_sha256`, and
+`readme_file_roles_sha256`, `target_outcome_portfolio_sha256`,
+`program_page_portfolio_sha256`, and
 `runtime_portfolio_sha256` material
 bindings. A Python target catalog, its declared-dependency artifact, CoreMap,
 activity-entrypoint selection, exact dependency catalog, potential-integration
@@ -935,28 +1049,37 @@ A language-neutral `program_page_portfolio_sha256` is mutually exclusive with
 the legacy Go `target_run_container_sha256` and
 `target_page_portfolio_sha256` pair. A bound `runtime_portfolio_sha256`
 requires exactly one of the neutral or legacy complete page-portfolio
-authorities; it cannot float independently. The neutral artifact is
+authorities; it cannot float independently. The neutral program-page authority
+requires one `target_outcome_portfolio_sha256`, while legacy and complete
+single-target pages omit it. The target-outcome artifact is strict-decoded and
+must join its analyzed rows bijectively to the neutral pages by exact full
+ProgramTarget and child run ID. The neutral page artifact is
 strict-decoded and must contain the current manifest's exact ProgramTarget ID
-and current child run ID. A multi-target standalone document is rederived from
-every child manifest, report, ProgramIndex, and canonical order and compared byte-for-byte; a
-self-consistent replacement seal is not authority. Merely containing an HTML
-marker is not publication evidence.
-The ordinary language-neutral child HTML may omit the Go-specific outer
-`analysis_target`. Standalone preparation restores that authority only from
-the manifest-verified canonical `report.json`, rejects any conflicting HTML
-copy, and injects it only into the self-contained multi-target payload needed
-to bind each selected target to the neutral page projection.
+and current child run ID. A multi-target standalone document is rederived
+directly from every child manifest, `report.json`, ProgramIndex, page-local
+artifact, and canonical order and compared byte-for-byte; child HTML is neither
+an input nor a merge source, and a self-consistent replacement seal is not
+authority. Merely containing an HTML marker is not publication evidence.
+The language-neutral child backing data may omit the Go-specific outer
+`analysis_target`. Standalone projection restores that authority only from the
+manifest-verified canonical `report.json` and injects it only into the
+self-contained multi-target payload needed to bind each selected target to the
+neutral page projection.
 
 Target navigation is also atomic. The cross-page rail is keyed only by exact
 `program_target.id` values restored from each validated page and the sealed
 `ProgramPagePortfolio`; its backend-owned repository route enters
 `#/repository` in the current document, while target routes enter `#/program`
-in the current or an authorized sibling document. The page-local
+in the current document for the standalone bundle. In served mode, sibling
+target URLs are virtual documents rendered on demand from their manifest-bound
+backing data; no sibling `report.html` exists on disk. The page-local
 `ProgramPortfolio` uses the same ProgramTarget identity, and the backend
-requires its default to equal the current page binding. Every page must be
-ready; an unavailable slot is a publication error, not a disabled link. Route
-validation is pure from builder through report server and never mutates an old
-`#/map` href into the product route.
+requires its default to equal the current page binding. Every analyzed backing
+page must validate completely. A selected `not_analyzed` outcome is instead a
+red, disabled, linkless switcher row and a separate repository-overview item;
+it is never mixed with RuntimePortfolio's analyzed-but-unclassified targets.
+Route validation is pure from builder through report server and never
+mutates an old `#/map` href into the product route.
 
 A served run is viable only when its manifest-authorized source IDs and the
 VS Code `code` CLI are available. Server startup fails explicitly when that
@@ -1276,7 +1399,7 @@ model-selected integration operations with their exact callsites and
 explicitly non-exact runtime authority.
 The report rechecks every selected CoreMap member, activity start, integration
 operation, and activity-to-caller path against the same sealed ProgramIndex.
-Manifest version 34 and report format version 67 material-bind the exact Python
+Manifest version 35 and report format version 68 material-bind the exact Python
 target catalog, declared-dependency artifact, CoreMap, activity-entrypoint
 selection, dependency catalog, selected integration dependencies, concrete
 integration-usage artifact, and deterministic ActivityPath artifact as one
@@ -1390,12 +1513,12 @@ boundary; absent relations stay visible as frontiers and are never supplied by
 the model. Server registrations must be reachable through retained program
 calls from a product Node surface, so an integration-test server with the same
 method/path cannot replace the production handler. Dependency-injected storage
-dispatch remains possible rather than exact. Report format 67 derives the
+dispatch remains possible rather than exact. Report format 68 derives the
 surface catalog and cross-surface view
 from the sealed project plus the exact ProgramIndex, starts JS/TS reports at
 `#/repository` only when that view has an exact surface or path, otherwise
 starts at the semantic program map, and owns fail-closed surface/path deep links. Manifest version
-34 material-binds and rederives both views before publication.
+35 material-binds and rederives both views before publication.
 
 The dependency handoff is a versioned language-neutral catalog. Each direct
 dependency has a deterministic local ID, the closed kind `workspace`,
@@ -1525,6 +1648,15 @@ rejects `partial`; the state exists to explain the failure, not as a degraded
 publication mode. A missing or broken package object must never look like
 evidence that the dependency is absent.
 
+A non-`DepOnly` root row is an ordinary repository package only when `go list`
+reports at least one build-selected `GoFiles` or `CgoFiles` entry. Raw rows for
+directories containing only external `*_test.go` files remain available to the
+one dependency metadata load, but do not enter Go facts, module package counts,
+target identity, or typed-program admission because the product deliberately
+loads with `Tests=false`. This exclusion is not a partial-analysis rule: any
+admitted source-bearing package that cannot be type checked still fails its
+own target closed.
+
 Every semantic cube and the current report run in canonical English. A future
 presentation-localization cube may translate a final allowlisted projection
 and resolve fixed UI labels after semantic analysis. That deferred cube must
@@ -1546,7 +1678,14 @@ raw graph edges remain local throughout.
 The repository is trusted input by default, so heuristic credential detection
 is off. `--scan-secrets` enables the cautious scan when the caller wants it.
 This does not relax the unconditional rule that API keys and Authorization
-headers are never written to artifacts.
+headers are never written to artifacts. The always-on Authorization-header
+guard recognizes a header only at a line start or immediately after a
+structural delimiter, with optional horizontal spacing. Arbitrary prose such
+as `Authentication and authorization: package` is not a header and must not
+make canonical artifacts diverge during redacted persistence. RuntimePortfolio
+applies this always-on persistence guard to its complete compiled provider
+request before any model call, independently of `--scan-secrets`; a real
+credential-shaped request remains terminal without exposing the matched value.
 
 Repository contents may change while analysis is running. The ordinary path
 does not recapture the repository, compare a later state, emit a freshness
@@ -1577,10 +1716,24 @@ The shared LLM executor owns:
 - provider configuration and a non-secret stable provider state;
 - construction of the exact immutable provider request;
 - HTTP transport, bounded retries, response-envelope decoding, and accounting;
-- stable ordered execution of cube-planned batches;
+- stable ordered execution of cube-planned batches through a bounded worker
+  pool (four workers on the ordinary product path), with caller indexes as the
+  result slots and no random batch identity;
 - JSON decoding into the response type requested by the cube;
 - accepted-only persistent caching; and
 - per-run observation events used by the semantic journal.
+
+Every live provider attempt acquires one lease from the run-shared adaptive
+gate. A transient HTTP 429 collapses the gate from the configured bound to one
+before the provider enters its existing retry backoff. Already-started attempts
+finish; the retry and every newly admitted attempt are then serial, including
+later cube batches and repository-overview calls in the same run. A terminal
+item error creates one batch child cancellation cause: queued items never
+start, in-flight requests receive cancellation, completed outcomes stay in
+their original caller-indexed slots, and concurrent terminal errors are
+reported by the lowest observed caller index. The owning cube rejects the
+batch, so these operationally retained outcomes and cache entries never become
+a partial semantic result. Observer events are replayed in caller order.
 
 Provider-call wrappers keep their underlying cause chain available for local
 `errors.Is`/`errors.As` handling when a typed cause is supplied, but their
@@ -1717,7 +1870,9 @@ A change is accepted only after:
 2. the binary completes a normal online run against a real repository;
 3. exit status, manifest, the sealed ProgramIndex set and every referenced
    index, downstream cube artifacts, report JSON, and report HTML are checked
-   directly;
+   directly; a multi-target run additionally proves that every analyzed backing
+   page validates and only the deterministic successful owner has a physical
+   report HTML;
 4. focused tests and vet for changed packages pass.
 
 Contributor-only browser QA, including opening a generated report through

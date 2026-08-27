@@ -72,7 +72,7 @@ func TestSystemCanvasRealBrowserInteractionDoesNotRebuildGeometry(t *testing.T) 
 		"--no-first-run",
 		"--no-sandbox",
 		"--window-size=1400,1000",
-		"--virtual-time-budget=4000",
+		"--virtual-time-budget=8000",
 		"--dump-dom",
 		"--user-data-dir="+profile,
 		server.URL+"/#/program",
@@ -422,6 +422,48 @@ const geometry = Geometry.buildEdgeGeometry(complete, measurements, ports);
 const repeatedGeometry = Geometry.buildEdgeGeometry(complete, measurements, repeatedPorts);
 equal(geometry, repeatedGeometry, 'edge geometry is deterministic for the same numeric measurements');
 assert(geometry.edges.every((edge) => edge.path.startsWith('M ') && edge.authority === complete.edgesByID[edge.id].authority), 'geometry retains path and authority');
+assert(geometry.edges.every((edge) => {
+  const sameLane = complete.nodesByID[edge.sourceID].lane === complete.nodesByID[edge.targetID].lane;
+  return edge.target.y === edge.targetPort.y &&
+    edge.target.x - edge.targetPort.x === (sameLane ? 12 : -12);
+}), 'arrow tips stop outside endpoint circles with a stable lane-aware clearance');
+assert(geometry.edgesByID[alphaBeta[0].id].track !== geometry.edgesByID[betaGamma.id].track,
+  'overlapping same-lane relations use separate deterministic outer tracks');
+
+const denseEntries = Array.from({length: 8}, (_, index) => ({
+  id: 'entry:dense-' + String(index), lane: 'entry', kind: 'entrypoint',
+  data: {name: 'dense-' + String(index)}
+}));
+const denseCore = {id: 'core:dense', lane: 'core', kind: 'core', data: {name: 'Dense core'}};
+const denseEdges = denseEntries.map((entry, index) => ({
+  id: 'dense-edge-' + String(index), sourceID: entry.id, targetID: denseCore.id,
+  authority: 'exact', description: 'dense edge ' + String(index)
+}));
+const denseNodes = denseEntries.concat([denseCore]);
+const denseGraph = {
+  nodes: denseNodes,
+  edges: denseEdges,
+  nodesByID: Object.fromEntries(denseNodes.map((node) => [node.id, node])),
+  edgesByID: Object.fromEntries(denseEdges.map((edge) => [edge.id, edge])),
+  incidentEdgesByNodeID: Object.fromEntries(denseNodes.map((node) => [node.id,
+    denseEdges.filter((edge) => edge.sourceID === node.id || edge.targetID === node.id)]))
+};
+const denseLayout = Geometry.portLayoutRequirements(denseGraph);
+assert(denseLayout.slotSpacing === 32 && denseLayout.minHeightByNodeID[denseCore.id] === 260,
+  'eight endpoint hit targets reserve a 260px card with a non-overlapping 32px pitch');
+const denseMeasurements = {
+  width: 700, height: 700,
+  nodesByID: Object.fromEntries(denseNodes.map((node, index) => [node.id, node === denseCore ?
+    {left: 400, top: 120, width: 200, height: denseLayout.minHeightByNodeID[denseCore.id]} :
+    {left: 20, top: 20 + index * 60, width: 180, height: 40}]))
+};
+const densePorts = Geometry.assignStablePorts(denseGraph, denseMeasurements);
+const denseTargetPorts = densePorts.portsByNodeID[denseCore.id];
+equal(denseTargetPorts.map((port) => port.oppositeNodeID), denseEntries.map((entry) => entry.id),
+  'dense target ports follow opposite-node vertical order instead of arbitrary edge IDs');
+assert(denseTargetPorts.every((port, index) => index === 0 ||
+  port.offset - denseTargetPorts[index - 1].offset >= 32),
+  'dense endpoint centers retain enough distance for their 29px pointer targets');
 
 const orderSource = complete.nodesByID['core:alpha'];
 const orderTarget = complete.nodesByID['core:beta'];
@@ -473,6 +515,44 @@ const systemCanvasGeneratedReportBrowserRunner = `
   function delay(milliseconds) {
     return new Promise(function (resolve) { window.setTimeout(resolve, milliseconds); });
   }
+  async function waitFor(predicate, timeout, message) {
+    var deadline = Date.now() + timeout;
+    while (!predicate()) {
+      if (Date.now() >= deadline) {
+        var fatal = document.getElementById('rm-fatal-message');
+        throw new Error(message + ': edges=' +
+          String(document.querySelectorAll('g[data-canvas-edge-id]').length) +
+          ' ports=' + String(document.querySelectorAll('[data-canvas-edge-port]').length) +
+          ' fatal=' + String(fatal && fatal.textContent || 'none'));
+      }
+      await delay(20);
+    }
+  }
+  function nodeBoundarySnapshot() {
+    return Array.prototype.map.call(document.querySelectorAll('[data-canvas-node]'), function (item) {
+      var style = getComputedStyle(item);
+      return [
+        item.getAttribute('data-canvas-node'),
+        style.borderTopColor,
+        style.borderRightColor,
+        style.borderBottomColor,
+        style.borderLeftColor,
+        style.boxShadow
+      ].join('|');
+    }).join('\n');
+  }
+  function emphasisClassSnapshot(selector) {
+    return Array.prototype.map.call(document.querySelectorAll(selector), function (item) {
+      return item.className && typeof item.className.baseVal === 'string'
+        ? item.className.baseVal
+        : item.className;
+    }).join('\n');
+  }
+  function edgePathSnapshot() {
+    return Array.prototype.map.call(document.querySelectorAll('g[data-canvas-edge-id] path'), function (item) {
+      return item.getAttribute('d');
+    }).join('\n');
+  }
   async function run() {
     var scriptIDs = [
       'rm-system-canvas-graph-js',
@@ -494,6 +574,10 @@ const systemCanvasGeneratedReportBrowserRunner = `
       'generated report executed every embedded System canvas layer');
 
     await delay(350);
+    await waitFor(function () {
+      return document.querySelectorAll('g[data-canvas-edge-id]').length === 2 &&
+        document.querySelectorAll('[data-canvas-edge-port]').length === 4;
+    }, 3000, 'generated System canvas did not finish its initial geometry');
     var host = document.querySelector('.rm-system-canvas-host');
     var canvas = document.querySelector('[data-system-canvas]');
     var fatal = document.getElementById('rm-fatal-message');
@@ -501,6 +585,13 @@ const systemCanvasGeneratedReportBrowserRunner = `
       (fatal && fatal.textContent ? fatal.textContent : 'no fatal diagnostic'));
     assert(document.querySelectorAll('g[data-canvas-edge-id]').length === 2, 'generated semantic payload renders both exact edges');
     assert(document.querySelectorAll('[data-canvas-edge-port]').length === 4, 'stable endpoint controls were created eagerly');
+    var entryFileGroups = document.querySelectorAll('.rm-canvas-entry-file');
+    assert(entryFileGroups.length === 1 &&
+      entryFileGroups[0].querySelector('.rm-canvas-entry-file__header h4').textContent === 'app/main.py',
+      'entrypoints are grouped under their exact file path');
+    var compactEntryMeta = entryFileGroups[0].querySelector('.rm-canvas-node--entry .rm-canvas-node__meta');
+    assert(compactEntryMeta && compactEntryMeta.textContent === 'L1',
+      'entrypoint cards keep only a compact line label instead of repeating the file path');
     var diagnostics = window.RepomapSystemCanvasRenderer.diagnostics(host);
     assert(diagnostics, 'the report shell owns a live renderer controller');
     var initialGeometryBuildCount = diagnostics.geometryBuildCount;
@@ -514,12 +605,109 @@ const systemCanvasGeneratedReportBrowserRunner = `
     assert(beta.getAttribute('href').indexOf('#/program/responsibility/beta') >= 0,
       'shell-owned node navigation remains available');
 
+    var initialNodeBoundaries = nodeBoundarySnapshot();
     beta.dispatchEvent(new PointerEvent('pointerover', {bubbles: true}));
     await delay(60);
     assert(canvas.getAttribute('data-canvas-highlight') === 'node', 'pointer hover activates node emphasis');
     assert(incident.classList.contains('rm-canvas-edge-group--related'), 'incident edge remains emphasized');
     assert(!nonIncident.classList.contains('rm-canvas-edge-group--related'), 'non-incident edge is not emphasized');
     assert(Number(getComputedStyle(nonIncident).opacity) < Number(getComputedStyle(incident).opacity), 'non-incident edge visibly fades');
+    assert(nodeBoundarySnapshot() === initialNodeBoundaries,
+      'relationship emphasis does not repaint card borders or halos');
+    var betaPortRects = Array.prototype.map.call(
+      document.querySelectorAll('[data-canvas-edge-port][data-canvas-node-id="core:beta"]'),
+      function (item) { return item.getBoundingClientRect(); }
+    ).sort(function (left, right) { return left.top - right.top; });
+    assert(betaPortRects.length > 0 && betaPortRects.every(function (rect) {
+      return Math.abs(rect.width - 29) <= 0.5 && Math.abs(rect.height - 29) <= 0.5;
+    }), 'visible endpoint controls expose stable 29px pointer targets: ' + betaPortRects.map(function (rect) {
+      return String(rect.width) + 'x' + String(rect.height);
+    }).join(', '));
+    assert(betaPortRects.every(function (rect, index) {
+      return index === 0 || betaPortRects[index - 1].bottom <= rect.top;
+    }), 'endpoint pointer targets on a dense card do not overlap');
+    assert(Array.prototype.every.call(document.querySelectorAll('marker'), function (marker) {
+      return marker.getAttribute('markerUnits') === 'userSpaceOnUse' &&
+        !/[zZ]/.test(marker.querySelector('path').getAttribute('d'));
+    }), 'arrowheads keep a fixed open shape when relation stroke emphasis changes');
+    assert(Array.prototype.every.call(document.querySelectorAll('g[data-canvas-edge-id]'), function (group) {
+      var path = group.querySelector('path');
+      var targetPort = document.querySelector('[data-canvas-edge-port][data-canvas-edge-id="' +
+        group.getAttribute('data-canvas-edge-id') + '"][data-canvas-node-id="' +
+        group.getAttribute('data-canvas-edge-to') + '"]');
+      if (!path || !targetPort || typeof path.getTotalLength !== 'function') return false;
+      var tip = path.getPointAtLength(path.getTotalLength());
+      var svgBounds = path.ownerSVGElement.getBoundingClientRect();
+      var portBounds = targetPort.getBoundingClientRect();
+      var scaleX = svgBounds.width / path.ownerSVGElement.viewBox.baseVal.width;
+      var scaleY = svgBounds.height / path.ownerSVGElement.viewBox.baseVal.height;
+      var tipX = svgBounds.left + tip.x * scaleX;
+      var tipY = svgBounds.top + tip.y * scaleY;
+      var portX = portBounds.left + portBounds.width / 2;
+      var portY = portBounds.top + portBounds.height / 2;
+      return Math.hypot(tipX - portX, tipY - portY) >= 9;
+    }), 'every arrow tip remains visibly outside its circular endpoint control');
+
+    var denseHost = document.createElement('div');
+    denseHost.style.width = '1100px';
+    document.body.appendChild(denseHost);
+    var denseActivities = Array.from({length: 8}, function (_, index) {
+      return {
+        id: 'dense-' + String(index), name: 'dense.ts#entry' + String(index), kind: 'function',
+        signature: '()', location: {path: 'dense.ts', line: index + 1, column: 1}
+      };
+    });
+    var denseMemberships = Object.create(null);
+    denseActivities.forEach(function (activity) { denseMemberships[activity.id] = ['dense-core']; });
+    var denseGraph = window.RepomapSystemCanvasGraph.buildCanvasGraph({
+      activities: denseActivities,
+      blocks: [{id: 'dense-core', name: 'Dense core', purpose: 'Exercises dense endpoint layout.', symbols: ['dense-symbol']}],
+      integrations: [], relations: [], blocksBySymbol: denseMemberships,
+      groupsByBlock: {'dense-core': ['dense-group']}
+    }, {activeBlockIDs: ['dense-core'], complete: true});
+    var denseController = window.RepomapSystemCanvasRenderer.mountSystemCanvas(denseHost, denseGraph, {}, {});
+    await waitFor(function () {
+      return denseHost.querySelectorAll('[data-canvas-edge-port]').length === 16;
+    }, 3000, 'dense System canvas did not finish geometry');
+    var denseCore = denseHost.querySelector('[data-canvas-node="core:dense-core"]');
+    denseCore.dispatchEvent(new PointerEvent('pointerover', {bubbles: true}));
+    await delay(40);
+    var denseRects = Array.prototype.map.call(
+      denseHost.querySelectorAll('[data-canvas-edge-port][data-canvas-node-id="core:dense-core"]'),
+      function (item) { return item.getBoundingClientRect(); }
+    ).sort(function (left, right) { return left.top - right.top; });
+    assert(denseCore.getBoundingClientRect().height >= 260 && denseRects.length === 8,
+      'eight connections expand their core card before geometry is measured');
+    assert(denseRects.every(function (rect, index) {
+      return Math.abs(rect.width - 29) <= 0.5 && Math.abs(rect.height - 29) <= 0.5 &&
+        (index === 0 || denseRects[index - 1].bottom <= rect.top);
+    }), 'dense endpoint pointer targets remain individually reachable without overlap');
+    denseController.unmount();
+    denseHost.remove();
+
+    var endpoint = port('core:beta', 'core:gamma');
+    assert(endpoint && endpoint.classList.contains('rm-canvas-edge-port--related'), 'related endpoint button becomes visible');
+    var betaChild = beta.querySelector('.rm-canvas-node__name') || beta;
+    var nodeClassSnapshot = emphasisClassSnapshot('[data-canvas-node]');
+    var edgeClassSnapshot = emphasisClassSnapshot('g[data-canvas-edge-id]');
+    var pathSnapshot = edgePathSnapshot();
+    endpoint.dispatchEvent(new PointerEvent('pointerover', {bubbles: true, relatedTarget: betaChild}));
+    await delay(40);
+    assert(canvas.getAttribute('data-canvas-highlight') === 'node',
+      'moving from a card onto its endpoint keeps stable node emphasis');
+    assert(emphasisClassSnapshot('[data-canvas-node]') === nodeClassSnapshot &&
+      emphasisClassSnapshot('g[data-canvas-edge-id]') === edgeClassSnapshot,
+      'endpoint pointer crossing does not churn node or edge emphasis classes');
+    assert(nodeBoundarySnapshot() === initialNodeBoundaries && edgePathSnapshot() === pathSnapshot,
+      'endpoint pointer crossing does not repaint card boundaries or replace edge paths');
+    endpoint.dispatchEvent(new PointerEvent('pointerout', {bubbles: true, relatedTarget: betaChild}));
+    await delay(40);
+    assert(canvas.getAttribute('data-canvas-highlight') === 'node' &&
+      emphasisClassSnapshot('[data-canvas-node]') === nodeClassSnapshot &&
+      emphasisClassSnapshot('g[data-canvas-edge-id]') === edgeClassSnapshot,
+      'moving from an endpoint back into its card keeps stable node emphasis');
+    assert(diagnostics.geometryBuildCount === initialGeometryBuildCount,
+      'card and endpoint pointer movement does not rebuild geometry');
 
     beta.dispatchEvent(new PointerEvent('pointerout', {bubbles: true, relatedTarget: document.body}));
     beta.focus();
@@ -527,8 +715,6 @@ const systemCanvasGeneratedReportBrowserRunner = `
     assert(document.activeElement === beta && canvas.getAttribute('data-canvas-highlight') === 'node',
       'keyboard focus activates the shell-mounted card');
 
-    var endpoint = port('core:beta', 'core:gamma');
-    assert(endpoint && endpoint.classList.contains('rm-canvas-edge-port--related'), 'related endpoint button becomes visible');
     assert(endpoint.tabIndex === 0 && endpoint.getAttribute('aria-hidden') === 'false', 'visible endpoint is keyboard focusable');
     endpoint.focus();
     await delay(40);
@@ -555,17 +741,37 @@ const systemCanvasGeneratedReportBrowserRunner = `
 
     await delay(600);
     var areaButtons = document.querySelectorAll('.rm-area-switcher__item');
-    assert(areaButtons.length === 2, 'generated report renders shell-owned architecture grouping controls');
+    assert(areaButtons.length === 3 && areaButtons[0].querySelector('span').textContent === 'All',
+      'generated report renders All before the shell-owned architecture grouping controls');
+    assert(!document.querySelector('.rm-canvas-mode'),
+      'generated report does not retain a separate complete-map toggle');
     var maximumScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
     var requestedScroll = Math.min(160, maximumScroll);
     window.scrollTo(0, requestedScroll);
     await delay(40);
     var scrollBefore = window.scrollY;
-    areaButtons[1].click();
+    areaButtons[0].click();
+    await delay(160);
+    var activeAll = document.querySelector('.rm-area-switcher__item[aria-current="true"]');
+    assert(activeAll && activeAll.querySelector('span').textContent === 'All',
+      'All becomes the current complete-map selection after the shell re-renders');
+    assert(document.activeElement === activeAll,
+      'All regains focus after the shell re-renders; active element is ' +
+        (document.activeElement ? document.activeElement.outerHTML : 'missing'));
+    if (maximumScroll >= 80) {
+      assert(Math.abs(window.scrollY - scrollBefore) <= 1,
+        'All does not scroll away from the updated map: before=' + String(scrollBefore) +
+          ' after=' + String(window.scrollY) + ' maximum=' + String(maximumScroll));
+    }
+    var alternateArea = document.querySelector('[data-area-group="alternate-flow"]');
+    assert(alternateArea, 'generated report retains the exact alternate grouping control');
+    alternateArea.click();
     await delay(160);
     assert(window.location.hash.indexOf('/responsibility/alpha') >= 0,
       'area switch keeps existing responsibility navigation behavior');
-    assert(document.querySelector('.rm-area-switcher__item[aria-current="true"] span').textContent === 'Alternate flow',
+    var activeAlternate = document.querySelector('.rm-area-switcher__item[aria-current="true"]');
+    assert(activeAlternate && activeAlternate.querySelector('span').textContent === 'Alternate flow' &&
+      document.activeElement === activeAlternate,
       'area switch re-renders the requested grouping');
     if (maximumScroll >= 80) {
       assert(Math.abs(window.scrollY - scrollBefore) <= 1,

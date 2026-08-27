@@ -650,6 +650,20 @@ func TestParseGoListOutput(t *testing.T) {
 	}
 }
 
+func TestRootGoListPackagesExcludesTestOnlyDirectoryRows(t *testing.T) {
+	values := []goListPackage{
+		{ImportPath: "example.com/project/testonly", Name: "testonly"},
+		{ImportPath: "example.com/project/library", Name: "library", GoFiles: []string{"library.go"}},
+		{ImportPath: "example.com/project/cgo", Name: "cgo", CgoFiles: []string{"binding.go"}},
+		{ImportPath: "example.com/dependency", Name: "dependency", GoFiles: []string{"dependency.go"}, DepOnly: true},
+	}
+	got := rootGoListPackages(values)
+	if len(got) != 2 || got[0].ImportPath != "example.com/project/library" ||
+		got[1].ImportPath != "example.com/project/cgo" {
+		t.Fatalf("ordinary root packages = %#v", got)
+	}
+}
+
 func TestParseGoListOutputWithError(t *testing.T) {
 	input := `{"ImportPath": "example.com/broken", "Name": "broken", "Error": {"Err": "build error"}}
 {"ImportPath": "example.com/ok", "Dir": "/ok", "Name": "ok", "GoFiles": ["ok.go"], "Module": {"Path": "example.com"}}

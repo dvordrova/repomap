@@ -46,6 +46,8 @@ const (
 	legacyEnvAuth     = "DEEPSEEK_AUTH"
 )
 
+// Client is safe for concurrent llm.Provider calls after configuration. Its
+// exported fields and OnWait hook must not be mutated once execution starts.
 type Client struct {
 	HTTPClient *http.Client
 	APIKey     string
