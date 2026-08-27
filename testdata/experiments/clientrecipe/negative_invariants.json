@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "invariants": [
+    {"id":"accounting_exact","scope":"analysis","statement":"Every observed candidate is admitted, hidden, or excluded exactly once.","prohibited":"unaccounted_candidate","test":"test_oracle_evaluation"},
+    {"id":"evidence_closed_initially","scope":"ui","statement":"Exact source evidence is closed and not materialized until an explicit user disclosure.","prohibited":"eager_evidence","test":"test_preview_behavior"},
+    {"id":"incomplete_not_best","scope":"analysis","statement":"An incomplete client instance cannot become the best example.","prohibited":"incomplete_best_example","test":"test_oracle_evaluation"},
+    {"id":"no_default_network","scope":"transport","statement":"Ordinary experiment tests make no network or real-provider request.","prohibited":"implicit_network","test":"test_synthesis_contract"},
+    {"id":"no_generated_promotion","scope":"analysis","statement":"Generated code cannot become a production client instance or recipe example.","prohibited":"generated_promotion","test":"test_structural_candidates"},
+    {"id":"no_invented_edge","scope":"synthesis","statement":"Synthesis cannot add a repository edge absent from validated structural authority.","prohibited":"invented_edge","test":"test_synthesis_contract"},
+    {"id":"no_invented_ref","scope":"synthesis","statement":"Unknown request-local refs have no authority and cannot survive validation.","prohibited":"invented_ref","test":"test_synthesis_contract"},
+    {"id":"no_invented_source","scope":"synthesis","statement":"Synthesis cannot emit a source locator or path.","prohibited":"invented_source","test":"test_synthesis_contract"},
+    {"id":"no_invented_step","scope":"synthesis","statement":"Synthesis cannot omit a required formal role or introduce an unsupported semantic step.","prohibited":"invented_step","test":"test_synthesis_contract"},
+    {"id":"no_oracle_input","scope":"analysis","statement":"The hidden oracle is evaluator-only and never enters extraction or synthesis input.","prohibited":"oracle_leak","test":"test_oracle_isolation"},
+    {"id":"no_stdlib_promotion","scope":"analysis","statement":"A standard-library helper is not a repository-owned external client boundary.","prohibited":"stdlib_promotion","test":"test_structural_candidates"},
+    {"id":"no_test_only_promotion","scope":"analysis","statement":"Test-only fakes and helpers cannot become production client instances.","prohibited":"test_only_promotion","test":"test_structural_candidates"},
+    {"id":"no_unreachable_promotion","scope":"analysis","statement":"An unreachable legacy wrapper or stale prose claim cannot become a live client instance.","prohibited":"unreachable_promotion","test":"test_structural_candidates"}
+  ]
+}

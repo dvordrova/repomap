@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "feature": "add_external_client",
+  "lens": "service_outbound_client_recipe",
+  "user_situation": "A newcomer must add one outbound client to an unfamiliar service without first reconstructing the whole architecture.",
+  "intent": "Find the repository-specific change sequence, inspect a complete example, and form an evidence-backed initial change plan.",
+  "user_needs": [
+    {"id": "best_example", "question": "Which complete existing client should I copy first?"},
+    {"id": "change_areas", "question": "Which parts of the repository will I probably change?"},
+    {"id": "configuration", "question": "Where is client configuration declared and translated?"},
+    {"id": "construction", "question": "Where is the external SDK wrapped and constructed?"},
+    {"id": "consumer_interface", "question": "Which application-facing interface and operation cross the boundary?"},
+    {"id": "initial_plan", "question": "What ordered first implementation plan is supported by repository evidence?"},
+    {"id": "observability", "question": "How does this repository observe and contain client failures?"},
+    {"id": "tests", "question": "How is the integration verified and where are fakes placed?"},
+    {"id": "wiring", "question": "Where does the client enter the live service graph?"}
+  ],
+  "completion_criteria": [
+    {"id": "accounting", "description": "Every observed candidate is visible, hidden behind disclosure, or excluded with a closed reason."},
+    {"id": "bounded_navigation", "description": "The user reaches any exact source reference in no more than two actions after choosing a step or example."},
+    {"id": "complete_example", "description": "The recommended example is complete, production reachable, and grounded in exact source locations."},
+    {"id": "mandatory_slots", "description": "Configuration, construction, local wrapper, consumer boundary, production operation, application wiring, verification, and observability are all answered."},
+    {"id": "no_false_authority", "description": "Generated, test-only, unreachable, standard-library, and stale prose candidates never become a production example."},
+    {"id": "source_grounding", "description": "Every visible repository claim resolves to an exact repository-relative source locator."}
+  ],
+  "ui_bounds": {
+    "landing_choices": 6,
+    "primary_recipe_steps": 7,
+    "visible_examples": 3,
+    "visible_evidence_per_step": 3,
+    "exact_source_actions": 2,
+    "audit_in_first_viewport": false
+  },
+  "state_machine": [
+    {
+      "state": "target_landing",
+      "question_answered": "What useful repository task can I start?",
+      "objects": ["task_card", "target_context", "coverage_hint"],
+      "primary_action": "open_recipe",
+      "secondary_actions": [],
+      "hidden": ["recipe_steps", "examples", "evidence", "exclusion_audit"],
+      "disclosure": "open_recipe",
+      "return_state": "target_landing"
+    },
+    {
+      "state": "recipe_overview",
+      "question_answered": "What is the repository-specific sequence and best example?",
+      "objects": ["recipe_summary", "primary_steps", "best_example", "example_summary", "coverage"],
+      "primary_action": "open_step",
+      "secondary_actions": ["open_example", "show_all_examples", "open_audit"],
+      "hidden": ["step_evidence", "extra_examples", "excluded_candidates"],
+      "disclosure": "select_step_or_example",
+      "return_state": "target_landing"
+    },
+    {
+      "state": "recipe_step",
+      "question_answered": "Why is this step needed and where is it implemented?",
+      "objects": ["step_purpose", "necessity", "covered_examples", "evidence_summary"],
+      "primary_action": "open_evidence",
+      "secondary_actions": ["open_example", "show_all_evidence"],
+      "hidden": ["source_detail", "overflow_evidence"],
+      "disclosure": "open_evidence",
+      "return_state": "recipe_overview"
+    },
+    {
+      "state": "example_instance",
+      "question_answered": "How does one complete client realize the recipe?",
+      "objects": ["instance_status", "slot_map", "source_counts", "missing_slots"],
+      "primary_action": "open_evidence",
+      "secondary_actions": ["open_step"],
+      "hidden": ["source_detail"],
+      "disclosure": "open_evidence",
+      "return_state": "recipe_overview"
+    },
+    {
+      "state": "evidence",
+      "question_answered": "What exact source fact supports the selected claim?",
+      "objects": ["source_locator", "symbol", "authority", "provenance"],
+      "primary_action": "open_exact_source",
+      "secondary_actions": [],
+      "hidden": ["unrelated_graph", "raw_inventory"],
+      "disclosure": "explicit_only",
+      "return_state": "recipe_step"
+    }
+  ]
+}
