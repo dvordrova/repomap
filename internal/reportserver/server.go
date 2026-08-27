@@ -16,8 +16,10 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/report"
@@ -48,6 +50,9 @@ type Options struct {
 	Port         int
 	Capability   string
 	ExpectedHost string
+	// VerifiedRuns is ordered current-transaction authority for lazily served
+	// pages. An empty slice preserves the independent artifact recovery path.
+	VerifiedRuns []report.VerifiedRunReceipt
 	OpenFile     OpenFileFunc
 	Logf         func(string, ...any)
 	OnReady      func(url string) error
@@ -62,13 +67,30 @@ type runRecord struct {
 	rendered          []byte
 }
 
+type lazyRunRecord struct {
+	mu               sync.Mutex
+	id               string
+	runDir           string
+	reportSHA256     string
+	repositoryName   string
+	manifest         report.RunManifest
+	targetNavigation *report.TargetNavigationPortfolio
+
+	loadComplete      bool
+	loadErr           error
+	workspaceSnapshot workspacesnapshot.Snapshot
+	sources           map[string]sourceTarget
+	rendered          []byte
+}
+
 type handler struct {
-	urlPrefix  string
-	initialRun string
-	runs       map[string]runRecord
-	openFile   OpenFileFunc
-	openSlot   chan struct{}
-	logf       func(string, ...any)
+	urlPrefix    string
+	initialRun   string
+	runs         map[string]runRecord
+	verifiedRuns map[string]*lazyRunRecord
+	openFile     OpenFileFunc
+	openSlot     chan struct{}
+	logf         func(string, ...any)
 }
 
 type openRequest struct {
@@ -192,32 +214,118 @@ func NewHandler(opts Options) (http.Handler, error) {
 			return nil, fmt.Errorf("report server: VS Code launcher: %w", err)
 		}
 	}
-	if err := requireOwnerHTML(filepath.Join(runsDir, opts.InitialRunID)); err != nil {
-		return nil, fmt.Errorf("report server: verify initial report: %w", err)
-	}
-	run, err := loadRun(runsDir, opts.InitialRunID)
-	if err != nil {
-		return nil, fmt.Errorf("report server: load initial run %s: %w", opts.InitialRunID, err)
-	}
-	runs, err := loadAuthorizedRuns(runsDir, run)
-	if err != nil {
-		return nil, fmt.Errorf("report server: load authorized target pages: %w", err)
+	var runs map[string]runRecord
+	var verifiedRuns map[string]*lazyRunRecord
+	if len(opts.VerifiedRuns) > 0 {
+		verifiedRuns, err = bindVerifiedRuns(runsDir, opts.InitialRunID, opts.VerifiedRuns)
+		if err != nil {
+			return nil, fmt.Errorf("report server: bind verified target pages: %w", err)
+		}
+	} else {
+		if err := requireOwnerHTML(filepath.Join(runsDir, opts.InitialRunID)); err != nil {
+			return nil, fmt.Errorf("report server: verify initial report: %w", err)
+		}
+		run, loadErr := loadRun(runsDir, opts.InitialRunID)
+		if loadErr != nil {
+			return nil, fmt.Errorf("report server: load initial run %s: %w", opts.InitialRunID, loadErr)
+		}
+		runs, err = loadAuthorizedRuns(runsDir, run)
+		if err != nil {
+			return nil, fmt.Errorf("report server: load authorized target pages: %w", err)
+		}
 	}
 
 	urlPrefix := capabilityURLPrefix(capability)
 	h := &handler{
-		urlPrefix:  urlPrefix,
-		initialRun: opts.InitialRunID,
-		runs:       runs,
-		openFile:   openFile,
-		openSlot:   make(chan struct{}, maxConcurrentOpenRequests),
-		logf:       opts.Logf,
+		urlPrefix:    urlPrefix,
+		initialRun:   opts.InitialRunID,
+		runs:         runs,
+		verifiedRuns: verifiedRuns,
+		openFile:     openFile,
+		openSlot:     make(chan struct{}, maxConcurrentOpenRequests),
+		logf:         opts.Logf,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+urlPrefix+"/{$}", h.serveRoot)
 	mux.HandleFunc("GET "+urlPrefix+"/runs/{runID}/report.html", h.serveReport)
 	mux.HandleFunc("POST "+urlPrefix+"/api/open", h.serveOpen)
 	return securityHeaders(mux, opts.ExpectedHost), nil
+}
+
+// bindVerifiedRuns consumes only opaque, transaction-local receipt authority.
+// It performs no report or manifest reads and does not render any page.
+func bindVerifiedRuns(
+	runsDir string,
+	initialRunID string,
+	receipts []report.VerifiedRunReceipt,
+) (map[string]*lazyRunRecord, error) {
+	pages := make([]report.TargetNavigationPage, 0, len(receipts))
+	records := make(map[string]*lazyRunRecord, len(receipts))
+	initialTargetID := ""
+
+	for index, receipt := range receipts {
+		page := receipt.ProgramPage()
+		if !validRunID(page.RunID) {
+			return nil, fmt.Errorf("verified run %d has an invalid page run id", index)
+		}
+		runDir := filepath.Join(runsDir, page.RunID)
+		if err := receipt.ValidateRunIdentity(runDir); err != nil {
+			return nil, fmt.Errorf("verified run %d identity: %w", index, err)
+		}
+		manifest := receipt.Manifest()
+		if receipt.ProgramTargetID() != page.ProgramTarget.ID ||
+			manifest.MaterialInputs.ProgramTargetID != page.ProgramTarget.ID ||
+			receipt.ReportSHA256() != manifest.ReportSHA256 ||
+			receipt.ProgramPagePortfolioSHA256() != manifest.MaterialInputs.ProgramPagePortfolioSHA256 ||
+			receipt.RepositoryName() == "" {
+			return nil, fmt.Errorf("verified run %d page authority mismatch", index)
+		}
+		if _, duplicate := records[page.RunID]; duplicate {
+			return nil, fmt.Errorf("verified runs contain a duplicate run id")
+		}
+		records[page.RunID] = &lazyRunRecord{
+			id:             page.RunID,
+			runDir:         receipt.RunDir(),
+			reportSHA256:   receipt.ReportSHA256(),
+			repositoryName: receipt.RepositoryName(),
+			manifest:       manifest,
+		}
+		pages = append(pages, page)
+		if page.RunID == initialRunID {
+			initialTargetID = page.ProgramTarget.ID
+		}
+	}
+	if initialTargetID == "" {
+		return nil, fmt.Errorf("verified runs do not contain the initial run")
+	}
+
+	initial := records[initialRunID]
+	initialManifest := initial.manifest
+	initialRepositoryName := initial.repositoryName
+	if len(records) > 1 && initialManifest.MaterialInputs.ProgramPagePortfolioSHA256 == "" {
+		return nil, fmt.Errorf("verified multi-run pages lack neutral portfolio authority")
+	}
+	for index, page := range pages {
+		record := records[page.RunID]
+		manifest := record.manifest
+		if record.repositoryName != initialRepositoryName ||
+			manifest.AnalysisRoot != initialManifest.AnalysisRoot ||
+			manifest.RepositoryState.Identity != initialManifest.RepositoryState.Identity ||
+			manifest.RepositoryStateSHA256 != initialManifest.RepositoryStateSHA256 ||
+			manifest.MaterialInputs.SelectedRevision != initialManifest.MaterialInputs.SelectedRevision ||
+			manifest.MaterialInputs.ProgramPagePortfolioSHA256 != initialManifest.MaterialInputs.ProgramPagePortfolioSHA256 ||
+			manifest.MaterialInputs.RuntimePortfolioSHA256 != initialManifest.MaterialInputs.RuntimePortfolioSHA256 ||
+			manifest.MaterialInputs.TargetOutcomePortfolioSHA256 != initialManifest.MaterialInputs.TargetOutcomePortfolioSHA256 ||
+			!reflect.DeepEqual(manifest.StandaloneSource, initialManifest.StandaloneSource) {
+			return nil, fmt.Errorf("verified run %d repository authority mismatch", index)
+		}
+		navigation, err := report.BuildTargetNavigation(pages, initialTargetID, page.ProgramTarget.ID)
+		if err != nil {
+			return nil, fmt.Errorf("verified run %d navigation: %w", index, err)
+		}
+		record.targetNavigation = navigation
+	}
+	return records, nil
 }
 
 func requireOwnerHTML(runDir string) error {
@@ -295,6 +403,104 @@ func loadRun(runsDir, runID string) (runRecord, error) {
 		sources:           sources,
 		rendered:          rendered,
 	}, nil
+}
+
+func (run *lazyRunRecord) renderedPage() ([]byte, error) {
+	run.mu.Lock()
+	defer run.mu.Unlock()
+	if run.loadComplete {
+		return run.rendered, run.loadErr
+	}
+	run.loadComplete = true
+	run.workspaceSnapshot, run.sources, run.rendered, run.loadErr = loadVerifiedRunPage(run)
+	return run.rendered, run.loadErr
+}
+
+func (run *lazyRunRecord) openAuthority(
+	sourceID string,
+) (workspacesnapshot.Snapshot, sourceTarget, bool) {
+	run.mu.Lock()
+	defer run.mu.Unlock()
+	if !run.loadComplete || run.loadErr != nil {
+		return workspacesnapshot.Snapshot{}, sourceTarget{}, false
+	}
+	target, ok := run.sources[sourceID]
+	return run.workspaceSnapshot, target, ok
+}
+
+func loadVerifiedRunPage(
+	run *lazyRunRecord,
+) (workspacesnapshot.Snapshot, map[string]sourceTarget, []byte, error) {
+	if run == nil || run.id == "" || run.runDir == "" || run.targetNavigation == nil {
+		return workspacesnapshot.Snapshot{}, nil, nil,
+			fmt.Errorf("verified run page authority is incomplete")
+	}
+	root, err := os.OpenRoot(run.runDir)
+	if err != nil {
+		return workspacesnapshot.Snapshot{}, nil, nil, fmt.Errorf("open run directory: %w", err)
+	}
+	defer root.Close()
+	reportJSON, err := readRootFile(root, "report.json", maxReportJSONBytes)
+	if err != nil {
+		return workspacesnapshot.Snapshot{}, nil, nil, fmt.Errorf("read report.json: %w", err)
+	}
+	digest := sha256.Sum256(reportJSON)
+	if fmt.Sprintf("%x", digest) != run.reportSHA256 {
+		return workspacesnapshot.Snapshot{}, nil, nil,
+			fmt.Errorf("report.json does not match verified receipt")
+	}
+	reportData, err := decodeVerifiedReportJSON(reportJSON)
+	if err != nil {
+		return workspacesnapshot.Snapshot{}, nil, nil, err
+	}
+	analysisRoot, err := run.manifest.ResolveAnalysisRoot()
+	if err != nil {
+		return workspacesnapshot.Snapshot{}, nil, nil, fmt.Errorf("resolve analysis root: %w", err)
+	}
+	workspaceSnapshot, catalog, err := workspaceSnapshotForManifest(run.manifest, analysisRoot)
+	if err != nil {
+		return workspacesnapshot.Snapshot{}, nil, nil, err
+	}
+	sources, sourceIDs := catalogSourceTargets(run.id, run.reportSHA256, catalog)
+	reportData.SourceIDs = sourceIDs
+	rendered, err := report.RenderHTMLWithOptions(
+		&reportData,
+		report.RenderOptions{
+			TargetNavigation: run.targetNavigation,
+			LocalRoots: []string{
+				run.runDir,
+				analysisRoot,
+				run.manifest.RepositoryState.Identity,
+			},
+		},
+	)
+	if err != nil {
+		return workspacesnapshot.Snapshot{}, nil, nil, fmt.Errorf("render report: %w", err)
+	}
+	if len(rendered) > maxReportHTMLBytes {
+		return workspacesnapshot.Snapshot{}, nil, nil,
+			fmt.Errorf("rendered report exceeds %d bytes", maxReportHTMLBytes)
+	}
+	return workspaceSnapshot, sources, rendered, nil
+}
+
+func decodeVerifiedReportJSON(encoded []byte) (report.ReportData, error) {
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.DisallowUnknownFields()
+	var data report.ReportData
+	if err := decoder.Decode(&data); err != nil {
+		return report.ReportData{}, fmt.Errorf("report.json is invalid: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return report.ReportData{}, fmt.Errorf("report.json contains multiple values")
+		}
+		return report.ReportData{}, fmt.Errorf("report.json has trailing data: %w", err)
+	}
+	if data.FormatVersion != report.CurrentFormatVersion {
+		return report.ReportData{}, fmt.Errorf("report.json is invalid")
+	}
+	return data, nil
 }
 
 func loadTargetNavigation(
@@ -412,14 +618,27 @@ func (h *handler) serveRoot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) serveReport(w http.ResponseWriter, r *http.Request) {
-	run, ok := h.runs[r.PathValue("runID")]
-	if !ok {
-		http.NotFound(w, r)
-		return
+	runID := r.PathValue("runID")
+	var rendered []byte
+	if verified, ok := h.verifiedRuns[runID]; ok {
+		var err error
+		rendered, err = verified.renderedPage()
+		if err != nil {
+			h.log("report load run=%s outcome=failed", runID)
+			http.Error(w, "report is unavailable", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		run, ok := h.runs[runID]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		rendered = run.rendered
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	http.ServeContent(w, r, "report.html", time.Time{}, bytes.NewReader(run.rendered))
+	http.ServeContent(w, r, "report.html", time.Time{}, bytes.NewReader(rendered))
 }
 
 func (h *handler) serveOpen(w http.ResponseWriter, r *http.Request) {
@@ -434,8 +653,9 @@ func (h *handler) serveOpen(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid open-file request"})
 		return
 	}
-	run, ok := h.runs[request.RunID]
-	if !ok {
+	verified, verifiedOK := h.verifiedRuns[request.RunID]
+	eager, eagerOK := h.runs[request.RunID]
+	if !verifiedOK && !eagerOK {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "report run not found"})
 		return
 	}
@@ -449,16 +669,24 @@ func (h *handler) serveOpen(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "source is not authorized by this report"})
 		return
 	}
-	target, ok := run.sources[sourceID]
-	if !ok {
+	var workspaceSnapshot workspacesnapshot.Snapshot
+	var target sourceTarget
+	var authorized bool
+	if verifiedOK {
+		workspaceSnapshot, target, authorized = verified.openAuthority(sourceID)
+	} else {
+		workspaceSnapshot = eager.workspaceSnapshot
+		target, authorized = eager.sources[sourceID]
+	}
+	if !authorized {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "source is not authorized by this report"})
 		return
 	}
 
-	absolutePath, err := resolveOpenTarget(r.Context(), run, target)
+	absolutePath, err := resolveOpenTargetWithSnapshot(r.Context(), workspaceSnapshot, target)
 	if err != nil {
 		h.log("source open run=%s source=%s outcome=source_unavailable response_ms=%d",
-			run.id, sourceID, time.Since(started).Milliseconds())
+			request.RunID, sourceID, time.Since(started).Milliseconds())
 		writeJSON(w, http.StatusConflict, map[string]string{
 			"error": "authorized source is unavailable",
 		})
@@ -487,7 +715,7 @@ func (h *handler) serveOpen(w http.ResponseWriter, r *http.Request) {
 		"status": "opened",
 	})
 	h.log("source open run=%s source=%s outcome=opened response_ms=%d",
-		run.id, sourceID, time.Since(started).Milliseconds())
+		request.RunID, sourceID, time.Since(started).Milliseconds())
 }
 
 func manifestSourceID(runID, reportSHA256, relativePath string) string {
@@ -521,7 +749,15 @@ func resolveOpenTarget(
 	run runRecord,
 	target sourceTarget,
 ) (string, error) {
-	service, err := workspaceopen.New(run.workspaceSnapshot)
+	return resolveOpenTargetWithSnapshot(ctx, run.workspaceSnapshot, target)
+}
+
+func resolveOpenTargetWithSnapshot(
+	ctx context.Context,
+	snapshot workspacesnapshot.Snapshot,
+	target sourceTarget,
+) (string, error) {
+	service, err := workspaceopen.New(snapshot)
 	if err != nil {
 		return "", err
 	}

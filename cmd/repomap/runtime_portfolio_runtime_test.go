@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/dvordrova/repomap/internal/programindex"
+	"github.com/dvordrova/repomap/internal/programpage"
 	"github.com/dvordrova/repomap/internal/report"
 	"github.com/dvordrova/repomap/internal/runtimeportfolio"
 )
@@ -264,6 +265,91 @@ func TestPersistRuntimePortfolioWritesByteIdenticalArtifacts(t *testing.T) {
 	}
 	if err := decoded.ValidateAgainst(input); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestProgramPageRuntimeEvidencePathsUsesRetainedValidatedAuthority(t *testing.T) {
+	input, result, _ := runtimePortfolioArtifactFixture(t)
+	authority := programPageRuntimeAuthority{input: input, result: result}
+	if err := validateProgramPageRuntimeAuthority(
+		authority, input.TargetPagePortfolioSHA256, len(input.Targets),
+	); err != nil {
+		t.Fatalf("validate retained runtime authority: %v", err)
+	}
+
+	paths, err := programPageRuntimeEvidencePaths(authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 1 || paths[0] != "cmd/server/main.go" {
+		t.Fatalf("runtime evidence paths = %#v", paths)
+	}
+
+	tampered := authority
+	tampered.input.TargetPagePortfolioSHA256 = strings.Repeat("c", 64)
+	if _, err := programPageRuntimeEvidencePaths(tampered); err == nil ||
+		!strings.Contains(err.Error(), "retained authority is invalid") {
+		t.Fatalf("tampered retained authority error = %v", err)
+	}
+}
+
+func TestProgramPageRuntimeInputUsesRetainedTargetProjection(t *testing.T) {
+	index, err := programindex.New(programindex.Input{
+		ScenarioSHA256: strings.Repeat("a", 64),
+		SourceSHA256:   strings.Repeat("b", 64),
+		Target: programindex.TargetInput{
+			Language: "go", Kind: "executable", Name: "server", Selector: "./cmd/server",
+			Sources:       []programindex.TargetSource{{FileRef: "f-main", Path: "cmd/server/main.go"}},
+			AnchorFileRef: "f-main",
+		},
+		Objects: []programindex.ObjectInput{}, Relations: []programindex.RelationInput{},
+		Coverage: programindex.CoverageInput{Measured: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID := "20260828-120000-server-a1b2c3"
+	portfolio, err := programpage.Build(index.Target.ID, []programpage.Page{{
+		Target: index.Target, RunID: runID,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runDir := filepath.Join(t.TempDir(), runID)
+	if err := os.Mkdir(runDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	runs := []targetPublishedRun{{
+		RunID: runID, RunDir: runDir, RepositoryName: "example",
+		SelectedRevision: strings.Repeat("c", 40),
+		ProgramPage: report.TargetNavigationPage{
+			RunID: runID, ProgramTarget: index.Target, ArtifactFilename: programindex.ArtifactFilename,
+		},
+		RuntimeTargetInput: runtimeportfolio.TargetInput{
+			ProgramTargetID: index.Target.ID, DisplayName: index.Target.Name,
+			Language: index.Target.Language, Kind: index.Target.Kind, Selector: index.Target.Selector,
+			Responsibilities: []runtimeportfolio.ResponsibilityInput{},
+			Evidence:         []runtimeportfolio.EvidenceInput{},
+		},
+	}}
+
+	input, owner, err := programPageRuntimePortfolioInput(portfolio, runs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if owner.RunID != runID || input.RepositoryName != "example" ||
+		len(input.Targets) != 1 || !input.Targets[0].Default {
+		t.Fatalf("retained runtime input = %#v, owner = %#v", input, owner)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, "report.json")); !os.IsNotExist(err) {
+		t.Fatalf("test unexpectedly required persisted report data: %v", err)
+	}
+
+	tampered := runs
+	tampered[0].RuntimeTargetInput.ProgramTargetID = "program-target-foreign"
+	if _, _, err := programPageRuntimePortfolioInput(portfolio, tampered); err == nil ||
+		!strings.Contains(err.Error(), "retained runtime projection") {
+		t.Fatalf("tampered retained projection error = %v", err)
 	}
 }
 

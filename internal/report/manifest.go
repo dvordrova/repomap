@@ -2131,8 +2131,16 @@ func DecodeRunManifest(data []byte) (RunManifest, error) {
 // deliberately retains no decoded report or semantic artifact and must not be
 // persisted as a replacement authority.
 type VerifiedRunReceipt struct {
-	runDir   string
-	manifest RunManifest
+	verified       bool
+	runDir         string
+	manifest       RunManifest
+	programPage    TargetNavigationPage
+	repositoryName string
+}
+
+type verifiedRunIdentity struct {
+	programPage    TargetNavigationPage
+	repositoryName string
 }
 
 // ReadVerifiedRunManifest verifies one run once and returns a compact receipt
@@ -2153,17 +2161,11 @@ func ReadVerifiedRunManifest(runDir string) (VerifiedRunReceipt, error) {
 	if err != nil {
 		return VerifiedRunReceipt{}, err
 	}
-	if _, err := verifyCompleteRunManifest(runDir, manifest, nil); err != nil {
+	_, identity, err := verifyCompleteRunManifestWithIdentity(runDir, manifest, nil)
+	if err != nil {
 		return VerifiedRunReceipt{}, err
 	}
-	absoluteRunDir, err := filepath.Abs(runDir)
-	if err != nil {
-		return VerifiedRunReceipt{}, fmt.Errorf("report manifest: resolve verified run directory: %w", err)
-	}
-	return VerifiedRunReceipt{
-		runDir:   filepath.Clean(absoluteRunDir),
-		manifest: cloneRunManifest(manifest),
-	}, nil
+	return newVerifiedRunReceipt(runDir, manifest, identity)
 }
 
 // ReadRunManifest reads and verifies run_manifest.json and report.json from a
@@ -2184,6 +2186,37 @@ func (receipt VerifiedRunReceipt) Manifest() RunManifest {
 // RunDir returns the clean absolute run directory bound to the receipt.
 func (receipt VerifiedRunReceipt) RunDir() string {
 	return receipt.runDir
+}
+
+// ProgramPage returns the small exact page identity retained by this
+// transaction. It does not restore report or ProgramIndex authority again.
+func (receipt VerifiedRunReceipt) ProgramPage() TargetNavigationPage {
+	page := receipt.programPage
+	page.ProgramTarget = receipt.programPage.ProgramTarget.Snapshot()
+	return page
+}
+
+// RepositoryName returns the canonical report repository name retained by
+// this transaction-local receipt.
+func (receipt VerifiedRunReceipt) RepositoryName() string {
+	return receipt.repositoryName
+}
+
+// ValidateRunIdentity proves only that the opaque receipt belongs to the
+// supplied run directory. Current-run receipts intentionally do not re-read
+// process-owned artifacts; independent later reads use ReadRunManifest.
+func (receipt VerifiedRunReceipt) ValidateRunIdentity(runDir string) error {
+	if !receipt.verified {
+		return fmt.Errorf("report manifest: verified run receipt is empty")
+	}
+	absoluteRunDir, err := filepath.Abs(runDir)
+	if err != nil {
+		return fmt.Errorf("report manifest: resolve verified run directory: %w", err)
+	}
+	if filepath.Clean(absoluteRunDir) != receipt.runDir {
+		return fmt.Errorf("report manifest: verified run receipt directory mismatch")
+	}
+	return nil
 }
 
 // ReportSHA256 returns the exact canonical report identity already verified.
@@ -2224,56 +2257,127 @@ func cloneRunManifest(manifest RunManifest) RunManifest {
 	return result
 }
 
+func newVerifiedRunReceipt(
+	runDir string,
+	manifest RunManifest,
+	identity verifiedRunIdentity,
+) (VerifiedRunReceipt, error) {
+	absoluteRunDir, err := filepath.Abs(runDir)
+	if err != nil {
+		return VerifiedRunReceipt{}, fmt.Errorf("report manifest: resolve verified run directory: %w", err)
+	}
+	page := identity.programPage
+	if err := validateTargetNavigationPage(page); err != nil {
+		return VerifiedRunReceipt{}, fmt.Errorf("report manifest: verified program page: %w", err)
+	}
+	if page.RunID != filepath.Base(filepath.Clean(absoluteRunDir)) ||
+		page.ProgramTarget.ID != manifest.MaterialInputs.ProgramTargetID ||
+		identity.repositoryName == "" {
+		return VerifiedRunReceipt{}, fmt.Errorf("report manifest: verified run receipt identity mismatch")
+	}
+	return VerifiedRunReceipt{
+		verified:       true,
+		runDir:         filepath.Clean(absoluteRunDir),
+		manifest:       cloneRunManifest(manifest),
+		programPage:    page,
+		repositoryName: identity.repositoryName,
+	}, nil
+}
+
+func newVerifiedRunReceiptFromReportData(
+	runDir string,
+	manifest RunManifest,
+	data *ReportData,
+) (VerifiedRunReceipt, error) {
+	page, err := PreparedTargetNavigationPage(runDir, data)
+	if err != nil {
+		return VerifiedRunReceipt{}, fmt.Errorf("report manifest: verified report program page: %w", err)
+	}
+	return newVerifiedRunReceipt(runDir, manifest, verifiedRunIdentity{
+		programPage:    page,
+		repositoryName: data.RepoName,
+	})
+}
+
 func verifyCompleteRunManifest(
 	runDir string,
 	manifest RunManifest,
 	reportJSON []byte,
 ) (manifestVerificationStats, error) {
+	stats, _, err := verifyCompleteRunManifestWithIdentity(runDir, manifest, reportJSON)
+	return stats, err
+}
+
+func verifyCompleteRunManifestWithIdentity(
+	runDir string,
+	manifest RunManifest,
+	reportJSON []byte,
+) (manifestVerificationStats, verifiedRunIdentity, error) {
 	suite, err := newManifestVerificationSuite(manifest, runDir)
 	if err != nil {
-		return manifestVerificationStats{}, err
+		return manifestVerificationStats{}, verifiedRunIdentity{}, err
 	}
 	defer suite.Close()
 	if err := suite.verifyReport(reportJSON); err != nil {
-		return suite.stats(), err
+		return suite.stats(), verifiedRunIdentity{}, err
 	}
-	if _, err := suite.programIndexes(); err != nil {
-		return suite.stats(), err
+	program, err := suite.programIndexes()
+	if err != nil {
+		return suite.stats(), verifiedRunIdentity{}, err
 	}
 	if err := suite.verifyProgramPortfolioProjection(reportJSON); err != nil {
-		return suite.stats(), err
+		return suite.stats(), verifiedRunIdentity{}, err
 	}
 	if err := suite.verifyRuntimePortfolioProjection(reportJSON); err != nil {
-		return suite.stats(), err
+		return suite.stats(), verifiedRunIdentity{}, err
 	}
 	if err := suite.verifyTargetOutcomePortfolioProjection(reportJSON); err != nil {
-		return suite.stats(), err
+		return suite.stats(), verifiedRunIdentity{}, err
 	}
 	if err := suite.verifyCubeMapProjection(reportJSON); err != nil {
-		return suite.stats(), err
+		return suite.stats(), verifiedRunIdentity{}, err
 	}
 	if err := suite.verifyActivityEntrypointProjection(reportJSON); err != nil {
-		return suite.stats(), err
+		return suite.stats(), verifiedRunIdentity{}, err
 	}
 	if err := suite.verifyActivityPathProjection(reportJSON); err != nil {
-		return suite.stats(), err
+		return suite.stats(), verifiedRunIdentity{}, err
 	}
 	if err := suite.verifyJSTSProjection(reportJSON); err != nil {
-		return suite.stats(), err
+		return suite.stats(), verifiedRunIdentity{}, err
 	}
 	if err := suite.verifyCoreMapProjection(reportJSON); err != nil {
-		return suite.stats(), err
+		return suite.stats(), verifiedRunIdentity{}, err
 	}
 	if err := suite.verifySnapshotArtifact(); err != nil {
-		return suite.stats(), err
+		return suite.stats(), verifiedRunIdentity{}, err
 	}
 	if err := suite.verifyTargetPagePortfolioArtifacts(); err != nil {
-		return suite.stats(), err
+		return suite.stats(), verifiedRunIdentity{}, err
 	}
 	if err := suite.verifyProgramPagePortfolioArtifact(); err != nil {
-		return suite.stats(), err
+		return suite.stats(), verifiedRunIdentity{}, err
 	}
-	return suite.stats(), nil
+	report, err := suite.report(reportJSON)
+	if err != nil {
+		return suite.stats(), verifiedRunIdentity{}, err
+	}
+	artifactFilename := ""
+	for _, entry := range program.set.Entries {
+		if entry.TargetID == program.set.DefaultTargetID {
+			artifactFilename = entry.Filename
+			break
+		}
+	}
+	identity := verifiedRunIdentity{
+		programPage: TargetNavigationPage{
+			RunID:            filepath.Base(filepath.Clean(runDir)),
+			ProgramTarget:    program.defaultIndex.Target.Snapshot(),
+			ArtifactFilename: artifactFilename,
+		},
+		repositoryName: report.RepoName,
+	}
+	return suite.stats(), identity, nil
 }
 
 // VerifyTargetPagePortfolioArtifacts binds the exact selected-target
@@ -2583,10 +2687,38 @@ func prepareAuthorizedRunManifest(
 			ReportContract:                data.FormatVersion,
 		},
 	}
-	if _, err := verifyCompleteRunManifest(runDir, manifest, reportJSON); err != nil {
+	if err := verifyPreparedRunManifest(manifest, data, reportJSON); err != nil {
 		return RunManifest{}, err
 	}
 	return manifest, nil
+}
+
+// verifyPreparedRunManifest closes the current in-process publication
+// transaction. readRunDir already restored and semantically validated every
+// producer artifact used to construct data, and the manifest digests above
+// were derived from those process-owned files. Re-reading and re-projecting
+// the complete run here would only validate our own immediately preceding
+// work a second time. Independent later consumers still use
+// verifyCompleteRunManifest and rebuild authority from disk.
+func verifyPreparedRunManifest(
+	manifest RunManifest,
+	data *ReportData,
+	reportJSON []byte,
+) error {
+	if err := manifest.Validate(); err != nil {
+		return err
+	}
+	if len(reportJSON) > maxManifestReportBytes || manifestSHA256(reportJSON) != manifest.ReportSHA256 {
+		return fmt.Errorf("report manifest: prepared report bytes do not match manifest authority")
+	}
+	persisted := reportDataForPersistence(data)
+	if persisted == nil {
+		return fmt.Errorf("report manifest: prepared report data is missing")
+	}
+	if err := manifest.verifyReportData(*persisted); err != nil {
+		return err
+	}
+	return nil
 }
 
 func reportAnalysisTargetBinding(target *analysistarget.Target) (string, string, error) {

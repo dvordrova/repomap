@@ -90,6 +90,97 @@ func TestHandlerServesInitialReportAndOpensItsOpaqueSource(t *testing.T) {
 	}
 }
 
+func TestVerifiedRunsStartWithoutReportsAndLoadPagesLazily(t *testing.T) {
+	fixture := writeVerifiedRunsFixture(t)
+	ownerReportPath := filepath.Join(fixture.owner.runsDir, fixture.owner.runID, "report.json")
+	siblingReportPath := filepath.Join(fixture.sibling.runsDir, fixture.sibling.runID, "report.json")
+	ownerReport := readTestFile(t, ownerReportPath)
+	for _, reportPath := range []string{ownerReportPath, siblingReportPath} {
+		if err := os.WriteFile(reportPath, []byte(`{"invalid":"during-startup"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, runID := range []string{fixture.owner.runID, fixture.sibling.runID} {
+		if err := os.Remove(filepath.Join(fixture.owner.runsDir, runID, "report.html")); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var openedPath string
+	handler, err := NewHandler(Options{
+		RunsDir:      fixture.owner.runsDir,
+		InitialRunID: fixture.owner.runID,
+		Capability:   testCapability,
+		VerifiedRuns: fixture.receipts[:1],
+		OpenFile: func(_ context.Context, absolutePath string, _, _ int) error {
+			openedPath = absolutePath
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewHandler read or rendered a verified report during startup: %v", err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	baseURL := server.URL + capabilityURLPrefix(testCapability)
+
+	if err := os.WriteFile(ownerReportPath, ownerReport, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ownerURL := baseURL + "/runs/" + fixture.owner.runID + "/report.html"
+	ownerResponse, err := server.Client().Get(ownerURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerHTML := readResponse(t, ownerResponse, http.StatusOK)
+	if !bytes.Contains(ownerHTML, []byte(fixture.owner.sourceID)) {
+		t.Fatal("first verified page did not derive manifest-authorized source ids")
+	}
+
+	openResponse := postOpen(t, baseURL, openRequest{
+		RunID: fixture.owner.runID, SourceID: fixture.owner.sourceID, Line: 1, Column: 1,
+	})
+	var opened map[string]any
+	decodeResponse(t, openResponse, http.StatusOK, &opened)
+	if opened["status"] != "opened" || openedPath != fixture.owner.sourcePath {
+		t.Fatalf("verified source open=%#v path=%q", opened, openedPath)
+	}
+
+	if err := os.WriteFile(ownerReportPath, []byte(`{"invalid":"after-first-get"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	repeatedOwnerResponse, err := server.Client().Get(ownerURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repeatedOwnerHTML := readResponse(t, repeatedOwnerResponse, http.StatusOK)
+	if !bytes.Equal(repeatedOwnerHTML, ownerHTML) {
+		t.Fatal("repeated verified page GET was not served from the rendered cache")
+	}
+
+	if !bytes.Equal(readTestFile(t, siblingReportPath), []byte(`{"invalid":"during-startup"}`)) {
+		t.Fatal("unvisited sibling report was loaded or changed")
+	}
+}
+
+func TestVerifiedRunsRejectMismatchedReceipt(t *testing.T) {
+	fixture := writeVerifiedRunsFixture(t)
+	if _, err := NewHandler(Options{
+		RunsDir: fixture.owner.runsDir, InitialRunID: fixture.owner.runID,
+		Capability: testCapability, VerifiedRuns: fixture.receipts[1:],
+		OpenFile: func(context.Context, string, int, int) error { return nil },
+	}); err == nil || !strings.Contains(err.Error(), "do not contain the initial run") {
+		t.Fatalf("mismatched verified receipt error = %v", err)
+	}
+	if _, err := NewHandler(Options{
+		RunsDir: fixture.owner.runsDir, InitialRunID: fixture.owner.runID,
+		Capability: testCapability, VerifiedRuns: fixture.receipts,
+		OpenFile: func(context.Context, string, int, int) error { return nil },
+	}); err == nil || !strings.Contains(err.Error(), "lack neutral portfolio authority") {
+		t.Fatalf("unbound multi-receipt error = %v", err)
+	}
+}
+
 func TestLoadRunRestoresVirtualPageWithoutPhysicalHTML(t *testing.T) {
 	fixture := writeTestRun(t)
 	htmlPath := filepath.Join(fixture.runsDir, fixture.runID, "report.html")
@@ -416,6 +507,55 @@ type testRunFixture struct {
 	staticHTML []byte
 }
 
+type verifiedRunsFixture struct {
+	owner    testRunFixture
+	sibling  testRunFixture
+	receipts []reportpkg.VerifiedRunReceipt
+}
+
+func writeVerifiedRunsFixture(t *testing.T) verifiedRunsFixture {
+	t.Helper()
+	repository, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, "batch.go"), []byte("package batch\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runsDir := t.TempDir()
+	baseReport := reportpkg.ReportData{
+		FormatVersion: reportpkg.CurrentFormatVersion,
+		RepoName:      filepath.Base(repository),
+		OpenablePaths: []string{"batch.go"},
+	}
+	owner := writeTestRunAtWithTargetName(
+		t, runsDir, "20260822-120000-owner", repository, baseReport, "owner-target",
+	)
+	sibling := writeTestRunAtWithTargetName(
+		t, runsDir, "20260822-120000-sibling", repository, baseReport, "sibling-target",
+	)
+	receipts := make([]reportpkg.VerifiedRunReceipt, 0, 2)
+	for _, fixture := range []testRunFixture{owner, sibling} {
+		receipt, readErr := reportpkg.ReadVerifiedRunManifest(
+			filepath.Join(fixture.runsDir, fixture.runID),
+		)
+		if readErr != nil {
+			t.Fatalf("read verified run %s: %v", fixture.runID, readErr)
+		}
+		receipts = append(receipts, receipt)
+	}
+	return verifiedRunsFixture{owner: owner, sibling: sibling, receipts: receipts}
+}
+
+func readTestFile(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
 func writeTestRun(t *testing.T) testRunFixture {
 	t.Helper()
 	repository := t.TempDir()
@@ -450,6 +590,20 @@ func writeTestRunAt(
 	reportData reportpkg.ReportData,
 ) testRunFixture {
 	t.Helper()
+	return writeTestRunAtWithTargetName(
+		t, runsDir, runID, canonicalRepository, reportData, reportData.RepoName,
+	)
+}
+
+func writeTestRunAtWithTargetName(
+	t *testing.T,
+	runsDir,
+	runID,
+	canonicalRepository string,
+	reportData reportpkg.ReportData,
+	targetName string,
+) testRunFixture {
+	t.Helper()
 	runDir := filepath.Join(runsDir, runID)
 	if err := os.Mkdir(runDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -458,7 +612,7 @@ func writeTestRunAt(
 		reportData.CapturedRevision = strings.Repeat("0", 40)
 	}
 	reportData.CapturedInputCount = len(reportData.OpenablePaths)
-	index := reportServerStructuralProgramIndexFixture(t, reportData.RepoName)
+	index := reportServerStructuralProgramIndexFixture(t, targetName)
 	portfolio, err := reportpkg.NewProgramPortfolio(index.Target.ID, []programindex.Index{index})
 	if err != nil {
 		t.Fatal(err)
@@ -597,7 +751,7 @@ func reportServerStructuralProgramIndexFixture(t *testing.T, name string) progra
 		ScenarioSHA256: strings.Repeat("1", 64),
 		SourceSHA256:   strings.Repeat("2", 64),
 		Target: programindex.TargetInput{
-			Language: "fixture", Kind: "library", Name: name, Selector: "reportserver-fixture",
+			Language: "fixture", Kind: "library", Name: name, Selector: "reportserver-fixture:" + name,
 			Sources:       []programindex.TargetSource{{FileRef: "f1", Path: "batch.go"}},
 			AnchorFileRef: "f1",
 			Seeds:         []programindex.TargetSeedInput{},

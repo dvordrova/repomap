@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"time"
 
 	"github.com/dvordrova/repomap/internal/debugdump"
@@ -17,6 +18,16 @@ import (
 	"github.com/dvordrova/repomap/internal/runtimeportfolio"
 	"github.com/dvordrova/repomap/internal/targetoutcome"
 )
+
+// programPageRuntimeAuthority is transaction-local authority already
+// validated against every completed page before the shared runtime artifact
+// is persisted. Keeping this compact value avoids rebuilding all page-local
+// ReportData merely to validate the same shared bytes again during
+// finalization.
+type programPageRuntimeAuthority struct {
+	input  runtimeportfolio.Input
+	result runtimeportfolio.Result
+}
 
 func repositoryTypedTargetDisplay(target repositoryTypedTarget) string {
 	switch target.Key.Adapter {
@@ -158,27 +169,27 @@ func synthesizeProgramPageRuntimePortfolio(
 	portfolio programpage.Portfolio,
 	runs []targetPublishedRun,
 	output *runOutput,
-) error {
+) (programPageRuntimeAuthority, error) {
 	input, owner, err := programPageRuntimePortfolioInput(portfolio, runs)
 	if err != nil {
-		return err
+		return programPageRuntimeAuthority{}, err
 	}
 	if providerFactory == nil {
-		return fmt.Errorf("runtime portfolio: model provider is unavailable")
+		return programPageRuntimeAuthority{}, fmt.Errorf("runtime portfolio: model provider is unavailable")
 	}
 	provider, err := providerFactory()
 	if err != nil {
-		return fmt.Errorf("runtime portfolio: configure provider: %w", err)
+		return programPageRuntimeAuthority{}, fmt.Errorf("runtime portfolio: configure provider: %w", err)
 	}
 	if provider == nil {
-		return fmt.Errorf("runtime portfolio: configured model provider is unavailable")
+		return programPageRuntimeAuthority{}, fmt.Errorf("runtime portfolio: configured model provider is unavailable")
 	}
 	if runner == nil {
 		runner = runtimeportfolio.Run
 	}
 	writer, err := debugdump.OpenWriter(owner.RunDir, false)
 	if err != nil {
-		return fmt.Errorf("runtime portfolio: open semantic artifact writer: %w", err)
+		return programPageRuntimeAuthority{}, fmt.Errorf("runtime portfolio: open semantic artifact writer: %w", err)
 	}
 	executor := llm.Executor{
 		RootDir: cacheRoot, Enabled: !noCache,
@@ -198,19 +209,19 @@ func synthesizeProgramPageRuntimePortfolio(
 	)
 	closeErr := writer.Close()
 	if runErr != nil {
-		return errors.Join(fmt.Errorf("runtime portfolio: synthesize repository roles: %w", runErr), closeErr)
+		return programPageRuntimeAuthority{}, errors.Join(fmt.Errorf("runtime portfolio: synthesize repository roles: %w", runErr), closeErr)
 	}
 	if closeErr != nil {
-		return fmt.Errorf("runtime portfolio: close semantic artifact writer: %w", closeErr)
+		return programPageRuntimeAuthority{}, fmt.Errorf("runtime portfolio: close semantic artifact writer: %w", closeErr)
 	}
 	if err := outcome.Value.ValidateAgainst(input); err != nil {
-		return fmt.Errorf("runtime portfolio: accepted result does not match exact repository input: %w", err)
+		return programPageRuntimeAuthority{}, fmt.Errorf("runtime portfolio: accepted result does not match exact repository input: %w", err)
 	}
 	if err := persistProgramPagePortfolioForRuns(portfolio, runs); err != nil {
-		return err
+		return programPageRuntimeAuthority{}, err
 	}
 	if err := persistRuntimePortfolioForRuns(input, outcome.Value, runs); err != nil {
-		return err
+		return programPageRuntimeAuthority{}, err
 	}
 	state := debugdump.SemanticStateAccepted
 	semanticCalls := outcome.SemanticCalls
@@ -226,7 +237,7 @@ func synthesizeProgramPageRuntimePortfolio(
 		RequestBytes: outcome.RequestBytes, SemanticCalls: semanticCalls,
 		TransportAttempts: transportAttempts, LatencyMillis: latencyMillis,
 	}); err != nil {
-		return fmt.Errorf("runtime portfolio: record semantic diagnostics: %w", err)
+		return programPageRuntimeAuthority{}, fmt.Errorf("runtime portfolio: record semantic diagnostics: %w", err)
 	}
 	if output != nil {
 		source := "live provider"
@@ -242,7 +253,7 @@ func synthesizeProgramPageRuntimePortfolio(
 			"artifact: "+runtimeportfolio.ArtifactFilename,
 		)
 	}
-	return nil
+	return programPageRuntimeAuthority{input: input, result: outcome.Value}, nil
 }
 
 func programPageRuntimePortfolioInput(
@@ -280,22 +291,21 @@ func programPageRuntimePortfolioInput(
 		if !reflect.DeepEqual(page.ProgramTarget, binding.Target) {
 			return runtimeportfolio.Input{}, targetPublishedRun{}, fmt.Errorf("runtime portfolio: page target does not match program page authority")
 		}
-		data, err := report.ReadRunDir(run.RunDir)
-		if err != nil {
-			return runtimeportfolio.Input{}, targetPublishedRun{}, fmt.Errorf("runtime portfolio: read completed page %s: %w", run.RunID, err)
-		}
 		if result.RepositoryName == "" {
-			result.RepositoryName = data.RepoName
-		} else if result.RepositoryName != data.RepoName {
+			result.RepositoryName = run.RepositoryName
+		} else if result.RepositoryName != run.RepositoryName {
 			return runtimeportfolio.Input{}, targetPublishedRun{}, fmt.Errorf("runtime portfolio: target pages disagree on repository identity")
+		}
+		if run.RepositoryName == "" {
+			return runtimeportfolio.Input{}, targetPublishedRun{}, fmt.Errorf("runtime portfolio: completed page %s has no retained repository identity", run.RunID)
 		}
 		if result.CapturedRevision == "" {
 			result.CapturedRevision = run.SelectedRevision
 		} else if result.CapturedRevision != run.SelectedRevision {
 			return runtimeportfolio.Input{}, targetPublishedRun{}, fmt.Errorf("runtime portfolio: target pages disagree on captured revision")
 		}
-		input, err := runtimePortfolioTargetInput(
-			data, page, binding.Target.ID == portfolio.DefaultTargetID,
+		input, err := retainedRuntimePortfolioTargetInput(
+			run.RuntimeTargetInput, page, binding.Target.ID == portfolio.DefaultTargetID,
 		)
 		if err != nil {
 			return runtimeportfolio.Input{}, targetPublishedRun{}, fmt.Errorf("runtime portfolio: completed page %s: %w", run.RunID, err)
@@ -319,95 +329,113 @@ func programPageRuntimePortfolioInput(
 	return result, owner, nil
 }
 
+func retainedRuntimePortfolioTargetInput(
+	input runtimeportfolio.TargetInput,
+	page report.TargetNavigationPage,
+	isDefault bool,
+) (runtimeportfolio.TargetInput, error) {
+	target := page.ProgramTarget
+	if input.ProgramTargetID != target.ID || input.DisplayName != target.Name ||
+		input.Language != target.Language || input.Kind != target.Kind ||
+		input.Selector != target.Selector || input.Default {
+		return runtimeportfolio.TargetInput{}, fmt.Errorf("retained runtime projection does not bind the page ProgramTarget")
+	}
+	input.Default = isDefault
+	return input, nil
+}
+
 func validateProgramPageRuntimeArtifacts(
+	authority programPageRuntimeAuthority,
 	portfolio programpage.Portfolio,
 	targetOutcomes targetoutcome.Portfolio,
 	runs []targetPublishedRun,
 ) error {
-	input, _, err := programPageRuntimePortfolioInput(portfolio, runs)
-	if err != nil {
+	if err := validateProgramPageRuntimeAuthority(
+		authority, portfolio.SHA256, len(runs),
+	); err != nil {
 		return err
 	}
-	portfolioBytes, err := portfolio.CanonicalJSON()
-	if err != nil {
+	// The three shared artifacts were just atomically installed and validated
+	// by their writers. Close only their semantic joins in memory here; the
+	// subsequent report generation consumes them once, while recovery starts a
+	// fresh artifact-derived verification suite.
+	if _, err := report.NewTargetOutcomePortfolioView(targetOutcomes, portfolio); err != nil {
 		return err
-	}
-	targetOutcomeBytes, err := targetOutcomes.CanonicalJSON()
-	if err != nil {
-		return err
-	}
-	runtimeValidator := runtimePortfolioArtifactSetValidator{}
-	for _, run := range runs {
-		pageBytes, found, err := readTargetPageRunFile(
-			run.RunDir, programpage.ArtifactFilename, programpage.MaxArtifactBytes,
-		)
-		if err != nil {
-			return err
-		}
-		if !found || !bytes.Equal(pageBytes, portfolioBytes) {
-			return fmt.Errorf("program page portfolio: run %s has stale page authority", run.RunID)
-		}
-		outcomeBytes, found, err := readTargetPageRunFile(
-			run.RunDir, targetoutcome.ArtifactFilename, targetoutcome.MaxArtifactBytes,
-		)
-		if err != nil {
-			return err
-		}
-		if !found || !bytes.Equal(outcomeBytes, targetOutcomeBytes) {
-			return fmt.Errorf("target outcome portfolio: run %s has stale selected-target authority", run.RunID)
-		}
-		raw, found, err := readTargetPageRunFile(
-			run.RunDir, runtimeportfolio.ArtifactFilename, runtimeportfolio.MaxArtifactBytes,
-		)
-		if err != nil {
-			return err
-		}
-		if !found {
-			return fmt.Errorf("runtime portfolio: run %s is missing the repository artifact", run.RunID)
-		}
-		if err := runtimeValidator.validate(raw, func(candidate []byte) error {
-			return fullyValidateRuntimePortfolioArtifact(candidate, input)
-		}); err != nil {
-			return fmt.Errorf("runtime portfolio: run %s: %w", run.RunID, err)
-		}
 	}
 	return nil
 }
 
+func validateProgramPageRuntimeAuthority(
+	authority programPageRuntimeAuthority,
+	portfolioSHA256 string,
+	targetCount int,
+) error {
+	if err := authority.result.ValidateAgainst(authority.input); err != nil {
+		return fmt.Errorf("runtime portfolio: retained authority is invalid: %w", err)
+	}
+	if authority.input.TargetPagePortfolioSHA256 != portfolioSHA256 {
+		return fmt.Errorf("runtime portfolio: retained authority does not match program pages")
+	}
+	if len(authority.input.Targets) != targetCount {
+		return fmt.Errorf("runtime portfolio: retained target coverage is incomplete")
+	}
+	return nil
+}
+
+func programPageRuntimeEvidencePaths(authority programPageRuntimeAuthority) ([]string, error) {
+	if err := authority.result.ValidateAgainst(authority.input); err != nil {
+		return nil, fmt.Errorf("runtime portfolio: retained authority is invalid: %w", err)
+	}
+	paths := make([]string, 0, authority.result.Coverage.EvidenceSelected)
+	for _, role := range authority.result.Roles {
+		for _, evidence := range role.Evidence {
+			if evidence.Location.Path != "" {
+				paths = append(paths, evidence.Location.Path)
+			}
+		}
+	}
+	sort.Strings(paths)
+	compacted := paths[:0]
+	for _, sourcePath := range paths {
+		if len(compacted) == 0 || compacted[len(compacted)-1] != sourcePath {
+			compacted = append(compacted, sourcePath)
+		}
+	}
+	return compacted, nil
+}
+
 func finalizeProgramPageRuns(
 	ctx context.Context,
+	runtimeAuthority programPageRuntimeAuthority,
 	portfolio programpage.Portfolio,
 	targetOutcomes targetoutcome.Portfolio,
 	runs []targetPublishedRun,
 ) error {
-	if err := validateProgramPageRuntimeArtifacts(portfolio, targetOutcomes, runs); err != nil {
+	if err := validateProgramPageRuntimeArtifacts(runtimeAuthority, portfolio, targetOutcomes, runs); err != nil {
+		return err
+	}
+	runtimePaths, err := programPageRuntimeEvidencePaths(runtimeAuthority)
+	if err != nil {
 		return err
 	}
 	for index := range runs {
-		data, err := report.ReadRunDir(runs[index].RunDir)
-		if err != nil {
-			return fmt.Errorf("program page portfolio: restore runtime evidence for run %s: %w", runs[index].RunID, err)
-		}
-		paths, err := report.CapturedInputPaths(data)
-		if err != nil {
-			return fmt.Errorf("program page portfolio: collect runtime evidence for run %s: %w", runs[index].RunID, err)
-		}
-		extended, err := report.ExtendRunAuthority(ctx, runs[index].Authority, paths)
+		extended, err := report.ExtendRunAuthority(ctx, runs[index].Authority, runtimePaths)
 		if err != nil {
 			return fmt.Errorf("program page portfolio: authorize runtime evidence for run %s: %w", runs[index].RunID, err)
 		}
 		runs[index].Authority = extended
 	}
 
-	runByID := make(map[string]targetPublishedRun, len(runs))
-	for _, run := range runs {
-		runByID[run.RunID] = run
+	runIndexByID := make(map[string]int, len(runs))
+	for index, run := range runs {
+		runIndexByID[run.RunID] = index
 	}
 	for _, binding := range portfolio.Pages {
-		run, found := runByID[binding.RunID]
+		runIndex, found := runIndexByID[binding.RunID]
 		if !found {
 			return fmt.Errorf("program page portfolio: completed run is missing")
 		}
+		run := &runs[runIndex]
 		page := run.ProgramPage
 		if page.RunID != run.RunID {
 			return fmt.Errorf("program page portfolio: completed page identity is invalid")
@@ -415,19 +443,24 @@ func finalizeProgramPageRuns(
 		if !reflect.DeepEqual(page.ProgramTarget, binding.Target) {
 			return fmt.Errorf("program page portfolio: completed page target mismatch")
 		}
-		if err := run.generateBackingPageData(); err != nil {
+		receipt, err := run.generateBackingPageData()
+		if err != nil {
 			return fmt.Errorf("program page portfolio: finalize backing run %s: %w", run.RunID, err)
 		}
-		manifest, err := report.ReadRunManifest(run.RunDir)
-		if err != nil {
-			return fmt.Errorf("program page portfolio: verify run %s: %w", run.RunID, err)
+		if err := receipt.ValidateRunIdentity(run.RunDir); err != nil {
+			return fmt.Errorf("program page portfolio: verify run receipt %s: %w", run.RunID, err)
 		}
+		if receiptPage := receipt.ProgramPage(); !reflect.DeepEqual(receiptPage, page) {
+			return fmt.Errorf("program page portfolio: run %s receipt page mismatch", run.RunID)
+		}
+		manifest := receipt.Manifest()
 		if manifest.RepositoryStateSHA256 != run.RepositoryStateSHA256 ||
 			manifest.MaterialInputs.SelectedRevision != run.SelectedRevision ||
 			manifest.MaterialInputs.ProgramTargetID != binding.Target.ID ||
 			manifest.MaterialInputs.ProgramPagePortfolioSHA256 == "" {
 			return fmt.Errorf("program page portfolio: run %s authority mismatch", run.RunID)
 		}
+		run.Receipt = receipt
 	}
 	return nil
 }
@@ -435,38 +468,43 @@ func finalizeProgramPageRuns(
 func publishProgramPageBundle(
 	portfolio programpage.Portfolio,
 	runs []targetPublishedRun,
-) error {
+) (report.PublicationAssessment, error) {
 	if err := portfolio.Validate(); err != nil {
-		return err
+		return report.FailedPublicationAssessment(), err
 	}
 	runsByID := make(map[string]targetPublishedRun, len(runs))
 	for _, run := range runs {
 		if run.RunID == "" || run.RunDir == "" || filepath.Base(run.RunDir) != run.RunID {
-			return fmt.Errorf("program page bundle: completed run identity is invalid")
+			return report.FailedPublicationAssessment(), fmt.Errorf("program page bundle: completed run identity is invalid")
 		}
 		if _, duplicate := runsByID[run.RunID]; duplicate {
-			return fmt.Errorf("program page bundle: duplicate completed run")
+			return report.FailedPublicationAssessment(), fmt.Errorf("program page bundle: duplicate completed run")
 		}
 		runsByID[run.RunID] = run
 	}
 	if len(runsByID) != len(portfolio.Pages) {
-		return fmt.Errorf("program page bundle: completed run coverage is incomplete")
+		return report.FailedPublicationAssessment(), fmt.Errorf("program page bundle: completed run coverage is incomplete")
 	}
 	defaultRunDir := ""
+	receipts := make([]report.VerifiedRunReceipt, 0, len(portfolio.Pages))
 	for _, page := range portfolio.Pages {
 		run, found := runsByID[page.RunID]
 		if !found {
-			return fmt.Errorf("program page bundle: portfolio run is missing")
+			return report.FailedPublicationAssessment(), fmt.Errorf("program page bundle: portfolio run is missing")
 		}
 		if page.Target.ID == portfolio.DefaultTargetID {
 			defaultRunDir = run.RunDir
 		}
+		receipts = append(receipts, run.Receipt)
 	}
 	if defaultRunDir == "" {
-		return fmt.Errorf("program page bundle: default run is missing")
+		return report.FailedPublicationAssessment(), fmt.Errorf("program page bundle: default run is missing")
 	}
-	if err := report.WriteProgramPageBundleFromArtifactsAtomic(defaultRunDir, portfolio); err != nil {
-		return fmt.Errorf("program page bundle: publish: %w", err)
+	assessment, err := report.PublishProgramPageBundleFromVerifiedRunsAtomic(
+		defaultRunDir, portfolio, receipts,
+	)
+	if err != nil {
+		return report.FailedPublicationAssessment(), fmt.Errorf("program page bundle: publish: %w", err)
 	}
-	return nil
+	return assessment, nil
 }

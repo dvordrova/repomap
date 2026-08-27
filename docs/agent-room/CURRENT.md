@@ -965,13 +965,28 @@ report JSON limit; its gzip representation is bounded by 65 MiB. The existing
 1 GiB aggregate standalone transport limit remains an independent bound and
 does not authorize a larger target chunk.
 
-Artifact-backed standalone publication uses two sequential passes over the
-verified child authorities. The first seals the exhaustive index and shared
-repository payload; the second reprojects one target at a time, writes its
-deterministic gzip bytes to a private temporary spool, immediately streams the
-chunk back through length, digest, strict typed-decode, and exact target-binding
-checks, and releases the target before loading the next. Final HTML publication
-streams base64 from that spool. After the temporary HTML is synced and closed,
+The ordinary live standalone publication carries a compact process-local
+receipt from each atomically installed backing page. Those receipts retain only
+the already verified manifest, repository name, and exact ProgramTarget/page
+identity. The owner report is decoded once for the shared repository payload
+and its target chunk; every non-owner report is decoded once directly into its
+target chunk. The current transaction does not reopen complete manifest suites,
+rehash files it just wrote, or reconstruct each child twice. The independent
+artifact-only recovery publisher keeps its two-pass reconstruction because it
+has no live receipts.
+
+For a deferred multi-target run, page analysis does not first publish a
+temporary page-local report and manifest. It retains the validated in-memory
+page projection, installs the shared repository authorities, and publishes
+each backing report once in final form. When the ordinary run serves the result,
+the server binds those receipts without eagerly restoring or rendering every
+target page; it loads a requested page on its first request. An independent
+server opened without live receipts retains the artifact-restoration path.
+
+Both paths write deterministic gzip bytes to a private temporary spool,
+immediately stream each chunk back through length, digest, strict typed-decode,
+and exact target-binding checks, and release the target before loading the
+next. Final HTML publication streams base64 from that spool. After the temporary HTML is synced and closed,
 the same transaction compares it byte-for-byte with the still-live validated
 spool, removes the spool, and only then atomically installs that exact file.
 That successful artifact-backed transaction returns READY directly; later and
@@ -1083,6 +1098,18 @@ Publication parsing is fail-closed and has one semantic validator:
 `ReadRunManifest` strictly restores the report, sealed ProgramIndex set, and
 all downstream artifact projections. Each non-default multi-target run is a
 manifest-validated backing authority, not a separate READY HTML publication.
+One complete manifest verification owns one immutable open run-directory view:
+each bounded artifact is read once and each canonical authority, including
+`report.json`, is strict-decoded once, then reused by every independent
+projection check in that suite. The live multi-target transaction likewise
+retains the already validated RuntimePortfolio input/result while it installs
+the same shared artifacts into each child; finalization derives the closed set
+of additional captured paths from that retained authority instead of restoring
+every completed page again. This is process-local authority only: later and
+recovery calls still build a fresh complete verification suite from artifacts.
+Successful atomic installation is the current-run verification boundary;
+receipts are passed forward without defending against out-of-band mutation of
+repomap's own cache directory between adjacent stages.
 Publication readiness is assessed only for the default owner and adds the HTML
 payload and multi-target-bundle checks; it does not maintain a second
 ProgramIndex or semantic-artifact validator. `snapshot.json` and `metadata.json` are
