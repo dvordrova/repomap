@@ -620,6 +620,11 @@
       "symbols": ["MaxOrdinaryReportHTMLBytes", "MaxReportJSONBytes"]
     },
     {
+      "file": "internal/report/standalone_bundle_transport.go",
+      "category": "byte-bound",
+      "symbols": ["maxStandaloneBundleTargetCompressedBytesV4", "maxStandaloneBundleTargetRawBytesV4", "standaloneBundleOverflowProbeBytes"]
+    },
+    {
       "file": "internal/report/standalone_target_bundle.go",
       "category": "byte-bound",
       "symbols": ["MaxStandaloneTargetBundlePayloadBytes", "maxPreparedStandaloneTargetHTMLBytes", "maxStandaloneTargetBundleHeaderBytes", "maxStandaloneTargetBundleOverhead", "maxStandaloneTargetBundleSealBytes"]
@@ -632,7 +637,17 @@
     {
       "file": "internal/report/templates/report_app.js",
       "category": "text-bound",
-      "symbols": ["MAX_REVISION_ABBREVIATION_CHARS"]
+      "symbols": ["MAX_CLIENT_ERROR_CHARS", "MAX_REVISION_ABBREVIATION_CHARS"]
+    },
+    {
+      "file": "internal/report/templates/report_loader.js",
+      "category": "byte-bound",
+      "symbols": ["MAX_TARGET_COMPRESSED_BYTES", "MAX_TARGET_RAW_BYTES", "MAX_TRANSPORT_BYTES", "aggregateRawBytes", "bytes", "rawBytes"]
+    },
+    {
+      "file": "internal/report/templates/report_loader.js",
+      "category": "text-bound",
+      "symbols": ["MAX_BASE64_CHARACTERS", "MAX_ERROR_MESSAGE_CHARS"]
     },
     {
       "file": "internal/reportserver/server.go",

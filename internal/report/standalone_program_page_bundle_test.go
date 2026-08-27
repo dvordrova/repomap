@@ -20,7 +20,9 @@ import (
 
 func TestWriteProgramPageBundleFromArtifactsPublishesOnlyOwnerHTML(t *testing.T) {
 	portfolio, ownerRunDir, runDirs := artifactProgramPageBundleFixture(t, 2)
+	entriesBefore := make(map[string][]string, len(runDirs))
 	for _, runDir := range runDirs {
+		entriesBefore[runDir] = directoryTreePaths(t, runDir)
 		if _, err := os.Lstat(filepath.Join(runDir, "report.html")); !os.IsNotExist(err) {
 			t.Fatalf("backing page unexpectedly published HTML before bundling: %s: %v", runDir, err)
 		}
@@ -28,6 +30,17 @@ func TestWriteProgramPageBundleFromArtifactsPublishesOnlyOwnerHTML(t *testing.T)
 
 	if err := WriteProgramPageBundleFromArtifactsAtomic(ownerRunDir, portfolio); err != nil {
 		t.Fatalf("WriteProgramPageBundleFromArtifactsAtomic: %v", err)
+	}
+	for _, runDir := range runDirs {
+		wantEntries := append([]string(nil), entriesBefore[runDir]...)
+		if runDir == ownerRunDir {
+			wantEntries = append(wantEntries, "report.html")
+			slices.Sort(wantEntries)
+		}
+		if entriesAfter := directoryTreePaths(t, runDir); !slices.Equal(entriesAfter, wantEntries) {
+			t.Fatalf("artifact publication left browser sidecars in %s: before=%v after=%v",
+				runDir, entriesBefore[runDir], entriesAfter)
+		}
 	}
 	ownerHTMLPath := filepath.Join(ownerRunDir, "report.html")
 	ownerHTML, err := os.ReadFile(ownerHTMLPath)
@@ -58,9 +71,21 @@ func TestWriteProgramPageBundleFromArtifactsPublishesOnlyOwnerHTML(t *testing.T)
 		identity.TargetCount != len(portfolio.Pages) {
 		t.Fatalf("artifact-derived bundle identity = %#v", identity)
 	}
-	for index := range portfolio.Pages {
-		if !bytes.Contains(ownerHTML, []byte(fmt.Sprintf("BACKING_REPORT_%d", index))) {
-			t.Fatalf("owner HTML omitted report.json payload %d", index)
+	transport, err := extractStandaloneBundleTransportV4HTML(ownerHTML)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(transport.TargetChunks) != len(portfolio.Pages) {
+		t.Fatalf("owner HTML target chunk count = %d, want %d", len(transport.TargetChunks), len(portfolio.Pages))
+	}
+	for index, chunk := range transport.TargetChunks {
+		raw, decodeErr := decodeStandaloneBundleTargetChunkV4(chunk.Ref, chunk.Base64)
+		if decodeErr != nil {
+			t.Fatal(decodeErr)
+		}
+		payload, decodeErr := DecodeBrowserTargetPayload(raw)
+		if decodeErr != nil || payload.Target.ID != portfolio.Pages[index].Target.ID {
+			t.Fatalf("owner HTML target payload %d = %#v, %v", index, payload.Target, decodeErr)
 		}
 	}
 
@@ -123,6 +148,66 @@ func TestWriteProgramPageBundleFromArtifactsPublishesOnlyOwnerHTML(t *testing.T)
 	}
 }
 
+func TestWriteProgramPageBundleFromArtifactsRejectsSiblingAnalysisRootDriftAtomically(t *testing.T) {
+	portfolio, ownerRunDir, runDirs := artifactProgramPageBundleFixture(t, 2)
+	siblingRunDir := ""
+	for _, runDir := range runDirs {
+		if runDir != ownerRunDir {
+			siblingRunDir = runDir
+			break
+		}
+	}
+	if siblingRunDir == "" {
+		t.Fatal("fixture has no sibling run")
+	}
+
+	siblingManifest, err := ReadRunManifest(siblingRunDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	siblingManifest.AnalysisRoot = filepath.Join(
+		siblingManifest.RepositoryState.Identity, "subtree",
+	)
+	if err := writeRunManifestAtomic(siblingRunDir, siblingManifest); err != nil {
+		t.Fatalf("write valid sibling manifest with a drifted analysis root: %v", err)
+	}
+	resealedSibling, err := ReadRunManifest(siblingRunDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resealedSibling.AnalysisRoot != "/repo/subtree" {
+		t.Fatalf("resealed sibling analysis root = %q", resealedSibling.AnalysisRoot)
+	}
+	if err := resealedSibling.Validate(); err != nil {
+		t.Fatalf("resealed sibling manifest is not independently valid: %v", err)
+	}
+
+	ownerHTMLPath := filepath.Join(ownerRunDir, "report.html")
+	if err := WriteProgramPageBundleFromArtifactsAtomic(ownerRunDir, portfolio); err == nil ||
+		!strings.Contains(err.Error(), "authority mismatch") {
+		t.Fatalf("sibling analysis-root drift error = %v", err)
+	}
+	if _, err := os.Lstat(ownerHTMLPath); !os.IsNotExist(err) {
+		t.Fatalf("failed artifact-derived publication created owner HTML: %v", err)
+	}
+
+	sentinel := []byte("ORIGINAL_OWNER_REPORT\n")
+	if err := os.WriteFile(ownerHTMLPath, sentinel, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteProgramPageBundleFromArtifactsAtomic(ownerRunDir, portfolio); err == nil ||
+		!strings.Contains(err.Error(), "authority mismatch") {
+		t.Fatalf("sibling analysis-root drift republish error = %v", err)
+	}
+	current, err := os.ReadFile(ownerHTMLPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(current, sentinel) {
+		t.Fatal("failed artifact-derived publication replaced owner HTML")
+	}
+}
+
 func TestWriteProgramPageBundleFromArtifactsAllowsOneAnalyzedPage(t *testing.T) {
 	portfolio, ownerRunDir, runDirs := artifactProgramPageBundleFixture(t, 1)
 	if len(portfolio.Pages) != 1 || len(runDirs) != 1 {
@@ -166,6 +251,64 @@ func TestWriteProgramPageBundleFromArtifactsAllowsOneAnalyzedPage(t *testing.T) 
 	if !defaultFailed {
 		t.Fatalf("logical selected default was not retained as failed: %#v", data.TargetOutcomePortfolio)
 	}
+	htmlRaw, err := os.ReadFile(filepath.Join(ownerRunDir, "report.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport, err := extractStandaloneBundleTransportV4HTML(htmlRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository, err := DecodeBrowserRepositoryPayload(transport.RepositoryPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(transport.Index.Targets) != 2 || len(repository.Targets) != 2 ||
+		len(transport.TargetChunks) != 1 {
+		t.Fatalf("partial artifact transport = %d index rows / %d repository rows / %d chunks",
+			len(transport.Index.Targets), len(repository.Targets), len(transport.TargetChunks))
+	}
+	failedIndexFound := false
+	failedRepositoryFound := false
+	for _, row := range transport.Index.Targets {
+		if row.TargetID != transport.Index.LogicalDefaultTargetID {
+			continue
+		}
+		failedIndexFound = row.State == standaloneBundleTransportTargetNotAnalyzed &&
+			row.ProgramTargetID == "" && row.Chunk == nil
+	}
+	for _, row := range repository.Targets {
+		if row.SelectedTargetID != repository.LogicalDefaultSelectedTargetID {
+			continue
+		}
+		failedRepositoryFound = row.State == "not_analyzed" && row.ProgramTargetID == "" && row.Href == ""
+	}
+	if !failedIndexFound || !failedRepositoryFound {
+		t.Fatalf("failed logical default gained target authority: index=%#v repository=%#v",
+			transport.Index.Targets, repository.Targets)
+	}
+}
+
+func TestWriteStandaloneProgramPageBundleRejectsCrossTargetLocalRootLeak(t *testing.T) {
+	portfolio, ready, runDir := standaloneProgramPageBundleFixture(t)
+	if len(ready) < 2 || ready[0].prepared == nil || ready[1].prepared == nil ||
+		len(ready[0].prepared.localRoots) == 0 {
+		t.Fatal("standalone fixture lacks two targets with local roots")
+	}
+	foreignRoot := ready[0].prepared.localRoots[0]
+	ready[1].prepared.target.Target.Name = foreignRoot
+	raw, err := EncodeBrowserTargetPayload(ready[1].prepared.target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready[1].prepared.targetPayload = raw
+	if err := WriteStandaloneProgramPageBundleAtomic(runDir, portfolio, ready); err == nil ||
+		!strings.Contains(err.Error(), "retained a local path") {
+		t.Fatalf("cross-target local-root leak error = %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(runDir, "report.html")); !os.IsNotExist(err) {
+		t.Fatalf("failed local-root publication created report.html: %v", err)
+	}
 }
 
 func TestWriteStandaloneProgramPageBundlePublishesLanguageNeutralPortfolio(t *testing.T) {
@@ -190,29 +333,33 @@ func TestWriteStandaloneProgramPageBundlePublishesLanguageNeutralPortfolio(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	wire := embeddedStandaloneTargetBundle(t, htmlBytes)
-	if wire.DefaultTargetIndex != defaultIndex || len(wire.Targets) != len(portfolio.Pages) {
-		t.Fatalf("standalone program page wire = %#v", wire)
+	transport, err := extractStandaloneBundleTransportV4HTML(htmlBytes)
+	if err != nil {
+		t.Fatal(err)
 	}
-	gotLanguages := make([]string, 0, len(wire.Targets))
-	for index, item := range wire.Targets {
-		binding := portfolio.Pages[index]
-		if item.TargetID != binding.Target.ID || item.Language != binding.Target.Language ||
-			item.Kind != binding.Target.Kind || item.DisplayName != binding.Target.Name ||
-			item.Href != fmt.Sprintf("?target=%d#/program", index) {
-			t.Fatalf("standalone program page item %d = %#v", index, item)
+	repository, err := DecodeBrowserRepositoryPayload(transport.RepositoryPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.Targets) != len(portfolio.Pages) ||
+		repository.LogicalDefaultSelectedTargetID != portfolio.DefaultTargetID {
+		t.Fatalf("standalone repository index = %#v", repository)
+	}
+	gotLanguages := make([]string, 0, len(transport.TargetChunks))
+	for index, chunk := range transport.TargetChunks {
+		raw, decodeErr := decodeStandaloneBundleTargetChunkV4(chunk.Ref, chunk.Base64)
+		if decodeErr != nil {
+			t.Fatal(decodeErr)
 		}
-		gotLanguages = append(gotLanguages, item.Language)
-		var payload map[string]json.RawMessage
-		if err := json.Unmarshal(item.Payload, &payload); err != nil {
-			t.Fatal(err)
+		payload, decodeErr := DecodeBrowserTargetPayload(raw)
+		if decodeErr != nil {
+			t.Fatal(decodeErr)
 		}
-		if _, found := payload["analysis_target"]; found {
-			t.Fatalf("language-neutral payload %d retained Go analysis authority: %s", index, item.Payload)
+		if repository.Targets[index].Href != fmt.Sprintf("?target=%d#/program", index) ||
+			payload.Target.ID != portfolio.Pages[index].Target.ID {
+			t.Fatalf("standalone target %d binding is invalid", index)
 		}
-		if _, found := payload["target_navigation"]; found {
-			t.Fatalf("prepared payload %d retained sibling navigation: %s", index, item.Payload)
-		}
+		gotLanguages = append(gotLanguages, payload.Target.Language)
 	}
 	slices.Sort(gotLanguages)
 	if !slices.Equal(gotLanguages, []string{"go", "python", "typescript"}) {
@@ -228,12 +375,7 @@ func TestWriteStandaloneProgramPageBundlePublishesLanguageNeutralPortfolio(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyExactStandaloneTargetBundleProjection(
-		htmlPath,
-		validated.identity,
-		validated.defaultTarget.repoName,
-		func(index int) (standaloneTargetBundleItem, error) { return validated.targets[index], nil },
-	); err != nil {
+	if err := verifyExactStandaloneTargetBundleProjection(htmlPath, validated); err != nil {
 		t.Fatalf("verify exact neutral projection: %v", err)
 	}
 }
@@ -257,6 +399,21 @@ func TestWriteStandaloneProgramPageBundleAllowsOneAnalyzedPage(t *testing.T) {
 	}
 	if len(singleReady) != 1 {
 		t.Fatalf("prepared single page count = %d", len(singleReady))
+	}
+	selected := singleReady[0].prepared
+	selected.repository.Targets = []BrowserTargetIndexItem{{
+		SelectedTargetID: selected.selectedTargetID,
+		ProgramTargetID:  selected.target.Target.ID,
+		Language:         selected.target.Target.Language,
+		Kind:             selected.target.Target.Kind,
+		DisplayName:      selected.target.Target.Name,
+		State:            "analyzed",
+		Href:             "#/program",
+	}}
+	selected.repository.LogicalDefaultSelectedTargetID = selected.selectedTargetID
+	selected.repositoryPayload, err = EncodeBrowserRepositoryPayload(selected.repository)
+	if err != nil {
+		t.Fatal(err)
 	}
 	runDir := filepath.Join(t.TempDir(), binding.RunID)
 	if err := os.Mkdir(runDir, 0o700); err != nil {
@@ -342,7 +499,7 @@ func TestStandaloneProgramPageBundleRejectsResealedPayloadRewrite(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	tampered := bytes.Replace(raw, []byte("PROGRAM_PAGE_0"), []byte("PROGRAM_PAGE_X"), 1)
+	tampered := bytes.Replace(raw, []byte("H4sI"), []byte("I4sI"), 1)
 	if bytes.Equal(tampered, raw) {
 		t.Fatal("neutral payload sentinel was not present")
 	}
@@ -361,12 +518,8 @@ func TestStandaloneProgramPageBundleRejectsResealedPayloadRewrite(t *testing.T) 
 	if _, found, err := InspectStandaloneTargetBundleHTML(htmlPath); err != nil || !found {
 		t.Fatalf("self-sealed rewritten bundle was not structurally valid: found=%t err=%v", found, err)
 	}
-	if err := verifyExactStandaloneTargetBundleProjection(
-		htmlPath,
-		validated.identity,
-		validated.defaultTarget.repoName,
-		func(index int) (standaloneTargetBundleItem, error) { return validated.targets[index], nil },
-	); err == nil || !strings.Contains(err.Error(), "manifest-derived projection") {
+	if err := verifyExactStandaloneTargetBundleProjection(htmlPath, validated); err == nil ||
+		!strings.Contains(err.Error(), "manifest-derived projection") {
 		t.Fatalf("resealed neutral payload authority error = %v", err)
 	}
 }
@@ -434,38 +587,38 @@ func standaloneProgramPageBundleFixture(
 		reportProgramIndexFixture(t, "typescript", "application"),
 	}
 	pages := make([]programpage.Page, 0, len(indexes))
-	indexByTargetID := make(map[string]programindex.Index, len(indexes))
 	for index, programIndex := range indexes {
 		pages = append(pages, programpage.Page{
 			Target: programIndex.Target,
 			RunID:  fmt.Sprintf("program-page-%d", index),
 		})
-		indexByTargetID[programIndex.Target.ID] = programIndex
 	}
 	portfolio, err := programpage.Build(indexes[1].Target.ID, pages)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ready := make([]PreparedStandaloneTarget, 0, len(portfolio.Pages))
-	for index, binding := range portfolio.Pages {
-		programIndex := indexByTargetID[binding.Target.ID]
-		programPortfolio, err := NewProgramPortfolio(binding.Target.ID, []programindex.Index{programIndex})
-		if err != nil {
-			t.Fatal(err)
-		}
-		payload, err := json.Marshal(map[string]any{
-			"format_version":       CurrentFormatVersion,
-			"program_portfolio":    programPortfolio,
-			"repo_name":            "neutral-bundle-fixture",
-			"captured_revision":    standaloneBundleRevision,
-			"captured_input_count": 0,
-			"openable_paths":       []string{},
-			"warnings":             []string{fmt.Sprintf("PROGRAM_PAGE_%d", index)},
-			"github_source_links": map[string]any{
-				"repository_url": "https://github.com/example/neutral-bundle",
-				"revision":       standaloneBundleRevision,
+	for _, binding := range portfolio.Pages {
+		targetPayload := BrowserTargetPayload{
+			Version: BrowserTargetPayloadVersion,
+			Target: BrowserTarget{
+				ID: binding.Target.ID, Language: binding.Target.Language, Kind: binding.Target.Kind,
+				Name: binding.Target.Name, Selector: binding.Target.Selector,
 			},
-		})
+			OpenablePaths: []string{},
+			Features: BrowserTargetFeatures{Program: BrowserProgramFeature{
+				Objects: []BrowserProgramObject{}, Relations: []BrowserProgramRelation{},
+			}},
+		}
+		if binding.Target.Language == "javascript" || binding.Target.Language == "typescript" {
+			targetPayload.Features.Surfaces = &BrowserSurfaceFeature{
+				Facts: []BrowserJSTSFact{}, Surfaces: []BrowserSurface{},
+			}
+			targetPayload.Features.CrossSurfacePaths = &BrowserCrossSurfacePathFeature{
+				Facts: []BrowserJSTSFact{}, Paths: []BrowserCrossSurfacePath{},
+			}
+		}
+		targetRaw, err := EncodeBrowserTargetPayload(targetPayload)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -474,11 +627,33 @@ func standaloneProgramPageBundleFixture(
 				RunID: binding.RunID, ProgramTarget: binding.Target.Snapshot(),
 				ArtifactFilename: programindex.ArtifactFilename,
 			},
-			payload: payload,
-			host:    "GitHub", repositoryURL: "https://github.com/example/neutral-bundle",
+			target: targetPayload, targetPayload: targetRaw, selectedTargetID: binding.Target.ID,
+			host: "GitHub", repositoryURL: "https://github.com/example/neutral-bundle",
 			revision: standaloneBundleRevision, repoName: "neutral-bundle-fixture",
 			localRoots: []string{filepath.Join(t.TempDir(), "private")},
 		}})
+	}
+	repository := BrowserRepositoryPayload{
+		Version:                        BrowserRepositoryPayloadVersion,
+		Repository:                     BrowserRepository{Name: "neutral-bundle-fixture", CapturedRevision: standaloneBundleRevision},
+		Source:                         BrowserSource{Kind: "github", RepositoryURL: "https://github.com/example/neutral-bundle"},
+		LogicalDefaultSelectedTargetID: portfolio.DefaultTargetID,
+		OpenablePaths:                  []string{},
+	}
+	for index, binding := range portfolio.Pages {
+		repository.Targets = append(repository.Targets, BrowserTargetIndexItem{
+			SelectedTargetID: binding.Target.ID, ProgramTargetID: binding.Target.ID,
+			Language: binding.Target.Language, Kind: binding.Target.Kind, DisplayName: binding.Target.Name,
+			State: "analyzed", Href: fmt.Sprintf("?target=%d#/program", index),
+		})
+	}
+	repositoryRaw, err := EncodeBrowserRepositoryPayload(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := range ready {
+		ready[index].prepared.repository = repository
+		ready[index].prepared.repositoryPayload = repositoryRaw
 	}
 	slices.Reverse(ready)
 	defaultRunID := ""
@@ -504,6 +679,28 @@ func standaloneProgramPageDefaultIndex(t *testing.T, portfolio programpage.Portf
 	}
 	t.Fatal("program page portfolio default is absent")
 	return -1
+}
+
+func directoryTreePaths(t *testing.T, directory string) []string {
+	t.Helper()
+	paths := make([]string, 0)
+	var visit func(string)
+	visit = func(relative string) {
+		entries, err := os.ReadDir(filepath.Join(directory, relative))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range entries {
+			path := filepath.Join(relative, entry.Name())
+			paths = append(paths, filepath.ToSlash(path))
+			if entry.IsDir() {
+				visit(path)
+			}
+		}
+	}
+	visit("")
+	slices.Sort(paths)
+	return paths
 }
 
 func artifactProgramPageBundleFixture(

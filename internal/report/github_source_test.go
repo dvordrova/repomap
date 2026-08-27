@@ -2,6 +2,7 @@ package report
 
 import (
 	"bytes"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -88,9 +89,20 @@ func TestGitHubPresentationIsHTMLOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(html, []byte(`"github_source_links"`)) ||
-		!bytes.Contains(html, []byte(`"repository_url":"https://github.com/team/project"`)) {
-		t.Fatalf("standalone HTML missing GitHub routing: %s", html)
+	transport, err := extractStandaloneBundleTransportV4HTML(html)
+	if err != nil {
+		t.Fatalf("extract rendered browser transport: %v", err)
+	}
+	repository, err := DecodeBrowserRepositoryPayload(transport.RepositoryPayload)
+	if err != nil {
+		t.Fatalf("decode rendered repository payload: %v", err)
+	}
+	wantSource := BrowserSource{Kind: "github", RepositoryURL: "https://github.com/team/project"}
+	if !reflect.DeepEqual(repository.Source, wantSource) {
+		t.Fatalf("rendered source routing = %#v, want %#v", repository.Source, wantSource)
+	}
+	if bytes.Contains(transport.RepositoryPayload, []byte(`"github_source_links"`)) {
+		t.Fatal("typed repository payload retained legacy GitHub source fields")
 	}
 
 	persisted, err := encodeReportJSON(&data, maxManifestReportBytes)

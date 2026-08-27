@@ -117,6 +117,34 @@ func TestBrowserRepositoryPayloadProjectsSharedIndexAndAuthorizedRoutes(t *testi
 	}
 }
 
+func TestBrowserRepositoryPayloadRejectsIncompleteRuntimeTargetCoverage(t *testing.T) {
+	payload := BrowserRepositoryPayload{
+		Version: BrowserRepositoryPayloadVersion,
+		Repository: BrowserRepository{
+			Name: "fixture", CapturedRevision: strings.Repeat("a", 40),
+		},
+		Source:                         BrowserSource{Kind: "none"},
+		LogicalDefaultSelectedTargetID: "selected-a",
+		Targets: []BrowserTargetIndexItem{
+			{SelectedTargetID: "selected-a", ProgramTargetID: "program-a", Language: "go", Kind: "library", DisplayName: "a", State: "analyzed", Href: "?target=0#/program"},
+			{SelectedTargetID: "selected-b", ProgramTargetID: "program-b", Language: "go", Kind: "library", DisplayName: "b", State: "analyzed", Href: "?target=1#/program"},
+		},
+		Runtime: &BrowserRuntimeOverview{
+			Roles: []BrowserRuntimeRole{{
+				Name: "Runtime", Purpose: "Runs one target.", Prominence: "primary",
+				RoleKind: "service", Requiredness: "required", Confidence: "high",
+				Implementations: []BrowserRuntimeImplementation{{ProgramTargetID: "program-a"}},
+				Evidence:        []BrowserLocation{},
+			}},
+			UnclassifiedTargets: []BrowserRuntimeUnclassifiedTarget{},
+		},
+		OpenablePaths: []string{},
+	}
+	if err := payload.Validate(); err == nil || !strings.Contains(err.Error(), "cover every analyzed target") {
+		t.Fatalf("incomplete runtime target coverage error = %v", err)
+	}
+}
+
 func TestBrowserPayloadCodecsRejectUnknownFieldsVersionsAndTrailingValues(t *testing.T) {
 	data := reportProgramShellDataFixture(t, "fixture")
 	payload, err := ProjectBrowserTargetPayload(&data)
@@ -151,5 +179,23 @@ func TestBrowserTargetProjectionRejectsSourceOutsideCanonicalOpenability(t *test
 	if _, err := ProjectBrowserTargetPayload(&data); err == nil ||
 		!strings.Contains(err.Error(), "outside canonical openability") {
 		t.Fatalf("missing canonical source authority error = %v", err)
+	}
+}
+
+func TestBrowserTargetProjectionKeepsCoreRepresentativesOutsideBoundedProgramView(t *testing.T) {
+	data := reportProgramShellDataFixture(t, "fixture")
+	if data.CoreMapView == nil || len(data.CoreMapView.RefinedCore) == 0 ||
+		len(data.CoreMapView.RefinedCore[0].RepresentativeSymbols) == 0 {
+		t.Fatal("fixture lacks a core representative")
+	}
+	representative := &data.CoreMapView.RefinedCore[0].RepresentativeSymbols[0]
+	representative.Symbol.NodeID = "program-object-omitted-from-bounded-view"
+
+	payload, err := ProjectBrowserTargetPayload(&data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := payload.Features.Core.RefinedCore[0].RepresentativeSymbols[0].Symbol.NodeID; got != representative.Symbol.NodeID {
+		t.Fatalf("representative identity = %q", got)
 	}
 }

@@ -3,7 +3,6 @@ package report
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"net/url"
 	"reflect"
 	"strings"
@@ -12,28 +11,24 @@ import (
 	"github.com/dvordrova/repomap/internal/programindex"
 )
 
-func embeddedReportDataJSON(t *testing.T, html []byte) []byte {
+func embeddedBrowserRepositoryPayload(t *testing.T, html []byte) BrowserRepositoryPayload {
 	t.Helper()
-	const opening = `<script type="application/json" id="rm-report-data">`
-	start := bytes.Index(html, []byte(opening))
-	if start < 0 {
-		t.Fatal("rendered HTML is missing report data")
+	transport, err := extractStandaloneBundleTransportV4HTML(html)
+	if err != nil {
+		t.Fatalf("extract rendered browser transport: %v", err)
 	}
-	start += len(opening)
-	end := bytes.Index(html[start:], []byte(`</script>`))
-	if end < 0 {
-		t.Fatal("rendered report data is unterminated")
+	payload, err := DecodeBrowserRepositoryPayload(transport.RepositoryPayload)
+	if err != nil {
+		t.Fatalf("decode rendered repository payload: %v", err)
 	}
-	return html[start : start+end]
-}
-
-func reportDataJSONFields(t *testing.T, raw []byte) map[string]json.RawMessage {
-	t.Helper()
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		t.Fatal(fmt.Errorf("decode rendered report data: %w", err))
+	canonical, err := EncodeBrowserRepositoryPayload(payload)
+	if err != nil {
+		t.Fatalf("re-encode rendered repository payload: %v", err)
 	}
-	return fields
+	if !bytes.Equal(canonical, transport.RepositoryPayload) {
+		t.Fatal("rendered repository payload is not canonical typed JSON")
+	}
+	return payload
 }
 
 func TestBuildTargetNavigationProjectsExactLanguageNeutralPages(t *testing.T) {
@@ -91,24 +86,57 @@ func TestTargetNavigationRenderOptionsStayTransient(t *testing.T) {
 	if !bytes.Equal(ordinary, zeroOptions) {
 		t.Fatal("zero render options changed the existing single-target HTML")
 	}
-	if _, exists := reportDataJSONFields(t, embeddedReportDataJSON(t, ordinary))["target_navigation"]; exists {
-		t.Fatal("ordinary single-target render gained target navigation")
+	ordinaryRepository := embeddedBrowserRepositoryPayload(t, ordinary)
+	entry, err := data.ProgramPortfolio.defaultEntry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantOrdinaryTarget := BrowserTargetIndexItem{
+		SelectedTargetID: entry.Target.ID,
+		ProgramTargetID:  entry.Target.ID,
+		Language:         entry.Target.Language,
+		Kind:             entry.Target.Kind,
+		DisplayName:      entry.Target.Name,
+		State:            "analyzed",
+		Href:             "#/program",
+	}
+	if ordinaryRepository.LogicalDefaultSelectedTargetID != entry.Target.ID ||
+		!reflect.DeepEqual(ordinaryRepository.Targets, []BrowserTargetIndexItem{wantOrdinaryTarget}) {
+		t.Fatalf("ordinary browser target index = %#v with default %q", ordinaryRepository.Targets,
+			ordinaryRepository.LogicalDefaultSelectedTargetID)
 	}
 
 	withNavigation, err := RenderHTMLWithOptions(data, RenderOptions{TargetNavigation: navigation})
 	if err != nil {
 		t.Fatalf("RenderHTMLWithOptions navigation: %v", err)
 	}
-	fields := reportDataJSONFields(t, embeddedReportDataJSON(t, withNavigation))
-	var projected TargetNavigationPortfolio
-	if err := json.Unmarshal(fields["target_navigation"], &projected); err != nil {
-		t.Fatalf("decode target navigation: %v", err)
+	repository := embeddedBrowserRepositoryPayload(t, withNavigation)
+	wantTargets := make([]BrowserTargetIndexItem, 0, len(navigation.Targets))
+	for _, item := range navigation.Targets {
+		wantTargets = append(wantTargets, BrowserTargetIndexItem{
+			SelectedTargetID: item.TargetID,
+			ProgramTargetID:  item.TargetID,
+			Language:         item.Language,
+			Kind:             item.Kind,
+			DisplayName:      item.DisplayName,
+			State:            "analyzed",
+			Href:             item.Href,
+		})
 	}
-	if !reflect.DeepEqual(&projected, navigation) {
-		t.Fatalf("rendered target navigation = %#v, want %#v", projected, *navigation)
+	if repository.LogicalDefaultSelectedTargetID != navigation.DefaultTargetID ||
+		!reflect.DeepEqual(repository.Targets, wantTargets) {
+		t.Fatalf("rendered browser target index = %#v with default %q, want %#v with default %q",
+			repository.Targets, repository.LogicalDefaultSelectedTargetID,
+			wantTargets, navigation.DefaultTargetID)
 	}
-	if bytes.Contains(fields["target_navigation"], []byte(`"artifact_filename"`)) {
-		t.Fatal("browser target navigation exposes backend-only ProgramIndex artifact filenames")
+	transport, err := extractStandaloneBundleTransportV4HTML(withNavigation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, legacy := range [][]byte{[]byte(`"target_navigation"`), []byte(`"artifact_filename"`)} {
+		if bytes.Contains(transport.RepositoryPayload, legacy) {
+			t.Fatalf("typed repository payload exposes retired navigation field %q", legacy)
+		}
 	}
 
 	canonical, err := json.Marshal(data)

@@ -2,13 +2,7 @@ package report
 
 import (
 	"bytes"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"reflect"
-
-	"github.com/dvordrova/repomap/internal/analysistarget"
 )
 
 // OrdinaryReportHTMLAuthority carries the local rendering authority that is
@@ -21,10 +15,9 @@ type OrdinaryReportHTMLAuthority struct {
 	RepositoryRoot   string
 }
 
-// VerifyOrdinaryReportHTMLPayload verifies that one ordinary report page
-// embeds exactly the canonical browser projection of its manifest-validated
-// report.json. External source routing and sibling navigation must exactly
-// match the caller's manifest-derived authority.
+// VerifyOrdinaryReportHTMLPayload reprojects the strict canonical report and
+// requires the HTML to carry exactly one matching repository payload and one
+// matching opaque chunk for the current analyzed target.
 func VerifyOrdinaryReportHTMLPayload(
 	htmlBytes, reportJSON []byte,
 	authority OrdinaryReportHTMLAuthority,
@@ -36,63 +29,73 @@ func VerifyOrdinaryReportHTMLPayload(
 	if err := validateProgramPresentation(&data); err != nil {
 		return fmt.Errorf("report: verify html report data: %w", err)
 	}
-
-	payloadJSON, err := extractOrdinaryReportHTMLPayload(htmlBytes)
-	if err != nil {
-		return err
+	if !bytes.Contains(bytes.ToLower(htmlBytes), []byte("<html")) {
+		return fmt.Errorf("report: ordinary html is missing the report application shell")
 	}
-	var payload programShellPayload
-	if err := decodeStrictProgramShellPayload(payloadJSON, &payload); err != nil {
-		return err
-	}
-	if err := payload.GitHubSourceLinks.validate(); err != nil {
-		return fmt.Errorf("report: embedded GitHub source links: %w", err)
-	}
-	if err := payload.GitLabSourceLinks.validate(); err != nil {
-		return fmt.Errorf("report: embedded GitLab source links: %w", err)
-	}
-	if payload.GitHubSourceLinks != nil && payload.GitLabSourceLinks != nil {
-		return fmt.Errorf("report: embedded payload contains multiple external source hosts")
+	if err := validateTargetNavigation(&data, authority.TargetNavigation); err != nil {
+		return fmt.Errorf("report: expected target navigation: %w", err)
 	}
 	expectedGitHub, expectedGitLab, err := ordinaryHTMLSourceLinks(data.CapturedRevision, authority)
 	if err != nil {
 		return err
 	}
-	if !reflect.DeepEqual(payload.GitHubSourceLinks, expectedGitHub) ||
-		!reflect.DeepEqual(payload.GitLabSourceLinks, expectedGitLab) {
-		return fmt.Errorf("report: embedded external source links do not match manifest authority")
-	}
-	if err := validateTargetNavigation(&data, authority.TargetNavigation); err != nil {
-		return fmt.Errorf("report: expected target navigation: %w", err)
-	}
-	if err := validateTargetNavigation(&data, payload.TargetNavigation); err != nil {
-		return fmt.Errorf("report: embedded target navigation: %w", err)
-	}
-	if !reflect.DeepEqual(payload.TargetNavigation, authority.TargetNavigation) {
-		return fmt.Errorf("report: embedded target navigation does not match manifest authority")
-	}
-
-	// Source routing and sibling navigation intentionally do not live in
-	// report.json. Project the validated render-only values over the canonical
-	// report and require every other browser field to remain exactly equal.
-	expectedData := data
-	expectedData.GitHubSourceLinks = expectedGitHub
-	expectedData.GitLabSourceLinks = expectedGitLab
-	expected := programShellPayloadForReport(&expectedData, authority.TargetNavigation)
+	data.GitHubSourceLinks = expectedGitHub
+	data.GitLabSourceLinks = expectedGitLab
 	localRoots := []string{authority.ArtifactsDir}
 	if expectedGitHub != nil || expectedGitLab != nil {
 		localRoots = append(localRoots, authority.AnalysisRoot, authority.RepositoryRoot)
 	}
-	expectedJSON, err := marshalHTMLPayloadWithLocalRoots(expected, localRoots)
+	expected, err := buildOrdinaryBrowserTransportV4(
+		&data, authority.TargetNavigation, localRoots,
+	)
 	if err != nil {
-		return fmt.Errorf("report: encode expected html payload: %w", err)
+		return fmt.Errorf("report: project expected browser transport: %w", err)
 	}
-	var renderedExpected programShellPayload
-	if err := decodeStrictProgramShellPayload(expectedJSON, &renderedExpected); err != nil {
-		return fmt.Errorf("report: decode expected html payload: %w", err)
+	actual, err := extractStandaloneBundleTransportV4HTML(htmlBytes)
+	if err != nil {
+		return fmt.Errorf("report: extract ordinary browser transport: %w", err)
 	}
-	if !reflect.DeepEqual(payload, renderedExpected) {
-		return fmt.Errorf("report: embedded report payload does not match report.json")
+	if len(actual.Index.Targets) != 1 || len(actual.TargetChunks) != 1 ||
+		actual.Index.Targets[0].State != standaloneBundleTransportTargetAnalyzed ||
+		actual.Index.Targets[0].Chunk == nil {
+		return fmt.Errorf("report: ordinary browser transport must contain exactly one analyzed target")
+	}
+	repositoryPayload, err := DecodeBrowserRepositoryPayload(actual.RepositoryPayload)
+	if err != nil {
+		return fmt.Errorf("report: decode embedded repository payload: %w", err)
+	}
+	canonicalRepository, err := EncodeBrowserRepositoryPayload(repositoryPayload)
+	if err != nil || !bytes.Equal(canonicalRepository, actual.RepositoryPayload) {
+		return fmt.Errorf("report: embedded repository payload is not canonical")
+	}
+	if !bytes.Equal(actual.IndexJSON, expected.IndexJSON) {
+		return fmt.Errorf("report: embedded browser transport index does not match report authority")
+	}
+	if !bytes.Equal(actual.RepositoryPayload, expected.RepositoryPayload) {
+		return fmt.Errorf("report: embedded repository payload does not match report.json")
+	}
+	actualTargetRaw, err := decodeStandaloneBundleTargetChunkV4(
+		actual.TargetChunks[0].Ref, actual.TargetChunks[0].Base64,
+	)
+	if err != nil {
+		return fmt.Errorf("report: decode ordinary target chunk: %w", err)
+	}
+	targetPayload, err := DecodeBrowserTargetPayload(actualTargetRaw)
+	if err != nil {
+		return fmt.Errorf("report: decode embedded target payload: %w", err)
+	}
+	canonicalTarget, err := EncodeBrowserTargetPayload(targetPayload)
+	if err != nil || !bytes.Equal(canonicalTarget, actualTargetRaw) {
+		return fmt.Errorf("report: embedded target payload is not canonical")
+	}
+	expectedTargetRaw, err := decodeStandaloneBundleTargetChunkV4(
+		expected.TargetChunks[0].Ref, expected.TargetChunks[0].Base64,
+	)
+	if err != nil {
+		return fmt.Errorf("report: decode expected target chunk: %w", err)
+	}
+	if !bytes.Equal(actualTargetRaw, expectedTargetRaw) {
+		return fmt.Errorf("report: embedded target payload does not match report.json")
 	}
 	return nil
 }
@@ -125,156 +128,4 @@ func ordinaryHTMLSourceLinks(
 	default:
 		return nil, nil, fmt.Errorf("report: unsupported manifest source host")
 	}
-}
-
-func extractOrdinaryReportHTMLPayload(htmlBytes []byte) ([]byte, error) {
-	if !bytes.Contains(bytes.ToLower(htmlBytes), []byte("<html")) {
-		return nil, fmt.Errorf("report: ordinary html is missing the report application shell")
-	}
-	opening := []byte(reportDataScriptOpen)
-	if bytes.Count(htmlBytes, opening) != 1 {
-		return nil, fmt.Errorf("report: ordinary html must contain exactly one report data payload")
-	}
-	start := bytes.Index(htmlBytes, opening) + len(opening)
-	remaining := htmlBytes[start:]
-	closing := []byte(reportDataScriptClose)
-	end := bytes.Index(remaining, closing)
-	if end < 0 {
-		return nil, fmt.Errorf("report: ordinary html report data payload is unterminated")
-	}
-	payload := remaining[:end]
-	if len(bytes.TrimSpace(payload)) == 0 {
-		return nil, fmt.Errorf("report: ordinary html report data payload is empty")
-	}
-	return payload, nil
-}
-
-func decodeStrictProgramShellPayload(raw []byte, payload *programShellPayload) error {
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(payload); err != nil {
-		return fmt.Errorf("report: decode embedded report payload: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return fmt.Errorf("report: embedded report payload has multiple json values")
-		}
-		return fmt.Errorf("report: embedded report payload has trailing data: %w", err)
-	}
-	return nil
-}
-
-func programShellPayloadForReport(
-	data *ReportData,
-	navigation *TargetNavigationPortfolio,
-) programShellPayload {
-	return programShellPayload{
-		FormatVersion:          data.FormatVersion,
-		RepoName:               data.RepoName,
-		AnalysisTarget:         analysisTargetForBrowser(data),
-		ProgramPortfolio:       data.ProgramPortfolio,
-		CubeMapView:            cubeMapViewForBrowser(data.CubeMapView),
-		CoreMapView:            coreMapViewForBrowser(data.CoreMapView),
-		ActivityEntrypointView: data.ActivityEntrypointView,
-		IntegrationUsageView:   integrationUsageViewForBrowser(data.IntegrationUsageView),
-		ActivityPathView:       activityPathViewForBrowser(data.ActivityPathView),
-		JSTSSurfaceCatalogView: jsTSSurfaceCatalogViewForBrowser(data.JSTSSurfaceCatalogView),
-		CrossSurfacePathView:   crossSurfacePathViewForBrowser(data.CrossSurfacePathView),
-		RuntimePortfolio:       data.RuntimePortfolio,
-		TargetOutcomePortfolio: data.TargetOutcomePortfolio,
-		OpenablePaths:          append([]string{}, data.OpenablePaths...),
-		SourceIDs:              data.SourceIDs,
-		GitHubSourceLinks:      data.GitHubSourceLinks,
-		GitLabSourceLinks:      data.GitLabSourceLinks,
-		CapturedRevision:       data.CapturedRevision,
-		CapturedInputCount:     data.CapturedInputCount,
-		Warnings:               append([]string(nil), data.Warnings...),
-		TargetNavigation:       navigation,
-	}
-}
-
-// AnalysisTarget is outer Go page authority, not part of the language-neutral
-// ProgramIndex/CoreMap browser contract. Retain it only for the retired
-// CubeMap browser shape while that reader remains; otherwise the browser must
-// see the same semantic payload for Go and Python.
-func analysisTargetForBrowser(data *ReportData) *analysistarget.Target {
-	if data == nil || data.CubeMapView == nil {
-		return nil
-	}
-	return data.AnalysisTarget
-}
-
-// The canonical report and manifest retain producer digests. They are not
-// browser joins: the browser has no independent artifact bytes against which
-// to verify them, so publishing them would only expose dead provenance fields.
-func cubeMapViewForBrowser(value *CubeMapView) *CubeMapView {
-	if value == nil {
-		return nil
-	}
-	projected := *value
-	projected.SourceIndexSHA256 = ""
-	projected.ExternalCallIndexSHA256 = ""
-	projected.DependencyCatalogSHA256 = ""
-	projected.CoreObjectIndexSHA256 = ""
-	projected.CoreObjectProjectionSHA256 = ""
-	projected.ActivitySubstrateSHA256 = ""
-	if value.SurfaceCoreEffects != nil {
-		effects := *value.SurfaceCoreEffects
-		effects.AuthoritySHA256 = ""
-		projected.SurfaceCoreEffects = &effects
-	}
-	return &projected
-}
-
-func coreMapViewForBrowser(value *CoreMapView) *CoreMapView {
-	if value == nil {
-		return nil
-	}
-	projected := *value
-	projected.IntegrationUsageSHA256 = ""
-	return &projected
-}
-
-func integrationUsageViewForBrowser(value *IntegrationUsageView) *IntegrationUsageView {
-	if value == nil {
-		return nil
-	}
-	projected := *value
-	projected.DependencyCatalogSHA256 = ""
-	projected.IntegrationDependenciesSHA256 = ""
-	projected.IntegrationUsageSHA256 = ""
-	return &projected
-}
-
-func activityPathViewForBrowser(value *ActivityPathView) *ActivityPathView {
-	if value == nil {
-		return nil
-	}
-	projected := *value
-	// The browser joins this projection through exact local object and
-	// operation IDs. Artifact digests stay in report.json and the manifest,
-	// where the independently read producer bytes can actually verify them.
-	projected.ActivityEntrypointsSHA256 = ""
-	projected.IntegrationDependenciesSHA256 = ""
-	projected.IntegrationUsageSHA256 = ""
-	projected.ActivityPathsSHA256 = ""
-	return &projected
-}
-
-func jsTSSurfaceCatalogViewForBrowser(value *JSTSSurfaceCatalogView) *JSTSSurfaceCatalogView {
-	if value == nil {
-		return nil
-	}
-	projected := *value
-	projected.JSTSProjectSHA256 = ""
-	return &projected
-}
-
-func crossSurfacePathViewForBrowser(value *CrossSurfacePathView) *CrossSurfacePathView {
-	if value == nil {
-		return nil
-	}
-	projected := *value
-	projected.JSTSProjectSHA256 = ""
-	return &projected
 }

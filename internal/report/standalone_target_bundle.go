@@ -17,8 +17,6 @@ import (
 	"reflect"
 	"strings"
 
-	_ "embed"
-
 	"github.com/dvordrova/repomap/internal/analysistarget"
 	"github.com/dvordrova/repomap/internal/programindex"
 	"github.com/dvordrova/repomap/internal/programpage"
@@ -26,7 +24,7 @@ import (
 )
 
 const (
-	StandaloneTargetBundleVersion     = 3
+	StandaloneTargetBundleVersion     = 4
 	StandaloneTargetNavigationVersion = 5
 
 	// One GiB is a terminal aggregate payload bound, not a prefix-clipping
@@ -36,20 +34,19 @@ const (
 	maxPreparedStandaloneTargetHTMLBytes = int64(256 << 20)
 	maxStandaloneTargetBundleHeaderBytes = int64(8 << 20)
 	maxStandaloneTargetBundleSealBytes   = int64(512)
-	maxStandaloneTargetBundleOverhead    = int64(64 << 20)
+	// Base64 can add one third to incompressible gzip target bytes. Keep the
+	// inspector's outer file bound above the one-GiB raw aggregate contract
+	// without changing that raw authority limit.
+	maxStandaloneTargetBundleOverhead = MaxStandaloneTargetBundlePayloadBytes/2 + int64(64<<20)
 
-	standaloneTargetBundlePlaceholder  = "REPOMAP_STANDALONE_TARGET_BUNDLE_PLACEHOLDER_3D909014"
-	standaloneTargetBundleMarkerPrefix = "<!-- repomap-standalone-target-bundle:v3:"
+	standaloneTargetBundlePlaceholder  = "REPOMAP_STANDALONE_TARGET_BUNDLE_PLACEHOLDER_4D909014"
+	standaloneTargetBundleMarkerPrefix = "<!-- repomap-standalone-target-bundle:v4:"
 	standaloneTargetBundleMarkerSuffix = " -->"
-	standaloneTargetBundleSealPrefix   = "<!-- repomap-standalone-target-bundle-seal:v3:"
+	standaloneTargetBundleSealPrefix   = "<!-- repomap-standalone-target-bundle-seal:v4:"
 	standaloneTargetBundleSealSuffix   = " -->\n"
 
-	reportDataScriptOpen  = `<script type="application/json" id="rm-report-data">`
-	reportDataScriptClose = `</script>`
+	standaloneBundleScriptClose = `</script>`
 )
-
-//go:embed templates/standalone_target_bootstrap.js
-var standaloneTargetBootstrapJS string
 
 // PreparedStandaloneTarget is an opaque, fully scrubbed hosted target
 // payload. Values can only be produced by the authorized GitHub/GitLab
@@ -59,14 +56,19 @@ type PreparedStandaloneTarget struct {
 }
 
 type preparedStandaloneTarget struct {
-	analysisTarget *analysistarget.Target
-	programPage    TargetNavigationPage
-	payload        []byte
-	host           string
-	repositoryURL  string
-	revision       string
-	repoName       string
-	localRoots     []string
+	analysisTarget    *analysistarget.Target
+	programPage       TargetNavigationPage
+	repository        BrowserRepositoryPayload
+	repositoryPayload []byte
+	target            BrowserTargetPayload
+	targetPayload     []byte
+	selectedTargetID  string
+	reportData        *ReportData
+	host              string
+	repositoryURL     string
+	revision          string
+	repoName          string
+	localRoots        []string
 }
 
 // StandaloneTargetBundleIdentity is the small public identity returned by the
@@ -137,6 +139,17 @@ func prepareGeneratedStandaloneTarget(
 	if err := authority.validate(); err != nil {
 		return PreparedStandaloneTarget{}, err
 	}
+	if err := verifyStandalonePreparationAuthority(runDir); err != nil {
+		return PreparedStandaloneTarget{}, err
+	}
+	page, err := LoadTargetNavigationPage(runDir, filepath.Base(filepath.Clean(runDir)))
+	if err != nil {
+		return PreparedStandaloneTarget{}, err
+	}
+	analysisTarget, err := preparedStandaloneAnalysisTarget(runDir)
+	if err != nil {
+		return PreparedStandaloneTarget{}, err
+	}
 	htmlPath := filepath.Join(runDir, "report.html")
 	info, err := os.Lstat(htmlPath)
 	if err != nil {
@@ -154,25 +167,14 @@ func prepareGeneratedStandaloneTarget(
 		return PreparedStandaloneTarget{}, fmt.Errorf("report: resolve prepared standalone target run: %w", err)
 	}
 	localRoots := []string{absoluteRunDir, authority.analysisRoot, authority.repository.Identity}
-	analysisTarget, err := preparedStandaloneAnalysisTarget(runDir)
-	if err != nil {
-		return PreparedStandaloneTarget{}, err
-	}
-	prepared, err := prepareStandaloneTargetFromHTMLWithAuthority(
-		htmlBytes, localRoots, analysisTarget,
+	prepared, err := prepareStandaloneTargetFromHTMLV4(
+		htmlBytes, localRoots, page.ProgramTarget, analysisTarget,
 	)
 	if err != nil {
 		return PreparedStandaloneTarget{}, err
 	}
 	if prepared.host != wantHost || prepared.revision != strings.ToLower(authority.repository.Head) {
 		return PreparedStandaloneTarget{}, fmt.Errorf("report: prepared standalone target source authority mismatch")
-	}
-	page, err := LoadTargetNavigationPage(runDir, filepath.Base(runDir))
-	if err != nil {
-		return PreparedStandaloneTarget{}, err
-	}
-	if prepared.programPage.ProgramTarget.ID != page.ProgramTarget.ID {
-		return PreparedStandaloneTarget{}, fmt.Errorf("report: prepared standalone target program authority mismatch")
 	}
 	prepared.programPage = page
 	return PreparedStandaloneTarget{prepared: prepared}, nil
@@ -183,6 +185,9 @@ func prepareGeneratedStandaloneTarget(
 // target seam, its cross-page authority is only the exact ProgramTarget+run
 // binding in programpage.Portfolio.
 func PrepareStandaloneProgramPage(runDir string) (PreparedStandaloneTarget, error) {
+	if err := verifyStandalonePreparationAuthority(runDir); err != nil {
+		return PreparedStandaloneTarget{}, err
+	}
 	manifest, err := ReadRunManifest(runDir)
 	if err != nil {
 		return PreparedStandaloneTarget{}, fmt.Errorf("report: prepare standalone program page manifest: %w", err)
@@ -226,19 +231,18 @@ func PrepareStandaloneProgramPage(runDir string) (PreparedStandaloneTarget, erro
 	if err != nil {
 		return PreparedStandaloneTarget{}, fmt.Errorf("report: resolve standalone program page run: %w", err)
 	}
-	prepared, err := prepareStandaloneTargetFromHTML(htmlBytes, []string{
-		absoluteRunDir, manifest.AnalysisRoot, manifest.RepositoryState.Identity,
-	})
-	if err != nil {
-		return PreparedStandaloneTarget{}, err
-	}
 	page, err := LoadTargetNavigationPage(runDir, runID)
 	if err != nil {
 		return PreparedStandaloneTarget{}, err
 	}
-	if !reflect.DeepEqual(page.ProgramTarget, binding.Target) ||
-		!reflect.DeepEqual(prepared.programPage.ProgramTarget, binding.Target) {
+	if !reflect.DeepEqual(page.ProgramTarget, binding.Target) {
 		return PreparedStandaloneTarget{}, fmt.Errorf("report: standalone program page target authority mismatch")
+	}
+	prepared, err := prepareStandaloneTargetFromHTMLV4(htmlBytes, []string{
+		absoluteRunDir, manifest.AnalysisRoot, manifest.RepositoryState.Identity,
+	}, binding.Target, nil)
+	if err != nil {
+		return PreparedStandaloneTarget{}, err
 	}
 	if prepared.host != manifest.StandaloneSource.Host ||
 		prepared.repositoryURL != manifest.StandaloneSource.RepositoryURL ||
@@ -247,6 +251,17 @@ func PrepareStandaloneProgramPage(runDir string) (PreparedStandaloneTarget, erro
 	}
 	prepared.programPage = page
 	return PreparedStandaloneTarget{prepared: prepared}, nil
+}
+
+func verifyStandalonePreparationAuthority(runDir string) error {
+	assessment, err := AssessRunPublication(runDir)
+	if err != nil {
+		return fmt.Errorf("report: verify prepared standalone publication: %w", err)
+	}
+	if assessment.Status != PublicationReady {
+		return fmt.Errorf("report: prepared standalone publication is not ready")
+	}
+	return nil
 }
 
 // preparedStandaloneAnalysisTarget reads the outer target from the canonical,
@@ -281,154 +296,104 @@ func preparedStandaloneAnalysisTarget(runDir string) (*analysistarget.Target, er
 	return &owned, nil
 }
 
-func prepareStandaloneTargetFromHTML(
+func prepareStandaloneTargetFromHTMLV4(
 	htmlBytes []byte,
 	localRoots []string,
-) (*preparedStandaloneTarget, error) {
-	return prepareStandaloneTargetFromHTMLWithAuthority(htmlBytes, localRoots, nil)
-}
-
-func prepareStandaloneTargetFromHTMLWithAuthority(
-	htmlBytes []byte,
-	localRoots []string,
+	programTarget programindex.Target,
 	authoritativeTarget *analysistarget.Target,
 ) (*preparedStandaloneTarget, error) {
-	start := bytes.Index(htmlBytes, []byte(reportDataScriptOpen))
-	if start < 0 || bytes.LastIndex(htmlBytes, []byte(reportDataScriptOpen)) != start {
-		return nil, fmt.Errorf("report: prepared standalone target has invalid report payload marker")
-	}
-	start += len(reportDataScriptOpen)
-	endOffset := bytes.Index(htmlBytes[start:], []byte(reportDataScriptClose))
-	if endOffset < 0 {
-		return nil, fmt.Errorf("report: prepared standalone target payload is unterminated")
-	}
-	payload := htmlBytes[start : start+endOffset]
-	decoder := json.NewDecoder(bytes.NewReader(payload))
-	decoder.UseNumber()
-	var decoded map[string]any
-	if err := decoder.Decode(&decoded); err != nil {
-		return nil, fmt.Errorf("report: decode prepared standalone target payload: %w", err)
-	}
-	if err := ensureJSONDecoderEOF(decoder); err != nil {
-		return nil, fmt.Errorf("report: decode prepared standalone target payload: %w", err)
-	}
-	delete(decoded, "target_navigation")
-	scrubRenderLocalPaths(decoded, localRoots)
-	canonical, err := json.Marshal(decoded)
-	if err != nil {
-		return nil, fmt.Errorf("report: encode prepared standalone target payload: %w", err)
-	}
-
-	envelope, err := decodeStrictReportJSON(canonical)
-	if err != nil {
-		return nil, fmt.Errorf("report: inspect prepared standalone target payload: %w", err)
-	}
-	if envelope.FormatVersion != CurrentFormatVersion {
-		return nil, fmt.Errorf("report: prepared standalone target has incompatible report authority")
+	if err := programTarget.Validate(); err != nil {
+		return nil, fmt.Errorf("report: prepared standalone target ProgramTarget: %w", err)
 	}
 	if authoritativeTarget != nil {
 		if err := authoritativeTarget.Validate(); err != nil {
-			return nil, fmt.Errorf("report: prepared standalone target canonical analysis target: %w", err)
-		}
-		if envelope.AnalysisTarget != nil && !reflect.DeepEqual(*envelope.AnalysisTarget, *authoritativeTarget) {
-			return nil, fmt.Errorf("report: prepared standalone target analysis target authority mismatch")
-		}
-		decoded["analysis_target"] = authoritativeTarget.Snapshot()
-		// Re-run the complete browser JSON round-trip after injecting typed
-		// authority. This gives the restored nested target the same canonical
-		// map-key ordering as the manifest-derived verification projection.
-		canonical, err = marshalHTMLPayloadWithLocalRoots(decoded, nil)
-		if err != nil {
-			return nil, fmt.Errorf("report: encode prepared standalone target authority: %w", err)
-		}
-		envelope, err = decodeStrictReportJSON(canonical)
-		if err != nil {
-			return nil, fmt.Errorf("report: inspect prepared standalone target authority: %w", err)
-		}
-	}
-	var analysisTarget *analysistarget.Target
-	if envelope.AnalysisTarget != nil {
-		if err := envelope.AnalysisTarget.Validate(); err != nil {
 			return nil, fmt.Errorf("report: prepared standalone target analysis target: %w", err)
 		}
-		owned := envelope.AnalysisTarget.Snapshot()
+	}
+	transport, err := extractStandaloneBundleTransportV4HTML(htmlBytes)
+	if err != nil {
+		return nil, fmt.Errorf("report: extract prepared standalone target v4: %w", err)
+	}
+	repository, err := DecodeBrowserRepositoryPayload(transport.RepositoryPayload)
+	if err != nil {
+		return nil, fmt.Errorf("report: prepared standalone repository payload: %w", err)
+	}
+	canonicalRepository, err := EncodeBrowserRepositoryPayload(repository)
+	if err != nil || !bytes.Equal(canonicalRepository, transport.RepositoryPayload) {
+		return nil, fmt.Errorf("report: prepared standalone repository payload is not canonical")
+	}
+	var indexRow *standaloneBundleTargetIndexV4
+	selectedTargetID := ""
+	for position := range transport.Index.Targets {
+		row := &transport.Index.Targets[position]
+		if row.ProgramTargetID != programTarget.ID {
+			continue
+		}
+		if indexRow != nil {
+			return nil, fmt.Errorf("report: prepared standalone ProgramTarget binding is ambiguous")
+		}
+		indexRow = row
+		selectedTargetID = row.TargetID
+	}
+	if indexRow == nil || indexRow.Chunk == nil {
+		return nil, fmt.Errorf("report: prepared standalone ProgramTarget chunk is missing")
+	}
+	var encoded *standaloneBundleEncodedTargetChunkV4
+	for position := range transport.TargetChunks {
+		chunk := &transport.TargetChunks[position]
+		if chunk.TargetID == selectedTargetID {
+			encoded = chunk
+			break
+		}
+	}
+	if encoded == nil {
+		return nil, fmt.Errorf("report: prepared standalone target chunk is missing")
+	}
+	targetRaw, err := decodeStandaloneBundleTargetChunkV4(encoded.Ref, encoded.Base64)
+	if err != nil {
+		return nil, fmt.Errorf("report: prepared standalone target chunk: %w", err)
+	}
+	target, err := DecodeBrowserTargetPayload(targetRaw)
+	if err != nil {
+		return nil, fmt.Errorf("report: prepared standalone target payload: %w", err)
+	}
+	canonicalTarget, err := EncodeBrowserTargetPayload(target)
+	if err != nil || !bytes.Equal(canonicalTarget, targetRaw) {
+		return nil, fmt.Errorf("report: prepared standalone target payload is not canonical")
+	}
+	if target.Target.ID != programTarget.ID || target.Target.Language != programTarget.Language ||
+		target.Target.Kind != programTarget.Kind || target.Target.Name != programTarget.Name ||
+		target.Target.Selector != programTarget.Selector {
+		return nil, fmt.Errorf("report: prepared standalone target payload does not match ProgramTarget")
+	}
+	host := ""
+	switch repository.Source.Kind {
+	case "github":
+		host = "GitHub"
+	case "gitlab":
+		host = "GitLab"
+	default:
+		return nil, fmt.Errorf("report: prepared standalone target requires hosted source authority")
+	}
+	var analysisTarget *analysistarget.Target
+	if authoritativeTarget != nil {
+		owned := authoritativeTarget.Snapshot()
 		analysisTarget = &owned
 	}
-	if envelope.ProgramPortfolio == nil {
-		return nil, fmt.Errorf("report: prepared standalone target requires a complete program portfolio")
-	}
-	if err := envelope.ProgramPortfolio.Validate(); err != nil {
-		return nil, fmt.Errorf("report: prepared standalone target program portfolio: %w", err)
-	}
-	defaultEntry, err := envelope.ProgramPortfolio.defaultEntry()
-	if err != nil {
-		return nil, fmt.Errorf("report: prepared standalone target default program target: %w", err)
-	}
-	if envelope.RepoName == "" || envelope.RepoName != strings.TrimSpace(envelope.RepoName) {
-		return nil, fmt.Errorf("report: prepared standalone target repository name is invalid")
-	}
-
-	host := ""
-	repositoryURL := ""
-	revision := ""
-	switch {
-	case envelope.GitHubSourceLinks != nil && envelope.GitLabSourceLinks == nil:
-		if err := envelope.GitHubSourceLinks.validate(); err != nil {
-			return nil, err
-		}
-		host = "GitHub"
-		repositoryURL = envelope.GitHubSourceLinks.RepositoryURL
-		revision = envelope.GitHubSourceLinks.Revision
-	case envelope.GitLabSourceLinks != nil && envelope.GitHubSourceLinks == nil:
-		if err := envelope.GitLabSourceLinks.validate(); err != nil {
-			return nil, err
-		}
-		host = "GitLab"
-		repositoryURL = envelope.GitLabSourceLinks.RepositoryURL
-		revision = envelope.GitLabSourceLinks.Revision
-	default:
-		return nil, fmt.Errorf("report: prepared standalone target requires exactly one external source host")
-	}
-	if envelope.CapturedRevision != revision {
-		return nil, fmt.Errorf("report: prepared standalone target captured revision does not match source authority")
-	}
-	if envelope.CapturedInputCount < 0 {
-		return nil, fmt.Errorf("report: prepared standalone target captured input count is invalid")
-	}
-	previousPath := ""
-	for index, sourcePath := range envelope.OpenablePaths {
-		if err := validateManifestPath(sourcePath); err != nil {
-			return nil, fmt.Errorf("report: prepared standalone target openable path %d: %w", index, err)
-		}
-		if previousPath != "" && previousPath >= sourcePath {
-			return nil, fmt.Errorf("report: prepared standalone target openable paths are not uniquely sorted")
-		}
-		previousPath = sourcePath
-	}
-
 	return &preparedStandaloneTarget{
-		analysisTarget: analysisTarget,
-		programPage: TargetNavigationPage{
-			ProgramTarget: defaultEntry.Target.Snapshot(),
-		},
-		payload:       canonical,
-		host:          host,
-		repositoryURL: repositoryURL,
-		revision:      revision,
-		repoName:      envelope.RepoName,
-		localRoots:    normalizedStandaloneLocalRoots(localRoots),
+		analysisTarget:    analysisTarget,
+		programPage:       TargetNavigationPage{ProgramTarget: programTarget.Snapshot()},
+		repository:        repository,
+		repositoryPayload: append([]byte(nil), transport.RepositoryPayload...),
+		target:            target,
+		targetPayload:     append([]byte(nil), targetRaw...),
+		selectedTargetID:  selectedTargetID,
+		host:              host,
+		repositoryURL:     repository.Source.RepositoryURL,
+		revision:          repository.Repository.CapturedRevision,
+		repoName:          repository.Repository.Name,
+		localRoots:        normalizedStandaloneLocalRoots(localRoots),
 	}, nil
-}
-
-func ensureJSONDecoderEOF(decoder *json.Decoder) error {
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		if err == nil {
-			return fmt.Errorf("multiple JSON values")
-		}
-		return err
-	}
-	return nil
 }
 
 func normalizedStandaloneLocalRoots(roots []string) []string {
@@ -448,25 +413,449 @@ func normalizedStandaloneLocalRoots(roots []string) []string {
 	return result
 }
 
-type standaloneTargetBundleWire struct {
-	Version            int                          `json:"version"`
-	DefaultTargetIndex int                          `json:"default_target_index"`
-	Targets            []standaloneTargetBundleItem `json:"targets"`
+const standaloneBundleIndexElementID = "rm-bundle-index"
+
+// standaloneBundleTransportHTMLSectionV4 is the shared ordinary/standalone
+// transport seam. It writes only the feature-blind index, one repository
+// payload, and the indexed opaque target chunks. Marker, seal, application
+// bootstrap, and canonical report data are deliberately outside this helper.
+func standaloneBundleTransportHTMLSectionV4(
+	transport standaloneBundleTransportV4,
+) ([]byte, error) {
+	var section bytes.Buffer
+	if err := writeStandaloneBundleTransportHTMLSectionV4(&section, transport); err != nil {
+		return nil, err
+	}
+	return section.Bytes(), nil
 }
 
-type standaloneTargetBundleItem struct {
-	TargetID    string          `json:"target_id"`
-	Language    string          `json:"language"`
-	Kind        string          `json:"kind"`
-	DisplayName string          `json:"display_name"`
-	Href        string          `json:"href"`
-	Payload     json.RawMessage `json:"payload"`
+func writeStandaloneBundleTransportHTMLSectionV4(
+	w io.Writer,
+	transport standaloneBundleTransportV4,
+) error {
+	if err := validateStandaloneBundleTransportForHTMLV4(transport); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, `  <script type="application/json" id="rm-bundle-index">`); err != nil {
+		return err
+	}
+	if _, err := w.Write(transport.IndexJSON); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, "</script>\n"); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, `  <script type="application/json" id="rm-repository-payload">`); err != nil {
+		return err
+	}
+	if _, err := w.Write(transport.RepositoryPayload); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, "</script>\n"); err != nil {
+		return err
+	}
+	for _, chunk := range transport.TargetChunks {
+		if _, err := io.WriteString(w, `  <script type="application/octet-stream" id="`); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, chunk.Ref.ElementID); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, `">`); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, chunk.Base64); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, "</script>\n"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateStandaloneBundleTransportForHTMLV4(transport standaloneBundleTransportV4) error {
+	index, err := decodeStandaloneBundleIndexV4(transport.IndexJSON)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(index, transport.Index) {
+		return fmt.Errorf("report: standalone bundle v4 index bytes do not match transport index")
+	}
+	if err := verifyStandaloneBundleIdentityPayloadV4(index.Repository, transport.RepositoryPayload); err != nil {
+		return fmt.Errorf("report: standalone bundle v4 repository payload: %w", err)
+	}
+	if bytes.Contains(bytes.ToLower(transport.RepositoryPayload), []byte("</script")) {
+		return fmt.Errorf("report: standalone bundle v4 repository payload cannot be embedded safely")
+	}
+	chunkIndex := 0
+	for position, row := range index.Targets {
+		if row.State != standaloneBundleTransportTargetAnalyzed {
+			continue
+		}
+		if chunkIndex >= len(transport.TargetChunks) {
+			return fmt.Errorf("report: standalone bundle v4 target %d chunk is missing", position)
+		}
+		chunk := transport.TargetChunks[chunkIndex]
+		if row.Chunk == nil || chunk.TargetID != row.TargetID || chunk.Ref != *row.Chunk {
+			return fmt.Errorf("report: standalone bundle v4 target %d chunk binding mismatch", position)
+		}
+		if _, err := decodeStandaloneBundleTargetChunkV4(chunk.Ref, chunk.Base64); err != nil {
+			return fmt.Errorf("report: standalone bundle v4 target %d chunk: %w", position, err)
+		}
+		chunkIndex++
+	}
+	if chunkIndex != len(transport.TargetChunks) {
+		return fmt.Errorf("report: standalone bundle v4 contains an unindexed target chunk")
+	}
+	return nil
+}
+
+// extractStandaloneBundleTransportV4HTML restores the v4 transport without
+// knowing any browser feature schema. Every indexed element must occur exactly
+// once; repository and target integrity are checked before bytes are returned.
+func extractStandaloneBundleTransportV4HTML(htmlBytes []byte) (standaloneBundleTransportV4, error) {
+	indexRaw, err := extractExactStandaloneBundleScriptV4(
+		htmlBytes, standaloneBundleIndexElementID, "application/json",
+	)
+	if err != nil {
+		return standaloneBundleTransportV4{}, err
+	}
+	index, err := decodeStandaloneBundleIndexV4(indexRaw)
+	if err != nil {
+		return standaloneBundleTransportV4{}, err
+	}
+	repositoryRaw, err := extractExactStandaloneBundleScriptV4(
+		htmlBytes, index.Repository.ElementID, "application/json",
+	)
+	if err != nil {
+		return standaloneBundleTransportV4{}, err
+	}
+	if err := verifyStandaloneBundleIdentityPayloadV4(index.Repository, repositoryRaw); err != nil {
+		return standaloneBundleTransportV4{}, fmt.Errorf("report: standalone bundle v4 repository payload: %w", err)
+	}
+	chunks := make([]standaloneBundleEncodedTargetChunkV4, 0, len(index.Targets))
+	for position, row := range index.Targets {
+		if row.State != standaloneBundleTransportTargetAnalyzed {
+			continue
+		}
+		if row.Chunk == nil {
+			return standaloneBundleTransportV4{}, fmt.Errorf("report: standalone bundle v4 target %d chunk is missing", position)
+		}
+		encodedRaw, extractErr := extractExactStandaloneBundleScriptV4(
+			htmlBytes, row.Chunk.ElementID, "application/octet-stream",
+		)
+		if extractErr != nil {
+			return standaloneBundleTransportV4{}, extractErr
+		}
+		encoded := string(encodedRaw)
+		if _, decodeErr := decodeStandaloneBundleTargetChunkV4(*row.Chunk, encoded); decodeErr != nil {
+			return standaloneBundleTransportV4{}, fmt.Errorf(
+				"report: standalone bundle v4 target %d chunk: %w", position, decodeErr,
+			)
+		}
+		chunks = append(chunks, standaloneBundleEncodedTargetChunkV4{
+			TargetID: row.TargetID, Ref: *row.Chunk, Base64: encoded,
+		})
+	}
+	if bytes.Count(htmlBytes, []byte(`id="`+standaloneBundleTargetElementPrefix)) != len(chunks) {
+		return standaloneBundleTransportV4{}, fmt.Errorf("report: standalone bundle v4 contains an unindexed or duplicate target chunk")
+	}
+	transport := standaloneBundleTransportV4{
+		Index:             index,
+		IndexJSON:         append([]byte(nil), indexRaw...),
+		RepositoryPayload: append([]byte(nil), repositoryRaw...),
+		TargetChunks:      chunks,
+	}
+	if err := validateStandaloneBundleTransportForHTMLV4(transport); err != nil {
+		return standaloneBundleTransportV4{}, err
+	}
+	return transport, nil
+}
+
+func extractExactStandaloneBundleScriptV4(
+	htmlBytes []byte,
+	elementID string,
+	mimeType string,
+) ([]byte, error) {
+	idToken := []byte(`id="` + elementID + `"`)
+	if bytes.Count(htmlBytes, idToken) != 1 {
+		return nil, fmt.Errorf("report: standalone bundle v4 element %q must occur exactly once", elementID)
+	}
+	open := []byte(`<script type="` + mimeType + `" id="` + elementID + `">`)
+	start := bytes.Index(htmlBytes, open)
+	if start < 0 {
+		return nil, fmt.Errorf("report: standalone bundle v4 element %q has invalid script metadata", elementID)
+	}
+	start += len(open)
+	endOffset := bytes.Index(htmlBytes[start:], []byte(standaloneBundleScriptClose))
+	if endOffset < 0 {
+		return nil, fmt.Errorf("report: standalone bundle v4 element %q is unterminated", elementID)
+	}
+	return htmlBytes[start : start+endOffset], nil
 }
 
 type validatedStandaloneTargetBundle struct {
 	identity      StandaloneTargetBundleIdentity
 	defaultTarget *preparedStandaloneTarget
-	targets       []standaloneTargetBundleItem
+	transport     standaloneBundleTransportV4
+	spool         *standaloneBundleSpoolV4
+}
+
+type standaloneBundleSpoolChunkV4 struct {
+	TargetID string
+	Ref      standaloneBundlePayloadRefV4
+	Offset   int64
+}
+
+type standaloneBundleSpoolV4 struct {
+	Index             standaloneBundleIndexV4
+	IndexJSON         []byte
+	RepositoryPayload []byte
+	TargetChunks      []standaloneBundleSpoolChunkV4
+	file              *os.File
+	path              string
+}
+
+type standaloneBundleSpoolTargetLoaderV4 func(
+	position int,
+	row BrowserTargetIndexItem,
+) ([]byte, error)
+
+func prepareStandaloneBundleSpoolV4(
+	repository BrowserRepositoryPayload,
+	loadTarget standaloneBundleSpoolTargetLoaderV4,
+) (result *standaloneBundleSpoolV4, resultErr error) {
+	if loadTarget == nil {
+		return nil, fmt.Errorf("report: standalone bundle v4 spool target loader is missing")
+	}
+	boundRepository, repositoryRaw, err := bindStandaloneBrowserRepositoryPayloadV4(repository)
+	if err != nil {
+		return nil, err
+	}
+	aggregate, err := standaloneTargetAggregateBytes(0, int64(len(repositoryRaw)))
+	if err != nil {
+		return nil, err
+	}
+	file, err := os.CreateTemp("", "repomap-report-bundle-v4-*")
+	if err != nil {
+		return nil, fmt.Errorf("report: create standalone bundle v4 spool: %w", err)
+	}
+	spool := &standaloneBundleSpoolV4{file: file, path: file.Name()}
+	installed := false
+	defer func() {
+		if !installed {
+			if cleanupErr := spool.closeAndRemove(); cleanupErr != nil {
+				resultErr = errors.Join(resultErr, cleanupErr)
+			}
+		}
+	}()
+	spool.Index = standaloneBundleIndexV4{
+		Version: standaloneBundleTransportVersion,
+		Repository: standaloneBundleIdentityPayloadRefV4(
+			standaloneBundleRepositoryElementID, standaloneBundleRepositoryEncoding, repositoryRaw,
+		),
+		LogicalDefaultTargetID: boundRepository.LogicalDefaultSelectedTargetID,
+		Targets:                make([]standaloneBundleTargetIndexV4, 0, len(boundRepository.Targets)),
+	}
+	spool.RepositoryPayload = repositoryRaw
+	offset := int64(0)
+	for position, target := range boundRepository.Targets {
+		row := standaloneBundleTargetIndexV4{
+			TargetID: target.SelectedTargetID,
+			State:    standaloneBundleTransportTargetState(target.State),
+		}
+		switch target.State {
+		case "analyzed":
+			raw, loadErr := loadTarget(position, target)
+			if loadErr != nil {
+				return nil, fmt.Errorf("report: standalone bundle v4 target %d: %w", position, loadErr)
+			}
+			aggregate, err = standaloneTargetAggregateBytes(aggregate, int64(len(raw)))
+			if err != nil {
+				return nil, err
+			}
+			elementID := fmt.Sprintf("%s%d", standaloneBundleTargetElementPrefix, position)
+			ref, encodeErr := encodeStandaloneBundleTargetChunkToV4(
+				target.SelectedTargetID, elementID, raw, file,
+			)
+			if encodeErr != nil {
+				return nil, fmt.Errorf("report: standalone bundle v4 target %d: %w", position, encodeErr)
+			}
+			if roundTripErr := verifyStandaloneBundleTargetChunkStreamV4(
+				ref, io.NewSectionReader(file, offset, ref.CompressedByteLength), raw,
+			); roundTripErr != nil {
+				return nil, fmt.Errorf(
+					"report: standalone bundle v4 target %d generation round-trip: %w",
+					position, roundTripErr,
+				)
+			}
+			row.ProgramTargetID = target.ProgramTargetID
+			row.Chunk = &ref
+			spool.TargetChunks = append(spool.TargetChunks, standaloneBundleSpoolChunkV4{
+				TargetID: target.SelectedTargetID, Ref: ref, Offset: offset,
+			})
+			offset += ref.CompressedByteLength
+		case "not_analyzed":
+			// Failed outcomes deliberately have no target loader call and no chunk.
+		default:
+			return nil, fmt.Errorf("report: standalone bundle v4 target %d state is unsupported", position)
+		}
+		spool.Index.Targets = append(spool.Index.Targets, row)
+	}
+	_ = aggregate
+	if err := validateStandaloneBundleIndexV4(spool.Index); err != nil {
+		return nil, err
+	}
+	spool.IndexJSON, err = json.Marshal(spool.Index)
+	if err != nil {
+		return nil, fmt.Errorf("report: encode standalone bundle v4 spool index: %w", err)
+	}
+	if _, err := decodeStandaloneBundleIndexV4(spool.IndexJSON); err != nil {
+		return nil, fmt.Errorf("report: verify standalone bundle v4 spool index: %w", err)
+	}
+	if err := file.Sync(); err != nil {
+		return nil, fmt.Errorf("report: sync standalone bundle v4 spool: %w", err)
+	}
+	if err := validateStandaloneBundleSpoolV4(spool); err != nil {
+		return nil, err
+	}
+	installed = true
+	return spool, nil
+}
+
+func validateStandaloneBundleSpoolV4(spool *standaloneBundleSpoolV4) error {
+	if spool == nil || spool.file == nil || spool.path == "" {
+		return fmt.Errorf("report: standalone bundle v4 spool is incomplete")
+	}
+	index, err := decodeStandaloneBundleIndexV4(spool.IndexJSON)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(index, spool.Index) {
+		return fmt.Errorf("report: standalone bundle v4 spool index bytes do not match index")
+	}
+	if err := verifyStandaloneBundleIdentityPayloadV4(index.Repository, spool.RepositoryPayload); err != nil {
+		return fmt.Errorf("report: standalone bundle v4 spool repository payload: %w", err)
+	}
+	chunkIndex := 0
+	offset := int64(0)
+	for position, row := range index.Targets {
+		if row.State != standaloneBundleTransportTargetAnalyzed {
+			continue
+		}
+		if chunkIndex >= len(spool.TargetChunks) || row.Chunk == nil {
+			return fmt.Errorf("report: standalone bundle v4 spool target %d chunk is missing", position)
+		}
+		chunk := spool.TargetChunks[chunkIndex]
+		if chunk.TargetID != row.TargetID || chunk.Ref != *row.Chunk || chunk.Offset != offset {
+			return fmt.Errorf("report: standalone bundle v4 spool target %d chunk binding mismatch", position)
+		}
+		if err := verifyStandaloneBundleTargetChunkDigestStreamV4(
+			chunk.Ref,
+			io.NewSectionReader(spool.file, chunk.Offset, chunk.Ref.CompressedByteLength),
+		); err != nil {
+			return fmt.Errorf("report: standalone bundle v4 spool target %d content: %w", position, err)
+		}
+		offset += chunk.Ref.CompressedByteLength
+		chunkIndex++
+	}
+	if chunkIndex != len(spool.TargetChunks) {
+		return fmt.Errorf("report: standalone bundle v4 spool contains an unindexed target chunk")
+	}
+	info, err := spool.file.Stat()
+	if err != nil {
+		return fmt.Errorf("report: inspect standalone bundle v4 spool: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Size() != offset {
+		return fmt.Errorf("report: standalone bundle v4 spool length mismatch")
+	}
+	return nil
+}
+
+func writeStandaloneBundleSpoolHTMLSectionV4(w io.Writer, spool *standaloneBundleSpoolV4) error {
+	if w == nil {
+		return fmt.Errorf("report: standalone bundle v4 spool writer is missing")
+	}
+	if err := validateStandaloneBundleSpoolV4(spool); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, `  <script type="application/json" id="rm-bundle-index">`); err != nil {
+		return err
+	}
+	if _, err := w.Write(spool.IndexJSON); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, "</script>\n  <script type=\"application/json\" id=\"rm-repository-payload\">"); err != nil {
+		return err
+	}
+	if _, err := w.Write(spool.RepositoryPayload); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, "</script>\n"); err != nil {
+		return err
+	}
+	for _, chunk := range spool.TargetChunks {
+		if _, err := io.WriteString(w, `  <script type="application/octet-stream" id="`+chunk.Ref.ElementID+`">`); err != nil {
+			return err
+		}
+		encoder := base64.NewEncoder(base64.StdEncoding, w)
+		written, copyErr := io.Copy(
+			encoder,
+			io.NewSectionReader(spool.file, chunk.Offset, chunk.Ref.CompressedByteLength),
+		)
+		closeErr := encoder.Close()
+		if copyErr != nil {
+			return fmt.Errorf("report: encode standalone bundle v4 spooled target: %w", copyErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("report: finish standalone bundle v4 spooled target: %w", closeErr)
+		}
+		if written != chunk.Ref.CompressedByteLength {
+			return fmt.Errorf("report: standalone bundle v4 spooled target length mismatch")
+		}
+		if _, err := io.WriteString(w, "</script>\n"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (spool *standaloneBundleSpoolV4) closeAndRemove() error {
+	if spool == nil {
+		return nil
+	}
+	var closeErr error
+	if spool.file != nil {
+		closeErr = spool.file.Close()
+		spool.file = nil
+	}
+	removeErr := error(nil)
+	if spool.path != "" {
+		removeErr = os.Remove(spool.path)
+		if removeErr == nil || errors.Is(removeErr, os.ErrNotExist) {
+			spool.path = ""
+		}
+	}
+	failures := make([]error, 0, 2)
+	if closeErr != nil {
+		failures = append(failures, fmt.Errorf("report: close private standalone bundle spool"))
+	}
+	if removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+		failures = append(failures, fmt.Errorf("report: remove private standalone bundle spool"))
+	}
+	return errors.Join(failures...)
+}
+
+func finishStandaloneBundleSpoolV4(spool *standaloneBundleSpoolV4, primary error) error {
+	cleanupErr := spool.closeAndRemove()
+	if primary == nil {
+		return cleanupErr
+	}
+	if cleanupErr == nil {
+		return primary
+	}
+	return errors.Join(primary, cleanupErr)
 }
 
 // WriteStandaloneTargetBundleAtomic replaces runDir/report.html only after
@@ -551,32 +940,49 @@ func WriteProgramPageBundleFromArtifactsAtomic(
 	}
 
 	runsDir := filepath.Dir(filepath.Clean(runDir))
-	targets := make([]standaloneTargetBundleItem, 0, len(portfolio.Pages))
-	aggregate := int64(0)
-	repoName := ""
+	preparedTargets := make([]*preparedStandaloneTarget, 0, len(portfolio.Pages))
+	var defaultPrepared *preparedStandaloneTarget
 	for index, binding := range portfolio.Pages {
-		item, itemRepoName, itemErr := expectedStandaloneProgramPageBundleItem(
-			runsDir, binding, index, defaultManifest,
-		)
+		prepared, itemErr := expectedStandaloneProgramPageBundleTarget(runsDir, binding, defaultManifest)
 		if itemErr != nil {
 			return fmt.Errorf("report: program page bundle target %d: %w", index, itemErr)
 		}
-		if repoName == "" {
-			repoName = itemRepoName
-		} else if itemRepoName != repoName {
+		if len(preparedTargets) != 0 && (prepared.repoName != preparedTargets[0].repoName ||
+			prepared.host != preparedTargets[0].host ||
+			prepared.repositoryURL != preparedTargets[0].repositoryURL ||
+			prepared.revision != preparedTargets[0].revision) {
 			return fmt.Errorf("report: program page bundle repository identity mismatch")
 		}
-		nextAggregate, aggregateErr := standaloneTargetAggregateBytes(
-			aggregate, int64(len(item.Payload)),
-		)
-		if aggregateErr != nil {
-			return aggregateErr
+		preparedTargets = append(preparedTargets, prepared)
+		if index == defaultIndex {
+			defaultPrepared = prepared
+		} else {
+			prepared.reportData = nil
 		}
-		aggregate = nextAggregate
-		targets = append(targets, item)
+		prepared.target = BrowserTargetPayload{}
+		prepared.targetPayload = nil
 	}
-	if repoName == "" || defaultIndex < 0 {
+	if defaultPrepared == nil || defaultIndex < 0 {
 		return fmt.Errorf("report: program page bundle default target is missing")
+	}
+	if err := projectStandaloneArtifactRepositoryV4(
+		defaultPrepared, preparedTargets, portfolio.DefaultTargetID,
+	); err != nil {
+		return err
+	}
+	repository := defaultPrepared.repository
+	releaseArtifactPreparedTargetData(preparedTargets)
+	spool, err := prepareStandaloneArtifactSpoolV4(
+		repository,
+		preparedTargets,
+		func(index int) (*preparedStandaloneTarget, error) {
+			return expectedStandaloneProgramPageBundleTarget(
+				runsDir, portfolio.Pages[index], defaultManifest,
+			)
+		},
+	)
+	if err != nil {
+		return err
 	}
 	validated := &validatedStandaloneTargetBundle{
 		identity: StandaloneTargetBundleIdentity{
@@ -585,15 +991,26 @@ func WriteProgramPageBundleFromArtifactsAtomic(
 			DefaultTargetIndex:         defaultIndex,
 			TargetCount:                len(portfolio.Pages),
 		},
-		defaultTarget: &preparedStandaloneTarget{repoName: repoName},
-		targets:       targets,
+		defaultTarget: defaultPrepared,
+		spool:         spool,
 	}
-	return writeValidatedStandaloneTargetBundleAtomic(runDir, validated)
+	publicationErr := writeValidatedStandaloneTargetBundleAtomicBeforeInstall(
+		runDir, validated, spool.closeAndRemove,
+	)
+	return finishStandaloneBundleSpoolV4(spool, publicationErr)
 }
 
 func writeValidatedStandaloneTargetBundleAtomic(
 	runDir string,
 	validated *validatedStandaloneTargetBundle,
+) error {
+	return writeValidatedStandaloneTargetBundleAtomicBeforeInstall(runDir, validated, nil)
+}
+
+func writeValidatedStandaloneTargetBundleAtomicBeforeInstall(
+	runDir string,
+	validated *validatedStandaloneTargetBundle,
+	beforeInstall func() error,
 ) error {
 	skeleton, err := standaloneTargetBundleSkeleton(validated)
 	if err != nil {
@@ -646,6 +1063,11 @@ func writeValidatedStandaloneTargetBundleAtomic(
 	if err := temporary.Close(); err != nil {
 		return fmt.Errorf("report: close standalone target bundle: %w", err)
 	}
+	if beforeInstall != nil {
+		if err := beforeInstall(); err != nil {
+			return err
+		}
+	}
 	finalPath := filepath.Join(runDir, "report.html")
 	if err := os.Rename(temporaryPath, finalPath); err != nil {
 		return fmt.Errorf("report: install standalone target bundle: %w", err)
@@ -668,7 +1090,7 @@ func validateStandaloneProgramPageBundle(
 	preparedByTargetID := make(map[string]*preparedStandaloneTarget, len(ready))
 	for index, opaque := range ready {
 		prepared := opaque.prepared
-		if prepared == nil || len(prepared.payload) == 0 {
+		if prepared == nil || len(prepared.targetPayload) == 0 || len(prepared.repositoryPayload) == 0 {
 			return nil, fmt.Errorf("report: standalone program page bundle prepared page %d is invalid", index)
 		}
 		if err := validateTargetNavigationPage(prepared.programPage); err != nil {
@@ -682,8 +1104,7 @@ func validateStandaloneProgramPageBundle(
 	}
 
 	defaultIndex := -1
-	aggregate := int64(0)
-	targets := make([]standaloneTargetBundleItem, 0, len(portfolio.Pages))
+	ordered := make([]*preparedStandaloneTarget, 0, len(portfolio.Pages))
 	var first *preparedStandaloneTarget
 	var defaultPrepared *preparedStandaloneTarget
 	for index, binding := range portfolio.Pages {
@@ -702,28 +1123,16 @@ func validateStandaloneProgramPageBundle(
 			return nil, fmt.Errorf("report: standalone program page bundle source authority mismatch")
 		}
 		for _, root := range prepared.localRoots {
-			if bytes.Contains(prepared.payload, []byte(root)) {
+			if bytes.Contains(prepared.targetPayload, []byte(root)) {
 				return nil, fmt.Errorf("report: standalone program page bundle retained a local path")
 			}
 		}
 		for _, sibling := range portfolio.Pages {
-			if bytes.Contains(prepared.payload, []byte(sibling.RunID)) {
+			if bytes.Contains(prepared.targetPayload, []byte(sibling.RunID)) {
 				return nil, fmt.Errorf("report: standalone program page bundle retained a sibling run id")
 			}
 		}
-		nextAggregate, err := standaloneTargetAggregateBytes(aggregate, int64(len(prepared.payload)))
-		if err != nil {
-			return nil, err
-		}
-		aggregate = nextAggregate
-		targets = append(targets, standaloneTargetBundleItem{
-			TargetID:    binding.Target.ID,
-			Language:    binding.Target.Language,
-			Kind:        binding.Target.Kind,
-			DisplayName: binding.Target.Name,
-			Href:        standaloneTargetHref(index),
-			Payload:     json.RawMessage(prepared.payload),
-		})
+		ordered = append(ordered, prepared)
 		delete(preparedByTargetID, binding.Target.ID)
 		if binding.Target.ID == portfolio.DefaultTargetID {
 			defaultIndex = index
@@ -736,6 +1145,10 @@ func validateStandaloneProgramPageBundle(
 	if defaultIndex < 0 || defaultPrepared == nil {
 		return nil, fmt.Errorf("report: standalone program page bundle default target is missing")
 	}
+	transport, err := prepareStandaloneTransportFromTargetsV4(defaultPrepared.repository, ordered)
+	if err != nil {
+		return nil, err
+	}
 	return &validatedStandaloneTargetBundle{
 		identity: StandaloneTargetBundleIdentity{
 			Version:                    StandaloneTargetBundleVersion,
@@ -744,7 +1157,7 @@ func validateStandaloneProgramPageBundle(
 			TargetCount:                len(portfolio.Pages),
 		},
 		defaultTarget: defaultPrepared,
-		targets:       targets,
+		transport:     transport,
 	}, nil
 }
 
@@ -766,7 +1179,8 @@ func validateStandaloneTargetBundle(
 	preparedByRef := make(map[string]*preparedStandaloneTarget, len(ready))
 	for index, opaque := range ready {
 		prepared := opaque.prepared
-		if prepared == nil || prepared.analysisTarget == nil || len(prepared.payload) == 0 {
+		if prepared == nil || prepared.analysisTarget == nil ||
+			len(prepared.targetPayload) == 0 || len(prepared.repositoryPayload) == 0 {
 			return nil, fmt.Errorf("report: standalone target bundle prepared target %d is invalid", index)
 		}
 		if err := validateTargetNavigationPage(prepared.programPage); err != nil {
@@ -779,8 +1193,7 @@ func validateStandaloneTargetBundle(
 	}
 
 	defaultIndex := -1
-	aggregate := int64(0)
-	targets := make([]standaloneTargetBundleItem, 0, len(container.Targets))
+	ordered := make([]*preparedStandaloneTarget, 0, len(container.Targets))
 	seenProgramTargetIDs := make(map[string]struct{}, len(container.Targets))
 	var first *preparedStandaloneTarget
 	var defaultPrepared *preparedStandaloneTarget
@@ -798,16 +1211,10 @@ func validateStandaloneTargetBundle(
 		if !reflect.DeepEqual(*prepared.analysisTarget, projection.Target) {
 			return nil, fmt.Errorf("report: standalone target bundle target authority mismatch")
 		}
-		item := standaloneTargetBundleItem{
-			TargetID:    prepared.programPage.ProgramTarget.ID,
-			Language:    prepared.programPage.ProgramTarget.Language,
-			Kind:        prepared.programPage.ProgramTarget.Kind,
-			DisplayName: prepared.programPage.ProgramTarget.Name,
-		}
-		if _, duplicate := seenProgramTargetIDs[item.TargetID]; duplicate {
+		if _, duplicate := seenProgramTargetIDs[prepared.programPage.ProgramTarget.ID]; duplicate {
 			return nil, fmt.Errorf("report: standalone target bundle contains duplicate program target identity")
 		}
-		seenProgramTargetIDs[item.TargetID] = struct{}{}
+		seenProgramTargetIDs[prepared.programPage.ProgramTarget.ID] = struct{}{}
 		if first == nil {
 			first = prepared
 		} else if prepared.host != first.host || prepared.repositoryURL != first.repositoryURL ||
@@ -815,26 +1222,16 @@ func validateStandaloneTargetBundle(
 			return nil, fmt.Errorf("report: standalone target bundle source authority mismatch")
 		}
 		for _, root := range prepared.localRoots {
-			if bytes.Contains(prepared.payload, []byte(root)) {
+			if bytes.Contains(prepared.targetPayload, []byte(root)) {
 				return nil, fmt.Errorf("report: standalone target bundle retained a local path")
 			}
 		}
 		for _, sibling := range portfolio.Targets {
-			if sibling.RunID != "" && bytes.Contains(prepared.payload, []byte(sibling.RunID)) {
+			if sibling.RunID != "" && bytes.Contains(prepared.targetPayload, []byte(sibling.RunID)) {
 				return nil, fmt.Errorf("report: standalone target bundle retained a sibling run id")
 			}
 		}
-		nextAggregate, aggregateErr := standaloneTargetAggregateBytes(
-			aggregate,
-			int64(len(prepared.payload)),
-		)
-		if aggregateErr != nil {
-			return nil, aggregateErr
-		}
-		aggregate = nextAggregate
-		item.Href = standaloneTargetHref(index)
-		item.Payload = json.RawMessage(prepared.payload)
-		targets = append(targets, item)
+		ordered = append(ordered, prepared)
 		delete(preparedByRef, projection.Target.Ref)
 		if index == defaultIndex {
 			defaultPrepared = prepared
@@ -846,6 +1243,10 @@ func validateStandaloneTargetBundle(
 	if defaultIndex < 0 || defaultPrepared == nil {
 		return nil, fmt.Errorf("report: standalone target bundle default target is missing")
 	}
+	transport, err := prepareStandaloneTransportFromTargetsV4(defaultPrepared.repository, ordered)
+	if err != nil {
+		return nil, err
+	}
 	return &validatedStandaloneTargetBundle{
 		identity: StandaloneTargetBundleIdentity{
 			Version:                   StandaloneTargetBundleVersion,
@@ -855,7 +1256,7 @@ func validateStandaloneTargetBundle(
 			TargetCount:               len(container.Targets),
 		},
 		defaultTarget: defaultPrepared,
-		targets:       targets,
+		transport:     transport,
 	}, nil
 }
 
@@ -874,6 +1275,241 @@ func standaloneTargetAggregateBytes(current, next int64) (int64, error) {
 		}
 	}
 	return current + next, nil
+}
+
+func bindStandaloneBrowserRepositoryPayloadV4(
+	payload BrowserRepositoryPayload,
+) (BrowserRepositoryPayload, []byte, error) {
+	payload.Targets = append([]BrowserTargetIndexItem(nil), payload.Targets...)
+	for position := range payload.Targets {
+		row := &payload.Targets[position]
+		switch row.State {
+		case "analyzed":
+			row.Href = standaloneTargetHref(position)
+		case "not_analyzed":
+			row.Href = ""
+		default:
+			return BrowserRepositoryPayload{}, nil, fmt.Errorf(
+				"report: standalone bundle repository target %d has unsupported state", position,
+			)
+		}
+	}
+	encoded, err := EncodeBrowserRepositoryPayload(payload)
+	if err != nil {
+		return BrowserRepositoryPayload{}, nil, fmt.Errorf(
+			"report: bind standalone bundle repository routes: %w", err,
+		)
+	}
+	return payload, encoded, nil
+}
+
+func prepareStandaloneTransportFromTargetsV4(
+	repository BrowserRepositoryPayload,
+	preparedTargets []*preparedStandaloneTarget,
+) (standaloneBundleTransportV4, error) {
+	boundRepository, repositoryRaw, err := bindStandaloneBrowserRepositoryPayloadV4(repository)
+	if err != nil {
+		return standaloneBundleTransportV4{}, err
+	}
+	preparedByProgramTarget := make(map[string]*preparedStandaloneTarget, len(preparedTargets))
+	localRoots := make([]string, 0)
+	for position, prepared := range preparedTargets {
+		if prepared == nil || len(prepared.targetPayload) == 0 {
+			return standaloneBundleTransportV4{}, fmt.Errorf(
+				"report: standalone bundle prepared target %d is invalid", position,
+			)
+		}
+		if _, duplicate := preparedByProgramTarget[prepared.target.Target.ID]; duplicate {
+			return standaloneBundleTransportV4{}, fmt.Errorf(
+				"report: standalone bundle contains duplicate prepared ProgramTarget identity",
+			)
+		}
+		preparedByProgramTarget[prepared.target.Target.ID] = prepared
+		localRoots = append(localRoots, prepared.localRoots...)
+	}
+	localRoots = normalizedBrowserLocalRoots(localRoots)
+	input := standaloneBundleTransportInputV4{
+		RepositoryPayload:      repositoryRaw,
+		LogicalDefaultTargetID: boundRepository.LogicalDefaultSelectedTargetID,
+		Targets:                make([]standaloneBundleTransportTargetInputV4, 0, len(boundRepository.Targets)),
+	}
+	for position, row := range boundRepository.Targets {
+		entry := standaloneBundleTransportTargetInputV4{TargetID: row.SelectedTargetID}
+		switch row.State {
+		case "analyzed":
+			prepared, ok := preparedByProgramTarget[row.ProgramTargetID]
+			if !ok || prepared.selectedTargetID != row.SelectedTargetID ||
+				prepared.target.Target.ID != row.ProgramTargetID {
+				return standaloneBundleTransportV4{}, fmt.Errorf(
+					"report: standalone bundle target %d lacks its exact prepared payload", position,
+				)
+			}
+			canonical, encodeErr := EncodeBrowserTargetPayload(prepared.target)
+			if encodeErr != nil || !bytes.Equal(canonical, prepared.targetPayload) {
+				return standaloneBundleTransportV4{}, fmt.Errorf(
+					"report: standalone bundle target %d payload is not canonical", position,
+				)
+			}
+			if browserValueContainsLocalPath(prepared.target, localRoots) ||
+				browserValueContainsLocalPath(boundRepository, localRoots) {
+				return standaloneBundleTransportV4{}, fmt.Errorf(
+					"report: standalone bundle retained a local path",
+				)
+			}
+			entry.ProgramTargetID = row.ProgramTargetID
+			entry.State = standaloneBundleTransportTargetAnalyzed
+			entry.Payload = prepared.targetPayload
+			delete(preparedByProgramTarget, row.ProgramTargetID)
+		case "not_analyzed":
+			entry.State = standaloneBundleTransportTargetNotAnalyzed
+		default:
+			return standaloneBundleTransportV4{}, fmt.Errorf(
+				"report: standalone bundle target %d has unsupported state", position,
+			)
+		}
+		input.Targets = append(input.Targets, entry)
+	}
+	if len(preparedByProgramTarget) != 0 {
+		return standaloneBundleTransportV4{}, fmt.Errorf(
+			"report: standalone bundle contains a foreign prepared target",
+		)
+	}
+	return prepareStandaloneBundleTransportV4(input)
+}
+
+func projectStandaloneArtifactRepositoryV4(
+	owner *preparedStandaloneTarget,
+	preparedTargets []*preparedStandaloneTarget,
+	defaultProgramTargetID string,
+) error {
+	if owner == nil || owner.reportData == nil || len(preparedTargets) == 0 {
+		return fmt.Errorf("report: standalone artifact repository projection is incomplete")
+	}
+	pages := make([]TargetNavigationPage, 0, len(preparedTargets))
+	for position, prepared := range preparedTargets {
+		if prepared == nil {
+			return fmt.Errorf("report: standalone artifact target %d is incomplete", position)
+		}
+		pages = append(pages, prepared.programPage)
+	}
+	navigation, err := BuildTargetNavigation(
+		pages, defaultProgramTargetID, owner.programPage.ProgramTarget.ID,
+	)
+	if err != nil {
+		return err
+	}
+	repository, err := ProjectBrowserRepositoryPayload(owner.reportData, navigation)
+	if err != nil {
+		return err
+	}
+	localRoots := make([]string, 0)
+	for _, prepared := range preparedTargets {
+		localRoots = append(localRoots, prepared.localRoots...)
+	}
+	repositoryRaw, err := encodeBrowserRepositoryPayloadForHTML(repository, localRoots)
+	if err != nil {
+		return err
+	}
+	repository, err = DecodeBrowserRepositoryPayload(repositoryRaw)
+	if err != nil {
+		return err
+	}
+	selectedByProgramTarget := make(map[string]string, len(repository.Targets))
+	for _, row := range repository.Targets {
+		if row.State == "analyzed" {
+			selectedByProgramTarget[row.ProgramTargetID] = row.SelectedTargetID
+		}
+	}
+	for position, prepared := range preparedTargets {
+		selectedTargetID := selectedByProgramTarget[prepared.programPage.ProgramTarget.ID]
+		if selectedTargetID == "" {
+			return fmt.Errorf(
+				"report: standalone artifact target %d is absent from exhaustive repository outcomes", position,
+			)
+		}
+		prepared.selectedTargetID = selectedTargetID
+	}
+	owner.repository = repository
+	owner.repositoryPayload = repositoryRaw
+	return nil
+}
+
+func releaseArtifactPreparedTargetData(preparedTargets []*preparedStandaloneTarget) {
+	for _, prepared := range preparedTargets {
+		if prepared == nil {
+			continue
+		}
+		prepared.reportData = nil
+		prepared.repository = BrowserRepositoryPayload{}
+		prepared.repositoryPayload = nil
+		prepared.target = BrowserTargetPayload{}
+		prepared.targetPayload = nil
+	}
+}
+
+type standaloneArtifactTargetReloaderV4 func(index int) (*preparedStandaloneTarget, error)
+
+func prepareStandaloneArtifactSpoolV4(
+	repository BrowserRepositoryPayload,
+	descriptors []*preparedStandaloneTarget,
+	reload standaloneArtifactTargetReloaderV4,
+) (*standaloneBundleSpoolV4, error) {
+	if len(descriptors) == 0 || reload == nil {
+		return nil, fmt.Errorf("report: standalone artifact spool inputs are incomplete")
+	}
+	byProgramTarget := make(map[string]int, len(descriptors))
+	localRoots := make([]string, 0)
+	for index, descriptor := range descriptors {
+		if descriptor == nil {
+			return nil, fmt.Errorf("report: standalone artifact descriptor %d is missing", index)
+		}
+		programTargetID := descriptor.programPage.ProgramTarget.ID
+		if _, duplicate := byProgramTarget[programTargetID]; duplicate {
+			return nil, fmt.Errorf("report: standalone artifact descriptors repeat a ProgramTarget")
+		}
+		byProgramTarget[programTargetID] = index
+		localRoots = append(localRoots, descriptor.localRoots...)
+	}
+	localRoots = normalizedBrowserLocalRoots(localRoots)
+	if browserValueContainsLocalPath(repository, localRoots) {
+		return nil, fmt.Errorf("report: standalone artifact repository retained a local path")
+	}
+	loaded := make([]bool, len(descriptors))
+	spool, err := prepareStandaloneBundleSpoolV4(
+		repository,
+		func(_ int, row BrowserTargetIndexItem) ([]byte, error) {
+			index, ok := byProgramTarget[row.ProgramTargetID]
+			if !ok || loaded[index] {
+				return nil, fmt.Errorf("analyzed ProgramTarget has no unique artifact descriptor")
+			}
+			fresh, reloadErr := reload(index)
+			if reloadErr != nil {
+				return nil, reloadErr
+			}
+			descriptor := descriptors[index]
+			if fresh == nil || !reflect.DeepEqual(fresh.programPage, descriptor.programPage) ||
+				fresh.host != descriptor.host || fresh.repositoryURL != descriptor.repositoryURL ||
+				fresh.revision != descriptor.revision || fresh.repoName != descriptor.repoName ||
+				fresh.target.Target.ID != row.ProgramTargetID || len(fresh.targetPayload) == 0 {
+				return nil, fmt.Errorf("reloaded artifact target does not match its first-pass authority")
+			}
+			if browserValueContainsLocalPath(fresh.target, localRoots) {
+				return nil, fmt.Errorf("reloaded artifact target retained a local path")
+			}
+			loaded[index] = true
+			return fresh.targetPayload, nil
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	for index, wasLoaded := range loaded {
+		if !wasLoaded {
+			primary := fmt.Errorf("report: standalone artifact descriptor %d has no analyzed outcome", index)
+			return nil, finishStandaloneBundleSpoolV4(spool, primary)
+		}
+	}
+	return spool, nil
 }
 
 func standaloneTargetBundleSkeleton(validated *validatedStandaloneTargetBundle) ([]byte, error) {
@@ -895,23 +1531,17 @@ func writeStandaloneTargetBundleSection(
 	}
 	marker := standaloneTargetBundleMarkerPrefix +
 		base64.RawURLEncoding.EncodeToString(identityJSON) + standaloneTargetBundleMarkerSuffix
-	if _, err := io.WriteString(w, marker+"\n  <script type=\"application/json\" id=\"rm-standalone-target-bundle\">"); err != nil {
+	if _, err := io.WriteString(w, marker+"\n"); err != nil {
 		return fmt.Errorf("report: write standalone target bundle marker: %w", err)
 	}
-	wire := standaloneTargetBundleWire{
-		Version: StandaloneTargetBundleVersion, DefaultTargetIndex: validated.identity.DefaultTargetIndex,
-		Targets: validated.targets,
+	if validated.spool != nil {
+		if err := writeStandaloneBundleSpoolHTMLSectionV4(w, validated.spool); err != nil {
+			return fmt.Errorf("report: write standalone target bundle v4 spool: %w", err)
+		}
+		return nil
 	}
-	encoder := json.NewEncoder(w)
-	encoder.SetEscapeHTML(true)
-	if err := encoder.Encode(wire); err != nil {
-		return fmt.Errorf("report: write standalone target bundle payloads: %w", err)
-	}
-	if _, err := io.WriteString(w,
-		"  </script>\n  <script type=\"application/json\" id=\"rm-report-data\"></script>\n"+
-			"  <script id=\"rm-standalone-target-bootstrap\">"+standaloneTargetBootstrapJS+"</script>",
-	); err != nil {
-		return fmt.Errorf("report: write standalone target bootstrap: %w", err)
+	if err := writeStandaloneBundleTransportHTMLSectionV4(w, validated.transport); err != nil {
+		return fmt.Errorf("report: write standalone target bundle v4 transport: %w", err)
 	}
 	return nil
 }
@@ -921,7 +1551,7 @@ func standaloneTargetBundleSeal(digest hash.Hash) string {
 		standaloneTargetBundleSealSuffix
 }
 
-// InspectStandaloneTargetBundleHTML detects and verifies one D286 bundle
+// InspectStandaloneTargetBundleHTML detects and verifies one v4 bundle
 // without loading the potentially one-GiB artifact into memory. Ordinary
 // pre-bundle report HTML returns found=false so recovery can rebuild it.
 func InspectStandaloneTargetBundleHTML(
@@ -1074,36 +1704,52 @@ func VerifyStandaloneTargetBundleHTML(
 	}
 
 	runsDir := filepath.Dir(absoluteRunDir)
-	defaultItem, repoName, err := expectedStandaloneTargetBundleItem(
-		runsDir,
-		container.Targets[defaultIndex],
-		portfolio.Targets[defaultIndex],
-		defaultIndex,
-		manifest,
-	)
-	if err != nil {
-		return StandaloneTargetBundleIdentity{}, fmt.Errorf("report: standalone target bundle default payload: %w", err)
-	}
-	itemAt := func(index int) (standaloneTargetBundleItem, error) {
-		if index == defaultIndex {
-			return defaultItem, nil
-		}
-		item, itemRepoName, itemErr := expectedStandaloneTargetBundleItem(
-			runsDir, container.Targets[index], portfolio.Targets[index], index, manifest,
+	preparedTargets := make([]*preparedStandaloneTarget, 0, len(container.Targets))
+	var defaultPrepared *preparedStandaloneTarget
+	for index := range container.Targets {
+		prepared, prepareErr := expectedStandaloneTargetBundleTarget(
+			runsDir, container.Targets[index], portfolio.Targets[index], manifest,
 		)
-		if itemErr != nil {
-			return standaloneTargetBundleItem{}, fmt.Errorf(
-				"report: standalone target bundle payload %d: %w", index, itemErr,
+		if prepareErr != nil {
+			return StandaloneTargetBundleIdentity{}, fmt.Errorf(
+				"report: standalone target bundle payload %d: %w", index, prepareErr,
 			)
 		}
-		if itemRepoName != repoName {
-			return standaloneTargetBundleItem{}, fmt.Errorf("report: standalone target bundle repository identity mismatch")
+		preparedTargets = append(preparedTargets, prepared)
+		if index == defaultIndex {
+			defaultPrepared = prepared
+		} else {
+			prepared.reportData = nil
 		}
-		return item, nil
+		prepared.target = BrowserTargetPayload{}
+		prepared.targetPayload = nil
 	}
-	if err := verifyExactStandaloneTargetBundleProjection(
-		absolutePath, identity, repoName, itemAt,
+	if defaultPrepared == nil {
+		return StandaloneTargetBundleIdentity{}, fmt.Errorf("report: standalone target bundle default payload is missing")
+	}
+	if err := projectStandaloneArtifactRepositoryV4(
+		defaultPrepared, preparedTargets, defaultPrepared.programPage.ProgramTarget.ID,
 	); err != nil {
+		return StandaloneTargetBundleIdentity{}, err
+	}
+	repository := defaultPrepared.repository
+	releaseArtifactPreparedTargetData(preparedTargets)
+	spool, err := prepareStandaloneArtifactSpoolV4(
+		repository,
+		preparedTargets,
+		func(index int) (*preparedStandaloneTarget, error) {
+			return expectedStandaloneTargetBundleTarget(
+				runsDir, container.Targets[index], portfolio.Targets[index], manifest,
+			)
+		},
+	)
+	if err != nil {
+		return StandaloneTargetBundleIdentity{}, err
+	}
+	verifyErr := verifyExactStandaloneTargetBundleProjection(absolutePath, &validatedStandaloneTargetBundle{
+		identity: identity, defaultTarget: defaultPrepared, spool: spool,
+	})
+	if err := finishStandaloneBundleSpoolV4(spool, verifyErr); err != nil {
 		return StandaloneTargetBundleIdentity{}, err
 	}
 	return identity, nil
@@ -1162,30 +1808,52 @@ func VerifyStandaloneProgramPageBundleHTML(
 	}
 
 	runsDir := filepath.Dir(absoluteRunDir)
-	defaultItem, repoName, err := expectedStandaloneProgramPageBundleItem(
-		runsDir, portfolio.Pages[defaultIndex], defaultIndex, manifest,
-	)
-	if err != nil {
-		return StandaloneTargetBundleIdentity{}, fmt.Errorf("report: standalone program page bundle default payload: %w", err)
-	}
-	itemAt := func(index int) (standaloneTargetBundleItem, error) {
-		if index == defaultIndex {
-			return defaultItem, nil
-		}
-		item, itemRepoName, itemErr := expectedStandaloneProgramPageBundleItem(
-			runsDir, portfolio.Pages[index], index, manifest,
+	preparedTargets := make([]*preparedStandaloneTarget, 0, len(portfolio.Pages))
+	var defaultPrepared *preparedStandaloneTarget
+	for index := range portfolio.Pages {
+		prepared, prepareErr := expectedStandaloneProgramPageBundleTarget(
+			runsDir, portfolio.Pages[index], manifest,
 		)
-		if itemErr != nil {
-			return standaloneTargetBundleItem{}, fmt.Errorf(
-				"report: standalone program page bundle payload %d: %w", index, itemErr,
+		if prepareErr != nil {
+			return StandaloneTargetBundleIdentity{}, fmt.Errorf(
+				"report: standalone program page bundle payload %d: %w", index, prepareErr,
 			)
 		}
-		if itemRepoName != repoName {
-			return standaloneTargetBundleItem{}, fmt.Errorf("report: standalone program page bundle repository identity mismatch")
+		preparedTargets = append(preparedTargets, prepared)
+		if index == defaultIndex {
+			defaultPrepared = prepared
+		} else {
+			prepared.reportData = nil
 		}
-		return item, nil
+		prepared.target = BrowserTargetPayload{}
+		prepared.targetPayload = nil
 	}
-	if err := verifyExactStandaloneTargetBundleProjection(absolutePath, identity, repoName, itemAt); err != nil {
+	if defaultPrepared == nil {
+		return StandaloneTargetBundleIdentity{}, fmt.Errorf("report: standalone program page bundle default payload is missing")
+	}
+	if err := projectStandaloneArtifactRepositoryV4(
+		defaultPrepared, preparedTargets, portfolio.DefaultTargetID,
+	); err != nil {
+		return StandaloneTargetBundleIdentity{}, err
+	}
+	repository := defaultPrepared.repository
+	releaseArtifactPreparedTargetData(preparedTargets)
+	spool, err := prepareStandaloneArtifactSpoolV4(
+		repository,
+		preparedTargets,
+		func(index int) (*preparedStandaloneTarget, error) {
+			return expectedStandaloneProgramPageBundleTarget(
+				runsDir, portfolio.Pages[index], manifest,
+			)
+		},
+	)
+	if err != nil {
+		return StandaloneTargetBundleIdentity{}, err
+	}
+	verifyErr := verifyExactStandaloneTargetBundleProjection(absolutePath, &validatedStandaloneTargetBundle{
+		identity: identity, defaultTarget: defaultPrepared, spool: spool,
+	})
+	if err := finishStandaloneBundleSpoolV4(spool, verifyErr); err != nil {
 		return StandaloneTargetBundleIdentity{}, err
 	}
 	return identity, nil
@@ -1193,16 +1861,13 @@ func VerifyStandaloneProgramPageBundleHTML(
 
 func verifyExactStandaloneTargetBundleProjection(
 	path string,
-	identity StandaloneTargetBundleIdentity,
-	repoName string,
-	itemAt func(int) (standaloneTargetBundleItem, error),
+	validated *validatedStandaloneTargetBundle,
 ) error {
-	if !validStandaloneTargetBundleIdentity(identity) || repoName == "" || itemAt == nil {
+	if validated == nil || !validStandaloneTargetBundleIdentity(validated.identity) ||
+		validated.defaultTarget == nil || validated.defaultTarget.repoName == "" {
 		return fmt.Errorf("report: standalone target bundle expected projection is invalid")
 	}
-	skeleton, err := standaloneTargetBundleSkeleton(&validatedStandaloneTargetBundle{
-		defaultTarget: &preparedStandaloneTarget{repoName: repoName},
-	})
+	skeleton, err := standaloneTargetBundleSkeleton(validated)
 	if err != nil {
 		return err
 	}
@@ -1226,49 +1891,24 @@ func verifyExactStandaloneTargetBundleProjection(
 	if err := comparator.compare(skeleton[:cut], "application shell prefix"); err != nil {
 		return err
 	}
-	identityJSON, err := json.Marshal(identity)
+	identityJSON, err := json.Marshal(validated.identity)
 	if err != nil {
 		return err
 	}
 	marker := standaloneTargetBundleMarkerPrefix +
 		base64.RawURLEncoding.EncodeToString(identityJSON) + standaloneTargetBundleMarkerSuffix
-	if err := comparator.compare(
-		[]byte(marker+"\n  <script type=\"application/json\" id=\"rm-standalone-target-bundle\">"),
-		"bundle marker",
-	); err != nil {
+	if err := comparator.compare([]byte(marker+"\n"), "bundle marker"); err != nil {
 		return err
 	}
-	header := fmt.Sprintf(
-		`{"version":%d,"default_target_index":%d,"targets":[`,
-		StandaloneTargetBundleVersion,
-		identity.DefaultTargetIndex,
-	)
-	if err := comparator.compare([]byte(header), "bundle header"); err != nil {
-		return err
+	expectedWriter := exactStandaloneBundleExpectedWriter{
+		comparator: &comparator,
+		label:      "bundle v4 transport",
 	}
-	for index := 0; index < identity.TargetCount; index++ {
-		item, err := itemAt(index)
-		if err != nil {
+	if validated.spool != nil {
+		if err := writeStandaloneBundleSpoolHTMLSectionV4(&expectedWriter, validated.spool); err != nil {
 			return err
 		}
-		if index != 0 {
-			if err := comparator.compare([]byte(","), "bundle target separator"); err != nil {
-				return err
-			}
-		}
-		itemJSON, marshalErr := json.Marshal(item)
-		if marshalErr != nil {
-			return fmt.Errorf("report: encode expected standalone target %d: %w", index, marshalErr)
-		}
-		if err := comparator.compare(itemJSON, fmt.Sprintf("bundle target %d", index)); err != nil {
-			return err
-		}
-	}
-	if err := comparator.compare(
-		[]byte("]}\n  </script>\n  <script type=\"application/json\" id=\"rm-report-data\"></script>\n"+
-			"  <script id=\"rm-standalone-target-bootstrap\">"+standaloneTargetBootstrapJS+"</script>"),
-		"bundle payload suffix",
-	); err != nil {
+	} else if err := writeStandaloneBundleTransportHTMLSectionV4(&expectedWriter, validated.transport); err != nil {
 		return err
 	}
 	if err := comparator.compare(skeleton[cut+len(placeholder):], "application shell suffix"); err != nil {
@@ -1349,190 +1989,213 @@ func manifestStandaloneProgramPageAuthority(
 	return portfolio, nil
 }
 
-func expectedStandaloneProgramPageBundleItem(
+func projectPreparedStandaloneTargetV4(
+	data *ReportData,
+	navigation *TargetNavigationPortfolio,
+	programTarget programindex.Target,
+	analysisTarget *analysistarget.Target,
+	localRoots []string,
+) (*preparedStandaloneTarget, error) {
+	repository, err := ProjectBrowserRepositoryPayload(data, navigation)
+	if err != nil {
+		return nil, err
+	}
+	target, err := ProjectBrowserTargetPayload(data)
+	if err != nil {
+		return nil, err
+	}
+	if target.Target.ID != programTarget.ID || target.Target.Language != programTarget.Language ||
+		target.Target.Kind != programTarget.Kind || target.Target.Name != programTarget.Name ||
+		target.Target.Selector != programTarget.Selector {
+		return nil, fmt.Errorf("report: browser target payload does not match ProgramTarget authority")
+	}
+	repositoryRaw, err := encodeBrowserRepositoryPayloadForHTML(repository, localRoots)
+	if err != nil {
+		return nil, err
+	}
+	repository, err = DecodeBrowserRepositoryPayload(repositoryRaw)
+	if err != nil {
+		return nil, err
+	}
+	targetRaw, err := encodeBrowserTargetPayloadForHTML(target, localRoots)
+	if err != nil {
+		return nil, err
+	}
+	target, err = DecodeBrowserTargetPayload(targetRaw)
+	if err != nil {
+		return nil, err
+	}
+	selectedTargetID := ""
+	for _, row := range repository.Targets {
+		if row.ProgramTargetID != programTarget.ID {
+			continue
+		}
+		if selectedTargetID != "" {
+			return nil, fmt.Errorf("report: browser repository ProgramTarget binding is ambiguous")
+		}
+		selectedTargetID = row.SelectedTargetID
+	}
+	if selectedTargetID == "" {
+		return nil, fmt.Errorf("report: browser repository lacks current ProgramTarget binding")
+	}
+	host := ""
+	switch repository.Source.Kind {
+	case "github":
+		host = "GitHub"
+	case "gitlab":
+		host = "GitLab"
+	default:
+		return nil, fmt.Errorf("report: standalone bundle requires hosted source authority")
+	}
+	var ownedAnalysis *analysistarget.Target
+	if analysisTarget != nil {
+		owned := analysisTarget.Snapshot()
+		ownedAnalysis = &owned
+	}
+	return &preparedStandaloneTarget{
+		analysisTarget:    ownedAnalysis,
+		programPage:       TargetNavigationPage{ProgramTarget: programTarget.Snapshot()},
+		repository:        repository,
+		repositoryPayload: repositoryRaw,
+		target:            target,
+		targetPayload:     targetRaw,
+		selectedTargetID:  selectedTargetID,
+		host:              host,
+		repositoryURL:     repository.Source.RepositoryURL,
+		revision:          repository.Repository.CapturedRevision,
+		repoName:          repository.Repository.Name,
+		localRoots:        normalizedStandaloneLocalRoots(localRoots),
+	}, nil
+}
+
+func expectedStandaloneProgramPageBundleTarget(
 	runsDir string,
 	binding programpage.Page,
-	index int,
 	defaultManifest RunManifest,
-) (standaloneTargetBundleItem, string, error) {
+) (*preparedStandaloneTarget, error) {
 	runDir := filepath.Join(runsDir, binding.RunID)
 	info, err := os.Lstat(runDir)
 	if err != nil || !info.IsDir() {
-		return standaloneTargetBundleItem{}, "", fmt.Errorf("child run directory is unavailable")
+		return nil, fmt.Errorf("child run directory is unavailable")
 	}
 	manifest, err := ReadRunManifest(runDir)
 	if err != nil {
-		return standaloneTargetBundleItem{}, "", fmt.Errorf("child manifest: %w", err)
+		return nil, fmt.Errorf("child manifest: %w", err)
 	}
 	if binding.Target.ID != defaultManifest.MaterialInputs.ProgramTargetID {
 		htmlPath := filepath.Join(runDir, "report.html")
 		if _, htmlErr := os.Lstat(htmlPath); htmlErr == nil {
-			return standaloneTargetBundleItem{}, "", fmt.Errorf("backing child unexpectedly publishes report.html")
+			return nil, fmt.Errorf("backing child unexpectedly publishes report.html")
 		} else if !errors.Is(htmlErr, os.ErrNotExist) {
-			return standaloneTargetBundleItem{}, "", fmt.Errorf("inspect backing child report.html: %w", htmlErr)
+			return nil, fmt.Errorf("inspect backing child report.html: %w", htmlErr)
 		}
 	}
 	if manifest.MaterialInputs.ProgramTargetID != binding.Target.ID ||
+		manifest.AnalysisRoot != defaultManifest.AnalysisRoot ||
 		manifest.RepositoryStateSHA256 != defaultManifest.RepositoryStateSHA256 ||
 		manifest.MaterialInputs.SelectedRevision != defaultManifest.MaterialInputs.SelectedRevision ||
 		manifest.MaterialInputs.ProgramPagePortfolioSHA256 != defaultManifest.MaterialInputs.ProgramPagePortfolioSHA256 ||
 		manifest.MaterialInputs.RuntimePortfolioSHA256 != defaultManifest.MaterialInputs.RuntimePortfolioSHA256 ||
 		manifest.MaterialInputs.TargetOutcomePortfolioSHA256 != defaultManifest.MaterialInputs.TargetOutcomePortfolioSHA256 ||
 		!reflect.DeepEqual(manifest.StandaloneSource, defaultManifest.StandaloneSource) {
-		return standaloneTargetBundleItem{}, "", fmt.Errorf("child manifest authority mismatch")
+		return nil, fmt.Errorf("child manifest authority mismatch")
 	}
-	root, err := os.OpenRoot(runDir)
-	if err != nil {
-		return standaloneTargetBundleItem{}, "", err
-	}
-	defer root.Close()
-	reportJSON, err := readManifestFile(root, "report.json", maxManifestReportBytes)
-	if err != nil {
-		return standaloneTargetBundleItem{}, "", err
-	}
-	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
-		return standaloneTargetBundleItem{}, "", err
-	}
-	data, err := decodeStrictReportJSON(reportJSON)
-	if err != nil {
-		return standaloneTargetBundleItem{}, "", err
-	}
-	if data.ProgramPortfolio == nil {
-		return standaloneTargetBundleItem{}, "", fmt.Errorf("child report ProgramPortfolio authority is incomplete")
-	}
-	defaultEntry, err := data.ProgramPortfolio.defaultEntry()
-	if err != nil {
-		return standaloneTargetBundleItem{}, "", err
-	}
-	if !reflect.DeepEqual(defaultEntry.Target, binding.Target) {
-		return standaloneTargetBundleItem{}, "", fmt.Errorf("child report ProgramTarget does not match portfolio")
-	}
-	setRaw, err := readManifestFile(root, programindex.ArtifactSetFilename, programindex.MaxArtifactSetBytes)
-	if err != nil {
-		return standaloneTargetBundleItem{}, "", err
-	}
-	if manifestSHA256(setRaw) != manifest.MaterialInputs.ProgramIndexSetSHA256 {
-		return standaloneTargetBundleItem{}, "", fmt.Errorf("child ProgramIndex set authority mismatch")
-	}
-	set, err := programindex.DecodeArtifactSet(setRaw)
-	if err != nil {
-		return standaloneTargetBundleItem{}, "", err
-	}
-	if set.DefaultTargetID != binding.Target.ID {
-		return standaloneTargetBundleItem{}, "", fmt.Errorf("child ProgramIndex default target mismatch")
-	}
-	artifactFilename := ""
-	for _, entry := range set.Entries {
-		if entry.TargetID == set.DefaultTargetID {
-			artifactFilename = entry.Filename
-			break
-		}
-	}
-	if artifactFilename == "" {
-		return standaloneTargetBundleItem{}, "", fmt.Errorf("child ProgramIndex artifact is missing")
-	}
-	sourceAuthority := OrdinaryReportHTMLAuthority{
-		StandaloneSource: manifest.StandaloneSource,
-		AnalysisRoot:     manifest.AnalysisRoot,
-		RepositoryRoot:   manifest.RepositoryState.Identity,
-	}
-	githubLinks, gitlabLinks, err := ordinaryHTMLSourceLinks(data.CapturedRevision, sourceAuthority)
-	if err != nil {
-		return standaloneTargetBundleItem{}, "", err
-	}
-	data.GitHubSourceLinks = githubLinks
-	data.GitLabSourceLinks = gitlabLinks
-	absoluteRunDir, err := filepath.Abs(runDir)
-	if err != nil {
-		return standaloneTargetBundleItem{}, "", err
-	}
-	payload, err := marshalHTMLPayloadWithLocalRoots(
-		programShellPayloadForReport(&data, nil),
-		[]string{absoluteRunDir, manifest.AnalysisRoot, manifest.RepositoryState.Identity},
-	)
-	if err != nil {
-		return standaloneTargetBundleItem{}, "", err
-	}
-	return standaloneTargetBundleItem{
-		TargetID:    binding.Target.ID,
-		Language:    binding.Target.Language,
-		Kind:        binding.Target.Kind,
-		DisplayName: binding.Target.Name,
-		Href:        standaloneTargetHref(index),
-		Payload:     json.RawMessage(payload),
-	}, data.RepoName, nil
+	return expectedStandaloneTargetFromManifestV4(runDir, binding.RunID, manifest, binding.Target, nil)
 }
 
-func expectedStandaloneTargetBundleItem(
+func expectedStandaloneTargetBundleTarget(
 	runsDir string,
 	projection snapshot.TargetRunProjection,
 	page snapshot.TargetPage,
-	index int,
 	defaultManifest RunManifest,
-) (standaloneTargetBundleItem, string, error) {
+) (*preparedStandaloneTarget, error) {
 	if page.TargetRef != projection.Target.Ref {
-		return standaloneTargetBundleItem{}, "", fmt.Errorf("target order does not match container")
+		return nil, fmt.Errorf("target order does not match container")
 	}
 	runDir := filepath.Join(runsDir, page.RunID)
 	info, err := os.Lstat(runDir)
 	if err != nil || !info.IsDir() {
-		return standaloneTargetBundleItem{}, "", fmt.Errorf("child run directory is unavailable")
+		return nil, fmt.Errorf("child run directory is unavailable")
 	}
 	manifest, err := ReadRunManifest(runDir)
 	if err != nil {
-		return standaloneTargetBundleItem{}, "", fmt.Errorf("child manifest: %w", err)
+		return nil, fmt.Errorf("child manifest: %w", err)
 	}
 	if manifest.MaterialInputs.AnalysisTargetRef != projection.Target.Ref ||
+		manifest.AnalysisRoot != defaultManifest.AnalysisRoot ||
 		manifest.RepositoryStateSHA256 != defaultManifest.RepositoryStateSHA256 ||
 		manifest.MaterialInputs.SelectedRevision != defaultManifest.MaterialInputs.SelectedRevision ||
 		manifest.MaterialInputs.TargetRunContainerSHA256 != defaultManifest.MaterialInputs.TargetRunContainerSHA256 ||
 		manifest.MaterialInputs.TargetPagePortfolioSHA256 != defaultManifest.MaterialInputs.TargetPagePortfolioSHA256 ||
 		manifest.MaterialInputs.RuntimePortfolioSHA256 != defaultManifest.MaterialInputs.RuntimePortfolioSHA256 ||
 		!reflect.DeepEqual(manifest.StandaloneSource, defaultManifest.StandaloneSource) {
-		return standaloneTargetBundleItem{}, "", fmt.Errorf("child manifest authority mismatch")
+		return nil, fmt.Errorf("child manifest authority mismatch")
 	}
+	prepared, err := expectedStandaloneTargetFromManifestV4(
+		runDir, page.RunID, manifest, programindex.Target{}, &projection.Target,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return prepared, nil
+}
+
+func expectedStandaloneTargetFromManifestV4(
+	runDir string,
+	runID string,
+	manifest RunManifest,
+	wantProgramTarget programindex.Target,
+	wantAnalysisTarget *analysistarget.Target,
+) (*preparedStandaloneTarget, error) {
 	root, err := os.OpenRoot(runDir)
 	if err != nil {
-		return standaloneTargetBundleItem{}, "", err
+		return nil, err
 	}
 	defer root.Close()
 	reportJSON, err := readManifestFile(root, "report.json", maxManifestReportBytes)
 	if err != nil {
-		return standaloneTargetBundleItem{}, "", err
+		return nil, err
 	}
 	if err := manifest.VerifyReportJSON(reportJSON); err != nil {
-		return standaloneTargetBundleItem{}, "", err
+		return nil, err
 	}
 	data, err := decodeStrictReportJSON(reportJSON)
 	if err != nil {
-		return standaloneTargetBundleItem{}, "", err
+		return nil, err
 	}
-	if data.ProgramPortfolio == nil || data.AnalysisTarget == nil {
-		return standaloneTargetBundleItem{}, "", fmt.Errorf("child report authority is incomplete")
+	if data.ProgramPortfolio == nil {
+		return nil, fmt.Errorf("child report ProgramPortfolio authority is incomplete")
 	}
-	if !reflect.DeepEqual(*data.AnalysisTarget, projection.Target) {
-		return standaloneTargetBundleItem{}, "", fmt.Errorf("child report target does not match container")
+	if wantAnalysisTarget != nil {
+		if data.AnalysisTarget == nil || !reflect.DeepEqual(*data.AnalysisTarget, *wantAnalysisTarget) {
+			return nil, fmt.Errorf("child report target does not match container")
+		}
 	}
 	defaultEntry, err := data.ProgramPortfolio.defaultEntry()
 	if err != nil {
-		return standaloneTargetBundleItem{}, "", err
+		return nil, err
 	}
-	if err := validateCubeMapProgramTarget(projection.Target, defaultEntry.Target); err != nil {
-		return standaloneTargetBundleItem{}, "", err
+	if wantProgramTarget.ID != "" && !reflect.DeepEqual(defaultEntry.Target, wantProgramTarget) {
+		return nil, fmt.Errorf("child report ProgramTarget does not match portfolio")
+	}
+	if wantAnalysisTarget != nil {
+		if err := validateCubeMapProgramTarget(*wantAnalysisTarget, defaultEntry.Target); err != nil {
+			return nil, err
+		}
 	}
 	setRaw, err := readManifestFile(root, programindex.ArtifactSetFilename, programindex.MaxArtifactSetBytes)
 	if err != nil {
-		return standaloneTargetBundleItem{}, "", err
+		return nil, err
 	}
 	if manifestSHA256(setRaw) != manifest.MaterialInputs.ProgramIndexSetSHA256 {
-		return standaloneTargetBundleItem{}, "", fmt.Errorf("child ProgramIndex set authority mismatch")
+		return nil, fmt.Errorf("child ProgramIndex set authority mismatch")
 	}
 	set, err := programindex.DecodeArtifactSet(setRaw)
 	if err != nil {
-		return standaloneTargetBundleItem{}, "", err
+		return nil, err
 	}
 	if set.DefaultTargetID != defaultEntry.Target.ID {
-		return standaloneTargetBundleItem{}, "", fmt.Errorf("child ProgramIndex default target mismatch")
+		return nil, fmt.Errorf("child ProgramIndex default target mismatch")
 	}
 	artifactFilename := ""
 	for _, entry := range set.Entries {
@@ -1542,7 +2205,7 @@ func expectedStandaloneTargetBundleItem(
 		}
 	}
 	if artifactFilename == "" {
-		return standaloneTargetBundleItem{}, "", fmt.Errorf("child ProgramIndex artifact is missing")
+		return nil, fmt.Errorf("child ProgramIndex artifact is missing")
 	}
 	sourceAuthority := OrdinaryReportHTMLAuthority{
 		StandaloneSource: manifest.StandaloneSource,
@@ -1551,49 +2214,74 @@ func expectedStandaloneTargetBundleItem(
 	}
 	githubLinks, gitlabLinks, err := ordinaryHTMLSourceLinks(data.CapturedRevision, sourceAuthority)
 	if err != nil {
-		return standaloneTargetBundleItem{}, "", err
+		return nil, err
 	}
 	data.GitHubSourceLinks = githubLinks
 	data.GitLabSourceLinks = gitlabLinks
 	absoluteRunDir, err := filepath.Abs(runDir)
 	if err != nil {
-		return standaloneTargetBundleItem{}, "", err
+		return nil, err
 	}
-	payload, err := marshalHTMLPayloadWithLocalRoots(
-		manifestStandaloneProgramShellPayload(&data, projection.Target),
-		[]string{absoluteRunDir, manifest.AnalysisRoot, manifest.RepositoryState.Identity},
-	)
+	localRoots := normalizedStandaloneLocalRoots([]string{
+		absoluteRunDir, manifest.AnalysisRoot, manifest.RepositoryState.Identity,
+	})
+	target, err := ProjectBrowserTargetPayload(&data)
 	if err != nil {
-		return standaloneTargetBundleItem{}, "", err
+		return nil, err
 	}
-	return standaloneTargetBundleItem{
-		TargetID:    defaultEntry.Target.ID,
-		Language:    defaultEntry.Target.Language,
-		Kind:        defaultEntry.Target.Kind,
-		DisplayName: defaultEntry.Target.Name,
-		Href:        standaloneTargetHref(index),
-		Payload:     json.RawMessage(payload),
-	}, data.RepoName, nil
-}
-
-// manifestStandaloneProgramShellPayload mirrors the multi-target writer's
-// restoration of outer target authority. Ordinary CoreMap browser payloads
-// omit this Go-only field, but a standalone bundle carries it so each embedded
-// page remains bound to its exact TargetRunContainer projection.
-func manifestStandaloneProgramShellPayload(
-	data *ReportData,
-	target analysistarget.Target,
-) programShellPayload {
-	payload := programShellPayloadForReport(data, nil)
-	owned := target.Snapshot()
-	payload.AnalysisTarget = &owned
-	return payload
+	targetRaw, err := encodeBrowserTargetPayloadForHTML(target, localRoots)
+	if err != nil {
+		return nil, err
+	}
+	target, err = DecodeBrowserTargetPayload(targetRaw)
+	if err != nil {
+		return nil, err
+	}
+	host := ""
+	repositoryURL := ""
+	if githubLinks != nil {
+		host = "GitHub"
+		repositoryURL = githubLinks.RepositoryURL
+	} else if gitlabLinks != nil {
+		host = "GitLab"
+		repositoryURL = gitlabLinks.RepositoryURL
+	}
+	ownedData := data
+	return &preparedStandaloneTarget{
+		analysisTarget: wantAnalysisTarget,
+		programPage: TargetNavigationPage{
+			RunID: runID, ProgramTarget: defaultEntry.Target.Snapshot(), ArtifactFilename: artifactFilename,
+		},
+		target:        target,
+		targetPayload: targetRaw,
+		reportData:    &ownedData,
+		host:          host,
+		repositoryURL: repositoryURL,
+		revision:      data.CapturedRevision,
+		repoName:      data.RepoName,
+		localRoots:    localRoots,
+	}, nil
 }
 
 type exactStandaloneBundleComparator struct {
 	reader io.Reader
 	digest hash.Hash
 	buffer []byte
+}
+
+type exactStandaloneBundleExpectedWriter struct {
+	comparator *exactStandaloneBundleComparator
+	label      string
+}
+
+func (writer *exactStandaloneBundleExpectedWriter) Write(expected []byte) (int, error) {
+	if writer == nil || writer.comparator == nil {
+		return 0, fmt.Errorf("report: standalone target bundle comparator is unavailable")
+	}
+	if err := writer.comparator.compare(expected, writer.label); err != nil {
+		return 0, err
+	}
+	return len(expected), nil
 }
 
 func (comparator *exactStandaloneBundleComparator) compare(expected []byte, label string) error {
