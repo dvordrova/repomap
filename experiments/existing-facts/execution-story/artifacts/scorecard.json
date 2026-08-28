@@ -1,0 +1,71 @@
+{
+  "schema": "repomap.experiment.execution-story.scorecard.v1",
+  "hypothesis": "Existing canonical JSON facts are sufficient for a useful partial execution story, while DeepSeek can fill audience-specific prose without owning facts or schema.",
+  "decision": "supported_for_constrained_filler",
+  "catalog_sha256": "a8543825d6483b2d2596644c640338314e10459df917777371e86c8c67fe0408",
+  "variant_scores": [
+    {
+      "name": "deterministic",
+      "accepted": true,
+      "valid_ref_ratio": 1,
+      "edge_order_ratio": 1,
+      "certainty_preservation_ratio": 1,
+      "exact_edges_preserved": "8/8",
+      "possible_edges_preserved": "1/1",
+      "invented_bridges": 0,
+      "endpoint_bound": true,
+      "frontier_preservation_ratio": 1,
+      "code_jump_ready": true
+    },
+    {
+      "name": "deepseek_newcomer",
+      "accepted": true,
+      "valid_ref_ratio": 1,
+      "edge_order_ratio": 1,
+      "certainty_preservation_ratio": 1,
+      "exact_edges_preserved": "8/8",
+      "possible_edges_preserved": "1/1",
+      "invented_bridges": 0,
+      "endpoint_bound": true,
+      "frontier_preservation_ratio": 1,
+      "code_jump_ready": true
+    },
+    {
+      "name": "deepseek_debugger",
+      "accepted": true,
+      "valid_ref_ratio": 1,
+      "edge_order_ratio": 1,
+      "certainty_preservation_ratio": 1,
+      "exact_edges_preserved": "8/8",
+      "possible_edges_preserved": "1/1",
+      "invented_bridges": 0,
+      "endpoint_bound": true,
+      "frontier_preservation_ratio": 1,
+      "code_jump_ready": true
+    }
+  ],
+  "prompt_paraphrase_stability": {
+    "compared_variants": [
+      "deepseek_newcomer",
+      "deepseek_debugger"
+    ],
+    "factual_ref_jaccard": 1,
+    "edge_sequence_equal": true,
+    "certainty_sequence_equal": true,
+    "endpoint_equal": true,
+    "frontier_set_equal": true,
+    "audience_text_different": true,
+    "guardrail_enforced": true
+  },
+  "exact_findings": [
+    "The deterministic projection selected 9 ordered edges: 8 exact and 1 possible.",
+    "The story binds n1 to the exact external endpoint crypto/tls.X509KeyPair at client/pkg/transport/listener.go:602.",
+    "All 3 variants preserved every edge, certainty marker, endpoint, frontier, and two code-jump refs; invented bridges = 0.",
+    "The newcomer and debugging prompts produced different prose with the same closed factual spine."
+  ],
+  "interpretation": [
+    "A stable UI can render start, ordered hops, boundary, gaps, and code jumps now; future cubes can enrich those slots without changing the skeleton.",
+    "DeepSeek is useful here as a constrained editor. The perfect structural stability is enforced by the decoder and is not evidence that unconstrained prose would stay factual.",
+    "The story remains intentionally partial because the source run omitted graph facts and the external library body is outside the represented boundary."
+  ]
+}

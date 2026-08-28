@@ -1,0 +1,356 @@
+{
+  "schema": "repomap.experiment.execution-story.catalog.v1",
+  "repository": {
+    "name": "go.etcd.io/etcd/v3",
+    "revision": "58f45a9ff1c083130830eb02b0cc7d9783609095",
+    "source_url": "https://github.com/etcd-io/etcd"
+  },
+  "selection": {
+    "policy": "longest closed route with exactly one possible edge; exact route fallback",
+    "status": "possible",
+    "route_steps": 8,
+    "exact_edges": 8,
+    "possible_edges": 1,
+    "callback_handoffs": 1,
+    "integration_label": "Load TLS key pair",
+    "integration_mechanism": "TLS"
+  },
+  "start_ref": "n1",
+  "end_ref": "x1",
+  "nodes": [
+    {
+      "ref": "n1",
+      "name": "startEtcd",
+      "kind": "function",
+      "signature": "func(cfg *go.etcd.io/etcd/server/v3/embed.Config) (\u003c-chan struct{}, \u003c-chan error, error)",
+      "location": {
+        "path": "server/etcdmain/etcd.go",
+        "line": 180,
+        "column": 6
+      },
+      "core_group_refs": [
+        "g1"
+      ]
+    },
+    {
+      "ref": "n2",
+      "name": "StartEtcd",
+      "kind": "function",
+      "signature": "func(inCfg *go.etcd.io/etcd/server/v3/embed.Config) (e *go.etcd.io/etcd/server/v3/embed.Etcd, err error)",
+      "location": {
+        "path": "server/embed/etcd.go",
+        "line": 110,
+        "column": 6
+      },
+      "core_group_refs": [
+        "g2"
+      ]
+    },
+    {
+      "ref": "n3",
+      "name": "NewServer",
+      "kind": "function",
+      "signature": "func(cfg go.etcd.io/etcd/server/v3/config.ServerConfig) (srv *go.etcd.io/etcd/server/v3/etcdserver.EtcdServer, err error)",
+      "location": {
+        "path": "server/etcdserver/server.go",
+        "line": 294,
+        "column": 6
+      },
+      "core_group_refs": [
+        "g3"
+      ]
+    },
+    {
+      "ref": "n4",
+      "name": "Start",
+      "kind": "method",
+      "signature": "func() error",
+      "location": {
+        "path": "server/etcdserver/api/rafthttp/transport.go",
+        "line": 133,
+        "column": 21
+      },
+      "core_group_refs": [
+        "g4"
+      ]
+    },
+    {
+      "ref": "n5",
+      "name": "NewRoundTripper",
+      "kind": "function",
+      "signature": "func(tlsInfo go.etcd.io/etcd/client/pkg/v3/transport.TLSInfo, dialTimeout time.Duration) (net/http.RoundTripper, error)",
+      "location": {
+        "path": "server/etcdserver/api/rafthttp/util.go",
+        "line": 47,
+        "column": 6
+      },
+      "core_group_refs": [
+        "g4"
+      ]
+    },
+    {
+      "ref": "n6",
+      "name": "NewTimeoutTransport",
+      "kind": "function",
+      "signature": "func(info go.etcd.io/etcd/client/pkg/v3/transport.TLSInfo, dialtimeoutd time.Duration, rdtimeoutd time.Duration, wtimeoutd time.Duration) (*net/http.Transport, error)",
+      "location": {
+        "path": "client/pkg/transport/timeout_transport.go",
+        "line": 27,
+        "column": 6
+      },
+      "core_group_refs": [
+        "g5"
+      ]
+    },
+    {
+      "ref": "n7",
+      "name": "NewTransport",
+      "kind": "function",
+      "signature": "func(info go.etcd.io/etcd/client/pkg/v3/transport.TLSInfo, dialtimeoutd time.Duration) (*net/http.Transport, error)",
+      "location": {
+        "path": "client/pkg/transport/transport.go",
+        "line": 27,
+        "column": 6
+      },
+      "core_group_refs": [
+        "g5"
+      ]
+    },
+    {
+      "ref": "n8",
+      "name": "ClientConfig",
+      "kind": "method",
+      "signature": "func() (*crypto/tls.Config, error)",
+      "location": {
+        "path": "client/pkg/transport/listener.go",
+        "line": 562,
+        "column": 21
+      },
+      "core_group_refs": [
+        "g5"
+      ]
+    },
+    {
+      "ref": "n9",
+      "name": "ClientConfig$1",
+      "kind": "function",
+      "location": {
+        "path": "client/pkg/transport/listener.go",
+        "line": 591,
+        "column": 58
+      }
+    }
+  ],
+  "edges": [
+    {
+      "ref": "e1",
+      "from_ref": "n1",
+      "to_ref": "n2",
+      "kind": "calls",
+      "certainty": "exact",
+      "invocation": "synchronous",
+      "location": {
+        "path": "server/etcdmain/etcd.go",
+        "line": 181,
+        "column": 27
+      }
+    },
+    {
+      "ref": "e2",
+      "from_ref": "n2",
+      "to_ref": "n3",
+      "kind": "calls",
+      "certainty": "exact",
+      "invocation": "synchronous",
+      "location": {
+        "path": "server/embed/etcd.go",
+        "line": 260,
+        "column": 41
+      }
+    },
+    {
+      "ref": "e3",
+      "from_ref": "n3",
+      "to_ref": "n4",
+      "kind": "calls",
+      "certainty": "exact",
+      "invocation": "synchronous",
+      "location": {
+        "path": "server/etcdserver/server.go",
+        "line": 423,
+        "column": 19
+      }
+    },
+    {
+      "ref": "e4",
+      "from_ref": "n4",
+      "to_ref": "n5",
+      "kind": "calls",
+      "certainty": "exact",
+      "invocation": "synchronous",
+      "location": {
+        "path": "server/etcdserver/api/rafthttp/transport.go",
+        "line": 139,
+        "column": 37
+      }
+    },
+    {
+      "ref": "e5",
+      "from_ref": "n5",
+      "to_ref": "n6",
+      "kind": "calls",
+      "certainty": "exact",
+      "invocation": "synchronous",
+      "location": {
+        "path": "server/etcdserver/api/rafthttp/util.go",
+        "line": 51,
+        "column": 38
+      }
+    },
+    {
+      "ref": "e6",
+      "from_ref": "n6",
+      "to_ref": "n7",
+      "kind": "calls",
+      "certainty": "exact",
+      "invocation": "synchronous",
+      "location": {
+        "path": "client/pkg/transport/timeout_transport.go",
+        "line": 28,
+        "column": 25
+      }
+    },
+    {
+      "ref": "e7",
+      "from_ref": "n7",
+      "to_ref": "n8",
+      "kind": "calls",
+      "certainty": "exact",
+      "invocation": "synchronous",
+      "location": {
+        "path": "client/pkg/transport/transport.go",
+        "line": 28,
+        "column": 31
+      }
+    },
+    {
+      "ref": "e8",
+      "from_ref": "n8",
+      "to_ref": "n9",
+      "kind": "passes_callback",
+      "certainty": "possible",
+      "invocation": "callback_transfer:synchronous",
+      "location": {
+        "path": "client/pkg/transport/listener.go",
+        "line": 591,
+        "column": 28
+      }
+    },
+    {
+      "ref": "e9",
+      "from_ref": "n9",
+      "to_ref": "x1",
+      "kind": "invokes_external",
+      "certainty": "exact",
+      "invocation": "synchronous",
+      "location": {
+        "path": "client/pkg/transport/listener.go",
+        "line": 602,
+        "column": 26
+      },
+      "endpoint": true
+    }
+  ],
+  "endpoint": {
+    "ref": "x1",
+    "name": "crypto/tls.X509KeyPair",
+    "mechanism": "TLS",
+    "operation": "Load TLS key pair",
+    "certainty": "exact",
+    "callsite": {
+      "path": "client/pkg/transport/listener.go",
+      "line": 602,
+      "column": 26
+    },
+    "from_ref": "n9",
+    "binding_edge_ref": "e9",
+    "boundary_message": "Execution inside the external library is not represented by this catalog."
+  },
+  "core_groups": [
+    {
+      "ref": "g1",
+      "name": "Server configuration and startup",
+      "purpose": "Parses command-line and file configuration, validates it, and launches the etcd server or proxy processes."
+    },
+    {
+      "ref": "g2",
+      "name": "Server configuration and embedding",
+      "purpose": "Defines server configuration structures, validation, and the embeddable etcd server lifecycle."
+    },
+    {
+      "ref": "g3",
+      "name": "Server bootstrap and lifecycle",
+      "purpose": "Bootstraps storage, cluster, and raft state from WAL, snapshots, or new configuration, then starts and stops the etcd server."
+    },
+    {
+      "ref": "g4",
+      "name": "Raft HTTP transport",
+      "purpose": "Transports raft messages, snapshots, and streams between peers over HTTP, including connection multiplexing, probing, and rate limiting."
+    },
+    {
+      "ref": "g5",
+      "name": "Transport and TLS utilities",
+      "purpose": "Provides network transport utilities including listeners, TLS configuration, timeouts, and socket options."
+    }
+  ],
+  "frontiers": [
+    {
+      "ref": "u1",
+      "kind": "possible_edge",
+      "edge_ref": "e8",
+      "at_ref": "n9",
+      "message": "passes_callback from n8 to n9 is represented as possible, not exact."
+    },
+    {
+      "ref": "u2",
+      "kind": "omitted_program_facts",
+      "message": "The source run omitted 1813 program objects, 48 relations, and 5652 traversal targets; alternate or longer paths may therefore be absent."
+    },
+    {
+      "ref": "u3",
+      "kind": "external_boundary",
+      "at_ref": "x1",
+      "message": "The catalog binds the callsite to the external symbol but does not represent execution inside that external library call."
+    }
+  ],
+  "source_inputs": [
+    {
+      "name": "activity-entrypoints.json",
+      "sha256": "dba33a3fbcf579496d1fbd3a1db4671af51c0951bf17f778762f262ca761f4d7"
+    },
+    {
+      "name": "activity-paths.json",
+      "sha256": "05a2c469a641ae9d21c01ee909484f12a24de8a3b660d12f45a720141ee8a2e1"
+    },
+    {
+      "name": "core-map.json",
+      "sha256": "017b10c0720ae944ff369613596c206ab2472c12b43bab6d51bcf485fb08d53d"
+    },
+    {
+      "name": "integration-usage.json",
+      "sha256": "a3c4ee52e02977fef16a047eac3083733f02352de2e9b17604c319ea2da43374"
+    },
+    {
+      "name": "program-index.json",
+      "sha256": "daddfdf71acdc4bf139bef965ea193a2899b9a8497548af6dbb13e2464c9e88a"
+    },
+    {
+      "name": "report.json",
+      "sha256": "e356a167da68b760fca4cfa8891a12273175f9514115b576b7fa435da695d6e0"
+    },
+    {
+      "name": "run_manifest.json",
+      "sha256": "71600c1db4ef45a60a9506d0e639006345317e12cac6cbd75bf84e5215bbcf5b"
+    }
+  ]
+}

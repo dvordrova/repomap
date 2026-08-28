@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "source_run_id": "20260827-221344-etcd-a086dce0989a",
+  "source_artifacts": [
+    {
+      "artifact": "activity-entrypoints.json",
+      "sha256": "dba33a3fbcf579496d1fbd3a1db4671af51c0951bf17f778762f262ca761f4d7",
+      "bytes": 68866
+    },
+    {
+      "artifact": "activity-paths.json",
+      "sha256": "05a2c469a641ae9d21c01ee909484f12a24de8a3b660d12f45a720141ee8a2e1",
+      "bytes": 993776
+    },
+    {
+      "artifact": "core-map.json",
+      "sha256": "017b10c0720ae944ff369613596c206ab2472c12b43bab6d51bcf485fb08d53d",
+      "bytes": 1863293
+    },
+    {
+      "artifact": "integration-dependencies.json",
+      "sha256": "eb92632ae8c511f479d0a8d02a2f0a6d421e4f6cb6eef60a7fbceadb504ed538",
+      "bytes": 64339
+    },
+    {
+      "artifact": "integration-usage.json",
+      "sha256": "a3c4ee52e02977fef16a047eac3083733f02352de2e9b17604c319ea2da43374",
+      "bytes": 694153
+    },
+    {
+      "artifact": "program-index.json",
+      "sha256": "daddfdf71acdc4bf139bef965ea193a2899b9a8497548af6dbb13e2464c9e88a",
+      "bytes": 17987873
+    }
+  ],
+  "model_calls": [
+    {
+      "call_id": "p1-q1",
+      "stage": "p1",
+      "paraphrase_id": "q1",
+      "status": "accepted",
+      "cached": false,
+      "request_sha256": "dc4dd8eb06ec21601dac0fe75f30e1ffb8c2a73bfec87a4543bd9441d7827d41",
+      "response_sha256": "bcf96e90036d7e286b332ead0422efa95fec55f6f697bccafdcefb6d056fadb7",
+      "input_tokens": 2351,
+      "output_tokens": 517,
+      "latency_ms": 4397,
+      "attempts": 1
+    },
+    {
+      "call_id": "p1-q2",
+      "stage": "p1",
+      "paraphrase_id": "q2",
+      "status": "accepted",
+      "cached": false,
+      "request_sha256": "dbe8245b6c486f3eee67de7966e5c53f3ba27663301da43aef6b53ee18b787d1",
+      "response_sha256": "7a24d5d2ab61dbed170553447d90b7f4c896f887d11ae2aea4a819bfdbdd8fa8",
+      "input_tokens": 2350,
+      "output_tokens": 481,
+      "latency_ms": 3924,
+      "attempts": 1
+    },
+    {
+      "call_id": "p2-critic-q1",
+      "stage": "p2-critic",
+      "paraphrase_id": "q1",
+      "status": "accepted",
+      "cached": false,
+      "request_sha256": "abf46506ddfec9116378297088144915ac0c11bd45be989b72e1c73262670315",
+      "response_sha256": "ac896f91cd63e3452ffcd5281b6c1b5bda762526e53cf6612ac5968c54d02e65",
+      "input_tokens": 2606,
+      "output_tokens": 89,
+      "latency_ms": 1571,
+      "attempts": 1
+    },
+    {
+      "call_id": "p2-critic-q2",
+      "stage": "p2-critic",
+      "paraphrase_id": "q2",
+      "status": "accepted",
+      "cached": false,
+      "request_sha256": "12e6e21cf18025844fa2cd9e6990d07d7bdb8c4e65caa6b4804e4f29ff952490",
+      "response_sha256": "3b6136a77118d4f533f820446ea1389d86014cd3b3d9d2b7162db2738055cd66",
+      "input_tokens": 2564,
+      "output_tokens": 89,
+      "latency_ms": 1444,
+      "attempts": 1
+    },
+    {
+      "call_id": "p2-planner-q1",
+      "stage": "p2-planner",
+      "paraphrase_id": "q1",
+      "status": "accepted",
+      "cached": false,
+      "request_sha256": "dc4dd8eb06ec21601dac0fe75f30e1ffb8c2a73bfec87a4543bd9441d7827d41",
+      "response_sha256": "5c9f0f2603180df8ce3991a79b807251767633aa13535b2ca73103b113093af3",
+      "input_tokens": 2351,
+      "output_tokens": 460,
+      "latency_ms": 3626,
+      "attempts": 1
+    },
+    {
+      "call_id": "p2-planner-q2",
+      "stage": "p2-planner",
+      "paraphrase_id": "q2",
+      "status": "accepted",
+      "cached": false,
+      "request_sha256": "dbe8245b6c486f3eee67de7966e5c53f3ba27663301da43aef6b53ee18b787d1",
+      "response_sha256": "be0b0b4738aa94d5981b15f9a1295528b27d67d2dff02c547979cebfb036cfee",
+      "input_tokens": 2350,
+      "output_tokens": 564,
+      "latency_ms": 4198,
+      "attempts": 1
+    }
+  ]
+}
