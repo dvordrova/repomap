@@ -26,24 +26,41 @@ func TestPreviewProjectionKeepsStructuralAuthorityLocal(t *testing.T) {
 	if model.Summary.Observed != 10 || model.Summary.Boundaries != 4 || model.Summary.Complete != 3 || model.Summary.Excluded != 6 {
 		t.Fatalf("preview accounting = %#v", model.Summary)
 	}
-	if model.Summary.RequiredRoles != 8 || model.Summary.CommonRoles != 1 {
+	if model.Summary.ObservedUniversalRoles != 8 || model.Summary.ObservedCommonRoles != 1 {
 		t.Fatalf("preview role reduction = %#v", model.Summary)
 	}
-	recommended := []string{}
+	mostComplete := []string{}
 	for _, example := range model.Examples {
-		if example.Recommended {
-			recommended = append(recommended, example.Name)
+		if example.MostComplete {
+			mostComplete = append(mostComplete, example.Name)
 		}
 	}
-	if !reflect.DeepEqual(recommended, []string{"Kubernetes"}) {
-		t.Fatalf("recommended examples = %v", recommended)
+	if !reflect.DeepEqual(mostComplete, []string{"Kubernetes", "Vault"}) {
+		t.Fatalf("most complete examples = %v", mostComplete)
 	}
 	if !reflect.DeepEqual(model.Examples[:3], completePreviewExamples(model.Examples[:3])) {
 		t.Fatal("the three initially visible examples are not all complete")
 	}
 	notifier := previewExampleByName(t, model, "Notifier")
-	if notifier.Complete || notifier.Recommended || !reflect.DeepEqual(notifier.Missing, []string{"Verification", "Observability", "Failure policy"}) {
+	if notifier.Complete || notifier.MostComplete || !reflect.DeepEqual(notifier.Missing, []string{"Verification", "Observability", "Failure policy"}) {
 		t.Fatalf("Notifier projection = %#v", notifier)
+	}
+	clickHouse := previewExampleByName(t, model, "ClickHouse")
+	clickHouseFailure := previewSlot(clickHouse, "s6")
+	if clickHouseFailure.Status != "partial" || len(clickHouseFailure.Evidence) == 0 ||
+		!reflect.DeepEqual(clickHouseFailure.Missing, []string{"Failure policy"}) {
+		t.Fatalf("ClickHouse failure slot = %#v", clickHouseFailure)
+	}
+	notifierFailure := previewSlot(notifier, "s6")
+	if notifierFailure.Status != "missing" || len(notifierFailure.Evidence) != 0 ||
+		!reflect.DeepEqual(notifierFailure.Missing, []string{"Observability", "Failure policy"}) {
+		t.Fatalf("Notifier failure slot = %#v", notifierFailure)
+	}
+	if len(model.Tasks) != 1 || !model.Tasks[0].Available {
+		t.Fatalf("preview tasks = %#v", model.Tasks)
+	}
+	if model.Scope.Evidence != "Controlled fixture only" || model.Scope.Generalization != "Generalization not established" {
+		t.Fatalf("preview scope = %#v", model.Scope)
 	}
 	roleSet := make(map[string]int)
 	for _, step := range model.Steps {
@@ -58,6 +75,16 @@ func TestPreviewProjectionKeepsStructuralAuthorityLocal(t *testing.T) {
 		if count != 1 {
 			t.Fatalf("role %s appears in %d preview groups", role, count)
 		}
+	}
+	verification := previewRoleByID(t, model, string(H1RoleVerification))
+	if !verification.TaskRequired || verification.ObservedComplete != 3 || verification.CompleteExamples != 3 ||
+		verification.ObservedNecessity != "Observed in all" {
+		t.Fatalf("verification role projection = %#v", verification)
+	}
+	failurePolicy := previewRoleByID(t, model, string(H1RoleFailurePolicy))
+	if failurePolicy.TaskRequired || failurePolicy.ObservedComplete != 2 || failurePolicy.CompleteExamples != 3 ||
+		failurePolicy.ObservedNecessity != "Common pattern" {
+		t.Fatalf("failure policy role projection = %#v", failurePolicy)
 	}
 }
 
@@ -81,6 +108,7 @@ func TestPreviewIsOneDeterministicOfflineHTML(t *testing.T) {
 	for _, forbidden := range []string{
 		`<link`, `src="http`, `src='http`, `href="http`, `href='http`, `fetch(`,
 		`XMLHttpRequest`, `WebSocket`, `@import`, `program-object-`, `program-relation-`, `h1-instance-`,
+		`Recommended to copy`, `Six evidence-backed steps`, `9 / 9`, `coverage-bar`,
 	} {
 		if bytes.Contains(raw, []byte(forbidden)) {
 			t.Fatalf("standalone preview contains forbidden dependency or raw authority %q", forbidden)
@@ -149,6 +177,17 @@ func previewExampleByName(t *testing.T, model PreviewModel, name string) Preview
 	}
 	t.Fatalf("preview has no %s example", name)
 	return PreviewExample{}
+}
+
+func previewRoleByID(t *testing.T, model PreviewModel, id string) PreviewRole {
+	t.Helper()
+	for _, role := range model.Roles {
+		if role.ID == id {
+			return role
+		}
+	}
+	t.Fatalf("preview has no %s role", id)
+	return PreviewRole{}
 }
 
 func completePreviewExamples(values []PreviewExample) []PreviewExample {

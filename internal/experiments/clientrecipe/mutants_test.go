@@ -2,6 +2,8 @@ package clientrecipe
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -13,13 +15,64 @@ import (
 	"testing"
 )
 
+const (
+	robustnessGoldenVersion = 2
+	h1FreezeReceiptVersion  = 2
+)
+
 type robustnessGolden struct {
-	Version int                `json:"version"`
-	Mutants []robustnessMutant `json:"mutants"`
+	Version         int                 `json:"version"`
+	ExtractorFreeze h1FreezeReceipt     `json:"extractor_freeze"`
+	Scorecard       robustnessScorecard `json:"scorecard"`
+	Mutants         []robustnessMutant  `json:"mutants"`
+}
+
+type h1FreezeReceipt struct {
+	Version                  int              `json:"version"`
+	Status                   string           `json:"status"`
+	Scope                    string           `json:"scope"`
+	AuthorityVersion         int              `json:"authority_version"`
+	H0Version                int              `json:"h0_version"`
+	H1Version                int              `json:"h1_version"`
+	EvaluationVersion        int              `json:"evaluation_version"`
+	BaselineAuthoritySHA256  string           `json:"baseline_authority_sha256"`
+	BaselineH0SHA256         string           `json:"baseline_h0_sha256"`
+	BaselineH1SHA256         string           `json:"baseline_h1_sha256"`
+	BaselineOracleSHA256     string           `json:"baseline_oracle_sha256"`
+	BaselineEvaluationSHA256 string           `json:"baseline_evaluation_sha256"`
+	SourceSHA256             string           `json:"source_sha256"`
+	Sources                  []h1FreezeSource `json:"sources"`
+	Rules                    []h1FreezeRule   `json:"rules"`
+	SHA256                   string           `json:"sha256"`
+}
+
+type h1FreezeSource struct {
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"`
+}
+
+type h1FreezeRule struct {
+	ID        string `json:"id"`
+	Statement string `json:"statement"`
+}
+
+type robustnessScorecard struct {
+	Verdict              EvaluationVerdict `json:"verdict"`
+	Claim                string            `json:"claim"`
+	Scope                string            `json:"scope"`
+	Passed               int               `json:"passed"`
+	Total                int               `json:"total"`
+	Dimensions           []string          `json:"dimensions"`
+	FeasibilityStatus    string            `json:"feasibility_status"`
+	GeneralizationStatus string            `json:"generalization_status"`
+	UserUtilityStatus    string            `json:"user_utility_status"`
+	ProductionReadiness  string            `json:"production_readiness"`
 }
 
 type robustnessMutant struct {
 	Name                 string                `json:"name"`
+	Dimension            string                `json:"dimension"`
+	Invariant            string                `json:"invariant"`
 	OracleDelta          string                `json:"oracle_delta"`
 	Verdict              EvaluationVerdict     `json:"verdict"`
 	Ledger               H1Ledger              `json:"ledger"`
@@ -35,33 +88,47 @@ type robustnessMutant struct {
 }
 
 func TestH1RobustnessMutants(t *testing.T) {
+	repositoryRoot := filepath.Clean(filepath.Join(experimentRoot(t), "..", "..", ".."))
 	baseOracle, err := DecodeOracle(readExperimentFile(t, filepath.Join(experimentRoot(t), "oracle.json")))
 	if err != nil {
 		t.Fatal(err)
 	}
 	tests := []struct {
 		name        string
+		dimension   string
+		invariant   string
 		oracleDelta string
 		mutate      func(*testing.T, string, *Oracle)
 	}{
 		{
 			name:        "noise_false_shapes",
+			dimension:   "noise",
+			invariant:   "irrelevant lookalike code does not change admitted boundaries, roles, evidence, exclusions, or callback accounting",
 			oracleDelta: "none; added shapes remain outside the oracle universe",
 			mutate:      mutateFalseShapeNoise,
 		},
 		{
 			name:        "renamed_symbols_and_boundary_directory",
+			dimension:   "rename",
+			invariant:   "constructor, configuration, wrapper, helper, and directory names are not semantic admission authority",
 			oracleDelta: "source paths and display symbols renamed; task semantics unchanged",
 			mutate:      mutateNamesAndBoundaryDirectory,
 		},
 		{
 			name:        "verification_layout_integration_to_unit",
+			dimension:   "layout",
+			invariant:   "verification remains grounded after relocation from an integration package to a package-local unit test",
 			oracleDelta: "clickhouse verification path and kind changed to unit_test",
 			mutate:      mutateVerificationLayout,
 		},
 	}
 
-	golden := robustnessGolden{Version: 1, Mutants: make([]robustnessMutant, 0, len(tests))}
+	golden := robustnessGolden{
+		Version:         robustnessGoldenVersion,
+		ExtractorFreeze: buildH1FreezeReceipt(t),
+		Mutants:         make([]robustnessMutant, 0, len(tests)),
+	}
+	assertH1FreezeRejectsDrift(t, golden.ExtractorFreeze, repositoryRoot)
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			experiment := copyExperimentFixture(t)
@@ -109,7 +176,8 @@ func TestH1RobustnessMutants(t *testing.T) {
 				t.Fatalf("incomplete instance missing roles = %v, want %v", missing, wantMissing)
 			}
 			golden.Mutants = append(golden.Mutants, robustnessMutant{
-				Name: test.name, OracleDelta: test.oracleDelta, Verdict: evaluation.Verdict,
+				Name: test.name, Dimension: test.dimension, Invariant: test.invariant,
+				OracleDelta: test.oracleDelta, Verdict: evaluation.Verdict,
 				Ledger: first.Ledger, InstanceDiscovery: evaluation.H1.InstanceDiscovery,
 				RoleCoverage: evaluation.H1.RoleCoverage, EvidenceGrounding: evaluation.H1.EvidenceGrounding,
 				ExclusionGrounding: evaluation.H1.ExclusionGrounding,
@@ -120,6 +188,10 @@ func TestH1RobustnessMutants(t *testing.T) {
 		})
 	}
 	sort.Slice(golden.Mutants, func(i, j int) bool { return golden.Mutants[i].Name < golden.Mutants[j].Name })
+	golden.Scorecard = buildRobustnessScorecard(golden.Mutants)
+	if err := golden.Validate(repositoryRoot); err != nil {
+		t.Fatal(err)
+	}
 	raw, err := json.MarshalIndent(golden, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -127,6 +199,9 @@ func TestH1RobustnessMutants(t *testing.T) {
 	raw = append(raw, '\n')
 	var decoded robustnessGolden
 	if err := decodeStrict(raw, &decoded, "robustness golden"); err != nil {
+		t.Fatal(err)
+	}
+	if err := decoded.Validate(repositoryRoot); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(decoded, golden) {
@@ -137,6 +212,325 @@ func TestH1RobustnessMutants(t *testing.T) {
 		return decodeStrict(candidate, &value, "robustness golden")
 	})
 	assertExperimentGolden(t, "05-robustness.json", raw)
+}
+
+func buildH1FreezeReceipt(t *testing.T) h1FreezeReceipt {
+	t.Helper()
+	repositoryRoot := filepath.Clean(filepath.Join(experimentRoot(t), "..", "..", ".."))
+	baseline, err := loadH1FreezeBaseline(repositoryRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources, err := discoverH1FreezeSources(repositoryRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt := h1FreezeReceipt{
+		Version: h1FreezeReceiptVersion, Status: "FROZEN", Scope: "test_only_h1_generalization_gate",
+		AuthorityVersion: AuthorityVersion, H0Version: H0Version, H1Version: H1Version,
+		EvaluationVersion:        EvaluationVersion,
+		BaselineAuthoritySHA256:  baseline.AuthoritySHA256,
+		BaselineH0SHA256:         baseline.H0SHA256,
+		BaselineH1SHA256:         baseline.H1SHA256,
+		BaselineOracleSHA256:     baseline.OracleSHA256,
+		BaselineEvaluationSHA256: baseline.EvaluationSHA256,
+		Sources:                  sources,
+		Rules:                    h1FreezeRules(),
+	}
+	receipt.SourceSHA256 = h1FreezeSourcesDigest(receipt.Sources)
+	receipt.SHA256 = h1FreezeDigest(receipt)
+	if err := receipt.Validate(repositoryRoot); err != nil {
+		t.Fatal(err)
+	}
+	return receipt
+}
+
+func h1FreezeRules() []h1FreezeRule {
+	return []h1FreezeRule{
+		{ID: "admissibility", Statement: "start from each exact external dependency/importer H0 candidate and require one restorable local structural wrapper"},
+		{ID: "clustering", Statement: "bind one boundary instance to one H0 candidate and its single exact wrapper, constructor flow, cross-package wiring flow, and live consumer flow"},
+		{ID: "completeness", Statement: "complete requires configuration, construction, local wrapper, consumer boundary, application wiring, production operation, verification, and observability; failure policy is not mandatory"},
+		{ID: "exclusions", Statement: "retain generated, test-only, not-production-reachable, and not-external-boundary candidates as explicit closed exclusions"},
+		{ID: "ranking", Statement: "among complete instances, maximize learned required-and-common role coverage and retain every exact tie as equally eligible"},
+		{ID: "role_extraction", Statement: "derive closed roles only from exact typed relations, structural source forms, source classifications, production reachability, and grounded source evidence"},
+		{ID: "role_reduction", Statement: "reduce roles over complete instances: all is required, at least two and two-thirds is common, and the remainder is optional"},
+	}
+}
+
+func assertH1FreezeRejectsDrift(t *testing.T, frozen h1FreezeReceipt, repositoryRoot string) {
+	t.Helper()
+	clone := func() h1FreezeReceipt {
+		value := frozen
+		value.Sources = append([]h1FreezeSource(nil), frozen.Sources...)
+		value.Rules = append([]h1FreezeRule(nil), frozen.Rules...)
+		return value
+	}
+	reseal := func(value h1FreezeReceipt) h1FreezeReceipt {
+		value.SourceSHA256 = h1FreezeSourcesDigest(value.Sources)
+		value.SHA256 = h1FreezeDigest(value)
+		return value
+	}
+	mutations := []struct {
+		name   string
+		mutate func(h1FreezeReceipt) h1FreezeReceipt
+	}{
+		{name: "omitted source", mutate: func(value h1FreezeReceipt) h1FreezeReceipt {
+			value.Sources = value.Sources[1:]
+			return reseal(value)
+		}},
+		{name: "invented source", mutate: func(value h1FreezeReceipt) h1FreezeReceipt {
+			value.Sources = append(value.Sources, h1FreezeSource{
+				Path: "zz-freeze-probe.go", SHA256: strings.Repeat("0", 64),
+			})
+			return reseal(value)
+		}},
+		{name: "oracle identity", mutate: func(value h1FreezeReceipt) h1FreezeReceipt {
+			value.BaselineOracleSHA256 = strings.Repeat("0", 64)
+			return reseal(value)
+		}},
+		{name: "evaluation identity", mutate: func(value h1FreezeReceipt) h1FreezeReceipt {
+			value.BaselineEvaluationSHA256 = strings.Repeat("0", 64)
+			return reseal(value)
+		}},
+	}
+	for _, mutation := range mutations {
+		if err := mutation.mutate(clone()).Validate(repositoryRoot); err == nil {
+			t.Fatalf("H1 freeze accepted %s drift", mutation.name)
+		}
+	}
+}
+
+type h1FreezeBaseline struct {
+	AuthoritySHA256  string
+	H0SHA256         string
+	H1SHA256         string
+	OracleSHA256     string
+	EvaluationSHA256 string
+}
+
+func loadH1FreezeBaseline(repositoryRoot string) (h1FreezeBaseline, error) {
+	experiment := filepath.Join(repositoryRoot, "testdata", "experiments", "clientrecipe")
+	read := func(relative string) ([]byte, error) {
+		raw, err := os.ReadFile(filepath.Join(experiment, filepath.FromSlash(relative)))
+		if err != nil {
+			return nil, fmt.Errorf("client recipe H1 freeze: read %s: %w", relative, err)
+		}
+		return raw, nil
+	}
+	authorityRaw, err := read("golden/01-input-authority.json")
+	if err != nil {
+		return h1FreezeBaseline{}, err
+	}
+	authority, err := DecodeAuthority(authorityRaw)
+	if err != nil {
+		return h1FreezeBaseline{}, err
+	}
+	h0Raw, err := read("golden/02-h0-candidates.json")
+	if err != nil {
+		return h1FreezeBaseline{}, err
+	}
+	h0, err := DecodeH0(h0Raw)
+	if err != nil {
+		return h1FreezeBaseline{}, err
+	}
+	h1Raw, err := read("golden/03-h1-structural.json")
+	if err != nil {
+		return h1FreezeBaseline{}, err
+	}
+	h1, err := DecodeH1(h1Raw)
+	if err != nil {
+		return h1FreezeBaseline{}, err
+	}
+	oracleRaw, err := read("oracle.json")
+	if err != nil {
+		return h1FreezeBaseline{}, err
+	}
+	oracle, err := DecodeOracle(oracleRaw)
+	if err != nil {
+		return h1FreezeBaseline{}, err
+	}
+	evaluationRaw, err := read("golden/04-evaluation.json")
+	if err != nil {
+		return h1FreezeBaseline{}, err
+	}
+	evaluation, err := DecodeEvaluation(evaluationRaw)
+	if err != nil {
+		return h1FreezeBaseline{}, err
+	}
+	if h0.AuthoritySHA256 != authority.SHA256 || h1.AuthoritySHA256 != authority.SHA256 ||
+		h1.H0SHA256 != h0.SHA256 || evaluation.H0SHA256 != h0.SHA256 ||
+		evaluation.H1SHA256 != h1.SHA256 || evaluation.OracleSHA256 != oracleEvaluationDigest(oracle) {
+		return h1FreezeBaseline{}, fmt.Errorf("client recipe H1 freeze: baseline identity chain mismatch")
+	}
+	oracleDigest := sha256.Sum256(oracleRaw)
+	return h1FreezeBaseline{
+		AuthoritySHA256:  authority.SHA256,
+		H0SHA256:         h0.SHA256,
+		H1SHA256:         h1.SHA256,
+		OracleSHA256:     hex.EncodeToString(oracleDigest[:]),
+		EvaluationSHA256: evaluation.SHA256,
+	}, nil
+}
+
+func discoverH1FreezeSources(repositoryRoot string) ([]h1FreezeSource, error) {
+	packagePath := filepath.Join(repositoryRoot, "internal", "experiments", "clientrecipe")
+	entries, err := os.ReadDir(packagePath)
+	if err != nil {
+		return nil, fmt.Errorf("client recipe H1 freeze: discover package sources: %w", err)
+	}
+	paths := make([]string, 0, len(entries)+6)
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		if !entry.Type().IsRegular() {
+			return nil, fmt.Errorf("client recipe H1 freeze: package source %s is not regular", entry.Name())
+		}
+		paths = append(paths, filepath.ToSlash(filepath.Join("internal", "experiments", "clientrecipe", entry.Name())))
+	}
+	paths = append(paths,
+		"go.mod",
+		"go.sum",
+		"internal/dependencies/catalog.go",
+		"internal/programindex/index.go",
+		"testdata/experiments/clientrecipe/negative_invariants.json",
+		"testdata/experiments/clientrecipe/task_contract.json",
+	)
+	sort.Strings(paths)
+	sources := make([]h1FreezeSource, 0, len(paths))
+	previous := ""
+	for _, sourcePath := range paths {
+		if previous == sourcePath {
+			return nil, fmt.Errorf("client recipe H1 freeze: duplicate source %s", sourcePath)
+		}
+		previous = sourcePath
+		filename := filepath.Join(repositoryRoot, filepath.FromSlash(sourcePath))
+		info, err := os.Lstat(filename)
+		if err != nil {
+			return nil, fmt.Errorf("client recipe H1 freeze: inspect %s: %w", sourcePath, err)
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("client recipe H1 freeze: source %s is not regular", sourcePath)
+		}
+		raw, err := os.ReadFile(filename)
+		if err != nil {
+			return nil, fmt.Errorf("client recipe H1 freeze: read %s: %w", sourcePath, err)
+		}
+		digest := sha256.Sum256(raw)
+		sources = append(sources, h1FreezeSource{Path: sourcePath, SHA256: hex.EncodeToString(digest[:])})
+	}
+	return sources, nil
+}
+
+func buildRobustnessScorecard(mutants []robustnessMutant) robustnessScorecard {
+	dimensionSet := make(map[string]struct{}, len(mutants))
+	passed := 0
+	for _, mutant := range mutants {
+		dimensionSet[mutant.Dimension] = struct{}{}
+		if mutant.Verdict == EvaluationPass {
+			passed++
+		}
+	}
+	dimensions := make([]string, 0, len(dimensionSet))
+	for dimension := range dimensionSet {
+		dimensions = append(dimensions, dimension)
+	}
+	sort.Strings(dimensions)
+	verdict := EvaluationFail
+	if passed == len(mutants) && len(mutants) > 0 {
+		verdict = EvaluationPass
+	}
+	return robustnessScorecard{
+		Verdict: verdict,
+		Claim:   "the frozen H1 behavior preserved its oracle score under rename, layout, and irrelevant-noise mutations of the same controlled fixture",
+		Scope:   "controlled_fixture_mutations", Passed: passed, Total: len(mutants), Dimensions: dimensions,
+		FeasibilityStatus: "ESTABLISHED", GeneralizationStatus: "NOT_ESTABLISHED",
+		UserUtilityStatus: "NOT_TESTED", ProductionReadiness: "NOT_READY",
+	}
+}
+
+func (value robustnessGolden) Validate(repositoryRoot string) error {
+	if value.Version != robustnessGoldenVersion || value.Mutants == nil {
+		return fmt.Errorf("client recipe robustness: invalid identity")
+	}
+	if err := value.ExtractorFreeze.Validate(repositoryRoot); err != nil {
+		return err
+	}
+	wantScorecard := buildRobustnessScorecard(value.Mutants)
+	if !reflect.DeepEqual(value.Scorecard, wantScorecard) {
+		return fmt.Errorf("client recipe robustness: scorecard does not match mutant outcomes")
+	}
+	previous := ""
+	for _, mutant := range value.Mutants {
+		if mutant.Name == "" || mutant.Dimension == "" || mutant.Invariant == "" || mutant.OracleDelta == "" ||
+			!mutant.Verdict.Valid() || (previous != "" && previous >= mutant.Name) {
+			return fmt.Errorf("client recipe robustness: invalid or non-canonical mutant %q", mutant.Name)
+		}
+		previous = mutant.Name
+	}
+	return nil
+}
+
+func (value h1FreezeReceipt) Validate(repositoryRoot string) error {
+	if value.Version != h1FreezeReceiptVersion || value.Status != "FROZEN" ||
+		value.Scope != "test_only_h1_generalization_gate" || value.AuthorityVersion != AuthorityVersion ||
+		value.H0Version != H0Version || value.H1Version != H1Version || value.EvaluationVersion != EvaluationVersion ||
+		!validSHA256(value.BaselineAuthoritySHA256) || !validSHA256(value.BaselineH0SHA256) ||
+		!validSHA256(value.BaselineH1SHA256) || !validSHA256(value.BaselineOracleSHA256) ||
+		!validSHA256(value.BaselineEvaluationSHA256) || !validSHA256(value.SourceSHA256) || !validSHA256(value.SHA256) ||
+		len(value.Sources) == 0 || len(value.Rules) == 0 {
+		return fmt.Errorf("client recipe H1 freeze: invalid identity")
+	}
+	previous := ""
+	for _, source := range value.Sources {
+		if !validSourcePath(source.Path) || !validSHA256(source.SHA256) || (previous != "" && previous >= source.Path) {
+			return fmt.Errorf("client recipe H1 freeze: invalid or non-canonical source %q", source.Path)
+		}
+		previous = source.Path
+	}
+	previous = ""
+	for _, rule := range value.Rules {
+		if rule.ID == "" || rule.Statement == "" || (previous != "" && previous >= rule.ID) {
+			return fmt.Errorf("client recipe H1 freeze: invalid or non-canonical rule %q", rule.ID)
+		}
+		previous = rule.ID
+	}
+	if !reflect.DeepEqual(value.Rules, h1FreezeRules()) {
+		return fmt.Errorf("client recipe H1 freeze: rule surface mismatch")
+	}
+	baseline, err := loadH1FreezeBaseline(repositoryRoot)
+	if err != nil {
+		return err
+	}
+	if value.BaselineAuthoritySHA256 != baseline.AuthoritySHA256 || value.BaselineH0SHA256 != baseline.H0SHA256 ||
+		value.BaselineH1SHA256 != baseline.H1SHA256 || value.BaselineOracleSHA256 != baseline.OracleSHA256 ||
+		value.BaselineEvaluationSHA256 != baseline.EvaluationSHA256 {
+		return fmt.Errorf("client recipe H1 freeze: stored baseline identity does not match canonical artifacts")
+	}
+	wantSources, err := discoverH1FreezeSources(repositoryRoot)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(value.Sources, wantSources) {
+		return fmt.Errorf("client recipe H1 freeze: source surface or digest mismatch")
+	}
+	if value.SourceSHA256 != h1FreezeSourcesDigest(value.Sources) || value.SHA256 != h1FreezeDigest(value) {
+		return fmt.Errorf("client recipe H1 freeze: digest mismatch")
+	}
+	return nil
+}
+
+func h1FreezeSourcesDigest(sources []h1FreezeSource) string {
+	raw, _ := json.Marshal(sources)
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:])
+}
+
+func h1FreezeDigest(value h1FreezeReceipt) string {
+	value.SHA256 = ""
+	raw, _ := json.Marshal(value)
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:])
 }
 
 func mutateNamesAndBoundaryDirectory(t *testing.T, experiment string, oracle *Oracle) {

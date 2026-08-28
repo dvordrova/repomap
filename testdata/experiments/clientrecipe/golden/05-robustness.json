@@ -1,8 +1,146 @@
 {
-  "version": 1,
+  "version": 2,
+  "extractor_freeze": {
+    "version": 2,
+    "status": "FROZEN",
+    "scope": "test_only_h1_generalization_gate",
+    "authority_version": 1,
+    "h0_version": 1,
+    "h1_version": 1,
+    "evaluation_version": 1,
+    "baseline_authority_sha256": "a6f492ded210630277f42eac2f88161f0cdf882ad7f04baf50eb4d26ac50b510",
+    "baseline_h0_sha256": "25198acc31182428997f5eee842d56bb6ff2b9e526c0d0945b925c916d447e74",
+    "baseline_h1_sha256": "8d2614e3c34005ee4bd2abde9a6eff124176facbaf743c5a85a69c37b902d4a7",
+    "baseline_oracle_sha256": "5474c64528cded2087fa485045d60072818ca6c63c5e9d13756ddaf287a35b40",
+    "baseline_evaluation_sha256": "be06664fb8f3be45bd8cc1c250cdef8f506fb74800799e2ce9ac1f5d1bce4a58",
+    "source_sha256": "aaa0429ce8aadd59379cf16f53c0ce50a313b06c74c68e3634a618056ce0089d",
+    "sources": [
+      {
+        "path": "go.mod",
+        "sha256": "40ac5fef91925ddd3a4c0996811964ce0765c6d52effcc0f8fdaaf6ade42f2df"
+      },
+      {
+        "path": "go.sum",
+        "sha256": "36148a3725099f01c41f29b427b3a072719c6feb4160f2ca89396b81253d5190"
+      },
+      {
+        "path": "internal/dependencies/catalog.go",
+        "sha256": "a2d2613858cdaef0edebaf874213e34906088a5299fa85866cbda79acfeb7be8"
+      },
+      {
+        "path": "internal/experiments/clientrecipe/authority.go",
+        "sha256": "4940657d24b421e930442b012da1bf10507fe29f7c8a1021e5e6aeb1ea7b93be"
+      },
+      {
+        "path": "internal/experiments/clientrecipe/contracts.go",
+        "sha256": "7753c863a81122674599ba75b94631e585ccd7e934ef0cf3ad0c098911123b0d"
+      },
+      {
+        "path": "internal/experiments/clientrecipe/evaluation.go",
+        "sha256": "3903c635bcb4412f01bbac21cc3918d370252935f2774cb9fb7b652ae205f67f"
+      },
+      {
+        "path": "internal/experiments/clientrecipe/go_authority.go",
+        "sha256": "0d61b5c77d5f4b7582e4a07cbf210f3050860ba62a27817d3c84fe5a70b1df53"
+      },
+      {
+        "path": "internal/experiments/clientrecipe/h0.go",
+        "sha256": "a73e4a178dd1a89c4ac20819a60f740ca61987a2dbd9cb4eeb378be54ad4ca6e"
+      },
+      {
+        "path": "internal/experiments/clientrecipe/h1.go",
+        "sha256": "8820d371ab1d761b0fd5659a09a214c3c4f7a56062d8c9ff7de567f27360e885"
+      },
+      {
+        "path": "internal/experiments/clientrecipe/h1_extract.go",
+        "sha256": "c49340eb3e06bdd5cbbbc55b5a228e8e2bc09791e6b5833272068d26012674ba"
+      },
+      {
+        "path": "internal/experiments/clientrecipe/h2.go",
+        "sha256": "ecc1e11b9c703579c36030a5e9af64038be96a281e20d34d4fdd2cb27febbb4f"
+      },
+      {
+        "path": "internal/experiments/clientrecipe/negative_invariants.go",
+        "sha256": "8f9b789cb493013dd5a9b026a784e4cc93614fe193644395ce5697e5edadb5c5"
+      },
+      {
+        "path": "internal/experiments/clientrecipe/oracle.go",
+        "sha256": "ed2cdcfa6a6a52dfbf35cd4280c4ed2c32b090d089696a7df5018b8c373297d1"
+      },
+      {
+        "path": "internal/experiments/clientrecipe/preview.go",
+        "sha256": "0c2ac9954eb09cbbdbeb8ac2cdd940e3a7cf519f4eb6d9b98c20d43a69e19316"
+      },
+      {
+        "path": "internal/experiments/clientrecipe/source.go",
+        "sha256": "87e37d1472dd466a00559dc38be3fe391c5ac6d4105b3f54f61b1b77733f289c"
+      },
+      {
+        "path": "internal/programindex/index.go",
+        "sha256": "bbdc04ad8af87c17098f716eddfa07420fd3683747695af7ef281fd07cc8994e"
+      },
+      {
+        "path": "testdata/experiments/clientrecipe/negative_invariants.json",
+        "sha256": "b35ca6c7897a0a468c26ec909af30f7195c533e76253f729cf565fbbe54117bb"
+      },
+      {
+        "path": "testdata/experiments/clientrecipe/task_contract.json",
+        "sha256": "a13176475384522b6b55522b3a75c88a5bb18cfbf0d55b0c71164789f889f2cc"
+      }
+    ],
+    "rules": [
+      {
+        "id": "admissibility",
+        "statement": "start from each exact external dependency/importer H0 candidate and require one restorable local structural wrapper"
+      },
+      {
+        "id": "clustering",
+        "statement": "bind one boundary instance to one H0 candidate and its single exact wrapper, constructor flow, cross-package wiring flow, and live consumer flow"
+      },
+      {
+        "id": "completeness",
+        "statement": "complete requires configuration, construction, local wrapper, consumer boundary, application wiring, production operation, verification, and observability; failure policy is not mandatory"
+      },
+      {
+        "id": "exclusions",
+        "statement": "retain generated, test-only, not-production-reachable, and not-external-boundary candidates as explicit closed exclusions"
+      },
+      {
+        "id": "ranking",
+        "statement": "among complete instances, maximize learned required-and-common role coverage and retain every exact tie as equally eligible"
+      },
+      {
+        "id": "role_extraction",
+        "statement": "derive closed roles only from exact typed relations, structural source forms, source classifications, production reachability, and grounded source evidence"
+      },
+      {
+        "id": "role_reduction",
+        "statement": "reduce roles over complete instances: all is required, at least two and two-thirds is common, and the remainder is optional"
+      }
+    ],
+    "sha256": "934a4b8b7f316f44e6b83172dc8e56c6ed56dd7d8be36c5d9670c9a68fb25f8d"
+  },
+  "scorecard": {
+    "verdict": "PASS",
+    "claim": "the frozen H1 behavior preserved its oracle score under rename, layout, and irrelevant-noise mutations of the same controlled fixture",
+    "scope": "controlled_fixture_mutations",
+    "passed": 3,
+    "total": 3,
+    "dimensions": [
+      "layout",
+      "noise",
+      "rename"
+    ],
+    "feasibility_status": "ESTABLISHED",
+    "generalization_status": "NOT_ESTABLISHED",
+    "user_utility_status": "NOT_TESTED",
+    "production_readiness": "NOT_READY"
+  },
   "mutants": [
     {
       "name": "noise_false_shapes",
+      "dimension": "noise",
+      "invariant": "irrelevant lookalike code does not change admitted boundaries, roles, evidence, exclusions, or callback accounting",
       "oracle_delta": "none; added shapes remain outside the oracle universe",
       "verdict": "PASS",
       "ledger": {
@@ -46,6 +184,8 @@
     },
     {
       "name": "renamed_symbols_and_boundary_directory",
+      "dimension": "rename",
+      "invariant": "constructor, configuration, wrapper, helper, and directory names are not semantic admission authority",
       "oracle_delta": "source paths and display symbols renamed; task semantics unchanged",
       "verdict": "PASS",
       "ledger": {
@@ -89,6 +229,8 @@
     },
     {
       "name": "verification_layout_integration_to_unit",
+      "dimension": "layout",
+      "invariant": "verification remains grounded after relocation from an integration package to a package-local unit test",
       "oracle_delta": "clickhouse verification path and kind changed to unit_test",
       "verdict": "PASS",
       "ledger": {
