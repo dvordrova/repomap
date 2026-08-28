@@ -131,6 +131,39 @@ func TestCurrentPipelineRendersOrientationVerticalSlice(t *testing.T) {
 	}
 }
 
+func TestOrientationClientReframesJoinedActivityPathsAsOptionalExecutionStory(t *testing.T) {
+	for _, required := range []string{
+		"function renderExecutionStory(activity, routes)",
+		"if (!routes.length) return null",
+		"route.activityID === activity.id",
+		"outcome.use.authority === 'exact_external_symbol'",
+		"if (outcomeIndex === 0)",
+		"Follow execution",
+		"not represented in available facts",
+	} {
+		if !strings.Contains(reportAppJS, required) {
+			t.Errorf("optional execution-story presentation is missing %q", required)
+		}
+	}
+	for _, selector := range []string{
+		".rm-execution-story__header",
+		".rm-execution-story__key--exact",
+		".rm-execution-story__key--possible",
+		".rm-execution-story-step--possible",
+		".rm-execution-story__not-represented",
+		".rm-execution-story-outcome__actions",
+	} {
+		if !strings.Contains(reportAppCSS, selector) {
+			t.Errorf("optional execution-story presentation is missing %q", selector)
+		}
+	}
+	for _, duplicateAuthority := range []string{"features.execution_story", "ExecutionStoryView"} {
+		if strings.Contains(reportAppJS, duplicateAuthority) {
+			t.Errorf("execution-story presentation introduced duplicate browser authority %q", duplicateAuthority)
+		}
+	}
+}
+
 func TestSystemCanvasAssetsKeepIsolatedOwnership(t *testing.T) {
 	scriptIDs := []string{
 		`id="rm-report-loader-js"`,

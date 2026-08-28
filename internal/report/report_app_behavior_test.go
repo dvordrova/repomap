@@ -205,6 +205,7 @@ const exposure = [
   '    selectedReportRoute: selectedReportRoute,',
   '    renderRepositoryFallback: renderRepositoryFallback,',
   '    renderActivityDetail: renderActivityDetail,',
+  '    renderExecutionStory: renderExecutionStory,',
   '    renderStarts: renderStarts,',
   '    compactDisplayText: compactDisplayText,',
   '    renderIntegrationDetail: renderIntegrationDetail,',
@@ -277,10 +278,15 @@ const packageObject = {
   external: { package_path: 'react', receiver: 'react', name: 'useEffect' }
 };
 const directRoute = {
-  activityID: activity.id, callerID: activity.id, status: 'exact', steps: [], frontier: [],
+  id: 'route:direct',
+  activityID: activity.id, callerID: activity.id, status: 'exact', distance: 0, steps: [], frontier: [],
   outcomes: [{
     dependencyID: integration.id,
-    use: { authority: 'exact_external_symbol', label: 'send request' }
+    use: {
+      authority: 'exact_external_symbol', label: 'send request', callee: 'http-client.send',
+      mechanism: 'resolved external call',
+      callsite: { path: 'app/execution.py', line: 30, column: 3 }
+    }
   }]
 };
 const model = {
@@ -920,7 +926,7 @@ const activityHost = new TestElement('main');
 model.blocksBySymbol[activity.id] = [block.id];
 api.renderActivityDetail(activityHost, route.activity);
 check(activityHost.textContent.includes('Start here') &&
-  activityHost.textContent.includes('Paths to selected integrations'),
+  activityHost.textContent.includes('Follow execution'),
   'the entrypoint route must render a useful semantic detail page');
 check(descendants(activityHost).some((node) => node.className === 'rm-entrypoint-header') &&
   !descendants(activityHost).some((node) => node.className === 'rm-detail-hero') &&
@@ -929,6 +935,84 @@ check(descendants(activityHost).some((node) => node.className === 'rm-entrypoint
   activityHost.textContent.includes('Starts here') &&
   activityHost.textContent.includes('Exact selected path'),
   'entrypoint detail must use a compact header and expose existing responsibility and route facts');
+const exactStory = descendants(activityHost).find((node) =>
+  String(node.className).split(/\s+/).includes('rm-execution-story')
+);
+const exactStorySourceActions = exactStory ? descendants(exactStory).filter((node) =>
+  String(node.className).split(/\s+/).includes('rm-source-action')
+) : [];
+check(exactStory && exactStory.textContent.includes('Deterministic program facts') &&
+  exactStory.textContent.includes('Exact route') && exactStory.textContent.includes('External outcome') &&
+  exactStory.textContent.includes('http-client.send'),
+  'Follow execution must reframe the already joined exact route and endpoint without model prose');
+check(exactStorySourceActions.length === 2 &&
+  exactStorySourceActions[0].textContent.includes('Start here') &&
+  exactStorySourceActions[1].textContent.includes('Open exact endpoint'),
+  'one execution route must expose only its selected activity and one exact endpoint source action');
+
+const possibleCaller = {
+  id: 'object:possible-caller', name: 'app/execution#sendPossibly', kind: 'function'
+};
+model.activityPaths.objectsByID[possibleCaller.id] = possibleCaller;
+const possibleRoute = {
+  id: 'route:possible', activityID: activity.id, callerID: possibleCaller.id,
+  status: 'possible', distance: 1, frontier: [],
+  steps: [{
+    fromID: activity.id, toID: possibleCaller.id, kind: 'passes_callback', authority: 'possible',
+    location: { path: 'app/execution.py', line: 24, column: 3 }
+  }],
+  outcomes: [directRoute.outcomes[0], {
+    dependencyID: integration.id,
+    use: {
+      authority: 'exact_external_symbol', label: 'send fallback', callee: 'http-client.sendFallback',
+      mechanism: 'resolved external call',
+      callsite: { path: 'app/execution.py', line: 31, column: 3 }
+    }
+  }]
+};
+const possibleStory = api.renderExecutionStory(activity, [possibleRoute]);
+const possibleSourceActions = descendants(possibleStory).filter((node) =>
+  String(node.className).split(/\s+/).includes('rm-source-action')
+);
+check(possibleStory.textContent.includes('Possible route') &&
+  descendants(possibleStory).some((node) =>
+    String(node.className).split(/\s+/).includes('rm-execution-story-step--possible')) &&
+  (possibleStory.textContent.match(/External outcome/g) || []).length === 2,
+  'Follow execution must keep a possible edge visibly distinct and retain every exact joined outcome');
+check(possibleSourceActions.length === 2,
+  'multiple exact outcomes on one route must not expand beyond the two-source-action cap');
+
+const unresolvedRoute = {
+  id: 'route:unresolved-endpoint', activityID: activity.id, callerID: activity.id,
+  status: 'exact', distance: 0, steps: [], frontier: [], outcomes: [{
+    dependencyID: integration.id,
+    use: {
+      authority: 'syntactic_unresolved', label: 'dynamic send', callee: 'client.send',
+      mechanism: 'syntactic callsite',
+      callsite: { path: 'app/execution.py', line: 32, column: 3 }
+    }
+  }]
+};
+const unresolvedStory = api.renderExecutionStory(activity, [unresolvedRoute]);
+const unresolvedSourceActions = descendants(unresolvedStory).filter((node) =>
+  String(node.className).split(/\s+/).includes('rm-source-action')
+);
+check(unresolvedStory.textContent.includes('not represented in available facts') &&
+  unresolvedStory.textContent.includes('Inspect integration') &&
+  !unresolvedStory.textContent.includes('client.send') && unresolvedSourceActions.length === 1,
+  'an unresolved callsite must remain an explicit endpoint gap without a callee or endpoint source action');
+
+const routesBeforeEmptyStory = model.activityPaths.routes;
+model.activityPaths.routes = [];
+const noStoryHost = new TestElement('main');
+api.renderActivityDetail(noStoryHost, activity);
+check(api.renderExecutionStory(activity, []) === null &&
+  !descendants(noStoryHost).some((node) =>
+    String(node.className).split(/\s+/).includes('rm-execution-story')) &&
+  noStoryHost.textContent.includes('Paths to selected integrations'),
+  'an entrypoint without a joined path must omit Follow execution and preserve the existing empty-path page');
+model.activityPaths.routes = routesBeforeEmptyStory;
+delete model.activityPaths.objectsByID[possibleCaller.id];
 
 const coreClick = {
   defaultPrevented: false,
@@ -969,6 +1053,17 @@ check(integrationHost.textContent.includes('HTTP client') &&
 check(integrationHost.textContent.includes('execute → http-client.send') &&
   !integrationHost.textContent.includes('app/execution#execute'),
   'integration operations must not repeat a canonical caller path beside the exact selected callsite');
+['frontier', 'unconnected'].forEach((status) => {
+  integration.uses[0].route = {
+    status, activityID: '', frontier: status === 'frontier' ? ['program_objects_omitted'] : []
+  };
+  const gapHost = new TestElement('main');
+  api.renderIntegrationDetail(gapHost, integration);
+  check(gapHost.textContent.includes('Activity path: ' + status) &&
+    gapHost.textContent.includes('not represented in available facts') &&
+    !gapHost.textContent.includes('from Start here'),
+    status + ' integration routes must remain explicit missing activity authority, not synthesized entrypoint stories');
+});
 integration.uses = [];
 
 const routerOwner = {
