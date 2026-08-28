@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "status": "TERMINAL_ERROR",
+  "stage": "authority_preparation",
+  "reason": "duplicate_program_relation_identity",
+  "frozen_h1_sha256": "8d2614e3c34005ee4bd2abde9a6eff124176facbaf743c5a85a69c37b902d4a7",
+  "frozen_receipt_sha256": "934a4b8b7f316f44e6b83172dc8e56c6ed56dd7d8be36c5d9670c9a68fb25f8d",
+  "fixture_receipt_sha256": "9544c7391106299e56739930308444101e8308480d5783fb18b6502de8a0a15c",
+  "candidate_oracle_isolation": true,
+  "authority_artifact": false,
+  "h0_artifact": false,
+  "h1_artifact": false,
+  "metrics_status": "NOT_AVAILABLE_TERMINAL_BEFORE_EVALUATION",
+  "generalization_status": "NOT_ESTABLISHED",
+  "user_utility_status": "NOT_TESTED",
+  "production_readiness": "NOT_READY",
+  "frequency_reducer": "IGNORED_REJECTED",
+  "verdict": "FAIL",
+  "sha256": "3181eae0d90ec8d2243983770cff2697b72c1cfccaad13d0bb883c7f2ce571c3"
+}

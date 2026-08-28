@@ -1,0 +1,733 @@
+{
+  "version": 1,
+  "author_brief_sha256": "2ac6286b63b3ab2ed8017de9052597bfeb87a771fc221b9823f1fd8322ff1e81",
+  "sealed_fixture_commit": "1301bfaa6",
+  "boundaries": [
+    {
+      "id": "address-verification",
+      "label": "Address verification",
+      "external_system": "geo.example/locator",
+      "local_boundary_anchor": {
+        "path": "internal/address/verification.go",
+        "line": 45
+      },
+      "production_entry_anchors": [
+        {
+          "path": "cmd/fulfilment/main.go",
+          "line": 12
+        },
+        {
+          "path": "cmd/fulfilment/main.go",
+          "line": 16
+        },
+        {
+          "path": "internal/bootstrap/runtime.go",
+          "line": 63
+        },
+        {
+          "path": "internal/checkout/service.go",
+          "line": 39
+        },
+        {
+          "path": "internal/httpapi/server.go",
+          "line": 19
+        }
+      ],
+      "complete": true,
+      "roles": [
+        {
+          "role": "application_wiring",
+          "anchors": [
+            {
+              "path": "internal/bootstrap/runtime.go",
+              "line": 43
+            },
+            {
+              "path": "internal/bootstrap/runtime.go",
+              "line": 63
+            }
+          ]
+        },
+        {
+          "role": "configuration",
+          "anchors": [
+            {
+              "path": "internal/address/verification.go",
+              "line": 13
+            },
+            {
+              "path": "internal/bootstrap/runtime.go",
+              "line": 44
+            }
+          ]
+        },
+        {
+          "role": "construction",
+          "anchors": [
+            {
+              "path": "internal/address/verification.go",
+              "line": 38
+            }
+          ]
+        },
+        {
+          "role": "consumer_boundary",
+          "anchors": [
+            {
+              "path": "internal/checkout/service.go",
+              "line": 29
+            }
+          ]
+        },
+        {
+          "role": "local_wrapper",
+          "anchors": [
+            {
+              "path": "internal/address/verification.go",
+              "line": 45
+            }
+          ]
+        },
+        {
+          "role": "observability",
+          "anchors": [
+            {
+              "path": "internal/address/verification.go",
+              "line": 46
+            },
+            {
+              "path": "internal/address/verification.go",
+              "line": 51
+            }
+          ]
+        },
+        {
+          "role": "production_operation",
+          "anchors": [
+            {
+              "path": "internal/address/verification.go",
+              "line": 47
+            }
+          ]
+        },
+        {
+          "role": "verification",
+          "anchors": [
+            {
+              "path": "internal/address/verification_test.go",
+              "line": 18
+            }
+          ]
+        }
+      ],
+      "missing_task_roles": []
+    },
+    {
+      "id": "parcel-booking",
+      "label": "Parcel booking",
+      "external_system": "shipping.example/parcel",
+      "local_boundary_anchor": {
+        "path": "internal/shipping/booking.go",
+        "line": 42
+      },
+      "production_entry_anchors": [
+        {
+          "path": "cmd/fulfilment/main.go",
+          "line": 12
+        },
+        {
+          "path": "cmd/fulfilment/main.go",
+          "line": 16
+        },
+        {
+          "path": "internal/bootstrap/runtime.go",
+          "line": 63
+        },
+        {
+          "path": "internal/checkout/service.go",
+          "line": 54
+        },
+        {
+          "path": "internal/httpapi/server.go",
+          "line": 19
+        }
+      ],
+      "complete": false,
+      "roles": [
+        {
+          "role": "application_wiring",
+          "anchors": [
+            {
+              "path": "internal/bootstrap/runtime.go",
+              "line": 49
+            },
+            {
+              "path": "internal/bootstrap/runtime.go",
+              "line": 63
+            }
+          ]
+        },
+        {
+          "role": "configuration",
+          "anchors": [
+            {
+              "path": "internal/bootstrap/runtime.go",
+              "line": 50
+            },
+            {
+              "path": "internal/shipping/booking.go",
+              "line": 12
+            }
+          ]
+        },
+        {
+          "role": "construction",
+          "anchors": [
+            {
+              "path": "internal/shipping/booking.go",
+              "line": 31
+            }
+          ]
+        },
+        {
+          "role": "consumer_boundary",
+          "anchors": [
+            {
+              "path": "internal/checkout/service.go",
+              "line": 18
+            }
+          ]
+        },
+        {
+          "role": "failure_policy",
+          "anchors": [
+            {
+              "path": "internal/shipping/booking.go",
+              "line": 43
+            },
+            {
+              "path": "internal/shipping/booking.go",
+              "line": 44
+            }
+          ]
+        },
+        {
+          "role": "local_wrapper",
+          "anchors": [
+            {
+              "path": "internal/shipping/booking.go",
+              "line": 42
+            }
+          ]
+        },
+        {
+          "role": "observability",
+          "anchors": [
+            {
+              "path": "internal/shipping/booking.go",
+              "line": 45
+            },
+            {
+              "path": "internal/shipping/booking.go",
+              "line": 50
+            }
+          ]
+        },
+        {
+          "role": "production_operation",
+          "anchors": [
+            {
+              "path": "internal/shipping/booking.go",
+              "line": 46
+            }
+          ]
+        }
+      ],
+      "missing_task_roles": [
+        "verification"
+      ]
+    },
+    {
+      "id": "payment-authorization",
+      "label": "Payment authorization",
+      "external_system": "acquirer.example/authorizer",
+      "local_boundary_anchor": {
+        "path": "internal/payment/gateway.go",
+        "line": 55
+      },
+      "production_entry_anchors": [
+        {
+          "path": "cmd/fulfilment/main.go",
+          "line": 12
+        },
+        {
+          "path": "cmd/fulfilment/main.go",
+          "line": 16
+        },
+        {
+          "path": "internal/bootstrap/runtime.go",
+          "line": 63
+        },
+        {
+          "path": "internal/checkout/service.go",
+          "line": 48
+        },
+        {
+          "path": "internal/httpapi/server.go",
+          "line": 19
+        }
+      ],
+      "complete": true,
+      "roles": [
+        {
+          "role": "application_wiring",
+          "anchors": [
+            {
+              "path": "internal/bootstrap/runtime.go",
+              "line": 29
+            },
+            {
+              "path": "internal/bootstrap/runtime.go",
+              "line": 63
+            }
+          ]
+        },
+        {
+          "role": "configuration",
+          "anchors": [
+            {
+              "path": "internal/bootstrap/runtime.go",
+              "line": 25
+            },
+            {
+              "path": "internal/bootstrap/runtime.go",
+              "line": 30
+            },
+            {
+              "path": "internal/bootstrap/runtime.go",
+              "line": 31
+            },
+            {
+              "path": "internal/payment/gateway.go",
+              "line": 13
+            }
+          ]
+        },
+        {
+          "role": "construction",
+          "anchors": [
+            {
+              "path": "internal/payment/gateway.go",
+              "line": 40
+            }
+          ]
+        },
+        {
+          "role": "consumer_boundary",
+          "anchors": [
+            {
+              "path": "internal/checkout/service.go",
+              "line": 14
+            }
+          ]
+        },
+        {
+          "role": "failure_policy",
+          "anchors": [
+            {
+              "path": "internal/payment/gateway.go",
+              "line": 58
+            },
+            {
+              "path": "internal/payment/gateway.go",
+              "line": 70
+            }
+          ]
+        },
+        {
+          "role": "local_wrapper",
+          "anchors": [
+            {
+              "path": "internal/payment/gateway.go",
+              "line": 55
+            }
+          ]
+        },
+        {
+          "role": "observability",
+          "anchors": [
+            {
+              "path": "internal/payment/gateway.go",
+              "line": 59
+            },
+            {
+              "path": "internal/payment/gateway.go",
+              "line": 68
+            }
+          ]
+        },
+        {
+          "role": "production_operation",
+          "anchors": [
+            {
+              "path": "internal/payment/gateway.go",
+              "line": 60
+            }
+          ]
+        },
+        {
+          "role": "verification",
+          "anchors": [
+            {
+              "path": "internal/payment/gateway_test.go",
+              "line": 23
+            }
+          ]
+        }
+      ],
+      "missing_task_roles": []
+    },
+    {
+      "id": "receipt-delivery",
+      "label": "Receipt delivery",
+      "external_system": "messaging.example/receipt",
+      "local_boundary_anchor": {
+        "path": "internal/notification/receipt.go",
+        "line": 30
+      },
+      "production_entry_anchors": [
+        {
+          "path": "cmd/fulfilment/main.go",
+          "line": 12
+        },
+        {
+          "path": "cmd/fulfilment/main.go",
+          "line": 16
+        },
+        {
+          "path": "internal/bootstrap/runtime.go",
+          "line": 63
+        },
+        {
+          "path": "internal/checkout/service.go",
+          "line": 58
+        },
+        {
+          "path": "internal/httpapi/server.go",
+          "line": 19
+        }
+      ],
+      "complete": false,
+      "roles": [
+        {
+          "role": "application_wiring",
+          "anchors": [
+            {
+              "path": "internal/bootstrap/runtime.go",
+              "line": 55
+            },
+            {
+              "path": "internal/bootstrap/runtime.go",
+              "line": 63
+            }
+          ]
+        },
+        {
+          "role": "configuration",
+          "anchors": [
+            {
+              "path": "internal/bootstrap/runtime.go",
+              "line": 56
+            },
+            {
+              "path": "internal/notification/receipt.go",
+              "line": 12
+            }
+          ]
+        },
+        {
+          "role": "construction",
+          "anchors": [
+            {
+              "path": "internal/notification/receipt.go",
+              "line": 23
+            }
+          ]
+        },
+        {
+          "role": "consumer_boundary",
+          "anchors": [
+            {
+              "path": "internal/checkout/service.go",
+              "line": 22
+            }
+          ]
+        },
+        {
+          "role": "local_wrapper",
+          "anchors": [
+            {
+              "path": "internal/notification/receipt.go",
+              "line": 30
+            }
+          ]
+        },
+        {
+          "role": "observability",
+          "anchors": [
+            {
+              "path": "internal/notification/receipt.go",
+              "line": 31
+            },
+            {
+              "path": "internal/notification/receipt.go",
+              "line": 41
+            }
+          ]
+        },
+        {
+          "role": "production_operation",
+          "anchors": [
+            {
+              "path": "internal/notification/receipt.go",
+              "line": 32
+            }
+          ]
+        }
+      ],
+      "missing_task_roles": [
+        "verification"
+      ]
+    },
+    {
+      "id": "tax-quotation",
+      "label": "Tax quotation",
+      "external_system": "revenue.example/taxquote",
+      "local_boundary_anchor": {
+        "path": "internal/tax/quote.go",
+        "line": 41
+      },
+      "production_entry_anchors": [
+        {
+          "path": "cmd/fulfilment/main.go",
+          "line": 12
+        },
+        {
+          "path": "cmd/fulfilment/main.go",
+          "line": 16
+        },
+        {
+          "path": "internal/bootstrap/runtime.go",
+          "line": 63
+        },
+        {
+          "path": "internal/checkout/service.go",
+          "line": 43
+        },
+        {
+          "path": "internal/httpapi/server.go",
+          "line": 19
+        }
+      ],
+      "complete": true,
+      "roles": [
+        {
+          "role": "application_wiring",
+          "anchors": [
+            {
+              "path": "internal/bootstrap/runtime.go",
+              "line": 36
+            },
+            {
+              "path": "internal/bootstrap/runtime.go",
+              "line": 63
+            }
+          ]
+        },
+        {
+          "role": "configuration",
+          "anchors": [
+            {
+              "path": "internal/bootstrap/runtime.go",
+              "line": 37
+            },
+            {
+              "path": "internal/bootstrap/runtime.go",
+              "line": 38
+            },
+            {
+              "path": "internal/tax/quote.go",
+              "line": 13
+            }
+          ]
+        },
+        {
+          "role": "construction",
+          "anchors": [
+            {
+              "path": "internal/tax/quote.go",
+              "line": 27
+            }
+          ]
+        },
+        {
+          "role": "consumer_boundary",
+          "anchors": [
+            {
+              "path": "internal/checkout/service.go",
+              "line": 28
+            }
+          ]
+        },
+        {
+          "role": "failure_policy",
+          "anchors": [
+            {
+              "path": "internal/tax/quote.go",
+              "line": 43
+            }
+          ]
+        },
+        {
+          "role": "local_wrapper",
+          "anchors": [
+            {
+              "path": "internal/tax/quote.go",
+              "line": 42
+            }
+          ]
+        },
+        {
+          "role": "observability",
+          "anchors": [
+            {
+              "path": "internal/tax/quote.go",
+              "line": 45
+            },
+            {
+              "path": "internal/tax/quote.go",
+              "line": 52
+            }
+          ]
+        },
+        {
+          "role": "production_operation",
+          "anchors": [
+            {
+              "path": "internal/tax/quote.go",
+              "line": 50
+            }
+          ]
+        },
+        {
+          "role": "verification",
+          "anchors": [
+            {
+              "path": "internal/tax/quote_test.go",
+              "line": 20
+            }
+          ]
+        }
+      ],
+      "missing_task_roles": []
+    }
+  ],
+  "exclusions": [
+    {
+      "id": "diagnostics-parcel-probe",
+      "kind": "diagnostic_probe",
+      "anchor": {
+        "path": "internal/diagnostics/carrier_probe.go",
+        "line": 16
+      },
+      "reason": "not_production_reachable"
+    },
+    {
+      "id": "example-tax-walkthrough",
+      "kind": "documentation_example",
+      "anchor": {
+        "path": "internal/examples/tax_walkthrough.go",
+        "line": 16
+      },
+      "reason": "not_production_reachable"
+    },
+    {
+      "id": "legacy-payment-reconciliation",
+      "kind": "legacy_workflow",
+      "anchor": {
+        "path": "internal/legacy/reconciliation.go",
+        "line": 25
+      },
+      "reason": "not_production_reachable"
+    },
+    {
+      "id": "migration-address-backfill",
+      "kind": "migration_job",
+      "anchor": {
+        "path": "internal/migration/address_backfill.go",
+        "line": 25
+      },
+      "reason": "not_production_reachable"
+    },
+    {
+      "id": "preview-receipt-sample",
+      "kind": "preview_tool",
+      "anchor": {
+        "path": "internal/preview/receipt_preview.go",
+        "line": 16
+      },
+      "reason": "not_production_reachable"
+    },
+    {
+      "id": "sandbox-payment-scenario",
+      "kind": "developer_sandbox",
+      "anchor": {
+        "path": "internal/sandbox/payment_scenario.go",
+        "line": 24
+      },
+      "reason": "not_production_reachable"
+    },
+    {
+      "id": "test-only-address-vendor-sketch",
+      "kind": "vendor_contract_sketch",
+      "anchor": {
+        "path": "internal/testkit/direct_vendors_test.go",
+        "line": 18
+      },
+      "reason": "test_only"
+    },
+    {
+      "id": "test-only-parcel-vendor-sketch",
+      "kind": "vendor_contract_sketch",
+      "anchor": {
+        "path": "internal/testkit/direct_vendors_test.go",
+        "line": 20
+      },
+      "reason": "test_only"
+    }
+  ],
+  "callbacks": [
+    {
+      "id": "parcel-reservation-method-value",
+      "pass_anchor": {
+        "path": "internal/shipping/booking.go",
+        "line": 39
+      },
+      "target_anchor": {
+        "path": "internal/shipping/booking.go",
+        "line": 46
+      }
+    },
+    {
+      "id": "tax-quote-function",
+      "pass_anchor": {
+        "path": "internal/bootstrap/runtime.go",
+        "line": 63
+      },
+      "target_anchor": {
+        "path": "internal/tax/quote.go",
+        "line": 42
+      }
+    }
+  ]
+}

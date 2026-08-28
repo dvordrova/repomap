@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "clientrecipe-blind-oracle-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "author_brief_sha256", "sealed_fixture_commit", "boundaries", "exclusions", "callbacks"],
+  "properties": {
+    "version": {"const": 1},
+    "author_brief_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "sealed_fixture_commit": {"type": "string", "pattern": "^[0-9a-f]{7,40}$"},
+    "boundaries": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {"$ref": "#/$defs/boundary"}
+    },
+    "exclusions": {
+      "type": "array",
+      "minItems": 6,
+      "items": {"$ref": "#/$defs/exclusion"}
+    },
+    "callbacks": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/callback"}
+    }
+  },
+  "$defs": {
+    "anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "line"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "line": {"type": "integer", "minimum": 1}
+      }
+    },
+    "role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "anchors"],
+      "properties": {
+        "role": {
+          "enum": ["configuration", "construction", "local_wrapper", "consumer_boundary", "application_wiring", "production_operation", "verification", "observability", "failure_policy"]
+        },
+        "anchors": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/anchor"}
+        }
+      }
+    },
+    "boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "external_system", "local_boundary_anchor", "production_entry_anchors", "complete", "roles", "missing_task_roles"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9_.-]+$"},
+        "label": {"type": "string", "minLength": 1},
+        "external_system": {"type": "string", "minLength": 1},
+        "local_boundary_anchor": {"$ref": "#/$defs/anchor"},
+        "production_entry_anchors": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/anchor"}
+        },
+        "complete": {"type": "boolean"},
+        "roles": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/role"}
+        },
+        "missing_task_roles": {
+          "type": "array",
+          "items": {
+            "enum": ["configuration", "construction", "local_wrapper", "consumer_boundary", "application_wiring", "production_operation", "verification", "observability"]
+          }
+        }
+      }
+    },
+    "exclusion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "anchor", "reason"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9_.-]+$"},
+        "kind": {"type": "string", "minLength": 1},
+        "anchor": {"$ref": "#/$defs/anchor"},
+        "reason": {"enum": ["generated", "test_only", "not_production_reachable", "not_external_boundary"]}
+      }
+    },
+    "callback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "pass_anchor", "target_anchor"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9_.-]+$"},
+        "pass_anchor": {
+          "description": "Exact source location of the call argument that passes the callback.",
+          "$ref": "#/$defs/anchor"
+        },
+        "target_anchor": {
+          "description": "Exact declaration location of the local callback function passed at pass_anchor.",
+          "$ref": "#/$defs/anchor"
+        }
+      }
+    }
+  }
+}

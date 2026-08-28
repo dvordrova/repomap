@@ -11,6 +11,7 @@ client without first reconstructing the whole service.
 | H1 typed structural footprint | FEASIBILITY PASS | Recovered 4 production boundaries, 32 of 32 expected role assignments, 43 of 43 evidence locators, all 6 exclusions, and exact `10 = 4 + 6` accounting on the controlled repository. |
 | H1 controlled robustness | 3 / 3 PASS | Preserved the same exact score under rename, layout, and irrelevant-noise mutations of that repository. This is not a second-repository generalization result. |
 | H1 reducer leave-one-out | DOMAIN FAIL | The eight task-required roles stayed present, but they were supplied by the task contract. The only learned repository-pattern role failed every held-out fold: `TP 0 / FP 1 / FN 2`, exact footprint `0 / 3`. |
+| H1 independently authored blind fixture | TERMINAL FAIL | The sealed five-boundary fixture and independent oracle passed their receipt checks, but the frozen candidate stopped in Authority preparation on a duplicate ProgramIndex relation identity. No H0, H1, or repository-pattern metrics were produced. |
 | H2 presentation copy | Non-authoritative | Adds bounded titles, purposes, and summaries for six short step refs and four short example refs. It cannot change roles, examples, completeness, recommendation, evidence, or exclusions. |
 
 Three boundaries are complete. Kubernetes and Vault are tied as the two most
@@ -68,6 +69,30 @@ candidate. This result rejects productizing the current required/common
 frequency reducer as predictive guidance; it does not invalidate the exact
 descriptive boundary facts.
 
+## Independently authored blind fixture: terminal result
+
+The repository was authored without access to H1, then sealed before a separate
+curator wrote the oracle. The receipt binds the exact repository and dependency
+trees, author brief, preregistration, oracle schema, raw oracle, and chronology.
+
+| Check | Frozen observation | Result |
+| --- | --- | --- |
+| Scene authority | 5 boundary truths, 8 exclusions, 2 callbacks | SEALED |
+| Candidate isolation | Candidate receives only the sealed repository root and frozen extractor identity | PASS |
+| Authority preparation | ProgramIndex rejected a duplicate relation identity | TERMINAL FAIL |
+| H0 artifact | Not reached | NOT AVAILABLE |
+| H1 artifact | Not reached | NOT AVAILABLE |
+| Instance / role / grounding metrics | Evaluation could not start | NOT AVAILABLE |
+| Generalization | Frozen H1 was not executable on the preregistered scene | NOT ESTABLISHED |
+| Product readiness | No partial semantic result is promoted | NOT READY |
+
+The canonical closed failure is
+`../clientrecipe-blind/golden/04-evaluation.json`; no `01`–`03` candidate
+artifacts were invented. This is an engineering stop-signal before a semantic
+generalization result, not evidence that the independently curated boundary
+portfolio is wrong. It also does not rehabilitate the rejected frequency
+reducer.
+
 ## H1 freeze receipt
 
 `golden/05-robustness.json` also carries the deterministic freeze identity for
@@ -108,6 +133,7 @@ candidates and their closed reasons.
 - Evidence comes from one deliberately crafted Go service, not a corpus of real repositories.
 - All three robustness mutations reuse that same service and oracle shape. They show resistance to these named perturbations, not extractor generalization.
 - Leave-one-out uses only three complete boundaries, does not isolate extraction, and finds no predictive non-contract pattern; the task-defined `24 / 24` coverage is not learned evidence.
+- The independently authored fixture currently terminates before H0/H1 because Authority cannot seal its ProgramIndex; therefore it supplies no blind precision, recall, role, grounding, exclusion, or callback score.
 - The frozen completeness rule currently supplies mandatory roles before role frequency is reduced over complete instances. The experiment does not yet establish a clean separation between task-required and repository-inferred necessity.
 - H1 is a test-only extraction hypothesis and is not integrated into the ordinary repomap pipeline.
 - H2 is presentation-only and is tested with an injected deterministic provider; there is no live-provider acceptance claim.
