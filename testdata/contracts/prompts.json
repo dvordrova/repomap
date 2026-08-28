@@ -92,6 +92,16 @@
       "embed_variable": "surfaceCoreEffectsPrompt"
     },
     {
+      "path": "internal/experiments/clientrecipe/h2_prompt.md",
+      "status": "dormant",
+      "owner": "clientrecipe",
+      "stage": "client_recipe_presentation_copy",
+      "role": "system",
+      "embed_source": "internal/experiments/clientrecipe/h2.go",
+      "embed_pattern": "h2_prompt.md",
+      "embed_variable": "h2Prompt"
+    },
+    {
       "path": "internal/integrationdependency/prompts/classifier.md",
       "status": "active",
       "owner": "integrationdependency",

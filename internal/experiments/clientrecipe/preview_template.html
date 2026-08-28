@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:">
+  <title>Add an external client · repomap experiment</title>
+  <style>{{.Style}}</style>
+</head>
+<body>
+  <a class="skip-link" href="#app">Skip to content</a>
+  <header class="site-header">
+    <a class="brand" href="#/target" aria-label="repomap task home">
+      <span class="brand-mark" aria-hidden="true">r</span>
+      <span>repomap</span>
+      <span class="experiment-pill">task preview</span>
+    </a>
+    <div class="target-chip" aria-label="Selected target">
+      <span class="target-dot" aria-hidden="true"></span>
+      <span id="target-chip-name">launch-service</span>
+      <span class="target-chip-meta">Go · Service</span>
+    </div>
+  </header>
+  <main id="app" tabindex="-1"></main>
+  <div id="overlay-root"></div>
+  <div id="route-announcer" class="sr-only" aria-live="polite"></div>
+  <script>window.__CLIENT_RECIPE_MODEL__ = {{.ModelJSON}};</script>
+  <script>{{.Script}}</script>
+</body>
+</html>

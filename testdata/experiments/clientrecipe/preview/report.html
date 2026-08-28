@@ -1,0 +1,802 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:">
+  <title>Add an external client · repomap experiment</title>
+  <style>:root {
+  --paper: #f5f2e9;
+  --paper-deep: #ebe6d9;
+  --surface: #fffdf8;
+  --surface-soft: #f9f7f0;
+  --ink: #17282a;
+  --muted: #657477;
+  --line: #d7d6cb;
+  --forest: #17695b;
+  --forest-dark: #104f46;
+  --forest-soft: #dcebe6;
+  --coral: #dd6848;
+  --coral-soft: #f8e0d7;
+  --gold: #e9b84c;
+  --gold-soft: #fbefc9;
+  --shadow: 0 22px 60px rgba(23, 40, 42, .10);
+  --radius: 18px;
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+
+html { min-width: 320px; background: var(--paper); scroll-behavior: smooth; }
+
+body { margin: 0; min-height: 100vh; background:
+  radial-gradient(circle at 87% 12%, rgba(233,184,76,.13), transparent 25rem),
+  radial-gradient(circle at 4% 80%, rgba(23,105,91,.08), transparent 30rem),
+  var(--paper); }
+
+button, a { font: inherit; }
+
+button { color: inherit; }
+
+a { color: inherit; }
+
+.skip-link { position: fixed; left: 16px; top: -80px; z-index: 100; padding: 10px 14px; border-radius: 8px; background: var(--ink); color: white; }
+.skip-link:focus { top: 12px; }
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  min-height: 70px;
+  padding: 12px clamp(18px, 4vw, 62px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid rgba(23,40,42,.12);
+  background: rgba(245,242,233,.92);
+  backdrop-filter: blur(16px);
+}
+
+.brand { display: inline-flex; align-items: center; gap: 11px; text-decoration: none; font-weight: 800; letter-spacing: -.02em; }
+.brand-mark { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: var(--ink); color: var(--surface); font-family: Georgia, serif; font-style: italic; font-size: 22px; }
+.experiment-pill { padding: 5px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+
+.target-chip { display: flex; align-items: center; gap: 9px; min-width: 250px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,253,248,.78); font-size: 13px; font-weight: 750; }
+.target-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--forest); box-shadow: 0 0 0 4px var(--forest-soft); }
+.target-chip-meta { margin-left: auto; color: var(--muted); font-weight: 600; }
+
+#app { min-height: calc(100vh - 70px); }
+#app:focus { outline: none; }
+
+.page { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: clamp(42px, 7vw, 92px) 0 96px; animation: page-in .24s ease-out both; }
+@keyframes page-in { from { opacity: 0; transform: translateY(6px); } }
+
+.eyebrow { margin: 0 0 14px; color: var(--forest); font-size: 12px; line-height: 1; font-weight: 850; letter-spacing: .16em; text-transform: uppercase; }
+.hero-title { max-width: 860px; margin: 0; font-size: clamp(44px, 7vw, 86px); line-height: .98; letter-spacing: -.062em; }
+.hero-title em { color: var(--forest); font-family: Georgia, serif; font-weight: 500; }
+.hero-copy { max-width: 690px; margin: 24px 0 0; color: var(--muted); font-size: clamp(17px, 2vw, 21px); line-height: 1.55; }
+
+.landing-top { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(260px, .55fr); gap: 54px; align-items: end; }
+.coverage-note { align-self: stretch; padding: 24px; border: 1px solid var(--line); border-radius: var(--radius); background: rgba(255,253,248,.62); display: flex; flex-direction: column; justify-content: space-between; }
+.coverage-note strong { display: block; font-size: 44px; line-height: 1; letter-spacing: -.05em; }
+.coverage-note span { color: var(--muted); line-height: 1.45; }
+.coverage-bar { height: 7px; overflow: hidden; border-radius: 999px; background: var(--paper-deep); }
+.coverage-bar span { display: block; width: 100%; height: 100%; background: var(--forest); }
+
+.task-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 54px; }
+.task-card { min-height: 150px; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: rgba(255,253,248,.62); text-align: left; }
+.task-card strong { display: block; font-size: 18px; letter-spacing: -.02em; }
+.task-card p { margin: 11px 0 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.task-card[data-available="false"] { opacity: .52; }
+.task-card.primary { grid-column: span 2; min-height: 198px; border-color: var(--forest); background: var(--forest); color: white; box-shadow: var(--shadow); cursor: pointer; position: relative; overflow: hidden; }
+.task-card.primary::after { content: "→"; position: absolute; right: 22px; bottom: 12px; color: rgba(255,255,255,.20); font-size: 82px; line-height: 1; }
+.task-card.primary strong { max-width: 420px; font-size: clamp(25px, 3vw, 38px); }
+.task-card.primary p { max-width: 500px; color: rgba(255,255,255,.72); font-size: 16px; }
+.task-card.primary .task-action { display: inline-flex; margin-top: 22px; padding-bottom: 3px; border-bottom: 1px solid rgba(255,255,255,.55); font-weight: 800; }
+
+button, .button { border: 0; }
+.primary-button, .secondary-button, .quiet-button, .back-link, .source-link {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 10px 15px; border-radius: 10px; text-decoration: none; font-weight: 800; cursor: pointer;
+}
+.primary-button { background: var(--forest); color: white; }
+.primary-button:hover, .primary-button:focus-visible { background: var(--forest-dark); }
+.secondary-button { border: 1px solid var(--line); background: var(--surface); }
+.secondary-button:hover, .secondary-button:focus-visible { border-color: var(--forest); color: var(--forest); }
+.quiet-button, .back-link { padding-left: 0; padding-right: 0; background: transparent; color: var(--forest); }
+.source-link { background: var(--ink); color: white; }
+button:focus-visible, a:focus-visible { outline: 3px solid rgba(221,104,72,.45); outline-offset: 3px; }
+
+.route-bar { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 34px; }
+.route-label { color: var(--muted); font-size: 13px; }
+.route-label strong { color: var(--ink); }
+.overview-hero { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(310px, .55fr); gap: 48px; align-items: end; padding-bottom: 42px; border-bottom: 1px solid var(--line); }
+.overview-title { margin: 0; font-size: clamp(42px, 6vw, 76px); line-height: 1; letter-spacing: -.055em; }
+.overview-copy { max-width: 700px; margin: 20px 0 0; color: var(--muted); font-size: 18px; line-height: 1.55; }
+.metric-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.metric { min-height: 94px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,253,248,.72); }
+.metric strong { display: block; font-size: 27px; line-height: 1; letter-spacing: -.04em; }
+.metric span { display: block; margin-top: 10px; color: var(--muted); font-size: 12px; font-weight: 750; text-transform: uppercase; letter-spacing: .08em; }
+
+.section-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin: 56px 0 22px; }
+.section-heading h2 { margin: 0; font-size: clamp(27px, 3vw, 38px); letter-spacing: -.04em; }
+.section-heading p { max-width: 540px; margin: 7px 0 0; color: var(--muted); line-height: 1.5; }
+.section-kicker { color: var(--forest); font-size: 12px; font-weight: 850; text-transform: uppercase; letter-spacing: .14em; }
+
+.recipe-layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(300px, .5fr); gap: 24px; align-items: start; }
+.step-list { display: grid; gap: 10px; }
+.step-card { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto 22px; gap: 16px; align-items: center; width: 100%; min-height: 118px; padding: 17px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); text-align: left; cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease; }
+.step-card:hover, .step-card:focus-visible { border-color: var(--forest); box-shadow: 0 9px 25px rgba(23,40,42,.07); }
+.step-number { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 13px; background: var(--forest-soft); color: var(--forest); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 800; }
+.step-card h3 { margin: 0; font-size: 18px; letter-spacing: -.025em; }
+.step-card p { margin: 7px 0 0; color: var(--muted); font-size: 14px; line-height: 1.45; }
+.step-meta { color: var(--muted); font-size: 12px; text-align: right; white-space: nowrap; }
+.step-arrow { color: var(--forest); font-size: 22px; }
+
+.recommendation { position: sticky; top: 92px; overflow: hidden; border: 1px solid var(--forest); border-radius: var(--radius); background: var(--forest); color: white; box-shadow: var(--shadow); }
+.recommendation-top { padding: 24px; }
+.recommendation-label { display: inline-flex; padding: 6px 9px; border-radius: 999px; background: var(--gold); color: var(--ink); font-size: 11px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.recommendation h3 { margin: 22px 0 8px; font-size: 31px; letter-spacing: -.045em; }
+.recommendation p { margin: 0; color: rgba(255,255,255,.72); line-height: 1.5; }
+.recommendation-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: rgba(255,255,255,.15); }
+.recommendation-facts div { padding: 16px 20px; background: rgba(10,55,48,.72); }
+.recommendation-facts strong { display: block; font-size: 19px; }
+.recommendation-facts span { color: rgba(255,255,255,.62); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+.recommendation .recommendation-action { width: calc(100% - 40px); margin: 20px; background: white; color: var(--forest); }
+
+.example-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 14px; }
+.example-card { display: flex; min-height: 218px; flex-direction: column; padding: 21px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+.example-card.incomplete { border-color: rgba(221,104,72,.55); background: linear-gradient(150deg, var(--surface) 55%, var(--coral-soft)); }
+.card-topline { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.status { display: inline-flex; align-items: center; gap: 6px; color: var(--forest); font-size: 11px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.status.incomplete { color: var(--coral); }
+.example-card h3 { margin: 22px 0 8px; font-size: 24px; letter-spacing: -.035em; }
+.example-card p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.48; }
+.example-card .quiet-button { margin-top: auto; align-self: flex-start; }
+.missing-inline { margin-top: 12px; color: var(--coral); font-size: 12px; font-weight: 750; }
+
+.audit-entry { margin-top: 72px; padding-top: 28px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 24px; }
+.audit-entry p { max-width: 650px; margin: 5px 0 0; color: var(--muted); line-height: 1.45; }
+
+.detail-shell { width: min(980px, calc(100% - 40px)); }
+.detail-hero { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 32px; align-items: start; padding-bottom: 34px; border-bottom: 1px solid var(--line); }
+.detail-number { display: inline-flex; margin-bottom: 18px; color: var(--forest); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 800; }
+.detail-title { max-width: 760px; margin: 0; font-size: clamp(39px, 6vw, 68px); line-height: 1; letter-spacing: -.055em; }
+.detail-copy { max-width: 700px; margin: 20px 0 0; color: var(--muted); font-size: 18px; line-height: 1.55; }
+.role-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+.role-badge { display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px; border-radius: 999px; background: var(--forest-soft); color: var(--forest); font-size: 12px; font-weight: 800; }
+.role-badge.common { background: var(--gold-soft); color: #805b00; }
+.detail-stat { min-width: 140px; padding: 18px; border-radius: 15px; background: var(--surface); border: 1px solid var(--line); }
+.detail-stat strong { display: block; font-size: 30px; }
+.detail-stat span { color: var(--muted); font-size: 12px; }
+
+.coverage-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.coverage-card { padding: 19px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.coverage-card h3 { margin: 0 0 6px; font-size: 17px; }
+.coverage-card p { margin: 0; color: var(--muted); font-size: 13px; }
+
+.example-detail-top { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-bottom: 18px; }
+.recommended-chip { padding: 6px 9px; border-radius: 999px; background: var(--gold); font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: .07em; }
+.slot-map { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.slot-card { display: flex; flex-direction: column; min-height: 190px; padding: 18px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); }
+.slot-card.missing { border-color: rgba(221,104,72,.55); background: var(--coral-soft); }
+.slot-card h3 { margin: 0 0 8px; font-size: 17px; }
+.slot-card p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.slot-card .secondary-button { margin-top: auto; align-self: flex-start; }
+.missing-list { display: flex; flex-wrap: wrap; gap: 7px; margin: 18px 0 0; padding: 0; list-style: none; }
+.missing-list li { padding: 7px 9px; border-radius: 8px; background: var(--coral-soft); color: #9e3c24; font-size: 12px; font-weight: 800; }
+
+.evidence-list { display: grid; gap: 12px; }
+.evidence-card { padding: 20px; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); }
+.evidence-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.evidence-role { color: var(--forest); font-size: 11px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.evidence-card h3 { margin: 7px 0 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 15px; overflow-wrap: anywhere; }
+.locator { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; overflow-wrap: anywhere; }
+.authority-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }
+.authority-chip { padding: 6px 9px; border-radius: 7px; background: var(--paper-deep); color: var(--muted); font-size: 11px; font-weight: 750; }
+.evidence-card .source-link { margin-top: 18px; }
+
+.drawer-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; justify-content: flex-end; background: rgba(16,31,33,.42); backdrop-filter: blur(4px); animation: fade-in .16s ease-out; }
+@keyframes fade-in { from { opacity: 0; } }
+.drawer { width: min(620px, 94vw); height: 100%; padding: 26px; overflow: auto; background: var(--surface); box-shadow: -20px 0 60px rgba(0,0,0,.18); animation: drawer-in .2s ease-out; }
+@keyframes drawer-in { from { transform: translateX(20px); opacity: 0; } }
+.drawer-head { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+.drawer h2 { margin: 5px 0 0; font-size: 34px; letter-spacing: -.04em; }
+.icon-button { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid var(--line); border-radius: 50%; background: var(--surface); cursor: pointer; font-size: 22px; }
+.audit-ledger { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin: 22px 0; }
+.audit-ledger div { padding: 14px; border-radius: 11px; background: var(--paper); }
+.audit-ledger strong { display: block; font-size: 22px; }
+.audit-ledger span { color: var(--muted); font-size: 11px; }
+.audit-list { display: grid; gap: 9px; }
+.audit-row { padding: 15px; border: 1px solid var(--line); border-radius: 12px; }
+.audit-row h3 { margin: 0; font-size: 15px; overflow-wrap: anywhere; }
+.audit-row p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+.audit-row .locator { margin-top: 9px; }
+
+.sr-only { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0,0,0,0) !important; white-space: nowrap !important; border: 0 !important; }
+.empty-note { padding: 28px; border: 1px dashed var(--line); border-radius: 14px; color: var(--muted); background: rgba(255,253,248,.45); }
+
+@media (max-width: 900px) {
+  .landing-top, .overview-hero, .recipe-layout { grid-template-columns: 1fr; }
+  .task-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .recommendation { position: static; }
+  .example-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+
+@media (max-width: 620px) {
+  .site-header { min-height: 62px; padding: 10px 14px; }
+  .experiment-pill, .target-chip-meta { display: none; }
+  .target-chip { min-width: 0; padding: 9px 11px; }
+  .brand { gap: 8px; }
+  .brand-mark { width: 34px; height: 34px; }
+  .page, .detail-shell { width: min(100% - 28px, 1180px); padding-top: 42px; }
+  .hero-title { font-size: 48px; }
+  .landing-top { gap: 25px; }
+  .task-grid { grid-template-columns: 1fr; margin-top: 34px; }
+  .task-card.primary { grid-column: auto; min-height: 220px; }
+  .overview-title, .detail-title { font-size: 44px; }
+  .metric-row { grid-template-columns: repeat(2,1fr); }
+  .section-heading { align-items: flex-start; flex-direction: column; }
+  .step-card { grid-template-columns: 44px minmax(0,1fr); }
+  .step-meta { grid-column: 2; text-align: left; }
+  .step-arrow { display: none; }
+  .example-grid, .slot-map, .coverage-grid { grid-template-columns: 1fr; }
+  .audit-entry, .detail-hero { align-items: flex-start; flex-direction: column; display: flex; }
+  .detail-stat { width: 100%; }
+  .evidence-header { flex-direction: column; }
+  .evidence-header .source-link { width: 100%; }
+  .drawer { width: 100%; padding: 20px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+</style>
+</head>
+<body>
+  <a class="skip-link" href="#app">Skip to content</a>
+  <header class="site-header">
+    <a class="brand" href="#/target" aria-label="repomap task home">
+      <span class="brand-mark" aria-hidden="true">r</span>
+      <span>repomap</span>
+      <span class="experiment-pill">task preview</span>
+    </a>
+    <div class="target-chip" aria-label="Selected target">
+      <span class="target-dot" aria-hidden="true"></span>
+      <span id="target-chip-name">launch-service</span>
+      <span class="target-chip-meta">Go · Service</span>
+    </div>
+  </header>
+  <main id="app" tabindex="-1"></main>
+  <div id="overlay-root"></div>
+  <div id="route-announcer" class="sr-only" aria-live="polite"></div>
+  <script>window.__CLIENT_RECIPE_MODEL__ = {"version":1,"target":{"name":"launch-service","language":"Go","kind":"Service"},"summary":{"observed":10,"boundaries":4,"complete":3,"excluded":6,"required_roles":8,"common_roles":1,"callback_closed":2,"callback_frontier":2},"tasks":[{"id":"add_client","title":"Add an external client","description":"Follow the repository's proven boundary shape from configuration to verification.","available":true},{"id":"trace_startup","title":"Trace service startup","description":"See how the live application graph is assembled.","available":false},{"id":"add_endpoint","title":"Add an endpoint","description":"Find the local request-handling pattern.","available":false},{"id":"change_storage","title":"Change persistence","description":"Locate storage contracts and implementations.","available":false},{"id":"add_metric","title":"Add observability","description":"Follow metrics and logging conventions.","available":false},{"id":"inspect_tests","title":"Extend verification","description":"Find the repository's testing boundaries.","available":false}],"steps":[{"id":"s1","number":1,"title":"Shape client configuration","purpose":"Translate application settings into a focused client configuration before construction.","roles":[{"id":"configuration","label":"Configuration","necessity":"Required"}],"covered_examples":["Kubernetes","ClickHouse","Vault","Notifier"],"evidence":[{"id":"e2-configuration-10","example_id":"e2","example":"Kubernetes","role":"Configuration","locator":"internal/clients/kubernetes/config.go:10","path":"internal/clients/kubernetes/config.go","line":10,"symbol":"ConfigFromApplication","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/kubernetes/config.go#L10"},{"id":"e1-configuration-9","example_id":"e1","example":"ClickHouse","role":"Configuration","locator":"internal/clients/clickhouse/config.go:9","path":"internal/clients/clickhouse/config.go","line":9,"symbol":"ConfigFromApplication","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/clickhouse/config.go#L9"},{"id":"e4-configuration-16","example_id":"e4","example":"Vault","role":"Configuration","locator":"internal/clients/vault/config.go:16","path":"internal/clients/vault/config.go","line":16,"symbol":"ConfigFromApplication","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/vault/config.go#L16"},{"id":"e3-configuration-9","example_id":"e3","example":"Notifier","role":"Configuration","locator":"internal/clients/notifier/config.go:9","path":"internal/clients/notifier/config.go","line":9,"symbol":"ConfigFromApplication","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/notifier/config.go#L9"}],"evidence_count":4,"complete_coverage":4},{"id":"s2","number":2,"title":"Build the local boundary","purpose":"Keep SDK construction behind a repository-owned wrapper that the application can depend on.","roles":[{"id":"construction","label":"Construction","necessity":"Required"},{"id":"local_wrapper","label":"Local wrapper","necessity":"Required"}],"covered_examples":["Kubernetes","ClickHouse","Vault","Notifier"],"evidence":[{"id":"e2-construction-19","example_id":"e2","example":"Kubernetes","role":"Construction","locator":"internal/clients/kubernetes/client.go:19","path":"internal/clients/kubernetes/client.go","line":19,"symbol":"NewClient","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/kubernetes/client.go#L19"},{"id":"e2-construction-20","example_id":"e2","example":"Kubernetes","role":"Construction","locator":"internal/clients/kubernetes/client.go:20","path":"internal/clients/kubernetes/client.go","line":20,"symbol":"kubernetessdk.New","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/kubernetes/client.go#L20"},{"id":"e2-construction-24","example_id":"e2","example":"Kubernetes","role":"Construction","locator":"internal/clients/kubernetes/client.go:24","path":"internal/clients/kubernetes/client.go","line":24,"symbol":"factory","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/kubernetes/client.go#L24"},{"id":"e2-local_wrapper-11","example_id":"e2","example":"Kubernetes","role":"Local wrapper","locator":"internal/clients/kubernetes/client.go:11","path":"internal/clients/kubernetes/client.go","line":11,"symbol":"Client struct","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/kubernetes/client.go#L11"},{"id":"e1-construction-16","example_id":"e1","example":"ClickHouse","role":"Construction","locator":"internal/clients/clickhouse/client.go:16","path":"internal/clients/clickhouse/client.go","line":16,"symbol":"NewClient","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/clickhouse/client.go#L16"},{"id":"e1-construction-17","example_id":"e1","example":"ClickHouse","role":"Construction","locator":"internal/clients/clickhouse/client.go:17","path":"internal/clients/clickhouse/client.go","line":17,"symbol":"clickhousesdk.Open","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/clickhouse/client.go#L17"},{"id":"e1-local_wrapper-11","example_id":"e1","example":"ClickHouse","role":"Local wrapper","locator":"internal/clients/clickhouse/client.go:11","path":"internal/clients/clickhouse/client.go","line":11,"symbol":"Client struct","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/clickhouse/client.go#L11"},{"id":"e4-construction-19","example_id":"e4","example":"Vault","role":"Construction","locator":"internal/clients/vault/client.go:19","path":"internal/clients/vault/client.go","line":19,"symbol":"NewClient","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/vault/client.go#L19"},{"id":"e4-construction-20","example_id":"e4","example":"Vault","role":"Construction","locator":"internal/clients/vault/client.go:20","path":"internal/clients/vault/client.go","line":20,"symbol":"vaultsdk.New","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/vault/client.go#L20"},{"id":"e4-local_wrapper-12","example_id":"e4","example":"Vault","role":"Local wrapper","locator":"internal/clients/vault/client.go:12","path":"internal/clients/vault/client.go","line":12,"symbol":"Client struct","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/vault/client.go#L12"},{"id":"e3-construction-13","example_id":"e3","example":"Notifier","role":"Construction","locator":"internal/clients/notifier/client.go:13","path":"internal/clients/notifier/client.go","line":13,"symbol":"NewClient","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/notifier/client.go#L13"},{"id":"e3-construction-14","example_id":"e3","example":"Notifier","role":"Construction","locator":"internal/clients/notifier/client.go:14","path":"internal/clients/notifier/client.go","line":14,"symbol":"notifiersdk.New","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/notifier/client.go#L14"},{"id":"e3-local_wrapper-9","example_id":"e3","example":"Notifier","role":"Local wrapper","locator":"internal/clients/notifier/client.go:9","path":"internal/clients/notifier/client.go","line":9,"symbol":"Client struct","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/notifier/client.go#L9"}],"evidence_count":13,"complete_coverage":4},{"id":"s3","number":3,"title":"Define the consumer contract","purpose":"Expose the smallest application-facing interface and call it from the real production operation.","roles":[{"id":"consumer_boundary","label":"Consumer boundary","necessity":"Required"},{"id":"production_operation","label":"Production operation","necessity":"Required"}],"covered_examples":["Kubernetes","ClickHouse","Vault","Notifier"],"evidence":[{"id":"e2-consumer_boundary-13","example_id":"e2","example":"Kubernetes","role":"Consumer boundary","locator":"internal/launch/service.go:13","path":"internal/launch/service.go","line":13,"symbol":"NamespaceLister interface","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/launch/service.go#L13"},{"id":"e2-production_operation-45","example_id":"e2","example":"Kubernetes","role":"Production operation","locator":"internal/launch/service.go:45","path":"internal/launch/service.go","line":45,"symbol":"service.clusters.ListNamespaces","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/launch/service.go#L45"},{"id":"e1-consumer_boundary-17","example_id":"e1","example":"ClickHouse","role":"Consumer boundary","locator":"internal/launch/service.go:17","path":"internal/launch/service.go","line":17,"symbol":"LaunchHistory interface","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/launch/service.go#L17"},{"id":"e1-production_operation-48","example_id":"e1","example":"ClickHouse","role":"Production operation","locator":"internal/launch/service.go:48","path":"internal/launch/service.go","line":48,"symbol":"service.history.RecentLaunches","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/launch/service.go#L48"},{"id":"e4-consumer_boundary-5","example_id":"e4","example":"Vault","role":"Consumer boundary","locator":"internal/launch/service.go:5","path":"internal/launch/service.go","line":5,"symbol":"SecretReader interface","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/launch/service.go#L5"},{"id":"e4-production_operation-38","example_id":"e4","example":"Vault","role":"Production operation","locator":"internal/launch/service.go:38","path":"internal/launch/service.go","line":38,"symbol":"service.secrets.ReadSecret","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/launch/service.go#L38"},{"id":"e3-consumer_boundary-9","example_id":"e3","example":"Notifier","role":"Consumer boundary","locator":"internal/launch/service.go:9","path":"internal/launch/service.go","line":9,"symbol":"LaunchNotifier interface","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/launch/service.go#L9"},{"id":"e3-production_operation-42","example_id":"e3","example":"Notifier","role":"Production operation","locator":"internal/launch/service.go:42","path":"internal/launch/service.go","line":42,"symbol":"service.notifier.SendLaunch","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/launch/service.go#L42"}],"evidence_count":8,"complete_coverage":4},{"id":"s4","number":4,"title":"Wire the live service graph","purpose":"Construct the client at startup and pass the local boundary into the service that uses it.","roles":[{"id":"application_wiring","label":"Application wiring","necessity":"Required"}],"covered_examples":["Kubernetes","ClickHouse","Vault","Notifier"],"evidence":[{"id":"e2-application_wiring-21","example_id":"e2","example":"Kubernetes","role":"Application wiring","locator":"internal/app/wiring.go:21","path":"internal/app/wiring.go","line":21,"symbol":"kubernetes.NewClient","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/app/wiring.go#L21"},{"id":"e1-application_wiring-27","example_id":"e1","example":"ClickHouse","role":"Application wiring","locator":"internal/app/wiring.go:27","path":"internal/app/wiring.go","line":27,"symbol":"clickhouse.NewClient","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/app/wiring.go#L27"},{"id":"e4-application_wiring-17","example_id":"e4","example":"Vault","role":"Application wiring","locator":"internal/app/wiring.go:17","path":"internal/app/wiring.go","line":17,"symbol":"vault.NewClient","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/app/wiring.go#L17"},{"id":"e3-application_wiring-33","example_id":"e3","example":"Notifier","role":"Application wiring","locator":"internal/app/wiring.go:33","path":"internal/app/wiring.go","line":33,"symbol":"notifier.NewClient","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/app/wiring.go#L33"}],"evidence_count":4,"complete_coverage":4},{"id":"s5","number":5,"title":"Prove the integration","purpose":"Follow the repository's existing unit or integration verification shape for observable behavior.","roles":[{"id":"verification","label":"Verification","necessity":"Required"}],"covered_examples":["Kubernetes","ClickHouse","Vault"],"evidence":[{"id":"e2-verification-10","example_id":"e2","example":"Kubernetes","role":"Verification","locator":"internal/clients/kubernetes/client_test.go:10","path":"internal/clients/kubernetes/client_test.go","line":10,"symbol":"TestClientListsNamespaces","authority":"Local syntax","provenance":"AST-backed source fact","source_href":"../repo/internal/clients/kubernetes/client_test.go#L10"},{"id":"e2-verification-19","example_id":"e2","example":"Kubernetes","role":"Verification","locator":"internal/clients/kubernetes/client_test.go:19","path":"internal/clients/kubernetes/client_test.go","line":19,"symbol":"len(namespaces) != 2 || namespaces[1] != \"launch\"","authority":"Local syntax","provenance":"AST-backed source fact","source_href":"../repo/internal/clients/kubernetes/client_test.go#L19"},{"id":"e1-verification-11","example_id":"e1","example":"ClickHouse","role":"Verification","locator":"test/integration/clickhouse_test.go:11","path":"test/integration/clickhouse_test.go","line":11,"symbol":"TestClickHouseClientContract","authority":"Local syntax","provenance":"AST-backed source fact","source_href":"../repo/test/integration/clickhouse_test.go#L11"},{"id":"e1-verification-23","example_id":"e1","example":"ClickHouse","role":"Verification","locator":"test/integration/clickhouse_test.go:23","path":"test/integration/clickhouse_test.go","line":23,"symbol":"len(launches) != 2 || launches[0] != \"launch-001\"","authority":"Local syntax","provenance":"AST-backed source fact","source_href":"../repo/test/integration/clickhouse_test.go#L23"},{"id":"e4-verification-11","example_id":"e4","example":"Vault","role":"Verification","locator":"internal/clients/vault/client_test.go:11","path":"internal/clients/vault/client_test.go","line":11,"symbol":"TestClientReadsSecret","authority":"Local syntax","provenance":"AST-backed source fact","source_href":"../repo/internal/clients/vault/client_test.go#L11"},{"id":"e4-verification-22","example_id":"e4","example":"Vault","role":"Verification","locator":"internal/clients/vault/client_test.go:22","path":"internal/clients/vault/client_test.go","line":22,"symbol":"value != \"value:launch/key\"","authority":"Local syntax","provenance":"AST-backed source fact","source_href":"../repo/internal/clients/vault/client_test.go#L22"}],"evidence_count":6,"complete_coverage":3},{"id":"s6","number":6,"title":"Observe and contain failure","purpose":"Record client attempts and failures, then apply the repository's common timeout or retry policy.","roles":[{"id":"observability","label":"Observability","necessity":"Required"},{"id":"failure_policy","label":"Failure policy","necessity":"Common"}],"covered_examples":["Kubernetes","Vault"],"evidence":[{"id":"e2-observability-34","example_id":"e2","example":"Kubernetes","role":"Observability","locator":"internal/clients/kubernetes/client.go:34","path":"internal/clients/kubernetes/client.go","line":34,"symbol":"client.metrics.RecordAttempt","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/kubernetes/client.go#L34"},{"id":"e2-observability-40","example_id":"e2","example":"Kubernetes","role":"Observability","locator":"internal/clients/kubernetes/client.go:40","path":"internal/clients/kubernetes/client.go","line":40,"symbol":"client.metrics.RecordFailure","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/kubernetes/client.go#L40"},{"id":"e2-observability-41","example_id":"e2","example":"Kubernetes","role":"Observability","locator":"internal/clients/kubernetes/client.go:41","path":"internal/clients/kubernetes/client.go","line":41,"symbol":"observability.ClientFailure","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/kubernetes/client.go#L41"},{"id":"e2-failure_policy-33","example_id":"e2","example":"Kubernetes","role":"Failure policy","locator":"internal/clients/kubernetes/client.go:33","path":"internal/clients/kubernetes/client.go","line":33,"symbol":"attempt \u003c= client.retries","authority":"Local syntax","provenance":"AST-backed source fact","source_href":"../repo/internal/clients/kubernetes/client.go#L33"},{"id":"e1-observability-25","example_id":"e1","example":"ClickHouse","role":"Observability","locator":"internal/clients/clickhouse/client.go:25","path":"internal/clients/clickhouse/client.go","line":25,"symbol":"client.metrics.RecordAttempt","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/clickhouse/client.go#L25"},{"id":"e1-observability-28","example_id":"e1","example":"ClickHouse","role":"Observability","locator":"internal/clients/clickhouse/client.go:28","path":"internal/clients/clickhouse/client.go","line":28,"symbol":"client.metrics.RecordFailure","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/clickhouse/client.go#L28"},{"id":"e1-observability-29","example_id":"e1","example":"ClickHouse","role":"Observability","locator":"internal/clients/clickhouse/client.go:29","path":"internal/clients/clickhouse/client.go","line":29,"symbol":"observability.ClientFailure","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/clickhouse/client.go#L29"},{"id":"e4-observability-30","example_id":"e4","example":"Vault","role":"Observability","locator":"internal/clients/vault/client.go:30","path":"internal/clients/vault/client.go","line":30,"symbol":"client.metrics.RecordAttempt","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/vault/client.go#L30"},{"id":"e4-observability-38","example_id":"e4","example":"Vault","role":"Observability","locator":"internal/clients/vault/client.go:38","path":"internal/clients/vault/client.go","line":38,"symbol":"client.metrics.RecordFailure","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/vault/client.go#L38"},{"id":"e4-observability-39","example_id":"e4","example":"Vault","role":"Observability","locator":"internal/clients/vault/client.go:39","path":"internal/clients/vault/client.go","line":39,"symbol":"observability.ClientFailure","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/vault/client.go#L39"},{"id":"e4-failure_policy-29","example_id":"e4","example":"Vault","role":"Failure policy","locator":"internal/clients/vault/client.go:29","path":"internal/clients/vault/client.go","line":29,"symbol":"attempt \u003c= client.retries","authority":"Local syntax","provenance":"AST-backed source fact","source_href":"../repo/internal/clients/vault/client.go#L29"},{"id":"e4-failure_policy-31","example_id":"e4","example":"Vault","role":"Failure policy","locator":"internal/clients/vault/client.go:31","path":"internal/clients/vault/client.go","line":31,"symbol":"context.WithTimeout","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/vault/client.go#L31"}],"evidence_count":12,"complete_coverage":2}],"examples":[{"id":"e2","name":"Kubernetes","summary":"Complete unit-tested boundary with an application interface, retries, metrics, and failure logging.","status":"Complete","complete":true,"recommended":true,"verification_kind":"Unit verified","missing":null,"evidence_count":14,"slots":[{"step_id":"s1","title":"Shape client configuration","status":"covered","roles":[{"id":"configuration","label":"Configuration","necessity":"Required"}],"missing":null,"evidence":[{"id":"e2-configuration-10","example_id":"e2","example":"Kubernetes","role":"Configuration","locator":"internal/clients/kubernetes/config.go:10","path":"internal/clients/kubernetes/config.go","line":10,"symbol":"ConfigFromApplication","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/kubernetes/config.go#L10"}]},{"step_id":"s2","title":"Build the local boundary","status":"covered","roles":[{"id":"construction","label":"Construction","necessity":"Required"},{"id":"local_wrapper","label":"Local wrapper","necessity":"Required"}],"missing":null,"evidence":[{"id":"e2-construction-19","example_id":"e2","example":"Kubernetes","role":"Construction","locator":"internal/clients/kubernetes/client.go:19","path":"internal/clients/kubernetes/client.go","line":19,"symbol":"NewClient","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/kubernetes/client.go#L19"},{"id":"e2-construction-20","example_id":"e2","example":"Kubernetes","role":"Construction","locator":"internal/clients/kubernetes/client.go:20","path":"internal/clients/kubernetes/client.go","line":20,"symbol":"kubernetessdk.New","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/kubernetes/client.go#L20"},{"id":"e2-construction-24","example_id":"e2","example":"Kubernetes","role":"Construction","locator":"internal/clients/kubernetes/client.go:24","path":"internal/clients/kubernetes/client.go","line":24,"symbol":"factory","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/kubernetes/client.go#L24"},{"id":"e2-local_wrapper-11","example_id":"e2","example":"Kubernetes","role":"Local wrapper","locator":"internal/clients/kubernetes/client.go:11","path":"internal/clients/kubernetes/client.go","line":11,"symbol":"Client struct","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/kubernetes/client.go#L11"}]},{"step_id":"s3","title":"Define the consumer contract","status":"covered","roles":[{"id":"consumer_boundary","label":"Consumer boundary","necessity":"Required"},{"id":"production_operation","label":"Production operation","necessity":"Required"}],"missing":null,"evidence":[{"id":"e2-consumer_boundary-13","example_id":"e2","example":"Kubernetes","role":"Consumer boundary","locator":"internal/launch/service.go:13","path":"internal/launch/service.go","line":13,"symbol":"NamespaceLister interface","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/launch/service.go#L13"},{"id":"e2-production_operation-45","example_id":"e2","example":"Kubernetes","role":"Production operation","locator":"internal/launch/service.go:45","path":"internal/launch/service.go","line":45,"symbol":"service.clusters.ListNamespaces","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/launch/service.go#L45"}]},{"step_id":"s4","title":"Wire the live service graph","status":"covered","roles":[{"id":"application_wiring","label":"Application wiring","necessity":"Required"}],"missing":null,"evidence":[{"id":"e2-application_wiring-21","example_id":"e2","example":"Kubernetes","role":"Application wiring","locator":"internal/app/wiring.go:21","path":"internal/app/wiring.go","line":21,"symbol":"kubernetes.NewClient","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/app/wiring.go#L21"}]},{"step_id":"s5","title":"Prove the integration","status":"covered","roles":[{"id":"verification","label":"Verification","necessity":"Required"}],"missing":null,"evidence":[{"id":"e2-verification-10","example_id":"e2","example":"Kubernetes","role":"Verification","locator":"internal/clients/kubernetes/client_test.go:10","path":"internal/clients/kubernetes/client_test.go","line":10,"symbol":"TestClientListsNamespaces","authority":"Local syntax","provenance":"AST-backed source fact","source_href":"../repo/internal/clients/kubernetes/client_test.go#L10"},{"id":"e2-verification-19","example_id":"e2","example":"Kubernetes","role":"Verification","locator":"internal/clients/kubernetes/client_test.go:19","path":"internal/clients/kubernetes/client_test.go","line":19,"symbol":"len(namespaces) != 2 || namespaces[1] != \"launch\"","authority":"Local syntax","provenance":"AST-backed source fact","source_href":"../repo/internal/clients/kubernetes/client_test.go#L19"}]},{"step_id":"s6","title":"Observe and contain failure","status":"covered","roles":[{"id":"observability","label":"Observability","necessity":"Required"},{"id":"failure_policy","label":"Failure policy","necessity":"Common"}],"missing":null,"evidence":[{"id":"e2-observability-34","example_id":"e2","example":"Kubernetes","role":"Observability","locator":"internal/clients/kubernetes/client.go:34","path":"internal/clients/kubernetes/client.go","line":34,"symbol":"client.metrics.RecordAttempt","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/kubernetes/client.go#L34"},{"id":"e2-observability-40","example_id":"e2","example":"Kubernetes","role":"Observability","locator":"internal/clients/kubernetes/client.go:40","path":"internal/clients/kubernetes/client.go","line":40,"symbol":"client.metrics.RecordFailure","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/kubernetes/client.go#L40"},{"id":"e2-observability-41","example_id":"e2","example":"Kubernetes","role":"Observability","locator":"internal/clients/kubernetes/client.go:41","path":"internal/clients/kubernetes/client.go","line":41,"symbol":"observability.ClientFailure","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/kubernetes/client.go#L41"},{"id":"e2-failure_policy-33","example_id":"e2","example":"Kubernetes","role":"Failure policy","locator":"internal/clients/kubernetes/client.go:33","path":"internal/clients/kubernetes/client.go","line":33,"symbol":"attempt \u003c= client.retries","authority":"Local syntax","provenance":"AST-backed source fact","source_href":"../repo/internal/clients/kubernetes/client.go#L33"}]}]},{"id":"e1","name":"ClickHouse","summary":"Complete integration-tested boundary with configuration, wiring, operations, and failure visibility.","status":"Complete","complete":true,"recommended":false,"verification_kind":"Integration verified","missing":null,"evidence_count":12,"slots":[{"step_id":"s1","title":"Shape client configuration","status":"covered","roles":[{"id":"configuration","label":"Configuration","necessity":"Required"}],"missing":null,"evidence":[{"id":"e1-configuration-9","example_id":"e1","example":"ClickHouse","role":"Configuration","locator":"internal/clients/clickhouse/config.go:9","path":"internal/clients/clickhouse/config.go","line":9,"symbol":"ConfigFromApplication","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/clickhouse/config.go#L9"}]},{"step_id":"s2","title":"Build the local boundary","status":"covered","roles":[{"id":"construction","label":"Construction","necessity":"Required"},{"id":"local_wrapper","label":"Local wrapper","necessity":"Required"}],"missing":null,"evidence":[{"id":"e1-construction-16","example_id":"e1","example":"ClickHouse","role":"Construction","locator":"internal/clients/clickhouse/client.go:16","path":"internal/clients/clickhouse/client.go","line":16,"symbol":"NewClient","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/clickhouse/client.go#L16"},{"id":"e1-construction-17","example_id":"e1","example":"ClickHouse","role":"Construction","locator":"internal/clients/clickhouse/client.go:17","path":"internal/clients/clickhouse/client.go","line":17,"symbol":"clickhousesdk.Open","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/clickhouse/client.go#L17"},{"id":"e1-local_wrapper-11","example_id":"e1","example":"ClickHouse","role":"Local wrapper","locator":"internal/clients/clickhouse/client.go:11","path":"internal/clients/clickhouse/client.go","line":11,"symbol":"Client struct","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/clickhouse/client.go#L11"}]},{"step_id":"s3","title":"Define the consumer contract","status":"covered","roles":[{"id":"consumer_boundary","label":"Consumer boundary","necessity":"Required"},{"id":"production_operation","label":"Production operation","necessity":"Required"}],"missing":null,"evidence":[{"id":"e1-consumer_boundary-17","example_id":"e1","example":"ClickHouse","role":"Consumer boundary","locator":"internal/launch/service.go:17","path":"internal/launch/service.go","line":17,"symbol":"LaunchHistory interface","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/launch/service.go#L17"},{"id":"e1-production_operation-48","example_id":"e1","example":"ClickHouse","role":"Production operation","locator":"internal/launch/service.go:48","path":"internal/launch/service.go","line":48,"symbol":"service.history.RecentLaunches","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/launch/service.go#L48"}]},{"step_id":"s4","title":"Wire the live service graph","status":"covered","roles":[{"id":"application_wiring","label":"Application wiring","necessity":"Required"}],"missing":null,"evidence":[{"id":"e1-application_wiring-27","example_id":"e1","example":"ClickHouse","role":"Application wiring","locator":"internal/app/wiring.go:27","path":"internal/app/wiring.go","line":27,"symbol":"clickhouse.NewClient","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/app/wiring.go#L27"}]},{"step_id":"s5","title":"Prove the integration","status":"covered","roles":[{"id":"verification","label":"Verification","necessity":"Required"}],"missing":null,"evidence":[{"id":"e1-verification-11","example_id":"e1","example":"ClickHouse","role":"Verification","locator":"test/integration/clickhouse_test.go:11","path":"test/integration/clickhouse_test.go","line":11,"symbol":"TestClickHouseClientContract","authority":"Local syntax","provenance":"AST-backed source fact","source_href":"../repo/test/integration/clickhouse_test.go#L11"},{"id":"e1-verification-23","example_id":"e1","example":"ClickHouse","role":"Verification","locator":"test/integration/clickhouse_test.go:23","path":"test/integration/clickhouse_test.go","line":23,"symbol":"len(launches) != 2 || launches[0] != \"launch-001\"","authority":"Local syntax","provenance":"AST-backed source fact","source_href":"../repo/test/integration/clickhouse_test.go#L23"}]},{"step_id":"s6","title":"Observe and contain failure","status":"missing","roles":[{"id":"observability","label":"Observability","necessity":"Required"},{"id":"failure_policy","label":"Failure policy","necessity":"Common"}],"missing":["Failure policy"],"evidence":[{"id":"e1-observability-25","example_id":"e1","example":"ClickHouse","role":"Observability","locator":"internal/clients/clickhouse/client.go:25","path":"internal/clients/clickhouse/client.go","line":25,"symbol":"client.metrics.RecordAttempt","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/clickhouse/client.go#L25"},{"id":"e1-observability-28","example_id":"e1","example":"ClickHouse","role":"Observability","locator":"internal/clients/clickhouse/client.go:28","path":"internal/clients/clickhouse/client.go","line":28,"symbol":"client.metrics.RecordFailure","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/clickhouse/client.go#L28"},{"id":"e1-observability-29","example_id":"e1","example":"ClickHouse","role":"Observability","locator":"internal/clients/clickhouse/client.go:29","path":"internal/clients/clickhouse/client.go","line":29,"symbol":"observability.ClientFailure","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/clickhouse/client.go#L29"}]}]},{"id":"e4","name":"Vault","summary":"Complete unit-tested boundary with explicit configuration, timeout-aware retries, metrics, and logging.","status":"Complete","complete":true,"recommended":false,"verification_kind":"Unit verified","missing":null,"evidence_count":14,"slots":[{"step_id":"s1","title":"Shape client configuration","status":"covered","roles":[{"id":"configuration","label":"Configuration","necessity":"Required"}],"missing":null,"evidence":[{"id":"e4-configuration-16","example_id":"e4","example":"Vault","role":"Configuration","locator":"internal/clients/vault/config.go:16","path":"internal/clients/vault/config.go","line":16,"symbol":"ConfigFromApplication","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/vault/config.go#L16"}]},{"step_id":"s2","title":"Build the local boundary","status":"covered","roles":[{"id":"construction","label":"Construction","necessity":"Required"},{"id":"local_wrapper","label":"Local wrapper","necessity":"Required"}],"missing":null,"evidence":[{"id":"e4-construction-19","example_id":"e4","example":"Vault","role":"Construction","locator":"internal/clients/vault/client.go:19","path":"internal/clients/vault/client.go","line":19,"symbol":"NewClient","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/vault/client.go#L19"},{"id":"e4-construction-20","example_id":"e4","example":"Vault","role":"Construction","locator":"internal/clients/vault/client.go:20","path":"internal/clients/vault/client.go","line":20,"symbol":"vaultsdk.New","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/vault/client.go#L20"},{"id":"e4-local_wrapper-12","example_id":"e4","example":"Vault","role":"Local wrapper","locator":"internal/clients/vault/client.go:12","path":"internal/clients/vault/client.go","line":12,"symbol":"Client struct","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/vault/client.go#L12"}]},{"step_id":"s3","title":"Define the consumer contract","status":"covered","roles":[{"id":"consumer_boundary","label":"Consumer boundary","necessity":"Required"},{"id":"production_operation","label":"Production operation","necessity":"Required"}],"missing":null,"evidence":[{"id":"e4-consumer_boundary-5","example_id":"e4","example":"Vault","role":"Consumer boundary","locator":"internal/launch/service.go:5","path":"internal/launch/service.go","line":5,"symbol":"SecretReader interface","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/launch/service.go#L5"},{"id":"e4-production_operation-38","example_id":"e4","example":"Vault","role":"Production operation","locator":"internal/launch/service.go:38","path":"internal/launch/service.go","line":38,"symbol":"service.secrets.ReadSecret","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/launch/service.go#L38"}]},{"step_id":"s4","title":"Wire the live service graph","status":"covered","roles":[{"id":"application_wiring","label":"Application wiring","necessity":"Required"}],"missing":null,"evidence":[{"id":"e4-application_wiring-17","example_id":"e4","example":"Vault","role":"Application wiring","locator":"internal/app/wiring.go:17","path":"internal/app/wiring.go","line":17,"symbol":"vault.NewClient","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/app/wiring.go#L17"}]},{"step_id":"s5","title":"Prove the integration","status":"covered","roles":[{"id":"verification","label":"Verification","necessity":"Required"}],"missing":null,"evidence":[{"id":"e4-verification-11","example_id":"e4","example":"Vault","role":"Verification","locator":"internal/clients/vault/client_test.go:11","path":"internal/clients/vault/client_test.go","line":11,"symbol":"TestClientReadsSecret","authority":"Local syntax","provenance":"AST-backed source fact","source_href":"../repo/internal/clients/vault/client_test.go#L11"},{"id":"e4-verification-22","example_id":"e4","example":"Vault","role":"Verification","locator":"internal/clients/vault/client_test.go:22","path":"internal/clients/vault/client_test.go","line":22,"symbol":"value != \"value:launch/key\"","authority":"Local syntax","provenance":"AST-backed source fact","source_href":"../repo/internal/clients/vault/client_test.go#L22"}]},{"step_id":"s6","title":"Observe and contain failure","status":"covered","roles":[{"id":"observability","label":"Observability","necessity":"Required"},{"id":"failure_policy","label":"Failure policy","necessity":"Common"}],"missing":null,"evidence":[{"id":"e4-observability-30","example_id":"e4","example":"Vault","role":"Observability","locator":"internal/clients/vault/client.go:30","path":"internal/clients/vault/client.go","line":30,"symbol":"client.metrics.RecordAttempt","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/vault/client.go#L30"},{"id":"e4-observability-38","example_id":"e4","example":"Vault","role":"Observability","locator":"internal/clients/vault/client.go:38","path":"internal/clients/vault/client.go","line":38,"symbol":"client.metrics.RecordFailure","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/vault/client.go#L38"},{"id":"e4-observability-39","example_id":"e4","example":"Vault","role":"Observability","locator":"internal/clients/vault/client.go:39","path":"internal/clients/vault/client.go","line":39,"symbol":"observability.ClientFailure","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/vault/client.go#L39"},{"id":"e4-failure_policy-29","example_id":"e4","example":"Vault","role":"Failure policy","locator":"internal/clients/vault/client.go:29","path":"internal/clients/vault/client.go","line":29,"symbol":"attempt \u003c= client.retries","authority":"Local syntax","provenance":"AST-backed source fact","source_href":"../repo/internal/clients/vault/client.go#L29"},{"id":"e4-failure_policy-31","example_id":"e4","example":"Vault","role":"Failure policy","locator":"internal/clients/vault/client.go:31","path":"internal/clients/vault/client.go","line":31,"symbol":"context.WithTimeout","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/vault/client.go#L31"}]}]},{"id":"e3","name":"Notifier","summary":"Production-reachable boundary that still lacks verification, observability, and a failure policy.","status":"Needs 3 roles","complete":false,"recommended":false,"verification_kind":"Not verified","missing":["Verification","Observability","Failure policy"],"evidence_count":7,"slots":[{"step_id":"s1","title":"Shape client configuration","status":"covered","roles":[{"id":"configuration","label":"Configuration","necessity":"Required"}],"missing":null,"evidence":[{"id":"e3-configuration-9","example_id":"e3","example":"Notifier","role":"Configuration","locator":"internal/clients/notifier/config.go:9","path":"internal/clients/notifier/config.go","line":9,"symbol":"ConfigFromApplication","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/notifier/config.go#L9"}]},{"step_id":"s2","title":"Build the local boundary","status":"covered","roles":[{"id":"construction","label":"Construction","necessity":"Required"},{"id":"local_wrapper","label":"Local wrapper","necessity":"Required"}],"missing":null,"evidence":[{"id":"e3-construction-13","example_id":"e3","example":"Notifier","role":"Construction","locator":"internal/clients/notifier/client.go:13","path":"internal/clients/notifier/client.go","line":13,"symbol":"NewClient","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/notifier/client.go#L13"},{"id":"e3-construction-14","example_id":"e3","example":"Notifier","role":"Construction","locator":"internal/clients/notifier/client.go:14","path":"internal/clients/notifier/client.go","line":14,"symbol":"notifiersdk.New","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/clients/notifier/client.go#L14"},{"id":"e3-local_wrapper-9","example_id":"e3","example":"Notifier","role":"Local wrapper","locator":"internal/clients/notifier/client.go:9","path":"internal/clients/notifier/client.go","line":9,"symbol":"Client struct","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/clients/notifier/client.go#L9"}]},{"step_id":"s3","title":"Define the consumer contract","status":"covered","roles":[{"id":"consumer_boundary","label":"Consumer boundary","necessity":"Required"},{"id":"production_operation","label":"Production operation","necessity":"Required"}],"missing":null,"evidence":[{"id":"e3-consumer_boundary-9","example_id":"e3","example":"Notifier","role":"Consumer boundary","locator":"internal/launch/service.go:9","path":"internal/launch/service.go","line":9,"symbol":"LaunchNotifier interface","authority":"Typed object","provenance":"ProgramIndex object authority","source_href":"../repo/internal/launch/service.go#L9"},{"id":"e3-production_operation-42","example_id":"e3","example":"Notifier","role":"Production operation","locator":"internal/launch/service.go:42","path":"internal/launch/service.go","line":42,"symbol":"service.notifier.SendLaunch","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/launch/service.go#L42"}]},{"step_id":"s4","title":"Wire the live service graph","status":"covered","roles":[{"id":"application_wiring","label":"Application wiring","necessity":"Required"}],"missing":null,"evidence":[{"id":"e3-application_wiring-33","example_id":"e3","example":"Notifier","role":"Application wiring","locator":"internal/app/wiring.go:33","path":"internal/app/wiring.go","line":33,"symbol":"notifier.NewClient","authority":"Typed relation","provenance":"ProgramIndex relation authority","source_href":"../repo/internal/app/wiring.go#L33"}]},{"step_id":"s5","title":"Prove the integration","status":"missing","roles":[{"id":"verification","label":"Verification","necessity":"Required"}],"missing":["Verification"],"evidence":null},{"step_id":"s6","title":"Observe and contain failure","status":"missing","roles":[{"id":"observability","label":"Observability","necessity":"Required"},{"id":"failure_policy","label":"Failure policy","necessity":"Common"}],"missing":["Observability","Failure policy"],"evidence":null}]}],"audit":[{"id":"a1","kind":"Repository prose","label":"Historical setup notes say external connections are created in `cmd/service`.","reason":"Not reachable from production startup","locator":"README.md:3"},{"id":"a2","kind":"External dependency","label":"Client struct","reason":"Not reachable from production startup","locator":"internal/legacy/client.go:6"},{"id":"a3","kind":"External dependency","label":"Code generated by mockgen. DO NOT EDIT.","reason":"Generated code","locator":"internal/gen/mock_vault.gen.go:1"},{"id":"a4","kind":"Test double","label":"fakeNamespaceLister struct","reason":"Test-only implementation","locator":"internal/clients/kubernetes/fake_test.go:6"},{"id":"a5","kind":"Test double","label":"fakeVault struct","reason":"Test-only implementation","locator":"internal/clients/vault/client_test.go:28"},{"id":"a6","kind":"Standard library helper","label":"DoHealthRequest","reason":"Not an external client boundary","locator":"internal/netutil/http.go:9"}]};</script>
+  <script>(function () {
+  'use strict';
+
+  var model = window.__CLIENT_RECIPE_MODEL__;
+  var app = document.getElementById('app');
+  var overlayRoot = document.getElementById('overlay-root');
+  var announcer = document.getElementById('route-announcer');
+  var auditTrigger = null;
+
+  function element(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+  }
+
+  function object(node, name) {
+    node.setAttribute('data-object', name);
+    return node;
+  }
+
+  function action(node, name) {
+    node.setAttribute('data-action', name);
+    return node;
+  }
+
+  function routeLink(label, href, className, actionName) {
+    var node = element('a', className || 'quiet-button', label);
+    node.href = href;
+    if (actionName) action(node, actionName);
+    return node;
+  }
+
+  function actionButton(label, className, actionName, handler) {
+    var node = element('button', className || 'secondary-button', label);
+    node.type = 'button';
+    if (actionName) action(node, actionName);
+    node.addEventListener('click', handler);
+    return node;
+  }
+
+  function page(state, className) {
+    var node = element('section', 'page ' + (className || ''));
+    node.setAttribute('data-state', state);
+    return node;
+  }
+
+  function roleBadge(role) {
+    var className = 'role-badge' + (role.necessity === 'Common' ? ' common' : '');
+    return element('span', className, role.label + ' · ' + role.necessity);
+  }
+
+  function statusLabel(example) {
+    return element('span', 'status' + (example.complete ? '' : ' incomplete'), example.status);
+  }
+
+  function getStep(id) {
+    return model.steps.find(function (row) { return row.id === id; });
+  }
+
+  function getExample(id) {
+    return model.examples.find(function (row) { return row.id === id; });
+  }
+
+  function getSlot(example, stepID) {
+    return example && example.slots.find(function (row) { return row.step_id === stepID; });
+  }
+
+  function routeParts() {
+    var hash = window.location.hash || '#/target';
+    return hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+  }
+
+  function factCount(value) {
+    return value + ' source ' + (value === 1 ? 'fact' : 'facts');
+  }
+
+  function announce(text) {
+    announcer.textContent = '';
+    window.setTimeout(function () { announcer.textContent = text; }, 0);
+  }
+
+  function render() {
+    closeAudit(false);
+    var parts = routeParts();
+    if (parts[0] === 'recipe' && parts[1] === 'step' && parts[2]) {
+      renderStep(parts[2]);
+    } else if (parts[0] === 'recipe' && parts[1] === 'example' && parts[2]) {
+      renderExample(parts[2]);
+    } else if (parts[0] === 'recipe' && parts[1] === 'evidence') {
+      renderEvidence(parts.slice(2));
+    } else if (parts[0] === 'recipe') {
+      renderOverview();
+    } else {
+      renderLanding();
+    }
+    app.focus({ preventScroll: true });
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }
+
+  function renderLanding() {
+    var root = page('target_landing', 'landing');
+    var top = element('div', 'landing-top');
+    var intro = element('div');
+    intro.appendChild(element('p', 'eyebrow', 'Repository task lens'));
+    var title = element('h1', 'hero-title');
+    title.appendChild(document.createTextNode('What do you want to '));
+    title.appendChild(element('em', '', 'change?'));
+    intro.appendChild(title);
+    intro.appendChild(element('p', 'hero-copy', 'Start with a concrete change. Repomap turns repeated repository evidence into a bounded, source-backed recipe.'));
+    top.appendChild(intro);
+
+    var coverage = object(element('aside', 'coverage-note'), 'coverage_hint');
+    var coverageTop = element('div');
+    coverageTop.appendChild(element('span', '', 'Current task coverage'));
+    coverageTop.appendChild(element('strong', '', model.summary.boundaries + ' boundaries'));
+    coverageTop.appendChild(element('span', '', model.summary.complete + ' complete examples · ' + model.summary.excluded + ' decoys excluded'));
+    coverage.appendChild(coverageTop);
+    var bar = element('div', 'coverage-bar');
+    bar.appendChild(element('span'));
+    coverage.appendChild(bar);
+    top.appendChild(coverage);
+    root.appendChild(top);
+
+    var grid = element('div', 'task-grid');
+    model.tasks.forEach(function (task) {
+      var card;
+      if (task.available) {
+        card = actionButton('', 'task-card primary', 'open_recipe', function () { window.location.hash = '#/recipe'; });
+        card.appendChild(element('strong', '', task.title));
+        card.appendChild(element('p', '', task.description));
+        card.appendChild(element('span', 'task-action', 'Open recipe →'));
+      } else {
+        card = element('article', 'task-card');
+        card.appendChild(element('strong', '', task.title));
+        card.appendChild(element('p', '', task.description));
+      }
+      card.setAttribute('data-available', String(task.available));
+      object(card, 'task_card');
+      grid.appendChild(card);
+    });
+    root.appendChild(grid);
+    object(root, 'target_context');
+    app.replaceChildren(root);
+    announce('Repository task choices');
+  }
+
+  function renderOverview() {
+    var root = page('recipe_overview', 'overview');
+    var routeBar = element('div', 'route-bar');
+    routeBar.appendChild(routeLink('← All repository tasks', '#/target', 'back-link', 'return_target'));
+    routeBar.appendChild(element('span', 'route-label', model.target.name + ' · ' + model.target.language));
+    root.appendChild(routeBar);
+
+    var hero = object(element('section', 'overview-hero'), 'recipe_summary');
+    var heroCopy = element('div');
+    heroCopy.appendChild(element('p', 'eyebrow', 'Repository-specific recipe'));
+    heroCopy.appendChild(element('h1', 'overview-title', 'Add an external client'));
+    heroCopy.appendChild(element('p', 'overview-copy', 'Six evidence-backed steps connect configuration, a local boundary, live wiring, behavior, verification, and failure handling—without reconstructing the entire codebase.'));
+    hero.appendChild(heroCopy);
+    var metrics = object(element('div', 'metric-row'), 'coverage');
+    [
+      [model.summary.boundaries, 'client boundaries'],
+      [model.summary.complete, 'complete examples'],
+      [model.steps.length, 'recipe steps'],
+      [model.summary.excluded, 'decoys excluded']
+    ].forEach(function (metric) {
+      var card = element('div', 'metric');
+      card.appendChild(element('strong', '', metric[0]));
+      card.appendChild(element('span', '', metric[1]));
+      metrics.appendChild(card);
+    });
+    hero.appendChild(metrics);
+    root.appendChild(hero);
+
+    var heading = element('div', 'section-heading');
+    var headingCopy = element('div');
+    headingCopy.appendChild(element('span', 'section-kicker', 'Change sequence'));
+    headingCopy.appendChild(element('h2', '', 'Follow the local shape'));
+    headingCopy.appendChild(element('p', '', 'Each step is reduced from the four production-reachable client boundaries below.'));
+    heading.appendChild(headingCopy);
+    root.appendChild(heading);
+
+    var recipeLayout = element('div', 'recipe-layout');
+    var list = object(element('div', 'step-list'), 'primary_steps');
+    model.steps.forEach(function (step) {
+      var card = actionButton('', 'step-card', 'open_step', function () { window.location.hash = '#/recipe/step/' + step.id; });
+      card.appendChild(element('span', 'step-number', String(step.number).padStart(2, '0')));
+      var copy = element('div');
+      copy.appendChild(element('h3', '', step.title));
+      copy.appendChild(element('p', '', step.purpose));
+      card.appendChild(copy);
+      var meta = element('div', 'step-meta');
+      meta.appendChild(element('div', '', step.complete_coverage + ' fully covered'));
+      meta.appendChild(element('div', '', factCount(step.evidence_count)));
+      card.appendChild(meta);
+      card.appendChild(element('span', 'step-arrow', '→'));
+      list.appendChild(card);
+    });
+    recipeLayout.appendChild(list);
+    recipeLayout.appendChild(renderRecommendation());
+    root.appendChild(recipeLayout);
+
+    var examplesHeading = element('div', 'section-heading');
+    var examplesCopy = element('div');
+    examplesCopy.appendChild(element('span', 'section-kicker', 'Concrete boundaries'));
+    examplesCopy.appendChild(element('h2', '', 'Copy a complete example'));
+    examplesCopy.appendChild(element('p', '', 'Start from the recommended boundary, then compare the other complete shapes.'));
+    examplesHeading.appendChild(examplesCopy);
+    var showAll = actionButton('Show all 4', 'secondary-button', 'show_all_examples', function () {
+      showAll.setAttribute('aria-expanded', 'true');
+      showAll.textContent = 'All 4 shown';
+      showAll.disabled = true;
+      renderExampleCards(exampleGrid, model.examples);
+    });
+    showAll.setAttribute('aria-expanded', 'false');
+    examplesHeading.appendChild(showAll);
+    root.appendChild(examplesHeading);
+    var exampleGrid = object(element('div', 'example-grid'), 'example_summary');
+    renderExampleCards(exampleGrid, model.examples.slice(0, 3));
+    root.appendChild(exampleGrid);
+
+    var auditEntry = element('section', 'audit-entry');
+    var auditCopy = element('div');
+    auditCopy.appendChild(element('span', 'section-kicker', 'Why this is trustworthy'));
+    auditCopy.appendChild(element('h2', '', 'Candidate audit'));
+    auditCopy.appendChild(element('p', '', 'Inspect the six generated, test-only, unreachable, prose, and standard-library candidates that did not become production examples.'));
+    auditEntry.appendChild(auditCopy);
+    auditTrigger = actionButton('Open audit · ' + model.summary.excluded, 'secondary-button', 'open_audit', openAudit);
+    auditTrigger.setAttribute('aria-expanded', 'false');
+    auditEntry.appendChild(auditTrigger);
+    root.appendChild(auditEntry);
+
+    app.replaceChildren(root);
+    announce('External client recipe overview');
+  }
+
+  function renderRecommendation() {
+    var example = model.examples.find(function (row) { return row.recommended; });
+    var card = object(element('aside', 'recommendation'), 'best_example');
+    var top = element('div', 'recommendation-top');
+    top.appendChild(element('span', 'recommendation-label', 'Recommended to copy'));
+    top.appendChild(element('h3', '', example.name));
+    top.appendChild(element('p', '', example.summary));
+    card.appendChild(top);
+    var facts = element('div', 'recommendation-facts');
+    var source = element('div');
+    source.appendChild(element('strong', '', example.evidence_count));
+    source.appendChild(element('span', '', 'source facts'));
+    facts.appendChild(source);
+    var verification = element('div');
+    verification.appendChild(element('strong', '', '9 / 9'));
+    verification.appendChild(element('span', '', 'roles covered'));
+    facts.appendChild(verification);
+    card.appendChild(facts);
+    var open = routeLink('Inspect ' + example.name + ' →', '#/recipe/example/' + example.id, 'primary-button recommendation-action', 'open_example');
+    card.appendChild(open);
+    return card;
+  }
+
+  function renderExampleCards(container, examples) {
+    container.replaceChildren();
+    examples.forEach(function (example) {
+      var card = element('article', 'example-card' + (example.complete ? '' : ' incomplete'));
+      var top = element('div', 'card-topline');
+      top.appendChild(statusLabel(example));
+      top.appendChild(element('span', 'route-label', example.verification_kind));
+      card.appendChild(top);
+      card.appendChild(element('h3', '', example.name));
+      card.appendChild(element('p', '', example.summary));
+      if (!example.complete) {
+        card.appendChild(element('div', 'missing-inline', 'Missing: ' + example.missing.join(', ')));
+      }
+      card.appendChild(routeLink('Inspect boundary →', '#/recipe/example/' + example.id, 'quiet-button', 'open_example'));
+      container.appendChild(card);
+    });
+  }
+
+  function renderStep(id) {
+    var step = getStep(id);
+    if (!step) { renderOverview(); return; }
+    var root = page('recipe_step', 'detail-shell');
+    var routeBar = element('div', 'route-bar');
+    routeBar.appendChild(routeLink('← Recipe overview', '#/recipe', 'back-link', 'return_overview'));
+    routeBar.appendChild(element('span', 'route-label', 'Step ' + step.number + ' of ' + model.steps.length));
+    root.appendChild(routeBar);
+    var hero = element('section', 'detail-hero');
+    var copy = object(element('div'), 'step_purpose');
+    copy.appendChild(element('span', 'detail-number', 'STEP ' + String(step.number).padStart(2, '0')));
+    copy.appendChild(element('h1', 'detail-title', step.title));
+    copy.appendChild(element('p', 'detail-copy', step.purpose));
+    var roles = object(element('div', 'role-row'), 'necessity');
+    step.roles.forEach(function (role) { roles.appendChild(roleBadge(role)); });
+    copy.appendChild(roles);
+    hero.appendChild(copy);
+    var stat = object(element('aside', 'detail-stat'), 'evidence_summary');
+    stat.appendChild(element('strong', '', step.evidence_count));
+    stat.appendChild(element('span', '', 'exact source facts'));
+    hero.appendChild(stat);
+    root.appendChild(hero);
+
+    var heading = element('div', 'section-heading');
+    var headingCopy = element('div');
+    headingCopy.appendChild(element('span', 'section-kicker', 'Repository coverage'));
+    headingCopy.appendChild(element('h2', '', step.complete_coverage + ' boundaries fully cover this step'));
+    heading.appendChild(headingCopy);
+    if (step.evidence.length) heading.appendChild(routeLink('View evidence →', '#/recipe/evidence/step/' + step.id, 'primary-button', 'open_evidence'));
+    root.appendChild(heading);
+    var grid = object(element('div', 'coverage-grid'), 'covered_examples');
+    model.examples.forEach(function (example) {
+      var slot = getSlot(example, step.id);
+      var card = element('article', 'coverage-card');
+      card.appendChild(element('h3', '', example.name));
+      if (slot.status === 'covered') {
+        card.appendChild(element('p', '', factCount(slot.evidence.length) + ' · covered'));
+      } else {
+        card.appendChild(element('p', '', 'Missing ' + slot.missing.join(', ')));
+      }
+      card.appendChild(routeLink('Inspect example', '#/recipe/example/' + example.id, 'quiet-button', 'open_example'));
+      grid.appendChild(card);
+    });
+    root.appendChild(grid);
+    app.replaceChildren(root);
+    announce(step.title + ' recipe step');
+  }
+
+  function renderExample(id) {
+    var example = getExample(id);
+    if (!example) { renderOverview(); return; }
+    var root = page('example_instance', 'detail-shell');
+    var routeBar = element('div', 'route-bar');
+    routeBar.appendChild(routeLink('← Recipe overview', '#/recipe', 'back-link', 'return_overview'));
+    routeBar.appendChild(element('span', 'route-label', example.verification_kind));
+    root.appendChild(routeBar);
+    var hero = element('section', 'detail-hero');
+    var copy = element('div');
+    var topline = object(element('div', 'example-detail-top'), 'instance_status');
+    topline.appendChild(statusLabel(example));
+    if (example.recommended) topline.appendChild(element('span', 'recommended-chip', 'Recommended to copy'));
+    copy.appendChild(topline);
+    copy.appendChild(element('h1', 'detail-title', example.name));
+    copy.appendChild(element('p', 'detail-copy', example.summary));
+    if (example.missing.length) {
+      var missing = object(element('ul', 'missing-list'), 'missing_slots');
+      example.missing.forEach(function (label) { missing.appendChild(element('li', '', label)); });
+      copy.appendChild(missing);
+    }
+    hero.appendChild(copy);
+    var stat = object(element('aside', 'detail-stat'), 'source_counts');
+    stat.appendChild(element('strong', '', example.evidence_count));
+    stat.appendChild(element('span', '', 'exact source facts'));
+    hero.appendChild(stat);
+    root.appendChild(hero);
+
+    var heading = element('div', 'section-heading');
+    var headingCopy = element('div');
+    headingCopy.appendChild(element('span', 'section-kicker', 'Six local steps'));
+    headingCopy.appendChild(element('h2', '', 'Boundary slot map'));
+    headingCopy.appendChild(element('p', '', example.complete ? 'Every required slot is grounded in this boundary.' : 'Missing slots stay visible and cannot be recommended away.'));
+    heading.appendChild(headingCopy);
+    root.appendChild(heading);
+    var slots = object(element('div', 'slot-map'), 'slot_map');
+    example.slots.forEach(function (slot) {
+      var card = element('article', 'slot-card' + (slot.status === 'missing' ? ' missing' : ''));
+      card.appendChild(element('h3', '', slot.title));
+      if (slot.status === 'missing') {
+        card.appendChild(element('p', '', 'Missing: ' + slot.missing.join(', ')));
+      } else {
+        card.appendChild(element('p', '', slot.roles.map(function (role) { return role.label; }).join(' + ') + ' · ' + factCount(slot.evidence.length)));
+        card.appendChild(routeLink('View evidence →', '#/recipe/evidence/example/' + example.id + '/' + slot.step_id, 'secondary-button', 'open_evidence'));
+      }
+      slots.appendChild(card);
+    });
+    root.appendChild(slots);
+    app.replaceChildren(root);
+    announce(example.name + ' client boundary');
+  }
+
+  function renderEvidence(parts) {
+    var kind = parts[0];
+    var evidence = [];
+    var title = 'Exact source evidence';
+    var subtitle = '';
+    var back = '#/recipe';
+    if (kind === 'step') {
+      var step = getStep(parts[1]);
+      if (!step) { renderOverview(); return; }
+      evidence = step.evidence;
+      title = step.title;
+      subtitle = 'Evidence across production-reachable examples';
+      back = '#/recipe/step/' + step.id;
+    } else if (kind === 'example') {
+      var example = getExample(parts[1]);
+      var slot = getSlot(example, parts[2]);
+      if (!example || !slot) { renderOverview(); return; }
+      evidence = slot.evidence;
+      title = example.name + ' · ' + slot.title;
+      subtitle = 'Exact facts for this boundary slot';
+      back = '#/recipe/example/' + example.id;
+    } else {
+      renderOverview(); return;
+    }
+
+    var root = page('evidence', 'detail-shell');
+    var routeBar = element('div', 'route-bar');
+    routeBar.appendChild(routeLink('← Back to selection', back, 'back-link', 'return_detail'));
+    routeBar.appendChild(element('span', 'route-label', factCount(evidence.length)));
+    root.appendChild(routeBar);
+    var hero = element('section', 'detail-hero');
+    var copy = element('div');
+    copy.appendChild(element('p', 'eyebrow', 'Source-backed claim'));
+    copy.appendChild(element('h1', 'detail-title', title));
+    copy.appendChild(element('p', 'detail-copy', subtitle));
+    hero.appendChild(copy);
+    root.appendChild(hero);
+
+    var heading = element('div', 'section-heading');
+    var headingCopy = element('div');
+    headingCopy.appendChild(element('span', 'section-kicker', 'Created on demand'));
+    headingCopy.appendChild(element('h2', '', 'Repository locators'));
+    headingCopy.appendChild(element('p', '', 'Paths and symbols appear only after you explicitly ask for evidence.'));
+    heading.appendChild(headingCopy);
+    root.appendChild(heading);
+    var list = element('div', 'evidence-list');
+    var visible = Math.min(3, evidence.length);
+    renderEvidenceCards(list, evidence.slice(0, visible));
+    root.appendChild(list);
+    if (evidence.length > visible) {
+      var showMore = actionButton('Show all ' + evidence.length + ' facts', 'secondary-button', 'show_all_evidence', function () {
+        showMore.setAttribute('aria-expanded', 'true');
+        showMore.remove();
+        renderEvidenceCards(list, evidence);
+      });
+      showMore.setAttribute('aria-expanded', 'false');
+      showMore.style.marginTop = '16px';
+      root.appendChild(showMore);
+    }
+    app.replaceChildren(root);
+    announce(title + ' evidence');
+  }
+
+  function renderEvidenceCards(container, evidence) {
+    container.replaceChildren();
+    evidence.forEach(function (row) {
+      var card = object(element('article', 'evidence-card'), 'source_locator');
+      var header = element('div', 'evidence-header');
+      var copy = element('div');
+      copy.appendChild(element('span', 'evidence-role', row.example + ' · ' + row.role));
+      copy.appendChild(object(element('h3', '', row.symbol), 'symbol'));
+      copy.appendChild(element('div', 'locator', row.locator));
+      header.appendChild(copy);
+      var source = routeLink('Open exact source ↗', row.source_href, 'source-link', 'open_exact_source');
+      header.appendChild(source);
+      card.appendChild(header);
+      var authority = object(element('div', 'authority-row'), 'authority');
+      authority.appendChild(element('span', 'authority-chip', row.authority));
+      authority.appendChild(object(element('span', 'authority-chip', row.provenance), 'provenance'));
+      card.appendChild(authority);
+      container.appendChild(card);
+    });
+  }
+
+  function openAudit() {
+    if (overlayRoot.firstChild) return;
+    var backdrop = element('div', 'drawer-backdrop');
+    backdrop.setAttribute('role', 'presentation');
+    backdrop.addEventListener('click', function (event) { if (event.target === backdrop) closeAudit(true); });
+    var drawer = element('aside', 'drawer');
+    drawer.setAttribute('role', 'dialog');
+    drawer.setAttribute('aria-modal', 'true');
+    drawer.setAttribute('aria-labelledby', 'audit-title');
+    var head = element('div', 'drawer-head');
+    var copy = element('div');
+    copy.appendChild(element('span', 'section-kicker', 'Separate disclosure'));
+    var title = element('h2', '', 'Candidate audit');
+    title.id = 'audit-title';
+    copy.appendChild(title);
+    head.appendChild(copy);
+    var close = actionButton('×', 'icon-button', 'close_audit', function () { closeAudit(true); });
+    close.setAttribute('aria-label', 'Close candidate audit');
+    head.appendChild(close);
+    drawer.appendChild(head);
+    var ledger = element('div', 'audit-ledger');
+    [[model.summary.observed, 'observed'], [model.summary.boundaries, 'admitted'], [model.summary.excluded, 'excluded']].forEach(function (item) {
+      var cell = element('div'); cell.appendChild(element('strong', '', item[0])); cell.appendChild(element('span', '', item[1])); ledger.appendChild(cell);
+    });
+    drawer.appendChild(ledger);
+    var list = element('div', 'audit-list');
+    model.audit.forEach(function (row) {
+      var item = element('article', 'audit-row');
+      item.setAttribute('data-audit-row', row.id);
+      item.appendChild(element('span', 'section-kicker', row.kind));
+      item.appendChild(element('h3', '', row.label));
+      item.appendChild(element('p', '', row.reason));
+      item.appendChild(element('div', 'locator', row.locator));
+      list.appendChild(item);
+    });
+    drawer.appendChild(list);
+    backdrop.appendChild(drawer);
+    overlayRoot.appendChild(backdrop);
+    if (auditTrigger) auditTrigger.setAttribute('aria-expanded', 'true');
+    close.focus();
+  }
+
+  function closeAudit(restoreFocus) {
+    if (!overlayRoot.firstChild) return;
+    overlayRoot.replaceChildren();
+    if (auditTrigger) auditTrigger.setAttribute('aria-expanded', 'false');
+    if (restoreFocus && auditTrigger) auditTrigger.focus();
+  }
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape' && overlayRoot.firstChild) {
+      event.preventDefault();
+      closeAudit(true);
+    }
+  });
+  window.addEventListener('hashchange', render);
+  window.__clientRecipePreview = Object.freeze({ render: render, openAudit: openAudit, closeAudit: closeAudit });
+  render();
+}());
+</script>
+</body>
+</html>
