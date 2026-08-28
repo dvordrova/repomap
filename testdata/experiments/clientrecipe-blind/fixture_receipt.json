@@ -1,0 +1,185 @@
+{
+  "version": 1,
+  "status": "SEALED",
+  "author_brief_sha256": "2ac6286b63b3ab2ed8017de9052597bfeb87a771fc221b9823f1fd8322ff1e81",
+  "preregistration_sha256": "cc33da2a49676ba7df89eed10b16291a1d5b6115e63ac02e98be4244c1d095e4",
+  "oracle_schema_version": 1,
+  "oracle_schema_sha256": "409de2cae576e9c2e759fa3a6fea811adbb3ecefba0c0bf761c0e59414ce24ea",
+  "repository_files": [
+    {
+      "path": "cmd/fulfilment/main.go",
+      "bytes": 441,
+      "sha256": "2542cd2792052263d23b9d17026e0f99e2af1e490de84e3fd721bfe2a9a034a5"
+    },
+    {
+      "path": "go.mod",
+      "bytes": 485,
+      "sha256": "e0ae5e83ed2b8c185d34e5726451907f512a13efe23e0ee013e933d24ebb265b"
+    },
+    {
+      "path": "internal/address/verification.go",
+      "bytes": 2048,
+      "sha256": "f820c64c49f88e66a133668db12cac476ab7545613efd400bcd5f6ba9c3a4168"
+    },
+    {
+      "path": "internal/address/verification_test.go",
+      "bytes": 890,
+      "sha256": "26c496a35bf643fb9d545fe1583df0d0e3faaaa413b0b49b5d659a4a0609bc98"
+    },
+    {
+      "path": "internal/bootstrap/runtime.go",
+      "bytes": 2147,
+      "sha256": "dc778034bcfbaacbd456f0cf53395cc15f6060661af217a4b7cdacd7498537df"
+    },
+    {
+      "path": "internal/checkout/service.go",
+      "bytes": 2137,
+      "sha256": "7d999b3dcb5ff75ed7372060f616b6758ecb7c5b539feb1c3f408fe2dcced6e7"
+    },
+    {
+      "path": "internal/checkout/service_test.go",
+      "bytes": 2108,
+      "sha256": "dbd771ebb9f99cca6b1e2b9a6e873559f5c26a91ec580c6369dad60e99c7e0f1"
+    },
+    {
+      "path": "internal/diagnostics/carrier_probe.go",
+      "bytes": 568,
+      "sha256": "2920da59ffa2733b2cbd16918296564ebc4db5e8b28c413a30e49f84be453de8"
+    },
+    {
+      "path": "internal/examples/tax_walkthrough.go",
+      "bytes": 594,
+      "sha256": "a700bdf99ccd98295e847c5054d16a5e86ce306b414c351ce473d8e2c95d35ef"
+    },
+    {
+      "path": "internal/httpapi/server.go",
+      "bytes": 771,
+      "sha256": "6861a8b35858449dcfd75c0c708249caab3e5c0966bf28b33b68d68250c26734"
+    },
+    {
+      "path": "internal/legacy/reconciliation.go",
+      "bytes": 823,
+      "sha256": "02eac81d9e8579c186cf5a3d3e57e861f8db07287e13bec96228a94c420ffb1d"
+    },
+    {
+      "path": "internal/migration/address_backfill.go",
+      "bytes": 836,
+      "sha256": "88ed7dd12f643c8b15dbe3317042e14932d3fa64d1cd75c38acff58ad0e291c9"
+    },
+    {
+      "path": "internal/model/order.go",
+      "bytes": 1046,
+      "sha256": "abbe95790cf1dbbaf2abdbc9cadbac582031f2ff71f7b7a717a06ebf2b4ef2dd"
+    },
+    {
+      "path": "internal/notification/receipt.go",
+      "bytes": 1546,
+      "sha256": "0445cf007c1f3c031ea5cb1f643288ccc3e7b92163ce677ea7719548f878ffa2"
+    },
+    {
+      "path": "internal/payment/gateway.go",
+      "bytes": 2022,
+      "sha256": "1ca95d9b9ea499fa9b407e537d7288ff17f59e32fd81aeaafcfd2e8362d11cfd"
+    },
+    {
+      "path": "internal/payment/gateway_test.go",
+      "bytes": 1127,
+      "sha256": "a7cad7f70eee7eaa9fac200212ce153392637ec728516eedea2b56aad4b17ab0"
+    },
+    {
+      "path": "internal/preview/receipt_preview.go",
+      "bytes": 648,
+      "sha256": "bb0cb37d1be1035a07bc4dc8d82b3a5d796a800168ead2117206dd8711e75c7b"
+    },
+    {
+      "path": "internal/sandbox/payment_scenario.go",
+      "bytes": 651,
+      "sha256": "764ae679cfe8cc73cee4cdb78eead0eb823ace4e6d5992cd89501ccb7c22763c"
+    },
+    {
+      "path": "internal/shipping/booking.go",
+      "bytes": 1648,
+      "sha256": "0b03519f32b100903658974ac77fc5382e2f2d972d720b9b6adb42ff7518fabe"
+    },
+    {
+      "path": "internal/tax/quote.go",
+      "bytes": 1809,
+      "sha256": "a99aee06eb9eda8e63db2c677f95d09158bd475fbcbba0080da307ffcc1a3691"
+    },
+    {
+      "path": "internal/tax/quote_test.go",
+      "bytes": 858,
+      "sha256": "749691cda4cc5e4535a4135c4b1b2cb6a8b4bee4af501bc1a7cbd096cb808eb2"
+    },
+    {
+      "path": "internal/telemetry/telemetry.go",
+      "bytes": 699,
+      "sha256": "2e95597a70d1e7c84815bc24b42867c5e4eb2e0dab5a400fadfade80999a9332"
+    },
+    {
+      "path": "internal/testkit/direct_vendors_test.go",
+      "bytes": 895,
+      "sha256": "46c7870ecaf41581dfb4b7c7fdf2e460ef29f3dde562b157866b7ece2bd8478f"
+    }
+  ],
+  "dependencies_files": [
+    {
+      "path": "authorizer/authorizer.go",
+      "bytes": 880,
+      "sha256": "6c5e1e69ba58cfc803648c96e6c7086c265cbad033b71384bbd9b381b11e11ac"
+    },
+    {
+      "path": "authorizer/go.mod",
+      "bytes": 44,
+      "sha256": "dae00d7eb06e62fbc9e114a440be3c2366105b82c782a43f44194ed2d6a30ea3"
+    },
+    {
+      "path": "locator/go.mod",
+      "bytes": 36,
+      "sha256": "158cc218a3f8c666178d9b2c5e1bd08482ff46ffc91da43e0a3bb78f89aee640"
+    },
+    {
+      "path": "locator/locator.go",
+      "bytes": 936,
+      "sha256": "6c9c751dd2bea24b57cddb879fee1dfe5d3a545021eef40bf03a236786f4850c"
+    },
+    {
+      "path": "parcel/go.mod",
+      "bytes": 40,
+      "sha256": "7a272bdacfcacb9378a1e4d3ee0de62f20554fc26c77202a6ff12005178f1505"
+    },
+    {
+      "path": "parcel/parcel.go",
+      "bytes": 999,
+      "sha256": "46c7c54780abefb5cbac9d1da48482fd86d6e690abe206db0146d524cdaf66e7"
+    },
+    {
+      "path": "receipt/go.mod",
+      "bytes": 42,
+      "sha256": "eeb96f94485e941bc338bad5a64178fef9202f74b4df74ff76e6c54222707084"
+    },
+    {
+      "path": "receipt/receipt.go",
+      "bytes": 924,
+      "sha256": "16636cf78a1663a1438f6dcc1c05378a64ae25c5b150897ad11156e853ae6ce3"
+    },
+    {
+      "path": "taxquote/go.mod",
+      "bytes": 41,
+      "sha256": "380b29732f57fd2092f6a53172cd2a27b2f75c1bdcbd3847333211fe375167f7"
+    },
+    {
+      "path": "taxquote/taxquote.go",
+      "bytes": 938,
+      "sha256": "de8f341f7b86315f3a3cdfe6ae21f50e267b14dc90f2ca66fde97d36f018012b"
+    }
+  ],
+  "repository_tree_sha256": "a8c68e09120a4b7070610d9927d2be074e5dd0e3ab2b9cea059dde5dd2147046",
+  "dependencies_tree_sha256": "ac336f04eae48a5f41f56eb332cd51aa1b1fb313a5f4bfaefe6fcbb6195c3086",
+  "oracle_sha256": "ad1ec48672b31ccd7419fa352836ea2f73eba6141e2e54cf5a1dd8041f569023",
+  "chronology": {
+    "fixture_validated_before_seal": true,
+    "oracle_sealed_before_candidate": true
+  },
+  "sha256": "9544c7391106299e56739930308444101e8308480d5783fb18b6502de8a0a15c"
+}
