@@ -145,13 +145,21 @@ function all(selector, root = app) { return root.querySelectorAll(selector); }
 function linkTo(href, root = app) { return descendants(root).find((node) => node.href === href); }
 
 check(state() === 'target_landing', 'initial state is not target_landing');
-check(all('[data-object="task_card"]').length === 6, 'landing does not expose exactly six task cards');
+check(all('[data-object="task_card"]').length === 1, 'landing does not expose exactly one available task');
+check(app.textContent.includes('Controlled fixture only') && app.textContent.includes('Generalization not established'), 'landing hides experiment scope');
+check(all('.coverage-bar').length === 0, 'landing still exposes a decorative coverage bar');
 check(all('.locator').length === 0, 'landing materialized source locators');
 check(all('[data-audit-row]').length === 0 && all('[data-audit-row]', overlay).length === 0, 'landing materialized audit rows');
 
 action('open_recipe').click();
 check(state() === 'recipe_overview', 'open recipe did not enter overview');
 check(all('[data-action="open_step"]').length === 6, 'overview does not expose six recipe steps');
+check(all('[data-object="most_complete_example"]').length === 2, 'overview does not expose the full most-complete tie set');
+check(app.textContent.includes('Most complete examples') && app.textContent.includes('Kubernetes') && app.textContent.includes('Vault'), 'most-complete tie set copy is incomplete');
+check(app.textContent.includes('2 fully covered · 1 partial'), 'overview hides the partial Step 6 boundary');
+check(!app.textContent.includes('Recommended to copy'), 'overview still makes a global copy recommendation');
+check(all('.role-coverage-row').length === 9, 'overview does not expose role-level coverage');
+check(app.textContent.includes('Task contract vs. repository pattern') && app.textContent.includes('2 / 3 complete examples'), 'role coverage does not separate contract from observed frequency');
 check(all('.example-card').length === 3, 'overview did not start with exactly three examples');
 check(!app.textContent.includes('Notifier'), 'incomplete fourth example was materialized initially');
 check(all('.locator').length === 0, 'overview materialized source locators');
@@ -174,6 +182,17 @@ check(source && source.href === '../repo/internal/clients/kubernetes/config.go#L
 action('return_detail').click();
 check(state() === 'recipe_step', 'evidence back action did not restore the step');
 
+window.location.hash = '#/recipe/example/e1';
+check(state() === 'example_instance', 'ClickHouse hash did not enter example state');
+const partialSlots = all('[data-slot-status="partial"]');
+check(partialSlots.length === 1, 'ClickHouse does not expose exactly one partial slot');
+check(partialSlots[0].textContent.includes('Observability') && partialSlots[0].textContent.includes('Missing: Failure policy'), 'ClickHouse partial slot lost covered or missing role copy');
+check(Boolean(action('open_evidence', partialSlots[0])), 'ClickHouse partial slot hides retained observability evidence');
+action('open_evidence', partialSlots[0]).click();
+check(state() === 'evidence' && all('.evidence-card').length > 0, 'ClickHouse partial-slot evidence did not remain inspectable');
+action('return_detail').click();
+check(state() === 'example_instance', 'partial-slot evidence back action did not restore ClickHouse');
+
 window.location.hash = '#/recipe';
 action('show_all_examples').click();
 const notifierLink = linkTo('#/recipe/example/e3');
@@ -183,7 +202,7 @@ check(state() === 'example_instance', 'Notifier link did not enter example state
 check(app.textContent.includes('Needs 3 roles'), 'Notifier detail lost incomplete status');
 check(all('[data-object="slot_map"]').length === 1, 'example detail has no grouped slot map');
 check(all('.slot-card').length === 6, 'example detail does not expose six grouped slots');
-check(all('.slot-card').filter((node) => node.className.split(/\s+/).includes('missing')).length === 2, 'Notifier grouped slots do not preserve its missing roles');
+check(all('[data-slot-status="missing"]').length === 2, 'Notifier grouped slots do not preserve its missing roles');
 action('open_evidence').click();
 check(state() === 'evidence', 'example evidence action did not enter evidence state');
 check(all('.evidence-card').length === 1, 'example slot did not disclose its exact evidence only');

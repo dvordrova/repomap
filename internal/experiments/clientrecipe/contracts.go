@@ -143,7 +143,7 @@ func (value TaskContract) Validate() error {
 		return fmt.Errorf("client recipe task contract: invalid identity or task definition")
 	}
 	if value.UIBounds != (UIBounds{
-		LandingChoices: 6, PrimaryRecipeSteps: 7, VisibleExamples: 3,
+		LandingChoices: 1, PrimaryRecipeSteps: 6, VisibleExamples: 3,
 		VisibleEvidence: 3, ExactSourceActions: 2, AuditInFirstViewport: false,
 	}) {
 		return fmt.Errorf("client recipe task contract: UI bounds do not match the experiment contract")

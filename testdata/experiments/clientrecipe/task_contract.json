@@ -5,7 +5,7 @@
   "user_situation": "A newcomer must add one outbound client to an unfamiliar service without first reconstructing the whole architecture.",
   "intent": "Find the repository-specific change sequence, inspect a complete example, and form an evidence-backed initial change plan.",
   "user_needs": [
-    {"id": "best_example", "question": "Which complete existing client should I copy first?"},
+    {"id": "best_example", "question": "Which complete existing examples cover the most repository-observed roles?"},
     {"id": "change_areas", "question": "Which parts of the repository will I probably change?"},
     {"id": "configuration", "question": "Where is client configuration declared and translated?"},
     {"id": "construction", "question": "Where is the external SDK wrapped and constructed?"},
@@ -18,14 +18,14 @@
   "completion_criteria": [
     {"id": "accounting", "description": "Every observed candidate is visible, hidden behind disclosure, or excluded with a closed reason."},
     {"id": "bounded_navigation", "description": "The user reaches any exact source reference in no more than two actions after choosing a step or example."},
-    {"id": "complete_example", "description": "The recommended example is complete, production reachable, and grounded in exact source locations."},
+    {"id": "complete_example", "description": "Every example highlighted as most complete is complete, production reachable, grounded in exact source locations, and every exact tie is preserved."},
     {"id": "mandatory_slots", "description": "Configuration, construction, local wrapper, consumer boundary, production operation, application wiring, verification, and observability are all answered."},
     {"id": "no_false_authority", "description": "Generated, test-only, unreachable, standard-library, and stale prose candidates never become a production example."},
     {"id": "source_grounding", "description": "Every visible repository claim resolves to an exact repository-relative source locator."}
   ],
   "ui_bounds": {
-    "landing_choices": 6,
-    "primary_recipe_steps": 7,
+    "landing_choices": 1,
+    "primary_recipe_steps": 6,
     "visible_examples": 3,
     "visible_evidence_per_step": 3,
     "exact_source_actions": 2,
@@ -44,8 +44,8 @@
     },
     {
       "state": "recipe_overview",
-      "question_answered": "What is the repository-specific sequence and best example?",
-      "objects": ["recipe_summary", "primary_steps", "best_example", "example_summary", "coverage"],
+      "question_answered": "What is the repository-specific sequence and which examples are most complete?",
+      "objects": ["recipe_summary", "primary_steps", "most_complete_examples", "example_summary", "coverage"],
       "primary_action": "open_step",
       "secondary_actions": ["open_example", "show_all_examples", "open_audit"],
       "hidden": ["step_evidence", "extra_examples", "excluded_candidates"],

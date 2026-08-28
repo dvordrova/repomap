@@ -25,8 +25,10 @@ var previewScript string
 type PreviewModel struct {
 	Version  int                `json:"version"`
 	Target   PreviewTarget      `json:"target"`
+	Scope    PreviewScope       `json:"scope"`
 	Summary  PreviewSummary     `json:"summary"`
 	Tasks    []PreviewTask      `json:"tasks"`
+	Roles    []PreviewRole      `json:"roles"`
 	Steps    []PreviewStep      `json:"steps"`
 	Examples []PreviewExample   `json:"examples"`
 	Audit    []PreviewExclusion `json:"audit"`
@@ -38,15 +40,20 @@ type PreviewTarget struct {
 	Kind     string `json:"kind"`
 }
 
+type PreviewScope struct {
+	Evidence       string `json:"evidence"`
+	Generalization string `json:"generalization"`
+}
+
 type PreviewSummary struct {
-	Observed         int `json:"observed"`
-	Boundaries       int `json:"boundaries"`
-	Complete         int `json:"complete"`
-	Excluded         int `json:"excluded"`
-	RequiredRoles    int `json:"required_roles"`
-	CommonRoles      int `json:"common_roles"`
-	CallbackClosed   int `json:"callback_closed"`
-	CallbackFrontier int `json:"callback_frontier"`
+	Observed               int `json:"observed"`
+	Boundaries             int `json:"boundaries"`
+	Complete               int `json:"complete"`
+	Excluded               int `json:"excluded"`
+	ObservedUniversalRoles int `json:"observed_universal_roles"`
+	ObservedCommonRoles    int `json:"observed_common_roles"`
+	CallbackClosed         int `json:"callback_closed"`
+	CallbackFrontier       int `json:"callback_frontier"`
 }
 
 type PreviewTask struct {
@@ -57,9 +64,12 @@ type PreviewTask struct {
 }
 
 type PreviewRole struct {
-	ID        string `json:"id"`
-	Label     string `json:"label"`
-	Necessity string `json:"necessity"`
+	ID                string `json:"id"`
+	Label             string `json:"label"`
+	TaskRequired      bool   `json:"task_required"`
+	ObservedComplete  int    `json:"observed_complete"`
+	CompleteExamples  int    `json:"complete_examples"`
+	ObservedNecessity string `json:"observed_necessity"`
 }
 
 type PreviewEvidence struct {
@@ -86,15 +96,17 @@ type PreviewStep struct {
 	Evidence         []PreviewEvidence `json:"evidence"`
 	EvidenceCount    int               `json:"evidence_count"`
 	CompleteCoverage int               `json:"complete_coverage"`
+	PartialCoverage  int               `json:"partial_coverage"`
 }
 
 type PreviewSlot struct {
-	StepID   string            `json:"step_id"`
-	Title    string            `json:"title"`
-	Status   string            `json:"status"`
-	Roles    []PreviewRole     `json:"roles"`
-	Missing  []string          `json:"missing"`
-	Evidence []PreviewEvidence `json:"evidence"`
+	StepID       string            `json:"step_id"`
+	Title        string            `json:"title"`
+	Status       string            `json:"status"`
+	Roles        []PreviewRole     `json:"roles"`
+	CoveredRoles []PreviewRole     `json:"covered_roles"`
+	Missing      []string          `json:"missing"`
+	Evidence     []PreviewEvidence `json:"evidence"`
 }
 
 type PreviewExample struct {
@@ -103,10 +115,11 @@ type PreviewExample struct {
 	Summary          string        `json:"summary"`
 	Status           string        `json:"status"`
 	Complete         bool          `json:"complete"`
-	Recommended      bool          `json:"recommended"`
+	MostComplete     bool          `json:"most_complete"`
 	VerificationKind string        `json:"verification_kind"`
 	Missing          []string      `json:"missing"`
 	EvidenceCount    int           `json:"evidence_count"`
+	RoleCoverage     int           `json:"role_coverage"`
 	Slots            []PreviewSlot `json:"slots"`
 }
 
@@ -142,6 +155,14 @@ func BuildPreviewModel(h1 H1Result, h2 H2Result, evaluation EvaluationResult) (P
 		return PreviewModel{}, fmt.Errorf("client recipe preview: experiment accounting changed")
 	}
 
+	completeExamples := 0
+	for _, instance := range h1.Instances {
+		if instance.Complete {
+			completeExamples++
+		}
+	}
+	roles, roleByID := previewRoles(h1, completeExamples)
+
 	stepCopy := make(map[string]H2StepCopy, len(h2.Steps))
 	for _, row := range h2.Steps {
 		stepCopy[row.Ref] = row
@@ -151,16 +172,16 @@ func BuildPreviewModel(h1 H1Result, h2 H2Result, evaluation EvaluationResult) (P
 		exampleCopy[row.Ref] = row
 	}
 	definitions := h2Examples(h1)
-	recommendedID := previewBestExample(h1, definitions)
+	mostCompleteIDs := previewMostCompleteExamples(h1, definitions)
 	examples := make([]PreviewExample, 0, len(definitions))
 	for _, definition := range definitions {
-		example := buildPreviewExample(h1, definition, stepCopy, exampleCopy[definition.Ref])
-		example.Recommended = definition.Ref == recommendedID
+		example := buildPreviewExample(definition, stepCopy, exampleCopy[definition.Ref], roleByID)
+		_, example.MostComplete = mostCompleteIDs[definition.Ref]
 		examples = append(examples, example)
 	}
 	sort.SliceStable(examples, func(i, j int) bool {
-		if examples[i].Recommended != examples[j].Recommended {
-			return examples[i].Recommended
+		if examples[i].MostComplete != examples[j].MostComplete {
+			return examples[i].MostComplete
 		}
 		if examples[i].Complete != examples[j].Complete {
 			return examples[i].Complete
@@ -168,10 +189,8 @@ func BuildPreviewModel(h1 H1Result, h2 H2Result, evaluation EvaluationResult) (P
 		return examples[i].Name < examples[j].Name
 	})
 
-	necessities := make(map[H1Role]H1Necessity, len(h1.Roles))
 	required, common := 0, 0
 	for _, row := range h1.Roles {
-		necessities[row.Role] = row.Necessity
 		switch row.Necessity {
 		case H1Required:
 			required++
@@ -182,15 +201,21 @@ func BuildPreviewModel(h1 H1Result, h2 H2Result, evaluation EvaluationResult) (P
 	steps := make([]PreviewStep, 0, len(h2StepDefinitions))
 	for index, definition := range h2StepDefinitions {
 		copyRow := stepCopy[definition.Ref]
-		step := PreviewStep{ID: definition.Ref, Number: index + 1, Title: copyRow.Title, Purpose: copyRow.Purpose}
+		step := PreviewStep{
+			ID: definition.Ref, Number: index + 1, Title: copyRow.Title, Purpose: copyRow.Purpose,
+			Roles: []PreviewRole{}, CoveredExamples: []string{}, Evidence: []PreviewEvidence{},
+		}
 		for _, role := range definition.Roles {
-			step.Roles = append(step.Roles, previewRole(role, necessities[role]))
+			step.Roles = append(step.Roles, roleByID[role])
 		}
 		for _, example := range examples {
 			slot := previewSlot(example, definition.Ref)
-			if slot.Status == "covered" {
+			switch slot.Status {
+			case "covered":
 				step.CompleteCoverage++
 				step.CoveredExamples = append(step.CoveredExamples, example.Name)
+			case "partial":
+				step.PartialCoverage++
 			}
 			step.Evidence = append(step.Evidence, slot.Evidence...)
 		}
@@ -207,29 +232,19 @@ func BuildPreviewModel(h1 H1Result, h2 H2Result, evaluation EvaluationResult) (P
 			Reason: previewExclusionReason(excluded.Reason), Locator: fmt.Sprintf("%s:%d", first.Path, first.Line),
 		})
 	}
-	complete := 0
-	for _, example := range examples {
-		if example.Complete {
-			complete++
-		}
-	}
 	model := PreviewModel{
 		Version: PreviewVersion,
 		Target:  PreviewTarget{Name: "launch-service", Language: "Go", Kind: "Service"},
+		Scope:   PreviewScope{Evidence: "Controlled fixture only", Generalization: "Generalization not established"},
 		Summary: PreviewSummary{
-			Observed: h1.Ledger.Observed, Boundaries: h1.Ledger.Admitted, Complete: complete,
-			Excluded: h1.Ledger.Excluded, RequiredRoles: required, CommonRoles: common,
+			Observed: h1.Ledger.Observed, Boundaries: h1.Ledger.Admitted, Complete: completeExamples,
+			Excluded: h1.Ledger.Excluded, ObservedUniversalRoles: required, ObservedCommonRoles: common,
 			CallbackClosed: h1.Callbacks.Closed, CallbackFrontier: h1.Callbacks.Frontier,
 		},
 		Tasks: []PreviewTask{
 			{ID: "add_client", Title: "Add an external client", Description: "Follow the repository's proven boundary shape from configuration to verification.", Available: true},
-			{ID: "trace_startup", Title: "Trace service startup", Description: "See how the live application graph is assembled."},
-			{ID: "add_endpoint", Title: "Add an endpoint", Description: "Find the local request-handling pattern."},
-			{ID: "change_storage", Title: "Change persistence", Description: "Locate storage contracts and implementations."},
-			{ID: "add_metric", Title: "Add observability", Description: "Follow metrics and logging conventions."},
-			{ID: "inspect_tests", Title: "Extend verification", Description: "Find the repository's testing boundaries."},
 		},
-		Steps: steps, Examples: examples, Audit: audit,
+		Roles: roles, Steps: steps, Examples: examples, Audit: audit,
 	}
 	return model, nil
 }
@@ -258,16 +273,12 @@ func RenderClientRecipePreview(h1 H1Result, h2 H2Result, evaluation EvaluationRe
 }
 
 func buildPreviewExample(
-	h1 H1Result,
 	definition h2ExampleDefinition,
 	stepCopy map[string]H2StepCopy,
 	copyRow H2ExampleCopy,
+	roleByID map[H1Role]PreviewRole,
 ) PreviewExample {
 	instance := definition.Instance
-	necessities := make(map[H1Role]H1Necessity, len(h1.Roles))
-	for _, role := range h1.Roles {
-		necessities[role.Role] = role.Necessity
-	}
 	roleRows := make(map[H1Role]H1RoleEvidence, len(instance.Roles))
 	for _, row := range instance.Roles {
 		roleRows[row.Role] = row
@@ -275,6 +286,7 @@ func buildPreviewExample(
 	example := PreviewExample{
 		ID: definition.Ref, Name: definition.Name, Summary: copyRow.Summary,
 		Complete: instance.Complete, VerificationKind: previewVerification(instance.VerificationKind),
+		Missing: []string{}, RoleCoverage: len(instance.Roles), Slots: []PreviewSlot{},
 	}
 	if instance.Complete {
 		example.Status = "Complete"
@@ -285,20 +297,30 @@ func buildPreviewExample(
 		example.Missing = append(example.Missing, previewRoleLabel(role))
 	}
 	for _, stepDefinition := range h2StepDefinitions {
-		slot := PreviewSlot{StepID: stepDefinition.Ref, Title: stepCopy[stepDefinition.Ref].Title, Status: "covered"}
+		slot := PreviewSlot{
+			StepID: stepDefinition.Ref, Title: stepCopy[stepDefinition.Ref].Title, Status: "covered",
+			Roles: []PreviewRole{}, CoveredRoles: []PreviewRole{}, Missing: []string{}, Evidence: []PreviewEvidence{},
+		}
 		for _, role := range stepDefinition.Roles {
-			slot.Roles = append(slot.Roles, previewRole(role, necessities[role]))
+			projectedRole := roleByID[role]
+			slot.Roles = append(slot.Roles, projectedRole)
 			row, present := roleRows[role]
 			if !present {
 				slot.Missing = append(slot.Missing, previewRoleLabel(role))
 				continue
 			}
+			slot.CoveredRoles = append(slot.CoveredRoles, projectedRole)
 			for _, evidence := range row.Evidence {
 				slot.Evidence = append(slot.Evidence, previewEvidence(definition.Ref, definition.Name, role, evidence))
 				example.EvidenceCount++
 			}
 		}
-		if len(slot.Missing) != 0 {
+		switch {
+		case len(slot.Missing) == 0:
+			slot.Status = "covered"
+		case len(slot.CoveredRoles) != 0:
+			slot.Status = "partial"
+		default:
 			slot.Status = "missing"
 		}
 		example.Slots = append(example.Slots, slot)
@@ -306,12 +328,13 @@ func buildPreviewExample(
 	return example
 }
 
-func previewBestExample(h1 H1Result, definitions []h2ExampleDefinition) string {
+func previewMostCompleteExamples(h1 H1Result, definitions []h2ExampleDefinition) map[string]struct{} {
 	necessities := make(map[H1Role]H1Necessity, len(h1.Roles))
 	for _, row := range h1.Roles {
 		necessities[row.Role] = row.Necessity
 	}
-	bestRef, bestPath, bestScore := "", "", -1
+	best := make(map[string]struct{})
+	bestScore := -1
 	for _, definition := range definitions {
 		if !definition.Instance.Complete {
 			continue
@@ -322,11 +345,32 @@ func previewBestExample(h1 H1Result, definitions []h2ExampleDefinition) string {
 				score++
 			}
 		}
-		if score > bestScore || (score == bestScore && (bestPath == "" || definition.Instance.ImporterRepositoryPath < bestPath)) {
-			bestRef, bestPath, bestScore = definition.Ref, definition.Instance.ImporterRepositoryPath, score
+		switch {
+		case score > bestScore:
+			clear(best)
+			best[definition.Ref] = struct{}{}
+			bestScore = score
+		case score == bestScore:
+			best[definition.Ref] = struct{}{}
 		}
 	}
-	return bestRef
+	return best
+}
+
+func previewRoles(h1 H1Result, completeExamples int) ([]PreviewRole, map[H1Role]PreviewRole) {
+	roles := make([]PreviewRole, 0, len(h1.Roles))
+	byID := make(map[H1Role]PreviewRole, len(h1.Roles))
+	for _, frequency := range h1.Roles {
+		_, taskRequired := h1MandatoryRoles[frequency.Role]
+		role := PreviewRole{
+			ID: string(frequency.Role), Label: previewRoleLabel(frequency.Role), TaskRequired: taskRequired,
+			ObservedComplete: frequency.CompleteInstances, CompleteExamples: completeExamples,
+			ObservedNecessity: previewObservedNecessity(frequency.Necessity),
+		}
+		roles = append(roles, role)
+		byID[frequency.Role] = role
+	}
+	return roles, byID
 }
 
 func previewSlot(example PreviewExample, stepID string) PreviewSlot {
@@ -364,10 +408,6 @@ func previewEscapePath(value string) string {
 	return strings.Join(parts, "/")
 }
 
-func previewRole(role H1Role, necessity H1Necessity) PreviewRole {
-	return PreviewRole{ID: string(role), Label: previewRoleLabel(role), Necessity: previewNecessity(necessity)}
-}
-
 func previewRoleLabel(role H1Role) string {
 	labels := map[H1Role]string{
 		H1RoleConfiguration: "Configuration", H1RoleConstruction: "Construction",
@@ -379,14 +419,14 @@ func previewRoleLabel(role H1Role) string {
 	return labels[role]
 }
 
-func previewNecessity(value H1Necessity) string {
+func previewObservedNecessity(value H1Necessity) string {
 	switch value {
 	case H1Required:
-		return "Required"
+		return "Observed in all"
 	case H1Common:
-		return "Common"
+		return "Common pattern"
 	default:
-		return "Optional"
+		return "Occasional pattern"
 	}
 }
 

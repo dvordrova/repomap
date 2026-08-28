@@ -46,8 +46,8 @@
   }
 
   function roleBadge(role) {
-    var className = 'role-badge' + (role.necessity === 'Common' ? ' common' : '');
-    return element('span', className, role.label + ' · ' + role.necessity);
+    var className = 'role-badge' + (role.task_required ? '' : ' additional');
+    return element('span', className, role.label + ' · ' + (role.task_required ? 'Task-required' : 'Additional pattern'));
   }
 
   function statusLabel(example) {
@@ -102,23 +102,24 @@
     var root = page('target_landing', 'landing');
     var top = element('div', 'landing-top');
     var intro = element('div');
-    intro.appendChild(element('p', 'eyebrow', 'Repository task lens'));
+    intro.appendChild(element('p', 'eyebrow', 'Available repository task'));
     var title = element('h1', 'hero-title');
-    title.appendChild(document.createTextNode('What do you want to '));
-    title.appendChild(element('em', '', 'change?'));
+    title.appendChild(document.createTextNode('Plan a source-backed '));
+    title.appendChild(element('em', '', 'change.'));
     intro.appendChild(title);
-    intro.appendChild(element('p', 'hero-copy', 'Start with a concrete change. Repomap turns repeated repository evidence into a bounded, source-backed recipe.'));
+    intro.appendChild(element('p', 'hero-copy', 'This experiment currently supports one concrete task and turns repeated repository evidence into a bounded recipe.'));
     top.appendChild(intro);
 
     var coverage = object(element('aside', 'coverage-note'), 'coverage_hint');
     var coverageTop = element('div');
-    coverageTop.appendChild(element('span', '', 'Current task coverage'));
+    coverageTop.appendChild(element('span', '', 'Experiment scope'));
     coverageTop.appendChild(element('strong', '', model.summary.boundaries + ' boundaries'));
     coverageTop.appendChild(element('span', '', model.summary.complete + ' complete examples · ' + model.summary.excluded + ' decoys excluded'));
     coverage.appendChild(coverageTop);
-    var bar = element('div', 'coverage-bar');
-    bar.appendChild(element('span'));
-    coverage.appendChild(bar);
+    var scope = object(element('div', 'scope-status'), 'experiment_scope');
+    scope.appendChild(element('span', 'scope-pill', model.scope.evidence));
+    scope.appendChild(element('span', 'scope-caveat', model.scope.generalization));
+    coverage.appendChild(scope);
     top.appendChild(coverage);
     root.appendChild(top);
 
@@ -142,13 +143,13 @@
     root.appendChild(grid);
     object(root, 'target_context');
     app.replaceChildren(root);
-    announce('Repository task choices');
+    announce('Available repository task');
   }
 
   function renderOverview() {
     var root = page('recipe_overview', 'overview');
     var routeBar = element('div', 'route-bar');
-    routeBar.appendChild(routeLink('← All repository tasks', '#/target', 'back-link', 'return_target'));
+    routeBar.appendChild(routeLink('← Available task', '#/target', 'back-link', 'return_target'));
     routeBar.appendChild(element('span', 'route-label', model.target.name + ' · ' + model.target.language));
     root.appendChild(routeBar);
 
@@ -156,7 +157,7 @@
     var heroCopy = element('div');
     heroCopy.appendChild(element('p', 'eyebrow', 'Repository-specific recipe'));
     heroCopy.appendChild(element('h1', 'overview-title', 'Add an external client'));
-    heroCopy.appendChild(element('p', 'overview-copy', 'Six evidence-backed steps connect configuration, a local boundary, live wiring, behavior, verification, and failure handling—without reconstructing the entire codebase.'));
+    heroCopy.appendChild(element('p', 'overview-copy', model.steps.length + ' evidence-backed steps connect configuration, a local boundary, live wiring, behavior, verification, and failure handling—without reconstructing the entire codebase.'));
     hero.appendChild(heroCopy);
     var metrics = object(element('div', 'metric-row'), 'coverage');
     [
@@ -191,25 +192,47 @@
       copy.appendChild(element('p', '', step.purpose));
       card.appendChild(copy);
       var meta = element('div', 'step-meta');
-      meta.appendChild(element('div', '', step.complete_coverage + ' fully covered'));
+      var coverageCopy = step.complete_coverage + ' fully covered';
+      if (step.partial_coverage) coverageCopy += ' · ' + step.partial_coverage + ' partial';
+      meta.appendChild(element('div', '', coverageCopy));
       meta.appendChild(element('div', '', factCount(step.evidence_count)));
       card.appendChild(meta);
       card.appendChild(element('span', 'step-arrow', '→'));
       list.appendChild(card);
     });
     recipeLayout.appendChild(list);
-    recipeLayout.appendChild(renderRecommendation());
+    recipeLayout.appendChild(renderMostCompleteExamples());
     root.appendChild(recipeLayout);
+
+    var roleHeading = element('div', 'section-heading');
+    var roleCopy = element('div');
+    roleCopy.appendChild(element('span', 'section-kicker', 'Role coverage'));
+    roleCopy.appendChild(element('h2', '', 'Task contract vs. repository pattern'));
+    roleCopy.appendChild(element('p', '', 'Task-required roles determine completeness. Observed frequency only describes the task-complete examples in this controlled fixture.'));
+    roleHeading.appendChild(roleCopy);
+    root.appendChild(roleHeading);
+    var roleCoverage = object(element('div', 'role-coverage'), 'role_coverage');
+    model.roles.forEach(function (role) {
+      var row = element('article', 'role-coverage-row');
+      var name = element('div');
+      name.appendChild(element('strong', '', role.label));
+      name.appendChild(element('span', 'contract-label' + (role.task_required ? '' : ' additional'), role.task_required ? 'Task-required' : 'Not required by task'));
+      row.appendChild(name);
+      row.appendChild(element('span', 'role-frequency', role.observed_complete + ' / ' + role.complete_examples + ' complete examples'));
+      row.appendChild(element('span', 'observed-pattern', role.observed_necessity));
+      roleCoverage.appendChild(row);
+    });
+    root.appendChild(roleCoverage);
 
     var examplesHeading = element('div', 'section-heading');
     var examplesCopy = element('div');
     examplesCopy.appendChild(element('span', 'section-kicker', 'Concrete boundaries'));
-    examplesCopy.appendChild(element('h2', '', 'Copy a complete example'));
-    examplesCopy.appendChild(element('p', '', 'Start from the recommended boundary, then compare the other complete shapes.'));
+    examplesCopy.appendChild(element('h2', '', 'Compare complete examples'));
+    examplesCopy.appendChild(element('p', '', 'No global copy recommendation is inferred without knowing the kind of boundary you intend to add.'));
     examplesHeading.appendChild(examplesCopy);
-    var showAll = actionButton('Show all 4', 'secondary-button', 'show_all_examples', function () {
+    var showAll = actionButton('Show all ' + model.examples.length, 'secondary-button', 'show_all_examples', function () {
       showAll.setAttribute('aria-expanded', 'true');
-      showAll.textContent = 'All 4 shown';
+      showAll.textContent = 'All ' + model.examples.length + ' shown';
       showAll.disabled = true;
       renderExampleCards(exampleGrid, model.examples);
     });
@@ -224,7 +247,7 @@
     var auditCopy = element('div');
     auditCopy.appendChild(element('span', 'section-kicker', 'Why this is trustworthy'));
     auditCopy.appendChild(element('h2', '', 'Candidate audit'));
-    auditCopy.appendChild(element('p', '', 'Inspect the six generated, test-only, unreachable, prose, and standard-library candidates that did not become production examples.'));
+    auditCopy.appendChild(element('p', '', 'Inspect the ' + model.summary.excluded + ' generated, test-only, unreachable, prose, and standard-library candidates that did not become production examples.'));
     auditEntry.appendChild(auditCopy);
     auditTrigger = actionButton('Open audit · ' + model.summary.excluded, 'secondary-button', 'open_audit', openAudit);
     auditTrigger.setAttribute('aria-expanded', 'false');
@@ -235,26 +258,24 @@
     announce('External client recipe overview');
   }
 
-  function renderRecommendation() {
-    var example = model.examples.find(function (row) { return row.recommended; });
-    var card = object(element('aside', 'recommendation'), 'best_example');
-    var top = element('div', 'recommendation-top');
-    top.appendChild(element('span', 'recommendation-label', 'Recommended to copy'));
-    top.appendChild(element('h3', '', example.name));
-    top.appendChild(element('p', '', example.summary));
-    card.appendChild(top);
-    var facts = element('div', 'recommendation-facts');
-    var source = element('div');
-    source.appendChild(element('strong', '', example.evidence_count));
-    source.appendChild(element('span', '', 'source facts'));
-    facts.appendChild(source);
-    var verification = element('div');
-    verification.appendChild(element('strong', '', '9 / 9'));
-    verification.appendChild(element('span', '', 'roles covered'));
-    facts.appendChild(verification);
-    card.appendChild(facts);
-    var open = routeLink('Inspect ' + example.name + ' →', '#/recipe/example/' + example.id, 'primary-button recommendation-action', 'open_example');
-    card.appendChild(open);
+  function renderMostCompleteExamples() {
+    var examples = model.examples.filter(function (row) { return row.most_complete; });
+    var card = object(element('aside', 'most-complete'), 'most_complete_examples');
+    var head = element('div', 'most-complete-head');
+    head.appendChild(element('span', 'most-complete-label', 'Most complete examples'));
+    head.appendChild(element('p', '', 'Deterministic full tie set by observed role coverage. This is not a recommendation for every future client.'));
+    card.appendChild(head);
+    examples.forEach(function (example) {
+      var item = object(element('div', 'most-complete-item'), 'most_complete_example');
+      item.appendChild(element('h3', '', example.name));
+      item.appendChild(element('p', '', example.summary));
+      var facts = element('div', 'most-complete-facts');
+      facts.appendChild(element('span', '', factCount(example.evidence_count)));
+      facts.appendChild(element('span', '', example.role_coverage + ' / ' + model.roles.length + ' observed roles'));
+      item.appendChild(facts);
+      item.appendChild(routeLink('Inspect ' + example.name + ' →', '#/recipe/example/' + example.id, 'primary-button most-complete-action', 'open_example'));
+      card.appendChild(item);
+    });
     return card;
   }
 
@@ -309,12 +330,16 @@
     var grid = object(element('div', 'coverage-grid'), 'covered_examples');
     model.examples.forEach(function (example) {
       var slot = getSlot(example, step.id);
-      var card = element('article', 'coverage-card');
+      var card = element('article', 'coverage-card ' + slot.status);
       card.appendChild(element('h3', '', example.name));
-      if (slot.status === 'covered') {
-        card.appendChild(element('p', '', factCount(slot.evidence.length) + ' · covered'));
-      } else {
+      if (slot.evidence.length) {
+        card.appendChild(element('p', '', factCount(slot.evidence.length) + ' · ' + slot.status));
+      }
+      if (slot.missing.length) {
         card.appendChild(element('p', '', 'Missing ' + slot.missing.join(', ')));
+      }
+      if (slot.evidence.length) {
+        card.appendChild(routeLink('View evidence →', '#/recipe/evidence/example/' + example.id + '/' + slot.step_id, 'secondary-button', 'open_evidence'));
       }
       card.appendChild(routeLink('Inspect example', '#/recipe/example/' + example.id, 'quiet-button', 'open_example'));
       grid.appendChild(card);
@@ -336,7 +361,7 @@
     var copy = element('div');
     var topline = object(element('div', 'example-detail-top'), 'instance_status');
     topline.appendChild(statusLabel(example));
-    if (example.recommended) topline.appendChild(element('span', 'recommended-chip', 'Recommended to copy'));
+    if (example.most_complete) topline.appendChild(element('span', 'most-complete-chip', 'Most complete set'));
     copy.appendChild(topline);
     copy.appendChild(element('h1', 'detail-title', example.name));
     copy.appendChild(element('p', 'detail-copy', example.summary));
@@ -354,19 +379,27 @@
 
     var heading = element('div', 'section-heading');
     var headingCopy = element('div');
-    headingCopy.appendChild(element('span', 'section-kicker', 'Six local steps'));
+    headingCopy.appendChild(element('span', 'section-kicker', model.steps.length + ' local steps'));
     headingCopy.appendChild(element('h2', '', 'Boundary slot map'));
-    headingCopy.appendChild(element('p', '', example.complete ? 'Every required slot is grounded in this boundary.' : 'Missing slots stay visible and cannot be recommended away.'));
+    headingCopy.appendChild(element('p', '', example.complete ? 'Every task-required role is grounded; additional repository patterns may still be absent.' : 'Missing task-required roles stay visible; existing evidence remains inspectable.'));
     heading.appendChild(headingCopy);
     root.appendChild(heading);
     var slots = object(element('div', 'slot-map'), 'slot_map');
     example.slots.forEach(function (slot) {
-      var card = element('article', 'slot-card' + (slot.status === 'missing' ? ' missing' : ''));
+      var card = element('article', 'slot-card ' + slot.status);
+      card.setAttribute('data-slot-status', slot.status);
       card.appendChild(element('h3', '', slot.title));
-      if (slot.status === 'missing') {
-        card.appendChild(element('p', '', 'Missing: ' + slot.missing.join(', ')));
-      } else {
-        card.appendChild(element('p', '', slot.roles.map(function (role) { return role.label; }).join(' + ') + ' · ' + factCount(slot.evidence.length)));
+      var roles = element('div', 'slot-role-row');
+      slot.roles.forEach(function (role) { roles.appendChild(roleBadge(role)); });
+      card.appendChild(roles);
+      card.appendChild(element('span', 'slot-state ' + slot.status, slot.status));
+      if (slot.evidence.length) {
+        card.appendChild(element('p', '', slot.covered_roles.map(function (role) { return role.label; }).join(' + ') + ' · ' + factCount(slot.evidence.length)));
+      }
+      if (slot.missing.length) {
+        card.appendChild(element('p', 'slot-missing', 'Missing: ' + slot.missing.join(', ')));
+      }
+      if (slot.evidence.length) {
         card.appendChild(routeLink('View evidence →', '#/recipe/evidence/example/' + example.id + '/' + slot.step_id, 'secondary-button', 'open_evidence'));
       }
       slots.appendChild(card);
