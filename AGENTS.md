@@ -249,11 +249,6 @@ sidecar tools.
   request-bound, fail-closed local presets with no network access. Fixture
   success is focused test evidence only and never replaces ordinary online
   product acceptance.
-- Do not create or extend a repository fixture automatically. First ask the
-  owner whether repository-shaped evidence is actually needed, state the
-  exact repository-dependent invariant it would prove, and check that a
-  smaller unit or contract test cannot prove the same thing. This approval
-  gate also applies to any future mixed-language fixture repository.
 - Keep the source-bound development inventories under `testdata/contracts`
   exact. Every static prompt Markdown file is classified as active or dormant
   and bound to its owning `go:embed`; every production hard-bound symbol is
