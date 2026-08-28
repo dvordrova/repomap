@@ -1036,6 +1036,10 @@ html&gt;body{padding:0}&lt;/style&gt;
     #repomap-workbench .rf-panel-head { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
     #repomap-workbench .rf-panel-head h2 { margin: 0 0 4px; font-size: 24px; font-weight: 500; letter-spacing: -.025em; }
     #repomap-workbench .rf-panel-head p { margin: 0; color: var(--rf-muted); }
+    #repomap-workbench .rf-why { margin: 16px 0 20px; padding: 6px 0 6px 18px; border-left: 3px solid var(--rf-green); }
+    #repomap-workbench .rf-why-main { max-width: 800px; margin: 6px 0; font-size: 18px; font-weight: 500; }
+    #repomap-workbench .rf-why-limit { max-width: 780px; margin: 0; color: var(--rf-muted); }
+    #repomap-workbench .rf-why-source { display: block; margin-top: 9px; color: var(--rf-green); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
     #repomap-workbench .rf-state { display: inline-flex; align-items: center; gap: 7px; color: var(--rf-green); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
     #repomap-workbench .rf-state::before { content: &quot;&quot;; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
     #repomap-workbench .rf-treatment { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 18px; }
@@ -1107,8 +1111,8 @@ html&gt;body{padding:0}&lt;/style&gt;
 
   &lt;main class=&quot;rf-shell&quot;&gt;
     &lt;div class=&quot;rf-kicker&quot;&gt;Repository workbench · live experiment&lt;/div&gt;
-    &lt;h1&gt;Use the facts already there.&lt;/h1&gt;
-    &lt;p class=&quot;rf-subtitle&quot;&gt;Three task views produced from one saved etcd run. DeepSeek may explain and rank closed refs; missing evidence stays visible.&lt;/p&gt;
+    &lt;h1&gt;Turn a repository map into a next step.&lt;/h1&gt;
+    &lt;p class=&quot;rf-subtitle&quot;&gt;Choose the question you have. Each view explains what decision it supports, where to start reading, and what the saved facts still cannot prove.&lt;/p&gt;
 
     &lt;div class=&quot;rf-stats&quot; aria-label=&quot;Available etcd facts&quot;&gt;
       &lt;span&gt;&lt;strong&gt;108&lt;/strong&gt; entrypoints&lt;/span&gt;
@@ -1119,9 +1123,9 @@ html&gt;body{padding:0}&lt;/style&gt;
     &lt;/div&gt;
 
     &lt;nav class=&quot;rf-nav&quot; aria-label=&quot;Repository tasks&quot; role=&quot;tablist&quot;&gt;
-      &lt;button type=&quot;button&quot; id=&quot;rf-tab-story&quot; role=&quot;tab&quot; tabindex=&quot;0&quot; data-rf-tab=&quot;story&quot; aria-controls=&quot;rf-panel-story&quot; aria-selected=&quot;true&quot;&gt;&lt;strong&gt;Follow execution&lt;/strong&gt;&lt;br&gt;&lt;span&gt;9 grounded edges&lt;/span&gt;&lt;/button&gt;
-      &lt;button type=&quot;button&quot; id=&quot;rf-tab-change&quot; role=&quot;tab&quot; tabindex=&quot;-1&quot; data-rf-tab=&quot;change&quot; aria-controls=&quot;rf-panel-change&quot; aria-selected=&quot;false&quot;&gt;&lt;strong&gt;Plan a change&lt;/strong&gt;&lt;br&gt;&lt;span&gt;Partial plan + unknowns&lt;/span&gt;&lt;/button&gt;
-      &lt;button type=&quot;button&quot; id=&quot;rf-tab-integration&quot; role=&quot;tab&quot; tabindex=&quot;-1&quot; data-rf-tab=&quot;integration&quot; aria-controls=&quot;rf-panel-integration&quot; aria-selected=&quot;false&quot;&gt;&lt;strong&gt;Inspect integration&lt;/strong&gt;&lt;br&gt;&lt;span&gt;64 exact bbolt uses&lt;/span&gt;&lt;/button&gt;
+      &lt;button type=&quot;button&quot; id=&quot;rf-tab-story&quot; role=&quot;tab&quot; data-rf-tab=&quot;story&quot; aria-controls=&quot;rf-panel-story&quot; aria-selected=&quot;true&quot;&gt;&lt;strong&gt;Follow execution&lt;/strong&gt;&lt;br&gt;&lt;span&gt;See where a behavior reaches code&lt;/span&gt;&lt;/button&gt;
+      &lt;button type=&quot;button&quot; id=&quot;rf-tab-change&quot; role=&quot;tab&quot; data-rf-tab=&quot;change&quot; aria-controls=&quot;rf-panel-change&quot; aria-selected=&quot;false&quot;&gt;&lt;strong&gt;Plan a change&lt;/strong&gt;&lt;br&gt;&lt;span&gt;Find grounded places to start editing&lt;/span&gt;&lt;/button&gt;
+      &lt;button type=&quot;button&quot; id=&quot;rf-tab-integration&quot; role=&quot;tab&quot; data-rf-tab=&quot;integration&quot; aria-controls=&quot;rf-panel-integration&quot; aria-selected=&quot;false&quot;&gt;&lt;strong&gt;Inspect integration&lt;/strong&gt;&lt;br&gt;&lt;span&gt;Estimate where a dependency change may spread&lt;/span&gt;&lt;/button&gt;
     &lt;/nav&gt;
 
     &lt;section class=&quot;rf-panel&quot; id=&quot;rf-panel-story&quot; role=&quot;tabpanel&quot; aria-labelledby=&quot;rf-tab-story&quot; data-rf-panel=&quot;story&quot;&gt;
@@ -1129,6 +1133,12 @@ html&gt;body{padding:0}&lt;/style&gt;
         &lt;div&gt;&lt;h2&gt;Possible startup path to an exact X509KeyPair callsite&lt;/h2&gt;&lt;p&gt;One callback handoff makes the route possible; the external symbol and local callsite remain exact.&lt;/p&gt;&lt;/div&gt;
         &lt;span class=&quot;rf-state&quot;&gt;route possible · endpoint exact&lt;/span&gt;
       &lt;/div&gt;
+      &lt;section class=&quot;rf-why&quot; aria-label=&quot;Why this route matters&quot;&gt;
+        &lt;div class=&quot;rf-kicker&quot;&gt;Why this matters&lt;/div&gt;
+        &lt;p class=&quot;rf-why-main&quot;&gt;Use this when you are debugging TLS startup or planning a transport change: it gives grounded code anchors at the selected entrypoint and before the exact external callsite.&lt;/p&gt;
+        &lt;p class=&quot;rf-why-limit&quot;&gt;The represented route spans five architecture areas and binds an exact X509KeyPair callsite; the ClientConfig-to-ClientConfig$1 callback relation remains possible, not proven.&lt;/p&gt;
+        &lt;small class=&quot;rf-why-source&quot;&gt;Bounded LLM copy slot · 6 closed facts · graph stays authoritative&lt;/small&gt;
+      &lt;/section&gt;
       &lt;p class=&quot;rf-result-line&quot;&gt;9 ordered edges · 8 exact · 1 possible callback · 0 invented bridges · 2 code jumps&lt;/p&gt;
       &lt;div data-rf-story aria-live=&quot;polite&quot;&gt;&lt;/div&gt;
       &lt;div class=&quot;rf-frontier-box&quot;&gt;&lt;strong&gt;Known limits&lt;/strong&gt;The callback transfer is not exact, 1,813 objects / 48 relations / 5,652 traversal targets were omitted by the source run, and execution inside crypto/tls is not represented.&lt;/div&gt;
@@ -1139,6 +1149,11 @@ html&gt;body{padding:0}&lt;/style&gt;
         &lt;div&gt;&lt;h2&gt;Change KV Put rejection under exhausted quota&lt;/h2&gt;&lt;p&gt;An ordered investigation plan. Adjacent evidence rows are not presented as a runtime call chain.&lt;/p&gt;&lt;/div&gt;
         &lt;span class=&quot;rf-state&quot;&gt;closed refs · partial&lt;/span&gt;
       &lt;/div&gt;
+      &lt;section class=&quot;rf-why&quot; aria-label=&quot;Why this plan matters&quot;&gt;
+        &lt;div class=&quot;rf-kicker&quot;&gt;Why this matters&lt;/div&gt;
+        &lt;p class=&quot;rf-why-main&quot;&gt;Use this when you need to change quota rejection but do not yet know which responsibility is the right investigation boundary or where to start reading.&lt;/p&gt;
+        &lt;p class=&quot;rf-why-limit&quot;&gt;The saved facts give grounded responsibility and source anchors, but do not establish a complete Put-to-quota runtime chain; exact tests and verification commands are not represented.&lt;/p&gt;
+      &lt;/section&gt;
       &lt;p class=&quot;rf-plan-mode&quot;&gt;Evidence-first plan · every step expands in place · destinations reuse existing report pages or exact source&lt;/p&gt;
       &lt;div class=&quot;rf-plan&quot; data-rf-plan-body aria-live=&quot;polite&quot;&gt;&lt;/div&gt;
       &lt;div class=&quot;rf-frontier-box&quot;&gt;&lt;strong&gt;Not represented in available facts&lt;/strong&gt;
@@ -1154,6 +1169,11 @@ html&gt;body{padding:0}&lt;/style&gt;
         &lt;div&gt;&lt;h2&gt;bbolt integration cockpit&lt;/h2&gt;&lt;p&gt;One stable grouping, then optional editorial and change-priority lenses.&lt;/p&gt;&lt;/div&gt;
         &lt;span class=&quot;rf-state&quot;&gt;64 exact uses&lt;/span&gt;
       &lt;/div&gt;
+      &lt;section class=&quot;rf-why&quot; aria-label=&quot;Why this integration view matters&quot;&gt;
+        &lt;div class=&quot;rf-kicker&quot;&gt;Why this matters&lt;/div&gt;
+        &lt;p class=&quot;rf-why-main&quot;&gt;Use this before changing bbolt or its wrapper code: it groups 64 exact uses so you can choose what deserves inspection first.&lt;/p&gt;
+        &lt;p class=&quot;rf-why-limit&quot;&gt;The uses and callers are exact; complete runtime reachability is not represented in the saved facts.&lt;/p&gt;
+      &lt;/section&gt;
       &lt;div class=&quot;rf-treatment&quot; aria-label=&quot;Integration treatment&quot;&gt;
         &lt;button type=&quot;button&quot; data-rf-integration=&quot;facts&quot; aria-pressed=&quot;true&quot;&gt;Grouped facts&lt;/button&gt;
         &lt;button type=&quot;button&quot; data-rf-integration=&quot;profile&quot; aria-pressed=&quot;false&quot;&gt;Operational profile&lt;/button&gt;
@@ -1275,7 +1295,7 @@ html&gt;body{padding:0}&lt;/style&gt;
         showDestination({
           kind: &#x27;Exact source destination&#x27;,
           title: label,
-          summary: &#x27;The saved run can take the user to this exact file and line. No missing runtime edge is inferred from the anchor.&#x27;,
+          summary: `Why this matters. Use this exact anchor to begin reading at ${label}. The location is exact; it does not prove a complete runtime path or resolve omitted paths.`,
           route: &#x27;repository source · exact locator&#x27;,
           locator
         });
@@ -1290,7 +1310,7 @@ html&gt;body{padding:0}&lt;/style&gt;
         showDestination({
           kind: &#x27;Existing responsibility destination&#x27;,
           title: item.label,
-          summary: item.summary,
+          summary: `Why this matters. ${item.summary} Use this grounded responsibility to decide whether it is the right edit boundary; it does not prove the only affected file or a complete call path.`,
           route: `#/program/responsibility/${item.id}`,
           locator: item.locator,
           from: &#x27;change&#x27;
@@ -1308,7 +1328,7 @@ html&gt;body{padding:0}&lt;/style&gt;
             &lt;div class=&quot;rf-trace-node-body&quot;&gt;
               &lt;span class=&quot;rf-trace-marker&quot; aria-hidden=&quot;true&quot;&gt;&lt;/span&gt;
               &lt;div class=&quot;rf-trace-copy&quot;&gt;&lt;h3&gt;${node.name}&lt;/h3&gt;&lt;p class=&quot;rf-locator&quot;&gt;${node.locator}&lt;/p&gt;${node.kind ? `&lt;span class=&quot;rf-trace-kind&quot;&gt;${node.kind}&lt;/span&gt;` : &#x27;&#x27;}&lt;/div&gt;
-              ${node.sourceLabel ? `&lt;button type=&quot;button&quot; class=&quot;rf-source&quot; data-rf-source=&quot;${node.locator}&quot;&gt;${node.sourceLabel}&lt;/button&gt;` : &#x27;&#x27;}
+              ${node.sourceLabel ? `&lt;button type=&quot;button&quot; class=&quot;rf-source&quot; data-rf-source=&quot;${node.locator}&quot; data-rf-source-label=&quot;${node.name}&quot;&gt;${node.sourceLabel}&lt;/button&gt;` : &#x27;&#x27;}
             &lt;/div&gt;
           &lt;/li&gt;`;
         }).join(&#x27;&#x27;)}&lt;/ol&gt;`;
@@ -1338,14 +1358,13 @@ html&gt;body{padding:0}&lt;/style&gt;
       };
       const renderIntegration = (key) =&gt; {
         root.querySelector(&#x27;[data-rf-integration-body]&#x27;).innerHTML = integrations[key].map(([operation, caller, locator]) =&gt; `
-          &lt;article class=&quot;rf-operation&quot;&gt;&lt;div&gt;&lt;strong&gt;${operation}&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;p&gt;${caller}&lt;/p&gt;&lt;div class=&quot;rf-locator ${locator === &#x27;not represented&#x27; ? &#x27;rf-empty&#x27; : &#x27;&#x27;}&quot;&gt;${locator}&lt;/div&gt;&lt;/div&gt;${locator === &#x27;not represented&#x27; ? &#x27;&lt;span class=&quot;rf-confidence rf-frontier&quot;&gt;frontier&lt;/span&gt;&#x27; : `&lt;button type=&quot;button&quot; class=&quot;rf-source&quot; data-rf-source=&quot;${locator}&quot;&gt;Open source&lt;/button&gt;`}&lt;/article&gt;`).join(&#x27;&#x27;);
+          &lt;article class=&quot;rf-operation&quot;&gt;&lt;div&gt;&lt;strong&gt;${operation}&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;p&gt;${caller}&lt;/p&gt;&lt;div class=&quot;rf-locator ${locator === &#x27;not represented&#x27; ? &#x27;rf-empty&#x27; : &#x27;&#x27;}&quot;&gt;${locator}&lt;/div&gt;&lt;/div&gt;${locator === &#x27;not represented&#x27; ? &#x27;&lt;span class=&quot;rf-confidence rf-frontier&quot;&gt;frontier&lt;/span&gt;&#x27; : `&lt;button type=&quot;button&quot; class=&quot;rf-source&quot; data-rf-source=&quot;${locator}&quot; data-rf-source-label=&quot;${operation}&quot;&gt;Open source&lt;/button&gt;`}&lt;/article&gt;`).join(&#x27;&#x27;);
       };
       root.addEventListener(&#x27;click&#x27;, (event) =&gt; {
         const tab = event.target.closest(&#x27;[data-rf-tab]&#x27;);
         if (tab) {
           root.querySelectorAll(&#x27;[data-rf-tab]&#x27;).forEach(b =&gt; {
             b.setAttribute(&#x27;aria-selected&#x27;, String(b === tab));
-            b.tabIndex = b === tab ? 0 : -1;
           });
           destinationPage.hidden = true;
           returnFocus = null;
@@ -1380,7 +1399,7 @@ html&gt;body{padding:0}&lt;/style&gt;
           return;
         }
         const source = event.target.closest(&#x27;[data-rf-source]&#x27;);
-        if (source) openSource(source.dataset.rfSource, source.textContent.trim());
+        if (source) openSource(source.dataset.rfSource, source.dataset.rfSourceLabel || source.textContent.trim());
       });
       root.addEventListener(&#x27;keydown&#x27;, (event) =&gt; {
         const tab = event.target.closest(&#x27;[data-rf-tab]&#x27;);

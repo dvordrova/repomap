@@ -15,9 +15,18 @@ optional task views:
 - an integration cockpit with grouped operations and a bounded inspection
   priority.
 
+Each task now opens with a plain-language `Why this matters` statement: the
+developer question it can help answer, the useful next step, and the decisive
+limit of the saved evidence. The execution-story slot is also the preview for a
+bounded LLM copy request. Its six closed fact cards remain the authority; model
+wording may explain a use case but cannot change the route, certainty, code
+jumps, or coverage warning.
+
 The subdirectories retain the prompts, closed-ref inputs, sanitized model
-responses, receipts, and scorecards used to audit the experiment. The
-timeboxed harness code and provider caches are deliberately not retained.
+responses, receipts, and scorecards used to audit the experiment. The new
+why-this-matters prompt and input record a candidate request contract, not a
+new live-provider result. The timeboxed harness code and provider caches are
+deliberately not retained.
 
 Current decision: productize the deterministic execution skeleton. Keep the
 change-plan and integration views as candidate skeletons until their new cube
