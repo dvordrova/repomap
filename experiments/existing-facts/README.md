@@ -23,10 +23,10 @@ wording may explain a use case but cannot change the route, certainty, code
 jumps, or coverage warning.
 
 The subdirectories retain the prompts, closed-ref inputs, sanitized model
-responses, receipts, and scorecards used to audit the experiment. The new
-why-this-matters prompt and input record a candidate request contract, not a
-new live-provider result. The timeboxed harness code and provider caches are
-deliberately not retained.
+responses, receipts, and scorecards used to audit the experiment. The
+why-this-matters probe now includes one live DeepSeek response and a receipt;
+the temporary harness and provider cache are not retained. Its UI copy is
+editorial only and does not become graph or certainty authority.
 
 Current decision: productize the deterministic execution skeleton. Keep the
 change-plan and integration views as candidate skeletons until their new cube

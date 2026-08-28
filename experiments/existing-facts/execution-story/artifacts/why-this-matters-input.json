@@ -1,9 +1,5 @@
 {
   "schema": "repomap.experiment.why-this-matters.catalog.v1",
-  "repository": {
-    "name": "go.etcd.io/etcd/v3",
-    "revision": "58f45a9ff1c083130830eb02b0cc7d9783609095"
-  },
   "facts": [
     {
       "ref": "s1",
@@ -34,24 +30,6 @@
       "ref": "g1",
       "kind": "coverage_gap",
       "statement": "The source run omitted 1813 program objects, 48 relations, and 5652 traversal targets, so alternate or longer paths may be absent."
-    }
-  ],
-  "recommended_code_jump_refs": [
-    "j1",
-    "j2"
-  ],
-  "code_jumps": [
-    {
-      "ref": "j1",
-      "label": "startEtcd",
-      "location": "server/etcdmain/etcd.go:180",
-      "purpose": "See where the selected startup route begins."
-    },
-    {
-      "ref": "j2",
-      "label": "ClientConfig$1",
-      "location": "client/pkg/transport/listener.go:591",
-      "purpose": "Inspect the retained caller immediately before the exact crypto/tls.X509KeyPair callsite."
     }
   ]
 }

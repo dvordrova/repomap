@@ -1,0 +1,23 @@
+{
+  "schema": "repomap.experiment.why-this-matters.receipt.v1",
+  "provider": "deepseek",
+  "source": "live",
+  "input_contract": "six fact cards only",
+  "input_catalog_sha256": "bd4976999dc62aeb89db11952c1b26d3cbe20b8bc224212be0d4e61bc6398f09",
+  "provider_request_sha256": "7fdf9e842f3a85055797c8cf8390b0acf023f9354f2de65ae72c8a2447e92554",
+  "provider_response_sha256": "8a1836c705b1896069a4c29e38733fddb2e4fe0a96b9b48e073afe29ab8ede45",
+  "finish_reason": "stop",
+  "metrics": {
+    "input_tokens": 812,
+    "output_tokens": 216,
+    "attempts": 1,
+    "latency_ms": 2400
+  },
+  "validation": {
+    "json_schema": "pass",
+    "closed_ref_membership": "pass",
+    "editorial_review": "caution",
+    "note": "The second use_when question says during startup but cites only the external-boundary card; it needs startup and possible-route context before product use. The UI uses only value and limit as editorial copy."
+  },
+  "authority": "Model wording is editorial. Closed facts, route certainty, code jumps, and coverage remain local authority."
+}

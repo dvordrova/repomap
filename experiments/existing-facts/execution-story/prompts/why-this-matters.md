@@ -4,7 +4,9 @@ You receive one closed execution-story catalog. Write the smallest useful explan
 
 The explanation must help with an investigation or decision; do not retell the ordered edge list. Frame uses as questions the route can help investigate, never as incidents that definitely occurred. Do not claim that the callback executed, that the external library succeeded, that a failure exists, or that the route is complete.
 
-Use only closed fact refs from the supplied catalog. Keep the prose plain and specific. The model does not own source destinations: choose only from the supplied `recommended_code_jump_refs`. Mention the most important uncertainty instead of hiding it.
+Use only closed fact refs from the supplied catalog. Keep the prose plain and
+specific. Source destinations are rendered locally and are not part of this
+request. Mention the most important uncertainty instead of hiding it.
 
 Return this exact shape and no extra fields:
 
@@ -17,10 +19,9 @@ Return this exact shape and no extra fields:
     {"text": "one concrete developer question, 8-18 words", "support_refs": ["closed refs only"]},
     {"text": "a different concrete developer question, 8-18 words", "support_refs": ["closed refs only"]}
   ],
-  "next_action": {"code_jump_refs": ["copy the two supplied refs"]},
   "limit": {"text": "one sentence stating the decisive uncertainty", "support_refs": ["closed fact refs only"]}
 }
 ```
 
-The application owns the section heading and renders the selected code-jump
-labels and purposes locally. The model does not write those factual strings.
+The application owns the section heading, code-jump selection, labels, paths,
+and purposes. None of those values enter the provider request.
