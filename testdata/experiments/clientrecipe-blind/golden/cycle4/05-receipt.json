@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "status": "TERMINAL_ERROR",
+  "candidate_id": "authority-collision-fix-v2",
+  "extractor_freeze_sha256": "0d18ec533228bf8d26a84f2c7dcd2fddf2cbe00c414b07ad4aefade42ba29fbe",
+  "artifacts": [
+    {
+      "stage": "authority",
+      "raw_sha256": "1e2eb58909a8acdc9410ef3ac43ef1962e9443781df2271b15cd8d09245e69fe",
+      "internal_sha256": "74a8f8b21f72f53f6996cc5982980aab4a321e95a6f3c34027b8db14d8b646c5"
+    },
+    {
+      "stage": "h0",
+      "raw_sha256": "fe28f32cdfdfdd42a68158cbd37feaf6e40cf08af6842728fcc8aec80d061fc2",
+      "internal_sha256": "67f6fb6ea7d5a5bcfe8217e7d94fdf556f58006f1c144df4de4c748de05dfafc"
+    },
+    {
+      "stage": "evaluation",
+      "raw_sha256": "3cdf525c2670c1a0d7d3592dd11b02c74ed878838815d7b63347ec7f9097c0f5",
+      "internal_sha256": "e582923cfcdf048c5617dc0d92638c86aec5548ce8fafa5520167440ae3e50fb"
+    }
+  ],
+  "unavailable_artifacts": [
+    "h1"
+  ],
+  "builds": 2,
+  "production_loads_per_build": [
+    1,
+    1
+  ],
+  "collision": {
+    "classification": "distinct_semantic_observations_collapsed_by_source_ref",
+    "groups": 3,
+    "sites": [
+      {
+        "path": "internal/httpapi/server.go",
+        "line": 15
+      },
+      {
+        "path": "internal/httpapi/server.go",
+        "line": 24
+      },
+      {
+        "path": "internal/httpapi/server.go",
+        "line": 25
+      }
+    ],
+    "relations_before": 122,
+    "relations_after": 122
+  },
+  "candidate_deterministic": true,
+  "evaluation_deterministic": true,
+  "oracle_isolation": {
+    "status": "NOT_TESTED_TERMINAL_BEFORE_EVALUATION",
+    "candidate_bytes_unchanged": false,
+    "evaluation_bytes_changed": false
+  },
+  "terminal": {
+    "stage": "h1_extraction",
+    "reason": "h1_extraction_failed"
+  },
+  "verdict": "FAIL",
+  "sha256": "b94fa43c7de4eb173877dabcf6bf0f8b8288694acce0832e836212c484513a93"
+}

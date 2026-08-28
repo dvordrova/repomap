@@ -136,6 +136,9 @@ func TestReducerLeaveOneCompleteBoundaryOut(t *testing.T) {
 func loadReducerFreeze(t *testing.T, repositoryRoot string) h1FreezeReceipt {
 	t.Helper()
 	raw := readExperimentFile(t, filepath.Join(experimentRoot(t), "golden", "05-robustness.json"))
+	if blindBytesSHA256(raw) != historicalRobustnessRawSHA256 {
+		t.Fatal("reducer leave-one-out: historical robustness bytes changed")
+	}
 	var golden robustnessGolden
 	if err := decodeStrict(raw, &golden, "robustness golden"); err != nil {
 		t.Fatal(err)

@@ -12,13 +12,130 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/dvordrova/repomap/internal/programindex"
 )
 
 const (
-	blindOracleVersion  = 1
-	blindReceiptVersion = 1
-	blindScoreVersion   = 1
+	blindOracleVersion   = 1
+	blindReceiptVersion  = 1
+	blindScoreVersion    = 1
+	cycle4FreezeVersion  = 1
+	cycle4ReceiptVersion = 1
+
+	cycle4CandidateID = "authority-collision-fix-v2"
+
+	historicalBlindTerminalRawSHA256       = "147036852636ed4315e110fe746a9aeeb2282affe90557da3b46189df3cd82e1"
+	historicalBlindTerminalInternalSHA256  = "3181eae0d90ec8d2243983770cff2697b72c1cfccaad13d0bb883c7f2ce571c3"
+	historicalBlindFixtureReceiptRawSHA256 = "ff62d783deb5d75f1df7261b532e01ad4d7984b4d562e383f3dbe5b4d227cfc3"
 )
+
+type cycle4ArtifactBinding struct {
+	Stage          string `json:"stage"`
+	Path           string `json:"path"`
+	RawSHA256      string `json:"raw_sha256"`
+	InternalSHA256 string `json:"internal_sha256"`
+}
+
+type cycle4BlindSnapshot struct {
+	AuthorBriefRawSHA256     string `json:"author_brief_raw_sha256"`
+	PreregistrationRawSHA256 string `json:"preregistration_raw_sha256"`
+	OracleSchemaRawSHA256    string `json:"oracle_schema_raw_sha256"`
+	OracleRawSHA256          string `json:"oracle_raw_sha256"`
+	FixtureReceiptRawSHA256  string `json:"fixture_receipt_raw_sha256"`
+	FixtureReceiptSHA256     string `json:"fixture_receipt_sha256"`
+	RepositoryTreeSHA256     string `json:"repository_tree_sha256"`
+	DependenciesTreeSHA256   string `json:"dependencies_tree_sha256"`
+}
+
+type cycle4HistoricalTerminal struct {
+	Path           string `json:"path"`
+	RawSHA256      string `json:"raw_sha256"`
+	InternalSHA256 string `json:"internal_sha256"`
+	Stage          string `json:"stage"`
+	Reason         string `json:"reason"`
+}
+
+type cycle4CollisionContract struct {
+	Classification string         `json:"classification"`
+	ExpectedGroups int            `json:"expected_groups"`
+	Sites          []blindLocator `json:"sites"`
+	IdentityRule   string         `json:"identity_rule"`
+}
+
+type cycle4EvaluatorContract struct {
+	InputsSHA256 string                 `json:"inputs_sha256"`
+	Inputs       []h1FreezeSource       `json:"inputs"`
+	Thresholds   blindThresholdContract `json:"thresholds"`
+	OverallRule  string                 `json:"overall_rule"`
+}
+
+type cycle4ExtractorFreeze struct {
+	Version                int                      `json:"version"`
+	Status                 string                   `json:"status"`
+	CandidateID            string                   `json:"candidate_id"`
+	CandidateSourcesSHA256 string                   `json:"candidate_sources_sha256"`
+	CandidateSources       []h1FreezeSource         `json:"candidate_sources"`
+	Rules                  []h1FreezeRule           `json:"rules"`
+	ControlledArtifacts    []cycle4ArtifactBinding  `json:"controlled_artifacts"`
+	BlindSnapshot          cycle4BlindSnapshot      `json:"blind_snapshot"`
+	HistoricalTerminal     cycle4HistoricalTerminal `json:"historical_terminal"`
+	Collision              cycle4CollisionContract  `json:"collision"`
+	Evaluator              cycle4EvaluatorContract  `json:"evaluator"`
+	SHA256                 string                   `json:"sha256"`
+}
+
+type cycle4CollisionObservation struct {
+	Classification  string         `json:"classification"`
+	Groups          int            `json:"groups"`
+	Sites           []blindLocator `json:"sites"`
+	RelationsBefore int            `json:"relations_before"`
+	RelationsAfter  int            `json:"relations_after"`
+}
+
+type cycle4RunArtifact struct {
+	Stage          string `json:"stage"`
+	RawSHA256      string `json:"raw_sha256"`
+	InternalSHA256 string `json:"internal_sha256"`
+}
+
+type cycle4OracleIsolation struct {
+	Status                  string `json:"status"`
+	CandidateBytesUnchanged bool   `json:"candidate_bytes_unchanged"`
+	EvaluationBytesChanged  bool   `json:"evaluation_bytes_changed"`
+}
+
+type cycle4TerminalState struct {
+	Stage  string `json:"stage"`
+	Reason string `json:"reason"`
+}
+
+type cycle4RunReceipt struct {
+	Version                 int                        `json:"version"`
+	Status                  string                     `json:"status"`
+	CandidateID             string                     `json:"candidate_id"`
+	ExtractorFreezeSHA256   string                     `json:"extractor_freeze_sha256"`
+	Artifacts               []cycle4RunArtifact        `json:"artifacts"`
+	UnavailableArtifacts    []string                   `json:"unavailable_artifacts"`
+	Builds                  int                        `json:"builds"`
+	ProductionLoadsPerBuild []int                      `json:"production_loads_per_build"`
+	Collision               cycle4CollisionObservation `json:"collision"`
+	CandidateDeterministic  bool                       `json:"candidate_deterministic"`
+	EvaluationDeterministic bool                       `json:"evaluation_deterministic"`
+	OracleIsolation         cycle4OracleIsolation      `json:"oracle_isolation"`
+	Terminal                *cycle4TerminalState       `json:"terminal,omitempty"`
+	Verdict                 EvaluationVerdict          `json:"verdict"`
+	SHA256                  string                     `json:"sha256"`
+}
+
+type cycle4CandidateBuild struct {
+	run          blindCandidateRun
+	authorityRaw []byte
+	h0Raw        []byte
+	h1Raw        []byte
+	loads        int
+	collision    cycle4CollisionObservation
+}
 
 type blindPreregistration struct {
 	Version                  int                    `json:"version"`
@@ -248,7 +365,6 @@ type blindCandidateRun struct {
 	h0        H0Result
 	h1        H1Result
 	h1Raw     []byte
-	repeated  []byte
 }
 
 type blindCandidateTerminal struct {
@@ -280,17 +396,12 @@ type blindTerminalScorecard struct {
 	SHA256                   string            `json:"sha256"`
 }
 
-func TestBlindRepositoryExtractionGate(t *testing.T) {
+func TestBlindRepositoryExtractionHistoricalSnapshot(t *testing.T) {
 	repositoryRoot := filepath.Clean(filepath.Join(experimentRoot(t), "..", "..", ".."))
 	root := filepath.Join(repositoryRoot, "testdata", "experiments", "clientrecipe-blind")
 	repoRoot := filepath.Join(root, "repo")
 	oraclePath := filepath.Join(root, "oracle.json")
 	receiptPath := filepath.Join(root, "fixture_receipt.json")
-	if os.Getenv("REPOMAP_UPDATE_EXPERIMENT_GOLDEN") == "1" {
-		if _, err := os.Stat(receiptPath); os.IsNotExist(err) {
-			writeBlindFixtureReceipt(t, root)
-		}
-	}
 
 	missing, err := blindFixtureMissing(repoRoot, oraclePath, receiptPath)
 	if err != nil {
@@ -335,70 +446,847 @@ func TestBlindRepositoryExtractionGate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	run, err := runBlindCandidate(repoRoot)
+	terminalRaw := readExperimentFile(t, filepath.Join(root, "golden", "04-evaluation.json"))
+	if blindBytesSHA256(terminalRaw) != historicalBlindTerminalRawSHA256 {
+		t.Fatal("blind historical gate: terminal raw bytes changed")
+	}
+	var terminal blindTerminalScorecard
+	if err := decodeStrict(terminalRaw, &terminal, "blind historical terminal scorecard"); err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := encodeBlindTerminalScorecard(terminal)
 	if err != nil {
-		terminal, ok := err.(*blindCandidateTerminal)
-		if !ok {
-			t.Fatal(err)
-		}
-		preserveBlindCandidateArtifacts(t, root, run)
-		failure := buildBlindTerminalScorecard(prereg, receipt, run, terminal)
-		failureRaw, encodeErr := encodeBlindTerminalScorecard(failure)
-		if encodeErr != nil {
-			t.Fatal(encodeErr)
-		}
-		assertBlindGolden(t, root, "04-evaluation.json", failureRaw)
-		t.Logf("blind repository-pattern verdict: %s (terminal %s/%s)", failure.Verdict, failure.Stage, failure.Reason)
-		return
+		t.Fatal(err)
+	}
+	if !bytes.Equal(canonical, terminalRaw) || terminal.SHA256 != historicalBlindTerminalInternalSHA256 ||
+		terminal.FrozenH1SHA256 != freeze.BaselineH1SHA256 || terminal.FrozenReceiptSHA256 != freeze.SHA256 ||
+		terminal.FixtureReceiptSHA256 != receipt.SHA256 || terminal.Stage != "authority_preparation" ||
+		terminal.Reason != "duplicate_program_relation_identity" || terminal.Verdict != EvaluationFail {
+		t.Fatal("blind historical gate: terminal snapshot identity chain changed")
+	}
+	t.Log("blind Cycle 3 terminal remains an immutable historical FAIL snapshot")
+}
+
+func TestBlindRepositoryExtractionGateCycle4(t *testing.T) {
+	repositoryRoot := filepath.Clean(filepath.Join(experimentRoot(t), "..", "..", ".."))
+	root := filepath.Join(repositoryRoot, "testdata", "experiments", "clientrecipe-blind")
+	repoRoot := filepath.Join(root, "repo")
+	briefRaw := readExperimentFile(t, filepath.Join(root, "author_brief.md"))
+	preregRaw := readExperimentFile(t, filepath.Join(root, "preregistration.json"))
+	schemaRaw := readExperimentFile(t, filepath.Join(root, "oracle.schema.json"))
+	oracleRaw := readExperimentFile(t, filepath.Join(root, "oracle.json"))
+	fixtureReceiptRaw := readExperimentFile(t, filepath.Join(root, "fixture_receipt.json"))
+	prereg, err := decodeBlindPreregistration(preregRaw, briefRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := decodeBlindFixtureReceipt(fixtureReceiptRaw)
+	if err != nil {
+		t.Fatal(err)
 	}
 	if err := receipt.Validate(root, briefRaw, preregRaw, schemaRaw, oracleRaw); err != nil {
-		t.Fatalf("blind gate: sealed fixture changed during candidate extraction: %v", err)
+		t.Fatal(err)
 	}
-	sourceExact := blindAuthorityMatchesReceipt(run.authority, receipt.RepositoryFiles)
-	candidate := blindCandidateFromH1(run.h1, run.authority)
-	candidateDeterministic := bytes.Equal(run.h1Raw, run.repeated)
-	first := evaluateBlindCandidate(prereg, oracle, candidate, run, sourceExact, candidateDeterministic, true)
-	second := evaluateBlindCandidate(prereg, oracle, candidate, run, sourceExact, candidateDeterministic, true)
-	firstRaw, err := encodeBlindScorecard(first)
+	oracle, err := decodeBlindOracle(oracleRaw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondRaw, err := encodeBlindScorecard(second)
+	if err := validateBlindOracleLocators(repoRoot, oracle); err != nil {
+		t.Fatal(err)
+	}
+
+	assertCycle4ControlledCompatibility(t, repositoryRoot)
+	freeze := buildCycle4ExtractorFreeze(t, repositoryRoot, root, prereg, receipt,
+		briefRaw, preregRaw, schemaRaw, oracleRaw, fixtureReceiptRaw)
+	freezeRaw, err := encodeCycle4ExtractorFreeze(freeze)
 	if err != nil {
 		t.Fatal(err)
 	}
-	evaluationDeterministic := bytes.Equal(firstRaw, secondRaw)
+	if err := freeze.Validate(repositoryRoot, root, prereg, receipt); err != nil {
+		t.Fatal(err)
+	}
+	// The candidate identity is sealed before either blind candidate build.
+	assertBlindCycle4Golden(t, root, "cycle4/00-extractor-freeze.json", freezeRaw)
+
+	first, firstErr := runBlindCandidateCycle4(t, repoRoot)
+	second, secondErr := runBlindCandidateCycle4(t, repoRoot)
+	if firstErr != nil || secondErr != nil {
+		freezeCycle4TerminalResult(t, root, freeze, prereg, receipt, first, second, firstErr, secondErr)
+		return
+	}
+	candidateDeterministic := bytes.Equal(first.authorityRaw, second.authorityRaw) &&
+		bytes.Equal(first.h0Raw, second.h0Raw) && bytes.Equal(first.h1Raw, second.h1Raw)
+	if first.loads != 1 || second.loads != 1 {
+		t.Fatalf("Cycle 4 production loads per build = [%d,%d], want [1,1]", first.loads, second.loads)
+	}
+	if !reflect.DeepEqual(first.collision, second.collision) {
+		t.Fatalf("Cycle 4 collision ledger changed between builds: %#v / %#v", first.collision, second.collision)
+	}
+	if err := validateCycle4CollisionObservation(first.collision, freeze.Collision); err != nil {
+		t.Fatal(err)
+	}
+	if err := receipt.Validate(root, briefRaw, preregRaw, schemaRaw, oracleRaw); err != nil {
+		t.Fatalf("Cycle 4 sealed fixture changed during candidate builds: %v", err)
+	}
+
+	firstCandidate := blindCandidateFromH1(first.run.h1, first.run.authority)
+	secondCandidate := blindCandidateFromH1(second.run.h1, second.run.authority)
+	firstSourceExact := blindAuthorityMatchesReceipt(first.run.authority, receipt.RepositoryFiles)
+	secondSourceExact := blindAuthorityMatchesReceipt(second.run.authority, receipt.RepositoryFiles)
+	firstEvaluation := evaluateBlindCandidate(prereg, oracle, firstCandidate, first.run,
+		firstSourceExact, candidateDeterministic, true)
+	secondEvaluation := evaluateBlindCandidate(prereg, oracle, secondCandidate, second.run,
+		secondSourceExact, candidateDeterministic, true)
+	firstEvaluationRaw, err := encodeBlindScorecard(firstEvaluation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondEvaluationRaw, err := encodeBlindScorecard(secondEvaluation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evaluationDeterministic := bytes.Equal(firstEvaluationRaw, secondEvaluationRaw)
 	if !evaluationDeterministic {
-		first = evaluateBlindCandidate(prereg, oracle, candidate, run, sourceExact, candidateDeterministic, false)
-		firstRaw, err = encodeBlindScorecard(first)
+		firstEvaluation = evaluateBlindCandidate(prereg, oracle, firstCandidate, first.run,
+			firstSourceExact, candidateDeterministic, false)
+		secondEvaluation = evaluateBlindCandidate(prereg, oracle, secondCandidate, second.run,
+			secondSourceExact, candidateDeterministic, false)
+		firstEvaluationRaw, err = encodeBlindScorecard(firstEvaluation)
+		if err != nil {
+			t.Fatal(err)
+		}
+		secondEvaluationRaw, err = encodeBlindScorecard(secondEvaluation)
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := first.Validate(prereg); err != nil {
+	if err := firstEvaluation.Validate(prereg); err != nil {
 		t.Fatal(err)
 	}
-	authorityRaw, err := EncodeAuthority(run.authority)
+	if err := secondEvaluation.Validate(prereg); err != nil {
+		t.Fatal(err)
+	}
+
+	candidateBundleBeforeOracleMutation := blindBytesSHA256(bytes.Join(
+		[][]byte{first.authorityRaw, first.h0Raw, first.h1Raw}, []byte{0},
+	))
+	mutatedOracle := mutateBlindOracleForIsolation(t, oracle)
+	mutatedEvaluation := evaluateBlindCandidate(prereg, mutatedOracle, firstCandidate, first.run,
+		firstSourceExact, candidateDeterministic, evaluationDeterministic)
+	mutatedEvaluationRaw, err := encodeBlindScorecard(mutatedEvaluation)
 	if err != nil {
 		t.Fatal(err)
 	}
-	h0Raw, err := EncodeH0(run.h0)
+	candidateBundleAfterOracleMutation := blindBytesSHA256(bytes.Join(
+		[][]byte{first.authorityRaw, first.h0Raw, first.h1Raw}, []byte{0},
+	))
+	oracleIsolation := cycle4OracleIsolation{
+		Status:                  "PASS",
+		CandidateBytesUnchanged: candidateBundleBeforeOracleMutation == candidateBundleAfterOracleMutation,
+		EvaluationBytesChanged:  !bytes.Equal(firstEvaluationRaw, mutatedEvaluationRaw),
+	}
+	if !oracleIsolation.CandidateBytesUnchanged || !oracleIsolation.EvaluationBytesChanged {
+		t.Fatalf("Cycle 4 oracle isolation failed: %#v", oracleIsolation)
+	}
+
+	assertBlindCycle4Golden(t, root, "cycle4/01-authority.json", first.authorityRaw)
+	assertBlindCycle4Golden(t, root, "cycle4/02-h0.json", first.h0Raw)
+	assertBlindCycle4Golden(t, root, "cycle4/03-h1.json", first.h1Raw)
+	assertBlindCycle4Golden(t, root, "cycle4/04-evaluation.json", firstEvaluationRaw)
+
+	runReceipt := buildCycle4RunReceipt(freeze, first, firstEvaluation, firstEvaluationRaw,
+		candidateDeterministic, evaluationDeterministic, oracleIsolation)
+	runReceiptRaw, err := encodeCycle4RunReceipt(runReceipt)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertBlindGolden(t, root, "01-authority.json", authorityRaw)
-	assertBlindGolden(t, root, "02-h0.json", h0Raw)
-	assertBlindGolden(t, root, "03-h1.json", run.h1Raw)
-	assertBlindGolden(t, root, "04-evaluation.json", firstRaw)
-	t.Logf("blind repository-pattern verdict: %s\n%s", first.Verdict, firstRaw)
+	if err := runReceipt.Validate(freeze, firstEvaluation, firstEvaluationRaw); err != nil {
+		t.Fatal(err)
+	}
+	assertBlindCycle4Golden(t, root, "cycle4/05-receipt.json", runReceiptRaw)
+	t.Logf("Cycle 4 blind verdict: %s; instances %d/%d, roles %d/%d, exclusions %d/%d",
+		firstEvaluation.Verdict, firstEvaluation.Instances.Matched, firstEvaluation.Instances.Truth,
+		firstEvaluation.Roles.Matched, firstEvaluation.Roles.Truth,
+		firstEvaluation.Exclusions.Matched, firstEvaluation.Exclusions.Truth)
+}
+
+func freezeCycle4TerminalResult(
+	t *testing.T,
+	root string,
+	freeze cycle4ExtractorFreeze,
+	prereg blindPreregistration,
+	fixtureReceipt blindFixtureReceipt,
+	first, second cycle4CandidateBuild,
+	firstErr, secondErr error,
+) {
+	t.Helper()
+	firstTerminal, firstOK := firstErr.(*blindCandidateTerminal)
+	secondTerminal, secondOK := secondErr.(*blindCandidateTerminal)
+	if !firstOK || !secondOK || firstTerminal.Stage != secondTerminal.Stage || firstTerminal.Reason != secondTerminal.Reason {
+		t.Fatalf("Cycle 4 terminal outcome is not deterministic: %v / %v", firstErr, secondErr)
+	}
+	if first.loads != 1 || second.loads != 1 {
+		t.Fatalf("Cycle 4 terminal production loads per build = [%d,%d], want [1,1]", first.loads, second.loads)
+	}
+	if !reflect.DeepEqual(first.collision, second.collision) {
+		t.Fatalf("Cycle 4 terminal collision observations differ: %#v / %#v", first.collision, second.collision)
+	}
+	if err := validateCycle4CollisionObservation(first.collision, freeze.Collision); err != nil {
+		t.Fatal(err)
+	}
+	candidateDeterministic := bytes.Equal(first.authorityRaw, second.authorityRaw) &&
+		bytes.Equal(first.h0Raw, second.h0Raw) && bytes.Equal(first.h1Raw, second.h1Raw)
+	if !candidateDeterministic {
+		t.Fatal("Cycle 4 partial candidate bytes differ across terminal builds")
+	}
+	if len(first.authorityRaw) == 0 || len(first.h0Raw) == 0 || len(first.h1Raw) != 0 {
+		t.Fatalf("Cycle 4 terminal artifact boundary = authority:%t h0:%t h1:%t, want true/true/false",
+			len(first.authorityRaw) != 0, len(first.h0Raw) != 0, len(first.h1Raw) != 0)
+	}
+	assertBlindCycle4Golden(t, root, "cycle4/01-authority.json", first.authorityRaw)
+	assertBlindCycle4Golden(t, root, "cycle4/02-h0.json", first.h0Raw)
+	assertCycle4GoldenAbsent(t, root, "03-h1.json")
+
+	firstFailure := buildBlindTerminalScorecard(prereg, fixtureReceipt, first.run, firstTerminal)
+	secondFailure := buildBlindTerminalScorecard(prereg, fixtureReceipt, second.run, secondTerminal)
+	firstFailureRaw, err := encodeBlindTerminalScorecard(firstFailure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondFailureRaw, err := encodeBlindTerminalScorecard(secondFailure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evaluationDeterministic := bytes.Equal(firstFailureRaw, secondFailureRaw)
+	if !evaluationDeterministic {
+		t.Fatal("Cycle 4 terminal evaluation bytes differ across identical builds")
+	}
+	assertBlindCycle4Golden(t, root, "cycle4/04-evaluation.json", firstFailureRaw)
+
+	runReceipt := buildCycle4TerminalRunReceipt(
+		freeze, first, firstFailure, firstFailureRaw, candidateDeterministic, evaluationDeterministic,
+	)
+	runReceiptRaw, err := encodeCycle4RunReceipt(runReceipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runReceipt.ValidateTerminal(freeze, first, firstFailure, firstFailureRaw); err != nil {
+		t.Fatal(err)
+	}
+	assertBlindCycle4Golden(t, root, "cycle4/05-receipt.json", runReceiptRaw)
+	t.Logf("Cycle 4 blind verdict: FAIL (terminal %s/%s); Authority and H0 retained, H1 unavailable",
+		firstTerminal.Stage, firstTerminal.Reason)
+}
+
+func assertCycle4GoldenAbsent(t *testing.T, root, name string) {
+	t.Helper()
+	filename := filepath.Join(root, "golden", "cycle4", name)
+	if _, err := os.Stat(filename); err == nil {
+		t.Fatalf("Cycle 4 terminal must not invent %s", name)
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("Cycle 4 inspect absent %s: %v", name, err)
+	}
+}
+
+func buildCycle4ExtractorFreeze(
+	t *testing.T,
+	repositoryRoot, root string,
+	prereg blindPreregistration,
+	receipt blindFixtureReceipt,
+	briefRaw, preregRaw, schemaRaw, oracleRaw, fixtureReceiptRaw []byte,
+) cycle4ExtractorFreeze {
+	t.Helper()
+	candidateSources, err := discoverH1FreezeSources(repositoryRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evaluatorInputs, err := discoverCycle4EvaluatorInputs(repositoryRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	controlled, err := cycle4ControlledArtifactBindings(repositoryRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	terminalRaw := readExperimentFile(t, filepath.Join(root, "golden", "04-evaluation.json"))
+	var terminal blindTerminalScorecard
+	if err := decodeStrict(terminalRaw, &terminal, "Cycle 3 terminal scorecard"); err != nil {
+		t.Fatal(err)
+	}
+	result := cycle4ExtractorFreeze{
+		Version: cycle4FreezeVersion, Status: "SEALED_BEFORE_CANDIDATE", CandidateID: cycle4CandidateID,
+		CandidateSourcesSHA256: h1FreezeSourcesDigest(candidateSources), CandidateSources: candidateSources,
+		Rules: h1FreezeRules(), ControlledArtifacts: controlled,
+		BlindSnapshot: cycle4BlindSnapshot{
+			AuthorBriefRawSHA256: blindBytesSHA256(briefRaw), PreregistrationRawSHA256: blindBytesSHA256(preregRaw),
+			OracleSchemaRawSHA256: blindBytesSHA256(schemaRaw), OracleRawSHA256: blindBytesSHA256(oracleRaw),
+			FixtureReceiptRawSHA256: blindBytesSHA256(fixtureReceiptRaw), FixtureReceiptSHA256: receipt.SHA256,
+			RepositoryTreeSHA256: receipt.RepositoryTreeSHA256, DependenciesTreeSHA256: receipt.DependenciesTreeSHA256,
+		},
+		HistoricalTerminal: cycle4HistoricalTerminal{
+			Path:      "testdata/experiments/clientrecipe-blind/golden/04-evaluation.json",
+			RawSHA256: blindBytesSHA256(terminalRaw), InternalSHA256: terminal.SHA256,
+			Stage: terminal.Stage, Reason: terminal.Reason,
+		},
+		Collision: cycle4CollisionContract{
+			Classification: "distinct_semantic_observations_collapsed_by_source_ref", ExpectedGroups: 3,
+			Sites: []blindLocator{
+				{Path: "internal/httpapi/server.go", Line: 15},
+				{Path: "internal/httpapi/server.go", Line: 24},
+				{Path: "internal/httpapi/server.go", Line: 25},
+			},
+			IdentityRule: "legacy_singletons_unchanged_collision_groups_disambiguated_by_complete_structural_tuple",
+		},
+		Evaluator: cycle4EvaluatorContract{
+			InputsSHA256: h1FreezeSourcesDigest(evaluatorInputs), Inputs: evaluatorInputs,
+			Thresholds: prereg.Thresholds, OverallRule: prereg.OverallRule,
+		},
+	}
+	result.SHA256 = cycle4ExtractorFreezeDigest(result)
+	return result
+}
+
+func discoverCycle4EvaluatorInputs(repositoryRoot string) ([]h1FreezeSource, error) {
+	paths := []string{
+		"internal/experiments/clientrecipe/authority_test.go",
+		"internal/experiments/clientrecipe/blind_fixture_test.go",
+		"internal/experiments/clientrecipe/contract_test.go",
+		"internal/experiments/clientrecipe/leave_one_out_test.go",
+		"internal/experiments/clientrecipe/mutants_test.go",
+		"testdata/experiments/clientrecipe-blind/author_brief.md",
+		"testdata/experiments/clientrecipe-blind/fixture_receipt.json",
+		"testdata/experiments/clientrecipe-blind/oracle.json",
+		"testdata/experiments/clientrecipe-blind/oracle.schema.json",
+		"testdata/experiments/clientrecipe-blind/preregistration.json",
+	}
+	sort.Strings(paths)
+	result := make([]h1FreezeSource, 0, len(paths))
+	for _, relative := range paths {
+		raw, err := os.ReadFile(filepath.Join(repositoryRoot, filepath.FromSlash(relative)))
+		if err != nil {
+			return nil, fmt.Errorf("Cycle 4 freeze: read evaluator input %s: %w", relative, err)
+		}
+		result = append(result, h1FreezeSource{Path: relative, SHA256: blindBytesSHA256(raw)})
+	}
+	return result, nil
+}
+
+func cycle4ControlledArtifactBindings(repositoryRoot string) ([]cycle4ArtifactBinding, error) {
+	type artifact struct {
+		stage, relative string
+		decode          func([]byte) (string, error)
+	}
+	artifacts := []artifact{
+		{stage: "authority", relative: "testdata/experiments/clientrecipe/golden/01-input-authority.json", decode: func(raw []byte) (string, error) {
+			value, err := DecodeAuthority(raw)
+			return value.SHA256, err
+		}},
+		{stage: "h0", relative: "testdata/experiments/clientrecipe/golden/02-h0-candidates.json", decode: func(raw []byte) (string, error) {
+			value, err := DecodeH0(raw)
+			return value.SHA256, err
+		}},
+		{stage: "h1", relative: "testdata/experiments/clientrecipe/golden/03-h1-structural.json", decode: func(raw []byte) (string, error) {
+			value, err := DecodeH1(raw)
+			return value.SHA256, err
+		}},
+	}
+	result := make([]cycle4ArtifactBinding, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		raw, err := os.ReadFile(filepath.Join(repositoryRoot, filepath.FromSlash(artifact.relative)))
+		if err != nil {
+			return nil, fmt.Errorf("Cycle 4 freeze: read controlled %s: %w", artifact.stage, err)
+		}
+		internal, err := artifact.decode(raw)
+		if err != nil {
+			return nil, fmt.Errorf("Cycle 4 freeze: decode controlled %s: %w", artifact.stage, err)
+		}
+		result = append(result, cycle4ArtifactBinding{
+			Stage: artifact.stage, Path: artifact.relative,
+			RawSHA256: blindBytesSHA256(raw), InternalSHA256: internal,
+		})
+	}
+	return result, nil
+}
+
+func encodeCycle4ExtractorFreeze(value cycle4ExtractorFreeze) ([]byte, error) {
+	raw, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("Cycle 4 freeze: encode: %w", err)
+	}
+	return append(raw, '\n'), nil
+}
+
+func cycle4ExtractorFreezeDigest(value cycle4ExtractorFreeze) string {
+	value.SHA256 = ""
+	raw, _ := json.Marshal(value)
+	return blindBytesSHA256(raw)
+}
+
+func (value cycle4ExtractorFreeze) Validate(
+	repositoryRoot, root string,
+	prereg blindPreregistration,
+	receipt blindFixtureReceipt,
+) error {
+	if value.Version != cycle4FreezeVersion || value.Status != "SEALED_BEFORE_CANDIDATE" ||
+		value.CandidateID != cycle4CandidateID || len(value.CandidateSources) == 0 || len(value.Rules) == 0 ||
+		len(value.ControlledArtifacts) != 3 || !validSHA256(value.CandidateSourcesSHA256) || !validSHA256(value.SHA256) {
+		return fmt.Errorf("Cycle 4 freeze: invalid identity")
+	}
+	wantSources, err := discoverH1FreezeSources(repositoryRoot)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(value.CandidateSources, wantSources) ||
+		value.CandidateSourcesSHA256 != h1FreezeSourcesDigest(value.CandidateSources) {
+		return fmt.Errorf("Cycle 4 freeze: current candidate source surface changed")
+	}
+	if !reflect.DeepEqual(value.Rules, h1FreezeRules()) {
+		return fmt.Errorf("Cycle 4 freeze: extractor rules changed")
+	}
+	wantControlled, err := cycle4ControlledArtifactBindings(repositoryRoot)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(value.ControlledArtifacts, wantControlled) {
+		return fmt.Errorf("Cycle 4 freeze: controlled artifact bindings changed")
+	}
+	wantBlind := cycle4BlindSnapshot{
+		AuthorBriefRawSHA256:     "2ac6286b63b3ab2ed8017de9052597bfeb87a771fc221b9823f1fd8322ff1e81",
+		PreregistrationRawSHA256: "cc33da2a49676ba7df89eed10b16291a1d5b6115e63ac02e98be4244c1d095e4",
+		OracleSchemaRawSHA256:    "409de2cae576e9c2e759fa3a6fea811adbb3ecefba0c0bf761c0e59414ce24ea",
+		OracleRawSHA256:          "ad1ec48672b31ccd7419fa352836ea2f73eba6141e2e54cf5a1dd8041f569023",
+		FixtureReceiptRawSHA256:  historicalBlindFixtureReceiptRawSHA256,
+		FixtureReceiptSHA256:     receipt.SHA256, RepositoryTreeSHA256: receipt.RepositoryTreeSHA256,
+		DependenciesTreeSHA256: receipt.DependenciesTreeSHA256,
+	}
+	if !reflect.DeepEqual(value.BlindSnapshot, wantBlind) {
+		return fmt.Errorf("Cycle 4 freeze: sealed blind snapshot changed")
+	}
+	wantTerminalRaw, err := os.ReadFile(filepath.Join(root, "golden", "04-evaluation.json"))
+	if err != nil {
+		return fmt.Errorf("Cycle 4 freeze: read historical terminal: %w", err)
+	}
+	wantTerminal := cycle4HistoricalTerminal{
+		Path:      "testdata/experiments/clientrecipe-blind/golden/04-evaluation.json",
+		RawSHA256: historicalBlindTerminalRawSHA256, InternalSHA256: historicalBlindTerminalInternalSHA256,
+		Stage: "authority_preparation", Reason: "duplicate_program_relation_identity",
+	}
+	if blindBytesSHA256(wantTerminalRaw) != historicalBlindTerminalRawSHA256 ||
+		!reflect.DeepEqual(value.HistoricalTerminal, wantTerminal) {
+		return fmt.Errorf("Cycle 4 freeze: historical terminal changed")
+	}
+	wantCollision := cycle4CollisionContract{
+		Classification: "distinct_semantic_observations_collapsed_by_source_ref", ExpectedGroups: 3,
+		Sites: []blindLocator{
+			{Path: "internal/httpapi/server.go", Line: 15},
+			{Path: "internal/httpapi/server.go", Line: 24},
+			{Path: "internal/httpapi/server.go", Line: 25},
+		},
+		IdentityRule: "legacy_singletons_unchanged_collision_groups_disambiguated_by_complete_structural_tuple",
+	}
+	if !reflect.DeepEqual(value.Collision, wantCollision) {
+		return fmt.Errorf("Cycle 4 freeze: collision contract changed")
+	}
+	wantEvaluatorInputs, err := discoverCycle4EvaluatorInputs(repositoryRoot)
+	if err != nil {
+		return err
+	}
+	if value.Evaluator.InputsSHA256 != h1FreezeSourcesDigest(value.Evaluator.Inputs) ||
+		!reflect.DeepEqual(value.Evaluator.Inputs, wantEvaluatorInputs) ||
+		!reflect.DeepEqual(value.Evaluator.Thresholds, prereg.Thresholds) || value.Evaluator.OverallRule != prereg.OverallRule {
+		return fmt.Errorf("Cycle 4 freeze: evaluator source or preregistered thresholds changed")
+	}
+	if value.SHA256 != cycle4ExtractorFreezeDigest(value) {
+		return fmt.Errorf("Cycle 4 freeze: digest mismatch")
+	}
+	return nil
+}
+
+func assertCycle4ControlledCompatibility(t *testing.T, repositoryRoot string) {
+	t.Helper()
+	repoRoot := filepath.Join(repositoryRoot, "testdata", "experiments", "clientrecipe", "repo")
+	loader := &countingProductionLoader{delegate: defaultProductionPackageLoader{}}
+	authority, err := prepareAuthority(t.Context(), repoRoot, loader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h0, err := BuildH0(authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h1, err := ExtractH1(repoRoot, authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loader.count != 1 {
+		t.Fatalf("Cycle 4 controlled compatibility package loads = %d, want 1", loader.count)
+	}
+	actual := make([][]byte, 3)
+	actual[0], err = EncodeAuthority(authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual[1], err = EncodeH0(h0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual[2], err = EncodeH1(h1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{
+		"golden/01-input-authority.json", "golden/02-h0-candidates.json", "golden/03-h1-structural.json",
+	}
+	for index, relative := range paths {
+		want := readExperimentFile(t, filepath.Join(repositoryRoot, "testdata", "experiments", "clientrecipe", relative))
+		if !bytes.Equal(actual[index], want) {
+			t.Fatalf("Cycle 4 changed controlled %s bytes", relative)
+		}
+	}
+}
+
+func runBlindCandidateCycle4(t *testing.T, repoRoot string) (cycle4CandidateBuild, error) {
+	t.Helper()
+	var result cycle4CandidateBuild
+	absoluteRoot, err := filepath.Abs(repoRoot)
+	if err != nil {
+		return result, blindTerminal("authority_preparation", err)
+	}
+	sources, repositorySHA256, err := prepareSourceFacts(absoluteRoot)
+	if err != nil {
+		return result, blindTerminal("authority_preparation", err)
+	}
+	loader := &countingProductionLoader{delegate: defaultProductionPackageLoader{}}
+	loaded, err := loader.Load(t.Context(), absoluteRoot)
+	result.loads = loader.count
+	if err != nil {
+		return result, blindTerminal("authority_preparation", err)
+	}
+	packagesByPath, modulePath, err := productionPackages(loaded)
+	if err != nil {
+		return result, blindTerminal("authority_preparation", err)
+	}
+	catalog, err := buildDependencyCatalog(absoluteRoot, modulePath, packagesByPath)
+	if err != nil {
+		return result, blindTerminal("authority_preparation", err)
+	}
+	var collision cycle4CollisionObservation
+	index, err := buildProgramIndexWithSealObserver(
+		absoluteRoot, modulePath, repositorySHA256, packagesByPath, sources,
+		func(before, after []programindex.RelationInput) error {
+			var observerErr error
+			collision, observerErr = observeCycle4RelationCollisions(before, after)
+			return observerErr
+		},
+	)
+	if err != nil {
+		return result, blindTerminal("authority_preparation", err)
+	}
+	result.collision = collision
+	operations, err := externalOperationFacts(index, catalog, sources)
+	if err != nil {
+		return result, blindTerminal("authority_preparation", err)
+	}
+	callbacks := callbackCoverage(index)
+	coverage := AuthorityCoverage{FilesObserved: len(sources)}
+	for _, source := range sources {
+		switch source.Class {
+		case SourceProduction:
+			coverage.ProductionFiles++
+		case SourceTest:
+			coverage.TestFiles++
+		case SourceGenerated:
+			coverage.GeneratedFiles++
+		case SourceProse:
+			coverage.ProseFiles++
+		case SourceManifest:
+			coverage.ManifestFiles++
+		case SourceOther:
+			coverage.OtherFiles++
+		}
+	}
+	coverage.DependencyUsesObserved = catalog.Coverage.ImportsObserved
+	coverage.ExternalCallsObserved = len(operations)
+	authority, err := sealAuthority(Authority{
+		Version: AuthorityVersion, RepositorySHA256: repositorySHA256, Program: index,
+		Dependencies: catalog, Sources: sources, ExternalOperations: operations, Callbacks: callbacks, Coverage: coverage,
+	})
+	if err != nil {
+		return result, blindTerminal("authority_preparation", err)
+	}
+	result.run.authority = authority
+	result.authorityRaw, err = EncodeAuthority(authority)
+	if err != nil {
+		return result, blindTerminal("authority_encoding", err)
+	}
+	h0, err := BuildH0(authority)
+	if err != nil {
+		return result, blindTerminal("h0_build", err)
+	}
+	result.run.h0 = h0
+	result.h0Raw, err = EncodeH0(h0)
+	if err != nil {
+		return result, blindTerminal("h0_encoding", err)
+	}
+	h1, err := ExtractH1(absoluteRoot, authority)
+	if err != nil {
+		return result, blindTerminal("h1_extraction", err)
+	}
+	h1Raw, err := EncodeH1(h1)
+	if err != nil {
+		return result, blindTerminal("h1_encoding", err)
+	}
+	result.run.h1 = h1
+	result.run.h1Raw = h1Raw
+	result.h1Raw = h1Raw
+	return result, nil
+}
+
+func observeCycle4RelationCollisions(before, after []programindex.RelationInput) (cycle4CollisionObservation, error) {
+	type group struct {
+		location blindLocator
+		tuples   []string
+	}
+	groups := make(map[string]*group)
+	for _, relation := range before {
+		key := strings.Join([]string{relation.SourceRef, string(relation.Kind), relation.FromRef}, "\x00")
+		entry := groups[key]
+		if entry == nil {
+			entry = &group{}
+			if relation.Location != nil {
+				entry.location = blindLocator{Path: relation.Location.Path, Line: relation.Location.Line}
+			}
+			groups[key] = entry
+		}
+		entry.tuples = append(entry.tuples, relationObservationTuple(relation))
+	}
+	sites := []blindLocator{}
+	classification := "distinct_semantic_observations_collapsed_by_source_ref"
+	collisions := 0
+	for _, entry := range groups {
+		if len(entry.tuples) < 2 {
+			continue
+		}
+		collisions++
+		distinct := make(map[string]struct{}, len(entry.tuples))
+		for _, tuple := range entry.tuples {
+			distinct[tuple] = struct{}{}
+		}
+		if len(distinct) != len(entry.tuples) {
+			classification = "duplicate_or_mixed_relation_observations"
+		}
+		sites = append(sites, entry.location)
+	}
+	sites = canonicalizeBlindLocators(sites)
+	if len(before) != len(after) {
+		return cycle4CollisionObservation{}, fmt.Errorf("Cycle 4 collision fix dropped relation observations: %d -> %d", len(before), len(after))
+	}
+	post := make(map[string]int, len(after))
+	for _, relation := range after {
+		key := strings.Join([]string{relation.SourceRef, string(relation.Kind), relation.FromRef}, "\x00")
+		post[key]++
+		if post[key] > 1 {
+			return cycle4CollisionObservation{}, fmt.Errorf("Cycle 4 collision fix retained duplicate relation identity")
+		}
+	}
+	return cycle4CollisionObservation{
+		Classification: classification, Groups: collisions, Sites: sites,
+		RelationsBefore: len(before), RelationsAfter: len(after),
+	}, nil
+}
+
+func validateCycle4CollisionObservation(value cycle4CollisionObservation, contract cycle4CollisionContract) error {
+	if value.Classification != contract.Classification || value.Groups != contract.ExpectedGroups ||
+		!reflect.DeepEqual(value.Sites, contract.Sites) || value.RelationsBefore <= 0 ||
+		value.RelationsAfter != value.RelationsBefore {
+		return fmt.Errorf("Cycle 4 collision observation does not satisfy the frozen contract: %#v", value)
+	}
+	return nil
+}
+
+func mutateBlindOracleForIsolation(t *testing.T, oracle blindOracle) blindOracle {
+	t.Helper()
+	raw, err := json.Marshal(oracle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result blindOracle
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Excluded) == 0 {
+		t.Fatal("Cycle 4 oracle isolation: no exclusion to mutate")
+	}
+	if result.Excluded[0].Reason == H1ExcludedTestOnly {
+		result.Excluded[0].Reason = H1ExcludedNotProductionReachable
+	} else {
+		result.Excluded[0].Reason = H1ExcludedTestOnly
+	}
+	if err := result.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
+func buildCycle4RunReceipt(
+	freeze cycle4ExtractorFreeze,
+	build cycle4CandidateBuild,
+	evaluation blindScorecard,
+	evaluationRaw []byte,
+	candidateDeterministic, evaluationDeterministic bool,
+	oracleIsolation cycle4OracleIsolation,
+) cycle4RunReceipt {
+	status := "FAIL"
+	if evaluation.Verdict == EvaluationPass {
+		status = "PASS"
+	}
+	result := cycle4RunReceipt{
+		Version: cycle4ReceiptVersion, Status: status, CandidateID: cycle4CandidateID,
+		ExtractorFreezeSHA256: freeze.SHA256,
+		Artifacts: []cycle4RunArtifact{
+			{Stage: "authority", RawSHA256: blindBytesSHA256(build.authorityRaw), InternalSHA256: build.run.authority.SHA256},
+			{Stage: "h0", RawSHA256: blindBytesSHA256(build.h0Raw), InternalSHA256: build.run.h0.SHA256},
+			{Stage: "h1", RawSHA256: blindBytesSHA256(build.h1Raw), InternalSHA256: build.run.h1.SHA256},
+			{Stage: "evaluation", RawSHA256: blindBytesSHA256(evaluationRaw), InternalSHA256: blindScorecardSemanticSHA256(evaluation)},
+		},
+		UnavailableArtifacts: []string{},
+		Builds:               2, ProductionLoadsPerBuild: []int{build.loads, build.loads}, Collision: build.collision,
+		CandidateDeterministic: candidateDeterministic, EvaluationDeterministic: evaluationDeterministic,
+		OracleIsolation: oracleIsolation, Verdict: evaluation.Verdict,
+	}
+	result.SHA256 = cycle4RunReceiptDigest(result)
+	return result
+}
+
+func buildCycle4TerminalRunReceipt(
+	freeze cycle4ExtractorFreeze,
+	build cycle4CandidateBuild,
+	failure blindTerminalScorecard,
+	failureRaw []byte,
+	candidateDeterministic, evaluationDeterministic bool,
+) cycle4RunReceipt {
+	result := cycle4RunReceipt{
+		Version: cycle4ReceiptVersion, Status: "TERMINAL_ERROR", CandidateID: cycle4CandidateID,
+		ExtractorFreezeSHA256: freeze.SHA256,
+		Artifacts: []cycle4RunArtifact{
+			{Stage: "authority", RawSHA256: blindBytesSHA256(build.authorityRaw), InternalSHA256: build.run.authority.SHA256},
+			{Stage: "h0", RawSHA256: blindBytesSHA256(build.h0Raw), InternalSHA256: build.run.h0.SHA256},
+			{Stage: "evaluation", RawSHA256: blindBytesSHA256(failureRaw), InternalSHA256: failure.SHA256},
+		},
+		UnavailableArtifacts: []string{"h1"},
+		Builds:               2, ProductionLoadsPerBuild: []int{build.loads, build.loads}, Collision: build.collision,
+		CandidateDeterministic: candidateDeterministic, EvaluationDeterministic: evaluationDeterministic,
+		OracleIsolation: cycle4OracleIsolation{Status: "NOT_TESTED_TERMINAL_BEFORE_EVALUATION"},
+		Terminal:        &cycle4TerminalState{Stage: failure.Stage, Reason: failure.Reason},
+		Verdict:         EvaluationFail,
+	}
+	result.SHA256 = cycle4RunReceiptDigest(result)
+	return result
+}
+
+func blindScorecardSemanticSHA256(value blindScorecard) string {
+	raw, _ := json.Marshal(value)
+	return blindBytesSHA256(raw)
+}
+
+func cycle4RunReceiptDigest(value cycle4RunReceipt) string {
+	value.SHA256 = ""
+	raw, _ := json.Marshal(value)
+	return blindBytesSHA256(raw)
+}
+
+func encodeCycle4RunReceipt(value cycle4RunReceipt) ([]byte, error) {
+	raw, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("Cycle 4 receipt: encode: %w", err)
+	}
+	return append(raw, '\n'), nil
+}
+
+func (value cycle4RunReceipt) Validate(
+	freeze cycle4ExtractorFreeze,
+	evaluation blindScorecard,
+	evaluationRaw []byte,
+) error {
+	wantStatus := "FAIL"
+	if evaluation.Verdict == EvaluationPass {
+		wantStatus = "PASS"
+	}
+	if value.Version != cycle4ReceiptVersion || value.Status != wantStatus || value.CandidateID != cycle4CandidateID ||
+		value.ExtractorFreezeSHA256 != freeze.SHA256 || value.Builds != 2 ||
+		!reflect.DeepEqual(value.ProductionLoadsPerBuild, []int{1, 1}) || len(value.Artifacts) != 4 ||
+		len(value.UnavailableArtifacts) != 0 || value.Terminal != nil || value.Verdict != evaluation.Verdict ||
+		!validSHA256(value.SHA256) {
+		return fmt.Errorf("Cycle 4 receipt: invalid identity or run accounting")
+	}
+	wantInternal := map[string]string{
+		"authority":  evaluation.AuthoritySHA256,
+		"h0":         evaluation.H0SHA256,
+		"h1":         evaluation.CandidateH1SHA256,
+		"evaluation": blindScorecardSemanticSHA256(evaluation),
+	}
+	wantStages := []string{"authority", "h0", "h1", "evaluation"}
+	for index, artifact := range value.Artifacts {
+		if artifact.Stage != wantStages[index] ||
+			!validSHA256(artifact.RawSHA256) || !validSHA256(artifact.InternalSHA256) ||
+			artifact.InternalSHA256 != wantInternal[artifact.Stage] {
+			return fmt.Errorf("Cycle 4 receipt: invalid artifact binding %q", artifact.Stage)
+		}
+	}
+	if value.Artifacts[3].Stage != "evaluation" || value.Artifacts[3].RawSHA256 != blindBytesSHA256(evaluationRaw) {
+		return fmt.Errorf("Cycle 4 receipt: evaluation raw binding mismatch")
+	}
+	if err := validateCycle4CollisionObservation(value.Collision, freeze.Collision); err != nil {
+		return err
+	}
+	if !value.CandidateDeterministic || !value.EvaluationDeterministic || value.OracleIsolation.Status != "PASS" ||
+		!value.OracleIsolation.CandidateBytesUnchanged || !value.OracleIsolation.EvaluationBytesChanged {
+		return fmt.Errorf("Cycle 4 receipt: determinism or oracle isolation failed")
+	}
+	if value.SHA256 != cycle4RunReceiptDigest(value) {
+		return fmt.Errorf("Cycle 4 receipt: digest mismatch")
+	}
+	return nil
+}
+
+func (value cycle4RunReceipt) ValidateTerminal(
+	freeze cycle4ExtractorFreeze,
+	build cycle4CandidateBuild,
+	failure blindTerminalScorecard,
+	failureRaw []byte,
+) error {
+	if value.Version != cycle4ReceiptVersion || value.Status != "TERMINAL_ERROR" ||
+		value.CandidateID != cycle4CandidateID || value.ExtractorFreezeSHA256 != freeze.SHA256 ||
+		value.Builds != 2 || !reflect.DeepEqual(value.ProductionLoadsPerBuild, []int{1, 1}) ||
+		!reflect.DeepEqual(value.UnavailableArtifacts, []string{"h1"}) || len(value.Artifacts) != 3 ||
+		value.Terminal == nil || value.Terminal.Stage != failure.Stage || value.Terminal.Reason != failure.Reason ||
+		value.Verdict != EvaluationFail || !validSHA256(value.SHA256) {
+		return fmt.Errorf("Cycle 4 terminal receipt: invalid identity or run accounting")
+	}
+	want := []cycle4RunArtifact{
+		{Stage: "authority", RawSHA256: blindBytesSHA256(build.authorityRaw), InternalSHA256: build.run.authority.SHA256},
+		{Stage: "h0", RawSHA256: blindBytesSHA256(build.h0Raw), InternalSHA256: build.run.h0.SHA256},
+		{Stage: "evaluation", RawSHA256: blindBytesSHA256(failureRaw), InternalSHA256: failure.SHA256},
+	}
+	if !reflect.DeepEqual(value.Artifacts, want) {
+		return fmt.Errorf("Cycle 4 terminal receipt: artifact bindings changed")
+	}
+	if err := validateCycle4CollisionObservation(value.Collision, freeze.Collision); err != nil {
+		return err
+	}
+	if !value.CandidateDeterministic || !value.EvaluationDeterministic ||
+		value.OracleIsolation != (cycle4OracleIsolation{Status: "NOT_TESTED_TERMINAL_BEFORE_EVALUATION"}) {
+		return fmt.Errorf("Cycle 4 terminal receipt: determinism or oracle-isolation status changed")
+	}
+	if value.SHA256 != cycle4RunReceiptDigest(value) {
+		return fmt.Errorf("Cycle 4 terminal receipt: digest mismatch")
+	}
+	return nil
 }
 
 func TestBlindFixtureReceiptContract(t *testing.T) {
 	repositoryRoot := filepath.Clean(filepath.Join(experimentRoot(t), "..", "..", ".."))
 	root := filepath.Join(repositoryRoot, "testdata", "experiments", "clientrecipe-blind")
-	if os.Getenv("REPOMAP_UPDATE_EXPERIMENT_GOLDEN") == "1" {
-		writeBlindFixtureReceipt(t, root)
-	}
 	receiptRaw := readExperimentFile(t, filepath.Join(root, "fixture_receipt.json"))
 	receipt, err := decodeBlindFixtureReceipt(receiptRaw)
 	if err != nil {
@@ -438,6 +1326,23 @@ func TestBlindEvaluatorRepresentsPassAndFail(t *testing.T) {
 	}
 	if passing.Verdict != EvaluationPass {
 		t.Fatalf("representable passing scorecard = %s, gates %#v", passing.Verdict, passing.Gates)
+	}
+	wantExclusionIDs := make([]string, 0, len(oracle.Excluded))
+	for _, excluded := range oracle.Excluded {
+		wantExclusionIDs = append(wantExclusionIDs, excluded.ID)
+	}
+	sort.Strings(wantExclusionIDs)
+	wantExclusions := blindSetMetric{
+		Truth: len(oracle.Excluded), Predicted: len(oracle.Excluded), Matched: len(oracle.Excluded),
+		TruePositive: wantExclusionIDs, FalsePositive: []string{}, FalseNegative: []string{},
+	}
+	wantReasons := blindExactMetric{
+		Correct: len(oracle.Excluded), Total: len(oracle.Excluded), Mismatches: []string{},
+	}
+	if !reflect.DeepEqual(passing.Exclusions, wantExclusions) ||
+		!reflect.DeepEqual(passing.ExclusionReasons, wantReasons) {
+		t.Fatalf("representable PASS does not exhaustively account for exclusions/reasons: %#v / %#v",
+			passing.Exclusions, passing.ExclusionReasons)
 	}
 
 	failingCandidate := candidate
@@ -535,43 +1440,6 @@ func decodeBlindFixtureReceipt(raw []byte) (blindFixtureReceipt, error) {
 	return value, nil
 }
 
-func writeBlindFixtureReceipt(t *testing.T, root string) {
-	t.Helper()
-	briefRaw := readExperimentFile(t, filepath.Join(root, "author_brief.md"))
-	preregRaw := readExperimentFile(t, filepath.Join(root, "preregistration.json"))
-	schemaRaw := readExperimentFile(t, filepath.Join(root, "oracle.schema.json"))
-	oracleRaw := readExperimentFile(t, filepath.Join(root, "oracle.json"))
-	prereg, err := decodeBlindPreregistration(preregRaw, briefRaw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	repositoryFiles, err := blindFileInventory(filepath.Join(root, "repo"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	dependencyFiles, err := blindFileInventory(filepath.Join(root, "deps"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	receipt := blindFixtureReceipt{
-		Version: blindReceiptVersion, Status: "SEALED",
-		AuthorBriefSHA256: prereg.AuthorBriefSHA256, PreregistrationSHA256: blindBytesSHA256(preregRaw),
-		OracleSchemaVersion: blindOracleVersion, OracleSchemaSHA256: blindBytesSHA256(schemaRaw),
-		RepositoryFiles: repositoryFiles, DependenciesFiles: dependencyFiles,
-		RepositoryTreeSHA256:   blindFileTreeSHA256(repositoryFiles),
-		DependenciesTreeSHA256: blindFileTreeSHA256(dependencyFiles), OracleSHA256: blindBytesSHA256(oracleRaw),
-		Chronology: blindReceiptChronology{FixtureValidatedBeforeSeal: true, OracleSealedBeforeCandidate: true},
-	}
-	receipt.SHA256 = blindFixtureReceiptSHA256(receipt)
-	raw, err := encodeBlindFixtureReceipt(receipt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "fixture_receipt.json"), raw, 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func encodeBlindFixtureReceipt(value blindFixtureReceipt) ([]byte, error) {
 	raw, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
@@ -580,8 +1448,11 @@ func encodeBlindFixtureReceipt(value blindFixtureReceipt) ([]byte, error) {
 	return append(raw, '\n'), nil
 }
 
-func assertBlindGolden(t *testing.T, root, name string, actual []byte) {
+func assertBlindCycle4Golden(t *testing.T, root, name string, actual []byte) {
 	t.Helper()
+	if !strings.HasPrefix(name, "cycle4/") || filepath.Clean(name) != filepath.FromSlash(name) {
+		t.Fatalf("Cycle 4 artifact path escaped its namespace: %q", name)
+	}
 	filename := filepath.Join(root, "golden", name)
 	if os.Getenv("REPOMAP_UPDATE_EXPERIMENT_GOLDEN") == "1" {
 		if err := os.MkdirAll(filepath.Dir(filename), 0o755); err != nil {
@@ -661,67 +1532,12 @@ func blindFixtureReceiptSHA256(value blindFixtureReceipt) string {
 	return blindBytesSHA256(raw)
 }
 
-func runBlindCandidate(repoRoot string) (blindCandidateRun, error) {
-	var run blindCandidateRun
-	authority, err := PrepareAuthority(repoRoot)
-	if err != nil {
-		return run, blindTerminal("authority_preparation", err)
-	}
-	run.authority = authority
-	h0, err := BuildH0(authority)
-	if err != nil {
-		return run, blindTerminal("h0_build", err)
-	}
-	run.h0 = h0
-	first, err := ExtractH1(repoRoot, authority)
-	if err != nil {
-		return run, blindTerminal("h1_extraction", err)
-	}
-	run.h1 = first
-	second, err := ExtractH1(repoRoot, authority)
-	if err != nil {
-		return run, blindTerminal("h1_repeat", err)
-	}
-	firstRaw, err := EncodeH1(first)
-	if err != nil {
-		return run, blindTerminal("h1_encoding", err)
-	}
-	run.h1Raw = firstRaw
-	secondRaw, err := EncodeH1(second)
-	if err != nil {
-		return run, blindTerminal("h1_repeat_encoding", err)
-	}
-	run.repeated = secondRaw
-	return run, nil
-}
-
 func blindTerminal(stage string, err error) error {
 	reason := stage + "_failed"
 	if stage == "authority_preparation" && strings.Contains(err.Error(), "duplicate relation identity") {
 		reason = "duplicate_program_relation_identity"
 	}
 	return &blindCandidateTerminal{Stage: stage, Reason: reason, Err: err}
-}
-
-func preserveBlindCandidateArtifacts(t *testing.T, root string, run blindCandidateRun) {
-	t.Helper()
-	if run.authority.SHA256 != "" {
-		raw, err := EncodeAuthority(run.authority)
-		if err != nil {
-			t.Fatal(err)
-		}
-		assertBlindGolden(t, root, "01-authority.json", raw)
-	}
-	if run.h0.SHA256 != "" {
-		raw, err := EncodeH0(run.h0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		assertBlindGolden(t, root, "02-h0.json", raw)
-	}
-	if len(run.h1Raw) != 0 {
-		assertBlindGolden(t, root, "03-h1.json", run.h1Raw)
-	}
 }
 
 func buildBlindTerminalScorecard(

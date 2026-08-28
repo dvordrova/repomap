@@ -1,0 +1,231 @@
+{
+  "version": 1,
+  "status": "SEALED_BEFORE_CANDIDATE",
+  "candidate_id": "authority-collision-fix-v2",
+  "candidate_sources_sha256": "f6923f8f7b155697dd2a3872272f23e34ec5ea13e6ebba04d078199db8064963",
+  "candidate_sources": [
+    {
+      "path": "go.mod",
+      "sha256": "40ac5fef91925ddd3a4c0996811964ce0765c6d52effcc0f8fdaaf6ade42f2df"
+    },
+    {
+      "path": "go.sum",
+      "sha256": "36148a3725099f01c41f29b427b3a072719c6feb4160f2ca89396b81253d5190"
+    },
+    {
+      "path": "internal/dependencies/catalog.go",
+      "sha256": "a2d2613858cdaef0edebaf874213e34906088a5299fa85866cbda79acfeb7be8"
+    },
+    {
+      "path": "internal/experiments/clientrecipe/authority.go",
+      "sha256": "4940657d24b421e930442b012da1bf10507fe29f7c8a1021e5e6aeb1ea7b93be"
+    },
+    {
+      "path": "internal/experiments/clientrecipe/contracts.go",
+      "sha256": "7753c863a81122674599ba75b94631e585ccd7e934ef0cf3ad0c098911123b0d"
+    },
+    {
+      "path": "internal/experiments/clientrecipe/evaluation.go",
+      "sha256": "3903c635bcb4412f01bbac21cc3918d370252935f2774cb9fb7b652ae205f67f"
+    },
+    {
+      "path": "internal/experiments/clientrecipe/go_authority.go",
+      "sha256": "f7718b9eaa0e27aeb783e28a68ff57e0daa9699379717b0b50a8a72e3ae603cf"
+    },
+    {
+      "path": "internal/experiments/clientrecipe/h0.go",
+      "sha256": "a73e4a178dd1a89c4ac20819a60f740ca61987a2dbd9cb4eeb378be54ad4ca6e"
+    },
+    {
+      "path": "internal/experiments/clientrecipe/h1.go",
+      "sha256": "8820d371ab1d761b0fd5659a09a214c3c4f7a56062d8c9ff7de567f27360e885"
+    },
+    {
+      "path": "internal/experiments/clientrecipe/h1_extract.go",
+      "sha256": "c49340eb3e06bdd5cbbbc55b5a228e8e2bc09791e6b5833272068d26012674ba"
+    },
+    {
+      "path": "internal/experiments/clientrecipe/h2.go",
+      "sha256": "ecc1e11b9c703579c36030a5e9af64038be96a281e20d34d4fdd2cb27febbb4f"
+    },
+    {
+      "path": "internal/experiments/clientrecipe/negative_invariants.go",
+      "sha256": "8f9b789cb493013dd5a9b026a784e4cc93614fe193644395ce5697e5edadb5c5"
+    },
+    {
+      "path": "internal/experiments/clientrecipe/oracle.go",
+      "sha256": "ed2cdcfa6a6a52dfbf35cd4280c4ed2c32b090d089696a7df5018b8c373297d1"
+    },
+    {
+      "path": "internal/experiments/clientrecipe/preview.go",
+      "sha256": "0c2ac9954eb09cbbdbeb8ac2cdd940e3a7cf519f4eb6d9b98c20d43a69e19316"
+    },
+    {
+      "path": "internal/experiments/clientrecipe/source.go",
+      "sha256": "87e37d1472dd466a00559dc38be3fe391c5ac6d4105b3f54f61b1b77733f289c"
+    },
+    {
+      "path": "internal/programindex/index.go",
+      "sha256": "bbdc04ad8af87c17098f716eddfa07420fd3683747695af7ef281fd07cc8994e"
+    },
+    {
+      "path": "testdata/experiments/clientrecipe/negative_invariants.json",
+      "sha256": "b35ca6c7897a0a468c26ec909af30f7195c533e76253f729cf565fbbe54117bb"
+    },
+    {
+      "path": "testdata/experiments/clientrecipe/task_contract.json",
+      "sha256": "a13176475384522b6b55522b3a75c88a5bb18cfbf0d55b0c71164789f889f2cc"
+    }
+  ],
+  "rules": [
+    {
+      "id": "admissibility",
+      "statement": "start from each exact external dependency/importer H0 candidate and require one restorable local structural wrapper"
+    },
+    {
+      "id": "clustering",
+      "statement": "bind one boundary instance to one H0 candidate and its single exact wrapper, constructor flow, cross-package wiring flow, and live consumer flow"
+    },
+    {
+      "id": "completeness",
+      "statement": "complete requires configuration, construction, local wrapper, consumer boundary, application wiring, production operation, verification, and observability; failure policy is not mandatory"
+    },
+    {
+      "id": "exclusions",
+      "statement": "retain generated, test-only, not-production-reachable, and not-external-boundary candidates as explicit closed exclusions"
+    },
+    {
+      "id": "ranking",
+      "statement": "among complete instances, maximize learned required-and-common role coverage and retain every exact tie as equally eligible"
+    },
+    {
+      "id": "role_extraction",
+      "statement": "derive closed roles only from exact typed relations, structural source forms, source classifications, production reachability, and grounded source evidence"
+    },
+    {
+      "id": "role_reduction",
+      "statement": "reduce roles over complete instances: all is required, at least two and two-thirds is common, and the remainder is optional"
+    }
+  ],
+  "controlled_artifacts": [
+    {
+      "stage": "authority",
+      "path": "testdata/experiments/clientrecipe/golden/01-input-authority.json",
+      "raw_sha256": "abe4154e01a194f7bce5000381a2bf1ced0183ee15b747fbe4d09ff858dbe4c2",
+      "internal_sha256": "a6f492ded210630277f42eac2f88161f0cdf882ad7f04baf50eb4d26ac50b510"
+    },
+    {
+      "stage": "h0",
+      "path": "testdata/experiments/clientrecipe/golden/02-h0-candidates.json",
+      "raw_sha256": "307e95b718797227c75399fe50302d44fb8c6807b2f45e609ab74e8567d3739e",
+      "internal_sha256": "25198acc31182428997f5eee842d56bb6ff2b9e526c0d0945b925c916d447e74"
+    },
+    {
+      "stage": "h1",
+      "path": "testdata/experiments/clientrecipe/golden/03-h1-structural.json",
+      "raw_sha256": "70f9f99a4ddffb0cbe1c42cc827bd9723c9556fedf4644a9a540530a6ec97500",
+      "internal_sha256": "8d2614e3c34005ee4bd2abde9a6eff124176facbaf743c5a85a69c37b902d4a7"
+    }
+  ],
+  "blind_snapshot": {
+    "author_brief_raw_sha256": "2ac6286b63b3ab2ed8017de9052597bfeb87a771fc221b9823f1fd8322ff1e81",
+    "preregistration_raw_sha256": "cc33da2a49676ba7df89eed10b16291a1d5b6115e63ac02e98be4244c1d095e4",
+    "oracle_schema_raw_sha256": "409de2cae576e9c2e759fa3a6fea811adbb3ecefba0c0bf761c0e59414ce24ea",
+    "oracle_raw_sha256": "ad1ec48672b31ccd7419fa352836ea2f73eba6141e2e54cf5a1dd8041f569023",
+    "fixture_receipt_raw_sha256": "ff62d783deb5d75f1df7261b532e01ad4d7984b4d562e383f3dbe5b4d227cfc3",
+    "fixture_receipt_sha256": "9544c7391106299e56739930308444101e8308480d5783fb18b6502de8a0a15c",
+    "repository_tree_sha256": "a8c68e09120a4b7070610d9927d2be074e5dd0e3ab2b9cea059dde5dd2147046",
+    "dependencies_tree_sha256": "ac336f04eae48a5f41f56eb332cd51aa1b1fb313a5f4bfaefe6fcbb6195c3086"
+  },
+  "historical_terminal": {
+    "path": "testdata/experiments/clientrecipe-blind/golden/04-evaluation.json",
+    "raw_sha256": "147036852636ed4315e110fe746a9aeeb2282affe90557da3b46189df3cd82e1",
+    "internal_sha256": "3181eae0d90ec8d2243983770cff2697b72c1cfccaad13d0bb883c7f2ce571c3",
+    "stage": "authority_preparation",
+    "reason": "duplicate_program_relation_identity"
+  },
+  "collision": {
+    "classification": "distinct_semantic_observations_collapsed_by_source_ref",
+    "expected_groups": 3,
+    "sites": [
+      {
+        "path": "internal/httpapi/server.go",
+        "line": 15
+      },
+      {
+        "path": "internal/httpapi/server.go",
+        "line": 24
+      },
+      {
+        "path": "internal/httpapi/server.go",
+        "line": 25
+      }
+    ],
+    "identity_rule": "legacy_singletons_unchanged_collision_groups_disambiguated_by_complete_structural_tuple"
+  },
+  "evaluator": {
+    "inputs_sha256": "20a12db2052f4f69bd718177802f5da0cfe68895e3a7d17e6d70abe164417ce2",
+    "inputs": [
+      {
+        "path": "internal/experiments/clientrecipe/authority_test.go",
+        "sha256": "46e7287ec732d2a504ab42ff3c5d2e5bf9de150a1321621a6d7f17db3fd8628d"
+      },
+      {
+        "path": "internal/experiments/clientrecipe/blind_fixture_test.go",
+        "sha256": "92c3cbe79fb732fd37518a1fa8c9de810aee9d5b8f8117d2ca74aaf94f4429a3"
+      },
+      {
+        "path": "internal/experiments/clientrecipe/contract_test.go",
+        "sha256": "7bd1cd230cc5c0211ff4bd942f53af153ce35561b55da91eceb4ded34adf5b50"
+      },
+      {
+        "path": "internal/experiments/clientrecipe/leave_one_out_test.go",
+        "sha256": "9ff6ae0d1005e56e659823a971cf77d41ba97ba236fa4cc7b5f2afa1893526d6"
+      },
+      {
+        "path": "internal/experiments/clientrecipe/mutants_test.go",
+        "sha256": "17223d860fdcdc68ba490650e3b0135ef8c51c01146a5302b629d6d8480ebf1c"
+      },
+      {
+        "path": "testdata/experiments/clientrecipe-blind/author_brief.md",
+        "sha256": "2ac6286b63b3ab2ed8017de9052597bfeb87a771fc221b9823f1fd8322ff1e81"
+      },
+      {
+        "path": "testdata/experiments/clientrecipe-blind/fixture_receipt.json",
+        "sha256": "ff62d783deb5d75f1df7261b532e01ad4d7984b4d562e383f3dbe5b4d227cfc3"
+      },
+      {
+        "path": "testdata/experiments/clientrecipe-blind/oracle.json",
+        "sha256": "ad1ec48672b31ccd7419fa352836ea2f73eba6141e2e54cf5a1dd8041f569023"
+      },
+      {
+        "path": "testdata/experiments/clientrecipe-blind/oracle.schema.json",
+        "sha256": "409de2cae576e9c2e759fa3a6fea811adbb3ecefba0c0bf761c0e59414ce24ea"
+      },
+      {
+        "path": "testdata/experiments/clientrecipe-blind/preregistration.json",
+        "sha256": "cc33da2a49676ba7df89eed10b16291a1d5b6115e63ac02e98be4244c1d095e4"
+      }
+    ],
+    "thresholds": {
+      "truth_instances": 5,
+      "instance_precision": "TP == predicted",
+      "instance_recall": "TP * 4 \u003e= truth * 3",
+      "critical_false_positives": 0,
+      "role_precision": "TP == predicted",
+      "role_recall": "TP * 5 \u003e= truth * 4",
+      "task_behaviour_coverage": "matched * 5 \u003e= truth * 4",
+      "matched_completeness_and_missing_sets": "exact",
+      "evidence_grounding_precision": "grounded == emitted",
+      "oracle_anchor_recall": "matched * 5 \u003e= truth * 4",
+      "decoy_admission": 0,
+      "exclusion_reason_precision": "correct == predicted",
+      "exclusion_recall": "matched * 4 \u003e= truth * 3",
+      "callback_accounting": "exact_when_present_else_0_0_0",
+      "candidate_and_evaluation": "deterministic",
+      "ledger_and_source_accounting": "exact"
+    },
+    "overall_rule": "PASS_IFF_EVERY_THRESHOLD_PASSES"
+  },
+  "sha256": "0d18ec533228bf8d26a84f2c7dcd2fddf2cbe00c414b07ad4aefade42ba29fbe"
+}

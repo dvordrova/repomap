@@ -274,6 +274,23 @@ func buildProgramIndex(
 	loaded []*packages.Package,
 	sources []SourceFact,
 ) (programindex.Index, error) {
+	return buildProgramIndexWithSealObserver(
+		repoRoot, modulePath, repositorySHA256, loaded, sources, nil,
+	)
+}
+
+// programIndexSealObserver exists so adapter tests can inspect the complete,
+// evaluator-blind observation ledger immediately before and after collision-only
+// disambiguation. It is deliberately request-local rather than a package-level
+// hook, so concurrent authority builds cannot observe or mutate one another.
+type programIndexSealObserver func(before, after []programindex.RelationInput) error
+
+func buildProgramIndexWithSealObserver(
+	repoRoot, modulePath, repositorySHA256 string,
+	loaded []*packages.Package,
+	sources []SourceFact,
+	observer programIndexSealObserver,
+) (programindex.Index, error) {
 	fileRefs := make(map[string]string)
 	targetSources := make([]programindex.TargetSource, 0)
 	for _, source := range sources {
@@ -406,10 +423,14 @@ func buildProgramIndex(
 						if external {
 							kind = programindex.RelationInvokesExternal
 						}
-						relations = append(relations, exactRelation(fromRef, toRef, kind, location, expression, "call"))
+						relations = append(relations, exactRelation(
+							fromRef, toRef, kind, location, expression, "call",
+						))
 					case *types.Var:
 						if _, ok := object.Type().Underlying().(*types.Signature); ok {
-							relations = append(relations, unresolvedRelation(fromRef, location, expression))
+							relations = append(relations, unresolvedRelation(
+								fromRef, location, expression,
+							))
 						}
 					}
 					for _, argument := range call.Args {
@@ -437,8 +458,18 @@ func buildProgramIndex(
 	if anchorRef == "" {
 		return programindex.Index{}, fmt.Errorf("client recipe authority: main source is absent")
 	}
+	var legacyRelations []programindex.RelationInput
+	if observer != nil {
+		legacyRelations = cloneRelationInputs(relations)
+	}
+	relations = disambiguateRelationObservations(relations)
+	if observer != nil {
+		if err := observer(legacyRelations, cloneRelationInputs(relations)); err != nil {
+			return programindex.Index{}, err
+		}
+	}
 	scenario := sha256.Sum256([]byte("clientrecipe-authority-v1\x00" + repositorySHA256))
-	return programindex.New(programindex.Input{
+	input := programindex.Input{
 		ScenarioSHA256: hex.EncodeToString(scenario[:]), SourceSHA256: repositorySHA256,
 		Target: programindex.TargetInput{
 			Language: "go", Kind: "executable", Name: path.Base(main.packagePath), Selector: "go:" + path.Dir(mainPath),
@@ -451,7 +482,8 @@ func buildProgramIndex(
 		Coverage: programindex.CoverageInput{
 			Measured: true, ObjectsObserved: len(objects), RelationsObserved: len(relations),
 		},
-	})
+	}
+	return programindex.New(input)
 }
 
 func relationObjectRef(
@@ -496,27 +528,120 @@ func exactRelation(
 	location programindex.Location,
 	expression, witnessKind string,
 ) programindex.RelationInput {
-	return programindex.RelationInput{
-		SourceRef: fmt.Sprintf("relation:%s:%d:%d:%s", location.Path, location.Line, location.Column, kind),
-		Kind:      kind, FromRef: fromRef, ToRefs: []string{toRef}, Resolution: programindex.ResolutionExact,
+	relation := programindex.RelationInput{
+		Kind: kind, FromRef: fromRef, ToRefs: []string{toRef}, Resolution: programindex.ResolutionExact,
 		Location: &location, TargetsObserved: 1,
 		Witnesses: []programindex.Witness{{
 			Kind: witnessKind, SourceExpression: expression, Location: &location,
 		}},
 		WitnessesObserved: 1,
 	}
+	relation.SourceRef = legacyRelationSourceRef(relation)
+	return relation
 }
 
-func unresolvedRelation(fromRef string, location programindex.Location, expression string) programindex.RelationInput {
-	return programindex.RelationInput{
-		SourceRef: fmt.Sprintf("relation:%s:%d:%d:unresolved_call", location.Path, location.Line, location.Column),
-		Kind:      programindex.RelationCalls, FromRef: fromRef, ToRefs: []string{},
+func unresolvedRelation(
+	fromRef string,
+	location programindex.Location,
+	expression string,
+) programindex.RelationInput {
+	relation := programindex.RelationInput{
+		Kind: programindex.RelationCalls, FromRef: fromRef, ToRefs: []string{},
 		Resolution: programindex.ResolutionUnresolved, Location: &location, TargetsObserved: 1,
 		Witnesses: []programindex.Witness{{
 			Kind: "function_value_call", SourceExpression: expression, Location: &location,
 		}},
 		WitnessesObserved: 1,
 	}
+	relation.SourceRef = legacyRelationSourceRef(relation)
+	return relation
+}
+
+func legacyRelationSourceRef(relation programindex.RelationInput) string {
+	suffix := string(relation.Kind)
+	if relation.Kind == programindex.RelationCalls && relation.Resolution == programindex.ResolutionUnresolved {
+		suffix = "unresolved_call"
+	}
+	return fmt.Sprintf(
+		"relation:%s:%d:%d:%s",
+		relation.Location.Path, relation.Location.Line, relation.Location.Column, suffix,
+	)
+}
+
+// disambiguateRelationObservations changes only a legacy identity shared by
+// structurally distinct observations. Singleton identities remain byte-for-byte
+// stable. An identical duplicate traversal receives the same suffix and is
+// therefore still rejected by ProgramIndex instead of being silently dropped.
+func disambiguateRelationObservations(relations []programindex.RelationInput) []programindex.RelationInput {
+	positions := make(map[string][]int, len(relations))
+	for position, relation := range relations {
+		key := strings.Join([]string{relation.SourceRef, string(relation.Kind), relation.FromRef}, "\x00")
+		positions[key] = append(positions[key], position)
+	}
+	for _, group := range positions {
+		if len(group) < 2 {
+			continue
+		}
+		tuples := make(map[string]struct{}, len(group))
+		for _, position := range group {
+			tuples[relationObservationTuple(relations[position])] = struct{}{}
+		}
+		if len(tuples) < 2 {
+			continue
+		}
+		for _, position := range group {
+			digest := sha256.Sum256([]byte(relationObservationTuple(relations[position])))
+			relations[position].SourceRef += ":" + hex.EncodeToString(digest[:12])
+		}
+	}
+	return relations
+}
+
+func cloneRelationInputs(relations []programindex.RelationInput) []programindex.RelationInput {
+	result := make([]programindex.RelationInput, len(relations))
+	for position, relation := range relations {
+		result[position] = relation
+		result[position].ToRefs = append([]string(nil), relation.ToRefs...)
+		result[position].Witnesses = append([]programindex.Witness(nil), relation.Witnesses...)
+	}
+	return result
+}
+
+// relationObservationTuple binds the complete adapter-observed semantics. The
+// witness expression is necessary because same-target fluent calls may share
+// both call.Pos and target identity while remaining distinct syntax events.
+func relationObservationTuple(relation programindex.RelationInput) string {
+	targets := append([]string(nil), relation.ToRefs...)
+	sort.Strings(targets)
+	witnesses := make([]string, 0, len(relation.Witnesses))
+	for _, witness := range relation.Witnesses {
+		witnessLocation := ""
+		if witness.Location != nil {
+			witnessLocation = fmt.Sprintf(
+				"%s:%d:%d", witness.Location.Path, witness.Location.Line, witness.Location.Column,
+			)
+		}
+		witnesses = append(witnesses, strings.Join([]string{
+			witness.Kind, witness.Detail, witness.SourceExpression, witnessLocation,
+		}, "\x1e"))
+	}
+	sort.Strings(witnesses)
+	location := ""
+	if relation.Location != nil {
+		location = fmt.Sprintf("%s:%d:%d", relation.Location.Path, relation.Location.Line, relation.Location.Column)
+	}
+	tuple := strings.Join([]string{
+		relation.FromRef,
+		string(relation.Kind),
+		string(relation.Resolution),
+		location,
+		strings.Join(targets, "\x1f"),
+		fmt.Sprintf("%d", relation.TargetsObserved),
+		strings.Join(witnesses, "\x1f"),
+		fmt.Sprintf("%d", relation.WitnessesObserved),
+		relation.Invocation,
+	}, "\x00")
+	return tuple
 }
 
 func calledObject(info *types.Info, expression ast.Expr) types.Object {

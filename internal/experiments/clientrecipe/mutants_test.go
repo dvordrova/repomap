@@ -18,6 +18,14 @@ import (
 const (
 	robustnessGoldenVersion = 2
 	h1FreezeReceiptVersion  = 2
+
+	historicalH1FreezeSourceSHA256 = "aaa0429ce8aadd59379cf16f53c0ce50a313b06c74c68e3634a618056ce0089d"
+	historicalRobustnessRawSHA256  = "e58ea688939ff6d9359b1f7c2a0b81b3dbd9257fd49cdeed64329cdf11131a91"
+	historicalAuthorityRawSHA256   = "abe4154e01a194f7bce5000381a2bf1ced0183ee15b747fbe4d09ff858dbe4c2"
+	historicalH0RawSHA256          = "307e95b718797227c75399fe50302d44fb8c6807b2f45e609ab74e8567d3739e"
+	historicalH1RawSHA256          = "70f9f99a4ddffb0cbe1c42cc827bd9723c9556fedf4644a9a540530a6ec97500"
+	historicalEvaluationRawSHA256  = "9707bb02615f50c4aa60b3245ecc7492fcacb2ac2764a310e55a25ba23d7cb3c"
+	historicalOracleRawSHA256      = "5474c64528cded2087fa485045d60072818ca6c63c5e9d13756ddaf287a35b40"
 )
 
 type robustnessGolden struct {
@@ -217,28 +225,19 @@ func TestH1RobustnessMutants(t *testing.T) {
 func buildH1FreezeReceipt(t *testing.T) h1FreezeReceipt {
 	t.Helper()
 	repositoryRoot := filepath.Clean(filepath.Join(experimentRoot(t), "..", "..", ".."))
-	baseline, err := loadH1FreezeBaseline(repositoryRoot)
-	if err != nil {
+	// This receipt records the Cycle 1 extractor that was actually evaluated.
+	// It is a historical snapshot, not a validator for today's source tree.
+	// Current-source compatibility is established independently by rebuilding
+	// the controlled Authority/H0/H1 artifacts and comparing their exact bytes.
+	raw := readExperimentFile(t, filepath.Join(experimentRoot(t), "golden", "05-robustness.json"))
+	if blindBytesSHA256(raw) != historicalRobustnessRawSHA256 {
+		t.Fatal("client recipe H1 freeze: historical robustness bytes changed")
+	}
+	var historical robustnessGolden
+	if err := decodeStrict(raw, &historical, "historical robustness golden"); err != nil {
 		t.Fatal(err)
 	}
-	sources, err := discoverH1FreezeSources(repositoryRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	receipt := h1FreezeReceipt{
-		Version: h1FreezeReceiptVersion, Status: "FROZEN", Scope: "test_only_h1_generalization_gate",
-		AuthorityVersion: AuthorityVersion, H0Version: H0Version, H1Version: H1Version,
-		EvaluationVersion:        EvaluationVersion,
-		BaselineAuthoritySHA256:  baseline.AuthoritySHA256,
-		BaselineH0SHA256:         baseline.H0SHA256,
-		BaselineH1SHA256:         baseline.H1SHA256,
-		BaselineOracleSHA256:     baseline.OracleSHA256,
-		BaselineEvaluationSHA256: baseline.EvaluationSHA256,
-		Sources:                  sources,
-		Rules:                    h1FreezeRules(),
-	}
-	receipt.SourceSHA256 = h1FreezeSourcesDigest(receipt.Sources)
-	receipt.SHA256 = h1FreezeDigest(receipt)
+	receipt := historical.ExtractorFreeze
 	if err := receipt.Validate(repositoryRoot); err != nil {
 		t.Fatal(err)
 	}
@@ -321,6 +320,9 @@ func loadH1FreezeBaseline(repositoryRoot string) (h1FreezeBaseline, error) {
 	if err != nil {
 		return h1FreezeBaseline{}, err
 	}
+	if blindBytesSHA256(authorityRaw) != historicalAuthorityRawSHA256 {
+		return h1FreezeBaseline{}, fmt.Errorf("client recipe H1 freeze: historical Authority raw bytes changed")
+	}
 	authority, err := DecodeAuthority(authorityRaw)
 	if err != nil {
 		return h1FreezeBaseline{}, err
@@ -328,6 +330,9 @@ func loadH1FreezeBaseline(repositoryRoot string) (h1FreezeBaseline, error) {
 	h0Raw, err := read("golden/02-h0-candidates.json")
 	if err != nil {
 		return h1FreezeBaseline{}, err
+	}
+	if blindBytesSHA256(h0Raw) != historicalH0RawSHA256 {
+		return h1FreezeBaseline{}, fmt.Errorf("client recipe H1 freeze: historical H0 raw bytes changed")
 	}
 	h0, err := DecodeH0(h0Raw)
 	if err != nil {
@@ -337,6 +342,9 @@ func loadH1FreezeBaseline(repositoryRoot string) (h1FreezeBaseline, error) {
 	if err != nil {
 		return h1FreezeBaseline{}, err
 	}
+	if blindBytesSHA256(h1Raw) != historicalH1RawSHA256 {
+		return h1FreezeBaseline{}, fmt.Errorf("client recipe H1 freeze: historical H1 raw bytes changed")
+	}
 	h1, err := DecodeH1(h1Raw)
 	if err != nil {
 		return h1FreezeBaseline{}, err
@@ -345,6 +353,9 @@ func loadH1FreezeBaseline(repositoryRoot string) (h1FreezeBaseline, error) {
 	if err != nil {
 		return h1FreezeBaseline{}, err
 	}
+	if blindBytesSHA256(oracleRaw) != historicalOracleRawSHA256 {
+		return h1FreezeBaseline{}, fmt.Errorf("client recipe H1 freeze: historical oracle raw bytes changed")
+	}
 	oracle, err := DecodeOracle(oracleRaw)
 	if err != nil {
 		return h1FreezeBaseline{}, err
@@ -352,6 +363,9 @@ func loadH1FreezeBaseline(repositoryRoot string) (h1FreezeBaseline, error) {
 	evaluationRaw, err := read("golden/04-evaluation.json")
 	if err != nil {
 		return h1FreezeBaseline{}, err
+	}
+	if blindBytesSHA256(evaluationRaw) != historicalEvaluationRawSHA256 {
+		return h1FreezeBaseline{}, fmt.Errorf("client recipe H1 freeze: historical evaluation raw bytes changed")
 	}
 	evaluation, err := DecodeEvaluation(evaluationRaw)
 	if err != nil {
@@ -498,6 +512,9 @@ func (value h1FreezeReceipt) Validate(repositoryRoot string) error {
 	if !reflect.DeepEqual(value.Rules, h1FreezeRules()) {
 		return fmt.Errorf("client recipe H1 freeze: rule surface mismatch")
 	}
+	if value.SourceSHA256 != historicalH1FreezeSourceSHA256 || value.SHA256 != frozenReceiptSHA256 {
+		return fmt.Errorf("client recipe H1 freeze: historical receipt identity mismatch")
+	}
 	baseline, err := loadH1FreezeBaseline(repositoryRoot)
 	if err != nil {
 		return err
@@ -506,13 +523,6 @@ func (value h1FreezeReceipt) Validate(repositoryRoot string) error {
 		value.BaselineH1SHA256 != baseline.H1SHA256 || value.BaselineOracleSHA256 != baseline.OracleSHA256 ||
 		value.BaselineEvaluationSHA256 != baseline.EvaluationSHA256 {
 		return fmt.Errorf("client recipe H1 freeze: stored baseline identity does not match canonical artifacts")
-	}
-	wantSources, err := discoverH1FreezeSources(repositoryRoot)
-	if err != nil {
-		return err
-	}
-	if !reflect.DeepEqual(value.Sources, wantSources) {
-		return fmt.Errorf("client recipe H1 freeze: source surface or digest mismatch")
 	}
 	if value.SourceSHA256 != h1FreezeSourcesDigest(value.Sources) || value.SHA256 != h1FreezeDigest(value) {
 		return fmt.Errorf("client recipe H1 freeze: digest mismatch")

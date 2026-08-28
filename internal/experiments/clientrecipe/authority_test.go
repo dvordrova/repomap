@@ -3,12 +3,15 @@ package clientrecipe
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/dvordrova/repomap/internal/programindex"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -83,6 +86,211 @@ func TestPrepareAuthorityDeterministicAndSingleLoad(t *testing.T) {
 		}
 	}
 	assertExperimentGolden(t, "01-input-authority.json", firstRaw)
+}
+
+func TestBlindAuthorityRelationObservationLedger(t *testing.T) {
+	repoRoot := filepath.Clean(filepath.Join(experimentRoot(t), "..", "clientrecipe-blind", "repo"))
+	sources, repositorySHA256, err := prepareSourceFacts(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := (defaultProductionPackageLoader{}).Load(t.Context(), repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	packagesByPath, modulePath, err := productionPackages(loaded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before, after []programindex.RelationInput
+	index, sealErr := buildProgramIndexWithSealObserver(
+		repoRoot, modulePath, repositorySHA256, packagesByPath, sources,
+		func(legacy, disambiguated []programindex.RelationInput) error {
+			before = cloneRelationInputs(legacy)
+			after = cloneRelationInputs(disambiguated)
+			return nil
+		},
+	)
+	if sealErr != nil {
+		t.Fatalf("blind ProgramIndex did not seal: %v", sealErr)
+	}
+	collisions := relationObservationCollisions(before)
+	if len(collisions) != 3 {
+		t.Fatalf("legacy relation collisions = %d, want the three diagnosed nested-call collisions: %#v", len(collisions), collisions)
+	}
+	wantCollisionLines := map[int]bool{15: false, 24: false, 25: false}
+	for _, collision := range collisions {
+		if collision.Classification != "distinct_semantic_observations_collapsed_by_source_ref" ||
+			len(collision.StructuralTuples) != 2 || collision.StructuralTuples[0] == collision.StructuralTuples[1] {
+			t.Errorf("legacy collision was not two distinct semantic observations: %#v", collision)
+		}
+		for line := range wantCollisionLines {
+			legacySourceRef := fmt.Sprintf("relation:internal/httpapi/server.go:%d:", line)
+			if strings.HasPrefix(collision.LegacyKey, legacySourceRef) {
+				wantCollisionLines[line] = true
+			}
+		}
+	}
+	for line, found := range wantCollisionLines {
+		if !found {
+			t.Errorf("legacy collision ledger missed internal/httpapi/server.go:%d", line)
+		}
+	}
+	if collisionsAfter := relationObservationCollisions(after); len(collisionsAfter) != 0 {
+		t.Fatalf("relation collisions survived disambiguation: %#v", collisionsAfter)
+	}
+	if len(index.Relations) != len(before) || len(after) != len(before) {
+		t.Fatalf("relation counts before=%d after=%d sealed=%d; an observation was dropped", len(before), len(after), len(index.Relations))
+	}
+	newRefs := make(map[string]struct{}, len(after))
+	for _, relation := range after {
+		if _, duplicate := newRefs[relation.SourceRef]; duplicate {
+			t.Errorf("complete structural observation ref is not unique: %s", relation.SourceRef)
+		}
+		newRefs[relation.SourceRef] = struct{}{}
+	}
+
+	// These are the three nested/fluent expressions that exposed the old
+	// file:line:column:kind collision. Each callsite is one AST position but
+	// contains two distinct exact external call observations.
+	for _, line := range []int{15, 24, 25} {
+		refs := make(map[string]struct{})
+		targets := make(map[string]struct{})
+		for _, relation := range after {
+			if relation.Location == nil || relation.Location.Path != "internal/httpapi/server.go" ||
+				relation.Location.Line != line || relation.Kind != programindex.RelationInvokesExternal {
+				continue
+			}
+			refs[relation.SourceRef] = struct{}{}
+			for _, target := range relation.ToRefs {
+				targets[target] = struct{}{}
+			}
+		}
+		if len(refs) != 2 || len(targets) != 2 {
+			t.Errorf("nested callsite line %d retained refs=%d targets=%d, want two distinct semantic observations", line, len(refs), len(targets))
+		}
+	}
+
+	authority, err := PrepareAuthority(repoRoot)
+	if err != nil {
+		t.Fatalf("blind PrepareAuthority did not seal: %v", err)
+	}
+	if err := authority.Validate(); err != nil {
+		t.Fatalf("blind authority is not valid after sealing: %v", err)
+	}
+}
+
+func TestRelationCollisionDisambiguationBindsCompleteStructuralTuple(t *testing.T) {
+	location := programindex.Location{Path: "internal/client.go", Line: 12, Column: 3}
+	base := programindex.RelationInput{
+		Kind: programindex.RelationCalls, FromRef: "local:example/client:internal/client.go:10:Run",
+		ToRefs:     []string{"local:example/client:internal/client.go:20:send"},
+		Resolution: programindex.ResolutionExact, Location: &location, TargetsObserved: 1,
+		Witnesses: []programindex.Witness{{Kind: "call", SourceExpression: "client.send()", Location: &location}}, WitnessesObserved: 1,
+	}
+	base.SourceRef = legacyRelationSourceRef(base)
+	baseTuple := relationObservationTuple(base)
+	mutations := map[string]func(programindex.RelationInput) programindex.RelationInput{
+		"producer": func(value programindex.RelationInput) programindex.RelationInput {
+			value.FromRef += ":other"
+			return value
+		},
+		"kind": func(value programindex.RelationInput) programindex.RelationInput {
+			value.Kind = programindex.RelationInvokesExternal
+			return value
+		},
+		"resolution": func(value programindex.RelationInput) programindex.RelationInput {
+			value.Resolution = programindex.ResolutionAlternatives
+			return value
+		},
+		"callsite": func(value programindex.RelationInput) programindex.RelationInput {
+			changed := *value.Location
+			changed.Column++
+			value.Location = &changed
+			return value
+		},
+		"target refs": func(value programindex.RelationInput) programindex.RelationInput {
+			value.ToRefs = []string{"local:example/client:internal/client.go:21:other"}
+			return value
+		},
+		"target count": func(value programindex.RelationInput) programindex.RelationInput {
+			value.TargetsObserved = 2
+			return value
+		},
+		"witness kind": func(value programindex.RelationInput) programindex.RelationInput {
+			value.Witnesses = []programindex.Witness{{Kind: "callback_argument", SourceExpression: "client.send()", Location: &location}}
+			return value
+		},
+		"witness expression": func(value programindex.RelationInput) programindex.RelationInput {
+			value.Witnesses = []programindex.Witness{{Kind: "call", SourceExpression: "client.sendConfigured()", Location: &location}}
+			return value
+		},
+		"witness count": func(value programindex.RelationInput) programindex.RelationInput {
+			value.WitnessesObserved = 2
+			return value
+		},
+	}
+	for name, mutate := range mutations {
+		t.Run(name, func(t *testing.T) {
+			if changed := relationObservationTuple(mutate(base)); changed == baseTuple {
+				t.Fatalf("%s is absent from relation observation identity", name)
+			}
+		})
+	}
+	if singleton := disambiguateRelationObservations([]programindex.RelationInput{base}); singleton[0].SourceRef != base.SourceRef {
+		t.Fatal("singleton legacy relation identity changed")
+	}
+	duplicates := disambiguateRelationObservations([]programindex.RelationInput{base, base})
+	if duplicates[0].SourceRef != base.SourceRef || duplicates[1].SourceRef != base.SourceRef {
+		t.Fatal("identical duplicate traversal was hidden by disambiguation")
+	}
+	different := mutations["target refs"](base)
+	distinct := disambiguateRelationObservations([]programindex.RelationInput{base, different})
+	if distinct[0].SourceRef == base.SourceRef || distinct[1].SourceRef == base.SourceRef ||
+		distinct[0].SourceRef == distinct[1].SourceRef {
+		t.Fatal("distinct observations sharing a legacy identity were not separated")
+	}
+}
+
+type relationObservationCollision struct {
+	LegacyKey        string
+	Classification   string
+	StructuralTuples []string
+}
+
+func relationObservationCollisions(relations []programindex.RelationInput) []relationObservationCollision {
+	byLegacyIdentity := make(map[string][]string)
+	for _, relation := range relations {
+		key := strings.Join([]string{relation.SourceRef, string(relation.Kind), relation.FromRef}, "\x00")
+		byLegacyIdentity[key] = append(byLegacyIdentity[key], relationObservationStructuralTuple(relation))
+	}
+	keys := make([]string, 0, len(byLegacyIdentity))
+	for key, tuples := range byLegacyIdentity {
+		if len(tuples) > 1 {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	result := make([]relationObservationCollision, 0, len(keys))
+	for _, key := range keys {
+		tuples := append([]string(nil), byLegacyIdentity[key]...)
+		sort.Strings(tuples)
+		classification := "duplicate_traversal_observation"
+		for _, tuple := range tuples[1:] {
+			if tuple != tuples[0] {
+				classification = "distinct_semantic_observations_collapsed_by_source_ref"
+				break
+			}
+		}
+		result = append(result, relationObservationCollision{
+			LegacyKey: key, Classification: classification, StructuralTuples: tuples,
+		})
+	}
+	return result
+}
+
+func relationObservationStructuralTuple(relation programindex.RelationInput) string {
+	return relationObservationTuple(relation)
 }
 
 func TestAuthorityCallbackFrontier(t *testing.T) {
