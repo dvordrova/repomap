@@ -1,0 +1,602 @@
+{
+  "version": 1,
+  "input_sha256": "b253a5815c0f54a46a13e5be119bf5c2bc0a715d0f9bb3646df788ab846c0669",
+  "d0": {
+    "variant": "D0",
+    "method": "deterministic closed-ref grouping; no model call",
+    "slots": [
+      {
+        "slot_ref": "s01",
+        "title": "Connection lifecycle",
+        "operation_count": 7,
+        "caller_count": 3,
+        "operation_refs": [
+          "o003",
+          "o004",
+          "o005",
+          "o031",
+          "o032",
+          "o033",
+          "o048"
+        ],
+        "caller_refs": [
+          "c01",
+          "c06",
+          "c16"
+        ],
+        "core_refs": [
+          "k01"
+        ],
+        "callees": [
+          "go.etcd.io/bbolt.*DB.Close",
+          "go.etcd.io/bbolt.Open"
+        ],
+        "files": [
+          "server/storage/backend/backend.go"
+        ]
+      },
+      {
+        "slot_ref": "s02",
+        "title": "Transaction control",
+        "operation_count": 13,
+        "caller_count": 9,
+        "operation_refs": [
+          "o007",
+          "o016",
+          "o020",
+          "o024",
+          "o037",
+          "o039",
+          "o040",
+          "o055",
+          "o058",
+          "o061",
+          "o062",
+          "o063",
+          "o064"
+        ],
+        "caller_refs": [
+          "c03",
+          "c07",
+          "c08",
+          "c09",
+          "c10",
+          "c11",
+          "c14",
+          "c19",
+          "c22"
+        ],
+        "core_refs": [
+          "k01"
+        ],
+        "callees": [
+          "go.etcd.io/bbolt.*DB.Begin",
+          "go.etcd.io/bbolt.*DB.View",
+          "go.etcd.io/bbolt.*Tx.Commit",
+          "go.etcd.io/bbolt.*Tx.Rollback"
+        ],
+        "files": [
+          "server/storage/backend/backend.go",
+          "server/storage/backend/batch_tx.go"
+        ]
+      },
+      {
+        "slot_ref": "s03",
+        "title": "Bucket structure",
+        "operation_count": 12,
+        "caller_count": 11,
+        "operation_refs": [
+          "o001",
+          "o006",
+          "o013",
+          "o018",
+          "o019",
+          "o025",
+          "o027",
+          "o035",
+          "o045",
+          "o049",
+          "o053",
+          "o054"
+        ],
+        "caller_refs": [
+          "c02",
+          "c04",
+          "c05",
+          "c07",
+          "c12",
+          "c13",
+          "c17",
+          "c18",
+          "c20",
+          "c22",
+          "c23"
+        ],
+        "core_refs": [
+          "k01",
+          "k02"
+        ],
+        "callees": [
+          "go.etcd.io/bbolt.*Tx.Bucket",
+          "go.etcd.io/bbolt.*Tx.CreateBucketIfNotExists",
+          "go.etcd.io/bbolt.*Tx.DeleteBucket"
+        ],
+        "files": [
+          "server/storage/backend/backend.go",
+          "server/storage/backend/batch_tx.go",
+          "server/storage/backend/read_tx.go",
+          "server/storage/schema/version.go"
+        ]
+      },
+      {
+        "slot_ref": "s04",
+        "title": "Key/value mutation",
+        "operation_count": 3,
+        "caller_count": 3,
+        "operation_refs": [
+          "o047",
+          "o050",
+          "o059"
+        ],
+        "caller_refs": [
+          "c05",
+          "c07",
+          "c12"
+        ],
+        "core_refs": [
+          "k01"
+        ],
+        "callees": [
+          "go.etcd.io/bbolt.*Bucket.Delete",
+          "go.etcd.io/bbolt.*Bucket.Put"
+        ],
+        "files": [
+          "server/storage/backend/backend.go",
+          "server/storage/backend/batch_tx.go"
+        ]
+      },
+      {
+        "slot_ref": "s05",
+        "title": "Scan and read",
+        "operation_count": 14,
+        "caller_count": 7,
+        "operation_refs": [
+          "o002",
+          "o010",
+          "o012",
+          "o014",
+          "o017",
+          "o026",
+          "o036",
+          "o042",
+          "o043",
+          "o044",
+          "o046",
+          "o051",
+          "o056",
+          "o057"
+        ],
+        "caller_refs": [
+          "c02",
+          "c04",
+          "c13",
+          "c18",
+          "c21",
+          "c22",
+          "c23"
+        ],
+        "core_refs": [
+          "k01",
+          "k02"
+        ],
+        "callees": [
+          "go.etcd.io/bbolt.*Bucket.Cursor",
+          "go.etcd.io/bbolt.*Bucket.ForEach",
+          "go.etcd.io/bbolt.*Bucket.Get",
+          "go.etcd.io/bbolt.*Cursor.First",
+          "go.etcd.io/bbolt.*Cursor.Next",
+          "go.etcd.io/bbolt.*Cursor.Seek",
+          "go.etcd.io/bbolt.*Tx.Cursor"
+        ],
+        "files": [
+          "server/storage/backend/backend.go",
+          "server/storage/backend/batch_tx.go",
+          "server/storage/backend/read_tx.go",
+          "server/storage/schema/version.go"
+        ]
+      },
+      {
+        "slot_ref": "s06",
+        "title": "Maintenance and diagnostics",
+        "operation_count": 15,
+        "caller_count": 4,
+        "operation_refs": [
+          "o008",
+          "o009",
+          "o011",
+          "o015",
+          "o021",
+          "o022",
+          "o023",
+          "o028",
+          "o029",
+          "o030",
+          "o034",
+          "o038",
+          "o041",
+          "o052",
+          "o060"
+        ],
+        "caller_refs": [
+          "c06",
+          "c08",
+          "c10",
+          "c15"
+        ],
+        "core_refs": [
+          "k01"
+        ],
+        "callees": [
+          "go.etcd.io/bbolt.*DB.Info",
+          "go.etcd.io/bbolt.*DB.Path",
+          "go.etcd.io/bbolt.*DB.Stats",
+          "go.etcd.io/bbolt.*Tx.DB",
+          "go.etcd.io/bbolt.*Tx.Size",
+          "go.etcd.io/bbolt.*Tx.Stats"
+        ],
+        "files": [
+          "server/storage/backend/backend.go",
+          "server/storage/backend/batch_tx.go"
+        ]
+      },
+      {
+        "slot_ref": "s07",
+        "title": "Other observed operations",
+        "operation_count": 0,
+        "caller_count": 0,
+        "operation_refs": null,
+        "caller_refs": null,
+        "core_refs": null,
+        "callees": null,
+        "files": null
+      }
+    ],
+    "reachability": "not represented in available facts"
+  },
+  "p1": {
+    "variant": "P1",
+    "headline": "bbolt integration cockpit: connection, transactions, buckets, mutations, scans, diagnostics",
+    "summary": "This cockpit catalogs bbolt usage across etcd server storage. It covers connection lifecycle, transaction control, bucket structure, key/value mutation, scan/read, and maintenance/diagnostics. Operations are exact external calls to bbolt symbols, validated by program index and activity outcome. Callers span backend and schema areas. Reachability is not represented in available facts.",
+    "slot_notes": [
+      {
+        "slot_ref": "s01",
+        "note": "Covers opening and closing bbolt databases via Open and DB.Close, with callers newBackend, defrag, and Close.",
+        "operation_refs": [
+          "o031",
+          "o003",
+          "o048"
+        ],
+        "caller_refs": [
+          "c01",
+          "c06",
+          "c16"
+        ]
+      },
+      {
+        "slot_ref": "s02",
+        "note": "Covers begin, view, commit, and rollback of bbolt transactions across backend and batch_tx files.",
+        "operation_refs": [
+          "o007",
+          "o016",
+          "o037",
+          "o024"
+        ],
+        "caller_refs": [
+          "c11",
+          "c08",
+          "c10",
+          "c03"
+        ]
+      },
+      {
+        "slot_ref": "s03",
+        "note": "Covers bucket access, creation, and deletion via Tx.Bucket, CreateBucketIfNotExists, and DeleteBucket.",
+        "operation_refs": [
+          "o001",
+          "o006",
+          "o049"
+        ],
+        "caller_refs": [
+          "c05",
+          "c17",
+          "c20"
+        ]
+      },
+      {
+        "slot_ref": "s04",
+        "note": "Covers key/value put and delete via Bucket.Put and Bucket.Delete.",
+        "operation_refs": [
+          "o047",
+          "o050",
+          "o059"
+        ],
+        "caller_refs": [
+          "c12",
+          "c07",
+          "c05"
+        ]
+      },
+      {
+        "slot_ref": "s05",
+        "note": "Covers scanning and reading via cursors, ForEach, and Get, including seek and iteration.",
+        "operation_refs": [
+          "o010",
+          "o026",
+          "o057",
+          "o002"
+        ],
+        "caller_refs": [
+          "c04",
+          "c02",
+          "c21",
+          "c23"
+        ]
+      },
+      {
+        "slot_ref": "s06",
+        "note": "Covers maintenance and diagnostics via DB.Info, DB.Path, DB.Stats, Tx.DB, Tx.Size, and Tx.Stats.",
+        "operation_refs": [
+          "o011",
+          "o015",
+          "o028",
+          "o021"
+        ],
+        "caller_refs": [
+          "c06",
+          "c15",
+          "c08",
+          "c10"
+        ]
+      },
+      {
+        "slot_ref": "s07",
+        "note": "not represented in available facts",
+        "operation_refs": null,
+        "caller_refs": null
+      }
+    ],
+    "reachability": "not represented in available facts"
+  },
+  "p2": {
+    "variant": "P2",
+    "overview": "The catalog covers bbolt usage across etcd storage backend and schema, with 64 operations across 23 callers. Slots span connection lifecycle, transaction control, bucket structure, key/value mutation, scan/read, and maintenance diagnostics. Most activity concentrates in backend.go and batch_tx.go, with schema versioning as a secondary area. Inspection priority is highest for slots with broad caller and operation overlap.",
+    "slot_notes": [
+      {
+        "slot_ref": "s01",
+        "priority_score": 3,
+        "change_note": "Connection lifecycle includes open and close operations across newBackend, defrag, and Close, with multiple close calls in defrag paths.",
+        "operation_refs": [
+          "o003",
+          "o004",
+          "o005",
+          "o031",
+          "o032",
+          "o033",
+          "o048"
+        ],
+        "caller_refs": [
+          "c01",
+          "c06",
+          "c16"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "slot_ref": "s02",
+        "priority_score": 5,
+        "change_note": "Transaction control spans begin, commit, rollback, and view across many callers, including defrag and snapshot paths, with multiple rollback and commit operations.",
+        "operation_refs": [
+          "o007",
+          "o016",
+          "o020",
+          "o024",
+          "o037",
+          "o039",
+          "o040",
+          "o055",
+          "o058",
+          "o061",
+          "o062",
+          "o063",
+          "o064"
+        ],
+        "caller_refs": [
+          "c03",
+          "c07",
+          "c08",
+          "c09",
+          "c10",
+          "c11",
+          "c14",
+          "c19",
+          "c22"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "slot_ref": "s03",
+        "priority_score": 5,
+        "change_note": "Bucket structure operations are numerous and touch both storage backend and schema, with bucket access, creation, and deletion across many callers.",
+        "operation_refs": [
+          "o001",
+          "o006",
+          "o013",
+          "o018",
+          "o019",
+          "o025",
+          "o027",
+          "o035",
+          "o045",
+          "o049",
+          "o053",
+          "o054"
+        ],
+        "caller_refs": [
+          "c02",
+          "c04",
+          "c05",
+          "c07",
+          "c12",
+          "c13",
+          "c17",
+          "c18",
+          "c20",
+          "c22",
+          "c23"
+        ],
+        "core_refs": [
+          "k01",
+          "k02"
+        ]
+      },
+      {
+        "slot_ref": "s04",
+        "priority_score": 3,
+        "change_note": "Key/value mutation includes put and delete operations in batch_tx and backend, with three callers and three operations.",
+        "operation_refs": [
+          "o047",
+          "o050",
+          "o059"
+        ],
+        "caller_refs": [
+          "c05",
+          "c07",
+          "c12"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "slot_ref": "s05",
+        "priority_score": 5,
+        "change_note": "Scan and read operations are the most numerous, covering cursor, bucket iteration, and get across backend, batch_tx, read_tx, and schema, with many callers.",
+        "operation_refs": [
+          "o002",
+          "o010",
+          "o012",
+          "o014",
+          "o017",
+          "o026",
+          "o036",
+          "o042",
+          "o043",
+          "o044",
+          "o046",
+          "o051",
+          "o056",
+          "o057"
+        ],
+        "caller_refs": [
+          "c02",
+          "c04",
+          "c13",
+          "c18",
+          "c21",
+          "c22",
+          "c23"
+        ],
+        "core_refs": [
+          "k01",
+          "k02"
+        ]
+      },
+      {
+        "slot_ref": "s06",
+        "priority_score": 4,
+        "change_note": "Maintenance and diagnostics include stats, info, path, and size operations, mostly in defrag and snapshot paths, with four callers.",
+        "operation_refs": [
+          "o008",
+          "o009",
+          "o011",
+          "o015",
+          "o021",
+          "o022",
+          "o023",
+          "o028",
+          "o029",
+          "o030",
+          "o034",
+          "o038",
+          "o041",
+          "o052",
+          "o060"
+        ],
+        "caller_refs": [
+          "c06",
+          "c08",
+          "c10",
+          "c15"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "slot_ref": "s07",
+        "priority_score": 0,
+        "change_note": "not represented in available facts",
+        "operation_refs": null,
+        "caller_refs": null,
+        "core_refs": null
+      }
+    ],
+    "reachability": "not represented in available facts"
+  },
+  "calls": [
+    {
+      "variant": "P1",
+      "prompt_sha256": "8f8513718bb7776999b2cf5924c4f4b66ba892031b6d6cc4e35690c6ee34b585",
+      "request_sha256": "10afba026f1dc3eafb145750d0cc306945dced08dadbbad44b41037085bd3992",
+      "response_sha256": "7c9a3a296d5ce48028b104a19cca362572b2f31ca31506b9d7ec1e522e693e8d",
+      "request_bytes": 55684,
+      "response_bytes": 2249,
+      "cached": true,
+      "finish_reason": "stop",
+      "metrics": {
+        "input_tokens": 15940,
+        "output_tokens": 663,
+        "prompt_cache_hit_tokens": 15872,
+        "prompt_cache_miss_tokens": 68,
+        "provider_response_bytes": 2955,
+        "usage_reported": true,
+        "latency": 4870980768,
+        "attempts": 1
+      }
+    },
+    {
+      "variant": "P2",
+      "prompt_sha256": "ea44aebd674004dd107fe063c090f9a9baff1761f0e237ff361987e7b2f67018",
+      "request_sha256": "090e5149a744523deb7578f5020ac0fd84f7069cf2653e7581d9ec76d52ae0e5",
+      "response_sha256": "5d20b46933ba2b323c67367ef8563ec669a91df98976b45c916062cc82fdc1f1",
+      "request_bytes": 56012,
+      "response_bytes": 3373,
+      "cached": false,
+      "finish_reason": "stop",
+      "metrics": {
+        "input_tokens": 16017,
+        "output_tokens": 1065,
+        "prompt_cache_hit_tokens": 16000,
+        "prompt_cache_miss_tokens": 17,
+        "provider_response_bytes": 4251,
+        "usage_reported": true,
+        "latency": 6947209299,
+        "attempts": 1
+      }
+    }
+  ]
+}

@@ -1,0 +1,1591 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src 'unsafe-inline' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Repository Workbench</title>
+<style>:root{color-scheme:light dark;background:light-dark(rgb(255 255 255), rgb(24 24 24))}html,body{margin:0}body{box-sizing:border-box;padding:1rem;background:inherit}iframe{display:block;width:100%;height:calc(100vh - 2rem);margin:0 auto;border:0}</style>
+</head>
+<body>
+<iframe sandbox="allow-scripts" referrerpolicy="no-referrer" title="Repository Workbench" srcdoc="&lt;!doctype html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;utf-8&quot;&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
+&lt;meta name=&quot;referrer&quot; content=&quot;no-referrer&quot;&gt;
+&lt;meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;default-src &#x27;none&#x27;; script-src &#x27;unsafe-inline&#x27; &#x27;unsafe-eval&#x27; &#x27;wasm-unsafe-eval&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src &#x27;unsafe-inline&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src &#x27;none&#x27;; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;&gt;
+&lt;title&gt;Repository Workbench&lt;/title&gt;
+&lt;style&gt;:root {
+  color-scheme: light dark;
+  background-color: var(
+    --background,
+    var(--color-background-primary, light-dark(rgb(255 255 255), rgb(24 24 24)))
+  ) !important;
+
+  /* Agent-facing contract; keep in sync with SKILL.md. */
+  --background: var(
+    --color-background-primary,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --card: color-mix(in oklab, var(--foreground) 5%, var(--background));
+  --card-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --popover: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255), rgb(45 45 45))
+  );
+  --popover-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --primary: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --primary-foreground: var(
+    --color-text-inverse,
+    light-dark(rgb(255 255 255), rgb(13 13 13))
+  );
+  --secondary: var(
+    --color-background-secondary,
+    light-dark(rgb(255 255 255 / 96%), rgb(54 54 54 / 96%))
+  );
+  --secondary-foreground: var(
+    --color-text-primary,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --muted: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --muted-foreground: var(
+    --color-text-secondary,
+    light-dark(rgb(26 28 31 / 49.4%), rgb(255 255 255 / 49.8%))
+  );
+  --accent: var(
+    --color-background-info,
+    light-dark(rgb(229 242 255), rgb(13 39 63))
+  );
+  --accent-foreground: var(
+    --color-text-info,
+    light-dark(rgb(51 156 255), rgb(131 195 255))
+  );
+  --destructive: var(
+    --color-text-warning,
+    light-dark(rgb(226 85 7), rgb(255 133 73))
+  );
+  --border: var(
+    --color-border-secondary,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+  --input: var(
+    --color-border-primary,
+    light-dark(
+      rgb(26 28 31 / 11.8%),
+      color-mix(in oklab, rgb(0 0 0) 10%, transparent)
+    )
+  );
+  --ring: var(
+    --color-ring-primary,
+    light-dark(rgb(51 156 255), rgb(131 195 255 / 76%))
+  );
+  --font-size-base: var(--font-text-md-size, 14px);
+  --blue: light-dark(rgb(51 156 255), rgb(51 156 255));
+  --orange: light-dark(rgb(226 85 7), rgb(251 106 34));
+  --green: light-dark(rgb(0 162 64), rgb(64 201 119));
+  --red: light-dark(rgb(224 46 42), rgb(255 103 100));
+  --purple: light-dark(rgb(146 79 247), rgb(173 123 249));
+  --yellow: light-dark(rgb(255 195 0), rgb(255 210 64));
+  --viz-series-1: var(--primary);
+  --viz-series-2: light-dark(rgb(243 136 59), rgb(245 154 86));
+  --viz-series-3: light-dark(rgb(93 201 119), rgb(116 213 139));
+  --viz-series-4: light-dark(rgb(235 119 177), rgb(240 143 192));
+  --viz-series-5: light-dark(rgb(155 121 236), rgb(170 145 239));
+  --viz-series-6: light-dark(rgb(58 185 177), rgb(90 203 194));
+
+  /* Internal implementation variables; not part of the agent contract. */
+  --font-sans: -apple-system, system-ui, &quot;Segoe UI&quot;, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, &quot;Liberation Mono&quot;,
+    monospace;
+  --font-size-normal: max(11px, var(--font-size-base));
+  --font-size-tooltip: calc(var(--font-size-base) - 1px);
+  --font-size-small: max(11px, calc(var(--font-size-base) - 2px));
+  --font-size-h1: calc(var(--font-size-normal) * 1.7142857143);
+  --font-size-h2: calc(var(--font-size-normal) * 1.4285714286);
+  --font-size-h3: calc(var(--font-size-normal) * 1.2857142857);
+  --font-weight-normal: 430;
+  --font-weight-medium: 500;
+  --line-height-normal: calc(var(--font-size-normal) * 1.5);
+  --line-height-tooltip: calc(var(--font-size-tooltip) * 1.4285714286);
+  --line-height-small: calc(var(--font-size-small) + 4px);
+  --radius: var(--border-radius-lg, 12.5px);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-2xl: calc(var(--radius) * 1.6);
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --checkmark-image: url(&quot;data:image/svg+xml,%3Csvg xmlns=&#x27;http://www.w3.org/2000/svg&#x27; viewBox=&#x27;0 0 17 17&#x27;%3E%3Cpath d=&#x27;M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z&#x27;/%3E%3C/svg%3E&quot;);
+
+  /* Legacy aliases; not part of the current agent contract. */
+  --viz-bg: transparent;
+  --viz-panel: var(--card);
+  --viz-border: var(--border);
+  --viz-text: var(--foreground);
+  --viz-muted: var(--muted-foreground);
+  --viz-accent: var(--primary);
+  --viz-accent-text: var(--primary-foreground);
+  --viz-accent-bg: var(--accent);
+  --viz-font-size: var(--font-size-base);
+  --viz-warning: var(--destructive);
+}
+
+:root[data-theme=&quot;light&quot;] {
+  color-scheme: light;
+}
+
+:root[data-theme=&quot;dark&quot;] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html &gt; body {
+  /* Preserve MCP aliases for older inline renderers without creating :root cycles. */
+  --color-background-primary: var(
+    --background,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --color-text-primary: var(
+    --foreground,
+    light-dark(rgb(26 28 31), rgb(255 255 255))
+  );
+  --color-border-secondary: var(
+    --border,
+    light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%))
+  );
+
+  margin: 0;
+  padding: 5px;
+  color: var(--foreground);
+  background: transparent !important;
+  font-family: var(--font-sans) !important;
+  font-size: var(--font-size-normal);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+}
+
+a {
+  color: color-mix(in srgb, var(--viz-accent) 80%, var(--viz-text) 20%);
+  cursor: pointer;
+  font-weight: var(--font-weight-medium, 500);
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+
+a:is(:hover, :focus-visible) {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 0.5px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-block: 0;
+}
+
+h1 {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h3,
+h4,
+h5,
+h6 {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+}
+
+b,
+strong,
+th {
+  font-weight: var(--font-weight-medium);
+}
+
+code:not(pre code) {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  corner-shape: superellipse(1.5);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  word-break: break-word;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--foreground);
+  font: inherit;
+  text-align: start;
+}
+
+.table :is(th, td) {
+  padding-block: 10px;
+  padding-inline: 0 24px;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+}
+
+.table-responsive &gt; .table :is(th, td) {
+  overflow-wrap: break-word;
+}
+
+.table :is(th, td):last-child {
+  padding-inline-end: 0;
+}
+
+.table :is(caption, thead th) {
+  font-weight: 600;
+}
+
+.table thead th {
+  padding-block: 8px;
+  border-bottom-color: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.table tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}
+
+.table.table-sm :is(th, td) {
+  padding-block: 6px;
+}
+
+.table.table-sm :is(th, td):not(:last-child) {
+  padding-inline-end: 16px;
+}
+
+.table :is(.text-end, [align=&quot;right&quot;]) {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.table :is(.text-center, [align=&quot;center&quot;]) {
+  text-align: center;
+}
+
+.table .text-nowrap {
+  white-space: nowrap;
+}
+
+#widget {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  background: transparent !important;
+}
+
+.card {
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  border-radius: var(--radius-2xl);
+  corner-shape: superellipse(1.5);
+  color: var(--card-foreground);
+  background: var(--card);
+}
+
+#widget &gt; :not(.card, .progress) {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: min(
+    20rem,
+    var(--tooltip-available-width, calc(100vw - 10px)),
+    calc(100vw - 10px)
+  );
+  max-height: min(
+    var(--tooltip-available-height, calc(100vh - 10px)),
+    calc(100vh - 10px)
+  );
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--popover-foreground);
+  background: var(--popover);
+  box-shadow: none;
+  font-size: var(--font-size-tooltip);
+  line-height: var(--line-height-tooltip);
+  overflow-wrap: break-word;
+  white-space: normal;
+  pointer-events: none;
+  user-select: none;
+}
+
+.viz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(180px, 24%), 1fr));
+  gap: 10px;
+}
+
+.viz-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viz-stat-value {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+.viz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.progress {
+  display: flex;
+  height: 6px;
+  margin-block: calc((var(--line-height-normal, 1.5em) - 6px) / 2);
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+}
+
+.progress-bar {
+  height: 100%;
+  flex-shrink: 0;
+  border: 0;
+  background: var(--viz-series-1);
+}
+
+.viz-badge {
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  color: var(--accent-foreground);
+  background: var(--accent);
+  font-weight: var(--font-weight-medium);
+}
+
+small,
+.text-small,
+.viz-badge {
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.text-muted {
+  color: var(--muted-foreground);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.viz-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-controls &gt; .form-label {
+  display: grid;
+  min-width: min(100%, 260px);
+  flex: 1 1 280px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-bottom: 0;
+}
+
+.viz-controls &gt; .form-label &gt; :is(.form-control, .form-range, .form-select) {
+  grid-column: 1 / -1;
+}
+
+.btn,
+.form-check-input,
+.form-control,
+.form-range,
+.form-select {
+  font: inherit;
+}
+
+.btn {
+  appearance: button;
+  display: inline-flex;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: var(--cursor-interaction, pointer);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.btn:is(.btn-block, .viz-tile) {
+  inline-size: 100%;
+}
+
+.btn.viz-tile {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+a.btn {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn-primary {
+  border-color: transparent;
+  color: var(--primary-foreground);
+  background: var(--foreground);
+  background-clip: padding-box;
+}
+
+.btn-primary .text-muted {
+  color: color-mix(in srgb, var(--primary-foreground) 50%, transparent);
+}
+
+.btn-primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 80%, transparent);
+  background-clip: padding-box;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.btn-ghost:not(:disabled):hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+[data-lucide] {
+  stroke-width: 1.6;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--foreground);
+  background: var(--secondary);
+}
+
+.form-control::placeholder {
+  color: var(--muted-foreground);
+}
+
+.form-control[type=&quot;file&quot;] {
+  padding: 0;
+  overflow: hidden;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control[type=&quot;file&quot;]::file-selector-button {
+  min-height: 26px;
+  margin-right: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-right: 1px solid var(--input);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: inherit;
+  font: inherit;
+}
+
+.form-control[type=&quot;file&quot;]:not(:disabled):hover::file-selector-button {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-control-color[type=&quot;color&quot;] {
+  width: 40px;
+  height: 28px;
+  padding: 3px;
+  cursor: var(--cursor-interaction, pointer);
+}
+
+.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.form-control-color[type=&quot;color&quot;]::-webkit-color-swatch {
+  border: 0;
+  border-radius: calc(var(--radius-lg) - 4px);
+  corner-shape: superellipse(1.5);
+}
+
+textarea.form-control {
+  height: auto;
+  min-height: 72px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.form-control:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.form-select {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 32px 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  corner-shape: superellipse(1.5);
+  color: var(--foreground);
+  background-color: var(--secondary);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted-foreground) 50%),
+    linear-gradient(135deg, var(--muted-foreground) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 10px) 50%;
+  background-repeat: no-repeat;
+  background-size: 4px 4px;
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-select:not(:disabled):hover {
+  background-color: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-select:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-check {
+  display: flex;
+  min-height: 20px;
+  align-items: center;
+  gap: 6px;
+}
+
+.form-check-input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid var(--input);
+  color: var(--primary-foreground);
+  background-color: transparent;
+  cursor: var(--cursor-interaction, default);
+  transition:
+    background-color 150ms,
+    border-color 150ms,
+    box-shadow 150ms;
+}
+
+.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;] {
+  border-color: var(--input);
+  border-radius: var(--radius-sm);
+  corner-shape: superellipse(1.5);
+  background-color: var(--secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input:not(:disabled):not(:checked):hover {
+  background-color: var(--card);
+}
+
+.form-check:not(.form-switch) .form-check-input[type=&quot;checkbox&quot;]:checked {
+  border-color: var(--primary);
+  background-color: var(--primary);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input[type=&quot;checkbox&quot;]:checked::before {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--primary-foreground);
+  content: &quot;&quot;;
+  mask: var(--checkmark-image) center / 12px 12px no-repeat;
+}
+
+.form-check-input[type=&quot;radio&quot;] {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+}
+
+.form-check-input[type=&quot;radio&quot;]:checked {
+  border: 2px solid var(--primary);
+  background:
+    radial-gradient(circle, var(--primary-foreground) 0 2.5px, transparent 3px),
+    var(--primary);
+}
+
+.form-check:not(.form-switch) .form-check-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+}
+
+.form-switch .form-check-input:disabled,
+.form-switch .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.form-check-label {
+  color: var(--foreground);
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-switch .form-check-input {
+  position: relative;
+  width: 32px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  box-shadow: none;
+  transition: background-color 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1px solid light-dark(var(--primary-foreground), var(--foreground));
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+  box-shadow: var(--shadow-sm);
+  content: &quot;&quot;;
+  transform: translate(2px, -50%);
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input:checked {
+  background: var(--primary);
+}
+
+.form-switch .form-check-input:checked::before {
+  transform: translate(14px, -50%);
+}
+
+.form-switch .form-check-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.form-range {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  outline: none;
+  border: 0;
+  accent-color: var(--primary);
+  background: linear-gradient(
+      color-mix(in srgb, var(--foreground) 7%, transparent),
+      color-mix(in srgb, var(--foreground) 7%, transparent)
+    )
+    center / 100% 2px no-repeat;
+}
+
+.form-range::-webkit-slider-runnable-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-webkit-slider-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range::-moz-range-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-moz-range-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.btn:not(.btn-primary, .viz-tile):is(
+  [aria-pressed=&quot;true&quot;],
+  [aria-selected=&quot;true&quot;],
+  .is-selected
+) {
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+
+.btn.viz-tile:is([aria-pressed=&quot;true&quot;], [aria-selected=&quot;true&quot;], .is-selected) {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .btn,
+  .form-control,
+  .form-select {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .form-control,
+  .form-select {
+    font-size: max(16px, var(--font-size-normal));
+  }
+
+  .form-control[type=&quot;file&quot;]::file-selector-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .form-control-color[type=&quot;color&quot;] {
+    width: 44px;
+    height: 44px;
+  }
+
+  .form-control:is(
+    [type=&quot;date&quot;],
+    [type=&quot;datetime-local&quot;],
+    [type=&quot;month&quot;],
+    [type=&quot;time&quot;],
+    [type=&quot;week&quot;]
+  ) {
+    min-width: 0;
+    max-width: 100%;
+    padding-block: 8px;
+  }
+
+  .form-check {
+    min-height: 44px;
+    padding-inline: 15px;
+  }
+
+  .form-check-input {
+    position: relative;
+  }
+
+  .form-check-input::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    content: &quot;&quot;;
+    transform: translate(-50%, -50%);
+  }
+
+  .form-check-label {
+    display: inline-flex;
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+  }
+
+  .form-range {
+    height: 44px;
+    touch-action: pan-y;
+  }
+
+  .form-range::-webkit-slider-runnable-track {
+    height: 44px;
+  }
+
+  .form-range::-moz-range-track {
+    height: 44px;
+  }
+
+  .form-range::-webkit-slider-thumb {
+    margin-top: 12px;
+  }
+}
+
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+#widget &gt; svg {
+  width: 100%;
+}
+
+/* Model-authored chart rules can otherwise stretch icons after these styles load. */
+svg.lucide {
+  display: block;
+  width: 16px !important;
+  height: 16px !important;
+  flex: none;
+  margin: 0 !important;
+  stroke-width: 1.6;
+}
+
+.text-warning,
+.text-destructive {
+  color: var(--destructive);
+}
+
+html&gt;body{padding:0}&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;div id=&quot;repomap-workbench&quot;&gt;
+  &lt;style&gt;
+    #repomap-workbench {
+      --rf-paper: light-dark(#f5f2e9, #151917);
+      --rf-surface: light-dark(#fbfaf5, #1c221f);
+      --rf-ink: light-dark(#182427, #edf3ef);
+      --rf-muted: light-dark(#667477, #a9b5b0);
+      --rf-line: light-dark(#d4d4ca, #39423e);
+      --rf-green: light-dark(#1f6d61, #6dc7b4);
+      --rf-green-soft: light-dark(#dce9e4, #213c35);
+      --rf-orange: light-dark(#d96a2b, #f3a46d);
+      --rf-orange-soft: light-dark(#f7e4d7, #462d21);
+      --rf-red: light-dark(#a23b36, #f08f87);
+      color: var(--rf-ink);
+      background: var(--rf-paper);
+      font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      padding: 22px;
+      min-width: 0;
+    }
+    #repomap-workbench * { box-sizing: border-box; }
+    #repomap-workbench .rf-shell { max-width: 1000px; margin: 0 auto; }
+    #repomap-workbench .rf-kicker { color: var(--rf-green); font-weight: 700; letter-spacing: .16em; text-transform: uppercase; font-size: 12px; }
+    #repomap-workbench h1 { margin: 8px 0 4px; font-size: clamp(28px, 5vw, 54px); line-height: 1; letter-spacing: -.045em; font-weight: 600; }
+    #repomap-workbench .rf-subtitle { margin: 0; color: var(--rf-muted); max-width: 720px; }
+    #repomap-workbench .rf-stats { display: flex; flex-wrap: wrap; gap: 16px; margin: 22px 0; padding: 13px 0; border-block: 1px solid var(--rf-line); color: var(--rf-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    #repomap-workbench .rf-stats strong { color: var(--rf-ink); font-weight: 600; }
+    #repomap-workbench .rf-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 20px 0 26px; }
+    #repomap-workbench .rf-nav button,
+    #repomap-workbench .rf-treatment button,
+    #repomap-workbench .rf-source {
+      min-height: 42px;
+      border: 1px solid var(--rf-line);
+      background: var(--rf-surface);
+      color: var(--rf-ink);
+      padding: 9px 12px;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    #repomap-workbench .rf-nav button[aria-selected=&quot;true&quot;],
+    #repomap-workbench .rf-treatment button[aria-pressed=&quot;true&quot;] { border-color: var(--rf-green); background: var(--rf-green-soft); color: var(--rf-green); }
+    #repomap-workbench .rf-panel[hidden] { display: none; }
+    #repomap-workbench .rf-panel-head { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+    #repomap-workbench .rf-panel-head h2 { margin: 0 0 4px; font-size: 24px; font-weight: 600; letter-spacing: -.025em; }
+    #repomap-workbench .rf-panel-head p { margin: 0; color: var(--rf-muted); }
+    #repomap-workbench .rf-state { display: inline-flex; align-items: center; gap: 7px; color: var(--rf-green); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+    #repomap-workbench .rf-state::before { content: &quot;&quot;; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+    #repomap-workbench .rf-treatment { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 18px; }
+    #repomap-workbench .rf-treatment button { min-height: 36px; padding: 7px 10px; font-size: 13px; }
+    #repomap-workbench .rf-stage { border-top: 1px solid var(--rf-line); padding: 18px 0; display: grid; grid-template-columns: 132px minmax(0, 1fr) auto; gap: 16px; align-items: start; }
+    #repomap-workbench .rf-stage:last-child { border-bottom: 1px solid var(--rf-line); }
+    #repomap-workbench .rf-stage-kind { color: var(--rf-muted); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; letter-spacing: .08em; }
+    #repomap-workbench .rf-stage h3 { margin: 0 0 5px; font-size: 17px; font-weight: 600; }
+    #repomap-workbench .rf-stage p { margin: 0; color: var(--rf-muted); }
+    #repomap-workbench .rf-locator { margin-top: 8px; color: var(--rf-green); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+    #repomap-workbench .rf-confidence { color: var(--rf-green); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+    #repomap-workbench .rf-confidence.rf-frontier { color: var(--rf-orange); }
+    #repomap-workbench .rf-frontier-box { margin-top: 16px; padding: 14px; background: var(--rf-orange-soft); color: var(--rf-ink); border-left: 3px solid var(--rf-orange); }
+    #repomap-workbench .rf-frontier-box strong { display: block; margin-bottom: 4px; }
+    #repomap-workbench .rf-source { margin-top: 10px; min-height: 34px; padding: 5px 9px; color: var(--rf-green); font-size: 12px; }
+    #repomap-workbench .rf-plan { display: grid; gap: 12px; counter-reset: plan; }
+    #repomap-workbench .rf-plan-step { counter-increment: plan; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; padding: 15px 0; border-top: 1px solid var(--rf-line); }
+    #repomap-workbench .rf-plan-step::before { content: counter(plan, decimal-leading-zero); color: var(--rf-green); font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    #repomap-workbench .rf-plan-step h3 { margin: 0 0 4px; font-size: 17px; }
+    #repomap-workbench .rf-plan-step p { margin: 0; color: var(--rf-muted); }
+    #repomap-workbench .rf-chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+    #repomap-workbench .rf-chip { display: inline-flex; padding: 3px 7px; background: var(--rf-green-soft); color: var(--rf-green); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    #repomap-workbench .rf-chip.rf-unknown { background: var(--rf-orange-soft); color: var(--rf-orange); }
+    #repomap-workbench .rf-operation { display: grid; grid-template-columns: minmax(160px, .8fr) minmax(0, 1.6fr) auto; gap: 16px; padding: 15px 0; border-top: 1px solid var(--rf-line); }
+    #repomap-workbench .rf-operation strong { font-size: 15px; }
+    #repomap-workbench .rf-operation p { margin: 3px 0 0; color: var(--rf-muted); }
+    #repomap-workbench .rf-empty { color: var(--rf-orange); }
+    #repomap-workbench .rf-rejected { color: var(--rf-red); border-color: var(--rf-red); }
+    #repomap-workbench .rf-result-line { margin: -5px 0 18px; color: var(--rf-muted); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    @media (max-width: 700px) {
+      #repomap-workbench { padding: 14px; }
+      #repomap-workbench .rf-nav { grid-template-columns: 1fr; }
+      #repomap-workbench .rf-stage, #repomap-workbench .rf-operation { grid-template-columns: 1fr; gap: 7px; }
+      #repomap-workbench .rf-panel-head { align-items: start; flex-direction: column; }
+      #repomap-workbench .rf-confidence { white-space: normal; }
+    }
+  &lt;/style&gt;
+
+  &lt;main class=&quot;rf-shell&quot;&gt;
+    &lt;div class=&quot;rf-kicker&quot;&gt;Repository workbench · live experiment&lt;/div&gt;
+    &lt;h1&gt;Use the facts already there.&lt;/h1&gt;
+    &lt;p class=&quot;rf-subtitle&quot;&gt;Three task views produced from one saved etcd run. DeepSeek may explain and rank closed refs; missing evidence stays visible.&lt;/p&gt;
+
+    &lt;div class=&quot;rf-stats&quot; aria-label=&quot;Available etcd facts&quot;&gt;
+      &lt;span&gt;&lt;strong&gt;108&lt;/strong&gt; entrypoints&lt;/span&gt;
+      &lt;span&gt;&lt;strong&gt;431&lt;/strong&gt; routes&lt;/span&gt;
+      &lt;span&gt;&lt;strong&gt;68&lt;/strong&gt; core responsibilities&lt;/span&gt;
+      &lt;span&gt;&lt;strong&gt;835&lt;/strong&gt; integration uses&lt;/span&gt;
+      &lt;span&gt;&lt;strong&gt;27&lt;/strong&gt; analyzed targets&lt;/span&gt;
+    &lt;/div&gt;
+
+    &lt;nav class=&quot;rf-nav&quot; aria-label=&quot;Repository tasks&quot;&gt;
+      &lt;button type=&quot;button&quot; data-rf-tab=&quot;story&quot; aria-selected=&quot;true&quot;&gt;&lt;strong&gt;Follow execution&lt;/strong&gt;&lt;br&gt;&lt;span&gt;9 grounded edges&lt;/span&gt;&lt;/button&gt;
+      &lt;button type=&quot;button&quot; data-rf-tab=&quot;change&quot; aria-selected=&quot;false&quot;&gt;&lt;strong&gt;Plan a change&lt;/strong&gt;&lt;br&gt;&lt;span&gt;Partial plan + unknowns&lt;/span&gt;&lt;/button&gt;
+      &lt;button type=&quot;button&quot; data-rf-tab=&quot;integration&quot; aria-selected=&quot;false&quot;&gt;&lt;strong&gt;Inspect integration&lt;/strong&gt;&lt;br&gt;&lt;span&gt;64 exact bbolt uses&lt;/span&gt;&lt;/button&gt;
+    &lt;/nav&gt;
+
+    &lt;section class=&quot;rf-panel&quot; data-rf-panel=&quot;story&quot;&gt;
+      &lt;div class=&quot;rf-panel-head&quot;&gt;
+        &lt;div&gt;&lt;h2&gt;From startEtcd to TLS key pair loading&lt;/h2&gt;&lt;p&gt;The same factual spine with deterministic, newcomer, and debugging copy.&lt;/p&gt;&lt;/div&gt;
+        &lt;span class=&quot;rf-state&quot;&gt;8 exact · 1 possible&lt;/span&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;rf-treatment&quot; aria-label=&quot;Narrative treatment&quot;&gt;
+        &lt;button type=&quot;button&quot; data-rf-treatment=&quot;facts&quot; aria-pressed=&quot;true&quot;&gt;Facts only&lt;/button&gt;
+        &lt;button type=&quot;button&quot; data-rf-treatment=&quot;newcomer&quot; aria-pressed=&quot;false&quot;&gt;DeepSeek · newcomer&lt;/button&gt;
+        &lt;button type=&quot;button&quot; data-rf-treatment=&quot;debug&quot; aria-pressed=&quot;false&quot;&gt;DeepSeek · debugger&lt;/button&gt;
+      &lt;/div&gt;
+      &lt;p class=&quot;rf-result-line&quot;&gt;Both model variants: 9/9 edges · 0 invented bridges · 3/3 frontiers · 2 code jumps&lt;/p&gt;
+      &lt;div data-rf-story aria-live=&quot;polite&quot;&gt;&lt;/div&gt;
+      &lt;div class=&quot;rf-frontier-box&quot;&gt;&lt;strong&gt;Known frontier&lt;/strong&gt;The callback handoff is possible, 1,813 objects / 48 relations / 5,652 traversal targets were omitted by the source run, and execution inside crypto/tls is not represented.&lt;/div&gt;
+    &lt;/section&gt;
+
+    &lt;section class=&quot;rf-panel&quot; data-rf-panel=&quot;change&quot; hidden&gt;
+      &lt;div class=&quot;rf-panel-head&quot;&gt;
+        &lt;div&gt;&lt;h2&gt;Change KV Put rejection under exhausted quota&lt;/h2&gt;&lt;p&gt;A useful starting plan, not a fabricated claim of complete impact.&lt;/p&gt;&lt;/div&gt;
+        &lt;span class=&quot;rf-state&quot;&gt;closed refs · partial&lt;/span&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;rf-treatment&quot; aria-label=&quot;Plan treatment&quot;&gt;
+        &lt;button type=&quot;button&quot; data-rf-plan=&quot;facts&quot; aria-pressed=&quot;true&quot;&gt;D0 · retrieval&lt;/button&gt;
+        &lt;button type=&quot;button&quot; data-rf-plan=&quot;planner&quot; aria-pressed=&quot;false&quot;&gt;P1 · DeepSeek filler&lt;/button&gt;
+        &lt;button type=&quot;button&quot; data-rf-plan=&quot;critic&quot; aria-pressed=&quot;false&quot; class=&quot;rf-rejected&quot;&gt;P2 · critic added no value&lt;/button&gt;
+      &lt;/div&gt;
+      &lt;p class=&quot;rf-result-line&quot;&gt;All refs grounded · unsupported claims 0 · P1 stability 0.647 · P2 stability 0.500&lt;/p&gt;
+      &lt;div class=&quot;rf-plan&quot; data-rf-plan-body aria-live=&quot;polite&quot;&gt;&lt;/div&gt;
+      &lt;div class=&quot;rf-frontier-box&quot;&gt;&lt;strong&gt;Continue in code&lt;/strong&gt;The saved facts do not contain the complete Put→quota path or exact test files and commands. Those remain explicit unknowns, not invented steps.&lt;/div&gt;
+    &lt;/section&gt;
+
+    &lt;section class=&quot;rf-panel&quot; data-rf-panel=&quot;integration&quot; hidden&gt;
+      &lt;div class=&quot;rf-panel-head&quot;&gt;
+        &lt;div&gt;&lt;h2&gt;bbolt integration cockpit&lt;/h2&gt;&lt;p&gt;One stable grouping, then optional editorial and change-priority lenses.&lt;/p&gt;&lt;/div&gt;
+        &lt;span class=&quot;rf-state&quot;&gt;64 exact uses&lt;/span&gt;
+      &lt;/div&gt;
+      &lt;div class=&quot;rf-treatment&quot; aria-label=&quot;Integration treatment&quot;&gt;
+        &lt;button type=&quot;button&quot; data-rf-integration=&quot;facts&quot; aria-pressed=&quot;true&quot;&gt;D0 · grouped facts&lt;/button&gt;
+        &lt;button type=&quot;button&quot; data-rf-integration=&quot;profile&quot; aria-pressed=&quot;false&quot;&gt;P1 · operational profile&lt;/button&gt;
+        &lt;button type=&quot;button&quot; data-rf-integration=&quot;risk&quot; aria-pressed=&quot;false&quot;&gt;P2 · change priority&lt;/button&gt;
+      &lt;/div&gt;
+      &lt;p class=&quot;rf-result-line&quot;&gt;4 importers · 56 relations · 23 callers · 64/64 locator and activity matches · 2 core areas&lt;/p&gt;
+      &lt;div data-rf-integration-body aria-live=&quot;polite&quot;&gt;&lt;/div&gt;
+      &lt;div class=&quot;rf-frontier-box&quot;&gt;&lt;strong&gt;Reachability&lt;/strong&gt;All 23 routes are frontier because the source ProgramIndex is incomplete. The cockpit says “not represented in available facts” instead of implying a complete runtime path.&lt;/div&gt;
+    &lt;/section&gt;
+  &lt;/main&gt;
+
+  &lt;script&gt;
+    (() =&gt; {
+      const root = document.getElementById(&#x27;repomap-workbench&#x27;);
+      const storyLocators = [
+        &#x27;server/etcdmain/etcd.go:181&#x27;,
+        &#x27;server/embed/etcd.go:260&#x27;,
+        &#x27;server/etcdserver/server.go:423&#x27;,
+        &#x27;server/etcdserver/api/rafthttp/transport.go:139&#x27;,
+        &#x27;server/etcdserver/api/rafthttp/util.go:51&#x27;,
+        &#x27;client/pkg/transport/timeout_transport.go:28&#x27;,
+        &#x27;client/pkg/transport/transport.go:28&#x27;,
+        &#x27;client/pkg/transport/listener.go:591&#x27;,
+        &#x27;client/pkg/transport/listener.go:602&#x27;
+      ];
+      const storyCertainty = [&#x27;exact&#x27;, &#x27;exact&#x27;, &#x27;exact&#x27;, &#x27;exact&#x27;, &#x27;exact&#x27;, &#x27;exact&#x27;, &#x27;exact&#x27;, &#x27;possible&#x27;, &#x27;exact&#x27;];
+      const storyVariants = {
+        facts: [
+          &#x27;startEtcd → StartEtcd&#x27;,
+          &#x27;StartEtcd → NewServer&#x27;,
+          &#x27;NewServer → rafthttp.Transport.Start&#x27;,
+          &#x27;Start → NewRoundTripper&#x27;,
+          &#x27;NewRoundTripper → NewTimeoutTransport&#x27;,
+          &#x27;NewTimeoutTransport → NewTransport&#x27;,
+          &#x27;NewTransport → ClientConfig&#x27;,
+          &#x27;ClientConfig → ClientConfig$1 callback&#x27;,
+          &#x27;ClientConfig$1 → crypto/tls.X509KeyPair&#x27;
+        ],
+        newcomer: [
+          &#x27;startEtcd calls StartEtcd synchronously.&#x27;,
+          &#x27;StartEtcd calls NewServer synchronously.&#x27;,
+          &#x27;NewServer calls the raft HTTP transport Start method.&#x27;,
+          &#x27;Start creates a new HTTP round tripper.&#x27;,
+          &#x27;NewRoundTripper creates a timeout-aware transport.&#x27;,
+          &#x27;NewTimeoutTransport delegates to NewTransport.&#x27;,
+          &#x27;NewTransport asks TLSInfo for its client configuration.&#x27;,
+          &#x27;ClientConfig may transfer control to its callback.&#x27;,
+          &#x27;The callback loads the TLS key pair through crypto/tls.&#x27;
+        ],
+        debug: [
+          &#x27;Confirm the startup handoff from startEtcd.&#x27;,
+          &#x27;Check the embedded-server boundary at StartEtcd.&#x27;,
+          &#x27;Inspect why NewServer starts the raft HTTP transport.&#x27;,
+          &#x27;Trace construction of the round tripper.&#x27;,
+          &#x27;Inspect timeout transport parameters.&#x27;,
+          &#x27;Continue into the base HTTP transport.&#x27;,
+          &#x27;Inspect the TLS ClientConfig call.&#x27;,
+          &#x27;Treat the callback transfer as possible, not exact.&#x27;,
+          &#x27;Stop at the exact external X509KeyPair callsite.&#x27;
+        ]
+      };
+      const plans = {
+        facts: [
+          [&#x27;Inspect the request-facing quota gate&#x27;, &#x27;Start with the saved RPC quota responsibility.&#x27;, [&#x27;e07&#x27;, &#x27;separate&#x27;, &#x27;partial&#x27;]],
+          [&#x27;Trace the quota-aware apply layer&#x27;, &#x27;Follow the known delegated write evidence without pretending the path is complete.&#x27;, [&#x27;e05&#x27;, &#x27;e02&#x27;, &#x27;connected&#x27;]],
+          [&#x27;Check storage availability and request cost&#x27;, &#x27;Review the local quota authority before changing behavior.&#x27;, [&#x27;e01&#x27;, &#x27;separate&#x27;]],
+          [&#x27;Verify RPC and gateway boundaries&#x27;, &#x27;Treat the two saved boundaries separately.&#x27;, [&#x27;e03&#x27;, &#x27;e15&#x27;, &#x27;partial&#x27;]],
+          [&#x27;Verify the persistence boundary&#x27;, &#x27;Inspect write-side and lease-sensitive transaction evidence.&#x27;, [&#x27;e10&#x27;, &#x27;e17&#x27;, &#x27;partial&#x27;]]
+        ],
+        planner: [
+          [&#x27;Locate the quota rejection point&#x27;, &#x27;Inspect storage quota enforcement and request-cost evidence.&#x27;, [&#x27;e01&#x27;, &#x27;e04&#x27;, &#x27;e08&#x27;]],
+          [&#x27;Inspect the apply pipeline&#x27;, &#x27;See where Put dispatch and quota checks meet.&#x27;, [&#x27;e02&#x27;, &#x27;e05&#x27;, &#x27;e06&#x27;]],
+          [&#x27;Inspect client-facing RPC handling&#x27;, &#x27;Find how quota errors are surfaced.&#x27;, [&#x27;e03&#x27;, &#x27;e07&#x27;, &#x27;e09&#x27;]],
+          [&#x27;Trace Put toward MVCC&#x27;, &#x27;Use the saved anchors as separate evidence; the full path is unresolved.&#x27;, [&#x27;e10&#x27;, &#x27;e11&#x27;, &#x27;e13&#x27;, &#x27;frontier&#x27;]],
+          [&#x27;Make the narrowest edit&#x27;, &#x27;Change the quota rejection logic at its grounded authority.&#x27;, [&#x27;e01&#x27;, &#x27;e04&#x27;]],
+          [&#x27;Verify the integration points&#x27;, &#x27;Check apply and RPC behavior, then choose tests after opening code.&#x27;, [&#x27;e02&#x27;, &#x27;e03&#x27;, &#x27;unknown&#x27;]]
+        ],
+        critic: [
+          [&#x27;No additional product value observed&#x27;, &#x27;The critic accepted grounded plans but removed and reordered zero steps.&#x27;, [&#x27;2 extra calls&#x27;, &#x27;no reduction&#x27;]],
+          [&#x27;Lower paraphrase stability&#x27;, &#x27;Anchor stability fell from 0.647 for P1 to 0.500 for P2.&#x27;, [&#x27;experiment result&#x27;, &#x27;frontier&#x27;]],
+          [&#x27;Decision&#x27;, &#x27;Keep the single constrained filler; do not ship a second critic call yet.&#x27;, [&#x27;rejected hypothesis&#x27;]]
+        ]
+      };
+      const integrations = {
+        facts: [
+          [&#x27;Connection lifecycle · 7&#x27;, &#x27;Open/close across 3 callers.&#x27;, &#x27;server/storage/backend/backend.go&#x27;],
+          [&#x27;Transaction control · 13&#x27;, &#x27;Begin, view, commit, and rollback across 9 callers.&#x27;, &#x27;server/storage/backend/batch_tx.go&#x27;],
+          [&#x27;Bucket structure · 12&#x27;, &#x27;Bucket access, creation, and deletion across backend and schema.&#x27;, &#x27;server/storage/backend/batch_tx.go:210&#x27;],
+          [&#x27;Key/value mutation · 3&#x27;, &#x27;Put and delete across 3 callers.&#x27;, &#x27;server/storage/backend/batch_tx.go&#x27;],
+          [&#x27;Scan and read · 14&#x27;, &#x27;Cursor, iteration, and get operations across 7 callers.&#x27;, &#x27;server/storage/backend/read_tx.go&#x27;],
+          [&#x27;Maintenance and diagnostics · 15&#x27;, &#x27;Stats, info, path, and size operations across 4 callers.&#x27;, &#x27;server/storage/backend/backend.go&#x27;],
+          [&#x27;Other observed operations · 0&#x27;, &#x27;not represented in available facts&#x27;, &#x27;not represented&#x27;]
+        ],
+        profile: [
+          [&#x27;Connection lifecycle&#x27;, &#x27;Open and close are concentrated in newBackend, defrag, and Close.&#x27;, &#x27;server/storage/backend/backend.go&#x27;],
+          [&#x27;Transaction control&#x27;, &#x27;Begin, view, commit, and rollback span backend and batch transaction code.&#x27;, &#x27;server/storage/backend/batch_tx.go&#x27;],
+          [&#x27;Bucket structure&#x27;, &#x27;Bucket operations cross storage backend and schema versioning.&#x27;, &#x27;server/storage/backend/batch_tx.go:210&#x27;],
+          [&#x27;Key/value mutation&#x27;, &#x27;The retained calls bind exact bbolt Put and Delete symbols.&#x27;, &#x27;server/storage/backend/batch_tx.go&#x27;],
+          [&#x27;Scan and read&#x27;, &#x27;Cursor and Get usage is the widest operational group.&#x27;, &#x27;server/storage/backend/read_tx.go&#x27;],
+          [&#x27;Maintenance and diagnostics&#x27;, &#x27;Defrag and snapshot paths dominate stats and size calls.&#x27;, &#x27;server/storage/backend/backend.go&#x27;],
+          [&#x27;Reachability&#x27;, &#x27;not represented in available facts&#x27;, &#x27;not represented&#x27;]
+        ],
+        risk: [
+          [&#x27;Priority 5 · transaction control&#x27;, &#x27;13 operations · 9 callers · storage backend core.&#x27;, &#x27;server/storage/backend/batch_tx.go&#x27;],
+          [&#x27;Priority 5 · bucket structure&#x27;, &#x27;12 operations · 11 callers · backend + schema core.&#x27;, &#x27;server/storage/backend/batch_tx.go:210&#x27;],
+          [&#x27;Priority 5 · scan and read&#x27;, &#x27;14 operations · 7 callers · backend + schema core.&#x27;, &#x27;server/storage/backend/read_tx.go&#x27;],
+          [&#x27;Priority 4 · maintenance&#x27;, &#x27;15 operations · 4 callers.&#x27;, &#x27;server/storage/backend/backend.go&#x27;],
+          [&#x27;Priority 3 · connection lifecycle&#x27;, &#x27;7 operations · 3 callers.&#x27;, &#x27;server/storage/backend/backend.go&#x27;],
+          [&#x27;Priority 3 · key/value mutation&#x27;, &#x27;3 operations · 3 callers.&#x27;, &#x27;server/storage/backend/batch_tx.go&#x27;],
+          [&#x27;Priority 0 · other&#x27;, &#x27;not represented in available facts&#x27;, &#x27;not represented&#x27;]
+        ]
+      };
+
+      const openSource = (locator) =&gt; {
+        if (!locator || locator === &#x27;not represented&#x27;) return;
+        if (window.openai?.sendFollowUpMessage) {
+          window.openai.sendFollowUpMessage({
+            title: &#x27;Open repository source&#x27;,
+            prompt: `Open and inspect ${locator} in the etcd repository. Continue only from this evidence anchor and distinguish known facts from inference.`
+          });
+        }
+      };
+      const renderStory = (key) =&gt; {
+        root.querySelector(&#x27;[data-rf-story]&#x27;).innerHTML = storyVariants[key].map((title, index) =&gt; {
+          const certainty = storyCertainty[index];
+          const locator = storyLocators[index];
+          return `&lt;article class=&quot;rf-stage&quot;&gt;
+            &lt;div class=&quot;rf-stage-kind&quot;&gt;${String(index + 1).padStart(2, &#x27;0&#x27;)} · e${index + 1}&lt;/div&gt;
+            &lt;div&gt;&lt;h3&gt;${title}&lt;/h3&gt;&lt;div class=&quot;rf-locator&quot;&gt;${locator}&lt;/div&gt;&lt;button type=&quot;button&quot; class=&quot;rf-source&quot; data-rf-source=&quot;${locator}&quot;&gt;Open source&lt;/button&gt;&lt;/div&gt;
+            &lt;div class=&quot;rf-confidence ${certainty === &#x27;possible&#x27; ? &#x27;rf-frontier&#x27; : &#x27;&#x27;}&quot;&gt;${certainty}&lt;/div&gt;
+          &lt;/article&gt;`;
+        }).join(&#x27;&#x27;);
+      };
+      const renderPlan = (key) =&gt; {
+        root.querySelector(&#x27;[data-rf-plan-body]&#x27;).innerHTML = plans[key].map(([title, body, chips]) =&gt; `
+          &lt;article class=&quot;rf-plan-step&quot;&gt;&lt;div&gt;&lt;h3&gt;${title}&lt;/h3&gt;&lt;p&gt;${body}&lt;/p&gt;&lt;div class=&quot;rf-chip-row&quot;&gt;${chips.map(c =&gt; `&lt;span class=&quot;rf-chip ${c === &#x27;unknown&#x27; || c === &#x27;frontier&#x27; || c === &#x27;rejected hypothesis&#x27; ? &#x27;rf-unknown&#x27; : &#x27;&#x27;}&quot;&gt;${c}&lt;/span&gt;`).join(&#x27;&#x27;)}&lt;/div&gt;&lt;/div&gt;&lt;/article&gt;`).join(&#x27;&#x27;);
+      };
+      const renderIntegration = (key) =&gt; {
+        root.querySelector(&#x27;[data-rf-integration-body]&#x27;).innerHTML = integrations[key].map(([operation, caller, locator]) =&gt; `
+          &lt;article class=&quot;rf-operation&quot;&gt;&lt;div&gt;&lt;strong&gt;${operation}&lt;/strong&gt;&lt;/div&gt;&lt;div&gt;&lt;p&gt;${caller}&lt;/p&gt;&lt;div class=&quot;rf-locator ${locator === &#x27;not represented&#x27; ? &#x27;rf-empty&#x27; : &#x27;&#x27;}&quot;&gt;${locator}&lt;/div&gt;&lt;/div&gt;${locator === &#x27;not represented&#x27; ? &#x27;&lt;span class=&quot;rf-confidence rf-frontier&quot;&gt;frontier&lt;/span&gt;&#x27; : `&lt;button type=&quot;button&quot; class=&quot;rf-source&quot; data-rf-source=&quot;${locator}&quot;&gt;Open source&lt;/button&gt;`}&lt;/article&gt;`).join(&#x27;&#x27;);
+      };
+      root.addEventListener(&#x27;click&#x27;, (event) =&gt; {
+        const tab = event.target.closest(&#x27;[data-rf-tab]&#x27;);
+        if (tab) {
+          root.querySelectorAll(&#x27;[data-rf-tab]&#x27;).forEach(b =&gt; b.setAttribute(&#x27;aria-selected&#x27;, String(b === tab)));
+          root.querySelectorAll(&#x27;[data-rf-panel]&#x27;).forEach(p =&gt; { p.hidden = p.dataset.rfPanel !== tab.dataset.rfTab; });
+          return;
+        }
+        const treatment = event.target.closest(&#x27;[data-rf-treatment]&#x27;);
+        if (treatment) {
+          root.querySelectorAll(&#x27;[data-rf-treatment]&#x27;).forEach(b =&gt; b.setAttribute(&#x27;aria-pressed&#x27;, String(b === treatment)));
+          renderStory(treatment.dataset.rfTreatment);
+          return;
+        }
+        const plan = event.target.closest(&#x27;[data-rf-plan]&#x27;);
+        if (plan) {
+          root.querySelectorAll(&#x27;[data-rf-plan]&#x27;).forEach(b =&gt; b.setAttribute(&#x27;aria-pressed&#x27;, String(b === plan)));
+          renderPlan(plan.dataset.rfPlan);
+          return;
+        }
+        const integration = event.target.closest(&#x27;[data-rf-integration]&#x27;);
+        if (integration) {
+          root.querySelectorAll(&#x27;[data-rf-integration]&#x27;).forEach(b =&gt; b.setAttribute(&#x27;aria-pressed&#x27;, String(b === integration)));
+          renderIntegration(integration.dataset.rfIntegration);
+          return;
+        }
+        const source = event.target.closest(&#x27;[data-rf-source]&#x27;);
+        if (source) openSource(source.dataset.rfSource);
+      });
+      renderStory(&#x27;facts&#x27;);
+      renderPlan(&#x27;facts&#x27;);
+      renderIntegration(&#x27;facts&#x27;);
+    })();
+  &lt;/script&gt;
+&lt;/div&gt;
+
+&lt;script src=&quot;https://unpkg.com/@floating-ui/core@1.7.3/dist/floating-ui.core.umd.min.js&quot;&gt;&lt;/script&gt;
+&lt;script src=&quot;https://unpkg.com/@floating-ui/dom@1.7.4/dist/floating-ui.dom.umd.min.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;
+(() =&gt; {
+  if (window.FloatingUIDOM == null) {
+    return;
+  }
+  const { autoUpdate, computePosition, flip, offset, shift, size } =
+    window.FloatingUIDOM;
+  const tooltipPlacements = new Set([&quot;top&quot;, &quot;right&quot;, &quot;bottom&quot;, &quot;left&quot;]);
+  const tooltipId = `codex-visualization-tooltip-${
+    window.crypto?.randomUUID?.() ?? Date.now().toString(36)
+  }`;
+  const tooltipGap = 5;
+  const hoverDelay = 700;
+  const skipDelay = 300;
+  let activeTrigger = null;
+  let pendingTrigger = null;
+  let tooltip = null;
+  let openTimeout = null;
+  let autoUpdateCleanup = null;
+  let positionRequest = 0;
+  let skipDelayUntil = 0;
+  let lastPointerWasTouch = false;
+  let pinnedByTouch = false;
+
+  const getTrigger = (target) =&gt;
+    target?.nodeType === Node.ELEMENT_NODE
+      ? target.closest(&quot;[data-tooltip]&quot;)
+      : null;
+  const containsTarget = (trigger, target) =&gt;
+    target?.nodeType != null &amp;&amp; trigger.contains(target);
+  const getContent = (trigger) =&gt;
+    trigger.getAttribute(&quot;data-tooltip&quot;)?.trim() ?? &quot;&quot;;
+  const getPlacement = (trigger) =&gt; {
+    const placement = trigger.getAttribute(&quot;data-tooltip-placement&quot;);
+    return tooltipPlacements.has(placement) ? placement : &quot;top&quot;;
+  };
+  const getTooltip = () =&gt; {
+    if (tooltip == null) {
+      tooltip = document.createElement(&quot;div&quot;);
+      tooltip.id = tooltipId;
+      tooltip.className = &quot;tooltip&quot;;
+      tooltip.setAttribute(&quot;role&quot;, &quot;tooltip&quot;);
+    }
+    return tooltip;
+  };
+  const setDescribedBy = (trigger, described) =&gt; {
+    const ids = new Set(
+      (trigger.getAttribute(&quot;aria-describedby&quot;) ?? &quot;&quot;)
+        .split(/\s+/)
+        .filter(Boolean),
+    );
+    if (described) {
+      ids.add(tooltipId);
+    } else {
+      ids.delete(tooltipId);
+    }
+    if (ids.size === 0) {
+      trigger.removeAttribute(&quot;aria-describedby&quot;);
+    } else {
+      trigger.setAttribute(&quot;aria-describedby&quot;, [...ids].join(&quot; &quot;));
+    }
+  };
+  const clearOpenTimeout = () =&gt; {
+    if (openTimeout != null) {
+      window.clearTimeout(openTimeout);
+      openTimeout = null;
+    }
+    pendingTrigger = null;
+  };
+  const closeTooltip = (activateSkipDelay = true) =&gt; {
+    clearOpenTimeout();
+    pinnedByTouch = false;
+    positionRequest += 1;
+    autoUpdateCleanup?.();
+    autoUpdateCleanup = null;
+    if (activeTrigger == null) {
+      return;
+    }
+    setDescribedBy(activeTrigger, false);
+    activeTrigger = null;
+    tooltip?.remove();
+    if (activateSkipDelay) {
+      skipDelayUntil = Date.now() + skipDelay;
+    }
+  };
+  const updatePosition = (trigger, floating) =&gt; {
+    const request = ++positionRequest;
+    void computePosition(trigger, floating, {
+      middleware: [
+        offset(tooltipGap),
+        flip({ padding: tooltipGap }),
+        shift({ padding: tooltipGap }),
+        size({
+          padding: tooltipGap,
+          apply({ availableHeight, availableWidth, elements }) {
+            elements.floating.style.setProperty(
+              &quot;--tooltip-available-width&quot;,
+              `${Math.max(0, availableWidth)}px`,
+            );
+            elements.floating.style.setProperty(
+              &quot;--tooltip-available-height&quot;,
+              `${Math.max(0, availableHeight)}px`,
+            );
+          },
+        }),
+      ],
+      placement: getPlacement(trigger),
+      strategy: &quot;fixed&quot;,
+    })
+      .then(({ x, y }) =&gt; {
+        if (activeTrigger !== trigger || request !== positionRequest) {
+          return;
+        }
+        const scale = window.devicePixelRatio || 1;
+        floating.style.transform = `translate(${Math.round(x * scale) / scale}px, ${Math.round(y * scale) / scale}px)`;
+        floating.style.visibility = &quot;visible&quot;;
+      })
+      .catch(() =&gt; {
+        if (activeTrigger === trigger &amp;&amp; request === positionRequest) {
+          closeTooltip(false);
+        }
+      });
+  };
+  const openTooltip = (trigger) =&gt; {
+    const content = getContent(trigger);
+    if (!trigger.isConnected || content.length === 0) {
+      return;
+    }
+    clearOpenTimeout();
+    if (activeTrigger === trigger) {
+      return;
+    }
+    closeTooltip();
+    const floating = getTooltip();
+    floating.textContent = content;
+    floating.style.visibility = &quot;hidden&quot;;
+    floating.style.transform = &quot;translate(0, 0)&quot;;
+    document.body.appendChild(floating);
+    activeTrigger = trigger;
+    setDescribedBy(trigger, true);
+    autoUpdateCleanup = autoUpdate(trigger, floating, () =&gt; {
+      updatePosition(trigger, floating);
+    });
+  };
+  const requestOpen = (trigger, immediate = false) =&gt; {
+    if (
+      getContent(trigger).length === 0 ||
+      activeTrigger === trigger ||
+      pendingTrigger === trigger
+    ) {
+      return;
+    }
+    clearOpenTimeout();
+    pendingTrigger = trigger;
+    const delay =
+      immediate || activeTrigger != null || Date.now() &lt; skipDelayUntil
+        ? 0
+        : hoverDelay;
+    if (delay === 0) {
+      openTooltip(trigger);
+      return;
+    }
+    openTimeout = window.setTimeout(() =&gt; {
+      openTimeout = null;
+      pendingTrigger = null;
+      openTooltip(trigger);
+    }, delay);
+  };
+  const handlePointerOpen = (event) =&gt; {
+    if (event.pointerType === &quot;touch&quot;) {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    requestOpen(trigger);
+  };
+  const handlePointer = (event) =&gt; {
+    lastPointerWasTouch =
+      event.type === &quot;pointerdown&quot; &amp;&amp; event.pointerType === &quot;touch&quot;;
+  };
+  const handleTouchClick = (event) =&gt; {
+    const isTouch = event.pointerType === &quot;touch&quot; || lastPointerWasTouch;
+    lastPointerWasTouch = false;
+    if (!isTouch || event.detail === 0) {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (
+      trigger == null ||
+      !trigger.isConnected ||
+      getContent(trigger).length === 0 ||
+      (pinnedByTouch &amp;&amp; activeTrigger === trigger)
+    ) {
+      if (pinnedByTouch) {
+        closeTooltip();
+      }
+      return;
+    }
+    openTooltip(trigger);
+    pinnedByTouch = activeTrigger === trigger;
+    window.setTimeout(() =&gt; {
+      if (activeTrigger === trigger &amp;&amp; !trigger.isConnected) {
+        closeTooltip(false);
+      }
+    }, 0);
+  };
+  const handleLeave = (event) =&gt; {
+    if (pinnedByTouch) {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const handleFocusIn = (event) =&gt; {
+    const trigger = getTrigger(event.target);
+    if (trigger?.matches(&quot;:focus-visible&quot;)) {
+      requestOpen(trigger, true);
+    }
+  };
+  const handleKeyDown = (event) =&gt; {
+    if (event.key === &quot;Escape&quot;) {
+      closeTooltip();
+    }
+  };
+  const handleContextMenu = (event) =&gt; {
+    lastPointerWasTouch = false;
+    const trigger = getTrigger(event.target);
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const destroy = () =&gt; {
+    closeTooltip(false);
+    lastPointerWasTouch = false;
+    document.removeEventListener(&quot;pointerover&quot;, handlePointerOpen);
+    document.removeEventListener(&quot;pointerdown&quot;, handlePointer);
+    document.removeEventListener(&quot;pointercancel&quot;, handlePointer);
+    document.removeEventListener(&quot;click&quot;, handleTouchClick);
+    document.removeEventListener(&quot;pointerout&quot;, handleLeave);
+    document.removeEventListener(&quot;focusin&quot;, handleFocusIn);
+    document.removeEventListener(&quot;focusout&quot;, handleLeave);
+    document.removeEventListener(&quot;keydown&quot;, handleKeyDown);
+    document.removeEventListener(&quot;contextmenu&quot;, handleContextMenu);
+    tooltip = null;
+  };
+
+  document.addEventListener(&quot;pointerover&quot;, handlePointerOpen);
+  document.addEventListener(&quot;pointerdown&quot;, handlePointer);
+  document.addEventListener(&quot;pointercancel&quot;, handlePointer);
+  document.addEventListener(&quot;click&quot;, handleTouchClick);
+  document.addEventListener(&quot;pointerout&quot;, handleLeave);
+  document.addEventListener(&quot;focusin&quot;, handleFocusIn);
+  document.addEventListener(&quot;focusout&quot;, handleLeave);
+  document.addEventListener(&quot;keydown&quot;, handleKeyDown);
+  document.addEventListener(&quot;contextmenu&quot;, handleContextMenu);
+  window.addEventListener(&quot;pagehide&quot;, destroy, { once: true });
+})();
+&lt;/script&gt;
+&lt;script id=&quot;codex-visualization-lucide&quot; async src=&quot;https://unpkg.com/lucide@1.17.0/dist/umd/lucide.js&quot;&gt;&lt;/script&gt;
+&lt;script&gt;
+(() =&gt; {
+  const initialize = () =&gt; {
+    globalThis.lucide?.createIcons({ attrs: { width: 16, height: 16 } });
+  };
+  if (globalThis.lucide != null) {
+    initialize();
+    return;
+  }
+  document
+    .getElementById(&quot;codex-visualization-lucide&quot;)
+    ?.addEventListener(&quot;load&quot;, initialize, { once: true });
+})();
+&lt;/script&gt;
+
+&lt;/body&gt;
+&lt;/html&gt;
+"></iframe>
+</body>
+</html>

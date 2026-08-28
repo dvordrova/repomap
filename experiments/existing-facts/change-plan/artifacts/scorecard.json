@@ -1,0 +1,44 @@
+[
+  {
+    "treatment_id": "d0",
+    "status": "accepted",
+    "valid_ref_rate": 1,
+    "grounding_rate": 1,
+    "connected_or_separate_rate": 1,
+    "unsupported_claims": 0,
+    "duplicate_action_rate": 0,
+    "actionability_rate": 1,
+    "anchor_stability": 1,
+    "source_jump_by_step_2": true,
+    "utility_score": 100,
+    "score_meaning": "heuristic utility proxy, not correctness probability"
+  },
+  {
+    "treatment_id": "p1",
+    "status": "accepted",
+    "valid_ref_rate": 1,
+    "grounding_rate": 1,
+    "connected_or_separate_rate": 1,
+    "unsupported_claims": 0,
+    "duplicate_action_rate": 0,
+    "actionability_rate": 0.917,
+    "anchor_stability": 0.647,
+    "source_jump_by_step_2": true,
+    "utility_score": 91.446,
+    "score_meaning": "heuristic utility proxy, not correctness probability"
+  },
+  {
+    "treatment_id": "p2",
+    "status": "accepted",
+    "valid_ref_rate": 1,
+    "grounding_rate": 1,
+    "connected_or_separate_rate": 1,
+    "unsupported_claims": 0,
+    "duplicate_action_rate": 0,
+    "actionability_rate": 1,
+    "anchor_stability": 0.5,
+    "source_jump_by_step_2": true,
+    "utility_score": 90,
+    "score_meaning": "heuristic utility proxy, not correctness probability"
+  }
+]

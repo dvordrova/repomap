@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "input_sha256": "b253a5815c0f54a46a13e5be119bf5c2bc0a715d0f9bb3646df788ab846c0669",
+  "result_sha256": "c90c6980c27cadf996c84987f2089d288adeeddd99c9a291e5d4f42699cb0d14",
+  "verdict": "pass",
+  "checks": [
+    {
+      "id": "canonical-source-artifacts",
+      "status": "pass",
+      "evidence": "7/7 saved authority artifacts decoded and validated"
+    },
+    {
+      "id": "selected-dependency-exact",
+      "status": "pass",
+      "evidence": "d1 is the exact go.etcd.io/bbolt package"
+    },
+    {
+      "id": "single-dependency-operations",
+      "status": "pass",
+      "evidence": "64 selected uses retained"
+    },
+    {
+      "id": "program-index-locators",
+      "status": "pass",
+      "evidence": "64/64 operation locators match exact ProgramIndex objects, relations, targets, and witnesses"
+    },
+    {
+      "id": "activity-outcome-join",
+      "status": "pass",
+      "evidence": "64/64 operations match exact activity outcomes"
+    },
+    {
+      "id": "canonical-counts",
+      "status": "pass",
+      "evidence": "64 uses / 56 relations / 23 callers / 64 outcomes / 23 routes"
+    },
+    {
+      "id": "p1-closed-refs",
+      "status": "pass",
+      "evidence": "P1 fills every stable slot with only slot-local refs"
+    },
+    {
+      "id": "p2-closed-refs",
+      "status": "pass",
+      "evidence": "P2 fills every stable slot with only closed refs and a bounded score"
+    },
+    {
+      "id": "gap-discipline",
+      "status": "pass",
+      "evidence": "not represented in available facts"
+    },
+    {
+      "id": "portable-receipts",
+      "status": "pass",
+      "evidence": "receipts contain repository-relative paths and revision-bound web links only"
+    }
+  ],
+  "variant_scores": [
+    {
+      "variant": "D0",
+      "source": "deterministic",
+      "structural_score": 100,
+      "slots_filled": 6,
+      "slots_total": 7,
+      "evidence_refs": 64,
+      "sortable_priority": false
+    },
+    {
+      "variant": "P1",
+      "source": "deepseek",
+      "structural_score": 100,
+      "slots_filled": 7,
+      "slots_total": 7,
+      "evidence_refs": 42,
+      "sortable_priority": false
+    },
+    {
+      "variant": "P2",
+      "source": "deepseek",
+      "structural_score": 100,
+      "slots_filled": 7,
+      "slots_total": 7,
+      "evidence_refs": 109,
+      "sortable_priority": true
+    }
+  ],
+  "conclusion": "Existing canonical facts support a useful integration cockpit; DeepSeek adds concise editorial lenses while local code retains slots, refs, counts, and gaps."
+}

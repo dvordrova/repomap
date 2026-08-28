@@ -1,0 +1,1219 @@
+{
+  "version": 1,
+  "source_mode": "existing_canonical_json_only",
+  "task": {
+    "id": "kv-put-quota",
+    "title": "Change how etcd rejects a KV Put when backend quota is exhausted; identify where to edit and what to verify.",
+    "paraphrases": [
+      {
+        "id": "q1",
+        "query": "Change how etcd rejects a KV Put when backend quota is exhausted. Where should I edit, and what behavior must I verify?"
+      },
+      {
+        "id": "q2",
+        "query": "Adjust etcd's out-of-space handling for KV writes. Give me the first code anchors and the checks needed before shipping."
+      }
+    ]
+  },
+  "catalog": {
+    "version": 1,
+    "source_run_id": "20260827-221344-etcd-a086dce0989a",
+    "task_id": "kv-put-quota",
+    "entries": [
+      {
+        "ref": "e01",
+        "kind": "core",
+        "label": "Storage quota enforcement",
+        "summary": "Enforces storage quotas by checking available space and estimating request costs.",
+        "path": "server/storage/quota.go",
+        "line": 54,
+        "source": "core-map.json",
+        "confidence": "semantic",
+        "related_refs": [],
+        "tags": [
+          "available",
+          "quota",
+          "request",
+          "storage"
+        ]
+      },
+      {
+        "ref": "e02",
+        "kind": "core",
+        "label": "Raft apply pipeline",
+        "summary": "Applies committed raft entries to the state machine, dispatching to auth, backend, quota, and corruption-aware appliers.",
+        "path": "server/etcdserver/apply/quota.go",
+        "line": 54,
+        "source": "core-map.json",
+        "confidence": "semantic",
+        "related_refs": [
+          "e05",
+          "e06"
+        ],
+        "tags": [
+          "apply",
+          "backend",
+          "quota"
+        ]
+      },
+      {
+        "ref": "e03",
+        "kind": "core",
+        "label": "V3 RPC services",
+        "summary": "Implements the etcd v3 gRPC services for auth, KV, lease, maintenance, cluster membership, and watch, including interceptors and health.",
+        "path": "server/etcdserver/api/v3rpc/quota.go",
+        "line": 93,
+        "source": "core-map.json",
+        "confidence": "semantic",
+        "related_refs": [
+          "e07",
+          "e09"
+        ],
+        "tags": [
+          "kv",
+          "quota"
+        ]
+      },
+      {
+        "ref": "e04",
+        "kind": "symbol",
+        "label": "costPut",
+        "summary": "function costPut declared at a saved ProgramIndex location.",
+        "path": "server/storage/quota.go",
+        "line": 149,
+        "source": "program-index.json",
+        "confidence": "exact",
+        "related_refs": [],
+        "tags": [
+          "put",
+          "quota",
+          "request",
+          "server",
+          "storage"
+        ]
+      },
+      {
+        "ref": "e05",
+        "kind": "symbol",
+        "label": "Put",
+        "summary": "method Put declared at a saved ProgramIndex location. 3 outgoing call relation(s) are unresolved in this run.",
+        "path": "server/etcdserver/apply/quota.go",
+        "line": 36,
+        "source": "program-index.json",
+        "confidence": "partial",
+        "related_refs": [],
+        "tags": [
+          "apply",
+          "put",
+          "quota",
+          "request",
+          "server"
+        ]
+      },
+      {
+        "ref": "e06",
+        "kind": "symbol",
+        "label": "newQuotaApplierV3",
+        "summary": "function newQuotaApplierV3 declared at a saved ProgramIndex location.",
+        "path": "server/etcdserver/apply/quota.go",
+        "line": 32,
+        "source": "program-index.json",
+        "confidence": "exact",
+        "related_refs": [],
+        "tags": [
+          "apply",
+          "backend",
+          "quota",
+          "server",
+          "storage"
+        ]
+      },
+      {
+        "ref": "e07",
+        "kind": "symbol",
+        "label": "Put",
+        "summary": "method Put declared at a saved ProgramIndex location. 2 outgoing call relation(s) are unresolved in this run.",
+        "path": "server/etcdserver/api/v3rpc/quota.go",
+        "line": 60,
+        "source": "program-index.json",
+        "confidence": "partial",
+        "related_refs": [],
+        "tags": [
+          "put",
+          "quota",
+          "request",
+          "server"
+        ]
+      },
+      {
+        "ref": "e08",
+        "kind": "symbol",
+        "label": "Available",
+        "summary": "method Available declared at a saved ProgramIndex location.",
+        "path": "server/storage/quota.go",
+        "line": 50,
+        "source": "program-index.json",
+        "confidence": "exact",
+        "related_refs": [],
+        "tags": [
+          "available",
+          "quota",
+          "server",
+          "storage"
+        ]
+      },
+      {
+        "ref": "e09",
+        "kind": "symbol",
+        "label": "newBackendQuota",
+        "summary": "function newBackendQuota declared at a saved ProgramIndex location.",
+        "path": "server/etcdserver/api/v3rpc/quota.go",
+        "line": 93,
+        "source": "program-index.json",
+        "confidence": "exact",
+        "related_refs": [],
+        "tags": [
+          "backend",
+          "quota",
+          "server",
+          "storage"
+        ]
+      },
+      {
+        "ref": "e10",
+        "kind": "symbol",
+        "label": "Put",
+        "summary": "function Put declared at a saved ProgramIndex location. 3 outgoing call relation(s) are unresolved in this run.",
+        "path": "server/etcdserver/txn/put.go",
+        "line": 30,
+        "source": "program-index.json",
+        "confidence": "partial",
+        "related_refs": [],
+        "tags": [
+          "kv",
+          "put",
+          "request",
+          "server",
+          "storage",
+          "txn"
+        ]
+      },
+      {
+        "ref": "e11",
+        "kind": "symbol",
+        "label": "Put",
+        "summary": "method Put declared at a saved ProgramIndex location.",
+        "path": "server/storage/mvcc/kvstore_txn.go",
+        "line": 180,
+        "source": "program-index.json",
+        "confidence": "exact",
+        "related_refs": [],
+        "tags": [
+          "kv",
+          "put",
+          "server",
+          "storage",
+          "txn"
+        ]
+      },
+      {
+        "ref": "e12",
+        "kind": "symbol",
+        "label": "request_KV_Put_0",
+        "summary": "function request_KV_Put_0 declared at a saved ProgramIndex location. 4 outgoing call relation(s) are unresolved in this run.",
+        "path": "api/etcdserverpb/gw/rpc.pb.gw.go",
+        "line": 66,
+        "source": "program-index.json",
+        "confidence": "partial",
+        "related_refs": [],
+        "tags": [
+          "kv",
+          "put",
+          "request"
+        ]
+      },
+      {
+        "ref": "e13",
+        "kind": "symbol",
+        "label": "Put",
+        "summary": "method Put declared at a saved ProgramIndex location. 2 outgoing call relation(s) are unresolved in this run.",
+        "path": "server/etcdserver/v3_server.go",
+        "line": 295,
+        "source": "program-index.json",
+        "confidence": "partial",
+        "related_refs": [],
+        "tags": [
+          "put",
+          "request",
+          "server"
+        ]
+      },
+      {
+        "ref": "e14",
+        "kind": "route",
+        "label": "Activity route · unsafePut",
+        "summary": "Saved activity route for unsafePut is frontier with 0 step(s). The run records an explicit frontier instead of a connected path.",
+        "path": "server/storage/backend/batch_tx.go",
+        "line": 149,
+        "source": "activity-paths.json",
+        "confidence": "frontier",
+        "related_refs": [],
+        "tags": [
+          "backend",
+          "frontier",
+          "put",
+          "storage"
+        ]
+      },
+      {
+        "ref": "e15",
+        "kind": "route",
+        "label": "Activity route · request_KV_Put_0",
+        "summary": "Saved activity route for request_KV_Put_0 is frontier with 0 step(s). The run records an explicit frontier instead of a connected path.",
+        "path": "api/etcdserverpb/gw/rpc.pb.gw.go",
+        "line": 66,
+        "source": "activity-paths.json",
+        "confidence": "frontier",
+        "related_refs": [
+          "e12"
+        ],
+        "tags": [
+          "frontier",
+          "kv",
+          "put",
+          "request"
+        ]
+      },
+      {
+        "ref": "e16",
+        "kind": "route",
+        "label": "Activity route · request_KV_Txn_0",
+        "summary": "Saved activity route for request_KV_Txn_0 is frontier with 0 step(s). The run records an explicit frontier instead of a connected path.",
+        "path": "api/etcdserverpb/gw/rpc.pb.gw.go",
+        "line": 120,
+        "source": "activity-paths.json",
+        "confidence": "frontier",
+        "related_refs": [],
+        "tags": [
+          "frontier",
+          "kv",
+          "request",
+          "txn"
+        ]
+      },
+      {
+        "ref": "e17",
+        "kind": "integration",
+        "label": "Put bbolt key-value · bbolt",
+        "summary": "Put bbolt key-value via bbolt at an exact saved callsite. Dependency: bbolt.",
+        "path": "server/storage/backend/backend.go",
+        "line": 669,
+        "source": "integration-usage.json + integration-dependencies.json",
+        "confidence": "exact_external_symbol",
+        "related_refs": [],
+        "tags": [
+          "backend",
+          "bbolt",
+          "put",
+          "storage"
+        ]
+      },
+      {
+        "ref": "e18",
+        "kind": "integration",
+        "label": "Read gRPC header · gRPC",
+        "summary": "Read gRPC header via gRPC at an exact saved callsite. Dependency: grpc.",
+        "path": "api/etcdserverpb/gw/rpc.pb.gw.go",
+        "line": 77,
+        "source": "integration-usage.json + integration-dependencies.json",
+        "confidence": "exact_external_symbol",
+        "related_refs": [
+          "e12"
+        ],
+        "tags": [
+          "grpc",
+          "kv",
+          "put",
+          "request"
+        ]
+      },
+      {
+        "ref": "e19",
+        "kind": "integration",
+        "label": "Decode request · HTTP",
+        "summary": "Decode request via HTTP at an exact saved callsite. Dependency: runtime.",
+        "path": "api/etcdserverpb/gw/rpc.pb.gw.go",
+        "line": 125,
+        "source": "integration-usage.json + integration-dependencies.json",
+        "confidence": "exact_external_symbol",
+        "related_refs": [],
+        "tags": [
+          "http",
+          "kv",
+          "request",
+          "txn"
+        ]
+      },
+      {
+        "ref": "e20",
+        "kind": "gap",
+        "label": "No selected Put/quota activity entrypoint",
+        "summary": "The saved activity-entrypoint set contains no task-relevant selected object; do not promote a route into entrypoint authority.",
+        "source": "activity-entrypoints.json",
+        "confidence": "absent",
+        "related_refs": [],
+        "tags": [
+          "entrypoint",
+          "unknown"
+        ]
+      },
+      {
+        "ref": "e21",
+        "kind": "gap",
+        "label": "Task-specific tests not represented",
+        "summary": "No task-relevant _test.go symbol is present in the saved ProgramIndex; exact verification commands and test anchors remain unknown.",
+        "source": "program-index.json",
+        "confidence": "absent",
+        "related_refs": [],
+        "tags": [
+          "tests",
+          "unknown",
+          "verify"
+        ]
+      }
+    ],
+    "source_stats": [
+      {
+        "artifact": "activity-entrypoints.json",
+        "rows": 108
+      },
+      {
+        "artifact": "activity-paths.json",
+        "rows": 431
+      },
+      {
+        "artifact": "core-map.json",
+        "rows": 68
+      },
+      {
+        "artifact": "integration-dependencies.json",
+        "rows": 44
+      },
+      {
+        "artifact": "integration-usage.json",
+        "rows": 835
+      },
+      {
+        "artifact": "program-index.json",
+        "rows": 25977
+      }
+    ]
+  },
+  "treatments": [
+    {
+      "id": "d0",
+      "label": "D0 · deterministic retrieval",
+      "description": "Local ranking and a fixed plan skeleton; no model copy or ordering.",
+      "runs": [
+        {
+          "paraphrase_id": "q1",
+          "query": "Change how etcd rejects a KV Put when backend quota is exhausted. Where should I edit, and what behavior must I verify?",
+          "status": "accepted",
+          "plan": {
+            "version": 1,
+            "steps": [
+              {
+                "id": "s1",
+                "action": "Inspect the request-facing quota gate and make the first edit there.",
+                "evidence_refs": [
+                  "e07"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s2",
+                "action": "Trace the delegated write into the quota-aware apply layer before changing downstream behavior.",
+                "evidence_refs": [
+                  "e05",
+                  "e02"
+                ],
+                "evidence_mode": "connected",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s3",
+                "action": "Check the storage availability and request-cost authority that the quota layers depend on.",
+                "evidence_refs": [
+                  "e01"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s4",
+                "action": "Verify both the direct RPC surface and the saved HTTP gateway boundary without assuming they form a complete path.",
+                "evidence_refs": [
+                  "e03",
+                  "e15"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s5",
+                "action": "Verify the write-side persistence boundary and lease-sensitive transaction behavior separately.",
+                "evidence_refs": [
+                  "e10",
+                  "e17"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              }
+            ],
+            "unknowns": [
+              {
+                "id": "u1",
+                "question": "Which exact tests and commands cover quota exhaustion for Put requests?",
+                "evidence_refs": [
+                  "e21"
+                ]
+              },
+              {
+                "id": "u2",
+                "question": "What is the complete runtime call path across the recorded interface frontiers?",
+                "evidence_refs": [
+                  "e14"
+                ]
+              }
+            ]
+          },
+          "metrics": {
+            "schema_valid": true,
+            "valid_ref_rate": 1,
+            "grounding_rate": 1,
+            "connected_or_separate_rate": 1,
+            "unsupported_claims": 0,
+            "duplicate_action_rate": 0,
+            "actionability_rate": 1,
+            "source_jump_step": 1
+          }
+        },
+        {
+          "paraphrase_id": "q2",
+          "query": "Adjust etcd's out-of-space handling for KV writes. Give me the first code anchors and the checks needed before shipping.",
+          "status": "accepted",
+          "plan": {
+            "version": 1,
+            "steps": [
+              {
+                "id": "s1",
+                "action": "Inspect the request-facing quota gate and make the first edit there.",
+                "evidence_refs": [
+                  "e07"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s2",
+                "action": "Trace the delegated write into the quota-aware apply layer before changing downstream behavior.",
+                "evidence_refs": [
+                  "e05",
+                  "e02"
+                ],
+                "evidence_mode": "connected",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s3",
+                "action": "Check the storage availability and request-cost authority that the quota layers depend on.",
+                "evidence_refs": [
+                  "e01"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s4",
+                "action": "Verify both the direct RPC surface and the saved HTTP gateway boundary without assuming they form a complete path.",
+                "evidence_refs": [
+                  "e03",
+                  "e15"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s5",
+                "action": "Verify the write-side persistence boundary and lease-sensitive transaction behavior separately.",
+                "evidence_refs": [
+                  "e10",
+                  "e17"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              }
+            ],
+            "unknowns": [
+              {
+                "id": "u1",
+                "question": "Which exact tests and commands cover quota exhaustion for Put requests?",
+                "evidence_refs": [
+                  "e21"
+                ]
+              },
+              {
+                "id": "u2",
+                "question": "What is the complete runtime call path across the recorded interface frontiers?",
+                "evidence_refs": [
+                  "e14"
+                ]
+              }
+            ]
+          },
+          "metrics": {
+            "schema_valid": true,
+            "valid_ref_rate": 1,
+            "grounding_rate": 1,
+            "connected_or_separate_rate": 1,
+            "unsupported_claims": 0,
+            "duplicate_action_rate": 0,
+            "actionability_rate": 1,
+            "source_jump_step": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "p1",
+      "label": "P1 · evidence-first DeepSeek",
+      "description": "DeepSeek chooses and orders only closed evidence refs.",
+      "runs": [
+        {
+          "paraphrase_id": "q1",
+          "query": "Change how etcd rejects a KV Put when backend quota is exhausted. Where should I edit, and what behavior must I verify?",
+          "status": "accepted",
+          "plan": {
+            "version": 1,
+            "steps": [
+              {
+                "id": "s1",
+                "action": "Inspect the storage quota enforcement logic to locate the rejection point for KV Put when quota is exhausted.",
+                "evidence_refs": [
+                  "e01",
+                  "e04",
+                  "e08"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s2",
+                "action": "Inspect the raft apply pipeline's quota applier to understand how Put requests are dispatched and quota checks are integrated.",
+                "evidence_refs": [
+                  "e02",
+                  "e05",
+                  "e06"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s3",
+                "action": "Inspect the v3 RPC service's quota handling to see how Put requests are intercepted and quota errors are returned.",
+                "evidence_refs": [
+                  "e03",
+                  "e07",
+                  "e09"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s4",
+                "action": "Trace the Put call path from the v3 server through the txn layer to the MVCC store to identify where quota rejection should be enforced.",
+                "evidence_refs": [
+                  "e10",
+                  "e11",
+                  "e13"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s5",
+                "action": "Edit the quota enforcement logic to change the rejection behavior for KV Put when quota is exhausted.",
+                "evidence_refs": [
+                  "e01",
+                  "e04"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s6",
+                "action": "Verify the changed behavior by checking the quota applier and v3 RPC service integration points.",
+                "evidence_refs": [
+                  "e02",
+                  "e03"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              }
+            ],
+            "unknowns": [
+              {
+                "id": "u1",
+                "question": "What is the exact current rejection behavior (error type, message, or status) when quota is exhausted for a KV Put?",
+                "evidence_refs": [
+                  "e01",
+                  "e04"
+                ]
+              },
+              {
+                "id": "u2",
+                "question": "What is the complete call path from the gRPC gateway to the storage quota check for a KV Put, given unresolved call relations?",
+                "evidence_refs": [
+                  "e12",
+                  "e15"
+                ]
+              },
+              {
+                "id": "u3",
+                "question": "What exact tests or verification commands should be used to confirm the new rejection behavior?",
+                "evidence_refs": [
+                  "e21"
+                ]
+              },
+              {
+                "id": "u4",
+                "question": "Are there any existing tests or test anchors that cover quota rejection for KV Put?",
+                "evidence_refs": [
+                  "e20",
+                  "e21"
+                ]
+              }
+            ]
+          },
+          "metrics": {
+            "schema_valid": true,
+            "valid_ref_rate": 1,
+            "grounding_rate": 1,
+            "connected_or_separate_rate": 1,
+            "unsupported_claims": 0,
+            "duplicate_action_rate": 0,
+            "actionability_rate": 1,
+            "source_jump_step": 1
+          }
+        },
+        {
+          "paraphrase_id": "q2",
+          "query": "Adjust etcd's out-of-space handling for KV writes. Give me the first code anchors and the checks needed before shipping.",
+          "status": "accepted",
+          "plan": {
+            "version": 1,
+            "steps": [
+              {
+                "id": "s1",
+                "action": "Inspect the storage quota enforcement logic to understand current out-of-space checks and request cost estimation.",
+                "evidence_refs": [
+                  "e01",
+                  "e04",
+                  "e08"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s2",
+                "action": "Review the raft apply pipeline's quota applier to see how quota errors are handled during apply.",
+                "evidence_refs": [
+                  "e02",
+                  "e05",
+                  "e06"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s3",
+                "action": "Examine the v3 RPC quota handling to identify where out-of-space errors are surfaced to clients.",
+                "evidence_refs": [
+                  "e03",
+                  "e07",
+                  "e09"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s4",
+                "action": "Trace the KV Put path from RPC gateway through server and txn layers to locate all quota check points.",
+                "evidence_refs": [
+                  "e10",
+                  "e12",
+                  "e13"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s5",
+                "action": "Inspect the backend batch transaction and bbolt put callsite to understand low-level write behavior under quota pressure.",
+                "evidence_refs": [
+                  "e14",
+                  "e17"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s6",
+                "action": "Verify the absence of task-specific tests and entrypoints to plan manual verification and test additions.",
+                "evidence_refs": [
+                  "e20",
+                  "e21"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "unknown"
+              }
+            ],
+            "unknowns": [
+              {
+                "id": "u1",
+                "question": "What is the exact current behavior when a KV write exceeds the storage quota?",
+                "evidence_refs": [
+                  "e01",
+                  "e04"
+                ]
+              },
+              {
+                "id": "u2",
+                "question": "How does the apply pipeline propagate quota errors to the RPC layer?",
+                "evidence_refs": [
+                  "e02",
+                  "e05"
+                ]
+              },
+              {
+                "id": "u3",
+                "question": "What are the unresolved call relations in the Put paths that affect quota enforcement?",
+                "evidence_refs": [
+                  "e05",
+                  "e07"
+                ]
+              },
+              {
+                "id": "u4",
+                "question": "What tests exist or need to be added to verify out-of-space handling changes?",
+                "evidence_refs": [
+                  "e21"
+                ]
+              }
+            ]
+          },
+          "metrics": {
+            "schema_valid": true,
+            "valid_ref_rate": 1,
+            "grounding_rate": 1,
+            "connected_or_separate_rate": 1,
+            "unsupported_claims": 0,
+            "duplicate_action_rate": 0,
+            "actionability_rate": 0.833,
+            "source_jump_step": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "p2",
+      "label": "P2 · planner + bounded critic",
+      "description": "The P1 planner is reused as a controlled baseline; the critic can only remove/reorder steps or increase uncertainty.",
+      "runs": [
+        {
+          "paraphrase_id": "q1",
+          "query": "Change how etcd rejects a KV Put when backend quota is exhausted. Where should I edit, and what behavior must I verify?",
+          "status": "accepted",
+          "plan": {
+            "version": 1,
+            "steps": [
+              {
+                "id": "s1",
+                "action": "Inspect the storage quota enforcement logic to locate the rejection condition for exhausted quota.",
+                "evidence_refs": [
+                  "e01",
+                  "e04",
+                  "e08"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s2",
+                "action": "Inspect the apply pipeline's quota applier to see how Put requests are checked against quota.",
+                "evidence_refs": [
+                  "e02",
+                  "e05",
+                  "e06"
+                ],
+                "evidence_mode": "connected",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s3",
+                "action": "Inspect the v3 RPC quota handling to understand the client-facing rejection path.",
+                "evidence_refs": [
+                  "e03",
+                  "e07",
+                  "e09"
+                ],
+                "evidence_mode": "connected",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s4",
+                "action": "Trace the Put request flow from the RPC service through the apply layer to the storage quota check.",
+                "evidence_refs": [
+                  "e13",
+                  "e10",
+                  "e11"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s5",
+                "action": "Modify the quota rejection logic to change the behavior when backend quota is exhausted.",
+                "evidence_refs": [
+                  "e01",
+                  "e04"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s6",
+                "action": "Verify the new rejection behavior by exercising the Put path under quota exhaustion.",
+                "evidence_refs": [
+                  "e02",
+                  "e03"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "unknown"
+              }
+            ],
+            "unknowns": [
+              {
+                "id": "u1",
+                "question": "What is the exact call path from the gRPC Put handler to the quota check?",
+                "evidence_refs": [
+                  "e12",
+                  "e15"
+                ]
+              },
+              {
+                "id": "u2",
+                "question": "What are the unresolved outgoing calls from the Put methods in the apply and v3rpc layers?",
+                "evidence_refs": [
+                  "e05",
+                  "e07"
+                ]
+              },
+              {
+                "id": "u3",
+                "question": "What is the exact behavior of the unsafePut route when quota is exhausted?",
+                "evidence_refs": [
+                  "e14"
+                ]
+              },
+              {
+                "id": "u4",
+                "question": "What tests or commands verify the quota rejection behavior?",
+                "evidence_refs": [
+                  "e21"
+                ]
+              }
+            ]
+          },
+          "metrics": {
+            "schema_valid": true,
+            "valid_ref_rate": 1,
+            "grounding_rate": 1,
+            "connected_or_separate_rate": 1,
+            "unsupported_claims": 0,
+            "duplicate_action_rate": 0,
+            "actionability_rate": 1,
+            "source_jump_step": 1
+          },
+          "critic_change": "removed=0; reordered=false"
+        },
+        {
+          "paraphrase_id": "q2",
+          "query": "Adjust etcd's out-of-space handling for KV writes. Give me the first code anchors and the checks needed before shipping.",
+          "status": "accepted",
+          "plan": {
+            "version": 1,
+            "steps": [
+              {
+                "id": "s1",
+                "action": "Inspect the storage quota enforcement logic to understand current out-of-space checks.",
+                "evidence_refs": [
+                  "e01"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s2",
+                "action": "Review the raft apply pipeline's quota handling to see how out-of-space is propagated.",
+                "evidence_refs": [
+                  "e02"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s3",
+                "action": "Examine the v3 RPC service's quota integration for KV write paths.",
+                "evidence_refs": [
+                  "e03"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s4",
+                "action": "Trace the Put method in the apply layer to identify where out-of-space errors are generated.",
+                "evidence_refs": [
+                  "e05"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s5",
+                "action": "Inspect the cost estimation function for Put requests to understand how request size is calculated.",
+                "evidence_refs": [
+                  "e04"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              },
+              {
+                "id": "s6",
+                "action": "Check the available space method to see how current usage is determined.",
+                "evidence_refs": [
+                  "e08"
+                ],
+                "evidence_mode": "separate",
+                "uncertainty": "partial"
+              }
+            ],
+            "unknowns": [
+              {
+                "id": "u1",
+                "question": "What is the exact behavior when the quota is exceeded in the apply pipeline?",
+                "evidence_refs": [
+                  "e02"
+                ]
+              },
+              {
+                "id": "u2",
+                "question": "How does the v3 RPC layer handle out-of-space errors before reaching the apply layer?",
+                "evidence_refs": [
+                  "e03"
+                ]
+              },
+              {
+                "id": "u3",
+                "question": "What are the unresolved call relations from the Put method in the apply layer?",
+                "evidence_refs": [
+                  "e05"
+                ]
+              },
+              {
+                "id": "u4",
+                "question": "What exact tests or verification commands are needed to validate the changes?",
+                "evidence_refs": [
+                  "e21"
+                ]
+              }
+            ]
+          },
+          "metrics": {
+            "schema_valid": true,
+            "valid_ref_rate": 1,
+            "grounding_rate": 1,
+            "connected_or_separate_rate": 1,
+            "unsupported_claims": 0,
+            "duplicate_action_rate": 0,
+            "actionability_rate": 1,
+            "source_jump_step": 1
+          },
+          "critic_change": "removed=0; reordered=false"
+        }
+      ]
+    }
+  ],
+  "scorecard": [
+    {
+      "treatment_id": "d0",
+      "status": "accepted",
+      "valid_ref_rate": 1,
+      "grounding_rate": 1,
+      "connected_or_separate_rate": 1,
+      "unsupported_claims": 0,
+      "duplicate_action_rate": 0,
+      "actionability_rate": 1,
+      "anchor_stability": 1,
+      "source_jump_by_step_2": true,
+      "utility_score": 100,
+      "score_meaning": "heuristic utility proxy, not correctness probability"
+    },
+    {
+      "treatment_id": "p1",
+      "status": "accepted",
+      "valid_ref_rate": 1,
+      "grounding_rate": 1,
+      "connected_or_separate_rate": 1,
+      "unsupported_claims": 0,
+      "duplicate_action_rate": 0,
+      "actionability_rate": 0.917,
+      "anchor_stability": 0.647,
+      "source_jump_by_step_2": true,
+      "utility_score": 91.446,
+      "score_meaning": "heuristic utility proxy, not correctness probability"
+    },
+    {
+      "treatment_id": "p2",
+      "status": "accepted",
+      "valid_ref_rate": 1,
+      "grounding_rate": 1,
+      "connected_or_separate_rate": 1,
+      "unsupported_claims": 0,
+      "duplicate_action_rate": 0,
+      "actionability_rate": 1,
+      "anchor_stability": 0.5,
+      "source_jump_by_step_2": true,
+      "utility_score": 90,
+      "score_meaning": "heuristic utility proxy, not correctness probability"
+    }
+  ],
+  "receipts": {
+    "version": 1,
+    "source_run_id": "20260827-221344-etcd-a086dce0989a",
+    "source_artifacts": [
+      {
+        "artifact": "activity-entrypoints.json",
+        "sha256": "dba33a3fbcf579496d1fbd3a1db4671af51c0951bf17f778762f262ca761f4d7",
+        "bytes": 68866
+      },
+      {
+        "artifact": "activity-paths.json",
+        "sha256": "05a2c469a641ae9d21c01ee909484f12a24de8a3b660d12f45a720141ee8a2e1",
+        "bytes": 993776
+      },
+      {
+        "artifact": "core-map.json",
+        "sha256": "017b10c0720ae944ff369613596c206ab2472c12b43bab6d51bcf485fb08d53d",
+        "bytes": 1863293
+      },
+      {
+        "artifact": "integration-dependencies.json",
+        "sha256": "eb92632ae8c511f479d0a8d02a2f0a6d421e4f6cb6eef60a7fbceadb504ed538",
+        "bytes": 64339
+      },
+      {
+        "artifact": "integration-usage.json",
+        "sha256": "a3c4ee52e02977fef16a047eac3083733f02352de2e9b17604c319ea2da43374",
+        "bytes": 694153
+      },
+      {
+        "artifact": "program-index.json",
+        "sha256": "daddfdf71acdc4bf139bef965ea193a2899b9a8497548af6dbb13e2464c9e88a",
+        "bytes": 17987873
+      }
+    ],
+    "model_calls": [
+      {
+        "call_id": "p1-q1",
+        "stage": "p1",
+        "paraphrase_id": "q1",
+        "status": "accepted",
+        "cached": false,
+        "request_sha256": "dc4dd8eb06ec21601dac0fe75f30e1ffb8c2a73bfec87a4543bd9441d7827d41",
+        "response_sha256": "bcf96e90036d7e286b332ead0422efa95fec55f6f697bccafdcefb6d056fadb7",
+        "input_tokens": 2351,
+        "output_tokens": 517,
+        "latency_ms": 4397,
+        "attempts": 1
+      },
+      {
+        "call_id": "p1-q2",
+        "stage": "p1",
+        "paraphrase_id": "q2",
+        "status": "accepted",
+        "cached": false,
+        "request_sha256": "dbe8245b6c486f3eee67de7966e5c53f3ba27663301da43aef6b53ee18b787d1",
+        "response_sha256": "7a24d5d2ab61dbed170553447d90b7f4c896f887d11ae2aea4a819bfdbdd8fa8",
+        "input_tokens": 2350,
+        "output_tokens": 481,
+        "latency_ms": 3924,
+        "attempts": 1
+      },
+      {
+        "call_id": "p2-critic-q1",
+        "stage": "p2-critic",
+        "paraphrase_id": "q1",
+        "status": "accepted",
+        "cached": false,
+        "request_sha256": "abf46506ddfec9116378297088144915ac0c11bd45be989b72e1c73262670315",
+        "response_sha256": "ac896f91cd63e3452ffcd5281b6c1b5bda762526e53cf6612ac5968c54d02e65",
+        "input_tokens": 2606,
+        "output_tokens": 89,
+        "latency_ms": 1571,
+        "attempts": 1
+      },
+      {
+        "call_id": "p2-critic-q2",
+        "stage": "p2-critic",
+        "paraphrase_id": "q2",
+        "status": "accepted",
+        "cached": false,
+        "request_sha256": "12e6e21cf18025844fa2cd9e6990d07d7bdb8c4e65caa6b4804e4f29ff952490",
+        "response_sha256": "3b6136a77118d4f533f820446ea1389d86014cd3b3d9d2b7162db2738055cd66",
+        "input_tokens": 2564,
+        "output_tokens": 89,
+        "latency_ms": 1444,
+        "attempts": 1
+      },
+      {
+        "call_id": "p2-planner-q1",
+        "stage": "p2-planner",
+        "paraphrase_id": "q1",
+        "status": "accepted",
+        "cached": false,
+        "request_sha256": "dc4dd8eb06ec21601dac0fe75f30e1ffb8c2a73bfec87a4543bd9441d7827d41",
+        "response_sha256": "5c9f0f2603180df8ce3991a79b807251767633aa13535b2ca73103b113093af3",
+        "input_tokens": 2351,
+        "output_tokens": 460,
+        "latency_ms": 3626,
+        "attempts": 1
+      },
+      {
+        "call_id": "p2-planner-q2",
+        "stage": "p2-planner",
+        "paraphrase_id": "q2",
+        "status": "accepted",
+        "cached": false,
+        "request_sha256": "dbe8245b6c486f3eee67de7966e5c53f3ba27663301da43aef6b53ee18b787d1",
+        "response_sha256": "be0b0b4738aa94d5981b15f9a1295528b27d67d2dff02c547979cebfb036cfee",
+        "input_tokens": 2350,
+        "output_tokens": 564,
+        "latency_ms": 4198,
+        "attempts": 1
+      }
+    ]
+  }
+}

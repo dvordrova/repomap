@@ -1,0 +1,2571 @@
+{
+  "version": 1,
+  "experiment": "existing-facts/integration-cockpit",
+  "source_run_id": "20260827-221344-etcd-a086dce0989a",
+  "repository": "go.etcd.io/etcd/v3",
+  "repository_url": "https://github.com/etcd-io/etcd",
+  "revision": "58f45a9ff1c083130830eb02b0cc7d9783609095",
+  "availability": "available_with_frontier",
+  "source_artifacts": [
+    {
+      "name": "dependency-catalog.json",
+      "present": true,
+      "canonical": true,
+      "cross_validated": false,
+      "sha256": "8ad3751c4704b39e44d73e46745e3c9dc33c99a0f9af01a02f506ba43c224c04",
+      "role": "dependency authority"
+    },
+    {
+      "name": "integration-dependencies.json",
+      "present": true,
+      "canonical": true,
+      "cross_validated": true,
+      "sha256": "eb92632ae8c511f479d0a8d02a2f0a6d421e4f6cb6eef60a7fbceadb504ed538",
+      "role": "selected dependency authority"
+    },
+    {
+      "name": "integration-usage.json",
+      "present": true,
+      "canonical": true,
+      "cross_validated": true,
+      "sha256": "a3c4ee52e02977fef16a047eac3083733f02352de2e9b17604c319ea2da43374",
+      "role": "operation authority"
+    },
+    {
+      "name": "program-index.json",
+      "present": true,
+      "canonical": true,
+      "cross_validated": true,
+      "sha256": "daddfdf71acdc4bf139bef965ea193a2899b9a8497548af6dbb13e2464c9e88a",
+      "role": "locator authority"
+    },
+    {
+      "name": "activity-entrypoints.json",
+      "present": true,
+      "canonical": true,
+      "cross_validated": true,
+      "sha256": "dba33a3fbcf579496d1fbd3a1db4671af51c0951bf17f778762f262ca761f4d7",
+      "role": "reachability validation input"
+    },
+    {
+      "name": "activity-paths.json",
+      "present": true,
+      "canonical": true,
+      "cross_validated": true,
+      "sha256": "05a2c469a641ae9d21c01ee909484f12a24de8a3b660d12f45a720141ee8a2e1",
+      "role": "reachability authority"
+    },
+    {
+      "name": "core-map.json",
+      "present": true,
+      "canonical": true,
+      "cross_validated": true,
+      "sha256": "017b10c0720ae944ff369613596c206ab2472c12b43bab6d51bcf485fb08d53d",
+      "role": "responsibility authority"
+    }
+  ],
+  "catalog": {
+    "version": 1,
+    "dependency": {
+      "ref": "d1",
+      "name": "bbolt",
+      "kind": "external",
+      "module_path": "go.etcd.io/bbolt",
+      "module_version": "v1.5.0-beta.0",
+      "package_path": "go.etcd.io/bbolt"
+    },
+    "importers": [
+      {
+        "ref": "i01",
+        "name": "embed",
+        "package_path": "go.etcd.io/etcd/server/v3/embed",
+        "repository_path": "server/embed"
+      },
+      {
+        "ref": "i02",
+        "name": "schema",
+        "package_path": "go.etcd.io/etcd/server/v3/storage/schema",
+        "repository_path": "server/storage/schema"
+      },
+      {
+        "ref": "i03",
+        "name": "config",
+        "package_path": "go.etcd.io/etcd/server/v3/config",
+        "repository_path": "server/config"
+      },
+      {
+        "ref": "i04",
+        "name": "backend",
+        "package_path": "go.etcd.io/etcd/server/v3/storage/backend",
+        "repository_path": "server/storage/backend"
+      }
+    ],
+    "callers": [
+      {
+        "ref": "c01",
+        "name": "newBackend",
+        "kind": "function",
+        "location": {
+          "path": "server/storage/backend/backend.go",
+          "line": 195,
+          "column": 6,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L195"
+        },
+        "route_ref": "r01",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c02",
+        "name": "unsafeForEach",
+        "kind": "function",
+        "location": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 234,
+          "column": 6,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L234"
+        },
+        "route_ref": "r02",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c03",
+        "name": "unsafeCommit$1",
+        "kind": "function",
+        "location": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 371,
+          "column": 6,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L371"
+        },
+        "route_ref": "r03",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c04",
+        "name": "Hash$1",
+        "kind": "function",
+        "location": {
+          "path": "server/storage/backend/backend.go",
+          "line": 408,
+          "column": 19,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L408"
+        },
+        "route_ref": "r04",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c05",
+        "name": "UnsafeDelete",
+        "kind": "method",
+        "location": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 209,
+          "column": 19,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L209"
+        },
+        "route_ref": "r05",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c06",
+        "name": "defrag",
+        "kind": "method",
+        "location": {
+          "path": "server/storage/backend/backend.go",
+          "line": 476,
+          "column": 19,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L476"
+        },
+        "route_ref": "r06",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c07",
+        "name": "defragdb$2",
+        "kind": "function",
+        "location": {
+          "path": "server/storage/backend/backend.go",
+          "line": 653,
+          "column": 22,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L653"
+        },
+        "route_ref": "r07",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c08",
+        "name": "Snapshot",
+        "kind": "method",
+        "location": {
+          "path": "server/storage/backend/backend.go",
+          "line": 359,
+          "column": 19,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L359"
+        },
+        "route_ref": "r08",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c09",
+        "name": "Hash",
+        "kind": "method",
+        "location": {
+          "path": "server/storage/backend/backend.go",
+          "line": 403,
+          "column": 19,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L403"
+        },
+        "route_ref": "r09",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c10",
+        "name": "commit",
+        "kind": "method",
+        "location": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 261,
+          "column": 19,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L261"
+        },
+        "route_ref": "r10",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c11",
+        "name": "unsafeBegin",
+        "kind": "method",
+        "location": {
+          "path": "server/storage/backend/backend.go",
+          "line": 693,
+          "column": 19,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L693"
+        },
+        "route_ref": "r11",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c12",
+        "name": "unsafePut",
+        "kind": "method",
+        "location": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 149,
+          "column": 19,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L149"
+        },
+        "route_ref": "r12",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c13",
+        "name": "UnsafeRange",
+        "kind": "method",
+        "location": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 174,
+          "column": 19,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L174"
+        },
+        "route_ref": "r13",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c14",
+        "name": "Close",
+        "kind": "method",
+        "location": {
+          "path": "server/storage/backend/backend.go",
+          "line": 713,
+          "column": 20,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L713"
+        },
+        "route_ref": "r14",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c15",
+        "name": "begin",
+        "kind": "method",
+        "location": {
+          "path": "server/storage/backend/backend.go",
+          "line": 678,
+          "column": 19,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L678"
+        },
+        "route_ref": "r15",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c16",
+        "name": "Close",
+        "kind": "method",
+        "location": {
+          "path": "server/storage/backend/backend.go",
+          "line": 459,
+          "column": 19,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L459"
+        },
+        "route_ref": "r16",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c17",
+        "name": "UnsafeCreateBucket",
+        "kind": "method",
+        "location": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 116,
+          "column": 19,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L116"
+        },
+        "route_ref": "r17",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c18",
+        "name": "UnsafeRange",
+        "kind": "method",
+        "location": {
+          "path": "server/storage/backend/read_tx.go",
+          "line": 78,
+          "column": 31,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/read_tx.go#L78"
+        },
+        "route_ref": "r18",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c19",
+        "name": "defragdb$1",
+        "kind": "function",
+        "location": {
+          "path": "server/storage/backend/backend.go",
+          "line": 625,
+          "column": 8,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L625"
+        },
+        "route_ref": "r19",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c20",
+        "name": "UnsafeDeleteBucket",
+        "kind": "method",
+        "location": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 127,
+          "column": 19,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L127"
+        },
+        "route_ref": "r20",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c21",
+        "name": "unsafeRange",
+        "kind": "function",
+        "location": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 186,
+          "column": 6,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L186"
+        },
+        "route_ref": "r21",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c22",
+        "name": "defragdb",
+        "kind": "function",
+        "location": {
+          "path": "server/storage/backend/backend.go",
+          "line": 616,
+          "column": 6,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L616"
+        },
+        "route_ref": "r22",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k01"
+        ]
+      },
+      {
+        "ref": "c23",
+        "name": "ReadStorageVersionFromSnapshot",
+        "kind": "function",
+        "location": {
+          "path": "server/storage/schema/version.go",
+          "line": 48,
+          "column": 6,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/schema/version.go#L48"
+        },
+        "route_ref": "r23",
+        "reachability": "frontier",
+        "frontier": [
+          "program_objects_omitted",
+          "program_relations_omitted"
+        ],
+        "core_refs": [
+          "k02"
+        ]
+      }
+    ],
+    "operations": [
+      {
+        "ref": "o001",
+        "caller_ref": "c05",
+        "label": "Access bbolt bucket",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Bucket",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 210,
+          "column": 23,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L210"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o002",
+        "caller_ref": "c23",
+        "label": "Read storage version from bbolt",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Bucket.Get",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/schema/version.go",
+          "line": 49,
+          "column": 33,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/schema/version.go#L49"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o003",
+        "caller_ref": "c06",
+        "label": "Close bbolt database",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*DB.Close",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 558,
+          "column": 14,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L558"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o004",
+        "caller_ref": "c06",
+        "label": "Close bbolt database",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*DB.Close",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 570,
+          "column": 18,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L570"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o005",
+        "caller_ref": "c06",
+        "label": "Close bbolt database",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*DB.Close",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 574,
+          "column": 19,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L574"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o006",
+        "caller_ref": "c17",
+        "label": "Create bbolt bucket",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.CreateBucketIfNotExists",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 117,
+          "column": 43,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L117"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o007",
+        "caller_ref": "c11",
+        "label": "Begin bbolt transaction",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*DB.Begin",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 695,
+          "column": 23,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L695"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o008",
+        "caller_ref": "c06",
+        "label": "Access bbolt database",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.DB",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 594,
+          "column": 22,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L594"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o009",
+        "caller_ref": "c15",
+        "label": "Access bbolt database",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.DB",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 684,
+          "column": 13,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L684"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o010",
+        "caller_ref": "c04",
+        "label": "Iterate bbolt cursor",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Cursor.Next",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 410,
+          "column": 58,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L410"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o011",
+        "caller_ref": "c06",
+        "label": "Get bbolt database stats",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*DB.Stats",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 596,
+          "column": 54,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L596"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o012",
+        "caller_ref": "c22",
+        "label": "Create bbolt cursor",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Cursor",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 638,
+          "column": 16,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L638"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o013",
+        "caller_ref": "c07",
+        "label": "Access bbolt bucket",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Bucket",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 664,
+          "column": 24,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L664"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o014",
+        "caller_ref": "c04",
+        "label": "Iterate bbolt cursor",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Cursor.First",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 410,
+          "column": 25,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L410"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o015",
+        "caller_ref": "c15",
+        "label": "Get bbolt database info",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*DB.Info",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 687,
+          "column": 76,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L687"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o016",
+        "caller_ref": "c08",
+        "label": "Begin bbolt transaction",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*DB.Begin",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 364,
+          "column": 23,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L364"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o017",
+        "caller_ref": "c21",
+        "label": "Iterate bbolt cursor",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Cursor.Next",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 198,
+          "column": 70,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L198"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o018",
+        "caller_ref": "c13",
+        "label": "Access bbolt bucket",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Bucket",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 175,
+          "column": 23,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L175"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o019",
+        "caller_ref": "c12",
+        "label": "Access bbolt bucket",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Bucket",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 150,
+          "column": 23,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L150"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o020",
+        "caller_ref": "c07",
+        "label": "Commit bbolt transaction",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Commit",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 656,
+          "column": 23,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L656"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o021",
+        "caller_ref": "c10",
+        "label": "Get bbolt transaction stats",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Stats",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 274,
+          "column": 34,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L274"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o022",
+        "caller_ref": "c10",
+        "label": "Get bbolt transaction stats",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Stats",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 275,
+          "column": 30,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L275"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o023",
+        "caller_ref": "c10",
+        "label": "Get bbolt transaction stats",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Stats",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 276,
+          "column": 30,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L276"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o024",
+        "caller_ref": "c03",
+        "label": "Rollback bbolt transaction",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Rollback",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 373,
+          "column": 25,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L373"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o025",
+        "caller_ref": "c22",
+        "label": "Create bbolt bucket",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.CreateBucketIfNotExists",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 647,
+          "column": 46,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L647"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o026",
+        "caller_ref": "c02",
+        "label": "Iterate bbolt bucket",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Bucket.ForEach",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 236,
+          "column": 19,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L236"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o027",
+        "caller_ref": "c18",
+        "label": "Access bbolt bucket",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Bucket",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/read_tx.go",
+          "line": 103,
+          "column": 32,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/read_tx.go#L103"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o028",
+        "caller_ref": "c06",
+        "label": "Get bbolt database path",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*DB.Path",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 498,
+          "column": 31,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L498"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o029",
+        "caller_ref": "c06",
+        "label": "Get bbolt database path",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*DB.Path",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 530,
+          "column": 18,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L530"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o030",
+        "caller_ref": "c06",
+        "label": "Get bbolt database path",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*DB.Path",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 559,
+          "column": 38,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L559"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o031",
+        "caller_ref": "c01",
+        "label": "Open bbolt database",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.Open",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 213,
+          "column": 22,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L213"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o032",
+        "caller_ref": "c06",
+        "label": "Open bbolt database",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.Open",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 516,
+          "column": 25,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L516"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o033",
+        "caller_ref": "c06",
+        "label": "Open bbolt database",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.Open",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 584,
+          "column": 23,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L584"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o034",
+        "caller_ref": "c08",
+        "label": "Get bbolt transaction size",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Size",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 370,
+          "column": 20,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L370"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o035",
+        "caller_ref": "c23",
+        "label": "Access bbolt bucket",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Bucket",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/schema/version.go",
+          "line": 49,
+          "column": 16,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/schema/version.go#L49"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o036",
+        "caller_ref": "c22",
+        "label": "Iterate bbolt bucket",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Bucket.ForEach",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 653,
+          "column": 21,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L653"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o037",
+        "caller_ref": "c10",
+        "label": "Commit bbolt transaction",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Commit",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 271,
+          "column": 21,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L271"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o038",
+        "caller_ref": "c15",
+        "label": "Get bbolt database stats",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*DB.Stats",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 685,
+          "column": 19,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L685"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o039",
+        "caller_ref": "c09",
+        "label": "View bbolt database",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*DB.View",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 408,
+          "column": 18,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L408"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o040",
+        "caller_ref": "c22",
+        "label": "Commit bbolt transaction",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Commit",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 675,
+          "column": 21,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L675"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o041",
+        "caller_ref": "c06",
+        "label": "Get bbolt transaction size",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Size",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 593,
+          "column": 26,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L593"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o042",
+        "caller_ref": "c04",
+        "label": "Create bbolt cursor",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Cursor",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 409,
+          "column": 17,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L409"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o043",
+        "caller_ref": "c22",
+        "label": "Iterate bbolt cursor",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Cursor.First",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 641,
+          "column": 24,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L641"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o044",
+        "caller_ref": "c04",
+        "label": "Iterate bbolt bucket",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Bucket.ForEach",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 416,
+          "column": 13,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L416"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o045",
+        "caller_ref": "c22",
+        "label": "Access bbolt bucket",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Bucket",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 642,
+          "column": 17,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L642"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o046",
+        "caller_ref": "c18",
+        "label": "Create bbolt cursor",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Bucket.Cursor",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/read_tx.go",
+          "line": 117,
+          "column": 20,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/read_tx.go#L117"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o047",
+        "caller_ref": "c12",
+        "label": "Put bbolt key-value",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Bucket.Put",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 163,
+          "column": 22,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L163"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o048",
+        "caller_ref": "c16",
+        "label": "Close bbolt database",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*DB.Close",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 464,
+          "column": 19,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L464"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o049",
+        "caller_ref": "c20",
+        "label": "Delete bbolt bucket",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.DeleteBucket",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 128,
+          "column": 26,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L128"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o050",
+        "caller_ref": "c07",
+        "label": "Put bbolt key-value",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Bucket.Put",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 669,
+          "column": 19,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L669"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o051",
+        "caller_ref": "c22",
+        "label": "Iterate bbolt cursor",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Cursor.Next",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 641,
+          "column": 57,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L641"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o052",
+        "caller_ref": "c06",
+        "label": "Get bbolt database info",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*DB.Info",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 596,
+          "column": 81,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L596"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o053",
+        "caller_ref": "c02",
+        "label": "Access bbolt bucket",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Bucket",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 235,
+          "column": 19,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L235"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o054",
+        "caller_ref": "c04",
+        "label": "Access bbolt bucket",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Bucket",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 411,
+          "column": 18,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L411"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o055",
+        "caller_ref": "c22",
+        "label": "Rollback bbolt transaction",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Rollback",
+        "invocation": "deferred",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 636,
+          "column": 2,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L636"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o056",
+        "caller_ref": "c13",
+        "label": "Create bbolt cursor",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Bucket.Cursor",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 183,
+          "column": 34,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L183"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o057",
+        "caller_ref": "c21",
+        "label": "Seek bbolt cursor",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Cursor.Seek",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 198,
+          "column": 22,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L198"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o058",
+        "caller_ref": "c14",
+        "label": "Rollback bbolt transaction",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Rollback",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 716,
+          "column": 22,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L716"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o059",
+        "caller_ref": "c05",
+        "label": "Delete bbolt key",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Bucket.Delete",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/batch_tx.go",
+          "line": 218,
+          "column": 22,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go#L218"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o060",
+        "caller_ref": "c15",
+        "label": "Get bbolt transaction size",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Size",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 683,
+          "column": 17,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L683"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o061",
+        "caller_ref": "c19",
+        "label": "Rollback bbolt transaction",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*Tx.Rollback",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 627,
+          "column": 18,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L627"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o062",
+        "caller_ref": "c07",
+        "label": "Begin bbolt transaction",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*DB.Begin",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 660,
+          "column": 29,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L660"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o063",
+        "caller_ref": "c22",
+        "label": "Begin bbolt transaction",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*DB.Begin",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 621,
+          "column": 27,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L621"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      },
+      {
+        "ref": "o064",
+        "caller_ref": "c22",
+        "label": "Begin bbolt transaction",
+        "mechanism": "bbolt",
+        "canonical_callee": "go.etcd.io/bbolt.*DB.Begin",
+        "invocation": "synchronous",
+        "authority": "exact_external_symbol",
+        "callsite": {
+          "path": "server/storage/backend/backend.go",
+          "line": 632,
+          "column": 22,
+          "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go#L632"
+        },
+        "relation": "exact",
+        "witness_kind": "go_external_static_call",
+        "program_index_validated": true,
+        "activity_outcome_matched": true
+      }
+    ],
+    "core_areas": [
+      {
+        "ref": "k01",
+        "name": "Storage backend",
+        "purpose": "Provides a bbolt-backed storage backend with transaction support, snapshots, hashing, and defragmentation.",
+        "files": [
+          {
+            "ref": "k01f02",
+            "path": "server/storage/backend/backend.go",
+            "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/backend.go"
+          },
+          {
+            "ref": "k01f03",
+            "path": "server/storage/backend/batch_tx.go",
+            "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/batch_tx.go"
+          },
+          {
+            "ref": "k01f04",
+            "path": "server/storage/backend/read_tx.go",
+            "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/backend/read_tx.go"
+          }
+        ],
+        "caller_refs": [
+          "c01",
+          "c02",
+          "c03",
+          "c04",
+          "c05",
+          "c06",
+          "c07",
+          "c08",
+          "c09",
+          "c10",
+          "c11",
+          "c12",
+          "c13",
+          "c14",
+          "c15",
+          "c16",
+          "c17",
+          "c18",
+          "c19",
+          "c20",
+          "c21",
+          "c22"
+        ]
+      },
+      {
+        "ref": "k02",
+        "name": "Storage schema and migration",
+        "purpose": "Manages storage schema versioning, migration, and validation.",
+        "files": [
+          {
+            "ref": "k02f03",
+            "path": "server/storage/schema/version.go",
+            "source_url": "https://github.com/etcd-io/etcd/blob/58f45a9ff1c083130830eb02b0cc7d9783609095/server/storage/schema/version.go"
+          }
+        ],
+        "caller_refs": [
+          "c23"
+        ]
+      }
+    ],
+    "slots": [
+      {
+        "ref": "s01",
+        "key": "connection_lifecycle",
+        "title": "Connection lifecycle",
+        "operation_refs": [
+          "o003",
+          "o004",
+          "o005",
+          "o031",
+          "o032",
+          "o033",
+          "o048"
+        ],
+        "caller_refs": [
+          "c01",
+          "c06",
+          "c16"
+        ],
+        "core_refs": [
+          "k01"
+        ],
+        "callees": [
+          "go.etcd.io/bbolt.*DB.Close",
+          "go.etcd.io/bbolt.Open"
+        ],
+        "files": [
+          "server/storage/backend/backend.go"
+        ]
+      },
+      {
+        "ref": "s02",
+        "key": "transaction_control",
+        "title": "Transaction control",
+        "operation_refs": [
+          "o007",
+          "o016",
+          "o020",
+          "o024",
+          "o037",
+          "o039",
+          "o040",
+          "o055",
+          "o058",
+          "o061",
+          "o062",
+          "o063",
+          "o064"
+        ],
+        "caller_refs": [
+          "c03",
+          "c07",
+          "c08",
+          "c09",
+          "c10",
+          "c11",
+          "c14",
+          "c19",
+          "c22"
+        ],
+        "core_refs": [
+          "k01"
+        ],
+        "callees": [
+          "go.etcd.io/bbolt.*DB.Begin",
+          "go.etcd.io/bbolt.*DB.View",
+          "go.etcd.io/bbolt.*Tx.Commit",
+          "go.etcd.io/bbolt.*Tx.Rollback"
+        ],
+        "files": [
+          "server/storage/backend/backend.go",
+          "server/storage/backend/batch_tx.go"
+        ]
+      },
+      {
+        "ref": "s03",
+        "key": "bucket_structure",
+        "title": "Bucket structure",
+        "operation_refs": [
+          "o001",
+          "o006",
+          "o013",
+          "o018",
+          "o019",
+          "o025",
+          "o027",
+          "o035",
+          "o045",
+          "o049",
+          "o053",
+          "o054"
+        ],
+        "caller_refs": [
+          "c02",
+          "c04",
+          "c05",
+          "c07",
+          "c12",
+          "c13",
+          "c17",
+          "c18",
+          "c20",
+          "c22",
+          "c23"
+        ],
+        "core_refs": [
+          "k01",
+          "k02"
+        ],
+        "callees": [
+          "go.etcd.io/bbolt.*Tx.Bucket",
+          "go.etcd.io/bbolt.*Tx.CreateBucketIfNotExists",
+          "go.etcd.io/bbolt.*Tx.DeleteBucket"
+        ],
+        "files": [
+          "server/storage/backend/backend.go",
+          "server/storage/backend/batch_tx.go",
+          "server/storage/backend/read_tx.go",
+          "server/storage/schema/version.go"
+        ]
+      },
+      {
+        "ref": "s04",
+        "key": "key_value_mutation",
+        "title": "Key/value mutation",
+        "operation_refs": [
+          "o047",
+          "o050",
+          "o059"
+        ],
+        "caller_refs": [
+          "c05",
+          "c07",
+          "c12"
+        ],
+        "core_refs": [
+          "k01"
+        ],
+        "callees": [
+          "go.etcd.io/bbolt.*Bucket.Delete",
+          "go.etcd.io/bbolt.*Bucket.Put"
+        ],
+        "files": [
+          "server/storage/backend/backend.go",
+          "server/storage/backend/batch_tx.go"
+        ]
+      },
+      {
+        "ref": "s05",
+        "key": "scan_and_read",
+        "title": "Scan and read",
+        "operation_refs": [
+          "o002",
+          "o010",
+          "o012",
+          "o014",
+          "o017",
+          "o026",
+          "o036",
+          "o042",
+          "o043",
+          "o044",
+          "o046",
+          "o051",
+          "o056",
+          "o057"
+        ],
+        "caller_refs": [
+          "c02",
+          "c04",
+          "c13",
+          "c18",
+          "c21",
+          "c22",
+          "c23"
+        ],
+        "core_refs": [
+          "k01",
+          "k02"
+        ],
+        "callees": [
+          "go.etcd.io/bbolt.*Bucket.Cursor",
+          "go.etcd.io/bbolt.*Bucket.ForEach",
+          "go.etcd.io/bbolt.*Bucket.Get",
+          "go.etcd.io/bbolt.*Cursor.First",
+          "go.etcd.io/bbolt.*Cursor.Next",
+          "go.etcd.io/bbolt.*Cursor.Seek",
+          "go.etcd.io/bbolt.*Tx.Cursor"
+        ],
+        "files": [
+          "server/storage/backend/backend.go",
+          "server/storage/backend/batch_tx.go",
+          "server/storage/backend/read_tx.go",
+          "server/storage/schema/version.go"
+        ]
+      },
+      {
+        "ref": "s06",
+        "key": "maintenance_diagnostics",
+        "title": "Maintenance and diagnostics",
+        "operation_refs": [
+          "o008",
+          "o009",
+          "o011",
+          "o015",
+          "o021",
+          "o022",
+          "o023",
+          "o028",
+          "o029",
+          "o030",
+          "o034",
+          "o038",
+          "o041",
+          "o052",
+          "o060"
+        ],
+        "caller_refs": [
+          "c06",
+          "c08",
+          "c10",
+          "c15"
+        ],
+        "core_refs": [
+          "k01"
+        ],
+        "callees": [
+          "go.etcd.io/bbolt.*DB.Info",
+          "go.etcd.io/bbolt.*DB.Path",
+          "go.etcd.io/bbolt.*DB.Stats",
+          "go.etcd.io/bbolt.*Tx.DB",
+          "go.etcd.io/bbolt.*Tx.Size",
+          "go.etcd.io/bbolt.*Tx.Stats"
+        ],
+        "files": [
+          "server/storage/backend/backend.go",
+          "server/storage/backend/batch_tx.go"
+        ]
+      },
+      {
+        "ref": "s07",
+        "key": "other_observed",
+        "title": "Other observed operations",
+        "operation_refs": [],
+        "caller_refs": [],
+        "core_refs": [],
+        "callees": [],
+        "files": []
+      }
+    ],
+    "counts": {
+      "dependency_catalog_rows": 215,
+      "selected_importers": 4,
+      "selected_uses": 64,
+      "unique_relations": 56,
+      "unique_callers": 23,
+      "activity_outcomes": 64,
+      "activity_routes": 23,
+      "core_areas": 2,
+      "program_objects": 6652,
+      "program_relations": 19325,
+      "program_objects_omitted": 1813,
+      "program_relations_omitted": 48
+    },
+    "reachability": "not represented in available facts",
+    "gaps": [
+      "not represented in available facts"
+    ]
+  },
+  "authority": {
+    "dependency_source_id": "dependency-1b875f0b66a577855effbad2",
+    "importers": [
+      {
+        "ref": "i01",
+        "source_id": "importer-8c43146c714df836f10f91be"
+      },
+      {
+        "ref": "i02",
+        "source_id": "importer-a6dce846c062942b66cae8a9"
+      },
+      {
+        "ref": "i03",
+        "source_id": "importer-d96c86ebe1881045e841431a"
+      },
+      {
+        "ref": "i04",
+        "source_id": "importer-ea51245fcbe6eb4848bbee92"
+      }
+    ],
+    "callers": [
+      {
+        "ref": "c01",
+        "source_id": "program-object-0b21e62f4dfd1a9997ac4b43b6ac20fa4bc5d3fc5e3e94b5eb719ca8eabc3e4c"
+      },
+      {
+        "ref": "c02",
+        "source_id": "program-object-1abe4bc31d1729ec56cc2994ea1e538705009323e4987cb4daaf354d8442b3c0"
+      },
+      {
+        "ref": "c03",
+        "source_id": "program-object-1b55dd23915b6c68a88ca8f9e2c5e31db01c2aeff4f1fffba1085dbb1abcdd74"
+      },
+      {
+        "ref": "c04",
+        "source_id": "program-object-3547f865324bd5e0db8feb20bca65ff7f95a714a58b66dd50d93fb59b273ecb9"
+      },
+      {
+        "ref": "c05",
+        "source_id": "program-object-37ef6e9b78275b2b06d548207660b2e98c7621c5dbc402e492c5da11a4f9d2d5"
+      },
+      {
+        "ref": "c06",
+        "source_id": "program-object-40adcac94e1cdbe71842c78a03855acac7e63f071906eb19874f3e8767a267e6"
+      },
+      {
+        "ref": "c07",
+        "source_id": "program-object-424becbd8ae6ee33f53061672cc0c68cc98635c8be231f1a75708229def1f675"
+      },
+      {
+        "ref": "c08",
+        "source_id": "program-object-4d51ff997e9d6118c9a96e66c4b05a2bb8e5daa86c9596d67490da86dd003824"
+      },
+      {
+        "ref": "c09",
+        "source_id": "program-object-5eef185891d1b633b3c95799a083720e597bab4eebce8d22d5913888833613fe"
+      },
+      {
+        "ref": "c10",
+        "source_id": "program-object-694c512f55280cffed2f382ad9899a0827074198f1129362c2d4b3d944eeead5"
+      },
+      {
+        "ref": "c11",
+        "source_id": "program-object-7602dd0826a26b0d6a6057f806b53879716af021e18e0a25ee9d4ead1b3bb62c"
+      },
+      {
+        "ref": "c12",
+        "source_id": "program-object-7d5574cb3d5606f72cb3176f10f0883dafeefcbdeb6c630bb326d971888e3e67"
+      },
+      {
+        "ref": "c13",
+        "source_id": "program-object-86248f791809b5170eaa3eb78ecd1738b54f9eeb6217d442f3e3c9282c9d9331"
+      },
+      {
+        "ref": "c14",
+        "source_id": "program-object-8e38230741d732a8441f29b2cc3d94b03f4f9586819d9080ccfc3b9a90ce9d47"
+      },
+      {
+        "ref": "c15",
+        "source_id": "program-object-940dd89a7e775926b95539f4d84952f4bba9475fbdf4fbd9934a3ad1a73f75cc"
+      },
+      {
+        "ref": "c16",
+        "source_id": "program-object-96a6ac68621370c3e84978cb49012f6ea6f46f2482cb7ffb16de552e9752e0d4"
+      },
+      {
+        "ref": "c17",
+        "source_id": "program-object-9a0fca6fac39faed558b5b913d9d9127da2f9ec7362016b2dcae4a26dcea714e"
+      },
+      {
+        "ref": "c18",
+        "source_id": "program-object-9d10b98eb9114d063f3a91a4c4d745994ee95d89d469f42211cf8a12cc578d12"
+      },
+      {
+        "ref": "c19",
+        "source_id": "program-object-b0337f4fd7b3e8bf6c5b01ae275c1eae65a3ccfd539f44bfa211061d76a33baf"
+      },
+      {
+        "ref": "c20",
+        "source_id": "program-object-b69119dad30749996354bc9350eca40c461f511a0ff4be109cda1468c0fa4f40"
+      },
+      {
+        "ref": "c21",
+        "source_id": "program-object-ba0b557cbde93d7ca9e60c48dd8fe987c05f2b47a107d8bffc738556b9b4fe08"
+      },
+      {
+        "ref": "c22",
+        "source_id": "program-object-bad38f99b116a0946a3802654e62958e9e8528919c63ee69ad8b307a77072306"
+      },
+      {
+        "ref": "c23",
+        "source_id": "program-object-fa9615e368b4b5eaef46fc60f8de1547fd2d5edf796bbd7f1d2c94f204ab0348"
+      }
+    ],
+    "operations": [
+      {
+        "ref": "o001",
+        "source_id": "program-relation-00a80d8d5795ae20f11e6ba987e9f829c7602d335ddbb1322f73bd9ad81a7836",
+        "external_source_id": "program-object-7fd11c2b323732251f48db306550bc99f05abe8f90474423be1db595fc667b93"
+      },
+      {
+        "ref": "o002",
+        "source_id": "program-relation-02aaf93d125bf36be10f259e20d9eb5551b3d8e7e85c9395e45fd3f9db5a0424",
+        "external_source_id": "program-object-726c45642a42a4800f544280a07c1a5792c0606f2aa47e572a14e2c618c8c6b9"
+      },
+      {
+        "ref": "o003",
+        "source_id": "program-relation-0ce9eed34edb2e4032b69e9ab01db63e6e302f77363e1dbf0d8428d82844fa2c",
+        "external_source_id": "program-object-9fbbdfa763e522e49f3c33958434715ddb91b3205174bcacf7e1609338d3ac61"
+      },
+      {
+        "ref": "o004",
+        "source_id": "program-relation-0ce9eed34edb2e4032b69e9ab01db63e6e302f77363e1dbf0d8428d82844fa2c",
+        "witness_index": 1,
+        "external_source_id": "program-object-9fbbdfa763e522e49f3c33958434715ddb91b3205174bcacf7e1609338d3ac61"
+      },
+      {
+        "ref": "o005",
+        "source_id": "program-relation-0ce9eed34edb2e4032b69e9ab01db63e6e302f77363e1dbf0d8428d82844fa2c",
+        "witness_index": 2,
+        "external_source_id": "program-object-9fbbdfa763e522e49f3c33958434715ddb91b3205174bcacf7e1609338d3ac61"
+      },
+      {
+        "ref": "o006",
+        "source_id": "program-relation-0e1d25725206f4414fc365c905ce67741a2856d2a79507267d1ea21e8d00d85c",
+        "external_source_id": "program-object-3f9346deae27e62dc96967506c4e59efaa1ca7df68fb9db24529168da50f3b27"
+      },
+      {
+        "ref": "o007",
+        "source_id": "program-relation-13d63301b67fdfc2b658215acc6e1228454c36c0feab748b5a3a0267ecdec3f3",
+        "external_source_id": "program-object-c80df05a73dfe1d65c918ad86c515133de61d47f2a64329d2ea1257b9574e55d"
+      },
+      {
+        "ref": "o008",
+        "source_id": "program-relation-1adb9f6e0f9fcf31122b12142acfd351132a524711fa72b2ac3739cc0efce709",
+        "external_source_id": "program-object-30749dca245397e905f0fca5723b509068523e1226676bf45bd530befa35bfd9"
+      },
+      {
+        "ref": "o009",
+        "source_id": "program-relation-1b4b1d2b8e012272914423cf8b9d181f352be8992d6c932d113a3ddfdfef1459",
+        "external_source_id": "program-object-30749dca245397e905f0fca5723b509068523e1226676bf45bd530befa35bfd9"
+      },
+      {
+        "ref": "o010",
+        "source_id": "program-relation-23e34dc3d58557c9f58a67965865e28a121fa1ef7da9e11ef11f3f4446deb0ec",
+        "external_source_id": "program-object-04e03c75eb15d48d6d9092951f284c96dae424ed3a75b39f41cf2c26ecd40c8a"
+      },
+      {
+        "ref": "o011",
+        "source_id": "program-relation-2714f5925844fd65fa951cebd65ff94dff99f3993c8c28dde3684f736850df6a",
+        "external_source_id": "program-object-925414bdb5769449cfccc4ff564d4ed5765255da431199383ae30e7f868df827"
+      },
+      {
+        "ref": "o012",
+        "source_id": "program-relation-2bdde3e62378d7899660cd51dc5dc0b44fcd2b0520c5d47b960b8aa7f291bed5",
+        "external_source_id": "program-object-1c66525663994a83b906469d8b6ad501bc96cd6d12c1a55ee486a8cbb8e41839"
+      },
+      {
+        "ref": "o013",
+        "source_id": "program-relation-3a7f9131a1debd2550f31157f68149bcc143ba35b4699b57a0830f09b7f3ca1e",
+        "external_source_id": "program-object-7fd11c2b323732251f48db306550bc99f05abe8f90474423be1db595fc667b93"
+      },
+      {
+        "ref": "o014",
+        "source_id": "program-relation-3c7c4dab871f7ea9619d06f56c4872aa45acab8a94a97174acdc4a8408b88423",
+        "external_source_id": "program-object-d49d5ebfd3074dcdb05adb01ae29eeda3017e43c75ef536b8786f5f6c5cdbf38"
+      },
+      {
+        "ref": "o015",
+        "source_id": "program-relation-3fca0b9ae3bf558d58d3fe1711b63394820d941651fbbb1d68379967f594f3e1",
+        "external_source_id": "program-object-dede3e7f83ae895782700e1028511a0ffe631a28e48691d7329a4f06b6624ef5"
+      },
+      {
+        "ref": "o016",
+        "source_id": "program-relation-4058ee3d931537ceba4c674f913b92b712185be1285306b3162823bdb0dc096e",
+        "external_source_id": "program-object-c80df05a73dfe1d65c918ad86c515133de61d47f2a64329d2ea1257b9574e55d"
+      },
+      {
+        "ref": "o017",
+        "source_id": "program-relation-4617ef85fbea1536d99a8ae9b37580d57f3475e1685403bbfdbe47b45aa81081",
+        "external_source_id": "program-object-04e03c75eb15d48d6d9092951f284c96dae424ed3a75b39f41cf2c26ecd40c8a"
+      },
+      {
+        "ref": "o018",
+        "source_id": "program-relation-4bab4c64b19ac2ff0829171f4e21eafed357912e0212fb4dbf68acb33496a0c3",
+        "external_source_id": "program-object-7fd11c2b323732251f48db306550bc99f05abe8f90474423be1db595fc667b93"
+      },
+      {
+        "ref": "o019",
+        "source_id": "program-relation-4d0e6a48a6f06c9841cdfff5cf92990dda20b15b3a4c63ac2a2e08b86cac048d",
+        "external_source_id": "program-object-7fd11c2b323732251f48db306550bc99f05abe8f90474423be1db595fc667b93"
+      },
+      {
+        "ref": "o020",
+        "source_id": "program-relation-4f36695c5d347ef031cc798ee604448bcb04dd799c3e4ed9466dac62c5db3d4e",
+        "external_source_id": "program-object-382692a6d2f58b84808f8e7396a695fd4dde0de88f380b0098e000ccb13bbf79"
+      },
+      {
+        "ref": "o021",
+        "source_id": "program-relation-5cd93f75dc5a52e2faf1075821664741af33fb2015b515741de5b7575e5769e4",
+        "external_source_id": "program-object-a22d833e551049c69b27f68b6321aaba2bd4d8be9b050e44a7384dd0ef5dd7af"
+      },
+      {
+        "ref": "o022",
+        "source_id": "program-relation-5cd93f75dc5a52e2faf1075821664741af33fb2015b515741de5b7575e5769e4",
+        "witness_index": 1,
+        "external_source_id": "program-object-a22d833e551049c69b27f68b6321aaba2bd4d8be9b050e44a7384dd0ef5dd7af"
+      },
+      {
+        "ref": "o023",
+        "source_id": "program-relation-5cd93f75dc5a52e2faf1075821664741af33fb2015b515741de5b7575e5769e4",
+        "witness_index": 2,
+        "external_source_id": "program-object-a22d833e551049c69b27f68b6321aaba2bd4d8be9b050e44a7384dd0ef5dd7af"
+      },
+      {
+        "ref": "o024",
+        "source_id": "program-relation-5dd07cbcf0c866e857eb65fff650ed86e8984487654d5bf641aa9c280646b037",
+        "external_source_id": "program-object-09bd83f482698839168dd5a32389e17ecaed5df43a895cc48e4cbac505037f3b"
+      },
+      {
+        "ref": "o025",
+        "source_id": "program-relation-621f161b2de0e3e84663e015c7104dbc33e4a563d23af9184f68048769fdd9b4",
+        "external_source_id": "program-object-3f9346deae27e62dc96967506c4e59efaa1ca7df68fb9db24529168da50f3b27"
+      },
+      {
+        "ref": "o026",
+        "source_id": "program-relation-623e6cf50b500931f9e7ce2c213d738a3ef8f1a7cb551eb837628b9d392cf07c",
+        "external_source_id": "program-object-e0564660f55055f9102021296ec630cf45825671fce59fd64caeff54cb5420b5"
+      },
+      {
+        "ref": "o027",
+        "source_id": "program-relation-62cd305a3ee818ba3e55a4daea550c7e5ab3235407397d8413d4c42c8ebb6e85",
+        "external_source_id": "program-object-7fd11c2b323732251f48db306550bc99f05abe8f90474423be1db595fc667b93"
+      },
+      {
+        "ref": "o028",
+        "source_id": "program-relation-64a9a405bfb9bb4938d76271097430c56445ca59e4343ccc86984a5e7c36689e",
+        "external_source_id": "program-object-7ec3054303aaf0f9e78b396dbcda14063ad91688845627b89f6589ceee78f22b"
+      },
+      {
+        "ref": "o029",
+        "source_id": "program-relation-64a9a405bfb9bb4938d76271097430c56445ca59e4343ccc86984a5e7c36689e",
+        "witness_index": 1,
+        "external_source_id": "program-object-7ec3054303aaf0f9e78b396dbcda14063ad91688845627b89f6589ceee78f22b"
+      },
+      {
+        "ref": "o030",
+        "source_id": "program-relation-64a9a405bfb9bb4938d76271097430c56445ca59e4343ccc86984a5e7c36689e",
+        "witness_index": 2,
+        "external_source_id": "program-object-7ec3054303aaf0f9e78b396dbcda14063ad91688845627b89f6589ceee78f22b"
+      },
+      {
+        "ref": "o031",
+        "source_id": "program-relation-6d0eb23f0644c90682904fb5bed9434c0e65dd2f568a853cb9cd900e2bfaf6a7",
+        "external_source_id": "program-object-d010992dd0972e35fb876bcc92ba667808670fab75e310511130c7974f31fb2a"
+      },
+      {
+        "ref": "o032",
+        "source_id": "program-relation-729e1809318d0c40b8d5c5e2bee12dc8efc829646370eb09e173d952712a2f2c",
+        "external_source_id": "program-object-d010992dd0972e35fb876bcc92ba667808670fab75e310511130c7974f31fb2a"
+      },
+      {
+        "ref": "o033",
+        "source_id": "program-relation-729e1809318d0c40b8d5c5e2bee12dc8efc829646370eb09e173d952712a2f2c",
+        "witness_index": 1,
+        "external_source_id": "program-object-d010992dd0972e35fb876bcc92ba667808670fab75e310511130c7974f31fb2a"
+      },
+      {
+        "ref": "o034",
+        "source_id": "program-relation-7358578035979988f26a540611153f48c902651109f1ce7d2a024dd762d27278",
+        "external_source_id": "program-object-1f12a1e5bd8eb34c2a93320088e0f7c2b66b5f608ff00aee18a53e8caa1dd537"
+      },
+      {
+        "ref": "o035",
+        "source_id": "program-relation-746bb7a3d097a73c6eb6a1a62b1f0a3f6e5e9d936388fde4dfc4284dd67af9de",
+        "external_source_id": "program-object-7fd11c2b323732251f48db306550bc99f05abe8f90474423be1db595fc667b93"
+      },
+      {
+        "ref": "o036",
+        "source_id": "program-relation-7734099e06e23332050b17333925aec6e56713617e8d424c4162ef2b760a49bb",
+        "external_source_id": "program-object-e0564660f55055f9102021296ec630cf45825671fce59fd64caeff54cb5420b5"
+      },
+      {
+        "ref": "o037",
+        "source_id": "program-relation-786da018de6dd83fb48c5dc1a7894b95e93ba8159bf809e80c24c5f2ec19b5c1",
+        "external_source_id": "program-object-382692a6d2f58b84808f8e7396a695fd4dde0de88f380b0098e000ccb13bbf79"
+      },
+      {
+        "ref": "o038",
+        "source_id": "program-relation-7cdc722b1f6502b3ec4fd5004900f08fcc4976eac2d71759a10b4c398feb99fe",
+        "external_source_id": "program-object-925414bdb5769449cfccc4ff564d4ed5765255da431199383ae30e7f868df827"
+      },
+      {
+        "ref": "o039",
+        "source_id": "program-relation-80417585ad12154cd00d2d4bd6e4d646e12177171bbb2c0f696864573c517877",
+        "external_source_id": "program-object-5c847d09501c3012234b12b201976d38cf44cb525301a65dc608aaf99dd10e66"
+      },
+      {
+        "ref": "o040",
+        "source_id": "program-relation-8a14262cb415a810fe0cc587ed0026a250d0b2f9c94a4fb8a453e6e417b0ac96",
+        "external_source_id": "program-object-382692a6d2f58b84808f8e7396a695fd4dde0de88f380b0098e000ccb13bbf79"
+      },
+      {
+        "ref": "o041",
+        "source_id": "program-relation-90c3b9596d02f74e1cfb1b74907e9307107e30f3336e05b7a76d60207d97be84",
+        "external_source_id": "program-object-1f12a1e5bd8eb34c2a93320088e0f7c2b66b5f608ff00aee18a53e8caa1dd537"
+      },
+      {
+        "ref": "o042",
+        "source_id": "program-relation-945dc2ba04253fd17655bfa9eb1308aaf4f7e5f2e2a562729f49ddd92c170e48",
+        "external_source_id": "program-object-1c66525663994a83b906469d8b6ad501bc96cd6d12c1a55ee486a8cbb8e41839"
+      },
+      {
+        "ref": "o043",
+        "source_id": "program-relation-96e774df704b9f72e94b8dfc328228e55795aac10f4a9e4e041673f738772b71",
+        "external_source_id": "program-object-d49d5ebfd3074dcdb05adb01ae29eeda3017e43c75ef536b8786f5f6c5cdbf38"
+      },
+      {
+        "ref": "o044",
+        "source_id": "program-relation-a05a4545acb7fa8112217cbc6807dfdaf4790f521fc8df3a40a937aae7fd04c1",
+        "external_source_id": "program-object-e0564660f55055f9102021296ec630cf45825671fce59fd64caeff54cb5420b5"
+      },
+      {
+        "ref": "o045",
+        "source_id": "program-relation-b136ee45d19c1d90d38e89f3707fe82a9e478672076436b3d9298cd3d6889734",
+        "external_source_id": "program-object-7fd11c2b323732251f48db306550bc99f05abe8f90474423be1db595fc667b93"
+      },
+      {
+        "ref": "o046",
+        "source_id": "program-relation-b27ae3a2b6c29f1c5784f3b36a521e91212e47a813501dd6baecc877897ef66a",
+        "external_source_id": "program-object-885d52f4068487a51cdf8c846172bdc090f12d84ae37841722ba7736eff46601"
+      },
+      {
+        "ref": "o047",
+        "source_id": "program-relation-bc3df063d07a108a307ecf4df6f6f79d5754261ab828ce2930071bb47f210d3e",
+        "external_source_id": "program-object-fced87ba7717c06d341d56a1a35b1ca1f97ff7e3cbcd2f321ef8d286d004a178"
+      },
+      {
+        "ref": "o048",
+        "source_id": "program-relation-bd59202b619d7e6a0a5130a3565b61a0d77f7ff4e4ea31387bb812c0848be8fe",
+        "external_source_id": "program-object-9fbbdfa763e522e49f3c33958434715ddb91b3205174bcacf7e1609338d3ac61"
+      },
+      {
+        "ref": "o049",
+        "source_id": "program-relation-c12a328c780c250492583fdfb189e0ff7abcb784005325b97d2eea577c259396",
+        "external_source_id": "program-object-5e8d8919d9a54b7d8eee59cc93ba1d3e79b3214ab4b7648fe4af083ced91e113"
+      },
+      {
+        "ref": "o050",
+        "source_id": "program-relation-cac05065c40912d5611e6ffc8c45ecd6748be378a35d94ed9c9e42e825df4540",
+        "external_source_id": "program-object-fced87ba7717c06d341d56a1a35b1ca1f97ff7e3cbcd2f321ef8d286d004a178"
+      },
+      {
+        "ref": "o051",
+        "source_id": "program-relation-cd6a640f31892a05f975e8987090e06bc387988ee9110519d41a4c4f7e535057",
+        "external_source_id": "program-object-04e03c75eb15d48d6d9092951f284c96dae424ed3a75b39f41cf2c26ecd40c8a"
+      },
+      {
+        "ref": "o052",
+        "source_id": "program-relation-d1ed67cd035930f7db626d73ace9b154e3432f5da72d33b275853977124bdb0d",
+        "external_source_id": "program-object-dede3e7f83ae895782700e1028511a0ffe631a28e48691d7329a4f06b6624ef5"
+      },
+      {
+        "ref": "o053",
+        "source_id": "program-relation-d35b60bf1400d1e955617a6f026ec669b1b3758cde673405bb6046ae774ead38",
+        "external_source_id": "program-object-7fd11c2b323732251f48db306550bc99f05abe8f90474423be1db595fc667b93"
+      },
+      {
+        "ref": "o054",
+        "source_id": "program-relation-d461aa0c5fdf0bed025137f12750649888ae82ab5a841ca60ca3164fbafd1a68",
+        "external_source_id": "program-object-7fd11c2b323732251f48db306550bc99f05abe8f90474423be1db595fc667b93"
+      },
+      {
+        "ref": "o055",
+        "source_id": "program-relation-d606b0a5ba506f0f47bc494d3aff862844ace7aca6505e08f963fd4e41039c46",
+        "external_source_id": "program-object-09bd83f482698839168dd5a32389e17ecaed5df43a895cc48e4cbac505037f3b"
+      },
+      {
+        "ref": "o056",
+        "source_id": "program-relation-dcb0005184b8556ea8344133bf389372de8149ae347d470042efb334fee6b755",
+        "external_source_id": "program-object-885d52f4068487a51cdf8c846172bdc090f12d84ae37841722ba7736eff46601"
+      },
+      {
+        "ref": "o057",
+        "source_id": "program-relation-e0efb7bb16a3927c49b2910abdbe404867d8ef2c5cb6e75e38f8763024e4d9c1",
+        "external_source_id": "program-object-6618399da04f485c7ad2980e76b6e7e7913a0ea10503f43b14a36061b490e0d3"
+      },
+      {
+        "ref": "o058",
+        "source_id": "program-relation-ebcf326ddcf3b1625484e48965f79cdbdacac513644391f2e1ff2d37c802edcc",
+        "external_source_id": "program-object-09bd83f482698839168dd5a32389e17ecaed5df43a895cc48e4cbac505037f3b"
+      },
+      {
+        "ref": "o059",
+        "source_id": "program-relation-f0bbc7a946d518e302fcb3050fe428e17f195f5d9bb3f46c8d087ec8f8c66d3f",
+        "external_source_id": "program-object-74550fe5880ecac0e484b83758371935f17e6c999ebf619a7118d890d197ba27"
+      },
+      {
+        "ref": "o060",
+        "source_id": "program-relation-f2474b4ad8cd7023b161e161b9d50cfb0bf971b65af8562595f6a1d539a40f05",
+        "external_source_id": "program-object-1f12a1e5bd8eb34c2a93320088e0f7c2b66b5f608ff00aee18a53e8caa1dd537"
+      },
+      {
+        "ref": "o061",
+        "source_id": "program-relation-f6b89c454d43c438ee118117f1b8ee814708bc096bf6eb0da3eff67daa1c1c2e",
+        "external_source_id": "program-object-09bd83f482698839168dd5a32389e17ecaed5df43a895cc48e4cbac505037f3b"
+      },
+      {
+        "ref": "o062",
+        "source_id": "program-relation-fa985c4f217b8d620b80ba283e6a7ff3265c83b50107388a8359938f1d32d568",
+        "external_source_id": "program-object-c80df05a73dfe1d65c918ad86c515133de61d47f2a64329d2ea1257b9574e55d"
+      },
+      {
+        "ref": "o063",
+        "source_id": "program-relation-fd96314cfe14785fa0bc1759eb722f53eae8dc166c3121b9c52e58fab4943c1d",
+        "external_source_id": "program-object-c80df05a73dfe1d65c918ad86c515133de61d47f2a64329d2ea1257b9574e55d"
+      },
+      {
+        "ref": "o064",
+        "source_id": "program-relation-fd96314cfe14785fa0bc1759eb722f53eae8dc166c3121b9c52e58fab4943c1d",
+        "witness_index": 1,
+        "external_source_id": "program-object-c80df05a73dfe1d65c918ad86c515133de61d47f2a64329d2ea1257b9574e55d"
+      }
+    ],
+    "core_areas": [
+      {
+        "ref": "k01",
+        "source_id": "core-cea4eb906e4f5c5a"
+      },
+      {
+        "ref": "k02",
+        "source_id": "core-d158c7c9a58dd23d"
+      }
+    ]
+  },
+  "input_sha256": "b253a5815c0f54a46a13e5be119bf5c2bc0a715d0f9bb3646df788ab846c0669"
+}

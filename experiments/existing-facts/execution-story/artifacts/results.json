@@ -1,0 +1,368 @@
+{
+  "schema": "repomap.experiment.execution-story.result.v1",
+  "generated_at": "2026-08-28T07:48:42.962477Z",
+  "catalog_sha256": "a8543825d6483b2d2596644c640338314e10459df917777371e86c8c67fe0408",
+  "provider_model": "deepseek-v4-flash",
+  "variants": [
+    {
+      "name": "deterministic",
+      "source": "local_projection",
+      "story": {
+        "schema": "repomap.experiment.execution-story.result.v1",
+        "audience": "deterministic",
+        "title": "startEtcd to crypto/tls.X509KeyPair",
+        "summary": {
+          "text": "The existing graph connects startEtcd to crypto/tls.X509KeyPair through 9 catalogued edges; 1 edge is possible rather than exact.",
+          "support_refs": [
+            "n1",
+            "e1",
+            "e2",
+            "e3",
+            "e4",
+            "e5",
+            "e6",
+            "e7",
+            "e8",
+            "e9",
+            "x1"
+          ]
+        },
+        "start_ref": "n1",
+        "end_ref": "x1",
+        "steps": [
+          {
+            "edge_ref": "e1",
+            "from_ref": "n1",
+            "to_ref": "n2",
+            "certainty": "exact",
+            "text": "startEtcd calls StartEtcd."
+          },
+          {
+            "edge_ref": "e2",
+            "from_ref": "n2",
+            "to_ref": "n3",
+            "certainty": "exact",
+            "text": "StartEtcd calls NewServer."
+          },
+          {
+            "edge_ref": "e3",
+            "from_ref": "n3",
+            "to_ref": "n4",
+            "certainty": "exact",
+            "text": "NewServer calls Start."
+          },
+          {
+            "edge_ref": "e4",
+            "from_ref": "n4",
+            "to_ref": "n5",
+            "certainty": "exact",
+            "text": "Start calls NewRoundTripper."
+          },
+          {
+            "edge_ref": "e5",
+            "from_ref": "n5",
+            "to_ref": "n6",
+            "certainty": "exact",
+            "text": "NewRoundTripper calls NewTimeoutTransport."
+          },
+          {
+            "edge_ref": "e6",
+            "from_ref": "n6",
+            "to_ref": "n7",
+            "certainty": "exact",
+            "text": "NewTimeoutTransport calls NewTransport."
+          },
+          {
+            "edge_ref": "e7",
+            "from_ref": "n7",
+            "to_ref": "n8",
+            "certainty": "exact",
+            "text": "NewTransport calls ClientConfig."
+          },
+          {
+            "edge_ref": "e8",
+            "from_ref": "n8",
+            "to_ref": "n9",
+            "certainty": "possible",
+            "text": "ClientConfig passes the callback to ClientConfig$1; this handoff is possible, not exact."
+          },
+          {
+            "edge_ref": "e9",
+            "from_ref": "n9",
+            "to_ref": "x1",
+            "certainty": "exact",
+            "text": "ClientConfig$1 invokes the external symbol crypto/tls.X509KeyPair."
+          }
+        ],
+        "uncertainty": [
+          {
+            "frontier_ref": "u1",
+            "text": "passes_callback from n8 to n9 is represented as possible, not exact."
+          },
+          {
+            "frontier_ref": "u2",
+            "text": "The source run omitted 1813 program objects, 48 relations, and 5652 traversal targets; alternate or longer paths may therefore be absent."
+          },
+          {
+            "frontier_ref": "u3",
+            "text": "The catalog binds the callsite to the external symbol but does not represent execution inside that external library call."
+          }
+        ],
+        "code_jump_refs": [
+          "n1",
+          "n9"
+        ],
+        "not_represented": {
+          "text": "Omitted graph facts and execution inside the external call are not represented by this story.",
+          "support_refs": [
+            "u1",
+            "u2",
+            "u3"
+          ]
+        }
+      }
+    },
+    {
+      "name": "deepseek_newcomer",
+      "source": "deepseek",
+      "prompt_sha256": "6c7ea7af9df820c546d34e0100af3f6876903944d582bc6e9d7dffcf72dae005",
+      "response_sha256": "a7f80ca47d04ff0a0f3fd77392af747986bf41dabefac413ff218e51f9131a32",
+      "input_tokens": 3190,
+      "output_tokens": 878,
+      "attempts": 1,
+      "latency_ms": 4879,
+      "story": {
+        "schema": "repomap.experiment.execution-story.result.v1",
+        "audience": "newcomer",
+        "title": "From startEtcd to TLS key pair loading",
+        "summary": {
+          "text": "Execution starts in startEtcd, flows through StartEtcd, NewServer, Start, NewRoundTripper, NewTimeoutTransport, NewTransport, ClientConfig, and a callback to load a TLS key pair via crypto/tls.X509KeyPair.",
+          "support_refs": [
+            "e1",
+            "e2",
+            "e3",
+            "e4",
+            "e5",
+            "e6",
+            "e7",
+            "e8",
+            "e9"
+          ]
+        },
+        "start_ref": "n1",
+        "end_ref": "x1",
+        "steps": [
+          {
+            "edge_ref": "e1",
+            "from_ref": "n1",
+            "to_ref": "n2",
+            "certainty": "exact",
+            "text": "startEtcd calls StartEtcd synchronously."
+          },
+          {
+            "edge_ref": "e2",
+            "from_ref": "n2",
+            "to_ref": "n3",
+            "certainty": "exact",
+            "text": "StartEtcd calls NewServer synchronously."
+          },
+          {
+            "edge_ref": "e3",
+            "from_ref": "n3",
+            "to_ref": "n4",
+            "certainty": "exact",
+            "text": "NewServer calls the Start method synchronously."
+          },
+          {
+            "edge_ref": "e4",
+            "from_ref": "n4",
+            "to_ref": "n5",
+            "certainty": "exact",
+            "text": "Start calls NewRoundTripper synchronously."
+          },
+          {
+            "edge_ref": "e5",
+            "from_ref": "n5",
+            "to_ref": "n6",
+            "certainty": "exact",
+            "text": "NewRoundTripper calls NewTimeoutTransport synchronously."
+          },
+          {
+            "edge_ref": "e6",
+            "from_ref": "n6",
+            "to_ref": "n7",
+            "certainty": "exact",
+            "text": "NewTimeoutTransport calls NewTransport synchronously."
+          },
+          {
+            "edge_ref": "e7",
+            "from_ref": "n7",
+            "to_ref": "n8",
+            "certainty": "exact",
+            "text": "NewTransport calls ClientConfig synchronously."
+          },
+          {
+            "edge_ref": "e8",
+            "from_ref": "n8",
+            "to_ref": "n9",
+            "certainty": "possible",
+            "text": "ClientConfig passes a callback to ClientConfig$1; this handoff is possible, not exact."
+          },
+          {
+            "edge_ref": "e9",
+            "from_ref": "n9",
+            "to_ref": "x1",
+            "certainty": "exact",
+            "text": "ClientConfig$1 invokes the external crypto/tls.X509KeyPair to load the TLS key pair."
+          }
+        ],
+        "uncertainty": [
+          {
+            "frontier_ref": "u1",
+            "text": "The callback handoff from ClientConfig to ClientConfig$1 is possible, not exact."
+          },
+          {
+            "frontier_ref": "u2",
+            "text": "The source run omitted 1813 program objects, 48 relations, and 5652 traversal targets; alternate or longer paths may be absent."
+          },
+          {
+            "frontier_ref": "u3",
+            "text": "Execution inside the external library call is not represented by this catalog."
+          }
+        ],
+        "code_jump_refs": [
+          "n1",
+          "n9"
+        ],
+        "not_represented": {
+          "text": "The catalog stops at the external TLS library boundary and omits many program objects and relations from the source run.",
+          "support_refs": [
+            "u2",
+            "u3"
+          ]
+        }
+      }
+    },
+    {
+      "name": "deepseek_debugger",
+      "source": "deepseek",
+      "prompt_sha256": "c0fd9a6a0c70934f90561b5f3b07345564f183d7875c2bdfcac7d91b2a335526",
+      "response_sha256": "c1e27809dda6f24f27abada39c728d21e1c923308ad6add99c39f4232598c72c",
+      "input_tokens": 3194,
+      "output_tokens": 1013,
+      "attempts": 1,
+      "latency_ms": 5758,
+      "story": {
+        "schema": "repomap.experiment.execution-story.result.v1",
+        "audience": "debugger",
+        "title": "TLS key pair loading during etcd server startup",
+        "summary": {
+          "text": "During server startup, the call chain from startEtcd to the TLS key pair loading endpoint is traced. The chain is exact until the possible callback transfer from ClientConfig to an anonymous function, which then invokes crypto/tls.X509KeyPair. The catalog cannot confirm the callback transfer or execution inside the external library.",
+          "support_refs": [
+            "e1",
+            "e2",
+            "e3",
+            "e4",
+            "e5",
+            "e6",
+            "e7",
+            "e8",
+            "e9"
+          ]
+        },
+        "start_ref": "n1",
+        "end_ref": "x1",
+        "steps": [
+          {
+            "edge_ref": "e1",
+            "from_ref": "n1",
+            "to_ref": "n2",
+            "certainty": "exact",
+            "text": "startEtcd calls StartEtcd synchronously at server/etcdmain/etcd.go:181."
+          },
+          {
+            "edge_ref": "e2",
+            "from_ref": "n2",
+            "to_ref": "n3",
+            "certainty": "exact",
+            "text": "StartEtcd calls NewServer synchronously at server/embed/etcd.go:260."
+          },
+          {
+            "edge_ref": "e3",
+            "from_ref": "n3",
+            "to_ref": "n4",
+            "certainty": "exact",
+            "text": "NewServer calls Start (rafthttp.Transport) synchronously at server/etcdserver/server.go:423."
+          },
+          {
+            "edge_ref": "e4",
+            "from_ref": "n4",
+            "to_ref": "n5",
+            "certainty": "exact",
+            "text": "Start calls NewRoundTripper synchronously at server/etcdserver/api/rafthttp/transport.go:139."
+          },
+          {
+            "edge_ref": "e5",
+            "from_ref": "n5",
+            "to_ref": "n6",
+            "certainty": "exact",
+            "text": "NewRoundTripper calls NewTimeoutTransport synchronously at server/etcdserver/api/rafthttp/util.go:51."
+          },
+          {
+            "edge_ref": "e6",
+            "from_ref": "n6",
+            "to_ref": "n7",
+            "certainty": "exact",
+            "text": "NewTimeoutTransport calls NewTransport synchronously at client/pkg/transport/timeout_transport.go:28."
+          },
+          {
+            "edge_ref": "e7",
+            "from_ref": "n7",
+            "to_ref": "n8",
+            "certainty": "exact",
+            "text": "NewTransport calls ClientConfig synchronously at client/pkg/transport/transport.go:28."
+          },
+          {
+            "edge_ref": "e8",
+            "from_ref": "n8",
+            "to_ref": "n9",
+            "certainty": "possible",
+            "text": "ClientConfig possibly passes a callback to an anonymous function at client/pkg/transport/listener.go:591."
+          },
+          {
+            "edge_ref": "e9",
+            "from_ref": "n9",
+            "to_ref": "x1",
+            "certainty": "exact",
+            "text": "The anonymous function invokes the external crypto/tls.X509KeyPair at client/pkg/transport/listener.go:602."
+          }
+        ],
+        "uncertainty": [
+          {
+            "frontier_ref": "u1",
+            "text": "The passes_callback edge from ClientConfig to the anonymous function is represented as possible, not exact; the catalog cannot confirm the callback transfer."
+          },
+          {
+            "frontier_ref": "u2",
+            "text": "The source run omitted 1813 program objects, 48 relations, and 5652 traversal targets; alternate or longer paths may therefore be absent."
+          },
+          {
+            "frontier_ref": "u3",
+            "text": "The catalog binds the callsite to the external symbol but does not represent execution inside that external library call."
+          }
+        ],
+        "code_jump_refs": [
+          "n1",
+          "n9"
+        ],
+        "not_represented": {
+          "text": "The catalog does not represent execution inside the external crypto/tls library, nor any omitted program objects, relations, or traversal targets that could reveal alternate paths.",
+          "support_refs": [
+            "u2",
+            "u3"
+          ]
+        }
+      }
+    }
+  ]
+}
