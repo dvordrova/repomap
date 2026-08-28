@@ -1,0 +1,699 @@
+{
+  "version": 1,
+  "authority_sha256": "74a8f8b21f72f53f6996cc5982980aab4a321e95a6f3c34027b8db14d8b646c5",
+  "candidates": [
+    {
+      "id": "h0-1a48cd4d6323a7856724f6a5",
+      "dependency_id": "dependency-b5c60868b5df6c866efd9cda",
+      "package_path": "messaging.example/receipt",
+      "importer_ref": "importer-c0edf1159e175c00923bf1e1",
+      "importer_package_path": "example.invalid/fulfilment/internal/preview",
+      "importer_repository_path": "internal/preview",
+      "calls": [
+        {
+          "relation_id": "program-relation-60a2a8727e77f0267999c169e8691c2dd6202f4c1a8b1aa424754ae702653d98",
+          "canonical_callee": "messaging.example/receipt.NewSender",
+          "callsite": {
+            "path": "internal/preview/receipt_preview.go",
+            "line": 12,
+            "column": 17
+          }
+        },
+        {
+          "relation_id": "program-relation-5662b9f5d45c54c16297e87b445eb990dd357d718b2023d0dad0ca59295d8399",
+          "canonical_callee": "messaging.example/receipt.*messaging.example/receipt.Sender.Dispatch",
+          "callsite": {
+            "path": "internal/preview/receipt_preview.go",
+            "line": 16,
+            "column": 19
+          }
+        }
+      ]
+    },
+    {
+      "id": "h0-2cdcfcb2340d8e749cd3607e",
+      "dependency_id": "dependency-b5c60868b5df6c866efd9cda",
+      "package_path": "messaging.example/receipt",
+      "importer_ref": "importer-5fe76eb0ec3c16ed6654f45a",
+      "importer_package_path": "example.invalid/fulfilment/internal/notification",
+      "importer_repository_path": "internal/notification",
+      "calls": [
+        {
+          "relation_id": "program-relation-d941b790463ef26f893f6bbdc5efca58cd927df7cc59ec91ff33c7e201ddb178",
+          "canonical_callee": "messaging.example/receipt.NewSender",
+          "callsite": {
+            "path": "internal/notification/receipt.go",
+            "line": 23,
+            "column": 17
+          }
+        },
+        {
+          "relation_id": "program-relation-5bc78b2460a4ee0e46f183f86c0890f01f77285d89b5b4fde5fbcefb2a9f0c51",
+          "canonical_callee": "messaging.example/receipt.*messaging.example/receipt.Sender.Dispatch",
+          "callsite": {
+            "path": "internal/notification/receipt.go",
+            "line": 32,
+            "column": 19
+          }
+        }
+      ]
+    },
+    {
+      "id": "h0-3c2c32db6e7f05ba297f0a0d",
+      "dependency_id": "dependency-9b9d732caec556c1fef85523",
+      "package_path": "geo.example/locator",
+      "importer_ref": "importer-a4ee60fa57982d14ca2db7b4",
+      "importer_package_path": "example.invalid/fulfilment/internal/address",
+      "importer_repository_path": "internal/address",
+      "calls": [
+        {
+          "relation_id": "program-relation-b4ea508761da1f4a5eb9477f24a358d7ac863070171470f620f8370f5057ec40",
+          "canonical_callee": "geo.example/locator.New",
+          "callsite": {
+            "path": "internal/address/verification.go",
+            "line": 38,
+            "column": 17
+          }
+        }
+      ]
+    },
+    {
+      "id": "h0-6f3107d6e3da9ff50e810daf",
+      "dependency_id": "dependency-5397b0dc16d5b62e63063dda",
+      "package_path": "revenue.example/taxquote",
+      "importer_ref": "importer-eb5278a53bb2eb2203108b94",
+      "importer_package_path": "example.invalid/fulfilment/internal/tax",
+      "importer_repository_path": "internal/tax",
+      "calls": [
+        {
+          "relation_id": "program-relation-7d27a47a95f613ab1fa32427440fe270c4bf6118ae7090fbb2e127507fcea98b",
+          "canonical_callee": "revenue.example/taxquote.NewClient",
+          "callsite": {
+            "path": "internal/tax/quote.go",
+            "line": 27,
+            "column": 17
+          }
+        }
+      ]
+    },
+    {
+      "id": "h0-7814634f7527e5666c548e71",
+      "dependency_id": "dependency-37d09c3f69b0494ef73802a7",
+      "package_path": "acquirer.example/authorizer",
+      "importer_ref": "importer-b9acbe06190167a886af8a8c",
+      "importer_package_path": "example.invalid/fulfilment/internal/payment",
+      "importer_repository_path": "internal/payment",
+      "calls": [
+        {
+          "relation_id": "program-relation-f97cbdb5a9bc814f56db64ba59cd3a3c0a3ad94b999579fcabec82df0ef3266d",
+          "canonical_callee": "acquirer.example/authorizer.New",
+          "callsite": {
+            "path": "internal/payment/gateway.go",
+            "line": 40,
+            "column": 17
+          }
+        }
+      ]
+    },
+    {
+      "id": "h0-7c578f3cf5bd8ade47ac983b",
+      "dependency_id": "dependency-37d09c3f69b0494ef73802a7",
+      "package_path": "acquirer.example/authorizer",
+      "importer_ref": "importer-95a7d3cb60943c5e4bcc4f1f",
+      "importer_package_path": "example.invalid/fulfilment/internal/sandbox",
+      "importer_repository_path": "internal/sandbox",
+      "calls": [
+        {
+          "relation_id": "program-relation-b8eb2547b57eb4d94fef836840b29713fcd354e44f57391949c9d23eef5e5df2",
+          "canonical_callee": "acquirer.example/authorizer.New",
+          "callsite": {
+            "path": "internal/sandbox/payment_scenario.go",
+            "line": 18,
+            "column": 17
+          }
+        },
+        {
+          "relation_id": "program-relation-1a8baf685edbdbe74778df6dd82b8c26785e013c737c6b2c41a7aaea34b22762",
+          "canonical_callee": "acquirer.example/authorizer.*acquirer.example/authorizer.Client.Authorize",
+          "callsite": {
+            "path": "internal/sandbox/payment_scenario.go",
+            "line": 24,
+            "column": 9
+          }
+        }
+      ]
+    },
+    {
+      "id": "h0-bb17a44d6e7d74befac7053e",
+      "dependency_id": "dependency-1d802b9295ca425471b7c58a",
+      "package_path": "shipping.example/parcel",
+      "importer_ref": "importer-28446021475a84927aba720c",
+      "importer_package_path": "example.invalid/fulfilment/internal/diagnostics",
+      "importer_repository_path": "internal/diagnostics",
+      "calls": [
+        {
+          "relation_id": "program-relation-af01bfc90f46d45b1d8c636bef7ea082132cf21ce9977aea05cf99e8af56a047",
+          "canonical_callee": "shipping.example/parcel.Dial",
+          "callsite": {
+            "path": "internal/diagnostics/carrier_probe.go",
+            "line": 12,
+            "column": 17
+          }
+        },
+        {
+          "relation_id": "program-relation-d266da8622d049daa29f867cabd3a5342a74a15d5768528a84de6dcb80b14758",
+          "canonical_callee": "shipping.example/parcel.*shipping.example/parcel.Broker.Reserve",
+          "callsite": {
+            "path": "internal/diagnostics/carrier_probe.go",
+            "line": 16,
+            "column": 11
+          }
+        }
+      ]
+    },
+    {
+      "id": "h0-ccb7350332d0dd2d301e9aa7",
+      "dependency_id": "dependency-1d802b9295ca425471b7c58a",
+      "package_path": "shipping.example/parcel",
+      "importer_ref": "importer-d8f814656925c43853abc53a",
+      "importer_package_path": "example.invalid/fulfilment/internal/shipping",
+      "importer_repository_path": "internal/shipping",
+      "calls": [
+        {
+          "relation_id": "program-relation-d3a826875d25cfb79a1cd685ba6adb8b5e9303a77eadbb50fa0fcd3add40a672",
+          "canonical_callee": "shipping.example/parcel.Dial",
+          "callsite": {
+            "path": "internal/shipping/booking.go",
+            "line": 31,
+            "column": 17
+          }
+        }
+      ]
+    },
+    {
+      "id": "h0-cdf037b69373ddc0e6e1fe09",
+      "dependency_id": "dependency-9b9d732caec556c1fef85523",
+      "package_path": "geo.example/locator",
+      "importer_ref": "importer-d39b2ac3b5fef519fdb778b9",
+      "importer_package_path": "example.invalid/fulfilment/internal/migration",
+      "importer_repository_path": "internal/migration",
+      "calls": [
+        {
+          "relation_id": "program-relation-0dd2dd34e14f235d10c09200e8e8536b9a226965914c963abb8a5cf2911aa73d",
+          "canonical_callee": "geo.example/locator.New",
+          "callsite": {
+            "path": "internal/migration/address_backfill.go",
+            "line": 19,
+            "column": 17
+          }
+        },
+        {
+          "relation_id": "program-relation-00b4151bd2cf1a2725e498a68cb53b46db7db63cd28c4ea73498673e0e17e067",
+          "canonical_callee": "geo.example/locator.*geo.example/locator.Service.Validate",
+          "callsite": {
+            "path": "internal/migration/address_backfill.go",
+            "line": 25,
+            "column": 18
+          }
+        }
+      ]
+    },
+    {
+      "id": "h0-d683963f8ea0d8e60334c316",
+      "dependency_id": "dependency-5397b0dc16d5b62e63063dda",
+      "package_path": "revenue.example/taxquote",
+      "importer_ref": "importer-e4ea189604a6617fb8567b57",
+      "importer_package_path": "example.invalid/fulfilment/internal/examples",
+      "importer_repository_path": "internal/examples",
+      "calls": [
+        {
+          "relation_id": "program-relation-90873ca99108ad0d1e5c27bc42571cb1c7e64bfb2a2cb67a9c5a333d3ef73eb1",
+          "canonical_callee": "revenue.example/taxquote.NewClient",
+          "callsite": {
+            "path": "internal/examples/tax_walkthrough.go",
+            "line": 12,
+            "column": 17
+          }
+        },
+        {
+          "relation_id": "program-relation-f176102f4b7c8a662ba9582ffc0433b56c0cc16d3b081bbf3226a0ffb24461c7",
+          "canonical_callee": "revenue.example/taxquote.*revenue.example/taxquote.Client.Calculate",
+          "callsite": {
+            "path": "internal/examples/tax_walkthrough.go",
+            "line": 16,
+            "column": 17
+          }
+        }
+      ]
+    },
+    {
+      "id": "h0-d69d4fd859d1d4a1bf0a5ad1",
+      "dependency_id": "dependency-37d09c3f69b0494ef73802a7",
+      "package_path": "acquirer.example/authorizer",
+      "importer_ref": "importer-c5f04394f9c36d15ba93140c",
+      "importer_package_path": "example.invalid/fulfilment/internal/legacy",
+      "importer_repository_path": "internal/legacy",
+      "calls": [
+        {
+          "relation_id": "program-relation-3a4faa9094cac0d96da984a8477feae12818c625f64536eec982e3176f68ce32",
+          "canonical_callee": "acquirer.example/authorizer.New",
+          "callsite": {
+            "path": "internal/legacy/reconciliation.go",
+            "line": 15,
+            "column": 17
+          }
+        },
+        {
+          "relation_id": "program-relation-4d6ba5073946f310f047dff66a94aa42ddbe76b3a52b06f4f0fc4658660dfeca",
+          "canonical_callee": "acquirer.example/authorizer.*acquirer.example/authorizer.Client.Authorize",
+          "callsite": {
+            "path": "internal/legacy/reconciliation.go",
+            "line": 25,
+            "column": 12
+          }
+        }
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "id": "h0-005e046df8029e6c4368d6b2",
+      "dependency_id": "dependency-ed14ee106dab0daab5e7df45",
+      "importer_ref": "importer-2587cec604b9731e57cbc8d0",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-08b96d41fe27c5c6aed017f5",
+      "dependency_id": "dependency-2b57b5db25f5c52b238074cf",
+      "importer_ref": "importer-c0edf1159e175c00923bf1e1",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-0b4754ce15f81eaad5e8a003",
+      "dependency_id": "dependency-cf04da15356cbd8d92543991",
+      "importer_ref": "importer-35bcf59ee4b9d8c848b0da31",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-0be2f6c94996196e3c88a279",
+      "dependency_id": "dependency-c6dc642ed89460e06ddd246d",
+      "importer_ref": "importer-a1faf44d47eec816100732f7",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-0db23385dc1b5a4d7c9a122b",
+      "dependency_id": "dependency-2b57b5db25f5c52b238074cf",
+      "importer_ref": "importer-2587cec604b9731e57cbc8d0",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-0e8dbdf26c2e54eee49c0701",
+      "dependency_id": "dependency-2b57b5db25f5c52b238074cf",
+      "importer_ref": "importer-b9acbe06190167a886af8a8c",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-0f3f9aa45253d24d8d7fd921",
+      "dependency_id": "dependency-1ec87b90c9080a41d57f6eca",
+      "importer_ref": "importer-35bcf59ee4b9d8c848b0da31",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-131af4a54f2c3ae7db8e65f6",
+      "dependency_id": "dependency-ed76caf6049057eb6cbd5e09",
+      "importer_ref": "importer-35bcf59ee4b9d8c848b0da31",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-231ba8d3ad4467fb9e84ca6a",
+      "dependency_id": "dependency-856131984bde87f29274b438",
+      "importer_ref": "importer-fee50e1d7904674d26a3a5cf",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-2478b6e45dbfdc974809c415",
+      "dependency_id": "dependency-1b6558476fd56e278b00a3cb",
+      "importer_ref": "importer-b9acbe06190167a886af8a8c",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-24b756c74946a4d0a40e2e0c",
+      "dependency_id": "dependency-1b6558476fd56e278b00a3cb",
+      "importer_ref": "importer-5fe76eb0ec3c16ed6654f45a",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-3008744727bcd1861fa530c5",
+      "dependency_id": "dependency-ed14ee106dab0daab5e7df45",
+      "importer_ref": "importer-eb5278a53bb2eb2203108b94",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-30da41f63aa06014a879bd51",
+      "dependency_id": "dependency-2b57b5db25f5c52b238074cf",
+      "importer_ref": "importer-a4ee60fa57982d14ca2db7b4",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-3256a937c1cc51697b721e55",
+      "dependency_id": "dependency-3d83b835a582fbc493daf4cb",
+      "importer_ref": "importer-a1faf44d47eec816100732f7",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-3965bfec0264880619727572",
+      "dependency_id": "dependency-b4f99be0ffe3e5149a018a74",
+      "importer_ref": "importer-35bcf59ee4b9d8c848b0da31",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-3a289c8c14b6ec226d47db58",
+      "dependency_id": "dependency-53231aed4e8523b2a7bc9a03",
+      "importer_ref": "importer-2587cec604b9731e57cbc8d0",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-3b70c55aad75ffadf6fe813e",
+      "dependency_id": "dependency-a43791cec24f8bc855c4f729",
+      "importer_ref": "importer-fee50e1d7904674d26a3a5cf",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-3ca9439a1c6ddfe122b9c25f",
+      "dependency_id": "dependency-856131984bde87f29274b438",
+      "importer_ref": "importer-35bcf59ee4b9d8c848b0da31",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-3f09f681f7586d419c5219b9",
+      "dependency_id": "dependency-2b57b5db25f5c52b238074cf",
+      "importer_ref": "importer-28446021475a84927aba720c",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-46cd0e88b05862ab40b5ec6d",
+      "dependency_id": "dependency-1ec87b90c9080a41d57f6eca",
+      "importer_ref": "importer-a4ee60fa57982d14ca2db7b4",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-47563e173ad27e7bc0502c6b",
+      "dependency_id": "dependency-1b6558476fd56e278b00a3cb",
+      "importer_ref": "importer-eb5278a53bb2eb2203108b94",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-49502f308f62e5ffb5d5d7ee",
+      "dependency_id": "dependency-cf04da15356cbd8d92543991",
+      "importer_ref": "importer-2587cec604b9731e57cbc8d0",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-4977053850615f4337974081",
+      "dependency_id": "dependency-1b6558476fd56e278b00a3cb",
+      "importer_ref": "importer-ae5e71ee27b37d4e581bc637",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-4c0e5e8f98c3fef8ab030399",
+      "dependency_id": "dependency-2b57b5db25f5c52b238074cf",
+      "importer_ref": "importer-d39b2ac3b5fef519fdb778b9",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-4d0a23c8e568e6aff7285138",
+      "dependency_id": "dependency-2b57b5db25f5c52b238074cf",
+      "importer_ref": "importer-c5f04394f9c36d15ba93140c",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-4e7780a40244ae2d45c50241",
+      "dependency_id": "dependency-1ec87b90c9080a41d57f6eca",
+      "importer_ref": "importer-5fe76eb0ec3c16ed6654f45a",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-50da7b7f4d49dbfe3f4f0f8f",
+      "dependency_id": "dependency-1ec87b90c9080a41d57f6eca",
+      "importer_ref": "importer-eb5278a53bb2eb2203108b94",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-55b0350eb2689f8bb6793138",
+      "dependency_id": "dependency-48ca6810e13365230d5092d9",
+      "importer_ref": "importer-35bcf59ee4b9d8c848b0da31",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-55fb4bea5843c026d1a4b935",
+      "dependency_id": "dependency-ed14ee106dab0daab5e7df45",
+      "importer_ref": "importer-5fe76eb0ec3c16ed6654f45a",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-60898750aa80e81741cfa8ef",
+      "dependency_id": "dependency-00bd8f5c434a7c516029fcc1",
+      "importer_ref": "importer-2587cec604b9731e57cbc8d0",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-651756dcfafb9673341fa736",
+      "dependency_id": "dependency-1b6558476fd56e278b00a3cb",
+      "importer_ref": "importer-35bcf59ee4b9d8c848b0da31",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-6b11e62a0d2155d42ef71f2d",
+      "dependency_id": "dependency-1b6558476fd56e278b00a3cb",
+      "importer_ref": "importer-a4ee60fa57982d14ca2db7b4",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-6c74b47b29f141bdc86c84e3",
+      "dependency_id": "dependency-750e290d1b9eae2949a3b1db",
+      "importer_ref": "importer-a1faf44d47eec816100732f7",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-6c89c4bb5832531f3fbcf933",
+      "dependency_id": "dependency-a43791cec24f8bc855c4f729",
+      "importer_ref": "importer-eb5278a53bb2eb2203108b94",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-6f7a44c2fe028e8cc8cb94f4",
+      "dependency_id": "dependency-1b6558476fd56e278b00a3cb",
+      "importer_ref": "importer-d8f814656925c43853abc53a",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-776339441810a3b6f64376cd",
+      "dependency_id": "dependency-00bd8f5c434a7c516029fcc1",
+      "importer_ref": "importer-35bcf59ee4b9d8c848b0da31",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-7abec23850009137b756bf69",
+      "dependency_id": "dependency-ed14ee106dab0daab5e7df45",
+      "importer_ref": "importer-a4ee60fa57982d14ca2db7b4",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-8e1efb3cbf16ba6a4d655af5",
+      "dependency_id": "dependency-2b57b5db25f5c52b238074cf",
+      "importer_ref": "importer-eb5278a53bb2eb2203108b94",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-94fc4281cfea4ab85b1630fd",
+      "dependency_id": "dependency-05783d5276675de1bffc16d5",
+      "importer_ref": "importer-ae5e71ee27b37d4e581bc637",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-960a52c666eb2be14cc2971e",
+      "dependency_id": "dependency-1638fffc6b36b35e673c6d41",
+      "importer_ref": "importer-fee50e1d7904674d26a3a5cf",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-99debebd29a029bdd4c8552f",
+      "dependency_id": "dependency-2b57b5db25f5c52b238074cf",
+      "importer_ref": "importer-95a7d3cb60943c5e4bcc4f1f",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-99f72305c8c04ffd37b0b782",
+      "dependency_id": "dependency-ed14ee106dab0daab5e7df45",
+      "importer_ref": "importer-c5f04394f9c36d15ba93140c",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-a00ce905d07356eb53813397",
+      "dependency_id": "dependency-3d83b835a582fbc493daf4cb",
+      "importer_ref": "importer-ae5e71ee27b37d4e581bc637",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-a0e19d73572545925e301495",
+      "dependency_id": "dependency-ed14ee106dab0daab5e7df45",
+      "importer_ref": "importer-35bcf59ee4b9d8c848b0da31",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-a231089c2a60c81cbba92999",
+      "dependency_id": "dependency-1ec87b90c9080a41d57f6eca",
+      "importer_ref": "importer-d8f814656925c43853abc53a",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-a2f00779e1c0e0252865b693",
+      "dependency_id": "dependency-53231aed4e8523b2a7bc9a03",
+      "importer_ref": "importer-35bcf59ee4b9d8c848b0da31",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-b05be0ae29ef1e05b0660abc",
+      "dependency_id": "dependency-2b57b5db25f5c52b238074cf",
+      "importer_ref": "importer-d8f814656925c43853abc53a",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-b7255749f5b031e44e4e567f",
+      "dependency_id": "dependency-b4f99be0ffe3e5149a018a74",
+      "importer_ref": "importer-2587cec604b9731e57cbc8d0",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-bbbdc209d771071478121b11",
+      "dependency_id": "dependency-ed14ee106dab0daab5e7df45",
+      "importer_ref": "importer-b9acbe06190167a886af8a8c",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-bbe985cd371b730a84108039",
+      "dependency_id": "dependency-1ec87b90c9080a41d57f6eca",
+      "importer_ref": "importer-b9acbe06190167a886af8a8c",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-c028e2848c5ba0c4f7cbf2f5",
+      "dependency_id": "dependency-0fa090805c657f03da454bc9",
+      "importer_ref": "importer-fee50e1d7904674d26a3a5cf",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-c215cc71d6214350cf7e07f8",
+      "dependency_id": "dependency-ed14ee106dab0daab5e7df45",
+      "importer_ref": "importer-d8f814656925c43853abc53a",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-cf50d26b9d7d99e72f7da558",
+      "dependency_id": "dependency-a43791cec24f8bc855c4f729",
+      "importer_ref": "importer-a4ee60fa57982d14ca2db7b4",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-d02673c89071c18a9c5d0117",
+      "dependency_id": "dependency-e0e822ee4c4322a7e4157683",
+      "importer_ref": "importer-35bcf59ee4b9d8c848b0da31",
+      "kind": "workspace",
+      "reason": "workspace"
+    },
+    {
+      "id": "h0-e6f8497bbea235b78c367818",
+      "dependency_id": "dependency-1638fffc6b36b35e673c6d41",
+      "importer_ref": "importer-a1faf44d47eec816100732f7",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-e953d8703e6eff02cb7b48f3",
+      "dependency_id": "dependency-2b57b5db25f5c52b238074cf",
+      "importer_ref": "importer-e4ea189604a6617fb8567b57",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-ea6a10a7dea2cbdc4b3b476f",
+      "dependency_id": "dependency-6e8b72a6b4f4772940e63339",
+      "importer_ref": "importer-b9acbe06190167a886af8a8c",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-efc2fc7850f564a3d1a1735a",
+      "dependency_id": "dependency-2b57b5db25f5c52b238074cf",
+      "importer_ref": "importer-5fe76eb0ec3c16ed6654f45a",
+      "kind": "stdlib",
+      "reason": "standard_library"
+    },
+    {
+      "id": "h0-f7b0c8b48549fee510dccf92",
+      "dependency_id": "dependency-a43791cec24f8bc855c4f729",
+      "importer_ref": "importer-2587cec604b9731e57cbc8d0",
+      "kind": "workspace",
+      "reason": "workspace"
+    }
+  ],
+  "ledger": {
+    "observed": 70,
+    "admitted": 11,
+    "excluded": 59
+  },
+  "sha256": "67f6fb6ea7d5a5bcfe8217e7d94fdf556f58006f1c144df4de4c748de05dfafc"
+}
