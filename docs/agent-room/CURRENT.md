@@ -821,10 +821,18 @@ diagnostic-journal availability never changes the cube's semantic contract.
     `exact` means only retained exact call/execute edges, `possible` exposes
     alternative dispatch or callback handoffs, `frontier` exposes an authority
     boundary, and `unconnected` means no retained route rather than runtime
-    impossibility. The current orientation slice does not present these
-    integration-specific traces as a general repository workflow. It keeps the
-    missing end-to-end mechanism capability explicit rather than inventing a
-    route from local relations or adding another product screen.
+    impossibility. `Follow execution` is an optional task-oriented
+    presentation reframe of these same report authorities for the exact
+    activity currently selected by the user and the routes already joined to
+    it. It never auto-selects or ranks a route. Start, ordered steps,
+    exact/possible certainty, frontiers, an optional `exact_external_symbol`
+    endpoint, and at most two source actions come only from the existing
+    `ActivityEntrypointView`, `ActivityPathView`, and `IntegrationUsageView`;
+    the existing authorized source router remains the only code-opening path.
+    This reframe adds no new analysis, model call, persisted view, or manifest
+    authority. When the selected activity has no joined path, the panel is
+    omitted; missing end-to-end authority remains an explicit frontier rather
+    than an invented route.
     Unselected dependency and callsite candidates are not browser rows. The
     browser does not infer roles or integrations from names or paths. Its code
     actions use only the existing
