@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "status": "PREREGISTERED_BEFORE_AUTHORSHIP",
+  "author_brief_sha256": "2ac6286b63b3ab2ed8017de9052597bfeb87a771fc221b9823f1fd8322ff1e81",
+  "blind_oracle_schema_version": 1,
+  "frozen_extractor": {
+    "h1_sha256": "8d2614e3c34005ee4bd2abde9a6eff124176facbaf743c5a85a69c37b902d4a7",
+    "receipt_sha256": "934a4b8b7f316f44e6b83172dc8e56c6ed56dd7d8be36c5d9670c9a68fb25f8d"
+  },
+  "candidate_inputs": [
+    "sealed_repository_root",
+    "frozen_extractor_identity"
+  ],
+  "candidate_forbidden_inputs": [
+    "blind_oracle",
+    "existing_fixture",
+    "existing_oracle",
+    "evaluator",
+    "model_provider",
+    "fixture_specific_literals"
+  ],
+  "instance_match": {
+    "key": "unique_exact_local_boundary_anchor_path_and_line",
+    "forbidden_fallbacks": [
+      "basename",
+      "directory",
+      "vendor",
+      "symbol_name",
+      "opaque_candidate_id",
+      "fuzzy_match"
+    ]
+  },
+  "thresholds": {
+    "truth_instances": 5,
+    "instance_precision": "TP == predicted",
+    "instance_recall": "TP * 4 >= truth * 3",
+    "critical_false_positives": 0,
+    "role_precision": "TP == predicted",
+    "role_recall": "TP * 5 >= truth * 4",
+    "task_behaviour_coverage": "matched * 5 >= truth * 4",
+    "matched_completeness_and_missing_sets": "exact",
+    "evidence_grounding_precision": "grounded == emitted",
+    "oracle_anchor_recall": "matched * 5 >= truth * 4",
+    "decoy_admission": 0,
+    "exclusion_reason_precision": "correct == predicted",
+    "exclusion_recall": "matched * 4 >= truth * 3",
+    "callback_accounting": "exact_when_present_else_0_0_0",
+    "candidate_and_evaluation": "deterministic",
+    "ledger_and_source_accounting": "exact"
+  },
+  "overall_rule": "PASS_IFF_EVERY_THRESHOLD_PASSES",
+  "pass_interpretation": "LIMITED_SECOND_FIXTURE_EVIDENCE",
+  "failure_interpretation": "FROZEN_H1_DOES_NOT_GENERALIZE_ON_PREREGISTERED_SCENE",
+  "user_utility": "NOT_TESTED",
+  "production_readiness": "NOT_READY",
+  "frequency_reducer": "REJECTED_BY_CYCLE2"
+}
