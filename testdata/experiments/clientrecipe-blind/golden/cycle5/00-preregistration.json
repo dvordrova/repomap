@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "status": "PREREGISTERED_AFTER_CYCLE4_BEFORE_CANDIDATE_V3",
+  "candidate_id": "exhaustive-boundary-disposition-v3",
+  "parent": {
+    "cycle4_commit": "4a5932c3b5b6909d103681b0c28316a7a6c472d5",
+    "extractor_freeze_raw_sha256": "ca1759990018e753f5a291a3ecdc00ab36f1aeadd715843cba95c2f107e0ddd8",
+    "extractor_freeze_sha256": "0d18ec533228bf8d26a84f2c7dcd2fddf2cbe00c414b07ad4aefade42ba29fbe",
+    "authority_raw_sha256": "1e2eb58909a8acdc9410ef3ac43ef1962e9443781df2271b15cd8d09245e69fe",
+    "h0_raw_sha256": "fe28f32cdfdfdd42a68158cbd37feaf6e40cf08af6842728fcc8aec80d061fc2",
+    "terminal_raw_sha256": "3cdf525c2670c1a0d7d3592dd11b02c74ed878838815d7b63347ec7f9097c0f5",
+    "run_receipt_raw_sha256": "8146bf7ea123c5a6530c059f47a4b3d403e44ff39e3148996a3788922b63df61",
+    "run_receipt_sha256": "b94fa43c7de4eb173877dabcf6bf0f8b8288694acce0832e836212c484513a93"
+  },
+  "sealed_inputs": {
+    "author_brief_raw_sha256": "2ac6286b63b3ab2ed8017de9052597bfeb87a771fc221b9823f1fd8322ff1e81",
+    "original_preregistration_raw_sha256": "cc33da2a49676ba7df89eed10b16291a1d5b6115e63ac02e98be4244c1d095e4",
+    "oracle_schema_raw_sha256": "409de2cae576e9c2e759fa3a6fea811adbb3ecefba0c0bf761c0e59414ce24ea",
+    "oracle_raw_sha256": "ad1ec48672b31ccd7419fa352836ea2f73eba6141e2e54cf5a1dd8041f569023",
+    "fixture_receipt_raw_sha256": "ff62d783deb5d75f1df7261b532e01ad4d7984b4d562e383f3dbe5b4d227cfc3",
+    "fixture_receipt_sha256": "9544c7391106299e56739930308444101e8308480d5783fb18b6502de8a0a15c",
+    "repository_tree_sha256": "a8c68e09120a4b7070610d9927d2be074e5dd0e3ab2b9cea059dde5dd2147046",
+    "dependencies_tree_sha256": "ac336f04eae48a5f41f56eb332cd51aa1b1fb313a5f4bfaefe6fcbb6195c3086"
+  },
+  "candidate_inputs": [
+    "sealed_repository_root",
+    "fresh_authority",
+    "fresh_h0",
+    "current_candidate_source_identity"
+  ],
+  "candidate_forbidden_inputs": [
+    "blind_oracle",
+    "existing_oracle",
+    "evaluator",
+    "expected_instance_or_exclusion_counts",
+    "fixture_specific_ids_names_paths_or_lines",
+    "model_provider"
+  ],
+  "decision_contract": {
+    "universe": "every exact h0 dependency/importer candidate exactly once",
+    "classification_order": [
+      "generated source => exclude_generated",
+      "no exact external operation => exclude_not_external_boundary",
+      "no exact production-reachable external operation => exclude_not_production_reachable",
+      "one exact reachable nominal owner flow => admit_nominal",
+      "one exact reachable functional owner flow => admit_functional",
+      "zero live owner flows after closed exclusions => terminal_unresolved",
+      "multiple competing live owner flows => terminal_multiple"
+    ],
+    "owner_flow_authority": [
+      "exact typed external operation",
+      "exact local construction or returned closure chain",
+      "exact cross-package startup wiring",
+      "exact consumer storage and production operation",
+      "nominal struct interface function field returned named function or method value"
+    ],
+    "no_struct_wrapper_rule": "absence of a direct sdk-bearing struct is neither admission nor exclusion",
+    "ambiguity_rule": "collect every unresolved disposition then reject the complete h1 without partial semantic output"
+  },
+  "bounded_evidence_extensions": [
+    "when old configuration evidence is empty retain an exact typed configuration composite passed to the chosen constructor",
+    "when old verification evidence is empty require an exact test owner construction or factory operation and later assertion over result error or collaborator state",
+    "when old observability evidence is empty require one exact invoked interface method and one compatible production implementation that mutates retained state or invokes a logging sink"
+  ],
+  "compatibility": {
+    "h0": "unchanged",
+    "h1_schema": "unchanged",
+    "controlled_authority_h0_h1": "byte_identical",
+    "legacy_resolution": "preferred_before_new_fallbacks"
+  },
+  "execution_gate": {
+    "fresh_builds": 2,
+    "production_loads_per_build": 1,
+    "candidate_artifacts": "byte_identical",
+    "candidate_oracle_isolation": "required",
+    "original_evaluator_and_thresholds": "unchanged",
+    "overall_rule": "PASS_IFF_EVERY_ORIGINAL_THRESHOLD_PASSES"
+  },
+  "visual_gate": {
+    "condition": "overall evaluator PASS",
+    "source": "validated candidate h1 only",
+    "labels": [
+      "limited second-fixture evidence",
+      "user utility not tested",
+      "not ready"
+    ],
+    "forbidden": [
+      "oracle-derived cards",
+      "recommended winner",
+      "frequency reducer",
+      "product report integration on this evidence alone"
+    ]
+  },
+  "sha256": "a56950fda89ea6524a90a77116f287229036969ffd27538131bafab6f3704a26"
+}

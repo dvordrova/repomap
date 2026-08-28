@@ -1,0 +1,184 @@
+{
+  "version": 1,
+  "status": "SEALED_BEFORE_CANDIDATE_V3_IMPLEMENTATION",
+  "candidate_id": "exhaustive-boundary-disposition-v3",
+  "authority_raw_sha256": "1e2eb58909a8acdc9410ef3ac43ef1962e9443781df2271b15cd8d09245e69fe",
+  "h0_raw_sha256": "fe28f32cdfdfdd42a68158cbd37feaf6e40cf08af6842728fcc8aec80d061fc2",
+  "oracle_used": false,
+  "rows": [
+    {
+      "h0_candidate_id": "h0-1a48cd4d6323a7856724f6a5",
+      "importer_repository_path": "internal/preview",
+      "package_path": "messaging.example/receipt",
+      "external_operations": [
+        "internal/preview/receipt_preview.go:12:messaging.example/receipt.NewSender",
+        "internal/preview/receipt_preview.go:16:messaging.example/receipt.*messaging.example/receipt.Sender.Dispatch"
+      ],
+      "production_reachable": false,
+      "owner_flow": null,
+      "disposition": "exclude_not_production_reachable"
+    },
+    {
+      "h0_candidate_id": "h0-2cdcfcb2340d8e749cd3607e",
+      "importer_repository_path": "internal/notification",
+      "package_path": "messaging.example/receipt",
+      "external_operations": [
+        "internal/notification/receipt.go:23:messaging.example/receipt.NewSender",
+        "internal/notification/receipt.go:32:messaging.example/receipt.*messaging.example/receipt.Sender.Dispatch"
+      ],
+      "production_reachable": true,
+      "owner_flow": {
+        "kind": "nominal",
+        "type": "Dispatcher",
+        "anchor": "internal/notification/receipt.go:17",
+        "constructor": "internal/notification/receipt.go:22:NewDispatcher",
+        "wiring": "internal/bootstrap/runtime.go:55",
+        "consumer": "internal/checkout/service.go:58"
+      },
+      "disposition": "admit_nominal"
+    },
+    {
+      "h0_candidate_id": "h0-3c2c32db6e7f05ba297f0a0d",
+      "importer_repository_path": "internal/address",
+      "package_path": "geo.example/locator",
+      "external_operations": [
+        "internal/address/verification.go:38:geo.example/locator.New"
+      ],
+      "production_reachable": true,
+      "owner_flow": {
+        "kind": "nominal",
+        "type": "Adapter",
+        "anchor": "internal/address/verification.go:32",
+        "constructor": "internal/address/verification.go:37:New",
+        "wiring": "internal/bootstrap/runtime.go:43",
+        "consumer": "internal/checkout/service.go:39"
+      },
+      "disposition": "admit_nominal"
+    },
+    {
+      "h0_candidate_id": "h0-6f3107d6e3da9ff50e810daf",
+      "importer_repository_path": "internal/tax",
+      "package_path": "revenue.example/taxquote",
+      "external_operations": [
+        "internal/tax/quote.go:27:revenue.example/taxquote.NewClient"
+      ],
+      "production_reachable": true,
+      "owner_flow": {
+        "kind": "functional",
+        "type": "QuoteFunc",
+        "anchor": "internal/tax/quote.go:20",
+        "constructor": "internal/tax/quote.go:26:Connect",
+        "wiring": "internal/bootstrap/runtime.go:36",
+        "consumer": "internal/checkout/service.go:43"
+      },
+      "disposition": "admit_functional"
+    },
+    {
+      "h0_candidate_id": "h0-7814634f7527e5666c548e71",
+      "importer_repository_path": "internal/payment",
+      "package_path": "acquirer.example/authorizer",
+      "external_operations": [
+        "internal/payment/gateway.go:40:acquirer.example/authorizer.New"
+      ],
+      "production_reachable": true,
+      "owner_flow": {
+        "kind": "nominal",
+        "type": "Gateway",
+        "anchor": "internal/payment/gateway.go:32",
+        "constructor": "internal/payment/gateway.go:39:Open",
+        "wiring": "internal/bootstrap/runtime.go:29",
+        "consumer": "internal/checkout/service.go:48"
+      },
+      "disposition": "admit_nominal"
+    },
+    {
+      "h0_candidate_id": "h0-7c578f3cf5bd8ade47ac983b",
+      "importer_repository_path": "internal/sandbox",
+      "package_path": "acquirer.example/authorizer",
+      "external_operations": [
+        "internal/sandbox/payment_scenario.go:18:acquirer.example/authorizer.New",
+        "internal/sandbox/payment_scenario.go:24:acquirer.example/authorizer.*acquirer.example/authorizer.Client.Authorize"
+      ],
+      "production_reachable": false,
+      "owner_flow": null,
+      "disposition": "exclude_not_production_reachable"
+    },
+    {
+      "h0_candidate_id": "h0-bb17a44d6e7d74befac7053e",
+      "importer_repository_path": "internal/diagnostics",
+      "package_path": "shipping.example/parcel",
+      "external_operations": [
+        "internal/diagnostics/carrier_probe.go:12:shipping.example/parcel.Dial",
+        "internal/diagnostics/carrier_probe.go:16:shipping.example/parcel.*shipping.example/parcel.Broker.Reserve"
+      ],
+      "production_reachable": false,
+      "owner_flow": null,
+      "disposition": "exclude_not_production_reachable"
+    },
+    {
+      "h0_candidate_id": "h0-ccb7350332d0dd2d301e9aa7",
+      "importer_repository_path": "internal/shipping",
+      "package_path": "shipping.example/parcel",
+      "external_operations": [
+        "internal/shipping/booking.go:31:shipping.example/parcel.Dial"
+      ],
+      "production_reachable": true,
+      "owner_flow": {
+        "kind": "nominal",
+        "type": "Booker",
+        "anchor": "internal/shipping/booking.go:25",
+        "constructor": "internal/shipping/booking.go:30:Open",
+        "wiring": "internal/bootstrap/runtime.go:49",
+        "consumer": "internal/checkout/service.go:54"
+      },
+      "disposition": "admit_nominal"
+    },
+    {
+      "h0_candidate_id": "h0-cdf037b69373ddc0e6e1fe09",
+      "importer_repository_path": "internal/migration",
+      "package_path": "geo.example/locator",
+      "external_operations": [
+        "internal/migration/address_backfill.go:19:geo.example/locator.New",
+        "internal/migration/address_backfill.go:25:geo.example/locator.*geo.example/locator.Service.Validate"
+      ],
+      "production_reachable": false,
+      "owner_flow": null,
+      "disposition": "exclude_not_production_reachable"
+    },
+    {
+      "h0_candidate_id": "h0-d683963f8ea0d8e60334c316",
+      "importer_repository_path": "internal/examples",
+      "package_path": "revenue.example/taxquote",
+      "external_operations": [
+        "internal/examples/tax_walkthrough.go:12:revenue.example/taxquote.NewClient",
+        "internal/examples/tax_walkthrough.go:16:revenue.example/taxquote.*revenue.example/taxquote.Client.Calculate"
+      ],
+      "production_reachable": false,
+      "owner_flow": null,
+      "disposition": "exclude_not_production_reachable"
+    },
+    {
+      "h0_candidate_id": "h0-d69d4fd859d1d4a1bf0a5ad1",
+      "importer_repository_path": "internal/legacy",
+      "package_path": "acquirer.example/authorizer",
+      "external_operations": [
+        "internal/legacy/reconciliation.go:15:acquirer.example/authorizer.New",
+        "internal/legacy/reconciliation.go:25:acquirer.example/authorizer.*acquirer.example/authorizer.Client.Authorize"
+      ],
+      "production_reachable": false,
+      "owner_flow": null,
+      "disposition": "exclude_not_production_reachable"
+    }
+  ],
+  "summary": {
+    "h0_candidates": 11,
+    "admit_nominal": 4,
+    "admit_functional": 1,
+    "exclude_not_production_reachable": 6,
+    "exclude_generated": 0,
+    "exclude_not_external_boundary": 0,
+    "terminal_unresolved": 0,
+    "terminal_multiple": 0
+  },
+  "sha256": "9215032467ba4593a9cfb1977784385bc1033fd433ea387c2819e6849bbce96b"
+}
